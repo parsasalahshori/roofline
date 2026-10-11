@@ -1,1 +1,10 @@
-{"compilerOptions":{"target":"ES2023","lib":["ES2023","DOM","DOM.Iterable"],"module":"ESNext","moduleResolution":"Bundler","jsx":"react-jsx","strict":true,"esModuleInterop":true,"skipLibCheck":true,"allowImportingTsExtensions":true,"noEmit":true,"types":["node"]},"include":["client","server","shared","tests","*.ts"]}
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/db" },
+    { "path": "packages/send-gate" },
+    { "path": "apps/api" },
+    { "path": "apps/worker" }
+  ]
+}
