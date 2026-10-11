@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, isNull, like, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, like, lt, or, sql } from 'drizzle-orm';
 import type { CompanyStatus, Role } from '@roofline/shared';
 import { isUniqueViolation } from '../errors.ts';
 import type { Db } from '../pools.ts';
@@ -241,6 +241,31 @@ export async function insertSession(system: Db, input: NewSession): Promise<void
     userAgent: input.userAgent,
     ip: input.ip,
   });
+}
+
+/**
+ * Starts a session only if the user's password is STILL the one that was just checked: one
+ * statement, `insert ... select ... from users where id = $user and password_hash = $hash`, so the
+ * check and the insert cannot be separated. Password login takes a while between verifying the
+ * password and saving the session (scrypt), and a Google hand-over or a password reset that
+ * commits in that gap changes the hash (or removes it) and deletes the user's sessions; without
+ * this the login would then add a fresh 30-day session behind them. Returns false, with nothing
+ * inserted, when the hash is no longer `passwordHash` (or the user is gone).
+ * Used ONLY by password login; sign-up, Google and invite sessions use `insertSession`.
+ */
+export async function insertSessionIfPasswordUnchanged(
+  system: Db,
+  input: NewSession,
+  passwordHash: string,
+): Promise<boolean> {
+  const result = await system.execute(sql`
+    insert into sessions (token_hash, user_id, active_company_id, expires_at, last_seen_at, user_agent, ip)
+    select ${input.tokenHash}::text, u.id, ${input.companyId}::uuid, ${input.expiresAt.toISOString()}::timestamptz,
+           ${input.now.toISOString()}::timestamptz, ${input.userAgent}::text, ${input.ip}::text
+    from users u
+    where u.id = ${input.userId}::uuid and u.password_hash = ${passwordHash}::text
+    returning id`);
+  return result.rows.length > 0;
 }
 
 export type SessionRecord = {

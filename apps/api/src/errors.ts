@@ -29,6 +29,7 @@ export const MESSAGES = {
   googleUnavailable: 'Google sign-in is having trouble right now. Please try again in a minute.',
   googleUnverified: "Google hasn't confirmed this email address, so we can't use it to sign in.",
   googleOtherAccount: 'That email is already connected to a different Google account.',
+  googleEmailInUse: 'This email already has a Roofline account. Please sign in with your password.',
 } as const;
 
 export type ErrorBody = { error: string; field?: string };

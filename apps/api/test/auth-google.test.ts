@@ -15,7 +15,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { companySettings, type Pools, withTenant } from '@roofline/db';
 import * as system from '@roofline/db/system';
 import { createApp } from '../src/app.ts';
-import { type GoogleClaims, GoogleUnavailableError, JoseGoogleVerifier } from '../src/auth/google.ts';
+import {
+  type GoogleClaims,
+  GoogleUnavailableError,
+  isGoogleAuthoritative,
+  JoseGoogleVerifier,
+} from '../src/auth/google.ts';
+import * as passwordModule from '../src/auth/password.ts';
 import { AppError } from '../src/errors.ts';
 import { loginAs, makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 
@@ -31,6 +37,13 @@ vi.mock('@roofline/db/system', async (importOriginal) => {
   };
 });
 
+// verifyPassword is wrapped (it still runs for real) so a test can run something right after a
+// password check succeeds and before the login saves its session.
+vi.mock('../src/auth/password.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/auth/password.ts')>();
+  return { ...actual, verifyPassword: vi.fn(actual.verifyPassword) };
+});
+
 const DAY = 24 * 60 * 60 * 1000;
 
 const FAILED = "We couldn't sign you in with Google. Please try again.";
@@ -38,6 +51,7 @@ const NOT_SET_UP = "Google sign-in isn't set up yet.";
 const UNAVAILABLE = 'Google sign-in is having trouble right now. Please try again in a minute.';
 const UNVERIFIED = "Google hasn't confirmed this email address, so we can't use it to sign in.";
 const OTHER_ACCOUNT = 'That email is already connected to a different Google account.';
+const EMAIL_IN_USE = 'This email already has a Roofline account. Please sign in with your password.';
 const NO_ACCESS = 'Your access to this company is turned off. Ask the owner to turn it back on.';
 const COMPANY_NAME = 'Please enter your company name.';
 const BAD_LOGIN = "That email and password don't match.";
@@ -134,6 +148,16 @@ describe('JoseGoogleVerifier', () => {
   ])('email_verified as $sent â†’ emailVerified $expected', async ({ value, expected }) => {
     const result = await verifier.verify(await token({ claims: { email_verified: value } }));
     expect(result.emailVerified).toBe(expected);
+  });
+
+  test('the Workspace domain (hd) comes through as hostedDomain; without one the property is absent', async () => {
+    expect(await verifier.verify(await token({ claims: { hd: 'acme-roofing.test' } }))).toMatchObject({
+      hostedDomain: 'acme-roofing.test',
+    });
+    for (const hd of [undefined, '', '   ', 42, true]) {
+      const result = await verifier.verify(await token({ claims: { hd: hd as never } }));
+      expect(result, `hd ${JSON.stringify(hd)}`).not.toHaveProperty('hostedDomain');
+    }
   });
 
   test('a missing or blank name falls back to the part of the email before the @', async () => {
@@ -301,6 +325,7 @@ beforeEach(async () => {
   vi.mocked(system.findUserByGoogleSub).mockReset();
   vi.mocked(system.findUserByEmail).mockReset();
   vi.mocked(system.linkGoogleAccount).mockReset();
+  vi.mocked(passwordModule.verifyPassword).mockReset();
   t = await makeTestApp();
 });
 
@@ -353,6 +378,11 @@ async function signedUpUser(email = 'olive@example.com', companyName = 'Summit R
     .send({ email, password: 'a long enough password', name: 'Olive Owner', companyName });
   expect(res.status).toBe(201);
   return res.body as { user: { id: string; email: string }; company: { id: string; slug: string } };
+}
+
+/** The 43-character token in the link of an email. */
+function tokenFrom(mail: { text: string }, page: 'reset' | 'verify'): string {
+  return mail.text.match(new RegExp(`/${page}\\?token=([A-Za-z0-9_-]{43})`))![1]!;
 }
 
 async function linkSub(userId: string, sub: string) {
@@ -430,7 +460,7 @@ describe('branch 2: a confirmed Google email that an existing user already has â
     t.clock.advance(3 * DAY);
 
     const agent = request.agent(t.app);
-    const res = await googleSignIn(claims({ sub: 'google-sub-olive', email: '  Olive@EXAMPLE.com ' }), {}, agent);
+    const res = await googleSignIn(claims({ sub: 'google-sub-olive', email: '  Olive@EXAMPLE.com ', hostedDomain: 'example.com' }), {}, agent);
     expect(res.status).toBe(200);
     expect(hasSessionCookie(res)).toBe(true);
     expect(res.body).toEqual({
@@ -465,10 +495,8 @@ describe('branch 2: a confirmed Google email that an existing user already has â
     // They also ask for a password-reset link, and hold on to it along with the confirmation link.
     expect((await request(t.app).post('/api/auth/reset-request').send({ email: 'victim@x.test' })).status).toBe(200);
     await t.settle();
-    const linkToken = (mail: { text: string }, page: 'reset' | 'verify') =>
-      mail.text.match(new RegExp(`/${page}\\?token=([A-Za-z0-9_-]{43})`))![1]!;
-    const resetToken = linkToken(t.mailer.sent.find((m) => /Reset/.test(m.subject))!, 'reset');
-    const verifyToken = linkToken(t.mailer.sent.find((m) => /Confirm/.test(m.subject))!, 'verify');
+    const resetToken = tokenFrom(t.mailer.sent.find((m) => /Reset/.test(m.subject))!, 'reset');
+    const verifyToken = tokenFrom(t.mailer.sent.find((m) => /Confirm/.test(m.subject))!, 'verify');
     expect(await sql('select kind from user_tokens where used_at is null order by kind')).toEqual([
       { kind: 'reset_password' },
       { kind: 'verify_email' },
@@ -477,7 +505,7 @@ describe('branch 2: a confirmed Google email that an existing user already has â
     // The real owner of victim@x.test signs in with Google.
     t.clock.advance(DAY);
     const victim = request.agent(t.app);
-    const res = await googleSignIn(claims({ sub: 'victim-sub', email: 'victim@x.test' }), {}, victim);
+    const res = await googleSignIn(claims({ sub: 'victim-sub', email: 'victim@x.test', hostedDomain: 'x.test' }), {}, victim);
     expect(res.status).toBe(200);
     expect(res.body.user).toMatchObject({ id: made.body.user.id, email: 'victim@x.test', emailVerified: true });
     expect(hasSessionCookie(res)).toBe(true);
@@ -519,7 +547,7 @@ describe('branch 2: a confirmed Google email that an existing user already has â
       sql('select 1 from user_tokens where user_id = $1 and used_at is null', [owner.userId]);
     expect(await unusedLinks()).toHaveLength(1);
 
-    const res = await googleSignIn(claims({ sub: 'google-sub-owner', email: owner.email }));
+    const res = await googleSignIn(claims({ sub: 'google-sub-owner', email: owner.email, hostedDomain: 'a.test' }));
     expect(res.status).toBe(200);
     expect(res.body.user.id).toBe(owner.userId);
 
@@ -535,7 +563,7 @@ describe('branch 2: a confirmed Google email that an existing user already has â
       owner.userId,
     ]);
     t.clock.advance(5 * DAY);
-    const res = await googleSignIn(claims({ sub: 'google-sub-owner', email: owner.email.toUpperCase() }));
+    const res = await googleSignIn(claims({ sub: 'google-sub-owner', email: owner.email.toUpperCase(), hostedDomain: 'A.test' }));
     expect(res.status).toBe(200);
     expect(res.body.user.id).toBe(owner.userId);
     const [row] = await sql<{ google_sub: string; email_verified_at: Date }>(
@@ -550,9 +578,11 @@ describe('branch 2: a confirmed Google email that an existing user already has â
     const owner = t.seed.a.owner;
     await linkSub(owner.userId, 'google-sub-first-account');
     const before = await counts();
-    const res = await googleSignIn(claims({ sub: 'google-sub-second-account', email: owner.email }));
+    const res = await googleSignIn(
+      claims({ sub: 'google-sub-second-account', email: owner.email, hostedDomain: 'a.test' }),
+    );
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: OTHER_ACCOUNT, field: 'email' });
+    expect(res.body).toEqual({ error: OTHER_ACCOUNT });
     expect(hasSessionCookie(res)).toBe(false);
     expect(await sql('select google_sub from users where id = $1', [owner.userId])).toEqual([
       { google_sub: 'google-sub-first-account' },
@@ -727,9 +757,10 @@ describe('two requests overlapping (each lookup below is made to miss what the o
   test('creating loses to the winner on the email â†’ looks again and links the account that now exists', async () => {
     const account = await signedUpUser('olive@example.com');
     vi.mocked(system.findUserByEmail).mockResolvedValueOnce(null);
-    const res = await googleSignIn(claims({ sub: 'google-sub-olive', email: 'olive@example.com' }), {
-      companyName: 'Another Roofing',
-    });
+    const res = await googleSignIn(
+      claims({ sub: 'google-sub-olive', email: 'olive@example.com', hostedDomain: 'example.com' }),
+      { companyName: 'Another Roofing' },
+    );
     expect(res.status).toBe(200);
     expect(res.body.user.id).toBe(account.user.id);
     expect(await sql('select google_sub from users where id = $1', [account.user.id])).toEqual([
@@ -744,7 +775,7 @@ describe('two requests overlapping (each lookup below is made to miss what the o
       await linkSub(owner.userId, 'google-sub-owner'); // what the other request did, just before ours
       return null;
     });
-    const res = await googleSignIn(claims({ sub: 'google-sub-owner', email: owner.email }));
+    const res = await googleSignIn(claims({ sub: 'google-sub-owner', email: owner.email, hostedDomain: 'a.test' }));
     expect(res.status).toBe(200);
     expect(res.body.user.id).toBe(owner.userId);
   });
@@ -759,6 +790,213 @@ describe('two requests overlapping (each lookup below is made to miss what the o
     expect(res.status).toBe(500);
     expect(hasSessionCookie(res)).toBe(false);
     expect(logError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isGoogleAuthoritative: when "email_verified" is enough to prove the caller owns the address', () => {
+  test.each([
+    { email: 'sam@gmail.com', hostedDomain: undefined, expected: true, why: 'Gmail' },
+    { email: 'sam@googlemail.com', hostedDomain: undefined, expected: true, why: 'Googlemail' },
+    { email: '  Sam@GMail.COM ', hostedDomain: undefined, expected: true, why: 'Gmail in any case, with spaces' },
+    { email: 'sam@gmail.com', hostedDomain: 'unrelated.test', expected: true, why: 'Gmail whatever hd says' },
+    { email: 'pat@acme.test', hostedDomain: 'acme.test', expected: true, why: 'Workspace domain equals the email domain' },
+    { email: 'Pat@Acme.TEST', hostedDomain: 'ACME.test', expected: true, why: 'same, compared case-insensitively' },
+    { email: 'pat@acme.test', hostedDomain: undefined, expected: false, why: 'some other domain, no Workspace' },
+    { email: 'pat@acme.test', hostedDomain: 'other.test', expected: false, why: 'Workspace of a different domain' },
+    { email: 'pat@mail.acme.test', hostedDomain: 'acme.test', expected: false, why: 'a subdomain is not the domain' },
+    { email: 'pat@acme.test', hostedDomain: 'mail.acme.test', expected: false, why: 'a parent is not the subdomain' },
+    { email: 'sam@evilgmail.com', hostedDomain: undefined, expected: false, why: 'looks like Gmail, is not' },
+    { email: 'sam@gmail.com.evil.test', hostedDomain: undefined, expected: false, why: 'Gmail as a prefix only' },
+    { email: 'sam@sub.gmail.com', hostedDomain: undefined, expected: false, why: 'a Gmail subdomain' },
+    { email: 'pat@acme.test', hostedDomain: '', expected: false, why: 'an empty hd' },
+    { email: 'not-an-email', hostedDomain: 'not-an-email', expected: false, why: 'no @ at all' },
+    { email: 'pat@', hostedDomain: '', expected: false, why: 'nothing after the @' },
+  ])('$email with hd $hostedDomain â†’ $expected ($why)', ({ email, hostedDomain, expected }) => {
+    expect(isGoogleAuthoritative({ email, hostedDomain })).toBe(expected);
+  });
+});
+
+describe('branch 2 only when Google is the authority for the address', () => {
+  /** Everything about a user an attacker or the owner could still use: the row, sessions and links. */
+  async function accountState(userId: string) {
+    return {
+      user: (await sql('select * from users where id = $1', [userId]))[0],
+      sessions: await sql('select id, token_hash from sessions where user_id = $1 order by id', [userId]),
+      links: await sql('select id, used_at from user_tokens where user_id = $1 order by id', [userId]),
+    };
+  }
+
+  test.each(['gmail.com', 'googlemail.com'])('an @%s address links (Google is the authority, no hd needed)', async (domain) => {
+    const account = await signedUpUser(`sam.roofer@${domain}`, 'Sam Roofing');
+    const res = await googleSignIn(claims({ sub: 'google-sub-sam', email: `Sam.Roofer@${domain.toUpperCase()}` }));
+    expect(res.status).toBe(200);
+    expect(res.body.user.id).toBe(account.user.id);
+    expect(await sql('select google_sub from users where id = $1', [account.user.id])).toEqual([
+      { google_sub: 'google-sub-sam' },
+    ]);
+  });
+
+  test('a Workspace address whose hd is the emailâ€™s own domain links (hd compared case-insensitively)', async () => {
+    const account = await signedUpUser('pat@acme-roofing.test', 'Acme Roofing');
+    const res = await googleSignIn(
+      claims({ sub: 'google-sub-pat', email: 'pat@acme-roofing.test', hostedDomain: 'ACME-Roofing.test' }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.user.id).toBe(account.user.id);
+    expect(await sql('select google_sub from users where id = $1', [account.user.id])).toEqual([
+      { google_sub: 'google-sub-pat' },
+    ]);
+  });
+
+  describe.each([
+    {
+      name: 'an unconfirmed password account (the case the hand-over is for)',
+      setup: async () => {
+        const account = await signedUpUser('pat@acme-roofing.test', 'Acme Roofing');
+        // The attacker is signed in and holds a reset link.
+        await request(t.app).post('/api/auth/reset-request').send({ email: 'pat@acme-roofing.test' });
+        await t.settle();
+        return { userId: account.user.id, email: 'pat@acme-roofing.test', password: 'a long enough password' };
+      },
+    },
+    {
+      name: 'a confirmed account with a live session',
+      setup: async () => {
+        const owner = t.seed.a.owner;
+        await loginAs(t.app, owner);
+        return { userId: owner.userId, email: owner.email, password: owner.password };
+      },
+    },
+  ])('a verified Google email on a domain Google is not the authority for, against $name', ({ setup }) => {
+    test.each([
+      { why: 'no hd at all', hostedDomain: undefined },
+      { why: 'an hd of some other domain', hostedDomain: 'other-company.test' },
+      { why: 'an hd that is only the parent of a subdomain address', hostedDomain: 'parent.test' },
+    ])('$why â†’ 409, and nothing about the account changes', async ({ hostedDomain }) => {
+      const victim = await setup();
+      const email = hostedDomain === 'parent.test' ? `x@mail.parent.test` : victim.email;
+      if (email !== victim.email) await sql('update users set email = $2 where id = $1', [victim.userId, email]);
+      const before = await accountState(victim.userId);
+      expect(before.sessions.length).toBeGreaterThan(0);
+
+      const res = await googleSignIn(claims({ sub: 'google-sub-intruder', email, hostedDomain }));
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({ error: EMAIL_IN_USE }); // and no `field`
+      expect(hasSessionCookie(res)).toBe(false);
+
+      expect(await accountState(victim.userId)).toEqual(before);
+      expect(before.user.google_sub).toBeNull();
+      // The password still works, and a company was not made for the intruder.
+      const login = await request(t.app).post('/api/auth/login').send({ email, password: victim.password });
+      expect(login.status).toBe(200);
+      expect(await sql('select 1 from users where google_sub = $1', ['google-sub-intruder'])).toEqual([]);
+    });
+  });
+
+  test('an account connected to another Google account is also just "already has an account" for such an address', async () => {
+    const account = await signedUpUser('pat@acme-roofing.test', 'Acme Roofing');
+    await linkSub(account.user.id, 'google-sub-first');
+    const res = await googleSignIn(claims({ sub: 'google-sub-second', email: 'pat@acme-roofing.test' }));
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: EMAIL_IN_USE });
+    expect(await sql('select google_sub from users where id = $1', [account.user.id])).toEqual([
+      { google_sub: 'google-sub-first' },
+    ]);
+  });
+
+  test.each([
+    { why: 'no hd', hostedDomain: undefined },
+    { why: 'an hd of another domain', hostedDomain: 'other-company.test' },
+  ])('a NEW account for such an address is still created on email_verified alone ($why)', async ({ hostedDomain }) => {
+    const before = await counts();
+    const res = await googleSignIn(
+      claims({ sub: 'google-sub-new-person', email: 'new.person@acme-roofing.test', hostedDomain }),
+      { companyName: 'New Person Roofing' },
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({ email: 'new.person@acme-roofing.test', emailVerified: true });
+    expect(await counts()).toMatchObject({ users: String(Number(before.users) + 1), companies: String(Number(before.companies) + 1) });
+  });
+});
+
+describe('a password login that is still in flight when the account changes hands', () => {
+  const VICTIM = 'victim@x.test';
+  const ATTACKER_PASSWORD = 'a long enough password';
+
+  /** Runs `between` right after the next password check succeeds, before the login saves its session. */
+  async function afterNextPasswordCheck(between: () => Promise<void>) {
+    const real = await vi.importActual<typeof import('../src/auth/password.ts')>('../src/auth/password.ts');
+    vi.mocked(passwordModule.verifyPassword).mockImplementationOnce(async (password, hash) => {
+      const matches = await real.verifyPassword(password, hash);
+      expect(matches).toBe(true);
+      await between();
+      return matches;
+    });
+  }
+
+  const sessionsOf = (userId: string) => sql('select id from sessions where user_id = $1', [userId]);
+
+  test('a Google hand-over committed between the password check and the session insert â†’ 401, and no session exists', async () => {
+    const attacker = await signedUpUser(VICTIM, 'Mallory Roofing'); // leaves the attacker one session
+    expect(await sessionsOf(attacker.user.id)).toHaveLength(1);
+    await afterNextPasswordCheck(async () => {
+      const handOver = await googleSignIn(claims({ sub: 'victim-sub', email: VICTIM, hostedDomain: 'x.test' }));
+      expect(handOver.status).toBe(200);
+    });
+
+    const res = await request(t.app).post('/api/auth/login').send({ email: VICTIM, password: ATTACKER_PASSWORD });
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: BAD_LOGIN });
+    expect(hasSessionCookie(res)).toBe(false);
+    // The attacker's own session went with the hand-over; the only session left is the Google caller's.
+    expect(await sessionsOf(attacker.user.id)).toHaveLength(1);
+    expect(await sql('select password_hash is null as no_password from users where id = $1', [attacker.user.id])).toEqual([
+      { no_password: true },
+    ]);
+  });
+
+  test('a password reset committed in that window â†’ 401, and no session exists', async () => {
+    const owner = t.seed.a.owner;
+    expect((await request(t.app).post('/api/auth/reset-request').send({ email: owner.email })).status).toBe(200);
+    await t.settle();
+    const token = tokenFrom(t.mailer.sent.find((m) => /Reset/.test(m.subject))!, 'reset');
+    await afterNextPasswordCheck(async () => {
+      const reset = await request(t.app).post('/api/auth/reset').send({ token, password: 'a brand new password' });
+      expect(reset.status).toBe(200);
+    });
+
+    const res = await request(t.app).post('/api/auth/login').send({ email: owner.email, password: owner.password });
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: BAD_LOGIN });
+    expect(hasSessionCookie(res)).toBe(false);
+    expect(await sessionsOf(owner.userId)).toEqual([]);
+    // The new password is the one that works.
+    const again = await request(t.app).post('/api/auth/login').send({ email: owner.email, password: 'a brand new password' });
+    expect(again.status).toBe(200);
+  });
+
+  test('a refused login leaves the session the browser already had', async () => {
+    const browser = await loginAs(t.app, t.seed.b.owner);
+    await signedUpUser(VICTIM, 'Mallory Roofing');
+    await afterNextPasswordCheck(async () => {
+      await googleSignIn(claims({ sub: 'victim-sub', email: VICTIM, hostedDomain: 'x.test' }));
+    });
+    const res = await browser.post('/api/auth/login').send({ email: VICTIM, password: ATTACKER_PASSWORD });
+    expect(res.status).toBe(401);
+    const me = await browser.get('/api/auth/me');
+    expect(me.status).toBe(200);
+    expect(me.body.user.id).toBe(t.seed.b.owner.userId);
+  });
+
+  test('a normal login is unaffected: 200, the cookie, one new session, and it works', async () => {
+    const owner = t.seed.a.owner;
+    const agent = request.agent(t.app);
+    const res = await agent.post('/api/auth/login').send({ email: owner.email, password: owner.password });
+    expect(res.status).toBe(200);
+    expect(hasSessionCookie(res)).toBe(true);
+    expect(res.body.user.id).toBe(owner.userId);
+    expect(await sessionsOf(owner.userId)).toHaveLength(1);
+    expect((await agent.get('/api/auth/me')).status).toBe(200);
   });
 });
 
@@ -805,7 +1043,7 @@ describe('a user with no active membership', () => {
   test('linking by email â†’ 403 too, and the account is not linked', async () => {
     const rep = t.seed.a.rep;
     await sql("update memberships set status = 'disabled' where user_id = $1", [rep.userId]);
-    const res = await googleSignIn(claims({ sub: 'google-sub-rep', email: rep.email }));
+    const res = await googleSignIn(claims({ sub: 'google-sub-rep', email: rep.email, hostedDomain: 'a.test' }));
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: NO_ACCESS });
     expect(hasSessionCookie(res)).toBe(false);

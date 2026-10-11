@@ -12,6 +12,7 @@ import {
   GoogleSubInUseError,
   consumeUserToken,
   insertSession,
+  insertSessionIfPasswordUnchanged,
   insertUserToken,
   linkGoogleAccount,
   removeAccount,
@@ -361,6 +362,76 @@ describe('Google accounts', () => {
   test('linkGoogleAccount: an unknown user id links nothing', async () => {
     expect(await linkGoogleAccount(system, '00000000-0000-4000-8000-000000000000', 'google-sub-1', NOW)).toBeNull();
     expect(await findUserByGoogleSub(system, 'google-sub-1')).toBeNull();
+  });
+});
+
+describe('insertSessionIfPasswordUnchanged', () => {
+  const NOW = new Date('2026-03-01T12:00:00Z');
+  const HASH = 'scrypt$16384$8$1$AAAA$BBBB';
+
+  const sessionFor = (created: { user: { id: string }; company: { id: string } }, tokenHash = 'hash-1') => ({
+    tokenHash,
+    userId: created.user.id,
+    companyId: created.company.id,
+    now: NOW,
+    expiresAt: new Date(NOW.getTime() + 30 * DAY),
+    userAgent: 'test browser',
+    ip: '203.0.113.5',
+  });
+
+  const rows = async (userId: string) =>
+    (await system.$client.query('select * from sessions where user_id = $1', [userId])).rows as Record<string, unknown>[];
+
+  test('saves the session, with every field, while the hash is still the one that was checked', async () => {
+    const created = await createAccount(system, account(1));
+    expect(await insertSessionIfPasswordUnchanged(system, sessionFor(created), HASH)).toBe(true);
+    const [row] = await rows(created.user.id);
+    expect(row).toMatchObject({
+      token_hash: 'hash-1',
+      user_id: created.user.id,
+      active_company_id: created.company.id,
+      expires_at: new Date(NOW.getTime() + 30 * DAY),
+      last_seen_at: NOW,
+      user_agent: 'test browser',
+      ip: '203.0.113.5',
+    });
+    expect(await findLiveSession(system, 'hash-1', new Date(NOW.getTime() + DAY))).toMatchObject({
+      userId: created.user.id,
+      companyId: created.company.id,
+    });
+  });
+
+  test('a missing user agent and address are saved as null', async () => {
+    const created = await createAccount(system, account(1));
+    await insertSessionIfPasswordUnchanged(system, { ...sessionFor(created), userAgent: null, ip: null }, HASH);
+    expect((await rows(created.user.id))[0]).toMatchObject({ user_agent: null, ip: null });
+  });
+
+  test('saves nothing once the password has been changed (a reset) or removed (a Google hand-over)', async () => {
+    const created = await createAccount(system, account(1));
+    await system.$client.query('update users set password_hash = $2 where id = $1', [created.user.id, 'scrypt$new']);
+    expect(await insertSessionIfPasswordUnchanged(system, sessionFor(created), HASH)).toBe(false);
+    await system.$client.query('update users set password_hash = null where id = $1', [created.user.id]);
+    expect(await insertSessionIfPasswordUnchanged(system, sessionFor(created, 'hash-2'), HASH)).toBe(false);
+    expect(await rows(created.user.id)).toEqual([]);
+  });
+
+  test('saves nothing for a user who no longer exists', async () => {
+    const created = await createAccount(system, account(1));
+    expect(
+      await insertSessionIfPasswordUnchanged(
+        system,
+        { ...sessionFor(created), userId: '00000000-0000-4000-8000-000000000000' },
+        HASH,
+      ),
+    ).toBe(false);
+    expect(await rows(created.user.id)).toEqual([]);
+  });
+
+  test('a token hash that is already taken is still a unique-violation error, not a quiet false', async () => {
+    const created = await createAccount(system, account(1));
+    await insertSessionIfPasswordUnchanged(system, sessionFor(created), HASH);
+    await expect(insertSessionIfPasswordUnchanged(system, sessionFor(created), HASH)).rejects.toThrow();
   });
 });
 

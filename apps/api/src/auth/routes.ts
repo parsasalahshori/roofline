@@ -31,9 +31,15 @@ import {
   signupRateLimit,
 } from '../rate-limit.ts';
 import { MAX_EMAIL_LENGTH, parse } from '../validate.ts';
-import { type GoogleClaims, GoogleUnavailableError } from './google.ts';
+import { type GoogleClaims, GoogleUnavailableError, isGoogleAuthoritative } from './google.ts';
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from './password.ts';
-import { clearSessionCookie, createSession, type SessionInfo, setSessionCookie } from './sessions.ts';
+import {
+  clearSessionCookie,
+  createSession,
+  createSessionIfPasswordUnchanged,
+  type SessionInfo,
+  setSessionCookie,
+} from './sessions.ts';
 import {
   confirmEmail,
   isResetTokenLive,
@@ -154,20 +160,29 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
 
   /**
    * Starts a session for the user and puts its cookie on the response. If the request already
-   * carries a live session, that session is deleted first: its cookie is being replaced, so it
+   * carries a live session, that session is deleted too: its cookie is being replaced, so it
    * would otherwise live on for 30 days where nobody can reach it or see it in their device list.
+   * `passwordChecked` is for password login only: the hash the password was verified against. The
+   * session is then saved only if the user still has that hash (a Google hand-over or a password
+   * reset that committed since has changed it), else this is the ordinary bad-login 401, and the
+   * session the browser already had is left alone.
    */
-  async function signIn(req: Request, res: Response, userId: string, companyId: string): Promise<void> {
+  async function signIn(
+    req: Request,
+    res: Response,
+    userId: string,
+    companyId: string,
+    passwordChecked?: string,
+  ): Promise<void> {
+    const input = { userId, companyId, ua: req.get('user-agent') ?? null, ip: req.ip ?? null, now: clock.now() };
+    const created =
+      passwordChecked === undefined
+        ? await createSession(system, input)
+        : await createSessionIfPasswordUnchanged(system, input, passwordChecked);
+    if (!created) throw new AppError(401, MESSAGES.badLogin);
     const current = req.session as SessionInfo | undefined;
     if (current) await deleteSession(system, current.sessionId);
-    const { token } = await createSession(system, {
-      userId,
-      companyId,
-      ua: req.get('user-agent') ?? null,
-      ip: req.ip ?? null,
-      now: clock.now(),
-    });
-    setSessionCookie(res, token, config);
+    setSessionCookie(res, created.token, config);
   }
 
   /**
@@ -278,7 +293,7 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     const [company] = await listActiveMemberships(system, user.id);
     if (!company) throw new AppError(403, MESSAGES.noAccess);
 
-    await signIn(req, res, user.id, company.id);
+    await signIn(req, res, user.id, company.id, user.passwordHash);
     res.json({ user: userBody(user), company: companyBody(company) });
   });
 
@@ -295,7 +310,9 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
    *    left alone even if the Google email has changed: the sub is the identity, the email is not.
    * 2. Google has not confirmed the email → refused. This comes before any email lookup, so an
    *    unconfirmed address can never be linked to (or used to probe for) an existing account.
-   * 3. A user with this email (case-insensitive) → connect this Google account to them. If their
+   * 3. A user with this email (case-insensitive) → only if Google is the authority for the address
+   *    (Gmail, or the caller's Workspace domain is the email's domain; see `isGoogleAuthoritative`),
+   *    connect this Google account to them; otherwise 409 and nothing changes. If their
    *    email was never confirmed, the account is also handed over (password, sessions and unused
    *    links removed; see `linkGoogleAccount`), because Google has shown the address is the
    *    caller's and the account may have been made by someone else. A confirmed account keeps its
@@ -326,7 +343,11 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
       if (byEmail) {
         // Connected to this very Google account a moment ago, by another copy of this request.
         if (byEmail.googleSub === claims.sub) return { user: byEmail, company: await firstActiveCompany(byEmail.id) };
-        if (byEmail.googleSub !== null) throw new AppError(409, MESSAGES.googleOtherAccount, 'email');
+        // Linking (and the hand-over of an unconfirmed account) is only for an address Google is the
+        // authority for. For any other, "email_verified" does not show the caller owns it, so the
+        // existing account is left exactly as it is.
+        if (!isGoogleAuthoritative(claims)) throw new AppError(409, MESSAGES.googleEmailInUse);
+        if (byEmail.googleSub !== null) throw new AppError(409, MESSAGES.googleOtherAccount);
         const company = await firstActiveCompany(byEmail.id);
         const linked = await linkGoogleAccount(system, byEmail.id, claims.sub, clock.now());
         if (linked) return { user: linked, company };

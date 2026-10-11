@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { CookieOptions, Request, Response } from 'express';
 import type { Db } from '@roofline/db';
-import { findLiveSession, insertSession, renewSession } from '@roofline/db/system';
+import { findLiveSession, insertSession, insertSessionIfPasswordUnchanged, renewSession } from '@roofline/db/system';
 import type { Role } from '@roofline/shared';
 import type { Config } from '../config.ts';
 
@@ -52,19 +52,41 @@ export type NewSessionInput = {
 
 const MAX_USER_AGENT_LENGTH = 512;
 
+function newSessionRow(input: NewSessionInput) {
+  const token = generateToken();
+  return {
+    token,
+    row: {
+      tokenHash: hashToken(token),
+      userId: input.userId,
+      companyId: input.companyId,
+      now: input.now,
+      expiresAt: new Date(input.now.getTime() + SESSION_TTL_MS),
+      userAgent: input.ua === null ? null : input.ua.slice(0, MAX_USER_AGENT_LENGTH),
+      ip: input.ip,
+    },
+  };
+}
+
 /** Starts a session and returns the raw token for the cookie. The token itself is never stored. */
 export async function createSession(system: Db, input: NewSessionInput): Promise<{ token: string }> {
-  const token = generateToken();
-  await insertSession(system, {
-    tokenHash: hashToken(token),
-    userId: input.userId,
-    companyId: input.companyId,
-    now: input.now,
-    expiresAt: new Date(input.now.getTime() + SESSION_TTL_MS),
-    userAgent: input.ua === null ? null : input.ua.slice(0, MAX_USER_AGENT_LENGTH),
-    ip: input.ip,
-  });
+  const { token, row } = newSessionRow(input);
+  await insertSession(system, row);
   return { token };
+}
+
+/**
+ * Starts a session for a password login, but only if the user's password is still `passwordHash`,
+ * the hash the password was just checked against; otherwise nothing is saved and the result is
+ * null (see `insertSessionIfPasswordUnchanged`). Only password login uses this.
+ */
+export async function createSessionIfPasswordUnchanged(
+  system: Db,
+  input: NewSessionInput,
+  passwordHash: string,
+): Promise<{ token: string } | null> {
+  const { token, row } = newSessionRow(input);
+  return (await insertSessionIfPasswordUnchanged(system, row, passwordHash)) ? { token } : null;
 }
 
 export type ResolvedSession = {
