@@ -367,6 +367,38 @@ export async function finishClaimedStep(
   return row ?? null;
 }
 
+/**
+ * Moves the lease of a running step to `leaseExpiresAt`, but only while the step is still this
+ * run's: `running`, at this run's own `runSeq`, with a lease still set. Returns false, and changes
+ * nothing, when a newer run has the step, when the step went back to the queue or finished, or when
+ * it is parked (no lease). The SET changes only `lease_expires_at`: `updated_at` is set to its own
+ * value, because Drizzle would otherwise bump it on every UPDATE (`$onUpdate`). It is one plain
+ * UPDATE of non-key columns, so like `finishClaimedStep` it never blocks a handler's own inserts that
+ * reference the step. The caller runs it in a short transaction of its own.
+ */
+export async function renewStepLease(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  runSeq: number,
+  leaseExpiresAt: Date,
+): Promise<boolean> {
+  const rows = await tx
+    .update(agentTaskSteps)
+    .set({ leaseExpiresAt, updatedAt: sql`${agentTaskSteps.updatedAt}` })
+    .where(
+      and(
+        eq(agentTaskSteps.companyId, ctx.companyId),
+        eq(agentTaskSteps.id, stepId),
+        eq(agentTaskSteps.status, 'running'),
+        eq(agentTaskSteps.runSeq, runSeq),
+        isNotNull(agentTaskSteps.leaseExpiresAt),
+      ),
+    )
+    .returning({ id: agentTaskSteps.id });
+  return rows.length > 0;
+}
+
 /** A parked step: `running` with no lease, so no run owns it and it finishes by itself later. */
 const parked = (ctx: TenantContext) =>
   and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.status, 'running'), isNull(agentTaskSteps.leaseExpiresAt));

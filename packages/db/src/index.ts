@@ -121,6 +121,7 @@ export {
   type NewStepRow,
   type NewTaskRow,
   reclaimExpiredLeases,
+  renewStepLease,
   requeueForRetry,
   type StepEdit,
   type StepFinish,
