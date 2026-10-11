@@ -2,7 +2,9 @@ import {
   buildDeps,
   createBoss,
   describeErrorForLog,
+  JOB_NAMES,
   loadConfigOrExit,
+  PgBossJobs,
   PgBossQueue,
   SCHEDULES,
   startWorker,
@@ -11,9 +13,9 @@ import {
 /*
  * The worker process: `npm start -w @roofline/worker` (or `npm run dev:worker` from the root). It
  * reads the same environment as the API, builds the same deps, and works pg-boss's queues: each
- * approved step (`agent-step`, run with `runStep`) and the scheduler's recurring jobs (`SCHEDULES`:
- * draft expiry every 5 minutes, the queued-step sweeper and the scheduled-text dispatcher every
- * minute). Several workers can run at once; pg-boss hands each job to one of them. Texts go through
+ * approved step (`agent-step`, run with `runStep`), the background jobs (`JOB_NAMES`: imports and
+ * texting registration), and the scheduler's recurring jobs (`SCHEDULES`: draft expiry every 5
+ * minutes, the queued-step sweeper and the scheduled-text dispatcher every minute). Several workers can run at once; pg-boss hands each job to one of them. Texts go through
  * `deps.sms`, which `buildDeps` sets to the disabled provider until F3 adds Twilio.
  *
  * On SIGTERM or SIGINT it stops taking jobs, lets the running ones finish (pg-boss's graceful
@@ -32,7 +34,7 @@ try {
   process.exit(1);
 }
 
-const deps = buildDeps(config, new PgBossQueue(boss));
+const deps = buildDeps(config, new PgBossQueue(boss), new PgBossJobs(boss));
 try {
   await startWorker(boss, deps);
 } catch (err) {
@@ -40,7 +42,9 @@ try {
   console.error(`Could not set up the job queue: ${describeErrorForLog(err)}`);
   process.exit(1);
 }
-console.log(`Roofline worker started (${config.NODE_ENV}): agent-step, ${SCHEDULES.map((s) => `${s.name} (${s.cron})`).join(', ')}`);
+console.log(
+  `Roofline worker started (${config.NODE_ENV}): agent-step, job queues ${JOB_NAMES.join(', ')}, ${SCHEDULES.map((s) => `${s.name} (${s.cron})`).join(', ')}`,
+);
 
 let stopping = false;
 function shutdown(signal: string): void {
