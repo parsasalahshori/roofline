@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { ApiError, apiFetch } from './client.ts';
 import type { Bbox } from '../shell/map/types.ts';
 import { keys } from './keys.ts';
-import type { Account, MapArea, PinsResult, SignInResult } from './types.ts';
+import type { Account, ApprovalsList, CurrentWeather, MapArea, PinsResult, SearchResult, SignInResult, TaskView } from './types.ts';
 
 /*
  * The hooks every screen shares. Later tasks add theirs to this file, beside the query keys they use.
@@ -92,5 +92,62 @@ export function useMapPins(bbox: Bbox | null) {
     enabled: bboxKey !== null,
     placeholderData: keepPreviousData,
     staleTime: 15_000,
+  });
+}
+
+/** How often the shell's counts are asked for again, and the weather (the server caches it for as long). */
+const COUNTS_EVERY = 30_000;
+const WEATHER_EVERY = 30 * 60_000;
+
+/** The plans the agents drafted. Asked again every 30 seconds and when the window is focused again. */
+export function useApprovals() {
+  return useQuery({
+    queryKey: keys.approvals,
+    queryFn: ({ signal }) => apiFetch<ApprovalsList>('/api/approvals', { signal }),
+    refetchInterval: COUNTS_EVERY,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/** How many tasks are running right now (`data.working`). Asked again every 30 seconds. */
+export function useTasksSummary() {
+  return useQuery({
+    queryKey: keys.summary,
+    queryFn: ({ signal }) => apiFetch<{ working: number }>('/api/tasks/summary', { signal }),
+    refetchInterval: COUNTS_EVERY,
+  });
+}
+
+/** How many tasks need attention: `data` is a number. Asked again every 30 seconds. */
+export function useAttentionCount() {
+  return useQuery({
+    queryKey: keys.attention,
+    queryFn: ({ signal }) => apiFetch<{ tasks: TaskView[] }>('/api/tasks?status=needs_attention&limit=200', { signal }),
+    select: (result) => result.tasks.length,
+    refetchInterval: COUNTS_EVERY,
+  });
+}
+
+/** The weather at the company: `data.weather` is null when there is none. Asked again every 30 minutes. */
+export function useWeather() {
+  return useQuery({
+    queryKey: keys.weather,
+    queryFn: ({ signal }) => apiFetch<{ weather: CurrentWeather | null }>('/api/weather', { signal }),
+    refetchInterval: WEATHER_EVERY,
+    staleTime: WEATHER_EVERY,
+  });
+}
+
+/**
+ * Customers, jobs and addresses that match what was typed. `q` goes to the server exactly as
+ * typed, encoded; nothing is asked until it has at least 2 characters (not counting spaces at
+ * either end).
+ */
+export function useSearch(q: string) {
+  return useQuery({
+    queryKey: keys.search(q),
+    queryFn: ({ signal }) => apiFetch<SearchResult>('/api/search?q=' + encodeURIComponent(q), { signal }),
+    enabled: q.trim().length >= 2,
+    staleTime: 30_000,
   });
 }

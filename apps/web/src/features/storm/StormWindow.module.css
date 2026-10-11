@@ -1,0 +1,17 @@
+/* The storm plan card under the coming-soon line: a column of its heading, its summary and its button. */
+.plan {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.plan h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.plan p {
+  margin: 0;
+}

@@ -1,0 +1,104 @@
+/*
+ * The panel is portaled to the body, so its z-index is compared with the page's own layers:
+ * Window 20, dock 30, this panel 40, toasts 50.
+ */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgba(43, 38, 32, 0.35);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 70vh;
+  overflow: hidden;
+  border-radius: var(--radius-window);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-window);
+}
+
+/* The container takes focus only to hold it; the field is the control that shows the ring */
+.dialog:focus-visible {
+  outline: none;
+}
+
+.input {
+  flex: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+/* Inset by 2px rather than the kit's 2px outside: the field spans the dialog, which clips what sits outside it */
+.input:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.results {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.group + .group {
+  margin-top: 4px;
+}
+
+.heading {
+  padding: 8px 8px 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.option[data-active='true'] {
+  background: var(--line);
+}
+
+.primary {
+  font-size: var(--font-size-body);
+  font-weight: 700;
+}
+
+.secondary {
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+.status {
+  flex: none;
+  margin: 0;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
