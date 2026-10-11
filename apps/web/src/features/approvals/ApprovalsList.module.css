@@ -1,0 +1,55 @@
+/* The plans waiting for a yes: a column of cards, each one a link to its review screen. */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The whole card is the link. It keeps a 40px touch target and a visible focus ring. */
+.link {
+  display: block;
+  min-height: 40px;
+  border-radius: var(--radius-card);
+  color: inherit;
+  text-decoration: none;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.title {
+  display: block;
+  font-size: 1rem;
+}
+
+/* Two lines at most, then an ellipsis */
+.summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.875rem;
+}
+
+.status {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}

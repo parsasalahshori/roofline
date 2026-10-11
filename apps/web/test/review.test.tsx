@@ -1,0 +1,485 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryRouter, RouterProvider } from 'react-router';
+import type { StepView, TaskView } from '../src/api/types.ts';
+import { createQueryClient, Providers } from '../src/app/providers.tsx';
+import { approvals } from '../src/copy/approvals.ts';
+import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { review } from '../src/copy/review.ts';
+import { shell } from '../src/copy/shell.ts';
+import { Review, ReviewRoute } from '../src/features/approvals/Review.tsx';
+import { makeTask, renderAt, stubApi, where } from './helpers.tsx';
+
+let api: ReturnType<typeof stubApi>;
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  expect(api?.unexpected ?? []).toEqual([]);
+});
+
+/** A step as the server sends it. It waits for a yes unless the overrides say otherwise. */
+function step(id: string, position: number, title: string, overrides: Partial<StepView> = {}): StepView {
+  return {
+    id,
+    position,
+    type: 'demo_noop',
+    approvalClass: 'internal',
+    enabled: true,
+    version: 1,
+    status: 'pending',
+    preview: { title, lines: [] },
+    canApprove: true,
+    attempts: 0,
+    result: null,
+    errorPlain: null,
+    payload: { label: title },
+    ...overrides,
+  };
+}
+
+/** Fixture ONE: a draft with a message and two internal steps. Nothing spends money. */
+function planOne(): TaskView {
+  return makeTask({
+    id: 't1',
+    status: 'draft',
+    agent: 'storm_scout',
+    steps: [
+      step('s1', 1, 'Text 31 customers', {
+        type: 'demo_message',
+        approvalClass: 'message',
+        preview: { title: 'Text 31 customers', lines: [], recipientCount: 31 },
+      }),
+      step('s2', 2, 'Door-knock routes for 4 reps'),
+      step('s3', 3, 'Update the job board'),
+    ],
+  });
+}
+
+/** Fixture TWO: as fixture ONE, but the third step spends money on ads. */
+function planTwo(spendCanApprove = true): TaskView {
+  const plan = planOne();
+  return {
+    ...plan,
+    steps: [
+      ...plan.steps.slice(0, 2),
+      step('s3', 3, 'Run ads on the swath', {
+        type: 'demo_spend',
+        approvalClass: 'spend',
+        preview: { title: 'Run ads on the swath', lines: [], maxSpendCents: 27000 },
+        canApprove: spendCanApprove,
+      }),
+    ],
+  };
+}
+
+/** The plan with one step changed (its version, switch or payload, as the server would answer). */
+function withStep(plan: TaskView, id: string, changes: Partial<StepView>): TaskView {
+  return { ...plan, steps: plan.steps.map((item) => (item.id === id ? { ...item, ...changes } : item)) };
+}
+
+/** The step with this id; a test asks only for steps that exist. */
+function stepOf(plan: TaskView, id: string): StepView {
+  const found = plan.steps.find((item) => item.id === id);
+  if (!found) throw new Error(`No step ${id} in the plan.`);
+  return found;
+}
+
+describe('the review screen', () => {
+  it('turning a step off leaves it out', async () => {
+    let plan = planOne();
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'PATCH /api/approvals/t1/steps/s2': () => {
+        plan = withStep(plan, 's2', { enabled: false, version: 2 });
+        return { body: stepOf(plan, 's2') };
+      },
+      'POST /api/approvals/t1/approve': () => {
+        plan = {
+          ...plan,
+          status: 'running',
+          steps: plan.steps.map((item) => ({ ...item, status: item.id === 's2' ? 'skipped' : 'queued' })),
+        };
+        return { body: plan };
+      },
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await user.click(await screen.findByRole('switch', { name: 'Door-knock routes for 4 reps' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve 2 steps' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Approve 2 steps' }));
+
+    await waitFor(() =>
+      expect(api.sent('POST /api/approvals/t1/approve')).toEqual([
+        { steps: [{ id: 's1', version: 1 }, { id: 's2', version: 2 }, { id: 's3', version: 1 }] },
+      ]),
+    );
+    expect(api.sent('PATCH /api/approvals/t1/steps/s2')).toEqual([{ version: 1, enabled: false }]);
+    expect(await screen.findAllByText('Starting soon')).not.toHaveLength(0);
+  });
+
+  it('Approve waits for a switch that is still on its way', async () => {
+    let plan = planOne();
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'PATCH /api/approvals/t1/steps/s2': () => {
+        plan = withStep(plan, 's2', { enabled: false, version: 2 });
+        return { body: stepOf(plan, 's2') };
+      },
+      'POST /api/approvals/t1/approve': () => {
+        plan = {
+          ...plan,
+          status: 'running',
+          steps: plan.steps.map((item) => ({ ...item, status: item.id === 's2' ? 'skipped' : 'queued' })),
+        };
+        return { body: plan };
+      },
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    // fireEvent, not user.click: both clicks land before the PATCH has even been sent
+    fireEvent.click(await screen.findByRole('switch', { name: 'Door-knock routes for 4 reps' }));
+    const approveNow = screen.getByRole('button', { name: /^Approve/ });
+    expect(approveNow).toBeDisabled();
+    fireEvent.click(approveNow);
+    expect(api.count('POST /api/approvals/t1/approve')).toBe(0);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve 2 steps' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Approve 2 steps' }));
+    await waitFor(() =>
+      expect(api.sent('POST /api/approvals/t1/approve')).toEqual([
+        { steps: [{ id: 's1', version: 1 }, { id: 's2', version: 2 }, { id: 's3', version: 1 }] },
+      ]),
+    );
+  });
+
+  it('a switch the server refuses goes back on and says why', async () => {
+    const message = 'That step is locked right now.';
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: planOne() }),
+      'PATCH /api/approvals/t1/steps/s2': () => ({ status: 400, body: { error: message } }),
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await user.click(await screen.findByRole('switch', { name: 'Door-knock routes for 4 reps' }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Door-knock routes for 4 reps' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: 'Approve 3 steps' })).toBeInTheDocument();
+  });
+
+  it('a 409 reloads the latest and says so', async () => {
+    const message = "This changed while you were looking. Here's the latest.";
+    const latest = withStep(planOne(), 's2', { enabled: false, version: 2 });
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: planOne() }),
+      'POST /api/approvals/t1/approve': () => ({ status: 409, body: { error: message, latest } }),
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await user.click(await screen.findByRole('button', { name: 'Approve 3 steps' }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Door-knock routes for 4 reps' })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('button', { name: 'Approve 2 steps' })).toBeInTheDocument();
+    expect(api.count('GET /api/approvals/t1')).toBe(1);
+  });
+
+  it('a double click approves once', async () => {
+    let plan = planOne();
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'POST /api/approvals/t1/approve': () => {
+        plan = {
+          ...plan,
+          status: 'running',
+          steps: plan.steps.map((item) => ({ ...item, status: 'queued' })),
+        };
+        return { body: plan };
+      },
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await user.dblClick(await screen.findByRole('button', { name: 'Approve 3 steps' }));
+
+    expect(await screen.findAllByText('Starting soon')).not.toHaveLength(0);
+    expect(api.count('POST /api/approvals/t1/approve')).toBe(1);
+  });
+
+  it('Not now declines with a reason', async () => {
+    let plan = planOne();
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'GET /api/approvals': () => ({ body: { count: 0, tasks: [] } }),
+      'POST /api/approvals/t1/decline': () => {
+        plan = { ...plan, status: 'declined' };
+        return { body: plan };
+      },
+    });
+    const { router, user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await user.click(await screen.findByRole('button', { name: review.notNow }));
+    const sheet = await screen.findByRole('dialog', { name: review.notNowTitle });
+    await user.type(within(sheet).getByRole('textbox', { name: review.reasonLabel }), 'Customer called to reschedule');
+    await user.click(within(sheet).getByRole('button', { name: review.notNow }));
+
+    expect(await screen.findByText(approvals.declined)).toBeInTheDocument();
+    await waitFor(() => expect(where(router)).toBe('/'));
+    expect(api.sent('POST /api/approvals/t1/decline')).toEqual([{ reason: 'Customer called to reschedule' }]);
+  });
+
+  it('Not now goes back to the list when more plans wait', async () => {
+    let plan = planOne();
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'GET /api/approvals': () => ({ body: { count: 1, tasks: [makeTask({ id: 't2' })] } }),
+      'POST /api/approvals/t1/decline': () => {
+        plan = { ...plan, status: 'declined' };
+        return { body: plan };
+      },
+    });
+    const { router, user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await user.click(await screen.findByRole('button', { name: review.notNow }));
+    const sheet = await screen.findByRole('dialog', { name: review.notNowTitle });
+    await user.click(within(sheet).getByRole('button', { name: review.notNow }));
+
+    await waitFor(() => expect(where(router)).toBe('/approvals'));
+  });
+
+  it('Not now without a reason sends no reason', async () => {
+    let plan = planOne();
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'GET /api/approvals': () => ({ body: { count: 0, tasks: [] } }),
+      'POST /api/approvals/t1/decline': () => {
+        plan = { ...plan, status: 'declined' };
+        return { body: plan };
+      },
+    });
+    const { router, user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await user.click(await screen.findByRole('button', { name: review.notNow }));
+    const sheet = await screen.findByRole('dialog', { name: review.notNowTitle });
+    await user.click(within(sheet).getByRole('button', { name: review.notNow }));
+
+    await waitFor(() => expect(where(router)).toBe('/'));
+    expect(api.sent('POST /api/approvals/t1/decline')).toEqual([{}]);
+  });
+
+  it('an expired plan offers Run it again', async () => {
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({
+        body: makeTask({
+          id: 't1',
+          status: 'expired',
+          expired: true,
+          steps: [step('s1', 1, 'Text 31 customers')],
+        }),
+      }),
+      'POST /api/approvals/t1/rerun': () => ({ status: 201, body: makeTask({ id: 'new-id' }) }),
+    });
+    const { router, user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    expect(await screen.findByText(review.expiredTitle)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: review.runAgain }));
+
+    await waitFor(() => expect(where(router)).toBe('/approvals/new-id'));
+    expect(api.count('POST /api/approvals/t1/rerun')).toBe(1);
+  });
+
+  it('an expired storm plan runs again under the storm plans address', async () => {
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({
+        body: makeTask({ id: 't1', status: 'expired', expired: true, steps: [step('s1', 1, 'Text 31 customers')] }),
+      }),
+      'POST /api/approvals/t1/rerun': () => ({ status: 201, body: makeTask({ id: 'new-id' }) }),
+    });
+    const { router, user } = renderAt(<Review taskId="t1" app="storm" />, '/storm/plans/t1');
+
+    await user.click(await screen.findByRole('button', { name: review.runAgain }));
+
+    await waitFor(() => expect(where(router)).toBe('/storm/plans/new-id'));
+  });
+
+  it('a missing plan shows the Not found state', async () => {
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ status: 404, body: { error: 'Not found' } }) });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    expect(await screen.findByText(shell.notFoundTitle)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: shell.backToMap })).toHaveAttribute('href', '/');
+  });
+
+  it('the route shows the plan named in the address', async () => {
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ body: planOne() }) });
+    const queryClient = createQueryClient();
+    queryClient.setDefaultOptions({ queries: { retry: false } });
+    const router = createMemoryRouter(
+      [{ path: '/approvals/:taskId', element: <ReviewRoute app="approvals" /> }],
+      { initialEntries: ['/approvals/t1'] },
+    );
+    render(
+      <Providers client={queryClient}>
+        <RouterProvider router={router} />
+      </Providers>,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Approve 3 steps' })).toBeInTheDocument();
+  });
+
+  it('shows what the plan will cost', async () => {
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ body: planTwo() }) });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    expect(await screen.findByRole('button', { name: 'Approve 3 steps · up to $270' })).toBeInTheDocument();
+  });
+
+  it('an office user approves what they can, and the spend waits for the owner', async () => {
+    let plan = planTwo(false);
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'POST /api/approvals/t1/approve': () => {
+        plan = {
+          ...plan,
+          status: 'awaiting_owner',
+          steps: plan.steps.map((item) => ({
+            ...item,
+            status: item.id === 's3' ? 'awaiting_owner' : 'queued',
+          })),
+        };
+        return { body: plan };
+      },
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    expect(await screen.findByText('Your owner approves spending')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Approve 2 steps · send ad to owner' }));
+
+    expect(await screen.findAllByText('Waiting for owner')).not.toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
+    expect(api.sent('POST /api/approvals/t1/approve')).toEqual([
+      { steps: [{ id: 's1', version: 1 }, { id: 's2', version: 1 }, { id: 's3', version: 1 }] },
+    ]);
+  });
+
+  it('editing a message saves the new text', async () => {
+    const original = { purpose: 'informational', body: 'Hello', customerIds: [] };
+    const edited = { purpose: 'informational', body: 'New text', customerIds: [] };
+    let plan = makeTask({
+      id: 't1',
+      status: 'draft',
+      steps: [
+        step('s1', 1, 'Text the owners', {
+          type: 'send_sms_batch',
+          approvalClass: 'message',
+          payload: original,
+          preview: { title: 'Text the owners', lines: [], messageSample: 'Hello' },
+        }),
+      ],
+    });
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'PATCH /api/approvals/t1/steps/s1': () => {
+        plan = withStep(plan, 's1', { version: 2, payload: edited });
+        return { body: stepOf(plan, 's1') };
+      },
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await user.click(await screen.findByRole('button', { name: review.edit }));
+    const field = await screen.findByRole('textbox', { name: review.messageLabel });
+    await user.clear(field);
+    await user.type(field, 'New text');
+    await user.click(screen.getByRole('button', { name: review.save }));
+
+    await waitFor(() => expect(api.sent('PATCH /api/approvals/t1/steps/s1')).toEqual([{ version: 1, payload: edited }]));
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: review.messageLabel })).toBeNull());
+  });
+
+  it('a 400 on edit shows the error on the field', async () => {
+    const plan = makeTask({
+      id: 't1',
+      status: 'draft',
+      steps: [
+        step('s1', 1, 'Text the owners', {
+          type: 'send_sms_batch',
+          approvalClass: 'message',
+          payload: { purpose: 'informational', body: 'Hello', customerIds: [] },
+        }),
+      ],
+    });
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'PATCH /api/approvals/t1/steps/s1': () => ({
+        status: 400,
+        body: { error: 'Please write the message.', field: 'payload.body' },
+      }),
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await user.click(await screen.findByRole('button', { name: review.edit }));
+    const field = await screen.findByRole('textbox', { name: review.messageLabel });
+    await user.clear(field);
+    await user.click(screen.getByRole('button', { name: review.save }));
+
+    expect(await screen.findByText('Please write the message.')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: review.messageLabel })).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('retrying a step that did not finish', async () => {
+    let plan = makeTask({
+      id: 't1',
+      status: 'needs_attention',
+      steps: [step('s1', 1, 'Text 31 customers', { status: 'failed', errorPlain: 'The text provider said no.' })],
+    });
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'POST /api/approvals/t1/steps/s1/retry': () => {
+        plan = {
+          ...plan,
+          status: 'running',
+          steps: plan.steps.map((item) => ({ ...item, status: 'queued', errorPlain: null })),
+        };
+        return { body: plan };
+      },
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    expect(await screen.findByText('The text provider said no.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: review.retry }));
+
+    expect(await screen.findAllByText('Starting soon')).not.toHaveLength(0);
+    expect(api.count('POST /api/approvals/t1/steps/s1/retry')).toBe(1);
+  });
+
+  it('the window shows the agent, the status and when it was drafted', async () => {
+    const plan = planOne();
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ body: plan }) });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    // The window opens while the plan loads, so the stat strip is awaited, not just the window
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.approvals.title });
+    expect(await within(dialog).findByText('Storm Scout')).toBeInTheDocument();
+    expect(within(dialog).getByText('Waiting for your OK')).toBeInTheDocument();
+    expect(within(dialog).getByText(review.drafted(plan.createdAt))).toBeInTheDocument();
+  });
+
+  it('shows the results of a finished plan', async () => {
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({
+        body: makeTask({
+          id: 't1',
+          status: 'done',
+          steps: [step('s1', 1, 'Text 31 customers', { status: 'done', result: { sent: 31, blocked: 2 } })],
+        }),
+      }),
+    });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    expect(await screen.findByText('31 sent')).toBeInTheDocument();
+    expect(screen.getByText('2 held back')).toBeInTheDocument();
+    expect(screen.getAllByText('Done').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
+  });
+});

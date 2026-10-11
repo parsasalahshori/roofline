@@ -1,5 +1,7 @@
 import { createBrowserRouter, createMemoryRouter, type RouteObject } from 'react-router';
 import { setUnauthorizedHandler } from '../api/client.ts';
+import { ApprovalsList } from '../features/approvals/ApprovalsList.tsx';
+import { ReviewRoute } from '../features/approvals/Review.tsx';
 import { AcceptInvite } from '../features/auth/AcceptInvite.tsx';
 import { ResetPassword } from '../features/auth/ResetPassword.tsx';
 import { SignIn } from '../features/auth/SignIn.tsx';
@@ -36,12 +38,11 @@ const routes: RouteObject[] = [
         children: [
           // The map is the home page: no window
           { index: true },
-          // Task 14 replaces the two approval windows
-          { path: 'approvals', element: comingSoonWindow('approvals') },
-          { path: 'approvals/:taskId', element: comingSoonWindow('approvals') },
+          { path: 'approvals', element: <AppWindow app="approvals"><ApprovalsList /></AppWindow> },
+          // The review screen draws its own window: the approvals one, or the Storm one for a storm plan
+          { path: 'approvals/:taskId', element: <ReviewRoute app="approvals" /> },
           { path: 'storm', element: <AppWindow app="storm"><StormWindow /></AppWindow> },
-          // Task 14 replaces the storm plan window
-          { path: 'storm/plans/:taskId', element: comingSoonWindow('storm') },
+          { path: 'storm/plans/:taskId', element: <ReviewRoute app="storm" /> },
           { path: 'storm/*', element: comingSoonWindow('storm') },
           { path: 'front-desk/*', element: comingSoonWindow('front-desk') },
           { path: 'estimator/*', element: comingSoonWindow('estimator') },
