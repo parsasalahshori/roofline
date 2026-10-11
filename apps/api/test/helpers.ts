@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import type { Express } from 'express';
 import request from 'supertest';
 import { afterAll, inject } from 'vitest';
@@ -9,7 +10,11 @@ import type { GoogleClaims, GoogleVerifier } from '../src/auth/google.ts';
 import type { Clock } from '../src/clock.ts';
 import type { Config } from '../src/config.ts';
 import { AppError, MESSAGES } from '../src/errors.ts';
+import { InlineJobs } from '../src/jobs/queue.ts';
 import type { Mailer } from '../src/mailer.ts';
+import { FakeBillingProvider } from '../src/providers/fakes/billing.ts';
+import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
+import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
 import type { CurrentWeather, WeatherSource } from '../src/weather/source.ts';
 
@@ -103,6 +108,14 @@ export type TestApp = {
   sms: FakeSmsAdapter;
   /** The weather source: it records the places it was asked about and answers `weather.value`. */
   weather: FakeWeatherSource;
+  /** Address lookup: it records each call and answers from a fixed table. */
+  geocoder: FakeGeocoder;
+  /** Billing: it records each customer, checkout, and meter event. */
+  billing: FakeBillingProvider;
+  /** Texting registration: `failNext` makes the next registrar call fail. */
+  registrar: FakeTextingRegistrar;
+  /** Background jobs: it records every send, and `drain(deps)` runs what is pending. */
+  jobs: InlineJobs;
   /** What work outside a request (the runner) handed to `deps.logError`, in order. Nothing is printed. */
   logged: { err: unknown; where: string }[];
   seed: { a: SeededCompany; b: SeededCompany };
@@ -131,6 +144,9 @@ export function testConfig(
     DATABASE_URL_SYSTEM: urls.system,
     ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
     PUBLIC_BASE_URL: 'https://app.roofline.test',
+    STRIPE_WEBHOOK_SECRET: 'whsec_test_roofline',
+    BILLING_PLANS_FILE: fileURLToPath(new URL('../../../config/billing-plans.example.json', import.meta.url)),
+    POLICY_PAGES_DOMAIN: 'roofline.test',
     // Not a real client id: the fake verifier never looks at it, but the route needs one to be set.
     GOOGLE_CLIENT_ID: 'roofline-test.apps.googleusercontent.com',
     TRUST_PROXY: 0,
@@ -178,6 +194,10 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const queue = new InlineQueue();
   const sms = new FakeSmsAdapter();
   const weather = new FakeWeatherSource();
+  const geocoder = new FakeGeocoder();
+  const billing = new FakeBillingProvider();
+  const registrar = new FakeTextingRegistrar();
+  const jobs = new InlineJobs();
   const logged: { err: unknown; where: string }[] = [];
   const pending = new Set<Promise<void>>();
   const deps: AppDeps = {
@@ -189,6 +209,10 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     queue,
     sms,
     weather,
+    geocoder,
+    billing,
+    registrar,
+    jobs,
     logError: (err, where) => logged.push({ err, where }),
     onBackgroundTask: (task) => {
       pending.add(task);
@@ -206,6 +230,10 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     queue,
     sms,
     weather,
+    geocoder,
+    billing,
+    registrar,
+    jobs,
     logged,
     seed,
     async settle() {

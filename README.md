@@ -45,6 +45,14 @@
 | `POSTMARK_TOKEN` | no | Sends email through Postmark; unset means email is only logged. |
 | `MAIL_FROM` | when `POSTMARK_TOKEN` is set | The verified From address. |
 | `TWILIO_AUTH_TOKEN` | no | Twilio master token for webhook signatures (companies without a subaccount token). |
+| `TWILIO_ACCOUNT_SID` | no | Twilio account SID (`AC` + 32 hex digits). When set, `TWILIO_AUTH_TOKEN` is required. |
+| `TWILIO_PRIMARY_PROFILE_SID` | no | Twilio primary customer profile SID (`BU` + 32 hex digits), for texting registration. |
+| `STRIPE_SECRET_KEY` | no | Stripe secret key (`sk_`). Unset: billing is off. |
+| `STRIPE_WEBHOOK_SECRET` | when `STRIPE_SECRET_KEY` is set | Stripe webhook signing secret (`whsec_`). |
+| `BILLING_PLANS_FILE` | no | The billing plans JSON file. Defaults to `config/billing-plans.example.json` outside production; required in production when `STRIPE_SECRET_KEY` is set. |
+| `GEOCODIO_API_KEY` | no | Geocodio key for address lookup. Unset: addresses are not looked up. |
+| `POLICY_PAGES_DOMAIN` | no | The bare hostname for the policy pages, like `roofline.app`. |
+| `FAKE_PROVIDERS` | no | `1` or `true` swaps every outside service for a fake. Development and test only; refused in production. |
 | `WEB_DIST_DIR` | no | Where the built web app is: `apps/web/dist` in production (a relative path is read from the repository root). When set, the API also serves the app, so one origin answers both; it must contain `index.html` or start-up stops. Leave unset in development, where Vite serves the app. |
 | `TRUST_PROXY` | no (0) | How many proxy hops to trust for the client address. |
 | `API_RATE_LIMIT_PER_MIN` | no (600) | Requests per minute per session on `/api/*`. |
