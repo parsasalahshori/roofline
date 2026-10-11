@@ -2,14 +2,19 @@ import '@roofline/ui/tokens.css';
 import '@roofline/ui/base.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { common } from './copy/common.ts';
+import { RouterProvider } from 'react-router/dom';
+import { Providers } from './app/providers.tsx';
+import { createAppRouter } from './app/router.tsx';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('index.html has no #root element');
 
-// A placeholder: the router replaces it (Task 10).
+const router = createAppRouter();
+
 createRoot(root).render(
   <StrictMode>
-    <p>{common.appName}</p>
+    <Providers>
+      <RouterProvider router={router} />
+    </Providers>
   </StrictMode>,
 );
