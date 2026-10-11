@@ -156,3 +156,4 @@ Minors (deferred): stack.ts children run via npx (SIGTERM forwarding; spawn deta
 F2 remaining: T18 (deferred Playwright specs + phone/a11y + acceptance, Ruling AK) then the final whole-branch review.
 F2 T18 launched here: wf_3cf9739e-49c (contact 14), base d223d91, ci with CI_JOBS="Platform E2E".
 Fix: rep-visibility.test.ts:400 flake (substring 333 in a random UUID; failed f2-shell run 38181409275 on 894f0d2) now matches a whole token; CI paths-ignore adds docs/**. F1 deferred minor closed.
+f2-shell 8fcb25f all green (run 38183287222: Platform, E2E, v1). Merged into f3-setup (lockfile regenerated); typecheck, lint, web, playwright --list clean.
