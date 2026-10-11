@@ -56,3 +56,7 @@ Sibling 1 (wf_bb05ddd5-f24, contact 23): T9 40df7ef (80083cc skeleton; b70976f p
 Carry to T24/T27/T28: import only types from apps/api/src/jobs/queue.ts (it imports JOB_HANDLERS as a value -> run.ts/advance.ts; ESM cycle). Carry to T24: validate data.importId (handlers.ts uses importId!).
 Minors (deferred): InlineJobs singletonKey dedupe ignores queue name (pg-boss scopes per queue); worker header comment stale ("sms disabled until F3"); FakeGeocoder city null for 2-part addresses; InlineJobs tests live in the DB-backed jobs.test.ts.
 G2 (T16, T21, T22) -> sibling 1 from f3-setup 74ee852 (contacts 24-26, ops-sib1c). Siblings 2 (G1) and 3 (G4) and this session (G3) built on f3-setup 9a469c8 + f3-t9 b70976f; they get 40df7ef via merge.
+Sibling 3 G4 part A (wf_914b4dad-c00, contact 45): T13 dc76a48 (CI 38184832879), T23 5e3e308 (CI 38184832984), both review clean, both carry f3-setup 74ee852. Task 13: complete. Task 23: complete. Merged into f3-setup 7b988eb (typecheck, lint clean).
+Ruling AM: an import treats a customer as opted out when ANY of their phones is in opt_outs (brief said only the matching phone) — cost if wrong: a customer with one opted-out number gets no import texts on their other number.
+Minors (deferred): T13 sms.ts private segmentsOf (send-gate does not export countSegments); no tests for a 4xx with unreadable body, 21211/21612 codes, or recordCarrierOptOut directly.
+T24 running on sibling 3 (wf_67c1a16b-737, contact 47). Next for sibling 3: G7 (T32, T33, T34).
