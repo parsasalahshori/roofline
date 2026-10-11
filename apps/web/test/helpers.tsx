@@ -71,6 +71,7 @@ export const SHELL_ROUTES: Record<string, () => Reply> = {
   'GET /api/tasks/summary': () => ({ body: { working: 0 } }),
   'GET /api/tasks?status=needs_attention&limit=200': () => ({ body: { tasks: [] } }),
   'GET /api/weather': () => ({ body: { weather: null } }),
+  'POST /api/me/today-shown': () => ({ body: { show: false } }),
 };
 
 /** A task as the server sends it. Pass what differs; `id` is required. */

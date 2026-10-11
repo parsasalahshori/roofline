@@ -16,4 +16,14 @@ export const shell = {
   // The window for an address that leads nowhere
   notFoundTitle: "This page isn't here",
   backToMap: 'Back to the map',
+
+  // The phone's bottom tabs and the More sheet
+  tabsLabel: 'Main',
+  tabMyDay: 'My day',
+  tabMap: 'Map',
+  tabJobs: 'Jobs',
+  tabCalendar: 'Calendar',
+  tabMore: 'More',
+  moreTitle: 'More',
+  moreClose: 'Close',
 } as const;

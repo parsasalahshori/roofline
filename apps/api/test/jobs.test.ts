@@ -929,7 +929,7 @@ describe('InlineJobs', () => {
     expect(jobs.sent[0]).not.toHaveProperty('singletonKey');
   });
 
-  test('a handler that throws twice then succeeds runs three times, attempts 1 to 3, and no error is kept', async () => {
+  test('a handler that throws twice then succeeds runs three times, attempts 1 to 3, and keeps both errors', async () => {
     const jobs = new InlineJobs();
     const metas: JobMeta[] = [];
     await jobs.send('import-customers', { companyId: QUEUE_COMPANY, importId: QUEUE_IMPORT });
@@ -948,10 +948,10 @@ describe('InlineJobs', () => {
       { attempt: 2, lastAttempt: false },
       { attempt: 3, lastAttempt: false },
     ]);
-    expect(jobs.errors).toEqual([]);
+    expect(jobs.errors).toEqual([new Error('boom 1'), new Error('boom 2')]);
   });
 
-  test('a handler that always throws runs five times, lastAttempt only on the fifth, and lands in errors', async () => {
+  test('a handler that always throws runs five times, lastAttempt only on the fifth, and keeps five errors', async () => {
     const jobs = new InlineJobs();
     const metas: JobMeta[] = [];
     await jobs.send('texting-registration', { companyId: QUEUE_COMPANY });
@@ -967,8 +967,8 @@ describe('InlineJobs', () => {
 
     expect(metas.map((m) => m.attempt)).toEqual([1, 2, 3, 4, 5]);
     expect(metas.map((m) => m.lastAttempt)).toEqual([false, false, false, false, true]);
-    expect(jobs.errors).toHaveLength(1);
-    expect(jobs.errors[0]).toEqual(new Error('still broken'));
+    expect(jobs.errors).toHaveLength(5);
+    expect(jobs.errors[4]).toEqual(new Error('still broken'));
   });
 
   test('a job sent while draining runs in the same drain', async () => {

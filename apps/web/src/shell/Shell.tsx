@@ -1,12 +1,19 @@
 import { Dock, type DockItem } from '@roofline/ui';
+import { lazy, Suspense, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useApprovals, useAttentionCount } from '../api/hooks.ts';
 import { dock, WINDOW_COPY } from '../copy/dock.ts';
+import { useTodayAutoOpen } from '../features/today/useTodayAutoOpen.ts';
 import { type AppKey, DOCK_APPS } from './apps.ts';
 import { countedDrafts } from './countedDrafts.ts';
-import { MapView } from './map/MapView.tsx';
+import { BottomTabs } from './phone/BottomTabs.tsx';
+import { MoreSheet } from './phone/MoreSheet.tsx';
 import styles from './Shell.module.css';
 import { ShellTopBar } from './topbar/ShellTopBar.tsx';
+import { useIsPhone } from './useIsPhone.ts';
+
+// The map (MapLibre, about 1 MB) loads in its own chunk, after the shell has rendered
+const MapView = lazy(() => import('./map/MapView.tsx').then((m) => ({ default: m.MapView })));
 
 /** The count bubble on an app's dock icon. Only three apps have one, and nothing is drawn at zero. */
 function badgeFor(app: AppKey, count: number): DockItem['badge'] {
@@ -22,11 +29,15 @@ function badgeFor(app: AppKey, count: number): DockItem['badge'] {
  * outlet) and the dock. The map is the home page; a window opens over it at its own URL.
  */
 export function Shell() {
+  useTodayAutoOpen();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const approvals = useApprovals();
   const attention = useAttentionCount();
   const drafts = countedDrafts(approvals.data);
+  const phone = useIsPhone();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const sheetOpen = phone && moreOpen;
 
   const counts: Record<AppKey, number> = {
     storm: drafts.filter((task) => task.agent === 'storm_scout').length,
@@ -58,12 +69,25 @@ export function Shell() {
         <ShellTopBar />
       </div>
       <div className={styles.map}>
-        <MapView onOpen={open} />
+        <Suspense fallback={null}>
+          <MapView onOpen={open} />
+        </Suspense>
       </div>
-      <Outlet />
-      <div className={styles.dock}>
-        <Dock label={dock.label} items={items} />
+      <div className={styles.windows}>
+        <Outlet />
       </div>
+      {phone ? (
+        <>
+          <div className={styles.tabs}>
+            <BottomTabs onMore={() => setMoreOpen(true)} moreOpen={sheetOpen} />
+          </div>
+          <MoreSheet open={sheetOpen} onClose={() => setMoreOpen(false)} />
+        </>
+      ) : (
+        <div className={styles.dock}>
+          <Dock label={dock.label} items={items} />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import type { Feature, FeatureCollection, Point } from 'geojson';
-import type { PinsResult } from '../../api/types.ts';
-import type { Bbox } from './types.ts';
+import type { Bbox, PinsResult } from '../../api/types.ts';
 
 /** Above this many points on screen, the customers and jobs sources cluster in the browser. */
 export const CLIENT_CLUSTER_ABOVE = 200;
