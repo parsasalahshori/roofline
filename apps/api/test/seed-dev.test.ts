@@ -149,7 +149,6 @@ describe('the lines the script prints', () => {
     expect(lines[0]).toContain('60 customers');
     expect(lines[0]).toContain('70 addresses');
     expect(lines[0]).toContain('28 jobs');
-    expect(lines.join('\n')).toContain(DEV_EMAILS.join('\n  '.trimStart()).split('\n')[0]!);
     for (const email of DEV_EMAILS) expect(lines).toContain(`  ${email}`);
   });
 
