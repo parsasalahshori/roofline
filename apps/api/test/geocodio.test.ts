@@ -73,7 +73,7 @@ function batchAnswer(_url: string, init: RequestInit | undefined): Response {
     item.address_components.number = String(Number(/(\d+)$/.exec(query)?.[1]));
     return { query, response: { results: [item] } };
   });
-  return json(JSON.stringify(answers));
+  return json(JSON.stringify({ results: answers }));
 }
 
 describe('GeocodioGeocoder.geocode', () => {
