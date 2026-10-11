@@ -94,7 +94,10 @@ export function billingRoutes(deps: AppDeps): Router {
     const ctx = req.ctx;
     const planKey = planFromBody(deps, req.body);
     const facts = await withTenant(deps.pools, ctx, (tx) => billingFacts(tx, ctx));
-    if (facts.stripeSubscriptionId !== null) throw new AppError(409, ALREADY_SUBSCRIBED);
+    // A live subscription (active or past due) changes plan instead; a canceled or ended one may check out again.
+    if (hasPaymentMethod({ stripeSubscriptionId: facts.stripeSubscriptionId, status: facts.status })) {
+      throw new AppError(409, ALREADY_SUBSCRIBED);
+    }
     requireConfigured(deps);
 
     const ensured = await guarded(() =>
@@ -155,7 +158,9 @@ export function billingRoutes(deps: AppDeps): Router {
     const planKey = planFromBody(deps, req.body);
     const facts = await withTenant(deps.pools, ctx, (tx) => billingFacts(tx, ctx));
     const subscriptionId = facts.stripeSubscriptionId;
-    if (subscriptionId === null) throw new AppError(409, NO_SUBSCRIPTION);
+    if (subscriptionId === null || !hasPaymentMethod({ stripeSubscriptionId: subscriptionId, status: facts.status })) {
+      throw new AppError(409, NO_SUBSCRIPTION);
+    }
     requireConfigured(deps);
     const keys = priceLookupKeys(planKey);
     await guarded(() =>

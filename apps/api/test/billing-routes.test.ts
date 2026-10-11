@@ -54,8 +54,8 @@ async function setTrialEnd(d: Date | null): Promise<void> {
   await sql('update companies set trial_ends_at = $2 where id = $1', [t.seed.a.companyId, d]);
 }
 
-async function setSubscription(id: string | null): Promise<void> {
-  await sql('update companies set stripe_subscription_id = $2 where id = $1', [t.seed.a.companyId, id]);
+async function setSubscription(id: string | null, status: string = id === null ? 'trial' : 'active'): Promise<void> {
+  await sql('update companies set stripe_subscription_id = $2, status = $3 where id = $1', [t.seed.a.companyId, id, status]);
 }
 
 async function storedCustomerIds(): Promise<(string | null)[]> {
@@ -250,6 +250,20 @@ describe('POST /api/billing/portal', () => {
 });
 
 describe('POST /api/billing/plan', () => {
+  test('a canceled company can pick a plan again, but cannot change plan', async () => {
+    const agent = await owner();
+    await setSubscription('sub_old', 'canceled');
+
+    const change = await agent.post('/api/billing/plan').send({ planKey: 'pro' });
+    expect(change.status).toBe(409);
+    expect(change.body).toEqual({ error: PICK_PLAN_FIRST });
+    expect(t.billing.planChanges).toHaveLength(0);
+
+    const checkout = await agent.post('/api/billing/checkout').send({ planKey: 'starter' });
+    expect(checkout.status).toBe(200);
+    expect(t.billing.checkouts).toHaveLength(1);
+  });
+
   test('change plan asks the provider', async () => {
     const agent = await owner();
 
