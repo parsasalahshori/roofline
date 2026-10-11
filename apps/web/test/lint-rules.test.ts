@@ -13,8 +13,18 @@ async function lint(code: string, relativePath: string): Promise<string> {
   return result!.messages.map((m) => m.message).join('\n');
 }
 
-/** A component file whose only content is `jsx`. */
-const component = (jsx: string): string => `declare const copy: { x: string };\nexport const Fake = () => ${jsx};\n`;
+/** A component file whose only content is `jsx`, which may use `copy`, `done`, `who` and `items`. */
+const component = (jsx: string): string =>
+  [
+    'declare const copy: { x: string };',
+    'declare const done: boolean;',
+    'declare const who: string;',
+    'declare const items: string[];',
+    // Read once, so that the ones a test does not use are not reported as unused.
+    'export const used = [copy, done, who, items];',
+    `export const Fake = () => ${jsx};`,
+    '',
+  ].join('\n');
 
 /** A file whose only content is an import from `from`. */
 const importing = (from: string): string => `import { x } from '${from}';\nexport { x };\n`;
@@ -48,9 +58,56 @@ describe('lint rules', { timeout: 30_000 }, () => {
     expect(await lint(component('<div aria-label="Close" />'), WEB_FILE)).toContain(NO_TEXT);
   });
 
+  it('refuses the other attributes a person reads', async () => {
+    for (const name of ['aria-description', 'aria-placeholder', 'aria-roledescription', 'title', 'label']) {
+      expect(await lint(component(`<div ${name}="Opens the menu" />`), WEB_FILE), name).toContain(NO_TEXT);
+    }
+  });
+
+  it('refuses a string written inside braces as a child', async () => {
+    expect(await lint(component('<p>{"Hello there"}</p>'), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component("<p>{'Hello there'}</p>"), KIT_FILE)).toContain(NO_TEXT);
+    expect(await lint(component('<>{"Hello there"}</>'), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component('<p>{`Hello there`}</p>'), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component('<p>{`Hello ${who}`}</p>'), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component('<p>{`${who} is here`}</p>'), KIT_FILE)).toContain(NO_TEXT);
+  });
+
+  it('refuses a string that is a branch of a ternary or a logical expression', async () => {
+    expect(await lint(component("<p>{done ? 'Yes' : 'No'}</p>"), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component("<p>{done ? copy.x : 'No'}</p>"), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component("<p>{who || 'Nobody'}</p>"), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component("<p>{who ?? 'Nobody'}</p>"), KIT_FILE)).toContain(NO_TEXT);
+    expect(await lint(component("<p>{done && 'Yes'}</p>"), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component('<p>{done ? `Hi ${who}` : copy.x}</p>'), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component("<p>{done ? copy.x : who ? 'Nobody' : copy.x}</p>"), WEB_FILE)).toContain(NO_TEXT);
+  });
+
+  it('refuses a string written inside braces in an attribute a person reads', async () => {
+    expect(await lint(component('<input title={"Search"} />'), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component("<input placeholder={'Search'} />"), KIT_FILE)).toContain(NO_TEXT);
+    expect(await lint(component('<img alt={`A roof`} />'), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component('<div aria-label={`Close ${who}`} />'), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component("<div aria-label={done ? 'Close' : 'Open'} />"), WEB_FILE)).toContain(NO_TEXT);
+    expect(await lint(component("<div aria-description={who || 'Nobody'} />"), WEB_FILE)).toContain(NO_TEXT);
+  });
+
   it('allows text that comes from the copy files', async () => {
     expect(await lint(component('<p>{copy.x}</p>'), WEB_FILE)).toBe('');
     expect(await lint(component('<input placeholder={copy.x} className="search" type="text" />'), WEB_FILE)).toBe('');
+    expect(await lint(component('<p>{done ? copy.x : copy.x}</p>'), WEB_FILE)).toBe('');
+    expect(await lint(component('<p>{who || copy.x}</p>'), KIT_FILE)).toBe('');
+    expect(await lint(component('<div title={done ? copy.x : copy.x} />'), WEB_FILE)).toBe('');
+  });
+
+  it('allows strings that are not text', async () => {
+    expect(await lint(component('<p className={"x"}>{copy.x}</p>'), WEB_FILE)).toBe('');
+    expect(await lint(component('<a href={"/jobs"}>{copy.x}</a>'), WEB_FILE)).toBe('');
+    expect(await lint(component("<p className={done ? 'a' : 'b'} role={'note'}>{copy.x}</p>"), KIT_FILE)).toBe('');
+    expect(await lint(component("<p>{done ? copy.x : null}{' '}{'/'}{2}</p>"), WEB_FILE)).toBe('');
+    // Strings in the attributes of an element inside braces are the attributes' business, not text.
+    const nested = '<ul>{items.map((item) => <li key={item} className={done ? "a" : "b"} data-x={"y"}>{copy.x}</li>)}</ul>';
+    expect(await lint(component(nested), WEB_FILE)).toBe('');
   });
 
   describe('import boundary', () => {

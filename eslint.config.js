@@ -57,15 +57,38 @@ const WEB_PATTERN = {
 // Flat config replaces a rule's options in each block that matches, so the web block holds both pattern sets.
 const WEB_RESTRICTION = { patterns: [DB_SYSTEM_PATTERN, WEB_PATTERN] };
 
-// Spec 4.7: every word on screen comes from apps/web/src/copy, so JSX holds no text of its own.
+/*
+ * Spec 4.7: every word on screen comes from apps/web/src/copy, so JSX holds no text of its own.
+ * Text can be written in JSX three ways, and all three are refused:
+ * - as JSX text (`<p>Hello</p>`);
+ * - as a string in an attribute a person reads (`title="Search"`, `alt`, `placeholder`, the aria text ones);
+ * - as a string or template inside braces, as a child (`{"Hello"}`, `{`Hi ${name}`}`) or in one of those
+ *   attributes (`title={"Search"}`), also when it is a branch of a ternary or of ||, && or ?? (`{done ? 'Yes' : 'No'}`).
+ * Strings in other attributes (className, href, type, role, key) are not text and are left alone.
+ */
+const NO_TEXT_MESSAGE = 'Put UI text in apps/web/src/copy and pass it in.';
+const HAS_LETTER = '/[A-Za-z]/';
+const TEXT_ATTRIBUTE = 'JSXAttribute[name.name=/^(aria-label|aria-description|aria-placeholder|aria-roledescription|title|placeholder|alt|label)$/]';
+
+// The braces whose contents are shown: a child of an element or fragment, or the value of a text attribute.
+const TEXT_BRACES = [':matches(JSXElement, JSXFragment) > JSXExpressionContainer', `${TEXT_ATTRIBUTE} > JSXExpressionContainer`];
+
+// Where in the braces a string can sit: as the whole expression, or as a branch of a ternary or a
+// logical expression, nested up to three deep (`a ? 'x' : b ? 'y' : copy.z`). Only direct branches:
+// a string deeper than that (a function's argument, an element's own attribute) is not what is shown.
+const TEXT_PLACES = TEXT_BRACES.flatMap((braces) =>
+  [0, 1, 2, 3].map((depth) => braces + ' > :matches(ConditionalExpression, LogicalExpression)'.repeat(depth)),
+);
+
 const NO_LITERAL_TEXT = [
+  { selector: 'JSXText[value=/[A-Za-z]/]', message: NO_TEXT_MESSAGE },
+  { selector: `${TEXT_ATTRIBUTE} > Literal[value=${HAS_LETTER}]`, message: NO_TEXT_MESSAGE },
   {
-    selector: 'JSXText[value=/[A-Za-z]/]',
-    message: 'Put UI text in apps/web/src/copy and pass it in.',
-  },
-  {
-    selector: 'JSXAttribute[name.name=/^(aria-label|title|placeholder|alt|label)$/] > Literal[value=/[A-Za-z]/]',
-    message: 'Put UI text in apps/web/src/copy and pass it in.',
+    selector: TEXT_PLACES.flatMap((place) => [
+      `${place} > Literal[value=${HAS_LETTER}]`,
+      `${place} > TemplateLiteral > TemplateElement[value.raw=${HAS_LETTER}]`,
+    ]).join(', '),
+    message: NO_TEXT_MESSAGE,
   },
 ];
 
