@@ -127,6 +127,28 @@ describe('contact', () => {
     const req = informational('2026-06-10T10:00:00', null, { recipient: { doNotContact: true } });
     expect(decide(req)).toMatchObject({ action: 'block', rule: 'contact' });
   });
+
+  // The flags come from a database row or a webhook, so a null or a missing value is possible
+  // whatever the type says. Only an exact `false` means "may contact"; anything else blocks.
+  describe.each(['doNotContact', 'optedOut'] as const)('a %s flag that is not exactly false', (flag) => {
+    test.each([null, undefined, 0, '', 'false', 'no'])('%j blocks', (value) => {
+      const req = baseline({ recipient: { [flag]: value as unknown as boolean } });
+      expect(decide(req)).toEqual({
+        action: 'block',
+        rule: 'contact',
+        reason: 'This customer asked not to be texted.',
+      });
+    });
+
+    test('blocks an informational message too', () => {
+      const req = informational('2026-06-10T10:00:00', null, { recipient: { [flag]: null as unknown as boolean } });
+      expect(decide(req)).toMatchObject({ action: 'block', rule: 'contact' });
+    });
+
+    test('an exact false still lets the text through', () => {
+      expect(decide(baseline({ recipient: { [flag]: false } }))).toEqual({ action: 'send' });
+    });
+  });
 });
 
 describe('consent', () => {
@@ -194,15 +216,61 @@ describe('content', () => {
   test('does not content-check informational messages', () => {
     expect(decide(informational('2026-06-10T10:00:00', null))).toEqual({ action: 'send' });
   });
+
+  describe('a blank body', () => {
+    const EMPTY = { action: 'block', rule: 'content', reason: 'This message is empty.' };
+    const BLANKS = ['', ' ', '   ', '\n', '\t \r\n', '\u00a0'];
+    /** An informational request whose body is exactly `body` (the shared helper always uses INFO_BODY). */
+    const info = (body: string, over: Overrides = {}) =>
+      baseline({ ...over, message: { purpose: 'informational', body, replyToInboundAt: null } });
+
+    test.each(BLANKS)('%j is blocked for an informational message', (body) => {
+      expect(decide(info(body))).toEqual(EMPTY);
+    });
+
+    test.each(BLANKS)('%j is blocked for a marketing message, with the empty-message reason', (body) => {
+      expect(decide(baseline({ message: { body } }))).toEqual(EMPTY);
+    });
+
+    test('a body that is missing altogether is blocked too, not a crash', () => {
+      for (const body of [undefined, null]) {
+        expect(decide(baseline({ message: { body: body as unknown as string } }))).toEqual(EMPTY);
+        expect(decide(info(body as unknown as string))).toEqual(EMPTY);
+      }
+    });
+
+    test('is checked at the content rule: after consent, before dedupe and the weekly cap', () => {
+      expect(decide(info('  ', { recipient: { consent: 'none' } }))).toMatchObject({ rule: 'consent' });
+      expect(decide(info('  ', { history: { dedupeAlreadySent: true } }))).toEqual(EMPTY);
+      const capped = baseline({
+        message: { body: '  ' },
+        company: { marketingCapPer7d: 0 },
+      });
+      expect(decide(capped)).toEqual(EMPTY);
+    });
+
+    test('a body with any real text in it is not blank', () => {
+      expect(decide(info('  ok  '))).toEqual({ action: 'send' });
+    });
+  });
 });
 
 describe('dedupe', () => {
+  const DUPLICATE = {
+    action: 'block',
+    rule: 'dedupe',
+    reason: 'Already sent this message to this customer.',
+  };
+
   test('blocks a message already sent to this customer', () => {
-    expect(decide(baseline({ history: { dedupeAlreadySent: true } }))).toEqual({
-      action: 'block',
-      rule: 'dedupe',
-      reason: 'Already sent this message to this customer.',
-    });
+    expect(decide(baseline({ history: { dedupeAlreadySent: true } }))).toEqual(DUPLICATE);
+  });
+
+  // Not knowing whether it went out is not the same as it not having gone out.
+  test.each([null, undefined, 0, '', 'false'])('a dedupeAlreadySent of %j blocks, since only an exact false clears it', (value) => {
+    const history = { dedupeAlreadySent: value as unknown as boolean };
+    expect(decide(baseline({ history }))).toEqual(DUPLICATE);
+    expect(decide(informational('2026-06-10T10:00:00', null, { history }))).toEqual(DUPLICATE);
   });
 });
 
@@ -244,6 +312,25 @@ describe('weekly frequency cap', () => {
       history: { marketingSentAt: [ago(days(1)), ago(days(3))] },
     });
     expect(decide(req)).toEqual({ action: 'send' });
+  });
+
+  // A timestamp that is not a date is a send whose time is unknown. Dropping it would under-count
+  // and let a text through; it counts as inside the window instead.
+  test('an invalid timestamp counts toward the cap', () => {
+    expect(decide(withSent([new Date('x'), new Date('x')]))).toEqual(TOO_MANY);
+  });
+
+  test('an invalid timestamp counts alongside a valid one', () => {
+    expect(decide(withSent([new Date('x'), ago(days(2))]))).toEqual(TOO_MANY);
+  });
+
+  test('one invalid timestamp, one under the cap of two, still sends', () => {
+    expect(decide(withSent([new Date('x')]))).toEqual({ action: 'send' });
+  });
+
+  test('an invalid timestamp does not hide behind a valid one older than 7 days', () => {
+    expect(decide(withSent([new Date('x'), ago(days(30))]))).toEqual({ action: 'send' });
+    expect(decide(withSent([new Date('x'), new Date('x'), ago(days(30))]))).toEqual(TOO_MANY);
   });
 });
 
@@ -313,6 +400,27 @@ describe('quiet hours', () => {
   test("falls back to the company's zone when the recipient has none", () => {
     const d = scheduled(decide(at('2026-06-10T21:30:00', { recipient: { timezone: null } })));
     expect(d.at).toEqual(chi('2026-06-11T08:00:00'));
+  });
+
+  test('falls back to the company zone and the standard window when the recipient has neither a zone nor a state', () => {
+    const req = at('2026-06-10T21:30:00', { recipient: { timezone: null, state: null } });
+    expect(decide(req)).toEqual({
+      action: 'schedule',
+      at: chi('2026-06-11T08:00:00'),
+      rule: 'quiet_hours',
+      reason: 'Will send at 8:00 AM their time (quiet hours).',
+    });
+    // The standard 21:00 end applies, not the 20:00 end of FL, OK and MD: 20:30 sends.
+    expect(decide(at('2026-06-10T20:30:00', { recipient: { timezone: null, state: null } }))).toEqual({
+      action: 'send',
+    });
+  });
+
+  test('a fixed offset is not a zone: the recipient falls back to the company zone', () => {
+    for (const timezone of ['-06:00', '+05:00', '+0500', '+05']) {
+      const d = scheduled(decide(at('2026-06-10T21:30:00', { recipient: { timezone } })));
+      expect(d.at).toEqual(chi('2026-06-11T08:00:00'));
+    }
   });
 
   test('falls back to the company zone when the recipient zone is not a real zone', () => {
@@ -468,6 +576,23 @@ describe('the 3-per-24-hours limit in FL, OK and MD', () => {
     });
   });
 
+  test('an invalid timestamp counts inside the 24 hours too, and ages out last', () => {
+    // Three sends of unknown time: the daily limit holds for a full day from now, the latest the
+    // sends could have been.
+    const unknown = [new Date('x'), new Date('x'), new Date('x')];
+    expect(decide(flAt('2026-06-09T11:30:00', unknown))).toEqual({
+      action: 'schedule',
+      at: chi('2026-06-10T11:30:00'),
+      rule: 'frequency',
+      reason: 'Will send at 11:30 AM their time (daily limit).',
+    });
+  });
+
+  test('two valid sends and one invalid one make three in the day', () => {
+    const mixed = [chi('2026-06-09T09:00:00'), new Date('x'), chi('2026-06-09T10:00:00')];
+    expect(scheduled(decide(flAt('2026-06-09T11:30:00', mixed))).rule).toBe('frequency');
+  });
+
   test('is not applied to a state outside FL, OK and MD', () => {
     expect(decide(flAt('2026-06-09T11:30:00', SENT, { recipient: { state: 'NE' } }))).toEqual({ action: 'send' });
     expect(decide(flAt('2026-06-09T11:30:00', SENT, { recipient: { state: null } }))).toEqual({ action: 'send' });
@@ -497,5 +622,11 @@ describe('bad input fails closed', () => {
 
   test('a company zone that is not a real zone throws instead of sending', () => {
     expect(() => decide(baseline({ company: { timezone: 'Not/AZone' } }))).toThrow(/time zone/i);
+  });
+
+  test('a company zone that is a fixed offset throws instead of sending', () => {
+    for (const timezone of ['-06:00', '+05:00', '+0500', '+05']) {
+      expect(() => decide(baseline({ company: { timezone } }))).toThrow(/time zone/i);
+    }
   });
 });

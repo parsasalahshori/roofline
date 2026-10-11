@@ -31,7 +31,10 @@ export type GateRequest = {
   };
   history: {
     dedupeAlreadySent: boolean;
-    /** When marketing texts to this customer went out, any order. Older than 7 days is ignored. */
+    /**
+     * When marketing texts to this customer went out, any order. Older than 7 days is ignored. An
+     * invalid Date (a send whose time is unknown) counts as having just gone out.
+     */
     marketingSentAt: Date[];
   };
 };
@@ -69,10 +72,11 @@ function marketingContentOk(body: string, companyName: string): boolean {
  * history, and acts on the answer.
  *
  * The rules run in order and the first block wins: billing, registration, contact, consent,
- * content, dedupe, the weekly cap. Then two things can push the send into the future: the
- * 3-per-24-hours limit (marketing to FL, OK and MD) and quiet hours (08:00 to 21:00 their time,
- * 20:00 in those states). The send waits for whichever is later; the rule reported is `frequency`
- * if the daily limit is what is holding it, otherwise `quiet_hours`.
+ * content (a blank body, then the marketing wording), dedupe, the weekly cap. Then two things can
+ * push the send into the future: the 3-per-24-hours limit (marketing to FL, OK and MD) and quiet
+ * hours (08:00 to 21:00 their time, 20:00 in those states). The send waits for whichever is later;
+ * the rule reported is `frequency` if the daily limit is what is holding it, otherwise
+ * `quiet_hours`.
  *
  * Anything that is not plainly informational is treated as marketing, the stricter case.
  *
@@ -95,7 +99,9 @@ export function decide(req: GateRequest): GateDecision {
   if (recipient.phoneE164 == null || recipient.phoneE164.trim() === '') {
     return block('contact', 'No mobile number on file.');
   }
-  if (recipient.doNotContact || recipient.optedOut) {
+  // Only an exact `false` clears these flags: a null or missing value from a database row or a
+  // webhook fails closed, like an unknown status does above.
+  if (recipient.doNotContact !== false || recipient.optedOut !== false) {
     return block('contact', 'This customer asked not to be texted.');
   }
 
@@ -104,17 +110,30 @@ export function decide(req: GateRequest): GateDecision {
     return block('consent', 'No texting consent on file.');
   }
 
+  // The content rule. A blank text is never sent, whatever its purpose; marketing must also carry
+  // the company name and the opt-out wording. A body that is not a string counts as blank.
+  if (typeof message.body !== 'string' || message.body.trim() === '') {
+    return block('content', 'This message is empty.');
+  }
   if (!informational && !marketingContentOk(message.body, company.name)) {
     return block('content', 'Marketing texts must include your company name and how to opt out.');
   }
 
-  if (history.dedupeAlreadySent) {
+  // Same as the contact flags: not knowing whether it went out is treated as it having gone out.
+  if (history.dedupeAlreadySent !== false) {
     return block('dedupe', 'Already sent this message to this customer.');
   }
 
   // Marketing sends in the last 7 days, whatever order the caller listed them in. A send stamped a
   // moment after `now` (another worker got there first) still counts: over-counting only delays.
-  const lastWeek = history.marketingSentAt.map((d) => d.getTime()).filter((ms) => nowMs - ms <= 7 * DAY_MS);
+  // A send with an invalid timestamp is read as having just happened: inside both the 7-day and
+  // the 24-hour window, and the last to age out. Dropping it would under-count and let a text
+  // through that the cap forbids.
+  const sentMs = history.marketingSentAt.map((d) => {
+    const ms = d.getTime();
+    return Number.isNaN(ms) ? nowMs : ms;
+  });
+  const lastWeek = sentMs.filter((ms) => nowMs - ms <= 7 * DAY_MS);
   // Written as "not under the cap" so a cap that is NaN blocks instead of letting everything through.
   if (!informational && !(lastWeek.length < company.marketingCapPer7d)) {
     return block('frequency', 'Already texted this customer the most allowed this week.');

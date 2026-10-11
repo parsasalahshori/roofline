@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import { describe, expect, test } from 'vitest';
 import { nextAllowedTime } from '../src/index.ts';
+import { isTimeZone } from '../src/quiet-hours.ts';
 
 const CHICAGO = 'America/Chicago';
 
@@ -57,8 +58,9 @@ describe('nextAllowedTime', () => {
     expect(nextAllowedTime(t, 'Europe/Berlin', null)).toEqual(local('2026-06-10T08:00:00', 'Europe/Berlin'));
   });
 
-  test('falls back to the standard window when no zone or state is known (company zone, 21:00 end)', () => {
-    // The recipient's missing zone and state are resolved by decide() to the company zone and null.
+  test('with a null state, the standard 21:00 end applies in the zone it is given', () => {
+    // This is nextAllowedTime alone. The fallback to the company zone when the recipient has no
+    // zone or state is decide()'s job and is tested in decide.test.ts.
     expect(nextAllowedTime(local('2026-06-10T20:59:00'), CHICAGO, null)).toEqual(local('2026-06-10T20:59:00'));
     expect(nextAllowedTime(local('2026-06-10T21:01:00'), CHICAGO, null)).toEqual(local('2026-06-11T08:00:00'));
   });
@@ -69,6 +71,57 @@ describe('nextAllowedTime', () => {
 
   test('throws for an invalid date', () => {
     expect(() => nextAllowedTime(new Date('nope'), CHICAGO, null)).toThrow();
+  });
+
+  test('throws for a fixed offset, which is not a place and has no daylight saving', () => {
+    for (const offset of ['-06:00', '+05:00', '+0500', '+05']) {
+      expect(() => nextAllowedTime(new Date('2026-06-10T15:00:00Z'), offset, null)).toThrow(/time zone/i);
+    }
+  });
+});
+
+describe('isTimeZone', () => {
+  test.each(['America/Chicago', 'America/New_York', 'America/Los_Angeles', 'Pacific/Honolulu', 'Europe/Berlin', 'UTC'])(
+    'accepts %s',
+    (zone) => expect(isTimeZone(zone)).toBe(true),
+  );
+
+  test.each(['-06:00', '+05:00', '+0500', '+05', '-6', 'UTC+5', 'UTC-06:00', 'GMT+5', 'Etc/GMT+5'])(
+    'rejects the fixed offset %s',
+    (zone) => expect(isTimeZone(zone)).toBe(false),
+  );
+
+  test.each(['', ' ', 'local', 'system', 'Z', 'Not/AZone', 'Chicago', 'America/', '/Chicago', 'America/Chicago '])(
+    'rejects %j',
+    (zone) => expect(isTimeZone(zone)).toBe(false),
+  );
+
+  test('rejects things that are not strings', () => {
+    for (const bad of [undefined, null, 5, {}]) {
+      expect(isTimeZone(bad as unknown as string)).toBe(false);
+    }
+  });
+
+  // Intl.supportedValuesOf lists ICU's older spellings (America/Indianapolis, Asia/Calcutta), so a
+  // current IANA name like America/Indiana/Indianapolis is missing from it even though it is a
+  // real place. These zones must still work: an Indiana customer must not be dropped to the
+  // company's zone and texted in the wrong hours.
+  test.each([
+    'America/Indiana/Indianapolis',
+    'America/Kentucky/Louisville',
+    'Asia/Kolkata',
+    'Europe/Kyiv',
+    'America/Argentina/Buenos_Aires',
+    'US/Central',
+  ])('accepts %s, a current or alias name for a real zone', (zone) => {
+    expect(isTimeZone(zone)).toBe(true);
+  });
+
+  test('a current IANA name works end to end: America/Indiana/Indianapolis', () => {
+    const zone = 'America/Indiana/Indianapolis';
+    expect(nextAllowedTime(local('2026-06-10T21:30:00', zone), zone, null)).toEqual(
+      local('2026-06-11T08:00:00', zone),
+    );
   });
 });
 
