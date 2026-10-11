@@ -1,7 +1,5 @@
-import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import type { TestProject } from 'vitest/node';
-import { migrate } from '../migrate.ts';
-import { APP_ROLES, roleUrl, setRolePasswords } from '../roles.ts';
+import { startTestDatabase } from './database.ts';
 
 declare module 'vitest' {
   export interface ProvidedContext {
@@ -15,41 +13,21 @@ declare module 'vitest' {
   }
 }
 
-/** Test-only role passwords. Real environments set theirs with `scripts/set-role-passwords.ts`. */
-const TEST_ROLE_PASSWORDS = { tenant: 'tenant-test-pw', system: 'system-test-pw' } as const;
-
 /**
- * Vitest `globalSetup`: starts one PostGIS container, applies every migration, sets the app role
- * passwords, and shares the owner, app_tenant and app_system URLs with the tests through
- * `inject('dbUrls')`.
- *
- * The postgis/postgis:16-3.4 image is amd64-only, so on Apple Silicon it runs under emulation and
- * takes a while to start. The platform is pinned so Docker never picks a different variant.
+ * Vitest `globalSetup`: calls `startTestDatabase` (one PostGIS container, every migration applied,
+ * app role passwords set) and shares the owner, app_tenant and app_system URLs with the tests through
+ * `inject('dbUrls')`. The returned teardown stops the container.
  */
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
-  const container = await new PostgreSqlContainer('postgis/postgis:16-3.4')
-    .withPlatform('linux/amd64')
-    .withDatabase('roofline')
-    .withUsername('roofline')
-    .withPassword('roofline')
-    .withStartupTimeout(180_000)
-    .start();
-
+  const database = await startTestDatabase();
   try {
-    const owner = container.getConnectionUri();
-    await migrate(owner);
-    await setRolePasswords(owner, TEST_ROLE_PASSWORDS);
-    project.provide('dbUrls', {
-      owner,
-      tenant: roleUrl(owner, APP_ROLES.tenant, TEST_ROLE_PASSWORDS.tenant),
-      system: roleUrl(owner, APP_ROLES.system, TEST_ROLE_PASSWORDS.system),
-    });
+    project.provide('dbUrls', database.urls);
   } catch (err) {
-    await container.stop();
+    await database.stop();
     throw err;
   }
 
   return async () => {
-    await container.stop();
+    await database.stop();
   };
 }

@@ -182,6 +182,71 @@ describe('previews', () => {
   });
 });
 
+describe('demo message and spend details', () => {
+  const SAMPLE = "Hi Maria, it's Acme Roofing. Reply STOP to opt out.";
+
+  test('demo_message takes an optional sample, recipient count and send time, and previews them', () => {
+    const value = { label: 'Text 31 customers', sample: SAMPLE, recipientCount: 31, sendTime: 'Today 10:00 AM' };
+    expect(stepTypes.demo_message.payload.parse(value)).toEqual(value);
+    expect(stepTypes.demo_message.preview(value, FACTS)).toEqual({
+      title: 'Text 31 customers',
+      lines: [],
+      messageSample: SAMPLE,
+      recipientCount: 31,
+      sendTime: 'Today 10:00 AM',
+    });
+  });
+
+  test('a bare demo_message still parses, and its preview has no extra keys', () => {
+    expect(stepTypes.demo_message.payload.parse({ label: 'Text 31 customers' })).toEqual({ label: 'Text 31 customers' });
+    expect(stepTypes.demo_message.preview({ label: 'Text 31 customers' }, FACTS)).toEqual({ title: 'Text 31 customers', lines: [] });
+  });
+
+  test('the sample is at most 640 characters', () => {
+    expect(schemaMessage('demo_message', { label: 'Text', sample: 'x'.repeat(640) })).toBeNull();
+    expect(schemaMessage('demo_message', { label: 'Text', sample: 'x'.repeat(641) })).toBe(
+      'Please keep the sample to 640 characters or fewer.',
+    );
+  });
+
+  test('recipientCount is a whole number of 0 or more', () => {
+    expect(schemaMessage('demo_message', { label: 'Text', recipientCount: 0 })).toBeNull();
+    for (const bad of [-1, 1.5, '31']) {
+      expect(schemaMessage('demo_message', { label: 'Text', recipientCount: bad }), String(bad)).toBe(
+        'Please enter the number of customers as a whole number.',
+      );
+    }
+  });
+
+  test('the send time is at most 60 characters', () => {
+    expect(schemaMessage('demo_message', { label: 'Text', sendTime: 'x'.repeat(60) })).toBeNull();
+    expect(schemaMessage('demo_message', { label: 'Text', sendTime: 'x'.repeat(61) })).toBe(
+      'Please keep the send time to 60 characters or fewer.',
+    );
+  });
+
+  test('an unknown key on demo_message is still refused', () => {
+    expect(stepTypes.demo_message.payload.safeParse({ label: 'Text 31 customers', extra: 1 }).success).toBe(false);
+  });
+
+  test('demo_spend takes an optional area, which previews after the spend line', () => {
+    const value = { label: 'Google + Facebook ads on the swath', maxSpendCents: 27000, area: 'North side swath · 4.2 sq mi' };
+    expect(stepTypes.demo_spend.payload.parse(value)).toEqual(value);
+    expect(stepTypes.demo_spend.preview(value, FACTS)).toEqual({
+      title: 'Google + Facebook ads on the swath',
+      lines: ['Spends up to $270.00', 'North side swath · 4.2 sq mi'],
+      maxSpendCents: 27000,
+    });
+  });
+
+  test('the area is at most 120 characters', () => {
+    expect(schemaMessage('demo_spend', { label: 'Ads', maxSpendCents: 0, area: 'x'.repeat(120) })).toBeNull();
+    expect(schemaMessage('demo_spend', { label: 'Ads', maxSpendCents: 0, area: 'x'.repeat(121) })).toBe(
+      'Please keep the area to 120 characters or fewer.',
+    );
+  });
+});
+
 describe('minutesSaved', () => {
   test('the demo steps save 5 minutes whatever the result', () => {
     for (const type of ['demo_noop', 'demo_message', 'demo_spend'] as const) {

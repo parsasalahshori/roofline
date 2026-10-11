@@ -10,7 +10,7 @@ export {
   type ListActivitiesOptions,
 } from './repos/activities.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
-export { insertDefaultSettings, pickFreeSlug, slugify } from './repos/companies.ts';
+export { insertDefaultSettings, pickFreeSlug, setServiceArea, slugify } from './repos/companies.ts';
 export {
   CONSENT_LABELS,
   createCustomer,

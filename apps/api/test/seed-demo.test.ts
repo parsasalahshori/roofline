@@ -12,12 +12,22 @@ import {
   slugFromArgs,
   USAGE,
 } from '../src/scripts/seed-demo.ts';
+import { demoTask } from '../src/tasks/demo.ts';
 import { dbAudit, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { dbSteps, dbTask } from './task-helpers.ts';
 
 const NOW = new Date('2026-10-12T15:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
+/** The demo text's sample for Acme Roofing: the company name is the only part that changes between companies. */
+const ACME_SAMPLE =
+  "Hi Maria, it's Acme Roofing. Tuesday's hail hit your street. Want a free roof check this week? Reply YES to book. Reply STOP to opt out.";
+
+describe('the demo plan itself', () => {
+  test('without a company name the sample says "your roofer"', () => {
+    expect(demoTask(NOW).steps[0]?.payload).toMatchObject({ sample: expect.stringContaining("it's your roofer.") });
+  });
+});
 
 let t: TestApp;
 
@@ -39,14 +49,50 @@ describe('the demo seed', () => {
     });
     const steps = await dbSteps(t, 'a', out.taskId);
     expect(steps.map((s) => [s.type, s.approvalClass, s.payload, s.status])).toEqual([
-      ['demo_message', 'message', { label: 'Text 31 customers' }, 'pending'],
+      [
+        'demo_message',
+        'message',
+        {
+          label: 'Text 31 customers',
+          sample: ACME_SAMPLE,
+          recipientCount: 31,
+          sendTime: 'Today 10:00 AM',
+        },
+        'pending',
+      ],
       ['demo_noop', 'internal', { label: 'Door-knock routes for 4 reps' }, 'pending'],
-      ['demo_spend', 'spend', { label: 'Google + Facebook ads on the swath', maxSpendCents: 27000 }, 'pending'],
+      [
+        'demo_spend',
+        'spend',
+        { label: 'Google + Facebook ads on the swath', maxSpendCents: 27000, area: 'North side swath · 4.2 sq mi' },
+        'pending',
+      ],
     ]);
     // Made the way an agent makes one: through createTask, audited with no person behind it.
     expect((await dbAudit(t, t.seed.a.companyId, 'task.create'))[0]).toMatchObject({ actorUserId: null, targetId: out.taskId });
     // Only that company has it.
     expect(await inCompany(t, t.seed.b.companyId, (tx) => tx.select().from(agentTasks))).toEqual([]);
+  });
+
+  test('the stored previews show the sample text, the count and the send time, and the area under the spend line', async () => {
+    const out = await seedDemoTask(t.deps.pools, 'acme-roofing', NOW);
+    const steps = await dbSteps(t, 'a', out.taskId);
+    expect(steps[0]!.preview).toMatchObject({
+      title: 'Text 31 customers',
+      messageSample: ACME_SAMPLE,
+      recipientCount: 31,
+      sendTime: 'Today 10:00 AM',
+    });
+    expect(steps[2]!.preview).toMatchObject({
+      title: 'Google + Facebook ads on the swath',
+      lines: ['Spends up to $270.00', 'North side swath · 4.2 sq mi'],
+    });
+  });
+
+  test('the sample text names the company the plan is made for', async () => {
+    const out = await seedDemoTask(t.deps.pools, 'bolt-roofing', NOW);
+    const [message] = await dbSteps(t, 'b', out.taskId);
+    expect(message!.payload).toMatchObject({ sample: expect.stringContaining("it's Bolt Roofing.") });
   });
 
   test('an unknown slug is refused in plain words, and nothing is made', async () => {

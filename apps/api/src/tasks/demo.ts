@@ -7,8 +7,13 @@ export const DEMO_TASK_WINDOW_MS = 48 * 60 * 60 * 1000;
  * The F2 demo plan (the seed makes it; the review screen is built against it): a Storm Scout plan
  * with one step of each approval class, so partial approval shows (an office user can approve the
  * text and the routes, and the ads wait for the owner). Its window is 48 hours from `now`.
+ *
+ * The text step carries a sample message that names `companyName` (the seed passes the company's
+ * own name; "your roofer" when none is given), how many customers it goes to, and when it goes out.
+ * The spend step names the area it covers. Those details are optional in the step type (steps.ts),
+ * so the plan still reads the same to any code that only knows the three step labels.
  */
-export function demoTask(now: Date): NewTask {
+export function demoTask(now: Date, companyName = 'your roofer'): NewTask {
   return {
     agent: 'storm_scout',
     kind: 'storm_plan',
@@ -16,9 +21,20 @@ export function demoTask(now: Date): NewTask {
     summary: 'Text the customers under the hail swath, send the reps door to door, and run ads on the swath.',
     expiresAt: new Date(now.getTime() + DEMO_TASK_WINDOW_MS),
     steps: [
-      { type: 'demo_message', payload: { label: 'Text 31 customers' } },
+      {
+        type: 'demo_message',
+        payload: {
+          label: 'Text 31 customers',
+          sample: `Hi Maria, it's ${companyName}. Tuesday's hail hit your street. Want a free roof check this week? Reply YES to book. Reply STOP to opt out.`,
+          recipientCount: 31,
+          sendTime: 'Today 10:00 AM',
+        },
+      },
       { type: 'demo_noop', payload: { label: 'Door-knock routes for 4 reps' } },
-      { type: 'demo_spend', payload: { label: 'Google + Facebook ads on the swath', maxSpendCents: 27000 } },
+      {
+        type: 'demo_spend',
+        payload: { label: 'Google + Facebook ads on the swath', maxSpendCents: 27000, area: 'North side swath · 4.2 sq mi' },
+      },
     ],
   };
 }
