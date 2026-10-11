@@ -2,8 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
+import { DisabledSmsAdapter, FakeSmsAdapter } from '@roofline/send-gate';
 import { loadConfig } from '../src/config.ts';
 import { buildDeps } from '../src/deps.ts';
+import { InlineJobs } from '../src/jobs/queue.ts';
+import { FakeBillingProvider } from '../src/providers/fakes/billing.ts';
+import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
+import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
 import { NwsWeatherSource } from '../src/weather/nws.ts';
 import { NullWeatherSource } from '../src/weather/source.ts';
@@ -235,7 +240,7 @@ describe('buildDeps and the weather source', () => {
 
   /** buildDeps over a complete environment. The pools are lazy: nothing connects until a query runs. */
   function depsFor(extra: Record<string, string>) {
-    const deps = buildDeps(loadConfig({ ...VALID, NODE_ENV: 'test', ...extra }), new InlineQueue());
+    const deps = buildDeps(loadConfig({ ...VALID, NODE_ENV: 'test', ...extra }), new InlineQueue(), new InlineJobs());
     built.push(deps);
     return deps;
   }
@@ -276,5 +281,166 @@ describe('buildDeps and the weather source', () => {
     const seen = recordGlobalFetch();
     await depsFor({ NWS_USER_AGENT: 'Acme Roofing (ops@acme.test)' }).weather.current(41.2565, -95.9345);
     expect(seen[0]!.headers.get('User-Agent')).toBe('Acme Roofing (ops@acme.test)');
+  });
+});
+
+describe('F3 settings', () => {
+  const STRIPE_KEY = 'sk_test_x';
+  const WHSEC = 'whsec_test_roofline';
+  const AC_SID = 'AC' + 'a'.repeat(32);
+  const BU_SID = 'BU' + 'b'.repeat(32);
+
+  test('the new keys are optional and absent by default', () => {
+    const config = loadConfig(VALID);
+    expect(config.STRIPE_SECRET_KEY).toBeUndefined();
+    expect(config.STRIPE_WEBHOOK_SECRET).toBeUndefined();
+    expect(config.GEOCODIO_API_KEY).toBeUndefined();
+    expect(config.TWILIO_ACCOUNT_SID).toBeUndefined();
+    expect(config.TWILIO_PRIMARY_PROFILE_SID).toBeUndefined();
+    expect(config.POLICY_PAGES_DOMAIN).toBeUndefined();
+    expect(config.FAKE_PROVIDERS).toBeUndefined();
+    // Outside production the example plans file is the default; in production without Stripe it stays unset.
+    expect(config.BILLING_PLANS_FILE).toBeUndefined();
+  });
+
+  test('blank values count as unset for every new key', () => {
+    const config = loadConfig({
+      ...VALID,
+      STRIPE_SECRET_KEY: '',
+      STRIPE_WEBHOOK_SECRET: ' ',
+      GEOCODIO_API_KEY: '',
+      TWILIO_ACCOUNT_SID: '',
+      TWILIO_PRIMARY_PROFILE_SID: '',
+      POLICY_PAGES_DOMAIN: '',
+      FAKE_PROVIDERS: '',
+      BILLING_PLANS_FILE: '',
+    });
+    expect(config.STRIPE_SECRET_KEY).toBeUndefined();
+    expect(config.TWILIO_ACCOUNT_SID).toBeUndefined();
+    expect(config.FAKE_PROVIDERS).toBeUndefined();
+    expect(config.BILLING_PLANS_FILE).toBeUndefined();
+  });
+
+  test('STRIPE_SECRET_KEY must start with sk_, and the message names the key only', () => {
+    const message = problem({ ...VALID, STRIPE_SECRET_KEY: 'pk_live_nope' });
+    expect(message).toContain('STRIPE_SECRET_KEY');
+    expect(message).toContain('must start with sk_');
+    expect(message).not.toContain('pk_live_nope');
+  });
+
+  test('STRIPE_SECRET_KEY needs STRIPE_WEBHOOK_SECRET', () => {
+    const message = problem({ ...VALID, STRIPE_SECRET_KEY: STRIPE_KEY });
+    expect(message).toContain('STRIPE_WEBHOOK_SECRET');
+    expect(message).toContain('is required when STRIPE_SECRET_KEY is set');
+  });
+
+  test('STRIPE_WEBHOOK_SECRET must start with whsec_', () => {
+    const message = problem({ ...VALID, STRIPE_WEBHOOK_SECRET: 'secret' });
+    expect(message).toContain('STRIPE_WEBHOOK_SECRET');
+    expect(message).toContain('whsec_');
+  });
+
+  test('a complete Stripe pair is accepted', () => {
+    const config = loadConfig({
+      ...VALID,
+      STRIPE_SECRET_KEY: STRIPE_KEY,
+      STRIPE_WEBHOOK_SECRET: WHSEC,
+      BILLING_PLANS_FILE: 'config/billing-plans.example.json',
+    });
+    expect(config).toMatchObject({ STRIPE_SECRET_KEY: STRIPE_KEY, STRIPE_WEBHOOK_SECRET: WHSEC });
+  });
+
+  test('in production with Stripe, BILLING_PLANS_FILE is required', () => {
+    const message = problem({ ...VALID, STRIPE_SECRET_KEY: STRIPE_KEY, STRIPE_WEBHOOK_SECRET: WHSEC });
+    expect(message).toContain('BILLING_PLANS_FILE');
+    expect(message).toContain('is required in production when STRIPE_SECRET_KEY is set');
+  });
+
+  test('BILLING_PLANS_FILE defaults to the example plans file outside production', () => {
+    const config = loadConfig({ ...VALID, NODE_ENV: 'development' });
+    expect(path.isAbsolute(config.BILLING_PLANS_FILE!)).toBe(true);
+    expect(config.BILLING_PLANS_FILE!.endsWith(path.join('config', 'billing-plans.example.json'))).toBe(true);
+    expect(loadConfig({ ...VALID, NODE_ENV: 'test' }).BILLING_PLANS_FILE!.endsWith(path.join('config', 'billing-plans.example.json'))).toBe(true);
+  });
+
+  test('a relative BILLING_PLANS_FILE is read from the repository root', () => {
+    const config = loadConfig({ ...VALID, NODE_ENV: 'development', BILLING_PLANS_FILE: 'config/other.json' });
+    expect(config.BILLING_PLANS_FILE).toBe(path.resolve(import.meta.dirname, '../../..', 'config/other.json'));
+  });
+
+  test('GEOCODIO_API_KEY is kept as written', () => {
+    expect(loadConfig({ ...VALID, GEOCODIO_API_KEY: 'geo-key' }).GEOCODIO_API_KEY).toBe('geo-key');
+  });
+
+  test('TWILIO_ACCOUNT_SID must be AC followed by 32 hex digits, and names the key', () => {
+    const message = problem({ ...VALID, TWILIO_ACCOUNT_SID: 'ACxyz' });
+    expect(message).toContain('TWILIO_ACCOUNT_SID');
+    expect(message).toContain('must be AC followed by 32 hex digits');
+    expect(message).not.toContain('ACxyz');
+  });
+
+  test('TWILIO_ACCOUNT_SID needs TWILIO_AUTH_TOKEN', () => {
+    const message = problem({ ...VALID, TWILIO_ACCOUNT_SID: AC_SID });
+    expect(message).toContain('TWILIO_AUTH_TOKEN');
+    expect(loadConfig({ ...VALID, TWILIO_ACCOUNT_SID: AC_SID, TWILIO_AUTH_TOKEN: 'tok' }).TWILIO_ACCOUNT_SID).toBe(AC_SID);
+  });
+
+  test('TWILIO_PRIMARY_PROFILE_SID must be BU followed by 32 hex digits', () => {
+    expect(loadConfig({ ...VALID, TWILIO_PRIMARY_PROFILE_SID: BU_SID }).TWILIO_PRIMARY_PROFILE_SID).toBe(BU_SID);
+    const message = problem({ ...VALID, TWILIO_PRIMARY_PROFILE_SID: 'AC' + 'a'.repeat(32) });
+    expect(message).toContain('TWILIO_PRIMARY_PROFILE_SID');
+  });
+
+  test('POLICY_PAGES_DOMAIN is a bare lowercase hostname (case is folded)', () => {
+    expect(loadConfig({ ...VALID, POLICY_PAGES_DOMAIN: 'Roofline.App' }).POLICY_PAGES_DOMAIN).toBe('roofline.app');
+    expect(loadConfig({ ...VALID, POLICY_PAGES_DOMAIN: 'policies.roofline.app' }).POLICY_PAGES_DOMAIN).toBe(
+      'policies.roofline.app',
+    );
+    for (const value of ['https://roofline.app', 'roofline.app/terms', 'localhost', 'roof line.app']) {
+      const message = problem({ ...VALID, POLICY_PAGES_DOMAIN: value });
+      expect(message).toContain('POLICY_PAGES_DOMAIN');
+      expect(message).toContain('must be a bare hostname, like roofline.app');
+    }
+  });
+
+  test('FAKE_PROVIDERS is a flag, and is refused in production', () => {
+    expect(loadConfig({ ...VALID, NODE_ENV: 'development', FAKE_PROVIDERS: '1' }).FAKE_PROVIDERS).toBe(true);
+    expect(loadConfig({ ...VALID, NODE_ENV: 'test', FAKE_PROVIDERS: 'false' }).FAKE_PROVIDERS).toBe(false);
+    const message = problem({ ...VALID, FAKE_PROVIDERS: '1' });
+    expect(message).toContain('FAKE_PROVIDERS');
+    expect(message).toContain('must not be set in production');
+    // Off in production is fine.
+    expect(loadConfig({ ...VALID, FAKE_PROVIDERS: '0' }).FAKE_PROVIDERS).toBe(false);
+  });
+});
+
+describe('buildDeps providers', () => {
+  /** A deps over `extra`, ended in `finally` (the pools are lazy, so nothing connects). */
+  async function withDeps(extra: Record<string, string>, use: (deps: ReturnType<typeof buildDeps>) => void) {
+    const deps = buildDeps(loadConfig({ ...VALID, NODE_ENV: 'test', ...extra }), new InlineQueue(), new InlineJobs());
+    try {
+      use(deps);
+    } finally {
+      await deps.pools.end();
+    }
+  }
+
+  test('FAKE_PROVIDERS=1 wires the fakes for every outside service', async () => {
+    await withDeps({ FAKE_PROVIDERS: '1' }, (deps) => {
+      expect(deps.geocoder).toBeInstanceOf(FakeGeocoder);
+      expect(deps.billing).toBeInstanceOf(FakeBillingProvider);
+      expect(deps.registrar).toBeInstanceOf(FakeTextingRegistrar);
+      expect(deps.sms).toBeInstanceOf(FakeSmsAdapter);
+      expect(deps.jobs).toBeInstanceOf(InlineJobs);
+    });
+  });
+
+  test('without FAKE_PROVIDERS nothing is configured and texts are refused', async () => {
+    await withDeps({}, (deps) => {
+      expect(deps.geocoder.configured).toBe(false);
+      expect(deps.billing.configured).toBe(false);
+      expect(deps.registrar.configured).toBe(false);
+      expect(deps.sms).toBeInstanceOf(DisabledSmsAdapter);
+    });
   });
 });
