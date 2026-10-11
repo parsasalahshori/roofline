@@ -47,12 +47,15 @@ type BatchText = { customerId: string; purpose: MessagePurpose; template: string
  *      `ON CONFLICT (step_id, customer_id) DO NOTHING`, or written over the retryable failure only
  *      while it still is one. A run that writes nothing lost the customer to another run and skips
  *      them. It commits.
- * 2. A `queued` row is then sent (outbound.ts): provider first, then `sent` or `failed` (retryable).
+ * 2. A `queued` row is then sent (outbound.ts): provider first, then `sent`; `failed` and retryable
+ *    when the provider refused it; `failed`, not retryable ("We couldn't confirm ...") on any other
+ *    provider error, since it may have gone out.
  *
  * Then the step's rows are counted into the result `{sent, scheduled, failed, blocked: {<rule>: n}}`
- * and the run ends:
- * - a send the provider refused during this run → throws (no customer data in the error), so the
- *   runner tries again; what was sent stays sent and is skipped next time;
+ * and the run ends, from those rows rather than from what this run did:
+ * - any text of the step the provider refused (`failed` and retryable: this run's, or one another
+ *   run or the dispatcher had refused after this run passed that customer) → throws (no customer
+ *   data in the error), so the runner tries again; what was sent stays sent and is skipped next time;
  * - else a row still `scheduled` (or `queued` under another run) → `running`: the step is parked and
  *   the dispatcher finishes it;
  * - else `done`.
@@ -72,13 +75,16 @@ export const sendSmsBatch: StepHandler = async (deps, ctx, step) => {
   for (const customerId of customerIds) {
     const dedupeKey = dedupePrefix !== undefined ? `${dedupePrefix}:${customerId}` : null;
     const queued = await decideOne(deps, ctx, step.id, { customerId, purpose, template: body, dedupeKey });
-    if (queued && (await sendQueuedText(deps, ctx, queued, NOT_TAKEN)) === 'not_taken') refused += 1;
+    if (queued && (await sendQueuedText(deps, ctx, queued, NOT_TAKEN)) === 'refused') refused += 1;
   }
 
-  if (refused > 0) {
-    throw new Error(`The texting service did not take ${refused} text(s) of this batch; the step will be tried again.`);
-  }
+  // The outcome comes from the step's rows, not from what this run did: another run (or the
+  // dispatcher) may have had a text refused after this run passed that customer.
   const counts = await withTenant(deps.pools, ctx, (tx) => stepTextCounts(tx, ctx, step.id));
+  if (refused > 0 || counts.retryableFailed > 0) {
+    const n = Math.max(refused, counts.retryableFailed);
+    throw new Error(`The texting service did not take ${n} text(s) of this batch; the step will be tried again.`);
+  }
   const result = batchResult(counts);
   return { status: counts.scheduled > 0 || counts.queued > 0 ? 'running' : 'done', result };
 };
@@ -110,7 +116,7 @@ function decideOne(deps: AppDeps, ctx: TenantContext, stepId: string, text: Batc
     );
     if (!built) return null;
 
-    let state: TextState = textStateFor(built.req);
+    let state: TextState = textStateFor(built);
     // The gate never lets a text through without a number; this keeps the type honest.
     if (state.status === 'queued' && built.toE164 === null) {
       state = { status: 'blocked', blockRule: 'contact', blockReason: 'No mobile number on file.' };

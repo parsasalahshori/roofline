@@ -26,6 +26,7 @@ export const NOT_TAKEN = "The texting service didn't take this message. We'll tr
 export const OPTED_OUT = 'This customer asked not to be texted.';
 export const NO_MOBILE = 'No mobile number on file.';
 export const NO_CONSENT = 'No texting consent on file.';
+export const ARCHIVED = 'This customer is archived.';
 
 /** One test customer: their number (or none), consent, and optionally a home with a state and zone. */
 export type SmsCustomer = {
@@ -164,3 +165,29 @@ export class HeldSmsAdapter implements SmsAdapter {
 
 /** The numbers a fake provider was asked to text, sorted. */
 export const sentTo = (sent: readonly OutboundSms[]) => sent.map((m) => m.to).sort();
+
+/**
+ * A provider whose sends to chosen numbers run a hook first (wait for a gate, then throw or go
+ * on). Every other send goes straight through. It records what it accepted, like the fake.
+ */
+export class ScriptedSmsAdapter implements SmsAdapter {
+  readonly sent: OutboundSms[] = [];
+  private readonly hooks = new Map<string, () => Promise<void>>();
+  private counter = 0;
+
+  /** The next send to `to` runs `hook` first; a throw from it is the provider's answer. */
+  on(to: string, hook: () => Promise<void>): void {
+    this.hooks.set(to, hook);
+  }
+
+  async send(m: OutboundSms): Promise<SmsSendResult> {
+    const hook = this.hooks.get(m.to);
+    if (hook) {
+      this.hooks.delete(m.to);
+      await hook();
+    }
+    this.sent.push({ companyId: m.companyId, to: m.to, body: m.body });
+    this.counter += 1;
+    return { providerSid: `SMSCRIPT${this.counter}`, segments: 1 };
+  }
+}

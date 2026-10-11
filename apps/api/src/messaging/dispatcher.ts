@@ -60,7 +60,8 @@ export const emptySummary = (): DispatchSummary => ({ sent: 0, scheduled: 0, blo
  *    `scheduled_for <= now` is locked `FOR UPDATE SKIP LOCKED` (so two dispatchers never take the
  *    same one), the customer's texting lock is taken, the gate request is built afresh and the
  *    gate decides:
- *    - send → the row becomes `queued`, commits, and is sent as every text is (outbound.ts);
+ *    - send → the row becomes `queued`, commits, and is sent as every text is (outbound.ts): a
+ *      refusal fails it retryable ("You can retry it."), an unknown outcome fails it for good;
  *    - schedule → the row waits again, with its new `scheduled_for` and reason;
  *    - block → `blocked`, with the rule and reason.
  *    A text that throws is logged (its id only) and left for the next pass; the others go on.
@@ -70,7 +71,8 @@ export const emptySummary = (): DispatchSummary => ({ sent: 0, scheduled: 0, blo
  *    under a live run) the step stays parked, with the new result. Otherwise it is finished with
  *    one conditional UPDATE (only while it is still parked): `done`, or `failed` when the provider
  *    refused some of its texts (a retry sends those), and its task follows (`refreshTask`). The task
- *    row is locked first, then the step: the order every writer takes.
+ *    row is locked first, then the step: the order every writer takes. A step that throws is logged
+ *    (its id only) and left for the next pass; the other steps go on.
  */
 export async function dispatchCompanyMessages(deps: AppDeps, companyId: string, now: Date): Promise<DispatchSummary> {
   const ctx = systemContext(companyId);
@@ -93,7 +95,12 @@ export async function dispatchCompanyMessages(deps: AppDeps, companyId: string, 
   }
 
   for (const step of await withTenant(deps.pools, ctx, (tx) => listParkedSteps(tx, ctx, 'send_sms_batch'))) {
-    if (await settleParkedStep(deps, ctx, step)) summary.finished += 1;
+    // One step that cannot be settled is logged and left for the next pass; the others go on.
+    try {
+      if (await settleParkedStep(deps, ctx, step)) summary.finished += 1;
+    } catch (err) {
+      reportJobError(deps, err, `dispatch-messages: step ${step.id}`);
+    }
   }
   return summary;
 }
@@ -145,7 +152,7 @@ async function decideAgain(
     at,
   );
   if (!built) return { state: NO_CUSTOMER, toE164: row.toE164 };
-  const state = textStateFor(built.req);
+  const state = textStateFor(built);
   if (state.status === 'queued' && built.toE164 === null) {
     return { state: { status: 'blocked', blockRule: 'contact', blockReason: 'No mobile number on file.' }, toE164: null };
   }

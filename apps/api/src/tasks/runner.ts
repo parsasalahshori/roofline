@@ -60,7 +60,10 @@ export type StepOutcome = {
  *   What it commits stays committed, whatever happens to the run after.
  * - **It may run more than once for one step** (a retry after a throw, a delivery after a crash,
  *   a person's retry). It uses the step's idempotency key (or the step id) and what it committed
- *   earlier, so a retry never repeats an outside effect such as texting someone twice.
+ *   earlier, so a retry never repeats an outside effect such as texting someone twice. Only an
+ *   outside call that definitely did not take effect may be tried again (for texts, the provider's
+ *   `SmsRefusedError`); one that failed without saying (a timeout, a dropped connection) may have
+ *   taken effect, so it is recorded as unknown and is never repeated by a retry.
  * - **Its outcome is saved only if the step is still this run's.** A run that outlived its lease
  *   may find a newer run has the step; its outcome is then dropped. A handler should finish well
  *   within `LEASE_MS`.

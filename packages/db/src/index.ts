@@ -45,7 +45,7 @@ export {
   isOptedOut,
   lockNextDueText,
   lockRecipient,
-  markTextNotTaken,
+  markTextFailed,
   markTextSent,
   markUnconfirmedTexts,
   type MessageRow,

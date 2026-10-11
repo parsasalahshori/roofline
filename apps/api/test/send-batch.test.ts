@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { companies, customers, insertStepText, messages, properties, type StepRow, withTenant } from '@roofline/db';
-import { FakeSmsAdapter } from '@roofline/send-gate';
+import { FakeSmsAdapter, SmsRefusedError } from '@roofline/send-gate';
 import { buildGateRequest } from '../src/messaging/gate-request.ts';
 import { sendSmsBatch } from '../src/messaging/send-batch.ts';
 import { runStep } from '../src/tasks/runner.ts';
@@ -10,6 +10,8 @@ import { makeTestApp, type TestApp } from './helpers.ts';
 import {
   addSmsCustomers,
   approvedBatch,
+  ARCHIVED,
+  gate,
   BATCH_AT,
   BRIEF_FIVE,
   DAY,
@@ -24,6 +26,7 @@ import {
   NOT_TAKEN,
   OPTED_OUT,
   rowFor,
+  ScriptedSmsAdapter,
   sentTo,
   stepMessages,
   UNCONFIRMED,
@@ -151,6 +154,116 @@ describe('send_sms_batch', () => {
     expect(rowFor(await stepMessages(t, 'a', stepId), c1)).toMatchObject({ status: 'failed', retryable: true });
     expect(t.sms.sent).toEqual([]);
     expect((await dbTask(t, 'a', taskId)).status).toBe('needs_attention');
+  });
+
+  test('a send whose outcome is unknown (a timeout, not a refusal) is never resent: failed, not retryable, and no retry', async () => {
+    const { taskId, stepId, c1 } = await briefBatch();
+    t.sms.failUnknownNext(1);
+
+    await runStep(t.deps, idOf('a'), stepId);
+
+    expect(rowFor(await stepMessages(t, 'a', stepId), c1)).toMatchObject({ status: 'failed', retryable: false, blockReason: UNCONFIRMED });
+    expect(t.sms.sent).toEqual([]);
+    // Not thrown: there is nothing a retry may do for it. c5 still waits, so the step is parked.
+    expect(await stepRow(taskId)).toMatchObject({
+      status: 'running',
+      attempts: 1,
+      result: { sent: 0, scheduled: 1, failed: 1, blocked: { consent: 1, contact: 2 } },
+    });
+    expect(await sendSmsBatch(t.deps, agentCtx(idOf('a')), await stepRow(taskId))).toMatchObject({ status: 'running' });
+    expect(t.sms.sent).toEqual([]);
+  });
+
+  test('a refused text the run did not reach itself still makes it throw, and the next run sends it', async () => {
+    t.clock.set(DAYTIME);
+    const [ann, ben] = await addSmsCustomers(t, 'a', [
+      { firstName: 'Ann', phone: '+14025550111', consent: 'attested' },
+      { firstName: 'Ben', phone: '+14025550112', consent: 'attested' },
+    ]);
+    const { taskId, stepId } = await approvedBatch(t, actors, [ann!, ben!]);
+    // Ben's text was refused by the provider in some other run (or by the dispatcher).
+    await inCompany(t, idOf('a'), (tx) =>
+      tx.insert(messages).values({
+        companyId: idOf('a'),
+        customerId: ben!,
+        stepId,
+        channel: 'sms',
+        direction: 'out',
+        purpose: 'marketing',
+        body: 'refused earlier',
+        status: 'failed',
+        retryable: true,
+        blockReason: NOT_TAKEN,
+      }),
+    );
+    const step = await stepRow(taskId);
+    const ctx = agentCtx(idOf('a'));
+    // A run that only covers Ann (as if it passed Ben while his text was still on its way).
+    const onlyAnn = { ...step, payload: { ...step.payload, customerIds: [ann!] } };
+    await expect(sendSmsBatch(t.deps, ctx, onlyAnn)).rejects.toThrow();
+    expect(sentTo(t.sms.sent)).toEqual(['+14025550111']);
+
+    expect(await sendSmsBatch(t.deps, ctx, step)).toEqual({ status: 'done', result: { sent: 2, scheduled: 0, failed: 0, blocked: {} } });
+    expect(sentTo(t.sms.sent)).toEqual(['+14025550111', '+14025550112']);
+  });
+
+  test('two runs: B passes X while A is sending it, A\'s send is refused, B must not finish the step; the retry texts X once', async () => {
+    t.clock.set(DAYTIME);
+    const [x, y] = await addSmsCustomers(t, 'a', [
+      { firstName: 'Xia', phone: '+14025550121', consent: 'attested' },
+      { firstName: 'Yan', phone: '+14025550122', consent: 'attested' },
+    ]);
+    const { taskId, stepId } = await approvedBatch(t, actors, [x!, y!]);
+    const sms = new ScriptedSmsAdapter();
+    const deps = { ...t.deps, sms };
+    const ctx = agentCtx(idOf('a'));
+    const step = await stepRow(taskId);
+    const [xEntered, xRelease, yEntered, yRelease] = [gate(), gate(), gate(), gate()];
+    sms.on('+14025550121', async () => {
+      xEntered.open();
+      await xRelease.opened;
+      throw new SmsRefusedError('refused');
+    });
+    sms.on('+14025550122', async () => {
+      yEntered.open();
+      await yRelease.opened;
+    });
+    const settle = (p: Promise<unknown>) => p.then((v) => ({ ok: v }), (e: unknown) => ({ threw: (e as Error).message }));
+
+    const runA = settle(sendSmsBatch(deps, ctx, step)); // claims X and waits in the provider
+    await xEntered.opened;
+    const runB = settle(sendSmsBatch(deps, ctx, step)); // X is A's; claims Y and waits
+    await yEntered.opened;
+    xRelease.open(); // A's send of X is refused; A skips Y (B's) and throws
+    expect(await runA).toHaveProperty('threw');
+    yRelease.open(); // B sends Y, then finds X refused: it throws too, rather than finish without X
+    expect(await runB).toHaveProperty('threw');
+    expect(rowFor(await stepMessages(t, 'a', stepId), x!)).toMatchObject({ status: 'failed', retryable: true, blockReason: NOT_TAKEN });
+
+    expect(await sendSmsBatch(deps, ctx, step)).toEqual({ status: 'done', result: { sent: 2, scheduled: 0, failed: 0, blocked: {} } });
+    expect(sentTo(sms.sent)).toEqual(['+14025550121', '+14025550122']);
+  });
+
+  test('an archived customer is not texted (contact: "This customer is archived."), after the billing and registration rules', async () => {
+    t.clock.set(DAYTIME);
+    const [ann, ben] = await addSmsCustomers(t, 'a', [
+      { firstName: 'Ann', phone: '+14025550111', consent: 'attested' },
+      { firstName: 'Ben', phone: '+14025550112', consent: 'attested' },
+    ]);
+    await inCompany(t, idOf('a'), (tx) => tx.update(customers).set({ archivedAt: DAYTIME }).where(eq(customers.id, ann!)));
+    const { stepId } = await approvedBatch(t, actors, [ann!, ben!]);
+    await t.queue.drain(t.deps);
+    let rows = await stepMessages(t, 'a', stepId);
+    expect(rowFor(rows, ann!)).toMatchObject({ status: 'blocked', blockRule: 'contact', blockReason: ARCHIVED });
+    expect(rowFor(rows, ben!)).toMatchObject({ status: 'sent' });
+    expect(sentTo(t.sms.sent)).toEqual(['+14025550112']);
+
+    // With texting not registered, the registration rule (which comes first) is the one reported.
+    await t.deps.pools.system.$client.query('delete from texting_registrations where company_id = $1', [idOf('a')]);
+    const second = await approvedBatch(t, actors, [ann!]);
+    await t.queue.drain(t.deps);
+    rows = await stepMessages(t, 'a', second.stepId);
+    expect(rowFor(rows, ann!)).toMatchObject({ status: 'blocked', blockRule: 'registration' });
   });
 
   test('a batch where nothing has to wait finishes the step and the task, with the minutes saved', async () => {
@@ -366,6 +479,7 @@ describe('buildGateRequest', () => {
     const built = await build(nina!);
     expect(built).toEqual({
       toE164: '+14025550101',
+      archived: false,
       req: {
         now: BATCH_AT,
         company: { name: 'Acme Roofing', timezone: 'America/Chicago', status: 'trial', campaignStatus: 'approved', marketingCapPer7d: 2 },
@@ -407,6 +521,48 @@ describe('buildGateRequest', () => {
     await home(1, 'FL', 'America/New_York', new Date(BATCH_AT.getTime() - HOUR));
     await home(2, 'CO', 'America/Denver', new Date(BATCH_AT.getTime() - DAY));
     expect((await build(id!))!.req.recipient).toMatchObject({ timezone: 'America/New_York', state: 'FL' });
+  });
+
+  test('an archived home is not where they live: the latest home still in use wins; with none, zone and state are null', async () => {
+    const [id] = await addSmsCustomers(t, 'a', [{ firstName: 'Ann', phone: '+14025550111', consent: 'attested' }]);
+    const home = (n: number, state: string, timezone: string, updatedAt: Date, archivedAt: Date | null) =>
+      inCompany(t, idOf('a'), async (tx) => {
+        const [row] = await tx
+          .insert(properties)
+          .values({
+            companyId: idOf('a'),
+            customerId: id!,
+            addressLine: `${n} Cedar Ct`,
+            city: 'Somewhere',
+            state,
+            zip: '00000',
+            addressKey: `${n} cedar ct|00000`,
+            timezone,
+            updatedAt,
+            archivedAt,
+          })
+          .returning({ id: properties.id });
+        return row!.id;
+      });
+    // They moved from Nebraska to Florida; archiving the old home touched it last.
+    await home(1, 'FL', 'America/New_York', new Date(BATCH_AT.getTime() - DAY), null);
+    await home(2, 'NE', 'America/Chicago', new Date(BATCH_AT.getTime() - HOUR), BATCH_AT);
+    expect((await build(id!))!.req.recipient).toMatchObject({ timezone: 'America/New_York', state: 'FL' });
+
+    // At 20:30 Chicago the Florida rules (20:00 end) hold the text for the morning.
+    const { stepId } = await approvedBatch(t, actors, [id!]);
+    await t.queue.drain(t.deps);
+    expect(rowFor(await stepMessages(t, 'a', stepId), id!)).toMatchObject({ status: 'scheduled', scheduledFor: NEXT_MORNING_NY });
+
+    await inCompany(t, idOf('a'), (tx) => tx.update(properties).set({ archivedAt: BATCH_AT }).where(eq(properties.customerId, id!)));
+    expect((await build(id!))!.req.recipient).toMatchObject({ timezone: null, state: null });
+  });
+
+  test('an archived customer is marked archived for the gate', async () => {
+    const [ann] = await addSmsCustomers(t, 'a', [{ firstName: 'Ann', phone: '+14025550111', consent: 'attested' }]);
+    expect((await build(ann!))!.archived).toBe(false);
+    await inCompany(t, idOf('a'), (tx) => tx.update(customers).set({ archivedAt: BATCH_AT }).where(eq(customers.id, ann!)));
+    expect((await build(ann!))!.archived).toBe(true);
   });
 
   test('opted out means an opt-out row for that number, in this company', async () => {

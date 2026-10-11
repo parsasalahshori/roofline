@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import pg from 'pg';
+import { beforeEach, describe, expect, inject, test } from 'vitest';
 import { customers, messages, optOuts, properties } from '@roofline/db';
 import { companiesWithDueMessages, companiesWithParkedSteps } from '@roofline/db/system';
 import { FakeSmsAdapter } from '@roofline/send-gate';
@@ -11,6 +12,7 @@ import { makeTestApp, type TestApp } from './helpers.ts';
 import {
   addSmsCustomers,
   approvedBatch,
+  ARCHIVED,
   BATCH_AT,
   BRIEF_FIVE,
   HeldSmsAdapter,
@@ -123,6 +125,11 @@ describe('dispatchDueMessages', () => {
       { rule: 'consent', reason: NO_CONSENT },
     ],
     [
+      'the office archived c5',
+      (c5) => inCompany(t, idOf('a'), (tx) => tx.update(customers).set({ archivedAt: BATCH_AT }).where(eq(customers.id, c5))),
+      { rule: 'contact', reason: ARCHIVED },
+    ],
+    [
       "the company's billing lapsed",
       () => t.deps.pools.system.$client.query(`update companies set status = 'past_due' where id = $1`, [idOf('a')]),
       { rule: 'billing', reason: BILLING },
@@ -220,6 +227,60 @@ describe('dispatchDueMessages', () => {
     expect(sentTo(t.sms.sent)).toEqual(['+13055550105', '+14025550101']);
     expect(await stepOf(taskId)).toMatchObject({ status: 'done', result: { sent: 2, scheduled: 0, failed: 0, blocked: { consent: 1, contact: 2 } } });
     expect((await dbTask(t, 'a', taskId)).status).toBe('done');
+  });
+
+  test('a send whose outcome is unknown at dispatch is never resent: failed, not retryable; the step is done', async () => {
+    const { taskId, stepId, c5 } = await parkedBatch();
+    t.sms.failUnknownNext(1);
+
+    await dispatchAt(MORNING);
+
+    expect(rowFor(await stepMessages(t, 'a', stepId), c5)).toMatchObject({ status: 'failed', retryable: false, blockReason: UNCONFIRMED });
+    expect(await stepOf(taskId)).toMatchObject({
+      status: 'done',
+      errorPlain: null,
+      result: { sent: 1, scheduled: 0, failed: 1, blocked: { consent: 1, contact: 2 } },
+    });
+    expect((await dbTask(t, 'a', taskId)).status).toBe('done');
+    await dispatchAt(at(MORNING, 10 * MINUTE));
+    expect(t.sms.sent).toHaveLength(1);
+  });
+
+  test('one parked step that cannot be settled does not stop the others; it is logged and tried again next time', async () => {
+    const first = await parkedBatch();
+    t.clock.advance(MINUTE); // so the second batch is the younger one, settled after the first
+    const [ann] = await addSmsCustomers(t, 'a', [
+      { firstName: 'Ann', phone: '+13055550111', consent: 'attested', state: 'FL', timezone: 'America/New_York' },
+    ]);
+    const second = await approvedBatch(t, actors, [ann!]);
+    await t.queue.drain(t.deps);
+    // Both batches' waiting texts are dealt with some other way, so both steps are ready to finish.
+    await inCompany(t, idOf('a'), (tx) =>
+      tx.update(messages).set({ status: 'blocked', blockRule: 'contact', blockReason: OPTED_OUT }).where(eq(messages.status, 'scheduled')),
+    );
+    // The first step's row refuses every change (standing in for a fault on that one step).
+    const owner = new pg.Client({ connectionString: inject('dbUrls').owner });
+    await owner.connect();
+    try {
+      await owner.query(`create function test_refuse_step() returns trigger language plpgsql as $$
+        begin raise exception 'this step is broken'; end $$`);
+      await owner.query(`create trigger test_refuse_step before update on agent_task_steps
+        for each row when (old.id = '${first.stepId}') execute function test_refuse_step()`);
+
+      await dispatchAt(at(BATCH_AT, 2 * MINUTE));
+
+      expect(await stepOf(first.taskId)).toMatchObject({ status: 'running' });
+      expect((await dbSteps(t, 'a', second.taskId))[0]).toMatchObject({ status: 'done' });
+      expect((await dbTask(t, 'a', second.taskId)).status).toBe('done');
+      expect(t.logged.map((l) => l.where)).toEqual([`dispatch-messages: step ${first.stepId}`]);
+    } finally {
+      await owner.query('drop trigger if exists test_refuse_step on agent_task_steps');
+      await owner.query('drop function if exists test_refuse_step()');
+      await owner.end();
+    }
+
+    await dispatchAt(at(BATCH_AT, 3 * MINUTE));
+    expect(await stepOf(first.taskId)).toMatchObject({ status: 'done' });
   });
 
   test('two dispatchers at once: every due text is sent exactly once and the step finishes once', async () => {

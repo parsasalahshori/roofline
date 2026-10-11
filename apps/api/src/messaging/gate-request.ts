@@ -40,6 +40,11 @@ export type BuiltGateRequest = {
   req: GateRequest;
   /** The number the text would go to, the same as `req.recipient.phoneE164`. */
   toE164: string | null;
+  /**
+   * The customer is archived. The gate itself does not know about archiving, so the caller blocks
+   * the text at the contact rule (outbound.ts `textStateFor`).
+   */
+  archived: boolean;
 };
 
 /** The customer's primary number, else their first, else null. */
@@ -53,8 +58,9 @@ function textingNumber(phones: readonly CustomerPhone[]): string | null {
  * - **company:** name, zone and billing status, the registration's campaign status (`none` without
  *   a registration) and the weekly cap from the settings;
  * - **recipient:** the primary number (else the first, else none), consent, do-not-contact, whether
- *   that number is on the opt-out list, and the zone and state of their most recently updated home
- *   (null without one: the gate then uses the company's zone and the standard hours);
+ *   that number is on the opt-out list, whether they are archived (`archived`), and the zone and
+ *   state of their most recently updated home that is not archived (null without one: the gate then
+ *   uses the company's zone and the standard hours);
  * - **message:** the body rendered with their first name and the company name, as it would be sent
  *   (or as given, when it is already rendered);
  * - **history:** whether a text with this dedupe key already went out (or is going out) from any
@@ -91,6 +97,7 @@ export async function buildGateRequest(
 
   return {
     toE164: phoneE164,
+    archived: recipient.archived,
     req: {
       now,
       company: {

@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, lte, notInArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, lte, notInArray, sql } from 'drizzle-orm';
 import type { CampaignStatus, CompanyStatus, ConsentStatus, GateRule, MessagePurpose, MessageStatus } from '@roofline/shared';
 import {
   companies,
@@ -81,12 +81,18 @@ export type TextingRecipientFacts = {
   phones: CustomerPhone[];
   consent: ConsentStatus;
   doNotContact: boolean;
-  /** From the customer's most recently updated property; null when they have none (or it has none). */
+  /** The customer was archived: they are no longer someone the company texts. */
+  archived: boolean;
+  /**
+   * From the customer's most recently updated property that is still in use (not archived); null
+   * when they have none (or it has none). An archived home is somewhere they no longer live, and
+   * archiving it touches its `updated_at`, so it is never the one used.
+   */
   timezone: string | null;
   state: string | null;
 };
 
-/** One customer of the company, with their most recently updated property's zone and state. Null when not in this company. */
+/** One customer of the company, with their latest home's zone and state. Null when not in this company. */
 export async function textingRecipientFacts(tx: Tx, ctx: TenantContext, customerId: string): Promise<TextingRecipientFacts | null> {
   const [customer] = await tx
     .select({
@@ -94,6 +100,7 @@ export async function textingRecipientFacts(tx: Tx, ctx: TenantContext, customer
       phones: customers.phones,
       consent: customers.smsConsentStatus,
       doNotContact: customers.doNotContact,
+      archivedAt: customers.archivedAt,
     })
     .from(customers)
     .where(and(eq(customers.companyId, ctx.companyId), eq(customers.id, customerId)))
@@ -102,7 +109,7 @@ export async function textingRecipientFacts(tx: Tx, ctx: TenantContext, customer
   const [home] = await tx
     .select({ timezone: properties.timezone, state: properties.state })
     .from(properties)
-    .where(and(eq(properties.companyId, ctx.companyId), eq(properties.customerId, customerId)))
+    .where(and(eq(properties.companyId, ctx.companyId), eq(properties.customerId, customerId), isNull(properties.archivedAt)))
     .orderBy(desc(properties.updatedAt), desc(properties.createdAt), desc(properties.id))
     .limit(1);
   return {
@@ -110,6 +117,7 @@ export async function textingRecipientFacts(tx: Tx, ctx: TenantContext, customer
     phones: Array.isArray(customer.phones) ? customer.phones : [],
     consent: customer.consent,
     doNotContact: customer.doNotContact,
+    archived: customer.archivedAt !== null,
     timezone: home?.timezone ?? null,
     state: home?.state ?? null,
   };
@@ -367,11 +375,21 @@ export async function markTextSent(
   return rows.length > 0;
 }
 
-/** The provider refused the text, so it never went out: `failed`, retryable, with the reason. Only from `queued`. */
-export async function markTextNotTaken(tx: Tx, ctx: TenantContext, messageId: string, reason: string, now: Date): Promise<boolean> {
+/**
+ * The send did not end in a `sent`: `failed`, with the reason, and `retryable` only when the
+ * provider refused it (it never went out). When the outcome is unknown (a timeout), the text may
+ * have gone out, so it is not retryable and is never sent again. Only from `queued`.
+ */
+export async function markTextFailed(
+  tx: Tx,
+  ctx: TenantContext,
+  messageId: string,
+  failure: { reason: string; retryable: boolean },
+  now: Date,
+): Promise<boolean> {
   const rows = await tx
     .update(messages)
-    .set({ status: 'failed', retryable: true, blockRule: null, blockReason: reason, updatedAt: now })
+    .set({ status: 'failed', retryable: failure.retryable, blockRule: null, blockReason: failure.reason, updatedAt: now })
     .where(and(eq(messages.companyId, ctx.companyId), eq(messages.id, messageId), eq(messages.status, 'queued')))
     .returning({ id: messages.id });
   return rows.length > 0;
