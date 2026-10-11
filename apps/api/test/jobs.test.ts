@@ -391,6 +391,43 @@ describe('changing a job', () => {
     expect(tooLong.body).toEqual({ error: REASON_TOO_LONG, field: 'lostReason' });
   });
 
+  test('moving a job away from lost clears its reason in the same update, and the audit shows it', async () => {
+    const { job } = await aJob({ stage: 'lost', lostReason: 'Went with a cheaper roofer' });
+    t.clock.set(new Date('2026-10-14T09:30:00.000Z'));
+    const res = await (await who.as('owner')).patch(`/api/jobs/${job.id}`).send({ stage: 'inspection' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ stage: 'inspection', lostReason: null });
+    expect((await dbJob(t, A(), job.id as string)).lostReason).toBeNull();
+    const [row] = await dbAudit(t, A(), 'job.update');
+    expect(row!.before).toEqual({ stage: 'lost', stageChangedAt: '2026-10-12T15:00:00.000Z', lostReason: 'Went with a cheaper roofer' });
+    expect(row!.after).toEqual({ stage: 'inspection', stageChangedAt: '2026-10-14T09:30:00.000Z', lostReason: null });
+  });
+
+  test('a reason sent along with the move away from lost is cleared as well', async () => {
+    const { job } = await aJob({ stage: 'lost', lostReason: 'Went elsewhere' });
+    const res = await (await who.as('owner')).patch(`/api/jobs/${job.id}`).send({ stage: 'lead', lostReason: 'Still here' });
+    expect(res.status).toBe(200);
+    expect(res.body.lostReason).toBeNull();
+  });
+
+  test('the reason is kept when the job moves into lost, stays lost, or never was lost', async () => {
+    const { job } = await aJob({ lostReason: 'A note on a lead' });
+    const owner = await who.as('owner');
+    // Never lost: moving it on leaves the note alone.
+    expect((await owner.patch(`/api/jobs/${job.id}`).send({ stage: 'proposal' })).body.lostReason).toBe('A note on a lead');
+    // Into lost with a new reason.
+    const lost = await owner.patch(`/api/jobs/${job.id}`).send({ stage: 'lost', lostReason: 'Too expensive' });
+    expect(lost.body.lostReason).toBe('Too expensive');
+    // Staying lost (stage sent again, or only the reason edited) keeps it.
+    expect((await owner.patch(`/api/jobs/${job.id}`).send({ stage: 'lost' })).body.lostReason).toBe('Too expensive');
+    expect((await owner.patch(`/api/jobs/${job.id}`).send({ lostReason: 'Too expensive for now' })).body.lostReason).toBe(
+      'Too expensive for now',
+    );
+    // A lost job with no reason moves on without trouble.
+    const bare = await mustCreate(owner, '/api/jobs', { customerId: job.customerId, propertyId: job.propertyId, stage: 'lost' });
+    expect((await owner.patch(`/api/jobs/${bare.id}`).send({ stage: 'won' })).body).toMatchObject({ stage: 'won', lostReason: null });
+  });
+
   test('the value can be cleared with null', async () => {
     const { job } = await aJob({ valueCents: 500_000 });
     const res = await (await who.as('owner')).patch(`/api/jobs/${job.id}`).send({ valueCents: null });

@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import {
+  AddressHasJobsError,
   createProperty,
+  CustomerRequiredError,
   DuplicateAddressError,
   getProperty,
   type LngLat,
@@ -33,6 +35,8 @@ const ZIP_MESSAGE = 'Please enter a 5-digit ZIP code.';
 const LATLNG_MESSAGE = 'Please give both latitude and longitude.';
 const NO_CUSTOMER = "We couldn't find that customer.";
 const SAVED_MESSAGE = 'This address is already saved.';
+const PICK_CUSTOMER = 'Pick the customer for this address.';
+const HAS_JOBS_MESSAGE = 'This address already has jobs for a different customer.';
 
 const FIRST_YEAR = 1800;
 
@@ -156,8 +160,10 @@ function propertyBody(row: PropertyRow) {
 
 /** What the repository's refusals mean to the caller. */
 function refused(err: unknown): never {
-  if (err instanceof DuplicateAddressError) throw new AppError(409, SAVED_MESSAGE);
+  if (err instanceof DuplicateAddressError) throw new AppError(409, SAVED_MESSAGE, 'addressLine');
   if (err instanceof UnknownCustomerError) throw new AppError(400, NO_CUSTOMER, 'customerId');
+  if (err instanceof CustomerRequiredError) throw new AppError(400, PICK_CUSTOMER, 'customerId');
+  if (err instanceof AddressHasJobsError) throw new AppError(400, HAS_JOBS_MESSAGE, 'customerId');
   throw err;
 }
 
@@ -166,7 +172,9 @@ function refused(err: unknown): never {
  * - A company cannot save the same street address in the same ZIP twice, however it is written (409).
  * - Reps work with the addresses the visibility rule gives them (scope.ts); any other is a 404, and
  *   the repository applies that, so no route can forget it. A customer named in a body must be one
- *   the caller can see (400 on `customerId`).
+ *   the caller can see (400 on `customerId`). A rep must name one when adding an address, and cannot
+ *   clear it later; owner and office may leave an address with no customer.
+ * - An address cannot be given to a customer while it has live jobs for a different one (400).
  * - Every edit is audited (before and after) and added to the address's timeline.
  */
 export function propertyRoutes(deps: AppDeps): Router {

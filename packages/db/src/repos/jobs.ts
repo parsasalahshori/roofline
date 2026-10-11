@@ -272,7 +272,8 @@ export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, opt
  * - A different customer or address is checked like a new job's (`JobLinkError`); one the job
  *   already has is not checked again.
  * - A different stage sets `stage_changed_at` to `now` and adds "Moved to <Stage>". Sending the
- *   stage the job already has changes nothing.
+ *   stage the job already has changes nothing. Moving a job away from 'lost' clears its lost
+ *   reason in the same update (the audit after-image shows it), even if the patch names one.
  * - A different assignee (an active member, or null) adds "Assigned to <name>" or "Unassigned".
  *   A rep may only name themselves or null (`ForbiddenError`, checked before the job is looked up).
  * - Always writes the audit row: the fields the patch named, before and after. Value, source and
@@ -331,6 +332,11 @@ export async function updateJob(
   }
   if (patch.lostReason !== undefined) {
     set.lostReason = patch.lostReason;
+    touched.add('lostReason');
+  }
+  // A job that is no longer lost has no reason for being lost, whatever else the patch sent.
+  if (stageChanged && before.stage === 'lost') {
+    set.lostReason = null;
     touched.add('lostReason');
   }
 

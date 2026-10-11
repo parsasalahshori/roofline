@@ -41,7 +41,9 @@ export {
 } from './repos/jobs.ts';
 export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './repos/paging.ts';
 export {
+  AddressHasJobsError,
   createProperty,
+  CustomerRequiredError,
   DuplicateAddressError,
   getProperty,
   listProperties,

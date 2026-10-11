@@ -1,7 +1,7 @@
-import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { normalizeAddressKey } from '@roofline/shared';
 import { findPgError, isUniqueViolation } from '../errors.ts';
-import { companies, properties } from '../schema/index.ts';
+import { companies, jobs, properties } from '../schema/index.ts';
 import type { LngLat } from '../schema/columns.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
@@ -57,6 +57,22 @@ export class UnknownCustomerError extends Error {
   constructor() {
     super('That customer does not exist, or the member cannot see it.');
     this.name = 'UnknownCustomerError';
+  }
+}
+
+/** A rep saved or edited an address without a customer. Reps tie every address to a customer they can see. */
+export class CustomerRequiredError extends Error {
+  constructor() {
+    super('A rep must give a customer for the address.');
+    this.name = 'CustomerRequiredError';
+  }
+}
+
+/** The address has live (not archived) jobs for a customer other than the one it was being given to. */
+export class AddressHasJobsError extends Error {
+  constructor() {
+    super('That address already has jobs for a different customer.');
+    this.name = 'AddressHasJobsError';
   }
 }
 
@@ -163,7 +179,9 @@ export async function listProperties(
 // Writes
 
 /**
- * Adds an address. Throws `UnknownCustomerError` when `customerId` is not a customer the member can
+ * Adds an address. Throws `CustomerRequiredError` when a rep gives no customer (an address a rep
+ * saves with no customer would be out of their own sight: owner, office and system may leave it
+ * out), `UnknownCustomerError` when `customerId` is not a customer the member can
  * see, and `DuplicateAddressError` when the company already has this street address in this ZIP
  * (the key is `normalizeAddressKey`, so punctuation, case and spacing do not make a new address).
  * Writes the audit row and the "Address added" timeline line.
@@ -175,6 +193,7 @@ export async function createProperty(
   options: WriteOptions,
 ): Promise<PropertyRow> {
   const { now } = options;
+  if (ctx.role === 'rep' && input.customerId == null) throw new CustomerRequiredError();
   if (input.customerId != null && !(await getCustomer(tx, ctx, input.customerId))) throw new UnknownCustomerError();
   const timezone = input.timezone ?? (await companyTimezone(tx, ctx));
 
@@ -220,7 +239,10 @@ export async function createProperty(
 /**
  * Changes an address the member may see; null when they may not (or it does not exist). The row is
  * locked for the length of the transaction. A new `customerId` (other than the one it has) must be a
- * customer the member can see (`UnknownCustomerError`). A new street address or ZIP gives the
+ * customer the member can see (`UnknownCustomerError`), and the address may have no live job for any
+ * other customer (`AddressHasJobsError`; archived jobs do not count, and clearing the customer is
+ * always consistent with the jobs). A rep cannot clear the customer (`CustomerRequiredError`). A new
+ * street address or ZIP gives the
  * address a new key, which may clash with another address (`DuplicateAddressError`).
  * Always writes the audit row (the fields the patch named, before and after) and an "Address
  * details updated" line.
@@ -245,8 +267,17 @@ export async function updateProperty(
   const touched = new Set<AuditedField>();
 
   if (patch.customerId !== undefined) {
-    if (patch.customerId !== null && patch.customerId !== before.customerId && !(await getCustomer(tx, ctx, patch.customerId))) {
-      throw new UnknownCustomerError();
+    if (patch.customerId === null && ctx.role === 'rep') throw new CustomerRequiredError();
+    if (patch.customerId !== null && patch.customerId !== before.customerId) {
+      if (!(await getCustomer(tx, ctx, patch.customerId))) throw new UnknownCustomerError();
+      // Every live job at this address must be for the customer it is being given to. All of the
+      // company's jobs count, not only the ones this member may see.
+      const [other] = await tx
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(and(eq(jobs.propertyId, id), isNull(jobs.archivedAt), ne(jobs.customerId, patch.customerId)))
+        .limit(1);
+      if (other) throw new AddressHasJobsError();
     }
     set.customerId = patch.customerId;
     touched.add('customerId');

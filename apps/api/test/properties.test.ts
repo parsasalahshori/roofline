@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { companies, findPgError, properties } from '@roofline/db';
+import {
+  companies,
+  createProperty,
+  CustomerRequiredError,
+  findPgError,
+  properties,
+  type TenantContext,
+  updateProperty,
+  withTenant,
+} from '@roofline/db';
 import { Actors, addressFor, dbAudit, dbProperty, inCompany, mustCreate, NO_UUID, NOT_FOUND, timeline } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 
@@ -106,7 +115,7 @@ describe('adding an address', () => {
     for (const addressLine of ['12 Oak St', '12 oak st.', '  12   OAK   ST ', '12 Oak St,']) {
       const res = await owner.post('/api/properties').send({ ...full, addressLine, city: 'Elsewhere' });
       expect(res.status, addressLine).toBe(409);
-      expect(res.body, addressLine).toEqual({ error: SAVED });
+      expect(res.body, addressLine).toEqual({ error: SAVED, field: 'addressLine' });
     }
     expect((await owner.get('/api/properties')).body.total).toBe(1);
     expect(await dbAudit(t, A(), 'property.create')).toHaveLength(1);
@@ -121,7 +130,7 @@ describe('adding an address', () => {
       owner.post('/api/properties').send({ ...full, addressLine: ' 12 oak  st' }),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409]);
-    expect(results.filter((r) => r.status === 409).every((r) => r.body.error === SAVED)).toBe(true);
+    expect(results.filter((r) => r.status === 409).map((r) => r.body)).toEqual(Array(2).fill({ error: SAVED, field: 'addressLine' }));
     expect(await inCompany(t, A(), (tx) => tx.select().from(properties))).toHaveLength(1);
     expect(await dbAudit(t, A(), 'property.create')).toHaveLength(1);
   });
@@ -135,9 +144,11 @@ describe('adding an address', () => {
 
   test('an address a rep cannot see still counts as saved', async () => {
     await mustCreate(await who.as('owner'), '/api/properties', full);
-    const res = await (await who.as('rep')).post('/api/properties').send(full);
+    const rep = await who.as('rep');
+    const mine = await mustCreate(rep, '/api/customers', { displayName: 'Rep customer' });
+    const res = await rep.post('/api/properties').send({ ...full, customerId: mine.id });
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: SAVED });
+    expect(res.body).toEqual({ error: SAVED, field: 'addressLine' });
   });
 
   test('an archived address is still saved: it must be restored, not added again', async () => {
@@ -263,7 +274,7 @@ describe('changing an address', () => {
     const other = await mustCreate(owner, '/api/properties', { ...full, addressLine: '14 Oak St' });
     const clash = await owner.patch(`/api/properties/${other.id}`).send({ addressLine: '12 oak st.' });
     expect(clash.status).toBe(409);
-    expect(clash.body).toEqual({ error: SAVED });
+    expect(clash.body).toEqual({ error: SAVED, field: 'addressLine' });
     expect((await dbProperty(t, A(), other.id)).addressLine).toBe('14 Oak St');
 
     const zipClash = await owner.patch(`/api/properties/${other.id}`).send({ addressLine: '12 Oak St', zip: '68103' });
@@ -477,5 +488,166 @@ describe('the constraint names the repository relies on are the database\'s own'
       code: '23503',
       constraint: 'properties_company_customer_fk',
     });
+  });
+});
+
+describe('reps tie new addresses to a customer', () => {
+  const PICK = 'Pick the customer for this address.';
+
+  test.each<[string, Record<string, unknown>]>([
+    ['no customerId', {}],
+    ['a null customerId', { customerId: null }],
+  ])('a rep sending %s → 400 on customerId, and nothing is saved', async (_name, extra) => {
+    const res = await (await who.as('rep')).post('/api/properties').send({ ...full, ...extra });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: PICK, field: 'customerId' });
+    expect(await inCompany(t, A(), (tx) => tx.select().from(properties))).toEqual([]);
+    expect(await dbAudit(t, A(), 'property.create')).toEqual([]);
+  });
+
+  test('a rep with a customer they made can add the address and read it back', async () => {
+    const rep = await who.as('rep');
+    const mine = await mustCreate(rep, '/api/customers', { displayName: 'Rep customer' });
+    const res = await rep.post('/api/properties').send({ ...full, customerId: mine.id });
+    expect(res.status).toBe(201);
+    expect(res.body.customerId).toBe(mine.id);
+    expect((await rep.get(`/api/properties/${res.body.id}`)).status).toBe(200);
+  });
+
+  test('a rep must still name a customer they can see: someone else\'s is the usual 400', async () => {
+    const theirs = await mustCreate(await who.as('owner'), '/api/customers', { displayName: "Owner's customer" });
+    const res = await (await who.as('rep')).post('/api/properties').send({ ...full, customerId: theirs.id });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: NO_CUSTOMER, field: 'customerId' });
+  });
+
+  test('the owner and the office may still add an address with no customer', async () => {
+    for (const [n, member] of (['owner', 'office'] as const).entries()) {
+      const res = await (await who.as(member)).post('/api/properties').send(addressFor(n));
+      expect(res.status, member).toBe(201);
+      expect(res.body.customerId, member).toBeNull();
+    }
+  });
+
+  test('a rep cannot take the customer off an address; they can move it to another customer they can see', async () => {
+    const rep = await who.as('rep');
+    const first = await mustCreate(rep, '/api/customers', { displayName: 'First' });
+    const second = await mustCreate(rep, '/api/customers', { displayName: 'Second' });
+    const p = await mustCreate(rep, '/api/properties', { ...full, customerId: first.id });
+
+    const cleared = await rep.patch(`/api/properties/${p.id}`).send({ customerId: null });
+    expect(cleared.status).toBe(400);
+    expect(cleared.body).toEqual({ error: PICK, field: 'customerId' });
+    expect((await dbProperty(t, A(), p.id as string)).customerId).toBe(first.id);
+    expect(await dbAudit(t, A(), 'property.update')).toEqual([]);
+
+    const moved = await rep.patch(`/api/properties/${p.id}`).send({ customerId: second.id });
+    expect(moved.status).toBe(200);
+    expect(moved.body.customerId).toBe(second.id);
+    // The owner can still clear it.
+    const owner = await (await who.as('owner')).patch(`/api/properties/${p.id}`).send({ customerId: null });
+    expect(owner.status).toBe(200);
+  });
+
+  test('the repository holds the same rule for a rep, and not for the system', async () => {
+    const repCtx: TenantContext = { companyId: A(), userId: who.user('rep').userId, role: 'rep', canApproveSpend: false };
+    const options = { now: t.clock.now() };
+    await expect(withTenant(t.deps.pools, repCtx, (tx) => createProperty(tx, repCtx, full, options))).rejects.toBeInstanceOf(
+      CustomerRequiredError,
+    );
+    const mine = await mustCreate(await who.as('rep'), '/api/customers', { displayName: 'Rep customer' });
+    const made = await withTenant(t.deps.pools, repCtx, (tx) => createProperty(tx, repCtx, { ...full, customerId: mine.id }, options));
+    await expect(
+      withTenant(t.deps.pools, repCtx, (tx) => updateProperty(tx, repCtx, made.id, { customerId: null }, options)),
+    ).rejects.toBeInstanceOf(CustomerRequiredError);
+    const systemCtx: TenantContext = { ...repCtx, userId: null, role: 'system' };
+    const loose = await withTenant(t.deps.pools, systemCtx, (tx) => createProperty(tx, systemCtx, addressFor(5), options));
+    expect(loose.customerId).toBeNull();
+  });
+});
+
+describe('giving an address to a customer that has jobs there', () => {
+  const CONFLICT = 'This address already has jobs for a different customer.';
+
+  /** Two customers, and an address with no customer yet. */
+  async function setup() {
+    const owner = await who.as('owner');
+    const x = await mustCreate(owner, '/api/customers', { displayName: 'X' });
+    const y = await mustCreate(owner, '/api/customers', { displayName: 'Y' });
+    const p = await mustCreate(owner, '/api/properties', full);
+    return { owner, x, y, p };
+  }
+  const job = (owner: Awaited<ReturnType<typeof setup>>['owner'], customerId: unknown, propertyId: unknown, extra: Record<string, unknown> = {}) =>
+    mustCreate(owner, '/api/jobs', { customerId, propertyId, ...extra });
+
+  test('a live job for another customer → 400 on customerId, and nothing changes', async () => {
+    const { owner, x, y, p } = await setup();
+    await job(owner, x.id, p.id);
+    const res = await owner.patch(`/api/properties/${p.id}`).send({ customerId: y.id });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: CONFLICT, field: 'customerId' });
+    expect((await dbProperty(t, A(), p.id as string)).customerId).toBeNull();
+    expect(await dbAudit(t, A(), 'property.update')).toEqual([]);
+  });
+
+  test('from no customer to the one every job is for is fine', async () => {
+    const { owner, x, p } = await setup();
+    await job(owner, x.id, p.id);
+    await job(owner, x.id, p.id);
+    const res = await owner.patch(`/api/properties/${p.id}`).send({ customerId: x.id });
+    expect(res.status).toBe(200);
+    expect(res.body.customerId).toBe(x.id);
+  });
+
+  test('one job for the customer and one for another → neither customer can have the address', async () => {
+    const { owner, x, y, p } = await setup();
+    await job(owner, x.id, p.id);
+    await job(owner, y.id, p.id);
+    for (const customerId of [x.id, y.id]) {
+      const res = await owner.patch(`/api/properties/${p.id}`).send({ customerId });
+      expect(res.body).toEqual({ error: CONFLICT, field: 'customerId' });
+    }
+  });
+
+  test('an archived job does not count; restoring it makes it count again', async () => {
+    const { owner, x, y, p } = await setup();
+    const j = await job(owner, x.id, p.id);
+    await owner.post(`/api/jobs/${j.id}/archive`);
+    expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: y.id })).status).toBe(200);
+    // The job is now for X at Y's address; restoring it does not make that consistent, but it is
+    // a job-level rule (enforced when the job is made or changed), not this one.
+    await owner.post(`/api/jobs/${j.id}/unarchive`);
+    expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: x.id })).status).toBe(200);
+    expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: y.id })).body.field).toBe('customerId');
+  });
+
+  test('the same customer again, or clearing the customer, is always fine', async () => {
+    const { owner, x, p } = await setup();
+    await job(owner, x.id, p.id);
+    await owner.patch(`/api/properties/${p.id}`).send({ customerId: x.id });
+    expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: x.id })).status).toBe(200);
+    expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: null })).status).toBe(200);
+  });
+
+  test('an address with no jobs, and jobs at other addresses, never block', async () => {
+    const { owner, x, y, p } = await setup();
+    const other = await mustCreate(owner, '/api/properties', addressFor(3));
+    await job(owner, x.id, other.id);
+    expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: y.id })).status).toBe(200);
+  });
+
+  test("jobs a rep can't see count too", async () => {
+    const owner = await who.as('owner');
+    const rep = await who.as('rep');
+    const mine = await mustCreate(rep, '/api/customers', { displayName: 'Rep customer' });
+    const hiddenCustomer = await mustCreate(owner, '/api/customers', { displayName: 'Hidden' });
+    const p = await mustCreate(owner, '/api/properties', full);
+    // An unassigned lead is the rep's to see; the job for the other customer is another rep's.
+    await job(owner, mine.id, p.id);
+    await job(owner, hiddenCustomer.id, p.id, { assignedUserId: who.user('otherRep').userId });
+    expect((await rep.get(`/api/properties/${p.id}`)).status).toBe(200);
+    const res = await rep.patch(`/api/properties/${p.id}`).send({ customerId: mine.id });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: CONFLICT, field: 'customerId' });
   });
 });
