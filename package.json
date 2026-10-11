@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "lint": "eslint .",
+    "lint:css": "stylelint \"packages/ui/src/**/*.css\" \"apps/web/src/**/*.css\" --allow-empty-input",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "db:up": "docker compose up -d --wait db",
@@ -23,6 +24,8 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.18.0",
     "eslint": "^10.12.0",
+    "postcss-value-parser": "^4.2.0",
+    "stylelint": "^17.16.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.71.1",

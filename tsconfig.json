@@ -4,6 +4,7 @@
     { "path": "packages/shared" },
     { "path": "packages/db" },
     { "path": "packages/send-gate" },
+    { "path": "packages/ui" },
     { "path": "apps/api" },
     { "path": "apps/worker" }
   ]

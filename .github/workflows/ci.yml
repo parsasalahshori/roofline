@@ -27,6 +27,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run lint:css
       - run: npm run typecheck
       # Vitest runs the packages and apps. The db and api suites start a PostGIS container with
       # Testcontainers, which uses the Docker that ubuntu-latest runners already have.
