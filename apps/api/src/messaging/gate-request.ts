@@ -45,6 +45,12 @@ export type BuiltGateRequest = {
    * the text at the contact rule (outbound.ts `textStateFor`).
    */
   archived: boolean;
+  /**
+   * The Twilio subaccount and messaging service the company's texts go out on (from the company
+   * facts); null when the company has no texting account yet. Kept outside `req`: the gate does not
+   * decide on it.
+   */
+  sender: { accountSid: string; messagingServiceSid: string } | null;
 };
 
 /** The customer's primary number, else their first, else null. */
@@ -98,6 +104,7 @@ export async function buildGateRequest(
   return {
     toE164: phoneE164,
     archived: recipient.archived,
+    sender: company.sender,
     req: {
       now,
       company: {

@@ -45,12 +45,17 @@ export type TextingCompanyFacts = {
   /** `none` when the company has no registration row. */
   campaignStatus: CampaignStatus;
   marketingCapPer7d: number;
+  /**
+   * The Twilio subaccount and messaging service the company's texts go out on. Null unless both
+   * are set on its texting registration.
+   */
+  sender: { accountSid: string; messagingServiceSid: string } | null;
 };
 
 /**
  * The context's company: its name, zone and billing status, its texting registration (the
- * `campaign_status` column only: app_tenant may read just some of that table's columns) and its
- * weekly cap. Null when the company cannot be seen.
+ * `campaign_status` column and the subaccount and messaging service SIDs; app_tenant may read just
+ * those columns of that table) and its weekly cap. Null when the company cannot be seen.
  */
 export async function textingCompanyFacts(tx: Tx, ctx: TenantContext): Promise<TextingCompanyFacts | null> {
   const [row] = await tx
@@ -59,6 +64,8 @@ export async function textingCompanyFacts(tx: Tx, ctx: TenantContext): Promise<T
       timezone: companies.timezone,
       status: companies.status,
       campaignStatus: textingRegistrations.campaignStatus,
+      subaccountSid: textingRegistrations.subaccountSid,
+      messagingServiceSid: textingRegistrations.messagingServiceSid,
       marketingCapPer7d: companySettings.marketingCapPer7d,
     })
     .from(companies)
@@ -73,6 +80,10 @@ export async function textingCompanyFacts(tx: Tx, ctx: TenantContext): Promise<T
     status: row.status,
     campaignStatus: row.campaignStatus ?? 'none',
     marketingCapPer7d: row.marketingCapPer7d ?? DEFAULT_MARKETING_CAP,
+    sender:
+      row.subaccountSid && row.messagingServiceSid
+        ? { accountSid: row.subaccountSid, messagingServiceSid: row.messagingServiceSid }
+        : null,
   };
 }
 

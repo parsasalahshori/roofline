@@ -145,6 +145,6 @@ function decideOne(deps: AppDeps, ctx: TenantContext, stepId: string, text: Batc
       : await insertStepText(tx, ctx, stepId, row, state, now);
 
     if (messageId === null || state.status !== 'queued') return null;
-    return { messageId, to: built.toE164!, body: row.body };
+    return { messageId, to: built.toE164!, body: row.body, sender: built.sender };
   });
 }
