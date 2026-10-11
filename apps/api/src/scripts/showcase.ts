@@ -145,9 +145,9 @@ export function buildShowcaseData(): ShowcaseData {
   const customers: ShowcaseCustomer[] = [];
 
   for (let i = 0; i < CUSTOMER_COUNT; i += 1) {
-    let firstName = '';
-    let lastName = '';
-    let displayName = '';
+    let firstName: string;
+    let lastName: string;
+    let displayName: string;
     do {
       firstName = pick(FIRST_NAMES);
       lastName = pick(LAST_NAMES);
@@ -158,9 +158,9 @@ export function buildShowcaseData(): ShowcaseData {
     const propertyCount = i % SECOND_ADDRESS_EVERY === 0 ? 2 : 1;
     const properties: ShowcaseProperty[] = [];
     for (let p = 0; p < propertyCount; p += 1) {
-      let addressLine = '';
-      let zip = '';
-      let addressKey = '';
+      let addressLine: string;
+      let zip: string;
+      let addressKey: string;
       do {
         addressLine = `${100 + Math.floor(rand() * 9800)} ${pick(STREETS)}`;
         zip = pick(ZIPS);
