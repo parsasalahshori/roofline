@@ -60,3 +60,4 @@ Sibling 3 G4 part A (wf_914b4dad-c00, contact 45): T13 dc76a48 (CI 38184832879),
 Ruling AM: an import treats a customer as opted out when ANY of their phones is in opt_outs (brief said only the matching phone) — cost if wrong: a customer with one opted-out number gets no import texts on their other number.
 Minors (deferred): T13 sms.ts private segmentsOf (send-gate does not export countSegments); no tests for a 4xx with unreadable body, 21211/21612 codes, or recordCarrierOptOut directly.
 T24 running on sibling 3 (wf_67c1a16b-737, contact 47). Next for sibling 3: G7 (T32, T33, T34).
+Sibling 3: G7 blocked on T29/T30 (G5); G5 (T25, T29, T30) reassigned to sibling 3 from f3-setup 7b988eb (contacts 48-50, ops-sib3c); G7 after G5.
