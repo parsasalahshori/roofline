@@ -151,3 +151,6 @@ export type CurrentWeather = {
   isDaytime: boolean;
   updatedAt: string;
 };
+
+/** A box on the map in degrees: west, south, east, north. The map and the pins query share it. */
+export type Bbox = [west: number, south: number, east: number, north: number];

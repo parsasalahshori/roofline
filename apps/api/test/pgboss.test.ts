@@ -192,11 +192,25 @@ describe('the worker', () => {
     await withWorker(async (worker) => {
       const schedules = await worker.getSchedules();
       expect(schedules.map((s) => [s.name, s.cron]).sort()).toEqual([
+        ['bill-monthly-fees', '0 9 1 * *'],
         ['dispatch-messages', '* * * * *'],
+        ['end-trials', '*/5 * * * *'],
         ['expire-drafts', '*/5 * * * *'],
+        ['poll-texting', '0 * * * *'],
+        ['provision-texting', '* * * * *'],
+        ['report-usage', '* * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);
     });
-    expect(SCHEDULES.map((s) => s.name)).toEqual(['expire-drafts', 'sweep-queued', 'dispatch-messages']);
+    expect(SCHEDULES.map((s) => s.name)).toEqual([
+      'expire-drafts',
+      'sweep-queued',
+      'dispatch-messages',
+      'end-trials',
+      'report-usage',
+      'provision-texting',
+      'poll-texting',
+      'bill-monthly-fees',
+    ]);
   });
 });

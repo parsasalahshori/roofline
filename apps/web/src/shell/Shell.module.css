@@ -1,11 +1,28 @@
 /*
- * Layers, bottom to top: the map, an open window (20), the top bar (25), the dock (30). The Sheet (40)
- * and toasts (50) come from the kit. Nothing here sets a z-index, transform, filter or opacity on the
- * shell itself or on the outlet, so the window and the dock compare in the page's own stacking context.
- * A floating window is kept between the top bar and the dock (the last rule), so neither one covers it.
+ * Layers, bottom to top: the map, an open window (20), the top bar (25), the dock on a desktop or the
+ * bottom tabs on a phone (30). The Sheet (40) and toasts (50) come from the kit. Nothing here sets a
+ * z-index, transform, filter or opacity on the shell, the windows wrapper or the outlet, so the window
+ * and the dock compare in the page's own stacking context. A floating window or a phone page is kept
+ * between the top bar and the dock or the tabs (the last rules), so neither one covers it.
+ *
+ * The inset variables on .shell are the space the chrome takes: --shell-top-inset is the top bar and
+ * --shell-bottom-inset is the dock (desktop) or the tab bar (phone). Windows read them, so a window
+ * never sits under the chrome. Change the chrome's height here and the windows follow.
  */
 .shell {
+  --shell-top-inset: 65px;
+  --shell-bottom-inset: 94px;
+  max-width: 100vw;
+  overflow-x: clip;
   color: var(--text);
+}
+
+/* Phone: the compact top bar is 57px tall and the tab bar is 48px plus the device's bottom safe area */
+@media (max-width: 767.98px) {
+  .shell {
+    --shell-top-inset: 57px;
+    --shell-bottom-inset: calc(48px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 .map {
@@ -21,15 +38,28 @@
   z-index: 25;
 }
 
+/* The outlet's wrapper: it only keeps the page inside the screen width */
+.windows {
+  max-width: 100vw;
+}
+
 /*
  * Desktop only: the end slot (weather, search, account) is never narrower than its content, so it
  * cannot spill left over the middle. The company name on the left takes the squeeze and ends in an
  * ellipsis. When both sides fit in equal columns the middle stays centered, as the kit intends.
- * `.topBar > header` is 0,1,1 and beats the kit's 0,1,0. The phone bar belongs to Task 17.
+ * `.topBar > header` is 0,1,1 and beats the kit's 0,1,0.
  */
 @media (min-width: 768px) {
   .topBar > header {
     grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  }
+}
+
+/* Phone: the compact bar is 57px tall with a narrower side padding, so its three slots fit 375px */
+@media (max-width: 767.98px) {
+  .topBar > header {
+    min-height: 57px;
+    padding: 8px 12px;
   }
 }
 
@@ -51,16 +81,35 @@
 }
 
 /*
- * A floating window (the kit's Window, rendered by the outlet) sits between the top bar (57px tall)
- * and the dock (70px tall, 16px off the bottom), 8px clear of each: 57 + 8 = 65 and 16 + 70 + 8 = 94.
- * With height auto it fills that band up to 860px, and the kit's auto margins center it there. The
- * kit's selector is 0,2,0 and this one is 0,3,0, so this one wins. Only the Window has role dialog and
- * data-variant. The search dialog is portaled to the body, outside .shell. The phone's page variant is
- * left alone (Task 17).
+ * Phone only: the bottom tab bar is fixed to the bottom edge above the map, and the windows stop at
+ * its top edge through --shell-bottom-inset. The safe-area padding keeps the tabs off the home bar.
+ */
+.tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--surface);
+}
+
+/*
+ * A floating window (the kit's Window, rendered by the outlet) sits between the top bar and the dock,
+ * each inset from the window by the variables above. With height auto it fills that band up to 860px,
+ * and the kit's auto margins center it there. The kit's selector is 0,2,0 and this one is 0,3,0, so
+ * this one wins. Only the Window has role dialog and data-variant. The search dialog is portaled to
+ * the body, outside .shell.
  */
 .shell [role="dialog"][data-variant="floating"] {
-  top: 65px;
-  bottom: 94px;
+  top: var(--shell-top-inset);
+  bottom: var(--shell-bottom-inset);
   height: auto;
   max-height: 860px;
+}
+
+/* Phone: a page window starts below the compact top bar and stops above the tab bar */
+.shell [role="dialog"][data-variant="page"] {
+  top: var(--shell-top-inset);
+  bottom: var(--shell-bottom-inset);
 }

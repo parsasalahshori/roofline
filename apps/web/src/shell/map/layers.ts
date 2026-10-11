@@ -5,6 +5,8 @@ import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap, SourceSpeci
 /*
  * The map's sources and layers. Two groups are added in order: BASE (the storm swath, the service area
  * and the server clusters) and PINS (customers and jobs, clustered in the browser when there are many).
+ * Each single-pin group has a transparent 40px hit layer right after its visible 7px pin, so a tap on a
+ * phone finds the pin; clicks read the hit layers, not the visible pins.
  * The storm swath source is filled later by Storm Scout and is only ever reset by a style swap.
  */
 
@@ -29,8 +31,12 @@ export const LAYER = {
   jobClusters: 'jobs-clusters',
   /** Single customer pins (source `customers`). */
   customers: 'customers',
+  /** Transparent 40px hit layer over the single customer pins; added right after `customers`. */
+  customersHit: 'customers-hit',
   /** Single job pins (source `jobs`). */
   jobs: 'jobs',
+  /** Transparent 40px hit layer over the single job pins; added right after `jobs`. */
+  jobsHit: 'jobs-hit',
 } as const;
 
 /** Everything the layers draw. */
@@ -62,7 +68,9 @@ const LAYER_IDS: readonly string[] = [
   LAYER.customerClusters,
   LAYER.jobClusters,
   LAYER.customers,
+  LAYER.customersHit,
   LAYER.jobs,
+  LAYER.jobsHit,
   COUNT_LAYER.customerClusters,
   COUNT_LAYER.jobClusters,
 ];
@@ -113,6 +121,19 @@ function stageColor(): unknown[] {
     tokens.text,
     tokens['stage-lead'],
   ];
+}
+
+/**
+ * The transparent hit circle over a single pin: 40px across (radius 20), invisible, and with the same
+ * source and filter as the pin it sits on, so a click on it reads the same feature.
+ */
+function hitPaint(): Record<string, unknown> {
+  return {
+    'circle-radius': 20,
+    'circle-opacity': 0,
+    'circle-stroke-opacity': 0,
+    'circle-color': tokens['pin-customer'],
+  };
 }
 
 /** A cluster bubble sized by the number of points it holds, read from `countKey`. */
@@ -236,6 +257,16 @@ function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void 
   addLayerOnce(
     map,
     asLayer({
+      id: LAYER.customersHit,
+      type: 'circle',
+      source: SOURCE.customers,
+      filter: ['!', ['has', 'point_count']],
+      paint: hitPaint(),
+    }),
+  );
+  addLayerOnce(
+    map,
+    asLayer({
       id: LAYER.jobs,
       type: 'circle',
       source: SOURCE.jobs,
@@ -246,6 +277,16 @@ function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void 
         'circle-stroke-width': 2,
         'circle-stroke-color': tokens.surface,
       },
+    }),
+  );
+  addLayerOnce(
+    map,
+    asLayer({
+      id: LAYER.jobsHit,
+      type: 'circle',
+      source: SOURCE.jobs,
+      filter: ['!', ['has', 'point_count']],
+      paint: hitPaint(),
     }),
   );
   if (hasGlyphs) {
@@ -262,7 +303,9 @@ function removePinGroup(map: MapLibreMap): void {
     LAYER.customerClusters,
     LAYER.jobClusters,
     LAYER.customers,
+    LAYER.customersHit,
     LAYER.jobs,
+    LAYER.jobsHit,
   ];
   for (const id of layerIds) {
     if (map.getLayer(id)) map.removeLayer(id);
