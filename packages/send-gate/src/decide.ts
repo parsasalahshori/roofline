@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { type CampaignStatus, type CompanyStatus, type ConsentStatus, type GateRule, isTimeZone, type MessagePurpose } from '@roofline/shared';
+import { type CampaignStatus, type CompanyStatus, type ConsentStatus, type GateRule, isTimeZone, type MessagePurpose, textability } from '@roofline/shared';
 import { isStrictState, nextAllowedTime } from './quiet-hours.ts';
 
 /** Everything `decide` needs, already fetched: the gate itself touches no database and no network. */
@@ -84,7 +84,8 @@ function marketingContentOk(body: string, companyName: string): boolean {
  * history, and acts on the answer.
  *
  * The rules run in order and the first block wins: billing, registration, contact, consent,
- * content (a blank body, then the marketing wording), dedupe, the weekly cap. Then two things can
+ * content (a blank body, then the marketing wording), dedupe, the weekly cap. The contact rule also
+ * checks that the number can be texted: a US number that is not toll-free. Then two things can
  * push the send into the future: the 3-per-24-hours limit (marketing to FL, OK and MD) and quiet
  * hours (08:00 to 21:00 their time, 20:00 in those states). The send waits for whichever is later;
  * the rule reported is `frequency` if the daily limit is what is holding it, otherwise
@@ -115,6 +116,19 @@ export function decide(req: GateRequest): GateDecision {
   // webhook fails closed, like an unknown status does above.
   if (recipient.doNotContact !== false || recipient.optedOut !== false) {
     return block('contact', 'This customer asked not to be texted.');
+  }
+
+  // Only an exact 'ok' passes: a number that is toll-free, outside the US, or not a valid number
+  // at all is blocked, the same fail-closed way as the flags above.
+  const textable = textability(recipient.phoneE164);
+  if (textable === 'toll_free') {
+    return block('contact', "This is a toll-free number, which can't get these texts.");
+  }
+  if (textable === 'not_us') {
+    return block('contact', "This number is outside the US, so we can't text it.");
+  }
+  if (textable !== 'ok') {
+    return block('contact', "This isn't a mobile number we can text.");
   }
 
   const allowedConsent = informational ? INFORMATIONAL_CONSENT : MARKETING_CONSENT;
