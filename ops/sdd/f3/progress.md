@@ -16,3 +16,4 @@ Held for the controller: T7 (needs T5 + T6, Ruling T); T9 API skeleton (needs F2
 Group D (wf_97a6d639-216, contact 10): T12 10693ab already complete; review clean; CI 38177661676 green after one re-run of the rep-visibility flake. Task 12: complete (7b4e8b4..10693ab). Merged into f3-setup 4633b10 (typecheck clean).
 Carry to Task 13: keep `if (!(await lease.keep())) return { status: 'running', result: {} };` as the first statement in send-batch.ts's per-customer loop; branch T13 from f3-setup after 4633b10.
 Hazard: editing an ops/bin script in place while an agent runs it breaks that run (bash reads scripts incrementally). Replace scripts atomically (write a temp file, then mv).
+CI: f3-setup 4633b10 (T1+T2+T8+T12) Platform job green, run 38179418220 (v1 job red only from the pre-0b81e1b empty data file; fixed when f2-shell merges in).
