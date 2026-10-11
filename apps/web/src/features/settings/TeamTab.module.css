@@ -1,0 +1,119 @@
+/* The Team tab: the members table, then the invite form and the invites still waiting, one under another */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.heading {
+  margin: 0 0 12px;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+/* A wide table scrolls sideways inside its card rather than pushing the window wider */
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.table th {
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* The row's role Select keeps its label for screen readers but does not draw it: the cell shows the picker alone */
+.roleSelect {
+  position: relative;
+  min-width: 140px;
+}
+
+.roleSelect label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The status words and the turn-off button sit side by side, and wrap on a narrow screen */
+.statusCell {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inviteForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.inviteEmail {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.inviteRole {
+  flex: 0 1 180px;
+  min-width: 0;
+}
+
+.pendingList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pendingItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.pendingItem:last-child {
+  border-bottom: 0;
+}
+
+.pendingEmail {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* On a phone the invite fields stack, each as wide as the card */
+@media (max-width: 767.98px) {
+  .inviteForm {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inviteEmail,
+  .inviteRole {
+    flex: none;
+    width: 100%;
+  }
+}

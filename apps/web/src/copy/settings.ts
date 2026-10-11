@@ -1,0 +1,92 @@
+import type { Role } from '@roofline/shared';
+import type { SettingsTab } from '../features/settings/tabs.ts';
+
+/*
+ * The Settings window (Task 16): its tabs, the Company tab and the Team tab. The words for the three
+ * tabs that are not built yet are in connections.ts, billing.ts and setup.ts, where vendor names are allowed.
+ */
+export const settings = {
+  // The row of links under the window title
+  tabsLabel: 'Settings sections',
+  tabs: {
+    company: 'Company',
+    team: 'Team',
+    connections: 'Connections',
+    billing: 'Billing',
+    setup: 'Setup',
+  } satisfies Record<SettingsTab, string>,
+
+  // While a tab's information loads
+  loading: 'Loading…',
+
+  // Who a person is on the team. Passed to the role Selects and shown as text to people who cannot change them.
+  roles: {
+    owner: 'Owner',
+    office: 'Office',
+    rep: 'Field rep',
+  } satisfies Record<Role, string>,
+
+  company: {
+    fields: {
+      name: 'Company name',
+      phone: 'Phone',
+      email: 'Email',
+      website: 'Website',
+      street: 'Street',
+      city: 'City',
+      state: 'State',
+      zip: 'ZIP code',
+      timezone: 'Time zone',
+    },
+    ownerOnly: 'Only the owner can change company details.',
+    save: 'Save',
+    saved: 'Saved',
+    /** The US time zones, in the order of the list. `value` is the zone's name as the server stores it. */
+    timeZones: [
+      { value: 'America/New_York', label: 'Eastern Time (New York)' },
+      { value: 'America/Chicago', label: 'Central Time (Chicago)' },
+      { value: 'America/Denver', label: 'Mountain Time (Denver)' },
+      { value: 'America/Phoenix', label: 'Arizona (Phoenix)' },
+      { value: 'America/Los_Angeles', label: 'Pacific Time (Los Angeles)' },
+      { value: 'America/Anchorage', label: 'Alaska (Anchorage)' },
+      { value: 'Pacific/Honolulu', label: 'Hawaii (Honolulu)' },
+      { value: 'America/Indiana/Indianapolis', label: 'Eastern Time (Indianapolis)' },
+      { value: 'America/Kentucky/Louisville', label: 'Eastern Time (Louisville)' },
+      { value: 'America/Detroit', label: 'Eastern Time (Detroit)' },
+      { value: 'America/Boise', label: 'Mountain Time (Boise)' },
+    ],
+  },
+
+  team: {
+    tableLabel: 'Team members',
+    columns: {
+      name: 'Name',
+      email: 'Email',
+      role: 'Role',
+      spend: 'Can approve spending',
+      status: 'Status',
+    },
+    /** The accessible names of the controls in a member's row (the row's own words are the column titles). */
+    roleFor: (name: string) => `Role for ${name}`,
+    spendFor: (name: string) => `Can approve spending: ${name}`,
+    turnOffFor: (name: string) => `Turn off ${name}`,
+    turnBackOnFor: (name: string) => `Turn back on ${name}`,
+    // The spending cell of an owner (always may) and of a field rep (never may); only office members get a switch
+    spendAlways: 'Always',
+    spendNever: 'Never',
+    statusActive: 'Active',
+    statusOff: 'Turned off',
+    turnOff: 'Turn off',
+    turnBackOn: 'Turn back on',
+
+    inviteHeading: 'Invite a teammate',
+    inviteEmail: 'Their email',
+    inviteRole: 'Their role',
+    sendInvite: 'Send invite',
+    inviteSent: (email: string) => `Invite sent to ${email}`,
+
+    pendingHeading: 'Waiting to join',
+    /** `date` is already written out, like Oct 18, 2026. */
+    pendingExpires: (date: string) => `Invite expires ${date}`,
+  },
+} as const;

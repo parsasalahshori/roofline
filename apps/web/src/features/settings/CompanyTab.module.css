@@ -1,0 +1,26 @@
+/* Two details to a row on a desktop, the Save button on a row of its own under them */
+.form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 720px;
+}
+
+/* Spans both columns and is only as wide as its word */
+.save {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* Who may change the details, shown above the read-only fields */
+.note {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+@media (max-width: 767.98px) {
+  .form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
