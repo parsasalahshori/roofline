@@ -155,3 +155,4 @@ Carry to T18: (1) useTodayAutoOpen onSuccess must navigate only if the current p
 Minors (deferred): stack.ts children run via npx (SIGTERM forwarding; spawn detached + kill group); signal handlers registered after DB start; no 'error' listener on children; unused click fixture; brief's playwright-core browsers.json check fails with ERR_PACKAGE_PATH_NOT_EXPORTED (versions match anyway); Today error state and partOfDay boundaries untested.
 F2 remaining: T18 (deferred Playwright specs + phone/a11y + acceptance, Ruling AK) then the final whole-branch review.
 F2 T18 launched here: wf_3cf9739e-49c (contact 14), base d223d91, ci with CI_JOBS="Platform E2E".
+Fix: rep-visibility.test.ts:400 flake (substring 333 in a random UUID; failed f2-shell run 38181409275 on 894f0d2) now matches a whole token; CI paths-ignore adds docs/**. F1 deferred minor closed.
