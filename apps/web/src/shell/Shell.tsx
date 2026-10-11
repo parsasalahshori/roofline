@@ -1,12 +1,15 @@
 import { Dock, type DockItem } from '@roofline/ui';
+import { lazy, Suspense } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useApprovals, useAttentionCount } from '../api/hooks.ts';
 import { dock, WINDOW_COPY } from '../copy/dock.ts';
 import { type AppKey, DOCK_APPS } from './apps.ts';
 import { countedDrafts } from './countedDrafts.ts';
-import { MapView } from './map/MapView.tsx';
 import styles from './Shell.module.css';
 import { ShellTopBar } from './topbar/ShellTopBar.tsx';
+
+// The map (MapLibre, about 1 MB) loads in its own chunk, after the shell has rendered
+const MapView = lazy(() => import('./map/MapView.tsx').then((m) => ({ default: m.MapView })));
 
 /** The count bubble on an app's dock icon. Only three apps have one, and nothing is drawn at zero. */
 function badgeFor(app: AppKey, count: number): DockItem['badge'] {
@@ -58,7 +61,9 @@ export function Shell() {
         <ShellTopBar />
       </div>
       <div className={styles.map}>
-        <MapView onOpen={open} />
+        <Suspense fallback={null}>
+          <MapView onOpen={open} />
+        </Suspense>
       </div>
       <Outlet />
       <div className={styles.dock}>

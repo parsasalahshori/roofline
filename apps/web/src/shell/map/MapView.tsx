@@ -10,7 +10,8 @@ import { emptyMapData, installMapLayers, updateMapData, type MapData } from './l
 import { mapStyle, satelliteAvailable } from './mapStyle.ts';
 import { PinCard } from './PinCard.tsx';
 import { needsClientClustering, normalizeBbox, toFeatureCollections } from './pins.ts';
-import type { Bbox, MapEnv, MapMode, PickedPin, PinTarget } from './types.ts';
+import type { Bbox } from '../../api/types.ts';
+import type { MapEnv, MapMode, PickedPin, PinTarget } from './types.ts';
 import styles from './MapView.module.css';
 
 export type MapViewProps = { onOpen: (target: PinTarget) => void };

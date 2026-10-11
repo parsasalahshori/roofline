@@ -25,7 +25,7 @@ export function StormWindow() {
       {plan ? (
         <Card as="section" aria-label={storm.planHeading} className={styles.plan}>
           <h2>{plan.title}</h2>
-          <p>{plan.summary}</p>
+          {plan.summary ? <p>{plan.summary}</p> : null}
           <Button variant="primary" href={'/storm/plans/' + encodeURIComponent(plan.id)}>
             {storm.approve}
           </Button>

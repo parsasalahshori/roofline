@@ -108,6 +108,7 @@ export default defineConfig(
   {
     files: ['**/*.tsx'],
     extends: [reactHooks.configs.flat.recommended],
+    rules: { 'jsx-quotes': ['error', 'prefer-double'] },
   },
   {
     // `off` switches the whole rule off here, so any restriction added to it later must be
