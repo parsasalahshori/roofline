@@ -24,8 +24,8 @@ export type DockProps = {
 
 /**
  * The row of apps on desktop. Every item shows its label under its icon, at all times. The dock sets
- * no position of its own: the shell places it, and keeps it clickable above an open window (a Window
- * sits at z-index 20, a Sheet at 30, toasts at 40).
+ * no position of its own: the shell places it, and keeps it clickable above an open window at the
+ * dock's layer, z-index 30. Layers: Window 20, dock 30, Sheet 40, toasts 50.
  */
 export function Dock({ label, items }: DockProps) {
   return (

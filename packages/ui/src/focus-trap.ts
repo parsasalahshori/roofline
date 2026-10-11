@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, type RefObject } from 'react';
+import { createContext, useContext, useEffect, useEffectEvent, useState, type RefObject } from 'react';
 
 export type FocusTrapOptions = {
   /** The trap works while true. Turning it off (or unmounting) gives focus back. */
@@ -13,20 +13,36 @@ const TABBABLE =
   'a[href], button, input, select, textarea, [tabindex], [contenteditable]:not([contenteditable="false"])';
 
 /**
- * Traps that are active right now, oldest first. Only the last one answers Tab and Esc, so a Sheet
- * opened over a Window gets the keys and the Window gets them back when the Sheet closes.
+ * A trap's place in the React tree: who it was rendered under. It is made on the trap's first render,
+ * so a parent and a child can be told apart before either one's effect has run. A component that holds
+ * other traps in its children (Window, Sheet) passes its scope down with TrapScopeContext. React
+ * context, not the DOM, because a Sheet is portaled to the body and is not inside its Window's markup.
  */
-const activeTraps: Array<{ container: HTMLElement }> = [];
+export type TrapScope = { parent: TrapScope | null };
 
-function pushTrap(trap: { container: HTMLElement }) {
-  // A trap that contains another one sits underneath it, however late it activated: when both mount in
-  // the same render, the child's effect runs before the parent's, and the inner trap must still win.
-  const inner = activeTraps.findIndex((other) => trap.container.contains(other.container));
-  if (inner === -1) activeTraps.push(trap);
-  else activeTraps.splice(inner, 0, trap);
+export const TrapScopeContext = createContext<TrapScope | null>(null);
+
+type ActiveTrap = {
+  scope: TrapScope;
+  container: HTMLElement;
+  /** Where focus goes back to when the trap ends. Null once an outer trap has taken over (see `outer`). */
+  opener: HTMLElement | null;
+  /** A trap that mounted with this one and sits under it: it holds the real opener, this one hands focus to it. */
+  outer?: ActiveTrap;
+};
+
+/** Traps that are active right now, in order of activation. Only the last one answers Tab and Esc. */
+const activeTraps: ActiveTrap[] = [];
+
+/** Is `ancestor` somewhere above `scope` in the React tree? */
+function isAncestor(ancestor: TrapScope, scope: TrapScope): boolean {
+  for (let node = scope.parent; node; node = node.parent) {
+    if (node === ancestor) return true;
+  }
+  return false;
 }
 
-function removeTrap(trap: { container: HTMLElement }) {
+function removeTrap(trap: ActiveTrap) {
   const index = activeTraps.indexOf(trap);
   if (index !== -1) activeTraps.splice(index, 1);
 }
@@ -97,11 +113,27 @@ function keepTabInside(event: KeyboardEvent, container: HTMLElement) {
  *
  * Mouse clicks outside are not blocked and nothing outside is made inert: the dock stays clickable
  * while a window is open.
+ *
+ * Active traps form a stack and only the newest answers Tab and Esc, so a Sheet opened over a Window
+ * gets the keys and the Window gets them back when the Sheet closes. A trap that is a React ancestor of
+ * one already active (they mounted in the same render, and a child's effect runs before its parent's)
+ * goes underneath it, keeps the focus where the inner one put it, and takes over its opener, so
+ * the outer trap is the one that gives focus back to the real opener.
  */
-export function useFocusTrap(
+export function useFocusTrap(ref: RefObject<HTMLElement | null>, options: FocusTrapOptions): void {
+  useScopedFocusTrap(ref, options);
+}
+
+/**
+ * useFocusTrap that also returns the trap's scope. A component that renders other traps inside
+ * itself wraps what it renders in `<TrapScopeContext value={scope}>`, so they know they are nested.
+ */
+export function useScopedFocusTrap(
   ref: RefObject<HTMLElement | null>,
   { active, onEscape, initialFocus }: FocusTrapOptions,
-): void {
+): TrapScope {
+  const parent = useContext(TrapScopeContext);
+  const [scope] = useState<TrapScope>(() => ({ parent }));
   // Read the latest values when a key is pressed or the trap starts, without restarting the trap.
   const handleEscape = useEffectEvent(() => onEscape?.());
   const startFocus = useEffectEvent(() => initialFocus?.current ?? ref.current);
@@ -110,10 +142,24 @@ export function useFocusTrap(
     const container = ref.current;
     if (!active || !container) return;
 
-    const trap = { container };
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    pushTrap(trap);
-    startFocus()?.focus();
+    const trap: ActiveTrap = {
+      scope,
+      container,
+      opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    };
+    const inner = activeTraps.find((other) => isAncestor(scope, other.scope));
+    if (inner) {
+      // Mounted together with a trap inside it, which already holds the focus. Go underneath it and take
+      // over its opener (the real one). The inner trap now gives focus back to this container, for as
+      // long as this trap is active.
+      trap.opener = inner.opener;
+      inner.opener = null;
+      inner.outer = trap;
+      activeTraps.splice(activeTraps.indexOf(inner), 0, trap);
+    } else {
+      activeTraps.push(trap);
+      startFocus()?.focus();
+    }
 
     function onKeyDown(event: KeyboardEvent) {
       // Not the newest trap, already handled by something inside, or an IME is using the key
@@ -130,7 +176,12 @@ export function useFocusTrap(
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       removeTrap(trap);
-      if (opener?.isConnected) opener.focus();
+      // An inner trap hands focus to the trap under it, unless that one has ended first: it has then
+      // already given focus back to the real opener, and this trap must not take it away again.
+      const target = trap.outer ? (activeTraps.includes(trap.outer) ? trap.outer.container : null) : trap.opener;
+      if (target?.isConnected) target.focus();
     };
-  }, [active, ref]);
+  }, [active, ref, scope]);
+
+  return scope;
 }

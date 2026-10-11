@@ -1,7 +1,7 @@
 /*
  * Fixed with inset 0 and auto margins, so a window with a width and a height sits in the middle of
  * the screen and one without fills it. The map stays visible around a floating window, and the
- * page behind it is not blocked.
+ * page behind it is not blocked. Layers: Window 20, dock 30, Sheet 40, toasts 50.
  */
 .window {
   position: fixed;
@@ -24,6 +24,8 @@
 }
 
 .window[data-variant="page"] {
+  /* The phone shell sets --shell-bottom-inset to the height of its bottom tab bar, so the window stops above it */
+  bottom: var(--shell-bottom-inset, 0px);
   width: auto;
   height: auto;
   margin: 0;

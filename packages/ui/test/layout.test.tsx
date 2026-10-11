@@ -495,6 +495,21 @@ describe('Sheet', () => {
     expect(opener).toHaveFocus();
   });
 
+  it('is portaled into the body, outside the markup of the window it is rendered from', () => {
+    const { container } = render(
+      <Window title="Need your OK" closeLabel="Close window" onClose={() => {}}>
+        <Sheet open title="Edit job" closeLabel="Close sheet" onClose={() => {}}>
+          body
+        </Sheet>
+      </Window>,
+    );
+    const sheet = screen.getByRole('dialog', { name: 'Edit job' });
+    const window = screen.getByRole('dialog', { name: 'Need your OK' });
+    expect(sheet.parentElement).toBe(document.body);
+    expect(container).not.toContainElement(sheet);
+    expect(window).not.toContainElement(sheet);
+  });
+
   describe('over a window', () => {
     function Stack({ sheetOpenAtStart, onWindowClose, onSheetClose }: {
       sheetOpenAtStart: boolean;
@@ -550,13 +565,84 @@ describe('Sheet', () => {
       const onSheetClose = vi.fn();
       render(<Stack sheetOpenAtStart onWindowClose={onWindowClose} onSheetClose={onSheetClose} />);
 
-      // A parent's effects run after its children's, so the window activates last. The sheet still wins.
+      // A parent's effects run after its children's, so the window activates last. The sheet still wins,
+      // and it keeps the focus the window's own start would otherwise have taken.
+      expect(screen.getByRole('dialog', { name: 'Edit job' })).toHaveFocus();
       expect(await tabThrough(user, 1)).toEqual(['Close sheet']);
       expect(await tabThrough(user, 2)).toEqual(['in sheet', 'Close sheet']);
 
       await user.keyboard('{Escape}');
       expect(onSheetClose).toHaveBeenCalledTimes(1);
       expect(onWindowClose).not.toHaveBeenCalled();
+    });
+
+    /** A page with a real opener and a Window holding an open Sheet, so both can mount and unmount in one render. */
+    function Together({ open, sheetOpen = true }: { open: boolean; sheetOpen?: boolean }) {
+      return (
+        <>
+          <button type="button">page opener</button>
+          {open ? (
+            <Window title="Need your OK" closeLabel="Close window" onClose={() => {}}>
+              <Sheet open={sheetOpen} title="Edit job" closeLabel="Close sheet" onClose={() => {}}>
+                <button type="button">in sheet</button>
+              </Sheet>
+            </Window>
+          ) : null}
+        </>
+      );
+    }
+
+    it.each([
+      ['', (children: ReactNode) => children],
+      [' under StrictMode', (children: ReactNode) => <StrictMode>{children}</StrictMode>],
+    ])('starts on the sheet and restores to the real opener when both mount together%s', (_name, wrap) => {
+      const { rerender } = render(wrap(<Together open={false} />));
+      const opener = screen.getByRole('button', { name: 'page opener' });
+      opener.focus();
+
+      rerender(wrap(<Together open />));
+      expect(screen.getByRole('dialog', { name: 'Edit job' })).toHaveFocus();
+
+      // Both go at once: the window's opener is the real one, not the sheet that was on top of it
+      rerender(wrap(<Together open={false} />));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(opener).toHaveFocus();
+    });
+
+    it('returns focus into the window when only the sheet closes, then to the real opener', () => {
+      const { rerender } = render(<Together open={false} />);
+      const opener = screen.getByRole('button', { name: 'page opener' });
+      opener.focus();
+
+      rerender(<Together open />);
+      expect(screen.getByRole('dialog', { name: 'Edit job' })).toHaveFocus();
+
+      rerender(<Together open sheetOpen={false} />);
+      expect(screen.queryByRole('dialog', { name: 'Edit job' })).toBeNull();
+      expect(screen.getByRole('dialog', { name: 'Need your OK' })).toHaveFocus();
+
+      rerender(<Together open={false} />);
+      expect(opener).toHaveFocus();
+    });
+
+    it('gives the keys back to the window once a sheet that mounted with it closes', async () => {
+      const user = userEvent.setup();
+      const onWindowClose = vi.fn();
+      function Page({ sheetOpen }: { sheetOpen: boolean }) {
+        return (
+          <Window title="Need your OK" closeLabel="Close window" onClose={onWindowClose}>
+            <button type="button">first</button>
+            <Sheet open={sheetOpen} title="Edit job" closeLabel="Close sheet" onClose={() => {}}>
+              body
+            </Sheet>
+          </Window>
+        );
+      }
+      const { rerender } = render(<Page sheetOpen />);
+      rerender(<Page sheetOpen={false} />);
+      expect(await tabThrough(user, 3)).toEqual(['Close window', 'first', 'Close window']);
+      await user.keyboard('{Escape}');
+      expect(onWindowClose).toHaveBeenCalledTimes(1);
     });
 
     it('keeps Tab inside the sheet while it is open', async () => {

@@ -1,6 +1,7 @@
 import { useId, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { CloseIcon } from '../../close-icon.tsx';
-import { useFocusTrap } from '../../focus-trap.ts';
+import { TrapScopeContext, useScopedFocusTrap } from '../../focus-trap.ts';
 import { IconButton } from '../IconButton/IconButton.tsx';
 import styles from './Sheet.module.css';
 
@@ -20,34 +21,30 @@ export type SheetProps = {
  * dialog like Window, with its own focus trap: opened over a Window, it alone answers Tab and Esc
  * until it closes. Renders nothing while closed.
  *
- * It is fixed to the viewport, so a Window does not clip it, but inside a Window it stays in the
- * Window's layer (a fixed element is its own stacking context). To lift it above the dock, render
- * it beside the Window instead of inside it.
+ * It is portaled into document.body, so wherever it is rendered from (inside a Window too) it sits
+ * above the Window and the dock. Layers: Window 20, dock 30, Sheet 40, toasts 50.
  */
 export function Sheet({ open, title, onClose, closeLabel, children, footer }: SheetProps) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  useFocusTrap(ref, { active: open, onEscape: onClose });
+  const scope = useScopedFocusTrap(ref, { active: open, onEscape: onClose });
 
   if (!open) return null;
 
-  return (
-    <div
-      ref={ref}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      tabIndex={-1}
-      className={styles.sheet}
-    >
-      <div className={styles.titleBar}>
-        <h2 id={titleId} className={styles.title}>
-          {title}
-        </h2>
-        <IconButton label={closeLabel} icon={<CloseIcon />} onClick={onClose} />
+  // A portal keeps React context, so the trap still knows which Window it was rendered under.
+  return createPortal(
+    <TrapScopeContext value={scope}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className={styles.sheet}>
+        <div className={styles.titleBar}>
+          <h2 id={titleId} className={styles.title}>
+            {title}
+          </h2>
+          <IconButton label={closeLabel} icon={<CloseIcon />} onClick={onClose} />
+        </div>
+        <div className={styles.body}>{children}</div>
+        {footer ? <div className={styles.footer}>{footer}</div> : null}
       </div>
-      <div className={styles.body}>{children}</div>
-      {footer ? <div className={styles.footer}>{footer}</div> : null}
-    </div>
+    </TrapScopeContext>,
+    document.body,
   );
 }

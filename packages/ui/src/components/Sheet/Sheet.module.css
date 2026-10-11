@@ -1,10 +1,13 @@
-/* Desktop: a panel on the right edge. Fixed, so it is not clipped by a window it is opened from. */
+/*
+ * Desktop: a panel on the right edge. The Sheet is portaled to the body, so this z-index is compared
+ * with the page's own layers: Window 20, dock 30, Sheet 40, toasts 50.
+ */
 .sheet {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 30;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   width: min(440px, 100vw);
