@@ -527,6 +527,7 @@ describe('buildGateRequest', () => {
     expect(built).toEqual({
       toE164: '+14025550101',
       archived: false,
+      sender: null,
       req: {
         now: BATCH_AT,
         company: { name: 'Acme Roofing', timezone: 'America/Chicago', status: 'trial', campaignStatus: 'approved', marketingCapPer7d: 2 },
