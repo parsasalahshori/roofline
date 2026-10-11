@@ -12,6 +12,7 @@ import type { AppDeps } from '../app.ts';
 import { logErrorToConsole } from '../errors.ts';
 import { systemContext } from '../permissions.ts';
 import { builtInHandlers } from './handlers.ts';
+import { LEASE_MS } from './lease.ts';
 import { refreshTask } from './service.ts';
 
 /*
@@ -28,8 +29,9 @@ import { refreshTask } from './service.ts';
 /** How many times a step is run before it needs a person. */
 export const MAX_ATTEMPTS = 5;
 
-/** How long a claim owns its step. A run still going after this may lose the step to the sweeper. */
-export const LEASE_MS = 10 * 60 * 1000;
+// The lease (how long a claim owns its step, and the heartbeat that renews it) lives in lease.ts, which
+// the batch handler imports without a cycle; the runner is where the rest of the code finds it.
+export { LEASE_MS, LEASE_RENEW_EVERY_MS, leaseKeeper } from './lease.ts';
 
 const GAVE_UP = "We couldn't finish this step. We'll keep the details here so you can retry.";
 const CANT_RUN_YET = "This kind of step can't run yet.";
@@ -65,8 +67,11 @@ export type StepOutcome = {
  *   `SmsRefusedError`); one that failed without saying (a timeout, a dropped connection) may have
  *   taken effect, so it is recorded as unknown and is never repeated by a retry.
  * - **Its outcome is saved only if the step is still this run's.** A run that outlived its lease
- *   may find a newer run has the step; its outcome is then dropped. A handler should finish well
- *   within `LEASE_MS`.
+ *   may find a newer run has the step; its outcome is then dropped. A handler that can run longer
+ *   than `LEASE_MS` (a big batch) keeps its lease with `leaseKeeper(deps, ctx, step)` (lease.ts):
+ *   it calls `keep()` before each item, which renews the lease every `LEASE_RENEW_EVERY_MS` and
+ *   returns false once the step is no longer this run's; the handler then stops and returns
+ *   `{ status: 'running', result: {} }`, which is dropped as stale.
  * - **Throwing means "try again later".** The queue does, up to 5 runs in all. A thrown error is
  *   logged, so it must not carry customer data: no phone numbers, names or message bodies in its
  *   message.

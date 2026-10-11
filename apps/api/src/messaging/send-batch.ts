@@ -12,6 +12,7 @@ import {
 } from '@roofline/db';
 import { type MessagePurpose, stepTypes } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { leaseKeeper } from '../tasks/lease.ts';
 import type { StepHandler } from '../tasks/runner.ts';
 import { buildGateRequest } from './gate-request.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, type QueuedText, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
@@ -38,6 +39,11 @@ type BatchText = { customerId: string; purpose: MessagePurpose; template: string
 
 /**
  * The handler. For each customer in `payload.customerIds`, in order:
+ * 0. Before each customer the run asks its lease keeper (tasks/lease.ts) to keep the step: the lease
+ *    is renewed every LEASE_RENEW_EVERY_MS, so a batch that runs longer than the lease keeps its step.
+ *    When keep() says no, the step is no longer this run's: the handler stops at once and returns
+ *    { status: 'running', result: {} }, which the runner drops because the run is stale. Whatever was
+ *    texted stays texted; the run that holds the step skips those customers.
  * 1. One short transaction, under the customer's texting lock (`lockRecipient`):
  *    - the step's row for them is looked up. None, or a retryable failure: go on. `queued` for
  *      longer than `QUEUED_TOO_LONG_MS`: marked unconfirmed (never resent). Anything else: done.
@@ -71,8 +77,12 @@ export const sendSmsBatch: StepHandler = async (deps, ctx, step) => {
     dedupePrefix?: string;
   };
 
+  const lease = leaseKeeper(deps, ctx, step);
   let refused = 0;
   for (const customerId of customerIds) {
+    // Before each customer: renew the lease when it is due. False means the step is no longer this
+    // run's (a newer run has it), so stop texting here and leave the rest to that run.
+    if (!(await lease.keep())) return { status: 'running', result: {} };
     const dedupeKey = dedupePrefix !== undefined ? `${dedupePrefix}:${customerId}` : null;
     const queued = await decideOne(deps, ctx, step.id, { customerId, purpose, template: body, dedupeKey });
     if (queued && (await sendQueuedText(deps, ctx, queued, NOT_TAKEN)) === 'refused') refused += 1;
