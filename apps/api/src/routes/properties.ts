@@ -151,6 +151,7 @@ function propertyBody(row: PropertyRow) {
     zip: row.zip,
     lat: row.geom?.[1] ?? null,
     lng: row.geom?.[0] ?? null,
+    /** Null unless one was given for this address: texts then go by the company's zone. */
     timezone: row.timezone,
     yearBuilt: row.yearBuilt,
     archivedAt: row.archivedAt,
@@ -180,6 +181,8 @@ function refused(err: unknown): never {
  *   lose its customer while it has any job (400): an address with a job always has a customer
  *   (a new job claims an address nobody owns yet).
  * - Every edit is audited (before and after) and added to the address's timeline.
+ * - An address saved without a time zone has none (`timezone: null`); the send gate then uses the
+ *   company's zone as it is when the text goes out, so fixing the company's zone later applies to it.
  */
 export function propertyRoutes(deps: AppDeps): Router {
   const { pools, clock } = deps;

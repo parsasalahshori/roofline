@@ -6,20 +6,34 @@
 -- tenant table, add it to TENANT_TABLES and give it the same ENABLE/FORCE/tenant_isolation block.
 
 -- 1. Roles (cluster-wide, so created only when missing; attributes re-asserted either way).
+--    Neither role bypasses row-level security. Granting the bypass needs a superuser (PostgreSQL 15)
+--    or an owner that has it itself (16+), and a managed host (Supabase) gives the migration owner
+--    CREATEROLE but no superuser, so app_system gets through RLS with its app_system_all policies
+--    (section 8) instead. The migration owner needs only CREATEROLE here.
+--
+--    PostgreSQL refuses any ALTER ROLE that names the attribute, even NOBYPASSRLS, from an owner
+--    that is not a superuser (15) or lacks the attribute (16+), so it is only taken off a role that
+--    has it (left over from an earlier run). CREATE ROLE ... NOBYPASSRLS needs only CREATEROLE.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_tenant') THEN
-    CREATE ROLE app_tenant LOGIN;
+    CREATE ROLE app_tenant LOGIN NOBYPASSRLS;
   END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_system') THEN
-    CREATE ROLE app_system LOGIN;
+    CREATE ROLE app_system LOGIN NOBYPASSRLS;
+  END IF;
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_tenant' AND rolbypassrls) THEN
+    ALTER ROLE app_tenant NOBYPASSRLS;
+  END IF;
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_system' AND rolbypassrls) THEN
+    ALTER ROLE app_system NOBYPASSRLS;
   END IF;
 END
 $$;
 --> statement-breakpoint
-ALTER ROLE app_tenant WITH LOGIN NOBYPASSRLS;
+ALTER ROLE app_tenant WITH LOGIN;
 --> statement-breakpoint
-ALTER ROLE app_system WITH LOGIN BYPASSRLS;
+ALTER ROLE app_system WITH LOGIN;
 --> statement-breakpoint
 GRANT USAGE ON SCHEMA public TO app_tenant, app_system;
 --> statement-breakpoint
@@ -60,8 +74,9 @@ CREATE VIEW company_members WITH (security_barrier) AS
 GRANT SELECT ON company_members TO app_tenant;
 --> statement-breakpoint
 
--- 5. app_system: BYPASSRLS (above), ALL on the global tables, and only the columns the scheduler
---    fan-out needs from tenant tables (ids, company, status, timing; never content).
+-- 5. app_system: ALL on the global tables, and only the columns the scheduler fan-out needs from
+--    tenant tables (ids, company, status, timing; never content). These grants are its real limit:
+--    its RLS policies (section 8) let every row through on the tables granted here.
 GRANT ALL ON
   users, sessions, memberships, invites, companies, company_phone_numbers,
   texting_registrations, webhook_events, user_tokens
@@ -75,13 +90,26 @@ GRANT SELECT (id, company_id, status, scheduled_for) ON messages TO app_system;
 --> statement-breakpoint
 
 -- 6. pg-boss keeps its queue tables in its own schema, owned by the role it connects as.
-CREATE SCHEMA IF NOT EXISTS pgboss AUTHORIZATION app_system;
+--    AUTHORIZATION needs the right to SET ROLE app_system (PostgreSQL 15: membership). A superuser
+--    has it; a CREATEROLE owner that is not one (a managed host) does not, even for a role it made,
+--    so it grants itself app_system for this one statement and revokes it straight after. The owner
+--    is named rather than written CURRENT_USER: Supabase's Postgres 17 crashes on
+--    `GRANT ... TO CURRENT_USER`.
+DO $$
+BEGIN
+  CREATE SCHEMA IF NOT EXISTS pgboss AUTHORIZATION app_system;
+EXCEPTION WHEN insufficient_privilege THEN
+  EXECUTE format('GRANT app_system TO %I', current_user);
+  CREATE SCHEMA IF NOT EXISTS pgboss AUTHORIZATION app_system;
+  EXECUTE format('REVOKE app_system FROM %I', current_user);
+END
+$$;
 --> statement-breakpoint
 
 -- 7. Row-level security, ENABLED and FORCED (so even a non-superuser table owner is filtered).
 --    With app.company_id unset or empty the expression is NULL, so a query returns zero rows
---    instead of erroring, and every write fails WITH CHECK. app_system bypasses RLS but its
---    grants above keep it to global tables and the scheduler columns.
+--    instead of erroring, and every write fails WITH CHECK. The tenant_isolation and company_self
+--    policies apply to every role (TO public); app_system also has app_system_all (section 8).
 ALTER TABLE company_settings ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE company_settings FORCE ROW LEVEL SECURITY;
@@ -202,3 +230,23 @@ ALTER TABLE companies FORCE ROW LEVEL SECURITY;
 CREATE POLICY company_self ON companies
   USING (id = nullif(current_setting('app.company_id', true), '')::uuid)
   WITH CHECK (id = nullif(current_setting('app.company_id', true), '')::uuid);
+--> statement-breakpoint
+
+-- 8. app_system through row-level security: one permissive policy on every RLS table it holds a grant
+--    on (sections 3 and 5; later migrations only add columns to those grants). Permissive policies
+--    are OR-ed, so app_system sees and writes every company's rows there, with or without
+--    app.company_id; app_tenant is still held to tenant_isolation/company_self. The grants stay the
+--    real limit: on agent_tasks, agent_task_steps and messages app_system may read only the
+--    scheduler columns, and it has no grant at all on the other tenant tables. A migration that
+--    grants app_system another RLS table must add the same policy (test/rls.test.ts checks).
+CREATE POLICY app_system_all ON companies FOR ALL TO app_system USING (true) WITH CHECK (true);
+--> statement-breakpoint
+CREATE POLICY app_system_all ON company_phone_numbers FOR ALL TO app_system USING (true) WITH CHECK (true);
+--> statement-breakpoint
+CREATE POLICY app_system_all ON texting_registrations FOR ALL TO app_system USING (true) WITH CHECK (true);
+--> statement-breakpoint
+CREATE POLICY app_system_all ON agent_tasks FOR ALL TO app_system USING (true) WITH CHECK (true);
+--> statement-breakpoint
+CREATE POLICY app_system_all ON agent_task_steps FOR ALL TO app_system USING (true) WITH CHECK (true);
+--> statement-breakpoint
+CREATE POLICY app_system_all ON messages FOR ALL TO app_system USING (true) WITH CHECK (true);

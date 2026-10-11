@@ -94,6 +94,74 @@ describe('schema', () => {
     expect(after).toEqual(before);
   });
 
+  test('every migration applies as a CREATEROLE owner that is not a superuser (a managed host such as Supabase)', async () => {
+    // The test container's owner is a superuser, which hides anything only a superuser may do. This
+    // owner has what a managed host gives: CREATEROLE, its own database, the extensions already
+    // enabled, and ADMIN (but not SET) on the app roles, as PostgreSQL 16 gives a CREATEROLE role
+    // on the roles it creates. The app roles are cluster-wide, so they already exist here.
+    const database = 'roofline_managed_host';
+    const migrator = 'roofline_managed_owner';
+    const membership = () =>
+      ownerQuery<{ role: string; admin: boolean; inherit: boolean; set: boolean }>(
+        `select r.rolname as role, a.admin_option as admin, a.inherit_option as inherit, a.set_option as set
+           from pg_auth_members a join pg_roles r on r.oid = a.roleid join pg_roles m on m.oid = a.member
+          where m.rolname = $1 order by 1`,
+        [migrator],
+      );
+    await ownerQuery(`drop database if exists ${database}`);
+    await ownerQuery(`drop role if exists ${migrator}`);
+    await ownerQuery(`create role ${migrator} login createrole password 'managed-owner-pw'`);
+    try {
+      await ownerQuery(`grant app_tenant, app_system to ${migrator} with admin true, inherit false, set false`);
+      await ownerQuery(`create database ${database} owner ${migrator}`);
+      const url = new URL(urls.owner);
+      url.pathname = `/${database}`;
+      const superuser = new pg.Client({ connectionString: url.toString() });
+      await superuser.connect();
+      try {
+        await superuser.query('create extension postgis; create extension citext;');
+      } finally {
+        await superuser.end();
+      }
+      url.username = migrator;
+      url.password = 'managed-owner-pw';
+
+      await migrate(url.toString());
+
+      // Everything the superuser-run test database has, it has too.
+      const summary = `select (select count(*)::int from drizzle.__drizzle_migrations) as migrations,
+          (select pg_get_userbyid(nspowner) from pg_namespace where nspname = 'pgboss') as pgboss_owner,
+          (select string_agg(tablename || '.' || policyname, ',' order by tablename, policyname)
+             from pg_policies where schemaname = 'public') as policies`;
+      const check = new pg.Client({ connectionString: url.toString() });
+      await check.connect();
+      try {
+        const [managed] = (await check.query(summary)).rows;
+        const [reference] = await ownerQuery(summary);
+        expect(managed).toEqual(reference);
+        expect(managed).toMatchObject({ pgboss_owner: 'app_system' });
+        expect(managed.policies).toContain('messages.app_system_all');
+      } finally {
+        await check.end();
+      }
+      // Its grant of app_system for the pgboss schema was taken back: ADMIN only, as before.
+      expect(await membership()).toEqual([
+        { role: 'app_system', admin: true, inherit: false, set: false },
+        { role: 'app_tenant', admin: true, inherit: false, set: false },
+      ]);
+      const roles = await ownerQuery(
+        `select rolname, rolbypassrls from pg_roles where rolname in ('app_tenant', 'app_system') order by 1`,
+      );
+      expect(roles).toEqual([
+        { rolname: 'app_system', rolbypassrls: false },
+        { rolname: 'app_tenant', rolbypassrls: false },
+      ]);
+    } finally {
+      await ownerQuery(`drop database if exists ${database} with (force)`);
+      await ownerQuery(`drop role if exists ${migrator}`);
+    }
+  });
+
   test('a property point round-trips through drizzle as [lng, lat] with SRID 4326', async () => {
     const s = await seedTwoCompanies(urls.owner);
     const db = drizzle(client);

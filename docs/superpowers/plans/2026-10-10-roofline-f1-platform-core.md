@@ -339,7 +339,7 @@ git add packages/db && git commit -m "feat(db): schema, migrations and testconta
       - `company_phone_numbers`, `texting_registrations`: SELECT only, policy on `company_id`.
       - All writes to these tables go through `app_system`.
     - `app_system` gets:
-      - `BYPASSRLS`
+      - `NOBYPASSRLS` (final-review fix I2: only a superuser may grant the bypass, and Supabase has none) and, on every RLS table it has a grant on, a permissive policy `app_system_all … FOR ALL TO app_system USING (true) WITH CHECK (true)`
       - ALL on global tables
       - column-level SELECT only on `agent_tasks(id, company_id, status, expires_at)`, `agent_task_steps(id, task_id, company_id, status, updated_at)` and `messages(id, company_id, status, scheduled_for)`
       - ownership of schema `pgboss`
@@ -710,7 +710,7 @@ git add apps/api packages/db && git commit -m "feat(api): customers API with con
 - Produces:
   - **Properties:** `POST/GET/PATCH /api/properties[/:id]` with `{customerId?, addressLine, city, state (2-letter), zip (5 digits), lat?, lng?, timezone?, yearBuilt?}`.
     - `geom` is set from lat/lng when both are given.
-    - `timezone` defaults to the company timezone.
+    - `timezone` is stored only when given; otherwise it stays null (`timezone: null` in responses) and the send gate falls back to the company timezone at send time. (Final-review fix I3: copying the company's zone at creation froze the `America/Chicago` default.)
     - A duplicate `address_key` → 409 `"This address is already saved."`
   - **Jobs:** `POST/GET/PATCH /api/jobs[/:id]` with `{customerId, propertyId, stage?='lead', source?='manual', valueCents?, assignedUserId?, lostReason?}`.
     - A stage change sets `stage_changed_at` and adds activity `"Moved to <Stage label>"`, with labels Lead, Inspection, Proposal, Won, Installed, Lost.
@@ -1311,7 +1311,7 @@ Recorded so reviewers don't treat them as drift.
 - Inbound START re-subscribes at `express` (informational only). Marketing consent is never restored by a text.
 
 **Database and queue**
-- `app_system` gets `BYPASSRLS` but only column-level SELECT on three tenant tables, so it can do cross-company scheduling without reading content.
+- `app_system` gets past RLS with permissive `app_system_all` policies (not the bypass attribute, which needs a superuser; final-review fix I2) but only column-level SELECT on three tenant tables, so it can do cross-company scheduling without reading content.
 - The company-scoped global tables (`companies` by `id`, `company_phone_numbers`, `texting_registrations`) also get RLS, so `app_tenant` can read its own row. `app_tenant` may update only profile columns of `companies`; billing and registration state are written only by `app_system`.
 - pg-boss enqueue happens after the transaction commits. A 1-minute sweeper re-enqueues steps stuck in `queued`, and `singletonKey` = step ID prevents duplicates.
 - Outbound texts never auto-resend a row whose send outcome is unknown.

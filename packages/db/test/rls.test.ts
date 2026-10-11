@@ -1,6 +1,9 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
+import { MIGRATIONS_FOLDER } from '../src/migrate.ts';
 import { createPools, type Pools } from '../src/pools.ts';
 import { companies, customers, textingRegistrations } from '../src/schema/index.ts';
 import { TENANT_TABLES } from '../src/schema/tenant.ts';
@@ -14,6 +17,14 @@ const COMPANY_SCOPED_GLOBALS = ['company_phone_numbers', 'texting_registrations'
 /** Global tables app_tenant must never touch directly. */
 const PRIVATE_GLOBALS = ['users', 'sessions', 'memberships', 'invites', 'user_tokens', 'webhook_events'] as const;
 const GLOBAL_TABLES = [...PRIVATE_GLOBALS, 'companies', ...COMPANY_SCOPED_GLOBALS] as const;
+/** The RLS tables app_system holds a grant on, each with its permissive app_system_all policy. */
+const APP_SYSTEM_RLS_TABLES = [
+  'companies',
+  ...COMPANY_SCOPED_GLOBALS,
+  'agent_tasks',
+  'agent_task_steps',
+  'messages',
+] as const;
 const COMPANY_PROFILE_COLUMNS = [
   'name',
   'legal_name',
@@ -139,15 +150,30 @@ beforeEach(async () => {
 });
 
 describe('roles', () => {
-  test('app_tenant is not a superuser and has no BYPASSRLS; app_system has BYPASSRLS', async () => {
+  test('neither app role is a superuser or bypasses row-level security', async () => {
+    // Granting the bypass needs a superuser (or, from PostgreSQL 16, an owner that has it), which a
+    // managed host's migration owner need not be, so app_system gets through RLS with its own
+    // app_system_all policies instead.
     const rows = await ownerQuery<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean; rolcanlogin: boolean }>(
       `select rolname, rolsuper, rolbypassrls, rolcanlogin from pg_roles
         where rolname in ('app_tenant', 'app_system') order by rolname`,
     );
     expect(rows).toEqual([
-      { rolname: 'app_system', rolsuper: false, rolbypassrls: true, rolcanlogin: true },
+      { rolname: 'app_system', rolsuper: false, rolbypassrls: false, rolcanlogin: true },
       { rolname: 'app_tenant', rolsuper: false, rolbypassrls: false, rolcanlogin: true },
     ]);
+  });
+
+  test('no migration grants the bypass-RLS attribute: BYPASSRLS appears only as NOBYPASSRLS', () => {
+    const files = readdirSync(MIGRATIONS_FOLDER).filter((f) => f.endsWith('.sql'));
+    expect(files.length).toBeGreaterThanOrEqual(10);
+    for (const file of files) {
+      const text = readFileSync(join(MIGRATIONS_FOLDER, file), 'utf8');
+      // Any case, comments included. The one other spelling allowed is pg_roles' read-only
+      // `rolbypassrls` column, which 0002 reads to take the attribute off a leftover role.
+      const granting = [...text.matchAll(/bypassrls/gi)].filter((m) => !/(no|rol)$/i.test(text.slice(0, m.index)));
+      expect(granting.map((m) => text.slice(Math.max(0, m.index - 20), m.index + 9)), file).toEqual([]);
+    }
   });
 
   test('neither app role owns any table or view', async () => {
@@ -170,8 +196,18 @@ describe('row-level security definitions', () => {
   const expression = (column: string) =>
     `(${column} = (NULLIF(current_setting('app.company_id'::text, true), ''::text))::uuid)`;
 
+  /** app_system's pass through RLS, on the tables it holds a grant on. Its grants are the real limit. */
+  const APP_SYSTEM_ALL = {
+    policyname: 'app_system_all',
+    permissive: 'PERMISSIVE',
+    roles: '{app_system}',
+    cmd: 'ALL',
+    qual: 'true',
+    with_check: 'true',
+  };
+
   test.each([...TENANT_TABLES, ...COMPANY_SCOPED_GLOBALS])(
-    '%s has RLS enabled and forced, with the tenant_isolation policy',
+    '%s has RLS enabled and forced, with the tenant_isolation policy (and app_system_all where app_system has a grant)',
     async (table) => {
       const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
         `select relrowsecurity, relforcerowsecurity from pg_class where oid = $1::regclass`,
@@ -180,34 +216,60 @@ describe('row-level security definitions', () => {
       expect(cls).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
       const policies = await ownerQuery(
         `select policyname, permissive, roles, cmd, qual, with_check from pg_policies
-          where schemaname = 'public' and tablename = $1`,
+          where schemaname = 'public' and tablename = $1 order by policyname`,
         [table],
       );
-      expect(policies).toEqual([
-        {
-          policyname: 'tenant_isolation',
-          permissive: 'PERMISSIVE',
-          roles: '{public}',
-          cmd: 'ALL',
-          qual: expression('company_id'),
-          with_check: expression('company_id'),
-        },
-      ]);
+      const tenantIsolation = {
+        policyname: 'tenant_isolation',
+        permissive: 'PERMISSIVE',
+        roles: '{public}',
+        cmd: 'ALL',
+        qual: expression('company_id'),
+        with_check: expression('company_id'),
+      };
+      expect(policies).toEqual(
+        (APP_SYSTEM_RLS_TABLES as readonly string[]).includes(table) ? [APP_SYSTEM_ALL, tenantIsolation] : [tenantIsolation],
+      );
     },
   );
 
-  test('companies has RLS enabled and forced, with the company_self policy on id', async () => {
+  test('companies has RLS enabled and forced, with the company_self policy on id (and app_system_all)', async () => {
     const [cls] = await ownerQuery(
       `select relrowsecurity, relforcerowsecurity from pg_class where oid = 'public.companies'::regclass`,
     );
     expect(cls).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
     const policies = await ownerQuery(
-      `select policyname, cmd, qual, with_check from pg_policies
-        where schemaname = 'public' and tablename = 'companies'`,
+      `select policyname, permissive, roles, cmd, qual, with_check from pg_policies
+        where schemaname = 'public' and tablename = 'companies' order by policyname`,
     );
     expect(policies).toEqual([
-      { policyname: 'company_self', cmd: 'ALL', qual: expression('id'), with_check: expression('id') },
+      APP_SYSTEM_ALL,
+      {
+        policyname: 'company_self',
+        permissive: 'PERMISSIVE',
+        roles: '{public}',
+        cmd: 'ALL',
+        qual: expression('id'),
+        with_check: expression('id'),
+      },
     ]);
+  });
+
+  test('every RLS table app_system holds any grant on has app_system_all, and no other table has it', async () => {
+    // Worked out from the catalog, so a later migration that grants app_system a new RLS table
+    // without the policy (app_system would silently see zero rows there) fails here.
+    const granted = await ownerQuery<{ relname: string }>(
+      `select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind in ('r', 'p') and c.relrowsecurity
+          and (has_table_privilege('app_system', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+               or has_any_column_privilege('app_system', c.oid, 'SELECT,INSERT,UPDATE,REFERENCES'))
+        order by 1`,
+    );
+    expect(granted.map((r) => r.relname)).toEqual([...APP_SYSTEM_RLS_TABLES].sort());
+    const withPolicy = await ownerQuery<{ tablename: string }>(
+      `select tablename from pg_policies where schemaname = 'public' and 'app_system' = any(roles) order by 1`,
+    );
+    expect(withPolicy.map((r) => r.tablename)).toEqual([...APP_SYSTEM_RLS_TABLES].sort());
   });
 
   test('company_members is a security_barrier view owned by the migration owner', async () => {
@@ -667,6 +729,48 @@ describe('withTenant', () => {
 });
 
 describe('app_system', () => {
+  test('with no app.company_id set, app_system reads the whitelisted columns of every company (its policies, not a bypass)', async () => {
+    for (const s of [seed.a, seed.b]) {
+      const task = await insertTask(s.companyId, 'Storm plan');
+      await ownerQuery(
+        `insert into agent_task_steps (company_id, task_id, position, type, approval_class, idempotency_key)
+         values ($1, $2, 1, 'send_sms_batch', 'message', $3)`,
+        [s.companyId, task, `k1-${s.companyId}`],
+      );
+      await ownerQuery(
+        `insert into messages (company_id, channel, direction, purpose, body, status, scheduled_for)
+         values ($1, 'sms', 'out', 'marketing', 'Hi', 'scheduled', now())`,
+        [s.companyId],
+      );
+    }
+    await ownerQuery(
+      `insert into company_phone_numbers (company_id, e164) values ($1, '+14025550100'), ($2, '+14025550101')`,
+      [seed.a.companyId, seed.b.companyId],
+    );
+    const reads = {
+      companies: `select id as company_id, status, plan_key from companies`,
+      company_phone_numbers: `select company_id, e164 from company_phone_numbers`,
+      texting_registrations: `select company_id, campaign_status, subaccount_auth_token_encrypted from texting_registrations`,
+      agent_tasks: `select id, company_id, status, expires_at from agent_tasks`,
+      agent_task_steps: `select id, task_id, company_id, status, updated_at, lease_expires_at, run_seq from agent_task_steps`,
+      messages: `select id, company_id, status, scheduled_for from messages`,
+    } satisfies Record<(typeof APP_SYSTEM_RLS_TABLES)[number], string>;
+
+    const client = new pg.Client({ connectionString: urls.system });
+    await client.connect();
+    try {
+      const [who] = (await client.query(`select current_user as role, current_setting('app.company_id', true) as setting`)).rows;
+      expect(who.role).toBe('app_system');
+      expect(who.setting ?? '').toBe('');
+      for (const [table, text] of Object.entries(reads)) {
+        const rows = (await client.query<{ company_id: string }>(text)).rows;
+        expect(rows.map((r) => r.company_id).sort(), table).toEqual([seed.a.companyId, seed.b.companyId].sort());
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
   test('system role can read only whitelisted columns of agent_tasks', async () => {
     await insertTask(seed.a.companyId, 'Storm plan A');
     await insertTask(seed.b.companyId, 'Storm plan B');

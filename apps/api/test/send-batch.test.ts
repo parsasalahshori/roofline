@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { companies, customers, insertStepText, messages, properties, type StepRow, withTenant } from '@roofline/db';
 import { FakeSmsAdapter, SmsRefusedError } from '@roofline/send-gate';
+import { dispatchDueMessages } from '../src/jobs/scheduler/dispatch-messages.ts';
 import { buildGateRequest } from '../src/messaging/gate-request.ts';
 import { sendSmsBatch } from '../src/messaging/send-batch.ts';
 import { runStep } from '../src/tasks/runner.ts';
@@ -438,6 +439,42 @@ describe('send_sms_batch', () => {
     await t.queue.drain(t.deps);
     expect(rowFor(await stepMessages(t, 'a', third.stepId), ann!)).toMatchObject({ status: 'blocked', blockRule: 'frequency' });
     expect(t.sms.sent).toHaveLength(2);
+  });
+});
+
+describe('a home saved without a time zone', () => {
+  test("follows the company's zone when it is fixed later: 21:30 New York (20:30 Chicago) waits for 08:00 New York", async () => {
+    // A New York roofer adds a customer and their home while the company zone is still the
+    // America/Chicago default (F3 sets it from the geocoded address), and only then fixes the zone.
+    const owner = await actors.as('owner');
+    const [ann] = await addSmsCustomers(t, 'a', [{ firstName: 'Ann', phone: '+12125550131', consent: 'attested' }]);
+    const home = await owner
+      .post('/api/properties')
+      .send({ customerId: ann, addressLine: '5 Bleecker St', city: 'New York', state: 'NY', zip: '10012' });
+    expect(home.status).toBe(201);
+    expect((await owner.patch('/api/company').send({ timezone: 'America/New_York' })).status).toBe(200);
+
+    // The marketing batch runs at 20:30 Chicago: 21:30 in New York, after 21:00 there.
+    expect(t.clock.now()).toEqual(BATCH_AT);
+    const { taskId, stepId } = await approvedBatch(t, actors, [ann!]);
+    await t.queue.drain(t.deps);
+
+    expect(rowFor(await stepMessages(t, 'a', stepId), ann!)).toMatchObject({
+      status: 'scheduled',
+      scheduledFor: NEXT_MORNING_NY,
+      blockRule: 'quiet_hours',
+      blockReason: 'Will send at 8:00 AM their time (quiet hours).',
+      sentAt: null,
+    });
+    expect(t.sms.sent).toEqual([]);
+    expect(await stepRow(taskId)).toMatchObject({ status: 'running', result: { sent: 0, scheduled: 1, failed: 0, blocked: {} } });
+    // Because the home has no zone of its own: the company's is the one that applies.
+    expect((await owner.get(`/api/properties/${home.body.id}`)).body.timezone).toBeNull();
+
+    // At 08:01 New York the dispatcher sends it.
+    t.clock.set(new Date(NEXT_MORNING_NY.getTime() + MINUTE));
+    await dispatchDueMessages(t.deps, t.clock.now());
+    expect(sentTo(t.sms.sent)).toEqual(['+12125550131']);
   });
 });
 

@@ -4,8 +4,8 @@ import { ESLint } from 'eslint';
 import { describe, expect, test } from 'vitest';
 
 /*
- * The import boundary for @roofline/db/system (the app_system pool: BYPASSRLS, so it sees every
- * company). Only auth, the Twilio hooks, the scheduler jobs, the scripts, the worker and the db
+ * The import boundary for @roofline/db/system (the app_system pool: its RLS policies let it see
+ * every company). Only auth, the Twilio hooks, the scheduler jobs, the scripts, the worker and the db
  * package itself may import it; everything else reaches the database through `withTenant`.
  *
  * These tests run the repo's real ESLint config (eslint.config.js) on source text, with a

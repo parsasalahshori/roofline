@@ -3,8 +3,8 @@ import type { Db } from '../pools.ts';
 import { agentTasks, agentTaskSteps, messages } from '../schema/index.ts';
 
 /*
- * The scheduler's fan-out. These run on the app_system pool, which bypasses row-level security but
- * may read only a few columns of the tenant tables (ids, company, status and timing; never
+ * The scheduler's fan-out. These run on the app_system pool, whose RLS policies let it see every
+ * company's rows but which may read only a few columns of the tenant tables (ids, company, status and timing; never
  * content). They only LIST what needs doing, across companies: the work itself is done per company
  * by the caller, inside `withTenant`, as app_tenant and under RLS. Only apps/api/src/jobs/scheduler/**
  * (and the worker) import this module. Callers pass `now`, so the app's clock decides every cut-off.

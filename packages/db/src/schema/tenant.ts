@@ -141,6 +141,7 @@ export const properties = pgTable(
     addressKey: text('address_key').notNull(),
     /** `[longitude, latitude]`, SRID 4326. */
     geom: point4326('geom'),
+    /** Only when given for this address. Null: the send gate uses the company's zone at send time. */
     timezone: text('timezone'),
     geocodeSource: text('geocode_source'),
     geocodeAccuracy: text('geocode_accuracy'),

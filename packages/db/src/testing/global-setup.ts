@@ -9,7 +9,7 @@ declare module 'vitest' {
      * Connection URLs for the one Testcontainer this run shares.
      * - `owner`: the superuser that owns the tables (bypasses even forced RLS, so seeding works).
      * - `tenant`: app_tenant, subject to RLS.
-     * - `system`: app_system, BYPASSRLS but limited grants.
+     * - `system`: app_system, through RLS on its app_system_all policies but with limited grants.
      */
     dbUrls: { owner: string; tenant: string; system: string };
   }

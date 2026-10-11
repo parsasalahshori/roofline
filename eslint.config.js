@@ -3,8 +3,8 @@ import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 /*
- * Import boundary: `@roofline/db/system` is the app_system pool (BYPASSRLS), so it can read across
- * companies. Everything else goes through `withTenant`. Only the places below may import it
+ * Import boundary: `@roofline/db/system` is the app_system pool (its RLS policies let it through
+ * every company's rows), so it can read across companies. Everything else goes through `withTenant`. Only the places below may import it
  * (ruled in Task 19; scripts ratified in Task 14). Adding a place here is a design decision, not a
  * lint fix. The relative patterns close the back door: a path straight into the db package's source.
  */

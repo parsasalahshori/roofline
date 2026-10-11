@@ -11,7 +11,8 @@ export type Db = NodePgDatabase<Schema> & { $client: pg.Pool };
  * The two connection pools the app uses. Neither connects as the table owner.
  * - `tenant` (app_tenant): all request work, always inside `withTenant`, subject to forced RLS.
  * - `system` (app_system): only `@roofline/db/system` functions (auth, webhook routing, scheduler
- *   fan-out). BYPASSRLS, but limited to the global tables plus a few scheduler columns.
+ *   fan-out). Not subject to the per-company filter (its app_system_all policies let every row
+ *   through), but its grants limit it to the global tables plus a few scheduler columns.
  */
 export type Pools = { tenant: Db; system: Db; end(): Promise<void> };
 

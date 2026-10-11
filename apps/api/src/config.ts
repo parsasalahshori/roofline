@@ -55,7 +55,12 @@ const ConfigSchema = z
     /** Per-session request limit for /api/*. Parsed here, applied by the rate limiter. */
     API_RATE_LIMIT_PER_MIN: integer(600, 1, 1_000_000),
     PORT: integer(4400, 1, 65535),
-    HOST: z.string().min(1).default('127.0.0.1'),
+    /**
+     * The address to listen on. Unset: `0.0.0.0` (every interface) in production, where the host's
+     * health check and router reach the process from outside its container; `127.0.0.1` otherwise,
+     * so a development server is not on the LAN. A HOST that is set always wins.
+     */
+    HOST: z.string().min(1).optional(),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.POSTMARK_TOKEN && !cfg.MAIL_FROM) {
@@ -65,7 +70,11 @@ const ConfigSchema = z
         message: 'is required when POSTMARK_TOKEN is set (Postmark needs a verified From address)',
       });
     }
-  });
+  })
+  .transform(({ HOST, ...cfg }) => ({
+    ...cfg,
+    HOST: HOST ?? (cfg.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'),
+  }));
 
 export type Config = z.infer<typeof ConfigSchema>;
 

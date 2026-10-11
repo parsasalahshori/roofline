@@ -39,7 +39,7 @@ const A = () => t.seed.a.companyId;
 const full = { addressLine: '12 Oak St', city: 'Omaha', state: 'NE', zip: '68102' };
 
 describe('adding an address', () => {
-  test('the answer has the documented shape; the company time zone is the default', async () => {
+  test('the answer has the documented shape; with no time zone given it is null (the company zone applies)', async () => {
     const res = await (await who.as('office')).post('/api/properties').send(full);
     expect(res.status).toBe(201);
     expect(res.body).toEqual({
@@ -51,7 +51,7 @@ describe('adding an address', () => {
       zip: '68102',
       lat: null,
       lng: null,
-      timezone: 'America/Chicago',
+      timezone: null,
       yearBuilt: null,
       archivedAt: null,
       createdAt: '2026-10-12T15:00:00.000Z',
@@ -59,11 +59,17 @@ describe('adding an address', () => {
     });
   });
 
-  test("the default time zone is the company's own, whatever it is", async () => {
+  test("with no time zone given, none is stored: the company's zone is not copied, so a later change to it applies", async () => {
     await inCompany(t, A(), (tx) => tx.update(companies).set({ timezone: 'America/Denver' }));
-    const res = await (await who.as('owner')).post('/api/properties').send(full);
-    expect(res.body.timezone).toBe('America/Denver');
-    expect((await dbProperty(t, A(), res.body.id)).timezone).toBe('America/Denver');
+    const owner = await who.as('owner');
+    const res = await owner.post('/api/properties').send(full);
+    expect(res.body.timezone).toBeNull();
+    expect((await dbProperty(t, A(), res.body.id)).timezone).toBeNull();
+    // The audit row records what was stored.
+    expect((await dbAudit(t, A(), 'property.create'))[0]!.after).toMatchObject({ timezone: null });
+    // The company fixes its zone afterwards; the address still has none of its own.
+    await inCompany(t, A(), (tx) => tx.update(companies).set({ timezone: 'America/New_York' }));
+    expect((await owner.get(`/api/properties/${res.body.id}`)).body.timezone).toBeNull();
   });
 
   test('every field can be given: customer, location, time zone, year built', async () => {

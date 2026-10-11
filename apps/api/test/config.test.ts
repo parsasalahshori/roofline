@@ -28,8 +28,22 @@ describe('loadConfig', () => {
       TRUST_PROXY: 0,
       API_RATE_LIMIT_PER_MIN: 600,
       PORT: 4400,
-      HOST: '127.0.0.1',
+      HOST: '0.0.0.0',
     });
+  });
+
+  test('HOST defaults to every interface in production (a host health check must reach it), loopback otherwise', () => {
+    expect(loadConfig(VALID).HOST).toBe('0.0.0.0');
+    expect(loadConfig({ ...VALID, NODE_ENV: 'development' }).HOST).toBe('127.0.0.1');
+    expect(loadConfig({ ...VALID, NODE_ENV: 'test' }).HOST).toBe('127.0.0.1');
+    // A blank HOST line counts as unset, so it gets the default too.
+    expect(loadConfig({ ...VALID, HOST: ' ' }).HOST).toBe('0.0.0.0');
+  });
+
+  test.each(['production', 'development', 'test'])('an explicit HOST always wins (NODE_ENV=%s)', (NODE_ENV) => {
+    expect(loadConfig({ ...VALID, NODE_ENV, HOST: '127.0.0.1' }).HOST).toBe('127.0.0.1');
+    expect(loadConfig({ ...VALID, NODE_ENV, HOST: '0.0.0.0' }).HOST).toBe('0.0.0.0');
+    expect(loadConfig({ ...VALID, NODE_ENV, HOST: '::' }).HOST).toBe('::');
   });
 
   test('parses the optional values', () => {

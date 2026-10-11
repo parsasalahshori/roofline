@@ -1,7 +1,7 @@
 import { and, asc, count, eq, ilike, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { normalizeAddressKey } from '@roofline/shared';
 import { findPgError, isUniqueViolation } from '../errors.ts';
-import { companies, jobs, properties } from '../schema/index.ts';
+import { jobs, properties } from '../schema/index.ts';
 import type { LngLat } from '../schema/columns.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
@@ -26,7 +26,11 @@ export type PropertyInput = {
   zip: string;
   /** `[longitude, latitude]`. */
   location?: LngLat | null;
-  /** Left out: the company's own time zone. */
+  /**
+   * Left out: none is stored (null), and the send gate uses the company's zone, as it is at send
+   * time. The company's zone is never copied in: it is a default until F3 geocodes the company, and
+   * a copy would not follow a later fix.
+   */
   timezone?: string;
   yearBuilt?: number | null;
 };
@@ -125,11 +129,6 @@ function snapshot(row: PropertyRow, fields: readonly AuditedField[]): Record<str
   return Object.fromEntries(fields.map((field) => [field, values[field]]));
 }
 
-async function companyTimezone(tx: Tx, ctx: TenantContext): Promise<string> {
-  const [row] = await tx.select({ timezone: companies.timezone }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
-  return row!.timezone;
-}
-
 // ---------------------------------------------------------------------------------------------
 // Reads
 
@@ -203,7 +202,6 @@ export async function createProperty(
   const { now } = options;
   if (ctx.role === 'rep' && input.customerId == null) throw new CustomerRequiredError();
   if (input.customerId != null && !(await getCustomer(tx, ctx, input.customerId))) throw new UnknownCustomerError();
-  const timezone = input.timezone ?? (await companyTimezone(tx, ctx));
 
   const [row] = await writing(() =>
     tx
@@ -217,7 +215,7 @@ export async function createProperty(
         zip: input.zip,
         addressKey: normalizeAddressKey(input.addressLine, input.zip),
         ...(input.location != null && { geom: input.location }),
-        timezone,
+        timezone: input.timezone ?? null,
         yearBuilt: input.yearBuilt ?? null,
         createdAt: now,
         updatedAt: now,
