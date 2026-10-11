@@ -22,12 +22,13 @@ const RULES = [
   'House rules (all agents):',
   '- Never spawn subagents.',
   '- Work only inside the worktree named for your task. Never touch other worktrees or other checkouts. Never push, merge, rebase, stash, reset, or switch branches. Never create or commit .env files.',
-  '- If npm creates a nested node_modules directory, run: xattr -w com.apple.fileprovider.ignore#P 1 <that dir>.',
+  A.cloud ? '- This is a 4-CPU cloud box shared by many agents. Run heavy commands (npm run typecheck, npm run lint, npm run lint:css, npm run build:web, or a whole web/ui vitest project) through the slot wrapper: ' + BIN + 'slot <command>. Focused vitest files need no wrapper.' : '- If npm creates a nested node_modules directory, run: xattr -w com.apple.fileprovider.ignore#P 1 <that dir>.',
   '- Repo style: ESM, explicit .ts/.tsx extensions on relative imports, strict TypeScript, CSS Modules with the S1 tokens, no letter-containing literal UI text in JSX (text comes from apps/web/src/copy/*.ts or props), no raw <button> in apps/web/src.',
   '- Known unrelated flake: apps/api/test/rep-visibility.test.ts:400 (a random UUID can contain 333); if only that fails, re-run that file alone.',
+  A.cloud ? '- There is NO Docker on this machine: never run database-backed tests (vitest for @roofline/db, @roofline/api or @roofline/worker, or any test file under packages/db, apps/api or apps/worker that starts a database) locally; they cannot start. Write them carefully and let GitHub Actions run them through ' + BIN + 'ci-check. Never try to start Docker.' :
   '- Database-backed tests (vitest for @roofline/db, @roofline/api or @roofline/worker, or any test file under packages/db, apps/api or apps/worker) start emulated PostGIS containers and this machine can only run a couple at once. ALWAYS run them through the slot wrapper, for example: ' + BIN + 'dbtest npx vitest run --project @roofline/api --testTimeout=60000 . Waiting for a slot is normal. Never start a database container yourself, and never stop or remove containers. Web/ui/shared/send-gate tests do not need the wrapper. Run only FOCUSED database test files locally; the complete database suites run on GitHub Actions through ' + BIN + 'ci-check (see the commit step).',
   '- GitHub: the repo is the private parsasalahshori/roofline. You may push ONLY your own task branch, and only through ' + BIN + 'ci-check. Never force-push, never push another branch, never open pull requests.',
-  '- Global constraints file (binding): ' + A.constraints,
+  '- Global constraints file (binding): see the task header.',
 ].join('\n')
 
 const PLAN = { type: 'object', properties: {
@@ -63,15 +64,16 @@ const GROUP = { type: 'object', properties: {
   mergeNotes: { type: 'string' } }, required: ['issues', 'mergeNotes'] }
 
 function head(t) {
-  return 'Roofline (multi-company roofing SaaS; milestone ' + (A.milestone || 'F2, the web shell') + ') Task ' + t.n + ': ' + t.title + '.\n' +
+  return 'Roofline (multi-company roofing SaaS; milestone ' + (t.milestone || A.milestone || 'F2, the web shell') + ') Task ' + t.n + ': ' + t.title + '.\n' +
     'Worktree: ' + t.worktree + ' (branch ' + t.branch + '). Task brief (requirements with exact values): ' + t.brief + '\n' +
+    'Global constraints file (binding): ' + (t.constraints || A.constraints) + '\n' +
     'Context from other tasks and controller rulings:\n' + t.context + '\n'
 }
 
 function planPrompt(t) {
   return 'You are the Sonnet lead for ' + head(t) + '\n' + RULES + '\n\n' +
     'You lead up to 3 Haiku builders who will implement your packages AT THE SAME TIME in this same worktree. Planning only:\n' +
-    (t.mode === 'resume' ? 'IMPORTANT: builders already did part of this task before an interruption; the uncommitted changes in the worktree are their work (git -C ' + t.worktree + ' status / diff). Keep what is right, and plan packages for the REMAINING work and for anything partial or wrong.\n' : '') +
+    (t.mode === 'resume' ? 'IMPORTANT: builders already did part of this task before an interruption; their partial work is in the worktree as WIP commits since ' + t.base + ' plus any uncommitted changes (git -C ' + t.worktree + ' log --oneline ' + t.base + '..HEAD; git -C ' + t.worktree + ' diff ' + t.base + '; git status). Never rewrite or squash those commits; commit on top. Keep what is right, and plan packages for the REMAINING work and for anything partial or wrong.\n' : '') +
     '1. Read the brief, the global constraints and the existing code the task touches.\n' +
     '2. If the task needs new npm packages, install them now in the worktree (npm i <pkg> -w <workspace>), so builders never touch package.json or package-lock.json. You may also create shared type-only files or minimal module shells that several packages import, so each package compiles on its own. Do not write the implementation or the tests.\n' +
     '3. Split the task into 3 packages (fewer only if the task truly has fewer independent parts). Every file the task touches belongs to exactly one package; no two packages edit the same file. Shared-file edits (index.ts exports, app.ts mounts, router wiring, config, copy files used by several parts) go to one package.\n' +
@@ -131,7 +133,7 @@ function groupPrompt(contact, group, results) {
     const r = results[i]
     return 'Task ' + t.n + ' (' + t.title + '): worktree ' + t.worktree + ', branch ' + t.branch + ', base ' + t.base + ', head ' + (r && r.sha ? r.sha : 'unknown') + ', status ' + (r ? r.status : 'failed')
   }).join('\n')
-  return 'You are ' + contact + ', the Opus contact for these Roofline ' + (A.milestone || 'F2') + ' tasks. They were built on separate branches in parallel and will all be merged into ' + (A.integrationBranch || 'f2-shell') + ' by the controller.\n' + lines + '\n' + RULES + '\n\n' +
+  return 'You are ' + contact + ', the Opus contact for these Roofline tasks (' + group.map((t) => (t.milestone || A.milestone || 'F2') + ' T' + t.n + ' -> ' + (t.integrationBranch || A.integrationBranch || 'f2-shell')).join(', ') + '). They were built on separate branches in parallel and will be merged into their integration branches by the controller.\n' + lines + '\n' + RULES + '\n\n' +
     'Read each diff (git -C <worktree> diff <base>..HEAD) and the briefs. Check how they fit together: interfaces one produces and another consumes (names, types, props), duplicated helpers, edits to the same files (predict merge conflicts and say exactly how to resolve each), and consistency with the copy and lint rules. Do not modify files. Return issues (with the task numbers involved) and merge notes.'
 }
 
