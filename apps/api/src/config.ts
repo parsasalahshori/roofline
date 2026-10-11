@@ -31,6 +31,14 @@ const encryptionKey = z.string(required).refine((v) => {
   return bytes.length === 32 && bytes.toString('base64') === v;
 }, 'must be 32 random bytes, base64-encoded (openssl rand -base64 32)');
 
+/** An on/off switch from an env string: `1` or `true` is yes, `0` or `false` is no; unset stays unset. */
+const flag = z
+  .string()
+  .transform((v) => v.trim().toLowerCase())
+  .pipe(z.enum(['1', 'true', '0', 'false'], { error: 'must be 1, true, 0 or false' }))
+  .transform((v) => v === '1' || v === 'true')
+  .optional();
+
 const ConfigSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production'], {
@@ -49,6 +57,18 @@ const ConfigSchema = z
     /** The From header for outgoing email, for example `Roofline <hello@example.com>`. */
     MAIL_FROM: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
+
+    /**
+     * How the weather service is told who is asking (it wants a name and a way to reach you).
+     * Unset: `Roofline (<PUBLIC_BASE_URL>)`, chosen where the source is built (deps.ts).
+     */
+    NWS_USER_AGENT: z
+      .string()
+      // It becomes an HTTP header, and a header with other characters makes every request fail.
+      .regex(/^[\x20-\x7e]+$/, 'must be plain ASCII text, like Roofline (ops@example.com)')
+      .optional(),
+    /** `1` or `true` turns weather off (the null source: no network). `0` or `false` leaves it on. */
+    WEATHER_DISABLED: flag,
 
     /** How many reverse-proxy hops to trust for `req.ip` (0 = none). */
     TRUST_PROXY: integer(0, 0, 32),

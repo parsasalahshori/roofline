@@ -19,7 +19,9 @@ import { jobRoutes } from './routes/jobs.ts';
 import { propertyRoutes } from './routes/properties.ts';
 import { taskRoutes } from './routes/tasks.ts';
 import { teamRoutes } from './routes/team.ts';
+import { weatherRoutes } from './routes/weather.ts';
 import type { StepQueue } from './tasks/queue.ts';
+import type { WeatherSource } from './weather/source.ts';
 
 /** Everything the app reaches outside itself through. Tests pass fakes for all of it. */
 export type AppDeps = {
@@ -39,6 +41,12 @@ export type AppDeps = {
    * and the worker use `DisabledSmsAdapter` until F3 adds Twilio; tests pass a `FakeSmsAdapter`.
    */
   sms: SmsAdapter;
+  /**
+   * Where the weather chip's numbers come from (weather/source.ts). The server uses the National
+   * Weather Service, or `NullWeatherSource` when `WEATHER_DISABLED` is set; tests pass a fake, so
+   * no test reaches the network.
+   */
+  weather: WeatherSource;
   /**
    * Where work that runs outside a request reports an error worth a person's look (the runner, when
    * a step gives up after its last attempt). It gets the error itself and where it happened, and
@@ -128,6 +136,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
   app.use('/api/tasks', taskRoutes(deps));
+  app.use('/api/weather', weatherRoutes(deps));
 
   app.use(notFoundHandler);
   app.use(errorHandler(logError));

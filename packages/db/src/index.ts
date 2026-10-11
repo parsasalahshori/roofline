@@ -56,6 +56,7 @@ export {
   setJobArchived,
   updateJob,
 } from './repos/jobs.ts';
+export { type CompanyLocation, companyLocation } from './repos/location.ts';
 export {
   getStepText,
   insertStepText,

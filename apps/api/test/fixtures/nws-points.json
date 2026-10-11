@@ -1,0 +1,5 @@
+{
+  "properties": {
+    "forecastHourly": "https://api.weather.gov/gridpoints/OAX/80,63/forecast/hourly"
+  }
+}
