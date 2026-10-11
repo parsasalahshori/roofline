@@ -33,6 +33,19 @@ export async function companyIdForNumber(
 }
 
 /**
+ * The company whose texting registration owns this messaging service (`messaging_service_sid`);
+ * null when no registration has it. Used to route a delivery report that carries no usable `From`.
+ */
+export async function companyIdForMessagingService(system: Db, messagingServiceSid: string): Promise<string | null> {
+  const [row] = await system
+    .select({ companyId: textingRegistrations.companyId })
+    .from(textingRegistrations)
+    .where(eq(textingRegistrations.messagingServiceSid, messagingServiceSid))
+    .limit(1);
+  return row?.companyId ?? null;
+}
+
+/**
  * The auth token the provider signs this company's webhooks with: the company's own subaccount
  * token (`texting_registrations.subaccount_auth_token_encrypted`, decrypted with `encryptionKeyB64`)
  * when it has one, else `fallback` (the platform account's TWILIO_AUTH_TOKEN), else null.
