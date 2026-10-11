@@ -57,6 +57,13 @@
       "when": 1791721346810,
       "tag": "0007_messages_retryable",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791724864806,
+      "tag": "0008_messages_from_e164",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,4 @@
+export { decrypt, encrypt } from './crypto.ts';
 export { findPgError, ForbiddenError, isUniqueViolation, type PgErrorInfo } from './errors.ts';
 export { MIGRATIONS_FOLDER, migrate } from './migrate.ts';
 export { createPools, type Db, type PoolName, type PoolOptions, type Pools, type Schema } from './pools.ts';
@@ -25,6 +26,22 @@ export {
   updateCustomer,
   type WriteOptions,
 } from './repos/customers.ts';
+export {
+  companyContact,
+  customersWithPhone,
+  type DeliveryOutcome,
+  flagPossibleOptOut,
+  type InboundText,
+  insertInboundText,
+  lockRecipients,
+  type PhoneCustomer,
+  POSSIBLE_OPT_OUT,
+  recordDeliveryOutcome,
+  restoreConsentByText,
+  revokeConsentByText,
+  TEXTED_START,
+  TEXTED_STOP,
+} from './repos/inbound.ts';
 export {
   createJob,
   getJob,

@@ -8,6 +8,7 @@ import type { GoogleVerifier } from './auth/google.ts';
 import { attachSession, requireSession } from './auth/middleware.ts';
 import { authRoutes } from './auth/routes.ts';
 import { errorHandler, logErrorToConsole, MESSAGES, notFoundHandler } from './errors.ts';
+import { twilioHooks } from './hooks/twilio.ts';
 import type { Mailer } from './mailer.ts';
 import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
@@ -101,6 +102,10 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   });
 
   app.use(blockCrossSiteMutations(config.APP_ORIGIN));
+  // Twilio's webhooks (hooks/twilio.ts): signed form posts, no session, no rate limit. Mounted
+  // ahead of the JSON parser and the /api gate, with its own form parser (64 KB), so these routes
+  // only ever read form bodies.
+  app.use('/hooks/twilio', twilioHooks(deps));
   // JSON only. `express.urlencoded` is deliberately not mounted here: Twilio's webhooks are the
   // one form-encoded caller, and /hooks/twilio/* adds it for itself.
   app.use(express.json({ limit: JSON_BODY_LIMIT }));

@@ -405,7 +405,10 @@ export const messages = pgTable(
     stepId: uuid('step_id'),
     dedupeKey: text('dedupe_key'),
     segments: integer('segments').notNull().default(1),
+    /** Outbound: the customer's number. Inbound: the company's texting number it was sent to. */
     toE164: text('to_e164'),
+    /** Inbound only: the number the text came from. Null on outbound rows. */
+    fromE164: text('from_e164'),
     /**
      * For a `failed` text: whether trying again is safe. True only when the provider refused it
      * (so it never went out); false when it may have gone out (unconfirmed) or can never go out.
