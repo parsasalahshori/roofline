@@ -237,7 +237,7 @@ Read from the code on `f2-shell` and `f3-setup`, not from the earlier specs:
 
 ## 11. Copy and plain words
 
-- New copy files: `copy/jobs.ts`, `copy/customers.ts`, `copy/calendar.ts`, `copy/prices.ts`, `copy/quotes.ts`. Vendor names ("Google Calendar", "Outlook") appear only in `copy/connections.ts`, which the calendar screens import for those strings (F2 rule).
+- New per-feature copy files (for example `copy/jobs.ts`, `copy/customers.ts`, `copy/calendar.ts`, `copy/appointments.ts`, `copy/prices.ts`, `copy/schedule.ts`, `copy/quotes.ts`; the plan lists them all). Vendor names ("Google Calendar", "Outlook") appear only in `copy/connections.ts`, which the calendar screens import for those strings (F2 rule).
 - Stage, appointment-kind, appointment-status and lost-reason labels each come from one map; snake_case values (`no_show`, `another_roofer`, `insurance_denied`) never appear in copy text.
 - Money shows whole dollars on cards and two decimals on quotes; times show like "Tue, Oct 13 · 2:00 PM".
 
