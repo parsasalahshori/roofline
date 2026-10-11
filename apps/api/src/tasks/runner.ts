@@ -10,6 +10,7 @@ import {
 } from '@roofline/db';
 import { isStepType, type StepResult, type StepType } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { logErrorToConsole } from '../errors.ts';
 import { builtInHandlers } from './handlers.ts';
 import { refreshTask } from './service.ts';
 
@@ -69,7 +70,9 @@ const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: nu
  * 2. In a second transaction, locks the step (still this run's) and calls its handler, then saves
  *    the outcome and brings the task's status in line (`refreshTask`).
  * 3. When the handler throws, that transaction rolls back. Before the fifth run the error is thrown
- *    on, so the queue tries again; on the fifth the step needs attention with a plain reason.
+ *    on, so the queue tries again (and logs it). On the fifth the error goes to `deps.logError`
+ *    (in the safe form of `describeErrorForLog`), and the step needs attention with a plain
+ *    sentence: the error itself is never stored on the step or shown to a person.
  * A step whose type has no handler needs attention at once ("This kind of step can't run yet.");
  * one claimed for a sixth time (a run that crashed the process on its fifth try) is not run again.
  */
@@ -107,7 +110,18 @@ export async function runStep(deps: AppDeps, companyId: string, stepId: string):
     });
   } catch (err) {
     if (claimed.attempts < MAX_ATTEMPTS) throw err;
+    // Logged first, so the cause is on record even if saving the outcome fails too.
+    report(deps, err, `step ${stepId} (gave up after ${MAX_ATTEMPTS} attempts)`);
     await settle(deps, ctx, claimed, { status: 'needs_attention', errorPlain: GAVE_UP });
+  }
+}
+
+/** Hands an error to the app's log. A failing logger must not stop the step being marked. */
+function report(deps: AppDeps, err: unknown, where: string): void {
+  try {
+    (deps.logError ?? logErrorToConsole)(err, where);
+  } catch {
+    // Nothing more to do: the step still gets its plain reason.
   }
 }
 

@@ -95,6 +95,12 @@ export type StepView = {
   preview: Record<string, unknown>;
   /** Whether the viewer may approve (and so edit) this step. */
   canApprove: boolean;
+  /** How many times the runner has started this step (0 until it runs; back to 0 on a retry). */
+  attempts: number;
+  /** What the step reported when it ran (counts only, never payload data), or null before it has. */
+  result: StepResult | null;
+  /** Why the step failed or needs attention, in words a person can read, or null. */
+  errorPlain: string | null;
   /** What the step does, as saved. Only on the views of one task and of an edited step, never on the list. */
   payload?: Record<string, unknown>;
 };
@@ -116,6 +122,8 @@ export type TaskView = {
   expiresAt: Date | null;
   /** True for a plan whose time has run out: marked `expired`, or a draft past `expiresAt` that the expiry job has not reached yet. */
   expired: boolean;
+  /** Minutes of staff time the plan saved, set when it finishes; null until then. */
+  minutesSaved: number | null;
   steps: StepView[];
 };
 
@@ -133,6 +141,10 @@ export function toStepView(row: StepViewRow, ctx: TenantContext, options: StepVi
     status: row.status,
     preview: row.preview,
     canApprove: can(ctx, APPROVE[row.approvalClass]),
+    attempts: row.attempts,
+    // A handler's result is a StepResult (runner.ts saves only what a handler returned).
+    result: (row.result ?? null) as StepResult | null,
+    errorPlain: row.errorPlain,
     ...(options.payload === true && { payload: row.payload }),
   };
 }
@@ -165,6 +177,7 @@ export function toTaskView(
     createdAt: task.createdAt,
     expiresAt: task.expiresAt,
     expired: isExpired(task, now),
+    minutesSaved: task.minutesSaved,
     steps: steps.map((step) => toStepView(step, ctx, options)),
   };
 }

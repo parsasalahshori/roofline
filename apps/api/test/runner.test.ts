@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { audit, type StepRow, type TenantContext } from '@roofline/db';
 import { ImmediateQueue } from '../src/tasks/queue.ts';
 import { registerStepHandler, runStep, type StepHandler } from '../src/tasks/runner.ts';
@@ -96,6 +96,82 @@ describe('runStep', () => {
     expect(calls).toBe(5);
     expect(await stepNow(taskId)).toMatchObject({ status: 'needs_attention', attempts: 5, errorPlain: GAVE_UP });
     expect(await dbTask(t, 'a', taskId)).toMatchObject({ status: 'needs_attention', minutesSaved: 0 });
+  });
+
+  test('a give-up is logged once, with the handler\'s own error; the step keeps only the plain sentence', async () => {
+    const thrown: Error[] = [];
+    use('demo_noop', async () => {
+      const err = new Error(`provider timed out (try ${thrown.length + 1}) token=sk_live_123`);
+      thrown.push(err);
+      throw err;
+    });
+    const { taskId, step } = await approvedOneStep();
+
+    await t.queue.drain(t.deps);
+
+    // The four earlier failures went back to the queue; only the last one is the runner's to log.
+    expect(t.logged).toHaveLength(1);
+    expect(t.logged[0]!.err).toBe(thrown[4]);
+    expect(t.logged[0]!.where).toBe(`step ${step.id} (gave up after 5 attempts)`);
+    const row = await stepNow(taskId);
+    expect(row.errorPlain).toBe(GAVE_UP);
+    expect(JSON.stringify(row)).not.toContain('provider timed out');
+    expect(JSON.stringify(row)).not.toContain('sk_live_123');
+  });
+
+  test('without a logger in deps, a give-up is one console line in the R14 form: name, first line without SQL params, pg code', async () => {
+    use('demo_noop', async () => {
+      const err = new Error('Failed query: update "agent_task_steps" set "result" = $1\nparams: {"secret":"sk_live_123"}', {
+        cause: Object.assign(new Error('duplicate key'), { code: '23505' }),
+      });
+      err.name = 'DrizzleQueryError';
+      throw err;
+    });
+    const { step } = await approvedOneStep();
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      await t.queue.drain({ ...t.deps, logError: undefined });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines).toEqual([
+      `Unhandled error on step ${step.id} (gave up after 5 attempts): DrizzleQueryError: Failed query: update "agent_task_steps" set "result" = $1 (pg 23505)`,
+    ]);
+    expect(lines.join('\n')).not.toContain('sk_live_123');
+  });
+
+  test('a logger that throws does not stop the step being marked as needing attention', async () => {
+    use('demo_noop', throwing());
+    const { taskId } = await approvedOneStep();
+    await t.queue.drain({
+      ...t.deps,
+      logError: () => {
+        throw new Error('log sink is down');
+      },
+    });
+    expect(await stepNow(taskId)).toMatchObject({ status: 'needs_attention', errorPlain: GAVE_UP });
+  });
+
+  test('nothing is logged for a step that succeeds after retries, or one whose type cannot run yet', async () => {
+    let calls = 0;
+    use('demo_noop', async () => {
+      calls += 1;
+      if (calls <= 4) throw new Error('provider timed out');
+      return { status: 'done', result: { ok: 1 } };
+    });
+    const { taskId } = await approvedOneStep();
+    const [id] = await newCustomers(t, 'a', ['Molly']);
+    const { taskId: sms } = await newTask(t, 'a', { steps: [smsStep([id!])] });
+    await (await actors.as('owner')).post(`/api/approvals/${sms}/approve`).send(seenOf(await dbSteps(t, 'a', sms)));
+
+    await t.queue.drain(t.deps);
+
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 5 });
+    expect((await dbSteps(t, 'a', sms))[0]!.status).toBe('needs_attention');
+    expect(t.logged).toEqual([]);
   });
 
   test('a throw rolls back what the handler wrote in its transaction; the attempt itself is still counted', async () => {
@@ -484,6 +560,46 @@ describe('POST /api/approvals/:taskId/steps/:stepId/retry', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
+
+describe('what the views show of a run', () => {
+  test('a step that gave up: attempts, the plain reason and no result, on the detail and on the feed', async () => {
+    use('demo_noop', throwing());
+    const { taskId, step } = await approvedOneStep();
+    await t.queue.drain(t.deps);
+
+    const owner = await actors.as('owner');
+    const detail = await owner.get(`/api/approvals/${taskId}`);
+    expect(detail.body).toMatchObject({ status: 'needs_attention', minutesSaved: 0 });
+    expect(detail.body.steps[0]).toMatchObject({ id: step.id, status: 'needs_attention', attempts: 5, result: null, errorPlain: GAVE_UP });
+
+    const feed = await owner.get('/api/tasks');
+    expect(feed.body.tasks[0]).toMatchObject({ id: taskId, minutesSaved: 0 });
+    expect(feed.body.tasks[0].steps[0]).toEqual({ ...detail.body.steps[0], payload: undefined });
+    expect(feed.body.tasks[0].steps[0]).not.toHaveProperty('payload');
+  });
+
+  test('a retried step shows attempts back at 0 and no error until it runs again', async () => {
+    const restore = registerStepHandler('demo_noop', throwing());
+    const { taskId, step } = await approvedOneStep();
+    await t.queue.drain(t.deps);
+    restore();
+    const res = await (await actors.as('owner')).post(retryUrl(taskId, step.id));
+    expect(res.body.steps[0]).toMatchObject({ status: 'queued', attempts: 0, errorPlain: null });
+  });
+
+  test('a send that reported counts shows them on the list, never the payload\'s customer ids', async () => {
+    use('send_sms_batch', async () => ({ status: 'done', result: { sent: 2, blocked: { do_not_contact: 1 } } }));
+    const ids = await newCustomers(t, 'a', ['Molly', 'Ann', 'Bo']);
+    const { taskId } = await newTask(t, 'a', { steps: [smsStep(ids)] });
+    await (await actors.as('owner')).post(`/api/approvals/${taskId}/approve`).send(seenOf(await dbSteps(t, 'a', taskId)));
+    await t.queue.drain(t.deps);
+
+    const feed = await (await actors.as('owner')).get('/api/tasks');
+    expect(feed.body.tasks[0]).toMatchObject({ status: 'done', minutesSaved: 3 });
+    expect(feed.body.tasks[0].steps[0]).toMatchObject({ attempts: 1, result: { sent: 2, blocked: { do_not_contact: 1 } }, errorPlain: null });
+    for (const id of ids) expect(JSON.stringify(feed.body)).not.toContain(id);
+  });
+});
 
 describe('GET /api/tasks/summary', () => {
   test('working counts the tasks with a step queued or running', async () => {

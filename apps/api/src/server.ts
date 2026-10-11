@@ -3,7 +3,7 @@ import { type AppDeps, createApp } from './app.ts';
 import { JoseGoogleVerifier } from './auth/google.ts';
 import { systemClock } from './clock.ts';
 import { ConfigError, loadConfig } from './config.ts';
-import { describeErrorForLog } from './errors.ts';
+import { logErrorToConsole } from './errors.ts';
 import { ConsoleMailer, type Mailer, PostmarkMailer } from './mailer.ts';
 import { ImmediateQueue } from './tasks/queue.ts';
 
@@ -44,9 +44,9 @@ const google = new JoseGoogleVerifier(config.GOOGLE_CLIENT_ID);
 // Steps run in this process for now; the pg-boss worker takes this over.
 const queue = new ImmediateQueue(
   (): AppDeps => deps,
-  (err, stepId) => console.error(`Running step ${stepId} failed: ${describeErrorForLog(err)}`),
+  (err, stepId) => logErrorToConsole(err, `step ${stepId}`),
 );
-const deps: AppDeps = { pools, config, mailer, clock: systemClock, google, queue };
+const deps: AppDeps = { pools, config, mailer, clock: systemClock, google, queue, logError: logErrorToConsole };
 const app = createApp(deps);
 
 // Express 5 calls this once, with the error as its argument if listening failed (port in use).

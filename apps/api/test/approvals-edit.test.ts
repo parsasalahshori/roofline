@@ -369,6 +369,7 @@ describe('GET /api/approvals', () => {
       createdAt: NOW.toISOString(),
       expiresAt: new Date(NOW.getTime() + 48 * HOUR).toISOString(),
       expired: false,
+      minutesSaved: null,
       steps: [
         {
           id: steps[0]!.id,
@@ -380,6 +381,9 @@ describe('GET /api/approvals', () => {
           status: 'pending',
           preview: { title: 'Text 31 customers', lines: [] },
           canApprove: true,
+          attempts: 0,
+          result: null,
+          errorPlain: null,
         },
         {
           id: steps[1]!.id,
@@ -391,6 +395,9 @@ describe('GET /api/approvals', () => {
           status: 'pending',
           preview: { title: 'Door-knock routes for 4 reps', lines: [] },
           canApprove: true,
+          attempts: 0,
+          result: null,
+          errorPlain: null,
         },
         {
           id: steps[2]!.id,
@@ -402,6 +409,9 @@ describe('GET /api/approvals', () => {
           status: 'pending',
           preview: { title: 'Google + Facebook ads on the swath', lines: ['Spends up to $270.00'], maxSpendCents: 27000 },
           canApprove: true,
+          attempts: 0,
+          result: null,
+          errorPlain: null,
         },
       ],
     });
@@ -422,7 +432,7 @@ describe('GET /api/approvals', () => {
     for (const task of res.body.tasks) {
       for (const step of task.steps) {
         expect(Object.keys(step).sort()).toEqual(
-          ['approvalClass', 'canApprove', 'enabled', 'id', 'position', 'preview', 'status', 'type', 'version'],
+          ['approvalClass', 'attempts', 'canApprove', 'enabled', 'errorPlain', 'id', 'position', 'preview', 'result', 'status', 'type', 'version'],
         );
       }
     }
@@ -637,6 +647,9 @@ describe('PATCH /api/approvals/:taskId/steps/:stepId', () => {
       status: 'pending',
       preview: { title: 'Text 31 customers', lines: [] },
       canApprove: true,
+      attempts: 0,
+      result: null,
+      errorPlain: null,
       payload: { label: 'Text 31 customers' },
     });
 

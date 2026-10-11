@@ -90,9 +90,20 @@ describe('POST /api/approvals/:taskId/approve', () => {
       expect(step).toMatchObject({ approvedByUserId: t.seed.a.owner.userId, approvedAt, attempts: 0, version: 1 });
     }
 
+    // Before anything ran, the views say so.
+    expect(res.body.minutesSaved).toBeNull();
+    expect(res.body.steps[0]).toMatchObject({ attempts: 0, result: null, errorPlain: null });
+
     await t.queue.drain(t.deps);
 
     expect(await dbTask(t, 'a', taskId)).toMatchObject({ status: 'done', minutesSaved: 15 });
+    // The detail view and the feed carry the minutes saved and each step's result.
+    const detail = await owner.get(`/api/approvals/${taskId}`);
+    expect(detail.body).toMatchObject({ status: 'done', minutesSaved: 15 });
+    for (const step of detail.body.steps) expect(step).toMatchObject({ status: 'done', attempts: 1, result: { ok: 1 }, errorPlain: null });
+    const feed = await owner.get('/api/tasks');
+    expect(feed.body.tasks[0]).toMatchObject({ id: taskId, minutesSaved: 15 });
+    expect(feed.body.tasks[0].steps.map((s: { result: unknown }) => s.result)).toEqual([{ ok: 1 }, { ok: 1 }, { ok: 1 }]);
     const done = await dbSteps(t, 'a', taskId);
     expect(done.map((s) => [s.status, s.attempts, s.result, s.errorPlain])).toEqual([
       ['done', 1, { ok: 1 }, null],

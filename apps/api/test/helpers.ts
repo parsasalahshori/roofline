@@ -72,6 +72,8 @@ export type TestApp = {
   google: FakeGoogleVerifier;
   /** The step queue: it records what was enqueued and runs nothing until `queue.drain(deps)`. */
   queue: InlineQueue;
+  /** What work outside a request (the runner) handed to `deps.logError`, in order. Nothing is printed. */
+  logged: { err: unknown; where: string }[];
   seed: { a: SeededCompany; b: SeededCompany };
   /**
    * Waits until all work the app started after answering (queued emails, the reset-request
@@ -144,6 +146,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const mailer = new FakeMailer();
   const google = new FakeGoogleVerifier();
   const queue = new InlineQueue();
+  const logged: { err: unknown; where: string }[] = [];
   const pending = new Set<Promise<void>>();
   const deps: AppDeps = {
     pools,
@@ -152,6 +155,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     clock,
     google,
     queue,
+    logError: (err, where) => logged.push({ err, where }),
     onBackgroundTask: (task) => {
       pending.add(task);
       void task.finally(() => pending.delete(task));
@@ -166,6 +170,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     mailer,
     google,
     queue,
+    logged,
     seed,
     async settle() {
       while (pending.size > 0) await Promise.allSettled([...pending]);

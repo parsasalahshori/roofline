@@ -110,6 +110,14 @@ export function describeErrorForLog(err: unknown): string {
   return `${err.name}: ${firstLine}${pg ? ` (pg ${pg.code})` : ''}`;
 }
 
+/**
+ * The default error log: one line, `Unhandled error on <where>: <describeErrorForLog(err)>`, on
+ * stderr. Used for a request answered with a 500 and for a step the runner gave up on.
+ */
+export function logErrorToConsole(err: unknown, where: string): void {
+  console.error(`Unhandled error on ${where}: ${describeErrorForLog(err)}`);
+}
+
 /** Fallthrough for any request no route answered. */
 export const notFoundHandler: RequestHandler = (_req, res) => {
   res.status(404).json({ error: MESSAGES.notFound } satisfies ErrorBody);

@@ -6,7 +6,7 @@ import type { Config } from './config.ts';
 import type { GoogleVerifier } from './auth/google.ts';
 import { attachSession, requireSession } from './auth/middleware.ts';
 import { authRoutes } from './auth/routes.ts';
-import { describeErrorForLog, errorHandler, MESSAGES, notFoundHandler } from './errors.ts';
+import { errorHandler, logErrorToConsole, MESSAGES, notFoundHandler } from './errors.ts';
 import type { Mailer } from './mailer.ts';
 import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
@@ -36,6 +36,13 @@ export type AppDeps = {
    */
   queue: StepQueue;
   /**
+   * Where work that runs outside a request reports an error worth a person's look (the runner, when
+   * a step gives up after its last attempt). It gets the error itself and where it happened, and
+   * must print no more than `describeErrorForLog(err)` does. Defaults to `logErrorToConsole`.
+   * Requests answered with a 500 go to `AppOptions.logError` instead.
+   */
+  logError?: (err: unknown, where: string) => void;
+  /**
    * Called with the promise of every piece of work the app starts after it has already answered
    * (the emails behind reset-request, for example). The promise never rejects: failures are logged.
    * The server leaves this unset; tests collect the promises and await them instead of sleeping.
@@ -61,9 +68,6 @@ export const JSON_BODY_LIMIT = '256kb';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-function defaultLogError(err: unknown, path: string): void {
-  console.error(`Unhandled error on ${path}: ${describeErrorForLog(err)}`);
-}
 
 /**
  * A browser that sends an Origin header on a mutation is telling us which site the request came
@@ -103,7 +107,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // Everything under /api: find the session, rate limit (per session, else per IP), then refuse
   // anyone who is not signed in. The public auth routes are the only exceptions (middleware.ts).
   // /health and /hooks/* are not under /api, so they are never limited.
-  const logError = options.logError ?? defaultLogError;
+  const logError = options.logError ?? logErrorToConsole;
   app.use('/api', attachSession(deps), apiRateLimit(config), requireSession);
 
   // Routers are mounted here as later tasks add them.
