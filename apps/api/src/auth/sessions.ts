@@ -8,7 +8,7 @@ import {
   renewSession,
   type SessionDetails,
 } from '@roofline/db/system';
-import type { Role } from '@roofline/shared';
+import type { CompanyStatus, Role } from '@roofline/shared';
 import type { Config } from '../config.ts';
 
 export const SESSION_COOKIE = 'rl_session';
@@ -32,7 +32,11 @@ export function isWellFormedToken(token: string): boolean {
   return TOKEN_SHAPE.test(token);
 }
 
-/** Who is signed in and where. Everything but `sessionId` comes from the live membership row. */
+/**
+ * Who is signed in and where. Everything but `sessionId` comes from the live membership row and
+ * the company row, read on every request: `companyStatus` is the company's current status, so a
+ * trial ending or a cancel applies without signing in again.
+ */
 export type SessionInfo = {
   sessionId: string;
   userId: string;
@@ -40,6 +44,7 @@ export type SessionInfo = {
   role: Role;
   canApproveSpend: boolean;
   emailVerified: boolean;
+  companyStatus: CompanyStatus;
 };
 
 /** The database keeps only this hash. A leaked sessions table cannot be replayed as cookies. */
