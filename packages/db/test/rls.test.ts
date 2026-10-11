@@ -24,6 +24,7 @@ const APP_SYSTEM_RLS_TABLES = [
   'agent_tasks',
   'agent_task_steps',
   'messages',
+  'usage_events',
 ] as const;
 const COMPANY_PROFILE_COLUMNS = [
   'name',
@@ -37,6 +38,8 @@ const COMPANY_PROFILE_COLUMNS = [
   'address_zip',
   'timezone',
   'service_area',
+  'location',
+  'service_area_miles',
   'logo_url',
 ] as const;
 
@@ -345,6 +348,15 @@ describe('grants', () => {
       .map((column_name) => ({ column_name, privilege_type: 'SELECT' }));
     expect(expected).toHaveLength(all.length - 1);
     expect(granted).toEqual(expected);
+    expect(granted.map((g) => g.column_name)).toEqual(
+      expect.arrayContaining([
+        'customer_profile_sid',
+        'trust_product_sid',
+        'brand_info',
+        'rejected_fields',
+        'last_checked_at',
+      ]),
+    );
   });
 
   test('app_tenant may update only the profile columns of companies (plus updated_at)', async () => {
@@ -413,7 +425,36 @@ describe('grants', () => {
       sel('messages', 'id'),
       sel('messages', 'scheduled_for'),
       sel('messages', 'status'),
+      sel('usage_events', 'company_id'),
+      sel('usage_events', 'id'),
+      sel('usage_events', 'kind'),
+      sel('usage_events', 'reported_to_stripe_at'),
     ]);
+  });
+
+  test('app_tenant can update companies.location and service_area_miles, but not the billing columns', async () => {
+    const companyId = seed.a.companyId;
+    await tenantRaw(`update companies set service_area_miles = 20 where id = $1`, {
+      companyId,
+      values: [companyId],
+    });
+    await tenantRaw(`update companies set location = st_setsrid(st_makepoint(-95.9345, 41.2565), 4326) where id = $1`, {
+      companyId,
+      values: [companyId],
+    });
+    expect(await ownerQuery(`select service_area_miles from companies where id = $1`, [companyId])).toEqual([
+      { service_area_miles: 20 },
+    ]);
+    for (const assignment of [
+      `stripe_subscription_id = 'sub_x'`,
+      `billing_event_at = now()`,
+      `billing_period_start = now()`,
+      `past_due_at = now()`,
+    ]) {
+      await expect(
+        tenantRaw(`update companies set ${assignment} where id = $1`, { companyId, values: [companyId] }),
+      ).rejects.toThrow(/permission denied/);
+    }
   });
 });
 
@@ -679,6 +720,27 @@ describe('app_tenant isolation', () => {
     expect(code === '23503' || /row-level security/.test(message)).toBe(true);
     expect(await ownerQuery(`select count(*)::int n from jobs`)).toEqual([{ n: 0 }]);
   });
+
+  test.each<[string, string]>([
+    ['setup_items', `insert into setup_items (company_id, key) values ($1, 'company_basics')`],
+    ['imports', `insert into imports (company_id, file_name) values ($1, 'customers.csv')`],
+    [
+      'early_delivery_reports',
+      `insert into early_delivery_reports (company_id, provider_message_sid, status) values ($1, 'SM' || repeat('a', 32), 'delivered')`,
+    ],
+  ])('tenant role sees and writes only its own %s rows and cannot delete them', async (table, insert) => {
+    await ownerQuery(insert, [seed.a.companyId]);
+    await ownerQuery(insert, [seed.b.companyId]);
+    expect(await tenantRaw(`select company_id from ${table}`, { companyId: seed.a.companyId })).toEqual([
+      { company_id: seed.a.companyId },
+    ]);
+    await expect(
+      tenantRaw(insert, { companyId: seed.a.companyId, values: [seed.b.companyId] }),
+    ).rejects.toThrow(/row-level security/);
+    await expect(tenantRaw(`delete from ${table}`, { companyId: seed.a.companyId })).rejects.toThrow(
+      /permission denied/,
+    );
+  });
 });
 
 describe('withTenant', () => {
@@ -742,6 +804,9 @@ describe('app_system', () => {
          values ($1, 'sms', 'out', 'marketing', 'Hi', 'scheduled', now())`,
         [s.companyId],
       );
+      await ownerQuery(`insert into usage_events (company_id, kind, quantity) values ($1, 'sms_segment', 1)`, [
+        s.companyId,
+      ]);
     }
     await ownerQuery(
       `insert into company_phone_numbers (company_id, e164) values ($1, '+14025550100'), ($2, '+14025550101')`,
@@ -754,6 +819,7 @@ describe('app_system', () => {
       agent_tasks: `select id, company_id, status, expires_at from agent_tasks`,
       agent_task_steps: `select id, task_id, company_id, status, updated_at, lease_expires_at, run_seq from agent_task_steps`,
       messages: `select id, company_id, status, scheduled_for from messages`,
+      usage_events: `select id, company_id, kind, reported_to_stripe_at from usage_events`,
     } satisfies Record<(typeof APP_SYSTEM_RLS_TABLES)[number], string>;
 
     const client = new pg.Client({ connectionString: urls.system });
@@ -805,6 +871,20 @@ describe('app_system', () => {
     await expect(systemRaw(`update agent_tasks set status = 'expired'`)).rejects.toThrow(/permission denied/);
     await expect(systemRaw(`select body from messages`)).rejects.toThrow(/permission denied/);
     await expect(systemRaw(`update messages set status = 'sent'`)).rejects.toThrow(/permission denied/);
+  });
+
+  test('system role can read only the reporting columns of usage_events, and cannot write them', async () => {
+    await ownerQuery(
+      `insert into usage_events (company_id, kind, quantity) values ($1, 'sms_segment', 1), ($2, 'ai_call_minute', 1)`,
+      [seed.a.companyId, seed.b.companyId],
+    );
+    const rows = await systemRaw<{ company_id: string; kind: string }>(
+      `select id, company_id, kind, reported_to_stripe_at from usage_events`,
+    );
+    expect(rows.map((r) => r.company_id).sort()).toEqual([seed.a.companyId, seed.b.companyId].sort());
+    expect(rows.map((r) => r.kind).sort()).toEqual(['ai_call_minute', 'sms_segment']);
+    await expect(systemRaw(`select quantity from usage_events`)).rejects.toThrow(/permission denied/);
+    await expect(systemRaw(`update usage_events set reported_to_stripe_at = now()`)).rejects.toThrow(/permission denied/);
   });
 
   test('system role cannot read or write tenant content', async () => {

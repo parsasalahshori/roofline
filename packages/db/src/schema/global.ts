@@ -1,6 +1,7 @@
-import { boolean, date, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { boolean, check, date, index, integer, jsonb, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { CAMPAIGN_STATUSES, COMPANY_STATUSES, ROLES } from '@roofline/shared';
-import { bytea, citext, enumCheck, multiPolygon, pk, timestamps, tstz } from './columns.ts';
+import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
 import { MEMBERSHIP_STATUSES, PHONE_NUMBER_PURPOSES, USER_TOKEN_KINDS } from './enums.ts';
 
 /*
@@ -56,9 +57,20 @@ export const companies = pgTable(
     trialEndsAt: tstz('trial_ends_at'),
     stripeCustomerId: text('stripe_customer_id').unique(),
     planKey: text('plan_key'),
+    /** Where the company works from, `[longitude, latitude]`, SRID 4326. Null until set. */
+    location: point4326('location'),
+    /** How far the company travels for work: one of 10, 20, 40 or 60 miles. */
+    serviceAreaMiles: integer('service_area_miles'),
+    stripeSubscriptionId: text('stripe_subscription_id').unique(),
+    billingEventAt: tstz('billing_event_at'),
+    billingPeriodStart: tstz('billing_period_start'),
+    pastDueAt: tstz('past_due_at'),
     ...timestamps(),
   },
-  (t) => [enumCheck('companies', 'status', t.status, COMPANY_STATUSES)],
+  (t) => [
+    enumCheck('companies', 'status', t.status, COMPANY_STATUSES),
+    check('companies_service_area_miles_check', sql`${t.serviceAreaMiles} in (10, 20, 40, 60)`),
+  ],
 );
 
 export const memberships = pgTable(
@@ -161,6 +173,12 @@ export const textingRegistrations = pgTable(
     submittedAt: tstz('submitted_at'),
     approvedAt: tstz('approved_at'),
     rejectionReasonPlain: text('rejection_reason_plain'),
+    customerProfileSid: text('customer_profile_sid'),
+    trustProductSid: text('trust_product_sid'),
+    brandInfo: jsonb('brand_info').$type<Record<string, unknown>>(),
+    /** Fields the carrier rejected, so the registration screen can point at them. */
+    rejectedFields: text('rejected_fields').array().notNull().default([]),
+    lastCheckedAt: tstz('last_checked_at'),
     ...timestamps(),
   },
   (t) => [enumCheck('texting_registrations', 'campaign_status', t.campaignStatus, CAMPAIGN_STATUSES)],

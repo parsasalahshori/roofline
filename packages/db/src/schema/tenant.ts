@@ -21,18 +21,22 @@ import {
   CONSENT_STATUSES,
   CUSTOMER_SOURCES,
   GATE_RULES,
+  IMPORT_ROW_OUTCOMES,
+  IMPORT_STATUSES,
   JOB_SOURCES,
   JOB_STAGES,
   MESSAGE_CHANNELS,
   MESSAGE_DIRECTIONS,
   MESSAGE_PURPOSES,
   MESSAGE_STATUSES,
+  SETUP_ITEM_KEYS,
+  SETUP_STATUSES,
   SMS_CONSENT_SOURCES,
   STEP_STATUSES,
   TASK_STATUSES,
 } from '@roofline/shared';
 import { bytea, enumCheck, pk, point4326, timestamps, tstz } from './columns.ts';
-import { INTEGRATION_STATUSES, TASK_MODES, USAGE_KINDS } from './enums.ts';
+import { EARLY_DELIVERY_STATUSES, INTEGRATION_STATUSES, TASK_MODES, USAGE_KINDS } from './enums.ts';
 import { companies, users } from './global.ts';
 
 /*
@@ -54,6 +58,10 @@ export const TENANT_TABLES = [
   'agent_task_steps',
   'messages',
   'opt_outs',
+  'setup_items',
+  'imports',
+  'import_rows',
+  'early_delivery_reports',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -120,6 +128,8 @@ export const customers = pgTable(
   (t) => [
     unique('customers_company_id_id_uniq').on(t.companyId, t.id),
     index('customers_company_idx').on(t.companyId, t.archivedAt),
+    index('customers_phones_gin').using('gin', t.phones.op('jsonb_path_ops')),
+    index('customers_emails_gin').using('gin', t.emails),
     enumCheck('customers', 'sms_consent_status', t.smsConsentStatus, CONSENT_STATUSES),
     enumCheck('customers', 'sms_consent_source', t.smsConsentSource, SMS_CONSENT_SOURCES),
     enumCheck('customers', 'source', t.source, CUSTOMER_SOURCES),
@@ -277,11 +287,21 @@ export const usageEvents = pgTable(
     refType: text('ref_type'),
     refId: text('ref_id'),
     reportedToStripeAt: tstz('reported_to_stripe_at'),
+    description: text('description'),
+    meterBatchId: uuid('meter_batch_id'),
+    stripeInvoiceItemId: text('stripe_invoice_item_id'),
     at: tstz('at').notNull().defaultNow(),
     ...timestamps(),
   },
   (t) => [
     index('usage_events_company_at_idx').on(t.companyId, t.at),
+    /** One charge per (company, kind, ref): a second write of the same reference is ignored. */
+    uniqueIndex('usage_events_ref_uniq')
+      .on(t.companyId, t.kind, t.refType, t.refId)
+      .where(sql`${t.refId} is not null`),
+    index('usage_events_unreported_idx')
+      .on(t.companyId)
+      .where(sql`${t.reportedToStripeAt} is null`),
     enumCheck('usage_events', 'kind', t.kind, USAGE_KINDS),
   ],
 );
@@ -436,6 +456,10 @@ export const messages = pgTable(
     index('messages_dedupe_idx').on(t.companyId, t.dedupeKey),
     index('messages_status_scheduled_idx').on(t.status, t.scheduledFor),
     index('messages_provider_sid_idx').on(t.providerMessageSid),
+    /** A provider delivers an inbound text once per SID: a repeat for the same company is a duplicate. */
+    uniqueIndex('messages_inbound_sid_uniq')
+      .on(t.companyId, t.providerMessageSid)
+      .where(sql`${t.direction} = 'in'`),
     enumCheck('messages', 'channel', t.channel, MESSAGE_CHANNELS),
     enumCheck('messages', 'direction', t.direction, MESSAGE_DIRECTIONS),
     enumCheck('messages', 'purpose', t.purpose, MESSAGE_PURPOSES),
@@ -455,4 +479,102 @@ export const optOuts = pgTable(
     ...timestamps(),
   },
   (t) => [unique('opt_outs_company_phone_uniq').on(t.companyId, t.phoneE164)],
+);
+
+/** The setup checklist: one row per company and item (F3 spec 5.3). */
+export const setupItems = pgTable(
+  'setup_items',
+  {
+    id: pk(),
+    companyId: companyId(),
+    key: text('key', { enum: SETUP_ITEM_KEYS }).notNull(),
+    status: text('status', { enum: SETUP_STATUSES }).notNull().default('todo'),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('setup_items_company_key_uniq').on(t.companyId, t.key),
+    enumCheck('setup_items', 'key', t.key, SETUP_ITEM_KEYS),
+    enumCheck('setup_items', 'status', t.status, SETUP_STATUSES),
+  ],
+);
+
+/** One CSV import: the file, the column mapping and the consent the upload was made under. */
+export const imports = pgTable(
+  'imports',
+  {
+    id: pk(),
+    companyId: companyId(),
+    fileName: text('file_name').notNull(),
+    headers: jsonb('headers').$type<string[]>().notNull().default([]),
+    mapping: jsonb('mapping').$type<Record<string, unknown>>().notNull().default({}),
+    counts: jsonb('counts').$type<Record<string, number>>().notNull().default({}),
+    rowCount: integer('row_count').notNull().default(0),
+    consentAttested: boolean('consent_attested').notNull().default(false),
+    consentText: text('consent_text'),
+    attestedByUserId: userRef('attested_by_user_id'),
+    attestedAt: tstz('attested_at'),
+    status: text('status', { enum: IMPORT_STATUSES }).notNull().default('uploaded'),
+    errorFileUrl: text('error_file_url'),
+    errorPlain: text('error_plain'),
+    createdByUserId: userRef('created_by_user_id'),
+    startedAt: tstz('started_at'),
+    finishedAt: tstz('finished_at'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('imports_company_id_id_uniq').on(t.companyId, t.id),
+    index('imports_company_created_idx').on(t.companyId, t.createdAt),
+    enumCheck('imports', 'status', t.status, IMPORT_STATUSES),
+  ],
+);
+
+/** One CSV row of an import, with what happened to it. */
+export const importRows = pgTable(
+  'import_rows',
+  {
+    id: pk(),
+    companyId: companyId(),
+    importId: uuid('import_id').notNull(),
+    rowNumber: integer('row_number').notNull(),
+    cells: jsonb('cells').$type<string[]>().notNull(),
+    outcome: text('outcome', { enum: IMPORT_ROW_OUTCOMES }),
+    reason: text('reason'),
+    customerId: uuid('customer_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'import_rows_company_import_fk',
+      columns: [t.companyId, t.importId],
+      foreignColumns: [imports.companyId, imports.id],
+    }),
+    foreignKey({
+      name: 'import_rows_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    unique('import_rows_import_row_uniq').on(t.importId, t.rowNumber),
+    index('import_rows_import_outcome_idx').on(t.importId, t.outcome),
+    enumCheck('import_rows', 'outcome', t.outcome, IMPORT_ROW_OUTCOMES),
+  ],
+);
+
+/** A delivery report that arrived before its message was marked sent (applied once the send lands). */
+export const earlyDeliveryReports = pgTable(
+  'early_delivery_reports',
+  {
+    id: pk(),
+    companyId: companyId(),
+    providerMessageSid: text('provider_message_sid').notNull(),
+    status: text('status', { enum: EARLY_DELIVERY_STATUSES }).notNull(),
+    reason: text('reason'),
+    receivedAt: tstz('received_at').notNull().defaultNow(),
+    appliedAt: tstz('applied_at'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('early_delivery_reports_company_sid_status_uniq').on(t.companyId, t.providerMessageSid, t.status),
+    enumCheck('early_delivery_reports', 'status', t.status, EARLY_DELIVERY_STATUSES),
+  ],
 );
