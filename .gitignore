@@ -5,6 +5,10 @@ v1/data/*
 !v1/data/.gitkeep
 test-results/
 playwright-report/
+apps/web/dist
+apps/web/e2e/.stack.json
+apps/web/test-results
+apps/web/playwright-report
 *.tsbuildinfo
 .buildcli/
 v1/.buildcli/
