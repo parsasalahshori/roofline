@@ -1,6 +1,6 @@
 export { decide, type GateDecision, type GateRequest } from './decide.ts';
 export { nextAllowedTime } from './quiet-hours.ts';
-export { classifyInbound, type InboundKind } from './inbound.ts';
+export { classifyInbound, type InboundKind, type InboundReading, looksLikeOptOut, readInbound } from './inbound.ts';
 export {
   DisabledSmsAdapter,
   FakeSmsAdapter,

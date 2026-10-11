@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { classifyInbound } from '../src/index.ts';
+import { classifyInbound, looksLikeOptOut, readInbound } from '../src/index.ts';
 
 describe('the brief', () => {
   test.each(['STOP', 'Stop.', '  stop  ', 'Stop texting me!', "don't text me", 'UNSUBSCRIBE'])('%s → stop', (b) =>
@@ -185,8 +185,12 @@ describe('very long bodies', () => {
     expect(classifyInbound('the crew will stop by at five. '.repeat(40_000))).toBe('other');
   });
 
-  test('a megabyte of repeated keywords is other: the message must be the keyword and nothing else', () => {
-    expect(classifyInbound('stop '.repeat(200_000))).toBe('other');
+  test('a megabyte of one keyword repeated is that keyword: repeats of the same word collapse (R22)', () => {
+    expect(classifyInbound('stop '.repeat(200_000))).toBe('stop');
+  });
+
+  test('a megabyte of a keyword and another word, repeated, is other: the message must be the keyword and nothing else', () => {
+    expect(classifyInbound('stop now '.repeat(100_000))).toBe('other');
   });
 
   test('a megabyte of whitespace is other', () => {
@@ -206,5 +210,226 @@ describe('very long bodies', () => {
   test('a keyword padded with a lot of whitespace is still the keyword', () => {
     // Opt-outs are honored: padding does not turn STOP into a different message.
     expect(classifyInbound(' '.repeat(100_000) + 'STOP' + ' '.repeat(100_000))).toBe('stop');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// R22: wider opt-out wording, NFKC, repeated words, strict START, looksLikeOptOut
+
+describe('more ways of saying stop (R22)', () => {
+  const MORE_STOP = [
+    'stop all',
+    'stop please',
+    'stop texting me please',
+    'please stop texting',
+    'please stop messaging me',
+    'unsubscribe please',
+    'unsubscribe me please',
+    'please remove me',
+    'remove me from the list',
+    'take me off the list',
+    'take me off of your list',
+    'dont text me again',
+    'do not contact me',
+    'dont contact me',
+    'dont message me',
+    'quit texting me',
+    'stop it',
+    'stop sending',
+    'no more texts',
+  ];
+
+  test.each(MORE_STOP)('%s → stop', (b) => expect(classifyInbound(b)).toBe('stop'));
+  test.each(MORE_STOP)('%s, shouted with punctuation → stop', (b) =>
+    expect(classifyInbound(`  ${b.toUpperCase()}!!! `)).toBe('stop'),
+  );
+
+  test('the apostrophe forms people actually type', () => {
+    expect(classifyInbound("Don't text me again.")).toBe('stop');
+    expect(classifyInbound('Don’t contact me')).toBe('stop');
+    expect(classifyInbound("don't message me!")).toBe('stop');
+    expect(classifyInbound('Stop, please.')).toBe('stop');
+    expect(classifyInbound('No more texts!!')).toBe('stop');
+  });
+
+  test('still the whole message only: a new phrase inside a longer message is other', () => {
+    expect(classifyInbound('stop it with the hammering at 6am')).toBe('other');
+    expect(classifyInbound('please remove me from Thursday and add me to Friday')).toBe('other');
+    expect(classifyInbound('no more texts after 9pm please')).toBe('other');
+    expect(classifyInbound('stop sending the crew so early')).toBe('other');
+  });
+});
+
+describe('NFKC: compatibility forms of the letters count (R22)', () => {
+  test('fullwidth letters fold to ASCII', () => {
+    expect(classifyInbound('ＳＴＯＰ')).toBe('stop');
+    expect(classifyInbound('ｓｔｏｐ')).toBe('stop');
+    expect(classifyInbound('ＵＮＳＵＢＳＣＲＩＢＥ')).toBe('stop');
+    expect(classifyInbound('ｓｔｏｐ ｔｅｘｔｉｎｇ ｍｅ')).toBe('stop');
+    expect(classifyInbound('ＨＥＬＰ')).toBe('help');
+  });
+
+  test('mathematical letters, ligatures and the long s fold too', () => {
+    expect(classifyInbound('𝐒𝐓𝐎𝐏')).toBe('stop'); // mathematical bold
+    expect(classifyInbound('𝘴𝘵𝘰𝘱')).toBe('stop'); // mathematical sans-serif italic
+    expect(classifyInbound('ﬆop')).toBe('stop'); // U+FB06 LATIN SMALL LIGATURE ST
+    expect(classifyInbound('ſtop')).toBe('stop'); // U+017F LATIN SMALL LETTER LONG S
+  });
+
+  test('a fullwidth space and punctuation are spaces and punctuation', () => {
+    expect(classifyInbound('ｓｔｏｐ　ｔｅｘｔｉｎｇ　ｍｅ！')).toBe('stop');
+  });
+
+  test('the Kelvin sign and U+0130 still strip instead of becoming k and i', () => {
+    // NFKC alone turns U+212A into "K"; it is dropped before NFKC runs, as the strip always did.
+    expect(classifyInbound('ta\u212Ae me off the list')).toBe('other'); // "tae me off the list"
+    expect(classifyInbound('\u212Aelvin')).toBe('other');
+    expect(classifyInbound('\u0130nfo')).toBe('other'); // "nfo"
+    expect(classifyInbound('unsubscr\u0130be please')).toBe('other');
+  });
+
+  test('accented letters are still not their base letter', () => {
+    expect(classifyInbound('ＳＴÖＰ')).toBe('other');
+    expect(classifyInbound('stöp')).toBe('other');
+  });
+
+  test('NFKC never loses a STOP the plain reading finds', () => {
+    // "™" folds to the letters TM and an "o" plus a combining diaeresis composes to "ö"; read
+    // either way the message is still a STOP, because the plain reading (no folding) is a STOP.
+    expect(classifyInbound('STOP™')).toBe('stop');
+    expect(classifyInbound('stöp')).toBe('stop');
+    expect(classifyInbound('STOP ℹ')).toBe('stop');
+  });
+
+  test('NFKC never makes a START: consent comes back only from a START that reads as START without folding', () => {
+    expect(classifyInbound('ＳＴＡＲＴ')).toBe('other');
+    expect(classifyInbound('𝐒𝐓𝐀𝐑𝐓')).toBe('other');
+    expect(classifyInbound('ＵＮＳＴＯＰ')).toBe('other');
+    expect(classifyInbound('ſtart')).toBe('other');
+  });
+});
+
+describe('repeated words collapse (R22)', () => {
+  test.each([
+    ['stop stop stop', 'stop'],
+    ['STOP STOP', 'stop'],
+    ['Stop. Stop! Stop!!', 'stop'],
+    ['cancel cancel', 'stop'],
+    ['unsubscribe unsubscribe unsubscribe', 'stop'],
+    ['please please stop', 'stop'],
+    ['stop texting texting me', 'stop'],
+    ['ＳＴＯＰ ＳＴＯＰ', 'stop'],
+    ['help help', 'help'],
+    ['start start', 'start'],
+    ['yes yes start', 'start'],
+  ])('%s → %s', (b, kind) => expect(classifyInbound(b)).toBe(kind));
+
+  test('only neighbours collapse: words repeated with something between them do not', () => {
+    expect(classifyInbound('stop now stop')).toBe('other');
+    expect(classifyInbound('stop me stop')).toBe('other');
+  });
+
+  test('a repeated word inside a longer message is still a longer message', () => {
+    expect(classifyInbound('stop stop the leak')).toBe('other');
+  });
+});
+
+describe('START is strict: any digit anywhere makes it other (R22)', () => {
+  test.each(['Start 9', 'START 2', 'start2', '9 start', 'yes start 1', 'unstop 4', 'Start #1', 'start 10am'])('%s → other', (b) =>
+    expect(classifyInbound(b)).toBe('other'),
+  );
+
+  test('digits of any script count, in the message as sent', () => {
+    expect(classifyInbound('Start ９')).toBe('other'); // fullwidth nine
+    expect(classifyInbound('start ٣')).toBe('other'); // Arabic-Indic three
+    expect(classifyInbound('start ²')).toBe('other'); // superscript two
+    expect(classifyInbound('start ①')).toBe('other'); // circled one
+  });
+
+  test('STOP and HELP with digits are still STOP and HELP', () => {
+    expect(classifyInbound('Stop 2')).toBe('stop');
+    expect(classifyInbound('STOP 9')).toBe('stop');
+    expect(classifyInbound('3 stop')).toBe('stop');
+    expect(classifyInbound('stop texting me 2')).toBe('stop');
+    expect(classifyInbound('help 1')).toBe('help');
+  });
+
+  test('START with no digits is still START', () => {
+    expect(classifyInbound('START!')).toBe('start');
+    expect(classifyInbound('Start 🙏')).toBe('start');
+    expect(classifyInbound('yes, start')).toBe('start');
+  });
+});
+
+describe('looksLikeOptOut: flags a message for a person to check (R22)', () => {
+  test.each([
+    'Can you stop by Thursday?',
+    'stop texting me about gutters',
+    'STOP!!! and call me',
+    'how do I unsubscribe from these',
+    'remove me from the Thursday schedule',
+    'please remove me',
+    'opt out of the extra coat',
+    'I want to opt-out',
+    'OPTOUT pls',
+    'ＳＴＯＰ now',
+    'stop',
+    'Stop. Now.',
+  ])('%s → true', (b) => expect(looksLikeOptOut(b)).toBe(true));
+
+  test.each([
+    'stopping by at 5',
+    'unstoppable',
+    'stops',
+    'the gutters stopped leaking',
+    'can you remove meat from the order',
+    'remover',
+    'optional extras',
+    'opt in',
+    'the roof looks great',
+    'removed me',
+    'cancel my appointment',
+    '',
+    '   ',
+  ])('%s → false', (b) => expect(looksLikeOptOut(b)).toBe(false));
+
+  test('the Kelvin sign and U+0130 cannot build one of the words', () => {
+    expect(looksLikeOptOut('unsubscr\u0130be')).toBe(false);
+  });
+
+  test('a body that is not a string is false, not a crash', () => {
+    for (const bad of [undefined, null, 42, {}, ['stop']]) {
+      expect(looksLikeOptOut(bad as unknown as string)).toBe(false);
+    }
+  });
+
+  test('a megabyte of text is linear: a word at the far end is still found', () => {
+    expect(looksLikeOptOut('the crew will come by at five. '.repeat(40_000) + 'stop')).toBe(true);
+    expect(looksLikeOptOut('the crew will come by at five. '.repeat(40_000))).toBe(false);
+  });
+});
+
+describe('readInbound: the kind and the keyword as matched, for the opt-out record', () => {
+  test.each([
+    ['STOP', 'stop', 'stop'],
+    ["  Don't text me AGAIN!! ", 'stop', 'dont text me again'],
+    ['STOP STOP STOP', 'stop', 'stop'],
+    ['ＳＴＯＰ', 'stop', 'stop'],
+    ['STOP™', 'stop', 'stop'],
+    ['Opt-Out', 'stop', 'optout'],
+    ['Help?', 'help', 'help'],
+    ['yes, start', 'start', 'yes start'],
+  ])('%s → %s, "%s"', (body, kind, keyword) => expect(readInbound(body)).toEqual({ kind, keyword }));
+
+  test('anything else has no keyword', () => {
+    expect(readInbound('Can you stop by Thursday?')).toEqual({ kind: 'other', keyword: null });
+    expect(readInbound('Start 9')).toEqual({ kind: 'other', keyword: null });
+    expect(readInbound(undefined as unknown as string)).toEqual({ kind: 'other', keyword: null });
+  });
+
+  test('classifyInbound is readInbound\'s kind', () => {
+    for (const body of ['STOP', 'help', 'start', 'Start 9', 'ＳＴＡＲＴ', 'hello']) {
+      expect(classifyInbound(body)).toBe(readInbound(body).kind);
+    }
   });
 });
