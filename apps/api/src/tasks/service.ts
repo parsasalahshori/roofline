@@ -8,6 +8,7 @@ import {
   listSteps,
   listTasksByStatus,
   type NewStepRow,
+  type StepRow,
   type StepSummaryRow,
   type TaskRow,
   type TenantContext,
@@ -59,7 +60,11 @@ export function canReview(ctx: TenantContext): boolean {
 // ---------------------------------------------------------------------------------------------
 // Views
 
-/** One step as the review screen gets it. The payload is left out: a batch can hold thousands of customer ids. */
+/**
+ * One step as the review screen gets it. The list leaves the `payload` out (a batch can hold
+ * thousands of customer ids); the views of one task, and of one step after an edit, carry it so the
+ * editor can fill itself in.
+ */
 export type StepView = {
   id: string;
   position: number;
@@ -71,7 +76,15 @@ export type StepView = {
   preview: Record<string, unknown>;
   /** Whether the viewer may approve (and so edit) this step. */
   canApprove: boolean;
+  /** What the step does, as saved. Only on the views of one task and of an edited step, never on the list. */
+  payload?: Record<string, unknown>;
 };
+
+/** Which views carry each step's payload. The list does not; opening one task, editing a step, and a 409's `latest` do. */
+export type StepViewOptions = { payload?: boolean };
+
+/** A step row as the views take it: the payload is there only when it was read (`listSteps(..., { payload: true })`, `getStep`). */
+type StepViewRow = StepSummaryRow & { payload?: Record<string, unknown> };
 
 export type TaskView = {
   id: string;
@@ -87,7 +100,10 @@ export type TaskView = {
   steps: StepView[];
 };
 
-export function toStepView(row: StepSummaryRow, ctx: TenantContext): StepView {
+export function toStepView(row: StepViewRow, ctx: TenantContext, options: StepViewOptions = {}): StepView {
+  if (options.payload === true && row.payload === undefined) {
+    throw new Error(`Step ${row.id} was read without its payload but its view asks for it.`);
+  }
   return {
     id: row.id,
     position: row.position,
@@ -98,6 +114,7 @@ export function toStepView(row: StepSummaryRow, ctx: TenantContext): StepView {
     status: row.status,
     preview: row.preview,
     canApprove: can(ctx, APPROVE[row.approvalClass]),
+    ...(options.payload === true && { payload: row.payload }),
   };
 }
 
@@ -112,7 +129,13 @@ export function isExpired(task: Pick<TaskRow, 'status' | 'expiresAt'>, now: Date
   return task.status === 'draft' && task.expiresAt !== null && task.expiresAt.getTime() < now.getTime();
 }
 
-export function toTaskView(task: TaskRow, steps: StepSummaryRow[], ctx: TenantContext, now: Date): TaskView {
+export function toTaskView(
+  task: TaskRow,
+  steps: readonly StepViewRow[],
+  ctx: TenantContext,
+  now: Date,
+  options: StepViewOptions = {},
+): TaskView {
   return {
     id: task.id,
     agent: task.agent,
@@ -123,7 +146,7 @@ export function toTaskView(task: TaskRow, steps: StepSummaryRow[], ctx: TenantCo
     createdAt: task.createdAt,
     expiresAt: task.expiresAt,
     expired: isExpired(task, now),
-    steps: steps.map((step) => toStepView(step, ctx)),
+    steps: steps.map((step) => toStepView(step, ctx, options)),
   };
 }
 
@@ -273,12 +296,15 @@ export async function listApprovals(tx: Tx, ctx: TenantContext, now: Date): Prom
   return { count: views.length, tasks: views };
 }
 
-/** One task in any status (the screen shows how a plan ended, too), or null for a rep, an unknown id or another company's. */
+/**
+ * One task in any status (the screen shows how a plan ended, too), or null for a rep, an unknown id
+ * or another company's. Unlike the list, each step carries its payload, for the editor.
+ */
 export async function getApproval(tx: Tx, ctx: TenantContext, taskId: string, now: Date): Promise<TaskView | null> {
   if (!canReview(ctx)) return null;
   const task = await getTask(tx, ctx, taskId);
   if (!task) return null;
-  return toTaskView(task, await listSteps(tx, ctx, [task.id]), ctx, now);
+  return toTaskView(task, await listSteps(tx, ctx, [task.id], { payload: true }), ctx, now, { payload: true });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -291,9 +317,9 @@ export type StepEditInput = {
   payload?: Record<string, unknown>;
 };
 
-/** The screen was showing something that is out of date: 409 with the step as it is now. */
-function changed(step: StepSummaryRow, ctx: TenantContext): AppError {
-  return new AppError(409, MESSAGES.changedWhileLooking, undefined, toStepView(step, ctx));
+/** The screen was showing something that is out of date: 409 with the step as it is now (payload included, so the editor can refresh from it). */
+function changed(step: StepRow, ctx: TenantContext): AppError {
+  return new AppError(409, MESSAGES.changedWhileLooking, undefined, toStepView(step, ctx, { payload: true }));
 }
 
 /**
@@ -310,6 +336,7 @@ function changed(step: StepSummaryRow, ctx: TenantContext): AppError {
  *   step on or off leaves the payload and preview alone, so the toggle always works.
  * - Version goes up by one, the editor and time are recorded, and `step.edit` is audited with the
  *   before and after of `{ enabled, payload, version }`.
+ * - Returns the step as saved, payload included (the editor refills from it).
  */
 export async function editStep(
   tx: Tx,
@@ -357,5 +384,5 @@ export async function editStep(
     ip: opts.ip ?? null,
     at: opts.now,
   });
-  return toStepView(updated, ctx);
+  return toStepView(updated, ctx, { payload: true });
 }

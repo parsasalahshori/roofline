@@ -24,8 +24,10 @@ const EditBody = z.object({
 /**
  * `/api/approvals`: the approval queue, where an agent's draft tasks wait for a person.
  * - `GET /` the tasks waiting on the signed-in member, newest first, with the `count` the pill shows.
- * - `GET /:taskId` one task, in any status.
+ *   Its steps carry no payload (a batch can hold thousands of customer ids).
+ * - `GET /:taskId` one task, in any status, each step with its payload so the editor can fill itself in.
  * - `PATCH /:taskId/steps/:stepId` turn a step on or off, or change its payload, before approving.
+ *   It returns the step as saved, payload included.
  * Only the owner and the office work the queue. A rep gets an empty list, and a 404 for any one task or
  * step, exactly as for one that does not exist. A task of another company is a 404 too. Tasks are made
  * by agents through `createTask` (tasks/service.ts), never over HTTP.

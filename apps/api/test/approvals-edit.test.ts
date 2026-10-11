@@ -416,11 +416,17 @@ describe('GET /api/approvals', () => {
   test('the payload is not part of the list (a batch can hold thousands of ids)', async () => {
     const [id] = await newCustomers('a', ['Molly']);
     await newTask('a', { steps: [smsStep([id!])] });
+    await newTask('a');
     const res = await (await actors.as('owner')).get('/api/approvals');
-    const step = res.body.tasks[0].steps[0];
-    expect(Object.keys(step).sort()).toEqual(
-      ['approvalClass', 'canApprove', 'enabled', 'id', 'position', 'preview', 'status', 'type', 'version'],
-    );
+    expect(res.body.tasks).toHaveLength(2);
+    for (const task of res.body.tasks) {
+      for (const step of task.steps) {
+        expect(Object.keys(step).sort()).toEqual(
+          ['approvalClass', 'canApprove', 'enabled', 'id', 'position', 'preview', 'status', 'type', 'version'],
+        );
+      }
+    }
+    expect(JSON.stringify(res.body)).not.toContain(id!);
   });
 
   test('canApprove follows the viewer: the office cannot approve the spend step; with delegation it can', async () => {
@@ -524,18 +530,40 @@ describe('GET /api/approvals', () => {
 // ---------------------------------------------------------------------------------------------
 
 describe('GET /api/approvals/:taskId', () => {
-  test('the owner and the office get the TaskView (the same one the list shows, with what each may approve)', async () => {
+  /** A list task's steps with the payload each one was made with added (what the detail view shows on top of the list). */
+  const withPayloads = (task: { steps: object[] }, payloads: unknown[]) => ({
+    ...task,
+    steps: task.steps.map((step, i) => ({ ...step, payload: payloads[i] })),
+  });
+
+  const DEMO_PAYLOADS = [
+    { label: 'Text 31 customers' },
+    { label: 'Door-knock routes for 4 reps' },
+    { label: 'Google + Facebook ads on the swath', maxSpendCents: 27000 },
+  ];
+
+  test('the owner and the office get the TaskView: the list\'s, plus each step\'s payload, with what each may approve', async () => {
     const { taskId } = await newTask('a');
     const list = await (await actors.as('owner')).get('/api/approvals');
 
     const owner = await (await actors.as('owner')).get(`/api/approvals/${taskId}`);
     expect(owner.status).toBe(200);
-    expect(owner.body).toEqual(list.body.tasks[0]);
+    expect(owner.body).toEqual(withPayloads(list.body.tasks[0], DEMO_PAYLOADS));
 
     const office = await (await actors.as('office')).get(`/api/approvals/${taskId}`);
     expect(office.status).toBe(200);
     expect(office.body.steps.map((s: { canApprove: boolean }) => s.canApprove)).toEqual([true, true, false]);
-    expect({ ...office.body, steps: office.body.steps.map((s: object) => ({ ...s, canApprove: true })) }).toEqual(list.body.tasks[0]);
+    expect({ ...office.body, steps: office.body.steps.map((s: object) => ({ ...s, canApprove: true })) }).toEqual(
+      withPayloads(list.body.tasks[0], DEMO_PAYLOADS),
+    );
+  });
+
+  test('the detail carries the payload as saved, so the editor can fill itself in (a text batch: body and customer ids)', async () => {
+    const ids = await newCustomers('a', ['Molly', 'Ned']);
+    const { taskId } = await newTask('a', { steps: [smsStep(ids)] });
+    const res = await (await actors.as('owner')).get(`/api/approvals/${taskId}`);
+    expect(res.body.steps).toHaveLength(1);
+    expect(res.body.steps[0].payload).toEqual({ purpose: 'marketing', body: STOP_BODY, customerIds: ids });
   });
 
   test('a task in any status can be opened (it is how the screen shows what happened), not only the ones in the list', async () => {
@@ -607,6 +635,7 @@ describe('PATCH /api/approvals/:taskId/steps/:stepId', () => {
       status: 'pending',
       preview: { title: 'Text 31 customers', lines: [] },
       canApprove: true,
+      payload: { label: 'Text 31 customers' },
     });
 
     const [row] = (await dbSteps('a', taskId)).filter((s) => s.id === message.id);
@@ -643,6 +672,35 @@ describe('PATCH /api/approvals/:taskId/steps/:stepId', () => {
     const first = await owner.patch(url(taskId, message.id)).send({ version: 1, enabled: false });
     const second = await owner.patch(url(taskId, message.id)).send({ version: first.body.version, enabled: true });
     expect([first.body.version, second.body.version, second.body.enabled]).toEqual([2, 3, true]);
+  });
+
+  test('the PATCH response carries the payload as saved: after a payload edit it is the new one, parsed', async () => {
+    const ids = await newCustomers('a', ['Molly']);
+    const { taskId } = await newTask('a', { steps: [smsStep(ids)] });
+    const [step] = await dbSteps('a', taskId);
+    const owner = await actors.as('owner');
+
+    const body = "{company} here.  Storm damage? We'll look free. Reply STOP to opt out.";
+    const edited = await owner
+      .patch(url(taskId, step!.id))
+      .send({ version: 1, payload: { purpose: 'marketing', body: `  ${body}  `, customerIds: ids.map((id) => id.toUpperCase()) } });
+    expect(edited.status).toBe(200);
+    expect(edited.body.payload).toEqual({ purpose: 'marketing', body, customerIds: ids });
+    expect(edited.body.payload).toEqual((await dbSteps('a', taskId))[0]!.payload);
+
+    // A toggle-only edit hands the unchanged payload back.
+    const toggled = await owner.patch(url(taskId, step!.id)).send({ version: 2, enabled: false });
+    expect(toggled.status).toBe(200);
+    expect(toggled.body.payload).toEqual({ purpose: 'marketing', body, customerIds: ids });
+  });
+
+  test('the 409\'s latest carries the payload too, so the editor can refresh itself from it', async () => {
+    const { taskId, noop } = await demo();
+    const owner = await actors.as('owner');
+    await owner.patch(url(taskId, noop.id)).send({ version: 1, payload: { label: 'Door-knock routes for 3 reps' } });
+    const stale = await owner.patch(url(taskId, noop.id)).send({ version: 1, enabled: false });
+    expect(stale.status).toBe(409);
+    expect(stale.body.latest).toMatchObject({ version: 2, payload: { label: 'Door-knock routes for 3 reps' } });
   });
 
   test('a version from the future is stale too', async () => {

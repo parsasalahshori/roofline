@@ -141,14 +141,24 @@ export async function getTask(
   return row ?? null;
 }
 
-/** The steps of these tasks, without payloads, each task's steps in position order. */
-export async function listSteps(tx: Tx, ctx: TenantContext, taskIds: readonly string[]): Promise<StepSummaryRow[]> {
+/**
+ * The steps of these tasks, each task's steps in position order. By default without the payload
+ * (lists never read it: a batch can hold thousands of customer ids); `{ payload: true }` reads it
+ * too, for the one task a person opens.
+ */
+export async function listSteps(tx: Tx, ctx: TenantContext, taskIds: readonly string[], options: { payload: true }): Promise<StepRow[]>;
+export async function listSteps(tx: Tx, ctx: TenantContext, taskIds: readonly string[]): Promise<StepSummaryRow[]>;
+export async function listSteps(
+  tx: Tx,
+  ctx: TenantContext,
+  taskIds: readonly string[],
+  options: { payload?: boolean } = {},
+): Promise<StepRow[] | StepSummaryRow[]> {
   if (taskIds.length === 0) return [];
-  return tx
-    .select(SUMMARY_COLUMNS)
-    .from(agentTaskSteps)
-    .where(and(eq(agentTaskSteps.companyId, ctx.companyId), inArray(agentTaskSteps.taskId, [...taskIds])))
-    .orderBy(asc(agentTaskSteps.taskId), asc(agentTaskSteps.position));
+  const where = and(eq(agentTaskSteps.companyId, ctx.companyId), inArray(agentTaskSteps.taskId, [...taskIds]));
+  const order = [asc(agentTaskSteps.taskId), asc(agentTaskSteps.position)] as const;
+  if (options.payload === true) return tx.select().from(agentTaskSteps).where(where).orderBy(...order);
+  return tx.select(SUMMARY_COLUMNS).from(agentTaskSteps).where(where).orderBy(...order);
 }
 
 /** One step of one task, with its payload, or null. */
