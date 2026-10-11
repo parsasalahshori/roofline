@@ -12,7 +12,7 @@ import {
   usageEvents,
 } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
-import { applyEarlyDeliveryReports } from './delivery.ts';
+import { applyEarlyDeliveryReports, lockDeliverySid } from './delivery.ts';
 
 /*
  * Data access for outbound texts (spec 4.5): what the send gate needs to know about a company, a
@@ -361,6 +361,8 @@ export async function markTextSent(
   sent: { providerSid: string; segments: number; sentAt: Date },
   now: Date,
 ): Promise<boolean> {
+  // Take the SID lock before the row lock, in the same order as /status (Ruling U).
+  await lockDeliverySid(tx, ctx, sent.providerSid);
   const rows = await tx
     .update(messages)
     .set({
