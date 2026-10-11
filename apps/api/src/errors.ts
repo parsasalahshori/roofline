@@ -40,24 +40,30 @@ export const MESSAGES = {
   inviteWrongGoogle: "This Google account doesn't match the email that was invited.",
   inviteSignIn: 'Sign in to accept this invite.',
   googleAlreadyUsed: 'This Google account is already connected to a different Roofline user.',
+  changedWhileLooking: "This changed while you were looking. Here's the latest.",
 } as const;
 
-export type ErrorBody = { error: string; field?: string };
+/** `latest` is only on the 409 of an approval that changed under the caller: the current version of what they tried to change. */
+export type ErrorBody = { error: string; field?: string; latest?: unknown };
 
 /**
  * An error the caller should see: it carries the HTTP status, a plain-English message, and
  * optionally the name of the field the message is about. Throw this for anything expected
  * (validation, conflicts, "not found"); everything else becomes a generic 500.
+ * A 409 that tells the screen to refresh also carries `latest`, the current state of the thing
+ * that changed (the approvals routes use it), so the response is `{ error, latest }`.
  */
 export class AppError extends Error {
   readonly status: number;
   readonly field?: string;
+  readonly latest?: unknown;
 
-  constructor(status: number, message: string, field?: string) {
+  constructor(status: number, message: string, field?: string, latest?: unknown) {
     super(message);
     this.name = 'AppError';
     this.status = status;
     if (field !== undefined) this.field = field;
+    if (latest !== undefined) this.latest = latest;
   }
 }
 
@@ -132,6 +138,7 @@ export function errorHandler(logError: (err: unknown, path: string) => void): Er
     if (known instanceof AppError) {
       const body: ErrorBody = { error: known.message };
       if (known.field !== undefined) body.field = known.field;
+      if (known.latest !== undefined) body.latest = known.latest;
       res.status(known.status).json(body);
       return;
     }

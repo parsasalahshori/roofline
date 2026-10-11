@@ -10,6 +10,7 @@ import { describeErrorForLog, errorHandler, MESSAGES, notFoundHandler } from './
 import type { Mailer } from './mailer.ts';
 import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
+import { approvalRoutes } from './routes/approvals.ts';
 import { companyRoutes } from './routes/company.ts';
 import { customerRoutes } from './routes/customers.ts';
 import { jobRoutes } from './routes/jobs.ts';
@@ -106,6 +107,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/properties', propertyRoutes(deps));
   app.use('/api/jobs', jobRoutes(deps));
   app.use('/api/activities', activityRoutes(deps));
+  app.use('/api/approvals', approvalRoutes(deps));
 
   app.use(notFoundHandler);
   app.use(errorHandler(logError));

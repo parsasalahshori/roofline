@@ -58,6 +58,22 @@ export {
   updateProperty,
 } from './repos/properties.ts';
 export { canSeeJobValue, customerScope, jobScope, propertyScope } from './repos/scope.ts';
+export {
+  customerFirstNames,
+  getCompanyName,
+  getStep,
+  getTask,
+  insertTask,
+  listSteps,
+  listTasksByStatus,
+  type NewStepRow,
+  type NewTaskRow,
+  type StepEdit,
+  type StepRow,
+  type StepSummaryRow,
+  type TaskRow,
+  updatePendingStep,
+} from './repos/tasks.ts';
 export type { LngLat } from './schema/columns.ts';
 export * from './schema/index.ts';
 export { type TenantContext, type Tx, withTenant } from './tenant.ts';
