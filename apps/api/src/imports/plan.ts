@@ -1,9 +1,7 @@
 import { importConsent } from '@roofline/shared';
-import type { ConsentStatus, ExistingConsent, ImportCounts, ImportPreviewRow, SkipKey } from '@roofline/shared';
-import type { NormalizedRow, RowSkip } from './normalize.ts';
+import type { ConsentStatus, ExistingCustomer, ExistingIndex, ImportCounts, ImportPreviewRow, NormalizedRow, RowSkip, SkipKey } from '@roofline/shared';
 
-export type ExistingCustomer = ExistingConsent & { id: string };
-export type ExistingIndex = { byPhone: ReadonlyMap<string, ExistingCustomer>; byEmail: ReadonlyMap<string, ExistingCustomer> };
+export type { ExistingCustomer, ExistingIndex } from '@roofline/shared';
 export type PlannedRow = {
   row: number;
   outcome: 'create' | 'update' | 'skip';
