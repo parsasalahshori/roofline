@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+data/*
+!data/.gitkeep
+test-results/
+playwright-report/
+.buildcli/
+cli/roof/target/
+
+.superpowers/

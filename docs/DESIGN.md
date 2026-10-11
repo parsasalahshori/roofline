@@ -1,0 +1,15 @@
+# Roofline design
+
+Build a working single-company US residential roofing estimator, with a React frontend, Express API, SQLite persistence, printable PDF proposals, and both a lightweight CLI and an actual BuildCLI Java command plugin. USD and square feet throughout. Full workflow is address → measurement → scope → priced proposal → review → status tracking.
+
+Data sources: Google Geocoding and Static Maps for address/imagery; RentCast for optional property context (never use living area as roof area); EagleView legacy report retrieval and authorized address-based orders with report polling and automatic draft generation; validated normalized JSON imports and manual surface/footprint measurements. Demo data must be unmistakably synthetic. Provider errors must never silently become demo measurements. Google Solar is excluded because current terms restrict it to energy-system uses.
+
+Pricing: surface area is authoritative; footprint converts once using pitch. Materials are rounded up to whole bundles (3 per square); labor uses actual roof squares; configurable waste, tear-off layers, steep slope, stories, edge/ridge/valley lengths, decking allowance, fixed disposal, permit allowance, overhead/profit markup, and configurable tax on marked-up material lines only. Default prices are examples requiring company review. Integer cents for line totals; proposals snapshot the pricebook so subsequent edits cannot rewrite an old quote.
+
+Review: verify property, roof geometry, and scope before marking a live proposal ready. No invented confidence percentages, no aerial damage diagnosis, no automatic sending. Paid measurement orders require a displayed provider price and explicit operator consent, with idempotency recorded before submission and no retry after uncertain outcomes. Users may explicitly record externally sent/accepted statuses, with an audit trail. Downloaded drafts remain visibly preliminary.
+
+Security: single-tenant operator authentication with scrypt password hash, opaque hashed session tokens, HttpOnly SameSite cookies, origin checks, request validation, bounded provider timeouts, rate limits, server-only keys, authenticated exports. Demo is loopback only; production must disable it. No public SaaS or multi-tenant claim.
+
+UI: warm off-white workspace, evergreen sidebar, serif page titles, clear data cards; responsive property/quote workspace with illustrated demo roof and live satellite imagery only for live geocoded properties. Navigation includes overview, estimator, proposals, customers, pricebook, connectors and company settings. Every visible action must work or explain the missing credential.
+
+Delivery: source, locked dependencies, example report, Dockerfile, setup guide, API/CLI documentation and research citations. Run unit/integration tests for pricing, provider normalization and failure modes, auth and workflow; browser tests for quote creation, persistence, pricebook and PDF; compile and exercise the BuildCLI plugin against the running API.

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD_DIR="$ROOT/.buildcli"
+if [ ! -f "$BUILD_DIR/plugins/roof.jar" ]; then printf 'Run ./scripts/build-cli.sh first (JDK 21+ and Maven required).\n' >&2; exit 1; fi
+mkdir -p "$BUILD_DIR/home/.buildcli/plugins"
+cp "$BUILD_DIR/plugins/roof.jar" "$BUILD_DIR/home/.buildcli/plugins/roof.jar"
+# Keep JVM configuration inside the project. Use real BuildCLI commands and PF4J
+# loading with a launcher that propagates errors and omits auto-update prompts.
+exec java -Duser.home="$BUILD_DIR/home" -cp "$BUILD_DIR/plugins/roof.jar:$BUILD_DIR/buildcli.jar" dev.buildcli.plugin.roof.RooflineLauncher "$@"
