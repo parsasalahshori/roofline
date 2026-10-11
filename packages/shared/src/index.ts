@@ -5,3 +5,8 @@ export * from './pricing.ts';
 export * from './render.ts';
 export * from './steps.ts';
 export * from './time-zone.ts';
+export * from './setup.ts';
+export * from './imports.ts';
+export * from './billing.ts';
+export * from './texting.ts';
+export * from './consent.ts';

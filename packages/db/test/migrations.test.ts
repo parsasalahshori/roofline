@@ -82,9 +82,22 @@ describe('schema', () => {
         where f_table_schema='public' and f_table_name in ('companies', 'properties') order by 1, 2`,
     );
     expect(rows).toEqual([
+      { f_table_name: 'companies', f_geometry_column: 'location', srid: 4326, type: 'POINT' },
       { f_table_name: 'companies', f_geometry_column: 'service_area', srid: 4326, type: 'MULTIPOLYGON' },
       { f_table_name: 'properties', f_geometry_column: 'geom', srid: 4326, type: 'POINT' },
     ]);
+  });
+
+  test('F3 tables are tenant tables with RLS forced', async () => {
+    const f3Tables = ['setup_items', 'imports', 'import_rows', 'early_delivery_reports'] as const;
+    expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...f3Tables]));
+    for (const table of f3Tables) {
+      const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+        `select relrowsecurity, relforcerowsecurity from pg_class where oid = $1::regclass`,
+        [`public.${table}`],
+      );
+      expect(cls, table).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+    }
   });
 
   test('running migrate a second time changes nothing', async () => {
@@ -362,6 +375,65 @@ describe('constraints', () => {
 
     const reg = `insert into texting_registrations (company_id) values ($1)`;
     expect((await rejected(reg, [s.a.companyId])).code).toBe('23505');
+  });
+
+  test('one inbound row per provider message per company', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const sid = 'SM' + 'a'.repeat(32);
+    const inbound = `insert into messages (company_id, channel, direction, body, status, provider_message_sid)
+      values ($1, 'sms', 'in', 'Hi', 'received', $2)`;
+    await ownerQuery(inbound, [s.a.companyId, sid]);
+    const err = await rejected(inbound, [s.a.companyId, sid]);
+    expect(err.code).toBe('23505');
+
+    // The partial index covers direction 'in' only, so an outbound row may share the SID.
+    await ownerQuery(
+      `insert into messages (company_id, channel, direction, body, status, provider_message_sid)
+       values ($1, 'sms', 'out', 'Hi', 'sent', $2)`,
+      [s.a.companyId, sid],
+    );
+    // Another company may receive the same SID.
+    await ownerQuery(inbound, [s.b.companyId, sid]);
+  });
+
+  test('customers.phones has a jsonb_path_ops GIN index', async () => {
+    const phones = await ownerQuery<{ indexdef: string }>(
+      `select indexdef from pg_indexes where schemaname = 'public' and indexname = 'customers_phones_gin'`,
+    );
+    expect(phones).toHaveLength(1);
+    expect(phones[0]!.indexdef).toMatch(/using gin/i);
+    expect(phones[0]!.indexdef).toContain('jsonb_path_ops');
+
+    const emails = await ownerQuery<{ indexdef: string }>(
+      `select indexdef from pg_indexes where schemaname = 'public' and indexname = 'customers_emails_gin'`,
+    );
+    expect(emails).toHaveLength(1);
+    expect(emails[0]!.indexdef).toMatch(/using gin/i);
+  });
+
+  test('service_area_miles accepts only 10, 20, 40 or 60', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const update = `update companies set service_area_miles = $2 where id = $1`;
+    const err = await rejected(update, [s.a.companyId, 25]);
+    expect(err.code).toBe('23514');
+    for (const miles of [10, 20, 40, 60, null]) {
+      await ownerQuery(update, [s.a.companyId, miles]);
+    }
+  });
+
+  test('F3 enum columns carry CHECK constraints', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const cid = s.a.companyId;
+    const badInserts = [
+      `insert into setup_items (company_id, key) values ('${cid}', 'bogus')`,
+      `insert into setup_items (company_id, key, status) values ('${cid}', 'company_basics', 'bogus')`,
+      `insert into imports (company_id, file_name, status) values ('${cid}', 'c.csv', 'bogus')`,
+      `insert into early_delivery_reports (company_id, provider_message_sid, status) values ('${cid}', 'SM1', 'bogus')`,
+    ];
+    for (const sql of badInserts) {
+      const err = await rejected(sql);
+      expect(err.code, sql).toBe('23514');
+    }
   });
 });
 

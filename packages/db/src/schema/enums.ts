@@ -24,5 +24,7 @@ export const USAGE_KINDS = [
   'texting_registration_fee',
   'phone_number_month',
 ] as const;
+export type UsageKind = (typeof USAGE_KINDS)[number];
 export const PHONE_NUMBER_PURPOSES = ['main'] as const;
 export const TASK_MODES = ['needs_approval', 'live'] as const;
+export const EARLY_DELIVERY_STATUSES = ['delivered', 'failed'] as const;
