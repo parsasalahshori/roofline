@@ -283,7 +283,7 @@ describe('POST /hooks/twilio/sms: the brief', () => {
     expect(await optOutRows('a')).toHaveLength(1);
     expect(await auditRows('a', 'customer.consent_revoked')).toHaveLength(1);
     expect(await timeline(t, idOf('a'), c1!)).toEqual([['customer.consent_changed', STOP_LINE]]);
-    expect(await webhookRows()).toMatchObject([{ provider: 'twilio-sms', eventId: `${idOf('a')}:${fields.MessageSid}` }]);
+    expect((await webhookRows()).filter((r) => r.provider === 'twilio-sms')).toEqual([]);
   });
 
   test('a bad signature → 403, and nothing is written', async () => {
@@ -318,10 +318,14 @@ describe('POST /hooks/twilio/sms: the brief', () => {
     await nothingWritten();
   });
 
-  test('a number that is no longer active → 404', async () => {
+  test('a number that is no longer active → /status still 404s for it (texts to it are accepted; see the STOP tests)', async () => {
+    const text = await sentText(OUT(11));
     await t.deps.pools.system.update(companyPhoneNumbers).set({ status: 'released' }).where(eq(companyPhoneNumbers.e164, A_NUMBER));
-    expect((await sms(inbound())).status).toBe(404);
-    await nothingWritten();
+    const res = await status(statusOf(OUT(11), 'delivered'));
+    expect(res.status).toBe(404);
+    expect(res.text).toBe('');
+    expect((await messageRow('a', text.id)).status).toBe('sent');
+    expect(await webhookRows()).toEqual([]);
   });
 
   test('"Can you stop by Thursday?" is stored as received, and consent is unchanged (Review Focus #1)', async () => {
@@ -554,9 +558,14 @@ describe('POST /hooks/twilio/sms: HELP, START and everything else', () => {
     expect(await inboundRows('a')).toMatchObject([{ body: 'help', status: 'received', customerId: c1 }]);
   });
 
-  test('HELP for a company with no phone on file → just the name and how to opt out', async () => {
-    await t.deps.pools.system.update(companies).set({ phoneE164: null }).where(eq(companies.id, idOf('a')));
-    expect(messageOf((await sms(inbound({ Body: 'INFO' }))).text)).toBe('Acme Roofing. Reply STOP to opt out.');
+  test('HELP for a company with no phone on file falls back to the number they texted', async () => {
+    await t.deps.pools.system
+      .update(companies)
+      .set({ phoneE164: null, email: null, website: null })
+      .where(eq(companies.id, idOf('a')));
+    expect(messageOf((await sms(inbound({ Body: 'INFO' }))).text)).toBe(
+      'Acme Roofing: call or text us at (402) 555-0100. Reply STOP to opt out.',
+    );
   });
 
   test('START never clears do-not-contact; only revoked customers change; archived ones stay revoked', async () => {
@@ -733,7 +742,7 @@ describe('POST /hooks/twilio/sms: signing tokens, bad requests and failures', ()
     expect((await dbCustomer(t, idOf('a'), c1!)).smsConsentStatus).toBe('revoked');
     expect(await optOutRows('a')).toHaveLength(1);
     expect(await inboundRows('a')).toHaveLength(3);
-    expect(await webhookRows()).toHaveLength(3);
+    expect(await webhookRows()).toEqual([]);
   });
 
   test('ids and numbers must be in Twilio\'s formats: MessageSid / SmsSid SM or MM + 32 hex, From and To E.164 (I1)', async () => {
@@ -808,6 +817,136 @@ describe('POST /hooks/twilio/sms: signing tokens, bad requests and failures', ()
 });
 
 // ---------------------------------------------------------------------------------------------
+
+describe('POST /hooks/twilio/sms: atomic claim and carrier rules', () => {
+  test('a STOP whose work fails is handled on the retry', async () => {
+    const [c1] = await addSmsCustomers(t, 'a', [nina()]);
+    const owner = new pg.Client({ connectionString: inject('dbUrls').owner });
+    await owner.connect();
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fields = inbound({ Body: 'STOP' });
+    try {
+      // The flag is armed: the opt-out insert raises until the test disarms it.
+      await owner.query('create table test_opt_out_flag (armed boolean not null)');
+      await owner.query('insert into test_opt_out_flag (armed) values (true)');
+      await owner.query(`create function test_refuse_opt_out() returns trigger language plpgsql security definer set search_path = public as $$
+        begin
+          if (select armed from test_opt_out_flag limit 1) then raise exception 'opt-out refused'; end if;
+          return new;
+        end $$`);
+      await owner.query(`create trigger test_refuse_opt_out before insert on opt_outs
+        for each row execute function test_refuse_opt_out()`);
+
+      const failed = await sms(fields);
+      expect(failed.status).toBe(500);
+      expect(await inboundRows('a')).toEqual([]);
+      expect(await optOutRows('a')).toEqual([]);
+
+      // The raise rolled back everything it touched, so the flag is cleared from outside the failed request.
+      await owner.query('update test_opt_out_flag set armed = false');
+
+      const retried = await sms(fields);
+      expect(retried.status).toBe(200);
+      expect(messageOf(retried.text)).toBe(UNSUBSCRIBED);
+      expect(await optOutRows('a')).toHaveLength(1);
+      expect(await auditRows('a', 'customer.consent_revoked')).toHaveLength(1);
+      expect((await dbCustomer(t, idOf('a'), c1!)).smsConsentStatus).toBe('revoked');
+    } finally {
+      await owner.query('drop trigger if exists test_refuse_opt_out on opt_outs');
+      await owner.query('drop function if exists test_refuse_opt_out()');
+      await owner.query('drop table if exists test_opt_out_flag');
+      await owner.end();
+      quiet.mockRestore();
+    }
+  });
+
+  test('two copies of one STOP at once make one opt-out and one reply', async () => {
+    const [c1] = await addSmsCustomers(t, 'a', [nina()]);
+    const fields = inbound({ Body: 'STOP' });
+
+    const [r1, r2] = await Promise.all([sms(fields), sms(fields)]);
+
+    expect([r1.status, r2.status]).toEqual([200, 200]);
+    const texts = [r1.text, r2.text];
+    expect(texts.filter((text) => text.includes('unsubscribed'))).toHaveLength(1);
+    expect(texts.filter((text) => text === EMPTY)).toHaveLength(1);
+    expect(await inboundRows('a')).toHaveLength(1);
+    expect(await optOutRows('a')).toHaveLength(1);
+    expect(await auditRows('a', 'customer.consent_revoked')).toHaveLength(1);
+    expect((await dbCustomer(t, idOf('a'), c1!)).smsConsentStatus).toBe('revoked');
+  });
+
+  test('texts that come in no longer use webhook_events', async () => {
+    const res = await sms(inbound({ Body: 'hello' }));
+
+    expect(res.status).toBe(200);
+    expect(res.text).toBe(EMPTY);
+    expect(await inboundRows('a')).toHaveLength(1);
+    expect((await webhookRows()).filter((r) => r.provider === 'twilio-sms')).toEqual([]);
+  });
+
+  test('a short-code sender is stored and changes nothing', async () => {
+    const [c1] = await addSmsCustomers(t, 'a', [nina()]);
+
+    const res = await sms(inbound({ From: '72345', Body: 'STOP' }));
+
+    expect(res.status).toBe(200);
+    expect(res.text).toBe(EMPTY);
+    expect(await inboundRows('a')).toMatchObject([{ customerId: null, fromE164: '72345', body: 'STOP', status: 'received' }]);
+    expect(await optOutRows('a')).toEqual([]);
+    expect(await auditRows('a', 'customer.consent_revoked')).toEqual([]);
+    expect((await dbCustomer(t, idOf('a'), c1!)).smsConsentStatus).toBe('express');
+  });
+
+  test('a STOP to a number that is no longer active still opts out', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await t.deps.pools.system.update(companyPhoneNumbers).set({ status: 'released' }).where(eq(companyPhoneNumbers.e164, A_NUMBER));
+
+    const res = await sms(inbound({ Body: 'STOP' }));
+
+    expect(res.status).toBe(200);
+    expect(messageOf(res.text)).toBe(UNSUBSCRIBED);
+    expect(await optOutRows('a')).toHaveLength(1);
+  });
+
+  test('HELP falls back to email, website, then the number they texted', async () => {
+    const setContact = (columns: { email: string | null; website: string | null }) =>
+      t.deps.pools.system.update(companies).set({ phoneE164: null, ...columns }).where(eq(companies.id, idOf('a')));
+
+    await setContact({ email: 'office@acme.test', website: null });
+    expect(messageOf((await sms(inbound({ Body: 'HELP' }))).text)).toBe(
+      'Acme Roofing: email us at office@acme.test. Reply STOP to opt out.',
+    );
+
+    await setContact({ email: null, website: 'https://acme.test' });
+    expect(messageOf((await sms(inbound({ Body: 'HELP' }))).text)).toBe('Acme Roofing: visit https://acme.test. Reply STOP to opt out.');
+
+    await setContact({ email: null, website: null });
+    expect(messageOf((await sms(inbound({ Body: 'HELP', To: A_NUMBER }))).text)).toBe(
+      'Acme Roofing: call or text us at (402) 555-0100. Reply STOP to opt out.',
+    );
+  });
+
+  test("Twilio's own opt-out keyword counts and we don't answer twice", async () => {
+    const [c1] = await addSmsCustomers(t, 'a', [nina()]);
+
+    const stop = await sms(inbound({ OptOutType: 'STOP', Body: 'OPTOUT' }));
+    expect(stop.status).toBe(200);
+    expect(stop.text).toBe(EMPTY);
+    expect(await optOutRows('a')).toMatchObject([{ phoneE164: NINA, keyword: 'OPTOUT' }]);
+    expect((await dbCustomer(t, idOf('a'), c1!)).smsConsentStatus).toBe('revoked');
+
+    const start = await sms(inbound({ OptOutType: 'START', Body: 'anything' }));
+    expect(start.status).toBe(200);
+    expect(start.text).toBe(EMPTY);
+    expect(await optOutRows('a')).toEqual([]);
+    expect((await dbCustomer(t, idOf('a'), c1!)).smsConsentStatus).toBe('express');
+
+    const help = await sms(inbound({ OptOutType: 'HELP', Body: 'anything' }));
+    expect(help.status).toBe(200);
+    expect(messageOf(help.text)).toBe(HELP_REPLY);
+  });
+});
 
 describe('POST /hooks/twilio/status', () => {
   test('delivered → the message is delivered', async () => {

@@ -44,10 +44,13 @@ export async function lockRecipients(tx: Tx, ctx: TenantContext, customerIds: re
   for (const id of [...new Set(customerIds)].sort()) await lockRecipient(tx, ctx, id);
 }
 
-/** The company's name and its phone on file, for the replies. Null when the company cannot be seen. */
-export async function companyContact(tx: Tx, ctx: TenantContext): Promise<{ name: string; phoneE164: string | null } | null> {
+/** The company's name, phone, email and website on file, for the replies. Null when the company cannot be seen. */
+export async function companyContact(
+  tx: Tx,
+  ctx: TenantContext,
+): Promise<{ name: string; phoneE164: string | null; email: string | null; website: string | null } | null> {
   const [row] = await tx
-    .select({ name: companies.name, phoneE164: companies.phoneE164 })
+    .select({ name: companies.name, phoneE164: companies.phoneE164, email: companies.email, website: companies.website })
     .from(companies)
     .where(eq(companies.id, ctx.companyId))
     .limit(1);
@@ -58,7 +61,7 @@ export type InboundText = {
   /** The customer the text is filed under, or null when the number is no customer's. */
   customerId: string | null;
   body: string;
-  /** Who sent it. */
+  /** Who sent it: an E.164 number, or a short code (3 to 8 digits) as received. */
   fromE164: string;
   /** The company's texting number it was sent to. */
   toE164: string;
@@ -66,8 +69,12 @@ export type InboundText = {
   providerSid: string;
 };
 
-/** Stores a text that came in: `direction in`, `status received`, channel sms. Returns its id. */
-export async function insertInboundText(tx: Tx, ctx: TenantContext, text: InboundText, now: Date): Promise<string> {
+/**
+ * Stores a text that came in: `direction in`, `status received`, channel sms. Returns its id, or
+ * null when the provider's id is already stored for this company (a repeat delivery); then nothing
+ * was written.
+ */
+export async function insertInboundText(tx: Tx, ctx: TenantContext, text: InboundText, now: Date): Promise<string | null> {
   const [row] = await tx
     .insert(messages)
     .values({
@@ -83,8 +90,9 @@ export async function insertInboundText(tx: Tx, ctx: TenantContext, text: Inboun
       createdAt: now,
       updatedAt: now,
     })
+    .onConflictDoNothing({ target: [messages.companyId, messages.providerMessageSid], where: sql`${messages.direction} = 'in'` })
     .returning({ id: messages.id });
-  return row!.id;
+  return row?.id ?? null;
 }
 
 const CONSENT_FIELDS = {

@@ -10,12 +10,24 @@ import { companyPhoneNumbers, textingRegistrations, webhookEvents } from '../sch
  * runs as app_tenant inside `withTenant`. Only apps/api/src/hooks/** imports this module.
  */
 
-/** The company that owns this texting number, while the number is active; null for any other number. */
-export async function companyIdForNumber(system: Db, e164: string): Promise<string | null> {
+/**
+ * The company that owns this texting number. By default only while the number is active; null for
+ * any other number. With `includeInactive: true` the number's status is not checked, so an inactive
+ * number of a company also counts (e164 is unique, so at most one row matches).
+ */
+export async function companyIdForNumber(
+  system: Db,
+  e164: string,
+  options?: { includeInactive?: boolean },
+): Promise<string | null> {
   const [row] = await system
     .select({ companyId: companyPhoneNumbers.companyId })
     .from(companyPhoneNumbers)
-    .where(and(eq(companyPhoneNumbers.e164, e164), eq(companyPhoneNumbers.status, 'active')))
+    .where(
+      options?.includeInactive
+        ? eq(companyPhoneNumbers.e164, e164)
+        : and(eq(companyPhoneNumbers.e164, e164), eq(companyPhoneNumbers.status, 'active')),
+    )
     .limit(1);
   return row?.companyId ?? null;
 }

@@ -14,31 +14,38 @@ import {
   withTenant,
 } from '@roofline/db';
 import { claimWebhookEvent, companyIdForNumber, releaseWebhookEvent, signingTokenFor } from '@roofline/db/system';
-import { looksLikeOptOut, readInbound } from '@roofline/send-gate';
+import { type InboundReading, looksLikeOptOut, readInbound } from '@roofline/send-gate';
 import type { AppDeps } from '../app.ts';
 
 /*
  * Twilio's webhooks (spec 4.5, R24), mounted at /hooks/twilio ahead of the /api session gate:
- * - POST /sms     a text came in to one of a company's numbers. Stored, then STOP / HELP / START
- *                 handled, and the reply sent back as TwiML.
+ * - POST /sms     a text came in to one of a company's numbers, from a person or a short code. Stored,
+ *                 then STOP / HELP / START handled (Twilio's own OptOutType, when sent, decides
+ *                 STOP / START / HELP instead of the body), and the reply sent back as TwiML.
  * - POST /status  a delivery report for a text that went out.
  *
  * Both are form posts. Before anything is written, each one is:
- * 1. routed: the company's own number (`To` of a text that came in, `From` of a report) must be an
- *    active texting number (company_phone_numbers), else 404 with an empty body;
+ * 1. routed: the company's own number (`To` of a text that came in, `From` of a report) must be a
+ *    texting number (company_phone_numbers), else 404 with an empty body. A text that came in also
+ *    routes when that number is no longer active, so a STOP still opts out; a report needs an
+ *    active number;
  * 2. authenticated: `X-Twilio-Signature` must be Twilio's signature of PUBLIC_BASE_URL + the path
  *    and the form fields, made with that company's subaccount token (else TWILIO_AUTH_TOKEN), else
  *    403. A company with no token at all is 403 too;
  * 3. checked for shape: MessageSid (and SmsSid, when sent) must be Twilio's id format, SM or MM and
- *    32 lowercase hex digits, and the numbers must be E.164, else 400 with an empty body. This is not
+ *    32 lowercase hex digits, and the numbers must be E.164 (a text's `From` may also be a short
+ *    code, 3 to 8 digits), else 400 with an empty body. This is not
  *    tidiness: the signature joins the sorted names and values with no separator, so a signed
  *    request re-split ("SM...NumMedia0" as the MessageSid, NumMedia left out) still verifies, and
  *    without this check it would pass the dedupe below as a new message (a replayed START could undo
  *    a later STOP);
- * 4. deduplicated: Twilio may deliver the same webhook more than once, so each delivery is claimed
- *    in webhook_events first, under a key that starts with the company's id, and a repeat does
- *    nothing (200, an empty reply). When the work for a claimed delivery fails, the claim is given
- *    back so Twilio's next try is handled.
+ * 4. deduplicated: Twilio may deliver the same webhook more than once. /sms dedupes inside the
+ *    tenant transaction: the inbound message insert (unique on company and MessageSid) is the claim,
+ *    so a repeat does nothing and answers an empty reply, and a failure rolls everything back and
+ *    answers 500 so Twilio's retry is handled. /status still claims each delivery in webhook_events
+ *    first, under a key that starts with the company's id, and a repeat does nothing (200, an empty
+ *    reply). When the work for a claimed /status delivery fails, the claim is given back so Twilio's
+ *    next try is handled.
  * The company's work then runs as app_tenant inside `withTenant` (role `system`, no user).
  */
 
@@ -48,10 +55,11 @@ export const FORM_BODY_LIMIT = '64kb';
 /** Delivery reports that fail a text, and what the message row then says. */
 export const CARRIER_FAILED = "The carrier couldn't deliver this text.";
 
-const SMS_EVENTS = 'twilio-sms';
 const STATUS_EVENTS = 'twilio-status';
 
 const E164 = /^\+[1-9]\d{1,14}$/;
+/** A short code, the 3 to 8 digit sender of a carrier message. */
+const SHORT_CODE = /^\d{3,8}$/;
 /** Twilio's id of a text: SM (or MM for one with media) and 32 lowercase hex digits. */
 const MESSAGE_SID = /^(SM|MM)[0-9a-f]{32}$/;
 
@@ -93,17 +101,29 @@ function displayPhone(e164: string): string {
   return us ? `(${us[1]}) ${us[2]}-${us[3]}` : e164;
 }
 
+/** The company's contact details for a HELP reply (companyContact). */
+type Contact = { name: string; phoneE164: string | null; email: string | null; website: string | null };
+
 /*
- * The replies. Every dynamic part (the company's name and phone) is escaped here; the fixed text
- * has no XML special characters that matter inside an element (an apostrophe is fine there).
+ * The replies. Every dynamic part (the company's name and contact details) is escaped here; the
+ * fixed text has no XML special characters that matter inside an element (an apostrophe is fine
+ * there).
  */
 const reply = {
   stop: (company: string) =>
     `You're unsubscribed from ${escapeXml(company)} texts. No more messages will be sent. Reply START to resubscribe.`,
-  help: (company: string, phone: string | null) =>
-    phone === null
-      ? `${escapeXml(company)}. Reply STOP to opt out.`
-      : `${escapeXml(company)}: call us at ${escapeXml(displayPhone(phone))}. Reply STOP to opt out.`,
+  /**
+   * HELP names the company and the first contact it has: its phone, else its email, else its
+   * website, else the number the text was sent to. An empty string counts as none.
+   */
+  help: (contact: Contact, to: string) => {
+    const name = escapeXml(contact.name);
+    const tail = 'Reply STOP to opt out.';
+    if (contact.phoneE164) return `${name}: call us at ${escapeXml(displayPhone(contact.phoneE164))}. ${tail}`;
+    if (contact.email) return `${name}: email us at ${escapeXml(contact.email)}. ${tail}`;
+    if (contact.website) return `${name}: visit ${escapeXml(contact.website)}. ${tail}`;
+    return `${name}: call or text us at ${escapeXml(displayPhone(to))}. ${tail}`;
+  },
   start: (company: string) => `You're resubscribed to ${escapeXml(company)} texts. Reply STOP to opt out.`,
 };
 
@@ -146,16 +166,36 @@ function e164Field(req: Request, name: string): string | undefined {
   return value !== undefined && E164.test(value) ? value : undefined;
 }
 
+/** The sender of a text (`From`): an E.164 number or a short code; else undefined. */
+function senderField(req: Request): string | undefined {
+  const value = field(req, 'From');
+  return value !== undefined && (E164.test(value) || SHORT_CODE.test(value)) ? value : undefined;
+}
+
+/** Twilio's OptOutType (Advanced Opt-Out), only when it is exactly STOP, START or HELP; else undefined. */
+function optOutTypeField(req: Request): OptOutType | undefined {
+  const value = field(req, 'OptOutType');
+  return value === 'STOP' || value === 'START' || value === 'HELP' ? value : undefined;
+}
+
 const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: null, role: 'system', canApproveSpend: false });
 
 /**
  * Steps 1 and 2 (routing, then the signature), on `numberField` (the company's own number).
+ * `options` go to companyIdForNumber: `includeInactive` routes a number whatever its status (a text
+ * that came in, so a STOP still opts out); without it only active numbers route.
  * Answers 404 or 403 itself and returns null; otherwise the company's id.
  */
-async function verify(deps: AppDeps, req: Request, res: Response, numberField: 'To' | 'From'): Promise<string | null> {
+async function verify(
+  deps: AppDeps,
+  req: Request,
+  res: Response,
+  numberField: 'To' | 'From',
+  options?: { includeInactive?: boolean },
+): Promise<string | null> {
   const { system } = deps.pools;
   const number = field(req, numberField);
-  const companyId = number !== undefined && E164.test(number) ? await companyIdForNumber(system, number) : null;
+  const companyId = number !== undefined && E164.test(number) ? await companyIdForNumber(system, number, options) : null;
   if (companyId === null) {
     res.status(404).end();
     return null;
@@ -186,26 +226,65 @@ async function once<T>(deps: AppDeps, provider: string, eventId: string, work: (
   }
 }
 
-type Inbound = { messageSid: string; from: string; to: string; body: string };
+/** Twilio's OptOutType values we act on. */
+type OptOutType = 'STOP' | 'START' | 'HELP';
+
+/**
+ * A text that came in. `from` is the sender's E.164 number or a short code. `optOutType` is Twilio's
+ * OptOutType when it sent one (Advanced Opt-Out): it decides STOP / START / HELP instead of the body.
+ */
+type Inbound = { messageSid: string; from: string; to: string; body: string; optOutType?: OptOutType };
+
+/**
+ * What the text is: Twilio's OptOutType when it is set (for STOP, the keyword is the body, normalized,
+ * or 'STOP' when the body is empty), else what the body reads as.
+ */
+function readingOf(text: Inbound): InboundReading {
+  switch (text.optOutType) {
+    case 'STOP':
+      return { kind: 'stop', keyword: text.body.trim().toUpperCase() || 'STOP' };
+    case 'START':
+      return { kind: 'start', keyword: 'START' };
+    case 'HELP':
+      return { kind: 'help', keyword: 'HELP' };
+    case undefined:
+      return readInbound(text.body);
+  }
+}
 
 /**
  * A text that came in, for the company, in one transaction. Returns the reply (escaped), or
  * undefined for none.
- * - It is stored as received, filed under the first active customer with the sender's number.
- * - STOP: the texting locks of every customer with the number (archived ones too) are taken first,
- *   so a send deciding for one of them right now finishes first and the next one sees the STOP;
- *   then the number goes on the opt-out list and all of them are revoked (`revokeConsentByText`).
- *   With no customer, the number is still put on the list.
- * - HELP: the company's name and phone.
+ * - A short-code sender is stored as received (customer null), and nothing else happens: no
+ *   classification, no locks, no opt-out, no reply.
+ * - Otherwise the sender's texting locks are taken first where the reading needs them (STOP: every
+ *   customer with the number, archived ones too, so a send deciding for one of them right now
+ *   finishes first; START: the active ones), then the message is stored, filed under the first
+ *   active customer with the sender's number. A repeat of the same MessageSid is stored already:
+ *   nothing more happens and there is no reply.
+ * - STOP: the number goes on the opt-out list and all of them are revoked (`revokeConsentByText`).
+ *   With no customer, the number is still put on the list. When Twilio sent the STOP as OptOutType,
+ *   Twilio already answered, so there is no reply from us.
+ * - HELP: the company's name and first contact (`reply.help`); always answered.
  * - START: under the active customers' locks, the number comes off the opt-out list and the revoked
- *   ones are back to `express` (`restoreConsentByText`). Do-not-contact stays as it is.
+ *   ones are back to `express` (`restoreConsentByText`). Do-not-contact stays as it is. As for STOP,
+ *   an OptOutType START gets no reply from us.
  * - anything else: no reply; a message that reads like an opt-out is flagged for a person to
  *   check, on each active customer's timeline or, with none, on the message's own; nobody is opted out.
  */
 async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): Promise<string | undefined> {
   const ctx = systemCtx(companyId);
   const now = deps.clock.now();
-  const reading = readInbound(text.body);
+
+  if (!E164.test(text.from)) {
+    await withTenant(deps.pools, ctx, (tx) =>
+      insertInboundText(tx, ctx, { customerId: null, body: text.body, fromE164: text.from, toE164: text.to, providerSid: text.messageSid }, now),
+    );
+    return undefined;
+  }
+
+  const reading = readingOf(text);
+  const twilioAnswered = text.optOutType === 'STOP' || text.optOutType === 'START';
   return withTenant(deps.pools, ctx, async (tx) => {
     const company = await companyContact(tx, ctx);
     if (company === null) throw new Error('The company that owns a texting number could not be read.');
@@ -222,16 +301,17 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
       { customerId: active[0] ?? null, body: text.body, fromE164: text.from, toE164: text.to, providerSid: text.messageSid },
       now,
     );
+    if (messageId === null) return undefined;
 
     switch (reading.kind) {
       case 'stop':
         await revokeConsentByText(tx, ctx, { phoneE164: text.from, keyword: reading.keyword, customerIds: all, messageId }, now);
-        return reply.stop(company.name);
+        return twilioAnswered ? undefined : reply.stop(company.name);
       case 'help':
-        return reply.help(company.name, company.phoneE164);
+        return reply.help(company, text.to);
       case 'start':
         await restoreConsentByText(tx, ctx, { phoneE164: text.from, customerIds: active, messageId }, now);
-        return reply.start(company.name);
+        return twilioAnswered ? undefined : reply.start(company.name);
       case 'other':
         if (looksLikeOptOut(text.body)) await flagPossibleOptOut(tx, ctx, active, messageId, now);
         return undefined;
@@ -250,19 +330,24 @@ export function twilioHooks(deps: AppDeps): Router {
   const router = Router();
   router.use(express.urlencoded({ extended: false, limit: FORM_BODY_LIMIT }));
 
+  /**
+   * A text that came in. Routed even when its number is no longer active (a STOP still opts out).
+   * The sender may be a short code. A repeated delivery answers an empty reply; a failure throws, so
+   * Express answers 500 and the tenant transaction rolls back.
+   */
   router.post('/sms', async (req, res) => {
-    const companyId = await verify(deps, req, res, 'To');
+    const companyId = await verify(deps, req, res, 'To', { includeInactive: true });
     if (companyId === null) return;
     const messageSid = messageSidOf(req);
-    const from = e164Field(req, 'From');
+    const from = senderField(req);
     const to = e164Field(req, 'To');
     if (messageSid === null || from === undefined || to === undefined) {
       res.status(400).end();
       return;
     }
-    const text: Inbound = { messageSid, from, to, body: field(req, 'Body') ?? '' };
-    const done = await once(deps, SMS_EVENTS, `${companyId}:${messageSid}`, () => handleInbound(deps, companyId, text));
-    sendTwiml(res, done.repeat ? undefined : done.value);
+    const text: Inbound = { messageSid, from, to, body: field(req, 'Body') ?? '', optOutType: optOutTypeField(req) };
+    const replyXml = await handleInbound(deps, companyId, text);
+    sendTwiml(res, replyXml);
   });
 
   /**
