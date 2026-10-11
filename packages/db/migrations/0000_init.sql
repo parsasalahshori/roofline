@@ -1,3 +1,4 @@
+-- NOTE: CREATE EXTENSION lines below were hand-prepended; do not regenerate this file.
 CREATE EXTENSION IF NOT EXISTS postgis;
 --> statement-breakpoint
 CREATE EXTENSION IF NOT EXISTS citext;

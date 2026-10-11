@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -68,6 +69,14 @@ const companyId = () =>
 
 const userRef = (name: string) => uuid(name).references(() => users.id);
 
+/*
+ * Same-company foreign keys. A plain `references(() => customers.id)` would let a company-A row
+ * point at a company-B customer: RLS WITH CHECK only looks at the inserting row's own company_id,
+ * and Postgres runs foreign-key checks without RLS. So every link between two tenant tables is a
+ * composite key `(company_id, x_id) -> (company_id, id)`, which needs `unique (company_id, id)` on
+ * the parent. Nullable link columns stay nullable: MATCH SIMPLE skips the check when one is NULL.
+ */
+
 export const companySettings = pgTable(
   'company_settings',
   {
@@ -113,6 +122,7 @@ export const customers = pgTable(
     ...timestamps(),
   },
   (t) => [
+    unique('customers_company_id_id_uniq').on(t.companyId, t.id),
     index('customers_company_idx').on(t.companyId, t.archivedAt),
     enumCheck('customers', 'sms_consent_status', t.smsConsentStatus, CONSENT_STATUSES),
     enumCheck('customers', 'sms_consent_source', t.smsConsentSource, SMS_CONSENT_SOURCES),
@@ -126,7 +136,7 @@ export const properties = pgTable(
     id: pk(),
     companyId: companyId(),
     /** Nullable: a home in a storm path may have no customer yet. */
-    customerId: uuid('customer_id').references(() => customers.id),
+    customerId: uuid('customer_id'),
     addressLine: text('address_line').notNull(),
     city: text('city').notNull(),
     state: text('state').notNull(),
@@ -145,6 +155,12 @@ export const properties = pgTable(
     ...timestamps(),
   },
   (t) => [
+    unique('properties_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'properties_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
     unique('properties_company_address_key_uniq').on(t.companyId, t.addressKey),
     index('properties_geom_gist').using('gist', t.geom),
     index('properties_customer_idx').on(t.customerId),
@@ -156,12 +172,8 @@ export const jobs = pgTable(
   {
     id: pk(),
     companyId: companyId(),
-    customerId: uuid('customer_id')
-      .notNull()
-      .references(() => customers.id),
-    propertyId: uuid('property_id')
-      .notNull()
-      .references(() => properties.id),
+    customerId: uuid('customer_id').notNull(),
+    propertyId: uuid('property_id').notNull(),
     stage: text('stage', { enum: JOB_STAGES }).notNull().default('lead'),
     stageChangedAt: tstz('stage_changed_at').notNull().defaultNow(),
     source: text('source', { enum: JOB_SOURCES }).notNull().default('manual'),
@@ -174,6 +186,16 @@ export const jobs = pgTable(
     ...timestamps(),
   },
   (t) => [
+    foreignKey({
+      name: 'jobs_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'jobs_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
     index('jobs_company_stage_idx').on(t.companyId, t.stage),
     index('jobs_customer_idx').on(t.customerId),
     index('jobs_property_idx').on(t.propertyId),
@@ -293,6 +315,7 @@ export const agentTasks = pgTable(
     ...timestamps(),
   },
   (t) => [
+    unique('agent_tasks_company_id_id_uniq').on(t.companyId, t.id),
     index('agent_tasks_company_status_idx').on(t.companyId, t.status, t.createdAt),
     index('agent_tasks_status_expires_idx').on(t.status, t.expiresAt),
     enumCheck('agent_tasks', 'agent', t.agent, AGENTS),
@@ -306,9 +329,7 @@ export const agentTaskSteps = pgTable(
   {
     id: pk(),
     companyId: companyId(),
-    taskId: uuid('task_id')
-      .notNull()
-      .references(() => agentTasks.id),
+    taskId: uuid('task_id').notNull(),
     position: integer('position').notNull(),
     /** For example `send_sms_batch`, `send_proposal`, `build_routes`. */
     type: text('type').notNull(),
@@ -333,6 +354,12 @@ export const agentTaskSteps = pgTable(
     ...timestamps(),
   },
   (t) => [
+    unique('agent_task_steps_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'agent_task_steps_company_task_fk',
+      columns: [t.companyId, t.taskId],
+      foreignColumns: [agentTasks.companyId, agentTasks.id],
+    }),
     unique('agent_task_steps_task_position_uniq').on(t.taskId, t.position),
     index('agent_task_steps_status_idx').on(t.status, t.updatedAt),
     enumCheck('agent_task_steps', 'approval_class', t.approvalClass, APPROVAL_CLASSES),
@@ -346,7 +373,7 @@ export const messages = pgTable(
     id: pk(),
     companyId: companyId(),
     /** Nullable: inbound texts from unknown numbers have no customer. */
-    customerId: uuid('customer_id').references(() => customers.id),
+    customerId: uuid('customer_id'),
     channel: text('channel', { enum: MESSAGE_CHANNELS }).notNull(),
     direction: text('direction', { enum: MESSAGE_DIRECTIONS }).notNull(),
     purpose: text('purpose', { enum: MESSAGE_PURPOSES }),
@@ -357,13 +384,23 @@ export const messages = pgTable(
     scheduledFor: tstz('scheduled_for'),
     sentAt: tstz('sent_at'),
     providerMessageSid: text('provider_message_sid'),
-    stepId: uuid('step_id').references(() => agentTaskSteps.id),
+    stepId: uuid('step_id'),
     dedupeKey: text('dedupe_key'),
     segments: integer('segments').notNull().default(1),
     toE164: text('to_e164'),
     ...timestamps(),
   },
   (t) => [
+    foreignKey({
+      name: 'messages_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'messages_company_step_fk',
+      columns: [t.companyId, t.stepId],
+      foreignColumns: [agentTaskSteps.companyId, agentTaskSteps.id],
+    }),
     /** A step texts each customer at most once, which makes batch retries safe. */
     uniqueIndex('messages_step_customer_uniq')
       .on(t.stepId, t.customerId)

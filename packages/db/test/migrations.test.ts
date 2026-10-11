@@ -76,8 +76,10 @@ describe('schema', () => {
   });
 
   test('geometry columns have the right type and SRID', async () => {
+    // Filter to the two known tables so a geometry column added later doesn't break this test.
     const rows = await ownerQuery<{ f_table_name: string; f_geometry_column: string; srid: number; type: string }>(
-      `select f_table_name, f_geometry_column, srid, type from geometry_columns where f_table_schema='public' order by 1, 2`,
+      `select f_table_name, f_geometry_column, srid, type from geometry_columns
+        where f_table_schema='public' and f_table_name in ('companies', 'properties') order by 1, 2`,
     );
     expect(rows).toEqual([
       { f_table_name: 'companies', f_geometry_column: 'service_area', srid: 4326, type: 'MULTIPOLYGON' },
@@ -278,6 +280,93 @@ describe('constraints', () => {
 
     const reg = `insert into texting_registrations (company_id) values ($1)`;
     expect((await rejected(reg, [s.a.companyId])).code).toBe('23505');
+  });
+});
+
+describe('same-company foreign keys', () => {
+  type Ids = { customerId: string; propertyId: string; taskId: string; stepId: string };
+
+  /** One customer, property, task and step for a company. */
+  async function makeGraph(companyId: string, tag: string): Promise<Ids> {
+    const [customer] = await ownerQuery<{ id: string }>(
+      `insert into customers (company_id, display_name) values ($1, $2) returning id`,
+      [companyId, `Customer ${tag}`],
+    );
+    const [property] = await ownerQuery<{ id: string }>(
+      `insert into properties (company_id, customer_id, address_line, city, state, zip, address_key)
+       values ($1, $2, '1 Main St', 'Omaha', 'NE', '68102', '1 main st|68102') returning id`,
+      [companyId, customer!.id],
+    );
+    const [task] = await ownerQuery<{ id: string }>(
+      `insert into agent_tasks (company_id, agent, kind, title) values ($1, 'system', 'k', 't') returning id`,
+      [companyId],
+    );
+    const [step] = await ownerQuery<{ id: string }>(
+      `insert into agent_task_steps (company_id, task_id, position, type, approval_class, idempotency_key)
+       values ($1, $2, 0, 'demo_noop', 'internal', $3) returning id`,
+      [companyId, task!.id, `key-${tag}`],
+    );
+    return { customerId: customer!.id, propertyId: property!.id, taskId: task!.id, stepId: step!.id };
+  }
+
+  type Fixture = { a: string; b: string; ga: Ids; gb: Ids };
+
+  /** Company ids for A and B, plus a full set of rows in each (`ga` and `gb`). */
+  async function twoCompanies(): Promise<Fixture> {
+    const s = await seedTwoCompanies(urls.owner);
+    return {
+      a: s.a.companyId,
+      b: s.b.companyId,
+      ga: await makeGraph(s.a.companyId, 'a'),
+      gb: await makeGraph(s.b.companyId, 'b'),
+    };
+  }
+
+  const insertJob = `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3)`;
+  const insertStep = `insert into agent_task_steps (company_id, task_id, position, type, approval_class, idempotency_key)
+    values ($1, $2, 1, 'demo_noop', 'internal', 'key-extra')`;
+  const insertMessageForCustomer = `insert into messages (company_id, customer_id, channel, direction, body, status)
+    values ($1, $2, 'sms', 'in', 'Hi', 'received')`;
+  const insertMessageForStep = `insert into messages (company_id, step_id, channel, direction, body, status)
+    values ($1, $2, 'sms', 'out', 'Hi', 'queued')`;
+  const insertProperty = `insert into properties (company_id, customer_id, address_line, city, state, zip, address_key)
+    values ($1, $2, '2 Oak Ave', 'Omaha', 'NE', '68102', '2 oak ave|68102')`;
+
+  test('links between rows of the same company are accepted', async () => {
+    const { a, ga } = await twoCompanies();
+    await ownerQuery(insertJob, [a, ga.customerId, ga.propertyId]);
+    await ownerQuery(insertStep, [a, ga.taskId]);
+    await ownerQuery(insertMessageForCustomer, [a, ga.customerId]);
+    await ownerQuery(insertMessageForStep, [a, ga.stepId]);
+    await ownerQuery(insertProperty, [a, ga.customerId]);
+  });
+
+  test('optional links may still be empty', async () => {
+    const { a } = await twoCompanies();
+    await ownerQuery(
+      `insert into properties (company_id, address_line, city, state, zip, address_key)
+       values ($1, '3 Elm St', 'Omaha', 'NE', '68102', '3 elm st|68102')`,
+      [a],
+    );
+    await ownerQuery(
+      `insert into messages (company_id, channel, direction, body, status) values ($1, 'sms', 'in', 'Hi', 'received')`,
+      [a],
+    );
+  });
+
+  test.each<[string, string, (c: Fixture) => [string, unknown[]]]>([
+    ['properties.customer_id', 'properties_company_customer_fk', (c) => [insertProperty, [c.a, c.gb.customerId]]],
+    ['jobs.customer_id', 'jobs_company_customer_fk', (c) => [insertJob, [c.a, c.gb.customerId, c.ga.propertyId]]],
+    ['jobs.property_id', 'jobs_company_property_fk', (c) => [insertJob, [c.a, c.ga.customerId, c.gb.propertyId]]],
+    ['agent_task_steps.task_id', 'agent_task_steps_company_task_fk', (c) => [insertStep, [c.a, c.gb.taskId]]],
+    ['messages.customer_id', 'messages_company_customer_fk', (c) => [insertMessageForCustomer, [c.a, c.gb.customerId]]],
+    ['messages.step_id', 'messages_company_step_fk', (c) => [insertMessageForStep, [c.a, c.gb.stepId]]],
+  ])('a company-A row cannot point at a company-B row through %s', async (_column, constraint, build) => {
+    const c = await twoCompanies();
+    const [sql, values] = build(c);
+    const err = await rejected(sql, values);
+    expect(err.code).toBe('23503');
+    expect(err.constraint).toBe(constraint);
   });
 });
 
