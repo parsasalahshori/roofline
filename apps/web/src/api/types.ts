@@ -52,12 +52,13 @@ export type TaskView = {
   agent: Agent;
   kind: string;
   title: string;
-  summary: string;
+  summary: string | null;
   status: TaskStatus;
   createdAt: string;
   expiresAt: string | null;
   expired: boolean;
-  minutesSaved: number;
+  /** Minutes of staff time the plan saved, set when it finishes; null until then. */
+  minutesSaved: number | null;
   rerunOfTaskId: string | null;
   steps: StepView[];
 };

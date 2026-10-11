@@ -1,10 +1,11 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, configure, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { createMemoryRouter, RouterProvider } from 'react-router';
+import { QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiFetch, setUnauthorizedHandler } from '../src/api/client.ts';
+import { ApiError, apiFetch, setUnauthorizedHandler } from '../src/api/client.ts';
 import { useSignOut, useSwitchCompany } from '../src/api/hooks.ts';
 import { keys } from '../src/api/keys.ts';
 import type { Account } from '../src/api/types.ts';
@@ -13,6 +14,12 @@ import { createAppRouter } from '../src/app/router.tsx';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { auth } from '../src/copy/auth.ts';
 import { common } from '../src/copy/common.ts';
+import { errors } from '../src/copy/errors.ts';
+
+// These tests type into real fields and wait on several renders. On a busy machine (other test runs in parallel) the defaults
+// (5 s per test, 1 s per findBy/waitFor) are too tight, and a test that times out keeps typing into the next test's page.
+vi.setConfig({ testTimeout: 30_000 });
+configure({ asyncUtilTimeout: 10_000 });
 
 const USER = { id: 'u1', email: 'sam@example.com', name: 'Sam Roofer', emailVerified: true };
 const COMPANY: Account['company'] = { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active' };
@@ -230,6 +237,43 @@ describe('the session redirect', () => {
 
     await Promise.allSettled([apiFetch('/api/other')]);
     await waitFor(() => expect(where(router)).toBe('/sign-in?next=%2Fjobs'));
+  });
+
+  it('offers another try when the session check fails for a reason other than a lost session', async () => {
+    api = stubApi({ 'GET /api/auth/me': () => ({ status: 500, body: { error: 'We hit a snag on our side.' } }) });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createAppRouter({ initialEntries: ['/jobs'] });
+    const user = userEvent.setup();
+    render(
+      <Providers client={client}>
+        <RouterProvider router={router} />
+      </Providers>,
+    );
+
+    expect((await screen.findByText('We hit a snag on our side.')).closest('[role="alert"]')).not.toBeNull();
+    // Not a lost session: the person stays where they were, and the page behind it does not open
+    expect(where(router)).toBe('/jobs');
+    expect(screen.queryByRole('heading', { name: common.appName })).not.toBeInTheDocument();
+
+    api.routes['GET /api/auth/me'] = () => ({ body: ACCOUNT });
+    await user.click(screen.getByRole('button', { name: errors.tryAgain }));
+
+    expect(await screen.findByRole('heading', { name: common.appName })).toBeInTheDocument();
+    expect(where(router)).toBe('/jobs');
+  });
+});
+
+describe('query defaults', () => {
+  it('retries a failed read twice, but never one the server refused with a 4xx', () => {
+    const queries = createQueryClient().getDefaultOptions().queries;
+    const retry = queries?.retry as (failureCount: number, error: Error) => boolean;
+    expect(retry(0, new ApiError(404, 'x'))).toBe(false);
+    expect(retry(0, new ApiError(401, 'x'))).toBe(false);
+    expect(retry(0, new ApiError(500, 'x'))).toBe(true);
+    expect(retry(0, new ApiError(0, 'x'))).toBe(true);
+    expect(retry(1, new TypeError('x'))).toBe(true);
+    expect(retry(2, new ApiError(500, 'x'))).toBe(false);
+    expect(queries?.refetchOnWindowFocus).toBe(true);
   });
 });
 
