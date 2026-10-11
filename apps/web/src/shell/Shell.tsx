@@ -2,6 +2,7 @@ import { Dock, type DockItem } from '@roofline/ui';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useApprovals, useAttentionCount } from '../api/hooks.ts';
 import { dock, WINDOW_COPY } from '../copy/dock.ts';
+import { useTodayAutoOpen } from '../features/today/useTodayAutoOpen.ts';
 import { type AppKey, DOCK_APPS } from './apps.ts';
 import { countedDrafts } from './countedDrafts.ts';
 import { MapView } from './map/MapView.tsx';
@@ -22,6 +23,7 @@ function badgeFor(app: AppKey, count: number): DockItem['badge'] {
  * outlet) and the dock. The map is the home page; a window opens over it at its own URL.
  */
 export function Shell() {
+  useTodayAutoOpen();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const approvals = useApprovals();
