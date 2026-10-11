@@ -36,6 +36,13 @@
       "when": 1791699140697,
       "tag": "0004_company_members_spend",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791711461308,
+      "tag": "0005_step_lease",
+      "breakpoints": true
     }
   ]
 }

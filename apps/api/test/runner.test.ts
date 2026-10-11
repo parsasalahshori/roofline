@@ -1,9 +1,10 @@
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { audit, type StepRow, type TenantContext } from '@roofline/db';
+import { afterAll, afterEach, beforeEach, describe, expect, inject, test, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { createPools, getTask, messages, type Pools, reclaimExpiredLeases, type StepRow, type TenantContext, withTenant } from '@roofline/db';
 import { ImmediateQueue } from '../src/tasks/queue.ts';
-import { registerStepHandler, runStep, type StepHandler } from '../src/tasks/runner.ts';
-import { createTask } from '../src/tasks/service.ts';
+import { registerStepHandler, runStep, type StepHandler, type StepOutcome } from '../src/tasks/runner.ts';
+import { createTask, retryStep } from '../src/tasks/service.ts';
 import { Actors, dbAudit, inCompany, NO_UUID, NOT_FOUND } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import {
@@ -17,6 +18,7 @@ import {
   newCustomers,
   newTask,
   NOT_ALLOWED,
+  RETRYING,
   seenOf,
   setStep,
   setTask,
@@ -174,30 +176,24 @@ describe('runStep', () => {
     expect(t.logged).toEqual([]);
   });
 
-  test('a throw rolls back what the handler wrote in its transaction; the attempt itself is still counted', async () => {
-    use('demo_noop', async (_deps, tx, ctx, step) => {
-      await audit(tx, ctx, { action: 'handler.wrote', targetType: 'agent_task_step', targetId: step.id });
-      throw new Error('boom');
+  test('a throw before the fifth run puts the step back in the queue with a plain reason; a later success clears it', async () => {
+    let calls = 0;
+    use('demo_noop', async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('boom');
+      return { status: 'done', result: { ok: 1 } };
     });
     const { taskId, step } = await approvedOneStep();
     await expect(runStep(t.deps, idOf('a'), step.id)).rejects.toThrow('boom');
-    expect(await dbAudit(t, idOf('a'), 'handler.wrote')).toEqual([]);
-    expect(await stepNow(taskId)).toMatchObject({ status: 'running', attempts: 1 });
-  });
-
-  test('what the handler writes on success is saved with the outcome', async () => {
-    use('demo_noop', async (_deps, tx, ctx, step) => {
-      await audit(tx, ctx, { action: 'handler.wrote', targetType: 'agent_task_step', targetId: step.id });
-      return { status: 'done', result: { ok: 1 } };
-    });
-    const { step } = await approvedOneStep();
+    expect(await stepNow(taskId)).toMatchObject({ status: 'queued', attempts: 1, errorPlain: RETRYING, leaseExpiresAt: null });
+    expect((await dbTask(t, 'a', taskId)).status).toBe('running');
     await runStep(t.deps, idOf('a'), step.id);
-    expect(await dbAudit(t, idOf('a'), 'handler.wrote')).toHaveLength(1);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 2, errorPlain: null });
   });
 
   test('the handler gets the app deps, the company\'s system context, and the claimed step with its payload', async () => {
     const seen: { ctx: TenantContext; step: StepRow; sameDeps: boolean }[] = [];
-    use('demo_noop', async (deps, _tx, ctx, step) => {
+    use('demo_noop', async (deps, ctx, step) => {
       seen.push({ ctx, step, sameDeps: deps === t.deps });
       return { status: 'done', result: { ok: 1 } };
     });
@@ -206,7 +202,13 @@ describe('runStep', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]!.sameDeps).toBe(true);
     expect(seen[0]!.ctx).toEqual({ companyId: idOf('a'), userId: null, role: 'system', canApproveSpend: false });
-    expect(seen[0]!.step).toMatchObject({ id: step.id, status: 'running', attempts: 1, payload: { label: 'Routes' } });
+    expect(seen[0]!.step).toMatchObject({
+      id: step.id,
+      status: 'running',
+      attempts: 1,
+      payload: { label: 'Routes' },
+      leaseExpiresAt: new Date(NOW.getTime() + 10 * 60_000),
+    });
   });
 
   test('the demo handlers finish with {ok: 1}', async () => {
@@ -282,7 +284,7 @@ describe('runStep', () => {
     expect(await dbTask(t, 'a', taskId)).toMatchObject({ status: 'done', minutesSaved: 10 });
   });
 
-  test('runStep does nothing to a step that is not queued or running, or that it cannot find', async () => {
+  test('runStep does nothing to a step that is not queued, or that it cannot find', async () => {
     let calls = 0;
     use('demo_noop', async () => {
       calls += 1;
@@ -292,7 +294,7 @@ describe('runStep', () => {
     const [step] = await dbSteps(t, 'a', taskId);
 
     await runStep(t.deps, idOf('a'), step!.id); // pending: not approved
-    for (const status of ['done', 'skipped', 'failed', 'needs_attention', 'awaiting_owner'] as const) {
+    for (const status of ['done', 'skipped', 'failed', 'needs_attention', 'awaiting_owner', 'running'] as const) {
       await setStep(t, 'a', step!.id, { status });
       await runStep(t.deps, idOf('a'), step!.id);
       expect((await stepNow(taskId)).status).toBe(status);
@@ -306,23 +308,17 @@ describe('runStep', () => {
     expect(await stepNow(taskId)).toMatchObject({ status: 'queued', attempts: 0 });
   });
 
-  test('a step left running by a crash is picked up again and counts the attempt', async () => {
-    const { taskId, step } = await approvedOneStep();
-    await setStep(t, 'a', step.id, { status: 'running', attempts: 2 });
-    await runStep(t.deps, idOf('a'), step.id);
-    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 3 });
-  });
-
-  test('a step that already used its 5 attempts (a crash on the last one) is not run a sixth time', async () => {
+  test('a step put back after it already used its 5 attempts (a run that died on the fifth) is not run a sixth time', async () => {
     let calls = 0;
     use('demo_noop', async () => {
       calls += 1;
       return { status: 'done', result: { ok: 1 } };
     });
     const { taskId, step } = await approvedOneStep();
-    await setStep(t, 'a', step.id, { status: 'running', attempts: 5 });
+    await setStep(t, 'a', step.id, { status: 'queued', attempts: 5 });
     await runStep(t.deps, idOf('a'), step.id);
     expect(calls).toBe(0);
+    expect(await stepNow(taskId)).toMatchObject({ attempts: 6, leaseExpiresAt: null });
     expect(await stepNow(taskId)).toMatchObject({ status: 'needs_attention', errorPlain: GAVE_UP });
     expect((await dbTask(t, 'a', taskId)).status).toBe('needs_attention');
   });
@@ -370,16 +366,321 @@ describe('runStep', () => {
 
 // ---------------------------------------------------------------------------------------------
 
+const MINUTE = 60 * 1000;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** The promise's outcome, or 'timeout' if it has not settled within `ms` (a run that hangs on a lock). */
+async function within<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'> {
+  return Promise.race([promise, sleep(ms).then(() => 'timeout' as const)]);
+}
+
+/** A promise a test opens by hand. */
+function gate(): { open: () => void; opened: Promise<void> } {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  return { open, opened };
+}
+
+/** The sweeper's call, for company A, at the app clock's time. */
+const reclaimA = () => inCompany(t, idOf('a'), (tx) => reclaimExpiredLeases(tx, agentCtx(idOf('a')), t.clock.now()));
+
+describe('the run protocol: no lock is held while a handler runs', () => {
+  test('the claim gives the run a 10-minute lease from the app clock; the end of the run clears it', async () => {
+    const leases: (Date | null)[] = [];
+    use('demo_noop', async (_deps, _ctx, step) => {
+      leases.push(step.leaseExpiresAt);
+      return { status: 'done', result: { ok: 1 } };
+    });
+    const { taskId, step } = await approvedOneStep();
+    await runStep(t.deps, idOf('a'), step.id);
+    expect(leases).toEqual([new Date(NOW.getTime() + 10 * MINUTE)]);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', leaseExpiresAt: null });
+  });
+
+  test('(a) two deliveries of one queued step at once: the handler runs once, the second delivery is a no-op', async () => {
+    const entered = gate();
+    const release = gate();
+    let calls = 0;
+    use('demo_noop', async () => {
+      calls += 1;
+      entered.open();
+      await release.opened;
+      return { status: 'done', result: { ok: 1 } };
+    });
+    const { taskId, step } = await approvedOneStep();
+    const first = runStep(t.deps, idOf('a'), step.id);
+    await entered.opened;
+    try {
+      // The first run is inside its handler and holds no lock: the second delivery returns at once.
+      expect(await within(runStep(t.deps, idOf('a'), step.id), 3000)).toBeUndefined();
+      expect(calls).toBe(1);
+    } finally {
+      release.open();
+    }
+    await first;
+    expect(calls).toBe(1);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 1, leaseExpiresAt: null });
+  });
+
+  test('(b) a run that lost its step to a newer claim writes nothing when it finally finishes', async () => {
+    const entered = gate();
+    const release = gate();
+    let calls = 0;
+    use('demo_noop', async (): Promise<StepOutcome> => {
+      calls += 1;
+      if (calls > 1) return { status: 'failed', result: { fresh: 1 }, errorPlain: 'The newer run failed.' };
+      entered.open();
+      await release.opened;
+      return { status: 'done', result: { stale: 1 } };
+    });
+    const { taskId, step } = await approvedOneStep();
+    const stale = runStep(t.deps, idOf('a'), step.id);
+    await entered.opened;
+    try {
+      // The first run looks dead: its lease runs out, the sweeper puts the step back, a new run takes it.
+      t.clock.advance(11 * MINUTE);
+      expect(await reclaimA()).toEqual([step.id]);
+      await runStep(t.deps, idOf('a'), step.id);
+      expect(await stepNow(taskId)).toMatchObject({ status: 'failed', attempts: 2, result: { fresh: 1 } });
+    } finally {
+      release.open();
+    }
+    await stale;
+    expect(calls).toBe(2);
+    expect(await stepNow(taskId)).toMatchObject({
+      status: 'failed',
+      attempts: 2,
+      result: { fresh: 1 },
+      errorPlain: 'The newer run failed.',
+      leaseExpiresAt: null,
+    });
+    expect((await dbTask(t, 'a', taskId)).status).toBe('partly_done');
+  });
+
+  test('(b) a stale run finishing while the newer run is still going writes nothing: the step stays the newer run\'s', async () => {
+    const entered = [gate(), gate()];
+    const release = [gate(), gate()];
+    let calls = 0;
+    use('demo_noop', async (): Promise<StepOutcome> => {
+      const n = calls++;
+      entered[n]!.open();
+      await release[n]!.opened;
+      return n === 0 ? { status: 'done', result: { stale: 1 } } : { status: 'done', result: { fresh: 1 } };
+    });
+    const { taskId, step } = await approvedOneStep();
+    const stale = runStep(t.deps, idOf('a'), step.id);
+    await entered[0]!.opened;
+    let fresh: Promise<void> | undefined;
+    try {
+      t.clock.advance(11 * MINUTE);
+      expect(await reclaimA()).toEqual([step.id]);
+      fresh = runStep(t.deps, idOf('a'), step.id);
+      await entered[1]!.opened;
+      const leased = (await stepNow(taskId)).leaseExpiresAt;
+
+      // The old run comes back first: the step is running, but at the newer run's count.
+      release[0]!.open();
+      await stale;
+      expect(await stepNow(taskId)).toMatchObject({ status: 'running', attempts: 2, result: null, leaseExpiresAt: leased });
+      expect((await dbTask(t, 'a', taskId)).status).toBe('running');
+    } finally {
+      release[0]!.open();
+      release[1]!.open();
+    }
+    await fresh;
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 2, result: { fresh: 1 }, leaseExpiresAt: null });
+  });
+
+  test('(b) a stale run that throws does not put back a step a newer run has finished', async () => {
+    const entered = gate();
+    const release = gate();
+    let calls = 0;
+    use('demo_noop', async () => {
+      calls += 1;
+      if (calls > 1) return { status: 'done', result: { ok: 1 } };
+      entered.open();
+      await release.opened;
+      throw new Error('provider timed out');
+    });
+    const { taskId, step } = await approvedOneStep();
+    const stale = runStep(t.deps, idOf('a'), step.id);
+    await entered.opened;
+    try {
+      t.clock.advance(11 * MINUTE);
+      await reclaimA();
+      await runStep(t.deps, idOf('a'), step.id);
+    } finally {
+      release.open();
+    }
+    await expect(stale).rejects.toThrow('provider timed out');
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 2, errorPlain: null });
+    expect((await dbTask(t, 'a', taskId)).status).toBe('done');
+  });
+
+  test('(c) a handler commits its own progress (a message tied to the step) mid-run: no deadlock, and it survives a later throw', async () => {
+    use('demo_noop', async (deps, ctx, step) => {
+      await withTenant(deps.pools, ctx, (tx) =>
+        tx.insert(messages).values({
+          companyId: ctx.companyId,
+          stepId: step.id,
+          channel: 'sms',
+          direction: 'out',
+          body: `try ${step.attempts}`,
+          status: 'sent',
+        }),
+      );
+      throw new Error('provider timed out');
+    });
+    const { taskId, step } = await approvedOneStep();
+
+    const outcome = runStep(t.deps, idOf('a'), step.id).then(
+      () => 'resolved',
+      (err: unknown) => (err as Error).message,
+    );
+    expect(await within(outcome, 5000)).toBe('provider timed out');
+
+    const rows = await inCompany(t, idOf('a'), (tx) => tx.select().from(messages).where(eq(messages.stepId, step.id)));
+    expect(rows.map((r) => r.body)).toEqual(['try 1']);
+    // Back in the queue for the next try, with a plain reason and no lease.
+    expect(await stepNow(taskId)).toMatchObject({ status: 'queued', attempts: 1, leaseExpiresAt: null, errorPlain: RETRYING });
+  });
+
+  test('(d) a parked step (the handler says it is still running) has no lease: a second delivery and the sweeper leave it alone', async () => {
+    let calls = 0;
+    use('demo_noop', async () => {
+      calls += 1;
+      return { status: 'running', result: { sent: 0 } };
+    });
+    const { taskId, step } = await approvedOneStep();
+    await runStep(t.deps, idOf('a'), step.id);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'running', attempts: 1, leaseExpiresAt: null, result: { sent: 0 } });
+
+    await runStep(t.deps, idOf('a'), step.id);
+    expect(calls).toBe(1);
+    t.clock.advance(24 * HOUR);
+    expect(await reclaimA()).toEqual([]);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'running', attempts: 1 });
+    expect((await dbTask(t, 'a', taskId)).status).toBe('running');
+  });
+
+  test('a run that died after its claim: the step stays running until its lease passes, then the sweeper puts it back', async () => {
+    let calls = 0;
+    use('demo_noop', async () => {
+      calls += 1;
+      return { status: 'done', result: { ok: 1 } };
+    });
+    const { taskId, step } = await approvedOneStep();
+    // What a crash right after the claim leaves behind.
+    await setStep(t, 'a', step.id, { status: 'running', attempts: 2, leaseExpiresAt: new Date(NOW.getTime() + 10 * MINUTE) });
+
+    await runStep(t.deps, idOf('a'), step.id); // a running step is never claimed
+    expect(calls).toBe(0);
+    expect(await reclaimA()).toEqual([]); // the lease has not run out yet
+
+    t.clock.advance(10 * MINUTE + 1);
+    expect(await reclaimA()).toEqual([step.id]);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'queued', attempts: 2, leaseExpiresAt: null });
+    await runStep(t.deps, idOf('a'), step.id);
+    expect(calls).toBe(1);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 3 });
+  });
+});
+
+describe('a run ending while a person retries the same step', () => {
+  let ownerPools: Pools | undefined;
+  afterAll(async () => {
+    await ownerPools?.end();
+  });
+
+  /** True once some query is waiting on a lock (seen from the table owner, who can see every session). */
+  async function waitUntilSomeoneIsBlocked(timeoutMs = 5000): Promise<boolean> {
+    const urls = inject('dbUrls');
+    ownerPools ??= createPools({ tenant: urls.owner, system: urls.owner });
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const { rows } = await ownerPools.system.$client.query(
+        "select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'",
+      );
+      if ((rows[0] as { n: number }).n > 0) return true;
+      await sleep(20);
+    }
+    return false;
+  }
+
+  test('both take the task lock first, so they never deadlock: the retry wins and the old run writes nothing', async () => {
+    const entered = gate();
+    const release = gate();
+    use('demo_noop', async () => {
+      entered.open();
+      await release.opened;
+      return { status: 'done', result: { stale: 1 } };
+    });
+    const { taskId, step } = await approvedOneStep();
+    const run = runStep(t.deps, idOf('a'), step.id);
+    await entered.opened;
+    t.clock.advance(11 * MINUTE); // the run outlived its lease: a person may retry it
+
+    const owner: TenantContext = { companyId: idOf('a'), userId: t.seed.a.owner.userId, role: 'owner', canApproveSpend: false };
+    const locked = gate();
+    const go = gate();
+    const retry = withTenant(t.deps.pools, owner, async (tx) => {
+      await getTask(tx, owner, taskId, { forUpdate: true });
+      locked.open();
+      await go.opened;
+      return retryStep(tx, owner, taskId, step.id, { now: t.clock.now() });
+    });
+    await locked.opened;
+    // The old run comes back and tries to end while the retry holds the task.
+    release.open();
+    const waited = await waitUntilSomeoneIsBlocked().finally(() => go.open());
+    const [r, s2] = await Promise.allSettled([retry, run]);
+    expect(waited).toBe(true);
+    expect(r.status).toBe('fulfilled');
+    expect(s2.status).toBe('fulfilled');
+    expect(await stepNow(taskId)).toMatchObject({ status: 'queued', attempts: 0, result: null, leaseExpiresAt: null });
+  });
+});
+
+describe('reclaimExpiredLeases', () => {
+  test('puts back only running steps whose lease has passed, and returns their ids', async () => {
+    const { taskId } = await newTask(t, 'a', {
+      steps: Array.from({ length: 6 }, (_, i) => ({ type: 'demo_noop' as const, payload: { label: `Step ${i}` } })),
+    });
+    const steps = await dbSteps(t, 'a', taskId);
+    const past = new Date(NOW.getTime() - MINUTE);
+    const future = new Date(NOW.getTime() + MINUTE);
+    await setTask(t, 'a', taskId, { status: 'running' });
+    await setStep(t, 'a', steps[0]!.id, { status: 'running', attempts: 3, leaseExpiresAt: past }); // dead run
+    await setStep(t, 'a', steps[1]!.id, { status: 'running', leaseExpiresAt: null }); // parked
+    await setStep(t, 'a', steps[2]!.id, { status: 'running', leaseExpiresAt: future }); // live run
+    await setStep(t, 'a', steps[3]!.id, { status: 'running', leaseExpiresAt: new Date(NOW.getTime() + 5000) }); // runs out right now: not yet
+    await setStep(t, 'a', steps[4]!.id, { status: 'done', leaseExpiresAt: past });
+    await setStep(t, 'a', steps[5]!.id, { status: 'queued', leaseExpiresAt: past });
+    // Company B's dead run is not company A's to reclaim.
+    const { taskId: bTask } = await newTask(t, 'b', { steps: [{ type: 'demo_noop', payload: { label: 'B' } }] });
+    const [bStep] = await dbSteps(t, 'b', bTask);
+    await setStep(t, 'b', bStep!.id, { status: 'running', leaseExpiresAt: past });
+
+    t.clock.advance(5000);
+    expect(await reclaimA()).toEqual([steps[0]!.id]);
+
+    const after = await dbSteps(t, 'a', taskId);
+    expect(after[0]).toMatchObject({ status: 'queued', attempts: 3, leaseExpiresAt: null, updatedAt: t.clock.now() });
+    expect(after.slice(1).map((s) => s.status)).toEqual(['running', 'running', 'running', 'done', 'queued']);
+    expect((await dbSteps(t, 'b', bTask))[0]).toMatchObject({ status: 'running', leaseExpiresAt: past });
+  });
+
+  test('nothing to reclaim: an empty list', async () => {
+    expect(await reclaimA()).toEqual([]);
+  });
+});
+
 describe('the queues', () => {
   test('InlineQueue.drain stops after 50 runs instead of looping forever', async () => {
-    // Each step asks for itself again after every run. The runner stops each one after its sixth
-    // claim, but nine of them need 54 runs, more than drain allows.
-    use('demo_noop', async (_deps, _tx, ctx, step) => {
-      await t.queue.enqueueStep(ctx.companyId, step.id);
-      return { status: 'running', result: {} };
-    });
+    // Each failing step is run 5 times before it needs attention; eleven of them need 55 runs.
+    use('demo_noop', throwing());
     const { taskId } = await newTask(t, 'a', {
-      steps: Array.from({ length: 9 }, (_, i) => ({ type: 'demo_noop' as const, payload: { label: `Step ${i}` } })),
+      steps: Array.from({ length: 11 }, (_, i) => ({ type: 'demo_noop' as const, payload: { label: `Step ${i}` } })),
     });
     const steps = await dbSteps(t, 'a', taskId);
     expect((await (await actors.as('owner')).post(`/api/approvals/${taskId}/approve`).send(seenOf(steps))).status).toBe(200);
@@ -387,10 +688,7 @@ describe('the queues', () => {
   });
 
   test('InlineQueue.drain takes a smaller limit too', async () => {
-    use('demo_noop', async (_deps, _tx, ctx, step) => {
-      await t.queue.enqueueStep(ctx.companyId, step.id);
-      return { status: 'running', result: {} };
-    });
+    use('demo_noop', throwing());
     await approvedOneStep();
     await expect(t.queue.drain(t.deps, 3)).rejects.toThrow('InlineQueue.drain stopped after 3 runs with 1 still waiting.');
   });
@@ -400,7 +698,7 @@ describe('the queues', () => {
     const [later] = await dbSteps(t, 'a', second);
     await setStep(t, 'a', later!.id, { status: 'queued' });
     await setTask(t, 'a', second, { status: 'running' });
-    use('demo_noop', async (_deps, _tx, ctx) => {
+    use('demo_noop', async (_deps, ctx) => {
       await t.queue.enqueueStep(ctx.companyId, later!.id);
       return { status: 'done', result: { ok: 1 } };
     });
@@ -498,6 +796,47 @@ describe('POST /api/approvals/:taskId/steps/:stepId/retry', () => {
       expect((await owner.post(retryUrl(taskId, step.id))).status, status).toBe(409);
     }
     expect(enqueued(t)).toEqual([step.id]);
+  });
+
+  test('a running step whose lease has passed counts as failed and can be retried; a live or parked one cannot', async () => {
+    const { taskId, step } = await approvedOneStep();
+    const owner = await actors.as('owner');
+    await setStep(t, 'a', step.id, { status: 'running', attempts: 1, leaseExpiresAt: new Date(NOW.getTime() + MINUTE) });
+    expect((await owner.post(retryUrl(taskId, step.id))).status).toBe(409); // still within its lease
+    await setStep(t, 'a', step.id, { leaseExpiresAt: null });
+    expect((await owner.post(retryUrl(taskId, step.id))).status).toBe(409); // parked
+
+    await setStep(t, 'a', step.id, { leaseExpiresAt: new Date(NOW.getTime() + MINUTE) });
+    t.clock.advance(MINUTE + 1);
+    const res = await owner.post(retryUrl(taskId, step.id));
+    expect(res.status).toBe(200);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'queued', attempts: 0, leaseExpiresAt: null, idempotencyKey: step.idempotencyKey });
+    await t.queue.drain(t.deps);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 1 });
+  });
+
+  test('a declined plan cannot be retried: 409 "This was already handled.", and the step is left as it is', async () => {
+    const { taskId } = await newTask(t, 'a', {
+      steps: [
+        { type: 'demo_message', payload: { label: 'Text' } },
+        { type: 'demo_spend', payload: { label: 'Ads', maxSpendCents: 500 } },
+      ],
+    });
+    const steps = await dbSteps(t, 'a', taskId);
+    const restore = registerStepHandler('demo_message', async () => ({ status: 'failed', result: {}, errorPlain: 'Nope.' }));
+    await (await actors.as('office')).post(`/api/approvals/${taskId}/approve`).send(seenOf(steps));
+    await t.queue.drain(t.deps);
+    restore();
+    const owner = await actors.as('owner');
+    expect((await owner.post(`/api/approvals/${taskId}/decline`).send({ reason: 'No ads' })).status).toBe(200);
+    expect((await dbTask(t, 'a', taskId)).status).toBe('declined');
+
+    const res = await owner.post(retryUrl(taskId, steps[0]!.id));
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: HANDLED });
+    expect((await dbSteps(t, 'a', taskId)).map((s) => s.status)).toEqual(['failed', 'skipped']);
+    expect((await dbTask(t, 'a', taskId)).status).toBe('declined');
+    expect(enqueued(t)).toEqual([steps[0]!.id]);
   });
 
   test('a double-click on retry queues the step once', async () => {
@@ -614,9 +953,11 @@ describe('GET /api/tasks/summary', () => {
     await (await actors.as('owner')).post(`/api/approvals/${three}/approve`).send(seenOf(await dbSteps(t, 'a', three)));
     expect((await owner.get('/api/tasks/summary')).body).toEqual({ working: 2 });
 
-    // Running counts as working too.
-    await setStep(t, 'a', (await stepNow(taskId)).id, { status: 'running' });
+    // Running counts as working too (a parked step included).
+    const first = (await stepNow(taskId)).id;
+    await setStep(t, 'a', first, { status: 'running' });
     expect((await owner.get('/api/tasks/summary')).body).toEqual({ working: 2 });
+    await setStep(t, 'a', first, { status: 'queued' });
 
     await t.queue.drain(t.deps);
     expect((await owner.get('/api/tasks/summary')).body).toEqual({ working: 0 });

@@ -14,6 +14,7 @@ export const EXPIRED = 'This plan expired before it was approved. You can run it
 export const NOT_ALLOWED = "Your role can't do that. Ask the owner.";
 export const GAVE_UP = "We couldn't finish this step. We'll keep the details here so you can retry.";
 export const CANT_RUN = "This kind of step can't run yet.";
+export const RETRYING = "This step hit a problem. We'll try it again shortly.";
 export const STOP_BODY = "Hi {first_name}, it's {company}. Free roof check this week. Reply STOP to opt out.";
 
 /** The runner / an agent acting for a company: no signed-in person. */

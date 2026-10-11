@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, countDistinct, desc, eq, getTableColumns, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, countDistinct, desc, eq, getTableColumns, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import type { Agent, ApprovalClass, StepStatus, TaskStatus } from '@roofline/shared';
 import { agentTasks, agentTaskSteps, companies, customers } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -273,58 +273,47 @@ export async function moveStep(
 
 /**
  * The runner's claim on a step:
- * `UPDATE agent_task_steps SET status = 'running', attempts = attempts + 1 WHERE id = $1 AND status IN ('queued', 'running') RETURNING *`.
- * A step that is still `running` is claimed again, so one left behind by a run that crashed is picked
- * up by the queue's next try, and that try is counted. Returns null when the step is not there to run
- * (not approved, already finished, or not this company's).
+ * `UPDATE agent_task_steps SET status = 'running', attempts = attempts + 1, lease_expires_at = <lease>
+ *  WHERE id = $1 AND company_id = $2 AND status = 'queued' RETURNING *`.
+ * Only a `queued` step is claimed, so a second delivery of a step that is already running (or
+ * parked) does nothing. The lease says how long this run owns the step; when a run dies, the
+ * sweeper (`reclaimExpiredLeases`) puts the step back once the lease has passed. Returns null when
+ * the step is not there to run (not approved, running, finished, or not this company's).
  */
-export async function claimStep(tx: Tx, ctx: TenantContext, stepId: string, now: Date): Promise<StepRow | null> {
+export async function claimStep(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  now: Date,
+  leaseExpiresAt: Date,
+): Promise<StepRow | null> {
   const [row] = await tx
     .update(agentTaskSteps)
-    .set({ status: 'running', attempts: sql`${agentTaskSteps.attempts} + 1`, updatedAt: now })
+    .set({ status: 'running', attempts: sql`${agentTaskSteps.attempts} + 1`, leaseExpiresAt, updatedAt: now })
     .where(
-      and(
-        eq(agentTaskSteps.companyId, ctx.companyId),
-        eq(agentTaskSteps.id, stepId),
-        inArray(agentTaskSteps.status, ['queued', 'running']),
-      ),
+      and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.id, stepId), eq(agentTaskSteps.status, 'queued')),
     )
     .returning();
   return row ?? null;
 }
 
 /**
- * Locks a step for the run that claimed it: the row, if it is still `running` at that run's
- * `attempts` (a later claim of the same step, by a queue that ran it twice, has a higher count and
- * takes over). Null means the run no longer owns the step.
+ * How a run ended, as the step saves it:
+ * - `done`, `failed`, `needs_attention`: finished (the last two with a reason a person can read);
+ * - `running`: parked, finishing by itself later (no lease, so the sweeper leaves it alone);
+ * - `queued`: back in the queue after a throw, for the queue's next try.
  */
-export async function lockClaimedStep(tx: Tx, ctx: TenantContext, stepId: string, attempts: number): Promise<StepRow | null> {
-  const [row] = await tx
-    .select()
-    .from(agentTaskSteps)
-    .where(
-      and(
-        eq(agentTaskSteps.companyId, ctx.companyId),
-        eq(agentTaskSteps.id, stepId),
-        eq(agentTaskSteps.status, 'running'),
-        eq(agentTaskSteps.attempts, attempts),
-      ),
-    )
-    .limit(1)
-    .for('update');
-  return row ?? null;
-}
-
-/** How a run ended, as the step saves it. */
 export type StepFinish = {
-  status: 'done' | 'running' | 'failed' | 'needs_attention';
+  status: 'done' | 'running' | 'failed' | 'needs_attention' | 'queued';
   result?: Record<string, unknown>;
   errorPlain?: string | null;
 };
 
 /**
- * Saves how a run ended, if the step is still that run's: `running` at the run's `attempts`.
- * Returns the row as saved, or null when another run has taken the step over.
+ * Saves how a run ended, if the step is still that run's: `running` at the run's `attempts` (a
+ * newer claim has a higher count). Clears the lease. Returns the row as saved, or null for a
+ * stale run, which then writes nothing. One plain UPDATE: the row lock it takes is FOR NO KEY
+ * UPDATE, so it never blocks a handler's own inserts that reference the step.
  */
 export async function finishClaimedStep(
   tx: Tx,
@@ -340,6 +329,7 @@ export async function finishClaimedStep(
       status: finish.status,
       ...(finish.result !== undefined && { result: finish.result }),
       errorPlain: finish.errorPlain ?? null,
+      leaseExpiresAt: null,
       updatedAt: now,
     })
     .where(
@@ -348,6 +338,57 @@ export async function finishClaimedStep(
         eq(agentTaskSteps.id, stepId),
         eq(agentTaskSteps.status, 'running'),
         eq(agentTaskSteps.attempts, attempts),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * The sweeper's dead-claim recovery, for one company: every `running` step whose lease has passed
+ * (`lease_expires_at < now`) was left behind by a run that died, so it goes back to `queued` with
+ * no lease. Its attempts are kept (the dead run counted). A running step with no lease is parked
+ * and left alone, as is one whose lease has not passed. Returns the ids put back, for the caller
+ * to hand to the queue after it commits.
+ */
+export async function reclaimExpiredLeases(tx: Tx, ctx: TenantContext, now: Date): Promise<string[]> {
+  const rows = await tx
+    .update(agentTaskSteps)
+    .set({ status: 'queued', leaseExpiresAt: null, updatedAt: now })
+    .where(
+      and(
+        eq(agentTaskSteps.companyId, ctx.companyId),
+        eq(agentTaskSteps.status, 'running'),
+        isNotNull(agentTaskSteps.leaseExpiresAt),
+        lt(agentTaskSteps.leaseExpiresAt, now),
+      ),
+    )
+    .returning({ id: agentTaskSteps.id });
+  return rows.map((r) => r.id);
+}
+
+/**
+ * A person's retry: puts a step that did not finish back in the queue with its attempts at 0, no
+ * error and no lease, keeping its idempotency key. "Did not finish" is `failed`, `needs_attention`,
+ * or `running` past its lease (a run that died before the sweeper got to it). Returns null when the
+ * step is in none of those by now.
+ */
+export async function requeueForRetry(tx: Tx, ctx: TenantContext, stepId: string, now: Date): Promise<StepRow | null> {
+  const [row] = await tx
+    .update(agentTaskSteps)
+    .set({ status: 'queued', attempts: 0, errorPlain: null, leaseExpiresAt: null, updatedAt: now })
+    .where(
+      and(
+        eq(agentTaskSteps.companyId, ctx.companyId),
+        eq(agentTaskSteps.id, stepId),
+        or(
+          inArray(agentTaskSteps.status, ['failed', 'needs_attention']),
+          and(
+            eq(agentTaskSteps.status, 'running'),
+            isNotNull(agentTaskSteps.leaseExpiresAt),
+            lt(agentTaskSteps.leaseExpiresAt, now),
+          ),
+        ),
       ),
     )
     .returning();

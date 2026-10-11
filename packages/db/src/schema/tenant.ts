@@ -347,6 +347,13 @@ export const agentTaskSteps = pgTable(
     /** A reason a person can read. */
     errorPlain: text('error_plain'),
     attempts: integer('attempts').notNull().default(0),
+    /**
+     * Until when the run that claimed this step owns it: set by the claim, cleared when that run
+     * ends. A `running` step with no lease is parked (it finishes by itself later, such as texts
+     * waiting out quiet hours); one whose lease has passed was left behind by a run that died, and
+     * the sweeper puts it back in the queue.
+     */
+    leaseExpiresAt: tstz('lease_expires_at'),
     ...timestamps(),
   },
   (t) => [

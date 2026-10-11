@@ -11,6 +11,7 @@ import {
   listTasksByStatus,
   type ListTasksOptions,
   moveStep,
+  requeueForRetry,
   type NewStepRow,
   type StepRow,
   type StepSummaryRow,
@@ -41,11 +42,12 @@ import { can, type Capability } from '../permissions.ts';
  * task's status follows its steps as they run. The data access is packages/db's repos/tasks.ts;
  * what a step type needs is packages/shared's registry (steps.ts); running a step is runner.ts.
  *
- * Every writer here locks the task row first (`getTask(..., { forUpdate: true })`) and only then
- * touches its steps, so two people acting on one task are taken one after the other. The runner
- * goes the other way (its own step, then the task in `refreshTask`), which cannot deadlock with
- * them: they only ever move steps that are waiting for a yes or did not finish, never a `running`
- * one, and an UPDATE that skips a row on its status does not wait for that row's lock.
+ * Every writer here, and the runner when it ends a run, locks the task row first
+ * (`getTask(..., { forUpdate: true })`) and only then writes its steps, so two writers on one task
+ * are taken one after the other and cannot deadlock. The only step writes outside that order hold
+ * no other lock: the runner's claim (one step) and the sweeper's lease recovery (steps only). Step
+ * rows are only ever changed by plain UPDATEs (FOR NO KEY UPDATE), so a handler's own inserts that
+ * reference its step are never blocked.
  */
 
 const NO_CUSTOMERS = "Some of these customers don't exist.";
@@ -623,12 +625,13 @@ export async function declineStep(
 // Retrying
 
 /**
- * Puts a step that did not finish (`failed` or `needs_attention`) back in the queue. Needs the
- * approve capability of the step's class (403 otherwise); any other status is a 409 "This was
- * already handled.". The step goes back to `queued` with its attempts at 0 and its error cleared,
- * and keeps its idempotency key, so whatever it already did is not done twice. The task is
- * `running` again (or stays `awaiting_owner` while another step waits on the owner), and
- * `step.retry` is audited. Returns the id to hand to the queue after the commit and the task's
+ * Puts a step that did not finish back in the queue: one that `failed` or `needs_attention`, or one
+ * still `running` past its lease (its run died before the sweeper got to it). Needs the approve
+ * capability of the step's class (403 otherwise). A declined plan, or a step in any other state, is
+ * a 409 "This was already handled.". The step goes back to `queued` with its attempts at 0, its error
+ * and lease cleared, and keeps its idempotency key, so whatever it already did is not done twice.
+ * The task is `running` again (or stays `awaiting_owner` while another step waits on the owner),
+ * and `step.retry` is audited. Returns the id to hand to the queue after the commit and the task's
  * detail view, or null when the task or step is not there for this member.
  */
 export async function retryStep(
@@ -643,10 +646,14 @@ export async function retryStep(
   const step = await getStep(tx, ctx, taskId, stepId);
   if (!step) return null;
   if (!can(ctx, APPROVE[step.approvalClass])) throw new AppError(403, MESSAGES.roleCannot);
-  if (step.status !== 'failed' && step.status !== 'needs_attention') throw new AppError(409, ALREADY_HANDLED);
+  // The owner's "no" stands: nothing of a declined plan is run again.
+  if (task.status === 'declined') throw new AppError(409, ALREADY_HANDLED);
+  const stalled = step.status === 'running' && step.leaseExpiresAt !== null && step.leaseExpiresAt < opts.now;
+  if (step.status !== 'failed' && step.status !== 'needs_attention' && !stalled) throw new AppError(409, ALREADY_HANDLED);
 
-  const moved = await moveStep(tx, ctx, step.id, ['failed', 'needs_attention'], { status: 'queued', attempts: 0, errorPlain: null }, opts.now);
-  if (!moved) throw new Error(`Step ${step.id} moved while its task was locked.`);
+  // The sweeper can put a stalled step back without the task lock, so this can lose that race.
+  const moved = await requeueForRetry(tx, ctx, step.id, opts.now);
+  if (!moved) throw new AppError(409, ALREADY_HANDLED);
 
   const waitsOnOwner = (await listSteps(tx, ctx, [taskId])).some((s) => s.status === 'awaiting_owner');
   const status: TaskStatus = waitsOnOwner ? 'awaiting_owner' : 'running';
