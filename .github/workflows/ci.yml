@@ -1,0 +1,56 @@
+name: CI
+
+# Runs on every push and pull request. No live provider calls anywhere in CI: Twilio, Stripe,
+# Google, Geocodio and Postmark are all faked in the tests (spec section 7). Nothing here needs a secret.
+
+on:
+  # main holds only the specs and the v1 baseline; the platform lives on the feature branches.
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  platform:
+    name: Platform (lint, typecheck, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run lint:css
+      - run: npm run typecheck
+      # Vitest runs the packages and apps. The db and api suites start a PostGIS container with
+      # Testcontainers, which uses the Docker that ubuntu-latest runners already have.
+      - run: npm test
+
+  # The v1 suite is separate: v1/ keeps its own package.json and lockfile and is not an npm
+  # workspace. Locally: `cd v1 && npm ci && npm test`.
+  v1:
+    name: v1 (node:test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: v1/package-lock.json
+      - run: npm ci
+      - run: npm test
