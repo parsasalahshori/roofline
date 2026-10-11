@@ -17,3 +17,6 @@ Group D (wf_97a6d639-216, contact 10): T12 10693ab already complete; review clea
 Carry to Task 13: keep `if (!(await lease.keep())) return { status: 'running', result: {} };` as the first statement in send-batch.ts's per-customer loop; branch T13 from f3-setup after 4633b10.
 Hazard: editing an ops/bin script in place while an agent runs it breaks that run (bash reads scripts incrementally). Replace scripts atomically (write a temp file, then mv).
 CI: f3-setup 4633b10 (T1+T2+T8+T12) Platform job green, run 38179418220 (v1 job red only from the pre-0b81e1b empty data file; fixed when f2-shell merges in).
+Sibling 3 wave 1 (wf_f8f09095-c88, contact 41): T6 1ca87f9 (CI 38179529475 green), T10 d1e0d9b (CI 38179515041 green), both review round 1 clean. T10 resolves the insertInboundText minor: onConflictDoNothing on (company_id, provider_message_sid) WHERE direction='in', returns null on repeat; /sms does nothing on null.
+Task 6: complete (d629c74..1ca87f9). Task 10: complete (d629c74..d1e0d9b). Merged into f3-setup 03782f5, d83f815; typecheck + lint clean.
+Minors (deferred): T10 stores the normalized body as the opt-out keyword on OptOutType=STOP (consider a cap); locks before the dedupe insert; no db-level test for includeInactive; T6 hard-codes "20,000" instead of MAX_IMPORT_ROWS; non-finite number cells render 'NaN'.
