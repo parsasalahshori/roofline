@@ -1,6 +1,17 @@
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { agentTasks } from '@roofline/db';
-import { seedDemoTask, slugFromArgs, USAGE } from '../src/scripts/seed-demo.ts';
+import {
+  parseSeedArgs,
+  PRODUCTION_REFUSAL,
+  refuseInProduction,
+  seedDemoTask,
+  SeedError,
+  slugFromArgs,
+  USAGE,
+} from '../src/scripts/seed-demo.ts';
 import { dbAudit, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { dbSteps, dbTask } from './task-helpers.ts';
@@ -51,5 +62,78 @@ describe('the demo seed', () => {
       expect(() => slugFromArgs(bad), JSON.stringify(bad)).toThrow(USAGE);
     }
     expect(USAGE).toBe('Usage: npm run seed:demo -w @roofline/api -- --company <slug>');
+  });
+});
+
+describe('the production guard', () => {
+  const REFUSAL = 'Refusing to seed demo data in production. Pass --allow-production if you really mean it.';
+
+  test('the refusal says what to do', () => {
+    expect(PRODUCTION_REFUSAL).toBe(REFUSAL);
+  });
+
+  test('NODE_ENV=production is refused as a SeedError unless the flag was passed', () => {
+    expect(() => refuseInProduction({ NODE_ENV: 'production' }, false)).toThrow(SeedError);
+    expect(() => refuseInProduction({ NODE_ENV: 'production' }, false)).toThrow(REFUSAL);
+    expect(() => refuseInProduction({ NODE_ENV: 'production' }, true)).not.toThrow();
+  });
+
+  test('any other environment (or none) is left alone', () => {
+    for (const NODE_ENV of ['development', 'test', 'staging', '', undefined]) {
+      expect(() => refuseInProduction({ NODE_ENV }, false), String(NODE_ENV)).not.toThrow();
+    }
+  });
+
+  test('--allow-production can come anywhere on the command line, and only that exact flag counts', () => {
+    expect(parseSeedArgs(['--company', 'acme-roofing'])).toEqual({ slug: 'acme-roofing', allowProduction: false });
+    expect(parseSeedArgs(['--company', 'acme-roofing', '--allow-production'])).toEqual({ slug: 'acme-roofing', allowProduction: true });
+    expect(parseSeedArgs(['--allow-production', '--company=acme-roofing'])).toEqual({ slug: 'acme-roofing', allowProduction: true });
+    for (const bad of [['--allow-production'], ['--company', 'acme-roofing', '--allow-prod'], ['--company', '--allow-production']]) {
+      expect(() => parseSeedArgs(bad), JSON.stringify(bad)).toThrow(USAGE);
+    }
+  });
+
+  // The real script, run the way `npm run seed:demo` runs it. No database URLs are set, so a run
+  // that gets past the guard stops at the "Set DATABASE_URL_TENANT..." line and touches nothing.
+  describe('the script itself', () => {
+    const API_DIR = fileURLToPath(new URL('..', import.meta.url));
+    const NEEDS_URLS = 'Set DATABASE_URL_TENANT and DATABASE_URL_SYSTEM';
+
+    async function runSeed(nodeEnv: string | undefined, ...args: string[]) {
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      delete env.DATABASE_URL_TENANT;
+      delete env.DATABASE_URL_SYSTEM;
+      if (nodeEnv === undefined) delete env.NODE_ENV;
+      else env.NODE_ENV = nodeEnv;
+      try {
+        const { stdout, stderr } = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'src/scripts/seed-demo.ts', ...args], { cwd: API_DIR, env });
+        return { code: 0, stdout, stderr };
+      } catch (err) {
+        const e = err as { code?: number; stdout?: string; stderr?: string };
+        return { code: e.code ?? -1, stdout: e.stdout ?? '', stderr: e.stderr ?? '' };
+      }
+    }
+
+    test('in production it refuses, says why, and exits non-zero, before it looks at the database URLs', async () => {
+      const out = await runSeed('production', '--company', 'acme-roofing');
+      expect(out.code).not.toBe(0);
+      expect(out.stderr.trim()).toBe(REFUSAL);
+      expect(out.stdout).toBe('');
+    });
+
+    test('with --allow-production it gets past the guard (and then stops for the missing database URLs)', async () => {
+      const out = await runSeed('production', '--company', 'acme-roofing', '--allow-production');
+      expect(out.code).not.toBe(0);
+      expect(out.stderr).not.toContain('Refusing');
+      expect(out.stderr).toContain(NEEDS_URLS);
+    });
+
+    test('outside production there is no guard', async () => {
+      for (const nodeEnv of ['development', undefined]) {
+        const out = await runSeed(nodeEnv, '--company', 'acme-roofing');
+        expect(out.stderr, String(nodeEnv)).not.toContain('Refusing');
+        expect(out.stderr, String(nodeEnv)).toContain(NEEDS_URLS);
+      }
+    });
   });
 });

@@ -17,9 +17,17 @@ import { createTask } from '../tasks/service.ts';
  * is allowed to import @roofline/db/system, ruled in Task 14); the plan is then made
  * with `createTask` in that company's own app_tenant transaction, as an agent would make it (no
  * person behind it). Prints the new task's id.
+ *
+ * The demo plan is fake work (a "Text 31 customers" step, a spend step), so the script refuses to
+ * run when NODE_ENV=production unless `--allow-production` is passed.
  */
 
 export const USAGE = 'Usage: npm run seed:demo -w @roofline/api -- --company <slug>';
+
+/** What the script says, and exits non-zero with, when it is run in production without the flag. */
+export const PRODUCTION_REFUSAL = 'Refusing to seed demo data in production. Pass --allow-production if you really mean it.';
+
+const ALLOW_PRODUCTION = '--allow-production';
 
 /** Something the person running the seed can fix; its message is the whole story. */
 export class SeedError extends Error {
@@ -48,6 +56,16 @@ export function slugFromArgs(argv: readonly string[]): string {
   return slug;
 }
 
+/** The slug and whether `--allow-production` was passed (it may come anywhere; only that exact spelling counts). */
+export function parseSeedArgs(argv: readonly string[]): { slug: string; allowProduction: boolean } {
+  return { slug: slugFromArgs(argv.filter((arg) => arg !== ALLOW_PRODUCTION)), allowProduction: argv.includes(ALLOW_PRODUCTION) };
+}
+
+/** Throws the refusal when `env` says production and the flag was not passed. */
+export function refuseInProduction(env: NodeJS.ProcessEnv, allowProduction: boolean): void {
+  if (env.NODE_ENV === 'production' && !allowProduction) throw new SeedError(PRODUCTION_REFUSAL);
+}
+
 /** Makes the demo plan for the company with this slug, at `now`. Throws SeedError when no company has it. */
 export async function seedDemoTask(pools: Pools, slug: string, now: Date): Promise<{ taskId: string; companyName: string }> {
   const company = await findCompanyBySlug(pools.system, slug);
@@ -58,18 +76,21 @@ export async function seedDemoTask(pools: Pools, slug: string, now: Date): Promi
 }
 
 async function main(): Promise<void> {
+  // The guard runs right after the arguments are read, before the database URLs are even looked at.
+  let slug: string;
+  try {
+    const args = parseSeedArgs(process.argv.slice(2));
+    refuseInProduction(process.env, args.allowProduction);
+    slug = args.slug;
+  } catch (err) {
+    console.error((err as Error).message);
+    process.exitCode = 1;
+    return;
+  }
   const tenant = process.env.DATABASE_URL_TENANT?.trim();
   const system = process.env.DATABASE_URL_SYSTEM?.trim();
   if (!tenant || !system) {
     console.error('Set DATABASE_URL_TENANT and DATABASE_URL_SYSTEM (the app_tenant and app_system connection URLs).');
-    process.exitCode = 1;
-    return;
-  }
-  let slug: string;
-  try {
-    slug = slugFromArgs(process.argv.slice(2));
-  } catch (err) {
-    console.error((err as Error).message);
     process.exitCode = 1;
     return;
   }
