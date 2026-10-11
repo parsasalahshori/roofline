@@ -138,3 +138,7 @@ Minors (deferred): APPROVALS_JSON_BODY_LIMIT doc comment garbled (app.ts ~75); s
 Merged into f2-shell: a62343c (T6), 2bee597 (T7), e3b9594 (T8; conflicts in app.ts/config.ts/config.test.ts resolved keeping both sides). typecheck + lint clean.
 Fix 96d2c0d: eslint ignores ops/** (roofline-team.js top-level return broke lint on f2-shell since b51c7c1). Sibling 1 told to merge f2-shell into f2-t17/f2-p1.
 CI: f2-shell 8d503e9 (T6+T7+T8 merged, lint fix, ops paths-ignore) all green, run 38180364868 — T8's database suites now proven.
+Cloud group B (wf_eddfb3f8-980, contact 4): T9 resumed and finished a320599 (showcase lint fix cd6c55e, README dev-seed section, seed-dev test fixes fe82475/a320599) CI 38180250862 green; T14 WIP 66b7ccb found complete, review clean, web 279/279, CI 38177661277 green; T16 57f9715 review clean. Notes: ops/sdd/f2/merge-wave-cloud-b.md.
+Task 9: complete (c2173ff..a320599). Task 14: complete (1fb5bd7..66b7ccb; commit title still says wip). Task 16: complete (1fb5bd7..57f9715).
+Merged into f2-shell: 29ab813 (T9; README conflict kept both sections), b35c0aa (T14), f711feb (T16). web vitest, typecheck, lint, lint:css clean.
+Minors (deferred, to P1 follow-up or T15): T9 seeds sendTime 'Today 10:00 AM' so the screen reads 'Sends Today 10:00 AM' (use 'today at 10:00 AM'); dead 'approvals' ComingSoonKey + copy entry; Review.tsx edit.isPending shared by toggles and text saves; seed-dev non-atomic on showcase failure; toReviewStep isOpen adds canApprove for awaiting_owner (deliberate, matches API).
