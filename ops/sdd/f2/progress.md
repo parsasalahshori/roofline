@@ -145,3 +145,7 @@ Minors (deferred, to P1 follow-up or T15): T9 seeds sendTime 'Today 10:00 AM' so
 f2-shell merged into f3-setup (baf4c93): system/index.ts kept both export lists; package-lock.json regenerated with npm install --package-lock-only; typecheck, lint, lint:css and web/shared/ui/send-gate suites clean; no migration-number collision (F2 added none).
 Team wave C launched here: T13 (e2e, ci with CI_JOBS="Platform E2E") + T15 (Today), base 26aabec, contact 12 — wf_554eb375-034. Team script gains per-task ciEnv (26aabec).
 Architect 2 writing F3 briefs: task 9 first, then 13-24, with proposed groups (status in ops/sdd/f3/briefs-status.txt).
+Sibling 1 (session_01MpVA7xTz6Bus8WPNZWUKRq, wf_d3d77fd3-941, contact 21): P1 ed193cf (CI 38180329002 green, review clean) and T17 100e89a (1 round; CI 38180327171 green). Notes: ops/sdd/f2/merge-sib1.md.
+Task P1: complete. Task 17: complete. Merged into f2-shell: P1 then T17 (Shell.tsx conflict: lazy/Suspense MapView + T17's tabs/sheet/dock; kept both). web vitest, typecheck, lint, lint:css, build:web clean.
+Minors (deferred): a click on a cluster bubble within ~20px of a single pin fires both zoom and the pin card; Vite still warns about the 1,039 kB map chunk.
+Carry to T15 (building in wave C on base 26aabec): T17 rewrote Shell.tsx; T15's one useTodayAutoOpen() line merges on top (Ruling W).
