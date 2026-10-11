@@ -89,6 +89,16 @@ describe('adding an address', () => {
     expect((await dbProperty(t, A(), res.body.id)).geom).toEqual([-95.9345, 41.2565]);
   });
 
+  test.each(['America/Indiana/Indianapolis', 'America/Kentucky/Louisville', 'US/Central'])(
+    'a real US zone the IANA list spells differently is accepted: %s',
+    async (timezone) => {
+      const res = await (await who.as('owner')).post('/api/properties').send({ ...full, state: 'IN', timezone });
+      expect(res.status).toBe(201);
+      expect(res.body.timezone).toBe(timezone);
+      expect((await dbProperty(t, A(), res.body.id)).timezone).toBe(timezone);
+    },
+  );
+
   test('text is trimmed and the state is upper-cased', async () => {
     const res = await (await who.as('owner'))
       .post('/api/properties')
@@ -183,6 +193,7 @@ describe('adding an address', () => {
     ['a latitude in text', { lat: '41.2', lng: -95.9 }, 'lat', LATLNG],
     ['a made-up time zone', { timezone: 'Mars/Olympus' }, 'timezone', ZONE],
     ['a time zone that is not text', { timezone: 5 }, 'timezone', ZONE],
+    ['a fixed offset for a time zone', { timezone: '-06:00' }, 'timezone', ZONE],
     ['a year before 1800', { yearBuilt: 1799 }, 'yearBuilt', YEAR],
     ['a year in the future', { yearBuilt: 2027 }, 'yearBuilt', YEAR],
     ['a year with a fraction', { yearBuilt: 1999.5 }, 'yearBuilt', YEAR],

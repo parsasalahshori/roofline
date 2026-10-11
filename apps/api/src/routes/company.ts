@@ -6,7 +6,7 @@ import { toE164 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { requireCapability } from '../permissions.ts';
-import { assertKnownFields, EMAIL_MESSAGE, emailField, parse, TIME_ZONES, TIMEZONE_MESSAGE, TOO_LONG } from '../validate.ts';
+import { assertKnownFields, EMAIL_MESSAGE, emailField, parse, timeZoneField, TOO_LONG } from '../validate.ts';
 
 const MAX_TEXT = 200;
 const MAX_URL = 2048;
@@ -86,7 +86,7 @@ const CompanyPatch = z.object({
     .refine((v) => v === '' || /^\d{5}(-\d{4})?$/.test(v), ZIP_MESSAGE)
     .transform((v) => (v === '' ? null : v))
     .nullable(),
-  timezone: z.string({ error: TIMEZONE_MESSAGE }).refine((v) => TIME_ZONES.has(v), TIMEZONE_MESSAGE),
+  timezone: timeZoneField,
   logoUrl: optionalAddress(['https:'], LOGO_MESSAGE),
 });
 const COMPANY_FIELDS = Object.keys(CompanyPatch.shape);

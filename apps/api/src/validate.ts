@@ -1,3 +1,4 @@
+import { isTimeZone } from '@roofline/shared';
 import { z, type ZodType } from 'zod';
 import { AppError, fieldOf, MESSAGES } from './errors.ts';
 
@@ -13,8 +14,12 @@ export const noNul = (value: string): boolean => !value.includes('\0');
 
 export const TIMEZONE_MESSAGE = 'Please pick a valid time zone.';
 
-/** The IANA zone names the platform knows (`America/Chicago`), plus UTC, which the list leaves out. */
-export const TIME_ZONES: ReadonlySet<string> = new Set([...Intl.supportedValuesOf('timeZone'), 'UTC']);
+/**
+ * A company or property time zone: a place (`America/Chicago`, `America/Indiana/Indianapolis`,
+ * `US/Central`) or UTC, never a fixed offset. It is the same `isTimeZone` the send gate uses, so
+ * a zone the API saves is a zone the gate will honor.
+ */
+export const timeZoneField = z.string({ error: TIMEZONE_MESSAGE }).refine(isTimeZone, TIMEZONE_MESSAGE);
 
 /** A UUID in its written form, either case. Routes use it to tell "malformed id" (a 404) from a real lookup. */
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -23,8 +23,7 @@ import {
   noNul,
   offsetParam,
   parse,
-  TIME_ZONES,
-  TIMEZONE_MESSAGE,
+  timeZoneField,
   TOO_LONG,
   UUID,
 } from '../validate.ts';
@@ -74,7 +73,7 @@ function schemas(maxYear: number) {
   const zip = z.string({ error: ZIP_MESSAGE }).trim().regex(/^\d{5}$/, ZIP_MESSAGE);
   const lat = z.number({ error: LATLNG_MESSAGE }).min(-90, LATLNG_MESSAGE).max(90, LATLNG_MESSAGE);
   const lng = z.number({ error: LATLNG_MESSAGE }).min(-180, LATLNG_MESSAGE).max(180, LATLNG_MESSAGE);
-  const timezone = z.string({ error: TIMEZONE_MESSAGE }).refine((v) => TIME_ZONES.has(v), TIMEZONE_MESSAGE);
+  const timezone = timeZoneField;
   const yearBuilt = z
     .number({ error: yearMessage })
     .int(yearMessage)

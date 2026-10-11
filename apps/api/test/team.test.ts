@@ -249,7 +249,7 @@ describe('PATCH /api/company', () => {
     },
   );
 
-  test.each(['Mars/Phobos', 'Chicago', '', 'america/chicago', '+01:00', 'Central Time'])(
+  test.each(['Mars/Phobos', 'Chicago', '', '+01:00', '-06:00', 'Etc/GMT+5', 'Central Time'])(
     'time zone %j → 400 on the timezone field',
     async (timezone) => {
       const owner = await loginAs(t.app, t.seed.a.owner);
@@ -264,6 +264,20 @@ describe('PATCH /api/company', () => {
     expect((await owner.patch('/api/company').send({ timezone: 'America/Phoenix' })).status).toBe(200);
     expect((await owner.patch('/api/company').send({ timezone: 'UTC' })).status).toBe(200);
   });
+
+  // Intl.supportedValuesOf lists ICU's older spellings, so a check against that list alone turned
+  // away real US zones. The shared isTimeZone also accepts the current IANA names and the aliases.
+  test.each(['America/Indiana/Indianapolis', 'America/Kentucky/Louisville', 'US/Central'])(
+    'the real US zone %s is accepted and saved',
+    async (timezone) => {
+      const owner = await loginAs(t.app, t.seed.a.owner);
+      const res = await owner.patch('/api/company').send({ timezone });
+      expect(res.status).toBe(200);
+      expect(res.body.timezone).toBe(timezone);
+      const [row] = await sql<{ timezone: string }>('select timezone from companies where id = $1', [t.seed.a.companyId]);
+      expect(row!.timezone).toBe(timezone);
+    },
+  );
 
   test.each([
     'status',

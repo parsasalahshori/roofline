@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
-import type { CampaignStatus, CompanyStatus, ConsentStatus, GateRule, MessagePurpose } from '@roofline/shared';
-import { isStrictState, isTimeZone, nextAllowedTime } from './quiet-hours.ts';
+import { type CampaignStatus, type CompanyStatus, type ConsentStatus, type GateRule, isTimeZone, type MessagePurpose } from '@roofline/shared';
+import { isStrictState, nextAllowedTime } from './quiet-hours.ts';
 
 /** Everything `decide` needs, already fetched: the gate itself touches no database and no network. */
 export type GateRequest = {
