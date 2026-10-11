@@ -1,0 +1,60 @@
+{
+  "results": [
+    {
+      "query": "1200 Farnam St, Omaha, NE 68102",
+      "response": {
+        "results": [
+          {
+            "formatted_address": "1200 Farnam St, Omaha, NE 68102",
+            "location": {
+              "lat": 41.2565,
+              "lng": -95.9345
+            },
+            "accuracy": 1,
+            "accuracy_type": "rooftop",
+            "address_components": {
+              "number": "0",
+              "formatted_street": "Farnam St",
+              "city": "Omaha",
+              "state": "NE",
+              "zip": "68102"
+            },
+            "fields": {
+              "timezone": {
+                "name": "America/Chicago"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "query": "1200 Farnam St, Omaha, NE 68102",
+      "response": {
+        "results": [
+          {
+            "formatted_address": "1200 Farnam St, Omaha, NE 68102",
+            "location": {
+              "lat": 41.2565,
+              "lng": -95.9345
+            },
+            "accuracy": 1,
+            "accuracy_type": "rooftop",
+            "address_components": {
+              "number": "1",
+              "formatted_street": "Farnam St",
+              "city": "Omaha",
+              "state": "NE",
+              "zip": "68102"
+            },
+            "fields": {
+              "timezone": {
+                "name": "America/Chicago"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
