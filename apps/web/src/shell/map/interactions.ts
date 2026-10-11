@@ -1,13 +1,23 @@
-import type { GeoJSONSource, MapGeoJSONFeature, MapLayerMouseEvent, Map as MapLibreMap } from 'maplibre-gl';
+import type { GeoJSONSource, MapGeoJSONFeature, MapLayerMouseEvent, MapMouseEvent, Map as MapLibreMap } from 'maplibre-gl';
 import { LAYER, SOURCE } from './layers.ts';
 import type { PickedPin } from './types.ts';
 
 /** How far a click on a cluster zooms in, in zoom levels, for the server's clusters. */
 const SERVER_CLUSTER_ZOOM_STEP = 2;
 
-/** The layers that show a pointer cursor: the pins and both kinds of cluster. */
-const CURSOR_LAYERS: readonly string[] = [LAYER.customers, LAYER.jobs, LAYER.clusters, LAYER.customerClusters, LAYER.jobClusters];
+/** The single-pin hit layers: a click on either opens the nearest pin under it. */
+const PIN_HIT_LAYERS: readonly string[] = [LAYER.customersHit, LAYER.jobsHit];
 
+/** The layers that show a pointer cursor: the pin hit layers and both kinds of cluster. */
+const CURSOR_LAYERS: readonly string[] = [
+  LAYER.customersHit,
+  LAYER.jobsHit,
+  LAYER.clusters,
+  LAYER.customerClusters,
+  LAYER.jobClusters,
+];
+
+/** A listener bound to one layer (cursor and cluster events). */
 type Binding = {
   type: 'click' | 'mouseenter' | 'mouseleave';
   layer: string;
@@ -21,10 +31,10 @@ function pointOf(feature: MapGeoJSONFeature): [number, number] | null {
   return [geometry.coordinates[0], geometry.coordinates[1]];
 }
 
-/** The pin under a click, read from its feature; null when the feature is not a usable pin. */
-function pickedPin(event: MapLayerMouseEvent): PickedPin | null {
-  const feature = event.features?.[0];
-  if (!feature) return null;
+/**
+ * The pin a feature stands for, read from its properties; null when the feature is not a usable pin.
+ */
+function pickedPin(feature: MapGeoJSONFeature): PickedPin | null {
   const properties: Record<string, unknown> | null = feature.properties;
   const lngLat = pointOf(feature);
   if (!properties || !lngLat) return null;
@@ -37,6 +47,46 @@ function pickedPin(event: MapLayerMouseEvent): PickedPin | null {
     stage: typeof properties.stage === 'string' ? properties.stage : null,
     stageLabel: typeof properties.stageLabel === 'string' ? properties.stageLabel : null,
     lngLat,
+  };
+}
+
+/**
+ * The feature whose point projects nearest the click, in screen pixels. Features that are not points
+ * are skipped; the first one wins a tie. Undefined when no point is in the list.
+ */
+export function nearestFeature(
+  features: readonly MapGeoJSONFeature[],
+  point: { x: number; y: number },
+  project: (lngLat: [number, number]) => { x: number; y: number },
+): MapGeoJSONFeature | undefined {
+  let best: MapGeoJSONFeature | undefined;
+  let bestDistance = Infinity;
+  for (const feature of features) {
+    const lngLat = pointOf(feature);
+    if (!lngLat) continue;
+    const at = project(lngLat);
+    const distance = (at.x - point.x) ** 2 + (at.y - point.y) ** 2;
+    if (distance < bestDistance) {
+      best = feature;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
+ * A click anywhere on the map opens the nearest single pin under it. The hit layers overlap, so one
+ * click can reach a customer and a job; this reads both and calls `onPick` once, for the nearer.
+ */
+function pinClickHandler(map: MapLibreMap, onPick: (pin: PickedPin) => void): (event: MapMouseEvent) => void {
+  return (event) => {
+    const layers = PIN_HIT_LAYERS.filter((id) => map.getLayer(id));
+    if (layers.length === 0) return;
+    const features = map.queryRenderedFeatures(event.point, { layers });
+    const feature = nearestFeature(features, event.point, (lngLat) => map.project(lngLat));
+    if (!feature) return;
+    const pin = pickedPin(feature);
+    if (pin) onPick(pin);
   };
 }
 
@@ -77,27 +127,13 @@ function setCursor(map: MapLibreMap, cursor: string): void {
 }
 
 /**
- * Wires clicks and pointer cursors on the pin and cluster layers. Returns a function that removes
- * every listener it added.
+ * Wires clicks and pointer cursors on the pin hit layers and the cluster layers. The pin click is one
+ * listener on the map (not on a layer), which reads the hit layers and picks the nearest pin. Returns a
+ * function that removes every listener it added.
  */
 export function bindMapInteractions(map: MapLibreMap, onPick: (pin: PickedPin) => void): () => void {
+  const onPinClick = pinClickHandler(map, onPick);
   const bindings: Binding[] = [
-    {
-      type: 'click',
-      layer: LAYER.customers,
-      handler: (event) => {
-        const pin = pickedPin(event);
-        if (pin) onPick(pin);
-      },
-    },
-    {
-      type: 'click',
-      layer: LAYER.jobs,
-      handler: (event) => {
-        const pin = pickedPin(event);
-        if (pin) onPick(pin);
-      },
-    },
     {
       type: 'click',
       layer: LAYER.clusters,
@@ -141,10 +177,12 @@ export function bindMapInteractions(map: MapLibreMap, onPick: (pin: PickedPin) =
   for (const binding of bindings) {
     map.on(binding.type, binding.layer, binding.handler);
   }
+  map.on('click', onPinClick);
 
   return () => {
     for (const binding of bindings) {
       map.off(binding.type, binding.layer, binding.handler);
     }
+    map.off('click', onPinClick);
   };
 }

@@ -24,3 +24,31 @@ Sibling 2 (wf_13479391-707, contact 31): T3 b857c5d (1 round, lint fix; carry do
 Task 3: complete (d629c74..b857c5d). Task 4: complete (d629c74..18a3eef). Task 5: complete (d629c74..2dd3312). Merged into f3-setup (head 0351174); typecheck, lint, shared tests clean.
 Carry to T7: BrandInfoSchema rejects full state names by design; toUsStateCode accepts them. Carry to T18/T19/T33: T3's no-hard-coded-prices test fails any src file containing 19900/39900.
 Minors (deferred): T4 SetupFacts.texting.rejectedFields is string[] vs T5's BrandField[] (tighten later); T5 split campaign helpers into texting-campaign.ts re-exported from texting.ts.
+F3 Task 9 (API skeleton): brief ready; assigned to sibling 1 (session_01MpVA7xTz6Bus8WPNZWUKRq), branch f3-t9 from f3-setup baf4c93, contact 23.
+Sibling 2 (wf_8adb9634-824, contact 35): T7 76aa441 (base 0351174), review clean, CI 38181073895 green. Task 7: complete. Merged into f3-setup (see git log). Notes: ops/sdd/f3/merge-sib2b.md.
+Carry to T23/T24 (important): move ExistingCustomer, ExistingIndex, NormalizedRow, RowSkip (type-only) into packages/shared/src/imports.ts; normalize.ts and plan.ts re-export them; db must not redefine them. T24 must not record attestation evidence for a matched customer with no phone (importConsent ignores hasPhone).
+Minors (deferred): badPhone checked before email (brief order); previewRows prints blank address parts; normalizeZip truncates '123456' to '12345'; T6's hard-coded "20,000" still open.
+Architect 2 briefs: task 9, 13-24 written (ops/sdd/f3/briefs-status.txt). Proposed groups: G1 (after T9) T18, T19, T20; G2 (after T9) T16, T21, T22; G3 (after T9) T14, T15, T17; G4 (after T7 + T11) T13, T23, then T24 stacked on T23.
+Ruling X: T4's rejectedFields stays string[]; T16 keeps only values in BRAND_FIELDS — cost if wrong: none.
+Ruling Y: with STRIPE_WEBHOOK_SECRET unset the Stripe webhook answers 503 and records nothing (Stripe retries) — cost if wrong: retried events.
+Ruling Z: T22 reads the Stripe customer id with its own small query, not T19's billingFacts — cost if wrong: one duplicated query.
+Ruling AA: InlineJobs records every thrown error (T9 brief amended; sibling 1 told) — cost if wrong: none.
+Ruling AB: the import job bulk-writes customers, homes and jobs instead of createCustomer (no audit row per customer) — cost if wrong: ~900 extra audit rows.
+Ruling AC (controller, overrides Architect 2's local-copies proposal): T7's ExistingCustomer, ExistingIndex, NormalizedRow and RowSkip move type-only into packages/shared/src/imports.ts (T23 does the move); apps/api normalize.ts/plan.ts re-export them and packages/db imports them from @roofline/shared — no duplicated declarations (sibling 2's group check) — cost if wrong: one moved type block.
+T13 starts only after T11's review is merged (both edit messages.ts).
+Sibling 3 wave 2 (wf_2d479fae-7ac, contact 44): T11 d33ecba (feature 9618f3b; test fix e689d8c; group-check hardening: markTextSent takes lockDeliverySid first). CI 38181866516 green. Task 11: complete. Merged into f3-setup. Notes: ops/sdd/f3/merge-sib3.md.
+Accepted semantics change: F1 test "a duplicate callback is ignored" becomes "a repeated callback changes nothing once the text has moved on" (statuses only move forward; the webhook_events claim is gone from /status).
+Follow-ups: keep claimWebhookEvent/releaseWebhookEvent for the Stripe hook (T20 decides); a worker sweep to prune unapplied early_delivery_reports (assign to T22/T31 or a polish task); partial unique index on texting_registrations.messaging_service_sid (routing uses limit 1) — carry to the texting-registration tasks.
+Architect 2: T23/T24 briefs updated for Ruling AC; briefs 25-37 written. Proposed groups: G5 T25, T29, T30 (T30 needs f2-shell with F2 T13, T15, T17, P1 merged into f3-setup); G6 T26 (stacked on T25), T27, T31; G7 T32, T33, T34; G8 T28, T35, T37; G9 T36.
+Ruling AD: T25 owns test/twilio-fixtures.ts; T26 stacks on T25 — cost if wrong: one wave.
+Ruling AE: resubmitting after a brand failure keeps and resubmits the failed brand id — cost if wrong: duplicate brands.
+Ruling AF: a failed campaign sets brand_status='campaign_failed' so resubmit can delete the old one without a new column — cost if wrong: a resubmit loop.
+Ruling AG: T30's Billing/Setup placeholders reuse F2's existing lines so F2 settings tests stay green — cost if wrong: none.
+Ruling AH: the banner slot's measured height adds to --shell-top-inset — cost if wrong: windows under banners.
+Ruling AI: the CSP lives in app.ts (not web.ts as the plan says); T31 edits it there — cost if wrong: none.
+Ruling AJ: the import upload always sends application/octet-stream — cost if wrong: rejected uploads.
+Ruling AK (controller): F2 T18 also owns phone.spec.ts, a11y.spec.ts, ops/sdd/f2/f2-acceptance.md and the CI phone-project run (T17 shipped without them); T36 extends them — cost if wrong: T36 waits on T18.
+Ruling AL: resubmitting a fixed brand updates the existing business profile in place — cost if wrong: corrections never reach Twilio.
+Controller: T28 buys a number only when the company is 'active' (the plan's test), not on past_due — spending only on paying accounts — cost if wrong: a past_due company waits for its number.
+Assignments: G4 (T13, T23, T24 stacked on T23) -> sibling 3 (contacts 45-47, ops-sib3b). G1 (T18, T19, T20) -> sibling 2 (contacts 37-39, ops-sib2c). Both may branch from a local merge of f3-setup 9a469c8 + the current f3-t9 and merge newer f3-t9 heads in; the controller merges T9 into f3-setup first. G2 (T16, T21, T22) and G3 (T14, T15, T17): next free capacity (sibling 1 after T9, this session after F2 T13/T15).
+G3 (T14, T15, T17) launched here: wf_b09e2405-d2b (contacts 51-53), bases = f3-setup 9a469c8 + f3-t9 b70976f merged locally (178b182, bd068f7, 5dc4867). G2 (T16, T21, T22) -> sibling 1 after T9.
