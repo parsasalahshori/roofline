@@ -201,7 +201,7 @@ export const jobs = pgTable(
   ],
 );
 
-/** The timeline for any customer, property or job. */
+/** The timeline for any customer, property or job, and for a message from a number that is no customer's (`subject_type` `message`). */
 export const activities = pgTable(
   'activities',
   {

@@ -22,8 +22,9 @@ export type ActivityEntry = {
 };
 
 /**
- * Appends one line to the timeline of a customer, property or job. Runs inside the caller's
- * `withTenant` transaction, so the line is saved with the change it describes or not at all.
+ * Appends one line to the timeline of a customer, property, job or message (a text from a number
+ * that is no customer's). Runs inside the caller's `withTenant` transaction, so the line is saved
+ * with the change it describes or not at all.
  * The actor is the context's signed-in user; with none (the runner and the scheduler) it is 'system',
  * or 'agent' when `actorAgent` names one.
  */
