@@ -295,12 +295,15 @@ export type SessionRecord = {
   role: Role;
   canApproveSpend: boolean;
   emailVerified: boolean;
+  /** The company's current status, read with the session so a change applies on the next request. */
+  companyStatus: CompanyStatus;
   lastSeenAt: Date;
 };
 
 /**
  * The live session behind a token hash: not expired at `now`, and its user still has an ACTIVE
- * membership in the session's company. Anything else (unknown, expired, membership disabled or
+ * membership in the session's company. It also returns the company's current status, so a status
+ * change applies on the next request. Anything else (unknown, expired, membership disabled or
  * removed) is null.
  */
 export async function findLiveSession(system: Db, tokenHash: string, now: Date): Promise<SessionRecord | null> {
@@ -312,6 +315,7 @@ export async function findLiveSession(system: Db, tokenHash: string, now: Date):
       role: memberships.role,
       canApproveSpend: memberships.canApproveSpend,
       emailVerifiedAt: users.emailVerifiedAt,
+      companyStatus: companies.status,
       lastSeenAt: sessions.lastSeenAt,
     })
     .from(sessions)
@@ -320,6 +324,7 @@ export async function findLiveSession(system: Db, tokenHash: string, now: Date):
       memberships,
       and(eq(memberships.userId, sessions.userId), eq(memberships.companyId, sessions.activeCompanyId)),
     )
+    .innerJoin(companies, eq(companies.id, memberships.companyId))
     .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, now), eq(memberships.status, 'active')))
     .limit(1);
   if (!row) return null;
