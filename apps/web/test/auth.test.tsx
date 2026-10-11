@@ -1,4 +1,4 @@
-import { cleanup, configure, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
@@ -16,7 +16,7 @@ import { auth } from '../src/copy/auth.ts';
 import { common } from '../src/copy/common.ts';
 import { dock } from '../src/copy/dock.ts';
 import { errors } from '../src/copy/errors.ts';
-import { SHELL_ROUTES } from './helpers.tsx';
+import { ACCOUNT, COMPANY, SHELL_ROUTES, stubApi as stubApiBase, type Routes, USER } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -24,46 +24,13 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
   return { MapView: () => createElement('div', { 'data-map-mock': true }) };
 });
 
-// These tests type into real fields and wait on several renders. On a busy machine (other test runs in parallel) the defaults
-// (5 s per test, 1 s per findBy/waitFor) are too tight, and a test that times out keeps typing into the next test's page.
-vi.setConfig({ testTimeout: 30_000 });
-configure({ asyncUtilTimeout: 10_000 });
-
-const USER = { id: 'u1', email: 'sam@example.com', name: 'Sam Roofer', emailVerified: true };
-const COMPANY: Account['company'] = { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active' };
-const ACCOUNT: Account = { user: USER, company: COMPANY, role: 'owner', companies: [{ id: 'c1', name: 'Summit Roofing' }] };
 const OTHER_COMPANY: Account['company'] = { id: 'c2', name: 'Ridge Roofing', slug: 'ridge-roofing', status: 'active' };
 
 const BAD_LOGIN = "That email and password don't match.";
 const SIGN_IN_FIRST = 'Sign in to accept this invite.';
 
-type Reply = { status?: number; body?: unknown };
-type Routes = Record<string, (request: { body: unknown }) => Reply>;
-
-/** Stands in for fetch: answers `METHOD /path` from `routes` and records every call. A request nobody expects answers 500 and fails the test. */
-function stubApi(given: Routes) {
-  // The shell's reads (Task 12) are answered with "nothing" unless a test gives its own answer
-  const routes: Routes = { ...SHELL_ROUTES, ...given };
-  const calls: { key: string; body: unknown }[] = [];
-  const unexpected: string[] = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const key = `${init?.method ?? 'GET'} ${String(input)}`;
-      const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
-      calls.push({ key, body });
-      const handler = routes[key];
-      if (!handler) unexpected.push(key);
-      const { status = 200, body: replyBody } = handler ? handler({ body }) : { status: 500, body: { error: `Unexpected ${key}` } };
-      return Promise.resolve(new Response(JSON.stringify(replyBody ?? {}), { status, headers: { 'content-type': 'application/json' } }));
-    }),
-  );
-  return {
-    routes,
-    unexpected,
-    sent: (key: string) => calls.filter((call) => call.key === key).map((call) => call.body),
-  };
-}
+/** The shell's reads (Task 12) are answered with "nothing" unless a test gives its own answer. */
+const stubApi = (given: Routes) => stubApiBase({ ...SHELL_ROUTES, ...given });
 
 function renderApp(path: string, { strict = false } = {}) {
   const queryClient = createQueryClient();
@@ -514,6 +481,6 @@ describe('session hooks', () => {
 
     await waitFor(() => expect(queryClient.getQueryData(keys.me)).toEqual(OTHER_ACCOUNT));
     expect(api.sent('POST /api/auth/switch-company')).toEqual([{ companyId: 'c2' }]);
-    await waitFor(() => expect(queryClient.getQueryState(keys.approvals)?.isInvalidated).toBe(true));
+    await waitFor(() => expect(queryClient.getQueryData(keys.approvals)).toBeUndefined());
   });
 });

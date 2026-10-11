@@ -1,9 +1,18 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { ApiError, apiFetch } from './client.ts';
-import type { Bbox } from '../shell/map/types.ts';
 import { keys } from './keys.ts';
-import type { Account, ApprovalsList, CurrentWeather, MapArea, PinsResult, SearchResult, SignInResult, TaskView } from './types.ts';
+import type {
+  Account,
+  ApprovalsList,
+  Bbox,
+  CurrentWeather,
+  MapArea,
+  PinsResult,
+  SearchResult,
+  SignInResult,
+  TaskView,
+} from './types.ts';
 
 /*
  * The hooks every screen shares. Later tasks add theirs to this file, beside the query keys they use.
@@ -57,7 +66,9 @@ export function useSignOut() {
 
 /**
  * Moves the session to another of the person's companies. The answer is the new account, so who
- * is signed in updates at once; everything else was loaded for the old company and is reloaded.
+ * is signed in updates at once. Everything else was loaded for the old company: it is reset, which
+ * drops its cached data (the old company's pins, search and drafts never render again) and reloads
+ * the queries that are on screen.
  */
 export function useSwitchCompany() {
   const queryClient = useQueryClient();
@@ -66,7 +77,7 @@ export function useSwitchCompany() {
       apiFetch<Account>('/api/auth/switch-company', { method: 'POST', body: { companyId } }),
     onSuccess: (account) => {
       queryClient.setQueryData(keys.me, account);
-      return queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== keys.me[0] });
+      return queryClient.resetQueries({ predicate: (query) => query.queryKey[0] !== keys.me[0] });
     },
   });
 }

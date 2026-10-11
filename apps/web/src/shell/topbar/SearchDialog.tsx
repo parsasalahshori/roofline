@@ -38,7 +38,7 @@ export function SearchDialog() {
 
   return (
     <>
-      <IconButton label={search.open} icon={<SearchIcon />} onClick={() => setOpen(true)} aria-haspopup='dialog' />
+      <IconButton label={search.open} icon={<SearchIcon />} onClick={() => setOpen(true)} aria-haspopup="dialog" />
       {open ? <SearchPanel onClose={() => setOpen(false)} /> : null}
     </>
   );
@@ -47,7 +47,7 @@ export function SearchDialog() {
 /** One line of text under the field: the hint, "searching", an error, or no matches. */
 function StatusLine({ text }: { text: string }) {
   return (
-    <p role='status' className={styles.status}>
+    <p role="status" className={styles.status}>
       {text}
     </p>
   );
@@ -118,13 +118,13 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
     content = <StatusLine text={search.noMatches(debounced)} />;
   } else {
     content = (
-      <div role='listbox' id={listId} aria-label={search.listLabel} className={styles.results}>
+      <div role="listbox" id={listId} aria-label={search.listLabel} className={styles.results}>
         {GROUPS.map((group) => {
           const items = options.map((option, index) => ({ option, index })).filter(({ option }) => option.group === group);
           if (items.length === 0) return null;
           const headingId = `${listId}-${group}`;
           return (
-            <div key={group} role='group' aria-labelledby={headingId} className={styles.group}>
+            <div key={group} role="group" aria-labelledby={headingId} className={styles.group}>
               <div id={headingId} className={styles.heading}>
                 {search[group]}
               </div>
@@ -134,7 +134,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
                   <div
                     key={option.key}
                     id={optionId(index)}
-                    role='option'
+                    role="option"
                     aria-selected={isActive}
                     data-active={isActive}
                     className={styles.option}
@@ -160,13 +160,13 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div ref={dialogRef} role='dialog' aria-modal='true' aria-label={search.dialogTitle} tabIndex={-1} className={styles.dialog}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={search.dialogTitle} tabIndex={-1} className={styles.dialog}>
         <input
           ref={inputRef}
-          type='text'
-          role='combobox'
-          autoComplete='off'
-          aria-autocomplete='list'
+          type="text"
+          role="combobox"
+          autoComplete="off"
+          aria-autocomplete="list"
           aria-label={search.inputLabel}
           placeholder={search.placeholder}
           aria-expanded={showList}
