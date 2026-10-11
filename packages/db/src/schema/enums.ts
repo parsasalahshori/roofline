@@ -11,20 +11,13 @@ export {
   MESSAGE_DIRECTIONS,
   MESSAGE_PURPOSES,
   SMS_CONSENT_SOURCES,
+  USAGE_KINDS,
+  type UsageKind,
 } from '@roofline/shared';
 
 export const MEMBERSHIP_STATUSES = ['invited', 'active', 'disabled'] as const;
 export const USER_TOKEN_KINDS = ['verify_email', 'reset_password'] as const;
 export const INTEGRATION_STATUSES = ['connected', 'error', 'revoked'] as const;
-export const USAGE_KINDS = [
-  'ai_call_minute',
-  'sms_segment',
-  'mms',
-  'exact_report',
-  'texting_registration_fee',
-  'phone_number_month',
-] as const;
-export type UsageKind = (typeof USAGE_KINDS)[number];
 export const PHONE_NUMBER_PURPOSES = ['main'] as const;
 export const TASK_MODES = ['needs_approval', 'live'] as const;
 export const EARLY_DELIVERY_STATUSES = ['delivered', 'failed'] as const;
