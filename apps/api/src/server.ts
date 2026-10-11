@@ -1,52 +1,32 @@
-import { createPools } from '@roofline/db';
-import { type AppDeps, createApp } from './app.ts';
-import { JoseGoogleVerifier } from './auth/google.ts';
-import { systemClock } from './clock.ts';
-import { ConfigError, loadConfig } from './config.ts';
-import { logErrorToConsole } from './errors.ts';
-import { ConsoleMailer, type Mailer, PostmarkMailer } from './mailer.ts';
-import { ImmediateQueue } from './tasks/queue.ts';
+import { createApp } from './app.ts';
+import { buildDeps, loadConfigOrExit } from './deps.ts';
+import { describeErrorForLog } from './errors.ts';
+import { createBoss, ensureStepQueue, PgBossQueue, SENDER_OPTIONS } from './tasks/pgboss-queue.ts';
 
-/** Entry point: `npm start -w @roofline/api`. Reads the environment, opens the pools, listens. */
+/**
+ * Entry point: `npm start -w @roofline/api`. Reads the environment, connects to the job queue,
+ * opens the pools, listens. Approved steps are sent to pg-boss here and run by the worker process
+ * (`npm run dev:worker`, or `npm start -w @roofline/worker`); without a worker they wait, queued.
+ */
 
 const SHUTDOWN_GRACE_MS = 10_000;
 
-function load() {
-  try {
-    return loadConfig(process.env);
-  } catch (err) {
-    if (err instanceof ConfigError) {
-      console.error(err.message);
-      process.exit(1);
-    }
-    throw err;
-  }
+const config = loadConfigOrExit(process.env);
+
+// Sending only: the worker does pg-boss's maintenance and cron.
+const boss = createBoss(config.DATABASE_URL_SYSTEM, SENDER_OPTIONS);
+try {
+  await boss.start();
+  await ensureStepQueue(boss);
+} catch (err) {
+  console.error(`Could not connect to the job queue: ${describeErrorForLog(err)}`);
+  process.exit(1);
 }
 
-const config = load();
-const pools = createPools({ tenant: config.DATABASE_URL_TENANT, system: config.DATABASE_URL_SYSTEM });
-
-let mailer: Mailer;
-if (config.POSTMARK_TOKEN && config.MAIL_FROM) {
-  mailer = new PostmarkMailer({ token: config.POSTMARK_TOKEN, from: config.MAIL_FROM });
-} else {
-  if (config.NODE_ENV === 'production') {
-    console.warn('POSTMARK_TOKEN is not set: email will be logged, not sent.');
-  }
-  mailer = new ConsoleMailer(config.NODE_ENV !== 'production');
-}
-
+const deps = buildDeps(config, new PgBossQueue(boss));
 if (!config.GOOGLE_CLIENT_ID && config.NODE_ENV === 'production') {
   console.warn('GOOGLE_CLIENT_ID is not set: Sign in with Google is off.');
 }
-const google = new JoseGoogleVerifier(config.GOOGLE_CLIENT_ID);
-
-// Steps run in this process for now; the pg-boss worker takes this over.
-const queue = new ImmediateQueue(
-  (): AppDeps => deps,
-  (err, stepId) => logErrorToConsole(err, `step ${stepId}`),
-);
-const deps: AppDeps = { pools, config, mailer, clock: systemClock, google, queue, logError: logErrorToConsole };
 const app = createApp(deps);
 
 // Express 5 calls this once, with the error as its argument if listening failed (port in use).
@@ -66,13 +46,16 @@ function shutdown(signal: string): void {
   const force = setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS);
   force.unref();
   server.close(() => {
-    pools.end().then(
-      () => process.exit(0),
-      (err: unknown) => {
-        console.error('Closing the database pools failed:', err);
-        process.exit(1);
-      },
-    );
+    boss
+      .stop({ graceful: true, timeout: SHUTDOWN_GRACE_MS / 2 })
+      .then(() => deps.pools.end())
+      .then(
+        () => process.exit(0),
+        (err: unknown) => {
+          console.error(`Shutting down failed: ${describeErrorForLog(err)}`);
+          process.exit(1);
+        },
+      );
   });
   server.closeIdleConnections();
 }

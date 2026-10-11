@@ -2,7 +2,6 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeEach, describe, expect, inject, test, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createPools, getTask, messages, type Pools, reclaimExpiredLeases, type StepRow, type TenantContext, withTenant } from '@roofline/db';
-import { ImmediateQueue } from '../src/tasks/queue.ts';
 import { registerStepHandler, runStep, type StepHandler, type StepOutcome } from '../src/tasks/runner.ts';
 import { createTask, retryStep } from '../src/tasks/service.ts';
 import { Actors, dbAudit, inCompany, NO_UUID, NOT_FOUND } from './crm-helpers.ts';
@@ -641,6 +640,99 @@ describe('a run ending while a person retries the same step', () => {
   });
 });
 
+describe('the run fence: a retry resets attempts, so a run is told apart from a newer one by something a retry never resets', () => {
+  /**
+   * Run A claims the step and hangs in its handler past its lease; the owner retries the step
+   * (attempts back to 0); run C claims it (attempts 1 again, the same count A had). Returns the
+   * runs and the step as C claimed it. `outcomes[0]` is A's handler, `outcomes[1]` is C's.
+   */
+  async function runAOutlivedByC(outcomes: [() => Promise<StepOutcome>, () => Promise<StepOutcome>]) {
+    const entered = [gate(), gate()];
+    const release = [gate(), gate()];
+    let calls = 0;
+    use('demo_noop', async () => {
+      const n = calls++;
+      entered[n]!.open();
+      await release[n]!.opened;
+      return outcomes[n]!();
+    });
+    const { taskId, step } = await approvedOneStep();
+    const runA = runStep(t.deps, idOf('a'), step.id);
+    await entered[0]!.opened;
+    t.clock.advance(11 * MINUTE);
+    expect((await (await actors.as('owner')).post(retryUrl(taskId, step.id))).status).toBe(200);
+    const runC = runStep(t.deps, idOf('a'), step.id);
+    await entered[1]!.opened;
+    const asClaimedByC = await stepNow(taskId);
+    expect(asClaimedByC).toMatchObject({ status: 'running', attempts: 1 });
+    return { taskId, step, runA, runC, asClaimedByC, release };
+  }
+
+  test('A finishing writes nothing: C keeps the step and its lease, and C\'s outcome is the one saved', async () => {
+    const { taskId, runA, runC, asClaimedByC, release } = await runAOutlivedByC([
+      async () => ({ status: 'done', result: { stale: 1 } }),
+      async () => ({ status: 'done', result: { fresh: 1 } }),
+    ]);
+    try {
+      release[0]!.open();
+      await runA;
+      expect(await stepNow(taskId)).toMatchObject({
+        status: 'running',
+        attempts: 1,
+        result: null,
+        leaseExpiresAt: asClaimedByC.leaseExpiresAt,
+      });
+      expect((await dbTask(t, 'a', taskId)).status).toBe('running');
+    } finally {
+      release[0]!.open();
+      release[1]!.open();
+    }
+    await runC;
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 1, result: { fresh: 1 }, leaseExpiresAt: null });
+    expect((await dbTask(t, 'a', taskId)).status).toBe('done');
+  });
+
+  test('A throwing does not put C\'s step back in the queue', async () => {
+    const { taskId, step, runA, runC, asClaimedByC, release } = await runAOutlivedByC([
+      async () => {
+        throw new Error('provider timed out');
+      },
+      async () => ({ status: 'done', result: { fresh: 1 } }),
+    ]);
+    try {
+      release[0]!.open();
+      await expect(runA).rejects.toThrow('provider timed out');
+      expect(await stepNow(taskId)).toMatchObject({
+        status: 'running',
+        attempts: 1,
+        errorPlain: null,
+        leaseExpiresAt: asClaimedByC.leaseExpiresAt,
+      });
+      // Only the retry handed the step to the queue; A's throw did not put it back.
+      expect(enqueued(t)).toEqual([step.id, step.id]);
+    } finally {
+      release[0]!.open();
+      release[1]!.open();
+    }
+    await runC;
+    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 1, result: { fresh: 1 }, errorPlain: null });
+  });
+
+  test('each claim takes the next run_seq; a retry keeps it while attempts goes back to 0 and still counts to 5', async () => {
+    use('demo_noop', throwing());
+    const { taskId, step } = await approvedOneStep();
+    expect(await stepNow(taskId)).toMatchObject({ runSeq: 0, attempts: 0 });
+    await t.queue.drain(t.deps);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'needs_attention', attempts: 5, runSeq: 5 });
+
+    expect((await (await actors.as('owner')).post(retryUrl(taskId, step.id))).status).toBe(200);
+    expect(await stepNow(taskId)).toMatchObject({ status: 'queued', attempts: 0, runSeq: 5 });
+    await t.queue.drain(t.deps);
+    // Five more tries after the retry, and the fence kept counting up.
+    expect(await stepNow(taskId)).toMatchObject({ status: 'needs_attention', attempts: 5, runSeq: 10 });
+  });
+});
+
 describe('reclaimExpiredLeases', () => {
   test('puts back only running steps whose lease has passed, and returns their ids', async () => {
     const { taskId } = await newTask(t, 'a', {
@@ -705,30 +797,6 @@ describe('the queues', () => {
     await approvedOneStep();
     await t.queue.drain(t.deps);
     expect((await dbSteps(t, 'a', second))[0]!.status).toBe('done');
-  });
-
-  test('ImmediateQueue runs the step in this process soon after it is enqueued', async () => {
-    const { taskId, step } = await approvedOneStep();
-    const errors: unknown[] = [];
-    const queue = new ImmediateQueue(() => t.deps, (err) => errors.push(err));
-    await queue.enqueueStep(idOf('a'), step.id);
-    const deadline = Date.now() + 5000;
-    while ((await stepNow(taskId)).status !== 'done' && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20));
-    expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 1 });
-    expect(errors).toEqual([]);
-  });
-
-  test('ImmediateQueue logs a run that throws instead of letting it escape', async () => {
-    use('demo_noop', throwing());
-    const { step } = await approvedOneStep();
-    const errors: { err: unknown; stepId: string }[] = [];
-    const queue = new ImmediateQueue(() => t.deps, (err, stepId) => errors.push({ err, stepId }));
-    await queue.enqueueStep(idOf('a'), step.id);
-    const deadline = Date.now() + 5000;
-    while (errors.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20));
-    expect(errors).toHaveLength(1);
-    expect((errors[0]!.err as Error).message).toBe('provider timed out');
-    expect(errors[0]!.stepId).toBe(step.id);
   });
 });
 

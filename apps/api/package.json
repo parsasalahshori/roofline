@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "tsx src/server.ts",
-    "dev": "tsx watch src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "seed:demo": "tsx src/scripts/seed-demo.ts"
   },
   "dependencies": {
     "@roofline/db": "^0.0.0",
@@ -17,6 +18,7 @@
     "express-rate-limit": "^8.7.1",
     "helmet": "^8.3.0",
     "jose": "^6.2.12",
+    "pg-boss": "^12.37.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {

@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express';
+import type { TenantContext } from '@roofline/db';
 import type { Role } from '@roofline/shared';
 import { AppError, MESSAGES } from './errors.ts';
 
@@ -59,4 +60,12 @@ export function requireCapability(cap: Capability): RequestHandler {
     }
     next(can(ctx, cap) ? undefined : new AppError(403, MESSAGES.roleCannot));
   };
+}
+
+/**
+ * The context work outside a request runs in for a company: the runner, the scheduler's jobs and
+ * the demo seed. No signed-in person, and `can` gives it nothing, so it approves nothing.
+ */
+export function systemContext(companyId: string): TenantContext {
+  return { companyId, userId: null, role: 'system', canApproveSpend: false };
 }

@@ -2,9 +2,10 @@ import type { AppDeps } from '../app.ts';
 import { runStep } from './runner.ts';
 
 /**
- * Where approved steps go to be run. The approval routes call `enqueueStep` only after their
- * transaction has committed, so a step is never run before it is saved as `queued`. Each enqueued
- * step is run with `runStep`; a run that throws is tried again later.
+ * Where approved steps go to be run. The approval routes (and the sweeper) call `enqueueStep` only
+ * after their transaction has committed, so a step is never run before it is saved as `queued`.
+ * Each enqueued step is run with `runStep`; a run that throws is tried again later. The server and
+ * the worker use `PgBossQueue` (pgboss-queue.ts); the tests use `InlineQueue` below.
  */
 export type StepQueue = {
   enqueueStep(companyId: string, stepId: string): Promise<void>;
@@ -45,32 +46,5 @@ export class InlineQueue implements StepQueue {
         this.waiting.push(job);
       }
     }
-  }
-}
-
-/**
- * The server's queue until the pg-boss worker takes over: each step is run in this process, right
- * after the current request has been answered. A run that throws is logged and not tried again.
- */
-export class ImmediateQueue implements StepQueue {
-  constructor(
-    private readonly deps: () => AppDeps,
-    private readonly logError: (err: unknown, stepId: string) => void,
-  ) {}
-
-  async enqueueStep(companyId: string, stepId: string): Promise<void> {
-    setImmediate(() => {
-      void (async () => {
-        try {
-          await runStep(this.deps(), companyId, stepId);
-        } catch (err) {
-          try {
-            this.logError(err, stepId);
-          } catch {
-            // A failing logger must not turn into an unhandled rejection.
-          }
-        }
-      })();
-    });
   }
 }

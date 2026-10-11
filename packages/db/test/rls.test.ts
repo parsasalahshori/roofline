@@ -319,6 +319,14 @@ describe('grants', () => {
     );
   });
 
+  test('app_system may create schemas in the database (pg-boss runs CREATE SCHEMA IF NOT EXISTS); app_tenant may not', async () => {
+    const [row] = await ownerQuery<{ system: boolean; tenant: boolean }>(
+      `select has_database_privilege('app_system', current_database(), 'CREATE') as system,
+              has_database_privilege('app_tenant', current_database(), 'CREATE') as tenant`,
+    );
+    expect(row).toEqual({ system: true, tenant: false });
+  });
+
   test('app_system: column-level SELECT only on the scheduler columns', async () => {
     const rows = await ownerQuery<{ table_name: string; column_name: string; privilege_type: string }>(
       `select table_name, column_name, privilege_type from information_schema.column_privileges
@@ -330,6 +338,8 @@ describe('grants', () => {
     expect(rows).toEqual([
       sel('agent_task_steps', 'company_id'),
       sel('agent_task_steps', 'id'),
+      sel('agent_task_steps', 'lease_expires_at'),
+      sel('agent_task_steps', 'run_seq'),
       sel('agent_task_steps', 'status'),
       sel('agent_task_steps', 'task_id'),
       sel('agent_task_steps', 'updated_at'),
@@ -680,9 +690,15 @@ describe('app_system', () => {
        values ($1, 'sms', 'out', 'marketing', 'Hi', 'scheduled', now())`,
       [seed.b.companyId],
     );
-    expect(await systemRaw(`select id, task_id, company_id, status, updated_at from agent_task_steps`)).toHaveLength(1);
+    expect(
+      await systemRaw(`select id, task_id, company_id, status, updated_at, lease_expires_at, run_seq from agent_task_steps`),
+    ).toHaveLength(1);
     expect(await systemRaw(`select id, company_id, status, scheduled_for from messages`)).toHaveLength(1);
     await expect(systemRaw(`select payload from agent_task_steps`)).rejects.toThrow(/permission denied/);
+    await expect(systemRaw(`select attempts from agent_task_steps`)).rejects.toThrow(/permission denied/);
+    // The sweeper only lists; the writes are app_tenant's, per company.
+    await expect(systemRaw(`update agent_task_steps set status = 'queued'`)).rejects.toThrow(/permission denied/);
+    await expect(systemRaw(`update agent_tasks set status = 'expired'`)).rejects.toThrow(/permission denied/);
     await expect(systemRaw(`select body from messages`)).rejects.toThrow(/permission denied/);
     await expect(systemRaw(`update messages set status = 'sent'`)).rejects.toThrow(/permission denied/);
   });

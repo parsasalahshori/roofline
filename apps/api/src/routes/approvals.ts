@@ -12,6 +12,7 @@ import {
   editStep,
   getApproval,
   listApprovals,
+  rerunTask,
   retryStep,
 } from '../tasks/service.ts';
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
@@ -79,6 +80,8 @@ const DeclineBody = z.object({
  *   `POST /:taskId/steps/:stepId/decline` say no to one step waiting on the owner.
  *   `POST /:taskId/steps/:stepId/retry` run a step that did not finish again.
  *   Each returns the task's detail view (payloads included).
+ * - `POST /:taskId/rerun` make a fresh draft from an expired plan ("Expired — run again?"): 201
+ *   with the new task's detail view; 409 "Only expired plans can be run again." for any other plan.
  * Only the owner and the office work the queue. A rep gets an empty list, and a 404 for any one task or
  * step, exactly as for one that does not exist. A task of another company is a 404 too. Tasks are made
  * by agents through `createTask` (tasks/service.ts), never over HTTP.
@@ -106,7 +109,7 @@ export function approvalRoutes(deps: AppDeps, logError: (err: unknown, path: str
     }
   }
 
-  /** Approving or declining a whole plan is for those who work the queue: approve messages or internal steps. */
+  /** Approving, declining or running again a whole plan is for those who work the queue: approve messages or internal steps. */
   const requireQueueWork = (ctx: Member): void => {
     if (!can(ctx, 'approve_message') && !can(ctx, 'approve_internal')) throw new AppError(403, MESSAGES.roleCannot);
   };
@@ -218,6 +221,17 @@ export function approvalRoutes(deps: AppDeps, logError: (err: unknown, path: str
     if (!out) throw new AppError(404, MESSAGES.notFound);
     await enqueue(ctx.companyId, out.toEnqueue, req.path);
     res.json(out.task);
+  });
+
+  router.post('/:taskId/rerun', async (req, res) => {
+    const { ctx } = req;
+    if (!canReview(ctx)) throw new AppError(404, MESSAGES.notFound);
+    const taskId = idParam(req.params.taskId);
+    requireQueueWork(ctx);
+
+    const task = await withTenant(pools, ctx, (tx) => rerunTask(tx, ctx, taskId, { now: clock.now(), ip: req.ip ?? null }));
+    if (!task) throw new AppError(404, MESSAGES.notFound);
+    res.status(201).json(task);
   });
 
   return router;

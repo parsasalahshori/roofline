@@ -354,6 +354,13 @@ export const agentTaskSteps = pgTable(
      * the sweeper puts it back in the queue.
      */
     leaseExpiresAt: tstz('lease_expires_at'),
+    /**
+     * Which run owns the step: every claim takes the next number, and a run saves its outcome only
+     * while the step is `running` at its own number. Nothing ever lowers it (a person's retry puts
+     * `attempts` back to 0 but leaves this alone), so a run that outlived its lease can never be
+     * mistaken for a newer one.
+     */
+    runSeq: integer('run_seq').notNull().default(0),
     ...timestamps(),
   },
   (t) => [

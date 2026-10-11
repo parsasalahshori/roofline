@@ -10,6 +10,7 @@ import {
 import { isStepType, type StepResult, type StepType } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { logErrorToConsole } from '../errors.ts';
+import { systemContext } from '../permissions.ts';
 import { builtInHandlers } from './handlers.ts';
 import { refreshTask } from './service.ts';
 
@@ -84,19 +85,17 @@ export function registerStepHandler(type: StepType, handler: StepHandler): () =>
   };
 }
 
-/** The runner acts for the company with no signed-in person; it approves nothing (permissions.ts). */
-const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: null, role: 'system', canApproveSpend: false });
-
 /**
  * Runs one step for the queue.
- * 1. **Claim**, in a transaction of its own: a `queued` step becomes `running` with `attempts + 1`
- *    and a lease of `LEASE_MS`. Anything else (not approved, already running or parked, finished,
- *    unknown, another company's) is left alone, so a second delivery is a no-op.
+ * 1. **Claim**, in a transaction of its own: a `queued` step becomes `running` with `attempts + 1`,
+ *    the next `runSeq` (this run's own number) and a lease of `LEASE_MS`. Anything else (not
+ *    approved, already running or parked, finished, unknown, another company's) is left alone, so
+ *    a second delivery is a no-op.
  * 2. **Handler**, with no lock held (see `StepHandler`).
  * 3. **End**, in one short transaction: the task row is locked first (the order every writer
  *    takes), then the outcome is saved if the step is still this run's (`running` at this run's
- *    `attempts`), the lease is cleared and the task's status follows (`refreshTask`). A stale run
- *    writes nothing.
+ *    `runSeq`; not `attempts`, which a person's retry resets), the lease is cleared and the task's
+ *    status follows (`refreshTask`). A stale run writes nothing, and a stale throw puts nothing back.
  * 4. **A throw** before the fifth run puts the step back to `queued` (with a plain reason) and
  *    throws on, so the queue tries again. On the fifth, the error goes to `deps.logError` (in the
  *    safe form of `describeErrorForLog`) and the step needs attention with a plain sentence: the
@@ -107,7 +106,8 @@ const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: nu
  */
 export async function runStep(deps: AppDeps, companyId: string, stepId: string): Promise<void> {
   const { pools, clock } = deps;
-  const ctx = systemCtx(companyId);
+  // The runner acts for the company with no signed-in person; it approves nothing.
+  const ctx = systemContext(companyId);
 
   const now = clock.now();
   const claimed = await withTenant(pools, ctx, (tx) =>
@@ -150,7 +150,7 @@ async function end(deps: AppDeps, ctx: TenantContext, claimed: StepRow, finish: 
   await withTenant(pools, ctx, async (tx) => {
     const now = clock.now();
     await getTask(tx, ctx, claimed.taskId, { forUpdate: true });
-    const saved = await finishClaimedStep(tx, ctx, claimed.id, claimed.attempts, finish, now);
+    const saved = await finishClaimedStep(tx, ctx, claimed.id, claimed.runSeq, finish, now);
     if (saved) await refreshTask(tx, ctx, saved.taskId, now);
   });
 }

@@ -53,6 +53,7 @@ import { can, type Capability } from '../permissions.ts';
 const NO_CUSTOMERS = "Some of these customers don't exist.";
 const ALREADY_HANDLED = 'This was already handled.';
 const EXPIRED_PLAN = 'This plan expired before it was approved. You can run it again.';
+const RERUN_ONLY_EXPIRED = 'Only expired plans can be run again.';
 
 /** A step a person still has to say yes or no to. */
 const OPEN: readonly StepStatus[] = ['pending', 'awaiting_owner'];
@@ -669,6 +670,66 @@ export async function retryStep(
     at: opts.now,
   });
   return { toEnqueue: [step.id], task: await currentView(tx, ctx, taskId, opts.now) };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Running an expired plan again
+
+/**
+ * "Expired — run again?": makes a fresh draft from a plan whose time ran out, and returns its
+ * detail view (payloads included). Null when the task is not there for this member (a rep, an
+ * unknown id, another company's: the route answers 404).
+ *
+ * - Only an expired plan: marked `expired`, or a draft past `expiresAt` that the expiry job has not
+ *   reached yet (`isExpired`; that draft is marked `expired` now, as the job would). Anything else
+ *   is a 409 "Only expired plans can be run again.".
+ * - The new draft is made with `createTask`, exactly as an agent makes one: the same agent, kind,
+ *   title, summary, subject and mode, and the same steps in the same order (type and payload; each
+ *   step on, pending, at version 1, with new ids and new idempotency keys). Each payload is checked
+ *   again, so a step that no longer passes (a text naming the company's old name) is a 400 on
+ *   `steps.N.payload` and nothing is made.
+ * - Its window is as long as the old one's: `expires_at = now + (old expires_at - old created_at)`,
+ *   or none when the old plan had none.
+ * - The old plan is left as it was (expired, its steps pending). `task.rerun` is audited on the new
+ *   task with `{ fromTaskId }`, after `createTask`'s own `task.create`.
+ * The old task's row is locked first (the order every task writer takes).
+ */
+export async function rerunTask(tx: Tx, ctx: TenantContext, taskId: string, opts: WriteOptions): Promise<TaskView | null> {
+  if (!canReview(ctx)) return null;
+  const task = await getTask(tx, ctx, taskId, { forUpdate: true });
+  if (!task) return null;
+  if (!isExpired(task, opts.now)) throw new AppError(409, RERUN_ONLY_EXPIRED);
+  if (task.status === 'draft') await updateTask(tx, ctx, taskId, { status: 'expired' }, opts.now);
+
+  const window = task.expiresAt === null ? null : task.expiresAt.getTime() - task.createdAt.getTime();
+  const steps = await listSteps(tx, ctx, [taskId], { payload: true });
+  const { taskId: freshId } = await createTask(
+    tx,
+    ctx,
+    {
+      agent: task.agent,
+      kind: task.kind,
+      title: task.title,
+      ...(task.summary !== null && { summary: task.summary }),
+      ...(task.subjectType !== null && { subjectType: task.subjectType }),
+      ...(task.subjectId !== null && { subjectId: task.subjectId }),
+      mode: task.mode,
+      ...(window !== null && { expiresAt: new Date(opts.now.getTime() + window) }),
+      // createTask refuses a type this build does not know (400 on steps.N.type).
+      steps: steps.map((step) => ({ type: step.type as StepType, payload: step.payload })),
+    },
+    opts,
+  );
+
+  await audit(tx, ctx, {
+    action: 'task.rerun',
+    targetType: 'agent_task',
+    targetId: freshId,
+    after: { fromTaskId: taskId },
+    ip: opts.ip ?? null,
+    at: opts.now,
+  });
+  return currentView(tx, ctx, freshId, opts.now);
 }
 
 // ---------------------------------------------------------------------------------------------
