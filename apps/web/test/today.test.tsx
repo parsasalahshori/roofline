@@ -78,20 +78,36 @@ describe('the Today window', () => {
 
     mount(['/today']);
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Good morning, Dana' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Good morning, Dana',
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Monday, October 12')).toBeInTheDocument();
     expect(api.unexpected).toEqual([]);
   });
 
   it('lists the top 3 drafts', async () => {
     const tasks = [1, 2, 3, 4, 5].map((n) =>
-      makeTask({ id: `t${n}`, title: `Plan ${n}`, status: 'draft', createdAt: `2026-10-0${n}T09:00:00.000Z` }),
+      makeTask({
+        id: `t${n}`,
+        title: `Plan ${n}`,
+        status: 'draft',
+        createdAt: `2026-10-0${n}T09:00:00.000Z`,
+      }),
     );
-    mount(['/today'], { 'GET /api/approvals': () => ({ body: { count: 5, tasks } }) });
+    mount(['/today'], {
+      'GET /api/approvals': () => ({ body: { count: 5, tasks } }),
+    });
 
     const dialog = await screen.findByRole('dialog');
-    const section = await within(dialog).findByRole('region', { name: today.needYourOk });
-    const list = await within(section).findByRole('list', { name: today.draftsLabel });
+    const section = await within(dialog).findByRole('region', {
+      name: today.needYourOk,
+    });
+    const list = await within(section).findByRole('list', {
+      name: today.draftsLabel,
+    });
     const links = within(list).getAllByRole('link');
 
     // Newest first: Plan 5, Plan 4, Plan 3
@@ -115,7 +131,9 @@ describe('the Today window', () => {
 
 describe('auto-opens only from the map home', () => {
   it('opens Today once when the server says to show it', async () => {
-    const { router } = mount(['/'], { 'POST /api/me/today-shown': () => ({ body: { show: true } }) });
+    const { router } = mount(['/'], {
+      'POST /api/me/today-shown': () => ({ body: { show: true } }),
+    });
 
     await waitFor(() => expect(where(router)).toBe('/today'));
     expect(api.count('POST /api/me/today-shown')).toBe(1);
@@ -132,7 +150,9 @@ describe('auto-opens only from the map home', () => {
   });
 
   it('stays on the map when the server says not to show it', async () => {
-    const { router } = mount(['/'], { 'POST /api/me/today-shown': () => ({ body: { show: false } }) });
+    const { router } = mount(['/'], {
+      'POST /api/me/today-shown': () => ({ body: { show: false } }),
+    });
 
     await waitFor(() => expect(api.count('POST /api/me/today-shown')).toBe(1));
     await settle();
@@ -141,11 +161,42 @@ describe('auto-opens only from the map home', () => {
   });
 
   it('never asks from a deep link', async () => {
-    const { router } = mount(['/jobs'], { 'POST /api/me/today-shown': () => ({ body: { show: true } }) });
+    const { router } = mount(['/jobs'], {
+      'POST /api/me/today-shown': () => ({ body: { show: true } }),
+    });
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     await settle();
     expect(api.count('POST /api/me/today-shown')).toBe(0);
+    expect(where(router)).toBe('/jobs');
+    expect(api.unexpected).toEqual([]);
+  });
+
+  it('does not hijack a page the person opened before the answer arrives', async () => {
+    const { router } = mount(['/'], {
+      'POST /api/me/today-shown': () => ({ body: { show: true } }),
+    });
+    // The stub answers at once, so gate its fetch until the person has moved on
+    const answer = globalThis.fetch;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let asked = false;
+    globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/me/today-shown')) {
+        asked = true;
+        return gate.then(() => answer(input, init));
+      }
+      return answer(input, init);
+    };
+
+    await waitFor(() => expect(asked).toBe(true));
+    // The person opens a dock app before the answer comes back
+    await router.navigate('/jobs');
+    await settle(); // the page renders on /jobs before the answer lands
+    release();
+    await settle();
+
+    expect(api.count('POST /api/me/today-shown')).toBe(1);
     expect(where(router)).toBe('/jobs');
     expect(api.unexpected).toEqual([]);
   });

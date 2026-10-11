@@ -71,7 +71,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: apps/web
       # The stack starts PostGIS with Testcontainers on the runner's Docker (amd64, native).
-      - run: npm run e2e -- --project desktop
+      - run: npm run e2e -- --project desktop --project phone
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
