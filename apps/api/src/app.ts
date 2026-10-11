@@ -9,6 +9,8 @@ import { authRoutes } from './auth/routes.ts';
 import { describeErrorForLog, errorHandler, MESSAGES, notFoundHandler } from './errors.ts';
 import type { Mailer } from './mailer.ts';
 import { apiRateLimit } from './rate-limit.ts';
+import { companyRoutes } from './routes/company.ts';
+import { teamRoutes } from './routes/team.ts';
 
 /**
  * Everything the app reaches outside itself through. Tests pass fakes for all of it.
@@ -94,6 +96,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
 
   // Routers are mounted here as later tasks add them.
   app.use('/api/auth', authRoutes(deps, logError));
+  app.use('/api/company', companyRoutes(deps));
+  app.use('/api/team', teamRoutes(deps, logError));
 
   app.use(notFoundHandler);
   app.use(errorHandler(logError));

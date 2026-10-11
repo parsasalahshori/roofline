@@ -30,6 +30,16 @@ export const MESSAGES = {
   googleUnverified: "Google hasn't confirmed this email address, so we can't use it to sign in.",
   googleOtherAccount: 'That email is already connected to a different Google account.',
   googleEmailInUse: 'This email already has a Roofline account. Please sign in with your password.',
+  roleCannot: "Your role can't do that. Ask the owner.",
+  nothingToChange: "There's nothing to change.",
+  tooManyInvites: "You've sent a lot of invites. Please try again in an hour.",
+  alreadyOnTeam: 'That person is already on your team.',
+  alreadyMember: "You're already on this team.",
+  lastOwner: 'Your company needs at least one owner.',
+  inviteGone: 'That invite link has expired or was already used. Ask for a new one.',
+  inviteWrongGoogle: "This Google account doesn't match the email that was invited.",
+  inviteSignIn: 'Sign in to accept this invite.',
+  googleAlreadyUsed: 'This Google account is already connected to a different Roofline user.',
 } as const;
 
 export type ErrorBody = { error: string; field?: string };

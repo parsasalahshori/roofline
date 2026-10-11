@@ -1,6 +1,6 @@
 import { type Request, type Response, Router } from 'express';
 import { z } from 'zod';
-import { insertDefaultSettings, withTenant } from '@roofline/db';
+import { audit, insertDefaultSettings, withTenant } from '@roofline/db';
 import {
   type AuthCompany,
   type AuthUser,
@@ -19,18 +19,20 @@ import {
   listSessions,
   type NewAccount,
   removeAccount,
+  switchSessionCompany,
 } from '@roofline/db/system';
 import type { AppDeps } from '../app.ts';
+import { createBackground } from '../background.ts';
 import { AppError, MESSAGES } from '../errors.ts';
-import type { MailMessage } from '../mailer.ts';
 import {
+  acceptInviteRateLimit,
   googleRateLimit,
   loginRateLimit,
   resendVerificationRateLimit,
   resetRequestRateLimit,
   signupRateLimit,
 } from '../rate-limit.ts';
-import { MAX_EMAIL_LENGTH, parse } from '../validate.ts';
+import { EMAIL_MESSAGE, emailField as email, MAX_EMAIL_LENGTH, parse } from '../validate.ts';
 import { type GoogleClaims, GoogleUnavailableError, isGoogleAuthoritative } from './google.ts';
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from './password.ts';
 import {
@@ -40,6 +42,16 @@ import {
   type SessionInfo,
   setSessionCookie,
 } from './sessions.ts';
+import {
+  type AcceptedInvite,
+  type AcceptProof,
+  acceptInvite,
+  AlreadyMemberError,
+  type InviteToAccept,
+  InviteUnavailableError,
+  lookUpInvite,
+  SignInRequiredError,
+} from './team-store.ts';
 import {
   confirmEmail,
   isResetTokenLive,
@@ -53,7 +65,6 @@ const TRIAL_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_NAME_LENGTH = 200;
 
-const EMAIL_MESSAGE = 'Please enter a valid email address.';
 const PASSWORD_MESSAGE = 'Use at least 10 characters for your password.';
 const NAME_MESSAGE = 'Please enter a name.';
 const COMPANY_NAME_MESSAGE = 'Please enter your company name.';
@@ -64,18 +75,17 @@ const companyName = z
   .min(1, COMPANY_NAME_MESSAGE)
   .max(MAX_NAME_LENGTH, 'That company name is too long.');
 
-/** Emails are stored trimmed and lowercased, at most 254 characters; the same rule is applied wherever one is asked for. */
-const email = z
-  .string({ error: EMAIL_MESSAGE })
+const passwordField = z.string({ error: PASSWORD_MESSAGE }).min(10, PASSWORD_MESSAGE);
+const nameField = z
+  .string({ error: NAME_MESSAGE })
   .trim()
-  .toLowerCase()
-  .max(MAX_EMAIL_LENGTH, EMAIL_MESSAGE)
-  .pipe(z.email(EMAIL_MESSAGE));
+  .min(1, NAME_MESSAGE)
+  .max(MAX_NAME_LENGTH, 'That name is too long.');
 
 const SignupBody = z.object({
   email,
-  password: z.string({ error: PASSWORD_MESSAGE }).min(10, PASSWORD_MESSAGE),
-  name: z.string({ error: NAME_MESSAGE }).trim().min(1, NAME_MESSAGE).max(MAX_NAME_LENGTH, 'That name is too long.'),
+  password: passwordField,
+  name: nameField,
   companyName,
 });
 
@@ -107,8 +117,24 @@ const VerifyEmailBody = z.object({ token: linkToken });
 const ResetRequestBody = z.object({ email });
 const ResetBody = z.object({
   token: linkToken,
-  password: z.string({ error: PASSWORD_MESSAGE }).min(10, PASSWORD_MESSAGE),
+  password: passwordField,
 });
+
+/**
+ * Accepting an invite. Only the token is checked up front. Name and password are only needed to
+ * make a NEW account (checked then, with the same rules as sign-up), and a person who is already
+ * signed in, or who has an account, needs neither. `googleCredential` replaces both.
+ */
+const AcceptInviteBody = z.object({
+  token: linkToken,
+  googleCredential: z.string({ error: MESSAGES.googleFailed }).min(1, MESSAGES.googleFailed).optional(),
+  name: z.unknown().optional(),
+  password: z.unknown().optional(),
+});
+
+const NewInviteeBody = z.object({ name: nameField, password: passwordField });
+
+const SwitchCompanyBody = z.object({ companyId: z.string({ error: MESSAGES.checkField }) });
 
 function confirmEmailText(link: string): string {
   return [
@@ -151,7 +177,7 @@ function signedIn(req: Request) {
 
 /**
  * `/api/auth/*`: sign-up, login, Google sign-in, logout, who-am-i, the user's own sessions, email
- * verification and password reset. A later task adds invites to this router.
+ * verification, password reset, invite acceptance and the company switcher.
  */
 export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string) => void): Router {
   const { pools, config, clock } = deps;
@@ -185,34 +211,7 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     setSessionCookie(res, created.token, config);
   }
 
-  /**
-   * Runs `work` after the request has been answered: the caller does not await it. A failure is
-   * logged and goes no further (it would otherwise be an unhandled rejection, which ends the
-   * process). `deps.onBackgroundTask` lets tests wait for it.
-   */
-  function background(path: string, work: () => Promise<void>): void {
-    const task = (async () => {
-      try {
-        await work();
-      } catch (err) {
-        try {
-          logError(err, path);
-        } catch {
-          // A failing logger must not turn into an unhandled rejection.
-        }
-      }
-    })();
-    deps.onBackgroundTask?.(task);
-  }
-
-  /**
-   * Hands an email to the mailer in the background. A failure is logged and never shown: the
-   * account (or the "if that address has an account" answer) does not depend on the mail provider
-   * being up, and the person can ask for another.
-   */
-  function queueMail(msg: MailMessage, path: string): void {
-    background(path, () => deps.mailer.send(msg));
-  }
+  const { background, queueMail } = createBackground(deps, logError);
 
   /** Makes a verification link good for 7 days and emails it. Throws if the link cannot be saved. */
   async function sendVerificationEmail(user: Pick<AuthUser, 'id' | 'email'>, path: string): Promise<void> {
@@ -445,22 +444,165 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     res.json({ ok: true });
   });
 
+  /**
+   * Who the person accepting an invite is, as `acceptInvite` needs it. Checks everything that is
+   * slow or can be refused before the transaction (which only re-checks what it must).
+   * - A user with the invite's address exists: the caller must show they are that user, in this
+   *   order: a live session of theirs; a Google account connected to them; their password. Else 401.
+   *   A Google credential for another address (and not connected to them) is a 400 instead: wrong address.
+   * - No such user: a new account is made. With Google, the verified Google email must be the invited one.
+   *   With a password, name and password are validated like sign-up's.
+   */
+  async function inviteIdentity(
+    req: Request,
+    invite: InviteToAccept,
+    body: z.infer<typeof AcceptInviteBody>,
+    claims: GoogleClaims | undefined,
+  ): Promise<{ newUser: { name: string; passwordHash: string | null; googleSub: string | null } | null; proof: AcceptProof | null }> {
+    const existing = await findUserByEmail(system, invite.email);
+    const current = req.session as SessionInfo | undefined;
+    const claimedEmail = claims?.email.trim().toLowerCase();
+
+    if (existing) {
+      if (current?.userId === existing.id) {
+        return { newUser: null, proof: { via: 'session', sessionId: current.sessionId } };
+      }
+      if (claims) {
+        if (existing.googleSub !== null && existing.googleSub === claims.sub) {
+          return { newUser: null, proof: { via: 'google', googleSub: claims.sub } };
+        }
+        throw new AppError(
+          claimedEmail === invite.email ? 401 : 400,
+          claimedEmail === invite.email ? MESSAGES.inviteSignIn : MESSAGES.inviteWrongGoogle,
+        );
+      }
+      if (typeof body.password === 'string' && body.password !== '' && existing.passwordHash) {
+        if (await verifyPassword(body.password, existing.passwordHash)) {
+          return { newUser: null, proof: { via: 'password', passwordHash: existing.passwordHash } };
+        }
+      }
+      throw new AppError(401, MESSAGES.inviteSignIn);
+    }
+
+    if (claims) {
+      if (claimedEmail !== invite.email) throw new AppError(400, MESSAGES.inviteWrongGoogle);
+      if (!claims.emailVerified) throw new AppError(400, MESSAGES.googleUnverified);
+      if (await findUserByGoogleSub(system, claims.sub)) throw new AppError(409, MESSAGES.googleAlreadyUsed);
+      return {
+        newUser: {
+          name: claims.name.trim().slice(0, MAX_NAME_LENGTH) || invite.email,
+          passwordHash: null,
+          googleSub: claims.sub,
+        },
+        proof: null,
+      };
+    }
+    const person = parse(NewInviteeBody, { name: body.name, password: body.password });
+    return { newUser: { name: person.name, passwordHash: await hashPassword(person.password), googleSub: null }, proof: null };
+  }
+
+  /** Accepts the invite, looking again once if someone made the account since we looked (a race). */
+  async function acceptWithIdentity(
+    req: Request,
+    invite: InviteToAccept,
+    body: z.infer<typeof AcceptInviteBody>,
+    claims: GoogleClaims | undefined,
+    retry = true,
+  ): Promise<AcceptedInvite> {
+    const identity = await inviteIdentity(req, invite, body, claims);
+    try {
+      return await acceptInvite(system, { token: body.token, now: clock.now(), ...identity });
+    } catch (err) {
+      if (err instanceof InviteUnavailableError) throw new AppError(400, MESSAGES.inviteGone);
+      if (err instanceof AlreadyMemberError) throw new AppError(409, MESSAGES.alreadyMember);
+      if (err instanceof SignInRequiredError) throw new AppError(401, MESSAGES.inviteSignIn);
+      if (err instanceof GoogleSubInUseError) throw new AppError(409, MESSAGES.googleAlreadyUsed);
+      if (err instanceof EmailInUseError && retry) return acceptWithIdentity(req, invite, body, claims, false);
+      throw err;
+    }
+  }
+
+  router.post('/accept-invite', ...acceptInviteRateLimit(), async (req, res) => {
+    const body = parse(AcceptInviteBody, req.body);
+    // A dead link is refused before anything is spent on it (a Google check, a password hash).
+    const invite = await lookUpInvite(system, body.token, clock.now());
+    if (!invite) throw new AppError(400, MESSAGES.inviteGone);
+
+    let claims: GoogleClaims | undefined;
+    if (body.googleCredential !== undefined) {
+      if (!config.GOOGLE_CLIENT_ID) throw new AppError(503, MESSAGES.googleNotSetUp);
+      try {
+        claims = await deps.google.verify(body.googleCredential);
+      } catch (err) {
+        if (err instanceof GoogleUnavailableError) logError(err.cause ?? err, req.path);
+        throw err;
+      }
+    }
+
+    const accepted = await acceptWithIdentity(req, invite, body, claims);
+    const { user, company, role } = accepted;
+
+    // The membership is saved; the audit row goes in the invited company's own tenant context,
+    // after the system transaction. If it cannot be written the person is still in (telling them
+    // it failed would be wrong, and the link is already used), so it is logged.
+    const ctx = { companyId: company.id, userId: user.id, role, canApproveSpend: false } as const;
+    await withTenant(deps.pools, ctx, (tx) =>
+      audit(tx, ctx, {
+        action: 'invite.accept',
+        targetType: 'invite',
+        targetId: accepted.inviteId,
+        after: { email: accepted.email, role, membershipId: accepted.membershipId },
+        ip: req.ip ?? null,
+        at: clock.now(),
+      }),
+    ).catch((err: unknown) => {
+      logError(err, req.path);
+    });
+
+    // Signed in to the invited company: the live session of this same user is moved there (its
+    // cookie stays), otherwise a new session is started (and a live session of someone else that
+    // this request carried is deleted, as in every sign-in).
+    const current = req.session as SessionInfo | undefined;
+    const reused =
+      current?.userId === user.id &&
+      (await switchSessionCompany(system, { sessionId: current.sessionId, userId: user.id, companyId: company.id }));
+    if (!reused) await signIn(req, res, user.id, company.id);
+    res.json(await accountBody(user.id, company.id));
+  });
+
   router.post('/logout', async (req, res) => {
     await deleteSession(system, signedIn(req).sessionId);
     clearSessionCookie(res, config);
     res.json({ ok: true });
   });
 
-  router.get('/me', async (req, res) => {
-    const session = signedIn(req);
-    const summary = await getAccountSummary(system, session.userId, session.companyId);
+  /** What `/me`, accepting an invite and switching company all answer: who, where, in which role, and every company they can switch to. */
+  async function accountBody(userId: string, companyId: string) {
+    const summary = await getAccountSummary(system, userId, companyId);
     if (!summary) throw new AppError(401, MESSAGES.signIn);
-    res.json({
+    return {
       user: userBody(summary.user),
       company: companyBody(summary.company),
       role: summary.role,
       companies: summary.companies,
-    });
+    };
+  }
+
+  router.get('/me', async (req, res) => {
+    const session = signedIn(req);
+    res.json(await accountBody(session.userId, session.companyId));
+  });
+
+  router.post('/switch-company', async (req, res) => {
+    const session = signedIn(req);
+    const body = parse(SwitchCompanyBody, req.body);
+    const companyId = body.companyId.toLowerCase();
+    // A company the user is not an active member of, one that does not exist and a malformed id all look the same.
+    const moved =
+      UUID.test(companyId) &&
+      (await switchSessionCompany(system, { sessionId: session.sessionId, userId: session.userId, companyId }));
+    if (!moved) throw new AppError(404, MESSAGES.notFound);
+    res.json(await accountBody(session.userId, companyId));
   });
 
   router.get('/sessions', async (req, res) => {

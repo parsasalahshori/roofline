@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import type { SessionInfo } from './auth/sessions.ts';
@@ -20,6 +21,9 @@ const SIGNUP_PER_IP_PER_HOUR = 10;
 const RESET_REQUEST_PER_IP_PER_HOUR = 20;
 const RESET_REQUEST_PER_EMAIL_PER_HOUR = 5;
 const RESEND_PER_USER_PER_HOUR = 3;
+const INVITES_PER_COMPANY_PER_HOUR = 30;
+const ACCEPT_INVITE_PER_IP = 30;
+const ACCEPT_INVITE_FAILURES = 10;
 
 /**
  * `/api/*`: `API_RATE_LIMIT_PER_MIN` requests a minute per session. The key is the session's token
@@ -163,4 +167,60 @@ export function resendVerificationRateLimit(): RequestHandler {
       next(new AppError(429, MESSAGES.tooManyEmails));
     },
   });
+}
+
+/**
+ * `POST /api/team/invites`: 30 an hour per company, shared by everyone who can invite, so an owner
+ * cannot be used to flood addresses with email. Every attempt counts. Mount it after the sign-in
+ * gate and the permission checks (so people who may not invite cannot use up the company's budget).
+ */
+export function inviteRateLimit(): RequestHandler {
+  return rateLimit({
+    windowMs: HOUR_MS,
+    limit: INVITES_PER_COMPANY_PER_HOUR,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      const session = req.session as SessionInfo | undefined;
+      return session ? `invite:${session.companyId}` : `invite-ip:${ipKeyGenerator(req.ip ?? 'unknown')}`;
+    },
+    handler: (_req, _res, next) => {
+      next(new AppError(429, MESSAGES.tooManyInvites));
+    },
+  });
+}
+
+/**
+ * `POST /api/auth/accept-invite`, public, so two limits like login's:
+ * - 30 attempts per 15 minutes per IP address, of any kind;
+ * - 10 FAILED attempts per 15 minutes for one IP address + invite link. Someone who has an invite
+ *   link for an existing account can try passwords against it; this caps the guesses. Once the
+ *   budget is spent every attempt, even a right one, is refused until the window passes.
+ * The IP limit comes first, so a script cannot grow the per-link table faster than that.
+ * Returns both limiters in order; mount them after the JSON body parser.
+ */
+export function acceptInviteRateLimit(): RequestHandler[] {
+  const common = { windowMs: LOGIN_WINDOW_MS, standardHeaders: 'draft-7', legacyHeaders: false } as const;
+  const handler: RequestHandler = (_req, _res, next) => {
+    next(new AppError(429, MESSAGES.tooManyLogins));
+  };
+  return [
+    rateLimit({
+      ...common,
+      limit: ACCEPT_INVITE_PER_IP,
+      keyGenerator: (req) => `accept-ip:${ipKeyGenerator(req.ip ?? 'unknown')}`,
+      handler,
+    }),
+    rateLimit({
+      ...common,
+      limit: ACCEPT_INVITE_FAILURES,
+      skipSuccessfulRequests: true,
+      keyGenerator: (req) => {
+        const token = (req.body as { token?: unknown } | undefined)?.token;
+        const digest = createHash('sha256').update(typeof token === 'string' ? token : '').digest('hex');
+        return `accept:${ipKeyGenerator(req.ip ?? 'unknown')}|${digest}`;
+      },
+      handler,
+    }),
+  ];
 }

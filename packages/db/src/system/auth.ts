@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, isNull, like, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, isNull, like, lt, or, sql } from 'drizzle-orm';
 import type { CompanyStatus, Role } from '@roofline/shared';
 import { isUniqueViolation } from '../errors.ts';
 import type { Db } from '../pools.ts';
@@ -44,7 +44,8 @@ export class GoogleSubInUseError extends Error {
   }
 }
 
-const USER_COLUMNS = {
+/** The columns of an `AuthUser`, for the other system modules that select users. */
+export const USER_COLUMNS = {
   id: users.id,
   email: users.email,
   name: users.name,
@@ -337,6 +338,40 @@ export async function renewSession(
     .where(and(eq(sessions.id, sessionId), lt(sessions.lastSeenAt, renewal.staleBefore)))
     .returning({ id: sessions.id });
   return updated.length > 0;
+}
+
+/**
+ * Moves a session to another of its user's companies: one guarded UPDATE that matches only when
+ * the session belongs to `userId` and that user has an ACTIVE membership in `companyId`, so the
+ * check and the change cannot be separated. Returns whether the session was moved.
+ */
+export async function switchSessionCompany(
+  system: Db,
+  input: { sessionId: string; userId: string; companyId: string },
+): Promise<boolean> {
+  const moved = await system
+    .update(sessions)
+    .set({ activeCompanyId: input.companyId })
+    .where(
+      and(
+        eq(sessions.id, input.sessionId),
+        eq(sessions.userId, input.userId),
+        exists(
+          system
+            .select({ one: sql`1` })
+            .from(memberships)
+            .where(
+              and(
+                eq(memberships.userId, input.userId),
+                eq(memberships.companyId, input.companyId),
+                eq(memberships.status, 'active'),
+              ),
+            ),
+        ),
+      ),
+    )
+    .returning({ id: sessions.id });
+  return moved.length > 0;
 }
 
 /** Deletes a session by id. Returns whether a row was removed. */
