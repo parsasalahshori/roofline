@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { ConsentStatus } from '@roofline/shared';
 import { customers, type CustomerPhone, optOuts } from '../schema/index.ts';
 import { ForbiddenError } from '../errors.ts';
@@ -7,7 +7,7 @@ import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
 import { clampPage } from './paging.ts';
 import { customerScope } from './scope.ts';
-import { escapeLike } from './search.ts';
+import { customerMatch } from './search.ts';
 
 export type CustomerRow = typeof customers.$inferSelect;
 
@@ -262,21 +262,7 @@ export async function listCustomers(
   if (options.includeArchived !== true) conditions.push(isNull(customers.archivedAt));
 
   const q = options.q?.trim() ?? '';
-  if (q !== '') {
-    const byName = ilike(customers.displayName, `%${escapeLike(q)}%`);
-    const digits = q.replace(/\D/g, '');
-    conditions.push(
-      digits.length >= 3
-        ? or(
-            byName,
-            sql`exists (
-              select 1 from jsonb_array_elements(${customers.phones}) as phone(entry)
-              where regexp_replace(phone.entry->>'e164', '[^0-9]', '', 'g') like ${`%${digits}%`}
-            )`,
-          )
-        : byName,
-    );
-  }
+  if (q !== '') conditions.push(customerMatch(q));
 
   const where = and(...conditions);
   const rows = await tx

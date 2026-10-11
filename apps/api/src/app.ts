@@ -17,7 +17,9 @@ import { approvalRoutes } from './routes/approvals.ts';
 import { companyRoutes } from './routes/company.ts';
 import { customerRoutes } from './routes/customers.ts';
 import { jobRoutes } from './routes/jobs.ts';
+import { mapRoutes } from './routes/map.ts';
 import { propertyRoutes } from './routes/properties.ts';
+import { searchRoutes } from './routes/search.ts';
 import { taskRoutes } from './routes/tasks.ts';
 import { teamRoutes } from './routes/team.ts';
 import type { StepQueue } from './tasks/queue.ts';
@@ -179,6 +181,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
   app.use('/api/tasks', taskRoutes(deps));
+  app.use('/api/search', searchRoutes(deps));
+  app.use('/api/map', mapRoutes(deps));
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.
