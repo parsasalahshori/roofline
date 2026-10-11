@@ -1,0 +1,22 @@
+.bar {
+  display: block;
+  border-radius: 6px;
+  background: var(--line);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lines > .bar:last-child {
+  width: 60%;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}

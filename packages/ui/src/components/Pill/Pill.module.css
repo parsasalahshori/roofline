@@ -1,0 +1,38 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  font-family: var(--font);
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pill[data-tone="accent"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.pill[data-tone="neutral"] {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.pill:hover {
+  filter: brightness(0.94);
+}
+
+/* 40px touch targets on phone */
+@media (max-width: 767.98px) {
+  .pill {
+    min-height: 40px;
+  }
+}

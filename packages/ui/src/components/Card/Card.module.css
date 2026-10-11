@@ -1,0 +1,12 @@
+.card {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  list-style: none;
+}
+
+.card[data-padded="true"] {
+  padding: 16px;
+}

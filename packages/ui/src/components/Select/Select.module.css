@@ -1,0 +1,8 @@
+/* The look comes from Field's .control; the native arrow stays so the picker reads as a picker. */
+.select {
+  cursor: pointer;
+}
+
+.select:disabled {
+  cursor: not-allowed;
+}
