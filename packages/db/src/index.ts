@@ -81,6 +81,18 @@ export {
   type TextState,
   updateScheduledText,
 } from './repos/messages.ts';
+export {
+  type Bbox,
+  type CustomerPin,
+  type GeoJsonMultiPolygon,
+  type JobPin,
+  mapArea,
+  mapPins,
+  type PinCluster,
+  type PinLayer,
+  type PinsResult,
+  SERVER_CLUSTER_ABOVE,
+} from './repos/map.ts';
 export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './repos/paging.ts';
 export {
   AddressHasJobsError,
@@ -100,6 +112,7 @@ export {
   updateProperty,
 } from './repos/properties.ts';
 export { canSeeJobValue, customerScope, jobScope, propertyScope } from './repos/scope.ts';
+export { type SearchAddress, searchAll, type SearchCustomer, type SearchJob } from './repos/search.ts';
 export {
   claimStep,
   countWorkingTasks,
