@@ -1,5 +1,13 @@
 # Merge notes, sibling 2c (F3 Tasks 18, 19, 20; Opus contact 37, run wf_4257d0b1-5b4)
 
+| Task | Branch | Head | CI run (Platform) |
+|---|---|---|---|
+| 18 Stripe adapter and plan sync | f3-t18 | 72938ec | 38185479308 passed |
+| 19 Billing API | f3-t19 | 484c9e4 | 38185483903 passed |
+| 20 Stripe webhooks | f3-t20 | 5b22d88 | 38185489548 passed |
+
+Each head already contains f3-setup 74ee852, so merging into f3-setup (suggested order T18, T19, T20) only adds each task's own commits. The three earlier local T9 merge commits have the same tree and drop out.
+
 Each branch started from f3-setup 9a469c8 plus a local merge of f3-t9 80083cc (controller-approved). After the team run, f3-setup 74ee852 (T9 final) was merged into each branch, so the stale pgboss.test.ts expectation that failed every team CI run is gone.
 
 Sibling fix after the group check (controller rule: take the recommended option): T19 04bd44b. Checkout's 409 'You already have a plan' now applies only while hasPaymentMethod is true (active or past_due), so a canceled or trial_ended company can check out again. /plan answers 409 'Pick a plan first.' unless the subscription is live. Test added: 'a canceled company can pick a plan again, but cannot change plan'. T20 still leaves stripe_subscription_id set on subscription.deleted (the optional second half of the suggestion, not done).
