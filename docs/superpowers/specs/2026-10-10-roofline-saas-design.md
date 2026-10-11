@@ -47,7 +47,7 @@
 | Agent autonomy | **Agents draft, owner approves.** Exception: Front Desk on a live call may book inspections, answer job questions, take claim details, and text back missed callers |
 | Hail data | Free NOAA MRMS **MESH** radar grid |
 | Homes in path | The roofer's customers **plus every home** from free building/address data. **No owner names** |
-| Storm ads | The roofer connects **their own** Google Ads and Meta accounts; Roofline launches on approve |
+| Storm ads | The roofer uses **their own** Google Ads and Meta ad accounts, and ad spend is billed to their own card. They connect them **agency-style**: one accept/share click in each ads account gives Roofline access, with no keys or passwords exchanged. Roofline launches on approve |
 | Text consent | When importing, the **owner confirms** that imported customers agreed to texts. The confirmation is recorded with who confirmed it and when |
 | Measuring | **Instant estimate** (footprint × pitch) plus a one-click **exact EagleView report**, billed through Roofline |
 | Homeowner page | Pick Good/Better/Best, see financing, **e-sign**. **No deposit or payments** |
@@ -177,7 +177,7 @@
   | Purpose | Service |
   |---|---|
   | Calls and texts | **Twilio**: Voice plus ConversationRelay for the AI calls; Messaging with each roofer registered as its own 10DLC brand through Twilio's ISV flow |
-  | Ads | **Google Ads API** and **Meta Marketing API**, using each roofer's own accounts (OAuth) |
+  | Ads | **Google Ads API**: the roofer links their ads account to **Roofline's Google Ads manager account**, and Roofline calls the API as itself with one developer token. **Meta Marketing API**: the roofer shares their ad account with **Roofline's Business portfolio as a partner**, and Roofline's system user manages it. Roofline holds one approval with each platform, not one per roofer |
   | Calendars | **Google Calendar** and **Microsoft Graph** (OAuth, two-way sync) |
   | Billing | **Stripe Billing** (plans plus metered usage) |
   | Exact reports | **EagleView** (ordered on Roofline's account, re-billed) |
@@ -277,8 +277,9 @@ Every text, outbound call or ad launch passes **one service** that decides **sen
 | Anthropic API organization | All agents | Same day |
 | Twilio account set up for ISV / A2P 10DLC, plus Roofline's own brand | Texting and calls for every roofer | Brand and campaign review about 10–15 days per roofer (research, Oct 2026); privacy-policy and terms URLs required |
 | Stripe account | Billing | Days |
-| Google Cloud project: OAuth consent screen verification (Calendar, Ads scopes) and Google Ads API access | Calendar sync, storm ads | Verification can take weeks; unverified apps are capped at 100 users |
-| Meta developer app: Business Verification and Advanced Access for `ads_management` | Storm ads | Days to about 2 weeks |
+| Google Ads manager account plus developer token with **Basic access** | Storm ads on every roofer's linked account | Google lists about 2 business days for Basic. A new token is test-only until approved |
+| Google Cloud OAuth consent screen verification (**Calendar scope only**; Ads needs no per-roofer OAuth with manager linking) | Calendar sync | Can take weeks; unverified apps are capped at 100 users |
+| Meta developer app: Business Verification, plus **Advanced Access for `ads_management` and `ads_read`** (required because Roofline manages other businesses' ad accounts) | Storm ads | Days to about 2 weeks. During pilots, roofers given a role on Roofline's Meta app can likely be served with Standard access (confirm with Meta) |
 | Microsoft Entra multi-tenant app plus publisher verification | Outlook calendar sync | Days |
 | **EagleView partner/integration agreement** | Ordering on Roofline's account and re-billing roofers needs a commercial agreement | Commercial negotiation |
 | MapTiler and Geocodio accounts | Map, satellite, geocoding | Same day |

@@ -505,7 +505,7 @@ This one model powers the "need your OK" pill, the review screen (R2), the activ
 | `prices_and_tiers` | Good/Better/Best templates and pricebook | Estimator | Estimator spec |
 | `connect_calendar` | Google or Outlook | Front Desk booking, Scheduler | Core CRM spec |
 | `phone_number` | Get a number + set up forwarding from the business line | Front Desk | Front Desk spec |
-| `connect_ads` | Google Ads + Meta | Storm ads | Storm Scout spec |
+| `connect_ads` | Link their Google Ads account to Roofline's manager account, and share their Meta ad account with Roofline as a partner (guided, one accept/share click each) | Storm ads | Storm Scout spec |
 
 - **Each agent card** (in the Agents window, later) shows what it is waiting on, for example "Front Desk turns on when: phone number ✓ · texting ⏳ · calendar ✗".
 - **Not in the way:** the checklist never blocks using the app. It shows as a progress ring in the user menu until complete.
