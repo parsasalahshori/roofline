@@ -29,6 +29,8 @@ test('dock has six labeled apps that each open one window with its own URL', asy
   loginAs,
   markTodaySeen,
 }) => {
+  // Six windows open one after another (about 5 s each on a slow CI runner): more than the 30 s default.
+  test.setTimeout(60_000);
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   const viewport = page.viewportSize();
