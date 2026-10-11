@@ -3,8 +3,11 @@ import helmet from 'helmet';
 import type { Pools } from '@roofline/db';
 import type { Clock } from './clock.ts';
 import type { Config } from './config.ts';
-import { errorHandler, MESSAGES, notFoundHandler } from './errors.ts';
+import { attachSession, requireSession } from './auth/middleware.ts';
+import { authRoutes } from './auth/routes.ts';
+import { describeErrorForLog, errorHandler, MESSAGES, notFoundHandler } from './errors.ts';
 import type { Mailer } from './mailer.ts';
+import { apiRateLimit } from './rate-limit.ts';
 
 /**
  * Everything the app reaches outside itself through. Tests pass fakes for all of it.
@@ -18,9 +21,15 @@ export type AppDeps = {
 };
 
 export type AppOptions = {
-  /** Mounts extra routes after the body parser and before the 404. For tests. */
+  /**
+   * Mounts extra routes after the body parser and before the /api sign-in gate and the 404. For
+   * tests: routes mounted here need no session and are not rate limited.
+   */
   extraRoutes?: (app: Express) => void;
-  /** Called with every unexpected error (the ones answered with a 500). Defaults to console.error. */
+  /**
+   * Called with every unexpected error (the ones answered with a 500). Defaults to console.error
+   * of `describeErrorForLog`, which never prints SQL parameters.
+   */
   logError?: (err: unknown, path: string) => void;
 };
 
@@ -30,7 +39,7 @@ export const JSON_BODY_LIMIT = '256kb';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 function defaultLogError(err: unknown, path: string): void {
-  console.error(`Unhandled error on ${path}:`, err);
+  console.error(`Unhandled error on ${path}: ${describeErrorForLog(err)}`);
 }
 
 /**
@@ -66,11 +75,18 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // one form-encoded caller, and /hooks/twilio/* adds it for itself.
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
-  // Routers are mounted here as later tasks add them.
-
   options.extraRoutes?.(app);
 
+  // Everything under /api: find the session, rate limit (per session, else per IP), then refuse
+  // anyone who is not signed in. The public auth routes are the only exceptions (middleware.ts).
+  // /health and /hooks/* are not under /api, so they are never limited.
+  const logError = options.logError ?? defaultLogError;
+  app.use('/api', attachSession(deps), apiRateLimit(config), requireSession);
+
+  // Routers are mounted here as later tasks add them.
+  app.use('/api/auth', authRoutes(deps, logError));
+
   app.use(notFoundHandler);
-  app.use(errorHandler(options.logError ?? defaultLogError));
+  app.use(errorHandler(logError));
   return app;
 }

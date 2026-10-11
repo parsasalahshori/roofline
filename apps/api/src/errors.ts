@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError } from 'zod';
+import { findPgError } from '@roofline/db';
 
 /**
  * Every message below is shown to a person, so each is a plain sentence: no codes, no jargon.
@@ -12,6 +13,12 @@ export const MESSAGES = {
   unreadable: "We couldn't read that request. Please check it and try again.",
   internal: 'Something went wrong on our side. Please try again.',
   checkField: 'Please check this field.',
+  signIn: 'Please sign in.',
+  badLogin: "That email and password don't match.",
+  emailTaken: 'An account with that email already exists.',
+  noAccess: 'Your access to this company is turned off. Ask the owner to turn it back on.',
+  tooManyLogins: 'Too many sign-in attempts. Try again in a few minutes.',
+  tooFast: "You're going a little fast. Try again in a minute.",
 } as const;
 
 export type ErrorBody = { error: string; field?: string };
@@ -60,6 +67,20 @@ function bodyParserStatus(err: unknown): number | undefined {
   if (typeof type !== 'string' || typeof status !== 'number') return undefined;
   if (expose !== true || status < 400 || status > 499) return undefined;
   return status;
+}
+
+/**
+ * What may be written to the log about an unexpected error: its name, the first line of its
+ * message, and the Postgres error code behind it (`23505`). Nothing else.
+ * Drizzle's failed-query message is "Failed query: <sql>\nparams: <values>", and the values can be
+ * password hashes, token hashes or customer data, so the `params:` part is cut off before the first
+ * line is taken, and the stack (which begins with the full message) and `cause` are never printed.
+ */
+export function describeErrorForLog(err: unknown): string {
+  if (!(err instanceof Error)) return 'A non-Error value was thrown.';
+  const firstLine = (err.message.replace(/\s*params:[\s\S]*$/i, '').split('\n')[0] ?? '').trim();
+  const pg = findPgError(err);
+  return `${err.name}: ${firstLine}${pg ? ` (pg ${pg.code})` : ''}`;
 }
 
 /** Fallthrough for any request no route answered. */

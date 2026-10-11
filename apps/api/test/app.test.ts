@@ -1,11 +1,13 @@
+import { inspect } from 'node:util';
 import type { Express } from 'express';
 import request from 'supertest';
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
+import { users } from '@roofline/db';
 import { type AppOptions, createApp } from '../src/app.ts';
-import { AppError } from '../src/errors.ts';
+import { AppError, describeErrorForLog } from '../src/errors.ts';
 import { parse } from '../src/validate.ts';
-import { makeTestApp, type TestApp } from './helpers.ts';
+import { loginAs, makeTestApp, type TestApp } from './helpers.ts';
 
 const APP_ORIGIN = 'https://app.roofline.test';
 const GENERIC_500 = 'Something went wrong on our side. Please try again.';
@@ -30,14 +32,25 @@ describe('health and not found', () => {
     expect(res.body).toEqual({ ok: true });
   });
 
-  test('GET /api/nope → 404 in plain English', async () => {
-    const res = await request(t.app).get('/api/nope');
+  test('GET /api/nope → 404 in plain English (for a signed-in user; signed out it is the sign-in 401)', async () => {
+    const agent = await loginAs(t.app, t.seed.a.owner);
+    const res = await agent.get('/api/nope');
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "We couldn't find that." });
+    const signedOut = await request(t.app).get('/api/nope');
+    expect(signedOut.status).toBe(401);
+    expect(signedOut.body).toEqual({ error: 'Please sign in.' });
+  });
+
+  test('a path outside /api is a plain 404 for anyone', async () => {
+    const res = await request(t.app).get('/nope');
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: "We couldn't find that." });
   });
 
   test('an unknown POST from the app itself is a JSON 404, not an HTML page', async () => {
-    const res = await request(t.app).post('/api/nope').set('Origin', APP_ORIGIN).send({});
+    const agent = await loginAs(t.app, t.seed.a.owner);
+    const res = await agent.post('/api/nope').set('Origin', APP_ORIGIN).send({});
     expect(res.status).toBe(404);
     expect(res.headers['content-type']).toMatch(/application\/json/);
     expect(res.body).toEqual({ error: "We couldn't find that." });
@@ -78,19 +91,21 @@ describe('cross-site mutations', () => {
     expect(res.status).toBe(403);
   });
 
+  // "Allowed" means past the origin check: a signed-out request then meets the sign-in gate (401).
   test('APP_ORIGIN itself is allowed', async () => {
     const res = await request(t.app).post('/api/anything').set('Origin', APP_ORIGIN).send({});
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(401);
   });
 
   test('a request with no Origin (a script, or the Twilio webhook) is allowed', async () => {
     const res = await request(t.app).post('/api/anything').send({});
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(401);
+    expect((await request(t.app).post('/hooks/anything').send({})).status).toBe(404);
   });
 
   test('reads are not mutations, so a foreign Origin on a GET is allowed', async () => {
     const res = await request(t.app).get('/api/anything').set('Origin', 'https://evil.example');
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(401);
   });
 });
 
@@ -187,6 +202,91 @@ describe('error responses', () => {
     expect(res.body).toEqual({ error: GENERIC_500 });
     expect(res.text).not.toMatch(/23505|owner@a\.test|users_email_key|insert into/);
     expect(logError.mock.calls[0]?.[0]).toBe(wrapped);
+  });
+
+  describe('the default error log (R14: never SQL parameters)', () => {
+    const HASH = 'scrypt$16384$8$1$c2FsdHNhbHRzYWx0c2FsdA==$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2hoYQ==';
+
+    /** Everything the default logger printed, flattened to one string. */
+    async function logFor(thrown: unknown): Promise<string[]> {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const app = createApp(t.deps, {
+          extraRoutes: (a) => {
+            a.get('/api/log-me', async () => {
+              await Promise.resolve();
+              throw thrown;
+            });
+          },
+        }); // no logError option: this is the default logger
+        const res = await request(app).get('/api/log-me');
+        expect(res.status).toBe(500);
+        return spy.mock.calls.map((call) => call.map((arg) => (typeof arg === 'string' ? arg : inspect(arg))).join(' '));
+      } finally {
+        spy.mockRestore();
+      }
+    }
+
+    test('a Drizzle-style error with `params: <hash>` logs its name, first line and pg code, and no hash', async () => {
+      const pgError = Object.assign(new Error('duplicate key value violates unique constraint "users_email_unique"'), {
+        code: '23505',
+        detail: 'Key (email)=(owner@a.test) already exists.',
+      });
+      const wrapped = new Error(`Failed query: insert into "users" ("email", "password_hash") values ($1, $2)\nparams: owner@a.test,${HASH}`, {
+        cause: pgError,
+      });
+      wrapped.name = 'DrizzleQueryError';
+      const lines = await logFor(wrapped);
+      expect(lines).toEqual([
+        'Unhandled error on /api/log-me: DrizzleQueryError: Failed query: insert into "users" ("email", "password_hash") values ($1, $2) (pg 23505)',
+      ]);
+      const printed = lines.join('\n');
+      expect(printed).not.toContain(HASH);
+      expect(printed).not.toMatch(/scrypt|params|owner@a\.test|aGFzaGhh/);
+    });
+
+    test('a real failed Drizzle insert (duplicate email) logs no password hash either', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const app = createApp(t.deps, {
+          extraRoutes: (a) => {
+            a.get('/api/real-dup', async () => {
+              await t.deps.pools.system
+                .insert(users)
+                .values({ email: t.seed.a.owner.email, name: 'Dup', passwordHash: HASH });
+            });
+          },
+        });
+        const res = await request(app).get('/api/real-dup');
+        expect(res.status).toBe(500);
+        const printed = spy.mock.calls.map((call) => call.map((arg) => (typeof arg === 'string' ? arg : inspect(arg))).join(' ')).join('\n');
+        expect(printed).toContain('(pg 23505)');
+        expect(printed).toContain('Failed query');
+        expect(printed).not.toContain(HASH);
+        expect(printed).not.toContain(t.seed.a.owner.email);
+        expect(printed).not.toMatch(/params|scrypt/);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    test('a plain Error logs its name and first line only, with no stack', async () => {
+      const lines = await logFor(new TypeError('Cannot read properties of undefined\n    at secret (/srv/app/file.ts:1:1)'));
+      expect(lines).toEqual(['Unhandled error on /api/log-me: TypeError: Cannot read properties of undefined']);
+    });
+
+    test('something that is not an Error is not printed at all', async () => {
+      const lines = await logFor({ password: 'hunter2', hash: HASH });
+      expect(lines).toEqual(['Unhandled error on /api/log-me: A non-Error value was thrown.']);
+    });
+
+    test('describeErrorForLog cuts `params:` wherever it starts', () => {
+      expect(describeErrorForLog(new Error('select 1 params: a,b'))).toBe('Error: select 1');
+      expect(describeErrorForLog(new Error('select 1\r\nparams: a,b'))).toBe('Error: select 1');
+      expect(describeErrorForLog(new Error('first\nsecond'))).toBe('Error: first');
+      expect(describeErrorForLog(Object.assign(new Error('x'), { cause: { code: '23503' } }))).toBe('Error: x (pg 23503)');
+      expect(describeErrorForLog(Object.assign(new Error('x'), { cause: { code: 'ECONNRESET' } }))).toBe('Error: x');
+    });
   });
 
   test('an error thrown with a status of its own is still a 500 unless it is an AppError', async () => {
