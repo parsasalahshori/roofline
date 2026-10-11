@@ -1,0 +1,90 @@
+/* The map is the bottom layer: Window 20, dock 30, Sheet 40, toasts 50. */
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+}
+
+/* Top left, under the page's top bar. The status region is always on the page and empty (zero size, so it blocks no map clicks); a screen reader announces the banner when it is inserted. */
+.status {
+  position: absolute;
+  top: 72px;
+  left: 16px;
+  max-width: calc(100% - 32px);
+}
+
+.banner {
+  margin: 0;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-window);
+  font-size: var(--font-size-body);
+}
+
+/* Top right. The satellite switch is a ghost Button, so it gets a surface of its own to read over the map. */
+.controls {
+  position: absolute;
+  top: 72px;
+  right: 16px;
+}
+
+.controls button[data-variant="ghost"] {
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+/* Above the dock on desktop and the bottom tab bar on phone. z-index 3 lifts it over MapLibre's control corners (z-index 2), so an open attribution never covers its text or buttons. .root is its own stacking context (z-index 0), so this stays under Window 20, dock 30, Sheet 40 and toasts 50. */
+.card {
+  position: absolute;
+  bottom: 96px;
+  left: 16px;
+  width: min(360px, calc(100% - 32px));
+  z-index: 3;
+}
+
+/* On phone the zoom control and the attribution clear the bottom tab bar. */
+@media (max-width: 767.98px) {
+  .map :global(.maplibregl-ctrl-bottom-left),
+  .map :global(.maplibregl-ctrl-bottom-right) {
+    bottom: 72px;
+  }
+
+  /* Below the satellite switch (72px + its 40px + a 16px gap), so the switch never covers the text. */
+  .status {
+    top: 128px;
+  }
+
+  /* Clears the zoom control and the attribution button (the right 50px of the map) with a 16px gap: 16px left + 50px + 16px = 82px. */
+  .card {
+    width: min(360px, calc(100% - 82px));
+  }
+
+  /* MapLibre's own buttons are 29px (zoom) and 24px (attribution); on phone they are 40px touch targets. */
+  .map :global(.maplibregl-ctrl-group button) {
+    width: 40px;
+    height: 40px;
+  }
+
+  .map :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
+    padding: 10px 40px 10px 0;
+  }
+
+  .map :global(.maplibregl-ctrl-attrib.maplibregl-compact-show) {
+    padding: 10px 40px 10px 8px;
+  }
+
+  .map :global(.maplibregl-ctrl-attrib-button) {
+    width: 40px;
+    height: 40px;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+}
