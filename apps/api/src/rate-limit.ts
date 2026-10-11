@@ -15,6 +15,7 @@ const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const LOGIN_WINDOW_MS = 15 * MINUTE_MS;
 const LOGIN_ATTEMPTS = 10;
+const GOOGLE_ATTEMPTS = 20;
 const SIGNUP_PER_IP_PER_HOUR = 10;
 const RESET_REQUEST_PER_IP_PER_HOUR = 20;
 const RESET_REQUEST_PER_EMAIL_PER_HOUR = 5;
@@ -64,6 +65,25 @@ export function loginRateLimit(): RequestHandler {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? 'unknown')}|${loginEmail(req.body)}`,
+    handler: (_req, _res, next) => {
+      next(new AppError(429, MESSAGES.tooManyLogins));
+    },
+  });
+}
+
+/**
+ * `POST /api/auth/google`: 20 attempts per 15 minutes per IP address. Every attempt counts,
+ * whether it signs in, creates an account or is refused, so the limit also caps how fast an
+ * address can try credentials or probe which emails have accounts. Same sentence as login.
+ * Mount it after the JSON body parser.
+ */
+export function googleRateLimit(): RequestHandler {
+  return rateLimit({
+    windowMs: LOGIN_WINDOW_MS,
+    limit: GOOGLE_ATTEMPTS,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => `google:${ipKeyGenerator(req.ip ?? 'unknown')}`,
     handler: (_req, _res, next) => {
       next(new AppError(429, MESSAGES.tooManyLogins));
     },

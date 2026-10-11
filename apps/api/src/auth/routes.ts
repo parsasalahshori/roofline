@@ -5,26 +5,33 @@ import {
   type AuthCompany,
   type AuthUser,
   createAccount,
+  type CreatedAccount,
   deleteSession,
   deleteSessionForUser,
   EmailInUseError,
   findUserByEmail,
+  findUserByGoogleSub,
   findUserById,
   getAccountSummary,
+  GoogleSubInUseError,
+  linkGoogleAccount,
   listActiveMemberships,
   listSessions,
+  type NewAccount,
   removeAccount,
 } from '@roofline/db/system';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import type { MailMessage } from '../mailer.ts';
 import {
+  googleRateLimit,
   loginRateLimit,
   resendVerificationRateLimit,
   resetRequestRateLimit,
   signupRateLimit,
 } from '../rate-limit.ts';
 import { MAX_EMAIL_LENGTH, parse } from '../validate.ts';
+import type { GoogleClaims } from './google.ts';
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from './password.ts';
 import { clearSessionCookie, createSession, type SessionInfo, setSessionCookie } from './sessions.ts';
 import {
@@ -45,6 +52,12 @@ const PASSWORD_MESSAGE = 'Use at least 10 characters for your password.';
 const NAME_MESSAGE = 'Please enter a name.';
 const COMPANY_NAME_MESSAGE = 'Please enter your company name.';
 
+const companyName = z
+  .string({ error: COMPANY_NAME_MESSAGE })
+  .trim()
+  .min(1, COMPANY_NAME_MESSAGE)
+  .max(MAX_NAME_LENGTH, 'That company name is too long.');
+
 /** Emails are stored trimmed and lowercased, at most 254 characters; the same rule is applied wherever one is asked for. */
 const email = z
   .string({ error: EMAIL_MESSAGE })
@@ -57,11 +70,7 @@ const SignupBody = z.object({
   email,
   password: z.string({ error: PASSWORD_MESSAGE }).min(10, PASSWORD_MESSAGE),
   name: z.string({ error: NAME_MESSAGE }).trim().min(1, NAME_MESSAGE).max(MAX_NAME_LENGTH, 'That name is too long.'),
-  companyName: z
-    .string({ error: COMPANY_NAME_MESSAGE })
-    .trim()
-    .min(1, COMPANY_NAME_MESSAGE)
-    .max(MAX_NAME_LENGTH, 'That company name is too long.'),
+  companyName,
 });
 
 /** Login only needs something to look up; a malformed address is just an account that does not exist. */
@@ -73,6 +82,16 @@ const LoginBody = z.object({
     .min(1, EMAIL_MESSAGE)
     .max(MAX_EMAIL_LENGTH, EMAIL_MESSAGE),
   password: z.string({ error: 'Please enter your password.' }).min(1, 'Please enter your password.'),
+});
+
+/**
+ * Google sign-in. The company name is only needed when the person turns out to be new, which is
+ * not known until the credential has been checked, so it is validated then (see `googleAccount`),
+ * with the same rule and message as sign-up.
+ */
+const GoogleBody = z.object({
+  credential: z.string({ error: MESSAGES.googleFailed }).min(1, MESSAGES.googleFailed),
+  companyName: z.unknown().optional(),
 });
 
 /** The token from the link in an email. Whether it is any good is decided against the database. */
@@ -125,8 +144,8 @@ function signedIn(req: Request) {
 }
 
 /**
- * `/api/auth/*`: sign-up, login, logout, who-am-i, the user's own sessions, email verification and
- * password reset. Later tasks add Google sign-in and invites to this router.
+ * `/api/auth/*`: sign-up, login, Google sign-in, logout, who-am-i, the user's own sessions, email
+ * verification and password reset. A later task adds invites to this router.
  */
 export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string) => void): Router {
   const { pools, config, clock } = deps;
@@ -193,29 +212,21 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     );
   }
 
-  router.post('/signup', signupRateLimit(), async (req, res) => {
-    const body = parse(SignupBody, req.body);
-    const now = clock.now();
-    const passwordHash = await hashPassword(body.password);
-
-    // Step 1, one system transaction: the user, the company and the owner membership.
-    // The company's time zone stays at the column default; F3 sets it from the geocoded address.
-    let account;
-    try {
-      account = await createAccount(system, {
-        email: body.email,
-        name: body.name,
-        passwordHash,
-        companyName: body.companyName,
-        trialEndsAt: new Date(now.getTime() + TRIAL_DAYS * DAY_MS),
-      });
-    } catch (err) {
-      if (err instanceof EmailInUseError) throw new AppError(409, MESSAGES.emailTaken, 'email');
-      throw err;
-    }
-
-    // Step 2, in the new company's own tenant transaction: its default settings. If this fails the
-    // account from step 1 is deleted again, so no half-made account is left to block a retry.
+  /**
+   * Makes a user and their own new company, with everything a company starts with, and signs
+   * nobody in. Used by sign-up and by Google sign-in, so slugs, the trial and the cleanup are the
+   * same for both.
+   * - Step 1, one system transaction: the user, the company and the owner membership. The company's
+   *   time zone stays at the column default; F3 sets it from the geocoded address.
+   * - Step 2, in the new company's own tenant transaction: its default settings. If this fails the
+   *   account from step 1 is deleted again, so no half-made account is left to block a retry.
+   * Throws EmailInUseError / GoogleSubInUseError when the email / Google account already has a user.
+   */
+  async function createCompanyAccount(input: Omit<NewAccount, 'trialEndsAt'>, path: string): Promise<CreatedAccount> {
+    const account = await createAccount(system, {
+      ...input,
+      trialEndsAt: new Date(clock.now().getTime() + TRIAL_DAYS * DAY_MS),
+    });
     try {
       await withTenant(
         pools,
@@ -224,8 +235,25 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
       );
     } catch (err) {
       await removeAccount(system, account).catch((cleanupErr: unknown) => {
-        logError(cleanupErr, req.path);
+        logError(cleanupErr, path);
       });
+      throw err;
+    }
+    return account;
+  }
+
+  router.post('/signup', signupRateLimit(), async (req, res) => {
+    const body = parse(SignupBody, req.body);
+    const passwordHash = await hashPassword(body.password);
+
+    let account;
+    try {
+      account = await createCompanyAccount(
+        { email: body.email, name: body.name, passwordHash, companyName: body.companyName },
+        req.path,
+      );
+    } catch (err) {
+      if (err instanceof EmailInUseError) throw new AppError(409, MESSAGES.emailTaken, 'email');
       throw err;
     }
 
@@ -250,6 +278,83 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     const [company] = await listActiveMemberships(system, user.id);
     if (!company) throw new AppError(403, MESSAGES.noAccess);
 
+    await signIn(req, res, user.id, company.id);
+    res.json({ user: userBody(user), company: companyBody(company) });
+  });
+
+  /** The company a user signs in to: their oldest active membership, as in password login. None means no access. */
+  async function firstActiveCompany(userId: string): Promise<AuthCompany> {
+    const [company] = await listActiveMemberships(system, userId);
+    if (!company) throw new AppError(403, MESSAGES.noAccess);
+    return company;
+  }
+
+  /**
+   * Decides who a verified Google credential is, in this order:
+   * 1. A user already connected to this Google account (`sub`) → that user. Their stored email is
+   *    left alone even if the Google email has changed: the sub is the identity, the email is not.
+   * 2. Google has not confirmed the email → refused. This comes before any email lookup, so an
+   *    unconfirmed address can never be linked to (or used to probe for) an existing account.
+   * 3. A user with this email (case-insensitive) → connect this Google account to them and mark
+   *    their email confirmed if it was not. Refused when they are already connected to a different
+   *    Google account: a second Google account that merely shares the address does not take over.
+   *    (Already connected to this very account means another copy of this request just did it.)
+   * 4. Otherwise a new person → a new verified user with no password, and their own company
+   *    (`companyName` required).
+   * Someone with no active membership is a 403 before anything is written. The two races
+   * (the same credential sent twice at once, or another request connecting the account first)
+   * show up as GoogleSubInUseError / EmailInUseError / a link that did not apply; the answer is to
+   * look again, once, and the second look finds what the winner made.
+   */
+  async function googleAccount(
+    claims: GoogleClaims,
+    rawCompanyName: unknown,
+    path: string,
+    retry = true,
+  ): Promise<{ user: AuthUser; company: AuthCompany }> {
+    const bySub = await findUserByGoogleSub(system, claims.sub);
+    if (bySub) return { user: bySub, company: await firstActiveCompany(bySub.id) };
+
+    if (!claims.emailVerified) throw new AppError(400, MESSAGES.googleUnverified);
+
+    const googleEmail = claims.email.trim().toLowerCase();
+    try {
+      const byEmail = await findUserByEmail(system, googleEmail);
+      if (byEmail) {
+        // Connected to this very Google account a moment ago, by another copy of this request.
+        if (byEmail.googleSub === claims.sub) return { user: byEmail, company: await firstActiveCompany(byEmail.id) };
+        if (byEmail.googleSub !== null) throw new AppError(409, MESSAGES.googleOtherAccount, 'email');
+        const company = await firstActiveCompany(byEmail.id);
+        const linked = await linkGoogleAccount(system, byEmail.id, claims.sub, clock.now());
+        if (linked) return { user: linked, company };
+        // Connected to a Google account between our lookup and the link.
+      } else {
+        const { companyName: name } = parse(z.object({ companyName }), { companyName: rawCompanyName });
+        const account = await createCompanyAccount(
+          {
+            email: googleEmail,
+            name: claims.name.trim().slice(0, MAX_NAME_LENGTH) || googleEmail,
+            passwordHash: null,
+            googleSub: claims.sub,
+            emailVerifiedAt: clock.now(),
+            companyName: name,
+          },
+          path,
+        );
+        return { user: account.user, company: account.company };
+      }
+    } catch (err) {
+      if (!(err instanceof EmailInUseError || err instanceof GoogleSubInUseError)) throw err;
+    }
+    if (!retry) throw new Error('Google sign-in kept racing with another request.');
+    return googleAccount(claims, rawCompanyName, path, false);
+  }
+
+  router.post('/google', googleRateLimit(), async (req, res) => {
+    if (!config.GOOGLE_CLIENT_ID) throw new AppError(503, MESSAGES.googleNotSetUp);
+    const body = parse(GoogleBody, req.body);
+    const claims = await deps.google.verify(body.credential);
+    const { user, company } = await googleAccount(claims, body.companyName, req.path);
     await signIn(req, res, user.id, company.id);
     res.json({ user: userBody(user), company: companyBody(company) });
   });

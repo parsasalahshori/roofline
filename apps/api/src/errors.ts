@@ -24,6 +24,10 @@ export const MESSAGES = {
   linkUsed: 'That link has already been used or has expired.',
   linkIncomplete: 'That link is incomplete. Please open it again from your email.',
   verifyEmailFirst: 'Please confirm your email first. We sent you a link.',
+  googleFailed: "We couldn't sign you in with Google. Please try again.",
+  googleNotSetUp: "Google sign-in isn't set up yet.",
+  googleUnverified: "Google hasn't confirmed this email address, so we can't use it to sign in.",
+  googleOtherAccount: 'That email is already connected to a different Google account.',
 } as const;
 
 export type ErrorBody = { error: string; field?: string };

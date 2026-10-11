@@ -8,7 +8,10 @@ import {
   EmailInUseError,
   findLiveSession,
   findUserByEmail,
+  findUserByGoogleSub,
+  GoogleSubInUseError,
   insertSession,
+  linkGoogleAccount,
   removeAccount,
   renewSession,
 } from '../src/system/auth.ts';
@@ -189,6 +192,82 @@ describe('createAccount / removeAccount', () => {
     expect([await count('users'), await count('companies'), await count('memberships')]).toEqual([1, 1, 1]);
     // And the email and name can be used again.
     await expect(createAccount(system, account(2, 'Goner'))).resolves.toMatchObject({ company: { slug: 'goner' } });
+  });
+});
+
+describe('Google accounts', () => {
+  const NOW = new Date('2026-03-01T12:00:00Z');
+
+  test('createAccount can make a Google user: no password, the Google account set, email already confirmed', async () => {
+    const created = await createAccount(system, {
+      ...account(1),
+      passwordHash: null,
+      googleSub: 'google-sub-1',
+      emailVerifiedAt: NOW,
+    });
+    expect(created.user).toMatchObject({
+      email: 'user1@example.com',
+      passwordHash: null,
+      googleSub: 'google-sub-1',
+      emailVerifiedAt: NOW,
+    });
+    expect(await findUserByGoogleSub(system, 'google-sub-1')).toMatchObject({ id: created.user.id });
+  });
+
+  test('a password user has no Google account and an unconfirmed email until told otherwise', async () => {
+    const created = await createAccount(system, account(1));
+    expect(created.user).toMatchObject({ googleSub: null, emailVerifiedAt: null });
+  });
+
+  test('a taken Google account throws GoogleSubInUseError and leaves nothing behind', async () => {
+    await createAccount(system, { ...account(1, 'First Co'), passwordHash: null, googleSub: 'google-sub-1' });
+    await expect(
+      createAccount(system, { ...account(2, 'Second Co'), passwordHash: null, googleSub: 'google-sub-1' }),
+    ).rejects.toBeInstanceOf(GoogleSubInUseError);
+    expect([await count('users'), await count('companies'), await count('memberships')]).toEqual([1, 1, 1]);
+  });
+
+  test('findUserByGoogleSub compares the sub exactly, and finds nobody for an unknown one', async () => {
+    await createAccount(system, { ...account(1), googleSub: 'Google-Sub-1' });
+    expect(await findUserByGoogleSub(system, 'Google-Sub-1')).toMatchObject({ email: 'user1@example.com' });
+    expect(await findUserByGoogleSub(system, 'google-sub-1')).toBeNull();
+    expect(await findUserByGoogleSub(system, '')).toBeNull();
+  });
+
+  test('linkGoogleAccount connects the account and confirms an unconfirmed email at `now`', async () => {
+    const { user } = await createAccount(system, account(1));
+    const linked = await linkGoogleAccount(system, user.id, 'google-sub-1', NOW);
+    expect(linked).toMatchObject({ id: user.id, googleSub: 'google-sub-1', emailVerifiedAt: NOW });
+    expect(await findUserByGoogleSub(system, 'google-sub-1')).toMatchObject({ id: user.id, emailVerifiedAt: NOW });
+  });
+
+  test('linkGoogleAccount leaves an email that was already confirmed with its original date', async () => {
+    const earlier = new Date('2026-01-01T00:00:00Z');
+    const { user } = await createAccount(system, { ...account(1), emailVerifiedAt: earlier });
+    const linked = await linkGoogleAccount(system, user.id, 'google-sub-1', NOW);
+    expect(linked?.emailVerifiedAt).toEqual(earlier);
+    expect((await findUserByGoogleSub(system, 'google-sub-1'))?.emailVerifiedAt).toEqual(earlier);
+  });
+
+  test('linkGoogleAccount never overwrites a Google account that is already there (null, nothing changed)', async () => {
+    const { user } = await createAccount(system, { ...account(1), googleSub: 'google-sub-first' });
+    expect(await linkGoogleAccount(system, user.id, 'google-sub-second', NOW)).toBeNull();
+    expect(await linkGoogleAccount(system, user.id, 'google-sub-first', NOW)).toBeNull();
+    expect(await findUserByGoogleSub(system, 'google-sub-first')).toMatchObject({ id: user.id, emailVerifiedAt: null });
+    expect(await findUserByGoogleSub(system, 'google-sub-second')).toBeNull();
+  });
+
+  test('linkGoogleAccount: a Google account that belongs to someone else throws GoogleSubInUseError', async () => {
+    await createAccount(system, { ...account(1, 'First Co'), googleSub: 'google-sub-1' });
+    const { user } = await createAccount(system, account(2, 'Second Co'));
+    await expect(linkGoogleAccount(system, user.id, 'google-sub-1', NOW)).rejects.toBeInstanceOf(GoogleSubInUseError);
+    // The failed link did not half-confirm the email.
+    expect(await findUserByEmail(system, 'user2@example.com')).toMatchObject({ googleSub: null, emailVerifiedAt: null });
+  });
+
+  test('linkGoogleAccount: an unknown user id links nothing', async () => {
+    expect(await linkGoogleAccount(system, '00000000-0000-4000-8000-000000000000', 'google-sub-1', NOW)).toBeNull();
+    expect(await findUserByGoogleSub(system, 'google-sub-1')).toBeNull();
   });
 });
 

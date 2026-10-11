@@ -16,7 +16,10 @@ export type AuthUser = {
   id: string;
   email: string;
   name: string;
+  /** Null for someone who has only ever signed in with Google. */
   passwordHash: string | null;
+  /** The Google account (`sub`) this user signs in with, or null when none is connected. */
+  googleSub: string | null;
   emailVerifiedAt: Date | null;
 };
 
@@ -33,11 +36,20 @@ export class EmailInUseError extends Error {
   }
 }
 
+/** Thrown by `createAccount` and `linkGoogleAccount` when the Google account already belongs to a user. */
+export class GoogleSubInUseError extends Error {
+  constructor() {
+    super('That Google account is already connected to a user.');
+    this.name = 'GoogleSubInUseError';
+  }
+}
+
 const USER_COLUMNS = {
   id: users.id,
   email: users.email,
   name: users.name,
   passwordHash: users.passwordHash,
+  googleSub: users.googleSub,
   emailVerifiedAt: users.emailVerifiedAt,
 } as const;
 
@@ -45,6 +57,42 @@ const USER_COLUMNS = {
 export async function findUserByEmail(system: Db, email: string): Promise<AuthUser | null> {
   const [row] = await system.select(USER_COLUMNS).from(users).where(eq(users.email, email)).limit(1);
   return row ?? null;
+}
+
+/** The user connected to this Google account (`sub` is compared exactly), or null. */
+export async function findUserByGoogleSub(system: Db, googleSub: string): Promise<AuthUser | null> {
+  const [row] = await system.select(USER_COLUMNS).from(users).where(eq(users.googleSub, googleSub)).limit(1);
+  return row ?? null;
+}
+
+/**
+ * Connects a Google account to a user who has none yet, and marks their email confirmed at `now`
+ * if it was not (a no-op for one that was). It is one guarded UPDATE (`google_sub is null`), so a
+ * user who got a Google account a moment ago is never overwritten: that returns null and changes
+ * nothing. Throws GoogleSubInUseError when the Google account belongs to another user.
+ */
+export async function linkGoogleAccount(
+  system: Db,
+  userId: string,
+  googleSub: string,
+  now: Date,
+): Promise<AuthUser | null> {
+  try {
+    return await system.transaction(async (tx) => {
+      const [linked] = await tx
+        .update(users)
+        .set({ googleSub })
+        .where(and(eq(users.id, userId), isNull(users.googleSub)))
+        .returning(USER_COLUMNS);
+      if (!linked) return null;
+      if (linked.emailVerifiedAt !== null) return linked;
+      await tx.update(users).set({ emailVerifiedAt: now }).where(eq(users.id, userId));
+      return { ...linked, emailVerifiedAt: now };
+    });
+  } catch (err) {
+    if (isUniqueViolation(err, 'users_google_sub_unique')) throw new GoogleSubInUseError();
+    throw err;
+  }
 }
 
 export async function findUserById(system: Db, userId: string): Promise<AuthUser | null> {
@@ -72,7 +120,12 @@ export async function listActiveMemberships(system: Db, userId: string): Promise
 export type NewAccount = {
   email: string;
   name: string;
-  passwordHash: string;
+  /** Null for someone who signs in with Google only. */
+  passwordHash: string | null;
+  /** The Google account (`sub`) the user signs in with, when they came from Google. */
+  googleSub?: string;
+  /** Set when the email is already confirmed (Google confirmed it); otherwise it starts unconfirmed. */
+  emailVerifiedAt?: Date;
   companyName: string;
   trialEndsAt: Date;
 };
@@ -89,14 +142,20 @@ const SLUG_ATTEMPTS = 25;
  * Creates a user, their company (status `trial`, slug from the name) and an active owner
  * membership in ONE transaction: either all three exist afterwards or none do.
  * The company's time zone is left at the column default; F3 sets it from the geocoded address.
- * Throws EmailInUseError when the email is taken.
+ * Throws EmailInUseError when the email is taken, and GoogleSubInUseError when the Google account is.
  */
 export async function createAccount(system: Db, input: NewAccount): Promise<CreatedAccount> {
   try {
     return await system.transaction(async (tx) => {
       const [user] = await tx
         .insert(users)
-        .values({ email: input.email, name: input.name, passwordHash: input.passwordHash })
+        .values({
+          email: input.email,
+          name: input.name,
+          passwordHash: input.passwordHash,
+          googleSub: input.googleSub ?? null,
+          emailVerifiedAt: input.emailVerifiedAt ?? null,
+        })
         .returning(USER_COLUMNS);
 
       const base = slugify(input.companyName);
@@ -134,6 +193,7 @@ export async function createAccount(system: Db, input: NewAccount): Promise<Crea
     });
   } catch (err) {
     if (isUniqueViolation(err, 'users_email_unique')) throw new EmailInUseError();
+    if (isUniqueViolation(err, 'users_google_sub_unique')) throw new GoogleSubInUseError();
     throw err;
   }
 }

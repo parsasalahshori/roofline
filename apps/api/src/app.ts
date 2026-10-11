@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import type { Pools } from '@roofline/db';
 import type { Clock } from './clock.ts';
 import type { Config } from './config.ts';
+import type { GoogleVerifier } from './auth/google.ts';
 import { attachSession, requireSession } from './auth/middleware.ts';
 import { authRoutes } from './auth/routes.ts';
 import { describeErrorForLog, errorHandler, MESSAGES, notFoundHandler } from './errors.ts';
@@ -11,13 +12,15 @@ import { apiRateLimit } from './rate-limit.ts';
 
 /**
  * Everything the app reaches outside itself through. Tests pass fakes for all of it.
- * Later tasks add the Google verifier, the step queue and the SMS adapter here.
+ * Later tasks add the step queue and the SMS adapter here.
  */
 export type AppDeps = {
   pools: Pools;
   config: Config;
   mailer: Mailer;
   clock: Clock;
+  /** Checks the credential Google's sign-in button produces. Tests pass a fake that maps strings to claims. */
+  google: GoogleVerifier;
   /**
    * Called with the promise of every piece of work the app starts after it has already answered
    * (the emails behind reset-request, for example). The promise never rejects: failures are logged.

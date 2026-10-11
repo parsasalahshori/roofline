@@ -1,5 +1,6 @@
 import { createPools } from '@roofline/db';
 import { createApp } from './app.ts';
+import { JoseGoogleVerifier } from './auth/google.ts';
 import { systemClock } from './clock.ts';
 import { ConfigError, loadConfig } from './config.ts';
 import { ConsoleMailer, type Mailer, PostmarkMailer } from './mailer.ts';
@@ -33,7 +34,12 @@ if (config.POSTMARK_TOKEN && config.MAIL_FROM) {
   mailer = new ConsoleMailer(config.NODE_ENV !== 'production');
 }
 
-const app = createApp({ pools, config, mailer, clock: systemClock });
+if (!config.GOOGLE_CLIENT_ID && config.NODE_ENV === 'production') {
+  console.warn('GOOGLE_CLIENT_ID is not set: Sign in with Google is off.');
+}
+const google = new JoseGoogleVerifier(config.GOOGLE_CLIENT_ID);
+
+const app = createApp({ pools, config, mailer, clock: systemClock, google });
 
 // Express 5 calls this once, with the error as its argument if listening failed (port in use).
 const server = app.listen(config.PORT, config.HOST, (err?: Error) => {
