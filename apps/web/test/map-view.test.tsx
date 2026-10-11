@@ -30,6 +30,10 @@ const fake = vi.hoisted(() => {
     private sources = new Map<string, FakeSource>();
     private layers = new Map<string, FakeLayer>();
     private listeners: Listener[] = [];
+    /** What queryRenderedFeatures answers (the features under a click). */
+    rendered: unknown[] = [];
+    queryRenderedFeatures = vi.fn(() => this.rendered);
+    project = ([lng, lat]: [number, number]) => ({ x: lng, y: lat });
 
     constructor(options: Record<string, unknown>) {
       if (FakeMap.failToCreate) throw new Error('Failed to initialize WebGL');
@@ -394,21 +398,23 @@ describe('MapView', () => {
     const map = lastMap();
 
     act(() => {
-      map.emit('click', 'jobs', {
-        features: [
-          {
-            properties: {
-              kind: 'job',
-              id: 'job-1',
-              name: 'Ada Lovelace',
-              addressLine: '12 Oak St',
-              stage: 'proposal',
-              stageLabel: 'Proposal',
-            },
-            geometry: { type: 'Point', coordinates: [-96.8, 32.9] },
-          },
-        ],
-      });
+      map.emit('style.load');
+    });
+    map.rendered = [
+      {
+        properties: {
+          kind: 'job',
+          id: 'job-1',
+          name: 'Ada Lovelace',
+          addressLine: '12 Oak St',
+          stage: 'proposal',
+          stageLabel: 'Proposal',
+        },
+        geometry: { type: 'Point', coordinates: [-96.8, 32.9] },
+      },
+    ];
+    act(() => {
+      map.emit('click', { point: { x: -96.8, y: 32.9 }, lngLat: { lng: -96.8, lat: 32.9 } });
     });
 
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();

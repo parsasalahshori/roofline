@@ -1,12 +1,15 @@
 import { Dock, type DockItem } from '@roofline/ui';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useApprovals, useAttentionCount } from '../api/hooks.ts';
 import { dock, WINDOW_COPY } from '../copy/dock.ts';
 import { type AppKey, DOCK_APPS } from './apps.ts';
 import { countedDrafts } from './countedDrafts.ts';
+import { BottomTabs } from './phone/BottomTabs.tsx';
+import { MoreSheet } from './phone/MoreSheet.tsx';
 import styles from './Shell.module.css';
 import { ShellTopBar } from './topbar/ShellTopBar.tsx';
+import { useIsPhone } from './useIsPhone.ts';
 
 // The map (MapLibre, about 1 MB) loads in its own chunk, after the shell has rendered
 const MapView = lazy(() => import('./map/MapView.tsx').then((m) => ({ default: m.MapView })));
@@ -30,6 +33,9 @@ export function Shell() {
   const approvals = useApprovals();
   const attention = useAttentionCount();
   const drafts = countedDrafts(approvals.data);
+  const phone = useIsPhone();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const sheetOpen = phone && moreOpen;
 
   const counts: Record<AppKey, number> = {
     storm: drafts.filter((task) => task.agent === 'storm_scout').length,
@@ -65,10 +71,21 @@ export function Shell() {
           <MapView onOpen={open} />
         </Suspense>
       </div>
-      <Outlet />
-      <div className={styles.dock}>
-        <Dock label={dock.label} items={items} />
+      <div className={styles.windows}>
+        <Outlet />
       </div>
+      {phone ? (
+        <>
+          <div className={styles.tabs}>
+            <BottomTabs onMore={() => setMoreOpen(true)} moreOpen={sheetOpen} />
+          </div>
+          <MoreSheet open={sheetOpen} onClose={() => setMoreOpen(false)} />
+        </>
+      ) : (
+        <div className={styles.dock}>
+          <Dock label={dock.label} items={items} />
+        </div>
+      )}
     </div>
   );
 }
