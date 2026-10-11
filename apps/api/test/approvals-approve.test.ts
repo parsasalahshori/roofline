@@ -875,4 +875,18 @@ describe('what F2 added to the approvals API', () => {
     const elsewhere = await owner.post('/api/customers').send({ displayName: 'x'.repeat(300 * 1024) });
     expect(elsewhere.status).toBe(413);
   });
+
+  test('a signed-out request is refused before its body is read', async () => {
+    const zero = '00000000-0000-0000-0000-000000000000';
+    // Over 1 MB: if the 1 MB parser ran before the sign-in gate this would be a 413.
+    const big = await request(t.app)
+      .patch(`/api/approvals/${zero}/steps/${zero}`)
+      .send({ version: 1, payload: { label: 'x'.repeat(1100 * 1024) } });
+    expect(big.status).toBe(401);
+    expect(big.body).toEqual({ error: 'Please sign in.' });
+
+    // Over 256 KB, under 1 MB: still a 401, not a 413.
+    const mid = await request(t.app).post(rerunUrl(zero)).send({ note: 'x'.repeat(300 * 1024) });
+    expect(mid.status).toBe(401);
+  });
 });

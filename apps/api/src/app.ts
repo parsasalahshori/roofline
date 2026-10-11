@@ -75,7 +75,8 @@ export const JSON_BODY_LIMIT = '256kb';
 /**
  * `/api/approvals` takes up to 1 MB: a text batch for 5,000 customers is about 200 KB of ids and
  * the screen sends it back whole on an edit, so a bigger plan must not meet the 256 KB cap. It is
- * parsed ahead of the global parser; a request it has read is skipped by the global one.
+ * The global parser skips /api/approvals. This parser is mounted after the sign-in gate, so a
+ * signed-out request gets its 401 before any body is read.
  */
 export const APPROVALS_JSON_BODY_LIMIT = '1mb';
 
@@ -147,8 +148,15 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/hooks/twilio', twilioHooks(deps));
   // JSON only. `express.urlencoded` is deliberately not mounted here: Twilio's webhooks are the
   // one form-encoded caller, and /hooks/twilio/* adds it for itself.
-  app.use('/api/approvals', express.json({ limit: APPROVALS_JSON_BODY_LIMIT }));
-  app.use(express.json({ limit: JSON_BODY_LIMIT }));
+  const globalJson = express.json({ limit: JSON_BODY_LIMIT });
+  // /api/approvals is left unparsed here: it gets its own 1 MB parser after the sign-in gate below.
+  app.use((req, res, next) => {
+    if (/^\/api\/approvals(?:\/|$)/i.test(req.path)) {
+      next();
+      return;
+    }
+    globalJson(req, res, next);
+  });
 
   options.extraRoutes?.(app);
 
@@ -157,6 +165,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // /health and /hooks/* are not under /api, so they are never limited.
   const logError = options.logError ?? logErrorToConsole;
   app.use('/api', attachSession(deps), apiRateLimit(config), requireSession);
+  // Signed-in requests only: a signed-out one was already refused above, before any body was read.
+  app.use('/api/approvals', express.json({ limit: APPROVALS_JSON_BODY_LIMIT }));
 
   // Routers are mounted here as later tasks add them.
   app.use('/api/auth', authRoutes(deps, logError));
