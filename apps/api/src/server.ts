@@ -1,6 +1,7 @@
 import { createApp } from './app.ts';
 import { buildDeps, loadConfigOrExit } from './deps.ts';
 import { describeErrorForLog } from './errors.ts';
+import { ensureJobQueues, PgBossJobs } from './jobs/queue.ts';
 import { createBoss, ensureStepQueue, PgBossQueue, SENDER_OPTIONS } from './tasks/pgboss-queue.ts';
 
 /**
@@ -18,12 +19,13 @@ const boss = createBoss(config.DATABASE_URL_SYSTEM, SENDER_OPTIONS);
 try {
   await boss.start();
   await ensureStepQueue(boss);
+  await ensureJobQueues(boss);
 } catch (err) {
   console.error(`Could not set up the job queue: ${describeErrorForLog(err)}`);
   process.exit(1);
 }
 
-const deps = buildDeps(config, new PgBossQueue(boss));
+const deps = buildDeps(config, new PgBossQueue(boss), new PgBossJobs(boss));
 if (!config.GOOGLE_CLIENT_ID && config.NODE_ENV === 'production') {
   console.warn('GOOGLE_CLIENT_ID is not set: Sign in with Google is off.');
 }
