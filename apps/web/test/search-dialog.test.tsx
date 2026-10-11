@@ -45,7 +45,7 @@ afterEach(() => {
 function renderPage(path = '/') {
   return renderAt(
     <>
-      <input aria-label='field' />
+      <input aria-label="field" />
       <SearchDialog />
     </>,
     path,

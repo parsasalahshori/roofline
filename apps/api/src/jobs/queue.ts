@@ -49,14 +49,14 @@ export type JobHandlers = Record<JobName, (deps: AppDeps, data: JobData, meta: J
  * send whose `singletonKey` matches a job still waiting is recorded but not queued (the way pg-boss
  * drops a duplicate on a singleton-key policy). `drain` runs the waiting jobs in order, including
  * any sent while it drains. A job that throws goes to the back of the line with its next attempt
- * number, the way pg-boss retries it. Its fifth run is the last (`lastAttempt` is true there); a
- * throw on it goes to `errors`. It stops with an error after `maxRuns` runs, so a job that never
+ * number, the way pg-boss retries it. Every throw goes to `errors`. Its fifth run is the last
+ * (`lastAttempt` is true there); a job that throws on it is dropped. It stops with an error after `maxRuns` runs, so a job that never
  * settles cannot hang a test.
  */
 export class InlineJobs implements JobQueue {
   /** Every `send` call, in order. Retries are not calls. */
   readonly sent: { name: JobName; data: JobData; singletonKey?: string }[] = [];
-  /** The errors of jobs whose last attempt threw. */
+  /** Every error a handler threw, one per failed attempt. */
   readonly errors: unknown[] = [];
   private readonly waiting: WaitingJob[] = [];
 
@@ -81,11 +81,8 @@ export class InlineJobs implements JobQueue {
         await handlers[job.name](deps, job.data, meta);
       } catch (err) {
         lastError = err;
-        if (meta.lastAttempt) {
-          this.errors.push(err);
-        } else {
-          this.waiting.push({ ...job, attempt: job.attempt + 1 });
-        }
+        this.errors.push(err);
+        if (!meta.lastAttempt) this.waiting.push({ ...job, attempt: job.attempt + 1 });
       }
     }
   }

@@ -37,8 +37,8 @@ export function UserMenu() {
   return (
     <div ref={rootRef} className={styles.root}>
       <Button
-        variant='ghost'
-        aria-haspopup='true'
+        variant="ghost"
+        aria-haspopup="true"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={styles.trigger}
@@ -48,7 +48,7 @@ export function UserMenu() {
       </Button>
       {open && !phone ? (
         <div ref={popoverRef} tabIndex={-1} className={styles.popover}>
-          <Card as='section' padded={false} aria-label={shell.menuLabel}>
+          <Card as="section" padded={false} aria-label={shell.menuLabel}>
             <MenuList account={account} close={close} />
           </Card>
         </div>
@@ -72,19 +72,19 @@ function MenuList({ account, close }: { account: Account; close: () => void }) {
   return (
     <ul className={styles.list}>
       <li>
-        <Button variant='ghost' href='/today' onClick={close} className={styles.item}>
+        <Button variant="ghost" href="/today" onClick={close} className={styles.item}>
           {shell.myDay}
         </Button>
       </li>
       <li>
-        <Button variant='ghost' href='/settings/company' onClick={close} className={styles.item}>
+        <Button variant="ghost" href="/settings/company" onClick={close} className={styles.item}>
           {shell.settings}
         </Button>
       </li>
       {others.map((company) => (
         <li key={company.id}>
           <Button
-            variant='ghost'
+            variant="ghost"
             busy={switchCompany.isPending}
             className={styles.item}
             onClick={() =>
@@ -104,7 +104,7 @@ function MenuList({ account, close }: { account: Account; close: () => void }) {
       ))}
       <li>
         <Button
-          variant='ghost'
+          variant="ghost"
           busy={signOut.isPending}
           className={styles.item}
           onClick={() =>

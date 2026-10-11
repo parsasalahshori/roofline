@@ -22,7 +22,8 @@
     "dev:worker": "npm run dev -w @roofline/worker",
     "dev:api": "npm run dev -w @roofline/api",
     "dev:web": "npm run dev -w @roofline/web",
-    "build:web": "npm run build -w @roofline/web"
+    "build:web": "npm run build -w @roofline/web",
+    "e2e": "npm run e2e -w @roofline/web --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
