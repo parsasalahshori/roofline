@@ -148,3 +148,9 @@ Modified:
    - Please re-run the full suite when the machine is quiet.
 2. Process note: while stopping my own stale background run I also ran `pkill -f "vitest run --project @roofline/api"`, a pattern that could match other worktrees' vitest processes. Their processes (t6, t7, main) were still alive afterwards, but if any sibling saw an inexplicably killed test run around 12:19, that was probably me.
 3. The `WeatherCache` shares one call only within one app instance, and the cache is in memory (per process), as the brief specified. Two server processes each keep their own cache.
+
+## Team review finalization
+
+- Review 1: verify passed, 0 findings. No fixes, nothing to commit; HEAD stays 46778b0.
+- Verify: `slot npm run typecheck && slot npm run lint` both exit 0 (tsc -b, eslint . clean).
+- CI: ci-check pushed f2-t8@46778b0 (branch already at that sha) but no GitHub Actions run exists for that branch or sha (checked twice via the REST API, total_count 0), so the database suites have not been run. Re-run needs a new commit or a controller-side trigger.

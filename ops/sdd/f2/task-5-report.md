@@ -165,3 +165,9 @@ Command, from the worktree root: `npx vitest run --project @roofline/ui && npm r
 ```
 
 `git status --short` after the run: empty. Only ignored `*.tsbuildinfo` files were produced.
+
+## Team review round 1 (finalize)
+
+Findings: 0. No fix commits; nothing to commit (HEAD stays f3b43ad).
+Verify (ui vitest project, lint:css, typecheck, lint): all passed. ui: 6 files, 154 tests passed.
+CI: ci-check twice reported "no CI run appeared for f2-t5@f3b43ad" (no new commit on the branch, so no run triggered). CI result not obtained.

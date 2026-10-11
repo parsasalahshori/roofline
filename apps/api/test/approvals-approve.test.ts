@@ -821,3 +821,72 @@ describe('two approvals that really overlap', () => {
     expect(await statuses(taskId)).toEqual(['pending', 'pending', 'pending']);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+
+describe('what F2 added to the approvals API', () => {
+  const rerunUrl = (taskId: string) => `/api/approvals/${taskId}/rerun`;
+
+  test('carries the plan it was rerun from', async () => {
+    const { taskId } = await demo();
+    await setTask(t, 'a', taskId, { status: 'expired' });
+    const owner = await actors.as('owner');
+
+    const rerun = await owner.post(rerunUrl(taskId)).send();
+    expect(rerun.status).toBe(201);
+    expect(rerun.body.id).not.toBe(taskId);
+    expect(rerun.body.rerunOfTaskId).toBe(taskId);
+
+    // The same link on the detail view and on the list the Approvals window reads.
+    expect((await owner.get(`/api/approvals/${rerun.body.id}`)).body.rerunOfTaskId).toBe(taskId);
+    const { taskId: ordinaryId } = await demo();
+    const list = (await owner.get('/api/approvals')).body.tasks as { id: string; rerunOfTaskId: string | null }[];
+    expect(list.find((x) => x.id === rerun.body.id)?.rerunOfTaskId).toBe(taskId);
+    // An ordinary task, and the expired plan itself, have no link.
+    expect(list.find((x) => x.id === ordinaryId)?.rerunOfTaskId).toBeNull();
+    expect((await owner.get(`/api/approvals/${ordinaryId}`)).body.rerunOfTaskId).toBeNull();
+    expect((await owner.get(`/api/approvals/${taskId}`)).body.rerunOfTaskId).toBeNull();
+  });
+
+  test('accepts an edit body over 256 KB on approvals', async () => {
+    const { taskId } = await newTask(t, 'a');
+    const [message] = await dbSteps(t, 'a', taskId);
+    // 300 KB of one string: past the global 256 KB limit, so only the approvals' own 1 MB limit lets it reach the step's validation.
+    const res = await (await actors.as('owner'))
+      .patch(`/api/approvals/${taskId}/steps/${message!.id}`)
+      .send({ version: 1, payload: { label: 'x'.repeat(300 * 1024) } });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'Please keep the label to 200 characters or fewer.' });
+    expect(res.body.field).toMatch(/^payload/);
+    expect((await dbSteps(t, 'a', taskId))[0]).toMatchObject({ version: 1 });
+  });
+
+  test('still refuses a body over 1 MB on approvals, and over 256 KB everywhere else', async () => {
+    const { taskId } = await newTask(t, 'a');
+    const [message] = await dbSteps(t, 'a', taskId);
+    const owner = await actors.as('owner');
+
+    const huge = await owner
+      .patch(`/api/approvals/${taskId}/steps/${message!.id}`)
+      .send({ version: 1, payload: { label: 'x'.repeat(1100 * 1024) } });
+    expect(huge.status).toBe(413);
+    expect(huge.body).toEqual({ error: 'That request was too large.' });
+
+    const elsewhere = await owner.post('/api/customers').send({ displayName: 'x'.repeat(300 * 1024) });
+    expect(elsewhere.status).toBe(413);
+  });
+
+  test('a signed-out request is refused before its body is read', async () => {
+    const zero = '00000000-0000-0000-0000-000000000000';
+    // Over 1 MB: if the 1 MB parser ran before the sign-in gate this would be a 413.
+    const big = await request(t.app)
+      .patch(`/api/approvals/${zero}/steps/${zero}`)
+      .send({ version: 1, payload: { label: 'x'.repeat(1100 * 1024) } });
+    expect(big.status).toBe(401);
+    expect(big.body).toEqual({ error: 'Please sign in.' });
+
+    // Over 256 KB, under 1 MB: still a 401, not a 413.
+    const mid = await request(t.app).post(rerunUrl(zero)).send({ note: 'x'.repeat(300 * 1024) });
+    expect(mid.status).toBe(401);
+  });
+});

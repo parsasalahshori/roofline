@@ -76,3 +76,9 @@ After the later edits (docs, approvals-edit fix), via my own container (see belo
 - `README` "Map tiles" bullet restates the global constraint (`VITE_MAPTILER_KEY`, `VITE_MAP_TILES=osm`, blank style otherwise); the map code is another task.
 - The F1 flake (`rep-visibility.test.ts:400`) did not show up in the final run.
 - Nothing outside the brief's file list was touched (plus `approvals-edit.test.ts`, one line, forced by the new field).
+
+## Team review finalization (commit 83a6b46)
+- Package apps/api: app.ts (approvals body limit applied only after the session gate; signed-out gets default small limit and 401 first) and test/approvals-approve.test.ts (+14 lines).
+- Review 1: 2 findings; contact check: F1 amended, F2 amended (both fixed in 83a6b46). Review 2: 0 findings.
+- Verify: npm run typecheck and npm run lint passed clean.
+- CI run 38178972637: Platform job success; v1 (node:test) job failed, the known pre-existing empty v1 data file on older task branches (not this task's). ci-check's script printed a shell parse error at line 47 while watching, so the result was confirmed via gh.
