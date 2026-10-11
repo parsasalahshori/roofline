@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 import { cx } from '../../cx.ts';
 import { Pressable } from '../../pressable.tsx';
 import styles from './IconButton.module.css';
@@ -9,6 +9,8 @@ export type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'chi
   icon: ReactNode;
   /** Draws a link instead of a button. */
   href?: string;
+  /** The rendered button, or the anchor when there is an href. */
+  ref?: Ref<HTMLButtonElement | HTMLAnchorElement>;
 };
 
 export function IconButton({ label, icon, className, ...rest }: IconButtonProps) {

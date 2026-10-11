@@ -1,6 +1,8 @@
-import { createContext, useContext, type AnchorHTMLAttributes, type ComponentType, type ReactNode } from 'react';
+import { createContext, useContext, type AnchorHTMLAttributes, type ComponentType, type ReactNode, type Ref } from 'react';
 
-export type UiLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string };
+// `ref` is an ordinary prop in React 19, so it reaches the provided component with the rest. An adapter
+// that spreads its props onto the router's Link passes it on to the <a>.
+export type UiLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; ref?: Ref<HTMLAnchorElement> };
 export type UiLinkComponent = ComponentType<UiLinkProps>;
 
 const UiLinkContext = createContext<UiLinkComponent | null>(null);

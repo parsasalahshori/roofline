@@ -15,6 +15,9 @@
   /* Never a text colour or under white text (3.4:1). Use it for dots, icons and bars. */
   --success: #2f9e44;
   --danger: #e03131;
+  /* The danger button's text and hover fill. White on --danger-hover is above 4.5:1, which a brightness filter on --danger is not. */
+  --on-danger: #ffffff;
+  --danger-hover: #c92a2a;
   --line: #eee5cf;
 
   /* Shape */

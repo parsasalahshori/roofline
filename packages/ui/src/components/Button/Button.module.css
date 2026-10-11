@@ -38,7 +38,7 @@
 /* White on --danger is 4.5:1 only at full white and bold, so this is the one place for it. */
 .button[data-variant="danger"] {
   background: var(--danger);
-  color: #fff;
+  color: var(--on-danger);
   font-weight: 700;
 }
 
@@ -46,8 +46,12 @@
   background: var(--line);
 }
 
-.button[data-variant="primary"]:hover,
+/* Danger changes only its fill on hover: a filter would dim the white text below 4.5:1 as well. */
 .button[data-variant="danger"]:hover {
+  background: var(--danger-hover);
+}
+
+.button[data-variant="primary"]:hover {
   filter: brightness(0.94);
 }
 
@@ -57,9 +61,14 @@
   cursor: not-allowed;
 }
 
-.button:disabled:hover,
-.button[aria-disabled="true"]:hover {
+.button[data-variant="primary"]:disabled:hover,
+.button[data-variant="primary"][aria-disabled="true"]:hover {
   filter: none;
+}
+
+.button[data-variant="danger"]:disabled:hover,
+.button[data-variant="danger"][aria-disabled="true"]:hover {
+  background: var(--danger);
 }
 
 .button[data-variant="ghost"]:disabled:hover,

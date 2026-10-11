@@ -13,6 +13,8 @@ export const tokens = {
   'accent-ink': '#2b2620',
   success: '#2f9e44',
   danger: '#e03131',
+  'on-danger': '#ffffff',
+  'danger-hover': '#c92a2a',
   line: '#eee5cf',
   'radius-card': '12px',
   'radius-window': '14px',

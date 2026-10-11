@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import styles from './Toggle.module.css';
 
 export type ToggleProps = {
@@ -8,11 +9,13 @@ export type ToggleProps = {
   /** Keep the label for assistive tech but do not draw it. */
   labelHidden?: boolean;
   disabled?: boolean;
+  ref?: Ref<HTMLButtonElement>;
 };
 
-export function Toggle({ checked, onChange, label, labelHidden = false, disabled = false }: ToggleProps) {
+export function Toggle({ checked, onChange, label, labelHidden = false, disabled = false, ref }: ToggleProps) {
   return (
     <button
+      ref={ref}
       type="button"
       role="switch"
       aria-checked={checked}

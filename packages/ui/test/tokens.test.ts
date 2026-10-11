@@ -27,6 +27,9 @@ const EXPECTED: ReadonlyArray<readonly [string, string]> = [
   ['--accent-ink', '#2b2620'],
   ['--success', '#2f9e44'],
   ['--danger', '#e03131'],
+  // The danger button's text and hover fill: white on --danger-hover stays above 4.5:1 (--danger itself is left alone).
+  ['--on-danger', '#ffffff'],
+  ['--danger-hover', '#c92a2a'],
   ['--line', '#eee5cf'],
   ['--radius-card', '12px'],
   ['--radius-window', '14px'],

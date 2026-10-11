@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, TextareaHTMLAttributes } from 'react';
+import type { InputHTMLAttributes, Ref, TextareaHTMLAttributes } from 'react';
 import { cx } from '../../cx.ts';
 import { FieldMessages, useFieldA11y } from './fieldParts.tsx';
 import styles from './Field.module.css';
@@ -10,6 +10,8 @@ export type FieldProps = InputHTMLAttributes<HTMLInputElement> & {
   /** A textarea instead of an input. Handlers still receive the change event; read event.target.value. */
   multiline?: boolean;
   rows?: number;
+  /** The input, or the textarea when multiline. */
+  ref?: Ref<HTMLInputElement | HTMLTextAreaElement>;
 };
 
 /**
@@ -23,6 +25,7 @@ export function Field({
   multiline = false,
   rows = 3,
   type,
+  ref,
   id: idProp,
   className,
   style,
@@ -43,9 +46,14 @@ export function Field({
         {label}
       </label>
       {multiline ? (
-        <textarea {...(rest as TextareaHTMLAttributes<HTMLTextAreaElement>)} {...control} rows={rows} />
+        <textarea
+          {...(rest as TextareaHTMLAttributes<HTMLTextAreaElement>)}
+          {...control}
+          ref={ref as Ref<HTMLTextAreaElement> | undefined}
+          rows={rows}
+        />
       ) : (
-        <input {...rest} {...control} type={type} />
+        <input {...rest} {...control} ref={ref as Ref<HTMLInputElement> | undefined} type={type} />
       )}
       <FieldMessages help={help} helpId={a11y.helpId} error={error} errorId={a11y.errorId} />
     </div>

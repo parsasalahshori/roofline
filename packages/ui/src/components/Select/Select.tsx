@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import { cx } from '../../cx.ts';
 import fieldStyles from '../Field/Field.module.css';
 import { FieldMessages, useFieldA11y } from '../Field/fieldParts.tsx';
@@ -15,10 +16,22 @@ export type SelectProps = {
   disabled?: boolean;
   id?: string;
   className?: string;
+  ref?: Ref<HTMLSelectElement>;
 };
 
 /** A labelled native <select>, so the platform picker and keyboard handling come for free. */
-export function Select({ label, value, onChange, options, help, error, disabled = false, id: idProp, className }: SelectProps) {
+export function Select({
+  label,
+  value,
+  onChange,
+  options,
+  help,
+  error,
+  disabled = false,
+  id: idProp,
+  className,
+  ref,
+}: SelectProps) {
   const a11y = useFieldA11y({ id: idProp, help, error });
 
   return (
@@ -27,6 +40,7 @@ export function Select({ label, value, onChange, options, help, error, disabled 
         {label}
       </label>
       <select
+        ref={ref}
         id={a11y.id}
         className={cx(fieldStyles.control, styles.select)}
         value={value}

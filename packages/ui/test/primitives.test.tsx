@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import {
   Avatar,
@@ -458,5 +459,59 @@ describe('EmptyState', () => {
     const { container } = render(<EmptyState title="Nothing here" />);
     expect(screen.getByText('Nothing here')).toBeInTheDocument();
     expect(container.querySelectorAll('p')).toHaveLength(1);
+  });
+});
+
+describe('refs', () => {
+  it('reaches the rendered button through Button and the rendered input through Field', () => {
+    const buttonRef = createRef<HTMLButtonElement | HTMLAnchorElement>();
+    const fieldRef = createRef<HTMLInputElement | HTMLTextAreaElement>();
+    render(
+      <>
+        <Button ref={buttonRef}>Save</Button>
+        <Field ref={fieldRef} label="Email" />
+      </>,
+    );
+    expect(buttonRef.current).toBe(screen.getByRole('button', { name: 'Save' }));
+    expect(fieldRef.current).toBe(screen.getByLabelText('Email'));
+  });
+
+  it('reaches the anchor when Button or IconButton has an href', () => {
+    const buttonRef = createRef<HTMLButtonElement | HTMLAnchorElement>();
+    const iconRef = createRef<HTMLButtonElement | HTMLAnchorElement>();
+    render(
+      <>
+        <Button ref={buttonRef} href="/jobs">
+          Jobs
+        </Button>
+        <IconButton ref={iconRef} label="Back" icon={<svg />} href="/" />
+      </>,
+    );
+    expect(buttonRef.current).toBe(screen.getByRole('link', { name: 'Jobs' }));
+    expect(iconRef.current).toBe(screen.getByRole('link', { name: 'Back' }));
+  });
+
+  it('reaches the textarea when a Field is multiline, so the first invalid field can take focus', () => {
+    const fieldRef = createRef<HTMLInputElement | HTMLTextAreaElement>();
+    render(<Field ref={fieldRef} label="Notes" multiline />);
+    expect(fieldRef.current).toBe(screen.getByLabelText('Notes'));
+    fieldRef.current?.focus();
+    expect(screen.getByLabelText('Notes')).toHaveFocus();
+  });
+
+  it('reaches the IconButton, Toggle and Select elements', () => {
+    const iconRef = createRef<HTMLButtonElement | HTMLAnchorElement>();
+    const toggleRef = createRef<HTMLButtonElement>();
+    const selectRef = createRef<HTMLSelectElement>();
+    render(
+      <>
+        <IconButton ref={iconRef} label="Close" icon={<svg />} />
+        <Toggle ref={toggleRef} checked onChange={() => {}} label="Text customers" />
+        <Select ref={selectRef} label="Role" value="a" onChange={() => {}} options={[{ value: 'a', label: 'A' }]} />
+      </>,
+    );
+    expect(iconRef.current).toBe(screen.getByRole('button', { name: 'Close' }));
+    expect(toggleRef.current).toBe(screen.getByRole('switch', { name: 'Text customers' }));
+    expect(selectRef.current).toBe(screen.getByLabelText('Role'));
   });
 });
