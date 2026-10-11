@@ -13,3 +13,6 @@ Merged into f3-setup: fb3db4c (T1), a23bf2a (T2), d629c74 (T8); typecheck clean;
 Sibling 2 (session_01NbXKpWjMvEQwTqNmQCt6wp): F3 T3, T4, T5 from f3-setup d629c74 (contacts 31-33); reports + merge notes on branch ops-sib2.
 Sibling 3 (session_01RypesnL2fbawyJH5HtdS7E): F3 T6, T10 from f3-setup d629c74, then T11 stacked on f3-t10 (contacts 41-44); reports + merge notes on branch ops-sib3.
 Held for the controller: T7 (needs T5 + T6, Ruling T); T9 API skeleton (needs F2 T6-T9 in f2-shell, then f2-shell into f3-setup).
+Group D (wf_97a6d639-216, contact 10): T12 10693ab already complete; review clean; CI 38177661676 green after one re-run of the rep-visibility flake. Task 12: complete (7b4e8b4..10693ab). Merged into f3-setup 4633b10 (typecheck clean).
+Carry to Task 13: keep `if (!(await lease.keep())) return { status: 'running', result: {} };` as the first statement in send-batch.ts's per-customer loop; branch T13 from f3-setup after 4633b10.
+Hazard: editing an ops/bin script in place while an agent runs it breaks that run (bash reads scripts incrementally). Replace scripts atomically (write a temp file, then mv).
