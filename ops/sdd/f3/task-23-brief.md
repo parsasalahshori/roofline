@@ -1,17 +1,17 @@
 ### Task 23: Import API: upload, mapping, preview, start, skipped rows
 
-**Base:** `f3-setup` after Tasks 9 and **7** are merged (sibling team building T7 now). From T6: `parseUpload`, `ImportFileError` (`imports/parse.ts`), `autoMap` (`imports/mapping.ts`), shared `ImportMapping`, `ImportCounts`, `ImportView`, `ImportPreviewRow`, `IMPORT_FIELDS`, `MAX_IMPORT_ROWS`. From T7: `normalizeRow` (`imports/normalize.ts`), `planImport`, `previewRows`, `ExistingIndex`, `ExistingCustomer`, `ImportPlan` (`imports/plan.ts`), shared `consentAttestationText`, and the test fixture `buildImportFixture()` (`apps/api/test/fixtures/import-1000.ts`). From T9: stub `apps/api/src/routes/imports.ts` (`importRoutes(deps): Router`, mounted at `/api/imports`; **may not** import `@roofline/db/system`), `deps.jobs` (`TestApp.jobs` = `InlineJobs`). From T1: `imports`/`import_rows` tables (columns above in `schema/tenant.ts`), GIN indexes `customers_phones_gin` (`jsonb_path_ops`) and `customers_emails_gin`, placeholder `packages/db/src/repos/imports.ts` (in the barrel). `requireCapability('import')` (owner only).
+**Base:** `f3-setup` at `9760679` or later (Tasks 7 and 9 are merged). From T6: `parseUpload`, `ImportFileError` (`imports/parse.ts`), `autoMap` (`imports/mapping.ts`), shared `ImportMapping`, `ImportCounts`, `ImportView`, `ImportPreviewRow`, `IMPORT_FIELDS`, `MAX_IMPORT_ROWS`. From T7: `normalizeRow` (`imports/normalize.ts`), `planImport`, `previewRows`, `ExistingIndex`, `ExistingCustomer`, `ImportPlan` (`imports/plan.ts`), shared `consentAttestationText`, and the test fixture `buildImportFixture()` (`apps/api/test/fixtures/import-1000.ts`). From T9: stub `apps/api/src/routes/imports.ts` (`importRoutes(deps): Router`, mounted at `/api/imports`; **may not** import `@roofline/db/system`), `deps.jobs` (`TestApp.jobs` = `InlineJobs`). From T1: `imports`/`import_rows` tables (columns above in `schema/tenant.ts`), GIN indexes `customers_phones_gin` (`jsonb_path_ops`) and `customers_emails_gin`, placeholder `packages/db/src/repos/imports.ts` (in the barrel). `requireCapability('import')` (owner only).
 
 **Split:**
-- Builder 1: `packages/db/src/repos/imports.ts`.
+- Builder 1: the type move (`packages/shared/src/imports.ts`, `imports/{normalize,plan}.ts` re-exports) first, then `packages/db/src/repos/imports.ts`.
 - Builder 2: `apps/api/src/imports/preview.ts` and `apps/api/src/imports/skipped-csv.ts`.
 - Builder 3: `apps/api/src/routes/imports.ts` and the tests.
 
 **Files:**
 - Create: `apps/api/src/imports/preview.ts`, `apps/api/src/imports/skipped-csv.ts`
-- Modify: `packages/db/src/repos/imports.ts`, `apps/api/src/routes/imports.ts`
+- Modify: `packages/db/src/repos/imports.ts`, `apps/api/src/routes/imports.ts`, `packages/shared/src/imports.ts` (the type move), `apps/api/src/imports/{normalize,plan}.ts` (type declarations → re-exports only; no logic change)
 - Test: `apps/api/test/imports-api.test.ts`, `apps/api/test/skipped-csv.test.ts`
-- Do not touch: T6/T7's `imports/{parse,mapping,normalize,plan}.ts`, `imports/run.ts` and `repos/import-apply.ts` (T24), `app.ts`.
+- Do not touch: T6's `imports/{parse,mapping}.ts` and any function in T7's `normalize.ts`/`plan.ts` (only their type declarations move), `imports/run.ts` and `repos/import-apply.ts` (T24), `app.ts`.
 
 **Interfaces:**
 ```ts
@@ -24,7 +24,7 @@ export async function setImportMapping(tx: Tx, ctx: TenantContext, id: string, m
 export async function startImport(tx: Tx, ctx: TenantContext, id: string, i: { attested: boolean; text: string | null }, now: Date): Promise<boolean>;   // uploaded → queued (sets consent_attested/consent_text/attested_by_user_id/attested_at, started_at); false otherwise
 export async function retryImport(tx: Tx, ctx: TenantContext, id: string, now: Date): Promise<boolean>;   // failed → queued, error_plain null
 export async function importCells(tx: Tx, ctx: TenantContext, id: string): Promise<string[][]>;   // in row_number order
-export async function existingIndexFor(tx: Tx, ctx: TenantContext, phones: readonly string[], emails: readonly string[]): Promise<ExistingIndex>;
+export async function existingIndexFor(tx: Tx, ctx: TenantContext, phones: readonly string[], emails: readonly string[]): Promise<ExistingIndex>;   // ExistingIndex from @roofline/shared
 export async function skippedImportRows(tx: Tx, ctx: TenantContext, id: string): Promise<{ row: number; reason: string; cells: string[] }[]>;
 export async function listImports(tx: Tx, ctx: TenantContext, limit: number): Promise<ImportRow[]>;   // newest first
 // imports/preview.ts
@@ -32,7 +32,16 @@ export async function buildImportView(tx: Tx, ctx: TenantContext, row: ImportRow
 // imports/skipped-csv.ts
 export function skippedCsv(headers: readonly string[], rows: readonly { row: number; reason: string; cells: string[] }[]): string;
 ```
-- **`ExistingIndex` type import:** `packages/db` cannot import from `apps/api`. Declare a structurally identical local type in `repos/imports.ts` (`ImportExistingIndex = { byPhone: ReadonlyMap<string, ImportExisting>; byEmail: … }`, `ImportExisting = { id; status: ConsentStatus; doNotContact; optedOut }`) and let TS check it against T7's `ExistingIndex` where `preview.ts` passes it to `planImport`.
+- **Type move (Ruling AC as overridden by the controller):** this task moves T7's four row types, **type-only**, into `packages/shared/src/imports.ts` (already in the shared barrel), verbatim:
+```ts
+import type { ExistingConsent } from './consent.ts';
+export type NormalizedRow = { displayName: string; firstName: string | null; lastName: string | null; phones: string[]; emails: string[];
+  address: { addressLine: string; city: string; state: string; zip: string } | null; notes: string | null; stage: JobStage | null };
+export type RowSkip = { skip: Exclude<SkipKey, 'duplicate'> };
+export type ExistingCustomer = ExistingConsent & { id: string };
+export type ExistingIndex = { byPhone: ReadonlyMap<string, ExistingCustomer>; byEmail: ReadonlyMap<string, ExistingCustomer> };
+```
+  In `apps/api/src/imports/normalize.ts` and `plan.ts`, delete the local declarations and re-export them: `export type { NormalizedRow, RowSkip } from '@roofline/shared';` (normalize.ts) and `export type { ExistingCustomer, ExistingIndex } from '@roofline/shared';` (plan.ts), importing them for their own use with `import type`. Existing importers (tests, T7's fixture) keep working unchanged. `packages/db` imports these types only from `@roofline/shared`; **no local copies** anywhere. `PlannedRow` and `ImportPlan` stay in `plan.ts`.
 - **`existingIndexFor`:** non-archived customers of the company where `phones @> ANY(<array of '[{"e164":"+1…"}]'::jsonb>)` or `emails ?| <text[]>` (so the GIN indexes apply; empty inputs skip that half); `optedOut` = the customer's matching phone is in `opt_outs`; `doNotContact` = `do_not_contact`; `status` = `sms_consent_status`. `byPhone` keys every e164 of each customer; `byEmail` every lowercased email.
 - **`buildImportView`:** before start (`uploaded`): `importCells` → `normalizeRow` per row with the stored mapping → `existingIndexFor` (all phones/emails of normalized rows) → `planImport(rows, index, attestedPreview)` → `counts`, `preview = previewRows(plan)`. After start: `counts` = the stored `imports.counts` (the job's), `preview` = `[]`. `progress = { processed: counts.processed ?? 0, total: rowCount }`; `skippedDownloadUrl` = `error_file_url` when `done`; dates ISO.
 - **Routes** (all `requireCapability('import')`; messages as constants in `routes/imports.ts`):

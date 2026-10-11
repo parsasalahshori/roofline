@@ -1,6 +1,6 @@
 ### Task 24: Import job: creating customers, homes and jobs
 
-**Base:** the Task 23 branch after review (or `f3-setup` once T23 is merged; T7 and T9 are then in). From T23 (`packages/db/src/repos/imports.ts`): `ImportRow`, `getImport`, `importCells`, `existingIndexFor`, `skippedImportRows`, and the routes that start/retry the job. From T7: `normalizeRow`, `NormalizedRow`, `RowSkip`, `planImport`, `ExistingCustomer` (`apps/api/src/imports/{normalize,plan}.ts`), shared `consentAttestationText`. From T9: stub `apps/api/src/imports/run.ts` (`runImport(deps, companyId, importId, meta)`, wired in `JOB_HANDLERS['import-customers']`), `JobMeta`, `deps.geocoder` (`TestApp.geocoder` = `FakeGeocoder` with `batches`; `/outage/i` gives `null` per item in a batch), `deps.jobs` (`InlineJobs.drain`, `errors`). From T1: placeholder `packages/db/src/repos/import-apply.ts` (in the barrel). `normalizeAddressKey` in `@roofline/shared`.
+**Base:** the Task 23 branch after review (or `f3-setup` once T23 is merged; T7 and T9 are then in). From T23 (`packages/db/src/repos/imports.ts`): `ImportRow`, `getImport`, `importCells`, `existingIndexFor`, `skippedImportRows`, and the routes that start/retry the job. From T7: `normalizeRow`, `planImport` (`apps/api/src/imports/{normalize,plan}.ts`); types `NormalizedRow`, `RowSkip`, `ExistingCustomer`, `ExistingIndex` from `@roofline/shared` (moved there by T23), shared `consentAttestationText`. From T9: stub `apps/api/src/imports/run.ts` (`runImport(deps, companyId, importId, meta)`, wired in `JOB_HANDLERS['import-customers']`), `JobMeta`, `deps.geocoder` (`TestApp.geocoder` = `FakeGeocoder` with `batches`; `/outage/i` gives `null` per item in a batch), `deps.jobs` (`InlineJobs.drain`, `errors`). From T1: placeholder `packages/db/src/repos/import-apply.ts` (in the barrel). `normalizeAddressKey` in `@roofline/shared`.
 
 **Split:**
 - Builder 1: `packages/db/src/repos/import-apply.ts`.
@@ -21,7 +21,7 @@ export async function hasPlannedSkips(tx: Tx, ctx: TenantContext, id: string): P
 export async function writePlannedSkips(tx: Tx, ctx: TenantContext, id: string, skips: readonly { row: number; reason: string }[]): Promise<void>;   // outcome 'skipped', reason
 export async function nextImportChunk(tx: Tx, ctx: TenantContext, id: string, size: number): Promise<{ rowNumber: number; cells: string[] }[]>;   // outcome null, row order
 export type ChunkWrite = { rows: { rowNumber: number; normalized: NormalizedRow; match: ExistingCustomer | null; consent: ConsentStatus; consentChanged: boolean;
-  geo: GeocodeResult | null }[]; createJobs: boolean; fileName: string; attested: { userId: string; text: string } | null; importId: string; createdByUserId: string | null };
+  geo: { lng: number; lat: number; timezone: string | null; accuracy: number; source: string } | null }[]; createJobs: boolean; fileName: string; attested: { userId: string; text: string } | null; importId: string; createdByUserId: string | null };
 export async function applyImportChunk(tx: Tx, ctx: TenantContext, w: ChunkWrite, now: Date): Promise<{ created: number; updated: number; jobs: number; located: number; notLocated: number }>;
 export async function saveImportProgress(tx: Tx, ctx: TenantContext, id: string, counts: ImportCounts, now: Date): Promise<void>;
 export async function finishImport(tx: Tx, ctx: TenantContext, id: string, counts: ImportCounts, now: Date): Promise<void>;
@@ -29,7 +29,7 @@ export async function failImport(tx: Tx, ctx: TenantContext, id: string, errorPl
 // imports/run.ts
 export async function runImport(deps: AppDeps, companyId: string, importId: string, meta: JobMeta): Promise<void>;
 ```
-- **Layer note:** `packages/db` cannot import from `apps/api`. Declare `NormalizedRow`, `ExistingCustomer` and `GeocodeResult`-shaped local types in `import-apply.ts` (structurally identical; TS checks the call in `run.ts`), or move only the type declarations — do not move T7's functions.
+- **Types:** `NormalizedRow`, `ExistingCustomer` (and `RowSkip`, `ExistingIndex`) come from `@roofline/shared` — T23 moved them there type-only; `import-apply.ts` imports them from `@roofline/shared`, with no local copies. `GeocodeResult` is an `apps/api` type, so `ChunkWrite.rows[].geo` is declared in `import-apply.ts` as the subset it writes: `{ lng: number; lat: number; timezone: string | null; accuracy: number; source: string } | null` (`GeocodeResult` is assignable to it).
 - **`runImport`** (ctx = `systemContext(companyId)`):
   1. `claimImport`; null → return.
   2. First claim (no planned skips yet: `hasPlannedSkips` false): plan the whole file — `importCells`, `normalizeRow` per row with the stored mapping, `planImport` against `existingIndexFor`, `attested` = `consent_attested` — and `writePlannedSkips` for every `skip`; store the plan's counts (`saveImportProgress`). On a resumed claim, reuse the stored counts.
