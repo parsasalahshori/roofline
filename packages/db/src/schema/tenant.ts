@@ -14,6 +14,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import {
+  ACTIVITY_ACTOR_TYPES,
+  ACTIVITY_SUBJECT_TYPES,
   AGENTS,
   APPROVAL_CLASSES,
   CONSENT_STATUSES,
@@ -21,22 +23,16 @@ import {
   GATE_RULES,
   JOB_SOURCES,
   JOB_STAGES,
+  MESSAGE_CHANNELS,
+  MESSAGE_DIRECTIONS,
+  MESSAGE_PURPOSES,
   MESSAGE_STATUSES,
+  SMS_CONSENT_SOURCES,
   STEP_STATUSES,
   TASK_STATUSES,
 } from '@roofline/shared';
 import { bytea, enumCheck, pk, point4326, timestamps, tstz } from './columns.ts';
-import {
-  ACTIVITY_ACTOR_TYPES,
-  ACTIVITY_SUBJECT_TYPES,
-  INTEGRATION_STATUSES,
-  MESSAGE_CHANNELS,
-  MESSAGE_DIRECTIONS,
-  MESSAGE_PURPOSES,
-  SMS_CONSENT_SOURCES,
-  TASK_MODES,
-  USAGE_KINDS,
-} from './enums.ts';
+import { INTEGRATION_STATUSES, TASK_MODES, USAGE_KINDS } from './enums.ts';
 import { companies, users } from './global.ts';
 
 /*

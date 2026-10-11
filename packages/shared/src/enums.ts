@@ -64,3 +64,21 @@ export const GATE_RULES = [
   'quiet_hours',
 ] as const;
 export type GateRule = (typeof GATE_RULES)[number];
+
+export const SMS_CONSENT_SOURCES = ['import', 'web_form', 'call', 'text', 'manual'] as const;
+export type SmsConsentSource = (typeof SMS_CONSENT_SOURCES)[number];
+
+export const ACTIVITY_SUBJECT_TYPES = ['customer', 'property', 'job'] as const;
+export type ActivitySubjectType = (typeof ACTIVITY_SUBJECT_TYPES)[number];
+
+export const ACTIVITY_ACTOR_TYPES = ['user', 'agent', 'system'] as const;
+export type ActivityActorType = (typeof ACTIVITY_ACTOR_TYPES)[number];
+
+export const MESSAGE_CHANNELS = ['sms', 'mms', 'email'] as const;
+export type MessageChannel = (typeof MESSAGE_CHANNELS)[number];
+
+export const MESSAGE_DIRECTIONS = ['out', 'in'] as const;
+export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
+
+export const MESSAGE_PURPOSES = ['marketing', 'informational'] as const;
+export type MessagePurpose = (typeof MESSAGE_PURPOSES)[number];

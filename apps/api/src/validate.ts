@@ -6,6 +6,9 @@ export const MAX_EMAIL_LENGTH = 254;
 
 export const EMAIL_MESSAGE = 'Please enter a valid email address.';
 
+/** A UUID in its written form, either case. Routes use it to tell "malformed id" (a 404) from a real lookup. */
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Emails are stored trimmed and lowercased, at most 254 characters; the same rule is applied wherever one is asked for. */
 export const emailField = z
   .string({ error: EMAIL_MESSAGE })
@@ -35,13 +38,40 @@ export function parse<T>(schema: ZodType<T>, value: unknown): T {
  * For PATCH bodies: the body must be a plain object whose keys are all in `allowed`. A key outside
  * the list is refused with 400 "Please check this field." naming that key (never silently
  * dropped), and a body with no keys is refused with 400 "There's nothing to change.".
+ * `allowEmpty` is for create bodies, where an empty object is left to the schema (which names the
+ * first required field that is missing).
  * Returns the body for the schema that checks the values.
  */
-export function assertKnownFields(body: unknown, allowed: readonly string[]): Record<string, unknown> {
+export function assertKnownFields(
+  body: unknown,
+  allowed: readonly string[],
+  options: { allowEmpty?: boolean } = {},
+): Record<string, unknown> {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new AppError(400, MESSAGES.checkField);
   const keys = Object.keys(body);
   const unknown = keys.find((key) => !allowed.includes(key));
   if (unknown !== undefined) throw new AppError(400, MESSAGES.checkField, unknown);
-  if (keys.length === 0) throw new AppError(400, MESSAGES.nothingToChange);
+  if (keys.length === 0 && options.allowEmpty !== true) throw new AppError(400, MESSAGES.nothingToChange);
   return body as Record<string, unknown>;
 }
+
+const LIMIT_MESSAGE = 'Please use a whole number from 1 to 200.';
+const OFFSET_MESSAGE = 'Please use a whole number, 0 or higher.';
+
+/**
+ * `?limit=` on a list route: a whole number from 1 (up to 7 digits). Anything above 200 is accepted
+ * and capped to 200 by the repository, not refused. Absent means the default page size (50).
+ */
+export const limitParam = z
+  .string({ error: LIMIT_MESSAGE })
+  .regex(/^\d{1,7}$/, LIMIT_MESSAGE)
+  .transform(Number)
+  .refine((n) => n >= 1, LIMIT_MESSAGE)
+  .optional();
+
+/** `?offset=` on a list route: a whole number from 0 (up to 7 digits). */
+export const offsetParam = z
+  .string({ error: OFFSET_MESSAGE })
+  .regex(/^\d{1,7}$/, OFFSET_MESSAGE)
+  .transform(Number)
+  .optional();

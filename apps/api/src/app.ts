@@ -9,7 +9,9 @@ import { authRoutes } from './auth/routes.ts';
 import { describeErrorForLog, errorHandler, MESSAGES, notFoundHandler } from './errors.ts';
 import type { Mailer } from './mailer.ts';
 import { apiRateLimit } from './rate-limit.ts';
+import { activityRoutes } from './routes/activities.ts';
 import { companyRoutes } from './routes/company.ts';
+import { customerRoutes } from './routes/customers.ts';
 import { teamRoutes } from './routes/team.ts';
 
 /**
@@ -98,6 +100,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/auth', authRoutes(deps, logError));
   app.use('/api/company', companyRoutes(deps));
   app.use('/api/team', teamRoutes(deps, logError));
+  app.use('/api/customers', customerRoutes(deps));
+  app.use('/api/activities', activityRoutes(deps));
 
   app.use(notFoundHandler);
   app.use(errorHandler(logError));

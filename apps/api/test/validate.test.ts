@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, test } from 'vitest';
 import { z } from 'zod';
 import { AppError } from '../src/errors.ts';
-import { parse } from '../src/validate.ts';
+import { assertKnownFields, limitParam, offsetParam, parse, UUID } from '../src/validate.ts';
 
 const FALLBACK = 'Please check this field.';
 
@@ -101,4 +101,50 @@ describe('parse', () => {
       expect(err.message).not.toMatch(/expected|received|Too small|Too big|Invalid/);
     }
   });
+});
+
+describe('assertKnownFields', () => {
+  test('an empty body is "nothing to change" unless the caller allows it (create bodies do)', () => {
+    expect(() => assertKnownFields({}, ['a'])).toThrow("There's nothing to change.");
+    expect(assertKnownFields({}, ['a'], { allowEmpty: true })).toEqual({});
+  });
+
+  test('an unknown key is refused by name, empty body allowed or not', () => {
+    for (const options of [undefined, { allowEmpty: true }]) {
+      const err = (() => {
+        try {
+          assertKnownFields({ b: 1 }, ['a'], options);
+        } catch (e) {
+          return e as AppError;
+        }
+        throw new Error('Expected a throw');
+      })();
+      expect(err).toMatchObject({ status: 400, message: FALLBACK, field: 'b' });
+    }
+  });
+
+  test.each([null, 'text', ['a'], 7])('%j is not a body', (body) => {
+    expect(() => assertKnownFields(body, ['a'], { allowEmpty: true })).toThrow(FALLBACK);
+  });
+});
+
+describe('page parameters', () => {
+  test('limit and offset are whole numbers in a query string; absent is fine', () => {
+    expect(parse(limitParam, undefined)).toBeUndefined();
+    expect(parse(limitParam, '25')).toBe(25);
+    expect(parse(limitParam, '5000')).toBe(5000);
+    expect(parse(offsetParam, '0')).toBe(0);
+    for (const bad of ['0', '-1', '1.5', 'abc', '', ' 5', '12345678', ['1', '2']]) {
+      expect(failure(limitParam, bad).message).toBe('Please use a whole number from 1 to 200.');
+    }
+    for (const bad of ['-1', '1.5', 'abc', '', '12345678']) {
+      expect(failure(offsetParam, bad).message).toBe('Please use a whole number, 0 or higher.');
+    }
+  });
+});
+
+test('UUID matches an id in either case and nothing else', () => {
+  expect(UUID.test('00000000-0000-4000-8000-00000000000A')).toBe(true);
+  expect(UUID.test('00000000-0000-4000-8000-00000000000')).toBe(false);
+  expect(UUID.test('not-a-uuid')).toBe(false);
 });

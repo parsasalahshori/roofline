@@ -16,9 +16,7 @@ import {
 } from '../auth/team-store.ts';
 import { can, requireCapability } from '../permissions.ts';
 import { inviteRateLimit } from '../rate-limit.ts';
-import { assertKnownFields, emailField, parse } from '../validate.ts';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { assertKnownFields, emailField, parse, UUID } from '../validate.ts';
 
 const ROLE_MESSAGE = 'Please pick a role.';
 
