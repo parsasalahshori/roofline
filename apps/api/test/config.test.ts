@@ -1,4 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 
 const KEY = Buffer.alloc(32, 9).toString('base64');
@@ -125,5 +128,55 @@ describe('loadConfig', () => {
 
   test('POSTMARK_TOKEN needs MAIL_FROM', () => {
     expect(problem({ ...VALID, POSTMARK_TOKEN: 'pm' })).toContain('MAIL_FROM');
+  });
+
+  describe('WEB_DIST_DIR', () => {
+    let built: string;
+    let noIndex: string;
+    const ROOT = path.resolve(import.meta.dirname, '../../..');
+
+    beforeAll(() => {
+      built = fs.mkdtempSync(path.join(os.tmpdir(), 'roofline-config-web-'));
+      fs.writeFileSync(path.join(built, 'index.html'), '<!doctype html>');
+      noIndex = fs.mkdtempSync(path.join(os.tmpdir(), 'roofline-config-empty-'));
+    });
+
+    afterAll(() => {
+      fs.rmSync(built, { recursive: true, force: true });
+      fs.rmSync(noIndex, { recursive: true, force: true });
+    });
+
+    test('is optional: unset or blank leaves it out', () => {
+      expect(loadConfig(VALID).WEB_DIST_DIR).toBeUndefined();
+      expect(loadConfig({ ...VALID, WEB_DIST_DIR: '  ' }).WEB_DIST_DIR).toBeUndefined();
+    });
+
+    test('a directory with an index.html is accepted', () => {
+      expect(loadConfig({ ...VALID, WEB_DIST_DIR: built }).WEB_DIST_DIR).toBe(built);
+    });
+
+    test('a relative path is read from the repository root, wherever the process was started', () => {
+      // `npm start -w @roofline/api` runs in apps/api, so `apps/web/dist` must not depend on the working directory.
+      const relative = path.relative(ROOT, built);
+      expect(path.isAbsolute(relative)).toBe(false);
+      expect(loadConfig({ ...VALID, WEB_DIST_DIR: relative }).WEB_DIST_DIR).toBe(built);
+    });
+
+    test('a missing directory is a ConfigError that names WEB_DIST_DIR and prints no value', () => {
+      const missing = path.join(os.tmpdir(), 'roofline-no-such-dir-4410');
+      const message = problem({ ...VALID, WEB_DIST_DIR: missing });
+      expect(message).toContain('WEB_DIST_DIR');
+      expect(message).not.toContain(missing);
+      expect(message).not.toContain(KEY);
+      expect(() => loadConfig({ ...VALID, WEB_DIST_DIR: missing })).toThrow(/^Invalid environment configuration/);
+    });
+
+    test('a directory without index.html is refused', () => {
+      expect(problem({ ...VALID, WEB_DIST_DIR: noIndex })).toContain('WEB_DIST_DIR');
+    });
+
+    test('a file instead of a directory is refused', () => {
+      expect(problem({ ...VALID, WEB_DIST_DIR: path.join(built, 'index.html') })).toContain('WEB_DIST_DIR');
+    });
   });
 });

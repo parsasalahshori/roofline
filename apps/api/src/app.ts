@@ -6,6 +6,7 @@ import type { Clock } from './clock.ts';
 import type { Config } from './config.ts';
 import type { GoogleVerifier } from './auth/google.ts';
 import { attachSession, requireSession } from './auth/middleware.ts';
+import { meRoutes } from './auth/me.ts';
 import { authRoutes } from './auth/routes.ts';
 import { errorHandler, logErrorToConsole, MESSAGES, notFoundHandler } from './errors.ts';
 import { twilioHooks } from './hooks/twilio.ts';
@@ -20,6 +21,7 @@ import { propertyRoutes } from './routes/properties.ts';
 import { taskRoutes } from './routes/tasks.ts';
 import { teamRoutes } from './routes/team.ts';
 import type { StepQueue } from './tasks/queue.ts';
+import { serveWeb } from './web.ts';
 
 /** Everything the app reaches outside itself through. Tests pass fakes for all of it. */
 export type AppDeps = {
@@ -70,8 +72,45 @@ export type AppOptions = {
 /** JSON bodies are capped at 256 KB. */
 export const JSON_BODY_LIMIT = '256kb';
 
+/**
+ * `/api/approvals` takes up to 1 MB: a text batch for 5,000 customers is about 200 KB of ids and
+ * the screen sends it back whole on an edit, so a bigger plan must not meet the 256 KB cap. It is
+ * parsed ahead of the global parser; a request it has read is skipped by the global one.
+ */
+export const APPROVALS_JSON_BODY_LIMIT = '1mb';
+
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/** Where the map's tiles, glyphs and sprites come from (MapTiler, or OpenStreetMap's own tile server). */
+const MAP_HOSTS = ['https://api.maptiler.com', 'https://tile.openstreetmap.org'] as const;
+
+/**
+ * The Content-Security-Policy for the web app, which the API serves (web.ts) and whose JSON
+ * answers carry it too, harmlessly. Everything is the app's own origin except the map: its tiles
+ * and style come from MAP_HOSTS, and MapLibre runs its tile workers from blob: URLs. Inline styles
+ * are allowed because the map and the UI set `style` attributes; inline and remote scripts are not.
+ * `upgrade-insecure-requests` is production only, since the end-to-end stack is plain http on
+ * 127.0.0.1 and would have its own scripts upgraded to https and broken.
+ */
+function contentSecurityPolicy(nodeEnv: Config['NODE_ENV']) {
+  return {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:', ...MAP_HOSTS],
+      connectSrc: ["'self'", ...MAP_HOSTS],
+      fontSrc: ["'self'", 'data:'],
+      workerSrc: ["'self'", 'blob:'],
+      childSrc: ['blob:'],
+      frameAncestors: ["'none'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: nodeEnv === 'production' ? [] : null,
+    },
+  };
+}
 
 /**
  * A browser that sends an Origin header on a mutation is telling us which site the request came
@@ -95,7 +134,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   const app = express();
 
   app.set('trust proxy', config.TRUST_PROXY);
-  app.use(helmet());
+  app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(config.NODE_ENV) }));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
@@ -108,6 +147,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/hooks/twilio', twilioHooks(deps));
   // JSON only. `express.urlencoded` is deliberately not mounted here: Twilio's webhooks are the
   // one form-encoded caller, and /hooks/twilio/* adds it for itself.
+  app.use('/api/approvals', express.json({ limit: APPROVALS_JSON_BODY_LIMIT }));
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
   options.extraRoutes?.(app);
@@ -120,6 +160,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
 
   // Routers are mounted here as later tasks add them.
   app.use('/api/auth', authRoutes(deps, logError));
+  app.use('/api/me', meRoutes(deps));
   app.use('/api/company', companyRoutes(deps));
   app.use('/api/team', teamRoutes(deps, logError));
   app.use('/api/customers', customerRoutes(deps));
@@ -128,6 +169,10 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
   app.use('/api/tasks', taskRoutes(deps));
+
+  // The web app itself, when there is a build to serve. After every API route, so it can only
+  // answer what they did not; web.ts keeps it off /api, /hooks and /health.
+  if (config.WEB_DIST_DIR !== undefined) serveWeb(app, config.WEB_DIST_DIR);
 
   app.use(notFoundHandler);
   app.use(errorHandler(logError));
