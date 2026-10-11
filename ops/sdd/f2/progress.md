@@ -120,3 +120,6 @@ Task 7: implementer DONE_WITH_CONCERNS (c2173ff on f2-t7): 58 new tests green; f
 Task 9: worktree wt/t9 (branch f2-t9) stacked on f2-t7 @c2173ff (needs Task 7's map repo + endpoints).
 Team group (contact 7): T7 review (ci) + T9 build (ci).
 Team group launched (contact 7): T7 review + T9 build — run wf_017c67f3-e3f. All 5 old-style Sonnet builders (T5, T6, T7, T8, T10) have now reported.
+Cloud move (2026-10-11): session continues in a Claude Code cloud container (4 CPUs, no Docker, gh not logged in). ci-check rewritten to use the GitHub REST API via curl; ops/bin/slot caps heavy local commands at 2; team script gains args.cloud, per-task constraints/milestone, and resume-from-WIP-commits (8823dd1). Worktrees under /home/user/wt/<branch>.
+Ruling R: the workflow concurrency cap is CPUs-2 = 2 per run, so the four groups run as four parallel workflow runs of the same script (contacts 1-3, 4-6, 7-9, 10-11) instead of one run — cost if wrong: none (same team structure).
+Cloud wave launched: group A (T6, T7, T8 review, ci) wf_bc3962a4-08d; group B (T9 resume, T14 resume, T16 review) wf_eddfb3f8-980; group D (F3 T12 resume, T5 review) wf_97a6d639-216.
