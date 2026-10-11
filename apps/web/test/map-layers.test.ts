@@ -107,7 +107,9 @@ const BASE_LAYERS = [
   'customers-clusters',
   'jobs-clusters',
   'customers',
+  'customers-hit',
   'jobs',
+  'jobs-hit',
 ];
 const COUNT_LAYERS = ['clusters-count', 'customers-clusters-count', 'jobs-clusters-count'];
 
@@ -142,7 +144,7 @@ describe('emptyMapData', () => {
 });
 
 describe('installMapLayers', () => {
-  it('adds the five sources and the seven layers in order, with no count labels when the style has no glyphs', () => {
+  it('adds the five sources and the nine layers in order, with no count labels when the style has no glyphs', () => {
     const fake = fakeMap();
     installMapLayers(fake.map, sampleData());
 
@@ -248,7 +250,9 @@ describe('installMapLayers', () => {
       'customers-clusters',
       'jobs-clusters',
       'customers',
+      'customers-hit',
       'jobs',
+      'jobs-hit',
       'customers-clusters-count',
       'jobs-clusters-count',
     ]);
@@ -334,7 +338,9 @@ describe('updateMapData', () => {
       'customers-clusters',
       'jobs-clusters',
       'customers',
+      'customers-hit',
       'jobs',
+      'jobs-hit',
     ]);
     expect(fake.removeSource.mock.calls.map((call) => call[0])).toEqual(['customers', 'jobs']);
 
@@ -398,7 +404,7 @@ describe('removeMapLayers', () => {
     const fake = fakeMap();
     fake.style.glyphs = 'https://example.com/{fontstack}/{range}.pbf';
     installMapLayers(fake.map, sampleData({ clustering: true }));
-    expect(fake.layers.size).toBe(10);
+    expect(fake.layers.size).toBe(12);
     expect(fake.sources.size).toBe(5);
 
     removeMapLayers(fake.map);
@@ -406,7 +412,7 @@ describe('removeMapLayers', () => {
     expect(fake.sources.size).toBe(0);
 
     installMapLayers(fake.map, sampleData({ clustering: false }));
-    expect(fake.layers.size).toBe(10);
+    expect(fake.layers.size).toBe(12);
     expect(fake.sources.size).toBe(5);
     expect(sourceSpec(fake, 'customers')).not.toHaveProperty('cluster');
   });

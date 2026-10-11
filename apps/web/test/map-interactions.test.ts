@@ -7,7 +7,8 @@ type Listener = (event: unknown) => void;
 
 /*
  * A hand-made stand-in for the MapLibre map: layer listeners are kept per (event, layer) so a test can
- * fire them, and the canvas, zoom and sources are plain fakes.
+ * fire them, unlayered listeners (the pin click) are kept under layer '', and the canvas, zoom, sources,
+ * projection and rendered-feature query are plain fakes. `rendered` is what a query under the click returns.
  */
 function fakeMap() {
   const listeners: { type: string; layer: string; handler: Listener }[] = [];
@@ -19,16 +20,22 @@ function fakeMap() {
     getClusterExpansionZoom: vi.fn<(clusterId: number) => Promise<number>>(() => Promise.resolve(13)),
   };
   const sources: Record<string, unknown> = { customers: customersSource, jobs: jobsSource };
+  const rendered: unknown[] = [];
 
-  const on = vi.fn((type: string, layer: string, handler: Listener) => {
-    listeners.push({ type, layer, handler });
+  const on = vi.fn((type: string, layerOrHandler: string | Listener, maybe?: Listener) => {
+    if (typeof layerOrHandler === 'function') listeners.push({ type, layer: '', handler: layerOrHandler });
+    else if (maybe) listeners.push({ type, layer: layerOrHandler, handler: maybe });
   });
-  const off = vi.fn((type: string, layer: string, handler: Listener) => {
+  const off = vi.fn((type: string, layerOrHandler: string | Listener, maybe?: Listener) => {
+    const layer = typeof layerOrHandler === 'function' ? '' : layerOrHandler;
+    const handler = typeof layerOrHandler === 'function' ? layerOrHandler : maybe;
     const index = listeners.findIndex((entry) => entry.type === type && entry.layer === layer && entry.handler === handler);
     if (index >= 0) listeners.splice(index, 1);
   });
   const easeTo = vi.fn();
   const getZoom = vi.fn(() => 10);
+  const queryRenderedFeatures = vi.fn<(point: unknown, options: unknown) => unknown[]>(() => rendered);
+  const project = vi.fn((lngLat: [number, number]) => ({ x: lngLat[0], y: lngLat[1] }));
 
   const map = {
     on,
@@ -37,6 +44,9 @@ function fakeMap() {
     getZoom,
     getCanvas: () => canvas,
     getSource: (id: string) => sources[id],
+    getLayer: (id: string) => ({ id }),
+    queryRenderedFeatures,
+    project,
   };
 
   function fire(type: string, layer: string, event: unknown): void {
@@ -51,10 +61,12 @@ function fakeMap() {
     canvas,
     customersSource,
     jobsSource,
+    rendered,
     on,
     off,
     easeTo,
     getZoom,
+    queryRenderedFeatures,
     fire,
   };
 }
@@ -81,12 +93,18 @@ const JOB_PROPERTIES = {
 };
 
 describe('pin clicks', () => {
+  /** A click on the map: the pin under it comes back from the rendered-feature query, the event carries the point. */
+  function clickUnder(fake: ReturnType<typeof fakeMap>, features: unknown[]): void {
+    fake.rendered.splice(0, fake.rendered.length, ...features);
+    fake.fire('click', '', { point: { x: 0, y: 0 }, lngLat: { lng: 0, lat: 0 } });
+  }
+
   it('reports a clicked job with its stage and position', () => {
     const fake = fakeMap();
     const onPick = vi.fn<(pin: PickedPin) => void>();
     bindMapInteractions(fake.map, onPick);
 
-    fake.fire('click', 'jobs', { features: [pointFeature(JOB_PROPERTIES, [-96.8, 32.9])] });
+    clickUnder(fake, [pointFeature(JOB_PROPERTIES, [-96.8, 32.9])]);
 
     expect(onPick).toHaveBeenCalledTimes(1);
     expect(onPick).toHaveBeenCalledWith({
@@ -105,13 +123,11 @@ describe('pin clicks', () => {
     const onPick = vi.fn<(pin: PickedPin) => void>();
     bindMapInteractions(fake.map, onPick);
 
-    fake.fire('click', 'customers', {
-      features: [
-        pointFeature({ kind: 'customer', id: 'cust-9', customerId: 'cust-9', name: 'Grace Hopper', addressLine: '4 Pine Rd' }, [
-          -96.5, 32.6,
-        ]),
-      ],
-    });
+    clickUnder(fake, [
+      pointFeature({ kind: 'customer', id: 'cust-9', customerId: 'cust-9', name: 'Grace Hopper', addressLine: '4 Pine Rd' }, [
+        -96.5, 32.6,
+      ]),
+    ]);
 
     expect(onPick).toHaveBeenCalledTimes(1);
     expect(onPick.mock.calls[0]?.[0]).toEqual({
@@ -125,13 +141,21 @@ describe('pin clicks', () => {
     });
   });
 
+  it('queries the two single-pin hit layers under the click', () => {
+    const fake = fakeMap();
+    bindMapInteractions(fake.map, vi.fn());
+
+    clickUnder(fake, []);
+
+    expect(fake.queryRenderedFeatures).toHaveBeenCalledWith({ x: 0, y: 0 }, { layers: ['customers-hit', 'jobs-hit'] });
+  });
+
   it('ignores a click that has no feature under it', () => {
     const fake = fakeMap();
     const onPick = vi.fn<(pin: PickedPin) => void>();
     bindMapInteractions(fake.map, onPick);
 
-    fake.fire('click', 'customers', { features: [] });
-    fake.fire('click', 'jobs', {});
+    clickUnder(fake, []);
 
     expect(onPick).not.toHaveBeenCalled();
   });
@@ -141,10 +165,10 @@ describe('pin clicks', () => {
     const onPick = vi.fn<(pin: PickedPin) => void>();
     bindMapInteractions(fake.map, onPick);
 
-    fake.fire('click', 'jobs', { features: [pointFeature(null, [-96.8, 32.9])] });
-    fake.fire('click', 'jobs', {
-      features: [{ type: 'Feature', properties: JOB_PROPERTIES, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } }],
-    });
+    clickUnder(fake, [pointFeature(null, [-96.8, 32.9])]);
+    clickUnder(fake, [
+      { type: 'Feature', properties: JOB_PROPERTIES, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } },
+    ]);
 
     expect(onPick).not.toHaveBeenCalled();
   });
@@ -221,7 +245,7 @@ describe('pointer cursor', () => {
     const fake = fakeMap();
     bindMapInteractions(fake.map, vi.fn());
 
-    for (const layer of ['customers', 'jobs', 'clusters', 'customers-clusters', 'jobs-clusters']) {
+    for (const layer of ['customers-hit', 'jobs-hit', 'clusters', 'customers-clusters', 'jobs-clusters']) {
       fake.fire('mouseenter', layer, {});
       expect(fake.canvas.style.cursor).toBe('pointer');
       fake.fire('mouseleave', layer, {});
@@ -229,13 +253,13 @@ describe('pointer cursor', () => {
     }
   });
 
-  it('sets the pointer on a job and clears it when the mouse leaves', () => {
+  it('sets the pointer on a job hit layer and clears it when the mouse leaves', () => {
     const fake = fakeMap();
     bindMapInteractions(fake.map, vi.fn());
 
-    fake.fire('mouseenter', 'jobs', {});
+    fake.fire('mouseenter', 'jobs-hit', {});
     expect(fake.canvas.style.cursor).toBe('pointer');
-    fake.fire('mouseleave', 'jobs', {});
+    fake.fire('mouseleave', 'jobs-hit', {});
     expect(fake.canvas.style.cursor).toBe('');
   });
 });
@@ -246,18 +270,21 @@ describe('unbinding', () => {
     const onPick = vi.fn<(pin: PickedPin) => void>();
     const unbind = bindMapInteractions(fake.map, onPick);
 
-    const added = fake.on.mock.calls.map((call) => ({ type: call[0], layer: call[1], handler: call[2] }));
+    const added = fake.listeners.map((entry) => ({ ...entry }));
     expect(added.length).toBeGreaterThan(0);
+    expect(added.some((entry) => entry.type === 'click' && entry.layer === '')).toBe(true);
 
     unbind();
 
     expect(fake.off).toHaveBeenCalledTimes(added.length);
     for (const entry of added) {
-      expect(fake.off).toHaveBeenCalledWith(entry.type, entry.layer, entry.handler);
+      const layerArgs = entry.layer === '' ? [] : [entry.layer];
+      expect(fake.off).toHaveBeenCalledWith(entry.type, ...layerArgs, entry.handler);
     }
     expect(fake.listeners).toEqual([]);
 
-    fake.fire('click', 'jobs', { features: [pointFeature(JOB_PROPERTIES, [-96.8, 32.9])] });
+    fake.rendered.push(pointFeature(JOB_PROPERTIES, [-96.8, 32.9]));
+    fake.fire('click', '', { point: { x: 0, y: 0 }, lngLat: { lng: 0, lat: 0 } });
     expect(onPick).not.toHaveBeenCalled();
   });
 });

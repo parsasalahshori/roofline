@@ -99,7 +99,7 @@ const NO_RAW_BUTTON = {
 };
 
 export default defineConfig(
-  { ignores: ['v1/**', '**/node_modules/**', '.superpowers/**', 'ops/**', 'apps/web/dist/**', '**/playwright-report/**'] },
+  { ignores: ['v1/**', '**/node_modules/**', '.superpowers/**', 'ops/**', 'apps/web/dist/**', '**/playwright-report/**', '**/test-results/**'] },
   {
     files: ['{apps,packages}/**/*.{ts,tsx}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
@@ -108,6 +108,7 @@ export default defineConfig(
   {
     files: ['**/*.tsx'],
     extends: [reactHooks.configs.flat.recommended],
+    rules: { 'jsx-quotes': ['error', 'prefer-double'] },
   },
   {
     // `off` switches the whole rule off here, so any restriction added to it later must be

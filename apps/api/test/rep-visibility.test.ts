@@ -397,7 +397,9 @@ describe('what a rep sees of the money', () => {
     const leadOne = await w.rep.get(`/api/jobs/${lead.id}`);
     expect(leadOne.status).toBe(200);
     expect(leadOne.body).not.toHaveProperty('valueCents');
-    expect(JSON.stringify(leadOne.body)).not.toContain('333');
+    // The value must not leak under any other key. Match 333 only as a whole token: ids are random
+    // UUIDs, which can contain the digits 333 between other hex characters.
+    expect(JSON.stringify(leadOne.body)).not.toMatch(/(^|[^0-9a-f-])333([^0-9a-f-]|$)/i);
   });
 
   test('a rep who takes the lead gets to see its value', async () => {

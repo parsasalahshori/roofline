@@ -142,3 +142,17 @@ Cloud group B (wf_eddfb3f8-980, contact 4): T9 resumed and finished a320599 (sho
 Task 9: complete (c2173ff..a320599). Task 14: complete (1fb5bd7..66b7ccb; commit title still says wip). Task 16: complete (1fb5bd7..57f9715).
 Merged into f2-shell: 29ab813 (T9; README conflict kept both sections), b35c0aa (T14), f711feb (T16). web vitest, typecheck, lint, lint:css clean.
 Minors (deferred, to P1 follow-up or T15): T9 seeds sendTime 'Today 10:00 AM' so the screen reads 'Sends Today 10:00 AM' (use 'today at 10:00 AM'); dead 'approvals' ComingSoonKey + copy entry; Review.tsx edit.isPending shared by toggles and text saves; seed-dev non-atomic on showcase failure; toReviewStep isOpen adds canApprove for awaiting_owner (deliberate, matches API).
+f2-shell merged into f3-setup (baf4c93): system/index.ts kept both export lists; package-lock.json regenerated with npm install --package-lock-only; typecheck, lint, lint:css and web/shared/ui/send-gate suites clean; no migration-number collision (F2 added none).
+Team wave C launched here: T13 (e2e, ci with CI_JOBS="Platform E2E") + T15 (Today), base 26aabec, contact 12 — wf_554eb375-034. Team script gains per-task ciEnv (26aabec).
+Architect 2 writing F3 briefs: task 9 first, then 13-24, with proposed groups (status in ops/sdd/f3/briefs-status.txt).
+Sibling 1 (session_01MpVA7xTz6Bus8WPNZWUKRq, wf_d3d77fd3-941, contact 21): P1 ed193cf (CI 38180329002 green, review clean) and T17 100e89a (1 round; CI 38180327171 green). Notes: ops/sdd/f2/merge-sib1.md.
+Task P1: complete. Task 17: complete. Merged into f2-shell: P1 then T17 (Shell.tsx conflict: lazy/Suspense MapView + T17's tabs/sheet/dock; kept both). web vitest, typecheck, lint, lint:css, build:web clean.
+Minors (deferred): a click on a cluster bubble within ~20px of a single pin fires both zoom and the pin card; Vite still warns about the 1,039 kB map chunk.
+Carry to T15 (building in wave C on base 26aabec): T17 rewrote Shell.tsx; T15's one useTodayAutoOpen() line merges on top (Ruling W).
+Wave C (wf_554eb375-034, contact 12): T13 d6bcc16 (e2e stack + 6 desktop shell specs; CI 38181691899 Platform + E2E green), T15 552d4c5 (Today; web 315; CI 38181682763 green); both reviews clean. Notes: ops/sdd/f2/merge-wave-cloud-c.md.
+Task 13: complete (26aabec..d6bcc16). Task 15: complete (26aabec..552d4c5). Merged into f2-shell (Shell.tsx auto-merged onto T17); web vitest, typecheck, lint, lint:css, build:web, playwright --list clean.
+Carry to T18: (1) useTodayAutoOpen onSuccess must navigate only if the current path is still '/' (dock click before the POST answers) + unit test; (2) add an e2e for Today auto-open (first visit to / opens /today, Esc, reload, no dialog); (3) markTodaySeen should read the company's timezone, not hard-coded America/Chicago.
+Minors (deferred): stack.ts children run via npx (SIGTERM forwarding; spawn detached + kill group); signal handlers registered after DB start; no 'error' listener on children; unused click fixture; brief's playwright-core browsers.json check fails with ERR_PACKAGE_PATH_NOT_EXPORTED (versions match anyway); Today error state and partOfDay boundaries untested.
+F2 remaining: T18 (deferred Playwright specs + phone/a11y + acceptance, Ruling AK) then the final whole-branch review.
+F2 T18 launched here: wf_3cf9739e-49c (contact 14), base d223d91, ci with CI_JOBS="Platform E2E".
+Fix: rep-visibility.test.ts:400 flake (substring 333 in a random UUID; failed f2-shell run 38181409275 on 894f0d2) now matches a whole token; CI paths-ignore adds docs/**. F1 deferred minor closed.

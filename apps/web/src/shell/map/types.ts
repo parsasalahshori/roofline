@@ -5,8 +5,7 @@
 /** What opening a pin goes to: a customer or a job, by id. */
 export type PinTarget = { kind: 'customer' | 'job'; id: string };
 
-/** A box on the map in degrees: west, south, east, north. */
-export type Bbox = [west: number, south: number, east: number, north: number];
+export type { Bbox } from '../../api/types.ts';
 
 /** `streets` is the plain map; `satellite` needs a map key. */
 export type MapMode = 'streets' | 'satellite';
