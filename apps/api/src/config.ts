@@ -63,6 +63,12 @@ const flag = z
   .transform((v) => v === '1' || v === 'true')
   .optional();
 
+/** A bare hostname (lowercase, checked after folding case): `roofline.app`, `policies.example.co`. */
+const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
+
+/** The example plans file, shipped with the repository; the default outside production. */
+const EXAMPLE_BILLING_PLANS = 'config/billing-plans.example.json';
+
 const ConfigSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production'], {
@@ -81,6 +87,44 @@ const ConfigSchema = z
     /** The From header for outgoing email, for example `Roofline <hello@example.com>`. */
     MAIL_FROM: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
+    /** Stripe secret key (`sk_`). Unset: billing is off and no Stripe call is made. */
+    STRIPE_SECRET_KEY: z
+      .string()
+      .refine((v) => v.startsWith('sk_'), 'must start with sk_')
+      .optional(),
+    /** Secret for checking Stripe webhook signatures (`whsec_`); required when STRIPE_SECRET_KEY is set. */
+    STRIPE_WEBHOOK_SECRET: z
+      .string()
+      .refine((v) => v.startsWith('whsec_'), 'must start with whsec_')
+      .optional(),
+    /**
+     * The billing plans file (JSON, read by `billingConfig`). Resolved from the repository root, like
+     * WEB_DIST_DIR. Unset: the example file outside production (applied in the final transform).
+     */
+    BILLING_PLANS_FILE: z
+      .string()
+      .transform((v) => path.resolve(REPO_ROOT, v))
+      .optional(),
+    /** Geocodio API key (address lookup). Unset: addresses are not looked up. */
+    GEOCODIO_API_KEY: z.string().optional(),
+    /** Twilio account SID (`AC` + 32 hex digits). When set, TWILIO_AUTH_TOKEN is required. */
+    TWILIO_ACCOUNT_SID: z
+      .string()
+      .regex(/^AC[0-9a-f]{32}$/, 'must be AC followed by 32 hex digits')
+      .optional(),
+    /** The Twilio primary customer profile SID (`BU` + 32 hex digits). */
+    TWILIO_PRIMARY_PROFILE_SID: z
+      .string()
+      .regex(/^BU[0-9a-f]{32}$/, 'must be BU followed by 32 hex digits')
+      .optional(),
+    /** The bare hostname the policy pages are served from, like roofline.app. Case is folded. */
+    POLICY_PAGES_DOMAIN: z
+      .string()
+      .transform((v) => v.toLowerCase())
+      .refine((v) => HOSTNAME.test(v), 'must be a bare hostname, like roofline.app')
+      .optional(),
+    /** Development and tests only: use the fake providers for every outside service. Refused in production. */
+    FAKE_PROVIDERS: flag,
 
     /**
      * Where the built web app is (apps/web/dist). When set, the API serves it too, so one process
@@ -120,10 +164,41 @@ const ConfigSchema = z
         message: 'is required when POSTMARK_TOKEN is set (Postmark needs a verified From address)',
       });
     }
+    if (cfg.STRIPE_SECRET_KEY && !cfg.STRIPE_WEBHOOK_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['STRIPE_WEBHOOK_SECRET'],
+        message: 'is required when STRIPE_SECRET_KEY is set',
+      });
+    }
+    if (cfg.STRIPE_SECRET_KEY && cfg.NODE_ENV === 'production' && !cfg.BILLING_PLANS_FILE) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['BILLING_PLANS_FILE'],
+        message: 'is required in production when STRIPE_SECRET_KEY is set',
+      });
+    }
+    if (cfg.TWILIO_ACCOUNT_SID && !cfg.TWILIO_AUTH_TOKEN) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TWILIO_AUTH_TOKEN'],
+        message: 'is required when TWILIO_ACCOUNT_SID is set',
+      });
+    }
+    if (cfg.FAKE_PROVIDERS && cfg.NODE_ENV === 'production') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['FAKE_PROVIDERS'],
+        message: 'must not be set in production',
+      });
+    }
   })
-  .transform(({ HOST, ...cfg }) => ({
+  .transform(({ HOST, BILLING_PLANS_FILE, ...cfg }) => ({
     ...cfg,
     HOST: HOST ?? (cfg.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'),
+    // Outside production the example file is the default; in production without Stripe it stays unset.
+    BILLING_PLANS_FILE:
+      BILLING_PLANS_FILE ?? (cfg.NODE_ENV === 'production' ? undefined : path.resolve(REPO_ROOT, EXAMPLE_BILLING_PLANS)),
   }));
 
 export type Config = z.infer<typeof ConfigSchema>;
