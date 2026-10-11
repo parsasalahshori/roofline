@@ -66,10 +66,18 @@ export async function findUserByGoogleSub(system: Db, googleSub: string): Promis
 }
 
 /**
- * Connects a Google account to a user who has none yet, and marks their email confirmed at `now`
- * if it was not (a no-op for one that was). It is one guarded UPDATE (`google_sub is null`), so a
- * user who got a Google account a moment ago is never overwritten: that returns null and changes
- * nothing. Throws GoogleSubInUseError when the Google account belongs to another user.
+ * Connects a Google account to a user who has none yet. It is one guarded UPDATE
+ * (`google_sub is null`), so a user who got a Google account a moment ago is never overwritten:
+ * that returns null and changes nothing. Throws GoogleSubInUseError when the Google account
+ * belongs to another user.
+ *
+ * If the user's email was already confirmed, that is all: their password, sessions and links stay.
+ *
+ * If it was NOT confirmed, the account is handed over, in the same transaction: Google has just
+ * shown that the person signing in owns the address, but anyone can make an account with someone
+ * else's address and a password of their own. So the email is marked confirmed at `now`, the
+ * password is removed, ALL the user's sessions are deleted, and their unused verification and
+ * reset links are deleted, so nothing the earlier holder kept can be used afterwards.
  */
 export async function linkGoogleAccount(
   system: Db,
@@ -86,8 +94,10 @@ export async function linkGoogleAccount(
         .returning(USER_COLUMNS);
       if (!linked) return null;
       if (linked.emailVerifiedAt !== null) return linked;
-      await tx.update(users).set({ emailVerifiedAt: now }).where(eq(users.id, userId));
-      return { ...linked, emailVerifiedAt: now };
+      await tx.update(users).set({ passwordHash: null, emailVerifiedAt: now }).where(eq(users.id, userId));
+      await tx.delete(sessions).where(eq(sessions.userId, userId));
+      await tx.delete(userTokens).where(and(eq(userTokens.userId, userId), isNull(userTokens.usedAt)));
+      return { ...linked, passwordHash: null, emailVerifiedAt: now };
     });
   } catch (err) {
     if (isUniqueViolation(err, 'users_google_sub_unique')) throw new GoogleSubInUseError();

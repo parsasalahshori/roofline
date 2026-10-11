@@ -1,12 +1,23 @@
+import { createServer, type RequestListener } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import request from 'supertest';
-import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, type JWTPayload, SignJWT } from 'jose';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import {
+  createLocalJWKSet,
+  createRemoteJWKSet,
+  errors,
+  exportJWK,
+  generateKeyPair,
+  type JWK,
+  type JWTPayload,
+  SignJWT,
+} from 'jose';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { companySettings, type Pools, withTenant } from '@roofline/db';
 import * as system from '@roofline/db/system';
 import { createApp } from '../src/app.ts';
-import { type GoogleClaims, JoseGoogleVerifier } from '../src/auth/google.ts';
+import { type GoogleClaims, GoogleUnavailableError, JoseGoogleVerifier } from '../src/auth/google.ts';
 import { AppError } from '../src/errors.ts';
-import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
+import { loginAs, makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 
 // The three lookups behind Google sign-in are wrapped (they still run for real) so a test can make
 // one of them miss, and so reproduce the moment two requests overlap.
@@ -24,59 +35,70 @@ const DAY = 24 * 60 * 60 * 1000;
 
 const FAILED = "We couldn't sign you in with Google. Please try again.";
 const NOT_SET_UP = "Google sign-in isn't set up yet.";
+const UNAVAILABLE = 'Google sign-in is having trouble right now. Please try again in a minute.';
 const UNVERIFIED = "Google hasn't confirmed this email address, so we can't use it to sign in.";
 const OTHER_ACCOUNT = 'That email is already connected to a different Google account.';
 const NO_ACCESS = 'Your access to this company is turned off. Ask the owner to turn it back on.';
 const COMPANY_NAME = 'Please enter your company name.';
 const BAD_LOGIN = "That email and password don't match.";
+const LINK_USED = 'That link has already been used or has expired.';
 const TOO_MANY = { error: 'Too many sign-in attempts. Try again in a few minutes.' };
 
 // ---------------------------------------------------------------------------------------------
 // JoseGoogleVerifier: the real verifier, run against a key pair made here (no call to Google).
 // ---------------------------------------------------------------------------------------------
 
-describe('JoseGoogleVerifier', () => {
-  const CLIENT_ID = 'roofline-test.apps.googleusercontent.com';
-  const KID = 'test-key-1';
+const CLIENT_ID = 'roofline-test.apps.googleusercontent.com';
+const KID = 'test-key-1';
 
-  type Signing = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
-  let privateKey: Signing;
+type SigningKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
+
+/** A signing key and the public key set that goes with it. */
+async function newKeys() {
+  const pair = await generateKeyPair('RS256');
+  const jwk: JWK = { ...(await exportJWK(pair.publicKey)), kid: KID, alg: 'RS256', use: 'sig' };
+  return { privateKey: pair.privateKey, jwk, local: createLocalJWKSet({ keys: [jwk] }) };
+}
+
+type TokenOptions = {
+  claims?: JWTPayload;
+  sub?: string | null;
+  issuer?: string;
+  audience?: string;
+  /** Seconds from now; negative means already expired. */
+  expiresIn?: number | null;
+  key?: SigningKey;
+};
+
+/** A Google-shaped ID token signed with `key`. Unless told otherwise it is valid. */
+async function signToken(key: SigningKey, o: TokenOptions = {}): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const jwt = new SignJWT({
+    email: 'Pat.Roofer@Example.com',
+    email_verified: true,
+    name: 'Pat Roofer',
+    ...o.claims,
+  })
+    .setProtectedHeader({ alg: 'RS256', kid: KID })
+    .setIssuer(o.issuer ?? 'https://accounts.google.com')
+    .setAudience(o.audience ?? CLIENT_ID)
+    .setIssuedAt(now - 120);
+  if (o.sub !== null) jwt.setSubject(o.sub ?? '110169484474386276334');
+  if (o.expiresIn !== null) jwt.setExpirationTime(now + (o.expiresIn ?? 3600));
+  return jwt.sign(o.key ?? key);
+}
+
+describe('JoseGoogleVerifier', () => {
+  let privateKey: SigningKey;
   let verifier: JoseGoogleVerifier;
 
   beforeEach(async () => {
-    const pair = await generateKeyPair('RS256');
-    privateKey = pair.privateKey;
-    const jwk: JWK = { ...(await exportJWK(pair.publicKey)), kid: KID, alg: 'RS256', use: 'sig' };
-    verifier = new JoseGoogleVerifier(CLIENT_ID, { keys: createLocalJWKSet({ keys: [jwk] }) });
+    const keys = await newKeys();
+    privateKey = keys.privateKey;
+    verifier = new JoseGoogleVerifier(CLIENT_ID, { keys: keys.local });
   });
 
-  type TokenOptions = {
-    claims?: JWTPayload;
-    sub?: string | null;
-    issuer?: string;
-    audience?: string;
-    /** Seconds from now; negative means already expired. */
-    expiresIn?: number | null;
-    key?: Signing;
-  };
-
-  /** A Google-shaped ID token. Unless told otherwise it is valid. */
-  async function token(o: TokenOptions = {}): Promise<string> {
-    const now = Math.floor(Date.now() / 1000);
-    const jwt = new SignJWT({
-      email: 'Pat.Roofer@Example.com',
-      email_verified: true,
-      name: 'Pat Roofer',
-      ...o.claims,
-    })
-      .setProtectedHeader({ alg: 'RS256', kid: KID })
-      .setIssuer(o.issuer ?? 'https://accounts.google.com')
-      .setAudience(o.audience ?? CLIENT_ID)
-      .setIssuedAt(now - 120);
-    if (o.sub !== null) jwt.setSubject(o.sub ?? '110169484474386276334');
-    if (o.expiresIn !== null) jwt.setExpirationTime(now + (o.expiresIn ?? 3600));
-    return jwt.sign(o.key ?? privateKey);
-  }
+  const token = (o: TokenOptions = {}) => signToken(privateKey, o);
 
   async function refusal(promise: Promise<unknown>) {
     const err = await promise.then(
@@ -160,6 +182,112 @@ describe('JoseGoogleVerifier', () => {
     const err = await refusal(unset.verify(await token()));
     expect(err.status).toBe(503);
     expect(err.message).toBe(NOT_SET_UP);
+  });
+
+  describe("when Google's keys cannot be fetched", () => {
+    /** A key server on this machine, so jose's real fetching runs without any call to Google. */
+    const running: { stop(): Promise<void> }[] = [];
+    async function keyServer(handler: RequestListener) {
+      const server = createServer(handler);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const { port } = server.address() as AddressInfo;
+      const stop = () =>
+        new Promise<void>((resolve) => {
+          server.closeAllConnections();
+          server.close(() => resolve());
+        });
+      running.push({ stop });
+      return { url: new URL(`http://127.0.0.1:${port}/certs`), stop };
+    }
+    afterEach(async () => {
+      await Promise.all(running.splice(0).map((r) => r.stop()));
+    });
+
+    const fetching = (url: URL) =>
+      new JoseGoogleVerifier(CLIENT_ID, { keys: createRemoteJWKSet(url, { timeoutDuration: 300 }) });
+
+    async function outage(promise: Promise<unknown>) {
+      const err = await refusal(promise);
+      expect(err).toBeInstanceOf(GoogleUnavailableError);
+      expect(err.status).toBe(503);
+      expect(err.message).toBe(UNAVAILABLE);
+      return err as GoogleUnavailableError;
+    }
+
+    test('control: keys served over HTTP verify a good token (so the failures below are about the keys)', async () => {
+      const keys = await newKeys();
+      const server = await keyServer((_req, res) => {
+        res.setHeader('content-type', 'application/json').end(JSON.stringify({ keys: [keys.jwk] }));
+      });
+      await expect(fetching(server.url).verify(await signToken(keys.privateKey))).resolves.toMatchObject({
+        email: 'Pat.Roofer@Example.com',
+      });
+    });
+
+    test.each([
+      ['a key server that times out', () => new errors.JWKSTimeout()],
+      ['a network error', () => new TypeError('fetch failed')],
+      ['a bad answer from the key server', () => new errors.JOSEError('Failed to parse the JSON Web Key Set HTTP response as JSON')],
+      ['a key set that is malformed', () => new errors.JWKSInvalid('JSON Web Key Set malformed')],
+      ['something nobody expected', () => new RangeError('boom')],
+    ])('%s (from a key getter that throws it) → 503 with its own sentence, and the cause is kept', async (_name, make) => {
+      const cause = make();
+      const down = new JoseGoogleVerifier(CLIENT_ID, {
+        keys: async () => {
+          throw cause;
+        },
+      });
+      const err = await outage(down.verify(await token()));
+      expect(err.cause).toBe(cause);
+    });
+
+    test('a key server that answers with something that is not JSON → 503', async () => {
+      const server = await keyServer((_req, res) => void res.end('<html>Bad gateway</html>'));
+      const err = await outage(fetching(server.url).verify(await token()));
+      expect(String((err.cause as Error).message)).toMatch(/JSON/);
+    });
+
+    test('a key server that answers 500 → 503', async () => {
+      const server = await keyServer((_req, res) => void res.writeHead(500).end('oops'));
+      await outage(fetching(server.url).verify(await token()));
+    });
+
+    test('a key server that answers JSON that is not a key set → 503', async () => {
+      const server = await keyServer((_req, res) => void res.end('{"nope":true}'));
+      const err = await outage(fetching(server.url).verify(await token()));
+      expect(err.cause).toBeInstanceOf(errors.JWKSInvalid);
+    });
+
+    test('a key server that never answers → jose times out → 503', async () => {
+      const server = await keyServer(() => {});
+      const err = await outage(fetching(server.url).verify(await token()));
+      expect(err.cause).toBeInstanceOf(errors.JWKSTimeout);
+    });
+
+    test('nothing listening at the key server → 503', async () => {
+      const server = await keyServer((_req, res) => void res.end('{}'));
+      await server.stop();
+      await outage(fetching(server.url).verify(await token()));
+    });
+
+    test('a key set that simply does not have this token’s key is the token’s fault → 401, not 503', async () => {
+      const server = await keyServer((_req, res) => void res.end('{"keys":[]}'));
+      const err = await refusal(fetching(server.url).verify(await token()));
+      expect(err).not.toBeInstanceOf(GoogleUnavailableError);
+      expect(err.status).toBe(401);
+      expect(err.message).toBe(FAILED);
+    });
+
+    test('a token that is not even a token is a 401 while Google is down (the keys are never needed)', async () => {
+      const down = new JoseGoogleVerifier(CLIENT_ID, {
+        keys: async () => {
+          throw new errors.JWKSTimeout();
+        },
+      });
+      const err = await refusal(down.verify('not-a-token'));
+      expect(err).not.toBeInstanceOf(GoogleUnavailableError);
+      expect(err.status).toBe(401);
+    });
   });
 });
 
@@ -294,7 +422,7 @@ describe('branch 1: the Google account is already linked to a user', () => {
 });
 
 describe('branch 2: a confirmed Google email that an existing user already has → link', () => {
-  test('links a password user (any capitalisation), confirms their email, and signs them in', async () => {
+  test('links an unconfirmed password user (any capitalisation), confirms their email, hands the account over, and signs them in', async () => {
     const account = await signedUpUser('olive@example.com');
     expect(await sql('select email_verified_at from users where id = $1', [account.user.id])).toEqual([
       { email_verified_at: null },
@@ -316,11 +444,89 @@ describe('branch 2: a confirmed Google email that an existing user already has �
     );
     expect(row!.google_sub).toBe('google-sub-olive');
     expect(row!.email_verified_at.getTime()).toBe(t.clock.now().getTime());
-    expect(row!.has_password).toBe(true);
+    // The email was never confirmed, so whoever made the account is cut off: no password any more.
+    expect(row!.has_password).toBe(false);
     // No new account, and the next time it is the sub that matches.
     expect(await sql('select 1 from users where email = $1', ['olive@example.com'])).toHaveLength(1);
     expect((await agent.get('/api/auth/me')).body.user.emailVerified).toBe(true);
     expect((await googleSignIn(claims({ sub: 'google-sub-olive', email: 'olive@example.com' }))).status).toBe(200);
+  });
+
+  test('an attacker who pre-registered the owner’s address loses the account when the owner signs in with Google', async () => {
+    // The attacker signs up with the victim's address and a password of their own. The address is
+    // never confirmed, so the account stays "unverified" and the attacker stays signed in.
+    const attacker = request.agent(t.app);
+    const made = await attacker
+      .post('/api/auth/signup')
+      .send({ email: 'victim@x.test', password: 'the attackers password', name: 'Mallory', companyName: 'Mallory Roofing' });
+    expect(made.status).toBe(201);
+    expect((await attacker.get('/api/auth/me')).status).toBe(200);
+
+    // They also ask for a password-reset link, and hold on to it along with the confirmation link.
+    expect((await request(t.app).post('/api/auth/reset-request').send({ email: 'victim@x.test' })).status).toBe(200);
+    await t.settle();
+    const linkToken = (mail: { text: string }, page: 'reset' | 'verify') =>
+      mail.text.match(new RegExp(`/${page}\\?token=([A-Za-z0-9_-]{43})`))![1]!;
+    const resetToken = linkToken(t.mailer.sent.find((m) => /Reset/.test(m.subject))!, 'reset');
+    const verifyToken = linkToken(t.mailer.sent.find((m) => /Confirm/.test(m.subject))!, 'verify');
+    expect(await sql('select kind from user_tokens where used_at is null order by kind')).toEqual([
+      { kind: 'reset_password' },
+      { kind: 'verify_email' },
+    ]);
+
+    // The real owner of victim@x.test signs in with Google.
+    t.clock.advance(DAY);
+    const victim = request.agent(t.app);
+    const res = await googleSignIn(claims({ sub: 'victim-sub', email: 'victim@x.test' }), {}, victim);
+    expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({ id: made.body.user.id, email: 'victim@x.test', emailVerified: true });
+    expect(hasSessionCookie(res)).toBe(true);
+
+    // Nothing the attacker kept works any more.
+    expect((await attacker.get('/api/auth/me')).status).toBe(401);
+    const password = await request(t.app)
+      .post('/api/auth/login')
+      .send({ email: 'victim@x.test', password: 'the attackers password' });
+    expect(password.status).toBe(401);
+    expect(password.body).toEqual({ error: BAD_LOGIN });
+    const reset = await request(t.app).post('/api/auth/reset').send({ token: resetToken, password: 'another password' });
+    expect(reset.status).toBe(400);
+    expect(reset.body).toEqual({ error: LINK_USED });
+    expect((await request(t.app).post('/api/auth/verify-email').send({ token: verifyToken })).status).toBe(400);
+
+    // The account itself is now the owner's, with the Google sign-in and the new session only.
+    expect(
+      await sql<{ google_sub: string; has_password: boolean }>(
+        'select google_sub, password_hash is not null as has_password from users where id = $1',
+        [made.body.user.id],
+      ),
+    ).toEqual([{ google_sub: 'victim-sub', has_password: false }]);
+    const [verified] = await sql<{ email_verified_at: Date }>('select email_verified_at from users where id = $1', [
+      made.body.user.id,
+    ]);
+    expect(verified!.email_verified_at.getTime()).toBe(t.clock.now().getTime());
+    expect(await sql('select 1 from user_tokens where user_id = $1', [made.body.user.id])).toEqual([]);
+    expect(await sql('select 1 from sessions where user_id = $1', [made.body.user.id])).toHaveLength(1);
+    expect((await victim.get('/api/auth/me')).status).toBe(200);
+  });
+
+  test('an account whose email was already confirmed keeps its password, its sessions and its links', async () => {
+    const owner = t.seed.a.owner;
+    const device = await loginAs(t.app, owner);
+    expect((await request(t.app).post('/api/auth/reset-request').send({ email: owner.email })).status).toBe(200);
+    await t.settle();
+    const unusedLinks = () =>
+      sql('select 1 from user_tokens where user_id = $1 and used_at is null', [owner.userId]);
+    expect(await unusedLinks()).toHaveLength(1);
+
+    const res = await googleSignIn(claims({ sub: 'google-sub-owner', email: owner.email }));
+    expect(res.status).toBe(200);
+    expect(res.body.user.id).toBe(owner.userId);
+
+    expect((await device.get('/api/auth/me')).status).toBe(200); // the other device is still signed in
+    expect(await unusedLinks()).toHaveLength(1);
+    const password = await request(t.app).post('/api/auth/login').send({ email: owner.email, password: owner.password });
+    expect(password.status).toBe(200); // and the password still works
   });
 
   test('an email that was already confirmed keeps its original date', async () => {
@@ -615,6 +821,41 @@ describe('a credential Google would not accept, and a missing client id', () => 
     expect(res.body).toEqual({ error: FAILED });
     expect(hasSessionCookie(res)).toBe(false);
     expect(await counts()).toEqual(before);
+  });
+
+  test('Google unreachable → 503 with its own sentence, the cause is logged, no cookie, nothing created', async () => {
+    const cause = new errors.JWKSTimeout();
+    const keys = await newKeys();
+    const logError = vi.fn();
+    const app = createApp(
+      {
+        ...t.deps,
+        google: new JoseGoogleVerifier(CLIENT_ID, {
+          keys: async () => {
+            throw cause;
+          },
+        }),
+      },
+      { logError },
+    );
+    const before = await counts();
+
+    const credential = await signToken(keys.privateKey);
+    const down = await request(app).post('/api/auth/google').send({ credential, companyName: 'Summit Roofing' });
+    expect(down.status).toBe(503);
+    expect(down.body).toEqual({ error: UNAVAILABLE });
+    expect(hasSessionCookie(down)).toBe(false);
+    expect(logError).toHaveBeenCalledTimes(1);
+    expect(logError).toHaveBeenCalledWith(cause, '/google');
+    expect(JSON.stringify(down.body)).not.toContain(credential);
+    expect(await counts()).toEqual(before);
+
+    // A bad credential is not an outage: it is not logged as one.
+    logError.mockClear();
+    const garbage = await request(app).post('/api/auth/google').send({ credential: 'not-a-token' });
+    expect(garbage.status).toBe(401);
+    expect(garbage.body).toEqual({ error: FAILED });
+    expect(logError).not.toHaveBeenCalled();
   });
 
   test.each([

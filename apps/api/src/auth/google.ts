@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, type JWTPayload, type JWTVerifyGetKey, jwtVerify } from 'jose';
+import { createRemoteJWKSet, errors, type JWTPayload, type JWTVerifyGetKey, jwtVerify } from 'jose';
 import { AppError, MESSAGES } from '../errors.ts';
 
 /** What Google vouches for about the person who signed in. */
@@ -26,6 +26,39 @@ const GOOGLE_ISSUERS = ['accounts.google.com', 'https://accounts.google.com'];
  * not have yet. Creating it makes no request.
  */
 const GOOGLE_KEYS = createRemoteJWKSet(new URL(GOOGLE_CERTS_URL));
+
+/**
+ * Google could not be asked: its signing keys could not be fetched (timeout, network error,
+ * a bad answer), so we cannot say whether the credential is good. That is our side's problem, not
+ * the caller's, so it is a 503 with its own sentence; `cause` holds what really went wrong, for
+ * the log (the response never carries it). Not a verdict on the credential: a person who gets
+ * this should simply try again.
+ */
+export class GoogleUnavailableError extends AppError {
+  constructor(cause: unknown) {
+    super(503, MESSAGES.googleUnavailable);
+    this.name = 'GoogleUnavailableError';
+    this.cause = cause;
+  }
+}
+
+/**
+ * What jose throws when the TOKEN is at fault: bad signature, expired, wrong audience or issuer,
+ * malformed, no key of that id in Google's set, a signing algorithm we do not accept. These are
+ * 401s. Everything else that can come out of `jwtVerify` is about getting Google's keys (a
+ * timeout, a network error, an answer that is not a key set) and means we cannot tell.
+ */
+const BAD_CREDENTIAL: readonly (new (...args: never[]) => Error)[] = [
+  errors.JWTClaimValidationFailed,
+  errors.JWTExpired,
+  errors.JWTInvalid,
+  errors.JWSInvalid,
+  errors.JWSSignatureVerificationFailed,
+  errors.JWKSNoMatchingKey,
+  errors.JWKSMultipleMatchingKeys,
+  errors.JOSEAlgNotAllowed,
+  errors.JOSENotSupported,
+];
 
 export type JoseGoogleVerifierOptions = {
   /** Where the signing keys come from. Tests pass a local key set so nothing calls Google. */
@@ -55,7 +88,9 @@ function claimsOf(payload: JWTPayload): GoogleClaims {
 /**
  * Checks Google ID tokens: the signature against Google's published keys, the issuer, the
  * audience (our own client id, so a token Google made for another app is refused), and that it has
- * not expired. Every failure, whatever its cause, is the same 401 with the same plain sentence.
+ * not expired.
+ * - A credential that is wrong in any way is the same 401 with the same plain sentence.
+ * - Failing to get Google's keys is a GoogleUnavailableError (503), never a 401.
  */
 export class JoseGoogleVerifier implements GoogleVerifier {
   private readonly clientId: string | undefined;
@@ -78,8 +113,9 @@ export class JoseGoogleVerifier implements GoogleVerifier {
         algorithms: ['RS256'],
         requiredClaims: ['exp', 'sub'],
       }));
-    } catch {
-      throw new AppError(401, MESSAGES.googleFailed);
+    } catch (err) {
+      if (BAD_CREDENTIAL.some((fault) => err instanceof fault)) throw new AppError(401, MESSAGES.googleFailed);
+      throw new GoogleUnavailableError(err);
     }
     return claimsOf(payload);
   }

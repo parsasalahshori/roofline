@@ -10,7 +10,9 @@ import {
   findUserByEmail,
   findUserByGoogleSub,
   GoogleSubInUseError,
+  consumeUserToken,
   insertSession,
+  insertUserToken,
   linkGoogleAccount,
   removeAccount,
   renewSession,
@@ -239,6 +241,97 @@ describe('Google accounts', () => {
     const linked = await linkGoogleAccount(system, user.id, 'google-sub-1', NOW);
     expect(linked).toMatchObject({ id: user.id, googleSub: 'google-sub-1', emailVerifiedAt: NOW });
     expect(await findUserByGoogleSub(system, 'google-sub-1')).toMatchObject({ id: user.id, emailVerifiedAt: NOW });
+  });
+
+  /** A user with a live session and one unused link of each kind (plus a verify link that was already used). */
+  async function holder(n: number, emailVerifiedAt?: Date) {
+    const created = await createAccount(system, { ...account(n, `Holder ${n}`), emailVerifiedAt });
+    await insertSession(system, {
+      tokenHash: `session-${n}`,
+      userId: created.user.id,
+      companyId: created.company.id,
+      now: NOW,
+      expiresAt: new Date(NOW.getTime() + 30 * DAY),
+      userAgent: 'test',
+      ip: '203.0.113.5',
+    });
+    const link = (kind: 'verify_email' | 'reset_password', name: string) =>
+      insertUserToken(system, {
+        userId: created.user.id,
+        kind,
+        tokenHash: `${name}-${n}`,
+        now: NOW,
+        expiresAt: new Date(NOW.getTime() + DAY),
+      });
+    await link('verify_email', 'verify');
+    await link('reset_password', 'reset');
+    await link('verify_email', 'verify-used');
+    await consumeUserToken(system, `verify-used-${n}`, 'verify_email', NOW);
+    return created;
+  }
+
+  const remaining = async (userId: string) => ({
+    sessions: (await system.$client.query('select 1 from sessions where user_id = $1', [userId])).rowCount,
+    unusedLinks: (
+      await system.$client.query('select token_hash from user_tokens where user_id = $1 and used_at is null order by 1', [
+        userId,
+      ])
+    ).rows.map((r: { token_hash: string }) => r.token_hash),
+    usedLinks: (
+      await system.$client.query('select token_hash from user_tokens where user_id = $1 and used_at is not null', [userId])
+    ).rows.map((r: { token_hash: string }) => r.token_hash),
+  });
+
+  test('linking an UNCONFIRMED account hands it over: password gone, every session and unused link deleted, email confirmed', async () => {
+    const target = await holder(1);
+    const bystander = await holder(2);
+    expect(await remaining(target.user.id)).toEqual({
+      sessions: 1,
+      unusedLinks: ['reset-1', 'verify-1'],
+      usedLinks: ['verify-used-1'],
+    });
+
+    const linked = await linkGoogleAccount(system, target.user.id, 'google-sub-1', NOW);
+    expect(linked).toMatchObject({ id: target.user.id, googleSub: 'google-sub-1', passwordHash: null, emailVerifiedAt: NOW });
+    expect(await findUserByGoogleSub(system, 'google-sub-1')).toMatchObject({ passwordHash: null, emailVerifiedAt: NOW });
+    expect(await findLiveSession(system, 'session-1', NOW)).toBeNull();
+    // Used links are history, not something anyone can use; the unused ones are gone.
+    expect(await remaining(target.user.id)).toEqual({ sessions: 0, unusedLinks: [], usedLinks: ['verify-used-1'] });
+    // Nobody else is touched.
+    expect(await remaining(bystander.user.id)).toEqual({
+      sessions: 1,
+      unusedLinks: ['reset-2', 'verify-2'],
+      usedLinks: ['verify-used-2'],
+    });
+    expect(await findUserByEmail(system, 'user2@example.com')).toMatchObject({ passwordHash: expect.any(String) });
+  });
+
+  test('linking a CONFIRMED account keeps its password, sessions and links', async () => {
+    const target = await holder(1, new Date('2026-01-01T00:00:00Z'));
+    const linked = await linkGoogleAccount(system, target.user.id, 'google-sub-1', NOW);
+    expect(linked).toMatchObject({
+      googleSub: 'google-sub-1',
+      passwordHash: 'scrypt$16384$8$1$AAAA$BBBB',
+      emailVerifiedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    expect(await findLiveSession(system, 'session-1', NOW)).toMatchObject({ userId: target.user.id });
+    expect(await remaining(target.user.id)).toEqual({
+      sessions: 1,
+      unusedLinks: ['reset-1', 'verify-1'],
+      usedLinks: ['verify-used-1'],
+    });
+  });
+
+  test('a link that does not apply (already has a Google account) clears nothing', async () => {
+    const target = await holder(1);
+    await system.$client.query('update users set google_sub = $2 where id = $1', [target.user.id, 'google-sub-x']);
+    expect(await linkGoogleAccount(system, target.user.id, 'google-sub-y', NOW)).toBeNull();
+    expect(await remaining(target.user.id)).toEqual({
+      sessions: 1,
+      unusedLinks: ['reset-1', 'verify-1'],
+      usedLinks: ['verify-used-1'],
+    });
+    expect(await findUserByEmail(system, 'user1@example.com')).toMatchObject({ passwordHash: expect.any(String) });
   });
 
   test('linkGoogleAccount leaves an email that was already confirmed with its original date', async () => {

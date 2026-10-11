@@ -31,7 +31,7 @@ import {
   signupRateLimit,
 } from '../rate-limit.ts';
 import { MAX_EMAIL_LENGTH, parse } from '../validate.ts';
-import type { GoogleClaims } from './google.ts';
+import { type GoogleClaims, GoogleUnavailableError } from './google.ts';
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from './password.ts';
 import { clearSessionCookie, createSession, type SessionInfo, setSessionCookie } from './sessions.ts';
 import {
@@ -295,8 +295,11 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
    *    left alone even if the Google email has changed: the sub is the identity, the email is not.
    * 2. Google has not confirmed the email → refused. This comes before any email lookup, so an
    *    unconfirmed address can never be linked to (or used to probe for) an existing account.
-   * 3. A user with this email (case-insensitive) → connect this Google account to them and mark
-   *    their email confirmed if it was not. Refused when they are already connected to a different
+   * 3. A user with this email (case-insensitive) → connect this Google account to them. If their
+   *    email was never confirmed, the account is also handed over (password, sessions and unused
+   *    links removed; see `linkGoogleAccount`), because Google has shown the address is the
+   *    caller's and the account may have been made by someone else. A confirmed account keeps its
+   *    password. Refused when they are already connected to a different
    *    Google account: a second Google account that merely shares the address does not take over.
    *    (Already connected to this very account means another copy of this request just did it.)
    * 4. Otherwise a new person → a new verified user with no password, and their own company
@@ -353,7 +356,15 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
   router.post('/google', googleRateLimit(), async (req, res) => {
     if (!config.GOOGLE_CLIENT_ID) throw new AppError(503, MESSAGES.googleNotSetUp);
     const body = parse(GoogleBody, req.body);
-    const claims = await deps.google.verify(body.credential);
+    let claims: GoogleClaims;
+    try {
+      claims = await deps.google.verify(body.credential);
+    } catch (err) {
+      // Google being unreachable is not the caller's doing: the response is the plain 503, and the
+      // real cause (a timeout, a network error) goes to the log.
+      if (err instanceof GoogleUnavailableError) logError(err.cause ?? err, req.path);
+      throw err;
+    }
     const { user, company } = await googleAccount(claims, body.companyName, req.path);
     await signIn(req, res, user.id, company.id);
     res.json({ user: userBody(user), company: companyBody(company) });
