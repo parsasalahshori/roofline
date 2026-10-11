@@ -245,16 +245,29 @@ export async function insertSession(system: Db, input: NewSession): Promise<void
 
 /**
  * Starts a session only if the user's password is STILL the one that was just checked: one
- * statement, `insert ... select ... from users where id = $user and password_hash = $hash`, so the
- * check and the insert cannot be separated. Password login takes a while between verifying the
- * password and saving the session (scrypt), and a Google hand-over or a password reset that
- * commits in that gap changes the hash (or removes it) and deletes the user's sessions; without
- * this the login would then add a fresh 30-day session behind them. Returns false, with nothing
- * inserted, when the hash is no longer `passwordHash` (or the user is gone).
+ * statement, `insert ... select ... from users where id = $user and password_hash = $hash for
+ * share`, so the check and the insert cannot be separated. Password login takes a while between
+ * verifying the password and saving the session (scrypt), and a Google hand-over or a password
+ * reset that commits in that gap changes the hash (or removes it) and deletes the user's
+ * sessions; without this the login would then add a fresh 30-day session behind them. Returns
+ * false, with nothing inserted, when the hash is no longer `passwordHash` (or the user is gone).
+ *
+ * `for share` locks the user's row, which matters under READ COMMITTED: a plain read does not
+ * see a hand-over or reset that has changed the row but not committed yet, so it would still
+ * find the old hash and insert (the insert's foreign-key check waits for a hand-over and then
+ * succeeds; a reset does not even make it wait). With the lock:
+ * - the change came first: this statement waits for that transaction to end, then re-checks the
+ *   committed row, finds the hash gone or different, and inserts nothing;
+ * - this statement came first: the other transaction's UPDATE of the row waits until this one
+ *   commits, so its later `delete from sessions` sees this session and removes it.
+ * It is FOR SHARE, not FOR KEY SHARE: changing `password_hash` is not a key change, and only
+ * FOR SHARE conflicts with that kind of UPDATE. Postgres allows the locking clause inside
+ * `insert ... select`, so it is still one statement, not a transaction around two.
  * Used ONLY by password login; sign-up, Google and invite sessions use `insertSession`.
+ * Takes anything that can `execute`, so a test can run it inside a transaction it holds open.
  */
 export async function insertSessionIfPasswordUnchanged(
-  system: Db,
+  system: Pick<Db, 'execute'>,
   input: NewSession,
   passwordHash: string,
 ): Promise<boolean> {
@@ -264,6 +277,7 @@ export async function insertSessionIfPasswordUnchanged(
            ${input.now.toISOString()}::timestamptz, ${input.userAgent}::text, ${input.ip}::text
     from users u
     where u.id = ${input.userId}::uuid and u.password_hash = ${passwordHash}::text
+    for share of u
     returning id`);
   return result.rows.length > 0;
 }

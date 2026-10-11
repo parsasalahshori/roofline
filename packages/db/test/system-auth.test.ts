@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { findPgError, isUniqueViolation } from '../src/errors.ts';
 import { createPools } from '../src/pools.ts';
 import { pickFreeSlug, slugify } from '../src/repos/companies.ts';
@@ -17,6 +17,7 @@ import {
   linkGoogleAccount,
   removeAccount,
   renewSession,
+  resetPasswordWithToken,
 } from '../src/system/auth.ts';
 import { resetDb } from '../src/testing/reset.ts';
 
@@ -432,6 +433,155 @@ describe('insertSessionIfPasswordUnchanged', () => {
     const created = await createAccount(system, account(1));
     await insertSessionIfPasswordUnchanged(system, sessionFor(created), HASH);
     await expect(insertSessionIfPasswordUnchanged(system, sessionFor(created), HASH)).rejects.toThrow();
+  });
+
+  /*
+   * Two connections, real locks. The check "password still unchanged" reads the user row, and under
+   * READ COMMITTED a plain read does not see a change another transaction has made but not yet
+   * committed. So the insert's select takes FOR SHARE on the row: it waits for that transaction,
+   * then re-checks the committed row; and if the login's lock comes first, the other
+   * transaction waits for it and its DELETE of the user's sessions sees (and removes) the new one.
+   */
+  describe('while another transaction is changing the same user', () => {
+    let observer: pg.Client;
+    beforeAll(async () => {
+      observer = new pg.Client({ connectionString: urls.owner });
+      await observer.connect();
+    });
+    afterAll(async () => {
+      await observer.end();
+    });
+
+    /** 'blocked' once a statement whose text matches `like` is waiting for a lock; 'finished' if `pending` settled first. */
+    async function blockedOrDone(pending: Promise<unknown>, like: string): Promise<'blocked' | 'finished'> {
+      let done = false;
+      pending.then(
+        () => (done = true),
+        () => (done = true),
+      );
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        if (done) return 'finished';
+        const { rows } = await observer.query(
+          `select 1 from pg_stat_activity
+            where datname = current_database() and wait_event_type = 'Lock' and query ilike $1 and pid <> pg_backend_pid()`,
+          [like],
+        );
+        if (rows.length > 0) return 'blocked';
+        if (Date.now() > deadline) throw new Error(`nothing matching ${like} ever waited for a lock`);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+
+    const LOGIN_INSERT = '%insert into sessions%';
+
+    test('hand-over in flight: a login that runs after its google_sub UPDATE waits, then sees the nulled password → false, and no session exists', async () => {
+      const created = await createAccount(system, account(1));
+      await insertSession(system, sessionFor(created, 'attackers-existing-session'));
+      const handOver = await system.$client.connect();
+      try {
+        await handOver.query('begin');
+        await handOver.query("update users set google_sub = 'google-sub-1' where id = $1 and google_sub is null", [
+          created.user.id,
+        ]);
+        const login = insertSessionIfPasswordUnchanged(system, sessionFor(created, 'logins-session'), HASH);
+        expect(await blockedOrDone(login, LOGIN_INSERT)).toBe('blocked');
+
+        await handOver.query('update users set password_hash = null, email_verified_at = $2 where id = $1', [
+          created.user.id,
+          NOW,
+        ]);
+        await handOver.query('delete from sessions where user_id = $1', [created.user.id]);
+        await handOver.query('commit');
+
+        expect(await login).toBe(false);
+      } finally {
+        await handOver.query('rollback').catch(() => {});
+        handOver.release();
+      }
+      expect(await rows(created.user.id)).toEqual([]);
+    }, 30_000);
+
+    test('reset in flight: a login that runs after its UPDATE of the password waits, then sees the new hash → false, and no session exists', async () => {
+      const created = await createAccount(system, account(1));
+      const reset = await system.$client.connect();
+      try {
+        await reset.query('begin');
+        await reset.query("update users set password_hash = 'scrypt$16384$8$1$NEW$HASH' where id = $1", [created.user.id]);
+        const login = insertSessionIfPasswordUnchanged(system, sessionFor(created), HASH);
+        // A plain read would not wait here (changing the password is not a "key" change), so a
+        // login that finishes before the reset commits is exactly the bug.
+        expect(await blockedOrDone(login, LOGIN_INSERT)).toBe('blocked');
+
+        await reset.query('delete from sessions where user_id = $1', [created.user.id]);
+        await reset.query('commit');
+
+        expect(await login).toBe(false);
+      } finally {
+        await reset.query('rollback').catch(() => {});
+        reset.release();
+      }
+      expect(await rows(created.user.id)).toEqual([]);
+    }, 30_000);
+
+    /** A login whose insert has run and whose transaction is held open, so it still holds its row lock. */
+    async function heldLogin(created: Parameters<typeof sessionFor>[0]) {
+      let release!: () => void;
+      const mayCommit = new Promise<void>((resolve) => (release = resolve));
+      let saved: (ok: boolean) => void = () => {};
+      const wasSaved = new Promise<boolean>((resolve) => (saved = resolve));
+      const finished = system.transaction(async (tx) => {
+        saved(await insertSessionIfPasswordUnchanged(tx, sessionFor(created, 'logins-session'), HASH));
+        await mayCommit;
+      });
+      const ok = await Promise.race([
+        wasSaved,
+        finished.then(() => Promise.reject(new Error('the held login ended before its insert answered'))),
+      ]);
+      return { ok, release, finished };
+    }
+
+    test('login first: the hand-over waits for the login’s lock, and its DELETE then removes the login’s session', async () => {
+      const created = await createAccount(system, account(1));
+      const login = await heldLogin(created);
+      try {
+        expect(login.ok).toBe(true);
+        const handOver = linkGoogleAccount(system, created.user.id, 'google-sub-1', NOW);
+        expect(await blockedOrDone(handOver, '%update "users" set "google_sub"%')).toBe('blocked');
+        login.release();
+        await login.finished;
+        expect(await handOver).toMatchObject({ googleSub: 'google-sub-1', passwordHash: null });
+      } finally {
+        login.release();
+        await login.finished.catch(() => {});
+      }
+      expect(await rows(created.user.id)).toEqual([]);
+    }, 30_000);
+
+    test('login first: a password reset waits for the login’s lock, and its DELETE then removes the login’s session', async () => {
+      const created = await createAccount(system, account(1));
+      await insertUserToken(system, {
+        userId: created.user.id,
+        kind: 'reset_password',
+        tokenHash: 'reset-hash',
+        now: NOW,
+        expiresAt: new Date(NOW.getTime() + DAY),
+      });
+      const login = await heldLogin(created);
+      try {
+        expect(login.ok).toBe(true);
+        // Changing the password is not a "key" change, so only the login's FOR SHARE makes it wait.
+        const reset = resetPasswordWithToken(system, { tokenHash: 'reset-hash', passwordHash: 'scrypt$NEW', now: NOW });
+        expect(await blockedOrDone(reset, '%update "users" set "password_hash"%')).toBe('blocked');
+        login.release();
+        await login.finished;
+        expect(await reset).toBe(created.user.id);
+      } finally {
+        login.release();
+        await login.finished.catch(() => {});
+      }
+      expect(await rows(created.user.id)).toEqual([]);
+    }, 30_000);
   });
 });
 
