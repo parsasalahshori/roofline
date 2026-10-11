@@ -7,5 +7,7 @@ export { AppError, describeErrorForLog, type ErrorBody, MESSAGES } from './error
 export { type ScheduledJob, SCHEDULES, startWorker, type WorkerOptions } from './jobs/worker.ts';
 export { ConsoleMailer, type MailMessage, type Mailer, PostmarkMailer } from './mailer.ts';
 export { parse } from './validate.ts';
+export { seedDemoTask } from './scripts/seed-demo.ts';
+export { seedShowcase } from './scripts/showcase.ts';
 export { createBoss, ensureStepQueue, PgBossQueue, SENDER_OPTIONS, STEP_QUEUE } from './tasks/pgboss-queue.ts';
 export type { StepQueue } from './tasks/queue.ts';

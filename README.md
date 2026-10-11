@@ -22,6 +22,14 @@
 - **Open** http://127.0.0.1:4401.
 - **Map tiles:** the map draws tiles only when `VITE_MAPTILER_KEY` is set where Vite starts (never commit it), or `VITE_MAP_TILES=osm` is set for OpenStreetMap's tiles. With neither it is a blank map and makes no network requests.
 
+## Running locally with demo data
+- **Database:** `npm run db:up` starts the local PostGIS database (needs Docker). Migrate it with `DATABASE_URL_OWNER=… npm run db:migrate`, then set the app role passwords with `DATABASE_URL_OWNER=… TENANT_DB_PASSWORD=… SYSTEM_DB_PASSWORD=… npm run set-role-passwords -w @roofline/db`, as the production boot order below describes.
+- **Dev seed:** run `NODE_ENV=development DATABASE_URL_OWNER=<owner url> DATABASE_URL_TENANT=<app_tenant url> DATABASE_URL_SYSTEM=<app_system url> npm run seed:dev -w @roofline/api`. It refuses to run unless `NODE_ENV` is `development`.
+- **Sign-ins:** the seed creates **Summit Roofing** (America/Chicago, Nebraska) only when no company has the slug `summit-roofing`. It has three users: `owner@summit.test` (Dana Park, owner), `office@summit.test` (Chris Lane, office, cannot approve spend) and `rep@summit.test` (Robin Hale, rep).
+- **Password:** `roofline-demo-2026`. These are dev-only test credentials; the script never prints them.
+- **Showcase:** the seed then loads an Omaha service area, 60 customers, 70 addresses, 28 jobs across every stage, and one storm plan waiting for approval. Running it again changes nothing.
+- **Storm plan only:** `npm run seed:demo -w @roofline/api -- --company <slug>` adds just the storm plan to an existing company, and its sample text names that company.
+
 ## Running in production
 - **Environment:** every variable is listed, with placeholders, in [`.env.example`](.env.example). The processes don't read a `.env` file; set the variables in the host (Render: the service's Environment tab). The API and the worker need the same set.
 

@@ -18,6 +18,9 @@ import { createTask } from '../tasks/service.ts';
  * with `createTask` in that company's own app_tenant transaction, as an agent would make it (no
  * person behind it). Prints the new task's id.
  *
+ * The text step's sample message names the company by its name from the company row (for example
+ * "Hi Maria, it's Acme Roofing."), so a demo for one company reads as that company's own plan.
+ *
  * The demo plan is fake work (a "Text 31 customers" step, a spend step), so the script refuses to
  * run when NODE_ENV=production unless `--allow-production` is passed.
  */
@@ -71,7 +74,7 @@ export async function seedDemoTask(pools: Pools, slug: string, now: Date): Promi
   const company = await findCompanyBySlug(pools.system, slug);
   if (!company) throw new SeedError(`No company has the slug "${slug}".`);
   const ctx = systemContext(company.id);
-  const { taskId } = await withTenant(pools, ctx, (tx) => createTask(tx, ctx, demoTask(now), { now, ip: null }));
+  const { taskId } = await withTenant(pools, ctx, (tx) => createTask(tx, ctx, demoTask(now, company.name), { now, ip: null }));
   return { taskId, companyName: company.name };
 }
 

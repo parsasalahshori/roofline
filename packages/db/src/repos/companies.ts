@@ -1,5 +1,7 @@
-import { companySettings } from '../schema/index.ts';
+import { eq, sql } from 'drizzle-orm';
+import { companies, companySettings } from '../schema/index.ts';
 import type { Tx } from '../tenant.ts';
+import type { GeoJsonMultiPolygon } from './map.ts';
 
 /**
  * Subdomain names that must never be a company slug. Slugs become `<slug>.<app-domain>` for the
@@ -52,4 +54,23 @@ export function pickFreeSlug(base: string, existing: Iterable<string>): string {
  */
 export async function insertDefaultSettings(tx: Tx, companyId: string): Promise<void> {
   await tx.insert(companySettings).values({ companyId });
+}
+
+/**
+ * Sets the service area of the company that `tx` is scoped to (a MultiPolygon in WGS84), or clears
+ * it with `null`. Run it inside `withTenant`: the function takes no company id, so the update reads
+ * the company from `app.company_id`, which `withTenant` sets. With no company set it updates nothing.
+ * app_tenant may update `service_area` under the `company_self` policy. The geometry is wrapped in
+ * `ST_SetSRID(..., 4326)` so the SRID is explicit for the `geometry(MultiPolygon,4326)` column.
+ */
+export async function setServiceArea(tx: Tx, geojson: GeoJsonMultiPolygon | null): Promise<void> {
+  await tx
+    .update(companies)
+    .set({
+      serviceArea:
+        geojson === null
+          ? null
+          : sql`ST_SetSRID(ST_Multi(ST_GeomFromGeoJSON(${JSON.stringify(geojson)})), 4326)`,
+    })
+    .where(eq(companies.id, sql`nullif(current_setting('app.company_id', true), '')::uuid`));
 }

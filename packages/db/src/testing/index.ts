@@ -3,11 +3,17 @@
 // so importing @roofline/db/testing never loads Testcontainers.
 import type {} from './global-setup.ts';
 
+export { startTestDatabase, TEST_ROLE_PASSWORDS, type TestDatabase } from './database.ts';
 export { resetDb } from './reset.ts';
 export {
   SEED_PASSWORD,
   hashPassword,
+  seedCompany,
   seedTwoCompanies,
-  type SeedUser,
+  type SeedCompanySpec,
+  type SeedCompanyUser,
   type SeededCompany,
+  type SeededCompanyBase,
+  type SeededMember,
+  type SeedUser,
 } from './seed.ts';
