@@ -130,7 +130,7 @@ describe('the dev seed', () => {
 
     expect(await inCompany(t, first.companyId, (tx) => tx.select().from(customers))).toHaveLength(60);
     expect(await inCompany(t, first.companyId, (tx) => tx.select().from(agentTasks))).toHaveLength(1);
-    expect(await inCompany(t, first.companyId, (tx) => tx.execute(sql`select 1 from company_members`))).toHaveLength(3);
+    expect(await inCompany(t, first.companyId, async (tx) => (await tx.execute(sql`select 1 from company_members`)).rows)).toHaveLength(3);
   });
 });
 
