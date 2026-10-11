@@ -25,3 +25,6 @@ Task 3: complete (d629c74..b857c5d). Task 4: complete (d629c74..18a3eef). Task 5
 Carry to T7: BrandInfoSchema rejects full state names by design; toUsStateCode accepts them. Carry to T18/T19/T33: T3's no-hard-coded-prices test fails any src file containing 19900/39900.
 Minors (deferred): T4 SetupFacts.texting.rejectedFields is string[] vs T5's BrandField[] (tighten later); T5 split campaign helpers into texting-campaign.ts re-exported from texting.ts.
 F3 Task 9 (API skeleton): brief ready; assigned to sibling 1 (session_01MpVA7xTz6Bus8WPNZWUKRq), branch f3-t9 from f3-setup baf4c93, contact 23.
+Sibling 2 (wf_8adb9634-824, contact 35): T7 76aa441 (base 0351174), review clean, CI 38181073895 green. Task 7: complete. Merged into f3-setup (see git log). Notes: ops/sdd/f3/merge-sib2b.md.
+Carry to T23/T24 (important): move ExistingCustomer, ExistingIndex, NormalizedRow, RowSkip (type-only) into packages/shared/src/imports.ts; normalize.ts and plan.ts re-export them; db must not redefine them. T24 must not record attestation evidence for a matched customer with no phone (importConsent ignores hasPhone).
+Minors (deferred): badPhone checked before email (brief order); previewRows prints blank address parts; normalizeZip truncates '123456' to '12345'; T6's hard-coded "20,000" still open.
