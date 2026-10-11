@@ -539,7 +539,15 @@ describe('app_tenant isolation', () => {
   });
 
   test("company_members lists the current company's members only", async () => {
-    type Member = { id: string; user_id: string; name: string; email: string; role: string; status: string };
+    type Member = {
+      id: string;
+      user_id: string;
+      name: string;
+      email: string;
+      role: string;
+      status: string;
+      can_approve_spend: boolean;
+    };
     const rows = await tenantRaw<Member>(`select * from company_members order by email`, {
       companyId: seed.a.companyId,
     });
@@ -547,8 +555,10 @@ describe('app_tenant isolation', () => {
       `select id, user_id from memberships where company_id = $1`,
       [seed.a.companyId],
     );
-    const columns = ['id', 'user_id', 'name', 'email', 'role', 'status'];
+    // can_approve_spend was appended by migration 0004; the first six keep their order.
+    const columns = ['id', 'user_id', 'name', 'email', 'role', 'status', 'can_approve_spend'];
     expect(rows.map((r) => Object.keys(r))).toEqual(rows.map(() => columns));
+    expect(rows.every((r) => r.can_approve_spend === false)).toBe(true);
     expect(rows.map((r) => r.email)).toEqual(['office@a.test', 'owner@a.test', 'rep2@a.test', 'rep@a.test']);
     expect(rows.every((r) => r.status === 'active')).toBe(true);
     expect(new Set(rows.map((r) => `${r.id}/${r.user_id}`))).toEqual(
@@ -556,6 +566,28 @@ describe('app_tenant isolation', () => {
     );
     expect(await tenantRaw(`select count(*)::int n from company_members`)).toEqual([{ n: 0 }]);
     expect(await tenantRaw(`select count(*)::int n from company_members`, { companyId: '' })).toEqual([{ n: 0 }]);
+  });
+
+  test('company_members shows each member\'s spend delegation, for the current company only', async () => {
+    await ownerQuery(
+      `update memberships set can_approve_spend = true
+        where role = 'office' and company_id = $1`,
+      [seed.a.companyId],
+    );
+    const a = await tenantRaw<{ email: string; can_approve_spend: boolean }>(
+      `select email, can_approve_spend from company_members order by email`,
+      { companyId: seed.a.companyId },
+    );
+    expect(a).toEqual([
+      { email: 'office@a.test', can_approve_spend: true },
+      { email: 'owner@a.test', can_approve_spend: false },
+      { email: 'rep2@a.test', can_approve_spend: false },
+      { email: 'rep@a.test', can_approve_spend: false },
+    ]);
+    const b = await tenantRaw<{ can_approve_spend: boolean }>(`select can_approve_spend from company_members`, {
+      companyId: seed.b.companyId,
+    });
+    expect(b.map((r) => r.can_approve_spend)).toEqual([false, false, false, false]);
   });
 
   test('an app_tenant session in company A cannot link a company-A job to a company-B customer', async () => {

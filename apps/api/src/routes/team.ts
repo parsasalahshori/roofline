@@ -68,7 +68,7 @@ export function teamRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     // The company_members view is the only way app_tenant sees names and emails; it is already
     // filtered to this company.
     const result = await withTenant(pools, ctx, (tx) =>
-      tx.execute(sql`select id, user_id, name, email, role, status from company_members order by name, id`),
+      tx.execute(sql`select id, user_id, name, email, role, status, can_approve_spend from company_members order by name, id`),
     );
     const members = result.rows.map((r) => ({
       id: r.id as string,
@@ -76,6 +76,8 @@ export function teamRoutes(deps: AppDeps, logError: (err: unknown, path: string)
       name: r.name as string,
       email: r.email as string,
       role: r.role as Role,
+      // Only meaningful for the office role (see permissions.ts); shown as stored for everyone.
+      canApproveSpend: r.can_approve_spend as boolean,
       status: r.status as string,
     }));
     // Who has been invited is for the people who manage the team.

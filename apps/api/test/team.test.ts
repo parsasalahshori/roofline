@@ -438,6 +438,7 @@ describe('GET /api/team', () => {
       name: 'Acme Owner',
       email: 'owner@a.test',
       role: 'owner',
+      canApproveSpend: false,
       status: 'active',
     });
     expect(JSON.stringify(res.body)).not.toMatch(/scrypt|password/i);
@@ -999,6 +1000,25 @@ describe('PATCH /api/team/members/:membershipId', () => {
     // The rep's own next request already sees the new role (it is read fresh).
     const rep = await loginAs(t.app, t.seed.a.rep);
     expect((await rep.get('/api/auth/me')).body.role).toBe('office');
+  });
+
+  test("the team list shows the office user's spend delegation before and after a PATCH", async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const id = await membershipId(t.seed.a.companyId, t.seed.a.office.userId);
+    const flagOf = async () => {
+      const team = await owner.get('/api/team');
+      const office = team.body.members.find((m: { id: string }) => m.id === id);
+      return office.canApproveSpend as boolean;
+    };
+    expect(await flagOf()).toBe(false);
+    await owner.patch(`/api/team/members/${id}`).send({ canApproveSpend: true }).expect(200);
+    expect(await flagOf()).toBe(true);
+    await owner.patch(`/api/team/members/${id}`).send({ role: 'rep' }).expect(200);
+    expect(await flagOf()).toBe(false);
+    // Another member's flag is not touched by any of this, and a rep sees the list the same way.
+    const rep = await loginAs(t.app, t.seed.a.rep);
+    const seen = (await rep.get('/api/team')).body.members as { canApproveSpend: boolean }[];
+    expect(seen.every((m) => m.canApproveSpend === false)).toBe(true);
   });
 
   test('delegates spend approval to an office user, and takes it back', async () => {

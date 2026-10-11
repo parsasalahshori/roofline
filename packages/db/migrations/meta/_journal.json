@@ -29,6 +29,13 @@
       "when": 1791686503538,
       "tag": "0003_tenant_texting_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791699140697,
+      "tag": "0004_company_members_spend",
+      "breakpoints": true
     }
   ]
 }
