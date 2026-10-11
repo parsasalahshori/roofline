@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { keys } from '../src/api/keys.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
+import { approvals } from '../src/copy/approvals.ts';
 import { comingSoon } from '../src/copy/comingSoon.ts';
 import { common } from '../src/copy/common.ts';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
@@ -203,21 +204,21 @@ it('opens a customer or a job from a pin card', async () => {
   await waitFor(() => expect(where(router)).toBe('/customers/c9'));
 });
 
-it('keeps placeholder windows for approvals and storm plans', async () => {
-  signedInApi();
+it('opens the approvals list and the review screen in their windows', async () => {
+  signedInApi({ 'GET /api/approvals/t1': () => ({ status: 404, body: { error: 'Not found' } }) });
   renderApp('/approvals');
-  const approvals = await screen.findByRole('dialog', { name: WINDOW_COPY.approvals.title });
-  expect(within(approvals).getByText(comingSoon.approvals)).toBeInTheDocument();
+  const list = await screen.findByRole('dialog', { name: WINDOW_COPY.approvals.title });
+  expect(await within(list).findByText(approvals.emptyTitle)).toBeInTheDocument();
   cleanup();
 
   renderApp('/approvals/t1');
-  const approvalOne = await screen.findByRole('dialog', { name: WINDOW_COPY.approvals.title });
-  expect(within(approvalOne).getByText(comingSoon.approvals)).toBeInTheDocument();
+  const review = await screen.findByRole('dialog', { name: WINDOW_COPY.approvals.title });
+  expect(await within(review).findByText(shell.notFoundTitle)).toBeInTheDocument();
   cleanup();
 
   renderApp('/storm/plans/t1');
   const plan = await screen.findByRole('dialog', { name: WINDOW_COPY.storm.title });
-  expect(within(plan).getByText(comingSoon.storm)).toBeInTheDocument();
+  expect(await within(plan).findByText(shell.notFoundTitle)).toBeInTheDocument();
 });
 
 it('shows the Not found window for an unknown address', async () => {

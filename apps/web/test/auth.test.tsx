@@ -106,6 +106,7 @@ describe('sign-in', () => {
     api = stubApi({
       'POST /api/auth/login': () => ({ body: { user: USER, company: COMPANY } }),
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
+      'GET /api/approvals/t1': () => ({ status: 404, body: { error: 'Not found' } }),
     });
     const { router, user } = renderApp('/sign-in?next=/approvals/t1');
 
@@ -190,6 +191,7 @@ describe('the session redirect', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/other': () => ({ status: 401, body: { error: 'Please sign in.' } }),
+      'GET /api/approvals/t1': () => ({ status: 404, body: { error: 'Not found' } }),
     });
     const { router } = renderApp('/approvals/t1');
     await screen.findByRole('navigation', { name: dock.label });
