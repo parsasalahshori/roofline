@@ -1,17 +1,8 @@
 import { toE164, toUsStateCode } from '@roofline/shared';
-import type { ImportField, ImportMapping, JobStage, SkipKey } from '@roofline/shared';
+import type { ImportField, ImportMapping, JobStage, NormalizedRow, RowSkip } from '@roofline/shared';
 
-export type NormalizedRow = {
-  displayName: string;
-  firstName: string | null;
-  lastName: string | null;
-  phones: string[];
-  emails: string[];
-  address: { addressLine: string; city: string; state: string; zip: string } | null;
-  notes: string | null;
-  stage: JobStage | null;
-};
-export type RowSkip = { skip: Exclude<SkipKey, 'duplicate'> };
+export type { NormalizedRow, RowSkip } from '@roofline/shared';
+
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

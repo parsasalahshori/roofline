@@ -1,3 +1,4 @@
+import type { ExistingConsent } from './consent.ts';
 import type { ConsentStatus, JobStage } from './enums.ts';
 
 export const IMPORT_STATUSES = ['uploaded', 'queued', 'processing', 'done', 'failed'] as const;
@@ -56,3 +57,17 @@ export type ImportView = {
 };
 
 export const MAX_IMPORT_ROWS = 20_000;
+
+export type NormalizedRow = {
+  displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  phones: string[];
+  emails: string[];
+  address: { addressLine: string; city: string; state: string; zip: string } | null;
+  notes: string | null;
+  stage: JobStage | null;
+};
+export type RowSkip = { skip: Exclude<SkipKey, 'duplicate'> };
+export type ExistingCustomer = ExistingConsent & { id: string };
+export type ExistingIndex = { byPhone: ReadonlyMap<string, ExistingCustomer>; byEmail: ReadonlyMap<string, ExistingCustomer> };
