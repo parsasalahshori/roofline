@@ -41,7 +41,8 @@ function makeRecordingFetch(answer: (method: string, path: string) => Response |
         headers[key.toLowerCase()] = value;
       });
     } else if (raw) {
-      for (const [key, value] of Object.entries(raw as Record<string, string>)) {
+      const entries = Array.isArray(raw) ? raw : Object.entries(raw as Record<string, string>);
+      for (const [key, value] of entries as [string, string][]) {
         headers[key.toLowerCase()] = String(value);
       }
     }
