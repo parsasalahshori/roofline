@@ -59,6 +59,18 @@ const INFORMATIONAL_CONSENT: ReadonlySet<ConsentStatus> = new Set(['express', 'a
 
 const OPT_OUT_PHRASE = /reply stop to opt out/i;
 
+/**
+ * Characters that take no space on a phone screen and that `trim()` keeps: the zero-width space,
+ * non-joiner and joiner (U+200B to U+200D) and the word joiner (U+2060). The byte-order mark
+ * (U+FEFF) is listed too, although `trim()` already drops it.
+ */
+const ZERO_WIDTH = /[\u200b-\u200d\u2060\ufeff]/g;
+
+/** True when nothing would show on screen: only whitespace and zero-width characters, or no text. */
+function isBlank(body: unknown): boolean {
+  return typeof body !== 'string' || body.replace(ZERO_WIDTH, '').trim() === '';
+}
+
 const block = (rule: GateRule, reason: string): GateDecision => ({ action: 'block', rule, reason });
 
 /** Marketing must name the company and say how to opt out. The body is the one actually sent. */
@@ -111,8 +123,9 @@ export function decide(req: GateRequest): GateDecision {
   }
 
   // The content rule. A blank text is never sent, whatever its purpose; marketing must also carry
-  // the company name and the opt-out wording. A body that is not a string counts as blank.
-  if (typeof message.body !== 'string' || message.body.trim() === '') {
+  // the company name and the opt-out wording. A body that is not a string, or one with nothing
+  // visible in it (whitespace and zero-width characters only), counts as blank.
+  if (isBlank(message.body)) {
     return block('content', 'This message is empty.');
   }
   if (!informational && !marketingContentOk(message.body, company.name)) {

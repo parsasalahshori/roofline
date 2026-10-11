@@ -163,14 +163,15 @@ describe('the worker', () => {
     }
   });
 
-  test('it schedules expire-drafts every 5 minutes and sweep-queued every minute (dispatch-messages comes with Task 17)', async () => {
+  test('it schedules expire-drafts every 5 minutes, and sweep-queued and dispatch-messages every minute', async () => {
     await withWorker(async (worker) => {
       const schedules = await worker.getSchedules();
       expect(schedules.map((s) => [s.name, s.cron]).sort()).toEqual([
+        ['dispatch-messages', '* * * * *'],
         ['expire-drafts', '*/5 * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);
     });
-    expect(SCHEDULES.map((s) => s.name)).toEqual(['expire-drafts', 'sweep-queued']);
+    expect(SCHEDULES.map((s) => s.name)).toEqual(['expire-drafts', 'sweep-queued', 'dispatch-messages']);
   });
 });

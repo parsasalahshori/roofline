@@ -1,6 +1,6 @@
-import { and, asc, eq, isNotNull, lt } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, lt, lte } from 'drizzle-orm';
 import type { Db } from '../pools.ts';
-import { agentTasks, agentTaskSteps } from '../schema/index.ts';
+import { agentTasks, agentTaskSteps, messages } from '../schema/index.ts';
 
 /*
  * The scheduler's fan-out. These run on the app_system pool, which bypasses row-level security but
@@ -49,6 +49,34 @@ export async function companiesWithExpiredLeases(system: Db, now: Date): Promise
         lt(agentTaskSteps.leaseExpiresAt, now),
       ),
     )
+    .orderBy(asc(agentTaskSteps.companyId));
+  return rows.map((r) => r.companyId);
+}
+
+/**
+ * The companies that have a text due to go out (`scheduled`, `scheduled_for <= now`), each once.
+ * Reads only `messages(company_id, status, scheduled_for)`, the columns app_system may see.
+ */
+export async function companiesWithDueMessages(system: Db, now: Date): Promise<string[]> {
+  const rows = await system
+    .selectDistinct({ companyId: messages.companyId })
+    .from(messages)
+    .where(and(eq(messages.status, 'scheduled'), lte(messages.scheduledFor, now)))
+    .orderBy(asc(messages.companyId));
+  return rows.map((r) => r.companyId);
+}
+
+/**
+ * The companies that have a parked step (`running` with no lease: it finishes by itself later, as
+ * a batch with texts waiting out quiet hours does), each once. The dispatcher looks at these too, so
+ * a batch whose last waiting text was dealt with some other way, or whose run parked it a moment
+ * after the dispatcher looked, still finishes.
+ */
+export async function companiesWithParkedSteps(system: Db): Promise<string[]> {
+  const rows = await system
+    .selectDistinct({ companyId: agentTaskSteps.companyId })
+    .from(agentTaskSteps)
+    .where(and(eq(agentTaskSteps.status, 'running'), isNull(agentTaskSteps.leaseExpiresAt)))
     .orderBy(asc(agentTaskSteps.companyId));
   return rows.map((r) => r.companyId);
 }

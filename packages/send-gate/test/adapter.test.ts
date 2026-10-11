@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { FakeSmsAdapter, type SmsAdapter } from '../src/index.ts';
+import { DisabledSmsAdapter, FakeSmsAdapter, type SmsAdapter } from '../src/index.ts';
 
 const msg = (body: string, to = '+14025550123') => ({ companyId: 'co-1', to, body });
 
@@ -51,5 +51,17 @@ describe('FakeSmsAdapter', () => {
     sms.failNext(3);
     sms.failNext(0);
     await expect(sms.send(msg('ok'))).resolves.toBeDefined();
+  });
+});
+
+describe('DisabledSmsAdapter', () => {
+  test('refuses every send with a plain sentence that carries no phone number or body', async () => {
+    const sms: SmsAdapter = new DisabledSmsAdapter();
+    const error = await sms.send(msg('Your estimate for 12 Oak St is ready', '+14025550123')).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("Texting isn't set up yet.");
+    const text = `${(error as Error).message} ${(error as Error).stack ?? ''}`;
+    expect(text).not.toContain('4025550123');
+    expect(text).not.toContain('Oak St');
   });
 });

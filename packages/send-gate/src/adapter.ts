@@ -42,3 +42,15 @@ export class FakeSmsAdapter implements SmsAdapter {
     return { providerSid: `SMFAKE${String(this.counter).padStart(6, '0')}`, segments: countSegments(m.body) };
   }
 }
+
+/**
+ * The provider until a real one is set up (F3 adds Twilio): every send is refused with a plain
+ * sentence. The server and the worker use it. A company only gets as far as a send once the
+ * carriers approved its registration (the send gate's registration rule), so in practice nothing
+ * reaches it; if something does, the text is marked as not taken and is never reported as sent.
+ */
+export class DisabledSmsAdapter implements SmsAdapter {
+  async send(): Promise<SmsSendResult> {
+    throw new Error("Texting isn't set up yet.");
+  }
+}

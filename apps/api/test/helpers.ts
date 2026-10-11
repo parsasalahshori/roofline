@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, inject } from 'vitest';
 import { createPools, type Pools } from '@roofline/db';
 import { resetDb, seedTwoCompanies, type SeedUser, type SeededCompany } from '@roofline/db/testing';
+import { FakeSmsAdapter } from '@roofline/send-gate';
 import { type AppDeps, createApp } from '../src/app.ts';
 import type { GoogleClaims, GoogleVerifier } from '../src/auth/google.ts';
 import type { Clock } from '../src/clock.ts';
@@ -72,6 +73,8 @@ export type TestApp = {
   google: FakeGoogleVerifier;
   /** The step queue: it records what was enqueued and runs nothing until `queue.drain(deps)`. */
   queue: InlineQueue;
+  /** The SMS provider: it records every text it was asked to send, and `failNext(n)` makes sends fail. */
+  sms: FakeSmsAdapter;
   /** What work outside a request (the runner) handed to `deps.logError`, in order. Nothing is printed. */
   logged: { err: unknown; where: string }[];
   seed: { a: SeededCompany; b: SeededCompany };
@@ -133,7 +136,6 @@ function poolsFor(config: Config): { pools: Pools; key: string } {
 /**
  * Builds the app against the shared test database: empties it, seeds Acme Roofing and Bolt Roofing
  * (four members each), and wires fakes for everything that would reach outside the process.
- * A later task adds the SMS adapter fake here.
  */
 export async function makeTestApp(overrides: Partial<Config> = {}): Promise<TestApp> {
   const urls = inject('dbUrls');
@@ -146,6 +148,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const mailer = new FakeMailer();
   const google = new FakeGoogleVerifier();
   const queue = new InlineQueue();
+  const sms = new FakeSmsAdapter();
   const logged: { err: unknown; where: string }[] = [];
   const pending = new Set<Promise<void>>();
   const deps: AppDeps = {
@@ -155,6 +158,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     clock,
     google,
     queue,
+    sms,
     logError: (err, where) => logged.push({ err, where }),
     onBackgroundTask: (task) => {
       pending.add(task);
@@ -170,6 +174,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     mailer,
     google,
     queue,
+    sms,
     logged,
     seed,
     async settle() {

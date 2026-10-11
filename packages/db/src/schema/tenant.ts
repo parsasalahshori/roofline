@@ -406,6 +406,11 @@ export const messages = pgTable(
     dedupeKey: text('dedupe_key'),
     segments: integer('segments').notNull().default(1),
     toE164: text('to_e164'),
+    /**
+     * For a `failed` text: whether trying again is safe. True only when the provider refused it
+     * (so it never went out); false when it may have gone out (unconfirmed) or can never go out.
+     */
+    retryable: boolean('retryable').notNull().default(false),
     ...timestamps(),
   },
   (t) => [

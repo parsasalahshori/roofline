@@ -252,6 +252,20 @@ describe('content', () => {
     test('a body with any real text in it is not blank', () => {
       expect(decide(info('  ok  '))).toEqual({ action: 'send' });
     });
+
+    // Invisible characters a paste can carry: zero-width space, non-joiner and joiner, word joiner,
+    // and the byte-order mark. A text of only these shows up empty on the customer's phone.
+    const ZERO_WIDTH = ['\u200b', '\u200c', '\u200d', '\u2060', '\ufeff', '\u200b\u200c\u200d\u2060\ufeff', ' \u200b \n\u2060\t'];
+
+    test.each(ZERO_WIDTH)('%j (zero-width characters only) is blank for both purposes', (body) => {
+      expect(decide(info(body))).toEqual(EMPTY);
+      expect(decide(baseline({ message: { body } }))).toEqual(EMPTY);
+    });
+
+    test('zero-width characters around real text do not make it blank', () => {
+      expect(decide(info('\u200bok\u2060'))).toEqual({ action: 'send' });
+      expect(decide(baseline({ message: { body: `\u200b${MARKETING_BODY}\ufeff` } }))).toEqual({ action: 'send' });
+    });
   });
 });
 

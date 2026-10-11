@@ -1,4 +1,5 @@
 import { createPools } from '@roofline/db';
+import { DisabledSmsAdapter } from '@roofline/send-gate';
 import type { AppDeps } from './app.ts';
 import { JoseGoogleVerifier } from './auth/google.ts';
 import { systemClock } from './clock.ts';
@@ -31,8 +32,9 @@ export function loadConfigOrExit(env: Record<string, string | undefined>): Confi
 
 /**
  * The real deps for `config`: both database pools, Postmark when it is configured (otherwise
- * email is logged, with a warning in production), Google sign-in, the system clock and the
- * console logger. `queue` is where approved steps go (the server and the worker pass a
+ * email is logged, with a warning in production), Google sign-in, the system clock, the console
+ * logger, and the SMS provider (`DisabledSmsAdapter`, which refuses every send, until F3 brings
+ * Twilio; the send gate's registration rule stops real companies before a send anyway). `queue` is where approved steps go (the server and the worker pass a
  * `PgBossQueue`). The caller ends `deps.pools` when it shuts down.
  */
 export function buildDeps(config: Config, queue: StepQueue): AppDeps {
@@ -49,5 +51,5 @@ export function buildDeps(config: Config, queue: StepQueue): AppDeps {
   }
 
   const google = new JoseGoogleVerifier(config.GOOGLE_CLIENT_ID);
-  return { pools, config, mailer, clock: systemClock, google, queue, logError: logErrorToConsole };
+  return { pools, config, mailer, clock: systemClock, google, queue, sms: new DisabledSmsAdapter(), logError: logErrorToConsole };
 }

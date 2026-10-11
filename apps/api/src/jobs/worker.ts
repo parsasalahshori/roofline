@@ -4,6 +4,7 @@ import { describeErrorForLog } from '../errors.ts';
 import { ensureStepQueue, STEP_QUEUE, type StepJobData } from '../tasks/pgboss-queue.ts';
 import { runStep } from '../tasks/runner.ts';
 import { UUID } from '../validate.ts';
+import { dispatchDueMessages } from './scheduler/dispatch-messages.ts';
 import { expireDrafts } from './scheduler/expire-drafts.ts';
 import { reportJobError } from './scheduler/report.ts';
 import { sweepQueued } from './scheduler/sweep-queued.ts';
@@ -24,12 +25,14 @@ export type ScheduledJob = {
 };
 
 /**
- * The worker's recurring jobs. Task 17 adds `dispatch-messages` (`* * * * *`) here. A schedule
+ * The worker's recurring jobs: draft expiry, the queued-step sweeper, and the scheduled-text
+ * dispatcher (texts waiting out quiet hours, and the batch steps they belong to). A schedule
  * dropped from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'expire-drafts', cron: '*/5 * * * *', run: expireDrafts },
   { name: 'sweep-queued', cron: '* * * * *', run: sweepQueued },
+  { name: 'dispatch-messages', cron: '* * * * *', run: dispatchDueMessages },
 ];
 
 /** How many steps one worker process runs at once. */

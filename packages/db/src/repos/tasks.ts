@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, countDistinct, desc, eq, getTableColumns, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, countDistinct, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Agent, ApprovalClass, StepStatus, TaskStatus } from '@roofline/shared';
 import { agentTasks, agentTaskSteps, companies, customers } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -363,6 +363,45 @@ export async function finishClaimedStep(
         eq(agentTaskSteps.runSeq, runSeq),
       ),
     )
+    .returning();
+  return row ?? null;
+}
+
+/** A parked step: `running` with no lease, so no run owns it and it finishes by itself later. */
+const parked = (ctx: TenantContext) =>
+  and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.status, 'running'), isNull(agentTaskSteps.leaseExpiresAt));
+
+/** The company's parked steps of one type (ids, tasks and results; no payloads), oldest first. */
+export async function listParkedSteps(
+  tx: Tx,
+  ctx: TenantContext,
+  type: string,
+): Promise<{ id: string; taskId: string; result: Record<string, unknown> | null }[]> {
+  return tx
+    .select({ id: agentTaskSteps.id, taskId: agentTaskSteps.taskId, result: agentTaskSteps.result })
+    .from(agentTaskSteps)
+    .where(and(parked(ctx), eq(agentTaskSteps.type, type)))
+    .orderBy(asc(agentTaskSteps.createdAt), asc(agentTaskSteps.id));
+}
+
+/**
+ * Finishes a parked step, for whatever completes it later (the dispatcher, once a batch's last
+ * waiting text is dealt with): one UPDATE, conditional on the step still being parked (`running`,
+ * no lease), so it never overwrites a run that has claimed the step since. With `status: 'running'`
+ * it only refreshes the parked step's result. Returns the row as saved, or null when the step is no
+ * longer parked. The caller locks the task first (task, then step).
+ */
+export async function finishParkedStep(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  finish: { status: 'done' | 'failed' | 'needs_attention' | 'running'; result: Record<string, unknown>; errorPlain?: string | null },
+  now: Date,
+): Promise<StepRow | null> {
+  const [row] = await tx
+    .update(agentTaskSteps)
+    .set({ status: finish.status, result: finish.result, errorPlain: finish.errorPlain ?? null, updatedAt: now })
+    .where(and(parked(ctx), eq(agentTaskSteps.id, stepId)))
     .returning();
   return row ?? null;
 }

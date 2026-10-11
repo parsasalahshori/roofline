@@ -225,6 +225,20 @@ describe('constraints', () => {
     expect(row).toEqual({ customer_id: null, segments: 1 });
   });
 
+  test('messages.retryable is a non-null boolean that starts false', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const [row] = await ownerQuery<{ retryable: boolean }>(
+      `insert into messages (company_id, channel, direction, body, status) values ($1, 'sms', 'out', 'Hi', 'failed') returning retryable`,
+      [s.a.companyId],
+    );
+    expect(row).toEqual({ retryable: false });
+    const err = await rejected(
+      `insert into messages (company_id, channel, direction, body, status, retryable) values ($1, 'sms', 'out', 'Hi', 'failed', null)`,
+      [s.a.companyId],
+    );
+    expect(err.code).toBe('23502');
+  });
+
   test('a step can send at most one message per customer, but null step ids are unrestricted', async () => {
     const s = await seedTwoCompanies(urls.owner);
     const cid = s.a.companyId;

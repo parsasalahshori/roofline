@@ -1,6 +1,7 @@
 import express, { type Express, type RequestHandler } from 'express';
 import helmet from 'helmet';
 import type { Pools } from '@roofline/db';
+import type { SmsAdapter } from '@roofline/send-gate';
 import type { Clock } from './clock.ts';
 import type { Config } from './config.ts';
 import type { GoogleVerifier } from './auth/google.ts';
@@ -19,10 +20,7 @@ import { taskRoutes } from './routes/tasks.ts';
 import { teamRoutes } from './routes/team.ts';
 import type { StepQueue } from './tasks/queue.ts';
 
-/**
- * Everything the app reaches outside itself through. Tests pass fakes for all of it.
- * A later task adds the SMS adapter here.
- */
+/** Everything the app reaches outside itself through. Tests pass fakes for all of it. */
 export type AppDeps = {
   pools: Pools;
   config: Config;
@@ -35,6 +33,11 @@ export type AppDeps = {
    * committed. Tests pass an `InlineQueue` and drain it themselves.
    */
   queue: StepQueue;
+  /**
+   * The SMS provider every outbound text goes through, after the send gate said yes. The server
+   * and the worker use `DisabledSmsAdapter` until F3 adds Twilio; tests pass a `FakeSmsAdapter`.
+   */
+  sms: SmsAdapter;
   /**
    * Where work that runs outside a request reports an error worth a person's look (the runner, when
    * a step gives up after its last attempt). It gets the error itself and where it happened, and

@@ -164,14 +164,14 @@ describe('runStep', () => {
       return { status: 'done', result: { ok: 1 } };
     });
     const { taskId } = await approvedOneStep();
-    const [id] = await newCustomers(t, 'a', ['Molly']);
-    const { taskId: sms } = await newTask(t, 'a', { steps: [smsStep([id!])] });
-    await (await actors.as('owner')).post(`/api/approvals/${sms}/approve`).send(seenOf(await dbSteps(t, 'a', sms)));
+    const { taskId: unknown } = await approvedOneStep('demo_message');
+    // A step saved under a type this version has no handler for (one retired since, say).
+    await setStep(t, 'a', (await stepNow(unknown)).id, { type: 'retired_step_type' });
 
     await t.queue.drain(t.deps);
 
     expect(await stepNow(taskId)).toMatchObject({ status: 'done', attempts: 5 });
-    expect((await dbSteps(t, 'a', sms))[0]!.status).toBe('needs_attention');
+    expect((await dbSteps(t, 'a', unknown))[0]!.status).toBe('needs_attention');
     expect(t.logged).toEqual([]);
   });
 
@@ -222,11 +222,9 @@ describe('runStep', () => {
     ]);
   });
 
-  test('a step type with no handler yet (send_sms_batch) needs attention at once, without retries', async () => {
-    const [id] = await newCustomers(t, 'a', ['Molly']);
-    const { taskId } = await newTask(t, 'a', { steps: [smsStep([id!])] });
-    const steps = await dbSteps(t, 'a', taskId);
-    expect((await (await actors.as('owner')).post(`/api/approvals/${taskId}/approve`).send(seenOf(steps))).status).toBe(200);
+  test('a step type with no handler (one this version does not know) needs attention at once, without retries', async () => {
+    const { taskId, step } = await approvedOneStep();
+    await setStep(t, 'a', step.id, { type: 'retired_step_type' });
 
     await t.queue.drain(t.deps);
 
