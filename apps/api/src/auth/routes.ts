@@ -508,10 +508,19 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     body: z.infer<typeof AcceptInviteBody>,
     claims: GoogleClaims | undefined,
     retry = true,
-  ): Promise<AcceptedInvite> {
+  ): Promise<AcceptedInvite & { sessionToken: string | null }> {
     const identity = await inviteIdentity(req, invite, body, claims);
     try {
-      return await acceptInvite(system, { token: body.token, now: clock.now(), ...identity });
+      return await acceptInvite(system, {
+        token: body.token,
+        now: clock.now(),
+        ...identity,
+        request: {
+          ua: req.get('user-agent') ?? null,
+          ip: req.ip ?? null,
+          carriedSessionId: (req.session as SessionInfo | undefined)?.sessionId ?? null,
+        },
+      });
     } catch (err) {
       if (err instanceof InviteUnavailableError) throw new AppError(400, MESSAGES.inviteGone);
       if (err instanceof AlreadyMemberError) throw new AppError(409, MESSAGES.alreadyMember);
@@ -559,14 +568,10 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
       logError(err, req.path);
     });
 
-    // Signed in to the invited company: the live session of this same user is moved there (its
-    // cookie stays), otherwise a new session is started (and a live session of someone else that
-    // this request carried is deleted, as in every sign-in).
-    const current = req.session as SessionInfo | undefined;
-    const reused =
-      current?.userId === user.id &&
-      (await switchSessionCompany(system, { sessionId: current.sessionId, userId: user.id, companyId: company.id }));
-    if (!reused) await signIn(req, res, user.id, company.id);
+    // The session was saved by the acceptance itself, in its transaction (see `acceptInvite`).
+    // All that is left is the cookie: a new one, unless the person's own live session was moved to
+    // the invited company, in which case the browser already has it.
+    if (accepted.sessionToken !== null) setSessionCookie(res, accepted.sessionToken, config);
     res.json(await accountBody(user.id, company.id));
   });
 

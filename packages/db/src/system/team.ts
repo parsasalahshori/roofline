@@ -8,6 +8,7 @@ import {
   type AuthUser,
   EmailInUseError,
   GoogleSubInUseError,
+  type SessionDetails,
   USER_COLUMNS,
 } from './auth.ts';
 
@@ -16,6 +17,13 @@ import {
  * are global (an invite is read by someone who has no company yet). Only
  * apps/api/src/auth/team-store.ts calls these. As in auth.ts, nothing here reads a clock or makes
  * a token: callers pass `now` and token hashes in.
+ *
+ * LOCK ORDER. Transactions here and in auth.ts take row locks in one order, so none can wait on
+ * another in a circle (Postgres would then abort one with a deadlock error, a 500):
+ *   invites -> users -> memberships (a company's owners in id order, then the target) -> sessions
+ * Accepting an invite goes invite, user, membership, session. Disabling a member goes invites (the
+ * ones it voids), owners, the member, then the member's sessions. A password reset goes user, then
+ * sessions. Anything new that locks several of these takes them in that order.
  */
 
 /** What `system.transaction` hands its callback. */
@@ -189,6 +197,14 @@ export type AcceptInviteInput = {
   newUser: { name: string; passwordHash: string | null; googleSub: string | null } | null;
   /** Used when a user with the invite's address exists. */
   proof: AcceptProof | null;
+  /**
+   * The session that ends the acceptance, saved IN the same transaction. With a `session` proof,
+   * that session is the one used: it is moved to the invited company and `newSession` is ignored.
+   * With any other proof (or a brand-new user) `newSession` is inserted for the user.
+   */
+  newSession: SessionDetails;
+  /** A live session of someone else that the request carried; deleted in the same transaction, since its cookie is being replaced. */
+  replaceSessionId: string | null;
 };
 
 export type AcceptedInvite = {
@@ -227,18 +243,29 @@ async function assertProof(tx: Tx, user: AuthUser, proof: AcceptProof, now: Date
 
 /**
  * Accepts an invitation. ONE transaction does all of it, so a token is used at most once even when
- * requests race, and a failure part-way leaves the invite pending:
+ * requests race, and a failure part-way leaves the invite pending and no session behind:
  * 1. Claims the invite with a single guarded UPDATE (`accepted_at is null and expires_at > now`).
  *    Of any number of simultaneous requests exactly one gets the row; the rest get
  *    InviteUnavailableError.
- * 2. Locks the user with the invite's address (FOR SHARE) and either checks the caller's `proof`
- *    against it, or, when there is no such user yet, creates one with the email confirmed.
+ * 2. Locks the user with the invite's address (FOR SHARE) and either creates one with the email
+ *    confirmed (no such user yet) or keeps the lock for step 4.
  *    - A user appeared since the caller looked: EmailInUseError (the caller looks again).
- *    - The proof does not hold: SignInRequiredError.
  *    - The Google account belongs to another user: GoogleSubInUseError.
  * 3. Creates the ACTIVE membership with the invited role, or turns a disabled/invited one on again
- *    with that role. Spend approval always starts off. An already active member:
- *    AlreadyMemberError, and the invite is left pending.
+ *    with that role. Spend approval always starts off. (The membership row is locked before the
+ *    proof is checked, see the lock order above, but an already active member is only told so
+ *    after the proof held, so membership is not revealed to someone who is not that user.)
+ * 4. Checks the caller's `proof` against the locked user (and, for a session proof, the locked
+ *    session), then ends the acceptance with a session, written here and not by the caller:
+ *    - proof = a session of the user: that session is moved to the invited company. If it is gone,
+ *      SignInRequiredError and nothing is saved. There is no fallback to a new session: a cookie
+ *      that was revoked must stay revoked.
+ *    - any other proof, or a new user: `newSession` is inserted. A password reset or Google
+ *      hand-over that commits before this transaction does fails the proof (FOR SHARE on the user
+ *      makes it wait for us, or us wait for it), and one that commits after ours deletes this
+ *      session with the rest of the user's sessions.
+ *    - `replaceSessionId`, a session of someone else that the request carried, is deleted.
+ * An already active member: AlreadyMemberError, and the invite is left pending.
  */
 export async function acceptInvite(system: Db, input: AcceptInviteInput): Promise<AcceptedInvite> {
   try {
@@ -261,7 +288,6 @@ export async function acceptInvite(system: Db, input: AcceptInviteInput): Promis
       let user: AuthUser;
       if (found) {
         if (!input.proof) throw new EmailInUseError();
-        await assertProof(tx, found, input.proof, input.now);
         user = found;
       } else {
         if (!input.newUser) throw new SignInRequiredError();
@@ -284,6 +310,9 @@ export async function acceptInvite(system: Db, input: AcceptInviteInput): Promis
         .where(and(eq(memberships.companyId, invite.companyId), eq(memberships.userId, user.id)))
         .limit(1)
         .for('update');
+
+      if (found && input.proof) await assertProof(tx, found, input.proof, input.now);
+
       let membershipId: string;
       if (existing) {
         if (existing.status === 'active') throw new AlreadyMemberError();
@@ -304,6 +333,30 @@ export async function acceptInvite(system: Db, input: AcceptInviteInput): Promis
           })
           .returning({ id: memberships.id });
         membershipId = created!.id;
+      }
+
+      if (input.proof?.via === 'session') {
+        const moved = await tx
+          .update(sessions)
+          .set({ activeCompanyId: invite.companyId })
+          .where(
+            and(eq(sessions.id, input.proof.sessionId), eq(sessions.userId, user.id), gt(sessions.expiresAt, input.now)),
+          )
+          .returning({ id: sessions.id });
+        if (moved.length === 0) throw new SignInRequiredError();
+      } else {
+        await tx.insert(sessions).values({
+          tokenHash: input.newSession.tokenHash,
+          userId: user.id,
+          activeCompanyId: invite.companyId,
+          expiresAt: input.newSession.expiresAt,
+          lastSeenAt: input.newSession.now,
+          userAgent: input.newSession.userAgent,
+          ip: input.newSession.ip,
+        });
+        if (input.replaceSessionId !== null) {
+          await tx.delete(sessions).where(eq(sessions.id, input.replaceSessionId));
+        }
       }
 
       const [company] = await tx
@@ -360,9 +413,14 @@ export type MembershipUpdate = {
  * may). It can be stored on any role, but a role change takes it back to false unless the same
  * request says otherwise, so a delegation does not follow someone to a different job.
  *
- * Disabling also deletes the user's sessions that are working in THIS company, in the same
- * transaction (their sessions in other companies stay). Turning someone back on does not bring
- * those back; they sign in again.
+ * Disabling also, in the same transaction:
+ * - deletes the user's sessions that are working in THIS company (their sessions in other
+ *   companies stay). Turning someone back on does not bring those back; they sign in again.
+ * - deletes this company's invites that were never accepted and are addressed to the user's
+ *   email. Otherwise a disabled member could switch themselves back on by accepting an invite they
+ *   still had. These are deleted FIRST, before any membership lock: accepting an invite locks the
+ *   invite and then the membership, so this takes them in the same order (see the lock order at
+ *   the top of this file).
  *
  * `beforeCommit` runs after the change and before the commit; if it throws, nothing is saved. The
  * route uses it to write the audit row, so a change never exists without one.
@@ -373,6 +431,21 @@ export async function updateMembership(
   beforeCommit?: (update: MembershipUpdate) => Promise<void>,
 ): Promise<MembershipUpdate | null> {
   return system.transaction(async (tx) => {
+    if (input.changes.status === 'disabled') {
+      // A plain read: the membership's user never changes, and the locks come after the invites.
+      const [who] = await tx
+        .select({ email: users.email })
+        .from(memberships)
+        .innerJoin(users, eq(users.id, memberships.userId))
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.companyId, input.companyId)))
+        .limit(1);
+      if (who) {
+        await tx
+          .delete(invites)
+          .where(and(eq(invites.companyId, input.companyId), eq(invites.email, who.email), isNull(invites.acceptedAt)));
+      }
+    }
+
     // Selected only to take the locks; the count further down runs after them.
     await tx
       .select({ id: memberships.id })

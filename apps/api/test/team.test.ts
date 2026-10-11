@@ -4,6 +4,7 @@ import { auditLog, withTenant } from '@roofline/db';
 import { SEED_PASSWORD } from '@roofline/db/testing';
 import type { GoogleClaims } from '../src/auth/google.ts';
 import { LastOwnerError, updateMember } from '../src/auth/team-store.ts';
+import { generateToken, hashToken } from '../src/auth/sessions.ts';
 import { loginAs, makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -66,6 +67,24 @@ async function addMembership(companyId: string, userId: string, role: string, st
     role,
     status,
   ]);
+}
+
+/** A connection of our own, to hold a transaction open while a request runs. */
+async function openClient() {
+  return t.deps.pools.system.$client.connect();
+}
+
+/** Waits until at least `n` database connections are stuck waiting for a lock. */
+async function untilBlocked(n: number) {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const [row] = await sql<{ n: string }>(
+      "select count(*) as n from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()",
+    );
+    if (Number(row!.n) >= n) return;
+    if (Date.now() > deadline) throw new Error(`Nothing was waiting for a lock (wanted ${n}).`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
 }
 
 function lastMailToken(to: string): string {
@@ -968,6 +987,262 @@ describe('POST /api/auth/accept-invite: someone who already has an account', () 
     const blocked = await accept({ token, password: SEED_PASSWORD });
     expect(blocked.status).toBe(429);
     expect(blocked.body).toEqual({ error: 'Too many sign-in attempts. Try again in a few minutes.' });
+  });
+});
+
+describe('POST /api/auth/accept-invite: the session is made inside the acceptance transaction', () => {
+  const BREP = () => t.seed.b.rep;
+
+  async function inviteBRep() {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    return { owner, token: await invite(owner, BREP().email, 'office') };
+  }
+
+  async function sessionCount(userId: string) {
+    return count('select count(*) from sessions where user_id = $1', [userId]);
+  }
+
+  async function nothingAccepted(owner: SuperAgent) {
+    expect(await sql('select 1 from memberships where company_id = $1 and user_id = $2', [t.seed.a.companyId, BREP().userId])).toHaveLength(0);
+    expect((await owner.get('/api/team')).body.invites).toHaveLength(1);
+  }
+
+  test('a password reset that commits right after the acceptance leaves no session made from the old password', async () => {
+    const { token } = await inviteBRep();
+    const blocker = await openClient(); // holds the membership the acceptance wants to insert
+    const reset = await openClient();
+    try {
+      await blocker.query('begin');
+      await blocker.query('insert into memberships (company_id, user_id, role) values ($1, $2, $3)', [t.seed.a.companyId, BREP().userId, 'rep']);
+      const accepting = accept({ token, password: SEED_PASSWORD }).then((res) => res);
+      await untilBlocked(1); // the acceptance holds the user's row (FOR SHARE) and waits for the membership key
+      // A password reset starts now: its UPDATE of the user waits behind the acceptance, then runs
+      // the way the real one does (change the password, delete ALL the user's sessions, commit).
+      await reset.query('begin');
+      const resetting = (async () => {
+        await reset.query("update users set password_hash = 'scrypt$reset-after' where id = $1", [BREP().userId]);
+        await reset.query('delete from sessions where user_id = $1', [BREP().userId]);
+        await reset.query('commit');
+      })();
+      await untilBlocked(2);
+      await blocker.query('rollback'); // the acceptance goes on
+      const res = await accepting;
+      await resetting;
+      expect(res.status).toBe(200);
+    } finally {
+      await blocker.query('rollback').catch(() => undefined);
+      await reset.query('rollback').catch(() => undefined);
+      blocker.release();
+      reset.release();
+    }
+    // The acceptance's session was saved before the reset's DELETE could run, so the DELETE took it.
+    expect(await sessionCount(BREP().userId)).toBe(0);
+  });
+
+  test('a password reset that commits first makes the acceptance a 401, with no session and the invite still pending', async () => {
+    const { owner, token } = await inviteBRep();
+    const reset = await openClient();
+    try {
+      await reset.query('begin');
+      await reset.query("update users set password_hash = 'scrypt$reset-first' where id = $1", [BREP().userId]);
+      const accepting = accept({ token, password: SEED_PASSWORD }).then((res) => res);
+      await untilBlocked(1); // verified the old password, now waiting for the user's row
+      await reset.query('delete from sessions where user_id = $1', [BREP().userId]);
+      await reset.query('commit');
+      const res = await accepting;
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ error: SIGN_IN_TO_ACCEPT });
+      expect(res.headers['set-cookie']).toBeUndefined();
+    } finally {
+      await reset.query('rollback').catch(() => undefined);
+      reset.release();
+    }
+    expect(await sessionCount(BREP().userId)).toBe(0);
+    await nothingAccepted(owner);
+  });
+
+  test('a proving session that is deleted before the acceptance checks it → 401, and no new session is made', async () => {
+    const { owner, token } = await inviteBRep();
+    const bRep = await loginAs(t.app, BREP());
+    const blocker = await openClient(); // holds the invite row, so the acceptance cannot start yet
+    try {
+      await blocker.query('begin');
+      await blocker.query('update invites set role = role where email = $1', [BREP().email]);
+      const accepting = bRep.post('/api/auth/accept-invite').send({ token }).then((res) => res);
+      await untilBlocked(1);
+      await sql('delete from sessions where user_id = $1', [BREP().userId]); // signed out elsewhere
+      await blocker.query('rollback');
+      const res = await accepting;
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ error: SIGN_IN_TO_ACCEPT });
+    } finally {
+      await blocker.query('rollback').catch(() => undefined);
+      blocker.release();
+    }
+    expect(await sessionCount(BREP().userId)).toBe(0);
+    await nothingAccepted(owner);
+  });
+
+  test('a proving session that is deleted right after the acceptance checks it does not leave a fresh session behind', async () => {
+    const { token } = await inviteBRep();
+    const bRep = await loginAs(t.app, BREP());
+    const blocker = await openClient(); // holds the membership the acceptance wants to insert
+    try {
+      await blocker.query('begin');
+      await blocker.query('insert into memberships (company_id, user_id, role) values ($1, $2, $3)', [t.seed.a.companyId, BREP().userId, 'rep']);
+      const accepting = bRep.post('/api/auth/accept-invite').send({ token }).then((res) => res);
+      await untilBlocked(1); // the acceptance has checked (and share-locked) the proving session
+      const loggingOut = sql('delete from sessions where user_id = $1', [BREP().userId]); // queued behind that lock
+      await untilBlocked(2);
+      await blocker.query('rollback');
+      await accepting;
+      await loggingOut;
+    } finally {
+      await blocker.query('rollback').catch(() => undefined);
+      blocker.release();
+    }
+    // Whatever the answer was, the session that was just revoked did not turn into a live one.
+    expect(await sessionCount(BREP().userId)).toBe(0);
+  });
+
+  test('a new person and a password-proven user get their session from the acceptance itself (one cookie, works at once)', async () => {
+    const { token } = await inviteBRep();
+    const agent = request.agent(t.app);
+    const res = await agent.post('/api/auth/accept-invite').send({ token, password: SEED_PASSWORD });
+    expect(res.status).toBe(200);
+    expect(String(res.headers['set-cookie'])).toMatch(/rl_session=/);
+    expect(await sessionCount(BREP().userId)).toBe(1);
+    const me = await agent.get('/api/auth/me');
+    expect(me.body.company.id).toBe(t.seed.a.companyId);
+    expect(me.body.role).toBe('office');
+  });
+
+  test("a live session of someone else that the request carried is deleted in the same step", async () => {
+    const { token } = await inviteBRep();
+    const aOffice = await loginAs(t.app, t.seed.a.office);
+    expect(await sessionCount(t.seed.a.office.userId)).toBe(1);
+    const res = await aOffice.post('/api/auth/accept-invite').send({ token, password: SEED_PASSWORD });
+    expect(res.status).toBe(200);
+    expect(await sessionCount(t.seed.a.office.userId)).toBe(0);
+    expect(await sessionCount(BREP().userId)).toBe(1);
+  });
+});
+
+describe('disabling a member voids their pending invites', () => {
+  /** B's rep is invited to A, and then ends up an active member of A some other way. */
+  async function pendingInviteForMember() {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const token = await invite(owner, t.seed.b.rep.email, 'office');
+    await addMembership(t.seed.a.companyId, t.seed.b.rep.userId, 'rep');
+    return { owner, token, id: await membershipId(t.seed.a.companyId, t.seed.b.rep.userId) };
+  }
+
+  test("a disabled member cannot switch themselves back on with an invite they still had", async () => {
+    const { owner, token, id } = await pendingInviteForMember();
+    expect((await owner.get('/api/team')).body.invites).toHaveLength(1);
+    await owner.patch(`/api/team/members/${id}`).send({ status: 'disabled' }).expect(200);
+    expect((await owner.get('/api/team')).body.invites).toEqual([]);
+
+    const res = await accept({ token, password: SEED_PASSWORD });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: INVITE_GONE });
+    const [m] = await sql<{ status: string; role: string }>('select status, role from memberships where id = $1', [id]);
+    expect(m).toEqual({ status: 'disabled', role: 'rep' });
+    expect(await count('select count(*) from sessions where user_id = $1 and active_company_id = $2', [t.seed.b.rep.userId, t.seed.a.companyId])).toBe(0);
+  });
+
+  test("only that company's invites to that address go; other people's and other companies' stay", async () => {
+    const { owner, id } = await pendingInviteForMember();
+    await invite(owner, 'someone.else@example.com', 'rep');
+    // Bolt's own invite to the same address (made directly: Bolt cannot invite its own member).
+    await sql(
+      "insert into invites (company_id, email, role, token_hash, expires_at) values ($1, $2, 'office', $3, $4)",
+      [t.seed.b.companyId, t.seed.b.rep.email, hashToken(generateToken()), new Date(t.clock.now().getTime() + 7 * DAY)],
+    );
+    const b = await loginAs(t.app, t.seed.b.owner);
+    await owner.patch(`/api/team/members/${id}`).send({ status: 'disabled' }).expect(200);
+    expect((await owner.get('/api/team')).body.invites.map((i: { email: string }) => i.email)).toEqual(['someone.else@example.com']);
+    expect((await b.get('/api/team')).body.invites).toHaveLength(1);
+  });
+
+  test('turning someone back on does not bring a voided invite back, and they can be invited afresh', async () => {
+    const { owner, id } = await pendingInviteForMember();
+    await owner.patch(`/api/team/members/${id}`).send({ status: 'disabled' }).expect(200);
+    await owner.patch(`/api/team/members/${id}`).send({ status: 'active' }).expect(200);
+    expect((await owner.get('/api/team')).body.invites).toEqual([]);
+    // Inviting again is possible once they are disabled again.
+    await owner.patch(`/api/team/members/${id}`).send({ status: 'disabled' }).expect(200);
+    expect((await owner.post('/api/team/invites').send({ email: t.seed.b.rep.email, role: 'rep' })).status).toBe(201);
+  });
+
+  test('a disable that is refused (the last owner) keeps the invites too', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    await sql(
+      "insert into invites (company_id, email, role, token_hash, expires_at) values ($1, 'owner@a.test', 'owner', $2, $3)",
+      [t.seed.a.companyId, hashToken(generateToken()), new Date(t.clock.now().getTime() + 7 * DAY)],
+    );
+    const id = await membershipId(t.seed.a.companyId, t.seed.a.owner.userId);
+    expect((await owner.patch(`/api/team/members/${id}`).send({ status: 'disabled' })).status).toBe(400);
+    expect(await count("select count(*) from invites where email = 'owner@a.test'")).toBe(1);
+  });
+
+  test('a disable and an accept that both wait for the same membership do not deadlock (invites are locked first)', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    await addMembership(t.seed.a.companyId, t.seed.b.rep.userId, 'rep');
+    const id = await membershipId(t.seed.a.companyId, t.seed.b.rep.userId);
+    const token = generateToken();
+    await sql(
+      "insert into invites (company_id, email, role, token_hash, expires_at) values ($1, $2, 'office', $3, $4)",
+      [t.seed.a.companyId, t.seed.b.rep.email, hashToken(token), new Date(t.clock.now().getTime() + 7 * DAY)],
+    );
+    const blocker = await openClient(); // holds the member's row, so both requests queue behind it
+    try {
+      await blocker.query('begin');
+      await blocker.query('select id from memberships where id = $1 for update', [id]);
+      const disabling = owner.patch(`/api/team/members/${id}`).send({ status: 'disabled' }).then((res) => res);
+      await untilBlocked(1);
+      const accepting = accept({ token, password: SEED_PASSWORD }).then((res) => res);
+      await untilBlocked(2);
+      await blocker.query('rollback');
+      const [disabled, accepted] = await Promise.all([disabling, accepting]);
+      // Taking the locks in different orders would be a deadlock here: one of the two would get a 500.
+      expect(disabled.status).toBe(200);
+      expect(accepted.status).toBe(400);
+      expect(accepted.body).toEqual({ error: INVITE_GONE });
+    } finally {
+      await blocker.query('rollback').catch(() => undefined);
+      blocker.release();
+    }
+    const [m] = await sql<{ status: string }>('select status from memberships where id = $1', [id]);
+    expect(m!.status).toBe('disabled');
+  });
+
+  test('disabling at the same moment as the person accepts (with their session) never deadlocks: never a 500', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    await addMembership(t.seed.a.companyId, t.seed.b.rep.userId, 'rep');
+    const id = await membershipId(t.seed.a.companyId, t.seed.b.rep.userId);
+    for (let round = 0; round < 8; round++) {
+      await sql("update memberships set status = 'active', role = 'rep' where id = $1", [id]);
+      const token = generateToken();
+      await sql(
+        "insert into invites (company_id, email, role, token_hash, expires_at) values ($1, $2, 'office', $3, $4)",
+        [t.seed.a.companyId, t.seed.b.rep.email, hashToken(token), new Date(t.clock.now().getTime() + 7 * DAY)],
+      );
+      // Their session is working in company A, so it is both their proof and what the disable deletes.
+      const member = await loginAs(t.app, t.seed.b.rep);
+      await member.post('/api/auth/switch-company').send({ companyId: t.seed.a.companyId }).expect(200);
+      const [accepting, disabling] = await Promise.all([
+        member.post('/api/auth/accept-invite').send({ token }),
+        owner.patch(`/api/team/members/${id}`).send({ status: 'disabled' }),
+      ]);
+      expect([round, disabling.status]).toEqual([round, 200]);
+      // 409 (they were still active), 401 (their session was already gone) or 400 (the invite was voided).
+      expect([round, [400, 401, 409].includes(accepting.status)]).toEqual([round, true]);
+      const [m] = await sql<{ status: string }>('select status from memberships where id = $1', [id]);
+      expect([round, m!.status]).toEqual([round, 'disabled']);
+      await sql('delete from sessions where user_id = $1', [t.seed.b.rep.userId]);
+      await sql('delete from invites where email = $1', [t.seed.b.rep.email]);
+    }
   });
 });
 

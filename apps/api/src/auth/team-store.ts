@@ -15,7 +15,7 @@ import {
   updateMembership,
 } from '@roofline/db/system';
 import type { Role } from '@roofline/shared';
-import { generateToken, hashToken, isWellFormedToken } from './sessions.ts';
+import { generateToken, hashToken, isWellFormedToken, prepareSession } from './sessions.ts';
 
 /*
  * The only module that writes memberships and invitations. The routes (routes/team.ts and the
@@ -84,9 +84,14 @@ export async function lookUpInvite(system: Db, token: string, now: Date): Promis
 }
 
 /**
- * Accepts the invite behind `token`: marks it used, makes (or finds) the user, and makes the
- * membership active with the invited role, all in one transaction. See `acceptInvite` in
- * @roofline/db/system for the errors it can throw.
+ * Accepts the invite behind `token`: marks it used, makes (or finds) the user, makes the
+ * membership active with the invited role, and ends with a session, all in one transaction. See
+ * `acceptInvite` in @roofline/db/system for the errors it can throw and why the session is saved
+ * there and not by the caller.
+ * `sessionToken` is the raw token for the new session's cookie, or null when the proof was a live
+ * session: that session was moved to the invited company and its cookie stays as it is.
+ * `request` is what the session records (device, address) and the session of someone else that the
+ * request carried, if any, which is deleted since its cookie is being replaced.
  */
 export async function acceptInvite(
   system: Db,
@@ -95,15 +100,24 @@ export async function acceptInvite(
     now: Date;
     newUser: { name: string; passwordHash: string | null; googleSub: string | null } | null;
     proof: AcceptProof | null;
+    request: { ua: string | null; ip: string | null; carriedSessionId: string | null };
   },
-): Promise<AcceptedInvite> {
+): Promise<AcceptedInvite & { sessionToken: string | null }> {
   if (!isWellFormedToken(input.token)) throw new InviteUnavailableError();
-  return acceptInviteRow(system, {
+  const { token: sessionToken, details } = prepareSession({
+    ua: input.request.ua,
+    ip: input.request.ip,
+    now: input.now,
+  });
+  const accepted = await acceptInviteRow(system, {
     tokenHash: hashToken(input.token),
     now: input.now,
     newUser: input.newUser,
     proof: input.proof,
+    newSession: details,
+    replaceSessionId: input.proof?.via === 'session' ? null : input.request.carriedSessionId,
   });
+  return { ...accepted, sessionToken: input.proof?.via === 'session' ? null : sessionToken };
 }
 
 /**

@@ -222,14 +222,18 @@ export async function removeAccount(system: Db, account: Pick<CreatedAccount, 'u
   });
 }
 
-export type NewSession = {
+/** A session's token hash, expiry and device details: everything but whose it is and which company it works in. */
+export type SessionDetails = {
   tokenHash: string;
-  userId: string;
-  companyId: string;
   now: Date;
   expiresAt: Date;
   userAgent: string | null;
   ip: string | null;
+};
+
+export type NewSession = SessionDetails & {
+  userId: string;
+  companyId: string;
 };
 
 export async function insertSession(system: Db, input: NewSession): Promise<void> {
@@ -264,7 +268,8 @@ export async function insertSession(system: Db, input: NewSession): Promise<void
  * It is FOR SHARE, not FOR KEY SHARE: changing `password_hash` is not a key change, and only
  * FOR SHARE conflicts with that kind of UPDATE. Postgres allows the locking clause inside
  * `insert ... select`, so it is still one statement, not a transaction around two.
- * Used ONLY by password login; sign-up, Google and invite sessions use `insertSession`.
+ * Used ONLY by password login. Sign-up and Google sign-in use `insertSession`; invite acceptance
+ * saves its session inside its own transaction (`acceptInvite`), under the same kind of lock.
  * Takes anything that can `execute`, so a test can run it inside a transaction it holds open.
  */
 export async function insertSessionIfPasswordUnchanged(

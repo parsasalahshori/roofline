@@ -1,7 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { CookieOptions, Request, Response } from 'express';
 import type { Db } from '@roofline/db';
-import { findLiveSession, insertSession, insertSessionIfPasswordUnchanged, renewSession } from '@roofline/db/system';
+import {
+  findLiveSession,
+  insertSession,
+  insertSessionIfPasswordUnchanged,
+  renewSession,
+  type SessionDetails,
+} from '@roofline/db/system';
 import type { Role } from '@roofline/shared';
 import type { Config } from '../config.ts';
 
@@ -52,20 +58,31 @@ export type NewSessionInput = {
 
 const MAX_USER_AGENT_LENGTH = 512;
 
-function newSessionRow(input: NewSessionInput) {
+/**
+ * A new session's token and everything about it that does not depend on who the user is: the
+ * token's hash, the expiry, the device details. For a transaction that already has the user (and
+ * the company) in hand and saves the session itself (invite acceptance); `newSessionRow` adds them.
+ */
+export function prepareSession(input: Pick<NewSessionInput, 'ua' | 'ip' | 'now'>): {
+  token: string;
+  details: SessionDetails;
+} {
   const token = generateToken();
   return {
     token,
-    row: {
+    details: {
       tokenHash: hashToken(token),
-      userId: input.userId,
-      companyId: input.companyId,
       now: input.now,
       expiresAt: new Date(input.now.getTime() + SESSION_TTL_MS),
       userAgent: input.ua === null ? null : input.ua.slice(0, MAX_USER_AGENT_LENGTH),
       ip: input.ip,
     },
   };
+}
+
+function newSessionRow(input: NewSessionInput) {
+  const { token, details } = prepareSession(input);
+  return { token, row: { ...details, userId: input.userId, companyId: input.companyId } };
 }
 
 /** Starts a session and returns the raw token for the cookie. The token itself is never stored. */
