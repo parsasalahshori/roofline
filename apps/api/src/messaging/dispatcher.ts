@@ -18,7 +18,7 @@ import type { AppDeps } from '../app.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
 import { refreshTask } from '../tasks/service.ts';
-import { buildGateRequest } from './gate-request.ts';
+import { type BuiltGateRequest, buildGateRequest } from './gate-request.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
 
 /*
@@ -117,10 +117,10 @@ async function dispatchNext(
     if (!row) return null;
     tried.push(row.id);
     const at = deps.clock.now();
-    const { state, toE164 } = await decideAgain(tx, ctx, row, at);
+    const { state, toE164, sender } = await decideAgain(tx, ctx, row, at);
     // The row is locked and `scheduled`, so this always lands; the check is what makes the send safe.
     if (!(await updateScheduledText(tx, ctx, row.id, { body: row.body, toE164 }, state, at))) return { skipped: true as const };
-    return { state, text: { messageId: row.id, to: toE164 ?? '', body: row.body } };
+    return { state, text: { messageId: row.id, to: toE164 ?? '', body: row.body, sender } };
   });
   if (!decided) return 'none';
   if ('skipped' in decided) return 'skipped';
@@ -134,8 +134,8 @@ async function decideAgain(
   ctx: TenantContext,
   row: MessageRow,
   at: Date,
-): Promise<{ state: TextState; toE164: string | null }> {
-  if (row.customerId === null) return { state: NO_CUSTOMER, toE164: row.toE164 };
+): Promise<{ state: TextState; toE164: string | null; sender: BuiltGateRequest['sender'] }> {
+  if (row.customerId === null) return { state: NO_CUSTOMER, toE164: row.toE164, sender: null };
   await lockRecipient(tx, ctx, row.customerId);
   const built = await buildGateRequest(
     tx,
@@ -151,12 +151,12 @@ async function decideAgain(
     },
     at,
   );
-  if (!built) return { state: NO_CUSTOMER, toE164: row.toE164 };
+  if (!built) return { state: NO_CUSTOMER, toE164: row.toE164, sender: null };
   const state = textStateFor(built);
   if (state.status === 'queued' && built.toE164 === null) {
-    return { state: { status: 'blocked', blockRule: 'contact', blockReason: 'No mobile number on file.' }, toE164: null };
+    return { state: { status: 'blocked', blockRule: 'contact', blockReason: 'No mobile number on file.' }, toE164: null, sender: built.sender };
   }
-  return { state, toE164: built.toE164 };
+  return { state, toE164: built.toE164, sender: built.sender };
 }
 
 /** Step 2 for one parked batch step. True when this call finished it. */

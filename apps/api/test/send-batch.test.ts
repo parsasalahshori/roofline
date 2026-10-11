@@ -1,7 +1,17 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { companies, customers, insertStepText, messages, properties, type StepRow, withTenant } from '@roofline/db';
-import { FakeSmsAdapter, SmsRefusedError } from '@roofline/send-gate';
+import {
+  companies,
+  customers,
+  insertStepText,
+  messages,
+  optOuts,
+  properties,
+  type StepRow,
+  textingRegistrations,
+  withTenant,
+} from '@roofline/db';
+import { FakeSmsAdapter, SmsRefusedError, type SmsAdapter } from '@roofline/send-gate';
 import { dispatchDueMessages } from '../src/jobs/scheduler/dispatch-messages.ts';
 import { buildGateRequest } from '../src/messaging/gate-request.ts';
 import { sendSmsBatch } from '../src/messaging/send-batch.ts';
@@ -517,6 +527,7 @@ describe('buildGateRequest', () => {
     expect(built).toEqual({
       toE164: '+14025550101',
       archived: false,
+      sender: null,
       req: {
         now: BATCH_AT,
         company: { name: 'Acme Roofing', timezone: 'America/Chicago', status: 'trial', campaignStatus: 'approved', marketingCapPer7d: 2 },
@@ -668,5 +679,78 @@ describe('buildGateRequest', () => {
     expect(sentTo(t.sms.sent)).toEqual(['+14025550112']);
     const all = await withTenant(t.deps.pools, agentCtx(idOf('a')), (tx) => tx.select().from(messages));
     expect(all.map((m) => m.customerId)).toEqual([own]);
+  });
+});
+
+describe('carrier opt-outs and the sending account', () => {
+  const NUMBER = '+14025550131';
+  const CARRIER_REASON = 'This person turned off texts from your number, so we stopped texting them.';
+  const SUB_SID = 'AC' + '1'.repeat(32);
+  const MS_SID = 'MG' + '2'.repeat(32);
+
+  /** One attested customer with a number, texted in an approved batch at a daytime hour. */
+  async function oneCustomer() {
+    t.clock.set(DAYTIME);
+    const [id] = await addSmsCustomers(t, 'a', [{ firstName: 'Vic', phone: NUMBER, consent: 'attested', state: 'NE', timezone: 'America/Chicago' }]);
+    const { taskId, stepId } = await approvedBatch(t, actors, [id!]);
+    return { id: id!, taskId, stepId };
+  }
+
+  const consentOf = (customerId: string) =>
+    inCompany(t, idOf('a'), async (tx) => (await tx.select({ s: customers.smsConsentStatus }).from(customers).where(eq(customers.id, customerId)))[0]!.s);
+
+  const optOutRows = (phone: string) =>
+    inCompany(t, idOf('a'), (tx) => tx.select().from(optOuts).where(eq(optOuts.phoneE164, phone)));
+
+  test('a carrier opt-out turns texting off for that customer', async () => {
+    const { id, taskId, stepId } = await oneCustomer();
+    t.sms.refuseNext(1, { permanent: true, optedOut: true, reasonPlain: CARRIER_REASON });
+
+    await t.queue.drain(t.deps);
+
+    expect(rowFor(await stepMessages(t, 'a', stepId), id)).toMatchObject({
+      status: 'failed',
+      retryable: false,
+      blockReason: CARRIER_REASON,
+    });
+    expect(await optOutRows(NUMBER)).toMatchObject([{ keyword: 'carrier' }]);
+    expect(await consentOf(id)).toBe('revoked');
+    expect(await stepRow(taskId)).toMatchObject({ status: 'done' });
+    expect(t.sms.sent).toEqual([]);
+  });
+
+  test("texts go out on the company's texting account", async () => {
+    await t.deps.pools.system
+      .update(textingRegistrations)
+      .set({ subaccountSid: SUB_SID, messagingServiceSid: MS_SID })
+      .where(eq(textingRegistrations.companyId, idOf('a')));
+    const { id, stepId } = await oneCustomer();
+
+    await t.queue.drain(t.deps);
+
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]!.sender).toEqual({ accountSid: SUB_SID, messagingServiceSid: MS_SID });
+    expect(rowFor(await stepMessages(t, 'a', stepId), id)).toMatchObject({ status: 'sent' });
+  });
+
+  test('an earlier STOP keeps its keyword when the carrier also reports it', async () => {
+    const { id, taskId, stepId } = await oneCustomer();
+    // The customer's STOP lands while the send is in flight: the gate has already let the text through.
+    const stopThenCarrierRefusal: SmsAdapter = {
+      send: async (m) => {
+        await inCompany(t, idOf('a'), (tx) =>
+          tx.insert(optOuts).values({ companyId: idOf('a'), phoneE164: NUMBER, keyword: 'STOP', at: DAYTIME, createdAt: DAYTIME, updatedAt: DAYTIME }),
+        );
+        return t.sms.send(m);
+      },
+    };
+    t.sms.refuseNext(1, { permanent: true, optedOut: true, reasonPlain: CARRIER_REASON });
+
+    await runStep({ ...t.deps, sms: stopThenCarrierRefusal }, idOf('a'), stepId);
+
+    expect(await optOutRows(NUMBER)).toMatchObject([{ keyword: 'STOP' }]);
+    expect(await consentOf(id)).toBe('revoked');
+    expect(rowFor(await stepMessages(t, 'a', stepId), id)).toMatchObject({ status: 'failed', retryable: false, blockReason: CARRIER_REASON });
+    expect(await stepRow(taskId)).toMatchObject({ status: 'done' });
   });
 });
