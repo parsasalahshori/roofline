@@ -39,3 +39,14 @@ T13 starts only after T11's review is merged (both edit messages.ts).
 Sibling 3 wave 2 (wf_2d479fae-7ac, contact 44): T11 d33ecba (feature 9618f3b; test fix e689d8c; group-check hardening: markTextSent takes lockDeliverySid first). CI 38181866516 green. Task 11: complete. Merged into f3-setup. Notes: ops/sdd/f3/merge-sib3.md.
 Accepted semantics change: F1 test "a duplicate callback is ignored" becomes "a repeated callback changes nothing once the text has moved on" (statuses only move forward; the webhook_events claim is gone from /status).
 Follow-ups: keep claimWebhookEvent/releaseWebhookEvent for the Stripe hook (T20 decides); a worker sweep to prune unapplied early_delivery_reports (assign to T22/T31 or a polish task); partial unique index on texting_registrations.messaging_service_sid (routing uses limit 1) — carry to the texting-registration tasks.
+Architect 2: T23/T24 briefs updated for Ruling AC; briefs 25-37 written. Proposed groups: G5 T25, T29, T30 (T30 needs f2-shell with F2 T13, T15, T17, P1 merged into f3-setup); G6 T26 (stacked on T25), T27, T31; G7 T32, T33, T34; G8 T28, T35, T37; G9 T36.
+Ruling AD: T25 owns test/twilio-fixtures.ts; T26 stacks on T25 — cost if wrong: one wave.
+Ruling AE: resubmitting after a brand failure keeps and resubmits the failed brand id — cost if wrong: duplicate brands.
+Ruling AF: a failed campaign sets brand_status='campaign_failed' so resubmit can delete the old one without a new column — cost if wrong: a resubmit loop.
+Ruling AG: T30's Billing/Setup placeholders reuse F2's existing lines so F2 settings tests stay green — cost if wrong: none.
+Ruling AH: the banner slot's measured height adds to --shell-top-inset — cost if wrong: windows under banners.
+Ruling AI: the CSP lives in app.ts (not web.ts as the plan says); T31 edits it there — cost if wrong: none.
+Ruling AJ: the import upload always sends application/octet-stream — cost if wrong: rejected uploads.
+Ruling AK (controller): F2 T18 also owns phone.spec.ts, a11y.spec.ts, ops/sdd/f2/f2-acceptance.md and the CI phone-project run (T17 shipped without them); T36 extends them — cost if wrong: T36 waits on T18.
+Ruling AL: resubmitting a fixed brand updates the existing business profile in place — cost if wrong: corrections never reach Twilio.
+Controller: T28 buys a number only when the company is 'active' (the plan's test), not on past_due — spending only on paying accounts — cost if wrong: a past_due company waits for its number.
