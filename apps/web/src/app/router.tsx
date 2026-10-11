@@ -1,4 +1,4 @@
-import { createBrowserRouter, createMemoryRouter, type RouteObject } from 'react-router';
+import { createBrowserRouter, createMemoryRouter, Navigate, type RouteObject } from 'react-router';
 import { setUnauthorizedHandler } from '../api/client.ts';
 import { ApprovalsList } from '../features/approvals/ApprovalsList.tsx';
 import { ReviewRoute } from '../features/approvals/Review.tsx';
@@ -7,6 +7,7 @@ import { ResetPassword } from '../features/auth/ResetPassword.tsx';
 import { SignIn } from '../features/auth/SignIn.tsx';
 import { VerifyEmail } from '../features/auth/VerifyEmail.tsx';
 import { ComingSoon } from '../features/coming-soon/ComingSoon.tsx';
+import { Settings } from '../features/settings/Settings.tsx';
 import { StormWindow } from '../features/storm/StormWindow.tsx';
 import { AppWindow } from '../shell/AppWindow.tsx';
 import type { ComingSoonKey } from '../shell/apps.ts';
@@ -50,7 +51,9 @@ const routes: RouteObject[] = [
           { path: 'calendar/*', element: comingSoonWindow('calendar') },
           { path: 'agents/*', element: comingSoonWindow('agents') },
           { path: 'customers/*', element: comingSoonWindow('customers') },
-          // Tasks 15 and 16 add today and settings; until then they show this
+          { path: 'settings', element: <Navigate to="/settings/company" replace /> },
+          { path: 'settings/:tab', element: <AppWindow app="settings"><Settings /></AppWindow> },
+          // Task 15 adds today; until then it shows this
           { path: '*', element: <NotFoundWindow /> },
         ],
       },
