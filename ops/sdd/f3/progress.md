@@ -24,3 +24,4 @@ Sibling 2 (wf_13479391-707, contact 31): T3 b857c5d (1 round, lint fix; carry do
 Task 3: complete (d629c74..b857c5d). Task 4: complete (d629c74..18a3eef). Task 5: complete (d629c74..2dd3312). Merged into f3-setup (head 0351174); typecheck, lint, shared tests clean.
 Carry to T7: BrandInfoSchema rejects full state names by design; toUsStateCode accepts them. Carry to T18/T19/T33: T3's no-hard-coded-prices test fails any src file containing 19900/39900.
 Minors (deferred): T4 SetupFacts.texting.rejectedFields is string[] vs T5's BrandField[] (tighten later); T5 split campaign helpers into texting-campaign.ts re-exported from texting.ts.
+F3 Task 9 (API skeleton): brief ready; assigned to sibling 1 (session_01MpVA7xTz6Bus8WPNZWUKRq), branch f3-t9 from f3-setup baf4c93, contact 23.
