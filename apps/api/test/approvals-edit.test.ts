@@ -370,6 +370,7 @@ describe('GET /api/approvals', () => {
       expiresAt: new Date(NOW.getTime() + 48 * HOUR).toISOString(),
       expired: false,
       minutesSaved: null,
+      rerunOfTaskId: null,
       steps: [
         {
           id: steps[0]!.id,

@@ -87,3 +87,9 @@ None of those failures touch my files; they are the container and timeout sympto
 
 - The verification gap above.
 - Task 9 should know that `bounds` for a single located address is a zero-area box (west = east, south = north), as the brief specifies; fitting the map to it needs a minimum zoom.
+
+## Team review finalization (commit cc05bc8)
+- Review 1 (3 findings): archived-customer jobs hidden from /api/search and map pins with tests (fixed); customerMatch shared with listCustomers (fixed); single-address zero-area bounds handled (fixed). Contact check: F1-F3 approved.
+- Review 2: 0 findings.
+- Packages: packages/db (repos/customers, map, search), apps/api (tests map, search).
+- Verify: typecheck and lint clean; CI run 38179505409 passed.

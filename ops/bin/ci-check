@@ -23,20 +23,25 @@ for i in $(seq 1 60); do
 done
 [ -n "$id" ] || { echo "ci-check: no CI run appeared for $branch@${sha:0:7}"; exit 3; }
 echo "ci-check: watching run $id for $branch@${sha:0:7} (about 10-20 minutes)"
-# Judge the platform job only: older task branches carry an empty v1 data file (fixed on f2-shell in
+# By default judge the platform job only: older task branches carry an empty v1 data file (fixed on f2-shell in
 # 0b81e1b), so their v1 job fails for a reason that is not theirs.
-platform=""
-for i in $(seq 1 240); do
-  job=$(curl -sS "$API/actions/runs/$id/jobs" 2>/dev/null | jq -c '[.jobs[] | select(.name | startswith("Platform"))][0] // empty' 2>/dev/null)
-  if [ -n "$job" ] && [ "$(jq -r .status <<<"$job")" = "completed" ]; then
-    platform=$(jq -r .conclusion <<<"$job"); jobid=$(jq -r .id <<<"$job"); break
+# CI_JOBS: space-separated job-name prefixes that must all succeed (default "Platform"; Task 13 adds "E2E").
+fail=0
+for prefix in ${CI_JOBS:-Platform}; do
+  conclusion=""; jobid=""
+  for i in $(seq 1 240); do
+    job=$(curl -sS "$API/actions/runs/$id/jobs" 2>/dev/null | jq -c --arg p "$prefix" '[.jobs[] | select(.name | startswith($p))][0] // empty' 2>/dev/null)
+    if [ -n "$job" ] && [ "$(jq -r .status <<<"$job")" = "completed" ]; then
+      conclusion=$(jq -r .conclusion <<<"$job"); jobid=$(jq -r .id <<<"$job"); break
+    fi
+    sleep 20
+  done
+  if [ "$conclusion" = "success" ]; then
+    echo "ci-check: $prefix job passed (run $id)"
+  else
+    fail=1
+    echo "ci-check: FAILED (run $id, $prefix job: ${conclusion:-timed out or missing}). Failing log tail:"
+    [ -n "$jobid" ] && curl -sSL "$API/actions/jobs/$jobid/logs" 2>/dev/null | sed 's/^[0-9T:.-]*Z //' | grep -v '^\s*$' | tail -200
   fi
-  sleep 20
 done
-if [ "$platform" = "success" ]; then
-  echo "ci-check: PASSED (run $id, platform job)"
-else
-  echo "ci-check: FAILED (run $id, platform job: ${platform:-timed out}). Failing log tail:"
-  [ -n "${jobid:-}" ] && curl -sSL "$API/actions/jobs/$jobid/logs" 2>/dev/null | sed 's/^[0-9T:.-]*Z //' | grep -v '^\s*$' | tail -200
-  exit 1
-fi
+[ "$fail" = 0 ] && echo "ci-check: PASSED (run $id)" || exit 1
