@@ -157,3 +157,6 @@ F2 remaining: T18 (deferred Playwright specs + phone/a11y + acceptance, Ruling A
 F2 T18 launched here: wf_3cf9739e-49c (contact 14), base d223d91, ci with CI_JOBS="Platform E2E".
 Fix: rep-visibility.test.ts:400 flake (substring 333 in a random UUID; failed f2-shell run 38181409275 on 894f0d2) now matches a whole token; CI paths-ignore adds docs/**. F1 deferred minor closed.
 f2-shell 8fcb25f all green (run 38183287222: Platform, E2E, v1). Merged into f3-setup (lockfile regenerated); typecheck, lint, web, playwright --list clean.
+Wave D (wf_3cf9739e-49c, contact 14): T18 efa39ff (1 round, F1 approved), CI 38183617238 Platform + E2E green; 20 e2e tests in 5 files, web 344. Edits to demo.ts, seed-demo.test.ts and e2e/fixtures.ts were the controller's carries (in scope). Task 18: complete (d223d91..efa39ff). Merged into f2-shell. f2-acceptance.md CI section updated. Closed minors: sendTime copy, markTodaySeen timezone, Today hijack.
+Minors (deferred): POST today-shown marks the day shown even if a dock click beat it (Today never seen that day; fix: acknowledge on open); today.test.tsx formatting churn; a11y spec tags are WCAG 2.0 only (add wcag21a/wcag21aa or fix comment); phone 'Approve stays pinned' may not scroll on a short review; long-name phone test may not render names.
+ALL F2 TASKS MERGED (1-18 + P1). Next: the final F2 whole-branch review.

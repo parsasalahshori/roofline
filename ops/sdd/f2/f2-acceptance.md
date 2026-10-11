@@ -75,6 +75,6 @@ npm run e2e -- --project desktop --project phone
   - `apps/web/e2e/a11y.spec.ts` — `approvals list has no serious accessibility violations`
   - `apps/web/e2e/a11y.spec.ts` — `approval review has no serious accessibility violations`
 
-## Not yet green on CI
-- Every e2e spec above (`apps/web/e2e/shell.spec.ts`, `today.spec.ts`, `approvals.spec.ts`, `phone.spec.ts`, `a11y.spec.ts`): no CI run on `f2-t18` has passed yet. Strike each line once the `E2E` job is green.
-- The unit tests listed above are not yet confirmed by a CI run on `f2-t18` either. Update this section after `ops/bin/ci-check` reports.
+## CI status
+- Green on `f2-t18` at efa39ff: CI run 38183617238, Platform job (every unit and database suite) and E2E job (desktop and phone projects: shell, today, approvals, phone, a11y specs).
+- Re-confirmed on `f2-shell` after the merge (see the F2 ledger).
