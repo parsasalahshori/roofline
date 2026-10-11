@@ -23,7 +23,7 @@ import {
 } from '../src/auth/google.ts';
 import * as passwordModule from '../src/auth/password.ts';
 import { AppError } from '../src/errors.ts';
-import { loginAs, makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
+import { loginAs, makeTestApp, SIGNUP_COMPANY, type SuperAgent, type TestApp } from './helpers.ts';
 
 // The three lookups behind Google sign-in are wrapped (they still run for real) so a test can make
 // one of them miss, and so reproduce the moment two requests overlap.
@@ -54,6 +54,8 @@ const OTHER_ACCOUNT = 'That email is already connected to a different Google acc
 const EMAIL_IN_USE = 'This email already has a Roofline account. Please sign in with your password.';
 const NO_ACCESS = 'Your access to this company is turned off. Ask the owner to turn it back on.';
 const COMPANY_NAME = 'Please enter your company name.';
+const PHONE_MESSAGE = "That doesn't look like a US phone number.";
+const ADDRESS_MESSAGE = "Please enter your business address.";
 const BAD_LOGIN = "That email and password don't match.";
 const LINK_USED = 'That link has already been used or has expired.';
 const TOO_MANY = { error: 'Too many sign-in attempts. Try again in a few minutes.' };
@@ -353,7 +355,10 @@ function googleSignIn(
   const credential = `credential-${++credentialCount}`;
   if (as) t.google.register(credential, as);
   const send = typeof target === 'function' ? request(target) : target;
-  return send.post('/api/auth/google').send({ credential, ...extra });
+  // A body that names a company is a sign-up attempt, so it gets the phone and address too (F3);
+  // a test that wants one of them wrong passes it in `extra`, which wins.
+  const company = 'companyName' in extra ? SIGNUP_COMPANY : {};
+  return send.post('/api/auth/google').send({ credential, ...company, ...extra });
 }
 
 function hasSessionCookie(res: { headers: Record<string, unknown> }): boolean {
@@ -375,7 +380,7 @@ async function counts() {
 async function signedUpUser(email = 'olive@example.com', companyName = 'Summit Roofing') {
   const res = await request(t.app)
     .post('/api/auth/signup')
-    .send({ email, password: 'a long enough password', name: 'Olive Owner', companyName });
+    .send({ email, password: 'a long enough password', name: 'Olive Owner', companyName, ...SIGNUP_COMPANY });
   expect(res.status).toBe(201);
   return res.body as { user: { id: string; email: string }; company: { id: string; slug: string } };
 }
@@ -488,7 +493,13 @@ describe('branch 2: a confirmed Google email that an existing user already has �
     const attacker = request.agent(t.app);
     const made = await attacker
       .post('/api/auth/signup')
-      .send({ email: 'victim@x.test', password: 'the attackers password', name: 'Mallory', companyName: 'Mallory Roofing' });
+      .send({
+        email: 'victim@x.test',
+        password: 'the attackers password',
+        name: 'Mallory',
+        companyName: 'Mallory Roofing',
+        ...SIGNUP_COMPANY,
+      });
     expect(made.status).toBe(201);
     expect((await attacker.get('/api/auth/me')).status).toBe(200);
 
@@ -670,6 +681,18 @@ describe('branch 3: a new person with a confirmed Google email → user and comp
     expect(again.status).toBe(200);
   });
 
+  test.each([
+    ['a bad business phone', { companyPhone: '12' }, 'companyPhone', PHONE_MESSAGE],
+    ['a blank business address', { companyAddress: '   ' }, 'companyAddress', ADDRESS_MESSAGE],
+  ])('a new user with %s → 400 with the field, and nothing is created', async (_name, extra, field, error) => {
+    const before = await counts();
+    const res = await googleSignIn(claims(), { companyName: 'Summit Roofing', ...extra });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error, field });
+    expect(hasSessionCookie(res)).toBe(false);
+    expect(await counts()).toEqual(before);
+  });
+
   test('the new user cannot use password login (no password): the same 401 as any wrong password', async () => {
     const created = await googleSignIn(claims(), { companyName: 'Summit Roofing' });
     expect(created.status).toBe(200);
@@ -708,7 +731,8 @@ describe('branch 3: a new person with a confirmed Google email → user and comp
     const credential = 'double-click';
     t.google.register(credential, claims());
     const before = await counts();
-    const send = () => request(t.app).post('/api/auth/google').send({ credential, companyName: 'Summit Roofing' });
+    const send = () =>
+      request(t.app).post('/api/auth/google').send({ credential, companyName: 'Summit Roofing', ...SIGNUP_COMPANY });
     const results = await Promise.all([send(), send(), send()]);
     expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
     expect(new Set(results.map((r) => r.body.user.id)).size).toBe(1);
@@ -1079,7 +1103,9 @@ describe('a credential Google would not accept, and a missing client id', () => 
     const before = await counts();
 
     const credential = await signToken(keys.privateKey);
-    const down = await request(app).post('/api/auth/google').send({ credential, companyName: 'Summit Roofing' });
+    const down = await request(app)
+      .post('/api/auth/google')
+      .send({ credential, companyName: 'Summit Roofing', ...SIGNUP_COMPANY });
     expect(down.status).toBe(503);
     expect(down.body).toEqual({ error: UNAVAILABLE });
     expect(hasSessionCookie(down)).toBe(false);

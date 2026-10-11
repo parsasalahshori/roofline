@@ -18,6 +18,12 @@ import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
 import type { CurrentWeather, WeatherSource } from '../src/weather/source.ts';
 
+/**
+ * The company details every sign-up needs (F3). Tests spread it into each sign-up body; the
+ * phone and address are valid, so only the field a test is about is wrong.
+ */
+export const SIGNUP_COMPANY = { companyPhone: '(402) 555-0199', companyAddress: '1200 Farnam St, Omaha, NE 68102' };
+
 /** A supertest agent: it keeps cookies between requests, like a browser tab. */
 export type SuperAgent = ReturnType<typeof request.agent>;
 

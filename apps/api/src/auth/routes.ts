@@ -1,6 +1,7 @@
 import { type Request, type Response, Router } from 'express';
+import { toE164 } from '@roofline/shared';
 import { z } from 'zod';
-import { audit, insertDefaultSettings, withTenant } from '@roofline/db';
+import { audit, insertDefaultSettings, setCompanyLocation, type TenantContext, withTenant } from '@roofline/db';
 import {
   type AuthCompany,
   type AuthUser,
@@ -23,6 +24,7 @@ import {
 } from '@roofline/db/system';
 import type { AppDeps } from '../app.ts';
 import { createBackground } from '../background.ts';
+import { DEFAULT_SERVICE_AREA_MILES, locateAddress } from '../company/location.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import {
   acceptInviteRateLimit,
@@ -68,12 +70,29 @@ const MAX_NAME_LENGTH = 200;
 const PASSWORD_MESSAGE = 'Use at least 10 characters for your password.';
 const NAME_MESSAGE = 'Please enter a name.';
 const COMPANY_NAME_MESSAGE = 'Please enter your company name.';
+const PHONE_MESSAGE = "That doesn't look like a US phone number.";
+const ADDRESS_MESSAGE = 'Please enter your business address.';
+const ADDRESS_NOT_FOUND_MESSAGE = "We couldn't find that address. Check the street, city and state.";
+const MAX_ADDRESS_LENGTH = 300;
 
 const companyName = z
   .string({ error: COMPANY_NAME_MESSAGE })
   .trim()
   .min(1, COMPANY_NAME_MESSAGE)
   .max(MAX_NAME_LENGTH, 'That company name is too long.');
+
+/** The business phone, as E.164 (`+14025550199`). Anything that is not a US number is refused. */
+const companyPhone = z
+  .string({ error: PHONE_MESSAGE })
+  .refine((value) => toE164(value) !== null, PHONE_MESSAGE)
+  .transform((value) => toE164(value) ?? '');
+
+/** The business address as typed; the map looks it up after this. */
+const companyAddress = z
+  .string({ error: ADDRESS_MESSAGE })
+  .trim()
+  .min(1, ADDRESS_MESSAGE)
+  .max(MAX_ADDRESS_LENGTH, ADDRESS_MESSAGE);
 
 const passwordField = z.string({ error: PASSWORD_MESSAGE }).min(10, PASSWORD_MESSAGE);
 const nameField = z
@@ -87,6 +106,8 @@ const SignupBody = z.object({
   password: passwordField,
   name: nameField,
   companyName,
+  companyPhone,
+  companyAddress,
 });
 
 /** Login only needs something to look up; a malformed address is just an account that does not exist. */
@@ -101,13 +122,15 @@ const LoginBody = z.object({
 });
 
 /**
- * Google sign-in. The company name is only needed when the person turns out to be new, which is
- * not known until the credential has been checked, so it is validated then (see `googleAccount`),
- * with the same rule and message as sign-up.
+ * Google sign-in. The company details are only needed when the person turns out to be new, which is
+ * not known until the credential has been checked, so they are validated then (see `googleAccount`),
+ * with the same rules and messages as sign-up.
  */
 const GoogleBody = z.object({
   credential: z.string({ error: MESSAGES.googleFailed }).min(1, MESSAGES.googleFailed),
   companyName: z.unknown().optional(),
+  companyPhone: z.unknown().optional(),
+  companyAddress: z.unknown().optional(),
 });
 
 /** The token from the link in an email. Whether it is any good is decided against the database. */
@@ -230,23 +253,63 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
    * Makes a user and their own new company, with everything a company starts with, and signs
    * nobody in. Used by sign-up and by Google sign-in, so slugs, the trial and the cleanup are the
    * same for both.
+   * - Before anything is written, the typed address is looked up on the map. Not found is a 400 on
+   *   `companyAddress` and nothing is created. A map that cannot be reached does not stop sign-up:
+   *   the company is made with the typed address and no point or time zone.
    * - Step 1, one system transaction: the user, the company and the owner membership. The company's
-   *   time zone stays at the column default; F3 sets it from the geocoded address.
-   * - Step 2, in the new company's own tenant transaction: its default settings. If this fails the
+   *   time zone stays at the column default until step 2 sets it from the map.
+   * - Step 2, in the new company's own tenant transaction: its default settings, and its place on
+   *   the map (phone, address, time zone, point, and the default service area). If this fails the
    *   account from step 1 is deleted again, so no half-made account is left to block a retry.
    * Throws EmailInUseError / GoogleSubInUseError when the email / Google account already has a user.
    */
-  async function createCompanyAccount(input: Omit<NewAccount, 'trialEndsAt'>, path: string): Promise<CreatedAccount> {
+  async function createCompanyAccount(
+    input: Omit<NewAccount, 'trialEndsAt'>,
+    path: string,
+    details: { phoneE164: string; addressText: string },
+  ): Promise<CreatedAccount> {
+    const outcome = await locateAddress(deps.geocoder, details.addressText);
+    if (outcome.kind === 'not_found') throw new AppError(400, ADDRESS_NOT_FOUND_MESSAGE, 'companyAddress');
+
     const account = await createAccount(system, {
       ...input,
       trialEndsAt: new Date(clock.now().getTime() + TRIAL_DAYS * DAY_MS),
     });
+    const tenant: TenantContext = {
+      companyId: account.company.id,
+      userId: null,
+      role: 'system',
+      canApproveSpend: false,
+    };
     try {
-      await withTenant(
-        pools,
-        { companyId: account.company.id, userId: null, role: 'system', canApproveSpend: false },
-        (tx) => insertDefaultSettings(tx, account.company.id),
-      );
+      await withTenant(pools, tenant, async (tx) => {
+        await insertDefaultSettings(tx, account.company.id);
+        await setCompanyLocation(
+          tx,
+          tenant,
+          outcome.kind === 'located'
+            ? {
+                street: outcome.result.street ?? details.addressText,
+                city: outcome.result.city,
+                state: outcome.result.state,
+                zip: outcome.result.zip,
+                phoneE164: details.phoneE164,
+                timezone: outcome.result.timezone,
+                point: { lng: outcome.result.lng, lat: outcome.result.lat },
+                serviceAreaMiles: DEFAULT_SERVICE_AREA_MILES,
+              }
+            : {
+                street: details.addressText,
+                city: null,
+                state: null,
+                zip: null,
+                phoneE164: details.phoneE164,
+                timezone: null,
+                point: null,
+                serviceAreaMiles: null,
+              },
+        );
+      });
     } catch (err) {
       await removeAccount(system, account).catch((cleanupErr: unknown) => {
         logError(cleanupErr, path);
@@ -255,6 +318,11 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     }
     return account;
   }
+
+  /** The public sign-in settings. Nothing about the caller is needed, so there is no session and no per-person limit. */
+  router.get('/config', (_req, res) => {
+    res.json({ googleClientId: config.GOOGLE_CLIENT_ID ?? null });
+  });
 
   router.post('/signup', signupRateLimit(), async (req, res) => {
     const body = parse(SignupBody, req.body);
@@ -265,6 +333,7 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
       account = await createCompanyAccount(
         { email: body.email, name: body.name, passwordHash, companyName: body.companyName },
         req.path,
+        { phoneE164: body.companyPhone, addressText: body.companyAddress },
       );
     } catch (err) {
       if (err instanceof EmailInUseError) throw new AppError(409, MESSAGES.emailTaken, 'email');
@@ -319,7 +388,7 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
    *    Google account: a second Google account that merely shares the address does not take over.
    *    (Already connected to this very account means another copy of this request just did it.)
    * 4. Otherwise a new person → a new verified user with no password, and their own company
-   *    (`companyName` required).
+   *    (`companyName`, `companyPhone` and `companyAddress` required, checked in that order).
    * Someone with no active membership is a 403 before anything is written. The two races
    * (the same credential sent twice at once, or another request connecting the account first)
    * show up as GoogleSubInUseError / EmailInUseError / a link that did not apply; the answer is to
@@ -327,7 +396,7 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
    */
   async function googleAccount(
     claims: GoogleClaims,
-    rawCompanyName: unknown,
+    rawCompany: { companyName: unknown; companyPhone: unknown; companyAddress: unknown },
     path: string,
     retry = true,
   ): Promise<{ user: AuthUser; company: AuthCompany }> {
@@ -352,7 +421,8 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
         if (linked) return { user: linked, company };
         // Connected to a Google account between our lookup and the link.
       } else {
-        const { companyName: name } = parse(z.object({ companyName }), { companyName: rawCompanyName });
+        // Same checks and order as sign-up: a bare credential is told about the company name first.
+        const company = parse(z.object({ companyName, companyPhone, companyAddress }), rawCompany);
         const account = await createCompanyAccount(
           {
             email: googleEmail,
@@ -360,9 +430,10 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
             passwordHash: null,
             googleSub: claims.sub,
             emailVerifiedAt: clock.now(),
-            companyName: name,
+            companyName: company.companyName,
           },
           path,
+          { phoneE164: company.companyPhone, addressText: company.companyAddress },
         );
         return { user: account.user, company: account.company };
       }
@@ -370,7 +441,7 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
       if (!(err instanceof EmailInUseError || err instanceof GoogleSubInUseError)) throw err;
     }
     if (!retry) throw new Error('Google sign-in kept racing with another request.');
-    return googleAccount(claims, rawCompanyName, path, false);
+    return googleAccount(claims, rawCompany, path, false);
   }
 
   router.post('/google', googleRateLimit(), async (req, res) => {
@@ -385,7 +456,11 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
       if (err instanceof GoogleUnavailableError) logError(err.cause ?? err, req.path);
       throw err;
     }
-    const { user, company } = await googleAccount(claims, body.companyName, req.path);
+    const { user, company } = await googleAccount(
+      claims,
+      { companyName: body.companyName, companyPhone: body.companyPhone, companyAddress: body.companyAddress },
+      req.path,
+    );
     await signIn(req, res, user.id, company.id);
     res.json({ user: userBody(user), company: companyBody(company) });
   });
