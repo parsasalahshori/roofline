@@ -142,3 +142,6 @@ Cloud group B (wf_eddfb3f8-980, contact 4): T9 resumed and finished a320599 (sho
 Task 9: complete (c2173ff..a320599). Task 14: complete (1fb5bd7..66b7ccb; commit title still says wip). Task 16: complete (1fb5bd7..57f9715).
 Merged into f2-shell: 29ab813 (T9; README conflict kept both sections), b35c0aa (T14), f711feb (T16). web vitest, typecheck, lint, lint:css clean.
 Minors (deferred, to P1 follow-up or T15): T9 seeds sendTime 'Today 10:00 AM' so the screen reads 'Sends Today 10:00 AM' (use 'today at 10:00 AM'); dead 'approvals' ComingSoonKey + copy entry; Review.tsx edit.isPending shared by toggles and text saves; seed-dev non-atomic on showcase failure; toReviewStep isOpen adds canApprove for awaiting_owner (deliberate, matches API).
+f2-shell merged into f3-setup (baf4c93): system/index.ts kept both export lists; package-lock.json regenerated with npm install --package-lock-only; typecheck, lint, lint:css and web/shared/ui/send-gate suites clean; no migration-number collision (F2 added none).
+Team wave C launched here: T13 (e2e, ci with CI_JOBS="Platform E2E") + T15 (Today), base 26aabec, contact 12 — wf_554eb375-034. Team script gains per-task ciEnv (26aabec).
+Architect 2 writing F3 briefs: task 9 first, then 13-24, with proposed groups (status in ops/sdd/f3/briefs-status.txt).
