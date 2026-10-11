@@ -10,14 +10,14 @@ const draftedAt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numer
 
 const stepWord = (n: number) => (n === 1 ? 'step' : 'steps');
 
-/** The word after each count a step reports. A key not listed here is not shown. */
-const RESULT_WORDS: Readonly<Record<string, string>> = {
-  sent: 'sent',
-  delivered: 'delivered',
-  failed: "couldn't send",
-  blocked: 'held back',
-  replies: 'replies',
-  booked: 'inspections booked',
+/** The word after each count a step reports, singular and plural. A key not listed here is not shown. */
+const RESULT_WORDS: Readonly<Record<string, readonly [singular: string, plural: string]>> = {
+  sent: ['sent', 'sent'],
+  delivered: ['delivered', 'delivered'],
+  failed: ["couldn't send", "couldn't send"],
+  blocked: ['held back', 'held back'],
+  replies: ['reply', 'replies'],
+  booked: ['inspection booked', 'inspections booked'],
 };
 
 /** The review screen's words (ReviewSteps takes all of its text from here) and the sheets that open over it. */
@@ -42,7 +42,7 @@ export const review = {
   retry: 'Try again',
   /** The switch is named by the step it turns on or off. */
   switchLabel: (title: string): string => title,
-  recipients: (count: number): string => `${count} customers`,
+  recipients: (count: number): string => `${count} ${count === 1 ? 'customer' : 'customers'}`,
   sendTime: (when: string): string => `Sends ${when} · quiet hours respected`,
   spend: (cents: number): string => `Up to ${dollars.format(cents / 100)}`,
   stepStatus: stepStatusLabel,
@@ -50,7 +50,9 @@ export const review = {
     const lines: string[] = [];
     for (const [key, value] of Object.entries(result)) {
       // A nested group of counts is not a line of its own; only a plain count with a known word is.
-      if (typeof value === 'number' && Object.hasOwn(RESULT_WORDS, key)) lines.push(`${value} ${RESULT_WORDS[key]}`);
+      if (typeof value !== 'number' || !Object.hasOwn(RESULT_WORDS, key)) continue;
+      const words = RESULT_WORDS[key];
+      if (words) lines.push(`${value} ${words[value === 1 ? 0 : 1]}`);
     }
     return lines;
   },

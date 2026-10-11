@@ -1,3 +1,4 @@
+import { useToast } from '@roofline/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { ApiError, apiFetch } from './client.ts';
@@ -66,19 +67,26 @@ export function useSignOut() {
 
 /**
  * Moves the session to another of the person's companies. The answer is the new account, so who
- * is signed in updates at once. Everything else was loaded for the old company: it is reset, which
- * drops its cached data (the old company's pins, search and drafts never render again) and reloads
- * the queries that are on screen.
+ * is signed in updates at once. It goes home (the map), and everything else that was loaded for the
+ * old company is reset, which drops its cached data (the old company's pins, search and drafts never
+ * render again) and reloads the queries that are on screen. These run here, not in the caller, so
+ * they still happen when the caller has gone (a menu closed before the switch was answered). A
+ * failure is a toast for the same reason.
  */
 export function useSwitchCompany() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const toast = useToast();
   return useMutation({
     mutationFn: (companyId: string) =>
       apiFetch<Account>('/api/auth/switch-company', { method: 'POST', body: { companyId } }),
     onSuccess: (account) => {
       queryClient.setQueryData(keys.me, account);
+      // Navigating first unmounts the old company's id-based pages, so the reset does not refetch them
+      void navigate('/');
       return queryClient.resetQueries({ predicate: (query) => query.queryKey[0] !== keys.me[0] });
     },
+    onError: (error) => toast.show(error.message, 'error'),
   });
 }
 

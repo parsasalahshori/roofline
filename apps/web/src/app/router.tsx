@@ -14,6 +14,7 @@ import { AppWindow } from '../shell/AppWindow.tsx';
 import type { ComingSoonKey } from '../shell/apps.ts';
 import { NotFoundWindow } from '../shell/NotFoundWindow.tsx';
 import { Shell } from '../shell/Shell.tsx';
+import { RouteError } from './RouteError.tsx';
 import { redirectToSignIn, RequireSession, resetSignInRedirect } from './RequireSession.tsx';
 
 /** A window for an app that is not built yet: its title, and the line that says so. */
@@ -37,6 +38,8 @@ const routes: RouteObject[] = [
     children: [
       {
         element: <Shell />,
+        // A route that fails to render shows its own page, not the router's default error page
+        errorElement: <RouteError />,
         children: [
           // The map is the home page: no window
           { index: true },

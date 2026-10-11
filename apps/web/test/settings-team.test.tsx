@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TeamBody } from '../src/api/types.ts';
+import type { Account, TeamBody } from '../src/api/types.ts';
 import { settings } from '../src/copy/settings.ts';
 import { TeamTab } from '../src/features/settings/TeamTab.tsx';
 import { ACCOUNT, renderAt, stubApi } from './helpers.tsx';
@@ -198,6 +198,30 @@ describe('team tab', () => {
     expect(within(screen.getByRole('row', { name: /Ray Rep/ })).getByText(settings.roles.rep)).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: settings.team.spendFor('Olive Office') })).toBeDisabled();
     expect(screen.queryByRole('heading', { name: settings.team.pendingHeading })).toBeNull();
+  });
+
+  it('an owner who demotes themselves loses the owner controls', async () => {
+    // A second owner, so the company keeps one when this owner steps down
+    team.members[1]!.role = 'owner';
+    let me: Account = ACCOUNT;
+    api = stubApi({
+      ...ownerRoutes(),
+      'GET /api/auth/me': () => ({ body: me }),
+      'PATCH /api/team/members/m1': (request) => {
+        // From now on the session answers as an office member
+        me = { ...ACCOUNT, role: 'office' };
+        return patchMember('m1')(request);
+      },
+    });
+    const { user } = renderAt(<TeamTab />);
+
+    await user.selectOptions(await screen.findByLabelText(settings.team.roleFor('Sam Roofer')), 'office');
+
+    await waitFor(() => expect(api.sent('PATCH /api/team/members/m1')).toEqual([{ role: 'office' }]));
+    await waitFor(() => expect(screen.queryByLabelText(settings.team.roleFor('Sam Roofer'))).toBeNull());
+    expect(screen.queryByLabelText(settings.team.roleFor('Olive Office'))).toBeNull();
+    expect(screen.queryByLabelText(settings.team.inviteEmail)).toBeNull();
+    expect(screen.queryByRole('button', { name: settings.team.sendInvite })).toBeNull();
   });
 
   it('only office members get a spending switch', async () => {

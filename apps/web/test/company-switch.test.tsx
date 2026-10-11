@@ -1,11 +1,14 @@
 import { cleanup, renderHook, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useApprovals, useSwitchCompany } from '../src/api/hooks.ts';
 import { keys } from '../src/api/keys.ts';
 import type { Account } from '../src/api/types.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
-import { ACCOUNT, ACCOUNT_TWO, makeTask, renderAt, SHELL_ROUTES, stubApi } from './helpers.tsx';
+import { shell } from '../src/copy/shell.ts';
+import { UserMenu } from '../src/shell/topbar/UserMenu.tsx';
+import { ACCOUNT, ACCOUNT_TWO, makeTask, renderAt, SHELL_ROUTES, stubApi, USER, where } from './helpers.tsx';
 
 /** The second company as the server answers a switch to it: the same person, with company c2 signed in. */
 const RIDGE_ACCOUNT: Account = {
@@ -14,6 +17,26 @@ const RIDGE_ACCOUNT: Account = {
 };
 
 let api: ReturnType<typeof stubApi> | undefined;
+
+/**
+ * Holds every switch-company request until the returned `release` is called, so a test can close
+ * the menu while the switch is still on its way.
+ */
+function holdSwitch() {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const answer = globalThis.fetch;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST' && String(input) === '/api/auth/switch-company') await gate;
+      return answer(input, init);
+    }),
+  );
+  return release;
+}
 
 afterEach(() => {
   cleanup();
@@ -31,7 +54,11 @@ it("a company switch drops the old company's pins and search", async () => {
   queryClient.setQueryData(keys.approvals, { count: 1, tasks: [makeTask({ id: 't1', title: 'Alpha draft' })] });
   queryClient.setQueryData(keys.me, ACCOUNT);
 
-  const wrapper = ({ children }: { children: ReactNode }) => <Providers client={queryClient}>{children}</Providers>;
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <Providers client={queryClient}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </Providers>
+  );
   const { result } = renderHook(() => useSwitchCompany(), { wrapper });
 
   result.current.mutate('c2');
@@ -86,4 +113,42 @@ it('a mounted list reloads for the new company', async () => {
   expect(firstBravo).toBeGreaterThan(-1);
   expect(shown.slice(firstBravo)).not.toContain('Alpha draft');
   expect(api.sent('POST /api/auth/switch-company')).toEqual([{ companyId: 'c2' }]);
+});
+
+it('closing the menu before the switch resolves still goes home', async () => {
+  api = stubApi({
+    'GET /api/auth/me': () => ({ body: ACCOUNT_TWO }),
+    'POST /api/auth/switch-company': () => ({ body: RIDGE_ACCOUNT }),
+  });
+  const release = holdSwitch();
+  const { router, user } = renderAt(<UserMenu />, '/jobs');
+
+  await user.click(await screen.findByRole('button', { name: USER.name }));
+  await user.click(screen.getByRole('button', { name: shell.switchTo('Ridge Roofing') }));
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('link', { name: shell.myDay })).not.toBeInTheDocument();
+
+  release();
+
+  await waitFor(() => expect(where(router)).toBe('/'));
+  expect(api.sent('POST /api/auth/switch-company')).toEqual([{ companyId: 'c2' }]);
+});
+
+it('a failed switch with the menu closed still shows the error toast', async () => {
+  api = stubApi({
+    'GET /api/auth/me': () => ({ body: ACCOUNT_TWO }),
+    'POST /api/auth/switch-company': () => ({ status: 400, body: { error: 'That company is not available to you.' } }),
+  });
+  const release = holdSwitch();
+  const { user } = renderAt(<UserMenu />, '/jobs');
+
+  await user.click(await screen.findByRole('button', { name: USER.name }));
+  await user.click(screen.getByRole('button', { name: shell.switchTo('Ridge Roofing') }));
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('link', { name: shell.myDay })).not.toBeInTheDocument();
+
+  release();
+
+  await screen.findByText('That company is not available to you.');
+  expect(api.count('POST /api/auth/switch-company')).toBe(1);
 });
