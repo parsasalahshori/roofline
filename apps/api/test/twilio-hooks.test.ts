@@ -20,9 +20,24 @@ import {
 } from '@roofline/db';
 import type { Config } from '../src/config.ts';
 import { escapeXml } from '../src/hooks/twilio.ts';
+import { dispatchDueMessages } from '../src/jobs/scheduler/dispatch-messages.ts';
 import { Actors, type CompanyKey, dbCustomer, inCompany, timeline } from './crm-helpers.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from './helpers.ts';
-import { addSmsCustomers, DAYTIME, gate, MINUTE, type SmsCustomer } from './sms-helpers.ts';
+import {
+  addSmsCustomers,
+  approvedBatch,
+  BATCH_AT,
+  BRIEF_FIVE,
+  DAYTIME,
+  gate,
+  HOUR,
+  MINUTE,
+  NEXT_MORNING_NY,
+  OPTED_OUT,
+  rowFor,
+  type SmsCustomer,
+  stepMessages,
+} from './sms-helpers.ts';
 
 /*
  * Task 18: Twilio's inbound-text and delivery-status webhooks (spec 4.5), with R22/R24.
@@ -361,6 +376,35 @@ describe('POST /hooks/twilio/sms: the brief', () => {
     expect(await auditRows('b', 'customer.consent_revoked')).toEqual([]);
     expect((await dbCustomer(t, idOf('a'), a1!)).smsConsentStatus).toBe('revoked');
     expect((await dbCustomer(t, idOf('b'), b1!)).smsConsentStatus).toBe('express');
+  });
+});
+
+describe('a STOP that arrives after a text was scheduled (spec 3.7: the whole path, hook then dispatcher)', () => {
+  test("Rosa's text is held for 08:00 New York; she texts STOP overnight; the dispatcher asks the gate again and blocks it", async () => {
+    t.clock.set(BATCH_AT);
+    const [c1, c2, c3, c4, c5] = await addSmsCustomers(t, 'a', BRIEF_FIVE);
+    const { stepId } = await approvedBatch(t, new Actors(t), [c1!, c2!, c3!, c4!, c5!]);
+    await t.queue.drain(t.deps);
+    expect(rowFor(await stepMessages(t, 'a', stepId), c5!)).toMatchObject({ status: 'scheduled', scheduledFor: NEXT_MORNING_NY });
+    expect(t.sms.sent).toHaveLength(1); // only Nina's went out that evening
+
+    // Overnight she replies STOP to the company's texting number, through the real webhook.
+    t.clock.set(new Date(BATCH_AT.getTime() + 2 * HOUR));
+    const res = await sms(inbound({ From: '+13055550105', Body: 'STOP' }));
+    expect(res.status).toBe(200);
+    expect((await optOutRows('a')).map((o) => o.phoneE164)).toContain('+13055550105');
+    expect(await dbCustomer(t, idOf('a'), c5!)).toMatchObject({ smsConsentStatus: 'revoked' });
+
+    // At 08:01 New York the text is due; the dispatcher decides again and the new opt-out wins.
+    t.clock.set(new Date(NEXT_MORNING_NY.getTime() + MINUTE));
+    await dispatchDueMessages(t.deps, t.clock.now());
+    expect(rowFor(await stepMessages(t, 'a', stepId), c5!)).toMatchObject({
+      status: 'blocked',
+      blockRule: 'contact',
+      blockReason: OPTED_OUT,
+      sentAt: null,
+    });
+    expect(t.sms.sent).toHaveLength(1);
   });
 });
 
