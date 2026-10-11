@@ -8,14 +8,25 @@ import type { GoogleVerifier } from './auth/google.ts';
 import { attachSession, requireSession } from './auth/middleware.ts';
 import { meRoutes } from './auth/me.ts';
 import { authRoutes } from './auth/routes.ts';
+import { billingRoutes } from './account/billing-routes.ts';
+import { setupRoutes } from './account/setup-routes.ts';
+import { textingRoutes } from './account/texting-routes.ts';
 import { errorHandler, logErrorToConsole, MESSAGES, notFoundHandler } from './errors.ts';
+import { stripeHooks } from './hooks/stripe.ts';
 import { twilioHooks } from './hooks/twilio.ts';
+import { twilioRegistrationHooks } from './hooks/twilio-registration.ts';
+import type { JobQueue } from './jobs/queue.ts';
+import { readOnlyGuard } from './billing/read-only.ts';
 import type { Mailer } from './mailer.ts';
+import type { BillingProvider } from './providers/billing.ts';
+import type { Geocoder } from './providers/geocoder.ts';
+import type { TextingRegistrar } from './providers/registrar.ts';
 import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
 import { approvalRoutes } from './routes/approvals.ts';
 import { companyRoutes } from './routes/company.ts';
 import { customerRoutes } from './routes/customers.ts';
+import { importRoutes } from './routes/imports.ts';
 import { jobRoutes } from './routes/jobs.ts';
 import { mapRoutes } from './routes/map.ts';
 import { propertyRoutes } from './routes/properties.ts';
@@ -24,6 +35,7 @@ import { taskRoutes } from './routes/tasks.ts';
 import { teamRoutes } from './routes/team.ts';
 import { weatherRoutes } from './routes/weather.ts';
 import type { StepQueue } from './tasks/queue.ts';
+import { policyPages } from './public/policies.ts';
 import { serveWeb } from './web.ts';
 import type { WeatherSource } from './weather/source.ts';
 
@@ -64,6 +76,26 @@ export type AppDeps = {
    * The server leaves this unset; tests collect the promises and await them instead of sleeping.
    */
   onBackgroundTask?: (task: Promise<void>) => void;
+  /**
+   * Where address lookups come from (providers/geocoder.ts). The server uses Geocodio, or an
+   * unconfigured geocoder that fails each lookup with a setup message; tests pass `FakeGeocoder`.
+   */
+  geocoder: Geocoder;
+  /**
+   * Where billing goes (providers/billing.ts): Stripe when configured, else an unconfigured
+   * provider; tests pass `FakeBillingProvider`.
+   */
+  billing: BillingProvider;
+  /**
+   * Where texting registration goes (providers/registrar.ts): Twilio's subaccounts, brands and
+   * campaigns when configured, else an unconfigured registrar; tests pass `FakeTextingRegistrar`.
+   */
+  registrar: TextingRegistrar;
+  /**
+   * Where the app sends work that runs in the worker's job queues (jobs/queue.ts): pg-boss in the
+   * server and the worker, or `InlineJobs` in tests, which drain it themselves.
+   */
+  jobs: JobQueue;
 };
 
 export type AppOptions = {
@@ -146,6 +178,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
 
   app.set('trust proxy', config.TRUST_PROXY);
   app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(config.NODE_ENV) }));
+  // The public policy pages (privacy and terms): no session, no rate limit, served before /health.
+  app.use(policyPages(deps));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
@@ -156,6 +190,10 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // ahead of the JSON parser and the /api gate, with its own form parser (64 KB), so these routes
   // only ever read form bodies.
   app.use('/hooks/twilio', twilioHooks(deps));
+  // Stripe's webhooks read the raw body (stripeHooks sets its own parser). The Twilio registration
+  // callbacks are signed form posts too, like /hooks/twilio.
+  app.use('/hooks/stripe', stripeHooks(deps));
+  app.use('/hooks/twilio-registration', twilioRegistrationHooks(deps));
   // JSON only. `express.urlencoded` is deliberately not mounted here: Twilio's webhooks are the
   // one form-encoded caller, and /hooks/twilio/* adds it for itself.
   const globalJson = express.json({ limit: JSON_BODY_LIMIT });
@@ -175,6 +213,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // /health and /hooks/* are not under /api, so they are never limited.
   const logError = options.logError ?? logErrorToConsole;
   app.use('/api', attachSession(deps), apiRateLimit(config), requireSession);
+  // Refuses writes from a company whose billing has lapsed (billing/read-only.ts).
+  app.use('/api', readOnlyGuard);
   // Signed-in requests only: a signed-out one was already refused above, before any body was read.
   app.use('/api/approvals', express.json({ limit: APPROVALS_JSON_BODY_LIMIT }));
 
@@ -192,6 +232,10 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/search', searchRoutes(deps));
   app.use('/api/map', mapRoutes(deps));
   app.use('/api/weather', weatherRoutes(deps));
+  app.use('/api/billing', billingRoutes(deps));
+  app.use('/api/setup', setupRoutes(deps));
+  app.use('/api/imports', importRoutes(deps));
+  app.use('/api/texting', textingRoutes(deps));
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.

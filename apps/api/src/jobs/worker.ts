@@ -4,15 +4,23 @@ import { describeErrorForLog } from '../errors.ts';
 import { ensureStepQueue, STEP_QUEUE, type StepJobData } from '../tasks/pgboss-queue.ts';
 import { runStep } from '../tasks/runner.ts';
 import { UUID } from '../validate.ts';
+import { JOB_HANDLERS } from './handlers.ts';
+import { ensureJobQueues, JOB_NAMES, type JobData, type JobMeta } from './queue.ts';
+import { billMonthlyFees } from './scheduler/bill-monthly-fees.ts';
 import { dispatchDueMessages } from './scheduler/dispatch-messages.ts';
+import { endTrials } from './scheduler/end-trials.ts';
 import { expireDrafts } from './scheduler/expire-drafts.ts';
+import { pollTexting } from './scheduler/poll-texting.ts';
+import { provisionTexting } from './scheduler/provision-texting.ts';
 import { reportJobError } from './scheduler/report.ts';
+import { reportUsage } from './scheduler/report-usage.ts';
 import { sweepQueued } from './scheduler/sweep-queued.ts';
 
 /*
  * What the worker process does with pg-boss (apps/worker starts it): run each `agent-step` job
- * with `runStep`, and run the scheduler's jobs on their crons. Kept here, beside the code it runs,
- * so the tests can start a worker in-process.
+ * with `runStep`, run each job-queue job (JOB_NAMES) with its handler in JOB_HANDLERS, and run the
+ * scheduler's jobs on their crons. Kept here, beside the code it runs, so the tests can start a
+ * worker in-process.
  */
 
 /** A job the worker runs on a cron, with the app's deps and the clock's time. */
@@ -25,14 +33,20 @@ export type ScheduledJob = {
 };
 
 /**
- * The worker's recurring jobs: draft expiry, the queued-step sweeper, and the scheduled-text
- * dispatcher (texts waiting out quiet hours, and the batch steps they belong to). A schedule
- * dropped from this list is unscheduled the next time a worker starts.
+ * The worker's recurring jobs: draft expiry, the queued-step sweeper, the scheduled-text
+ * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
+ * end, usage reporting, texting provisioning and polling, and the monthly fees. A schedule dropped
+ * from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'expire-drafts', cron: '*/5 * * * *', run: expireDrafts },
   { name: 'sweep-queued', cron: '* * * * *', run: sweepQueued },
   { name: 'dispatch-messages', cron: '* * * * *', run: dispatchDueMessages },
+  { name: 'end-trials', cron: '*/5 * * * *', run: endTrials },
+  { name: 'report-usage', cron: '* * * * *', run: reportUsage },
+  { name: 'provision-texting', cron: '* * * * *', run: provisionTexting },
+  { name: 'poll-texting', cron: '0 * * * *', run: pollTexting },
+  { name: 'bill-monthly-fees', cron: '0 9 1 * *', run: billMonthlyFees },
 ];
 
 /** How many steps one worker process runs at once. */
@@ -59,6 +73,13 @@ class JobFailed extends Error {
   }
 }
 
+/** A job-queue job's data: a company id (and, for an import, its import id). Checked before a handler runs. */
+function isJobData(data: unknown): data is JobData {
+  if (typeof data !== 'object' || data === null) return false;
+  const { companyId } = data as Record<string, unknown>;
+  return typeof companyId === 'string' && UUID.test(companyId);
+}
+
 function isStepJob(data: unknown): data is StepJobData {
   if (typeof data !== 'object' || data === null) return false;
   const { companyId, stepId } = data as Record<string, unknown>;
@@ -71,6 +92,10 @@ function isStepJob(data: unknown): data is StepJobData {
  *   fails the job (with the error in its safe form), and pg-boss tries it again with backoff; the
  *   runner has already put the step back to `queued` for that next try. A job whose data is not a
  *   company and step id is logged and dropped.
+ * - each of JOB_NAMES (the job queues, made by `ensureJobQueues`): each job runs its handler in
+ *   JOB_HANDLERS with its data and `meta` (`attempt` counted from 1, and `lastAttempt` on the last
+ *   try that pg-boss allows). A job whose data has no company id that is a UUID is logged and
+ *   dropped; a handler that throws fails the job (as `JobFailed`), and pg-boss retries it.
  * - each of `schedules`: its own queue (one waiting job at most, no retries: the next tick is the
  *   retry), worked by `run(deps, deps.clock.now())`, and scheduled on its cron. A failure is logged
  *   through `deps.logError`.
@@ -81,6 +106,7 @@ export async function startWorker(boss: PgBoss, deps: AppDeps, options: WorkerOp
   const schedules = options.schedules ?? SCHEDULES;
 
   await ensureStepQueue(boss);
+  await ensureJobQueues(boss);
   await boss.work<unknown>(
     STEP_QUEUE,
     { ...polling, localConcurrency: options.localConcurrency ?? STEP_CONCURRENCY },
@@ -97,6 +123,22 @@ export async function startWorker(boss: PgBoss, deps: AppDeps, options: WorkerOp
       }
     },
   );
+
+  for (const name of JOB_NAMES) {
+    await boss.work(name, { ...polling, includeMetadata: true }, async ([job]) => {
+      if (!job) return;
+      if (!isJobData(job.data)) {
+        reportJobError(deps, new Error(`A ${name} job did not name a company.`), `${name} job ${job.id}`);
+        return;
+      }
+      const meta: JobMeta = { attempt: job.retryCount + 1, lastAttempt: job.retryCount >= job.retryLimit };
+      try {
+        await JOB_HANDLERS[name](deps, job.data, meta);
+      } catch (err) {
+        throw new JobFailed(err);
+      }
+    });
+  }
 
   const wanted = new Set(schedules.map((s) => s.name));
   for (const old of await boss.getSchedules()) {

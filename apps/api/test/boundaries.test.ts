@@ -34,6 +34,8 @@ describe('@roofline/db/system import boundary', () => {
     'apps/api/src/hooks/__fixture_ok_import.ts',
     'apps/api/src/auth/__fixture_ok_import.ts',
     'apps/api/src/jobs/scheduler/__fixture_ok_import.ts',
+    'apps/api/src/account/__fixture_ok_import.ts',
+    'apps/api/src/public/__fixture_ok_import.ts',
     'apps/api/src/scripts/__fixture_ok_import.ts',
     'apps/worker/src/__fixture_ok_import.ts',
     'packages/db/src/__fixture_ok_import.ts',
@@ -46,6 +48,7 @@ describe('@roofline/db/system import boundary', () => {
 
   test.each([
     'apps/api/src/routes/customers.ts',
+    'apps/api/src/routes/imports.ts',
     'apps/api/src/messaging/dispatcher.ts',
     'apps/api/src/tasks/runner.ts',
     'apps/api/src/jobs/worker.ts',
