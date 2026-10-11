@@ -5,9 +5,9 @@ name: CI
 
 on:
   push:
-    # Ledger, brief and report commits (ops/) must not start a run, because a new run cancels the
+    # Ledger, brief, report and spec/plan commits (ops/, docs/) must not start a run, because a new run cancels the
     # one in progress for the same branch.
-    paths-ignore: ['ops/**']
+    paths-ignore: ['ops/**', 'docs/**']
   pull_request:
   workflow_dispatch:
 
