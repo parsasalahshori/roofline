@@ -132,6 +132,8 @@ export type TaskView = {
   expired: boolean;
   /** Minutes of staff time the plan saved, set when it finishes; null until then. */
   minutesSaved: number | null;
+  /** The expired plan this one was made from by "run again", or null for an ordinary plan. */
+  rerunOfTaskId: string | null;
   steps: StepView[];
 };
 
@@ -186,6 +188,7 @@ export function toTaskView(
     expiresAt: task.expiresAt,
     expired: isExpired(task, now),
     minutesSaved: task.minutesSaved,
+    rerunOfTaskId: task.rerunOfTaskId,
     steps: steps.map((step) => toStepView(step, ctx, options)),
   };
 }

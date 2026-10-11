@@ -1,3 +1,6 @@
+import { statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 const required = { error: 'is required' } as const;
@@ -31,6 +34,27 @@ const encryptionKey = z.string(required).refine((v) => {
   return bytes.length === 32 && bytes.toString('base64') === v;
 }, 'must be 32 random bytes, base64-encoded (openssl rand -base64 32)');
 
+/** The repository root (this file is apps/api/src/config.ts). A relative WEB_DIST_DIR is read from here. */
+const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+
+function isBuiltWebApp(dir: string): boolean {
+  try {
+    return statSync(dir).isDirectory() && statSync(path.join(dir, 'index.html')).isFile();
+  } catch {
+    return false; // missing, or not readable
+  }
+}
+
+/**
+ * The built web app: a directory that contains index.html. A relative path is taken from the
+ * repository root, not the working directory, because `npm start -w @roofline/api` runs in
+ * apps/api; the value kept is the absolute path. The message never prints the path.
+ */
+const webDistDir = z
+  .string()
+  .transform((v) => path.resolve(REPO_ROOT, v))
+  .refine(isBuiltWebApp, 'must be a directory that contains index.html (build the web app first: npm run build:web)');
+
 const ConfigSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production'], {
@@ -49,6 +73,13 @@ const ConfigSchema = z
     /** The From header for outgoing email, for example `Roofline <hello@example.com>`. */
     MAIL_FROM: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
+
+    /**
+     * Where the built web app is (apps/web/dist). When set, the API serves it too, so one process
+     * answers the app and the API (production, and the end-to-end stack). Unset: the API serves
+     * only /api, /hooks and /health, and the browser gets the app from Vite.
+     */
+    WEB_DIST_DIR: webDistDir.optional(),
 
     /** How many reverse-proxy hops to trust for `req.ip` (0 = none). */
     TRUST_PROXY: integer(0, 0, 32),

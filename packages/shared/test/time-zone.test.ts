@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { isTimeZone } from '../src/time-zone.ts';
-import { isTimeZone as isTimeZoneFromIndex } from '../src/index.ts';
+import { isTimeZone, localDate } from '../src/time-zone.ts';
+import { isTimeZone as isTimeZoneFromIndex, localDate as localDateFromIndex } from '../src/index.ts';
 
 describe('isTimeZone', () => {
   test('is exported from the package entry point', () => {
@@ -41,5 +41,26 @@ describe('isTimeZone', () => {
     'US/Central',
   ])('accepts %s, a current or alias name for a real zone', (zone) => {
     expect(isTimeZone(zone)).toBe(true);
+  });
+});
+
+describe('localDate', () => {
+  test('is exported from the package entry point', () => {
+    expect(localDateFromIndex).toBe(localDate);
+  });
+
+  test('is the calendar day in the zone, not in UTC', () => {
+    const instant = new Date('2026-10-12T04:30:00Z');
+    expect(localDate(instant, 'America/Chicago')).toBe('2026-10-11');
+    expect(localDate(instant, 'Asia/Tokyo')).toBe('2026-10-12');
+    expect(localDate(instant, 'UTC')).toBe('2026-10-12');
+  });
+
+  test('turns over at local midnight, daylight saving included', () => {
+    // Chicago is UTC-5 until Nov 1 2026 (CDT), UTC-6 after (CST).
+    expect(localDate(new Date('2026-10-13T04:59:59Z'), 'America/Chicago')).toBe('2026-10-12');
+    expect(localDate(new Date('2026-10-13T05:00:00Z'), 'America/Chicago')).toBe('2026-10-13');
+    expect(localDate(new Date('2026-11-02T05:59:59Z'), 'America/Chicago')).toBe('2026-11-01');
+    expect(localDate(new Date('2026-11-02T06:00:00Z'), 'America/Chicago')).toBe('2026-11-02');
   });
 });
