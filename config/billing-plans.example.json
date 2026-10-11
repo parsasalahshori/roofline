@@ -1,0 +1,26 @@
+{
+  "_note": "Example values for development and tests only. The owner sets real prices in the file BILLING_PLANS_FILE points to.",
+  "plans": [
+    {
+      "key": "starter",
+      "name": "Starter",
+      "monthly_price_cents": 19900,
+      "included": { "ai_call_minutes": 300, "sms_segments": 1000 },
+      "overage_cents": { "ai_call_minute": 25, "sms_segment": 3 }
+    },
+    {
+      "key": "pro",
+      "name": "Pro",
+      "monthly_price_cents": 39900,
+      "included": { "ai_call_minutes": 1000, "sms_segments": 5000 },
+      "overage_cents": { "ai_call_minute": 20, "sms_segment": 2 }
+    }
+  ],
+  "exact_report_markup_pct": 20,
+  "pass_through_cents": {
+    "brand_registration": 4400,
+    "campaign_vetting": 1500,
+    "campaign_monthly": 1000,
+    "phone_number_monthly": 115
+  }
+}
