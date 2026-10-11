@@ -28,3 +28,11 @@ F3 Task 9 (API skeleton): brief ready; assigned to sibling 1 (session_01MpVA7xTz
 Sibling 2 (wf_8adb9634-824, contact 35): T7 76aa441 (base 0351174), review clean, CI 38181073895 green. Task 7: complete. Merged into f3-setup (see git log). Notes: ops/sdd/f3/merge-sib2b.md.
 Carry to T23/T24 (important): move ExistingCustomer, ExistingIndex, NormalizedRow, RowSkip (type-only) into packages/shared/src/imports.ts; normalize.ts and plan.ts re-export them; db must not redefine them. T24 must not record attestation evidence for a matched customer with no phone (importConsent ignores hasPhone).
 Minors (deferred): badPhone checked before email (brief order); previewRows prints blank address parts; normalizeZip truncates '123456' to '12345'; T6's hard-coded "20,000" still open.
+Architect 2 briefs: task 9, 13-24 written (ops/sdd/f3/briefs-status.txt). Proposed groups: G1 (after T9) T18, T19, T20; G2 (after T9) T16, T21, T22; G3 (after T9) T14, T15, T17; G4 (after T7 + T11) T13, T23, then T24 stacked on T23.
+Ruling X: T4's rejectedFields stays string[]; T16 keeps only values in BRAND_FIELDS — cost if wrong: none.
+Ruling Y: with STRIPE_WEBHOOK_SECRET unset the Stripe webhook answers 503 and records nothing (Stripe retries) — cost if wrong: retried events.
+Ruling Z: T22 reads the Stripe customer id with its own small query, not T19's billingFacts — cost if wrong: one duplicated query.
+Ruling AA: InlineJobs records every thrown error (T9 brief amended; sibling 1 told) — cost if wrong: none.
+Ruling AB: the import job bulk-writes customers, homes and jobs instead of createCustomer (no audit row per customer) — cost if wrong: ~900 extra audit rows.
+Ruling AC (controller, overrides Architect 2's local-copies proposal): T7's ExistingCustomer, ExistingIndex, NormalizedRow and RowSkip move type-only into packages/shared/src/imports.ts (T23 does the move); apps/api normalize.ts/plan.ts re-export them and packages/db imports them from @roofline/shared — no duplicated declarations (sibling 2's group check) — cost if wrong: one moved type block.
+T13 starts only after T11's review is merged (both edit messages.ts).
