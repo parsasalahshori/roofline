@@ -47,6 +47,11 @@ describe('lint rules', { timeout: 30_000 }, () => {
     expect(messages).toBe('');
   });
 
+  it('requires double quotes on JSX attributes', async () => {
+    expect(await lint(component("<div role='status' />"), WEB_FILE)).toContain('singlequote');
+    expect(await lint(component('<div role="status" />'), WEB_FILE)).toBe('');
+  });
+
   it('refuses text written in JSX', async () => {
     expect(await lint(component('<p>Hello there</p>'), WEB_FILE)).toContain(NO_TEXT);
     expect(await lint(component('<p>Hello there</p>'), KIT_FILE)).toContain(NO_TEXT);

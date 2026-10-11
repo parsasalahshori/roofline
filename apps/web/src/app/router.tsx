@@ -9,6 +9,7 @@ import { VerifyEmail } from '../features/auth/VerifyEmail.tsx';
 import { ComingSoon } from '../features/coming-soon/ComingSoon.tsx';
 import { Settings } from '../features/settings/Settings.tsx';
 import { StormWindow } from '../features/storm/StormWindow.tsx';
+import { Today } from '../features/today/Today.tsx';
 import { AppWindow } from '../shell/AppWindow.tsx';
 import type { ComingSoonKey } from '../shell/apps.ts';
 import { NotFoundWindow } from '../shell/NotFoundWindow.tsx';
@@ -53,7 +54,8 @@ const routes: RouteObject[] = [
           { path: 'customers/*', element: comingSoonWindow('customers') },
           { path: 'settings', element: <Navigate to="/settings/company" replace /> },
           { path: 'settings/:tab', element: <AppWindow app="settings"><Settings /></AppWindow> },
-          // Task 15 adds today; until then it shows this
+          { path: 'today', element: <AppWindow app="today"><Today /></AppWindow> },
+          // Anything else
           { path: '*', element: <NotFoundWindow /> },
         ],
       },

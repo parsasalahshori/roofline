@@ -1,0 +1,34 @@
+import { Sheet, UiLink } from '@roofline/ui';
+import { WINDOW_COPY } from '../../copy/dock.ts';
+import { shell } from '../../copy/shell.ts';
+import type { WindowKey } from '../apps.ts';
+import styles from './MoreSheet.module.css';
+
+/** The apps the tab bar does not hold, in the order the sheet lists them. Each title is the window's own. */
+const MORE_LINKS: readonly { key: WindowKey; href: string }[] = [
+  { key: 'storm', href: '/storm' },
+  { key: 'front-desk', href: '/front-desk' },
+  { key: 'estimator', href: '/estimator' },
+  { key: 'agents', href: '/agents' },
+  { key: 'settings', href: '/settings' },
+];
+
+/**
+ * The More sheet on a phone: the apps that do not fit in the tab bar. Choosing one navigates (the
+ * link does that) and closes the sheet.
+ */
+export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Sheet open={open} title={shell.moreTitle} onClose={onClose} closeLabel={shell.moreClose}>
+      <ul className={styles.list}>
+        {MORE_LINKS.map(({ key, href }) => (
+          <li key={key}>
+            <UiLink href={href} className={styles.link} onClick={onClose}>
+              {WINDOW_COPY[key].title}
+            </UiLink>
+          </li>
+        ))}
+      </ul>
+    </Sheet>
+  );
+}
