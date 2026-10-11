@@ -14,7 +14,7 @@ import {
 import { CONSENT_STATUSES, toE164 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
-import { assertKnownFields, emailField, limitParam, offsetParam, parse, UUID } from '../validate.ts';
+import { assertKnownFields, emailField, limitParam, noNul, offsetParam, parse, TOO_LONG, UUID } from '../validate.ts';
 
 const MAX_PHONES = 10;
 const MAX_EMAILS = 10;
@@ -24,13 +24,9 @@ const NAME_MESSAGE = 'Please enter a name.';
 const PHONE_MESSAGE = "That doesn't look like a US phone number.";
 const TWICE_MESSAGE = 'This number is listed twice.';
 const TAKEN_MESSAGE = 'Another customer already has this number.';
-const TOO_LONG = 'That is too long.';
 const ATTESTED_MESSAGE = 'That consent type can only come from a customer import.';
 const NOTE_MESSAGE = 'A note can only be added when texting consent is set to OK for offers.';
 const NOTE_TOO_LONG = 'Please keep the note to 500 characters or fewer.';
-
-/** Postgres cannot store a NUL character in text; refusing it here keeps a stray one from becoming a 500. */
-const noNul = (value: string): boolean => !value.includes('\0');
 
 /** Optional text: trimmed, at most `max` characters; empty means "none". */
 const optionalText = (max: number) =>
@@ -198,9 +194,11 @@ function taken(err: unknown): never {
 
 /**
  * `/api/customers`: list and search, create, open, edit, archive and restore (R16).
- * - Reps work only with the customers they created; any other customer is a 404 (the repository
- *   applies that rule, so no route can forget it). Owner and office see all of the company's.
- * - `smsConsentStatus`, `doNotContact` and `consentNote` are owner/office only (403 for a rep).
+ * - Reps work with the customers they created and the ones a job they can see is for (scope.ts);
+ *   any other customer is a 404 (the repository applies that rule, so no route can forget it).
+ *   Owner and office see all of the company's.
+ * - `smsConsentStatus`, `doNotContact` and `consentNote` are owner/office only (403 for a rep). The
+ *   route says so before it reads the body, and the repository refuses it too.
  * - Every edit is audited (before and after) and added to the customer's timeline, in the same
  *   transaction as the change.
  */

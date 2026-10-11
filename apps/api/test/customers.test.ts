@@ -1,7 +1,20 @@
 import request from 'supertest';
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { activities, auditLog, customers, jobs, optOuts, properties, withTenant, type Tx } from '@roofline/db';
+import {
+  activities,
+  auditLog,
+  createCustomer,
+  customers,
+  ForbiddenError,
+  jobs,
+  optOuts,
+  properties,
+  type TenantContext,
+  updateCustomer,
+  withTenant,
+  type Tx,
+} from '@roofline/db';
 import type { SeedUser } from '@roofline/db/testing';
 import { loginAs, makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 
@@ -940,6 +953,43 @@ describe('opt-outs', () => {
     expect((await dbOptOuts(t.seed.a.companyId)).map((r) => r.phoneE164)).toEqual([MOLLY_E164]);
   });
 
+  test('asking again for do-not-contact, the revoked status or the same numbers puts missing numbers back on the list', async () => {
+    const owner = await agentFor('owner');
+    const dnc = await create('owner', { displayName: 'DNC', doNotContact: true, phones: [{ number: MOLLY }] });
+    const revoked = await create('owner', {
+      displayName: 'Revoked',
+      smsConsentStatus: 'revoked',
+      phones: [{ number: '(308) 555-0188' }],
+    });
+    const asked = await create('owner', {
+      displayName: 'Same numbers',
+      doNotContact: true,
+      phones: [{ number: '(308) 555-0199' }],
+    });
+    // The customers sent START, so their rows are gone; nothing on the customers themselves has changed.
+    await inCompany(t.seed.a.companyId, (tx) => tx.delete(optOuts));
+    expect(await dbOptOuts(t.seed.a.companyId)).toEqual([]);
+
+    // An edit that touches none of consent, do-not-contact or the numbers leaves the list alone.
+    await owner.patch(`/api/customers/${dnc.id}`).send({ displayName: 'DNC, renamed' });
+    expect(await dbOptOuts(t.seed.a.companyId)).toEqual([]);
+
+    // Asking for the state they are already in puts the numbers back (the rows are written, not just kept).
+    expect((await owner.patch(`/api/customers/${dnc.id}`).send({ doNotContact: true })).status).toBe(200);
+    expect((await dbOptOuts(t.seed.a.companyId)).map((r) => r.phoneE164)).toEqual([MOLLY_E164]);
+    expect((await owner.patch(`/api/customers/${revoked.id}`).send({ smsConsentStatus: 'revoked' })).status).toBe(200);
+    expect((await owner.patch(`/api/customers/${asked.id}`).send({ phones: [{ number: '(308) 555-0199' }] })).status).toBe(200);
+    expect((await dbOptOuts(t.seed.a.companyId)).map((r) => r.phoneE164)).toEqual(['+13085550188', '+13085550199', MOLLY_E164]);
+  });
+
+  test('asking again for a state that is not opted out adds nobody', async () => {
+    const owner = await agentFor('owner');
+    const fine = await create('owner', { displayName: 'Fine', smsConsentStatus: 'express', phones: [{ number: MOLLY }] });
+    await owner.patch(`/api/customers/${fine.id}`).send({ smsConsentStatus: 'express', doNotContact: false });
+    await owner.patch(`/api/customers/${fine.id}`).send({ phones: [{ number: MOLLY }] });
+    expect(await dbOptOuts(t.seed.a.companyId)).toEqual([]);
+  });
+
   test("an earlier STOP from the customer is kept as it was; it is not rewritten as 'manual'", async () => {
     const made = await create('owner', { displayName: 'Molly', phones: [{ number: MOLLY }] });
     const earlier = new Date('2026-10-01T10:00:00.000Z');
@@ -1254,7 +1304,7 @@ describe('what a rep can see', () => {
     expect(res.body.activities.map((a: { kind: string }) => a.kind)).toEqual(['customer.created']);
   });
 
-  test('property and job timelines: the owner can open one that exists, a rep cannot yet, another company is 404', async () => {
+  test('property and job timelines: the owner can open one that exists, another company is 404, a rep can open them when a visible job links them', async () => {
     const customer = await create('owner', { displayName: 'Molly' });
     const { propertyId, jobId } = await inCompany(t.seed.a.companyId, async (tx) => {
       const [property] = await tx
@@ -1299,8 +1349,87 @@ describe('what a rep can see', () => {
     expect((await owner.get(`/api/activities?subjectType=property&subjectId=${otherPropertyId}`)).status).toBe(404);
     expect((await owner.get(`/api/activities?subjectType=job&subjectId=${otherPropertyId}`)).status).toBe(404);
 
+    // The job is an unassigned lead, so a rep sees it (and the address it is for). Once it is no longer
+    // a lead, and nobody has given it to the rep, both are out of their sight (rep-visibility.test.ts
+    // covers the whole rule).
     const rep = await agentFor('rep');
+    expect((await rep.get(`/api/activities?subjectType=property&subjectId=${propertyId}`)).status).toBe(200);
+    expect((await rep.get(`/api/activities?subjectType=job&subjectId=${jobId}`)).status).toBe(200);
+    await inCompany(t.seed.a.companyId, (tx) => tx.update(jobs).set({ stage: 'inspection' }).where(eq(jobs.id, jobId)));
+    await inCompany(t.seed.a.companyId, (tx) => tx.update(properties).set({ customerId: null }).where(eq(properties.id, propertyId)));
     expect((await rep.get(`/api/activities?subjectType=property&subjectId=${propertyId}`)).status).toBe(404);
     expect((await rep.get(`/api/activities?subjectType=job&subjectId=${jobId}`)).status).toBe(404);
+  });
+});
+
+describe('the repository guards consent on its own (defense in depth)', () => {
+  const repCtx = (): TenantContext => ({
+    companyId: t.seed.a.companyId,
+    userId: userOf('rep').userId,
+    role: 'rep',
+    canApproveSpend: false,
+  });
+  const ownerCtx = (): TenantContext => ({ ...repCtx(), userId: userOf('owner').userId, role: 'owner' });
+  const writeOptions = () => ({ now: t.clock.now() });
+  const as = <T>(ctx: TenantContext, fn: (tx: Tx) => Promise<T>) => withTenant(t.deps.pools, ctx, fn);
+
+  test.each<[string, Parameters<typeof createCustomer>[2]]>([
+    ['a consent status', { displayName: 'X', smsConsentStatus: 'express' }],
+    ['a consent status of none', { displayName: 'X', smsConsentStatus: 'none' }],
+    ['do-not-contact on', { displayName: 'X', doNotContact: true }],
+    ['do-not-contact off', { displayName: 'X', doNotContact: false }],
+    ['a consent note', { displayName: 'X', consentNote: 'on paper' }],
+  ])('createCustomer: a rep sending %s is refused and nothing is saved', async (_name, input) => {
+    await expect(as(repCtx(), (tx) => createCustomer(tx, repCtx(), input, writeOptions()))).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await inCompany(t.seed.a.companyId, (tx) => tx.select().from(customers))).toEqual([]);
+    expect(await dbAudit(t.seed.a.companyId, 'customer.create')).toEqual([]);
+  });
+
+  test.each<[string, Parameters<typeof updateCustomer>[3]]>([
+    ['a consent status', { smsConsentStatus: 'revoked' }],
+    ['the same consent status it has', { smsConsentStatus: 'none' }],
+    ['do-not-contact on', { doNotContact: true }],
+    ['do-not-contact off', { doNotContact: false }],
+    ['a consent note', { consentNote: 'on paper' }],
+    ['a consent field along with a detail', { displayName: 'Sneaky', doNotContact: true }],
+  ])('updateCustomer: a rep sending %s is refused and nothing changes', async (_name, patch) => {
+    const mine = await create('rep', { displayName: 'Rep customer', phones: [{ number: MOLLY }] });
+    await expect(as(repCtx(), (tx) => updateCustomer(tx, repCtx(), mine.id, patch, writeOptions()))).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+    const stored = await dbCustomer(t.seed.a.companyId, mine.id);
+    expect(stored).toMatchObject({ displayName: 'Rep customer', doNotContact: false, smsConsentStatus: 'none' });
+    expect(await dbAudit(t.seed.a.companyId, 'customer.update')).toEqual([]);
+    expect(await dbOptOuts(t.seed.a.companyId)).toEqual([]);
+  });
+
+  test('the guard looks at what is sent, not at what the keys hold: left-out (undefined) consent fields are fine for a rep', async () => {
+    const mine = await create('rep', { displayName: 'Rep customer' });
+    const updated = await as(repCtx(), (tx) =>
+      updateCustomer(
+        tx,
+        repCtx(),
+        mine.id,
+        { displayName: 'Renamed', smsConsentStatus: undefined, doNotContact: undefined, consentNote: undefined },
+        writeOptions(),
+      ),
+    );
+    expect(updated?.displayName).toBe('Renamed');
+    const created = await as(repCtx(), (tx) =>
+      createCustomer(tx, repCtx(), { displayName: 'Fresh', doNotContact: undefined, smsConsentStatus: undefined }, writeOptions()),
+    );
+    expect(created.displayName).toBe('Fresh');
+  });
+
+  test('the owner (and the system) are not held back', async () => {
+    const made = await as(ownerCtx(), (tx) =>
+      createCustomer(tx, ownerCtx(), { displayName: 'Owner made', doNotContact: true }, writeOptions()),
+    );
+    expect(made.doNotContact).toBe(true);
+    const systemCtx: TenantContext = { ...repCtx(), userId: null, role: 'system' };
+    const changed = await as(systemCtx, (tx) =>
+      updateCustomer(tx, systemCtx, made.id, { smsConsentStatus: 'revoked' }, writeOptions()),
+    );
+    expect(changed?.smsConsentStatus).toBe('revoked');
   });
 });

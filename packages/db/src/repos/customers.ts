@@ -1,11 +1,13 @@
 import { and, asc, count, eq, ilike, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { ConsentStatus } from '@roofline/shared';
 import { customers, type CustomerPhone, optOuts } from '../schema/index.ts';
+import { ForbiddenError } from '../errors.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
 import { clampPage } from './paging.ts';
 import { customerScope } from './scope.ts';
+import { escapeLike } from './search.ts';
 
 export type CustomerRow = typeof customers.$inferSelect;
 
@@ -138,6 +140,24 @@ export async function ensureOptOuts(tx: Tx, ctx: TenantContext, phones: readonly
     .onConflictDoNothing({ target: [optOuts.companyId, optOuts.phoneE164] });
 }
 
+/**
+ * Consent and do-not-contact belong to the owner and the office (R16). The route refuses a rep who
+ * sends any of these before it looks at anything else; this is the same rule at the data layer, so
+ * a caller that forgets the route's check still cannot let a rep change consent. It looks at what
+ * was sent (a key left out, or undefined, is not sent), not at whether the value differs.
+ */
+function assertMayChangeConsent(
+  ctx: TenantContext,
+  input: { smsConsentStatus?: unknown; doNotContact?: unknown; consentNote?: unknown },
+): void {
+  if (
+    ctx.role === 'rep' &&
+    (input.smsConsentStatus !== undefined || input.doNotContact !== undefined || input.consentNote !== undefined)
+  ) {
+    throw new ForbiddenError();
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // History helpers
 
@@ -212,7 +232,7 @@ const optedOut = (row: Pick<CustomerRow, 'smsConsentStatus' | 'doNotContact'>) =
 // ---------------------------------------------------------------------------------------------
 // Reads
 
-/** One customer the member may see, or null (it does not exist, is another company's, or a rep did not create it). */
+/** One customer the member may see, or null (it does not exist, is another company's, or is outside a rep's scope). */
 export async function getCustomer(tx: Tx, ctx: TenantContext, id: string): Promise<CustomerRow | null> {
   const [row] = await tx
     .select()
@@ -230,11 +250,6 @@ export type ListCustomersOptions = {
   offset?: number;
   includeArchived?: boolean;
 };
-
-/** Escapes the characters LIKE treats as wildcards, so a search for `100%` finds "100%". */
-function escapeLike(text: string): string {
-  return text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
 
 /** The customers the member may see, by name, with the count before paging. */
 export async function listCustomers(
@@ -291,6 +306,7 @@ export async function createCustomer(
   options: WriteOptions,
 ): Promise<CustomerRow> {
   const { now } = options;
+  assertMayChangeConsent(ctx, input);
   const phones = input.phones ?? [];
   await assertPhonesFree(
     tx,
@@ -355,9 +371,10 @@ export async function createCustomer(
  *   (`DuplicatePhoneError`), so sending a customer's own numbers back never fails.
  * - A consent status different from the current one is recorded as a manual change by `ctx.userId`,
  *   now. The same status again changes nothing, so the first record of consent keeps its date.
- *   Authority to change consent is checked by the caller (the route): this function does not know roles.
- * - When the customer ends up revoked or do-not-contact and the status, do-not-contact or the numbers
- *   changed, every number they have is put on the opt-out list. Nothing ever comes off it here.
+ *   A rep may not send consent fields at all (`ForbiddenError`): the route checks too, but this is the lock that holds.
+ * - When the customer ends up revoked or do-not-contact and the request named the status, the
+ *   do-not-contact flag, the consent note or the numbers (even with the same values as before),
+ *   every number they have is put on the opt-out list. Nothing ever comes off it here.
  * - Always writes the audit row (the fields the patch named, before and after) and a "Customer
  *   details updated" line, plus consent lines for a status or do-not-contact change.
  */
@@ -369,6 +386,7 @@ export async function updateCustomer(
   options: WriteOptions,
 ): Promise<CustomerRow | null> {
   const { now } = options;
+  assertMayChangeConsent(ctx, patch);
   const [before] = await tx
     .select()
     .from(customers)
@@ -436,9 +454,15 @@ export async function updateCustomer(
   const [updated] = await tx.update(customers).set(set).where(eq(customers.id, id)).returning();
   const after = updated!;
 
-  const statusChanged = after.smsConsentStatus !== before.smsConsentStatus;
-  const doNotContactChanged = after.doNotContact !== before.doNotContact;
-  if (optedOut(after) && (statusChanged || doNotContactChanged || patch.phones !== undefined)) {
+  // Asking again for a state the customer is already in still counts: the list is for the texting
+  // rules to lean on, and a customer who is opted out must have every number on it. The insert
+  // keeps any row that is already there, so nothing is rewritten when nothing was missing.
+  const touchedOptOutInputs =
+    patch.smsConsentStatus !== undefined ||
+    patch.consentNote !== undefined ||
+    patch.doNotContact !== undefined ||
+    patch.phones !== undefined;
+  if (optedOut(after) && touchedOptOutInputs) {
     await ensureOptOuts(tx, ctx, after.phones.map((p) => p.e164), now);
   }
 

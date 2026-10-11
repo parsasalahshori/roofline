@@ -6,6 +6,16 @@ export const MAX_EMAIL_LENGTH = 254;
 
 export const EMAIL_MESSAGE = 'Please enter a valid email address.';
 
+export const TOO_LONG = 'That is too long.';
+
+/** Postgres cannot store a NUL character in text; refusing it up front keeps a stray one from becoming a 500. */
+export const noNul = (value: string): boolean => !value.includes('\0');
+
+export const TIMEZONE_MESSAGE = 'Please pick a valid time zone.';
+
+/** The IANA zone names the platform knows (`America/Chicago`), plus UTC, which the list leaves out. */
+export const TIME_ZONES: ReadonlySet<string> = new Set([...Intl.supportedValuesOf('timeZone'), 'UTC']);
+
 /** A UUID in its written form, either case. Routes use it to tell "malformed id" (a 404) from a real lookup. */
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

@@ -3,14 +3,14 @@ import type { ActivitySubjectType } from '@roofline/shared';
 import { activities, customers, jobs, properties } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { clampPage } from './paging.ts';
-import { customerScope } from './scope.ts';
+import { customerScope, jobScope, propertyScope } from './scope.ts';
 
 export type ActivityRow = typeof activities.$inferSelect;
 
 export type ActivityEntry = {
   subjectType: ActivitySubjectType;
   subjectId: string;
-  /** What happened, dotted: `customer.created`, `customer.updated`, `customer.consent_changed`, `customer.archived`. */
+  /** What happened, dotted: `customer.created`, `customer.consent_changed`, `property.updated`, `job.stage_changed`, `job.archived`. */
   kind: string;
   /** A plain-English line for the timeline. */
   summary: string;
@@ -44,9 +44,9 @@ export async function addActivity(tx: Tx, ctx: TenantContext, entry: ActivityEnt
 }
 
 /**
- * Whether the member may see the timeline of this subject: it must exist in their company and, for
- * a customer, be inside their scope. A rep gets no property or job timelines yet (Task 11 widens
- * that to the ones linked to a job they can see); the owner and the office get all of them.
+ * Whether the member may see the timeline of this subject: it must exist in their company and be
+ * inside their scope (scope.ts: a rep sees the customers, addresses and jobs the visibility rule
+ * gives them; the owner and the office see all of them).
  */
 async function activitySubjectVisible(
   tx: Tx,
@@ -62,9 +62,19 @@ async function activitySubjectVisible(
       .limit(1);
     return row !== undefined;
   }
-  if (ctx.role === 'rep') return false;
-  const table = subjectType === 'property' ? properties : jobs;
-  const [row] = await tx.select({ id: table.id }).from(table).where(eq(table.id, subjectId)).limit(1);
+  if (subjectType === 'property') {
+    const [row] = await tx
+      .select({ id: properties.id })
+      .from(properties)
+      .where(and(eq(properties.id, subjectId), propertyScope(ctx)))
+      .limit(1);
+    return row !== undefined;
+  }
+  const [row] = await tx
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.id, subjectId), jobScope(ctx)))
+    .limit(1);
   return row !== undefined;
 }
 

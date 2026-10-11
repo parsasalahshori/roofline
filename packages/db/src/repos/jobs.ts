@@ -1,0 +1,431 @@
+import { and, count, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { JOB_STAGE_LABELS, type JobSource, type JobStage } from '@roofline/shared';
+import { findPgError, ForbiddenError } from '../errors.ts';
+import { jobs } from '../schema/index.ts';
+import type { TenantContext, Tx } from '../tenant.ts';
+import { addActivity } from './activities.ts';
+import { audit } from './audit.ts';
+import { getCustomer, type WriteOptions } from './customers.ts';
+import { clampPage } from './paging.ts';
+import { getProperty, type PropertyRow } from './properties.ts';
+import { jobScope } from './scope.ts';
+
+export type JobRow = typeof jobs.$inferSelect;
+
+/**
+ * A new job, made by `ctx.userId`. The caller (the API route) has already checked the shapes: ids
+ * are UUIDs, the stage and source are real, the value is a whole number of cents, the reason is at
+ * most 500 characters. Whether the things it points at exist and may be used is checked here.
+ */
+export type JobInput = {
+  customerId: string;
+  propertyId: string;
+  /** Default 'lead'. */
+  stage?: JobStage;
+  /** Default 'manual'. */
+  source?: JobSource;
+  valueCents?: number | null;
+  assignedUserId?: string | null;
+  lostReason?: string | null;
+};
+
+/** Changes to a job. A field left out (undefined) is not touched; null clears the ones that can be cleared. */
+export type JobPatch = {
+  customerId?: string;
+  propertyId?: string;
+  stage?: JobStage;
+  source?: JobSource;
+  valueCents?: number | null;
+  assignedUserId?: string | null;
+  lostReason?: string | null;
+};
+
+/**
+ * What is wrong with something a job points at. The API reports each as a 400 on the matching field:
+ * - `customer`: not a customer the member can see (`customerId`)
+ * - `property`: not an address the member can see (`propertyId`)
+ * - `propertyCustomer`: the address belongs to another customer (`propertyId`)
+ * - `assignee`: not an active member of the company (`assignedUserId`)
+ */
+export type JobLinkProblem = 'customer' | 'property' | 'propertyCustomer' | 'assignee';
+
+export class JobLinkError extends Error {
+  readonly problem: JobLinkProblem;
+
+  constructor(problem: JobLinkProblem) {
+    super(`A job cannot point at that (${problem}).`);
+    this.name = 'JobLinkError';
+    this.problem = problem;
+  }
+}
+
+/**
+ * The last line of defence for the links: when a write still fails on one of the jobs foreign keys
+ * (the customer or address vanished between the check and the write, or the checks were skipped),
+ * this says which link it was. Undefined for any other error.
+ */
+export function jobLinkErrorFromPg(err: unknown): JobLinkError | undefined {
+  const pg = findPgError(err);
+  if (pg?.code !== '23503') return undefined;
+  switch (pg.constraint) {
+    case 'jobs_company_customer_fk':
+      return new JobLinkError('customer');
+    case 'jobs_company_property_fk':
+      return new JobLinkError('property');
+    case 'jobs_assigned_user_id_users_id_fk':
+      return new JobLinkError('assignee');
+    default:
+      return undefined;
+  }
+}
+
+async function guarded<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    throw jobLinkErrorFromPg(err) ?? err;
+  }
+}
+
+/**
+ * A rep may give a job to themselves or to nobody, never to someone else (R17). The route checks
+ * this before anything else; this is the same rule at the data layer. Owner, office and system
+ * may assign anyone.
+ */
+function assertMayAssign(ctx: TenantContext, assignedUserId: string | null | undefined): void {
+  if (ctx.role === 'rep' && assignedUserId !== undefined && assignedUserId !== null && assignedUserId !== ctx.userId) {
+    throw new ForbiddenError();
+  }
+}
+
+/** The member's name when they are an active member of the company, else null. `company_members` is the only way the tenant role sees names. */
+async function activeMemberName(tx: Tx, userId: string): Promise<string | null> {
+  const result = await tx.execute(
+    sql`select name from company_members where user_id = ${userId} and status = 'active' limit 1`,
+  );
+  const row = result.rows[0];
+  return row ? (row.name as string) : null;
+}
+
+/**
+ * Checks that a job may point at this customer and this address: the member can see both, and an
+ * address that already has a customer belongs to this one. Returns the address.
+ */
+async function checkLinks(tx: Tx, ctx: TenantContext, customerId: string, propertyId: string): Promise<PropertyRow> {
+  if (!(await getCustomer(tx, ctx, customerId))) throw new JobLinkError('customer');
+  const property = await getProperty(tx, ctx, propertyId);
+  if (!property) throw new JobLinkError('property');
+  if (property.customerId !== null && property.customerId !== customerId) throw new JobLinkError('propertyCustomer');
+  return property;
+}
+
+// ---------------------------------------------------------------------------------------------
+// History helpers
+
+const AUDITED = [
+  'customerId',
+  'propertyId',
+  'stage',
+  'stageChangedAt',
+  'source',
+  'valueCents',
+  'assignedUserId',
+  'lostReason',
+] as const;
+type AuditedField = (typeof AUDITED)[number];
+
+/** The named fields of a job as plain JSON (dates as ISO strings), for the audit log. */
+function snapshot(row: JobRow, fields: readonly AuditedField[]): Record<string, unknown> {
+  return Object.fromEntries(
+    fields.map((field) => {
+      const value = row[field];
+      return [field, value instanceof Date ? value.toISOString() : value];
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reads
+
+/** One job the member may see, or null (it does not exist, is another company's, or is outside a rep's scope). */
+export async function getJob(tx: Tx, ctx: TenantContext, id: string): Promise<JobRow | null> {
+  const [row] = await tx
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.id, id), jobScope(ctx)))
+    .limit(1);
+  return row ?? null;
+}
+
+export type ListJobsOptions = {
+  stage?: JobStage;
+  /** 'me': assigned to the member. 'unassigned': assigned to nobody. */
+  assigned?: 'me' | 'unassigned';
+  customerId?: string;
+  propertyId?: string;
+  /** Default 50, at most 200. */
+  limit?: number;
+  offset?: number;
+  includeArchived?: boolean;
+};
+
+/** The jobs the member may see, newest first, with the count before paging. */
+export async function listJobs(
+  tx: Tx,
+  ctx: TenantContext,
+  options: ListJobsOptions = {},
+): Promise<{ jobs: JobRow[]; total: number }> {
+  const { limit, offset } = clampPage(options);
+  const conditions: (SQL | undefined)[] = [jobScope(ctx)];
+  if (options.includeArchived !== true) conditions.push(isNull(jobs.archivedAt));
+  if (options.stage !== undefined) conditions.push(eq(jobs.stage, options.stage));
+  if (options.assigned === 'me') conditions.push(ctx.userId === null ? sql`false` : eq(jobs.assignedUserId, ctx.userId));
+  if (options.assigned === 'unassigned') conditions.push(isNull(jobs.assignedUserId));
+  if (options.customerId !== undefined) conditions.push(eq(jobs.customerId, options.customerId));
+  if (options.propertyId !== undefined) conditions.push(eq(jobs.propertyId, options.propertyId));
+
+  const where = and(...conditions);
+  const rows = await tx.select().from(jobs).where(where).orderBy(desc(jobs.createdAt), desc(jobs.id)).limit(limit).offset(offset);
+  const [totals] = await tx.select({ total: count() }).from(jobs).where(where);
+  return { jobs: rows, total: totals?.total ?? 0 };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Writes
+
+/**
+ * Adds a job, created by `ctx.userId`, at `now` in the given stage (default 'lead').
+ * Throws `JobLinkError` when the customer or the address is not one the member can see, when the
+ * address belongs to a different customer, or when `assignedUserId` is not an active member; and
+ * `ForbiddenError` when a rep assigns someone other than themselves.
+ * Writes the audit row and the timeline: "Job created" on the job (plus "Assigned to ..." when it
+ * starts out assigned) and "New job: <address>" on the customer.
+ */
+export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, options: WriteOptions): Promise<JobRow> {
+  const { now } = options;
+  assertMayAssign(ctx, input.assignedUserId);
+  const property = await checkLinks(tx, ctx, input.customerId, input.propertyId);
+  const assigneeName = input.assignedUserId ? await activeMemberName(tx, input.assignedUserId) : null;
+  if (input.assignedUserId && assigneeName === null) throw new JobLinkError('assignee');
+
+  const [row] = await guarded(() =>
+    tx
+      .insert(jobs)
+      .values({
+        companyId: ctx.companyId,
+        customerId: input.customerId,
+        propertyId: input.propertyId,
+        stage: input.stage ?? 'lead',
+        stageChangedAt: now,
+        source: input.source ?? 'manual',
+        valueCents: input.valueCents ?? null,
+        assignedUserId: input.assignedUserId ?? null,
+        createdByUserId: ctx.userId,
+        lostReason: input.lostReason ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning(),
+  );
+  const created = row!;
+
+  await audit(tx, ctx, {
+    action: 'job.create',
+    targetType: 'job',
+    targetId: created.id,
+    after: snapshot(created, AUDITED),
+    ip: options.ip ?? null,
+    at: now,
+  });
+  await addActivity(tx, ctx, {
+    subjectType: 'job',
+    subjectId: created.id,
+    kind: 'job.created',
+    summary: 'Job created',
+    at: now,
+  });
+  await addActivity(tx, ctx, {
+    subjectType: 'customer',
+    subjectId: created.customerId,
+    kind: 'job.created',
+    summary: `New job: ${property.addressLine}`,
+    data: { jobId: created.id, propertyId: created.propertyId },
+    at: now,
+  });
+  if (assigneeName !== null) {
+    await addActivity(tx, ctx, {
+      subjectType: 'job',
+      subjectId: created.id,
+      kind: 'job.assigned',
+      summary: `Assigned to ${assigneeName}`,
+      data: { from: null, to: created.assignedUserId },
+      at: now,
+    });
+  }
+  return created;
+}
+
+/**
+ * Changes a job the member may see; null when they may not (or it does not exist). The row is
+ * locked for the length of the transaction, so two edits of one job do not interleave.
+ *
+ * - A different customer or address is checked like a new job's (`JobLinkError`); one the job
+ *   already has is not checked again.
+ * - A different stage sets `stage_changed_at` to `now` and adds "Moved to <Stage>". Sending the
+ *   stage the job already has changes nothing.
+ * - A different assignee (an active member, or null) adds "Assigned to <name>" or "Unassigned".
+ *   A rep may only name themselves or null (`ForbiddenError`, checked before the job is looked up).
+ * - Always writes the audit row: the fields the patch named, before and after. Value, source and
+ *   lost-reason changes appear there only.
+ */
+export async function updateJob(
+  tx: Tx,
+  ctx: TenantContext,
+  id: string,
+  patch: JobPatch,
+  options: WriteOptions,
+): Promise<JobRow | null> {
+  const { now } = options;
+  assertMayAssign(ctx, patch.assignedUserId);
+  const [before] = await tx
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.id, id), jobScope(ctx)))
+    .limit(1)
+    .for('update');
+  if (!before) return null;
+
+  const set: Partial<typeof jobs.$inferInsert> = { updatedAt: now };
+  const touched = new Set<AuditedField>();
+
+  const newCustomer = patch.customerId !== undefined && patch.customerId !== before.customerId;
+  const newProperty = patch.propertyId !== undefined && patch.propertyId !== before.propertyId;
+  if (newCustomer || newProperty) {
+    await checkLinks(tx, ctx, patch.customerId ?? before.customerId, patch.propertyId ?? before.propertyId);
+  }
+  if (patch.customerId !== undefined) {
+    set.customerId = patch.customerId;
+    touched.add('customerId');
+  }
+  if (patch.propertyId !== undefined) {
+    set.propertyId = patch.propertyId;
+    touched.add('propertyId');
+  }
+
+  const stageChanged = patch.stage !== undefined && patch.stage !== before.stage;
+  if (patch.stage !== undefined) {
+    touched.add('stage');
+    if (stageChanged) {
+      set.stage = patch.stage;
+      set.stageChangedAt = now;
+      touched.add('stageChangedAt');
+    }
+  }
+  if (patch.source !== undefined) {
+    set.source = patch.source;
+    touched.add('source');
+  }
+  if (patch.valueCents !== undefined) {
+    set.valueCents = patch.valueCents;
+    touched.add('valueCents');
+  }
+  if (patch.lostReason !== undefined) {
+    set.lostReason = patch.lostReason;
+    touched.add('lostReason');
+  }
+
+  const assigneeChanged = patch.assignedUserId !== undefined && patch.assignedUserId !== before.assignedUserId;
+  let assigneeName: string | null = null;
+  if (patch.assignedUserId !== undefined) {
+    touched.add('assignedUserId');
+    if (assigneeChanged) {
+      if (patch.assignedUserId !== null) {
+        assigneeName = await activeMemberName(tx, patch.assignedUserId);
+        if (assigneeName === null) throw new JobLinkError('assignee');
+      }
+      set.assignedUserId = patch.assignedUserId;
+    }
+  }
+
+  const [updated] = await guarded(() => tx.update(jobs).set(set).where(eq(jobs.id, id)).returning());
+  const after = updated!;
+
+  const fields = AUDITED.filter((field) => touched.has(field));
+  await audit(tx, ctx, {
+    action: 'job.update',
+    targetType: 'job',
+    targetId: id,
+    before: snapshot(before, fields),
+    after: snapshot(after, fields),
+    ip: options.ip ?? null,
+    at: now,
+  });
+  if (stageChanged) {
+    await addActivity(tx, ctx, {
+      subjectType: 'job',
+      subjectId: id,
+      kind: 'job.stage_changed',
+      summary: `Moved to ${JOB_STAGE_LABELS[after.stage]}`,
+      data: { from: before.stage, to: after.stage },
+      at: now,
+    });
+  }
+  if (assigneeChanged) {
+    await addActivity(tx, ctx, {
+      subjectType: 'job',
+      subjectId: id,
+      kind: 'job.assigned',
+      summary: assigneeName === null ? 'Unassigned' : `Assigned to ${assigneeName}`,
+      data: { from: before.assignedUserId, to: after.assignedUserId },
+      at: now,
+    });
+  }
+  return after;
+}
+
+/**
+ * Archives or restores a job the member may see (null when they may not). There is no hard delete.
+ * Doing it again changes nothing and writes nothing.
+ */
+export async function setJobArchived(
+  tx: Tx,
+  ctx: TenantContext,
+  id: string,
+  archived: boolean,
+  options: WriteOptions,
+): Promise<JobRow | null> {
+  const { now } = options;
+  const [before] = await tx
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.id, id), jobScope(ctx)))
+    .limit(1)
+    .for('update');
+  if (!before) return null;
+  if (archived === (before.archivedAt !== null)) return before;
+
+  const [updated] = await tx
+    .update(jobs)
+    .set({ archivedAt: archived ? now : null, updatedAt: now })
+    .where(eq(jobs.id, id))
+    .returning();
+  const after = updated!;
+
+  await audit(tx, ctx, {
+    action: archived ? 'job.archive' : 'job.unarchive',
+    targetType: 'job',
+    targetId: id,
+    before: { archivedAt: before.archivedAt?.toISOString() ?? null },
+    after: { archivedAt: after.archivedAt?.toISOString() ?? null },
+    ip: options.ip ?? null,
+    at: now,
+  });
+  await addActivity(tx, ctx, {
+    subjectType: 'job',
+    subjectId: id,
+    kind: archived ? 'job.archived' : 'job.unarchived',
+    summary: archived ? 'Job archived' : 'Job restored',
+    at: now,
+  });
+  return after;
+}

@@ -1,6 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError } from 'zod';
-import { findPgError } from '@roofline/db';
+import { findPgError, ForbiddenError } from '@roofline/db';
 
 /**
  * Every message below is shown to a person, so each is a plain sentence: no codes, no jargon.
@@ -113,6 +113,7 @@ export const notFoundHandler: RequestHandler = (_req, res) => {
  * The one place errors become responses.
  * - AppError → its status, message and field.
  * - ZodError → 400, field from the first issue, generic sentence (see zodToAppError).
+ * - ForbiddenError (a repository's role check) → 403 "Your role can't do that. Ask the owner.".
  * - body-parser errors → 413 or 400 in our own words.
  * - anything else → 500 with the generic sentence. The error (and its `cause`: Drizzle wraps the
  *   Postgres error there, with its `code` and `detail`) is handed to `logError` and never reaches
@@ -126,7 +127,8 @@ export function errorHandler(logError: (err: unknown, path: string) => void): Er
       return;
     }
 
-    const known = err instanceof ZodError ? zodToAppError(err) : err;
+    // A repository refused a change the member's role may not make (the routes check first; this is the second lock).
+    const known = err instanceof ZodError ? zodToAppError(err) : err instanceof ForbiddenError ? new AppError(403, MESSAGES.roleCannot) : err;
     if (known instanceof AppError) {
       const body: ErrorBody = { error: known.message };
       if (known.field !== undefined) body.field = known.field;

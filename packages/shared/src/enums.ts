@@ -7,6 +7,16 @@ export type ConsentStatus = (typeof CONSENT_STATUSES)[number];
 export const JOB_STAGES = ['lead', 'inspection', 'proposal', 'won', 'installed', 'lost'] as const;
 export type JobStage = (typeof JOB_STAGES)[number];
 
+/** What a person sees for each stage: on the job, and in the timeline ("Moved to Inspection"). */
+export const JOB_STAGE_LABELS: Record<JobStage, string> = {
+  lead: 'Lead',
+  inspection: 'Inspection',
+  proposal: 'Proposal',
+  won: 'Won',
+  installed: 'Installed',
+  lost: 'Lost',
+};
+
 export const JOB_SOURCES = ['storm', 'call', 'text', 'web', 'referral', 'import', 'manual'] as const;
 export type JobSource = (typeof JOB_SOURCES)[number];
 

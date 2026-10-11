@@ -3,7 +3,7 @@ import type { Express } from 'express';
 import request from 'supertest';
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
-import { users } from '@roofline/db';
+import { ForbiddenError, users } from '@roofline/db';
 import { type AppOptions, createApp } from '../src/app.ts';
 import { AppError, describeErrorForLog } from '../src/errors.ts';
 import { parse } from '../src/validate.ts';
@@ -317,6 +317,18 @@ describe('error responses', () => {
     expect(withoutField.body).toEqual({ error: 'That link has expired.' });
     expect(Object.keys(withoutField.body)).toEqual(['error']);
     // Expected errors are not logged as failures.
+    expect(logError).not.toHaveBeenCalled();
+  });
+
+  test('a ForbiddenError from a repository → 403 in plain words, and it is not logged as a failure', async () => {
+    const { app, logError } = appWith((a) => {
+      a.get('/api/forbidden', () => {
+        throw new ForbiddenError();
+      });
+    });
+    const res = await request(app).get('/api/forbidden');
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Your role can't do that. Ask the owner." });
     expect(logError).not.toHaveBeenCalled();
   });
 

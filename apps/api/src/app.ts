@@ -12,6 +12,8 @@ import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
 import { companyRoutes } from './routes/company.ts';
 import { customerRoutes } from './routes/customers.ts';
+import { jobRoutes } from './routes/jobs.ts';
+import { propertyRoutes } from './routes/properties.ts';
 import { teamRoutes } from './routes/team.ts';
 
 /**
@@ -101,6 +103,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/company', companyRoutes(deps));
   app.use('/api/team', teamRoutes(deps, logError));
   app.use('/api/customers', customerRoutes(deps));
+  app.use('/api/properties', propertyRoutes(deps));
+  app.use('/api/jobs', jobRoutes(deps));
   app.use('/api/activities', activityRoutes(deps));
 
   app.use(notFoundHandler);

@@ -1,4 +1,4 @@
-export { findPgError, isUniqueViolation, type PgErrorInfo } from './errors.ts';
+export { findPgError, ForbiddenError, isUniqueViolation, type PgErrorInfo } from './errors.ts';
 export { MIGRATIONS_FOLDER, migrate } from './migrate.ts';
 export { createPools, type Db, type PoolName, type PoolOptions, type Pools, type Schema } from './pools.ts';
 export {
@@ -25,6 +25,35 @@ export {
   updateCustomer,
   type WriteOptions,
 } from './repos/customers.ts';
+export {
+  createJob,
+  getJob,
+  type JobInput,
+  JobLinkError,
+  jobLinkErrorFromPg,
+  type JobLinkProblem,
+  type JobPatch,
+  type JobRow,
+  listJobs,
+  type ListJobsOptions,
+  setJobArchived,
+  updateJob,
+} from './repos/jobs.ts';
 export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './repos/paging.ts';
+export {
+  createProperty,
+  DuplicateAddressError,
+  getProperty,
+  listProperties,
+  type ListPropertiesOptions,
+  type PropertyInput,
+  type PropertyPatch,
+  type PropertyRow,
+  setPropertyArchived,
+  UnknownCustomerError,
+  updateProperty,
+} from './repos/properties.ts';
+export { canSeeJobValue, customerScope, jobScope, propertyScope } from './repos/scope.ts';
+export type { LngLat } from './schema/columns.ts';
 export * from './schema/index.ts';
 export { type TenantContext, type Tx, withTenant } from './tenant.ts';

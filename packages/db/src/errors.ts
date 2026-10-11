@@ -26,3 +26,15 @@ export function isUniqueViolation(err: unknown, constraint?: string): boolean {
   const pg = findPgError(err);
   return pg?.code === '23505' && (constraint === undefined || pg.constraint === constraint);
 }
+
+/**
+ * A repository refused a change because the member's role may not make it (a rep touching consent
+ * or do-not-contact, a rep handing a job to someone else). The routes check the same rules before
+ * they get here; this is the second lock, for any caller that forgets. The API answers 403.
+ */
+export class ForbiddenError extends Error {
+  constructor(message = "This role can't make that change.") {
+    super(message);
+    this.name = 'ForbiddenError';
+  }
+}

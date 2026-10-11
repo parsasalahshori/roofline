@@ -6,21 +6,16 @@ import { toE164 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { requireCapability } from '../permissions.ts';
-import { assertKnownFields, EMAIL_MESSAGE, emailField, parse } from '../validate.ts';
+import { assertKnownFields, EMAIL_MESSAGE, emailField, parse, TIME_ZONES, TIMEZONE_MESSAGE, TOO_LONG } from '../validate.ts';
 
 const MAX_TEXT = 200;
 const MAX_URL = 2048;
 
 const PHONE_MESSAGE = "That doesn't look like a US phone number.";
-const TIMEZONE_MESSAGE = 'Please pick a valid time zone.';
 const WEBSITE_MESSAGE = 'Please enter a web address, like https://example.com.';
 const LOGO_MESSAGE = 'Please enter the web address of the logo image, starting with https://.';
 const STATE_MESSAGE = 'Please use the 2-letter state, like NE.';
 const ZIP_MESSAGE = 'Please enter a ZIP code, like 68102.';
-const TOO_LONG = 'That is too long.';
-
-/** The IANA zone names the platform knows (`America/Chicago`), plus UTC, which the list leaves out. */
-const TIME_ZONES: ReadonlySet<string> = new Set([...Intl.supportedValuesOf('timeZone'), 'UTC']);
 
 /**
  * `http(s)://host/...` as a string to store, or null when it is not one. A bare `acme.example` is
