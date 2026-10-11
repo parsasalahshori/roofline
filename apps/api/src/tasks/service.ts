@@ -1,12 +1,16 @@
 import {
   audit,
+  countWorkingTasks,
   customerFirstNames,
   getCompanyName,
   getStep,
   getTask,
   insertTask,
   listSteps,
+  listTasks,
   listTasksByStatus,
+  type ListTasksOptions,
+  moveStep,
   type NewStepRow,
   type StepRow,
   type StepSummaryRow,
@@ -14,6 +18,7 @@ import {
   type TenantContext,
   type Tx,
   updatePendingStep,
+  updateTask,
   type WriteOptions,
 } from '@roofline/db';
 import {
@@ -21,6 +26,7 @@ import {
   type ApprovalClass,
   isStepType,
   type PreviewFacts,
+  type StepResult,
   type StepStatus,
   type StepType,
   stepTypes,
@@ -30,13 +36,26 @@ import { AppError, MESSAGES } from '../errors.ts';
 import { can, type Capability } from '../permissions.ts';
 
 /*
- * The approval queue's rules (spec 4.1): how an agent's task is made, who sees it, and how a
- * person edits one of its steps before approving. The data access is packages/db's repos/tasks.ts;
- * what a step type needs is packages/shared's registry (steps.ts). Approving, declining and
- * running come in the next tasks and live next to this.
+ * The approval queue's rules (spec 4.1): how an agent's task is made, who sees it, how a person
+ * edits one of its steps, approves or declines it, retries a step that did not finish, and how a
+ * task's status follows its steps as they run. The data access is packages/db's repos/tasks.ts;
+ * what a step type needs is packages/shared's registry (steps.ts); running a step is runner.ts.
+ *
+ * Every writer here locks the task row first (`getTask(..., { forUpdate: true })`) and only then
+ * touches its steps, so two people acting on one task are taken one after the other. The runner
+ * goes the other way (its own step, then the task in `refreshTask`), which cannot deadlock with
+ * them: they only ever move steps that are waiting for a yes or did not finish, never a `running`
+ * one, and an UPDATE that skips a row on its status does not wait for that row's lock.
  */
 
 const NO_CUSTOMERS = "Some of these customers don't exist.";
+const ALREADY_HANDLED = 'This was already handled.';
+const EXPIRED_PLAN = 'This plan expired before it was approved. You can run it again.';
+
+/** A step a person still has to say yes or no to. */
+const OPEN: readonly StepStatus[] = ['pending', 'awaiting_owner'];
+/** A step being worked on. */
+const IN_FLIGHT: readonly StepStatus[] = ['queued', 'running'];
 
 /** The capability a person needs to approve (and so to edit or switch off) a step of each class. */
 const APPROVE: Record<ApprovalClass, Capability> = {
@@ -274,16 +293,8 @@ export async function createTask(tx: Tx, ctx: TenantContext, input: NewTask, opt
 // ---------------------------------------------------------------------------------------------
 // Reading the queue
 
-/**
- * The tasks waiting on this member, newest first, as `{ count, tasks }` (`count` is what the "N need
- * your OK" pill shows). The owner, and office staff the owner has let approve spend, see drafts and
- * the plans waiting on the owner; other office staff see drafts only; a rep sees nothing.
- * A draft past its time is still listed, marked `expired`, until the expiry job moves it.
- */
-export async function listApprovals(tx: Tx, ctx: TenantContext, now: Date): Promise<{ count: number; tasks: TaskView[] }> {
-  if (!canReview(ctx)) return { count: 0, tasks: [] };
-  const statuses: TaskStatus[] = can(ctx, 'approve_spend') ? ['draft', 'awaiting_owner'] : ['draft'];
-  const tasks = await listTasksByStatus(tx, ctx, statuses);
+/** List views of these tasks, in the order given, each with its steps (no payloads). */
+async function listViews(tx: Tx, ctx: TenantContext, tasks: readonly TaskRow[], now: Date): Promise<TaskView[]> {
   const steps = await listSteps(
     tx,
     ctx,
@@ -292,8 +303,21 @@ export async function listApprovals(tx: Tx, ctx: TenantContext, now: Date): Prom
   // listSteps gives each task's steps in position order; keep that order within the group.
   const byTask = new Map<string, StepSummaryRow[]>();
   for (const step of steps) byTask.set(step.taskId, [...(byTask.get(step.taskId) ?? []), step]);
-  const views = tasks.map((task) => toTaskView(task, byTask.get(task.id) ?? [], ctx, now));
-  return { count: views.length, tasks: views };
+  return tasks.map((task) => toTaskView(task, byTask.get(task.id) ?? [], ctx, now));
+}
+
+/**
+ * The tasks waiting on this member, newest first, as `{ count, tasks }` (`count` is what the "N need
+ * your OK" pill shows). The owner, and office staff the owner has let approve spend, see drafts and
+ * the plans waiting on the owner; other office staff see drafts only; a rep sees nothing.
+ * A draft past its time is still listed, marked `expired`, until the expiry job moves it, but it is
+ * not counted: the pill only nags about plans that can still be approved.
+ */
+export async function listApprovals(tx: Tx, ctx: TenantContext, now: Date): Promise<{ count: number; tasks: TaskView[] }> {
+  if (!canReview(ctx)) return { count: 0, tasks: [] };
+  const statuses: TaskStatus[] = can(ctx, 'approve_spend') ? ['draft', 'awaiting_owner'] : ['draft'];
+  const views = await listViews(tx, ctx, await listTasksByStatus(tx, ctx, statuses), now);
+  return { count: views.filter((view) => !view.expired).length, tasks: views };
 }
 
 /**
@@ -385,4 +409,313 @@ export async function editStep(
     at: opts.now,
   });
   return toStepView(updated, ctx, { payload: true });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Approving
+
+/** The detail view of a task as it is now: every step, with its payload. */
+async function currentView(tx: Tx, ctx: TenantContext, taskId: string, now: Date): Promise<TaskView> {
+  const task = await getTask(tx, ctx, taskId);
+  if (!task) throw new Error(`Task ${taskId} disappeared inside its own transaction.`);
+  return toTaskView(task, await listSteps(tx, ctx, [taskId], { payload: true }), ctx, now, { payload: true });
+}
+
+/** What the approval screen sends for each step it showed. */
+export type SeenStep = { id: string; version: number };
+
+/** What happens to one step that waits for a yes. */
+type Decision = { step: StepRow; to: 'skipped' | 'queued' | 'awaiting_owner' };
+
+/**
+ * Approves a draft (or the part of a plan that waits on the owner) for the caller. Returns the step
+ * ids to hand to the queue and the task's detail view, or null when the task is not there for this
+ * member (the route answers 404). Runs in the caller's transaction; the route enqueues the ids only
+ * after it commits.
+ *
+ * - The task row is locked first. A plan whose time ran out is a 409 ("This plan expired before it
+ *   was approved. You can run it again."); one that is not a draft or waiting on the owner is a 409
+ *   "This was already handled.".
+ * - Every step still waiting for a yes (`pending` or `awaiting_owner`) must be in `seen` at the
+ *   version it has now; otherwise the screen is out of date: 409 carrying the task as it is now.
+ * - Then each such step: switched off → `skipped`; the caller may approve its class → `queued`,
+ *   with who approved it and when; otherwise → `awaiting_owner` (partial approval, never a 403).
+ *   When that changes nothing (an office user approving a plan that only waits on the owner), it is
+ *   the "already handled" 409, so a second click never writes anything.
+ * - Each step about to run is checked again exactly as when it was made (the company may have been
+ *   renamed since): a failure is a 400 on `steps.<stepId>.payload` and nothing is approved.
+ * - The task becomes `awaiting_owner` if any step waits on the owner, else `running` when something
+ *   was queued, else `done` (everything was switched off). It records the first approval's person
+ *   and time. `task.approve` is audited with the step ids that were approved, left for the owner
+ *   and skipped.
+ */
+export async function approveTask(
+  tx: Tx,
+  ctx: TenantContext,
+  taskId: string,
+  seen: readonly SeenStep[],
+  opts: WriteOptions,
+): Promise<{ toEnqueue: string[]; task: TaskView } | null> {
+  const task = await getTask(tx, ctx, taskId, { forUpdate: true });
+  if (!task) return null;
+  if (isExpired(task, opts.now)) throw new AppError(409, EXPIRED_PLAN);
+  if (task.status !== 'draft' && task.status !== 'awaiting_owner') throw new AppError(409, ALREADY_HANDLED);
+
+  const steps = await listSteps(tx, ctx, [taskId], { payload: true });
+  const open = steps.filter((step) => OPEN.includes(step.status));
+  const shown = new Map(seen.map((s) => [s.id, s.version]));
+  if (open.some((step) => shown.get(step.id) !== step.version)) {
+    throw new AppError(409, MESSAGES.changedWhileLooking, undefined, toTaskView(task, steps, ctx, opts.now, { payload: true }));
+  }
+
+  const decisions: Decision[] = open.map((step) => ({
+    step,
+    to: !step.enabled ? 'skipped' : can(ctx, APPROVE[step.approvalClass]) ? 'queued' : 'awaiting_owner',
+  }));
+  if (decisions.every(({ step, to }) => step.status === to)) throw new AppError(409, ALREADY_HANDLED);
+
+  const toRun = decisions.filter(({ to }) => to === 'queued').map(({ step }) => step);
+  if (toRun.length > 0) {
+    const companyName = await companyNameOf(tx, ctx);
+    for (const step of toRun) {
+      if (!isStepType(step.type)) throw new Error(`Step ${step.id} has a type this build does not know.`);
+      await checkPayload(tx, ctx, step.type, step.payload, companyName, `steps.${step.id}.payload`);
+    }
+  }
+
+  for (const { step, to } of decisions) {
+    if (step.status === to) continue;
+    const move = to === 'queued' ? { status: to, approvedByUserId: ctx.userId, approvedAt: opts.now } : { status: to };
+    // Cannot miss: every writer of a waiting step holds this task's lock, which this transaction has.
+    if (!(await moveStep(tx, ctx, step.id, OPEN, move, opts.now))) throw new Error(`Step ${step.id} moved while its task was locked.`);
+  }
+
+  const toEnqueue = toRun.map((step) => step.id);
+  const awaitingOwner = decisions.filter(({ to }) => to === 'awaiting_owner').map(({ step }) => step.id);
+  const status: TaskStatus = awaitingOwner.length > 0 ? 'awaiting_owner' : toEnqueue.length > 0 ? 'running' : 'done';
+  const firstApproval = toEnqueue.length > 0 && task.approvedAt === null;
+  await updateTask(
+    tx,
+    ctx,
+    taskId,
+    { status, ...(firstApproval && { approvedByUserId: ctx.userId, approvedAt: opts.now }) },
+    opts.now,
+  );
+  // A plan with nothing left to run is finished now; this records its minutes.
+  await refreshTask(tx, ctx, taskId, opts.now);
+
+  await audit(tx, ctx, {
+    action: 'task.approve',
+    targetType: 'agent_task',
+    targetId: taskId,
+    after: {
+      approvedStepIds: toEnqueue,
+      awaitingOwnerStepIds: awaitingOwner,
+      skippedStepIds: decisions.filter(({ to }) => to === 'skipped').map(({ step }) => step.id),
+    },
+    ip: opts.ip ?? null,
+    at: opts.now,
+  });
+  return { toEnqueue, task: await currentView(tx, ctx, taskId, opts.now) };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Declining
+
+/**
+ * Declines a plan that is still waiting for a yes (a draft, or one waiting on the owner; otherwise
+ * 409 "This was already handled."). Every step still waiting is `skipped`; a step that was already
+ * approved and queued keeps going. The task is `declined` with who, when and the reason (null when
+ * none was given), and `task.decline` is audited. Returns the detail view, or null when the task is
+ * not there for this member.
+ */
+export async function declineTask(
+  tx: Tx,
+  ctx: TenantContext,
+  taskId: string,
+  reason: string | null,
+  opts: WriteOptions,
+): Promise<TaskView | null> {
+  const task = await getTask(tx, ctx, taskId, { forUpdate: true });
+  if (!task) return null;
+  if (task.status !== 'draft' && task.status !== 'awaiting_owner') throw new AppError(409, ALREADY_HANDLED);
+
+  const skipped: string[] = [];
+  for (const step of await listSteps(tx, ctx, [taskId])) {
+    if (!OPEN.includes(step.status)) continue;
+    if (!(await moveStep(tx, ctx, step.id, OPEN, { status: 'skipped' }, opts.now))) {
+      throw new Error(`Step ${step.id} moved while its task was locked.`);
+    }
+    skipped.push(step.id);
+  }
+  await updateTask(
+    tx,
+    ctx,
+    taskId,
+    { status: 'declined', declinedByUserId: ctx.userId, declinedAt: opts.now, declineReason: reason },
+    opts.now,
+  );
+  // What was approved before the decline may have finished already: its minutes still count.
+  await refreshTask(tx, ctx, taskId, opts.now);
+
+  await audit(tx, ctx, {
+    action: 'task.decline',
+    targetType: 'agent_task',
+    targetId: taskId,
+    before: { status: task.status },
+    after: { status: 'declined', reason, skippedStepIds: skipped },
+    ip: opts.ip ?? null,
+    at: opts.now,
+  });
+  return currentView(tx, ctx, taskId, opts.now);
+}
+
+/**
+ * Declines one step that waits on the owner, leaving the rest of the plan as it is. Needs the
+ * spend approval (403 otherwise); a step that is not `awaiting_owner` is a 409 "This was already
+ * handled.". The step is `skipped`, the task's status follows (`refreshTask`), and `step.decline` is
+ * audited. Returns the task's detail view, or null when the task or step is not there for this member.
+ */
+export async function declineStep(
+  tx: Tx,
+  ctx: TenantContext,
+  taskId: string,
+  stepId: string,
+  opts: WriteOptions,
+): Promise<TaskView | null> {
+  const task = await getTask(tx, ctx, taskId, { forUpdate: true });
+  if (!task) return null;
+  const step = await getStep(tx, ctx, taskId, stepId);
+  if (!step) return null;
+  if (!can(ctx, 'approve_spend')) throw new AppError(403, MESSAGES.roleCannot);
+  if (step.status !== 'awaiting_owner') throw new AppError(409, ALREADY_HANDLED);
+
+  if (!(await moveStep(tx, ctx, step.id, ['awaiting_owner'], { status: 'skipped' }, opts.now))) {
+    throw new Error(`Step ${step.id} moved while its task was locked.`);
+  }
+  await refreshTask(tx, ctx, taskId, opts.now);
+  await audit(tx, ctx, {
+    action: 'step.decline',
+    targetType: 'agent_task_step',
+    targetId: step.id,
+    before: { status: step.status },
+    after: { status: 'skipped' },
+    ip: opts.ip ?? null,
+    at: opts.now,
+  });
+  return currentView(tx, ctx, taskId, opts.now);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Retrying
+
+/**
+ * Puts a step that did not finish (`failed` or `needs_attention`) back in the queue. Needs the
+ * approve capability of the step's class (403 otherwise); any other status is a 409 "This was
+ * already handled.". The step goes back to `queued` with its attempts at 0 and its error cleared,
+ * and keeps its idempotency key, so whatever it already did is not done twice. The task is
+ * `running` again (or stays `awaiting_owner` while another step waits on the owner), and
+ * `step.retry` is audited. Returns the id to hand to the queue after the commit and the task's
+ * detail view, or null when the task or step is not there for this member.
+ */
+export async function retryStep(
+  tx: Tx,
+  ctx: TenantContext,
+  taskId: string,
+  stepId: string,
+  opts: WriteOptions,
+): Promise<{ toEnqueue: string[]; task: TaskView } | null> {
+  const task = await getTask(tx, ctx, taskId, { forUpdate: true });
+  if (!task) return null;
+  const step = await getStep(tx, ctx, taskId, stepId);
+  if (!step) return null;
+  if (!can(ctx, APPROVE[step.approvalClass])) throw new AppError(403, MESSAGES.roleCannot);
+  if (step.status !== 'failed' && step.status !== 'needs_attention') throw new AppError(409, ALREADY_HANDLED);
+
+  const moved = await moveStep(tx, ctx, step.id, ['failed', 'needs_attention'], { status: 'queued', attempts: 0, errorPlain: null }, opts.now);
+  if (!moved) throw new Error(`Step ${step.id} moved while its task was locked.`);
+
+  const waitsOnOwner = (await listSteps(tx, ctx, [taskId])).some((s) => s.status === 'awaiting_owner');
+  const status: TaskStatus = waitsOnOwner ? 'awaiting_owner' : 'running';
+  if (task.status !== status) await updateTask(tx, ctx, taskId, { status }, opts.now);
+
+  await audit(tx, ctx, {
+    action: 'step.retry',
+    targetType: 'agent_task_step',
+    targetId: step.id,
+    before: { status: step.status, attempts: step.attempts, errorPlain: step.errorPlain },
+    after: { status: 'queued', attempts: 0 },
+    ip: opts.ip ?? null,
+    at: opts.now,
+  });
+  return { toEnqueue: [step.id], task: await currentView(tx, ctx, taskId, opts.now) };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Following the steps
+
+/** Minutes of staff time the task's finished steps saved: each done step's own `minutesSaved`, added up and rounded. */
+async function minutesSavedOf(tx: Tx, ctx: TenantContext, taskId: string): Promise<number> {
+  let total = 0;
+  for (const step of await listSteps(tx, ctx, [taskId], { payload: true })) {
+    if (step.status !== 'done' || !isStepType(step.type)) continue;
+    total += stepTypes[step.type].minutesSaved(step.payload, (step.result ?? {}) as StepResult);
+  }
+  return Math.round(total);
+}
+
+/**
+ * Brings a task's status in line with its steps after one of them changed (it ran, was declined or
+ * was retried). Locks the task row (a no-op when the caller already holds it). Returns the task as
+ * it is now, or null when it is not there.
+ *
+ * - While any step is still queued, running or waiting on the owner, the task is not finished: it
+ *   is `awaiting_owner` if a step waits on the owner, else `running`.
+ * - Once none is, the task is finished: `needs_attention` if any step needs attention, else
+ *   `partly_done` if any failed, else `done` (every step that was not skipped is done). Its
+ *   `minutes_saved` is then set from the done steps.
+ * - A draft or an expired plan is left alone (nothing of it was approved). A declined plan keeps
+ *   its status, so the owner's "no" stands, but the steps approved before it still count their minutes.
+ */
+export async function refreshTask(tx: Tx, ctx: TenantContext, taskId: string, now: Date): Promise<TaskRow | null> {
+  const task = await getTask(tx, ctx, taskId, { forUpdate: true });
+  if (!task || task.status === 'draft' || task.status === 'expired') return task;
+
+  const steps = await listSteps(tx, ctx, [taskId]);
+  const any = (statuses: readonly StepStatus[]) => steps.some((step) => statuses.includes(step.status));
+  const declined = task.status === 'declined';
+
+  if (any(['awaiting_owner', ...IN_FLIGHT])) {
+    const status: TaskStatus = any(['awaiting_owner']) ? 'awaiting_owner' : 'running';
+    if (declined || status === task.status) return task;
+    return updateTask(tx, ctx, taskId, { status }, now);
+  }
+  // A step nobody has said yes or no to cannot sit in an approved plan; never finish one that has it.
+  if (any(['pending'])) return task;
+
+  const status: TaskStatus = any(['needs_attention']) ? 'needs_attention' : any(['failed']) ? 'partly_done' : 'done';
+  const minutesSaved = await minutesSavedOf(tx, ctx, taskId);
+  return updateTask(tx, ctx, taskId, { ...(!declined && { status }), minutesSaved }, now);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The activity feed
+
+export type TaskFeedQuery = Pick<ListTasksOptions, 'agent' | 'status' | 'since' | 'limit'>;
+
+/**
+ * The company's tasks in any status, newest first, narrowed by agent, status and creation time,
+ * as list views (no payloads). For the owner and the office; a rep gets an empty list.
+ */
+export async function listTaskFeed(tx: Tx, ctx: TenantContext, query: TaskFeedQuery, now: Date): Promise<TaskView[]> {
+  if (!canReview(ctx)) return [];
+  return listViews(tx, ctx, await listTasks(tx, ctx, query), now);
+}
+
+/**
+ * The "N agents working" number: how many tasks have a step queued or running (a plan waiting for
+ * a yes is not working). For the owner and the office; a rep always gets 0.
+ */
+export async function workingCount(tx: Tx, ctx: TenantContext): Promise<number> {
+  return canReview(ctx) ? countWorkingTasks(tx, ctx) : 0;
 }

@@ -478,14 +478,14 @@ describe('GET /api/approvals', () => {
     expect(res.body.count).toBe(3);
   });
 
-  test('count is the number of tasks returned', async () => {
+  test('count is the number of tasks returned when none has expired', async () => {
     for (let i = 0; i < 4; i++) await newTask('a', { title: `task ${i}` });
     const res = await (await actors.as('owner')).get('/api/approvals');
     expect(res.body.count).toBe(res.body.tasks.length);
     expect(res.body.count).toBe(4);
   });
 
-  test('a draft past its expiry is still listed until the expiry job runs, marked expired', async () => {
+  test('a draft past its expiry is still listed until the expiry job runs, marked expired, but not counted', async () => {
     const { taskId: lapsed } = await newTask('a', { title: 'lapsed', expiresAt: new Date(NOW.getTime() - HOUR) });
     t.clock.advance(1000);
     const { taskId: fresh } = await newTask('a', { title: 'fresh', expiresAt: new Date(NOW.getTime() + HOUR) });
@@ -495,15 +495,17 @@ describe('GET /api/approvals', () => {
     const res = await (await actors.as('owner')).get('/api/approvals');
     const byId = Object.fromEntries(res.body.tasks.map((x: { id: string; expired: boolean }) => [x.id, x.expired]));
     expect(byId).toEqual({ [lapsed]: true, [fresh]: false, [open]: false });
-    expect(res.body.count).toBe(3);
+    expect(res.body.tasks).toHaveLength(3);
+    // The pill only counts plans that can still be approved.
+    expect(res.body.count).toBe(2);
   });
 
   test('the time comes from the app clock: a draft that has not reached its expiry yet becomes expired when the clock passes it', async () => {
     await newTask('a', { expiresAt: new Date(NOW.getTime() + HOUR) });
     const owner = await actors.as('owner');
-    expect((await owner.get('/api/approvals')).body.tasks[0].expired).toBe(false);
+    expect((await owner.get('/api/approvals')).body).toMatchObject({ count: 1, tasks: [{ expired: false }] });
     t.clock.advance(HOUR + 1);
-    expect((await owner.get('/api/approvals')).body.tasks[0].expired).toBe(true);
+    expect((await owner.get('/api/approvals')).body).toMatchObject({ count: 0, tasks: [{ expired: true }] });
   });
 
   test('only this company\'s tasks are listed', async () => {

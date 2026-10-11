@@ -15,11 +15,13 @@ import { companyRoutes } from './routes/company.ts';
 import { customerRoutes } from './routes/customers.ts';
 import { jobRoutes } from './routes/jobs.ts';
 import { propertyRoutes } from './routes/properties.ts';
+import { taskRoutes } from './routes/tasks.ts';
 import { teamRoutes } from './routes/team.ts';
+import type { StepQueue } from './tasks/queue.ts';
 
 /**
  * Everything the app reaches outside itself through. Tests pass fakes for all of it.
- * Later tasks add the step queue and the SMS adapter here.
+ * A later task adds the SMS adapter here.
  */
 export type AppDeps = {
   pools: Pools;
@@ -28,6 +30,11 @@ export type AppDeps = {
   clock: Clock;
   /** Checks the credential Google's sign-in button produces. Tests pass a fake that maps strings to claims. */
   google: GoogleVerifier;
+  /**
+   * Where approved steps go to be run (tasks/queue.ts). Given step ids only after the approval has
+   * committed. Tests pass an `InlineQueue` and drain it themselves.
+   */
+  queue: StepQueue;
   /**
    * Called with the promise of every piece of work the app starts after it has already answered
    * (the emails behind reset-request, for example). The promise never rejects: failures are logged.
@@ -107,7 +114,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/properties', propertyRoutes(deps));
   app.use('/api/jobs', jobRoutes(deps));
   app.use('/api/activities', activityRoutes(deps));
-  app.use('/api/approvals', approvalRoutes(deps));
+  app.use('/api/approvals', approvalRoutes(deps, logError));
+  app.use('/api/tasks', taskRoutes(deps));
 
   app.use(notFoundHandler);
   app.use(errorHandler(logError));

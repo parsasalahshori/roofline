@@ -1,9 +1,11 @@
 import { createPools } from '@roofline/db';
-import { createApp } from './app.ts';
+import { type AppDeps, createApp } from './app.ts';
 import { JoseGoogleVerifier } from './auth/google.ts';
 import { systemClock } from './clock.ts';
 import { ConfigError, loadConfig } from './config.ts';
+import { describeErrorForLog } from './errors.ts';
 import { ConsoleMailer, type Mailer, PostmarkMailer } from './mailer.ts';
+import { ImmediateQueue } from './tasks/queue.ts';
 
 /** Entry point: `npm start -w @roofline/api`. Reads the environment, opens the pools, listens. */
 
@@ -39,7 +41,13 @@ if (!config.GOOGLE_CLIENT_ID && config.NODE_ENV === 'production') {
 }
 const google = new JoseGoogleVerifier(config.GOOGLE_CLIENT_ID);
 
-const app = createApp({ pools, config, mailer, clock: systemClock, google });
+// Steps run in this process for now; the pg-boss worker takes this over.
+const queue = new ImmediateQueue(
+  (): AppDeps => deps,
+  (err, stepId) => console.error(`Running step ${stepId} failed: ${describeErrorForLog(err)}`),
+);
+const deps: AppDeps = { pools, config, mailer, clock: systemClock, google, queue };
+const app = createApp(deps);
 
 // Express 5 calls this once, with the error as its argument if listening failed (port in use).
 const server = app.listen(config.PORT, config.HOST, (err?: Error) => {

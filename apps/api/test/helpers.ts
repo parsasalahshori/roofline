@@ -9,6 +9,7 @@ import type { Clock } from '../src/clock.ts';
 import type { Config } from '../src/config.ts';
 import { AppError, MESSAGES } from '../src/errors.ts';
 import type { Mailer } from '../src/mailer.ts';
+import { InlineQueue } from '../src/tasks/queue.ts';
 
 /** A supertest agent: it keeps cookies between requests, like a browser tab. */
 export type SuperAgent = ReturnType<typeof request.agent>;
@@ -69,6 +70,8 @@ export type TestApp = {
   clock: TestClock;
   mailer: FakeMailer;
   google: FakeGoogleVerifier;
+  /** The step queue: it records what was enqueued and runs nothing until `queue.drain(deps)`. */
+  queue: InlineQueue;
   seed: { a: SeededCompany; b: SeededCompany };
   /**
    * Waits until all work the app started after answering (queued emails, the reset-request
@@ -128,7 +131,7 @@ function poolsFor(config: Config): { pools: Pools; key: string } {
 /**
  * Builds the app against the shared test database: empties it, seeds Acme Roofing and Bolt Roofing
  * (four members each), and wires fakes for everything that would reach outside the process.
- * Later tasks add the step queue and SMS adapter fakes here.
+ * A later task adds the SMS adapter fake here.
  */
 export async function makeTestApp(overrides: Partial<Config> = {}): Promise<TestApp> {
   const urls = inject('dbUrls');
@@ -140,6 +143,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const clock = new TestClock();
   const mailer = new FakeMailer();
   const google = new FakeGoogleVerifier();
+  const queue = new InlineQueue();
   const pending = new Set<Promise<void>>();
   const deps: AppDeps = {
     pools,
@@ -147,6 +151,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     mailer,
     clock,
     google,
+    queue,
     onBackgroundTask: (task) => {
       pending.add(task);
       void task.finally(() => pending.delete(task));
@@ -160,6 +165,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     clock,
     mailer,
     google,
+    queue,
     seed,
     async settle() {
       while (pending.size > 0) await Promise.allSettled([...pending]);

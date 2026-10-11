@@ -59,20 +59,31 @@ export {
 } from './repos/properties.ts';
 export { canSeeJobValue, customerScope, jobScope, propertyScope } from './repos/scope.ts';
 export {
+  claimStep,
+  countWorkingTasks,
   customerFirstNames,
+  finishClaimedStep,
   getCompanyName,
   getStep,
   getTask,
   insertTask,
   listSteps,
+  listTasks,
   listTasksByStatus,
+  type ListTasksOptions,
+  lockClaimedStep,
+  moveStep,
   type NewStepRow,
   type NewTaskRow,
   type StepEdit,
+  type StepFinish,
+  type StepMove,
   type StepRow,
   type StepSummaryRow,
   type TaskRow,
+  type TaskUpdate,
   updatePendingStep,
+  updateTask,
 } from './repos/tasks.ts';
 export type { LngLat } from './schema/columns.ts';
 export * from './schema/index.ts';

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
-import type { Agent, ApprovalClass, TaskStatus } from '@roofline/shared';
+import { and, asc, countDistinct, desc, eq, getTableColumns, gte, inArray, sql } from 'drizzle-orm';
+import type { Agent, ApprovalClass, StepStatus, TaskStatus } from '@roofline/shared';
 import { agentTasks, agentTaskSteps, companies, customers } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { clampPage } from './paging.ts';
 
 /*
  * Data access for the approval queue (spec 4.1): agent tasks and their steps. Everything here runs
@@ -215,4 +216,176 @@ export async function updatePendingStep(
     )
     .returning();
   return row ?? null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Approving, declining and running
+
+/** The task columns approving, declining and finishing change. */
+export type TaskUpdate = Partial<
+  Pick<
+    TaskRow,
+    'status' | 'approvedByUserId' | 'approvedAt' | 'declinedByUserId' | 'declinedAt' | 'declineReason' | 'minutesSaved'
+  >
+>;
+
+/** Changes a task's status (and what goes with it). Returns the row as saved, or null when the task is not there. */
+export async function updateTask(tx: Tx, ctx: TenantContext, taskId: string, set: TaskUpdate, now: Date): Promise<TaskRow | null> {
+  const [row] = await tx
+    .update(agentTasks)
+    .set({ ...set, updatedAt: now })
+    .where(and(eq(agentTasks.companyId, ctx.companyId), eq(agentTasks.id, taskId)))
+    .returning();
+  return row ?? null;
+}
+
+/** Where a step moves to, and what is recorded with the move. */
+export type StepMove = {
+  status: StepStatus;
+  approvedByUserId?: string | null;
+  approvedAt?: Date | null;
+  attempts?: number;
+  errorPlain?: string | null;
+};
+
+/**
+ * Moves one step to another status, but only while it is still in one of `from`. Returns the row
+ * as saved, or null when the step is in some other status by now. The status check is part of the
+ * UPDATE, so a step that already moved on is never moved a second time.
+ */
+export async function moveStep(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  from: readonly StepStatus[],
+  to: StepMove,
+  now: Date,
+): Promise<StepRow | null> {
+  const [row] = await tx
+    .update(agentTaskSteps)
+    .set({ ...to, updatedAt: now })
+    .where(
+      and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.id, stepId), inArray(agentTaskSteps.status, [...from])),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * The runner's claim on a step:
+ * `UPDATE agent_task_steps SET status = 'running', attempts = attempts + 1 WHERE id = $1 AND status IN ('queued', 'running') RETURNING *`.
+ * A step that is still `running` is claimed again, so one left behind by a run that crashed is picked
+ * up by the queue's next try, and that try is counted. Returns null when the step is not there to run
+ * (not approved, already finished, or not this company's).
+ */
+export async function claimStep(tx: Tx, ctx: TenantContext, stepId: string, now: Date): Promise<StepRow | null> {
+  const [row] = await tx
+    .update(agentTaskSteps)
+    .set({ status: 'running', attempts: sql`${agentTaskSteps.attempts} + 1`, updatedAt: now })
+    .where(
+      and(
+        eq(agentTaskSteps.companyId, ctx.companyId),
+        eq(agentTaskSteps.id, stepId),
+        inArray(agentTaskSteps.status, ['queued', 'running']),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Locks a step for the run that claimed it: the row, if it is still `running` at that run's
+ * `attempts` (a later claim of the same step, by a queue that ran it twice, has a higher count and
+ * takes over). Null means the run no longer owns the step.
+ */
+export async function lockClaimedStep(tx: Tx, ctx: TenantContext, stepId: string, attempts: number): Promise<StepRow | null> {
+  const [row] = await tx
+    .select()
+    .from(agentTaskSteps)
+    .where(
+      and(
+        eq(agentTaskSteps.companyId, ctx.companyId),
+        eq(agentTaskSteps.id, stepId),
+        eq(agentTaskSteps.status, 'running'),
+        eq(agentTaskSteps.attempts, attempts),
+      ),
+    )
+    .limit(1)
+    .for('update');
+  return row ?? null;
+}
+
+/** How a run ended, as the step saves it. */
+export type StepFinish = {
+  status: 'done' | 'running' | 'failed' | 'needs_attention';
+  result?: Record<string, unknown>;
+  errorPlain?: string | null;
+};
+
+/**
+ * Saves how a run ended, if the step is still that run's: `running` at the run's `attempts`.
+ * Returns the row as saved, or null when another run has taken the step over.
+ */
+export async function finishClaimedStep(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  attempts: number,
+  finish: StepFinish,
+  now: Date,
+): Promise<StepRow | null> {
+  const [row] = await tx
+    .update(agentTaskSteps)
+    .set({
+      status: finish.status,
+      ...(finish.result !== undefined && { result: finish.result }),
+      errorPlain: finish.errorPlain ?? null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentTaskSteps.companyId, ctx.companyId),
+        eq(agentTaskSteps.id, stepId),
+        eq(agentTaskSteps.status, 'running'),
+        eq(agentTaskSteps.attempts, attempts),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+export type ListTasksOptions = {
+  agent?: Agent;
+  status?: TaskStatus;
+  /** Only tasks created at this time or later. */
+  since?: Date;
+  /** 1 to 200; 50 when not given. */
+  limit?: number;
+};
+
+/** The company's tasks in any status, newest first, optionally narrowed (the activity feed). */
+export async function listTasks(tx: Tx, ctx: TenantContext, options: ListTasksOptions = {}): Promise<TaskRow[]> {
+  const { limit } = clampPage({ ...(options.limit !== undefined && { limit: options.limit }) });
+  return tx
+    .select()
+    .from(agentTasks)
+    .where(
+      and(
+        eq(agentTasks.companyId, ctx.companyId),
+        options.agent !== undefined ? eq(agentTasks.agent, options.agent) : undefined,
+        options.status !== undefined ? eq(agentTasks.status, options.status) : undefined,
+        options.since !== undefined ? gte(agentTasks.createdAt, options.since) : undefined,
+      ),
+    )
+    .orderBy(desc(agentTasks.createdAt), desc(agentTasks.id))
+    .limit(limit);
+}
+
+/** How many of the company's tasks have a step being worked on (`queued` or `running`): the "agents working" number. */
+export async function countWorkingTasks(tx: Tx, ctx: TenantContext): Promise<number> {
+  const [row] = await tx
+    .select({ n: countDistinct(agentTaskSteps.taskId) })
+    .from(agentTaskSteps)
+    .where(and(eq(agentTaskSteps.companyId, ctx.companyId), inArray(agentTaskSteps.status, ['queued', 'running'])));
+  return row?.n ?? 0;
 }
