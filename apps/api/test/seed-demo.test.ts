@@ -56,7 +56,7 @@ describe('the demo seed', () => {
           label: 'Text 31 customers',
           sample: ACME_SAMPLE,
           recipientCount: 31,
-          sendTime: 'Today 10:00 AM',
+          sendTime: 'today at 10:00 AM',
         },
         'pending',
       ],
@@ -81,7 +81,7 @@ describe('the demo seed', () => {
       title: 'Text 31 customers',
       messageSample: ACME_SAMPLE,
       recipientCount: 31,
-      sendTime: 'Today 10:00 AM',
+      sendTime: 'today at 10:00 AM',
     });
     expect(steps[2]!.preview).toMatchObject({
       title: 'Google + Facebook ads on the swath',

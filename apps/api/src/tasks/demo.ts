@@ -27,7 +27,7 @@ export function demoTask(now: Date, companyName = 'your roofer'): NewTask {
           label: 'Text 31 customers',
           sample: `Hi Maria, it's ${companyName}. Tuesday's hail hit your street. Want a free roof check this week? Reply YES to book. Reply STOP to opt out.`,
           recipientCount: 31,
-          sendTime: 'Today 10:00 AM',
+          sendTime: 'today at 10:00 AM',
         },
       },
       { type: 'demo_noop', payload: { label: 'Door-knock routes for 4 reps' } },

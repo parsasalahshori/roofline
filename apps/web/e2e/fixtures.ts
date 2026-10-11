@@ -101,11 +101,15 @@ export const test = base.extend<Fixtures>({
     });
   },
 
+  // Marks Today as already shown for today in the user's company timezone (`companies.timezone`),
+  // so the auto-open does not fire. The API decides "today" in that same zone.
   markTodaySeen: async ({ db }, use) => {
     await use(async (email) => {
       await db.query(
-        `update memberships set last_today_shown_on = (now() at time zone 'America/Chicago')::date
-          where user_id = (select id from users where email = $1)`,
+        `update memberships m set last_today_shown_on = (now() at time zone c.timezone)::date
+           from companies c
+          where c.id = m.company_id
+            and m.user_id = (select id from users where email = $1)`,
         [email],
       );
     });
