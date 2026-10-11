@@ -10,3 +10,6 @@ Task 1: complete (7b4e8b4..4e6971a). Task 2: complete (7b4e8b4..3d92b01). Task 8
 Carry to Task 3: when USAGE_KINDS moves to packages/shared/src/billing.ts, replace the db enums.ts UsageKind with `export { USAGE_KINDS, type UsageKind } from '@roofline/shared'` (contact 7).
 Minors (deferred): recordUsage sets createdAt/updatedAt from input.at; GIN indexes not CONCURRENTLY; insertInboundText has no ON CONFLICT for messages_inbound_sid_uniq (decide in Task 10); revokeDataApiExposure functions revoke not 42501-guarded; revokeOnPgboss 42501 skip not logged; preflight script prints raw stack on connect failure; send() unknown-failure message hard-coded.
 Merged into f3-setup: fb3db4c (T1), a23bf2a (T2), d629c74 (T8); typecheck clean; pushed; CI confirms T1+T2 together (contact 7's note).
+Sibling 2 (session_01NbXKpWjMvEQwTqNmQCt6wp): F3 T3, T4, T5 from f3-setup d629c74 (contacts 31-33); reports + merge notes on branch ops-sib2.
+Sibling 3 (session_01RypesnL2fbawyJH5HtdS7E): F3 T6, T10 from f3-setup d629c74, then T11 stacked on f3-t10 (contacts 41-44); reports + merge notes on branch ops-sib3.
+Held for the controller: T7 (needs T5 + T6, Ruling T); T9 API skeleton (needs F2 T6-T9 in f2-shell, then f2-shell into f3-setup).
