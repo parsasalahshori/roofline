@@ -4,6 +4,7 @@ import {
   createProperty,
   CustomerRequiredError,
   findPgError,
+  jobs,
   properties,
   type TenantContext,
   updateProperty,
@@ -568,6 +569,7 @@ describe('reps tie new addresses to a customer', () => {
 
 describe('giving an address to a customer that has jobs there', () => {
   const CONFLICT = 'This address already has jobs for a different customer.';
+  const NEEDS_CUSTOMER = 'This address has jobs, so it needs a customer.';
 
   /** Two customers, and an address with no customer yet. */
   async function setup() {
@@ -577,32 +579,40 @@ describe('giving an address to a customer that has jobs there', () => {
     const p = await mustCreate(owner, '/api/properties', full);
     return { owner, x, y, p };
   }
-  const job = (owner: Awaited<ReturnType<typeof setup>>['owner'], customerId: unknown, propertyId: unknown, extra: Record<string, unknown> = {}) =>
+  type Setup = Awaited<ReturnType<typeof setup>>;
+  /** A job through the API. At an address nobody owns, it makes its customer the owner. */
+  const job = (owner: Setup['owner'], customerId: unknown, propertyId: unknown, extra: Record<string, unknown> = {}) =>
     mustCreate(owner, '/api/jobs', { customerId, propertyId, ...extra });
+  /** A job straight into the table: what the API can no longer make (data from before a job claimed its address, an import). */
+  const legacyJob = (customerId: unknown, propertyId: unknown, extra: Partial<typeof jobs.$inferInsert> = {}) =>
+    inCompany(t, A(), (tx) =>
+      tx.insert(jobs).values({ companyId: A(), customerId: customerId as string, propertyId: propertyId as string, ...extra }),
+    );
 
   test('a live job for another customer → 400 on customerId, and nothing changes', async () => {
     const { owner, x, y, p } = await setup();
-    await job(owner, x.id, p.id);
+    await job(owner, x.id, p.id); // the job makes X the owner of the address
+    const updates = (await dbAudit(t, A(), 'property.update')).length;
     const res = await owner.patch(`/api/properties/${p.id}`).send({ customerId: y.id });
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: CONFLICT, field: 'customerId' });
-    expect((await dbProperty(t, A(), p.id as string)).customerId).toBeNull();
-    expect(await dbAudit(t, A(), 'property.update')).toEqual([]);
+    expect((await dbProperty(t, A(), p.id as string)).customerId).toBe(x.id);
+    expect(await dbAudit(t, A(), 'property.update')).toHaveLength(updates);
   });
 
   test('from no customer to the one every job is for is fine', async () => {
     const { owner, x, p } = await setup();
-    await job(owner, x.id, p.id);
-    await job(owner, x.id, p.id);
+    await legacyJob(x.id, p.id);
+    await legacyJob(x.id, p.id);
     const res = await owner.patch(`/api/properties/${p.id}`).send({ customerId: x.id });
     expect(res.status).toBe(200);
     expect(res.body.customerId).toBe(x.id);
   });
 
-  test('one job for the customer and one for another → neither customer can have the address', async () => {
+  test('one job for the customer and one for another (old data) → neither customer can have the address', async () => {
     const { owner, x, y, p } = await setup();
-    await job(owner, x.id, p.id);
-    await job(owner, y.id, p.id);
+    await legacyJob(x.id, p.id);
+    await legacyJob(y.id, p.id);
     for (const customerId of [x.id, y.id]) {
       const res = await owner.patch(`/api/properties/${p.id}`).send({ customerId });
       expect(res.body).toEqual({ error: CONFLICT, field: 'customerId' });
@@ -621,12 +631,25 @@ describe('giving an address to a customer that has jobs there', () => {
     expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: y.id })).body.field).toBe('customerId');
   });
 
-  test('the same customer again, or clearing the customer, is always fine', async () => {
+  test('the same customer again is fine', async () => {
     const { owner, x, p } = await setup();
     await job(owner, x.id, p.id);
-    await owner.patch(`/api/properties/${p.id}`).send({ customerId: x.id });
     expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: x.id })).status).toBe(200);
-    expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: null })).status).toBe(200);
+  });
+
+  test('the customer cannot be taken off an address that has a job, archived or not; with no job it can', async () => {
+    const { owner, x, p } = await setup();
+    const q = await mustCreate(owner, '/api/properties', addressFor(4));
+    await owner.patch(`/api/properties/${q.id}`).send({ customerId: x.id });
+    expect((await owner.patch(`/api/properties/${q.id}`).send({ customerId: null })).status).toBe(200);
+
+    const j = await job(owner, x.id, p.id);
+    const refused = await owner.patch(`/api/properties/${p.id}`).send({ customerId: null });
+    expect(refused.status).toBe(400);
+    expect(refused.body).toEqual({ error: NEEDS_CUSTOMER, field: 'customerId' });
+    await owner.post(`/api/jobs/${j.id}/archive`);
+    expect((await owner.patch(`/api/properties/${p.id}`).send({ customerId: null })).status).toBe(400);
+    expect((await dbProperty(t, A(), p.id as string)).customerId).toBe(x.id);
   });
 
   test('an address with no jobs, and jobs at other addresses, never block', async () => {
@@ -639,14 +662,13 @@ describe('giving an address to a customer that has jobs there', () => {
   test("jobs a rep can't see count too", async () => {
     const owner = await who.as('owner');
     const rep = await who.as('rep');
-    const mine = await mustCreate(rep, '/api/customers', { displayName: 'Rep customer' });
-    const hiddenCustomer = await mustCreate(owner, '/api/customers', { displayName: 'Hidden' });
-    const p = await mustCreate(owner, '/api/properties', full);
-    // An unassigned lead is the rep's to see; the job for the other customer is another rep's.
-    await job(owner, mine.id, p.id);
-    await job(owner, hiddenCustomer.id, p.id, { assignedUserId: who.user('otherRep').userId });
+    const c = await mustCreate(rep, '/api/customers', { displayName: 'Rep customer C' });
+    const d = await mustCreate(rep, '/api/customers', { displayName: 'Rep customer D' });
+    const p = await mustCreate(owner, '/api/properties', { ...full, customerId: c.id });
+    // The job at C's address is another rep's, so the rep cannot see it; they see the address through C.
+    await job(owner, c.id, p.id, { assignedUserId: who.user('otherRep').userId });
     expect((await rep.get(`/api/properties/${p.id}`)).status).toBe(200);
-    const res = await rep.patch(`/api/properties/${p.id}`).send({ customerId: mine.id });
+    const res = await rep.patch(`/api/properties/${p.id}`).send({ customerId: d.id });
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: CONFLICT, field: 'customerId' });
   });

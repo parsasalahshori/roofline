@@ -5,9 +5,9 @@ import { jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
-import { getCustomer, type WriteOptions } from './customers.ts';
+import { type CustomerRow, getCustomer, type WriteOptions } from './customers.ts';
 import { clampPage } from './paging.ts';
-import { getProperty, type PropertyRow } from './properties.ts';
+import { getProperty, linkPropertyToCustomer, type PropertyRow } from './properties.ts';
 import { jobScope } from './scope.ts';
 
 export type JobRow = typeof jobs.$inferSelect;
@@ -109,14 +109,38 @@ async function activeMemberName(tx: Tx, userId: string): Promise<string | null> 
 
 /**
  * Checks that a job may point at this customer and this address: the member can see both, and an
- * address that already has a customer belongs to this one. Returns the address.
+ * address that already has a customer belongs to this one. Returns both.
  */
-async function checkLinks(tx: Tx, ctx: TenantContext, customerId: string, propertyId: string): Promise<PropertyRow> {
-  if (!(await getCustomer(tx, ctx, customerId))) throw new JobLinkError('customer');
+async function checkLinks(
+  tx: Tx,
+  ctx: TenantContext,
+  customerId: string,
+  propertyId: string,
+): Promise<{ customer: CustomerRow; property: PropertyRow }> {
+  const customer = await getCustomer(tx, ctx, customerId);
+  if (!customer) throw new JobLinkError('customer');
   const property = await getProperty(tx, ctx, propertyId);
   if (!property) throw new JobLinkError('property');
   if (property.customerId !== null && property.customerId !== customerId) throw new JobLinkError('propertyCustomer');
-  return property;
+  return { customer, property };
+}
+
+/**
+ * An address with a job always has a customer: a job at an address nobody owns yet makes the job's
+ * customer its owner, in the same transaction (the address row is locked for the change, so a
+ * second job for another customer made at the same moment is refused as "belongs to a different
+ * customer"). Without this the customer's timeline ("New job: <address>") would name an address
+ * that a rep who can see the customer could not open.
+ */
+async function claimAddress(
+  tx: Tx,
+  ctx: TenantContext,
+  links: { customer: CustomerRow; property: PropertyRow },
+  options: WriteOptions,
+): Promise<void> {
+  if (links.property.customerId !== null) return;
+  const owned = await linkPropertyToCustomer(tx, ctx, links.property.id, links.customer, options);
+  if (owned.customerId !== links.customer.id) throw new JobLinkError('propertyCustomer');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -197,16 +221,19 @@ export async function listJobs(
  * Adds a job, created by `ctx.userId`, at `now` in the given stage (default 'lead').
  * Throws `JobLinkError` when the customer or the address is not one the member can see, when the
  * address belongs to a different customer, or when `assignedUserId` is not an active member; and
- * `ForbiddenError` when a rep assigns someone other than themselves.
+ * `ForbiddenError` when a rep assigns someone other than themselves. An address that has no
+ * customer yet becomes this customer's (see `claimAddress`).
  * Writes the audit row and the timeline: "Job created" on the job (plus "Assigned to ..." when it
  * starts out assigned) and "New job: <address>" on the customer.
  */
 export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, options: WriteOptions): Promise<JobRow> {
   const { now } = options;
   assertMayAssign(ctx, input.assignedUserId);
-  const property = await checkLinks(tx, ctx, input.customerId, input.propertyId);
+  const links = await checkLinks(tx, ctx, input.customerId, input.propertyId);
+  const { property } = links;
   const assigneeName = input.assignedUserId ? await activeMemberName(tx, input.assignedUserId) : null;
   if (input.assignedUserId && assigneeName === null) throw new JobLinkError('assignee');
+  await claimAddress(tx, ctx, links, options);
 
   const [row] = await guarded(() =>
     tx
@@ -269,8 +296,8 @@ export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, opt
  * Changes a job the member may see; null when they may not (or it does not exist). The row is
  * locked for the length of the transaction, so two edits of one job do not interleave.
  *
- * - A different customer or address is checked like a new job's (`JobLinkError`); one the job
- *   already has is not checked again.
+ * - A different customer or address is checked like a new job's (`JobLinkError`), and an address
+ *   with no customer becomes this customer's; one the job already has is not checked again.
  * - A different stage sets `stage_changed_at` to `now` and adds "Moved to <Stage>". Sending the
  *   stage the job already has changes nothing. Moving a job away from 'lost' clears its lost
  *   reason in the same update (the audit after-image shows it), even if the patch names one.
@@ -302,7 +329,8 @@ export async function updateJob(
   const newCustomer = patch.customerId !== undefined && patch.customerId !== before.customerId;
   const newProperty = patch.propertyId !== undefined && patch.propertyId !== before.propertyId;
   if (newCustomer || newProperty) {
-    await checkLinks(tx, ctx, patch.customerId ?? before.customerId, patch.propertyId ?? before.propertyId);
+    const links = await checkLinks(tx, ctx, patch.customerId ?? before.customerId, patch.propertyId ?? before.propertyId);
+    await claimAddress(tx, ctx, links, options);
   }
   if (patch.customerId !== undefined) {
     set.customerId = patch.customerId;

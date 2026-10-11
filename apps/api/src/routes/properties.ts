@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   AddressHasJobsError,
+  AddressNeedsCustomerError,
   createProperty,
   CustomerRequiredError,
   DuplicateAddressError,
@@ -37,6 +38,7 @@ const NO_CUSTOMER = "We couldn't find that customer.";
 const SAVED_MESSAGE = 'This address is already saved.';
 const PICK_CUSTOMER = 'Pick the customer for this address.';
 const HAS_JOBS_MESSAGE = 'This address already has jobs for a different customer.';
+const NEEDS_CUSTOMER_MESSAGE = 'This address has jobs, so it needs a customer.';
 
 const FIRST_YEAR = 1800;
 
@@ -164,6 +166,7 @@ function refused(err: unknown): never {
   if (err instanceof UnknownCustomerError) throw new AppError(400, NO_CUSTOMER, 'customerId');
   if (err instanceof CustomerRequiredError) throw new AppError(400, PICK_CUSTOMER, 'customerId');
   if (err instanceof AddressHasJobsError) throw new AppError(400, HAS_JOBS_MESSAGE, 'customerId');
+  if (err instanceof AddressNeedsCustomerError) throw new AppError(400, NEEDS_CUSTOMER_MESSAGE, 'customerId');
   throw err;
 }
 
@@ -174,7 +177,9 @@ function refused(err: unknown): never {
  *   the repository applies that, so no route can forget it. A customer named in a body must be one
  *   the caller can see (400 on `customerId`). A rep must name one when adding an address, and cannot
  *   clear it later; owner and office may leave an address with no customer.
- * - An address cannot be given to a customer while it has live jobs for a different one (400).
+ * - An address cannot be given to a customer while it has live jobs for a different one, and cannot
+ *   lose its customer while it has any job (400): an address with a job always has a customer
+ *   (a new job claims an address nobody owns yet).
  * - Every edit is audited (before and after) and added to the address's timeline.
  */
 export function propertyRoutes(deps: AppDeps): Router {

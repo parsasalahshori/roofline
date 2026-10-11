@@ -42,10 +42,12 @@ export {
 export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './repos/paging.ts';
 export {
   AddressHasJobsError,
+  AddressNeedsCustomerError,
   createProperty,
   CustomerRequiredError,
   DuplicateAddressError,
   getProperty,
+  linkPropertyToCustomer,
   listProperties,
   type ListPropertiesOptions,
   type PropertyInput,

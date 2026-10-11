@@ -76,6 +76,14 @@ export class AddressHasJobsError extends Error {
   }
 }
 
+/** The customer cannot be taken off an address that has jobs: every address with a job belongs to a customer. */
+export class AddressNeedsCustomerError extends Error {
+  constructor() {
+    super('That address has jobs, so it needs a customer.');
+    this.name = 'AddressNeedsCustomerError';
+  }
+}
+
 const ADDRESS_KEY_CONSTRAINT = 'properties_company_address_key_uniq';
 const CUSTOMER_CONSTRAINT = 'properties_company_customer_fk';
 
@@ -238,12 +246,15 @@ export async function createProperty(
 
 /**
  * Changes an address the member may see; null when they may not (or it does not exist). The row is
- * locked for the length of the transaction. A new `customerId` (other than the one it has) must be a
- * customer the member can see (`UnknownCustomerError`), and the address may have no live job for any
- * other customer (`AddressHasJobsError`; archived jobs do not count, and clearing the customer is
- * always consistent with the jobs). A rep cannot clear the customer (`CustomerRequiredError`). A new
- * street address or ZIP gives the
- * address a new key, which may clash with another address (`DuplicateAddressError`).
+ * locked for the length of the transaction.
+ * - A new `customerId` (other than the one it has) must be a customer the member can see
+ *   (`UnknownCustomerError`), and the address may have no live job for any other customer
+ *   (`AddressHasJobsError`; archived jobs do not count).
+ * - The customer cannot be cleared while the address has any job (`AddressNeedsCustomerError`:
+ *   every address with a job belongs to a customer), and a rep cannot clear it at all
+ *   (`CustomerRequiredError`).
+ * - A new street address or ZIP gives the address a new key, which may clash with another address
+ *   (`DuplicateAddressError`).
  * Always writes the audit row (the fields the patch named, before and after) and an "Address
  * details updated" line.
  */
@@ -268,6 +279,12 @@ export async function updateProperty(
 
   if (patch.customerId !== undefined) {
     if (patch.customerId === null && ctx.role === 'rep') throw new CustomerRequiredError();
+    if (patch.customerId === null && before.customerId !== null) {
+      // Any job counts, archived or not: a job's timeline lines name the address, and who may see the
+      // address follows its customer.
+      const [anyJob] = await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.propertyId, id)).limit(1);
+      if (anyJob) throw new AddressNeedsCustomerError();
+    }
     if (patch.customerId !== null && patch.customerId !== before.customerId) {
       if (!(await getCustomer(tx, ctx, patch.customerId))) throw new UnknownCustomerError();
       // Every live job at this address must be for the customer it is being given to. All of the
@@ -334,6 +351,52 @@ export async function updateProperty(
     kind: 'property.updated',
     summary: 'Address details updated',
     data: { fields },
+    at: now,
+  });
+  return after;
+}
+
+/**
+ * Gives an address that has no customer to `customer`: used when a job is made for it, so that every
+ * address with a job belongs to a customer (and who may see the address follows the customer).
+ * The row is locked first and read again, so two jobs made at once for one unowned address cannot
+ * both claim it. Returns the address as it is afterwards: if it already had a customer (this one, or
+ * another one that got there first) nothing is written and that customer is on the returned row.
+ * Writes the audit row and an "Address linked to <name>" timeline line when it changes anything.
+ */
+export async function linkPropertyToCustomer(
+  tx: Tx,
+  ctx: TenantContext,
+  propertyId: string,
+  customer: { id: string; displayName: string },
+  options: WriteOptions,
+): Promise<PropertyRow> {
+  const { now } = options;
+  const [before] = await tx.select().from(properties).where(eq(properties.id, propertyId)).limit(1).for('update');
+  if (!before) throw new Error('The address to link does not exist.'); // callers have just read it; addresses are never deleted
+  if (before.customerId !== null) return before;
+
+  const [updated] = await tx
+    .update(properties)
+    .set({ customerId: customer.id, updatedAt: now })
+    .where(eq(properties.id, propertyId))
+    .returning();
+  const after = updated!;
+
+  await audit(tx, ctx, {
+    action: 'property.update',
+    targetType: 'property',
+    targetId: propertyId,
+    before: snapshot(before, ['customerId']),
+    after: snapshot(after, ['customerId']),
+    at: now,
+  });
+  await addActivity(tx, ctx, {
+    subjectType: 'property',
+    subjectId: propertyId,
+    kind: 'property.updated',
+    summary: `Address linked to ${customer.displayName}`,
+    data: { fields: ['customerId'], customerId: customer.id },
     at: now,
   });
   return after;

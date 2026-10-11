@@ -19,6 +19,7 @@ import {
   dbActivities,
   dbAudit,
   dbJob,
+  dbProperty,
   inCompany,
   mustCreate,
   NO_UUID,
@@ -162,12 +163,13 @@ describe('creating a job', () => {
     expect([stored.stageChangedAt, stored.createdAt, stored.updatedAt]).toEqual(Array(3).fill(new Date('2026-11-01T08:15:00.000Z')));
   });
 
-  test('a house with no customer yet can take a job for any customer', async () => {
+  test('a house with no customer yet can take a job for any customer, and becomes that customer\'s', async () => {
     const owner = await who.as('owner');
     const customer = await mustCreate(owner, '/api/customers', { displayName: 'Molly' });
     const property = await mustCreate(owner, '/api/properties', addressFor(1));
     const res = await owner.post('/api/jobs').send({ customerId: customer.id, propertyId: property.id });
     expect(res.status).toBe(201);
+    expect((await dbProperty(t, A(), property.id)).customerId).toBe(customer.id);
   });
 
   test.each<[string, Record<string, unknown>, string, string]>([
@@ -280,6 +282,147 @@ describe('creating a job', () => {
         expect(res.status, member).toBe(201);
       }
     });
+  });
+});
+
+describe('a job claims an address nobody owns yet', () => {
+  const LINKED = 'Address linked to Rep customer';
+
+  /** An address the owner saved with no customer, and a customer the rep made. */
+  async function unowned() {
+    const owner = await who.as('owner');
+    const rep = await who.as('rep');
+    const customer = await mustCreate(rep, '/api/customers', { displayName: 'Rep customer' });
+    const property = await mustCreate(owner, '/api/properties', addressFor(0));
+    return { owner, rep, customer, property };
+  }
+
+  test("a rep who sees the customer can open the address of the customer's job, and the timeline names nothing they can't open", async () => {
+    const { owner, rep, customer, property } = await unowned();
+    // Before the job, the rep can see neither the address nor anything about it.
+    expect((await rep.get(`/api/properties/${property.id}`)).status).toBe(404);
+
+    const job = await mustCreate(owner, '/api/jobs', {
+      customerId: customer.id,
+      propertyId: property.id,
+      assignedUserId: who.user('otherRep').userId,
+    });
+    expect((await dbProperty(t, A(), property.id)).customerId).toBe(customer.id);
+    expect((await rep.get(`/api/jobs/${job.id}`)).status).toBe(404); // someone else's job
+
+    const address = await rep.get(`/api/properties/${property.id}`);
+    expect(address.status).toBe(200);
+    expect(address.body).toMatchObject({ customerId: customer.id, addressLine: '100 Oak St' });
+
+    const lines = await rep.get(`/api/activities?subjectType=customer&subjectId=${customer.id}`);
+    expect(lines.status).toBe(200);
+    const newJob = lines.body.activities.find((a: { kind: string }) => a.kind === 'job.created');
+    expect(newJob).toMatchObject({ summary: 'New job: 100 Oak St', data: { jobId: job.id, propertyId: property.id } });
+    // ... and that address is one the rep can open, with its own timeline.
+    const timelineOfAddress = await rep.get(`/api/activities?subjectType=property&subjectId=${newJob.data.propertyId}`);
+    expect(timelineOfAddress.status).toBe(200);
+  });
+
+  test('the change is audited and on the address timeline, in the same time as the job', async () => {
+    const { owner, customer, property } = await unowned();
+    t.clock.set(new Date('2026-10-14T09:30:00.000Z'));
+    await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: property.id });
+    const [row] = await dbAudit(t, A(), 'property.update');
+    expect(row).toMatchObject({ targetType: 'property', targetId: property.id, actorUserId: who.user('owner').userId });
+    expect(row!.before).toEqual({ customerId: null });
+    expect(row!.after).toEqual({ customerId: customer.id });
+    expect(row!.at).toEqual(new Date('2026-10-14T09:30:00.000Z'));
+    expect(await timeline(t, A(), property.id)).toEqual([
+      ['property.created', 'Address added'],
+      ['property.updated', LINKED],
+    ]);
+    const stored = await dbProperty(t, A(), property.id);
+    expect(stored.updatedAt).toEqual(new Date('2026-10-14T09:30:00.000Z'));
+  });
+
+  test('an address the customer already owns is left alone: no change, no audit row, no timeline line', async () => {
+    const { owner, customer } = await unowned();
+    const owned = await mustCreate(owner, '/api/properties', { customerId: customer.id, ...addressFor(1) });
+    t.clock.set(new Date('2026-10-14T09:30:00.000Z'));
+    await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: owned.id });
+    await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: owned.id });
+    const stored = await dbProperty(t, A(), owned.id);
+    expect(stored.updatedAt).toEqual(new Date('2026-10-12T15:00:00.000Z'));
+    expect(await dbAudit(t, A(), 'property.update')).toEqual([]);
+    expect(await timeline(t, A(), owned.id)).toEqual([['property.created', 'Address added']]);
+  });
+
+  test('a second job for the same customer does not link it again', async () => {
+    const { owner, customer, property } = await unowned();
+    await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: property.id });
+    await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: property.id });
+    expect(await dbAudit(t, A(), 'property.update')).toHaveLength(1);
+    expect((await timeline(t, A(), property.id)).filter(([kind]) => kind === 'property.updated')).toHaveLength(1);
+  });
+
+  test('an address that belongs to a different customer is still the 400 on propertyId, and is not changed', async () => {
+    const { owner, customer } = await unowned();
+    const sam = await mustCreate(owner, '/api/customers', { displayName: 'Sam' });
+    const samsHouse = await mustCreate(owner, '/api/properties', { customerId: sam.id, ...addressFor(2) });
+    const res = await owner.post('/api/jobs').send({ customerId: customer.id, propertyId: samsHouse.id });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: WRONG_CUSTOMER, field: 'propertyId' });
+    expect((await dbProperty(t, A(), samsHouse.id)).customerId).toBe(sam.id);
+    expect(await dbAudit(t, A(), 'property.update')).toEqual([]);
+  });
+
+  test('a job that fails for another reason leaves the address as it was', async () => {
+    const { owner, customer, property } = await unowned();
+    const res = await owner
+      .post('/api/jobs')
+      .send({ customerId: customer.id, propertyId: property.id, assignedUserId: NO_UUID });
+    expect(res.status).toBe(400);
+    expect((await dbProperty(t, A(), property.id)).customerId).toBeNull();
+    expect(await dbAudit(t, A(), 'property.update')).toEqual([]);
+  });
+
+  test('moving a job to an address nobody owns claims that address for the job\'s customer', async () => {
+    const { owner, customer, property } = await unowned();
+    const first = await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: property.id });
+    const second = await mustCreate(owner, '/api/properties', addressFor(3));
+    const res = await owner.patch(`/api/jobs/${first.id}`).send({ propertyId: second.id });
+    expect(res.status).toBe(200);
+    expect((await dbProperty(t, A(), second.id)).customerId).toBe(customer.id);
+    expect((await dbAudit(t, A(), 'property.update')).map((r) => r.targetId).sort()).toEqual([property.id, second.id].sort());
+
+    // A failed move claims nothing.
+    const third = await mustCreate(owner, '/api/properties', addressFor(4));
+    const bad = await owner.patch(`/api/jobs/${first.id}`).send({ propertyId: third.id, assignedUserId: NO_UUID });
+    expect(bad.status).toBe(400);
+    expect((await dbProperty(t, A(), third.id)).customerId).toBeNull();
+  });
+
+  test('two jobs for different customers made at the same moment at one unowned address: one wins, the other is a 400, never a 500', async () => {
+    const { owner, customer, property } = await unowned();
+    const other = await mustCreate(owner, '/api/customers', { displayName: 'Other' });
+    const office = await who.as('office');
+    const results = await Promise.all([
+      owner.post('/api/jobs').send({ customerId: customer.id, propertyId: property.id }),
+      office.post('/api/jobs').send({ customerId: other.id, propertyId: property.id }),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 400]);
+    const [winner] = results.filter((r) => r.status === 201);
+    const [loser] = results.filter((r) => r.status === 400);
+    expect(loser!.body).toEqual({ error: WRONG_CUSTOMER, field: 'propertyId' });
+    expect((await dbProperty(t, A(), property.id)).customerId).toBe(winner!.body.customerId);
+    expect(await inCompany(t, A(), (tx) => tx.select().from(jobs))).toHaveLength(1);
+    expect(await dbAudit(t, A(), 'property.update')).toHaveLength(1);
+  });
+
+  test('two jobs for the same customer made at the same moment: both are saved, the address is linked once', async () => {
+    const { owner, customer, property } = await unowned();
+    const office = await who.as('office');
+    const results = await Promise.all([
+      owner.post('/api/jobs').send({ customerId: customer.id, propertyId: property.id }),
+      office.post('/api/jobs').send({ customerId: customer.id, propertyId: property.id }),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([201, 201]);
+    expect(await dbAudit(t, A(), 'property.update')).toHaveLength(1);
   });
 });
 
