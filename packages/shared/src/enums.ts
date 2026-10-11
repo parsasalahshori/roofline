@@ -78,7 +78,8 @@ export type GateRule = (typeof GATE_RULES)[number];
 export const SMS_CONSENT_SOURCES = ['import', 'web_form', 'call', 'text', 'manual'] as const;
 export type SmsConsentSource = (typeof SMS_CONSENT_SOURCES)[number];
 
-export const ACTIVITY_SUBJECT_TYPES = ['customer', 'property', 'job'] as const;
+/** `message`: a text that came in from a number that is no customer's (a possible opt-out to check). */
+export const ACTIVITY_SUBJECT_TYPES = ['customer', 'property', 'job', 'message'] as const;
 export type ActivitySubjectType = (typeof ACTIVITY_SUBJECT_TYPES)[number];
 
 export const ACTIVITY_ACTOR_TYPES = ['user', 'agent', 'system'] as const;

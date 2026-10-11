@@ -1,6 +1,6 @@
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { ActivitySubjectType } from '@roofline/shared';
-import { activities, customers, jobs, properties } from '../schema/index.ts';
+import { activities, customers, jobs, messages, properties } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { clampPage } from './paging.ts';
 import { customerScope, jobScope, propertyScope } from './scope.ts';
@@ -10,7 +10,7 @@ export type ActivityRow = typeof activities.$inferSelect;
 export type ActivityEntry = {
   subjectType: ActivitySubjectType;
   subjectId: string;
-  /** What happened, dotted: `customer.created`, `customer.consent_changed`, `property.updated`, `job.stage_changed`, `job.archived`. */
+  /** What happened, dotted: `customer.created`, `customer.consent_changed`, `property.updated`, `job.stage_changed`, `message.possible_opt_out`. */
   kind: string;
   /** A plain-English line for the timeline. */
   summary: string;
@@ -46,7 +46,8 @@ export async function addActivity(tx: Tx, ctx: TenantContext, entry: ActivityEnt
 /**
  * Whether the member may see the timeline of this subject: it must exist in their company and be
  * inside their scope (scope.ts: a rep sees the customers, addresses and jobs the visibility rule
- * gives them; the owner and the office see all of them).
+ * gives them; the owner and the office see all of them). A message is seen by a rep only when it is
+ * filed under a customer they may see, so one from a number that is no customer's is not.
  */
 async function activitySubjectVisible(
   tx: Tx,
@@ -67,6 +68,20 @@ async function activitySubjectVisible(
       .select({ id: properties.id })
       .from(properties)
       .where(and(eq(properties.id, subjectId), propertyScope(ctx)))
+      .limit(1);
+    return row !== undefined;
+  }
+  if (subjectType === 'message') {
+    const scope = customerScope(ctx);
+    const [row] = await tx
+      .select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.id, subjectId),
+          scope === undefined ? undefined : sql`${messages.customerId} in (select ${customers.id} from ${customers} where ${scope})`,
+        ),
+      )
       .limit(1);
     return row !== undefined;
   }

@@ -7,7 +7,7 @@ import { AppError, MESSAGES } from '../errors.ts';
 import { limitParam, offsetParam, parse, UUID } from '../validate.ts';
 
 const ListQuery = z.object({
-  subjectType: z.enum(ACTIVITY_SUBJECT_TYPES, { error: 'Please pick customer, property or job.' }),
+  subjectType: z.enum(ACTIVITY_SUBJECT_TYPES, { error: 'Please pick customer, property, job or message.' }),
   subjectId: z
     .string({ error: MESSAGES.checkField })
     .refine((v) => UUID.test(v), MESSAGES.checkField)
@@ -32,7 +32,7 @@ function activityBody(row: ActivityRow) {
 }
 
 /**
- * `GET /api/activities?subjectType=&subjectId=`: the timeline of one customer, property or job,
+ * `GET /api/activities?subjectType=&subjectId=`: the timeline of one customer, property, job or message,
  * newest first, as `{ activities, total }` (`limit` default 50, at most 200, and `offset`).
  * Row-level security keeps it to the member's company, and the same visibility rule as the subject
  * itself applies: a subject the member cannot open (another company's, a customer a rep did not

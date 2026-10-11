@@ -10,6 +10,7 @@ import {
   companyPhoneNumbers,
   customers,
   encrypt,
+  ensureOptOuts,
   lockRecipient,
   messages,
   optOuts,
@@ -18,7 +19,8 @@ import {
   withTenant,
 } from '@roofline/db';
 import type { Config } from '../src/config.ts';
-import { type CompanyKey, dbCustomer, inCompany, timeline } from './crm-helpers.ts';
+import { escapeXml } from '../src/hooks/twilio.ts';
+import { Actors, type CompanyKey, dbCustomer, inCompany, timeline } from './crm-helpers.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from './helpers.ts';
 import { addSmsCustomers, DAYTIME, gate, MINUTE, type SmsCustomer } from './sms-helpers.ts';
 
@@ -78,7 +80,11 @@ beforeEach(async () => {
 });
 
 let sidCounter = 0;
-const nextSid = () => `SM${String((sidCounter += 1)).padStart(32, '0')}`;
+/** A fresh MessageSid in Twilio's format: SM and 32 lowercase hex digits. */
+const nextSid = () => `SM${(sidCounter += 1).toString(16).padStart(32, '0')}`;
+/** The provider ids of A's (or B's) outbound texts in the status tests. */
+const OUT = (n: number) => `SM${'ab'.repeat(15)}${n.toString(16).padStart(2, '0')}`;
+const IN_SID = `SM${'cd'.repeat(16)}`;
 
 /** The fields Twilio posts for an inbound text, to A's number from Nina unless overridden. */
 function inbound(fields: Record<string, string> = {}): Record<string, string> {
@@ -262,7 +268,7 @@ describe('POST /hooks/twilio/sms: the brief', () => {
     expect(await optOutRows('a')).toHaveLength(1);
     expect(await auditRows('a', 'customer.consent_revoked')).toHaveLength(1);
     expect(await timeline(t, idOf('a'), c1!)).toEqual([['customer.consent_changed', STOP_LINE]]);
-    expect(await webhookRows()).toMatchObject([{ provider: 'twilio-sms', eventId: fields.MessageSid }]);
+    expect(await webhookRows()).toMatchObject([{ provider: 'twilio-sms', eventId: `${idOf('a')}:${fields.MessageSid}` }]);
   });
 
   test('a bad signature → 403, and nothing is written', async () => {
@@ -462,6 +468,37 @@ describe('POST /hooks/twilio/sms: STOP', () => {
   });
 });
 
+describe('POST /hooks/twilio/sms: lock order (M3)', () => {
+  test('a STOP and an office edit of a customer sharing the number cannot deadlock: the STOP locks customers before the opt-out list', async () => {
+    const [, second] = await addInOrder('a', [nina(), nina({ firstName: 'Nora' })]);
+    const ctx = { companyId: idOf('a'), userId: t.seed.a.office.userId, role: 'office' as const, canApproveSpend: false };
+    const locked = gate();
+    const release = gate();
+
+    // The office edits Nora the way updateCustomer does: her row FOR UPDATE first, then her numbers onto the opt-out list.
+    const edit = withTenant(t.deps.pools, ctx, async (tx) => {
+      await tx.select({ id: customers.id }).from(customers).where(eq(customers.id, second!)).for('update');
+      locked.open();
+      await release.opened;
+      await ensureOptOuts(tx, ctx, [NINA], DAYTIME);
+    });
+    edit.catch(() => locked.open());
+    await locked.opened;
+
+    const stopping = sms(inbound({ Body: 'STOP' })).then((r) => r);
+    const waited = await untilLockWait();
+    release.open();
+
+    const [edited, res] = await Promise.allSettled([edit, stopping]);
+    expect(waited).toBe(true);
+    expect(edited.status).toBe('fulfilled');
+    expect(res.status === 'fulfilled' && res.value.status).toBe(200);
+    expect((await dbCustomer(t, idOf('a'), second!)).smsConsentStatus).toBe('revoked');
+    // The edit's 'manual' row came first; the STOP then wrote the customer's own word over it.
+    expect(await optOutRows('a')).toMatchObject([{ phoneE164: NINA, keyword: 'stop' }]);
+  });
+});
+
 describe('POST /hooks/twilio/sms: HELP, START and everything else', () => {
   test('HELP → the company name and phone, and how to opt out; nothing about consent changes', async () => {
     const [c1] = await addSmsCustomers(t, 'a', [nina()]);
@@ -529,18 +566,45 @@ describe('POST /hooks/twilio/sms: HELP, START and everything else', () => {
     expect(await optOutRows('a')).toEqual([]);
   });
 
-  test('an ordinary message is not flagged; one from an unknown number is stored with no customer and flags nobody', async () => {
+  test('an ordinary message is not flagged', async () => {
     const [c1] = await addSmsCustomers(t, 'a', [nina()]);
     expect((await sms(inbound({ Body: 'See you Thursday!' }))).text).toBe(EMPTY);
-    t.clock.advance(MINUTE);
-    expect((await sms(inbound({ From: STRANGER, Body: 'remove me from the Thursday schedule' }))).text).toBe(EMPTY);
-
     expect(await activityRows('a', 'message.possible_opt_out')).toEqual([]);
     expect(await timeline(t, idOf('a'), c1!)).toEqual([]);
-    expect((await inboundRows('a')).map((r) => [r.customerId, r.fromE164])).toEqual([
-      [c1, NINA],
-      [null, STRANGER],
+  });
+
+  test('a possible opt-out from a number with no customer is flagged on the message itself (I2)', async () => {
+    const res = await sms(inbound({ From: STRANGER, Body: 'never text me again' }));
+
+    expect(res.text).toBe(EMPTY);
+    const [message] = await inboundRows('a');
+    expect(message).toMatchObject({ customerId: null, fromE164: STRANGER });
+    expect(await activityRows('a', 'message.possible_opt_out')).toMatchObject([
+      { subjectType: 'message', subjectId: message!.id, summary: POSSIBLE, actorType: 'system', data: { messageId: message!.id } },
     ]);
+    expect(await optOutRows('a')).toEqual([]);
+
+    // The owner and the office can read it on the message's timeline; a rep cannot see a message with no customer.
+    const actors = new Actors(t);
+    const url = `/api/activities?subjectType=message&subjectId=${message!.id}`;
+    const owner = await (await actors.as('owner')).get(url);
+    expect(owner.status).toBe(200);
+    expect(owner.body.activities).toMatchObject([{ subjectType: 'message', kind: 'message.possible_opt_out', summary: POSSIBLE }]);
+    expect((await (await actors.as('office')).get(url)).status).toBe(200);
+    expect((await (await actors.as('rep')).get(url)).status).toBe(404);
+    expect((await (await actors.as('owner', 'b')).get(url)).status).toBe(404);
+  });
+
+  test("polite and alternate opt-outs end to end: STOP, or flagged on the customer's timeline (I2)", async () => {
+    const [c1] = await addSmsCustomers(t, 'a', [nina()]);
+    expect(messageOf((await sms(inbound({ Body: 'Please take me off your list' }))).text)).toBe(UNSUBSCRIBED);
+    expect(await optOutRows('a')).toMatchObject([{ keyword: 'please take me off your list' }]);
+    expect((await dbCustomer(t, idOf('a'), c1!)).smsConsentStatus).toBe('revoked');
+
+    const [c2] = await addSmsCustomers(t, 'a', [{ firstName: 'Omar', phone: '+14025550102', consent: 'express' }]);
+    expect((await sms(inbound({ From: '+14025550102', Body: 'I want to cancel these texts' }))).text).toBe(EMPTY);
+    expect((await dbCustomer(t, idOf('a'), c2!)).smsConsentStatus).toBe('express');
+    expect(await timeline(t, idOf('a'), c2!)).toEqual([['message.possible_opt_out', POSSIBLE]]);
   });
 
   test('every dynamic part of the reply is XML-escaped: a company called "Bob & <Sons>"', async () => {
@@ -555,6 +619,21 @@ describe('POST /hooks/twilio/sms: HELP, START and everything else', () => {
     expect(messageOf(help.text)).toBe(HELP_REPLY.replace('Acme Roofing', 'Bob & <Sons>'));
     const start = await sms(inbound({ Body: 'START' }));
     expect(messageOf(start.text)).toBe(RESUBSCRIBED.replace('Acme Roofing', 'Bob & <Sons>'));
+  });
+
+  test('characters XML 1.0 forbids are dropped from the reply: a company name with U+0007 (M9)', async () => {
+    await t.deps.pools.system.update(companies).set({ name: 'Acme\u0007 Roofing\uFFFE' }).where(eq(companies.id, idOf('a')));
+    const res = await sms(inbound({ Body: 'STOP' }));
+    expect([...res.text].filter((ch) => ch === '\u0007' || ch === '\uFFFE')).toEqual([]);
+    expect(messageOf(res.text)).toBe(UNSUBSCRIBED);
+  });
+
+  test('escapeXml: the five special characters become entities; everything XML 1.0 forbids is dropped', () => {
+    expect(escapeXml(`Bob & <Sons> "R" 'Us'`)).toBe('Bob &amp; &lt;Sons&gt; &quot;R&quot; &apos;Us&apos;');
+    const forbidden = ['\u0000', '\u0001', '\u0007', '\u0008', '\u000B', '\u000C', '\u000E', '\u001F', '\uFFFE', '\uFFFF', '\uD800', '\uDFFF'];
+    for (const ch of forbidden) expect(escapeXml(`a${ch}b`), JSON.stringify(ch)).toBe('ab');
+    // Tab, newline and carriage return are allowed, and so is everything else, astral characters included.
+    expect(escapeXml('a\tb\nc\rd é 屋根 🙏 \u007F \uFFFD')).toBe('a\tb\nc\rd é 屋根 🙏 \u007F \uFFFD');
   });
 
   test("B's number is B's: its message lands in B, signed with B's token, and A's token is refused there", async () => {
@@ -587,6 +666,54 @@ describe('POST /hooks/twilio/sms: signing tokens, bad requests and failures', ()
     expect(messageOf(res.text)).toBe(UNSUBSCRIBED);
     // A company with its own token is still checked against that one, not the platform's.
     expect((await sms(inbound({ To: B_NUMBER }), { token: MASTER_TOKEN })).status).toBe(403);
+  });
+
+  test('a re-split replay of a signed START cannot pose as a new message: 400, and the later STOP stands (I1)', async () => {
+    const [c1] = await addSmsCustomers(t, 'a', [nina()]);
+    await sms(inbound({ Body: 'STOP' }));
+    const start = inbound({ Body: 'START' });
+    const startSignature = twilio.getExpectedTwilioSignature(TOKEN.a, BASE + SMS, start);
+    await sms(start, { signature: startSignature });
+    t.clock.advance(MINUTE);
+    await sms(inbound({ Body: 'STOP' }));
+    expect((await dbCustomer(t, idOf('a'), c1!)).smsConsentStatus).toBe('revoked');
+
+    // Twilio's signature joins sorted keys and values with no separator, so the next field folded
+    // into MessageSid still verifies, and the MessageSid looks new to the dedupe.
+    const replay = { ...without(start, 'NumMedia'), MessageSid: `${start.MessageSid}NumMedia${start.NumMedia}` };
+    expect(twilio.validateRequest(TOKEN.a, startSignature, BASE + SMS, replay)).toBe(true);
+    const res = await sms(replay, { signature: startSignature });
+
+    expect(res.status).toBe(400);
+    expect(res.text).toBe('');
+    expect((await dbCustomer(t, idOf('a'), c1!)).smsConsentStatus).toBe('revoked');
+    expect(await optOutRows('a')).toHaveLength(1);
+    expect(await inboundRows('a')).toHaveLength(3);
+    expect(await webhookRows()).toHaveLength(3);
+  });
+
+  test('ids and numbers must be in Twilio\'s formats: MessageSid / SmsSid SM or MM + 32 hex, From and To E.164 (I1)', async () => {
+    const malformed: Record<string, string>[] = [
+      { MessageSid: `SM${'A'.repeat(32)}` }, // upper-case hex
+      { MessageSid: `SM${'a'.repeat(31)}` },
+      { MessageSid: `SM${'a'.repeat(33)}` },
+      { MessageSid: `MG${'a'.repeat(32)}` },
+      { MessageSid: `SM${'a'.repeat(32)}\n` },
+      { SmsSid: 'SMnot-a-sid' },
+      { From: '4025550101' },
+      { From: '+1 402 555 0101' },
+      { From: 'whatsapp:+14025550101' },
+    ];
+    for (const bad of malformed) {
+      const res = await sms(inbound(bad));
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(res.text).toBe('');
+    }
+    await nothingWritten();
+
+    expect((await sms(inbound({ MessageSid: `MM${'0f'.repeat(16)}`, Body: 'photo' }))).status).toBe(200);
+    expect((await sms(inbound({ SmsSid: `SM${'1e'.repeat(16)}`, Body: 'hello' }))).status).toBe(200);
+    expect(await inboundRows('a')).toHaveLength(2);
   });
 
   test('a signed request with no MessageSid or no From → 400, nothing written', async () => {
@@ -640,93 +767,104 @@ describe('POST /hooks/twilio/sms: signing tokens, bad requests and failures', ()
 
 describe('POST /hooks/twilio/status', () => {
   test('delivered → the message is delivered', async () => {
-    const text = await sentText('SMout0001');
-    const res = await status(statusOf('SMout0001', 'delivered'));
+    const text = await sentText(OUT(1));
+    const res = await status(statusOf(OUT(1), 'delivered'));
     expect(res.status).toBe(200);
     expect(await messageRow('a', text.id)).toMatchObject({ status: 'delivered', blockReason: null });
-    expect(await webhookRows()).toMatchObject([{ provider: 'twilio-status', eventId: 'SMout0001:delivered' }]);
+    expect(await webhookRows()).toMatchObject([{ provider: 'twilio-status', eventId: `${idOf('a')}:${OUT(1)}:delivered` }]);
   });
 
   test.each(['failed', 'undelivered'])('%s → failed, with the carrier reason, not retryable', async (outcome) => {
-    const text = await sentText('SMout0002');
-    expect((await status(statusOf('SMout0002', outcome, { ErrorCode: '30003' }))).status).toBe(200);
+    const text = await sentText(OUT(2));
+    expect((await status(statusOf(OUT(2), outcome, { ErrorCode: '30003' }))).status).toBe(200);
     expect(await messageRow('a', text.id)).toMatchObject({ status: 'failed', blockReason: CARRIER, blockRule: null, retryable: false });
   });
 
   test.each(['queued', 'sending', 'sent', 'accepted', 'read', 'something-new'])('%s → nothing changes, 200', async (other) => {
-    const text = await sentText('SMout0003');
-    expect((await status(statusOf('SMout0003', other))).status).toBe(200);
+    const text = await sentText(OUT(3));
+    expect((await status(statusOf(OUT(3), other))).status).toBe(200);
     expect(await messageRow('a', text.id)).toMatchObject({ status: 'sent' });
   });
 
   test('delivered is never downgraded: a late "sent", "failed" or "undelivered" leaves it delivered', async () => {
-    const text = await sentText('SMout0004');
-    await status(statusOf('SMout0004', 'delivered'));
+    const text = await sentText(OUT(4));
+    await status(statusOf(OUT(4), 'delivered'));
     for (const late of ['sent', 'failed', 'undelivered', 'queued']) {
-      expect((await status(statusOf('SMout0004', late))).status).toBe(200);
+      expect((await status(statusOf(OUT(4), late))).status).toBe(200);
     }
     expect(await messageRow('a', text.id)).toMatchObject({ status: 'delivered', blockReason: null });
   });
 
   test('only a sent text moves: a queued or already failed one is left alone', async () => {
-    const text = await sentText('SMout0005');
+    const text = await sentText(OUT(5));
     await inCompany(t, idOf('a'), (tx) => tx.update(messages).set({ status: 'queued' }).where(eq(messages.id, text.id)));
-    await status(statusOf('SMout0005', 'delivered'));
+    await status(statusOf(OUT(5), 'delivered'));
     expect((await messageRow('a', text.id)).status).toBe('queued');
   });
 
   test('a duplicate callback is ignored: the same (MessageSid, MessageStatus) is handled once', async () => {
-    const text = await sentText('SMout0006');
-    expect((await status(statusOf('SMout0006', 'failed'))).status).toBe(200);
+    const text = await sentText(OUT(6));
+    expect((await status(statusOf(OUT(6), 'failed'))).status).toBe(200);
     // Put it back by hand: if the repeat were handled again it would fail the text a second time.
     await inCompany(t, idOf('a'), (tx) => tx.update(messages).set({ status: 'sent', blockReason: null }).where(eq(messages.id, text.id)));
 
-    const again = await status(statusOf('SMout0006', 'failed'));
+    const again = await status(statusOf(OUT(6), 'failed'));
 
     expect(again.status).toBe(200);
     expect(await messageRow('a', text.id)).toMatchObject({ status: 'sent', blockReason: null });
     expect(await webhookRows()).toHaveLength(1);
     // A different status for the same text is a different event.
-    await status(statusOf('SMout0006', 'delivered'));
+    await status(statusOf(OUT(6), 'delivered'));
     expect((await messageRow('a', text.id)).status).toBe('delivered');
   });
 
   test('an unknown MessageSid → 200 and nothing changes', async () => {
-    const text = await sentText('SMout0007');
-    expect((await status(statusOf('SMnobody', 'delivered'))).status).toBe(200);
+    const text = await sentText(OUT(7));
+    expect((await status(statusOf(OUT(99), 'delivered'))).status).toBe(200);
     expect((await messageRow('a', text.id)).status).toBe('sent');
   });
 
-  test("isolation: A's callback cannot touch B's text, even one with the same id", async () => {
-    const bText = await sentText('SMshared', null, 'b');
-    expect((await status(statusOf('SMshared', 'failed'))).status).toBe(200);
-    expect(await messageRow('b', bText.id)).toMatchObject({ status: 'sent', blockReason: null });
-    // B's own report (signed with B's token, from B's number) does reach it.
-    expect((await status(statusOf('SMshared', 'delivered', { From: B_NUMBER }), { token: TOKEN.b })).status).toBe(200);
+  test("isolation: A's callback cannot touch B's text with the same id, nor use up B's delivery (per-company keys)", async () => {
+    const bText = await sentText(OUT(50), null, 'b');
+    expect((await status(statusOf(OUT(50), 'delivered'))).status).toBe(200);
+    expect((await messageRow('b', bText.id)).status).toBe('sent');
+    expect((await status(statusOf(OUT(50), 'delivered', { From: B_NUMBER }), { token: TOKEN.b })).status).toBe(200);
     expect((await messageRow('b', bText.id)).status).toBe('delivered');
+    expect((await webhookRows()).map((r) => r.eventId).sort()).toEqual(
+      [`${idOf('a')}:${OUT(50)}:delivered`, `${idOf('b')}:${OUT(50)}:delivered`].sort(),
+    );
   });
 
   test('an inbound text with the same id is never changed', async () => {
-    await sms(inbound({ MessageSid: 'SMin0001', Body: 'hello' }));
-    await status(statusOf('SMin0001', 'delivered'));
+    await sms(inbound({ MessageSid: IN_SID, Body: 'hello' }));
+    await status(statusOf(IN_SID, 'delivered'));
     expect(await inboundRows('a')).toMatchObject([{ status: 'received' }]);
   });
 
+  test('a MessageSid (or SmsSid) not in Twilio\'s format → 400, nothing changes (I1)', async () => {
+    const text = await sentText(OUT(10));
+    expect((await status(statusOf(`${OUT(10)}x`, 'delivered'))).status).toBe(400);
+    expect((await status(statusOf(OUT(10).toUpperCase(), 'delivered'))).status).toBe(400);
+    expect((await status(statusOf(OUT(10), 'delivered', { SmsSid: 'nope' }))).status).toBe(400);
+    expect((await messageRow('a', text.id)).status).toBe('sent');
+    expect(await webhookRows()).toEqual([]);
+  });
+
   test('an unknown From → 404; a bad signature → 403; nothing changes either way', async () => {
-    const text = await sentText('SMout0008');
-    const unknown = await status(statusOf('SMout0008', 'delivered', { From: '+14025550999' }));
+    const text = await sentText(OUT(8));
+    const unknown = await status(statusOf(OUT(8), 'delivered', { From: '+14025550999' }));
     expect(unknown.status).toBe(404);
     expect(unknown.text).toBe('');
-    expect((await status(statusOf('SMout0008', 'delivered'), { token: TOKEN.b })).status).toBe(403);
-    expect((await status(statusOf('SMout0008', 'delivered'), { signature: null })).status).toBe(403);
+    expect((await status(statusOf(OUT(8), 'delivered'), { token: TOKEN.b })).status).toBe(403);
+    expect((await status(statusOf(OUT(8), 'delivered'), { signature: null })).status).toBe(403);
     expect((await messageRow('a', text.id)).status).toBe('sent');
     expect(await webhookRows()).toEqual([]);
   });
 
   test('no signing token → 403', async () => {
     await setToken('a', null);
-    const text = await sentText('SMout0009');
-    expect((await status(statusOf('SMout0009', 'delivered'))).status).toBe(403);
+    const text = await sentText(OUT(9));
+    expect((await status(statusOf(OUT(9), 'delivered'))).status).toBe(403);
     expect((await messageRow('a', text.id)).status).toBe('sent');
   });
 });
@@ -741,6 +879,23 @@ afterEach(async () => {
 afterAll(async () => {
   await observer?.end();
 });
+
+/** Waits until some connection is waiting for any lock (a row lock, here), for up to 5 seconds. */
+async function untilLockWait(timeoutMs = 5000): Promise<boolean> {
+  if (!observer) {
+    observer = new pg.Client({ connectionString: inject('dbUrls').owner });
+    await observer.connect();
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { rows } = await observer.query<{ n: number }>(
+      "select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'",
+    );
+    if (rows[0]!.n > 0) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return false;
+}
 
 /** Waits until some connection is waiting for an advisory lock (lockRecipient), for up to 5 seconds. */
 async function untilAdvisoryLockWait(timeoutMs = 5000): Promise<boolean> {

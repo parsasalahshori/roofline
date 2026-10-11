@@ -29,9 +29,16 @@ import type { AppDeps } from '../app.ts';
  * 2. authenticated: `X-Twilio-Signature` must be Twilio's signature of PUBLIC_BASE_URL + the path
  *    and the form fields, made with that company's subaccount token (else TWILIO_AUTH_TOKEN), else
  *    403. A company with no token at all is 403 too;
- * 3. deduplicated: Twilio may deliver the same webhook more than once, so each delivery is claimed
- *    in webhook_events first and a repeat does nothing (200, an empty reply). When the work for a
- *    claimed delivery fails, the claim is given back so Twilio's next try is handled.
+ * 3. checked for shape: MessageSid (and SmsSid, when sent) must be Twilio's id format, SM or MM and
+ *    32 lowercase hex digits, and the numbers must be E.164, else 400 with an empty body. This is not
+ *    tidiness: the signature joins the sorted names and values with no separator, so a signed
+ *    request re-split ("SM...NumMedia0" as the MessageSid, NumMedia left out) still verifies, and
+ *    without this check it would pass the dedupe below as a new message (a replayed START could undo
+ *    a later STOP);
+ * 4. deduplicated: Twilio may deliver the same webhook more than once, so each delivery is claimed
+ *    in webhook_events first, under a key that starts with the company's id, and a repeat does
+ *    nothing (200, an empty reply). When the work for a claimed delivery fails, the claim is given
+ *    back so Twilio's next try is handled.
  * The company's work then runs as app_tenant inside `withTenant` (role `system`, no user).
  */
 
@@ -45,13 +52,39 @@ const SMS_EVENTS = 'twilio-sms';
 const STATUS_EVENTS = 'twilio-status';
 
 const E164 = /^\+[1-9]\d{1,14}$/;
+/** Twilio's id of a text: SM (or MM for one with media) and 32 lowercase hex digits. */
+const MESSAGE_SID = /^(SM|MM)[0-9a-f]{32}$/;
 
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8"?>';
 const XML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
 
-/** Text made safe to put inside TwiML: the five XML special characters become entities. */
+/**
+ * Whether a code point may appear in an XML 1.0 document at all (the `Char` production): tab,
+ * newline, carriage return, and everything from U+0020 up except the surrogates, U+FFFE and U+FFFF.
+ */
+function isXmlChar(cp: number): boolean {
+  return (
+    cp === 0x09 ||
+    cp === 0x0a ||
+    cp === 0x0d ||
+    (cp >= 0x20 && cp <= 0xd7ff) ||
+    (cp >= 0xe000 && cp <= 0xfffd) ||
+    (cp >= 0x10000 && cp <= 0x10ffff)
+  );
+}
+
+/**
+ * Text made safe to put inside TwiML: characters XML 1.0 forbids (U+0000 to U+0008, U+000B,
+ * U+000C, U+000E to U+001F, U+FFFE, U+FFFF, and unpaired surrogates) are dropped, and the five XML
+ * special characters become entities.
+ */
 export function escapeXml(text: string): string {
-  return text.replace(/[&<>"']/g, (ch) => XML_ENTITIES[ch]!);
+  let out = '';
+  for (const ch of text) {
+    if (!isXmlChar(ch.codePointAt(0)!)) continue;
+    out += XML_ENTITIES[ch] ?? ch;
+  }
+  return out;
 }
 
 /** A US number as people write it, (402) 555-0199; any other number as it is. */
@@ -87,6 +120,32 @@ function field(req: Request, name: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/** Whether the form has this field at all, in any shape. */
+function sent(req: Request, name: string): boolean {
+  const body = req.body as Record<string, unknown> | undefined;
+  return body?.[name] !== undefined;
+}
+
+/**
+ * Step 3: the request's MessageSid in Twilio's format, with SmsSid (when sent) in it too; else
+ * null, and the caller answers 400.
+ */
+function messageSidOf(req: Request): string | null {
+  const messageSid = field(req, 'MessageSid');
+  if (messageSid === undefined || !MESSAGE_SID.test(messageSid)) return null;
+  if (sent(req, 'SmsSid')) {
+    const smsSid = field(req, 'SmsSid');
+    if (smsSid === undefined || !MESSAGE_SID.test(smsSid)) return null;
+  }
+  return messageSid;
+}
+
+/** A form field that must be an E.164 number; else undefined. */
+function e164Field(req: Request, name: string): string | undefined {
+  const value = field(req, name);
+  return value !== undefined && E164.test(value) ? value : undefined;
+}
+
 const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: null, role: 'system', canApproveSpend: false });
 
 /**
@@ -111,7 +170,7 @@ async function verify(deps: AppDeps, req: Request, res: Response, numberField: '
   return companyId;
 }
 
-/** Step 3 and the work: claims the delivery, runs `work`, and gives the claim back if `work` throws. */
+/** Step 4 and the work: claims the delivery, runs `work`, and gives the claim back if `work` throws. */
 async function once<T>(deps: AppDeps, provider: string, eventId: string, work: () => Promise<T>): Promise<{ repeat: true } | { repeat: false; value: T }> {
   const { system } = deps.pools;
   if (!(await claimWebhookEvent(system, provider, eventId))) return { repeat: true };
@@ -140,8 +199,8 @@ type Inbound = { messageSid: string; from: string; to: string; body: string };
  * - HELP: the company's name and phone.
  * - START: under the active customers' locks, the number comes off the opt-out list and the revoked
  *   ones are back to `express` (`restoreConsentByText`). Do-not-contact stays as it is.
- * - anything else: no reply; a message that reads like an opt-out is flagged on each active
- *   customer's timeline for a person to check, and nobody is opted out.
+ * - anything else: no reply; a message that reads like an opt-out is flagged for a person to
+ *   check, on each active customer's timeline or, with none, on the message's own; nobody is opted out.
  */
 async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): Promise<string | undefined> {
   const ctx = systemCtx(companyId);
@@ -194,14 +253,15 @@ export function twilioHooks(deps: AppDeps): Router {
   router.post('/sms', async (req, res) => {
     const companyId = await verify(deps, req, res, 'To');
     if (companyId === null) return;
-    const messageSid = field(req, 'MessageSid');
-    const from = field(req, 'From');
-    if (!messageSid || !from) {
+    const messageSid = messageSidOf(req);
+    const from = e164Field(req, 'From');
+    const to = e164Field(req, 'To');
+    if (messageSid === null || from === undefined || to === undefined) {
       res.status(400).end();
       return;
     }
-    const text: Inbound = { messageSid, from, to: field(req, 'To')!, body: field(req, 'Body') ?? '' };
-    const done = await once(deps, SMS_EVENTS, messageSid, () => handleInbound(deps, companyId, text));
+    const text: Inbound = { messageSid, from, to, body: field(req, 'Body') ?? '' };
+    const done = await once(deps, SMS_EVENTS, `${companyId}:${messageSid}`, () => handleInbound(deps, companyId, text));
     sendTwiml(res, done.repeat ? undefined : done.value);
   });
 
@@ -213,16 +273,16 @@ export function twilioHooks(deps: AppDeps): Router {
   router.post('/status', async (req, res) => {
     const companyId = await verify(deps, req, res, 'From');
     if (companyId === null) return;
-    const messageSid = field(req, 'MessageSid');
+    const messageSid = messageSidOf(req);
     const messageStatus = field(req, 'MessageStatus');
-    if (!messageSid || !messageStatus) {
+    if (messageSid === null || !messageStatus) {
       res.status(400).end();
       return;
     }
     const outcome = outcomeOf(messageStatus);
     if (outcome !== null) {
       const ctx = systemCtx(companyId);
-      await once(deps, STATUS_EVENTS, `${messageSid}:${messageStatus}`, () =>
+      await once(deps, STATUS_EVENTS, `${companyId}:${messageSid}:${messageStatus}`, () =>
         withTenant(deps.pools, ctx, (tx) => recordDeliveryOutcome(tx, ctx, messageSid, outcome, deps.clock.now())),
       );
     }

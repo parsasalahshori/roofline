@@ -120,7 +120,9 @@ function lockConsent(tx: Tx, ctx: TenantContext, customerIds: readonly string[])
 /**
  * A STOP by text from `phoneE164`. The caller has taken the customers' texting locks
  * (`lockRecipients`) first, so this waits for any send deciding for them right now, and the next
- * send sees it.
+ * send sees it. Then the customers' rows are locked, and only then the opt-out list is written: the
+ * same order as `updateCustomer` (customer, then `ensureOptOuts`), so a STOP and an office edit of
+ * a customer with this number take turns instead of deadlocking.
  * - The number goes on the opt-out list with the customer's own words (`keyword`, normalized),
  *   replacing whatever row was there (an office opt-out is a weaker record than the customer's STOP).
  *   This happens even when the number is no customer's.
@@ -135,6 +137,7 @@ export async function revokeConsentByText(
   stop: { phoneE164: string; keyword: string; customerIds: readonly string[]; messageId: string },
   now: Date,
 ): Promise<string[]> {
+  const before = stop.customerIds.length > 0 ? await lockConsent(tx, ctx, stop.customerIds) : [];
   await tx
     .insert(optOuts)
     .values({ companyId: ctx.companyId, phoneE164: stop.phoneE164, keyword: stop.keyword, at: now, createdAt: now, updatedAt: now })
@@ -142,9 +145,8 @@ export async function revokeConsentByText(
       target: [optOuts.companyId, optOuts.phoneE164],
       set: { keyword: stop.keyword, at: now, updatedAt: now },
     });
-  if (stop.customerIds.length === 0) return [];
+  if (before.length === 0) return [];
 
-  const before = await lockConsent(tx, ctx, stop.customerIds);
   const after = await tx
     .update(customers)
     .set({ smsConsentStatus: 'revoked', smsConsentSource: 'text', smsConsentAt: now, smsConsentByUserId: null, updatedAt: now })
@@ -174,7 +176,8 @@ export async function revokeConsentByText(
 }
 
 /**
- * A START by text from `phoneE164`, after the caller took the customers' texting locks.
+ * A START by text from `phoneE164`, after the caller took the customers' texting locks. The
+ * customers' rows are locked before the opt-out list is touched, as in `revokeConsentByText`.
  * - Every opt-out row for the number is deleted.
  * - Of the customers given (the active ones who have the number), each one that is `revoked`
  *   becomes `express`, source `text`, now, by nobody, with a `customer.consent_restored` audit row
@@ -188,10 +191,9 @@ export async function restoreConsentByText(
   start: { phoneE164: string; customerIds: readonly string[]; messageId: string },
   now: Date,
 ): Promise<string[]> {
+  const locked = start.customerIds.length > 0 ? await lockConsent(tx, ctx, start.customerIds) : [];
   await tx.delete(optOuts).where(and(eq(optOuts.companyId, ctx.companyId), eq(optOuts.phoneE164, start.phoneE164)));
-  if (start.customerIds.length === 0) return [];
-
-  const before = (await lockConsent(tx, ctx, start.customerIds)).filter((c) => c.smsConsentStatus === 'revoked');
+  const before = locked.filter((c) => c.smsConsentStatus === 'revoked');
   if (before.length === 0) return [];
   const after = await tx
     .update(customers)
@@ -223,7 +225,8 @@ export async function restoreConsentByText(
 
 /**
  * Puts "Possible opt-out. Please check this message." on each customer's timeline, pointing at the
- * message. Only a flag for a person: nobody's consent or opt-out changes.
+ * message; with no customer (a number that is no customer's), on the message's own timeline
+ * (subject `message`). Only a flag for a person: nobody's consent or opt-out changes.
  */
 export async function flagPossibleOptOut(
   tx: Tx,
@@ -232,15 +235,12 @@ export async function flagPossibleOptOut(
   messageId: string,
   now: Date,
 ): Promise<void> {
-  for (const id of customerIds) {
-    await addActivity(tx, ctx, {
-      subjectType: 'customer',
-      subjectId: id,
-      kind: 'message.possible_opt_out',
-      summary: POSSIBLE_OPT_OUT,
-      data: { messageId },
-      at: now,
-    });
+  const subjects =
+    customerIds.length > 0
+      ? customerIds.map((id) => ({ subjectType: 'customer' as const, subjectId: id }))
+      : [{ subjectType: 'message' as const, subjectId: messageId }];
+  for (const subject of subjects) {
+    await addActivity(tx, ctx, { ...subject, kind: 'message.possible_opt_out', summary: POSSIBLE_OPT_OUT, data: { messageId }, at: now });
   }
 }
 

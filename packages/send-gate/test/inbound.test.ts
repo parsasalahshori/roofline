@@ -378,17 +378,12 @@ describe('looksLikeOptOut: flags a message for a person to check (R22)', () => {
   ])('%s → true', (b) => expect(looksLikeOptOut(b)).toBe(true));
 
   test.each([
-    'stopping by at 5',
     'unstoppable',
-    'stops',
-    'the gutters stopped leaking',
     'can you remove meat from the order',
     'remover',
     'optional extras',
     'opt in',
     'the roof looks great',
-    'removed me',
-    'cancel my appointment',
     '',
     '   ',
   ])('%s → false', (b) => expect(looksLikeOptOut(b)).toBe(false));
@@ -432,4 +427,108 @@ describe('readInbound: the kind and the keyword as matched, for the opt-out reco
       expect(classifyInbound(body)).toBe(readInbound(body).kind);
     }
   });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Fix round 1 (I2): polite opt-outs, and a wider flag
+
+describe('courtesy words around a STOP phrase (I2a)', () => {
+  test.each([
+    'Please take me off your list',
+    'no more texts please',
+    'quit texting me please',
+    'opt me out please',
+    'dont contact me again',
+    'dont text me anymore',
+    "please don't text me anymore",
+    'cancel please',
+    'stop thanks',
+    'Unsubscribe, thank you!',
+    'pls stop',
+    'plz remove me thx',
+    'please please stop thanks thank you',
+    'remove me please thanks',
+    'stop again',
+    'STOP!! Thank you.',
+  ])('%s → stop', (b) => expect(classifyInbound(b)).toBe('stop'));
+
+  test('the keyword kept is the whole message as normalized, courtesy words and all', () => {
+    expect(readInbound('Please take me off your list')).toEqual({ kind: 'stop', keyword: 'please take me off your list' });
+    expect(readInbound('stop thanks')).toEqual({ kind: 'stop', keyword: 'stop thanks' });
+  });
+
+  test('courtesy words alone are not a STOP', () => {
+    for (const b of ['please', 'thanks', 'thank you', 'please thanks', 'again', 'anymore', 'pls thx']) {
+      expect(classifyInbound(b)).toBe('other');
+    }
+  });
+
+  test('only at the ends: a courtesy word in the middle still makes a longer message', () => {
+    expect(classifyInbound('stop please texting')).toBe('other');
+    expect(classifyInbound('remove please me')).toBe('other');
+  });
+
+  test('never for START or HELP: they must still be the bare keyword', () => {
+    expect(classifyInbound('please start')).toBe('other');
+    expect(classifyInbound('start please')).toBe('other');
+    expect(classifyInbound('start again')).toBe('other');
+    expect(classifyInbound('unstop thanks')).toBe('other');
+    expect(classifyInbound('help please')).toBe('other');
+  });
+
+  test('a long run of courtesy words is linear', () => {
+    expect(classifyInbound('please pls '.repeat(100_000) + 'stop' + ' thanks thx'.repeat(100_000))).toBe('stop');
+    expect(classifyInbound('please pls '.repeat(100_000))).toBe('other');
+  });
+});
+
+describe('the reviewer\'s probes: each is a STOP, or flagged for a person (I2)', () => {
+  test.each([
+    'Please take me off your list',
+    'no more texts please',
+    'quit texting me please',
+    'opt me out please',
+    'dont contact me again',
+    'never text me again',
+    'dont text me anymore',
+    "please don't text me anymore",
+    'Revoke consent',
+    'I want to cancel these texts',
+    'cancel please',
+    'end texts',
+    'remove my number from your list',
+    'take me off this list',
+    'no more messages',
+    'delete me',
+  ])('%s', (b) => {
+    const kind = classifyInbound(b);
+    expect(kind === 'stop' || (kind === 'other' && looksLikeOptOut(b))).toBe(true);
+  });
+
+  test.each(['start the job Monday', 'stop by tomorrow', 'cancel my 9am', 'end of the month works', 'please remove the old shingles'])(
+    'over-match probe %s is neither STOP nor START',
+    (b) => expect(classifyInbound(b)).toBe('other'),
+  );
+});
+
+describe('looksLikeOptOut, widened (I2b)', () => {
+  test.each([
+    // each word and phrase, as written
+    'please stop', 'how do I unsubscribe', 'I quit', 'end', 'revoke it', 'cancel', 'optout',
+    'can I opt out', 'remove me', 'remove my number', 'take me off', 'dont text me', 'do not contact me',
+    'never message me', 'no more texts', 'no more messages', 'leave me alone', 'delete me',
+    // inflected
+    'the gutters stopped leaking', 'stopping by at 5', 'stops', 'I unsubscribed last week', 'quitting texts',
+    'ending this', 'I revoked that', 'cancelled', 'canceling the texts', 'I opted out', 'removed me',
+    'removing my numbers', 'taking me off', 'stop texting me', 'you keep messaging me', 'contacted me twice',
+    'no more text', 'leaving me alone', 'deleted me',
+    // others
+    'cancel my appointment', 'Revoke consent', 'ＤＥＬＥＴＥ ＭＥ',
+  ])('%s → true', (b) => expect(looksLikeOptOut(b)).toBe(true));
+
+  test.each([
+    'unstoppable', 'that is quite a storm', 'see you this weekend', 'please send the quote', 'we attend Sunday',
+    'endorse', 'the textbook', 'in that context', 'remove meat', 'remover', 'cancellation fee', 'opt in',
+    'take a look', 'contact us', 'leave the ladder', 'delete the photo', 'more texts', 'the roof looks great',
+  ])('%s → false: stems are words, not substrings', (b) => expect(looksLikeOptOut(b)).toBe(false));
 });

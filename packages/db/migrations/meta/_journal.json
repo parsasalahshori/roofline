@@ -64,6 +64,13 @@
       "when": 1791724864806,
       "tag": "0008_messages_from_e164",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791727242295,
+      "tag": "0009_activities_message_subject",
+      "breakpoints": true
     }
   ]
 }
