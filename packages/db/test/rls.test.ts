@@ -319,12 +319,12 @@ describe('grants', () => {
     );
   });
 
-  test('app_system may create schemas in the database (pg-boss runs CREATE SCHEMA IF NOT EXISTS); app_tenant may not', async () => {
+  test('neither app role may create schemas in the database (pg-boss runs with createSchema: false in the schema 0002 made)', async () => {
     const [row] = await ownerQuery<{ system: boolean; tenant: boolean }>(
       `select has_database_privilege('app_system', current_database(), 'CREATE') as system,
               has_database_privilege('app_tenant', current_database(), 'CREATE') as tenant`,
     );
-    expect(row).toEqual({ system: true, tenant: false });
+    expect(row).toEqual({ system: false, tenant: false });
   });
 
   test('app_system: column-level SELECT only on the scheduler columns', async () => {

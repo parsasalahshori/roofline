@@ -1,12 +1,13 @@
 import { eq } from 'drizzle-orm';
 import pg from 'pg';
-import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
-import { agentTasks, agentTaskSteps, withTenant } from '@roofline/db';
+import { afterAll, afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
+import { agentTasks, agentTaskSteps, createPools, type Pools, type TenantContext, withTenant } from '@roofline/db';
 import { companiesWithExpiredDrafts, companiesWithExpiredLeases, stepsQueuedLongerThan } from '@roofline/db/system';
 import type { AppDeps } from '../src/app.ts';
 import { expireDrafts } from '../src/jobs/scheduler/expire-drafts.ts';
 import { QUEUED_TOO_LONG_MS, sweepQueued } from '../src/jobs/scheduler/sweep-queued.ts';
 import type { QueuedStep, StepQueue } from '../src/tasks/queue.ts';
+import { rerunTask } from '../src/tasks/service.ts';
 import { Actors, dbAudit, inCompany, NO_UUID, NOT_FOUND } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { DEMO_STEPS, dbSteps, dbTask, newCustomers, newTask, seenOf, setStep, setTask, smsStep } from './task-helpers.ts';
@@ -21,6 +22,7 @@ const NOW = new Date('2026-10-12T15:00:00.000Z');
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 const RERUN_ONLY_EXPIRED = 'Only expired plans can be run again.';
+const ALREADY_RERUN = 'This plan was already run again.';
 const MARKETING = 'Marketing texts must include your company name and "Reply STOP to opt out".';
 
 let t: TestApp;
@@ -259,6 +261,138 @@ describe('POST /api/approvals/:taskId/rerun', () => {
     expect((await dbAudit(t, idOf('a'), 'task.rerun'))[0]).toMatchObject({ actorUserId: t.seed.a.office.userId });
   });
 });
+
+describe('a plan is run again once', () => {
+  const ownerCtx = (): TenantContext => ({ companyId: idOf('a'), userId: t.seed.a.owner.userId, role: 'owner', canApproveSpend: true });
+
+  async function expiredPlan() {
+    const { taskId } = await newTask(t, 'a', { expiresAt: at(-MINUTE) });
+    await expireDrafts(t.deps, NOW);
+    return taskId;
+  }
+
+  let owner: pg.Client | undefined;
+  afterEach(async () => {
+    await owner?.query('rollback').catch(() => undefined);
+    await owner?.end();
+    owner = undefined;
+  });
+
+  test('the new draft records which plan it came from; asking again → 409 "This plan was already run again."', async () => {
+    const taskId = await expiredPlan();
+    const agent = await actors.as('owner');
+    const first = await agent.post(rerunUrl(taskId)).send();
+    expect(first.status).toBe(201);
+    expect(await dbTask(t, 'a', first.body.id)).toMatchObject({ rerunOfTaskId: taskId, status: 'draft' });
+    expect((await dbTask(t, 'a', taskId)).rerunOfTaskId).toBeNull();
+
+    const again = await (await actors.as('office')).post(rerunUrl(taskId)).send();
+    expect(again.status).toBe(409);
+    expect(again.body).toEqual({ error: ALREADY_RERUN });
+    expect(await allTasks('a')).toHaveLength(2);
+    expect(await dbAudit(t, idOf('a'), 'task.rerun')).toHaveLength(1);
+
+    // The new draft can itself be run again once it expires; that makes a third plan, not a second copy of the first.
+    await setTask(t, 'a', first.body.id, { status: 'expired' });
+    const third = await agent.post(rerunUrl(first.body.id)).send();
+    expect(third.status).toBe(201);
+    expect(await dbTask(t, 'a', third.body.id)).toMatchObject({ rerunOfTaskId: first.body.id });
+  });
+
+  test('two clicks at once: one 201 and one 409, and exactly one new plan', async () => {
+    const taskId = await expiredPlan();
+    const [ownerAgent, officeAgent] = [await actors.as('owner'), await actors.as('office')];
+    const results = await Promise.all([ownerAgent.post(rerunUrl(taskId)).send(), officeAgent.post(rerunUrl(taskId)).send()]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(results.find((r) => r.status === 409)!.body).toEqual({ error: ALREADY_RERUN });
+    const copies = (await allTasks('a')).filter((row) => row.rerunOfTaskId === taskId);
+    expect(copies).toHaveLength(1);
+    expect(await dbAudit(t, idOf('a'), 'task.rerun')).toHaveLength(1);
+  });
+
+  test('two reruns that really overlap: the second waits for the first\'s lock on the old plan, then finds it already run again', async () => {
+    const taskId = await expiredPlan();
+    const ctx = ownerCtx();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let worked!: () => void;
+    const firstWorked = new Promise<void>((resolve) => (worked = resolve));
+
+    const first = withTenant(t.deps.pools, ctx, async (tx) => {
+      const view = await rerunTask(tx, ctx, taskId, { now: NOW });
+      worked();
+      await gate;
+      return view;
+    });
+    first.catch(() => worked());
+    await firstWorked;
+    const second = withTenant(t.deps.pools, ctx, (tx) => rerunTask(tx, ctx, taskId, { now: NOW }));
+    const waited = await waitUntilSomeoneIsBlocked();
+    release();
+    const [r1, r2] = await Promise.allSettled([first, second]);
+
+    expect(waited).toBe(true);
+    expect(r1.status).toBe('fulfilled');
+    expect(r2.status).toBe('rejected');
+    expect((r2 as PromiseRejectedResult).reason).toMatchObject({ status: 409, message: ALREADY_RERUN });
+    expect((await allTasks('a')).filter((row) => row.rerunOfTaskId === taskId)).toHaveLength(1);
+  });
+
+  test('the unique index is the backstop: a rerun that collides with a copy not yet committed gets the 409, never a 500', async () => {
+    const taskId = await expiredPlan();
+    owner = new pg.Client({ connectionString: inject('dbUrls').owner });
+    await owner.connect();
+    await owner.query('begin');
+    // A copy of the plan made by some other path that skipped the check, still uncommitted.
+    await owner.query(
+      `insert into agent_tasks (company_id, agent, kind, title, rerun_of_task_id) values ($1, 'storm_scout', 'storm_plan', 'Copy', $2)`,
+      [idOf('a'), taskId],
+    );
+    const pending = (await actors.as('owner')).post(rerunUrl(taskId)).send().then((r) => r);
+    expect(await waitUntilSomeoneIsBlocked()).toBe(true);
+    await owner.query('commit');
+    const res = await pending;
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: ALREADY_RERUN });
+    expect((await allTasks('a')).filter((row) => row.rerunOfTaskId === taskId).map((row) => row.title)).toEqual(['Copy']);
+    expect(t.logged).toEqual([]);
+  });
+
+  test('the database keeps one copy per plan per company; plans that are not copies are not limited', async () => {
+    const aTask = await expiredPlan();
+    owner = new pg.Client({ connectionString: inject('dbUrls').owner });
+    await owner.connect();
+    const insert = (companyId: string, rerunOf: string | null) =>
+      owner!.query(`insert into agent_tasks (company_id, agent, kind, title, rerun_of_task_id) values ($1, 'storm_scout', 'storm_plan', 'Copy', $2)`, [
+        companyId,
+        rerunOf,
+      ]);
+    await insert(idOf('a'), aTask);
+    await expect(insert(idOf('a'), aTask)).rejects.toMatchObject({ code: '23505', constraint: 'agent_tasks_company_rerun_of_uniq' });
+    await insert(idOf('a'), null);
+    await insert(idOf('a'), null);
+  });
+});
+
+let lockPools: Pools | undefined;
+afterAll(async () => {
+  await lockPools?.end();
+});
+
+/** True once some query is waiting on a lock (seen from the table owner, who can see every session). */
+async function waitUntilSomeoneIsBlocked(timeoutMs = 5000): Promise<boolean> {
+  const urls = inject('dbUrls');
+  lockPools ??= createPools({ tenant: urls.owner, system: urls.owner });
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { rows } = await lockPools.system.$client.query(
+      "select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'",
+    );
+    if ((rows[0] as { n: number }).n > 0) return true;
+    await sleep(20);
+  }
+  return false;
+}
 
 // ---------------------------------------------------------------------------------------------
 

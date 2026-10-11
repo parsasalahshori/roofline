@@ -1,5 +1,5 @@
 {
-  "id": "531e8690-54c4-4b35-ad38-0dcfa97af40a",
+  "id": "84d7ab6c-4f0c-49ba-b1a6-14f86b6b0771",
   "prevId": "109b717b-1ed8-48c1-97ee-8c2fdd57f46a",
   "version": "7",
   "dialect": "postgresql",
@@ -1605,6 +1605,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "rerun_of_task_id": {
+          "name": "rerun_of_task_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1621,6 +1627,28 @@
         }
       },
       "indexes": {
+        "agent_tasks_company_rerun_of_uniq": {
+          "name": "agent_tasks_company_rerun_of_uniq",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rerun_of_task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"agent_tasks\".\"rerun_of_task_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "agent_tasks_company_status_idx": {
           "name": "agent_tasks_company_status_idx",
           "columns": [

@@ -40,6 +40,8 @@ export type NewTaskRow = {
   subjectId?: string | null;
   mode?: 'needs_approval' | 'live';
   expiresAt?: Date | null;
+  /** The expired plan this one is a fresh copy of ("run again"); at most one copy per plan. */
+  rerunOfTaskId?: string | null;
   /** In order: the first is position 0. */
   steps: NewStepRow[];
 };
@@ -87,6 +89,7 @@ export async function insertTask(tx: Tx, ctx: TenantContext, input: NewTaskRow, 
       mode: input.mode ?? 'needs_approval',
       status: 'draft',
       expiresAt: input.expiresAt ?? null,
+      rerunOfTaskId: input.rerunOfTaskId ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -114,6 +117,16 @@ export async function insertTask(tx: Tx, ctx: TenantContext, input: NewTaskRow, 
     );
   }
   return { taskId };
+}
+
+/** The id of the plan made from `taskId` by "run again", or null when it has not been run again. */
+export async function findRerunOf(tx: Tx, ctx: TenantContext, taskId: string): Promise<string | null> {
+  const [row] = await tx
+    .select({ id: agentTasks.id })
+    .from(agentTasks)
+    .where(and(eq(agentTasks.companyId, ctx.companyId), eq(agentTasks.rerunOfTaskId, taskId)))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 /** The company's tasks in any of these statuses, newest first. */

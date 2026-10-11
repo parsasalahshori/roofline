@@ -63,6 +63,7 @@ export {
   countWorkingTasks,
   customerFirstNames,
   expireOverdueDrafts,
+  findRerunOf,
   finishClaimedStep,
   getCompanyName,
   getStep,

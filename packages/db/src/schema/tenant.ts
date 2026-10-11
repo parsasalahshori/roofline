@@ -308,10 +308,18 @@ export const agentTasks = pgTable(
     declineReason: text('decline_reason'),
     /** Set when the task finishes. */
     minutesSaved: numeric('minutes_saved', { precision: 10, scale: 2, mode: 'number' }),
+    /**
+     * The expired plan this draft was made from by "run again", or null. A plan is run again at most
+     * once: the unique index below holds even if two reruns race.
+     */
+    rerunOfTaskId: uuid('rerun_of_task_id'),
     ...timestamps(),
   },
   (t) => [
     unique('agent_tasks_company_id_id_uniq').on(t.companyId, t.id),
+    uniqueIndex('agent_tasks_company_rerun_of_uniq')
+      .on(t.companyId, t.rerunOfTaskId)
+      .where(sql`${t.rerunOfTaskId} is not null`),
     index('agent_tasks_company_status_idx').on(t.companyId, t.status, t.createdAt),
     index('agent_tasks_status_expires_idx').on(t.status, t.expiresAt),
     enumCheck('agent_tasks', 'agent', t.agent, AGENTS),

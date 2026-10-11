@@ -2,10 +2,12 @@ import {
   audit,
   countWorkingTasks,
   customerFirstNames,
+  findRerunOf,
   getCompanyName,
   getStep,
   getTask,
   insertTask,
+  isUniqueViolation,
   listSteps,
   listTasks,
   listTasksByStatus,
@@ -54,6 +56,9 @@ const NO_CUSTOMERS = "Some of these customers don't exist.";
 const ALREADY_HANDLED = 'This was already handled.';
 const EXPIRED_PLAN = 'This plan expired before it was approved. You can run it again.';
 const RERUN_ONLY_EXPIRED = 'Only expired plans can be run again.';
+const ALREADY_RERUN = 'This plan was already run again.';
+/** The database's own guard on "one copy per plan" (migration 0006). */
+const RERUN_UNIQUE = 'agent_tasks_company_rerun_of_uniq';
 
 /** A step a person still has to say yes or no to. */
 const OPEN: readonly StepStatus[] = ['pending', 'awaiting_owner'];
@@ -255,6 +260,8 @@ export type NewTask = {
   subjectId?: string;
   expiresAt?: Date;
   mode?: 'needs_approval' | 'live';
+  /** Only `rerunTask` sets this: the expired plan the new one is a fresh copy of. */
+  rerunOfTaskId?: string;
   steps: { type: StepType; payload: unknown }[];
 };
 
@@ -291,6 +298,7 @@ export async function createTask(tx: Tx, ctx: TenantContext, input: NewTask, opt
       subjectId: input.subjectId ?? null,
       ...(input.mode !== undefined && { mode: input.mode }),
       expiresAt: input.expiresAt ?? null,
+      rerunOfTaskId: input.rerunOfTaskId ?? null,
       steps,
     },
     opts.now,
@@ -683,6 +691,11 @@ export async function retryStep(
  * - Only an expired plan: marked `expired`, or a draft past `expiresAt` that the expiry job has not
  *   reached yet (`isExpired`; that draft is marked `expired` now, as the job would). Anything else
  *   is a 409 "Only expired plans can be run again.".
+ * - Only once: the new draft records the plan it came from (`rerun_of_task_id`), and a plan that
+ *   already has a copy is a 409 "This plan was already run again." (a double-click, or two people at
+ *   once). The old plan's row is locked FOR UPDATE before that check, so two reruns are taken one
+ *   after the other and the second sees the first's copy; the unique index on
+ *   `(company_id, rerun_of_task_id)` backs that up, and its violation is the same 409.
  * - The new draft is made with `createTask`, exactly as an agent makes one: the same agent, kind,
  *   title, summary, subject and mode, and the same steps in the same order (type and payload; each
  *   step on, pending, at version 1, with new ids and new idempotency keys). Each payload is checked
@@ -692,34 +705,42 @@ export async function retryStep(
  *   or none when the old plan had none.
  * - The old plan is left as it was (expired, its steps pending). `task.rerun` is audited on the new
  *   task with `{ fromTaskId }`, after `createTask`'s own `task.create`.
- * The old task's row is locked first (the order every task writer takes).
  */
 export async function rerunTask(tx: Tx, ctx: TenantContext, taskId: string, opts: WriteOptions): Promise<TaskView | null> {
   if (!canReview(ctx)) return null;
   const task = await getTask(tx, ctx, taskId, { forUpdate: true });
   if (!task) return null;
   if (!isExpired(task, opts.now)) throw new AppError(409, RERUN_ONLY_EXPIRED);
+  if ((await findRerunOf(tx, ctx, taskId)) !== null) throw new AppError(409, ALREADY_RERUN);
   if (task.status === 'draft') await updateTask(tx, ctx, taskId, { status: 'expired' }, opts.now);
 
   const window = task.expiresAt === null ? null : task.expiresAt.getTime() - task.createdAt.getTime();
   const steps = await listSteps(tx, ctx, [taskId], { payload: true });
-  const { taskId: freshId } = await createTask(
-    tx,
-    ctx,
-    {
-      agent: task.agent,
-      kind: task.kind,
-      title: task.title,
-      ...(task.summary !== null && { summary: task.summary }),
-      ...(task.subjectType !== null && { subjectType: task.subjectType }),
-      ...(task.subjectId !== null && { subjectId: task.subjectId }),
-      mode: task.mode,
-      ...(window !== null && { expiresAt: new Date(opts.now.getTime() + window) }),
-      // createTask refuses a type this build does not know (400 on steps.N.type).
-      steps: steps.map((step) => ({ type: step.type as StepType, payload: step.payload })),
-    },
-    opts,
-  );
+  let freshId: string;
+  try {
+    ({ taskId: freshId } = await createTask(
+      tx,
+      ctx,
+      {
+        agent: task.agent,
+        kind: task.kind,
+        title: task.title,
+        ...(task.summary !== null && { summary: task.summary }),
+        ...(task.subjectType !== null && { subjectType: task.subjectType }),
+        ...(task.subjectId !== null && { subjectId: task.subjectId }),
+        mode: task.mode,
+        ...(window !== null && { expiresAt: new Date(opts.now.getTime() + window) }),
+        rerunOfTaskId: taskId,
+        // createTask refuses a type this build does not know (400 on steps.N.type).
+        steps: steps.map((step) => ({ type: step.type as StepType, payload: step.payload })),
+      },
+      opts,
+    ));
+  } catch (err) {
+    // A copy that slipped past the check above (made by a path that did not take the lock).
+    if (isUniqueViolation(err, RERUN_UNIQUE)) throw new AppError(409, ALREADY_RERUN);
+    throw err;
+  }
 
   await audit(tx, ctx, {
     action: 'task.rerun',

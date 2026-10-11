@@ -13,7 +13,8 @@ import { createTask } from '../tasks/service.ts';
  *
  *   DATABASE_URL_TENANT=... DATABASE_URL_SYSTEM=... npm run seed:demo -w @roofline/api -- --company acme-roofing
  *
- * The company is found by its slug through app_system (companies is global); the plan is then made
+ * The company is found by its slug through app_system (companies is global; apps/api/src/scripts/**
+ * is allowed to import @roofline/db/system, ruled in Task 14); the plan is then made
  * with `createTask` in that company's own app_tenant transaction, as an agent would make it (no
  * person behind it). Prints the new task's id.
  */

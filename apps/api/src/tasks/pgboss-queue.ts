@@ -38,7 +38,7 @@ export const STEP_QUEUE_OPTIONS: Omit<Queue, 'name'> = { policy: 'short', ...STE
 /** What an API process needs from pg-boss: sending only, so no maintenance and no cron. */
 export const SENDER_OPTIONS = { supervise: false, schedule: false } as const;
 
-export type BossOptions = Omit<ConstructorOptions, 'connectionString' | 'schema' | 'db'> & {
+export type BossOptions = Omit<ConstructorOptions, 'connectionString' | 'schema' | 'db' | 'createSchema'> & {
   /** Where pg-boss's own errors go (default `logErrorToConsole`). Gets the error and `'pg-boss'`. */
   logError?: (err: unknown, where: string) => void;
 };
@@ -46,14 +46,16 @@ export type BossOptions = Omit<ConstructorOptions, 'connectionString' | 'schema'
 /**
  * A pg-boss instance on the `pgboss` schema, connecting with `systemUrl` (the app_system URL). It
  * is not started: call `start()` (which installs or upgrades pg-boss's tables when needed) and
- * then `ensureStepQueue`. pg-boss reports background trouble (a lost connection, a failed
+ * then `ensureStepQueue`. `createSchema: false`: the schema already exists (0002), and pg-boss's
+ * `CREATE SCHEMA IF NOT EXISTS` would need CREATE on the whole database, which app_system does
+ * not get. pg-boss reports background trouble (a lost connection, a failed
  * maintenance pass) as `error` events; an EventEmitter with no `error` listener would crash the
  * process, so one is always attached, and it logs in the safe form of `describeErrorForLog`.
  * Warnings (slow queries, a long queue) are logged as one line.
  */
 export function createBoss(systemUrl: string, options: BossOptions = {}): PgBoss {
   const { logError = logErrorToConsole, ...rest } = options;
-  const boss = new PgBoss({ ...rest, connectionString: systemUrl, schema: PGBOSS_SCHEMA });
+  const boss = new PgBoss({ ...rest, connectionString: systemUrl, schema: PGBOSS_SCHEMA, createSchema: false });
   boss.on('error', (err) => {
     try {
       logError(err, 'pg-boss');
