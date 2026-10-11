@@ -135,6 +135,7 @@ describe('GET /api/map/pins', () => {
     const liveJob = await job(owner, live, { stage: 'lead' });
 
     const archivedCustomer = await located(owner, 'Archived Customer', 2, OMAHA);
+    const archivedCustomerJob = await job(owner, archivedCustomer, { stage: 'proposal' });
     const archivedProperty = await located(owner, 'Archived Property', 3, OMAHA);
     const noPlace = await located(owner, 'No Place', 4, null);
     const archivedJob = await job(owner, live, { stage: 'proposal' });
@@ -151,7 +152,7 @@ describe('GET /api/map/pins', () => {
     expect(res.body.customers.map((p: { propertyId: string }) => p.propertyId)).toEqual([live.property.id]);
     expect(res.body.jobs.map((p: { jobId: string }) => p.jobId)).toEqual([liveJob.id]);
     const text = JSON.stringify(res.body);
-    for (const hidden of [archivedCustomer.property.id, archivedProperty.property.id, noPlace.property.id, noPlaceJob.id, archivedJob.id, orphan.id]) {
+    for (const hidden of [archivedCustomer.property.id, archivedCustomerJob.id, archivedProperty.property.id, noPlace.property.id, noPlaceJob.id, archivedJob.id, orphan.id]) {
       expect(text).not.toContain(hidden);
     }
   });

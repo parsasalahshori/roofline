@@ -214,12 +214,13 @@ describe('GET /api/search', () => {
     expect((await search(owner, '🏠'.repeat(150))).status).toBe(200);
   });
 
-  test('leaves out archived customers and jobs, and addresses with no customer or an archived one', async () => {
+  test('leaves out archived customers and their jobs, archived jobs, and addresses with no customer or an archived one', async () => {
     const owner = await who.as('owner');
     const live = await maria(owner);
 
     const gone = await mustCreate(owner, '/api/customers', { displayName: 'Maria Archived' });
     const goneProperty = await mustCreate(owner, '/api/properties', { customerId: gone.id, ...addressFor(5), addressLine: '5 Pine Archived Ct' });
+    const goneJob = await mustCreate(owner, '/api/jobs', { customerId: gone.id, propertyId: goneProperty.id });
     const noCustomer = await mustCreate(owner, '/api/properties', { ...addressFor(6), addressLine: '6 Pine Orphan Ct' });
     const archivedJobCustomer = await mustCreate(owner, '/api/customers', { displayName: 'Maria Jobless' });
     const archivedJobProperty = await mustCreate(owner, '/api/properties', { customerId: archivedJobCustomer.id, ...addressFor(7) });
@@ -232,9 +233,11 @@ describe('GET /api/search', () => {
     const res = await search(owner, 'maria');
     expect(res.body.customers.map((c: { id: string }) => c.id).sort()).toEqual([archivedJobCustomer.id, live.customer.id].sort());
     expect(res.body.jobs.map((j: { id: string }) => j.id)).toEqual([live.job.id]);
+    expect(JSON.stringify(res.body)).not.toContain(goneJob.id);
 
     const addresses = await search(owner, 'pine');
     expect(addresses.body.addresses.map((a: { id: string }) => a.id)).toEqual([live.property.id]);
+    expect(addresses.body.jobs.map((j: { id: string }) => j.id)).toEqual([live.job.id]);
     expect(JSON.stringify(addresses.body)).not.toContain(goneProperty.id);
     expect(JSON.stringify(addresses.body)).not.toContain(noCustomer.id);
   });

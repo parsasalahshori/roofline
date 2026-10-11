@@ -33,10 +33,10 @@ export type SearchAddress = {
 };
 
 /**
- * The same match as `listCustomers`: the name contains the text (any case), or, when the text has
+ * The customer match shared by `listCustomers` and `searchAll`: the name contains the text (any case), or, when the text has
  * three or more digits, one of the customer's numbers contains those digits.
  */
-function customerMatch(q: string): SQL | undefined {
+export function customerMatch(q: string): SQL | undefined {
   const byName = ilike(customers.displayName, `%${escapeLike(q)}%`);
   const digits = q.replace(/\D/g, '');
   if (digits.length < 3) return byName;
@@ -55,7 +55,7 @@ function customerMatch(q: string): SQL | undefined {
  * too short to be useful.
  * - customers: as `listCustomers` (name, or phone digits); by name.
  * - addresses: the street, city or ZIP; only addresses with a customer who is not archived; by street.
- * - jobs: the customer's name or the street of the job's address; newest first.
+ * - jobs: the customer's name or the street of the job's address; newest first; jobs of an archived customer are left out too.
  * Archived records are left out, and a rep sees only what the scope helpers let through.
  */
 export async function searchAll(
@@ -112,6 +112,7 @@ export async function searchAll(
     .where(
       and(
         isNull(jobs.archivedAt),
+        isNull(customers.archivedAt),
         jobScope(ctx),
         or(ilike(customers.displayName, like), ilike(properties.addressLine, like)),
       ),

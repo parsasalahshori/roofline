@@ -55,9 +55,9 @@ const OPEN_STAGES: JobStage[] = ['lead', 'inspection', 'proposal', 'won'];
  * The pin rules, written once so that the count, the points and the clusters cannot disagree.
  * - A customer pin is an address with a location, not archived, of a customer who is not archived;
  *   the member must be allowed to see both (a rep sees only their own customers' addresses).
- * - A job pin is a job still going (`OPEN_STAGES`), not archived, that the member may see, at an
- *   address with a location. A job always has a customer and an address a rep who sees the job may
- *   see, so only the job's own scope applies.
+ * - A job pin is a job still going (`OPEN_STAGES`), not archived, of a customer who is not archived,
+ *   that the member may see, at an address with a location. A job always has a customer and an
+ *   address a rep who sees the job may see, so only the job's own scope applies.
  */
 
 const envelopeOf = (bbox: Bbox) =>
@@ -75,6 +75,7 @@ const customerPinWhere = (ctx: TenantContext, bbox: Bbox) =>
 const jobPinWhere = (ctx: TenantContext, bbox: Bbox) =>
   and(
     isNull(jobs.archivedAt),
+    isNull(customers.archivedAt),
     inArray(jobs.stage, OPEN_STAGES),
     jobScope(ctx),
     sql`ST_Intersects(${properties.geom}, ${envelopeOf(bbox)})`,
@@ -97,6 +98,7 @@ async function countJobPins(tx: Tx, ctx: TenantContext, bbox: Bbox): Promise<num
     .select({ n: count() })
     .from(jobs)
     .innerJoin(properties, eq(jobs.propertyId, properties.id))
+    .innerJoin(customers, eq(jobs.customerId, customers.id))
     .where(jobPinWhere(ctx, bbox));
   return row?.n ?? 0;
 }
@@ -156,6 +158,7 @@ async function clusters(tx: Tx, ctx: TenantContext, bbox: Bbox, layer: PinLayer)
           .select(columns)
           .from(jobs)
           .innerJoin(properties, eq(jobs.propertyId, properties.id))
+          .innerJoin(customers, eq(jobs.customerId, customers.id))
           .where(jobPinWhere(ctx, bbox))
           .groupBy(snapped);
   return rows.map((row) => ({ layer, ...row })).sort((a, b) => a.lng - b.lng || a.lat - b.lat);
