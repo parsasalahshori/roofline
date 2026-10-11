@@ -1,0 +1,58 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  box-shadow: var(--shadow-window);
+}
+
+.name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.address {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.stage {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.stage::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.stage[data-stage="lead"]::before {
+  background: var(--stage-lead);
+}
+
+.stage[data-stage="inspection"]::before {
+  background: var(--stage-inspection);
+}
+
+.stage[data-stage="proposal"]::before {
+  background: var(--stage-proposal);
+}
+
+.stage[data-stage="won"]::before,
+.stage[data-stage="installed"]::before {
+  background: var(--stage-won);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

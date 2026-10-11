@@ -1,8 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { ApiError, apiFetch } from './client.ts';
+import type { Bbox } from '../shell/map/types.ts';
 import { keys } from './keys.ts';
-import type { Account, SignInResult } from './types.ts';
+import type { Account, MapArea, PinsResult, SignInResult } from './types.ts';
 
 /*
  * The hooks every screen shares. Later tasks add theirs to this file, beside the query keys they use.
@@ -67,5 +68,29 @@ export function useSwitchCompany() {
       queryClient.setQueryData(keys.me, account);
       return queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== keys.me[0] });
     },
+  });
+}
+
+/** The company's service area and the box that fits it. It changes rarely, so it is kept for a while. */
+export function useMapArea() {
+  return useQuery({
+    queryKey: keys.mapArea,
+    queryFn: ({ signal }) => apiFetch<MapArea>('/api/map/area', { signal }),
+    staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * The pins inside a box on the map. With no box (the map has not told us its view yet) nothing is
+ * asked. While the next box loads, the last answer stays, so the pins do not blink on every move.
+ */
+export function useMapPins(bbox: Bbox | null) {
+  const bboxKey = bbox === null ? null : bbox.join(',');
+  return useQuery({
+    queryKey: keys.pins(bboxKey ?? ''),
+    queryFn: ({ signal }) => apiFetch<PinsResult>(`/api/map/pins?bbox=${bboxKey}&layers=customers,jobs`, { signal }),
+    enabled: bboxKey !== null,
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
   });
 }
