@@ -1,0 +1,79 @@
+/* Desktop: a panel on the right edge. Fixed, so it is not clipped by a window it is opened from. */
+.sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(440px, 100vw);
+  overflow: hidden;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-window);
+}
+
+/* The container takes focus so the title is read out; it is not a control, so it gets no ring. */
+.sheet:focus-visible {
+  outline: none;
+}
+
+.titleBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  min-width: 0;
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 20px;
+  overflow: auto;
+}
+
+.footer {
+  flex: none;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+/* Phone: a sheet rising from the bottom edge, as tall as its content up to most of the screen */
+@media (max-width: 767.98px) {
+  .sheet {
+    top: auto;
+    left: 0;
+    width: auto;
+    max-height: 85vh;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    border-radius: var(--radius-window) var(--radius-window) 0 0;
+  }
+
+  .titleBar {
+    padding-left: 16px;
+  }
+
+  .body {
+    padding: 16px;
+  }
+
+  .footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}

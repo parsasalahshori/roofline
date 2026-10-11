@@ -1,0 +1,105 @@
+/*
+ * Fixed with inset 0 and auto margins, so a window with a width and a height sits in the middle of
+ * the screen and one without fills it. The map stays visible around a floating window, and the
+ * page behind it is not blocked.
+ */
+.window {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.window[data-variant="floating"] {
+  width: min(90vw, 1280px);
+  height: min(90vh, 860px);
+  border-radius: var(--radius-window);
+  box-shadow: var(--shadow-window);
+}
+
+.window[data-variant="page"] {
+  width: auto;
+  height: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Focus lands on the dialog so its title is read out; it is a container, not a control, so it gets no ring. */
+.window:focus-visible {
+  outline: none;
+}
+
+.titleBar {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.heading {
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.description {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.stats {
+  flex: none;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+/* The body is the one part that scrolls; min-height lets it shrink inside the flex column. */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 20px;
+  overflow: auto;
+}
+
+/* A flex sibling of the scrolling body, so it stays at the bottom edge however long the body is */
+.footer {
+  flex: none;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+@media (max-width: 767.98px) {
+  .titleBar {
+    padding-left: 16px;
+  }
+
+  .stats,
+  .footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .body {
+    padding: 16px;
+  }
+}
