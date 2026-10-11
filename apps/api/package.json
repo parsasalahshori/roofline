@@ -10,7 +10,8 @@
     "start": "tsx src/server.ts",
     "dev": "tsx watch src/server.ts",
     "seed:demo": "tsx src/scripts/seed-demo.ts",
-    "seed:dev": "tsx src/scripts/seed-dev.ts"
+    "seed:dev": "tsx src/scripts/seed-dev.ts",
+    "sync:stripe-plans": "tsx src/scripts/sync-stripe-plans.ts"
   },
   "dependencies": {
     "@roofline/db": "^0.0.0",
