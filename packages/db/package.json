@@ -11,6 +11,7 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "tsx scripts/migrate.ts",
+    "preflight": "tsx scripts/preflight.ts",
     "set-role-passwords": "tsx scripts/set-role-passwords.ts"
   },
   "dependencies": {

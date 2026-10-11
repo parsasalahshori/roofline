@@ -17,6 +17,7 @@
     "test": "vitest run",
     "db:up": "docker compose up -d --wait db",
     "db:migrate": "npm run migrate -w @roofline/db",
+    "db:preflight": "npm run preflight -w @roofline/db",
     "db:generate": "npm run generate -w @roofline/db",
     "dev:worker": "npm run dev -w @roofline/worker",
     "dev:api": "npm run dev -w @roofline/api",
