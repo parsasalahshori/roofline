@@ -1,9 +1,9 @@
-import { and, asc, desc, eq, gt, like, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, like, lt, or } from 'drizzle-orm';
 import type { CompanyStatus, Role } from '@roofline/shared';
 import { isUniqueViolation } from '../errors.ts';
 import type { Db } from '../pools.ts';
 import { pickFreeSlug, slugify } from '../repos/companies.ts';
-import { companies, memberships, sessions, users } from '../schema/index.ts';
+import { companies, memberships, sessions, type USER_TOKEN_KINDS, users, userTokens } from '../schema/index.ts';
 
 /*
  * Authentication data access. These run on the app_system pool: users, sessions and memberships
@@ -292,4 +292,132 @@ export async function getAccountSummary(system: Db, userId: string, companyId: s
     role: current.role,
     companies: active.map((m) => ({ id: m.id, name: m.name })),
   };
+}
+
+export type UserTokenKind = (typeof USER_TOKEN_KINDS)[number];
+
+export type NewUserToken = {
+  userId: string;
+  kind: UserTokenKind;
+  tokenHash: string;
+  /** The app clock's `now()`. Stamps the tokens this call retires. */
+  now: Date;
+  expiresAt: Date;
+};
+
+/** What `system.transaction` hands its callback. */
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/**
+ * Stores a verification or reset token (its hash, never the token). A user has at most one live
+ * reset link: in the same transaction, their earlier unused reset tokens are marked used at
+ * `now`, so the newest email is the only one that works. The user's row is locked first, so two
+ * requests issuing at once queue up instead of both leaving a live token behind. Verification
+ * links do not replace each other: an older email still works.
+ */
+export async function insertUserToken(system: Db, input: NewUserToken): Promise<void> {
+  await system.transaction(async (tx) => {
+    if (input.kind === 'reset_password') {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).for('update');
+      await tx
+        .update(userTokens)
+        .set({ usedAt: input.now })
+        .where(
+          and(eq(userTokens.userId, input.userId), eq(userTokens.kind, 'reset_password'), isNull(userTokens.usedAt)),
+        );
+    }
+    await tx.insert(userTokens).values({
+      userId: input.userId,
+      kind: input.kind,
+      tokenHash: input.tokenHash,
+      expiresAt: input.expiresAt,
+    });
+  });
+}
+
+/**
+ * Spends a token: one UPDATE that matches only a token of this kind that is unused and not yet
+ * expired at `now` (`expires_at > now`: the last valid moment is the one before it), so of any
+ * number of simultaneous attempts exactly one gets the user id and the rest get null.
+ */
+async function claimUserToken(exec: Pick<Tx, 'update'>, tokenHash: string, kind: UserTokenKind, now: Date) {
+  const [row] = await exec
+    .update(userTokens)
+    .set({ usedAt: now })
+    .where(
+      and(
+        eq(userTokens.tokenHash, tokenHash),
+        eq(userTokens.kind, kind),
+        isNull(userTokens.usedAt),
+        gt(userTokens.expiresAt, now),
+      ),
+    )
+    .returning({ userId: userTokens.userId });
+  return row?.userId ?? null;
+}
+
+/** Spends the token and nothing else. Returns the user it was issued to, or null when it cannot be used. */
+export async function consumeUserToken(
+  system: Db,
+  tokenHash: string,
+  kind: UserTokenKind,
+  now: Date,
+): Promise<string | null> {
+  return claimUserToken(system, tokenHash, kind, now);
+}
+
+/** True when the token exists, is of this kind, is unused and is not expired at `now`. Spends nothing. */
+export async function isUserTokenLive(system: Db, tokenHash: string, kind: UserTokenKind, now: Date): Promise<boolean> {
+  const [row] = await system
+    .select({ id: userTokens.id })
+    .from(userTokens)
+    .where(
+      and(
+        eq(userTokens.tokenHash, tokenHash),
+        eq(userTokens.kind, kind),
+        isNull(userTokens.usedAt),
+        gt(userTokens.expiresAt, now),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
+ * Spends an email-verification token and marks the user's email verified at `now` (a no-op if it
+ * already was), in one transaction. Null when the token cannot be used.
+ */
+export async function verifyEmailWithToken(system: Db, tokenHash: string, now: Date): Promise<string | null> {
+  return system.transaction(async (tx) => {
+    const userId = await claimUserToken(tx, tokenHash, 'verify_email', now);
+    if (userId === null) return null;
+    await tx
+      .update(users)
+      .set({ emailVerifiedAt: now })
+      .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)));
+    return userId;
+  });
+}
+
+/**
+ * Spends a reset token, then in the same transaction sets the user's password, marks their email
+ * verified if it was not (a reset link proves they read that inbox) and deletes ALL of their
+ * sessions. Either everything happens or none of it does: a failure leaves the token usable and
+ * the old password and sessions in place. Null when the token cannot be used.
+ */
+export async function resetPasswordWithToken(
+  system: Db,
+  input: { tokenHash: string; passwordHash: string; now: Date },
+): Promise<string | null> {
+  return system.transaction(async (tx) => {
+    const userId = await claimUserToken(tx, input.tokenHash, 'reset_password', input.now);
+    if (userId === null) return null;
+    await tx.update(users).set({ passwordHash: input.passwordHash }).where(eq(users.id, userId));
+    await tx
+      .update(users)
+      .set({ emailVerifiedAt: input.now })
+      .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)));
+    await tx.delete(sessions).where(eq(sessions.userId, userId));
+    return userId;
+  });
 }

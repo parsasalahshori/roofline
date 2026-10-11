@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import request from 'supertest';
-import { beforeEach, describe, expect, inject, test, vi } from 'vitest';
-import { companySettings, type Pools, withTenant } from '@roofline/db';
+import { afterAll, beforeEach, describe, expect, inject, test, vi } from 'vitest';
+import { companySettings, createPools, type Pools, withTenant } from '@roofline/db';
 import { hashPassword as seedHashPassword, resetDb, SEED_PASSWORD } from '@roofline/db/testing';
 import { createApp } from '../src/app.ts';
-import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from '../src/auth/password.ts';
+import { COST, DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from '../src/auth/password.ts';
 import * as passwordModule from '../src/auth/password.ts';
+import { resolveSession } from '../src/auth/sessions.ts';
 import { makeTestApp, loginAs, type SuperAgent, type TestApp } from './helpers.ts';
 
 // verifyPassword is wrapped (it still runs for real) so a test can see what it was called with.
@@ -104,6 +105,17 @@ describe('password hashing', () => {
     expect(parts.slice(0, 4)).toEqual(['scrypt', '16384', '8', '1']);
     expect(Buffer.from(parts[4]!, 'base64')).toHaveLength(16);
     expect(Buffer.from(parts[5]!, 'base64')).toHaveLength(64);
+  });
+
+  test('DUMMY_PASSWORD_HASH has the same cost parameters as every real hash (it follows COST, not a copy of it)', async () => {
+    const dummy = DUMMY_PASSWORD_HASH.split('$');
+    const real = (await hashPassword(PASSWORD)).split('$');
+    expect(dummy.slice(0, 4)).toEqual(['scrypt', String(COST.N), String(COST.r), String(COST.p)]);
+    expect(dummy.slice(0, 4)).toEqual(real.slice(0, 4));
+    expect(Buffer.from(dummy[4]!, 'base64')).toHaveLength(Buffer.from(real[4]!, 'base64').length);
+    expect(Buffer.from(dummy[5]!, 'base64')).toHaveLength(Buffer.from(real[5]!, 'base64').length);
+    // And it is a hash the verifier accepts as well-formed: a wrong password is a clean "no".
+    expect(await verifyPassword(PASSWORD, DUMMY_PASSWORD_HASH)).toBe(false);
   });
 });
 
@@ -517,7 +529,7 @@ describe('requireSession', () => {
   });
 
   test('the public auth routes are reachable without a session', async () => {
-    // These get past the gate; each answers for itself (the later ones do not exist yet: 404).
+    // These get past the gate; each answers for itself (google and accept-invite do not exist yet: 404).
     expect((await request(t.app).post('/api/auth/signup').send({})).status).toBe(400);
     expect((await request(t.app).post('/api/auth/login').send({})).status).toBe(400);
     for (const route of ['verify-email', 'reset-request', 'reset', 'google', 'accept-invite']) {
@@ -779,5 +791,219 @@ describe('GET /api/auth/me', () => {
     const agent = await loginAs(t.app, t.seed.a.owner);
     const me = await agent.get('/api/auth/me');
     expect(JSON.stringify(me.body)).not.toMatch(/scrypt|password|token|hash/i);
+  });
+});
+
+describe('sign-up rate limit', () => {
+  const TOO_MANY = { error: 'Too many sign-ups from here. Try again later.' };
+
+  test('10 sign-ups an hour from one address; the 11th → 429 with the exact sentence', async () => {
+    for (let i = 1; i <= 10; i++) {
+      const res = await signup(t.app, { email: `owner${i}@example.com`, companyName: `Company ${i}` });
+      expect(res.status, `sign-up ${i}`).toBe(201);
+    }
+    const blocked = await signup(t.app, { email: 'owner11@example.com', companyName: 'Company 11' });
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toEqual(TOO_MANY);
+    expect(sessionCookie(blocked)).toBeNull();
+    expect(await sql('select 1 from users where email = $1', ['owner11@example.com'])).toEqual([]);
+  });
+
+  test('refused attempts count too, so the "email already used" answer cannot be asked 10+ times', async () => {
+    expect((await signup(t.app)).status).toBe(201);
+    for (let i = 2; i <= 10; i++) {
+      expect((await signup(t.app)).status, `attempt ${i}`).toBe(409);
+    }
+    const blocked = await signup(t.app);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toEqual(TOO_MANY);
+  });
+
+  test('another address has its own budget', async () => {
+    const proxied = await makeTestApp({ TRUST_PROXY: 1 });
+    const from = (ip: string, n: number) =>
+      request(proxied.app)
+        .post('/api/auth/signup')
+        .set('X-Forwarded-For', ip)
+        .send(signupBody({ email: `owner${n}@example.com`, companyName: `Company ${n}` }));
+    for (let i = 1; i <= 10; i++) expect((await from('203.0.113.7', i)).status).toBe(201);
+    expect((await from('203.0.113.7', 11)).status).toBe(429);
+    expect((await from('203.0.113.8', 12)).status).toBe(201);
+  });
+
+  test('it does not touch login or the other routes', async () => {
+    for (let i = 1; i <= 10; i++) await signup(t.app, { email: `owner${i}@example.com`, companyName: `Company ${i}` });
+    expect((await signup(t.app, { email: 'owner11@example.com' })).status).toBe(429);
+    const res = await request(t.app)
+      .post('/api/auth/login')
+      .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
+    expect(res.status).toBe(200);
+    expect((await request(t.app).get('/health')).status).toBe(200);
+  });
+});
+
+describe('email length', () => {
+  /** A syntactically valid address of exactly `length` characters (64-character local part, then labels of at most 63). */
+  function emailOfLength(length: number): string {
+    const head = `${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.`;
+    const tail = '.com';
+    const email = `${head}${'d'.repeat(length - head.length - tail.length)}${tail}`;
+    expect(email).toHaveLength(length);
+    return email;
+  }
+  const EMAIL_MESSAGE = 'Please enter a valid email address.';
+
+  test('sign-up: 254 characters is accepted, 255 → 400 with the email sentence', async () => {
+    const tooLong = await signup(t.app, { email: emailOfLength(255) });
+    expect(tooLong.status).toBe(400);
+    expect(tooLong.body).toEqual({ error: EMAIL_MESSAGE, field: 'email' });
+    const ok = await signup(t.app, { email: emailOfLength(254) });
+    expect(ok.status).toBe(201);
+    expect(ok.body.user.email).toBe(emailOfLength(254));
+  });
+
+  test('login: 255 characters → 400 with the email sentence, without a lookup or a password check', async () => {
+    const res = await request(t.app)
+      .post('/api/auth/login')
+      .send({ email: emailOfLength(255), password: 'whatever it is' });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: EMAIL_MESSAGE, field: 'email' });
+    expect(vi.mocked(passwordModule.verifyPassword)).not.toHaveBeenCalled();
+  });
+
+  test('login: 254 characters still reaches the normal "doesn\'t match" answer', async () => {
+    const res = await request(t.app)
+      .post('/api/auth/login')
+      .send({ email: emailOfLength(254), password: 'whatever it is' });
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: BAD_LOGIN });
+  });
+});
+
+describe('signing in on a browser that is already signed in', () => {
+  async function sessionIds(agent: SuperAgent): Promise<string[]> {
+    const res = await agent.get('/api/auth/sessions');
+    expect(res.status).toBe(200);
+    return (res.body.sessions as { id: string }[]).map((s) => s.id);
+  }
+
+  test('logging in twice with the same agent leaves one session, and it is the new one', async () => {
+    const agent = await loginAs(t.app, t.seed.a.owner);
+    const [first] = await sessionIds(agent);
+    expect(await sessionIds(agent)).toHaveLength(1);
+
+    const again = await agent.post('/api/auth/login').send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
+    expect(again.status).toBe(200);
+    const after = await sessionIds(agent);
+    expect(after).toHaveLength(1);
+    expect(after[0]).not.toBe(first);
+    expect(await sql('select 1 from sessions where user_id = $1', [t.seed.a.owner.userId])).toHaveLength(1);
+  });
+
+  test('the cookie that was replaced no longer works anywhere', async () => {
+    const first = await request(t.app)
+      .post('/api/auth/login')
+      .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
+    const oldCookie = `rl_session=${sessionCookie(first)!.value}`;
+    const second = await request(t.app)
+      .post('/api/auth/login')
+      .set('Cookie', oldCookie)
+      .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
+    expect(second.status).toBe(200);
+    expect((await request(t.app).get('/api/auth/me').set('Cookie', oldCookie)).status).toBe(401);
+    const newCookie = `rl_session=${sessionCookie(second)!.value}`;
+    expect((await request(t.app).get('/api/auth/me').set('Cookie', newCookie)).status).toBe(200);
+  });
+
+  test('signing in as someone else on the same browser leaves no session behind for the first user', async () => {
+    const agent = await loginAs(t.app, t.seed.a.owner);
+    await agent.post('/api/auth/login').send({ email: t.seed.a.office.email, password: SEED_PASSWORD });
+    expect(await sql('select 1 from sessions where user_id = $1', [t.seed.a.owner.userId])).toEqual([]);
+    expect((await agent.get('/api/auth/me')).body.user.email).toBe(t.seed.a.office.email);
+  });
+
+  test("other devices of the same user are not touched", async () => {
+    const phone = await loginAs(t.app, t.seed.a.owner);
+    const laptop = await loginAs(t.app, t.seed.a.owner);
+    await laptop.post('/api/auth/login').send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
+    expect((await phone.get('/api/auth/me')).status).toBe(200);
+    expect(await sql('select 1 from sessions where user_id = $1', [t.seed.a.owner.userId])).toHaveLength(2);
+  });
+
+  test('a failed login leaves the current session as it was', async () => {
+    const agent = await loginAs(t.app, t.seed.a.owner);
+    const [id] = await sessionIds(agent);
+    const bad = await agent.post('/api/auth/login').send({ email: t.seed.a.owner.email, password: 'wrong password' });
+    expect(bad.status).toBe(401);
+    expect(await sessionIds(agent)).toEqual([id]);
+  });
+
+  test('a login with a dead cookie just starts one session', async () => {
+    const res = await request(t.app)
+      .post('/api/auth/login')
+      .set('Cookie', `rl_session=${'x'.repeat(43)}`)
+      .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
+    expect(res.status).toBe(200);
+    expect(await sql('select 1 from sessions where user_id = $1', [t.seed.a.owner.userId])).toHaveLength(1);
+  });
+
+  test('signing up while signed in replaces the session too', async () => {
+    const agent = await loginAs(t.app, t.seed.a.owner);
+    const res = await agent.post('/api/auth/signup').send(signupBody());
+    expect(res.status).toBe(201);
+    expect(await sql('select 1 from sessions where user_id = $1', [t.seed.a.owner.userId])).toEqual([]);
+    expect((await agent.get('/api/auth/me')).body.user.email).toBe('owner@example.com');
+  });
+});
+
+describe('role and spend approval are read fresh on every request', () => {
+  // The change is made on a separate connection as the table owner, the way an admin would outside the app.
+  let ownerPools: Pools | undefined;
+  async function asOwner(text: string, params: unknown[] = []): Promise<void> {
+    const urls = inject('dbUrls');
+    ownerPools ??= createPools({ tenant: urls.owner, system: urls.owner });
+    await ownerPools.system.$client.query(text, params);
+  }
+  afterAll(async () => {
+    await ownerPools?.end();
+  });
+
+  test('promoting an office user to owner with spend approval shows on the next /me, with no re-login', async () => {
+    const login = await request(t.app)
+      .post('/api/auth/login')
+      .send({ email: t.seed.a.office.email, password: SEED_PASSWORD });
+    const token = sessionCookie(login)!.value;
+    const cookie = `rl_session=${token}`;
+
+    const before = await request(t.app).get('/api/auth/me').set('Cookie', cookie);
+    expect(before.body.role).toBe('office');
+    expect(await resolveSession(t.deps.pools.system, token, t.clock.now())).toMatchObject({
+      role: 'office',
+      canApproveSpend: false,
+    });
+
+    await asOwner("update memberships set role = 'owner', can_approve_spend = true where user_id = $1 and company_id = $2", [
+      t.seed.a.office.userId,
+      t.seed.a.companyId,
+    ]);
+
+    const after = await request(t.app).get('/api/auth/me').set('Cookie', cookie);
+    expect(after.status).toBe(200);
+    expect(after.body.role).toBe('owner');
+    expect(await resolveSession(t.deps.pools.system, token, t.clock.now())).toMatchObject({
+      role: 'owner',
+      canApproveSpend: true,
+    });
+
+    // And back down again the same way.
+    await asOwner("update memberships set role = 'rep', can_approve_spend = false where user_id = $1 and company_id = $2", [
+      t.seed.a.office.userId,
+      t.seed.a.companyId,
+    ]);
+    expect((await request(t.app).get('/api/auth/me').set('Cookie', cookie)).body.role).toBe('rep');
+    expect(await resolveSession(t.deps.pools.system, token, t.clock.now())).toMatchObject({
+      role: 'rep',
+      canApproveSpend: false,
+    });
   });
 });

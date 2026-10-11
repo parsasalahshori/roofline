@@ -29,10 +29,10 @@ const PUBLIC_ROUTES: ReadonlySet<string> = new Set(
   [
     'signup',
     'login',
-    // Added by the tasks that build them; listed now so the sign-in gate never needs to change.
     'verify-email',
     'reset-request',
     'reset',
+    // Added by the tasks that build them; listed now so the sign-in gate never needs to change.
     'google',
     'accept-invite',
   ].map((name) => `POST /auth/${name}`),
@@ -81,8 +81,8 @@ export function attachSession(deps: AppDeps): RequestHandler {
 
 /**
  * Second half of the gate: no live session means 401 "Please sign in.", except on the public auth
- * routes (sign-up, login and the later verify, reset and invite routes). Mounted once on /api, so
- * every route added later is behind it by default.
+ * routes (sign-up, login, email verification, password reset and, later, Google sign-in and invite
+ * acceptance). Mounted once on /api, so every route added later is behind it by default.
  */
 export const requireSession: RequestHandler = (req, _res, next) => {
   if ((req.session as SessionInfo | undefined) !== undefined || isPublicRoute(req.method, req.path)) {
@@ -90,4 +90,20 @@ export const requireSession: RequestHandler = (req, _res, next) => {
     return;
   }
   next(new AppError(401, MESSAGES.signIn));
+};
+
+/**
+ * For routes that need a confirmed email address (inviting teammates, in Task 9). Mount it after
+ * the sign-in gate. An unconfirmed address → 403 "Please confirm your email first. We sent you a
+ * link." The check reads `req.session.emailVerified`, which the gate refreshes from the database
+ * on every request, so confirming the email lifts the block on the very next request.
+ */
+export const requireVerifiedEmail: RequestHandler = (req, _res, next) => {
+  const session = req.session as SessionInfo | undefined;
+  if (!session) {
+    // Behind the gate this cannot happen; if a route is ever mounted without it, say what is true.
+    next(new AppError(401, MESSAGES.signIn));
+    return;
+  }
+  next(session.emailVerified ? undefined : new AppError(403, MESSAGES.verifyEmailFirst));
 };

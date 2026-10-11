@@ -1,4 +1,4 @@
-import { randomBytes, scrypt, type ScryptOptions, timingSafeEqual } from 'node:crypto';
+import { randomBytes, scrypt, scryptSync, type ScryptOptions, timingSafeEqual } from 'node:crypto';
 
 /**
  * Password hashes are `scrypt$N$r$p$<salt base64>$<hash base64>` (a 64-byte key and a 16-byte
@@ -6,7 +6,7 @@ import { randomBytes, scrypt, type ScryptOptions, timingSafeEqual } from 'node:c
  * `verifyPassword` reads the cost parameters from the stored string, so raising them later does
  * not lock out hashes written with the old ones.
  */
-const COST = { N: 16384, r: 8, p: 1 } as const;
+export const COST = { N: 16384, r: 8, p: 1 } as const;
 const KEY_BYTES = 64;
 const SALT_BYTES = 16;
 
@@ -21,11 +21,15 @@ function derive(password: string, salt: Buffer, keyBytes: number, options: Scryp
   });
 }
 
+function format(salt: Buffer, key: Buffer): string {
+  return ['scrypt', COST.N, COST.r, COST.p, salt.toString('base64'), key.toString('base64')].join('$');
+}
+
 /** scrypt with a random salt. Passwords are hashed exactly as typed (no trimming or normalising). */
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(SALT_BYTES);
   const key = await derive(password, salt, KEY_BYTES, COST);
-  return ['scrypt', COST.N, COST.r, COST.p, salt.toString('base64'), key.toString('base64')].join('$');
+  return format(salt, key);
 }
 
 function wholeNumber(text: string | undefined): number | null {
@@ -60,10 +64,15 @@ export async function verifyPassword(password: string, stored: string): Promise<
 }
 
 /**
- * A valid hash of a password nobody knows (generated once with random input and discarded).
+ * A valid hash of a password nobody knows, made when this module loads from the same COST and key
+ * and salt sizes as every real hash, so it can never drift from them when COST is raised.
+ * The salt is fixed; the password is 32 random bytes that are never kept.
  * Login checks the typed password against this when the email has no account, or the account has
  * no password, so those requests spend the same scrypt time as a wrong password and the response
- * time does not reveal which emails have accounts.
+ * time does not reveal which emails have accounts. (It is never a way in: those requests are
+ * refused whatever the check returns.)
  */
-export const DUMMY_PASSWORD_HASH =
-  'scrypt$16384$8$1$BMYuHYbqeOQru+ArKb6xkw==$esIm97DA7Io7KvX1OkAF/XdLZ24uy3+Cl0M0i1KxGoX3NFDTxs2sdZ4SXNMmnJUrg7gOWrUvDr594SsV3ioS6w==';
+export const DUMMY_PASSWORD_HASH = (() => {
+  const salt = Buffer.alloc(SALT_BYTES, 0x5a);
+  return format(salt, scryptSync(randomBytes(32), salt, KEY_BYTES, COST));
+})();

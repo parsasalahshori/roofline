@@ -1,6 +1,9 @@
 import type { ZodType } from 'zod';
 import { AppError, fieldOf, MESSAGES } from './errors.ts';
 
+/** The longest email address there is (RFC 5321: 254 characters). Every email field in the API is capped at this. */
+export const MAX_EMAIL_LENGTH = 254;
+
 /**
  * Checks `value` against `schema` and returns the parsed result, or throws a 400 AppError.
  * - `field` is the first issue's path joined with dots (`address.zip`, `items.1.qty`).

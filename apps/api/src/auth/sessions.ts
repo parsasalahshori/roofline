@@ -16,6 +16,16 @@ export const SESSION_RENEW_AFTER_MS = HOUR_MS;
 /** 32 random bytes as base64url is always 43 characters from this alphabet. */
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
 
+/** 32 random bytes, base64url. Session cookies and the emailed verification and reset links all use this. */
+export function generateToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/** True for a string that could be a token from `generateToken`. A cheap check before any database lookup. */
+export function isWellFormedToken(token: string): boolean {
+  return TOKEN_SHAPE.test(token);
+}
+
 /** Who is signed in and where. Everything but `sessionId` comes from the live membership row. */
 export type SessionInfo = {
   sessionId: string;
@@ -44,7 +54,7 @@ const MAX_USER_AGENT_LENGTH = 512;
 
 /** Starts a session and returns the raw token for the cookie. The token itself is never stored. */
 export async function createSession(system: Db, input: NewSessionInput): Promise<{ token: string }> {
-  const token = randomBytes(32).toString('base64url');
+  const token = generateToken();
   await insertSession(system, {
     tokenHash: hashToken(token),
     userId: input.userId,
@@ -70,7 +80,7 @@ export type ResolvedSession = {
  * unknown, expired, or whose membership is no longer active.
  */
 export async function resolveSessionDetailed(system: Db, token: string, now: Date): Promise<ResolvedSession | null> {
-  if (!TOKEN_SHAPE.test(token)) return null;
+  if (!isWellFormedToken(token)) return null;
   const tokenHash = hashToken(token);
   const found = await findLiveSession(system, tokenHash, now);
   if (!found) return null;

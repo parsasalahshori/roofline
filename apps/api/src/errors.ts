@@ -19,6 +19,11 @@ export const MESSAGES = {
   noAccess: 'Your access to this company is turned off. Ask the owner to turn it back on.',
   tooManyLogins: 'Too many sign-in attempts. Try again in a few minutes.',
   tooFast: "You're going a little fast. Try again in a minute.",
+  tooManySignups: 'Too many sign-ups from here. Try again later.',
+  tooManyEmails: "We've already sent you a few emails. Please check your inbox, or try again in an hour.",
+  linkUsed: 'That link has already been used or has expired.',
+  linkIncomplete: 'That link is incomplete. Please open it again from your email.',
+  verifyEmailFirst: 'Please confirm your email first. We sent you a link.',
 } as const;
 
 export type ErrorBody = { error: string; field?: string };

@@ -1,7 +1,9 @@
 import type { RequestHandler } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
+import type { SessionInfo } from './auth/sessions.ts';
 import type { Config } from './config.ts';
 import { AppError, MESSAGES } from './errors.ts';
+import { MAX_EMAIL_LENGTH } from './validate.ts';
 
 /*
  * Rate limiters. The counters live in this process's memory (express-rate-limit's default store),
@@ -10,8 +12,13 @@ import { AppError, MESSAGES } from './errors.ts';
  */
 
 const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
 const LOGIN_WINDOW_MS = 15 * MINUTE_MS;
 const LOGIN_ATTEMPTS = 10;
+const SIGNUP_PER_IP_PER_HOUR = 10;
+const RESET_REQUEST_PER_IP_PER_HOUR = 20;
+const RESET_REQUEST_PER_EMAIL_PER_HOUR = 5;
+const RESEND_PER_USER_PER_HOUR = 3;
 
 /**
  * `/api/*`: `API_RATE_LIMIT_PER_MIN` requests a minute per session. The key is the session's token
@@ -59,6 +66,81 @@ export function loginRateLimit(): RequestHandler {
     keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? 'unknown')}|${loginEmail(req.body)}`,
     handler: (_req, _res, next) => {
       next(new AppError(429, MESSAGES.tooManyLogins));
+    },
+  });
+}
+
+/**
+ * `POST /api/auth/signup`: 10 an hour per IP address. Every attempt counts, including refused ones
+ * (an email that is already taken, bad input), so the "that email already has an account" answer
+ * cannot be asked in bulk and a script cannot flood addresses with verification emails.
+ * Mount it after the JSON body parser.
+ */
+export function signupRateLimit(): RequestHandler {
+  return rateLimit({
+    windowMs: HOUR_MS,
+    limit: SIGNUP_PER_IP_PER_HOUR,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => `signup:${ipKeyGenerator(req.ip ?? 'unknown')}`,
+    handler: (_req, _res, next) => {
+      next(new AppError(429, MESSAGES.tooManySignups));
+    },
+  });
+}
+
+/** What `POST /api/auth/reset-request` answers, to everyone, whatever happened behind it. */
+const answerOk: RequestHandler = (_req, res) => {
+  res.json({ ok: true });
+};
+
+/**
+ * `POST /api/auth/reset-request`: two limits, 20 an hour per IP address and 5 an hour per email
+ * (trimmed, lowercased; the email limit applies only to a request that names an email address of
+ * a possible length, since anything else is refused as invalid before it matters).
+ * Over a limit the answer is the normal `200 {ok: true}` with no headers that say "throttled",
+ * and the route is not run, so no email goes out. Answering 429 would tell a stranger which
+ * addresses are being asked about; staying silent tells them nothing. The IP limit comes first,
+ * so a script cannot grow the per-email table faster than 20 entries an hour per address.
+ * Returns the two limiters in order; mount them both, after the JSON body parser.
+ */
+export function resetRequestRateLimit(): RequestHandler[] {
+  const common = { windowMs: HOUR_MS, standardHeaders: false, legacyHeaders: false, handler: answerOk } as const;
+  return [
+    rateLimit({
+      ...common,
+      limit: RESET_REQUEST_PER_IP_PER_HOUR,
+      keyGenerator: (req) => `reset-ip:${ipKeyGenerator(req.ip ?? 'unknown')}`,
+    }),
+    rateLimit({
+      ...common,
+      limit: RESET_REQUEST_PER_EMAIL_PER_HOUR,
+      skip: (req) => {
+        const email = loginEmail(req.body);
+        return email === '' || email.length > MAX_EMAIL_LENGTH;
+      },
+      keyGenerator: (req) => `reset-email:${loginEmail(req.body)}`,
+    }),
+  ];
+}
+
+/**
+ * `POST /api/auth/resend-verification`: 3 an hour per user, across all of their sessions (the key
+ * is the user id the sign-in gate found, so signing in again does not reset the count).
+ * Mount it after the sign-in gate.
+ */
+export function resendVerificationRateLimit(): RequestHandler {
+  return rateLimit({
+    windowMs: HOUR_MS,
+    limit: RESEND_PER_USER_PER_HOUR,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      const session = req.session as SessionInfo | undefined;
+      return session ? `resend:${session.userId}` : `resend-ip:${ipKeyGenerator(req.ip ?? 'unknown')}`;
+    },
+    handler: (_req, _res, next) => {
+      next(new AppError(429, MESSAGES.tooManyEmails));
     },
   });
 }
