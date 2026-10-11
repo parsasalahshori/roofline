@@ -1,0 +1,66 @@
+/*
+ * Layers, bottom to top: the map, an open window (20), the top bar (25), the dock (30). The Sheet (40)
+ * and toasts (50) come from the kit. Nothing here sets a z-index, transform, filter or opacity on the
+ * shell itself or on the outlet, so the window and the dock compare in the page's own stacking context.
+ * A floating window is kept between the top bar and the dock (the last rule), so neither one covers it.
+ */
+.shell {
+  color: var(--text);
+}
+
+.map {
+  position: fixed;
+  inset: 0;
+}
+
+.topBar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 25;
+}
+
+/*
+ * Desktop only: the end slot (weather, search, account) is never narrower than its content, so it
+ * cannot spill left over the middle. The company name on the left takes the squeeze and ends in an
+ * ellipsis. When both sides fit in equal columns the middle stays centered, as the kit intends.
+ * `.topBar > header` is 0,1,1 and beats the kit's 0,1,0. The phone bar belongs to Task 17.
+ */
+@media (min-width: 768px) {
+  .topBar > header {
+    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  }
+}
+
+/* The dock's row takes clicks only where its apps are; the map stays usable around it */
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  pointer-events: none;
+}
+
+.dock > * {
+  pointer-events: auto;
+}
+
+/*
+ * A floating window (the kit's Window, rendered by the outlet) sits between the top bar (57px tall)
+ * and the dock (70px tall, 16px off the bottom), 8px clear of each: 57 + 8 = 65 and 16 + 70 + 8 = 94.
+ * With height auto it fills that band up to 860px, and the kit's auto margins center it there. The
+ * kit's selector is 0,2,0 and this one is 0,3,0, so this one wins. Only the Window has role dialog and
+ * data-variant. The search dialog is portaled to the body, outside .shell. The phone's page variant is
+ * left alone (Task 17).
+ */
+.shell [role="dialog"][data-variant="floating"] {
+  top: 65px;
+  bottom: 94px;
+  height: auto;
+  max-height: 860px;
+}

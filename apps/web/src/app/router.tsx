@@ -1,18 +1,23 @@
 import { createBrowserRouter, createMemoryRouter, type RouteObject } from 'react-router';
 import { setUnauthorizedHandler } from '../api/client.ts';
-import { common } from '../copy/common.ts';
 import { AcceptInvite } from '../features/auth/AcceptInvite.tsx';
 import { ResetPassword } from '../features/auth/ResetPassword.tsx';
 import { SignIn } from '../features/auth/SignIn.tsx';
 import { VerifyEmail } from '../features/auth/VerifyEmail.tsx';
+import { ComingSoon } from '../features/coming-soon/ComingSoon.tsx';
+import { StormWindow } from '../features/storm/StormWindow.tsx';
+import { AppWindow } from '../shell/AppWindow.tsx';
+import type { ComingSoonKey } from '../shell/apps.ts';
+import { NotFoundWindow } from '../shell/NotFoundWindow.tsx';
+import { Shell } from '../shell/Shell.tsx';
 import { redirectToSignIn, RequireSession, resetSignInRedirect } from './RequireSession.tsx';
 
-/** Stands in until the shell (Task 12) is mounted under the session route. */
-function Placeholder() {
+/** A window for an app that is not built yet: its title, and the line that says so. */
+function comingSoonWindow(app: ComingSoonKey) {
   return (
-    <main>
-      <h1>{common.appName}</h1>
-    </main>
+    <AppWindow app={app}>
+      <ComingSoon app={app} />
+    </AppWindow>
   );
 }
 
@@ -23,11 +28,31 @@ const routes: RouteObject[] = [
   { path: '/verify', element: <VerifyEmail /> },
   { path: '/invite', element: <AcceptInvite /> },
   {
-    // Everything else needs a session. The shell's routes become children of this one.
+    // Everything else needs a session. The shell (map, dock, windows) is the one layout under it.
     element: <RequireSession />,
     children: [
-      { index: true, element: <Placeholder /> },
-      { path: '*', element: <Placeholder /> },
+      {
+        element: <Shell />,
+        children: [
+          // The map is the home page: no window
+          { index: true },
+          // Task 14 replaces the two approval windows
+          { path: 'approvals', element: comingSoonWindow('approvals') },
+          { path: 'approvals/:taskId', element: comingSoonWindow('approvals') },
+          { path: 'storm', element: <AppWindow app="storm"><StormWindow /></AppWindow> },
+          // Task 14 replaces the storm plan window
+          { path: 'storm/plans/:taskId', element: comingSoonWindow('storm') },
+          { path: 'storm/*', element: comingSoonWindow('storm') },
+          { path: 'front-desk/*', element: comingSoonWindow('front-desk') },
+          { path: 'estimator/*', element: comingSoonWindow('estimator') },
+          { path: 'jobs/*', element: comingSoonWindow('jobs') },
+          { path: 'calendar/*', element: comingSoonWindow('calendar') },
+          { path: 'agents/*', element: comingSoonWindow('agents') },
+          { path: 'customers/*', element: comingSoonWindow('customers') },
+          // Tasks 15 and 16 add today and settings; until then they show this
+          { path: '*', element: <NotFoundWindow /> },
+        ],
+      },
     ],
   },
 ];

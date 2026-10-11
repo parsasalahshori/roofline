@@ -13,6 +13,14 @@ import { createAppRouter } from '../src/app/router.tsx';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { auth } from '../src/copy/auth.ts';
 import { common } from '../src/copy/common.ts';
+import { dock } from '../src/copy/dock.ts';
+import { SHELL_ROUTES } from './helpers.tsx';
+
+// The real map loads maplibre-gl, which these tests never need
+vi.mock('../src/shell/map/MapView.tsx', async () => {
+  const { createElement } = await import('react');
+  return { MapView: () => createElement('div', { 'data-map-mock': true }) };
+});
 
 const USER = { id: 'u1', email: 'sam@example.com', name: 'Sam Roofer', emailVerified: true };
 const COMPANY: Account['company'] = { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active' };
@@ -26,7 +34,9 @@ type Reply = { status?: number; body?: unknown };
 type Routes = Record<string, (request: { body: unknown }) => Reply>;
 
 /** Stands in for fetch: answers `METHOD /path` from `routes` and records every call. A request nobody expects answers 500 and fails the test. */
-function stubApi(routes: Routes) {
+function stubApi(given: Routes) {
+  // The shell's reads (Task 12) are answered with "nothing" unless a test gives its own answer
+  const routes: Routes = { ...SHELL_ROUTES, ...given };
   const calls: { key: string; body: unknown }[] = [];
   const unexpected: string[] = [];
   vi.stubGlobal(
@@ -97,7 +107,7 @@ describe('sign-in', () => {
     await waitFor(() => expect(where(router)).toBe('/approvals/t1'));
     expect(api.sent('POST /api/auth/login')).toEqual([{ email: 'sam@example.com', password: 'a long password' }]);
     // The page behind the sign-in opens once the session is confirmed
-    expect(await screen.findByRole('heading', { name: common.appName })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: dock.label })).toBeInTheDocument();
   });
 
   it('ignores an unsafe next', async () => {
@@ -175,7 +185,7 @@ describe('the session redirect', () => {
       'GET /api/other': () => ({ status: 401, body: { error: 'Please sign in.' } }),
     });
     const { router } = renderApp('/approvals/t1');
-    await screen.findByRole('heading', { name: common.appName });
+    await screen.findByRole('navigation', { name: dock.label });
     const navigate = vi.spyOn(router, 'navigate');
 
     await Promise.allSettled([apiFetch('/api/other'), apiFetch('/api/other'), apiFetch('/api/other')]);
@@ -218,7 +228,7 @@ describe('the session redirect', () => {
       'GET /api/other': () => ({ status: 401, body: { error: 'Please sign in.' } }),
     });
     const { router, user } = renderApp('/jobs');
-    await screen.findByRole('heading', { name: common.appName });
+    await screen.findByRole('navigation', { name: dock.label });
 
     await Promise.allSettled([apiFetch('/api/other')]);
     await waitFor(() => expect(where(router)).toBe('/sign-in?next=%2Fjobs'));
@@ -226,7 +236,7 @@ describe('the session redirect', () => {
     await user.type(screen.getByLabelText(auth.password), 'a long password');
     await user.click(screen.getByRole('button', { name: auth.signIn }));
     await waitFor(() => expect(where(router)).toBe('/jobs'));
-    await screen.findByRole('heading', { name: common.appName });
+    await screen.findByRole('navigation', { name: dock.label });
 
     await Promise.allSettled([apiFetch('/api/other')]);
     await waitFor(() => expect(where(router)).toBe('/sign-in?next=%2Fjobs'));
@@ -333,7 +343,7 @@ describe('accept invite', () => {
     expect(api.sent('POST /api/auth/accept-invite')).toEqual([{ token: 'inv1', name: 'Sam Roofer', password: 'a long password' }]);
     expect(queryClient.getQueryData(keys.me)).toEqual(ACCOUNT);
     // The session is already known, so the home page does not ask the server who this is
-    expect(await screen.findByRole('heading', { name: common.appName })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: dock.label })).toBeInTheDocument();
   });
 
   it('asks an existing account to sign in first, and comes back to the invite after', async () => {

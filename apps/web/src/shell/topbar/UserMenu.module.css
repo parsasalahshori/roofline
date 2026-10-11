@@ -1,0 +1,53 @@
+/* The popover is positioned against the name; the top bar's layer sits above the Window, so the menu opens over it */
+.root {
+  position: relative;
+}
+
+.trigger {
+  max-width: 100%;
+}
+
+/* A long name ends in an ellipsis rather than pushing the top bar apart */
+.name {
+  min-width: 0;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1023.98px) {
+  .name {
+    max-width: 12ch;
+  }
+}
+
+.popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1;
+  min-width: 220px;
+}
+
+/* The popover takes focus only to hold it; the entries carry the ring */
+.popover:focus-visible {
+  outline: none;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+
+/* Full width with the words on the left, and a 40px target on every screen */
+.list .item {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 40px;
+  text-align: left;
+}

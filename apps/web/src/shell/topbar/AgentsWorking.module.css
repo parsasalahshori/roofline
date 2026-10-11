@@ -1,0 +1,22 @@
+.agents {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+  white-space: nowrap;
+}
+
+/* Green marks that work is going on; the text itself never turns green (white text on it fails contrast) */
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+.agents[data-state="working"] .dot {
+  background: var(--success);
+}
