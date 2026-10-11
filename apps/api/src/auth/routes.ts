@@ -152,19 +152,32 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
   }
 
   /**
-   * Hands an email to the mailer without making the person wait for it. A failure is logged and
-   * never shown: the account (or the "if that address has an account" answer) does not depend on
-   * the mail provider being up, and the person can ask for another.
+   * Runs `work` after the request has been answered: the caller does not await it. A failure is
+   * logged and goes no further (it would otherwise be an unhandled rejection, which ends the
+   * process). `deps.onBackgroundTask` lets tests wait for it.
+   */
+  function background(path: string, work: () => Promise<void>): void {
+    const task = (async () => {
+      try {
+        await work();
+      } catch (err) {
+        try {
+          logError(err, path);
+        } catch {
+          // A failing logger must not turn into an unhandled rejection.
+        }
+      }
+    })();
+    deps.onBackgroundTask?.(task);
+  }
+
+  /**
+   * Hands an email to the mailer in the background. A failure is logged and never shown: the
+   * account (or the "if that address has an account" answer) does not depend on the mail provider
+   * being up, and the person can ask for another.
    */
   function queueMail(msg: MailMessage, path: string): void {
-    const report = (err: unknown) => {
-      logError(err, path);
-    };
-    try {
-      deps.mailer.send(msg).catch(report);
-    } catch (err) {
-      report(err);
-    }
+    background(path, () => deps.mailer.send(msg));
   }
 
   /** Makes a verification link good for 7 days and emails it. Throws if the link cannot be saved. */
@@ -256,12 +269,17 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     res.json({ ok: true });
   });
 
-  router.post('/reset-request', ...resetRequestRateLimit(), async (req, res) => {
+  router.post('/reset-request', ...resetRequestRateLimit(), (req, res) => {
+    // Only the input is checked before answering, so a malformed email is a 400 whoever it names.
     const body = parse(ResetRequestBody, req.body);
-    const user = await findUserByEmail(system, body.email);
-    // The same answer whether or not the address has an account (and the mail goes out in the
-    // background), so neither the response nor its timing says which addresses are registered.
-    if (user) {
+    // Then the answer goes out at once, and everything that depends on whether the address has an
+    // account (the lookup, the token, the email, and any failure of them) happens afterwards.
+    // Known and unknown addresses therefore take the same path to the same response, with the same
+    // timing; nothing here can make one of them slower or fail where the other does not.
+    res.json({ ok: true });
+    background(req.path, async () => {
+      const user = await findUserByEmail(system, body.email);
+      if (!user) return;
       const token = await issueToken(system, user.id, 'reset_password', RESET_PASSWORD_TTL_MS, clock.now());
       queueMail(
         {
@@ -271,8 +289,7 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
         },
         req.path,
       );
-    }
-    res.json({ ok: true });
+    });
   });
 
   router.post('/reset', async (req, res) => {

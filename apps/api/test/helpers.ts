@@ -49,6 +49,12 @@ export type TestApp = {
   clock: TestClock;
   mailer: FakeMailer;
   seed: { a: SeededCompany; b: SeededCompany };
+  /**
+   * Waits until all work the app started after answering (queued emails, the reset-request
+   * lookup) has finished, including work those tasks start. Await it before asserting on
+   * `mailer.sent` after such a request.
+   */
+  settle(): Promise<void>;
   /** Ends this app's database pools now. Optional: they are also ended when the test file finishes. */
   close(): Promise<void>;
 };
@@ -110,7 +116,17 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const { pools, key } = poolsFor(config);
   const clock = new TestClock();
   const mailer = new FakeMailer();
-  const deps: AppDeps = { pools, config, mailer, clock };
+  const pending = new Set<Promise<void>>();
+  const deps: AppDeps = {
+    pools,
+    config,
+    mailer,
+    clock,
+    onBackgroundTask: (task) => {
+      pending.add(task);
+      void task.finally(() => pending.delete(task));
+    },
+  };
   const app = createApp(deps);
 
   return {
@@ -119,6 +135,9 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     clock,
     mailer,
     seed,
+    async settle() {
+      while (pending.size > 0) await Promise.allSettled([...pending]);
+    },
     async close() {
       if (openPools.get(key) === pools) {
         openPools.delete(key);

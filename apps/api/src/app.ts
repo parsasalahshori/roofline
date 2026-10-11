@@ -18,6 +18,12 @@ export type AppDeps = {
   config: Config;
   mailer: Mailer;
   clock: Clock;
+  /**
+   * Called with the promise of every piece of work the app starts after it has already answered
+   * (the emails behind reset-request, for example). The promise never rejects: failures are logged.
+   * The server leaves this unset; tests collect the promises and await them instead of sleeping.
+   */
+  onBackgroundTask?: (task: Promise<void>) => void;
 };
 
 export type AppOptions = {

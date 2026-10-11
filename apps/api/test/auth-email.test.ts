@@ -10,6 +10,39 @@ import { errorHandler } from '../src/errors.ts';
 import type { Mailer } from '../src/mailer.ts';
 import { loginAs, makeTestApp, type SentMail, type SuperAgent, type TestApp } from './helpers.ts';
 
+/*
+ * Two seams for the "work after the response" tests, both wrapping the real thing:
+ * - `lookupGate`: while set, the reset-request lookup (findUserByEmail) waits for it.
+ * - `failIssue`: while set, issueToken throws it.
+ * They are plain state read at call time, so a test that sets one must clear it (beforeEach does).
+ */
+const hooks = vi.hoisted(() => ({
+  lookupGate: null as Promise<void> | null,
+  failIssue: null as Error | null,
+}));
+
+vi.mock('@roofline/db/system', async (importOriginal) => {
+  const actual = await importOriginal<{ findUserByEmail: (...args: unknown[]) => Promise<unknown> }>();
+  return {
+    ...actual,
+    findUserByEmail: async (...args: unknown[]) => {
+      if (hooks.lookupGate) await hooks.lookupGate;
+      return actual.findUserByEmail(...args);
+    },
+  };
+});
+
+vi.mock('../src/auth/tokens.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/auth/tokens.ts')>();
+  return {
+    ...actual,
+    issueToken: async (...args: Parameters<typeof actual.issueToken>) => {
+      if (hooks.failIssue) throw hooks.failIssue;
+      return actual.issueToken(...args);
+    },
+  };
+});
+
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const PASSWORD = 'a long enough password';
@@ -28,6 +61,8 @@ const TOO_MANY_EMAILS = "We've already sent you a few emails. Please check your 
 let t: TestApp;
 
 beforeEach(async () => {
+  hooks.lookupGate = null;
+  hooks.failIssue = null;
   t = await makeTestApp();
 });
 
@@ -62,7 +97,12 @@ function tokenFrom(mail: SentMail, page: 'verify' | 'reset'): string {
 }
 
 const verify = (token: unknown) => request(t.app).post('/api/auth/verify-email').send({ token });
-const requestReset = (email: unknown) => request(t.app).post('/api/auth/reset-request').send({ email });
+/** Asks for a reset link, then waits for the work the route does after answering (the lookup, the token, the email). */
+async function requestReset(email: unknown) {
+  const res = await request(t.app).post('/api/auth/reset-request').send({ email });
+  await t.settle();
+  return res;
+}
 const reset = (token: unknown, password: unknown = NEW_PASSWORD) =>
   request(t.app).post('/api/auth/reset').send({ token, password });
 const login = (email: string, password: string) => request(t.app).post('/api/auth/login').send({ email, password });
@@ -202,7 +242,8 @@ describe('email verification', () => {
     const agent = request.agent(app);
     const res = await agent.post('/api/auth/signup').send(signupBody());
     expect(res.status).toBe(201);
-    await vi.waitFor(() => expect(logError).toHaveBeenCalledTimes(1));
+    await t.settle();
+    expect(logError).toHaveBeenCalledTimes(1);
     expect((logError.mock.calls[0]![0] as Error).message).toBe('postmark down');
     expect(res.body.user.emailVerified).toBe(false);
 
@@ -210,6 +251,26 @@ describe('email verification', () => {
     const cookie = res.headers['set-cookie'];
     const fresh = await request(t.app).post('/api/auth/resend-verification').set('Cookie', cookie!);
     expect(fresh.status).toBe(200);
+    expect(t.mailer.sent).toHaveLength(1);
+    expect((await verify(tokenFrom(t.mailer.sent[0]!, 'verify'))).status).toBe(200);
+  });
+});
+
+describe('sign-up when the verification link cannot be made', () => {
+  test('the account is still created and signed in, the failure is logged, and resending recovers', async () => {
+    const logError = vi.fn();
+    const app = createApp(t.deps, { logError });
+    hooks.failIssue = new Error('database went away');
+    const agent = request.agent(app);
+    const res = await agent.post('/api/auth/signup').send(signupBody());
+    expect(res.status).toBe(201);
+    expect(logError).toHaveBeenCalledTimes(1);
+    expect(t.mailer.sent).toHaveLength(0);
+    expect((await agent.get('/api/auth/me')).status).toBe(200);
+
+    hooks.failIssue = null;
+    expect((await agent.post('/api/auth/resend-verification')).status).toBe(200);
+    await t.settle();
     expect(t.mailer.sent).toHaveLength(1);
     expect((await verify(tokenFrom(t.mailer.sent[0]!, 'verify'))).status).toBe(200);
   });
@@ -381,8 +442,11 @@ describe('reset request', () => {
 
   test('the 20-an-hour budget is per IP address: another address is not held back', async () => {
     const proxied = await makeTestApp({ TRUST_PROXY: 1 });
-    const from = (ip: string, email: string) =>
-      request(proxied.app).post('/api/auth/reset-request').set('X-Forwarded-For', ip).send({ email });
+    const from = async (ip: string, email: string) => {
+      const res = await request(proxied.app).post('/api/auth/reset-request').set('X-Forwarded-For', ip).send({ email });
+      await proxied.settle();
+      return res;
+    };
     for (let i = 1; i <= 20; i++) await from('203.0.113.7', `nobody${i}@example.com`);
     await from('203.0.113.7', proxied.seed.a.owner.email);
     expect(proxied.mailer.sent).toHaveLength(0);
@@ -409,7 +473,69 @@ describe('reset request', () => {
     const res = await request(app).post('/api/auth/reset-request').send({ email: t.seed.a.owner.email });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    await vi.waitFor(() => expect(logError).toHaveBeenCalledTimes(1));
+    await t.settle();
+    expect(logError).toHaveBeenCalledTimes(1);
+    expect((logError.mock.calls[0]![0] as Error).message).toBe('postmark down');
+  });
+
+  test('if making the link fails for a real account, the answer is still 200 {ok: true} and the failure is logged', async () => {
+    const logError = vi.fn();
+    const app = createApp(t.deps, { logError });
+    hooks.failIssue = new Error('database went away');
+
+    const known = await request(app).post('/api/auth/reset-request').send({ email: t.seed.a.owner.email });
+    const unknown = await request(app).post('/api/auth/reset-request').send({ email: 'nobody@example.com' });
+    await t.settle();
+
+    // Same answer as for an address with no account: a failure here must not tell them apart.
+    expect(known.status).toBe(200);
+    expect(known.body).toEqual({ ok: true });
+    expect(unknown.status).toBe(200);
+    expect(unknown.body).toEqual(known.body);
+    expect(logError).toHaveBeenCalledTimes(1);
+    expect((logError.mock.calls[0]![0] as Error).message).toBe('database went away');
+    expect(logError.mock.calls[0]![1]).toBe('/reset-request');
+    expect(t.mailer.sent).toHaveLength(0);
+  });
+
+  test('a logger that itself throws does not crash anything', async () => {
+    const logError = vi.fn(() => {
+      throw new Error('logger is broken');
+    });
+    const app = createApp(t.deps, { logError });
+    hooks.failIssue = new Error('database went away');
+    const res = await request(app).post('/api/auth/reset-request').send({ email: t.seed.a.owner.email });
+    expect(res.status).toBe(200);
+    await t.settle(); // settles instead of rejecting
+    expect(logError).toHaveBeenCalledTimes(1);
+  });
+
+  test('the answer is sent before the lookup runs: it does not wait for the database work behind it', async () => {
+    let release!: () => void;
+    hooks.lookupGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      // If the route waited for the lookup, this request would hang until the test times out.
+      const res = await request(t.app).post('/api/auth/reset-request').send({ email: t.seed.a.owner.email });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(t.mailer.sent).toHaveLength(0); // the work has not even looked the address up yet
+      expect(await sql('select 1 from user_tokens')).toHaveLength(0);
+    } finally {
+      release();
+    }
+    await t.settle();
+    expect(t.mailer.sent).toHaveLength(1);
+    expect(await sql('select 1 from user_tokens')).toHaveLength(1);
+  });
+
+  test('a malformed email is still refused before anything else: 400, and no background work', async () => {
+    hooks.lookupGate = new Promise<void>(() => undefined); // never released: any lookup would hang settle()
+    const res = await request(t.app).post('/api/auth/reset-request').send({ email: 'not-an-email' });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: EMAIL_MESSAGE, field: 'email' });
+    await t.settle();
   });
 });
 
