@@ -259,7 +259,10 @@ export type DeliveryOutcome = { status: 'delivered' } | { status: 'failed'; reas
  * Applies a delivery report to the company's outbound text with this provider id. Only a `sent`
  * text moves, so a report never takes a text backwards (a late "failed" after "delivered" changes
  * nothing) and never touches one that is not out yet. A failure is final: not retryable, with the
- * reason. False when no sent text of the company has that id.
+ * reason. Returns `applied` when a `sent` text moved; `ignored` when an outbound text of the company
+ * has that id but is not `sent`; `unknown_sid` when no outbound text of the company has it (the
+ * caller then keeps the report as an early one). The caller takes the SID lock (`lockDeliverySid`)
+ * first.
  */
 export async function recordDeliveryOutcome(
   tx: Tx,
@@ -267,7 +270,7 @@ export async function recordDeliveryOutcome(
   providerSid: string,
   outcome: DeliveryOutcome,
   now: Date,
-): Promise<boolean> {
+): Promise<'applied' | 'ignored' | 'unknown_sid'> {
   const set =
     outcome.status === 'delivered'
       ? { status: 'delivered' as const, updatedAt: now }
@@ -284,5 +287,14 @@ export async function recordDeliveryOutcome(
       ),
     )
     .returning({ id: messages.id });
-  return rows.length > 0;
+  if (rows.length > 0) return 'applied';
+
+  const [known] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(eq(messages.companyId, ctx.companyId), eq(messages.providerMessageSid, providerSid), eq(messages.direction, 'out')),
+    )
+    .limit(1);
+  return known ? 'ignored' : 'unknown_sid';
 }

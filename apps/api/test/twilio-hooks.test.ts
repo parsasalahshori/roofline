@@ -318,13 +318,13 @@ describe('POST /hooks/twilio/sms: the brief', () => {
     await nothingWritten();
   });
 
-  test('a number that is no longer active → /status still 404s for it (texts to it are accepted; see the STOP tests)', async () => {
+  test('a number that is no longer active → /status still reaches the company, and the report is applied (texts to it are accepted; see the STOP tests)', async () => {
     const text = await sentText(OUT(11));
     await t.deps.pools.system.update(companyPhoneNumbers).set({ status: 'released' }).where(eq(companyPhoneNumbers.e164, A_NUMBER));
     const res = await status(statusOf(OUT(11), 'delivered'));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
     expect(res.text).toBe('');
-    expect((await messageRow('a', text.id)).status).toBe('sent');
+    expect((await messageRow('a', text.id)).status).toBe('delivered');
     expect(await webhookRows()).toEqual([]);
   });
 
@@ -954,7 +954,7 @@ describe('POST /hooks/twilio/status', () => {
     const res = await status(statusOf(OUT(1), 'delivered'));
     expect(res.status).toBe(200);
     expect(await messageRow('a', text.id)).toMatchObject({ status: 'delivered', blockReason: null });
-    expect(await webhookRows()).toMatchObject([{ provider: 'twilio-status', eventId: `${idOf('a')}:${OUT(1)}:delivered` }]);
+    expect(await webhookRows()).toEqual([]);
   });
 
   test.each(['failed', 'undelivered'])('%s → failed, with the carrier reason, not retryable', async (outcome) => {
@@ -985,20 +985,19 @@ describe('POST /hooks/twilio/status', () => {
     expect((await messageRow('a', text.id)).status).toBe('queued');
   });
 
-  test('a duplicate callback is ignored: the same (MessageSid, MessageStatus) is handled once', async () => {
+  test('a repeated callback changes nothing once the text has moved on', async () => {
     const text = await sentText(OUT(6));
     expect((await status(statusOf(OUT(6), 'failed'))).status).toBe(200);
-    // Put it back by hand: if the repeat were handled again it would fail the text a second time.
-    await inCompany(t, idOf('a'), (tx) => tx.update(messages).set({ status: 'sent', blockReason: null }).where(eq(messages.id, text.id)));
+    expect(await messageRow('a', text.id)).toMatchObject({ status: 'failed', blockReason: CARRIER });
 
     const again = await status(statusOf(OUT(6), 'failed'));
 
     expect(again.status).toBe(200);
-    expect(await messageRow('a', text.id)).toMatchObject({ status: 'sent', blockReason: null });
-    expect(await webhookRows()).toHaveLength(1);
-    // A different status for the same text is a different event.
+    expect(await messageRow('a', text.id)).toMatchObject({ status: 'failed', blockReason: CARRIER });
+    // Only a sent text moves: a later "delivered" does not undo the failure.
     await status(statusOf(OUT(6), 'delivered'));
-    expect((await messageRow('a', text.id)).status).toBe('delivered');
+    expect((await messageRow('a', text.id)).status).toBe('failed');
+    expect(await webhookRows()).toEqual([]);
   });
 
   test('an unknown MessageSid → 200 and nothing changes', async () => {
@@ -1013,9 +1012,7 @@ describe('POST /hooks/twilio/status', () => {
     expect((await messageRow('b', bText.id)).status).toBe('sent');
     expect((await status(statusOf(OUT(50), 'delivered', { From: B_NUMBER }), { token: TOKEN.b })).status).toBe(200);
     expect((await messageRow('b', bText.id)).status).toBe('delivered');
-    expect((await webhookRows()).map((r) => r.eventId).sort()).toEqual(
-      [`${idOf('a')}:${OUT(50)}:delivered`, `${idOf('b')}:${OUT(50)}:delivered`].sort(),
-    );
+    expect(await webhookRows()).toEqual([]);
   });
 
   test('an inbound text with the same id is never changed', async () => {

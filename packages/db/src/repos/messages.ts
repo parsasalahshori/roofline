@@ -12,6 +12,7 @@ import {
   usageEvents,
 } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { applyEarlyDeliveryReports, lockDeliverySid } from './delivery.ts';
 
 /*
  * Data access for outbound texts (spec 4.5): what the send gate needs to know about a company, a
@@ -349,7 +350,9 @@ export async function updateScheduledText(
 /**
  * The provider took the text: `sent`, with its id, segments and time, no reason and not retryable.
  * From `queued` (the usual case) or from `failed` (a slow send that was marked unconfirmed in the
- * meantime: it did go out, so the row says so). False when the row is in neither.
+ * meantime: it did go out, so the row says so). False when the row is in neither. When it moves,
+ * the early delivery reports for its id that arrived before the save are applied in the same
+ * transaction (`applyEarlyDeliveryReports`).
  */
 export async function markTextSent(
   tx: Tx,
@@ -358,6 +361,8 @@ export async function markTextSent(
   sent: { providerSid: string; segments: number; sentAt: Date },
   now: Date,
 ): Promise<boolean> {
+  // Take the SID lock before the row lock, in the same order as /status (Ruling U).
+  await lockDeliverySid(tx, ctx, sent.providerSid);
   const rows = await tx
     .update(messages)
     .set({
@@ -372,7 +377,9 @@ export async function markTextSent(
     })
     .where(and(eq(messages.companyId, ctx.companyId), eq(messages.id, messageId), inArray(messages.status, ['queued', 'failed'])))
     .returning({ id: messages.id });
-  return rows.length > 0;
+  if (rows.length === 0) return false;
+  await applyEarlyDeliveryReports(tx, ctx, messageId, sent.providerSid, now);
+  return true;
 }
 
 /**

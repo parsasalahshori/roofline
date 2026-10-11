@@ -6,14 +6,16 @@ import {
   type DeliveryOutcome,
   flagPossibleOptOut,
   insertInboundText,
+  lockDeliverySid,
   lockRecipients,
   recordDeliveryOutcome,
   restoreConsentByText,
   revokeConsentByText,
+  saveEarlyDeliveryReport,
   type TenantContext,
   withTenant,
 } from '@roofline/db';
-import { claimWebhookEvent, companyIdForNumber, releaseWebhookEvent, signingTokenFor } from '@roofline/db/system';
+import { companyIdForMessagingService, companyIdForNumber, signingTokenFor } from '@roofline/db/system';
 import { type InboundReading, looksLikeOptOut, readInbound } from '@roofline/send-gate';
 import type { AppDeps } from '../app.ts';
 
@@ -26,9 +28,10 @@ import type { AppDeps } from '../app.ts';
  *
  * Both are form posts. Before anything is written, each one is:
  * 1. routed: the company's own number (`To` of a text that came in, `From` of a report) must be a
- *    texting number (company_phone_numbers), else 404 with an empty body. A text that came in also
- *    routes when that number is no longer active, so a STOP still opts out; a report needs an
- *    active number;
+ *    texting number (company_phone_numbers), else 404 with an empty body. A text that came in and a
+ *    report both route whatever the number's status, so a STOP still opts out and a report for a
+ *    released number is still applied. A report with no usable `From` (none, or not E.164) routes by
+ *    its `MessagingServiceSid` instead (texting_registrations);
  * 2. authenticated: `X-Twilio-Signature` must be Twilio's signature of PUBLIC_BASE_URL + the path
  *    and the form fields, made with that company's subaccount token (else TWILIO_AUTH_TOKEN), else
  *    403. A company with no token at all is 403 too;
@@ -42,11 +45,16 @@ import type { AppDeps } from '../app.ts';
  * 4. deduplicated: Twilio may deliver the same webhook more than once. /sms dedupes inside the
  *    tenant transaction: the inbound message insert (unique on company and MessageSid) is the claim,
  *    so a repeat does nothing and answers an empty reply, and a failure rolls everything back and
- *    answers 500 so Twilio's retry is handled. /status still claims each delivery in webhook_events
- *    first, under a key that starts with the company's id, and a repeat does nothing (200, an empty
- *    reply). When the work for a claimed /status delivery fails, the claim is given back so Twilio's
- *    next try is handled.
+ *    answers 500 so Twilio's retry is handled. /status is not claimed in webhook_events: its writes
+ *    are idempotent (a text only moves from `sent`, and an early report is stored once).
  * The company's work then runs as app_tenant inside `withTenant` (role `system`, no user).
+ *
+ * /status is routed by its `From` (the company's number, active or not), else by its
+ * `MessagingServiceSid` (the company's texting registration). A delivery report can reach us before
+ * the send that made the text is saved. Such a report (its SID is no text of the company's yet) is
+ * kept in early_delivery_reports, and applied when the send is saved (markTextSent). The SID's
+ * advisory transaction lock makes the two take turns, so a report is never stored after the save
+ * already looked for it.
  */
 
 /** Form bodies on these routes are capped at 64 KB (a text is at most 1,600 characters). */
@@ -55,9 +63,9 @@ export const FORM_BODY_LIMIT = '64kb';
 /** Delivery reports that fail a text, and what the message row then says. */
 export const CARRIER_FAILED = "The carrier couldn't deliver this text.";
 
-const STATUS_EVENTS = 'twilio-status';
-
 const E164 = /^\+[1-9]\d{1,14}$/;
+/** Twilio's id of a messaging service: MG and 32 lowercase hex digits. */
+const MESSAGING_SERVICE_SID = /^MG[0-9a-f]{32}$/;
 /** A short code, the 3 to 8 digit sender of a carrier message. */
 const SHORT_CODE = /^\d{3,8}$/;
 /** Twilio's id of a text: SM (or MM for one with media) and 32 lowercase hex digits. */
@@ -181,6 +189,22 @@ function optOutTypeField(req: Request): OptOutType | undefined {
 const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: null, role: 'system', canApproveSpend: false });
 
 /**
+ * Step 2 (the signature), for a request already routed to `companyId`: checked with that company's
+ * token (else TWILIO_AUTH_TOKEN). Answers 403 itself and returns null; otherwise the company's id.
+ */
+async function checkSignature(deps: AppDeps, req: Request, res: Response, companyId: string): Promise<string | null> {
+  const { system } = deps.pools;
+  const token = await signingTokenFor(system, companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
+  const signature = req.get('X-Twilio-Signature');
+  const url = deps.config.PUBLIC_BASE_URL + req.originalUrl;
+  if (token === null || signature === undefined || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
+    res.status(403).end();
+    return null;
+  }
+  return companyId;
+}
+
+/**
  * Steps 1 and 2 (routing, then the signature), on `numberField` (the company's own number).
  * `options` go to companyIdForNumber: `includeInactive` routes a number whatever its status (a text
  * that came in, so a STOP still opts out); without it only active numbers route.
@@ -200,30 +224,30 @@ async function verify(
     res.status(404).end();
     return null;
   }
-  const token = await signingTokenFor(system, companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
-  const signature = req.get('X-Twilio-Signature');
-  const url = deps.config.PUBLIC_BASE_URL + req.originalUrl;
-  if (token === null || signature === undefined || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
-    res.status(403).end();
-    return null;
-  }
-  return companyId;
+  return checkSignature(deps, req, res, companyId);
 }
 
-/** Step 4 and the work: claims the delivery, runs `work`, and gives the claim back if `work` throws. */
-async function once<T>(deps: AppDeps, provider: string, eventId: string, work: () => Promise<T>): Promise<{ repeat: true } | { repeat: false; value: T }> {
+/**
+ * Steps 1 and 2 for a delivery report. Routed by `From` (the company's number, whatever its status,
+ * so a report for a released number is still applied); when `From` is missing, not E.164, or no
+ * company owns it, by `MessagingServiceSid` (texting_registrations). Else 404. Then the signature,
+ * with that company's token. Answers 404 or 403 itself and returns null; otherwise the company's id.
+ */
+async function routeStatus(deps: AppDeps, req: Request, res: Response): Promise<string | null> {
   const { system } = deps.pools;
-  if (!(await claimWebhookEvent(system, provider, eventId))) return { repeat: true };
-  try {
-    return { repeat: false, value: await work() };
-  } catch (err) {
-    try {
-      await releaseWebhookEvent(system, provider, eventId);
-    } catch (releaseErr) {
-      deps.logError?.(releaseErr, `${provider}: releasing a failed delivery`);
+  const from = field(req, 'From');
+  let companyId = from !== undefined && E164.test(from) ? await companyIdForNumber(system, from, { includeInactive: true }) : null;
+  if (companyId === null) {
+    const serviceSid = field(req, 'MessagingServiceSid');
+    if (serviceSid !== undefined && MESSAGING_SERVICE_SID.test(serviceSid)) {
+      companyId = await companyIdForMessagingService(system, serviceSid);
     }
-    throw err;
   }
+  if (companyId === null) {
+    res.status(404).end();
+    return null;
+  }
+  return checkSignature(deps, req, res, companyId);
 }
 
 /** Twilio's OptOutType values we act on. */
@@ -352,11 +376,13 @@ export function twilioHooks(deps: AppDeps): Router {
 
   /**
    * `delivered` → delivered; `failed` / `undelivered` → failed, not retryable, with the carrier
-   * reason; both only from `sent` (`recordDeliveryOutcome`), so nothing goes backwards. Any other
-   * status (queued, sending, sent, ...) and an id that is no text of the company's: 200, nothing done.
+   * reason; both only from `sent` (`recordDeliveryOutcome`), so nothing goes backwards. A report for
+   * an id that is no outbound text of the company's yet is kept (early_delivery_reports) and applied
+   * when its send is saved; the SID's lock makes that wait for, or be seen by, the save. Any other
+   * status (queued, sending, sent, ...): 200, nothing done. Always 200 with an empty body once routed.
    */
   router.post('/status', async (req, res) => {
-    const companyId = await verify(deps, req, res, 'From');
+    const companyId = await routeStatus(deps, req, res);
     if (companyId === null) return;
     const messageSid = messageSidOf(req);
     const messageStatus = field(req, 'MessageStatus');
@@ -367,9 +393,19 @@ export function twilioHooks(deps: AppDeps): Router {
     const outcome = outcomeOf(messageStatus);
     if (outcome !== null) {
       const ctx = systemCtx(companyId);
-      await once(deps, STATUS_EVENTS, `${companyId}:${messageSid}:${messageStatus}`, () =>
-        withTenant(deps.pools, ctx, (tx) => recordDeliveryOutcome(tx, ctx, messageSid, outcome, deps.clock.now())),
-      );
+      const now = deps.clock.now();
+      await withTenant(deps.pools, ctx, async (tx) => {
+        await lockDeliverySid(tx, ctx, messageSid);
+        const result = await recordDeliveryOutcome(tx, ctx, messageSid, outcome, now);
+        if (result === 'unknown_sid') {
+          await saveEarlyDeliveryReport(
+            tx,
+            ctx,
+            { providerSid: messageSid, status: outcome.status, reason: outcome.status === 'failed' ? outcome.reason : null },
+            now,
+          );
+        }
+      });
     }
     res.status(200).end();
   });
