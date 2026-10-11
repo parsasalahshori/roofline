@@ -1,13 +1,19 @@
 /*
  * roofline/min-font-size: nothing on screen is smaller than 12px (spec 4.7, Global Constraints).
  *
- * Checks `font-size` and the size token of the `font` shorthand. A size passes when it is
+ * Checks `font-size`, the size token of the `font` shorthand, and the definition of every
+ * `--font-size-*` custom property. A size passes when it is
  *   - px, and at least 12px
  *   - rem, and at least 0.75rem (rem is read as 16px, the browser default)
- *   - var(--font-size-*): the S1 tokens, which tokens.css keeps at 12px or more
+ *   - var(--font-size-*): a font-size token, whose own definition is held to the same rule
+ *   - inherit, initial, unset or revert: they cannot go below a size that is itself checked
+ *     (initial is medium, 16px)
  * Anything else is reported, because its size cannot be known from the stylesheet alone: %, em,
  * the keywords (smaller, medium, ...), calc() and friends, and any other var(). A var() that
  * names a font-size token is checked again for its fallback, so var(--font-size-body, 11px) fails.
+ *
+ * Checking the definitions is what makes the var(--font-size-*) pass honest: without it,
+ * `.x { --font-size-body: 8px; font-size: var(--font-size-body) }` would get through.
  *
  * In the `font` shorthand only the size is looked at, so `var(--font)` as the family is fine.
  * The size is the token before the `/` when there is one, else the first token that looks like a
@@ -39,6 +45,8 @@ const SIZE_KEYWORDS = new Set([
   'smaller',
   'larger',
 ]);
+// The CSS-wide keywords that cannot produce a size smaller than one already checked.
+const INHERITING_KEYWORDS = new Set(['inherit', 'initial', 'unset', 'revert']);
 const ANGLE_UNITS = new Set(['deg', 'grad', 'rad', 'turn']);
 const SIZE_FUNCTIONS = new Set(['calc', 'clamp', 'min', 'max']);
 
@@ -67,6 +75,7 @@ function check(node) {
     return fallback === undefined ? null : check(fallback);
   }
   if (node.type === 'word') {
+    if (INHERITING_KEYWORDS.has(node.value.toLowerCase())) return null;
     const parsed = valueParser.unit(node.value);
     if (parsed) {
       const amount = parseFloat(parsed.number);
@@ -94,7 +103,7 @@ function looksLikeSize(node) {
 /** The token that holds the size, or undefined when the declaration sets none (font: inherit). */
 function sizeNode(decl) {
   const nodes = valueParser(decl.value).nodes.filter(significant);
-  if (decl.prop.toLowerCase() === 'font-size') return nodes[0];
+  if (decl.prop.toLowerCase() !== 'font') return nodes[0]; // font-size or a --font-size-* token
   const slash = nodes.findIndex((n) => n.type === 'div' && n.value === '/');
   if (slash > 0) return nodes[slash - 1];
   return nodes.find(looksLikeSize);
@@ -105,7 +114,7 @@ const ruleFunction = (primary) => (root, result) => {
   const valid = validateOptions(result, ruleName, { actual: primary, possible: [true] });
   if (!valid) return;
 
-  root.walkDecls(/^font(-size)?$/i, (decl) => {
+  root.walkDecls(/^(font(-size)?|--font-size-.*)$/i, (decl) => {
     const node = sizeNode(decl);
     if (node === undefined) return;
     const problem = check(node);

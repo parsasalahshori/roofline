@@ -33,6 +33,9 @@ describe('roofline/min-font-size', () => {
     'a{font-size:var(--font-size-body)}',
     'a{font:600 14px/1.4 var(--font)}',
     'a{font-size:28px}',
+    // CSS-wide keywords cannot go below a size that is itself checked (initial is medium).
+    'a{font-size:inherit}',
+    'a{font-size:unset}',
   ];
 
   it.each(tooSmall)('rejects %s as too small', async (code) => {
@@ -76,8 +79,30 @@ describe('roofline/min-font-size', () => {
     expect(bad[0]).toContain(UNSUPPORTED);
   });
 
-  it('ignores custom properties that merely hold a size', async () => {
-    expect(await warningsFor(':root{--font-size-min:12px;--tiny:8px}')).toEqual([]);
+  it('accepts the CSS-wide keywords inherit, initial, unset and revert', async () => {
+    for (const keyword of ['inherit', 'initial', 'unset', 'revert', 'INHERIT']) {
+      expect(await warningsFor(`a{font-size:${keyword}}`), keyword).toEqual([]);
+    }
+  });
+
+  it('checks the definition of every --font-size-* token, so the var() passthrough is honest', async () => {
+    expect(await warningsFor(':root{--font-size-body:14px}')).toEqual([]);
+    expect(await warningsFor(':root{--font-size-min:12px;--font-size-label:0.75rem}')).toEqual([]);
+    expect(await warningsFor(':root{--font-size-label:var(--font-size-body)}')).toEqual([]);
+    const tiny = await warningsFor(':root{--font-size-tiny:11px}');
+    expect(tiny).toHaveLength(1);
+    expect(tiny[0]).toContain(TOO_SMALL);
+    // Redefining a token somewhere narrower is the bypass this guards against.
+    const shadowed = await warningsFor('.x{--font-size-body:8px;font-size:var(--font-size-body)}');
+    expect(shadowed).toHaveLength(1);
+    expect(shadowed[0]).toContain(TOO_SMALL);
+    const percent = await warningsFor(':root{--font-size-big:120%}');
+    expect(percent).toHaveLength(1);
+    expect(percent[0]).toContain(UNSUPPORTED);
+  });
+
+  it('leaves custom properties that are not --font-size-* alone', async () => {
+    expect(await warningsFor(':root{--tiny:8px;--font-size:8px}')).toHaveLength(0);
   });
 
   it('reports the declaration even with !important or uppercase', async () => {
