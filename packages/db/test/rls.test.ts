@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { createPools, type Pools } from '../src/pools.ts';
-import { companies, customers } from '../src/schema/index.ts';
+import { companies, customers, textingRegistrations } from '../src/schema/index.ts';
 import { TENANT_TABLES } from '../src/schema/tenant.ts';
 import { type TenantContext, withTenant } from '../src/tenant.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
@@ -256,14 +256,33 @@ describe('grants', () => {
   });
 
   test('app_tenant: SELECT only on the company-scoped global tables, nothing on the private ones', async () => {
+    // texting_registrations has no table-level SELECT: only the column grants checked below.
     expect(await tablePrivileges('app_tenant', ['companies', ...COMPANY_SCOPED_GLOBALS])).toEqual([
       privs('companies', true, false, false, false),
       privs('company_phone_numbers', true, false, false, false),
-      privs('texting_registrations', true, false, false, false),
+      privs('texting_registrations', false, false, false, false),
     ]);
     expect(await tablePrivileges('app_tenant', PRIVATE_GLOBALS)).toEqual(
       PRIVATE_GLOBALS.map((t) => privs(t, false, false, false, false)),
     );
+  });
+
+  test('app_tenant may read every texting_registrations column except the subaccount auth token', async () => {
+    const granted = await ownerQuery<{ column_name: string; privilege_type: string }>(
+      `select column_name, privilege_type from information_schema.column_privileges
+        where grantee = 'app_tenant' and table_schema = 'public' and table_name = 'texting_registrations'
+        order by column_name, privilege_type`,
+    );
+    const all = await ownerQuery<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'texting_registrations' order by column_name`,
+    );
+    const expected = all
+      .map((c) => c.column_name)
+      .filter((c) => c !== 'subaccount_auth_token_encrypted')
+      .map((column_name) => ({ column_name, privilege_type: 'SELECT' }));
+    expect(expected).toHaveLength(all.length - 1);
+    expect(granted).toEqual(expected);
   });
 
   test('app_tenant may update only the profile columns of companies (plus updated_at)', async () => {
@@ -479,6 +498,22 @@ describe('app_tenant isolation', () => {
         values: [seed.a.companyId],
       }),
     ).rejects.toThrow(/permission denied/);
+  });
+
+  test('tenant role cannot read the texting subaccount auth token, even its own', async () => {
+    const tokenErr = await dbError(
+      withTenant(pools, ctx(seed.a), (tx) =>
+        tx.execute(sql`select subaccount_auth_token_encrypted from texting_registrations`),
+      ),
+    );
+    expect(tokenErr.message).toMatch(/permission denied/);
+    // A Drizzle select of the whole row names the token column too, so it is refused as well.
+    const rowErr = await dbError(withTenant(pools, ctx(seed.a), (tx) => tx.select().from(textingRegistrations)));
+    expect(rowErr.message).toMatch(/permission denied/);
+    const status = await withTenant(pools, ctx(seed.a), (tx) =>
+      tx.select({ campaignStatus: textingRegistrations.campaignStatus }).from(textingRegistrations),
+    );
+    expect(status).toEqual([{ campaignStatus: 'approved' }]);
   });
 
   test('tenant role can read its company_phone_numbers but not write them', async () => {

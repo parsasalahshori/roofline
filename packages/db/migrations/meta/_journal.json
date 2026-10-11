@@ -22,6 +22,13 @@
       "when": 1791685053183,
       "tag": "0002_roles_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791686503538,
+      "tag": "0003_tenant_texting_columns",
+      "breakpoints": true
     }
   ]
 }
