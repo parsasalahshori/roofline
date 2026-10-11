@@ -1,0 +1,13 @@
+/* The body and the footer of the two sheets: the field, then the buttons. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}

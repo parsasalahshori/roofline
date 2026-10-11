@@ -1,0 +1,190 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--font-size-body);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* A switched-off step is greyed by colour and fill, not opacity, so its text keeps AA contrast. */
+.row[data-state="off"] {
+  background: var(--surface-2);
+}
+
+.row[data-state="off"] .title {
+  color: var(--text-muted);
+}
+
+.row[data-state="off"] .bubble {
+  border-style: dashed;
+  background: transparent;
+}
+
+.switch {
+  flex: none;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-height: 40px;
+}
+
+.title {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+/* The dot only repeats what the words say, so the status never rests on colour alone. */
+.status::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.status[data-status="done"]::before {
+  background: var(--success);
+}
+
+.status[data-status="running"]::before,
+.status[data-status="queued"]::before {
+  background: var(--accent);
+}
+
+.status[data-status="failed"]::before,
+.status[data-status="needs_attention"]::before {
+  background: var(--danger);
+}
+
+.bubble {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* A 400-character message with no spaces must wrap inside the card instead of widening the window. */
+.bubble[data-wrap="anywhere"] {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.facts,
+.lines,
+.results {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lines {
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.results {
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  margin-top: 8px;
+}
+
+/* Pinned to the bottom of the scrolling body, so Approve is in reach on a phone however long the list is. */
+.footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.footerNote {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.footerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+@media (max-width: 767.98px) {
+  .row {
+    padding: 12px;
+  }
+
+  .footerActions > * {
+    flex: 1 1 auto;
+  }
+}

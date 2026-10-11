@@ -1,5 +1,12 @@
-import { describe, expect, test } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { loadConfig } from '../src/config.ts';
+import { buildDeps } from '../src/deps.ts';
+import { InlineQueue } from '../src/tasks/queue.ts';
+import { NwsWeatherSource } from '../src/weather/nws.ts';
+import { NullWeatherSource } from '../src/weather/source.ts';
 
 const KEY = Buffer.alloc(32, 9).toString('base64');
 
@@ -125,5 +132,149 @@ describe('loadConfig', () => {
 
   test('POSTMARK_TOKEN needs MAIL_FROM', () => {
     expect(problem({ ...VALID, POSTMARK_TOKEN: 'pm' })).toContain('MAIL_FROM');
+  });
+
+  describe('WEB_DIST_DIR', () => {
+    let built: string;
+    let noIndex: string;
+    const ROOT = path.resolve(import.meta.dirname, '../../..');
+
+    beforeAll(() => {
+      built = fs.mkdtempSync(path.join(os.tmpdir(), 'roofline-config-web-'));
+      fs.writeFileSync(path.join(built, 'index.html'), '<!doctype html>');
+      noIndex = fs.mkdtempSync(path.join(os.tmpdir(), 'roofline-config-empty-'));
+    });
+
+    afterAll(() => {
+      fs.rmSync(built, { recursive: true, force: true });
+      fs.rmSync(noIndex, { recursive: true, force: true });
+    });
+
+    test('is optional: unset or blank leaves it out', () => {
+      expect(loadConfig(VALID).WEB_DIST_DIR).toBeUndefined();
+      expect(loadConfig({ ...VALID, WEB_DIST_DIR: '  ' }).WEB_DIST_DIR).toBeUndefined();
+    });
+
+    test('a directory with an index.html is accepted', () => {
+      expect(loadConfig({ ...VALID, WEB_DIST_DIR: built }).WEB_DIST_DIR).toBe(built);
+    });
+
+    test('a relative path is read from the repository root, wherever the process was started', () => {
+      // `npm start -w @roofline/api` runs in apps/api, so `apps/web/dist` must not depend on the working directory.
+      const relative = path.relative(ROOT, built);
+      expect(path.isAbsolute(relative)).toBe(false);
+      expect(loadConfig({ ...VALID, WEB_DIST_DIR: relative }).WEB_DIST_DIR).toBe(built);
+    });
+
+    test('a missing directory is a ConfigError that names WEB_DIST_DIR and prints no value', () => {
+      const missing = path.join(os.tmpdir(), 'roofline-no-such-dir-4410');
+      const message = problem({ ...VALID, WEB_DIST_DIR: missing });
+      expect(message).toContain('WEB_DIST_DIR');
+      expect(message).not.toContain(missing);
+      expect(message).not.toContain(KEY);
+      expect(() => loadConfig({ ...VALID, WEB_DIST_DIR: missing })).toThrow(/^Invalid environment configuration/);
+    });
+
+    test('a directory without index.html is refused', () => {
+      expect(problem({ ...VALID, WEB_DIST_DIR: noIndex })).toContain('WEB_DIST_DIR');
+    });
+
+    test('a file instead of a directory is refused', () => {
+      expect(problem({ ...VALID, WEB_DIST_DIR: path.join(built, 'index.html') })).toContain('WEB_DIST_DIR');
+    });
+  });
+});
+
+describe('weather settings', () => {
+  test('both are optional and absent by default', () => {
+    const config = loadConfig(VALID);
+    expect(config.NWS_USER_AGENT).toBeUndefined();
+    expect(config.WEATHER_DISABLED).toBeUndefined();
+    // Blank lines in an env file count as unset.
+    const blank = loadConfig({ ...VALID, NWS_USER_AGENT: ' ', WEATHER_DISABLED: '' });
+    expect(blank.NWS_USER_AGENT).toBeUndefined();
+    expect(blank.WEATHER_DISABLED).toBeUndefined();
+  });
+
+  test('NWS_USER_AGENT is kept as written', () => {
+    expect(loadConfig({ ...VALID, NWS_USER_AGENT: 'Acme Roofing (ops@acme.test)' }).NWS_USER_AGENT).toBe(
+      'Acme Roofing (ops@acme.test)',
+    );
+  });
+
+  test('NWS_USER_AGENT must be plain text, since it travels as an HTTP header', () => {
+    for (const value of ['Roofline \u2014 ops', 'Roofline\nops', 'Rooflin\u00e9']) {
+      expect(problem({ ...VALID, NWS_USER_AGENT: value })).toContain('NWS_USER_AGENT');
+    }
+  });
+
+  test.each([
+    ['1', true],
+    ['true', true],
+    ['TRUE', true],
+    ['0', false],
+    ['false', false],
+  ])('WEATHER_DISABLED=%s is %s', (value, expected) => {
+    expect(loadConfig({ ...VALID, WEATHER_DISABLED: value }).WEATHER_DISABLED).toBe(expected);
+  });
+
+  test.each(['yes', 'on', '2', 'disabled'])('rejects WEATHER_DISABLED=%s, naming the variable', (value) => {
+    const message = problem({ ...VALID, WEATHER_DISABLED: value });
+    expect(message).toContain('WEATHER_DISABLED');
+    expect(message).toContain('1, true, 0 or false');
+  });
+});
+
+describe('buildDeps and the weather source', () => {
+  const built: { pools: { end(): Promise<void> } }[] = [];
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await Promise.all(built.splice(0).map((deps) => deps.pools.end()));
+  });
+
+  /** buildDeps over a complete environment. The pools are lazy: nothing connects until a query runs. */
+  function depsFor(extra: Record<string, string>) {
+    const deps = buildDeps(loadConfig({ ...VALID, NODE_ENV: 'test', ...extra }), new InlineQueue());
+    built.push(deps);
+    return deps;
+  }
+
+  /** Replaces the global fetch with one that records the headers it was called with, and answers 599. */
+  function recordGlobalFetch() {
+    const seen: { url: string; headers: Headers }[] = [];
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      seen.push({ url, headers: new Headers(init?.headers) });
+      return new Response('', { status: 599 });
+    });
+    return seen;
+  }
+
+  test('WEATHER_DISABLED=1 makes the weather source the null one, which asks nobody', async () => {
+    const seen = recordGlobalFetch();
+    for (const value of ['1', 'true']) {
+      const { weather } = depsFor({ WEATHER_DISABLED: value });
+      expect(weather).toBeInstanceOf(NullWeatherSource);
+      expect(await weather.current(41.2565, -95.9345)).toBeNull();
+    }
+    expect(seen).toHaveLength(0);
+  });
+
+  test('otherwise it is the National Weather Service, introducing itself with the public address by default', async () => {
+    const seen = recordGlobalFetch();
+    const { weather } = depsFor({});
+    expect(weather).toBeInstanceOf(NwsWeatherSource);
+    expect(await weather.current(41.2565, -95.9345)).toBeNull(); // the stub answers 599
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.headers.get('User-Agent')).toBe('Roofline (https://app.roofline.test)');
+
+    // WEATHER_DISABLED=0 is "not disabled".
+    expect(depsFor({ WEATHER_DISABLED: '0' }).weather).toBeInstanceOf(NwsWeatherSource);
+  });
+
+  test('NWS_USER_AGENT replaces the default', async () => {
+    const seen = recordGlobalFetch();
+    await depsFor({ NWS_USER_AGENT: 'Acme Roofing (ops@acme.test)' }).weather.current(41.2565, -95.9345);
+    expect(seen[0]!.headers.get('User-Agent')).toBe('Acme Roofing (ops@acme.test)');
   });
 });

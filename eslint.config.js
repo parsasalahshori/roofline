@@ -99,7 +99,7 @@ const NO_RAW_BUTTON = {
 };
 
 export default defineConfig(
-  { ignores: ['v1/**', '**/node_modules/**', '.superpowers/**', 'apps/web/dist/**', '**/playwright-report/**'] },
+  { ignores: ['v1/**', '**/node_modules/**', '.superpowers/**', 'ops/**', 'apps/web/dist/**', '**/playwright-report/**'] },
   {
     files: ['{apps,packages}/**/*.{ts,tsx}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],

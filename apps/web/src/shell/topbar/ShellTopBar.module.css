@@ -1,0 +1,14 @@
+.logo {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  color: var(--text);
+}
+
+.company {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

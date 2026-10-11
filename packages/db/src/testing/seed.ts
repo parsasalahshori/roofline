@@ -21,6 +21,35 @@ export type SeededCompany = {
   otherRep: SeedUser;
 };
 
+/** One user of a company made by `seedCompany`. */
+export type SeedCompanyUser = { email: string; name: string; role: Role; canApproveSpend?: boolean };
+
+/** What `seedCompany` makes. Every user gets `password`, a verified email and an active membership. */
+export type SeedCompanySpec = {
+  name: string;
+  slug: string;
+  /** Left out: the column default (America/Chicago). */
+  timezone?: string;
+  /** `companies.address_state`, for example 'NE'. Left out: none. */
+  state?: string;
+  /** `companies.phone_e164`. Left out: none. */
+  phoneE164?: string;
+  users: SeedCompanyUser[];
+  password: string;
+};
+
+/** One user `seedCompany` made. */
+export type SeededMember = { userId: string; email: string; name: string; role: Role; password: string };
+
+/** What `seedCompany` returns: the company and its users, in the order the spec listed them. */
+export type SeededCompanyBase = {
+  companyId: string;
+  slug: string;
+  name: string;
+  phoneE164: string | null;
+  users: SeededMember[];
+};
+
 const scryptAsync = promisify(scrypt) as (
   password: string,
   salt: Buffer,
@@ -62,64 +91,108 @@ const MEMBERS = [
 const TRIAL_DAYS = 14;
 
 /**
- * Inserts two companies (Acme Roofing and Bolt Roofing) with four active members each: an owner,
- * an office user without spend approval, and two reps. Every user has a verified email and the
- * password `correct-horse-battery`. Each company has default settings and an approved texting
- * registration. Connects as the table owner, so it works before and after RLS is enabled.
+ * Inserts one company with its default settings, an approved texting registration and the users the
+ * spec lists, in one transaction. Each user gets the spec's password (hashed once per call, or the
+ * cached hash when the password is `SEED_PASSWORD`), a verified email and an active membership.
+ * Returns the company and its users in spec order. Connects as the table owner, so it works before
+ * and after RLS is enabled.
  */
-export async function seedTwoCompanies(ownerUrl: string): Promise<{ a: SeededCompany; b: SeededCompany }> {
-  const passwordHash = await getSeedPasswordHash();
+export async function seedCompany(ownerUrl: string, spec: SeedCompanySpec): Promise<SeededCompanyBase> {
+  const passwordHash =
+    spec.password === SEED_PASSWORD ? await getSeedPasswordHash() : await hashPassword(spec.password);
   const client = new pg.Client({ connectionString: ownerUrl });
   await client.connect();
   try {
     const db = drizzle(client);
     const now = new Date();
-    const result = await db.transaction(async (tx) => {
-      const seeded: Record<string, SeededCompany> = {};
-      for (const c of COMPANIES) {
-        const [company] = await tx
-          .insert(companies)
-          .values({
-            name: c.name,
-            slug: c.slug,
-            phoneE164: c.phoneE164,
-            timezone: 'America/Chicago',
-            addressState: 'NE',
-            status: 'trial',
-            trialEndsAt: new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000),
-          })
-          .returning({ id: companies.id });
-        const companyId = company!.id;
-        await tx.insert(companySettings).values({ companyId });
-        await tx.insert(textingRegistrations).values({ companyId, campaignStatus: 'approved', approvedAt: now });
+    return await db.transaction(async (tx) => {
+      const [company] = await tx
+        .insert(companies)
+        .values({
+          name: spec.name,
+          slug: spec.slug,
+          phoneE164: spec.phoneE164 ?? null,
+          ...(spec.timezone === undefined ? {} : { timezone: spec.timezone }),
+          addressState: spec.state ?? null,
+          status: 'trial',
+          trialEndsAt: new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000),
+        })
+        .returning({ id: companies.id });
+      const companyId = company!.id;
+      await tx.insert(companySettings).values({ companyId });
+      await tx.insert(textingRegistrations).values({ companyId, campaignStatus: 'approved', approvedAt: now });
 
-        const people: Record<string, SeedUser> = {};
-        for (const m of MEMBERS) {
-          const email = `${m.local}@${c.key}.test`;
-          const [user] = await tx
-            .insert(users)
-            .values({ email, name: `${c.name.split(' ')[0]} ${m.label}`, passwordHash, emailVerifiedAt: now })
-            .returning({ id: users.id });
-          await tx
-            .insert(memberships)
-            .values({ companyId, userId: user!.id, role: m.role, canApproveSpend: false, status: 'active' });
-          people[m.member] = { userId: user!.id, email, password: SEED_PASSWORD };
-        }
-        seeded[c.key] = {
+      const members: SeededMember[] = [];
+      for (const u of spec.users) {
+        const [user] = await tx
+          .insert(users)
+          .values({ email: u.email, name: u.name, passwordHash, emailVerifiedAt: now })
+          .returning({ id: users.id });
+        const userId = user!.id;
+        await tx.insert(memberships).values({
           companyId,
-          slug: c.slug,
-          name: c.name,
-          phoneE164: c.phoneE164,
-          owner: people.owner!,
-          office: people.office!,
-          rep: people.rep!,
-          otherRep: people.otherRep!,
-        };
+          userId,
+          role: u.role,
+          canApproveSpend: u.canApproveSpend ?? false,
+          status: 'active',
+        });
+        members.push({ userId, email: u.email, name: u.name, role: u.role, password: spec.password });
       }
-      return seeded;
+      return { companyId, slug: spec.slug, name: spec.name, phoneE164: spec.phoneE164 ?? null, users: members };
     });
-    return { a: result.a!, b: result.b! };
   } finally {
     await client.end();
   }
+}
+
+/** The spec for one of the two fixed companies: the four MEMBERS in order, all in Central time, Nebraska. */
+function twoCompanySpec(c: (typeof COMPANIES)[number]): SeedCompanySpec {
+  return {
+    name: c.name,
+    slug: c.slug,
+    phoneE164: c.phoneE164,
+    timezone: 'America/Chicago',
+    state: 'NE',
+    password: SEED_PASSWORD,
+    users: MEMBERS.map((m) => ({
+      email: `${m.local}@${c.key}.test`,
+      name: `${c.name.split(' ')[0]} ${m.label}`,
+      role: m.role,
+      canApproveSpend: false,
+    })),
+  };
+}
+
+/**
+ * The F1 shape of one of the two fixed companies. `seeded.users` is in MEMBERS order (see
+ * `twoCompanySpec`), so the four fixed members are read by position.
+ */
+function toSeededCompany(seeded: SeededCompanyBase, phoneE164: string): SeededCompany {
+  const [owner, office, rep, otherRep] = seeded.users.map(
+    (u): SeedUser => ({ userId: u.userId, email: u.email, password: SEED_PASSWORD }),
+  );
+  return {
+    companyId: seeded.companyId,
+    slug: seeded.slug,
+    name: seeded.name,
+    phoneE164,
+    owner,
+    office,
+    rep,
+    otherRep,
+  };
+}
+
+/**
+ * Inserts two companies (Acme Roofing, then Bolt Roofing) with four active members each: an owner,
+ * an office user without spend approval, and two reps. Every user has a verified email and the
+ * password `correct-horse-battery`. Each company has default settings and an approved texting
+ * registration. Each company is one `seedCompany` transaction, and the two run one after the other.
+ * Connects as the table owner, so it works before and after RLS is enabled.
+ */
+export async function seedTwoCompanies(ownerUrl: string): Promise<{ a: SeededCompany; b: SeededCompany }> {
+  const [acme, bolt] = COMPANIES;
+  const a = await seedCompany(ownerUrl, twoCompanySpec(acme));
+  const b = await seedCompany(ownerUrl, twoCompanySpec(bolt));
+  return { a: toSeededCompany(a, acme.phoneE164), b: toSeededCompany(b, bolt.phoneE164) };
 }

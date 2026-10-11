@@ -28,3 +28,18 @@ export function isTimeZone(zone: string): boolean {
     return false; // Intl throws a RangeError for a name it does not know
   }
 }
+
+/**
+ * The calendar day (`YYYY-MM-DD`) it is in `zone` at the instant `now`. "Today" for a company is
+ * its own day, not UTC's: 04:30Z on Oct 12 is still Oct 11 in Chicago. `zone` must be a real zone
+ * (`isTimeZone`); an unknown one throws a RangeError. The `en-CA` locale is used only because it
+ * writes dates in this order.
+ */
+export function localDate(now: Date, zone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: zone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}

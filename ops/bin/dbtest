@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Runs a command that starts Testcontainers databases (Roofline's db/api/worker test suites),
+# at most ROOFLINE_DB_SLOTS (default 2) at a time across every worktree on this machine.
+# The PostGIS image is amd64-only, so each container is emulated and expensive; waiting for a
+# slot is normal. Usage: dbtest npx vitest run --project @roofline/api
+set -u
+SLOTS=${ROOFLINE_DB_SLOTS:-2}
+ROOT=/tmp/roofline-db-slots
+mkdir -p "$ROOT"
+waited=0
+while :; do
+  for i in $(seq 1 "$SLOTS"); do
+    d="$ROOT/slot-$i"
+    if mkdir "$d" 2>/dev/null; then
+      echo $$ > "$d/pid"
+      trap 'rm -rf "$d"' EXIT INT TERM
+      [ "$waited" -gt 0 ] && echo "[dbtest] got slot $i after ${waited}s" >&2
+      "$@"
+      rc=$?
+      exit $rc
+    fi
+    pid=$(cat "$d/pid" 2>/dev/null)
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then rm -rf "$d"; fi
+  done
+  [ $((waited % 60)) -eq 0 ] && echo "[dbtest] waiting for a test-database slot (${waited}s)" >&2
+  sleep 5; waited=$((waited + 5))
+done

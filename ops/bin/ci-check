@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Push the current task branch to the private GitHub repo and wait for its CI run (lint, typecheck,
+# every test suite incl. the database ones, on GitHub's machines). Prints the failing log on failure.
+# Run from inside a task worktree after committing. Exit 0 = CI passed.
+# Uses the GitHub REST API through curl (the cloud session's proxy adds the credentials; gh is not
+# logged in there). Set GH_API to override the base URL.
+set -uo pipefail
+API=${GH_API:-https://api.github.com/repos/parsasalahshori/roofline}
+branch=$(git rev-parse --abbrev-ref HEAD)
+case "$branch" in main|f1-platform-core|f2-shell|f3-setup|HEAD) echo "ci-check: refusing to push $branch (integration branches are pushed by the controller)"; exit 2;; esac
+[ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "ci-check: commit your changes first"; exit 2; }
+sha=$(git rev-parse HEAD)
+pushed=""
+for d in 0 2 4 8 16; do
+  sleep "$d"
+  if git push -q origin "HEAD:refs/heads/$branch"; then pushed=1; break; fi
+done
+[ -n "$pushed" ] || { echo "ci-check: push failed"; exit 3; }
+id=""
+for i in $(seq 1 60); do
+  id=$(curl -sS "$API/actions/runs?branch=$branch&head_sha=$sha&per_page=1" 2>/dev/null | jq -r '.workflow_runs[0].id // empty' 2>/dev/null)
+  [ -n "$id" ] && break; sleep 5
+done
+[ -n "$id" ] || { echo "ci-check: no CI run appeared for $branch@${sha:0:7}"; exit 3; }
+echo "ci-check: watching run $id for $branch@${sha:0:7} (about 10-20 minutes)"
+# By default judge the platform job only: older task branches carry an empty v1 data file (fixed on f2-shell in
+# 0b81e1b), so their v1 job fails for a reason that is not theirs.
+# CI_JOBS: space-separated job-name prefixes that must all succeed (default "Platform"; Task 13 adds "E2E").
+fail=0
+for prefix in ${CI_JOBS:-Platform}; do
+  conclusion=""; jobid=""
+  for i in $(seq 1 240); do
+    job=$(curl -sS "$API/actions/runs/$id/jobs" 2>/dev/null | jq -c --arg p "$prefix" '[.jobs[] | select(.name | startswith($p))][0] // empty' 2>/dev/null)
+    if [ -n "$job" ] && [ "$(jq -r .status <<<"$job")" = "completed" ]; then
+      conclusion=$(jq -r .conclusion <<<"$job"); jobid=$(jq -r .id <<<"$job"); break
+    fi
+    sleep 20
+  done
+  if [ "$conclusion" = "success" ]; then
+    echo "ci-check: $prefix job passed (run $id)"
+  else
+    fail=1
+    echo "ci-check: FAILED (run $id, $prefix job: ${conclusion:-timed out or missing}). Failing log tail:"
+    [ -n "$jobid" ] && curl -sSL "$API/actions/jobs/$jobid/logs" 2>/dev/null | sed 's/^[0-9T:.-]*Z //' | grep -v '^\s*$' | tail -200
+  fi
+done
+[ "$fail" = 0 ] && echo "ci-check: PASSED (run $id)" || exit 1

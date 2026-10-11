@@ -88,15 +88,51 @@ const demoNoop: StepTypeDef<LabelPayload> = {
   minutesSaved: () => 5,
 };
 
-const demoMessage: StepTypeDef<LabelPayload> = {
+/** A demo text's optional details: the sample message, how many customers, and when it goes out. */
+const COUNT_MESSAGE = 'Please enter the number of customers as a whole number.';
+const messagePayload = z.strictObject({
+  label,
+  sample: z
+    .string({ error: CHECK_TEXT })
+    .trim()
+    .max(640, 'Please keep the sample to 640 characters or fewer.')
+    .refine(noNul, CHECK_TEXT)
+    .optional(),
+  recipientCount: z.number({ error: COUNT_MESSAGE }).int(COUNT_MESSAGE).min(0, COUNT_MESSAGE).optional(),
+  sendTime: z
+    .string({ error: CHECK_TEXT })
+    .trim()
+    .max(60, 'Please keep the send time to 60 characters or fewer.')
+    .refine(noNul, CHECK_TEXT)
+    .optional(),
+});
+type MessagePayload = z.output<typeof messagePayload>;
+
+const demoMessage: StepTypeDef<MessagePayload> = {
   type: 'demo_message',
   approvalClass: 'message',
-  payload: labelPayload,
-  preview: (p) => ({ title: p.label, lines: [] }),
+  payload: messagePayload,
+  preview: (p) => ({
+    title: p.label,
+    lines: [],
+    ...(p.sample !== undefined && { messageSample: p.sample }),
+    ...(p.recipientCount !== undefined && { recipientCount: p.recipientCount }),
+    ...(p.sendTime !== undefined && { sendTime: p.sendTime }),
+  }),
   minutesSaved: () => 5,
 };
 
-const spendPayload = z.strictObject({ label, maxSpendCents });
+/** A demo spend step's optional area, which the preview shows after the spend line. */
+const spendPayload = z.strictObject({
+  label,
+  maxSpendCents,
+  area: z
+    .string({ error: CHECK_TEXT })
+    .trim()
+    .max(120, 'Please keep the area to 120 characters or fewer.')
+    .refine(noNul, CHECK_TEXT)
+    .optional(),
+});
 type SpendPayload = z.output<typeof spendPayload>;
 
 const demoSpend: StepTypeDef<SpendPayload> = {
@@ -105,7 +141,7 @@ const demoSpend: StepTypeDef<SpendPayload> = {
   payload: spendPayload,
   preview: (p) => ({
     title: p.label,
-    lines: [`Spends up to ${dollars.format(p.maxSpendCents / 100)}`],
+    lines: [`Spends up to ${dollars.format(p.maxSpendCents / 100)}`, ...(p.area !== undefined ? [p.area] : [])],
     maxSpendCents: p.maxSpendCents,
   }),
   minutesSaved: () => 5,
