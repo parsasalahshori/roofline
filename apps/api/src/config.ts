@@ -55,6 +55,14 @@ const webDistDir = z
   .transform((v) => path.resolve(REPO_ROOT, v))
   .refine(isBuiltWebApp, 'must be a directory that contains index.html (build the web app first: npm run build:web)');
 
+/** An on/off switch from an env string: `1` or `true` is yes, `0` or `false` is no; unset stays unset. */
+const flag = z
+  .string()
+  .transform((v) => v.trim().toLowerCase())
+  .pipe(z.enum(['1', 'true', '0', 'false'], { error: 'must be 1, true, 0 or false' }))
+  .transform((v) => v === '1' || v === 'true')
+  .optional();
+
 const ConfigSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production'], {
@@ -80,6 +88,17 @@ const ConfigSchema = z
      * only /api, /hooks and /health, and the browser gets the app from Vite.
      */
     WEB_DIST_DIR: webDistDir.optional(),
+    /**
+     * How the weather service is told who is asking (it wants a name and a way to reach you).
+     * Unset: `Roofline (<PUBLIC_BASE_URL>)`, chosen where the source is built (deps.ts).
+     */
+    NWS_USER_AGENT: z
+      .string()
+      // It becomes an HTTP header, and a header with other characters makes every request fail.
+      .regex(/^[\x20-\x7e]+$/, 'must be plain ASCII text, like Roofline (ops@example.com)')
+      .optional(),
+    /** `1` or `true` turns weather off (the null source: no network). `0` or `false` leaves it on. */
+    WEATHER_DISABLED: flag,
 
     /** How many reverse-proxy hops to trust for `req.ip` (0 = none). */
     TRUST_PROXY: integer(0, 0, 32),

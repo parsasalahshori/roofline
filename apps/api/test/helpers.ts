@@ -11,6 +11,7 @@ import type { Config } from '../src/config.ts';
 import { AppError, MESSAGES } from '../src/errors.ts';
 import type { Mailer } from '../src/mailer.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
+import type { CurrentWeather, WeatherSource } from '../src/weather/source.ts';
 
 /** A supertest agent: it keeps cookies between requests, like a browser tab. */
 export type SuperAgent = ReturnType<typeof request.agent>;
@@ -65,6 +66,31 @@ export class FakeGoogleVerifier implements GoogleVerifier {
   }
 }
 
+/** What `FakeWeatherSource` answers until a test sets something else. */
+export const FAKE_WEATHER: CurrentWeather = {
+  tempF: 64,
+  summary: 'Mostly Sunny',
+  icon: 'sun',
+  isDaytime: true,
+  updatedAt: '2026-10-12T14:00:00.000Z',
+};
+
+/**
+ * A weather source that never leaves the process. It records every place it was asked about and
+ * answers `value` (null: the service has nothing); if `failure` is set it throws that instead.
+ */
+export class FakeWeatherSource implements WeatherSource {
+  readonly calls: { lat: number; lng: number }[] = [];
+  value: CurrentWeather | null = FAKE_WEATHER;
+  failure: unknown = undefined;
+
+  async current(lat: number, lng: number): Promise<CurrentWeather | null> {
+    this.calls.push({ lat, lng });
+    if (this.failure !== undefined) throw this.failure;
+    return this.value && { ...this.value };
+  }
+}
+
 export type TestApp = {
   app: Express;
   deps: AppDeps;
@@ -75,6 +101,8 @@ export type TestApp = {
   queue: InlineQueue;
   /** The SMS provider: it records every text it was asked to send, and `failNext(n)` makes sends fail. */
   sms: FakeSmsAdapter;
+  /** The weather source: it records the places it was asked about and answers `weather.value`. */
+  weather: FakeWeatherSource;
   /** What work outside a request (the runner) handed to `deps.logError`, in order. Nothing is printed. */
   logged: { err: unknown; where: string }[];
   seed: { a: SeededCompany; b: SeededCompany };
@@ -149,6 +177,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const google = new FakeGoogleVerifier();
   const queue = new InlineQueue();
   const sms = new FakeSmsAdapter();
+  const weather = new FakeWeatherSource();
   const logged: { err: unknown; where: string }[] = [];
   const pending = new Set<Promise<void>>();
   const deps: AppDeps = {
@@ -159,6 +188,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     google,
     queue,
     sms,
+    weather,
     logError: (err, where) => logged.push({ err, where }),
     onBackgroundTask: (task) => {
       pending.add(task);
@@ -175,6 +205,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     google,
     queue,
     sms,
+    weather,
     logged,
     seed,
     async settle() {
