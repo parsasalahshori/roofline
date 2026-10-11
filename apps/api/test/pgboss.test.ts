@@ -76,6 +76,31 @@ async function withWorker<T>(fn: (worker: PgBoss) => Promise<T>): Promise<T> {
   }
 }
 
+describe('ensureStepQueue', () => {
+  test('makes the queue with the short policy, and running it again changes nothing', async () => {
+    await ensureStepQueue(sender);
+    await ensureStepQueue(sender);
+    expect(await sender.getQueue(STEP_QUEUE)).toMatchObject({ name: STEP_QUEUE, policy: 'short' });
+  });
+
+  // pg-boss only dedupes by singletonKey on a `short` queue; on `standard` every send is a new job,
+  // and createQueue on an existing queue changes nothing. So a queue someone made earlier with the
+  // wrong policy would silently double-run steps unless startup refuses it.
+  test('a queue that already exists with another policy stops startup with a clear error', async () => {
+    await sender.deleteQueue(STEP_QUEUE);
+    await sender.createQueue(STEP_QUEUE, { policy: 'standard' });
+    try {
+      await expect(ensureStepQueue(sender)).rejects.toThrow('The agent-step queue has the wrong policy (standard); expected short.');
+      // It only looks: the queue is left as it was.
+      expect((await sender.getQueue(STEP_QUEUE))?.policy).toBe('standard');
+    } finally {
+      await sender.deleteQueue(STEP_QUEUE);
+      await ensureStepQueue(sender);
+    }
+    expect((await sender.getQueue(STEP_QUEUE))?.policy).toBe('short');
+  });
+});
+
 describe('PgBossQueue', () => {
   test('approving sends one agent-step job per step, keyed by the step id, with the retry settings', async () => {
     const { steps } = await approvedDemo();

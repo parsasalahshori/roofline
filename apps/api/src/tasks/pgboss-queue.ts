@@ -72,9 +72,20 @@ export function createBoss(systemUrl: string, options: BossOptions = {}): PgBoss
   return boss;
 }
 
-/** Makes the `agent-step` queue if it is not there yet (creating an existing queue changes nothing). */
+/**
+ * Makes the `agent-step` queue if it is not there yet, then checks the queue that is there.
+ * Creating an existing queue changes nothing, and a policy cannot be changed afterwards, so a
+ * queue made earlier with another policy (`standard`, say) would keep it: sending a step twice
+ * would then make two jobs and run it twice. Startup stops with a clear error instead. The check
+ * only reads; it never changes or deletes the queue.
+ */
 export async function ensureStepQueue(boss: PgBoss): Promise<void> {
   await boss.createQueue(STEP_QUEUE, STEP_QUEUE_OPTIONS);
+  const existing = await boss.getQueue(STEP_QUEUE);
+  if (existing === null) throw new Error(`The ${STEP_QUEUE} queue could not be found after it was created.`);
+  if (existing.policy !== STEP_QUEUE_OPTIONS.policy) {
+    throw new Error(`The ${STEP_QUEUE} queue has the wrong policy (${existing.policy}); expected ${STEP_QUEUE_OPTIONS.policy}.`);
+  }
 }
 
 /**

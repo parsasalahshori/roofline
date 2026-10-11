@@ -33,7 +33,13 @@ try {
 }
 
 const deps = buildDeps(config, new PgBossQueue(boss));
-await startWorker(boss, deps);
+try {
+  await startWorker(boss, deps);
+} catch (err) {
+  // Includes ensureStepQueue refusing an agent-step queue that has the wrong policy.
+  console.error(`Could not set up the job queue: ${describeErrorForLog(err)}`);
+  process.exit(1);
+}
 console.log(`Roofline worker started (${config.NODE_ENV}): agent-step, ${SCHEDULES.map((s) => `${s.name} (${s.cron})`).join(', ')}`);
 
 let stopping = false;

@@ -19,7 +19,7 @@ try {
   await boss.start();
   await ensureStepQueue(boss);
 } catch (err) {
-  console.error(`Could not connect to the job queue: ${describeErrorForLog(err)}`);
+  console.error(`Could not set up the job queue: ${describeErrorForLog(err)}`);
   process.exit(1);
 }
 
