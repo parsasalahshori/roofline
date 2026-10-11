@@ -1,0 +1,13 @@
+import type { AppDeps } from '../app.ts';
+import { advanceRegistration } from '../account/texting/advance.ts';
+import { runImport } from '../imports/run.ts';
+import type { JobName, JobData, JobMeta } from './queue.ts';
+
+/**
+ * What each job does, by name. The worker (worker.ts) and `InlineJobs.drain` both run jobs through
+ * this map. Imports only types from queue.ts, so the two files can refer to each other.
+ */
+export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: JobMeta) => Promise<void>> = {
+  'import-customers': (deps, data, meta) => runImport(deps, data.companyId, data.importId!, meta),
+  'texting-registration': (deps, data) => advanceRegistration(deps, data.companyId),
+};

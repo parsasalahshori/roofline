@@ -27,6 +27,9 @@ import {
   timeline,
 } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
+import type { AppDeps } from '../src/app.ts';
+import { InlineJobs, type JobData, type JobHandlers, type JobMeta } from '../src/jobs/queue.ts';
+import { SCHEDULES } from '../src/jobs/worker.ts';
 
 const NO_CUSTOMER = "We couldn't find that customer.";
 const NO_ADDRESS = "We couldn't find that address.";
@@ -879,5 +882,148 @@ describe('the repository guards assignment on its own (defense in depth)', () =>
     expect(mine).toEqual({ jobs: [], total: 0 });
     const [line] = await dbActivities(t, A(), job.id as string).then((rows) => rows.filter((r) => r.kind === 'job.assigned'));
     expect(line).toMatchObject({ actorType: 'system', actorUserId: null });
+  });
+});
+
+/*
+ * The job queue (jobs/queue.ts) and the worker's schedules (jobs/worker.ts). InlineJobs is pure;
+ * this file's beforeEach above still applies to these blocks too.
+ */
+const QUEUE_DEPS = {} as AppDeps;
+const QUEUE_COMPANY = '5b1f2c3e-4d5a-4b6c-8d7e-9f0a1b2c3d4e';
+const QUEUE_IMPORT = '7c2d3e4f-5a6b-4c7d-9e8f-0a1b2c3d4e5f';
+
+/** A full handler map: every job does nothing unless a test overrides it. */
+function queueHandlers(over: Partial<JobHandlers> = {}): JobHandlers {
+  return {
+    'import-customers': async () => {},
+    'texting-registration': async () => {},
+    ...over,
+  };
+}
+
+describe('InlineJobs', () => {
+  test('a second send with the same pending singletonKey is recorded but queued once', async () => {
+    const jobs = new InlineJobs();
+    let runs = 0;
+    const data: JobData = { companyId: QUEUE_COMPANY, importId: QUEUE_IMPORT };
+    await jobs.send('import-customers', data, { singletonKey: 'import:1' });
+    await jobs.send('import-customers', data, { singletonKey: 'import:1' });
+
+    expect(jobs.sent).toHaveLength(2);
+    expect(jobs.sent[0]).toEqual({ name: 'import-customers', data, singletonKey: 'import:1' });
+    await jobs.drain(QUEUE_DEPS, queueHandlers({ 'import-customers': async () => { runs++; } }));
+    expect(runs).toBe(1);
+    expect(jobs.errors).toEqual([]);
+  });
+
+  test('a send without a singletonKey is never dropped, and sent records no key', async () => {
+    const jobs = new InlineJobs();
+    let runs = 0;
+    await jobs.send('texting-registration', { companyId: QUEUE_COMPANY });
+    await jobs.send('texting-registration', { companyId: QUEUE_COMPANY });
+    await jobs.drain(QUEUE_DEPS, queueHandlers({ 'texting-registration': async () => { runs++; } }));
+
+    expect(runs).toBe(2);
+    expect(jobs.sent[0]).toEqual({ name: 'texting-registration', data: { companyId: QUEUE_COMPANY } });
+    expect(jobs.sent[0]).not.toHaveProperty('singletonKey');
+  });
+
+  test('a handler that throws twice then succeeds runs three times, attempts 1 to 3, and keeps both errors', async () => {
+    const jobs = new InlineJobs();
+    const metas: JobMeta[] = [];
+    await jobs.send('import-customers', { companyId: QUEUE_COMPANY, importId: QUEUE_IMPORT });
+    await jobs.drain(
+      QUEUE_DEPS,
+      queueHandlers({
+        'import-customers': async (_deps, _data, meta) => {
+          metas.push(meta);
+          if (metas.length <= 2) throw new Error(`boom ${metas.length}`);
+        },
+      }),
+    );
+
+    expect(metas).toEqual([
+      { attempt: 1, lastAttempt: false },
+      { attempt: 2, lastAttempt: false },
+      { attempt: 3, lastAttempt: false },
+    ]);
+    expect(jobs.errors).toEqual([new Error('boom 1'), new Error('boom 2')]);
+  });
+
+  test('a handler that always throws runs five times, lastAttempt only on the fifth, and keeps five errors', async () => {
+    const jobs = new InlineJobs();
+    const metas: JobMeta[] = [];
+    await jobs.send('texting-registration', { companyId: QUEUE_COMPANY });
+    await jobs.drain(
+      QUEUE_DEPS,
+      queueHandlers({
+        'texting-registration': async (_deps, _data, meta) => {
+          metas.push(meta);
+          throw new Error('still broken');
+        },
+      }),
+    );
+
+    expect(metas.map((m) => m.attempt)).toEqual([1, 2, 3, 4, 5]);
+    expect(metas.map((m) => m.lastAttempt)).toEqual([false, false, false, false, true]);
+    expect(jobs.errors).toHaveLength(5);
+    expect(jobs.errors[4]).toEqual(new Error('still broken'));
+  });
+
+  test('a job sent while draining runs in the same drain', async () => {
+    const jobs = new InlineJobs();
+    const ran: string[] = [];
+    await jobs.send('import-customers', { companyId: QUEUE_COMPANY, importId: QUEUE_IMPORT });
+    await jobs.drain(
+      QUEUE_DEPS,
+      queueHandlers({
+        'import-customers': async (_deps, data) => {
+          ran.push('import-customers');
+          await jobs.send('texting-registration', { companyId: data.companyId });
+        },
+        'texting-registration': async () => {
+          ran.push('texting-registration');
+        },
+      }),
+    );
+
+    expect(ran).toEqual(['import-customers', 'texting-registration']);
+    expect(jobs.sent.map((s) => s.name)).toEqual(['import-customers', 'texting-registration']);
+  });
+
+  test('drain stops with an error after maxRuns runs', async () => {
+    const jobs = new InlineJobs();
+    await jobs.send('texting-registration', { companyId: QUEUE_COMPANY });
+    const forever = queueHandlers({
+      'texting-registration': async (_deps, data) => {
+        await jobs.send('texting-registration', data);
+      },
+    });
+    await expect(jobs.drain(QUEUE_DEPS, forever, 3)).rejects.toThrow(/stopped after 3 runs/);
+  });
+
+  test('the default handler map runs the stub jobs without error', async () => {
+    const jobs = new InlineJobs();
+    await jobs.send('import-customers', { companyId: QUEUE_COMPANY, importId: QUEUE_IMPORT });
+    await jobs.send('texting-registration', { companyId: QUEUE_COMPANY });
+    await jobs.drain(QUEUE_DEPS);
+
+    expect(jobs.errors).toEqual([]);
+  });
+});
+
+describe('SCHEDULES', () => {
+  test('the five new schedules follow the first three, with their exact crons', () => {
+    expect(SCHEDULES.map((s) => [s.name, s.cron])).toEqual([
+      ['expire-drafts', '*/5 * * * *'],
+      ['sweep-queued', '* * * * *'],
+      ['dispatch-messages', '* * * * *'],
+      ['end-trials', '*/5 * * * *'],
+      ['report-usage', '* * * * *'],
+      ['provision-texting', '* * * * *'],
+      ['poll-texting', '0 * * * *'],
+      ['bill-monthly-fees', '0 9 1 * *'],
+    ]);
   });
 });
