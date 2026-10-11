@@ -137,3 +137,4 @@ Task 6: complete (5494fc1..83a6b46). Task 7: complete (5494fc1..cc05bc8). Task 8
 Minors (deferred): APPROVALS_JSON_BODY_LIMIT doc comment garbled (app.ts ~75); single located address gives zero-area bounds - web map must pad when west===east; customerMatch doc comment long line; two 'where is the company' rules (companyLocation company-wide incl. archived vs mapArea rep-scoped) - document, do not unify by accident; weather route queries location before the cache.
 Merged into f2-shell: a62343c (T6), 2bee597 (T7), e3b9594 (T8; conflicts in app.ts/config.ts/config.test.ts resolved keeping both sides). typecheck + lint clean.
 Fix 96d2c0d: eslint ignores ops/** (roofline-team.js top-level return broke lint on f2-shell since b51c7c1). Sibling 1 told to merge f2-shell into f2-t17/f2-p1.
+CI: f2-shell 8d503e9 (T6+T7+T8 merged, lint fix, ops paths-ignore) all green, run 38180364868 — T8's database suites now proven.
