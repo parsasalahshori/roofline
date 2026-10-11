@@ -4,7 +4,9 @@ export { classifyInbound, type InboundKind, type InboundReading, looksLikeOptOut
 export {
   DisabledSmsAdapter,
   FakeSmsAdapter,
+  isSmsRefusedError,
   type OutboundSms,
+  SMS_REFUSED,
   type SmsAdapter,
   SmsRefusedError,
   type SmsSendResult,

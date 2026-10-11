@@ -149,6 +149,105 @@ describe('contact', () => {
       expect(decide(baseline({ recipient: { [flag]: false } }))).toEqual({ action: 'send' });
     });
   });
+  describe('a number that cannot be texted', () => {
+    test('blocks a toll-free number', () => {
+      expect(decide(baseline({ recipient: { phoneE164: '+18005550100' } }))).toEqual({
+        action: 'block',
+        rule: 'contact',
+        reason: "This is a toll-free number, which can't get these texts.",
+      });
+    });
+
+    test.each(['833', '844', '855', '866', '877', '888', '900'])(
+      'blocks the toll-free area code %s the same way',
+      (code) => {
+        expect(decide(baseline({ recipient: { phoneE164: `+1${code}5550100` } }))).toEqual({
+          action: 'block',
+          rule: 'contact',
+          reason: "This is a toll-free number, which can't get these texts.",
+        });
+      },
+    );
+
+    test('blocks a Canadian number as outside the US', () => {
+      expect(decide(baseline({ recipient: { phoneE164: '+14165550100' } }))).toEqual({
+        action: 'block',
+        rule: 'contact',
+        reason: "This number is outside the US, so we can't text it.",
+      });
+    });
+
+    test('blocks a Jamaican number as outside the US', () => {
+      expect(decide(baseline({ recipient: { phoneE164: '+18765550100' } }))).toEqual({
+        action: 'block',
+        rule: 'contact',
+        reason: "This number is outside the US, so we can't text it.",
+      });
+    });
+
+    test('blocks a number that is not shaped like +1 and ten digits', () => {
+      expect(decide(baseline({ recipient: { phoneE164: '+4402071234567' } }))).toEqual({
+        action: 'block',
+        rule: 'contact',
+        reason: "This isn't a mobile number we can text.",
+      });
+    });
+
+    test('is strict about surrounding whitespace: no trimming, so a padded US number is not textable', () => {
+      expect(decide(baseline({ recipient: { phoneE164: ' +14025550123' } }))).toEqual({
+        action: 'block',
+        rule: 'contact',
+        reason: "This isn't a mobile number we can text.",
+      });
+    });
+
+    test('still sends to a US territory number (Puerto Rico)', () => {
+      expect(decide(baseline({ recipient: { phoneE164: '+17875550100' } }))).toEqual({ action: 'send' });
+    });
+
+    test('blocks an informational message to a toll-free number the same way', () => {
+      const req = informational('2026-06-10T10:00:00', null, { recipient: { phoneE164: '+18005550100' } });
+      expect(decide(req)).toEqual({
+        action: 'block',
+        rule: 'contact',
+        reason: "This is a toll-free number, which can't get these texts.",
+      });
+    });
+
+    describe('is checked after the number-on-file and do-not-contact checks, and before consent', () => {
+      test('a toll-free number on a do-not-contact customer reports the do-not-contact reason', () => {
+        expect(decide(baseline({ recipient: { phoneE164: '+18005550100', doNotContact: true } }))).toEqual({
+          action: 'block',
+          rule: 'contact',
+          reason: 'This customer asked not to be texted.',
+        });
+      });
+
+      test('a toll-free number on an opted-out customer reports the do-not-contact reason', () => {
+        expect(decide(baseline({ recipient: { phoneE164: '+18005550100', optedOut: true } }))).toEqual({
+          action: 'block',
+          rule: 'contact',
+          reason: 'This customer asked not to be texted.',
+        });
+      });
+
+      test('a missing number reports "No mobile number on file." even when consent is also missing', () => {
+        expect(decide(baseline({ recipient: { phoneE164: null, consent: 'none' } }))).toEqual({
+          action: 'block',
+          rule: 'contact',
+          reason: 'No mobile number on file.',
+        });
+      });
+
+      test('a toll-free number with no consent is reported by the contact rule, not consent', () => {
+        expect(decide(baseline({ recipient: { phoneE164: '+18005550100', consent: 'none' } }))).toEqual({
+          action: 'block',
+          rule: 'contact',
+          reason: "This is a toll-free number, which can't get these texts.",
+        });
+      });
+    });
+  });
 });
 
 describe('consent', () => {
@@ -349,6 +448,24 @@ describe('weekly frequency cap', () => {
 });
 
 describe('rule order', () => {
+  test('a toll-free number on a past_due company reports billing, not contact', () => {
+    const req = baseline({ company: { status: 'past_due' }, recipient: { phoneE164: '+18005550100' } });
+    expect(decide(req)).toEqual({
+      action: 'block',
+      rule: 'billing',
+      reason: 'Texting is paused until billing is sorted out.',
+    });
+  });
+
+  test('a toll-free number on a campaign with status none reports registration, not contact', () => {
+    const req = baseline({ company: { campaignStatus: 'none' }, recipient: { phoneE164: '+18005550100' } });
+    expect(decide(req)).toEqual({
+      action: 'block',
+      rule: 'registration',
+      reason: 'Texting turns on after the phone carriers approve your registration.',
+    });
+  });
+
   test('a request failing both consent and dedupe reports consent', () => {
     const req = baseline({ recipient: { consent: 'none' }, history: { dedupeAlreadySent: true } });
     expect(decide(req)).toMatchObject({ action: 'block', rule: 'consent' });
