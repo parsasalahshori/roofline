@@ -7,7 +7,7 @@ import { createApp } from '../src/app.ts';
 import { COST, DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from '../src/auth/password.ts';
 import * as passwordModule from '../src/auth/password.ts';
 import { resolveSession } from '../src/auth/sessions.ts';
-import { makeTestApp, loginAs, type SuperAgent, type TestApp } from './helpers.ts';
+import { loginAs, makeTestApp, SIGNUP_COMPANY, type SuperAgent, type TestApp } from './helpers.ts';
 
 // verifyPassword is wrapped (it still runs for real) so a test can see what it was called with.
 vi.mock('../src/auth/password.ts', async (importOriginal) => {
@@ -33,10 +33,17 @@ async function sql<T = Record<string, unknown>>(text: string, params: unknown[] 
   return result.rows as T[];
 }
 
-type SignupBody = { email: string; password: string; name: string; companyName: string };
+type SignupBody = { email: string; password: string; name: string; companyName: string; companyPhone: string; companyAddress: string };
 
 function signupBody(overrides: Partial<SignupBody> = {}): SignupBody {
-  return { email: 'owner@example.com', password: PASSWORD, name: 'Olive Owner', companyName: 'Summit Roofing', ...overrides };
+  return {
+    email: 'owner@example.com',
+    password: PASSWORD,
+    name: 'Olive Owner',
+    companyName: 'Summit Roofing',
+    ...SIGNUP_COMPANY,
+    ...overrides,
+  };
 }
 
 function signup(app: TestApp['app'] | SuperAgent, overrides: Partial<SignupBody> = {}) {
@@ -278,6 +285,10 @@ describe('sign-up', () => {
     ['a missing name', { name: undefined }, 'name', 'Please enter a name.'],
     ['a blank company name', { companyName: ' ' }, 'companyName', 'Please enter your company name.'],
     ['a missing company name', { companyName: undefined }, 'companyName', 'Please enter your company name.'],
+    ['a bad business phone', { companyPhone: '12' }, 'companyPhone', "That doesn't look like a US phone number."],
+    ['a missing business phone', { companyPhone: undefined }, 'companyPhone', "That doesn't look like a US phone number."],
+    ['a blank business address', { companyAddress: '   ' }, 'companyAddress', "Please enter your business address."],
+    ['a missing business address', { companyAddress: undefined }, 'companyAddress', "Please enter your business address."],
   ])('%s → 400 with the field and a plain sentence', async (_name, overrides, field, error) => {
     const res = await request(t.app)
       .post('/api/auth/signup')

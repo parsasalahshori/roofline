@@ -25,8 +25,8 @@ declare global {
 }
 
 /** Auth routes that work without a session. Method and path (relative to /api), lowercase. */
-const PUBLIC_ROUTES: ReadonlySet<string> = new Set(
-  [
+const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
+  ...[
     'signup',
     'login',
     'verify-email',
@@ -36,7 +36,9 @@ const PUBLIC_ROUTES: ReadonlySet<string> = new Set(
     'google',
     'accept-invite',
   ].map((name) => `POST /auth/${name}`),
-);
+  // The sign-in page's public settings (the Google client id). Nothing about the caller is needed.
+  'GET /auth/config',
+]);
 
 function isPublicRoute(method: string, path: string): boolean {
   return PUBLIC_ROUTES.has(`${method} ${path.toLowerCase().replace(/\/+$/, '')}`);

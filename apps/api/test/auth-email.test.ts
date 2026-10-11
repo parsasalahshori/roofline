@@ -8,7 +8,7 @@ import { attachSession, requireVerifiedEmail } from '../src/auth/middleware.ts';
 import { consumeToken, issueToken } from '../src/auth/tokens.ts';
 import { errorHandler } from '../src/errors.ts';
 import type { Mailer } from '../src/mailer.ts';
-import { loginAs, makeTestApp, type SentMail, type SuperAgent, type TestApp } from './helpers.ts';
+import { loginAs, makeTestApp, SIGNUP_COMPANY, type SentMail, type SuperAgent, type TestApp } from './helpers.ts';
 
 /*
  * Two seams for the "work after the response" tests, both wrapping the real thing:
@@ -75,7 +75,14 @@ async function sql<T = Record<string, unknown>>(text: string, params: unknown[] 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
 function signupBody(overrides: Record<string, unknown> = {}) {
-  return { email: 'owner@example.com', password: PASSWORD, name: 'Olive Owner', companyName: 'Summit Roofing', ...overrides };
+  return {
+    email: 'owner@example.com',
+    password: PASSWORD,
+    name: 'Olive Owner',
+    companyName: 'Summit Roofing',
+    ...SIGNUP_COMPANY,
+    ...overrides,
+  };
 }
 
 /** Signs a new owner up on a fresh agent (so it carries the session cookie), and returns the cookie too. */

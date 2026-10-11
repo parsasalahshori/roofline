@@ -1,9 +1,21 @@
 import { eq } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
-import { audit, companies, companySettings, insertDefaultSettings, type Tx, withTenant } from '@roofline/db';
+import {
+  audit,
+  companies,
+  companyLocationFacts,
+  companySettings,
+  insertDefaultSettings,
+  setCompanyLocation,
+  setServiceAreaRadius,
+  type TenantContext,
+  type Tx,
+  withTenant,
+} from '@roofline/db';
 import { toE164 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { DEFAULT_SERVICE_AREA_MILES, locateAddress, SERVICE_AREA_CHOICES } from '../company/location.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { requireCapability } from '../permissions.ts';
 import { assertKnownFields, EMAIL_MESSAGE, emailField, parse, timeZoneField, TOO_LONG } from '../validate.ts';
@@ -16,6 +28,13 @@ const WEBSITE_MESSAGE = 'Please enter a web address, like https://example.com.';
 const LOGO_MESSAGE = 'Please enter the web address of the logo image, starting with https://.';
 const STATE_MESSAGE = 'Please use the 2-letter state, like NE.';
 const ZIP_MESSAGE = 'Please enter a ZIP code, like 68102.';
+
+// The map and service-area messages (F3). They live here, not in errors.ts MESSAGES.
+const ADDRESS_FIRST_MESSAGE = 'Please add your business address first.';
+const NOT_FOUND_MESSAGE = "We couldn't find that address. Check the street, city and state.";
+const MAP_DOWN_MESSAGE = "We couldn't reach the map service. Try again in a minute.";
+const RADIUS_MESSAGE = 'Pick 10, 20, 40 or 60 miles.';
+const NOT_ON_MAP_MESSAGE = 'Place your address on the map first.';
 
 /**
  * `http(s)://host/...` as a string to store, or null when it is not one. A bare `acme.example` is
@@ -152,6 +171,13 @@ const SettingsPatch = z.object({
 });
 const SETTINGS_FIELDS = Object.keys(SettingsPatch.shape);
 
+/** The service-area radius: one of the choices, and only a number (a text "20" is refused). */
+const RadiusPatch = z.object({
+  radiusMiles: z
+    .number({ error: RADIUS_MESSAGE })
+    .refine((v) => (SERVICE_AREA_CHOICES as readonly number[]).includes(v), RADIUS_MESSAGE),
+});
+
 const SETTINGS_READ = {
   id: companySettings.id,
   hourlyRateCents: companySettings.hourlyRateCents,
@@ -172,19 +198,23 @@ function pick<T extends Record<string, unknown>>(row: T, touched: readonly strin
 }
 
 /**
- * `/api/company`: the company profile (any member can read it; only `company_admin` changes it)
- * and `/api/company/settings` (`company_admin` for both). Every change is written together with
- * its audit row, before and after, in one transaction.
+ * `/api/company`: the company profile (any member can read it; only `company_admin` changes it),
+ * `/api/company/settings` (`company_admin` for both), and the map: `/api/company/locate` (looks the
+ * saved address up) and `/api/company/service-area` (`company_admin`). Every change is written
+ * together with its audit row, before and after, in one transaction. The address lookup is a
+ * network call, so it runs outside any transaction.
  */
 export function companyRoutes(deps: AppDeps): Router {
   const { pools, clock } = deps;
   const router = Router();
 
-  const loadCompany = async (tx: Tx, companyId: string, lock = false) => {
-    const query = tx.select(COMPANY_READ).from(companies).where(eq(companies.id, companyId)).limit(1);
+  /** The company's profile, with where it stands on the map: `located` and the radius. */
+  const loadCompany = async (tx: Tx, ctx: TenantContext, lock = false) => {
+    const query = tx.select(COMPANY_READ).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
     const [row] = await (lock ? query.for('update') : query);
     if (!row) throw new AppError(404, MESSAGES.notFound);
-    return row;
+    const facts = await companyLocationFacts(tx, ctx);
+    return { ...row, located: facts.located, serviceAreaMiles: facts.serviceAreaMiles };
   };
 
   /** The company's settings row, made with the defaults if it is somehow missing. */
@@ -202,7 +232,7 @@ export function companyRoutes(deps: AppDeps): Router {
   };
 
   router.get('/', async (req, res) => {
-    res.json(await withTenant(pools, req.ctx, (tx) => loadCompany(tx, req.ctx.companyId)));
+    res.json(await withTenant(pools, req.ctx, (tx) => loadCompany(tx, req.ctx)));
   });
 
   router.patch('/', requireCapability('company_admin'), async (req, res) => {
@@ -215,13 +245,13 @@ export function companyRoutes(deps: AppDeps): Router {
     const now = clock.now();
 
     const result = await withTenant(pools, ctx, async (tx) => {
-      const before = await loadCompany(tx, ctx.companyId, true);
+      const before = await loadCompany(tx, ctx, true);
       const set = Object.fromEntries(touched.map((key) => [COMPANY_COLUMN[key as keyof CompanyPatchValues], changes[key as keyof CompanyPatchValues]]));
       await tx
         .update(companies)
         .set({ ...set, updatedAt: now })
         .where(eq(companies.id, ctx.companyId));
-      const after = await loadCompany(tx, ctx.companyId);
+      const after = await loadCompany(tx, ctx);
       await audit(tx, ctx, {
         action: 'company.update',
         targetType: 'company',
@@ -232,6 +262,66 @@ export function companyRoutes(deps: AppDeps): Router {
         at: now,
       });
       return after;
+    });
+    res.json(result);
+  });
+
+  router.post('/locate', requireCapability('company_admin'), async (req, res) => {
+    const { ctx } = req;
+    const addressText = await withTenant(pools, ctx, async (tx) => (await companyLocationFacts(tx, ctx)).addressText);
+    if (addressText === null) throw new AppError(400, ADDRESS_FIRST_MESSAGE, 'addressStreet');
+
+    // No transaction is open here: the lookup is a network call and must not hold a connection.
+    const outcome = await locateAddress(deps.geocoder, addressText);
+    if (outcome.kind === 'not_found') throw new AppError(400, NOT_FOUND_MESSAGE, 'addressStreet');
+    if (outcome.kind === 'unavailable') throw new AppError(503, MAP_DOWN_MESSAGE);
+    const { result } = outcome;
+
+    const now = clock.now();
+    await withTenant(pools, ctx, async (tx) => {
+      // The typed address stays as it is; only the point, the time zone and the area change.
+      const before = await loadCompany(tx, ctx, true);
+      await setCompanyLocation(tx, ctx, {
+        street: before.addressStreet,
+        city: before.addressCity,
+        state: before.addressState,
+        zip: before.addressZip,
+        timezone: result.timezone,
+        point: { lng: result.lng, lat: result.lat },
+        serviceAreaMiles: before.serviceAreaMiles ?? DEFAULT_SERVICE_AREA_MILES,
+      });
+      await audit(tx, ctx, {
+        action: 'company.located',
+        targetType: 'company',
+        targetId: ctx.companyId,
+        before: { located: before.located },
+        after: { located: true },
+        ip: req.ip ?? null,
+        at: now,
+      });
+    });
+    res.json({ located: true });
+  });
+
+  router.put('/service-area', requireCapability('company_admin'), async (req, res) => {
+    const { ctx } = req;
+    const { radiusMiles } = parse(RadiusPatch, assertKnownFields(req.body, ['radiusMiles'], { allowEmpty: true }));
+    const now = clock.now();
+
+    const result = await withTenant(pools, ctx, async (tx) => {
+      const before = await loadCompany(tx, ctx, true);
+      // False means there is no point yet; throwing rolls the transaction back.
+      if (!(await setServiceAreaRadius(tx, ctx, radiusMiles))) throw new AppError(409, NOT_ON_MAP_MESSAGE);
+      await audit(tx, ctx, {
+        action: 'company.service_area',
+        targetType: 'company',
+        targetId: ctx.companyId,
+        before: { radiusMiles: before.serviceAreaMiles },
+        after: { radiusMiles },
+        ip: req.ip ?? null,
+        at: now,
+      });
+      return loadCompany(tx, ctx);
     });
     res.json(result);
   });
