@@ -15,6 +15,13 @@
       "when": 1791684355883,
       "tag": "0001_same_company_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791685053183,
+      "tag": "0002_roles_rls",
+      "breakpoints": true
     }
   ]
 }

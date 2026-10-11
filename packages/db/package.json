@@ -10,7 +10,8 @@
   },
   "scripts": {
     "generate": "drizzle-kit generate",
-    "migrate": "tsx scripts/migrate.ts"
+    "migrate": "tsx scripts/migrate.ts",
+    "set-role-passwords": "tsx scripts/set-role-passwords.ts"
   },
   "dependencies": {
     "@roofline/shared": "^0.0.0",
