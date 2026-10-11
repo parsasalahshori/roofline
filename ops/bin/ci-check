@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Push the current task branch to the private GitHub repo and wait for its CI run (lint, typecheck,
+# every test suite incl. the database ones, on GitHub's machines). Prints the failing log on failure.
+# Run from inside a task worktree after committing. Exit 0 = CI passed.
+set -uo pipefail
+branch=$(git rev-parse --abbrev-ref HEAD)
+case "$branch" in main|f1-platform-core|f2-shell|f3-setup|HEAD) echo "ci-check: refusing to push $branch (integration branches are pushed by the controller)"; exit 2;; esac
+[ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "ci-check: commit your changes first"; exit 2; }
+sha=$(git rev-parse HEAD)
+git push -q origin "HEAD:refs/heads/$branch" || { echo "ci-check: push failed"; exit 3; }
+id=""
+for i in $(seq 1 60); do
+  id=$(gh run list --branch "$branch" --commit "$sha" -L 1 --json databaseId -q '.[0].databaseId' 2>/dev/null)
+  [ -n "$id" ] && break; sleep 5
+done
+[ -n "$id" ] || { echo "ci-check: no CI run appeared for $branch@${sha:0:7}"; exit 3; }
+echo "ci-check: watching run $id for $branch@${sha:0:7} (about 10-20 minutes)"
+gh run watch "$id" --interval 30 >/dev/null 2>&1
+# Judge the platform job only: older task branches carry an empty v1 data file (fixed on f2-shell in
+# 0b81e1b), so their v1 job fails for a reason that is not theirs.
+platform=$(gh run view "$id" --json jobs -q '.jobs[] | select(.name | startswith("Platform")) | .conclusion' 2>/dev/null)
+if [ "$platform" = "success" ]; then
+  echo "ci-check: PASSED (run $id, platform job)"
+else
+  echo "ci-check: FAILED (run $id, platform job: ${platform:-unknown}). Failing log tail:"
+  gh run view "$id" --log-failed 2>/dev/null | grep -v '^v1 (node:test)' | tail -200; exit 1
+fi

@@ -1,0 +1,85 @@
+### Task 12: Web: shell (top bar, dock, windows, search, user menu)
+
+**Files:**
+- Create: `apps/web/src/shell/{Shell.tsx,Shell.module.css,AppWindow.tsx,apps.ts,useIsPhone.ts}`, `apps/web/src/shell/topbar/{ShellTopBar,OkPill,AgentsWorking,WeatherChip,SearchDialog,UserMenu}.tsx` (+ CSS Modules), `apps/web/src/features/coming-soon/ComingSoon.tsx`, `apps/web/src/features/storm/StormWindow.tsx`, `apps/web/src/copy/{shell,dock,search,comingSoon,storm}.ts`
+- Modify: `apps/web/src/app/router.tsx`, `apps/web/src/api/hooks.ts` (`useApprovals`, `useTasksSummary`, `useAttentionCount`, `useWeather`, `useSearch`)
+- Test: `apps/web/test/shell.test.tsx`, `apps/web/test/search-dialog.test.tsx`, `apps/web/test/ok-pill.test.tsx`
+
+**Interfaces:**
+- **App definitions (`apps.ts`):**
+  - `AppKey = 'storm'|'front-desk'|'estimator'|'jobs'|'calendar'|'agents'`
+  - `DOCK_APPS: readonly { key: AppKey; href: string; icon: ReactNode; shipped: false }[]`, in dock order: Storm, Front Desk, Estimator, Jobs, Calendar, Agents.
+  - `WINDOW_COPY: Record<AppKey | 'today' | 'approvals' | 'settings' | 'customers' | 'notFound', { title: string; description: string }>` comes from `copy/dock.ts`:
+    - Storm, "Hail maps and storm plans"
+    - Front Desk, "Answers every call and text"
+    - Estimator, "Roof estimates and proposals"
+    - Jobs, "Every job from lead to paid"
+    - Calendar, "Inspections and installs"
+    - Agents, "What your agents did today"
+    - Need your OK, "Plans your agents drafted, waiting for a yes"
+    - My day, "What needs you today"
+    - Settings, "Your company, team and accounts"
+    - Customer, "Customer details"
+    - Not found, "We couldn't find that page"
+- **Badges** (from the queries):
+  - Storm: the counted drafts with `agent === 'storm_scout'`
+  - Estimator: the counted drafts with `agent === 'estimator'`
+  - Agents: `useAttentionCount()`, the length of `GET /api/tasks?status=needs_attention&limit=200`
+  - the others: none
+  - "Counted drafts" means `ApprovalsList.tasks` with status `draft` or `awaiting_owner` and `expired === false`.
+- **`useIsPhone(): boolean`:** `matchMedia('(max-width: 767.98px)')` through `useSyncExternalStore`. It is false where `matchMedia` is missing. Task 17 builds the phone shell on it.
+- **`AppWindow({ app, children, stats? })`:** renders `Window` titled from `WINDOW_COPY[app]`, `variant` from `useIsPhone()` (phone → `'page'`), `onClose: () => navigate('/')`, `closeLabel: common.close`. Keyed by `app`, so opening another app replaces the window.
+- **Router children** of the session route:
+  - `index`: nothing (map home)
+  - `today`: Task 15
+  - `approvals` and `approvals/:taskId`: Task 14; Task 12 renders `ComingSoon` placeholders in their slots
+  - `storm`: `StormWindow`
+  - `storm/plans/:taskId`: Task 14's `Review` inside the Storm window
+  - `storm/*`, `front-desk/*`, `estimator/*`, `jobs/*`, `calendar/*`, `agents/*`, `customers/*`: `ComingSoon`
+  - `settings` and `settings/:tab`: Task 16
+  - `*`: the Not found window
+- **`ComingSoon({ app })`:** an `EmptyState` with the app's coming-soon line from `copy/comingSoon.ts`.
+- **`StormWindow`:** `ComingSoon` plus, when the newest counted `storm_scout` draft exists, a `Card` with its title, summary and a primary `Button` "Approve storm plan" → `/storm/plans/${id}`.
+- **`OkPill`:**
+  - Hidden when `count === 0`.
+  - The label is `copy.shell.needYourOk(count)` → `${n} need your OK`.
+  - `href`: with exactly one counted draft, `/approvals/${id}`; otherwise `/approvals`.
+- **`AgentsWorking`:** `copy.shell.agentsWorking(working)` → 0: "All quiet"; 1: "1 agent working"; n: `${n} agents working`. From `GET /api/tasks/summary`, refetched every 30 s.
+- **`WeatherChip`:** hidden when `weather` is null or the query errors. Otherwise an icon plus `${tempF}°` plus the summary, truncated with an ellipsis. Refetched every 30 min.
+- **`SearchDialog`:**
+  - ⌘K (mac) or Ctrl+K opens it from anywhere, including while typing in an input (`keydown` on `window`, `preventDefault`). A top-bar search `IconButton` also opens it.
+  - The input is debounced 200 ms; at least 2 characters shows results grouped as Customers, Jobs and Addresses (each heading from copy).
+  - ↑/↓ move through the results (`aria-activedescendant` on a `role="combobox"` input with a `role="listbox"`); Enter opens the active one.
+  - Targets: a customer → `/customers/${id}`; a job → `/jobs/${id}`; an address → `/customers/${customerId}`.
+  - Esc closes it. Under 2 characters it shows a hint; with no matches, "No matches for “{q}”".
+- **`UserMenu`:** `Avatar` plus the name opens a menu (a `Sheet` on phone, a popover `Card` on desktop) with:
+  - My day → `/today`
+  - Settings → `/settings/company`
+  - one entry per other company (switch) when `companies.length > 1`
+  - Sign out
+- **Shell layout:** `TopBar` on top, then the map, then `<Outlet />` inside the window, then the `Dock` at the bottom center. The Dock marks `current` from the first path segment. When a pin card's Open is used: `navigate('/customers/'+id)` or `'/jobs/'+id`.
+- **Polling:** approvals are refetched every 30 s and on window focus.
+
+- [ ] **Step 1: Write the failing tests** (memory router with stubbed `fetch` routes; `maplibre-gl` mocked)
+  - `shell.test.tsx`:
+    - `it('shows six labeled dock apps')`: `within(getByRole('navigation', {name: copy.dock.label})).getAllByRole('link')` gives the 6 labels in order.
+    - `it('opens each app in one centered window with its own URL')`: clicking Storm gives the dialog named Storm and the router location `/storm`; then clicking Jobs gives the dialog Jobs and one dialog in the document.
+    - `it('Esc and ✕ go to the map')`: at `/jobs`, Esc → `/` with no dialog; at `/jobs`, a click on Close → `/`.
+    - `it('deep-links straight to a window')`: the initial entry `/calendar` shows the dialog Calendar.
+    - `it('badges Storm with storm drafts and Agents with tasks needing attention')`.
+    - `it('Storm window offers the storm plan')`: one storm draft → "Approve storm plan" links to `/storm/plans/t1`.
+    - `it('hides the weather when there is none or it fails')`: `{weather:null}` and a 500 both render no weather chip and no error toast.
+  - `ok-pill.test.tsx`: count 0 → no pill; one counted draft (plus one expired) → the link "1 need your OK" with href `/approvals/t1`; two → href `/approvals`.
+  - `search-dialog.test.tsx`:
+    - `it('opens on Ctrl+K even from a text field')`.
+    - `it('groups results and opens the active one with Enter')`: type "lop", ArrowDown, Enter → `/customers/c1`.
+    - `it('waits for 2 characters')`.
+    - `it('shows no matches')`.
+    - `it('sends the query as typed, encoded')`: "o'neil %" is requested as `q=o'neil%20%25` (URLSearchParams).
+- [ ] **Step 2: Run them and see them fail**.
+- [ ] **Step 3: Implement**.
+- [ ] **Step 4: Run the tests, the lints and the build**. Expected: PASS.
+- [ ] **Step 5: Commit** — `feat(web): shell with top bar, dock, windows, search and user menu`
+
+---
+
