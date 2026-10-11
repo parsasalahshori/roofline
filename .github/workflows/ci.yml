@@ -55,3 +55,28 @@ jobs:
           cache-dependency-path: v1/package-lock.json
       - run: npm ci
       - run: npm test
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # CI has no pre-installed browser: fetch the pinned version's Chromium and its system libraries.
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      # The stack starts PostGIS with Testcontainers on the runner's Docker (amd64, native).
+      - run: npm run e2e -- --project desktop
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
