@@ -318,13 +318,13 @@ describe('POST /hooks/twilio/sms: the brief', () => {
     await nothingWritten();
   });
 
-  test('a number that is no longer active → /status still 404s for it (texts to it are accepted; see the STOP tests)', async () => {
+  test('a number that is no longer active → /status still reaches the company, and the report is applied (texts to it are accepted; see the STOP tests)', async () => {
     const text = await sentText(OUT(11));
     await t.deps.pools.system.update(companyPhoneNumbers).set({ status: 'released' }).where(eq(companyPhoneNumbers.e164, A_NUMBER));
     const res = await status(statusOf(OUT(11), 'delivered'));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
     expect(res.text).toBe('');
-    expect((await messageRow('a', text.id)).status).toBe('sent');
+    expect((await messageRow('a', text.id)).status).toBe('delivered');
     expect(await webhookRows()).toEqual([]);
   });
 
