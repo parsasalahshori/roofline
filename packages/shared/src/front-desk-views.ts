@@ -161,6 +161,8 @@ export type FrontDeskSettings = {
 export type FrontDeskSettingsInput = Omit<FrontDeskSettings, 'blockedReason' | 'forwardingVerifiedAt' | 'onCall'> & {
   /** User ids in ring order; members left out are taken off the list. */
   onCallOrder: string[];
+  /** Owner only: turn Front Desk on although the forwarding test has not passed. */
+  override?: boolean;
 };
 
 /** Limits the settings form and the route both enforce (spec §10). */
