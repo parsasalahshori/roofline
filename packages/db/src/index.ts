@@ -196,3 +196,4 @@ export * from './repos/storm-geo.ts';
 export * from './repos/storm-pages.ts';
 export * from './repos/storm-requests.ts';
 export * from './repos/storm-results.ts';
+export * from './repos/storm-api.ts';
