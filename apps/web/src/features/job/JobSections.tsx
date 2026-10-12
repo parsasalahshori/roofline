@@ -1,14 +1,19 @@
 import { useId, useMemo, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { isTimeZone, type AppointmentView, type JobView, type TaskStatus } from '@roofline/shared';
-import { Button, EmptyState, UiLink, useToast } from '@roofline/ui';
+import type { ProposalView } from '@roofline/shared';
+import { Button, EmptyState, Skeleton, UiLink, useToast } from '@roofline/ui';
 import { job } from '../../copy/job.ts';
+import { proposals } from '../../copy/proposals.ts';
 import { jobs } from '../../copy/jobs.ts';
 import { TASK_STATUS_LABEL } from '../../copy/status.ts';
+import { useMe } from '../../api/hooks.ts';
 import { useCompany } from '../settings/api.ts';
+import { useCopyLink } from '../proposals/api.ts';
 import { formatDollars } from '../jobs/JobCardView.tsx';
 import { Timeline } from '../timeline/Timeline.tsx';
-import { useCreateQuote } from './api.ts';
+import { useMeasure } from '../estimator/api.ts';
+import { useCreateQuote, useJobProposals } from './api.ts';
 import styles from './JobSections.module.css';
 
 export type JobSectionsProps = { view: JobView };
@@ -44,6 +49,33 @@ function Section({ title, children, name }: { title: string; children: ReactNode
   );
 }
 
+/** The lowest enabled option's total as a line, or null when there is none. Instant numbers say Estimate. */
+function proposalFromText(proposal: ProposalView): string | null {
+  const totals = proposal.options.filter((option) => option.enabled).map((option) => option.totalCents);
+  if (totals.length === 0) return null;
+  const money = proposals.money(Math.min(...totals));
+  return proposal.basis === 'exact' ? job.proposalExactFrom(money) : job.proposalFrom(money);
+}
+
+/** One proposal row: the link, plus a Copy link button for staff who may hand the link out. */
+function ProposalRow({ proposal, from, canCopy }: { proposal: ProposalView; from: string | null; canCopy: boolean }) {
+  const copyLink = useCopyLink(proposal.id);
+  return (
+    <li className={styles.proposalRow}>
+      <UiLink href={'/estimator/proposals/' + proposal.id} className={styles.link} data-status={proposal.status}>
+        <span className={styles.strong}>{proposal.number}</span>
+        <span className={styles.meta}>{proposals.statusLabelFor(proposal.status)}</span>
+        {from !== null ? <span className={styles.meta}>{from}</span> : null}
+      </UiLink>
+      {canCopy ? (
+        <Button variant="ghost" busy={copyLink.isPending} onClick={() => copyLink.mutate()}>
+          {proposals.copyLink}
+        </Button>
+      ) : null}
+    </li>
+  );
+}
+
 /** The four blocks under the header: appointments, quotes, agent tasks and the timeline. */
 export function JobSections({ view }: JobSectionsProps) {
   const zone = useCompanyZone();
@@ -51,6 +83,10 @@ export function JobSections({ view }: JobSectionsProps) {
   const toast = useToast();
   const createQuote = useCreateQuote(view.job.id);
   const jobId = view.job.id;
+  const measure = useMeasure();
+  const jobProposals = useJobProposals(jobId);
+  const me = useMe();
+  const canCopyLinks = me.data?.role === 'owner' || me.data?.role === 'office';
 
   const whenFormat = useMemo(
     () => new Intl.DateTimeFormat('en-US', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }),
@@ -69,6 +105,15 @@ export function JobSections({ view }: JobSectionsProps) {
       navigate(`/jobs/${jobId}/quotes/${id}`);
     } catch {
       toast.show(job.quoteCreateFailed, 'error');
+    }
+  }
+
+  async function startProposal() {
+    try {
+      const measurement = await measure.mutateAsync({ propertyId: view.home.id });
+      navigate('/estimator/measure/' + measurement.id);
+    } catch {
+      toast.show(job.proposalStartFailed, 'error');
     }
   }
 
@@ -130,6 +175,37 @@ export function JobSections({ view }: JobSectionsProps) {
                 </UiLink>
               </li>
             ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section title={job.proposalsTitle} name="proposals">
+        {view.can.edit ? (
+          <div className={styles.actions}>
+            <Button variant="primary" busy={measure.isPending} onClick={() => void startProposal()}>
+              {job.newProposal}
+            </Button>
+          </div>
+        ) : null}
+        {jobProposals.isPending ? (
+          <Skeleton lines={2} />
+        ) : jobProposals.isError ? (
+          <p>{job.proposalsLoadFailed}</p>
+        ) : jobProposals.data.length === 0 ? (
+          <EmptyState title={job.proposalsEmpty} />
+        ) : (
+          <ul className={styles.list}>
+            {jobProposals.data.map((proposal) => {
+              const from = view.can.seeValue ? proposalFromText(proposal) : null;
+              return (
+                <ProposalRow
+                  key={proposal.id}
+                  proposal={proposal}
+                  from={from}
+                  canCopy={canCopyLinks && proposal.status !== 'draft'}
+                />
+              );
+            })}
           </ul>
         )}
       </Section>

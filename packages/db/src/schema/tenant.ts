@@ -38,9 +38,10 @@ import {
   SMS_CONSENT_SOURCES,
   STEP_STATUSES,
   TASK_STATUSES,
+  type AddOnUnit,
   type WorkHours,
 } from '@roofline/shared';
-import { bytea, enumCheck, pk, point4326, timestamps, tstz } from './columns.ts';
+import { bytea, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
   ACTOR_TYPES,
   AGENT_EVENT_KINDS,
@@ -59,13 +60,21 @@ import {
   CONVERSATION_OUTCOMES,
   CONVERSATION_STATUSES,
   EARLY_DELIVERY_STATUSES,
+  EXACT_ORDER_STATUSES,
   FOLLOW_UP_KINDS,
   HANDLED_BY,
   IDENTITY_LEVELS,
   INTEGRATION_STATUSES,
+  MEASUREMENT_KINDS,
+  MEASUREMENT_METHODS,
+  PROPOSAL_EVENT_KINDS,
+  PROPOSAL_STATUSES,
   QUOTE_STATUSES,
   RECORDING_STATUSES,
+  STORED_FILE_KINDS,
   TASK_MODES,
+  TIERS,
+  TIER_MATERIALS,
   TRANSFER_RESULTS,
   TURN_ROUTES,
   TURN_SPEAKERS,
@@ -116,6 +125,15 @@ export const TENANT_TABLES = [
   'agent_task_events',
   'agent_settings',
   'time_recounts',
+  'measurements',
+  'tier_templates',
+  'proposals',
+  'proposal_counters',
+  'proposal_options',
+  'proposal_signatures',
+  'proposal_events',
+  'exact_report_orders',
+  'stored_files',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -182,6 +200,15 @@ export const companySettings = pgTable(
     followupReviews: boolean('followup_reviews').notNull().default(true),
     followupLeads: boolean('followup_leads').notNull().default(true),
     followupProposals: boolean('followup_proposals').notNull().default(true),
+    /** The pitch assumed when a measurement has no measured pitch, in twelfths (6 = 6/12). */
+    defaultPitchX12: numeric('default_pitch_x12', { precision: 4, scale: 2, mode: 'number' }).notNull().default(6),
+    /** Roof overhang added to the footprint, in feet. */
+    overhangFt: numeric('overhang_ft', { precision: 3, scale: 1, mode: 'number' }).notNull().default(1),
+    /** How long a new proposal stays valid, in days. */
+    proposalValidDays: integer('proposal_valid_days').notNull().default(30),
+    aerialMeasure: boolean('aerial_measure').notNull().default(false),
+    /** Whether a signed proposal carries the estimate clause (spec 5.3). */
+    estimateChangeClause: boolean('estimate_change_clause').notNull().default(true),
     ...timestamps(),
   },
   (t) => [
@@ -205,6 +232,9 @@ export const companySettings = pgTable(
     check('company_settings_reminder_hour_check', sql`${t.reminderHour} between 0 and 23`),
     check('company_settings_lead_followup_days_check', sql`${t.leadFollowupDays} between 1 and 30`),
     check('company_settings_review_delay_days_check', sql`${t.reviewDelayDays} between 0 and 30`),
+    check('company_settings_default_pitch_x12_check', sql`${t.defaultPitchX12} between 0 and 24`),
+    check('company_settings_overhang_ft_check', sql`${t.overhangFt} between 0 and 3`),
+    check('company_settings_proposal_valid_days_check', sql`${t.proposalValidDays} between 1 and 180`),
   ],
 );
 
@@ -1298,4 +1328,321 @@ export const timeRecounts = pgTable(
     at: tstz('at').notNull().defaultNow(),
   },
   (t) => [index('time_recounts_company_at_idx').on(t.companyId, t.at)],
+);
+
+/*
+ * E1 estimator tables (spec 3.4, 4.1, 4.3, 5.3, 8). Every link to another tenant table is a
+ * same-company composite key, as above.
+ */
+
+/** One add-on line of a tier template or a frozen proposal option (spec 4.1). */
+export type TierAddOn = { name: string; unit: AddOnUnit; rateCents: number; taxable: boolean };
+
+/** A measured (or manual) roof for a property; immutable once a proposal is sent from it (Decision 8). */
+export const measurements = pgTable(
+  'measurements',
+  {
+    id: pk(),
+    companyId: companyId(),
+    propertyId: uuid('property_id').notNull(),
+    jobId: uuid('job_id'),
+    kind: text('kind', { enum: MEASUREMENT_KINDS }).notNull(),
+    method: text('method', { enum: MEASUREMENT_METHODS }).notNull(),
+    /** Null for a manual measurement. `[longitude, latitude]` rings, SRID 4326. */
+    outline: multiPolygon('outline'),
+    /** Which footprints make up the roof, and which are included. */
+    structures: jsonb('structures').$type<Record<string, unknown>[]>().notNull().default([]),
+    footprintSqFt: numeric('footprint_sq_ft', { precision: 12, scale: 2, mode: 'number' }),
+    overhangFt: numeric('overhang_ft', { precision: 4, scale: 2, mode: 'number' }),
+    pitchX12: numeric('pitch_x12', { precision: 4, scale: 2, mode: 'number' }),
+    surfaceSqFt: numeric('surface_sq_ft', { precision: 12, scale: 2, mode: 'number' }),
+    edgeFt: numeric('edge_ft', { precision: 12, scale: 2, mode: 'number' }),
+    ridgeFt: numeric('ridge_ft', { precision: 12, scale: 2, mode: 'number' }),
+    valleyFt: numeric('valley_ft', { precision: 12, scale: 2, mode: 'number' }),
+    facets: integer('facets'),
+    providerRef: text('provider_ref'),
+    notes: text('notes'),
+    createdByUserId: userRef('created_by_user_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('measurements_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'measurements_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    foreignKey({
+      name: 'measurements_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    index('measurements_property_idx').on(t.propertyId),
+    enumCheck('measurements', 'kind', t.kind, MEASUREMENT_KINDS),
+    enumCheck('measurements', 'method', t.method, MEASUREMENT_METHODS),
+  ],
+);
+
+/** The three tier templates of a company (one per tier), the defaults of spec 4.1 until edited. */
+export const tierTemplates = pgTable(
+  'tier_templates',
+  {
+    id: pk(),
+    companyId: companyId(),
+    tier: text('tier', { enum: TIERS }).notNull(),
+    /** Shown to the homeowner, for example "Good: Architectural shingles". */
+    name: text('name').notNull(),
+    material: text('material', { enum: TIER_MATERIALS }).notNull(),
+    wastePercent: numeric('waste_percent', { precision: 5, scale: 2, mode: 'number' }).notNull().default(12),
+    /** Null: the company's pricebook default applies. */
+    markupPercent: numeric('markup_percent', { precision: 5, scale: 2, mode: 'number' }),
+    addOns: jsonb('add_ons').$type<TierAddOn[]>().notNull().default([]),
+    /** Up to four short bullets for the homeowner. */
+    highlights: text('highlights').array().notNull().default([]),
+    enabled: boolean('enabled').notNull().default(true),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('tier_templates_company_id_id_uniq').on(t.companyId, t.id),
+    unique('tier_templates_company_tier_uniq').on(t.companyId, t.tier),
+    check('tier_templates_highlights_check', sql`cardinality(${t.highlights}) <= 4`),
+    enumCheck('tier_templates', 'tier', t.tier, TIERS),
+    enumCheck('tier_templates', 'material', t.material, TIER_MATERIALS),
+  ],
+);
+
+/** A proposal for a job, built from one measurement. Sent proposals never re-price (Decision 11). */
+export const proposals = pgTable(
+  'proposals',
+  {
+    id: pk(),
+    companyId: companyId(),
+    jobId: uuid('job_id').notNull(),
+    customerId: uuid('customer_id').notNull(),
+    propertyId: uuid('property_id').notNull(),
+    measurementId: uuid('measurement_id').notNull(),
+    /** `P-0001` style, unique per company. */
+    number: text('number').notNull(),
+    status: text('status', { enum: PROPOSAL_STATUSES }).notNull().default('draft'),
+    validUntil: date('valid_until', { mode: 'string' }).notNull(),
+    /** SHA-256 of the link token. Unique across all companies, so a token maps to one proposal. */
+    linkTokenHash: bytea('link_token_hash').notNull(),
+    /** Encrypted link token, so the same link can be sent again. */
+    linkTokenEncrypted: bytea('link_token_encrypted').notNull(),
+    sentAt: tstz('sent_at'),
+    firstViewedAt: tstz('first_viewed_at'),
+    lastViewedAt: tstz('last_viewed_at'),
+    viewCount: integer('view_count').notNull().default(0),
+    signedAt: tstz('signed_at'),
+    declinedAt: tstz('declined_at'),
+    declineReason: text('decline_reason'),
+    /** Set when a revised draft replaces a sent proposal (Decision 11). */
+    replacedById: uuid('replaced_by_id'),
+    /** The text as sent. */
+    messageBody: text('message_body'),
+    estimateBasis: text('estimate_basis', { enum: MEASUREMENT_KINDS }).notNull(),
+    createdByUserId: userRef('created_by_user_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('proposals_company_id_id_uniq').on(t.companyId, t.id),
+    unique('proposals_company_number_uniq').on(t.companyId, t.number),
+    unique('proposals_link_token_hash_uniq').on(t.linkTokenHash),
+    foreignKey({
+      name: 'proposals_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'proposals_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'proposals_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    foreignKey({
+      name: 'proposals_company_measurement_fk',
+      columns: [t.companyId, t.measurementId],
+      foreignColumns: [measurements.companyId, measurements.id],
+    }),
+    foreignKey({
+      name: 'proposals_company_replaced_by_fk',
+      columns: [t.companyId, t.replacedById],
+      foreignColumns: [t.companyId, t.id],
+    }),
+    index('proposals_job_idx').on(t.jobId),
+    index('proposals_status_idx').on(t.status),
+    enumCheck('proposals', 'status', t.status, PROPOSAL_STATUSES),
+    enumCheck('proposals', 'estimate_basis', t.estimateBasis, MEASUREMENT_KINDS),
+  ],
+);
+
+/** The next proposal number for a company (one row per company). */
+export const proposalCounters = pgTable('proposal_counters', {
+  id: pk(),
+  companyId: companyId().unique(),
+  nextNumber: integer('next_number').notNull().default(1),
+  ...timestamps(),
+});
+
+/** One priced option (good, better or best) of a proposal. `calculation` and `total_cents` are frozen. */
+export const proposalOptions = pgTable(
+  'proposal_options',
+  {
+    id: pk(),
+    companyId: companyId(),
+    proposalId: uuid('proposal_id').notNull(),
+    tier: text('tier', { enum: TIERS }).notNull(),
+    position: integer('position').notNull(),
+    name: text('name').notNull(),
+    highlights: text('highlights').array().notNull().default([]),
+    scope: jsonb('scope').$type<Record<string, unknown>>().notNull(),
+    prices: jsonb('prices').$type<Record<string, unknown>>().notNull(),
+    addOns: jsonb('add_ons').$type<TierAddOn[]>().notNull(),
+    calculation: jsonb('calculation').$type<Record<string, unknown>>().notNull(),
+    totalCents: integer('total_cents').notNull(),
+    monthlyEstimateCents: integer('monthly_estimate_cents'),
+    enabled: boolean('enabled').notNull().default(true),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('proposal_options_company_id_id_uniq').on(t.companyId, t.id),
+    unique('proposal_options_proposal_tier_uniq').on(t.proposalId, t.tier),
+    foreignKey({
+      name: 'proposal_options_company_proposal_fk',
+      columns: [t.companyId, t.proposalId],
+      foreignColumns: [proposals.companyId, proposals.id],
+    }),
+    enumCheck('proposal_options', 'tier', t.tier, TIERS),
+  ],
+);
+
+/** A PDF or other file in object storage; the bytes are never in the database. */
+export const storedFiles = pgTable(
+  'stored_files',
+  {
+    id: pk(),
+    companyId: companyId(),
+    kind: text('kind', { enum: STORED_FILE_KINDS }).notNull(),
+    objectKey: text('object_key').notNull(),
+    sha256: text('sha256').notNull(),
+    bytes: integer('bytes').notNull(),
+    contentType: text('content_type').notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('stored_files_company_id_id_uniq').on(t.companyId, t.id),
+    enumCheck('stored_files', 'kind', t.kind, STORED_FILE_KINDS),
+  ],
+);
+
+/** The signature record of a signed proposal (spec 5.3). At most one per proposal. */
+export const proposalSignatures = pgTable(
+  'proposal_signatures',
+  {
+    id: pk(),
+    companyId: companyId(),
+    proposalId: uuid('proposal_id').notNull(),
+    optionId: uuid('option_id').notNull(),
+    signerName: text('signer_name').notNull(),
+    typedSignature: text('typed_signature').notNull(),
+    /** The drawn image itself goes into the signed PDF, not this table. */
+    drawnSignaturePngSha256: text('drawn_signature_png_sha256'),
+    consentText: text('consent_text').notNull(),
+    consentVersion: text('consent_version').notNull(),
+    /** SHA-256 of the canonical JSON of the proposal and the chosen option as shown. */
+    documentSha256: text('document_sha256').notNull(),
+    totalCents: integer('total_cents').notNull(),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    signedAt: tstz('signed_at').notNull(),
+    viewedFirstAt: tstz('viewed_first_at'),
+    pdfFileId: uuid('pdf_file_id'),
+    pdfSha256: text('pdf_sha256'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('proposal_signatures_company_id_id_uniq').on(t.companyId, t.id),
+    unique('proposal_signatures_proposal_uniq').on(t.proposalId),
+    foreignKey({
+      name: 'proposal_signatures_company_proposal_fk',
+      columns: [t.companyId, t.proposalId],
+      foreignColumns: [proposals.companyId, proposals.id],
+    }),
+    foreignKey({
+      name: 'proposal_signatures_company_option_fk',
+      columns: [t.companyId, t.optionId],
+      foreignColumns: [proposalOptions.companyId, proposalOptions.id],
+    }),
+    foreignKey({
+      name: 'proposal_signatures_company_pdf_fk',
+      columns: [t.companyId, t.pdfFileId],
+      foreignColumns: [storedFiles.companyId, storedFiles.id],
+    }),
+  ],
+);
+
+/** The homeowner side of a proposal's timeline (mirrored as job activities). */
+export const proposalEvents = pgTable(
+  'proposal_events',
+  {
+    id: pk(),
+    companyId: companyId(),
+    proposalId: uuid('proposal_id').notNull(),
+    kind: text('kind', { enum: PROPOSAL_EVENT_KINDS }).notNull(),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
+    ipHash: text('ip_hash'),
+    userAgent: text('user_agent'),
+    at: tstz('at').notNull().defaultNow(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('proposal_events_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'proposal_events_company_proposal_fk',
+      columns: [t.companyId, t.proposalId],
+      foreignColumns: [proposals.companyId, proposals.id],
+    }),
+    index('proposal_events_proposal_at_idx').on(t.proposalId, t.at),
+    enumCheck('proposal_events', 'kind', t.kind, PROPOSAL_EVENT_KINDS),
+  ],
+);
+
+/** An EagleView exact-report order for a measurement. Provider text is never stored here (error_plain is ours). */
+export const exactReportOrders = pgTable(
+  'exact_report_orders',
+  {
+    id: pk(),
+    companyId: companyId(),
+    measurementId: uuid('measurement_id').notNull(),
+    status: text('status', { enum: EXACT_ORDER_STATUSES }).notNull().default('priced'),
+    priceMinCents: integer('price_min_cents'),
+    priceMaxCents: integer('price_max_cents'),
+    priceExpiresAt: tstz('price_expires_at'),
+    providerProductId: text('provider_product_id'),
+    providerReportId: text('provider_report_id'),
+    referenceId: text('reference_id').notNull(),
+    taskId: uuid('task_id'),
+    lastPolledAt: tstz('last_polled_at'),
+    errorPlain: text('error_plain'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('exact_report_orders_company_id_id_uniq').on(t.companyId, t.id),
+    unique('exact_report_orders_company_reference_uniq').on(t.companyId, t.referenceId),
+    foreignKey({
+      name: 'exact_report_orders_company_measurement_fk',
+      columns: [t.companyId, t.measurementId],
+      foreignColumns: [measurements.companyId, measurements.id],
+    }),
+    foreignKey({
+      name: 'exact_report_orders_company_task_fk',
+      columns: [t.companyId, t.taskId],
+      foreignColumns: [agentTasks.companyId, agentTasks.id],
+    }),
+    enumCheck('exact_report_orders', 'status', t.status, EXACT_ORDER_STATUSES),
+  ],
 );

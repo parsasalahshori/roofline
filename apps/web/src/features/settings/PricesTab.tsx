@@ -7,7 +7,10 @@ import { errors } from '../../copy/errors.ts';
 import { prices } from '../../copy/prices.ts';
 import { formErrors } from '../auth/formErrors.ts';
 import { usePricebook, useSavePricebook, type PricebookSave } from './crm-api.ts';
+import { EstimateSection } from './EstimateSection.tsx';
+import { FinancingSection } from './FinancingSection.tsx';
 import styles from './PricesTab.module.css';
+import { TiersSection } from './TiersSection.tsx';
 
 /** The 15 pricebook keys, each a dollar amount. */
 const PRICE_KEYS = [
@@ -119,8 +122,21 @@ function differs(a: Form, b: Form): boolean {
   return FORM_KEYS.some((key) => a[key] !== b[key]);
 }
 
-/** The price list and quote defaults. The owner edits them; everyone else reads them. */
+/** The Prices tab: C1's price list, then E1's Estimator sections (each loads its own data). */
 export function PricesTab() {
+  return (
+    <>
+      <PricebookPart />
+      {/* E1 Task 14: Estimator sections, kept apart from C1's price list above */}
+      <TiersSection />
+      <FinancingSection />
+      <EstimateSection />
+    </>
+  );
+}
+
+/** The price list and quote defaults. The owner edits them; everyone else reads them. */
+function PricebookPart() {
   const me = useMe();
   const pricebook = usePricebook();
 

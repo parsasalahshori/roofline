@@ -57,6 +57,24 @@ describe('read-only guard', () => {
     expect(recorded.code).toBeUndefined();
   });
 
+  test.each([['POST', '/public/proposals/x/sign'], ['DELETE', '/PUBLIC/x'], ['PATCH', '/public/x']])(
+    'a trial that has ended does not block %s %s under /public/',
+    (method, path) => {
+      const { next, recorded } = run(method, path, 'trial_ended');
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(recorded.code).toBeUndefined();
+    },
+  );
+
+  test.each([['POST', '/publicx/x'], ['POST', '/public'], ['POST', '/proposals'], ['POST', '/estimator/settings']])(
+    'writes elsewhere are still blocked: %s %s',
+    (method, path) => {
+      const { next, recorded } = run(method, path, 'canceled');
+      expect(next).not.toHaveBeenCalled();
+      expect(recorded.code).toBe(403);
+    },
+  );
+
   test('a request without a session passes', () => {
     const { next } = run('POST', '/customers', null);
     expect(next).toHaveBeenCalledTimes(1);

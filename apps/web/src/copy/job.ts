@@ -76,6 +76,14 @@ export const job = {
     final: 'Final',
   } as Record<QuoteStatus, string>,
 
+  proposalsTitle: 'Proposals',
+  proposalsEmpty: 'No proposals yet.',
+  newProposal: 'New proposal',
+  proposalStartFailed: "We couldn't start a proposal. Try again.",
+  proposalsLoadFailed: "We couldn't load the proposals. Try again.",
+  proposalFrom: (money: string) => `Estimate from ${money}`,
+  proposalExactFrom: (money: string) => `From ${money}`,
+
   tasksTitle: 'Agent tasks',
   tasksEmpty: 'No agent tasks for this job.',
 

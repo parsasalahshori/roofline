@@ -19,3 +19,7 @@ export * from './voice-routing.ts';
 export * from './relay-tokens.ts';
 export * from './line-lookups.ts';
 export * from './fd-retention.ts';
+// E1 skeleton (Task 1).
+export * from './footprints.ts';
+export * from './proposal-links.ts';
+export * from './exact-report-fanout.ts';

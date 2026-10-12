@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_TIER_TEMPLATES } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { create } from '../src/copy/create.ts';
@@ -50,6 +51,12 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
   });
   return api;
 }
+
+/** The shell reads plus the two Prices reads, so the Prices tab can render its E1 sections. */
+const PRICES_ROUTES: Routes = {
+  'GET /api/tier-templates': () => ({ body: { templates: DEFAULT_TIER_TEMPLATES.map((t) => ({ ...t, addOns: [...t.addOns], highlights: [...t.highlights] })) } }),
+  'GET /api/estimator/settings': () => ({ body: { defaultPitchX12: 6, overhangFt: 1, proposalValidDays: 30, aerialMeasure: false, aerialConfigured: false, estimateChangeClause: true, financingAprBps: null, financingTermMonths: null } }),
+};
 
 function renderApp(path: string) {
   const queryClient = createQueryClient();
@@ -169,7 +176,7 @@ describe('the New job and New customer screens', () => {
 
 describe('settings tabs for the C1 screens', () => {
   it('shows Prices to the owner', async () => {
-    signedInApi(ACCOUNT, { 'GET /api/pricebook': () => ({ body: PRICEBOOK_VIEW }) });
+    signedInApi(ACCOUNT, { ...PRICES_ROUTES, 'GET /api/pricebook': () => ({ body: PRICEBOOK_VIEW }) });
     renderApp('/settings/prices');
 
     expect(await screen.findByLabelText(prices.fields.permit)).toBeInTheDocument();
@@ -177,7 +184,7 @@ describe('settings tabs for the C1 screens', () => {
   });
 
   it('shows Prices to the office', async () => {
-    signedInApi({ ...ACCOUNT, role: 'office' }, { 'GET /api/pricebook': () => ({ body: PRICEBOOK_VIEW }) });
+    signedInApi({ ...ACCOUNT, role: 'office' }, { ...PRICES_ROUTES, 'GET /api/pricebook': () => ({ body: PRICEBOOK_VIEW }) });
     renderApp('/settings/prices');
 
     expect(await screen.findByLabelText(prices.fields.permit)).toBeInTheDocument();
