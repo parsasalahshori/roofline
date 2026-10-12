@@ -50,66 +50,78 @@ function nineLocal(today: string, timeZone: string): Date {
   return new Date(start + 21 * 3_600_000);
 }
 
-/** Tomorrow's reminder texts for one company: one approval task, once per local day. */
+/**
+ * Tomorrow's reminder texts for one company: one approval task, once per local day. The model is
+ * called outside any transaction; the once-a-day check runs again just before the task is made.
+ */
 export async function runReminders(deps: AppDeps, companyId: string, meta: JobMeta): Promise<void> {
   void meta;
   const ctx: TenantContext = { companyId, userId: null, role: 'system', canApproveSpend: false };
-  await withTenant(deps.pools, ctx, async (tx) => {
-    const company = await schedulerCompany(tx, ctx);
-    if (!company || (company.status !== 'active' && company.status !== 'trial')) return;
-    if (!(await schedulerAgentOn(tx, ctx))) return;
+  const now = deps.clock.now();
 
-    const now = deps.clock.now();
+  const plan = await withTenant(deps.pools, ctx, async (tx) => {
+    const company = await schedulerCompany(tx, ctx);
+    if (!company || (company.status !== 'active' && company.status !== 'trial')) return null;
+    if (!(await schedulerAgentOn(tx, ctx))) return null;
+
     const tz = company.timezone;
     const today = localParts(now, tz).localDate;
     const tomorrow = zoneDayAfter(today);
     const todayStart = zoneDayStart(today, tz);
     const todayEnd = zoneDayStart(tomorrow, tz);
+    if (await agentTaskCreatedBetween(tx, ctx, { agent: 'scheduler', kind: 'reminders', from: todayStart, to: todayEnd })) return null;
+
+    const candidates = await reminderCandidates(tx, ctx, { from: todayEnd, to: zoneDayStart(zoneDayAfter(tomorrow), tz) });
+    if (candidates.length === 0) return null;
+    return { company, tz, today, tomorrow, todayStart, todayEnd, candidates };
+  });
+  if (!plan) return;
+  const { company, tz, today, tomorrow, todayStart, todayEnd, candidates } = plan;
+
+  const keyOf = (c: ReminderCandidate): string => c.jobId ?? c.appointmentId;
+  const facts: JobFacts[] = candidates.map((c) => {
+    const w = reminderWindow(c, tz);
+    return {
+      jobId: keyOf(c),
+      customerFirstName: c.customerFirstName,
+      companyName: company.name,
+      repFirstName: c.repFirstName,
+      address: c.addressLine,
+      facts: { window: w.allDay ? 'all day' : `between ${w.start} and ${w.end}`, when: 'tomorrow' },
+    };
+  });
+  const drafted = new Map<string, string>();
+  for (let i = 0; i < facts.length; i += MAX_DRAFT_JOBS) {
+    const chunk = facts.slice(i, i + MAX_DRAFT_JOBS);
+    try {
+      const res = await deps.llm.draftTexts({ instruction: 'reminder', facts: chunk });
+      if (!res.refused) for (const t of res.texts) if (!drafted.has(t.jobId)) drafted.set(t.jobId, t.body);
+    } catch (err) {
+      if (!(err instanceof LlmUnavailableError)) throw err;
+    }
+  }
+
+  let usedTemplate = false;
+  const messages = candidates.map((c) => {
+    const text = drafted.get(keyOf(c));
+    if (text !== undefined && bodyOk(text)) return { customerId: c.customerId, jobId: c.jobId, body: text };
+    usedTemplate = true;
+    return { customerId: c.customerId, jobId: c.jobId, body: reminderTemplate(c, company.name, tz) };
+  });
+
+  const steps = Array.from({ length: Math.ceil(messages.length / MAX_TEXTS_PER_STEP) }, (_, n) => ({
+    type: 'send_personal_texts' as const,
+    payload: {
+      purpose: 'informational',
+      kind: 'reminder',
+      messages: messages.slice(n * MAX_TEXTS_PER_STEP, (n + 1) * MAX_TEXTS_PER_STEP),
+      dedupePrefix: `reminder:${tomorrow}`,
+    },
+  }));
+
+  await withTenant(deps.pools, ctx, async (tx) => {
+    // Another run may have made today's task while the model was writing.
     if (await agentTaskCreatedBetween(tx, ctx, { agent: 'scheduler', kind: 'reminders', from: todayStart, to: todayEnd })) return;
-
-    const all = await reminderCandidates(tx, ctx, { from: todayEnd, to: zoneDayStart(zoneDayAfter(tomorrow), tz) });
-    if (all.length === 0) return;
-    const candidates = all;
-
-    const keyOf = (c: ReminderCandidate): string => c.jobId ?? c.appointmentId;
-    const facts: JobFacts[] = candidates.map((c) => {
-      const w = reminderWindow(c, tz);
-      return {
-        jobId: keyOf(c),
-        customerFirstName: c.customerFirstName,
-        companyName: company.name,
-        repFirstName: c.repFirstName,
-        address: c.addressLine,
-        facts: { window: w.allDay ? 'all day' : `between ${w.start} and ${w.end}`, when: 'tomorrow' },
-      };
-    });
-    const drafted = new Map<string, string>();
-    for (let i = 0; i < facts.length; i += MAX_DRAFT_JOBS) {
-      const chunk = facts.slice(i, i + MAX_DRAFT_JOBS);
-      try {
-        const res = await deps.llm.draftTexts({ instruction: 'reminder', facts: chunk });
-        if (!res.refused) for (const t of res.texts) if (!drafted.has(t.jobId)) drafted.set(t.jobId, t.body);
-      } catch (err) {
-        if (!(err instanceof LlmUnavailableError)) throw err;
-      }
-    }
-
-    let usedTemplate = false;
-    const messages = candidates.map((c) => {
-      const text = drafted.get(keyOf(c));
-      if (text !== undefined && bodyOk(text)) return { customerId: c.customerId, jobId: c.jobId, body: text };
-      usedTemplate = true;
-      return { customerId: c.customerId, jobId: c.jobId, body: reminderTemplate(c, company.name, tz) };
-    });
-
-    const steps = [];
-    for (let i = 0; i < messages.length; i += MAX_TEXTS_PER_STEP) {
-      steps.push({
-        type: 'send_personal_texts' as const,
-        payload: { purpose: 'informational', kind: 'reminder', messages: messages.slice(i, i + MAX_TEXTS_PER_STEP), dedupePrefix: `reminder:${tomorrow}` },
-      });
-    }
-
     await createTask(
       tx,
       ctx,

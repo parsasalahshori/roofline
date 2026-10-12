@@ -9,6 +9,7 @@ import {
   createCustomer,
   createJob,
   createProperty,
+  customers,
   setPaused,
   users,
   type ReminderCandidate,
@@ -175,6 +176,21 @@ describe('runReminders', () => {
     expect(payload.kind).toBe('reminder');
     expect(payload.messages).toHaveLength(3);
     expect(payload.messages.map((m) => m.customerId).sort()).toEqual([insp.customerId, inst.customerId, adj.customerId].sort());
+  });
+
+  test('skips do-not-contact and archived customers', async () => {
+    const keep = await seedVisit({ first: 'Hal' });
+    const dnc = await seedVisit({ first: 'Ida' });
+    const gone = await seedVisit({ first: 'Jo' });
+    await inCompany(t, A(), async (tx) => {
+      await tx.update(customers).set({ doNotContact: true }).where(eq(customers.id, dnc.customerId));
+      await tx.update(customers).set({ archivedAt: THREE_PM }).where(eq(customers.id, gone.customerId));
+    });
+
+    await runReminders(t.deps, A(), META);
+
+    const { payload } = await onlyTask();
+    expect(payload.messages.map((m) => m.customerId)).toEqual([keep.customerId]);
   });
 
   test('more than 25 customers: every one is texted, none dropped', async () => {

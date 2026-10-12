@@ -85,7 +85,7 @@ export async function reminderCandidates(tx: Tx, ctx: TenantContext, q: { from: 
       allDay: appointments.allDay,
       firstName: customers.firstName,
       displayName: customers.displayName,
-      repName: sql<string | null>`(select m.name from company_members m where m.user_id = ${appointments.assignedUserId} limit 1)`,
+      repName: sql<string | null>`(select m.name from company_members m where m.company_id = ${appointments.companyId} and m.user_id = ${appointments.assignedUserId} limit 1)`,
       addressLine: properties.addressLine,
     })
     .from(appointments)
@@ -100,6 +100,8 @@ export async function reminderCandidates(tx: Tx, ctx: TenantContext, q: { from: 
         gte(appointments.startsAt, q.from),
         lt(appointments.startsAt, q.to),
         sql`${appointments.customerId} is not null`,
+        isNull(customers.archivedAt),
+        eq(customers.doNotContact, false),
         sql`exists (select 1 from jsonb_array_elements(${customers.phones}) as p where btrim(coalesce(p->>'e164', '')) <> '')`,
       ),
     )
