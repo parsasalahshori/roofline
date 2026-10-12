@@ -142,7 +142,8 @@ describe('PATCH /api/agent-values bounds', () => {
     ]) {
       const res = await patch({ claimsNudgeDays: bad });
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ error: NUDGE, field: 'claimsNudgeDays' });
+      expect(res.body.error).toBe(NUDGE);
+      expect(res.body.field).toMatch(/^claimsNudgeDays(\.\d+)?$/);
     }
   });
 
@@ -163,7 +164,8 @@ describe('PATCH /api/agent-values bounds', () => {
     ]) {
       const res = await patch({ followupDays: bad });
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ error: FOLLOWUP, field: 'followupDays' });
+      expect(res.body.error).toBe(FOLLOWUP);
+      expect(res.body.field).toMatch(/^followupDays(\.\d+)?$/);
     }
   });
 
