@@ -53,7 +53,7 @@ beforeEach(async () => {
   (t.deps as unknown as { llm: ScriptedLlm }).llm = new ScriptedLlm([], { summary: 'The caller asked about a leak.' });
 });
 
-type Seed = { noConversation?: boolean; aiSeconds?: number; spam?: boolean; toolCalls?: ToolCallRecord[]; company?: 'a' | 'b' };
+type Seed = { noConversation?: boolean; aiSeconds?: number; aiStarted?: boolean; spam?: boolean; toolCalls?: ToolCallRecord[]; company?: 'a' | 'b' };
 type Seeded = { callId: string; callSid: string; customerId: string | null; companyId: string };
 
 /** A finished call (with its conversation, customer and one caller turn) as the relay would have left it. */
@@ -85,6 +85,7 @@ async function seedCall(o: Seed = {}): Promise<Seeded> {
         status: 'ended',
         conversationId,
         aiSeconds: o.aiSeconds ?? 0,
+        aiStartedAt: o.aiStarted === true ? t.clock.now() : null,
         spamReason: o.spam === true ? 'robocall' : null,
         transcriptStored: false,
         startedAt: t.clock.now(),
@@ -150,6 +151,14 @@ describe('Front Desk combined fixes', () => {
     const s = await seedCall({ noConversation: true, aiSeconds: 0 });
     await run(s);
     expect(await liveTasks()).toHaveLength(0);
+  });
+
+  test('an AI-answered call whose AI seconds are not recorded yet still creates its live task', async () => {
+    // The relay sets ai_started_at when the AI picks up, but adds ai_seconds only after the call settles,
+    // which can be after the after-call job ran; nothing links calls.conversation_id on this base.
+    const s = await seedCall({ noConversation: true, aiStarted: true, aiSeconds: 0 });
+    await run(s);
+    expect(await liveTasks()).toHaveLength(1);
   });
 
   test('a spam call still creates its live task', async () => {

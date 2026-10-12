@@ -196,7 +196,7 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
   }
 
   // A paused or voicemail call the AI never answered makes no task; spam is recorded because screening runs before the pause decision.
-  if (call.conversationId !== null || call.aiSeconds > 0) {
+  if (call.conversationId !== null || call.aiStartedAt !== null || call.aiSeconds > 0) {
     await recordLiveTask(
       deps,
       ctx,
