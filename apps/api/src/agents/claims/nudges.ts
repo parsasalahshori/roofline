@@ -19,7 +19,7 @@ import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
 import { type DraftKind, type JobFacts, LlmUnavailableError } from '../../providers/llm.ts';
 import { createTask } from '../../tasks/service.ts';
-import { draftBodyOk, FROM_TEMPLATE, localTimeToday, systemCtx } from '../common.ts';
+import { draftBodyOk, FROM_TEMPLATE, planExpiresAt, systemCtx } from '../common.ts';
 
 /*
  * The Claims agent's daily run (G1 Task 8), fired by the `claims-daily` job at 10 AM local. It finds
@@ -191,7 +191,7 @@ export async function runClaimsDaily(deps: AppDeps, companyId: string, meta: Job
         summary: fromTemplate
           ? `${FROM_TEMPLATE}. Asks homeowners where their insurance claim stands.`
           : 'Asks homeowners where their insurance claim stands.',
-        expiresAt: localTimeToday(plan.day, EXPIRES_HOUR, plan.timeZone),
+        expiresAt: planExpiresAt(plan.day, EXPIRES_HOUR, plan.timeZone, now),
         steps: [
           {
             type: 'send_personal_texts',
