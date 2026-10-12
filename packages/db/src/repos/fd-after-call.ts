@@ -13,6 +13,8 @@ export type AfterCallRow = {
   status: 'ringing' | 'ai' | 'ringing_team' | 'transferred' | 'ended' | 'rejected' | 'failed';
   conversationId: string | null;
   startedAt: Date;
+  /** Set by the relay when the AI picks up (A1: the after-call job counts an AI-handled call even before ai_seconds is added). */
+  aiStartedAt: Date | null;
   endedAt: Date | null;
   aiSeconds: number;
   billedMinutes: number;
@@ -33,6 +35,7 @@ export async function loadCallForAfterCall(tx: Tx, ctx: TenantContext, callSid: 
       status: calls.status,
       conversationId: calls.conversationId,
       startedAt: calls.startedAt,
+      aiStartedAt: calls.aiStartedAt,
       endedAt: calls.endedAt,
       aiSeconds: calls.aiSeconds,
       billedMinutes: calls.billedMinutes,

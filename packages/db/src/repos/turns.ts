@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, max, sql } from 'drizzle-orm';
 import type { TurnRoute, TurnSpeaker } from '@roofline/shared';
 import { conversationTurns } from '../schema/index.ts';
 import type { ToolCallRecord } from '../schema/index.ts';
@@ -85,4 +85,38 @@ export async function listTurns(
     .from(conversationTurns)
     .where(and(eq(conversationTurns.companyId, ctx.companyId), eq(conversationTurns.conversationId, conversationId)))
     .orderBy(asc(conversationTurns.position));
+}
+
+/**
+ * A1 Task 21: marks a conversation as having had a model_failure hand-off: a system turn with route
+ * 'transfer' and guardHits ['model_failure'] at the next free position. Agents metrics read it to leave
+ * the conversation out of the Front Desk success rate. It carries no customer text. Idempotent: a second
+ * call for the same conversation is a no-op.
+ */
+export async function recordModelFailureHandoff(tx: Tx, ctx: TenantContext, conversationId: string): Promise<void> {
+  const [existing] = await tx
+    .select({ id: conversationTurns.id })
+    .from(conversationTurns)
+    .where(
+      and(
+        eq(conversationTurns.companyId, ctx.companyId),
+        eq(conversationTurns.conversationId, conversationId),
+        eq(conversationTurns.route, 'transfer'),
+        sql`'model_failure' = any(${conversationTurns.guardHits})`,
+      ),
+    )
+    .limit(1);
+  if (existing) return;
+  const [row] = await tx
+    .select({ max: max(conversationTurns.position) })
+    .from(conversationTurns)
+    .where(and(eq(conversationTurns.companyId, ctx.companyId), eq(conversationTurns.conversationId, conversationId)));
+  await insertTurn(tx, ctx, {
+    conversationId,
+    position: (row?.max ?? -1) + 1,
+    speaker: 'system',
+    text: 'Hand-off: the assistant could not continue',
+    route: 'transfer',
+    guardHits: ['model_failure'],
+  });
 }

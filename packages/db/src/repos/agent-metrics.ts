@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import type { Agent, TaskStatus } from '@roofline/shared';
-import { agentSettings, agentTasks, agentTaskSteps, customers, jobs } from '../schema/index.ts';
+import { agentSettings, agentTasks, agentTaskSteps, conversations, customers, jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { waitingNow } from './agent-waiting.ts';
 import { customerScope, jobScope } from './scope.ts';
@@ -248,4 +248,36 @@ export async function agentSettingsInfo(tx: Tx, ctx: TenantContext): Promise<Age
     })
     .from(agentSettings)
     .where(eq(agentSettings.companyId, ctx.companyId));
+}
+
+/*
+ * A1 Task 21 SHELL (package B fills the body; keep name and signature).
+ * Front Desk success (Ruling AX-D): finished conversations in the last 30 days and how many succeeded.
+ */
+export async function frontDeskConversationCounts(
+  tx: Tx,
+  ctx: TenantContext,
+  w: MetricsWindow,
+): Promise<{ finished: number; succeeded: number }> {
+  let repScope = sql`true`;
+  if (ctx.role === 'rep') {
+    // AX-J: a rep sees conversations whose customer has a job in the rep's scope; no customer, no rep.
+    const scope = jobScope(ctx);
+    repScope = scope
+      ? sql`${conversations.customerId} in (select ${jobs.customerId} from ${jobs}
+          where ${jobs.companyId} = ${ctx.companyId} and ${scope})`
+      : sql`false`;
+  }
+  const marker = sql`exists (select 1 from conversation_turns t where t.company_id = ${conversations.companyId}
+    and t.conversation_id = ${conversations.id} and t.route = 'transfer' and 'model_failure' = any(t.guard_hits))`;
+  const finishedWhere = sql`${conversations.status} <> 'active' and ${conversations.outcome} is not null
+    and ${conversations.updatedAt} >= ${w.since30} and ${repScope}`;
+  const rows = await tx
+    .select({
+      finished: sql<number>`(count(*))::int`,
+      succeeded: sql<number>`(count(*) filter (where ${conversations.outcome} <> 'abandoned' and not ${marker}))::int`,
+    })
+    .from(conversations)
+    .where(and(eq(conversations.companyId, ctx.companyId), finishedWhere));
+  return { finished: Number(rows[0]?.finished ?? 0), succeeded: Number(rows[0]?.succeeded ?? 0) };
 }

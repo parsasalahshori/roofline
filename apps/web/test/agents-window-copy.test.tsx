@@ -3,7 +3,7 @@ import type { AgentCard as AgentCardData } from '@roofline/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { Providers, createQueryClient } from '../src/app/providers.tsx';
-import { agentsCommon } from '../src/copy/agents.ts';
+import { agentPage, agentsCommon } from '../src/copy/agents.ts';
 import { AgentCard } from '../src/features/agents/AgentCard.tsx';
 
 afterEach(cleanup);
@@ -45,5 +45,12 @@ describe('estimate copy', () => {
     expect(container.textContent).not.toMatch(/about|less than|≈/);
     expect(container.textContent).not.toContain(agentsCommon.estimate);
     expect(screen.queryAllByText(agentsCommon.comingSoon).length).toBeGreaterThan(0);
+  });
+});
+
+describe('time breakdown labels', () => {
+  it('says Front Desk call and text rows include bookings', () => {
+    expect(agentPage.baselineLabels.call_answered).toBe('Calls answered (incl. bookings)');
+    expect(agentPage.baselineLabels.text_reply).toBe('Text replies (incl. bookings)');
   });
 });

@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { countLiveAiCalls, insertCall, screeningFacts, type TenantContext, updateCall, withTenant } from '@roofline/db';
+import { countLiveAiCalls, insertCall, isAgentPaused, screeningFacts, type TenantContext, updateCall, withTenant } from '@roofline/db';
 import { teamDialNumbers } from '@roofline/db/system';
 import { disclosureGreeting } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
@@ -73,7 +73,8 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
         return { kind: 'reject' as const };
       }
       const liveAi = await countLiveAiCalls(tx, ctx);
-      return { kind: 'ok' as const, callId: call.id, liveAi };
+      const paused = await isAgentPaused(tx, ctx, 'front_desk');
+      return { kind: 'ok' as const, callId: call.id, liveAi, paused };
     });
 
     if (outcome.kind === 'replay') {
@@ -90,7 +91,7 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
       deps.relaySessions.size >= deps.config.FRONT_DESK_MAX_CALLS ||
       !deps.relaySessions.llmHealthy;
 
-    if (!route.frontDeskEnabled || overCap) {
+    if (!route.frontDeskEnabled || overCap || outcome.paused) {
       sendVoiceTwiml(res, voicemailXml(publicUrl, await teamDialNumbers(deps.pools.system, route.companyId)));
       return;
     }

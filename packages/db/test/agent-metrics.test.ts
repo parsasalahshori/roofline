@@ -7,12 +7,22 @@ import {
   agentSettingsInfo,
   breakdownByBaseline,
   dailyFinished,
+  frontDeskConversationCounts,
   minutesByAgent,
   type MetricsWindow,
   recentTasks,
 } from '../src/repos/agent-metrics.ts';
 import { listWaitingTasks } from '../src/repos/agent-waiting.ts';
-import { agentSettings, agentTaskSteps, agentTasks, customers, jobs, properties } from '../src/schema/index.ts';
+import {
+  agentSettings,
+  agentTaskSteps,
+  agentTasks,
+  conversations,
+  conversationTurns,
+  customers,
+  jobs,
+  properties,
+} from '../src/schema/index.ts';
 import { type TenantContext, type Tx, withTenant } from '../src/tenant.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
 
@@ -403,5 +413,91 @@ describe('agent metrics', () => {
     expect(rows).toEqual([{ agent: 'storm_scout', pausedAt, pausedByName: 'Acme Owner', lastRunNowAt: null }]);
 
     expect(await withTenant(pools, ctxFor(seed.b), (tx) => agentSettingsInfo(tx, ctxFor(seed.b)))).toEqual([]);
+  });
+
+  describe('frontDeskConversationCounts (Ruling AX-D, AX-J)', () => {
+    type ConvSeed = { outcome?: string | null; status?: 'active' | 'ended'; updatedAt?: Date; customerId?: string | null; marker?: boolean };
+
+    async function seedConv(c: SeededCompany, cv: ConvSeed): Promise<string> {
+      return withTenant(pools, ctxFor(c), async (tx) => {
+        const at = cv.updatedAt ?? today;
+        const [row] = await tx
+          .insert(conversations)
+          .values({
+            companyId: c.companyId,
+            channel: 'voice',
+            customerId: cv.customerId ?? null,
+            phoneE164: `+1402555${String(Math.floor(Math.random() * 9000) + 1000)}`,
+            companyNumberE164: '+14025550000',
+            status: cv.status ?? 'ended',
+            outcome: (cv.outcome === undefined ? 'booked' : cv.outcome) as 'booked' | null,
+            createdAt: at,
+            updatedAt: at,
+          })
+          .returning({ id: conversations.id });
+        if (cv.marker) {
+          await tx.insert(conversationTurns).values({
+            companyId: c.companyId,
+            conversationId: row!.id,
+            position: 1,
+            speaker: 'system',
+            text: 'Handed off',
+            route: 'transfer',
+            guardHits: ['model_failure'],
+          });
+        }
+        return row!.id;
+      });
+    }
+
+    const counts = (c: SeededCompany, ctx: TenantContext = ctxFor(c)) =>
+      withTenant(pools, ctx, (tx) => frontDeskConversationCounts(tx, ctx, w));
+
+    test('succeeded excludes abandoned and model-failure hand-offs; old, active and outcome-less rows are not finished', async () => {
+      const c = seed.a;
+      await seedConv(c, {});
+      await seedConv(c, {});
+      await seedConv(c, {});
+      await seedConv(c, { outcome: 'abandoned' });
+      await seedConv(c, { marker: true, outcome: 'transferred' });
+      await seedConv(c, { updatedAt: new Date('2026-08-01T12:00:00Z') });
+      await seedConv(c, { status: 'active', outcome: null });
+      await seedConv(c, { outcome: null });
+      expect(await counts(c)).toEqual({ finished: 5, succeeded: 3 });
+      // Company B sees none of it.
+      expect(await counts(seed.b)).toEqual({ finished: 0, succeeded: 0 });
+    });
+
+    test('a rep counts only conversations whose customer has a job in the rep scope; owner counts all', async () => {
+      const c = seed.a;
+      const owner = ctxFor(c);
+      const { mine, theirs } = await withTenant(pools, owner, async (tx) => {
+        const make = async (name: string, n: number, assignee: string) => {
+          const [cust] = await tx
+            .insert(customers)
+            .values({ companyId: c.companyId, displayName: name, createdByUserId: c.owner.userId })
+            .returning({ id: customers.id });
+          const [prop] = await tx
+            .insert(properties)
+            .values({ companyId: c.companyId, customerId: cust!.id, addressLine: `${n} Elm St`, city: 'Omaha', state: 'NE', zip: '68102', addressKey: `elm${n}` })
+            .returning({ id: properties.id });
+          await tx.insert(jobs).values({
+            companyId: c.companyId,
+            customerId: cust!.id,
+            propertyId: prop!.id,
+            assignedUserId: assignee,
+            createdByUserId: c.owner.userId,
+          });
+          return cust!.id;
+        };
+        return { mine: await make('Mine', 1, c.rep.userId), theirs: await make('Theirs', 2, c.otherRep.userId) };
+      });
+      await seedConv(c, { customerId: mine });
+      await seedConv(c, { customerId: mine, outcome: 'abandoned' });
+      await seedConv(c, { customerId: theirs });
+      await seedConv(c, { customerId: null });
+      expect(await counts(c, repCtx(c))).toEqual({ finished: 2, succeeded: 1 });
+      expect(await counts(c, owner)).toEqual({ finished: 4, succeeded: 3 });
+    });
   });
 });

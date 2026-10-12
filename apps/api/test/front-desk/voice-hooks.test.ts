@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { calls, companyPhoneNumbers, companySettings, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
+import { agentSettings, calls, companyPhoneNumbers, companySettings, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { disclosureGreeting } from '@roofline/shared';
 import { escapeXml } from '../../src/hooks/twilio.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
@@ -122,6 +122,28 @@ describe('POST /hooks/twilio/voice', () => {
     expect(res.text).toContain(`<Number>${TEAM_1}</Number>`);
     expect(res.text).not.toContain('<Record');
     expect(res.text).not.toContain('<ConversationRelay');
+  });
+
+  test('a paused Front Desk takes the team-ring/voicemail path like Front Desk off', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    await seedTeam();
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.insert(agentSettings).values({ companyId: idOf('a'), agent: 'front_desk', pausedAt: new Date() }),
+    );
+    const res = await post(VOICE, incoming());
+    expect(res.text).toContain('<Dial timeout="20"');
+    expect(res.text).toContain('after-dial?mode=voicemail');
+    expect(res.text).not.toContain('<ConversationRelay');
+  });
+
+  test('unpaused Front Desk answers (Connect ConversationRelay)', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.insert(agentSettings).values({ companyId: idOf('a'), agent: 'front_desk', pausedAt: null }),
+    );
+    const res = await post(VOICE, incoming());
+    expect(res.text).toContain('<Connect');
+    expect(res.text).toContain('<ConversationRelay');
   });
 
   test('a withheld caller id (anonymous) is still answered and saved', async () => {
