@@ -4,7 +4,7 @@ Status: every automated test below runs in CI (`.github/workflows/ci.yml`: the P
 
 Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/test/` (web components), `packages/<name>/test/` and `docs/superpowers/`. Test names are quoted exactly as written in the files (a name with a `%s` is a `test.each` title). Where a name is a `describe` group, the group name comes first.
 
-**T19** marks the part that lands with Task 19, the full call path (`apps/api/test/front-desk/call-paths.test.ts`: relay, engine and tools wired together with `FakeVoiceSession` and `ScriptedLlm`, one scenario each for booking, job question, claim, message, transfer on a leak, angry caller, recording objection and spam). Its test names are not written yet; the D1 lead fills each `T19:` line with the scenario's name when Task 19 merges. Until then those criteria are proven piece by piece (the tool, the engine, the hook, the loop) and not as one call.
+**T19** marks the part that lands with Task 19, the full call path (`apps/api/test/front-desk/call-paths.test.ts`: relay, engine and tools wired together with `FakeVoiceSession` and `ScriptedLlm`, one scenario each for booking, job question, claim, message, transfer on a leak, angry caller, recording objection and spam). Each `T19:` line below names those tests. Task 25 added the thirteen scripted calls of spec section 16 (`apps/api/test/front-desk/scenarios.test.ts`, data in `apps/api/test/front-desk/scenarios/`), played through the same relay loop, engine and tools; where one covers a criterion it is named next to the call path. A name with `%s` is a `test.each` title.
 
 ## Tally
 
@@ -13,7 +13,7 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
 | Proof | Criteria | Count |
 | --- | --- | --- |
 | Automated test or CI check today | all but 34 | 41 |
-| T19 call-path scenario still to add (name left blank for the D1 lead) | 1, 3, 4, 8, 9, 10, 11, 12, 13, 22, 24, 33 | 12 |
+| T19 call-path scenario (named in the T19 line of each criterion) | 1, 3, 4, 8, 9, 10, 11, 12, 13, 22, 24, 33 | 12 |
 | Manual smoke step | 1, 2, 3, 4, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 30, 31, 32, 33, 34, 37, 39 | 28 |
 | Manual smoke only (no automated test) | 34 | 1 |
 
@@ -25,7 +25,7 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
    - `apps/api/test/front-desk/voice-hooks.test.ts`: "relay TwiML has the disclosure greeting, non-interruptible, callId parameter"; "a withheld caller id (anonymous) is still answered and saved"; "a missing From is answered and saved as anonymous".
    - `apps/api/test/front-desk/voice-transfer-hooks.test.ts`: "after-dial ring-first no answer hands the call to the Front Desk with the disclosure".
    - `packages/shared/test/recording-consent.test.ts`: "disclosureGreeting > exact wording"; "disclosureGreeting > trims and falls back for empty names".
-   - T19: any scenario's relay TwiML and first turn (the greeting is not repeated by the model: `apps/api/test/front-desk/prompt.test.ts`: "prompt names only the four live actions and every tool").
+   - T19: the call paths start at the relay setup that follows the greeting and the engine never speaks the disclosure itself: `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (every scenario's graded record rejects the disclosure said a second time); `apps/api/test/front-desk/prompt.test.ts`: "prompt names only the four live actions and every tool".
    - Manual: M1 (heard on two carriers).
 2. **Recording starts**
    - `apps/api/test/front-desk/recording.test.ts`: "starts once"; "retention 0 never records".
@@ -37,7 +37,7 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
    - `apps/api/test/front-desk/recording-store.test.ts`: "a caller who objected keeps stopped_by_caller after the upload".
    - `apps/api/test/front-desk/twilio-call-control.test.ts`: "stopRecording posts Status stopped".
    - `apps/web/test/d1-t22-view.test.tsx`: "says the transcript was not kept at the caller's request when a call did not store it".
-   - T19: the recording objection scenario.
+   - T19: `apps/api/test/front-desk/call-paths.test.ts`: "recording objection: recording stops, turns are saved with blank text and a system turn"; `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (the recording-objection scenario: recording stopped once, one system turn).
    - Manual: M7.
 
 ## With the fakes, a caller can use every live action
@@ -45,7 +45,7 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
 4. **A caller books an inspection in an open slot: an appointment with source `front_desk`, a Lead job, a calendar push, and a confirmation text through the gate**
    - `apps/api/test/front-desk/tools-booking.test.ts`: "book_inspection > books a new caller in one go: customer, call consent, home, Lead job, front_desk appointment, push, text"; "find_inspection_times > offers at most 6 times, by part of day, inside work hours and after the notice"; "book_inspection > a confirmation text the gate blocks is recorded, and the booking stands"; "book_inspection > a text that fails to send leaves the booking standing".
    - `apps/web/test/d1-t26-appointment.test.tsx`: "shows Booked by Front Desk for a front desk booking".
-   - T19: the booking scenario (slot offered, booked, ends the call).
+   - T19: `apps/api/test/front-desk/call-paths.test.ts`: "booking: find times, book the offered slot, then goodbye"; `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (the booking and booking-taken-slot scenarios).
    - Manual: M2.
 5. **A booking onto a slot taken meanwhile offers the next two and writes nothing, and a repeated try makes one appointment**
    - `apps/api/test/front-desk/tools-booking.test.ts`: "book_inspection > a slot taken meanwhile returns the next two and writes nothing"; "book_inspection > the same conversation and slot gives the same appointment, and one text"; "book_inspection > two tries at once still make one appointment"; "book_inspection > two callers cannot take one inspector at one time".
@@ -57,14 +57,14 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
    - `apps/api/test/front-desk/tools-booking.test.ts`: "move_inspection > moves the caller's own inspection, clears the confirmation, queues the calendar push"; "move_inspection > a new time that was taken returns the next two and leaves the visit alone"; "move_inspection > an unverified caller cannot move"; "move_inspection > another customer's inspection is not found"; "move_inspection > with moving switched off it is refused"; "cancel_inspection > cancels the caller's own inspection with the reason, and queues the calendar push".
 8. **A caller is refused moving an install, and offered a message instead**
    - `apps/api/test/front-desk/tools-booking.test.ts`: "move_inspection > an install is refused with a message suggestion"; "cancel_inspection > an install is refused with a message suggestion".
-   - T19: the booking or message scenario (an install the caller wants moved ends in a message).
+   - T19: no end-to-end call covers an install being refused; the refusal is proved at the tool above, and the hand-over to a message is the call path `apps/api/test/front-desk/call-paths.test.ts`: "message: a non-urgent take_message sets the job next step and leaves an activity" (a gap, listed under Gaps).
 9. **A caller gives claim details: a claim intake on the job**
    - `apps/api/test/front-desk/tools-claim.test.ts`: "claim intake is stored and linked to the verified caller's single open job"; "verified caller with no open job gets a new Lead job with source front_desk"; "unknown caller's claim is stored without a job"; "the same claim twice in one conversation stores one row"; "a repeated claim with several open jobs creates one job, one row and one activity".
-   - T19: the claim scenario.
+   - T19: `apps/api/test/front-desk/call-paths.test.ts`: "claim: take_claim_details links the intake to the verified caller job"; `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (the claim scenario).
 10. **A caller leaves a message, which becomes a Today follow-up**
     - `apps/api/test/front-desk/tools-message.test.ts`: "message sets the assigned rep's job next step due today and writes a front_desk_message activity with { conversationId, urgent, reason }"; "unassigned job keeps assignee null (office)"; "no job: conversation outcome is message and nothing throws"; "urgent message emails each on-call member once, a second urgent message in the same conversation sends none"; "non-urgent message sends no email".
     - `apps/web/test/today-front-desk.test.tsx`: "shows From Front Desk for a message"; "shows Urgent, from Front Desk for an urgent message".
-    - T19: the message scenario, which also applies Ruling EA (a phone-matched caller leaves the job's next step alone; only a verified caller updates it).
+    - T19: `apps/api/test/front-desk/call-paths.test.ts`: "message: a non-urgent take_message sets the job next step and leaves an activity" (Ruling EA: a verified caller updates the job's next step); `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (the rambling-caller, job-unverified and prompt-injection scenarios each end in a message with no job touched).
     - Manual: M6.
 11. **A caller is transferred on request**
     - `packages/shared/test/front-desk-rules.test.ts`: "shouldTransfer" (the rows of the table); "transferPlan" (the rows of the table).
@@ -72,18 +72,18 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
     - `apps/api/test/front-desk/engine.test.ts`: "router route transfer hands off and route end says goodbye then ends"; "transfer_to_person and end_call finish the turn with their event".
     - `apps/api/test/front-desk/relay-loop.test.ts`: "a handoff event sends an end with handoffData kind transfer and still saves the turn row"; "dtmf 0 sends an end with a transfer request".
     - `apps/api/test/front-desk/voice-transfer-hooks.test.ts`: "after-relay with a transfer in work hours dials every on-call member with a whisper URL"; "whisper asks to press 1 with numDigits 1 timeout 8"; "whisper-result takes the call on 1 and hangs up that leg otherwise"; "after-dial answered ends the call as answered".
-    - T19: the angry or asked-for-a-person scenario.
+    - T19: `apps/api/test/front-desk/call-paths.test.ts`: "angry caller: the router sends a transfer and the call ends with reason angry"; "transfer on a leak: transfer_to_person ends the call with a transfer handoff".
     - Manual: M5.
 12. **A caller is transferred on "water is coming through my ceiling"**
     - `apps/api/test/front-desk/tools-handoff.test.ts`: "after hours leak reason gives ring_each".
     - `apps/api/test/front-desk/voice-transfer-hooks.test.ts`: "after-relay urgent out of hours rings each member in turn".
     - `packages/shared/test/front-desk-rules.test.ts`: "shouldTransfer" (the leak rows).
-    - T19: the transfer-on-a-leak scenario.
+    - T19: `apps/api/test/front-desk/call-paths.test.ts`: "transfer on a leak: transfer_to_person ends the call with a transfer handoff"; `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (the active-leak scenario).
     - Manual: M5.
 13. **A caller is transferred when angry**
     - `packages/shared/test/front-desk-rules.test.ts`: "shouldTransfer" (the angry rows).
     - `apps/api/test/front-desk/engine.test.ts`: "router route transfer hands off and route end says goodbye then ends".
-    - T19: the angry caller scenario.
+    - T19: `apps/api/test/front-desk/call-paths.test.ts`: "angry caller: the router sends a transfer and the call ends with reason angry"; `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (the angry-caller scenario).
 14. **Nobody answering returns the caller to a message**
     - `apps/api/test/front-desk/voice-transfer-hooks.test.ts`: "after-dial no answer returns to the relay in message_only mode"; "after-relay with no on-call members goes to message mode"; "after-dial no answer with members left dials the next one"; "after-dial voicemail mode, not answered, records a message".
     - `apps/api/test/front-desk/tools-handoff.test.ts`: "no on-call members gives message mode"; "after hours and not urgent gives message mode".
@@ -147,7 +147,7 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
     - `apps/api/test/front-desk-fakes.test.ts`: "screenCall rejects a blocked number".
     - `apps/api/test/front-desk/texts.test.ts`: "a spam text gets no reply and ends the conversation".
     - `apps/api/test/front-desk/retention.test.ts`: "spam is swept at 7 days".
-    - T19: the spam scenario.
+    - T19: `apps/api/test/front-desk/call-paths.test.ts`: "spam: a sales pitch is answered with the polite ending and marked spam on the conversation and the call"; `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (the spam-pitch scenario).
     - Manual: M12.
 23. **"Mark as spam" blocks the number**
     - `apps/api/test/front-desk/spam.test.ts`: "marking a call as spam blocks the number, sets the call spam reason and the conversation outcome"; "marking the same call twice is idempotent"; "the office can mark a call as spam"; "a rep cannot mark spam (403)"; "unmarking returns 204 and the next call from that number is no longer rejected".
@@ -160,7 +160,7 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
 24. **A summary is written and the conversation closed**
     - `apps/api/test/front-desk/after-call.test.ts`: "saves the summary on the conversation and closes it"; "no transcript stored: summary from actions only"; "the fd-after-call job does the same work from the queue".
     - `apps/web/e2e/front-desk.spec.ts`: "a call opens with its disclosure, transcript, action cards and summary, and is marked read".
-    - T19: every scenario ends with the summary job.
+    - T19: `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" runs the after-call job at the end of every scenario except spam (a spam call is billed and left unsummarised by design) and checks the summary, the closed conversation and, for a booking, claim or message, the outcome.
     - Manual: M13.
 25. **The outcome is set (actions win over the model)**
     - `apps/api/test/front-desk/after-call.test.ts`: "actions win over the model outcome when the job runs"; "outcome precedence: actions win over the model".
@@ -210,10 +210,11 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
 33. **Per-turn timings are stored**
     - `packages/db/test/repos-conversations-turns.test.ts`: "insertTurn stores timings tokens and guard hits".
     - `apps/api/test/front-desk/stats-routes.test.ts`: "p50 first reply ms is the median and null with no replies"; "stats from seeded calls, conversations and turns (exact numbers)".
-    - T19: each scenario "records turns with timings" (Task 19 brief).
+    - T19: `apps/api/test/front-desk/call-paths.test.ts`: "booking: find times, book the offered slot, then goodbye"; "job question (verified): verify_caller then lookup_my_jobs shows the job"; "recording objection: recording stops, turns are saved with blank text and a system turn"; `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (every assistant turn of all thirteen scenarios has its router and total time, and an Opus turn its first-token time).
     - Manual: M13 (the percentile query over real turns).
 34. **The eval report lists p50 and p95**
-    - Manual: M13 and M14. No automated test: the numbers need the real models. Task 25 builds the scripted evals and the report (`docs/superpowers/d1-latency.md`, written by hand after a run).
+    - Manual: M13 and M14. No automated test can produce the numbers, because they need the real models. Task 25 built the scripted evals (`npm run eval:front-desk -w @roofline/api -- --confirm-spend`) and the report template with its empty results tables (`docs/superpowers/d1-latency.md`, "not run yet"; the owner fills it in by hand after the first run).
+   - Automated proof of the plumbing (no model): `apps/api/test/front-desk/eval-front-desk.test.ts`: "runs the chosen scenarios, writes the json and markdown files, and exits 0"; "latencyRows gives p50 and p95 per scenario and route, and for all scenarios"; "cost comes from usage at the model price, and an unknown model is priced as Opus". `apps/api/test/smoke-front-desk-guards.test.ts`: "without --confirm-spend it prints the refusal, reads no setting and exits 1"; "without ANTHROPIC_API_KEY it stops before any request"; "apps/api/package.json has the script, and no workflow runs it".
 
 ## Tenancy
 
@@ -278,4 +279,5 @@ Not a separate criterion; these are the spec section 16 browser items and where 
 - Everything that needs a real provider is the manual smoke: the real Claude models (M0, M13, M14), real calls and the disclosure as heard (M1), a real transfer (M5, M6), the codes on real carrier phones (M9), real texts (M10, M11).
 - R2 is not wired in this build (`apps/api/src/providers/r2.ts` returns nothing until E1's object store merges), so the recording-in-R2 and deleted-at-Twilio proof (criteria 28 and 30 in the real world, M8) cannot be run yet. The fakes prove the copy and the delete.
 - Criterion 34 (the p50 and p95 report) has no automated test and belongs to Task 25 and the manual runs M13 and M14.
-- The T19 lines are open until Task 19 merges; the criteria that carry one are proven today at the tool, engine, hook and loop level.
+- Criterion 8 (an install the caller wants moved is refused, then a message is offered) has no end-to-end call: the refusal is proved at the tool and the message at the call-path level, but no scripted call asks to move an install. A scenario for it would need an install appointment whose id the model has been shown; spec section 16 does not list it.
+- The scripted scenarios in CI use a ScriptedLlm, so they prove the plumbing, the data and the grading code, not what the real models say. That is the by-hand eval (criterion 34).

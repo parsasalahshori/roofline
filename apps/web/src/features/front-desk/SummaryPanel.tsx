@@ -1,5 +1,6 @@
 import { Banner, Button, Card, Pill, Toggle } from '@roofline/ui';
 import type { ConversationDetail } from '@roofline/shared';
+import { useMe } from '../../api/hooks.ts';
 import { conversationCopy } from '../../copy/front-desk-conversation.ts';
 import { useMarkSpam, useSetHandling } from './conversation-api.ts';
 import { RecordingPlayer } from './RecordingPlayer.tsx';
@@ -7,12 +8,15 @@ import styles from './SummaryPanel.module.css';
 
 /**
  * The summary card beside the transcript: the summary and follow-ups, the recordings, who is
- * handling the conversation, and for a voice call, Mark as spam and Call back.
+ * handling the conversation, and for a voice call, Mark as spam (owner and office only, the roles the
+ * server lets mark spam) and Call back.
  */
 export function SummaryPanel({ conversation }: { conversation: ConversationDetail }) {
   const setHandling = useSetHandling(conversation.id);
   const markSpam = useMarkSpam(conversation.id);
   const lastCall = conversation.calls.at(-1) ?? null;
+  const role = useMe().data?.role;
+  const canMarkSpam = role === 'owner' || role === 'office';
   const showSpam = conversation.channel === 'voice' && lastCall !== null;
 
   return (
@@ -51,7 +55,7 @@ export function SummaryPanel({ conversation }: { conversation: ConversationDetai
         {showSpam && lastCall !== null && lastCall.spamReason !== null ? (
           <Pill tone="neutral">{conversationCopy.spamMarked}</Pill>
         ) : null}
-        {showSpam && lastCall !== null && lastCall.spamReason === null ? (
+        {canMarkSpam && showSpam && lastCall !== null && lastCall.spamReason === null ? (
           <Button variant="ghost" busy={markSpam.isPending} onClick={() => markSpam.mutate(lastCall.id)}>
             {conversationCopy.markSpam}
           </Button>

@@ -3,6 +3,7 @@ import { FRONT_DESK_LIMITS } from '@roofline/shared';
 import { Banner, Button, Card, EmptyState, Field, Select, Skeleton, Toggle, useToast } from '@roofline/ui';
 import { useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/client.ts';
+import { useMe } from '../../../api/hooks.ts';
 import { errors } from '../../../copy/errors.ts';
 import { frontDeskSettings } from '../../../copy/front-desk-settings.ts';
 import { ForwardingGuide } from './ForwardingGuide.tsx';
@@ -87,6 +88,8 @@ const NUMBER_COPY: Record<NumberField, { label: string; range: (min: number, max
 
 type FormProps = {
   saved: FrontDeskSettings;
+  /** Only the owner may turn Front Desk on before forwarding is verified (the server checks too). */
+  isOwner: boolean;
   voices: FrontDeskVoice[] | undefined;
   saving: boolean;
   serverError: Error | null;
@@ -94,8 +97,11 @@ type FormProps = {
 };
 
 /** The form itself. It is remounted with fresh state each time the settings are saved, so it always shows what the server kept. */
-function FrontDeskForm({ saved, voices, saving, serverError, onSave }: FormProps) {
+function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave }: FormProps) {
   const [draft, setDraft] = useState<Draft>(() => draftFrom(saved));
+  // The owner's "turn on anyway": asking, then confirmed (sent as `override: true`)
+  const [confirmingOverride, setConfirmingOverride] = useState(false);
+  const [override, setOverride] = useState(false);
   const [order, setOrder] = useState<string[]>(() => orderFrom(saved));
 
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
@@ -131,6 +137,21 @@ function FrontDeskForm({ saved, voices, saving, serverError, onSave }: FormProps
           ? apiError.message
           : undefined;
   const blocked = saved.blockedReason !== null;
+  // Turning it OFF is always allowed. Turning it ON is checked only when it is saved as off (the server
+  // checks only that switch); then a block stops it, except the owner may skip an unverified forwarding.
+  const turnOnBlocked = blocked && !saved.enabled;
+  const canOverride = isOwner && saved.blockedReason === 'forwarding_not_verified';
+
+  function onEnabledChange(next: boolean) {
+    if (!next) {
+      setConfirmingOverride(false);
+      setOverride(false);
+      update('enabled', false);
+      return;
+    }
+    if (!turnOnBlocked) update('enabled', true);
+    else if (canOverride) setConfirmingOverride(true);
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -148,6 +169,7 @@ function FrontDeskForm({ saved, voices, saving, serverError, onSave }: FormProps
       transcriptRetentionDays: numberValues.transcriptRetentionDays ?? 0,
       maxConcurrentAiCalls: numberValues.maxConcurrentAiCalls ?? 0,
       onCallOrder: order,
+      ...(override && draft.enabled ? { override: true } : {}),
     };
     onSave(input);
   }
@@ -167,14 +189,30 @@ function FrontDeskForm({ saved, voices, saving, serverError, onSave }: FormProps
           <Toggle
             label={frontDeskSettings.onOff.label}
             checked={draft.enabled}
-            disabled={blocked || saving}
-            onChange={(next) => {
-              // Never turn the assistant on while it is blocked
-              if (!blocked) update('enabled', next);
-            }}
+            disabled={saving || (turnOnBlocked && !canOverride && !draft.enabled)}
+            onChange={onEnabledChange}
           />
           {blocked ? (
             <p className={styles.blocked}>{frontDeskSettings.onOff.blocked[saved.blockedReason ?? 'no_number']}</p>
+          ) : null}
+          {confirmingOverride ? (
+            <section aria-label={frontDeskSettings.onOff.overrideYes} className={styles.confirm}>
+              <p className={styles.confirmText}>{frontDeskSettings.onOff.overrideConfirm}</p>
+              <div className={styles.confirmActions}>
+                <Button
+                  onClick={() => {
+                    setConfirmingOverride(false);
+                    setOverride(true);
+                    update('enabled', true);
+                  }}
+                >
+                  {frontDeskSettings.onOff.overrideYes}
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirmingOverride(false)}>
+                  {frontDeskSettings.onOff.overrideNo}
+                </Button>
+              </div>
+            </section>
           ) : null}
           <Toggle
             label={frontDeskSettings.texts.label}
@@ -323,6 +361,7 @@ export function FrontDeskTab() {
   const voices = useFrontDeskVoices();
   const save = useSaveFrontDeskSettings();
   const toast = useToast();
+  const me = useMe();
   // Bumped after each save so the form re-seeds from what the server kept
   const [revision, setRevision] = useState(0);
 
@@ -360,6 +399,7 @@ export function FrontDeskTab() {
       <FrontDeskForm
         key={revision}
         saved={query.data}
+        isOwner={me.data?.role === 'owner'}
         voices={voices.data}
         saving={save.isPending}
         serverError={save.error}
