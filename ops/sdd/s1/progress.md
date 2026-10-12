@@ -242,3 +242,10 @@ The three tasks run in parallel from 83e9856, with Sonnet builders, and need CI 
   - `HAIL_ALERT_STALE_MINUTES_SEASON` = 180;
   - `HAIL_ALERT_STALE_MINUTES_OFFSEASON` = 720;
   - `POSTMARK_TOKEN` in the hail service, with the deprecated `POSTMARK_SERVER_TOKEN` as fallback.
+
+## Carries from the integration sentinel, pass 12 (session_01RypesnL2fbawyJH5HtdS7E)
+For the next e1-estimator merge into s1-storm:
+- Add R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET to the production `VALID` config in `apps/api/test/storm-config.test.ts`, `google-ads-http.test.ts` and `postmark-broadcast.test.ts` (E1 Ruling ET).
+- Add E1's `proposalListRoutes()` stub to the s1-routes test "dock Storm opens /storm".
+
+Already done: s1-r2a is merged (28f3800) with the Ruling BD trim (41b970c). REDRAFTABLE_PLAN_STATUSES is `['draft']`, and replaceDraftPlan is restored to T11's version.
