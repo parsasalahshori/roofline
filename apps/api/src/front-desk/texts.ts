@@ -14,6 +14,7 @@ import {
   withTenant,
 } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
+import { recordTextTask } from '../agents/front-desk-tasks.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { buildGateRequest } from '../messaging/gate-request.ts';
 import { sendQueuedText, textStateFor } from '../messaging/outbound.ts';
@@ -223,5 +224,14 @@ export async function runFrontDeskText(
   }
   if (outcome) {
     await sendQueuedText(deps, ctx, { messageId: outcome.messageId, to: outcome.to, body: reply, sender: outcome.sender }, 'We could not send this text.');
+    // A1 Task 4: one live task per conversation per local day. The engine events carry no booking results, so bookings is 0.
+    try {
+      await withTenant(deps.pools, ctx, async (tx) => {
+        const { timezone } = await loadCompanyFacts(tx, ctx);
+        await recordTextTask(tx, ctx, { conversationId, customerId, replies: 1, bookings: 0 }, sendAt, timezone);
+      });
+    } catch {
+      console.error(`fd live task failed conversation=${conversationId} company=${data.companyId}`);
+    }
   }
 }

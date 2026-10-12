@@ -20,6 +20,7 @@ import {
 } from '@roofline/db';
 import { BOARD_STAGES, JOB_SOURCES, JOB_STAGE_LABELS, JOB_STAGES, NEXT_STEP_MAX } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { onJobNextStepChanged } from '../agents/front-desk-tasks.ts';
 import { can } from '../permissions.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { assertKnownFields, limitParam, noNul, offsetParam, parse, UUID } from '../validate.ts';
@@ -341,8 +342,8 @@ export function jobRoutes(deps: AppDeps): Router {
     requireAssignRole(ctx, req.body);
     const body = parse(PatchBody, assertKnownFields(req.body, FIELDS));
 
-    const updated = await withTenant(pools, ctx, (tx) =>
-      updateJob(
+    const updated = await withTenant(pools, ctx, async (tx) => {
+      const row = await updateJob(
         tx,
         ctx,
         id,
@@ -358,8 +359,10 @@ export function jobRoutes(deps: AppDeps): Router {
           ...(body.nextStepOn !== undefined && { nextStepOn: body.nextStepOn }),
         },
         { now: clock.now(), ip: req.ip ?? null },
-      ),
-    ).catch(refused);
+      );
+      if (row) await onJobNextStepChanged(tx, ctx, row, clock.now());
+      return row;
+    }).catch(refused);
     if (!updated) throw new AppError(404, MESSAGES.notFound);
     res.json(jobBody(updated, ctx));
   });

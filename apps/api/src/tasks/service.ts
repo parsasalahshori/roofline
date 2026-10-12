@@ -9,6 +9,7 @@ import {
   findRerunOf,
   finishClaimedStep,
   finishParkedStep,
+  findStepByIdempotencyKey,
   getCompanyName,
   getStep,
   getTask,
@@ -16,6 +17,7 @@ import {
   insertAgentEvent,
   insertTask,
   isUniqueViolation,
+  listLiveTasksBySubject,
   listSteps,
   listTasks,
   listTasksByStatus,
@@ -23,6 +25,7 @@ import {
   type ListTasksOptions,
   moveStep,
   requeueForRetry,
+  setStepResult,
   setStepSnapshot,
   type StepFinish,
   type NewStepRow,
@@ -1030,4 +1033,137 @@ export async function listTaskFeed(tx: Tx, ctx: TenantContext, query: TaskFeedQu
  */
 export async function workingCount(tx: Tx, ctx: TenantContext): Promise<number> {
   return canReview(ctx) ? countWorkingTasks(tx, ctx) : 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Live tasks (A1 Task 4). SHELL: Package A implements these bodies.
+
+export type NewLiveTask = {
+  agent: Agent;
+  kind: string;
+  title: string;
+  subjectType?: string;
+  subjectId?: string;
+  step: { type: 'front_desk_call' | 'front_desk_texts'; result: Record<string, number> };
+  /** `done`, or `needs_attention` while a follow-up is open. */
+  status: 'done' | 'needs_attention';
+  /** Unique per finished call / per text conversation per day. A repeat call returns the existing task. */
+  idempotencyKey: string;
+};
+
+/** Creates one live task with its one already-finished step. Idempotent on `idempotencyKey`. */
+export async function createLiveTask(
+  tx: Tx,
+  ctx: TenantContext,
+  input: NewLiveTask,
+  now: Date,
+): Promise<{ taskId: string; created: boolean }> {
+  const existing = await findStepByIdempotencyKey(tx, ctx, input.idempotencyKey);
+  if (existing) return { taskId: existing.taskId, created: false };
+
+  let taskId: string;
+  try {
+    // A savepoint, so losing a race on the unique key does not abort the caller's transaction.
+    taskId = await tx.transaction(async (sp) => {
+      const inserted = await insertTask(
+        sp,
+        ctx,
+        {
+          agent: input.agent,
+          kind: input.kind,
+          title: input.title,
+          subjectType: input.subjectType ?? null,
+          subjectId: input.subjectId ?? null,
+          mode: 'live',
+          status: input.status,
+          steps: [
+            {
+              type: input.step.type,
+              approvalClass: stepTypes[input.step.type].approvalClass,
+              payload: { label: input.title },
+              preview: { title: input.title, lines: [] },
+              status: 'done',
+              result: input.step.result,
+              idempotencyKey: input.idempotencyKey,
+            },
+          ],
+        },
+        now,
+      );
+      return inserted.taskId;
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    const raced = await findStepByIdempotencyKey(tx, ctx, input.idempotencyKey);
+    if (!raced) throw error;
+    return { taskId: raced.taskId, created: false };
+  }
+
+  await event(tx, ctx, taskId, 'created', 'agent', { stepCount: 1 }, now);
+  const [step] = await listSteps(tx, ctx, [taskId], { payload: true });
+  await recordOutcome(tx, ctx, step!, now);
+  const minutesSaved = await minutesSavedOf(tx, ctx, taskId);
+  await updateTask(tx, ctx, taskId, { minutesSaved }, now);
+  if (input.status === 'done') {
+    await event(tx, ctx, taskId, 'finished', 'system', { status: 'done', minutesSaved }, now);
+  } else {
+    await event(tx, ctx, taskId, 'step_attention', 'agent', { attempts: 0 }, now, step!.id);
+  }
+  await audit(tx, ctx, {
+    action: 'task.create',
+    targetType: 'agent_task',
+    targetId: taskId,
+    after: { agent: input.agent, kind: input.kind, title: input.title, steps: [input.step.type] },
+    ip: null,
+    at: now,
+  });
+  return { taskId, created: true };
+}
+
+/** Closes each live `needs_attention` task about this job to `done` (one `finished` event each). Returns the count closed. */
+export async function closeLiveTasksForSubject(
+  tx: Tx,
+  ctx: TenantContext,
+  subjectType: string,
+  subjectId: string,
+  now: Date,
+): Promise<number> {
+  const rows = await listLiveTasksBySubject(tx, ctx, { agent: 'front_desk', subjectType, subjectId, status: 'needs_attention' });
+  for (const row of rows) {
+    const minutesSaved = await minutesSavedOf(tx, ctx, row.id);
+    await updateTask(tx, ctx, row.id, { status: 'done', minutesSaved }, now);
+    if (!(await hasTaskEvent(tx, ctx, row.id, 'finished'))) {
+      await event(tx, ctx, row.id, 'finished', 'system', { status: 'done', minutesSaved }, now);
+    }
+  }
+  return rows.length;
+}
+
+/** Adds counts to a finished live task's step result (a repeat on the same key), then refreshes its minutes. Writes no events. */
+export async function addToLiveTask(
+  tx: Tx,
+  ctx: TenantContext,
+  idempotencyKey: string,
+  add: Record<string, number>,
+  now: Date,
+): Promise<string | null> {
+  const found = await findStepByIdempotencyKey(tx, ctx, idempotencyKey);
+  if (!found) return null;
+  const row = await getStep(tx, ctx, found.taskId, found.id);
+  if (!row || row.status !== 'done' || !isStepType(row.type)) return found.taskId;
+  const prev = (row.result ?? {}) as Record<string, number>;
+  const next: Record<string, number> = { ...prev };
+  for (const [k, v] of Object.entries(add)) next[k] = (Number(prev[k]) || 0) + v;
+  await setStepResult(tx, ctx, row.id, next, now);
+  const overrides = await loadBaselineOverrides(tx, ctx);
+  const m = stepMinutes(stepTypes[row.type] as never, row.payload as never, next as StepResult, overrides);
+  await setStepSnapshot(
+    tx,
+    ctx,
+    row.id,
+    { baselineKey: m.baseline, units: m.units, minutesPerUnit: m.minutesPerUnit, minutesSaved: m.minutes },
+    now,
+  );
+  await updateTask(tx, ctx, found.taskId, { minutesSaved: await minutesSavedOf(tx, ctx, found.taskId) }, now);
+  return found.taskId;
 }
