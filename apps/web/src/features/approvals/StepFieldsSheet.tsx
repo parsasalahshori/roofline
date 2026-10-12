@@ -7,10 +7,10 @@ import { review } from '../../copy/review.ts';
 import { stepAds } from '../../copy/stepAds.ts';
 import { stepEdit } from '../../copy/stepEdit.ts';
 import { stepRoutes } from '../../copy/stepRoutes.ts';
-import { useTeam } from '../settings/api.ts';
+import { useCompany, useTeam } from '../settings/api.ts';
 import { useStormSettings } from '../settings/stormApi.ts';
 import sheetStyles from './ApprovalSheets.module.css';
-import type { EditFieldSpec, EditValues, StepKit } from './steps/types.ts';
+import type { EditFieldSpec, EditValues, StepKit, StepKitContext } from './steps/types.ts';
 import styles from './StepFieldsSheet.module.css';
 
 export type StepFieldsSheetProps = {
@@ -52,12 +52,20 @@ const pickedOf = (values: EditValues, id: string): string[] => {
  * warnings under them, and its field errors and the shared payload check before anything is saved.
  * The parent mounts it per step while editing and unmounts it to close it.
  */
-export function StepFieldsSheet({ step, kit, saving, error, onSave, onClose }: StepFieldsSheetProps) {
+export function StepFieldsSheet(props: StepFieldsSheetProps) {
+  const needsZone = props.step.type === 'create_appointment' || props.step.type === 'move_appointment';
+  const company = useCompany(needsZone);
+  // The visit and move kits show times in the company's zone, so their fields wait for it (G1 Task 17p)
+  if (needsZone && company.isPending) return null;
+  return <StepFieldsBody {...props} ctx={{ zone: company.data?.timezone ?? 'America/Chicago' }} />;
+}
+
+function StepFieldsBody({ step, kit, saving, error, onSave, onClose, ctx }: StepFieldsSheetProps & { ctx: StepKitContext }) {
   const team = useTeam();
   // The ad photos come from Settings; only a create_ad_campaign step reads them.
   const stormSettings = useStormSettings(step.type === 'create_ad_campaign');
   const photos = stormSettings.data?.photos ?? [];
-  const [fields] = useState(() => kit.editFields(step));
+  const [fields] = useState(() => kit.editFields(step, ctx));
   const [values, setValues] = useState<EditValues>(() => initialValues(fields));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [sheetError, setSheetError] = useState<string | undefined>(undefined);
@@ -99,13 +107,13 @@ export function StepFieldsSheet({ step, kit, saving, error, onSave, onClose }: S
   }
 
   function save() {
-    const errors = kit.fieldErrors?.(step, values) ?? {};
+    const errors = kit.fieldErrors?.(step, values, ctx) ?? {};
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setSheetError(undefined);
       return;
     }
-    const payload = kit.toPayload(step, values);
+    const payload = kit.toPayload(step, values, ctx);
     const def = stepTypes[step.type];
     const parsed = def.payload.safeParse(payload);
     if (!parsed.success) {

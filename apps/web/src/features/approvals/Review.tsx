@@ -253,7 +253,7 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
           if (itemKit === undefined) return null;
           return (
             <div className={styles.detail} key={item.id}>
-              <itemKit.Preview step={item} canApprove={item.canApprove} />
+              <itemKit.Preview step={item} canApprove={item.canApprove} taskId={taskId} />
             </div>
           );
         })}
