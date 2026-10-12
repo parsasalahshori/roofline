@@ -83,6 +83,12 @@ const ConfigSchema = z
     PUBLIC_BASE_URL: httpUrl.transform((v) => v.replace(/\/+$/, '')),
 
     GOOGLE_CLIENT_ID: z.string().optional(),
+    /** Google OAuth client secret. Needs GOOGLE_CLIENT_ID. Unset: Google Calendar connections are off. */
+    GOOGLE_CLIENT_SECRET: z.string().optional(),
+    /** Microsoft app client id. Set with MICROSOFT_CLIENT_SECRET, or neither. Unset: Outlook connections are off. */
+    MICROSOFT_CLIENT_ID: z.string().optional(),
+    /** Microsoft app client secret. Set with MICROSOFT_CLIENT_ID, or neither. */
+    MICROSOFT_CLIENT_SECRET: z.string().optional(),
     POSTMARK_TOKEN: z.string().optional(),
     /** The From header for outgoing email, for example `Roofline <hello@example.com>`. */
     MAIL_FROM: z.string().optional(),
@@ -157,6 +163,27 @@ const ConfigSchema = z
     HOST: z.string().min(1).optional(),
   })
   .superRefine((cfg, ctx) => {
+    if (cfg.GOOGLE_CLIENT_SECRET && !cfg.GOOGLE_CLIENT_ID) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GOOGLE_CLIENT_ID'],
+        message: 'is required when GOOGLE_CLIENT_SECRET is set',
+      });
+    }
+    if (cfg.MICROSOFT_CLIENT_ID && !cfg.MICROSOFT_CLIENT_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MICROSOFT_CLIENT_SECRET'],
+        message: 'is required when MICROSOFT_CLIENT_ID is set',
+      });
+    }
+    if (cfg.MICROSOFT_CLIENT_SECRET && !cfg.MICROSOFT_CLIENT_ID) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MICROSOFT_CLIENT_ID'],
+        message: 'is required when MICROSOFT_CLIENT_SECRET is set',
+      });
+    }
     if (cfg.POSTMARK_TOKEN && !cfg.MAIL_FROM) {
       ctx.addIssue({
         code: 'custom',
