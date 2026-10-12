@@ -117,7 +117,7 @@ export const createAdCampaignHandler: StepHandler = async (deps: AppDeps, ctx: T
     }
     const members = await tx.execute(
       sql`select role, can_approve_spend from company_members
-          where company_id = ${ctx.companyId} and user_id = ${row.approvedByUserId} and status = 'active' limit 1`,
+          where user_id = ${row.approvedByUserId} and status = 'active' limit 1`,
     );
     const m = members.rows[0];
     if (!m) return false;
