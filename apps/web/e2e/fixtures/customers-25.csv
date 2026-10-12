@@ -1,0 +1,26 @@
+Name,Phone,Email,Address,City,State,Zip
+Customer 01,(402) 555-2001,customer01@example.test,1 Pine St,Omaha,NE,68102
+Customer 02,(402) 555-2002,customer02@example.test,2 Pine St,Omaha,NE,68102
+Customer 03,(402) 555-2003,customer03@example.test,3 Pine St,Omaha,NE,68102
+Customer 04,(402) 555-2004,customer04@example.test,4 Pine St,Omaha,NE,68102
+Customer 05,(402) 555-2005,customer05@example.test,5 Pine St,Omaha,NE,68102
+Customer 06,(402) 555-2006,customer06@example.test,6 Pine St,Omaha,NE,68102
+Customer 07,(402) 555-2007,customer07@example.test,7 Pine St,Omaha,NE,68102
+Customer 08,(402) 555-2008,customer08@example.test,8 Pine St,Omaha,NE,68102
+Customer 09,(402) 555-2009,customer09@example.test,9 Pine St,Omaha,NE,68102
+Customer 10,(402) 555-2010,customer10@example.test,10 Pine St,Omaha,NE,68102
+Customer 11,(402) 555-2011,customer11@example.test,11 Pine St,Omaha,NE,68102
+Customer 12,(402) 555-2012,customer12@example.test,12 Pine St,Omaha,NE,68102
+Customer 13,(402) 555-2013,customer13@example.test,13 Pine St,Omaha,NE,68102
+Customer 14,(402) 555-2014,customer14@example.test,14 Pine St,Omaha,NE,68102
+Customer 15,(402) 555-2015,customer15@example.test,15 Pine St,Omaha,NE,68102
+Customer 16,(402) 555-2016,customer16@example.test,16 Pine St,Omaha,NE,68102
+Customer 17,(402) 555-2017,customer17@example.test,17 Pine St,Omaha,NE,68102
+Customer 18,(402) 555-2018,customer18@example.test,18 Pine St,Omaha,NE,68102
+Customer 19,(402) 555-2019,customer19@example.test,19 Pine St,Omaha,NE,68102
+Customer 20,(402) 555-2020,customer20@example.test,20 Pine St,Omaha,NE,68102
+Customer 21,555-0144,,21 Pine St,Omaha,NE,68102
+Customer 22,12,,22 Pine St,Omaha,NE,68102
+Customer 23,call me,,23 Pine St,Omaha,NE,68102
+Repeat 24,(402) 555-2001,repeat24@example.test,24 Pine St,Omaha,NE,68102
+Repeat 25,(402) 555-2002,repeat25@example.test,25 Pine St,Omaha,NE,68102

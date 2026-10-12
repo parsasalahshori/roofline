@@ -92,6 +92,8 @@ export function policyPages(deps: AppDeps): Router {
     if (companyHost !== null) {
       if (req.path === '/privacy' || req.path === '/terms') {
         void servePage(res, next, companyHost, req.path === '/privacy' ? 'privacy' : 'terms');
+      } else if (req.path === '/') {
+        res.redirect(302, '/privacy');
       } else {
         sendNotFound(res);
       }

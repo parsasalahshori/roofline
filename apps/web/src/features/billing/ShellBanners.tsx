@@ -1,4 +1,4 @@
-import { Banner, Button } from '@roofline/ui';
+import { Banner, Button, useToast } from '@roofline/ui';
 import { useMe } from '../../api/hooks.ts';
 import { billing } from '../../copy/billing.ts';
 import { usePortal } from './api.ts';
@@ -11,6 +11,7 @@ import styles from './ShellBanners.module.css';
 export function ShellBanners() {
   const me = useMe();
   const portal = usePortal();
+  const toast = useToast();
   const status = me.data?.company.status;
   const role = me.data?.role;
 
@@ -31,7 +32,7 @@ export function ShellBanners() {
   if (status === 'past_due') {
     const action =
       role === 'owner' ? (
-        <Button onClick={() => portal.mutate()} busy={portal.isPending}>
+        <Button onClick={() => portal.mutate(undefined, { onError: (error) => toast.show(error.message, 'error') })} busy={portal.isPending}>
           {billing.banners.fixPayment}
         </Button>
       ) : (
