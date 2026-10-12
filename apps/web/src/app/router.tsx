@@ -1,13 +1,24 @@
 import { createBrowserRouter, createMemoryRouter, Navigate, type RouteObject } from 'react-router';
 import { setUnauthorizedHandler } from '../api/client.ts';
 import { ApprovalsList } from '../features/approvals/ApprovalsList.tsx';
+import { AppointmentWindow } from '../features/appointments/AppointmentWindow.tsx';
+import { CalendarWindow } from '../features/calendar/CalendarWindow.tsx';
 import { ReviewRoute } from '../features/approvals/Review.tsx';
 import { AcceptInvite } from '../features/auth/AcceptInvite.tsx';
 import { ResetPassword } from '../features/auth/ResetPassword.tsx';
 import { SignIn } from '../features/auth/SignIn.tsx';
 import { VerifyEmail } from '../features/auth/VerifyEmail.tsx';
+import { CustomersWindow } from '../features/customers/CustomersWindow.tsx';
+import { CustomerWindow } from '../features/customers/CustomerWindow.tsx';
 import { ComingSoon } from '../features/coming-soon/ComingSoon.tsx';
+import { NewCustomer } from '../features/create/NewCustomer.tsx';
+import { NewJob } from '../features/create/NewJob.tsx';
+import { ConversationWindow } from '../features/front-desk/ConversationWindow.tsx';
+import { FrontDeskWindow } from '../features/front-desk/FrontDeskWindow.tsx';
 import { ImportWizard } from '../features/imports/ImportWizard.tsx';
+import { JobWindow } from '../features/job/JobWindow.tsx';
+import { JobsWindow } from '../features/jobs/JobsWindow.tsx';
+import { QuoteWindow } from '../features/quotes/QuoteWindow.tsx';
 import { SignUp } from '../features/signup/SignUp.tsx';
 import { Settings } from '../features/settings/Settings.tsx';
 import { StormWindow } from '../features/storm/StormWindow.tsx';
@@ -58,12 +69,20 @@ const routes: RouteObject[] = [
           { path: 'storm', element: <AppWindow app="storm"><StormWindow /></AppWindow> },
           { path: 'storm/plans/:taskId', element: <ReviewRoute app="storm" /> },
           { path: 'storm/*', element: comingSoonWindow('storm') },
-          { path: 'front-desk/*', element: comingSoonWindow('front-desk') },
+          { path: 'front-desk', element: <AppWindow app="front-desk"><FrontDeskWindow /></AppWindow> },
+          { path: 'front-desk/:conversationId', element: <AppWindow app="front-desk"><ConversationWindow /></AppWindow> },
           { path: 'estimator/*', element: comingSoonWindow('estimator') },
-          { path: 'jobs/*', element: comingSoonWindow('jobs') },
-          { path: 'calendar/*', element: comingSoonWindow('calendar') },
           { path: 'agents/*', element: comingSoonWindow('agents') },
-          { path: 'customers/*', element: comingSoonWindow('customers') },
+          { path: 'jobs', element: <AppWindow app="jobs"><JobsWindow /></AppWindow> },
+          { path: 'jobs/new', element: <AppWindow app="jobs"><NewJob /></AppWindow> },
+          { path: 'jobs/:jobId', element: <AppWindow app="jobs"><JobWindow /></AppWindow> },
+          { path: 'jobs/:jobId/quotes/:quoteId', element: <AppWindow app="jobs"><QuoteWindow /></AppWindow> },
+          { path: 'customers', element: <AppWindow app="customers"><CustomersWindow /></AppWindow> },
+          { path: 'customers/new', element: <AppWindow app="customers"><NewCustomer /></AppWindow> },
+          { path: 'customers/:customerId', element: <AppWindow app="customers"><CustomerWindow /></AppWindow> },
+          { path: 'calendar', element: <AppWindow app="calendar"><CalendarWindow /></AppWindow> },
+          { path: 'calendar/new', element: <AppWindow app="calendar"><AppointmentWindow /></AppWindow> },
+          { path: 'calendar/appointments/:appointmentId', element: <AppWindow app="calendar"><AppointmentWindow /></AppWindow> },
           { path: 'settings', element: <Navigate to="/settings/company" replace /> },
           { path: 'settings/setup/import', element: <AppWindow app="settings"><Settings subpage={<ImportWizard />} /></AppWindow> },
           { path: 'settings/setup/import/:importId', element: <AppWindow app="settings"><Settings subpage={<ImportWizard />} /></AppWindow> },

@@ -194,6 +194,20 @@ describe('texting registration', () => {
     expect(await screen.findByText('Texting is on. Your number is (402) 555-0100.')).toBeInTheDocument();
   });
 
+  it('shows approved without a number yet', async () => {
+    signedInApi(
+      view({
+        state: 'approved',
+        brand: FULL_BRAND,
+        approvedAt: '2026-10-11T15:00:00Z',
+        number: null,
+      }),
+    );
+    renderApp('/settings/setup/texting');
+
+    expect(await screen.findByText("You're approved. We're getting your texting number ready.")).toBeInTheDocument();
+  });
+
   it('a server field error lands under its field', async () => {
     signedInApi(view({ defaults: FULL_BRAND }), {
       status: 400,

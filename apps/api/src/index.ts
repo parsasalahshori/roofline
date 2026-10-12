@@ -21,6 +21,19 @@ export {
   BillingUnavailableError,
   createBillingProvider,
 } from './providers/billing.ts';
+export {
+  type CalendarApi,
+  type CalendarApis,
+  CalendarAuthError,
+  CalendarUnavailableError,
+  createCalendarApis,
+  type ExternalCalendar,
+  type ExternalEvent,
+  type ExternalEventInput,
+  type OAuthTokens,
+  type SyncPage,
+} from './providers/calendar.ts';
+export { FakeCalendarApi } from './providers/fakes/calendar.ts';
 export { type GeocodeResult, type Geocoder, GeocoderUnavailableError, createGeocoder } from './providers/geocoder.ts';
 export {
   createRegistrar,

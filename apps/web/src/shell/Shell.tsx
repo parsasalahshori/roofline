@@ -3,6 +3,7 @@ import { type CSSProperties, lazy, Suspense, useEffect, useRef, useState } from 
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useApprovals, useAttentionCount, useMe } from '../api/hooks.ts';
 import { dock, WINDOW_COPY } from '../copy/dock.ts';
+import { useFrontDeskUnread } from '../features/front-desk/api.ts';
 import { ShellBanners } from '../features/billing/ShellBanners.tsx';
 import { useTodayAutoOpen } from '../features/today/useTodayAutoOpen.ts';
 import { type AppKey, DOCK_APPS } from './apps.ts';
@@ -17,12 +18,13 @@ import { useIsPhone } from './useIsPhone.ts';
 // The map (MapLibre, about 1 MB) loads in its own chunk, after the shell has rendered
 const MapView = lazy(() => import('./map/MapView.tsx').then((m) => ({ default: m.MapView })));
 
-/** The count bubble on an app's dock icon. Only three apps have one, and nothing is drawn at zero. */
+/** The count bubble on an app's dock icon. Only four apps have one, and nothing is drawn at zero. */
 function badgeFor(app: AppKey, count: number): DockItem['badge'] {
   if (!(count > 0)) return undefined;
   if (app === 'storm') return { count, label: dock.stormBadge(count) };
   if (app === 'estimator') return { count, label: dock.estimatorBadge(count) };
   if (app === 'agents') return { count, label: dock.agentsBadge(count) };
+  if (app === 'front-desk') return { count, label: dock.frontDeskBadge(count) };
   return undefined;
 }
 
@@ -37,6 +39,7 @@ export function Shell() {
   const { pathname } = useLocation();
   const approvals = useApprovals();
   const attention = useAttentionCount();
+  const frontDeskUnread = useFrontDeskUnread();
   const drafts = countedDrafts(approvals.data);
   const phone = useIsPhone();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -57,7 +60,7 @@ export function Shell() {
 
   const counts: Record<AppKey, number> = {
     storm: drafts.filter((task) => task.agent === 'storm_scout').length,
-    'front-desk': 0,
+    'front-desk': frontDeskUnread,
     estimator: drafts.filter((task) => task.agent === 'estimator').length,
     jobs: 0,
     calendar: 0,

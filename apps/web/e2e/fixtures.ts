@@ -5,6 +5,7 @@ import { test as base, expect, type Locator, type Page } from '@playwright/test'
 import pg from 'pg';
 import { createPools, type Pools } from '@roofline/db';
 import { resetDb, seedTwoCompanies, SEED_PASSWORD, type SeededCompany } from '@roofline/db/testing';
+import type { CompanyStatus } from '@roofline/shared';
 import { seedDemoTask, seedShowcase } from '@roofline/api';
 
 /*
@@ -47,6 +48,17 @@ export async function resetScenario(urls: { owner: string; tenant: string; syste
   const pools = getPools(urls);
   const { taskId } = await seedShowcase(pools, a.companyId, new Date(), { companyName: 'Acme Roofing' });
   return { a, taskId };
+}
+
+/** Sets Acme Roofing's billing status directly in the database. */
+export async function setCompanyStatus(status: CompanyStatus): Promise<void> {
+  const client = new pg.Client({ connectionString: readStack().ownerUrl });
+  await client.connect();
+  try {
+    await client.query(`update companies set status = $1 where slug = 'acme-roofing'`, [status]);
+  } finally {
+    await client.end();
+  }
 }
 
 type Fixtures = {

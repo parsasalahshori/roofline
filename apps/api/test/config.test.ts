@@ -409,6 +409,29 @@ describe('F3 settings', () => {
     }
   });
 
+  test('MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET come as a pair; the issue names the missing one', () => {
+    const noSecret = problem({ ...VALID, MICROSOFT_CLIENT_ID: 'ms-id' });
+    expect(noSecret).toContain('MICROSOFT_CLIENT_SECRET');
+    expect(noSecret).toContain('is required when MICROSOFT_CLIENT_ID is set');
+    const noId = problem({ ...VALID, MICROSOFT_CLIENT_SECRET: 'ms-secret' });
+    expect(noId).toContain('MICROSOFT_CLIENT_ID');
+    expect(noId).toContain('is required when MICROSOFT_CLIENT_SECRET is set');
+    const both = loadConfig({ ...VALID, MICROSOFT_CLIENT_ID: 'ms-id', MICROSOFT_CLIENT_SECRET: 'ms-secret' });
+    expect(both).toMatchObject({ MICROSOFT_CLIENT_ID: 'ms-id', MICROSOFT_CLIENT_SECRET: 'ms-secret' });
+    const blank = loadConfig({ ...VALID, MICROSOFT_CLIENT_ID: ' ', MICROSOFT_CLIENT_SECRET: '' });
+    expect(blank.MICROSOFT_CLIENT_ID).toBeUndefined();
+    expect(blank.MICROSOFT_CLIENT_SECRET).toBeUndefined();
+  });
+
+  test('GOOGLE_CLIENT_SECRET needs GOOGLE_CLIENT_ID', () => {
+    const message = problem({ ...VALID, GOOGLE_CLIENT_SECRET: 'g-secret' });
+    expect(message).toContain('GOOGLE_CLIENT_ID');
+    expect(message).toContain('is required when GOOGLE_CLIENT_SECRET is set');
+    expect(loadConfig({ ...VALID, GOOGLE_CLIENT_ID: 'g-id', GOOGLE_CLIENT_SECRET: 'g-secret' })).toMatchObject({
+      GOOGLE_CLIENT_SECRET: 'g-secret',
+    });
+  });
+
   test('FAKE_PROVIDERS is a flag, and is refused in production', () => {
     expect(loadConfig({ ...VALID, NODE_ENV: 'development', FAKE_PROVIDERS: '1' }).FAKE_PROVIDERS).toBe(true);
     expect(loadConfig({ ...VALID, NODE_ENV: 'test', FAKE_PROVIDERS: 'false' }).FAKE_PROVIDERS).toBe(false);

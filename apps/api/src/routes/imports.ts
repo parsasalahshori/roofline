@@ -20,6 +20,7 @@ import {
 import { consentAttestationText, IMPORT_FIELDS, type ImportField, type ImportMapping, type ImportView } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
+import { reportJobError } from '../jobs/scheduler/report.ts';
 import { autoMap } from '../imports/mapping.ts';
 import { ImportFileError, parseUpload } from '../imports/parse.ts';
 import { buildImportView } from '../imports/preview.ts';
@@ -215,7 +216,12 @@ export function importRoutes(deps: AppDeps): Router {
       }
       return buildImportView(tx, ctx, await loadImport(tx, ctx, id), false);
     });
-    await sendJob(ctx.companyId, id);
+    try {
+      await sendJob(ctx.companyId, id);
+    } catch (err) {
+      // The import is committed as queued; sweep-imports hands it to the queue on its next run.
+      reportJobError(deps, err, req.path);
+    }
     res.status(202).json(view);
   });
 
@@ -229,7 +235,12 @@ export function importRoutes(deps: AppDeps): Router {
       if (!retried) throw new AppError(409, NOT_FAILED);
       return buildImportView(tx, ctx, await loadImport(tx, ctx, id), false);
     });
-    await sendJob(ctx.companyId, id);
+    try {
+      await sendJob(ctx.companyId, id);
+    } catch (err) {
+      // The import is committed as queued; sweep-imports hands it to the queue on its next run.
+      reportJobError(deps, err, req.path);
+    }
     res.status(202).json(view);
   });
 

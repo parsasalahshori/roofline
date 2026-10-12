@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { keys } from '../src/api/keys.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import type { CompanyBody } from '../src/api/types.ts';
@@ -74,7 +75,7 @@ const COMPANY: CompanyBody = {
 };
 
 /** A signed-in owner (or the given role) whose Setup reads answer with `view`, unless a test gives its own answers. */
-function signedInApi(view: SetupView, overrides: Parameters<typeof stubApi>[0] = {}, role: 'owner' | 'office' = 'owner') {
+function signedInApi(view: SetupView, overrides: Parameters<typeof stubApi>[0] = {}, role: 'owner' | 'office' | 'rep' = 'owner') {
   api = stubApi({
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role } }),
@@ -122,9 +123,20 @@ describe('setup tab', () => {
 
     await stepList();
     expect(screen.getByText('Coming with the Estimator')).toBeInTheDocument();
-    expect(screen.getByText('Coming with the calendar')).toBeInTheDocument();
+    expect(screen.queryByText('Coming with the calendar')).not.toBeInTheDocument();
     expect(screen.queryByText('Coming with Front Desk')).not.toBeInTheDocument();
     expect(screen.getByText('Coming with Storm Scout')).toBeInTheDocument();
+  });
+
+  it('the phone number step links the owner to the forwarding guide', async () => {
+    signedInApi(viewOf());
+    renderApp('/settings/setup');
+
+    const row = await rowOf(setupItems.phone_number.title);
+    expect(within(row).getByRole('link', { name: setup.actions.forwardCalls })).toHaveAttribute(
+      'href',
+      '/settings/front-desk#forwarding',
+    );
   });
 
   it('the owner skips the import and the ring moves', async () => {
@@ -142,6 +154,20 @@ describe('setup tab', () => {
     await waitFor(() => expect(api.count('POST /api/setup/import_customers/skip')).toBe(1));
     expect(await screen.findByRole('link', { name: '2 of 5 setup steps done' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '1 of 5 setup steps done' })).toBeNull();
+  });
+
+  it('the calendar step links to Connections for every member', async () => {
+    for (const role of ['owner', 'rep'] as const) {
+      signedInApi(viewOf(), {}, role);
+      renderApp('/settings/setup');
+
+      const list = await stepList();
+      const row = within(list).getByRole('heading', { name: setupItems.connect_calendar.title }).closest('li') as HTMLElement;
+      const action = within(row).getByRole('link', { name: setup.actions.connectCalendar });
+      expect(action, role).toHaveAttribute('href', '/settings/connections');
+      expect(api.unexpected, role).toEqual([]);
+      cleanup();
+    }
   });
 
   it('office sees no buttons', async () => {
@@ -190,5 +216,25 @@ describe('setup tab', () => {
 
     await user.selectOptions(within(dialog).getByLabelText(setup.sheet.radiusLabel), setup.radius(20));
     await waitFor(() => expect(api.sent('PUT /api/company/service-area')).toEqual([{ radiusMiles: 20 }]));
+  });
+
+  it('placing the company and setting the radius both refresh the map area', async () => {
+    signedInApi(viewOf(undefined, { company_basics: { status: 'todo' } }), {
+      'POST /api/company/locate': () => ({ body: { located: true } }),
+      'PUT /api/company/service-area': () => ({ body: { ...COMPANY, serviceAreaMiles: 20 } }),
+    });
+    const { user, queryClient } = renderApp('/settings/setup');
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const mapAreaCalls = () => invalidate.mock.calls.filter(([filters]) => filters?.queryKey === keys.mapArea).length;
+
+    const row = await rowOf(setupItems.company_basics.title);
+    await user.click(within(row).getByRole('button', { name: setup.actions.checkDetails }));
+    const dialog = await screen.findByRole('dialog', { name: setup.sheet.title });
+
+    await user.click(within(dialog).getByRole('button', { name: setup.sheet.placeOnMap }));
+    await waitFor(() => expect(mapAreaCalls()).toBe(1));
+
+    await user.selectOptions(within(dialog).getByLabelText(setup.sheet.radiusLabel), setup.radius(20));
+    await waitFor(() => expect(mapAreaCalls()).toBe(2));
   });
 });

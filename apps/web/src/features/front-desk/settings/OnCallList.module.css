@@ -1,0 +1,116 @@
+/* The on-call list: one card row per member, drag handle, number, name and phone, then the move and remove buttons */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.listArea {
+  min-width: 0;
+}
+
+.list,
+.offList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.handle,
+.actions > * {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.handle {
+  cursor: grab;
+}
+
+.place {
+  min-width: 24px;
+  color: var(--text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.who {
+  flex: 1 1 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.phone {
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.offSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subheading {
+  margin: 8px 0 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+/* Keeps the live region for screen readers and out of sight */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

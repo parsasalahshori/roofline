@@ -2,8 +2,9 @@ import type { Role } from '@roofline/shared';
 import type { SettingsTab } from '../features/settings/tabs.ts';
 
 /*
- * The Settings window (Task 16): its tabs, the Company tab and the Team tab. The words for the three
- * tabs that are not built yet are in connections.ts, billing.ts and setup.ts, where vendor names are allowed.
+ * The Settings window (Task 16): its tabs, the Company tab and the Team tab. The Prices and Schedule tabs
+ * are labelled here; their words are in prices.ts and schedule.ts. The words for Connections, Billing and
+ * Setup are in connections.ts, billing.ts and setup.ts, where vendor names are allowed.
  */
 export const settings = {
   // The row of links under the window title
@@ -11,9 +12,13 @@ export const settings = {
   tabs: {
     company: 'Company',
     team: 'Team',
+    prices: 'Prices',
+    schedule: 'Schedule',
     connections: 'Connections',
     billing: 'Billing',
     setup: 'Setup',
+    'front-desk': 'Front Desk',
+    profile: 'Your profile',
   } satisfies Record<SettingsTab, string>,
 
   // While a tab's information loads

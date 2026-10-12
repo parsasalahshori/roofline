@@ -11,9 +11,12 @@ export interface TextingAccounts {
   ensureMessagingService(sub: SubaccountRef, companyId: string, urls: { inbound: string; status: string }): Promise<{ messagingServiceSid: string }>;
   ensureNumber(sub: SubaccountRef, i: { messagingServiceSid: string; areaCode: string | null; state: string | null }):
     Promise<{ e164: string; phoneNumberSid: string; capabilities: ('sms' | 'voice')[] }> }
+/** Twilio ids as the brand flow creates them; reported one by one so a failure part-way keeps what exists. */
+export type BrandProgress = Partial<{ customerProfileSid: string; trustProductSid: string; brandSid: string }>;
 export interface TextingBrands {
   submitBrand(sub: SubaccountRef, i: { companyId: string; brand: BrandInfo; statusCallback: string;
-    previous: { customerProfileSid: string | null; trustProductSid: string | null; brandSid: string | null } }):
+    previous: { customerProfileSid: string | null; trustProductSid: string | null; brandSid: string | null };
+    onProgress?: (p: BrandProgress) => void }):
     Promise<{ customerProfileSid: string; trustProductSid: string; brandSid: string }>;
   brandStatus(sub: SubaccountRef, brandSid: string): Promise<{ status: ReviewStatus; failureReason: string | null }>;
   submitCampaign(sub: SubaccountRef, i: { brandSid: string; messagingServiceSid: string; campaign: CampaignInfo; previousCampaignSid: string | null }):

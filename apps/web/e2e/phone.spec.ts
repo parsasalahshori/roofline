@@ -100,3 +100,46 @@ test('long text does not widen the page', async ({ page, loginAs, markTodaySeen,
   await expect(page.getByRole('dialog').first()).toBeVisible();
   await noSideScroll(page);
 });
+
+test('sign-up does not scroll sideways', async ({ page }) => {
+  await page.goto('/sign-up');
+  await expect(page.getByLabel('Your name')).toBeVisible();
+  await noSideScroll(page);
+});
+
+test('F3 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+
+  for (const path of ['/settings/setup', '/settings/billing', '/settings/setup/import']) {
+    await page.goto(path);
+    await expect(page.getByRole('dialog').first()).toBeVisible();
+    await noSideScroll(page);
+  }
+});
+
+test('C1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, db, scenario }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const job = await db.query<{ id: string }>(`select id from jobs where company_id = $1 order by id limit 1`, [
+    scenario.a.companyId,
+  ]);
+  const customer = await db.query<{ id: string }>(`select id from customers where company_id = $1 order by id limit 1`, [
+    scenario.a.companyId,
+  ]);
+
+  const pages: [string, () => Locator][] = [
+    ['/jobs?view=list', () => page.getByLabel('Jobs list', { exact: true })],
+    [`/jobs/${job.rows[0]?.id}`, () => page.getByRole('group', { name: 'Job stage' })],
+    [`/customers/${customer.rows[0]?.id}`, () => page.getByRole('group', { name: 'Customer actions' })],
+    [
+      '/calendar?view=list',
+      () => page.locator('[data-testid^="agenda-day-"]').first().or(page.getByText('Nothing scheduled.', { exact: true })),
+    ],
+  ];
+  for (const [path, ready] of pages) {
+    await page.goto(path);
+    await expect(ready()).toBeVisible({ timeout: 20_000 });
+    await noSideScroll(page);
+  }
+});

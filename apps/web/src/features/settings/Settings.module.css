@@ -12,6 +12,7 @@
 /* A tab is a whole target on a phone: at least 40px tall, and never squeezed to fit the row */
 .tab {
   flex: none;
+  white-space: nowrap;
   min-height: 40px;
 }
 

@@ -22,6 +22,7 @@ import { twilioRegistrationHooks } from './hooks/twilio-registration.ts';
 import type { JobQueue } from './jobs/queue.ts';
 import { readOnlyGuard } from './billing/read-only.ts';
 import type { Mailer } from './mailer.ts';
+import type { CalendarApis } from './providers/calendar.ts';
 import type { BillingProvider } from './providers/billing.ts';
 import type { Geocoder } from './providers/geocoder.ts';
 import type { CallControl } from './providers/call-control.ts';
@@ -32,7 +33,10 @@ import type { ObjectStore } from './providers/object-store.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
 import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
+import { appointmentRoutes } from './routes/appointments.ts';
 import { approvalRoutes } from './routes/approvals.ts';
+import { calendarConnectRoutes } from './routes/calendar-connect.ts';
+import { calendarRoutes } from './routes/calendar.ts';
 import { blockedNumberRoutes } from './routes/blocked-numbers.ts';
 import { callRoutes } from './routes/calls.ts';
 import { companyRoutes } from './routes/company.ts';
@@ -40,13 +44,19 @@ import { conversationRoutes } from './routes/conversations.ts';
 import { frontDeskRoutes } from './routes/front-desk.ts';
 import { transferPhoneRoutes } from './routes/transfer-phone.ts';
 import { customerRoutes } from './routes/customers.ts';
+import { exportRoutes } from './routes/export.ts';
 import { importRoutes } from './routes/imports.ts';
 import { jobRoutes } from './routes/jobs.ts';
 import { mapRoutes } from './routes/map.ts';
+import { noteRoutes } from './routes/notes.ts';
+import { pricebookRoutes } from './routes/pricebook.ts';
 import { propertyRoutes } from './routes/properties.ts';
+import { jobQuoteRoutes, quoteRoutes } from './routes/quotes.ts';
 import { searchRoutes } from './routes/search.ts';
 import { taskRoutes } from './routes/tasks.ts';
 import { teamRoutes } from './routes/team.ts';
+import { timelineRoutes } from './routes/timeline.ts';
+import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
 import type { StepQueue } from './tasks/queue.ts';
 import { policyPages } from './public/policies.ts';
@@ -95,6 +105,8 @@ export type AppDeps = {
    * unconfigured geocoder that fails each lookup with a setup message; tests pass `FakeGeocoder`.
    */
   geocoder: Geocoder;
+  /** The calendar provider seam (providers/calendar.ts): one api per provider; tests pass fakes. */
+  calendars: CalendarApis;
   /**
    * Where billing goes (providers/billing.ts): Stripe when configured, else an unconfigured
    * provider; tests pass `FakeBillingProvider`.
@@ -255,6 +267,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/team', teamRoutes(deps, logError));
   app.use('/api/customers', customerRoutes(deps));
   app.use('/api/properties', propertyRoutes(deps));
+  // Before /api/jobs: Express matches in order, and jobRoutes would otherwise take /:id/quotes.
+  app.use('/api/jobs/:jobId/quotes', jobQuoteRoutes(deps));
   app.use('/api/jobs', jobRoutes(deps));
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
@@ -262,6 +276,15 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/search', searchRoutes(deps));
   app.use('/api/map', mapRoutes(deps));
   app.use('/api/weather', weatherRoutes(deps));
+  app.use('/api/appointments', appointmentRoutes(deps));
+  app.use('/api/today', todayRoutes(deps));
+  app.use('/api/calendar', calendarRoutes(deps));
+  app.use('/api/calendar', calendarConnectRoutes(deps));
+  app.use('/api/timeline', timelineRoutes(deps));
+  app.use('/api/notes', noteRoutes(deps));
+  app.use('/api/pricebook', pricebookRoutes(deps));
+  app.use('/api/quotes', quoteRoutes(deps));
+  app.use('/api/export', exportRoutes(deps));
   app.use('/api/billing', billingRoutes(deps));
   app.use('/api/setup', setupRoutes(deps));
   app.use('/api/imports', importRoutes(deps));

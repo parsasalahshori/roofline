@@ -7,6 +7,7 @@ import { JOB_HANDLERS } from './handlers.ts';
 export const JOB_NAMES = [
   'import-customers',
   'texting-registration',
+  'calendar-push',
   // D1 Front Desk
   'fd-after-call',
   'fd-recording-store',
@@ -17,6 +18,7 @@ export type JobName = (typeof JOB_NAMES)[number];
 export type JobData = {
   companyId: string;
   importId?: string;
+  appointmentId?: string;
   callId?: string;
   /** fd-after-call: the Twilio CallSid (callId stays the calls row id everywhere else). */
   callSid?: string;

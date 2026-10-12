@@ -4,10 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { RouterProvider } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { keys } from '../src/api/keys.ts';
+import type { CompanyBody } from '../src/api/types.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { approvals } from '../src/copy/approvals.ts';
-import { comingSoon } from '../src/copy/comingSoon.ts';
+import { calendar } from '../src/copy/calendar.ts';
 import { common } from '../src/copy/common.ts';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { shell } from '../src/copy/shell.ts';
@@ -38,7 +39,16 @@ afterEach(() => {
 
 /** A signed-in person whose shell reads answer "nothing", unless a test gives its own answers. */
 function signedInApi(overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: ACCOUNT }), ...overrides });
+  api = stubApi({
+    ...SHELL_ROUTES,
+    // The pipeline board (the /jobs window) reads the board and the team; both are empty here
+    'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
+    'GET /api/team': () => ({ body: { members: [] } }),
+    // The map's job pin opens /jobs/j9, which reads its view; a 404 keeps the window out of these shell tests
+    'GET /api/jobs/j9/view': () => ({ status: 404, body: { error: 'Not found' } }),
+    'GET /api/auth/me': () => ({ body: ACCOUNT }),
+    ...overrides,
+  });
   return api;
 }
 
@@ -104,12 +114,44 @@ it('Esc and ✕ go to the map', async () => {
 });
 
 it('deep-links straight to a window', async () => {
-  signedInApi();
+  const company: CompanyBody = {
+    id: 'c1',
+    name: 'Summit Roofing',
+    slug: 'summit-roofing',
+    status: 'active',
+    legalName: null,
+    phone: null,
+    email: null,
+    website: null,
+    addressStreet: null,
+    addressCity: null,
+    addressState: null,
+    addressZip: null,
+    timezone: 'America/Chicago',
+    logoUrl: null,
+    located: false,
+    serviceAreaMiles: null,
+  };
+  const routes: Routes = {
+    ...SHELL_ROUTES,
+    'GET /api/auth/me': () => ({ body: ACCOUNT }),
+    'GET /api/company': () => ({ body: company }),
+    'GET /api/team': () => ({ body: { members: [], invites: [] } }),
+    'POST /api/calendar/sync': () => ({ body: {} }),
+  };
+  api = stubApi(
+    new Proxy(routes, {
+      get(target, key, receiver) {
+        if (typeof key === 'string' && key.startsWith('GET /api/appointments?')) return () => ({ body: { appointments: [], busy: [] } });
+        return Reflect.get(target, key, receiver);
+      },
+    }),
+  );
   renderApp('/calendar');
 
-  const calendar = await screen.findByRole('dialog', { name: WINDOW_COPY.calendar.title });
-  expect(within(calendar).getByText(WINDOW_COPY.calendar.description)).toBeInTheDocument();
-  expect(within(calendar).getByText(comingSoon.calendar)).toBeInTheDocument();
+  const calendarWindow = await screen.findByRole('dialog', { name: WINDOW_COPY.calendar.title });
+  expect(within(calendarWindow).getByText(WINDOW_COPY.calendar.description)).toBeInTheDocument();
+  expect(await within(calendarWindow).findByRole('button', { name: calendar.today })).toBeInTheDocument();
 });
 
 it('badges Storm with storm drafts and Agents with tasks needing attention', async () => {
@@ -194,7 +236,7 @@ it('marks the open app in the dock', async () => {
 });
 
 it('opens a customer or a job from a pin card', async () => {
-  signedInApi();
+  signedInApi({ 'GET /api/customers/c9/view': () => ({ status: 404, body: { error: 'Not found' } }) });
   const { router, user } = renderApp('/');
 
   await user.click(await screen.findByRole('button', { name: 'job pin' }));

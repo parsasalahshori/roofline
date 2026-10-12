@@ -31,7 +31,15 @@ const SIGN_IN_FIRST = 'Sign in to accept this invite.';
 
 /** The shell's reads (Task 12) are answered with "nothing" unless a test gives its own answer. */
 // The sign-in page asks whether Google sign-in is set up: here it is not
-const stubApi = (given: Routes) => stubApiBase({ ...SHELL_ROUTES, 'GET /api/auth/config': () => ({ body: { googleClientId: null } }), ...given });
+const stubApi = (given: Routes) =>
+  stubApiBase({
+    ...SHELL_ROUTES,
+    // The pipeline board (the /jobs window) reads the board and the team; both are empty here
+    'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
+    'GET /api/team': () => ({ body: { members: [] } }),
+    'GET /api/auth/config': () => ({ body: { googleClientId: null } }),
+    ...given,
+  });
 
 function renderApp(path: string, { strict = false } = {}) {
   const queryClient = createQueryClient();

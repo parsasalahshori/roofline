@@ -1,5 +1,6 @@
 import type { AppDeps } from '../app.ts';
 import { advanceRegistration } from '../account/texting/advance.ts';
+import { pushAppointment } from '../calendar/push.ts';
 import { runAfterCall } from '../front-desk/after-call.ts';
 import { expireForwardingTest } from '../front-desk/forwarding-test.ts';
 import { runFrontDeskText } from '../front-desk/texts.ts';
@@ -14,6 +15,7 @@ import type { JobName, JobData, JobMeta } from './queue.ts';
 export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: JobMeta) => Promise<void>> = {
   'import-customers': (deps, data, meta) => runImport(deps, data.companyId, data.importId!, meta),
   'texting-registration': (deps, data) => advanceRegistration(deps, data.companyId),
+  'calendar-push': (deps, data, meta) => pushAppointment(deps, data.companyId, data.appointmentId!, meta),
   // D1 Front Desk
   'fd-after-call': (deps, data) => runAfterCall(deps, data),
   'fd-recording-store': (deps, data, meta) => storeRecording(deps, data, meta),

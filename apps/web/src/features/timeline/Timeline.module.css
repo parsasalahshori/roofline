@@ -1,0 +1,83 @@
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity,
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.text {
+  align-items: flex-start;
+}
+
+.text:has(.bubble[data-direction="out"]) {
+  align-items: flex-end;
+}
+
+.bubble {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.bubble[data-direction="out"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.body,
+.summary {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.summary {
+  color: var(--text);
+}
+
+.meta {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.time {
+  white-space: nowrap;
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

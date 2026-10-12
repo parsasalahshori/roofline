@@ -1,0 +1,54 @@
+/* The New job form: three steps stacked on one screen, each a section with its own heading */
+.page {
+  max-width: 720px;
+}
+
+.form {
+  display: grid;
+  gap: 24px;
+}
+
+.step {
+  display: grid;
+  gap: 12px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+/* A customer already chosen: the name, with a Change button beside it */
+.chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Stage and source, or rep and value, side by side on a wide screen */
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+/* Touch targets on a phone are 40px tall; the submit button is only as wide as its words */
+.submit {
+  justify-self: start;
+  min-height: 40px;
+}
+
+@media (max-width: 767.98px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

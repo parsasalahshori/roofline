@@ -42,6 +42,9 @@
 | `DATABASE_URL_SYSTEM` | yes | Postgres URL for `app_system` (auth, webhook routing, scheduler fan-out, pg-boss). |
 | `ENCRYPTION_KEY` | yes | `openssl rand -base64 32`. Encrypts secrets in the database; never change it once data exists. |
 | `GOOGLE_CLIENT_ID` | no | Turns on Sign in with Google. |
+| `GOOGLE_CLIENT_SECRET` | no | With `GOOGLE_CLIENT_ID`, turns on Google Calendar connections. |
+| `MICROSOFT_CLIENT_ID` | no | Both or neither with `MICROSOFT_CLIENT_SECRET`. Turns on Outlook calendar connections. |
+| `MICROSOFT_CLIENT_SECRET` | no | Both or neither with `MICROSOFT_CLIENT_ID`. Turns on Outlook calendar connections. |
 | `POSTMARK_TOKEN` | no | Sends email through Postmark; unset means email is only logged. |
 | `MAIL_FROM` | when `POSTMARK_TOKEN` is set | The verified From address. |
 | `TWILIO_AUTH_TOKEN` | no | Twilio master token for webhook signatures (companies without a subaccount token). |
@@ -60,6 +63,13 @@
 | `HOST` | no | Listen address: `0.0.0.0` in production, `127.0.0.1` otherwise, unless set. |
 | `DATABASE_URL_OWNER` | migrations only | The migration owner. Only the migrate and role-password steps use it; never the API or worker. |
 | `TENANT_DB_PASSWORD`, `SYSTEM_DB_PASSWORD` | role passwords only | Set on `app_tenant` and `app_system`; must match the two app URLs. |
+
+- **Calendar connections:**
+  - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google Calendar, and `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` for Outlook. A provider with either value missing shows as not set up in Settings.
+  - Register these redirect URIs with each provider: `<PUBLIC_BASE_URL>/api/calendar/oauth/google/callback` and `<PUBLIC_BASE_URL>/api/calendar/oauth/microsoft/callback`.
+  - The Google OAuth consent screen needs verification, which can take weeks; until it is verified, add the pilot users as test users.
+  - Refresh tokens are stored encrypted with `ENCRYPTION_KEY`. Changing that key breaks every existing connection, and each person has to reconnect.
+  - What is tested, and what only a real account can show, is listed in [`docs/superpowers/c1-acceptance.md`](docs/superpowers/c1-acceptance.md).
 
 **Front Desk configuration.** All optional. Tests and CI never call Anthropic or Twilio.
 
@@ -87,3 +97,14 @@
   - The `postgis` and `citext` extensions must be enabled on the host, in the `public` schema. The first migration runs `CREATE EXTENSION IF NOT EXISTS` for both, which works where the owner may create them (Supabase's `postgres` role may); otherwise enable them first (Supabase: dashboard → Database → Extensions).
   - **Pick `public`, not an `extensions` schema** (the Supabase dashboard offers one): the app roles' `search_path` is `"$user", public`, so with `citext` in `extensions` their email lookups silently turn case-sensitive (checked on Supabase's Postgres 17 image). `db:migrate` moves a `citext` it finds in another schema into `public`. It stops with a plain message when `postgis` is in another schema, because that one can't be moved: drop it there and let the migration install it, or enable it for `public` in the host's settings.
   - **Supabase's Data API roles:** Supabase grants `anon` and `authenticated` access to new `public` tables by default, which would expose `users` (with `password_hash`) and `sessions` over its REST API. Every `db:migrate` revokes all their grants on `public` and `pgboss` (on `pgboss` only where the owner may: a table pg-boss made as `app_system` can't be revoked on by a plain `CREATEROLE` owner, so that one is skipped), their use of the `public` schema, and the default privileges that hand them new tables, so tables a later migration adds are covered too. `db:preflight` (step 2a) fails if any grant is left, `pgboss` included.
+- **Billing and texting setup (F3):**
+  - **Plans:** run `npm run sync:stripe-plans -w @roofline/api` before the first deploy and again after every price change. It creates the meters, products and prices from `BILLING_PLANS_FILE`.
+  - **Stripe webhook:** add the endpoint `<PUBLIC_BASE_URL>/hooks/stripe` with exactly these five events: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`. Its signing secret is `STRIPE_WEBHOOK_SECRET`; without it the endpoint answers 503 and Stripe retries.
+  - **Twilio registration callback:** point Twilio's registration status callback at `<PUBLIC_BASE_URL>/hooks/twilio-registration`. A daily poll also checks the carriers.
+  - **Hosted policy pages:** set `POLICY_PAGES_DOMAIN` (like `roofline.app`) and add wildcard DNS `*.<POLICY_PAGES_DOMAIN>` pointing at the API service, so each company's `https://<company-slug>.<POLICY_PAGES_DOMAIN>/privacy` and `/terms` resolve.
+- **Owner to-dos before texting goes live:**
+  - Keep Twilio Advanced Opt-Out on, with its default keywords.
+  - Have the lawyer review the policy templates and the consent sentence.
+  - Set the real `BILLING_PLANS_FILE` (required in production when `STRIPE_SECRET_KEY` is set).
+  - Set `TWILIO_PRIMARY_PROFILE_SID` (the primary customer profile, `BU` + 32 hex digits).
+  - Run the by-hand checks in [`docs/superpowers/f3-manual-smoke.md`](docs/superpowers/f3-manual-smoke.md).
