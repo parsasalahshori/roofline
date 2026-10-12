@@ -8,3 +8,5 @@ Built:
 Review rounds: 3 verify rounds, each 1 finding; contact checks approve/amend/approve. Final amend addressed here: the email_opt_outs conflict target removed so the SELECT(email) drop holds.
 Minors: db/api tests prove on CI only (no Docker).
 Verify: typecheck, lint, shared vitest (668 passed) and drizzle-kit "No schema changes" all passed.
+
+CI: run 38268684621 (492563f) failed on ad-sync.test seed (two companies, same customer id vs the new index): fixed in 4452777 (company b seeds its own customer id in ad-sync and ad-spend-sync-scheduler tests). Run 38270696502 (4452777): Hail and v1 green; Platform red only on exact-report.test.ts:130 (the E1 time bomb, fixed on s1-storm in b46f1f5, which this branch predates); E2E red, log not readable through the proxy (blob host denied), cause not confirmed. Judge both on the merged head.
