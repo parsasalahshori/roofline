@@ -36,6 +36,7 @@ import { appointmentRoutes } from './routes/appointments.ts';
 import { approvalRoutes } from './routes/approvals.ts';
 import { calendarConnectRoutes } from './routes/calendar-connect.ts';
 import { calendarRoutes } from './routes/calendar.ts';
+import { claimBoardRoutes, jobClaimRoutes } from './routes/claims.ts';
 import { blockedNumberRoutes } from './routes/blocked-numbers.ts';
 import { callRoutes } from './routes/calls.ts';
 import { companyRoutes } from './routes/company.ts';
@@ -265,6 +266,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/properties', propertyRoutes(deps));
   // Before /api/jobs: Express matches in order, and jobRoutes would otherwise take /:id/quotes.
   app.use('/api/jobs/:jobId/quotes', jobQuoteRoutes(deps));
+  // G1 Agents
+  app.use('/api/jobs/:jobId/claim', jobClaimRoutes(deps));
   app.use('/api/jobs', jobRoutes(deps));
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
@@ -295,6 +298,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/front-desk', frontDeskRoutes(deps));
   app.use('/api/calls', callRoutes(deps));
   app.use('/api/blocked-numbers', blockedNumberRoutes(deps));
+  // G1 Agents
+  app.use('/api/claims', claimBoardRoutes(deps));
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.
