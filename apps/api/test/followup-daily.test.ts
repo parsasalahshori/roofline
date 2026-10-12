@@ -26,16 +26,16 @@ beforeEach(async () => {
 const companyId = () => t.seed.a.companyId;
 const run = () => runFollowUps(t.deps, companyId(), META);
 
-/** The follow_up agent row: unpaused, paused, or (never called) absent. */
+/** The follow_up agent row: paused or unpaused (app_tenant has no DELETE; Ruling GX-E: a missing row means off). */
 async function setAgent(o: { paused: boolean }) {
   await inCompany(t, companyId(), async (tx) => {
-    await tx.delete(agentSettings).where(and(eq(agentSettings.companyId, companyId()), eq(agentSettings.agent, 'follow_up')));
-    await tx.insert(agentSettings).values({ companyId: companyId(), agent: 'follow_up', pausedAt: o.paused ? NINE_AM : null });
+    const pausedAt = o.paused ? NINE_AM : null;
+    await tx
+      .insert(agentSettings)
+      .values({ companyId: companyId(), agent: 'follow_up', pausedAt })
+      .onConflictDoUpdate({ target: [agentSettings.companyId, agentSettings.agent], set: { pausedAt } });
   });
 }
-
-const clearAgent = () =>
-  inCompany(t, companyId(), (tx) => tx.delete(agentSettings).where(and(eq(agentSettings.companyId, companyId()), eq(agentSettings.agent, 'follow_up'))));
 
 let addrN = 0;
 
@@ -219,15 +219,15 @@ describe('lead follow-ups', () => {
     expect(await tasksOf('follow_ups')).toHaveLength(0);
   });
 
-  test('paused, and no settings row, make nothing', async () => {
+  test('paused makes nothing; unpaused makes the plan', async () => {
     const lead = await seedJob({ createdDaysAgo: 3 });
     scriptGood([lead.jobId]);
     await setAgent({ paused: true });
     await run();
     expect(await tasksOf('follow_ups')).toHaveLength(0);
-    await clearAgent();
+    await setAgent({ paused: false });
     await run();
-    expect(await tasksOf('follow_ups')).toHaveLength(0);
+    expect(await tasksOf('follow_ups')).toHaveLength(1);
   });
 
   test('running twice on the same day makes one plan', async () => {
