@@ -216,3 +216,12 @@ CREATE OR REPLACE VIEW company_members WITH (security_barrier) AS
    WHERE m.company_id = nullif(current_setting('app.company_id', true), '')::uuid;
 --> statement-breakpoint
 GRANT SELECT ON company_members TO app_tenant;
+--> statement-breakpoint
+
+-- 10. Task R1 (Ruling AW, amended in place): merged storms keep one id.
+--     When the hail service finds that two stored storms are one, the older survives and the other points at it
+--     through merged_into. The column goes last so the order matches the schema file. The table-wide
+--     SELECT, INSERT and UPDATE grant from section 1 already covers app_hail; the column grant is explicit.
+ALTER TABLE storms ADD COLUMN merged_into uuid REFERENCES storms(id);
+--> statement-breakpoint
+GRANT UPDATE (merged_into) ON storms TO app_hail;
