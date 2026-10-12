@@ -15,3 +15,8 @@
 
 ## Verify tail
 typecheck ok, lint ok, shared vitest 381 passed, drizzle-kit: "No schema changes, nothing to migrate", no check_no_changes file, playwright-core only 1.56.1.
+
+## CI rounds
+- Run 38196905397 (bfadcb8) failed: the rls.test.ts text scan rejected the word BYPASSRLS in a 0018 comment. Fixed by rewording the comment (ac00704).
+- Run 38197856024 (ac00704) failed: (a) migrations.test.ts rejected the guarded `ALTER ROLE app_hail NOBYPASSRLS`; test now only rejects an ALTER ROLE that grants LOGIN. (b) the footprint_id column query also matched properties.footprint_id (E1, text); scoped to the two door tables (e519110).
+- Run 38198745859 (e519110): PASSED (lint, typecheck, db suites, e2e).
