@@ -8,6 +8,16 @@ import type { JobQueue } from './jobs/queue.ts';
 import { ConsoleMailer, type Mailer, PostmarkMailer } from './mailer.ts';
 import { createBillingProvider } from './providers/billing.ts';
 import { createGeocoder } from './providers/geocoder.ts';
+import type { CallControl } from './providers/call-control.ts';
+import type { LineLookup } from './providers/line-lookup.ts';
+import { type Llm, LlmUnavailableError } from './providers/llm.ts';
+import { anthropicFor } from './providers/anthropic/index.ts';
+import { FakeCallControl } from './providers/fakes/call-control.ts';
+import { FakeLineLookup } from './providers/fakes/line-lookup.ts';
+import { ScriptedLlm } from './providers/fakes/scripted-llm.ts';
+import { twilioLookupFor } from './providers/twilio/lookup.ts';
+import { twilioCallControlFor } from './providers/twilio/voice.ts';
+import { RelaySessions } from './front-desk/relay-sessions.ts';
 import { createRegistrar } from './providers/registrar.ts';
 import { createSmsAdapter } from './providers/sms.ts';
 import type { StepQueue } from './tasks/queue.ts';
@@ -36,6 +46,64 @@ export function loadConfigOrExit(env: Record<string, string | undefined>): Confi
   }
 }
 
+/** The Llm when no key is set: every call says Front Desk is not set up. */
+export class UnconfiguredLlm implements Llm {
+  readonly configured = false;
+  private fail(): never {
+    throw new LlmUnavailableError('Front Desk is not set up: ANTHROPIC_API_KEY is missing.');
+  }
+  route(): never {
+    return this.fail();
+  }
+  answer(): never {
+    return this.fail();
+  }
+  summarize(): never {
+    return this.fail();
+  }
+}
+
+/** Call control that refuses every call (Twilio voice is not configured). */
+export class UnconfiguredCallControl implements CallControl {
+  readonly configured = false;
+  private refuse(): Promise<never> {
+    return Promise.reject(new Error('Call control is not configured.'));
+  }
+  startRecording(): Promise<never> {
+    return this.refuse();
+  }
+  stopRecording(): Promise<never> {
+    return this.refuse();
+  }
+  fetchRecording(): Promise<never> {
+    return this.refuse();
+  }
+  deleteRecording(): Promise<never> {
+    return this.refuse();
+  }
+  placeTestCall(): Promise<never> {
+    return this.refuse();
+  }
+  setVoiceUrl(): Promise<never> {
+    return this.refuse();
+  }
+}
+
+/** The fake Llm with FAKE_PROVIDERS, the real one when a key is set, else one that refuses. Never builds a client here. */
+export function createLlm(config: Config): Llm {
+  return config.FAKE_PROVIDERS ? new ScriptedLlm() : (anthropicFor(config) ?? new UnconfiguredLlm());
+}
+
+export function createCallControl(config: Config): CallControl {
+  return config.FAKE_PROVIDERS ? new FakeCallControl() : (twilioCallControlFor(config) ?? new UnconfiguredCallControl());
+}
+
+export function createLineLookup(config: Config): LineLookup {
+  return config.FAKE_PROVIDERS
+    ? new FakeLineLookup()
+    : (twilioLookupFor(config) ?? { lineType: async () => 'unknown' as const });
+}
+
 /**
  * The real deps for `config`: both database pools, Postmark when it is configured (otherwise
  * email is logged, with a warning in production), Google sign-in, the system clock, the console
@@ -62,6 +130,10 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     mailer = new ConsoleMailer(config.NODE_ENV !== 'production');
   }
 
+  if (config.NODE_ENV === 'production' && !config.ANTHROPIC_API_KEY) {
+    console.warn('ANTHROPIC_API_KEY is not set: Front Desk is off.');
+  }
+
   const google = new JoseGoogleVerifier(config.GOOGLE_CLIENT_ID);
   const weather = config.WEATHER_DISABLED
     ? new NullWeatherSource()
@@ -80,5 +152,10 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     billing: createBillingProvider(config),
     registrar: createRegistrar(config),
     jobs,
+    // D1 Front Desk
+    llm: createLlm(config),
+    callControl: createCallControl(config),
+    lineLookup: createLineLookup(config),
+    relaySessions: new RelaySessions(),
   };
 }

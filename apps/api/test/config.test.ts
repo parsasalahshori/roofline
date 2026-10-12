@@ -37,6 +37,12 @@ describe('loadConfig', () => {
   test('parses a complete environment and fills the defaults', () => {
     expect(loadConfig(VALID)).toEqual({
       ...VALID,
+      FRONT_DESK_ROUTER_MODEL: 'claude-haiku-5-5',
+      FRONT_DESK_ANSWER_MODEL: 'claude-opus-5-5',
+      FRONT_DESK_OPUS_FAST: false,
+      FRONT_DESK_MAX_CALLS: 40,
+      RELAY_PUBLIC_URL: 'wss://app.roofline.test/relay',
+      RELAY_TOKEN_SECRET: loadConfig(VALID).RELAY_TOKEN_SECRET,
       TRUST_PROXY: 0,
       API_RATE_LIMIT_PER_MIN: 600,
       PORT: 4400,
@@ -442,5 +448,57 @@ describe('buildDeps providers', () => {
       expect(deps.registrar.configured).toBe(false);
       expect(deps.sms).toBeInstanceOf(DisabledSmsAdapter);
     });
+  });
+});
+
+describe('Front Desk config', () => {
+  test('defaults', () => {
+    const cfg = loadConfig(VALID);
+    expect(cfg.FRONT_DESK_ROUTER_MODEL).toBe('claude-haiku-5-5');
+    expect(cfg.FRONT_DESK_ANSWER_MODEL).toBe('claude-opus-5-5');
+    expect(cfg.FRONT_DESK_OPUS_FAST).toBe(false);
+    expect(cfg.FRONT_DESK_MAX_CALLS).toBe(40);
+    expect(cfg.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(cfg.TWILIO_TEST_CALLER_NUMBER).toBeUndefined();
+  });
+
+  test('RELAY_PUBLIC_URL is derived from PUBLIC_BASE_URL, and an explicit value is kept', () => {
+    expect(loadConfig(VALID).RELAY_PUBLIC_URL).toBe('wss://app.roofline.test/relay');
+    expect(loadConfig({ ...VALID, NODE_ENV: 'development', PUBLIC_BASE_URL: 'http://localhost:4400' }).RELAY_PUBLIC_URL).toBe(
+      'ws://localhost:4400/relay',
+    );
+    expect(loadConfig({ ...VALID, RELAY_PUBLIC_URL: 'wss://relay.roofline.test/r/' }).RELAY_PUBLIC_URL).toBe(
+      'wss://relay.roofline.test/r',
+    );
+  });
+
+  test('a RELAY_PUBLIC_URL that is not wss:// is rejected in production, ws:// is allowed elsewhere', () => {
+    expect(problem({ ...VALID, RELAY_PUBLIC_URL: 'http://relay.roofline.test/relay' })).toContain('RELAY_PUBLIC_URL');
+    expect(problem({ ...VALID, RELAY_PUBLIC_URL: 'ws://relay.roofline.test/relay' })).toContain('RELAY_PUBLIC_URL');
+    expect(loadConfig({ ...VALID, NODE_ENV: 'development', RELAY_PUBLIC_URL: 'ws://127.0.0.1:4400/relay' }).RELAY_PUBLIC_URL).toBe(
+      'ws://127.0.0.1:4400/relay',
+    );
+  });
+
+  test('TWILIO_TEST_CALLER_NUMBER must be E.164', () => {
+    expect(loadConfig({ ...VALID, TWILIO_TEST_CALLER_NUMBER: '+14025550100' }).TWILIO_TEST_CALLER_NUMBER).toBe('+14025550100');
+    expect(problem({ ...VALID, TWILIO_TEST_CALLER_NUMBER: '402-555-0100' })).toContain(
+      'TWILIO_TEST_CALLER_NUMBER: must be an E.164 number like +14025550100',
+    );
+  });
+
+  test('RELAY_TOKEN_SECRET must be at least 32 bytes; unset is derived deterministically', () => {
+    expect(problem({ ...VALID, RELAY_TOKEN_SECRET: 'too-short' })).toContain('RELAY_TOKEN_SECRET: must be at least 32 bytes');
+    const given = 'x'.repeat(32);
+    expect(loadConfig({ ...VALID, RELAY_TOKEN_SECRET: given }).RELAY_TOKEN_SECRET).toBe(given);
+    const a = loadConfig(VALID).RELAY_TOKEN_SECRET;
+    expect(loadConfig(VALID).RELAY_TOKEN_SECRET).toBe(a);
+    expect(Buffer.from(a, 'base64')).toHaveLength(32);
+    expect(loadConfig({ ...VALID, ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64') }).RELAY_TOKEN_SECRET).not.toBe(a);
+  });
+
+  test('FRONT_DESK_OPUS_FAST reads as a flag', () => {
+    expect(loadConfig({ ...VALID, FRONT_DESK_OPUS_FAST: '1' }).FRONT_DESK_OPUS_FAST).toBe(true);
+    expect(loadConfig({ ...VALID, FRONT_DESK_OPUS_FAST: 'false' }).FRONT_DESK_OPUS_FAST).toBe(false);
   });
 });

@@ -10,4 +10,9 @@ import type { JobName, JobData, JobMeta } from './queue.ts';
 export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: JobMeta) => Promise<void>> = {
   'import-customers': (deps, data, meta) => runImport(deps, data.companyId, data.importId!, meta),
   'texting-registration': (deps, data) => advanceRegistration(deps, data.companyId),
+  // D1 Front Desk
+  'fd-after-call': async () => {}, // Task 12 fills this in
+  'fd-recording-store': async () => {}, // Task 12 fills this in
+  'fd-text': async () => {}, // Task 14 fills this in
+  'fd-forwarding-test': async () => {}, // Task 17 fills this in
 };
