@@ -78,7 +78,7 @@ describe('conversation identity repo', () => {
     expect(got?.verifyFailures).toBe(1);
   });
 
-  test('loadStoredIdentity counts failed verify_caller calls by name and ok only (redacted ones too), not other tools', async () => {
+  test('loadStoredIdentity counts mismatches and redacted failures, not engine refusals, the lock or other tools', async () => {
     const id = await newConversation(seed.a);
     const c = ctxFor(seed.a);
     const mismatch = 'That did not match our records. Ask the caller to say their full name and the street address again.';
@@ -105,7 +105,7 @@ describe('conversation identity repo', () => {
       });
     });
     const got = await withTenant(pools, c, (tx) => loadStoredIdentity(tx, c, id));
-    expect(got?.verifyFailures).toBe(5);
+    expect(got?.verifyFailures).toBe(3);
   });
 
   test('loadTurnStats on 3 exchanges (caller+assistant each) gives nextPosition 6, callerTurns 3, assistantTurns 3', async () => {

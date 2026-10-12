@@ -279,14 +279,15 @@ describe('Front Desk texts', () => {
     });
   }
 
-  test('turnLimit trips for SMS', async () => {
+  test('turnLimit trips for SMS: no model call, the thread goes to the team with one handoff reply', async () => {
     await addSmsCustomers(t, 'a', [nina()]);
     await inboundText('Hello');
     const conversationId = (await conversationRows())[0]!.id;
     await storeExchanges(conversationId, SMS_MAX_AI_TURNS);
     await t.jobs.drain(t.deps);
     expect(llm.calls).toHaveLength(0);
-    expect(t.sms.sent).toHaveLength(0);
+    expect(t.sms.sent).toHaveLength(1);
+    expect((await conversationRows())[0]).toMatchObject({ handledBy: 'team', teamUntil: null });
   });
 
   test('a thread under the cap still answers', async () => {
@@ -436,7 +437,7 @@ describe('Front Desk texts', () => {
     });
   });
 
-  test('a 2-hour-old SMS thread still gets a reply, and the 41st AI turn does not', async () => {
+  test('a 2-hour-old SMS thread still gets a reply, and the 41st AI turn hands off to the team once', async () => {
     expect(SMS_MAX_AI_TURNS).toBe(40);
     await addSmsCustomers(t, 'a', [nina()]);
     await inboundText('Hello');
@@ -451,8 +452,15 @@ describe('Front Desk texts', () => {
     const before = llm.calls.length;
     await inboundText('Again');
     await t.jobs.drain(t.deps);
+    // The 41st turn is not the model's: the thread goes to the team with the one handoff reply.
     expect(llm.calls).toHaveLength(before);
-    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent).toHaveLength(2);
+    // A later text stays with the team: no model call, no reply.
+    t.clock.advance(MINUTE);
+    await inboundText('Still there?');
+    await t.jobs.drain(t.deps);
+    expect(llm.calls).toHaveLength(before);
+    expect(t.sms.sent).toHaveLength(2);
   });
 
   test('unanswered texts are still joined with a newline into one caller turn', async () => {

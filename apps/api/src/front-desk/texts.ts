@@ -91,6 +91,9 @@ export const SMS_MAX_AI_TURNS = TURN_LIMIT_OFFER_TURNS;
 /** Texted when the engine hands a text conversation to the team. */
 export const SMS_HANDOFF_REPLY = "I've passed this to the team; someone will text you back.";
 export const TEXT_HANDOFF_SUBJECT = 'Front Desk handed a text conversation to the team';
+export const TEXT_HANDOFF_URGENT_SUBJECT = 'Urgent: Front Desk handed a text conversation to the team';
+/** Why a thread at the AI-turn cap went to the team. */
+export const SMS_CAP_SUMMARY = 'This text conversation reached the assistant\'s limit, so a person needs to take it from here.';
 /** The caller line stored for a text with no words (a photo-only MMS), so the detail never reads it as blanked by retention. */
 export const SMS_PHOTO_ONLY = '[photo]';
 
@@ -132,8 +135,9 @@ export async function runFrontDeskText(
     if (teamAt && now.getTime() - teamAt.getTime() < TEAM_QUIET_MS) return null;
 
     const stats = await loadTurnStats(tx, ctx, conversationId);
-    // The cap is the AI-turn count only, never the thread's age. Stopping here spends nothing on a thread over it.
-    if (stats.callerTurns >= SMS_MAX_AI_TURNS) return null;
+    // The cap is the AI-turn count only, never the thread's age. At the cap the thread goes to the team once
+    // (SMS_HANDOFF_REPLY, team handling with no end), and the model is not asked (E1 review 4).
+    if (stats.callerTurns >= SMS_MAX_AI_TURNS) return { capped: true as const, lastUnanswered: unanswered[unanswered.length - 1]!, toE164: conversation.phoneE164, customerId: conversation.customerId };
 
     const facts = await loadCompanyFacts(tx, ctx);
     const companyBlock = buildCompanyBlock({
@@ -187,6 +191,10 @@ export async function runFrontDeskText(
       if (matches.length === 1 && matches[0]!.customerId === state.customerId) {
         state.identity = 'matched';
         await saveCallerIdentity(tx, ctx, conversationId, { identity: 'matched', customerId: state.customerId });
+      } else {
+        // A shared number's guess must drive nothing (lookups, bookings, the "C" shortcut, verify_caller), as on voice
+        // (NUMBER_SHARED). The reply still goes out on the conversation's linked record after the turn (E1 review 1).
+        state.customerId = null;
       }
     }
     state.toolSettings = { canMove: facts.canMove, canCancel: facts.canCancel };
@@ -206,13 +214,14 @@ export async function runFrontDeskText(
       const earlier = await listConversationTexts(tx, ctx, conversationId, HISTORY_TEXTS);
       for (const text of earlier) {
         if (text.createdAt.getTime() >= firstUnanswered.createdAt.getTime()) continue;
-        if (text.direction === 'in') appendUser(state, text.body);
+        if (text.direction === 'in') appendUser(state, text.body.trim() === '' ? SMS_PHOTO_ONLY : text.body);
         else if (text.assistant) {
           appendAssistant(state, [{ type: 'text', text: text.body }] as unknown as Anthropic.ContentBlock[]);
         }
       }
     }
     return {
+      capped: false as const,
       state,
       customerId: state.customerId,
       toE164: conversation.phoneE164,
@@ -222,20 +231,22 @@ export async function runFrontDeskText(
   });
   if (!prepared) return;
 
-  const { state, callerText, lastUnanswered, toE164 } = prepared;
-  const active = engine ?? createEngine(deps, TEXT_TOOL_HANDLERS);
+  const { lastUnanswered, toE164 } = prepared;
   const said: string[] = [];
-  let handoff: { summary: string } | null = null;
+  let handoff: { summary: string; urgent: boolean; openEnded?: boolean } | null = null;
   let spam = false;
   let turnSaved = false;
-  if (prepared.customerId !== null && isConfirmShortcut(callerText)) {
+  if (prepared.capped) {
+    handoff = { summary: SMS_CAP_SUMMARY, urgent: false, openEnded: true };
+  } else if (prepared.customerId !== null && isConfirmShortcut(prepared.callerText)) {
     // "C" or "confirm" from a customer's own number confirms their next visit; the engine is not asked.
     said.push(await confirmByText(deps, { companyId: data.companyId, conversationId, customerId: prepared.customerId }, deps.clock.now()));
   } else {
-    for await (const event of active.turn(state, callerText, new AbortController().signal)) {
+    const active = engine ?? createEngine(deps, TEXT_TOOL_HANDLERS);
+    for await (const event of active.turn(prepared.state, prepared.callerText, new AbortController().signal)) {
       if (event.type === 'say') said.push(event.text);
       else if (event.type === 'turn_saved') turnSaved = true;
-      else if (event.type === 'handoff') handoff = { summary: event.summary };
+      else if (event.type === 'handoff') handoff = { summary: event.summary, urgent: event.urgent === true };
       else if (event.type === 'end' && event.reason === 'spam') spam = true;
     }
   }
@@ -246,7 +257,7 @@ export async function runFrontDeskText(
   }
   // A booking during the turn may have created the customer, so read the link again.
   const customerId = await withTenant(deps.pools, ctx, async (tx) => {
-    if (handoff) await setConversationHandling(tx, ctx, conversationId, 'team', new Date(now.getTime() + TEAM_HANDLING_MS));
+    if (handoff) await setConversationHandling(tx, ctx, conversationId, 'team', handoff.openEnded ? null : new Date(now.getTime() + TEAM_HANDLING_MS));
     let fresh = (await getConversation(tx, ctx, conversationId))?.customerId ?? prepared.customerId;
     // An unknown texter who gets an answer (or a handoff) needs a customer record to text through the gate, as with the missed-call text-back.
     if (fresh === null && (said.length > 0 || turnSaved || handoff)) {
@@ -262,15 +273,16 @@ export async function runFrontDeskText(
         subjectType: 'customer',
         subjectId: fresh,
         kind: 'front_desk_message',
-        summary: TEXT_HANDOFF_SUBJECT,
-        data: { conversationId, urgent: false, reason: handoff.summary },
+        summary: handoff.urgent ? TEXT_HANDOFF_URGENT_SUBJECT : TEXT_HANDOFF_SUBJECT,
+        // The urgent flag is the durable record hasUrgentNoticeFor reads, so a later urgent message emails on-call once (E1 review 3).
+        data: { conversationId, urgent: handoff.urgent, reason: handoff.summary },
         actorAgent: 'front_desk',
         at: now,
       });
     }
     return fresh;
   });
-  if (handoff) await emailOnCallTeam(deps, data.companyId, TEXT_HANDOFF_SUBJECT, handoff.summary);
+  if (handoff) await emailOnCallTeam(deps, data.companyId, handoff.urgent ? TEXT_HANDOFF_URGENT_SUBJECT : TEXT_HANDOFF_SUBJECT, handoff.summary);
 
   const spoken = said.join(' ').trim();
   let reply = fitSegments(spoken);

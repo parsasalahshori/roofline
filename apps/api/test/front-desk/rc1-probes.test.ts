@@ -2,9 +2,9 @@ import { eq, sql } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { describe, expect, test } from 'vitest';
-import { companyPhoneNumbers, companySettings, conversations, conversationTurns, encrypt, insertCall, textingRegistrations, type Tx, withTenant } from '@roofline/db';
+import { companyPhoneNumbers, companySettings, conversations, conversationTurns, encrypt, insertCall, insertTurn, textingRegistrations, type Tx, withTenant } from '@roofline/db';
 import { createEngine } from '../../src/front-desk/engine.ts';
-import { SMS_PHOTO_ONLY } from '../../src/front-desk/texts.ts';
+import { SMS_HANDOFF_REPLY, SMS_MAX_AI_TURNS, SMS_PHOTO_ONLY } from '../../src/front-desk/texts.ts';
 import { MAX_FAILURES, VERIFY_LOCKED, verifyCaller } from '../../src/front-desk/tools/caller.ts';
 import type { EngineEvent } from '../../src/front-desk/engine-types.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
@@ -195,5 +195,32 @@ describe('RC-1 review regressions', () => {
     expect(second.verifyFailures).toBe(MAX_FAILURES);
     const res = await verifyCaller({ deps: app.deps, companyId: second.companyId, conversation: second, now: app.clock.now() }, bad);
     expect(res).toEqual({ ok: false, forModel: VERIFY_LOCKED });
+  });
+  test('on a shared number the guessed customer drives nothing: "C" goes to the model, not the confirm shortcut', async () => {
+    const llm = await smsSetup();
+    await addSmsCustomers(t, 'a', [{ firstName: 'Nate', phone: NINA, consent: 'express' as const }]);
+    await inboundText('C');
+    await t.jobs.drain(t.deps);
+    expect(answerCalls(llm)).toHaveLength(1);
+    const [conv] = await conversationRows();
+    expect(conv!.identity).toBe('unknown');
+  });
+
+  test('at the AI-turn cap the thread goes to the team once: the handoff reply, open-ended team handling, no model call', async () => {
+    const llm = await smsSetup();
+    await inboundText('Hello');
+    const [conv] = await conversationRows();
+    await inCompany(t, idA(), async (tx: Tx) => {
+      const ctx = { companyId: idA(), userId: null, role: 'system' as const, canApproveSpend: false };
+      for (let i = 0; i < SMS_MAX_AI_TURNS; i++) {
+        await insertTurn(tx, ctx, { conversationId: conv!.id, speaker: 'caller', text: `q${i}` });
+        await insertTurn(tx, ctx, { conversationId: conv!.id, speaker: 'assistant', text: `a${i}` });
+      }
+    });
+    await t.jobs.drain(t.deps);
+    expect(answerCalls(llm)).toHaveLength(0);
+    expect(t.sms.sent.map((m) => (m as { body?: string }).body)).toEqual([SMS_HANDOFF_REPLY]);
+    const [after] = await conversationRows();
+    expect({ handledBy: after!.handledBy, teamUntil: after!.teamUntil }).toEqual({ handledBy: 'team', teamUntil: null });
   });
 });
