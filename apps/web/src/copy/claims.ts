@@ -1,0 +1,58 @@
+import type { ClaimEventActor, ClaimStatus } from '@roofline/shared';
+
+/** Words for the claim section on a job and for the claims board. Plain words only. */
+export const claims = {
+  sectionTitle: 'Insurance claim',
+  none: 'No claim on this job yet.',
+  addDetails: 'Add claim details',
+  edit: 'Edit',
+  intakeLine: (insurer: string, claimNumber: string | null): string =>
+    `From the Front Desk call: ${insurer}, claim ${claimNumber ?? 'not given'}`,
+  loadError: 'We could not load the claim.',
+  loading: 'Loading the claim',
+  historyTitle: 'History',
+  historyLine: (status: string, who: string, day: string): string => `${status} · by ${who} · ${day}`,
+  claimsAgent: 'the Claims agent',
+  unknownPerson: 'a teammate',
+  status: {
+    not_filed: 'Not filed',
+    filed: 'Filed',
+    adjuster_scheduled: 'Adjuster visit booked',
+    inspected: 'Inspected',
+    approved: 'Approved',
+    partly_approved: 'Partly approved',
+    denied: 'Denied',
+    supplement_requested: 'Supplement asked for',
+    closed: 'Closed',
+  } satisfies Record<ClaimStatus, string>,
+  actor: { user: 'a teammate', agent: 'the Claims agent' } satisfies Record<ClaimEventActor, string>,
+  // field labels (also the labels of the form)
+  insurerLabel: 'Insurer',
+  claimNumberLabel: 'Claim number',
+  dateOfLossLabel: 'Date of loss',
+  statusLabel: 'Status',
+  adjusterNameLabel: 'Adjuster name',
+  adjusterPhoneLabel: 'Adjuster phone',
+  adjusterEmailLabel: 'Adjuster email',
+  deductibleLabel: 'Deductible (dollars)',
+  deductibleHelp: 'Leave empty if you do not know it yet.',
+  deductibleInvalid: 'Enter an amount in dollars, like 1000 or 1,000.50.',
+  notesLabel: 'Notes',
+  // form
+  formTitle: 'Insurance claim',
+  save: 'Save',
+  cancel: 'Cancel',
+  close: 'Close',
+  saved: 'Claim saved.',
+  saveFailed: 'We could not save the claim. Please try again.',
+  // board
+  boardTitle: 'Claims',
+  boardEmpty: 'No claims yet.',
+  boardLoading: 'Loading the claims',
+  boardLoadError: 'We could not load the claims.',
+  columnEmpty: 'Nothing here.',
+  since: (day: string): string => `since ${day}`,
+  noInsurer: 'Insurer not given',
+  noAddress: 'No address',
+  claimNumberLine: (number: string): string => `Claim ${number}`,
+} as const;

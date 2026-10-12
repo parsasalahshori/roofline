@@ -1,0 +1,80 @@
+/* The claims board: a column per status side by side on wide screens, stacked on a phone. */
+.section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-muted);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 600px) {
+  .columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.column {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.columnHeading {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text);
+}
+
+.cards {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.empty {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 40px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.name {
+  font-weight: 600;
+}
+
+.meta {
+  color: var(--text-muted);
+}
