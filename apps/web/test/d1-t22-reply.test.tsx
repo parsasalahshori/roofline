@@ -1,8 +1,8 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationDetail } from '@roofline/shared';
 import { ConversationWindow } from '../src/features/front-desk/ConversationWindow.tsx';
 import { conversationCopy } from '../src/copy/front-desk-conversation.ts';
@@ -13,6 +13,7 @@ let api: ReturnType<typeof stubApi> | undefined;
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   expect(api?.unexpected ?? []).toEqual([]);
   api = undefined;
 });
@@ -66,6 +67,59 @@ describe('ConversationWindow read receipt', () => {
     // Let any extra effect run before counting.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(api?.count('POST /api/conversations/conv1/read')).toBe(1);
+  });
+});
+
+describe('ConversationWindow polling', () => {
+  const GET = 'GET /api/conversations/conv1';
+
+  it('asks for the conversation again every 30 s, so new texts show without a reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let turns: ConversationDetail['turns'] = [];
+    api = stubApi({
+      [GET]: () => ({ body: makeConversation({ turns }) }),
+      'POST /api/conversations/conv1/read': () => ({ body: {} }),
+      'GET /api/auth/me': () => ({ body: ACCOUNT }),
+    });
+    const queryClient = createQueryClient();
+    queryClient.setDefaultOptions({ queries: { retry: false } });
+    const router = createMemoryRouter([{ path: '/front-desk/:conversationId', element: <ConversationWindow /> }], {
+      initialEntries: ['/front-desk/conv1'],
+    });
+    render(
+      <Providers client={queryClient}>
+        <RouterProvider router={router} />
+      </Providers>,
+    );
+    await screen.findByLabelText(conversationCopy.replyLabel);
+    // Opening marks it read, which refreshes it once; count from after that.
+    await waitFor(() => expect(api?.count('POST /api/conversations/conv1/read')).toBe(1));
+    await act(() => vi.advanceTimersByTimeAsync(100));
+    const first = api?.count(GET) ?? 0;
+
+    turns = [{ id: 't1', callId: null, position: 0, speaker: 'caller', text: 'Are you coming today?', truncated: false, at: '2026-10-12T16:30:00.000Z', actions: [] }];
+    await act(() => vi.advanceTimersByTimeAsync(5100));
+    expect(api.count(GET)).toBe(first);
+    await act(() => vi.advanceTimersByTimeAsync(25_000));
+    expect(api.count(GET)).toBeGreaterThan(first);
+    expect(await screen.findByText('Are you coming today?')).toBeInTheDocument();
+  });
+
+  it('asks every 5 s while a call is live', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderWindow(
+      makeConversation({
+        channel: 'voice',
+        canReply: false,
+        calls: [{ id: 'call1', status: 'ai', startedAt: '2026-10-12T16:30:00.000Z', endedAt: null, aiSeconds: null, recordingStatus: 'none', transcriptStored: true, transferResult: 'none', transferTo: null, spamReason: null, canPlayRecording: false }],
+      }),
+    );
+    // Opening marks it read, which refreshes it once; count from after that.
+    await waitFor(() => expect(api?.count('POST /api/conversations/conv1/read')).toBe(1));
+    await act(() => vi.advanceTimersByTimeAsync(100));
+    const before = api?.count(GET) ?? 0;
+    await act(() => vi.advanceTimersByTimeAsync(5100));
+    expect(api?.count(GET)).toBe(before + 1);
   });
 });
 
