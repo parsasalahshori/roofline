@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { Config } from '../../src/config.ts';
-import { renderMarkdown, latencyRows, main, playCall, costUsd, toneResult, type EvalFactory, type RunResult } from '../../src/scripts/eval-front-desk.ts';
+import { renderMarkdown, latencyRows, main, playCall, costUsd, toneResult, EST_USD_PER_SCENARIO_RUN, type EvalFactory, type RunResult } from '../../src/scripts/eval-front-desk.ts';
 import { buildClients } from '../../src/providers/anthropic/client.ts';
 import { createEvalModels, GRADER_PROMPT, type EvalModels } from '../../src/providers/anthropic/eval.ts';
 import { ScriptedLlm, type Script } from '../../src/providers/fakes/scripted-llm.ts';
@@ -136,6 +136,20 @@ describe('eval:front-desk main with fakes', () => {
     const md = [...written.entries()].find(([p]) => p.endsWith('.md'))![1];
     expect(md).toContain('| price | 2 | 2 |');
     expect(md).toContain('First token p50');
+  });
+
+  test('prints a cost estimate before the paid loop', async () => {
+    const ids = ['price', 'spam-pitch'];
+    const two = run(['--confirm-spend', '--scenario', ids.join(','), '--runs', '2'], lineByLine, new ScriptedLlm(scriptFor(ids.map((id) => scenarioById(id)!))));
+    expect(await two.done).toBe(0);
+    expect(two.out[0]).toBe(`About $${(EST_USD_PER_SCENARIO_RUN * 4).toFixed(2)} for 2 scenarios × 2 runs (an estimate; the report has the measured cost).`);
+    expect(two.out[1]).toMatch(/^ok /);
+    const one = run(['--confirm-spend', '--scenario', 'price'], lineByLine, new ScriptedLlm(scriptFor([scenarioById('price')!])));
+    expect(await one.done).toBe(0);
+    expect(one.out[0]).toBe(`About $${EST_USD_PER_SCENARIO_RUN.toFixed(2)} for 1 scenario × 1 run (an estimate; the report has the measured cost).`);
+    // Every scenario once is the spec's "about $3" (section 16).
+    expect(EST_USD_PER_SCENARIO_RUN * SCENARIOS.length).toBeGreaterThanOrEqual(3);
+    expect(EST_USD_PER_SCENARIO_RUN * SCENARIOS.length).toBeLessThan(4);
   });
 
   test('--out names the files', async () => {

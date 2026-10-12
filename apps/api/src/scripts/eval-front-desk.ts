@@ -105,6 +105,15 @@ export const PRICES: Readonly<Record<string, { input: number; cacheRead: number;
   'claude-opus-5-5': { input: 4, cacheRead: 0.2, output: 20 },
 };
 
+/** The rough cost of one scenario played once (calls, simulator and grader): spec section 16's "about $3" over 13 scenarios. Printed as an estimate before the paid loop. */
+export const EST_USD_PER_SCENARIO_RUN = 0.25;
+
+/** The line printed before any money is spent. */
+export function costEstimateLine(scenarios: number, runs: number): string {
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  return `About $${(EST_USD_PER_SCENARIO_RUN * scenarios * runs).toFixed(2)} for ${plural(scenarios, 'scenario')} × ${plural(runs, 'run')} (an estimate; the report has the measured cost).`;
+}
+
 /** Cost of one request from its usage. Cache writes are not in the usage this adapter keeps, so they are not counted. An unknown model is priced as Opus, the dearer one. */
 export function costUsd(u: Pick<TurnUsage, 'model' | 'inputTokens' | 'cachedTokens' | 'outputTokens'>): number {
   const p = PRICES[u.model] ?? PRICES['claude-opus-5-5']!;
@@ -532,6 +541,7 @@ export async function main(
     const deps = factory(config);
     if (deps === null) throw new SmokeRefused('Set ANTHROPIC_API_KEY first.');
 
+    io.log(costEstimateLine(chosen.length, args.runs));
     const startedAt = now().toISOString();
     const results: RunResult[] = [];
     for (const id of chosen) {
