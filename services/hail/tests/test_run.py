@@ -32,6 +32,7 @@ def level_pair(outer, inner):
 BASE = level_pair(box(-97, 35, -96, 36), box(-96.8, 35.2, -96.4, 35.6))
 GROWN = level_pair(box(-97, 35, -95.9, 36.1), box(-96.8, 35.2, -96.3, 35.7))
 FAR = [Contour(0.75, mp(box(-90, 30, -89, 31))), Contour(1.0, mp(box(-89.8, 30.2, -89.4, 30.6)))]
+BOTH = [Contour(a.threshold_in, mp(*a.geom.geoms, *b.geom.geoms)) for a, b in zip(BASE, FAR)]
 
 
 def grid(tmp_path, name, key, valid_at):
@@ -73,7 +74,7 @@ def test_new_disjoint_cell_gets_new_id(conn_factory, clean_db, tmp_path, monkeyp
             grid(tmp_path, "g2.grib2", "test-run-2", utc(2002, 6, 5, 15, 30)),
         ]
     )
-    answers = [BASE, BASE + FAR]
+    answers = [BASE, BOTH]
     monkeypatch.setattr(run, "contour_grid", lambda path: answers.pop(0))
     tick(source, conn_factory, now())
     s2 = tick(source, conn_factory, now())
