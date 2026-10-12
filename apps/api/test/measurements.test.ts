@@ -193,7 +193,7 @@ describe('POST /api/measurements: outlines from footprints', () => {
     expect(view.structures).toHaveLength(2);
     const byId = Object.fromEntries(view.structures.map((s) => [s.footprintId, s]));
     expect(byId[ids.house!]).toMatchObject({ included: true, ring: open(HOUSE) });
-    expect(byId[ids.neighbor!]).toMatchObject({ included: false, ring: NEIGHBOR });
+    expect(byId[ids.neighbor!]).toMatchObject({ included: false, ring: open(NEIGHBOR) });
   });
 
   it('no footprint near the point gives draw mode', async () => {
