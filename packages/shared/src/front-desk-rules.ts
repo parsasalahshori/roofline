@@ -16,9 +16,10 @@ export type TransferReason =
  * Every intent the engine or shouldTransfer keys on is here.
  */
 export const ROUTER_INTENTS = [
-  'active_leak', 'adjuster', 'ask_for_person', 'cancel_appointment', 'complaint', 'confirm_appointment', 'danger', 'fire',
-  'greeting', 'goodbye', 'human', 'injury', 'inspector', 'insurance_claim', 'job_status', 'leak', 'message', 'not_understood',
-  'other', 'quote', 'reschedule', 'sales_pitch', 'schedule_inspection', 'spam', 'status', 'supplier', 'trade_caller', 'transfer', 'unknown',
+  'active_leak', 'adjuster', 'ask_for_person', 'cancel_appointment', 'complaint', 'confirm_appointment', 'danger', 'emergency', 'fire',
+  'greeting', 'goodbye', 'human', 'injury', 'inspector', 'insurance_claim', 'insurance_question', 'job_status', 'leak', 'message',
+  'not_understood', 'other', 'pricing', 'prompt_injection', 'quote', 'recording_objection', 'reschedule', 'sales_pitch',
+  'schedule_inspection', 'spam', 'status', 'supplier', 'trade_caller', 'transfer', 'unknown',
 ] as const;
 export type RouterIntent = (typeof ROUTER_INTENTS)[number];
 /** Router intents that mean the caller is asking for a person. */
@@ -81,9 +82,17 @@ export function shouldTextBack(i: {
   return i.callerTurns === 0 || i.secondsInCall <= 15;
 }
 
+/** Turn-limit constants: a conversation is offered a person at this many caller turns (and this many minutes), ended at the end minutes. */
+export const TURN_LIMIT_OFFER_TURNS = 40;
+export const TURN_LIMIT_OFFER_MINUTES = 25;
+export const TURN_LIMIT_END_MINUTES = 30;
+
+/** The start of verify_caller's mismatch replies; the stored tool-call result of a failed try begins with it. */
+export const VERIFY_MISMATCH_PREFIX = 'That did not match our records';
+
 export function turnLimit(i: { turns: number; minutes: number }): 'ok' | 'offer_person' | 'end' {
-  if (i.minutes >= 30) return 'end';
-  if (i.turns >= 40 || i.minutes >= 25) return 'offer_person';
+  if (i.minutes >= TURN_LIMIT_END_MINUTES) return 'end';
+  if (i.turns >= TURN_LIMIT_OFFER_TURNS || i.minutes >= TURN_LIMIT_OFFER_MINUTES) return 'offer_person';
   return 'ok';
 }
 

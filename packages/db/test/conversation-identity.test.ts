@@ -68,7 +68,7 @@ describe('conversation identity repo', () => {
         speaker: 'assistant',
         text: 'checking',
         toolCalls: [
-          { name: 'verify_caller', input: {}, result: 'x', ok: false },
+          { name: 'verify_caller', input: {}, result: 'That did not match our records. Ask again.', ok: false },
           { name: 'verify_caller', input: {}, result: 'x', ok: true },
           { name: 'find_job', input: {}, result: 'x', ok: false },
         ],
@@ -76,6 +76,33 @@ describe('conversation identity repo', () => {
     });
     const got = await withTenant(pools, c, (tx) => loadStoredIdentity(tx, c, id));
     expect(got?.verifyFailures).toBe(1);
+  });
+
+  test('loadStoredIdentity counts only real name/street mismatches, not invalid input, the lock or other tools', async () => {
+    const id = await newConversation(seed.a);
+    const c = ctxFor(seed.a);
+    const mismatch = 'That did not match our records. Ask the caller to say their full name and the street address again.';
+    await withTenant(pools, c, async (tx) => {
+      await insertTurn(tx, c, {
+        conversationId: id,
+        speaker: 'assistant',
+        text: 'checking',
+        toolCalls: [
+          { name: 'verify_caller', input: {}, result: mismatch, ok: false },
+          { name: 'verify_caller', input: {}, result: mismatch, ok: false },
+          { name: 'verify_caller', input: {}, result: 'Those details were not valid. Check them and try once more.', ok: false },
+          {
+            name: 'verify_caller',
+            input: {},
+            result: 'Verification is locked for this conversation after three failed tries. Do not try again.',
+            ok: false,
+          },
+          { name: 'take_message', input: {}, result: mismatch, ok: false },
+        ],
+      });
+    });
+    const got = await withTenant(pools, c, (tx) => loadStoredIdentity(tx, c, id));
+    expect(got?.verifyFailures).toBe(2);
   });
 
   test('loadTurnStats on 3 exchanges (caller+assistant each) gives nextPosition 6, callerTurns 3, assistantTurns 3', async () => {

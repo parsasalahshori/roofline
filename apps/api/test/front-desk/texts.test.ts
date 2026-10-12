@@ -3,6 +3,7 @@ import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
+  activities,
   appointments,
   blockNumber,
   companies,
@@ -21,7 +22,9 @@ import {
 import { TEXT_CHANNEL_TOOLS } from '@roofline/shared';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import type { Engine } from '../../src/front-desk/engine-types.ts';
-import { queueFrontDeskText, runFrontDeskText, SMS_MAX_AI_TURNS } from '../../src/front-desk/texts.ts';
+import { queueFrontDeskText, runFrontDeskText, SMS_HANDOFF_REPLY, SMS_MAX_AI_TURNS, TEXT_HANDOFF_SUBJECT } from '../../src/front-desk/texts.ts';
+import { findInspectionTimes } from '../../src/front-desk/tools/times.ts';
+import { newConversationState } from '../../src/front-desk/state.ts';
 import { NOTHING_TO_CONFIRM } from '../../src/front-desk/tools/confirm.ts';
 import { VERIFY_LOCKED } from '../../src/front-desk/tools/caller.ts';
 import { ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
@@ -131,7 +134,7 @@ const storedTurns = (conversationId: string) => withTenant(t.deps.pools, sysCtx(
 const drainAll = async () => {
   for (let i = 0; i < 3; i += 1) await t.jobs.drain(t.deps);
 };
-/** Makes the conversation look as if it started a minute ago (the 30-minute thread limit counts from its start). */
+/** Makes the conversation look as if it started a minute ago. */
 async function startedJustNow(conversationId: string) {
   await inCompany(t, idA(), (tx: Tx) =>
     tx.update(conversations).set({ createdAt: new Date(t.clock.now().getTime() - MINUTE) }).where(eq(conversations.id, conversationId)),
@@ -305,17 +308,164 @@ describe('Front Desk texts', () => {
     expect(t.sms.sent).toHaveLength(0);
   });
 
-  test('an unknown texter costs no turn', async () => {
+  test('an unknown texter with no booking gets the reply and is linked to a new customer', async () => {
     await inboundText('Hello', '+14025550177');
     await t.jobs.drain(t.deps);
-    expect(llm.calls).toHaveLength(0);
-    expect(t.sms.sent).toHaveLength(0);
+    expect(answerCalls(llm)).toHaveLength(1);
+    const [row] = await conversationRows();
+    const rows = await inCompany(t, idA(), (tx: Tx) => tx.select().from(customers));
+    expect(rows).toHaveLength(1);
+    expect(JSON.stringify(rows[0]!.phones)).toContain('+14025550177');
+    expect(rows[0]!.smsConsentStatus).toBe('express');
+    expect(rows[0]!.smsConsentSource).toBe('text');
+    expect(row).toMatchObject({ identity: 'unknown' });
+    expect(row!.customerId).not.toBeNull();
+    expect(row!.customerId).toBe(rows[0]!.id);
+    expect(await storedTurns(row!.id)).toHaveLength(2);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: '+14025550177' });
+  });
+
+  test('an unknown texter who books gets the reply and the conversation is linked to the new customer', async () => {
+    const UNKNOWN = '+14025550177';
+    const book = {
+      kind: 'tool' as const,
+      name: 'book_inspection' as const,
+      input: {
+        slotStart: '',
+        slotUserId: '',
+        propertyId: null,
+        address: '123 Elm St, Omaha, NE 68102',
+        firstName: 'Rita',
+        lastName: 'Gomez',
+        notes: 'Leak over the garage',
+      },
+    };
+    const find = {
+      kind: 'tool' as const,
+      name: 'find_inspection_times' as const,
+      input: { propertyId: null, address: '123 Elm St, Omaha, NE 68102', fromDate: '2026-10-14', partOfDay: 'morning' as const },
+    };
+    llm = await setup([{ when: /book me/i, route: OPUS, answer: [find, book] }]);
+    // The slot the tool will really offer first (the engine only books what it showed).
+    const probe = newConversationState({ companyId: idA(), conversationId: 'probe', channel: 'sms', phone: UNKNOWN, callId: null, companyBlock: '', repName: null, startedAt: t.clock.now() });
+    const offered = await findInspectionTimes({ deps: t.deps, companyId: idA(), conversation: probe, now: t.clock.now() }, find.input);
+    const slot = /slotStart (\S+), slotUserId ([0-9a-f-]{36})/.exec(offered.forModel)!;
+    book.input.slotStart = slot[1]!;
+    book.input.slotUserId = slot[2]!;
+    await inboundText('Please book me an inspection', UNKNOWN);
+    await t.jobs.drain(t.deps);
+    const rows = await inCompany(t, idA(), (tx: Tx) => tx.select().from(customers));
+    expect(rows).toHaveLength(1);
+    const [row] = await conversationRows();
+    expect(row!.customerId).toBe(rows[0]!.id);
+    // The booking's own confirmation text goes to the texter; it also counts as the answer to the inbound text, so the
+    // engine's closing words are not sent on top of it.
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: UNKNOWN });
+    expect(t.sms.sent[0]!.body).toContain("You're booked");
+  });
+
+  test('a phone-matched texter ends up with identity matched in the row', async () => {
+    const [customerId] = await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hello');
+    await t.jobs.drain(t.deps);
+    const [row] = await conversationRows();
+    expect(row).toMatchObject({ identity: 'matched', customerId });
+  });
+
+  describe('an SMS handoff', () => {
+    const badTake = (id: string) => ({ kind: 'tool' as const, name: 'take_message' as const, input: { banana: true }, id });
+    async function onCall(): Promise<string[]> {
+      const { owner, office } = t.seed.a;
+      const q = t.deps.pools.system.$client;
+      await q.query('update memberships set on_call_order = 0 where company_id = $1 and user_id = $2', [idA(), owner.userId]);
+      await q.query('update memberships set on_call_order = 1 where company_id = $1 and user_id = $2', [idA(), office.userId]);
+      return [owner.email, office.email];
+    }
+
+    test('an unknown texter handoff still texts the fixed copy and notifies the team', async () => {
+      llm = await setup([{ when: /./, route: OPUS, answer: [badTake('b1'), badTake('b2')] }]);
+      const emails = await onCall();
+      await inboundText('Hello', '+14025550177');
+      await t.jobs.drain(t.deps);
+      expect(t.sms.sent).toHaveLength(1);
+      expect(t.sms.sent[0]).toMatchObject({ to: '+14025550177' });
+      expect(t.sms.sent[0]!.body).toContain(SMS_HANDOFF_REPLY);
+      const [row] = await conversationRows();
+      expect(row).toMatchObject({ handledBy: 'team' });
+      expect(row!.customerId).not.toBeNull();
+      expect(t.mailer.sent.map((m) => m.to).sort()).toEqual([...emails].sort());
+      const acts = await inCompany(t, idA(), (tx: Tx) =>
+        tx.select().from(activities).where(and(eq(activities.subjectId, row!.customerId!), eq(activities.kind, 'front_desk_message'))),
+      );
+      expect(acts).toHaveLength(1);
+    });
+
+    test('texts the fixed copy and notifies the team', async () => {
+      llm = await setup([{ when: /./, route: OPUS, answer: [badTake('b1'), badTake('b2')] }]);
+      const emails = await onCall();
+      const [customerId] = await addSmsCustomers(t, 'a', [nina()]);
+      await inboundText('Hello');
+      await t.jobs.drain(t.deps);
+      expect(t.sms.sent).toHaveLength(1);
+      expect(t.sms.sent[0]!.body).toContain(SMS_HANDOFF_REPLY);
+      const [row] = await conversationRows();
+      expect(row).toMatchObject({ handledBy: 'team' });
+      expect(t.mailer.sent.map((m) => m.to).sort()).toEqual([...emails].sort());
+      expect(t.mailer.sent[0]!.subject).toBe(TEXT_HANDOFF_SUBJECT);
+      const acts = await inCompany(t, idA(), (tx: Tx) =>
+        tx.select().from(activities).where(and(eq(activities.subjectId, customerId!), eq(activities.kind, 'front_desk_message'))),
+      );
+      expect(acts).toHaveLength(1);
+      // A later text is silent: the team has the conversation.
+      t.clock.advance(MINUTE);
+      await inboundText('Anyone?');
+      await t.jobs.drain(t.deps);
+      expect(t.sms.sent).toHaveLength(1);
+      expect(t.mailer.sent).toHaveLength(emails.length);
+    });
+
+    test('keeps what the model said and still adds the fixed copy', async () => {
+      llm = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Let me check on that.' }, badTake('b1'), badTake('b2')] }]);
+      await addSmsCustomers(t, 'a', [nina()]);
+      await inboundText('Hello');
+      await t.jobs.drain(t.deps);
+      expect(t.sms.sent).toHaveLength(1);
+      expect(t.sms.sent[0]!.body).toBe(`Let me check on that. ${SMS_HANDOFF_REPLY}`);
+    });
+  });
+
+  test('a 2-hour-old SMS thread still gets a reply, and the 41st AI turn does not', async () => {
+    expect(SMS_MAX_AI_TURNS).toBe(40);
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hello');
+    const conversationId = (await conversationRows())[0]!.id;
+    await inCompany(t, idA(), (tx: Tx) =>
+      tx.update(conversations).set({ createdAt: new Date(t.clock.now().getTime() - 2 * HOUR) }).where(eq(conversations.id, conversationId)),
+    );
+    await t.jobs.drain(t.deps);
+    expect(t.sms.sent).toHaveLength(1);
+    await storeExchanges(conversationId, SMS_MAX_AI_TURNS);
+    t.clock.advance(MINUTE);
+    const before = llm.calls.length;
+    await inboundText('Again');
+    await t.jobs.drain(t.deps);
+    expect(llm.calls).toHaveLength(before);
+    expect(t.sms.sent).toHaveLength(1);
+  });
+
+  test('unanswered texts are still joined with a newline into one caller turn', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('first');
+    t.clock.advance(3_000);
+    await inboundText('second');
+    await t.jobs.drain(t.deps);
+    const turns = await storedTurns((await conversationRows())[0]!.id);
+    expect(turns[0]).toMatchObject({ speaker: 'caller', text: 'first\nsecond' });
   });
 
   test('a texter whose number matches exactly one customer is identified and answered', async () => {
-    await inboundText('Hello', '+14025550177');
-    await t.jobs.drain(t.deps);
-    expect(t.sms.sent).toHaveLength(0);
     await addSmsCustomers(t, 'a', [nina({ phone: '+14025550177' })]);
     await inboundText('Anyone there?', '+14025550177');
     await t.jobs.drain(t.deps);

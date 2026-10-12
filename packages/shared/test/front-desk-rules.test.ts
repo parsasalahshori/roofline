@@ -6,6 +6,8 @@ import {
   shouldTextBack,
   shouldTransfer,
   transferPlan,
+  TURN_LIMIT_END_MINUTES,
+  TURN_LIMIT_OFFER_TURNS,
   turnLimit,
   verifyCaller,
   type TransferReason,
@@ -133,6 +135,11 @@ describe('turnLimit', () => {
   test.each(rows)('turns %d minutes %d', (turns, minutes, want) => {
     expect(turnLimit({ turns, minutes })).toBe(want);
   });
+
+  test('the exported constants drive the limits', () => {
+    expect(turnLimit({ turns: TURN_LIMIT_OFFER_TURNS, minutes: 0 })).toBe('offer_person');
+    expect(turnLimit({ turns: 0, minutes: TURN_LIMIT_END_MINUTES })).toBe('end');
+  });
 });
 
 describe('matchCaller', () => {
@@ -180,6 +187,13 @@ describe('router intents', () => {
     for (const i of ['leak', 'active_leak', 'danger', 'injury', 'fire', 'trade_caller', 'adjuster', 'inspector', 'supplier', 'ask_for_person', 'transfer', 'human', 'not_understood', 'spam', 'sales_pitch']) {
       expect(ROUTER_INTENTS as readonly string[]).toContain(i);
     }
+  });
+
+  test('ROUTER_INTENTS contains every intent the scenarios, engine and smoke use', () => {
+    for (const i of ['emergency', 'insurance_question', 'pricing', 'prompt_injection', 'recording_objection']) {
+      expect(ROUTER_INTENTS as readonly string[]).toContain(i);
+    }
+    expect(ROUTER_INTENTS.some((i) => /record/i.test(i))).toBe(true);
   });
 
   test('ASK_PERSON_INTENTS is ask_for_person, transfer, human', () => {

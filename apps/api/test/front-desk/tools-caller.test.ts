@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { conversations, customers, getConversation, properties, withTenant, type TenantContext } from '@roofline/db';
-import { normalizeAddressKey } from '@roofline/shared';
+import { normalizeAddressKey, VERIFY_MISMATCH_PREFIX } from '@roofline/shared';
 import type { ToolContext } from '../../src/front-desk/engine-types.ts';
 import { newConversationState } from '../../src/front-desk/state.ts';
 import { identifyCaller, VERIFY_LOCKED, verifyCaller } from '../../src/front-desk/tools/caller.ts';
@@ -149,6 +149,7 @@ describe('verifyCaller', () => {
     const third = await verifyCaller(ctx, bad);
     expect(third.ok).toBe(false);
     expect(third.forModel.toLowerCase()).toContain('transfer');
+    expect(third.forModel.startsWith(VERIFY_MISMATCH_PREFIX)).toBe(true);
   });
 
   test('with two phone matches, either customer can verify', async () => {

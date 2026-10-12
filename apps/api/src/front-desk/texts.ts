@@ -1,5 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import {
+  addActivity,
+  findOrCreateCallerCustomer,
   getConversation,
   listConversationTexts,
   listUnansweredInbound,
@@ -13,12 +15,13 @@ import {
   loadTurnStats,
   lockRecipient,
   matchCustomersByPhone,
+  recordCallConsent,
   saveCallerIdentity,
   type Tx,
   updateConversation,
   withTenant,
 } from '@roofline/db';
-import { turnLimit } from '@roofline/shared';
+import { TURN_LIMIT_OFFER_TURNS } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { buildGateRequest } from '../messaging/gate-request.ts';
@@ -29,6 +32,7 @@ import { buildCompanyBlock } from './prompt.ts';
 import { confirmByText, isConfirmShortcut } from './tools/confirm.ts';
 import { FRONT_DESK_HANDLERS } from './tools/index.ts';
 import { systemCtx } from './tools/system-ctx.ts';
+import { emailOnCallTeam } from './tools/transfer.ts';
 import { appendAssistant, appendUser, newConversationState } from './state.ts';
 
 /*
@@ -80,7 +84,11 @@ const HISTORY_TEXTS = 20;
 const MAX_REPLY_CHARS = 306; // two 153-character segments
 
 /** A text thread never gets more than this many AI turns (one per caller turn), whatever the clock says. */
-export const SMS_MAX_AI_TURNS = 40;
+export const SMS_MAX_AI_TURNS = TURN_LIMIT_OFFER_TURNS;
+
+/** Texted when the engine hands a text conversation to the team. */
+export const SMS_HANDOFF_REPLY = "I've passed this to the team; someone will text you back.";
+export const TEXT_HANDOFF_SUBJECT = 'Front Desk handed a text conversation to the team';
 
 /** Keeps whole sentences while they fit in two segments; the first sentence is always kept whole. */
 function fitSegments(reply: string): string {
@@ -109,7 +117,7 @@ export async function runFrontDeskText(
   const prepared = await withTenant(deps.pools, ctx, async (tx) => {
     const conversation = await getConversation(tx, ctx, conversationId);
     if (!conversation || conversation.status !== 'active') return null;
-    // The manual open-ended 'Team is handling' switch (no teamUntil) stays silent; a timed handoff whose teamUntil is
+    // Deliberate (lead ruling pending): the manual open-ended 'Team is handling' switch (no teamUntil) stays silent; a timed handoff whose teamUntil is
     // set falls through to the 2-hour quiet check on the team's last reply below.
     if (conversation.handledBy === 'team' && conversation.teamUntil === null) return null;
     if (await isNumberBlocked(tx, ctx, conversation.phoneE164)) return null;
@@ -120,10 +128,8 @@ export async function runFrontDeskText(
     if (teamAt && now.getTime() - teamAt.getTime() < TEAM_QUIET_MS) return null;
 
     const stats = await loadTurnStats(tx, ctx, conversationId);
-    const minutes = (now.getTime() - conversation.createdAt.getTime()) / 60_000;
-    // The engine checks the same rule; stopping here spends nothing on a thread that is over its limits.
+    // The cap is the AI-turn count only, never the thread's age. Stopping here spends nothing on a thread over it.
     if (stats.callerTurns >= SMS_MAX_AI_TURNS) return null;
-    if (turnLimit({ turns: stats.callerTurns, minutes }) === 'end') return null;
 
     const facts = await loadCompanyFacts(tx, ctx);
     const companyBlock = buildCompanyBlock({
@@ -160,12 +166,16 @@ export async function runFrontDeskText(
       state.verifyFailures = stored.verifyFailures;
     }
     if (state.customerId === null) {
-      // Unknown texters get no reply until a customer record exists; exactly one phone match identifies them.
+      // Exactly one phone match identifies the texter. Otherwise they stay unknown and the engine still runs: its
+      // tools can book (creating the customer) or take a message.
       const matches = await matchCustomersByPhone(tx, ctx, conversation.phoneE164);
-      if (matches.length !== 1) return null;
-      state.customerId = matches[0]!.customerId;
-      state.identity = 'matched';
-      await saveCallerIdentity(tx, ctx, conversationId, { identity: 'matched', customerId: state.customerId });
+      if (matches.length === 1) {
+        state.customerId = matches[0]!.customerId;
+        state.identity = 'matched';
+        await saveCallerIdentity(tx, ctx, conversationId, { identity: 'matched', customerId: state.customerId });
+      } else {
+        state.identity = 'unknown';
+      }
     } else if (state.identity === 'unknown') {
       // The inbound hook linked the customer by phone; record that as 'matched' so it survives the next text.
       state.identity = 'matched';
@@ -207,7 +217,7 @@ export async function runFrontDeskText(
   const { state, callerText, lastUnanswered, toE164 } = prepared;
   const active = engine ?? createEngine(deps, TEXT_TOOL_HANDLERS);
   const said: string[] = [];
-  let handoff = false;
+  let handoff: { summary: string } | null = null;
   let spam = false;
   let turnSaved = false;
   if (prepared.customerId !== null && isConfirmShortcut(callerText)) {
@@ -217,7 +227,7 @@ export async function runFrontDeskText(
     for await (const event of active.turn(state, callerText, new AbortController().signal)) {
       if (event.type === 'say') said.push(event.text);
       else if (event.type === 'turn_saved') turnSaved = true;
-      else if (event.type === 'handoff') handoff = true;
+      else if (event.type === 'handoff') handoff = { summary: event.summary };
       else if (event.type === 'end' && event.reason === 'spam') spam = true;
     }
   }
@@ -226,13 +236,42 @@ export async function runFrontDeskText(
     await withTenant(deps.pools, ctx, (tx) => updateConversation(tx, ctx, conversationId, { status: 'ended' }));
     return;
   }
-  if (handoff) {
-    await withTenant(deps.pools, ctx, (tx) => updateConversation(tx, ctx, conversationId, { handledBy: 'team' }));
-  }
+  // A booking during the turn may have created the customer, so read the link again.
+  const customerId = await withTenant(deps.pools, ctx, async (tx) => {
+    if (handoff) await updateConversation(tx, ctx, conversationId, { handledBy: 'team' });
+    let fresh = (await getConversation(tx, ctx, conversationId))?.customerId ?? prepared.customerId;
+    // An unknown texter who gets an answer (or a handoff) needs a customer record to text through the gate, as with the missed-call text-back.
+    if (fresh === null && (said.length > 0 || turnSaved || handoff)) {
+      const created = await findOrCreateCallerCustomer(tx, ctx, toE164, now);
+      if (created !== null) {
+        await recordCallConsent(tx, ctx, created, now, 'text');
+        await saveCallerIdentity(tx, ctx, conversationId, { identity: 'unknown', customerId: created });
+        fresh = created;
+      }
+    }
+    if (handoff && fresh !== null) {
+      await addActivity(tx, ctx, {
+        subjectType: 'customer',
+        subjectId: fresh,
+        kind: 'front_desk_message',
+        summary: TEXT_HANDOFF_SUBJECT,
+        data: { conversationId, urgent: false, reason: handoff.summary },
+        actorAgent: 'front_desk',
+        at: now,
+      });
+    }
+    return fresh;
+  });
+  if (handoff) await emailOnCallTeam(deps, data.companyId, TEXT_HANDOFF_SUBJECT, handoff.summary);
 
-  const reply = fitSegments(said.join(' ').trim());
+  const spoken = said.join(' ').trim();
+  let reply = fitSegments(spoken);
+  if (handoff) {
+    const combined = spoken === '' ? SMS_HANDOFF_REPLY : `${spoken} ${SMS_HANDOFF_REPLY}`;
+    reply = combined.length <= MAX_REPLY_CHARS ? combined : SMS_HANDOFF_REPLY;
+  }
   if (reply === '') return;
-  const customerId = prepared.customerId;
+  // Only an ambiguous number (it matches several customers) leaves no one to address the reply to: stay silent.
   if (customerId === null) return;
   // Stored means the engine kept this exchange (an assistant turn exists), so the reply must not be thrown away.
   const stored = said.length > 0 || turnSaved;

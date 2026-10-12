@@ -1,4 +1,5 @@
 import { matchCustomersByPhone, saveCallerIdentity, verifyCustomerByNameStreet, withTenant } from '@roofline/db';
+import { VERIFY_MISMATCH_PREFIX } from '@roofline/shared';
 import type { ToolContext, ToolHandler } from '../engine-types.ts';
 import { systemCtx } from './system-ctx.ts';
 
@@ -76,8 +77,8 @@ export const verifyCaller: ToolHandler<'verify_caller'> = async (ctx, input) => 
     return {
       ok: false,
       forModel:
-        'That did not match our records, and this was the third try. Do not try again. Suggest a transfer to the team so they can help, or offer to take a message.',
+        `${VERIFY_MISMATCH_PREFIX}, and this was the third try. Do not try again. Suggest a transfer to the team so they can help, or offer to take a message.`,
     };
   }
-  return { ok: false, forModel: 'That did not match our records. Ask the caller to say their full name and the street address again.' };
+  return { ok: false, forModel: `${VERIFY_MISMATCH_PREFIX}. Ask the caller to say their full name and the street address again.` };
 };

@@ -160,7 +160,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
 
   async function* turn(state: ConversationState, callerText: string, signal: AbortSignal): AsyncGenerator<EngineEvent> {
     const startedMs = performance.now();
-    const minutes = (deps.clock.now().getTime() - state.startedAt.getTime()) / 60_000;
+    const minutes = state.channel === 'sms' ? 0 : (deps.clock.now().getTime() - state.startedAt.getTime()) / 60_000;
     const limit = turnLimit({ turns: state.turns, minutes });
     if (limit === 'end') {
       yield { type: 'end', reason: 'limit' };
@@ -454,7 +454,8 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             result = { ok: false, forModel: NOT_THEIRS };
           } else {
             const handler = tools[use.name] as ((ctx: unknown, input: unknown) => Promise<ToolResult>) | undefined;
-            if (!toolNames.includes(use.name as FrontDeskToolName)) {
+            const offered = toolNames.includes(use.name as FrontDeskToolName);
+            if (!offered) {
               result = { ok: false, forModel: 'That is not available.' };
             } else if (!handler) {
               result = { ok: false, forModel: 'That is not available right now.' };
@@ -467,10 +468,10 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
               }
             }
             for (const id of result.shownIds ?? []) state.shownIds.add(id);
-            if (use.name === 'transfer_to_person' && !finish) {
+            if (offered && use.name === 'transfer_to_person' && !finish) {
               const p = parsed.data as { reason: Exclude<TransferReason, 'model_failure'>; summary: string };
               finish = { type: 'handoff', reason: p.reason, summary: p.summary };
-            } else if (use.name === 'end_call' && !finish) {
+            } else if (offered && use.name === 'end_call' && !finish) {
               finish = { type: 'end', reason: (parsed.data as { reason: 'goodbye' | 'spam' | 'silence' }).reason };
             }
           }

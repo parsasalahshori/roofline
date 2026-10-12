@@ -1,6 +1,7 @@
 import { hasUrgentNoticeFor, loadCompanyFacts, withTenant } from '@roofline/db';
-import { onCallMembers } from '@roofline/db/system';
+import { onCallEmails, onCallMembers } from '@roofline/db/system';
 import { transferPlan, workIntervals } from '@roofline/shared';
+import type { AppDeps } from '../../app.ts';
 import type { ToolHandler } from '../engine-types.ts';
 import { markPersonAskCounted, markUnderstandingCounted, personAskCounted, understandingCounted } from '../state.ts';
 import { systemCtx } from './system-ctx.ts';
@@ -46,3 +47,19 @@ export const transferToPerson: ToolHandler<'transfer_to_person'> = async (ctx, i
   }
   return { ok: true, forModel: 'Tell the caller you are connecting them now.', action: 'transfer_' + plan.mode };
 };
+
+/** Emails the on-call members that a conversation went to the team (the SMS handoff in texts.ts). Ids only in logs. */
+export async function emailOnCallTeam(deps: AppDeps, companyId: string, subject: string, text: string): Promise<void> {
+  try {
+    const members = await onCallEmails(deps.pools.system, companyId);
+    for (const m of members) {
+      try {
+        await deps.mailer.send({ to: m.email, subject, text });
+      } catch (err) {
+        deps.logError?.(err, 'front-desk.text-handoff');
+      }
+    }
+  } catch (err) {
+    deps.logError?.(err, 'front-desk.text-handoff');
+  }
+}
