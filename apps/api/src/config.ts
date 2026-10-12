@@ -224,10 +224,14 @@ const ConfigSchema = z
     META_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/, 'must look like v24.0').default('v24.0'),
     /** The Postmark message stream for storm alerts and other broadcast email. */
     POSTMARK_BROADCAST_STREAM: z.string().min(1).default('broadcast'),
+    /** Basic-auth password Postmark's webhook calls us with at /hooks/postmark. Unset: the webhook refuses every call. */
+    POSTMARK_WEBHOOK_SECRET: z.string().min(16, 'must be at least 16 characters').optional(),
     /** The plain From address for storm email, like storms@roofline.app. Unset: `storms@` + the mail domain (final transform). */
     STORM_MAIL_FROM: z.string().email('must be an email address').optional(),
     /** Minutes without a fresh hail report before the hail feed counts as stale. */
     HAIL_STALE_MINUTES: integer(90, 1, 10080),
+    /** Where the hail-health schedule emails ops when the hail data goes stale. Unset: it only logs. */
+    OPS_ALERT_EMAIL: z.string().email('must be an email address').optional(),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.GOOGLE_CLIENT_SECRET && !cfg.GOOGLE_CLIENT_ID) {

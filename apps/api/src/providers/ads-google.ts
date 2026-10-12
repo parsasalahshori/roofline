@@ -4,13 +4,16 @@ export type AdCreate = { accountId: string; nameTag: string; dailyBudgetCents: n
   landingUrl: string; headline: string; description: string; companyName: string; city: string; keywords: string[] };
 export type AdStats = { spendCents: number; impressions: number; clicks: number; status: 'paused' | 'active' | 'ended' | 'removed' };
 export class AdPlatformError extends Error {
-  constructor(readonly kind: AdErrorKind, readonly status?: number) {
+  /** Meta Graph error code and subcode when known (numbers only, never provider text). */
+  constructor(readonly kind: AdErrorKind, readonly status?: number, readonly graph?: { code?: number; subcode?: number }) {
     super(`Ad platform error: ${kind}`);
     this.name = 'AdPlatformError';
   }
 }
 export interface AdsGoogle { readonly configured: boolean; managerId: string;
-  invite(customerId: string): Promise<void>; linkStatus(customerId: string): Promise<'pending' | 'active' | 'refused' | 'none'>;
+  invite(customerId: string): Promise<void>;
+  unlink(customerId: string): Promise<void>; // ends the manager link (CustomerClientLink); revokeAdAccount calls it.
+  linkStatus(customerId: string): Promise<'pending' | 'active' | 'refused' | 'none'>;
   accountInfo(customerId: string): Promise<{ name: string; currency: string }>;
   findCampaign(customerId: string, nameTag: string): Promise<string | null>;
   createCampaign(c: AdCreate): Promise<{ campaignId: string }>;        // created PAUSED

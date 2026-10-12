@@ -1,0 +1,1 @@
+{"error":{"code":400,"message":"x","status":"FAILED_PRECONDITION","details":[{"@type":"type.googleapis.com/google.ads.googleads.v21.errors.GoogleAdsFailure","errors":[{"errorCode":{"someError":"BILLING_ACCOUNT_SUSPENDED"},"message":"x"}]}]}}

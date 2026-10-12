@@ -1,0 +1,16 @@
+{
+  "name": "Roofline storm cs-1 meta",
+  "object_story_spec": {
+    "link_data": {
+      "image_hash": "abc123hash",
+      "link": "https://example.test/storm/abc",
+      "message": "Hail hit Oklahoma City this week. Ask Acme Roofing for a free roof check.",
+      "name": "Free hail damage check",
+      "description": "No-obligation inspection after the storm.",
+      "call_to_action": {
+        "type": "LEARN_MORE",
+        "value": { "link": "https://example.test/storm/abc" }
+      }
+    }
+  }
+}

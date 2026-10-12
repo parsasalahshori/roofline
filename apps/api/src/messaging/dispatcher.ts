@@ -20,6 +20,7 @@ import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
 import { completeParkedStep, refreshTask } from '../tasks/service.ts';
 import { type BuiltGateRequest, buildGateRequest } from './gate-request.ts';
+import { dispatchEmail } from './dispatch-email.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
 
 /*
@@ -37,8 +38,8 @@ export const NOT_TAKEN_LATER = "The texting service didn't take this message. Yo
 /** A batch step whose waiting texts are all dealt with, but some the provider refused. */
 export const STEP_FAILED = "Some texts didn't go out. You can retry them.";
 
-/** The step types that wait on texts: a batch's texts, and a proposal's single text. */
-const PARKED_TEXT_STEP_TYPES = ['send_sms_batch', 'send_proposal'] as const;
+/** The step types that wait on messages: a batch's texts or emails, and a proposal's single text. */
+const PARKED_TEXT_STEP_TYPES = ['send_sms_batch', 'send_email_batch', 'send_proposal'] as const;
 
 /** A text with no customer has no consent on file. */
 const NO_CUSTOMER: TextState = { status: 'blocked', blockRule: 'consent', blockReason: 'No texting consent on file.' };
@@ -98,6 +99,17 @@ export async function dispatchCompanyMessages(deps: AppDeps, companyId: string, 
     }
     if (outcome === 'none') break;
     if (outcome !== 'skipped') summary[outcome] += 1;
+  }
+
+  // Scheduled emails: a failure here never stops the texts or the parked steps.
+  try {
+    const email = await dispatchEmail(deps, ctx, now);
+    summary.sent += email.sent;
+    summary.scheduled += email.scheduled;
+    summary.blocked += email.blocked;
+    summary.failed += email.failed;
+  } catch (err) {
+    reportJobError(deps, err, 'dispatch-messages: email');
   }
 
   for (const type of PARKED_TEXT_STEP_TYPES) {

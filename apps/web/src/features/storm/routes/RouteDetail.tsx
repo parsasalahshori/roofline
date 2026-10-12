@@ -1,7 +1,8 @@
-import { EmptyState } from '@roofline/ui';
-import { doors } from '../../../copy/doors.ts';
+import { useParams } from 'react-router';
+import { RouteView } from './RouteView.tsx';
 
-/** One route: a line until the route page is built. */
+/** One route on the phone, read from the route id in the address. */
 export function RouteDetail() {
-  return <EmptyState title={doors.routeComingSoon} />;
+  const { routeId } = useParams();
+  return <RouteView routeId={routeId ?? ''} />;
 }

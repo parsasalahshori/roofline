@@ -380,13 +380,21 @@ export async function acceptInvite(system: Db, input: AcceptInviteInput): Promis
   }
 }
 
-export type MemberSnapshot = { role: Role; canApproveSpend: boolean; status: MembershipStatus };
+export type MemberSnapshot = {
+  role: Role;
+  canApproveSpend: boolean;
+  status: MembershipStatus;
+  /** Whether this member gets the storm alert email (Settings -> Team). */
+  stormAlertEmail: boolean;
+};
 
 export type MembershipChanges = {
   role?: Role;
   canApproveSpend?: boolean;
   /** `invited` is not something a person can set. */
   status?: 'active' | 'disabled';
+  /** Storm alert email on or off. A role change leaves it as it is. */
+  stormAlertEmail?: boolean;
 };
 
 export type MembershipUpdate = {
@@ -461,6 +469,7 @@ export async function updateMembership(
         role: memberships.role,
         canApproveSpend: memberships.canApproveSpend,
         status: memberships.status,
+        stormAlertEmail: memberships.stormAlertEmail,
       })
       .from(memberships)
       .where(and(eq(memberships.id, input.membershipId), eq(memberships.companyId, input.companyId)))
@@ -468,13 +477,19 @@ export async function updateMembership(
       .for('update');
     if (!target) return null;
 
-    const before: MemberSnapshot = { role: target.role, canApproveSpend: target.canApproveSpend, status: target.status };
+    const before: MemberSnapshot = {
+      role: target.role,
+      canApproveSpend: target.canApproveSpend,
+      status: target.status,
+      stormAlertEmail: target.stormAlertEmail,
+    };
     const { changes } = input;
     const role = changes.role ?? before.role;
     const after: MemberSnapshot = {
       role,
       canApproveSpend: changes.canApproveSpend ?? (role === before.role ? before.canApproveSpend : false),
       status: changes.status ?? before.status,
+      stormAlertEmail: changes.stormAlertEmail ?? before.stormAlertEmail,
     };
 
     const wasActiveOwner = before.role === 'owner' && before.status === 'active';
@@ -493,7 +508,12 @@ export async function updateMembership(
       if (!activeOwners.some((o) => o.id !== target.id)) throw new LastOwnerError();
     }
 
-    if (after.role !== before.role || after.canApproveSpend !== before.canApproveSpend || after.status !== before.status) {
+    if (
+      after.role !== before.role ||
+      after.canApproveSpend !== before.canApproveSpend ||
+      after.status !== before.status ||
+      after.stormAlertEmail !== before.stormAlertEmail
+    ) {
       await tx.update(memberships).set(after).where(eq(memberships.id, target.id));
     }
     if (after.status === 'disabled') {
@@ -517,4 +537,16 @@ export async function updateMembership(
     await beforeCommit?.(result);
     return result;
   });
+}
+
+/**
+ * Each membership's storm alert flag in `companyId`, keyed by membership id. Read here, not through
+ * the company_members view, which has no column for it (the team list reads it from this map).
+ */
+export async function listStormAlertFlags(system: Db, companyId: string): Promise<Map<string, boolean>> {
+  const rows = await system
+    .select({ id: memberships.id, stormAlertEmail: memberships.stormAlertEmail })
+    .from(memberships)
+    .where(eq(memberships.companyId, companyId));
+  return new Map(rows.map((r) => [r.id, r.stormAlertEmail]));
 }

@@ -2,6 +2,8 @@ import type { StepType } from '@roofline/shared';
 import { orderExactReport } from '../estimator/exact-report.ts';
 import { sendSmsBatch } from '../messaging/send-batch.ts';
 import { sendProposalStep } from '../estimator/send-proposal.ts';
+import { sendEmailBatchHandler } from '../storm/email-batch.ts';
+import { buildRoutesHandler } from '../storm/routes-build.ts';
 import type { StepHandler } from './runner.ts';
 
 /** The demo steps (the F2 demo task, and the tests) do nothing and finish at once. */
@@ -15,9 +17,11 @@ const notYet: StepHandler = async () => {
 /**
  * What runs each kind of step, as the platform ships it; runner.ts starts from this. A type with
  * no handler here cannot run yet: its step needs attention ("This kind of step can't run yet.").
- * The Storm Scout steps (`send_email_batch`, `build_routes`, `create_ad_campaign`) fail with
+ * The Storm Scout step `create_ad_campaign` fails with
  * 'not yet' until their handlers land.
  * `send_sms_batch` texts its customers through the send gate (messaging/send-batch.ts).
+ * `send_email_batch` emails them through the email gate (storm/email-batch.ts).
+ * `build_routes` turns a storm's hail zone into door-knock routes (storm/routes-build.ts).
  */
 export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   demo_noop: finishAtOnce,
@@ -26,8 +30,8 @@ export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   send_sms_batch: sendSmsBatch,
   send_proposal: sendProposalStep,
   order_exact_report: orderExactReport,
-  // Storm Scout (S1): the real handlers arrive in later S1 tasks.
-  send_email_batch: notYet,
-  build_routes: notYet,
+  // Storm Scout (S1): create_ad_campaign's real handler arrives in a later S1 task.
+  send_email_batch: sendEmailBatchHandler,
+  build_routes: buildRoutesHandler,
   create_ad_campaign: notYet,
 };

@@ -235,7 +235,7 @@ export type TextState =
   | { status: 'failed'; blockReason: string; retryable: boolean };
 
 /** The columns a state sets. A queued text keeps its `scheduled_for` (when it was due), the others say why. */
-function stateColumns(state: TextState) {
+export function stateColumns(state: TextState) {
   switch (state.status) {
     case 'queued':
       return { status: state.status, blockRule: null, blockReason: null, retryable: false };
@@ -328,6 +328,7 @@ export async function lockNextDueText(tx: Tx, ctx: TenantContext, now: Date, ski
         eq(messages.companyId, ctx.companyId),
         eq(messages.status, 'scheduled'),
         eq(messages.direction, 'out'),
+        eq(messages.channel, 'sms'),
         lte(messages.scheduledFor, now),
         skip.length > 0 ? notInArray(messages.id, [...skip]) : undefined,
       ),

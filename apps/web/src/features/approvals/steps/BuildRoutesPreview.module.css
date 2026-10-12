@@ -1,0 +1,47 @@
+/* The door-knock plan under its step: the title, the note, one row per rep and the door cap. */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-body);
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+.routes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.route {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+
+.rep {
+  font-weight: 600;
+}
+
+.detail {
+  color: var(--text-muted);
+}
+
+.cap {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}

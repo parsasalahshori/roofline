@@ -6,13 +6,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
-import { ads } from '../src/copy/ads.ts';
-import { comingSoon } from '../src/copy/comingSoon.ts';
 import { connections } from '../src/copy/connections.ts';
 import { doors } from '../src/copy/doors.ts';
 import { settings } from '../src/copy/settings.ts';
 import { storm } from '../src/copy/storm.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
+
+// The route map needs maplibre-gl, which these tests never need. RouteMap is package B's component.
+vi.mock('../src/features/storm/routes/RouteMap.tsx', () => ({ RouteMap: () => null }));
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -27,6 +28,39 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
       ),
   };
 });
+
+vi.mock('../src/features/storm/StormSwathMap.tsx', () => ({ StormSwathMap: () => null }));
+
+const DETAIL = {
+  storm: {
+    id: 's1',
+    placeName: 'Maple Ridge',
+    day: '2026-10-10',
+    maxIn: 1.75,
+    status: 'final',
+    customersHit: 12,
+    homesHit: 340,
+    planTaskId: null,
+    planStatus: null,
+  },
+  swath: { type: 'FeatureCollection', features: [] },
+  results: {
+    textsSent: 0,
+    textsDelivered: 0,
+    replies: 0,
+    yesReplies: 0,
+    emailsSent: 0,
+    unsubscribes: 0,
+    doorsKnocked: 0,
+    wantsCheck: 0,
+    adSpendCents: 0,
+    adMaxCents: 0,
+    adClicks: 0,
+    landingRequests: 0,
+    inspectionsBooked: 0,
+  },
+  plan: null,
+};
 
 const CALENDAR_NONE = { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } };
 const COMPANY = { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null, website: null, addressStreet: null, addressCity: null, addressState: null, addressZip: null, timezone: 'America/Chicago', logoUrl: null, located: false, serviceAreaMiles: null };
@@ -44,6 +78,8 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
   api = stubApi({
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: account }),
+    // The Connections tab reads the ad accounts too; none are linked unless a test says so
+    'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }),
     // C1's calendar card on Connections, the company read in Settings and E1's proposals list in the Estimator
     'GET /api/calendar/connection': () => ({ body: CALENDAR_NONE }),
     'GET /api/company': () => ({ body: COMPANY }),
@@ -71,24 +107,49 @@ function dockLink(dockNav: HTMLElement, label: string) {
 }
 
 describe('S1 Storm windows', () => {
-  it.each([
-    ['/storm', comingSoon.storm],
-    ['/storm/s1', storm.detailComingSoon],
-    ['/storm/routes', doors.routesComingSoon],
-    ['/storm/routes/r1', doors.routeComingSoon],
-  ])('%s shows its placeholder', async (path, copy) => {
-    signedInApi();
-    renderApp(path);
-
-    expect(await screen.findByText(copy)).toBeInTheDocument();
-  });
-
-  it('/storm/routes is the routes list and not a storm called routes', async () => {
-    signedInApi();
+  it('/storm/routes shows the empty line when the rep has no routes', async () => {
+    const api = signedInApi(ACCOUNT, { 'GET /api/routes/mine': () => ({ body: { routes: [] } }) });
     renderApp('/storm/routes');
 
-    expect(await screen.findByText(doors.routesComingSoon)).toBeInTheDocument();
-    expect(screen.queryByText(storm.detailComingSoon)).toBeNull();
+    expect(await screen.findByText(doors.myRoutesEmpty)).toBeInTheDocument();
+    expect(api.count('GET /api/storms/routes')).toBe(0);
+  });
+
+  it('/storm/routes/r1 shows that route', async () => {
+    signedInApi(ACCOUNT, {
+      'GET /api/routes/r1': () => ({
+        body: {
+          route: {
+            id: 'r1',
+            companyStormId: 'cs1',
+            stormId: 'st1',
+            userId: 'u1',
+            name: 'Omaha · Route 1 (Sam)',
+            status: 'ready',
+            stops: 0,
+            doneStops: 0,
+          },
+          stops: [],
+        },
+      }),
+    });
+    renderApp('/storm/routes/r1');
+
+    expect(await screen.findByRole('heading', { name: 'Omaha · Route 1 (Sam)' })).toBeInTheDocument();
+  });
+
+  it('/storm shows the storms list', async () => {
+    signedInApi();
+    renderApp('/storm');
+
+    expect(await screen.findByText(storm.empty)).toBeInTheDocument();
+  });
+
+  it('/storm/s1 shows that storm', async () => {
+    signedInApi(ACCOUNT, { 'GET /api/storms/s1': () => ({ body: DETAIL }) });
+    renderApp('/storm/s1');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Maple Ridge' })).toBeInTheDocument();
   });
 
   it('the dock Storm opens /storm', async () => {
@@ -127,8 +188,8 @@ describe('S1 Storm windows', () => {
     signedInApi();
     renderApp('/settings/connections');
 
-    expect(await screen.findByText(connections.googleAds)).toBeInTheDocument();
-    expect(await screen.findByText(connections.meta)).toBeInTheDocument();
-    expect(await screen.findByText(ads.connectionsComingSoon)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: connections.googleAds })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: connections.meta })).toBeInTheDocument();
+    expect(screen.getAllByText(connections.later)).toHaveLength(1);
   });
 });

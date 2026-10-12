@@ -1,0 +1,42 @@
+/* The five outcome buttons: one column, each a full-width tap target at least 48px tall */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.heading {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.outcome {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.alert {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
