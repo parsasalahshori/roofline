@@ -48,3 +48,4 @@ Moved to `packages/db/src/system/on-call.ts` (exported by `@roofline/db/system`)
 Local: `npm run typecheck`, `npm run lint`, web vitest for the two view tests: clean. The api and db suites run only in CI.
 
 ## CI
+Merged d1-front-desk 092068c8 (smoke guard TRUST_PROXY fix) into d1-rev-d. First run on 61abe402 (38281729989): E2E green; Platform failed on two rls.test assertions I had missed (the app_tenant relation list still named line_lookups, and the app_system column-privilege table still expected the removed grants); fixed in a follow-up commit.

@@ -481,7 +481,7 @@ describe('grants', () => {
         order by 1`,
     );
     expect(rows.map((r) => r.relname)).toEqual(
-      [...TENANT_TABLES, 'companies', ...COMPANY_SCOPED_GLOBALS, 'company_members', 'line_lookups'].sort(),
+      [...TENANT_TABLES, 'companies', ...COMPANY_SCOPED_GLOBALS, 'company_members'].sort(),
     );
   });
 
@@ -1284,20 +1284,22 @@ describe('front desk tables', () => {
       ['calls', 'company_id', 'SELECT', true],
       ['calls', 'call_sid', 'SELECT', true],
       ['calls', 'status', 'SELECT', true],
-      ['calls', 'conversation_id', 'SELECT', true],
+      ['calls', 'conversation_id', 'SELECT', false],
       ['calls', 'from_e164', 'SELECT', false],
-      ['calls', 'recording_key', 'SELECT', true],
-      ['calls', 'recording_key', 'UPDATE', true],
-      ['calls', 'recording_status', 'UPDATE', true],
+      ['calls', 'recording_key', 'SELECT', false],
+      ['calls', 'recording_key', 'UPDATE', false],
+      ['calls', 'recording_status', 'UPDATE', false],
       ['calls', 'from_e164', 'UPDATE', false],
+      ['calls', 'recording_status', 'SELECT', false],
+      // Review note 31: app_system has no grant on conversations or the turns, and writes no column of calls.
       // Ruling BF: app_system never reads or writes transcript text or tool records.
-      ['conversation_turns', 'at', 'SELECT', true],
+      ['conversation_turns', 'at', 'SELECT', false],
       ['conversation_turns', 'text', 'UPDATE', false],
       ['conversation_turns', 'tool_calls', 'UPDATE', false],
       ['conversation_turns', 'speaker', 'UPDATE', false],
       ['conversation_turns', 'text', 'SELECT', false],
       ['conversation_turns', 'tool_calls', 'SELECT', false],
-      ['conversations', 'status', 'SELECT', true],
+      ['conversations', 'status', 'SELECT', false],
       // Task 17's voice-URL repair marks the number; nothing else on company_phone_numbers changes.
       ['company_phone_numbers', 'capabilities', 'UPDATE', true],
       ['company_phone_numbers', 'updated_at', 'UPDATE', true],
