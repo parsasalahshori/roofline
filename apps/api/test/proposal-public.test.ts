@@ -186,3 +186,28 @@ describe('same-origin posts and read-only companies', () => {
     expect(res.body).toEqual({ signed: true });
   });
 });
+
+describe('the per-link limit', () => {
+  test('one link gets 120 requests an hour across open, view, decline and the signed copy, from any address; the 121st is a 429', async () => {
+    const s = await sent();
+    // Behind a proxy, so each request can come from its own address and the per-IP limit never trips.
+    t.app.set('trust proxy', 1);
+    const from = (i: number) => `198.51.100.${i % 200}`;
+    for (let i = 0; i < 120; i += 1) {
+      const res =
+        i % 2 === 0
+          ? await request(t.app).get(`/api/public/proposals/${s.token}`).set('X-Forwarded-For', from(i))
+          : await request(t.app).post(`/api/public/proposals/${s.token}/view`).set('Origin', origin()).set('X-Forwarded-For', from(i)).send({});
+      expect(res.status, `request ${i + 1}`).toBeLessThan(400);
+    }
+    for (const res of [
+      await request(t.app).get(`/api/public/proposals/${s.token}`).set('X-Forwarded-For', '203.0.113.200'),
+      await request(t.app).get(`/api/public/proposals/${s.token}/signed.pdf`).set('X-Forwarded-For', '203.0.113.201'),
+      await request(t.app).post(`/api/public/proposals/${s.token}/decline`).set('Origin', origin()).set('X-Forwarded-For', '203.0.113.202').send({}),
+    ]) {
+      expect(res.status).toBe(429);
+      expect(res.body).toEqual({ error: "You're going a little fast. Try again in a minute." });
+    }
+    expect((await proposalRow(s.proposal.id)).status).not.toBe('declined');
+  });
+});

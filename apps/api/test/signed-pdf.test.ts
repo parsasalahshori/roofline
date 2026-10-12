@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
-import { inflateSync } from 'node:zlib';
+import { crc32, inflateSync } from 'node:zlib';
 import type { ProposalView, PublicProposalView, SignatureRecord } from '@roofline/shared';
-import { calculateQuote, defaultPricebook, defaultScope, ESTIMATE_CLAUSE_V1 } from '@roofline/shared';
-import { eq } from 'drizzle-orm';
+import { calculateQuote, canonicalJson, defaultPricebook, defaultScope, ESTIMATE_CLAUSE_V1 } from '@roofline/shared';
+import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
-import { companies, companySettings, customers, measurements, proposalSignatures, proposals, storedFiles } from '@roofline/db';
+import { companies, companySettings, customers, measurements, proposalEvents, proposalSignatures, proposals, storedFiles } from '@roofline/db';
 import { drawnSignatureKey, makeSignedPdf } from '../src/estimator/signed-pdf.ts';
+import { SIGNED_PDF_GRACE_MS, sweepSignedPdfs } from '../src/jobs/scheduler/signed-pdf-sweep.ts';
 import { pdfToBuffer, renderProposalPdf } from '../src/proposals/pdf.ts';
 import { addressFor, Actors, inCompany, mustCreate } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
@@ -65,7 +66,7 @@ afterEach(async () => {
 });
 
 /** A sent proposal, signed through the public route; the signed-pdf job is queued, not yet run. */
-async function signed(email: string | null = 'molly@example.com', extra: { drawnSignature?: string } = {}) {
+async function signed(email: string | null = 'molly@example.com', extra: { drawnSignature?: string } = {}, beforeSign?: (proposalId: string) => Promise<unknown>) {
   const owner = await who.as('owner');
   const customer = await mustCreate(owner, '/api/customers', { displayName: 'Molly Lindgren' });
   const property = await mustCreate(owner, '/api/properties', { customerId: customer.id, ...addressFor(0) });
@@ -94,6 +95,7 @@ async function signed(email: string | null = 'molly@example.com', extra: { drawn
   const match = TOKEN_PATTERN.exec(t.sms.sent[0]!.body);
   expect(match).not.toBeNull();
   const token = match![1]!;
+  if (beforeSign) await beforeSign(proposal.id);
   const view = (await request(t.app).get(`/api/public/proposals/${token}`)).body as PublicProposalView;
   const res = await request(t.app)
     .post(`/api/public/proposals/${token}/sign`)
@@ -117,6 +119,29 @@ async function storedPdf(): Promise<Uint8Array> {
   return bytes!;
 }
 const pdfPuts = () => t.objectStore.calls.filter((c) => c.method === 'put' && c.key.endsWith('.pdf'));
+const signedEvent = async (proposalId: string) =>
+  (await inCompany(t, t.seed.a.companyId, (tx) =>
+    tx.select().from(proposalEvents).where(and(eq(proposalEvents.proposalId, proposalId), eq(proposalEvents.kind, 'signed'))),
+  ))[0]!;
+
+/** A 4x2 RGBA PNG whose image data is not zlib: png-js's async decode threw it out of the process (review A-C1). */
+function corruptPng(): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(data.length, 0);
+    head.write(type, 4, 'latin1');
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
+    return Buffer.concat([head, data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(4, 0);
+  ihdr.writeUInt32BE(2, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const magic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return Buffer.concat([magic, chunk('IHDR', ihdr), chunk('IDAT', Buffer.from('notzlibdata')), chunk('IEND', Buffer.alloc(0))]);
+}
 
 // A renderer fixture: one signed estimate-based option.
 const calculation = calculateQuote({ ...defaultScope, areaSqFt: 2400, areaType: 'surface', pitch: 6 }, defaultPricebook);
@@ -224,8 +249,9 @@ describe('signed pdf job', () => {
   });
 
   test('the job leaves the estimate clause out when the basis is exact', async () => {
-    const s = await signed();
-    await inCompany(t, t.seed.a.companyId, (tx) => tx.update(proposals).set({ estimateBasis: 'exact' }).where(eq(proposals.id, s.proposal.id)));
+    const s = await signed('molly@example.com', {}, (id) =>
+      inCompany(t, t.seed.a.companyId, (tx) => tx.update(proposals).set({ estimateBasis: 'exact' }).where(eq(proposals.id, id))),
+    );
     await run(s.proposal.id);
     const text = pdfText(await storedPdf());
     expect(text).toContain('Signing record');
@@ -274,6 +300,69 @@ describe('signed pdf job', () => {
     expect(await fileRows()).toHaveLength(0);
     const [sig] = await signatureRows(s.proposal.id);
     expect(sig!.pdfFileId).toBeNull();
+  });
+
+  test('a stored drawn image that is not a drawable PNG fails the job cleanly (no crash) and stores no PDF', async () => {
+    const s = await signed('molly@example.com', { drawnSignature: TINY_PNG });
+    const bad = corruptPng();
+    // As if a bad image had been stored before the sign route checked images in full.
+    await t.objectStore.put(drawnSignatureKey(t.seed.a.companyId, s.proposal.id, sha256(bad)), bad, 'image/png');
+    await inCompany(t, t.seed.a.companyId, (tx) =>
+      tx.update(proposalSignatures).set({ drawnSignaturePngSha256: sha256(bad) }).where(eq(proposalSignatures.proposalId, s.proposal.id)),
+    );
+    await expect(run(s.proposal.id)).rejects.toThrow('not a PNG this app can draw');
+    // Give any stray async decode a chance to throw (it would fail the run as an unhandled error).
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pdfPuts()).toHaveLength(0);
+    expect(await fileRows()).toHaveLength(0);
+    const [sig] = await signatureRows(s.proposal.id);
+    expect(sig!.pdfFileId).toBeNull();
+  });
+
+  test('the PDF prints the signed facts from the stored document, whatever changes after signing', async () => {
+    const companyId = t.seed.a.companyId;
+    await inCompany(t, companyId, async (tx) => {
+      await tx.update(companies).set({ phoneE164: '+14025550111' }).where(eq(companies.id, companyId));
+      await tx.update(companySettings).set({ financingAprBps: 999, financingTermMonths: 120, estimateChangeClause: true }).where(eq(companySettings.companyId, companyId));
+    });
+    const s = await signed();
+    // After signing: a new phone, a new name, new financing and the clause off.
+    await inCompany(t, companyId, async (tx) => {
+      await tx.update(companies).set({ phoneE164: '+14025550999', name: 'Renamed Roofing Co' }).where(eq(companies.id, companyId));
+      await tx.update(companySettings).set({ financingAprBps: 799, financingTermMonths: 60, estimateChangeClause: false }).where(eq(companySettings.companyId, companyId));
+    });
+    await run(s.proposal.id);
+    const text = pdfText(await storedPdf());
+    expect(text).toContain('+14025550111');
+    expect(text).not.toContain('+14025550999');
+    expect(text).not.toContain('Renamed Roofing Co');
+    expect(text).toContain(ESTIMATE_CLAUSE_V1);
+    const signingPage = text.slice(text.indexOf('Signed by'), text.indexOf('Signing record'));
+    expect(signingPage).toContain('9.99% for 120 months');
+    expect(signingPage).not.toContain('7.99%');
+
+    // The stored document is the one hashed, and it holds the signed values.
+    const [sig] = await signatureRows(s.proposal.id);
+    const document = (await signedEvent(s.proposal.id)).data['document'] as { company: { phone: string | null }; option: { financingTerms: unknown; totalCents: number } };
+    expect(createHash('sha256').update(canonicalJson(document)).digest('hex')).toBe(sig!.documentSha256);
+    expect(document.company.phone).toBe('+14025550111');
+    expect(document.option.financingTerms).toEqual({ aprBps: 999, months: 120 });
+    expect(document.option.totalCents).toBe(sig!.totalCents);
+  });
+
+  test('the sweep queues the job again for a signature over 10 minutes old with no PDF, once per proposal', async () => {
+    const s = await signed();
+    const signedAt = t.clock.now();
+    // Its own job is still waiting (or its retries ran out): too early to sweep.
+    expect(await sweepSignedPdfs(t.deps, new Date(signedAt.getTime() + SIGNED_PDF_GRACE_MS - 60_000))).toEqual({ queued: 0 });
+    const later = new Date(signedAt.getTime() + SIGNED_PDF_GRACE_MS + 60_000);
+    expect(await sweepSignedPdfs(t.deps, later)).toEqual({ queued: 1 });
+    const sends = t.jobs.sent.filter((j) => j.name === 'signed-pdf');
+    expect(sends.at(-1)).toEqual({ name: 'signed-pdf', data: { companyId: t.seed.a.companyId, proposalId: s.proposal.id }, singletonKey: s.proposal.id });
+    await t.jobs.drain(t.deps);
+    expect(await fileRows()).toHaveLength(1);
+    // Made: nothing left to sweep.
+    expect(await sweepSignedPdfs(t.deps, later)).toEqual({ queued: 0 });
   });
 
   test('is idempotent: a second run does not duplicate the file or the email', async () => {

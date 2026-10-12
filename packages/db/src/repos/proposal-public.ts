@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto';
-import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
-import type { PublicProposalView, ProposalEventKind, ProposalStatus, SignatureRecord } from '@roofline/shared';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import {
+  parseSignedDocument,
+  type FinancingTerms,
+  type PublicProposalView,
+  type ProposalEventKind,
+  type ProposalStatus,
+  type SignatureRecord,
+  type SignedDocument,
+} from '@roofline/shared';
 import {
   companies,
   companySettings,
@@ -53,6 +61,67 @@ async function settingsFor(tx: Tx, ctx: TenantContext) {
   return row ?? null;
 }
 
+/** An option's terms: the financing shown beside its monthly amount, and whether the estimate clause is on. */
+export type ProposalOptionTerms = { financing: FinancingTerms | null; estimateClause: boolean };
+
+type LiveSettings = { apr: number | null; months: number | null; clause: boolean } | null;
+
+/** Today's company settings as terms: only for options priced before terms were frozen (Ruling ER). */
+function liveTerms(settings: LiveSettings): ProposalOptionTerms {
+  return {
+    financing: settings && settings.apr !== null && settings.months !== null ? { aprBps: settings.apr, months: settings.months } : null,
+    estimateClause: settings?.clause ?? true,
+  };
+}
+
+/** The terms frozen in an option's `prices.terms` when it was priced (Ruling ER), or null when it has none. */
+function frozenTerms(prices: Record<string, unknown>): ProposalOptionTerms | null {
+  const terms = prices['terms'];
+  if (typeof terms !== 'object' || terms === null) return null;
+  const { financing, estimateClause } = terms as Record<string, unknown>;
+  if (typeof estimateClause !== 'boolean') return null;
+  if (financing === null) return { financing: null, estimateClause };
+  if (typeof financing !== 'object' || financing === undefined) return null;
+  const { aprBps, months } = financing as Record<string, unknown>;
+  if (typeof aprBps !== 'number' || typeof months !== 'number') return null;
+  return { financing: { aprBps, months }, estimateClause };
+}
+
+/**
+ * Each option's terms, by option id: frozen on the option (Ruling ER), or today's settings for an
+ * option priced before terms were frozen. Includes disabled options.
+ */
+export async function proposalOptionTerms(tx: Tx, ctx: TenantContext, proposalId: string): Promise<Record<string, ProposalOptionTerms>> {
+  const rows = await tx
+    .select({ id: proposalOptions.id, prices: proposalOptions.prices })
+    .from(proposalOptions)
+    .where(and(eq(proposalOptions.companyId, ctx.companyId), eq(proposalOptions.proposalId, proposalId)));
+  const live = liveTerms(await settingsFor(tx, ctx));
+  return Object.fromEntries(rows.map((o) => [o.id, frozenTerms(o.prices) ?? live]));
+}
+
+/**
+ * Keeps the exact document that document_sha256 covers on the proposal's 'signed' event (`data.document`,
+ * Ruling ER). Call it in the signing transaction, right after signProposal answered 'signed'.
+ */
+export async function recordSignedDocument(tx: Tx, ctx: TenantContext, proposalId: string, document: SignedDocument): Promise<void> {
+  await tx
+    .update(proposalEvents)
+    .set({ data: sql`${proposalEvents.data} || jsonb_build_object('document', ${JSON.stringify(document)}::jsonb)` })
+    .where(and(eq(proposalEvents.companyId, ctx.companyId), eq(proposalEvents.proposalId, proposalId), eq(proposalEvents.kind, 'signed')));
+}
+
+/** The signed document stored at signing (Ruling ER), or null for a signature made before it was stored. */
+export async function signedDocumentOf(tx: Tx, ctx: TenantContext, proposalId: string): Promise<SignedDocument | null> {
+  const [row] = await tx
+    .select({ data: proposalEvents.data })
+    .from(proposalEvents)
+    .where(and(eq(proposalEvents.companyId, ctx.companyId), eq(proposalEvents.proposalId, proposalId), eq(proposalEvents.kind, 'signed')))
+    .orderBy(desc(proposalEvents.at))
+    .limit(1);
+  return row ? parseSignedDocument(row.data['document']) : null;
+}
+
 async function lockProposal(tx: Tx, ctx: TenantContext, id: string): Promise<ProposalRow | null> {
   const [row] = await tx
     .select()
@@ -93,7 +162,11 @@ export async function publicProposalView(tx: Tx, ctx: TenantContext, proposalId:
     .where(and(eq(proposalSignatures.companyId, ctx.companyId), eq(proposalSignatures.proposalId, proposalId)))
     .limit(1);
 
-  const financingTerms = settings && settings.apr !== null && settings.months !== null ? { aprBps: settings.apr, months: settings.months } : null;
+  // Terms frozen with each option's price (Ruling ER); today's settings only for options priced before that.
+  const live = liveTerms(settings);
+  const termsOf = optionRows.map((o) => frozenTerms(o.prices));
+  // The options of one proposal are priced together, so they share one clause setting.
+  const clauseOn = termsOf.find((t) => t !== null)?.estimateClause ?? live.estimateClause;
   const first = row.customerName.trim().split(/\s+/)[0] ?? '';
   let status: PublicProposalView['status'] = 'open';
   if (p.signedAt) status = 'signed';
@@ -108,7 +181,7 @@ export async function publicProposalView(tx: Tx, ctx: TenantContext, proposalId:
     validUntil: p.validUntil,
     status,
     basis: p.estimateBasis,
-    options: optionRows.map((o) => ({
+    options: optionRows.map((o, index) => ({
       id: o.id,
       tier: o.tier,
       name: o.name,
@@ -117,10 +190,10 @@ export async function publicProposalView(tx: Tx, ctx: TenantContext, proposalId:
       inclusions: [...o.highlights, ...o.addOns.map((a) => a.name)],
       totalCents: o.totalCents,
       monthlyEstimateCents: o.monthlyEstimateCents,
-      financingTerms,
+      financingTerms: (termsOf[index] ?? live).financing,
     })),
     signed: sig ? { optionId: sig.optionId, name: sig.signerName, at: sig.signedAt.toISOString(), pdfReady: sig.pdfFileId !== null } : null,
-    estimateClause: p.estimateBasis === 'estimate' && (settings?.clause ?? true),
+    estimateClause: p.estimateBasis === 'estimate' && clauseOn,
   };
 }
 

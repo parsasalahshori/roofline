@@ -18,6 +18,7 @@ import { pruneEarlyReports } from './scheduler/prune-early-reports.ts';
 import { provisionTexting } from './scheduler/provision-texting.ts';
 import { reportJobError } from './scheduler/report.ts';
 import { reportUsage } from './scheduler/report-usage.ts';
+import { sweepSignedPdfs } from './scheduler/signed-pdf-sweep.ts';
 import { sweepImports } from './scheduler/sweep-imports.ts';
 import { sweepQueued } from './scheduler/sweep-queued.ts';
 
@@ -41,7 +42,7 @@ export type ScheduledJob = {
  * The worker's recurring jobs: draft expiry, the queued-step sweeper, the import sweeper (imports
  * stranded queued or processing), the scheduled-text
  * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
- * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up and the exact-report poll. A schedule dropped
+ * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll and the signed-PDF sweep. A schedule dropped
  * from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [
@@ -58,6 +59,7 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'calendar-pull', cron: '*/5 * * * *', run: pullCalendars },
   { name: 'footprints-ensure', cron: '*/15 * * * *', run: ensureFootprints },
   { name: 'exact-report-poll', cron: '*/10 * * * *', run: pollExactReports },
+  { name: 'signed-pdf-sweep', cron: '*/15 * * * *', run: sweepSignedPdfs },
 ];
 
 /** How many steps one worker process runs at once. */

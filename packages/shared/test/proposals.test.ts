@@ -4,6 +4,7 @@ import {
   ESTIMATE_CLAUSE_V1,
   canonicalJson,
   isUsStateCode,
+  parseSignedDocument,
   signedDocument,
   US_STATE_CODES,
   type PublicProposalView,
@@ -129,4 +130,18 @@ test('US state codes: the 50 states and DC, no territories (C-M4)', () => {
   expect(isUsStateCode('NE')).toBe(true);
   expect(isUsStateCode(' dc ')).toBe(true);
   for (const code of ['PR', 'GU', 'VI', 'AS', 'MP', 'Nebraska', '', 'N']) expect(isUsStateCode(code)).toBe(false);
+});
+
+test('parseSignedDocument reads back a stored signed document with the same hash text, and refuses anything else', () => {
+  const doc = signedDocument(sampleView(), 'o1', true);
+  // Stored as jsonb and read back: the canonical text, and so the hash, is unchanged.
+  const stored = JSON.parse(JSON.stringify(doc)) as unknown;
+  const parsed = parseSignedDocument(stored);
+  expect(parsed).not.toBeNull();
+  expect(canonicalJson(parsed)).toBe(canonicalJson(doc));
+  expect(parsed?.option.financingTerms).toEqual({ aprBps: 0, months: 12 });
+  expect(parsed?.clause).toBe(ESTIMATE_CLAUSE_V1);
+  expect(parseSignedDocument(undefined)).toBeNull();
+  expect(parseSignedDocument({ optionId: 'o1' })).toBeNull();
+  expect(parseSignedDocument({ ...doc, option: { ...doc.option, totalCents: 'lots' } })).toBeNull();
 });

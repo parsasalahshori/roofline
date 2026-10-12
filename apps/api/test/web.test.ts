@@ -32,6 +32,24 @@ describe('serving the web app (WEB_DIST_DIR set)', () => {
     expect(res.headers['cache-control']).toBe('no-cache');
   });
 
+  test.each(['/p/abcdefghijklmnopqrstuvwxyz012345', '/P/abcdefghijklmnopqrstuvwxyz012345'])(
+    'the homeowner proposal page %s is noindex, no-store and no-referrer',
+    async (url) => {
+      const { app } = await makeTestApp({ WEB_DIST_DIR: dist });
+      for (const res of [await request(app).get(url), await request(app).head(url)]) {
+        expect(res.status).toBe(200);
+        expect(res.headers['content-type']).toMatch(/^text\/html/);
+        expect(res.headers['x-robots-tag']).toBe('noindex, nofollow');
+        expect(res.headers['cache-control']).toBe('no-store');
+        expect(res.headers['referrer-policy']).toBe('no-referrer');
+      }
+      // Other pages keep the revalidated no-cache and no robots header.
+      const other = await request(app).get('/pricing');
+      expect(other.headers['cache-control']).toBe('no-cache');
+      expect(other.headers['x-robots-tag']).toBeUndefined();
+    },
+  );
+
   test('HEAD / is answered like GET, without a body', async () => {
     const { app } = await makeTestApp({ WEB_DIST_DIR: dist });
     const res = await request(app).head('/approvals/abc');
