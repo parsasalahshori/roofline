@@ -14,3 +14,9 @@ Minors / follow-ups
 - phone.spec waits for 'Storms in your area' as heading; a11y waits for region. Confirm on CI.
 
 Verify: typecheck, lint, lint:css clean; playwright --list: 52 tests in 13 files.
+
+CI rounds (ci-check "Platform E2E Hail"; Platform and Hail jobs passed in every round)
+- Round 0, run 38242124205 @290680d: E2E failed. POST /api/storms/:id/plan and /storm/:id take the company_storms id, not storms.id. Fixed (5c06a77): specs and draftAndApproveStormPlan use scenario.companyStormId.
+- Round 1, run 38244724811 @5c06a77: E2E failed. (a) axe nested-interactive on the storm swath map (role img with focusable MapLibre attribution): fixed in ec8d9cf by making it role region like the measure map (storm-detail.test.tsx updated). (b) strict-mode match on the 'Text ' row: now /^Text /. (c) plans stuck: waitForStormSteps now names unfinished steps.
+- Round 2, run 38248017373 @ec8d9cf: E2E failed. Storm detail a11y now passes. Diagnosis from the step report: send_sms_batch and send_email_batch stay 'running' with scheduled:12 (held by quiet hours: CI ran at about 7am in the company zone America/Chicago); ads and routes finish. Fix (committed, NOT yet run on CI because the 2-rerun limit was used): seedStormFixture sets companies.timezone to a zone where it is mid-day (daytimeZone).
+- Open: the office-approves test's 'Text ' row stayed pending in round 1; likely the same quiet-hours hold or a click race, recheck on the next CI run.

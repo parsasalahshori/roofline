@@ -21,6 +21,24 @@ function dayBefore(now: Date): string {
   return new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+/** The hour (0-23) it is at `now` in an IANA zone. */
+function localHour(now: Date, timeZone: string): number {
+  return Number(new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' }).format(now));
+}
+
+const DAYTIME_ZONES = ['America/Chicago', 'America/Los_Angeles', 'America/New_York', 'Pacific/Honolulu', 'Europe/London', 'Asia/Kolkata', 'Asia/Tokyo', 'Australia/Sydney'];
+
+/**
+ * A company zone where `now` is mid-day, so the send gate (quiet hours) lets the texts and emails go
+ * whatever time CI runs. Keeps the default Chicago whenever it is already mid-day there.
+ */
+function daytimeZone(now: Date): string {
+  return DAYTIME_ZONES.find((zone) => {
+    const hour = localHour(now, zone);
+    return hour >= 11 && hour <= 15;
+  }) ?? 'America/Chicago';
+}
+
 export async function seedStormFixture(
   pools: Pools,
   companyId: string,
@@ -39,6 +57,7 @@ export async function seedStormFixture(
     `update companies set address_street = '1200 Farnam St', address_city = 'Omaha', address_state = 'NE', address_zip = '68102' where id = $1`,
     [companyId],
   );
+  await q(`update companies set timezone = $2 where id = $1`, [companyId, daytimeZone(now)]);
   await q(
     `insert into texting_registrations (company_id, campaign_status, approved_at) values ($1, 'approved', $2)
      on conflict (company_id) do update set campaign_status = 'approved'`,
