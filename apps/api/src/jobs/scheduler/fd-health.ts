@@ -1,4 +1,5 @@
-import { endStuckCalls, markVoiceUrlAttempt, markVoiceUrlSet, numbersNeedingVoiceUrl } from '@roofline/db/system';
+import { listIdleSmsConversationIds, withTenant } from '@roofline/db';
+import { companyIdsForRetention, endStuckCalls, markVoiceUrlAttempt, markVoiceUrlSet, numbersNeedingVoiceUrl } from '@roofline/db/system';
 import type { AppDeps } from '../../app.ts';
 import { applyVoiceUrls, type VoiceUrlResult } from '../../front-desk/number-voice.ts';
 
@@ -7,6 +8,12 @@ const REPAIR_LIMIT = 20;
 
 /** How many stuck calls one pass ends at most. */
 const STUCK_CALL_LIMIT = 100;
+
+/** An SMS conversation with no message for this long gets its after-call summary. */
+export const IDLE_SMS_HOURS = 24;
+
+/** How many idle SMS conversations one company queues per pass. */
+export const IDLE_SMS_PER_COMPANY_LIMIT = 50;
 
 /** How many numbers the first Front Desk save of one company sets at most. */
 const COMPANY_LIMIT = 100;
@@ -55,5 +62,27 @@ export async function fdHealth(deps: AppDeps, now: Date): Promise<void> {
     }
   } catch {
     console.error('Front Desk: ending stuck calls failed.');
+  }
+  // Texting threads that went quiet: queue their after-call summary (singletonKey dedupes repeats).
+  try {
+    const before = new Date(now.getTime() - IDLE_SMS_HOURS * 3600_000);
+    const companyIds = await companyIdsForRetention(deps.pools.system);
+    for (const companyId of companyIds) {
+      try {
+        const ctx = { companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+        const ids = await withTenant(deps.pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, IDLE_SMS_PER_COMPANY_LIMIT));
+        for (const conversationId of ids) {
+          try {
+            await deps.jobs.send('fd-after-call', { companyId, conversationId }, { singletonKey: `fd-after-call:sms:${conversationId}` });
+          } catch {
+            console.error(`fd-after-call enqueue failed company=${companyId}`);
+          }
+        }
+      } catch {
+        console.error(`fd-idle-sms failed company=${companyId}`);
+      }
+    }
+  } catch {
+    console.error('Front Desk: the idle SMS pass failed.');
   }
 }

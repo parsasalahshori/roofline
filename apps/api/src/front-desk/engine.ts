@@ -16,7 +16,9 @@ import {
   insertConversation,
   insertTurn,
   linkCallConversation,
+  hasUrgentNoticeFor,
   loadCompanyFacts,
+  matchCustomersByPhone,
   setCallSpamReason,
   type TenantContext,
   updateConversation,
@@ -100,6 +102,18 @@ function idsIn(value: unknown, out: string[] = []): string[] {
 /** Router intents that mean the caller is asking for a person (see shouldTransfer). */
 const ASK_PERSON_INTENTS = new Set(['ask_for_person', 'transfer', 'human']);
 
+/** A handoff is urgent when the router said so, the reason is danger or a leak, or an urgent message was already taken on this conversation. */
+async function urgentForHandoff(deps: AppDeps, state: ConversationState, reason: TransferReason, routerUrgent: boolean): Promise<boolean> {
+  if (routerUrgent || reason === 'danger' || reason === 'leak' || state.urgentNoticeSent === true) return true;
+  try {
+    const ctx = systemCtx(state.companyId);
+    return await withTenant(deps.pools, ctx, (tx) => hasUrgentNoticeFor(tx, ctx, state.conversationId));
+  } catch (err) {
+    deps.logError?.(err, 'front-desk.handoff');
+    return false;
+  }
+}
+
 export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
   const lastAssistantTurn = new WeakMap<ConversationState, string>();
 
@@ -125,9 +139,13 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       const companyBlock = buildCompanyBlock(input);
       // A call row links to its conversation once: a second start for the same call reuses it.
       let id: string | null = null;
+      let reusedRow: Awaited<ReturnType<typeof getConversation>> = null;
       if (i.callId !== undefined) {
         const linked = await findCallConversationId(tx, ctx, i.callId);
-        if (linked !== null) id = (await getConversation(tx, ctx, linked))?.id ?? null;
+        if (linked !== null) {
+          reusedRow = await getConversation(tx, ctx, linked);
+          id = reusedRow?.id ?? null;
+        }
       }
       if (id === null) {
         id = (
@@ -150,6 +168,19 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         startedAt: deps.clock.now(),
       });
       created.toolSettings = { canMove: facts.canMove, canCancel: facts.canCancel };
+      if (i.channel === 'voice') {
+        if (reusedRow !== null && (reusedRow.identity === 'verified' || reusedRow.identity === 'matched')) {
+          created.identity = reusedRow.identity;
+          created.customerId = reusedRow.customerId ?? null;
+        } else {
+          const matches = await matchCustomersByPhone(tx, ctx, i.phone);
+          if (matches.length === 1) {
+            created.customerId = matches[0]!.customerId;
+            created.identity = 'matched';
+            await updateConversation(tx, ctx, id, { customerId: matches[0]!.customerId, identity: 'matched' });
+          }
+        }
+      }
       return created;
     });
   }
@@ -267,8 +298,8 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       }
     }
 
-    async function* handoff(reason: TransferReason, summary: string): AsyncGenerator<EngineEvent> {
-      yield { type: 'handoff', reason, summary };
+    async function* handoff(reason: TransferReason, summary: string, urgent: boolean): AsyncGenerator<EngineEvent> {
+      yield { type: 'handoff', reason, summary, urgent };
     }
 
     async function* run(): AsyncGenerator<EngineEvent> {
@@ -347,7 +378,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             taskInProgress: state.taskInProgress,
             failedUnderstanding: state.failedUnderstanding,
           }) ?? 'asked';
-        yield* handoff(reason, `The caller needs a person (${decision.intent}).`);
+        yield* handoff(reason, `The caller needs a person (${decision.intent}).`, await urgentForHandoff(deps, state, reason, decision.urgent));
         return;
       }
       if (decision && decision.route === 'opus') {
@@ -363,7 +394,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         if (byCount) {
           dropSpeculative();
           rec.route = 'transfer';
-          yield* handoff(byCount, `The caller needs a person (${decision.intent}).`);
+          yield* handoff(byCount, `The caller needs a person (${decision.intent}).`, await urgentForHandoff(deps, state, byCount, false));
           return;
         }
       }
@@ -388,7 +419,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
           state.modelErrors += 1;
           if (state.modelErrors >= 2) {
             yield speak(SAY_TROUBLE);
-            yield* handoff('model_failure', 'The assistant had trouble answering and needs a person to take over.');
+            yield* handoff('model_failure', 'The assistant had trouble answering and needs a person to take over.', await urgentForHandoff(deps, state, 'model_failure', false));
             return;
           }
           stream = openStream();
@@ -401,12 +432,12 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         if (out.stopReason === 'refusal') {
           if (out.content.length > 0) appendAssistant(state, out.content);
           yield speak(SAY_REFUSAL);
-          yield* handoff('model_failure', 'The assistant could not help with this request and needs a person to take over.');
+          yield* handoff('model_failure', 'The assistant could not help with this request and needs a person to take over.', await urgentForHandoff(deps, state, 'model_failure', false));
           return;
         }
         if (out.stopReason === 'max_tokens') {
           if (shortened) {
-            yield* handoff('model_failure', 'The assistant could not finish an answer and needs a person to take over.');
+            yield* handoff('model_failure', 'The assistant could not finish an answer and needs a person to take over.', await urgentForHandoff(deps, state, 'model_failure', false));
             return;
           }
           shortened = true;
@@ -424,7 +455,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         // Tool round.
         rounds += 1;
         if (rounds > MAX_TOOL_ROUNDS) {
-          yield* handoff('not_understood', 'The assistant took too many steps and needs a person to take over.');
+          yield* handoff('not_understood', 'The assistant took too many steps and needs a person to take over.', await urgentForHandoff(deps, state, 'not_understood', false));
           return;
         }
         appendAssistant(state, out.content);
@@ -438,7 +469,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
           if (!parsed.success) {
             invalidInputs += 1;
             result = { ok: false, forModel: 'Those details were not valid. Check them and try once more.' };
-            if (invalidInputs > 1) finish = { type: 'handoff', reason: 'not_understood', summary: 'The assistant could not fill in the details and needs a person to take over.' };
+            if (invalidInputs > 1) finish = { type: 'handoff', reason: 'not_understood', summary: 'The assistant could not fill in the details and needs a person to take over.', urgent: await urgentForHandoff(deps, state, 'not_understood', false) };
           } else if (idsIn(parsed.data).some((id) => !state.shownIds.has(id))) {
             result = { ok: false, forModel: NOT_THEIRS };
           } else {
@@ -458,7 +489,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             for (const id of result.shownIds ?? []) state.shownIds.add(id);
             if (use.name === 'transfer_to_person' && !finish) {
               const p = parsed.data as { reason: Exclude<TransferReason, 'model_failure'>; summary: string };
-              finish = { type: 'handoff', reason: p.reason, summary: p.summary };
+              finish = { type: 'handoff', reason: p.reason, summary: p.summary, urgent: await urgentForHandoff(deps, state, p.reason, false) };
             } else if (use.name === 'end_call' && !finish) {
               finish = { type: 'end', reason: (parsed.data as { reason: 'goodbye' | 'spam' | 'silence' }).reason };
             }

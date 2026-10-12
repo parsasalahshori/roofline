@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, test, vi } from 'vitest';
 import type { z } from 'zod';
-import { getConversation, listTurns, withTenant } from '@roofline/db';
+import { activities, customers, getConversation, jobs, listTurns, withTenant } from '@roofline/db';
 import {
   FRONT_DESK_TOOLS,
   type FrontDeskToolName,
@@ -10,6 +10,8 @@ import {
 } from '@roofline/shared';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import type { ConversationState, EngineEvent, ToolHandlers } from '../../src/front-desk/engine-types.ts';
+import { takeMessage } from '../../src/front-desk/tools/message.ts';
+import { inCompany } from '../crm-helpers.ts';
 import { appendUser } from '../../src/front-desk/state.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { AnswerInput, LlmEvent, RouteDecision, TurnUsage } from '../../src/providers/llm.ts';
@@ -387,7 +389,7 @@ describe('front desk engine', () => {
     const a = await setup([
       { when: /./, route: OPUS, answer: [{ kind: 'tool', name: 'transfer_to_person', input: { reason: 'asked', summary: 'x' } }] },
     ]);
-    expect(await a.say('let me talk to someone')).toContainEqual({ type: 'handoff', reason: 'asked', summary: 'x' });
+    expect(await a.say('let me talk to someone')).toContainEqual({ type: 'handoff', reason: 'asked', summary: 'x', urgent: false });
     const b = await setup([
       { when: /./, route: OPUS, answer: [{ kind: 'tool', name: 'end_call', input: { reason: 'goodbye' } }] },
     ]);
@@ -481,5 +483,101 @@ describe('front desk engine', () => {
     await say('my roof');
     expect(state.failedUnderstanding).toBe(0);
     void llm;
+  });
+});
+
+
+describe('front desk engine: caller match at call start and urgent handoffs', () => {
+  const MATCH_PHONE = '+14025550177';
+  const ctxOf = (companyId: string) => ({ companyId, userId: null, role: 'system' as const, canApproveSpend: false });
+
+  async function addCustomer(t: TestApp, name: string, phone: string): Promise<string> {
+    const companyId = t.seed.a.companyId;
+    return inCompany(t, companyId, async (tx) => {
+      const [c] = await tx
+        .insert(customers)
+        .values({ companyId, displayName: name, phones: [{ e164: phone, primary: true }] })
+        .returning({ id: customers.id });
+      return c!.id;
+    });
+  }
+
+  async function row(t: TestApp, state: ConversationState) {
+    const ctx = ctxOf(state.companyId);
+    return withTenant(t.deps.pools, ctx, (tx) => getConversation(tx, ctx, state.conversationId));
+  }
+
+  test('start matches a known voice caller', async () => {
+    const t = await makeTestApp();
+    const customerId = await addCustomer(t, 'Nina Park', MATCH_PHONE);
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm([]) }, {});
+    const state = await engine.start({ companyId: t.seed.a.companyId, channel: 'voice', phone: MATCH_PHONE });
+    expect(state.identity).toBe('matched');
+    expect(state.customerId).toBe(customerId);
+    expect(await row(t, state)).toMatchObject({ customerId, identity: 'matched' });
+  });
+
+  test('start leaves two customers with one phone, no match, and sms unknown', async () => {
+    const t = await makeTestApp();
+    await addCustomer(t, 'Nina Park', MATCH_PHONE);
+    await addCustomer(t, 'Sam Park', MATCH_PHONE);
+    await addCustomer(t, 'Solo Person', '+14025550188');
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm([]) }, {});
+    const companyId = t.seed.a.companyId;
+    const two = await engine.start({ companyId, channel: 'voice', phone: MATCH_PHONE });
+    expect(two).toMatchObject({ identity: 'unknown', customerId: null });
+    const none = await engine.start({ companyId, channel: 'voice', phone: '+14025550166' });
+    expect(none).toMatchObject({ identity: 'unknown', customerId: null });
+    const sms = await engine.start({ companyId, channel: 'sms', phone: '+14025550188' });
+    expect(sms).toMatchObject({ identity: 'unknown', customerId: null });
+    expect(await row(t, two)).toMatchObject({ customerId: null, identity: 'unknown' });
+  });
+
+  test('a matched caller take_message notes the customer and leaves job next steps alone (Ruling EA)', async () => {
+    const t = await makeTestApp();
+    const customerId = await addCustomer(t, 'Nina Park', MATCH_PHONE);
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm([]) }, {});
+    const state = await engine.start({ companyId: t.seed.a.companyId, channel: 'voice', phone: MATCH_PHONE });
+    const result = await takeMessage(
+      { deps: t.deps, companyId: state.companyId, conversation: state, now: t.clock.now() },
+      { reason: 'Call me back', urgent: false, callbackWhen: null, name: null },
+    );
+    expect(result.ok).toBe(true);
+    const acts = await inCompany(t, state.companyId, (tx) => tx.select().from(activities));
+    const msg = acts.filter((a) => a.kind === 'front_desk_message');
+    expect(msg).toHaveLength(1);
+    expect(msg[0]).toMatchObject({ subjectType: 'customer', subjectId: customerId });
+    const jobRows = await inCompany(t, state.companyId, (tx) => tx.select().from(jobs));
+    expect(jobRows.every((j) => j.nextStep === null || !String(j.nextStep).startsWith('Call back'))).toBe(true);
+  });
+
+  test('handoff urgency follows the router, the reason, and an earlier urgent notice', async () => {
+    const urgentRoute: RouteDecision = { ...OPUS, route: 'transfer', urgent: true };
+    const a = await setup([{ when: /./, route: urgentRoute }]);
+    expect(await a.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', urgent: true }));
+    const b = await setup([{ when: /./, route: { ...OPUS, route: 'transfer' } }]);
+    expect(await b.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', urgent: false }));
+    const tool = (reason: string) => [{ when: /./, route: OPUS, answer: [{ kind: 'tool' as const, name: 'transfer_to_person' as const, input: { reason, summary: 'x' } }] }];
+    const c = await setup(tool('leak'));
+    expect(await c.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'leak', urgent: true }));
+    const d = await setup(tool('asked'));
+    expect(await d.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'asked', urgent: false }));
+    const e = await setup(tool('asked'));
+    e.state.urgentNoticeSent = true;
+    expect(await e.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'asked', urgent: true }));
+  });
+
+  test('an urgent take_message followed by a person-ask hands off as urgent', async () => {
+    const { t, state, say } = await setup(
+      [
+        { when: /message/, route: OPUS, answer: [{ kind: 'tool', name: 'take_message', input: { reason: 'Leak', urgent: true, callbackWhen: null, name: null } }] },
+        { when: /person/, route: OPUS, answer: [{ kind: 'tool', name: 'transfer_to_person', input: { reason: 'asked', summary: 'x' } }] },
+      ],
+      { take_message: takeMessage },
+    );
+    state.customerId = await addCustomer(t, 'Nina Park', '+14025550155');
+    const first = await say('take a message');
+    expect(first.some((e) => e.type === 'handoff')).toBe(false);
+    expect(await say('let me talk to a person')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'asked', urgent: true }));
   });
 });
