@@ -13,6 +13,8 @@ const notYet: StepHandler = async () => {
 /**
  * What runs each kind of step, as the platform ships it; runner.ts starts from this. A type with
  * no handler here cannot run yet: its step needs attention ("This kind of step can't run yet.").
+ * `send_proposal`, `order_exact_report` and the Storm Scout steps (`send_email_batch`, `build_routes`,
+ * `create_ad_campaign`) fail with 'not yet' until their handlers land.
  * `send_sms_batch` texts its customers through the send gate (messaging/send-batch.ts).
  */
 export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
@@ -22,4 +24,8 @@ export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   send_sms_batch: sendSmsBatch,
   send_proposal: notYet,
   order_exact_report: notYet,
+  // Storm Scout (S1): the real handlers arrive in later S1 tasks.
+  send_email_batch: notYet,
+  build_routes: notYet,
+  create_ad_campaign: notYet,
 };
