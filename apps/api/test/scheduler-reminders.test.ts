@@ -70,7 +70,7 @@ async function seedVisit(v: Visit): Promise<{ customerId: string; jobId: string;
     const property = await createProperty(
       tx,
       ctx,
-      { customerId: customer.id, addressLine: v.address ?? '12 Oak St', city: 'Austin', state: 'TX', zip: '78701' },
+      { customerId: customer.id, addressLine: v.address ?? `${1000 + phoneSeq} Oak St`, city: 'Austin', state: 'TX', zip: '78701' },
       { now },
     );
     const job = await createJob(tx, ctx, { customerId: customer.id, propertyId: property.id }, { now });
