@@ -14,3 +14,8 @@
 
 ## Verify
 - Local: python syntax parse ok; git diff --check 1553006 clean. Nothing Python runs on this box; CI proves the rest.
+
+## CI
+- Run 38202317362 (7a50f4d): Hail failed, ruff RUF100 on an unneeded `# noqa: DTZ001` in test_contours.py; reverted that file to base (62e8c68).
+- Run 38203698198 (62e8c68): ruff clean, 1 pytest failure: test_new_disjoint_cell_gets_new_id built `BASE + FAR` as a list concat, so split_storms saw only the first 0.75 contour. Test now merges per level (453f208).
+- Run 38204465906 (453f208): Platform and Hail PASSED.
