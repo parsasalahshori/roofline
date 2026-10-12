@@ -11,7 +11,7 @@ export type SimulateResult = { ok: true; message: string } & Record<string, unkn
 export const demoKey = ['demo'] as const;
 
 /**
- * Whether the API runs in demo mode: GET /api/demo answers 200 { demo: true } only then. A 404 (demo off) or any
+ * Whether the API runs in demo mode: GET /api/demo answers 200 { demo: true } then, and { demo: false } otherwise. A 404 or any
  * other failure reads as "not a demo"; it is asked once per session and never retried.
  */
 export function useDemoMode(): boolean {
