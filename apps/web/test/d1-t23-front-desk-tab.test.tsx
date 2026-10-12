@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FrontDeskSettings, FrontDeskVoice } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
+import { forwarding } from '../src/copy/forwarding.ts';
 import { frontDeskSettings } from '../src/copy/front-desk-settings.ts';
 import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
@@ -73,6 +74,8 @@ function makeSettings(overrides: Partial<FrontDeskSettings> = {}): FrontDeskSett
   };
 }
 
+const TEXTING_VIEW = { state: 'approved', reason: null, rejectedFields: [], brand: null, defaults: {}, submittedAt: null, approvedAt: '2026-10-01T10:00:00.000Z', number: '+14025550100', needsPaymentMethod: false, needsVerifiedEmail: false, hostedPolicyUrls: { privacy: 'https://example.test/privacy', terms: 'https://example.test/terms' } };
+
 function signIn(current: FrontDeskSettings, extra: Record<string, () => { status?: number; body?: unknown }> = {}) {
   api = stubApi({
     ...SHELL_ROUTES,
@@ -82,6 +85,7 @@ function signIn(current: FrontDeskSettings, extra: Record<string, () => { status
     'GET /api/setup': () => ({ body: SETUP_VIEW }),
     'GET /api/front-desk/settings': () => ({ body: current }),
     'GET /api/front-desk/voices': () => ({ body: VOICES }),
+    'GET /api/texting': () => ({ body: TEXTING_VIEW }),
     ...extra,
   });
 }
@@ -223,13 +227,13 @@ describe('Settings -> Front Desk form', () => {
     expect(within(facts.closest('div') as HTMLElement).getByText('Facts are too long.')).toBeInTheDocument();
   });
 
-  it('leaves a forwarding slot below the form that is empty', async () => {
+  it('shows the forwarding guide in the slot below the form', async () => {
     signIn(makeSettings());
     renderTab();
 
     await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
-    const slot = document.querySelector('[data-forwarding-slot]');
+    const slot = document.querySelector('[data-forwarding-slot]') as HTMLElement;
     expect(slot).not.toBeNull();
-    expect(slot?.textContent ?? '').toBe('');
+    expect(await within(slot).findByRole('heading', { name: forwarding.title })).toBeInTheDocument();
   });
 });

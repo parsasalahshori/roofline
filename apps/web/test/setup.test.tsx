@@ -124,8 +124,19 @@ describe('setup tab', () => {
     await stepList();
     expect(screen.getByText('Coming with the Estimator')).toBeInTheDocument();
     expect(screen.getByText('Coming with the calendar')).toBeInTheDocument();
-    expect(screen.getByText('Coming with Front Desk')).toBeInTheDocument();
+    expect(screen.queryByText('Coming with Front Desk')).not.toBeInTheDocument();
     expect(screen.getByText('Coming with Storm Scout')).toBeInTheDocument();
+  });
+
+  it('the phone number step links the owner to the forwarding guide', async () => {
+    signedInApi(viewOf());
+    renderApp('/settings/setup');
+
+    const row = await rowOf(setupItems.phone_number.title);
+    expect(within(row).getByRole('link', { name: setup.actions.forwardCalls })).toHaveAttribute(
+      'href',
+      '/settings/front-desk#forwarding',
+    );
   });
 
   it('the owner skips the import and the ring moves', async () => {
