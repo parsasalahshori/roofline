@@ -3,7 +3,7 @@ import { findCallBySid, updateCall, withTenant } from '@roofline/db';
 import { onCallMembers } from '@roofline/db/system';
 import { disclosureGreeting, transferPlan, workIntervals, type TransferReason } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import { DIAL_TIMEOUT_SECONDS, relayConnectXml, routeVoice, sendVoiceTwiml, systemCtx, VOICEMAIL_XML, type VoiceRoute } from './twilio-voice-common.ts';
+import { DIAL_TIMEOUT_SECONDS, relayConnectXml, routeVoice, sendVoiceTwiml, systemCtx, validCallSid, VOICEMAIL_XML, type VoiceRoute } from './twilio-voice-common.ts';
 import { checkSignature, escapeXml, field, FORM_BODY_LIMIT } from './twilio.ts';
 
 /*
@@ -93,8 +93,8 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
   router.post('/after-relay', async (req, res) => {
     const route = await routeVoice(deps, req, res);
     if (!route) return;
-    const callSid = field(req, 'CallSid');
-    if (callSid === undefined || callSid === '') {
+    const callSid = validCallSid(req);
+    if (callSid === null) {
       res.status(400).end();
       return;
     }
@@ -157,8 +157,8 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
   router.post('/after-dial', async (req, res) => {
     const route = await routeVoice(deps, req, res);
     if (!route) return;
-    const callSid = field(req, 'CallSid');
-    if (callSid === undefined || callSid === '') {
+    const callSid = validCallSid(req);
+    if (callSid === null) {
       res.status(400).end();
       return;
     }

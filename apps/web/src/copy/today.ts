@@ -20,5 +20,7 @@ export const today = {
   signedBy: (name: string) => `Signed by ${name}`,
   signedNone: 'No proposals signed today.',
   signedEstimate: (money: string) => `Estimate ${money}`,
+  fromFrontDesk: 'From Front Desk',
+  fromFrontDeskUrgent: 'Urgent, from Front Desk',
   draftsLabel: 'Plans waiting for your OK',
 } as const;

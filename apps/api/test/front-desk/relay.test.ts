@@ -1,9 +1,9 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import WebSocket from 'ws';
-import { calls, findCallBySid, insertCall, withTenant } from '@roofline/db';
-import { attachRelayUpgrade } from '../../src/front-desk/relay-server.ts';
+import { calls, findCallBySid, insertCall, updateCall, withTenant } from '@roofline/db';
+import { attachRelayUpgrade, RELAY_MAX_PAYLOAD, RELAY_MAX_QUEUED, RELAY_MAX_UNAUTH } from '../../src/front-desk/relay-server.ts';
 import { mintRelayToken } from '../../src/front-desk/relay-token.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { RouteDecision } from '../../src/providers/llm.ts';
@@ -94,7 +94,9 @@ async function rig(script: Script = SAY, opts: { idleMs?: number } = {}) {
     const [s] = await tx.select({ s: calls.aiSeconds }).from(calls);
     return { status: found?.status, aiSeconds: s?.s ?? -1 };
   });
-  return { t, deps, row, token, connect, open, setupMsg, readCall, llm };
+  const setStatus = (status: 'ended' | 'failed' | 'rejected' | 'ringing_team' | 'transferred') =>
+    withTenant(t.deps.pools, ctx, (tx) => updateCall(tx, ctx, CALL_SID, { status }));
+  return { t, deps, row, token, port, setStatus, connect, open, setupMsg, readCall, llm };
 }
 
 const isEnd = (f: Frame): boolean => f.type === 'end';
@@ -230,5 +232,87 @@ describe('relay websocket server', () => {
     expect(logged).not.toContain(CALLER_TEXT);
     expect(logged).not.toContain('+1555');
     expect(logged).not.toContain(r.token);
+  });
+
+  test('an oversized frame closes the socket', async () => {
+    const r = await rig();
+    const c = r.connect(r.token);
+    await new Promise<void>((res) => c.ws.once('open', () => res()));
+    c.ws.send('x'.repeat(RELAY_MAX_PAYLOAD + 1));
+    expect(await c.closed).toBe(1009);
+  });
+
+  test('a flood of frames before setup completes closes with 1008', async () => {
+    const r = await rig();
+    const c = r.connect(r.token);
+    await new Promise<void>((res) => c.ws.once('open', () => res()));
+    c.send(r.setupMsg());
+    for (let i = 0; i < RELAY_MAX_QUEUED + 300; i += 1) c.send({ type: 'prompt', voicePrompt: 'hi', last: false });
+    expect(await c.closed).toBe(1008);
+  });
+
+  test('the pre-auth cap refuses extra upgrades with 503', async () => {
+    const r = await rig();
+    const idle: WebSocket[] = [];
+    for (let i = 0; i < RELAY_MAX_UNAUTH; i += 1) {
+      const c = r.connect(r.token);
+      idle.push(c.ws);
+    }
+    await Promise.all(idle.map((w) => new Promise<void>((res) => w.once('open', () => res()))));
+    const extra = new WebSocket(`ws://127.0.0.1:${r.port}/relay?t=${r.token}`);
+    extra.on('error', () => undefined);
+    cleanups.push(() => extra.terminate());
+    const status = await new Promise<number>((res) => {
+      extra.once('unexpected-response', (_req, resp) => res(resp.statusCode ?? 0));
+      extra.once('open', () => res(0));
+    });
+    expect(status).toBe(503);
+    for (const w of idle) w.terminate();
+  });
+
+  test('aborted handshakes do not use up pre-auth slots', async () => {
+    const r = await rig();
+    for (let i = 0; i < RELAY_MAX_UNAUTH + 5; i += 1) {
+      await new Promise<void>((res) => {
+        const req = request({
+          host: '127.0.0.1',
+          port: r.port,
+          path: `/relay?t=${r.token}`,
+          headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': 'bad' },
+        });
+        req.on('response', (resp) => { resp.resume(); res(); });
+        req.on('upgrade', (_resp, sock) => { sock.destroy(); res(); });
+        req.on('error', () => res());
+        req.on('close', () => res());
+        req.end();
+      });
+    }
+    const c = r.connect(r.token);
+    const opened = await new Promise<boolean>((res) => {
+      c.ws.once('open', () => res(true));
+      c.ws.once('unexpected-response', () => res(false));
+    });
+    expect(opened).toBe(true);
+  });
+
+  test.each(['ended', 'failed', 'rejected'] as const)('a token for a %s call is refused', async (status) => {
+    const r = await rig();
+    await r.setStatus(status);
+    const c = await r.open();
+    expect(await c.closed).toBe(1008);
+    expect((await r.readCall()).status).toBe(status);
+    expect(r.deps.relaySessions.size).toBe(0);
+  });
+
+  test.each(['ringing_team', 'transferred'] as const)('a message_only reconnect works for a call in status %s', async (status) => {
+    const r = await rig();
+    await r.setStatus(status);
+    const c = r.connect(r.token);
+    await new Promise<void>((res) => c.ws.once('open', () => res()));
+    c.send({ ...r.setupMsg(), customParameters: { callId: r.row.id, mode: 'message_only' } });
+    await until(() => r.deps.relaySessions.size === 1);
+    expect(c.ws.readyState).toBe(WebSocket.OPEN);
+    c.ws.close();
+    await c.closed;
   });
 });

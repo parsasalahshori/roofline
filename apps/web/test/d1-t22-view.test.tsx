@@ -9,7 +9,7 @@ import { conversationCopy } from '../src/copy/front-desk-conversation.ts';
 const AT = '2026-10-11T14:00:00.000Z';
 
 function turn(overrides: Partial<TurnView> & Pick<TurnView, 'id' | 'position' | 'speaker'>): TurnView {
-  return { text: 'Hello', truncated: false, at: AT, actions: [], ...overrides };
+  return { callId: null, text: 'Hello', truncated: false, at: AT, actions: [], ...overrides };
 }
 
 function makeConversation(overrides: Partial<ConversationDetail> = {}): ConversationDetail {
@@ -108,7 +108,7 @@ describe('ConversationView', () => {
     renderView(
       makeConversation({
         calls: makeConversation().calls.map((call) => ({ ...call, transcriptStored: false })),
-        turns: [turn({ id: 't1', position: 1, speaker: 'caller', text: null })],
+        turns: [turn({ id: 't1', callId: 'call1', position: 1, speaker: 'caller', text: null })],
       }),
     );
     expect(screen.getByText("Transcript not kept at the caller's request")).toBeInTheDocument();
@@ -121,7 +121,7 @@ describe('ConversationView', () => {
   it('says the transcript was removed after the retention period when it was stored', () => {
     renderView(
       makeConversation({
-        turns: [turn({ id: 't1', position: 1, speaker: 'caller', text: null })],
+        turns: [turn({ id: 't1', callId: 'call1', position: 1, speaker: 'caller', text: null })],
       }),
     );
     expect(screen.getByText('Transcript removed after the retention period')).toBeInTheDocument();

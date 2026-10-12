@@ -75,6 +75,8 @@ const SAVED: AppointmentView = {
   notes: null,
   source: 'manual',
   sync: 'none',
+  confirmedAt: null,
+  confirmedVia: null,
   canEdit: true,
 };
 

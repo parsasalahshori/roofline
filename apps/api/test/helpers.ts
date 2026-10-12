@@ -30,7 +30,7 @@ import { ScriptedLlm } from '../src/providers/fakes/scripted-llm.ts';
 import { RelaySessions } from '../src/front-desk/relay-sessions.ts';
 import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
-import type { CurrentWeather, HourlyForecast, WeatherSource } from '../src/weather/source.ts';
+import type { CurrentWeather, DailyForecast, HourlyForecast, WeatherSource } from '../src/weather/source.ts';
 
 /**
  * The company details every sign-up needs (F3). Tests spread it into each sign-up body; the
@@ -132,9 +132,13 @@ export class FakeWeatherSource implements WeatherSource {
     return this.hourlyValue && this.hourlyValue.slice(0, hours).map((h) => ({ ...h }));
   }
 
-  // Ruling DC: the daily forecast is not on the WeatherSource interface; tests get no forecast.
-  async daily(): Promise<null> {
-    return null;
+  /** What `daily` answers (null: no forecast). */
+  dailyValue: DailyForecast[] | null = null;
+  dailyCalls: { lat: number; lng: number; days: number }[] = [];
+
+  async daily(lat: number, lng: number, days: number): Promise<DailyForecast[] | null> {
+    this.dailyCalls.push({ lat, lng, days });
+    return this.dailyValue && this.dailyValue.map((d) => ({ ...d }));
   }
 }
 

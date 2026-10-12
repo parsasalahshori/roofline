@@ -42,8 +42,17 @@ describe('Front Desk skeleton', () => {
   });
 
   test.each(['/hooks/twilio/voice', '/hooks/twilio/voice-status'])('%s is reachable without a session and answers 404 for an unknown number', async (path) => {
-    const res = await request(t.app).post(path).type('form').send({ CallSid: 'CA1', To: '+14025559999' });
+    const res = await request(t.app)
+      .post(path)
+      .type('form')
+      .set('X-Twilio-Signature', 'not-checked-before-routing')
+      .send({ CallSid: 'CA1', To: '+14025559999' });
     expect(res.status).toBe(404);
+  });
+
+  test.each(['/hooks/twilio/voice', '/hooks/twilio/voice-status'])('%s refuses a request with no signature before any lookup', async (path) => {
+    const res = await request(t.app).post(path).type('form').send({ CallSid: 'CA1', To: '+14025559999' });
+    expect(res.status).toBe(403);
   });
 
   test('the /api stubs sit behind the session gate', async () => {
