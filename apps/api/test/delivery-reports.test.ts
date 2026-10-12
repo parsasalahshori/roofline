@@ -1,7 +1,8 @@
 import { asc, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
-import { beforeEach, describe, expect, test } from 'vitest';
+import pg from 'pg';
+import { beforeEach, describe, expect, inject, test } from 'vitest';
 import { companyPhoneNumbers, earlyDeliveryReports, encrypt, messages, textingRegistrations, webhookEvents } from '@roofline/db';
 import type { SmsAdapter, SmsSendResult } from '@roofline/send-gate';
 import { Actors, inCompany } from './crm-helpers.ts';
@@ -15,6 +16,17 @@ import { addSmsCustomers, approvedBatch, DAYTIME, gate, rowFor, type SmsCustomer
  */
 
 let t: TestApp;
+
+/** Runs one statement as the owner role: app_system may not update phone numbers or delete registrations. */
+async function ownerQuery(sql: string, params: unknown[] = []): Promise<void> {
+  const client = new pg.Client({ connectionString: inject('dbUrls').owner });
+  await client.connect();
+  try {
+    await client.query(sql, params);
+  } finally {
+    await client.end();
+  }
+}
 let actors: Actors;
 
 /** Acme's texting number (company_phone_numbers). */
@@ -194,7 +206,7 @@ describe('POST /hooks/twilio/status: reports that arrive before the send is save
 
   test('a report for a number that is no longer active is applied', async () => {
     const text = await sentText(SENT_SID);
-    await t.deps.pools.system.update(companyPhoneNumbers).set({ status: 'released' }).where(eq(companyPhoneNumbers.e164, A_NUMBER));
+    await ownerQuery(`update company_phone_numbers set status = 'released' where e164 = $1`, [A_NUMBER]);
 
     const res = await status(statusOf(SENT_SID, 'delivered', { From: A_NUMBER }));
 

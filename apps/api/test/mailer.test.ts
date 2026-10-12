@@ -40,8 +40,32 @@ describe('PostmarkMailer', () => {
     );
     const mailer = new PostmarkMailer({ token: 'server-token', from: 'hello@roofline.test', fetch });
     const send = mailer.send({ to: 'bad', subject: 's', text: 't' });
-    await expect(send).rejects.toThrow(/422.*Invalid email request/);
+    await expect(send).rejects.toThrow('Postmark rejected the email (HTTP 422, ErrorCode 300).');
     await expect(send).rejects.not.toThrow(/server-token/);
+  });
+
+  test("keeps only Postmark's ErrorCode: its Message echoes recipient addresses", async () => {
+    const { fetch } = fakeFetch(
+      new Response(
+        '{"ErrorCode":406,"Message":"You tried to send to recipient(s) that have been marked as inactive. Found inactive addresses: owner@a.test, maria@acme.test."}',
+        { status: 422 },
+      ),
+    );
+    const mailer = new PostmarkMailer({ token: 'server-token', from: 'hello@roofline.test', fetch });
+    const err: unknown = await mailer.send({ to: 'owner@a.test', subject: 's', text: 't' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    const shown = `${String(err)} ${JSON.stringify(err)} ${(err as Error).stack ?? ''} ${String((err as Error).cause ?? '')}`;
+    expect((err as Error).message).toBe('Postmark rejected the email (HTTP 422, ErrorCode 406).');
+    expect(shown).not.toMatch(/@/);
+    expect(shown).not.toMatch(/inactive/);
+  });
+
+  test('a body that is not Postmark JSON gives no ErrorCode and none of its text', async () => {
+    const { fetch } = fakeFetch(new Response('Bad gateway for owner@a.test', { status: 502 }));
+    const mailer = new PostmarkMailer({ token: 'server-token', from: 'hello@roofline.test', fetch });
+    await expect(mailer.send({ to: 'owner@a.test', subject: 's', text: 't' })).rejects.toThrow(
+      /^Postmark rejected the email \(HTTP 502\)\.$/,
+    );
   });
 });
 

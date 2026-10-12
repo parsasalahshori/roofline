@@ -11,7 +11,31 @@ import {
 import type { CompanyStatus, Role } from '@roofline/shared';
 import type { Config } from '../config.ts';
 
-export const SESSION_COOKIE = 'rl_session';
+/**
+ * The session cookie's name whenever it is set over https, and always in production. The `__Host-`
+ * prefix makes the browser refuse the cookie unless it is Secure, has `Path=/` and no `Domain`, so a
+ * sibling host on the same site cannot plant ("toss") a session cookie for the app.
+ */
+export const SESSION_COOKIE = '__Host-rl_session';
+/**
+ * The name used outside production over plain http (local development, tests, the end-to-end
+ * stack): `__Host-` needs `Secure`, which a browser will not store from a plain-http origin like
+ * http://127.0.0.1. Production never reads or writes this name.
+ */
+export const DEV_SESSION_COOKIE = 'rl_session';
+
+/** Whether the session cookie is the Secure `__Host-` one: always in production, and on any https request. */
+export function isSecureCookieContext(req: Pick<Request, 'secure'>, config: Pick<Config, 'NODE_ENV'>): boolean {
+  return config.NODE_ENV === 'production' || req.secure;
+}
+
+/**
+ * The one name a request's session cookie has, read and written: `SESSION_COOKIE` over https and in
+ * production, `DEV_SESSION_COOKIE` otherwise. Everything that reads or sets the cookie goes through this.
+ */
+export function sessionCookieName(req: Pick<Request, 'secure'>, config: Pick<Config, 'NODE_ENV'>): string {
+  return isSecureCookieContext(req, config) ? SESSION_COOKIE : DEV_SESSION_COOKIE;
+}
 
 const HOUR_MS = 60 * 60 * 1000;
 /** A session lasts 30 days from the last time it was renewed. */
@@ -146,27 +170,39 @@ export async function resolveSession(system: Db, token: string, now: Date): Prom
   return (await resolveSessionDetailed(system, token, now))?.session ?? null;
 }
 
-/** The cookie's attributes. `Secure` only in production, so plain-http local development still works. */
-function cookieOptions(config: Pick<Config, 'NODE_ENV'>): CookieOptions {
-  return { httpOnly: true, secure: config.NODE_ENV === 'production', sameSite: 'lax', path: '/' };
+/**
+ * The cookie's attributes. `Secure` with the `__Host-` name (production, and any https request);
+ * neither over plain http outside production, so local development still works. Always `Path=/`
+ * and never a `Domain`, as `__Host-` requires.
+ */
+function cookieOptions(req: Pick<Request, 'secure'>, config: Pick<Config, 'NODE_ENV'>): CookieOptions {
+  return { httpOnly: true, secure: isSecureCookieContext(req, config), sameSite: 'lax', path: '/' };
 }
 
 export function setSessionCookie(res: Response, token: string, config: Pick<Config, 'NODE_ENV'>): void {
-  res.cookie(SESSION_COOKIE, token, { ...cookieOptions(config), maxAge: SESSION_TTL_MS });
+  res.cookie(sessionCookieName(res.req, config), token, { ...cookieOptions(res.req, config), maxAge: SESSION_TTL_MS });
 }
 
 export function clearSessionCookie(res: Response, config: Pick<Config, 'NODE_ENV'>): void {
-  res.clearCookie(SESSION_COOKIE, cookieOptions(config));
+  res.clearCookie(sessionCookieName(res.req, config), cookieOptions(res.req, config));
 }
 
-/** The session token from the Cookie header, or undefined. (No cookie-parser: this is the only cookie we read.) */
-export function readSessionToken(req: Pick<Request, 'headers'>): string | undefined {
+/**
+ * The session token from the Cookie header, or undefined. Only the name this request uses counts
+ * (see `sessionCookieName`): in production a plain `rl_session` cookie is ignored. (No
+ * cookie-parser: this is the only cookie we read.)
+ */
+export function readSessionToken(
+  req: Pick<Request, 'headers' | 'secure'>,
+  config: Pick<Config, 'NODE_ENV'>,
+): string | undefined {
   const header = req.headers.cookie;
   if (!header) return undefined;
+  const name = sessionCookieName(req, config);
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
     if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== SESSION_COOKIE) continue;
+    if (part.slice(0, eq).trim() !== name) continue;
     const value = part.slice(eq + 1).trim();
     return value === '' ? undefined : value;
   }
