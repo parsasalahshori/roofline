@@ -6,6 +6,9 @@ const ID2 = '22222222-2222-4222-8222-222222222222';
 const ID3 = '33333333-3333-4333-8333-333333333333';
 const ID4 = '44444444-4444-4444-8444-444444444444';
 const FACTS = { companyName: 'Acme Roofing' };
+/** A uuid with letters, so an upper-case form differs from the lower-case one. */
+const LOWER_ID = 'abcdef01-1111-4111-8111-111111111111';
+const UPPER_ID = LOWER_ID.toUpperCase();
 
 /** A distinct, valid v4-shaped uuid for index `i` (1-based), so a list can be made as long as a test needs. */
 const uuidFor = (i: number): string => {
@@ -119,6 +122,55 @@ describe('send_email_batch', () => {
     expect(preview.title).toBe('Email 40 customers');
   });
 
+  test('the preview fills the storm tokens with sample values, leaving no raw token', () => {
+    const body = '{first_name}, hail of {hail_size} hit {street} {day}. {company} {unsubscribe}';
+    const p = email.payload.parse(emailPayload({ body }));
+    const sample = email.preview(p, FACTS).messageSample ?? '';
+    expect(sample).toContain('Sam');
+    expect(sample).toContain('1.75"');
+    expect(sample).toContain('Maple St');
+    expect(sample).toContain('yesterday');
+    expect(sample).toContain('Acme Roofing');
+    expect(sample).toContain('(unsubscribe link)');
+    expect(sample).not.toContain('{street}');
+  });
+
+  test('the preview fills the company address when facts give one', () => {
+    const p = email.payload.parse(emailPayload({ body: '{company_address} {unsubscribe}' }));
+    const sample = email.preview(p, { ...FACTS, companyAddress: '100 Main St' }).messageSample ?? '';
+    expect(sample).toContain('100 Main St');
+    expect(sample).toContain('(unsubscribe link)');
+    expect(sample).not.toContain('{company_address}');
+  });
+
+  test('a missing company address is left as a token in the preview', () => {
+    const p = email.payload.parse(emailPayload({ body: '{company_address} {unsubscribe}' }));
+    const sample = email.preview(p, FACTS).messageSample ?? '';
+    expect(sample).toContain('{company_address}');
+  });
+
+  test('the preview uses facts.sampleFirstName for the first name when given', () => {
+    const p = email.payload.parse(emailPayload({ body: 'Hi {first_name}, {company} {unsubscribe}' }));
+    const sample = email.preview(p, { ...FACTS, sampleFirstName: 'Jordan' }).messageSample ?? '';
+    expect(sample).toContain('Jordan');
+    expect(sample).not.toContain('Sam');
+  });
+
+  test('an upper-case customer id parses to lower case', () => {
+    const parsed = email.payload.parse(emailPayload({ customerIds: [UPPER_ID] }));
+    expect(parsed.customerIds).toEqual([LOWER_ID]);
+  });
+
+  test('an upper-case uuid key in fields is rejected', () => {
+    const result = email.payload.safeParse(emailPayload({ fields: { [UPPER_ID]: { street: '12 Oak St' } } }));
+    expect(result.success).toBe(false);
+  });
+
+  test('a lower-case uuid key in fields is accepted', () => {
+    const result = email.payload.safeParse(emailPayload({ fields: { [ID]: { street: '12 Oak St' } } }));
+    expect(result.success).toBe(true);
+  });
+
   test('minutes saved is half a minute per email, capped at 120', () => {
     const p = email.payload.parse(emailPayload());
     expect(email.minutesSaved(p, { sent: 10 })).toBe(5);
@@ -169,6 +221,36 @@ describe('build_routes', () => {
   test('minutes saved is 120 per route', () => {
     const p = routes.payload.parse(routePayload());
     expect(routes.minutesSaved(p, {})).toBe(480);
+  });
+
+  test('1 rep and 400 doors plans 3 routes (150 doors each at most), 360 minutes saved', () => {
+    const p = routes.payload.parse(routePayload({ repUserIds: [ID2], maxDoors: 400 }));
+    const preview = routes.preview(p, FACTS);
+    expect(preview.title).toBe('3 door-knock routes · 400 doors');
+    expect(preview.lines).toEqual(['Rep 1: 3 routes, up to 400 doors']);
+    expect(routes.minutesSaved(p, {})).toBe(360);
+  });
+
+  test('2 reps and 100 doors plan 2 routes, one per rep, 240 minutes saved', () => {
+    const p = routes.payload.parse(routePayload({ repUserIds: [ID2, ID3], maxDoors: 100 }));
+    const preview = routes.preview(p, FACTS);
+    expect(preview.title).toBe('2 door-knock routes · 100 doors');
+    expect(preview.lines).toEqual(['Rep 1: 1 route, up to 50 doors', 'Rep 2: 1 route, up to 50 doors']);
+    expect(routes.minutesSaved(p, {})).toBe(240);
+  });
+
+  test('the per-rep door counts never add up to more than the plan', () => {
+    const p = routes.payload.parse(routePayload({ repUserIds: [ID2, ID3, ID4], maxDoors: 1000 }));
+    const lines = routes.preview(p, FACTS).lines;
+    const doorCounts = lines.map((line) => Number(/up to ([\d,]+) doors?/.exec(line)?.[1]?.replace(',', '')));
+    expect(doorCounts.reduce((sum, n) => sum + n, 0)).toBeLessThanOrEqual(1000);
+  });
+
+  test('1500 doors is accepted and 1501 is refused with the plain message', () => {
+    expect(routes.payload.safeParse(routePayload({ maxDoors: 1500 })).success).toBe(true);
+    const result = routes.payload.safeParse(routePayload({ maxDoors: 1501 }));
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe('You can plan at most 1,500 doors.');
   });
 });
 
@@ -247,7 +329,14 @@ describe('create_ad_campaign', () => {
     expect(preview.title).toBe('Google ads on the hail area');
     expect(preview.maxSpendCents).toBe(15000);
     expect(preview.lines).toHaveLength(2);
-    expect(preview.lines[1]).toBe('$21.43 a day for 7 days');
+    expect(preview.lines[1]).toBe('$21.42 a day for 7 days');
+  });
+
+  test('the daily amount is the budget floored to a cent over the days, so the total stays within the maximum', () => {
+    const p = ads.payload.parse(googlePayload({ maxSpendCents: 2000, days: 3 }));
+    const preview = ads.preview(p, FACTS);
+    expect(preview.lines).toContain('$6.66 a day for 3 days');
+    expect(preview.lines[1]).toBe('$6.66 a day for 3 days');
   });
 
   test('the meta preview has its title', () => {

@@ -8,7 +8,8 @@ const CHICAGO = 'America/Chicago';
 /** A wall-clock moment in Chicago, as the Date the gate receives. */
 const chi = (iso: string): Date => DateTime.fromISO(iso, { zone: CHICAGO }).toJSDate();
 
-const MARKETING_BODY = 'Acme Roofing checked the hail near you. Unsubscribe: https://app.example.com/u/abc123';
+const MARKETING_BODY =
+  'Acme Roofing checked the hail near you. 100 Main St, Omaha, NE 68102. Unsubscribe: https://app.example.com/u/abc123';
 
 /** A marketing email that sends: billing ok, an address on file, consent not withdrawn, 10:00 in Chicago. */
 function baseline(over: Partial<EmailGateRequest> = {}): EmailGateRequest {
@@ -82,6 +83,7 @@ describe('decideEmail: billing and contact', () => {
 
 describe('decideEmail: content', () => {
   const contentReason = 'Emails need the company name, mailing address and unsubscribe link.';
+  const blankReason = 'This message still has a blank to fill in.';
 
   test('a marketing email without a postal address is blocked', () => {
     expect(blocked(baseline({ companyAddress: null }))).toEqual({ ok: false, rule: 'content', reason: contentReason });
@@ -98,7 +100,50 @@ describe('decideEmail: content', () => {
   });
 
   test('a body with {unsubscribe} in place of a link passes', () => {
-    const d = decideEmail(baseline({ body: 'Acme Roofing checked the hail near you. {unsubscribe}' }));
+    const d = decideEmail(
+      baseline({ body: 'Acme Roofing checked the hail near you. 100 Main St, Omaha, NE 68102. {unsubscribe}' }),
+    );
+    expect(d.ok).toBe(true);
+  });
+
+  test('a marketing body without the postal address is blocked, even with a name and unsubscribe link', () => {
+    const r = blocked(baseline({ body: 'Acme Roofing checked the hail near you. Unsubscribe: https://app.example.com/u/abc123' }));
+    expect(r).toEqual({ ok: false, rule: 'content', reason: contentReason });
+  });
+
+  test('a body with a leftover {street} token is blocked with the blank message', () => {
+    const r = blocked(
+      baseline({ body: 'Acme Roofing saw hail on {street}. 100 Main St, Omaha, NE 68102. Unsubscribe: https://app.example.com/u/abc123' }),
+    );
+    expect(r).toEqual({ ok: false, rule: 'content', reason: blankReason });
+  });
+
+  test('a subject with a leftover {first_name} token is blocked with the blank message', () => {
+    const r = blocked(baseline({ subject: 'Hi {first_name}, hail near you' }));
+    expect(r).toEqual({ ok: false, rule: 'content', reason: blankReason });
+  });
+
+  test('a leftover {unsubscribe} token is allowed, because the send swaps it for the link', () => {
+    const d = decideEmail(
+      baseline({ body: 'Acme Roofing checked the hail near you. 100 Main St, Omaha, NE 68102. {unsubscribe}' }),
+    );
+    expect(d.ok).toBe(true);
+  });
+
+  test('the address is matched after trimming surrounding whitespace', () => {
+    const d = decideEmail(
+      baseline({
+        companyAddress: '  12 Main St, Tampa FL  ',
+        body: 'Acme Roofing checked the hail near you. 12 Main St, Tampa FL. Unsubscribe: https://app.example.com/u/abc123',
+      }),
+    );
+    expect(d.ok).toBe(true);
+  });
+
+  test('an informational email with a leftover {street} token is not blocked by the blank rule', () => {
+    const d = decideEmail(
+      baseline({ purpose: 'informational', body: 'Your crew arrives on {street} at 9am.' }),
+    );
     expect(d.ok).toBe(true);
   });
 

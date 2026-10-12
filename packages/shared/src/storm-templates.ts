@@ -34,8 +34,10 @@ const STORM_TOKEN = /\{(first_name|company|hail_size|street|day|company_address|
 
 /**
  * Fill a storm template in one pass. Replacement values are never re-scanned for tokens,
- * and `$` sequences in values are inserted literally. Unknown tokens stay as written.
- * An empty or blank first_name becomes "there".
+ * and `$` sequences in values are inserted literally. Unknown or missing tokens are left as
+ * written, and decideEmail's content rule blocks any email that still holds them. Texts are
+ * checked by Task 11/12's render hook, which must refuse a rendered body that still holds a
+ * storm token. An empty or blank first_name becomes "there".
  */
 export function renderStormTemplate(tpl: string, f: StormFields): string {
   const values: Record<string, string | undefined> = {

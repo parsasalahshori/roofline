@@ -32,6 +32,15 @@ export type EmailGateDecision = { ok: true; sendAt: Date } | { ok: false; rule: 
 /** Marketing email may reach one address at most this many times in 7 days. */
 const MARKETING_WEEKLY_LIMIT = 2;
 
+/** Shown when a marketing email lacks the company name, the postal address or an unsubscribe link. */
+const MISSING_ITEMS_MESSAGE = 'Emails need the company name, mailing address and unsubscribe link.';
+
+/** Shown when a marketing subject or body still holds a storm token that was never filled in. */
+const BLANK_MESSAGE = 'This message still has a blank to fill in.';
+
+/** A storm token left unfilled. `{unsubscribe}` is not listed: the send pipeline swaps it for the link. */
+const UNFILLED_TOKEN = /\{(first_name|company|hail_size|street|day|company_address)\}/;
+
 /**
  * Characters that take no space on a screen and that `trim()` keeps: the zero-width space,
  * non-joiner and joiner (U+200B to U+200D), the word joiner (U+2060) and the byte-order mark (U+FEFF).
@@ -51,7 +60,8 @@ const no = (rule: GateRule, reason: string): EmailGateDecision => ({ ok: false, 
  *
  * The rules run in order and the first block wins: billing, contact (address, then the two
  * opt-out flags), content (a blank subject or body, then for marketing the company name, a mailing
- * address and an unsubscribe link), dedupe, and the weekly marketing cap. Then quiet hours: the
+ * address that appears in the body, an unsubscribe link, and no unfilled storm token such as
+ * `{street}`), dedupe, and the weekly marketing cap. Then quiet hours: the
  * email is sent at the earliest moment inside 08:00 to 21:00 in `timeZone`. Informational email
  * skips the marketing content and frequency checks but still waits for quiet hours.
  *
@@ -79,13 +89,22 @@ export function decideEmail(r: EmailGateRequest): EmailGateDecision {
     return no('content', 'This message is empty.');
   }
   if (!informational) {
-    if (isBlank(r.companyAddress)) {
-      return no('content', 'Emails need the company name, mailing address and unsubscribe link.');
+    const address = typeof r.companyAddress === 'string' ? r.companyAddress.trim() : '';
+    if (isBlank(r.companyAddress) || address === '') {
+      return no('content', MISSING_ITEMS_MESSAGE);
     }
     const name = typeof r.companyName === 'string' ? r.companyName.trim().toLowerCase() : '';
     const body = r.body.toLowerCase();
-    if (name === '' || !body.includes(name) || !(body.includes('{unsubscribe}') || body.includes('/u/'))) {
-      return no('content', 'Emails need the company name, mailing address and unsubscribe link.');
+    if (
+      name === '' ||
+      !body.includes(name) ||
+      !r.body.includes(address) ||
+      !(body.includes('{unsubscribe}') || body.includes('/u/'))
+    ) {
+      return no('content', MISSING_ITEMS_MESSAGE);
+    }
+    if (UNFILLED_TOKEN.test(r.subject) || UNFILLED_TOKEN.test(r.body)) {
+      return no('content', BLANK_MESSAGE);
     }
   }
 
