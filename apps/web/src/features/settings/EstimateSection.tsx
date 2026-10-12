@@ -5,7 +5,8 @@ import { estimateCopy } from '../../copy/financeEstimate.ts';
 import { settings as settingsCopy } from '../../copy/settings.ts';
 import { tiers } from '../../copy/tiers.ts';
 import { formErrors } from '../auth/formErrors.ts';
-import { useEstimatorSettings, useSaveEstimatorSettings, type EstimatorSettings } from './estimator-api.ts';
+import type { EstimatorSettings } from '@roofline/shared';
+import { useEstimatorSettings, useSaveEstimatorSettings } from './estimator-api.ts';
 import styles from './FinanceEstimate.module.css';
 
 /** The three number fields, by the key the API takes. The two switches have no field message of their own. */

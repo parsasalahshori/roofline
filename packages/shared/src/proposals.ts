@@ -28,13 +28,14 @@ export type StoredFileKind = (typeof STORED_FILE_KINDS)[number];
 
 // ---------------------------------------------------------------------------------------------
 // T4: proposal views, the signature record, canonical JSON.
-import type { Outline, InstantEstimate } from './roof.ts';
+import type { Outline, InstantEstimate, LngLat, Ring } from './roof.ts';
 import type { AddOn } from './tiers.ts';
 import type { Scope, Calculation, QuoteLine } from './pricing.ts';
 
 export type MeasurementView = {
   id: string; propertyId: string; jobId: string | null; kind: MeasurementKind; method: MeasurementMethod;
-  outline: Outline | null; structures: { footprintId: string; included: boolean; areaSqFt: number }[]; estimate: InstantEstimate; facets: number | null;
+  outline: Outline | null; structures: { footprintId: string; included: boolean; areaSqFt: number; ring: Ring }[]; estimate: InstantEstimate; facets: number | null;
+  overhangFt: number; /** The map centre, [lng, lat]. */ center: LngLat;
   locked: boolean; providerRef: string | null; notes: string | null; createdAt: string; drawMode: boolean;
 };
 export type ProposalOptionView = {
@@ -107,3 +108,19 @@ export function signedDocument(p: PublicProposalView, optionId: string, clause: 
     clause: clause ? ESTIMATE_CLAUSE_V1 : null,
   };
 }
+
+/** The estimator settings as the API answers. `aerialConfigured` is false when no aerial provider is set up (the switch is then hidden). */
+export type EstimatorSettings = {
+  defaultPitchX12: number;
+  overhangFt: number;
+  proposalValidDays: number;
+  aerialMeasure: boolean;
+  aerialConfigured: boolean;
+  estimateChangeClause: boolean;
+  /** Basis points: 999 means 9.99%; 0 means no interest; null means financing is not set. */
+  financingAprBps: number | null;
+  financingTermMonths: number | null;
+};
+
+/** What PUT /api/estimator/settings takes: the same fields without the read-only `aerialConfigured`. Send only what the section edits. */
+export type EstimatorSettingsPatch = Partial<Omit<EstimatorSettings, 'aerialConfigured'>>;

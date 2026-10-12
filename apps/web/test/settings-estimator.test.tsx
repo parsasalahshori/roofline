@@ -3,9 +3,10 @@ import { DEFAULT_TIER_TEMPLATES, TierTemplateSchema, type SetupItemView, type Ti
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setup } from '../src/copy/setup.ts';
 import { tiers } from '../src/copy/tiers.ts';
+import { proposals } from '../src/copy/proposals.ts';
 import { tierEditor } from '../src/copy/tiersEditor.ts';
 import { estimateCopy, financeCopy } from '../src/copy/financeEstimate.ts';
-import type { EstimatorSettings } from '../src/features/settings/estimator-api.ts';
+import type { EstimatorSettings } from '@roofline/shared';
 import { SetupRow } from '../src/features/setup/SetupRow.tsx';
 import { EstimateSection } from '../src/features/settings/EstimateSection.tsx';
 import { FinancingSection } from '../src/features/settings/FinancingSection.tsx';
@@ -72,7 +73,7 @@ describe('Settings Prices: Good, Better, Best templates', () => {
     const { user } = renderAt(<TiersSection />, '/settings/prices');
 
     const good = await tierRegion('good');
-    const name = await within(good).findByLabelText(tierEditor.fields.name);
+    const name = await within(good).findByLabelText(proposals.fieldName);
     await user.clear(name);
     await user.type(name, 'Good, new name');
     await user.click(screen.getByRole('button', { name: tiers.save }));
@@ -93,9 +94,9 @@ describe('Settings Prices: Good, Better, Best templates', () => {
     const { user } = renderAt(<TiersSection />, '/settings/prices');
 
     const good = await tierRegion('good');
-    const name = await within(good).findByLabelText(tierEditor.fields.name);
+    const name = await within(good).findByLabelText(proposals.fieldName);
     await user.clear(name);
-    const waste = within(good).getByLabelText(tierEditor.fields.waste);
+    const waste = within(good).getByLabelText(proposals.fieldWaste);
     await user.clear(waste);
     await user.type(waste, '51');
     await user.click(screen.getByRole('button', { name: tiers.save }));
@@ -109,7 +110,7 @@ describe('Settings Prices: Good, Better, Best templates', () => {
     settingsApi('office');
     renderAt(<TiersSection />, '/settings/prices');
 
-    const name = await within(await tierRegion('good')).findByLabelText(tierEditor.fields.name);
+    const name = await within(await tierRegion('good')).findByLabelText(proposals.fieldName);
     expect(name).toBeDisabled();
     expect(screen.queryByRole('button', { name: tiers.save })).toBeNull();
   });
