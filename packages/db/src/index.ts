@@ -223,3 +223,6 @@ export * from './repos/fd-caller.ts';
 export * from './repos/follow-up-log.ts';
 // G1 Claims (Task 6)
 export * from './repos/claims.ts';
+// G1 Task 10
+export * from './repos/scheduler.ts';
+export * from './repos/scheduler-agenda.ts';
