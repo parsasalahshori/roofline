@@ -165,7 +165,20 @@ describe('Stripe webhooks', () => {
 
     const res = await post(stripeEvent('customer.subscription.deleted', { id: 'sub_1', customer: 'cus_A', status: 'canceled' }));
     expect(res.status).toBe(200);
-    expect(await company()).toMatchObject({ status: 'canceled', stripe_subscription_id: 'sub_1' });
+    expect(await company()).toMatchObject({ status: 'canceled', stripe_subscription_id: null });
+  });
+
+  test('deleting an old subscription leaves the new one alone', async () => {
+    await post(stripeEvent('customer.subscription.created', { id: 'sub_2', customer: 'cus_A', status: 'active', metadata: { plan_key: 'starter' } }));
+    expect(await company()).toMatchObject({ status: 'active', stripe_subscription_id: 'sub_2' });
+    const audits = await auditCount();
+
+    const res = await post(stripeEvent('customer.subscription.deleted', { id: 'sub_1', customer: 'cus_A', status: 'canceled' }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ received: true });
+
+    expect(await company()).toMatchObject({ status: 'active', stripe_subscription_id: 'sub_2' });
+    expect(await auditCount()).toBe(audits);
   });
 
   test('the same event twice does nothing the second time', async () => {

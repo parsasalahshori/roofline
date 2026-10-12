@@ -15,6 +15,7 @@ const ADD_CARD_FIRST = 'Add a card first.';
 const PICK_PLAN_FIRST = 'Pick a plan first.';
 const NOT_SET_UP = "Billing isn't set up yet.";
 const CANT_REACH = "We couldn't reach the payment service. Try again in a minute.";
+const REFUSED = 'The payment service turned this down. Check your plan details or try again later.';
 
 const EXAMPLE_PLANS = [
   {
@@ -173,6 +174,35 @@ describe('POST /api/billing/checkout', () => {
     expect(t.billing.checkouts[0]!.trialEnd).toBeNull();
   });
 
+  test('a trial ending in 48 hours 30 minutes bills at checkout (inside the margin)', async () => {
+    await setTrialEnd(new Date(t.clock.now().getTime() + 48 * 60 * 60 * 1000 + 30 * 60 * 1000));
+    const agent = await owner();
+
+    const res = await agent.post('/api/billing/checkout').send({ planKey: 'starter' });
+    expect(res.status).toBe(200);
+    expect(t.billing.checkouts[0]!.trialEnd).toBeNull();
+  });
+
+  test('a trial ending in exactly 49 hours is kept', async () => {
+    const trialEnd = new Date(t.clock.now().getTime() + 49 * 60 * 60 * 1000);
+    await setTrialEnd(trialEnd);
+    const agent = await owner();
+
+    const res = await agent.post('/api/billing/checkout').send({ planKey: 'starter' });
+    expect(res.status).toBe(200);
+    expect(t.billing.checkouts[0]!.trialEnd).toEqual(trialEnd);
+  });
+
+  test('a refusal from the payment service is a 502 with a plain message', async () => {
+    const agent = await owner();
+
+    t.billing.failNext(1, 'refused');
+    const res = await agent.post('/api/billing/checkout').send({ planKey: 'starter' });
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: REFUSED });
+    expect(t.billing.checkouts).toHaveLength(0);
+  });
+
   test('two checkouts at once make one customer', async () => {
     const first = await owner();
     const second = await owner();
@@ -247,6 +277,18 @@ describe('POST /api/billing/portal', () => {
       returnUrl: `${APP_ORIGIN}/settings/billing`,
     });
   });
+
+  test('a refusal from the payment service is a 502 with a plain message', async () => {
+    const agent = await owner();
+    const checkout = await agent.post('/api/billing/checkout').send({ planKey: 'starter' });
+    expect(checkout.status).toBe(200);
+
+    t.billing.failNext(1, 'refused');
+    const res = await agent.post('/api/billing/portal').send({});
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: REFUSED });
+    expect(t.billing.portals).toHaveLength(0);
+  });
 });
 
 describe('POST /api/billing/plan', () => {
@@ -283,5 +325,16 @@ describe('POST /api/billing/plan', () => {
       'roofline_pro_ai_call_minute',
       'roofline_pro_sms_segment',
     ]);
+  });
+
+  test('a refusal from the payment service is a 502 with a plain message', async () => {
+    const agent = await owner();
+    await setSubscription('sub_1');
+
+    t.billing.failNext(1, 'refused');
+    const res = await agent.post('/api/billing/plan').send({ planKey: 'pro' });
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: REFUSED });
+    expect(t.billing.planChanges).toHaveLength(0);
   });
 });

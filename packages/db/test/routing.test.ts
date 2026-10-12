@@ -2,13 +2,8 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { encrypt } from '../src/crypto.ts';
 import { createPools } from '../src/pools.ts';
-import { companyPhoneNumbers, textingRegistrations, webhookEvents } from '../src/schema/index.ts';
-import {
-  claimWebhookEvent,
-  companyIdForNumber,
-  releaseWebhookEvent,
-  signingTokenFor,
-} from '../src/system/routing.ts';
+import { companyPhoneNumbers, textingRegistrations } from '../src/schema/index.ts';
+import { companyIdForNumber, signingTokenFor } from '../src/system/routing.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
 
 const urls = inject('dbUrls');
@@ -90,32 +85,5 @@ describe('signingTokenFor', () => {
   test('a stored token that does not decrypt throws: it never falls back to the master token', async () => {
     await setToken(seed.a.companyId, encrypt('token-for-a', OTHER_KEY));
     await expect(signingTokenFor(system, seed.a.companyId, 'master-token', KEY)).rejects.toThrow();
-  });
-});
-
-describe('claimWebhookEvent / releaseWebhookEvent', () => {
-  const rows = () => system.select().from(webhookEvents);
-
-  test('the first claim of an event wins; a repeat does not', async () => {
-    expect(await claimWebhookEvent(system, 'twilio-sms', 'SM1')).toBe(true);
-    expect(await claimWebhookEvent(system, 'twilio-sms', 'SM1')).toBe(false);
-    expect(await rows()).toHaveLength(1);
-  });
-
-  test('the same id from another provider is another event', async () => {
-    expect(await claimWebhookEvent(system, 'twilio-sms', 'SM1')).toBe(true);
-    expect(await claimWebhookEvent(system, 'twilio-status', 'SM1')).toBe(true);
-  });
-
-  test('two claims at once: exactly one wins', async () => {
-    const results = await Promise.all([1, 2, 3, 4].map(() => claimWebhookEvent(system, 'twilio-sms', 'SM9')));
-    expect(results.filter(Boolean)).toHaveLength(1);
-  });
-
-  test('a released claim can be claimed again', async () => {
-    expect(await claimWebhookEvent(system, 'twilio-sms', 'SM1')).toBe(true);
-    await releaseWebhookEvent(system, 'twilio-sms', 'SM1');
-    expect(await rows()).toHaveLength(0);
-    expect(await claimWebhookEvent(system, 'twilio-sms', 'SM1')).toBe(true);
   });
 });

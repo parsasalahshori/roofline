@@ -9,7 +9,8 @@ import {
   readStripeState,
 } from '../billing/stripe-sync.ts';
 import { loadConfigOrExit } from '../deps.ts';
-import { BillingUnavailableError } from '../providers/billing.ts';
+import { BillingRefusedError, BillingUnavailableError } from '../providers/billing.ts';
+import { STRIPE_REFUSED } from '../providers/stripe.ts';
 
 /*
  * Makes Stripe match the billing plan file (BILLING_PLANS_FILE):
@@ -23,7 +24,6 @@ import { BillingUnavailableError } from '../providers/billing.ts';
 
 export const USAGE = 'Usage: npm run sync:stripe-plans -w @roofline/api -- [--dry-run] [--live]';
 
-const REFUSED = 'Stripe refused the request.';
 const ALLOWED_FLAGS = new Set(['--dry-run', '--live']);
 
 export type SyncIo = { log(line: string): void; error(line: string): void };
@@ -87,7 +87,7 @@ export async function main(
     }
     return 0;
   } catch (err) {
-    io.error(err instanceof BillingUnavailableError ? err.message : REFUSED);
+    io.error(err instanceof BillingUnavailableError || err instanceof BillingRefusedError ? err.message : STRIPE_REFUSED);
     return 1;
   }
 }
