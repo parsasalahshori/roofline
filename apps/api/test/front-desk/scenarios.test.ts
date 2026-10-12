@@ -164,6 +164,15 @@ async function expectRows(sc: Scenario, { r, observed }: Played) {
     case 'job-unverified':
       expect(frontDesk).toHaveLength(0);
       break;
+    case 'job-verified': {
+      // The status is heard only after lookup_my_jobs succeeded, never guessed before it. A scripted turn's text after its
+      // tools is the fixed continuation, so status text in the lookup turn itself would have been said before the lookup.
+      const lookupTurn = observed.turns.findIndex((t) => t.tools.some((x) => x.name === 'lookup_my_jobs' && x.ok));
+      expect(lookupTurn).toBeGreaterThanOrEqual(0);
+      observed.turns.slice(0, lookupTurn + 1).forEach((t) => expect(t.spoken).not.toMatch(/inspection stage|arranging the inspection/i));
+      expect(observed.turns.slice(lookupTurn + 1).map((t) => t.spoken).join(' ')).toMatch(/inspection stage|arranging the inspection/i);
+      break;
+    }
     case 'recording-objection': {
       expect(r.t.callControl.calls.filter((c) => c.method === 'stopRecording')).toHaveLength(1);
       const system = (await r.turns()).filter((x) => x.speaker === 'system');
