@@ -72,14 +72,13 @@ CREATE POLICY tenant_isolation ON blocked_numbers
 
 -- 4. app_system: the voice-routing and relay fan-outs read only the ids, company, call_sid and status of a
 --    call, across companies, through the app_system_all policy below (section 6). That is its real limit
---    (Ruling AW narrowing of review note 31): it has no grant on conversations or conversation_turns. It
---    writes only what the fd-health stuck-call sweep needs to end a call (Task CV, endStuckCalls: it also
---    reads started_at; status, ended_at and updated_at, which Drizzle's timestamps helper sets). It never
---    reads or writes transcript text or tool records (Ruling BF): the retention sweep blanks turns on the
---    tenant pool, inside withTenant. The recording columns are read and written by app_tenant inside withTenant.
-GRANT SELECT (id, company_id, call_sid, status, started_at) ON calls TO app_system;
---> statement-breakpoint
-GRANT UPDATE (status, ended_at, updated_at) ON calls TO app_system;
+--    (Ruling AW narrowing of review note 31): it has no grant on conversations or conversation_turns, and
+--    it never writes a call. The fd-health stuck-call sweep lists only the companies with a live call
+--    (company_id, status) here and ends each company's calls on the tenant pool inside withTenant
+--    (Ruling BJ). It never reads or writes transcript text or tool records (Ruling BF): the retention sweep
+--    blanks turns on the tenant pool, inside withTenant. The recording columns are read and written by
+--    app_tenant inside withTenant.
+GRANT SELECT (id, company_id, call_sid, status) ON calls TO app_system;
 --> statement-breakpoint
 -- The fd-health repair marks a number whose voice URL it set (Task 17, markVoiceUrlSet). 0002 gives
 -- app_system only SELECT and INSERT on company_phone_numbers (Ruling SEC-4), so only that column and

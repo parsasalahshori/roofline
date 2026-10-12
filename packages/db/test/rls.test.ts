@@ -532,7 +532,6 @@ describe('grants', () => {
       [[...TENANT_TABLES]],
     );
     const sel = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'SELECT' });
-    const upd = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'UPDATE' });
     expect(rows).toEqual([
       sel('agent_task_steps', 'company_id'),
       sel('agent_task_steps', 'id'),
@@ -552,12 +551,8 @@ describe('grants', () => {
       sel('calendar_connections', 'user_id'),
       sel('calls', 'call_sid'),
       sel('calls', 'company_id'),
-      upd('calls', 'ended_at'),
       sel('calls', 'id'),
-      sel('calls', 'started_at'),
       sel('calls', 'status'),
-      upd('calls', 'status'),
-      upd('calls', 'updated_at'),
       sel('early_delivery_reports', 'applied_at'),
       sel('early_delivery_reports', 'id'),
       sel('early_delivery_reports', 'received_at'),
@@ -1134,7 +1129,7 @@ describe('app_system', () => {
       messages: `select id, company_id, status, scheduled_for from messages`,
       usage_events: `select id, company_id, kind, reported_to_stripe_at from usage_events`,
       calendar_connections: `select id, company_id, user_id, status, last_synced_at from calendar_connections`,
-      calls: `select id, company_id, call_sid, status, started_at from calls`,
+      calls: `select id, company_id, call_sid, status from calls`,
     } satisfies Record<Exclude<(typeof APP_SYSTEM_RLS_TABLES)[number], 'early_delivery_reports'>, string>;
 
     const client = new pg.Client({ connectionString: urls.system });
@@ -1271,6 +1266,20 @@ describe('front desk tables', () => {
     expect(await ownerQuery(`select count(*)::int as n from conversation_turns`)).toEqual([{ n: 1 }]);
   });
 
+  test('Ruling BJ: app_system cannot UPDATE calls (42501); app_tenant ends its own call, updated_at included', async () => {
+    await seedFrontDesk(seed.a.companyId, '1003');
+    await expect(systemRaw(`update calls set status = 'ended', ended_at = now(), updated_at = now()`)).rejects.toMatchObject({
+      code: '42501',
+    });
+    await expect(systemRaw(`update calls set status = 'ended'`)).rejects.toMatchObject({ code: '42501' });
+    await expect(systemRaw(`select started_at from calls`)).rejects.toMatchObject({ code: '42501' });
+    const ended = await tenantRaw<{ status: string }>(
+      `update calls set status = 'ended', ended_at = now(), updated_at = now() returning status`,
+      { companyId: seed.a.companyId },
+    );
+    expect(ended).toEqual([{ status: 'ended' }]);
+  });
+
   test('app_tenant sees only its own company in each D1 table', async () => {
     await seedFrontDesk(seed.a.companyId, '1001');
     await seedFrontDesk(seed.b.companyId, '2001');
@@ -1294,14 +1303,14 @@ describe('front desk tables', () => {
       ['calls', 'recording_key', 'SELECT', false],
       ['calls', 'recording_key', 'UPDATE', false],
       ['calls', 'recording_status', 'UPDATE', false],
-      // Task CV: the fd-health stuck-call sweep reads started_at and ends a call.
-      ['calls', 'started_at', 'SELECT', true],
-      ['calls', 'status', 'UPDATE', true],
-      ['calls', 'ended_at', 'UPDATE', true],
-      ['calls', 'updated_at', 'UPDATE', true],
+      // Ruling BJ: the fd-health stuck-call sweep lists companies only; it ends calls on the tenant pool.
+      ['calls', 'started_at', 'SELECT', false],
+      ['calls', 'status', 'UPDATE', false],
+      ['calls', 'ended_at', 'UPDATE', false],
+      ['calls', 'updated_at', 'UPDATE', false],
       ['calls', 'from_e164', 'UPDATE', false],
       ['calls', 'recording_status', 'SELECT', false],
-      // Review note 31: app_system has no grant on conversations or the turns; on calls it writes only the stuck-call sweep's columns.
+      // Review note 31: app_system has no grant on conversations or the turns, and none to write calls.
       // Ruling BF: app_system never reads or writes transcript text or tool records.
       ['conversation_turns', 'at', 'SELECT', false],
       ['conversation_turns', 'text', 'UPDATE', false],

@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import {
   applyCallStatus,
   countLiveCallsInWindow,
+  endStuckCallsForCompany,
   findCallBySid,
   findCallConversationId,
   insertCall,
@@ -13,7 +14,7 @@ import { companyReadOnly } from '../src/repos/front-desk-settings.ts';
 import { frontDeskTextsOn } from '../src/repos/fd-texts.ts';
 import { createPools } from '../src/pools.ts';
 import { calls, companies, companySettings } from '../src/schema/index.ts';
-import { endStuckCalls } from '../src/system/stuck-calls.ts';
+import { companiesWithLiveCalls } from '../src/system/stuck-calls.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
 import { type TenantContext, withTenant } from '../src/tenant.ts';
 
@@ -111,6 +112,19 @@ describe('applyCallStatus guard', () => {
   });
 });
 
+describe('applyCallStatus guard: failed is final (CV#8)', () => {
+  test('a failed call stays failed and keeps its endedAt when a later completed callback arrives', async () => {
+    const a = ctx(seed.a);
+    await makeCall(seed.a, 'CA1', minutesAgo(5), 'ringing');
+    const first = new Date(NOW.getTime() - 1000);
+    expect(await withTenant(pools, a, (tx) => applyCallStatus(tx, a, 'CA1', 'no-answer', first))).toBe(true);
+    expect(await withTenant(pools, a, (tx) => applyCallStatus(tx, a, 'CA1', 'completed', NOW))).toBe(true);
+    const [row] = await withTenant(pools, a, (tx) => tx.select().from(calls).where(eq(calls.callSid, 'CA1')));
+    expect(row?.status).toBe('failed');
+    expect(row?.endedAt?.getTime()).toBe(first.getTime());
+  });
+});
+
 describe('companyReadOnly / frontDeskTextsOn', () => {
   test('read-only only for trial_ended and canceled', async () => {
     const a = ctx(seed.a);
@@ -137,19 +151,47 @@ describe('companyReadOnly / frontDeskTextsOn', () => {
   });
 });
 
-describe('endStuckCalls', () => {
-  test('ends only old live calls and returns them', async () => {
-    await makeCall(seed.a, 'CA1', minutesAgo(40), 'ringing_team');
+describe('companiesWithLiveCalls / endStuckCallsForCompany (Ruling BJ, CV#3)', () => {
+  test('app_system lists only companies with a live call, whatever its age', async () => {
+    await makeCall(seed.a, 'CA1', minutesAgo(1), 'ai');
+    await makeCall(seed.b, 'CB1', minutesAgo(50), 'ended');
+    expect(await companiesWithLiveCalls(system)).toEqual([seed.a.companyId]);
+    await makeCall(seed.b, 'CB2', minutesAgo(1), 'ringing_team');
+    expect(await companiesWithLiveCalls(system)).toEqual([seed.a.companyId, seed.b.companyId].sort());
+  });
+
+  test("ends 'ai' after 35 minutes and 'ringing'/'ringing_team' only after 4 hours, in the context's company only", async () => {
+    await makeCall(seed.a, 'CA1', minutesAgo(40), 'ai');
     await makeCall(seed.a, 'CA2', minutesAgo(10), 'ai');
-    const old = await makeCall(seed.b, 'CB1', minutesAgo(50), 'ended');
-    const ended = await endStuckCalls(system, NOW, 10);
-    expect(ended).toEqual([{ companyId: seed.a.companyId, callSid: 'CA1' }]);
+    await makeCall(seed.a, 'CA3', minutesAgo(40), 'ringing');
+    await makeCall(seed.a, 'CA4', minutesAgo(40), 'ringing_team');
+    await makeCall(seed.a, 'CA5', minutesAgo(4 * 60 + 1), 'ringing');
+    await makeCall(seed.a, 'CA6', minutesAgo(4 * 60 + 1), 'ringing_team');
+    await makeCall(seed.a, 'CA7', minutesAgo(300), 'ended');
+    await makeCall(seed.b, 'CB1', minutesAgo(40), 'ai');
     const a = ctx(seed.a);
-    expect((await withTenant(pools, a, (tx) => findCallBySid(tx, a, 'CA1')))?.status).toBe('ended');
-    expect((await withTenant(pools, a, (tx) => findCallBySid(tx, a, 'CA2')))?.status).toBe('ai');
-    const b = ctx(seed.b);
-    const [bRow] = await withTenant(pools, b, (tx) => tx.select().from(calls).where(eq(calls.id, old.id)));
-    expect(bRow?.endedAt).toBeNull();
-    expect(await endStuckCalls(system, NOW, 10)).toEqual([]);
+    const ended = await withTenant(pools, a, (tx) => endStuckCallsForCompany(tx, a, NOW, 10));
+    expect([...ended].sort()).toEqual(['CA1', 'CA5', 'CA6']);
+    const status = async (c: SeededCompany, sid: string) =>
+      (await withTenant(pools, ctx(c), (tx) => tx.select().from(calls).where(eq(calls.callSid, sid))))[0]!;
+    expect((await status(seed.a, 'CA1')).endedAt?.getTime()).toBe(NOW.getTime());
+    expect((await status(seed.a, 'CA2')).status).toBe('ai');
+    expect((await status(seed.a, 'CA3')).status).toBe('ringing');
+    expect((await status(seed.a, 'CA4')).status).toBe('ringing_team');
+    expect((await status(seed.b, 'CB1')).status).toBe('ai');
+    expect(await withTenant(pools, a, (tx) => endStuckCallsForCompany(tx, a, NOW, 10))).toEqual([]);
+  });
+
+  test('app_system cannot end a call itself (42501)', async () => {
+    await makeCall(seed.a, 'CA1', minutesAgo(40), 'ai');
+    const err = await system
+      .update(calls)
+      .set({ status: 'ended' })
+      .where(eq(calls.callSid, 'CA1'))
+      .then(
+        () => null,
+        (e: unknown) => e as { code?: string; cause?: { code?: string } },
+      );
+    expect(err?.code ?? err?.cause?.code).toBe('42501');
   });
 });
