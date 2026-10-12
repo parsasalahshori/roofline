@@ -35,7 +35,7 @@ import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
 import { createTask } from '../../tasks/service.ts';
 import { writeAgentNote } from '../notes.ts';
-import { FROM_TEMPLATE, localTimeToday, systemCtx } from '../common.ts';
+import { FROM_TEMPLATE, planExpiresAt, systemCtx } from '../common.ts';
 import { localParts } from '../schedule.ts';
 import {
   draftLeadTexts,
@@ -309,7 +309,7 @@ async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now
         kind: LEADS_KIND,
         title: `Follow-ups for today (${leadTexts.length + proposalTexts.length + reviewTexts.length})`,
         ...(summaryParts.length > 0 && { summary: summaryParts.join('. ') }),
-        expiresAt: localTimeToday(today, PLAN_EXPIRES_HOUR, company.timeZone),
+        expiresAt: planExpiresAt(now, today, PLAN_EXPIRES_HOUR, company.timeZone),
         createdBy: 'agent',
         steps,
       },

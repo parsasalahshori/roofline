@@ -1,4 +1,4 @@
-import { type TenantContext, zoneDayStart } from '@roofline/db';
+import { type TenantContext, zoneDayAfter, zoneDayStart } from '@roofline/db';
 import { claimsGuard, guardSentence } from '@roofline/shared';
 import { localParts } from './schedule.ts';
 
@@ -17,6 +17,15 @@ export function localTimeToday(today: string, hour: number, timeZone: string): D
   const seen = localParts(new Date(t), timeZone).hour;
   t += (hour - seen) * 3_600_000;
   return new Date(t);
+}
+
+/**
+ * When a plan drafted at `now` on company-local day `today` expires: `hour`:00 today, or `hour`:00 the next
+ * local day when that has already passed, so a plan drafted in the evening is never created already expired.
+ */
+export function planExpiresAt(now: Date, today: string, hour: number, timeZone: string): Date {
+  const sameDay = localTimeToday(today, hour, timeZone);
+  return sameDay.getTime() > now.getTime() ? sameDay : localTimeToday(zoneDayAfter(today), hour, timeZone);
 }
 
 /** Trimmed, non-empty, at most maxChars, every sentence clean under guardSentence, and claimsGuard ok. */
