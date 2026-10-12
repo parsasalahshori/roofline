@@ -100,3 +100,4 @@ Ruling AX-K (track lead): until S1/D1 land on a1-agents, upstream facts are seam
 - Task 14 (track lead brief `task-14-brief.md`): Storm Scout rules from S1 settings, Run now via `storm-match-company`, pause check where S1 drafts, card/list waiting agreement. Starts after the s1 merge lands.
 - **s1-storm merge landed:** `a1-merge-s1` 54ab085 (CI run 38206933442 green, Platform + E2E) merged into a1-agents 49be5c8 with no further conflicts (T12 was already in). After the merge: typecheck, lint, lint:css, shared 747, web 540; drizzle-kit no changes; playwright-core only 1.56.1. Head CI (Platform + E2E) running.
 - Running: T15 (web polish + editable hourly rate) from bf77f8f, T14 (Storm Scout wiring) from 49be5c8. T4 waits on D1's after-call/texts jobs.
+- a1-agents 49be5c8 (s1-storm + e1 merged, T12) CI run 38208073325 green (Platform + E2E).
