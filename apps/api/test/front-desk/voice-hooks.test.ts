@@ -181,7 +181,7 @@ describe('POST /hooks/twilio/voice', () => {
     expect(full.text).toContain('<Record maxLength="120" playBeep="true"/>');
     expect(full.text).not.toContain('<ConversationRelay');
 
-    await withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.delete(calls).where(eq(calls.companyId, idOf('a'))));
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.update(calls).set({ status: 'ended' }).where(eq(calls.companyId, idOf('a'))));
     await seed('CA' + 'f'.repeat(32), 40);
     const stale = await post(VOICE, incoming());
     expect(stale.text).toContain('<ConversationRelay');
