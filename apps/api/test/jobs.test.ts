@@ -927,6 +927,11 @@ function queueHandlers(over: Partial<JobHandlers> = {}): JobHandlers {
     'storm-draft': async () => {},
     'storm-alert': async () => {},
     'ad-sync-company': async () => {},
+    // D1 Front Desk
+    'fd-after-call': async () => {},
+    'fd-recording-store': async () => {},
+    'fd-text': async () => {},
+    'fd-forwarding-test': async () => {},
     ...over,
   };
 }
@@ -1075,6 +1080,8 @@ describe('SCHEDULES', () => {
       ['storm-match', '*/10 * * * *'],
       ['ad-spend-sync', '0 * * * *'],
       ['hail-health', '*/15 * * * *'],
+      ['fd-retention', '17 3 * * *'],
+      ['fd-health', '*/2 * * * *'],
     ]);
   });
 

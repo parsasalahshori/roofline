@@ -28,3 +28,10 @@ export * from './proposals.ts';
 // S1 skeleton (Task 1): one line per new shared file; later S1 tasks fill the files in.
 export * from './storm.ts';
 export * from './door-routes.ts';
+// D1 skeleton (Task 1): one line per new shared file; later D1 tasks fill the files in.
+export * from './front-desk.ts';
+export * from './front-desk-rules.ts';
+export * from './front-desk-tools.ts';
+export * from './front-desk-views.ts';
+export * from './forwarding.ts';
+export * from './recording-consent.ts';

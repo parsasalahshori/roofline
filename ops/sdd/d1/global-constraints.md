@@ -1,11 +1,11 @@
 ## Global Constraints (D1 Front Desk)
 
-Adapted from the C1, E1 and S1 global constraints (`ops/sdd/{c1,e1,s1}/global-constraints.md`, which carry F1–F3's rules) and the plan's Global Constraints (`docs/superpowers/plans/2026-10-12-roofline-front-desk.md`). Spec: `docs/superpowers/specs/2026-10-12-roofline-front-desk-design.md`. Branch `d1-front-desk` from `s1-storm` once S1 is merged; task branches `d1-t<N>`. D1 rulings use the prefix **D** (DA, DB, …).
+Adapted from the C1, E1 and S1 global constraints (`ops/sdd/{c1,e1,s1}/global-constraints.md`, which carry F1–F3's rules) and the plan's Global Constraints (`docs/superpowers/plans/2026-10-12-roofline-front-desk.md`). Spec: `docs/superpowers/specs/2026-10-12-roofline-front-desk-design.md`. Branch `d1-front-desk` (parallel track from `c1-crm` dfa9132; merges `c1-crm` as it advances); task branches `d1-t<N>`. D1 rulings use the prefix **D** (DA, DB, …).
 
 **C1, E1 and S1 are not built yet.** Names marked **[C1]** / **[E1]** / **[S1]** in a brief come from those plans and briefs. The lead checks each against the merged branch before starting and records any difference; a renamed export is followed, not re-created.
 
 **Everything in the C1/E1/S1 global constraints applies**, with these D1 changes:
-- **Migrations:** D1 owns `0018_front_desk_schema.sql` and `0019_front_desk_grants_rls.sql` (Task 1). S1 ends at `0017`.
+- **Migrations (Ruling AP, overrides every 0018/0019 below):** D1 owns `0019_front_desk_schema.sql` and `0020_front_desk_grants_rls.sql` (Task 1). D1's base (`c1-crm`) ends at `0014`; E1 takes 0015/0016 and S1 0017/0018 on their own tracks. Generate on D1's base, then rename the file, its snapshot and the journal `tag` to 0019/0020 (journal `idx` stays sequential); the controller fixes journal order when tracks merge.
 - **Lockfile:** only Task 1 (`@anthropic-ai/sdk`, `ws`, `@types/ws`).
 - **Claude (Ruling DA):** the only client is the Anthropic TypeScript SDK `@anthropic-ai/sdk`, inside `apps/api/src/providers/anthropic/`, behind the `Llm` seam. Model ids exactly `claude-haiku-5-5` (routing, summaries) and `claude-opus-5-5` (answers). **Tests use `ScriptedLlm` only**; the adapter's own unit test uses a scripted fake `fetch` with recorded fixtures. **No live Anthropic call ever happens in tests or CI**: no key in `testConfig()` or CI, `FAKE_PROVIDERS=1` forces `ScriptedLlm` (Ruling DB), and `eval:front-desk` / `smoke:front-desk` are manual and refuse without their confirm flags.
 - **Live sockets:** the ConversationRelay WebSocket attaches to the HTTP server returned by `app.listen` in `apps/api/src/server.ts`.

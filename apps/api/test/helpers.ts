@@ -22,7 +22,11 @@ import { FakeCalendarApi } from '../src/providers/fakes/calendar.ts';
 import { FakeExactReports } from '../src/providers/fakes/exact-reports.ts';
 import { FakeFootprintSource } from '../src/providers/fakes/footprints.ts';
 import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
+import { FakeCallControl } from '../src/providers/fakes/call-control.ts';
 import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
+import { FakeLineLookup } from '../src/providers/fakes/line-lookup.ts';
+import { ScriptedLlm } from '../src/providers/fakes/scripted-llm.ts';
+import { RelaySessions } from '../src/front-desk/relay-sessions.ts';
 import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
 import type { CurrentWeather, WeatherSource } from '../src/weather/source.ts';
@@ -109,6 +113,11 @@ export class FakeWeatherSource implements WeatherSource {
     if (this.failure !== undefined) throw this.failure;
     return this.value && { ...this.value };
   }
+
+  // Ruling DC: the daily forecast is not on the WeatherSource interface; tests get no forecast.
+  async daily(): Promise<null> {
+    return null;
+  }
 }
 
 export type TestApp = {
@@ -149,6 +158,11 @@ export type TestApp = {
   registrar: FakeTextingRegistrar;
   /** Background jobs: it records every send, and `drain(deps)` runs what is pending. */
   jobs: InlineJobs;
+  // D1 Front Desk
+  llm: ScriptedLlm;
+  callControl: FakeCallControl;
+  lineLookup: FakeLineLookup;
+  relaySessions: RelaySessions;
   /** What work outside a request (the runner) handed to `deps.logError`, in order. Nothing is printed. */
   logged: { err: unknown; where: string }[];
   seed: { a: SeededCompany; b: SeededCompany };
@@ -195,6 +209,13 @@ export function testConfig(
     POSTMARK_BROADCAST_STREAM: 'broadcast',
     STORM_MAIL_FROM: 'storms@roofline.test',
     HAIL_STALE_MINUTES: 90,
+    // D1 Front Desk (ANTHROPIC_API_KEY stays unset)
+    FRONT_DESK_ROUTER_MODEL: 'claude-haiku-5-5',
+    FRONT_DESK_ANSWER_MODEL: 'claude-opus-5-5',
+    FRONT_DESK_OPUS_FAST: false,
+    FRONT_DESK_MAX_CALLS: 40,
+    RELAY_PUBLIC_URL: 'wss://app.roofline.test/relay',
+    RELAY_TOKEN_SECRET: 'relay-test-secret-0123456789abcdef0123',
     ...overrides,
   };
 }
@@ -249,6 +270,10 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const billing = new FakeBillingProvider();
   const registrar = new FakeTextingRegistrar();
   const jobs = new InlineJobs();
+  const llm = new ScriptedLlm();
+  const callControl = new FakeCallControl();
+  const lineLookup = new FakeLineLookup();
+  const relaySessions = new RelaySessions();
   const logged: { err: unknown; where: string }[] = [];
   const pending = new Set<Promise<void>>();
   const deps: AppDeps = {
@@ -273,6 +298,11 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     billing,
     registrar,
     jobs,
+    // D1 Front Desk
+    llm,
+    callControl,
+    lineLookup,
+    relaySessions,
     logError: (err, where) => logged.push({ err, where }),
     onBackgroundTask: (task) => {
       pending.add(task);
@@ -303,6 +333,10 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     billing,
     registrar,
     jobs,
+    llm,
+    callControl,
+    lineLookup,
+    relaySessions,
     logged,
     seed,
     async settle() {

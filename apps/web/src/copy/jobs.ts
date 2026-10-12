@@ -55,6 +55,7 @@ export const jobs = {
     referral: 'Referral',
     import: 'Import',
     manual: 'Added by hand',
+    front_desk: 'Front Desk',
   },
   filterSearch: 'Search jobs',
   filterSearchHelp: 'Name, address or next step',
