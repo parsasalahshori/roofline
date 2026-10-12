@@ -6,7 +6,7 @@ import pg from 'pg';
 import { createPools, type Pools } from '@roofline/db';
 import { resetDb, seedTwoCompanies, SEED_PASSWORD, type SeededCompany } from '@roofline/db/testing';
 import type { CompanyStatus } from '@roofline/shared';
-import { seedDemoTask, seedShowcase } from '@roofline/api';
+import { seedDemoTask, seedShowcase, seedStormFixture } from '@roofline/api';
 
 /*
  * Shared end-to-end helpers. `stack.ts` writes `.stack.json` beside this file once the database is
@@ -21,7 +21,15 @@ function dbUrls(stack: Stack): { owner: string; tenant: string; system: string }
 }
 
 /** The seeded world a test starts from: Acme Roofing (company a) and its showcase task. */
-export type Scenario = { a: SeededCompany; taskId: string };
+export type Scenario = { a: SeededCompany; taskId: string; stormId: string; companyStormId: string };
+
+/** The policy pages domain the e2e stack runs with (stack.ts sets POLICY_PAGES_DOMAIN to it). */
+export const E2E_POLICY_DOMAIN = 'roofline.test';
+
+/** A URL on Acme Roofing's company host; the browser maps `*.roofline.test` to the stack (playwright.config.ts). */
+export function companyHostUrl(path: string): string {
+  return `http://acme-roofing.${E2E_POLICY_DOMAIN}:4410${path}`;
+}
 
 export type Who = 'owner' | 'office' | 'rep';
 
@@ -46,8 +54,19 @@ export async function resetScenario(urls: { owner: string; tenant: string; syste
   await resetDb(urls.owner);
   const { a } = await seedTwoCompanies(urls.owner);
   const pools = getPools(urls);
-  const { taskId } = await seedShowcase(pools, a.companyId, new Date(), { companyName: 'Acme Roofing' });
-  return { a, taskId };
+  const now = new Date();
+  const { taskId } = await seedShowcase(pools, a.companyId, now, { companyName: 'Acme Roofing' });
+  // The storm tables are global or owner-written, so the fixture runs its SQL through the owner pool.
+  const owner = new pg.Pool({ connectionString: urls.owner, max: 1 });
+  try {
+    const { stormId, companyStormId } = await seedStormFixture(pools, a.companyId, {
+      now,
+      query: async (text, values) => (await owner.query(text, values)).rows,
+    });
+    return { a, taskId, stormId, companyStormId };
+  } finally {
+    await owner.end();
+  }
 }
 
 /** Sets Acme Roofing's billing status directly in the database. */
@@ -59,6 +78,56 @@ export async function setCompanyStatus(status: CompanyStatus): Promise<void> {
   } finally {
     await client.end();
   }
+}
+
+/** The 8-character code of the fixture storm's page (or of `companyStormId`'s), waiting up to 15 seconds for the page to exist. */
+export async function stormPageCode(db: pg.Client, companyStormId?: string): Promise<string> {
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    const { rows } =
+      companyStormId === undefined
+        ? await db.query<{ code: string }>(`select code from storm_pages order by created_at desc limit 1`)
+        : await db.query<{ code: string }>(`select code from storm_pages where company_storm_id = $1 order by created_at desc limit 1`, [
+            companyStormId,
+          ]);
+    if (rows[0] !== undefined) return rows[0].code;
+    if (Date.now() > deadline) throw new Error('The storm page was not created within 15 seconds.');
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
+type ApprovalStepView = { id: string; version: number; enabled: boolean; status: string };
+
+/** Drafts the storm plan for `stormId` and approves every step, as the signed-in owner on `page`. */
+export async function draftAndApproveStormPlan(page: Page, stormId: string): Promise<{ taskId: string }> {
+  const headers = { Origin: readStack().baseUrl };
+  const drafted = await page.request.post(`/api/storms/${stormId}/plan`, { headers, data: {} });
+  expect(drafted.status()).toBe(200);
+  const { taskId } = (await drafted.json()) as { taskId: string };
+  const task = await page.request.get(`/api/approvals/${taskId}`);
+  expect(task.status()).toBe(200);
+  const { steps } = (await task.json()) as { steps: ApprovalStepView[] };
+  const approved = await page.request.post(`/api/approvals/${taskId}/approve`, {
+    headers,
+    data: { steps: steps.filter((step) => step.enabled).map((step) => ({ id: step.id, version: step.version })) },
+  });
+  expect(approved.status()).toBe(200);
+  return { taskId };
+}
+
+/** Polls the plan until every enabled step is 'done' (60 seconds at most). */
+export async function waitForStormSteps(page: Page, taskId: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/approvals/${taskId}`);
+        if (response.status() !== 200) return 'unreadable';
+        const { steps } = (await response.json()) as { steps: ApprovalStepView[] };
+        return steps.filter((step) => step.enabled).every((step) => step.status === 'done') ? 'done' : 'waiting';
+      },
+      { timeout: 60_000, intervals: [500, 1000] },
+    )
+    .toBe('done');
 }
 
 type Fixtures = {
