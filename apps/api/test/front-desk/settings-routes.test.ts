@@ -232,6 +232,20 @@ describe('read-only company (Ruling BG)', () => {
   });
 });
 
+describe('business phone change (pre-review #38)', () => {
+  test('changing the business phone clears the forwarding test result; other edits keep it', async () => {
+    await verify('a');
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    expect((await owner.patch('/api/company').send({ name: 'Acme Renamed' })).status).toBe(200);
+    expect(((await owner.get(SETTINGS)).body as FrontDeskSettings).forwardingVerifiedAt).not.toBeNull();
+
+    expect((await owner.patch('/api/company').send({ phone: '(402) 555-0177' })).status).toBe(200);
+    const view = (await owner.get(SETTINGS)).body as FrontDeskSettings;
+    expect(view.forwardingVerifiedAt).toBeNull();
+    expect(view.blockedReason).toBe('forwarding_not_verified');
+  });
+});
+
 describe('/api/me/transfer-phone', () => {
   test('transfer phone: prefill from user phone, PUT needs ackRecording true, E.164 required, stores for own membership only', async () => {
     await ownerSql('update users set phone_e164 = $1 where id = $2', ['+14025550111', t.seed.a.rep.userId]);
