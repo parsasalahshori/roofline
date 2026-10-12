@@ -207,3 +207,20 @@ test('an unknown setup key is not found', async () => {
   expect(res.status).toBe(404);
   expect(res.body).toEqual({ error: NOT_FOUND });
 });
+
+test('phone number is todo until a forwarding test is verified, then done', async () => {
+  const owner = await loginAs(t.app, t.seed.a.owner);
+
+  const before = await getSetup(owner);
+  expect(item(before, 'phone_number')).toMatchObject({ status: 'todo', comingWith: null, skippable: false });
+
+  await ownerSql(
+    `insert into company_settings (company_id, forwarding_verified_at)
+     values ($1, now())
+     on conflict (company_id) do update set forwarding_verified_at = now()`,
+    [t.seed.a.companyId],
+  );
+
+  const after = await getSetup(owner);
+  expect(item(after, 'phone_number')).toMatchObject({ status: 'done', comingWith: null });
+});
