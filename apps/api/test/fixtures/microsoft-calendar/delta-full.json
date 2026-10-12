@@ -1,0 +1,83 @@
+{
+  "pages": [
+    {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(event)",
+      "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/calendars/cal-default/calendarView/delta?$skiptoken=page2",
+      "value": [
+        {
+          "@odata.etag": "W/\"a1\"",
+          "id": "e-timed",
+          "subject": "Private title",
+          "isAllDay": false,
+          "isCancelled": false,
+          "showAs": "busy",
+          "start": {
+            "dateTime": "2030-01-10T16:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2030-01-10T17:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "lastModifiedDateTime": "2030-01-05T12:00:00Z"
+        },
+        {
+          "@odata.etag": "W/\"b1\"",
+          "id": "e-free",
+          "subject": "Private title",
+          "isAllDay": false,
+          "isCancelled": false,
+          "showAs": "free",
+          "start": {
+            "dateTime": "2030-01-11T16:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2030-01-11T17:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "lastModifiedDateTime": "2030-01-06T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/me/calendars/cal-default/calendarView/delta?$deltatoken=delta-1",
+      "value": [
+        {
+          "@odata.etag": "W/\"c1\"",
+          "id": "e-allday",
+          "subject": "Private title",
+          "isAllDay": true,
+          "isCancelled": false,
+          "showAs": "busy",
+          "start": {
+            "dateTime": "2030-01-12T00:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2030-01-13T00:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "lastModifiedDateTime": "2030-01-07T12:00:00Z"
+        },
+        {
+          "@odata.etag": "W/\"d1\"",
+          "id": "e-cancelled",
+          "subject": "Private title",
+          "isAllDay": false,
+          "isCancelled": true,
+          "showAs": "busy",
+          "start": {
+            "dateTime": "2030-01-14T16:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2030-01-14T17:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "lastModifiedDateTime": "2030-01-08T12:00:00Z"
+        }
+      ]
+    }
+  ]
+}
