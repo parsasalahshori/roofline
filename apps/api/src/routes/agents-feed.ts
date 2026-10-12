@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { feedRank, listFeedPage, listWaitingTasks, withTenant, type FeedCursor, type FeedRow, type TenantContext, type Tx } from '@roofline/db';
+import { feedRank, listFeedPage, listFrontDeskFollowUps, listWaitingTasks, withTenant, type FeedCursor, type FeedRow, type TenantContext, type Tx } from '@roofline/db';
 import type { FeedItem, FeedPage, ScreenAgent, WaitingItem, WaitingList, WaitingOn } from '@roofline/shared';
 import { isScreenAgent } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
@@ -94,15 +94,28 @@ function draftWaitingOn(
 const attentionWaitingOn = (ctx: TenantContext): WaitingOn => (ctx.role === 'rep' ? { kind: 'office' } : { kind: 'you' });
 
 /**
- * Front Desk follow-ups are not on this base: D1 is not merged into a1-agents (Ruling AX-K).
- * Merge rule: when D1 lands, replace this body and keep the name. It reads D1's open follow-ups
- * (the next steps D1 T9 creates on jobs), scoped by jobScope(ctx), with kind 'front_desk_follow_up'.
+ * Front Desk follow-ups: jobs whose customer left a message or was handed to the team and whose next step
+ * is still open (the repo's rule, scoped by jobScope for reps). Each waits on the person the job is
+ * assigned to, the reader when that is them, else the office.
  */
-async function frontDeskFollowUps(tx: Tx, ctx: TenantContext): Promise<WaitingItem[]> {
-  // The seam takes the same transaction and reader the D1 read will need; nothing is read yet.
-  void tx;
-  void ctx;
-  return [];
+async function frontDeskFollowUps(tx: Tx, ctx: TenantContext, now: Date): Promise<WaitingItem[]> {
+  const rows = await listFrontDeskFollowUps(tx, ctx, now);
+  return rows.map((row): WaitingItem => {
+    const who = row.outcome === 'transferred' ? 'A caller was handed to the team.' : 'A caller left a message.';
+    let waitingOn: WaitingOn = { kind: 'office' };
+    if (row.assigneeName !== null) {
+      waitingOn = ctx.userId !== undefined && ctx.userId === row.assignedUserId ? { kind: 'you' } : { kind: 'person', name: row.assigneeName };
+    }
+    return {
+      id: `fd-follow-up:${row.jobId}`,
+      agent: 'front_desk',
+      kind: 'front_desk_follow_up',
+      text: `${who} Next step: ${row.nextStep}`,
+      since: row.since.toISOString(),
+      waitingOn,
+      href: jobHref('job', row.jobId),
+    };
+  });
 }
 
 /**
@@ -169,7 +182,7 @@ export function agentsFeedRoutes(deps: AppDeps): Router {
           href: jobHref(row.subjectType, row.subjectId),
         };
       });
-      const followUps = await frontDeskFollowUps(tx, ctx);
+      const followUps = await frontDeskFollowUps(tx, ctx, now);
       return [...tasks, ...followUps].sort((a, b) => Date.parse(a.since) - Date.parse(b.since) || a.id.localeCompare(b.id));
     });
     const list: WaitingList = { items };

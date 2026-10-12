@@ -80,6 +80,15 @@ async function repJobs() {
   return { repJob, otherJob };
 }
 
+/** Sets the job's next step and gives its customer a Front Desk conversation with this outcome. */
+async function seedFollowUp(jobId: string, nextStep: string, outcome: string, lastMessageAt: Date): Promise<void> {
+  await inCompany(t, A(), async (tx) => {
+    await tx.execute(sql`update jobs set next_step = ${nextStep} where id = ${jobId}`);
+    await tx.execute(sql`insert into conversations (company_id, channel, customer_id, phone_e164, company_number_e164, status, outcome, last_message_at)
+      select ${A()}, 'voice', customer_id, '+14025550111', '+14025550000', 'ended', ${outcome}, ${lastMessageAt.toISOString()}::timestamptz from jobs where id = ${jobId}`);
+  });
+}
+
 async function waitingFor(who: Who, company: 'a' | 'b' = 'a') {
   const { status, body } = await get(who, '/api/agents/waiting', company);
   expect(status).toBe(200);
@@ -307,11 +316,40 @@ describe('agents waiting', () => {
     expect((await waitingFor('owner')).some((i) => i.id === taskId)).toBe(false);
   });
 
-  test('waiting never returns front_desk_follow_up rows yet', async () => {
+  test('waiting has no front_desk_follow_up rows without a Front Desk message or transfer', async () => {
     await newTask(t, 'a', { title: 'Plan', steps: NOOP });
     const rows = await waitingFor('owner');
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) expect(['draft', 'attention']).toContain(row.kind);
     expect(rows.some((row) => row.kind === 'front_desk_follow_up')).toBe(false);
+  });
+
+  test('waiting lists Front Desk follow-ups with who they wait on, a job link, and ordered by since among drafts', async () => {
+    const assigned = await makeJob(21, 'Called Ann', actors.user('rep').userId);
+    const unassigned = await makeJob(22, 'Called Bo');
+    const quiet = await makeJob(23, 'Booked Cy', actors.user('rep').userId);
+    const since = new Date(NOW.getTime() - 3 * MINUTE);
+    await seedFollowUp(assigned, 'Call Ann back', 'message', since);
+    await seedFollowUp(unassigned, 'Ring Bo about the estimate', 'transferred', new Date(NOW.getTime() - 9 * MINUTE));
+    await seedFollowUp(quiet, 'Already booked', 'booked', since);
+    const draft = await newTask(t, 'a', { title: 'Plan', steps: NOOP });
+
+    const rows = await waitingFor('owner');
+    const items = rows.filter((row) => row.kind === 'front_desk_follow_up');
+    expect(items.map((row) => row.id)).toEqual([`fd-follow-up:${unassigned}`, `fd-follow-up:${assigned}`]);
+    expect(items[0]).toMatchObject({ agent: 'front_desk', waitingOn: { kind: 'office' }, href: `/jobs/${unassigned}`, since: new Date(NOW.getTime() - 9 * MINUTE).toISOString() });
+    expect(items[0]!.text).toContain('Ring Bo about the estimate');
+    expect(items[1]).toMatchObject({ waitingOn: { kind: 'person', name: expect.any(String) }, href: `/jobs/${assigned}` });
+    expect(items[1]!.text).toContain('Call Ann back');
+    const sinceMs = rows.map((row) => Date.parse(row.since));
+    expect(sinceMs).toEqual([...sinceMs].sort((a, b) => a - b));
+    expect(rows.some((row) => row.id === draft.taskId)).toBe(true);
+
+    // The assigned rep sees their own follow-up as theirs, and an unassigned lead (in every rep's scope)
+    // as the office's; they never see a job assigned to someone else.
+    const repRows = (await waitingFor('rep')).filter((row) => row.kind === 'front_desk_follow_up');
+    expect(repRows.map((row) => row.id)).toEqual([`fd-follow-up:${unassigned}`, `fd-follow-up:${assigned}`]);
+    expect(repRows[1]!.waitingOn).toEqual({ kind: 'you' });
+    expect(repRows[0]!.waitingOn).toEqual({ kind: 'office' });
   });
 });

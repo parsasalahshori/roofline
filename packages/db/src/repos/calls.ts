@@ -176,3 +176,13 @@ export async function frontDeskCallSettings(tx: Tx, ctx: TenantContext): Promise
     maxConcurrentAiCalls: row?.maxConcurrentAiCalls ?? 4,
   };
 }
+
+/** The conversation a call belongs to, or null when it has none. */
+export async function findCallConversationId(tx: Tx, ctx: TenantContext, callId: string): Promise<string | null> {
+  const [row] = await tx
+    .select({ conversationId: calls.conversationId })
+    .from(calls)
+    .where(and(eq(calls.companyId, ctx.companyId), eq(calls.id, callId)))
+    .limit(1);
+  return row?.conversationId ?? null;
+}

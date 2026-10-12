@@ -1,6 +1,6 @@
 import type { Agent } from '@roofline/shared';
-import { and, eq, gt, inArray, isNull, or, type SQL, sql } from 'drizzle-orm';
-import { agentTasks, agentTaskSteps, customers, jobs } from '../schema/index.ts';
+import { and, eq, gt, inArray, isNotNull, isNull, or, type SQL, sql } from 'drizzle-orm';
+import { agentTasks, agentTaskSteps, conversations, customers, jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { customerScope, jobScope } from './scope.ts';
 
@@ -157,4 +157,77 @@ export async function listWaitingTasks(tx: Tx, ctx: TenantContext, now: Date): P
 
   rows.sort((a, b) => a.since.getTime() - b.since.getTime() || a.taskId.localeCompare(b.taskId));
   return rows;
+}
+
+/*
+ * Front Desk follow-ups: open next steps on jobs whose customer left a message or was handed to the team.
+ * D1 has no follow-up table and no conversation-to-job link, so a follow-up is a job with a next step still
+ * set whose customer has a Front Desk conversation that ended as a message or a transfer.
+ */
+export type FrontDeskFollowUpRow = {
+  /** The job id (the WaitingItem id is `fd-follow-up:<jobId>`). */
+  jobId: string;
+  /** Conversation lastMessageAt: when the person started waiting. */
+  since: Date;
+  /** jobs.next_step text. */
+  nextStep: string;
+  /** Assigned user's name (company_members), else null = the office. */
+  assigneeName: string | null;
+  /** The assigned user, else null. */
+  assignedUserId: string | null;
+  /** 'message' or 'transferred' (conversations.outcome). */
+  outcome: string;
+};
+
+/** The newest message or transfer conversation of the job's customer since `since30`, as a correlated subquery over `column`. */
+function latestConversation(column: 'last_message_at' | 'outcome', since30: Date): SQL {
+  return sql`(select c.${sql.raw(column)} from ${conversations} c
+    where c.company_id = ${jobs.companyId} and c.customer_id = ${jobs.customerId}
+      and c.outcome in ('message', 'transferred')
+      and c.last_message_at >= ${since30}
+    order by c.last_message_at desc, c.id desc limit 1)`;
+}
+
+/** The one query behind both the list and the card count, so they always agree. */
+function followUpQuery(tx: Tx, ctx: TenantContext, now: Date) {
+  const since30 = new Date(now.getTime() - 30 * 86_400_000);
+  const since = latestConversation('last_message_at', since30);
+  return tx
+    .select({
+      jobId: jobs.id,
+      since: sql<Date>`${since}`.mapWith((value: string | Date) => new Date(value)).as('since'),
+      nextStep: jobs.nextStep,
+      assignedUserId: jobs.assignedUserId,
+      // company_members is the only way the tenant role sees names (no grant on users).
+      assigneeName: sql<string | null>`(select m.name from company_members m where m.user_id = ${jobs.assignedUserId} limit 1)`,
+      outcome: sql<string>`${latestConversation('outcome', since30)}`,
+    })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.companyId, ctx.companyId),
+        isNotNull(jobs.nextStep),
+        isNull(jobs.archivedAt),
+        sql`${since} is not null`,
+        jobScope(ctx),
+      ),
+    );
+}
+
+/** Open Front Desk follow-ups (last message or transfer in the 30 days before now), rep-scoped by jobScope(ctx), oldest first. */
+export async function listFrontDeskFollowUps(tx: Tx, ctx: TenantContext, now: Date): Promise<FrontDeskFollowUpRow[]> {
+  const rows = await followUpQuery(tx, ctx, now).orderBy(sql`since asc`, jobs.id);
+  return rows.map((row) => ({
+    jobId: row.jobId,
+    since: row.since,
+    nextStep: row.nextStep ?? '',
+    assigneeName: row.assigneeName ?? null,
+    assignedUserId: row.assignedUserId,
+    outcome: row.outcome,
+  }));
+}
+
+/** Same rule as the list (last message or transfer in the 30 days before now; shared query), counted: feeds the front_desk card waitingCount. */
+export async function countFrontDeskFollowUps(tx: Tx, ctx: TenantContext, now: Date): Promise<number> {
+  return (await followUpQuery(tx, ctx, now)).length;
 }

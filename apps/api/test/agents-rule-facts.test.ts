@@ -1,4 +1,4 @@
-import { companySettings } from '@roofline/db';
+import { companyPhoneNumbers, companySettings } from '@roofline/db';
 import { rulesFor } from '@roofline/shared';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
@@ -71,5 +71,58 @@ describe('gatherRuleFacts (A1 Tasks 5 and 14)', () => {
     const owner = await inCompany(t, companyId, (tx) => gatherRuleFacts(tx, ownerCtx));
     expect(owner.stormScout?.budgetCents).toBe(27000);
     expect(owner).not.toHaveProperty('noLinks');
+  });
+
+  test('Front Desk facts: number, what it may do, and the first rule sentence (transfer names wait for the view)', async () => {
+    const companyId = t.seed.a.companyId;
+    await t.deps.pools.system
+      .insert(companyPhoneNumbers)
+      .values({ companyId, e164: '+19495550100', capabilities: ['sms', 'voice'], providerSid: 'PN_RF' });
+    for (const canMove of [false, true]) {
+      await inCompany(t, companyId, async (tx) => {
+        const updated = await tx
+          .update(companySettings)
+          .set({ frontDeskEnabled: true, frontDeskCanMove: canMove })
+          .where(eq(companySettings.companyId, companyId))
+          .returning({ companyId: companySettings.companyId });
+        if (updated.length === 0) await tx.insert(companySettings).values({ companyId, frontDeskEnabled: true, frontDeskCanMove: canMove });
+      });
+      const facts = await factsFor(companyId);
+      // company_members does not expose transfer_phone_e164 / on_call_order, so the names are empty (no migration).
+      expect(facts.frontDesk).toEqual({ phoneNumber: '(949) 555-0100', transferNames: [], canBook: true, canConfirm: true, canMove });
+      const rules = rulesFor('front_desk', facts);
+      expect(rules[0]!.text).toContain('(949) 555-0100');
+      expect(rules[0]!.links.every((l) => l.href === '/settings/front-desk')).toBe(true);
+    }
+  });
+
+  test('a rep gets the Front Desk sentences with no links', async () => {
+    const companyId = t.seed.a.companyId;
+    await t.deps.pools.system
+      .insert(companyPhoneNumbers)
+      .values({ companyId, e164: '+19495550100', capabilities: ['voice'], providerSid: 'PN_RF2' });
+    await inCompany(t, companyId, async (tx) => {
+      const updated = await tx
+        .update(companySettings)
+        .set({ frontDeskEnabled: true })
+        .where(eq(companySettings.companyId, companyId))
+        .returning({ companyId: companySettings.companyId });
+      if (updated.length === 0) await tx.insert(companySettings).values({ companyId, frontDeskEnabled: true });
+    });
+    const repCtx = { companyId, userId: null, role: 'rep' as const, canApproveSpend: false };
+    const facts = await inCompany(t, companyId, (tx) => gatherRuleFacts(tx, repCtx));
+    const rules = rulesFor('front_desk', facts);
+    expect(rules.length).toBeGreaterThan(0);
+    expect(rules.every((r) => r.links.length === 0)).toBe(true);
+  });
+
+  test('Front Desk off with an active voice number gives no Front Desk facts', async () => {
+    const companyId = t.seed.a.companyId;
+    await t.deps.pools.system
+      .insert(companyPhoneNumbers)
+      .values({ companyId, e164: '+19495550100', capabilities: ['voice'], providerSid: 'PN_RF3' });
+    const facts = await factsFor(companyId);
+    expect(facts).not.toHaveProperty('frontDesk');
+    expect(rulesFor('front_desk', facts)).toEqual([]);
   });
 });
