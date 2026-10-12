@@ -13,3 +13,4 @@
   - #8: seed turns and startedAt on reuse.
   - Plus Ruling BK, C1's RA review #8, T25 finding 6 (eval drift), and unknown-caller message visibility.
 - RC-3: on reuse, start() also restores verifyFailures (and identity/customerId) from the stored conversation (E1 RC-1 review finding 9).
+- call-paths.test.ts:205 uses +14025550200, outside the fictional 0100-0199 block (E1 leftover).
