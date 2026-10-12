@@ -901,6 +901,10 @@ function queueHandlers(over: Partial<JobHandlers> = {}): JobHandlers {
     'calendar-push': async () => {},
     'footprints-load': async () => {},
     'signed-pdf': async () => {},
+    'storm-match-company': async () => {},
+    'storm-draft': async () => {},
+    'storm-alert': async () => {},
+    'ad-sync-company': async () => {},
     ...over,
   };
 }
@@ -1045,6 +1049,10 @@ describe('SCHEDULES', () => {
       ['calendar-pull', '*/5 * * * *'],
       ['footprints-ensure', '*/15 * * * *'],
       ['exact-report-poll', '*/10 * * * *'],
+      ['spotter-sync', '*/30 * * * *'],
+      ['storm-match', '*/10 * * * *'],
+      ['ad-spend-sync', '0 * * * *'],
+      ['hail-health', '*/15 * * * *'],
     ]);
   });
 
@@ -1055,5 +1063,9 @@ describe('SCHEDULES', () => {
   test('the footprints-load and signed-pdf job queues are registered', () => {
     expect(JOB_NAMES).toContain('footprints-load');
     expect(JOB_NAMES).toContain('signed-pdf');
+  });
+
+  test('the storm job queues are registered', () => {
+    for (const name of ['storm-match-company', 'storm-draft', 'storm-alert', 'ad-sync-company']) expect(JOB_NAMES).toContain(name);
   });
 });

@@ -25,6 +25,10 @@ import type { TextingRegistrar } from './providers/registrar.ts';
 import type { FootprintSource } from './providers/footprints.ts';
 import type { AerialMeasure } from './providers/aerial.ts';
 import type { ExactReports } from './providers/exact-reports.ts';
+import type { AdImageRenderer } from './providers/ad-image.ts';
+import type { AdsGoogle } from './providers/ads-google.ts';
+import type { AdsMeta } from './providers/ads-meta.ts';
+import type { BroadcastMailer } from './providers/broadcast.ts';
 import type { ObjectStore } from './providers/object-store.ts';
 import { apiRateLimit, publicRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
@@ -51,6 +55,13 @@ import { weatherRoutes } from './routes/weather.ts';
 import { measurementRoutes } from './routes/measurements.ts';
 import { tierTemplateRoutes } from './routes/tier-templates.ts';
 import { estimatorSettingsRoutes } from './routes/estimator-settings.ts';
+import { stormRoutes } from './routes/storms.ts';
+import { doorRoutes } from './routes/door-routes.ts';
+import { stormSettingsRoutes } from './routes/storm-settings.ts';
+import { adsRoutes } from './routes/ads.ts';
+import { stormRequestRoutes } from './public/storm-requests.ts';
+import { stormPage } from './public/storm-page.ts';
+import { unsubscribeRoutes } from './public/unsubscribe.ts';
 import { proposalRoutes } from './routes/proposals.ts';
 import { publicProposalRoutes } from './public/proposals.ts';
 import { proposalSignRoutes } from './public/proposal-sign.ts';
@@ -126,6 +137,14 @@ export type AppDeps = {
   exactReports: ExactReports;
   /** Where proposal files are stored (providers/object-store.ts); tests pass `MemoryObjectStore`. */
   objectStore: ObjectStore;
+  /** Where Google Ads campaigns are made and read (providers/ads-google.ts); tests pass `FakeAdsGoogle`. */
+  adsGoogle: AdsGoogle;
+  /** Where Meta ad campaigns are made and read (providers/ads-meta.ts); tests pass `FakeAdsMeta`. */
+  adsMeta: AdsMeta;
+  /** Where broadcast email (storm alerts) is sent (providers/broadcast.ts); tests pass `FakeBroadcastMailer`. */
+  broadcast: BroadcastMailer;
+  /** Draws the ad card image (providers/ad-image.ts); tests pass `FakeAdImageRenderer`. */
+  adImage: AdImageRenderer;
 };
 
 export type AppOptions = {
@@ -212,12 +231,16 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(config.NODE_ENV) }));
   // The public policy pages (privacy and terms): no session, no rate limit, served before /health.
   app.use(policyPages(deps));
+  // The company-host storm landing page, GET /storm/:code: no session, no rate limit.
+  app.use(stormPage(deps));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
   });
 
   app.use(blockCrossSiteMutations(config.APP_ORIGIN));
+  // Email unsubscribe links (public/unsubscribe.ts): no session, outside /api; the router brings its own body parser.
+  app.use('/u', unsubscribeRoutes(deps));
   // Twilio's webhooks (hooks/twilio.ts): signed form posts, no session, no rate limit. Mounted
   // ahead of the JSON parser and the /api gate, with its own form parser (64 KB), so these routes
   // only ever read form bodies.
@@ -283,11 +306,18 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/tier-templates', tierTemplateRoutes(deps));
   app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
   app.use('/api/proposals', proposalRoutes(deps));
+  // Storm Scout: storms and their plans, door-knock routes, per-company storm settings, and ads.
+  app.use('/api/storms', stormRoutes(deps));
+  app.use('/api/routes', doorRoutes(deps));
+  app.use('/api/storm/settings', stormSettingsRoutes(deps));
+  app.use('/api/ads', adsRoutes(deps));
   // Signed-out customers open and sign their proposal here. The sign-in gate lets every path under
   // /api/public/ through (auth/middleware.ts), and the per-IP limit stands in for the session one.
   const publicRouter = express.Router();
   publicRouter.use('/proposals', publicProposalRoutes(deps));
   publicRouter.use('/proposals', proposalSignRoutes(deps));
+  // A homeowner asks for a storm inspection from the company's storm page.
+  publicRouter.use('/storm-requests', stormRequestRoutes(deps));
   app.use('/api/public', publicRateLimit(), publicRouter);
 
   // The web app itself, when there is a build to serve. After every API route, so it can only

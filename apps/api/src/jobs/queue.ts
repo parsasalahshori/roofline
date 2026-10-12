@@ -4,10 +4,12 @@ import { JOB_HANDLERS } from './handlers.ts';
 
 // The job queues: the names, what a job carries, and where jobs go. The worker (worker.ts) runs
 // them on pg-boss; the tests use `InlineJobs` below. handlers.ts imports only types from here.
-export const JOB_NAMES = ['import-customers', 'texting-registration', 'calendar-push', 'footprints-load', 'signed-pdf'] as const; export type JobName = (typeof JOB_NAMES)[number];
+export const JOB_NAMES = ['import-customers', 'texting-registration', 'calendar-push', 'footprints-load', 'signed-pdf', 'storm-match-company', 'storm-draft', 'storm-alert', 'ad-sync-company'] as const; export type JobName = (typeof JOB_NAMES)[number];
 // 'footprints-load' is global work, but the worker requires a company id on every job: its data is
 // `{ companyId: <the requesting company>, state }` with singletonKey = state.
-export type JobData = { companyId: string; importId?: string; appointmentId?: string; state?: string; proposalId?: string };
+// Storm Scout: 'storm-match-company' is `{ companyId }`, sent with singletonKey companyId; 'storm-draft' is
+// `{ companyId, companyStormId }`; 'storm-alert' is `{ companyId, companyStormId, kind }`; 'ad-sync-company' is `{ companyId }`.
+export type JobData = { companyId: string; importId?: string; appointmentId?: string; state?: string; proposalId?: string; companyStormId?: string; kind?: 'now' | 'plan' };
 export type JobMeta = { attempt: number; lastAttempt: boolean };
 export interface JobQueue { send(name: JobName, data: JobData, opts?: { singletonKey?: string }): Promise<void> }
 export const JOB_QUEUE_OPTIONS = { policy: 'stately', retryLimit: 4, retryBackoff: true, retryDelay: 30 } as const;   // 5 attempts
