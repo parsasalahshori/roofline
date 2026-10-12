@@ -302,10 +302,13 @@ describe('GET /api/agents/:agent (detail)', () => {
     expect(after.body.runNow).toEqual({ kind: 'available', nextAllowedAt: '2026-10-12T17:05:00.000Z' });
   });
 
-  test('detail rules: estimator has its sentence; storm and front desk have none on this base (AX-K)', async () => {
+  test('detail rules: estimator and storm scout have sentences; front desk has none on this base (AX-K)', async () => {
     const owner = await who.as('owner');
     expect((await owner.get('/api/agents/estimator')).body.rules).toEqual([{ text: ESTIMATOR_RULE, links: [] }]);
-    expect((await owner.get('/api/agents/storm_scout')).body.rules).toEqual([]);
+    const stormRules = (await owner.get('/api/agents/storm_scout')).body.rules;
+    expect(stormRules).toHaveLength(1);
+    expect(stormRules[0].links).toHaveLength(3);
+    expect(stormRules[0].links.every((l: { href: string }) => l.href === '/settings/storm')).toBe(true);
     expect((await owner.get('/api/agents/front_desk')).body.rules).toEqual([]);
   });
 

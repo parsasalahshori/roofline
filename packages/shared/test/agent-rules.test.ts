@@ -23,9 +23,9 @@ describe("storm_scout", () => {
       "When hail of 1 inch or more hits your service area, I draft a storm plan: texts, emails, door-knock routes and ads up to $270 over 7 days.",
     );
     expect(rules[0]!.links).toEqual([
-      { label: "1 inch", href: "/settings/storm-scout" },
-      { label: "$270", href: "/settings/storm-scout" },
-      { label: "7 days", href: "/settings/storm-scout" },
+      { label: "1 inch", href: "/settings/storm" },
+      { label: "$270", href: "/settings/storm" },
+      { label: "7 days", href: "/settings/storm" },
     ]);
   });
   test("fractional threshold is plural", () => {

@@ -95,7 +95,7 @@ async function companyFacts(tx: Tx, ctx: TenantContext): Promise<{ zone: string;
 
 async function gather(tx: Tx, ctx: TenantContext, now: Date): Promise<Snapshot> {
   const { zone, hourlyRateCents } = await companyFacts(tx, ctx);
-  const window = metricsWindow(now, zone);
+  const window: MetricsWindow = { ...metricsWindow(now, zone), now };
   const counts = await agentCounts(tx, ctx, window);
   const settingRows = await agentSettingsInfo(tx, ctx);
   const monthMinutes = await minutesByAgent(tx, ctx, periodRange(now, zone, 'month'));

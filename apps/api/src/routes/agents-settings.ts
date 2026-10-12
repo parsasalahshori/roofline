@@ -48,7 +48,7 @@ async function buildBaselines(tx: Tx, ctx: TenantContext): Promise<TimeBaselines
 
 /** A1 Task 7: /api/agents/time-baselines, /time-baselines/recount, /:agent/paused, /:agent/run. */
 export function agentSettingsRoutes(deps: AppDeps): Router {
-  const { pools, clock } = deps;
+  const { pools, clock, jobs } = deps;
   const router = Router();
 
   router.get('/time-baselines', requireCapability('view_money_totals'), async (req, res) => {
@@ -132,7 +132,7 @@ export function agentSettingsRoutes(deps: AppDeps): Router {
     const agent = req.params.agent;
     if (!isScreenAgent(agent)) throw new AppError(404, MESSAGES.notFound);
     const now = clock.now();
-    const result = await withTenant(pools, ctx, (tx) => runAgentNow(tx, ctx, agent, now));
+    const result = await withTenant(pools, ctx, (tx) => runAgentNow(tx, ctx, agent, now, { jobs }));
     res.status(202).json(result);
   });
 
