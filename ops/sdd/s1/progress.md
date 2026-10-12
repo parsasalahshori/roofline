@@ -63,3 +63,8 @@ Ruling SG: Task 2 adds the whole `hail` CI job (its tests need it first); Task 3
 - W7: T28; T29 by hand.
 
 ## Tasks
+
+## Build log
+Track lead session started 2026-10-12 (controller: Architect 1). `s1-storm` = `c1-crm` dfa9132. `e1-estimator` is still at dfa9132 (E1 T1 not built), so S1 starts with the tasks that do not need E1.
+Ruling SH: `door_stops.footprint_id` and `door_exclusions.footprint_id` are `bigint` with no foreign key to `building_footprints` — same reason as Ruling EA (the global footprint table is reloaded per state and a tenant row must not block that) — cost if wrong: a dangling id shows as an address-only stop.
+Ruling SI: Task 1 waits for E1 Task 1 (`stored_files`, `STORED_FILE_KINDS`, E1's 0015/0016 snapshot) so `0017` is generated once, on E1's snapshot, with the two new stored-file kinds and the `storm_photos.stored_file_id` composite FK. Meanwhile Tasks 2, 4, 5, 6 build on scratch commit `8b1cd4e` (branch `s1-scratch`, on dfa9132): T1's shared slice from the brief (`shared/storm.ts` constants and types, `shared/door-routes.ts` placeholder, two barrel lines). **Merge rule:** when Task 1 merges, add/add conflicts in `storm.ts` keep T1's constants block with the T4 logic below it; `door-routes.ts` takes T5's file; `shared/index.ts` takes T1's lines. If E1 T1 has not landed by the end of wave 2, T1 runs without the `storm_photos`/stored-file parts and a follow-up regenerates `0017` at the E1 merge (Ruling AP: never reuse a number; 0017 is unreleased).

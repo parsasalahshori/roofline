@@ -5,7 +5,7 @@ Adapted from `ops/sdd/c1/global-constraints.md` and `ops/sdd/e1/global-constrain
 **C1 and E1 are not built yet.** Names marked **[C1]** / **[E1]** in a brief come from those plans and briefs (`ops/sdd/c1/`, `ops/sdd/e1/`). The lead checks each against the merged branch before starting and records any difference in the report; a renamed export is followed, not re-created.
 
 **Everything in the C1 and E1 global constraints applies**, with these S1 changes:
-- **Migrations:** S1 owns `0016_storm_schema.sql` (generated) and `0017_storm_grants_rls.sql` (custom), both in Task 1, including the new `app_hail` role. E1 ends at `0015`.
+- **Migrations:** S1 owns `0017_storm_schema.sql` (generated) and `0018_storm_grants_rls.sql` (custom) (Ruling AP; the plan's 0016/0017 are superseded), both in Task 1, including the new `app_hail` role. E1 ends at `0016` (Ruling AP).
 - **Lockfile:** only Task 1 edits `package-lock.json` (`@resvg/resvg-js`).
 - **Python service (`services/hail/`):** Python 3.12, GDAL from the `ghcr.io/osgeo/gdal:ubuntu-small-3.8.5` image (`osgeo` bindings, never pip-installed), `psycopg` 3, `shapely` 2, `httpx`; dev extras `pytest`, `ruff`. **Nothing Python runs on the build box.** Verify = `ruff check .` and `pytest -q` in `services/hail`, run by the CI `hail` job (added in Task 2, Ruling SG; full YAML in the T2 brief); prove with `CI_JOBS="Platform Hail" ops/bin/ci-check`. The job runs `npm run db:migrate` against a `postgis/postgis:16-3.4` service on port 54329, then pytest inside the GDAL image with `HAIL_TEST_DATABASE_URL`.
 - **No `render.yaml`** exists in the repo; the hail worker's Render setup is documented in `services/hail/README.md` (Ruling SB, owner step).
@@ -20,7 +20,7 @@ Adapted from `ops/sdd/c1/global-constraints.md` and `ops/sdd/e1/global-constrain
 - **Every outbound customer text goes through `send_sms_batch` and the F1 gate; every storm email through `decideEmail`.** Nothing calls an adapter directly.
 - **Ad spend:** nothing creates or enables a campaign except the `create_ad_campaign` step after an approval that satisfies its `spend` class; the platform budget (daily × days, with end date) is ≤ the approved `maxSpendCents`; the 95% pause is a second guard.
 - **Provider text** (Google, Meta, Postmark, NOAA) is never shown; store status codes and our own plain messages. Google/Meta policy-rejection reasons map to a short plain list (`policy`, `payment`, `access`, `targeting`, `other`).
-- **Lockfile:** only Task 1 edits `package-lock.json`. **Migrations:** only Task 1 (`0016` generated, `0017` custom) — E1 used 0014/0015. The Python service never runs migrations.
+- **Lockfile:** only Task 1 edits `package-lock.json`. **Migrations:** only Task 1 (`0017` generated, `0018` custom, Ruling AP) — E1 uses 0015/0016. The Python service never runs migrations.
 - **Python:** `ruff` + `pytest` in CI only (a new `hail` job in `.github/workflows/ci.yml`, GDAL image); nothing Python runs on the build box.
 
 ## Review Focus
