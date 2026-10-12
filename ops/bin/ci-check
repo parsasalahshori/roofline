@@ -7,7 +7,7 @@
 set -uo pipefail
 API=${GH_API:-https://api.github.com/repos/parsasalahshori/roofline}
 branch=$(git rev-parse --abbrev-ref HEAD)
-case "$branch" in main|f1-platform-core|f2-shell|f3-setup|HEAD) echo "ci-check: refusing to push $branch (integration branches are pushed by the controller)"; exit 2;; esac
+case "$branch" in main|f1-platform-core|f2-shell|f2-shell-wbg3ja|f3-setup|c1-crm|e1-estimator|s1-storm|d1-front-desk|a1-agents|g1-agents|HEAD) echo "ci-check: refusing to push $branch (integration branches are pushed by the controller)"; exit 2;; esac
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "ci-check: commit your changes first"; exit 2; }
 sha=$(git rev-parse HEAD)
 pushed=""

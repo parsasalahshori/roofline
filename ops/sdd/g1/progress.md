@@ -40,3 +40,17 @@ Ruling GX-F: Task 16 runs in W7 beside Task 15 (after T6's API), not in W3 — c
 W1 T1 · W2 T2 · W3 G1 = T3, T17 · W4 G2 = T4, T5, T6 · G3 = T9, T7 · W5 G4 = T8, T10, T13 · W6 G5 = T11, T12, T14 · W7 T15, T16 · W8 T18.
 
 ## Tasks
+
+## Ruling AP (controller, 2026-10-12)
+Migration numbers override this plan and these briefs: F3 ends at 0012; C1 0013/0014; E1 0015/0016; S1 0017/0018; D1 0019/0020; A1 0021/0022; G1 0023/0024. Parallel tracks: see AGENTS.md.
+
+## Track lead log (Track C, g1-agents; lead session_01NbXKpWjMvEQwTqNmQCt6wp)
+
+Base: `g1-agents` = `a1-agents` 74367bf (= `c1-crm` dfa9132 + A1 ops). Upstream check at start (2026-10-12): A1, D1, S1 and E1 have built nothing yet (their task branches are in flight); C1 has T1–T4 (schema incl. `appointments`, `company_settings`, `APPOINTMENT_STATUSES` with `no_show`). Not present yet: `STORED_FILE_KINDS` [E1], `WeatherSource.daily` [D1] (`current` exists), `Llm`/guards [D1], `agent_settings`/`TIME_BASELINES` [A1], A1's `steps.ts` baseline/units rewrite.
+
+Ruling GX-G (track lead): G1's migrations are `0023_more_agents_schema.sql` (generated) and `0024_more_agents_grants_rls.sql` (custom) per Ruling AP; drizzle-kit generates them with lower numbers on this base, so the builder renames the files, snapshots (`meta/0023_snapshot.json`, `meta/0024_snapshot.json`) and journal tags. Every plan/brief mention of 0022/0023 means 0023/0024. The controller fixes journal order when tracks merge — cost if wrong: none.
+Ruling GX-H (track lead): Task 1 does not edit `packages/shared/src/steps.ts` (A1 T2 is rewriting it) and does not add `claim_packet` to `STORED_FILE_KINDS` (E1 has not built it). Task 2 adds the four step types after A1 T2 lands; Task 7 adds `claim_packet` after E1 T13 lands. Task 1 puts `CLAIM_STATUSES`, `CLAIM_EVENT_ACTORS` and `FOLLOW_UP_KINDS` in a new `packages/shared/src/more-agents.ts` (shared barrel), which Task 2 then extends — cost if wrong: none.
+Ruling GX-I (track lead): Task 2 is split. **T2a** (`more-agents.ts` pure rules: `followUpAllowed`, the `…Due` rules, `weatherRisk`, `CLAIM_STATUS_FLOW`) runs as soon as T1 is merged; **T2b** (the four step types and `claimsGuard`) waits for A1 T2 (`steps.ts` baseline/units) and D1 T2 (guards) — cost if wrong: one extra task commit.
+Ruling GX-J (track lead): Task 9 runs in wave 1 (it touches only `apps/api/src/weather/*` and its tests). It adds `hourly` to the existing `WeatherSource` (`current` today). When D1 T7 adds `daily` to the same interface and `nws.ts`, the merge keeps both methods (and both fakes' methods) — cost if wrong: one small merge conflict.
+
+Waves as run by the track lead: W1 T1 (builder sonnet: migrations and RLS), T9 · W2 T2a · then upstream-gated tasks as A1/D1/S1/E1/C1 land.
