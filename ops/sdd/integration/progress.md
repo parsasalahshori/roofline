@@ -655,3 +655,11 @@ Merge-artifact fixes: none beyond the conflict resolutions above.
 lint pass, lint:css pass; vitest @roofline/web 1000 pass (111 files), @roofline/ui 170 pass, @roofline/shared 1281
 pass, @roofline/send-gate 525 pass. Before the probe commits: typecheck 5 errors (problems 2, 3), web 23 failures
 in 5 files (problems 3, 4). The database, API, worker and e2e suites run only in CI.
+
+### CI (pass 6)
+
+Run 38219860264 on b8cb7dd: Platform (lint, typecheck, tests) success; E2E (Playwright) success; Hail service (ruff,
+pytest) success; v1 (node:test) success. C1 wave 5 (quote PDF, Prices/Schedule tabs, calendar card, CRM windows),
+E1 T8 (proposal PDF and routes, real `prices_and_tiers`) and S1 T23/T24/T27 (Storm settings, ad connections, storm
+layer, `stormAlertEmail`) pass the database, API, worker and e2e suites in combination, including the setup e2e
+with one "Coming with" line. No fixes were needed after CI, so ci-check was not re-run.
