@@ -89,6 +89,8 @@
 | `DATABASE_URL_OWNER` | migrations only | The migration owner. Only the migrate and role-password steps use it; never the API or worker. |
 | `TENANT_DB_PASSWORD`, `SYSTEM_DB_PASSWORD` | role passwords only | Set on `app_tenant` and `app_system`; must match the two app URLs. |
 
+- **Building footprints and proposal links:** the worker's `footprints-ensure` job runs every 15 minutes (`*/15 * * * *`) and queues a `footprints-load` job for each state a company is in whose footprints are not yet `ready` or loading. Each load reads one state's file from Microsoft US Building Footprints (ODbL; the attribution is in `apps/web/src/copy/legal.ts`, shown on the measure view) into PostGIS from `FOOTPRINTS_BASE_URL`. A state is usable once its `building_footprint_states.status` is `ready`; until then homes there open draw mode. End-to-end and test stacks do not download anything: they seed a Nebraska fixture with `seedFootprintFixture` (exported from `apps/api/src/index.ts`). `PROPOSAL_LINK_BASE_URL` must share `APP_ORIGIN`'s origin, because the homeowner page posts its signing and decline requests there.
+
 - **Calendar connections:**
   - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google Calendar, and `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` for Outlook. A provider with either value missing shows as not set up in Settings.
   - Register these redirect URIs with each provider: `<PUBLIC_BASE_URL>/api/calendar/oauth/google/callback` and `<PUBLIC_BASE_URL>/api/calendar/oauth/microsoft/callback`.

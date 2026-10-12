@@ -80,3 +80,4 @@ export { seedDemoTask } from './scripts/seed-demo.ts';
 export { seedShowcase } from './scripts/showcase.ts';
 export { createBoss, ensureStepQueue, PgBossQueue, SENDER_OPTIONS, STEP_QUEUE } from './tasks/pgboss-queue.ts';
 export type { StepQueue } from './tasks/queue.ts';
+export { seedFootprintFixture } from './scripts/footprint-fixture.ts';
