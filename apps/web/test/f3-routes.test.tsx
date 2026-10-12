@@ -2,6 +2,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
+import type { ImportView } from '@roofline/shared';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
@@ -28,6 +29,38 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
       ),
   };
 });
+
+/** A freshly uploaded import, enough for the mapping step to show. */
+function importView(id: string): ImportView {
+  const none = { noName: 0, noContact: 0, badPhone: 0, duplicate: 0 };
+  return {
+    id,
+    fileName: 'c.csv',
+    status: 'uploaded',
+    headers: ['Name', 'Phone'],
+    mapping: { name: 0, phone: 1 },
+    rowCount: 3,
+    counts: {
+      total: 3,
+      new: 2,
+      updated: 1,
+      skipped: 0,
+      skippedBy: none,
+      consent: { attested: 0, express: 0, unchanged: 0, optedOutKept: 0 },
+      jobs: 0,
+      processed: 0,
+      located: 0,
+      notLocated: 0,
+    },
+    preview: [],
+    progress: { processed: 0, total: 3 },
+    consentAttested: false,
+    startedAt: null,
+    finishedAt: null,
+    errorPlain: null,
+    skippedDownloadUrl: null,
+  };
+}
 
 let api: ReturnType<typeof stubApi>;
 
@@ -69,17 +102,18 @@ it('import line shows inside the Settings window with the Setup tab current', as
   renderApp('/settings/setup/import');
 
   const dialog = await settingsWindow();
-  expect(await within(dialog).findByText(importCopy.comingSoon)).toBeInTheDocument();
+  expect(await within(dialog).findByLabelText(importCopy.uploadLabel)).toBeInTheDocument();
   const nav = await tabsNav();
   expect(within(nav).getByRole('link', { name: settings.tabs.setup })).toHaveAttribute('aria-current', 'page');
 });
 
 it('import line shows for a single import inside the Settings window with the Setup tab current', async () => {
   signedInApi();
+  api.routes['GET /api/imports/abc?attested=false'] = () => ({ body: importView('abc') });
   renderApp('/settings/setup/import/abc');
 
   const dialog = await settingsWindow();
-  expect(await within(dialog).findByText(importCopy.comingSoon)).toBeInTheDocument();
+  expect(await within(dialog).findByText(importCopy.mappingTitle)).toBeInTheDocument();
   const nav = await tabsNav();
   expect(within(nav).getByRole('link', { name: settings.tabs.setup })).toHaveAttribute('aria-current', 'page');
 });
