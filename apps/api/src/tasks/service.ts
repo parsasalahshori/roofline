@@ -312,7 +312,9 @@ export type NewTask = {
 
 /**
  * Makes a draft task with its steps, for an agent. This is the service the agents and the demo seed
- * call; no HTTP route creates tasks.
+ * call; no HTTP route creates tasks (`rerunTask` copies an expired one, through this function).
+ * Built-in step types a person cannot create (front_desk_*) are refused unless the caller passes
+ * `allowInternalStepTypes`, which only `rerunTask` does.
  * - Each step's payload is checked by its step type, so a bad one is a 400 on `steps.N.payload`
  *   (a text to customers that do not exist is one on `steps.N.payload.customerIds`) and nothing is saved.
  * - The approval class comes from the step type, never from the agent.
@@ -320,13 +322,21 @@ export type NewTask = {
  * - The preview each step shows is built here, from the checked payload.
  * Runs in the caller's `withTenant` transaction.
  */
-export async function createTask(tx: Tx, ctx: TenantContext, input: NewTask, opts: WriteOptions): Promise<{ taskId: string }> {
+export async function createTask(
+  tx: Tx,
+  ctx: TenantContext,
+  input: NewTask,
+  opts: WriteOptions & { allowInternalStepTypes?: boolean },
+): Promise<{ taskId: string }> {
   if (input.steps.length === 0) throw new AppError(400, 'A plan needs at least one step.', 'steps');
 
   const companyName = await companyNameOf(tx, ctx);
   const steps: NewStepRow[] = [];
   for (const [n, step] of input.steps.entries()) {
-    if (!isUserCreatableStepType(step.type)) throw new AppError(400, "That kind of step isn't supported.", `steps.${n}.type`);
+    // Only `rerunTask` passes allowInternalStepTypes: built-in steps (front_desk_*) are copied over
+    // from an expired plan. Every other caller, the API routes included, is refused them.
+    const allowed = opts.allowInternalStepTypes ? isStepType(step.type) : isUserCreatableStepType(step.type);
+    if (!allowed) throw new AppError(400, "That kind of step isn't supported.", `steps.${n}.type`);
     const checked = await checkPayload(tx, ctx, step.type, step.payload, companyName, `steps.${n}.payload`);
     steps.push({ type: step.type, approvalClass: stepTypes[step.type].approvalClass, ...checked });
   }
@@ -795,10 +805,11 @@ export async function rerunTask(tx: Tx, ctx: TenantContext, taskId: string, opts
         ...(window !== null && { expiresAt: new Date(opts.now.getTime() + window) }),
         rerunOfTaskId: taskId,
         createdBy: 'user',
-        // createTask refuses a type this build does not know (400 on steps.N.type).
+        // Rerun passes allowInternalStepTypes so built-in steps (front_desk_*) copy over; a type this
+        // build does not know is still a 400 on steps.N.type.
         steps: steps.map((step) => ({ type: step.type as StepType, payload: step.payload })),
       },
-      opts,
+      { ...opts, allowInternalStepTypes: true },
     ));
   } catch (err) {
     // A copy that slipped past the check above (made by a path that did not take the lock).
@@ -923,7 +934,9 @@ export async function refreshTask(tx: Tx, ctx: TenantContext, taskId: string, no
   const minutesSaved = await minutesSavedOf(tx, ctx, taskId);
   const updated = await updateTask(tx, ctx, taskId, { ...(!declined && { status }), minutesSaved }, now);
   // One `finished` event per real move into a final status; a declined plan's status does not move.
-  if (!declined && task.status !== status) await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved }, now);
+  // Only a final status is finished: needs_attention is not, and a status already written is not written twice.
+  const final = status !== 'needs_attention';
+  if (!declined && final && task.status !== status) await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved }, now);
   return updated;
 }
 

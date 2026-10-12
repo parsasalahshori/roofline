@@ -24,6 +24,7 @@ import type { Geocoder } from './providers/geocoder.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
 import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
+import { agentsFeedRoutes } from './routes/agents-feed.ts';
 import { agentsRoutes } from './routes/agents.ts';
 import { appointmentRoutes } from './routes/appointments.ts';
 import { approvalRoutes } from './routes/approvals.ts';
@@ -246,7 +247,9 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
   app.use('/api/tasks', taskRoutes(deps));
-  // Agents (A1). Tasks 6 and 7 mount their routers on this same /api/agents prefix right after this line.
+  // Agents (A1): feed and waiting (T6) first, then the overview and /:agent (T5; non-agent names call next()).
+  // T7's settings router (time baselines, pause, run) is mounted further down on the same prefix.
+  app.use('/api/agents', agentsFeedRoutes(deps));
   app.use('/api/agents', agentsRoutes(deps));
   app.use('/api/search', searchRoutes(deps));
   app.use('/api/map', mapRoutes(deps));

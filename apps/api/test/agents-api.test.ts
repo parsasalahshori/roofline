@@ -346,10 +346,11 @@ describe('GET /api/agents/:agent (detail)', () => {
     }
   });
 
-  test('sibling paths are not captured by /:agent: /feed is 404, not a 400 from the agent route', async () => {
+  test('sibling paths are not captured by /:agent: /feed reaches the feed router, not a 400 from the agent route', async () => {
     const res = await (await who.as('owner')).get('/api/agents/feed?period=bogus');
-    expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: NOT_FOUND });
+    // /feed belongs to the feed router (Task 6): /:agent must not swallow it, and `period` means nothing there.
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
   });
 
   test('bad period is 400', async () => {

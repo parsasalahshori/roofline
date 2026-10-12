@@ -1,0 +1,167 @@
+import { Router } from 'express';
+import { listFeedPage, listWaitingTasks, withTenant, type FeedCursor, type FeedRow, type TenantContext, type Tx } from '@roofline/db';
+import type { FeedItem, FeedPage, ScreenAgent, WaitingItem, WaitingList, WaitingOn } from '@roofline/shared';
+import { isScreenAgent } from '@roofline/shared';
+import type { AppDeps } from '../app.ts';
+import { feedSentence, waitingAttentionText, waitingDraftText } from '../agents/feed-text.ts';
+import { can, type Capability } from '../permissions.ts';
+import { AppError } from '../errors.ts';
+import { canReview } from '../tasks/service.ts';
+import { UUID } from '../validate.ts';
+
+/** Feed rows per page. */
+export const FEED_PAGE_SIZE = 30;
+
+const BAD_AGENT = 'Please pick a valid agent.';
+const BAD_CURSOR = 'Please reload the page and try again.';
+
+/** The approval capability each draft's class needs. */
+const CLASS_CAPABILITY = {
+  message: 'approve_message',
+  internal: 'approve_internal',
+  spend: 'approve_spend',
+} as const satisfies Record<'message' | 'internal' | 'spend', Capability>;
+
+/** An opaque cursor: base64url of `${at ISO}|${id}`. */
+export function encodeCursor(cursor: FeedCursor): string {
+  return Buffer.from(`${cursor.at.toISOString()}|${cursor.id}`, 'utf8').toString('base64url');
+}
+
+/** Reads a cursor back, or throws the 400 for a cursor this server did not make. */
+export function decodeCursor(value: string): FeedCursor {
+  const text = Buffer.from(value, 'base64url').toString('utf8');
+  const bar = text.indexOf('|');
+  const at = bar === -1 ? new Date(Number.NaN) : new Date(text.slice(0, bar));
+  const id = bar === -1 ? '' : text.slice(bar + 1);
+  if (Number.isNaN(at.getTime()) || !UUID.test(id)) throw new AppError(400, BAD_CURSOR, 'cursor');
+  return { at, id };
+}
+
+/** A string query parameter, or undefined when it is absent. Anything else is a bad value. */
+function stringParam(value: unknown, message: string, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new AppError(400, message, field);
+  return value;
+}
+
+const isOpenDraft = (status: string) => status === 'draft' || status === 'awaiting_owner';
+
+/** The job a row is about, as a link, else null. */
+function jobHref(subjectType: string | null, subjectId: string | null): string | null {
+  return subjectType === 'job' && subjectId !== null ? `/jobs/${subjectId}` : null;
+}
+
+/** Where a feed row links: the review for a draft the reader can review, else its job, else nowhere. */
+function feedHref(row: FeedRow, ctx: TenantContext): string | null {
+  if (canReview(ctx) && isOpenDraft(row.taskStatus)) return `/approvals/${row.taskId}`;
+  return jobHref(row.subjectType, row.subjectId);
+}
+
+function toFeedItem(row: FeedRow, ctx: TenantContext): FeedItem {
+  return {
+    id: row.id,
+    agent: row.agent,
+    kind: row.kind,
+    text: feedSentence(row),
+    at: row.at.toISOString(),
+    href: feedHref(row, ctx),
+  };
+}
+
+/**
+ * Who a draft waits on: the reader when they may approve one of its classes, else the office.
+ * A draft with no open steps waits on the office too.
+ */
+function draftWaitingOn(classes: readonly ('message' | 'internal' | 'spend')[], ctx: TenantContext): WaitingOn {
+  const mayApprove = classes.some((cls) => can(ctx, CLASS_CAPABILITY[cls]));
+  return mayApprove ? { kind: 'you' } : { kind: 'office' };
+}
+
+/** Attention tasks wait on the owner or the office; a rep's are the office's to pick up. */
+const attentionWaitingOn = (ctx: TenantContext): WaitingOn => (ctx.role === 'rep' ? { kind: 'office' } : { kind: 'you' });
+
+/**
+ * Front Desk follow-ups are not on this base: D1 is not merged into a1-agents (Ruling AX-K).
+ * Merge rule: when D1 lands, replace this body and keep the name. It reads D1's open follow-ups
+ * (the next steps D1 T9 creates on jobs), scoped by jobScope(ctx), with kind 'front_desk_follow_up'.
+ */
+async function frontDeskFollowUps(tx: Tx, ctx: TenantContext): Promise<WaitingItem[]> {
+  // The seam takes the same transaction and reader the D1 read will need; nothing is read yet.
+  void tx;
+  void ctx;
+  return [];
+}
+
+/**
+ * `/api/agents`: the activity feed and the waiting-on-a-person list (the Agents screen).
+ * - `GET /feed?agent=&cursor=` one page of the feed, newest first, 30 rows; `nextCursor` is null on the last page.
+ * - `GET /waiting` drafts waiting for approval, tasks that need attention, and Front Desk follow-ups,
+ *   oldest first, with who each one waits on.
+ * Reps see only events and tasks on their own jobs and customers (Ruling AX-J).
+ */
+export function agentsFeedRoutes(deps: AppDeps): Router {
+  const { pools, clock } = deps;
+  const router = Router();
+
+  router.get('/feed', async (req, res) => {
+    const { ctx } = req;
+    const agentValue = stringParam(req.query.agent, BAD_AGENT, 'agent');
+    let agent: ScreenAgent | undefined;
+    if (agentValue !== undefined) {
+      if (!isScreenAgent(agentValue)) throw new AppError(400, BAD_AGENT, 'agent');
+      agent = agentValue;
+    }
+    const cursorValue = stringParam(req.query.cursor, BAD_CURSOR, 'cursor');
+    const cursor = cursorValue === undefined || cursorValue === '' ? null : decodeCursor(cursorValue);
+
+    const rows = await withTenant(pools, ctx, (tx) =>
+      listFeedPage(tx, ctx, {
+        ...(agent !== undefined && { agent }),
+        cursor,
+        limit: FEED_PAGE_SIZE + 1,
+      }),
+    );
+
+    const kept = rows.slice(0, FEED_PAGE_SIZE);
+    const last = kept[kept.length - 1];
+    const nextCursor = rows.length > FEED_PAGE_SIZE && last ? encodeCursor({ at: last.at, id: last.id }) : null;
+    const page: FeedPage = { items: kept.map((row) => toFeedItem(row, ctx)), nextCursor };
+    res.json(page);
+  });
+
+  router.get('/waiting', async (req, res) => {
+    const { ctx } = req;
+    const now = clock.now();
+    const items = await withTenant(pools, ctx, async (tx): Promise<WaitingItem[]> => {
+      const rows = await listWaitingTasks(tx, ctx, now);
+      const tasks = rows.map((row): WaitingItem => {
+        if (row.waiting === 'draft') {
+          return {
+            id: row.taskId,
+            agent: row.agent,
+            kind: 'draft',
+            text: waitingDraftText(row.agent, row.title),
+            since: row.since.toISOString(),
+            waitingOn: draftWaitingOn(row.approvalClasses, ctx),
+            href: canReview(ctx) ? `/approvals/${row.taskId}` : jobHref(row.subjectType, row.subjectId),
+          };
+        }
+        return {
+          id: row.taskId,
+          agent: row.agent,
+          kind: 'attention',
+          text: waitingAttentionText(row.agent, row.title, row.reason),
+          since: row.since.toISOString(),
+          waitingOn: attentionWaitingOn(ctx),
+          href: jobHref(row.subjectType, row.subjectId),
+        };
+      });
+      const followUps = await frontDeskFollowUps(tx, ctx);
+      return [...tasks, ...followUps].sort((a, b) => Date.parse(a.since) - Date.parse(b.since) || a.id.localeCompare(b.id));
+    });
+    const list: WaitingList = { items };
+    res.json(list);
+  });
+
+  return router;
+}
