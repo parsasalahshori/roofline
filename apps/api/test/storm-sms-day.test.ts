@@ -25,7 +25,7 @@ async function stormText(): Promise<string> {
   ]);
   const stormId = await addCompanyStorm(t, 'a', STORM_DAY);
   const { stepId } = await approvedBatch(t, actors, [ann!], {
-    body: 'Hail hit {street} {day}. Reply STOP to opt out.',
+    body: 'Acme Roofing: hail hit {street} {day}. Reply STOP to opt out.',
     fields: { [ann!]: { street: 'Elm St', day: 'drafted-day' } },
     dedupePrefix: `storm:${stormId}`,
   });
@@ -36,11 +36,11 @@ async function stormText(): Promise<string> {
 describe('storm text day label', () => {
   test('says today on the storm day, whatever the draft said', async () => {
     t.clock.set(SAME_DAY_LATE);
-    expect(await stormText()).toBe('Hail hit Elm St today. Reply STOP to opt out.');
+    expect(await stormText()).toBe('Acme Roofing: hail hit Elm St today. Reply STOP to opt out.');
   });
 
   test('says yesterday once the company clock is past midnight', async () => {
     t.clock.set(NEXT_DAY_EARLY);
-    expect(await stormText()).toBe('Hail hit Elm St yesterday. Reply STOP to opt out.');
+    expect(await stormText()).toBe('Acme Roofing: hail hit Elm St yesterday. Reply STOP to opt out.');
   });
 });
