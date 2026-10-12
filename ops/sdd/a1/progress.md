@@ -177,3 +177,4 @@ Ruling AX-N (track lead): Front Desk steps fold booking minutes into the call/te
 - Accepted: `apps/api/src/routes/agents.ts` added to DB_SYSTEM_ALLOWED to read on-call first names (`onCallFirstNames(pools.system, ctx.companyId)`), company-scoped, for the Front Desk rule sentence.
 - Ruling BH (renamed from BG; BG is D1's): setting a next step on a job that had none (null → text) counts as a change and closes the job's open Front Desk live tasks (brief: "text changes").
 - Carried minors (non-blocking): feed `closedLater` relies on the 2 ms creation offset (a close-reason payload flag would be cleaner); jobs PATCH does one extra getJob even without nextStep; ' Next step: ' literal in routes/agents-feed.ts should move to copy; recount lock test does not exercise a concurrent wait.
+- a1-agents 3348b7c7 (T23 merged) green: run 38281414192 Platform+E2E.
