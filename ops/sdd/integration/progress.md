@@ -1559,3 +1559,124 @@ followed through the Actions API until they completed.)
 New problem 8. **E1 test time bomb, `FakeExactReports` on the wall clock.** See above. Fix:
 `new FakeExactReports(() => clock.now())` in `apps/api/test/helpers.ts` (`makeTestApp`). Owner E1, now (it is red on
 e1-estimator and on every track that carries E1 after 2026-10-12T15:01Z).
+
+## Pass 14
+
+Base: pass 13 head 431ea771. `git fetch origin` (2026-10-12): every head matched the request; c1-crm 7758e82 was already
+merged and was skipped. Merged in order with `git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 7758e82157918218b8b87e6237772874e2154469 | (already in the probe) | - |
+| e1-estimator | be4793d5e3a11a172c88b21f49898bd263dce86c | ae33581 | 2 files |
+| s1-storm | 19963e0e880630ddc2b996f330fc742ba4d331aa | c9bd8df | 12 files + snapshot rebuild |
+| d1-front-desk | 93dcfca869e2dc0085363f280ab66bdc7e80ed3e | c22d5d1 | 10 files |
+| a1-agents | 50295ebdf6ea564c449d4d2c41c2db676e3332cc | 7b9d3f3 | 30 files (A1's own resolution of D1 4ce5c7f vs the probe's) |
+| g1-agents | bbf8e5dcb2e4e3d7ab1cca1be5751b5730c40473 | d746f37 | 30 files (all of G1 lands: g1-full, g1-md4, T8c, T18b) |
+
+Probe-only commits: 6d5c496 (Ruling BD final, A1's a1-merge-up2 files), 546e745 (`ops/bin/launch-normalize` and
+`packages/db/scripts/launch-normalize{,-lib}.ts` from `ops-launch-prep` c3ce947; its docs and db test not taken),
+ed3d962 (merge artifacts and cross-track fixes, below).
+
+What the tracks brought: E1 the dispatcher through `completeParkedStep` for the parked end (Ruling AX-H), `pathForLog`
+in the late-error branch, the FakeExactReports test clock, the signed-PDF signature fix; S1 R8-R10 (Ruling BF: ad account
+unique index, grant trims in 0018 in place, public forms hardening, storm form YES) and its c1/e1 security re-merge (R2 and
+TRUST_PROXY in its production fixtures, `proposalListRoutes()` in s1-routes); D1 T7-T9, T19, T27, d1-sec and its c1 sync
+(0020 `GRANT UPDATE (capabilities, updated_at)`), `daily` weather; A1 T4/T21/T22 (Front Desk live tasks, rules, follow-ups,
+`setStepResult`/`insertTask` added to the one-writer rule); G1 every task (Claims, Scheduler, Follow-up, claim packet,
+agent values, claims replies in the inbound hook, 0023 `claim_packet` stored-file kind).
+
+### Conflict resolutions
+
+e1-estimator: `dispatcher.ts` E1's comment, the probe keeps `completeParkedStep` for the `running` re-save too (E1 still
+imports `finishParkedStep` for it; A1's a1-merge-up2 has the probe's form); `test/helpers.ts` E1's FakeExactReports line.
+`errors.ts` merged clean (E1's `pathForLog` replaces the probe copy).
+
+s1-storm: 0018, `storm-config`/`google-ads-http`/`postmark-broadcast` tests: S1's (drops the probe's pass-13 0018 grant
+edit and fixture comments). `hooks/twilio.ts` (Ruling AV): both imports; `onStormFormYes` then `onStormReply`, then G1,
+then Front Desk. `worker.ts`, `jobs.test.ts`, `pgboss.test.ts`, `system/index.ts`, `fixtures.ts`: both sides. `rls.test.ts`:
+S1's spotter_reports SELECT/INSERT test, the EQ signature test once, D1's column rows with S1's `company_storms` trim
+(`id, company_id, status`).
+
+d1-front-desk: `weather/source.ts`, `nws.ts`, `weather.test.ts`, `test/helpers.ts` keep G1's `hourly` and D1's `daily`
+(the interface has both; FakeWeatherSource has both real methods); 0020 D1's (drops the probe copy); `copy/today.ts` both;
+e2e `stack.ts`/`fixtures.ts` D1's `ENCRYPTION_KEY`/`testCallerNumber`; `a11y.spec.ts`/`phone.spec.ts` both.
+
+a1-agents: A1's merge commits only re-resolve D1 4ce5c7f (checked with `git show --cc`: no A1-only change in those files);
+every conflicted file took the probe side except A1's own: `db/src/index.ts` (probe barrel + A1's new exports),
+`front-desk/texts.test.ts` (both imports), `copy/agents.ts` (A1's "(incl. bookings)" labels plus G1 keys), `test/helpers.ts`.
+Artifact: the merge dropped `import type { ObjectStore }` from `app.ts` (restored in the merge).
+
+g1-agents: barrels, `deps.ts`, `app.ts` (G1 routes and `staticMap`), `queue.ts`, `handlers.ts`, `worker.ts`, jobs/pgboss
+tests, `proposals.ts` (`claim_packet`), `copy/agents.ts`, e2e specs, `a1-dock`, `a1-routes`, `a1-settings`: both sides.
+`hooks/twilio.ts`: G1's claims call between S1 and Front Desk (Ruling AV). Cross-track (new problems 1-3):
+`agents/run-now.ts`, `agents/metrics.ts`, `routes/agents-settings.ts`, `agents/rule-facts.ts` (+ test), `AgentsTab.tsx`,
+`AgentPage.tsx`, `RunNowButton.tsx`.
+
+Ruling BD (final): `storm/plan.ts`, `storm/plan-errors.ts`, `routes/storms.ts`, `routes/approvals.ts`, `storm-plan.test.ts`,
+`storm-routes.test.ts` taken from A1's `a1-merge-up2` 6e20e90 (diffed: their only differences from the probe are the BD
+hunks). `POST /api/storms/:id/plan` passes `allowFinished` and the person as `createdByUserId`; rerun passes it; the
+automatic paths do not; `fresh: lock.oldDraftId === null` (lockStormPlan sets `oldDraftId` only for a draft, so it equals
+`!previousWasDraft`); one REDRAFTABLE pair in `@roofline/db`. s1-storm's StormDetail keeps "Draft a new plan" on expired
+and declined plans (no red item).
+
+### Migration journal (Ruling AP) and Rulings AW/BF
+
+S1 R8 amended 0018 in place (`ad_accounts_platform_external_live_uq`, grant trims) and its snapshot. The probe's
+0019-0024 snapshots were rebuilt on it with a three-way JSON merge (base: old 0018, theirs: new 0018; delta = the index;
+`id`/`prevId` and key order kept; 25 lines each, as S1's). G1's 0023 adds the `claim_packet` kind (SQL and 0023/0024
+snapshots, merged clean). `drizzle-kit generate`: no changes. `ops/bin/launch-normalize --check`: journal OK (25, `when`
+increasing), snapshots OK (25 chained), drizzle-kit OK, grants FAIL on one item: app_system
+`GRANT UPDATE (recording_key, recording_status) ON calls` (0020) lacks `updated_at` (D1 item in progress on d1-rev-d: D1
+says nothing writes `calls` as app_system, so the grant is dropped or gets updated_at; not patched in the probe). Exactly one
+`messages (company_id, id)` unique, D1's.
+
+Post-0018 snapshots that disagree with S1's 0018: a1-agents 0021/0022 (no merged_into, ad_campaigns.paused_by, R8),
+a1-merge-up2 0019-0022 (no R8), g1-agents 0019-0024 (none of R1/R3/R8), g1-ms2m and g1-me2m 0019-0024 (no R8),
+d1-front-desk 0019/0020 (chained from 0014, no S1).
+
+### Items: status
+
+Closed by a track this pass:
+- Item 4 (S1): R8 0018 (spotter_reports SELECT, INSERT), TRUST_PROXY/R2 in the three production fixtures,
+  `proposalListRoutes()` in s1-routes: taken from S1, probe edits gone.
+- Item 5 (E1): clock fix and `pathForLog` taken from E1, probe copies gone.
+- Item 6 (D1 0020 grant): taken from D1.
+- Ruling BD: closed in code (A1's version); route and rerun pass `allowFinished`, automatic paths do not.
+
+Still open:
+- Item 1: d1-front-desk 93dcfca still has 17 journal entries; 0019/0020 `when` below S1's 0018 and 0019 chained from 0014.
+- Item 2: a1-dock, a1-settings, settings, e1-routes, steps and now a1-routes and g1-turn-on differ from every head (each
+  within a few lines of g1-agents). Combined: six dock apps shipped, every G1 agent launched.
+- Item 3: e1 still calls `finishParkedStep` for the `running` re-save (owner A1 at its e1 merge; a1-merge-up2 has it);
+  the db REDRAFTABLE pair and `fresh` are in a1-merge-up2 only; the post-0018 snapshot rebuild is not on a1-agents.
+- Item 6b: D1 Task RA (recording CSP) not landed: `app.ts` has no `media-src`; D1's ledger says RA proxies playback and
+  sets `media-src 'self'`.
+- Item 7: list above.
+
+### New cross-track problems
+
+1. **G1 x A1, one-writer rule.** G1's `agents/notes.ts` and `routes/claims.ts` import `moveStep`/`updateTask` (A1's
+   eslint EVENT_WRITERS; g1-agents' eslint has no such rule). Lint fails in combination. Probe: block-scoped
+   `eslint-disable no-restricted-imports` on those imports. Fix: G1 creates those tasks through A1's task service
+   (`createLiveTask`/an approve-style service function) so the status moves write events. Owner G1 at its a1 merge.
+2. **G1 x A1, Run now after commit.** A1 made `RUN_NOW` handlers `(ctx, deps)` run after the transaction commits
+   (`runAgentNow` returns `{ result, send }`); G1's handlers are `(tx, ctx, jobs)` run inside. Probe: A1's shape, G1's
+   three handlers converted, G1's paused 409 and `G1_AGENTS_SHIPPED` kept, Storm Scout paused check kept. Owner G1.
+3. **G1 x A1, Agents screen and facts.** `metrics.ts` `statusOf(agent, settings, waitingCount)` uses A1's Front Desk
+   waiting count; `rule-facts.ts` returns A1's Storm Scout/Front Desk facts plus G1's three (A1's exact-equality test
+   now compares `stormScout` only; G1's default test uses `toMatchObject`); Settings Agents tab shows A1's
+   `TimeBaselines` then G1's `AgentRules` (G1 had replaced A1's slot); `AgentPage` keeps G1's claims board and Run-now
+   hiding with A1's `paused` prop; `RunNowButton` A1's company-time label with G1's labels; G1's `g1-turn-on` test stubs
+   time-baselines; A1's "/agents/claims coming soon" test removed (claims ships). Owner G1 at its a1 merge.
+4. **S1 x A1/G1/D1 snapshots (Ruling AW).** List above.
+
+Merge-artifact fixes: `app.ts` ObjectStore import (a1 merge); `deps.ts` `UnconfiguredLlm` G1 stub bodies (ed3d962);
+`a1-routes` unused import.
+
+### Checks (after all merges and ed3d962)
+
+`npm ci` clean (no lockfile change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass (incl.
+`tsc -p scripts`), lint pass, lint:css pass; vitest @roofline/web 1316 pass (142 files), @roofline/ui 172 pass,
+@roofline/shared 1361 pass, @roofline/send-gate 532 pass. `ops/bin/launch-normalize --check`: fails only on the D1
+`calls` grant (above). The database, API, worker and e2e suites run only in CI.
