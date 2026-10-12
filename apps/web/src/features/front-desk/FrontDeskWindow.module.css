@@ -1,0 +1,36 @@
+/* The Front Desk window: this week's numbers, the filter chips, then the list. Flex children get min-width: 0. */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 4px 0 8px;
+  color: var(--text);
+  font-size: var(--font-size-body);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.more {
+  align-self: center;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+}

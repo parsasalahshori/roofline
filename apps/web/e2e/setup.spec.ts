@@ -31,11 +31,17 @@ test('skip the import and the ring moves', async ({ page }) => {
 });
 
 test('later steps say Coming with', async ({ page }) => {
-  await expect(page.getByText(/Coming with/)).toHaveCount(2);
-  for (const line of [
-    'Coming with Front Desk',
-    'Coming with Storm Scout',
-  ]) {
+  // The calendar step is real since C1 Task 12, the phone number step since D1 Task 24 and prices since E1.
+  await expect(page.getByText(/Coming with/)).toHaveCount(1);
+  for (const line of ['Coming with Storm Scout']) {
     await expect(page.getByText(line, { exact: true }).first()).toBeVisible();
   }
+});
+
+test('the phone number step opens the forwarding guide', async ({ page }) => {
+  await expect(page.getByText('Coming with Front Desk', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Forward your calls' })).toHaveAttribute(
+    'href',
+    '/settings/front-desk#forwarding',
+  );
 });

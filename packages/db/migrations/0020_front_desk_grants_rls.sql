@@ -71,17 +71,16 @@ CREATE POLICY tenant_isolation ON blocked_numbers
 
 -- 4. app_system: the recording and retention fan-outs read only the ids, company, status and recording
 --    columns they need, across companies, through the app_system_all policies below (section 6). These
---    grants are its real limit. It may write only the recording columns of a call and the text and tool
---    records of a turn (the retention sweep blanks them and keeps the metadata).
+--    grants are its real limit. It may write only the recording columns of a call. It never reads or
+--    writes transcript text or tool records (Ruling BF): the retention sweep blanks turns on the tenant
+--    pool, inside withTenant.
 GRANT SELECT (id, company_id, call_sid, status, conversation_id, recording_key, recording_status) ON calls TO app_system;
 --> statement-breakpoint
 GRANT UPDATE (recording_key, recording_status) ON calls TO app_system;
 --> statement-breakpoint
 GRANT SELECT (id, company_id, status) ON conversations TO app_system;
 --> statement-breakpoint
-GRANT SELECT (id, company_id, text, tool_calls, at) ON conversation_turns TO app_system;
---> statement-breakpoint
-GRANT UPDATE (text, tool_calls) ON conversation_turns TO app_system;
+GRANT SELECT (id, company_id, at) ON conversation_turns TO app_system;
 --> statement-breakpoint
 
 -- 5. Global lookup cache for the line type (Twilio Lookup). It has no company_id and no RLS: a line's

@@ -58,6 +58,8 @@ export type SetupFacts = {
   calendarsConnected: number;
   /** The company has saved a pricebook and all three Good/Better/Best tier templates. */
   pricesAndTiersSaved: boolean;
+  /** A forwarding test call reached the business line (company_settings.forwarding_verified_at is set). */
+  forwardingVerified: boolean;
   skipped: ReadonlySet<SetupItemKey>;
 };
 
@@ -77,7 +79,6 @@ export type SetupView = {
 };
 
 const COMING_WITH_BY_KEY: Partial<Record<SetupItemKey, ComingWith>> = {
-  phone_number: 'front_desk',
   connect_ads: 'storm_scout',
 };
 
@@ -127,6 +128,9 @@ function resolveItem(key: SetupItemKey, facts: SetupFacts): Resolved {
     case 'prices_and_tiers':
       // Not skippable, so a stored skip for this key is deliberately ignored.
       return facts.pricesAndTiersSaved ? { status: 'done', data: {} } : { status: 'todo', data: {} };
+    case 'phone_number':
+      // Not skippable: done only when a forwarding test has reached the business line.
+      return facts.forwardingVerified ? { status: 'done', data: {} } : { status: 'todo', data: {} };
     default:
       return { status: 'todo', data: {} };
   }
