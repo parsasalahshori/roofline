@@ -163,6 +163,15 @@ describe('storm landing page on the company host', () => {
   });
 });
 
+describe('storm landing page codes', () => {
+  test.each(['abc12345', 'abcd234', 'abcd23456', 'abcd-345'])('a malformed code %s is the generic 404 page', async (code) => {
+    const res = await request(t.app).get(`/storm/${code}`).set('Host', A_HOST);
+
+    expect(res.status).toBe(404);
+    expect(res.text).toContain(NOT_FOUND_TEXT);
+  });
+});
+
 describe('the app host still serves the web app under /storm', () => {
   beforeEach(() => {
     if (!webDist) {

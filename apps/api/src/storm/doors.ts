@@ -51,18 +51,22 @@ const ADDRESS_PATTERN = /^(.+),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5})/;
 
 type Place = { addressLine: string; city: string; state: string; zip: string };
 
-async function placeFor(tx: Tx, ctx: TenantContext, stop: DoorStopRow, company: CompanyBits): Promise<Place> {
+/** What a stop's address uses for any part the company profile cannot supply. */
+const FALLBACK_CITY = 'Unknown';
+const FALLBACK_STATE = 'NE';
+const FALLBACK_ZIP = '00000';
+const nearLabel = (stop: DoorStopRow): string => `Near ${stop.lat}, ${stop.lng}`;
+
+function placeFor(stop: DoorStopRow, company: CompanyBits): Place {
   const match = stop.address === null ? null : ADDRESS_PATTERN.exec(stop.address);
   if (match) {
     return { addressLine: match[1]!.trim(), city: match[2]!.trim(), state: match[3]!, zip: match[4]! };
   }
-  void tx;
-  void ctx;
   return {
-    addressLine: stop.address ?? `Near ${stop.lat}, ${stop.lng}`,
-    city: company.city ?? 'Unknown',
-    state: company.state ?? 'NE',
-    zip: company.zip ?? '00000',
+    addressLine: stop.address ?? nearLabel(stop),
+    city: company.city ?? FALLBACK_CITY,
+    state: company.state ?? FALLBACK_STATE,
+    zip: company.zip ?? FALLBACK_ZIP,
   };
 }
 
@@ -95,7 +99,7 @@ async function createHome(
     if (linked.customerId === customer.id) return stop.propertyId;
     // The home already belongs to someone else: this lead gets its own address row.
   }
-  const place = await placeFor(tx, ctx, stop, company);
+  const place = placeFor(stop, company);
   const input = { customerId: customer.id, ...place, location: [stop.lng, stop.lat] as [number, number] };
   try {
     // A nested transaction is a savepoint: a duplicate-key failure must not abort the outer transaction.
