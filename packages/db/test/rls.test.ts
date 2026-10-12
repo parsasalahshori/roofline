@@ -332,7 +332,10 @@ describe('grants', () => {
   test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links and calendar_connections', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
-      t === 'audit_log' ? privs(t, true, true, false, false) : privs(t, true, true, true, deletable.has(t)),
+      // proposal_signatures: UPDATE only on the three columns attaching the signed PDF writes (Ruling EQ)
+      t === 'audit_log' || t === 'proposal_signatures'
+        ? privs(t, true, true, false, false)
+        : privs(t, true, true, true, deletable.has(t)),
     );
     expect(await tablePrivileges('app_tenant', TENANT_TABLES)).toEqual(expected);
   });
@@ -436,8 +439,18 @@ describe('grants', () => {
 
   test('app_tenant has SELECT, INSERT and UPDATE but no DELETE on each E1 tenant table', async () => {
     expect(await tablePrivileges('app_tenant', E1_TENANT_TABLES)).toEqual(
-      E1_TENANT_TABLES.map((t) => privs(t, true, true, true, false)),
+      E1_TENANT_TABLES.map((t) => privs(t, true, true, t !== 'proposal_signatures', false)),
     );
+  });
+
+  test('app_tenant may update only pdf_file_id, pdf_sha256 and updated_at of a signature (Ruling EQ)', async () => {
+    const rows = await ownerQuery<{ column_name: string; can_update: boolean }>(
+      `select column_name, has_column_privilege('app_tenant', 'public.proposal_signatures', column_name, 'UPDATE') as can_update
+         from information_schema.columns
+        where table_schema = 'public' and table_name = 'proposal_signatures'`,
+    );
+    const updatable = rows.filter((r) => r.can_update).map((r) => r.column_name).sort();
+    expect(updatable).toEqual(['pdf_file_id', 'pdf_sha256', 'updated_at']);
   });
 
   test('app_tenant: SELECT only on building_footprints, and no privilege on building_footprint_states', async () => {
