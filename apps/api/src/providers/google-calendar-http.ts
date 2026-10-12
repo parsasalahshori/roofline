@@ -7,6 +7,9 @@ export type GoogleHttp = (url: string, init?: RequestInit) => Promise<Response>;
 export const GOOGLE_UNAVAILABLE_MESSAGE = "Couldn't reach Google Calendar.";
 export const GOOGLE_RECONNECT_MESSAGE = 'Reconnect your calendar.';
 
+/** The OAuth token endpoint. Its 401/403 are client-credential problems, not a dead grant, so the adapter classifies them from the OAuth error body. */
+export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+
 const DEFAULT_TIMEOUT_MS = 10000;
 
 /** Reads a JSON body; a body that is not JSON is an unavailable service, not a crash. */
@@ -35,7 +38,7 @@ async function isRateLimited(res: Response): Promise<boolean> {
   }
 }
 
-/** Builds the GoogleHttp: 10 s default timeout; network/timeout/429/5xx and rate/quota 403s -> CalendarUnavailableError; 401 and other 403s -> CalendarAuthError; every other status is returned as is. */
+/** Builds the GoogleHttp: 10 s default timeout; network/timeout/429/5xx and rate/quota 403s -> CalendarUnavailableError; 401 and other 403s -> CalendarAuthError (the token endpoint is exempt from the 401/403 mapping); every other status is returned as is. */
 export function makeGoogleHttp(o: { fetch?: typeof fetch; timeoutMs?: number }): GoogleHttp {
   const doFetch = o.fetch ?? globalThis.fetch;
   const timeoutMs = o.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -47,6 +50,7 @@ export function makeGoogleHttp(o: { fetch?: typeof fetch; timeoutMs?: number }):
       throw new CalendarUnavailableError(GOOGLE_UNAVAILABLE_MESSAGE);
     }
     if (res.status === 429 || res.status >= 500) throw new CalendarUnavailableError(GOOGLE_UNAVAILABLE_MESSAGE);
+    if (url === GOOGLE_TOKEN_URL) return res;
     if (res.status === 403 && (await isRateLimited(res))) throw new CalendarUnavailableError(GOOGLE_UNAVAILABLE_MESSAGE);
     if (res.status === 401 || res.status === 403) throw new CalendarAuthError(GOOGLE_RECONNECT_MESSAGE);
     return res;

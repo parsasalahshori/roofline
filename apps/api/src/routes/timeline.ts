@@ -10,9 +10,12 @@ const CURSOR = /^([^~]+)(?:~([0-9a-f-]{36}))?$/i;
 const readCursor = (value: string): { at: Date; id: string | null } | null => {
   const m = CURSOR.exec(value);
   if (!m || Number.isNaN(Date.parse(m[1]!))) return null;
+  const at = new Date(m[1]!);
+  // Postgres cannot store a timestamp outside years 1 to 9999; keep to a sane range.
+  if (at.getUTCFullYear() < 1900 || at.getUTCFullYear() > 9999) return null;
   const id = m[2]?.toLowerCase() ?? null;
   if (id !== null && !UUID.test(id)) return null;
-  return { at: new Date(m[1]!), id };
+  return { at, id };
 };
 const TimelineParams = z.object({
   customerId: z.string({ error: MESSAGES.checkField }).optional(),

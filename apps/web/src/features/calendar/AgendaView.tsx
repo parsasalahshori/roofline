@@ -18,9 +18,20 @@ function groupByDay(props: AgendaViewProps): Day[] {
   const byKey = new Map(days.map((day) => [day.key, day]));
   const visible = showCanceled ? appointments : appointments.filter((a) => a.status !== 'canceled');
   const sorted = [...visible].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const firstKey = days[0]?.key ?? '';
   for (const appointment of sorted) {
-    const day = byKey.get(zonedDateKey(new Date(appointment.startsAt), zone));
-    if (day) day.items.push(appointment);
+    const startKey = zonedDateKey(new Date(appointment.startsAt), zone);
+    if (appointment.allDay) {
+      // Every listed day it covers (end exclusive), as TimeGrid does
+      const lastKey = zonedDateKey(new Date(Math.max(Date.parse(appointment.startsAt), Date.parse(appointment.endsAt) - 1)), zone);
+      for (const day of days) {
+        if (startKey <= day.key && day.key <= lastKey) day.items.push(appointment);
+      }
+    } else {
+      // A timed item that started before the range sits on the first listed day
+      const day = byKey.get(startKey < firstKey ? firstKey : startKey);
+      if (day) day.items.push(appointment);
+    }
   }
   return days.filter((day) => day.items.length > 0);
 }
