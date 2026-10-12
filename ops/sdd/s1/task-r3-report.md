@@ -61,3 +61,12 @@ Branch `s1-r3`, built on `s1-i5` (c3c6fe0). API and db only; the fakes are the o
 - `apps/api/test/meta-ads-campaigns.test.ts`: campaign PAUSED, ad set and ad ACTIVE.
 - Local: typecheck and lint clean; the shared suite passes. The api and db suites need Docker, which this box lacks,
   so they ran on CI only.
+
+## CI
+
+First run (38246228940) failed on three tests that asserted the old behaviour: the Meta body fixtures
+(`fixtures/meta/body-ad.json`, `body-adset.json`, `body-adset-housing.json` now say ACTIVE) and
+`ads-routes.test.ts` (a thrown Check now keeps the status). Fixed in 2e38104.
+
+Green run: **38248652411** on 2e38104 (Platform, E2E, Hail and v1 all success). The ci-check script itself timed out
+while waiting, so the run was watched through the Actions API.
