@@ -15,3 +15,6 @@
 
 ## Verify
 typecheck, lint, shared (755 tests incl.) and web vitest passed locally; CI result recorded in the task output.
+
+## CI
+Run 38275841686 failed Platform (4 test expectations: spam text whitespace, texts tool-name shape/order, tools-jobs shownIds). Fixed in 698c010; run 38277873842 passed Platform and E2E.
