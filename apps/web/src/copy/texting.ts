@@ -27,6 +27,7 @@ export const texting = {
   checkThis: 'Please check this.',
   send: 'Send to the phone carriers',
   fixAndResubmit: 'Fix and resubmit',
+  gettingNumber: "You're approved. We're getting your texting number ready.",
   waiting: 'Waiting on phone carriers (usually 10–15 days)',
   submittedOn: (date: string) => `Sent on ${date}`,
   on: (number: string) => `Texting is on. Your number is ${number}.`,

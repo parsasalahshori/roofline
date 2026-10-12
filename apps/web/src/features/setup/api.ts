@@ -37,6 +37,7 @@ export function useLocateCompany() {
     mutationFn: () => apiFetch<{ located: true }>('/api/company/locate', { method: 'POST' }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.company });
+      void queryClient.invalidateQueries({ queryKey: keys.mapArea });
       void queryClient.invalidateQueries({ queryKey: setupKey });
     },
   });
@@ -48,6 +49,7 @@ export function useServiceArea() {
     mutationFn: (radiusMiles: number) => apiFetch<unknown>('/api/company/service-area', { method: 'PUT', body: { radiusMiles } }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.company });
+      void queryClient.invalidateQueries({ queryKey: keys.mapArea });
       void queryClient.invalidateQueries({ queryKey: setupKey });
     },
   });
