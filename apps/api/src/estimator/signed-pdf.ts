@@ -53,7 +53,12 @@ function renderSignedPdf(input: ProposalPdfInput): Promise<Buffer> {
  * Safe to retry: the object key is deterministic, and a signature that already has a file is left alone.
  * The homeowner is emailed the link once, by the run that created the file row.
  */
-export async function makeSignedPdf(deps: AppDeps, companyId: string, proposalId: string, meta: JobMeta): Promise<void> {
+/** What making a signed PDF needs: a job passes the whole AppDeps; the demo seed passes just these. */
+export type SignedPdfDeps = Pick<AppDeps, 'pools' | 'objectStore' | 'clock' | 'mailer'> & {
+  config: Pick<AppDeps['config'], 'ENCRYPTION_KEY' | 'PROPOSAL_LINK_BASE_URL'>;
+};
+
+export async function makeSignedPdf(deps: SignedPdfDeps, companyId: string, proposalId: string, meta: JobMeta): Promise<void> {
   void meta;
   const ctx = systemContext(companyId);
   const src = await withTenant(deps.pools, ctx, (tx) => signedPdfSource(tx, ctx, proposalId));

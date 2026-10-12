@@ -1,11 +1,11 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { createPools, migrate } from '@roofline/db';
 import { APP_ROLES, roleUrl, setRolePasswords } from '@roofline/db/testing';
-import { DEMO_COMPANY_NAME, DEMO_LOGIN, seedDemoWorld } from '@roofline/api';
+import { DEMO_COMPANY_NAME, DEMO_LOGIN, DirObjectStore, seedDemoWorld } from '@roofline/api';
 import { dockerProblem, nodeProblem, portIsFree, portProblem } from './demo-preflight.ts';
 
 /*
@@ -33,12 +33,15 @@ const PORT = Number(process.env.DEMO_PORT?.trim() || 4500);
 const DB_PORT = Number(process.env.DEMO_DB_PORT?.trim() || 54339);
 const BASE_URL = `http://localhost:${PORT}`;
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
-const COMPOSE = ['compose', '-p', process.env.DEMO_COMPOSE_PROJECT?.trim() || 'roofline-demo', '-f', `${REPO_ROOT}docker-compose.demo.yml`];
+const COMPOSE_PROJECT = process.env.DEMO_COMPOSE_PROJECT?.trim() || 'roofline-demo';
+const COMPOSE = ['compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_ROOT}docker-compose.demo.yml`];
 const OWNER_URL = `postgres://roofline:roofline@127.0.0.1:${DB_PORT}/roofline`;
 /** Local-only role passwords for the demo database (it listens on 127.0.0.1 only). */
 const ROLE_PASSWORDS = { tenant: 'demo-tenant-pw', system: 'demo-system-pw' } as const;
 const SHUTDOWN_WAIT_MS = 10_000;
 const RESET = process.argv.includes('--reset');
+/** The demo's file store (signed PDFs), shared by the seed, the API and the worker; git-ignored, emptied by --reset. */
+const FILES_DIR = `${REPO_ROOT}.demo-files/${COMPOSE_PROJECT}`;
 /** `--db-only`: start the database, migrate and seed, then stop (the arm64 CI check uses it). */
 const DB_ONLY = process.argv.includes('--db-only');
 
@@ -87,6 +90,7 @@ if (!dbRunning && !(await portIsFree(DB_PORT))) fail(portProblem(DB_PORT, 'DEMO_
 if (RESET) {
   log('Resetting: removing the demo database.');
   docker([...COMPOSE, 'down', '-v'], true);
+  rmSync(FILES_DIR, { recursive: true, force: true });
 }
 log('Starting the demo database (the first run downloads PostGIS, about 1 minute).');
 if (!docker([...COMPOSE, 'up', '-d', '--wait', 'db'], true).ok) fail('The demo database did not start. Is Docker Desktop running and up to date?');
@@ -150,7 +154,7 @@ try {
   await setRolePasswords(OWNER_URL, ROLE_PASSWORDS);
   const pools = createPools({ tenant: tenantUrl, system: systemUrl });
   try {
-    const world = await seedDemoWorld(pools, OWNER_URL, new Date(), { encryptionKey: ENCRYPTION_KEY });
+    const world = await seedDemoWorld(pools, OWNER_URL, new Date(), { encryptionKey: ENCRYPTION_KEY, objectStore: new DirObjectStore(FILES_DIR) });
     log(
       world.created
         ? `Seeded ${DEMO_COMPANY_NAME}: ${Object.entries(world.counts).filter(([name]) => !name.includes('.')).map(([name, n]) => `${n} ${name}`).join(', ')}.`
@@ -191,6 +195,7 @@ const env: NodeJS.ProcessEnv = {
   // Only the "Hail storm hits" simulation uses it: storms are written by the owner role.
   DEMO_DATABASE_URL_OWNER: OWNER_URL,
   ENCRYPTION_KEY,
+  DEMO_FILES_DIR: FILES_DIR,
   WEB_DIST_DIR: 'apps/web/dist',
   API_RATE_LIMIT_PER_MIN: '100000',
 };

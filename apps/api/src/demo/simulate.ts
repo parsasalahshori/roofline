@@ -6,6 +6,7 @@ import {
   companyPhoneNumbers,
   conversations,
   createPools,
+  decrypt,
   customers,
   type Db,
   insertCall,
@@ -191,7 +192,8 @@ export async function simulateCall(deps: AppDeps, companyId: string): Promise<Si
       .update(calls)
       .set({ conversationId, transcriptStored: true })
       .where(and(eq(calls.companyId, companyId), eq(calls.id, call.id)));
-    await updateCall(tx, ctx, callSid, { endedAt: deps.clock.now(), aiSeconds: DEMO_CALL_SECONDS });
+    // As Twilio's status callback would on hang-up: after-call work runs only on a finished call.
+    await updateCall(tx, ctx, callSid, { status: 'ended', endedAt: deps.clock.now(), aiSeconds: DEMO_CALL_SECONDS });
     if (homeowner.customerId !== null) {
       await updateConversation(tx, ctx, conversationId, { customerId: homeowner.customerId, identity: 'matched' });
     }
@@ -299,7 +301,7 @@ export async function simulateSign(deps: AppDeps, companyId: string): Promise<Si
   const now = deps.clock.now();
   const picked = await withTenant(deps.pools, ctx, async (tx) => {
     const [row] = await tx
-      .select({ id: proposals.id, number: proposals.number, customerId: proposals.customerId, name: customers.displayName })
+      .select({ id: proposals.id, number: proposals.number, customerId: proposals.customerId, name: customers.displayName, linkTokenEncrypted: proposals.linkTokenEncrypted })
       .from(proposals)
       .innerJoin(customers, and(eq(customers.companyId, proposals.companyId), eq(customers.id, proposals.customerId)))
       .where(and(inArray(proposals.status, ['sent', 'viewed']), isNull(proposals.signedAt), sql`${proposals.validUntil} >= ${now.toISOString().slice(0, 10)}::date`))
@@ -322,6 +324,8 @@ export async function simulateSign(deps: AppDeps, companyId: string): Promise<Si
     ok: true,
     proposalId: picked.id,
     customerId: picked.customerId,
+    // The homeowner's own page, where the signed copy appears once the worker has made it.
+    homeownerUrl: `/p/${encodeURIComponent(decrypt(picked.linkTokenEncrypted, deps.config.ENCRYPTION_KEY))}`,
     message: `${picked.name} signed proposal ${picked.number} (${picked.optionName}).`,
   };
 }

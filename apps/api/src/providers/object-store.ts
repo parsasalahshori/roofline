@@ -1,5 +1,6 @@
 import type { Pools } from '@roofline/db';
 import type { Config } from '../config.ts';
+import { DirObjectStore } from './fakes/dir-object-store.ts';
 import { MemoryObjectStore } from './fakes/object-store.ts';
 import { r2For } from './r2.ts';
 
@@ -33,6 +34,8 @@ export class UnconfiguredObjectStore implements ObjectStore {
 
 export function createObjectStore(config: Config, pools: Pools): ObjectStore {
   void pools;
+  // Demo mode: one directory shared by the API, the worker and the seed (in memory, each would have its own).
+  if (config.DEMO_MODE && config.DEMO_FILES_DIR) return new DirObjectStore(config.DEMO_FILES_DIR);
   if (config.FAKE_PROVIDERS) return new MemoryObjectStore();
   return r2For(config) ?? (config.NODE_ENV === 'production' ? new UnconfiguredObjectStore() : new MemoryObjectStore());
 }

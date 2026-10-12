@@ -27,3 +27,4 @@ scripts/eval-results/
 
 # The demo smoke's output (DEMO_VIDEO=1 records into it)
 demo-artifacts/
+.demo-files/

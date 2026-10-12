@@ -46,7 +46,7 @@ async function clickFirst(page: Page, selector: string): Promise<boolean> {
 }
 
 /** Opens the Demo badge's simulate panel and presses one simulation; it must succeed. */
-async function simulate(page: Page, which: 'text' | 'call' | 'storm' | 'sign'): Promise<void> {
+async function simulate(page: Page, which: 'text' | 'call' | 'storm' | 'sign'): Promise<Record<string, unknown>> {
   const panel = page.getByTestId('simulate-panel');
   if (!(await panel.isVisible().catch(() => false))) await page.getByTestId('demo-badge').click();
   await expect(panel).toBeVisible();
@@ -55,6 +55,7 @@ async function simulate(page: Page, which: 'text' | 'call' | 'storm' | 'sign'): 
   const response = await responded;
   expect(response.status(), `simulate ${which}`).toBeLessThan(300);
   await linger(page, 2000);
+  return (await response.json()) as Record<string, unknown>;
 }
 
 test('Roofline demo walkthrough', async ({ page }) => {
@@ -128,9 +129,22 @@ test('Roofline demo walkthrough', async ({ page }) => {
 
   await test.step('Simulate: a homeowner signs', async () => {
     await visit(page, '/estimator');
-    await simulate(page, 'sign');
+    const signed = await simulate(page, 'sign');
     await visit(page, '/estimator');
     await visit(page, '/agents/feed');
-  });
 
+    // The homeowner's page offers the signed copy once the worker has made it, and it is a real PDF.
+    const homeownerUrl = String(signed['homeownerUrl']);
+    expect(homeownerUrl).toMatch(/^\/p\//);
+    const pdfUrl = `/api/public/proposals/${homeownerUrl.slice('/p/'.length)}/signed.pdf`;
+    await expect
+      .poll(async () => (await page.request.get(pdfUrl)).status(), { timeout: 90_000, intervals: [1000, 2000] })
+      .toBe(200);
+    const pdf = await page.request.get(pdfUrl);
+    expect(pdf.headers()['content-type']).toContain('application/pdf');
+    expect((await pdf.body()).subarray(0, 5).toString()).toBe('%PDF-');
+    await page.goto(homeownerUrl);
+    await expect(page.getByRole('link', { name: 'Download your signed copy' })).toBeVisible({ timeout: 30_000 });
+    await linger(page);
+  });
 });
