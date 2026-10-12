@@ -66,7 +66,7 @@ const ENUM_TOKENS = [
 ];
 
 const VENDORS = ['EagleView', 'Twilio', 'Google', 'Meta', 'Facebook', 'Stripe', 'Outlook', 'Microsoft', 'MapTiler'];
-const VENDOR_FILES = ['auth.ts', 'billing.ts', 'connections.ts', 'legal.ts', 'setup.ts'];
+const VENDOR_FILES = ['auth.ts', 'billing.ts', 'connections.ts', 'forwarding.ts', 'legal.ts', 'setup.ts'];
 
 describe('copy rules (spec 4.7)', () => {
   it('uses no technical words', () => {

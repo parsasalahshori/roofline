@@ -10,7 +10,7 @@ export const forwarding = {
     other_gsm: 'Another cell phone company',
     landline: 'A landline',
     ringcentral: 'RingCentral',
-    google_voice: 'Goo' + 'gle Voice',
+    google_voice: 'Google Voice',
     ooma: 'Ooma',
     spectrum: 'Spectrum',
     comcast: 'Comcast',
