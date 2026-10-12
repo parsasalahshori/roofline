@@ -118,7 +118,7 @@ function stormId(raw: unknown): string {
 /**
  * `/api/storms`: `GET /layer` is the same storm layer; `GET /` and `GET /:id` list and show the company's
  * storms (any member; the list takes `?since=YYYY-MM-DD`, default the last 30 days); `POST /:id/dismiss` and `POST /:id/plan` need `approve_internal`. `:id` is the
- * company_storms id. A plan is drafted when the storm has none or its plan is a draft, expired or declined
+ * company_storms id. A plan is drafted when the storm has none or its plan is a draft (Ruling BD: A1 adds expired and declined)
  * (409 otherwise); 409 too when Storm Scout is paused. The answer stays `{ taskId }`. Everything else answers 404.
  */
 export function stormRoutes(deps: AppDeps): Router {

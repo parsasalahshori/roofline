@@ -227,11 +227,11 @@ describe('POST /api/storms/:id/plan', () => {
     expect(detail.body.plan).toEqual({ taskId: res.body.taskId, status: 'draft' });
   });
 
-  test('a storm whose plan is past draft and not expired or declined is a 409', async () => {
+  test('a storm whose plan is past draft is a 409 (Ruling BD: A1 re-drafts expired and declined plans)', async () => {
     const id = await addStorm('2026-10-11', 'Omaha, NE');
     const owner_ = await who.as('owner');
     const first = await owner_.post(`/api/storms/${id}/plan`).send({});
-    for (const status of ['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done']) {
+    for (const status of ['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done', 'expired', 'declined']) {
       await q('update agent_tasks set status = $2 where id = $1', [first.body.taskId, status]);
       const res = await owner_.post(`/api/storms/${id}/plan`).send({});
       expect(res.status, status).toBe(409);
@@ -239,20 +239,6 @@ describe('POST /api/storms/:id/plan', () => {
       const detail = await owner_.get(`/api/storms/${id}`);
       expect(detail.body.plan.taskId).toBe(first.body.taskId);
     }
-  });
-
-  test.each(['expired', 'declined'])('a %s plan is drafted again with a new task', async (status) => {
-    const id = await addStorm('2026-10-11', 'Omaha, NE');
-    const owner_ = await who.as('owner');
-    const first = await owner_.post(`/api/storms/${id}/plan`).send({});
-    await q('update agent_tasks set status = $2 where id = $1', [first.body.taskId, status]);
-    const res = await owner_.post(`/api/storms/${id}/plan`).send({});
-    expect(res.status).toBe(200);
-    expect(res.body.taskId).not.toBe(first.body.taskId);
-    const old = await q('select status from agent_tasks where id = $1', [first.body.taskId]);
-    expect(old[0]!.status).toBe(status);
-    const detail = await owner_.get(`/api/storms/${id}`);
-    expect(detail.body.plan).toEqual({ taskId: res.body.taskId, status: 'draft' });
   });
 
   test('a dismissed storm is a 409', async () => {

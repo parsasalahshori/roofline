@@ -351,21 +351,8 @@ describe('re-drafting', () => {
     expect(drafted).toEqual({ taskId: expect.any(String) });
   });
 
-  test.each(['expired', 'declined'] as const)('a %s plan is re-drafted into a new task, the old one keeps its status', async (status) => {
-    await addHit({ email: 'a@example.com' });
-    const first = await draft();
-    await setTask(t, 'a', first.taskId, { status });
-
-    const second = await draft();
-
-    expect(second.taskId).not.toBe(first.taskId);
-    expect((await companyStormRow()).plan_task_id).toBe(second.taskId);
-    expect((await dbTask(t, 'a', first.taskId)).status).toBe(status);
-    expect((await dbTask(t, 'a', second.taskId)).status).toBe('draft');
-  });
-
-  test.each(['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done'] as const)(
-    'a %s plan is left alone',
+  test.each(['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done', 'expired', 'declined'] as const)(
+    'a %s plan is left alone (Ruling BD: A1 re-drafts expired and declined plans)',
     async (status) => {
       await addHit({ email: 'a@example.com' });
       const first = await draft();
@@ -382,24 +369,15 @@ describe('re-drafting', () => {
     },
   );
 
-  test('a re-draft of a draft sends no second ready email, a re-draft after expiry or decline sends one', async () => {
+  test('a re-draft of a draft sends no second ready email', async () => {
     await addHit({ email: 'a@example.com' });
     const first = await draft();
     const perAlert = planEmails().length;
     expect(perAlert).toBeGreaterThan(0);
 
     const second = await draft();
+    expect(second.taskId).not.toBe(first.taskId);
     expect(planEmails()).toHaveLength(perAlert);
-
-    await setTask(t, 'a', second.taskId, { status: 'expired' });
-    const third = await draft();
-    expect(third.taskId).not.toBe(second.taskId);
-    expect(planEmails()).toHaveLength(perAlert * 2);
-
-    await setTask(t, 'a', third.taskId, { status: 'declined' });
-    await draft();
-    expect(planEmails()).toHaveLength(perAlert * 3);
-    expect(first.taskId).not.toBe(second.taskId);
   });
 
   test('a dismissed storm is not drafted', async () => {

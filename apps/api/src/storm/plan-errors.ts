@@ -10,5 +10,8 @@ export const PLAN_CHANGED = 'The plan changed while we were drafting. Please try
 export const PLAN_PAUSED = 'Storm Scout is paused. Turn it back on in Agents to draft a plan.';
 export const PLAN_EXISTS = 'This storm already has a plan. Open it in your tasks.';
 
-/** Plan task statuses a new draft may replace. Everything else (approved, running, awaiting_owner, partly_done, needs_attention, done) is never replaced. */
-export const REDRAFTABLE_PLAN_STATUSES: readonly TaskStatus[] = ['draft', 'expired', 'declined'];
+/**
+ * Plan task statuses a new draft may replace on s1-storm: a draft only. Ruling BD: A1 owns the re-draft
+ * mechanism and widens this to expired and declined (lockStormPlan / supersedeDraft) at its s1 merge.
+ */
+export const REDRAFTABLE_PLAN_STATUSES: readonly TaskStatus[] = ['draft'];

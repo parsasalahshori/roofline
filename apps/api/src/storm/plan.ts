@@ -25,9 +25,8 @@ import { PLAN_CHANGED, PLAN_DISMISSED, PLAN_NOT_FOUND, REDRAFTABLE_PLAN_STATUSES
 /*
  * Drafts the approval plan for one company storm (S1 Task 11): a text, an email, door routes and two
  * ad campaigns, each ON unless something is missing, in which case it is saved OFF with a plain
- * reason. Re-drafting replaces a draft, expired or declined plan; a plan that is approved, running,
- * awaiting the owner, partly done, needing attention or done is left alone. The owner is emailed "plan
- * ready" for a first draft and for a re-draft after expiry or decline, not for a re-draft of a draft.
+ * reason. Re-drafting replaces a draft plan only (Ruling BD: A1 adds expired and declined); any other plan
+ * is left alone. The owner is emailed "plan ready" for a first draft, not again for a re-draft of a draft.
  * This only creates the task; nothing is texted or mailed here.
  */
 
