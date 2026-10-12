@@ -27,7 +27,7 @@ export const STORED_FILE_KINDS = ['signed_proposal_pdf'] as const;
 export type StoredFileKind = (typeof STORED_FILE_KINDS)[number];
 
 // ---------------------------------------------------------------------------------------------
-// T4: proposal views, the signature record, canonical JSON (types and constants by the lead; the two functions below are shells)
+// T4: proposal views, the signature record, canonical JSON.
 import type { Outline, InstantEstimate } from './roof.ts';
 import type { AddOn } from './tiers.ts';
 import type { Scope, Calculation, QuoteLine } from './pricing.ts';
