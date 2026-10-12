@@ -25,10 +25,9 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
   const skip = useSkip();
   const unskip = useUnskip();
 
-  // The phone number step leads to the forwarding guide now, so it is not "coming with" anything for owners.
-  const phoneReady = item.key === 'phone_number' && item.comingWith === 'front_desk';
-  // The calendar step is live now: the server still says it comes later, and the row ignores that
-  const later = phoneReady || item.key === 'connect_calendar' ? null : item.comingWith;
+  // The calendar step (C1) and the phone number step (D1, the forwarding guide) are live now: the server
+  // may still say they come later, and the row ignores that
+  const later = item.key === 'connect_calendar' || item.key === 'phone_number' ? null : item.comingWith;
   // Connecting the calendar is every member's own action, so it does not wait on the owner
   const offersActions = (canAct || item.key === 'connect_calendar') && later === null && item.status !== 'done';
   const rejected = item.data.rejected === true;
