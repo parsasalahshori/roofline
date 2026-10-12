@@ -126,6 +126,23 @@ describe('schema', () => {
     }
   });
 
+  test('G1 tables are tenant tables with RLS forced', async () => {
+    const g1Tables = ['claims', 'claim_events', 'follow_up_log'] as const;
+    expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...g1Tables]));
+    for (const table of g1Tables) {
+      const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+        `select relrowsecurity, relforcerowsecurity from pg_class where oid = $1::regclass`,
+        [`public.${table}`],
+      );
+      expect(cls, table).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+      const policies = await ownerQuery<{ policyname: string }>(
+        `select policyname from pg_policies where schemaname = 'public' and tablename = $1`,
+        [table],
+      );
+      expect(policies.map((p) => p.policyname), table).toContain('tenant_isolation');
+    }
+  });
+
   test('running migrate a second time changes nothing', async () => {
     const before = await ownerQuery<{ n: number }>(`select count(*)::int as n from drizzle.__drizzle_migrations`);
     await migrate(urls.owner);
@@ -638,6 +655,189 @@ describe('same-company foreign keys', () => {
     ['messages.step_id', 'messages_company_step_fk', (c) => [insertMessageForStep, [c.a, c.gb.stepId]]],
   ])('a company-A row cannot point at a company-B row through %s', async (_column, constraint, build) => {
     const c = await twoCompanies();
+    const [sql, values] = build(c);
+    const err = await rejected(sql, values);
+    expect(err.code).toBe('23503');
+    expect(err.constraint).toBe(constraint);
+  });
+});
+
+describe('G1 schema', () => {
+  type G1Ids = { customerId: string; jobId: string; job2Id: string; appointmentId: string; messageId: string; taskId: string };
+
+  /** One customer, two jobs, an appointment, a message and a task in a company. */
+  async function makeG1Graph(companyId: string, tag: string): Promise<G1Ids> {
+    const [customer] = await ownerQuery<{ id: string }>(
+      `insert into customers (company_id, display_name) values ($1, $2) returning id`,
+      [companyId, `Customer ${tag}`],
+    );
+    const [property] = await ownerQuery<{ id: string }>(
+      `insert into properties (company_id, customer_id, address_line, city, state, zip, address_key)
+       values ($1, $2, '1 Main St', 'Omaha', 'NE', '68102', $3) returning id`,
+      [companyId, customer!.id, `${tag} main st|68102`],
+    );
+    const jobSql = `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3) returning id`;
+    const [job] = await ownerQuery<{ id: string }>(jobSql, [companyId, customer!.id, property!.id]);
+    const [job2] = await ownerQuery<{ id: string }>(jobSql, [companyId, customer!.id, property!.id]);
+    const [appointment] = await ownerQuery<{ id: string }>(
+      `insert into appointments (company_id, kind, starts_at, ends_at)
+       values ($1, 'inspection', now() + interval '1 hour', now() + interval '2 hours') returning id`,
+      [companyId],
+    );
+    const [message] = await ownerQuery<{ id: string }>(
+      `insert into messages (company_id, customer_id, channel, direction, body, status)
+       values ($1, $2, 'sms', 'out', 'Hi', 'queued') returning id`,
+      [companyId, customer!.id],
+    );
+    const [task] = await ownerQuery<{ id: string }>(
+      `insert into agent_tasks (company_id, agent, kind, title) values ($1, 'system', 'k', 't') returning id`,
+      [companyId],
+    );
+    return {
+      customerId: customer!.id,
+      jobId: job!.id,
+      job2Id: job2!.id,
+      appointmentId: appointment!.id,
+      messageId: message!.id,
+      taskId: task!.id,
+    };
+  }
+
+  type G1Fixture = { a: string; b: string; ga: G1Ids; gb: G1Ids; claimA: string };
+
+  async function g1Companies(): Promise<G1Fixture> {
+    const s = await seedTwoCompanies(urls.owner);
+    const ga = await makeG1Graph(s.a.companyId, 'a');
+    const gb = await makeG1Graph(s.b.companyId, 'b');
+    const [claim] = await ownerQuery<{ id: string }>(
+      `insert into claims (company_id, job_id) values ($1, $2) returning id`,
+      [s.a.companyId, ga.jobId],
+    );
+    return { a: s.a.companyId, b: s.b.companyId, ga, gb, claimA: claim!.id };
+  }
+
+  const insertClaim = `insert into claims (company_id, job_id, adjuster_appointment_id) values ($1, $2, $3)`;
+  const insertClaimEvent = `insert into claim_events (company_id, claim_id, to_status, by_actor) values ($1, $2, 'filed', 'user')`;
+  const insertFollowUp = `insert into follow_up_log (company_id, customer_id, job_id, kind, message_id) values ($1, $2, $3, 'claims', $4)`;
+  const setMovedBy = `update appointments set moved_by_task_id = $2 where id = $3 and company_id = $1`;
+
+  test('one claim per job: a second claim for the same job is rejected, another job is accepted', async () => {
+    const { a, ga } = await g1Companies();
+    const err = await rejected(`insert into claims (company_id, job_id) values ($1, $2)`, [a, ga.jobId]);
+    expect(err.code).toBe('23505');
+    expect(err.constraint).toBe('claims_company_job_uniq');
+    await ownerQuery(`insert into claims (company_id, job_id) values ($1, $2)`, [a, ga.job2Id]);
+    expect(await count('claims', a)).toBe(2);
+  });
+
+  test('a new claim starts not_filed with a status_changed_at, and rows of the same company link up', async () => {
+    const { a, ga, claimA } = await g1Companies();
+    const [claim] = await ownerQuery<{ status: string; stamped: boolean; deductible_cents: number | null }>(
+      `select status, status_changed_at is not null as stamped, deductible_cents from claims where id = $1`,
+      [claimA],
+    );
+    expect(claim).toEqual({ status: 'not_filed', stamped: true, deductible_cents: null });
+    await ownerQuery(insertClaimEvent, [a, claimA]);
+    await ownerQuery(insertFollowUp, [a, ga.customerId, ga.jobId, ga.messageId]);
+    await ownerQuery(setMovedBy, [a, ga.taskId, ga.appointmentId]);
+    await ownerQuery(`update claims set adjuster_appointment_id = $2 where id = $1`, [claimA, ga.appointmentId]);
+  });
+
+  test('claim, claim event and follow-up log columns reject values outside their enums', async () => {
+    const { a, ga, claimA } = await g1Companies();
+    const bad: [string, unknown[]][] = [
+      [`update claims set status = 'bogus' where id = $1`, [claimA]],
+      [`update claims set deductible_cents = -1 where id = $1`, [claimA]],
+      [`insert into claim_events (company_id, claim_id, to_status, by_actor) values ($1, $2, 'filed', 'robot')`, [a, claimA]],
+      [`insert into claim_events (company_id, claim_id, to_status, by_actor) values ($1, $2, 'bogus', 'user')`, [a, claimA]],
+      [
+        `insert into claim_events (company_id, claim_id, from_status, to_status, by_actor) values ($1, $2, 'bogus', 'filed', 'user')`,
+        [a, claimA],
+      ],
+      [`insert into follow_up_log (company_id, customer_id, kind) values ($1, $2, 'bogus')`, [a, ga.customerId]],
+      [`insert into follow_up_log (company_id, customer_id, kind, n) values ($1, $2, 'lead', 0)`, [a, ga.customerId]],
+    ];
+    for (const [sql, values] of bad) {
+      const err = await rejected(sql, values);
+      expect(err.code, sql).toBe('23514');
+    }
+    await ownerQuery(`update claims set deductible_cents = 0 where id = $1`, [claimA]);
+    await ownerQuery(`insert into follow_up_log (company_id, customer_id, kind) values ($1, $2, 'no_show')`, [a, ga.customerId]);
+    const [row] = await ownerQuery<{ n: number }>(`select n from follow_up_log where company_id = $1`, [a]);
+    expect(row).toEqual({ n: 1 });
+  });
+
+  test('company_settings carries the G1 defaults', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const [row] = await ownerQuery<Record<string, unknown>>(
+      `select claims_nudge_days, weather_rain_pct, weather_gust_mph, reminder_hour, followup_days,
+              lead_followup_days, review_link, review_delay_days, followup_reviews, followup_leads, followup_proposals
+         from company_settings where company_id = $1`,
+      [s.a.companyId],
+    );
+    expect(row).toEqual({
+      claims_nudge_days: [3, 5, 7],
+      weather_rain_pct: 60,
+      weather_gust_mph: 25,
+      reminder_hour: 15,
+      followup_days: [3, 4],
+      lead_followup_days: 2,
+      review_link: null,
+      review_delay_days: 3,
+      followup_reviews: true,
+      followup_leads: true,
+      followup_proposals: true,
+    });
+  });
+
+  test.each<[string, string]>([
+    ['weather_rain_pct', '101'],
+    ['weather_rain_pct', '-1'],
+    ['weather_gust_mph', '0'],
+    ['weather_gust_mph', '101'],
+    ['reminder_hour', '24'],
+    ['reminder_hour', '-1'],
+    ['lead_followup_days', '0'],
+    ['lead_followup_days', '31'],
+    ['review_delay_days', '-1'],
+    ['review_delay_days', '31'],
+  ])('company_settings.%s rejects %s', async (column, value) => {
+    const s = await seedTwoCompanies(urls.owner);
+    const err = await rejected(`update company_settings set ${column} = ${value} where company_id = $1`, [s.a.companyId]);
+    expect(err.code).toBe('23514');
+  });
+
+  test('company_settings G1 bounds accept their edge values', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    await ownerQuery(
+      `update company_settings set weather_rain_pct = 0, weather_gust_mph = 100, reminder_hour = 23,
+              lead_followup_days = 30, review_delay_days = 0 where company_id = $1`,
+      [s.a.companyId],
+    );
+  });
+
+  test.each<[string, string, (c: G1Fixture) => [string, unknown[]]]>([
+    ['claims.job_id', 'claims_company_job_fk', (c) => [insertClaim, [c.a, c.gb.jobId, null]]],
+    [
+      'claims.adjuster_appointment_id',
+      'claims_company_adjuster_appointment_fk',
+      (c) => [insertClaim, [c.a, c.ga.job2Id, c.gb.appointmentId]],
+    ],
+    ['claim_events.claim_id', 'claim_events_company_claim_fk', (c) => [insertClaimEvent, [c.b, c.claimA]]],
+    [
+      'follow_up_log.customer_id',
+      'follow_up_log_company_customer_fk',
+      (c) => [insertFollowUp, [c.a, c.gb.customerId, null, null]],
+    ],
+    ['follow_up_log.job_id', 'follow_up_log_company_job_fk', (c) => [insertFollowUp, [c.a, c.ga.customerId, c.gb.jobId, null]]],
+    [
+      'follow_up_log.message_id',
+      'follow_up_log_company_message_fk',
+      (c) => [insertFollowUp, [c.a, c.ga.customerId, null, c.gb.messageId]],
+    ],
+    ['appointments.moved_by_task_id', 'appointments_company_moved_by_task_fk', (c) => [setMovedBy, [c.a, c.gb.taskId, c.ga.appointmentId]]],
+  ])('a company-A row cannot point at a company-B row through %s', async (_column, constraint, build) => {
+    const c = await g1Companies();
     const [sql, values] = build(c);
     const err = await rejected(sql, values);
     expect(err.code).toBe('23503');

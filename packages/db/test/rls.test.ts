@@ -329,6 +329,18 @@ describe('grants', () => {
       ['company_settings', 'stuck_after_days'],
       ['jobs', 'next_step'],
       ['jobs', 'next_step_on'],
+      ['company_settings', 'claims_nudge_days'],
+      ['company_settings', 'weather_rain_pct'],
+      ['company_settings', 'weather_gust_mph'],
+      ['company_settings', 'reminder_hour'],
+      ['company_settings', 'followup_days'],
+      ['company_settings', 'lead_followup_days'],
+      ['company_settings', 'review_link'],
+      ['company_settings', 'review_delay_days'],
+      ['company_settings', 'followup_reviews'],
+      ['company_settings', 'followup_leads'],
+      ['company_settings', 'followup_proposals'],
+      ['appointments', 'moved_by_task_id'],
     ];
     const rows = await ownerQuery<{ table_name: string; column_name: string; can_update: boolean }>(
       `select t as table_name, c as column_name,
@@ -337,6 +349,14 @@ describe('grants', () => {
       [columns.map(([t]) => t), columns.map(([, c]) => c)],
     );
     expect(rows).toEqual(columns.map(([table_name, column_name]) => ({ table_name, column_name, can_update: true })));
+  });
+
+  test('G1 tables: app_tenant has S/I/U and no DELETE or TRUNCATE; app_system has nothing', async () => {
+    const g1Tables = ['claims', 'claim_events', 'follow_up_log'] as const;
+    expect(await tablePrivileges('app_tenant', g1Tables)).toEqual(g1Tables.map((t) => privs(t, true, true, true, false)));
+    expect(await tablePrivileges('app_system', g1Tables)).toEqual(
+      g1Tables.map((t) => privs(t, false, false, false, false)),
+    );
   });
 
   test('app_tenant: SELECT only on the company-scoped global tables, nothing on the private ones', async () => {
@@ -747,6 +767,28 @@ describe('app_tenant isolation', () => {
     const { code, message } = error as pg.DatabaseError;
     expect(code === '23503' || /row-level security/.test(message)).toBe(true);
     expect(await ownerQuery(`select count(*)::int n from jobs`)).toEqual([{ n: 0 }]);
+  });
+
+  test('tenant role cannot see a claim of another company and cannot insert one for it', async () => {
+    const bCustomer = await insertCustomer(seed.b.companyId, 'Bob');
+    const bProperty = await insertProperty(seed.b.companyId, bCustomer, '1 main st|68102');
+    const [bJob] = await ownerQuery<{ id: string }>(
+      `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3) returning id`,
+      [seed.b.companyId, bCustomer, bProperty],
+    );
+    await ownerQuery(`insert into claims (company_id, job_id) values ($1, $2)`, [seed.b.companyId, bJob!.id]);
+
+    expect(await tenantRaw(`select id from claims`, { companyId: seed.a.companyId })).toEqual([]);
+    expect(
+      await tenantRaw(`select company_id from claims`, { companyId: seed.b.companyId }),
+    ).toEqual([{ company_id: seed.b.companyId }]);
+    await expect(
+      tenantRaw(`insert into claims (company_id, job_id) values ($1, $2)`, {
+        companyId: seed.a.companyId,
+        values: [seed.b.companyId, bJob!.id],
+      }),
+    ).rejects.toThrow(/row-level security/);
+    expect(await ownerQuery(`select count(*)::int n from claims`)).toEqual([{ n: 1 }]);
   });
 
   test.each<[string, string]>([
