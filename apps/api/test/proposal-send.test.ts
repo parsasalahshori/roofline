@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { customers, measurements, proposalEvents, proposals } from '@roofline/db';
 import { addressFor, Actors, dbJob, inCompany, mustCreate, NO_UUID } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
-import { BATCH_AT, DAYTIME, NO_CONSENT, stepMessages } from './sms-helpers.ts';
+import { DAYTIME, NO_CONSENT, stepMessages } from './sms-helpers.ts';
 import { dbSteps, seenOf } from './task-helpers.ts';
 import { dispatchCompanyMessages } from '../src/messaging/dispatcher.ts';
 
@@ -169,7 +169,7 @@ describe('approving the send', () => {
   });
 
   test('in quiet hours the text is scheduled; when the dispatcher sends it the proposal becomes sent', async () => {
-    t.clock.set(BATCH_AT);
+    t.clock.set(new Date('2026-10-15T06:00:00.000Z')); // 01:00 in Omaha: quiet hours
     const s = await draft();
     const taskId = await askToSend(s.owner, s.proposal.id);
     await approveAndRun(s.owner, taskId);
