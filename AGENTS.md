@@ -32,7 +32,8 @@ lives anywhere else.
 | F2 web shell and design kit | `docs/superpowers/plans/2026-10-11-roofline-f2-shell.md` | **done**: Tasks 1-19 + P1 on `f2-shell`, CI green incl. e2e |
 | F3 setup, texting, billing, import | `docs/superpowers/plans/2026-10-11-roofline-f3-setup.md` (on `f3-setup`) + briefs `ops/sdd/f3/` | **done** (8b8400a): 37 tasks, polish, integration-review fixes A-C |
 | C1 Core CRM | `docs/superpowers/plans/2026-10-12-roofline-core-crm.md` + briefs `ops/sdd/c1/` | **done** except T29 (owner: real Google/Outlook smoke); T1-T28 + whole-branch review on `c1-crm` |
-| E1, S1, D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{e1,s1,d1,a1,g1}/` | planned, briefs ready |
+| E1 Estimator | `docs/superpowers/plans/2026-10-12-roofline-estimator.md` | **done** (630ffcf): T1-T22 + whole-branch review; owner runs T22 smoke |
+| S1, D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{s1,d1,a1,g1}/` | in progress (see each ledger); D1 T4 merge waits on the owner |
 
 All finished branches are merged (2026-10-12): F3 T26, T31-T35 into `f3-setup` (330ca23); C1 T2-T4 and the
 latest `f3-setup` into `c1-crm` (dfa9132).
