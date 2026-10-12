@@ -15,3 +15,8 @@ export * from './pipeline.ts';
 export * from './availability.ts';
 export * from './crm.ts';
 export * from './csv.ts';
+// D1 skeleton (Task 1): one line per new shared file; later D1 tasks fill the files in.
+export * from './front-desk.ts';
+export * from './front-desk-tools.ts';
+export * from './forwarding.ts';
+export * from './recording-consent.ts';

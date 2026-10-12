@@ -14,3 +14,8 @@ export * from './scheduler.ts';
 export * from './routing.ts';
 // C1 skeleton (Task 1).
 export * from './calendar-sync.ts';
+// D1 skeleton (Task 1).
+export * from './voice-routing.ts';
+export * from './relay-tokens.ts';
+export * from './line-lookups.ts';
+export * from './fd-retention.ts';

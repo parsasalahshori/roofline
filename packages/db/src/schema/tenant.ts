@@ -21,7 +21,9 @@ import {
   APPROVAL_CLASSES,
   CONSENT_STATUSES,
   CUSTOMER_SOURCES,
+  DEFAULT_FRONT_DESK_VOICE,
   DEFAULT_WORK_HOURS,
+  FRONT_DESK_VOICES,
   GATE_RULES,
   IMPORT_ROW_OUTCOMES,
   IMPORT_STATUSES,
@@ -45,10 +47,23 @@ import {
   APPOINTMENT_STATUSES,
   CALENDAR_CONNECTION_STATUSES,
   CALENDAR_PROVIDERS,
+  CALL_STATUSES,
+  CLAIM_TAKEN_BY,
+  CONFIRMED_VIA,
+  CONSENT_REGIMES,
+  CONVERSATION_CHANNELS,
+  CONVERSATION_OUTCOMES,
+  CONVERSATION_STATUSES,
   EARLY_DELIVERY_STATUSES,
+  HANDLED_BY,
+  IDENTITY_LEVELS,
   INTEGRATION_STATUSES,
   QUOTE_STATUSES,
+  RECORDING_STATUSES,
   TASK_MODES,
+  TRANSFER_RESULTS,
+  TURN_ROUTES,
+  TURN_SPEAKERS,
   USAGE_KINDS,
 } from './enums.ts';
 import { companies, users } from './global.ts';
@@ -84,6 +99,11 @@ export const TENANT_TABLES = [
   'pricebooks',
   'quotes',
   'quote_counters',
+  'conversations',
+  'calls',
+  'conversation_turns',
+  'claim_intakes',
+  'blocked_numbers',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -121,6 +141,23 @@ export const companySettings = pgTable(
     minNoticeMinutes: integer('min_notice_minutes').notNull().default(120),
     /** Days in stage before a Lead, Inspection or Proposal counts as stuck. */
     stuckAfterDays: integer('stuck_after_days').notNull().default(14),
+    /** Front Desk: false until forwarding passes or the owner turns it on. */
+    frontDeskEnabled: boolean('front_desk_enabled').notNull().default(false),
+    /** Front Desk: text the caller back about a missed call and answer SMS. */
+    frontDeskTexts: boolean('front_desk_texts').notNull().default(true),
+    /** Seconds the team's phones ring before the assistant answers; 0 turns it off. */
+    ringTeamFirstSeconds: integer('ring_team_first_seconds').notNull().default(0),
+    frontDeskVoice: text('front_desk_voice').notNull().default(DEFAULT_FRONT_DESK_VOICE),
+    /** Facts the assistant may state about the company (hours, areas, services), at most 2,000 characters. */
+    frontDeskFacts: text('front_desk_facts').notNull().default(''),
+    frontDeskCanMove: boolean('front_desk_can_move').notNull().default(true),
+    frontDeskCanCancel: boolean('front_desk_can_cancel').notNull().default(true),
+    missedCallTextBack: boolean('missed_call_text_back').notNull().default(true),
+    /** Days to keep call recordings; 0 means do not record. */
+    recordingRetentionDays: integer('recording_retention_days').notNull().default(90),
+    transcriptRetentionDays: integer('transcript_retention_days').notNull().default(365),
+    maxConcurrentAiCalls: integer('max_concurrent_ai_calls').notNull().default(4),
+    forwardingVerifiedAt: tstz('forwarding_verified_at'),
     ...timestamps(),
   },
   (t) => [
@@ -128,6 +165,17 @@ export const companySettings = pgTable(
     check('company_settings_travel_buffer_minutes_check', sql`${t.travelBufferMinutes} between 0 and 120`),
     check('company_settings_min_notice_minutes_check', sql`${t.minNoticeMinutes} between 0 and 4320`),
     check('company_settings_stuck_after_days_check', sql`${t.stuckAfterDays} between 3 and 90`),
+    check('company_settings_ring_team_first_seconds_check', sql`${t.ringTeamFirstSeconds} between 0 and 30`),
+    enumCheck(
+      'company_settings',
+      'front_desk_voice',
+      t.frontDeskVoice,
+      FRONT_DESK_VOICES.map((v) => v.id),
+    ),
+    check('company_settings_front_desk_facts_check', sql`char_length(${t.frontDeskFacts}) <= 2000`),
+    check('company_settings_recording_retention_days_check', sql`${t.recordingRetentionDays} between 0 and 365`),
+    check('company_settings_transcript_retention_days_check', sql`${t.transcriptRetentionDays} between 30 and 730`),
+    check('company_settings_max_concurrent_ai_calls_check', sql`${t.maxConcurrentAiCalls} between 1 and 10`),
   ],
 );
 
@@ -475,13 +523,21 @@ export const messages = pgTable(
      * (so it never went out); false when it may have gone out (unconfirmed) or can never go out.
      */
     retryable: boolean('retryable').notNull().default(false),
+    /** Front Desk: the conversation a text belongs to (null for texts outside Front Desk). */
+    conversationId: uuid('conversation_id'),
     ...timestamps(),
   },
   (t) => [
+    unique('messages_company_id_id_uniq').on(t.companyId, t.id),
     foreignKey({
       name: 'messages_company_customer_fk',
       columns: [t.companyId, t.customerId],
       foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'messages_company_conversation_fk',
+      columns: [t.companyId, t.conversationId],
+      foreignColumns: [conversations.companyId, conversations.id],
     }),
     foreignKey({
       name: 'messages_company_step_fk',
@@ -641,6 +697,9 @@ export const appointments = pgTable(
     createdByUserId: userRef('created_by_user_id'),
     canceledAt: tstz('canceled_at'),
     archivedAt: tstz('archived_at'),
+    /** When the customer confirmed the visit, and how (a call, a text, or a person marking it). */
+    confirmedAt: tstz('confirmed_at'),
+    confirmedVia: text('confirmed_via', { enum: CONFIRMED_VIA }),
     ...timestamps(),
   },
   (t) => [
@@ -667,6 +726,7 @@ export const appointments = pgTable(
     enumCheck('appointments', 'kind', t.kind, APPOINTMENT_KINDS),
     enumCheck('appointments', 'status', t.status, APPOINTMENT_STATUSES),
     enumCheck('appointments', 'source', t.source, APPOINTMENT_SOURCES),
+    enumCheck('appointments', 'confirmed_via', t.confirmedVia, CONFIRMED_VIA),
   ],
 );
 
@@ -825,3 +885,187 @@ export const quoteCounters = pgTable('quote_counters', {
   nextNumber: integer('next_number').notNull().default(1),
   ...timestamps(),
 });
+
+/*
+ * Front Desk (D1). A conversation is one thread with one other party: a phone call or the SMS
+ * thread with one number. The transcript (`conversation_turns`) is shared by both channels.
+ */
+
+export type ToolCallRecord = { name: string; input: unknown; result: string; ok: boolean };
+
+export const conversations = pgTable(
+  'conversations',
+  {
+    id: pk(),
+    companyId: companyId(),
+    channel: text('channel', { enum: CONVERSATION_CHANNELS }).notNull(),
+    customerId: uuid('customer_id'),
+    /** The other party's number (the caller, or the customer texting in). */
+    phoneE164: text('phone_e164').notNull(),
+    /** The company number the contact used. */
+    companyNumberE164: text('company_number_e164').notNull(),
+    status: text('status', { enum: CONVERSATION_STATUSES }).notNull().default('active'),
+    handledBy: text('handled_by', { enum: HANDLED_BY }).notNull().default('assistant'),
+    /** When a person took over; the assistant may answer again after this. */
+    teamUntil: tstz('team_until'),
+    lastMessageAt: tstz('last_message_at').notNull().defaultNow(),
+    unreadCount: integer('unread_count').notNull().default(0),
+    summary: text('summary'),
+    outcome: text('outcome', { enum: CONVERSATION_OUTCOMES }),
+    identity: text('identity', { enum: IDENTITY_LEVELS }).notNull().default('unknown'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('conversations_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'conversations_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    index('conversations_company_last_message_idx').on(t.companyId, t.lastMessageAt.desc()),
+    /** One open SMS thread per company number and contact. */
+    uniqueIndex('conversations_active_sms_uniq')
+      .on(t.companyId, t.phoneE164)
+      .where(sql`${t.channel} = 'sms' and ${t.status} = 'active'`),
+    enumCheck('conversations', 'channel', t.channel, CONVERSATION_CHANNELS),
+    enumCheck('conversations', 'status', t.status, CONVERSATION_STATUSES),
+    enumCheck('conversations', 'handled_by', t.handledBy, HANDLED_BY),
+    enumCheck('conversations', 'outcome', t.outcome, CONVERSATION_OUTCOMES),
+    enumCheck('conversations', 'identity', t.identity, IDENTITY_LEVELS),
+  ],
+);
+
+export const calls = pgTable(
+  'calls',
+  {
+    id: pk(),
+    companyId: companyId(),
+    conversationId: uuid('conversation_id'),
+    /** The provider's call id. Unique across companies: one call is one row. */
+    callSid: text('call_sid').notNull().unique(),
+    fromE164: text('from_e164').notNull(),
+    toE164: text('to_e164').notNull(),
+    forwardedFrom: text('forwarded_from'),
+    stirVerstat: text('stir_verstat'),
+    status: text('status', { enum: CALL_STATUSES }).notNull().default('ringing'),
+    startedAt: tstz('started_at').notNull().defaultNow(),
+    aiStartedAt: tstz('ai_started_at'),
+    endedAt: tstz('ended_at'),
+    aiSeconds: integer('ai_seconds').notNull().default(0),
+    billedMinutes: integer('billed_minutes').notNull().default(0),
+    recordingKey: text('recording_key'),
+    recordingStatus: text('recording_status', { enum: RECORDING_STATUSES }).notNull().default('none'),
+    recordingSeconds: integer('recording_seconds'),
+    consentRegime: text('consent_regime', { enum: CONSENT_REGIMES }),
+    transcriptStored: boolean('transcript_stored').notNull().default(false),
+    transferUserId: userRef('transfer_user_id'),
+    transferResult: text('transfer_result', { enum: TRANSFER_RESULTS }),
+    spamReason: text('spam_reason'),
+    textBackMessageId: uuid('text_back_message_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('calls_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'calls_company_conversation_fk',
+      columns: [t.companyId, t.conversationId],
+      foreignColumns: [conversations.companyId, conversations.id],
+    }),
+    foreignKey({
+      name: 'calls_company_text_back_message_fk',
+      columns: [t.companyId, t.textBackMessageId],
+      foreignColumns: [messages.companyId, messages.id],
+    }),
+    index('calls_company_started_idx').on(t.companyId, t.startedAt),
+    enumCheck('calls', 'status', t.status, CALL_STATUSES),
+    enumCheck('calls', 'recording_status', t.recordingStatus, RECORDING_STATUSES),
+    enumCheck('calls', 'consent_regime', t.consentRegime, CONSENT_REGIMES),
+    enumCheck('calls', 'transfer_result', t.transferResult, TRANSFER_RESULTS),
+  ],
+);
+
+export const conversationTurns = pgTable(
+  'conversation_turns',
+  {
+    id: pk(),
+    companyId: companyId(),
+    conversationId: uuid('conversation_id').notNull(),
+    callId: uuid('call_id'),
+    position: integer('position').notNull(),
+    speaker: text('speaker', { enum: TURN_SPEAKERS }).notNull(),
+    text: text('text').notNull(),
+    truncated: boolean('truncated').notNull().default(false),
+    at: tstz('at').notNull().defaultNow(),
+    model: text('model'),
+    route: text('route', { enum: TURN_ROUTES }),
+    routerMs: integer('router_ms'),
+    firstTokenMs: integer('first_token_ms'),
+    totalMs: integer('total_ms'),
+    inputTokens: integer('input_tokens'),
+    cachedTokens: integer('cached_tokens'),
+    outputTokens: integer('output_tokens'),
+    toolCalls: jsonb('tool_calls').$type<ToolCallRecord[]>(),
+    guardHits: text('guard_hits').array().notNull().default([]),
+  },
+  (t) => [
+    unique('conversation_turns_company_id_id_uniq').on(t.companyId, t.id),
+    uniqueIndex('conversation_turns_conversation_position_uniq').on(t.conversationId, t.position),
+    foreignKey({
+      name: 'conversation_turns_company_conversation_fk',
+      columns: [t.companyId, t.conversationId],
+      foreignColumns: [conversations.companyId, conversations.id],
+    }),
+    foreignKey({
+      name: 'conversation_turns_company_call_fk',
+      columns: [t.companyId, t.callId],
+      foreignColumns: [calls.companyId, calls.id],
+    }),
+    enumCheck('conversation_turns', 'speaker', t.speaker, TURN_SPEAKERS),
+    enumCheck('conversation_turns', 'route', t.route, TURN_ROUTES),
+  ],
+);
+
+/** A claim the assistant or a person took down for a customer (insurer, claim number, loss details). */
+export const claimIntakes = pgTable(
+  'claim_intakes',
+  {
+    id: pk(),
+    companyId: companyId(),
+    jobId: uuid('job_id'),
+    conversationId: uuid('conversation_id'),
+    insurer: text('insurer').notNull(),
+    claimNumber: text('claim_number'),
+    dateOfLoss: date('date_of_loss', { mode: 'string' }),
+    description: text('description').notNull(),
+    adjusterVisitAt: tstz('adjuster_visit_at'),
+    takenBy: text('taken_by', { enum: CLAIM_TAKEN_BY }).notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'claim_intakes_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'claim_intakes_company_conversation_fk',
+      columns: [t.companyId, t.conversationId],
+      foreignColumns: [conversations.companyId, conversations.id],
+    }),
+    enumCheck('claim_intakes', 'taken_by', t.takenBy, CLAIM_TAKEN_BY),
+  ],
+);
+
+/** Numbers the company refuses to take calls or texts from. */
+export const blockedNumbers = pgTable(
+  'blocked_numbers',
+  {
+    id: pk(),
+    companyId: companyId(),
+    e164: text('e164').notNull(),
+    reason: text('reason'),
+    blockedBy: userRef('blocked_by'),
+    createdAt: tstz('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('blocked_numbers_company_e164_uniq').on(t.companyId, t.e164)],
+);
