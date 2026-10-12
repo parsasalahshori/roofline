@@ -87,14 +87,20 @@ test('Esc and ✕ go home, Back goes to the previous window', async ({ page, log
 test('deep link opens the review directly', async ({ page, loginAs, scenario }) => {
   // Today is not marked seen here, so Today would be due: a deep link must not open it over the review.
   await loginAs(page, 'owner');
+  const asked: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/api/me/today-shown')) asked.push(r.url());
+  });
   await page.goto('/approvals/' + scenario.taskId);
-  await expect(page).toHaveURL('/approvals/' + scenario.taskId);
   const dialog = page.getByRole('dialog', { name: 'Need your OK' });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('Storm plan: hail on the north side');
   await expect(page.getByRole('button', { name: 'Approve 3 steps · up to $270' })).toBeVisible();
+  // Give a stray Today question time to be sent before concluding there was none
+  await page.waitForTimeout(1000);
+  expect(asked).toHaveLength(0);
+  await expect(page).toHaveURL('/approvals/' + scenario.taskId);
   await expect(page.getByRole('dialog', { name: 'My day' })).toHaveCount(0);
-  expect(page.url().endsWith('/today')).toBe(false);
 });
 
 test('focus stays inside the window', async ({ page, loginAs, markTodaySeen }) => {

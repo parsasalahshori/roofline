@@ -30,6 +30,7 @@ describe('review words', () => {
 
   it('names the customers, the send time and the spend of a step', () => {
     expect(review.recipients(31)).toBe('31 customers');
+    expect(review.recipients(1)).toBe('1 customer');
     expect(review.sendTime('9:00 AM')).toBe('Sends 9:00 AM · quiet hours respected');
     expect(review.spend(27000)).toBe('Up to $270');
   });
@@ -55,6 +56,10 @@ describe('result lines', () => {
         detail: { a: 1 },
       }),
     ).toEqual(['31 sent', '29 delivered', "1 couldn't send", '2 held back', '4 replies', '3 inspections booked']);
+  });
+
+  it('uses the singular word for a count of one', () => {
+    expect(review.resultLines({ replies: 1, booked: 1 })).toEqual(['1 reply', '1 inspection booked']);
   });
 
   it('keeps zero counts', () => {

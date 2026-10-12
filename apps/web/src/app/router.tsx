@@ -14,6 +14,7 @@ import { AppWindow } from '../shell/AppWindow.tsx';
 import type { ComingSoonKey } from '../shell/apps.ts';
 import { NotFoundWindow } from '../shell/NotFoundWindow.tsx';
 import { Shell } from '../shell/Shell.tsx';
+import { RouteError } from './RouteError.tsx';
 import { redirectToSignIn, RequireSession, resetSignInRedirect } from './RequireSession.tsx';
 
 /** A window for an app that is not built yet: its title, and the line that says so. */
@@ -34,10 +35,17 @@ const routes: RouteObject[] = [
   {
     // Everything else needs a session. The shell (map, dock, windows) is the one layout under it.
     element: <RequireSession />,
+    // The last resort: something outside the shell failed to render
+    errorElement: <RouteError />,
     children: [
       {
         element: <Shell />,
         children: [
+          {
+            // A window that fails to render shows the error in the window area; the map, dock and
+            // top bar stay (a pathless layout, so the error renders in the shell's outlet)
+            errorElement: <RouteError variant="window" />,
+            children: [
           // The map is the home page: no window
           { index: true },
           { path: 'approvals', element: <AppWindow app="approvals"><ApprovalsList /></AppWindow> },
@@ -57,6 +65,8 @@ const routes: RouteObject[] = [
           { path: 'today', element: <AppWindow app="today"><Today /></AppWindow> },
           // Anything else
           { path: '*', element: <NotFoundWindow /> },
+            ],
+          },
         ],
       },
     ],

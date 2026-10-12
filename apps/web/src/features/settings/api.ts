@@ -72,7 +72,11 @@ export function useInvite() {
   });
 }
 
-/** Changes a member's role, spending permission or status (owner only). A 400 means it would leave the company without an owner. */
+/**
+ * Changes a member's role, spending permission or status (owner only). A 400 means it would leave the company without an owner.
+ * The session and the approvals are asked again too: when the member is the viewer, their own role
+ * (and so the owner controls) changes with it.
+ */
 export function useUpdateMember() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -81,6 +85,11 @@ export function useUpdateMember() {
         method: 'PATCH',
         body: update.changes,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.team }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: keys.team }),
+        queryClient.invalidateQueries({ queryKey: keys.me }),
+        queryClient.invalidateQueries({ queryKey: keys.approvals }),
+      ]).then(() => undefined),
   });
 }
