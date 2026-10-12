@@ -61,3 +61,23 @@ Ruling EE: the signed-agreement email (T13) contains a link to `GET /api/public/
 - W6: T21; T22 by hand.
 
 ## Tasks
+
+## Build log
+Track lead session_01UtFnF1PL9Tbc2z44JfhQDM (started by controller session_01LXtxzoHNoWz5SACkLF1d2p). `e1-estimator` = c1-crm dfa9132 + e4dbe2f (briefs/constraints renumbered to 0015/0016 per Ruling AP).
+Wave 1 (wf_c2f810c9-41c, contact 101): T1 on e1-t1, base e4dbe2f.
+Wave 2 in parallel (wf_8c32dc49-5b4, contact 102): T2, T3, T4 on scratch commit 4f9bae5 (branch e1-scratch, on e4dbe2f) that writes T1's shared constants block in `shared/proposals.ts`, type-only stubs of T2's `LngLat/Ring/Outline/InstantEstimate` (`roof.ts`) and T3's `AddOn` (`tiers.ts`), and the three barrel lines.
+Merge rule (T1 first): add/add conflicts → `roof.ts` takes T2, `tiers.ts` takes T3, `proposals.ts` = T1's constants block + T4's additions below it, `shared/index.ts` = T1's.
+On T1 merge: send_message S1 session_01XaGX8pcLBpR2SWeGqsd3gP with the e1-estimator sha, copy controller.
+CI outage (controller, 02:21Z): GitHub Actions down (billing). No merges into e1-estimator until CI passes. Waves 1-2 started before the notice, so their ci-check calls fail; any commit made only to chase that failure is reviewed and reverted before merge. When CI returns: ci-check each waiting task branch, then merge.
+Task 1 (wf_c2f810c9-41c, contact 101): 78756e6, review clean, CI 38194636634 green (Platform incl. DB suites, E2E; ran 02:08-02:23Z, before the outage). Lead review: 0016 grants/RLS match the brief; `drizzle-kit generate` reports no changes. Extra (kept): `GRANT USAGE, SELECT ON SEQUENCE building_footprints_id_seq TO app_system` (bigserial inserts by the loader); db-only `TIER_MATERIALS` in `schema/enums.ts`; company_settings new columns rely on 0002's table-wide tenant grants. Task 1: complete. Merged into e1-estimator c0ac821 (typecheck, lint clean; playwright-core 1.56.1 only).
+Wave 2 (wf_8c32dc49-5b4, contact 102), base scratch 4f9bae5:
+- T2 4faa753: review clean, CI 38194659737 green. `offsetOutline` (in the brief's Split but not its Interfaces) not built; geometry in `roof-geometry.ts`, re-exported by `roof.ts`. Task 2: complete.
+- T3 8c35f6b: review clean, CI 38194921319 green. Judgement: spec Decision 10's "highlights +" would give Better 5 highlights over the cap of 4; Better drops "Tear-off and cleanup". `monthlyPaymentCents` throws RangeError on a non-finite principal. Task 3: complete.
+- T4 a96d7be: review clean, local verify clean; CI 38195634306 cancelled by the outage, re-run (same run id) green. Task 4: complete.
+Merged into e1-estimator: T2 387349a (roof.ts from T2; proposals/tiers/index from T1), T3 6fc70ba (tiers.ts from T3), origin/c1-crm 0a7c943 (C1 T18), T4 (clean). shared 454 tests, web copy-rules, typecheck, lint clean; playwright-core 1.56.1 only.
+Carries: send_proposal preview labels totals Good/Better/Best by position only when 3 totals: T8/T11 always send 3 totals in tier order, or extend the payload to {tier,totalCents} (group check 102). pitchFactor/geometry minors in task-2-report.md.
+Wave 3 (wf_52209e53-04e, contact 103, builders Sonnet per Ruling AQ): T5 on e1-t5 from e1-w3base 2504960 (= e1-estimator 278a478 + merge of origin/c1-t5 46e54e3, C1 T5 whose CI has not passed yet); T14 on e1-t14 from 278a478.
+Merge rule: e1-t5 is merged into e1-estimator only after C1 T5 is CI-green (ideally after c1-crm carries it and is merged into e1-estimator first); C1 T25 later rewrites PricesTab.tsx: keep C1's body and E1 T14's three section slots.
+Merged origin/c1-crm 0fe2b16 (C1 T5 CI 38195617057; F3 T28, T37) into e1-estimator: typecheck, lint clean; drizzle-kit no changes.
+Ruling EF (controller, accepted): tier highlights capped at 4 (Better drops "Tear-off and cleanup"; spec D10's "highlights +" would exceed the cap).
+Ruling EG (controller, accepted): `offsetOutline` (named only in the T2 brief's Split, not its Interfaces) is not built; the edge allowance `perimeter + 8 × overhang` stands.
