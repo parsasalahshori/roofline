@@ -14,3 +14,6 @@
 
 ## Verify output tail
 typecheck: clean. lint: clean. vitest shared + send-gate: 33 files, 1182 tests passed.
+
+## CI round 1
+Run 38215911397: Platform failed on storm-skeleton.test.ts (send_email_batch is no longer a not-yet stub); E2E and Hail passed. Fixed by dropping send_email_batch from the stub-rejection loop (still asserted registered).
