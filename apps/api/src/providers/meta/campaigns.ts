@@ -95,7 +95,7 @@ function customLocations(c: MetaCreate): Record<string, unknown>[] {
 
 function imageForm(png: Uint8Array): FormData {
   const form = new FormData();
-  form.append('filename', new Blob([png], { type: 'image/png' }), 'ad.png');
+  form.append('filename', new Blob([new Uint8Array(png)], { type: 'image/png' }), 'ad.png');
   return form;
 }
 
