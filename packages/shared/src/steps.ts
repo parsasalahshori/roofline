@@ -83,18 +83,7 @@ export interface StepTypeDef<P> {
   bookings?(p: P, result: StepResult): number;
   /** Compatibility (Ruling AX-A): minutes saved at the default minutes. Task 3 removes it. */
   minutesSaved(p: P, result: StepResult): number;
-  /**
-   * Ruling AY (A1's step shape, ahead of the a1-agents merge, which drops `minutesSaved` and makes
-   * these required): whether a person may create the step by hand, the time-saved baseline it counts
-   * against (A1's TIME_BASELINES key) and how many units of it the finished step did.
-   */
-  userCreatable?: boolean;
-  baseline?(p: P, result: StepResult): StormBaselineKey;
-  units?(p: P, result: StepResult): number;
 }
-
-/** The A1 TIME_BASELINES keys the storm steps count against (A1: 0.5 min an email capped at 120, 45 min a route, 45 min a campaign). */
-export type StormBaselineKey = 'email_sent' | 'route_built' | 'ad_campaign';
 
 /** A count from a step's result: a finite number above zero, else 0. */
 function resultCount(value: StepResult[string] | undefined): number {
@@ -417,7 +406,7 @@ const sendEmailPayload = z.strictObject({
 });
 type SendEmailPayload = z.output<typeof sendEmailPayload>;
 
-const sendEmailBatch: StepTypeDef<SendEmailPayload> = {
+const sendEmailBatch = withMinutesSaved<SendEmailPayload>({
   type: 'send_email_batch',
   approvalClass: 'message',
   payload: sendEmailPayload,
@@ -438,13 +427,10 @@ const sendEmailBatch: StepTypeDef<SendEmailPayload> = {
       recipientCount,
     };
   },
-  minutesSaved(_p, result) {
-    return Math.min(120, 0.5 * resultCount(result.sent));
-  },
   userCreatable: true,
   baseline: () => 'email_sent',
   units: (_p, result) => resultCount(result.sent),
-};
+});
 
 // ---------------------------------------------------------------------------------------------
 // build_routes (internal: the crew plans the knocks; nothing goes out to a customer)
@@ -474,7 +460,7 @@ function routeCount(reps: number, maxDoors: number): number {
   return Math.max(reps, Math.ceil(maxDoors / MAX_DOORS_PER_ROUTE));
 }
 
-const buildRoutes: StepTypeDef<BuildRoutesPayload> = {
+const buildRoutes = withMinutesSaved<BuildRoutesPayload>({
   type: 'build_routes',
   approvalClass: 'internal',
   payload: buildRoutesPayload,
@@ -496,13 +482,10 @@ const buildRoutes: StepTypeDef<BuildRoutesPayload> = {
       lines,
     };
   },
-  minutesSaved(_p, result) {
-    return 45 * resultCount(result.routes);
-  },
   userCreatable: true,
   baseline: () => 'route_built',
   units: (_p, result) => resultCount(result.routes),
-};
+});
 
 // ---------------------------------------------------------------------------------------------
 // create_ad_campaign (spend: the money is only spent once a person has approved the campaign)
@@ -581,7 +564,7 @@ function adNeedsProblem(p: {
   return null;
 }
 
-const createAdCampaign: StepTypeDef<CreateAdPayload> = {
+const createAdCampaign = withMinutesSaved<CreateAdPayload>({
   type: 'create_ad_campaign',
   approvalClass: 'spend',
   payload: createAdPayload,
@@ -596,11 +579,10 @@ const createAdCampaign: StepTypeDef<CreateAdPayload> = {
       maxSpendCents: p.maxSpendCents,
     };
   },
-  minutesSaved: (_p, result) => 45 * resultCount(result.campaigns),
   userCreatable: true,
   baseline: () => 'ad_campaign',
   units: (_p, result) => resultCount(result.campaigns),
-};
+});
 
 // ---------------------------------------------------------------------------------------------
 // send_proposal
