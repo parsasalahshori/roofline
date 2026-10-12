@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ConversationDetail } from '@roofline/shared';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -54,6 +55,24 @@ function dockLink(dockNav: HTMLElement, label: string) {
   return within(dockNav).getByRole('link', { name: new RegExp('^' + label) });
 }
 
+const CONVERSATION_ABC = {
+  id: 'abc',
+  channel: 'sms',
+  status: 'active',
+  customer: { id: 'c1', name: 'Pat Lee' },
+  phoneE164: '+15551230000',
+  outcome: null,
+  summary: null,
+  followUps: [],
+  identity: 'matched',
+  handledBy: 'assistant',
+  teamUntil: null,
+  calls: [],
+  turns: [],
+  links: { jobIds: [], appointmentIds: [], claimIntakeIds: [] },
+  canReply: false,
+} satisfies ConversationDetail;
+
 describe('D1 Front Desk routes', () => {
   it('/front-desk shows the empty window', async () => {
     signedInApi();
@@ -62,11 +81,14 @@ describe('D1 Front Desk routes', () => {
     expect(await within(dialog).findByText(frontDesk.windowEmpty)).toBeInTheDocument();
   });
 
-  it('/front-desk/abc shows the empty conversation', async () => {
-    signedInApi();
+  it('/front-desk/abc shows the conversation', async () => {
+    signedInApi(ACCOUNT, {
+      'GET /api/conversations/abc': () => ({ body: CONVERSATION_ABC }),
+      'POST /api/conversations/abc/read': () => ({ body: {} }),
+    });
     renderApp('/front-desk/abc');
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY['front-desk'].title });
-    expect(await within(dialog).findByText(frontDesk.conversationEmpty)).toBeInTheDocument();
+    expect(await within(dialog).findByRole('heading', { name: 'Pat Lee' })).toBeInTheDocument();
   });
 
   it('the dock link has no Coming soon note and opens Front Desk', async () => {
