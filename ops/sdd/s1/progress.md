@@ -227,3 +227,9 @@ Source: `ops/sdd/integration/security-review.md` on `origin/sec-review` (probe l
 - **Lows 9, 10, 14, 18:** **R8** trims the 0018 grants; **R9** keeps `/u/` tokens out of logs and limits the S1 public routes.
 
 The three tasks run in parallel from 83e9856, with Sonnet builders, and need CI on Platform, E2E and Hail before each merge. Finding 4 (`TRUST_PROXY`, F2/F3) limits how effective the per-IP caps are; it is not S1's.
+
+## 2026-10-12: E2E red on 83e9856 (run 38259582760) and fix 3f800e5
+- Platform and Hail passed. E2E had 7 storm specs fail, all with `create_ad_campaign: needs_attention` and the `NOT_USD` message.
+- Cause: R3 (577674c) made the ad campaign step refuse an account whose currency isn't USD. `scripts/storm-fixture.ts` inserted ad accounts with a null currency.
+- Fix 3f800e5: fixture accounts now have currency USD and a name, plus external ids per company (derived from the company id), so they stay valid under R8's global unique index.
+- R7–R10 branch from bases before 3f800e5, so their E2E shows the same 7 failures. Those are the base's failures: judge each task's E2E on the merge result after it lands on s1-storm.
