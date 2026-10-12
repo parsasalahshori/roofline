@@ -344,6 +344,30 @@ Launch set: 14 queues (13 job queues + `agent-step`). With G1: 21.
   elsewhere.
 - Every `db:migrate` revokes Supabase's `anon` and `authenticated` grants on `public` and `pgboss`.
 
+#### Normalize the migrations (controller, at the launch merge)
+
+Run this after all six tracks are merged on the launch branch and before its final CI run. It needs no database
+and no Docker, only `npm ci`.
+
+1. Run `ops/bin/launch-normalize --check` from the repo root. This reports and changes nothing.
+2. If only the `journal` step fails, run `ops/bin/launch-normalize`. It rewrites `meta/_journal.json` and checks
+   everything again. Commit the journal (`ops(launch): normalize migration journal`) and push.
+3. Run `ops/bin/launch-normalize --check` again. It must print `PASSED: nothing to change.` The tool is
+   idempotent, so a second run never changes anything.
+
+Each step prints `[OK]`, `[FIXED]` or `[FAIL]` with one line per finding. The exit code is 0 only when nothing
+fails.
+
+| Step | Checks | On FAIL |
+|---|---|---|
+| `journal` | `idx` runs 0…N with no gap; each tag starts with its zero-padded idx; `when` is strictly increasing. Drizzle's migrator skips a migration whose `when` is not newer than the last one applied. | Out-of-order `when` values are fixed in place: an entry moves to the one before + 1 s, and later entries move only if needed. A gap or a wrong tag means a track reused or skipped a number: send it back to that track. |
+| `snapshots` | Every journal tag has its `.sql` and `meta/NNNN_snapshot.json`. Each `prevId` is the id of the snapshot before it, ids are unique, and no `.sql` is missing from the journal. | The track whose snapshot breaks the chain rebuilds it on the merged one before it. Ruling AW: amend in place. |
+| `drizzle-kit` | `drizzle-kit generate` reports `No schema changes`. Anything it writes is deleted again, and the journal is restored. | The schema and the last snapshot disagree. The owning track adds the change to its own migration in place. |
+| `grants` | No role holds a column-level `GRANT UPDATE (cols)` without `updated_at` on a table whose `updated_at` uses the `timestamps()` helper. Drizzle sets `updated_at` on every update, so such a grant refuses every update. | Add `updated_at` to that grant in the owning track's migration (in place), and pin it in `rls.test.ts`. |
+
+The pure checks are in `packages/db/scripts/launch-normalize-lib.ts` (tests: `packages/db/test/launch-normalize.test.ts`).
+The command itself is `packages/db/scripts/launch-normalize.ts`. `--skip-generate` skips the drizzle-kit step.
+
 ### 3.4 Database setup, in order
 
 1. `DATABASE_URL_OWNER=… npm run db:migrate` (before each new version starts).
