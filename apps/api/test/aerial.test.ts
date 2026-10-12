@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createMeasurement, type TenantContext } from '@roofline/db';
+import { eq } from 'drizzle-orm';
+import { createMeasurement, measurements, type TenantContext } from '@roofline/db';
 import { instantEstimate, type MeasurementView } from '@roofline/shared';
 import { UnconfiguredAerial } from '../src/deps.ts';
 import { aerialTiming } from '../src/estimator/aerial.ts';
@@ -67,7 +68,9 @@ describe('POST /api/measurements/:id/aerial', () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     const view = res.body as MeasurementView;
     expect(view.method).toBe('aerial');
-    expect(view.estimate.surfaceSqFt).toBe(2480);
+    // The view recomputes its estimate from the outline; the aerial area is the stored column.
+    const [row] = await inCompany(t, ctx.companyId, (tx) => tx.select().from(measurements).where(eq(measurements.id, view.id)));
+    expect(row!.surfaceSqFt).toBe(2480);
     expect(view.estimate.pitchX12).toBe(7);
     expect(resultCalls().length).toBeGreaterThanOrEqual(2);
   });

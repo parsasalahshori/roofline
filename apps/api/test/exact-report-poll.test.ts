@@ -13,6 +13,8 @@ import { makeTestApp, type TestApp } from './helpers.ts';
 import { agentCtx, dbSteps, dbTask, seenOf } from './task-helpers.ts';
 
 const NOW = new Date('2026-10-12T15:00:00.000Z');
+/** The order is stamped polled when placed (at NOW), so polls run after the ten-minute gap. */
+const LATER = new Date(NOW.getTime() + 11 * 60_000);
 
 let t: TestApp;
 let actors: Actors;
@@ -78,21 +80,23 @@ const allProposals = () => inCompany(t, ctx.companyId, (tx) => tx.select().from(
 describe('polling exact reports', () => {
   test('a pending report stays waiting and is stamped polled; not asked again within ten minutes', async () => {
     const { orderId } = await orderIt();
-    await pollExactReports(t.deps, NOW);
+    await pollExactReports(t.deps, new Date(NOW.getTime() + 5 * 60_000));
+    expect(reportCalls()).toHaveLength(0);
+    await pollExactReports(t.deps, LATER);
     const o = await dbOrder(orderId);
     expect(o.status).toBe('waiting');
-    expect(o.lastPolledAt?.getTime()).toBe(NOW.getTime());
+    expect(o.lastPolledAt?.getTime()).toBe(LATER.getTime());
     expect(reportCalls()).toHaveLength(1);
-    await pollExactReports(t.deps, new Date(NOW.getTime() + 5 * 60_000));
+    await pollExactReports(t.deps, new Date(LATER.getTime() + 5 * 60_000));
     expect(reportCalls()).toHaveLength(1);
-    await pollExactReports(t.deps, new Date(NOW.getTime() + 11 * 60_000));
+    await pollExactReports(t.deps, new Date(LATER.getTime() + 11 * 60_000));
     expect(reportCalls()).toHaveLength(2);
   });
 
   test('a complete report makes an exact measurement', async () => {
     await orderIt();
     t.exactReports.complete('rep-1');
-    await pollExactReports(t.deps, NOW);
+    await pollExactReports(t.deps, LATER);
     const rows = await exactMeasurements();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ kind: 'exact', method: 'eagleview', surfaceSqFt: 2612, pitchX12: 7, ridgeFt: 62, edgeFt: 188, valleyFt: 24, facets: 9, providerRef: 'rep-1', propertyId, jobId });
@@ -101,7 +105,7 @@ describe('polling exact reports', () => {
   test('one usage row at the report cost, even if completed twice', async () => {
     const { orderId } = await orderIt();
     t.exactReports.complete('rep-1');
-    await pollExactReports(t.deps, NOW);
+    await pollExactReports(t.deps, LATER);
     const rows = await usage();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ quantity: 1, unitCostCents: 4500, refType: 'exact_report', refId: 'rep-1' });
@@ -119,7 +123,7 @@ describe('polling exact reports', () => {
     const draft = await buildProposal(t.deps, ownerCtx, { measurementId, jobId });
     await orderIt();
     t.exactReports.complete('rep-1');
-    await pollExactReports(t.deps, NOW);
+    await pollExactReports(t.deps, LATER);
     const [exact] = await exactMeasurements();
     const after = await proposalOf(draft.id);
     expect(after?.status).toBe('draft');
@@ -134,7 +138,7 @@ describe('polling exact reports', () => {
     const before = await proposalOf(sent.id);
     await orderIt();
     t.exactReports.complete('rep-1');
-    await pollExactReports(t.deps, NOW);
+    await pollExactReports(t.deps, LATER);
     expect(await proposalOf(sent.id)).toEqual(before);
     const rows = await allProposals();
     expect(rows).toHaveLength(2);
@@ -156,7 +160,7 @@ describe('polling exact reports', () => {
         return r.status === 'complete' ? { ...r, costCents: null } : r;
       },
     };
-    await pollExactReports({ ...t.deps, exactReports: noCost }, NOW);
+    await pollExactReports({ ...t.deps, exactReports: noCost }, LATER);
     const rows = await usage();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.unitCostCents).toBe(6200);
@@ -170,7 +174,7 @@ describe('polling exact reports', () => {
       }
     }
     const { orderId, taskId } = await orderIt();
-    await pollExactReports({ ...t.deps, exactReports: new Failing() }, NOW);
+    await pollExactReports({ ...t.deps, exactReports: new Failing() }, LATER);
     const o = await dbOrder(orderId);
     const plain = 'The report could not be completed. Check with the report provider.';
     expect(o.status).toBe('attention');
@@ -186,7 +190,7 @@ describe('polling exact reports', () => {
     const { orderId, taskId } = await orderIt();
     expect((await dbSteps(t, 'a', taskId))[0]!.status).toBe('running');
     t.exactReports.complete('rep-1');
-    await pollExactReports(t.deps, NOW);
+    await pollExactReports(t.deps, LATER);
     expect((await dbOrder(orderId)).status).toBe('complete');
     expect((await dbSteps(t, 'a', taskId))[0]!.status).toBe('done');
     expect((await dbTask(t, 'a', taskId)).status).toBe('done');
