@@ -159,3 +159,4 @@ Ruling ER (lead): terms are frozen with the price. build/reprice write `prices.t
 Ruling ES (lead): reps may get a proposal's link (GET /api/proposals/:id/link with job scope): the link is already in the texts a rep can read on the job timeline; restricting it bought nothing. Owner/office keep it too.
 Ruling ET (lead): production refuses to start when any company could sign without storage: R2_* must all be set in production (was a warning). FAKE_PROVIDERS stays refused in production.
 Controller (12:18Z): Rulings EQ-ET accepted; EQ's in-place 0016 edit is right under Ruling AW (nothing deployed), custom SQL only, snapshots unchanged. Tracks re-merging e1-estimator take the new 0016 text (same journal entry).
+rev-db 1221568 + 87ab442 (0016 in place: signature column UPDATE grant, options draft-only trigger, waiting-orders index; a fixture now writes the signature as the owner) CI 38249693013 green (Platform, E2E). Merged into e1-estimator.
