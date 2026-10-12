@@ -104,6 +104,8 @@ describe('job proposals', () => {
   it("New proposal measures the job's home", async () => {
     const { router, user } = renderJob(LIST, {
       'POST /api/measurements': () => ({ body: { id: 'm7' } }),
+      // The measure window opens and reads the measurement; answered so the test does not race the cleanup
+      'GET /api/measurements/m7': () => ({ status: 404, body: { error: 'Not found.' } }),
     });
     await screen.findByRole('link', { name: /P-1001/ });
     await user.click(screen.getByRole('button', { name: job.newProposal }));
