@@ -185,6 +185,19 @@ describe('OAuth', () => {
     expect(String((err as Error).message)).not.toContain('ms-refresh');
   });
 
+  test('invalid_client on refresh (a bad client secret) is unavailable, not a reconnect', async () => {
+    const { api } = makeApi([{ status: 401, body: { error: 'invalid_client', error_description: 'SECRET-DETAIL' } }]);
+    const err = await rejection(api.refresh('ms-refresh-1'));
+    expect(err).toBeInstanceOf(CalendarUnavailableError);
+    expect(String((err as Error).message)).not.toContain('SECRET-DETAIL');
+  });
+
+  test('a non-JSON 401 from the token endpoint is unavailable', async () => {
+    const { api } = makeApi([{ status: 401 }]);
+    const err = await rejection(api.refresh('ms-refresh-1'));
+    expect(err).toBeInstanceOf(CalendarUnavailableError);
+  });
+
   test('invalid_grant on exchangeCode is an auth error that leaks no provider text', async () => {
     const { api } = makeApi([{ status: 400, body: TOKEN_INVALID_GRANT }]);
     const err = await rejection(api.exchangeCode({ code: 'auth-code-1', redirectUri: 'https://app.roofline.test/callback' }));
