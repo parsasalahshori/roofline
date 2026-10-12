@@ -100,3 +100,5 @@ Carries from the contact-207 group check:
 - T18/T27: one name for the Meta account across the copy files (for example 'Facebook and Instagram (Meta)'), and only one coming-soon line in the Connections tab (drop connections.later or ads.connectionsComingSoon).
 - T10/T11: worker.ts isJobData checks only companyId. Storm job handlers must validate companyStormId and kind.
 - Whole-branch review: services/hail run.py treats every 12:xx UTC grid as final (the brief says "hour is 12Z"). The :05 and :35 ticks can both run final. Consider "final once per day" (no processed final run yet for that day).
+
+- Task 13 (s1-t13, uncommitted, CI pending): Postmark broadcast adapter, unsubscribe page and one-click, /hooks/postmark webhook, POSTMARK_WEBHOOK_SECRET. Decision: the app has no SESSION_SECRET (brief assumed one), so unsubscribe tokens are keyed by `unsubscribeKey(config)` (public/unsubscribe-key.ts, HKDF of ENCRYPTION_KEY, info `unsubscribe`); Task 12 must sign with the same helper. recordEmailOptOut uses raw SQL naming only company_id, email, source (drizzle insert lists default columns app_system lacks); no 0018 change.

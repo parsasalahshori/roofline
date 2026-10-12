@@ -76,6 +76,7 @@
 | `META_BUSINESS_ID` | no | Meta business id that ad accounts are shared with. All four META settings or none. |
 | `META_GRAPH_VERSION` | no (`v24.0`) | The Meta Graph API version, like `v24.0`. |
 | `POSTMARK_BROADCAST_STREAM` | no (`broadcast`) | The Postmark message stream for storm alert email. |
+| `POSTMARK_WEBHOOK_SECRET` | no | Basic-auth password for Postmark's bounce and complaint webhook at `/hooks/postmark` (16+ characters). Unset: the webhook refuses every call. |
 | `STORM_MAIL_FROM` | no | Plain From address for storm email, like `storms@roofline.app`. Unset: `storms@` plus the `MAIL_FROM` domain, else `POLICY_PAGES_DOMAIN`, else the `PUBLIC_BASE_URL` host. |
 | `HAIL_STALE_MINUTES` | no (90) | Minutes without a fresh hail report before the hail feed counts as stale (1 to 10080). |
 | `POLICY_PAGES_DOMAIN` | no | The bare hostname for the policy pages, like `roofline.app`. |
