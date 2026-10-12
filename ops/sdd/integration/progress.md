@@ -1701,7 +1701,7 @@ T4/T21/T22, S1 R8-R10, E1 sec fixes) and final Ruling BD pass the database, API,
 (The local `ci-check` wrapper was stopped by its time limit; both runs were followed through the Actions API.)
 
 New problem 5. **D1 x C1/E1, Front Desk smoke production fixture.** `apps/api/test/smoke-front-desk-guards.test.ts`
-`BASE_ENV` needs `TRUST_PROXY: '1'` (C1, already on d1-front-desk since c49523a, so this part is red on D1 itself) and
+`BASE_ENV` needs `TRUST_PROXY: '1'` (C1, already required on d1-front-desk since c49523a, so this part should fail on D1 alone; unconfirmed, D1 CI on 93dcfca was cancelled) and
 the four R2 settings (E1, at D1's e1 merge). Owner D1.
 New problem 6. **A1 x G1, Agents e2e.** The three spec fixes above belong in A1 (agents, agents-settings) and G1
 (more-agents) at their next merge of each other. Owners A1 and G1.
