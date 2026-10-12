@@ -69,6 +69,7 @@ export async function saveFrontDeskSettings(
   tx: Tx,
   ctx: TenantContext,
   input: FrontDeskSettingsInput,
+  now: Date = new Date(),
 ): Promise<void> {
   const values = {
     frontDeskEnabled: input.enabled,
@@ -86,7 +87,7 @@ export async function saveFrontDeskSettings(
   await tx
     .insert(companySettings)
     .values({ companyId: ctx.companyId, ...values })
-    .onConflictDoUpdate({ target: companySettings.companyId, set: { ...values, updatedAt: new Date() } });
+    .onConflictDoUpdate({ target: companySettings.companyId, set: { ...values, updatedAt: now } });
 }
 
 /** Turns Front Desk off and leaves every other setting as it is (a read-only company may still do this). */

@@ -118,7 +118,7 @@ export function frontDeskRoutes(deps: AppDeps): Router {
           throw new AppError(409, NEEDS_FORWARDING, 'enabled');
         }
       }
-      await saveFrontDeskSettings(tx, ctx, input);
+      await saveFrontDeskSettings(tx, ctx, input, deps.clock.now());
     });
     await writeOnCallOrder(deps, ctx, ids);
 

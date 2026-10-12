@@ -173,6 +173,19 @@ describe('POST /hooks/twilio/voice', () => {
     }
   });
 
+  test('the LLM health check reads the injected clock (pre-review #40)', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    const start = new Date('2030-01-01T12:00:00Z');
+    t.clock.set(start);
+    for (let i = 0; i < 3; i += 1) t.deps.relaySessions.recordLlmFailure(start);
+    const tripped = await post(VOICE, incoming());
+    expect(tripped.text).not.toContain('<ConversationRelay');
+    // 61 s later on the app's clock the breaker has reset, whatever the wall clock says.
+    t.clock.advance(61_000);
+    const healed = await post(VOICE, incoming());
+    expect(healed.text).toContain('<ConversationRelay');
+  });
+
   test('a screened call is rejected and the row is rejected', async () => {
     await setSettings('a', { frontDeskEnabled: true });
     screen.verdict = { action: 'reject', reason: 'blocked' };
