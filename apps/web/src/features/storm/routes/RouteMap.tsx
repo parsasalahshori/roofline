@@ -39,6 +39,7 @@ function boundsOf(stops: DoorStop[]): Box | null {
 export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const dotRef = useRef<Marker | null>(null);
 
   // The map itself: made once, removed on unmount.
   useEffect(() => {
@@ -75,7 +76,7 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
     );
   }, [west, south, east, north]);
 
-  // The markers: rebuilt when the doors, the current door or the rep's position change.
+  // The numbered door markers: rebuilt when the doors or the current door change, not when the rep moves.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -88,15 +89,36 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
       element.textContent = String(index + 1);
       markers.push(new Marker({ element }).setLngLat([stop.lng, stop.lat]).addTo(map));
     });
-    if (position) {
-      const dot = document.createElement('div');
-      dot.className = styles.you;
-      markers.push(new Marker({ element: dot }).setLngLat([position.lng, position.lat]).addTo(map));
-    }
     return () => {
       for (const marker of markers) marker.remove();
     };
-  }, [stops, currentStopId, position]);
+  }, [stops, currentStopId]);
+
+  // The rep's dot: one marker that moves with the position.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!position) {
+      dotRef.current?.remove();
+      dotRef.current = null;
+      return;
+    }
+    if (dotRef.current) {
+      dotRef.current.setLngLat([position.lng, position.lat]);
+      return;
+    }
+    const dot = document.createElement('div');
+    dot.className = styles.you;
+    dotRef.current = new Marker({ element: dot }).setLngLat([position.lng, position.lat]).addTo(map);
+  }, [position]);
+
+  useEffect(
+    () => () => {
+      dotRef.current?.remove();
+      dotRef.current = null;
+    },
+    [],
+  );
 
   return <div ref={containerRef} className={styles.map} role="region" aria-label={doors.routeMapLabel} />;
 }

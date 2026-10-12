@@ -109,8 +109,8 @@ describe('StormDetail', () => {
     setup();
     expect(await screen.findByRole('heading', { level: 1, name: 'Maple Ridge' })).toBeInTheDocument();
     expect(screen.getByText(storm.upTo('1.75'))).toBeInTheDocument();
-    expect(screen.getByText(storm.customersHit(12))).toBeInTheDocument();
-    expect(screen.getByText(storm.homesHit(340))).toBeInTheDocument();
+    expect(screen.getByText(storm.customersHitLabel)).toBeInTheDocument();
+    expect(screen.getByText(storm.homesHitLabel)).toBeInTheDocument();
     expect(screen.getByRole('region', { name: storm.mapLabel })).toBeInTheDocument();
   });
 
@@ -184,6 +184,30 @@ describe('StormDetail', () => {
     await vi.waitFor(() => {
       expect(api.count('POST /api/storms/s1/plan')).toBe(1);
     });
+  });
+
+  it.each([
+    ['expired', true, false],
+    ['declined', true, false],
+    ['draft', true, true],
+    ['running', false, true],
+  ])('a %s plan: redraft button %s, open plan %s', async (status, redraftShown, openShown) => {
+    setup({ plan: { taskId: 't1', status } });
+    await screen.findByRole('heading', { level: 1, name: 'Maple Ridge' });
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('button', { name: storm.redraft }) !== null).toBe(redraftShown);
+    });
+    expect(screen.queryByRole('link', { name: storm.openPlan }) !== null).toBe(openShown);
+  });
+
+  it('shows the API message when drafting is refused', async () => {
+    const message = 'Storm Scout is paused. Turn it back on in Agents to draft a plan.';
+    const { user } = setup({
+      plan: null,
+      extra: { 'POST /api/storms/s1/plan': () => ({ status: 409, body: { error: message } }) },
+    });
+    await user.click(await screen.findByRole('button', { name: storm.redraft }));
+    expect(await screen.findByText(message)).toBeInTheDocument();
   });
 
   it('unknown storm', async () => {

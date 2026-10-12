@@ -57,3 +57,10 @@
   gap: 8px;
   margin-top: 8px;
 }
+
+/* The My routes link sits above everything else in the window. */
+.routes {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}

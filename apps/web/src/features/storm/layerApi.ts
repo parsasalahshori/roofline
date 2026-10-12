@@ -13,7 +13,7 @@ export const STORM_LAYER_DAYS = 7;
  */
 export function useStormLayer(bbox: Bbox | null, zoom: number | null, enabled: boolean) {
   const bboxKey = bbox === null ? null : bbox.join(',');
-  const roundedZoom = zoom === null ? null : Math.round(zoom * 10) / 10;
+  const roundedZoom = zoom === null ? null : Math.min(22, Math.max(0, Math.round(zoom)));
   return useQuery({
     queryKey: keys.stormLayer(bboxKey ?? '', roundedZoom ?? 0, STORM_LAYER_DAYS),
     queryFn: ({ signal }) =>

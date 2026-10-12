@@ -185,17 +185,15 @@ export type StormSettingsPatch = Partial<
 
 export type AdPlatform = 'google' | 'meta';
 export type AdAccountStatus = 'pending' | 'active' | 'error' | 'revoked';
-/** Our own plain reasons; provider text is never shown. */
-export type AdAccountReason = 'policy' | 'payment' | 'access' | 'targeting' | 'other';
-
-/** One connected ad account (S1 Task 16 builds the API; this is the shape Task 27 codes against). */
+/** One connected ad account, as the ad API's row. `lastErrorPlain` is our own plain sentence, safe to show; provider text never is. */
 export type AdAccount = {
   id: string;
   platform: AdPlatform;
   externalAccountId: string;
   status: AdAccountStatus;
   name: string | null;
-  reason: AdAccountReason | null;
+  currency: string | null;
+  lastErrorPlain: string | null;
   linkedAt: string | null;
 };
 
