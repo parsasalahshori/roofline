@@ -76,13 +76,13 @@ describe("primaryTextingPhone", () => {
     ).toBe("+15551230003");
   });
 
-  test("skips a landline-labelled primary and uses the next usable number", () => {
+  test("is null when the chosen number is a landline, even with a second mobile", () => {
     expect(
       primaryTextingPhone([
         { e164: "+15551230004", primary: true, label: " Landline " },
         { e164: "+15551230005", label: "mobile" },
       ]),
-    ).toBe("+15551230005");
+    ).toBeNull();
   });
 
   test("is null for no phones and for only landlines", () => {

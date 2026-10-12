@@ -47,7 +47,7 @@ export async function agentCompanyFacts(
   return row ?? null;
 }
 
-/** The number the send gate texts: primary, else first, e164 trimmed and non-empty, never labelled landline. Null when none. */
+/** The number the send gate texts: primary, else first, e164 trimmed and non-empty; null when none or when that number is labelled landline. */
 export function primaryTextingPhone(
   phones: readonly {
     e164?: unknown;
@@ -56,12 +56,10 @@ export function primaryTextingPhone(
   }[],
 ): string | null {
   const usable = phones.filter(
-    (p) =>
-      typeof p?.e164 === "string" &&
-      p.e164.trim() !== "" &&
-      (p.label ?? "").trim().toLowerCase() !== "landline",
+    (p) => typeof p?.e164 === "string" && p.e164.trim() !== "",
   );
   const chosen = usable.find((p) => p.primary === true) ?? usable[0];
+  if (chosen && (chosen.label ?? "").trim().toLowerCase() === "landline") return null;
   return typeof chosen?.e164 === "string" ? chosen.e164.trim() : null;
 }
 
