@@ -10,3 +10,6 @@ export const CALENDAR_CONNECTION_STATUSES = ['connected', 'error', 'revoked'] as
 export type CalendarConnectionStatus = (typeof CALENDAR_CONNECTION_STATUSES)[number];
 export const QUOTE_STATUSES = ['draft', 'final'] as const;
 export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
+export const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+export type WorkHours = Record<Weekday, [string, string][]>;
