@@ -214,4 +214,16 @@ describe('New job screen', () => {
     expect(names).toEqual(['Storm', 'Call', 'Text', 'Web', 'Referral', 'Import', 'Manual']);
     expect(source).toHaveValue('manual');
   });
+
+  it('the stage select offers only Lead, Inspection and Proposal', async () => {
+    signedInApi(ACCOUNT, ANN_ROUTES);
+    await renderNewJob('/jobs/new?customerId=c7');
+
+    const stage = await screen.findByLabelText(create.newJob.stage);
+    const names = within(stage)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(names).toEqual(['Lead', 'Inspection', 'Proposal']);
+    expect(stage).toHaveValue('lead');
+  });
 });

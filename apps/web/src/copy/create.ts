@@ -54,9 +54,6 @@ export const create = {
     lead: 'Lead',
     inspection: 'Inspection',
     proposal: 'Proposal',
-    won: 'Won',
-    installed: 'Installed',
-    lost: 'Lost',
   },
   sourceNames: {
     storm: 'Storm',

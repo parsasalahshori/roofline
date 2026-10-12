@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { JOB_SOURCES, JOB_STAGES, type JobSource, type JobStage } from '@roofline/shared';
+import { JOB_SOURCES, type JobSource, type JobStage } from '@roofline/shared';
 import { Button, Field, Select, useToast, type SelectOption } from '@roofline/ui';
 import { ApiError, apiFetch } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
@@ -42,7 +42,9 @@ function usePresetCustomer(id: string | null) {
   });
 }
 
-const stageOptions: SelectOption[] = JOB_STAGES.map((stage) => ({ value: stage, label: create.stageNames[stage] }));
+// A job is created in one of the first three stages: Won needs a value, Lost needs a reason, and Installed only follows Won
+const CREATE_STAGES = ['lead', 'inspection', 'proposal'] as const satisfies readonly JobStage[];
+const stageOptions: SelectOption[] = CREATE_STAGES.map((stage) => ({ value: stage, label: create.stageNames[stage] }));
 const sourceOptions: SelectOption[] = JOB_SOURCES.map((source) => ({ value: source, label: create.sourceNames[source] }));
 
 /** The New job screen: a customer, then a home, then the job's details. One form, no modal. */
