@@ -26,7 +26,7 @@ test('rep marks a door Wants a check and the lead reaches the owner Today', asyn
   test.setTimeout(90_000);
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
-  const { taskId } = await draftAndApproveStormPlan(page, scenario.stormId);
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
   await waitForStormSteps(page, taskId);
 
   // The routes belong to the company's reps (the owner takes the doors only when there is no rep).
@@ -70,7 +70,7 @@ test('landing page on a phone submits a request', async ({ page, loginAs, markTo
   test.setTimeout(90_000);
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
-  const { taskId } = await draftAndApproveStormPlan(page, scenario.stormId);
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
   await waitForStormSteps(page, taskId);
   const code = await stormPageCode(db, scenario.companyStormId);
 

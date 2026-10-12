@@ -98,10 +98,10 @@ export async function stormPageCode(db: pg.Client, companyStormId?: string): Pro
 
 type ApprovalStepView = { id: string; version: number; enabled: boolean; status: string };
 
-/** Drafts the storm plan for `stormId` and approves every step, as the signed-in owner on `page`. */
-export async function draftAndApproveStormPlan(page: Page, stormId: string): Promise<{ taskId: string }> {
+/** Drafts the storm plan for the company storm id and approves every step, as the signed-in owner on `page`. */
+export async function draftAndApproveStormPlan(page: Page, companyStormId: string): Promise<{ taskId: string }> {
   const headers = { Origin: readStack().baseUrl };
-  const drafted = await page.request.post(`/api/storms/${stormId}/plan`, { headers, data: {} });
+  const drafted = await page.request.post(`/api/storms/${companyStormId}/plan`, { headers, data: {} });
   expect(drafted.status()).toBe(200);
   const { taskId } = (await drafted.json()) as { taskId: string };
   const task = await page.request.get(`/api/approvals/${taskId}`);

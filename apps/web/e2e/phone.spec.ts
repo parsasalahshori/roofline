@@ -148,14 +148,14 @@ test('S1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, s
   test.setTimeout(90_000);
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
-  const { taskId } = await draftAndApproveStormPlan(page, scenario.stormId);
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
   await waitForStormSteps(page, taskId);
 
   await page.goto('/storm');
   await expect(page.getByRole('heading', { name: 'Storms in your area' })).toBeVisible();
   await noSideScroll(page);
 
-  await page.goto(`/storm/${scenario.stormId}`);
+  await page.goto(`/storm/${scenario.companyStormId}`);
   await expect(page.getByRole('heading', { name: 'Results so far' })).toBeVisible({ timeout: 20_000 });
   await noSideScroll(page);
 

@@ -104,7 +104,7 @@ test('storm window has no serious accessibility violations', async ({ page, logi
 test('storm detail has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, scenario }) => {
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
-  await page.goto(`/storm/${scenario.stormId}`);
+  await page.goto(`/storm/${scenario.companyStormId}`);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });
@@ -113,7 +113,7 @@ test('route view has no serious accessibility violations', async ({ page, loginA
   test.setTimeout(90_000);
   // The owner approves the plan so the routes are built; the routes belong to the reps.
   await loginAs(page, 'owner');
-  const { taskId } = await draftAndApproveStormPlan(page, scenario.stormId);
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
   await waitForStormSteps(page, taskId);
 
   await loginAs(page, 'rep');
@@ -130,7 +130,7 @@ test('route view has no serious accessibility violations', async ({ page, loginA
 test('storm landing page has no serious accessibility violations', async ({ page, loginAs, db, scenario }) => {
   test.setTimeout(90_000);
   await loginAs(page, 'owner');
-  const { taskId } = await draftAndApproveStormPlan(page, scenario.stormId);
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
   await waitForStormSteps(page, taskId);
   const code = await stormPageCode(db, scenario.companyStormId);
   await page.goto(companyHostUrl('/storm/' + code));

@@ -26,7 +26,7 @@ test('storm plan in 2 clicks', async ({ page, loginAs, markTodaySeen, scenario, 
   test.setTimeout(90_000);
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
-  const taskId = await draftPlan(page, scenario.stormId);
+  const taskId = await draftPlan(page, scenario.companyStormId);
   expect(taskId).not.toBe(scenario.taskId);
 
   await page.goto('/storm');
@@ -41,7 +41,7 @@ test('storm plan in 2 clicks', async ({ page, loginAs, markTodaySeen, scenario, 
   expect(clicks.count).toBe(2);
 
   // Results: texts went out, and the ads have a budget line (two campaigns share it).
-  await page.goto(`/storm/${scenario.stormId}`);
+  await page.goto(`/storm/${scenario.companyStormId}`);
   await expect(page.getByRole('heading', { name: 'Results so far' })).toBeVisible({ timeout: 20_000 });
   const grid = page.getByTestId('storm-results-grid');
   const textsSent = grid.locator('dl').filter({ has: page.getByText('Texts sent', { exact: true }) });
@@ -58,7 +58,7 @@ test('office approves messages, owner approves spend', async ({
 }) => {
   test.setTimeout(90_000);
   await loginAs(page, 'owner');
-  const taskId = await draftPlan(page, scenario.stormId);
+  const taskId = await draftPlan(page, scenario.companyStormId);
 
   await loginAs(page, 'office');
   await markTodaySeen('office@a.test');
