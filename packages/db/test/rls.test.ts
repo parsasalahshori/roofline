@@ -2127,6 +2127,7 @@ describe('front desk tables', () => {
       ['conversations', 'phone_e164', 'SELECT', false],
       // fd-health's voice-URL marker (markVoiceUrlSet); every other company_phone_numbers column stays read-only.
       ['company_phone_numbers', 'capabilities', 'UPDATE', true],
+      ['company_phone_numbers', 'updated_at', 'UPDATE', true],
       ['company_phone_numbers', 'status', 'UPDATE', false],
       ['company_phone_numbers', 'e164', 'UPDATE', false],
     ];
