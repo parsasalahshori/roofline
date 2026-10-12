@@ -229,7 +229,7 @@ export * from './repos/scheduler-agenda.ts';
 // G1 Task 8
 export * from './repos/claims-agent.ts';
 // G1 Task 13a
-export { findLeadCandidates, findProposalCandidates, findStuckCandidates, followUpSettings, type LeadCandidate, PROPOSAL_CALL_KIND, PROPOSAL_CALL_SUBJECT, type ProposalCandidate, recordStuckNudge, STUCK_NUDGE_ACTIVITY, STUCK_NUDGE_GAP_DAYS, type StuckCandidate } from './repos/follow-up-finder.ts';
+export { findLeadCandidates, findProposalCandidates, findReviewCandidates, findStuckCandidates, followUpSettings, type LeadCandidate, PROPOSAL_CALL_KIND, PROPOSAL_CALL_SUBJECT, type ProposalCandidate, type ReviewCandidate, recordStuckNudge, STUCK_NUDGE_ACTIVITY, STUCK_NUDGE_GAP_DAYS, type StuckCandidate } from './repos/follow-up-finder.ts';
 // E1 skeleton (Task 1): one line per new repo file; later E1 tasks fill the files in.
 export * from './repos/measurements.ts';
 export * from './repos/tier-templates.ts';

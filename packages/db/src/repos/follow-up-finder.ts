@@ -1,5 +1,5 @@
-import { and, asc, eq, inArray, isNotNull, isNull, lte, max, ne, notExists, or, sql } from 'drizzle-orm';
-import { daysInStage, isStuck, leadFollowUpDue, proposalFollowUpDue, REPLY_STOP_DAYS } from '@roofline/shared';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, max, ne, notExists, or, sql } from 'drizzle-orm';
+import { daysInStage, isStuck, leadFollowUpDue, localDate, proposalFollowUpDue, REPLY_STOP_DAYS } from '@roofline/shared';
 import {
   activities,
   agentTasks,
@@ -393,4 +393,122 @@ export async function findProposalCandidates(
     });
   }
   return out;
+}
+
+/** G1 Task 14: a finished install that is due a review request. */
+export type ReviewCandidate = {
+  jobId: string;
+  customerId: string;
+  customerFirstName: string | null;
+  assignedUserId: string | null;
+  /** When the install appointment ended. */
+  installEndedAt: Date;
+};
+
+/** Whole local days from one YYYY-MM-DD date to another. */
+function wholeDaysBetween(fromDay: string, toDay: string): number {
+  const parse = (d: string) => {
+    const [y, m, dd] = d.split('-').map(Number);
+    return Date.UTC(y ?? 0, (m ?? 1) - 1, dd ?? 1);
+  };
+  return Math.round((parse(toDay) - parse(fromDay)) / DAY_MS);
+}
+
+/** Finished installs due a one-time review request. The caller checks the settings flags and applies the cap. */
+export async function findReviewCandidates(
+  tx: Tx,
+  ctx: TenantContext,
+  now: Date,
+  opts: { reviewDelayDays: number; timeZone: string },
+): Promise<ReviewCandidate[]> {
+  const rows = await tx
+    .select({
+      jobId: jobs.id,
+      customerId: jobs.customerId,
+      customerFirstName: customers.firstName,
+      phones: customers.phones,
+      assignedUserId: jobs.assignedUserId,
+    })
+    .from(jobs)
+    .innerJoin(customers, and(eq(customers.companyId, jobs.companyId), eq(customers.id, jobs.customerId)))
+    .where(
+      and(
+        eq(jobs.companyId, ctx.companyId),
+        ne(jobs.stage, 'lost'),
+        isNull(jobs.archivedAt),
+        isNull(customers.archivedAt),
+        eq(customers.doNotContact, false),
+        inArray(customers.smsConsentStatus, ['attested', 'written']),
+      ),
+    );
+
+  const textable = rows.filter((r) => {
+    const p = textingPhone(r.phones ?? []);
+    return p !== null && (p.label ?? '').trim().toLowerCase() !== 'landline';
+  });
+  if (textable.length === 0) return [];
+
+  const jobIds = textable.map((r) => r.jobId);
+  const customerIds = [...new Set(textable.map((r) => r.customerId))];
+
+  // The latest install per job decides; only a completed one qualifies.
+  const installRows = await tx
+    .select({ jobId: appointments.jobId, status: appointments.status, endsAt: appointments.endsAt })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.companyId, ctx.companyId),
+        eq(appointments.kind, 'install'),
+        isNull(appointments.archivedAt),
+        inArray(appointments.jobId, jobIds),
+      ),
+    )
+    .orderBy(desc(appointments.endsAt), asc(appointments.id));
+  const latestInstall = new Map<string, { status: string; endsAt: Date }>();
+  for (const r of installRows) {
+    if (r.jobId !== null && !latestInstall.has(r.jobId)) latestInstall.set(r.jobId, { status: r.status, endsAt: r.endsAt });
+  }
+
+  const reviewedRows = await tx
+    .select({ jobId: followUpLog.jobId })
+    .from(followUpLog)
+    .where(and(eq(followUpLog.companyId, ctx.companyId), eq(followUpLog.kind, 'review'), inArray(followUpLog.jobId, jobIds)));
+  const reviewed = new Set<string>();
+  for (const r of reviewedRows) if (r.jobId !== null) reviewed.add(r.jobId);
+
+  const inboundRows = await tx
+    .select({ customerId: messages.customerId, at: max(messages.createdAt) })
+    .from(messages)
+    .where(and(eq(messages.companyId, ctx.companyId), eq(messages.direction, 'in'), inArray(messages.customerId, customerIds)))
+    .groupBy(messages.customerId);
+  const lastInbound = new Map<string, Date>();
+  for (const r of inboundRows) if (r.customerId !== null && r.at !== null) lastInbound.set(r.customerId, r.at);
+
+  const todayDay = localDate(now, opts.timeZone);
+  const oldest = now.getTime() - 30 * DAY_MS;
+  const due: ReviewCandidate[] = [];
+  for (const r of textable) {
+    const install = latestInstall.get(r.jobId);
+    if (install === undefined || install.status !== 'completed') continue;
+    if (reviewed.has(r.jobId)) continue;
+    if (install.endsAt.getTime() < oldest) continue;
+    if (wholeDaysBetween(localDate(install.endsAt, opts.timeZone), todayDay) < opts.reviewDelayDays) continue;
+    const inboundAt = lastInbound.get(r.customerId);
+    if (inboundAt !== undefined && now.getTime() - inboundAt.getTime() < REPLY_STOP_DAYS * DAY_MS) continue;
+    due.push({
+      jobId: r.jobId,
+      customerId: r.customerId,
+      customerFirstName: r.customerFirstName,
+      assignedUserId: r.assignedUserId,
+      installEndedAt: install.endsAt,
+    });
+  }
+
+  due.sort((a, b) => a.installEndedAt.getTime() - b.installEndedAt.getTime() || (a.jobId < b.jobId ? -1 : a.jobId > b.jobId ? 1 : 0));
+  const seen = new Set<string>();
+  return due.filter((c) => {
+    if (seen.has(c.customerId)) return false; // one request per customer: the oldest install
+    seen.add(c.customerId);
+    return true;
+  });
 }

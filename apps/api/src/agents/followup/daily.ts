@@ -7,6 +7,7 @@ import {
   findStuckCandidates,
   followUpLogFor,
   findProposalCandidates,
+  findReviewCandidates,
   getJob,
   PROPOSAL_CALL_KIND,
   PROPOSAL_CALL_SUBJECT,
@@ -32,12 +33,22 @@ import type { JobMeta } from '../../jobs/queue.ts';
 import { createTask } from '../../tasks/service.ts';
 import { writeAgentNote } from '../notes.ts';
 import { localParts } from '../schedule.ts';
-import { draftLeadTexts, draftProposalTexts, type LeadDraftInput, pickTwoSlots, type ProposalDraftInput } from './draft.ts';
+import {
+  draftLeadTexts,
+  draftProposalTexts,
+  draftReviewTexts,
+  type LeadDraftInput,
+  pickTwoSlots,
+  type ProposalDraftInput,
+  type ReviewDraftInput,
+} from './draft.ts';
 
 /*
  * The Follow-up agent's daily run (G1 Task 13a), 9 AM company-local. Two independent parts, each
  * made at most once per company-local day:
- * - leads: unbooked leads get a text offering two inspection times. One plan for the owner to approve.
+ * - texts: unbooked leads get a text offering two inspection times, unsigned proposals get a follow-up
+ *   (13b), and installs completed a few days ago get a review request (Task 14, only when a review
+ *   link is set). One plan for the owner to approve, with one step per group.
  * - stuck jobs: the rep gets a next step on the job. No customer text, no email; one live task
  *   (no approval) records it.
  * Nothing here logs message text or names.
@@ -48,6 +59,7 @@ const LEADS_KIND = 'follow_ups';
 const STUCK_KIND = 'stuck_nudges';
 const LEAD_CAP = 25;
 const PROPOSAL_CAP = 25;
+const REVIEW_CAP = 25;
 const DEFAULT_FOLLOWUP_DAYS = [3, 4];
 const DAY_MS = 86_400_000;
 const LOG_WINDOW_DAYS = 365;
@@ -115,27 +127,40 @@ export async function runFollowUps(deps: AppDeps, companyId: string, meta: JobMe
 
 type Company = { timeZone: string; name: string; workHours: WorkHours };
 
-type Prepared = { leads: LeadDraftInput[]; proposals: ProposalDraftInput[] };
+type Prepared = { leads: LeadDraftInput[]; proposals: ProposalDraftInput[]; reviews: ReviewDraftInput[] };
 
 async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now: Date, today: string, dayStart: Date): Promise<void> {
   // The candidates and everything the drafts need, read in one transaction.
   const prepared = await withTenant(deps.pools, ctx, async (tx): Promise<Prepared | null> => {
     const settings = await followUpSettings(tx, ctx);
     const [proposalRow] = await tx
-      .select({ followupProposals: companySettings.followupProposals, followupDays: companySettings.followupDays })
+      .select({
+        followupProposals: companySettings.followupProposals,
+        followupDays: companySettings.followupDays,
+        followupReviews: companySettings.followupReviews,
+        reviewLink: companySettings.reviewLink,
+        reviewDelayDays: companySettings.reviewDelayDays,
+      })
       .from(companySettings)
       .where(eq(companySettings.companyId, ctx.companyId))
       .limit(1);
     const proposalsOn = proposalRow?.followupProposals ?? true;
     const followupDays = proposalRow?.followupDays ?? DEFAULT_FOLLOWUP_DAYS;
-    if (!settings.followupLeads && !proposalsOn) return null;
+    const reviewLink = proposalRow?.reviewLink?.trim() ?? '';
+    const reviewsOn = (proposalRow?.followupReviews ?? true) && reviewLink !== '';
+    const reviewDelayDays = proposalRow?.reviewDelayDays ?? 3;
+    if (!settings.followupLeads && !proposalsOn && !reviewsOn) return null;
     const made = await madeToday(tx, ctx, LEADS_KIND, dayStart);
 
     const leadCandidates =
       settings.followupLeads && !made ? await findLeadCandidates(tx, ctx, now, { leadFollowupDays: settings.leadFollowupDays }) : [];
     const proposalCandidates = proposalsOn ? await findProposalCandidates(tx, ctx, now, { followupDays }) : [];
+    const reviewCandidates =
+      reviewsOn && !made ? await findReviewCandidates(tx, ctx, now, { reviewDelayDays, timeZone: company.timeZone }) : [];
     const names =
-      leadCandidates.length > 0 || proposalCandidates.length > 0 ? await memberNames(tx) : new Map<string, string>();
+      leadCandidates.length > 0 || proposalCandidates.length > 0 || reviewCandidates.length > 0
+        ? await memberNames(tx)
+        : new Map<string, string>();
     // G1 Task 13a: each lead's times come from its rep's own hours and busy time (company hours if unassigned).
     const repIds = [...new Set(leadCandidates.map((c) => c.assignedUserId).filter((id): id is string => id !== null))];
     const busy = await busyFor(tx, ctx, repIds, now, new Date(now.getTime() + 5 * DAY_MS));
@@ -224,22 +249,52 @@ async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now
         lowestTotalCents: c.lowestTotalCents,
       });
     }
-    return { leads, proposals };
+
+    // G1 Task 14: review requests. A customer already getting a lead or proposal text today is skipped.
+    const chosen = new Set([...leadCustomers, ...proposals.map((p) => p.customerId)]);
+    const reviews: ReviewDraftInput[] = [];
+    for (const c of reviewCandidates) {
+      if (made || reviews.length >= REVIEW_CAP) break;
+      if (chosen.has(c.customerId)) continue;
+      const decision = followUpAllowed({
+        log: await followUpLogFor(tx, ctx, [c.customerId], logSince),
+        kind: 'review',
+        customerId: c.customerId,
+        jobId: c.jobId,
+        now,
+        lastInboundAt: await lastInboundAt(tx, ctx, c.customerId),
+        lastStormTextAt: await lastStormTextAt(tx, ctx, c.customerId),
+      });
+      if (!decision.allowed) continue;
+      reviews.push({
+        jobId: c.jobId,
+        customerId: c.customerId,
+        customerFirstName: c.customerFirstName,
+        repFirstName: c.assignedUserId === null ? null : firstWord(names.get(c.assignedUserId)),
+        reviewLink,
+      });
+    }
+    return { leads, proposals, reviews };
   });
-  if (prepared === null || (prepared.leads.length === 0 && prepared.proposals.length === 0)) return;
+  if (prepared === null || (prepared.leads.length === 0 && prepared.proposals.length === 0 && prepared.reviews.length === 0)) return;
 
   // The Llm calls are made outside any transaction.
   const leadDraft = prepared.leads.length > 0 ? await draftLeadTexts(deps.llm, company.name, prepared.leads) : null;
   const proposalDraft = prepared.proposals.length > 0 ? await draftProposalTexts(deps.llm, company.name, prepared.proposals) : null;
+  const reviewDraft = prepared.reviews.length > 0 ? await draftReviewTexts(deps.llm, company.name, prepared.reviews) : null;
   const leadTexts = leadDraft?.texts ?? [];
   const proposalTexts = proposalDraft?.texts ?? [];
-  const anyTemplate = (leadDraft?.anyTemplate ?? false) || (proposalDraft?.anyTemplate ?? false);
+  const reviewTexts = reviewDraft?.texts ?? [];
+  const anyTemplate = (leadDraft?.anyTemplate ?? false) || (proposalDraft?.anyTemplate ?? false) || (reviewDraft?.anyTemplate ?? false);
   const jobIds = new Map(prepared.leads.map((l) => [l.customerId, l.jobId]));
 
   const summaryParts: string[] = [];
   if (anyTemplate) summaryParts.push('Written from a template');
   if (proposalTexts.length > 0) {
     summaryParts.push(proposalTexts.length === 1 ? '1 proposal follow-up' : `${proposalTexts.length} proposal follow-ups`);
+  }
+  if (reviewTexts.length > 0) {
+    summaryParts.push(reviewTexts.length === 1 ? '1 review request' : `${reviewTexts.length} review requests`);
   }
 
   const steps: { type: 'send_personal_texts'; payload: Record<string, unknown> }[] = [];
@@ -265,6 +320,17 @@ async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now
       },
     });
   }
+  if (reviewTexts.length > 0) {
+    steps.push({
+      type: 'send_personal_texts',
+      payload: {
+        purpose: 'marketing',
+        kind: 'review',
+        messages: reviewTexts.map((t) => ({ customerId: t.customerId, jobId: t.jobId, body: t.body })),
+        dedupePrefix: `followup-review:${today}`,
+      },
+    });
+  }
 
   await withTenant(deps.pools, ctx, async (tx) => {
     // Checked again: a second run may have made the plan while the Llm was writing.
@@ -275,7 +341,7 @@ async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now
       {
         agent: AGENT,
         kind: LEADS_KIND,
-        title: `Follow-ups for today (${leadTexts.length + proposalTexts.length})`,
+        title: `Follow-ups for today (${leadTexts.length + proposalTexts.length + reviewTexts.length})`,
         ...(summaryParts.length > 0 && { summary: summaryParts.join('. ') }),
         expiresAt: sixPm(today, company.timeZone),
         createdBy: 'agent',

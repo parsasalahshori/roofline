@@ -250,3 +250,78 @@ export async function draftProposalTexts(
   });
   return { texts, anyTemplate };
 }
+
+/** G1 Task 14: what the review request needs. */
+export type ReviewDraftInput = {
+  jobId: string;
+  customerId: string;
+  customerFirstName: string | null;
+  repFirstName: string | null;
+  reviewLink: string;
+};
+
+export type DraftedReviewText = { jobId: string; customerId: string; body: string; fromTemplate: boolean };
+
+const REVIEW_MAX_TEMPLATE_CHARS = 300;
+
+/** The text used when the Llm cannot write one, or its text fails a check. Always carries the link and the STOP line. */
+export function reviewTemplate(i: { customerFirstName: string | null; companyName: string; reviewLink: string }): string {
+  const first = i.customerFirstName ?? 'there';
+  const build = (ask: string) =>
+    `Hi ${first}, it's ${i.companyName}. Thanks for choosing us for your new roof. ${ask}: ${i.reviewLink} Reply STOP to opt out.`;
+  const long = build('If you have a minute, a short review helps a lot');
+  return long.length <= REVIEW_MAX_TEMPLATE_CHARS ? long : build('A short review helps a lot');
+}
+
+function acceptableReviewBody(body: string, link: string): boolean {
+  if (body.trim() === '' || body.length > MAX_BODY_CHARS) return false;
+  if (!claimsGuard(body).ok) return false;
+  if (!body.includes(link)) return false;
+  return /Reply STOP to opt out\.?$/.test(body.trim());
+}
+
+/**
+ * Writes one review request per finished job through the Llm. A text that fails a check, a job the
+ * Llm left out, a refusal, or an unavailable Llm gets the template instead. At most MAX_DRAFT_JOBS.
+ */
+export async function draftReviewTexts(
+  llm: Llm,
+  companyName: string,
+  reviews: readonly ReviewDraftInput[],
+): Promise<{ texts: DraftedReviewText[]; anyTemplate: boolean }> {
+  if (reviews.length > MAX_DRAFT_JOBS) throw new RangeError(`At most ${MAX_DRAFT_JOBS} reviews per call.`);
+  if (reviews.length === 0) return { texts: [], anyTemplate: false };
+
+  const facts: JobFacts[] = reviews.map((r) => ({
+    jobId: r.jobId,
+    customerFirstName: r.customerFirstName ?? '',
+    companyName,
+    repFirstName: r.repFirstName,
+    address: null,
+    facts: { reviewLink: r.reviewLink },
+  }));
+
+  const written = new Map<string, string>();
+  try {
+    const result = await llm.draftTexts({ instruction: 'review_request', facts });
+    if (!result.refused) for (const t of result.texts) written.set(t.jobId, t.body);
+  } catch (e) {
+    if (!(e instanceof LlmUnavailableError)) throw e;
+  }
+
+  let anyTemplate = false;
+  const texts = reviews.map((r): DraftedReviewText => {
+    const body = written.get(r.jobId);
+    if (body !== undefined && acceptableReviewBody(body, r.reviewLink)) {
+      return { jobId: r.jobId, customerId: r.customerId, body, fromTemplate: false };
+    }
+    anyTemplate = true;
+    return {
+      jobId: r.jobId,
+      customerId: r.customerId,
+      body: reviewTemplate({ customerFirstName: r.customerFirstName, companyName, reviewLink: r.reviewLink }),
+      fromTemplate: true,
+    };
+  });
+  return { texts, anyTemplate };
+}

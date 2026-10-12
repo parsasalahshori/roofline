@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { createPools } from '../src/pools.ts';
 import { recordFollowUp } from '../src/repos/follow-up-log.ts';
-import { findLeadCandidates, findStuckCandidates, followUpSettings, recordStuckNudge } from '../src/repos/follow-up-finder.ts';
+import { findLeadCandidates, findReviewCandidates, findStuckCandidates, followUpSettings, recordStuckNudge } from '../src/repos/follow-up-finder.ts';
 import { appointments, customers, jobs, messages, properties } from '../src/schema/index.ts';
 import { type TenantContext, withTenant } from '../src/tenant.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
@@ -31,7 +31,7 @@ function ctxFor(c: SeededCompany): TenantContext {
 let addrN = 0;
 
 type JobSeed = {
-  stage?: 'lead' | 'proposal' | 'lost';
+  stage?: 'lead' | 'proposal' | 'installed' | 'lost';
   createdAt?: Date;
   stageChangedAt?: Date;
   assigned?: boolean;
@@ -39,6 +39,8 @@ type JobSeed = {
   phones?: { e164: string; label?: string; primary?: boolean }[];
   doNotContact?: boolean;
   lostReason?: string;
+  consent?: 'none' | 'express' | 'attested' | 'written';
+  customerArchived?: boolean;
 };
 
 /** A customer with one job; returns the ids. */
@@ -53,6 +55,8 @@ async function makeJob(c: SeededCompany, j: JobSeed = {}) {
         firstName: 'Pat',
         phones: j.phones ?? [{ e164: '+14025550101', label: 'mobile' }],
         ...(j.doNotContact !== undefined && { doNotContact: j.doNotContact }),
+        ...(j.consent !== undefined && { smsConsentStatus: j.consent }),
+        ...(j.customerArchived === true && { archivedAt: NOW }),
         createdByUserId: c.owner.userId,
       })
       .returning({ id: customers.id });
@@ -225,5 +229,110 @@ describe('followUpSettings', () => {
     const ctx = ctxFor(seed.a);
     const s = await withTenant(pools, ctx, (tx) => followUpSettings(tx, ctx));
     expect(s).toEqual({ leadFollowupDays: 2, followupLeads: true, stuckAfterDays: 14 });
+  });
+});
+
+let phoneN = 0;
+
+async function makeReviewJob(
+  c: SeededCompany,
+  opts: JobSeed & { install?: { endedAgoDays: number; status?: 'scheduled' | 'completed' } | null } = {},
+) {
+  const { install, ...seedOpts } = opts;
+  const j = await makeJob(c, {
+    stage: 'installed',
+    consent: 'attested',
+    phones: [{ e164: `+1402555${String(2000 + ++phoneN)}`, label: 'mobile' }],
+    ...seedOpts,
+  });
+  const inst = install === undefined ? { endedAgoDays: 3, status: 'completed' as const } : install;
+  if (inst !== null) {
+    const endsAt = ago(inst.endedAgoDays);
+    await withTenant(pools, ctxFor(c), (tx) =>
+      tx.insert(appointments).values({
+        companyId: c.companyId,
+        kind: 'install',
+        status: inst.status ?? 'completed',
+        jobId: j.jobId,
+        customerId: j.customerId,
+        propertyId: j.propertyId,
+        startsAt: new Date(endsAt.getTime() - 4 * 3_600_000),
+        endsAt,
+      }),
+    );
+  }
+  return j;
+}
+
+async function reviews(c: SeededCompany, delay = 3, now = NOW) {
+  const ctx = ctxFor(c);
+  return withTenant(pools, ctx, (tx) => findReviewCandidates(tx, ctx, now, { reviewDelayDays: delay, timeZone: 'America/Chicago' }));
+}
+
+describe('findReviewCandidates', () => {
+  test('an install completed 3 days ago with delay 3 is returned', async () => {
+    const j = await makeReviewJob(seed.a);
+    const found = await reviews(seed.a);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ jobId: j.jobId, customerId: j.customerId, customerFirstName: 'Pat', assignedUserId: null });
+    expect(found[0]?.installEndedAt.getTime()).toBe(ago(3).getTime());
+  });
+
+  test('an install completed 2 days ago, or 31 days ago, is not returned', async () => {
+    await makeReviewJob(seed.a, { install: { endedAgoDays: 2 } });
+    await makeReviewJob(seed.a, { install: { endedAgoDays: 31 } });
+    expect(await reviews(seed.a)).toEqual([]);
+  });
+
+  test('delay 0 with an install completed today is returned', async () => {
+    const j = await makeReviewJob(seed.a, { install: { endedAgoDays: 0.1 } });
+    expect((await reviews(seed.a, 0)).map((r) => r.jobId)).toEqual([j.jobId]);
+  });
+
+  test('an install that is only scheduled, or a job with no install, is not returned', async () => {
+    await makeReviewJob(seed.a, { install: { endedAgoDays: 3, status: 'scheduled' } });
+    await makeReviewJob(seed.a, { install: null });
+    expect(await reviews(seed.a)).toEqual([]);
+  });
+
+  test('a job that already has a review log row is not returned', async () => {
+    const j = await makeReviewJob(seed.a);
+    const messageId = await makeMessage(seed.a, j.customerId, 'out', ago(1));
+    const ctx = ctxFor(seed.a);
+    await withTenant(pools, ctx, (tx) => recordFollowUp(tx, ctx, { customerId: j.customerId, jobId: j.jobId, kind: 'review', messageId, at: ago(1) }));
+    expect(await reviews(seed.a)).toEqual([]);
+  });
+
+  test('a lost job is not returned', async () => {
+    await makeReviewJob(seed.a, { stage: 'lost', lostReason: 'Went elsewhere' });
+    expect(await reviews(seed.a)).toEqual([]);
+  });
+
+  test('consent none and express are skipped; attested and written are returned', async () => {
+    await makeReviewJob(seed.a, { consent: 'none' });
+    await makeReviewJob(seed.a, { consent: 'express' });
+    const att = await makeReviewJob(seed.a, { consent: 'attested' });
+    const wri = await makeReviewJob(seed.a, { consent: 'written' });
+    expect((await reviews(seed.a)).map((r) => r.jobId).sort()).toEqual([att.jobId, wri.jobId].sort());
+  });
+
+  test('do-not-contact, archived, and landline-only customers are not returned', async () => {
+    await makeReviewJob(seed.a, { doNotContact: true });
+    await makeReviewJob(seed.a, { customerArchived: true });
+    await makeReviewJob(seed.a, { phones: [{ e164: '+14025559901', label: 'landline' }] });
+    expect(await reviews(seed.a)).toEqual([]);
+  });
+
+  test('an inbound text 1 day ago blocks; 4 days ago does not', async () => {
+    const blocked = await makeReviewJob(seed.a);
+    await makeMessage(seed.a, blocked.customerId, 'in', ago(1));
+    const open = await makeReviewJob(seed.a);
+    await makeMessage(seed.a, open.customerId, 'in', ago(4));
+    expect((await reviews(seed.a)).map((r) => r.jobId)).toEqual([open.jobId]);
+  });
+
+  test('another company sees nothing', async () => {
+    await makeReviewJob(seed.a);
+    expect(await reviews(seed.b)).toEqual([]);
   });
 });
