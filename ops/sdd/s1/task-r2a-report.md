@@ -16,3 +16,7 @@
 
 ## Verify tail
 typecheck (tsc -b) clean, eslint clean, vitest @roofline/shared: 28 files, 668 tests passed. DB/API tests run on CI only.
+
+## CI
+- Run 38250841615 (5321093): Platform failed. storm-alerts.test.ts expects a synchronous throw from the storm-draft handler for a bad id; making the handler async broke it. Fixed in aa9f2af: validation stays synchronous, the draft runs in runStormDraft (storm-plan.test.ts line 481 back to a sync toThrow).
+- Run 38254123531 (aa9f2af): Platform, E2E, v1, Hail all passed.
