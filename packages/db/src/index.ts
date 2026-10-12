@@ -223,3 +223,5 @@ export * from './repos/fd-caller.ts';
 export * from './repos/follow-up-log.ts';
 // G1 Claims (Task 6)
 export * from './repos/claims.ts';
+// G1 Task 13a
+export { findLeadCandidates, findStuckCandidates, followUpSettings, type LeadCandidate, recordStuckNudge, STUCK_NUDGE_ACTIVITY, STUCK_NUDGE_GAP_DAYS, type StuckCandidate } from './repos/follow-up-finder.ts';
