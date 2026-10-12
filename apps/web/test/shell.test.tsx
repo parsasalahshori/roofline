@@ -7,7 +7,7 @@ import { keys } from '../src/api/keys.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { approvals } from '../src/copy/approvals.ts';
-import { comingSoon } from '../src/copy/comingSoon.ts';
+import { calendar } from '../src/copy/calendar.ts';
 import { common } from '../src/copy/common.ts';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { shell } from '../src/copy/shell.ts';
@@ -107,9 +107,9 @@ it('deep-links straight to a window', async () => {
   signedInApi();
   renderApp('/calendar');
 
-  const calendar = await screen.findByRole('dialog', { name: WINDOW_COPY.calendar.title });
-  expect(within(calendar).getByText(WINDOW_COPY.calendar.description)).toBeInTheDocument();
-  expect(within(calendar).getByText(comingSoon.calendar)).toBeInTheDocument();
+  const calendarWindow = await screen.findByRole('dialog', { name: WINDOW_COPY.calendar.title });
+  expect(within(calendarWindow).getByText(WINDOW_COPY.calendar.description)).toBeInTheDocument();
+  expect(within(calendarWindow).getByText(calendar.comingSoon)).toBeInTheDocument();
 });
 
 it('badges Storm with storm drafts and Agents with tasks needing attention', async () => {
