@@ -91,7 +91,6 @@ function dockLink(dockNav: HTMLElement, label: string) {
 describe('E1 windows', () => {
   it.each([
     ['/estimator', estimator.comingSoon],
-    ['/estimator/proposals/p1', proposals.comingSoon],
   ])('%s shows its placeholder', async (path, copy) => {
     signedInApi();
     renderApp(path);
@@ -104,6 +103,23 @@ describe('E1 windows', () => {
     renderApp('/estimator/measure/m1');
 
     expect(await screen.findByText(measure.numbersTitle)).toBeInTheDocument();
+  });
+
+  it('/estimator/proposals/p1 shows the proposal', async () => {
+    signedInApi(ACCOUNT, {
+      'GET /api/proposals/p1': () => ({
+        body: {
+          id: 'p1', number: 'P-0001', status: 'draft', jobId: 'j1', customer: { id: 'c1', name: 'Maria Lopez', phone: null },
+          address: '12 Oak St', measurementId: 'm1', basis: 'exact', options: [], messageBody: '', validUntil: '2026-11-12',
+          sentAt: null, views: { count: 0, first: null, last: null }, signed: null, declined: null, taskId: null, replacedById: null, canEdit: true,
+        },
+      }),
+      'GET /api/pricebook': () => ({ status: 403, body: { error: 'Not allowed.' } }),
+      'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', timezone: 'America/Chicago' } }),
+    });
+    renderApp('/estimator/proposals/p1');
+
+    expect(await screen.findByText(proposals.title('P-0001'))).toBeInTheDocument();
   });
 
   it('/p/abc renders without a session and without the shell', async () => {
