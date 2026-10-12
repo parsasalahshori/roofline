@@ -205,9 +205,9 @@ describe('the worker', () => {
         ['provision-texting', '* * * * *'],
         ['prune-early-reports', '17 3 * * *'],
         ['report-usage', '* * * * *'],
+        ['signed-pdf-sweep', '*/15 * * * *'],
         ['spotter-sync', '*/30 * * * *'],
         ['storm-match', '*/10 * * * *'],
-        ['signed-pdf-sweep', '*/15 * * * *'],
         ['sweep-imports', '* * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);
