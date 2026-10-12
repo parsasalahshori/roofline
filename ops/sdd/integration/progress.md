@@ -1399,7 +1399,7 @@ Base: pass 12 head ab09bae5. `git fetch origin` (2026-10-12): every head matched
 | a1-agents | f48086c72df56af27b8ff910e04eaddde43d215c | f93ad30 | 1 file |
 | g1-agents | e9834cd980eda7e4ed1cce079b4759845bd555c5 | cddd1c2 | none (docs only) |
 
-Probe-only commit: ad3191c (cross-track fixes, below).
+Probe-only commits: ad3191c and 94c62b1 (cross-track fixes, below).
 
 What the tracks brought: C1 the security fixes (Ruling BF / SEC-1..4: TRUST_PROXY required in production, login and
 invite limits, `__Host-rl_session`, late errors, exact app_system grants in 0002 and a no-TRUNCATE/TRIGGER/REFERENCES
@@ -1505,8 +1505,9 @@ Still open (probe keeps its workaround):
 2. **C1 x D1, `company_phone_numbers` UPDATE.** C1 SEC-4 leaves app_system SELECT, INSERT on `company_phone_numbers`;
    D1's `markVoiceUrlSet` (`system/voice-routing.ts`, called by the fd-health job) updates `capabilities` through the
    system pool, so `apps/api/test/front-desk/number-voice.test.ts` and the fd-health job fail with permission denied.
-   Probe fix: 0020 adds `GRANT UPDATE (capabilities) ON company_phone_numbers TO app_system`. Owner D1 at its c1 merge
-   (C1's merge note: grant what you need in your own migration).
+   Probe fix: 0020 adds `GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers TO app_system` (Drizzle's
+   `$onUpdate` also writes `updated_at`; `capabilities` alone still failed in CI, fixed in 94c62b1). Owner D1 at its c1
+   merge (C1's merge note: grant what you need in your own migration).
 3. **C1 x S1, production config fixtures need TRUST_PROXY.** S1's storm-config, google-ads-http and postmark-broadcast
    tests build a production config without it and throw `ConfigError`. Probe fix: `TRUST_PROXY: '1'` (with the R2 four
    from pass 12). Owner S1 at its c1/e1 merge.
@@ -1535,3 +1536,26 @@ Still open (probe keeps its workaround):
 `npm ci` clean (no package change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass, lint
 pass, lint:css pass; vitest @roofline/web 1243 pass (133 files), @roofline/ui 172 pass, @roofline/shared 1298 pass,
 @roofline/send-gate 532 pass. The database, API, worker and e2e suites run only in CI.
+
+### CI (pass 13)
+
+Run 38271112763 on f47286c, attempt 1: E2E (Playwright) success; Hail service success; v1 success; Platform failure,
+8 tests in 3 API files:
+- `test/front-desk/number-voice.test.ts` (6) and `test/front-desk/settings-routes.test.ts` "first save sets voice url"
+  (1): `markVoiceUrlSet` still refused. `timestamps()` gives `updated_at` a Drizzle `$onUpdate`, so the update also
+  writes `updated_at`; the 0020 grant is now `UPDATE (capabilities, updated_at)` (new problem 2).
+- `test/exact-report.test.ts` "an expired price within the approved max is re-priced then ordered" (1): not a merge
+  artifact. The test helpers build `FakeExactReports()` on the wall clock (`expiresAt` = real now + 10 min) while the
+  test clock is pinned to 2026-10-12T15:00Z, so after 15:01Z real time the price is never expired at test time + 11 min.
+  It passed in pass 12 only because that run was earlier in the day; it fails the same way on e1-estimator and every
+  branch carrying E1 from now on. Probe fix: `new FakeExactReports(() => clock.now())` in `test/helpers.ts`.
+
+Fix commit 94c62b1. Run 38275182476 on 94c62b1, attempt 1: Platform (lint, typecheck, tests) success; E2E (Playwright)
+success; Hail service (ruff, pytest) success; v1 (node:test) success. C1's security fixes, E1's security findings, S1
+T28/R1/R2a/R2b/R4/R5/R7 on the rebuilt 0019-0024 snapshots, D1 Tasks 4-6 and 10-18 and A1 T20 pass the database, API,
+worker and e2e suites in combination. (The local `ci-check` wrapper was stopped by its time limit; both runs were
+followed through the Actions API until they completed.)
+
+New problem 8. **E1 test time bomb, `FakeExactReports` on the wall clock.** See above. Fix:
+`new FakeExactReports(() => clock.now())` in `apps/api/test/helpers.ts` (`makeTestApp`). Owner E1, now (it is red on
+e1-estimator and on every track that carries E1 after 2026-10-12T15:01Z).
