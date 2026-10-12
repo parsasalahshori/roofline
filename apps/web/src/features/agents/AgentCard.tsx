@@ -1,4 +1,4 @@
-import { hoursLabel, moneyLabel, type AgentCard as AgentCardData } from '@roofline/shared';
+import { G1_AGENTS, hoursLabel, moneyLabel, type AgentCard as AgentCardData } from '@roofline/shared';
 import { useId } from 'react';
 import { Card, UiLink } from '@roofline/ui';
 import { agentsCommon, agentsWindow } from '../../copy/agents.ts';
@@ -14,6 +14,7 @@ export function AgentCard({ card, hourlyRateCents }: { card: AgentCardData; hour
   const timeId = `${id}-time`;
   const chipId = `${id}-chip`;
   const name = AGENT_LABEL[card.agent];
+  const turnOn = card.status === 'paused' && (G1_AGENTS as readonly string[]).includes(card.agent);
   const soon = card.status === 'coming_soon';
   return (
     <Card as="div">
@@ -50,6 +51,7 @@ export function AgentCard({ card, hourlyRateCents }: { card: AgentCardData; hour
               </p>
               <p className={`${styles.line} ${styles.muted}`}>{`${agentsWindow.notApproved} ${card.notApproved30d}`}</p>
               {card.waitingCount > 0 ? <p className={styles.line}>{`${agentsWindow.waiting} ${card.waitingCount}`}</p> : null}
+              {turnOn ? <p className={styles.line}><span>{agentsWindow.turnOnHint}</span></p> : null}
               <MiniChart days={card.last14Days} label={agentsWindow.chartLabel} />
             </>
           )}

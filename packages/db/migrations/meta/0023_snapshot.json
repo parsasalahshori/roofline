@@ -7198,7 +7198,7 @@
       "checkConstraints": {
         "stored_files_kind_check": {
           "name": "stored_files_kind_check",
-          "value": "\"stored_files\".\"kind\" in ('signed_proposal_pdf', 'storm_photo', 'ad_image')"
+          "value": "\"stored_files\".\"kind\" in ('signed_proposal_pdf', 'storm_photo', 'ad_image', 'claim_packet')"
         }
       },
       "isRLSEnabled": false
@@ -10978,7 +10978,30 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "ad_accounts_platform_external_live_uq": {
+          "name": "ad_accounts_platform_external_live_uq",
+          "columns": [
+            {
+              "expression": "platform",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "external_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "\"ad_accounts\".\"status\" <> 'revoked'",
+          "concurrently": false
+        }
+      },
       "foreignKeys": {
         "ad_accounts_company_id_companies_id_fk": {
           "name": "ad_accounts_company_id_companies_id_fk",

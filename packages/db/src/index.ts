@@ -31,9 +31,16 @@ export {
   type RecentTaskRow,
   recentTasks,
   taskSubjectScope,
+  frontDeskConversationCounts,
 } from './repos/agent-metrics.ts';
 export { type FeedCursor, type FeedRow, feedRank, listFeedPage } from './repos/agent-feed.ts';
-export { listWaitingTasks, type WaitingTaskRow } from './repos/agent-waiting.ts';
+export {
+  countFrontDeskFollowUps,
+  listFrontDeskFollowUps,
+  listWaitingTasks,
+  type FrontDeskFollowUpRow,
+  type WaitingTaskRow,
+} from './repos/agent-waiting.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
 export {
   insertTimeRecount,
@@ -168,6 +175,9 @@ export {
   listTasks,
   listTasksByStatus,
   type ListTasksOptions,
+  findStepByIdempotencyKey,
+  setStepResult,
+  listLiveTasksBySubject,
   moveStep,
   type NewStepRow,
   type NewTaskRow,
@@ -236,8 +246,22 @@ export * from './repos/fd-caller.ts';
 export * from './repos/fd-texts.ts';
 export * from './repos/fd-after-call.ts';
 export * from './repos/fd-text-back.ts';
+export * from './repos/fd-message.ts';
 export * from './repos/conversation-inbox.ts';
 export * from './repos/front-desk-stats.ts';
+export * from './repos/follow-up-log.ts';
+// G1 Claims (Task 6)
+export * from './repos/claims.ts';
+export * from './repos/claim-packet.ts'; // G1 Task 7
+// G1 Task 10
+export * from './repos/scheduler.ts';
+export * from './repos/scheduler-agenda.ts';
+export * from './repos/scheduler-weather.ts'; // G1 Task 11
+export * from './repos/scheduler-no-show.ts'; // G1 Task 12
+// G1 Task 8
+export * from './repos/claims-agent.ts';
+// G1 Task 13a
+export { findLeadCandidates, findProposalCandidates, findReviewCandidates, findStuckCandidates, followUpSettings, type LeadCandidate, PROPOSAL_CALL_KIND, PROPOSAL_CALL_SUBJECT, type ProposalCandidate, type ReviewCandidate, recordStuckNudge, STUCK_NUDGE_ACTIVITY, STUCK_NUDGE_GAP_DAYS, type StuckCandidate } from './repos/follow-up-finder.ts';
 // S1 skeleton (Task 1): one line per new repo file; later S1 tasks fill the files in.
 export * from './repos/storm-layer.ts';
 export * from './repos/company-storms.ts';

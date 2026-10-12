@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { beforeEach, describe, expect, test } from 'vitest';
+import pg from 'pg';
+import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { spotterReports } from '@roofline/db';
 import { upsertSpotterReports } from '@roofline/db/system';
 import { parseSpcHailCsv, syncSpotter } from '../src/storm/spotter.ts';
@@ -30,10 +31,19 @@ describe('parseSpcHailCsv', () => {
 
 describe('syncSpotter', () => {
   let t: TestApp;
+  // app_system holds SELECT and INSERT only on spotter_reports (Ruling BF), so the cleanup goes through the owner.
+  const owner = new pg.Client({ connectionString: inject('dbUrls').owner });
+  const ownerReady = owner.connect();
+
+  afterAll(async () => {
+    await ownerReady.catch(() => undefined);
+    await owner.end().catch(() => undefined);
+  });
 
   beforeEach(async () => {
     t = await makeTestApp();
-    await t.deps.pools.system.delete(spotterReports);
+    await ownerReady;
+    await owner.query('delete from spotter_reports');
   });
 
   const store = (r: Parameters<typeof upsertSpotterReports>[1]) => upsertSpotterReports(t.deps.pools.system, r);

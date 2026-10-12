@@ -17,7 +17,7 @@ const DB_SYSTEM_PATTERN = {
     '**/packages/db/src/system/**',
   ],
   message:
-    'Only auth, the Twilio and Stripe hooks, the Front Desk relay socket, the call recording start and store job, the missed-call text-back, the scheduler jobs, account and public routes, scripts, the worker and the db package may import @roofline/db/system. Use withTenant from @roofline/db instead.',
+    'Only auth, the Twilio and Stripe hooks, the Front Desk relay socket, the call recording start and store job, the missed-call text-back, the Front Desk message and transfer tools, the scheduler jobs, account and public routes, scripts, the worker and the db package may import @roofline/db/system. Use withTenant from @roofline/db instead.',
 };
 
 const DB_SYSTEM_RESTRICTION = { patterns: [DB_SYSTEM_PATTERN] };
@@ -29,6 +29,8 @@ const DB_SYSTEM_ALLOWED = [
   'apps/api/src/front-desk/recording.ts',
   'apps/api/src/jobs/recording-store.ts',
   'apps/api/src/front-desk/text-back.ts',
+  'apps/api/src/front-desk/tools/message.ts',
+  'apps/api/src/front-desk/tools/transfer.ts',
   'apps/api/src/jobs/scheduler/**',
   // The footprint loader is global work as app_system (E1 Task 6).
   'apps/api/src/estimator/footprints-load.ts',
@@ -52,7 +54,9 @@ const DB_SYSTEM_ALLOWED = [
 // and event, so they too belong to the task service (completeClaimedStep, completeParkedStep, expireOverdueTasks).
 // moveStep and updateTask change a step's or task's status, so they pair with an event there as well
 // (declineTask, supersedeDraft).
-const EVENT_WRITERS = ['insertAgentEvent', 'setStepSnapshot', 'finishClaimedStep', 'finishParkedStep', 'expireOverdueDrafts', 'moveStep', 'updateTask'];
+// setStepResult and insertTask write step and task rows, so they belong to the task service too
+// (addToLiveTask, createLiveTask).
+const EVENT_WRITERS = ['insertAgentEvent', 'setStepSnapshot', 'finishClaimedStep', 'finishParkedStep', 'expireOverdueDrafts', 'moveStep', 'updateTask', 'setStepResult', 'insertTask'];
 const RECOUNT_WRITERS = ['rewriteStepSnapshot', 'refreshTaskMinutes'];
 // A regex, not a group: the group '@roofline/db' would also match '@roofline/db/system'.
 const DB_MODULE_REGEX = '^@roofline/db$|/packages/db/src/(?!system(/|$))';
@@ -140,7 +144,7 @@ const NO_RAW_BUTTON = {
 export default defineConfig(
   { ignores: ['v1/**', '**/node_modules/**', '.superpowers/**', 'ops/**', 'apps/web/dist/**', '**/playwright-report/**', '**/test-results/**'] },
   {
-    files: ['{apps,packages}/**/*.{ts,tsx}'],
+    files: ['{apps,packages,scripts}/**/*.{ts,tsx}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     rules: { 'no-restricted-imports': ['error', DB_SYSTEM_RESTRICTION] },
   },

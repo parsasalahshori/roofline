@@ -366,7 +366,7 @@ describe('re-drafting', () => {
   });
 
   test.each(['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done', 'expired', 'declined'] as const)(
-    'a %s plan is left alone (Ruling BD: A1 re-drafts expired and declined plans)',
+    'a %s plan is left alone by a plain call (amended Ruling BD: expired and declined only with allowFinished)',
     async (status) => {
       await addHit({ email: 'a@example.com' });
       const first = await draft();

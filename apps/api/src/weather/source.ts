@@ -20,6 +20,14 @@ export type CurrentWeather = {
 /** One hour of forecast, shared with the weather-risk rule in @roofline/shared (G1). */
 export type { HourlyForecast } from '@roofline/shared';
 import type { HourlyForecast } from '@roofline/shared';
+export type DailyForecast = {
+  /** YYYY-MM-DD, the place's local date. */
+  date: string;
+  highF: number | null;
+  lowF: number | null;
+  summary: string;
+  precipChancePercent: number | null;
+};
 
 export interface WeatherSource {
   /**
@@ -33,10 +41,13 @@ export interface WeatherSource {
    * as `current`: never throws).
    */
   hourly(lat: number, lng: number, hours: number): Promise<HourlyForecast[] | null>;
+  /** Up to `days` days of forecast, or null on any failure or when the place is not covered. Never throws. */
+  daily(lat: number, lng: number, days: number): Promise<DailyForecast[] | null>;
 }
 
 /** A source with no weather to give. It asks nobody. */
 export class NullWeatherSource implements WeatherSource {
   readonly current: WeatherSource['current'] = async () => null;
   readonly hourly: WeatherSource['hourly'] = async () => null;
+  readonly daily: WeatherSource['daily'] = async () => null;
 }

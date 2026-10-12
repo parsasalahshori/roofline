@@ -221,6 +221,7 @@ async function settleParkedStep(
         finish = { status: 'needs_attention', result, errorPlain };
       }
     }
+    // Every parked step ends through completeParkedStep (A1 records the outcome there; Ruling AX-H).
     const saved = await completeParkedStep(tx, ctx, step.id, finish, now);
     if (!saved) return false;
     await refreshTask(tx, ctx, saved.taskId, now);

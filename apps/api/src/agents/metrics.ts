@@ -6,7 +6,9 @@ import {
   breakdownByBaseline,
   companies,
   companySettings,
+  countFrontDeskFollowUps,
   dailyFinished,
+  frontDeskConversationCounts,
   minutesByAgent,
   recentTasks,
   type AgentCounts,
@@ -19,6 +21,7 @@ import {
 import {
   chartDates,
   G1_AGENTS_SHIPPED,
+  isPaused,
   LAUNCH_AGENTS,
   metricsWindow,
   periodRange,
@@ -75,6 +78,7 @@ type Snapshot = {
   counts: Record<string, AgentCounts>;
   settings: Map<string, AgentSettingsInfo>;
   monthMinutes: Record<string, number>;
+  frontDeskRate: { finished: number; succeeded: number };
 };
 
 async function companyFacts(tx: Tx, ctx: TenantContext): Promise<{ zone: string; hourlyRateCents: number }> {
@@ -102,6 +106,7 @@ async function gather(tx: Tx, ctx: TenantContext, now: Date): Promise<Snapshot> 
   const counts = await agentCounts(tx, ctx, window);
   const settingRows = await agentSettingsInfo(tx, ctx);
   const monthMinutes = await minutesByAgent(tx, ctx, periodRange(now, zone, 'month'));
+  const frontDeskRate = await frontDeskConversationCounts(tx, ctx, window);
   return {
     now,
     zone,
@@ -110,10 +115,11 @@ async function gather(tx: Tx, ctx: TenantContext, now: Date): Promise<Snapshot> 
     counts,
     settings: new Map(settingRows.map((row) => [row.agent, row])),
     monthMinutes,
+    frontDeskRate,
   };
 }
 
-/** Claims, Scheduler and Follow-up show "Coming soon" until G1 ships (Ruling AX-B). */
+/** Claims, Scheduler and Follow-up show "Coming soon" only while G1_AGENTS_SHIPPED is false (Ruling AX-B). */
 function isComingSoon(agent: ScreenAgent): boolean {
   return !(LAUNCH_AGENTS as readonly string[]).includes(agent) && !G1_AGENTS_SHIPPED;
 }
@@ -132,15 +138,16 @@ function emptyCard(agent: ScreenAgent): AgentCard {
 }
 
 /** Paused wins over waiting; waiting means drafts or needs_attention tasks are waiting for a person. */
-function statusOf(settings: AgentSettingsInfo | undefined, waitingCount: number): AgentStatusView {
-  if (settings !== undefined && settings.pausedAt !== null) return 'paused';
+function statusOf(agent: ScreenAgent, settings: AgentSettingsInfo | undefined, waitingCount: number): AgentStatusView {
+  if (isPaused(agent, settings === undefined ? null : { pausedAt: settings.pausedAt })) return 'paused';
   if (waitingCount > 0) return 'waiting';
   return 'on';
 }
 
 /**
- * One agent's card. `successRate` uses the task model for every agent. Front Desk's rate is meant to
- * read conversations.outcome instead (Ruling AX-D); that lands with D1, so it is not done here yet.
+ * One agent's card. `successRate` uses the task model, except Front Desk (Ruling AX-D): finished conversations
+ * in the last 30 days that were not abandoned and had no model-failure hand-off, null below 5 conversations.
+ * Front Desk's waitingCount also counts open follow-ups (customers it handed a message or a transfer for).
  */
 async function buildCard(tx: Tx, ctx: TenantContext, snap: Snapshot, agent: ScreenAgent): Promise<AgentCard> {
   if (isComingSoon(agent)) return emptyCard(agent);
@@ -151,15 +158,22 @@ async function buildCard(tx: Tx, ctx: TenantContext, snap: Snapshot, agent: Scre
     date,
     finished: finishedByDate.get(date) ?? 0,
   }));
+  const waitingCount =
+    agent === 'front_desk' ? counts.waitingCount + (await countFrontDeskFollowUps(tx, ctx, snap.now)) : counts.waitingCount;
+  let rate = successRate({ done: counts.done30d, partlyDone: counts.partlyDone30d, ran: counts.ran30d });
+  if (agent === 'front_desk') {
+    const { finished, succeeded } = snap.frontDeskRate;
+    rate = finished < 5 ? null : Math.round((succeeded / finished) * 100) / 100;
+  }
   return {
     agent,
-    status: statusOf(snap.settings.get(agent), counts.waitingCount),
+    status: statusOf(agent, snap.settings.get(agent), waitingCount),
     finishedToday: counts.finishedToday,
-    successRate: successRate({ done: counts.done30d, partlyDone: counts.partlyDone30d, ran: counts.ran30d }),
+    successRate: rate,
     notApproved30d: counts.notApproved30d,
     minutesThisMonth: snap.monthMinutes[agent] ?? 0,
     last14Days,
-    waitingCount: counts.waitingCount,
+    waitingCount,
   };
 }
 
@@ -178,6 +192,9 @@ export async function buildOverview(tx: Tx, ctx: TenantContext, now: Date): Prom
 function runNowOf(agent: ScreenAgent, lastRunNowAt: Date | null): RunNow {
   switch (agent) {
     case 'storm_scout':
+    case 'claims':
+    case 'scheduler':
+    case 'follow_up':
       // The POST that starts a run is Task 7's; this only says whether one can be asked for, and when.
       return {
         kind: 'available',
@@ -245,7 +262,7 @@ export async function buildDetail(
   const snap = await gather(tx, ctx, now);
   const card = await buildCard(tx, ctx, snap, agent);
   const settings = snap.settings.get(agent);
-  const pausedAt = settings?.pausedAt ?? null;
+  const paused = isPaused(agent, settings === undefined ? null : { pausedAt: settings.pausedAt });
 
   if (isComingSoon(agent)) {
     return {
@@ -278,7 +295,7 @@ export async function buildDetail(
     minutesInPeriod,
     breakdown,
     rules,
-    paused: pausedAt === null ? null : { at: pausedAt.toISOString(), byName: settings?.pausedByName ?? null },
+    paused: !paused ? null : { at: (settings?.pausedAt ?? now).toISOString(), byName: settings?.pausedByName ?? null },
     runNow: runNowOf(agent, settings?.lastRunNowAt ?? null),
     recentTasks: tasks.map((row) => recentTaskOf(row, hrefs.get(row.id) ?? null)),
     hourlyRateCents: rateFor(ctx, snap),

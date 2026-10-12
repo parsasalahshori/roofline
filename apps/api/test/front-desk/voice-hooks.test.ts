@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { calls, companyPhoneNumbers, companySettings, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
+import { agentSettings, calls, companyPhoneNumbers, companySettings, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { disclosureGreeting } from '@roofline/shared';
 import { escapeXml } from '../../src/hooks/twilio.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
@@ -124,6 +124,28 @@ describe('POST /hooks/twilio/voice', () => {
     expect(res.text).not.toContain('<ConversationRelay');
   });
 
+  test('a paused Front Desk takes the team-ring/voicemail path like Front Desk off', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    await seedTeam();
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.insert(agentSettings).values({ companyId: idOf('a'), agent: 'front_desk', pausedAt: new Date() }),
+    );
+    const res = await post(VOICE, incoming());
+    expect(res.text).toContain('<Dial timeout="20"');
+    expect(res.text).toContain('after-dial?mode=voicemail');
+    expect(res.text).not.toContain('<ConversationRelay');
+  });
+
+  test('unpaused Front Desk answers (Connect ConversationRelay)', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.insert(agentSettings).values({ companyId: idOf('a'), agent: 'front_desk', pausedAt: null }),
+    );
+    const res = await post(VOICE, incoming());
+    expect(res.text).toContain('<Connect');
+    expect(res.text).toContain('<ConversationRelay');
+  });
+
   test('a withheld caller id (anonymous) is still answered and saved', async () => {
     const before = (await callRows('a')).length;
     const res = await post(VOICE, incoming(A_NUMBER, { From: 'anonymous' }));
@@ -196,5 +218,59 @@ describe('POST /hooks/twilio/voice', () => {
     // and A's token cannot sign B's number
     const bad = await post(VOICE, incoming(B_NUMBER), { token: TOKEN_A });
     expect(bad.status).toBe(403);
+  });
+
+  test('a replayed signed /voice for an ended call answers Hangup', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    const fields = incoming();
+    const first = await post(VOICE, fields);
+    expect(first.text).toContain('<ConversationRelay');
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.update(calls).set({ status: 'ended' }).where(eq(calls.callSid, fields.CallSid)));
+    const replay = await post(VOICE, fields);
+    expect(replay.status).toBe(200);
+    expect(replay.text).toContain('<Response><Hangup/></Response>');
+    expect(replay.text).not.toContain('<ConversationRelay');
+  });
+
+  test('a replayed /voice for a call in progress (status ai) answers Hangup', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    const fields = incoming();
+    await post(VOICE, fields);
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.update(calls).set({ status: 'ai' }).where(eq(calls.callSid, fields.CallSid)));
+    const replay = await post(VOICE, fields);
+    expect(replay.status).toBe(200);
+    expect(replay.text).toContain('<Response><Hangup/></Response>');
+    expect(replay.text).not.toContain('<ConversationRelay');
+  });
+
+  test('a malformed CallSid is 400', async () => {
+    const res = await post(VOICE, { ...incoming(), CallSid: 'CA123' });
+    expect(res.status).toBe(400);
+    expect(res.text).toBe('');
+    expect(await callRows('a')).toHaveLength(0);
+  });
+
+  test('an unsigned /voice-status is 403', async () => {
+    const res = await post(VOICE_STATUS, { CallSid: incoming().CallSid, CallStatus: 'completed', From: CALLER, To: A_NUMBER }, { signature: null });
+    expect(res.status).toBe(403);
+  });
+
+  test('a malformed CallSid on /voice-status is 400', async () => {
+    const res = await post(VOICE_STATUS, { CallSid: 'CA123', CallStatus: 'completed', From: CALLER, To: A_NUMBER });
+    expect(res.status).toBe(400);
+  });
+
+  test.each(['whisper', 'whisper-result'])('a tampered ?company= on /voice-transfer/%s is 403', async (leg) => {
+    const fields = { CallSid: incoming().CallSid, To: TEAM_1, From: A_NUMBER };
+    const signedPath = `/hooks/twilio/voice-transfer/${leg}?company=${idOf('a')}&call=x&name=Acme`;
+    const signature = twilio.getExpectedTwilioSignature(TOKEN_A, BASE + signedPath, fields);
+    const tamperedPath = signedPath.replace(idOf('a'), idOf('b'));
+    const res = await post(tamperedPath, fields, { signature });
+    expect(res.status).toBe(403);
+  });
+
+  test('a malformed CallSid on /voice-transfer/after-dial is 400', async () => {
+    const res = await post('/hooks/twilio/voice-transfer/after-dial?mode=voicemail', { CallSid: 'CA123', To: A_NUMBER, From: CALLER, DialCallStatus: 'no-answer' });
+    expect(res.status).toBe(400);
   });
 });

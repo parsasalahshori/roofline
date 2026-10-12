@@ -20,14 +20,15 @@ beforeAll(async () => {
 afterAll(() => undefined);
 
 describe('Front Desk skeleton', () => {
-  test('JOB_NAMES gain the Front Desk names at the end', () => {
+  test('JOB_NAMES gain the Front Desk names before the G1 names', () => {
     expect(JOB_NAMES.slice(0, 2)).toEqual(['import-customers', 'texting-registration']);
-    expect(JOB_NAMES.slice(-4)).toEqual([...FD_JOBS]);
+    // G1 appends seven agent jobs after the Front Desk names.
+    expect(JOB_NAMES.slice(-11, -7)).toEqual([...FD_JOBS]);
     for (const name of JOB_NAMES) expect(typeof JOB_HANDLERS[name]).toBe('function');
   });
 
   test('SCHEDULES gain fd-retention and fd-health with their crons', () => {
-    expect(SCHEDULES.slice(-2).map((s) => [s.name, s.cron])).toEqual([
+    expect(SCHEDULES.slice(-7, -5).map((s) => [s.name, s.cron])).toEqual([
       ['fd-retention', '47 3 * * *'],
       ['fd-health', '*/2 * * * *'],
     ]);
@@ -41,8 +42,17 @@ describe('Front Desk skeleton', () => {
   });
 
   test.each(['/hooks/twilio/voice', '/hooks/twilio/voice-status'])('%s is reachable without a session and answers 404 for an unknown number', async (path) => {
-    const res = await request(t.app).post(path).type('form').send({ CallSid: 'CA1', To: '+14025559999' });
+    const res = await request(t.app)
+      .post(path)
+      .type('form')
+      .set('X-Twilio-Signature', 'not-checked-before-routing')
+      .send({ CallSid: 'CA1', To: '+14025559999' });
     expect(res.status).toBe(404);
+  });
+
+  test.each(['/hooks/twilio/voice', '/hooks/twilio/voice-status'])('%s refuses a request with no signature before any lookup', async (path) => {
+    const res = await request(t.app).post(path).type('form').send({ CallSid: 'CA1', To: '+14025559999' });
+    expect(res.status).toBe(403);
   });
 
   test('the /api stubs sit behind the session gate', async () => {

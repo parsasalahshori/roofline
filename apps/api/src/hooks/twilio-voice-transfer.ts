@@ -1,9 +1,9 @@
 import express, { Router } from 'express';
-import { findCallBySid, updateCall, withTenant } from '@roofline/db';
+import { findCallBySid, findCallConversationId, recordModelFailureHandoff, updateCall, withTenant } from '@roofline/db';
 import { onCallMembers } from '@roofline/db/system';
 import { disclosureGreeting, transferPlan, workIntervals, type TransferReason } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import { DIAL_TIMEOUT_SECONDS, relayConnectXml, routeVoice, sendVoiceTwiml, systemCtx, VOICEMAIL_XML, type VoiceRoute } from './twilio-voice-common.ts';
+import { DIAL_TIMEOUT_SECONDS, relayConnectXml, routeVoice, sendVoiceTwiml, systemCtx, validCallSid, VOICEMAIL_XML, type VoiceRoute } from './twilio-voice-common.ts';
 import { checkSignature, escapeXml, field, FORM_BODY_LIMIT } from './twilio.ts';
 
 /*
@@ -93,8 +93,8 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
   router.post('/after-relay', async (req, res) => {
     const route = await routeVoice(deps, req, res);
     if (!route) return;
-    const callSid = field(req, 'CallSid');
-    if (callSid === undefined || callSid === '') {
+    const callSid = validCallSid(req);
+    if (callSid === null) {
       res.status(400).end();
       return;
     }
@@ -118,6 +118,16 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
       else await updateCall(tx, ctx, callSid, { status: 'ringing_team' });
       return call.id;
     });
+    if (callId !== null && handoff.reason === 'model_failure') {
+      try {
+        await withTenant(deps.pools, ctx, async (tx) => {
+          const conversationId = await findCallConversationId(tx, ctx, callId);
+          if (conversationId !== null) await recordModelFailureHandoff(tx, ctx, conversationId);
+        });
+      } catch {
+        console.error(`model_failure marker failed call=${callId} company=${route.companyId}`);
+      }
+    }
     if (callId === null) {
       sendVoiceTwiml(res, HANGUP);
       return;
@@ -157,8 +167,8 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
   router.post('/after-dial', async (req, res) => {
     const route = await routeVoice(deps, req, res);
     if (!route) return;
-    const callSid = field(req, 'CallSid');
-    if (callSid === undefined || callSid === '') {
+    const callSid = validCallSid(req);
+    if (callSid === null) {
       res.status(400).end();
       return;
     }

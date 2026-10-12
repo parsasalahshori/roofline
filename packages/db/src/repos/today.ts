@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, isNull, lt, gt, lte, ne, not, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, gt, lte, ne, not, or, sql } from 'drizzle-orm';
 import { daysInStage, isStuck, localDate, type JobCard, type TodayView } from '@roofline/shared';
-import { appointments, customers, jobs, properties } from '../schema/index.ts';
+import { activities, appointments, customers, jobs, properties } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { canSeeJobValue, jobScope } from './scope.ts';
 import {
@@ -72,8 +72,30 @@ export async function todayView(
     )
     .orderBy(asc(jobs.nextStepOn), asc(jobs.id));
 
+  // Front Desk marker: the newest front_desk_message activity per job decides urgent or message
+  const fdByJob = new Map<string, 'urgent' | 'message'>();
+  if (followRows.length > 0) {
+    const fdRows = await tx
+      .select({ subjectId: activities.subjectId, urgent: sql<string | null>`${activities.data}->>'urgent'` })
+      .from(activities)
+      .where(
+        and(
+          eq(activities.subjectType, 'job'),
+          eq(activities.kind, 'front_desk_message'),
+          inArray(
+            activities.subjectId,
+            followRows.map((r) => r.job.id),
+          ),
+        ),
+      )
+      .orderBy(desc(activities.at), desc(activities.id));
+    for (const r of fdRows) {
+      if (!fdByJob.has(r.subjectId)) fdByJob.set(r.subjectId, r.urgent === 'true' ? 'urgent' : 'message');
+    }
+  }
+
   const names = await memberNames(tx);
-  const followUps: JobCard[] = followRows.map(({ job, customerName, addressLine }) => {
+  const cards: JobCard[] = followRows.map(({ job, customerName, addressLine }) => {
     const days = daysInStage(job.stageChangedAt, now, timeZone);
     const assignedName = job.assignedUserId !== null ? names.get(job.assignedUserId) : undefined;
     return {
@@ -93,8 +115,12 @@ export async function todayView(
       nextStep: job.nextStep,
       nextStepOn: job.nextStepOn,
       updatedAt: job.updatedAt.toISOString(),
+      frontDesk: fdByJob.get(job.id) ?? null,
     };
   });
+  const rank = (c: JobCard) => (c.frontDesk === 'urgent' ? 0 : c.frontDesk === 'message' ? 1 : 2);
+  // Array.prototype.sort is stable: the existing order holds inside each group
+  const followUps = [...cards].sort((a, b) => rank(a) - rank(b));
 
   return { appointments: todaysAppointments, followUps };
 }

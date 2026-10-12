@@ -109,7 +109,7 @@ describe('the confirmation page', () => {
     expect(res.text).toContain('Acme Roofing');
     expect(res.text).toContain(`<form method="post" action="/u/${token}">`);
     expect(res.headers['cache-control']).toBe('no-store');
-    expect(res.headers['referrer-policy']).toBe('no-referrer');
+    expect(res.headers['referrer-policy']).toBe('same-origin');
     expect(await rowsFor(A())).toEqual([]);
   });
 });

@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { calls, companyPhoneNumbers, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
+import { calls, companyPhoneNumbers, conversationTurns, conversations, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
 
 /*
@@ -98,6 +98,58 @@ const relayFields = (data: string | null, to = A_NUMBER): Record<string, string>
 });
 
 describe('POST /hooks/twilio/voice-transfer/after-relay', () => {
+  async function callWithConversation() {
+    const call = await seedCall();
+    const conversationId = await withTenant(t.deps.pools, ctxOf('a'), async (tx) => {
+      const [conv] = await tx
+        .insert(conversations)
+        .values({ companyId: idOf('a'), channel: 'voice', phoneE164: CALLER, companyNumberE164: A_NUMBER })
+        .returning({ id: conversations.id });
+      await tx.update(calls).set({ conversationId: conv!.id }).where(eq(calls.id, call.id));
+      return conv!.id;
+    });
+    return conversationId;
+  }
+  const turnsOf = (conversationId: string) =>
+    withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.select().from(conversationTurns).where(eq(conversationTurns.conversationId, conversationId)));
+
+  test('a model_failure hand-off writes the marker turn; reason asked writes none', async () => {
+    await seedTeam();
+    const conversationId = await callWithConversation();
+    await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'asked')));
+    expect(await turnsOf(conversationId)).toHaveLength(0);
+    await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'model_failure')));
+    const turns = await turnsOf(conversationId);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ speaker: 'system', route: 'transfer' });
+    expect(turns[0]!.guardHits).toContain('model_failure');
+  });
+
+  test('a repeated model_failure after-relay keeps one marker turn and still dials the team', async () => {
+    await seedTeam();
+    const conversationId = await callWithConversation();
+    const first = await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'model_failure')));
+    const second = await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'model_failure')));
+    expect(first.status).toBe(200);
+    expect(first.text).toContain('<Dial');
+    expect(second.status).toBe(200);
+    expect(second.text).toContain('<Dial');
+    expect((await turnsOf(conversationId)).filter((t) => t.guardHits?.includes('model_failure'))).toHaveLength(1);
+  });
+
+  test('a model_failure marker lands after an existing turn at position 0', async () => {
+    await seedTeam();
+    const conversationId = await callWithConversation();
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.insert(conversationTurns).values({ companyId: idOf('a'), conversationId, position: 0, speaker: 'caller', text: 'Hello' }),
+    );
+    const res = await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'model_failure')));
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<Dial');
+    const marker = (await turnsOf(conversationId)).find((x) => x.guardHits?.includes('model_failure'));
+    expect(marker?.position).toBe(1);
+  });
+
   test('after-relay with a transfer in work hours dials every on-call member with a whisper URL', async () => {
     await seedTeam();
     const call = await seedCall();

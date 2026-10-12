@@ -17,6 +17,17 @@ export const STT_PROVIDER = 'Deepgram';
 export const VOICEMAIL_XML =
   '<Response><Say>Please leave a message after the tone.</Say><Record maxLength="120" playBeep="true"/><Hangup/></Response>';
 export const DIAL_TIMEOUT_SECONDS = 20;
+/** Answer for a replayed or already-finished call: no relay token is minted. */
+export const HANGUP_XML = '<Response><Hangup/></Response>';
+
+/** A Twilio CallSid: CA plus 32 lowercase hex characters. */
+export const CALL_SID = /^CA[0-9a-f]{32}$/;
+
+/** The request's CallSid when it has the Twilio shape, else null. */
+export function validCallSid(req: Request): string | null {
+  const value = field(req, 'CallSid');
+  return value !== undefined && CALL_SID.test(value) ? value : null;
+}
 
 /** Placeholder ElevenLabs voice ids until the owner picks the real voices (owner to-do). */
 export const FRONT_DESK_VOICE_IDS: Record<FrontDeskVoiceId, string> = {
@@ -49,8 +60,16 @@ export function relayConnectXml(
   );
 }
 
-/** Steps shared by every voice hook: route `To` -> company (404, empty body), then the signature (403). Returns the route or null (response already sent). */
+/**
+ * Steps shared by every voice hook: a request with no X-Twilio-Signature header is refused (403) before
+ * any lookup (Ruling BF, as hooks/twilio-registration.ts); then route `To` -> company (404, empty body),
+ * then the signature (403). Returns the route or null (response already sent).
+ */
 export async function routeVoice(deps: AppDeps, req: Request, res: Response): Promise<VoiceRoute | null> {
+  if (!req.get('X-Twilio-Signature')) {
+    res.status(403).end();
+    return null;
+  }
   const to = field(req, 'To');
   const route = to !== undefined && E164.test(to) ? await voiceRouteForNumber(deps.pools.system, to) : null;
   if (route === null) {

@@ -22,10 +22,24 @@ export type AgentRuleFacts = {
     canConfirm: boolean;
     canMove: boolean;
   };
+  claims?: { nudgeDays: [number, number, number] };
+  scheduler?: { reminderHour: number; rainPct: number; gustMph: number };
+  followUp?: {
+    proposalDays: [number, number];
+    leadDays: number;
+    reviewDelayDays: number;
+    /** True only when the follow-up reviews switch is on and a review link is saved. */
+    reviewsOn: boolean;
+    /** Default true. */
+    leadsOn?: boolean;
+    /** Default true. */
+    proposalsOn?: boolean;
+  };
 };
 
 const STORM_SETTINGS = "/settings/storm";
 const FRONT_DESK_SETTINGS = "/settings/front-desk";
+const AGENT_SETTINGS = "/settings/agents";
 
 /** '1 inch', '1.5 inches' (singular only for exactly 1). */
 function inchesText(inches: number): string {
@@ -124,6 +138,103 @@ function frontDeskRules(
   return rules;
 }
 
+/** '4 PM', '12 AM', '12 PM' from an hour 0 to 23. */
+function hourText(hour: number): string {
+  const suffix = hour < 12 ? "AM" : "PM";
+  const twelve = hour % 12 === 0 ? 12 : hour % 12;
+  return `${twelve} ${suffix}`;
+}
+
+function claimsRules(
+  claims: NonNullable<AgentRuleFacts["claims"]>,
+): RuleSentence[] {
+  const [d0, d1, d2] = claims.nudgeDays.map(daysText) as [string, string, string];
+  return [
+    {
+      text: `I check claims every morning at 10 and draft check-in texts for you to approve: ${d0} after the inspection if no claim is filed, ${d1} after filing if no adjuster date, ${d2} after the adjuster visit.`,
+      links: [d0, d1, d2].map((label) => ({ label, href: AGENT_SETTINGS })),
+    },
+    {
+      text: "I never contact insurers or adjusters, and I never talk about coverage or deductibles.",
+      links: [],
+    },
+  ];
+}
+
+function schedulerRules(
+  scheduler: NonNullable<AgentRuleFacts["scheduler"]>,
+): RuleSentence[] {
+  const hour = hourText(scheduler.reminderHour);
+  const rain = `${scheduler.rainPct}%`;
+  const gust = `${scheduler.gustMph} mph`;
+  return [
+    {
+      text: `At ${hour} I draft reminder texts for tomorrow's visits for you to approve.`,
+      links: [{ label: hour, href: AGENT_SETTINGS }],
+    },
+    {
+      text: "At 6 PM I email each crew member their visits for tomorrow.",
+      links: [],
+    },
+    {
+      text: `At 6 AM and 2 PM I check the weather for the next three days of installs and suggest moving any with rain of ${rain} or more or gusts of ${gust} or more. I never cancel.`,
+      links: [
+        { label: rain, href: AGENT_SETTINGS },
+        { label: gust, href: AGENT_SETTINGS },
+      ],
+    },
+    {
+      text: "When a visit is marked no-show, I draft a text offering two new times.",
+      links: [],
+    },
+  ];
+}
+
+function followUpRules(
+  f: NonNullable<AgentRuleFacts["followUp"]>,
+): RuleSentence[] {
+  const rules: RuleSentence[] = [];
+  if (f.proposalsOn !== false) {
+    const d0 = daysText(f.proposalDays[0]);
+    const d1 = daysText(f.proposalDays[1]);
+    rules.push({
+      text: `After a proposal goes out, I draft a follow-up text for you to approve ${d0} and ${d1} later if there is no answer.`,
+      links: [
+        { label: d0, href: AGENT_SETTINGS },
+        { label: d1, href: AGENT_SETTINGS },
+      ],
+    });
+  }
+  if (f.leadsOn !== false) {
+    const quiet = daysText(f.leadDays);
+    rules.push({
+      text: `I draft a follow-up text for a lead that has gone quiet for ${quiet}.`,
+      links: [{ label: quiet, href: AGENT_SETTINGS }],
+    });
+  }
+  rules.push({
+    text: "When a job is stuck, I leave a next step for the rep and send no text.",
+    links: [],
+  });
+  if (f.reviewsOn) {
+    const delay = daysText(f.reviewDelayDays);
+    rules.push({
+      text: `${delay} after an install, I draft a review request, only to customers who agreed to marketing texts.`,
+      links: [{ label: delay, href: AGENT_SETTINGS }],
+    });
+  } else {
+    rules.push({
+      text: "Reviews are off until you add your review link.",
+      links: [{ label: "review link", href: AGENT_SETTINGS }],
+    });
+  }
+  rules.push({
+    text: "At most one text per customer every 3 days, and none after they reply.",
+    links: [],
+  });
+  return rules;
+}
+
 /** The rule sentences for one agent's card. Agents without facts (or without rules) return []. */
 export function rulesFor(agent: Agent, s: AgentRuleFacts): RuleSentence[] {
   const rules = rulesForAgent(agent, s);
@@ -143,6 +254,12 @@ function rulesForAgent(agent: Agent, s: AgentRuleFacts): RuleSentence[] {
       ];
     case "front_desk":
       return s.frontDesk ? frontDeskRules(s.frontDesk) : [];
+    case "claims":
+      return s.claims ? claimsRules(s.claims) : [];
+    case "scheduler":
+      return s.scheduler ? schedulerRules(s.scheduler) : [];
+    case "follow_up":
+      return s.followUp ? followUpRules(s.followUp) : [];
     default:
       return [];
   }

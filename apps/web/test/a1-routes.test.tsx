@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import type { CompanyBody } from '../src/api/types.ts';
 import { createAppRouter } from '../src/app/router.tsx';
-import { agentPage, agents, agentsWindow } from '../src/copy/agents.ts';
+import { agents, agentsWindow } from '../src/copy/agents.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
 import { AGENT_LABEL } from '../src/copy/status.ts';
 import { agentFromSlug, agentSlug, PAGE_AGENTS } from '../src/features/agents/slugs.ts';
@@ -108,6 +108,8 @@ describe('A1 windows', () => {
     signedInApi(ACCOUNT, {
       'GET /api/company': () => ({ body: COMPANY }),
       ['GET /api/agents/' + agent + '?period=month']: () => ({ body: detailFor(agent as ScreenAgent) }),
+      // The claims page also shows the claims board, which reads the claims and the company time zone
+      'GET /api/claims': () => ({ body: { claims: [] } }),
     });
     renderApp('/agents/' + agentSlug(agent));
 
@@ -117,17 +119,6 @@ describe('A1 windows', () => {
       expect(await within(dialog).findByText(agents.agentComingSoon)).toBeInTheDocument();
       expect(api.count('GET /api/agents/' + agent + '?period=month')).toBe(0);
     }
-  });
-
-  it('/agents/claims shows the coming-soon page: no switch, no run button, no detail fetch', async () => {
-    signedInApi(ACCOUNT, { 'GET /api/company': () => ({ body: COMPANY }) });
-    renderApp('/agents/claims');
-
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
-    expect(await within(dialog).findByText(agents.agentComingSoon)).toBeInTheDocument();
-    expect(within(dialog).queryByRole('switch')).toBeNull();
-    expect(within(dialog).queryByRole('button', { name: agentPage.runNowButton })).toBeNull();
-    expect(api.count('GET /api/agents/claims?period=month')).toBe(0);
   });
 
   it('lets feed win over :agent', async () => {

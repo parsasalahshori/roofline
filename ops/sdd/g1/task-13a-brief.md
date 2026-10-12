@@ -1,0 +1,18 @@
+### Task 13a: Follow-up agent — leads and stuck jobs, daily task (Ruling GX-Q)
+
+**Ruling GX-Q (track lead):** Task 13 splits. **13a** (now): the finder for unbooked leads and stuck jobs, drafting, the daily task and rep nudges. **13b** (after E1's proposals land on g1-agents): unsigned-proposal follow-ups (`proposalFollowUpDue`, call-the-rep next step) added to the same finder and task. Cost if wrong: one extra task.
+
+**Base:** `g1-w5` (as Task 8).
+
+Read first: `ops/sdd/g1/global-constraints.md`; `progress.md` (GX-E, T3/T4 carries); spec §5, Decisions 7–8; `agents/followup/daily.ts` (T3 stub), `agents/personal-texts.ts`, `providers/llm.ts` (`draftTexts` kinds `lead_follow_up`), T2a `leadFollowUpDue`/`followUpAllowed`, C1's stuck rule (`isStuck` in `packages/shared/src/pipeline.ts`; `repos/board.ts`, `repos/today.ts` for how stuck jobs and next steps are read), C1's job `nextStep`/`nextStepOn` fields (PATCH /api/jobs/:id), `findSlots` (`packages/shared/src/availability.ts`) and how D1's front-desk booking offers two times.
+
+**Split:** Builder 1 `packages/db/src/repos/follow-up-finder.ts` (+ barrel); Builder 2 `agents/followup/{daily,draft}.ts`; Builder 3 tests.
+
+**Finder:** for the company (job scope: all jobs), (a) **leads**: stage `lead`, not lost, no scheduled/completed appointment, created ≥ `lead_followup_days` ago, `leadFollowUpDue` true, `followup_leads` setting on, customer has a mobile phone; (b) **stuck jobs**: C1's stuck rule (`isStuck(stage, daysSinceLastActivity, stuckAfterDays)`), with an assigned rep, not nudged in the last 7 days (record nudges as an agent event or in `follow_up_log`? — `follow_up_log` is for customer texts only: record rep nudges as task events on a `live` task, see below). Stop conditions (Decision 7) for leads: any inbound text in the last 3 days, an appointment, the job marked lost → excluded; spacing via `followUpAllowed(kind 'lead')`.
+
+**Daily task (`runFollowUps`, 9 AM local):** company active/trial, agent `follow_up` on (GX-E) and not already created today. Leads: `draftTexts({ instruction: 'lead_follow_up', facts })` with two inspection times from `findSlots` for the job's rep (or the company's default availability) in the next 3 workdays as plain strings ("Thursday 10 AM", "Friday 2 PM"); guards as Task 8; template fallback "Hi {first}, it's {rep} at {company}. We can come look at your roof {slot1} or {slot2}. Reply with the one that works." → one task `agent 'follow_up'`, `kind 'follow_ups'`, title "Follow-ups for today ({n})", one `send_personal_texts` step `{ purpose: 'informational', kind: 'lead', messages, dedupePrefix: 'followup:{localDate}' }`, `expiresAt` 6 PM local. Stuck jobs: no customer text — one **live** task (no approval, staff-only) "Nudged reps about {n} quiet jobs" whose effect is, per stuck job, setting C1's next step to "No activity on the {customer} job for {d} days." with `nextStepOn` = today when the job has no next step already, plus an in-app notification if C1/A1 have one (read Today's sources; Today shows next steps). No email.
+
+**Tests (CI):** a lead 2 days old with no appointment is offered two times; a lead who texted yesterday, has an appointment, or is lost is not; spacing across agents (a claims text 2 days ago blocks); paused → nothing; already-ran-today → nothing; template fallback; a stuck job gets the next step once (a second day within 7 days does not re-nudge); a job with its own next step is left alone.
+
+**Verify:** `npm run typecheck && npm run lint` (slot); CI with `CI_JOBS="Platform E2E"`.
+- Commit: `feat(api): Follow-up agent — leads and stuck jobs (G1 Task 13a)`

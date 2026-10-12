@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import {
   getConversation,
+  isAgentPaused,
   listConversationTexts,
   listUnansweredInbound,
   loadCompanyFacts,
@@ -14,12 +15,15 @@ import {
   withTenant,
 } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
+import { recordTextTask } from '../agents/front-desk-tasks.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { buildGateRequest } from '../messaging/gate-request.ts';
 import { sendQueuedText, textStateFor } from '../messaging/outbound.ts';
 import { createEngine } from './engine.ts';
-import type { Engine, ToolHandlers } from './engine-types.ts';
+import type { Engine } from './engine-types.ts';
 import { buildCompanyBlock } from './prompt.ts';
+import { confirmByText, isConfirmShortcut } from './tools/confirm.ts';
+import { FRONT_DESK_HANDLERS } from './tools/index.ts';
 import { appendAssistant, appendUser, newConversationState } from './state.ts';
 
 /*
@@ -54,8 +58,9 @@ export const FD_TEXT_DEBOUNCE_SECONDS = 20;
  * message id>`. Passing `consumed: true` (an earlier handler, S1 onStormReply or G1 claims, already answered) queues
  * nothing. G1 may call it directly.
  */
-export async function queueFrontDeskText(_tx: Tx, message: InboundMessageRef, opts?: QueueFrontDeskTextOpts): Promise<void> {
+export async function queueFrontDeskText(tx: Tx, message: InboundMessageRef, opts?: QueueFrontDeskTextOpts): Promise<void> {
   if (opts?.consumed === true || opts?.jobs === undefined) return;
+  if (await isAgentPaused(tx, { companyId: message.companyId, userId: null, role: 'system', canApproveSpend: false }, 'front_desk')) return;
   await opts.jobs.send(
     'fd-text',
     { companyId: message.companyId, conversationId: message.conversationId },
@@ -63,9 +68,8 @@ export async function queueFrontDeskText(_tx: Tx, message: InboundMessageRef, op
   );
 }
 
-/** No real tool handlers yet; the engine offers only TEXT_CHANNEL_TOOLS on the sms channel. */
-// TODO(Task 7/8): real tool handlers
-const TEXT_TOOL_HANDLERS: ToolHandlers = {};
+/** The engine offers only TEXT_CHANNEL_TOOLS on the sms channel. */
+const TEXT_TOOL_HANDLERS = FRONT_DESK_HANDLERS;
 
 const TEAM_QUIET_MS = 2 * 60 * 60 * 1000;
 const HISTORY_TEXTS = 20;
@@ -100,6 +104,7 @@ export async function runFrontDeskText(
   const now = deps.clock.now();
 
   const prepared = await withTenant(deps.pools, ctx, async (tx) => {
+    if (await isAgentPaused(tx, ctx, 'front_desk')) return null;
     const conversation = await getConversation(tx, ctx, conversationId);
     if (!conversation || conversation.status !== 'active' || conversation.handledBy === 'team') return null;
     if (!(await frontDeskTextsOn(tx, ctx))) return null;
@@ -134,6 +139,7 @@ export async function runFrontDeskText(
       startedAt: now,
     });
     state.customerId = conversation.customerId;
+    state.toolSettings = { canMove: facts.canMove, canCancel: facts.canCancel };
     const firstUnanswered = unanswered[0]!;
     const earlier = await listConversationTexts(tx, ctx, conversationId, HISTORY_TEXTS);
     for (const text of earlier) {
@@ -153,16 +159,19 @@ export async function runFrontDeskText(
   if (!prepared) return;
 
   const { state, callerText, lastUnanswered } = prepared;
-  // TODO(Task 8): when the booking-confirm helper exists, call it here for 'C' / 'confirm' instead of the engine.
-  // Until then 'C' / 'confirm' is a normal text for the engine.
   const active = engine ?? createEngine(deps, TEXT_TOOL_HANDLERS);
   const said: string[] = [];
   let handoff = false;
   let spam = false;
-  for await (const event of active.turn(state, callerText, new AbortController().signal)) {
-    if (event.type === 'say') said.push(event.text);
-    else if (event.type === 'handoff') handoff = true;
-    else if (event.type === 'end' && event.reason === 'spam') spam = true;
+  if (prepared.customerId !== null && isConfirmShortcut(callerText)) {
+    // "C" or "confirm" from a customer's own number confirms their next visit; the engine is not asked.
+    said.push(await confirmByText(deps, { companyId: data.companyId, conversationId, customerId: prepared.customerId }, deps.clock.now()));
+  } else {
+    for await (const event of active.turn(state, callerText, new AbortController().signal)) {
+      if (event.type === 'say') said.push(event.text);
+      else if (event.type === 'handoff') handoff = true;
+      else if (event.type === 'end' && event.reason === 'spam') spam = true;
+    }
   }
   if (spam) {
     // Spam is never answered: end the conversation so later texts from the number open a new one.
@@ -223,5 +232,14 @@ export async function runFrontDeskText(
   }
   if (outcome) {
     await sendQueuedText(deps, ctx, { messageId: outcome.messageId, to: outcome.to, body: reply, sender: outcome.sender }, 'We could not send this text.');
+    // A1 Task 4: one live task per conversation per local day. The engine events carry no booking results, so bookings is 0.
+    try {
+      await withTenant(deps.pools, ctx, async (tx) => {
+        const { timezone } = await loadCompanyFacts(tx, ctx);
+        await recordTextTask(tx, ctx, { conversationId, customerId, replies: 1, bookings: 0 }, sendAt, timezone);
+      });
+    } catch {
+      console.error(`fd live task failed conversation=${conversationId} company=${data.companyId}`);
+    }
   }
 }

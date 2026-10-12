@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
+import { STORED_FILE_KINDS } from '@roofline/shared';
 import { MIGRATIONS_FOLDER, migrate } from '../src/migrate.ts';
 import { ACTOR_TYPES, AGENT_EVENT_KINDS } from '../src/schema/enums.ts';
 import { companies, customers, properties } from '../src/schema/index.ts';
@@ -1089,11 +1090,10 @@ describe('S1 constraints', () => {
     expect(err.code).toBe('23514');
   });
 
-  test('stored_files accepts the storm_photo and ad_image kinds and refuses an unknown one', async () => {
+  test('stored_files accepts every STORED_FILE_KINDS value and refuses an unknown one', async () => {
     const s = await seedTwoCompanies(urls.owner);
-    await insertStoredFile(s.a.companyId, 'storm_photo', 'photo-1');
-    await insertStoredFile(s.a.companyId, 'ad_image', 'ad-1');
-    await insertStoredFile(s.a.companyId, 'signed_proposal_pdf', 'pdf-1');
+    // Every kind the code knows must pass the check: the last migration that recreates it lists them all.
+    for (const kind of STORED_FILE_KINDS) await insertStoredFile(s.a.companyId, kind, `file-${kind}`);
     const err = await rejected(
       `insert into stored_files (company_id, kind, object_key, sha256, bytes, content_type)
        values ($1, 'bogus', 'x', repeat('a', 64), 1, 'image/jpeg')`,
@@ -1181,6 +1181,24 @@ describe('S1 constraints', () => {
     const err = await rejected(insert('POINT(-96 41)'));
     expect(err.code).toBe('23505');
     await ownerQuery(insert('POINT(-96 42)'));
+  });
+
+  test('ad_accounts: a live (platform, external_account_id) belongs to one company; a revoked row frees it (Ruling BF)', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into ad_accounts (company_id, platform, external_account_id, status) values ($1, $2, $3, $4)`;
+    await ownerQuery(insert, [s.b.companyId, 'google', '1234567890', 'pending']);
+    // Another company cannot hold the same account, in any live status.
+    for (const status of ['pending', 'active', 'error']) {
+      const err = await rejected(insert, [s.a.companyId, 'google', '1234567890', status]);
+      expect(err.code, status).toBe('23505');
+      expect(err.constraint, status).toBe('ad_accounts_platform_external_live_uq');
+    }
+    // The same id on the other platform, and another id on the same platform, are different accounts.
+    await ownerQuery(insert, [s.a.companyId, 'meta', '1234567890', 'pending']);
+    await ownerQuery(insert, [s.b.companyId, 'meta', 'act_77', 'active']);
+    // Once the holder revokes, the other company can connect.
+    await ownerQuery(`update ad_accounts set status = 'revoked' where company_id = $1 and platform = 'google'`, [s.b.companyId]);
+    await ownerQuery(insert, [s.a.companyId, 'google', '1234567890', 'pending']);
   });
 });
 

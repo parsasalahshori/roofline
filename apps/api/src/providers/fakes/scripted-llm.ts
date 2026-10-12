@@ -2,9 +2,14 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { CONVERSATION_OUTCOMES, type FrontDeskToolName } from '@roofline/shared';
 import {
   type AnswerInput,
+  type ClaimReplyFacts,
+  type DraftKind,
+  type DraftTextsResult,
+  type JobFacts,
   type Llm,
   type LlmEvent,
   LlmUnavailableError,
+  MAX_DRAFT_JOBS,
   type RouteDecision,
   type RouteInput,
   type TurnUsage,
@@ -76,6 +81,11 @@ export class ScriptedLlm implements Llm {
   readonly configured = true;
   delayMs = 0;
   calls: LlmCall[] = [];
+  // G1 Agents
+  draftCalls: { instruction: DraftKind; facts: JobFacts[] }[] = [];
+  extractionCalls: { text: string; now: Date; timeZone: string }[] = [];
+  private draftQueue: (DraftTextsResult | Error)[] = [];
+  private extractionQueue: ({ facts: ClaimReplyFacts; usage: TurnUsage } | Error)[] = [];
   private failures = 0;
   private toolCounter = 0;
 
@@ -90,6 +100,10 @@ export class ScriptedLlm implements Llm {
 
   reset(): void {
     this.calls = [];
+    this.draftCalls = [];
+    this.extractionCalls = [];
+    this.draftQueue = [];
+    this.extractionQueue = [];
     this.failures = 0;
     this.toolCounter = 0;
   }
@@ -153,5 +167,30 @@ export class ScriptedLlm implements Llm {
       followUps: [] as string[],
       usage: USAGE,
     };
+  }
+
+  scriptDraft(result: DraftTextsResult | Error): void {
+    this.draftQueue.push(result);
+  }
+
+  scriptExtraction(result: { facts: ClaimReplyFacts; usage: TurnUsage } | Error): void {
+    this.extractionQueue.push(result);
+  }
+
+  async draftTexts(i: { instruction: DraftKind; facts: JobFacts[] }): Promise<DraftTextsResult> {
+    if (i.facts.length > MAX_DRAFT_JOBS) throw new RangeError('At most 25 jobs per call.');
+    this.draftCalls.push(structuredClone(i));
+    const next = this.draftQueue.shift();
+    if (next === undefined) throw new LlmUnavailableError('No scripted draft.');
+    if (next instanceof Error) throw next;
+    return next;
+  }
+
+  async extractClaimReply(i: { text: string; now: Date; timeZone: string }): Promise<{ facts: ClaimReplyFacts; usage: TurnUsage }> {
+    this.extractionCalls.push(structuredClone(i));
+    const next = this.extractionQueue.shift();
+    if (next === undefined) throw new LlmUnavailableError('No scripted extraction.');
+    if (next instanceof Error) throw next;
+    return next;
   }
 }

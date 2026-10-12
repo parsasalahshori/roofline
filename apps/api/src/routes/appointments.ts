@@ -319,6 +319,7 @@ export function appointmentRoutes(deps: AppDeps): Router {
       });
 
       await queuePush(deps, ctx.companyId, result.row.id, result.pushDue);
+      if (status === 'no_show') await deps.jobs.send('scheduler-no-show', { companyId: ctx.companyId, appointmentId: result.row.id }, { singletonKey: result.row.id }); // G1 Task 12
       res.json(result.appointment);
     });
   }

@@ -13,6 +13,7 @@ import { AppError, MESSAGES } from '../src/errors.ts';
 import { InlineJobs } from '../src/jobs/queue.ts';
 import type { Mailer } from '../src/mailer.ts';
 import { FakeAdImageRenderer } from '../src/providers/fakes/ad-image.ts';
+import { FakeStaticMap } from '../src/providers/fakes/static-map.ts'; // G1 Task 7
 import { FakeAdsGoogle } from '../src/providers/fakes/ads-google.ts';
 import { FakeAdsMeta } from '../src/providers/fakes/ads-meta.ts';
 import { FakeBroadcastMailer } from '../src/providers/fakes/broadcast.ts';
@@ -29,7 +30,7 @@ import { ScriptedLlm } from '../src/providers/fakes/scripted-llm.ts';
 import { RelaySessions } from '../src/front-desk/relay-sessions.ts';
 import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
-import type { CurrentWeather, HourlyForecast, WeatherSource } from '../src/weather/source.ts';
+import type { CurrentWeather, DailyForecast, HourlyForecast, WeatherSource } from '../src/weather/source.ts';
 
 /**
  * The company details every sign-up needs (F3). Tests spread it into each sign-up body; the
@@ -131,9 +132,13 @@ export class FakeWeatherSource implements WeatherSource {
     return this.hourlyValue && this.hourlyValue.slice(0, hours).map((h) => ({ ...h }));
   }
 
-  // Ruling DC: the daily forecast is not on the WeatherSource interface; tests get no forecast.
-  async daily(): Promise<null> {
-    return null;
+  /** What `daily` answers (null: no forecast). */
+  dailyValue: DailyForecast[] | null = null;
+  dailyCalls: { lat: number; lng: number; days: number }[] = [];
+
+  async daily(lat: number, lng: number, days: number): Promise<DailyForecast[] | null> {
+    this.dailyCalls.push({ lat, lng, days });
+    return this.dailyValue && this.dailyValue.map((d) => ({ ...d }));
   }
 }
 
@@ -169,6 +174,8 @@ export type TestApp = {
   broadcast: FakeBroadcastMailer;
   /** The ad image renderer: it answers a fixed image without drawing. */
   adImage: FakeAdImageRenderer;
+  /** G1 Task 7: the claim packet's map picture: a tiny PNG, `absent = true` answers null. */
+  staticMap: FakeStaticMap;
   /** Billing: it records each customer, checkout, and meter event. */
   billing: FakeBillingProvider;
   /** Texting registration: `failNext` makes the next registrar call fail. */
@@ -217,6 +224,10 @@ export function testConfig(
     API_RATE_LIMIT_PER_MIN: 600,
     PORT: 0,
     HOST: '127.0.0.1',
+    AGENT_DRAFT_MODEL: 'claude-opus-5-5',
+    AGENT_EXTRACT_MODEL: 'claude-haiku-5-5',
+    // G1 Agents (no static map in tests)
+    MAPTILER_SERVER_KEY: undefined,
     EAGLEVIEW_ENV: 'sandbox',
     EAGLEVIEW_PRODUCT_ID: 0,
     PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
@@ -280,12 +291,13 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const calendars = { google: new FakeCalendarApi('google'), microsoft: new FakeCalendarApi('microsoft') };
   const footprints = new FakeFootprintSource();
   const aerial = new FakeAerialMeasure();
-  const exactReports = new FakeExactReports(() => clock.now()); // prices expire on the test clock, not the wall clock
+  const exactReports = new FakeExactReports(() => clock.now());
   const objectStore = new MemoryObjectStore();
   const adsGoogle = new FakeAdsGoogle();
   const adsMeta = new FakeAdsMeta();
   const broadcast = new FakeBroadcastMailer();
   const adImage = new FakeAdImageRenderer();
+  const staticMap = new FakeStaticMap();
   const billing = new FakeBillingProvider();
   const registrar = new FakeTextingRegistrar();
   const jobs = new InlineJobs();
@@ -314,6 +326,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     adsMeta,
     broadcast,
     adImage,
+    staticMap,
     billing,
     registrar,
     jobs,
@@ -349,6 +362,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     adsMeta,
     broadcast,
     adImage,
+    staticMap,
     billing,
     registrar,
     jobs,

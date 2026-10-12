@@ -79,4 +79,6 @@ ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_weather_rain_pct
 ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_weather_gust_mph_check" CHECK ("company_settings"."weather_gust_mph" between 1 and 100);--> statement-breakpoint
 ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_reminder_hour_check" CHECK ("company_settings"."reminder_hour" between 0 and 23);--> statement-breakpoint
 ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_lead_followup_days_check" CHECK ("company_settings"."lead_followup_days" between 1 and 30);--> statement-breakpoint
-ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_review_delay_days_check" CHECK ("company_settings"."review_delay_days" between 0 and 30);
+ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_review_delay_days_check" CHECK ("company_settings"."review_delay_days" between 0 and 30);--> statement-breakpoint
+ALTER TABLE "stored_files" DROP CONSTRAINT "stored_files_kind_check";--> statement-breakpoint
+ALTER TABLE "stored_files" ADD CONSTRAINT "stored_files_kind_check" CHECK ("stored_files"."kind" in ('signed_proposal_pdf', 'storm_photo', 'ad_image', 'claim_packet'));

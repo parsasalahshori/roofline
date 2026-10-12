@@ -3,6 +3,8 @@ import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
+  agentSettings,
+  appointments,
   companyPhoneNumbers,
   companySettings,
   conversations,
@@ -16,6 +18,7 @@ import { TEXT_CHANNEL_TOOLS } from '@roofline/shared';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import type { Engine } from '../../src/front-desk/engine-types.ts';
 import { queueFrontDeskText, runFrontDeskText } from '../../src/front-desk/texts.ts';
+import { NOTHING_TO_CONFIRM } from '../../src/front-desk/tools/confirm.ts';
 import { ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { RouteDecision } from '../../src/providers/llm.ts';
 import { inCompany } from '../crm-helpers.ts';
@@ -60,7 +63,12 @@ async function setup(script: ConstructorParameters<typeof ScriptedLlm>[0] = [{ w
   return llm;
 }
 
-async function setFrontDesk(values: { frontDeskEnabled: boolean; frontDeskTexts: boolean }) {
+async function setFrontDesk(values: {
+  frontDeskEnabled: boolean;
+  frontDeskTexts: boolean;
+  frontDeskCanMove?: boolean;
+  frontDeskCanCancel?: boolean;
+}) {
   const ctx = { companyId: idA(), userId: null, role: 'system' as const, canApproveSpend: false };
   await withTenant(t.deps.pools, ctx, (tx) =>
     tx
@@ -126,6 +134,32 @@ describe('Front Desk texts', () => {
     expect(out[0]).toMatchObject({ channel: 'sms', purpose: 'informational', status: 'sent', body: 'We can help with that.' });
     expect(t.sms.sent).toHaveLength(1);
     expect(answerCalls(llm)).toHaveLength(1);
+  });
+
+  const answerToolNames = () => {
+    const call = llm.calls.find((c) => c.kind === 'answer');
+    expect(call).toBeDefined();
+    return ((call!.request as { tools?: (string | { name: string })[] }).tools ?? []).map((x) => (typeof x === 'string' ? x : x.name));
+  };
+
+  test('the text runner offers move and cancel when the settings allow them', async () => {
+    await setFrontDesk({ frontDeskEnabled: true, frontDeskTexts: true, frontDeskCanMove: true, frontDeskCanCancel: true });
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hi there');
+    await runFrontDeskText(t.deps, { companyId: idA(), conversationId: (await conversationRows())[0]!.id }, createEngine(t.deps, {}));
+    const names = answerToolNames();
+    expect(names).toContain('move_inspection');
+    expect(names).toContain('cancel_inspection');
+  });
+
+  test('the text runner hides move and cancel when the settings turn them off', async () => {
+    await setFrontDesk({ frontDeskEnabled: true, frontDeskTexts: true, frontDeskCanMove: false, frontDeskCanCancel: false });
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hi there');
+    await runFrontDeskText(t.deps, { companyId: idA(), conversationId: (await conversationRows())[0]!.id }, createEngine(t.deps, {}));
+    const names = answerToolNames();
+    expect(names).not.toContain('move_inspection');
+    expect(names).not.toContain('cancel_inspection');
   });
 
   test('a text that arrives while the engine runs gets its own reply', async () => {
@@ -221,6 +255,28 @@ describe('Front Desk texts', () => {
     expect(fdTextJobs()).toEqual([]);
   });
 
+  test('a paused Front Desk does not queue the text job; unpaused queues it', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hello');
+    const [conv] = await conversationRows();
+    const [inbound] = await inCompany(t, idA(), (tx: Tx) =>
+      tx.select({ id: messages.id }).from(messages).where(and(eq(messages.companyId, idA()), eq(messages.direction, 'in'))),
+    );
+    const ctx = { companyId: idA(), userId: null, role: 'system' as const, canApproveSpend: false };
+    const message = { id: inbound!.id, conversationId: conv!.id, companyId: idA() };
+    t.jobs.sent.length = 0;
+    await withTenant(t.deps.pools, ctx, (tx) =>
+      tx.insert(agentSettings).values({ companyId: idA(), agent: 'front_desk', pausedAt: new Date() }),
+    );
+    await withTenant(t.deps.pools, ctx, (tx) => queueFrontDeskText(tx, message, { jobs: t.jobs }));
+    expect(fdTextJobs()).toEqual([]);
+    await withTenant(t.deps.pools, ctx, (tx) =>
+      tx.update(agentSettings).set({ pausedAt: null }).where(eq(agentSettings.companyId, idA())),
+    );
+    await withTenant(t.deps.pools, ctx, (tx) => queueFrontDeskText(tx, message, { jobs: t.jobs }));
+    expect(fdTextJobs()).toHaveLength(1);
+  });
+
   test('queueFrontDeskText is idempotent per message', async () => {
     await addSmsCustomers(t, 'a', [nina()]);
     await inboundText('Hello');
@@ -281,13 +337,38 @@ describe('Front Desk texts', () => {
     expect(await conversationRows()).toEqual([expect.objectContaining({ outcome: 'spam', status: 'ended' })]);
   });
 
-  test('the C / confirm shortcut is routed through the engine for now', async () => {
+  test('the C / confirm shortcut is answered by the confirm helper, not the engine', async () => {
     await addSmsCustomers(t, 'a', [nina()]);
     await inboundText('C');
     await t.jobs.drain(t.deps);
-    // TODO(Task 8): this becomes the confirm helper's reply once it exists.
-    expect(answerCalls(llm)).toHaveLength(1);
+    // Nina has no upcoming visit, so the helper says so (the booking tests cover a real confirmation).
+    expect(answerCalls(llm)).toHaveLength(0);
     expect(t.sms.sent).toHaveLength(1);
+    expect((await outbound())[0]).toMatchObject({ body: NOTHING_TO_CONFIRM });
+  });
+
+  test('C confirms the next visit and the reply says which one', async () => {
+    const [ninaId] = await addSmsCustomers(t, 'a', [nina()]);
+    const startsAt = new Date(DAYTIME.getTime() + 24 * HOUR);
+    await inCompany(t, idA(), (tx: Tx) =>
+      tx.insert(appointments).values({
+        companyId: idA(),
+        kind: 'inspection',
+        customerId: ninaId!,
+        assignedUserId: t.seed.a.owner.userId,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + HOUR),
+        status: 'scheduled',
+        source: 'front_desk',
+      }),
+    );
+    await inboundText('confirm');
+    await t.jobs.drain(t.deps);
+    expect(answerCalls(llm)).toHaveLength(0);
+    expect((await outbound())[0]).toMatchObject({ body: 'Thanks, your inspection on Wed Oct 14, 10:00 AM is confirmed.' });
+    const rows = await inCompany(t, idA(), (tx: Tx) => tx.select().from(appointments));
+    expect(rows[0]).toMatchObject({ confirmedVia: 'text' });
+    expect(rows[0]!.confirmedAt).not.toBeNull();
   });
 
   test('a reply within 10 minutes of the customer text sends at 23:00 company time despite quiet hours', async () => {
@@ -306,6 +387,6 @@ describe('Front Desk texts', () => {
     await inboundText('Hello');
     await runFrontDeskText(t.deps, { companyId: idA(), conversationId: (await conversationRows())[0]!.id }, createEngine(t.deps, {}));
     const [call] = answerCalls(llm);
-    expect((call!.request as { tools: string[] }).tools).toEqual([...TEXT_CHANNEL_TOOLS]);
+    expect([...(call!.request as { tools: string[] }).tools].sort()).toEqual([...TEXT_CHANNEL_TOOLS].sort());
   });
 });

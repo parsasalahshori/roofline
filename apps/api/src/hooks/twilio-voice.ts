@@ -1,11 +1,11 @@
 import express, { Router } from 'express';
-import { countLiveAiCalls, insertCall, screeningFacts, type TenantContext, updateCall, withTenant } from '@roofline/db';
+import { countLiveAiCalls, insertCall, isAgentPaused, screeningFacts, type TenantContext, updateCall, withTenant } from '@roofline/db';
 import { teamDialNumbers } from '@roofline/db/system';
 import { disclosureGreeting } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { forwardingTestArrived } from '../front-desk/forwarding-test.ts';
 import { screenCall } from '../providers/call-screen.ts';
-import { DIAL_TIMEOUT_SECONDS, relayConnectXml, routeVoice, sendVoiceTwiml, VOICEMAIL_XML } from './twilio-voice-common.ts';
+import { DIAL_TIMEOUT_SECONDS, HANGUP_XML, relayConnectXml, routeVoice, sendVoiceTwiml, validCallSid, VOICEMAIL_XML } from './twilio-voice-common.ts';
 import { E164, escapeXml, field, FORM_BODY_LIMIT } from './twilio.ts';
 
 /*
@@ -33,15 +33,20 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
   router.post('/', async (req, res) => {
     const route = await routeVoice(deps, req, res);
     if (!route) return;
-    // A forwarding test (Front Desk) is answered before anything else: the test caller's call proves forwarding.
-    if (await forwardingTestArrived(deps, route.companyId, field(req, 'From') ?? '')) {
-      sendVoiceTwiml(res, '<Response><Say>Forwarding works.</Say><Hangup/></Response>');
+    const callSid = validCallSid(req);
+    const to = field(req, 'To');
+    if (callSid === null || to === undefined) {
+      res.status(400).end();
       return;
     }
-    const callSid = field(req, 'CallSid');
-    const to = field(req, 'To');
-    if (callSid === undefined || callSid === '' || to === undefined) {
-      res.status(400).end();
+    // A forwarding test (Front Desk) is answered before anything else: the test caller's call proves forwarding.
+    if (
+      await forwardingTestArrived(deps, route.companyId, field(req, 'From') ?? '', {
+        forwardedFrom: field(req, 'ForwardedFrom') ?? null,
+        stirVerstat: field(req, 'StirVerstat') ?? null,
+      })
+    ) {
+      sendVoiceTwiml(res, '<Response><Say>Forwarding works.</Say><Hangup/></Response>');
       return;
     }
     const rawFrom = (field(req, 'From') ?? '').slice(0, 32);
@@ -59,6 +64,8 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
         stirVerstat: field(req, 'StirVerstat') ?? null,
         now,
       });
+      // A repeated CallSid returns the existing row: only a new or still-ringing call may get relay TwiML.
+      if (call.status !== 'ringing') return { kind: 'replay' as const };
       const facts = fromKnown ? await screeningFacts(tx, ctx, rawFrom, now) : { blocked: false, callsLastHour: 0, knownCustomer: false };
       const screen = screenCall({ from: rawFrom, stirVerstat: field(req, 'StirVerstat') ?? null, ...facts });
       if (screen.action === 'reject') {
@@ -66,9 +73,14 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
         return { kind: 'reject' as const };
       }
       const liveAi = await countLiveAiCalls(tx, ctx);
-      return { kind: 'ok' as const, callId: call.id, liveAi };
+      const paused = await isAgentPaused(tx, ctx, 'front_desk');
+      return { kind: 'ok' as const, callId: call.id, liveAi, paused };
     });
 
+    if (outcome.kind === 'replay') {
+      sendVoiceTwiml(res, HANGUP_XML);
+      return;
+    }
     if (outcome.kind === 'reject') {
       sendVoiceTwiml(res, '<Response><Reject/></Response>');
       return;
@@ -79,7 +91,7 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
       deps.relaySessions.size >= deps.config.FRONT_DESK_MAX_CALLS ||
       !deps.relaySessions.llmHealthy;
 
-    if (!route.frontDeskEnabled || overCap) {
+    if (!route.frontDeskEnabled || overCap || outcome.paused) {
       sendVoiceTwiml(res, voicemailXml(publicUrl, await teamDialNumbers(deps.pools.system, route.companyId)));
       return;
     }

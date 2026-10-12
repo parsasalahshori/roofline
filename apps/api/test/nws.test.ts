@@ -366,6 +366,56 @@ describe('weatherIcon', () => {
 describe('NullWeatherSource', () => {
   test('always answers null', async () => {
     expect(await new NullWeatherSource().current(...OMAHA)).toBeNull();
+    expect(await new NullWeatherSource().daily(...OMAHA, 7)).toBeNull();
+  });
+});
+
+describe('NwsWeatherSource.daily', () => {
+  const FORECAST_URL = 'https://api.weather.gov/gridpoints/OAX/80,63/forecast';
+  const POINTS_WITH_FORECAST = JSON.stringify({ properties: { forecast: FORECAST_URL, forecastHourly: HOURLY_URL } });
+  const period = (startTime: string, isDaytime: boolean, temperature: number, shortForecast: string, rain: number | null) => ({
+    startTime,
+    isDaytime,
+    temperature,
+    temperatureUnit: 'F',
+    shortForecast,
+    probabilityOfPrecipitation: { value: rain },
+  });
+  const FORECAST = JSON.stringify({
+    properties: {
+      periods: [
+        period('2026-10-15T06:00:00-05:00', true, 72, 'Mostly Sunny', 10),
+        period('2026-10-15T18:00:00-05:00', false, 55, 'Clear', null),
+        period('2026-10-16T06:00:00-05:00', true, 68, 'Chance Rain Showers', 40),
+        period('2026-10-16T18:00:00-05:00', false, 50, 'Cloudy', 20),
+        period('2026-10-17T06:00:00-05:00', true, 60, 'Sunny', 0),
+      ],
+    },
+  });
+  const serve = (forecast: Response | (() => Response)) =>
+    fakeFetch((url) => {
+      if (url.startsWith('https://api.weather.gov/points/')) return new Response(POINTS_WITH_FORECAST, { status: 200 });
+      if (url === FORECAST_URL) return typeof forecast === 'function' ? forecast() : forecast;
+      return undefined;
+    });
+
+  test('groups day and night periods into days, capped to the days asked', async () => {
+    const { fetch } = serve(new Response(FORECAST, { status: 200 }));
+    const days = await new NwsWeatherSource({ userAgent: USER_AGENT, fetch }).daily(...OMAHA, 2);
+    expect(days).toEqual([
+      { date: '2026-10-15', highF: 72, lowF: 55, summary: 'Mostly Sunny', precipChancePercent: 10 },
+      { date: '2026-10-16', highF: 68, lowF: 50, summary: 'Chance Rain Showers', precipChancePercent: 40 },
+    ]);
+  });
+
+  test('an HTTP failure is null', async () => {
+    const { fetch } = serve(new Response('down', { status: 503 }));
+    expect(await new NwsWeatherSource({ userAgent: USER_AGENT, fetch }).daily(...OMAHA, 7)).toBeNull();
+  });
+
+  test('an unreadable answer is null', async () => {
+    const { fetch } = serve(new Response('not json', { status: 200 }));
+    expect(await new NwsWeatherSource({ userAgent: USER_AGENT, fetch }).daily(...OMAHA, 7)).toBeNull();
   });
 
   test('hourly answers null', async () => {

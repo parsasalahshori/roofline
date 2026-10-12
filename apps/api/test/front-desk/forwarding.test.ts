@@ -69,10 +69,13 @@ function post(path: string, fields: Record<string, string>, token: string) {
 }
 
 let inboundCounter = 0;
-/** An inbound call to a company's number. Its CallSid never collides with the fake's own `CA0…` test sids. */
-function inbound(to: string, from: string) {
+/**
+ * An inbound call to a company's number. Its CallSid is 'CA' + 32 hex chars and never collides with the fake's own
+ * `CA0…` test sids. `extra` adds signed fields such as ForwardedFrom or StirVerstat.
+ */
+function inbound(to: string, from: string, extra: Record<string, string> = {}) {
   const CallSid = `CAee${String(++inboundCounter).padStart(30, '0')}`;
-  return post(VOICE, { CallSid, From: from, To: to }, to === A_NUMBER ? TOKEN_A : TOKEN_B);
+  return post(VOICE, { CallSid, From: from, To: to, ...extra }, to === A_NUMBER ? TOKEN_A : TOKEN_B);
 }
 
 async function startTest(agent: SuperAgent) {
@@ -118,6 +121,19 @@ describe('POST /api/front-desk/forwarding-test', () => {
     expect(placedTests()).toHaveLength(0);
   });
 
+  test.each([
+    ['toll-free', '+18005550123'],
+    ['non-US NANP', '+14165550123'],
+  ])('POST refuses a %s business phone with 422 field phone', async (_name, phone) => {
+    await ownerSql('update companies set phone_e164 = $2 where id = $1', [idOf('a'), phone]);
+    const owner = await loginAs(t.app, t.seed.a.owner);
+
+    const res = await startTest(owner);
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ field: 'phone' });
+    expect(placedTests()).toHaveLength(0);
+  });
+
   test('a rep cannot start the test (403); an office member can', async () => {
     const rep = await loginAs(t.app, t.seed.a.rep);
     const denied = await startTest(rep);
@@ -144,7 +160,7 @@ describe('GET /api/front-desk/forwarding-test/:id', () => {
     const owner = await loginAs(t.app, t.seed.a.owner);
     const { body } = await startTest(owner);
 
-    const arrival = await inbound(A_NUMBER, TEST_CALLER);
+    const arrival = await inbound(A_NUMBER, TEST_CALLER, { ForwardedFrom: A_PHONE });
     expect(arrival.status).toBe(200);
     expect(arrival.text).toContain(VERIFIED_TWIML);
 
@@ -159,6 +175,50 @@ describe('GET /api/front-desk/forwarding-test/:id', () => {
     const setupRes = await owner.get('/api/setup');
     const setup = setupRes.body as SetupView;
     expect(setup.items.find((i) => i.key === 'phone_number')).toMatchObject({ status: 'done', comingWith: null });
+  });
+
+  async function verifiedAt(): Promise<Date | null | undefined> {
+    const [row] = await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.select({ at: companySettings.forwardingVerifiedAt }).from(companySettings).where(eq(companySettings.companyId, idOf('a'))),
+    );
+    return row?.at;
+  }
+
+  test('a spoofed test call (right From, no ForwardedFrom, no passing verstat) does not verify', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const { body } = await startTest(owner);
+
+    const arrival = await inbound(A_NUMBER, TEST_CALLER);
+    expect(arrival.status).toBe(200);
+    expect(arrival.text).not.toContain(VERIFIED_TWIML);
+
+    expect((await viewOf(owner, body.id as string)).body).toMatchObject({ status: 'calling' });
+    expect(await verifiedAt()).toBeNull();
+  });
+
+  test('ForwardedFrom equal to the business phone verifies', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const { body } = await startTest(owner);
+    const arrival = await inbound(A_NUMBER, TEST_CALLER, { ForwardedFrom: A_PHONE });
+    expect(arrival.text).toContain(VERIFIED_TWIML);
+    expect((await viewOf(owner, body.id as string)).body).toMatchObject({ status: 'verified' });
+  });
+
+  test('StirVerstat TN-Validation-Passed-A verifies', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const { body } = await startTest(owner);
+    const arrival = await inbound(A_NUMBER, TEST_CALLER, { StirVerstat: 'TN-Validation-Passed-A' });
+    expect(arrival.text).toContain(VERIFIED_TWIML);
+    expect((await viewOf(owner, body.id as string)).body).toMatchObject({ status: 'verified' });
+  });
+
+  test('ForwardedFrom of a different number with no passing verstat does not verify', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const { body } = await startTest(owner);
+    const arrival = await inbound(A_NUMBER, TEST_CALLER, { ForwardedFrom: '+14025550777', StirVerstat: 'TN-Validation-Failed-C' });
+    expect(arrival.text).not.toContain(VERIFIED_TWIML);
+    expect((await viewOf(owner, body.id as string)).body).toMatchObject({ status: 'calling' });
+    expect(await verifiedAt()).toBeNull();
   });
 
   test('no arrival by the 30 s timeout fails the test with the likely cause', async () => {
@@ -179,7 +239,7 @@ describe('GET /api/front-desk/forwarding-test/:id', () => {
     const ownerA = await loginAs(t.app, t.seed.a.owner);
     const { body } = await startTest(ownerA);
 
-    const arrivalAtB = await inbound(B_NUMBER, TEST_CALLER);
+    const arrivalAtB = await inbound(B_NUMBER, TEST_CALLER, { ForwardedFrom: A_PHONE });
     expect(arrivalAtB.status).toBe(200);
     expect(arrivalAtB.text).not.toContain(VERIFIED_TWIML);
 

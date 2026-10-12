@@ -36,6 +36,7 @@ import type { FootprintSource } from './providers/footprints.ts';
 import type { AerialMeasure } from './providers/aerial.ts';
 import type { ExactReports } from './providers/exact-reports.ts';
 import type { AdImageRenderer } from './providers/ad-image.ts';
+import type { StaticMap } from './providers/static-map.ts'; // G1 Task 7
 import type { AdsGoogle } from './providers/ads-google.ts';
 import type { AdsMeta } from './providers/ads-meta.ts';
 import type { BroadcastMailer } from './providers/broadcast.ts';
@@ -47,6 +48,8 @@ import { appointmentRoutes } from './routes/appointments.ts';
 import { approvalRoutes } from './routes/approvals.ts';
 import { calendarConnectRoutes } from './routes/calendar-connect.ts';
 import { calendarRoutes } from './routes/calendar.ts';
+import { claimBoardRoutes, jobClaimRoutes } from './routes/claims.ts';
+import { agentValueRoutes } from './routes/agent-values.ts';
 import { blockedNumberRoutes } from './routes/blocked-numbers.ts';
 import { callRoutes } from './routes/calls.ts';
 import { companyRoutes } from './routes/company.ts';
@@ -167,6 +170,8 @@ export type AppDeps = {
   callControl: CallControl;
   lineLookup: LineLookup;
   relaySessions: RelaySessions;
+  /** G1 Task 7: the map picture on the claim packet (providers/static-map.ts); tests pass `FakeStaticMap`. */
+  staticMap: StaticMap;
 };
 
 export type AppOptions = {
@@ -319,6 +324,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/properties', propertyRoutes(deps));
   // Before /api/jobs: Express matches in order, and jobRoutes would otherwise take /:id/quotes.
   app.use('/api/jobs/:jobId/quotes', jobQuoteRoutes(deps));
+  // G1 Agents
+  app.use('/api/jobs/:jobId/claim', jobClaimRoutes(deps));
   app.use('/api/jobs', jobRoutes(deps));
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
@@ -345,6 +352,9 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/imports', importRoutes(deps));
   app.use('/api/texting', textingRoutes(deps));
   app.use('/api/agents', agentSettingsRoutes(deps));
+  // G1 Agents
+  app.use('/api/claims', claimBoardRoutes(deps));
+  app.use('/api/agent-values', agentValueRoutes(deps));
   app.use('/api/measurements', measurementRoutes(deps));
   app.use('/api/tier-templates', tierTemplateRoutes(deps));
   app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));

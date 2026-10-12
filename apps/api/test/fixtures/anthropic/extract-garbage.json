@@ -1,0 +1,1 @@
+{"id":"msg_test_claude-haiku-5-5","type":"message","role":"assistant","model":"claude-haiku-5-5","content":[{"type":"text","text":"not json"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":300,"output_tokens":80,"cache_read_input_tokens":250,"cache_creation_input_tokens":0}}

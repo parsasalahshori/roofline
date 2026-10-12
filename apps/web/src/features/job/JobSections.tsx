@@ -14,6 +14,7 @@ import { formatDollars } from '../jobs/JobCardView.tsx';
 import { Timeline } from '../timeline/Timeline.tsx';
 import { useMeasure } from '../estimator/api.ts';
 import { useCreateQuote, useJobProposals } from './api.ts';
+import { ClaimSection } from './ClaimSection.tsx';
 import styles from './JobSections.module.css';
 
 export type JobSectionsProps = { view: JobView };
@@ -210,6 +211,7 @@ export function JobSections({ view }: JobSectionsProps) {
           </ul>
         )}
       </Section>
+      <ClaimSection jobId={jobId} />
 
       <Section title={job.tasksTitle} name="tasks">
         {view.tasks.length === 0 ? (

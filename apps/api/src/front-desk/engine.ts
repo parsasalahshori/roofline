@@ -6,7 +6,6 @@ import {
   type GuardHit,
   SentenceBuffer,
   shouldTransfer,
-  TEXT_CHANNEL_TOOLS,
   type TransferReason,
   turnLimit,
   type TurnRoute,
@@ -33,6 +32,7 @@ import type {
   ToolResult,
 } from './engine-types.ts';
 import { fillerFor } from './fillers.ts';
+import { toolNamesFor } from './tools/index.ts';
 import { buildCompanyBlock } from './prompt.ts';
 import { appendAssistant, appendSystemNote, appendToolResults, appendUser, newConversationState } from './state.ts';
 
@@ -94,6 +94,9 @@ function idsIn(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
+/** Router intents that mean the caller is asking for a person (see shouldTransfer). */
+const ASK_PERSON_INTENTS = new Set(['ask_for_person', 'transfer', 'human']);
+
 export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
   const lastAssistantTurn = new WeakMap<ConversationState, string>();
 
@@ -122,7 +125,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         phoneE164: i.phone,
         companyNumberE164: companyNumber,
       });
-      return newConversationState({
+      const created = newConversationState({
         companyId: i.companyId,
         conversationId: id,
         channel: i.channel,
@@ -132,6 +135,8 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         repName: null,
         startedAt: deps.clock.now(),
       });
+      created.toolSettings = { canMove: facts.canMove, canCancel: facts.canCancel };
+      return created;
     });
   }
 
@@ -189,8 +194,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       }
     };
 
-    const toolNames: FrontDeskToolName[] =
-      state.channel === 'sms' ? [...TEXT_CHANNEL_TOOLS] : (Object.keys(FRONT_DESK_TOOLS) as FrontDeskToolName[]);
+    const toolNames: FrontDeskToolName[] = toolNamesFor(state.channel, state.toolSettings ?? { canMove: false, canCancel: false });
 
     // The answer call always happens inside a try: an unconfigured Llm throws from answer() itself.
     const openStream = (): Stream => {
@@ -280,6 +284,13 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         void Promise.resolve(speculative.iter.return?.(undefined)).catch(() => undefined);
       };
 
+      if (decision) {
+        // Task 6 carry: count person-asks and misunderstandings once per turn, before shouldTransfer.
+        if (ASK_PERSON_INTENTS.has(decision.intent)) state.askedForPersonCount += 1;
+        if (decision.intent === 'not_understood') state.failedUnderstanding += 1;
+        else state.failedUnderstanding = 0;
+      }
+
       if (decision && SPAM_INTENTS.has(decision.intent)) {
         dropSpeculative();
         rec.route = 'end';
@@ -324,6 +335,23 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
           }) ?? 'asked';
         yield* handoff(reason, `The caller needs a person (${decision.intent}).`);
         return;
+      }
+      if (decision && decision.route === 'opus') {
+        // Counts alone can end the call: a repeated person-ask, or three turns in a row not understood.
+        const byCount = shouldTransfer({
+          intent: 'other',
+          urgent: false,
+          mood: 'calm',
+          askedForPersonCount: ASK_PERSON_INTENTS.has(decision.intent) ? state.askedForPersonCount : 0,
+          taskInProgress: state.taskInProgress,
+          failedUnderstanding: state.failedUnderstanding,
+        });
+        if (byCount) {
+          dropSpeculative();
+          rec.route = 'transfer';
+          yield* handoff(byCount, `The caller needs a person (${decision.intent}).`);
+          return;
+        }
       }
       // Opus route (or the router was unavailable).
       let stream = speculative;
@@ -401,7 +429,9 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             result = { ok: false, forModel: NOT_THEIRS };
           } else {
             const handler = tools[use.name] as ((ctx: unknown, input: unknown) => Promise<ToolResult>) | undefined;
-            if (!handler) {
+            if (!toolNames.includes(use.name as FrontDeskToolName)) {
+              result = { ok: false, forModel: 'That is not available.' };
+            } else if (!handler) {
               result = { ok: false, forModel: 'That is not available right now.' };
             } else {
               try {

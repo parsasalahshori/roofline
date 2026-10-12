@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { insertOmahaStorm, type Query } from '@roofline/db/testing';
-import { PLAN_EXISTS } from '../src/storm/plan-errors.ts';
+import { PLAN_EXISTS, PLAN_PAUSED } from '../src/storm/plan-errors.ts';
 import { Actors } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { NO_UUID } from './crm-helpers.ts';
@@ -227,11 +227,11 @@ describe('POST /api/storms/:id/plan', () => {
     expect(detail.body.plan).toEqual({ taskId: res.body.taskId, status: 'draft' });
   });
 
-  test('a storm whose plan is past draft is a 409 (Ruling BD: A1 re-drafts expired and declined plans)', async () => {
+  test('a storm whose plan is past draft and not finished is a 409 PLAN_EXISTS (amended Ruling BD)', async () => {
     const id = await addStorm('2026-10-11', 'Omaha, NE');
     const owner_ = await who.as('owner');
     const first = await owner_.post(`/api/storms/${id}/plan`).send({});
-    for (const status of ['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done', 'expired', 'declined']) {
+    for (const status of ['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done']) {
       await q('update agent_tasks set status = $2 where id = $1', [first.body.taskId, status]);
       const res = await owner_.post(`/api/storms/${id}/plan`).send({});
       expect(res.status, status).toBe(409);
@@ -239,6 +239,41 @@ describe('POST /api/storms/:id/plan', () => {
       const detail = await owner_.get(`/api/storms/${id}`);
       expect(detail.body.plan.taskId).toBe(first.body.taskId);
     }
+  });
+
+  test.each(['expired', 'declined'])(
+    "'Draft a new plan' over a %s plan drafts a new one, created by the person who asked (amended Ruling BD)",
+    async (status) => {
+      const id = await addStorm('2026-10-11', 'Omaha, NE');
+      const owner_ = await who.as('owner');
+      const first = await owner_.post(`/api/storms/${id}/plan`).send({});
+      await q('update agent_tasks set status = $2 where id = $1', [first.body.taskId, status]);
+
+      const res = await owner_.post(`/api/storms/${id}/plan`).send({});
+      expect(res.status).toBe(200);
+      expect(res.body.taskId).not.toBe(first.body.taskId);
+      const detail = await owner_.get(`/api/storms/${id}`);
+      expect(detail.body.plan).toEqual({ taskId: res.body.taskId, status: 'draft' });
+      // The finished plan is left as it was: only a draft is superseded.
+      const [old] = await q('select status from agent_tasks where id = $1', [first.body.taskId]);
+      expect(old!.status).toBe(status);
+      const [created] = await q(
+        `select actor_type, actor_user_id from agent_task_events where task_id = $1 and kind = 'created'`,
+        [res.body.taskId],
+      );
+      expect(created).toEqual({ actor_type: 'user', actor_user_id: t.seed.a.owner.userId });
+    },
+  );
+
+  test('a paused Storm Scout is a 409 with the paused text and drafts nothing', async () => {
+    const id = await addStorm('2026-10-11', 'Omaha, NE');
+    await q(`insert into agent_settings (company_id, agent, paused_at) values ($1, 'storm_scout', now())`, [t.seed.a.companyId]);
+    const owner_ = await who.as('owner');
+    const res = await owner_.post(`/api/storms/${id}/plan`).send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(PLAN_PAUSED);
+    expect(PLAN_PAUSED).toBe('Storm Scout is paused. Turn it back on in Agents to draft a plan.');
+    expect((await owner_.get(`/api/storms/${id}`)).body.plan).toBeNull();
   });
 
   test('a dismissed storm is a 409', async () => {
