@@ -23,6 +23,8 @@ export const JOB_NAMES = [
   'followup-daily',
   // G1 Task 8
   'claims-reply',
+  // G1 Task 12
+  'scheduler-no-show',
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 // 'footprints-load' is global work, but the worker requires a company id on every job: its data is

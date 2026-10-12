@@ -936,6 +936,8 @@ function queueHandlers(over: Partial<JobHandlers> = {}): JobHandlers {
     'followup-daily': async () => {},
     // G1 Task 8
     'claims-reply': async () => {},
+    // G1 Task 12
+    'scheduler-no-show': async () => {},
     ...over,
   };
 }
