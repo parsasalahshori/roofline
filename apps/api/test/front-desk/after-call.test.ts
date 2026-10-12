@@ -12,6 +12,7 @@ import {
   encrypt,
   findCallConversationId,
   lineLookups,
+  listConversationInbox,
   messages,
   textingRegistrations,
   type ToolCallRecord,
@@ -565,5 +566,76 @@ describe('line lookup cache', () => {
     expect(t.lineLookup.lookups.filter((n) => n === OTHER_CALLER)).toHaveLength(2);
     const rows = await t.deps.pools.system.select().from(lineLookups).where(eq(lineLookups.e164, OTHER_CALLER));
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('SMS conversation after-call', () => {
+  async function seedSms(): Promise<{ conversationId: string; customerId: string }> {
+    return inCompany(t, idA(), async (tx) => {
+      const [c] = await tx
+        .insert(customers)
+        .values({ companyId: idA(), displayName: 'Sam Texter', firstName: 'Sam', phones: [{ e164: OTHER_CALLER, label: 'mobile', primary: true }] })
+        .returning({ id: customers.id });
+      const [conv] = await tx
+        .insert(conversations)
+        .values({ companyId: idA(), channel: 'sms', customerId: c!.id, phoneE164: OTHER_CALLER, companyNumberE164: A_NUMBER, status: 'active' })
+        .returning({ id: conversations.id });
+      const lines: [string, string][] = [['caller', CALLER_WORDS], ['assistant', 'Thanks, we will look at it.']];
+      for (let i = 0; i < lines.length; i += 1) {
+        await tx.insert(conversationTurns).values({
+          companyId: idA(),
+          conversationId: conv!.id,
+          position: i,
+          speaker: lines[i]![0] as 'caller' | 'assistant',
+          text: lines[i]![1],
+        });
+      }
+      return { conversationId: conv!.id, customerId: c!.id };
+    });
+  }
+  const textActivities = () => inCompany(t, idA(), (tx) => tx.select().from(activities).where(eq(activities.kind, 'text_conversation')));
+  const anyUsage = () => inCompany(t, idA(), (tx) => tx.select().from(usageEvents));
+
+  test('summarizes, ends the conversation, logs one activity, and is idempotent', async () => {
+    const s = await seedSms();
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    const conv = await conversationOf(s.conversationId);
+    expect(conv.status).toBe('ended');
+    expect(conv.summary).toBe(SUMMARY);
+    expect((summarizeCalls()[0]!.request as { transcript: string }).transcript).toContain(CALLER_WORDS);
+    const acts = await textActivities();
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toMatchObject({ subjectId: s.customerId });
+    expect(await anyUsage()).toHaveLength(0);
+    expect(await outboundRows()).toHaveLength(0);
+    expect(t.sms.sent).toHaveLength(0);
+
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    expect(await textActivities()).toHaveLength(1);
+    expect(summarizeCalls()).toHaveLength(1);
+  });
+});
+
+describe('voice needs attention', () => {
+  test('a booked call leaves the conversation unread and listed under needs_attention', async () => {
+    const s = await seedCall({ aiSeconds: 90, transcriptStored: true, turns: [CALLER_WORDS], toolCalls: [BOOKING] });
+    await run(s);
+    const conv = await conversationOf(s.conversationId!);
+    expect(conv.unreadCount).toBeGreaterThanOrEqual(1);
+    const page = await inCompany(t, idA(), (tx) =>
+      listConversationInbox(tx, tenantCtx(), { onCall: true }, { filter: 'needs_attention', cursor: null }),
+    );
+    const item = page.items.find((i) => i.id === s.conversationId);
+    expect(item).toBeDefined();
+    expect(item!.needsAttention).toBe(true);
+  });
+
+  test('an other-outcome call stays read', async () => {
+    (llm as unknown as { summarize: unknown }).summarize = async () => ({ summary: SUMMARY, outcome: 'other', followUps: [] });
+    const s = await seedCall({ aiSeconds: 30, transcriptStored: true, turns: [CALLER_WORDS] });
+    await run(s);
+    const conv = await conversationOf(s.conversationId!);
+    expect(conv.outcome).toBe('other');
+    expect(conv.unreadCount).toBe(0);
   });
 });

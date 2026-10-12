@@ -124,6 +124,23 @@ describe('POST /hooks/twilio/voice-transfer/after-relay', () => {
     expect((await callRow()).status).toBe('ringing_team');
   });
 
+  test('after-relay out of hours: an urgent person-ask rings on-call staff, a non-urgent one takes a message', async () => {
+    t.clock.set(AFTER_HOURS);
+    await seedTeam();
+    await seedCall();
+    const urgent = await post(`${PREFIX}/after-relay`, relayFields(JSON.stringify({ kind: 'transfer', reason: 'asked', urgent: true })));
+    expect(urgent.status).toBe(200);
+    expect(urgent.text).toContain('<Dial');
+    expect(urgent.text).toContain(`>${TEAM_1}</Number>`);
+    const calm = await post(`${PREFIX}/after-relay`, relayFields(JSON.stringify({ kind: 'transfer', reason: 'asked', urgent: false })));
+    expect(calm.text).not.toContain('<Dial');
+    expect(calm.text).toContain('name="mode" value="message_only"');
+    const missing = await post(`${PREFIX}/after-relay`, relayFields(JSON.stringify({ kind: 'transfer', reason: 'asked' })));
+    expect(missing.text).toContain('name="mode" value="message_only"');
+    const stringy = await post(`${PREFIX}/after-relay`, relayFields(JSON.stringify({ kind: 'transfer', reason: 'asked', urgent: 'true' })));
+    expect(stringy.text).toContain('name="mode" value="message_only"');
+  });
+
   test('after-relay with no on-call members goes to message mode', async () => {
     await seedCall();
     const res = await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer')));
