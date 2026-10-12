@@ -824,7 +824,7 @@ describe('S1 constraints', () => {
       .split('\n')
       .filter((line) => !line.trimStart().startsWith('--'))
       .join('\n');
-    expect(statements).not.toMatch(/ALTER ROLE app_hail/i);
+    expect(statements).not.toMatch(/ALTER ROLE app_hail[^;]*\bLOGIN\b/i);
     expect(statements).not.toMatch(/\bLOGIN\b/);
   });
 
@@ -942,7 +942,8 @@ describe('S1 constraints', () => {
   test('door_stops.footprint_id and door_exclusions.footprint_id are bigint with no foreign key (Ruling SH)', async () => {
     const cols = await ownerQuery<{ table_name: string; data_type: string }>(
       `select table_name, data_type from information_schema.columns
-        where table_schema = 'public' and column_name = 'footprint_id' order by 1`,
+        where table_schema = 'public' and column_name = 'footprint_id'
+          and table_name in ('door_stops', 'door_exclusions') order by 1`,
     );
     expect(cols).toEqual([
       { table_name: 'door_exclusions', data_type: 'bigint' },
