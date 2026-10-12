@@ -1,0 +1,113 @@
+/* The forwarding guide: a card under the Front Desk form. Codes are large, wrap at 375px, and every button is 40px tall. */
+.guide {
+  scroll-margin-top: 16px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-stat);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+}
+
+.number {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.numberLabel {
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.numberValue {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.pickers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 16px;
+}
+
+.codes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.intro {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.codeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* Codes are the thing to read and dial: large, monospace, and free to wrap on a narrow screen */
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--font-size-stat);
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  min-width: 0;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: var(--font-size-body);
+  color: var(--text);
+}
+
+@media (max-width: 767.98px) {
+  .codeRow > button {
+    width: 100%;
+  }
+}
