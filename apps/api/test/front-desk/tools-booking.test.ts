@@ -18,7 +18,7 @@ import {
 import type { ConsentStatus, IdentityLevel } from '@roofline/shared';
 import type { ConversationState, ToolContext } from '../../src/front-desk/engine-types.ts';
 import { newConversationState } from '../../src/front-desk/state.ts';
-import { bookInspection, isAvailable as bookAvailable } from '../../src/front-desk/tools/book.ts';
+import { BOOK_FAILED, bookInspection, isAvailable as bookAvailable } from '../../src/front-desk/tools/book.ts';
 import {
   confirmAppointmentTool,
   confirmByText,
@@ -198,7 +198,7 @@ async function everyoneBusy(start: string, propertyId: string | null = null) {
 }
 
 /** A customer with a number and a home. */
-async function seedCustomer(o: { phone?: string; consent?: ConsentStatus; address?: string } = {}) {
+async function seedCustomer(o: { phone?: string; secondPhone?: string; consent?: ConsentStatus; address?: string } = {}) {
   const now = t.clock.now();
   return inCompany(t, A(), async (tx) => {
     const [row] = await tx
@@ -208,7 +208,10 @@ async function seedCustomer(o: { phone?: string; consent?: ConsentStatus; addres
         displayName: 'Nina Park',
         firstName: 'Nina',
         lastName: 'Park',
-        phones: [{ e164: o.phone ?? CALLER, label: 'mobile', primary: true }],
+        phones: [
+          { e164: o.phone ?? CALLER, label: 'mobile', primary: true },
+          ...(o.secondPhone ? [{ e164: o.secondPhone, label: 'mobile', primary: false }] : []),
+        ],
         smsConsentStatus: o.consent ?? 'express',
         createdAt: now,
         updatedAt: now,
@@ -517,6 +520,25 @@ describe('book_inspection', () => {
     expect(t.sms.sent).toHaveLength(1);
   });
 
+  test('the confirmation goes to the number the conversation is on when it is the customer\'s second number', async () => {
+    const SECOND = '+14025550177';
+    const { customerId, propertyId } = await seedCustomer({ secondPhone: SECOND });
+    const state = await startConversation({ channel: 'sms', phone: SECOND, identity: 'matched', customerId });
+    const res = await bookInspection(toolCtx(state), bookInput({ propertyId, address: null }));
+    expect(res.ok).toBe(true);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]!.to).toBe(SECOND);
+  });
+
+  test('a conversation phone that is not one of the customer\'s numbers still gets the text on the primary number', async () => {
+    const { customerId, propertyId } = await seedCustomer({ secondPhone: '+14025550177' });
+    const state = await startConversation({ channel: 'sms', phone: '+14025550199', identity: 'matched', customerId });
+    const res = await bookInspection(toolCtx(state), bookInput({ propertyId, address: null }));
+    expect(res.ok).toBe(true);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]!.to).toBe(CALLER);
+  });
+
   test('a confirmation text the gate blocks is recorded, and the booking stands', async () => {
     const { customerId, propertyId } = await seedCustomer({ consent: 'revoked' });
     const state = await startConversation({ identity: 'matched', customerId });
@@ -566,6 +588,16 @@ describe('book_inspection', () => {
     expect(res.ok).toBe(false);
     expect(await allAppointments()).toHaveLength(0);
     expect(await allCustomers()).toHaveLength(0);
+  });
+
+  test("a typed address that is another customer's home gets the neutral sentence, not who owns it (pre-review #30)", async () => {
+    await seedCustomer({ phone: '+14025550166', address: '123 Elm St' });
+    const state = await startConversation();
+    const res = await bookInspection(toolCtx(state), bookInput({ propertyId: null, address: ADDRESS }));
+    expect(res.ok).toBe(false);
+    expect(res.forModel).toBe(BOOK_FAILED);
+    expect(res.forModel).not.toMatch(/someone else|on file/i);
+    expect(await allAppointments()).toHaveLength(0);
   });
 
   test('a home on file for someone else is not booked for a new caller', async () => {

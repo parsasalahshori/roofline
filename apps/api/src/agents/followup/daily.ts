@@ -1,20 +1,22 @@
-import { and, eq, gte } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
-  agentTasks,
   companies,
   companySettings,
+  firstWord,
   findLeadCandidates,
   findStuckCandidates,
   followUpLogFor,
   findProposalCandidates,
   findReviewCandidates,
   getJob,
+  hasAgentTaskBetween,
   PROPOSAL_CALL_KIND,
   PROPOSAL_CALL_SUBJECT,
   followUpSettings,
   lastInboundAt,
   lastStormTextAt,
   memberNames,
+  readAgentValues,
   recordStuckNudge,
   STUCK_NUDGE_GAP_DAYS,
   type StuckCandidate,
@@ -25,6 +27,7 @@ import {
   updateJob,
   type Tx,
   withTenant,
+  zoneDayAfter,
   zoneDayStart,
 } from '@roofline/db';
 import { DEFAULT_WORK_HOURS, followUpAllowed, NEXT_STEP_MAX, type WorkHours } from '@roofline/shared';
@@ -32,6 +35,7 @@ import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
 import { createTask } from '../../tasks/service.ts';
 import { writeAgentNote } from '../notes.ts';
+import { FROM_TEMPLATE, localTimeToday, systemCtx } from '../common.ts';
 import { localParts } from '../schedule.ts';
 import {
   draftLeadTexts,
@@ -62,35 +66,13 @@ const STUCK_KIND = 'stuck_nudges';
 const LEAD_CAP = 25;
 const PROPOSAL_CAP = 25;
 const REVIEW_CAP = 25;
-const DEFAULT_FOLLOWUP_DAYS = [3, 4];
 const DAY_MS = 86_400_000;
 const LOG_WINDOW_DAYS = 365;
 const PLAN_EXPIRES_HOUR = 18;
 
-const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: null, role: 'system', canApproveSpend: false });
-
 /** True when the agent already made a task of this kind on the company-local day that starts at `dayStart`. */
-async function madeToday(tx: Tx, ctx: TenantContext, kind: string, dayStart: Date): Promise<boolean> {
-  const [row] = await tx
-    .select({ id: agentTasks.id })
-    .from(agentTasks)
-    .where(
-      and(eq(agentTasks.companyId, ctx.companyId), eq(agentTasks.agent, AGENT), eq(agentTasks.kind, kind), gte(agentTasks.createdAt, dayStart)),
-    )
-    .limit(1);
-  return row !== undefined;
-}
-
-/** 6 PM company-local on the given day. */
-function sixPm(day: string, timeZone: string): Date {
-  let t = zoneDayStart(day, timeZone).getTime() + PLAN_EXPIRES_HOUR * 3_600_000;
-  // A day with a clock change is not 24 hours long; move to the wall-clock hour.
-  const hour = localParts(new Date(t), timeZone).hour;
-  t += (PLAN_EXPIRES_HOUR - hour) * 3_600_000;
-  return new Date(t);
-}
-
-const firstWord = (name: string | undefined): string | null => name?.trim().split(/\s+/)[0] || null;
+const madeToday = (tx: Tx, ctx: TenantContext, kind: string, dayStart: Date, today: string, timeZone: string): Promise<boolean> =>
+  hasAgentTaskBetween(tx, ctx, { agent: AGENT, kind, from: dayStart, to: zoneDayStart(zoneDayAfter(today), timeZone) });
 
 export async function runFollowUps(deps: AppDeps, companyId: string, meta: JobMeta): Promise<void> {
   void meta;
@@ -125,28 +107,17 @@ type Prepared = { leads: LeadDraftInput[]; proposals: ProposalDraftInput[]; revi
 async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now: Date, today: string, dayStart: Date): Promise<void> {
   // The candidates and everything the drafts need, read in one transaction.
   const prepared = await withTenant(deps.pools, ctx, async (tx): Promise<Prepared | null> => {
-    const settings = await followUpSettings(tx, ctx);
-    const [proposalRow] = await tx
-      .select({
-        followupProposals: companySettings.followupProposals,
-        followupDays: companySettings.followupDays,
-        followupReviews: companySettings.followupReviews,
-        reviewLink: companySettings.reviewLink,
-        reviewDelayDays: companySettings.reviewDelayDays,
-      })
-      .from(companySettings)
-      .where(eq(companySettings.companyId, ctx.companyId))
-      .limit(1);
-    const proposalsOn = proposalRow?.followupProposals ?? true;
-    const followupDays = proposalRow?.followupDays ?? DEFAULT_FOLLOWUP_DAYS;
-    const reviewLink = proposalRow?.reviewLink?.trim() ?? '';
-    const reviewsOn = (proposalRow?.followupReviews ?? true) && reviewLink !== '';
-    const reviewDelayDays = proposalRow?.reviewDelayDays ?? 3;
-    if (!settings.followupLeads && !proposalsOn && !reviewsOn) return null;
-    const made = await madeToday(tx, ctx, LEADS_KIND, dayStart);
+    const values = await readAgentValues(tx, ctx);
+    const proposalsOn = values.followupProposals;
+    const followupDays = values.followupDays;
+    const reviewLink = values.reviewLink?.trim() ?? '';
+    const reviewsOn = values.followupReviews && reviewLink !== '';
+    const reviewDelayDays = values.reviewDelayDays;
+    if (!values.followupLeads && !proposalsOn && !reviewsOn) return null;
+    const made = await madeToday(tx, ctx, LEADS_KIND, dayStart, today, company.timeZone);
 
     const leadCandidates =
-      settings.followupLeads && !made ? await findLeadCandidates(tx, ctx, now, { leadFollowupDays: settings.leadFollowupDays }) : [];
+      values.followupLeads && !made ? await findLeadCandidates(tx, ctx, now, { leadFollowupDays: values.leadFollowupDays }) : [];
     const proposalCandidates = proposalsOn ? await findProposalCandidates(tx, ctx, now, { followupDays }) : [];
     const reviewCandidates =
       reviewsOn && !made ? await findReviewCandidates(tx, ctx, now, { reviewDelayDays, timeZone: company.timeZone }) : [];
@@ -284,7 +255,7 @@ async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now
   const jobIds = new Map(prepared.leads.map((l) => [l.customerId, l.jobId]));
 
   const summaryParts: string[] = [];
-  if (anyTemplate) summaryParts.push('Written from a template');
+  if (anyTemplate) summaryParts.push(FROM_TEMPLATE);
   if (proposalTexts.length > 0) {
     summaryParts.push(proposalTexts.length === 1 ? '1 proposal follow-up' : `${proposalTexts.length} proposal follow-ups`);
   }
@@ -329,7 +300,7 @@ async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now
 
   await withTenant(deps.pools, ctx, async (tx) => {
     // Checked again: a second run may have made the plan while the Llm was writing.
-    if (await madeToday(tx, ctx, LEADS_KIND, dayStart)) return;
+    if (await madeToday(tx, ctx, LEADS_KIND, dayStart, today, company.timeZone)) return;
     await createTask(
       tx,
       ctx,
@@ -338,7 +309,7 @@ async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now
         kind: LEADS_KIND,
         title: `Follow-ups for today (${leadTexts.length + proposalTexts.length + reviewTexts.length})`,
         ...(summaryParts.length > 0 && { summary: summaryParts.join('. ') }),
-        expiresAt: sixPm(today, company.timeZone),
+        expiresAt: localTimeToday(today, PLAN_EXPIRES_HOUR, company.timeZone),
         createdBy: 'agent',
         steps,
       },
@@ -349,7 +320,7 @@ async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now
 
 async function runStuck(deps: AppDeps, ctx: TenantContext, timeZone: string, now: Date, today: string, dayStart: Date): Promise<void> {
   await withTenant(deps.pools, ctx, async (tx) => {
-    if (await madeToday(tx, ctx, STUCK_KIND, dayStart)) return;
+    if (await madeToday(tx, ctx, STUCK_KIND, dayStart, today, timeZone)) return;
     const settings = await followUpSettings(tx, ctx);
     const stuck: StuckCandidate[] = await findStuckCandidates(tx, ctx, now, { timeZone, stuckAfterDays: settings.stuckAfterDays });
     if (stuck.length === 0) return;

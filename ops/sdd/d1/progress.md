@@ -154,3 +154,116 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
     - (a) ASK_PERSON_INTENTS and 'not_understood' are guessed router labels, and the frozen ROUTER_PROMPT doesn't ask for them. RC adds the labels to the router's json_schema enum (Haiku format), not to the frozen prompt text.
     - (b) transfer reason 'asked' plus the router intent can count one ask twice in a turn; count once.
     - (c) drop the times.ts systemCtx re-export.
+- 2026-10-12: integration 092068c8 green (CI 38281636895, Platform+E2E): T27 + c1-crm 7758e82 + T19, with the smoke guard test's TRUST_PROXY fix (T27's production BASE_ENV met C1's BF check). CV and RA are building in parallel off 93dcfca; RC waits for CV; T25 is with the C1 lead; d1-rev-a/b/c are with E1 and d1-rev-d with C1.
+- 2026-10-12: **d1-rev-a and d1-rev-b merged** (E1 pre-review fixes).
+  - d1-rev-a 5267d58 (CI 38281600581): items 13, 25 hook part, 26, 29, 30, 38, 39, 40 and 45, plus **Ruling BG**. A read-only company gets team then voicemail, never AI; no fd-text; the "off" PUT is allowed.
+  - d1-rev-b 542a7e9 (CI 38281601513): items 14, 15, 16, 17 and 36. The lock order is the phone lock, then lockRecipient.
+  - Retention 0 now deletes existing recordings; the settings copy may need to say so.
+  - Since Ruling BG landed via d1-rev-a, Task CV's BG part is redundant: at CV's merge, keep d1-rev-a's version and drop CV's duplicate.
+  - RC must pass `toE164: conversation.phoneE164` in texts.ts (item 17).
+- 2026-10-12: **d1-rev-d merged** (C1 lead, notes 20, 31, 32, 33, 35, 43; 5e58c80, CI 38284192214 green on b1c782d5).
+  - 0020 is narrowed in place: app_system has no grants left on conversations or conversation_turns (their app_system_all policies are dropped), and on calls only SELECT (id, company_id, call_sid, status).
+  - So any new system-pool pass over calls or conversations (CV's stale-call sweep, RC's SMS idle-close) must list companies on the system pool, then work per company on the tenant pool inside withTenant, rather than adding grants back.
+  - SMS detail now merges messages with turns (dedupe by text; re-check if RC changes what texts.ts writes).
+  - Front Desk SMS bodies are blanked under retention.
+- 2026-10-12, controller plan to finish fast (owner):
+  - RC is split. RC-1 (S1 lead, d1-rc1): items 1-4, 6 and 9, the T19 minors, and E1's final-review F2 (texts part), F4, F5, F6 and N3 (book.ts toE164). RC-2 (me, d1-rc2 off d1-cv): notes 28 and 41, F2 (voice match at start), F3 (urgency through the handoff), and voice needs_attention.
+  - The final whole-branch review runs incrementally (E1 lead): d1-rev-e (F1 appointment ids), d1-rev-f (F7-F10), d1-rev-g (N2 dispatcher toE164, N4 transfer phone vs any Roofline number), and d1-rev-c (also N3's reply route).
+  - **Ruling BI** (owner, item N6): retention blanks only the AI exchange (inbound texts the assistant handled and its replies). It keeps STOP/START/HELP bodies, staff replies and booking confirmations, and the copy says so. Retention 0 deletes existing recordings, with copy that says so. Built by the A1 lead on d1-rev-h.
+  - Docker works locally (`nohup dockerd &`): run the db and api suites before every push.
+- Task CV, Schema gap (finding F2): calls has no outcome or title column, so a transferred call with no conversation keeps only calls.status 'transferred' as its outcome. needs_attention is derived from unread_count (conversation-inbox.ts), which voice calls never set, so a booked voice call does not show as needs-attention. A column would need a new migration, which D1 does not own beyond 0019/0020, so it is left for the controller.
+- 2026-10-12: **Task CV merged** (d1-cv 77d57be, CI 38288296627 green; local Docker: db rls, repos-calls-cv, migrations and fd-texts, plus the api front-desk suite with 521 tests).
+  - What it does: calls.conversation_id is linked in engine.start, and start reuses the linked conversation. after-call runs only for finished calls (ended, transferred, failed, rejected), with usage once from the total aiSeconds. take_message no longer writes summary. The AI cap uses an advisory lock and a 35-minute window. fd-health ends stuck calls. applyCallStatus guards terminal states.
+  - Ruling BG: d1-rev-a's version is kept.
+  - 0020: app_system on calls has SELECT (id, company_id, call_sid, status, started_at) and UPDATE (status, ended_at, updated_at).
+  - Fixes integration red: rev-b's blocked_numbers isolation cases now expect 42501 (rev-d removed app_tenant UPDATE).
+  - **Gaps:**
+    - (a) calls has no outcome or title column, so a transferred call with no conversation keeps only calls.status.
+    - (b) Voice needs_attention: RC-2 sets unread_count.
+- **Ruling BJ** (controller): CV's stale-call sweep moves to per-company tenant transactions, and app_system's UPDATE and SELECT(started_at) grants on calls are dropped (BF and the rev-d rule). Built by the E1 lead on d1-rev-i, with the sweep fixes: 35 min for `ai` only, about 4 h for ringing and ringing_team, no text-back after a sweep, plus billing and status edge cases. The D1 lead keeps the reused-conversation turn positions and the AI cap counting non-AI calls (follow-ups.md).
+- 2026-10-12: **Task 25 merged** (C1 lead; d1-t25 c6a72d1, CI 38290781537 green on 2dd74adc with CV). It adds:
+  - 13 §16 scenarios with a CI runner over ScriptedLlm through the real relay loop, engine and tools.
+  - `npm run eval:front-desk -- --confirm-spend` (refuses without the flag or a key; model calls only in providers/anthropic/eval.ts).
+  - d1-latency.md as a template, empty until the owner's first run.
+  - The T19 rows of d1-acceptance.md filled in.
+  - Gap: criterion 8 (an install move is refused) has no end-to-end call test.
+- 2026-10-12: **d1-rev-h merged** (A1 lead; Ruling BI; 17d47e3, CI 38290914284 green with CV).
+  - blankExpiredTexts blanks only inbound texts in a conversation and the assistant's own replies (fd-text: keys).
+  - Staff replies, booking confirmations, text-backs and STOP/START/HELP or opt-out-looking texts are kept.
+  - The sweep uses a keyset cursor.
+  - The settings copy says what is kept; retention 0 deletes existing recordings at the next nightly cleanup.
+
+Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.recording_key (object key recordings/<companyId>/<callId>-<recordingSid>.mp3), per the brief's "same column as the key". No new column and no change to 0019/0020. Twilio copies are deleted by fd-recording-store after the copy, when R2 is unset, or after the 5th failed attempt.
+- 2026-10-12: **Staging batch merged to d1-front-desk** (one push; local Docker suites green before the push: front-desk api 655, db 336, web 789; the previous full run api 2927). Each branch was green on its own CI:
+  - **d1-rev-e** (E1, F1): a verified caller's lookup_my_jobs lists appointment ids, so confirm, move and cancel can act on existing appointments.
+  - **RC-2** (8654fcf):
+    - SMS after-call through the idle-SMS pass (`queueIdleSmsAfterCalls`);
+    - caller phone match at call start (F2);
+    - urgency through the handoff into /after-relay (F3);
+    - voice needs_attention via unread_count;
+    - urgent email deduped once per conversation, made durable by D1 lead commit: hasUrgentNoticeFor row-locks the conversation and also matches an earlier urgent take_message turn.
+  - **RA** (284b2dc, finished by the D1 lead):
+    - relay verifies the signature and token before upgrade;
+    - transcript_stored set on authenticate;
+    - one recording choice per call, with the recording SID in the key;
+    - Twilio copy deleted (note 42);
+    - playback proxied through GET /api/calls/:id/recording, CSP media-src 'self' only.
+  - **d1-cap** (D1 lead): the AI cap counts only AI-bound calls; non-AI paths are marked ringing_team.
+  - **d1-rev-f** (E1, F7-F10): SMS detail matches texts to turn lines one to one; photo-only texts; unsigned webhooks are refused before any lookup.
+  - **d1-rev-g** (E1, N2/N4): the dispatcher keeps toE164; the transfer phone can't be any company's Roofline number.
+  - **d1-rev-i** (E1, **Ruling BJ** + CV review #3/#5/#8):
+    - the sweep is per company on the tenant pool;
+    - app_system keeps only SELECT (id, company_id, call_sid, status) on calls;
+    - `ai` calls end at 35 min, ringing calls at 4 h;
+    - swept calls get no text-back;
+    - recordCallMinutes takes the greatest value while unbatched;
+    - failed is final.
+  - **d1-rev-j** (E1, T25 review): strict tone grade, job-verified ordering, eval refuses under CI or fakes and prints a cost estimate, costs labelled as a lower bound.
+  - **d1-t25b** (C1): criterion 8 install-move test; acceptance-map fixes.
+  - **d1-rev-k** (C1, RA review):
+    - one recording per call;
+    - an objection in a later session stops Twilio.CURRENT;
+    - relay URL carries the company and is verified before any slot or DB read;
+    - per-SID alreadyCopied;
+    - failed Twilio deletes retry;
+    - an inverted Range is ignored.
+    - Deploy note: relay URLs minted before deploy (no o=) get 401, which only affects calls mid-transfer at deploy time.
+  - **RC-3** (D1 lead):
+    - **Ruling BK**: after hours, on-call staff are rung only for leak or danger or an urgent take_message, with settings copy;
+    - a reused conversation continues positions, turn count, start time and urgent notice;
+    - redaction is decided at save time and keeps take_message's urgent flag;
+    - DTMF-0, turn-failure and transfer_to_person carry the urgent flag;
+    - a take_message card shows the caller's message.
+  - **Merge resolutions:**
+    - rev-i x RC-2 x cap: the idle-SMS pass is its own function, called after endStuckCalls; after-call keeps the SMS path plus swept and recordCallMinutes;
+    - t25b's call-paths.test.ts taken;
+    - rev-e's tests ported onto call-rig.
+  - **Rulings recorded:**
+    - **BJ** (stale-call sweep per company; app_system calls grants trimmed);
+    - **BK** (above).
+  - **Still open:**
+    - RC-1/RC-1b (S1 lead): SMS turn positions, system-note ordering, verify_caller lockout and identity persistence, router intent enum, F4-F6, the "[photo]" placeholder. It ships as a follow-up merge.
+    - d1-rev-l (E1, RC-2 review minors).
+    - Restoring verifyFailures on reuse depends on RC-1's identity persistence.
+    - T25 finding 6 (the eval's playCall drift from engine.run) and C1 RA review #6 (ranged playback reads) are follow-ups.
+- 2026-10-12: **Integration green at 3c1d391** (CI 38300366922, Platform and E2E): every D1 plan task (1-27), the pre-review fixes (CV, RA, RC-2, RC-3, d1-cap, rev-a through rev-k) and Rulings BG, BI, BJ and BK. **D1 complete**, with follow-up merges still in flight:
+  - RC-4 (D1 lead, d1-rc4): loose leak and danger matching, the message-mode clock, and conversation times from the app clock.
+  - d1-rev-m (E1): amended BK vocabulary, final ROUTER_INTENTS, ring_first after-dial cap check, ok-only dedupe, and /after-relay urgency.
+  - d1-rev-l (E1): RC-2 review minors.
+  - RC-1/RC-1b (S1): SMS turn positions and the SMS 30-minute HIGH; system-note ordering; verify_caller lockout and identity persistence (including on reuse); lastTeamReplyAt ignoring system texts; F4-F6; "[photo]".
+  - Later: ranged playback reads (C1 RA #6); the eval's playCall drift from engine.run (T25 finding 6).
+- 2026-10-12: **d1-rev-l merged** (E1, RC-2 review #2/#4/#5/#6 and the RC-1 matcher tolerance; a two-segment relay test; 6126009, CI 38300824666 green). The idle-SMS pass runs on the half hour, skips read-only and texting-off companies, rechecks idleness under a conversation lock, and also lists recently ended, unsummarised threads.
+- 2026-10-12: **RC-4 merged** (D1 lead; 10f55e0, CI 38302002040 green; local front-desk api 635 and shared 849 on the merge). shouldTransfer matches leak and danger loosely, so a router 'emergency' still rings on-call (Ruling BK). A reused conversation's clock starts at most 20 min back. insertConversation takes its times from the app clock.
+- 2026-10-12: **d1-rev-m merged** (E1; 4d34e8b, CI 38305050962 green). Amended **Ruling BK**: emergencyReason checks the exact vocabulary, RC-4's loose intent words and the caller's own phrases, a bare 'emergency' counts as danger, and the router prompt names the vocabulary; the D1 lead's engine commit passes callerText. Also the final ROUTER_INTENTS (36) for the router schema and zod; a ring_first after-dial cap check (aiAllowedNow plus lockAiCap); /voice marks ringing_team only with team numbers; dedupe and the inbox URGENT check need ok='true'; /after-relay urgency ORs in hasUrgentNoticeFor. Local: front-desk api 643, shared 883, rls 153.
+- 2026-10-12: **RC-1/RC-1b merged** (S1 lead; d1-rc1 5893457, CI 38308593201 green, on b2c4a97). **This clears the launch blocker.** Local suites on the merge: db 346, api 3003, web 789, shared 887.
+  - SMS uses only the AI-turn cap, so a reused thread of any age keeps answering.
+  - insertTurn allocates the position under the conversation row lock.
+  - System notes commit only together with an assistant reply.
+  - verify_caller locks out at MAX, and identity and failures persist and are restored on reuse. Failures are counted from verify_caller ok:false rows whose result is a mismatch or empty, so the count survives redaction. Engine refusals are not counted.
+  - Shared numbers are never 'matched', and the guessed customer is cleared.
+  - lastTeamReplyAt counts only staff replies. The "Team is handling" switch quiets until teamUntil.
+  - An SMS handoff replies once and carries urgency.
+  - A photo-only text is stored as '[photo]'.
+  - The router intents are the shared ROUTER_INTENTS (from rev-m); ASK_PERSON_INTENTS is re-added.
+  - Known minor still open: E1 review 11 (a duplicate first text in history after a silent turn; rare).
+  - Also merged: integration sentinel problems 9 (one Front Desk-off check in read-only.ts) and 11 (the eval test env sets E1's R2 settings).

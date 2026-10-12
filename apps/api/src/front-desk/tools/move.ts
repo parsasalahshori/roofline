@@ -4,12 +4,12 @@ import {
   optionLine,
   openInspectionSlots,
   queueCalendarPush,
-  systemCtx,
   type ToolSettings,
   verifiedCustomerId,
   whenWords,
   zoneOf,
 } from './times.ts';
+import { systemCtx } from './system-ctx.ts';
 import {
   AppointmentLinkError,
   clearConfirmation,

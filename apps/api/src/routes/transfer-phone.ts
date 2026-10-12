@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import type { TransferPhoneView } from '@roofline/shared';
+import { textability, type TransferPhoneView } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import { readTransferPhone, writeTransferPhone } from '../account/transfer-phone.ts';
+import { isOwnCompanyNumber, isRooflineNumber, readTransferPhone, writeTransferPhone } from '../account/transfer-phone.ts';
+import { AppError } from '../errors.ts';
 import { parse } from '../validate.ts';
 
 const NOT_BUILT = 'This part of Front Desk (the transfer phone) is not built yet.';
 const E164_MESSAGE = 'Enter the phone number with its country code, like +14025550123.';
+const US_ONLY_MESSAGE = 'Enter a US phone number. Toll-free, 900 and numbers outside the US cannot take transferred calls.';
+const OWN_NUMBER_MESSAGE = "Enter a phone that rings a person. Calls can't be transferred to your business phone or a Roofline number.";
 const ACK_MESSAGE = 'Please confirm that calls to this phone may be recorded.';
 
 const Body = z.object({
@@ -17,7 +20,9 @@ const Body = z.object({
 /**
  * `/api/me/transfer-phone`: the number a live call is handed to for the signed-in person, any role.
  * - `GET /` answers `{ e164, prefill, recordingAcknowledgedAt }`; `prefill` is the phone on their account.
- * - `PUT /` takes `{ e164, ackRecording: true }`. Only the caller's own membership changes.
+ * - `PUT /` takes `{ e164, ackRecording: true }`. Only the caller's own membership changes. The number
+ *   is dialled on the company's account, so only a textable US number (no toll-free, no 900, nothing
+ *   outside the US) that is not the company's business phone or one of its Roofline numbers is taken.
  */
 export function transferPhoneRoutes(deps: AppDeps): Router {
   const router = Router();
@@ -34,6 +39,10 @@ export function transferPhoneRoutes(deps: AppDeps): Router {
 
   router.put('/', async (req, res) => {
     const body = parse(Body, req.body);
+    if (textability(body.e164) !== 'ok') throw new AppError(400, US_ONLY_MESSAGE, 'e164');
+    if (await isOwnCompanyNumber(deps, req.ctx, body.e164)) throw new AppError(400, OWN_NUMBER_MESSAGE, 'e164');
+    // Another company's Roofline number would send every transfer into that company's Front Desk.
+    if (await isRooflineNumber(deps, body.e164)) throw new AppError(400, OWN_NUMBER_MESSAGE, 'e164');
     res.json(view(await writeTransferPhone(deps, req.ctx, body.e164)));
   });
 

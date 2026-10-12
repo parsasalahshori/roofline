@@ -1,24 +1,35 @@
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import type { Db } from '../pools.ts';
-import { companies, companyPhoneNumbers, memberships, textingRegistrations } from '../schema/index.ts';
+import { companies, companyPhoneNumbers, memberships, textingRegistrations, users } from '../schema/index.ts';
 
 /*
  * Voice webhook routing on the app_system pool (D1 Task 10). Only apps/api/src/hooks/twilio-voice*.ts
  * imports this. Memberships are read only here (Ruling DK).
  */
 
-/** What a voice webhook needs about the company that owns the dialed number (settings are read tenant-side). */
-export type VoiceNumberRoute = { companyId: string; companyName: string; timezone: string };
+/**
+ * What a voice webhook needs about the company that owns the dialed number (settings are read
+ * tenant-side). `readOnly`: the company's trial ended or its plan was canceled, so it gets no
+ * Front Desk calls (Ruling BG).
+ */
+export type VoiceNumberRoute = { companyId: string; companyName: string; timezone: string; readOnly: boolean };
 
 /** An active texting/voice number (company_phone_numbers, status 'active') -> its company; null when none. */
 export async function voiceRouteForNumber(system: Db, e164: string): Promise<VoiceNumberRoute | null> {
   const [row] = await system
-    .select({ companyId: companyPhoneNumbers.companyId, companyName: companies.name, timezone: companies.timezone })
+    .select({
+      companyId: companyPhoneNumbers.companyId,
+      companyName: companies.name,
+      timezone: companies.timezone,
+      status: companies.status,
+    })
     .from(companyPhoneNumbers)
     .innerJoin(companies, eq(companies.id, companyPhoneNumbers.companyId))
     .where(and(eq(companyPhoneNumbers.e164, e164), eq(companyPhoneNumbers.status, 'active')))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  const { status, ...route } = row;
+  return { ...route, readOnly: status === 'trial_ended' || status === 'canceled' };
 }
 
 export type OnCallMember = { userId: string; phone: string; onCallOrder: number };
@@ -40,6 +51,32 @@ export async function onCallMembers(system: Db, companyId: string): Promise<OnCa
   const out: OnCallMember[] = [];
   for (const r of rows) {
     if (r.phone !== null && r.onCallOrder !== null) out.push({ userId: r.userId, phone: r.phone, onCallOrder: r.onCallOrder });
+  }
+  return out;
+}
+
+/**
+ * First names of the on-call members (same filter and order as onCallMembers), for the Front Desk rule sentence.
+ * The first name is the first whitespace-separated token of users.name; empty names are skipped.
+ */
+export async function onCallFirstNames(system: Db, companyId: string): Promise<string[]> {
+  const rows = await system
+    .select({ name: users.name })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(
+      and(
+        eq(memberships.companyId, companyId),
+        eq(memberships.status, 'active'),
+        isNotNull(memberships.transferPhoneE164),
+        isNotNull(memberships.onCallOrder),
+      ),
+    )
+    .orderBy(asc(memberships.onCallOrder), asc(memberships.userId));
+  const out: string[] = [];
+  for (const r of rows) {
+    const first = r.name.trim().split(/\s+/)[0] ?? '';
+    if (first !== '') out.push(first);
   }
   return out;
 }
@@ -68,7 +105,9 @@ export type VoiceNumberToSet = {
 
 /**
  * Active company_phone_numbers with 'voice' and without the 'voice_url' marker, whose company has a
- * texting registration with a subaccount. Oldest first. `companyId` null means every company.
+ * texting registration with a subaccount. Least recently touched first: a failed attempt stamps
+ * updated_at (markVoiceUrlAttempt), so numbers that keep failing go to the back of the queue and never
+ * starve newer ones. `companyId` null means every company.
  */
 export async function numbersNeedingVoiceUrl(system: Db, companyId: string | null, limit: number): Promise<VoiceNumberToSet[]> {
   const rows = await system
@@ -92,7 +131,7 @@ export async function numbersNeedingVoiceUrl(system: Db, companyId: string | nul
         companyId === null ? undefined : eq(companyPhoneNumbers.companyId, companyId),
       ),
     )
-    .orderBy(asc(companyPhoneNumbers.createdAt), asc(companyPhoneNumbers.id))
+    .orderBy(asc(companyPhoneNumbers.updatedAt), asc(companyPhoneNumbers.id))
     .limit(limit);
   const out: VoiceNumberToSet[] = [];
   for (const r of rows) {
@@ -114,4 +153,9 @@ export async function markVoiceUrlSet(system: Db, numberId: string): Promise<voi
     .update(companyPhoneNumbers)
     .set({ capabilities: sql`array_append(${companyPhoneNumbers.capabilities}, ${VOICE_URL_MARKER})` })
     .where(and(eq(companyPhoneNumbers.id, numberId), sql`not (${VOICE_URL_MARKER} = any(${companyPhoneNumbers.capabilities}))`));
+}
+
+/** Records a failed voice URL attempt on a number (updated_at = now), so the next pass tries others first. */
+export async function markVoiceUrlAttempt(system: Db, numberId: string, now: Date): Promise<void> {
+  await system.update(companyPhoneNumbers).set({ updatedAt: now }).where(eq(companyPhoneNumbers.id, numberId));
 }

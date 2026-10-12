@@ -7,6 +7,25 @@ export const READ_ONLY_MESSAGE: Record<'trial_ended' | 'canceled', string> = {
   canceled: 'Your plan was canceled, so Roofline is read-only for now. Pick a plan to keep going.',
 };
 
+/** True for a company status that makes Roofline read-only: no writes, and no Front Desk calls or texts (Ruling BG). */
+export function isReadOnlyStatus(status: string | null | undefined): status is 'trial_ended' | 'canceled' {
+  return status === 'trial_ended' || status === 'canceled';
+}
+
+/**
+ * The one write a read-only company may still make outside the open sections (Ruling BG): turning
+ * Front Desk off. The route then saves only the switch.
+ */
+function turnsFrontDeskOff(method: string, path: string, body: unknown): boolean {
+  return (
+    method === 'PUT' &&
+    (path === '/front-desk/settings' || path === '/front-desk/settings/') &&
+    typeof body === 'object' &&
+    body !== null &&
+    (body as { enabled?: unknown }).enabled === false
+  );
+}
+
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
@@ -17,9 +36,17 @@ const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const ALWAYS_OPEN_SECTIONS = ['auth', 'billing', 'me'];
 
 /**
+ * Paths under an open section that still close in read-only mode: the Front Desk transfer phone is
+ * company setup (it is dialled on the company's account), not the member's own marker.
+ */
+const CLOSED_UNDER_OPEN = ['me/transfer-phone'];
+
+/**
  * Refuses writes from a company whose trial has ended or whose plan was canceled. Reads still work,
  * and signing in and out, billing (bare or under it) and the member's own marker stay open so the
- * company can pick a plan.
+ * company can pick a plan. One more write stays open: turning Front Desk off (`PUT /front-desk/settings`
+ * with `enabled: false`), so a company that can no longer pay can still stop the assistant. Turning it on,
+ * or any other change, is refused like every other write.
  * `past_due` is not read-only: the send gate pauses texts for it instead. The company status comes
  * from the session, which is read on every request, so a change applies without signing in again.
  * Paths under `/public/` (the signed-out customer pages) pass for every method.
@@ -32,7 +59,7 @@ export const readOnlyGuard: RequestHandler = (req, res, next) => {
     return;
   }
   const status = session.companyStatus;
-  if (status !== 'trial_ended' && status !== 'canceled') {
+  if (!isReadOnlyStatus(status)) {
     next();
     return;
   }
@@ -41,7 +68,16 @@ export const readOnlyGuard: RequestHandler = (req, res, next) => {
     return;
   }
   const path = req.path.toLowerCase();
-  if (path.startsWith('/public/') || ALWAYS_OPEN_SECTIONS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`))) {
+  if (path.startsWith('/public/')) {
+    next();
+    return;
+  }
+  const closed = CLOSED_UNDER_OPEN.some((name) => path === `/${name}` || path.startsWith(`/${name}/`));
+  if (!closed && ALWAYS_OPEN_SECTIONS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`))) {
+    next();
+    return;
+  }
+  if (turnsFrontDeskOff(req.method, path, req.body)) {
     next();
     return;
   }

@@ -24,13 +24,15 @@ async function readTotals(page: Page): Promise<string> {
   return (await totalsLine(page).innerText()).trim();
 }
 
+const baselinesSection = (page: Page) => page.getByRole('region', { name: 'How we count time saved' });
+
 async function saveTextBaseline(page: Page): Promise<void> {
   await page.goto('/settings/agents');
   const input = page.getByRole('textbox', { name: INPUT }).or(page.getByRole('spinbutton', { name: INPUT }));
   await input.fill('2');
-  // G1's agent rules form sits below on the same tab with its own Save; the time-saved table's comes first (probe pass 14).
-  await page.getByRole('button', { name: 'Save', exact: true }).first().click();
-  await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
+  // Scoped to the time-baselines section: other settings on this tab have their own Save.
+  await baselinesSection(page).getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(baselinesSection(page).getByText('Saved.', { exact: true })).toBeVisible();
 }
 
 test('settings agents: owner changes a baseline, saves, recounts, and the month total changes', async ({
@@ -89,7 +91,7 @@ test('settings agents: office sees the table read-only', async ({ page, loginAs,
   await expect(page.getByRole('cell', { name: '1.5 minutes' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: INPUT })).toHaveCount(0);
   await expect(page.getByRole('spinbutton', { name: INPUT })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+  await expect(baselinesSection(page).getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Recount the last 90 days with these numbers' })).toHaveCount(0);
 });
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { BaselineKey, TimeBaselineRow } from '@roofline/shared';
 import { Banner, Button, Field, Skeleton, UiLink } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
@@ -28,6 +28,7 @@ function basisWords(row: TimeBaselineRow): string {
 export function TimeBaselines() {
   const query = useTimeBaselines();
   const save = useSaveTimeBaselines();
+  const titleId = useId();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
 
@@ -76,8 +77,10 @@ export function TimeBaselines() {
   const saveMessage = save.error instanceof ApiError ? save.error.message : copy.saveError;
 
   return (
-    <section className={styles.root}>
-      <h2 className={styles.title}>{copy.title}</h2>
+    <section className={styles.root} aria-labelledby={titleId}>
+      <h2 id={titleId} className={styles.title}>
+        {copy.title}
+      </h2>
       <p className={styles.text}>{copy.intro}</p>
       <p className={styles.text}>{copy.onlyFinished}</p>
       <div className={styles.tableWrap}>

@@ -1,10 +1,10 @@
 import {
   type ClaimCandidate,
   claimNudgeDays,
-  companyRunFacts,
+  agentCompanyFacts,
   followUpLogFor,
   g1AgentOn,
-  hasAgentTaskToday,
+  hasAgentTaskBetween,
   lastInboundAt,
   lastStormTextAt,
   listClaimNudgeCandidates,
@@ -14,11 +14,12 @@ import {
   zoneDayAfter,
   zoneDayStart,
 } from '@roofline/db';
-import { type ClaimNudge, claimNudgeDue, claimsGuard, followUpAllowed, guardSentence, localDate } from '@roofline/shared';
+import { type ClaimNudge, claimNudgeDue, followUpAllowed, localDate } from '@roofline/shared';
 import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
 import { type DraftKind, type JobFacts, LlmUnavailableError } from '../../providers/llm.ts';
 import { createTask } from '../../tasks/service.ts';
+import { draftBodyOk, FROM_TEMPLATE, localTimeToday, systemCtx } from '../common.ts';
 
 /*
  * The Claims agent's daily run (G1 Task 8), fired by the `claims-daily` job at 10 AM local. It finds
@@ -44,10 +45,6 @@ const KIND_OF = {
   ask_adjuster_outcome: 'claims_ask_outcome',
 } as const satisfies Record<ClaimNudge, DraftKind>;
 export type ClaimsDraftKind = (typeof KIND_OF)[ClaimNudge];
-
-export const FROM_TEMPLATE = 'Written from a template';
-
-const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: null, role: 'system', canApproveSpend: false });
 
 // ---------------------------------------------------------------------------------------------
 // Templates: plain, short, and they pass the claims guard (no coverage, deductible or insurer-contact words).
@@ -75,17 +72,6 @@ export function templateFor(kind: ClaimsDraftKind, who: TemplateWho): string {
 type Planned = { candidate: ClaimCandidate; nudge: ClaimNudge; kind: ClaimsDraftKind };
 type Plan = { companyName: string; timeZone: string; day: string; planned: Planned[] };
 
-/** The sentences of a text, split the way the claims guard splits them. */
-const sentencesOf = (body: string): string[] => body.split(/(?<=[.!?])\s+/).filter((s) => s.trim() !== '');
-
-/** Whether a drafted text may be used: not empty, short enough, and clean under both guards. */
-function bodyPasses(body: string, repName: string | null): boolean {
-  const text = body.trim();
-  if (text === '' || text.length > MAX_BODY) return false;
-  if (sentencesOf(text).some((s) => guardSentence(s, { repName }).hits.length > 0)) return false;
-  return claimsGuard(text).ok;
-}
-
 const wholeDays = (now: Date, from: Date): string => String(Math.max(0, Math.floor((now.getTime() - from.getTime()) / DAY_MS)));
 
 /** What the model is told about one claim: plain strings only. */
@@ -98,32 +84,21 @@ function factsFor(p: Planned, companyName: string, now: Date): JobFacts {
   return { jobId: c.jobId, customerFirstName: c.customerFirstName, companyName, repFirstName: c.repFirstName, address: c.address, facts };
 }
 
-/** 6 PM on the company's calendar day `day`. */
-function expiryOf(day: string, timeZone: string): Date {
-  const guess = new Date(zoneDayStart(day, timeZone).getTime() + EXPIRES_HOUR * 60 * 60 * 1000);
-  // On a day that is 23 or 25 hours long, move the guess so the zone's wall clock reads 18:00.
-  const part = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', hour: 'numeric' })
-    .formatToParts(guess)
-    .find((x) => x.type === 'hour');
-  const hour = Number(part?.value);
-  return Number.isFinite(hour) ? new Date(guess.getTime() + (EXPIRES_HOUR - hour) * 60 * 60 * 1000) : guess;
-}
-
 const dayBounds = (day: string, timeZone: string): [Date, Date] => [zoneDayStart(day, timeZone), zoneDayStart(zoneDayAfter(day), timeZone)];
 
 /** Steps 1 to 6: who is due a check-in today, or null when the agent should do nothing. */
 async function planRun(tx: Tx, ctx: TenantContext, now: Date): Promise<Plan | null> {
-  const company = await companyRunFacts(tx, ctx);
+  const company = await agentCompanyFacts(tx, ctx);
   if (company === null || (company.status !== 'active' && company.status !== 'trial')) return null;
   if (!(await g1AgentOn(tx, ctx, 'claims'))) return null;
 
-  const day = localDate(now, company.timezone);
-  const [dayStart, dayEnd] = dayBounds(day, company.timezone);
-  if (await hasAgentTaskToday(tx, ctx, 'claims', 'claims_nudges', dayStart, dayEnd)) return null;
+  const day = localDate(now, company.timeZone);
+  const [dayStart, dayEnd] = dayBounds(day, company.timeZone);
+  if (await hasAgentTaskBetween(tx, ctx, { agent: 'claims', kind: 'claims_nudges', from: dayStart, to: dayEnd })) return null;
 
   const days = await claimNudgeDays(tx, ctx);
   const due: Planned[] = [];
-  for (const candidate of await listClaimNudgeCandidates(tx, ctx, now)) {
+  for (const candidate of await listClaimNudgeCandidates(tx, ctx)) {
     const nudge = claimNudgeDue(
       { status: candidate.status, inspectedAt: candidate.inspectedAt, statusChangedAt: candidate.statusChangedAt, adjusterAt: candidate.adjusterAt },
       now,
@@ -155,7 +130,7 @@ async function planRun(tx: Tx, ctx: TenantContext, now: Date): Promise<Plan | nu
     if (planned.length >= MAX_PER_RUN) break; // the candidates are already oldest claim first
   }
   if (planned.length === 0) return null;
-  return { companyName: company.name, timeZone: company.timezone, day, planned };
+  return { companyName: company.name, timeZone: company.timeZone, day, planned };
 }
 
 /** Step 7: one text per planned claim, from the model where it passes the guards, else from the template. */
@@ -175,7 +150,7 @@ async function writeTexts(deps: AppDeps, plan: Plan, now: Date): Promise<{ bodie
     }
     for (const p of group) {
       const body = drafted.get(p.candidate.jobId);
-      if (body !== undefined && bodyPasses(body, p.candidate.repFirstName)) {
+      if (body !== undefined && draftBodyOk(body, { repName: p.candidate.repFirstName, maxChars: MAX_BODY })) {
         bodies.set(p.candidate.jobId, body.trim());
       } else {
         fromTemplate = true;
@@ -205,7 +180,7 @@ export async function runClaimsDaily(deps: AppDeps, companyId: string, meta: Job
 
   await withTenant(deps.pools, ctx, async (tx) => {
     // Another run may have made today's plan while the model was writing: one plan a day.
-    if (await hasAgentTaskToday(tx, ctx, 'claims', 'claims_nudges', dayStart, dayEnd)) return;
+    if (await hasAgentTaskBetween(tx, ctx, { agent: 'claims', kind: 'claims_nudges', from: dayStart, to: dayEnd })) return;
     await createTask(
       tx,
       ctx,
@@ -214,9 +189,9 @@ export async function runClaimsDaily(deps: AppDeps, companyId: string, meta: Job
         kind: 'claims_nudges',
         title: `Claim check-ins (${messages.length} texts)`,
         summary: fromTemplate
-          ? `${FROM_TEMPLATE}: asks homeowners where their insurance claim stands.`
+          ? `${FROM_TEMPLATE}. Asks homeowners where their insurance claim stands.`
           : 'Asks homeowners where their insurance claim stands.',
-        expiresAt: expiryOf(plan.day, plan.timeZone),
+        expiresAt: localTimeToday(plan.day, EXPIRES_HOUR, plan.timeZone),
         steps: [
           {
             type: 'send_personal_texts',

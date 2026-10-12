@@ -2,6 +2,7 @@ import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import {
   agentTasks,
   type ClaimPatch,
+  CLAIMS_ACK_PREFIX,
   claims,
   companies,
   followUpLogFor,
@@ -22,6 +23,7 @@ import { buildGateRequest } from '../../messaging/gate-request.ts';
 import { sendQueuedText, textStateFor } from '../../messaging/outbound.ts';
 import { type ClaimReplyFacts, LlmUnavailableError } from '../../providers/llm.ts';
 import { createTask } from '../../tasks/service.ts';
+import { systemCtx } from '../common.ts';
 import { writeAgentNote } from '../notes.ts';
 
 export type ClaimsReplyMessage = {
@@ -58,7 +60,6 @@ const REPLY_JOB_DELAY_SECONDS = 5;
 /** The whole answer to a reply the extraction fully answered (spec 3.3). */
 export const CLAIMS_ACK_TEXT = 'Thanks, got it.';
 
-const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: null, role: 'system', canApproveSpend: false });
 
 /** The customer's newest claim that is not closed, or null. */
 async function openClaimOf(tx: Tx, ctx: TenantContext, customerId: string) {
@@ -148,7 +149,7 @@ async function continueToFrontDesk(deps: AppDeps, ctx: TenantContext, messageId:
 async function sendClaimsAck(deps: AppDeps, ctx: TenantContext, messageId: string, reply: LoadedReply): Promise<void> {
   const conversationId = reply.conversationId;
   if (conversationId === null) return;
-  const dedupeKey = `claims-ack:${messageId}`;
+  const dedupeKey = `${CLAIMS_ACK_PREFIX}${messageId}`;
   const sendAt = deps.clock.now();
   const queued = await withTenant(deps.pools, ctx, async (tx) => {
     await lockRecipient(tx, ctx, reply.customerId);

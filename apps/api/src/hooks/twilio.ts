@@ -3,11 +3,13 @@ import twilio from 'twilio';
 import {
   attachInboundToConversation,
   companyContact,
+  companyReadOnly,
   customersWithPhone,
   type DeliveryOutcome,
   flagPossibleOptOut,
   frontDeskTextsOn,
   insertInboundText,
+  isNumberBlocked,
   lockDeliverySid,
   lockRecipients,
   recordDeliveryOutcome,
@@ -196,13 +198,18 @@ const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: nu
 /**
  * Step 2 (the signature), for a request already routed to `companyId`: checked with that company's
  * token (else TWILIO_AUTH_TOKEN). Answers 403 itself and returns null; otherwise the company's id.
+ * A request with no signature (or an empty one) is refused before the token lookup, so it costs no query.
  */
 export async function checkSignature(deps: AppDeps, req: Request, res: Response, companyId: string): Promise<string | null> {
+  const signature = req.get('X-Twilio-Signature');
+  if (signature === undefined || signature === '') {
+    res.status(403).end();
+    return null;
+  }
   const { system } = deps.pools;
   const token = await signingTokenFor(system, companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
-  const signature = req.get('X-Twilio-Signature');
   const url = deps.config.PUBLIC_BASE_URL + req.originalUrl;
-  if (token === null || signature === undefined || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
+  if (token === null || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
     res.status(403).end();
     return null;
   }
@@ -359,7 +366,13 @@ export async function handleInbound(deps: AppDeps, companyId: string, text: Inbo
         }
         // Front Desk still files a consumed text into its conversation (so the reply or the hand-on lands there); it
         // queues no answer of its own for it.
-        if (!looksLikeOptOut(text.body) && (await frontDeskTextsOn(tx, ctx))) {
+        // A blocked number, or a read-only company (Ruling BG), gets no Front Desk work; the text is still stored above.
+        if (
+          !looksLikeOptOut(text.body) &&
+          (await frontDeskTextsOn(tx, ctx)) &&
+          !(await isNumberBlocked(tx, ctx, text.from)) &&
+          !(await companyReadOnly(tx, ctx))
+        ) {
           const conv = await attachInboundToConversation(
             tx,
             ctx,

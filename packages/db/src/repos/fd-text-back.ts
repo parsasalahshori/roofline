@@ -2,8 +2,9 @@ import { and, eq, gte, isNotNull, like } from 'drizzle-orm';
 import { calls, companySettings, customers, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
+import { lockCustomerPhone } from './customers.ts';
 import { customersWithPhone } from './inbound.ts';
-import type { TextState } from './messages.ts';
+import { FD_DEDUPE_PREFIX, FD_DEDUPE_WHERE, type TextState } from './messages.ts';
 
 /*
  * D1 Task 13: the rows behind the missed-call text-back. Every query names ctx.companyId. Used by
@@ -57,13 +58,13 @@ export async function textedBackWithin24h(tx: Tx, ctx: TenantContext, toE164: st
 }
 
 /**
- * A call is express texting consent, but only for a customer who has none yet: revoked, written,
+ * A call or an inbound text is express texting consent, but only for a customer who has none yet: revoked, written,
  * attested, express and do-not-contact are never touched. Writes the timeline line too.
  */
-export async function recordCallConsent(tx: Tx, ctx: TenantContext, customerId: string, now: Date): Promise<boolean> {
+export async function recordCallConsent(tx: Tx, ctx: TenantContext, customerId: string, now: Date, source: 'call' | 'text' = 'call'): Promise<boolean> {
   const changed = await tx
     .update(customers)
-    .set({ smsConsentStatus: 'express', smsConsentSource: 'call', smsConsentAt: now, updatedAt: now })
+    .set({ smsConsentStatus: 'express', smsConsentSource: source, smsConsentAt: now, updatedAt: now })
     .where(and(eq(customers.companyId, ctx.companyId), eq(customers.id, customerId), eq(customers.smsConsentStatus, 'none')))
     .returning({ id: customers.id });
   if (changed.length === 0) return false;
@@ -71,8 +72,8 @@ export async function recordCallConsent(tx: Tx, ctx: TenantContext, customerId: 
     subjectType: 'customer',
     subjectId: customerId,
     kind: 'customer.consent_changed',
-    summary: 'Texting consent changed to Express (the customer called)',
-    data: { from: 'none', to: 'express', source: 'call' },
+    summary: source === 'text' ? 'Texting consent changed to Express (the customer texted)' : 'Texting consent changed to Express (the customer called)',
+    data: { from: 'none', to: 'express', source },
     at: now,
   });
   return true;
@@ -82,8 +83,13 @@ export async function recordCallConsent(tx: Tx, ctx: TenantContext, customerId: 
  * The company's customer for this number: the one non-archived customer who has it; a new minimal
  * customer when nobody has it; null when several do (shared phones are never guessed) or only an
  * archived customer has it.
+ *
+ * Takes the per-number lock customer saves take (lockCustomerPhone) before looking, so two calls from
+ * one new number, or a call and a customer save, cannot both find nobody and both insert: the second
+ * waits for the first's transaction and then finds its customer.
  */
 export async function findOrCreateCallerCustomer(tx: Tx, ctx: TenantContext, e164: string, now: Date = new Date()): Promise<string | null> {
+  await lockCustomerPhone(tx, ctx, e164);
   const found = await customersWithPhone(tx, ctx, e164);
   const active = found.filter((c) => !c.archived);
   if (active.length === 1) return active[0]!.id;
@@ -132,28 +138,26 @@ export async function insertTextBackMessage(
   state: TextState,
   now: Date,
 ): Promise<string | null> {
-  const [existing] = await tx
-    .select({ id: messages.id })
-    .from(messages)
-    .where(and(eq(messages.companyId, ctx.companyId), eq(messages.dedupeKey, i.dedupeKey), eq(messages.direction, 'out')))
-    .limit(1);
-  if (existing) return null;
-  const [row] = await tx
-    .insert(messages)
-    .values({
-      companyId: ctx.companyId,
-      customerId: i.customerId,
-      conversationId: i.conversationId,
-      channel: 'sms',
-      direction: 'out',
-      purpose: 'informational',
-      body: i.body,
-      toE164: i.toE164,
-      dedupeKey: i.dedupeKey,
-      ...stateColumns(state),
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning({ id: messages.id });
+  const values = {
+    companyId: ctx.companyId,
+    customerId: i.customerId,
+    conversationId: i.conversationId,
+    channel: 'sms',
+    direction: 'out',
+    purpose: 'informational',
+    body: i.body,
+    toE164: i.toE164,
+    dedupeKey: i.dedupeKey,
+    ...stateColumns(state),
+    createdAt: now,
+    updatedAt: now,
+  } satisfies typeof messages.$inferInsert;
+  // An fd- key is covered by the partial unique index messages_fd_dedupe_uniq, which decides a race: the loser inserts nothing.
+  const insert = tx.insert(messages).values(values);
+  const [row] = await (
+    i.dedupeKey.startsWith(FD_DEDUPE_PREFIX)
+      ? insert.onConflictDoNothing({ target: [messages.companyId, messages.dedupeKey], where: FD_DEDUPE_WHERE })
+      : insert
+  ).returning({ id: messages.id });
   return row?.id ?? null;
 }

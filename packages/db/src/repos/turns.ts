@@ -1,13 +1,14 @@
-import { and, asc, eq, max, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import type { TurnRoute, TurnSpeaker } from '@roofline/shared';
-import { conversationTurns } from '../schema/index.ts';
+import { conversations, conversationTurns } from '../schema/index.ts';
 import type { ToolCallRecord } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
 export type NewTurn = {
   conversationId: string;
   callId?: string | null;
-  position: number;
+  /** Deprecated and IGNORED: insertTurn allocates the position itself. */
+  position?: number;
   speaker: TurnSpeaker;
   text: string;
   at?: Date;
@@ -23,15 +24,29 @@ export type NewTurn = {
   guardHits?: string[];
 };
 
-/** Appends one turn. A second turn at the same position of a conversation is rejected by the database. */
+/**
+ * Appends one turn at the next free position of its conversation. The conversation row is locked first, so
+ * concurrent inserts into one conversation queue up and get distinct, consecutive positions.
+ */
 export async function insertTurn(tx: Tx, ctx: TenantContext, t: NewTurn): Promise<{ id: string }> {
+  const locked = await tx
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.id, t.conversationId)))
+    .for('update');
+  if (locked.length === 0) throw new Error('Conversation not found.');
+  const [next] = await tx
+    .select({ n: sql<number>`coalesce(max(${conversationTurns.position}), -1) + 1` })
+    .from(conversationTurns)
+    .where(and(eq(conversationTurns.companyId, ctx.companyId), eq(conversationTurns.conversationId, t.conversationId)));
+  const position = Number(next!.n);
   const [row] = await tx
     .insert(conversationTurns)
     .values({
       companyId: ctx.companyId,
       conversationId: t.conversationId,
       callId: t.callId ?? null,
-      position: t.position,
+      position,
       speaker: t.speaker,
       text: t.text,
       ...(t.at !== undefined && { at: t.at }),
@@ -92,8 +107,18 @@ export async function listTurns(
  * 'transfer' and guardHits ['model_failure'] at the next free position. Agents metrics read it to leave
  * the conversation out of the Front Desk success rate. It carries no customer text. Idempotent: a second
  * call for the same conversation is a no-op.
+ *
+ * The conversation row is locked first (the same lock D1's insertTurn takes, RC-1), so the existence check and
+ * the next position are read with no other turn writer of this conversation in between: concurrent calls never
+ * collide on a position and never write a second hand-off turn.
  */
 export async function recordModelFailureHandoff(tx: Tx, ctx: TenantContext, conversationId: string): Promise<void> {
+  const locked = await tx
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.id, conversationId)))
+    .for('update');
+  if (locked.length === 0) return;
   const [existing] = await tx
     .select({ id: conversationTurns.id })
     .from(conversationTurns)
@@ -107,13 +132,9 @@ export async function recordModelFailureHandoff(tx: Tx, ctx: TenantContext, conv
     )
     .limit(1);
   if (existing) return;
-  const [row] = await tx
-    .select({ max: max(conversationTurns.position) })
-    .from(conversationTurns)
-    .where(and(eq(conversationTurns.companyId, ctx.companyId), eq(conversationTurns.conversationId, conversationId)));
+  // insertTurn (RC-1) allocates the next position under the same conversation lock.
   await insertTurn(tx, ctx, {
     conversationId,
-    position: (row?.max ?? -1) + 1,
     speaker: 'system',
     text: 'Hand-off: the assistant could not continue',
     route: 'transfer',

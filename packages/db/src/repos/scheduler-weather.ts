@@ -2,6 +2,7 @@ import { and, asc, eq, gt, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle
 import { DEFAULT_WORK_HOURS, type Interval, type WorkHours } from '@roofline/shared';
 import { agentTasks, appointments, companySettings, customers, properties } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { firstWord } from './agent-common.ts';
 import { listBusyBlocks } from './appointments.ts';
 
 /** A scheduled install that the weather watch may move. */
@@ -22,7 +23,6 @@ export type WeatherInstall = {
 
 export type WeatherSettings = { workHours: WorkHours; rainPct: number; gustMph: number };
 
-const firstWord = (s: string | null | undefined): string => (s ?? '').trim().split(/\s+/)[0] ?? '';
 
 /** The company's work hours and weather thresholds (company_settings), or defaults when no row. */
 export async function weatherSettings(tx: Tx, ctx: TenantContext): Promise<WeatherSettings> {
@@ -80,7 +80,7 @@ export async function weatherInstallCandidates(tx: Tx, ctx: TenantContext, q: { 
       allDay: r.allDay,
       lat: Number(r.lat),
       lng: Number(r.lng),
-      customerFirstName: firstWord(r.firstName) || firstWord(r.displayName),
+      customerFirstName: firstWord(r.firstName) ?? firstWord(r.displayName) ?? '',
       textable: r.textable === true,
     });
   }

@@ -189,6 +189,48 @@ describe('Front Desk live tasks from calls', () => {
     expect((await eventKinds(task!.id)).filter((k) => k === 'finished')).toHaveLength(1);
   });
 
+  test('PATCH nextStep from one text to another closes the live task with exactly one finished event; the same text closes nothing', async () => {
+    const s = await seedCall({ aiSeconds: 45, toolCalls: [MESSAGE_TOOL] });
+    const job = await jobWithNextStep(s.customerId!, 'Call back');
+    await run(s);
+    const owner = await who.as('owner');
+    const same = await owner.patch(`/api/jobs/${job.id}`).send({ nextStep: 'Call back' });
+    expect(same.status).toBe(200);
+    const [open] = await liveTasks();
+    expect(open!.status).toBe('needs_attention');
+    const changed = await owner.patch(`/api/jobs/${job.id}`).send({ nextStep: 'Send estimate' });
+    expect(changed.status).toBe(200);
+    const [task] = await liveTasks();
+    expect(task!.status).toBe('done');
+    expect((await eventKinds(task!.id)).filter((k) => k === 'finished')).toHaveLength(1);
+  });
+
+  test('/waiting: a needs_attention Front Desk job task waits on the job assignee, shows the next step, and is the office when unassigned', async () => {
+    const s = await seedCall({ aiSeconds: 45, toolCalls: [MESSAGE_TOOL] });
+    const job = await jobWithNextStep(s.customerId!, 'Bring the tarp');
+    await run(s);
+    const owner = await who.as('owner');
+    const rep = await who.as('rep');
+    const attentionFor = async (agent: typeof owner) => {
+      const res = await agent.get('/api/agents/waiting');
+      expect(res.status).toBe(200);
+      return (res.body.items as { kind: string; href: string | null; text: string; waitingOn: { kind: string; name?: string } }[]).find(
+        (i) => i.kind === 'attention' && i.href === `/jobs/${job.id}`,
+      );
+    };
+
+    const unassigned = await attentionFor(owner);
+    expect(unassigned!.waitingOn).toEqual({ kind: 'office' });
+    expect(unassigned!.text).toContain('Bring the tarp');
+
+    const assigned = await owner.patch(`/api/jobs/${job.id}`).send({ assignedUserId: who.user('rep').userId });
+    expect(assigned.status).toBe(200);
+    const forOwner = await attentionFor(owner);
+    expect(forOwner!.waitingOn).toMatchObject({ kind: 'person', name: expect.stringMatching(/\S/) });
+    expect(forOwner!.text).toContain('Bring the tarp');
+    expect((await attentionFor(rep))!.waitingOn).toEqual({ kind: 'you' });
+  });
+
   test('cross-tenant: company B PATCH/queries never see company A task', async () => {
     const s = await seedCall({ aiSeconds: 45, toolCalls: [MESSAGE_TOOL] });
     const job = await jobWithNextStep(s.customerId!);

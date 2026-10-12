@@ -1,10 +1,10 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ClaimStatus, ConversationOutcome, FrontDeskToolName } from '@roofline/shared';
+import type { ClaimStatus, ConversationOutcome, FrontDeskToolName, RouterIntent } from '@roofline/shared';
 import type { EngineStateSummary } from '../front-desk/engine-state.ts';
 
 // The Llm seam (D1 Task 4). The only real implementation is providers/anthropic/ (Ruling DA).
 export type RouteInput = { companyBlock: string; state: EngineStateSummary; callerText: string; channel: 'voice' | 'sms' };
-export type RouteDecision = { intent: string; urgent: boolean; mood: 'calm' | 'upset' | 'angry'; route: 'fast' | 'opus' | 'transfer' | 'end'; fastReply: string | null };
+export type RouteDecision = { intent: RouterIntent; urgent: boolean; mood: 'calm' | 'upset' | 'angry'; route: 'fast' | 'opus' | 'transfer' | 'end'; fastReply: string | null };
 export type AnswerInput = { companyId: string; companyBlock: string; history: Anthropic.MessageParam[]; tools: FrontDeskToolName[]; signal: AbortSignal };
 export type TurnUsage = { model: string; inputTokens: number; cachedTokens: number; outputTokens: number; firstTokenMs: number | null; totalMs: number };
 export type LlmEvent = { type: 'text'; text: string } | { type: 'tool_use'; id: string; name: FrontDeskToolName; input: unknown }
@@ -20,7 +20,14 @@ export type JobFacts = { jobId: string; customerFirstName: string; companyName: 
  * failed the guards): callers write that job from the template instead and mark the task "Written
  * from a template". `refused` is true when the model refused the whole request (no texts at all).
  */
-export type DraftTextsResult = { texts: { jobId: string; body: string }[]; refused: boolean; usage: TurnUsage };
+export type DraftDropReason = 'guard' | 'claims_guard' | 'too_long' | 'unknown_job' | 'duplicate' | 'review_rule';
+export type DraftTextsResult = {
+  texts: { jobId: string; body: string }[];
+  refused: boolean;
+  usage: TurnUsage;
+  /** Texts the model wrote that were not used, and why. Absent when none were dropped. Callers may ignore it. */
+  dropped?: { jobId: string; reason: DraftDropReason }[];
+};
 /** What a homeowner's reply says about their claim. `adjusterAt` is an ISO 8601 instant, resolved in the company's time zone. */
 export type ClaimReplyFacts = {
   claimNumber?: string;

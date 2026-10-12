@@ -227,11 +227,11 @@ test('a revoked grant turns the connection to error once', async () => {
   expect(after.lastErrorPlain).toBe('Reconnect your calendar.');
 });
 
-test('sync answers 202 with a connection and 404 without', async () => {
+test('sync answers 202 with a connection and 204 (nothing to sync) without', async () => {
   const owner = await actors.as('owner');
   const before = await owner.post('/api/calendar/sync').send({});
-  expect(before.status).toBe(404);
-  expect(before.body.error).toBe(NOT_FOUND);
+  expect(before.status).toBe(204);
+  expect(before.text).toBe('');
 
   await connectOwner();
   const after = await owner.post('/api/calendar/sync').send({});

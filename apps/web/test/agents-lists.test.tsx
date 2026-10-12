@@ -40,7 +40,11 @@ describe('RecentTasks', () => {
   });
 
   it('has words for every real task kind and falls back for unknown ones', async () => {
-    for (const kind of ['storm_plan', 'send_storm_plan', 'create_ad_campaign', 'send_proposal', 'order_exact_report']) {
+    const kinds = ['storm_plan', 'send_storm_plan', 'create_ad_campaign', 'send_proposal', 'order_exact_report', 'exact_report'];
+    // Front Desk live tasks and G1's agents (Claims, Scheduler, Follow-up).
+    kinds.push('call', 'text_conversation', 'claims_nudges', 'claims_reply_noted', 'claims_adjuster_visit');
+    kinds.push('claim_packet', 'reminders', 'no_show', 'weather_moves', 'follow_ups', 'stuck_nudges', 'proposal_call_rep');
+    for (const kind of kinds) {
       expect(Object.hasOwn(TASK_KIND_LABEL, kind)).toBe(true);
     }
     showTasks([task({ id: 'u', kind: 'brand_new_kind', href: null }), task({ id: 'p', kind: 'toString', href: null })]);

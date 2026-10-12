@@ -16,6 +16,8 @@ const CONFIRM_REFUSALS = {
     'This makes a real registration with the phone carriers and costs money. Pass --confirm-real-registration if you mean it.',
   '--confirm-real-providers':
     'This talks to the real Claude and Twilio services and costs money. Pass --confirm-real-providers if you mean it.',
+  '--confirm-spend':
+    'This plays scripted calls against the real Claude models and costs money (about three dollars for one full run). Pass --confirm-spend if you mean it.',
 } as const;
 
 export type ConfirmFlag = keyof typeof CONFIRM_REFUSALS;

@@ -344,6 +344,7 @@ export function jobRoutes(deps: AppDeps): Router {
     const body = parse(PatchBody, assertKnownFields(req.body, FIELDS));
 
     const updated = await withTenant(pools, ctx, async (tx) => {
+      const priorNextStep = (await getJob(tx, ctx, id))?.nextStep;
       const row = await updateJob(
         tx,
         ctx,
@@ -361,7 +362,7 @@ export function jobRoutes(deps: AppDeps): Router {
         },
         { now: clock.now(), ip: req.ip ?? null },
       );
-      if (row) await onJobNextStepChanged(tx, ctx, row, clock.now());
+      if (row) await onJobNextStepChanged(tx, ctx, row, clock.now(), body.nextStep !== undefined ? priorNextStep : undefined);
       return row;
     }).catch(refused);
     if (!updated) throw new AppError(404, MESSAGES.notFound);

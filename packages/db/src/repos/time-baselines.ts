@@ -86,7 +86,9 @@ export async function listRecountSteps(
       ),
     )
     .orderBy(asc(agentTaskSteps.id))
-    .limit(range.limit);
+    .limit(range.limit)
+    // Lock order is step, then task (as addToLiveTask): a recount cannot deadlock with a live-task repeat.
+    .for('update', { of: agentTaskSteps });
   return rows.map((r) => ({ ...r, payload: r.payload ?? {}, result: r.result ?? null }));
 }
 

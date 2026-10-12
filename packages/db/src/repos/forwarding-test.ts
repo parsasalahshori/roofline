@@ -70,6 +70,15 @@ export async function recentForwardingTestAt(tx: Tx, ctx: TenantContext, fromE16
   return row !== undefined;
 }
 
+/** How many tests were placed from `fromE164` after `since` (the daily cap). */
+export async function countForwardingTestsSince(tx: Tx, ctx: TenantContext, fromE164: string, since: Date): Promise<number> {
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(calls)
+    .where(and(eq(calls.companyId, ctx.companyId), eq(calls.fromE164, fromE164), gt(calls.startedAt, since)));
+  return row?.n ?? 0;
+}
+
 /**
  * Holds a transaction-scoped lock for this company's tests, so two starts at once cannot both pass the
  * rate limit. Released at commit or rollback.

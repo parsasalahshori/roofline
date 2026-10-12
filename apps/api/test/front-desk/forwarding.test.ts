@@ -111,6 +111,39 @@ describe('POST /api/front-desk/forwarding-test', () => {
     expect(placedTests()).toHaveLength(2);
   });
 
+  test('at most 10 test calls per company in any rolling 24 hours (pre-review #26)', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    for (let i = 0; i < 10; i += 1) {
+      expect((await startTest(owner)).status, `test ${String(i + 1)}`).toBe(200);
+      t.clock.advance(61_000);
+    }
+    const eleventh = await startTest(owner);
+    expect(eleventh.status).toBe(429);
+    expect(eleventh.body).toEqual({ error: "You've run the forwarding test 10 times in the last day. Try again tomorrow." });
+    expect(placedTests()).toHaveLength(10);
+
+    // Company B has its own allowance.
+    const ownerB = await loginAs(t.app, t.seed.b.owner);
+    expect((await startTest(ownerB)).status).toBe(200);
+
+    // A day after the first test, one slot frees up.
+    t.clock.advance(24 * 60 * 60 * 1000 - 10 * 61_000 + 1_000);
+    expect((await startTest(owner)).status).toBe(200);
+  });
+
+  test.each([
+    ['its own', A_NUMBER],
+    ["another company's", B_NUMBER],
+  ])('POST refuses a business phone that is %s Roofline number (422 field phone, pre-review #26)', async (_name, phone) => {
+    await ownerSql('update companies set phone_e164 = $2 where id = $1', [idOf('a'), phone]);
+    const owner = await loginAs(t.app, t.seed.a.owner);
+
+    const res = await startTest(owner);
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ field: 'phone' });
+    expect(placedTests()).toHaveLength(0);
+  });
+
   test('a company without a business phone number is asked to add one (422, field phone)', async () => {
     await ownerSql('update companies set phone_e164 = null where id = $1', [idOf('a')]);
     const owner = await loginAs(t.app, t.seed.a.owner);

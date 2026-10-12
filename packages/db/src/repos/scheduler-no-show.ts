@@ -2,6 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { AppointmentKind } from '@roofline/shared';
 import { agentTasks, appointments, customers } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { firstWord } from './agent-common.ts';
 
 /** The no-show appointment and the facts a reschedule text needs. */
 export type NoShowTarget = {
@@ -16,7 +17,6 @@ export type NoShowTarget = {
   repFirstName: string | null;
 };
 
-const firstWord = (s: string | null | undefined): string => (s ?? '').trim().split(/\s+/)[0] ?? '';
 
 /**
  * The appointment when it is still `no_show`, not archived, with a customer who is not archived, not
@@ -61,8 +61,8 @@ export async function noShowTarget(tx: Tx, ctx: TenantContext, appointmentId: st
     startsAt: r.startsAt,
     assignedUserId: r.assignedUserId,
     propertyId: r.propertyId,
-    customerFirstName: firstWord(r.firstName) || firstWord(r.displayName),
-    repFirstName: firstWord(r.repName) || null,
+    customerFirstName: firstWord(r.firstName) ?? firstWord(r.displayName) ?? '',
+    repFirstName: firstWord(r.repName),
   };
 }
 

@@ -6,14 +6,17 @@ import {
   agentTaskEvents,
   agentTasks,
   agentTaskSteps,
+  conversationTurns,
   companyPhoneNumbers,
   companySettings,
   conversations,
   encrypt,
+  listFeedPage,
   textingRegistrations,
   type Tx,
   withTenant,
 } from '@roofline/db';
+import { feedSentence } from '../src/agents/feed-text.ts';
 import { ScriptedLlm } from '../src/providers/fakes/scripted-llm.ts';
 import type { RouteDecision } from '../src/providers/llm.ts';
 import { Actors, inCompany } from './crm-helpers.ts';
@@ -88,10 +91,25 @@ describe('Front Desk live text tasks', () => {
     const tasks = await tasksOf(idA());
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({ agent: 'front_desk', kind: 'text_conversation', mode: 'live' });
+    expect(tasks[0]!.title).toBe('Answered 1 text');
     const steps = await stepsOf(idA());
     expect(steps).toHaveLength(1);
     expect(steps[0]).toMatchObject({ type: 'front_desk_texts', status: 'done' });
     expect(steps[0]!.result).toMatchObject({ replies: 1, bookings: 0 });
+  });
+
+  test('a scheduled reply (quiet hours) adds no replies to the live task', async () => {
+    await inboundText('Hi, anyone there?');
+    t.clock.set(new Date('2026-10-14T04:00:00.000Z')); // 23:00 Chicago, more than 10 minutes after the text
+    await t.jobs.drain(t.deps);
+    expect(t.sms.sent).toHaveLength(0);
+    expect(await stepsOf(idA())).toHaveLength(0);
+  });
+
+  test('a sent reply adds exactly one reply to the live task', async () => {
+    await exchange('Hi there');
+    const [step] = await stepsOf(idA());
+    expect(step!.result).toMatchObject({ replies: 1 });
   });
 
   test('a second reply in the same conversation on the same local day does not add a task', async () => {
@@ -105,6 +123,24 @@ describe('Front Desk live text tasks', () => {
     expect(step!.result).toMatchObject({ replies: 2, bookings: 0 });
     const [task] = await tasksOf(idA());
     expect(Number(task!.minutesSaved)).toBe(4);
+    expect(task!.title).toBe('Answered 2 texts');
+  });
+
+  test('three replies the same day make one task titled with the count, and the feed reads it as a counted sentence', async () => {
+    await exchange('First question');
+    t.clock.advance(10 * MINUTE);
+    await exchange('Second question');
+    t.clock.advance(10 * MINUTE);
+    await exchange('Third question');
+    expect(t.sms.sent).toHaveLength(3);
+    const tasks = await tasksOf(idA());
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.title).toBe('Answered 3 texts');
+    const ctx = { companyId: idA(), userId: t.seed.a.owner.userId, role: 'owner' as const, canApproveSpend: false };
+    const rows = await withTenant(t.deps.pools, ctx, (tx) => listFeedPage(tx, ctx, { limit: 200 }));
+    const fd = rows.filter((r) => r.agent === 'front_desk');
+    expect(fd).toHaveLength(1);
+    expect(feedSentence(fd[0]!)).toBe('Front Desk answered 3 texts from Nina');
   });
 
   test('a reply the next local day (advance the test clock 24h+) makes a new task', async () => {
@@ -121,6 +157,17 @@ describe('Front Desk live text tasks', () => {
     expect(task).toMatchObject({ mode: 'live', status: 'done' });
     const events = await eventsOf(idA(), task!.id);
     expect(events.filter((e) => e.kind === 'finished')).toHaveLength(1);
+  });
+
+  test('a model_failure hand-off writes the marker turn and hands the conversation to the team', async () => {
+    (t.deps as unknown as { llm: ScriptedLlm }).llm = new ScriptedLlm([{ when: /./, route: OPUS, answer: [{ kind: 'refuse' }] }]);
+    await exchange('Something odd');
+    const [conv] = await inCompany(t, idA(), (tx: Tx) => tx.select().from(conversations));
+    expect(conv!.handledBy).toBe('team');
+    const turns = await inCompany(t, idA(), (tx: Tx) =>
+      tx.select().from(conversationTurns).where(eq(conversationTurns.conversationId, conv!.id)),
+    );
+    expect(turns.filter((x) => x.route === 'transfer' && x.guardHits?.includes('model_failure'))).toHaveLength(1);
   });
 
   test('text tasks never appear in GET /api/approvals', async () => {

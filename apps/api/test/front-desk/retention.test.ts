@@ -1,11 +1,14 @@
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
+  BLANK_BATCH,
+  blankExpiredTurns,
   calls,
   companySettings,
   conversations,
   conversationTurns,
   customers,
+  messages,
   setArchived,
   withTenant,
   type TenantContext,
@@ -116,6 +119,42 @@ async function addTurn(companyId: string, conversationId: string, at: Date, posi
   return row!.id;
 }
 
+async function addText(
+  companyId: string,
+  o: {
+    conversationId: string | null;
+    at: Date;
+    direction?: 'in' | 'out';
+    status?: 'received' | 'sent' | 'queued' | 'scheduled';
+    body?: string;
+    dedupeKey?: string;
+  },
+): Promise<string> {
+  seq++;
+  const [row] = await inTenant(companyId, (tx) =>
+    tx
+      .insert(messages)
+      .values({
+        companyId,
+        conversationId: o.conversationId,
+        channel: 'sms',
+        direction: o.direction ?? 'in',
+        purpose: o.direction === 'out' ? 'informational' : null,
+        body: o.body ?? 'my roof is leaking',
+        status: o.status ?? 'received',
+        fromE164: '+14025553000',
+        toE164: '+14025550200',
+        providerMessageSid: `SM${String(seq).padStart(32, '0')}`,
+        dedupeKey: o.dedupeKey ?? (o.direction === 'out' ? `fd-text:${seq}` : null),
+        createdAt: o.at,
+      })
+      .returning({ id: messages.id }),
+  );
+  return row!.id;
+}
+const textRow = async (companyId: string, id: string) =>
+  (await inTenant(companyId, (tx) => tx.select().from(messages).where(eq(messages.id, id))))[0]!;
+
 const callRow = async (companyId: string, id: string) =>
   (await inTenant(companyId, (tx) => tx.select().from(calls).where(eq(calls.id, id))))[0]!;
 const turnRow = async (companyId: string, id: string) =>
@@ -134,7 +173,7 @@ describe('Front Desk retention', () => {
     const turnB = await addTurn(a, convB, ago(60 * DAY + 1));
 
     const result = await sweepCompanyRetention(t.deps, a, NOW);
-    expect(result).toEqual({ recordingsDeleted: 1, turnsBlanked: 1 });
+    expect(result).toEqual({ recordingsDeleted: 1, turnsBlanked: 1, messagesBlanked: 0 });
 
     const rowA = await callRow(a, callA.id);
     expect(rowA.recordingStatus).toBe('stored');
@@ -173,16 +212,22 @@ describe('Front Desk retention', () => {
     expect((await turnRow(a, freshSpamTurn)).text).toBe('my roof is leaking');
   });
 
-  test('recording_retention_days = 0 sweeps nothing', async () => {
+  test('recording_retention_days = 0 expires every existing recording now, spam or not', async () => {
     const a = t.seed.a.companyId;
     await setRetention(a, 0, 365);
     const old = await addCall(a, { startedAt: ago(400 * DAY) });
+    const recent = await addCall(a, { startedAt: ago(60_000) });
+    const spam = await addCall(a, { startedAt: ago(60_000), spamReason: 'assistant_spam' });
+    const testCall = await addCall(a, { startedAt: ago(DAY), conversationId: null, fromE164: TEST_CALLER });
     const result = await sweepCompanyRetention(t.deps, a, NOW);
-    expect(result.recordingsDeleted).toBe(0);
-    const row = await callRow(a, old.id);
-    expect(row.recordingStatus).toBe('stored');
-    expect(row.recordingKey).toBe(old.key);
-    expect(deletes()).toHaveLength(0);
+    expect(result.recordingsDeleted).toBe(3);
+    for (const call of [old, recent, spam]) {
+      const row = await callRow(a, call.id);
+      expect(row.recordingStatus).toBe('deleted');
+      expect(row.recordingKey).toBeNull();
+      expect(deletes()).toContainEqual({ method: 'delete', key: call.key });
+    }
+    expect((await callRow(a, testCall.id)).recordingStatus).toBe('stored');
   });
 
   test('turn text is blanked, metadata and summaries kept', async () => {
@@ -228,10 +273,10 @@ describe('Front Desk retention', () => {
     await addTurn(a, conv, ago(100 * DAY));
 
     const first = await sweepCompanyRetention(t.deps, a, NOW);
-    expect(first).toEqual({ recordingsDeleted: 1, turnsBlanked: 1 });
+    expect(first).toEqual({ recordingsDeleted: 1, turnsBlanked: 1, messagesBlanked: 0 });
     const deleteCount = deletes().length;
     const second = await sweepCompanyRetention(t.deps, a, NOW);
-    expect(second).toEqual({ recordingsDeleted: 0, turnsBlanked: 0 });
+    expect(second).toEqual({ recordingsDeleted: 0, turnsBlanked: 0, messagesBlanked: 0 });
     expect(deletes()).toHaveLength(deleteCount);
   });
 
@@ -337,5 +382,146 @@ describe('Front Desk retention', () => {
     expect(row.recordingKey).toBe(call.key);
     expect(deletes()).toHaveLength(0);
     expect((await turnRow(a, turn)).text).toBe('my roof is leaking');
+  });
+});
+
+describe('Front Desk retention: texts and batching (review note 43)', () => {
+  test('Front Desk text bodies are blanked under the transcript setting, metadata kept, other messages untouched', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const spamConv = await addConversation(a, { outcome: 'spam' });
+    const oldIn = await addText(a, { conversationId: conv, at: ago(61 * DAY) });
+    const oldOut = await addText(a, { conversationId: conv, at: ago(61 * DAY), direction: 'out', status: 'sent' });
+    const freshIn = await addText(a, { conversationId: conv, at: ago(59 * DAY) });
+    const outsideFd = await addText(a, { conversationId: null, at: ago(400 * DAY) });
+    const waiting = await addText(a, { conversationId: conv, at: ago(61 * DAY), direction: 'out', status: 'scheduled' });
+    const spamOld = await addText(a, { conversationId: spamConv, at: ago(8 * DAY) });
+    const spamFresh = await addText(a, { conversationId: spamConv, at: ago(6 * DAY) });
+    const before = await textRow(a, oldOut);
+
+    const result = await sweepCompanyRetention(t.deps, a, NOW);
+    expect(result.messagesBlanked).toBe(3);
+
+    const after = await textRow(a, oldOut);
+    expect(after.body).toBe('');
+    expect(after.status).toBe('sent');
+    expect(after.direction).toBe('out');
+    expect(after.toE164).toBe(before.toE164);
+    expect(after.conversationId).toBe(conv);
+    expect(after.createdAt).toEqual(before.createdAt);
+    expect((await textRow(a, oldIn)).body).toBe('');
+    expect((await textRow(a, spamOld)).body).toBe('');
+    expect((await textRow(a, freshIn)).body).toBe('my roof is leaking');
+    expect((await textRow(a, spamFresh)).body).toBe('my roof is leaking');
+    expect((await textRow(a, outsideFd)).body).toBe('my roof is leaking');
+    expect((await textRow(a, waiting)).body).toBe('my roof is leaking');
+
+    expect((await sweepCompanyRetention(t.deps, a, NOW)).messagesBlanked).toBe(0);
+  });
+
+  test('only the AI exchange is blanked: keyword texts, staff replies and booking confirmations stay (Ruling BI)', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const old = ago(400 * DAY);
+    const aiIn = await addText(a, { conversationId: conv, at: old });
+    const aiOut = await addText(a, { conversationId: conv, at: old, direction: 'out', status: 'sent', dedupeKey: 'fd-text:abc' });
+    const stop = await addText(a, { conversationId: conv, at: old, body: 'Stop.' });
+    const start = await addText(a, { conversationId: conv, at: old, body: 'START' });
+    const help = await addText(a, { conversationId: conv, at: old, body: ' help ' });
+    const staff = await addText(a, { conversationId: conv, at: old, direction: 'out', status: 'sent', body: 'Hi, this is Sam.', dedupeKey: 'fd-reply:x:y' });
+    const booking = await addText(a, { conversationId: conv, at: old, direction: 'out', status: 'sent', body: 'You are booked.', dedupeKey: 'fd-book:z' });
+    const textBack = await addText(a, { conversationId: conv, at: old, direction: 'out', status: 'sent', body: 'Sorry we missed you.', dedupeKey: 'fd-textback:c' });
+
+    expect((await sweepCompanyRetention(t.deps, a, NOW)).messagesBlanked).toBe(2);
+    expect((await textRow(a, aiIn)).body).toBe('');
+    expect((await textRow(a, aiOut)).body).toBe('');
+    expect((await textRow(a, stop)).body).toBe('Stop.');
+    expect((await textRow(a, start)).body).toBe('START');
+    expect((await textRow(a, help)).body).toBe(' help ');
+    expect((await textRow(a, staff)).body).toBe('Hi, this is Sam.');
+    expect((await textRow(a, booking)).body).toBe('You are booked.');
+    expect((await textRow(a, textBack)).body).toBe('Sorry we missed you.');
+    expect((await sweepCompanyRetention(t.deps, a, NOW)).messagesBlanked).toBe(0);
+  });
+
+  test('kept keyword texts do not stall the batches: AI texts after a full batch of them are still blanked', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const values = Array.from({ length: BLANK_BATCH }, (_, i) => ({
+      companyId: a,
+      conversationId: conv,
+      channel: 'sms' as const,
+      direction: 'in' as const,
+      body: 'STOP',
+      status: 'received' as const,
+      fromE164: '+14025553000',
+      toE164: '+14025550200',
+      providerMessageSid: `SMkeep${String(i).padStart(28, '0')}`,
+      createdAt: ago(500 * DAY),
+    }));
+    await inTenant(a, (tx) => tx.insert(messages).values(values));
+    const later = await addText(a, { conversationId: conv, at: ago(400 * DAY) });
+
+    expect((await sweepCompanyRetention(t.deps, a, NOW)).messagesBlanked).toBe(1);
+    expect((await textRow(a, later)).body).toBe('');
+  });
+
+  test('another company text is never blanked by this sweep', async () => {
+    const a = t.seed.a.companyId;
+    const b = t.seed.b.companyId;
+    await setRetention(a, 90, 60);
+    await setRetention(b, 90, 60);
+    const convB = await addConversation(b);
+    const textB = await addText(b, { conversationId: convB, at: ago(400 * DAY) });
+    await sweepCompanyRetention(t.deps, a, NOW);
+    expect((await textRow(b, textB)).body).toBe('my roof is leaking');
+  });
+
+  test('blanking is batched: a statement changes at most the limit, and the sweep loops until none are left', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      companyId: a,
+      conversationId: conv,
+      position: i + 1,
+      speaker: 'caller' as const,
+      text: 'my roof is leaking',
+      at: ago(100 * DAY),
+    }));
+    await inTenant(a, (tx) => tx.insert(conversationTurns).values(rows));
+    const counts: number[] = [];
+    for (;;) {
+      const n = await inTenant(a, (tx) => blankExpiredTurns(tx, ctxFor(a), { now: NOW, transcriptDays: 60, limit: 2 }));
+      counts.push(n);
+      if (n === 0) break;
+    }
+    expect(counts).toEqual([2, 2, 1, 0]);
+  });
+
+  test('a backlog larger than one batch is fully blanked by one sweep', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const total = 1001;
+    await inTenant(a, (tx) =>
+      tx.insert(conversationTurns).values(
+        Array.from({ length: total }, (_, i) => ({
+          companyId: a,
+          conversationId: conv,
+          position: i + 1,
+          speaker: 'caller' as const,
+          text: 'my roof is leaking',
+          at: ago(100 * DAY),
+        })),
+      ),
+    );
+    const result = await sweepCompanyRetention(t.deps, a, NOW);
+    expect(result.turnsBlanked).toBe(total);
+    const left = await inTenant(a, (tx) => tx.select().from(conversationTurns).where(eq(conversationTurns.text, 'my roof is leaking')));
+    expect(left).toHaveLength(0);
   });
 });

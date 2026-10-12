@@ -536,9 +536,12 @@ describe('a finished plan is replaced only on request (Task 20, amended Ruling B
     await addHit({ email: 'a@example.com' });
     const first = await draft();
     await setTask(t, 'a', first.taskId, { status });
+    const mailsBefore = planEmails().length;
 
     const next = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { allowFinished: true });
     expect(next!.taskId).not.toBe(first.taskId);
+    // Not a re-draft of a draft, so the owner hears about the new plan (S1 R2a: fresh = !previousWasDraft).
+    expect(planEmails().length).toBeGreaterThan(mailsBefore);
     expect((await dbTask(t, 'a', next!.taskId)).status).toBe('draft');
     expect((await companyStormRow()).plan_task_id).toBe(next!.taskId);
     expect((await dbTask(t, 'a', first.taskId)).status).toBe(status);

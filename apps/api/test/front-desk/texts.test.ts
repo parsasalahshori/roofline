@@ -1,14 +1,20 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
+  activities,
   agentSettings,
   appointments,
+  blockNumber,
+  companies,
   companyPhoneNumbers,
   companySettings,
   conversations,
+  customers,
   encrypt,
+  insertTurn,
+  listTurns,
   messages,
   textingRegistrations,
   type Tx,
@@ -17,8 +23,11 @@ import {
 import { TEXT_CHANNEL_TOOLS } from '@roofline/shared';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import type { Engine } from '../../src/front-desk/engine-types.ts';
-import { queueFrontDeskText, runFrontDeskText } from '../../src/front-desk/texts.ts';
+import { queueFrontDeskText, runFrontDeskText, SMS_HANDOFF_REPLY, SMS_MAX_AI_TURNS, TEXT_HANDOFF_SUBJECT } from '../../src/front-desk/texts.ts';
+import { findInspectionTimes } from '../../src/front-desk/tools/times.ts';
+import { newConversationState } from '../../src/front-desk/state.ts';
 import { NOTHING_TO_CONFIRM } from '../../src/front-desk/tools/confirm.ts';
+import { VERIFY_LOCKED } from '../../src/front-desk/tools/caller.ts';
 import { ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { RouteDecision } from '../../src/providers/llm.ts';
 import { inCompany } from '../crm-helpers.ts';
@@ -84,6 +93,12 @@ async function inboundText(body: string, from = NINA) {
   const signature = twilio.getExpectedTwilioSignature(TOKEN, BASE + SMS, fields);
   const res = await request(t.app).post(SMS).type('form').set('X-Twilio-Signature', signature).send(fields);
   expect(res.status).toBe(200);
+  // The conversation row's created_at is the database's clock; the thread limit reads it against the test clock, so a
+  // brand-new conversation (one message) starts when its first text arrived.
+  await inCompany(t, idA(), (tx: Tx) =>
+    tx.execute(sql`update conversations c set created_at = (select min(m.created_at) from messages m where m.conversation_id = c.id)
+      where (select count(*) from messages m where m.conversation_id = c.id) = 1`),
+  );
 }
 
 const nina = (overrides = {}) => ({ firstName: 'Nina', phone: NINA, consent: 'express' as const, ...overrides });
@@ -112,6 +127,18 @@ async function teamReply(conversationId: string, customerId: string, ago: number
       createdAt: new Date(t.clock.now().getTime() - ago),
       updatedAt: new Date(t.clock.now().getTime() - ago),
     }),
+  );
+}
+
+const sysCtx = () => ({ companyId: idA(), userId: null, role: 'system' as const, canApproveSpend: false });
+const storedTurns = (conversationId: string) => withTenant(t.deps.pools, sysCtx(), (tx) => listTurns(tx, sysCtx(), conversationId));
+const drainAll = async () => {
+  for (let i = 0; i < 3; i += 1) await t.jobs.drain(t.deps);
+};
+/** Makes the conversation look as if it started a minute ago. */
+async function startedJustNow(conversationId: string) {
+  await inCompany(t, idA(), (tx: Tx) =>
+    tx.update(conversations).set({ createdAt: new Date(t.clock.now().getTime() - MINUTE) }).where(eq(conversations.id, conversationId)),
   );
 }
 
@@ -162,13 +189,11 @@ describe('Front Desk texts', () => {
     expect(names).not.toContain('cancel_inspection');
   });
 
-  test('a text that arrives while the engine runs gets its own reply', async () => {
-    await addSmsCustomers(t, 'a', [nina()]);
-    await inboundText('First question');
-    t.jobs.sent.length = 0;
+  /** An engine that lets a second text arrive just before the real turn runs; `quiet` makes the turn produce nothing. */
+  function engineWithMidTurnText(quiet: boolean): Engine {
     const real = createEngine(t.deps, {});
     let injected = false;
-    const engine: Engine = {
+    return {
       start: (i) => real.start(i),
       interrupted: (s, x) => real.interrupted(s, x),
       note: (s, n) => real.note(s, n),
@@ -179,10 +204,16 @@ describe('Front Desk texts', () => {
           await inboundText('Second question');
           t.clock.advance(MINUTE);
         }
-        yield* real.turn(state, text, signal);
+        if (!quiet) yield* real.turn(state, text, signal);
       },
     };
-    await runFrontDeskText(t.deps, { companyId: idA(), conversationId: (await conversationRows())[0]!.id }, engine);
+  }
+
+  test('a text that arrives mid-turn with nothing stored is requeued and answered once for both texts', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('First question');
+    t.jobs.sent.length = 0;
+    await runFrontDeskText(t.deps, { companyId: idA(), conversationId: (await conversationRows())[0]!.id }, engineWithMidTurnText(true));
     expect(t.sms.sent).toHaveLength(0);
     await t.jobs.drain(t.deps);
     expect(t.sms.sent).toHaveLength(1);
@@ -190,6 +221,305 @@ describe('Front Desk texts', () => {
     const prompt = JSON.stringify(calls[calls.length - 1]!.request);
     expect(prompt).toContain('First question');
     expect(prompt).toContain('Second question');
+  });
+
+  test('a text that arrives mid-turn after an assistant turn was stored still sends the first reply and queues the second', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('First question');
+    t.jobs.sent.length = 0;
+    const conversationId = (await conversationRows())[0]!.id;
+    await runFrontDeskText(t.deps, { companyId: idA(), conversationId }, engineWithMidTurnText(false));
+    // The first reply is not dropped, and a job is queued for the newer text.
+    expect(t.sms.sent).toHaveLength(1);
+    expect(fdTextJobs().length).toBeGreaterThan(0);
+    const unanswered = await withTenant(t.deps.pools, sysCtx(), async (tx) => {
+      const { listUnansweredInbound } = await import('@roofline/db');
+      return listUnansweredInbound(tx, sysCtx(), conversationId);
+    });
+    expect(unanswered.map((u) => u.body)).toEqual(['Second question']);
+    await t.jobs.drain(t.deps);
+    expect(t.sms.sent).toHaveLength(2);
+    expect((await storedTurns(conversationId)).map((x) => x.speaker)).toEqual(['caller', 'assistant', 'caller', 'assistant']);
+  });
+
+  test('three SMS exchanges store 6 turns at positions 0..5', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    for (const text of ['One', 'Two', 'Three']) {
+      await inboundText(text);
+      t.clock.advance(MINUTE);
+      await t.jobs.drain(t.deps);
+      t.clock.advance(MINUTE);
+    }
+    const turns = await storedTurns((await conversationRows())[0]!.id);
+    expect(turns.map((x) => x.position)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(turns.map((x) => x.speaker)).toEqual(['caller', 'assistant', 'caller', 'assistant', 'caller', 'assistant']);
+  });
+
+  test('the engine sees earlier turns on the second exchange', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('First question');
+    t.clock.advance(MINUTE);
+    await t.jobs.drain(t.deps);
+    t.clock.advance(MINUTE);
+    await inboundText('Second question');
+    t.clock.advance(MINUTE);
+    await t.jobs.drain(t.deps);
+    const calls = answerCalls(llm);
+    expect(calls).toHaveLength(2);
+    const history = (calls[1]!.request as { history: { role: string }[] }).history;
+    expect(history.map((h) => h.role)).toEqual(['user', 'assistant', 'user']);
+  });
+
+  /** Gives the conversation `exchanges` stored caller/assistant turn pairs. */
+  async function storeExchanges(conversationId: string, exchanges: number) {
+    await withTenant(t.deps.pools, sysCtx(), async (tx) => {
+      for (let i = 0; i < exchanges; i += 1) {
+        await insertTurn(tx, sysCtx(), { conversationId, speaker: 'caller', text: `Question ${i}` });
+        await insertTurn(tx, sysCtx(), { conversationId, speaker: 'assistant', text: `Answer ${i}` });
+      }
+    });
+  }
+
+  test('turnLimit trips for SMS: no model call, the thread goes to the team with one handoff reply', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hello');
+    const conversationId = (await conversationRows())[0]!.id;
+    await storeExchanges(conversationId, SMS_MAX_AI_TURNS);
+    await t.jobs.drain(t.deps);
+    expect(llm.calls).toHaveLength(0);
+    expect(t.sms.sent).toHaveLength(1);
+    expect((await conversationRows())[0]).toMatchObject({ handledBy: 'team', teamUntil: null });
+  });
+
+  test('a thread under the cap still answers', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hello');
+    const conversationId = (await conversationRows())[0]!.id;
+    await storeExchanges(conversationId, SMS_MAX_AI_TURNS - 1);
+    await t.jobs.drain(t.deps);
+    expect(answerCalls(llm)).toHaveLength(1);
+    expect(t.sms.sent).toHaveLength(1);
+  });
+
+  test('a blocked number gets no AI turn', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await withTenant(t.deps.pools, sysCtx(), (tx) => blockNumber(tx, sysCtx(), { e164: NINA, reason: null, blockedBy: null }));
+    await inboundText('Hello');
+    await t.jobs.drain(t.deps);
+    expect(llm.calls).toHaveLength(0);
+    expect(t.sms.sent).toHaveLength(0);
+  });
+
+  test('an unknown texter with no booking gets the reply and is linked to a new customer', async () => {
+    await inboundText('Hello', '+14025550177');
+    await t.jobs.drain(t.deps);
+    expect(answerCalls(llm)).toHaveLength(1);
+    const [row] = await conversationRows();
+    const rows = await inCompany(t, idA(), (tx: Tx) => tx.select().from(customers));
+    expect(rows).toHaveLength(1);
+    expect(JSON.stringify(rows[0]!.phones)).toContain('+14025550177');
+    expect(rows[0]!.smsConsentStatus).toBe('express');
+    expect(rows[0]!.smsConsentSource).toBe('text');
+    expect(row).toMatchObject({ identity: 'unknown' });
+    expect(row!.customerId).not.toBeNull();
+    expect(row!.customerId).toBe(rows[0]!.id);
+    expect(await storedTurns(row!.id)).toHaveLength(2);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: '+14025550177' });
+  });
+
+  test('an unknown texter who books gets the reply and the conversation is linked to the new customer', async () => {
+    const UNKNOWN = '+14025550177';
+    const book = {
+      kind: 'tool' as const,
+      name: 'book_inspection' as const,
+      input: {
+        slotStart: '',
+        slotUserId: '',
+        propertyId: null,
+        address: '123 Elm St, Omaha, NE 68102',
+        firstName: 'Rita',
+        lastName: 'Gomez',
+        notes: 'Leak over the garage',
+      },
+    };
+    const find = {
+      kind: 'tool' as const,
+      name: 'find_inspection_times' as const,
+      input: { propertyId: null, address: '123 Elm St, Omaha, NE 68102', fromDate: '2026-10-14', partOfDay: 'morning' as const },
+    };
+    llm = await setup([{ when: /book me/i, route: OPUS, answer: [find, book] }]);
+    // The slot the tool will really offer first (the engine only books what it showed).
+    const probe = newConversationState({ companyId: idA(), conversationId: 'probe', channel: 'sms', phone: UNKNOWN, callId: null, companyBlock: '', repName: null, startedAt: t.clock.now() });
+    const offered = await findInspectionTimes({ deps: t.deps, companyId: idA(), conversation: probe, now: t.clock.now() }, find.input);
+    const slot = /slotStart (\S+), slotUserId ([0-9a-f-]{36})/.exec(offered.forModel)!;
+    book.input.slotStart = slot[1]!;
+    book.input.slotUserId = slot[2]!;
+    await inboundText('Please book me an inspection', UNKNOWN);
+    await t.jobs.drain(t.deps);
+    const rows = await inCompany(t, idA(), (tx: Tx) => tx.select().from(customers));
+    expect(rows).toHaveLength(1);
+    const [row] = await conversationRows();
+    expect(row!.customerId).toBe(rows[0]!.id);
+    // The booking's own confirmation text goes to the texter; it also counts as the answer to the inbound text, so the
+    // engine's closing words are not sent on top of it.
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: UNKNOWN });
+    expect(t.sms.sent[0]!.body).toContain("You're booked");
+  });
+
+  test('a phone-matched texter ends up with identity matched in the row', async () => {
+    const [customerId] = await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hello');
+    await t.jobs.drain(t.deps);
+    const [row] = await conversationRows();
+    expect(row).toMatchObject({ identity: 'matched', customerId });
+  });
+
+  describe('an SMS handoff', () => {
+    const badTake = (id: string) => ({ kind: 'tool' as const, name: 'take_message' as const, input: { banana: true }, id });
+    async function onCall(): Promise<string[]> {
+      const { owner, office } = t.seed.a;
+      const q = t.deps.pools.system.$client;
+      await q.query('update memberships set on_call_order = 0 where company_id = $1 and user_id = $2', [idA(), owner.userId]);
+      await q.query('update memberships set on_call_order = 1 where company_id = $1 and user_id = $2', [idA(), office.userId]);
+      return [owner.email, office.email];
+    }
+
+    test('an unknown texter handoff still texts the fixed copy and notifies the team', async () => {
+      llm = await setup([{ when: /./, route: OPUS, answer: [badTake('b1'), badTake('b2')] }]);
+      const emails = await onCall();
+      await inboundText('Hello', '+14025550177');
+      await t.jobs.drain(t.deps);
+      expect(t.sms.sent).toHaveLength(1);
+      expect(t.sms.sent[0]).toMatchObject({ to: '+14025550177' });
+      expect(t.sms.sent[0]!.body).toContain(SMS_HANDOFF_REPLY);
+      const [row] = await conversationRows();
+      expect(row).toMatchObject({ handledBy: 'team' });
+      expect(row!.customerId).not.toBeNull();
+      expect(t.mailer.sent.map((m) => m.to).sort()).toEqual([...emails].sort());
+      const acts = await inCompany(t, idA(), (tx: Tx) =>
+        tx.select().from(activities).where(and(eq(activities.subjectId, row!.customerId!), eq(activities.kind, 'front_desk_message'))),
+      );
+      expect(acts).toHaveLength(1);
+    });
+
+    test('texts the fixed copy and notifies the team', async () => {
+      llm = await setup([{ when: /./, route: OPUS, answer: [badTake('b1'), badTake('b2')] }]);
+      const emails = await onCall();
+      const [customerId] = await addSmsCustomers(t, 'a', [nina()]);
+      await inboundText('Hello');
+      await t.jobs.drain(t.deps);
+      expect(t.sms.sent).toHaveLength(1);
+      expect(t.sms.sent[0]!.body).toContain(SMS_HANDOFF_REPLY);
+      const [row] = await conversationRows();
+      expect(row).toMatchObject({ handledBy: 'team' });
+      expect(t.mailer.sent.map((m) => m.to).sort()).toEqual([...emails].sort());
+      expect(t.mailer.sent[0]!.subject).toBe(TEXT_HANDOFF_SUBJECT);
+      const acts = await inCompany(t, idA(), (tx: Tx) =>
+        tx.select().from(activities).where(and(eq(activities.subjectId, customerId!), eq(activities.kind, 'front_desk_message'))),
+      );
+      expect(acts).toHaveLength(1);
+      // A later text is silent: the team has the conversation.
+      t.clock.advance(MINUTE);
+      await inboundText('Anyone?');
+      await t.jobs.drain(t.deps);
+      expect(t.sms.sent).toHaveLength(1);
+      expect(t.mailer.sent).toHaveLength(emails.length);
+    });
+
+    test('keeps what the model said and still adds the fixed copy', async () => {
+      llm = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Let me check on that.' }, badTake('b1'), badTake('b2')] }]);
+      await addSmsCustomers(t, 'a', [nina()]);
+      await inboundText('Hello');
+      await t.jobs.drain(t.deps);
+      expect(t.sms.sent).toHaveLength(1);
+      expect(t.sms.sent[0]!.body).toBe(`Let me check on that. ${SMS_HANDOFF_REPLY}`);
+    });
+  });
+
+  test('a 2-hour-old SMS thread still gets a reply, and the 41st AI turn hands off to the team once', async () => {
+    expect(SMS_MAX_AI_TURNS).toBe(40);
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hello');
+    const conversationId = (await conversationRows())[0]!.id;
+    await inCompany(t, idA(), (tx: Tx) =>
+      tx.update(conversations).set({ createdAt: new Date(t.clock.now().getTime() - 2 * HOUR) }).where(eq(conversations.id, conversationId)),
+    );
+    await t.jobs.drain(t.deps);
+    expect(t.sms.sent).toHaveLength(1);
+    await storeExchanges(conversationId, SMS_MAX_AI_TURNS);
+    t.clock.advance(MINUTE);
+    const before = llm.calls.length;
+    await inboundText('Again');
+    await t.jobs.drain(t.deps);
+    // The 41st turn is not the model's: the thread goes to the team with the one handoff reply.
+    expect(llm.calls).toHaveLength(before);
+    expect(t.sms.sent).toHaveLength(2);
+    // A later text stays with the team: no model call, no reply.
+    t.clock.advance(MINUTE);
+    await inboundText('Still there?');
+    await t.jobs.drain(t.deps);
+    expect(llm.calls).toHaveLength(before);
+    expect(t.sms.sent).toHaveLength(2);
+  });
+
+  test('unanswered texts are still joined with a newline into one caller turn', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('first');
+    t.clock.advance(3_000);
+    await inboundText('second');
+    await t.jobs.drain(t.deps);
+    const turns = await storedTurns((await conversationRows())[0]!.id);
+    expect(turns[0]).toMatchObject({ speaker: 'caller', text: 'first\nsecond' });
+  });
+
+  test('a texter whose number matches exactly one customer is identified and answered', async () => {
+    await addSmsCustomers(t, 'a', [nina({ phone: '+14025550177' })]);
+    await inboundText('Anyone there?', '+14025550177');
+    await t.jobs.drain(t.deps);
+    expect(answerCalls(llm)).toHaveLength(1);
+    expect(t.sms.sent).toHaveLength(1);
+    const [row] = await conversationRows();
+    expect(row).toMatchObject({ identity: 'matched' });
+    expect(row!.customerId).not.toBeNull();
+  });
+
+  test('the reply is sent to the number that texted', async () => {
+    const SECOND = '+14025550199';
+    const [customerId] = await addSmsCustomers(t, 'a', [nina()]);
+    await inCompany(t, idA(), (tx: Tx) =>
+      tx
+        .update(customers)
+        .set({ phones: [{ e164: NINA, label: 'mobile', primary: true }, { e164: SECOND, label: 'work', primary: false }] })
+        .where(eq(customers.id, customerId!)),
+    );
+    await inboundText('Hello', SECOND);
+    await t.jobs.drain(t.deps);
+    const [row] = await outbound();
+    expect(row).toMatchObject({ toE164: SECOND });
+    expect(t.sms.sent).toHaveLength(1);
+  });
+
+  test('identity and failure count survive the next text', async () => {
+    const bad = { name: 'Nobody Here', street: '1 Nowhere Rd' };
+    const tool = (id: string) => ({ kind: 'tool' as const, name: 'verify_caller' as const, input: bad, id });
+    llm = await setup([
+      { when: /first/i, route: OPUS, answer: [tool('v1'), tool('v2')] },
+      { when: /second/i, route: OPUS, answer: [tool('v3'), tool('v4')] },
+    ]);
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('first try');
+    t.clock.advance(MINUTE);
+    await drainAll();
+    t.clock.advance(MINUTE);
+    await inboundText('second try');
+    t.clock.advance(MINUTE);
+    await drainAll();
+    // The third failure says so, the fourth hits the lock: the count of 2 came back from the stored turns.
+    expect(JSON.stringify(llm.calls.filter((c) => c.kind === 'answer').map((c) => c.request))).toContain(JSON.stringify(VERIFY_LOCKED).slice(1, -1));
+    const [row] = await conversationRows();
+    expect(row).toMatchObject({ identity: 'matched' });
   });
 
   test('a team reply silences the assistant for 2 hours', async () => {
@@ -212,6 +542,7 @@ describe('Front Desk texts', () => {
     await inboundText('First question');
     const [conv] = await conversationRows();
     t.clock.set(DAYTIME);
+    await startedJustNow(conv!.id);
     await teamReply(conv!.id, customerId!, 2 * HOUR + MINUTE);
     t.clock.advance(MINUTE);
     await inboundText('Second question');
@@ -230,6 +561,24 @@ describe('Front Desk texts', () => {
     await t.jobs.drain(t.deps);
     expect(t.sms.sent).toHaveLength(0);
     expect(answerCalls(llm)).toHaveLength(0);
+  });
+
+  test('a team reply with handledBy team and a past teamUntil does not silence the assistant after 2 hours', async () => {
+    const [customerId] = await addSmsCustomers(t, 'a', [nina()]);
+    t.clock.set(new Date(DAYTIME.getTime() - 3 * HOUR));
+    await inboundText('First question');
+    const [conv] = await conversationRows();
+    t.clock.set(DAYTIME);
+    await startedJustNow(conv!.id);
+    await teamReply(conv!.id, customerId!, 2 * HOUR + MINUTE);
+    await inCompany(t, idA(), (tx: Tx) =>
+      tx.update(conversations).set({ handledBy: 'team', teamUntil: new Date(DAYTIME.getTime() - HOUR) }).where(eq(conversations.id, conv!.id)),
+    );
+    t.clock.advance(MINUTE);
+    await inboundText('Second question');
+    await t.jobs.drain(t.deps);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(answerCalls(llm)).toHaveLength(1);
   });
 
   test('STOP never reaches Front Desk', async () => {
@@ -314,6 +663,16 @@ describe('Front Desk texts', () => {
     await t.jobs.drain(t.deps);
     const [row] = await outbound();
     expect(row).toMatchObject({ purpose: 'informational', status: 'blocked' });
+    expect(t.sms.sent).toHaveLength(0);
+  });
+
+  test.each(['trial_ended', 'canceled'] as const)('a read-only company (%s) gets no AI turn on an inbound text', async (status) => {
+    await t.deps.pools.system.update(companies).set({ status }).where(eq(companies.id, idA()));
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hi there');
+    await t.jobs.drain(t.deps);
+    expect(fdTextJobs()).toHaveLength(0);
+    expect(answerCalls(llm)).toHaveLength(0);
     expect(t.sms.sent).toHaveLength(0);
   });
 
