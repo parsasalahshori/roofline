@@ -158,9 +158,16 @@ export async function runFrontDeskText(
   const active = engine ?? createEngine(deps, TEXT_TOOL_HANDLERS);
   const said: string[] = [];
   let handoff = false;
+  let spam = false;
   for await (const event of active.turn(state, callerText, new AbortController().signal)) {
     if (event.type === 'say') said.push(event.text);
     else if (event.type === 'handoff') handoff = true;
+    else if (event.type === 'end' && event.reason === 'spam') spam = true;
+  }
+  if (spam) {
+    // Spam is never answered: end the conversation so later texts from the number open a new one.
+    await withTenant(deps.pools, ctx, (tx) => updateConversation(tx, ctx, conversationId, { status: 'ended' }));
+    return;
   }
   if (handoff) {
     await withTenant(deps.pools, ctx, (tx) => updateConversation(tx, ctx, conversationId, { handledBy: 'team' }));

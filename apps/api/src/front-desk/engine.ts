@@ -283,9 +283,12 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       if (decision && SPAM_INTENTS.has(decision.intent)) {
         dropSpeculative();
         rec.route = 'end';
-        const ev = speak(SAY_SPAM_ENDING);
-        appendAssistant(state, [{ type: 'text', text: ev.text }] as unknown as Anthropic.ContentBlock[]);
-        yield ev;
+        // The goodbye is spoken on calls only; a spam text gets no reply at all.
+        if (state.channel === 'voice') {
+          const ev = speak(SAY_SPAM_ENDING);
+          appendAssistant(state, [{ type: 'text', text: ev.text }] as unknown as Anthropic.ContentBlock[]);
+          yield ev;
+        }
         await markSpam();
         yield { type: 'end', reason: 'spam' };
         return;

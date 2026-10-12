@@ -270,6 +270,17 @@ describe('Front Desk texts', () => {
     expect(t.sms.sent[0]!.body).not.toMatch(/\$|500/);
   });
 
+  test('a spam text gets no reply and ends the conversation', async () => {
+    const spamRoute: RouteDecision = { intent: 'spam', urgent: false, mood: 'calm', route: 'end', fastReply: null };
+    llm = await setup([{ when: /./, route: spamRoute }]);
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Lower your business loan rate today, reply YES');
+    await t.jobs.drain(t.deps);
+    expect(t.sms.sent).toHaveLength(0);
+    expect(await outbound()).toHaveLength(0);
+    expect(await conversationRows()).toEqual([expect.objectContaining({ outcome: 'spam', status: 'ended' })]);
+  });
+
   test('the C / confirm shortcut is routed through the engine for now', async () => {
     await addSmsCustomers(t, 'a', [nina()]);
     await inboundText('C');
