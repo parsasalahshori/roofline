@@ -17,7 +17,6 @@
   --shell-base-top: 65px;
   --shell-top-inset: calc(var(--shell-base-top) + var(--shell-banner-height, 0px));
   --shell-bottom-inset: 94px;
-  --shell-bottom-inset: 94px;
   max-width: 100vw;
   overflow-x: clip;
   color: var(--text);
