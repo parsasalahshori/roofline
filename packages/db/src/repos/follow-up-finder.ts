@@ -1,6 +1,18 @@
-import { and, asc, eq, inArray, isNull, lte, max, notExists, or, sql } from 'drizzle-orm';
-import { daysInStage, isStuck, leadFollowUpDue, REPLY_STOP_DAYS } from '@roofline/shared';
-import { activities, appointments, companySettings, type CustomerPhone, customers, followUpLog, jobs, messages } from '../schema/index.ts';
+import { and, asc, eq, inArray, isNotNull, isNull, lte, max, ne, notExists, or, sql } from 'drizzle-orm';
+import { daysInStage, isStuck, leadFollowUpDue, proposalFollowUpDue, REPLY_STOP_DAYS } from '@roofline/shared';
+import {
+  activities,
+  agentTasks,
+  appointments,
+  companySettings,
+  type CustomerPhone,
+  customers,
+  followUpLog,
+  jobs,
+  messages,
+  proposalOptions,
+  proposals,
+} from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 
@@ -218,4 +230,167 @@ export async function recordStuckNudge(tx: Tx, ctx: TenantContext, jobId: string
     at: now,
     actorAgent: 'follow_up',
   });
+}
+
+/** G1 Task 13b: an unsigned proposal that is due a follow-up. `due` comes from `proposalFollowUpDue`. */
+export type ProposalCandidate = {
+  proposalId: string;
+  number: string;
+  jobId: string;
+  customerId: string;
+  customerFirstName: string | null;
+  customerName: string;
+  assignedUserId: string | null;
+  viewed: boolean;
+  /** The lowest enabled option total in cents, or null when the proposal has no options. */
+  lowestTotalCents: number | null;
+  due: 'text' | 'call_rep';
+};
+
+/** The subject type and task kind of the live note that records "the rep was asked to call" (Task 13b). */
+export const PROPOSAL_CALL_SUBJECT = 'proposal';
+export const PROPOSAL_CALL_KIND = 'proposal_call_rep';
+
+/** Unsigned proposals due a text or a rep call. Nothing here reads message text. */
+export async function findProposalCandidates(
+  tx: Tx,
+  ctx: TenantContext,
+  now: Date,
+  opts: { followupDays: readonly number[] },
+): Promise<ProposalCandidate[]> {
+  const rows = await tx
+    .select({
+      proposalId: proposals.id,
+      number: proposals.number,
+      status: proposals.status,
+      jobId: proposals.jobId,
+      customerId: proposals.customerId,
+      sentAt: proposals.sentAt,
+      lastViewedAt: proposals.lastViewedAt,
+      signedAt: proposals.signedAt,
+      customerFirstName: customers.firstName,
+      customerName: customers.displayName,
+      phones: customers.phones,
+      assignedUserId: jobs.assignedUserId,
+    })
+    .from(proposals)
+    .innerJoin(customers, and(eq(customers.companyId, proposals.companyId), eq(customers.id, proposals.customerId)))
+    .innerJoin(jobs, and(eq(jobs.companyId, proposals.companyId), eq(jobs.id, proposals.jobId)))
+    .where(
+      and(
+        eq(proposals.companyId, ctx.companyId),
+        inArray(proposals.status, ['sent', 'viewed']),
+        isNotNull(proposals.sentAt),
+        isNull(proposals.signedAt),
+        ne(jobs.stage, 'lost'),
+        isNull(jobs.archivedAt),
+        isNull(customers.archivedAt),
+        eq(customers.doNotContact, false),
+      ),
+    )
+    .orderBy(asc(proposals.sentAt), asc(proposals.id));
+
+  const textable = rows.filter((r) => {
+    const p = textingPhone(r.phones ?? []);
+    return p !== null && (p.label ?? '').trim().toLowerCase() !== 'landline';
+  });
+  if (textable.length === 0) return [];
+
+  const jobIds = [...new Set(textable.map((r) => r.jobId))];
+  const proposalIds = textable.map((r) => r.proposalId);
+  const customerIds = [...new Set(textable.map((r) => r.customerId))];
+
+  const logRows = await tx
+    .select({ jobId: followUpLog.jobId, at: followUpLog.at })
+    .from(followUpLog)
+    .where(and(eq(followUpLog.companyId, ctx.companyId), eq(followUpLog.kind, 'proposal'), inArray(followUpLog.jobId, jobIds)));
+  const logByJob = new Map<string, Date[]>();
+  for (const r of logRows) {
+    if (r.jobId === null) continue;
+    const list = logByJob.get(r.jobId) ?? [];
+    list.push(r.at);
+    logByJob.set(r.jobId, list);
+  }
+
+  const callRows = await tx
+    .select({ subjectId: agentTasks.subjectId, at: agentTasks.createdAt })
+    .from(agentTasks)
+    .where(
+      and(
+        eq(agentTasks.companyId, ctx.companyId),
+        eq(agentTasks.agent, 'follow_up'),
+        eq(agentTasks.kind, PROPOSAL_CALL_KIND),
+        eq(agentTasks.subjectType, PROPOSAL_CALL_SUBJECT),
+        inArray(agentTasks.subjectId, proposalIds),
+      ),
+    );
+  const callRepAt = new Map<string, Date>();
+  for (const r of callRows) {
+    if (r.subjectId === null) continue;
+    const prev = callRepAt.get(r.subjectId);
+    if (prev === undefined || r.at.getTime() < prev.getTime()) callRepAt.set(r.subjectId, r.at);
+  }
+
+  const inboundRows = await tx
+    .select({ customerId: messages.customerId, at: max(messages.createdAt) })
+    .from(messages)
+    .where(and(eq(messages.companyId, ctx.companyId), eq(messages.direction, 'in'), inArray(messages.customerId, customerIds)))
+    .groupBy(messages.customerId);
+  const lastInbound = new Map<string, Date>();
+  for (const r of inboundRows) if (r.customerId !== null && r.at !== null) lastInbound.set(r.customerId, r.at);
+
+  const optionRows = await tx
+    .select({ proposalId: proposalOptions.proposalId, lowest: sql<number | null>`min(${proposalOptions.totalCents})` })
+    .from(proposalOptions)
+    .where(
+      and(
+        eq(proposalOptions.companyId, ctx.companyId),
+        eq(proposalOptions.enabled, true),
+        inArray(proposalOptions.proposalId, proposalIds),
+      ),
+    )
+    .groupBy(proposalOptions.proposalId);
+  const lowest = new Map<string, number>();
+  for (const r of optionRows) if (r.lowest !== null) lowest.set(r.proposalId, Number(r.lowest));
+
+  const seenText = new Set<string>();
+  const out: ProposalCandidate[] = [];
+  for (const r of textable) {
+    if (r.sentAt === null) continue;
+    const sentAtMs = r.sentAt.getTime();
+    const sentTexts = (logByJob.get(r.jobId) ?? []).filter((at) => at.getTime() >= sentAtMs);
+    const lastTextAt = sentTexts.reduce<Date | null>((m, at) => (m === null || at.getTime() > m.getTime() ? at : m), null);
+    const due = proposalFollowUpDue(
+      {
+        sentAt: r.sentAt,
+        lastViewedAt: r.lastViewedAt,
+        signedAt: r.signedAt,
+        textsSent: sentTexts.length,
+        lastTextAt,
+        callRepAt: callRepAt.get(r.proposalId) ?? null,
+      },
+      now,
+      opts.followupDays,
+    );
+    if (due === null) continue;
+    const inboundAt = lastInbound.get(r.customerId);
+    if (inboundAt !== undefined && now.getTime() - inboundAt.getTime() < REPLY_STOP_DAYS * DAY_MS) continue;
+    if (due === 'text') {
+      if (seenText.has(r.customerId)) continue; // one text per customer: the oldest proposal
+      seenText.add(r.customerId);
+    }
+    out.push({
+      proposalId: r.proposalId,
+      number: r.number,
+      jobId: r.jobId,
+      customerId: r.customerId,
+      customerFirstName: r.customerFirstName,
+      customerName: r.customerName,
+      assignedUserId: r.assignedUserId,
+      viewed: r.lastViewedAt !== null || r.status === 'viewed',
+      lowestTotalCents: lowest.get(r.proposalId) ?? null,
+      due,
+    });
+  }
+  return out;
 }

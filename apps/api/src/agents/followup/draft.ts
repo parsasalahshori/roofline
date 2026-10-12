@@ -169,3 +169,84 @@ export async function draftLeadTexts(
   });
   return { texts, anyTemplate };
 }
+
+/** G1 Task 13b: what the proposal text needs. `lowestTotalCents` is the lowest option total, or null. */
+export type ProposalDraftInput = {
+  jobId: string;
+  customerId: string;
+  customerFirstName: string | null;
+  repFirstName: string | null;
+  proposalNumber: string;
+  viewed: boolean;
+  lowestTotalCents: number | null;
+};
+
+export type DraftedProposalText = { jobId: string; customerId: string; body: string; fromTemplate: boolean };
+
+/** The text used when the Llm cannot write one, or its text fails a check. No link, no price. */
+export function proposalTemplate(i: {
+  customerFirstName: string | null;
+  repFirstName: string | null;
+  companyName: string;
+}): string {
+  const first = i.customerFirstName ?? 'there';
+  const rep = i.repFirstName ?? 'a member of our team';
+  return `Hi ${first}, it's ${rep} at ${i.companyName}. Just checking you got the roof proposal we sent. Happy to answer any questions \u2014 reply here or call us.`;
+}
+
+function acceptableProposalBody(body: string): boolean {
+  if (body.trim() === '' || body.length > MAX_BODY_CHARS) return false;
+  return claimsGuard(body).ok;
+}
+
+/**
+ * Writes one text per unsigned proposal through the Llm. A text that fails a check, a proposal the
+ * Llm left out, a refusal, or an unavailable Llm gets the template instead. At most MAX_DRAFT_JOBS.
+ */
+export async function draftProposalTexts(
+  llm: Llm,
+  companyName: string,
+  proposals: readonly ProposalDraftInput[],
+): Promise<{ texts: DraftedProposalText[]; anyTemplate: boolean }> {
+  if (proposals.length > MAX_DRAFT_JOBS) throw new RangeError(`At most ${MAX_DRAFT_JOBS} proposals per call.`);
+  if (proposals.length === 0) return { texts: [], anyTemplate: false };
+
+  const facts: JobFacts[] = proposals.map((p) => ({
+    jobId: p.jobId,
+    customerFirstName: p.customerFirstName ?? '',
+    companyName,
+    repFirstName: p.repFirstName,
+    address: null,
+    facts: {
+      proposalNumber: p.proposalNumber,
+      viewed: p.viewed ? 'yes' : 'no',
+      ...(p.lowestTotalCents !== null && {
+        lowestTotal: '$' + (p.lowestTotalCents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 }),
+      }),
+    },
+  }));
+
+  const written = new Map<string, string>();
+  try {
+    const result = await llm.draftTexts({ instruction: 'proposal_follow_up', facts });
+    if (!result.refused) for (const t of result.texts) written.set(t.jobId, t.body);
+  } catch (e) {
+    if (!(e instanceof LlmUnavailableError)) throw e;
+  }
+
+  let anyTemplate = false;
+  const texts = proposals.map((p): DraftedProposalText => {
+    const body = written.get(p.jobId);
+    if (body !== undefined && acceptableProposalBody(body)) {
+      return { jobId: p.jobId, customerId: p.customerId, body, fromTemplate: false };
+    }
+    anyTemplate = true;
+    return {
+      jobId: p.jobId,
+      customerId: p.customerId,
+      body: proposalTemplate({ customerFirstName: p.customerFirstName, repFirstName: p.repFirstName, companyName }),
+      fromTemplate: true,
+    };
+  });
+  return { texts, anyTemplate };
+}
