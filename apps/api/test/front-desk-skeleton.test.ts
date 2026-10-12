@@ -22,8 +22,8 @@ afterAll(() => undefined);
 describe('Front Desk skeleton', () => {
   test('JOB_NAMES gain the Front Desk names before the G1 names', () => {
     expect(JOB_NAMES.slice(0, 2)).toEqual(['import-customers', 'texting-registration']);
-    // G1 appends five agent jobs after the Front Desk names.
-    expect(JOB_NAMES.slice(-9, -5)).toEqual([...FD_JOBS]);
+    // G1 appends six agent jobs after the Front Desk names.
+    expect(JOB_NAMES.slice(-10, -6)).toEqual([...FD_JOBS]);
     for (const name of JOB_NAMES) expect(typeof JOB_HANDLERS[name]).toBe('function');
   });
 
