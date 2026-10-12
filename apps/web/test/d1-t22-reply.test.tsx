@@ -7,7 +7,7 @@ import type { ConversationDetail } from '@roofline/shared';
 import { ConversationWindow } from '../src/features/front-desk/ConversationWindow.tsx';
 import { conversationCopy } from '../src/copy/front-desk-conversation.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
-import { stubApi } from './helpers.tsx';
+import { ACCOUNT, stubApi } from './helpers.tsx';
 
 let api: ReturnType<typeof stubApi> | undefined;
 
@@ -42,6 +42,7 @@ function renderWindow(conversation: ConversationDetail, replyRoute?: () => { sta
   api = stubApi({
     'GET /api/conversations/conv1': () => ({ body: conversation }),
     'POST /api/conversations/conv1/read': () => ({ body: {} }),
+    'GET /api/auth/me': () => ({ body: ACCOUNT }),
     ...(replyRoute ? { 'POST /api/conversations/conv1/reply': replyRoute } : {}),
   });
   const queryClient = createQueryClient();
