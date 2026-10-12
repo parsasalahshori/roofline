@@ -112,7 +112,8 @@ export function JobSections({ view }: JobSectionsProps) {
   async function startProposal() {
     try {
       const measurement = await measure.mutateAsync({ propertyId: view.home.id });
-      navigate('/estimator/measure/' + measurement.id);
+      // Ruling EM: the measure window builds the proposal on this job
+      navigate('/estimator/measure/' + measurement.id, { state: { jobId } });
     } catch {
       toast.show(job.proposalStartFailed, 'error');
     }

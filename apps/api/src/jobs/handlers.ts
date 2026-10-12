@@ -9,9 +9,25 @@ import { runReminders } from '../agents/scheduler/reminders.ts';
 import { runWeatherWatch } from '../agents/scheduler/weather.ts';
 import { pushAppointment } from '../calendar/push.ts';
 import { loadFootprintState } from '../estimator/footprints-load.ts';
-import { signedPdf } from '../estimator/signed-pdf.ts';
+import { makeSignedPdf } from '../estimator/signed-pdf.ts';
 import { runImport } from '../imports/run.ts';
+import { syncCompanyAds } from '../storm/ad-sync.ts';
+import { sendStormAlert } from '../storm/alerts.ts';
+import { matchCompanyStorms } from '../storm/match.ts';
+import { draftStormPlan } from '../storm/plan.ts';
+import { UUID } from '../validate.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
+
+function checkStormJob(data: JobData): void {
+  if (typeof data.companyStormId !== 'string' || !UUID.test(data.companyStormId)) {
+    throw new Error('A storm job did not name a company storm.');
+  }
+}
+
+function checkStormAlertJob(data: JobData): void {
+  checkStormJob(data);
+  if (data.kind !== 'now' && data.kind !== 'plan') throw new Error('A storm alert job did not name a kind.');
+}
 
 /**
  * What each job does, by name. The worker (worker.ts) and `InlineJobs.drain` both run jobs through
@@ -37,5 +53,15 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   // G1 Task 12
   'scheduler-no-show': (deps, data) => runNoShow(deps, data.companyId, data.appointmentId!),
   'footprints-load': (deps, data, meta) => loadFootprintState(deps, data.state!, meta),
-  'signed-pdf': (deps, data) => signedPdf(deps, data.companyId, data.proposalId!),
+  'signed-pdf': (deps, data, meta) => makeSignedPdf(deps, data.companyId, data.proposalId!, meta),
+  'storm-match-company': (deps, data) => matchCompanyStorms(deps, data.companyId),
+  'storm-draft': (deps, data) => {
+    checkStormJob(data);
+    return draftStormPlan(deps, data.companyId, data.companyStormId!, deps.clock.now()).then(() => undefined);
+  },
+  'storm-alert': (deps, data) => {
+    checkStormAlertJob(data);
+    return sendStormAlert(deps, data.companyId, data.companyStormId!, data.kind!);
+  },
+  'ad-sync-company': (deps, data) => syncCompanyAds(deps, data.companyId),
 };

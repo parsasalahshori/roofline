@@ -4,9 +4,10 @@ vi.hoisted(() => {
 });
 
 import type { AppointmentView } from '@roofline/shared';
-import { act, cleanup, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CompanyBody, TeamBody } from '../src/api/types.ts';
+import { AgendaView } from '../src/features/calendar/AgendaView.tsx';
 import { CalendarWindow } from '../src/features/calendar/CalendarWindow.tsx';
 import type { AppointmentsBody, BusyBlock } from '../src/features/calendar/types.ts';
 import { calendar } from '../src/copy/calendar.ts';
@@ -119,8 +120,8 @@ const COMPANY_BODY: CompanyBody = {
 /** Two active people: Sam (owner, u1) and Jo (rep, u2). */
 const TEAM_BODY: TeamBody = {
   members: [
-    { id: 'm1', userId: 'u1', name: 'Sam Roofer', email: 'sam@example.com', role: 'owner', canApproveSpend: true, status: 'active' },
-    { id: 'm2', userId: 'u2', name: 'Jo Crew', email: 'jo@example.com', role: 'rep', canApproveSpend: false, status: 'active' },
+    { id: 'm1', userId: 'u1', name: 'Sam Roofer', email: 'sam@example.com', role: 'owner', canApproveSpend: true, status: 'active', stormAlertEmail: true },
+    { id: 'm2', userId: 'u2', name: 'Jo Crew', email: 'jo@example.com', role: 'rep', canApproveSpend: false, status: 'active', stormAlertEmail: true },
   ],
   invites: [],
 };
@@ -417,5 +418,37 @@ describe('calendar window', () => {
     expect(screen.queryByTestId('appt-a3')).toBeNull();
     await user.click(screen.getByRole('switch', { name: calendar.showCanceled }));
     expect(await screen.findByTestId('appt-a3')).toBeInTheDocument();
+  });
+});
+
+describe('Agenda view range overlap', () => {
+  const from = dateKeyToInstant('2026-11-03', CHICAGO);
+  const view = (items: AppointmentView[]) =>
+    render(
+      <AgendaView zone={CHICAGO} from={from} dayCount={3} appointments={items} people={[]} showCanceled={false} onOpen={vi.fn()} onLoadMore={vi.fn()} />,
+    );
+
+  it('lists a multi-day install on each listed day it covers, from the first listed day', () => {
+    view([
+      makeAppointment({
+        id: 'inst',
+        kind: 'install',
+        allDay: true,
+        startsAt: dateKeyToInstant('2026-11-02', CHICAGO).toISOString(),
+        endsAt: dateKeyToInstant('2026-11-05', CHICAGO).toISOString(),
+      }),
+    ]);
+    // Covers 11-02, 11-03, 11-04: the 11-02 day is before the range
+    expect(screen.queryByTestId('agenda-day-2026-11-02')).toBeNull();
+    expect(screen.getByTestId('agenda-day-2026-11-03')).toBeInTheDocument();
+    expect(screen.getByTestId('agenda-day-2026-11-04')).toBeInTheDocument();
+    expect(screen.queryByTestId('agenda-day-2026-11-05')).toBeNull();
+    expect(screen.getAllByTestId('agenda-item-inst')).toHaveLength(2);
+  });
+
+  it('puts a timed item that started before the range on the first listed day', () => {
+    view([makeAppointment({ id: 'early', startsAt: '2026-11-02T15:00:00.000Z', endsAt: '2026-11-03T15:00:00.000Z' })]);
+    expect(screen.getByTestId('agenda-day-2026-11-03')).toBeInTheDocument();
+    expect(screen.getAllByTestId('agenda-item-early')).toHaveLength(1);
   });
 });

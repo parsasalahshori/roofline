@@ -10,6 +10,7 @@ import type {
 import { appointments, claimEvents, claimIntakes, claims, customers, jobs, properties } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { audit } from './audit.ts';
+import { latestClaimPacket } from './claim-packet.ts';
 import { jobScope } from './scope.ts';
 
 /** The fields a person may save on a claim. Absent = leave alone; null = clear. */
@@ -145,9 +146,14 @@ async function assertAppointmentOnJob(tx: Tx, ctx: TenantContext, jobId: string,
 export async function getJobClaim(tx: Tx, ctx: TenantContext, jobId: string): Promise<JobClaimResponse | null> {
   if (!(await jobIsVisible(tx, ctx, jobId))) return null;
   const row = await loadClaimRow(tx, jobId);
-  if (row) return { claim: toClaimView(row, await loadEvents(tx, row.id)), intake: null };
+  if (row) {
+    // G1 Task 7
+    const built = await latestClaimPacket(tx, ctx, row.id);
+    const packet = built ? { storedFileId: built.storedFileId, builtAt: built.builtAt.toISOString() } : null;
+    return { claim: toClaimView(row, await loadEvents(tx, row.id)), intake: null, packet };
+  }
   const intake = await loadLatestIntake(tx, jobId);
-  return { claim: null, intake: intake ? toIntakeView(intake) : null };
+  return { claim: null, intake: intake ? toIntakeView(intake) : null, packet: null };
 }
 
 /**

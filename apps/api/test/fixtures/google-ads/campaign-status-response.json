@@ -1,0 +1,9 @@
+{
+  "mutateOperationResponses": [
+    {
+      "campaignResult": {
+        "resourceName": "customers/9876543210/campaigns/555"
+      }
+    }
+  ]
+}

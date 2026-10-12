@@ -10,6 +10,11 @@ export const JOB_NAMES = [
   'calendar-push',
   'footprints-load',
   'signed-pdf',
+  // S1 Storm Scout
+  'storm-match-company',
+  'storm-draft',
+  'storm-alert',
+  'ad-sync-company',
   // D1 Front Desk
   'fd-after-call',
   'fd-recording-store',
@@ -35,6 +40,10 @@ export type JobData = {
   appointmentId?: string;
   state?: string;
   proposalId?: string;
+  // S1: 'storm-match-company' is `{ companyId }` (singletonKey companyId); 'storm-draft' is `{ companyId, companyStormId }`;
+  // 'storm-alert' is `{ companyId, companyStormId, kind }`; 'ad-sync-company' is `{ companyId }`.
+  companyStormId?: string;
+  kind?: 'now' | 'plan';
   callId?: string;
   recordingSid?: string;
   conversationId?: string;

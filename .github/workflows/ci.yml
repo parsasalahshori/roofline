@@ -80,3 +80,30 @@ jobs:
             apps/web/playwright-report
             apps/web/test-results
           retention-days: 7
+
+  # Python hail service (Ruling SC/SG): GDAL comes from the image's osgeo bindings; nothing Python runs on the build box.
+  hail:
+    name: Hail service (ruff, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      db:
+        image: postgis/postgis:16-3.4
+        env: { POSTGRES_USER: roofline, POSTGRES_PASSWORD: roofline, POSTGRES_DB: roofline }
+        ports: ['54329:5432']
+        options: >-
+          --health-cmd "pg_isready -U roofline -d roofline" --health-interval 2s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run db:migrate          # DATABASE_URL_OWNER defaults to 127.0.0.1:54329
+      - run: >-
+          docker run --rm --network host -v "$PWD:/w" -w /w/services/hail
+          -e HAIL_TEST_DATABASE_URL=postgres://roofline:roofline@127.0.0.1:54329/roofline
+          ghcr.io/osgeo/gdal:ubuntu-small-3.8.5
+          bash -c "apt-get update -qq && apt-get install -y -qq python3-venv >/dev/null &&
+          python3 -m venv --system-site-packages /tmp/v && /tmp/v/bin/pip install -q -e '.[dev]' &&
+          /tmp/v/bin/ruff check . && /tmp/v/bin/pytest -q"
+      - run: docker build -t roofline-hail services/hail

@@ -1,0 +1,46 @@
+/* The fields of the generic Edit sheet: a group per pick (a legend and its checkboxes), the hints and the warnings. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+}
+
+.legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.warning {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--danger);
+}
+
+.sheetError {
+  margin: 0;
+  color: var(--danger);
+}

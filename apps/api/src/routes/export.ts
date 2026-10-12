@@ -53,31 +53,35 @@ function drained(res: Response): Promise<void> {
 }
 
 /**
- * Streams one export as CSV, inside a single tenant transaction. The first row is read, and the
- * audit row written, before any header or byte is sent, so a failure up to that point is an
- * ordinary error response and every download leaves an audit row even if the client drops early.
- * Rows are written with `csvCell` (formula-safe) and CRLF line endings, honouring backpressure.
+ * Streams one export as CSV. The company is checked and the audit row written and COMMITTED in its
+ * own short transaction before anything is sent, so every download is audited (even if the stream
+ * later fails or the client drops) and a reader right after the download always sees the row. The
+ * rows are then read in a second tenant transaction; a failure before the first byte is an ordinary
+ * error response. Rows are written with `csvCell` (formula-safe) and CRLF line endings, honouring
+ * backpressure.
  */
 async function sendCsv(deps: AppDeps, req: Request, res: Response, spec: ExportSpec): Promise<void> {
   const { pools, clock } = deps;
   const { ctx } = req;
   const now = clock.now();
 
-  await withTenant(pools, ctx, async (tx) => {
-    const company = await textingCompanyFacts(tx, ctx);
-    if (!company) throw new AppError(404, MESSAGES.notFound);
+  const company = await withTenant(pools, ctx, async (tx) => {
+    const facts = await textingCompanyFacts(tx, ctx);
+    if (!facts) throw new AppError(404, MESSAGES.notFound);
+    await audit(tx, ctx, {
+      action: spec.action,
+      targetType: 'company',
+      targetId: ctx.companyId,
+      ip: req.ip ?? null,
+      at: now,
+    });
+    return facts;
+  });
 
+  await withTenant(pools, ctx, async (tx) => {
     const rows = spec.rows(tx, ctx);
     try {
       let next = await rows.next();
-
-      await audit(tx, ctx, {
-        action: spec.action,
-        targetType: 'company',
-        targetId: ctx.companyId,
-        ip: req.ip ?? null,
-        at: now,
-      });
 
       res.status(200);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');

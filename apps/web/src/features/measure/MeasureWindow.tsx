@@ -1,15 +1,18 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Banner, Button, Checkbox, EmptyState, Field } from '@roofline/ui';
-import { instantEstimate, type Ring } from '@roofline/shared';
+import { instantEstimate, type ProposalView, type Ring } from '@roofline/shared';
 import { Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
 import { legal } from '../../copy/legal.ts';
+import { estimator } from '../../copy/estimator.ts';
 import { measure } from '../../copy/measure.ts';
+import { useBuildProposal, useSendProposal } from '../estimator/api.ts';
 import { mapStyle, satelliteAvailable } from '../../shell/map/mapStyle.ts';
 import type { MapEnv } from '../../shell/map/types.ts';
-import { useExactReport, useMakeProposal, useMeasurement, usePatchMeasurement } from './api.ts';
+import { useExactReport, useMeasurement, usePatchMeasurement } from './api.ts';
+import { readHandoff } from './handoff.ts';
 import styles from './MeasureWindow.module.css';
 import { createOutlineEditor, type EditResult, type OutlineEditor } from './OutlineEditor.ts';
 import type { MeasurementPatch, MeasurementView, OutlineProblem } from './types.ts';
@@ -70,7 +73,13 @@ function Loaded({ m }: { m: MeasurementView }) {
   const [lng, lat] = m.center;
   const patch = usePatchMeasurement(m.id);
   const exact = useExactReport(m.id);
-  const proposal = useMakeProposal(m.id);
+  const handoff = readHandoff(useLocation().state);
+  const build = useBuildProposal();
+  const send = useSendProposal();
+  const [making, setMaking] = useState(false);
+  const [makeFailed, setMakeFailed] = useState(false);
+  const makingRef = useRef(false);
+  const builtRef = useRef<ProposalView | null>(null);
 
   const [ring, setRing] = useState<Ring>(m.outline?.[0] ?? []);
   const [problem, setProblem] = useState<OutlineProblem | null>(null);
@@ -188,8 +197,33 @@ function Loaded({ m }: { m: MeasurementView }) {
     }, SAVE_DEBOUNCE_MS);
   };
 
+  const makeProposal = async () => {
+    if (makingRef.current) return;
+    makingRef.current = true;
+    setMaking(true);
+    setMakeFailed(false);
+    try {
+      await flushPending();
+      const built =
+        builtRef.current ??
+        (await build.mutateAsync({
+          measurementId: m.id,
+          ...(handoff.jobId !== undefined && { jobId: handoff.jobId }),
+          ...(handoff.customer !== undefined && { customer: handoff.customer }),
+        }));
+      builtRef.current = built;
+      const sent = await send.mutateAsync(built.id);
+      void navigate(`/approvals/${sent.taskId}`);
+    } catch {
+      setMakeFailed(true);
+    } finally {
+      makingRef.current = false;
+      setMaking(false);
+    }
+  };
+
   const noOutline = drawMode && ring.length < 3;
-  const proposalBlocked = proposal.isPending || problem !== null || noOutline || locked;
+  const proposalBlocked = making || problem !== null || noOutline || locked;
   const rows: [string, string][] = [
     [measure.area, format(estimate.surfaceSqFt)],
     [measure.squares, format(estimate.squares)],
@@ -322,22 +356,17 @@ function Loaded({ m }: { m: MeasurementView }) {
           {exact.isError ? <Banner tone="danger">{measure.exactFailed}</Banner> : null}
           <Button
             className={styles.wide}
-            busy={proposal.isPending}
+            busy={making}
             disabled={proposalBlocked}
-            onClick={() =>
-              void flushPending().then(
-                () =>
-                  proposal.mutate(undefined, {
-                    onSuccess: (created) => {
-                      void navigate(`/estimator/proposals/${created.id}`);
-                    },
-                  }),
-                () => {},
-              )
-            }
+            onClick={() => void makeProposal()}
           >
             {measure.makeProposal}
           </Button>
+          {makeFailed ? (
+            <div role="alert">
+              <Banner tone="danger">{estimator.makeFailed}</Banner>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

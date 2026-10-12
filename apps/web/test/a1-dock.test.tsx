@@ -66,18 +66,18 @@ describe('A1 dock', () => {
     expect(link.getAttribute('href')).toBe('/agents');
   });
 
-  it('keeps the Coming soon note on Storm and Front Desk', async () => {
+  it('keeps the Coming soon note on Front Desk', async () => {
     signedInApi();
     renderApp('/');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
 
-    for (const key of ['storm', 'front-desk'] as const) {
+    for (const key of ['front-desk'] as const) {
       expect(dockLink(dockNav, WINDOW_COPY[key].title).textContent ?? '').toContain(dock.comingSoon);
     }
   });
 
-  it('marks Agents shipped (Estimator too, from E1)', () => {
+  it('marks Agents shipped (Estimator and Storm too, from E1 and S1)', () => {
     const shipped = Object.fromEntries(DOCK_APPS.map((app) => [app.key, app.shipped]));
-    expect(shipped).toEqual({ storm: false, 'front-desk': false, estimator: true, jobs: true, calendar: true, agents: true });
+    expect(shipped).toEqual({ storm: true, 'front-desk': false, estimator: true, jobs: true, calendar: true, agents: true });
   });
 });

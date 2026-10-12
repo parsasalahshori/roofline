@@ -223,6 +223,7 @@ export * from './repos/fd-caller.ts';
 export * from './repos/follow-up-log.ts';
 // G1 Claims (Task 6)
 export * from './repos/claims.ts';
+export * from './repos/claim-packet.ts'; // G1 Task 7
 // G1 Task 10
 export * from './repos/scheduler.ts';
 export * from './repos/scheduler-agenda.ts';
@@ -239,3 +240,20 @@ export * from './repos/proposals.ts';
 export * from './repos/proposal-public.ts';
 export * from './repos/exact-reports.ts';
 export * from './repos/stored-files.ts';
+// S1 skeleton (Task 1): one line per new repo file; later S1 tasks fill the files in.
+export * from './repos/storm-layer.ts';
+export * from './repos/company-storms.ts';
+export * from './repos/storm-hits.ts';
+export * from './repos/storm-plans.ts';
+export * from './repos/storm-alerts.ts';
+export * from './repos/email-sends.ts';
+export * from './repos/email-opt-outs.ts';
+export * from './repos/door-routes.ts';
+export * from './repos/ad-accounts.ts';
+export * from './repos/ad-campaigns.ts';
+export * from './repos/ad-campaign-sync.ts';
+export * from './repos/storm-geo.ts';
+export * from './repos/storm-pages.ts';
+export * from './repos/storm-requests.ts';
+export * from './repos/storm-results.ts';
+export * from './repos/storm-api.ts';

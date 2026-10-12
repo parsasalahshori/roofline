@@ -192,6 +192,7 @@ describe('the worker', () => {
     await withWorker(async (worker) => {
       const schedules = await worker.getSchedules();
       expect(schedules.map((s) => [s.name, s.cron]).sort()).toEqual([
+        ['ad-spend-sync', '0 * * * *'],
         ['bill-monthly-fees', '0 9 1 * *'],
         ['calendar-pull', '*/5 * * * *'],
         ['claims-daily-schedule', '*/15 * * * *'],
@@ -203,6 +204,7 @@ describe('the worker', () => {
         ['fd-retention', '17 3 * * *'],
         ['followup-daily-schedule', '*/15 * * * *'],
         ['footprints-ensure', '*/15 * * * *'],
+        ['hail-health', '*/15 * * * *'],
         ['poll-texting', '0 * * * *'],
         ['provision-texting', '* * * * *'],
         ['prune-early-reports', '17 3 * * *'],
@@ -210,6 +212,8 @@ describe('the worker', () => {
         ['scheduler-agenda-schedule', '*/15 * * * *'],
         ['scheduler-reminders-schedule', '*/15 * * * *'],
         ['scheduler-weather-schedule', '*/15 * * * *'],
+        ['spotter-sync', '*/30 * * * *'],
+        ['storm-match', '*/10 * * * *'],
         ['sweep-imports', '* * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);
@@ -228,6 +232,10 @@ describe('the worker', () => {
       'calendar-pull',
       'footprints-ensure',
       'exact-report-poll',
+      'spotter-sync',
+      'storm-match',
+      'ad-spend-sync',
+      'hail-health',
       'fd-retention',
       'fd-health',
       'claims-daily-schedule',

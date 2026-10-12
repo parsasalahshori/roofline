@@ -291,6 +291,32 @@ describe('when the calendar cannot be reached', () => {
     expect((await viewOf(id)).sync).toBe('failed');
   });
 
+  test('moving an appointment whose assignee connection is already in error keeps the link with reconnect', async () => {
+    const samConnection = await connectSam();
+    const id = await book(sam());
+    await drain();
+    const original = await theLink(id);
+
+    t.calendars.google.revoke('refresh-sam');
+    await patch(id, { startsAt: MOVED_START, endsAt: MOVED_END });
+    await drain();
+    const ctx: TenantContext = { companyId: A(), userId: sam(), role: 'owner', canApproveSpend: true };
+    expect((await withTenant(t.deps.pools, ctx, (tx) => getConnection(tx, ctx, sam())))?.status).toBe('error');
+
+    // The connection is now 'error'. A second move must not treat Sam as having no calendar.
+    await patch(id, { startsAt: START, endsAt: END });
+    await expect(drain()).resolves.toBeUndefined();
+
+    expect(t.jobs.errors).toEqual([]);
+    const link = await theLink(id);
+    expect(link.connectionId).toBe(samConnection.id);
+    expect(link.providerEventId).toBe(original.providerEventId);
+    expect(link.pushErrorPlain).toBe('reconnect');
+    expect((await viewOf(id)).sync).toBe('failed');
+    expect(calls('deleteEvent')).toHaveLength(0);
+    expect(calls('createEvent')).toHaveLength(1);
+  });
+
   test('a revoked old calendar does not block the move to the new assignee', async () => {
     const samConnection = await connectSam();
     const patConnection = await connectPat();

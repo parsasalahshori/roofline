@@ -24,6 +24,8 @@ export type JobInput = {
   stage?: JobStage;
   /** Default 'manual'. */
   source?: JobSource;
+  /** The global storms.id this lead came from. */
+  stormId?: string | null;
   valueCents?: number | null;
   assignedUserId?: string | null;
   lostReason?: string | null;
@@ -328,6 +330,7 @@ export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, opt
         stage: input.stage ?? 'lead',
         stageChangedAt: now,
         source: input.source ?? 'manual',
+        stormId: input.stormId ?? null,
         valueCents: input.valueCents ?? null,
         assignedUserId: input.assignedUserId ?? null,
         createdByUserId: ctx.userId,

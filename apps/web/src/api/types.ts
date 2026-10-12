@@ -93,6 +93,8 @@ export type TeamBody = {
     role: Role;
     canApproveSpend: boolean;
     status: 'active' | 'disabled';
+    /** Whether this member gets storm alert emails (S1 Task 27). */
+    stormAlertEmail: boolean;
   }[];
   invites: { id: string; email: string; role: Role; expiresAt: string }[];
 };
@@ -156,3 +158,46 @@ export type CurrentWeather = {
 
 /** A box on the map in degrees: west, south, east, north. The map and the pins query share it. */
 export type Bbox = [west: number, south: number, east: number, north: number];
+
+/** The storm template texts. */
+export type StormTemplates = { smsTemplate: string; emailSubject: string; emailTemplate: string };
+
+/** One ad photo (S1 Task 27). `url` is `/api/storm/photos/:id/file`. */
+export type StormPhoto = { id: string; url: string; createdAt: string };
+
+/** GET/PUT /api/storm/settings. The templates are what applies now (the default when none is saved). */
+export type StormSettingsBody = StormTemplates & {
+  /** Hail size in inches that starts a storm plan: 0.75 to 2 in quarter-inch steps. */
+  thresholdIn: number;
+  adBudgetCents: number;
+  adDays: number;
+  adGoogleSharePct: number;
+  emailEnabled: boolean;
+  defaults: StormTemplates;
+  photos: StormPhoto[];
+  maxPhotos: number;
+};
+
+/** What PUT /api/storm/settings takes: any of these, only what changed. An empty template resets it to the default. */
+export type StormSettingsPatch = Partial<
+  StormTemplates & { thresholdIn: number; adBudgetCents: number; adDays: number; adGoogleSharePct: number; emailEnabled: boolean }
+>;
+
+export type AdPlatform = 'google' | 'meta';
+export type AdAccountStatus = 'pending' | 'active' | 'error' | 'revoked';
+/** Our own plain reasons; provider text is never shown. */
+export type AdAccountReason = 'policy' | 'payment' | 'access' | 'targeting' | 'other';
+
+/** One connected ad account (S1 Task 16 builds the API; this is the shape Task 27 codes against). */
+export type AdAccount = {
+  id: string;
+  platform: AdPlatform;
+  externalAccountId: string;
+  status: AdAccountStatus;
+  name: string | null;
+  reason: AdAccountReason | null;
+  linkedAt: string | null;
+};
+
+/** GET /api/ads/accounts. `managerId` is Roofline's Google manager ID, `businessId` its Meta Business ID (null until set up). */
+export type AdAccountsBody = { accounts: AdAccount[]; managerId: string | null; businessId: string | null };

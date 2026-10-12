@@ -36,7 +36,7 @@ describe('the estimator skeleton', () => {
   test('GET /api/public/proposals/x without a session is 404, not 401', async () => {
     const res = await request(t.app).get('/api/public/proposals/x');
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: MESSAGES.notFound });
+    expect(res.body).toEqual({ error: "This proposal link doesn't work." });
   });
 
   test('POST /api/public/proposals/x/sign is not 401', async () => {

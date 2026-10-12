@@ -1,12 +1,29 @@
 import { type Request, Router } from 'express';
 import { z } from 'zod';
-import { ClaimFieldError, getJobClaim, listClaims, saveClaim, type ClaimPatch, withTenant } from '@roofline/db';
+import {
+  ClaimFieldError,
+  getJobClaim,
+  latestClaimPacket,
+  listClaims,
+  listSteps,
+  moveStep,
+  saveClaim,
+  updateTask,
+  type ClaimPatch,
+  withTenant,
+} from '@roofline/db';
 import { CLAIM_FIELD_LIMITS, CLAIM_STATUSES, toE164 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
+import { ObjectStoreUnavailableError } from '../providers/object-store.ts'; // G1 Task 7
+import { runStep } from '../tasks/runner.ts'; // G1 Task 7
+import { createTask } from '../tasks/service.ts'; // G1 Task 7
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
 
 const NO_JOB = "We couldn't find that job.";
+const NO_STORAGE = "File storage isn't set up."; // G1 Task 7
+const NO_PACKET = 'No claim packet yet.'; // G1 Task 7
+const PACKET_FAILED = 'We could not build the claim packet.'; // G1 Task 7
 const STATUS_MESSAGE = 'Please pick a valid status.';
 const DATE_MESSAGE = 'Please enter a date as YYYY-MM-DD.';
 const PHONE_MESSAGE = 'Please enter a valid phone number.';
@@ -162,6 +179,78 @@ export function jobClaimRoutes(deps: AppDeps): Router {
     ).catch(refused);
     if (!saved) throw new AppError(404, NO_JOB);
     res.json(saved);
+  });
+
+  // G1 Task 7: build the packet now. A live task with one internal step is made, the step is queued and
+  // run inline, so the step stays the single writer of the file. Nothing is sent to anyone.
+  router.post('/packet', async (req, res) => {
+    const { ctx } = req;
+    const id = jobId(paramsOf(req).jobId);
+    const visible = await withTenant(pools, ctx, (tx) => getJobClaim(tx, ctx, id));
+    if (!visible) throw new AppError(404, NO_JOB);
+    if (visible.claim === null) throw new AppError(409, 'Save the claim details first.');
+
+    const now = clock.now();
+    const { taskId, stepId } = await withTenant(pools, ctx, async (tx) => {
+      const created = await createTask(
+        tx,
+        ctx,
+        {
+          agent: 'claims',
+          kind: 'claim_packet',
+          title: 'Build the claim packet',
+          subjectType: 'job',
+          subjectId: id,
+          mode: 'live',
+          steps: [{ type: 'build_claim_packet', payload: { jobId: id } }],
+        },
+        { now, ip: null, allowInternalStepTypes: true },
+      );
+      await updateTask(tx, ctx, created.taskId, { status: 'running' }, now);
+      const [step] = await listSteps(tx, ctx, [created.taskId]);
+      if (!step) throw new Error('The claim packet step was not saved.');
+      await moveStep(tx, ctx, step.id, ['pending'], { status: 'queued', approvedAt: now }, now);
+      return { taskId: created.taskId, stepId: step.id };
+    });
+    await runStep(deps, ctx.companyId, stepId);
+
+    const after = await withTenant(pools, ctx, async (tx) => ({
+      claim: await getJobClaim(tx, ctx, id),
+      steps: await listSteps(tx, ctx, [taskId]),
+    }));
+    const packet = after.claim?.packet ?? null;
+    if (packet === null || packet.storedFileId === visible.packet?.storedFileId) {
+      const errorPlain = after.steps.find((s) => s.id === stepId)?.errorPlain ?? null;
+      if (errorPlain === NO_STORAGE) throw new AppError(503, NO_STORAGE);
+      throw new AppError(500, errorPlain ?? PACKET_FAILED);
+    }
+    res.status(200).json({ packet });
+  });
+
+  // G1 Task 7: the newest packet, streamed.
+  router.get('/packet', async (req, res) => {
+    const { ctx } = req;
+    const id = jobId(paramsOf(req).jobId);
+    const found = await withTenant(pools, ctx, async (tx) => {
+      const view = await getJobClaim(tx, ctx, id);
+      if (!view) return 'no_job' as const;
+      if (view.claim === null) return null;
+      return latestClaimPacket(tx, ctx, view.claim.id);
+    });
+    if (found === 'no_job') throw new AppError(404, NO_JOB);
+    if (found === null) throw new AppError(404, NO_PACKET);
+    let bytes: Uint8Array | null;
+    try {
+      bytes = await deps.objectStore.get(found.objectKey);
+    } catch (err) {
+      if (err instanceof ObjectStoreUnavailableError) throw new AppError(503, NO_STORAGE);
+      throw err;
+    }
+    if (bytes === null) throw new AppError(404, NO_PACKET);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="claim-packet.pdf"');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(Buffer.from(bytes));
   });
 
   return router;

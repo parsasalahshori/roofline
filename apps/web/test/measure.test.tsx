@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
+import { estimator } from '../src/copy/estimator.ts';
 import { legal } from '../src/copy/legal.ts';
 import { measure } from '../src/copy/measure.ts';
 import { closeDrawing, deleteCorner, insertCorner, moveCorner, nudgeCorner } from '../src/features/measure/OutlineEditor.ts';
@@ -131,21 +132,22 @@ type Call = { key: string; body: unknown };
 let calls: Call[];
 let current: MeasurementView;
 let patchStatus: number;
+let buildStatus: number;
 const sent = (key: string) => calls.filter((c) => c.key === key).map((c) => c.body as Record<string, unknown>);
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function renderWindow() {
+function renderWindow(state?: unknown) {
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
   const router = createMemoryRouter(
     [
       { path: 'estimator/measure/:measurementId', element: <MeasureWindow /> },
-      { path: 'estimator/proposals/:id', element: <p>Proposal page</p> },
+      { path: 'approvals/:id', element: <p>Approval page</p> },
     ],
-    { initialEntries: ['/estimator/measure/m1'] },
+    { initialEntries: [{ pathname: '/estimator/measure/m1', state }] },
   );
   render(
     <Providers client={queryClient}>
@@ -156,9 +158,9 @@ function renderWindow() {
 }
 
 /** Renders, waits for the numbers, and starts the map (a real map emits load once). */
-async function open(over: Partial<MeasurementView> = {}) {
+async function open(over: Partial<MeasurementView> = {}, state?: unknown) {
   current = view(over);
-  const router = renderWindow();
+  const router = renderWindow(state);
   await screen.findByText(measure.numbersTitle);
   await waitFor(() => expect(fake.FakeMap.instances.length).toBeGreaterThan(0));
   mapEmit('load');
@@ -178,6 +180,7 @@ function mouse(target: EventTarget, type: string, x: number, y: number) {
 beforeEach(() => {
   calls = [];
   patchStatus = 200;
+  buildStatus = 201;
   fake.FakeMap.instances.length = 0;
   vi.stubEnv('VITE_MAPTILER_KEY', '');
   vi.stubEnv('VITE_MAP_TILES', '');
@@ -194,7 +197,8 @@ beforeEach(() => {
         return json(current);
       }
       if (key === 'POST /api/measurements/m1/exact-report') return json({ taskId: 't1' }, 201);
-      if (key === 'POST /api/proposals') return json({ id: 'pr1' }, 201);
+      if (key === 'POST /api/proposals') return buildStatus === 201 ? json({ id: 'pr1' }, 201) : json({ error: 'boom' }, buildStatus);
+      if (key === 'POST /api/proposals/pr1/send') return json({ taskId: 't9' });
       return json({ error: `Unexpected ${key}` }, 500);
     }),
   );
@@ -413,10 +417,51 @@ describe('measure window', () => {
     expect(await screen.findByText(measure.locked)).toBeTruthy();
   });
 
-  it('Make proposal posts the measurement id and opens the proposal', async () => {
+  it('Make proposal builds, sends and lands on the approval', async () => {
     const router = await open();
     fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
-    await waitFor(() => expect(sent('POST /api/proposals')).toEqual([{ measurementId: 'm1' }]));
-    await waitFor(() => expect(router.state.location.pathname).toBe('/estimator/proposals/pr1'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/approvals/t9'));
+    expect(sent('POST /api/proposals')).toEqual([{ measurementId: 'm1' }]);
+    expect(sent('POST /api/proposals/pr1/send')).toHaveLength(1);
+  });
+
+  it('a double click builds and sends once', async () => {
+    const router = await open();
+    const button = screen.getByRole('button', { name: measure.makeProposal });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/approvals/t9'));
+    expect(sent('POST /api/proposals')).toHaveLength(1);
+    expect(sent('POST /api/proposals/pr1/send')).toHaveLength(1);
+  });
+
+  it('router state with a job id sends it with the build', async () => {
+    const router = await open({}, { jobId: 'j1' });
+    fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/approvals/t9'));
+    expect(sent('POST /api/proposals')).toEqual([{ measurementId: 'm1', jobId: 'j1' }]);
+  });
+
+  it('router state with a customer sends it with the build', async () => {
+    const customer = { name: 'Dana Fox', phone: '5125550100', askedByText: true };
+    const router = await open({}, { customer });
+    fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/approvals/t9'));
+    expect(sent('POST /api/proposals')).toEqual([{ measurementId: 'm1', customer }]);
+  });
+
+  it('router state of the wrong shape is ignored', async () => {
+    const router = await open({}, { jobId: 7, customer: { name: 'Dana' } });
+    fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/approvals/t9'));
+    expect(sent('POST /api/proposals')).toEqual([{ measurementId: 'm1' }]);
+  });
+
+  it('a failed build shows the failure copy and stays on the window', async () => {
+    buildStatus = 500;
+    const router = await open();
+    fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
+    expect(await screen.findByText(estimator.makeFailed)).toBeTruthy();
+    expect(router.state.location.pathname).toBe('/estimator/measure/m1');
   });
 });

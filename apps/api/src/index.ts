@@ -44,6 +44,21 @@ export {
 } from './providers/exact-reports.ts';
 export { type FootprintFeature, type FootprintSource, createFootprintSource } from './providers/footprints.ts';
 export { type ObjectStore, createObjectStore } from './providers/object-store.ts';
+export {
+  type AdCreate,
+  type AdErrorKind,
+  AdPlatformError,
+  type AdsGoogle,
+  type AdStats,
+  type Circle,
+} from './providers/ads-google.ts';
+export { type AdsMeta, type MetaCreate } from './providers/ads-meta.ts';
+export { type BroadcastMail, type BroadcastMailer } from './providers/broadcast.ts';
+export { type AdImageRenderer } from './providers/ad-image.ts';
+export { FakeAdsGoogle } from './providers/fakes/ads-google.ts';
+export { FakeAdsMeta } from './providers/fakes/ads-meta.ts';
+export { FakeBroadcastMailer } from './providers/fakes/broadcast.ts';
+export { FakeAdImageRenderer } from './providers/fakes/ad-image.ts';
 export { FakeAerialMeasure } from './providers/fakes/aerial.ts';
 export { FakeExactReports } from './providers/fakes/exact-reports.ts';
 export { FakeFootprintSource } from './providers/fakes/footprints.ts';
