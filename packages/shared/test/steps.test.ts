@@ -270,23 +270,23 @@ describe('demo message and spend details', () => {
 describe('minutesSaved', () => {
   test('the demo steps save 5 minutes whatever the result', () => {
     for (const type of ['demo_noop', 'demo_message', 'demo_spend'] as const) {
-      expect(stepTypes[type].minutesSaved({}, { ok: 1 })).toBe(5);
+      expect(stepMinutes(stepTypes[type], {}, { ok: 1 }).minutes).toBe(5);
     }
   });
 
   test('send_sms_batch saves 1.5 minutes per text sent, at most 120', () => {
     const p = sms.payload.parse(payload());
-    expect(sms.minutesSaved(p, { sent: 10 })).toBe(15);
-    expect(sms.minutesSaved(p, { sent: 80 })).toBe(120);
-    expect(sms.minutesSaved(p, { sent: 5000 })).toBe(120);
-    expect(sms.minutesSaved(p, { sent: 0 })).toBe(0);
+    expect(stepMinutes(sms, p, { sent: 10 }).minutes).toBe(15);
+    expect(stepMinutes(sms, p, { sent: 80 }).minutes).toBe(120);
+    expect(stepMinutes(sms, p, { sent: 5000 }).minutes).toBe(120);
+    expect(stepMinutes(sms, p, { sent: 0 }).minutes).toBe(0);
   });
 
   test('send_sms_batch saves nothing when the result has no usable "sent" count', () => {
     const p = sms.payload.parse(payload());
-    expect(sms.minutesSaved(p, {})).toBe(0);
-    expect(sms.minutesSaved(p, { sent: { a: 1 } })).toBe(0);
-    expect(sms.minutesSaved(p, { sent: -4 })).toBe(0);
+    expect(stepMinutes(sms, p, {}).minutes).toBe(0);
+    expect(stepMinutes(sms, p, { sent: { a: 1 } }).minutes).toBe(0);
+    expect(stepMinutes(sms, p, { sent: -4 }).minutes).toBe(0);
   });
 });
 
@@ -373,12 +373,5 @@ describe('baselines, units and user-creatable step types', () => {
   test('stepMinutes ignores overrides for the hidden demo key', () => {
     const p = stepTypes.demo_noop.payload.parse({ label: 'x' });
     expect(stepMinutes(stepTypes.demo_noop, p, {}, { demo: 1 } as Partial<Record<'demo', number>>).minutes).toBe(5);
-  });
-
-  test('the compatibility minutesSaved matches stepMinutes with default minutes', () => {
-    for (const [type, p, result] of SAMPLES) {
-      const parsed = stepTypes[type].payload.parse(p);
-      expect(stepTypes[type].minutesSaved(parsed, result), type).toBe(stepMinutes(stepTypes[type], parsed, result).minutes);
-    }
   });
 });

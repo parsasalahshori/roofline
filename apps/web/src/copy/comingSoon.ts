@@ -4,6 +4,5 @@ import type { ComingSoonKey } from '../shell/apps.ts';
 export const comingSoon: Record<ComingSoonKey, string> = {
   storm: 'Hail maps and storm plans are coming soon.',
   estimator: 'Roof estimates and proposals are coming soon.',
-  agents: 'The record of what your agents did is coming soon.',
   approvals: 'The plans waiting for your OK are coming soon.',
 };

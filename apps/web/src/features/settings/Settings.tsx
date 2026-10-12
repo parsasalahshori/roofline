@@ -7,6 +7,7 @@ import { BillingTab } from '../billing/BillingTab.tsx';
 import { FrontDeskTab } from '../front-desk/settings/FrontDeskTab.tsx';
 import { ProfileTab } from '../front-desk/settings/ProfileTab.tsx';
 import { SetupTab } from '../setup/SetupTab.tsx';
+import { AgentsTab } from './AgentsTab.tsx';
 import { CompanyTab } from './CompanyTab.tsx';
 import { ConnectionsTab } from './ConnectionsTab.tsx';
 import { PricesTab } from './PricesTab.tsx';
@@ -29,6 +30,7 @@ export function Settings({ subpage }: { subpage?: ReactNode } = {}) {
   if (!isSettingsTab(tab)) return <Navigate to="/settings/company" replace />;
   if (tab === 'prices' && role === 'rep') return <Navigate to="/settings/company" replace />;
   if (tab === 'front-desk' && role === 'rep') return <Navigate to="/settings/company" replace />;
+  if (tab === 'agents' && role === 'rep') return <Navigate to="/settings/company" replace />;
 
   return (
     <>
@@ -77,5 +79,7 @@ function renderPanel(tab: SettingsTab, subpage: ReactNode, roleKnown: boolean) {
       return roleKnown ? <FrontDeskTab /> : null;
     case 'profile':
       return <ProfileTab />;
+    case 'agents':
+      return roleKnown ? <AgentsTab /> : null;
   }
 }

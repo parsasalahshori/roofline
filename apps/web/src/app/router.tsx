@@ -1,5 +1,9 @@
 import { createBrowserRouter, createMemoryRouter, Navigate, type RouteObject } from 'react-router';
 import { setUnauthorizedHandler } from '../api/client.ts';
+import { AgentRoute } from '../features/agents/AgentPage.tsx';
+import { AgentsWindow } from '../features/agents/AgentsWindow.tsx';
+import { FeedWindow } from '../features/agents/FeedWindow.tsx';
+import { WaitingWindow } from '../features/agents/WaitingWindow.tsx';
 import { ApprovalsList } from '../features/approvals/ApprovalsList.tsx';
 import { AppointmentWindow } from '../features/appointments/AppointmentWindow.tsx';
 import { CalendarWindow } from '../features/calendar/CalendarWindow.tsx';
@@ -80,7 +84,10 @@ const routes: RouteObject[] = [
           { path: 'estimator', element: <AppWindow app="estimator"><EstimatorWindow /></AppWindow> },
           { path: 'estimator/measure/:measurementId', element: <AppWindow app="estimator"><MeasureWindow /></AppWindow> },
           { path: 'estimator/proposals/:proposalId', element: <AppWindow app="estimator"><ProposalWindow /></AppWindow> },
-          { path: 'agents/*', element: comingSoonWindow('agents') },
+          { path: 'agents', element: <AppWindow app="agents"><AgentsWindow /></AppWindow> },
+          { path: 'agents/feed', element: <AppWindow app="agents"><FeedWindow /></AppWindow> },
+          { path: 'agents/waiting', element: <AppWindow app="agents"><WaitingWindow /></AppWindow> },
+          { path: 'agents/:agent', element: <AgentRoute /> },
           { path: 'jobs', element: <AppWindow app="jobs"><JobsWindow /></AppWindow> },
           { path: 'jobs/new', element: <AppWindow app="jobs"><NewJob /></AppWindow> },
           { path: 'jobs/:jobId', element: <AppWindow app="jobs"><JobWindow /></AppWindow> },

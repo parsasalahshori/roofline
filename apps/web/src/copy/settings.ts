@@ -18,6 +18,7 @@ export const settings = {
     billing: 'Billing',
     setup: 'Setup',
     'front-desk': 'Front Desk',
+    agents: 'Agents',
     profile: 'Your profile',
   } satisfies Record<SettingsTab, string>,
 
