@@ -3,6 +3,7 @@ import {
   claimAdCampaign,
   coverCircles,
   ensureStormPage,
+  extendStormPageUntil,
   getAdAccountByPlatform,
   getAdCampaignByStep,
   getCompanyName,
@@ -39,8 +40,14 @@ export const NOT_APPROVED = 'This ad was not approved. Ask the owner to approve 
 const NO_BUDGET = 'The most to spend is too small for that many days. Raise it or pick fewer days.';
 const NO_AREA = "We couldn't find a hail area to show this ad in.";
 const NO_STORM = "We couldn't find that storm. Please make this plan again.";
+export const NO_LANDING_PAGES = 'Storm landing pages are not set up yet.';
 
-/** The same five sentences as apps/web/src/copy (the API cannot import web copy). */
+/**
+ * The same five sentences as `adErrorCopy` in apps/web/src/copy/connections.ts; keep the two in sync.
+ * The API cannot import apps/web, and these sentences name the ad platform, which the copy rules
+ * (apps/web/test/copy-rules.test.ts) allow only in the web copy files (auth, billing, connections, legal,
+ * setup), so they cannot move to packages/shared. The API therefore keeps its own copy.
+ */
 export const AD_ERROR_COPY: Record<AdErrorKind, string> = {
   policy: "Google didn't approve the ad. Edit the words and try again.",
   payment: 'The ad account has a payment problem. Fix it in Google Ads.',
@@ -150,11 +157,21 @@ export const createAdCampaignHandler: StepHandler = async (deps: AppDeps, ctx: T
   }
   if (circles.length === 0) return attention(NO_AREA);
 
+  // The landing page lives on the company host. Without POLICY_PAGES_DOMAIN there is none, so stop before
+  // any page or platform call (the app host's /storm/:id is the SPA route, not the landing page).
+  const origin = companyOriginFor(deps.config, slug);
+  if (origin === null) return attention(NO_LANDING_PAGES);
+
   const startDate = localDate(now, timezone);
   const endDate = addDays(startDate, p.days - 1);
-  // The landing page is Task 20's: ensureStormPage owns the code and the active-until rule.
-  const page = await withTenant(deps.pools, ctx, (tx) => ensureStormPage(tx, ctx, { companyStormId, now }));
-  const landingUrl = `${companyOriginFor(deps.config, slug) ?? deps.config.PUBLIC_BASE_URL}/storm/${page.code}`;
+  // The landing page is Task 20's: ensureStormPage owns the code and the first active-until rule. The page
+  // must outlive the campaign: it is kept live until the day after the campaign's end date (only extended).
+  const page = await withTenant(deps.pools, ctx, async (tx) => {
+    const ensured = await ensureStormPage(tx, ctx, { companyStormId, now });
+    await extendStormPageUntil(tx, ctx, ensured.id, new Date(`${addDays(endDate, 1)}T00:00:00Z`));
+    return ensured;
+  });
+  const landingUrl = `${origin}/storm/${page.code}`;
 
   const creative: Record<string, unknown> = {
     headline: p.headline,

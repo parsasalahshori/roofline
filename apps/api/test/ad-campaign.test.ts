@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 
 import type { StepRow } from '@roofline/db';
 import { insertOmahaStorm, type Query } from '@roofline/db/testing';
 import { companyOriginFor } from '../src/public/storm-requests.ts';
-import { createAdCampaignHandler, NOT_APPROVED } from '../src/storm/ad-campaign.ts';
+import { createAdCampaignHandler, NO_LANDING_PAGES, NOT_APPROVED } from '../src/storm/ad-campaign.ts';
 import { Actors } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { agentCtx, dbSteps, enqueued, newTask, seenOf, setStep } from './task-helpers.ts';
@@ -82,7 +82,7 @@ async function expectLandingUrl(row: CampaignRow) {
   const pages = await q(`select code from storm_pages where company_id = $1 and company_storm_id = $2`, [companyA(), companyStormId]);
   expect(pages).toHaveLength(1);
   const [co] = await q(`select slug from companies where id = $1`, [companyA()]);
-  const origin = companyOriginFor(t.deps.config, String(co!.slug)) ?? t.deps.config.PUBLIC_BASE_URL;
+  const origin = companyOriginFor(t.deps.config, String(co!.slug))!;
   expect(row.creative.landingUrl).toBe(`${origin}/storm/${String(pages[0]!.code)}`);
 }
 
@@ -103,6 +103,31 @@ const campaignRow = async (stepId: string) =>
 const methods = (calls: { method: string }[]) => calls.map((c) => c.method);
 
 describe('create_ad_campaign', () => {
+  test('the landing page outlives the campaign and is never shortened', async () => {
+    // A 60-day campaign from 2026-10-12 ends 2026-12-10; the page (convective day + 30) would end earlier.
+    const long = await makeStep('google', { days: 60, maxSpendCents: 60000 });
+    expect((await run(long)).status).toBe('done');
+    const until = async () =>
+      new Date(String((await q(`select active_until from storm_pages where company_id = $1`, [companyA()]))[0]!.active_until)).toISOString();
+    expect(await until()).toBe('2026-12-11T00:00:00.000Z');
+
+    // A later, shorter campaign for the same storm leaves it alone.
+    const short = await makeStep('meta', { days: 3, maxSpendCents: 3000 });
+    expect((await run(short)).status).toBe('done');
+    expect(await until()).toBe('2026-12-11T00:00:00.000Z');
+  });
+
+  test('without a landing pages domain the step needs attention before any platform call', async () => {
+    const step = await makeStep('google');
+    const deps = { ...t.deps, config: { ...t.deps.config, POLICY_PAGES_DOMAIN: undefined } };
+    const outcome = await createAdCampaignHandler(deps, agentCtx(companyA()), step);
+    expect(outcome.status).toBe('needs_attention');
+    expect(outcome.errorPlain).toBe(NO_LANDING_PAGES);
+    expect(t.adsGoogle.calls).toEqual([]);
+    expect(t.adsMeta.calls).toEqual([]);
+    expect(await q(`select 1 from ad_campaigns where company_id = $1`, [companyA()])).toHaveLength(0);
+  });
+
   test('google happy path: one paused campaign, enabled, within the approved maximum', async () => {
     const step = await makeStep('google');
     const outcome = await run(step);
