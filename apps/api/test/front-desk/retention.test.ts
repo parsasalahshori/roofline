@@ -173,16 +173,22 @@ describe('Front Desk retention', () => {
     expect((await turnRow(a, freshSpamTurn)).text).toBe('my roof is leaking');
   });
 
-  test('recording_retention_days = 0 sweeps nothing', async () => {
+  test('recording_retention_days = 0 expires every existing recording now, spam or not', async () => {
     const a = t.seed.a.companyId;
     await setRetention(a, 0, 365);
     const old = await addCall(a, { startedAt: ago(400 * DAY) });
+    const recent = await addCall(a, { startedAt: ago(60_000) });
+    const spam = await addCall(a, { startedAt: ago(60_000), spamReason: 'assistant_spam' });
+    const testCall = await addCall(a, { startedAt: ago(DAY), conversationId: null, fromE164: TEST_CALLER });
     const result = await sweepCompanyRetention(t.deps, a, NOW);
-    expect(result.recordingsDeleted).toBe(0);
-    const row = await callRow(a, old.id);
-    expect(row.recordingStatus).toBe('stored');
-    expect(row.recordingKey).toBe(old.key);
-    expect(deletes()).toHaveLength(0);
+    expect(result.recordingsDeleted).toBe(3);
+    for (const call of [old, recent, spam]) {
+      const row = await callRow(a, call.id);
+      expect(row.recordingStatus).toBe('deleted');
+      expect(row.recordingKey).toBeNull();
+      expect(deletes()).toContainEqual({ method: 'delete', key: call.key });
+    }
+    expect((await callRow(a, testCall.id)).recordingStatus).toBe('stored');
   });
 
   test('turn text is blanked, metadata and summaries kept', async () => {

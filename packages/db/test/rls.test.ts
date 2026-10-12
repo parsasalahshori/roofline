@@ -1305,3 +1305,379 @@ describe('front desk tables', () => {
     );
   });
 });
+
+/**
+ * D1 tables (security finding 36, as finding 22 did for C1 and E1). Each case makes one row for a
+ * company as the owner (with the parents it needs, all in that company) and names a column the tenant
+ * role may set. Company A's session must not read, change or delete B's row, must not move its own row
+ * to B, and must not insert a row carrying B's company_id. Column-level grants are respected: app_tenant
+ * holds no UPDATE on conversation_turns.company_id, so moving a turn is refused by the grant itself.
+ */
+describe('app_tenant isolation on the D1 tables', () => {
+  type Case = {
+    table: string;
+    /** The insert statement and its values for `company`, its parents made first. */
+    insert: (company: SeededCompany) => Promise<{ text: string; values: unknown[] }>;
+    /** A column assignment the tenant role is allowed to make. */
+    set: string;
+    /** app_tenant holds DELETE on the table. */
+    deletable: boolean;
+    /** app_tenant may UPDATE company_id (else the grant refuses the move). */
+    movable: boolean;
+  };
+
+  let phoneSeq = 0;
+  const nextPhone = () => `+1402557${String(1000 + ++phoneSeq)}`;
+
+  const CASES: Case[] = [
+    {
+      table: 'conversations',
+      insert: async (c) => ({
+        text: `insert into conversations (company_id, channel, phone_e164, company_number_e164)
+               values ($1, 'sms', $2, '+14025550100') returning id`,
+        values: [c.companyId, nextPhone()],
+      }),
+      set: `summary = 'changed'`,
+      deletable: false,
+      movable: true,
+    },
+    {
+      table: 'calls',
+      insert: async (c) => ({
+        text: `insert into calls (company_id, call_sid, from_e164, to_e164) values ($1, $2, $3, '+14025550100') returning id`,
+        values: [c.companyId, callSidFor(c.companyId), nextPhone()],
+      }),
+      set: `status = 'ended'`,
+      deletable: false,
+      movable: true,
+    },
+    {
+      table: 'conversation_turns',
+      insert: async (c) => ({
+        text: `insert into conversation_turns (company_id, conversation_id, position, speaker, text)
+               values ($1, $2, 1, 'caller', 'Hi') returning id`,
+        values: [c.companyId, await insertConversation(c.companyId, 'voice', nextPhone())],
+      }),
+      set: `text = 'changed'`,
+      deletable: false,
+      movable: false,
+    },
+    {
+      table: 'claim_intakes',
+      insert: async (c) => ({
+        text: `insert into claim_intakes (company_id, insurer, description, taken_by)
+               values ($1, 'State Farm', 'Hail on the north slope', 'front_desk') returning id`,
+        values: [c.companyId],
+      }),
+      set: `insurer = 'Changed'`,
+      deletable: false,
+      movable: true,
+    },
+    {
+      table: 'blocked_numbers',
+      insert: async (c) => ({
+        text: `insert into blocked_numbers (company_id, e164) values ($1, $2) returning id`,
+        values: [c.companyId, nextPhone()],
+      }),
+      set: `reason = 'changed'`,
+      deletable: true,
+      movable: true,
+    },
+  ];
+
+  test('every case is a tenant table', () => {
+    for (const c of CASES) expect(TENANT_TABLES as readonly string[], c.table).toContain(c.table);
+  });
+
+  async function rowFor(c: Case, company: SeededCompany): Promise<string> {
+    const { text, values } = await c.insert(company);
+    const [row] = await ownerQuery<{ id: string }>(text, values);
+    return row!.id;
+  }
+
+  /** The row as the owner sees it, to show a refused write changed nothing. */
+  const ownerRow = (c: Case, id: string) => ownerQuery(`select * from ${c.table} where id = $1`, [id]);
+
+  test.each(CASES.map((c) => [c.table, c] as const))("%s: company A reads only its own rows, never B's by id", async (_t, c) => {
+    const aId = await rowFor(c, seed.a);
+    const bId = await rowFor(c, seed.b);
+    expect(await tenantRaw(`select id, company_id from ${c.table}`, { companyId: seed.a.companyId })).toEqual([
+      { id: aId, company_id: seed.a.companyId },
+    ]);
+    expect(
+      await tenantRaw(`select id from ${c.table} where id = $1`, { companyId: seed.a.companyId, values: [bId] }),
+    ).toEqual([]);
+    expect(
+      await tenantRaw(`select id from ${c.table} where company_id = $1`, {
+        companyId: seed.a.companyId,
+        values: [seed.b.companyId],
+      }),
+    ).toEqual([]);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))("%s: company A cannot change or delete B's row", async (_t, c) => {
+    await rowFor(c, seed.a);
+    const bId = await rowFor(c, seed.b);
+    const before = await ownerRow(c, bId);
+    expect(
+      await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
+        companyId: seed.a.companyId,
+        values: [bId],
+      }),
+    ).toEqual([]);
+    if (c.deletable) {
+      expect(
+        await tenantRaw(`delete from ${c.table} where id = $1 returning id`, { companyId: seed.a.companyId, values: [bId] }),
+      ).toEqual([]);
+    }
+    expect(await ownerRow(c, bId)).toEqual(before);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))('%s: company A can change its own row (the control)', async (_t, c) => {
+    const aId = await rowFor(c, seed.a);
+    expect(
+      await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
+        companyId: seed.a.companyId,
+        values: [aId],
+      }),
+    ).toEqual([{ id: aId }]);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))('%s: company A cannot move its own row to B', async (_t, c) => {
+    const aId = await rowFor(c, seed.a);
+    const before = await ownerRow(c, aId);
+    let error: unknown;
+    try {
+      await tenantRaw(`update ${c.table} set company_id = $1 where id = $2`, {
+        companyId: seed.a.companyId,
+        values: [seed.b.companyId, aId],
+      });
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toBeInstanceOf(pg.DatabaseError);
+    const { code, message } = error as pg.DatabaseError;
+    if (c.movable) {
+      // RLS's WITH CHECK refuses it; a same-company foreign key may refuse it first.
+      expect(code === '23503' || /row-level security/.test(message)).toBe(true);
+    } else {
+      expect(code).toBe('42501');
+    }
+    expect(await ownerRow(c, aId)).toEqual(before);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))("%s: company A cannot insert a row with B's company_id", async (_t, c) => {
+    // B's parents exist (made by the owner), so only row-level security stands in the way.
+    const { text, values } = await c.insert(seed.b);
+    await expect(tenantRaw(text, { companyId: seed.a.companyId, values })).rejects.toThrow(/row-level security/);
+    expect(await ownerQuery(`select count(*)::int n from ${c.table}`)).toEqual([{ n: 0 }]);
+  });
+
+  // Cross-company references: a company-A row pointing at a company-B parent. The composite
+  // (company_id, id) foreign keys refuse it (23503); RLS may refuse it first.
+  async function callFor(companyId: string): Promise<string> {
+    const [row] = await ownerQuery<{ id: string }>(
+      `insert into calls (company_id, call_sid, from_e164, to_e164) values ($1, $2, $3, '+14025550100') returning id`,
+      [companyId, callSidFor(companyId), nextPhone()],
+    );
+    return row!.id;
+  }
+
+  async function jobFor(companyId: string): Promise<string> {
+    const customer = await insertCustomer(companyId, 'Job Owner');
+    const property = await insertProperty(companyId, customer, `${companyId}|68102`);
+    const [row] = await ownerQuery<{ id: string }>(
+      `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3) returning id`,
+      [companyId, customer, property],
+    );
+    return row!.id;
+  }
+
+  async function messageFor(companyId: string): Promise<string> {
+    const [row] = await ownerQuery<{ id: string }>(
+      `insert into messages (company_id, channel, direction, body, status) values ($1, 'sms', 'out', 'Hi', 'sent') returning id`,
+      [companyId],
+    );
+    return row!.id;
+  }
+
+  async function claimFor(companyId: string): Promise<string> {
+    const [row] = await ownerQuery<{ id: string }>(
+      `insert into claim_intakes (company_id, insurer, description, taken_by)
+       values ($1, 'State Farm', 'Hail', 'front_desk') returning id`,
+      [companyId],
+    );
+    return row!.id;
+  }
+
+  type FkCase = {
+    name: string;
+    /** Makes A's and B's rows as the owner; returns the tenant statement A runs and a check that nothing was written. */
+    attempt: () => Promise<{ text: string; values: unknown[]; unchanged: () => Promise<void> }>;
+  };
+
+  const turnCount = async () => (await ownerQuery<{ n: number }>(`select count(*)::int n from conversation_turns`))[0]!.n;
+  const columnOf = async (table: string, column: string, id: string) =>
+    (await ownerQuery<Record<string, unknown>>(`select ${column} as v from ${table} where id = $1`, [id]))[0]!['v'];
+
+  const FK_CASES: FkCase[] = [
+    {
+      name: "conversation_turns.conversation_id (insert) to B's conversation",
+      attempt: async () => {
+        const bConversation = await insertConversation(seed.b.companyId, 'voice', nextPhone());
+        return {
+          text: `insert into conversation_turns (company_id, conversation_id, position, speaker, text) values ($1, $2, 1, 'caller', 'Hi')`,
+          values: [seed.a.companyId, bConversation],
+          unchanged: async () => expect(await turnCount()).toBe(0),
+        };
+      },
+    },
+    {
+      name: "conversation_turns.call_id (insert) to B's call",
+      attempt: async () => {
+        const aConversation = await insertConversation(seed.a.companyId, 'voice', nextPhone());
+        const bCall = await callFor(seed.b.companyId);
+        return {
+          text: `insert into conversation_turns (company_id, conversation_id, call_id, position, speaker, text)
+                 values ($1, $2, $3, 1, 'caller', 'Hi')`,
+          values: [seed.a.companyId, aConversation, bCall],
+          unchanged: async () => expect(await turnCount()).toBe(0),
+        };
+      },
+    },
+    {
+      name: "claim_intakes.job_id (insert) to B's job",
+      attempt: async () => {
+        const bJob = await jobFor(seed.b.companyId);
+        return {
+          text: `insert into claim_intakes (company_id, job_id, insurer, description, taken_by) values ($1, $2, 'X', 'Hail', 'front_desk')`,
+          values: [seed.a.companyId, bJob],
+          unchanged: async () =>
+            expect(await ownerQuery(`select count(*)::int n from claim_intakes where company_id = $1`, [seed.a.companyId])).toEqual([{ n: 0 }]),
+        };
+      },
+    },
+    {
+      name: "claim_intakes.job_id (update) to B's job",
+      attempt: async () => {
+        const aClaim = await claimFor(seed.a.companyId);
+        const bJob = await jobFor(seed.b.companyId);
+        return {
+          text: `update claim_intakes set job_id = $1 where id = $2`,
+          values: [bJob, aClaim],
+          unchanged: async () => expect(await columnOf('claim_intakes', 'job_id', aClaim)).toBeNull(),
+        };
+      },
+    },
+    {
+      name: "claim_intakes.conversation_id (insert) to B's conversation",
+      attempt: async () => {
+        const bConversation = await insertConversation(seed.b.companyId, 'voice', nextPhone());
+        return {
+          text: `insert into claim_intakes (company_id, conversation_id, insurer, description, taken_by) values ($1, $2, 'X', 'Hail', 'front_desk')`,
+          values: [seed.a.companyId, bConversation],
+          unchanged: async () =>
+            expect(await ownerQuery(`select count(*)::int n from claim_intakes where company_id = $1`, [seed.a.companyId])).toEqual([{ n: 0 }]),
+        };
+      },
+    },
+    {
+      name: "claim_intakes.conversation_id (update) to B's conversation",
+      attempt: async () => {
+        const aClaim = await claimFor(seed.a.companyId);
+        const bConversation = await insertConversation(seed.b.companyId, 'voice', nextPhone());
+        return {
+          text: `update claim_intakes set conversation_id = $1 where id = $2`,
+          values: [bConversation, aClaim],
+          unchanged: async () => expect(await columnOf('claim_intakes', 'conversation_id', aClaim)).toBeNull(),
+        };
+      },
+    },
+    {
+      name: "calls.text_back_message_id (update) to B's message",
+      attempt: async () => {
+        const aCall = await callFor(seed.a.companyId);
+        const bMessage = await messageFor(seed.b.companyId);
+        return {
+          text: `update calls set text_back_message_id = $1 where id = $2`,
+          values: [bMessage, aCall],
+          unchanged: async () => expect(await columnOf('calls', 'text_back_message_id', aCall)).toBeNull(),
+        };
+      },
+    },
+    {
+      name: "calls.text_back_message_id (insert) to B's message",
+      attempt: async () => {
+        const bMessage = await messageFor(seed.b.companyId);
+        return {
+          text: `insert into calls (company_id, call_sid, from_e164, to_e164, text_back_message_id) values ($1, $2, $3, '+14025550100', $4)`,
+          values: [seed.a.companyId, callSidFor(seed.a.companyId), nextPhone(), bMessage],
+          unchanged: async () =>
+            expect(await ownerQuery(`select count(*)::int n from calls where company_id = $1`, [seed.a.companyId])).toEqual([{ n: 0 }]),
+        };
+      },
+    },
+    {
+      name: "messages.conversation_id (update) to B's conversation",
+      attempt: async () => {
+        const aMessage = await messageFor(seed.a.companyId);
+        const bConversation = await insertConversation(seed.b.companyId, 'sms', nextPhone());
+        return {
+          text: `update messages set conversation_id = $1 where id = $2`,
+          values: [bConversation, aMessage],
+          unchanged: async () => expect(await columnOf('messages', 'conversation_id', aMessage)).toBeNull(),
+        };
+      },
+    },
+    {
+      name: "messages.conversation_id (insert) to B's conversation",
+      attempt: async () => {
+        const bConversation = await insertConversation(seed.b.companyId, 'sms', nextPhone());
+        return {
+          text: `insert into messages (company_id, conversation_id, channel, direction, body, status) values ($1, $2, 'sms', 'in', 'Hi', 'received')`,
+          values: [seed.a.companyId, bConversation],
+          unchanged: async () =>
+            expect(await ownerQuery(`select count(*)::int n from messages where company_id = $1`, [seed.a.companyId])).toEqual([{ n: 0 }]),
+        };
+      },
+    },
+    {
+      name: "conversations.customer_id (update) to B's customer",
+      attempt: async () => {
+        const aConversation = await insertConversation(seed.a.companyId, 'sms', nextPhone());
+        const bCustomer = await insertCustomer(seed.b.companyId, 'Bob');
+        return {
+          text: `update conversations set customer_id = $1 where id = $2`,
+          values: [bCustomer, aConversation],
+          unchanged: async () => expect(await columnOf('conversations', 'customer_id', aConversation)).toBeNull(),
+        };
+      },
+    },
+    {
+      name: "conversations.customer_id (insert) to B's customer",
+      attempt: async () => {
+        const bCustomer = await insertCustomer(seed.b.companyId, 'Bob');
+        return {
+          text: `insert into conversations (company_id, customer_id, channel, phone_e164, company_number_e164) values ($1, $2, 'sms', $3, '+14025550100')`,
+          values: [seed.a.companyId, bCustomer, nextPhone()],
+          unchanged: async () =>
+            expect(await ownerQuery(`select count(*)::int n from conversations where company_id = $1`, [seed.a.companyId])).toEqual([{ n: 0 }]),
+        };
+      },
+    },
+  ];
+
+  test.each(FK_CASES.map((c) => [c.name, c] as const))('company A cannot point %s', async (_n, c) => {
+    const { text, values, unchanged } = await c.attempt();
+    let error: unknown;
+    try {
+      await tenantRaw(text, { companyId: seed.a.companyId, values });
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toBeInstanceOf(pg.DatabaseError);
+    const { code, message } = error as pg.DatabaseError;
+    expect(code === '23503' || /row-level security/.test(message)).toBe(true);
+    await unchanged();
+  });
+});

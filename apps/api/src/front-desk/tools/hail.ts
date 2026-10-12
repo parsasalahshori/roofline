@@ -1,5 +1,6 @@
-import { hailHitsForProperties, propertiesForCustomer, type TenantContext, withTenant } from '@roofline/db';
+import { hailHitsForProperties, propertiesForCustomer, withTenant } from '@roofline/db';
 import type { ToolHandler } from '../engine-types.ts';
+import { systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 7: hail_at_my_home. Verified callers only. States only what the company's radar record
@@ -12,10 +13,6 @@ const NO_CUSTOMER = "I don't have a customer record for this caller yet.";
 const NO_HOME = 'I have no home on file for this caller.';
 const NOT_SHOWN = "I can't use that home. Please pick one I have listed.";
 const NO_RECORD = `There is no hail record for the home in the last ${DAYS} days in the company's radar data. That does not mean there was or was not damage.`;
-
-function systemCtx(companyId: string): TenantContext {
-  return { companyId, userId: null, role: 'system', canApproveSpend: false };
-}
 
 function monthDay(isoDate: string): string {
   const [y, m, d] = isoDate.split('-').map(Number) as [number, number, number];

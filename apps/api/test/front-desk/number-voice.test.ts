@@ -106,6 +106,22 @@ describe('voice URL setup (D1 Task 17)', () => {
     expect(await capabilitiesOf(E164_A2)).toContain('voice_url');
   });
 
+  test('numbers that keep failing do not starve a newer one (pre-review #39)', async () => {
+    await registerSubaccount('a', SUB_A, 'token-a');
+    await addNumber('a', E164_A1, 'PN_A1', ['sms', 'voice']);
+    await addNumber('a', E164_A2, 'PN_A2', ['sms', 'voice']);
+    await addNumber('a', '+14025550204', 'PN_A4', ['sms', 'voice']);
+    t.clock.advance(60 * 60 * 1000);
+    t.callControl.failNext(2);
+    // The pass takes two: both fail and are stamped as tried.
+    expect(await repairVoiceUrls(t.deps, 2)).toEqual({ set: 0, failed: 2 });
+    t.clock.advance(2 * 60 * 1000);
+    // The next pass takes the untried number first, then one of the failed ones.
+    expect(await repairVoiceUrls(t.deps, 2)).toEqual({ set: 2, failed: 0 });
+    expect(voiceCalls()[2]!.args[1]).toBe('PN_A4');
+    expect(await capabilitiesOf('+14025550204')).toContain('voice_url');
+  });
+
   test('numbers of a company without a subaccount are skipped', async () => {
     await addNumber('b', E164_B1, 'PN_B1', ['sms', 'voice']);
 

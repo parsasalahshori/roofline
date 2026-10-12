@@ -18,9 +18,10 @@ import type { JobQueue } from '../jobs/queue.ts';
 import { buildGateRequest } from '../messaging/gate-request.ts';
 import { sendQueuedText, textStateFor } from '../messaging/outbound.ts';
 import { createEngine } from './engine.ts';
-import type { Engine, ToolHandlers } from './engine-types.ts';
+import type { Engine } from './engine-types.ts';
 import { buildCompanyBlock } from './prompt.ts';
 import { confirmByText, isConfirmShortcut } from './tools/confirm.ts';
+import { FRONT_DESK_HANDLERS } from './tools/index.ts';
 import { appendAssistant, appendUser, newConversationState } from './state.ts';
 
 /*
@@ -64,9 +65,8 @@ export async function queueFrontDeskText(_tx: Tx, message: InboundMessageRef, op
   );
 }
 
-/** No real tool handlers yet; the engine offers only TEXT_CHANNEL_TOOLS on the sms channel. */
-// TODO(Task 7/8): real tool handlers
-const TEXT_TOOL_HANDLERS: ToolHandlers = {};
+/** The engine offers only TEXT_CHANNEL_TOOLS on the sms channel. */
+const TEXT_TOOL_HANDLERS = FRONT_DESK_HANDLERS;
 
 const TEAM_QUIET_MS = 2 * 60 * 60 * 1000;
 const HISTORY_TEXTS = 20;
@@ -135,6 +135,7 @@ export async function runFrontDeskText(
       startedAt: now,
     });
     state.customerId = conversation.customerId;
+    state.toolSettings = { canMove: facts.canMove, canCancel: facts.canCancel };
     const firstUnanswered = unanswered[0]!;
     const earlier = await listConversationTexts(tx, ctx, conversationId, HISTORY_TEXTS);
     for (const text of earlier) {

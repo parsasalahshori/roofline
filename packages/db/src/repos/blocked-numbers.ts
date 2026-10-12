@@ -32,6 +32,16 @@ export async function blockNumber(
   return row;
 }
 
+/** True when `e164` is on the company's blocklist. */
+export async function isNumberBlocked(tx: Tx, ctx: TenantContext, e164: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: blockedNumbers.id })
+    .from(blockedNumbers)
+    .where(and(eq(blockedNumbers.companyId, ctx.companyId), eq(blockedNumbers.e164, e164)))
+    .limit(1);
+  return row !== undefined;
+}
+
 /** Removes one blocked number of the context's company by id. Returns false when no such row exists for this company. */
 export async function unblockNumber(tx: Tx, ctx: TenantContext, id: string): Promise<boolean> {
   const rows = await tx

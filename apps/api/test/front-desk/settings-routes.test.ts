@@ -212,6 +212,40 @@ describe('GET /api/front-desk/voices', () => {
   });
 });
 
+describe('read-only company (Ruling BG)', () => {
+  test('a read-only company can turn Front Desk off and nothing else', async () => {
+    await verify('a');
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    expect((await owner.put(SETTINGS).send(body({ enabled: true, facts: 'Before.' }))).status).toBe(200);
+    await ownerSql("update companies set status = 'trial_ended' where id = $1", [idOf('a')]);
+
+    const refused = await owner.put(SETTINGS).send(body({ enabled: true, facts: 'Changed.' }));
+    expect(refused.status).toBe(403);
+
+    const off = await owner.put(SETTINGS).send(body({ enabled: false, facts: 'Changed.', voice: 'marcus' }));
+    expect(off.status).toBe(200);
+    expect(off.body as FrontDeskSettings).toMatchObject({ enabled: false, facts: 'Before.', voice: 'claire' });
+
+    const rep = await loginAs(t.app, t.seed.a.rep);
+    expect((await rep.put(SETTINGS).send(body({ enabled: false }))).status).toBe(403);
+    expect((await owner.put(TRANSFER).send({ e164: '+14025550122', ackRecording: true })).status).toBe(403);
+  });
+});
+
+describe('business phone change (pre-review #38)', () => {
+  test('changing the business phone clears the forwarding test result; other edits keep it', async () => {
+    await verify('a');
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    expect((await owner.patch('/api/company').send({ name: 'Acme Renamed' })).status).toBe(200);
+    expect(((await owner.get(SETTINGS)).body as FrontDeskSettings).forwardingVerifiedAt).not.toBeNull();
+
+    expect((await owner.patch('/api/company').send({ phone: '(402) 555-0177' })).status).toBe(200);
+    const view = (await owner.get(SETTINGS)).body as FrontDeskSettings;
+    expect(view.forwardingVerifiedAt).toBeNull();
+    expect(view.blockedReason).toBe('forwarding_not_verified');
+  });
+});
+
 describe('/api/me/transfer-phone', () => {
   test('transfer phone: prefill from user phone, PUT needs ackRecording true, E.164 required, stores for own membership only', async () => {
     await ownerSql('update users set phone_e164 = $1 where id = $2', ['+14025550111', t.seed.a.rep.userId]);
@@ -250,6 +284,20 @@ describe('/api/me/transfer-phone', () => {
         expect(row.ack).toBeNull();
       }
     }
+  });
+
+  test('transfer phone: only a US number that is not the company own line (pre-review #13)', async () => {
+    await ownerSql('update companies set phone_e164 = $1 where id = $2', ['+14025550199', idOf('a')]);
+    const rep = await loginAs(t.app, t.seed.a.rep);
+    for (const bad of ['+18005550123', '+19005550123', '+14165550123', '+18765550123', '+442071234567', '+8821234567', A_NUMBER, '+14025550199']) {
+      const res = await rep.put(TRANSFER).send({ e164: bad, ackRecording: true });
+      expect(res.status, bad).toBe(400);
+      expect(res.body, bad).toMatchObject({ field: 'e164' });
+    }
+    expect((await rep.get(TRANSFER)).body).toMatchObject({ e164: null });
+    // A US territory number is a US number.
+    const ok = await rep.put(TRANSFER).send({ e164: '+17875550123', ackRecording: true });
+    expect(ok.status).toBe(200);
   });
 
   test('cross-tenant: a user of company B never changes company A', async () => {

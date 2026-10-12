@@ -30,7 +30,8 @@ function daysAgo(now: Date, days: number): Date {
 /**
  * Calls with recording_key not null and recording_status <> 'deleted' that are past retention:
  * started_at < now - days, where days = SPAM_RETENTION_DAYS for a spam call and recordingDays otherwise.
- * recordingDays = 0 means nothing is recorded, so non-spam calls are skipped. Forwarding-test calls
+ * recordingDays = 0 means calls are no longer recorded and existing recordings expire now: every
+ * recording of a call that started before `now` is returned, spam or not. Forwarding-test calls
  * (conversation_id null and from_e164 = testCaller, when testCaller is not null) are never returned. Oldest first.
  */
 export async function findExpiredRecordings(
@@ -38,15 +39,15 @@ export async function findExpiredRecordings(
   ctx: TenantContext,
   opts: { now: Date; recordingDays: number; testCaller: string | null; limit: number },
 ): Promise<ExpiredRecording[]> {
-  const spamDays = opts.recordingDays > 0 ? Math.min(SPAM_RETENTION_DAYS, opts.recordingDays) : SPAM_RETENTION_DAYS;
+  const recordingDays = Math.max(0, opts.recordingDays);
+  const spamDays = Math.min(SPAM_RETENTION_DAYS, recordingDays);
   const spamExpired = and(isNotNull(calls.spamReason), lt(calls.startedAt, daysAgo(opts.now, spamDays)));
-  const normalExpired =
-    opts.recordingDays > 0 ? and(isNull(calls.spamReason), lt(calls.startedAt, daysAgo(opts.now, opts.recordingDays))) : undefined;
+  const normalExpired = and(isNull(calls.spamReason), lt(calls.startedAt, daysAgo(opts.now, recordingDays)));
   const conds: (SQL | undefined)[] = [
     eq(calls.companyId, ctx.companyId),
     isNotNull(calls.recordingKey),
     ne(calls.recordingStatus, 'deleted'),
-    normalExpired ? or(spamExpired, normalExpired) : spamExpired,
+    or(spamExpired, normalExpired),
   ];
   if (opts.testCaller !== null) {
     conds.push(sql`NOT (${calls.conversationId} IS NULL AND ${calls.fromE164} = ${opts.testCaller})`);
