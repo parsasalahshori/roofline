@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import {
+  calendarBusyBlocks,
   calendarEventLinks,
   encrypt,
   getConnection,
@@ -10,7 +11,7 @@ import {
   type TenantContext,
 } from '@roofline/db';
 import { clearTokenCache } from '../src/calendar/tokens.ts';
-import type { ExternalEventInput } from '../src/providers/calendar.ts';
+import { CalendarUnavailableError, type ExternalEventInput } from '../src/providers/calendar.ts';
 import { Actors, addressFor, inCompany, mustCreate } from './crm-helpers.ts';
 import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 
@@ -207,6 +208,66 @@ describe('pushing an appointment to the assignee calendar', () => {
     expect(await links(id)).toHaveLength(0);
     expect((await viewOf(id)).sync).toBe('none');
     expect(t.jobs.errors).toEqual([]);
+  });
+});
+
+describe('races with the pull', () => {
+  test('a busy block stored for the new event before its link existed is gone once the push finishes', async () => {
+    const samConnection = await connectSam();
+    const api = t.calendars.google;
+    const realCreate = api.createEvent.bind(api);
+    const seen: string[] = [];
+    // The pull lands between the provider create and the link save: it sees an unlinked busy event and stores a block.
+    vi.spyOn(api, 'createEvent').mockImplementation(async (token, calendarId, input) => {
+      const r = await realCreate(token, calendarId, input);
+      seen.push(r.id);
+      await inCompany(t, A(), (tx) =>
+        tx.insert(calendarBusyBlocks).values({
+          companyId: A(),
+          connectionId: samConnection.id,
+          userId: sam(),
+          providerEventId: r.id,
+          startsAt: new Date(START),
+          endsAt: new Date(END),
+        }),
+      );
+      return r;
+    });
+    const id = await book(sam());
+    await drain();
+
+    expect(seen).toHaveLength(1);
+    expect((await theLink(id)).providerEventId).toBe(seen[0]);
+    const blocks = await inCompany(t, A(), (tx) => tx.select().from(calendarBusyBlocks).where(eq(calendarBusyBlocks.connectionId, samConnection.id)));
+    expect(blocks).toHaveLength(0);
+    expect(t.jobs.errors).toEqual([]);
+  });
+
+  test('on reassignment the link is gone before the remote delete runs, and a failed delete keeps the appointment scheduled', async () => {
+    await connectSam();
+    const patConnection = await connectPat();
+    const id = await book(sam());
+    await drain();
+    const before = await theLink(id);
+
+    const api = t.calendars.google;
+    const linkCountAtDelete: number[] = [];
+    vi.spyOn(api, 'deleteEvent').mockImplementationOnce(async () => {
+      linkCountAtDelete.push((await links(id)).length);
+      throw new CalendarUnavailableError('unavailable');
+    });
+    await patch(id, { assignedUserId: pat() });
+    await drain();
+
+    // The pull of Sam's calendar would have found no link for the event at the moment it was deleted.
+    expect(linkCountAtDelete).toEqual([0]);
+    expect(t.jobs.errors).toEqual([]);
+    const link = await theLink(id);
+    expect(link.connectionId).toBe(patConnection.id);
+    expect(link.providerEventId).not.toBe(before.providerEventId);
+    const owner = await who.as('owner');
+    const res = await owner.get(`/api/appointments/${id}`);
+    expect((res.body as { status: string }).status).toBe('scheduled');
   });
 });
 

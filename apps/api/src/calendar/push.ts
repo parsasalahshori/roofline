@@ -2,6 +2,7 @@ import {
   appointments,
   calendarConnections,
   companies,
+  deleteBusyBlockForEvent,
   deleteEventLink,
   getAppointmentView,
   getConnection,
@@ -16,6 +17,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import type { AppDeps } from '../app.ts';
 import type { JobMeta } from '../jobs/queue.ts';
+import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
 import { CalendarAuthError, CalendarUnavailableError, type ExternalEventInput } from '../providers/calendar.ts';
 import { eventInputFor } from './event-text.ts';
@@ -88,23 +90,33 @@ async function load(deps: AppDeps, ctx: TenantContext, appointmentId: string): P
   });
 }
 
-/** Deletes the remote event when its connection still works, then drops the link row. */
+/**
+ * Drops the link row first (committed), then deletes the remote event when its connection still works.
+ * Order matters: while the link existed, the old user's pull would see the deleted event as cancelled
+ * and cancel the live appointment. With the link gone the pull sees an unlinked cancelled event and
+ * only clears its busy block. If the remote delete then fails, the worst case is an orphan event,
+ * which the pull treats as an ordinary outside busy event; it is logged, not retried (the link, our
+ * only record of the event id, is already gone).
+ */
 async function removeRemote(deps: AppDeps, ctx: TenantContext, appointmentId: string, conn: CalendarConnectionRow | null, link: Link): Promise<void> {
+  await withTenant(deps.pools, ctx, (tx) => deleteEventLink(tx, ctx, appointmentId));
   if (conn && conn.status !== 'error' && conn.calendarId !== null) {
     try {
       await withToken(deps, ctx, conn, (token) => deps.calendars[conn.provider].deleteEvent(token, conn.calendarId!, link.providerEventId));
     } catch (err) {
-      // A dead old connection is already marked error (by accessTokenFor or withToken); its event cannot be reached, so only the link is dropped.
-      if (!(err instanceof CalendarAuthError)) throw err;
+      // A dead old connection is already marked error (by accessTokenFor or withToken); its event cannot be reached.
+      if (!(err instanceof CalendarAuthError)) reportJobError(deps, err, 'calendar/push removeRemote');
     }
   }
-  await withTenant(deps.pools, ctx, (tx) => deleteEventLink(tx, ctx, appointmentId));
 }
 
-/** Creates the remote event and records the link. */
+/** Creates the remote event and records the link. The same transaction drops any busy block the pull stored for the new event before the link existed. */
 async function createAndLink(deps: AppDeps, ctx: TenantContext, appointmentId: string, conn: CalendarConnectionRow, token: string, input: ExternalEventInput): Promise<void> {
   const r = await deps.calendars[conn.provider].createEvent(token, conn.calendarId!, input);
-  await withTenant(deps.pools, ctx, (tx) => saveEventLink(tx, ctx, { appointmentId, connectionId: conn.id, providerEventId: r.id, etag: r.etag }, deps.clock.now()));
+  await withTenant(deps.pools, ctx, async (tx) => {
+    await saveEventLink(tx, ctx, { appointmentId, connectionId: conn.id, providerEventId: r.id, etag: r.etag }, deps.clock.now());
+    await deleteBusyBlockForEvent(tx, ctx, conn.id, r.id);
+  });
 }
 
 /** Records the new etag of an event we updated. */

@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { calendarEventLinks } from '../schema/tenant.ts';
+import { calendarBusyBlocks, calendarEventLinks } from '../schema/tenant.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
 /*
@@ -46,4 +46,21 @@ export async function deleteEventLink(tx: Tx, ctx: TenantContext, appointmentId:
   await tx
     .delete(calendarEventLinks)
     .where(and(eq(calendarEventLinks.companyId, ctx.companyId), eq(calendarEventLinks.appointmentId, appointmentId)));
+}
+
+/**
+ * Drops the busy block (if any) the pull stored for an event the app itself created. The pull can see a new
+ * event before its link is saved and take it for an outside busy event; the push calls this in the same
+ * transaction as `saveEventLink`, so the appointment's own event never blocks its assignee's availability.
+ */
+export async function deleteBusyBlockForEvent(tx: Tx, ctx: TenantContext, connectionId: string, providerEventId: string): Promise<void> {
+  await tx
+    .delete(calendarBusyBlocks)
+    .where(
+      and(
+        eq(calendarBusyBlocks.companyId, ctx.companyId),
+        eq(calendarBusyBlocks.connectionId, connectionId),
+        eq(calendarBusyBlocks.providerEventId, providerEventId),
+      ),
+    );
 }
