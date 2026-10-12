@@ -1,0 +1,5 @@
+PUT
+host: acct123.r2.cloudflarestorage.com
+path: /bucket1/companies/c1/proposals/p1/signed-abc.pdf
+content-type: application/pdf
+authorization-prefix: AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/

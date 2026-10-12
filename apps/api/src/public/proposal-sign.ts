@@ -6,6 +6,7 @@ import { publicProposalState, publicProposalView, signProposal, withTenant } fro
 import { CONSENT_TEXT_V1, canonicalJson, signedDocument, type SignatureRecord } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
+import { drawnSignatureKey } from '../estimator/signed-pdf.ts';
 import { parse } from '../validate.ts';
 import { handleProposalError, publicProposalHeaders, resolveLink, tokenHashOf } from './proposal-common.ts';
 
@@ -59,18 +60,25 @@ export function proposalSignRoutes(deps: AppDeps): Router {
   router.post('/:token/sign', perToken, async (req, res, next) => {
     try {
       const body = parse(signBody, req.body);
-      let drawnHash: string | null = null;
+      let drawn: { png: Buffer; sha256: string } | null = null;
       if (body.drawnSignature !== undefined) {
         const png = Buffer.from(body.drawnSignature, 'base64');
         if (png.length < PNG_MAGIC.length || !png.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
           throw new AppError(400, DRAW_AGAIN);
         }
-        drawnHash = sha256Hex(png);
+        drawn = { png, sha256: sha256Hex(png) };
       }
+      const drawnHash = drawn?.sha256 ?? null;
 
       const now = deps.clock.now();
       const link = await resolveLink(deps, String(req.params['token'] ?? ''), now);
       const { ctx, proposalId } = link;
+
+      // The image is stored before the signature commits, so a recorded hash always has its image (the
+      // signed PDF draws it). The key is content-addressed: a retried or refused sign leaves the same object.
+      if (drawn !== null) {
+        await deps.objectStore.put(drawnSignatureKey(ctx.companyId, proposalId, drawn.sha256), drawn.png, 'image/png');
+      }
 
       const outcome = await withTenant(deps.pools, ctx, async (tx) => {
         const view = await publicProposalView(tx, ctx, proposalId, now);

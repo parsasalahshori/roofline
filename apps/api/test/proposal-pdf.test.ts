@@ -46,12 +46,13 @@ function decodeText(raw: string): string {
 }
 
 const base = (extra: Partial<ProposalPdfInput> = {}): ProposalPdfInput => ({
-  audience: 'homeowner', company: { name: 'Acme Roofing', phone: '(402) 555-0199' }, proposal: proposal(), ...extra,
+  audience: 'homeowner', company: { name: 'Acme Roofing', phone: '(402) 555-0199' }, proposal: proposal(), estimateClause: null, ...extra,
 });
 const pages = (s: string): number => (s.match(/\/Type \/Page\n/g) ?? []).length;
 
-const signature: { record: SignatureRecord; image: null } = {
+const signature: { record: SignatureRecord; image: null; timeZone: string } = {
   image: null,
+  timeZone: 'America/Chicago',
   record: {
     optionId: 'opt-better', signerName: 'Molly Q. Lindgren', typedSignature: 'Molly Q. Lindgren', drawnSignaturePngSha256: null,
     consentText: 'I agree to sign electronically.', consentVersion: 'v1', documentSha256: 'ab12'.repeat(16), totalCents: 1_234_500,
