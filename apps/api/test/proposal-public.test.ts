@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import type { ProposalView, PublicProposalView } from '@roofline/shared';
 import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { customers, measurements, proposalEvents, proposals } from '@roofline/db';
 import { addressFor, Actors, dbActivities, inCompany, mustCreate } from './crm-helpers.ts';
+import { proposalIpHashFor } from '../src/public/proposal-common.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { DAYTIME } from './sms-helpers.ts';
 import { dbSteps, seenOf } from './task-helpers.ts';
@@ -150,6 +152,20 @@ describe('views and decline', () => {
     const rows = await events(s.proposal.id, 'option_viewed');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.data).toMatchObject({ optionId });
+  });
+
+  test('a view stores a keyed hash of the address, never the unkeyed sha256 (security finding 8)', async () => {
+    const s = await sent();
+    expect((await postTo(s.token, '/view')).status).toBe(204);
+    const [row] = await events(s.proposal.id, 'viewed');
+    const companyId = t.seed.a.companyId;
+    // supertest connects over loopback; req.ip is one of these depending on the platform.
+    const candidates = ['::ffff:127.0.0.1', '127.0.0.1', '::1'];
+    expect(row!.ipHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(candidates.map((ip) => proposalIpHashFor(t.deps.config, ip, companyId))).toContain(row!.ipHash);
+    for (const ip of candidates) {
+      expect(row!.ipHash).not.toBe(createHash('sha256').update(`${ip}${companyId}`).digest('hex'));
+    }
   });
 
   test('decline stores the reason; a reason over 500 characters is a 400', async () => {

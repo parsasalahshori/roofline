@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import {
   parseSignedDocument,
@@ -271,11 +270,12 @@ export async function recordProposalEvent(
   });
 }
 
+/** `s.ipHash` is the caller's keyed hash of `s.ip` for the 'signed' event (the signature row keeps the raw ip, Ruling EP). */
 export async function signProposal(
   tx: Tx,
   ctx: TenantContext,
   proposalId: string,
-  s: Omit<SignatureRecord, 'documentSha256'> & { documentSha256: string },
+  s: Omit<SignatureRecord, 'documentSha256'> & { documentSha256: string; ipHash: string },
   now: Date,
 ): Promise<'signed' | 'already_signed' | 'closed'> {
   // C-M1: signing changes every open proposal of the job, so they are all locked first, in id order (as a send does).
@@ -366,7 +366,7 @@ export async function signProposal(
     proposalId,
     kind: 'signed',
     data: { optionId: option.id },
-    ipHash: createHash('sha256').update(`${s.ip}${ctx.companyId}`).digest('hex'),
+    ipHash: s.ipHash,
     userAgent: s.userAgent,
     at: now,
     createdAt: now,
