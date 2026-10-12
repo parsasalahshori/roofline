@@ -56,8 +56,7 @@ function proposal(id: string, number: string, jobId: string, status: string, bas
 const LIST = [
   proposal('pr1', 'P-1001', 'j1', 'sent', 'estimate', [1200000, 900000]),
   proposal('pr2', 'P-1002', 'j1', 'signed', 'exact', [1500000]),
-  proposal('pr3', 'P-9999', 'other', 'draft', 'estimate', [100000]),
-];
+];  // the server filters by job (Ruling EM), so the answer holds only this job's proposals
 
 function renderJob(list: ProposalView[], overrides: Record<string, () => { body?: unknown; status?: number }> = {}) {
   api = stubApi({
@@ -66,7 +65,7 @@ function renderJob(list: ProposalView[], overrides: Record<string, () => { body?
     'GET /api/team': () => ({ body: { members: [], invites: [] } }),
     'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', timezone: 'America/Chicago' } }),
     'GET /api/jobs/j1/view': () => ({ body: VIEW }),
-    'GET /api/proposals': () => ({ body: { proposals: list, total: list.length } }),
+    'GET /api/proposals?jobId=j1': () => ({ body: { proposals: list, total: list.length } }),
     ...overrides,
   });
   const queryClient = createQueryClient();
@@ -88,7 +87,6 @@ describe('job proposals', () => {
     expect(first).toHaveTextContent(proposals.statusLabelFor('sent'));
     const second = screen.getByRole('link', { name: /P-1002/ });
     expect(second).toHaveTextContent(proposals.statusLabelFor('signed'));
-    expect(screen.queryByText('P-9999')).not.toBeInTheDocument();
   });
 
   it('shows Estimate on instant totals and not on exact ones', async () => {
@@ -111,23 +109,18 @@ describe('job proposals', () => {
     await user.click(screen.getByRole('button', { name: job.newProposal }));
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/estimator/measure/m7'));
     expect(api.sent('POST /api/measurements')).toEqual([{ propertyId: 'p1' }]);
+    expect(router.state.location.state).toEqual({ jobId: 'j1' });
   });
 
-  it('reads every page of the proposal list', async () => {
-    renderJob(LIST, {
-      'GET /api/proposals': () => ({
-        body: { proposals: [proposal('px', 'P-0001', 'other', 'draft', 'estimate', [100000])], total: 2 },
-      }),
-      'GET /api/proposals?offset=1': () => ({
-        body: { proposals: [proposal('pr1', 'P-1001', 'j1', 'sent', 'estimate', [1200000])], total: 2 },
-      }),
-    });
+  it("asks the server for this job's proposals only", async () => {
+    renderJob(LIST);
     expect(await screen.findByRole('link', { name: /P-1001/ })).toBeInTheDocument();
-    expect(screen.queryByText('P-0001')).not.toBeInTheDocument();
+    expect(api.calls.map((c) => c.key)).toContain('GET /api/proposals?jobId=j1');
+    expect(api.calls.map((c) => c.key)).not.toContain('GET /api/proposals');
   });
 
   it('empty state', async () => {
-    renderJob([LIST[2]!]);
+    renderJob([]);
     expect(await screen.findByText(job.proposalsEmpty)).toBeInTheDocument();
   });
 
