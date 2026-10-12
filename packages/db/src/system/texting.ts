@@ -1,7 +1,7 @@
-import { and, asc, eq, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type { BrandInfo } from '@roofline/shared';
 import type { Db } from '../pools.ts';
-import { companies, textingRegistrations } from '../schema/index.ts';
+import { companies, companyPhoneNumbers, textingRegistrations } from '../schema/index.ts';
 
 /*
  * Texting registration data access, on the app_system pool: the texting_registrations rows are
@@ -142,4 +142,98 @@ export async function withRegistrationLock<T>(
     if (isLockNotAvailable(err)) return 'busy';
     throw err;
   }
+}
+
+/* Texting registration progress and the poll's windows (the hooks, the poll and the monthly fees). */
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** The company a texting sid (subaccount, customer profile, trust product, brand, campaign or messaging service) belongs to. */
+export async function companyIdForTextingSid(system: Db, sid: string): Promise<string | null> {
+  const [row] = await system
+    .select({ companyId: textingRegistrations.companyId })
+    .from(textingRegistrations)
+    .where(
+      or(
+        eq(textingRegistrations.subaccountSid, sid),
+        eq(textingRegistrations.customerProfileSid, sid),
+        eq(textingRegistrations.trustProductSid, sid),
+        eq(textingRegistrations.brandSid, sid),
+        eq(textingRegistrations.campaignSid, sid),
+        eq(textingRegistrations.messagingServiceSid, sid),
+      ),
+    )
+    .limit(1);
+  return row?.companyId ?? null;
+}
+
+/**
+ * Companies whose registration the poll should check now (their ids, in order). A pending campaign
+ * is checked hourly while its brand is with the carriers, daily once the campaign is, and a submitted
+ * registration with no brand sid after an hour is checked too (a stuck stage 1).
+ */
+export async function registrationsToCheck(system: Db, now: Date): Promise<string[]> {
+  const hourAgo = new Date(now.getTime() - HOUR_MS);
+  const dayAgo = new Date(now.getTime() - DAY_MS);
+  const rows = await system
+    .select({ companyId: textingRegistrations.companyId })
+    .from(textingRegistrations)
+    .where(
+      and(
+        eq(textingRegistrations.campaignStatus, 'pending'),
+        or(
+          and(
+            isNull(textingRegistrations.campaignSid),
+            isNotNull(textingRegistrations.brandSid),
+            or(isNull(textingRegistrations.lastCheckedAt), lt(textingRegistrations.lastCheckedAt, hourAgo)),
+          ),
+          and(
+            isNotNull(textingRegistrations.campaignSid),
+            or(isNull(textingRegistrations.lastCheckedAt), lt(textingRegistrations.lastCheckedAt, dayAgo)),
+          ),
+          and(
+            isNull(textingRegistrations.brandSid),
+            isNotNull(textingRegistrations.submittedAt),
+            lt(textingRegistrations.submittedAt, hourAgo),
+          ),
+        ),
+      ),
+    )
+    .orderBy(asc(textingRegistrations.companyId));
+  return rows.map((r) => r.companyId);
+}
+
+/** Records the company's main number (purpose 'main', status 'active'); idempotent on e164. */
+export async function addMainNumber(
+  system: Db,
+  companyId: string,
+  n: { e164: string; providerSid: string; capabilities: string[] },
+): Promise<void> {
+  await system
+    .insert(companyPhoneNumbers)
+    .values({
+      companyId,
+      e164: n.e164,
+      capabilities: n.capabilities,
+      providerSid: n.providerSid,
+      purpose: 'main',
+      status: 'active',
+    })
+    .onConflictDoNothing({ target: companyPhoneNumbers.e164 });
+}
+
+/** Companies with an active main number or an approved campaign (ids, in order). */
+export async function companiesWithTextingFees(system: Db): Promise<string[]> {
+  const [numbers, campaigns] = await Promise.all([
+    system
+      .select({ companyId: companyPhoneNumbers.companyId })
+      .from(companyPhoneNumbers)
+      .where(and(eq(companyPhoneNumbers.purpose, 'main'), eq(companyPhoneNumbers.status, 'active'))),
+    system
+      .select({ companyId: textingRegistrations.companyId })
+      .from(textingRegistrations)
+      .where(and(eq(textingRegistrations.campaignStatus, 'approved'), isNotNull(textingRegistrations.campaignSid))),
+  ]);
+  return [...new Set([...numbers, ...campaigns].map((r) => r.companyId))].sort();
 }
