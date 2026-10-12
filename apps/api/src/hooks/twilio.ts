@@ -8,6 +8,7 @@ import {
   flagPossibleOptOut,
   frontDeskTextsOn,
   insertInboundText,
+  isNumberBlocked,
   lockDeliverySid,
   lockRecipients,
   recordDeliveryOutcome,
@@ -343,7 +344,8 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
         if (looksLikeOptOut(text.body)) await flagPossibleOptOut(tx, ctx, active, messageId, now);
         // Inbound handler order (Ruling AV): STOP/HELP/START (above), then S1 onStormReply, then G1 claims, then Front Desk. S1 and G1 call their hooks HERE, before this one, and set `consumed` when they answer the message.
         const consumed = false;
-        if (!looksLikeOptOut(text.body) && (await frontDeskTextsOn(tx, ctx))) {
+        // A blocked number gets no Front Desk work; the text is still stored above.
+        if (!looksLikeOptOut(text.body) && (await frontDeskTextsOn(tx, ctx)) && !(await isNumberBlocked(tx, ctx, text.from))) {
           const conv = await attachInboundToConversation(
             tx,
             ctx,
