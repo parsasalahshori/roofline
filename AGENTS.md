@@ -28,17 +28,12 @@ lives anywhere else.
 |---|---|---|
 | F1 platform core | `docs/superpowers/plans/2026-10-10-roofline-f1-platform-core.md` | done |
 | F2 web shell and design kit | `docs/superpowers/plans/2026-10-11-roofline-f2-shell.md` | **done**: Tasks 1-19 + P1 on `f2-shell`, CI green incl. e2e |
-| F3 setup, texting, billing, import | `docs/superpowers/plans/2026-10-11-roofline-f3-setup.md` (on `f3-setup`) + briefs `ops/sdd/f3/` | 29 of 37 + polish P3a/P3b merged on `f3-setup` |
-| C1 Core CRM | `docs/superpowers/plans/2026-10-12-roofline-core-crm.md` + briefs `ops/sdd/c1/` | Task 1 merged on `c1-crm` |
+| F3 setup, texting, billing, import | `docs/superpowers/plans/2026-10-11-roofline-f3-setup.md` (on `f3-setup`) + briefs `ops/sdd/f3/` | 34 of 37 + polish P3a/P3b merged; left: T28, T37, T36 |
+| C1 Core CRM | `docs/superpowers/plans/2026-10-12-roofline-core-crm.md` + briefs `ops/sdd/c1/` | Tasks 1-4 merged on `c1-crm` |
 | E1, S1, D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{e1,s1,d1,a1,g1}/` | planned, briefs ready |
 
-Finished, CI-green task branches NOT yet merged (merge these first, `--no-ff`):
-- Into `f3-setup` (all based on `ebcc93c`): `f3-t26` f9efe6f, `f3-t31` 64ac1b6, `f3-t35` 95e35a3,
-  `f3-t32` 2b7918c, `f3-t33` 919b204, `f3-t34` 8d0f7f0. Their group check never ran: run typecheck, lint
-  and the web tests after merging. Reports: branches `ops-sib2e`, `ops-sib3d`. Carry: give `.banners`
-  z-index 24 (T32/T33).
-- Into `c1-crm`: `c1-t2` 1a73b7a, `c1-t3` bbad8ec, then `c1-t4` cd99713 (take T2/T3's `pipeline.ts` and
-  `availability.ts`). Reports: branch `ops-sib1e`.
+All finished branches are merged (2026-10-12): F3 T26, T31-T35 into `f3-setup` (330ca23); C1 T2-T4 and the
+latest `f3-setup` into `c1-crm` (dfa9132).
 
 Then F3 Tasks 28, 37 and finally 36 (briefs in `ops/sdd/f3/`), merge `f3-setup` into `c1-crm`, and continue
 C1 from its plan's "Parallel lanes" table (next: T5 API skeleton, T18 web skeleton).
