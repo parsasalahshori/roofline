@@ -1,7 +1,7 @@
 import { UiLink } from '@roofline/ui';
 import { hoursLabel, type RecentTask } from '@roofline/shared';
 import { agentPage } from '../../copy/agents.ts';
-import { TASK_STATUS_LABEL } from '../../copy/status.ts';
+import { TASK_KIND_LABEL, TASK_STATUS_LABEL } from '../../copy/status.ts';
 import styles from './AgentLists.module.css';
 
 function plain(value: string): string {
@@ -12,6 +12,10 @@ function statusWords(status: string): string {
   return Object.hasOwn(TASK_STATUS_LABEL, status)
     ? TASK_STATUS_LABEL[status as keyof typeof TASK_STATUS_LABEL]
     : plain(status);
+}
+
+function kindWords(kind: string): string {
+  return Object.hasOwn(TASK_KIND_LABEL, kind) ? TASK_KIND_LABEL[kind]! : plain(kind);
 }
 
 function whenLabel(iso: string): string {
@@ -37,9 +41,9 @@ export function RecentTasks({ tasks }: { tasks: RecentTask[] }) {
               <UiLink
                 href={'/approvals/' + encodeURIComponent(task.id)}
                 className={styles.link}
-                aria-label={`${agentPage.recentOpenLabel} ${plain(task.kind)}`}
+                aria-label={`${agentPage.recentOpenLabel} ${kindWords(task.kind)}`}
               >
-                <span className={styles.kind}>{plain(task.kind)}</span>
+                <span className={styles.kind}>{kindWords(task.kind)}</span>
                 <span className={styles.meta}>{statusWords(task.status)}</span>
                 <span className={styles.meta}>{whenLabel(task.createdAt)}</span>
                 {task.minutesSaved !== null ? (
