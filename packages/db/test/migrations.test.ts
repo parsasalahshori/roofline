@@ -668,6 +668,36 @@ describe('E1 constraints', () => {
     expect(err.constraint).toBe('proposals_link_token_hash_uniq');
   });
 
+  test('proposal options change only while the proposal is a draft (Ruling EQ trigger)', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const a = await makeProposalParents(s.a.companyId, 'a');
+    const [proposal] = await ownerQuery<{ id: string }>(
+      insertProposal + ' returning id',
+      proposalValues(s.a.companyId, a, 'P-0001', Buffer.alloc(32, 9)),
+    );
+    const [option] = await ownerQuery<{ id: string }>(
+      `insert into proposal_options (company_id, proposal_id, tier, position, name, scope, prices, add_ons, calculation, total_cents)
+       values ($1, $2, 'good', 0, 'Good', '{}', '{}', '[]', '{}', 1000) returning id`,
+      [s.a.companyId, proposal!.id],
+    );
+    // A draft's option may change.
+    await ownerQuery('update proposal_options set total_cents = 1100 where id = $1', [option!.id]);
+    // Once the proposal is sent, the database refuses.
+    await ownerQuery(`update proposals set status = 'sent' where id = $1`, [proposal!.id]);
+    const err = await rejected('update proposal_options set total_cents = 1200 where id = $1', [option!.id]);
+    expect(err.code).toBe('23514');
+    const [after] = await ownerQuery<{ total_cents: number }>('select total_cents from proposal_options where id = $1', [option!.id]);
+    expect(after!.total_cents).toBe(1100);
+  });
+
+  test('the exact-report poll has its partial index on waiting orders (Ruling EQ)', async () => {
+    const rows = await ownerQuery<{ indexdef: string }>(
+      `select indexdef from pg_indexes where indexname = 'exact_report_orders_waiting_polled_idx'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.indexdef).toContain('WHERE');
+  });
+
   test('tier_templates allows one row per tier per company', async () => {
     const s = await seedTwoCompanies(urls.owner);
     const insertTier = (companyId: string, tier: string) =>

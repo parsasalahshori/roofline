@@ -1,10 +1,21 @@
 // Pure roof geometry: local equirectangular projection, shoelace area, edge perimeter,
 // pitch factor, minimum-area rotated rectangle, and outline sanity checks.
+import { PRICING_LIMITS } from './pricing.ts';
 import type { LngLat, Ring } from './roof.ts';
 
 const EARTH_RADIUS_M = 6371008.8;
 const FT_PER_M = 3.280839895;
-const TOO_LARGE_SQFT = 200000;
+/** The steepest pitch a measurement takes (x/12). */
+const MAX_PITCH_X12 = 24;
+/** Room for the overhang (up to 3 ft all round) on top of the footprint. */
+const OVERHANG_ALLOWANCE = 1.25;
+/**
+ * The largest footprint an outline may have: at the steepest pitch, with the overhang allowance, its
+ * roof surface still fits the pricing engine's limit, so an accepted outline can always be priced.
+ */
+export const TOO_LARGE_SQFT = Math.floor(PRICING_LIMITS.maxAreaSqFt / Math.sqrt(1 + (MAX_PITCH_X12 / 12) ** 2) / OVERHANG_ALLOWANCE);
+/** Below this a ring has no area to speak of (three corners in a line). */
+const MIN_AREA_SQFT = 1;
 
 type Pt = { x: number; y: number };
 
@@ -154,6 +165,9 @@ export function outlineProblem(ring: Ring): 'too_few_corners' | 'self_intersecti
       if (properlyCross(p[i]!, p[(i + 1) % n]!, p[j]!, p[(j + 1) % n]!)) return 'self_intersecting';
     }
   }
-  if (polygonAreaSqFt(ring) > TOO_LARGE_SQFT) return 'too_large';
+  const area = polygonAreaSqFt(ring);
+  // Corners in a line enclose nothing: as good as too few corners.
+  if (area < MIN_AREA_SQFT) return 'too_few_corners';
+  if (area > TOO_LARGE_SQFT) return 'too_large';
   return null;
 }

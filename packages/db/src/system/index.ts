@@ -25,3 +25,4 @@ export * from './ad-sync-fanout.ts';
 export * from './storm-page-lookup.ts';
 export * from './unsubscribe-lookup.ts';
 export * from './hail-health.ts';
+export * from './signed-pdf-fanout.ts';

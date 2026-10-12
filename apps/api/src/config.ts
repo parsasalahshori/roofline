@@ -194,7 +194,7 @@ const ConfigSchema = z
     EAGLEVIEW_ENV: z.enum(['sandbox', 'production'], { error: 'must be sandbox or production' }).default('sandbox'),
     /** The EagleView product id to order. 0 is a placeholder: ask before ordering anything. */
     EAGLEVIEW_PRODUCT_ID: integer(0, 0, 2_147_483_647),
-    /** Cloudflare R2 account id. All four R2 settings come together, or none. Unset: signed proposals cannot be stored. */
+    /** Cloudflare R2 account id. All four R2 settings come together, or none; production requires them. Unset: signed proposals cannot be stored. */
     R2_ACCOUNT_ID: z.string().optional(),
     /** R2 access key id. See R2_ACCOUNT_ID. */
     R2_ACCESS_KEY_ID: z.string().optional(),
@@ -202,7 +202,7 @@ const ConfigSchema = z
     R2_SECRET_ACCESS_KEY: z.string().optional(),
     /** R2 bucket name. See R2_ACCOUNT_ID. */
     R2_BUCKET: z.string().optional(),
-    /** The base URL of customer proposal links. No trailing slash. Unset: APP_ORIGIN (applied in the final transform). */
+    /** The base URL of customer proposal links. No trailing slash. Must be on APP_ORIGIN's origin. Unset: APP_ORIGIN (applied in the final transform). */
     PROPOSAL_LINK_BASE_URL: httpUrl.transform((v) => v.replace(/\/+$/, '')).optional(),
     /** Where the building footprint files are read from. Always ends in a slash. Default: the Microsoft US buildings set. */
     FOOTPRINTS_BASE_URL: httpUrl.transform((v) => (v.endsWith('/') ? v : `${v}/`)).default(DEFAULT_FOOTPRINTS_BASE_URL),
@@ -318,6 +318,19 @@ const ConfigSchema = z
           ctx.addIssue({ code: 'custom', path: [name], message: 'is required when the other R2 settings are set' });
         }
       }
+    } else if (cfg.NODE_ENV === 'production') {
+      // Ruling ET: a homeowner can sign only when the signed proposal can be stored, so production needs R2.
+      for (const name of r2) {
+        ctx.addIssue({ code: 'custom', path: [name], message: 'is required in production (signed proposals are stored in R2)' });
+      }
+    }
+    // The homeowner page signs and declines with POST requests, which are only taken from APP_ORIGIN.
+    if (cfg.PROPOSAL_LINK_BASE_URL !== undefined && originOf(cfg.PROPOSAL_LINK_BASE_URL) !== originOf(cfg.APP_ORIGIN)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PROPOSAL_LINK_BASE_URL'],
+        message: 'must be on the same origin as APP_ORIGIN (homeowners sign through it)',
+      });
     }
     const googleAds = [
       'GOOGLE_ADS_DEVELOPER_TOKEN',
@@ -371,6 +384,15 @@ const ConfigSchema = z
   }));
 
 export type Config = z.infer<typeof ConfigSchema>;
+
+/** A URL's origin, or null when it is not a URL. */
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
 
 /** The environment was unusable. The message names the variables, never their values. */
 export class ConfigError extends Error {

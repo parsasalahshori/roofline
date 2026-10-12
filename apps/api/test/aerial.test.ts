@@ -68,9 +68,10 @@ describe('POST /api/measurements/:id/aerial', () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     const view = res.body as MeasurementView;
     expect(view.method).toBe('aerial');
-    // The view recomputes its estimate from the outline; the aerial area is the stored column.
+    // B5: the view shows the aerial measure's stored numbers, never ones worked out again from the outline.
     const [row] = await inCompany(t, ctx.companyId, (tx) => tx.select().from(measurements).where(eq(measurements.id, view.id)));
     expect(row!.surfaceSqFt).toBe(2480);
+    expect(view.estimate.surfaceSqFt).toBe(2480);
     expect(view.estimate.pitchX12).toBe(7);
     expect(resultCalls().length).toBeGreaterThanOrEqual(2);
   });

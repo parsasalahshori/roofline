@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { PROPOSAL_LINK_MESSAGE, type ProposalEventKind, type ProposalView } from '@roofline/shared';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { customers, measurements, proposalEvents, proposals } from '@roofline/db';
+import { customers, jobs, measurements, proposalEvents, proposals } from '@roofline/db';
 import { addressFor, Actors, dbJob, inCompany, mustCreate, NO_UUID } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { DAYTIME, NO_CONSENT, stepMessages } from './sms-helpers.ts';
@@ -239,15 +239,22 @@ describe('the link', () => {
     expect(await eventsOf(s.proposal.id, 'link_copied')).toHaveLength(1);
   });
 
-  test('a rep cannot read the link (403), even on their own job', async () => {
+  test("Ruling ES: a rep gets the link of a proposal on their own job; another rep's job is a 404", async () => {
     const rep = await who.as('rep');
     const s = await draft({ assignedTo: who.user('rep').userId });
     const taskId = await askToSend(rep, s.proposal.id);
     await approveAndRun(s.owner, taskId);
+    const token = tokenIn(t.sms.sent[0]!.body);
 
     const res = await rep.get(`/api/proposals/${s.proposal.id}/link`);
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe(ROLE_CANNOT);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ url: `${LINK_BASE}/p/${token}` });
+    expect(await eventsOf(s.proposal.id, 'link_copied')).toHaveLength(1);
+
+    // Once the job is another rep's, this rep cannot see the proposal at all.
+    await inCompany(t, t.seed.a.companyId, (tx) => tx.update(jobs).set({ assignedUserId: who.user('otherRep').userId }).where(eq(jobs.id, s.job.id)));
+    const hidden = await rep.get(`/api/proposals/${s.proposal.id}/link`);
+    expect(hidden.status).toBe(404);
   });
 
   test('a signed proposal keeps its link: asking again gives the same URL', async () => {
@@ -336,5 +343,94 @@ describe('replacing the old proposal on send', () => {
     expect(after.status).toBe('signed');
     expect(after.replacedById).toBeNull();
     expect(Buffer.from(after.linkTokenHash).equals(Buffer.from(before.linkTokenHash))).toBe(true);
+  });
+});
+
+describe('a revision while the send waits for approval (B1)', () => {
+  test("revising a 'ready' proposal replaces it; approving the old send then texts nothing", async () => {
+    const s = await draft();
+    const taskId = await askToSend(s.owner, s.proposal.id);
+    expect((await proposalRow(s.proposal.id)).status).toBe('ready');
+
+    const revised = await s.owner.post(`/api/proposals/${s.proposal.id}/revise`);
+    expect(revised.status).toBe(201);
+    const newId = (revised.body as ProposalView).id;
+    expect(newId).not.toBe(s.proposal.id);
+    const old = await proposalRow(s.proposal.id);
+    expect(old.status).toBe('replaced');
+    expect(old.replacedById).toBe(newId);
+
+    await approveAndRun(s.owner, taskId);
+    expect(t.sms.sent).toEqual([]);
+    const [step] = await dbSteps(t, 'a', taskId);
+    expect(step!.status).toBe('needs_attention');
+    expect(step!.errorPlain).toBe("This proposal can't be sent now. Make a revised proposal to change it.");
+  });
+
+  test('revising a replaced proposal is a 409', async () => {
+    const s = await draft();
+    await askToSend(s.owner, s.proposal.id);
+    expect((await s.owner.post(`/api/proposals/${s.proposal.id}/revise`)).status).toBe(201);
+    const again = await s.owner.post(`/api/proposals/${s.proposal.id}/revise`);
+    expect(again.status).toBe(409);
+    expect(again.body.error).toBe('A newer proposal replaced this one. Change the newer one instead.');
+  });
+});
+
+describe('a retried send never texts prices nobody approved (B2)', () => {
+  test('after a blocked send and an edit, retrying the old step asks for a fresh approval and sends nothing', async () => {
+    const s = await draft({ consent: 'none' });
+    const taskId = await askToSend(s.owner, s.proposal.id);
+    await approveAndRun(s.owner, taskId);
+    expect((await proposalRow(s.proposal.id)).status).toBe('draft');
+
+    // The rep fixes the consent and lowers a markup on the draft; the office presses Retry on the old step.
+    await inCompany(t, t.seed.a.companyId, (tx) => tx.update(customers).set({ smsConsentStatus: 'express' }).where(eq(customers.id, s.customer.id)));
+    const edit = await s.owner.patch(`/api/proposals/${s.proposal.id}`).send({ options: [{ id: s.proposal.options[0]!.id, markupPercent: 5 }] });
+    expect(edit.status).toBe(200);
+    const [step] = await dbSteps(t, 'a', taskId);
+    const retry = await s.owner.post(`/api/approvals/${taskId}/steps/${step!.id}/retry`).send();
+    expect(retry.status).toBeLessThan(300);
+    await t.queue.drain(t.deps);
+
+    expect(t.sms.sent).toEqual([]);
+    const [after] = await dbSteps(t, 'a', taskId);
+    expect(after!.status).toBe('needs_attention');
+    expect(after!.errorPlain).toBe('This proposal changed. Send it again for approval.');
+    expect((await proposalRow(s.proposal.id)).status).toBe('draft');
+
+    // A fresh send makes a new task with the new totals, and that one goes out.
+    const fresh = await askToSend(s.owner, s.proposal.id);
+    expect(fresh).not.toBe(taskId);
+    await approveAndRun(s.owner, fresh);
+    expect(t.sms.sent).toHaveLength(1);
+    expect((await proposalRow(s.proposal.id)).status).toBe('sent');
+  });
+});
+
+describe('a held proposal text blocked when its time comes (C-I4)', () => {
+  test('the proposal goes back to draft and the step needs attention with the reason', async () => {
+    t.clock.set(new Date('2026-10-15T06:00:00.000Z')); // 01:00 in Omaha: quiet hours
+    const s = await draft();
+    const taskId = await askToSend(s.owner, s.proposal.id);
+    await approveAndRun(s.owner, taskId);
+    const [parked] = await dbSteps(t, 'a', taskId);
+    const [row] = await stepMessages(t, 'a', parked!.id);
+    expect(row).toMatchObject({ status: 'scheduled' });
+
+    // Overnight the customer's consent is gone.
+    await inCompany(t, t.seed.a.companyId, (tx) => tx.update(customers).set({ smsConsentStatus: 'none' }).where(eq(customers.id, s.customer.id)));
+    t.clock.set(new Date(row!.scheduledFor!));
+    await dispatchCompanyMessages(t.deps, t.seed.a.companyId, t.clock.now());
+
+    expect(t.sms.sent).toEqual([]);
+    expect((await proposalRow(s.proposal.id)).status).toBe('draft');
+    const [step] = await dbSteps(t, 'a', taskId);
+    expect(step!.status).toBe('needs_attention');
+    expect(step!.errorPlain).toBe(NO_CONSENT);
+    expect(step!.result).toMatchObject({ sent: 0 });
+    // The draft can be edited again.
+    const edit = await s.owner.patch(`/api/proposals/${s.proposal.id}`).send({ messageBody: 'Hi {first_name}, here it is: {link}' });
+    expect(edit.status).toBe(200);
   });
 });

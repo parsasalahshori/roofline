@@ -3,6 +3,7 @@ import {
   addActivity,
   companies,
   companySettings,
+  companyTerms,
   createCustomer,
   createJob,
   createProposal,
@@ -14,6 +15,7 @@ import {
   jobScope,
   jobs,
   linkPropertyToCustomer,
+  monthlyFor,
   tierTemplates,
   withTenant,
   type MeasurementBasics,
@@ -25,8 +27,8 @@ import {
   DEFAULT_TIER_TEMPLATES,
   defaultScope,
   localDate,
-  monthlyPaymentCents,
   priceTier,
+  PRICING_LIMITS,
   TIERS,
   toE164,
   type MeasuredQuantities,
@@ -71,20 +73,32 @@ async function loadTemplates(tx: Tx, ctx: TenantContext): Promise<TierTemplate[]
   });
 }
 
-async function financingSettings(tx: Tx, ctx: TenantContext): Promise<{ aprBps: number; months: number } | null> {
-  const [s] = await tx
-    .select({ apr: companySettings.financingAprBps, months: companySettings.financingTermMonths })
-    .from(companySettings)
-    .where(eq(companySettings.companyId, ctx.companyId))
-    .limit(1);
-  return s && s.apr !== null && s.months !== null ? { aprBps: s.apr, months: s.months } : null;
+/** The measurement has no roof to price: no outline drawn, or every structure left out. */
+export const NO_ROOF_MESSAGE = 'Draw the roof outline first.';
+/** An estimate too large for the pricing engine: an exact report prices it. */
+export const TOO_LARGE_ESTIMATE_MESSAGE = 'That roof is too large for an instant proposal. Order an exact report.';
+/** A measured roof (an exact report) too large for the pricing engine. */
+export const TOO_LARGE_ROOF_MESSAGE = 'That roof is too large to price here.';
+
+/**
+ * The pricing engine's bounds, checked first so a roof it cannot price gets our own sentence (B8), never the
+ * engine's field error.
+ */
+function assertPriceable(m: MeasurementBasics): void {
+  if (!(m.surfaceSqFt > 0)) throw new AppError(400, NO_ROOF_MESSAGE);
+  const lengths = [m.edgeFt, m.ridgeFt, m.valleyFt];
+  if (m.surfaceSqFt > PRICING_LIMITS.maxAreaSqFt || lengths.some((ft) => ft > PRICING_LIMITS.maxLengthFt)) {
+    throw new AppError(400, m.kind === 'exact' ? TOO_LARGE_ROOF_MESSAGE : TOO_LARGE_ESTIMATE_MESSAGE);
+  }
 }
 
-/** The three options (good, better, best, disabled ones too) for a measurement, priced with the current templates and pricebook. */
+/** The three options (good, better, best, disabled ones too) for a measurement, priced with the current templates, pricebook and terms. A roof the engine cannot price is a 400 with our own sentence. */
 export async function priceOptions(tx: Tx, ctx: TenantContext, m: MeasurementBasics): Promise<NewProposalOption[]> {
+  assertPriceable(m);
   const templates = await loadTemplates(tx, ctx);
   const view = await getPricebook(tx, ctx);
-  const fin = await financingSettings(tx, ctx);
+  // Ruling ER: the terms are frozen with each option's price.
+  const terms = await companyTerms(tx, ctx, m.kind);
   const base = {
     ...defaultScope,
     areaSqFt: m.surfaceSqFt,
@@ -114,8 +128,9 @@ export async function priceOptions(tx: Tx, ctx: TenantContext, m: MeasurementBas
       pricebook: view.prices,
       quantities,
       totalCents: priced.totalCents,
-      monthlyEstimateCents: fin ? monthlyPaymentCents(priced.totalCents, fin.aprBps, fin.months) : null,
+      monthlyEstimateCents: monthlyFor(priced.totalCents, terms),
       enabled: template.enabled,
+      terms,
     };
   });
 }

@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import type { ProposalView, PublicProposalView } from '@roofline/shared';
 import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { customers, measurements, proposalEvents, proposals } from '@roofline/db';
 import { addressFor, Actors, dbActivities, inCompany, mustCreate } from './crm-helpers.ts';
+import { proposalIpHashFor } from '../src/public/proposal-common.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { DAYTIME } from './sms-helpers.ts';
 import { dbSteps, seenOf } from './task-helpers.ts';
@@ -152,6 +154,20 @@ describe('views and decline', () => {
     expect(rows[0]!.data).toMatchObject({ optionId });
   });
 
+  test('a view stores a keyed hash of the address, never the unkeyed sha256 (security finding 8)', async () => {
+    const s = await sent();
+    expect((await postTo(s.token, '/view')).status).toBe(204);
+    const [row] = await events(s.proposal.id, 'viewed');
+    const companyId = t.seed.a.companyId;
+    // supertest connects over loopback; req.ip is one of these depending on the platform.
+    const candidates = ['::ffff:127.0.0.1', '127.0.0.1', '::1'];
+    expect(row!.ipHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(candidates.map((ip) => proposalIpHashFor(t.deps.config, ip, companyId))).toContain(row!.ipHash);
+    for (const ip of candidates) {
+      expect(row!.ipHash).not.toBe(createHash('sha256').update(`${ip}${companyId}`).digest('hex'));
+    }
+  });
+
   test('decline stores the reason; a reason over 500 characters is a 400', async () => {
     const s = await sent();
     expect((await postTo(s.token, '/decline', { reason: 'x'.repeat(501) })).status).toBe(400);
@@ -184,5 +200,30 @@ describe('same-origin posts and read-only companies', () => {
     const res = await postTo(s.token, '/sign', { optionId, consent: true, signerName: 'Molly Lindgren', typedSignature: 'Molly Lindgren' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ signed: true });
+  });
+});
+
+describe('the per-link limit', () => {
+  test('one link gets 120 requests an hour across open, view, decline and the signed copy, from any address; the 121st is a 429', async () => {
+    const s = await sent();
+    // Behind a proxy, so each request can come from its own address and the per-IP limit never trips.
+    t.app.set('trust proxy', 1);
+    const from = (i: number) => `198.51.100.${i % 200}`;
+    for (let i = 0; i < 120; i += 1) {
+      const res =
+        i % 2 === 0
+          ? await request(t.app).get(`/api/public/proposals/${s.token}`).set('X-Forwarded-For', from(i))
+          : await request(t.app).post(`/api/public/proposals/${s.token}/view`).set('Origin', origin()).set('X-Forwarded-For', from(i)).send({});
+      expect(res.status, `request ${i + 1}`).toBeLessThan(400);
+    }
+    for (const res of [
+      await request(t.app).get(`/api/public/proposals/${s.token}`).set('X-Forwarded-For', '203.0.113.200'),
+      await request(t.app).get(`/api/public/proposals/${s.token}/signed.pdf`).set('X-Forwarded-For', '203.0.113.201'),
+      await request(t.app).post(`/api/public/proposals/${s.token}/decline`).set('Origin', origin()).set('X-Forwarded-For', '203.0.113.202').send({}),
+    ]) {
+      expect(res.status).toBe(429);
+      expect(res.body).toEqual({ error: "You're going a little fast. Try again in a minute." });
+    }
+    expect((await proposalRow(s.proposal.id)).status).not.toBe('declined');
   });
 });

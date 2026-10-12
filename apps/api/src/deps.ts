@@ -200,9 +200,6 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
   const weather = config.WEATHER_DISABLED
     ? new NullWeatherSource()
     : new NwsWeatherSource({ userAgent: config.NWS_USER_AGENT ?? `Roofline (${config.PUBLIC_BASE_URL})` });
-  if (config.NODE_ENV === 'production' && !config.R2_BUCKET) {
-    console.warn('R2 is not set: signed proposals cannot be stored.');
-  }
   return {
     pools,
     config,

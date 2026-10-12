@@ -58,11 +58,11 @@
 | `EAGLEVIEW_CLIENT_SECRET` | no | EagleView client secret. Both or neither with `EAGLEVIEW_CLIENT_ID`. |
 | `EAGLEVIEW_ENV` | no (`sandbox`) | `sandbox` or `production`. |
 | `EAGLEVIEW_PRODUCT_ID` | no (0) | The EagleView product id to order. 0 is a placeholder: ask before ordering. |
-| `R2_ACCOUNT_ID` | no | Cloudflare R2 account id. All four R2 settings or none. Expected in production once any company can sign; without them start-up warns and signed proposals cannot be stored. |
+| `R2_ACCOUNT_ID` | production | Cloudflare R2 account id. All four R2 settings or none; production refuses to start without them (signed proposals are stored in R2). |
 | `R2_ACCESS_KEY_ID` | no | R2 access key id. All four R2 settings or none. |
 | `R2_SECRET_ACCESS_KEY` | no | R2 secret access key. All four R2 settings or none. |
 | `R2_BUCKET` | no | R2 bucket name. All four R2 settings or none. |
-| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be the same origin as `APP_ORIGIN` for the homeowner page to accept its signing and decline posts. |
+| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be on the same origin as `APP_ORIGIN` (start-up refuses another origin), because the homeowner page posts its signing and decline requests there. |
 | `FOOTPRINTS_BASE_URL` | no | Where building footprint files are read from; a trailing slash is added. Defaults to `https://usbuildingdata.blob.core.windows.net/usbuildings-v2/`. |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | no | Google Ads developer token. All five GOOGLE_ADS settings or none; unset means Google ads are off. |
 | `GOOGLE_ADS_MANAGER_ID` | no | Google Ads manager account id. All five GOOGLE_ADS settings or none. |
@@ -93,6 +93,8 @@
 | `TENANT_DB_PASSWORD`, `SYSTEM_DB_PASSWORD` | role passwords only | Set on `app_tenant` and `app_system`; must match the two app URLs. |
 | `HAIL_DB_PASSWORD` | role passwords only | Set on `app_hail`, the hail service's database role; must match `HAIL_DATABASE_URL`. |
 | `HAIL_DATABASE_URL` | hail service only | Login URL of `app_hail`, read by `services/hail` only (never the API or worker). |
+
+- **Building footprints and proposal links:** the worker's `footprints-ensure` job runs every 15 minutes (`*/15 * * * *`) and queues a `footprints-load` job for each state a company is in whose footprints are not yet `ready` or loading. Each load reads one state's file from Microsoft US Building Footprints (ODbL; the attribution is in `apps/web/src/copy/legal.ts`, shown on the measure view) into PostGIS from `FOOTPRINTS_BASE_URL`. A state is usable once its `building_footprint_states.status` is `ready`; until then homes there open draw mode. End-to-end and test stacks do not download anything: they seed a Nebraska fixture with `seedFootprintFixture` (exported from `apps/api/src/index.ts`). `PROPOSAL_LINK_BASE_URL` must share `APP_ORIGIN`'s origin, because the homeowner page posts its signing and decline requests there.
 
 - **Calendar connections:**
   - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google Calendar, and `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` for Outlook. A provider with either value missing shows as not set up in Settings.

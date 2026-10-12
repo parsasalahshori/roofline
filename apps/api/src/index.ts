@@ -83,3 +83,4 @@ export { unsubscribeKey } from './public/unsubscribe-key.ts';
 export { signUnsubscribeToken } from './public/unsubscribe-token.ts';
 export { createBoss, ensureStepQueue, PgBossQueue, SENDER_OPTIONS, STEP_QUEUE } from './tasks/pgboss-queue.ts';
 export type { StepQueue } from './tasks/queue.ts';
+export { seedFootprintFixture } from './scripts/footprint-fixture.ts';
