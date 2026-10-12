@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { BRAND_FIELDS, type CampaignStatus, type SetupFacts, type SetupItemKey, type SetupItemView } from '@roofline/shared';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { setupItems } from '../schema/tenant.ts';
+import { adAccountCounts } from './ad-accounts.ts';
 
 /*
  * Data access for the setup checklist (F3 spec 5.3). Every read runs on the tenant transaction, so
@@ -56,6 +57,8 @@ export async function setupFacts(tx: Tx, ctx: TenantContext): Promise<Omit<Setup
   const membersResult = await tx.execute(sql`select count(*)::int as active from company_members where status = 'active'`);
   const membersRow = membersResult.rows[0] as { active: number } | undefined;
 
+  const ads = await adAccountCounts(tx, ctx);
+
   const skippedRows = await tx
     .select({ key: setupItems.key })
     .from(setupItems)
@@ -77,6 +80,7 @@ export async function setupFacts(tx: Tx, ctx: TenantContext): Promise<Omit<Setup
     },
     activeMembers: membersRow?.active ?? 0,
     paymentMethod: company?.payment_method ?? false,
+    ads,
     skipped,
   };
 }

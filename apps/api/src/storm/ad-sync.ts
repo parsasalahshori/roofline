@@ -1,7 +1,8 @@
 import type { AppDeps } from '../app.ts';
+import { recheckPendingAdAccounts } from './ad-recheck.ts';
 
-/** Syncs one company's ad spend and applies the 95% pause. Stub from S1 Task 7; Task 19 fills it. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- stub parameters, used once the body exists
-export async function syncCompanyAds(_deps: AppDeps, _companyId: string): Promise<void> {
-  throw new Error('not yet');
+/** Syncs one company's ad accounts and (Task 19) ad spend. Today: the recheck of accounts waiting to be accepted. */
+export async function syncCompanyAds(deps: AppDeps, companyId: string): Promise<void> {
+  await recheckPendingAdAccounts(deps, companyId);
+  // Task 19 adds the campaign spend sync and the 95% pause here, beside the recheck.
 }
