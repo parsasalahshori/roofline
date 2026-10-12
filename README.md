@@ -85,7 +85,7 @@
 | `POLICY_PAGES_DOMAIN` | no (required for Storm Scout) | The bare hostname for the policy pages, like `roofline.app`. Required for Storm Scout landing pages and ads. |
 | `FAKE_PROVIDERS` | no | `1` or `true` swaps every outside service for a fake. Development and test only; refused in production. |
 | `WEB_DIST_DIR` | no | Where the built web app is: `apps/web/dist` in production (a relative path is read from the repository root). When set, the API also serves the app, so one origin answers both; it must contain `index.html` or start-up stops. Leave unset in development, where Vite serves the app. |
-| `TRUST_PROXY` | no (0) | How many proxy hops to trust for the client address. |
+| `TRUST_PROXY` | in production (0 elsewhere) | How many proxy hops to trust for the client address: `1` on Render (one proxy in front). Unset or 0 stops start-up in production; a value above the real hop count lets clients choose their IP via `X-Forwarded-For`. |
 | `API_RATE_LIMIT_PER_MIN` | no (600) | Requests per minute per session on `/api/*`. |
 | `PORT` | no (4400) | Listen port (Render sets it). |
 | `HOST` | no | Listen address: `0.0.0.0` in production, `127.0.0.1` otherwise, unless set. |

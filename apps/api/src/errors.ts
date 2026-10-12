@@ -15,7 +15,6 @@ export const MESSAGES = {
   checkField: 'Please check this field.',
   signIn: 'Please sign in.',
   badLogin: "That email and password don't match.",
-  emailTaken: 'An account with that email already exists.',
   noAccess: 'Your access to this company is turned off. Ask the owner to turn it back on.',
   tooManyLogins: 'Too many sign-in attempts. Try again in a few minutes.',
   tooFast: "You're going a little fast. Try again in a minute.",
@@ -140,12 +139,20 @@ export const notFoundHandler: RequestHandler = (_req, res) => {
  * - anything else → 500 with the generic sentence. The error (and its `cause`: Drizzle wraps the
  *   Postgres error there, with its `code` and `detail`) is handed to `logError` and never reaches
  *   the response.
+ * - after the headers went out (a stream that failed part way): logged the same way, and the
+ *   connection is cut.
  */
 export function errorHandler(logError: (err: unknown, path: string) => void): ErrorRequestHandler {
+  // Express knows an error handler by its four parameters, so `next` stays although it is unused.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   return (err: unknown, req, res, next) => {
-    // Too late to send a clean JSON body; let Express close the connection.
+    // Too late to send a clean JSON body. The error is logged here, scrubbed, and the connection is
+    // cut so the client can't take a partial body for a whole one. It is not handed on with
+    // `next(err)`: Express's default handler prints the raw error and its `cause` (query params,
+    // Postgres detail) before it destroys the socket.
     if (res.headersSent) {
-      next(err);
+      logError(err, req.path);
+      res.destroy();
       return;
     }
 
