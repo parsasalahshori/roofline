@@ -115,7 +115,9 @@ async function send(fetchFn: (input: string, init: RequestInit) => Promise<Respo
   }
 
   if (!response.ok || errorOf(parsed) !== null) {
-    throw new AdPlatformError(mapMetaError(response.status, parsed), response.status);
+    const error = errorOf(parsed);
+    const graph = { code: numberOf(error?.code), subcode: numberOf(error?.error_subcode) };
+    throw new AdPlatformError(mapMetaError(response.status, parsed), response.status, graph);
   }
   if (parsed === undefined) throw new AdPlatformError('other', response.status);
   return parsed;

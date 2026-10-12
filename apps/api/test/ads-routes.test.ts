@@ -104,6 +104,18 @@ test('revoking a Google account ends the manager link', async () => {
   expect(await t.adsGoogle.linkStatus('1234567890')).toBe('none');
 });
 
+test('a failing unlink is reported with the row id only, and the row is still revoked', async () => {
+  const owner = await loginAs(t.app, t.seed.a.owner);
+  const acct = await linkGoogle(owner);
+  t.adsGoogle.failNext('other');
+  const res = await owner.delete(`/api/ads/accounts/${acct.id}`);
+  expect(res.status).toBe(200);
+  expect(res.body.account.status).toBe('revoked');
+  const reports = t.logged.filter((l) => l.where.includes(acct.id));
+  expect(reports).toHaveLength(1);
+  expect(reports[0]?.where).not.toContain('Ad platform error');
+});
+
 test('a failing unlink never blocks the owner removing the account', async () => {
   const owner = await loginAs(t.app, t.seed.a.owner);
   const acct = await linkGoogle(owner);

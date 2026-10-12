@@ -11,7 +11,7 @@ import {
   normalizeGoogleCustomerId,
   normalizeMetaAdAccountId,
 } from '../src/storm/ad-accounts.ts';
-import { makeTestApp, type TestApp } from './helpers.ts';
+import { loginAs, makeTestApp, type TestApp } from './helpers.ts';
 
 let t: TestApp;
 
@@ -79,4 +79,33 @@ test('evaluateAdAccount never throws and never uses provider text', async () => 
   };
   const other = await evaluateAdAccount(t.deps, { platform: 'meta', externalAccountId: 'act_1' });
   expect(other.lastErrorPlain).toBe(AD_ERROR_MESSAGES.other);
+});
+
+async function linkGoogleRoute(customerId: string) {
+  const owner = await loginAs(t.app, t.seed.a.owner);
+  const res = await owner.post('/api/ads/accounts/google').send({ customerId });
+  expect(res.status).toBe(201);
+  return { owner, id: res.body.account.id as string };
+}
+
+test('checkAdAccount re-invites a refused Google link', async () => {
+  const { owner, id } = await linkGoogleRoute('123-456-7890');
+  t.adsGoogle.refuse('1234567890');
+  const before = t.adsGoogle.calls.length;
+  const checked = await owner.post(`/api/ads/accounts/${id}/check`);
+  expect(checked.status).toBe(200);
+  const invites = t.adsGoogle.calls.slice(before).filter((c) => c.method === 'invite');
+  expect(invites.some((c) => c.args[0] === '1234567890')).toBe(true);
+  expect(checked.body.account.status).toBe('pending');
+  expect(checked.body.account.lastErrorPlain).toBe(GOOGLE_PENDING);
+});
+
+test('checkAdAccount does not re-invite an active Google link', async () => {
+  const { owner, id } = await linkGoogleRoute('123-456-7890');
+  t.adsGoogle.accept('1234567890');
+  const before = t.adsGoogle.calls.length;
+  const checked = await owner.post(`/api/ads/accounts/${id}/check`);
+  expect(checked.status).toBe(200);
+  expect(checked.body.account.status).toBe('active');
+  expect(t.adsGoogle.calls.slice(before).some((c) => c.method === 'invite')).toBe(false);
 });

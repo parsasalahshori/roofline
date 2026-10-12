@@ -5,6 +5,8 @@ export type GoogleAdsLink = {
   invite(customerId: string): Promise<void>;
   linkStatus(customerId: string): Promise<'pending' | 'active' | 'refused' | 'none'>;
   accountInfo(customerId: string): Promise<{ name: string; currency: string }>;
+  /** Ends our manager link to the customer: an ACTIVE link is set INACTIVE, a PENDING one CANCELED, anything else is left alone. */
+  unlink(customerId: string): Promise<void>;
 };
 
 type LinkState = 'pending' | 'active' | 'refused' | 'none';
@@ -23,6 +25,12 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+/** A manager link id may come back as a JSON string or number; anything else is empty. */
+function idText(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return text(value);
 }
 
 function mapStatus(status: string): LinkState {
@@ -69,6 +77,38 @@ export function createLink(http: GoogleAdsHttp, managerId: string): GoogleAdsLin
 
       await http.request('POST', `customers/${manager}/customerClientLinks:mutate`, {
         operation: { create: { clientCustomer: `customers/${client}`, status: 'PENDING' } },
+      });
+    },
+
+    async unlink(customerId: string): Promise<void> {
+      const client = digits(customerId);
+      const rows = await http.search(
+        manager,
+        `SELECT customer_client_link.manager_link_id, customer_client_link.status FROM customer_client_link WHERE customer_client_link.client_customer = 'customers/${client}'`,
+      );
+
+      let active: Record<string, unknown> | undefined;
+      let pending: Record<string, unknown> | undefined;
+      for (const row of rows) {
+        const link = asRecord(asRecord(row)?.customerClientLink);
+        if (link === undefined) continue;
+        if (link.status === 'ACTIVE') active ??= link;
+        else if (link.status === 'PENDING') pending ??= link;
+      }
+
+      const chosen = active ?? pending;
+      if (chosen === undefined) return;
+      const managerLinkId = idText(chosen.managerLinkId);
+      if (managerLinkId === '') throw new AdPlatformError('other');
+
+      await http.request('POST', `customers/${manager}/customerClientLinks:mutate`, {
+        operation: {
+          update: {
+            resourceName: `customers/${manager}/customerClientLinks/${client}~${managerLinkId}`,
+            status: active !== undefined ? 'INACTIVE' : 'CANCELED',
+          },
+          updateMask: 'status',
+        },
       });
     },
 

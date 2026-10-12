@@ -129,3 +129,4 @@ I3 carries (contact-218 group check), to build as I3 or fold into T19:
 - (minor) checkAdAccount re-invites on linkStatus 'refused' as well as 'none'; test it with the fake set to refused.
 - (minor, review) google-ads/index.ts and http.ts use double quotes (repo style is single). checkAdAccount makes up to 3 GAQL searches per click.
 - T17's notes: AdsGoogle.unlink becomes required after the fix. mapMetaError checks 'rejected' before payment.
+- I3 (s1-i3): Google unlink on revoke, Meta outage vs not shared, re-invite after refusal. Done; see task-i3-report.md.
