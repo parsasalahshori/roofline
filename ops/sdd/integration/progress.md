@@ -772,3 +772,13 @@ Merge-artifact fixes: none beyond the conflict resolutions above (typecheck and 
 
 None found locally. C1 T28 and A1 T13 add e2e specs that share the seeded scenario (C1 reads board column counts such
 as `Lead (8)`; A1 seeds agent tasks through `agentsSeed`); CI checks them together.
+
+### CI (pass 7)
+
+Run 38223884841 on 22938fb: Platform (lint, typecheck, tests) success; E2E (Playwright) success; Hail service (ruff,
+pytest) success; v1 (node:test) success. C1 T28 (CRM, calendar, a11y and phone e2e), A1 T13 (Agents e2e with
+`agentsSeed`), S1 T10/T12/T14 (storm alerts, settle trigger and hail-health, `send_email_batch`, `build_routes`, the
+amended 0018 with the `company_members` view) and E1's C1 wave 5 merge pass the database, API, worker and e2e suites
+in combination. No fixes were needed after CI, so ci-check was not re-run. (The local `ci-check` wrapper was stopped
+by its time limit while Platform was still running; the run was then followed through the Actions API until it
+completed.)
