@@ -1,0 +1,183 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  max-width: 100%;
+  box-sizing: border-box;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--font-size-body);
+}
+
+.loading {
+  margin: 16px;
+  color: var(--text-muted);
+}
+
+.mapColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.map {
+  position: relative;
+  height: 45vh;
+  min-height: 240px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.hint,
+.attribution {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.hint {
+  color: var(--text);
+  font-size: var(--font-size-body);
+}
+
+/* Vertex handles are DOM markers: 40px hit areas, set by the editor; keep them clear of MapLibre's clip. */
+.map :global(.maplibregl-canvas-container) {
+  touch-action: none;
+}
+
+.panels {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.kind {
+  align-self: flex-start;
+  padding: 8px 16px;
+  border-radius: var(--radius-card);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+.kind[data-kind="exact"] {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.pitches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+}
+
+.pitch {
+  min-height: 40px;
+  min-width: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.pitch[data-state="on"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.diagram {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.numbers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+
+.row dt {
+  color: var(--text-muted);
+}
+
+.row dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wide {
+  width: 100%;
+  min-height: 40px;
+}
+
+.waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+
+@media (min-width: 900px) {
+  .root {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .mapColumn {
+    flex: 1 1 55%;
+    position: sticky;
+    top: 16px;
+  }
+
+  .map {
+    height: 70vh;
+  }
+
+  .panels {
+    flex: 1 1 45%;
+  }
+}

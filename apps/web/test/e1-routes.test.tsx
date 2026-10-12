@@ -1,3 +1,4 @@
+import { instantEstimate } from '@roofline/shared';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
@@ -12,6 +13,7 @@ import { measure } from '../src/copy/measure.ts';
 import { prices } from '../src/copy/prices.ts';
 import { proposals } from '../src/copy/proposals.ts';
 import { tiers } from '../src/copy/tiers.ts';
+import type { MeasurementView } from '../src/features/measure/types.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
@@ -27,6 +29,33 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
       ),
   };
 });
+
+vi.mock('maplibre-gl', () => ({
+  Map: class {
+    constructor() {
+      throw new Error('no webgl');
+    }
+  },
+  Marker: class {},
+  NavigationControl: class {},
+}));
+
+const MEASUREMENT: MeasurementView = {
+  id: 'm1',
+  propertyId: 'pr1',
+  jobId: null,
+  kind: 'estimate',
+  method: 'outline',
+  drawMode: false,
+  outline: null,
+  structures: [],
+  pitchX12: 6,
+  overhangFt: 1,
+  valleyFt: 0,
+  center: [-97.7, 30.3],
+  estimate: instantEstimate({ outline: [], pitchX12: 6, overhangFt: 1, valleyFt: 0 }),
+  locked: false,
+};
 
 let api: ReturnType<typeof stubApi>;
 
@@ -62,13 +91,19 @@ function dockLink(dockNav: HTMLElement, label: string) {
 describe('E1 windows', () => {
   it.each([
     ['/estimator', estimator.comingSoon],
-    ['/estimator/measure/m1', measure.comingSoon],
     ['/estimator/proposals/p1', proposals.comingSoon],
   ])('%s shows its placeholder', async (path, copy) => {
     signedInApi();
     renderApp(path);
 
     expect(await screen.findByText(copy)).toBeInTheDocument();
+  });
+
+  it('/estimator/measure/m1 opens the measure window', async () => {
+    signedInApi(ACCOUNT, { 'GET /api/measurements/m1': () => ({ body: MEASUREMENT }) });
+    renderApp('/estimator/measure/m1');
+
+    expect(await screen.findByText(measure.numbersTitle)).toBeInTheDocument();
   });
 
   it('/p/abc renders without a session and without the shell', async () => {
