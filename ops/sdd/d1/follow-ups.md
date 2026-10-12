@@ -2,4 +2,16 @@
 - E1 CV review #1: on a reused conversation, engine.start must seed nextPosition and turn count from the stored turns (RC-1's insertTurn allocation also covers the collision).
 - E1 CV review #6: take_message for an unknown caller must be visible. Show input.reason on the action card even after a recording objection (the caller deliberately left it).
 - E1 CV review #2 (Ruling BJ assigns it to me): the AI cap counts `ringing` calls that never go to the AI (ring_first, Front Desk off, read-only, over-cap voicemail). Inside the locked transaction, set non-relay paths to `ringing_team`, and count only `ai` plus relay-reserved calls.
+- C1 RA review #8 (engine.ts, after RC-1): the {name, ok} choice for tool rows is made when the call is pushed, not when it is saved, so a turn in flight at the moment of an objection keeps the pre-objection tool args. Decide at save time.
+- C1 RA review #6 (later): playback reads the whole object for every Range or seek request; it needs a ranged get in the object-store seam.
+- C1 RA review #7: no change needed. relayCallById reads only SELECT (id, company_id, call_sid, status) on calls, which Ruling BJ keeps for app_system.
+- **Ruling BK** (controller, owner-approved; build in RC-3): after hours, on-call staff are rung only for leak or danger reasons or an urgent take_message, never for the router's "urgent" flag alone. The settings copy says so.
+- RC-3 scope (after RC-1 lands), from the E1 RC-2 review:
+  - #1: seed urgentNoticeSent in start() on reuse from the durable check, and keep `urgent` on redacted take_message tool rows.
+  - #3: the DTMF-0 and turn-failure handoffs pass the flag.
+  - #7: transfer.ts includes the flag.
+  - #8: seed turns and startedAt on reuse.
+  - Plus Ruling BK, C1's RA review #8, T25 finding 6 (eval drift), and unknown-caller message visibility.
+- RC-3: on reuse, start() also restores verifyFailures (and identity/customerId) from the stored conversation (E1 RC-1 review finding 9).
+- call-paths.test.ts:205 uses +14025550200, outside the fictional 0100-0199 block (E1 leftover).
 - E1 T25 review finding 6 (after RC lands): the eval's playCall has drifted from engine.run(). It lacks the byCount transfer, the shortened retry on max_tokens, the second-invalid-input handoff and the turn limit, and it uses its own lines instead of SAY_REFUSAL/GOODBYE/TROUBLE. Export the SAY_* constants (and a shared decision helper) from engine.ts and import them in the eval.
