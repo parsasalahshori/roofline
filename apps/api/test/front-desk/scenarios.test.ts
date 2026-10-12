@@ -88,7 +88,7 @@ async function play(sc: Scenario, o: { slip?: boolean } = {}): Promise<Played> {
   if (sc.seed.onCall) {
     await r.t.deps.pools.system.$client.query(
       'update memberships set transfer_phone_e164 = $1, on_call_order = $2 where company_id = $3 and user_id = $4',
-      ['+14025550200', 0, r.companyId, r.t.seed.a.owner.userId],
+      ['+14025550150', 0, r.companyId, r.t.seed.a.owner.userId],
     );
   }
 
