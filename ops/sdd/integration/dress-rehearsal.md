@@ -412,3 +412,56 @@ extraction for FAKE_PROVIDERS (owner G1, with the test stack). Recorded as a gap
 - **BUG-7** (`GET /api/demo` returns 404 with demo mode off): routed to the demo-mode owner. The sentinel folds the fix into the probe.
 - **S1 a11y flake** (the storm-detail heading race): fixed on s1-storm 4e5954ee.
 - **G1 test gap (not blocking):** the claims-ack "Thanks, got it." branch cannot run on the e2e stack, because the fake model has no scripted claim extraction. Only `apps/api/test/claims-ack.test.ts` covers it. Follow-up for G1: give the e2e/demo fake model a scripted extraction, so the acknowledgement runs end to end.
+
+## Final run (bb23b03e)
+
+Base: `ops-rehearsal` 50dce215 = the pass-16 rehearsal spec (be4ffd03) + `launch-integration` bb23b03e (final pass-16
+probe, with D1's RC-1/RC-1b). `npm ci` was clean, `npm ls playwright-core` shows only 1.56.1, and the web build
+succeeded. One stack at a time. **No spec or product change was needed:** RC-1 broke nothing in the rehearsal. The SMS
+flow, the claims reply hand-on, unknown numbers and the conversation views all passed unchanged.
+
+**Verdict: PASS.** The only failures are the two known, expected items: BUG-7 (allowlisted) and the a11y
+storm-detail flake.
+
+### Rehearsal (desktop + phone): 12 passed (5.9 min)
+
+| Journey | Desktop | Phone |
+|---|---|---|
+| a. Sign up, Setup, six apps from the dock | pass | covered by phone.spec |
+| b. CRM: customer → job → links, board; no home-map banner | pass | pass |
+| c. Estimator: measure → proposal → send → homeowner signs → Won | pass | pass (to Sent) |
+| d. Storm: swath drawn (12.9%) → draft plan → approve 5 → results → feed | pass | pass (to the review) |
+| e1. Front Desk inbound text, updates without reload (text at 0 s, reply at 30 s) | pass | pass |
+| e2. Front Desk inbound call: linked, transcript kept and shown, summary | pass | — |
+| f. Agents: Estimator and Storm Scout tasks, minutes saved | pass | pass (overview, feed, waiting) |
+| g. Claims, Scheduler, Follow-up fire once; plain labels; minutes; feed | pass | pass (G1 pages) |
+| h. Front Desk follow-up once on Waiting = card count | pass | — |
+| i. Claims reply answered exactly once (hand-on branch); Front Desk still on | pass | — |
+
+Evidence from the run:
+- e2: `{"conversation_id":"72615ddc-…","transcript_stored":true,"status":"ended"}`, summary "Scripted summary."
+- g: Recent work labels "Claim check-ins", "Appointment reminders", "Lead follow-ups".
+- i: one answer, `"Sorry, could you say that again?"`, sent; the conversation is `handled_by: assistant`. The
+  acknowledgement branch is still not reachable on fake stacks (see the pass 16 dry run).
+
+### Console, 5xx and "coming soon"
+
+- Console: the only error is BUG-7 (`GET /api/demo` 404 with demo mode off), allowlisted, 45 occurrences across the
+  12 tests (once per full page load). Its fix lands in a follow-up head; drop its `KNOWN_CONSOLE` entry then. No other
+  console errors.
+- Uncaught page errors: none. 5xx responses: none.
+- "Coming soon": none on any visited screen, desktop or phone, including `/agents`, `/agents/claims`,
+  `/agents/scheduler`, `/agents/follow-up`, `/settings/agents` and `/settings/front-desk`.
+
+### Full existing e2e suite: 118 passed, 1 failed (15.8 min)
+
+- Includes the 12 rehearsal tests (all pass). Existing specs: **106 passed, 1 failed**. Per spec: a11y 29/30,
+  agents-settings 4, agents 9, approvals 4, billing 2, calendar 2, crm 6, estimator 2, front-desk 11, homeowner 1,
+  import 1, more-agents 3, public-forms 2, setup 3, shell 6, signup 1, storm 2, today 3; phone: doors 2, phone 13.
+- The one failure is the known flake `a11y.spec.ts:193` "storm detail": a strict-mode violation, because
+  `getByRole('heading', { level: 1 })` matched both the window's "Storm" and the page's "Omaha, NE". Re-run alone:
+  **passed**. Its fix is not in this head (owner S1).
+
+### New bugs
+
+None.
