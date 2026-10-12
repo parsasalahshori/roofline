@@ -1,4 +1,19 @@
-/** The Calendar window (Task 18 skeleton). */
+/** The Calendar window. SHELL (Task 23): Package C owns this file; keys below are the contract, texts may be refined. */
 export const calendar = {
   comingSoon: 'Your calendar of inspections and installs is coming soon.',
+  today: 'Today',
+  previous: 'Previous',
+  next: 'Next',
+  viewWeek: 'Week',
+  viewDay: 'Day',
+  viewList: 'List',
+  newAppointment: 'New appointment',
+  people: 'People',
+  showCanceled: 'Show canceled',
+  busy: 'Busy',
+  allDay: 'All day',
+  loadMore: 'Load more',
+  empty: 'Nothing scheduled.',
+  loadError: 'The calendar could not be loaded.',
+  zoneNote: (zoneName: string) => `Times are shown in ${zoneName}, your company time zone.`,
 } as const;

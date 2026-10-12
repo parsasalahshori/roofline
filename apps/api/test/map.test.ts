@@ -35,7 +35,7 @@ async function located(agent: Agent, name: string, n: number, at: { lat: number;
   const property = (await mustCreate(agent, '/api/properties', {
     customerId: customer.id,
     ...addressFor(n),
-    ...(at !== null && at),
+    ...(at !== null ? at : { lat: null, lng: null }), // null: saved with no point (no server lookup)
     ...extra,
   })) as Created;
   return { customer, property };

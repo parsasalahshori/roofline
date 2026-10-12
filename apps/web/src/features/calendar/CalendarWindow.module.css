@@ -1,0 +1,18 @@
+/* The calendar window: the toolbar above the active view. The page never scrolls sideways; the grid does. */
+.window {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.body {
+  min-width: 0;
+}
+
+@media (max-width: 767.98px) {
+  .window {
+    padding: 16px;
+  }
+}

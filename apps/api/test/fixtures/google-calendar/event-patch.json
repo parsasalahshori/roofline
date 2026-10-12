@@ -1,0 +1,10 @@
+{
+  "kind": "calendar#event",
+  "etag": "\"etag-2\"",
+  "id": "evt1",
+  "status": "confirmed",
+  "summary": "Roof inspection",
+  "transparency": "opaque",
+  "created": "2026-10-12T14:00:00.000Z",
+  "updated": "2026-10-12T15:00:00.000Z"
+}

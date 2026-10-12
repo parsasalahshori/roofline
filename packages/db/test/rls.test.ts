@@ -48,7 +48,7 @@ const E1_TENANT_TABLES = [
   'stored_files',
 ] as const;
 /** Tenant tables app_tenant may delete from. No other tenant table grants it DELETE. */
-const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links', 'blocked_numbers'] as const;
+const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links', 'calendar_connections', 'blocked_numbers'] as const;
 /**
  * Tenant tables app_tenant may only select from and insert into: no UPDATE and no DELETE. conversation_turns is
  * updated by column only (see the column test below).
@@ -349,7 +349,7 @@ describe('grants', () => {
     truncate: false,
   });
 
-  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, agent_task_events, time_recounts and conversation_turns, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links and blocked_numbers', async () => {
+  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, agent_task_events, time_recounts and conversation_turns, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links, calendar_connections and blocked_numbers', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
       SELECT_INSERT_ONLY.has(t) ? privs(t, true, true, false, false) : privs(t, true, true, true, deletable.has(t)),
