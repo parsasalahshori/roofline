@@ -74,7 +74,7 @@ const RERUN_ONLY_EXPIRED = 'Only expired plans can be run again.';
 const RERUN_OFF_REASON = 'This step was switched off.';
 export const ALREADY_RERUN = 'This plan was already run again.';
 /** The database's own guard on "one copy per plan" (migration 0006). */
-const RERUN_UNIQUE = 'agent_tasks_company_rerun_of_uniq';
+export const RERUN_UNIQUE = 'agent_tasks_company_rerun_of_uniq';
 
 /** A step a person still has to say yes or no to. */
 const OPEN: readonly StepStatus[] = ['pending', 'awaiting_owner'];
@@ -104,13 +104,14 @@ async function event(
   data: Record<string, unknown>,
   at: Date,
   stepId?: string,
+  actorUserId?: string,
 ): Promise<void> {
   await insertAgentEvent(tx, ctx, {
     taskId,
     ...(stepId !== undefined && { stepId }),
     kind,
     actorType,
-    ...(actorType === 'user' && { actorUserId: ctx.userId }),
+    ...(actorType === 'user' && { actorUserId: actorUserId ?? ctx.userId }),
     data,
     at,
   });
@@ -331,6 +332,8 @@ export type NewTask = {
   rerunOfTaskId?: string;
   /** Who made the plan, for its `created` event. Default `agent`. */
   createdBy?: 'agent' | 'system' | 'user';
+  /** Acting member for a `user` created event when ctx.userId is null (system context). */
+  createdByUserId?: string;
   /** `off`: the step is saved switched off (enabled=false) with this plain reason; its payload may then be incomplete (for example no customers). */
   steps: { type: StepType; payload: unknown; off?: string }[];
 };
@@ -402,7 +405,7 @@ export async function createTask(
     },
     opts.now,
   );
-  await event(tx, ctx, taskId, 'created', input.createdBy ?? 'agent', { stepCount: steps.length }, opts.now);
+  await event(tx, ctx, taskId, 'created', input.createdBy ?? 'agent', { stepCount: steps.length }, opts.now, undefined, input.createdByUserId);
   await audit(tx, ctx, {
     action: 'task.create',
     targetType: 'agent_task',

@@ -15,6 +15,7 @@ import {
   getApproval,
   listApprovals,
   prepareRerun,
+  RERUN_UNIQUE,
   rerunTask,
   retryStep,
 } from '../tasks/service.ts';
@@ -244,7 +245,7 @@ export function approvalRoutes(deps: AppDeps, logError: (err: unknown, path: str
       let drafted: { taskId: string } | null;
       try {
         drafted = await draftStormPlan(deps, ctx.companyId, target.companyStormId, clock.now(), {
-          replaceFinished: true,
+          ...(ctx.userId !== null && { createdByUserId: ctx.userId }),
           rerunOfTaskId: taskId,
           afterCreate: (tx, newId) =>
             audit(tx, ctx, {
@@ -257,7 +258,7 @@ export function approvalRoutes(deps: AppDeps, logError: (err: unknown, path: str
             }),
         });
       } catch (err) {
-        if (isUniqueViolation(err, 'agent_tasks_company_rerun_of_uniq')) throw new AppError(409, ALREADY_RERUN);
+        if (isUniqueViolation(err, RERUN_UNIQUE)) throw new AppError(409, ALREADY_RERUN);
         if (err instanceof Error && err.message === STORM_PLAN_ERRORS.notFound) throw new AppError(404, MESSAGES.notFound);
         if (err instanceof Error && (err.message === STORM_PLAN_ERRORS.dismissed || err.message === STORM_PLAN_ERRORS.changed)) throw new AppError(409, err.message);
         throw err;

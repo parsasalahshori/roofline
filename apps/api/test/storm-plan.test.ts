@@ -478,37 +478,50 @@ describe('the storm-draft job', () => {
   });
 });
 
-describe('re-draft over a finished plan (Task 20)', () => {
-  test('without the option an expired plan is returned unchanged', async () => {
+describe('re-draft over a finished plan (Task 20, Ruling BD)', () => {
+  test('an expired plan is re-drafted by a plain draftStormPlan call', async () => {
     await addHit({ email: 'a@example.com' });
     const first = await draft();
     await setTask(t, 'a', first.taskId, { status: 'expired' });
 
     const again = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
-    expect(again!.taskId).toBe(first.taskId);
-    expect((await companyStormRow()).plan_task_id).toBe(first.taskId);
+    expect(again!.taskId).not.toBe(first.taskId);
+    expect((await dbTask(t, 'a', again!.taskId)).status).toBe('draft');
+    expect((await companyStormRow()).plan_task_id).toBe(again!.taskId);
   });
 
-  test.each(['expired', 'declined'] as const)('replaceFinished re-drafts over a %s plan', async (status) => {
+  test.each(['expired', 'declined'] as const)('re-drafts over a %s plan', async (status) => {
     await addHit({ email: 'a@example.com' });
     const first = await draft();
     await setTask(t, 'a', first.taskId, { status });
 
-    const next = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { replaceFinished: true });
+    const next = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
     expect(next!.taskId).not.toBe(first.taskId);
     expect((await dbTask(t, 'a', next!.taskId)).status).toBe('draft');
     expect((await companyStormRow()).plan_task_id).toBe(next!.taskId);
     expect((await dbTask(t, 'a', first.taskId)).status).toBe(status);
   });
 
-  test('replaceFinished never replaces an approved plan', async () => {
+  test.each(['approved', 'running'] as const)('never replaces a %s plan', async (status) => {
     await addHit({ email: 'a@example.com' });
     const first = await draft();
-    await setTask(t, 'a', first.taskId, { status: 'approved' });
+    await setTask(t, 'a', first.taskId, { status });
 
-    const again = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { replaceFinished: true });
+    const again = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
     expect(again!.taskId).toBe(first.taskId);
     expect((await companyStormRow()).plan_task_id).toBe(first.taskId);
+  });
+
+  test('the storm-draft job handler re-drafts over an expired plan', async () => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status: 'expired' });
+
+    await JOB_HANDLERS['storm-draft'](t.deps, { companyId: companyId(), companyStormId }, { attempt: 1, lastAttempt: false });
+
+    const row = await companyStormRow();
+    expect(row.plan_task_id).not.toBe(first.taskId);
+    expect((await dbTask(t, 'a', row.plan_task_id as string)).status).toBe('draft');
   });
 
   test('a switched-off step of an expired plan is rebuilt with its reason', async () => {
@@ -516,7 +529,7 @@ describe('re-draft over a finished plan (Task 20)', () => {
     const first = await draft();
     await setTask(t, 'a', first.taskId, { status: 'expired' });
 
-    const next = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { replaceFinished: true });
+    const next = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
     const steps = await stepsOf(next!.taskId);
     expect(steps[0]).toMatchObject({ enabled: false, errorPlain: STORM_OFF.noSmsRecipients });
   });
