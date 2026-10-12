@@ -100,9 +100,10 @@ async function loadReply(tx: Tx, ctx: TenantContext, messageId: string): Promise
 }
 
 /** The job's rep, else the company's owner; null when neither can be found. */
-async function visitUserId(tx: Tx, ctx: TenantContext, repUserId: string | null): Promise<string | null> {
+async function visitUserId(tx: Tx, repUserId: string | null): Promise<string | null> {
   if (repUserId !== null) return repUserId;
-  const result = await tx.execute(sql`select user_id from company_members where company_id = ${ctx.companyId} and role = 'owner' and status = 'active' order by id limit 1`);
+  // company_members is the security-barrier view filtered to the current company (app.company_id).
+  const result = await tx.execute(sql`select user_id from company_members where role = 'owner' and status = 'active' order by id limit 1`);
   const row = result.rows[0];
   return row ? (row.user_id as string) : null;
 }
@@ -184,7 +185,7 @@ export async function runClaimsReply(deps: AppDeps, companyId: string, messageId
     await writeLiveNote(tx, ctx, messageId, noteTitle(facts, patch), now);
 
     if (visit !== null) {
-      const userId = await visitUserId(tx, ctx, claim.repUserId);
+      const userId = await visitUserId(tx, claim.repUserId);
       if (userId === null) return;
       await createTask(
         tx,

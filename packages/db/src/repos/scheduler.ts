@@ -85,7 +85,8 @@ export async function reminderCandidates(tx: Tx, ctx: TenantContext, q: { from: 
       allDay: appointments.allDay,
       firstName: customers.firstName,
       displayName: customers.displayName,
-      repName: sql<string | null>`(select m.name from company_members m where m.company_id = ${appointments.companyId} and m.user_id = ${appointments.assignedUserId} limit 1)`,
+      // company_members is the security-barrier view filtered to the current company (app.company_id).
+      repName: sql<string | null>`(select m.name from company_members m where m.user_id = ${appointments.assignedUserId} limit 1)`,
       addressLine: properties.addressLine,
     })
     .from(appointments)
