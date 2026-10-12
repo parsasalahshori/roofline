@@ -93,6 +93,8 @@ describe('creating a job', () => {
       assignedUserId: null,
       createdByUserId: who.user('owner').userId,
       lostReason: null,
+      nextStep: null,
+      nextStepOn: null,
       archivedAt: null,
       createdAt: '2026-10-12T15:00:00.000Z',
       updatedAt: '2026-10-12T15:00:00.000Z',
@@ -148,14 +150,18 @@ describe('creating a job', () => {
   });
 
   test('a job can start in a later stage; that is where it starts, not a move', async () => {
-    const { job } = await aJob({ stage: 'won' });
+    const { job } = await aJob({ stage: 'won', valueCents: 500_000 });
     expect(job).toMatchObject({ stage: 'won', stageLabel: 'Won', stageChangedAt: '2026-10-12T15:00:00.000Z' });
     expect(await timeline(t, A(), job.id as string)).toEqual([['job.created', 'Job created']]);
   });
 
-  test('setting a job to lost without a reason is allowed', async () => {
-    const { job } = await aJob({ stage: 'lost' });
-    expect(job).toMatchObject({ stage: 'lost', lostReason: null });
+  test('a job cannot start lost without a reason', async () => {
+    const { customer, property } = await mollyAndHouse();
+    const res = await (await who.as('owner'))
+      .post('/api/jobs')
+      .send({ customerId: customer.id, propertyId: property.id, stage: 'lost' });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Pick why the job was lost.', field: 'lostReason' });
   });
 
   test('uses the app clock for every time it records', async () => {
@@ -464,19 +470,27 @@ describe('changing a job', () => {
     ['installed', 'Installed'],
     ['lost', 'Lost'],
   ] as const)('moving to %s says "Moved to %s"', async (stage, label) => {
-    // Start from a different stage than the one moved to, so the move is real.
-    const { job } = await aJob({ stage: stage === 'proposal' ? 'won' : 'proposal' });
-    const res = await (await who.as('owner')).patch(`/api/jobs/${job.id}`).send({ stage });
+    // Start from a different stage than the one moved to, so the move is real (Installed comes from Won).
+    // Every job carries a value, and Lost a reason, as the stage rules require.
+    const start = stage === 'proposal' || stage === 'installed' ? 'won' : 'proposal';
+    const { job } = await aJob({ stage: start, valueCents: 500_000 });
+    const res = await (await who.as('owner'))
+      .patch(`/api/jobs/${job.id}`)
+      .send({ stage, ...(stage === 'lost' ? { lostReason: 'Went elsewhere' } : {}) });
     expect(res.status).toBe(200);
     expect(res.body.stageLabel).toBe(label);
     expect(await timeline(t, A(), job.id as string)).toContainEqual(['job.stage_changed', `Moved to ${label}`]);
   });
 
   test('every stage in the shared list has a label', async () => {
-    const { job } = await aJob();
+    // In list order (lead, inspection, proposal, won, installed, lost), which the stage rules allow
+    // when the job has a value and Lost gets a reason.
+    const { job } = await aJob({ valueCents: 500_000 });
     const owner = await who.as('owner');
     for (const stage of JOB_STAGES) {
-      const res = await owner.patch(`/api/jobs/${job.id}`).send({ stage });
+      const res = await owner
+        .patch(`/api/jobs/${job.id}`)
+        .send({ stage, ...(stage === 'lost' ? { lostReason: 'Went elsewhere' } : {}) });
       expect(res.status, stage).toBe(200);
       expect(res.body.stageLabel).toMatch(/^[A-Z][a-z]+$/);
     }
@@ -569,9 +583,17 @@ describe('changing a job', () => {
     expect((await owner.patch(`/api/jobs/${job.id}`).send({ lostReason: 'Too expensive for now' })).body.lostReason).toBe(
       'Too expensive for now',
     );
-    // A lost job with no reason moves on without trouble.
-    const bare = await mustCreate(owner, '/api/jobs', { customerId: job.customerId, propertyId: job.propertyId, stage: 'lost' });
-    expect((await owner.patch(`/api/jobs/${bare.id}`).send({ stage: 'won' })).body).toMatchObject({ stage: 'won', lostReason: null });
+    // Leaving Lost clears the reason.
+    const other = await mustCreate(owner, '/api/jobs', {
+      customerId: job.customerId,
+      propertyId: job.propertyId,
+      stage: 'lost',
+      lostReason: 'Went elsewhere',
+    });
+    expect((await owner.patch(`/api/jobs/${other.id}`).send({ stage: 'won', valueCents: 1 })).body).toMatchObject({
+      stage: 'won',
+      lostReason: null,
+    });
   });
 
   test('the value can be cleared with null', async () => {
@@ -727,7 +749,7 @@ describe('opening and listing jobs', () => {
     const j1 = await make({});
     const j2 = await make({ stage: 'inspection', assignedUserId: who.user('rep').userId });
     const j3 = await make({ assignedUserId: who.user('rep').userId }, second.id as string);
-    const j4 = await make({ stage: 'won' }, second.id as string);
+    const j4 = await make({ stage: 'won', valueCents: 500_000 }, second.id as string);
     return { customer, property, second, j1, j2, j3, j4 };
   }
   const idsOf = (res: { body: { jobs: { id: string }[] } }) => res.body.jobs.map((j) => j.id);
