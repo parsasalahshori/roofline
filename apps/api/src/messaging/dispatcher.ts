@@ -19,6 +19,7 @@ import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
 import { refreshTask } from '../tasks/service.ts';
 import { type BuiltGateRequest, buildGateRequest } from './gate-request.ts';
+import { dispatchEmail } from './dispatch-email.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
 
 /*
@@ -94,12 +95,25 @@ export async function dispatchCompanyMessages(deps: AppDeps, companyId: string, 
     if (outcome !== 'skipped') summary[outcome] += 1;
   }
 
-  for (const step of await withTenant(deps.pools, ctx, (tx) => listParkedSteps(tx, ctx, 'send_sms_batch'))) {
-    // One step that cannot be settled is logged and left for the next pass; the others go on.
-    try {
-      if (await settleParkedStep(deps, ctx, step)) summary.finished += 1;
-    } catch (err) {
-      reportJobError(deps, err, `dispatch-messages: step ${step.id}`);
+  // Scheduled emails: a failure here never stops the texts or the parked steps.
+  try {
+    const email = await dispatchEmail(deps, ctx, now);
+    summary.sent += email.sent;
+    summary.scheduled += email.scheduled;
+    summary.blocked += email.blocked;
+    summary.failed += email.failed;
+  } catch (err) {
+    reportJobError(deps, err, 'dispatch-messages: email');
+  }
+
+  for (const kind of ['send_sms_batch', 'send_email_batch'] as const) {
+    for (const step of await withTenant(deps.pools, ctx, (tx) => listParkedSteps(tx, ctx, kind))) {
+      // One step that cannot be settled is logged and left for the next pass; the others go on.
+      try {
+        if (await settleParkedStep(deps, ctx, step)) summary.finished += 1;
+      } catch (err) {
+        reportJobError(deps, err, `dispatch-messages: step ${step.id}`);
+      }
     }
   }
   return summary;
