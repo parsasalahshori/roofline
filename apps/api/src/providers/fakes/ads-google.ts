@@ -36,6 +36,10 @@ export class FakeAdsGoogle implements AdsGoogle {
     this.enter('invite', [customerId]);
     if (this.links.get(customerId) !== 'active') this.links.set(customerId, 'pending');
   }
+  async unlink(customerId: string): Promise<void> {
+    this.enter('unlink', [customerId]);
+    this.links.delete(customerId);
+  }
   async linkStatus(customerId: string): Promise<'pending' | 'active' | 'refused' | 'none'> {
     this.enter('linkStatus', [customerId]);
     return this.links.get(customerId) ?? 'none';

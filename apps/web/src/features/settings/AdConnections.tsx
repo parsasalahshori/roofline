@@ -146,7 +146,7 @@ function GoogleConnectForm() {
         busy={connect.isPending}
         disabled={stripSeparators(customerId).length < 10}
       >
-        {connections.connect}
+        {connections.adConnect}
       </Button>
     </form>
   );
@@ -186,7 +186,7 @@ function MetaConnectForm() {
         error={problems.forField('adAccountId')}
       />
       <Button type="submit" variant="primary" busy={connect.isPending} disabled={adAccountId.trim() === ''}>
-        {connections.connect}
+        {connections.adConnect}
       </Button>
     </form>
   );

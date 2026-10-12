@@ -55,8 +55,8 @@ const COMPANY_BODY: CompanyBody = {
 
 const TEAM_BODY: TeamBody = {
   members: [
-    { id: 'm1', userId: 'u1', name: 'Sam', email: 'sam@example.com', role: 'owner', canApproveSpend: true, status: 'active', stormAlertEmail: false },
-    { id: 'm2', userId: 'u2', name: 'Jo', email: 'jo@example.com', role: 'rep', canApproveSpend: false, status: 'active', stormAlertEmail: false },
+    { id: 'm1', userId: 'u1', name: 'Sam', email: 'sam@example.com', role: 'owner', canApproveSpend: true, status: 'active', stormAlertEmail: true },
+    { id: 'm2', userId: 'u2', name: 'Jo', email: 'jo@example.com', role: 'rep', canApproveSpend: false, status: 'active', stormAlertEmail: true },
   ],
   invites: [],
 };

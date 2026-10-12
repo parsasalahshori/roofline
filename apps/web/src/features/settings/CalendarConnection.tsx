@@ -36,13 +36,13 @@ function ConnectButton({ provider, configured }: { provider: Provider; configure
   if (!configured) {
     return (
       <Button variant="primary" disabled>
-        {connections.connectCalendar[provider]}
+        {connections.connect[provider]}
       </Button>
     );
   }
   return (
     <Button variant="primary" href={`/api/calendar/connect/${provider}`}>
-      {connections.connectCalendar[provider]}
+      {connections.connect[provider]}
     </Button>
   );
 }

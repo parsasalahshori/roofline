@@ -1,47 +1,19 @@
 import type { AdAccountReason } from '../api/types.ts';
 
-/** Settings, Connections: the person's calendar and the ad accounts. Vendor names live in this file only. */
+/** Settings, Connections: where the person's calendar and the ad accounts get connected. Vendor names live in this file only. */
 export const connections = {
   /** The one line about connections that is still to come. */
   later: 'More connections are coming with setup.',
   /** The names of the two ad accounts, one name each everywhere. */
   googleAds: 'Google Ads',
   meta: 'Facebook and Instagram (Meta)',
-  calendarTitle: 'Your calendar',
-  providers: { google: 'Google Calendar', microsoft: 'Outlook' },
-  /** The calendar connect buttons (named apart from the ad cards' `connect`). */
-  connectCalendar: { google: 'Connect Google Calendar', microsoft: 'Connect Outlook' },
-  notConfigured: 'Calendar connections aren\'t set up yet.',
-  account: 'Account',
-  calendarLabel: 'Calendar',
-  lastSynced: (when: string) => `Last synced ${when}`,
-  neverSynced: 'Not synced yet.',
-  disconnect: 'Disconnect',
-  disconnectConfirm: 'Your appointments stay in Roofline and on your calendar.',
-  confirmYes: 'Disconnect',
-  confirmNo: 'Keep it',
-  reconnectTitle: 'Reconnect your calendar',
-  loading: 'Loading your calendar…',
-  loadFailed: 'Your calendar could not be loaded.',
-  toasts: {
-    connected: 'Calendar connected.',
-    failed: 'Couldn\'t connect your calendar. Try again.',
-    canceled: 'Calendar connection canceled.',
-    notSetUp: 'Calendar connections aren\'t set up yet.',
-  },
-  chooseFailed: 'Couldn\'t change the calendar. Try again.',
-  disconnectFailed: 'Couldn\'t disconnect your calendar. Try again.',
-  disconnected: 'Calendar disconnected.',
-  /** The short brand word for the appointment sync line ('On your Google calendar'); `providers` is the full product name. */
-  providerName: { google: 'Google', microsoft: 'Outlook' },
-
   /** The two sides of the ad budget split (Settings, Storm). */
   googleShareLabel: 'Share for Google Ads',
   metaShareLabel: 'Share for Facebook and Instagram (Meta)',
 
   /** The words both ad account cards share. */
   stepsLabel: 'How to connect',
-  connect: 'Connect',
+  adConnect: 'Connect',
   checkAgain: 'Check again',
   remove: 'Remove',
   statusLabel: 'Status',
@@ -85,6 +57,34 @@ export const connections = {
   metaStepConnect: 'Press Connect, then press Check again.',
   metaAdAccountId: 'Ad account ID',
   metaAdAccountIdHelp: 'Starts with act_, or is just the digits',
+
+  /** The person's calendar (C1). */
+  calendarTitle: 'Your calendar',
+  providers: { google: 'Google Calendar', microsoft: 'Outlook' },
+  connect: { google: 'Connect Google Calendar', microsoft: 'Connect Outlook' },
+  notConfigured: 'Calendar connections aren\'t set up yet.',
+  account: 'Account',
+  calendarLabel: 'Calendar',
+  lastSynced: (when: string) => `Last synced ${when}`,
+  neverSynced: 'Not synced yet.',
+  disconnect: 'Disconnect',
+  disconnectConfirm: 'Your appointments stay in Roofline and on your calendar.',
+  confirmYes: 'Disconnect',
+  confirmNo: 'Keep it',
+  reconnectTitle: 'Reconnect your calendar',
+  loading: 'Loading your calendar…',
+  loadFailed: 'Your calendar could not be loaded.',
+  toasts: {
+    connected: 'Calendar connected.',
+    failed: 'Couldn\'t connect your calendar. Try again.',
+    canceled: 'Calendar connection canceled.',
+    notSetUp: 'Calendar connections aren\'t set up yet.',
+  },
+  chooseFailed: 'Couldn\'t change the calendar. Try again.',
+  disconnectFailed: 'Couldn\'t disconnect your calendar. Try again.',
+  disconnected: 'Calendar disconnected.',
+  /** The short brand word for the appointment sync line ('On your Google calendar'); `providers` is the full product name. */
+  providerName: { google: 'Google', microsoft: 'Outlook' },
 } as const;
 
 /** The name of a provider as the person sees it: 'google' or 'microsoft'. */

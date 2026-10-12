@@ -59,6 +59,9 @@ const DETAIL = {
   plan: null,
 };
 
+const CALENDAR_NONE = { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } };
+const COMPANY = { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null, website: null, addressStreet: null, addressCity: null, addressState: null, addressZip: null, timezone: 'America/Chicago', logoUrl: null, located: false, serviceAreaMiles: null };
+
 let api: ReturnType<typeof stubApi>;
 
 afterEach(() => {
@@ -74,9 +77,10 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
     'GET /api/auth/me': () => ({ body: account }),
     // The Connections tab reads the ad accounts too; none are linked unless a test says so
     'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }),
-    // C1 Task 21: the Connections tab also shows the person's calendar
-    'GET /api/calendar/connection': () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } }),
-    'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null, website: null, addressStreet: null, addressCity: null, addressState: null, addressZip: null, timezone: 'America/Chicago', logoUrl: null, located: false, serviceAreaMiles: null } }),
+    // C1's calendar card on Connections, the company read in Settings and E1's proposals list in the Estimator
+    'GET /api/calendar/connection': () => ({ body: CALENDAR_NONE }),
+    'GET /api/company': () => ({ body: COMPANY }),
+    'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }),
     ...overrides,
   });
   return api;
@@ -133,8 +137,7 @@ describe('S1 Storm windows', () => {
   });
 
   it('the dock Storm opens /storm', async () => {
-    // The Estimator window lists proposals since E1 Task 15.
-    signedInApi(ACCOUNT, { 'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }) });
+    signedInApi();
     const { router, user } = renderApp('/estimator');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
     const link = dockLink(dockNav, WINDOW_COPY.storm.title);

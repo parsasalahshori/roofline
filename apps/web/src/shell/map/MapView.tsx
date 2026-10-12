@@ -157,6 +157,24 @@ export function MapView({ onOpen }: MapViewProps) {
     if (instance && styleReady.current) updateMapData(instance, next);
   }, [area.data, shownPins]);
 
+  // Feed the storm layer from the last good answer.
+  useEffect(() => {
+    stormRef.current = shownStorm;
+    const instance = mapRef.current;
+    if (instance && styleReady.current) {
+      applyStormData(instance, shownStorm);
+      if (!hailOnRef.current) setStormVisible(instance, false);
+    }
+  }, [shownStorm]);
+
+  // The hail switch. Nothing is touched on the first mount while the layer is on.
+  useEffect(() => {
+    hailOnRef.current = hailOn;
+    if (hailOn && !hailToggled.current) return;
+    hailToggled.current = true;
+    const instance = mapRef.current;
+    if (instance && styleReady.current) setStormVisible(instance, hailOn);
+  }, [hailOn]);
   // /?focus=<propertyId>: fly to that property's pin and open its card, once per distinct value.
   useEffect(() => {
     // Leaving ?focus= forgets the last one, so following the same address link again flies again.
@@ -196,25 +214,6 @@ export function MapView({ onOpen }: MapViewProps) {
       setPicked(next);
     });
   }, [focus, shownPins]);
-
-  // Feed the storm layer from the last good answer.
-  useEffect(() => {
-    stormRef.current = shownStorm;
-    const instance = mapRef.current;
-    if (instance && styleReady.current) {
-      applyStormData(instance, shownStorm);
-      if (!hailOnRef.current) setStormVisible(instance, false);
-    }
-  }, [shownStorm]);
-
-  // The hail switch. Nothing is touched on the first mount while the layer is on.
-  useEffect(() => {
-    hailOnRef.current = hailOn;
-    if (hailOn && !hailToggled.current) return;
-    hailToggled.current = true;
-    const instance = mapRef.current;
-    if (instance && styleReady.current) setStormVisible(instance, hailOn);
-  }, [hailOn]);
 
   // The satellite switch swaps the style. The style.load handler then installs the layers again.
   useEffect(() => {

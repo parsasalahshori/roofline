@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { BRAND_FIELDS, type CampaignStatus, type SetupFacts, type SetupItemKey, type SetupItemView } from '@roofline/shared';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { setupItems } from '../schema/tenant.ts';
+import { adAccountCounts } from './ad-accounts.ts';
 import { connectedMemberCount } from './calendar.ts';
 
 /*
@@ -57,6 +58,7 @@ export async function setupFacts(tx: Tx, ctx: TenantContext): Promise<Omit<Setup
   const membersResult = await tx.execute(sql`select count(*)::int as active from company_members where status = 'active'`);
   const membersRow = membersResult.rows[0] as { active: number } | undefined;
 
+  const ads = await adAccountCounts(tx, ctx);
   // Connected calendars of active members (calendar.ts): a dead grant (status error) does not count.
   const calendarsConnected = await connectedMemberCount(tx, ctx);
 
@@ -88,6 +90,7 @@ export async function setupFacts(tx: Tx, ctx: TenantContext): Promise<Omit<Setup
     },
     activeMembers: membersRow?.active ?? 0,
     paymentMethod: company?.payment_method ?? false,
+    ads,
     calendarsConnected,
     pricesAndTiersSaved: (pricesRow?.pricebook ?? false) && (pricesRow?.tiers ?? 0) === 3,
     skipped,

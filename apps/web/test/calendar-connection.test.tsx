@@ -76,8 +76,8 @@ describe('your calendar', () => {
     renderAt(<CalendarConnection />, '/settings/connections');
 
     expect(await screen.findByText(connections.notConfigured)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: connections.connectCalendar.google })).toBeDisabled();
-    expect(screen.getByRole('button', { name: connections.connectCalendar.microsoft })).toBeDisabled();
+    expect(screen.getByRole('button', { name: connections.connect.google })).toBeDisabled();
+    expect(screen.getByRole('button', { name: connections.connect.microsoft })).toBeDisabled();
     expect(document.querySelector('a[href="/api/calendar/connect/google"]')).toBeNull();
     expect(document.querySelector('a[href="/api/calendar/connect/microsoft"]')).toBeNull();
   });
@@ -128,7 +128,7 @@ describe('your calendar', () => {
     renderAt(<CalendarConnection />, '/settings/connections');
 
     expect(await screen.findByText(connections.reconnectTitle)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: connections.connectCalendar.google })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: connections.connect.google })).toHaveAttribute(
       'href',
       '/api/calendar/connect/google',
     );

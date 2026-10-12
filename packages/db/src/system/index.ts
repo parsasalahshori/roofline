@@ -29,3 +29,4 @@ export * from './storm-match-fanout.ts';
 export * from './ad-sync-fanout.ts';
 export * from './storm-page-lookup.ts';
 export * from './unsubscribe-lookup.ts';
+export * from './hail-health.ts';

@@ -248,7 +248,6 @@ it('hides the Storm tab from a rep and sends the address to Company', async () =
 it('connections lists the ad accounts slot', async () => {
   signedInApi({
     'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }),
-    // C1 Task 21: the Connections tab also shows the person's calendar
     'GET /api/calendar/connection': () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } }),
   });
   renderApp('/settings/connections');

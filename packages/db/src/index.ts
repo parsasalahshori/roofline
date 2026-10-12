@@ -232,6 +232,7 @@ export * from './repos/storm-layer.ts';
 export * from './repos/company-storms.ts';
 export * from './repos/storm-hits.ts';
 export * from './repos/storm-plans.ts';
+export * from './repos/storm-alerts.ts';
 export * from './repos/email-sends.ts';
 export * from './repos/email-opt-outs.ts';
 export * from './repos/door-routes.ts';
