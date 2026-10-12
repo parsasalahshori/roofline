@@ -33,6 +33,8 @@ export type EditFieldSpec = {
   /** For `pick`: the choices. */
   options?: { value: string; label: string }[];
   help?: string;
+  /** For `number`: the keyboard. Defaults to numeric; use decimal when cents are allowed. */
+  inputMode?: 'numeric' | 'decimal';
 };
 
 export type EditValues = Record<string, string | string[]>;

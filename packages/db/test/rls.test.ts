@@ -622,6 +622,21 @@ describe('grants', () => {
     ]);
   });
 
+  test('app_hail may UPDATE storms.merged_into', async () => {
+    const rows = await ownerQuery<{ ok: boolean }>(
+      `select has_column_privilege('app_hail', 'public.storms', 'merged_into', 'UPDATE') as ok`,
+    );
+    expect(rows).toEqual([{ ok: true }]);
+  });
+
+  test('app_tenant and app_system cannot UPDATE storms.merged_into', async () => {
+    const rows = await ownerQuery<{ tenant: boolean; system: boolean }>(
+      `select has_column_privilege('app_tenant', 'public.storms', 'merged_into', 'UPDATE') as tenant,
+              has_column_privilege('app_system', 'public.storms', 'merged_into', 'UPDATE') as system`,
+    );
+    expect(rows).toEqual([{ tenant: false, system: false }]);
+  });
+
   test('app_hail has privileges on no other relation than the three hail tables', async () => {
     const rows = await ownerQuery<{ relname: string }>(
       `select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -773,8 +788,10 @@ describe('grants', () => {
       sel('ad_campaigns', 'company_id'),
       sel('ad_campaigns', 'external_campaign_id'),
       sel('ad_campaigns', 'id'),
+      sel('ad_campaigns', 'paused_by'),
       sel('ad_campaigns', 'platform'),
       sel('ad_campaigns', 'status'),
+      sel('ad_campaigns', 'updated_at'),
       sel('agent_task_steps', 'company_id'),
       sel('agent_task_steps', 'id'),
       sel('agent_task_steps', 'lease_expires_at'),

@@ -3,6 +3,7 @@ import {
   claimAdCampaign,
   coverCircles,
   ensureStormPage,
+  extendStormPageUntil,
   getAdAccountByPlatform,
   getAdCampaignByStep,
   getCompanyName,
@@ -20,6 +21,7 @@ import {
 } from '@roofline/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import type { AppDeps } from '../app.ts';
+import { reportJobError } from '../jobs/scheduler/report.ts';
 import { can } from '../permissions.ts';
 import { companyOriginFor } from '../public/storm-requests.ts';
 import { type AdErrorKind, AdPlatformError } from '../providers/ads-google.ts';
@@ -31,7 +33,10 @@ import { resolveAdImage } from './creative.ts';
  * re-checks the step's spend approval and the ad account before any platform call, searches the platform
  * for the campaign's name tag before creating one (a retry after a lost response must not create a second),
  * creates the campaign PAUSED with a total budget of daily x days <= the approved maximum, stores its id,
- * and only then enables it. All platform calls happen outside transactions.
+ * and only then enables it. If anything fails after the id is stored (a lost enable response may still have
+ * been applied by the platform) the campaign is paused again, best effort, before the row is marked failed; the
+ * hourly sync (ad-sync.ts) sweeps failed rows that have an id for one that is still live. Only a US dollar ad
+ * account is used: the budget is in US cents. All platform calls happen outside transactions.
  */
 
 const UNREADABLE = "We couldn't read this ad. Please make it again.";
@@ -39,8 +44,15 @@ export const NOT_APPROVED = 'This ad was not approved. Ask the owner to approve 
 const NO_BUDGET = 'The most to spend is too small for that many days. Raise it or pick fewer days.';
 const NO_AREA = "We couldn't find a hail area to show this ad in.";
 const NO_STORM = "We couldn't find that storm. Please make this plan again.";
+export const NO_LANDING_PAGES = 'Storm landing pages are not set up yet.';
+export const NOT_USD = "This ad account doesn't bill in US dollars. Roofline can only run ads on a US dollar account.";
 
-/** The same five sentences as apps/web/src/copy (the API cannot import web copy). */
+/**
+ * The same five sentences as `adErrorCopy` in apps/web/src/copy/connections.ts; keep the two in sync.
+ * The API cannot import apps/web, and these sentences name the ad platform, which the copy rules
+ * (apps/web/test/copy-rules.test.ts) allow only in the web copy files (auth, billing, connections, legal,
+ * setup), so they cannot move to packages/shared. The API therefore keeps its own copy.
+ */
 export const AD_ERROR_COPY: Record<AdErrorKind, string> = {
   policy: "Google didn't approve the ad. Edit the words and try again.",
   payment: 'The ad account has a payment problem. Fix it in Google Ads.',
@@ -148,13 +160,25 @@ export const createAdCampaignHandler: StepHandler = async (deps: AppDeps, ctx: T
     });
     return attention(AD_ERROR_COPY.access);
   }
+  // The budget is US cents, so any other billing currency would be the wrong amount. Nothing is claimed or created.
+  if (account.currency !== 'USD') return attention(NOT_USD);
   if (circles.length === 0) return attention(NO_AREA);
+
+  // The landing page lives on the company host. Without POLICY_PAGES_DOMAIN there is none, so stop before
+  // any page or platform call (the app host's /storm/:id is the SPA route, not the landing page).
+  const origin = companyOriginFor(deps.config, slug);
+  if (origin === null) return attention(NO_LANDING_PAGES);
 
   const startDate = localDate(now, timezone);
   const endDate = addDays(startDate, p.days - 1);
-  // The landing page is Task 20's: ensureStormPage owns the code and the active-until rule.
-  const page = await withTenant(deps.pools, ctx, (tx) => ensureStormPage(tx, ctx, { companyStormId, now }));
-  const landingUrl = `${companyOriginFor(deps.config, slug) ?? deps.config.PUBLIC_BASE_URL}/storm/${page.code}`;
+  // The landing page is Task 20's: ensureStormPage owns the code and the first active-until rule. The page
+  // must outlive the campaign: it is kept live until the day after the campaign's end date (only extended).
+  const page = await withTenant(deps.pools, ctx, async (tx) => {
+    const ensured = await ensureStormPage(tx, ctx, { companyStormId, now });
+    await extendStormPageUntil(tx, ctx, ensured.id, new Date(`${addDays(endDate, 1)}T00:00:00Z`));
+    return ensured;
+  });
+  const landingUrl = `${origin}/storm/${page.code}`;
 
   const creative: Record<string, unknown> = {
     headline: p.headline,
@@ -205,10 +229,20 @@ export const createAdCampaignHandler: StepHandler = async (deps: AppDeps, ctx: T
   const accountId = account.externalAccountId;
   const api = platform === 'google' ? deps.adsGoogle : deps.adsMeta;
 
+  // Set once the platform id is stored on the row; from then on a failure may have left the campaign enabled.
+  let storedId: string | null = row.externalCampaignId;
+
   const fail = async (kind: AdErrorKind): Promise<StepOutcome> => {
     const errorPlain = AD_ERROR_COPY[kind];
+    // paused_by is cleared: the sync's sweep confirms the pause itself before it stops looking at this row.
     await withTenant(deps.pools, ctx, (tx) =>
-      updateAdCampaign(tx, ctx, row.id, { status: 'failed', errorKind: kind, errorPlain, now: deps.clock.now() }),
+      updateAdCampaign(tx, ctx, row.id, {
+        status: 'failed',
+        pausedBy: null,
+        errorKind: kind,
+        errorPlain,
+        now: deps.clock.now(),
+      }),
     );
     return attention(errorPlain);
   };
@@ -267,9 +301,16 @@ export const createAdCampaignHandler: StepHandler = async (deps: AppDeps, ctx: T
     await withTenant(deps.pools, ctx, (tx) =>
       updateAdCampaign(tx, ctx, row.id, { externalCampaignId: campaignId, now: deps.clock.now() }),
     );
+    storedId = campaignId;
     await api.setStatus(accountId, campaignId, 'active');
     await withTenant(deps.pools, ctx, (tx) =>
-      updateAdCampaign(tx, ctx, row.id, { status: 'active', errorKind: null, errorPlain: null, now: deps.clock.now() }),
+      updateAdCampaign(tx, ctx, row.id, {
+        status: 'active',
+        pausedBy: null,
+        errorKind: null,
+        errorPlain: null,
+        now: deps.clock.now(),
+      }),
     );
     return summary({
       ...row,
@@ -277,6 +318,15 @@ export const createAdCampaignHandler: StepHandler = async (deps: AppDeps, ctx: T
       housingFallback: housing,
     });
   } catch (err) {
+    // The enable may have reached the platform even though its answer was lost, so switch the campaign off again.
+    // A failure here is logged (never provider text); the hourly sync sweeps this row and pauses it if still live.
+    if (storedId !== null) {
+      try {
+        await api.setStatus(accountId, storedId, 'paused');
+      } catch (pauseErr) {
+        reportJobError(deps, pauseErr, `create_ad_campaign: step ${step.id} pause after failure`);
+      }
+    }
     if (err instanceof AdPlatformError) return fail(err.kind);
     throw err;
   }

@@ -40,6 +40,9 @@ const num = (v: unknown): number => Number(v ?? 0);
  * What a storm's plan did, counted from the company's own rows. Every query filters on the company id as
  * well as relying on row-level security. All zeros (and no replies) when the storm has no plan.
  *
+ * Replies: an inbound text counts when it came within 14 days after the customer's first plan text and before
+ * the customer's next storm text from a different plan.
+ *
  * Unsubscribes: email_opt_outs rows carry no message id, so an opt-out counts when its address is one a
  * plan email went to and it was recorded at or after that email was sent.
  */
@@ -84,6 +87,18 @@ export async function stormResultCounts(tx: Tx, ctx: TenantContext, companyStorm
       from messages r
       join plan_texts p on p.customer_id = r.customer_id
       where r.company_id = ${cid}::uuid and r.channel = 'sms' and r.direction = 'in' and r.created_at > p.first_at
+        and r.created_at <= p.first_at + interval '14 days'
+        and not exists (
+          select 1
+          from messages n
+          join agent_task_steps ns on ns.company_id = n.company_id and ns.id = n.step_id
+          join agent_tasks nt on nt.company_id = ns.company_id and nt.id = ns.task_id
+          where n.company_id = ${cid}::uuid and n.customer_id = r.customer_id
+            and n.channel = 'sms' and n.direction = 'out' and n.status in ('sent','delivered')
+            and ns.type = 'send_sms_batch' and nt.kind = 'storm_plan' and ns.task_id <> ${taskId}::uuid
+            and coalesce(n.sent_at, n.created_at) > p.first_at
+            and coalesce(n.sent_at, n.created_at) < r.created_at
+        )
     `),
   );
 

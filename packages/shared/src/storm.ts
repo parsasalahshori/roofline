@@ -17,6 +17,9 @@ export const AD_ACCOUNT_STATUSES = ['pending', 'active', 'error', 'revoked'] as 
 export type AdAccountStatus = (typeof AD_ACCOUNT_STATUSES)[number];
 export const AD_CAMPAIGN_STATUSES = ['creating', 'paused', 'active', 'ended', 'failed'] as const;
 export type AdCampaignStatus = (typeof AD_CAMPAIGN_STATUSES)[number];
+/** Who paused a campaign: Roofline itself (the 95% pause, or a confirmed-off failed row) or the ad platform. */
+export const AD_PAUSED_BY = ['roofline', 'platform'] as const;
+export type AdPausedBy = (typeof AD_PAUSED_BY)[number];
 export const AD_ERROR_KINDS = ['policy', 'payment', 'access', 'targeting', 'other'] as const;
 export type AdErrorKind = (typeof AD_ERROR_KINDS)[number];
 export const EMAIL_OPT_OUT_SOURCES = ['link', 'one_click', 'complaint', 'manual'] as const;

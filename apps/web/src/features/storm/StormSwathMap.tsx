@@ -81,7 +81,7 @@ export function StormSwathMap({ swath }: StormSwathMapProps) {
 
   return (
     <div className={styles.root}>
-      <div ref={containerRef} className={styles.map} role="img" aria-label={storm.mapLabel} />
+      <div ref={containerRef} className={styles.map} role="region" aria-label={storm.mapLabel} />
       <h3 className={styles.legendHeading}>{mapCopy.hailLegend}</h3>
       <ul className={styles.legend} aria-label={mapCopy.hailLegend}>
         {HAIL_LEVEL_SIZES_IN.map((size, index) => (

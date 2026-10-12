@@ -62,3 +62,15 @@ describe('STORM_TOKEN_IN_TEXT', () => {
     expect(UNFILLED_TEXT_REASON.length).toBeGreaterThan(0);
   });
 });
+
+describe('stormTextRender day argument', () => {
+  test('a third argument overrides the day in the fields', () => {
+    const render = stormTextRender('Hail {day} at {street}.', FIELDS, 'today')!;
+    expect(render(ID)).toBe('Hail today at 12 Elm St.');
+  });
+
+  test('without it the fields day is kept', () => {
+    const render = stormTextRender('Hail {day} at {street}.', FIELDS)!;
+    expect(render(ID)).toBe('Hail yesterday at 12 Elm St.');
+  });
+});

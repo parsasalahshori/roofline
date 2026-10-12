@@ -13,12 +13,25 @@ import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { requireCapability } from '../permissions.ts';
 import { draftStormPlan } from '../storm/plan.ts';
+import {
+  PLAN_CHANGED,
+  PLAN_DISMISSED,
+  PLAN_EXISTS,
+  PLAN_NOT_FOUND,
+  PLAN_PAUSED,
+  REDRAFTABLE_PLAN_STATUSES,
+} from '../storm/plan-errors.ts';
 import { stormResults } from '../storm/results.ts';
 import { UUID } from '../validate.ts';
 
 const BBOX_MESSAGE = 'Please give the map area as west,south,east,north.';
 const ZOOM_MESSAGE = 'Please give the map zoom as a whole number from 0 to 22.';
 const DAYS_MESSAGE = 'Please give the number of days as a whole number from 1 to 30.';
+const SINCE_MESSAGE = 'Please give the date as year-month-day, like 2026-10-12.';
+
+/** `GET /` lists storms first matched within this many days unless `?since=` says otherwise. */
+const SINCE_DEFAULT_DAYS = 30;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/;
 
 const ZOOM_MIN = 0;
 const ZOOM_MAX = 22;
@@ -86,13 +99,14 @@ export function stormLayerRoutes(deps: AppDeps): Router {
   return router;
 }
 
-const DISMISSED_MESSAGE = 'This storm was dismissed, so no plan is drafted.';
-const PLAN_EXISTS_MESSAGE = 'This storm already has a plan. Open it in your tasks.';
-const PLAN_CHANGED_MESSAGE = 'The plan changed while we were drafting. Please try again.';
-const PLAN_NOT_FOUND_MESSAGE = 'We could not find that storm.';
-
-/** Only a draft plan may be drafted again (T11 draftStormPlan replaces a draft only). */
-const REDRAFTABLE: readonly string[] = ['draft'];
+/** `?since=` as a Date: an ISO date or date-time, or `fallback` when left out. */
+function parseSince(value: unknown, fallback: Date): Date {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) throw new AppError(400, SINCE_MESSAGE, 'since');
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) throw new AppError(400, SINCE_MESSAGE, 'since');
+  return new Date(ms);
+}
 
 /** The :id of a request as a lowercase UUID, or a 404 for anything else. */
 function stormId(raw: unknown): string {
@@ -103,8 +117,9 @@ function stormId(raw: unknown): string {
 
 /**
  * `/api/storms`: `GET /layer` is the same storm layer; `GET /` and `GET /:id` list and show the company's
- * storms (any member); `POST /:id/dismiss` and `POST /:id/plan` need `approve_internal`. `:id` is the
- * company_storms id. Everything else answers 404.
+ * storms (any member; the list takes `?since=YYYY-MM-DD`, default the last 30 days); `POST /:id/dismiss` and `POST /:id/plan` need `approve_internal`. `:id` is the
+ * company_storms id. A plan is drafted when the storm has none or its plan is a draft (Ruling BD: A1 adds expired and declined)
+ * (409 otherwise); 409 too when Storm Scout is paused. The answer stays `{ taskId }`. Everything else answers 404.
  */
 export function stormRoutes(deps: AppDeps): Router {
   const router = Router();
@@ -113,7 +128,8 @@ export function stormRoutes(deps: AppDeps): Router {
   router.use('/layer', layerHandler(deps));
 
   router.get('/', async (req, res) => {
-    const storms = await withTenant(deps.pools, req.ctx, (tx) => listCompanyStorms(tx, req.ctx));
+    const since = parseSince(req.query['since'], new Date(deps.clock.now().getTime() - SINCE_DEFAULT_DAYS * 24 * 60 * 60 * 1000));
+    const storms = await withTenant(deps.pools, req.ctx, (tx) => listCompanyStorms(tx, req.ctx, { since }));
     res.json({ storms });
   });
 
@@ -154,17 +170,18 @@ export function stormRoutes(deps: AppDeps): Router {
       ref: await companyStormRef(tx, req.ctx, id),
     }));
     if (!storm || !ref) throw new AppError(404, MESSAGES.notFound);
-    if (ref.status === 'dismissed') throw new AppError(409, DISMISSED_MESSAGE);
-    if (storm.planTaskId !== null && !REDRAFTABLE.includes(storm.planStatus ?? '')) {
-      throw new AppError(409, PLAN_EXISTS_MESSAGE);
+    if (ref.status === 'dismissed') throw new AppError(409, PLAN_DISMISSED);
+    if (storm.planTaskId !== null && !REDRAFTABLE_PLAN_STATUSES.some((status) => status === storm.planStatus)) {
+      throw new AppError(409, PLAN_EXISTS);
     }
     try {
-      const { taskId } = await draftStormPlan(deps, req.ctx.companyId, id, deps.clock.now());
-      res.json({ taskId });
+      const drafted = await draftStormPlan(deps, req.ctx.companyId, id, deps.clock.now());
+      if (drafted === null) throw new AppError(409, PLAN_PAUSED);
+      res.json({ taskId: drafted.taskId });
     } catch (err) {
       const message = err instanceof Error && !(err instanceof AppError) ? err.message : '';
-      if (message === DISMISSED_MESSAGE || message === PLAN_CHANGED_MESSAGE) throw new AppError(409, message);
-      if (message === PLAN_NOT_FOUND_MESSAGE) throw new AppError(404, MESSAGES.notFound);
+      if (message === PLAN_DISMISSED || message === PLAN_CHANGED) throw new AppError(409, message);
+      if (message === PLAN_NOT_FOUND) throw new AppError(404, MESSAGES.notFound);
       throw err;
     }
   });

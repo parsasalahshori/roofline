@@ -1,4 +1,4 @@
-import { getAlertFacts, claimNowAlert, listAlertRecipients, withTenant, type AlertFacts, type AlertRecipient } from '@roofline/db';
+import { getAlertFacts, claimNowAlert, releaseNowAlert, listUnalertedMatched, listAlertRecipients, withTenant, type AlertFacts, type AlertRecipient } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
@@ -54,19 +54,23 @@ async function sendEach(
   companyId: string,
   recipients: AlertRecipient[],
   message: { subject: string; text: string },
-): Promise<void> {
+): Promise<number> {
+  let ok = 0;
   for (const r of recipients) {
     try {
       await deps.mailer.send({ to: r.email, subject: message.subject, text: message.text });
+      ok += 1;
     } catch (err) {
       reportJobError(deps, err, `storm-alert: company ${companyId}`);
     }
   }
+  return ok;
 }
 
 /** Alerts the owner and office about a company storm ('storm-alert' job body). */
 export async function sendStormAlert(deps: AppDeps, companyId: string, companyStormId: string, kind: 'now' | 'plan'): Promise<void> {
   if (kind === 'now') {
+    await alertUnalerted(deps, companyId);
     await alertNow(deps, companyId, companyStormId);
     return;
   }
@@ -84,7 +88,23 @@ export async function alertNow(deps: AppDeps, companyId: string, companyStormId:
     return { facts, recipients: await listAlertRecipients(tx) };
   });
   if (!found) return;
-  await sendEach(deps, companyId, found.recipients, nowEmail(deps, found.facts, companyStormId));
+  const sentCount = await sendEach(deps, companyId, found.recipients, nowEmail(deps, found.facts, companyStormId));
+  if (found.recipients.length > 0 && sentCount === 0) {
+    // Every send failed: give the claim back so the next match alerts again.
+    await withTenant(deps.pools, systemContext(companyId), (tx) => releaseNowAlert(tx, companyStormId));
+  }
+}
+
+/** Alerts every matched company storm whose "now" alert was never claimed (covers a crash between the match commit and the alert). */
+export async function alertUnalerted(deps: AppDeps, companyId: string): Promise<void> {
+  const ids = await withTenant(deps.pools, systemContext(companyId), (tx) => listUnalertedMatched(tx));
+  for (const id of ids) {
+    try {
+      await alertNow(deps, companyId, id);
+    } catch (err) {
+      reportJobError(deps, err, `storm-alert: company ${companyId}`);
+    }
+  }
 }
 
 /** Emails the owner and office that the plan is drafted. */

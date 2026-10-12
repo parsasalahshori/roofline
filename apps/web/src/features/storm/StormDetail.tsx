@@ -32,20 +32,25 @@ export function StormDetail() {
   const role = me.data?.role;
   const canAct = role === 'owner' || role === 'office';
   const item = data.storm;
+  const planStatus = data.plan?.status;
+  /** An expired or declined plan is over: only a new one makes sense. */
+  const plansReplaced = planStatus === 'expired' || planStatus === 'declined';
+  const canRedraft = data.plan === null || planStatus === 'draft' || plansReplaced;
 
   return (
     <div className={styles.page}>
       <h1 className={styles.title}>{item.placeName ?? item.day}</h1>
       <p className={styles.size}>{storm.upTo(item.maxIn.toFixed(2))}</p>
       <div className={styles.stats}>
-        <StatCard label={storm.customersHit(item.customersHit)} value={item.customersHit} />
-        <StatCard label={storm.homesHit(item.homesHit)} value={item.homesHit} />
+        <StatCard label={storm.customersHitLabel} value={item.customersHit} />
+        <StatCard label={storm.homesHitLabel} value={item.homesHit} />
       </div>
       <StormSwathMap swath={data.swath} />
       <Card as="section" aria-label={storm.planHeadingDetail} className={styles.plan}>
-        {data.plan ? (
+        {data.plan && !plansReplaced ? (
           <Button href={'/storm/plans/' + encodeURIComponent(data.plan.taskId)}>{storm.openPlan}</Button>
-        ) : canAct ? (
+        ) : null}
+        {canAct && canRedraft ? (
           <Button
             variant="primary"
             disabled={redraft.isPending}
