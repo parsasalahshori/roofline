@@ -114,7 +114,7 @@ test('a weather move review shows the new day and the reason, then Approve', asy
   );
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByText('Move the install to ' + day, { exact: false })).toBeVisible({ timeout: 20_000 });
-  await expect(dialog.getByText(plan.reason)).toBeVisible();
+  await expect(dialog.getByRole('paragraph').filter({ hasText: plan.reason })).toBeVisible();
 
   await page.getByRole('button', { name: /^Approve 1 step/ }).click();
   await expect(dialog.getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, { timeout: 20_000 });
