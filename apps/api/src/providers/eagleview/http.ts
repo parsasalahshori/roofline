@@ -64,6 +64,11 @@ function errorForStatus(status: number): EagleViewHttpError | null {
   return fail('rejected', status);
 }
 
+/**
+ * TO CONFIRM AT PARTNER ONBOARDING: the production auth flavor for Measurement Orders. v1 used a bearer
+ * token from the account integration; this class uses the client-credentials token for both hosts. Auth
+ * lives only here (plan Ruling 5), so a different flavor changes this class and nothing else.
+ */
 export class EagleViewHttp {
   readonly env: 'sandbox' | 'production';
   private readonly clientId: string;

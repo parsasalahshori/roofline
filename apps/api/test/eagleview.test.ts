@@ -308,6 +308,13 @@ describe('EagleViewOrders', () => {
     await expect(orders.report(REPORT_ID)).resolves.toEqual({ status: 'pending' });
   });
 
+  test('get-report complete without a readable cost gives costCents null, never 0', async () => {
+    const text = fixtureText('get-report-complete.json').replace('"Cost":42.5,', '');
+    const { orders } = makeOrders([{ match: REPORT_ROUTE_PART, replies: [{ status: 200, text }] }]);
+    const result = await orders.report(REPORT_ID);
+    expect(result).toMatchObject({ status: 'complete', costCents: null });
+  });
+
   test('get-report complete', async () => {
     const { orders, calls } = makeOrders([
       { match: REPORT_ROUTE_PART, replies: [{ status: 200, text: fixtureText('get-report-complete.json') }] },
