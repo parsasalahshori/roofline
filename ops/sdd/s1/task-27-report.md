@@ -16,3 +16,6 @@
 
 ## Verify tail
 typecheck, lint, lint:css clean; web vitest: 48 files, 482 tests passed.
+
+## CI round 1 (run 38208185882)
+Failed: storm-settings.test.ts read company_settings through the system pool (no grant, 42501). Fixed: the helper now reads through the tenant pool with set_config. All other 4137 tests passed.

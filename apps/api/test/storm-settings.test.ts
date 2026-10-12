@@ -29,13 +29,21 @@ beforeEach(async () => {
   t = await makeTestApp();
 });
 
-/** A look at the stored settings row through the system pool, so a reset shows as NULL. */
+/** A look at the stored settings row through the tenant pool (the system pool has no grant), so a reset shows as NULL. */
 async function storedSettings(companyId: string): Promise<Record<string, unknown>> {
-  const result = await t.deps.pools.system.$client.query(
-    'select hail_threshold_in, storm_ad_budget_cents, storm_ad_days, storm_ad_google_share_pct, storm_email_enabled, storm_sms_template, storm_email_subject, storm_email_template from company_settings where company_id = $1',
-    [companyId],
-  );
-  return result.rows[0] as Record<string, unknown>;
+  const client = await t.deps.pools.tenant.$client.connect();
+  try {
+    await client.query('begin');
+    await client.query("select set_config('app.company_id', $1, true)", [companyId]);
+    const result = await client.query(
+      'select hail_threshold_in, storm_ad_budget_cents, storm_ad_days, storm_ad_google_share_pct, storm_email_enabled, storm_sms_template, storm_email_subject, storm_email_template from company_settings where company_id = $1',
+      [companyId],
+    );
+    await client.query('commit');
+    return result.rows[0] as Record<string, unknown>;
+  } finally {
+    client.release();
+  }
 }
 
 function upload(agent: SuperAgent, bytes: Buffer, type = 'image/jpeg') {
