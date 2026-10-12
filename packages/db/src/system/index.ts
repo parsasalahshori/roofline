@@ -18,6 +18,7 @@ export * from './calendar-sync.ts';
 export * from './footprints.ts';
 export * from './proposal-links.ts';
 export * from './exact-report-fanout.ts';
+export * from './signed-pdf-fanout.ts';
 // S1 skeleton (Task 1).
 export * from './spotter.ts';
 export * from './storm-match-fanout.ts';

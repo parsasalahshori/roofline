@@ -5,10 +5,13 @@ import { pdfToBuffer, renderProposalPdf, type ProposalPdfInput } from '../src/pr
 
 const calculation = calculateQuote({ ...defaultScope, areaSqFt: 2400, areaType: 'surface', pitch: 6 }, defaultPricebook);
 
+const ICE_SHIELD = { code: 'addon', name: 'Ice shield', quantity: 220, unit: 'ft', unitCents: 250, totalCents: 55000, taxable: true };
+
 function option(tier: 'good' | 'better' | 'best', name: string, extra: Partial<ProposalOptionView> = {}): ProposalOptionView {
   return {
     id: `opt-${tier}`, tier, name, highlights: [`${name} highlight`], scope: { ...defaultScope }, addOns: [],
-    calculation, addOnLines: [{ code: 'addon', name: 'Ice shield', quantity: 220, unit: 'ft', unitCents: 250, totalCents: 55000, taxable: true }],
+    // As withAddOns makes them: the add-on lines are at the end of calculation.lines, and addOnLines repeats them.
+    calculation: { ...calculation, lines: [...calculation.lines, ICE_SHIELD] }, addOnLines: [ICE_SHIELD],
     totalCents: 1_234_500, monthlyEstimateCents: 21_200, enabled: true, ...extra,
   };
 }
@@ -46,12 +49,13 @@ function decodeText(raw: string): string {
 }
 
 const base = (extra: Partial<ProposalPdfInput> = {}): ProposalPdfInput => ({
-  audience: 'homeowner', company: { name: 'Acme Roofing', phone: '(402) 555-0199' }, proposal: proposal(), ...extra,
+  audience: 'homeowner', company: { name: 'Acme Roofing', phone: '(402) 555-0199' }, proposal: proposal(), estimateClause: null, ...extra,
 });
 const pages = (s: string): number => (s.match(/\/Type \/Page\n/g) ?? []).length;
 
-const signature: { record: SignatureRecord; image: null } = {
+const signature: { record: SignatureRecord; image: null; timeZone: string } = {
   image: null,
+  timeZone: 'America/Chicago',
   record: {
     optionId: 'opt-better', signerName: 'Molly Q. Lindgren', typedSignature: 'Molly Q. Lindgren', drawnSignaturePngSha256: null,
     consentText: 'I agree to sign electronically.', consentVersion: 'v1', documentSha256: 'ab12'.repeat(16), totalCents: 1_234_500,
@@ -100,6 +104,33 @@ describe('proposal pdf', () => {
     const p = proposal();
     p.options.forEach((o) => { o.monthlyEstimateCents = null; });
     expect(await render(base({ proposal: p, financing: { aprBps: 999, months: 120 } }))).not.toContain('estimate, subject to approval');
+  });
+
+  test('the internal PDF lists each add-on line once (calculation.lines already carries them)', async () => {
+    const addOn = { code: 'ridge-vent', name: 'Ridge vent upgrade', quantity: 60, unit: 'ft', unitCents: 900, totalCents: 54_000, taxable: true };
+    const p = proposal();
+    p.options = [option('better', 'Bravo Shingles', { calculation: { ...calculation, lines: [...calculation.lines, addOn] }, addOnLines: [addOn] })];
+    const internal = await render(base({ audience: 'internal', proposal: p }));
+    expect(internal.split('Ridge vent upgrade').length - 1).toBe(1);
+  });
+
+  test('per-option financing terms: each option shows its own frozen terms, and null hides the line', async () => {
+    const s = await render(
+      base({
+        financing: { aprBps: 1, months: 1 },
+        optionFinancing: { 'opt-good': { aprBps: 799, months: 60 }, 'opt-better': null, 'opt-best': { aprBps: 999, months: 120 } },
+      }),
+    );
+    expect(s).toContain('7.99% for 60 months');
+    expect(s).toContain('9.99% for 120 months');
+    expect(s.split('subject to approval').length - 1).toBe(2);
+    expect(s).not.toContain('0.01% for 1 months');
+  });
+
+  test('the signature page repeats the chosen option\'s financing line', async () => {
+    const signed = await render(base({ signature, optionFinancing: { 'opt-better': { aprBps: 999, months: 120 } } }));
+    const page = signed.slice(signed.indexOf('Signed by'));
+    expect(page).toContain('9.99% for 120 months');
   });
 
   test('signature page', async () => {

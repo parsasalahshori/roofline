@@ -10,7 +10,7 @@ import { connections } from '../src/copy/connections.ts';
 import { doors } from '../src/copy/doors.ts';
 import { settings } from '../src/copy/settings.ts';
 import { storm } from '../src/copy/storm.ts';
-import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
+import { ACCOUNT, proposalListRoutes, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The route map needs maplibre-gl, which these tests never need. RouteMap is package B's component.
 vi.mock('../src/features/storm/routes/RouteMap.tsx', () => ({ RouteMap: () => null }));
@@ -153,7 +153,8 @@ describe('S1 Storm windows', () => {
   });
 
   it('the dock Storm opens /storm', async () => {
-    signedInApi();
+    // It starts on the Estimator, which lists proposals by status (E1's per-status groups).
+    signedInApi(ACCOUNT, proposalListRoutes());
     const { router, user } = renderApp('/estimator');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
     const link = dockLink(dockNav, WINDOW_COPY.storm.title);

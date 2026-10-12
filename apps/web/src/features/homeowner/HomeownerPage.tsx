@@ -186,14 +186,18 @@ export function HomeownerPage() {
               {callLink}
             </div>
 
-            <SignFlow
-              token={token}
-              proposal={proposal}
-              optionId={chosen?.id ?? ''}
-              open={chosen !== null}
-              onClose={() => setChosenOptionId(null)}
-              onSigned={() => setChosenOptionId(null)}
-            />
+            {/* Mounted only while an option is chosen, and keyed by it: every opening starts with an empty pad, no old drawing, name or error. */}
+            {chosen !== null ? (
+              <SignFlow
+                key={chosen.id}
+                token={token}
+                proposal={proposal}
+                optionId={chosen.id}
+                open
+                onClose={() => setChosenOptionId(null)}
+                onSigned={() => setChosenOptionId(null)}
+              />
+            ) : null}
             <DeclineSheet
               token={token}
               open={declineOpen}

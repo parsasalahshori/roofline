@@ -6,6 +6,7 @@ import {
   getProposal,
   listProposals,
   measurements,
+  proposalOptions,
   proposals,
   tierTemplates,
   UnknownProposalOptionError,
@@ -16,8 +17,8 @@ import {
 import { DEFAULT_TIER_TEMPLATES, defaultPricebook, defaultScope, monthlyPaymentCents, priceTier, type MeasuredQuantities } from '@roofline/shared';
 import { Actors, addressFor, dbActivities, inCompany, mustCreate, NO_UUID } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
-import { buildProposal } from '../src/estimator/build.ts';
-import { repriceFromMeasurement } from '../src/estimator/reprice.ts';
+import { buildProposal, NO_ROOF_MESSAGE, TOO_LARGE_ESTIMATE_MESSAGE, TOO_LARGE_ROOF_MESSAGE } from '../src/estimator/build.ts';
+import { REPLACED_PROPOSAL_MESSAGE, repriceFromMeasurement, SIGNED_PROPOSAL_MESSAGE } from '../src/estimator/reprice.ts';
 
 const NOW = new Date('2026-10-12T15:00:00.000Z');
 const SURFACE = 2400;
@@ -313,5 +314,84 @@ describe('listing proposals', () => {
     expect(page.proposals).toHaveLength(1);
     const signed = (await list({ status: 'signed' })).proposals[0]!;
     expect(signed.signed).toBeNull(); // no signature record was written
+  });
+});
+
+const storedTerms = async (proposalId: string) =>
+  (await inCompany(t, A(), (tx) => tx.select().from(proposalOptions).where(eq(proposalOptions.proposalId, proposalId)))).map(
+    (o) => (o.prices as { terms?: unknown }).terms,
+  );
+
+describe('terms frozen with the price (Ruling ER)', () => {
+  test('each option stores the financing and the estimate clause it was priced with', async () => {
+    const s = await setup();
+    const plain = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
+    expect(await storedTerms(plain.id)).toEqual([0, 1, 2].map(() => ({ financing: null, estimateClause: true })));
+
+    await setFinancing(999, 120);
+    const financed = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
+    expect(await storedTerms(financed.id)).toEqual([0, 1, 2].map(() => ({ financing: { aprBps: 999, months: 120 }, estimateClause: true })));
+
+    // The clause is for estimates only, and only while the company keeps it on.
+    const exact = await newMeasurement('a', s.property.id as string, SURFACE, 'exact');
+    const fromReport = await buildProposal(t.deps, ownerCtx(), { measurementId: exact, jobId: s.job.id });
+    expect((await storedTerms(fromReport.id)).every((terms) => (terms as { estimateClause: boolean }).estimateClause === false)).toBe(true);
+    await inCompany(t, A(), (tx) => tx.update(companySettings).set({ estimateChangeClause: false }).where(eq(companySettings.companyId, A())));
+    const off = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
+    expect((await storedTerms(off.id)).every((terms) => (terms as { estimateClause: boolean }).estimateClause === false)).toBe(true);
+  });
+
+  test('a re-price writes the terms of that moment, and the monthly amount follows them', async () => {
+    const s = await setup();
+    const p = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
+    await setFinancing(0, 60);
+    const r = await repriceFromMeasurement(t.deps, ownerCtx(), p.id, await newMeasurement('a', s.property.id as string, 3600));
+    expect(await storedTerms(p.id)).toEqual([0, 1, 2].map(() => ({ financing: { aprBps: 0, months: 60 }, estimateClause: true })));
+    for (const o of r.proposal.options) expect(o.monthlyEstimateCents).toBe(Math.ceil(o.totalCents / 60));
+  });
+});
+
+describe('roofs the pricing engine cannot price (B8)', () => {
+  test('no roof (zero surface) is a plain 400 asking for the outline', async () => {
+    const s = await setup('a', {}, 0, 0);
+    await expect(buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id })).rejects.toMatchObject({ status: 400, message: NO_ROOF_MESSAGE });
+    expect(NO_ROOF_MESSAGE).toBe('Draw the roof outline first.');
+  });
+
+  test('a surface over the pricing limit is a plain 400: an estimate points to an exact report', async () => {
+    const s = await setup('a', {}, 0, 150_000);
+    await expect(buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id })).rejects.toMatchObject({ status: 400, message: TOO_LARGE_ESTIMATE_MESSAGE });
+    const exact = await newMeasurement('a', s.property.id as string, 150_000, 'exact');
+    await expect(buildProposal(t.deps, ownerCtx(), { measurementId: exact, jobId: s.job.id })).rejects.toMatchObject({ status: 400, message: TOO_LARGE_ROOF_MESSAGE });
+  });
+
+  test('the route answers the plain sentence, with no field', async () => {
+    const s = await setup('a', {}, 0, 0);
+    const res = await (await who.as('owner')).post('/api/proposals').send({ measurementId: s.measurementId, jobId: s.job.id });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: NO_ROOF_MESSAGE });
+  });
+});
+
+describe('repricing by status (B1, B9)', () => {
+  test("a 'ready' proposal gets a revised draft and is replaced by it, so its waiting send texts nothing", async () => {
+    const s = await setup();
+    const p = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
+    await inCompany(t, A(), (tx) => tx.update(proposals).set({ status: 'ready' }).where(eq(proposals.id, p.id)));
+    const r = await repriceFromMeasurement(t.deps, ownerCtx(), p.id, await newMeasurement('a', s.property.id as string, 3600, 'exact'));
+    expect(r.revised).toBe(true);
+    const [old] = await inCompany(t, A(), (tx) => tx.select().from(proposals).where(eq(proposals.id, p.id)));
+    expect(old).toMatchObject({ status: 'replaced', replacedById: r.proposal.id });
+  });
+
+  test('a signed proposal is refused inside the re-price (409), and so is a replaced one', async () => {
+    const s = await setup();
+    const p = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
+    const m = await newMeasurement('a', s.property.id as string, 3600, 'exact');
+    await inCompany(t, A(), (tx) => tx.update(proposals).set({ status: 'signed', signedAt: NOW }).where(eq(proposals.id, p.id)));
+    await expect(repriceFromMeasurement(t.deps, ownerCtx(), p.id, m)).rejects.toMatchObject({ status: 409, message: SIGNED_PROPOSAL_MESSAGE });
+    await inCompany(t, A(), (tx) => tx.update(proposals).set({ status: 'replaced', signedAt: null }).where(eq(proposals.id, p.id)));
+    await expect(repriceFromMeasurement(t.deps, ownerCtx(), p.id, m)).rejects.toMatchObject({ status: 409, message: REPLACED_PROPOSAL_MESSAGE });
+    expect(await inCompany(t, A(), (tx) => tx.select().from(proposals).where(eq(proposals.jobId, s.job.id)))).toHaveLength(1);
   });
 });

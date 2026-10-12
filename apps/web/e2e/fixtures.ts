@@ -6,7 +6,7 @@ import pg from 'pg';
 import { createPools, type Pools } from '@roofline/db';
 import { resetDb, seedTwoCompanies, SEED_PASSWORD, type SeededCompany } from '@roofline/db/testing';
 import type { CompanyStatus } from '@roofline/shared';
-import { seedDemoTask, seedShowcase } from '@roofline/api';
+import { seedDemoTask, seedFootprintFixture, seedShowcase } from '@roofline/api';
 import { seedAgentsFixture, type AgentsFixture } from './agents-seed.ts';
 
 /*
@@ -48,6 +48,7 @@ export async function resetScenario(urls: { owner: string; tenant: string; syste
   const { a } = await seedTwoCompanies(urls.owner);
   const pools = getPools(urls);
   const { taskId } = await seedShowcase(pools, a.companyId, new Date(), { companyName: 'Acme Roofing' });
+  await seedFootprintFixture(pools);
   return { a, taskId };
 }
 

@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
-import { CONSENT_TEXT_V1, canonicalJson, signedDocument, type ProposalView, type PublicProposalView } from '@roofline/shared';
-import { eq } from 'drizzle-orm';
+import { crc32, deflateSync } from 'node:zlib';
+import { CONSENT_TEXT_V1, canonicalJson, parseSignedDocument, signedDocument, type ProposalView, type PublicProposalView } from '@roofline/shared';
+import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { customers, measurements, proposalSignatures, proposals } from '@roofline/db';
+import { customers, measurements, proposalEvents, proposalSignatures, proposals } from '@roofline/db';
 import { addressFor, Actors, dbJob, inCompany, mustCreate } from './crm-helpers.ts';
+import { proposalIpHashFor } from '../src/public/proposal-common.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { DAYTIME } from './sms-helpers.ts';
 import { dbSteps, seenOf } from './task-helpers.ts';
@@ -25,6 +27,26 @@ const sha256 = (value: string | Buffer): string => createHash('sha256').update(v
 // A 1x1 PNG.
 const TINY_PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const DRAW_AGAIN = 'Draw your signature again.';
+
+function chunk(type: string, data: Buffer): Buffer {
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(data.length, 0);
+  head.write(type, 4, 'latin1');
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
+  return Buffer.concat([head, data, crc]);
+}
+/** A PNG of the given size and colour type around the given IDAT bytes, as raw base64. */
+function pngOf(width: number, height: number, colourType: number, idat: Buffer): string {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = colourType;
+  const magic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return Buffer.concat([magic, chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]).toString('base64');
+}
 
 beforeEach(async () => {
   t = await makeTestApp();
@@ -198,13 +220,79 @@ describe('what is checked', () => {
     expect(res.body.error).toBe('Draw your signature again.');
   });
 
-  test('a tiny PNG without a prefix is accepted and its hash stored', async () => {
+  test('a tiny PNG without a prefix is accepted, its hash stored, and the image stored in file storage first', async () => {
     const s = await sent();
     const view = await viewOf(s.token);
     const res = await post(s.token, goodBody(view, { drawnSignature: TINY_PNG }));
     expect(res.status).toBe(200);
+    const png = Buffer.from(TINY_PNG, 'base64');
     const [row] = await signatures(s.proposal.id);
-    expect(row!.drawnSignaturePngSha256).toBe(sha256(Buffer.from(TINY_PNG, 'base64')));
+    expect(row!.drawnSignaturePngSha256).toBe(sha256(png));
+    const key = `companies/${t.seed.a.companyId}/proposals/${s.proposal.id}/signature-${sha256(png)}.png`;
+    const stored = await t.objectStore.get(key);
+    expect(stored).not.toBeNull();
+    expect(Buffer.compare(Buffer.from(stored!), png)).toBe(0);
+    expect(t.objectStore.calls).toContainEqual({ method: 'put', key, contentType: 'image/png' });
+  });
+
+  test('a fully transparent RGBA drawing (valid PNG) is accepted', async () => {
+    const s = await sent();
+    const view = await viewOf(s.token);
+    const clear = pngOf(600, 240, 6, deflateSync(Buffer.alloc(240 * (1 + 600 * 4))));
+    const res = await post(s.token, goodBody(view, { drawnSignature: clear }));
+    expect(res.status).toBe(200);
+    const [row] = await signatures(s.proposal.id);
+    expect(row!.drawnSignaturePngSha256).toBe(sha256(Buffer.from(clear, 'base64')));
+  });
+
+  test('a PNG magic with junk, a corrupt IDAT and an oversized image are refused before anything is stored or signed', async () => {
+    const s = await sent();
+    const view = await viewOf(s.token);
+    const bad = {
+      junk: Buffer.concat([Buffer.from('\x89PNG', 'latin1'), Buffer.from('junk that is not a png at all')]).toString('base64'),
+      // The case that crashed the worker: a valid RGBA header around image data that is not zlib.
+      corruptIdat: pngOf(4, 2, 6, Buffer.from('notzlibdata')),
+      shortIdat: pngOf(4, 2, 6, deflateSync(Buffer.alloc(10))),
+      tooWide: pngOf(2001, 1, 6, deflateSync(Buffer.alloc(1 + 2001 * 4))),
+      bomb: pngOf(2000, 1000, 6, deflateSync(Buffer.alloc(20_000_000))),
+    };
+    for (const [name, drawnSignature] of Object.entries(bad)) {
+      const res = await post(s.token, goodBody(view, { drawnSignature }));
+      expect(res.status, name).toBe(400);
+      expect(res.body, name).toEqual({ error: DRAW_AGAIN, field: 'drawnSignature' });
+    }
+    expect(t.objectStore.calls.filter((c) => c.method === 'put')).toHaveLength(0);
+    expect(await signatures(s.proposal.id)).toHaveLength(0);
+    expect((await proposalRow(s.proposal.id)).status).not.toBe('signed');
+    expect(t.jobs.sent.filter((j) => j.name === 'signed-pdf')).toHaveLength(0);
+  });
+
+  test("the 'signed' event stores the exact document the hash covers", async () => {
+    const s = await sent();
+    const view = await viewOf(s.token);
+    const body = goodBody(view);
+    expect((await post(s.token, body)).status).toBe(200);
+    const [row] = await signatures(s.proposal.id);
+    const [event] = await inCompany(t, t.seed.a.companyId, (tx) =>
+      tx.select().from(proposalEvents).where(and(eq(proposalEvents.proposalId, s.proposal.id), eq(proposalEvents.kind, 'signed'))),
+    );
+    const stored = event!.data['document'];
+    expect(sha256(canonicalJson(stored))).toBe(row!.documentSha256);
+    expect(parseSignedDocument(stored)).toEqual(signedDocument(view, body.optionId, view.basis === 'estimate'));
+    expect(event!.data['optionId']).toBe(body.optionId);
+    // Security finding 8: the event keeps a keyed hash of the signer's address (the signature row keeps the raw one).
+    expect(event!.ipHash).toBe(proposalIpHashFor(t.deps.config, row!.ip ?? '', t.seed.a.companyId));
+    expect(event!.ipHash).not.toBe(createHash('sha256').update(`${row!.ip}${t.seed.a.companyId}`).digest('hex'));
+  });
+
+  test('a failed image store records no signature', async () => {
+    const s = await sent();
+    const view = await viewOf(s.token);
+    t.objectStore.failNext(1);
+    const res = await post(s.token, goodBody(view, { drawnSignature: TINY_PNG }));
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(await signatures(s.proposal.id)).toHaveLength(0);
+    expect((await proposalRow(s.proposal.id)).status).not.toBe('signed');
   });
 
   test('the 11th attempt on one token within an hour is a 429', async () => {

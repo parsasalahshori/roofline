@@ -1,3 +1,4 @@
+import { isUsStateCode } from '@roofline/shared';
 import { claimFootprintState, failFootprintState, finishFootprintState, insertFootprints, type FootprintInput } from '@roofline/db/system';
 import type { AppDeps } from '../app.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
@@ -11,11 +12,13 @@ export const FOOTPRINT_LOAD_FAILED_PLAIN = "We couldn't load the building outlin
  * Loads one state's building outlines into the global table (a long job as app_system). Safe to
  * retry: a failure clears the partial rows and marks the state failed, and the next attempt
  * re-claims it (which clears the state's rows again). A duplicate job for a state already loading
- * or ready does nothing.
+ * or ready does nothing, and so does one for a code that is not a US state (or DC).
  */
 export async function loadFootprintState(deps: AppDeps, state: string, meta: JobMeta): Promise<void> {
-  const s = state.toUpperCase();
+  const s = state.trim().toUpperCase();
   if (!deps.footprints.configured) return;
+  // A code with no footprint file (a territory, a typo) has nothing to load: done, not retried.
+  if (!isUsStateCode(s)) return;
   const system = deps.pools.system;
   const url = deps.footprints.stateFileUrl(s);
   if (!(await claimFootprintState(system, s, url, deps.clock.now()))) return;

@@ -26,6 +26,12 @@ const LOOKS_LIKE_FILE = /\.[a-z0-9]+$/i;
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 const NO_CACHE = 'no-cache';
 
+/**
+ * The homeowner's proposal page, `/p/<token>`: its URL carries the link's credential, so it is never
+ * indexed or followed, never stored by any cache, and never sent on as a referrer.
+ */
+const PROPOSAL_PAGE = /^\/p(?:\/|$)/i;
+
 export function serveWeb(app: Express, distDir: string): void {
   const root = path.resolve(distDir);
   const indexPath = path.join(root, 'index.html');
@@ -47,7 +53,13 @@ export function serveWeb(app: Express, distDir: string): void {
       next();
       return;
     }
-    res.setHeader('Cache-Control', NO_CACHE);
+    if (PROPOSAL_PAGE.test(req.path)) {
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+    } else {
+      res.setHeader('Cache-Control', NO_CACHE);
+    }
     res.sendFile(indexPath, (err) => {
       // A browser that went away mid-download is not worth an error; anything else (index.html
       // deleted under a running server) goes to the error handler and is logged.
