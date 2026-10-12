@@ -42,7 +42,7 @@ function open(data: JobClaimResponse, extra: Routes = {}) {
   return renderAt(<ClaimSection jobId="j1" />);
 }
 
-const putSaved = { 'PUT /api/jobs/j1/claim': () => ({ body: { claim: { ...CLAIM, claimNumber: 'CL-8' }, intake: null } }) };
+const putSaved = { 'PUT /api/jobs/j1/claim': () => ({ body: { ...CLAIM, claimNumber: 'CL-8' } }) };
 
 async function openEdit(user: ReturnType<typeof renderAt>['user']) {
   await user.click(await screen.findByRole('button', { name: claims.edit }));
@@ -80,6 +80,29 @@ describe('claim section', () => {
     expect(screen.getByText('Filed · by Sam · Oct 12')).toBeInTheDocument();
     expect(screen.getByText('Inspected · by the Claims agent · Oct 14')).toBeInTheDocument();
     expect(document.querySelectorAll('a[href^="tel:"], a[href^="mailto:"]').length).toBe(0);
+  });
+
+  it('a first save from an intake sends a cleared pre-filled field as null, so it is not filled back', async () => {
+    const { user } = open({ claim: null, intake: INTAKE }, putSaved);
+    await user.click(await screen.findByRole('button', { name: claims.addDetails }));
+    const form = within(await screen.findByRole('dialog'));
+    await user.clear(form.getByLabelText(claims.claimNumberLabel));
+    await user.click(form.getByRole('button', { name: claims.save }));
+
+    expect(await screen.findByText(claims.saved)).toBeInTheDocument();
+    const [sent] = api.sent('PUT /api/jobs/j1/claim') as Record<string, unknown>[];
+    expect(sent).toMatchObject({ insurer: 'Acme Mutual', claimNumber: null });
+  });
+
+  it('after a save the section shows the saved claim', async () => {
+    const { user } = open({ claim: CLAIM, intake: null }, putSaved);
+    const form = await openEdit(user);
+    const number = form.getByLabelText(claims.claimNumberLabel);
+    await user.clear(number);
+    await user.type(number, 'CL-8');
+    await user.click(form.getByRole('button', { name: claims.save }));
+
+    expect(await screen.findByText('CL-8')).toBeInTheDocument();
   });
 
   it('saves only the changed fields and shows the toast', async () => {

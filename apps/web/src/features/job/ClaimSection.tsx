@@ -126,6 +126,9 @@ function ClaimSheet({ jobId, data, onClose }: ClaimSheetProps) {
     for (const key of TEXT_FIELDS) {
       const next = textOrNull(values[key]);
       if (next !== textOrNull(baseline[key])) edit[key] = next;
+      // First save from an intake: the API fills any field left out from the intake, so a pre-filled
+      // field the person cleared is sent as an explicit null.
+      else if (data.claim === null && next === null && textOrNull(initial[key]) !== null) edit[key] = null;
     }
     if (values.status !== baseline.status) edit.status = values.status;
     const cents = parseDollars(values.deductible);

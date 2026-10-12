@@ -98,7 +98,7 @@ describe('A1 windows', () => {
     signedInApi(ACCOUNT, {
       ['GET /api/agents/' + agent + '?period=month']: () => ({ body: detailFor(agent as ScreenAgent) }),
       // The claims page also shows the claims board, which reads the claims and the company time zone
-      'GET /api/claims': () => ({ body: [] }),
+      'GET /api/claims': () => ({ body: { claims: [] } }),
       'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', timezone: 'America/Chicago' } }),
     });
     renderApp('/agents/' + agentSlug(agent));

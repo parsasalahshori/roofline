@@ -45,7 +45,7 @@ function board(reply: { status?: number; body?: unknown }) {
 
 describe('claims board', () => {
   it('shows a column per status in order', async () => {
-    board({ body: ROWS });
+    board({ body: { claims: ROWS } });
     await screen.findByText('Pat Doe');
     const headings = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
     expect(headings).toEqual(CLAIM_STATUSES.map((s) => claims.status[s]));
@@ -53,7 +53,7 @@ describe('claims board', () => {
   });
 
   it('a card links to its job, inside its column', async () => {
-    board({ body: ROWS });
+    board({ body: { claims: ROWS } });
     const link = await screen.findByRole('link', { name: /Pat Doe/ });
     expect(link).toHaveAttribute('href', '/jobs/j1');
     expect(link).toHaveTextContent(claims.since('Oct 12'));
@@ -64,7 +64,7 @@ describe('claims board', () => {
   });
 
   it('says so when there are no claims', async () => {
-    board({ body: [] });
+    board({ body: { claims: [] } });
     expect(await screen.findByText(claims.boardEmpty)).toBeInTheDocument();
   });
 

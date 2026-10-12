@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClaimBoardRow, ClaimStatus, JobClaimResponse } from '@roofline/shared';
+import type { ClaimBoardRow, ClaimStatus, ClaimView, JobClaimResponse } from '@roofline/shared';
 import { apiFetch } from '../../api/client.ts';
 import { jobKey } from '../job/api.ts';
 
@@ -24,23 +24,24 @@ export function useJobClaim(jobId: string) {
   });
 }
 
-/** Saves the claim; sets the claim query's data and refreshes the job (its timeline). */
+/** Saves the claim (`PUT` answers the saved `ClaimView`); updates the claim query and refreshes the job (its timeline). */
 export function useSaveClaim(jobId: string) {
   const queryClient = useQueryClient();
-  return useMutation<JobClaimResponse, Error, ClaimEdit>({
-    mutationFn: (edit) => apiFetch<JobClaimResponse>('/api/jobs/' + jobId + '/claim', { method: 'PUT', body: edit }),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['claim', jobId], data);
+  return useMutation<ClaimView, Error, ClaimEdit>({
+    mutationFn: (edit) => apiFetch<ClaimView>('/api/jobs/' + jobId + '/claim', { method: 'PUT', body: edit }),
+    onSuccess: (claim) => {
+      queryClient.setQueryData<JobClaimResponse>(['claim', jobId], (old) => ({ claim, intake: old?.intake ?? null }));
       void queryClient.invalidateQueries({ queryKey: jobKey(jobId) });
     },
   });
 }
 
-/** The claims board rows, optionally for one status. */
+/** The claims board rows, optionally for one status (`GET /api/claims` answers `{ claims }`). */
 export function useClaimsBoard(status?: ClaimStatus) {
   return useQuery<ClaimBoardRow[]>({
     queryKey: ['claims-board', status ?? 'all'],
-    queryFn: ({ signal }) =>
-      apiFetch<ClaimBoardRow[]>('/api/claims' + (status === undefined ? '' : '?status=' + status), { signal }),
+    queryFn: async ({ signal }) =>
+      (await apiFetch<{ claims: ClaimBoardRow[] }>('/api/claims' + (status === undefined ? '' : '?status=' + status), { signal }))
+        .claims,
   });
 }
