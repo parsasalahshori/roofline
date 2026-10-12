@@ -74,13 +74,22 @@ CREATE VIEW company_members WITH (security_barrier) AS
 GRANT SELECT ON company_members TO app_tenant;
 --> statement-breakpoint
 
--- 5. app_system: ALL on the global tables, and only the columns the scheduler fan-out needs from
+-- 5. app_system: on the global tables, only the privileges its code uses (never TRUNCATE, which
+--    skips RLS, nor TRIGGER or REFERENCES); and only the columns the scheduler fan-out needs from
 --    tenant tables (ids, company, status, timing; never content). These grants are its real limit:
 --    its RLS policies (section 8) let every row through on the tables granted here.
-GRANT ALL ON
-  users, sessions, memberships, invites, companies, company_phone_numbers,
-  texting_registrations, webhook_events, user_tokens
+--    - accounts, sign-in and team (users, sessions, memberships, invites, user_tokens) and
+--      companies (sign-up rollback deletes the new company): read, add, change, remove;
+--    - texting_registrations: read, add, change (a registration is never deleted);
+--    - company_phone_numbers: read, add (the main number; insert ... on conflict do nothing);
+--    - webhook_events: read, add (the Stripe event claim, insert ... returning id).
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+  users, sessions, memberships, invites, companies, user_tokens
   TO app_system;
+--> statement-breakpoint
+GRANT SELECT, INSERT, UPDATE ON texting_registrations TO app_system;
+--> statement-breakpoint
+GRANT SELECT, INSERT ON company_phone_numbers, webhook_events TO app_system;
 --> statement-breakpoint
 GRANT SELECT (id, company_id, status, expires_at) ON agent_tasks TO app_system;
 --> statement-breakpoint
