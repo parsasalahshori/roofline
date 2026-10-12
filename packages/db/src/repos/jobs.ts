@@ -301,10 +301,11 @@ export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, opt
   assertMayAssign(ctx, input.assignedUserId);
   const links = await checkLinks(tx, ctx, input.customerId, input.propertyId);
   const { property } = links;
-  // A job starts as a lead, so a stage given at creation is a move from 'lead' and follows the same rules.
+  // A stage given at creation follows the move rules from 'lead' (Won needs a value, Lost a reason), except
+  // that a job may start Installed: a past job (the showcase seed, an import) was already Won before it was entered.
   if (input.stage !== undefined) {
     const problem = stageMoveProblem({
-      from: 'lead',
+      from: input.stage === 'installed' ? 'won' : 'lead',
       to: input.stage,
       valueCents: input.valueCents ?? null,
       lostReason: input.lostReason ?? null,
@@ -416,8 +417,9 @@ export async function updateJob(
     const problem = stageMoveProblem({
       from: before.stage,
       to: patch.stage,
-      valueCents: patch.valueCents ?? before.valueCents,
-      lostReason: patch.lostReason ?? before.lostReason,
+      // What will be stored: an explicit null in the patch clears the field, so it counts as null here.
+      valueCents: patch.valueCents !== undefined ? patch.valueCents : before.valueCents,
+      lostReason: patch.lostReason !== undefined ? patch.lostReason : before.lostReason,
     });
     if (problem) throw new StageRuleError(problem);
   }

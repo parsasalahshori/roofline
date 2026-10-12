@@ -148,14 +148,18 @@ describe('creating a job', () => {
   });
 
   test('a job can start in a later stage; that is where it starts, not a move', async () => {
-    const { job } = await aJob({ stage: 'won' });
+    const { job } = await aJob({ stage: 'won', valueCents: 500_000 });
     expect(job).toMatchObject({ stage: 'won', stageLabel: 'Won', stageChangedAt: '2026-10-12T15:00:00.000Z' });
     expect(await timeline(t, A(), job.id as string)).toEqual([['job.created', 'Job created']]);
   });
 
-  test('setting a job to lost without a reason is allowed', async () => {
-    const { job } = await aJob({ stage: 'lost' });
-    expect(job).toMatchObject({ stage: 'lost', lostReason: null });
+  test('a job cannot start lost without a reason', async () => {
+    const { customer, property } = await mollyAndHouse();
+    const res = await (await who.as('owner'))
+      .post('/api/jobs')
+      .send({ customerId: customer.id, propertyId: property.id, stage: 'lost' });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Pick why the job was lost.', field: 'lostReason' });
   });
 
   test('uses the app clock for every time it records', async () => {
@@ -569,9 +573,17 @@ describe('changing a job', () => {
     expect((await owner.patch(`/api/jobs/${job.id}`).send({ lostReason: 'Too expensive for now' })).body.lostReason).toBe(
       'Too expensive for now',
     );
-    // A lost job with no reason moves on without trouble.
-    const bare = await mustCreate(owner, '/api/jobs', { customerId: job.customerId, propertyId: job.propertyId, stage: 'lost' });
-    expect((await owner.patch(`/api/jobs/${bare.id}`).send({ stage: 'won' })).body).toMatchObject({ stage: 'won', lostReason: null });
+    // Leaving Lost clears the reason.
+    const other = await mustCreate(owner, '/api/jobs', {
+      customerId: job.customerId,
+      propertyId: job.propertyId,
+      stage: 'lost',
+      lostReason: 'Went elsewhere',
+    });
+    expect((await owner.patch(`/api/jobs/${other.id}`).send({ stage: 'won', valueCents: 1 })).body).toMatchObject({
+      stage: 'won',
+      lostReason: null,
+    });
   });
 
   test('the value can be cleared with null', async () => {

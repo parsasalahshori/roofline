@@ -71,7 +71,7 @@ describe('GET /api/map/pins', () => {
     const faraway = await mustCreate(owner, '/api/properties', { customerId: near.customer.id, ...addressFor(3), lat: 30.1, lng: -90.1 });
 
     const proposal = await job(owner, near, { stage: 'proposal' });
-    await job(owner, near, { stage: 'lost' });
+    await job(owner, near, { stage: 'lost', lostReason: 'Went elsewhere' });
     await job(owner, far, { stage: 'lead' });
 
     const res = await pins(owner);
