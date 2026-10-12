@@ -8,7 +8,7 @@ export type AppKey = 'storm' | 'front-desk' | 'estimator' | 'jobs' | 'calendar' 
 export type WindowKey = AppKey | 'today' | 'approvals' | 'settings' | 'customers' | 'notFound';
 
 /** The windows that show a "coming soon" line (copy/comingSoon.ts) for now. Jobs, Calendar and Customers have real windows. */
-export type ComingSoonKey = 'storm' | 'front-desk' | 'estimator' | 'agents' | 'approvals';
+export type ComingSoonKey = 'front-desk' | 'estimator' | 'agents' | 'approvals';
 
 /** One app in the dock. `shipped` is true once the app has its real windows; a shipped app shows no "Coming soon" note. */
 export type DockApp = { key: AppKey; href: string; icon: ReactNode; shipped: boolean };

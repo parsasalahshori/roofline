@@ -12,8 +12,13 @@ export const keys = {
   weather: ['weather'] as const,
   mapArea: ['map-area'] as const,
   pins: (bboxKey: string) => ['pins', bboxKey] as const,
+  stormLayer: (bboxKey: string, zoom: number, days: number) => ['storm-layer', bboxKey, zoom, days] as const,
   search: (q: string) => ['search', q] as const,
   company: ['company'] as const,
   team: ['team'] as const,
   texting: ['texting'] as const,
+  storms: ['storms'] as const,
+  storm: (id: string) => ['storm', id] as const,
+  stormSettings: ['storm-settings'] as const,
+  adAccounts: ['ad-accounts'] as const,
 };
