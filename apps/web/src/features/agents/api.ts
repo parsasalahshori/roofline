@@ -1,11 +1,14 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   Agent,
   AgentDetail,
   AgentsOverview,
   FeedPage,
+  RecountResult,
   RunNowResult,
   ScreenAgent,
+  TimeBaselines,
+  TimeBaselinesBody,
   TimePeriod,
   WaitingList,
 } from '@roofline/shared';
@@ -18,13 +21,15 @@ export const agentsKeys = {
   all: ['agents'] as const,
   feed: ['agents', 'feed'] as const,
   waiting: ['agents', 'waiting'] as const,
+  overview: ['agents', 'overview'] as const,
+  detail: (agent: ScreenAgent, period: TimePeriod) => ['agents', 'detail', agent, period] as const,
 };
 
 // --- Task 9: Agents window ---
 /** GET /api/agents: the overview (cards, month totals, hourly rate). */
 export function useAgentsOverview() {
   return useQuery({
-    queryKey: agentsKeys.all,
+    queryKey: agentsKeys.overview,
     queryFn: ({ signal }) => apiFetch<AgentsOverview>('/api/agents', { signal }),
   });
 }
@@ -55,13 +60,12 @@ export function useWaiting() {
 }
 
 // --- Task 10: agent page ---
-export const agentDetailKey = (agent: ScreenAgent, period: TimePeriod) => ['agents', 'detail', agent, period] as const;
-
 /** GET /api/agents/:agent?period= */
 export function useAgentDetail(agent: ScreenAgent, period: TimePeriod) {
   return useQuery({
-    queryKey: agentDetailKey(agent, period),
+    queryKey: agentsKeys.detail(agent, period),
     queryFn: ({ signal }) => apiFetch<AgentDetail>(`/api/agents/${agent}?period=${period}`, { signal }),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -80,5 +84,38 @@ export function useRunNow(agent: ScreenAgent) {
   return useMutation({
     mutationFn: () => apiFetch<RunNowResult>(`/api/agents/${agent}/run`, { method: 'POST' }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: agentsKeys.all }),
+  });
+}
+
+// --- Task 12: time baselines ---
+export const timeBaselinesKey = [...agentsKeys.all, 'time-baselines'] as const;
+
+/** GET /api/agents/time-baselines (owner and office; a rep gets 403). */
+export function useTimeBaselines() {
+  return useQuery({
+    queryKey: timeBaselinesKey,
+    queryFn: ({ signal }) => apiFetch<TimeBaselines>('/api/agents/time-baselines', { signal }),
+  });
+}
+
+/** PUT /api/agents/time-baselines (owner): only the changed keys; null resets a key. Invalidates agentsKeys.all. */
+export function useSaveTimeBaselines() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TimeBaselinesBody) => apiFetch<TimeBaselines>('/api/agents/time-baselines', { method: 'PUT', body }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(timeBaselinesKey, saved);
+      return queryClient.invalidateQueries({ queryKey: agentsKeys.all });
+    },
+  });
+}
+
+/** POST /api/agents/time-baselines/recount (owner). dryRun true adds ?dryRun=1 and changes nothing. A real run invalidates agentsKeys.all. */
+export function useRecount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dryRun: boolean) =>
+      apiFetch<RecountResult>(`/api/agents/time-baselines/recount${dryRun ? '?dryRun=1' : ''}`, { method: 'POST' }),
+    onSuccess: (result) => (result.dryRun ? undefined : queryClient.invalidateQueries({ queryKey: agentsKeys.all })),
   });
 }

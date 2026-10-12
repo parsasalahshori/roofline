@@ -177,8 +177,8 @@ describe('send_email_batch', () => {
     expect(stepMinutes(email, p, { sent: 1000 }).minutes).toBe(120);
     expect(stepMinutes(email, p, { sent: 0 }).minutes).toBe(0);
     expect(stepMinutes(email, p, {}).minutes).toBe(0);
-    expect(email.baseline?.(p, {})).toBe('email_sent');
-    expect(email.units?.(p, { sent: 10 })).toBe(10);
+    expect(email.baseline(p, {})).toBe('email_sent');
+    expect(email.units(p, { sent: 10 })).toBe(10);
     expect(email.userCreatable).toBe(true);
   });
 
@@ -225,8 +225,8 @@ describe('build_routes', () => {
     const p = routes.payload.parse(routePayload());
     expect(stepMinutes(routes, p, { routes: 4 }).minutes).toBe(180);
     expect(stepMinutes(routes, p, {}).minutes).toBe(0);
-    expect(routes.baseline?.(p, {})).toBe('route_built');
-    expect(routes.units?.(p, { routes: 4 })).toBe(4);
+    expect(routes.baseline(p, {})).toBe('route_built');
+    expect(routes.units(p, { routes: 4 })).toBe(4);
     expect(routes.userCreatable).toBe(true);
   });
 
@@ -353,8 +353,8 @@ describe('create_ad_campaign', () => {
     const p = ads.payload.parse(googlePayload());
     expect(stepMinutes(ads, p, { campaigns: 1 }).minutes).toBe(45);
     expect(stepMinutes(ads, p, {}).minutes).toBe(0);
-    expect(ads.baseline?.(p, {})).toBe('ad_campaign');
-    expect(ads.units?.(p, { campaigns: 1 })).toBe(1);
+    expect(ads.baseline(p, {})).toBe('ad_campaign');
+    expect(ads.units(p, { campaigns: 1 })).toBe(1);
     expect(ads.userCreatable).toBe(true);
   });
 });

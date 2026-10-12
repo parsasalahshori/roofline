@@ -45,11 +45,11 @@ import {
 import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
   ACTOR_TYPES,
-  AGENT_EVENT_KINDS,
   AD_ACCOUNT_STATUSES,
   AD_CAMPAIGN_STATUSES,
   AD_ERROR_KINDS,
   AD_PLATFORMS,
+  AGENT_EVENT_KINDS,
   APPOINTMENT_KINDS,
   APPOINTMENT_SOURCES,
   APPOINTMENT_STATUSES,

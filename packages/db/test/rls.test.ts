@@ -69,11 +69,6 @@ const S1_TENANT_TABLES = [
   'storm_photos',
 ] as const;
 /** Tenant tables app_tenant may delete from. No other tenant table grants it DELETE. */
-/**
- * Tenant tables app_tenant may only select from and insert into: no UPDATE and no DELETE. conversation_turns is
- * updated by column only (see the column test below).
- */
-const SELECT_INSERT_ONLY = new Set<string>(['audit_log', 'agent_task_events', 'time_recounts', 'conversation_turns']);
 const APP_TENANT_DELETE_TABLES = [
   'opt_outs',
   'calendar_busy_blocks',
@@ -83,6 +78,11 @@ const APP_TENANT_DELETE_TABLES = [
   'door_exclusions',
   'storm_photos',
 ] as const;
+/**
+ * Tenant tables app_tenant may only select from and insert into: no UPDATE and no DELETE. conversation_turns is
+ * updated by column only (see the column test below).
+ */
+const SELECT_INSERT_ONLY = new Set<string>(['audit_log', 'agent_task_events', 'time_recounts', 'conversation_turns']);
 const COMPANY_PROFILE_COLUMNS = [
   'name',
   'legal_name',

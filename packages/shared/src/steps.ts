@@ -29,13 +29,13 @@ export const STEP_TYPES = [
   'demo_message',
   'demo_spend',
   'send_sms_batch',
+  'front_desk_call',
+  'front_desk_texts',
   'send_email_batch',
   'build_routes',
   'create_ad_campaign',
   'send_proposal',
   'order_exact_report',
-  'front_desk_call',
-  'front_desk_texts',
   'send_personal_texts',
   'build_claim_packet',
   'create_appointment',
@@ -87,11 +87,6 @@ export interface StepTypeDef<P> {
   bookings?(p: P, result: StepResult): number;
 }
 
-/** A count from a step's result: a finite number above zero, else 0. */
-function resultCount(value: StepResult[string] | undefined): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
-}
-
 export type StepMinutes = { baseline: BaselineKey; units: number; minutesPerUnit: number; minutes: number };
 
 /**
@@ -116,6 +111,8 @@ export function stepMinutes<P>(
 }
 
 /** A count from a step's result: a finite number above zero, else 0. Anything else never counts. */
+const resultCount = (value: StepResult[string] | undefined): number => countOf(value);
+
 function countOf(value: StepResult[string] | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
 }
@@ -628,7 +625,6 @@ function tierTotalsLine(totals: number[]): string {
 const sendProposal: StepTypeDef<ProposalPayload> = {
   type: 'send_proposal',
   approvalClass: 'message',
-  userCreatable: true,
   payload: proposalPayload,
   validate: (p) => (p.body.includes(PROPOSAL_LINK_TOKEN) ? null : PROPOSAL_LINK_MESSAGE),
   preview(p, facts) {
@@ -642,6 +638,7 @@ const sendProposal: StepTypeDef<ProposalPayload> = {
       recipientCount: 1,
     };
   },
+  userCreatable: true,
   baseline: () => 'proposal_sent',
   units: () => 1,
 };
@@ -671,9 +668,9 @@ type ExactReportPayload = z.output<typeof exactReportPayload>;
 const orderExactReport: StepTypeDef<ExactReportPayload> = {
   type: 'order_exact_report',
   approvalClass: 'spend',
-  userCreatable: true,
   payload: exactReportPayload,
   preview: (p) => ({ title: 'Order an exact roof report', lines: [p.address], maxSpendCents: p.maxSpendCents }),
+  userCreatable: true,
   baseline: () => 'exact_report',
   units: () => 1,
 };
@@ -812,13 +809,13 @@ export const stepTypes: Record<StepType, StepTypeDef<any>> = {
   demo_message: demoMessage,
   demo_spend: demoSpend,
   send_sms_batch: sendSmsBatch,
+  front_desk_call: frontDeskCall,
+  front_desk_texts: frontDeskTexts,
   send_email_batch: sendEmailBatch,
   build_routes: buildRoutes,
   create_ad_campaign: createAdCampaign,
   send_proposal: sendProposal,
   order_exact_report: orderExactReport,
-  front_desk_call: frontDeskCall,
-  front_desk_texts: frontDeskTexts,
   send_personal_texts: sendPersonalTexts,
   build_claim_packet: buildClaimPacket,
   create_appointment: createAppointment,

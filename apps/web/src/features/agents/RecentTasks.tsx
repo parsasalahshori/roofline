@@ -1,7 +1,8 @@
 import { UiLink } from '@roofline/ui';
 import { hoursLabel, type RecentTask } from '@roofline/shared';
-import { agentPage } from '../../copy/agents.ts';
+import { agentPage, agentsCommon } from '../../copy/agents.ts';
 import { TASK_STATUS_LABEL } from '../../copy/status.ts';
+import { agentTimeLabel } from './time.ts';
 import styles from './AgentLists.module.css';
 
 function plain(value: string): string {
@@ -14,20 +15,11 @@ function statusWords(status: string): string {
     : plain(status);
 }
 
-function whenLabel(iso: string): string {
-  return new Date(iso).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
 /** The latest work this agent did; each row opens that task in the review screen. */
 export function RecentTasks({ tasks }: { tasks: RecentTask[] }) {
   return (
     <section className={styles.section}>
-      <h2 className={styles.title}>{agentPage.recentTitle}</h2>
+      <h3 className={styles.title}>{agentPage.recentTitle}</h3>
       {tasks.length === 0 ? (
         <p className={styles.empty}>{agentPage.recentEmpty}</p>
       ) : (
@@ -41,10 +33,10 @@ export function RecentTasks({ tasks }: { tasks: RecentTask[] }) {
               >
                 <span className={styles.kind}>{plain(task.kind)}</span>
                 <span className={styles.meta}>{statusWords(task.status)}</span>
-                <span className={styles.meta}>{whenLabel(task.createdAt)}</span>
+                <span className={styles.meta}>{agentTimeLabel(task.createdAt)}</span>
                 {task.minutesSaved !== null ? (
                   <span className={styles.meta}>
-                    {`${hoursLabel(task.minutesSaved)} ${agentPage.estimateSuffix}`}
+                    {`${hoursLabel(task.minutesSaved)} ${agentsCommon.estimate}`}
                   </span>
                 ) : null}
               </UiLink>

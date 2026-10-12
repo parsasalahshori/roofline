@@ -34,11 +34,13 @@ export function PauseSwitch({ agent, paused, isOwner }: PauseSwitchProps) {
   const close = () => {
     setConfirming(false);
     setFailed(false);
+    mutation.reset();
   };
 
   const onToggle = (next: boolean) => {
     if (next) {
       setFailed(false);
+      mutation.reset();
       setConfirming(true);
       return;
     }
