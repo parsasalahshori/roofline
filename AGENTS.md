@@ -76,6 +76,10 @@ it calls D1's path itself for "Thanks, got it." or the continuation), then D1 `q
 handler skips a message an earlier one consumed. Tracks do not wait for each other: each adds its own
 call, and the merger keeps both in this order.
 
+**Ruling AW (pre-release migration edits):** nothing is deployed, so a track may amend its own custom
+migration (grants, RLS, CHECK swaps) in place instead of taking a new number. Afterwards check that
+`drizzle-kit generate` reports no changes, and record the edit in the track's ledger.
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the
