@@ -1,0 +1,72 @@
+/* The ad campaign preview: the approved maximum leads, then the daily amount, the ad, and the map. */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+}
+
+/* The approved maximum: the largest type on the screen, so the owner sees the most they could spend first. */
+.maximum {
+  margin: 0;
+  font-size: var(--font-size-stat);
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.daily,
+.platform,
+.caption {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  overflow-wrap: anywhere;
+}
+
+.headline {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.description,
+.body {
+  margin: 0;
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.keywords {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  overflow-wrap: anywhere;
+}
+
+.map {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.notice {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  font-size: var(--font-size-min);
+  overflow-wrap: anywhere;
+}

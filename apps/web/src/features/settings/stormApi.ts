@@ -38,11 +38,12 @@ export async function uploadStormPhoto(file: File): Promise<StormPhoto> {
   throw new ApiError(response.status, message, field);
 }
 
-/** The company's storm settings, with the photos and the standard texts. */
-export function useStormSettings() {
+/** The company's storm settings, with the photos and the standard texts. `enabled` false keeps it from being read. */
+export function useStormSettings(enabled = true) {
   return useQuery({
     queryKey: keys.stormSettings,
     queryFn: ({ signal }) => apiFetch<StormSettingsBody>('/api/storm/settings', { signal }),
+    enabled,
   });
 }
 
