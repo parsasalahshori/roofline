@@ -32,11 +32,16 @@ lives anywhere else.
 | C1 Core CRM | `docs/superpowers/plans/2026-10-12-roofline-core-crm.md` + briefs `ops/sdd/c1/` | Task 1 merged on `c1-crm` |
 | E1, S1, D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{e1,s1,d1,a1,g1}/` | planned, briefs ready |
 
-Unfinished work left on task branches (check `ops/README.md` and the F3/C1 ledgers for each head):
-- F3: `f3-t26`, `f3-t31`, `f3-t35`, `f3-t32`, `f3-t33`, `f3-t34` (some may be WIP commits titled
-  `wip(...)`), then `f3-t28`, `f3-t37` and finally `f3-t36` (not started; briefs in `ops/sdd/f3/`).
-- C1: `c1-t2`, `c1-t3`, `c1-t4` (built on a scratch commit; merge rules are in `ops/sdd/c1/progress.md`),
-  then the rest of C1 per the plan's "Parallel lanes" table.
+Finished, CI-green task branches NOT yet merged (merge these first, `--no-ff`):
+- Into `f3-setup` (all based on `ebcc93c`): `f3-t26` f9efe6f, `f3-t31` 64ac1b6, `f3-t35` 95e35a3,
+  `f3-t32` 2b7918c, `f3-t33` 919b204, `f3-t34` 8d0f7f0. Their group check never ran: run typecheck, lint
+  and the web tests after merging. Reports: branches `ops-sib2e`, `ops-sib3d`. Carry: give `.banners`
+  z-index 24 (T32/T33).
+- Into `c1-crm`: `c1-t2` 1a73b7a, `c1-t3` bbad8ec, then `c1-t4` cd99713 (take T2/T3's `pipeline.ts` and
+  `availability.ts`). Reports: branch `ops-sib1e`.
+
+Then F3 Tasks 28, 37 and finally 36 (briefs in `ops/sdd/f3/`), merge `f3-setup` into `c1-crm`, and continue
+C1 from its plan's "Parallel lanes" table (next: T5 API skeleton, T18 web skeleton).
 
 ## How to do a task
 
