@@ -217,6 +217,19 @@ describe('fd-texts repo', () => {
     expect(rows).toHaveLength(1);
   });
 
+  test('two racing insertAssistantText calls with one fd- key insert once (review note 35)', async () => {
+    const ctx = ctxFor(seed.a);
+    const { conv } = await receive(T0);
+    const customerId = await customer();
+    const input = { conversationId: conv.id, customerId, body: 'bot', toE164: PHONE, dedupeKey: 'fd-text:race' };
+    const results = await Promise.all(
+      [0.1, 0.2, 0.3].map((h) => withTenant(pools, ctx, (tx) => insertAssistantText(tx, ctx, input, { status: 'queued' }, hours(h)))),
+    );
+    expect(results.filter((r) => r !== null)).toHaveLength(1);
+    const rows = await withTenant(pools, ctx, (tx) => tx.select().from(messages).where(eq(messages.dedupeKey, 'fd-text:race')));
+    expect(rows).toHaveLength(1);
+  });
+
   test('frontDeskTextsOn is false unless both settings are on', async () => {
     const ctx = ctxFor(seed.a);
     const set = (v: { frontDeskEnabled: boolean; frontDeskTexts: boolean }) =>

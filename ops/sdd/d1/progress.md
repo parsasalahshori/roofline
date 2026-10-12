@@ -161,3 +161,8 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
   - Retention 0 now deletes existing recordings; the settings copy may need to say so.
   - Since Ruling BG landed via d1-rev-a, Task CV's BG part is redundant: at CV's merge, keep d1-rev-a's version and drop CV's duplicate.
   - RC must pass `toE164: conversation.phoneE164` in texts.ts (item 17).
+- 2026-10-12: **d1-rev-d merged** (C1 lead, notes 20, 31, 32, 33, 35, 43; 5e58c80, CI 38284192214 green on b1c782d5).
+  - 0020 is narrowed in place: app_system has no grants left on conversations or conversation_turns (their app_system_all policies are dropped), and on calls only SELECT (id, company_id, call_sid, status).
+  - So any new system-pool pass over calls or conversations (CV's stale-call sweep, RC's SMS idle-close) must list companies on the system pool, then work per company on the tenant pool inside withTenant, rather than adding grants back.
+  - SMS detail now merges messages with turns (dedupe by text; re-check if RC changes what texts.ts writes).
+  - Front Desk SMS bodies are blanked under retention.

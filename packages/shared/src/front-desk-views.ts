@@ -52,7 +52,11 @@ export type ToolActionCard = {
   link: { kind: 'customer' | 'job' | 'appointment' | 'claim_intake'; id: string } | null;
 };
 
-/** One transcript line. `text` is null when the transcript was not kept (caller's request) or was swept. */
+/**
+ * One transcript line. `text` is null when the transcript was not kept (caller's request) or was swept.
+ * In a text conversation the list also holds a line for each text no turn shows (the team's replies, texts the
+ * assistant never answered): `callId` null, `position` 0, `id` the message id. Show lines in time order, then position.
+ */
 export type TurnView = {
   id: string;
   /** The call this turn was spoken on, or null for a text turn. */

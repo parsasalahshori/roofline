@@ -82,6 +82,26 @@ describe('ConversationView', () => {
     }
   });
 
+  it('lists a text line (position 0) among the turns in time order', () => {
+    renderView(
+      makeConversation({
+        channel: 'sms',
+        calls: [],
+        turns: [
+          turn({ id: 't2', position: 2, speaker: 'assistant', text: 'We can come Thursday', at: '2026-10-11T14:05:00.000Z' }),
+          turn({ id: 'm9', position: 0, speaker: 'team', text: 'This is Sam, see you then', at: '2026-10-11T14:10:00.000Z' }),
+          turn({ id: 'm8', position: 0, speaker: 'caller', text: 'Are you coming Thursday', at: '2026-10-11T14:00:00.000Z' }),
+        ],
+      }),
+    );
+    const lines = screen.getAllByRole('listitem').map((li) => li.textContent ?? '');
+    const order = ['Are you coming Thursday', 'We can come Thursday', 'This is Sam, see you then'].map((w) =>
+      lines.findIndex((l) => l.includes(w)),
+    );
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
   it('lists turns in position order', () => {
     renderView(
       makeConversation({
