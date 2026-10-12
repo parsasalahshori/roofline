@@ -116,7 +116,9 @@ describe('GET /api/map/pins', () => {
     const c = await located(owner, 'Many Houses', 1, OMAHA);
     const second = await mustCreate(owner, '/api/properties', { customerId: c.customer.id, ...addressFor(2), lat: 41.26, lng: -95.94 });
     const stages = ['lead', 'inspection', 'proposal', 'won', 'installed', 'lost'] as const;
-    for (const stage of stages) await job(owner, c, { stage });
+    // Won and Installed carry a value and Lost a reason, as the stage rules require.
+    const extra = { won: { valueCents: 1 }, installed: { valueCents: 1 }, lost: { lostReason: 'Went elsewhere' } } as const;
+    for (const stage of stages) await job(owner, c, { stage, ...(extra[stage as keyof typeof extra] ?? {}) });
 
     const res = await pins(owner);
     expect(idsOf(res.body.customers, 'propertyId')).toEqual([c.property.id, second.id].sort());
