@@ -200,7 +200,7 @@ describe('the worker', () => {
         ['exact-report-poll', '*/10 * * * *'],
         ['expire-drafts', '*/5 * * * *'],
         ['fd-health', '*/2 * * * *'],
-        ['fd-retention', '17 3 * * *'],
+        ['fd-retention', '47 3 * * *'],
         ['footprints-ensure', '*/15 * * * *'],
         ['hail-health', '*/15 * * * *'],
         ['poll-texting', '0 * * * *'],

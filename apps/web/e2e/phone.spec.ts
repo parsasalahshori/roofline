@@ -137,3 +137,29 @@ test('agents screens fit the phone', async ({ page, loginAs, markTodaySeen, agen
     await noSideScroll(page);
   }
 });
+
+test('C1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, db, scenario }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const job = await db.query<{ id: string }>(`select id from jobs where company_id = $1 order by id limit 1`, [
+    scenario.a.companyId,
+  ]);
+  const customer = await db.query<{ id: string }>(`select id from customers where company_id = $1 order by id limit 1`, [
+    scenario.a.companyId,
+  ]);
+
+  const pages: [string, () => Locator][] = [
+    ['/jobs?view=list', () => page.getByLabel('Jobs list', { exact: true })],
+    [`/jobs/${job.rows[0]?.id}`, () => page.getByRole('group', { name: 'Job stage' })],
+    [`/customers/${customer.rows[0]?.id}`, () => page.getByRole('group', { name: 'Customer actions' })],
+    [
+      '/calendar?view=list',
+      () => page.locator('[data-testid^="agenda-day-"]').first().or(page.getByText('Nothing scheduled.', { exact: true })),
+    ],
+  ];
+  for (const [path, ready] of pages) {
+    await page.goto(path);
+    await expect(ready()).toBeVisible({ timeout: 20_000 });
+    await noSideScroll(page);
+  }
+});

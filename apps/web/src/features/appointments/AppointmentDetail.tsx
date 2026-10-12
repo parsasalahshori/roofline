@@ -107,6 +107,13 @@ export function AppointmentDetail({ appointment, onReschedule }: AppointmentDeta
           </>
         ) : null}
 
+        {appointment.source === 'front_desk' ? (
+          <>
+            <dt>{appointments.detailSource}</dt>
+            <dd>{appointments.bookedByFrontDesk}</dd>
+          </>
+        ) : null}
+
         {appointment.notes !== null && appointment.notes !== '' ? (
           <>
             <dt>{appointments.detailNotes}</dt>
@@ -142,10 +149,10 @@ export function AppointmentDetail({ appointment, onReschedule }: AppointmentDeta
           <Button busy={action.isPending} onClick={() => void run('complete')}>
             {appointments.markDone}
           </Button>
-          <Button variant="ghost" onClick={() => void run('no-show')}>
+          <Button variant="ghost" disabled={action.isPending} onClick={() => void run('no-show')}>
             {appointments.noShow}
           </Button>
-          <Button variant="danger" onClick={() => setConfirmCancel(true)}>
+          <Button variant="danger" disabled={action.isPending} onClick={() => setConfirmCancel(true)}>
             {appointments.cancel}
           </Button>
         </div>

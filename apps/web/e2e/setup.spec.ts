@@ -35,3 +35,11 @@ test('later steps say Coming with', async ({ page }) => {
   await expect(page.getByText('Coming with Storm Scout', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Coming with Front Desk', { exact: true })).toHaveCount(0);
 });
+
+test('the phone number step opens the forwarding guide', async ({ page }) => {
+  await expect(page.getByText('Coming with Front Desk', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Forward your calls' })).toHaveAttribute(
+    'href',
+    '/settings/front-desk#forwarding',
+  );
+});

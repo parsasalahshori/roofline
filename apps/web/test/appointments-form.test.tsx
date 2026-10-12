@@ -137,6 +137,24 @@ describe('Appointment form', () => {
     expect(api.count('GET /api/jobs/j1/view')).toBe(1);
   });
 
+  it('prefills date, time and a single person from ?start=&people=', async () => {
+    setup();
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/calendar/new?start=2026-10-13T19%3A00%3A00.000Z&people=u2&kind=other');
+
+    expect(await screen.findByLabelText(appointments.dateLabel)).toHaveValue('2026-10-13');
+    expect(screen.getByLabelText(appointments.timeLabel)).toHaveValue('14:00');
+    await waitFor(() => expect(screen.getByLabelText(appointments.personLabel)).toHaveValue('u2'));
+  });
+
+  it('shows the server message when a save fails with an ApiError', async () => {
+    setup({ 'POST /api/appointments': () => ({ status: 422, body: { error: 'That time is outside the work week.' } }) });
+    const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');
+    await screen.findByText('Dana Price');
+    fireEvent.change(screen.getByLabelText(appointments.timeLabel), { target: { value: '14:00' } });
+    await user.click(screen.getByRole('button', { name: appointments.save }));
+    expect(await screen.findByText('That time is outside the work week.')).toBeInTheDocument();
+  });
+
   it('picking a suggestion fills date, time and person', async () => {
     setup({}, { slots: [{ start: '2026-10-13T19:00:00.000Z', end: '2026-10-13T19:30:00.000Z', userIds: ['u1'] }] });
     const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');

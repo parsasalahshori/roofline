@@ -93,8 +93,8 @@ describe('visibleTabs with the agents tab', () => {
     }
   });
 
-  it('lists nine tabs, Agents among them', () => {
-    expect(SETTINGS_TABS).toHaveLength(9);
+  it('lists eleven tabs, Agents among them', () => {
+    expect(SETTINGS_TABS).toHaveLength(11);
     expect(isSettingsTab('agents')).toBe(true);
   });
 });

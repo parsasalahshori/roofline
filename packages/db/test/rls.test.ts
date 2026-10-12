@@ -789,10 +789,6 @@ describe('grants', () => {
       sel('conversation_turns', 'at'),
       sel('conversation_turns', 'company_id'),
       sel('conversation_turns', 'id'),
-      sel('conversation_turns', 'text'),
-      upd('conversation_turns', 'text'),
-      sel('conversation_turns', 'tool_calls'),
-      upd('conversation_turns', 'tool_calls'),
       sel('conversations', 'company_id'),
       sel('conversations', 'id'),
       sel('conversations', 'status'),
@@ -1303,7 +1299,7 @@ describe('app_system', () => {
       calendar_connections: `select id, company_id, user_id, status, last_synced_at from calendar_connections`,
       calls: `select id, company_id, call_sid, status, conversation_id, recording_key, recording_status from calls`,
       conversations: `select id, company_id, status from conversations`,
-      conversation_turns: `select id, company_id, text, tool_calls, at from conversation_turns`,
+      conversation_turns: `select id, company_id, at from conversation_turns`,
     } satisfies Record<
       Exclude<
         (typeof APP_SYSTEM_RLS_TABLES)[number],
@@ -1797,10 +1793,13 @@ describe('front desk tables', () => {
       ['calls', 'recording_key', 'UPDATE', true],
       ['calls', 'recording_status', 'UPDATE', true],
       ['calls', 'from_e164', 'UPDATE', false],
-      ['conversation_turns', 'text', 'UPDATE', true],
-      ['conversation_turns', 'tool_calls', 'UPDATE', true],
+      // Ruling BF: app_system never reads or writes transcript text or tool records.
+      ['conversation_turns', 'at', 'SELECT', true],
+      ['conversation_turns', 'text', 'UPDATE', false],
+      ['conversation_turns', 'tool_calls', 'UPDATE', false],
       ['conversation_turns', 'speaker', 'UPDATE', false],
-      ['conversation_turns', 'text', 'SELECT', true],
+      ['conversation_turns', 'text', 'SELECT', false],
+      ['conversation_turns', 'tool_calls', 'SELECT', false],
       ['conversations', 'status', 'SELECT', true],
       ['conversations', 'phone_e164', 'SELECT', false],
     ];

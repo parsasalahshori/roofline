@@ -14,9 +14,10 @@ import { SignIn } from '../features/auth/SignIn.tsx';
 import { VerifyEmail } from '../features/auth/VerifyEmail.tsx';
 import { CustomersWindow } from '../features/customers/CustomersWindow.tsx';
 import { CustomerWindow } from '../features/customers/CustomerWindow.tsx';
-import { ComingSoon } from '../features/coming-soon/ComingSoon.tsx';
 import { NewCustomer } from '../features/create/NewCustomer.tsx';
 import { NewJob } from '../features/create/NewJob.tsx';
+import { ConversationWindow } from '../features/front-desk/ConversationWindow.tsx';
+import { FrontDeskWindow } from '../features/front-desk/FrontDeskWindow.tsx';
 import { ImportWizard } from '../features/imports/ImportWizard.tsx';
 import { EstimatorWindow } from '../features/estimator/EstimatorWindow.tsx';
 import { HomeownerPage } from '../features/homeowner/HomeownerPage.tsx';
@@ -34,20 +35,10 @@ import { RouteDetail } from '../features/storm/routes/RouteDetail.tsx';
 import { Today } from '../features/today/Today.tsx';
 import { TextingSetup } from '../features/texting/TextingSetup.tsx';
 import { AppWindow } from '../shell/AppWindow.tsx';
-import type { ComingSoonKey } from '../shell/apps.ts';
 import { NotFoundWindow } from '../shell/NotFoundWindow.tsx';
 import { Shell } from '../shell/Shell.tsx';
 import { RouteError } from './RouteError.tsx';
 import { redirectToSignIn, RequireSession, resetSignInRedirect } from './RequireSession.tsx';
-
-/** A window for an app that is not built yet: its title, and the line that says so. */
-function comingSoonWindow(app: ComingSoonKey) {
-  return (
-    <AppWindow app={app}>
-      <ComingSoon app={app} />
-    </AppWindow>
-  );
-}
 
 const routes: RouteObject[] = [
   // Open to everyone: signing in, and the pages that links in emails open
@@ -82,7 +73,8 @@ const routes: RouteObject[] = [
           { path: 'storm/routes', element: <AppWindow app="storm"><RoutesWindow /></AppWindow> },
           { path: 'storm/routes/:routeId', element: <AppWindow app="storm"><RouteDetail /></AppWindow> },
           { path: 'storm/:id', element: <AppWindow app="storm"><StormDetail /></AppWindow> },
-          { path: 'front-desk/*', element: comingSoonWindow('front-desk') },
+          { path: 'front-desk', element: <AppWindow app="front-desk"><FrontDeskWindow /></AppWindow> },
+          { path: 'front-desk/:conversationId', element: <AppWindow app="front-desk"><ConversationWindow /></AppWindow> },
           { path: 'estimator', element: <AppWindow app="estimator"><EstimatorWindow /></AppWindow> },
           { path: 'estimator/measure/:measurementId', element: <AppWindow app="estimator"><MeasureWindow /></AppWindow> },
           { path: 'estimator/proposals/:proposalId', element: <AppWindow app="estimator"><ProposalWindow /></AppWindow> },

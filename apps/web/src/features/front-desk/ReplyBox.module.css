@@ -1,0 +1,14 @@
+.form {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.actions > * {
+  min-height: 40px;
+}

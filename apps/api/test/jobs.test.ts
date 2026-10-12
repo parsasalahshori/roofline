@@ -1080,7 +1080,7 @@ describe('SCHEDULES', () => {
       ['storm-match', '*/10 * * * *'],
       ['ad-spend-sync', '0 * * * *'],
       ['hail-health', '*/15 * * * *'],
-      ['fd-retention', '17 3 * * *'],
+      ['fd-retention', '47 3 * * *'],
       ['fd-health', '*/2 * * * *'],
     ]);
   });
