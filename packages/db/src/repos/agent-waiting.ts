@@ -188,7 +188,10 @@ function latestConversation(column: 'last_message_at' | 'outcome', since30: Date
     order by c.last_message_at desc, c.id desc limit 1)`;
 }
 
-/** The one query behind both the list and the card count, so they always agree. */
+/**
+ * The one query behind both the list and the card count, so they always agree. A job that already has an open
+ * (needs_attention) live Front Desk task is skipped, because that task is already in the waiting list.
+ */
 function followUpQuery(tx: Tx, ctx: TenantContext, now: Date) {
   const since30 = new Date(now.getTime() - 30 * 86_400_000);
   const since = latestConversation('last_message_at', since30);
@@ -210,6 +213,8 @@ function followUpQuery(tx: Tx, ctx: TenantContext, now: Date) {
         isNull(jobs.archivedAt),
         sql`${since} is not null`,
         jobScope(ctx),
+        // An open live Front Desk task for the job is already in the waiting list; do not list it twice.
+        sql`not exists (select 1 from agent_tasks t where t.company_id = ${jobs.companyId} and t.agent = 'front_desk' and t.mode = 'live' and t.status = 'needs_attention' and t.subject_type = 'job' and t.subject_id = ${jobs.id})`,
       ),
     );
 }

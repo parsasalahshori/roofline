@@ -1036,7 +1036,7 @@ export async function workingCount(tx: Tx, ctx: TenantContext): Promise<number> 
 }
 
 // ---------------------------------------------------------------------------------------------
-// Live tasks (A1 Task 4). SHELL: Package A implements these bodies.
+// Live tasks (A1 Task 4).
 
 export type NewLiveTask = {
   agent: Agent;
@@ -1152,7 +1152,8 @@ export async function addToLiveTask(
 ): Promise<string | null> {
   const found = await findStepByIdempotencyKey(tx, ctx, idempotencyKey);
   if (!found) return null;
-  const row = await getStep(tx, ctx, found.taskId, found.id);
+  // The step row is locked, so two repeats on one key add up instead of overwriting each other.
+  const row = await getStep(tx, ctx, found.taskId, found.id, { forUpdate: true });
   if (!row || row.status !== 'done' || !isStepType(row.type)) return found.taskId;
   const prev = (row.result ?? {}) as Record<string, number>;
   const next: Record<string, number> = { ...prev };

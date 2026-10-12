@@ -52,7 +52,9 @@ const DB_SYSTEM_ALLOWED = [
 // and event, so they too belong to the task service (completeClaimedStep, completeParkedStep, expireOverdueTasks).
 // moveStep and updateTask change a step's or task's status, so they pair with an event there as well
 // (declineTask, supersedeDraft).
-const EVENT_WRITERS = ['insertAgentEvent', 'setStepSnapshot', 'finishClaimedStep', 'finishParkedStep', 'expireOverdueDrafts', 'moveStep', 'updateTask'];
+// setStepResult and insertTask write step and task rows, so they belong to the task service too
+// (addToLiveTask, createLiveTask).
+const EVENT_WRITERS = ['insertAgentEvent', 'setStepSnapshot', 'finishClaimedStep', 'finishParkedStep', 'expireOverdueDrafts', 'moveStep', 'updateTask', 'setStepResult', 'insertTask'];
 const RECOUNT_WRITERS = ['rewriteStepSnapshot', 'refreshTaskMinutes'];
 // A regex, not a group: the group '@roofline/db' would also match '@roofline/db/system'.
 const DB_MODULE_REGEX = '^@roofline/db$|/packages/db/src/(?!system(/|$))';

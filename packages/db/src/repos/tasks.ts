@@ -240,14 +240,21 @@ export async function listSteps(
 }
 
 /** One step of one task, with its payload, or null. */
-export async function getStep(tx: Tx, ctx: TenantContext, taskId: string, stepId: string): Promise<StepRow | null> {
-  const [row] = await tx
+export async function getStep(
+  tx: Tx,
+  ctx: TenantContext,
+  taskId: string,
+  stepId: string,
+  options: { forUpdate?: boolean } = {},
+): Promise<StepRow | null> {
+  const query = tx
     .select()
     .from(agentTaskSteps)
     .where(
       and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.taskId, taskId), eq(agentTaskSteps.id, stepId)),
     )
     .limit(1);
+  const [row] = await (options.forUpdate === true ? query.for('update') : query);
   return row ?? null;
 }
 

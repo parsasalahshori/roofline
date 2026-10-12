@@ -103,6 +103,7 @@ export async function runFrontDeskText(
   const now = deps.clock.now();
 
   const prepared = await withTenant(deps.pools, ctx, async (tx) => {
+    if (await isAgentPaused(tx, ctx, 'front_desk')) return null;
     const conversation = await getConversation(tx, ctx, conversationId);
     if (!conversation || conversation.status !== 'active' || conversation.handledBy === 'team') return null;
     if (!(await frontDeskTextsOn(tx, ctx))) return null;

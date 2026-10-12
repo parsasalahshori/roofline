@@ -1,6 +1,6 @@
 # A1 acceptance checklist (spec section 10, Agents screen)
 
-Status: the API, database, worker, shared and web component tests below are the repo's own suites; the database-backed ones run on CI (`.github/workflows/ci.yml`, the Platform job), because this machine has no Docker. The new Playwright specs (`agents.spec.ts`, `agents-settings.spec.ts`, and the Agents additions to `a11y.spec.ts` and `phone.spec.ts`) were only listed locally with `npx playwright test --list -c apps/web/playwright.config.ts` and are proven by CI's E2E job. Front Desk is not built on this base (Ruling AX-M: D1's after-call and text jobs do not exist), so every Front Desk row below is marked **pending D1 (Task 4)** and cites no test.
+Status: the API, database, worker, shared and web component tests below are the repo's own suites; the database-backed ones run on CI (`.github/workflows/ci.yml`, the Platform job), because this machine has no Docker. The new Playwright specs (`agents.spec.ts`, `agents-settings.spec.ts`, and the Agents additions to `a11y.spec.ts` and `phone.spec.ts`) were only listed locally with `npx playwright test --list -c apps/web/playwright.config.ts` and are proven by CI's E2E job. Front Desk is now built on this base (D1's after-call and text jobs feed live tasks), and its rows below cite their tests.
 
 Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/test/` (web components), `packages/<name>/test/` and `docs/superpowers/`. Spec: `docs/superpowers/specs/2026-10-12-roofline-agents-screen-design.md` section 10. Plan: `docs/superpowers/plans/2026-10-12-roofline-agents-screen.md` (Review Focus).
 
@@ -16,7 +16,7 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
 - **Rule sentences from settings**
   - `packages/shared/test/agent-rules.test.ts`: "exact sentence and three links"; "fractional threshold is plural"; "one day is singular"; "different facts produce different text"; "no storm facts gives no sentences"; "every link label is a substring of its sentence and points into settings".
   - `apps/api/test/agents-rule-facts.test.ts`: "changed company settings flow into the Storm Scout facts"; "rulesFor gives Storm Scout one sentence with three settings links and Front Desk none".
-  - Front Desk rule sentence, number and transfer names: `apps/api/test/agents-rule-facts.test.ts` (Front Desk facts from D1 settings); sentence builder in `packages/shared/test/agent-rules.test.ts`: "exact three sentences for the full facts".
+  - Front Desk rule sentence and number: `apps/api/test/agents-rule-facts.test.ts` (Front Desk facts from D1 settings). The sentence names no transfer people (transfer names are empty) until D1 exposes the on-call names; sentence builder in `packages/shared/test/agent-rules.test.ts`: "exact three sentences for the full facts".
 - **Local-day periods and 14-day series**
   - `packages/shared/test/agent-periods.test.ts`: "Chicago in daylight time starts at 05:00Z"; "DST end day (Nov 1) starts at 05:00Z, the day after at 06:00Z"; "month is the local month"; "last90 covers 90 local days including today"; "14 local dates, oldest first, ending today".
 
@@ -32,7 +32,7 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
 - **Recount over 90 days with an audit entry**
   - `apps/api/test/agents-recount.test.ts`: "recount dry run returns before and after and writes nothing"; "recount real run updates snapshots, inserts one time_recounts row and one audit_log entry with before and after totals"; "recount only touches steps from the last 90 days"; "recount is owner only: office and rep get 403 and company B is untouched"; "recount task minutes_saved equals the rounded sum of its steps".
   - `apps/web/test/time-baselines-recount.test.tsx`: "owner recount runs a dry run first and shows before and after"; "Confirm runs the real recount, then shows the success line and invalidates agents queries".
-- **Front Desk live tasks from D1 calls and texts**: pending D1 (Task 4).
+- **Front Desk live tasks from D1 calls and texts**: `apps/api/test/front-desk-live-tasks.test.ts`, `apps/api/test/front-desk-live-text-tasks.test.ts`, `apps/api/test/live-tasks-service.test.ts`.
 - **Events written by every task transition**
   - `apps/api/test/task-events.test.ts`: "createTask writes one created event with the agent as actor"; "approving a whole plan writes one approved event by the approver"; "a plan with a step left for the owner is partly_approved"; "declining a plan writes one declined event by the user"; "expiry writes one expired event by the system"; "a task that reaches done writes exactly one finished event"; "a task that lands in needs_attention writes no finished event"; "after attention then retry to done, finished is written once with status done".
   - `packages/db/test/agent-events.test.ts`: "insertAgentEvent then listTaskEvents returns events in order".
@@ -96,7 +96,7 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
   - `apps/web/e2e/agents-settings.spec.ts`: "settings agents: saving a baseline alone does not change past totals"; "settings agents: owner changes a baseline, saves, recounts, and the month total changes".
 - **All three launch agents appear with real data**
   - Storm Scout and Estimator: `apps/api/test/agents-api.test.ts`: "GET /api/agents returns six cards in order"; "numbers come from seeded tasks and snapshots"; `apps/web/e2e/agents.spec.ts`: "agents window: cards show the numbers from the seeded tasks".
-  - Front Desk card with real data: pending D1 (Task 4).
+  - Front Desk card with real data: `apps/api/test/front-desk-live-tasks.test.ts`, `apps/api/test/front-desk-live-text-tasks.test.ts`, `apps/api/test/live-tasks-service.test.ts`; follow-ups counted once: `apps/api/test/front-desk-followup-once.test.ts`; only AI-handled calls counted, pause covers queued texts, archive closes the live task: `apps/api/test/front-desk-combined-fixes.test.ts`.
   - Front Desk success rate: `packages/db/test/agent-metrics.test.ts` (finished and succeeded conversation counts, model_failure hand-offs, rep scope); `apps/api/test/agents-api.test.ts` (successRate null under five).
   - Front Desk waiting follow-ups: `packages/db/test/agent-waiting.test.ts`; `apps/api/test/agents-feed-routes.test.ts` (waiting lists Front Desk follow-ups).
   - Bookings folded into call and text rows: `apps/web/test/agents-window-copy.test.tsx` ("says Front Desk call and text rows include bookings").
@@ -126,12 +126,12 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
    - `apps/api/test/agents-settings.test.ts`: "pausing does not change a running task".
    - Front Desk pause routing calls to the team: `apps/api/test/front-desk/voice-hooks.test.ts`, `apps/api/test/front-desk/voice-transfer-hooks.test.ts`, `apps/api/test/front-desk/texts.test.ts`.
 
-## Front Desk rows (live tasks and the card pending D1 (Task 4))
-- Front Desk live tasks from D1 calls and texts: pending D1 (Task 4).
+## Front Desk rows (live tasks and the card)
+- Front Desk live tasks from D1 calls and texts: `apps/api/test/front-desk-live-tasks.test.ts`, `apps/api/test/front-desk-live-text-tasks.test.ts`, `apps/api/test/live-tasks-service.test.ts`.
 - Front Desk success rate: see Integration above (`packages/db/test/agent-metrics.test.ts`, `apps/api/test/agents-api.test.ts`).
 - Front Desk pause routing calls to the team: `apps/api/test/front-desk/voice-hooks.test.ts`, `apps/api/test/front-desk/texts.test.ts`.
-- Front Desk card with real data: pending D1 (Task 4).
-- Front Desk rule sentence: `apps/api/test/agents-rule-facts.test.ts`.
+- Front Desk card with real data: `apps/api/test/front-desk-live-tasks.test.ts`, `apps/api/test/front-desk-live-text-tasks.test.ts`, `apps/api/test/live-tasks-service.test.ts`; follow-ups counted once: `apps/api/test/front-desk-followup-once.test.ts`; only AI-handled calls counted, pause covers queued texts, archive closes the live task: `apps/api/test/front-desk-combined-fixes.test.ts`.
+- Front Desk rule sentence: `apps/api/test/agents-rule-facts.test.ts`. It names no transfer people (transfer names are empty) until D1 exposes the on-call names.
 
 ## Gaps and notes
 - **Known seam:** Storm Scout "Run now" enqueues a job whose S1 handler is still a stub; the e2e spec asserts the 202 and cooldown text only and never drains the queue.
@@ -140,3 +140,6 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
 ## Owner to-dos (spec section 11)
 - Confirm the default time baselines (spec section 3.1). They are the assumptions behind the headline number on every customer's screen.
 - Confirm the hourly rate default ($28 an hour). Nothing else: no accounts, credentials or costs.
+
+## Known gaps
+- Text-task bookings count 0 until D1's booking tools land.

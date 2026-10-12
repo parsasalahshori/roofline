@@ -195,20 +195,23 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
     );
   }
 
-  await recordLiveTask(
-    deps,
-    ctx,
-    {
-      callId: call.id,
-      conversationId: call.conversationId,
-      customerId: conversation?.customerId ?? null,
-      seconds: secondsInCall,
-      bookings: actions.filter((a) => a === 'book_inspection' || a === 'move_inspection').length,
-      spam: false,
-      outcome: pickedOutcome,
-    },
-    now,
-  );
+  // A paused or voicemail call the AI never answered makes no task; spam is recorded because screening runs before the pause decision.
+  if (call.conversationId !== null || call.aiSeconds > 0) {
+    await recordLiveTask(
+      deps,
+      ctx,
+      {
+        callId: call.id,
+        conversationId: call.conversationId,
+        customerId: conversation?.customerId ?? null,
+        seconds: secondsInCall,
+        bookings: actions.filter((a) => a === 'book_inspection' || a === 'move_inspection').length,
+        spam: false,
+        outcome: pickedOutcome,
+      },
+      now,
+    );
+  }
 
   if (transferred || call.status === 'rejected') return;
   await maybeTextBack(deps, ctx, {

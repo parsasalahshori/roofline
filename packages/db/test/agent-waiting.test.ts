@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { createPools } from '../src/pools.ts';
 import { countFrontDeskFollowUps, listFrontDeskFollowUps } from '../src/repos/agent-waiting.ts';
-import { conversations, customers, jobs, properties } from '../src/schema/index.ts';
+import { agentTasks, conversations, customers, jobs, properties } from '../src/schema/index.ts';
 import { type TenantContext, withTenant } from '../src/tenant.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
 
@@ -74,6 +74,27 @@ const earlier = new Date('2026-10-11T14:00:00Z');
 const later = new Date('2026-10-12T09:30:00Z');
 
 describe('Front Desk follow-ups', () => {
+  const liveTask = (c: SeededCompany, jobId: string, status: 'needs_attention' | 'done') =>
+    withTenant(pools, ownerCtx(c), (tx) =>
+      tx.insert(agentTasks).values({ companyId: c.companyId, agent: 'front_desk', kind: 'call', title: 'Took a message', mode: 'live', status, subjectType: 'job', subjectId: jobId }),
+    );
+
+  test('skips a job that already has an open live Front Desk task', async () => {
+    const c = seed.a;
+    const jobId = await seedJob(c, { name: 'Dee', n: 20, assignedUserId: null, nextStep: 'Call Dee', conversations: [{ outcome: 'message', at: later }] });
+    await liveTask(c, jobId, 'needs_attention');
+    expect(await list(c)).toEqual([]);
+    expect(await count(c)).toBe(0);
+  });
+
+  test('still lists a job whose live task is done', async () => {
+    const c = seed.a;
+    const jobId = await seedJob(c, { name: 'Eve', n: 21, assignedUserId: null, nextStep: 'Call Eve', conversations: [{ outcome: 'message', at: later }] });
+    await liveTask(c, jobId, 'done');
+    expect(await list(c)).toHaveLength(1);
+    expect(await count(c)).toBe(1);
+  });
+
   test('a job with a next step and a message conversation is one row with the assignee name and the conversation time', async () => {
     const c = seed.a;
     const jobId = await seedJob(c, { name: 'Ann', n: 1, assignedUserId: c.rep.userId, nextStep: 'Call Ann back', conversations: [{ outcome: 'message', at: later }] });

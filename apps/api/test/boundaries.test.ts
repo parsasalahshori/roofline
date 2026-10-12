@@ -87,7 +87,7 @@ describe('@roofline/db/system import boundary', () => {
 describe('agent event writer boundary', () => {
   const src = (name: string) => `import { ${name} } from '@roofline/db'; export { ${name} };`;
 
-  test.each(['insertAgentEvent', 'setStepSnapshot'])('%s is allowed in tasks/service.ts and tests, flagged elsewhere in src', async (name) => {
+  test.each(['insertAgentEvent', 'setStepSnapshot', 'setStepResult', 'insertTask'])('%s is allowed in tasks/service.ts and tests, flagged elsewhere in src', async (name) => {
     expect(await restrictedImports('apps/api/src/tasks/service.ts', src(name))).toEqual([]);
     expect(await restrictedImports('apps/api/test/__fixture_ok.ts', src(name))).toEqual([]);
     expect(await restrictedImports('apps/api/src/routes/agents-feed.ts', src(name))).toHaveLength(1);
