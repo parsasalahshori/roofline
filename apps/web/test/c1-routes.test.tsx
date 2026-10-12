@@ -46,6 +46,7 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: account }),
     'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
+    'GET /api/jobs/j1/view': () => ({ status: 404, body: { error: 'Not found' } }),
     'GET /api/team': () => ({ body: { members: [] } }),
     ...overrides,
   });
@@ -75,7 +76,7 @@ const settingsTabs = () => screen.findByRole('navigation', { name: settings.tabs
 describe('C1 windows', () => {
   it.each([
     ['/jobs', WINDOW_COPY.jobs.title, jobs.newJob],
-    ['/jobs/j1', WINDOW_COPY.jobs.title, job.comingSoon],
+    ['/jobs/j1', WINDOW_COPY.jobs.title, job.notFoundTitle],
     ['/jobs/j1/quotes/q1', WINDOW_COPY.jobs.title, quotes.comingSoon],
     ['/customers', WINDOW_COPY.customers.title, customers.comingSoon],
     ['/customers/c1', WINDOW_COPY.customers.title, customers.customerComingSoon],
