@@ -22,6 +22,8 @@ const COMPANY: CompanyBody = {
   addressZip: '68102',
   timezone: 'America/Chicago',
   logoUrl: null,
+  located: false,
+  serviceAreaMiles: null,
 };
 
 /** What the form shows for the fixture, by field key. */

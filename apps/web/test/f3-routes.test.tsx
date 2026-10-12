@@ -49,11 +49,19 @@ function renderApp(path: string) {
   return { router, queryClient, user: userEvent.setup() };
 }
 
+/** A small checklist for the reads the shell makes; the Setup tab's own tests use the full nine steps. */
+const SETUP_VIEW = {
+  items: [{ key: 'company_basics', status: 'todo', comingWith: null, skippable: false, data: {} }],
+  progress: { done: 0, total: 5 },
+} as const;
+
 /** A signed-in owner, with the shell's reads answered as "nothing". */
 function signedInApi() {
   api = stubApi({
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
+    // The user menu's ring reads the checklist too
+    'GET /api/setup': () => ({ body: SETUP_VIEW }),
   });
   return api;
 }
@@ -116,11 +124,11 @@ it('billing says what is coming', async () => {
   expect(await screen.findByText(billing.later)).toBeInTheDocument();
 });
 
-it('setup says what is coming', async () => {
+it('setup shows the checklist', async () => {
   signedInApi();
   renderApp('/settings/setup');
 
-  expect(await screen.findByText(setup.later)).toBeInTheDocument();
+  expect(await screen.findByRole('list', { name: setup.listLabel })).toBeInTheDocument();
 });
 
 it('connections still says what is coming', async () => {

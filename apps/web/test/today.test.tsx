@@ -37,6 +37,8 @@ const COMPANY_BODY: CompanyBody = {
   addressZip: null,
   timezone: 'America/Chicago',
   logoUrl: null,
+  located: false,
+  serviceAreaMiles: null,
 };
 
 let api: ReturnType<typeof stubApi>;

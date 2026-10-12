@@ -1,6 +1,8 @@
 /* The popover is positioned against the name; the top bar's layer sits above the Window, so the menu opens over it */
 .root {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .trigger {
