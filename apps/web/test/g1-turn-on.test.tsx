@@ -104,8 +104,16 @@ describe('G1 agents start paused', () => {
     expect(screen.queryByText(/is coming soon/i)).toBeNull();
   });
 
-  it.each(G1)('Run now is labelled for %s', async (agent) => {
-    setup(`/agents/${SLUG[agent]}`);
+  it.each(G1)('Run now is labelled for %s once it is on', async (agent) => {
+    setup(`/agents/${SLUG[agent]}`, {
+      [`GET /api/agents/${agent}?period=month`]: () => ({ body: { ...detail(agent), paused: null } }),
+    });
     expect(await screen.findByRole('button', { name: agentPage.runNowLabels[agent] })).toBeInTheDocument();
+  });
+
+  it.each(G1)('a paused %s offers Turn on and no Run now', async (agent) => {
+    setup(`/agents/${SLUG[agent]}`);
+    expect(await screen.findByText(agentPage.rulesTitle)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: agentPage.runNowLabels[agent] })).toBeNull();
   });
 });
