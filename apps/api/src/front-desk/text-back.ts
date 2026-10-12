@@ -79,7 +79,7 @@ export async function maybeTextBack(deps: AppDeps, ctx: TenantContext, input: Te
     const built = await buildGateRequest(
       tx,
       ctx,
-      { customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null },
+      { customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null, toE164: input.fromE164 },
       now,
     );
     if (!built) return null;

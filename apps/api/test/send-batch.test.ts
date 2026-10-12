@@ -490,7 +490,10 @@ describe('a home saved without a time zone', () => {
 });
 
 describe('buildGateRequest', () => {
-  const build = (customerId: string, over: { purpose?: 'marketing' | 'informational'; dedupeKey?: string | null; body?: string } = {}) =>
+  const build = (
+    customerId: string,
+    over: { purpose?: 'marketing' | 'informational'; dedupeKey?: string | null; body?: string; toE164?: string | null } = {},
+  ) =>
     inCompany(t, idOf('a'), (tx) =>
       buildGateRequest(
         tx,
@@ -501,6 +504,7 @@ describe('buildGateRequest', () => {
           body: over.body ?? 'Hi {first_name}, {company} here. Reply STOP to opt out.',
           dedupeKey: over.dedupeKey ?? null,
           replyToInboundAt: null,
+          ...(over.toE164 !== undefined && { toE164: over.toE164 }),
         },
         t.clock.now(),
       ),
@@ -548,6 +552,30 @@ describe('buildGateRequest', () => {
     expect((await build(id!))!.req.recipient.phoneE164).toBe('+14025550002');
     await setPhones([{ e164: '+14025550001' }, { e164: '+14025550002' }]);
     expect((await build(id!))!.toE164).toBe('+14025550001');
+  });
+
+  test('toE164: one of the customer\'s numbers is texted instead of the primary, and its own opt-out counts', async () => {
+    const [id] = await addSmsCustomers(t, 'a', [{ firstName: 'Ann', phone: null, consent: 'attested' }]);
+    await inCompany(t, idOf('a'), (tx) =>
+      tx
+        .update(customers)
+        .set({ phones: [{ e164: '+14025550001', primary: true }, { e164: '+14025550002' }] })
+        .where(eq(customers.id, id!)),
+    );
+    const second = (await build(id!, { toE164: '+14025550002' }))!;
+    expect(second.toE164).toBe('+14025550002');
+    expect(second.req.recipient).toMatchObject({ phoneE164: '+14025550002', optedOut: false });
+
+    // Only the texted number's opt-out matters: the second number opted out, the primary did not.
+    await inCompany(t, idOf('a'), (tx) => tx.insert(optOuts).values({ companyId: idOf('a'), phoneE164: '+14025550002', keyword: 'STOP' }));
+    expect((await build(id!, { toE164: '+14025550002' }))!.req.recipient.optedOut).toBe(true);
+    expect((await build(id!))!.req.recipient).toMatchObject({ phoneE164: '+14025550001', optedOut: false });
+
+    // A number that is not theirs is never texted: the primary is used, as without it.
+    const stranger = (await build(id!, { toE164: '+14025559999' }))!;
+    expect(stranger.toE164).toBe('+14025550001');
+    expect(stranger.req.recipient).toMatchObject({ phoneE164: '+14025550001', optedOut: false });
+    expect((await build(id!, { toE164: null }))!.toE164).toBe('+14025550001');
   });
 
   test('the zone and state come from the most recently updated home; with none they are null', async () => {

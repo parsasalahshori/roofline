@@ -428,6 +428,30 @@ describe('missed-call text-back through the gate', () => {
     expect(await outboundRows()).toHaveLength(1);
   });
 
+  test('a known customer calling from their second number is texted back on that number', async () => {
+    const [cust] = await inCompany(t, idA(), (tx) =>
+      tx
+        .insert(customers)
+        .values({
+          companyId: idA(),
+          displayName: 'Nina Customer',
+          firstName: 'Nina',
+          phones: [
+            { e164: MOBILE_TWO, label: 'mobile', primary: true },
+            { e164: MOBILE, label: 'mobile' },
+          ],
+        })
+        .returning({ id: customers.id }),
+    );
+    const { result } = await textBack(MOBILE, { customerId: cust!.id });
+    expect(result).toBe('sent');
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: MOBILE });
+    const out = await outboundRows();
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ customerId: cust!.id, toE164: MOBILE });
+  });
+
   test('during quiet hours the text waits: scheduled, not sent', async () => {
     t.clock.set(QUIET_NIGHT);
     const { result } = await textBack(MOBILE);
