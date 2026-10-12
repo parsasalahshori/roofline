@@ -71,25 +71,22 @@ export async function memberHours(tx: Tx, ctx: TenantContext, userId: string): P
     .from(memberSchedules)
     .where(and(eq(memberSchedules.companyId, ctx.companyId), eq(memberSchedules.userId, userId)))
     .limit(1);
-  if (row) return { workHours: row.weeklyHours, custom: true };
+  // A JSON null is the "back on company hours" marker (app_tenant cannot DELETE member_schedules rows).
+  if (row && row.weeklyHours !== null) return { workHours: row.weeklyHours, custom: true };
   const settings = await scheduleSettings(tx, ctx);
   return { workHours: settings.workHours, custom: false };
 }
 
-/** Sets a member's own weekly hours, or with `null` deletes them so the member uses the company hours. */
+/** Sets a member's own weekly hours, or with `null` clears them so the member uses the company hours.
+ * The row is kept and its weekly_hours set to a JSON null: app_tenant has no DELETE on member_schedules. */
 export async function saveMemberHours(tx: Tx, ctx: TenantContext, userId: string, hours: WorkHours | null, now: Date): Promise<void> {
-  if (hours === null) {
-    await tx
-      .delete(memberSchedules)
-      .where(and(eq(memberSchedules.companyId, ctx.companyId), eq(memberSchedules.userId, userId)));
-    return;
-  }
+  const stored = hours === null ? sql<WorkHours>`'null'::jsonb` : hours;
   await tx
     .insert(memberSchedules)
-    .values({ companyId: ctx.companyId, userId, weeklyHours: hours, updatedAt: now })
+    .values({ companyId: ctx.companyId, userId, weeklyHours: stored, updatedAt: now })
     .onConflictDoUpdate({
       target: [memberSchedules.companyId, memberSchedules.userId],
-      set: { weeklyHours: hours, updatedAt: now },
+      set: { weeklyHours: stored, updatedAt: now },
     });
 }
 
