@@ -12,3 +12,8 @@ def convective_day(t: datetime) -> date:
     if t.hour < 12:
         return (t - timedelta(days=1)).date()
     return t.date()
+
+
+def final_instant(day: date) -> datetime:
+    """The instant that closes convective day `day`: the next day at 12:00:00Z."""
+    return datetime(day.year, day.month, day.day, 12, 0, 0, tzinfo=timezone.utc) + timedelta(days=1)

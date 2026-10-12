@@ -1,7 +1,11 @@
 # Hail service
 
-Fetches NOAA MRMS `MESH_Max_1440min_00.50` from the public S3 bucket `noaa-mrms-pds` and contours it into the 8 hail
-levels 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3 inches. These must equal `HAIL_LEVELS_IN` in `@roofline/shared`.
+Fetches NOAA MRMS MESH from the public S3 bucket `noaa-mrms-pds` and contours it into the 8 hail levels 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3 inches. These must equal `HAIL_LEVELS_IN` in `@roofline/shared`.
+
+Data source: each `MESH_Max_60min_00.50` grid is unioned into the current convective day's storms (12Z to 12Z), so
+the footprint only grows during the day. The `MESH_Max_1440min_00.50` grid valid exactly at 12:00:00Z closes the
+previous day once: it replaces that day's shapes and marks the storms final. A day whose 12Z run was missed is closed on
+a later tick from its own 12Z 1440min key. A 60min grid at hour 12 is provisional for the new day.
 
 ## Layout
 
