@@ -1,5 +1,6 @@
 import type { StepType } from '@roofline/shared';
 import { sendSmsBatch } from '../messaging/send-batch.ts';
+import { buildRoutesHandler } from '../storm/routes-build.ts';
 import type { StepHandler } from './runner.ts';
 
 /** The demo steps (the F2 demo task, and the tests) do nothing and finish at once. */
@@ -26,6 +27,6 @@ export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   order_exact_report: notYet,
   // Storm Scout (S1): the real handlers arrive in later S1 tasks.
   send_email_batch: notYet,
-  build_routes: notYet,
+  build_routes: buildRoutesHandler,
   create_ad_campaign: notYet,
 };
