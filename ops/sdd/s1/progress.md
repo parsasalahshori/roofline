@@ -306,3 +306,12 @@ Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema c
   - `proposalListRoutes()` in the s1-routes dock test.
 - R8 had already narrowed 0018, so C1's app_system test holds.
 - Local checks: typecheck and lint pass; web 970 and shared/ui/send-gate 1367 tests pass; drizzle-kit reports no changes.
+
+## Sentinel pass 13 and the controller's final Ruling BD (16:41Z)
+- **Redraft button:** POST /api/storms/:id/plan from the "Draft a new plan" button is an explicit owner action and passes allowFinished, as the rerun route does; automatic paths never do. A1 wires this in a1-merge-up2. The button therefore stays on expired and declined plans. Branch s1-r11 (56f534a, which hid it) is NOT merged.
+- **spotter_reports grant:** already fixed by R8. app_system has SELECT and INSERT only, with no GRANT ALL in 0018.
+- **TRUST_PROXY and R2 in the production fixtures:** done in e726ecf.
+- **updated_at hazard (controller):** 0018 has two column-level UPDATE grants:
+  - app_system `UPDATE (place_name) ON storms`;
+  - app_hail `UPDATE (merged_into) ON storms`, which is redundant beside app_hail's table-wide UPDATE on storms.
+  `storms.updated_at` is a plain `tstz(...).defaultNow()` without the `timestamps()` helper's `$onUpdate`, so Drizzle adds no updated_at to those updates. No code path updates storms.place_name as app_system: the only writer is the e2e fixture, through the owner. No grant is affected, so nothing changes.
