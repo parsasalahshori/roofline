@@ -142,13 +142,13 @@ it('settings goes to company', async () => {
   await waitFor(() => expect(where(router)).toBe('/settings/company'));
 });
 
-it("shows the owner's eight tabs as links and marks the current one", async () => {
+it("shows the owner's ten tabs as links and marks the current one", async () => {
   signedInApi();
   renderApp('/settings/team');
 
   const nav = await tabsNav();
   const links = within(nav).getAllByRole('link');
-  expect(links).toHaveLength(8);
+  expect(links).toHaveLength(10);
   expect(links.map((link) => link.textContent)).toEqual([
     settings.tabs.company,
     settings.tabs.team,
@@ -157,7 +157,9 @@ it("shows the owner's eight tabs as links and marks the current one", async () =
     settings.tabs.connections,
     settings.tabs.billing,
     settings.tabs.setup,
+    settings.tabs['front-desk'],
     settings.tabs.agents,
+    settings.tabs.profile,
   ]);
   expect(links.map((link) => link.getAttribute('href'))).toEqual([
     '/settings/company',
@@ -167,7 +169,9 @@ it("shows the owner's eight tabs as links and marks the current one", async () =
     '/settings/connections',
     '/settings/billing',
     '/settings/setup',
+    '/settings/front-desk',
     '/settings/agents',
+    '/settings/profile',
   ]);
   expect(links[1]).toHaveAttribute('aria-current', 'page');
   links.filter((_, i) => i !== 1).forEach((link) => expect(link).not.toHaveAttribute('aria-current'));

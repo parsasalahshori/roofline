@@ -93,8 +93,8 @@ describe('visibleTabs with the agents tab', () => {
     }
   });
 
-  it('lists eight tabs, Agents among them', () => {
-    expect(SETTINGS_TABS).toHaveLength(8);
+  it('lists ten tabs (with the D1 Front Desk and Your profile tabs), Agents among them', () => {
+    expect(SETTINGS_TABS).toHaveLength(10);
     expect(isSettingsTab('agents')).toBe(true);
   });
 });
