@@ -2,7 +2,6 @@ import type { ForwardingTestView } from '@roofline/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../../api/client.ts';
 
-/* SHELL: Package B replaces the bodies. Names and signatures below are the contract. */
 
 export const forwardingKeys = {
   test: (id: string) => ['front-desk', 'forwarding-test', id] as const,

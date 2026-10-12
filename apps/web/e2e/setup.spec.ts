@@ -31,13 +31,16 @@ test('skip the import and the ring moves', async ({ page }) => {
 });
 
 test('later steps say Coming with', async ({ page }) => {
-  await expect(page.getByText(/Coming with/)).toHaveCount(4);
-  for (const line of [
-    'Coming with the Estimator',
-    'Coming with the calendar',
-    'Coming with Front Desk',
-    'Coming with Storm Scout',
-  ]) {
+  await expect(page.getByText(/Coming with/)).toHaveCount(3);
+  for (const line of ['Coming with the Estimator', 'Coming with the calendar', 'Coming with Storm Scout']) {
     await expect(page.getByText(line, { exact: true }).first()).toBeVisible();
   }
+});
+
+test('the phone number step opens the forwarding guide', async ({ page }) => {
+  await expect(page.getByText('Coming with Front Desk', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Forward your calls' })).toHaveAttribute(
+    'href',
+    '/settings/front-desk#forwarding',
+  );
 });
