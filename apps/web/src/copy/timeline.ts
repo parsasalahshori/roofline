@@ -1,4 +1,5 @@
 import type { MessageStatus } from '@roofline/shared';
+import { frontDeskInbox } from './front-desk-inbox.ts';
 
 /** The shared timeline (job window and customer window) and the note composer. */
 export const timeline = {
@@ -20,6 +21,12 @@ export const timeline = {
     blocked: 'Not sent',
     received: 'Received',
   } satisfies Record<MessageStatus, string>,
+  frontDesk: {
+    callLabel: 'Front Desk call',
+    textLabel: 'Front Desk text',
+    open: 'Open conversation',
+    outcome: frontDeskInbox.outcomes,
+  },
   system: 'Roofline',
   noteLabel: 'Add a note',
   notePlaceholder: 'Write a note',

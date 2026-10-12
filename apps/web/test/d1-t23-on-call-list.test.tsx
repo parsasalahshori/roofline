@@ -30,9 +30,9 @@ describe('OnCallList', () => {
     const items = rows();
     expect(items).toHaveLength(3);
     expect(items[0]).toHaveTextContent('Cy');
-    expect(items[0]).toHaveTextContent('+15555550103');
+    expect(items[0]).toHaveTextContent('(555) 555-0103');
     expect(items[1]).toHaveTextContent('Ana');
-    expect(items[1]).toHaveTextContent('+15555550101');
+    expect(items[1]).toHaveTextContent('(555) 555-0101');
     expect(items[2]).toHaveTextContent('Ben');
     expect(items[2]).toHaveTextContent(copy.noPhone);
   });

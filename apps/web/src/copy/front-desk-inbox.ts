@@ -12,7 +12,7 @@ export const frontDeskInbox = {
     messages: 'Messages',
     spam: 'Spam',
   },
-  unknownCaller: 'Unknown number',
+  unknownCaller: 'Unknown caller',
   live: 'Live now',
   urgent: 'Urgent',
   needsAttention: 'Needs attention',

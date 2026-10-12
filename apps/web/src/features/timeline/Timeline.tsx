@@ -2,6 +2,7 @@ import type { Agent, TimelineItem } from '@roofline/shared';
 import { Button, EmptyState, Skeleton } from '@roofline/ui';
 import { AGENT_LABEL } from '../../copy/status.ts';
 import { timeline } from '../../copy/timeline.ts';
+import { FrontDeskCard, frontDeskActivity } from './FrontDeskCard.tsx';
 import { NoteComposer } from './NoteComposer.tsx';
 import { useTimeline, type TimelineSubject } from './api.ts';
 import styles from './Timeline.module.css';
@@ -24,7 +25,7 @@ function isAgent(name: string): name is Agent {
 }
 
 /** Who did it: the agent's label, the person's name, or the Roofline name for the system. */
-function actorLabel(item: TimelineItem): string {
+export function actorLabel(item: TimelineItem): string {
   const { actor } = item;
   if (actor.type === 'system') return timeline.system;
   if (actor.name === null) return timeline.system;
@@ -32,7 +33,7 @@ function actorLabel(item: TimelineItem): string {
   return actor.name;
 }
 
-function TimeStamp({ at }: { at: string }) {
+export function TimeStamp({ at }: { at: string }) {
   return (
     <time dateTime={at} title={absoluteFormat.format(new Date(at))} className={styles.time}>
       {relativeTime(at)}
@@ -94,13 +95,12 @@ export function Timeline({ customerId, jobId }: TimelineProps) {
   } else {
     body = (
       <ol aria-label={timeline.label} className={styles.list}>
-        {items.map((item) =>
-          item.type === 'text' && item.text !== null ? (
-            <TextRow key={item.id} item={item} text={item.text} />
-          ) : (
-            <ActivityRow key={item.id} item={item} />
-          ),
-        )}
+        {items.map((item) => {
+          if (item.type === 'text' && item.text !== null) return <TextRow key={item.id} item={item} text={item.text} />;
+          const frontDesk = frontDeskActivity(item);
+          if (frontDesk !== null) return <FrontDeskCard key={item.id} item={item} data={frontDesk} />;
+          return <ActivityRow key={item.id} item={item} />;
+        })}
       </ol>
     );
   }

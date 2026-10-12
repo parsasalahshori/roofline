@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { CARRIERS, forwardingSteps } from '@roofline/shared';
 import { describe, expect, it } from 'vitest';
 import { forwarding } from '../src/copy/forwarding.ts';
-import { frontDesk } from '../src/copy/front-desk.ts';
+import { conversationCopy } from '../src/copy/front-desk-conversation.ts';
+import { frontDeskInbox } from '../src/copy/front-desk-inbox.ts';
+import { frontDeskSettings } from '../src/copy/front-desk-settings.ts';
 
 const read = (name: string): string => readFileSync(fileURLToPath(new URL(`../src/copy/${name}`, import.meta.url)), 'utf8');
 
@@ -40,20 +42,20 @@ describe('D1 copy', () => {
     }
   });
 
-  it('has the Front Desk words other tasks use', () => {
-    for (const text of [
-      frontDesk.windowEmpty,
-      frontDesk.conversationEmpty,
-      frontDesk.settingsEmpty,
-      frontDesk.transferPhone.title,
-      frontDesk.transferPhone.empty,
-    ]) {
-      expect(text.trim().length).toBeGreaterThan(0);
-    }
+  it('has no empty Front Desk words', () => {
+    const walk = (value: unknown, path: string): void => {
+      if (typeof value === 'string') expect(value.trim().length, path).toBeGreaterThan(0);
+      else if (value !== null && typeof value === 'object') {
+        for (const [key, inner] of Object.entries(value)) walk(inner, `${path}.${key}`);
+      }
+    };
+    walk(frontDeskInbox, 'frontDeskInbox');
+    walk(conversationCopy, 'conversationCopy');
+    walk(frontDeskSettings, 'frontDeskSettings');
   });
 
   it('names no carrier in the Front Desk words', () => {
-    const source = read('front-desk.ts');
+    const source = ['front-desk-inbox.ts', 'front-desk-conversation.ts', 'front-desk-settings.ts'].map(read).join('\n');
     for (const name of ['Verizon', 'AT&T', 'T-Mobile', 'RingCentral', 'Google', 'Ooma', 'Spectrum', 'Comcast', 'Grasshopper']) {
       expect(source.includes(name), name).toBe(false);
     }
