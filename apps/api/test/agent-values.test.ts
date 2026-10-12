@@ -125,16 +125,20 @@ describe('PATCH /api/agent-values bounds', () => {
     expect(res.body).toEqual({ error: REVIEW_DELAY, field: 'reviewDelayDays' });
   });
 
-  test('claimsNudgeDays accepts increasing whole numbers from 1 to 60', async () => {
-    const res = await patch({ claimsNudgeDays: [1, 2, 60] });
-    expect(res.status).toBe(200);
-    expect(res.body.claimsNudgeDays).toEqual([1, 2, 60]);
-  });
-
-  test('claimsNudgeDays refuses a repeat, a descent, a zero, a 61 and a fraction', async () => {
-    for (const bad of [
+  test('claimsNudgeDays takes three whole numbers from 1 to 60, one per stage, in any order', async () => {
+    for (const good of [
+      [1, 2, 60],
       [5, 3, 7],
       [3, 3, 7],
+    ]) {
+      const res = await patch({ claimsNudgeDays: good });
+      expect(res.status).toBe(200);
+      expect(res.body.claimsNudgeDays).toEqual(good);
+    }
+  });
+
+  test('claimsNudgeDays refuses a zero, a 61, a fraction and a short list', async () => {
+    for (const bad of [
       [0, 2, 3],
       [3, 5, 61],
       [3, 5.5, 7],

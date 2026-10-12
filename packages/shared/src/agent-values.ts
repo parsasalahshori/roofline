@@ -22,7 +22,7 @@ export const AGENT_VALUE_MESSAGES = {
   percent: 'Please enter a percent from 0 to 100.',
   gust: 'Please enter a whole number of miles per hour from 1 to 100.',
   hour: 'Please pick an hour from 0 to 23.',
-  nudgeDays: 'Please enter three numbers of days, smallest first.',
+  nudgeDays: 'Please enter three whole numbers of days from 1 to 60.',
   followupDays: 'Please enter two whole numbers of days from 1 to 30.',
   leadDays: 'Please enter a whole number of days from 1 to 30.',
   reviewDelay: 'Please enter a whole number of days from 0 to 30.',
@@ -50,7 +50,6 @@ const NUDGE_DAY = wholeNumber(1, 60, AGENT_VALUE_MESSAGES.nudgeDays);
 const shape = {
   claimsNudgeDays: z
     .tuple([NUDGE_DAY, NUDGE_DAY, NUDGE_DAY], { error: AGENT_VALUE_MESSAGES.nudgeDays })
-    .refine(([first, second, third]) => first < second && second < third, AGENT_VALUE_MESSAGES.nudgeDays)
     .optional(),
   weatherRainPct: wholeNumber(0, 100, AGENT_VALUE_MESSAGES.percent).optional(),
   weatherGustMph: wholeNumber(1, 100, AGENT_VALUE_MESSAGES.gust).optional(),
