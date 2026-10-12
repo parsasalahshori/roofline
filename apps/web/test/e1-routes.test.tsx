@@ -87,7 +87,8 @@ describe('E1 windows', () => {
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
 
     expect(dockLink(dockNav, WINDOW_COPY.estimator.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY.storm.title).textContent ?? '').toContain(dock.comingSoon);
+    expect(dockLink(dockNav, WINDOW_COPY.storm.title).textContent ?? '').not.toContain(dock.comingSoon);
+    expect(dockLink(dockNav, WINDOW_COPY['front-desk'].title).textContent ?? '').toContain(dock.comingSoon);
   });
 
   it('Settings Prices shows the three E1 sections', async () => {

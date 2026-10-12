@@ -15,6 +15,7 @@ export const settings = {
     prices: 'Prices',
     schedule: 'Schedule',
     connections: 'Connections',
+    storm: 'Storm',
     billing: 'Billing',
     setup: 'Setup',
   } satisfies Record<SettingsTab, string>,
