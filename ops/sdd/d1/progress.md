@@ -192,3 +192,5 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
   - Staff replies, booking confirmations, text-backs and STOP/START/HELP or opt-out-looking texts are kept.
   - The sweep uses a keyset cursor.
   - The settings copy says what is kept; retention 0 deletes existing recordings at the next nightly cleanup.
+
+Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.recording_key (object key recordings/<companyId>/<callId>-<recordingSid>.mp3), per the brief's "same column as the key". No new column and no change to 0019/0020. Twilio copies are deleted by fd-recording-store after the copy, when R2 is unset, or after the 5th failed attempt.

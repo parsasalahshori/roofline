@@ -1,8 +1,10 @@
 import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import twilio from 'twilio';
 import WebSocket from 'ws';
-import { calls, findCallBySid, insertCall, updateCall, withTenant } from '@roofline/db';
+import { calls, findCallBySid, insertCall, setCallRecording, updateCall, withTenant } from '@roofline/db';
+import { signingTokenFor } from '@roofline/db/system';
 import { attachRelayUpgrade, RELAY_MAX_PAYLOAD, RELAY_MAX_QUEUED, RELAY_MAX_UNAUTH } from '../../src/front-desk/relay-server.ts';
 import { mintRelayToken } from '../../src/front-desk/relay-token.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
@@ -45,7 +47,7 @@ const until = async (fn: () => Promise<boolean> | boolean, ms = 5000): Promise<v
 async function rig(script: Script = SAY, opts: { idleMs?: number } = {}) {
   const t = await makeTestApp();
   const llm = new ScriptedLlm(script);
-  const deps = { ...t.deps, llm };
+  const deps = { ...t.deps, llm, config: { ...t.deps.config, TWILIO_AUTH_TOKEN: 'relay-test-master-token' } };
   const server: Server = createServer();
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const handle = attachRelayUpgrade(server, deps, opts);
@@ -60,8 +62,25 @@ async function rig(script: Script = SAY, opts: { idleMs?: number } = {}) {
   );
   const token = mintRelayToken(deps.config.RELAY_TOKEN_SECRET, { callId: row.id, companyId: row.companyId }, t.clock.now());
 
+  const signer = (await signingTokenFor(deps.pools.system, row.companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY)) as string;
+  const sign = (tok: string, callId: string = row.id): string => twilio.getExpectedTwilioSignature(signer, `${deps.config.RELAY_PUBLIC_URL}?t=${tok}&c=${callId}`, {});
+  /** A raw upgrade request; resolves with the HTTP status (101 when it upgraded). */
+  const rawUpgrade = (tok: string, headers: Record<string, string> = {}, callId: string = row.id): Promise<number> =>
+    new Promise((res) => {
+      const req = request({
+        host: '127.0.0.1',
+        port,
+        path: `/relay?t=${tok}&c=${callId}`,
+        headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==', ...headers },
+      });
+      req.on('response', (resp) => { resp.resume(); res(resp.statusCode ?? 0); });
+      req.on('upgrade', (_resp, sock) => { sock.destroy(); res(101); });
+      req.on('error', () => res(0));
+      req.end();
+    });
+
   function connect(tok: string): Client {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/relay?t=${tok}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/relay?t=${tok}&c=${row.id}`, { headers: { 'X-Twilio-Signature': sign(tok) } });
     const frames: Frame[] = [];
     ws.on('message', (d) => frames.push(JSON.parse(d.toString()) as Frame));
     ws.on('error', () => undefined);
@@ -96,43 +115,131 @@ async function rig(script: Script = SAY, opts: { idleMs?: number } = {}) {
   });
   const setStatus = (status: 'ended' | 'failed' | 'rejected' | 'ringing_team' | 'transferred') =>
     withTenant(t.deps.pools, ctx, (tx) => updateCall(tx, ctx, CALL_SID, { status }));
-  return { t, deps, row, token, port, setStatus, connect, open, setupMsg, readCall, llm };
+  const readTranscriptStored = () =>
+    withTenant(t.deps.pools, ctx, async (tx) => {
+      const [s] = await tx.select({ v: calls.transcriptStored }).from(calls);
+      return s?.v;
+    });
+  const stopRecording = () => withTenant(t.deps.pools, ctx, (tx) => setCallRecording(tx, ctx, CALL_SID, { recordingStatus: 'stopped_by_caller' }));
+  return { t, deps, row, token, port, rawUpgrade, sign, readTranscriptStored, stopRecording, setStatus, connect, open, setupMsg, readCall, llm };
 }
 
 const isEnd = (f: Frame): boolean => f.type === 'end';
 
 describe('relay websocket server', () => {
-  test('a bad token closes 1008', async () => {
+  test('an unsigned upgrade gets 401 with no socket', async () => {
     const r = await rig();
-    const c = r.connect('nonsense');
-    expect(await c.closed).toBe(1008);
-    const c2 = await r.open(`${Date.now() + 100000}.${'0'.repeat(64)}`);
-    expect(await c2.closed).toBe(1008);
+    expect(await r.rawUpgrade(r.token)).toBe(401);
+    expect(r.deps.relaySessions.size).toBe(0);
+    expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': r.sign(r.token) })).toBe(101);
   });
 
-  test('an expired token closes 1008', async () => {
+  test('a bad token gets 401', async () => {
+    const r = await rig();
+    expect(await r.rawUpgrade('nonsense', { 'X-Twilio-Signature': r.sign('nonsense') })).toBe(401);
+    expect(r.deps.relaySessions.size).toBe(0);
+  });
+
+  test('a wrong signature gets 401 with no socket', async () => {
+    const r = await rig();
+    expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': 'AAAA' })).toBe(401);
+    expect(r.deps.relaySessions.has(CALL_SID)).toBe(false);
+  });
+
+  test('a well-shaped forged token with a correct signature gets 401', async () => {
+    const r = await rig();
+    const forged = `${Date.now() + 60000}.${'a'.repeat(64)}`;
+    expect(await r.rawUpgrade(forged, { 'X-Twilio-Signature': r.sign(forged) })).toBe(401);
+    expect(r.deps.relaySessions.has(CALL_SID)).toBe(false);
+  });
+
+  test('a valid token and signature for a call id with no call gets 401', async () => {
+    const r = await rig();
+    const ghost = '11111111-2222-4333-8444-555555555555';
+    expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': r.sign(r.token, ghost) }, ghost)).toBe(401);
+    expect(r.deps.relaySessions.has(CALL_SID)).toBe(false);
+  });
+
+  test('a valid token and signature for an ended call gets 401 at the upgrade', async () => {
+    const r = await rig();
+    await r.setStatus('ended');
+    expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': r.sign(r.token) })).toBe(401);
+    expect(r.deps.relaySessions.has(CALL_SID)).toBe(false);
+  });
+
+  test('60 bad-signature upgrades in a row each get 401 and a valid connect still opens', async () => {
+    const r = await rig();
+    for (let i = 0; i < 60; i += 1) expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': 'AAAA' })).toBe(401);
+    expect(r.deps.relaySessions.has(CALL_SID)).toBe(false);
+    const ok = await r.open();
+    await until(() => r.deps.relaySessions.size === 1);
+    ok.ws.close();
+    await ok.closed;
+  });
+
+  test('a bad token (right shape, wrong MAC) is refused at the upgrade', async () => {
+    const r = await rig();
+    const flipped = r.token.slice(0, -1) + (r.token.endsWith('0') ? '1' : '0');
+    // The MAC is verified before handleUpgrade (the URL carries the call id), so no socket opens.
+    expect(await r.rawUpgrade(flipped, { 'X-Twilio-Signature': r.sign(flipped) })).toBe(401);
+    expect(r.deps.relaySessions.size).toBe(0);
+  });
+
+  test('an expired token is refused at the upgrade', async () => {
     const r = await rig();
     r.t.clock.advance(11 * 60 * 1000);
-    const c = r.connect(r.token);
-    expect(await c.closed).toBe(1008);
+    expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': r.sign(r.token) })).toBe(401);
   });
 
-  test('company A token with company B call closes 1008', async () => {
+  test('60 denied sockets in a row do not block the 61st valid one', async () => {
+    const r = await rig();
+    for (let i = 0; i < RELAY_MAX_UNAUTH + 10; i += 1) {
+      const c = await r.open(r.token, `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+      await c.closed;
+    }
+    const ok = await r.open();
+    await until(() => r.deps.relaySessions.size === 1);
+    ok.ws.close();
+    await ok.closed;
+  });
+
+  test('after setup the call reads transcript_stored true, and false after an objection', async () => {
+    const r = await rig(SAY);
+    const c = await r.open();
+    await until(async () => (await r.readTranscriptStored()) === true);
+    c.send({ type: 'prompt', voicePrompt: "please don't record me", last: true });
+    await c.waitFor((f) => f.type === 'text' && f.last === true);
+    await until(async () => (await r.readTranscriptStored()) === false);
+    c.ws.close();
+    await c.closed;
+  });
+
+  test('a second session on a stopped_by_caller call keeps transcript_stored false', async () => {
+    const r = await rig(SAY);
+    await r.stopRecording();
+    const c = await r.open();
+    await until(() => r.deps.relaySessions.size === 1);
+    expect(await r.readTranscriptStored()).toBe(false);
+    c.ws.close();
+    await c.closed;
+  });
+
+  test('company A token with company B call is denied (1006)', async () => {
     const r = await rig();
     const ctxB = { companyId: r.t.seed.b.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
     const rowB = await withTenant(r.t.deps.pools, ctxB, (tx) =>
       insertCall(tx, ctxB, { callSid: `CA${'d'.repeat(32)}`, fromE164: CALLER_PHONE, toE164: '+14025550101', forwardedFrom: null, stirVerstat: null, now: r.t.clock.now() }),
     );
     const c = await r.open(r.token, rowB.id);
-    expect(await c.closed).toBe(1008);
+    expect(await c.closed).toBe(1006);
   });
 
-  test('a second socket for the same call closes 1008', async () => {
+  test('a second socket for the same call is denied (1006)', async () => {
     const r = await rig();
     const first = await r.open();
     await until(() => r.deps.relaySessions.size === 1);
     const second = await r.open();
-    expect(await second.closed).toBe(1008);
+    expect(await second.closed).toBe(1006);
     expect(r.deps.relaySessions.size).toBe(1);
     first.ws.close();
     await first.closed;
@@ -242,13 +349,13 @@ describe('relay websocket server', () => {
     expect(await c.closed).toBe(1009);
   });
 
-  test('a flood of frames before setup completes closes with 1008', async () => {
+  test('a flood of frames before setup completes is denied (1006)', async () => {
     const r = await rig();
     const c = r.connect(r.token);
     await new Promise<void>((res) => c.ws.once('open', () => res()));
     c.send(r.setupMsg());
     for (let i = 0; i < RELAY_MAX_QUEUED + 300; i += 1) c.send({ type: 'prompt', voicePrompt: 'hi', last: false });
-    expect(await c.closed).toBe(1008);
+    expect(await c.closed).toBe(1006);
   });
 
   test('the pre-auth cap refuses extra upgrades with 503', async () => {
@@ -259,7 +366,7 @@ describe('relay websocket server', () => {
       idle.push(c.ws);
     }
     await Promise.all(idle.map((w) => new Promise<void>((res) => w.once('open', () => res()))));
-    const extra = new WebSocket(`ws://127.0.0.1:${r.port}/relay?t=${r.token}`);
+    const extra = new WebSocket(`ws://127.0.0.1:${r.port}/relay?t=${r.token}&c=${r.row.id}`);
     extra.on('error', () => undefined);
     cleanups.push(() => extra.terminate());
     const status = await new Promise<number>((res) => {
@@ -277,7 +384,7 @@ describe('relay websocket server', () => {
         const req = request({
           host: '127.0.0.1',
           port: r.port,
-          path: `/relay?t=${r.token}`,
+          path: `/relay?t=${r.token}&c=${r.row.id}`,
           headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': 'bad' },
         });
         req.on('response', (resp) => { resp.resume(); res(); });
@@ -298,8 +405,7 @@ describe('relay websocket server', () => {
   test.each(['ended', 'failed', 'rejected'] as const)('a token for a %s call is refused', async (status) => {
     const r = await rig();
     await r.setStatus(status);
-    const c = await r.open();
-    expect(await c.closed).toBe(1008);
+    expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': r.sign(r.token) })).toBe(401);
     expect((await r.readCall()).status).toBe(status);
     expect(r.deps.relaySessions.size).toBe(0);
   });

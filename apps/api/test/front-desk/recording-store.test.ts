@@ -24,7 +24,7 @@ const BYTES = Uint8Array.from([0x49, 0x44, 0x33, 0x04, 0x00]);
 
 const companyId = () => t.seed.a.companyId;
 const ctx = (): TenantContext => ({ companyId: companyId(), role: 'system', userId: null, canApproveSpend: false });
-const keyFor = (callId: string) => `recordings/${companyId()}/${callId}.mp3`;
+const keyFor = (callId: string) => `recordings/${companyId()}/${callId}-${RECORDING_SID}.mp3`;
 
 let callId: string;
 
@@ -99,14 +99,90 @@ describe('fd-recording-store job', () => {
     expect(t.callControl.recordings.has(RECORDING_SID)).toBe(false);
   });
 
-  test('without file storage the recording stays at Twilio and nothing throws', async () => {
+  test('the object key carries the recording sid', async () => {
+    await run();
+    expect(keyFor(callId)).toBe(`recordings/${companyId()}/${callId}-${RECORDING_SID}.mp3`);
+    expect((await callRow()).recordingKey).toBe(`recordings/${companyId()}/${callId}-${RECORDING_SID}.mp3`);
+  });
+
+  test('without file storage the Twilio copy is deleted and only metadata stays', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await run(1, { ...t.deps, objectStore: new UnconfiguredObjectStore() });
     expect(warn).toHaveBeenCalledOnce();
     expect(String(warn.mock.calls[0]![0])).toContain(callId);
+    expect(String(warn.mock.calls[0]![0])).toContain('recording deleted at Twilio, file storage not set up');
+    expect(deletes()).toHaveLength(1);
+    expect(puts()).toHaveLength(0);
+    const row = await callRow();
+    expect(row.recordingStatus).toBe('deleted');
+    expect(row.recordingKey).toBeNull();
+  });
+
+  test('on the last attempt a failing copy still deletes the Twilio copy and does not throw', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    t.callControl.failNext(1); // the fetch fails; the delete after it succeeds
+    await expect(run(5)).resolves.toBeUndefined();
+    expect(deletes()).toHaveLength(1);
+    expect(t.callControl.recordings.has(RECORDING_SID)).toBe(false);
+    const row = await callRow();
+    expect(row.recordingStatus).toBe('deleted');
+    expect(row.recordingKey).toBeNull();
+    expect(warn.mock.calls.map((c) => String(c[0]))).toContain(`recording store gave up, Twilio copy deleted call=${callId} company=${companyId()}`);
+  });
+
+  test('without file storage a caller who objected keeps stopped_by_caller', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await withTenant(t.deps.pools, ctx(), (tx) => tx.update(calls).set({ recordingStatus: 'stopped_by_caller' }).where(eq(calls.id, callId)));
+    await run(1, { ...t.deps, objectStore: new UnconfiguredObjectStore() });
+    expect(deletes()).toHaveLength(1);
+    expect(puts()).toHaveLength(0);
+    expect(t.callControl.recordings.has(RECORDING_SID)).toBe(false);
+    expect((await callRow()).recordingStatus).toBe('stopped_by_caller');
+    expect((await callRow()).recordingKey).toBeNull();
+  });
+
+  test('on the last attempt a caller who objected keeps stopped_by_caller', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await withTenant(t.deps.pools, ctx(), (tx) => tx.update(calls).set({ recordingStatus: 'stopped_by_caller' }).where(eq(calls.id, callId)));
+    t.callControl.failNext(1);
+    await expect(run(5)).resolves.toBeUndefined();
+    expect(deletes()).toHaveLength(1);
+    expect(t.callControl.recordings.has(RECORDING_SID)).toBe(false);
+    expect((await callRow()).recordingStatus).toBe('stopped_by_caller');
+    expect((await callRow()).recordingKey).toBeNull();
+  });
+
+  test('on an earlier attempt a failing copy throws and deletes nothing at Twilio', async () => {
+    t.callControl.failNext(1);
+    await expect(run(4)).rejects.toThrow();
     expect(deletes()).toHaveLength(0);
     expect(t.callControl.recordings.has(RECORDING_SID)).toBe(true);
     expect((await callRow()).recordingStatus).toBe('recording');
+  });
+
+  test('on the last attempt an upload that fails after writing leaves no orphan object', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const realPut = t.objectStore.put.bind(t.objectStore);
+    vi.spyOn(t.objectStore, 'put').mockImplementation(async (key, bytes, contentType) => {
+      await realPut(key, bytes, contentType);
+      throw new Error('Upload failed after writing');
+    });
+    await expect(run(5)).resolves.toBeUndefined();
+    expect(await t.objectStore.get(keyFor(callId))).toBeNull();
+    expect(deletes().map((c) => c.args[1])).toEqual([RECORDING_SID]);
+    const row = await callRow();
+    expect(row.recordingStatus).toBe('deleted');
+    expect(row.recordingKey).toBeNull();
+  });
+
+  test('on an earlier attempt an upload that fails after writing throws and does not delete at Twilio', async () => {
+    const realPut = t.objectStore.put.bind(t.objectStore);
+    vi.spyOn(t.objectStore, 'put').mockImplementation(async (key, bytes, contentType) => {
+      await realPut(key, bytes, contentType);
+      throw new Error('Upload failed after writing');
+    });
+    await expect(run(4)).rejects.toThrow();
+    expect(deletes()).toHaveLength(0);
   });
 
   test('a job without a call id does nothing', async () => {

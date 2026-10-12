@@ -6,7 +6,8 @@ import type { AppDeps } from '../app.ts';
 /*
  * Call recording for the relay (D1 Task 12). Starts once after the greeting began; the caller can
  * object, which stops the recording and turns the transcript off. Logs carry ids only: never
- * numbers, urls, keys or transcript text.
+ * numbers, urls, keys or transcript text. A call already stopped_by_caller (a later relay session)
+ * starts with objected true and start() does nothing.
  * TODO(e1-estimator merge, Ruling DJ/DV): the stored_files row of kind 'call_recording' is added there.
  */
 export type RecordingHandle = {
@@ -17,7 +18,7 @@ export type RecordingHandle = {
   /** True once the caller has objected: turns from now on are stored with text ''. */
   readonly objected: boolean;
 };
-export type RecordingCall = { callId: string; companyId: string; callSid: string };
+export type RecordingCall = { callId: string; companyId: string; callSid: string; /** True when the call's status is already 'stopped_by_caller': start() must do nothing and objected starts true. */ stoppedByCaller?: boolean };
 
 const OBJECTION = new RegExp(
   [
@@ -37,10 +38,12 @@ export function createRecording(deps: AppDeps, call: RecordingCall): RecordingHa
   let recordingSid: string | null = null;
   let sub: { accountSid: string; authToken: string } | null = null;
   let started = false;
-  let objected = false;
+  let objected = call.stoppedByCaller === true;
 
   return {
     async start() {
+      // A second relay session on a call the caller already objected on: never record again.
+      if (call.stoppedByCaller === true) return;
       if (started) return;
       started = true;
       try {

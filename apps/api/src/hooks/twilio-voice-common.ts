@@ -50,7 +50,7 @@ export function relayConnectXml(
 ): string {
   const voice = escapeXml(voiceIdFor(route.frontDeskVoice));
   const token = mintRelayToken(deps.config.RELAY_TOKEN_SECRET, { callId, companyId: route.companyId }, deps.clock.now());
-  const url = `${deps.config.RELAY_PUBLIC_URL}?t=${encodeURIComponent(token)}`;
+  const url = `${deps.config.RELAY_PUBLIC_URL}?t=${encodeURIComponent(token)}&c=${encodeURIComponent(callId)}`;
   const mode = o.messageOnly ? '<Parameter name="mode" value="message_only"/>' : '';
   return (
     `<Response><Connect action="${escapeXml(o.action)}"><ConversationRelay url="${escapeXml(url)}" ` +

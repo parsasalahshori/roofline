@@ -11,7 +11,7 @@ import { isRecordingObjection, type RecordingHandle } from './recording.ts';
  * relay-server.ts (package C). Logs carry the call id and company id only: never transcript text,
  * phone numbers or tokens.
  */
-export type RelayCall = { callId: string; companyId: string; callSid: string; from: string; to: string; messageOnly: boolean };
+export type RelayCall = { callId: string; companyId: string; callSid: string; from: string; to: string; messageOnly: boolean; /** True when calls.recording_status is 'stopped_by_caller' (a second relay session on the same call). Seeds state.transcriptOff. */ recordingStopped?: boolean };
 
 export type RelayLoop = {
   /** Resolves when the in-flight turn (if any) has been drained and saved. */
@@ -136,6 +136,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
           callId: call.callId,
           companyNumber: call.to,
         });
+        if (call.recordingStopped === true && state) state.transcriptOff = true;
         return;
       }
       case 'prompt': {

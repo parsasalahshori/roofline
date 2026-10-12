@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
+import type { Response } from 'superagent';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { calls, conversations, customers, withTenant, type TenantContext } from '@roofline/db';
 import { MemoryObjectStore } from '../../src/providers/fakes/object-store.ts';
@@ -10,7 +11,6 @@ import { loginAs, makeTestApp, type SuperAgent, type TestApp } from '../helpers.
  * MemoryObjectStore unit tests at the bottom.
  */
 
-const ROLE_MESSAGE = "Your role can't do that. Ask the owner.";
 const NOT_FOUND = "We couldn't find that.";
 const ZERO_UUID = '00000000-0000-4000-8000-000000000000';
 
@@ -52,7 +52,7 @@ async function seedCall(opts: SeedOpts = {}): Promise<{ callId: string; key: str
       .returning({ id: calls.id });
     return call!.id;
   });
-  const key = `recordings/${idOf('a')}/${callId}.mp3`;
+  const key = `recordings/${idOf('a')}/${callId}-RE${String(sidCounter).padStart(32, '0')}.mp3`;
   if (recordingStatus !== 'none') {
     await withTenant(t.deps.pools, ctxOf('a'), async (tx) => {
       await tx.update(calls).set({ recordingKey: key }).where(eq(calls.id, callId));
@@ -62,52 +62,74 @@ async function seedCall(opts: SeedOpts = {}): Promise<{ callId: string; key: str
   return { callId, key };
 }
 
+/** Collects a binary response body into a Buffer. */
+const binary = (res: Response, cb: (err: Error | null, body: Buffer) => void): void => {
+  const chunks: Buffer[] = [];
+  res.on('data', (c: Buffer) => chunks.push(c));
+  res.on('end', () => cb(null, Buffer.concat(chunks)));
+};
+
 describe('GET /api/calls/:id/recording', () => {
   beforeEach(async () => {
     t = await makeTestApp();
     t.clock.set(new Date());
   });
 
-  test.each(['owner', 'office'] as const)('%s gets a 302 to a signed url', async (role) => {
-    const { callId, key } = await seedCall();
-    const res = await (await agentFor(role)).get(`/api/calls/${callId}/recording`).redirects(0);
-    expect(res.status).toBe(302);
-    expect(res.headers.location.startsWith(`memory://${key}?expires=`)).toBe(true);
+  test.each(['owner', 'office'] as const)('%s gets the bytes as audio/mpeg, no-store', async (role) => {
+    const { callId } = await seedCall();
+    const res = await (await agentFor(role)).get(`/api/calls/${callId}/recording`).buffer(true).parse(binary);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('audio/mpeg');
     expect(res.headers['cache-control']).toContain('no-store');
-    expect(t.objectStore.calls).toContainEqual({ method: 'signedGetUrl', key, seconds: 300 });
+    expect(res.headers['accept-ranges']).toBe('bytes');
+    expect([...(res.body as Buffer)]).toEqual([1, 2, 3]);
+  });
+
+  test('a Range request gets a 206 with the slice', async () => {
+    const { callId } = await seedCall();
+    const res = await (await agentFor('owner')).get(`/api/calls/${callId}/recording`).set('Range', 'bytes=1-2').buffer(true).parse(binary);
+    expect(res.status).toBe(206);
+    expect(res.headers['content-range']).toBe('bytes 1-2/3');
+    expect([...(res.body as Buffer)]).toEqual([2, 3]);
+  });
+
+  test('an unsatisfiable Range gets a 416', async () => {
+    const { callId } = await seedCall();
+    const res = await (await agentFor('owner')).get(`/api/calls/${callId}/recording`).set('Range', 'bytes=10-20');
+    expect(res.status).toBe(416);
+    expect(res.headers['content-range']).toBe('bytes */3');
   });
 
   test('a stopped_by_caller recording with a key is playable', async () => {
     const { callId } = await seedCall({ status: 'stopped_by_caller' });
-    const res = await (await agentFor('owner')).get(`/api/calls/${callId}/recording`).redirects(0);
-    expect(res.status).toBe(302);
+    const res = await (await agentFor('owner')).get(`/api/calls/${callId}/recording`);
+    expect(res.status).toBe(200);
   });
 
-  test('Accept: application/json answers url and expiresAt, 300 seconds after the app clock', async () => {
-    const { callId, key } = await seedCall();
-    const now = new Date('2026-10-12T12:00:00.000Z');
-    t.clock.set(now);
-    const res = await (await agentFor('owner')).get(`/api/calls/${callId}/recording`).set('Accept', 'application/json');
+  test('the conversation detail carries no storage url', async () => {
+    const { callId } = await seedCall();
+    const owner = await agentFor('owner');
+    const conv = await withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.select({ id: calls.conversationId }).from(calls).where(eq(calls.id, callId)));
+    const res = await owner.get(`/api/conversations/${conv[0]!.id}`);
     expect(res.status).toBe(200);
-    expect(res.headers['cache-control']).toContain('no-store');
-    expect(res.body.url.startsWith(`memory://${key}?expires=`)).toBe(true);
-    expect(res.body.expiresAt).toBe(new Date(now.getTime() + 300_000).toISOString());
+    expect(JSON.stringify(res.body)).not.toContain('r2.cloudflarestorage.com');
+    expect(JSON.stringify(res.body)).not.toContain('memory://');
   });
 
   test("a rep plays a call of a customer they created but not another rep's customer", async () => {
     const mine = await seedCall({ createdBy: t.seed.a.rep.userId });
     const theirs = await seedCall({ createdBy: t.seed.a.owner.userId });
     const rep = await agentFor('rep');
-    expect((await rep.get(`/api/calls/${mine.callId}/recording`).redirects(0)).status).toBe(302);
-    const denied = await rep.get(`/api/calls/${theirs.callId}/recording`).redirects(0);
-    expect(denied.status).toBe(403);
-    expect(denied.body).toEqual({ error: ROLE_MESSAGE });
+    expect((await rep.get(`/api/calls/${mine.callId}/recording`)).status).toBe(200);
+    const denied = await rep.get(`/api/calls/${theirs.callId}/recording`);
+    expect(denied.status).toBe(404);
+    expect(denied.body).toEqual({ error: "We couldn't find that." });
   });
 
   test('a rep cannot play a transferred leg even for their own customer', async () => {
     const { callId } = await seedCall({ createdBy: t.seed.a.rep.userId, transferResult: 'answered' });
-    const res = await (await agentFor('rep')).get(`/api/calls/${callId}/recording`).redirects(0);
-    expect(res.status).toBe(403);
+    const res = await (await agentFor('rep')).get(`/api/calls/${callId}/recording`);
+    expect(res.status).toBe(404);
   });
 
   test('a call with no stored recording is 404', async () => {
@@ -129,6 +151,14 @@ describe('GET /api/calls/:id/recording', () => {
   test('unauthenticated is 401', async () => {
     const { callId } = await seedCall();
     expect((await request(t.app).get(`/api/calls/${callId}/recording`)).status).toBe(401);
+  });
+});
+
+describe('Content-Security-Policy', () => {
+  test('allows media from this origin only', async () => {
+    t = await makeTestApp();
+    const res = await request(t.app).get('/health');
+    expect(res.headers['content-security-policy']).toContain("media-src 'self'");
   });
 });
 
