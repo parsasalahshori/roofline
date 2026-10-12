@@ -89,6 +89,7 @@ function recordedRoutes(brand: string[], campaign: string[]): Record<string, str
     [`GET ${MSG}/Services/${MG}/PhoneNumbers`]: 'service-numbers-empty',
     [`POST ${MSG}/Services/${MG}/PhoneNumbers`]: 'service-number-add',
     [`GET ${API}/Accounts/${sub.accountSid}/AvailablePhoneNumbers/US/Local.json`]: 'available-402',
+    [`GET ${API}/Accounts/${sub.accountSid}/IncomingPhoneNumbers.json`]: 'incoming-numbers-empty',
     [`POST ${API}/Accounts/${sub.accountSid}/IncomingPhoneNumbers.json`]: 'incoming-create',
     [`POST ${TH}/CustomerProfiles`]: 'profile-create',
     [`POST ${TH}/CustomerProfiles/${BU}/EntityAssignments`]: 'assignment-create',
