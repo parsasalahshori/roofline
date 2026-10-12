@@ -25,7 +25,7 @@ in packages/db reports no changes.
 ## Tests (db/api suites run in CI only, no Docker here)
 
 - `packages/db/test/storm-pages.test.ts`: `extendStormPageUntil` extends, never shortens, is tenant-scoped.
-- `apps/api/test/ad-campaign.test.ts`: a 60-day campaign leaves `active_until` = end date + 1 day (2026-12-11), a later 3-day campaign does
+- `apps/api/test/ad-campaign.test.ts`: a 30-day campaign (end 2026-11-10, past convective day + 30 = 11-10) leaves `active_until` = 2026-11-11, a later 3-day campaign does
   not shorten it; with POLICY_PAGES_DOMAIN unset the step is needs-attention with that reason, neither fake recorded a call, no campaign row.
   The landing URL helper no longer falls back to PUBLIC_BASE_URL.
 - Local: typecheck, lint, `vitest --project @roofline/web` (888) pass.

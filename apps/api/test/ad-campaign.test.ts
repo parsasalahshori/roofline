@@ -104,17 +104,17 @@ const methods = (calls: { method: string }[]) => calls.map((c) => c.method);
 
 describe('create_ad_campaign', () => {
   test('the landing page outlives the campaign and is never shortened', async () => {
-    // A 60-day campaign from 2026-10-12 ends 2026-12-10; the page (convective day + 30) would end earlier.
-    const long = await makeStep('google', { days: 60, maxSpendCents: 60000 });
+    // A 30-day campaign from 2026-10-12 ends 2026-11-10; the page (convective day 10-11 + 30 = 11-10) would end a day early.
+    const long = await makeStep('google', { days: 30, maxSpendCents: 30000 });
     expect((await run(long)).status).toBe('done');
     const until = async () =>
       new Date(String((await q(`select active_until from storm_pages where company_id = $1`, [companyA()]))[0]!.active_until)).toISOString();
-    expect(await until()).toBe('2026-12-11T00:00:00.000Z');
+    expect(await until()).toBe('2026-11-11T00:00:00.000Z');
 
     // A later, shorter campaign for the same storm leaves it alone.
     const short = await makeStep('meta', { days: 3, maxSpendCents: 3000 });
     expect((await run(short)).status).toBe('done');
-    expect(await until()).toBe('2026-12-11T00:00:00.000Z');
+    expect(await until()).toBe('2026-11-11T00:00:00.000Z');
   });
 
   test('without a landing pages domain the step needs attention before any platform call', async () => {
