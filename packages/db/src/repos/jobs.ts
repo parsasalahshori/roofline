@@ -1,5 +1,5 @@
 import { and, count, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
-import { JOB_STAGE_LABELS, type JobSource, type JobStage } from '@roofline/shared';
+import { JOB_STAGE_LABELS, type JobSource, type JobStage, type StageMoveProblem, stageMoveProblem } from '@roofline/shared';
 import { findPgError, ForbiddenError } from '../errors.ts';
 import { jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -27,6 +27,10 @@ export type JobInput = {
   valueCents?: number | null;
   assignedUserId?: string | null;
   lostReason?: string | null;
+  /** Trimmed; an empty text is stored as null. At most NEXT_STEP_MAX characters (the route checks). */
+  nextStep?: string | null;
+  /** The day the next step is due, 'YYYY-MM-DD'. */
+  nextStepOn?: string | null;
 };
 
 /** Changes to a job. A field left out (undefined) is not touched; null clears the ones that can be cleared. */
@@ -38,6 +42,10 @@ export type JobPatch = {
   valueCents?: number | null;
   assignedUserId?: string | null;
   lostReason?: string | null;
+  /** Trimmed; an empty text clears the next step. */
+  nextStep?: string | null;
+  /** 'YYYY-MM-DD', or null to clear the date. */
+  nextStepOn?: string | null;
 };
 
 /**
@@ -48,6 +56,17 @@ export type JobPatch = {
  * - `assignee`: not an active member of the company (`assignedUserId`)
  */
 export type JobLinkProblem = 'customer' | 'property' | 'propertyCustomer' | 'assignee';
+
+/** A stage change the pipeline rules refuse (see `stageMoveProblem`). The route maps it to a 400. */
+export class StageRuleError extends Error {
+  readonly problem: StageMoveProblem;
+
+  constructor(problem: StageMoveProblem) {
+    super(`That stage change is not allowed (${problem.problem}).`);
+    this.name = 'StageRuleError';
+    this.problem = problem;
+  }
+}
 
 export class JobLinkError extends Error {
   readonly problem: JobLinkProblem;
@@ -155,6 +174,8 @@ const AUDITED = [
   'valueCents',
   'assignedUserId',
   'lostReason',
+  'nextStep',
+  'nextStepOn',
 ] as const;
 type AuditedField = (typeof AUDITED)[number];
 
@@ -166,6 +187,55 @@ function snapshot(row: JobRow, fields: readonly AuditedField[]): Record<string, 
       return [field, value instanceof Date ? value.toISOString() : value];
     }),
   );
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+/**
+ * 'YYYY-MM-DD' as 'Oct 14', read from the digits alone: a due date is a calendar day, so no zone
+ * is applied to it.
+ */
+function shortDate(ymd: string): string {
+  const [, month, day] = ymd.split('-');
+  return `${MONTH_NAMES[Number(month) - 1]} ${Number(day)}`;
+}
+
+/** The next step as stored: trimmed, null when empty; undefined stays undefined (not touched). */
+function cleanNextStep(text: string | null | undefined): string | null | undefined {
+  if (text === undefined || text === null) return text;
+  const trimmed = text.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * Writes the timeline line for a next step that was set, re-dated or cleared. Nothing is written
+ * when neither the text nor the date changed, or when only the date changed and there is no text.
+ */
+async function addNextStepActivity(
+  tx: Tx,
+  ctx: TenantContext,
+  jobId: string,
+  before: { nextStep: string | null; nextStepOn: string | null },
+  after: { nextStep: string | null; nextStepOn: string | null },
+  at: Date,
+): Promise<void> {
+  if (before.nextStep === after.nextStep && before.nextStepOn === after.nextStepOn) return;
+  let summary: string;
+  if (after.nextStep !== null) {
+    const due = after.nextStepOn !== null ? ` (${shortDate(after.nextStepOn)})` : '';
+    summary = `Next step: ${after.nextStep}${due}`;
+  } else if (before.nextStep !== null) {
+    summary = 'Next step cleared';
+  } else {
+    return;
+  }
+  await addActivity(tx, ctx, {
+    subjectType: 'job',
+    subjectId: jobId,
+    kind: 'job.next_step',
+    summary,
+    at,
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -231,10 +301,22 @@ export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, opt
   assertMayAssign(ctx, input.assignedUserId);
   const links = await checkLinks(tx, ctx, input.customerId, input.propertyId);
   const { property } = links;
+  // A job starts as a lead, so a stage given at creation is a move from 'lead' and follows the same rules.
+  if (input.stage !== undefined) {
+    const problem = stageMoveProblem({
+      from: 'lead',
+      to: input.stage,
+      valueCents: input.valueCents ?? null,
+      lostReason: input.lostReason ?? null,
+    });
+    if (problem) throw new StageRuleError(problem);
+  }
   const assigneeName = input.assignedUserId ? await activeMemberName(tx, input.assignedUserId) : null;
   if (input.assignedUserId && assigneeName === null) throw new JobLinkError('assignee');
   await claimAddress(tx, ctx, links, options);
 
+  const nextStep = cleanNextStep(input.nextStep) ?? null;
+  const nextStepOn = input.nextStepOn ?? null;
   const [row] = await guarded(() =>
     tx
       .insert(jobs)
@@ -249,6 +331,8 @@ export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, opt
         assignedUserId: input.assignedUserId ?? null,
         createdByUserId: ctx.userId,
         lostReason: input.lostReason ?? null,
+        nextStep,
+        nextStepOn,
         createdAt: now,
         updatedAt: now,
       })
@@ -271,6 +355,7 @@ export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, opt
     summary: 'Job created',
     at: now,
   });
+  await addNextStepActivity(tx, ctx, created.id, { nextStep: null, nextStepOn: null }, created, now);
   await addActivity(tx, ctx, {
     subjectType: 'customer',
     subjectId: created.customerId,
@@ -303,8 +388,11 @@ export async function createJob(tx: Tx, ctx: TenantContext, input: JobInput, opt
  *   reason in the same update (the audit after-image shows it), even if the patch names one.
  * - A different assignee (an active member, or null) adds "Assigned to <name>" or "Unassigned".
  *   A rep may only name themselves or null (`ForbiddenError`, checked before the job is looked up).
- * - Always writes the audit row: the fields the patch named, before and after. Value, source and
- *   lost-reason changes appear there only.
+ * - A stage the pipeline rules refuse (`stageMoveProblem`) throws `StageRuleError` before anything is written.
+ * - A changed next step or next-step date adds "Next step: <text> (Oct 14)" or "Next step cleared"
+ *   (`addNextStepActivity`); a date change alone, with no text, adds nothing.
+ * - Always writes the audit row: the fields the patch named, before and after. Value, source,
+ *   lost-reason and next-step changes appear there only.
  */
 export async function updateJob(
   tx: Tx,
@@ -323,8 +411,20 @@ export async function updateJob(
     .for('update');
   if (!before) return null;
 
+  // The pipeline rules are checked before anything is written (the address link below writes).
+  if (patch.stage !== undefined) {
+    const problem = stageMoveProblem({
+      from: before.stage,
+      to: patch.stage,
+      valueCents: patch.valueCents ?? before.valueCents,
+      lostReason: patch.lostReason ?? before.lostReason,
+    });
+    if (problem) throw new StageRuleError(problem);
+  }
+
   const set: Partial<typeof jobs.$inferInsert> = { updatedAt: now };
   const touched = new Set<AuditedField>();
+  const nextStep = cleanNextStep(patch.nextStep);
 
   const newCustomer = patch.customerId !== undefined && patch.customerId !== before.customerId;
   const newProperty = patch.propertyId !== undefined && patch.propertyId !== before.propertyId;
@@ -361,6 +461,14 @@ export async function updateJob(
   if (patch.lostReason !== undefined) {
     set.lostReason = patch.lostReason;
     touched.add('lostReason');
+  }
+  if (nextStep !== undefined) {
+    set.nextStep = nextStep;
+    touched.add('nextStep');
+  }
+  if (patch.nextStepOn !== undefined) {
+    set.nextStepOn = patch.nextStepOn;
+    touched.add('nextStepOn');
   }
   // A job that is no longer lost has no reason for being lost, whatever else the patch sent.
   if (stageChanged && before.stage === 'lost') {
@@ -414,6 +522,14 @@ export async function updateJob(
       at: now,
     });
   }
+  await addNextStepActivity(
+    tx,
+    ctx,
+    id,
+    { nextStep: before.nextStep, nextStepOn: before.nextStepOn },
+    { nextStep: after.nextStep, nextStepOn: after.nextStepOn },
+    now,
+  );
   return after;
 }
 
