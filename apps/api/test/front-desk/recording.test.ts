@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { companySettings, encrypt, findCallRecordingBySid, insertCall, listTurns, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import type { ConversationState, Engine } from '../../src/front-desk/engine-types.ts';
-import { createRecording, isRecordingObjection } from '../../src/front-desk/recording.ts';
+import { createRecording, CURRENT_RECORDING, isRecordingObjection } from '../../src/front-desk/recording.ts';
 import { runRelayLoop, type RelayCall } from '../../src/front-desk/relay-session-loop.ts';
 import { FakeVoiceSession } from '../../src/providers/fakes/voice-session.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
@@ -92,6 +92,30 @@ describe('call recording', () => {
     await rec.stopForObjection();
     expect(rec.objected).toBe(true);
     expect(t.callControl.calls.filter((c) => c.method === 'stopRecording')).toHaveLength(1);
+    const s = await status();
+    expect(s.recording_status).toBe('stopped_by_caller');
+    expect(s.transcript_stored).toBe(false);
+  });
+
+  test('two segments: the second session starts no recording, and its objection stops the first recording', async () => {
+    const { deps, call, t, status } = await rig();
+    // Segment 1 (AI answered, then a transfer was tried): the call-level recording starts.
+    const first = createRecording(deps, call);
+    await first.start();
+    const starts = () => t.callControl.calls.filter((c) => c.method === 'startRecording');
+    expect(starts()).toHaveLength(1);
+    expect((await status()).recording_status).toBe('recording');
+
+    // Segment 2 (message mode after the failed transfer) on the same call: the recording is still running.
+    const second = createRecording(deps, { ...call, alreadyRecording: true });
+    await second.start();
+    expect(starts()).toHaveLength(1);
+
+    await second.stopForObjection();
+    const stops = t.callControl.calls.filter((c) => c.method === 'stopRecording');
+    expect(stops).toHaveLength(1);
+    expect(stops[0]!.args[1]).toBe(SID);
+    expect(stops[0]!.args[2]).toBe(CURRENT_RECORDING);
     const s = await status();
     expect(s.recording_status).toBe('stopped_by_caller');
     expect(s.transcript_stored).toBe(false);

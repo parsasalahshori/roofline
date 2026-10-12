@@ -3,13 +3,13 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import twilio from 'twilio';
 import WebSocket from 'ws';
-import { calls, findCallBySid, insertCall, setCallRecording, updateCall, withTenant } from '@roofline/db';
+import { calls, encrypt, findCallBySid, insertCall, setCallRecording, textingRegistrations, updateCall, withTenant } from '@roofline/db';
 import { signingTokenFor } from '@roofline/db/system';
 import { attachRelayUpgrade, RELAY_MAX_PAYLOAD, RELAY_MAX_QUEUED, RELAY_MAX_UNAUTH } from '../../src/front-desk/relay-server.ts';
 import { mintRelayToken } from '../../src/front-desk/relay-token.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { RouteDecision } from '../../src/providers/llm.ts';
-import { makeTestApp } from '../helpers.ts';
+import { makeTestApp, TEST_ENCRYPTION_KEY } from '../helpers.ts';
 
 const OPUS: RouteDecision = { intent: 'other', urgent: false, mood: 'calm', route: 'opus', fastReply: null };
 const SAY: Script = [{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'We can help with that.' }] }];
@@ -63,14 +63,16 @@ async function rig(script: Script = SAY, opts: { idleMs?: number } = {}) {
   const token = mintRelayToken(deps.config.RELAY_TOKEN_SECRET, { callId: row.id, companyId: row.companyId }, t.clock.now());
 
   const signer = (await signingTokenFor(deps.pools.system, row.companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY)) as string;
-  const sign = (tok: string, callId: string = row.id): string => twilio.getExpectedTwilioSignature(signer, `${deps.config.RELAY_PUBLIC_URL}?t=${tok}&c=${callId}`, {});
+  const relayQuery = (tok: string, callId: string = row.id, companyId: string = row.companyId): string => `?t=${tok}&c=${callId}&o=${companyId}`;
+  const sign = (tok: string, callId: string = row.id, companyId: string = row.companyId): string =>
+    twilio.getExpectedTwilioSignature(signer, `${deps.config.RELAY_PUBLIC_URL}${relayQuery(tok, callId, companyId)}`, {});
   /** A raw upgrade request; resolves with the HTTP status (101 when it upgraded). */
-  const rawUpgrade = (tok: string, headers: Record<string, string> = {}, callId: string = row.id): Promise<number> =>
+  const rawUpgrade = (tok: string, headers: Record<string, string> = {}, callId: string = row.id, companyId: string = row.companyId): Promise<number> =>
     new Promise((res) => {
       const req = request({
         host: '127.0.0.1',
         port,
-        path: `/relay?t=${tok}&c=${callId}`,
+        path: `/relay${relayQuery(tok, callId, companyId)}`,
         headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==', ...headers },
       });
       req.on('response', (resp) => { resp.resume(); res(resp.statusCode ?? 0); });
@@ -80,7 +82,7 @@ async function rig(script: Script = SAY, opts: { idleMs?: number } = {}) {
     });
 
   function connect(tok: string): Client {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/relay?t=${tok}&c=${row.id}`, { headers: { 'X-Twilio-Signature': sign(tok) } });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/relay${relayQuery(tok)}`, { headers: { 'X-Twilio-Signature': sign(tok) } });
     const frames: Frame[] = [];
     ws.on('message', (d) => frames.push(JSON.parse(d.toString()) as Frame));
     ws.on('error', () => undefined);
@@ -121,7 +123,7 @@ async function rig(script: Script = SAY, opts: { idleMs?: number } = {}) {
       return s?.v;
     });
   const stopRecording = () => withTenant(t.deps.pools, ctx, (tx) => setCallRecording(tx, ctx, CALL_SID, { recordingStatus: 'stopped_by_caller' }));
-  return { t, deps, row, token, port, rawUpgrade, sign, readTranscriptStored, stopRecording, setStatus, connect, open, setupMsg, readCall, llm };
+  return { t, deps, row, token, port, rawUpgrade, relayQuery, sign, readTranscriptStored, stopRecording, setStatus, connect, open, setupMsg, readCall, llm };
 }
 
 const isEnd = (f: Frame): boolean => f.type === 'end';
@@ -138,6 +140,42 @@ describe('relay websocket server', () => {
     const r = await rig();
     expect(await r.rawUpgrade('nonsense', { 'X-Twilio-Signature': r.sign('nonsense') })).toBe(401);
     expect(r.deps.relaySessions.size).toBe(0);
+  });
+
+  test('a token for another company (the o parameter changed) gets 401 at the upgrade', async () => {
+    const r = await rig();
+    const other = r.t.seed.b.companyId;
+    expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': r.sign(r.token, r.row.id, other) }, r.row.id, other)).toBe(401);
+    expect(r.deps.relaySessions.size).toBe(0);
+  });
+
+  test('an upgrade with no company in the URL gets 401', async () => {
+    const r = await rig();
+    const status = await new Promise<number>((res) => {
+      const req = request({
+        host: '127.0.0.1',
+        port: r.port,
+        path: `/relay?t=${r.token}&c=${r.row.id}`,
+        headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==', 'X-Twilio-Signature': r.sign(r.token) },
+      });
+      req.on('response', (resp) => { resp.resume(); res(resp.statusCode ?? 0); });
+      req.on('upgrade', (_resp, sock) => { sock.destroy(); res(101); });
+      req.on('error', () => res(0));
+      req.end();
+    });
+    expect(status).toBe(401);
+  });
+
+  test('with every pre-auth slot full, a forged token still gets 401: it never takes a slot', async () => {
+    const r = await rig();
+    const idle: WebSocket[] = [];
+    for (let i = 0; i < RELAY_MAX_UNAUTH; i += 1) idle.push(r.connect(r.token).ws);
+    await Promise.all(idle.map((w) => new Promise<void>((res) => w.once('open', () => res()))));
+    const forged = `${Date.now() + 60000}.${'a'.repeat(64)}`;
+    expect(await r.rawUpgrade(forged, { 'X-Twilio-Signature': r.sign(forged) })).toBe(401);
+    // A real (valid-token) upgrade is the one that meets the cap.
+    expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': r.sign(r.token) })).toBe(503);
+    for (const w of idle) w.terminate();
   });
 
   test('a wrong signature gets 401 with no socket', async () => {
@@ -220,6 +258,31 @@ describe('relay websocket server', () => {
     const c = await r.open();
     await until(() => r.deps.relaySessions.size === 1);
     expect(await r.readTranscriptStored()).toBe(false);
+    c.ws.close();
+    await c.closed;
+  });
+
+  test('a second session on a call already recording starts no recording, and an objection stops the current one', async () => {
+    const r = await rig(SAY);
+    await withTenant(r.t.deps.pools, { companyId: r.row.companyId, userId: null, role: 'system', canApproveSpend: false }, (tx) =>
+      setCallRecording(tx, { companyId: r.row.companyId, userId: null, role: 'system', canApproveSpend: false }, CALL_SID, { recordingStatus: 'recording' }),
+    );
+    const c = await r.open();
+    await until(() => r.deps.relaySessions.size === 1);
+    // The company's Twilio subaccount (added after the upgrade, which this rig signs with the main token).
+    await r.t.deps.pools.system
+      .insert(textingRegistrations)
+      .values({ companyId: r.row.companyId, subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt('test-subaccount-token', TEST_ENCRYPTION_KEY) })
+      .onConflictDoUpdate({
+        target: textingRegistrations.companyId,
+        set: { subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt('test-subaccount-token', TEST_ENCRYPTION_KEY) },
+      });
+    c.send({ type: 'prompt', voicePrompt: "please don't record me", last: true });
+    await c.waitFor((f) => f.type === 'text' && f.last === true);
+    await until(() => r.t.callControl.calls.some((x) => x.method === 'stopRecording'));
+    expect(r.t.callControl.calls.filter((x) => x.method === 'startRecording')).toHaveLength(0);
+    const stop = r.t.callControl.calls.find((x) => x.method === 'stopRecording')!;
+    expect(stop.args[2]).toBe('Twilio.CURRENT');
     c.ws.close();
     await c.closed;
   });
@@ -366,7 +429,7 @@ describe('relay websocket server', () => {
       idle.push(c.ws);
     }
     await Promise.all(idle.map((w) => new Promise<void>((res) => w.once('open', () => res()))));
-    const extra = new WebSocket(`ws://127.0.0.1:${r.port}/relay?t=${r.token}&c=${r.row.id}`);
+    const extra = new WebSocket(`ws://127.0.0.1:${r.port}/relay${r.relayQuery(r.token)}`, { headers: { 'X-Twilio-Signature': r.sign(r.token) } });
     extra.on('error', () => undefined);
     cleanups.push(() => extra.terminate());
     const status = await new Promise<number>((res) => {
@@ -384,7 +447,7 @@ describe('relay websocket server', () => {
         const req = request({
           host: '127.0.0.1',
           port: r.port,
-          path: `/relay?t=${r.token}&c=${r.row.id}`,
+          path: `/relay${r.relayQuery(r.token)}`,
           headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': 'bad' },
         });
         req.on('response', (resp) => { resp.resume(); res(); });

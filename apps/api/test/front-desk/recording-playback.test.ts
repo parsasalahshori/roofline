@@ -100,6 +100,13 @@ describe('GET /api/calls/:id/recording', () => {
     expect(res.headers['content-range']).toBe('bytes */3');
   });
 
+  test('a backwards Range (bytes=2-1) is ignored: 200 with the whole file', async () => {
+    const { callId } = await seedCall();
+    const res = await (await agentFor('owner')).get(`/api/calls/${callId}/recording`).set('Range', 'bytes=2-1').buffer(true).parse(binary);
+    expect(res.status).toBe(200);
+    expect([...(res.body as Buffer)]).toEqual([1, 2, 3]);
+  });
+
   test('a stopped_by_caller recording with a key is playable', async () => {
     const { callId } = await seedCall({ status: 'stopped_by_caller' });
     const res = await (await agentFor('owner')).get(`/api/calls/${callId}/recording`);

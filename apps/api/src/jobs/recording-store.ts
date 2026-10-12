@@ -1,11 +1,14 @@
 import { findCallRecording, setCallRecording, type TenantContext, withTenant } from '@roofline/db';
 import { recordingSubaccount } from '@roofline/db/system';
 import type { AppDeps } from '../app.ts';
+import { TwilioApiError } from '../providers/twilio/http.ts';
 import type { JobData, JobMeta } from './queue.ts';
 
 /**
  * The fd-recording-store job: copy a finished call recording from Twilio to file storage, then delete
- * it at Twilio. Safe to run again: a call already 'stored' skips the copy and only retries the delete.
+ * it at Twilio. Safe to run again: a recording whose object key is already on the call skips the copy and
+ * only retries the delete. A failed delete at Twilio fails the job (so it is retried) until the last attempt;
+ * a recording Twilio no longer has (404) counts as deleted.
  * Logs carry the call id and company id only.
  */
 export async function storeRecording(deps: AppDeps, data: JobData, meta: JobMeta): Promise<void> {
@@ -27,13 +30,19 @@ export async function storeRecording(deps: AppDeps, data: JobData, meta: JobMeta
   const deleteAtTwilio = async (): Promise<void> => {
     try {
       await deps.callControl.deleteRecording(sub, recordingSid);
-    } catch {
+    } catch (err) {
       // A recording already gone at Twilio is fine.
+      if (err instanceof TwilioApiError && err.status === 404) return;
+      // Anything else is retried by the job; on the last attempt it is logged and left.
+      if (!meta.lastAttempt) throw err;
       console.warn(`recording delete at Twilio failed call=${callId} company=${companyId}`);
     }
   };
 
-  const alreadyCopied = call.recordingStatus === 'stored' || (call.recordingKey !== null && call.recordingStatus === 'stopped_by_caller');
+  // Note 42: the Twilio recording SID is kept in recording_key (recordings/<companyId>/<callId>-<recordingSid>.mp3); the job deletes the Twilio copy itself, so no separate column is needed.
+  const key = `recordings/${companyId}/${callId}-${recordingSid}.mp3`;
+  // Already copied means THIS recording's object is on the call: a call stored from another recording still copies this one.
+  const alreadyCopied = call.recordingKey === key;
   if (!alreadyCopied) {
     if (!deps.objectStore.configured) {
       // No file storage: the Twilio copy is deleted anyway (no recording is kept there) and only the metadata stays.
@@ -42,8 +51,6 @@ export async function storeRecording(deps: AppDeps, data: JobData, meta: JobMeta
       console.warn(`recording deleted at Twilio, file storage not set up call=${callId} company=${companyId}`);
       return;
     }
-    // Note 42: the Twilio recording SID is kept in recording_key (recordings/<companyId>/<callId>-<recordingSid>.mp3); the job deletes the Twilio copy itself, so no separate column is needed.
-    const key = `recordings/${companyId}/${callId}-${recordingSid}.mp3`;
     let putStarted = false;
     try {
       const bytes = await deps.callControl.fetchRecording(sub, recordingSid);
