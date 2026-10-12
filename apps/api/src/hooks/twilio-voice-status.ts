@@ -24,7 +24,12 @@ export function twilioVoiceStatusHooks(deps: AppDeps): Router {
     const now = deps.clock.now();
     await withTenant(deps.pools, ctx, (tx) => applyCallStatus(tx, ctx, callSid, status, now));
     if (TERMINAL.has(status)) {
-      await deps.jobs.send('fd-after-call', { companyId: route.companyId, callId: callSid }, { singletonKey: callSid, startAfter: 5 });
+      try {
+        await deps.jobs.send('fd-after-call', { companyId: route.companyId, callSid }, { singletonKey: `fd-after-call:${callSid}`, startAfter: 5 });
+      } catch {
+        // The status is saved; a lost enqueue must not make Twilio retry the callback. Ids only.
+        console.error(`fd-after-call enqueue failed company=${route.companyId}`);
+      }
     }
     res.status(204).end();
   });

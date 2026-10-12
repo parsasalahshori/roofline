@@ -35,10 +35,10 @@ const A_NUMBER = '+14025550100';
 const TOKEN = 'test-subaccount-token-a';
 const TEST_CALLER = '+14025550123';
 /** Numbers the fake line lookup calls mobile (+1555), landline (+1556) and voip (+1557). */
-const MOBILE = '+15551230001';
-const MOBILE_TWO = '+15551230002';
-const LANDLINE = '+15561230001';
-const VOIP = '+15571230001';
+const MOBILE = '+15552010001';
+const MOBILE_TWO = '+15552010002';
+const LANDLINE = '+15562010001';
+const VOIP = '+15572010001';
 const OTHER_CALLER = '+14025550999';
 const SUMMARY = 'Nina asked about hail damage and booked an inspection for Friday.';
 const CALLER_WORDS = 'My roof leaks above the garage at 12 Elm Street';
@@ -157,7 +157,7 @@ async function seedCall(o: SeedCall = {}): Promise<Seeded> {
   });
 }
 
-const run = (s: Seeded) => runAfterCall(t.deps, { companyId: idA(), callId: s.callSid });
+const run = (s: Seeded) => runAfterCall(t.deps, { companyId: idA(), callSid: s.callSid });
 
 const ctxA = { companyId: '', userId: null, role: 'system' as const, canApproveSpend: false };
 const tenantCtx = () => ({ ...ctxA, companyId: idA() });
@@ -250,7 +250,7 @@ describe('runAfterCall', () => {
 
   test('the fd-after-call job does the same work from the queue', async () => {
     const s = await seedCall({ aiSeconds: 61, transcriptStored: true, turns: [CALLER_WORDS] });
-    await t.jobs.send('fd-after-call', { companyId: idA(), callId: s.callSid }, { singletonKey: s.callSid });
+    await t.jobs.send('fd-after-call', { companyId: idA(), callSid: s.callSid }, { singletonKey: `fd-after-call:${s.callSid}` });
     await t.jobs.drain(t.deps);
     expect(t.jobs.errors).toEqual([]);
     expect((await conversationOf(s.conversationId!)).summary).toBe(SUMMARY);
@@ -266,7 +266,7 @@ describe('runAfterCall', () => {
       startedAt: new Date(t.clock.now().getTime() - 40_000),
       endedAt: t.clock.now(),
     });
-    await t.jobs.send('fd-after-call', { companyId: idA(), callId: s.callSid }, { singletonKey: s.callSid });
+    await t.jobs.send('fd-after-call', { companyId: idA(), callSid: s.callSid }, { singletonKey: `fd-after-call:${s.callSid}` });
     await t.jobs.drain(t.deps);
     expect(t.jobs.errors).toEqual([]);
     expect(t.sms.sent).toHaveLength(1);

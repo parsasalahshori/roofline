@@ -67,8 +67,8 @@ function firstSentence(text: string): string {
   return (s === '' ? text.trim() : s).slice(0, 200);
 }
 
-export async function runAfterCall(deps: AppDeps, data: { companyId: string; callId?: string; conversationId?: string }): Promise<void> {
-  const callSid = data.callId;
+export async function runAfterCall(deps: AppDeps, data: { companyId: string; callSid?: string; conversationId?: string }): Promise<void> {
+  const callSid = data.callSid;
   if (callSid === undefined) return;
   const ctx: TenantContext = { companyId: data.companyId, userId: null, role: 'system', canApproveSpend: false };
   const now = deps.clock.now();
