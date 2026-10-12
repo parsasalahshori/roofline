@@ -69,7 +69,6 @@ export const takeMessage: ToolHandler<'take_message'> = async (ctx, input) => {
 
     await updateConversation(tx, tctx, conversation.conversationId, {
       outcome: 'message',
-      summary: input.reason.slice(0, 500),
     });
     return seen;
   });

@@ -1,8 +1,9 @@
 import pg from 'pg';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, inject, test } from 'vitest';
-import { companyPhoneNumbers, encrypt, memberships, textingRegistrations } from '@roofline/db';
+import { companies, companyPhoneNumbers, encrypt, memberships, textingRegistrations } from '@roofline/db';
 import { FRONT_DESK_VOICES, type FrontDeskSettings, type FrontDeskVoice, type TransferPhoneView } from '@roofline/shared';
+import { READ_ONLY_MESSAGE } from '../../src/billing/read-only.ts';
 import { loginAs, makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
 
 /*
@@ -311,5 +312,18 @@ describe('/api/me/transfer-phone', () => {
     expect(view).toMatchObject({ voice: 'maya', facts: '' });
     expect(view.onCall.every((m) => m.onCallOrder === null && m.transferPhoneE164 === null)).toBe(true);
     expect((await ownerA.get(TRANSFER)).body).toMatchObject({ e164: null });
+  });
+});
+
+describe('read-only company', () => {
+  test('a company whose trial ended can turn Front Desk off but not on', async () => {
+    await verify('a');
+    await t.deps.pools.system.update(companies).set({ status: 'trial_ended' }).where(eq(companies.id, idOf('a')));
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const off = await owner.put(SETTINGS).send(body({ enabled: false }));
+    expect(off.status).toBe(200);
+    const on = await owner.put(SETTINGS).send(body({ enabled: true }));
+    expect(on.status).toBe(403);
+    expect(on.body).toEqual({ error: READ_ONLY_MESSAGE.trial_ended });
   });
 });
