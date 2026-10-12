@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { RouterProvider } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { keys } from '../src/api/keys.ts';
+import type { CompanyBody } from '../src/api/types.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { approvals } from '../src/copy/approvals.ts';
@@ -104,12 +105,44 @@ it('Esc and ✕ go to the map', async () => {
 });
 
 it('deep-links straight to a window', async () => {
-  signedInApi();
+  const company: CompanyBody = {
+    id: 'c1',
+    name: 'Summit Roofing',
+    slug: 'summit-roofing',
+    status: 'active',
+    legalName: null,
+    phone: null,
+    email: null,
+    website: null,
+    addressStreet: null,
+    addressCity: null,
+    addressState: null,
+    addressZip: null,
+    timezone: 'America/Chicago',
+    logoUrl: null,
+    located: false,
+    serviceAreaMiles: null,
+  };
+  const routes: Routes = {
+    ...SHELL_ROUTES,
+    'GET /api/auth/me': () => ({ body: ACCOUNT }),
+    'GET /api/company': () => ({ body: company }),
+    'GET /api/team': () => ({ body: { members: [], invites: [] } }),
+    'POST /api/calendar/sync': () => ({ body: {} }),
+  };
+  api = stubApi(
+    new Proxy(routes, {
+      get(target, key, receiver) {
+        if (typeof key === 'string' && key.startsWith('GET /api/appointments?')) return () => ({ body: { appointments: [], busy: [] } });
+        return Reflect.get(target, key, receiver);
+      },
+    }),
+  );
   renderApp('/calendar');
 
   const calendarWindow = await screen.findByRole('dialog', { name: WINDOW_COPY.calendar.title });
   expect(within(calendarWindow).getByText(WINDOW_COPY.calendar.description)).toBeInTheDocument();
-  expect(within(calendarWindow).getByText(calendar.comingSoon)).toBeInTheDocument();
+  expect(await within(calendarWindow).findByRole('button', { name: calendar.today })).toBeInTheDocument();
 });
 
 it('badges Storm with storm drafts and Agents with tasks needing attention', async () => {
