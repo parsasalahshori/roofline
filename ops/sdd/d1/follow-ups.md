@@ -12,3 +12,4 @@
   - #7: transfer.ts includes the flag.
   - #8: seed turns and startedAt on reuse.
   - Plus Ruling BK, C1's RA review #8, T25 finding 6 (eval drift), and unknown-caller message visibility.
+- RC-3: on reuse, start() also restores verifyFailures (and identity/customerId) from the stored conversation (E1 RC-1 review finding 9).
