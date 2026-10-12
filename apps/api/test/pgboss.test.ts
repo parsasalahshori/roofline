@@ -197,6 +197,8 @@ describe('the worker', () => {
         ['dispatch-messages', '* * * * *'],
         ['end-trials', '*/5 * * * *'],
         ['expire-drafts', '*/5 * * * *'],
+        ['fd-health', '*/2 * * * *'],
+        ['fd-retention', '17 3 * * *'],
         ['poll-texting', '0 * * * *'],
         ['provision-texting', '* * * * *'],
         ['prune-early-reports', '17 3 * * *'],
@@ -217,6 +219,8 @@ describe('the worker', () => {
       'bill-monthly-fees',
       'prune-early-reports',
       'calendar-pull',
+      'fd-retention',
+      'fd-health',
     ]);
   });
 });

@@ -1,3 +1,4 @@
+import { hkdfSync } from 'node:crypto';
 import { statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +63,15 @@ const flag = z
   .pipe(z.enum(['1', 'true', '0', 'false'], { error: 'must be 1, true, 0 or false' }))
   .transform((v) => v === '1' || v === 'true')
   .optional();
+
+/** Like `flag`, but unset is `false`, so the key is always a boolean afterwards. */
+const flagDefault = (fallback: boolean) =>
+  z
+    .string()
+    .transform((v) => v.trim().toLowerCase())
+    .pipe(z.enum(['1', 'true', '0', 'false'], { error: 'must be 1, true, 0 or false' }))
+    .transform((v) => v === '1' || v === 'true')
+    .default(fallback);
 
 /** A bare hostname (lowercase, checked after folding case): `roofline.app`, `policies.example.co`. */
 const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
@@ -150,6 +160,38 @@ const ConfigSchema = z
     /** `1` or `true` turns weather off (the null source: no network). `0` or `false` leaves it on. */
     WEATHER_DISABLED: flag,
 
+    // D1 Front Desk
+    /** Anthropic API key. Unset: Front Desk is off (no model call is made). */
+    ANTHROPIC_API_KEY: z.string().optional(),
+    FRONT_DESK_ROUTER_MODEL: z.string().min(1).default('claude-haiku-5-5'),
+    FRONT_DESK_ANSWER_MODEL: z.string().min(1).default('claude-opus-5-5'),
+    /** `1` or `true` asks for the faster Opus output mode. */
+    FRONT_DESK_OPUS_FAST: flagDefault(false),
+    /** The most calls Front Desk answers at once. */
+    FRONT_DESK_MAX_CALLS: integer(40, 1, 1000),
+    /** The wss:// URL Twilio ConversationRelay connects to. Unset: PUBLIC_BASE_URL with the wss scheme and /relay. */
+    RELAY_PUBLIC_URL: z
+      .string()
+      .refine((v) => {
+        try {
+          const { protocol } = new URL(v);
+          return protocol === 'wss:' || protocol === 'ws:';
+        } catch {
+          return false;
+        }
+      }, 'must be a wss:// URL')
+      .optional(),
+    /** Roofline's own Twilio number, for forwarding tests. */
+    TWILIO_TEST_CALLER_NUMBER: z
+      .string()
+      .regex(/^\+[1-9]\d{6,14}$/, 'must be an E.164 number like +14025550100')
+      .optional(),
+    /** Signs relay tokens; at least 32 bytes. Unset: derived from ENCRYPTION_KEY. */
+    RELAY_TOKEN_SECRET: z
+      .string()
+      .refine((v) => Buffer.byteLength(v, 'utf8') >= 32, 'must be at least 32 bytes')
+      .optional(),
+
     /** How many reverse-proxy hops to trust for `req.ip` (0 = none). */
     TRUST_PROXY: integer(0, 0, 32),
     /** Per-session request limit for /api/*. Parsed here, applied by the rate limiter. */
@@ -219,9 +261,17 @@ const ConfigSchema = z
         message: 'must not be set in production',
       });
     }
+    if (cfg.RELAY_PUBLIC_URL && cfg.NODE_ENV === 'production' && !cfg.RELAY_PUBLIC_URL.startsWith('wss:')) {
+      ctx.addIssue({ code: 'custom', path: ['RELAY_PUBLIC_URL'], message: 'must be a wss:// URL' });
+    }
   })
-  .transform(({ HOST, BILLING_PLANS_FILE, ...cfg }) => ({
+  .transform(({ HOST, BILLING_PLANS_FILE, RELAY_PUBLIC_URL, RELAY_TOKEN_SECRET, ...cfg }) => ({
     ...cfg,
+    // D1 Front Desk
+    RELAY_PUBLIC_URL: (RELAY_PUBLIC_URL ?? `${cfg.PUBLIC_BASE_URL.replace(/^http/, 'ws')}/relay`).replace(/\/+$/, ''),
+    RELAY_TOKEN_SECRET:
+      RELAY_TOKEN_SECRET ??
+      Buffer.from(hkdfSync('sha256', Buffer.from(cfg.ENCRYPTION_KEY, 'base64'), Buffer.alloc(0), 'relay', 32)).toString('base64'),
     HOST: HOST ?? (cfg.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'),
     // Outside production the example file is the default; in production without Stripe it stays unset.
     BILLING_PLANS_FILE:

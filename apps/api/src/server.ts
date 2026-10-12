@@ -1,6 +1,7 @@
 import { createApp } from './app.ts';
 import { buildDeps, loadConfigOrExit } from './deps.ts';
 import { describeErrorForLog } from './errors.ts';
+import { attachRelayUpgrade } from './front-desk/relay-server.ts';
 import { ensureJobQueues, PgBossJobs } from './jobs/queue.ts';
 import { createBoss, ensureStepQueue, PgBossQueue, SENDER_OPTIONS } from './tasks/pgboss-queue.ts';
 
@@ -40,6 +41,9 @@ const server = app.listen(config.PORT, config.HOST, (err?: Error) => {
   console.log(`Roofline API listening on http://${config.HOST}:${config.PORT} (${config.NODE_ENV})`);
 });
 
+// D1 Front Desk: the /relay WebSocket upgrade
+const relay = attachRelayUpgrade(server, deps);
+
 let shuttingDown = false;
 function shutdown(signal: string): void {
   if (shuttingDown) return;
@@ -47,6 +51,7 @@ function shutdown(signal: string): void {
   console.log(`${signal} received, shutting down.`);
   const force = setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS);
   force.unref();
+  relay.close();
   server.close(() => {
     boss
       .stop({ graceful: true, timeout: SHUTDOWN_GRACE_MS / 2 })

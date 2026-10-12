@@ -11,6 +11,8 @@ import { pullCalendars } from './scheduler/calendar-pull.ts';
 import { dispatchDueMessages } from './scheduler/dispatch-messages.ts';
 import { endTrials } from './scheduler/end-trials.ts';
 import { expireDrafts } from './scheduler/expire-drafts.ts';
+import { fdHealth } from './scheduler/fd-health.ts';
+import { fdRetention } from './scheduler/fd-retention.ts';
 import { pollTexting } from './scheduler/poll-texting.ts';
 import { pruneEarlyReports } from './scheduler/prune-early-reports.ts';
 import { provisionTexting } from './scheduler/provision-texting.ts';
@@ -39,7 +41,7 @@ export type ScheduledJob = {
  * The worker's recurring jobs: draft expiry, the queued-step sweeper, the import sweeper (imports
  * stranded queued or processing), the scheduled-text
  * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
- * end, usage reporting, texting provisioning and polling, and the monthly fees. A schedule dropped
+ * end, usage reporting, texting provisioning and polling, the monthly fees, and Front Desk's retention and health checks. A schedule dropped
  * from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [
@@ -54,6 +56,9 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'bill-monthly-fees', cron: '0 9 1 * *', run: billMonthlyFees },
   { name: 'prune-early-reports', cron: '17 3 * * *', run: pruneEarlyReports },
   { name: 'calendar-pull', cron: '*/5 * * * *', run: pullCalendars },
+  // D1 Front Desk
+  { name: 'fd-retention', cron: '17 3 * * *', run: fdRetention },
+  { name: 'fd-health', cron: '*/2 * * * *', run: fdHealth },
 ];
 
 /** How many steps one worker process runs at once. */
