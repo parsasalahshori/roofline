@@ -95,6 +95,10 @@ export function calendarConnectRoutes(deps: AppDeps): Router {
 
   const settingsRedirect = (result: string): string => `${config.APP_ORIGIN}/settings/connections?calendar=${result}`;
 
+  /** A company whose trial ended or whose plan was canceled is read-only: no new connection, even through a GET. */
+  const readOnly = (req: { session: { companyStatus?: string } }): boolean =>
+    req.session.companyStatus === 'trial_ended' || req.session.companyStatus === 'canceled';
+
   /** The caller's own connection row, or null. */
   function currentRow(req: { ctx: TenantContext; session: { userId: string } }): Promise<CalendarConnectionRow | null> {
     return withTenant(pools, req.ctx, (tx) => getConnection(tx, req.ctx, req.session.userId));
@@ -125,6 +129,10 @@ export function calendarConnectRoutes(deps: AppDeps): Router {
 
   router.get('/connect/:provider', (req, res) => {
     const provider = providerParam(req.params.provider);
+    if (readOnly(req)) {
+      res.redirect(302, settingsRedirect('failed'));
+      return;
+    }
     if (!deps.calendars[provider].configured) {
       res.redirect(302, settingsRedirect('not-set-up'));
       return;
@@ -143,6 +151,10 @@ export function calendarConnectRoutes(deps: AppDeps): Router {
     const userId = req.session.userId;
     const now = clock.now();
     const state = typeof req.query.state === 'string' ? req.query.state : '';
+    if (readOnly(req)) {
+      res.redirect(302, settingsRedirect('failed'));
+      return;
+    }
 
     pruneUsedStates(now.getTime());
     const claims = state === '' ? null : readOAuthState(state, config.ENCRYPTION_KEY, now);
