@@ -28,6 +28,7 @@ const TOKEN = 'test-subaccount-token-a';
 const TEXTABLE = '+14025550101';
 const OPTED_OUT_NUMBER = '+14025550103';
 const UNKNOWN_NUMBER = '+14025550777';
+const SECOND_NUMBER = '+14025550104';
 const BASE = '/api/conversations';
 /** 02:00 on a Wednesday in Chicago: inside quiet hours everywhere. */
 const NIGHT = new Date('2026-10-14T07:00:00.000Z');
@@ -375,6 +376,33 @@ describe('POST /api/conversations/:id/reply', () => {
     // The 2-hour quiet after a team text comes from the message itself (texts.ts), not from a handover.
     expect(row!.handledBy).toBe('assistant');
     expect(row!.teamUntil).toBeNull();
+  });
+
+  test('reply goes to the number that texted when it is one of the customer\'s numbers', async () => {
+    const owner = await who.as('owner');
+    const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
+    await inCompany(t, idA(), (tx) =>
+      tx
+        .update(customers)
+        .set({ phones: [{ e164: TEXTABLE, label: 'mobile', primary: true }, { e164: SECOND_NUMBER, label: 'mobile', primary: false }] })
+        .where(eq(customers.id, customer)),
+    );
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: SECOND_NUMBER });
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'We can come Friday.' });
+    expect(res.status).toBe(200);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: SECOND_NUMBER });
+    const [msg] = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.id, res.body.id)));
+    expect(msg!.toE164).toBe(SECOND_NUMBER);
+  });
+
+  test('reply from a number that is not the customer\'s goes to their primary number', async () => {
+    const owner = await who.as('owner');
+    const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: SECOND_NUMBER });
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'We can come Friday.' });
+    expect(res.status).toBe(200);
+    expect(t.sms.sent[0]).toMatchObject({ to: TEXTABLE });
   });
 
   test('reply validates the body and only works on texts', async () => {

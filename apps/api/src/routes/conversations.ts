@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   decodeInboxCursor,
   findVisibleConversation,
+  getConversation,
   getConversationDetail,
   insertAssistantText,
   listConversationInbox,
@@ -146,10 +147,12 @@ export function conversationRoutes(deps: AppDeps): Router {
       if (customerId === null) throw new AppError(409, NO_CUSTOMER);
       const dedupeKey = `fd-reply:${id}:${randomUUID()}`;
       await lockRecipient(tx, ctx, customerId);
+      // Reply to the number that texted; the gate uses it only when it is one of the customer's numbers.
+      const toE164 = (await getConversation(tx, ctx, id))?.phoneE164 ?? null;
       const built = await buildGateRequest(
         tx,
         ctx,
-        { customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null },
+        { customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null, toE164 },
         now,
       );
       if (!built) throw new AppError(404, MESSAGES.notFound);
