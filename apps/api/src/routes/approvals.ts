@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { withTenant } from '@roofline/db';
+import { audit, isUniqueViolation, withTenant } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can, type Member } from '../permissions.ts';
+import { draftStormPlan, STORM_PLAN_ERRORS } from '../storm/plan.ts';
 import {
+  ALREADY_RERUN,
   approveTask,
   canReview,
   declineStep,
@@ -12,6 +14,8 @@ import {
   editStep,
   getApproval,
   listApprovals,
+  prepareRerun,
+  RERUN_UNIQUE,
   rerunTask,
   retryStep,
 } from '../tasks/service.ts';
@@ -82,7 +86,10 @@ const DeclineBody = z.object({
  *   Each returns the task's detail view (payloads included).
  * - `POST /:taskId/rerun` make a fresh draft from an expired plan ("Expired — run again?"): 201
  *   with the new task's detail view; 409 "Only expired plans can be run again." for any other plan,
- *   and 409 "This plan was already run again." for a plan that already has its copy.
+ *   and 409 "This plan was already run again." for a plan that already has its copy. A storm plan is
+ *   re-drafted from fresh storm and customer data (its switched-off steps are rebuilt with their reasons),
+ *   and 409 "Storm Scout is paused. Turn it back on in Agents to draft a plan." when Storm Scout is paused.
+ *   Any other plan is copied, each step keeping its on or off state.
  * Only the owner and the office work the queue. A rep gets an empty list, and a 404 for any one task or
  * step, exactly as for one that does not exist. A task of another company is a 404 too. Tasks are made
  * by agents through `createTask` (tasks/service.ts), never over HTTP.
@@ -230,7 +237,41 @@ export function approvalRoutes(deps: AppDeps, logError: (err: unknown, path: str
     const taskId = idParam(req.params.taskId);
     requireQueueWork(ctx);
 
-    const task = await withTenant(pools, ctx, (tx) => rerunTask(tx, ctx, taskId, { now: clock.now(), ip: req.ip ?? null }));
+    const opts = { now: clock.now(), ip: req.ip ?? null };
+    const target = await withTenant(pools, ctx, (tx) => prepareRerun(tx, ctx, taskId, opts));
+    if (!target) throw new AppError(404, MESSAGES.notFound);
+
+    if (target.kind === 'storm') {
+      let drafted: { taskId: string } | null;
+      try {
+        drafted = await draftStormPlan(deps, ctx.companyId, target.companyStormId, clock.now(), {
+          ...(ctx.userId !== null && { createdByUserId: ctx.userId }),
+          rerunOfTaskId: taskId,
+          allowFinished: true,
+          afterCreate: (tx, newId) =>
+            audit(tx, ctx, {
+              action: 'task.rerun',
+              targetType: 'agent_task',
+              targetId: newId,
+              after: { fromTaskId: taskId },
+              ip: opts.ip,
+              at: opts.now,
+            }),
+        });
+      } catch (err) {
+        if (isUniqueViolation(err, RERUN_UNIQUE)) throw new AppError(409, ALREADY_RERUN);
+        if (err instanceof Error && err.message === STORM_PLAN_ERRORS.notFound) throw new AppError(404, MESSAGES.notFound);
+        if (err instanceof Error && (err.message === STORM_PLAN_ERRORS.dismissed || err.message === STORM_PLAN_ERRORS.changed)) throw new AppError(409, err.message);
+        throw err;
+      }
+      if (drafted === null) throw new AppError(409, MESSAGES.stormScoutPaused);
+      const fresh = await withTenant(pools, ctx, (tx) => getApproval(tx, ctx, drafted.taskId, clock.now()));
+      if (!fresh) throw new AppError(404, MESSAGES.notFound);
+      res.status(201).json(fresh);
+      return;
+    }
+
+    const task = await withTenant(pools, ctx, (tx) => rerunTask(tx, ctx, taskId, opts));
     if (!task) throw new AppError(404, MESSAGES.notFound);
     res.status(201).json(task);
   });

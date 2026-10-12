@@ -7,6 +7,7 @@ import {
   emailCompanyFacts,
   expireOverdueDrafts,
   findRerunOf,
+  findStormByPlanTask,
   finishClaimedStep,
   finishParkedStep,
   getCompanyName,
@@ -70,9 +71,10 @@ const NO_CUSTOMERS = "Some of these customers don't exist.";
 const ALREADY_HANDLED = 'This was already handled.';
 const EXPIRED_PLAN = 'This plan expired before it was approved. You can run it again.';
 const RERUN_ONLY_EXPIRED = 'Only expired plans can be run again.';
-const ALREADY_RERUN = 'This plan was already run again.';
+const RERUN_OFF_REASON = 'This step was switched off.';
+export const ALREADY_RERUN = 'This plan was already run again.';
 /** The database's own guard on "one copy per plan" (migration 0006). */
-const RERUN_UNIQUE = 'agent_tasks_company_rerun_of_uniq';
+export const RERUN_UNIQUE = 'agent_tasks_company_rerun_of_uniq';
 
 /** A step a person still has to say yes or no to. */
 const OPEN: readonly StepStatus[] = ['pending', 'awaiting_owner'];
@@ -102,13 +104,14 @@ async function event(
   data: Record<string, unknown>,
   at: Date,
   stepId?: string,
+  actorUserId?: string,
 ): Promise<void> {
   await insertAgentEvent(tx, ctx, {
     taskId,
     ...(stepId !== undefined && { stepId }),
     kind,
     actorType,
-    ...(actorType === 'user' && { actorUserId: ctx.userId }),
+    ...(actorType === 'user' && { actorUserId: actorUserId ?? ctx.userId }),
     data,
     at,
   });
@@ -334,6 +337,8 @@ export type NewTask = {
   rerunOfTaskId?: string;
   /** Who made the plan, for its `created` event. Default `agent`. */
   createdBy?: 'agent' | 'system' | 'user';
+  /** Acting member for a `user` created event when ctx.userId is null (system context). */
+  createdByUserId?: string;
   /** `off`: the step is saved switched off (enabled=false) with this plain reason; its payload may then be incomplete (for example no customers). */
   steps: { type: StepType; payload: unknown; off?: string }[];
 };
@@ -405,8 +410,8 @@ export async function createTask(
     },
     opts.now,
   );
-  await event(tx, ctx, taskId, 'created', input.createdBy ?? 'agent', { stepCount: steps.length }, opts.now);
-  await audit(tx, ctx, {
+  await event(tx, ctx, taskId, 'created', input.createdBy ?? 'agent', { stepCount: steps.length }, opts.now, undefined, input.createdByUserId);
+  await audit(tx, input.createdByUserId !== undefined ? { ...ctx, userId: input.createdByUserId } : ctx, {
     action: 'task.create',
     targetType: 'agent_task',
     targetId: taskId,
@@ -878,7 +883,8 @@ export async function retryStep(
  *   `(company_id, rerun_of_task_id)` backs that up, and its violation is the same 409.
  * - The new draft is made with `createTask`, exactly as an agent makes one: the same agent, kind,
  *   title, summary, subject and mode, and the same steps in the same order (type and payload; each
- *   step on, pending, at version 1, with new ids and new idempotency keys). Each payload is checked
+ *   step keeps its on/off state, pending, at version 1, with new ids and new idempotency keys; a
+ *   switched-off step keeps its reason and its payload as given). Each payload is checked
  *   again, so a step that no longer passes (a text naming the company's old name) is a 400 on
  *   `steps.N.payload` and nothing is made.
  * - Its window is as long as the old one's: `expires_at = now + (old expires_at - old created_at)`,
@@ -917,7 +923,11 @@ export async function rerunTask(tx: Tx, ctx: TenantContext, taskId: string, opts
         createdBy: 'user',
         // Rerun passes allowInternalStepTypes so built-in steps (front_desk_*) copy over; a type this
         // build does not know is still a 400 on steps.N.type.
-        steps: steps.map((step) => ({ type: step.type as StepType, payload: step.payload })),
+        steps: steps.map((step) => ({
+          type: step.type as StepType,
+          payload: step.payload,
+          ...(step.enabled ? {} : { off: step.errorPlain ?? RERUN_OFF_REASON }),
+        })),
       },
       { ...opts, allowInternalStepTypes: true },
     ));
@@ -1072,4 +1082,31 @@ export async function listTaskFeed(tx: Tx, ctx: TenantContext, query: TaskFeedQu
  */
 export async function workingCount(tx: Tx, ctx: TenantContext): Promise<number> {
   return canReview(ctx) ? countWorkingTasks(tx, ctx) : 0;
+}
+
+/** What the rerun route does next: re-draft a storm plan through Storm Scout, or copy the plan. */
+export type StormRerunTarget = { kind: 'storm'; companyStormId: string } | { kind: 'copy' };
+
+/**
+ * Pre-flight for the rerun route. Null when the task is not there for this member. Only an expired
+ * plan (409 otherwise). Anything but a storm plan is `copy` (nothing changed; `rerunTask` follows).
+ * A storm plan that already has a rerun is a 409 ALREADY_RERUN; one a company storm points at
+ * (`plan_task_id`) is re-drafted through Storm Scout; otherwise it is copied (a legacy plan with no
+ * company storm). A stale draft is marked `expired` here, as `rerunTask` does, before the route
+ * re-drafts in its own transaction.
+ */
+export async function prepareRerun(tx: Tx, ctx: TenantContext, taskId: string, opts: WriteOptions): Promise<StormRerunTarget | null> {
+  if (!canReview(ctx)) return null;
+  const task = await getTask(tx, ctx, taskId, { forUpdate: true });
+  if (!task) return null;
+  if (!isExpired(task, opts.now)) throw new AppError(409, RERUN_ONLY_EXPIRED);
+  if (task.kind !== 'storm_plan') return { kind: 'copy' };
+  if ((await findRerunOf(tx, ctx, taskId)) !== null) throw new AppError(409, ALREADY_RERUN);
+  const companyStormId = await findStormByPlanTask(tx, ctx, taskId);
+  if (companyStormId === null) return { kind: 'copy' };
+  if (task.status === 'draft') {
+    await updateTask(tx, ctx, taskId, { status: 'expired' }, opts.now);
+    await event(tx, ctx, taskId, 'expired', 'system', {}, opts.now);
+  }
+  return { kind: 'storm', companyStormId };
 }

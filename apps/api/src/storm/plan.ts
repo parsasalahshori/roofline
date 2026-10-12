@@ -1,12 +1,15 @@
 import { createTask, supersedeDraft, type NewTask } from '../tasks/service.ts';
 import {
+  FINISHED_REDRAFTABLE_PLAN_STATUSES,
   isAgentPaused,
   linkStormPlan,
   listStormPlanRecipients,
   loadStormPlanFacts,
   lockStormPlan,
+  REDRAFTABLE_PLAN_STATUSES,
   withTenant,
   type StormPlanFacts,
+  type Tx,
 } from '@roofline/db';
 import {
   DEFAULT_STORM_EMAIL_BODY,
@@ -22,13 +25,13 @@ import {
 import type { AppDeps } from '../app.ts';
 import { systemContext } from '../permissions.ts';
 import { alertPlanReady } from './alerts.ts';
-import { PLAN_CHANGED, PLAN_DISMISSED, PLAN_NOT_FOUND, REDRAFTABLE_PLAN_STATUSES } from './plan-errors.ts';
+import { PLAN_CHANGED, PLAN_DISMISSED, PLAN_NOT_FOUND } from './plan-errors.ts';
 
 /*
  * Drafts the approval plan for one company storm (S1 Task 11): a text, an email, door routes and two
  * ad campaigns, each ON unless something is missing, in which case it is saved OFF with a plain
- * reason. Re-drafting replaces a draft plan only (Ruling BD: A1 adds expired and declined); any other plan
- * is left alone. The owner is emailed "plan ready" for a first draft, not again for a re-draft of a draft.
+ * reason. Re-drafting replaces a draft plan; an expired or declined plan only with allowFinished (amended
+ * Ruling BD); any other plan is left alone. The owner is emailed "plan ready" for a first draft, not again for a re-draft of a draft.
  * This only creates the task; nothing is texted or mailed here.
  */
 
@@ -47,6 +50,12 @@ export const STORM_OFF = {
 } as const;
 
 const EMAIL_INCOMPLETE = 'Your email needs your company name, mailing address and unsubscribe link.';
+/** The plan errors draftStormPlan throws (the strings live in plan-errors.ts, one source; A1 T20's rerun route compares these). */
+export const STORM_PLAN_ERRORS = {
+  notFound: PLAN_NOT_FOUND,
+  dismissed: PLAN_DISMISSED,
+  changed: PLAN_CHANGED,
+} as const;
 const PLAN_LIFETIME_MS = 48 * 60 * 60 * 1000;
 const MIN_AD_CENTS = 500;
 const MAX_DOORS = 1500;
@@ -163,23 +172,39 @@ function buildSteps(
   ];
 }
 
-/** Drafts (or re-drafts) the storm's plan and returns its task; null when Storm Scout is paused (nothing is drafted). */
+/**
+ * Drafts (or re-drafts) the storm's plan and returns its task; null when Storm Scout is paused (nothing is drafted).
+ * Amended Ruling BD: by default an old plan is re-drafted only when it is a 'draft'; an 'expired' or 'declined' plan is replaced only
+ * with opts.allowFinished (set only by the rerun route and S1's later 'Draft a new plan' route); any other status is returned unchanged.
+ * opts.rerunOfTaskId, opts.createdByUserId and opts.afterCreate (A1 T20 rerun): the rerun link, the acting member (the 'created'
+ * event and audit actor is that user) and the caller's audit commit with the draft in this one transaction, so a unique violation on
+ * agent_tasks_company_rerun_of_uniq rolls the whole re-draft back. Default storm drafting stays actor 'agent'.
+ */
 export async function draftStormPlan(
   deps: AppDeps,
   companyId: string,
   companyStormId: string,
   now: Date,
+  opts: {
+    rerunOfTaskId?: string;
+    createdByUserId?: string;
+    allowFinished?: boolean;
+    afterCreate?: (tx: Tx, taskId: string) => Promise<void>;
+  } = {},
 ): Promise<{ taskId: string } | null> {
   const ctx = systemContext(companyId);
   const drafted = await withTenant(deps.pools, ctx, async (tx): Promise<{ taskId: string; fresh: boolean } | null> => {
     // A1 T14 (Ruling AX-K): a paused Storm Scout drafts no new plan (the storm alerts still go out).
     if (await isAgentPaused(tx, ctx, 'storm_scout')) return null;
     const facts = await loadStormPlanFacts(tx, ctx, companyStormId);
-    if (!facts) throw new Error(PLAN_NOT_FOUND);
-    if (facts.status === 'dismissed') throw new Error(PLAN_DISMISSED);
-    if (facts.planTaskId !== null && !REDRAFTABLE_PLAN_STATUSES.includes(facts.planStatus!)) {
-      return { taskId: facts.planTaskId, fresh: false };
-    }
+    if (!facts) throw new Error(STORM_PLAN_ERRORS.notFound);
+    if (facts.status === 'dismissed') throw new Error(STORM_PLAN_ERRORS.dismissed);
+    const replaceable =
+      facts.planStatus !== null &&
+      ((REDRAFTABLE_PLAN_STATUSES as readonly string[]).includes(facts.planStatus) ||
+        (opts.allowFinished === true && (FINISHED_REDRAFTABLE_PLAN_STATUSES as readonly string[]).includes(facts.planStatus)));
+    if (facts.planTaskId !== null && !replaceable) return { taskId: facts.planTaskId, fresh: false };
+    // S1 R2a: a re-draft of a draft sends no second plan-ready email.
     const previousWasDraft = facts.planTaskId !== null && facts.planStatus === 'draft';
 
     const recipients = await listStormPlanRecipients(tx, ctx, companyStormId);
@@ -198,13 +223,19 @@ export async function draftStormPlan(
         subjectId: companyStormId,
         expiresAt: new Date(now.getTime() + PLAN_LIFETIME_MS),
         steps,
+        ...(opts.rerunOfTaskId !== undefined && {
+          rerunOfTaskId: opts.rerunOfTaskId,
+          createdBy: 'user' as const,
+          ...(opts.createdByUserId !== undefined && { createdByUserId: opts.createdByUserId }),
+        }),
       },
       { now },
     );
-    const lock = await lockStormPlan(tx, ctx, companyStormId);
-    if (!lock.ok) throw new Error(PLAN_CHANGED);
-    if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(PLAN_CHANGED);
+    const lock = await lockStormPlan(tx, ctx, companyStormId, { allowFinished: opts.allowFinished === true });
+    if (!lock.ok) throw new Error(STORM_PLAN_ERRORS.changed);
+    if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(STORM_PLAN_ERRORS.changed);
     await linkStormPlan(tx, ctx, companyStormId, taskId, now);
+    if (opts.afterCreate) await opts.afterCreate(tx, taskId);
     return { taskId, fresh: !previousWasDraft };
   });
 
