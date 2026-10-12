@@ -2,14 +2,14 @@ import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { blockedNumbers, companyPhoneNumbers, companySettings, encrypt, messages, textingRegistrations, type Tx, withTenant } from '@roofline/db';
+import { blockedNumbers, companies, companyPhoneNumbers, companySettings, encrypt, messages, textingRegistrations, type Tx, withTenant } from '@roofline/db';
 import { inCompany } from '../crm-helpers.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
 import { addSmsCustomers, DAYTIME } from '../sms-helpers.ts';
 
 /*
- * Pre-review #25: the inbound SMS hook stores every text, but queues no Front Desk text work for a
- * blocked sender.
+ * Pre-review #25 and Ruling BG: the inbound SMS hook stores every text, but queues no Front Desk text
+ * work for a blocked sender or for a read-only company (trial ended, plan canceled).
  */
 
 let t: TestApp;
@@ -61,6 +61,13 @@ describe('inbound SMS: who gets Front Desk text work', () => {
 
   test('a text from a blocked number is stored but gets no Front Desk work (pre-review #25)', async () => {
     await withTenant(t.deps.pools, ctxA(), (tx) => tx.insert(blockedNumbers).values({ companyId: idA(), e164: NINA, reason: 'spam' }));
+    await inboundText('Can someone look at my roof?');
+    expect(await inboundRows()).toHaveLength(1);
+    expect(fdTextJobs()).toEqual([]);
+  });
+
+  test.each(['trial_ended', 'canceled'] as const)('a %s company stores the text but gets no Front Desk work (Ruling BG)', async (status) => {
+    await t.deps.pools.system.update(companies).set({ status }).where(eq(companies.id, idA()));
     await inboundText('Can someone look at my roof?');
     expect(await inboundRows()).toHaveLength(1);
     expect(fdTextJobs()).toEqual([]);

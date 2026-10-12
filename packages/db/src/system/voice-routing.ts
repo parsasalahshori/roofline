@@ -7,18 +7,29 @@ import { companies, companyPhoneNumbers, memberships, textingRegistrations } fro
  * imports this. Memberships are read only here (Ruling DK).
  */
 
-/** What a voice webhook needs about the company that owns the dialed number (settings are read tenant-side). */
-export type VoiceNumberRoute = { companyId: string; companyName: string; timezone: string };
+/**
+ * What a voice webhook needs about the company that owns the dialed number (settings are read
+ * tenant-side). `readOnly`: the company's trial ended or its plan was canceled, so it gets no
+ * Front Desk calls (Ruling BG).
+ */
+export type VoiceNumberRoute = { companyId: string; companyName: string; timezone: string; readOnly: boolean };
 
 /** An active texting/voice number (company_phone_numbers, status 'active') -> its company; null when none. */
 export async function voiceRouteForNumber(system: Db, e164: string): Promise<VoiceNumberRoute | null> {
   const [row] = await system
-    .select({ companyId: companyPhoneNumbers.companyId, companyName: companies.name, timezone: companies.timezone })
+    .select({
+      companyId: companyPhoneNumbers.companyId,
+      companyName: companies.name,
+      timezone: companies.timezone,
+      status: companies.status,
+    })
     .from(companyPhoneNumbers)
     .innerJoin(companies, eq(companies.id, companyPhoneNumbers.companyId))
     .where(and(eq(companyPhoneNumbers.e164, e164), eq(companyPhoneNumbers.status, 'active')))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  const { status, ...route } = row;
+  return { ...route, readOnly: status === 'trial_ended' || status === 'canceled' };
 }
 
 export type OnCallMember = { userId: string; phone: string; onCallOrder: number };

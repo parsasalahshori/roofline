@@ -212,6 +212,26 @@ describe('GET /api/front-desk/voices', () => {
   });
 });
 
+describe('read-only company (Ruling BG)', () => {
+  test('a read-only company can turn Front Desk off and nothing else', async () => {
+    await verify('a');
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    expect((await owner.put(SETTINGS).send(body({ enabled: true, facts: 'Before.' }))).status).toBe(200);
+    await ownerSql("update companies set status = 'trial_ended' where id = $1", [idOf('a')]);
+
+    const refused = await owner.put(SETTINGS).send(body({ enabled: true, facts: 'Changed.' }));
+    expect(refused.status).toBe(403);
+
+    const off = await owner.put(SETTINGS).send(body({ enabled: false, facts: 'Changed.', voice: 'marcus' }));
+    expect(off.status).toBe(200);
+    expect(off.body as FrontDeskSettings).toMatchObject({ enabled: false, facts: 'Before.', voice: 'claire' });
+
+    const rep = await loginAs(t.app, t.seed.a.rep);
+    expect((await rep.put(SETTINGS).send(body({ enabled: false }))).status).toBe(403);
+    expect((await owner.put(TRANSFER).send({ e164: '+14025550122', ackRecording: true })).status).toBe(403);
+  });
+});
+
 describe('/api/me/transfer-phone', () => {
   test('transfer phone: prefill from user phone, PUT needs ackRecording true, E.164 required, stores for own membership only', async () => {
     await ownerSql('update users set phone_e164 = $1 where id = $2', ['+14025550111', t.seed.a.rep.userId]);

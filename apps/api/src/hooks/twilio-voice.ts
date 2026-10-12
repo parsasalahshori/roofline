@@ -90,7 +90,8 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
       deps.relaySessions.size >= deps.config.FRONT_DESK_MAX_CALLS ||
       !deps.relaySessions.llmHealthy;
 
-    if (!route.frontDeskEnabled || overCap) {
+    // A read-only company (trial ended, plan canceled) gets no AI calls: the team, then voicemail (Ruling BG).
+    if (!route.frontDeskEnabled || route.readOnly || overCap) {
       sendVoiceTwiml(res, voicemailXml(publicUrl, await teamDialNumbers(deps.pools.system, route.companyId)));
       return;
     }

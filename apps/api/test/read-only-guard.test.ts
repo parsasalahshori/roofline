@@ -4,7 +4,7 @@ import { READ_ONLY_MESSAGE, readOnlyGuard } from '../src/billing/read-only.ts';
 type Status = 'trial_ended' | 'canceled' | 'active';
 
 /** Runs the guard for one request. Plain objects only: no app, no database. */
-function run(method: string, path: string, companyStatus: Status | null) {
+function run(method: string, path: string, companyStatus: Status | null, body?: unknown) {
   const next = vi.fn();
   const recorded: { code?: number; body?: unknown } = {};
   const res = {
@@ -21,6 +21,7 @@ function run(method: string, path: string, companyStatus: Status | null) {
     method,
     path,
     session: companyStatus === null ? undefined : { companyStatus },
+    body,
   };
   readOnlyGuard(req as never, res as never, next);
   return { next, recorded };
@@ -57,6 +58,25 @@ describe('read-only guard', () => {
       expect(recorded.body).toEqual({ error: READ_ONLY_MESSAGE.trial_ended });
     },
   );
+
+  test('a read-only company may turn Front Desk off, and nothing else on that path (Ruling BG)', () => {
+    for (const status of ['trial_ended', 'canceled'] as const) {
+      expect(run('PUT', '/front-desk/settings', status, { enabled: false, texts: true }).next).toHaveBeenCalledTimes(1);
+    }
+    for (const [method, body] of [
+      ['PUT', { enabled: true }],
+      ['PUT', { enabled: 'false' }],
+      ['PUT', {}],
+      ['PUT', undefined],
+      ['POST', { enabled: false }],
+    ] as const) {
+      const { next, recorded } = run(method, '/front-desk/settings', 'trial_ended', body);
+      expect(next).not.toHaveBeenCalled();
+      expect(recorded.code).toBe(403);
+    }
+    const other = run('POST', '/front-desk/forwarding-test', 'trial_ended', { enabled: false });
+    expect(other.recorded.code).toBe(403);
+  });
 
   test('a read is always let through, even for a trial that has ended', () => {
     const { next, recorded } = run('GET', '/customers', 'trial_ended');

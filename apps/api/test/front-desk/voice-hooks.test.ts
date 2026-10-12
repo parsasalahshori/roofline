@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { calls, companyPhoneNumbers, companySettings, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
+import { calls, companies, companyPhoneNumbers, companySettings, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { disclosureGreeting } from '@roofline/shared';
 import { escapeXml } from '../../src/hooks/twilio.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
@@ -158,6 +158,19 @@ describe('POST /hooks/twilio/voice', () => {
     const res = await post(VOICE, incoming());
     expect(res.text).toContain('<Record maxLength="120" playBeep="true"/>');
     expect(res.text).not.toContain('<ConversationRelay');
+  });
+
+  test('a read-only company (trial ended or canceled) gets the team then voicemail, never the AI (Ruling BG)', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 15 });
+    await seedTeam();
+    for (const status of ['trial_ended', 'canceled'] as const) {
+      await t.deps.pools.system.update(companies).set({ status }).where(eq(companies.id, idOf('a')));
+      const res = await post(VOICE, incoming());
+      expect(res.status, status).toBe(200);
+      expect(res.text, status).toContain('after-dial?mode=voicemail');
+      expect(res.text, status).not.toContain('mode=ring_first');
+      expect(res.text, status).not.toContain('<ConversationRelay');
+    }
   });
 
   test('a screened call is rejected and the row is rejected', async () => {

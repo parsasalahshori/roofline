@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getFrontDeskSettings, saveFrontDeskSettings, withTenant } from '@roofline/db';
+import { getFrontDeskSettings, saveFrontDeskSettings, turnFrontDeskOff, withTenant } from '@roofline/db';
 import {
   FRONT_DESK_LIMITS,
   FRONT_DESK_VOICES,
@@ -11,6 +11,7 @@ import {
 import type { AppDeps } from '../app.ts';
 import { readOnCallRows, writeOnCallOrder } from '../account/transfer-phone.ts';
 import { forwardingTestRoutes } from '../front-desk/forwarding-test.ts';
+import { isReadOnlyStatus } from '../billing/read-only.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { ensureVoiceUrl } from '../jobs/scheduler/fd-health.ts';
 import { parse, UUID } from '../validate.ts';
@@ -56,7 +57,8 @@ const canManage = (role: string): boolean => role === 'owner' || role === 'offic
  * `/api/front-desk`:
  * - `GET /settings`, `PUT /settings` (owner, office): FrontDeskSettings / FrontDeskSettingsInput (+ `override`).
  *   Turning Front Desk on needs a voice number and a passed forwarding test; only the owner may send
- *   `override: true` to skip the test. The save that turns it on sets the number's voice URL.
+ *   `override: true` to skip the test. The save that turns it on sets the number's voice URL. A
+ *   read-only company may only turn it off (Ruling BG).
  * - `GET /voices` (any role): the four voices.
  * - `/forwarding-test` and `/stats` are mounted below. Anything not built yet answers 501.
  */
@@ -92,6 +94,13 @@ export function frontDeskRoutes(deps: AppDeps): Router {
   router.put('/settings', async (req, res) => {
     const { ctx } = req;
     if (!canManage(ctx.role)) throw new AppError(403, MESSAGES.roleCannot);
+    // Ruling BG: a read-only company reaches here only with `enabled: false` (readOnlyGuard), and
+    // only the switch is saved; every other setting stays as it was.
+    if (isReadOnlyStatus(req.session?.companyStatus)) {
+      await withTenant(pools, ctx, (tx) => turnFrontDeskOff(tx, ctx, deps.clock.now()));
+      res.json(await settingsView(ctx));
+      return;
+    }
     const { override, onCallOrder, ...rest } = parse(SettingsBody, req.body);
     const input = { ...rest, onCallOrder } as FrontDeskSettingsInput;
 
