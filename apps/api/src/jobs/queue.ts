@@ -4,14 +4,46 @@ import { JOB_HANDLERS } from './handlers.ts';
 
 // The job queues: the names, what a job carries, and where jobs go. The worker (worker.ts) runs
 // them on pg-boss; the tests use `InlineJobs` below. handlers.ts imports only types from here.
-export const JOB_NAMES = ['import-customers', 'texting-registration', 'calendar-push', 'footprints-load', 'signed-pdf', 'storm-match-company', 'storm-draft', 'storm-alert', 'ad-sync-company'] as const; export type JobName = (typeof JOB_NAMES)[number];
+export const JOB_NAMES = [
+  'import-customers',
+  'texting-registration',
+  'calendar-push',
+  'footprints-load',
+  'signed-pdf',
+  'storm-match-company',
+  'storm-draft',
+  'storm-alert',
+  'ad-sync-company',
+  // D1 Front Desk
+  'fd-after-call',
+  'fd-recording-store',
+  'fd-text',
+  'fd-forwarding-test',
+] as const;
+export type JobName = (typeof JOB_NAMES)[number];
 // 'footprints-load' is global work, but the worker requires a company id on every job: its data is
 // `{ companyId: <the requesting company>, state }` with singletonKey = state.
 // Storm Scout: 'storm-match-company' is `{ companyId }`, sent with singletonKey companyId; 'storm-draft' is
 // `{ companyId, companyStormId }`; 'storm-alert' is `{ companyId, companyStormId, kind }`; 'ad-sync-company' is `{ companyId }`.
-export type JobData = { companyId: string; importId?: string; appointmentId?: string; state?: string; proposalId?: string; companyStormId?: string; kind?: 'now' | 'plan' };
+export type JobData = {
+  companyId: string;
+  importId?: string;
+  appointmentId?: string;
+  state?: string;
+  proposalId?: string;
+  companyStormId?: string;
+  kind?: 'now' | 'plan';
+  callId?: string;
+  /** fd-after-call: the Twilio CallSid (callId stays the calls row id everywhere else). */
+  callSid?: string;
+  recordingSid?: string;
+  conversationId?: string;
+  testId?: string;
+};
+/** What a `send` may ask for: a dedupe key, and a delay in seconds before the job may run. */
+export type SendOptions = { singletonKey?: string; startAfter?: number };
 export type JobMeta = { attempt: number; lastAttempt: boolean };
-export interface JobQueue { send(name: JobName, data: JobData, opts?: { singletonKey?: string }): Promise<void> }
+export interface JobQueue { send(name: JobName, data: JobData, opts?: SendOptions): Promise<void> }
 export const JOB_QUEUE_OPTIONS = { policy: 'stately', retryLimit: 4, retryBackoff: true, retryDelay: 30 } as const;   // 5 attempts
 /**
  * Queues whose jobs may run longer than pg-boss's default 15 minutes. A state's footprint load (a large
@@ -29,7 +61,7 @@ export function jobQueueOptions(name: JobName) {
 /** The app's job queue on pg-boss. The boss must be started and the queues made (`ensureJobQueues`). */
 export class PgBossJobs implements JobQueue {
   constructor(private readonly boss: PgBoss) {}
-  async send(name: JobName, data: JobData, opts?: { singletonKey?: string }): Promise<void> {
+  async send(name: JobName, data: JobData, opts?: SendOptions): Promise<void> {
     // The expiry is sent with each job as well, so a queue made before it was set still gets it.
     const expireInSeconds = JOB_EXPIRE_SECONDS[name];
     await this.boss.send(name, data, { ...(opts ?? {}), ...(expireInSeconds !== undefined && { expireInSeconds }) });
@@ -74,14 +106,16 @@ export type JobHandlers = Record<JobName, (deps: AppDeps, data: JobData, meta: J
  */
 export class InlineJobs implements JobQueue {
   /** Every `send` call, in order. Retries are not calls. */
-  readonly sent: { name: JobName; data: JobData; singletonKey?: string }[] = [];
+  readonly sent: { name: JobName; data: JobData; singletonKey?: string; startAfter?: number }[] = [];
   /** Every error a handler threw, one per failed attempt. */
   readonly errors: unknown[] = [];
   private readonly waiting: WaitingJob[] = [];
 
-  async send(name: JobName, data: JobData, opts?: { singletonKey?: string }): Promise<void> {
+  async send(name: JobName, data: JobData, opts?: SendOptions): Promise<void> {
     const singletonKey = opts?.singletonKey;
-    this.sent.push(singletonKey === undefined ? { name, data } : { name, data, singletonKey });
+    const startAfter = opts?.startAfter;
+    // startAfter is recorded only; drain still runs every job at once.
+    this.sent.push({ name, data, ...(singletonKey === undefined ? {} : { singletonKey }), ...(startAfter === undefined ? {} : { startAfter }) });
     if (singletonKey !== undefined && this.waiting.some((job) => job.name === name && job.singletonKey === singletonKey)) {
       return;
     }

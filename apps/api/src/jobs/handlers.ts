@@ -3,6 +3,9 @@ import { advanceRegistration } from '../account/texting/advance.ts';
 import { pushAppointment } from '../calendar/push.ts';
 import { loadFootprintState } from '../estimator/footprints-load.ts';
 import { makeSignedPdf } from '../estimator/signed-pdf.ts';
+import { runAfterCall } from '../front-desk/after-call.ts';
+import { expireForwardingTest } from '../front-desk/forwarding-test.ts';
+import { runFrontDeskText } from '../front-desk/texts.ts';
 import { runImport } from '../imports/run.ts';
 import { syncCompanyAds } from '../storm/ad-sync.ts';
 import { sendStormAlert } from '../storm/alerts.ts';
@@ -11,6 +14,7 @@ import { draftStormPlan } from '../storm/plan.ts';
 import { PLAN_DISMISSED, PLAN_NOT_FOUND } from '../storm/plan-errors.ts';
 import { UUID } from '../validate.ts';
 import { reportJobError } from './scheduler/report.ts';
+import { storeRecording } from './recording-store.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
 
 function checkStormJob(data: JobData): void {
@@ -57,4 +61,9 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
     return sendStormAlert(deps, data.companyId, data.companyStormId!, data.kind!);
   },
   'ad-sync-company': (deps, data) => syncCompanyAds(deps, data.companyId),
+  // D1 Front Desk
+  'fd-after-call': (deps, data) => runAfterCall(deps, data),
+  'fd-recording-store': (deps, data, meta) => storeRecording(deps, data, meta),
+  'fd-text': (deps, data) => runFrontDeskText(deps, data),
+  'fd-forwarding-test': (deps, data) => expireForwardingTest(deps, data.companyId, data.testId!),
 };

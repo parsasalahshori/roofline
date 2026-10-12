@@ -15,6 +15,10 @@ import { errorHandler, logErrorToConsole, MESSAGES, notFoundHandler } from './er
 import { stripeHooks } from './hooks/stripe.ts';
 import { postmarkHooks } from './hooks/postmark.ts';
 import { twilioHooks } from './hooks/twilio.ts';
+import { twilioVoiceHooks } from './hooks/twilio-voice.ts';
+import { twilioVoiceTransferHooks } from './hooks/twilio-voice-transfer.ts';
+import { twilioVoiceRecordingHooks } from './hooks/twilio-voice-recording.ts';
+import { twilioVoiceStatusHooks } from './hooks/twilio-voice-status.ts';
 import { twilioRegistrationHooks } from './hooks/twilio-registration.ts';
 import type { JobQueue } from './jobs/queue.ts';
 import { readOnlyGuard } from './billing/read-only.ts';
@@ -22,6 +26,11 @@ import type { Mailer } from './mailer.ts';
 import type { CalendarApis } from './providers/calendar.ts';
 import type { BillingProvider } from './providers/billing.ts';
 import type { Geocoder } from './providers/geocoder.ts';
+import type { CallControl } from './providers/call-control.ts';
+import type { LineLookup } from './providers/line-lookup.ts';
+import type { Llm } from './providers/llm.ts';
+import type { RelaySessions } from './front-desk/relay-sessions.ts';
+import type { ObjectStore } from './providers/object-store.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
 import type { FootprintSource } from './providers/footprints.ts';
 import type { AerialMeasure } from './providers/aerial.ts';
@@ -30,7 +39,6 @@ import type { AdImageRenderer } from './providers/ad-image.ts';
 import type { AdsGoogle } from './providers/ads-google.ts';
 import type { AdsMeta } from './providers/ads-meta.ts';
 import type { BroadcastMailer } from './providers/broadcast.ts';
-import type { ObjectStore } from './providers/object-store.ts';
 import { apiRateLimit, publicRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
 import { agentsFeedRoutes } from './routes/agents-feed.ts';
@@ -39,7 +47,12 @@ import { appointmentRoutes } from './routes/appointments.ts';
 import { approvalRoutes } from './routes/approvals.ts';
 import { calendarConnectRoutes } from './routes/calendar-connect.ts';
 import { calendarRoutes } from './routes/calendar.ts';
+import { blockedNumberRoutes } from './routes/blocked-numbers.ts';
+import { callRoutes } from './routes/calls.ts';
 import { companyRoutes } from './routes/company.ts';
+import { conversationRoutes } from './routes/conversations.ts';
+import { frontDeskRoutes } from './routes/front-desk.ts';
+import { transferPhoneRoutes } from './routes/transfer-phone.ts';
 import { customerRoutes } from './routes/customers.ts';
 import { exportRoutes } from './routes/export.ts';
 import { importRoutes } from './routes/imports.ts';
@@ -149,6 +162,11 @@ export type AppDeps = {
   broadcast: BroadcastMailer;
   /** Draws the ad card image (providers/ad-image.ts); tests pass `FakeAdImageRenderer`. */
   adImage: AdImageRenderer;
+  // D1 Front Desk: the Claude seam, call control, line lookup and the live relay-session registry.
+  llm: Llm;
+  callControl: CallControl;
+  lineLookup: LineLookup;
+  relaySessions: RelaySessions;
 };
 
 export type AppOptions = {
@@ -254,6 +272,11 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // Twilio's webhooks (hooks/twilio.ts): signed form posts, no session, no rate limit. Mounted
   // ahead of the JSON parser and the /api gate, with its own form parser (64 KB), so these routes
   // only ever read form bodies.
+  // D1 Front Desk: the voice hooks are signed form posts, mounted before /hooks/twilio and the session gate
+  app.use('/hooks/twilio/voice-transfer', twilioVoiceTransferHooks(deps)); // D1 Front Desk
+  app.use('/hooks/twilio/voice-status', twilioVoiceStatusHooks(deps));
+  app.use('/hooks/twilio/voice/recording', twilioVoiceRecordingHooks(deps));
+  app.use('/hooks/twilio/voice', twilioVoiceHooks(deps));
   app.use('/hooks/twilio', twilioHooks(deps));
   // Postmark's bounce and complaint webhook (hooks/postmark.ts): basic-auth secret, no session; its router brings its own JSON parser (256 KB).
   app.use('/hooks/postmark', postmarkHooks(deps));
@@ -287,6 +310,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
 
   // Routers are mounted here as later tasks add them.
   app.use('/api/auth', authRoutes(deps, logError));
+  // D1 Front Desk: before /api/me, whose prefix mount would catch it
+  app.use('/api/me/transfer-phone', transferPhoneRoutes(deps));
   app.use('/api/me', meRoutes(deps));
   app.use('/api/company', companyRoutes(deps));
   app.use('/api/team', teamRoutes(deps, logError));
@@ -335,6 +360,11 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   publicRouter.use('/proposals', publicProposalRoutes(deps));
   publicRouter.use('/proposals', proposalSignRoutes(deps));
   app.use('/api/public', publicRateLimit(), publicRouter);
+  // D1 Front Desk
+  app.use('/api/conversations', conversationRoutes(deps));
+  app.use('/api/front-desk', frontDeskRoutes(deps));
+  app.use('/api/calls', callRoutes(deps));
+  app.use('/api/blocked-numbers', blockedNumberRoutes(deps));
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.

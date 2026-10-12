@@ -1,6 +1,6 @@
 import type { ObjectStore } from '../object-store.ts';
 
-export type ObjectStoreCall = { method: 'put'; key: string; contentType: string } | { method: 'get'; key: string };
+export type ObjectStoreCall = { method: 'put'; key: string; contentType: string } | { method: 'get'; key: string } | { method: 'signedGetUrl'; key: string; seconds: number } | { method: 'delete'; key: string };
 
 export class MemoryObjectStore implements ObjectStore {
   readonly configured = true;
@@ -25,5 +25,14 @@ export class MemoryObjectStore implements ObjectStore {
     this.record({ method: 'get', key });
     const item = this.items.get(key);
     return item ? new Uint8Array(item.bytes) : null;
+  }
+  /** Deterministic: `memory://<key>?expires=<epoch seconds>`; the key need not exist. */
+  async signedGetUrl(key: string, seconds: number): Promise<string> {
+    this.record({ method: 'signedGetUrl', key, seconds });
+    return `memory://${key}?expires=${Math.floor(Date.now() / 1000) + seconds}`;
+  }
+  async delete(key: string): Promise<void> {
+    this.record({ method: 'delete', key });
+    this.items.delete(key);
   }
 }

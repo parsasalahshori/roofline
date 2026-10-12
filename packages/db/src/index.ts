@@ -224,11 +224,20 @@ export * from './repos/stored-files.ts';
 export * from './repos/conversations.ts';
 export * from './repos/turns.ts';
 export * from './repos/calls.ts';
+export * from './repos/call-recording.ts';
+export * from './repos/fd-retention.ts';
+export * from './repos/forwarding-test.ts';
 export * from './repos/claim-intakes.ts';
 export * from './repos/front-desk-settings.ts';
 export * from './repos/blocked-numbers.ts';
 export * from './repos/fd-booking.ts';
 export * from './repos/fd-caller.ts';
+// D1 Front Desk (Tasks 10-18)
+export * from './repos/fd-texts.ts';
+export * from './repos/fd-after-call.ts';
+export * from './repos/fd-text-back.ts';
+export * from './repos/conversation-inbox.ts';
+export * from './repos/front-desk-stats.ts';
 // S1 skeleton (Task 1): one line per new repo file; later S1 tasks fill the files in.
 export * from './repos/storm-layer.ts';
 export * from './repos/company-storms.ts';

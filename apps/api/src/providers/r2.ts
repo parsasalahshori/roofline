@@ -17,8 +17,9 @@ function unavailable(status: number): Error {
 }
 
 /**
- * Cloudflare R2 over its S3 API, signed with SigV4. The bucket is private: this class never builds
- * or returns a public or presigned URL.
+ * Cloudflare R2 over its S3 API, signed with SigV4. The bucket is private: no public URL is ever
+ * built; the only link that leaves the server is `signedGetUrl`'s short-lived presigned GET (D1's
+ * call-recording playback, Ruling DV).
  */
 export class R2ObjectStore implements ObjectStore {
   readonly configured = true;
@@ -59,6 +60,22 @@ export class R2ObjectStore implements ObjectStore {
     if (res.status === 404) return null;
     if (!res.ok) throw unavailable(res.status);
     return new Uint8Array(await res.arrayBuffer());
+  }
+
+  /** A presigned GET that stops working after `seconds` (D1 Ruling DV: recording playback). */
+  async signedGetUrl(key: string, seconds: number): Promise<string> {
+    const url = new URL(this.url(key));
+    url.searchParams.set('X-Amz-Expires', String(Math.max(1, Math.floor(seconds))));
+    const signed = await this.client.sign(url.toString(), { method: 'GET', aws: { signQuery: true } });
+    return signed.url;
+  }
+
+  /** Removes one object; a missing key is not an error (D1 Ruling DV: the retention sweep). */
+  async delete(key: string): Promise<void> {
+    const signed = await this.client.sign(this.url(key), { method: 'DELETE' });
+    const res = await this.doFetch(signed);
+    if (res.status === 404) return;
+    if (!res.ok) throw unavailable(res.status);
   }
 }
 
