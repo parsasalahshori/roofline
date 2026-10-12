@@ -4,7 +4,7 @@ import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { agents } from '../src/copy/agents.ts';
+import { timeBaselines } from '../src/copy/agents.ts';
 import { settings } from '../src/copy/settings.ts';
 import { isSettingsTab, SETTINGS_TABS, visibleTabs } from '../src/features/settings/tabs.ts';
 import { ACCOUNT, COMPANY, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
@@ -53,18 +53,18 @@ const settingsTabs = () => screen.findByRole('navigation', { name: settings.tabs
 
 describe('settings agents tab', () => {
   it('shows Agents to the owner', async () => {
-    signedInApi();
+    signedInApi(ACCOUNT, { 'GET /api/agents/time-baselines': () => ({ body: { rows: [{ key: 'text_sent', unit: 'text', basis: 'Each text counts for a short time', defaultMinutes: 2, minutes: 2, capMinutes: null, perCallLength: false }], canEdit: true, hourlyRateCents: 2800 } }) });
     renderApp('/settings/agents');
 
-    expect(await screen.findByText(agents.settingsComingSoon)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: timeBaselines.title })).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.agents })).toHaveAttribute('href', '/settings/agents');
   });
 
   it('shows Agents to the office', async () => {
-    signedInApi({ ...ACCOUNT, role: 'office' });
+    signedInApi({ ...ACCOUNT, role: 'office' }, { 'GET /api/agents/time-baselines': () => ({ body: { rows: [{ key: 'text_sent', unit: 'text', basis: 'Each text counts for a short time', defaultMinutes: 2, minutes: 2, capMinutes: null, perCallLength: false }], canEdit: false, hourlyRateCents: 2800 } }) });
     renderApp('/settings/agents');
 
-    expect(await screen.findByText(agents.settingsComingSoon)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: timeBaselines.title })).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.agents })).toHaveAttribute('href', '/settings/agents');
   });
 
@@ -74,7 +74,7 @@ describe('settings agents tab', () => {
 
     await waitFor(() => expect(where(router)).toBe('/settings/company'));
     expect(within(await settingsTabs()).queryByRole('link', { name: settings.tabs.agents })).not.toBeInTheDocument();
-    expect(screen.queryByText(agents.settingsComingSoon)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: timeBaselines.title })).not.toBeInTheDocument();
   });
 });
 

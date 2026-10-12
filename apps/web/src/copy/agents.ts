@@ -6,13 +6,7 @@ export const agents = {
   // The tab row in the Agents window
   tabsLabel: 'Agents sections',
   tabs: { overview: 'Overview', feed: 'Feed', waiting: 'Waiting on you' },
-  overviewComingSoon: 'Your agents and what they did today are coming soon.',
-  feedComingSoon: 'The record of what your agents did is coming soon.',
-  waitingComingSoon: 'The tasks waiting on you are coming soon.',
   agentComingSoon: 'This agent’s page is coming soon.',
-  // The Agents tab in Settings
-  settingsTab: 'Agents',
-  settingsComingSoon: 'How we count time saved is coming soon.',
 
   // --- Task 11: feed and waiting ---
   feedFiltersLabel: 'Show work by',
@@ -33,7 +27,6 @@ export const agents = {
 // --- Task 9: Agents window ---
 export const agentsWindow = {
   estimate: '(estimate)',
-  totalsPrefix: 'About',
   totalsSaved: 'saved this month',
   separator: '·',
   successRate: 'Success rate',
@@ -106,4 +99,54 @@ export const agentPage = {
     text_reply: 'Text replies',
     demo: 'Demo steps',
   } satisfies Record<BaselineKey, string>,
+} as const;
+
+// --- Task 12: time baselines ---
+export const timeBaselines = {
+  title: 'How we count time saved',
+  intro: 'Each kind of finished work saves your staff some minutes. These numbers are estimates, and you can change them.',
+  onlyFinished: 'Only finished work counts.',
+  tableCaption: 'Minutes saved for each kind of work',
+  colWork: 'Work',
+  colUnit: 'Counted per',
+  colBasis: 'How we count it',
+  colMinutes: 'Minutes saved',
+  minutesSuffix: 'minutes',
+  /** Visually hidden label prefix for each input: 'Minutes saved for <work>'. */
+  inputLabelPrefix: 'Minutes saved for',
+  defaultIs: 'Standard:',
+  reset: 'Reset to default',
+  /** Reset button accessible name: 'Reset to default for <work>'. */
+  resetLabelSuffix: 'for',
+  save: 'Save',
+  saving: 'Saving',
+  saved: 'Saved.',
+  saveError: 'We could not save that. Try again in a moment.',
+  ownerOnly: 'Only the owner can change these.',
+  loadError: 'We could not load these numbers. Try again in a moment.',
+  loading: 'Loading these numbers',
+  /** Cap and call-length words. capWords(120) -> 'At most 120 minutes per batch'. */
+  capPrefix: 'At most',
+  capSuffix: 'minutes per batch',
+  plusCallLength: 'plus the call’s length',
+  errorNotNumber: 'Enter a number of minutes, like 5 or 7.5.',
+  errorRange: 'Use a number from 0 to 600.',
+  errorStep: 'Use whole or half minutes, like 5 or 5.5.',
+  ratePrefix: 'Staff time is valued at',
+  rateSuffix: 'an hour.',
+  rateLinkText: 'Change this in Company settings',
+  rateHref: '/settings/company',
+  recountButton: 'Recount the last 90 days with these numbers',
+  recountWorking: 'Checking',
+  recountError: 'We could not recount. Try again in a moment.',
+  recountTitle: 'Recount the last 90 days?',
+  recountIntro: 'This changes the time saved shown for the last 90 days.',
+  recountBefore: 'Now:',
+  recountAfter: 'After the recount:',
+  recountSteps: 'Finished steps counted:',
+  recountConfirm: 'Recount',
+  recountCancel: 'Cancel',
+  recountClose: 'Close',
+  recountDone: 'Done. The last 90 days now use these numbers.',
+  estimate: '(estimate)',
 } as const;
