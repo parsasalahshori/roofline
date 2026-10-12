@@ -1,0 +1,44 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  color: var(--text);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius-card);
+  font-family: var(--font);
+  font-size: var(--font-size-body);
+}
+
+.banner[data-tone="warning"] {
+  border-left-color: var(--accent);
+}
+
+.banner[data-tone="danger"] {
+  border-left-color: var(--danger);
+}
+
+.text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.action {
+  flex: none;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .banner {
+    flex-wrap: wrap;
+  }
+
+  .action {
+    flex: 1 1 100%;
+  }
+}

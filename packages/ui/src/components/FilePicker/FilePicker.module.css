@@ -1,0 +1,31 @@
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* The dashed edge is the drop target's only cue at rest; it turns solid while a file hovers. */
+.zone {
+  min-height: 40px;
+  padding: 16px;
+  border: 2px dashed var(--text-muted);
+  border-radius: var(--radius-card);
+  color: var(--text);
+  font-size: var(--font-size-body);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.zone[data-state="over"] {
+  border-style: solid;
+  border-color: var(--text);
+  background: var(--surface-2);
+}
