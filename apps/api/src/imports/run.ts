@@ -84,7 +84,7 @@ export async function runImport(deps: AppDeps, companyId: string, importId: stri
       // Geocoding calls out to a service, so it runs outside any transaction.
       const geos = await geocodeRows(deps, rows.map((r) => r.normalized));
 
-      counts = await withTenant(deps.pools, ctx, async (tx) => {
+      const next = await withTenant(deps.pools, ctx, async (tx) => {
         const written = await applyImportChunk(
           tx,
           ctx,
@@ -106,9 +106,12 @@ export async function runImport(deps: AppDeps, companyId: string, importId: stri
           },
           now,
         );
+        const wrote = written.created + written.updated;
+        // Another runner holds these rows (SKIP LOCKED): it writes them and finishes the import.
+        if (wrote === 0) return null;
         const progressed: ImportCounts = {
           ...counts,
-          processed: counts.processed + chunk.length,
+          processed: counts.processed + wrote,
           new: counts.new + written.created,
           updated: counts.updated + written.updated,
           jobs: counts.jobs + written.jobs,
@@ -118,6 +121,8 @@ export async function runImport(deps: AppDeps, companyId: string, importId: stri
         await saveImportProgress(tx, ctx, importId, progressed, now);
         return progressed;
       });
+      if (next === null) return;
+      counts = next;
     }
 
     await withTenant(deps.pools, ctx, (tx) => finishImport(tx, ctx, importId, counts, now));
