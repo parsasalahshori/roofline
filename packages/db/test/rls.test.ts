@@ -29,6 +29,9 @@ const APP_SYSTEM_RLS_TABLES = [
   'calendar_connections',
   'proposals',
   'exact_report_orders',
+  'calls',
+  'conversations',
+  'conversation_turns',
 ] as const;
 /** Global estimator tables: no tenant data, no RLS. app_system writes them from the loader job. */
 const FOOTPRINT_TABLES = ['building_footprints', 'building_footprint_states'] as const;
@@ -45,7 +48,7 @@ const E1_TENANT_TABLES = [
   'stored_files',
 ] as const;
 /** Tenant tables app_tenant may delete from. No other tenant table grants it DELETE. */
-const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links'] as const;
+const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links', 'blocked_numbers'] as const;
 const COMPANY_PROFILE_COLUMNS = [
   'name',
   'legal_name',
@@ -155,6 +158,18 @@ async function insertTask(companyId: string, title: string): Promise<string> {
   );
   return row!.id;
 }
+
+async function insertConversation(companyId: string, channel: 'voice' | 'sms', phone: string): Promise<string> {
+  const [row] = await ownerQuery<{ id: string }>(
+    `insert into conversations (company_id, channel, phone_e164, company_number_e164)
+     values ($1, $2, $3, '+14025550100') returning id`,
+    [companyId, channel, phone],
+  );
+  return row!.id;
+}
+
+/** A call SID is 'CA' plus 32 hex digits; the company id's hex digits make it unique per company. */
+const callSidFor = (companyId: string) => `CA${companyId.replaceAll('-', '')}`;
 
 beforeAll(async () => {
   owner = new pg.Client({ connectionString: urls.owner });
@@ -329,12 +344,48 @@ describe('grants', () => {
     truncate: false,
   });
 
-  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, and DELETE only on opt_outs, calendar_busy_blocks and calendar_event_links', async () => {
+  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log and conversation_turns, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links and blocked_numbers', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
-      t === 'audit_log' ? privs(t, true, true, false, false) : privs(t, true, true, true, deletable.has(t)),
+      // audit_log is append-only; conversation_turns is updated by column only (see the column test below).
+      t === 'audit_log' || t === 'conversation_turns'
+        ? privs(t, true, true, false, false)
+        : privs(t, true, true, true, deletable.has(t)),
     );
     expect(await tablePrivileges('app_tenant', TENANT_TABLES)).toEqual(expected);
+  });
+
+  test('app_tenant: DELETE only on blocked_numbers among the D1 tables; conversation_turns has no table-level UPDATE', async () => {
+    expect(
+      await tablePrivileges('app_tenant', ['conversations', 'calls', 'conversation_turns', 'claim_intakes', 'blocked_numbers']),
+    ).toEqual([
+      privs('conversations', true, true, true, false),
+      privs('calls', true, true, true, false),
+      privs('conversation_turns', true, true, false, false),
+      privs('claim_intakes', true, true, true, false),
+      privs('blocked_numbers', true, true, true, true),
+    ]);
+  });
+
+  test('app_tenant UPDATE on conversation_turns is column-level: text, tool_calls and truncated only', async () => {
+    const columns: [string, boolean][] = [
+      ['text', true],
+      ['tool_calls', true],
+      ['truncated', true],
+      ['speaker', false],
+      ['position', false],
+    ];
+    const rows = await ownerQuery<{ column_name: string; can_update: boolean }>(
+      `select c as column_name, has_column_privilege('app_tenant', 'public.conversation_turns', c, 'UPDATE') as can_update
+         from unnest($1::text[]) as c`,
+      [columns.map(([c]) => c)],
+    );
+    expect(rows).toEqual(columns.map(([column_name, can_update]) => ({ column_name, can_update })));
+  });
+
+  test('app_tenant and app_system: line_lookups is a global cache, app_system read/write and app_tenant read only', async () => {
+    expect(await tablePrivileges('app_system', ['line_lookups'])).toEqual([privs('line_lookups', true, true, true, false)]);
+    expect(await tablePrivileges('app_tenant', ['line_lookups'])).toEqual([privs('line_lookups', true, false, false, false)]);
   });
 
   test('app_tenant may update the new company_settings and jobs columns, table-wide or column-level', async () => {
@@ -420,7 +471,14 @@ describe('grants', () => {
         order by 1`,
     );
     expect(rows.map((r) => r.relname)).toEqual(
-      [...TENANT_TABLES, 'companies', ...COMPANY_SCOPED_GLOBALS, 'company_members', 'building_footprints'].sort(),
+      [
+        ...TENANT_TABLES,
+        'companies',
+        ...COMPANY_SCOPED_GLOBALS,
+        'company_members',
+        'building_footprints',
+        'line_lookups',
+      ].sort(),
     );
   });
 
@@ -547,6 +605,7 @@ describe('grants', () => {
       [[...TENANT_TABLES]],
     );
     const sel = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'SELECT' });
+    const upd = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'UPDATE' });
     expect(rows).toEqual([
       sel('agent_task_steps', 'company_id'),
       sel('agent_task_steps', 'id'),
@@ -564,6 +623,25 @@ describe('grants', () => {
       sel('calendar_connections', 'last_synced_at'),
       sel('calendar_connections', 'status'),
       sel('calendar_connections', 'user_id'),
+      sel('calls', 'call_sid'),
+      sel('calls', 'company_id'),
+      sel('calls', 'conversation_id'),
+      sel('calls', 'id'),
+      sel('calls', 'recording_key'),
+      upd('calls', 'recording_key'),
+      sel('calls', 'recording_status'),
+      upd('calls', 'recording_status'),
+      sel('calls', 'status'),
+      sel('conversation_turns', 'at'),
+      sel('conversation_turns', 'company_id'),
+      sel('conversation_turns', 'id'),
+      sel('conversation_turns', 'text'),
+      upd('conversation_turns', 'text'),
+      sel('conversation_turns', 'tool_calls'),
+      upd('conversation_turns', 'tool_calls'),
+      sel('conversations', 'company_id'),
+      sel('conversations', 'id'),
+      sel('conversations', 'status'),
       sel('early_delivery_reports', 'applied_at'),
       sel('early_delivery_reports', 'id'),
       sel('early_delivery_reports', 'received_at'),
@@ -967,6 +1045,17 @@ describe('app_system', () => {
          values ($1, $2, 'google', $3)`,
         [s.companyId, s.owner.userId, Buffer.from('encrypted-placeholder')],
       );
+      const conversation = await insertConversation(s.companyId, 'voice', '+14025550120');
+      await ownerQuery(
+        `insert into calls (company_id, call_sid, from_e164, to_e164, conversation_id)
+         values ($1, $2, '+14025550121', '+14025550100', $3)`,
+        [s.companyId, callSidFor(s.companyId), conversation],
+      );
+      await ownerQuery(
+        `insert into conversation_turns (company_id, conversation_id, position, speaker, text)
+         values ($1, $2, 1, 'caller', 'Hi')`,
+        [s.companyId, conversation],
+      );
     }
     await ownerQuery(
       `insert into company_phone_numbers (company_id, e164) values ($1, '+14025550100'), ($2, '+14025550101')`,
@@ -981,6 +1070,9 @@ describe('app_system', () => {
       messages: `select id, company_id, status, scheduled_for from messages`,
       usage_events: `select id, company_id, kind, reported_to_stripe_at from usage_events`,
       calendar_connections: `select id, company_id, user_id, status, last_synced_at from calendar_connections`,
+      calls: `select id, company_id, call_sid, status, conversation_id, recording_key, recording_status from calls`,
+      conversations: `select id, company_id, status from conversations`,
+      conversation_turns: `select id, company_id, text, tool_calls, at from conversation_turns`,
     } satisfies Record<
       Exclude<(typeof APP_SYSTEM_RLS_TABLES)[number], 'early_delivery_reports' | 'proposals' | 'exact_report_orders'>,
       string
@@ -1083,5 +1175,82 @@ describe('app_system', () => {
     expect(updated).toEqual([{ status: 'active' }]);
     const regs = await systemRaw(`select company_id from texting_registrations`);
     expect(regs).toHaveLength(2);
+  });
+});
+
+describe('front desk tables', () => {
+  /** One conversation, call, turn, claim intake and blocked number for a company; `tag` makes the numbers differ. */
+  async function seedFrontDesk(companyId: string, tag: string): Promise<void> {
+    const conversation = await insertConversation(companyId, 'voice', `+1402555${tag}`);
+    await ownerQuery(
+      `insert into calls (company_id, call_sid, from_e164, to_e164, conversation_id)
+       values ($1, $2, $3, '+14025550100', $4)`,
+      [companyId, callSidFor(companyId), `+1402555${tag}`, conversation],
+    );
+    await ownerQuery(
+      `insert into conversation_turns (company_id, conversation_id, position, speaker, text)
+       values ($1, $2, 1, 'caller', 'Hi')`,
+      [companyId, conversation],
+    );
+    await ownerQuery(
+      `insert into claim_intakes (company_id, insurer, description, taken_by)
+       values ($1, 'State Farm', 'Hail on the north slope', 'front_desk')`,
+      [companyId],
+    );
+    await ownerQuery(`insert into blocked_numbers (company_id, e164) values ($1, $2)`, [companyId, `+1402556${tag}`]);
+  }
+
+  test('app_tenant cannot DELETE conversation_turns', async () => {
+    const conversation = await insertConversation(seed.a.companyId, 'voice', '+14025550130');
+    await ownerQuery(
+      `insert into conversation_turns (company_id, conversation_id, position, speaker, text)
+       values ($1, $2, 1, 'caller', 'Hi')`,
+      [seed.a.companyId, conversation],
+    );
+    const err = await dbError(withTenant(pools, ctx(seed.a), (tx) => tx.execute(sql`delete from conversation_turns`)));
+    expect(err.code).toBe('42501');
+    expect(await ownerQuery(`select count(*)::int as n from conversation_turns`)).toEqual([{ n: 1 }]);
+  });
+
+  test('app_tenant sees only its own company in each D1 table', async () => {
+    await seedFrontDesk(seed.a.companyId, '1001');
+    await seedFrontDesk(seed.b.companyId, '2001');
+    const tables = ['conversations', 'calls', 'conversation_turns', 'claim_intakes', 'blocked_numbers'] as const;
+    for (const table of tables) {
+      const rows = await tenantRaw<{ company_id: string }>(`select company_id from ${table}`, {
+        companyId: seed.a.companyId,
+      });
+      expect(rows.map((r) => r.company_id), table).toEqual([seed.a.companyId]);
+    }
+  });
+
+  test('app_system holds exactly the column privileges the call, turn and conversation fan-outs need', async () => {
+    const checks: [string, string, string, boolean][] = [
+      ['calls', 'id', 'SELECT', true],
+      ['calls', 'company_id', 'SELECT', true],
+      ['calls', 'call_sid', 'SELECT', true],
+      ['calls', 'status', 'SELECT', true],
+      ['calls', 'conversation_id', 'SELECT', true],
+      ['calls', 'from_e164', 'SELECT', false],
+      ['calls', 'recording_key', 'SELECT', true],
+      ['calls', 'recording_key', 'UPDATE', true],
+      ['calls', 'recording_status', 'UPDATE', true],
+      ['calls', 'from_e164', 'UPDATE', false],
+      ['conversation_turns', 'text', 'UPDATE', true],
+      ['conversation_turns', 'tool_calls', 'UPDATE', true],
+      ['conversation_turns', 'speaker', 'UPDATE', false],
+      ['conversation_turns', 'text', 'SELECT', true],
+      ['conversations', 'status', 'SELECT', true],
+      ['conversations', 'phone_e164', 'SELECT', false],
+    ];
+    const rows = await ownerQuery<{ table_name: string; column_name: string; privilege: string; allowed: boolean }>(
+      `select t as table_name, c as column_name, p as privilege,
+              has_column_privilege('app_system', 'public.' || t, c, p) as allowed
+         from unnest($1::text[], $2::text[], $3::text[]) as v(t, c, p)`,
+      [checks.map(([t]) => t), checks.map(([, c]) => c), checks.map(([, , p]) => p)],
+    );
+    expect(rows).toEqual(
+      checks.map(([table_name, column_name, privilege, allowed]) => ({ table_name, column_name, privilege, allowed })),
+    );
   });
 });

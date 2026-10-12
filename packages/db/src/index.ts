@@ -179,3 +179,12 @@ export * from './repos/proposals.ts';
 export * from './repos/proposal-public.ts';
 export * from './repos/exact-reports.ts';
 export * from './repos/stored-files.ts';
+// D1 skeleton (Task 1): one line per new repo file; later D1 tasks fill the files in.
+export * from './repos/conversations.ts';
+export * from './repos/turns.ts';
+export * from './repos/calls.ts';
+export * from './repos/claim-intakes.ts';
+export * from './repos/front-desk-settings.ts';
+export * from './repos/blocked-numbers.ts';
+export * from './repos/fd-booking.ts';
+export * from './repos/fd-caller.ts';

@@ -102,6 +102,12 @@ export const memberships = pgTable(
     status: text('status', { enum: MEMBERSHIP_STATUSES }).notNull().default('active'),
     /** The calendar day (company time zone) the Today window last opened for this member. */
     lastTodayShownOn: date('last_today_shown_on', { mode: 'string' }),
+    /** Front Desk: the number a live call is transferred to for this member (E.164), null when none. */
+    transferPhoneE164: text('transfer_phone_e164'),
+    /** Front Desk: position in the ring order for the team, lowest first; null when not on call. */
+    onCallOrder: integer('on_call_order'),
+    /** When the member acknowledged that calls may be recorded. */
+    recordingAckAt: tstz('recording_ack_at'),
     ...timestamps(),
   },
   (t) => [
@@ -251,3 +257,13 @@ export const buildingFootprintStates = pgTable(
   },
   (t) => [enumCheck('building_footprint_states', 'status', t.status, FOOTPRINT_STATE_STATUSES)],
 );
+
+/**
+ * Cache of Twilio Lookup line types (global: a number's line type does not depend on the company).
+ * Read and written by the system role only.
+ */
+export const lineLookups = pgTable('line_lookups', {
+  e164: text('e164').primaryKey(),
+  lineType: text('line_type').notNull(),
+  lookedUpAt: tstz('looked_up_at').notNull().defaultNow(),
+});
