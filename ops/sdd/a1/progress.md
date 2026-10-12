@@ -37,3 +37,28 @@ Ruling AX-D: Front Desk's success rate = conversations whose outcome is not `aba
 W1 T1 · W2 G1 = T2, T8 · W3 G2 = T3, T9, T10 · W4 G3 = T4, T5, T6 · G4 = T7, T11, T12 · W5 T13.
 
 ## Tasks
+
+## Track lead log (Track C, a1-agents)
+
+Base: `a1-agents` = `c1-crm` dfa9132 (C1 T1-T4 + F3 through T35). Upstream check at start: E1, S1, D1 integration branches are all still dfa9132 (nothing built); C1 T18 (router, `apps.ts` shipped flag, Settings tabs) is on `c1-t18`, not yet merged.
+
+Ruling AX-E (track lead): the F1 demo step types (`demo_noop`, `demo_message`, `demo_spend`, 5 minutes each today) get a hidden baseline `demo` (5 min per unit, 1 unit per done step) marked `hidden: true`: it is not editable and not shown in "How we count time saved". Keeps every F1/F2 minutes test stable — cost if wrong: one hidden key.
+Ruling AX-F (track lead): migrations are `0021_agents_schema.sql` (generated) and `0022_agents_grants_rls.sql` (custom) per Ruling AP; drizzle-kit generates them as 0015/0016 on this base, the builder renames the files, snapshots (`meta/0021_snapshot.json`, `meta/0022_snapshot.json`) and journal tags. Every plan/brief mention of 0020/0021 means 0021/0022 — cost if wrong: none.
+Ruling AX-G (track lead): Task 1 does not edit `packages/shared/src/steps.ts`; Task 2 (same wave) adds `front_desk_call`/`front_desk_texts` to `STEP_TYPES`. Task 1 owns only `packages/db` (+ db barrels) and the event/status constants, which live in `packages/shared/src/agents.ts` only if T2 creates it — so T1 puts `AGENT_EVENT_KINDS`, `ACTOR_TYPES` and `AGENT_STATUSES_VIEW` in `packages/db/src/schema/enums.ts` and T2 re-exports nothing of them — cost if wrong: none.
+Merge rule (E1/S1 step types): when `e1-estimator` or `s1-storm` merge into `a1-agents`, their new step types (`send_proposal`, `order_exact_report`, `send_email_batch`, `build_routes`, `create_ad_campaign`) are converted at merge to `baseline` + `units` (keys `proposal_sent`, `exact_report`, `email_sent`, `route_built`, `ad_campaign`), with `minutesSaved` removed once T3 lands.
+
+### Wave 1 (2026-10-12): T1, T2 merged
+- **T1** `a1-t1` 16d54dd → merged 1a67d96. Schema: `agent_task_steps` gains `baseline_key`, `units`, `minutes_per_unit`, `minutes_saved`; new tenant tables `time_baselines`, `agent_task_events` (SELECT/INSERT only), `agent_settings`, `time_recounts` (SELECT/INSERT only). Migrations `0021_agents_schema.sql` / `0022_agents_grants_rls.sql` (journal idx 15/16, tags 0021/0022). Enums `AGENT_EVENT_KINDS`, `ACTOR_TYPES`, `AGENT_STATUSES_VIEW` in `packages/db/src/schema/enums.ts`. Deviation: `time_recounts.to_at` NOT NULL (a recount range always has both ends). No column grant needed: 0002 grants app_tenant table-wide S/I/U on `agent_task_steps`; app_system cannot read the snapshot columns. CI run 38194518785 green (Platform incl. db suites, E2E, v1).
+- **T2** `a1-t2` 527c7df → merged c7e4087. `shared/agents.ts` (`TIME_BASELINES`, hidden `demo` key per AX-E, `VISIBLE_BASELINE_KEYS`, `isEditableBaselineKey`, `minutesFor`, `G1_AGENTS_SHIPPED = false`), `shared/steps.ts` (`baseline` + `units`, `stepMinutes`, compat `minutesSaved` per AX-A, `front_desk_call` / `front_desk_texts` internal and `userCreatable: false`), `shared/metrics.ts` (`successRate`, `hoursLabel`, `moneyLabel`), `shared/agent-rules.ts` (`rulesFor`). CI run 38194526828 green.
+- After the merge on a1-agents: npm ci, playwright-core only 1.56.1, typecheck, lint, lint:css, shared vitest 457/457 all green.
+- Carried to later tasks (Opus group check):
+  - T3: `minutes_saved` is the authoritative snapshot; `minutes_per_unit` is informational (rounded; for Front Desk steps it folds in bookings and call length). Round to 2 decimals before writing. T3 switches `createTask`'s step-type check to `isUserCreatableStepType` and removes `minutesSaved` (AX-A).
+  - T7 recount: recompute from `units` + current baselines with the same `stepMinutes`, never `units × minutes_per_unit`.
+  - UI tasks: `hoursLabel` already returns "about …"; callers add "(estimate)". `moneyLabel` returns "≈ $870"; callers add "(estimate)". The `metrics.ts` header comment says otherwise; fix it in T9.
+  - T5/T8: if web needs `AGENT_STATUSES_VIEW`, move it to `shared/agents.ts` and import it in db enums.
+  - Upstream merges (E1/S1/D1): keep the upstream journal entries first, renumber A1 idx after them, re-chain `0021_snapshot.prevId` to the last upstream snapshot, regenerate the 0021/0022 snapshots (drizzle-kit generate must then emit nothing).
+
+### c1-crm merged; wave 2 launched (2026-10-12)
+- `c1-crm` cd7d719 (C1 T5 API skeleton, T18 web skeleton; F3 complete) merged into a1-agents 1a84373, no conflicts. Journal: 0000-0014 then 0021/0022; `drizzle-kit generate` reports no changes. Local: typecheck, lint, lint:css, shared 457/457, web 437/437; playwright-core only 1.56.1.
+- Wave 2 from 1a84373, Sonnet builders (Ruling AQ): T3 (task service, touches runner leases), T8 (router, dock, Settings tab).
+Ruling AX-H (track lead): `tasks/service.ts` stays the single writer of events and step snapshots; `tasks/runner.ts` / `handlers.ts` change only to call new exported service functions for step outcomes, keeping the lease / run_seq / SKIP LOCKED guarantees. A runner that lost its lease writes neither a snapshot nor an event — cost if wrong: none.

@@ -25,3 +25,7 @@ export * from './front-desk-rules.ts';
 export * from './front-desk-tools.ts';
 export * from './forwarding.ts';
 export * from './recording-consent.ts';
+// A1 (Task 2)
+export * from './agents.ts';
+export * from './metrics.ts';
+export * from './agent-rules.ts';

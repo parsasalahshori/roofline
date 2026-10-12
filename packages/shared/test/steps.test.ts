@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { stepTypes, type StepType } from '../src/steps.ts';
+import { TIME_BASELINES } from '../src/agents.ts';
+import { isUserCreatableStepType, stepMinutes, stepTypes, type StepResult, type StepType } from '../src/steps.ts';
 
 const MARKETING_MESSAGE = 'Marketing texts must include your company name and "Reply STOP to opt out".';
 const FACTS = { companyName: 'Acme Roofing' };
@@ -26,6 +27,8 @@ describe('the registry', () => {
       'demo_message',
       'demo_noop',
       'demo_spend',
+      'front_desk_call',
+      'front_desk_texts',
       'order_exact_report',
       'send_proposal',
       'send_sms_batch',
@@ -34,6 +37,8 @@ describe('the registry', () => {
       demo_noop: ['demo_noop', 'internal'],
       demo_message: ['demo_message', 'message'],
       demo_spend: ['demo_spend', 'spend'],
+      front_desk_call: ['front_desk_call', 'internal'],
+      front_desk_texts: ['front_desk_texts', 'internal'],
       send_sms_batch: ['send_sms_batch', 'message'],
       send_proposal: ['send_proposal', 'message'],
       order_exact_report: ['order_exact_report', 'spend'],
@@ -276,5 +281,98 @@ describe('minutesSaved', () => {
     expect(sms.minutesSaved(p, {})).toBe(0);
     expect(sms.minutesSaved(p, { sent: { a: 1 } })).toBe(0);
     expect(sms.minutesSaved(p, { sent: -4 })).toBe(0);
+  });
+});
+
+describe('baselines, units and user-creatable step types', () => {
+  const FRONT_DESK = ['front_desk_call', 'front_desk_texts'] as const;
+  const SAMPLES: [StepType, unknown, StepResult][] = [
+    ['demo_noop', { label: 'Knock doors' }, { ok: 1 }],
+    ['demo_message', { label: 'Text 31 customers' }, { sent: 3 }],
+    ['demo_spend', { label: 'Ads', maxSpendCents: 0 }, {}],
+    ['send_sms_batch', payload(), { sent: 31, blocked: 2 }],
+    ['front_desk_call', { label: 'Front desk call' }, { seconds: 240, bookings: 1, replies: 0, spam: 0 }],
+    ['front_desk_call', { label: 'Front desk call' }, { seconds: 30, spam: 1 }],
+    ['front_desk_texts', { label: 'Front desk texts' }, { replies: 3, bookings: 1 }],
+  ];
+
+  test('every step type reports a baseline key that exists in TIME_BASELINES', () => {
+    for (const [type, p, result] of SAMPLES) {
+      const key = stepTypes[type].baseline(stepTypes[type].payload.parse(p), result);
+      expect(Object.keys(TIME_BASELINES)).toContain(key);
+    }
+  });
+
+  test('only the two front desk types are not user-creatable, and the guard agrees', () => {
+    for (const type of Object.keys(stepTypes) as StepType[]) {
+      const creatable = !(FRONT_DESK as readonly string[]).includes(type);
+      expect(stepTypes[type].userCreatable, type).toBe(creatable);
+      expect(isUserCreatableStepType(type), type).toBe(creatable);
+    }
+    expect(isUserCreatableStepType('not_a_step')).toBe(false);
+    expect(isUserCreatableStepType(undefined)).toBe(false);
+  });
+
+  test('send_sms_batch counts only the "sent" units: {sent: 31, blocked: 2} is 31 units and 46.5 minutes', () => {
+    const p = sms.payload.parse(payload());
+    expect(stepMinutes(sms, p, { sent: 31, blocked: 2 })).toMatchObject({
+      baseline: 'text_sent',
+      units: 31,
+      minutes: 46.5,
+      minutesPerUnit: 1.5,
+    });
+    expect(stepMinutes(sms, p, { blocked: 5 }).minutes).toBe(0);
+    expect(stepMinutes(sms, p, { blocked: 5 }).units).toBe(0);
+    expect(stepMinutes(sms, p, { sent: 100 }).minutes).toBe(120);
+  });
+
+  test('demo steps are baseline "demo", one unit, five minutes', () => {
+    for (const type of ['demo_noop', 'demo_message', 'demo_spend'] as const) {
+      const p = stepTypes[type].payload.parse(type === 'demo_spend' ? { label: 'Ads', maxSpendCents: 0 } : { label: 'x' });
+      expect(stepMinutes(stepTypes[type], p, {})).toEqual({ baseline: 'demo', units: 1, minutesPerUnit: 5, minutes: 5 });
+    }
+  });
+
+  test('front_desk_call: an answered call is 2 minutes plus its length', () => {
+    const d = stepTypes.front_desk_call;
+    const p = d.payload.parse({ label: 'Front desk call' });
+    expect(stepMinutes(d, p, { seconds: 240, bookings: 0, replies: 0, spam: 0 })).toMatchObject({
+      baseline: 'call_answered',
+      units: 1,
+      minutes: 6,
+    });
+    expect(stepMinutes(d, p, { seconds: 240, bookings: 1, replies: 0, spam: 0 }).minutes).toBe(9);
+  });
+
+  test('front_desk_call: a spam call is baseline spam_call, counted as the length of the line, with no bookings', () => {
+    const d = stepTypes.front_desk_call;
+    const p = d.payload.parse({ label: 'Front desk call' });
+    expect(stepMinutes(d, p, { seconds: 30, spam: 1 })).toMatchObject({ baseline: 'spam_call', minutes: 0.5 });
+    expect(stepMinutes(d, p, { seconds: 30, spam: 1, bookings: 2 }).minutes).toBe(0.5);
+  });
+
+  test('front_desk_texts: replies at 2 minutes each, with bookings added at 3 each', () => {
+    const d = stepTypes.front_desk_texts;
+    const p = d.payload.parse({ label: 'Front desk texts' });
+    expect(stepMinutes(d, p, { replies: 3 })).toMatchObject({ baseline: 'text_reply', units: 3, minutes: 6 });
+    expect(stepMinutes(d, p, { replies: 2, bookings: 1 }).minutes).toBe(7);
+  });
+
+  test('stepMinutes honors owner overrides for visible keys', () => {
+    const d = stepTypes.front_desk_texts;
+    const p = d.payload.parse({ label: 'Front desk texts' });
+    expect(stepMinutes(d, p, { replies: 3 }, { text_reply: 1 }).minutes).toBe(3);
+  });
+
+  test('stepMinutes ignores overrides for the hidden demo key', () => {
+    const p = stepTypes.demo_noop.payload.parse({ label: 'x' });
+    expect(stepMinutes(stepTypes.demo_noop, p, {}, { demo: 1 } as Partial<Record<'demo', number>>).minutes).toBe(5);
+  });
+
+  test('the compatibility minutesSaved matches stepMinutes with default minutes', () => {
+    for (const [type, p, result] of SAMPLES) {
+      const parsed = stepTypes[type].payload.parse(p);
+      expect(stepTypes[type].minutesSaved(parsed, result), type).toBe(stepMinutes(stepTypes[type], parsed, result).minutes);
+    }
   });
 });
