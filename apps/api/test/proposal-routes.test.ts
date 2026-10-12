@@ -100,7 +100,7 @@ describe('reading proposals', () => {
     const { owner, customer, property, job, proposal } = await build();
     const other = await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: property.id });
     const otherMeasurement = await measurement(t.seed.a.companyId, property.id, other.id);
-    const made = await owner.post('/api/proposals').send({ measurementId: otherMeasurement });
+    const made = await owner.post('/api/proposals').send({ measurementId: otherMeasurement, jobId: other.id });
     expect(made.status).toBe(201);
     expect((await owner.get('/api/proposals')).body.total).toBe(2);
     const mine = await owner.get(`/api/proposals?jobId=${job.id}`);
