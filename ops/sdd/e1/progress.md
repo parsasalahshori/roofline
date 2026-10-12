@@ -183,3 +183,4 @@ Launch runbook (docs/superpowers/launch-runbook.md, branch launch-docs 8a26610) 
   - batches 1-3 over df798d1;
   - incremental reviews of CV, T25, RC-2, RC-1 and its follow-up, RC-3, d1-cap and the dedupe (the C1 lead took RA).
   E1-lead fix branches, all CI-green and handed to D1: d1-rev-c, e (via d1-t25b), f, g, i (Ruling BJ), j, l and m (Ruling BK amended, the final ROUTER_INTENTS). The RC-1 shared-number patch and 4 failing probes were handed to the S1 lead; I checked RC-1 5deb42b clean. Rulings from the controller: BG, BJ, BK (amended).
+- 22:10Z D1 closing pass on d1-front-desk f2c0e8b (all fixes plus RC-1/RC-1b): PASS. typecheck, lint and lint:css are clean. Local Docker suites: web/shared/ui/send-gate 2348, db 346, api 3003, all passing. The BK on-call ring and the SMS team-reply fixes were verified in code and by tests. The E1 lead's D1 review lane is closed.
