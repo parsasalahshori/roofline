@@ -6,6 +6,7 @@ import { runStep } from '../tasks/runner.ts';
 import { UUID } from '../validate.ts';
 import { JOB_HANDLERS } from './handlers.ts';
 import { ensureJobQueues, JOB_NAMES, type JobData, type JobMeta } from './queue.ts';
+import { agentJobSchedule } from './scheduler/agent-jobs.ts';
 import { billMonthlyFees } from './scheduler/bill-monthly-fees.ts';
 import { pullCalendars } from './scheduler/calendar-pull.ts';
 import { dispatchDueMessages } from './scheduler/dispatch-messages.ts';
@@ -59,6 +60,12 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   // D1 Front Desk
   { name: 'fd-retention', cron: '17 3 * * *', run: fdRetention },
   { name: 'fd-health', cron: '*/2 * * * *', run: fdHealth },
+  // G1 Agents (the schedule's queue is named apart from the job queue it sends to)
+  { name: 'claims-daily-schedule', cron: '*/15 * * * *', run: agentJobSchedule('claims-daily') },
+  { name: 'scheduler-reminders-schedule', cron: '*/15 * * * *', run: agentJobSchedule('scheduler-reminders') },
+  { name: 'scheduler-agenda-schedule', cron: '*/15 * * * *', run: agentJobSchedule('scheduler-agenda') },
+  { name: 'scheduler-weather-schedule', cron: '*/15 * * * *', run: agentJobSchedule('scheduler-weather') },
+  { name: 'followup-daily-schedule', cron: '*/15 * * * *', run: agentJobSchedule('followup-daily') },
 ];
 
 /** How many steps one worker process runs at once. */

@@ -123,6 +123,8 @@ const ConfigSchema = z
       .optional(),
     /** Geocodio API key (address lookup). Unset: addresses are not looked up. */
     GEOCODIO_API_KEY: z.string().optional(),
+    /** MapTiler server key (static map in claim packets). Unset: claim packets have no map. */
+    MAPTILER_SERVER_KEY: z.string().optional(),
     /** Twilio account SID (`AC` + 32 hex digits). When set, TWILIO_AUTH_TOKEN is required. */
     TWILIO_ACCOUNT_SID: z
       .string()

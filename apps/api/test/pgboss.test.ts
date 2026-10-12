@@ -194,15 +194,20 @@ describe('the worker', () => {
       expect(schedules.map((s) => [s.name, s.cron]).sort()).toEqual([
         ['bill-monthly-fees', '0 9 1 * *'],
         ['calendar-pull', '*/5 * * * *'],
+        ['claims-daily-schedule', '*/15 * * * *'],
         ['dispatch-messages', '* * * * *'],
         ['end-trials', '*/5 * * * *'],
         ['expire-drafts', '*/5 * * * *'],
         ['fd-health', '*/2 * * * *'],
         ['fd-retention', '17 3 * * *'],
+        ['followup-daily-schedule', '*/15 * * * *'],
         ['poll-texting', '0 * * * *'],
         ['provision-texting', '* * * * *'],
         ['prune-early-reports', '17 3 * * *'],
         ['report-usage', '* * * * *'],
+        ['scheduler-agenda-schedule', '*/15 * * * *'],
+        ['scheduler-reminders-schedule', '*/15 * * * *'],
+        ['scheduler-weather-schedule', '*/15 * * * *'],
         ['sweep-imports', '* * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);
@@ -221,6 +226,11 @@ describe('the worker', () => {
       'calendar-pull',
       'fd-retention',
       'fd-health',
+      'claims-daily-schedule',
+      'scheduler-reminders-schedule',
+      'scheduler-agenda-schedule',
+      'scheduler-weather-schedule',
+      'followup-daily-schedule',
     ]);
   });
 });

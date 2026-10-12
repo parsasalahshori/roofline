@@ -1,5 +1,10 @@
 import type { AppDeps } from '../app.ts';
 import { advanceRegistration } from '../account/texting/advance.ts';
+import { runClaimsDaily } from '../agents/claims/nudges.ts';
+import { runFollowUps } from '../agents/followup/daily.ts';
+import { runAgenda } from '../agents/scheduler/agenda.ts';
+import { runReminders } from '../agents/scheduler/reminders.ts';
+import { runWeatherWatch } from '../agents/scheduler/weather.ts';
 import { pushAppointment } from '../calendar/push.ts';
 import { runImport } from '../imports/run.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
@@ -17,4 +22,10 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'fd-recording-store': async () => {}, // Task 12 fills this in
   'fd-text': async () => {}, // Task 14 fills this in
   'fd-forwarding-test': async () => {}, // Task 17 fills this in
+  // G1 Agents
+  'claims-daily': (deps, data, meta) => runClaimsDaily(deps, data.companyId, meta),
+  'scheduler-reminders': (deps, data, meta) => runReminders(deps, data.companyId, meta),
+  'scheduler-agenda': (deps, data, meta) => runAgenda(deps, data.companyId, meta),
+  'scheduler-weather': (deps, data, meta) => runWeatherWatch(deps, data.companyId, meta),
+  'followup-daily': (deps, data, meta) => runFollowUps(deps, data.companyId, meta),
 };

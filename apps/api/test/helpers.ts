@@ -200,6 +200,8 @@ export function testConfig(
     FRONT_DESK_MAX_CALLS: 40,
     RELAY_PUBLIC_URL: 'wss://app.roofline.test/relay',
     RELAY_TOKEN_SECRET: 'relay-test-secret-0123456789abcdef0123',
+    // G1 Agents (no static map in tests)
+    MAPTILER_SERVER_KEY: undefined,
     ...overrides,
   };
 }

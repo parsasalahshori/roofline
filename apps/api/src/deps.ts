@@ -62,6 +62,13 @@ export class UnconfiguredLlm implements Llm {
   summarize(): never {
     return this.fail();
   }
+  // G1 Agents
+  draftTexts(): never {
+    return this.fail();
+  }
+  extractClaimReply(): never {
+    return this.fail();
+  }
 }
 
 /** Call control that refuses every call (Twilio voice is not configured). */

@@ -904,6 +904,12 @@ function queueHandlers(over: Partial<JobHandlers> = {}): JobHandlers {
     'fd-recording-store': async () => {},
     'fd-text': async () => {},
     'fd-forwarding-test': async () => {},
+    // G1 Agents
+    'claims-daily': async () => {},
+    'scheduler-reminders': async () => {},
+    'scheduler-agenda': async () => {},
+    'scheduler-weather': async () => {},
+    'followup-daily': async () => {},
     ...over,
   };
 }
@@ -1048,6 +1054,11 @@ describe('SCHEDULES', () => {
       ['calendar-pull', '*/5 * * * *'],
       ['fd-retention', '17 3 * * *'],
       ['fd-health', '*/2 * * * *'],
+      ['claims-daily-schedule', '*/15 * * * *'],
+      ['scheduler-reminders-schedule', '*/15 * * * *'],
+      ['scheduler-agenda-schedule', '*/15 * * * *'],
+      ['scheduler-weather-schedule', '*/15 * * * *'],
+      ['followup-daily-schedule', '*/15 * * * *'],
     ]);
   });
 

@@ -13,6 +13,12 @@ export const JOB_NAMES = [
   'fd-recording-store',
   'fd-text',
   'fd-forwarding-test',
+  // G1 Agents
+  'claims-daily',
+  'scheduler-reminders',
+  'scheduler-agenda',
+  'scheduler-weather',
+  'followup-daily',
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 export type JobData = {

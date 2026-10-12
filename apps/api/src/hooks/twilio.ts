@@ -17,6 +17,7 @@ import {
 } from '@roofline/db';
 import { companyIdForMessagingService, companyIdForNumber, signingTokenFor } from '@roofline/db/system';
 import { type InboundReading, looksLikeOptOut, readInbound } from '@roofline/send-gate';
+import { onClaimsReply } from '../agents/claims/replies.ts';
 import type { AppDeps } from '../app.ts';
 
 /*
@@ -309,7 +310,7 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
 
   const reading = readingOf(text);
   const twilioAnswered = text.optOutType === 'STOP' || text.optOutType === 'START';
-  return withTenant(deps.pools, ctx, async (tx) => {
+  const stored = await withTenant(deps.pools, ctx, async (tx): Promise<{ reply: string | undefined; claims: { customerId: string; messageId: string } | null }> => {
     const company = await companyContact(tx, ctx);
     if (company === null) throw new Error('The company that owns a texting number could not be read.');
     const everyone = await customersWithPhone(tx, ctx, text.from);
@@ -325,22 +326,30 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
       { customerId: active[0] ?? null, body: text.body, fromE164: text.from, toE164: text.to, providerSid: text.messageSid },
       now,
     );
-    if (messageId === null) return undefined;
+    if (messageId === null) return { reply: undefined, claims: null };
 
     switch (reading.kind) {
       case 'stop':
         await revokeConsentByText(tx, ctx, { phoneE164: text.from, keyword: reading.keyword, customerIds: all, messageId }, now);
-        return twilioAnswered ? undefined : reply.stop(company.name);
+        return { reply: twilioAnswered ? undefined : reply.stop(company.name), claims: null };
       case 'help':
-        return reply.help(company, text.to);
+        return { reply: reply.help(company, text.to), claims: null };
       case 'start':
         await restoreConsentByText(tx, ctx, { phoneE164: text.from, customerIds: active, messageId }, now);
-        return twilioAnswered ? undefined : reply.start(company.name);
+        return { reply: twilioAnswered ? undefined : reply.start(company.name), claims: null };
       case 'other':
         if (looksLikeOptOut(text.body)) await flagPossibleOptOut(tx, ctx, active, messageId, now);
-        return undefined;
+        return { reply: undefined, claims: active[0] === undefined ? null : { customerId: active[0], messageId } };
     }
   });
+  if (stored.claims === null) return stored.reply;
+
+  const { customerId, messageId } = stored.claims;
+  // G1 Agents: a reply to a claims text goes to the Claims agent first (Ruling GX-A). S1's storm replies run before this block; D1's Front Desk after it.
+  const claimsReply = await onClaimsReply(deps, { companyId, customerId, messageId, body: text.body, receivedAt: now });
+  if (claimsReply.consumed) return undefined;
+  // D1 Front Desk (queueFrontDeskText) goes after this block
+  return undefined;
 }
 
 /** What a delivery report's MessageStatus does to the text; null for the ones that change nothing. */
