@@ -110,10 +110,10 @@ describe('Your profile tab', () => {
 });
 
 describe('visibleTabs', () => {
-  const ALL = ['company', 'team', 'prices', 'schedule', 'connections', 'billing', 'setup', 'front-desk', 'profile'];
+  const ALL = ['company', 'team', 'prices', 'schedule', 'connections', 'billing', 'setup', 'front-desk', 'agents', 'profile'];
   const LIMITED = ['company', 'team', 'schedule', 'connections', 'billing', 'setup', 'profile'];
 
-  it('gives owner and office all nine tabs', () => {
+  it('gives owner and office all ten tabs', () => {
     expect(visibleTabs('owner')).toEqual(ALL);
     expect(visibleTabs('office')).toEqual(ALL);
   });

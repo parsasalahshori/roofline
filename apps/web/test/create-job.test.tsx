@@ -203,7 +203,7 @@ describe('New job screen', () => {
     expect(api.count('POST /api/properties')).toBe(0);
   });
 
-  it('all seven sources are offered as words', async () => {
+  it('all eight sources are offered as words', async () => {
     signedInApi(ACCOUNT, ANN_ROUTES);
     await renderNewJob('/jobs/new?customerId=c7');
 
@@ -211,7 +211,7 @@ describe('New job screen', () => {
     const names = within(source)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    expect(names).toEqual(['Storm', 'Call', 'Text', 'Web', 'Referral', 'Import', 'Manual']);
+    expect(names).toEqual(['Storm', 'Call', 'Text', 'Web', 'Referral', 'Import', 'Manual', 'Front Desk']);
     expect(source).toHaveValue('manual');
   });
 
