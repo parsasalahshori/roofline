@@ -94,3 +94,18 @@ describe('storm settings', () => {
     expect(loadConfig({ ...VALID, HAIL_STALE_MINUTES: '120' }).HAIL_STALE_MINUTES).toBe(120);
   });
 });
+
+describe('postmark webhook settings', () => {
+  test('POSTMARK_WEBHOOK_SECRET is optional', () => {
+    expect(loadConfig(VALID).POSTMARK_WEBHOOK_SECRET).toBeUndefined();
+  });
+
+  test('POSTMARK_WEBHOOK_SECRET must be at least 16 characters', () => {
+    expect(problem({ ...VALID, POSTMARK_WEBHOOK_SECRET: 'short' })).toContain(
+      'POSTMARK_WEBHOOK_SECRET: must be at least 16 characters',
+    );
+    expect(loadConfig({ ...VALID, POSTMARK_WEBHOOK_SECRET: 'pm-hook-secret-0123456789' }).POSTMARK_WEBHOOK_SECRET).toBe(
+      'pm-hook-secret-0123456789',
+    );
+  });
+});

@@ -11,7 +11,7 @@ Read first: `ops/sdd/s1/global-constraints.md`; spec `docs/superpowers/specs/202
 **Interfaces:**
 ```ts
 export const sendEmailBatchHandler: StepHandler<'send_email_batch'>;
-// per recipient: render subject/body with fields + company_address + unsubscribe = `${APP_ORIGIN}/u/${token}` (token = a stateless HMAC of `${companyId}.${emailLower}`, Ruling 5)
+// per recipient: render subject/body with fields + company_address + unsubscribe = `${APP_ORIGIN}/u/${token}` (token = `signUnsubscribeToken(unsubscribeKey(config), …)` from Task 13's `public/unsubscribe-token.ts` and `public/unsubscribe-key.ts`, which replaces Ruling 5's HMAC; the app has no SESSION_SECRET)
 // gate: decideEmail; blocked → messages row status 'blocked' with rule/reason (as SMS); quiet hours → scheduled row picked up by the F1 dispatcher's email branch (Task 12 adds `dispatchEmail` beside the SMS dispatcher, same claim pattern)
 // send: deps.broadcast.send({ from: `"${company} via Roofline" <${STORM_MAIL_FROM}>`, replyTo: company email, tag: `storm:${companyStormId}` })
 // result: { sent, blocked: { [rule]: n }, scheduled }

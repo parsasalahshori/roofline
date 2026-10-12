@@ -1,0 +1,5 @@
+Time,Size,Location,County,State,Lat,Lon,Comments
+1523,100,3 N OMAHA,DOUGLAS,NE,41.30,-95.93,quarter size hail
+1610,175,5 W ELKHORN,DOUGLAS,NE,41.28,-96.30,golf ball
+1700,UNK,2 E PAPILLION,SARPY,NE,41.15,-96.04,unknown size
+1745,125,4 S BELLEVUE,SARPY,NE,abc,-95.90,bad latitude
