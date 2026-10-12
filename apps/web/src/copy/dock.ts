@@ -6,6 +6,7 @@ export const dock = {
   comingSoon: 'Coming soon',
   stormBadge: (count: number) => (count === 1 ? '1 new storm plan' : `${count} new storm plans`),
   estimatorBadge: (count: number) => (count === 1 ? '1 proposal waiting' : `${count} proposals waiting`),
+  frontDeskBadge: (count: number) => (count === 1 ? '1 conversation waiting' : `${count} conversations waiting`),
   agentsBadge: (count: number) => (count === 1 ? '1 task needs attention' : `${count} tasks need attention`),
 } as const;
 
