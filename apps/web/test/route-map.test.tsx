@@ -14,13 +14,13 @@ const fake = vi.hoisted(() => {
     }
   }
   class FakeMarker {
-    setLngLat() {
-      return this;
+    static instances: FakeMarker[] = [];
+    setLngLat = vi.fn(() => this);
+    addTo = vi.fn(() => this);
+    remove = vi.fn();
+    constructor() {
+      FakeMarker.instances.push(this);
     }
-    addTo() {
-      return this;
-    }
-    remove() {}
   }
   return { FakeMap, FakeMarker };
 });
@@ -39,6 +39,7 @@ const stops: DoorStop[] = [stop('s1', 1, 32.8, -96.9), stop('s2', 2, 32.85, -96.
 describe('RouteMap fit', () => {
   beforeEach(() => {
     fake.FakeMap.instances.length = 0;
+    fake.FakeMarker.instances.length = 0;
   });
 
   it('fits the view once for a route, not on every move of the rep', () => {
@@ -59,5 +60,25 @@ describe('RouteMap fit', () => {
     const moved = [stop('s1', 1, 32.7, -96.95), stop('s2', 2, 32.85, -96.85)];
     rerender(<RouteMap stops={moved} currentStopId={moved[0].id} position={null} />);
     expect(fake.FakeMap.instances[0].fitBounds).toHaveBeenCalledTimes(2);
+  });
+
+  it('moves the rep dot without rebuilding the door markers', () => {
+    const { rerender } = render(<RouteMap stops={stops} currentStopId={stops[0].id} position={{ lat: 32.9, lng: -96.8 }} />);
+    const created = fake.FakeMarker.instances.length;
+    expect(created).toBe(stops.length + 1);
+    const doors = fake.FakeMarker.instances.slice(0, stops.length);
+    const dot = fake.FakeMarker.instances[stops.length];
+    rerender(<RouteMap stops={stops} currentStopId={stops[0].id} position={{ lat: 32.91, lng: -96.81 }} />);
+    expect(fake.FakeMarker.instances.length).toBe(created);
+    for (const marker of doors) expect(marker.remove).not.toHaveBeenCalled();
+    expect(dot.setLngLat).toHaveBeenLastCalledWith([-96.81, 32.91]);
+    expect(dot.remove).not.toHaveBeenCalled();
+  });
+
+  it('removes the rep dot when the position goes away', () => {
+    const { rerender } = render(<RouteMap stops={stops} currentStopId={stops[0].id} position={{ lat: 32.9, lng: -96.8 }} />);
+    const dot = fake.FakeMarker.instances[stops.length];
+    rerender(<RouteMap stops={stops} currentStopId={stops[0].id} position={null} />);
+    expect(dot.remove).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,7 +1,11 @@
 # Hail service
 
-Fetches NOAA MRMS `MESH_Max_1440min_00.50` from the public S3 bucket `noaa-mrms-pds` and contours it into the 8 hail
-levels 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3 inches. These must equal `HAIL_LEVELS_IN` in `@roofline/shared`.
+Fetches NOAA MRMS MESH from the public S3 bucket `noaa-mrms-pds` and contours it into the 8 hail levels 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3 inches. These must equal `HAIL_LEVELS_IN` in `@roofline/shared`.
+
+Data source: each `MESH_Max_60min_00.50` grid is unioned into the current convective day's storms (12Z to 12Z), so
+the footprint only grows during the day. The `MESH_Max_1440min_00.50` grid valid exactly at 12:00:00Z closes the
+previous day once: it replaces that day's shapes and marks the storms final. A day whose 12Z run was missed is closed on
+a later tick from its own 12Z 1440min key. A 60min grid at hour 12 is provisional for the new day.
 
 ## Layout
 
@@ -51,8 +55,10 @@ There is no `render.yaml`; do not create one. Create the worker by hand:
    password.
 3. Set the environment variables:
    - `HAIL_DATABASE_URL`: login URL of the `app_hail` role.
-   - `OPS_ALERT_EMAIL`: receives the alert and is used as the Postmark From, so it must be a verified Postmark sender.
-   - `POSTMARK_SERVER_TOKEN`: Postmark server token.
+   - `OPS_ALERT_EMAIL`: receives the alert and is also the From address, so it must be a verified Postmark sender
+     address (its domain verified in Postmark).
+   - `POSTMARK_TOKEN`: Postmark server token, the same as the API. `POSTMARK_SERVER_TOKEN` still works but is
+     deprecated.
 
 Behaviour:
 

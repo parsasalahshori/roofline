@@ -262,6 +262,23 @@ describe('MapView', () => {
     expect(map.fitBounds).not.toHaveBeenCalled();
   });
 
+  it('asks for the storm layer at a whole-number zoom when the map is at 3.5', async () => {
+    renderMap();
+    const map = lastMap();
+    map.getZoom = () => 3.5;
+    act(() => {
+      map.emit('style.load');
+    });
+    act(() => {
+      map.emit('load');
+    });
+
+    await waitFor(() => expect(requests.some((url) => url.startsWith('/api/map/storm-layer?'))).toBe(true));
+    const url = requests.find((entry) => entry.startsWith('/api/map/storm-layer?')) ?? '';
+    expect(url).toContain('zoom=4');
+    expect(url).not.toContain('zoom=3.5');
+  });
+
   it('turns on client clustering above 200 points', async () => {
     pinsBody = points({ customers: 201, jobs: 0 });
     renderMap();

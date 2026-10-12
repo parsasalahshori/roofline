@@ -199,3 +199,55 @@ T28: CI rounds 1-3 failed E2E. Fixes so far: the company storm id, the map a11y 
 Ruling BD (controller, 12:56Z): A1 owns the storm re-draft mechanism (lockStormPlan, supersedeDraft, REDRAFTABLE widened to draft/expired/declined). S1 drops R2a's replaceDraftPlan re-draft and locking work. S1 keeps: draftStormPlan -> { taskId } | null with the pause check first; the POST /api/storms/:id/plan 409 paused copy on null; and the consent fixes (R2b). R2a was already running in wf_cabe1d1b with R1/R2b (stopping it would stop them), so at merge the lead keeps only the BD-allowed parts plus non-overlapping minors, and reverts replaceDraftPlan/lock/REDRAFTABLE changes. R1 (storms.merged_into) lands as soon as it is green; A1, G1, D1 and the probe rebuild their post-0018 snapshots after it.
 s1-storm with R3: ci-check 38251534932 PASSED (Platform, Hail, E2E). T28 on 0909fb5 (run 38250663843): 49/52 e2e pass, including storm plan in 2 clicks. Three remain (route view a11y, landing form post not redirecting on the phone, phone /storm heading); a focused agent is fixing them on s1-t28.
 Ruling BD amended (controller, 13:15Z): storm-match and automatic drafting re-draft only over draft plans. Expired/declined plans are replaced only by an explicit rerun (A1 allowFinished). R2a handling unchanged (keep the null signature, the 409, and non-overlapping minors).
+T28 (wf_6a01c1f2 + a focused fix agent): e89fa35. Adds storm.spec (storm plan in 2 clicks: all five steps Done with the fakes; office approves messages, owner approves spend), doors.spec (rep marks "Wants a check" and the lead reaches the rep's Today; the landing page on a phone submits a request), a11y and phone no-scroll for /storm, /storm/:id, the route view and the landing page, seedStormFixture (exported from @roofline/api), docs/superpowers/s1-acceptance.md and README env docs.
+Product bugs the e2e found and fixed:
+- (1) helmet's default Referrer-Policy no-referrer made browsers send Origin: null on the landing form POST, so the Origin guard refused EVERY homeowner request. The storm page now sends Referrer-Policy: same-origin, with an api test.
+- (2) RouteMap was role=img around focusable MapLibre links; it is now role=region.
+Test-side: e2e company zone set to a mid-day zone (9-19 local, every UTC hour covered, with a test) so quiet hours don't hold the storm texts/emails; the phone spec waits for the list region. CI 38254137473 Platform/E2E/Hail/v1 green (52 e2e tests). Merged into s1-storm.
+R4 (wf_6d1b30d1, contact 239): c2e0827 (bad1059 + tokens.ts mirror fix). Storm layer zoom rounded and clamped; My routes link in StormWindow and the phone More sheet; ad accounts show lastErrorPlain (the dead reason copy is gone); plan statuses cover all TASK_STATUSES; a loading skeleton; count-free stat labels; decimal input for the ad max; RouteMap dot effect split; marker shadow tokens. CI 38254351772 Platform/E2E/Hail. Merged after T28 (one test conflict: count-free labels plus T28 map role=region). Local: typecheck/lint/lint:css clean, web+ui 1115 tests, e2e list 52. Note: the Redraft button shows for expired/declined plans; on s1-storm the API still answers 409 for those until A1 widens REDRAFTABLE (Ruling BD).
+Ruling BE (controller 13:41Z, launch runbook 1.10): (1) unify on POSTMARK_TOKEN (hail main.py reads POSTMARK_SERVER_TOKEN; keep it as a fallback); (2) document OPS_ALERT_EMAIL (it must be a verified Postmark sender) in the config schema and .env.example; (3) hail-health 180/720 minutes come from config; (4) POLICY_PAGES_DOMAIN required: already done in I5. Items 1-3 are task R6 (brief task-r6-brief.md), after R1 and R2b merge (they edit main.py and hail-health.ts).
+Review fixes wave (wf_cabe1d1b, contact 237, sonnet):
+- R1 e0812a1: the hail day is built from MESH_Max_60min grids accumulated by union; one explicit final per day from the 12:00:00Z 1440min key, with old unfinalized days closed later; storms.merged_into (0018 + snapshot, Ruling AW; app_hail UPDATE(merged_into)); the oldest id survives a merge; in-memory failure counting; matching/layer/fan-out filters. CI 38250896980 on 6d503ab.
+- R2a 0edd7ae: draftStormPlan -> { taskId } | null with the A1 marker first; the route answers 409 PLAN_PAUSED on null; plan-errors.ts constants; storm-draft drops permanent failures; ?since= (default 30 days); no second ready email for a re-draft of a draft. CI 38254123531 on aa9f2af.
+- R2b 3ab6e88: YES only to sent/delivered storm texts; editStep keeps storm steps marketing with the same dedupe, and the ad max/days can't rise; the SMS {day} label is computed at send time; a scheduled email to a changed address is blocked; replies counted within 14 days; the now-alert claim is released on total failure and alertUnalerted added; hail-health alerts every tick past the threshold with a cooldown; the 0018 email_opt_outs SELECT(email) is kept with a reason comment (ON CONFLICT needs it). CI 38249000689 on 705a479.
+Merged R1, R2a, R2b (no conflicts). Then the Ruling BD trim: replaceDraftPlan restored to its T11 form, R2a's storm-plans db test dropped, REDRAFTABLE_PLAN_STATUSES = ['draft'], and the tests list expired/declined as "left alone". A1 widens these at its s1 merge. Local: typecheck/lint clean, shared/send-gate 1193, web 945, drizzle-kit no changes, Python parses.
+Remaining group-check items go to R7 (brief task-r7-brief.md, which also folds in R6/Ruling BE):
+- merged_into filters in storm-api.ts and storm-alerts.ts;
+- afterMatch calls alertUnalerted;
+- listUnalertedMatched bounded to 3 days;
+- R1 hail minors.
+Note: PLAN_PAUSED cannot be reached until A1 T14 wires isAgentPaused into plan.ts.
+R5 (C1 lead): 0d1c8d4 (5e75615 code). One landing code rule (STORM_PAGE_CODE_RE in repos/storm-pages.ts, used by both public routes). The rate limit and Origin guard moved inside stormRequestRoutes, so form posts get ?error=busy/invalid while JSON keeps its status codes. createStormRequest goes through createJob (audit and timeline lines; actor system). doors placeFor is synchronous with named fallbacks. When a landing request matches another customer's home, the job line says "sent for this home by <name>". CI 38255682720 Platform/E2E/Hail/v1. Merged into s1-storm (auto-merged storm-page.ts; T28's Referrer-Policy fix kept). Local: typecheck/lint clean, 668 shared, e2e list 52. Behaviour: a malformed code with a browser Origin gets 403 from the guard.
+
+## Ruling BF (controller, 2026-10-12): security review fixes before S1 completes
+Source: `ops/sdd/integration/security-review.md` on `origin/sec-review` (probe launch-integration a7e2b559). S1 owns:
+- **High 1:** ad accounts shared across companies. **R8:** a global partial unique index in 0018 (Ruling AW); claim the row before calling the platform; unlink only when this company was the live holder.
+- **High 2:** `Referrer-Policy: no-referrer` turns Origin into null on the public forms. **R9:** the unsubscribe confirm page uses same-origin; e2e specs submit both forms.
+- **Medium 3:** unverified SMS consent from the storm form. **R10:** the form never writes or upgrades consent; a YES from that phone within 14 days makes it express; per-IP share and per-phone caps.
+- **Lows 9, 10, 14, 18:** **R8** trims the 0018 grants; **R9** keeps `/u/` tokens out of logs and limits the S1 public routes.
+
+The three tasks run in parallel from 83e9856, with Sonnet builders, and need CI on Platform, E2E and Hail before each merge. Finding 4 (`TRUST_PROXY`, F2/F3) limits how effective the per-IP caps are; it is not S1's.
+
+## 2026-10-12: E2E red on 83e9856 (run 38259582760) and fix 3f800e5
+- Platform and Hail passed. E2E had 7 storm specs fail, all with `create_ad_campaign: needs_attention` and the `NOT_USD` message.
+- Cause: R3 (577674c) made the ad campaign step refuse an account whose currency isn't USD. `scripts/storm-fixture.ts` inserted ad accounts with a null currency.
+- Fix 3f800e5: fixture accounts now have currency USD and a name, plus external ids per company (derived from the company id), so they stay valid under R8's global unique index.
+- R7–R10 branch from bases before 3f800e5, so their E2E shows the same 7 failures. Those are the base's failures: judge each task's E2E on the merge result after it lands on s1-storm.
+
+## R7 merged (s1-r7 0c2717a, merge on s1-storm)
+- R7 run 38259664396: Platform and Hail passed. E2E had the same 7 failures as the base (the NOT_USD fixture, fixed in 3f800e5). E2E is judged on the merged head.
+- Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema changes" all pass.
+- Decision recorded: a merged storm stays hidden from lists until it has a plan. Alerts and settle candidates always skip merged storms, so a merged storm with a draft plan is not re-drafted.
+- Ruling BE config:
+  - `HAIL_ALERT_STALE_MINUTES_SEASON` = 180;
+  - `HAIL_ALERT_STALE_MINUTES_OFFSEASON` = 720;
+  - `POSTMARK_TOKEN` in the hail service, with the deprecated `POSTMARK_SERVER_TOKEN` as fallback.
+
+## Carries from the integration sentinel, pass 12 (session_01RypesnL2fbawyJH5HtdS7E)
+For the next e1-estimator merge into s1-storm:
+- Add R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET to the production `VALID` config in `apps/api/test/storm-config.test.ts`, `google-ads-http.test.ts` and `postmark-broadcast.test.ts` (E1 Ruling ET).
+- Add E1's `proposalListRoutes()` stub to the s1-routes test "dock Storm opens /storm".
+
+Already done: s1-r2a is merged (28f3800) with the Ruling BD trim (41b970c). REDRAFTABLE_PLAN_STATUSES is `['draft']`, and replaceDraftPlan is restored to T11's version.
+- Carry for the a1-agents merge (controller, Ruling BD detail): delete REDRAFTABLE_PLAN_STATUSES from `apps/api/src/storm/plan-errors.ts`. Its callers import A1's db exports REDRAFTABLE_PLAN_STATUSES (['draft']) and FINISHED_REDRAFTABLE_PLAN_STATUSES (['expired','declined']).
+- CI run 38263313497 on s1-storm@c2e3a1f (R7 merge plus the 3f800e5 fixture fix): Platform, Hail and E2E all green.

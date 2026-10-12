@@ -96,6 +96,20 @@ describe('the generic edit sheet', () => {
     await waitFor(() => expect(api?.count('GET /api/team')).toBeGreaterThan(0));
   });
 
+  it('uses the decimal keyboard for a number field that asks for it, and numeric otherwise', async () => {
+    api = teamStub();
+    const kit = inlineKit({
+      editFields: () => [
+        { id: 'amount', label: 'Amount', kind: 'number', inputMode: 'decimal', value: '1.5' },
+        { id: 'count', label: 'Count', kind: 'number', value: '3' },
+      ],
+    });
+    renderAt(<StepFieldsSheet step={emailStep()} kit={kit} saving={false} onSave={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByLabelText('Amount')).toHaveAttribute('inputmode', 'decimal');
+    expect(screen.getByLabelText('Count')).toHaveAttribute('inputmode', 'numeric');
+    await waitFor(() => expect(api?.count('GET /api/team')).toBeGreaterThan(0));
+  });
+
   it('saves the payload that toPayload builds from the edited values', async () => {
     api = teamStub();
     const onSave = vi.fn();

@@ -237,7 +237,14 @@ const ConfigSchema = z
     STORM_MAIL_FROM: z.string().email('must be an email address').optional(),
     /** Minutes without a fresh hail report before the hail feed counts as stale. */
     HAIL_STALE_MINUTES: integer(90, 1, 10080),
-    /** Where the hail-health schedule emails ops when the hail data goes stale. Unset: it only logs. */
+    /** Minutes without a new processed hail grid before hail-health emails ops in storm season (UTC April to September). Separate from HAIL_STALE_MINUTES, the storm-layer banner. */
+    HAIL_ALERT_STALE_MINUTES_SEASON: integer(180, 1, 10080),
+    /** Minutes without a new processed hail grid before hail-health emails ops off season (UTC October to March). */
+    HAIL_ALERT_STALE_MINUTES_OFFSEASON: integer(720, 1, 10080),
+    /**
+     * Where the hail service and the hail-health schedule email ops when hail data goes stale. Unset: it only logs.
+     * It must be a verified Postmark sender address (its domain verified in Postmark), because the hail service also uses it as the From.
+     */
     OPS_ALERT_EMAIL: z.string().email('must be an email address').optional(),
   })
   .superRefine((cfg, ctx) => {

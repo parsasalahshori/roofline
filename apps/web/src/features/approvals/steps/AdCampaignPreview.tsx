@@ -114,6 +114,7 @@ function editFields(step: StepView): EditFieldSpec[] {
       id: 'maxSpend',
       label: stepAds.maxLabel,
       kind: 'number',
+      inputMode: 'decimal',
       value: ad.maxCents === null ? '' : String(ad.maxCents / 100),
       ...(ad.maxCents === null ? {} : { help: stepAds.maxHelp(stepAds.money(ad.maxCents)) }),
     },

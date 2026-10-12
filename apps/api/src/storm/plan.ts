@@ -22,12 +22,14 @@ import {
 import type { AppDeps } from '../app.ts';
 import { systemContext } from '../permissions.ts';
 import { alertPlanReady } from './alerts.ts';
+import { PLAN_CHANGED, PLAN_DISMISSED, PLAN_NOT_FOUND, REDRAFTABLE_PLAN_STATUSES } from './plan-errors.ts';
 
 /*
  * Drafts the approval plan for one company storm (S1 Task 11): a text, an email, door routes and two
  * ad campaigns, each ON unless something is missing, in which case it is saved OFF with a plain
- * reason. Re-drafting replaces a DRAFT plan only; a plan that is running, approved, declined or
- * expired is left alone. This only creates the task; nothing is texted or mailed here.
+ * reason. Re-drafting replaces a draft plan only (Ruling BD: A1 adds expired and declined); any other plan
+ * is left alone. The owner is emailed "plan ready" for a first draft, not again for a re-draft of a draft.
+ * This only creates the task; nothing is texted or mailed here.
  */
 
 export const STORM_OFF = {
@@ -45,9 +47,6 @@ export const STORM_OFF = {
 } as const;
 
 const EMAIL_INCOMPLETE = 'Your email needs your company name, mailing address and unsubscribe link.';
-const NOT_FOUND = 'We could not find that storm.';
-const DISMISSED = 'This storm was dismissed, so no plan is drafted.';
-const CHANGED = 'The plan changed while we were drafting. Please try again.';
 const PLAN_LIFETIME_MS = 48 * 60 * 60 * 1000;
 const MIN_AD_CENTS = 500;
 const MAX_DOORS = 1500;
@@ -172,13 +171,16 @@ export async function draftStormPlan(
   now: Date,
 ): Promise<{ taskId: string } | null> {
   const ctx = systemContext(companyId);
-  const drafted = await withTenant(deps.pools, ctx, async (tx) => {
+  const drafted = await withTenant(deps.pools, ctx, async (tx): Promise<{ taskId: string; fresh: boolean } | null> => {
     // A1 T14 (Ruling AX-K): a paused Storm Scout drafts no new plan (the storm alerts still go out).
     if (await isAgentPaused(tx, ctx, 'storm_scout')) return null;
     const facts = await loadStormPlanFacts(tx, ctx, companyStormId);
-    if (!facts) throw new Error(NOT_FOUND);
-    if (facts.status === 'dismissed') throw new Error(DISMISSED);
-    if (facts.planTaskId !== null && facts.planStatus !== 'draft') return { taskId: facts.planTaskId, fresh: false };
+    if (!facts) throw new Error(PLAN_NOT_FOUND);
+    if (facts.status === 'dismissed') throw new Error(PLAN_DISMISSED);
+    if (facts.planTaskId !== null && !REDRAFTABLE_PLAN_STATUSES.includes(facts.planStatus!)) {
+      return { taskId: facts.planTaskId, fresh: false };
+    }
+    const previousWasDraft = facts.planTaskId !== null && facts.planStatus === 'draft';
 
     const recipients = await listStormPlanRecipients(tx, ctx, companyStormId);
     const day = stormDayLabel(facts.convectiveDay, now, facts.company.timezone);
@@ -200,13 +202,14 @@ export async function draftStormPlan(
       { now },
     );
     const lock = await lockStormPlan(tx, ctx, companyStormId);
-    if (!lock.ok) throw new Error(CHANGED);
-    if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(CHANGED);
+    if (!lock.ok) throw new Error(PLAN_CHANGED);
+    if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(PLAN_CHANGED);
     await linkStormPlan(tx, ctx, companyStormId, taskId, now);
-    return { taskId, fresh: true };
+    return { taskId, fresh: !previousWasDraft };
   });
 
   if (drafted === null) return null;
+
   // After the commit, so the owner is never told about a plan that was rolled back.
   if (drafted.fresh) await alertPlanReady(deps, companyId, companyStormId, drafted.taskId);
   return { taskId: drafted.taskId };

@@ -111,8 +111,11 @@ const addAdAccount = (platform: 'google' | 'meta', status = 'active') =>
   ]);
 const setSettings = (set: string, values: unknown[] = []) =>
   q(`update company_settings set ${set} where company_id = $1`, [companyId(), ...values]);
-/** Storm Scout is never paused here, so a plan always comes back. */
-const draft = async () => (await draftStormPlan(t.deps, companyId(), companyStormId, NOW))!;
+const draft = async (): Promise<{ taskId: string }> => {
+  const drafted = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
+  if (drafted === null) throw new Error('The plan was not drafted.');
+  return drafted;
+};
 const stepsOf = (taskId: string) => dbSteps(t, 'a', taskId);
 const payloadOf = (s: StepRow) => s.payload as Record<string, unknown>;
 const sorted = (ids: string[]) => [...ids].sort();
@@ -355,27 +358,40 @@ describe('re-drafting', () => {
     expect(events[0].data).toEqual({ skippedSteps: 5, replacedByTaskId: second.taskId });
   });
 
-  test('re-drafting never replaces an approved or running plan', async () => {
+  test('returns { taskId } on success', async () => {
     await addHit({ email: 'a@example.com' });
+    const drafted = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
+    expect(drafted).not.toBeNull();
+    expect(drafted).toEqual({ taskId: expect.any(String) });
+  });
 
-    // A really approved plan.
-    const approved = await draft();
-    await approveAs('owner', approved.taskId);
-    expect((await dbTask(t, 'a', approved.taskId)).status).not.toBe('draft');
-    const mailsBefore = planEmails().length;
-    const tasksBefore = await taskCount();
-    expect((await draft()).taskId).toBe(approved.taskId);
-    expect(await taskCount()).toBe(tasksBefore);
-    expect(planEmails()).toHaveLength(mailsBefore);
+  test.each(['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done', 'expired', 'declined'] as const)(
+    'a %s plan is left alone (Ruling BD: A1 re-drafts expired and declined plans)',
+    async (status) => {
+      await addHit({ email: 'a@example.com' });
+      const first = await draft();
+      await setTask(t, 'a', first.taskId, { status });
+      const mailsBefore = planEmails().length;
+      const tasksBefore = await taskCount();
 
-    // Waiting on the owner, and running.
-    for (const status of ['awaiting_owner', 'running'] as const) {
-      await setTask(t, 'a', approved.taskId, { status });
-      expect((await draft()).taskId).toBe(approved.taskId);
+      expect((await draft()).taskId).toBe(first.taskId);
+
+      expect((await companyStormRow()).plan_task_id).toBe(first.taskId);
+      expect((await dbTask(t, 'a', first.taskId)).status).toBe(status);
       expect(await taskCount()).toBe(tasksBefore);
       expect(planEmails()).toHaveLength(mailsBefore);
-      expect((await companyStormRow()).plan_task_id).toBe(approved.taskId);
-    }
+    },
+  );
+
+  test('a re-draft of a draft sends no second ready email', async () => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    const perAlert = planEmails().length;
+    expect(perAlert).toBeGreaterThan(0);
+
+    const second = await draft();
+    expect(second.taskId).not.toBe(first.taskId);
+    expect(planEmails()).toHaveLength(perAlert);
   });
 
   test('re-drafting a non-draft plan writes no declined event', async () => {
@@ -475,5 +491,14 @@ describe('the storm-draft job', () => {
     const task = await dbTask(t, 'a', row.plan_task_id as string);
     expect(task.expiresAt).toEqual(new Date(NOW.getTime() + 48 * HOUR));
     expect(row.status).toBe('planned');
+  });
+
+  test('a dismissed storm and an unknown storm do not throw (permanent failures are logged and dropped)', async () => {
+    const meta = { attempt: 1, lastAttempt: false };
+    await expect(JOB_HANDLERS['storm-draft'](t.deps, { companyId: companyId(), companyStormId: NO_UUID }, meta)).resolves.toBeUndefined();
+
+    await q(`update company_storms set status = 'dismissed' where id = $1`, [companyStormId]);
+    await expect(JOB_HANDLERS['storm-draft'](t.deps, { companyId: companyId(), companyStormId }, meta)).resolves.toBeUndefined();
+    expect(await taskCount()).toBe(0);
   });
 });

@@ -99,6 +99,21 @@ describe('storm settings', () => {
     expect(loadConfig({ ...VALID, HAIL_STALE_MINUTES: '120' }).HAIL_STALE_MINUTES).toBe(120);
   });
 
+  test('hail alert thresholds default to 180 and 720, separate from the 90 minute banner', () => {
+    const config = loadConfig(VALID);
+    expect(config.HAIL_ALERT_STALE_MINUTES_SEASON).toBe(180);
+    expect(config.HAIL_ALERT_STALE_MINUTES_OFFSEASON).toBe(720);
+    expect(config.HAIL_STALE_MINUTES).toBe(90);
+  });
+
+  test('hail alert thresholds can be overridden and refuse 0', () => {
+    const config = loadConfig({ ...VALID, HAIL_ALERT_STALE_MINUTES_SEASON: '60', HAIL_ALERT_STALE_MINUTES_OFFSEASON: '240' });
+    expect(config.HAIL_ALERT_STALE_MINUTES_SEASON).toBe(60);
+    expect(config.HAIL_ALERT_STALE_MINUTES_OFFSEASON).toBe(240);
+    expect(problem({ ...VALID, HAIL_ALERT_STALE_MINUTES_SEASON: '0' })).toContain('HAIL_ALERT_STALE_MINUTES_SEASON');
+    expect(problem({ ...VALID, HAIL_ALERT_STALE_MINUTES_OFFSEASON: '0' })).toContain('HAIL_ALERT_STALE_MINUTES_OFFSEASON');
+  });
+
   test('OPS_ALERT_EMAIL is optional and must be an email', () => {
     expect(loadConfig(VALID).OPS_ALERT_EMAIL).toBeUndefined();
     expect(loadConfig({ ...VALID, OPS_ALERT_EMAIL: 'ops@example.org' }).OPS_ALERT_EMAIL).toBe('ops@example.org');

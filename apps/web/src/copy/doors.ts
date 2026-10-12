@@ -1,9 +1,7 @@
 /** The door-knocking routes under Storm, on the phone. */
 export const doors = {
-  /** The routes list, until it is built. Kept for the desktop fallback only. */
-  routesComingSoon: 'Your door-knocking routes are on their way.',
-  /** One route, until it is built. Kept for the desktop fallback only. */
-  routeComingSoon: 'This route is on its way.',
+  /** The link to the routes list, in the Storm window and the More sheet. */
+  myRoutesLink: 'My routes',
 
   // My routes
   myRoutesEmpty: 'No routes yet. When a storm plan builds routes for you, they show up here.',
