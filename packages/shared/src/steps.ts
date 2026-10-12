@@ -393,7 +393,7 @@ const sendEmailPayload = z.strictObject({
 });
 type SendEmailPayload = z.output<typeof sendEmailPayload>;
 
-const sendEmailBatch = withMinutesSaved<SendEmailPayload>({
+const sendEmailBatch: StepTypeDef<SendEmailPayload> = {
   type: 'send_email_batch',
   approvalClass: 'message',
   payload: sendEmailPayload,
@@ -417,7 +417,7 @@ const sendEmailBatch = withMinutesSaved<SendEmailPayload>({
   userCreatable: true,
   baseline: () => 'email_sent',
   units: (_p, result) => resultCount(result.sent),
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 // build_routes (internal: the crew plans the knocks; nothing goes out to a customer)
@@ -447,7 +447,7 @@ function routeCount(reps: number, maxDoors: number): number {
   return Math.max(reps, Math.ceil(maxDoors / MAX_DOORS_PER_ROUTE));
 }
 
-const buildRoutes = withMinutesSaved<BuildRoutesPayload>({
+const buildRoutes: StepTypeDef<BuildRoutesPayload> = {
   type: 'build_routes',
   approvalClass: 'internal',
   payload: buildRoutesPayload,
@@ -472,7 +472,7 @@ const buildRoutes = withMinutesSaved<BuildRoutesPayload>({
   userCreatable: true,
   baseline: () => 'route_built',
   units: (_p, result) => resultCount(result.routes),
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 // create_ad_campaign (spend: the money is only spent once a person has approved the campaign)
@@ -551,7 +551,7 @@ function adNeedsProblem(p: {
   return null;
 }
 
-const createAdCampaign = withMinutesSaved<CreateAdPayload>({
+const createAdCampaign: StepTypeDef<CreateAdPayload> = {
   type: 'create_ad_campaign',
   approvalClass: 'spend',
   payload: createAdPayload,
@@ -569,7 +569,7 @@ const createAdCampaign = withMinutesSaved<CreateAdPayload>({
   userCreatable: true,
   baseline: () => 'ad_campaign',
   units: (_p, result) => resultCount(result.campaigns),
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 // send_proposal
@@ -619,7 +619,7 @@ function tierTotalsLine(totals: number[]): string {
     .join(' · ');
 }
 
-const sendProposal = withMinutesSaved<ProposalPayload>({
+const sendProposal: StepTypeDef<ProposalPayload> = {
   type: 'send_proposal',
   approvalClass: 'message',
   userCreatable: true,
@@ -638,7 +638,7 @@ const sendProposal = withMinutesSaved<ProposalPayload>({
   },
   baseline: () => 'proposal_sent',
   units: () => 1,
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 // order_exact_report
@@ -662,7 +662,7 @@ const exactReportPayload = z.strictObject({
 });
 type ExactReportPayload = z.output<typeof exactReportPayload>;
 
-const orderExactReport = withMinutesSaved<ExactReportPayload>({
+const orderExactReport: StepTypeDef<ExactReportPayload> = {
   type: 'order_exact_report',
   approvalClass: 'spend',
   userCreatable: true,
@@ -670,7 +670,7 @@ const orderExactReport = withMinutesSaved<ExactReportPayload>({
   preview: (p) => ({ title: 'Order an exact roof report', lines: [p.address], maxSpendCents: p.maxSpendCents }),
   baseline: () => 'exact_report',
   units: () => 1,
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 
