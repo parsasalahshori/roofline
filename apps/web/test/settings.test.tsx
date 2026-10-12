@@ -5,7 +5,6 @@ import { RouterProvider } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { ads } from '../src/copy/ads.ts';
 import { billing } from '../src/copy/billing.ts';
 import { connections } from '../src/copy/connections.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
@@ -114,7 +113,10 @@ it('billing tab shows the card note', async () => {
 });
 
 it('connections says what is coming', async () => {
-  signedInApi({ 'GET /api/calendar/connection': () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } }) });
+  signedInApi({
+    'GET /api/calendar/connection': () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } }),
+    'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }),
+  });
   renderApp('/settings/connections');
 
   expect(await screen.findByText(connections.later)).toBeInTheDocument();
@@ -201,10 +203,26 @@ it('opens in a window titled Settings', async () => {
 });
 
 it('shows the Storm tab to the owner and opens it', async () => {
-  signedInApi();
+  signedInApi({
+    'GET /api/storm/settings': () => ({
+      body: {
+        thresholdIn: 1,
+        adBudgetCents: 25000,
+        adDays: 7,
+        adGoogleSharePct: 60,
+        emailEnabled: true,
+        smsTemplate: 'Hi {company}. Reply STOP to opt out.',
+        emailSubject: 'Hail near {street}',
+        emailTemplate: 'Hi {company} {company_address} {unsubscribe}',
+        defaults: { smsTemplate: 'Hi {company}. Reply STOP to opt out.', emailSubject: 'Hail near {street}', emailTemplate: 'Hi' },
+        photos: [],
+        maxPhotos: 5,
+      },
+    }),
+  });
   renderApp('/settings/storm');
 
-  expect(await screen.findByText(storm.settingsComingSoon)).toBeInTheDocument();
+  expect(await screen.findByLabelText(storm.settings.thresholdLabel)).toBeInTheDocument();
   const nav = await tabsNav();
   expect(within(nav).getByRole('link', { name: settings.tabs.storm })).toHaveAttribute('aria-current', 'page');
 });
@@ -224,15 +242,14 @@ it('hides the Storm tab from a rep and sends the address to Company', async () =
   await waitFor(() => expect(where(router)).toBe('/settings/company'));
   const nav = await tabsNav();
   expect(within(nav).queryByRole('link', { name: settings.tabs.storm })).not.toBeInTheDocument();
-  expect(screen.queryByText(storm.settingsComingSoon)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(storm.settings.thresholdLabel)).not.toBeInTheDocument();
 });
 
 it('connections lists the ad accounts slot', async () => {
-  signedInApi();
+  signedInApi({ 'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }) });
   renderApp('/settings/connections');
 
   expect(await screen.findByText(connections.later)).toBeInTheDocument();
-  expect(screen.getByText(ads.connectionsComingSoon)).toBeInTheDocument();
-  expect(screen.getByText(connections.googleAds)).toBeInTheDocument();
-  expect(screen.getByText(connections.meta)).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: connections.googleAds })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: connections.meta })).toBeInTheDocument();
 });

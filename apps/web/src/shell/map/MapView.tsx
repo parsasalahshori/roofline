@@ -6,10 +6,15 @@ import { UNSAFE_LocationContext } from 'react-router';
 import { useMapArea, useMapPins } from '../../api/hooks.ts';
 import type { PinsResult } from '../../api/types.ts';
 import { mapCopy } from '../../copy/map.ts';
+import { storm as stormCopy } from '../../copy/storm.ts';
+import { useStormLayer } from '../../features/storm/layerApi.ts';
+import type { StormLayerResponse } from '../../features/storm/layerTypes.ts';
+import { HailLegend } from './HailLegend.tsx';
 import { bindMapInteractions } from './interactions.ts';
 import { emptyMapData, installMapLayers, updateMapData, type MapData } from './layers.ts';
 import { mapStyle, satelliteAvailable } from './mapStyle.ts';
 import { PinCard } from './PinCard.tsx';
+import { applyStormData, setStormVisible } from './stormLayer.ts';
 import { needsClientClustering, normalizeBbox, toFeatureCollections } from './pins.ts';
 import type { Bbox } from '../../api/types.ts';
 import type { MapEnv, MapMode, PickedPin, PinTarget } from './types.ts';
@@ -63,6 +68,11 @@ export function MapView({ onOpen }: MapViewProps) {
   const appliedMode = useRef<MapMode>('streets');
   const [mode, setMode] = useState<MapMode>('streets');
   const [bbox, setBbox] = useState<Bbox | null>(null);
+  const [zoom, setZoom] = useState<number | null>(null);
+  const [hailOn, setHailOn] = useState(true);
+  const hailOnRef = useRef(true);
+  const hailToggled = useRef(false);
+  const stormRef = useRef<StormLayerResponse | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [picked, setPicked] = useState<PickedPin | null>(null);
   const area = useMapArea();
@@ -73,6 +83,10 @@ export function MapView({ onOpen }: MapViewProps) {
   // The last pins answer that arrived. A failed request leaves it alone, so the pins stay on the map.
   const [shownPins, setShownPins] = useState<PinsResult | undefined>(undefined);
   if (pins.data !== undefined && pins.data !== shownPins) setShownPins(pins.data);
+  const storm = useStormLayer(bbox, zoom, hailOn);
+  // The last storm answer that arrived; an error or an unexpected answer leaves it alone.
+  const [shownStorm, setShownStorm] = useState<StormLayerResponse | undefined>(undefined);
+  if (storm.data !== undefined && storm.data !== shownStorm) setShownStorm(storm.data);
 
   // Create the map once, and remove it when the page goes away.
   useEffect(() => {
@@ -96,6 +110,7 @@ export function MapView({ onOpen }: MapViewProps) {
       clearTimeout(timer);
       timer = setTimeout(() => {
         const next = normalizeBbox(instance.getBounds());
+        setZoom(instance.getZoom());
         setBbox((previous) =>
           previous !== null && previous.every((value, index) => value === next[index]) ? previous : next,
         );
@@ -105,6 +120,8 @@ export function MapView({ onOpen }: MapViewProps) {
     instance.on('style.load', () => {
       styleReady.current = true;
       installMapLayers(instance, dataRef.current);
+      applyStormData(instance, stormRef.current);
+      if (!hailOnRef.current) setStormVisible(instance, false);
     });
     instance.on('load', scheduleBbox);
     instance.on('moveend', scheduleBbox);
@@ -180,6 +197,25 @@ export function MapView({ onOpen }: MapViewProps) {
     });
   }, [focus, shownPins]);
 
+  // Feed the storm layer from the last good answer.
+  useEffect(() => {
+    stormRef.current = shownStorm;
+    const instance = mapRef.current;
+    if (instance && styleReady.current) {
+      applyStormData(instance, shownStorm);
+      if (!hailOnRef.current) setStormVisible(instance, false);
+    }
+  }, [shownStorm]);
+
+  // The hail switch. Nothing is touched on the first mount while the layer is on.
+  useEffect(() => {
+    hailOnRef.current = hailOn;
+    if (hailOn && !hailToggled.current) return;
+    hailToggled.current = true;
+    const instance = mapRef.current;
+    if (instance && styleReady.current) setStormVisible(instance, hailOn);
+  }, [hailOn]);
+
   // The satellite switch swaps the style. The style.load handler then installs the layers again.
   useEffect(() => {
     const instance = mapRef.current;
@@ -192,6 +228,7 @@ export function MapView({ onOpen }: MapViewProps) {
   const satellite = satelliteAvailable(readMapEnv());
   // A map error, or a pins request that failed (the last good pins stay on the map meanwhile).
   const showBanner = failed || pins.isError;
+  const swathCount = shownStorm?.swaths?.features?.length ?? 0;
 
   return (
     <div className={styles.root} data-mode={mode}>
@@ -201,9 +238,10 @@ export function MapView({ onOpen }: MapViewProps) {
       </p>
       <div role="status" className={styles.status} data-state={showBanner ? 'error' : 'idle'}>
         {showBanner ? <p className={styles.banner}>{mapCopy.error}</p> : null}
+        {hailOn && storm.data?.stale === true ? <p className={styles.banner}>{stormCopy.staleBanner}</p> : null}
       </div>
-      {satellite ? (
-        <div className={styles.controls}>
+      <div className={styles.controls}>
+        {satellite ? (
           <Button
             variant="ghost"
             aria-pressed={mode === 'satellite'}
@@ -212,8 +250,12 @@ export function MapView({ onOpen }: MapViewProps) {
           >
             {mapCopy.satellite}
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+        <Button variant="ghost" aria-pressed={hailOn} onClick={() => setHailOn((current) => !current)}>
+          {mapCopy.hailLayer}
+        </Button>
+      </div>
+      <HailLegend visible={hailOn && swathCount > 0} />
       {picked ? (
         <div className={styles.card}>
           <PinCard

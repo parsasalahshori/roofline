@@ -70,6 +70,20 @@ function MemberRow({ member, isOwner, updating, change }: MemberRowProps) {
         )}
       </td>
       <td>
+        {/* Storm alert emails go to owners and office members; a field rep never gets them */}
+        {member.role === 'rep' ? (
+          settings.team.stormAlertsNever
+        ) : (
+          <Toggle
+            label={settings.team.stormAlertsFor(member.name)}
+            labelHidden
+            checked={member.stormAlertEmail}
+            disabled={!isOwner || updating}
+            onChange={(next) => change({ stormAlertEmail: next })}
+          />
+        )}
+      </td>
+      <td>
         <div className={styles.statusCell}>
           <span data-status={member.status}>{active ? settings.team.statusActive : settings.team.statusOff}</span>
           {isOwner ? (
@@ -175,6 +189,7 @@ export function TeamTab() {
                 <th scope="col">{settings.team.columns.email}</th>
                 <th scope="col">{settings.team.columns.role}</th>
                 <th scope="col">{settings.team.columns.spend}</th>
+                <th scope="col">{settings.team.columns.stormAlerts}</th>
                 <th scope="col">{settings.team.columns.status}</th>
               </tr>
             </thead>
