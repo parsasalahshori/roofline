@@ -65,7 +65,7 @@ Service column: **api+worker** = both Node processes (one shared config). **hail
 | `WEB_DIST_DIR` | api (+worker, see 1.1) | optional (set in production) | `apps/web/dist` | Where the built web app is. Set: the API serves the app too. Must contain `index.html` or start-up stops. | none | F2 |
 | `NWS_USER_AGENT` | api+worker | optional | `Roofline (ops@example.com)` | How api.weather.gov is told who is asking. Unset: `Roofline (<PUBLIC_BASE_URL>)`. | none | F2 |
 | `WEATHER_DISABLED` | api+worker | optional | `0` / `1` | `1` turns the weather service off (no network). | none | F2 |
-| `TRUST_PROXY` | api+worker | optional (default `0`) | `1` | Proxy hops to trust for the client address (rate limits, audit log). Set it to the hops Render puts in front. | none | F1 |
+| `TRUST_PROXY` | api+worker | **yes in production** (default `0` elsewhere) | `1` | Proxy hops to trust for the client address (rate limits, audit log). Render puts one proxy in front, so `1`. With `0` every visitor shares the proxy's address (every IP limit becomes global); a value above the real hop count lets clients choose their IP through `X-Forwarded-For`. From `c1-crm` (security fix, Ruling BF) start-up refuses production when it is unset or `0`. | none | F1, Ruling BF |
 | `API_RATE_LIMIT_PER_MIN` | api+worker | optional (default `600`) | `600` | Requests per minute per session on `/api/*`. | none | F1 |
 | `PORT` | api | optional (default `4400`) | `10000` | Listen port. Render sets it. | none | F1 |
 | `HOST` | api | optional | `0.0.0.0` | Listen address. Default `0.0.0.0` in production, `127.0.0.1` otherwise. | none | F2 |
@@ -211,6 +211,11 @@ shared), 2 web-build names: **73 deployable names**. Plus 6 smoke-only names and
     fallback).
 12. **`HAIL_DATABASE_URL`** is only a comment in `.env.example` (`HAIL_DB_PASSWORD` likewise). That is by design
     (the API never reads it), but easy to miss.
+13. **Security fixes (Ruling BF) are on `c1-crm` and `e1-estimator` first.** They are: `TRUST_PROXY` required in production;
+    the `__Host-rl_session` cookie, Secure on https; login limits per account, per address and globally, with a scrypt gate
+    (2 in flight, 64 queued, then 503); invite caps across companies; the neutral sign-up 409 (Ruling SEC-1); narrowed
+    app_system grants in 0002 and 0016; and keyed proposal IP hashes. Branches that have not re-merged `c1-crm` /
+    `e1-estimator` lack them, so the launch merge must take them. Email-first sign-up is an owner decision (roadmap).
 
 ---
 
@@ -415,7 +420,7 @@ Start the long-lead items on day one. Each step names its roadmap row.
 ### E. Configuration
 
 22. Set the 1.2-1.7 variables on the API and the worker (the same set). `NODE_ENV=production`,
-    `WEB_DIST_DIR=apps/web/dist`, all four `R2_*`, `FAKE_PROVIDERS` unset.
+    `TRUST_PROXY=1` (neither service starts without it), `WEB_DIST_DIR=apps/web/dist`, all four `R2_*`, `FAKE_PROVIDERS` unset.
 23. Set `HAIL_DATABASE_URL`, `OPS_ALERT_EMAIL`, `POSTMARK_SERVER_TOKEN` on the hail worker. Verify `OPS_ALERT_EMAIL`
     as a Postmark sender.
 24. Write the real `BILLING_PLANS_FILE`, then run `npm run sync:stripe-plans -w @roofline/api`. *[Roadmap: Stripe
@@ -491,7 +496,7 @@ committed. If anything that looks like a secret is printed, stop and rotate it.
 10. **ElevenLabs voice ids** are placeholders in code. Who picks them, and when?
 11. **API scaling with D1.** `FRONT_DESK_MAX_CALLS` and the model health breaker are per process. Is one always-on
     API instance the launch plan? What instance size?
-12. **`TRUST_PROXY`** on Render: how many hops (likely 1)? The default 0 makes every client look like the proxy.
+12. **`TRUST_PROXY`** on Render: resolved (Ruling BF). Set `1`; production start-up refuses `0` or unset. Confirm the hop count once on staging: the audit log should show your own address, not Render's.
 13. **Worker and `WEB_DIST_DIR`.** Build the web app on the worker too, or leave the variable unset there?
 14. **G1 variables** (`AGENT_DRAFT_MODEL`, `AGENT_EXTRACT_MODEL`, `MAPTILER_SERVER_KEY`) need `.env.example` and
     README rows when G1 lands.
