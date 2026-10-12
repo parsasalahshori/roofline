@@ -1,0 +1,53 @@
+{
+  "pages": [
+    {
+      "kind": "calendar#events",
+      "etag": "\"etag-sync-page-1\"",
+      "summary": "crew@example.com",
+      "updated": "2026-10-12T15:00:00.000Z",
+      "timeZone": "America/Chicago",
+      "nextPageToken": "page-2",
+      "items": [
+        {
+          "kind": "calendar#event",
+          "etag": "\"etag-2\"",
+          "id": "evt1",
+          "status": "confirmed",
+          "summary": "Roof inspection",
+          "transparency": "opaque",
+          "updated": "2026-10-12T15:00:00.000Z",
+          "start": { "dateTime": "2026-10-14T14:00:00-05:00", "timeZone": "America/Chicago" },
+          "end": { "dateTime": "2026-10-14T15:00:00-05:00", "timeZone": "America/Chicago" }
+        },
+        {
+          "kind": "calendar#event",
+          "etag": "\"etag-7\"",
+          "id": "evt2",
+          "status": "confirmed",
+          "summary": "Lunch",
+          "transparency": "transparent",
+          "updated": "2026-10-11T09:30:00.000Z",
+          "start": { "dateTime": "2026-10-15T12:00:00-05:00", "timeZone": "America/Chicago" },
+          "end": { "dateTime": "2026-10-15T13:00:00-05:00", "timeZone": "America/Chicago" }
+        }
+      ]
+    },
+    {
+      "kind": "calendar#events",
+      "etag": "\"etag-sync-page-2\"",
+      "summary": "crew@example.com",
+      "updated": "2026-10-12T15:00:00.000Z",
+      "timeZone": "America/Chicago",
+      "nextSyncToken": "sync-1",
+      "items": [
+        {
+          "kind": "calendar#event",
+          "etag": "\"etag-9\"",
+          "id": "evt3",
+          "status": "cancelled",
+          "updated": "2026-10-12T10:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}
