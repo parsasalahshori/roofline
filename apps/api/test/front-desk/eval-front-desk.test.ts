@@ -248,6 +248,13 @@ describe('the report numbers', () => {
     expect(renderMarkdown({ startedAt: 'now', scenarios: ['a', 'b'], runs: 1, results: [result('a', [turn('opus', 1, 2, 3)])] })).toContain('| a | opus | 1 | 1 | 1 | 2 | 2 | 3 | 3 |');
   });
 
+  test('the report marks the cost as a lower bound', () => {
+    const md = renderMarkdown({ startedAt: 'now', scenarios: ['a'], runs: 1, results: [] });
+    expect(md).toContain('| Cost per run (call, lower bound) | Cost per run (harness, lower bound) |');
+    expect(md).toMatch(/Total cost of this run, a lower bound: /);
+    expect(md).toContain('Aborted speculative answers and cache writes are not counted');
+  });
+
   test('cost comes from usage at the model price, and an unknown model is priced as Opus', () => {
     expect(costUsd({ model: 'claude-haiku-5-5', inputTokens: 1_000_000, cachedTokens: 1_000_000, outputTokens: 1_000_000 })).toBeCloseTo(0.1 + 0.01 + 0.5);
     expect(costUsd({ model: 'claude-opus-5-5', inputTokens: 1_000_000, cachedTokens: 0, outputTokens: 1_000_000 })).toBeCloseTo(24);

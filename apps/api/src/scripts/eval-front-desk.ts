@@ -459,7 +459,7 @@ const usd = (x: number) => `$${x.toFixed(3)}`;
 export function renderMarkdown(o: { startedAt: string; scenarios: string[]; runs: number; results: readonly RunResult[] }): string {
   const lines: string[] = [];
   lines.push(`# Front Desk scripted call eval`, '', `Started ${o.startedAt}. Runs per scenario: ${o.runs}. Router model claude-haiku-5-5, answers claude-opus-5-5.`, '');
-  lines.push('| Scenario | Runs | Passed | Tone mean | Cost per run (call) | Cost per run (harness) |', '| --- | --- | --- | --- | --- | --- |');
+  lines.push('| Scenario | Runs | Passed | Tone mean | Cost per run (call, lower bound) | Cost per run (harness, lower bound) |', '| --- | --- | --- | --- | --- | --- |');
   for (const id of o.scenarios) {
     const rs = o.results.filter((r) => r.scenario === id);
     const passed = rs.filter((r) => r.pass).length;
@@ -469,7 +469,12 @@ export function renderMarkdown(o: { startedAt: string; scenarios: string[]; runs
     lines.push(`| ${id} | ${rs.length} | ${passed} | ${toneMean} | ${usd(avg((r) => r.cost.call))} | ${usd(avg((r) => r.cost.harness))} |`);
   }
   const total = o.results.reduce((a, r) => ({ call: a.call + r.cost.call, harness: a.harness + r.cost.harness }), { call: 0, harness: 0 });
-  lines.push('', `Total cost of this run: ${usd(total.call + total.harness)} (the calls ${usd(total.call)}, the simulator and grader ${usd(total.harness)}).`, '');
+  lines.push(
+    '',
+    `Total cost of this run, a lower bound: ${usd(total.call + total.harness)} (the calls ${usd(total.call)}, the simulator and grader ${usd(total.harness)}).`,
+    'Aborted speculative answers and cache writes are not counted, so the invoice is somewhat higher.',
+    '',
+  );
 
   const failed = o.results.filter((r) => !r.pass);
   lines.push('## Failures', '');

@@ -72,10 +72,11 @@ the runs in the row (linear interpolation, the same as `percentile_cont` in the 
 | Router p50, p95 | From the caller's line to the router's answer. The Opus request starts at the same moment (speculative start), so this time is not added to Opus turns. |
 | First token p50, p95 | From the start of the Opus request to its first text token. This is the number the spec targets. `n/a` for routes that never ask Opus. |
 | Total p50, p95 | From the caller's line to the end of the assistant's turn, including tool rounds. |
-| Cost per run (call) | The router and answer requests of one run, from the usage the API reports (input, cached input and output tokens at the model's price in `PRICES` in `apps/api/src/scripts/eval-front-desk.ts`). |
-| Cost per run (harness) | The caller simulator and tone grader of one run. This is eval overhead, not call cost. |
+| Cost per run (call, lower bound) | The router and answer requests of one run, from the usage the API reports (input, cached input and output tokens at the model's price in `PRICES` in `apps/api/src/scripts/eval-front-desk.ts`). |
+| Cost per run (harness, lower bound) | The caller simulator and tone grader of one run. This is eval overhead, not call cost. |
 
-Cache writes are not counted (the adapter keeps only cache reads), so costs are slightly under the invoice. If a price changes,
+Every cost here is a lower bound: cache writes are not counted (the adapter keeps only cache reads), and neither is an
+Opus answer started speculatively and then aborted (its usage is never reported), so the invoice is somewhat higher. If a price changes,
 update `PRICES` and the date in its comment.
 
 ## Results
@@ -84,7 +85,7 @@ Not run yet: fill in after the owner's first run. Copy the numbers only (no tran
 
 Run details:
 
-| Date | Who | Models | Runs per scenario | Code version (commit) | Total cost |
+| Date | Who | Models | Runs per scenario | Code version (commit) | Total cost (lower bound) |
 | --- | --- | --- | --- | --- | --- |
 | not run yet |  |  |  |  |  |
 
@@ -100,7 +101,7 @@ Run details:
 
 ### Pass rates and cost per scenario
 
-| Scenario | Runs | Code-graded passes | Tone mean | Cost per run (call) | Cost per run (harness) |
+| Scenario | Runs | Code-graded passes | Tone mean | Cost per run (call, lower bound) | Cost per run (harness, lower bound) |
 | --- | --- | --- | --- | --- | --- |
 | not run yet |  |  |  |  |  |
 
