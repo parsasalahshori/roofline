@@ -67,4 +67,47 @@ describe('Front Desk follow-up counted once', () => {
     expect(cards.status).toBe(200);
     expect((cards.body as AgentsOverview).cards.find((c) => c.agent === 'front_desk')!.waitingCount).toBe(1);
   });
+
+  test('a customer with two jobs with next steps and one open live task on one job: one waiting item and waitingCount 1', async () => {
+    const companyId = t.seed.a.companyId;
+    const owner = await who.as('owner');
+    const customer = await mustCreate(owner, '/api/customers', { displayName: 'Ola Customer' });
+    const property = await mustCreate(owner, '/api/properties', { customerId: customer.id, ...addressFor(32) });
+    const first = await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: property.id, nextStep: 'Call Ola back' });
+    await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: property.id, nextStep: 'Send Ola a quote' });
+
+    await inCompany(t, companyId, async (tx) => {
+      await tx.insert(conversations).values({
+        companyId,
+        channel: 'voice',
+        customerId: customer.id,
+        phoneE164: '+14025550998',
+        companyNumberE164: '+14025550100',
+        status: 'ended',
+        outcome: 'message',
+        lastMessageAt: t.clock.now(),
+      });
+      await createLiveTask(
+        tx,
+        { companyId, userId: null, role: 'system', canApproveSpend: false },
+        {
+          agent: 'front_desk',
+          kind: 'call',
+          title: 'Took a message',
+          subjectType: 'job',
+          subjectId: first.id,
+          step: { type: 'front_desk_call', result: { seconds: 30, bookings: 0, spam: 0 } },
+          status: 'needs_attention',
+          idempotencyKey: 'fd-call:test-2',
+        },
+        t.clock.now(),
+      );
+    });
+
+    const waiting = await owner.get('/api/agents/waiting');
+    expect(waiting.status).toBe(200);
+    expect(waiting.body.items).toHaveLength(1);
+    const cards = await owner.get('/api/agents');
+    expect((cards.body as AgentsOverview).cards.find((c) => c.agent === 'front_desk')!.waitingCount).toBe(1);
+  });
 });

@@ -28,6 +28,12 @@ export type WaitingTaskRow = {
   status: string;
   /** Full name of the company's owner (company_members, role 'owner'); null when there is none. */
   ownerName: string | null;
+  /** Job subjects: the job's assigned user, else null. Other subjects: null. */
+  jobAssignedUserId: string | null;
+  /** Job subjects: the assignee's name (company_members), else null. */
+  jobAssigneeName: string | null;
+  /** Job subjects: jobs.next_step, else null. */
+  jobNextStep: string | null;
 };
 
 const DRAFT_STATUSES = ['draft', 'awaiting_owner'] as const;
@@ -90,6 +96,24 @@ export async function listWaitingTasks(tx: Tx, ctx: TenantContext, now: Date): P
   );
   const ownerName = (ownerResult.rows[0]?.name as string | null | undefined) ?? null;
 
+  // Job facts for job subjects. Reps only get here for jobs inside jobScope (the task query is already narrowed).
+  const jobIds = [...new Set(tasks.filter((task) => task.subjectType === 'job' && task.subjectId !== null).map((task) => task.subjectId!))];
+  const jobFacts = new Map<string, { assignedUserId: string | null; assigneeName: string | null; nextStep: string | null }>();
+  if (jobIds.length > 0) {
+    const facts = await tx
+      .select({
+        id: jobs.id,
+        assignedUserId: jobs.assignedUserId,
+        nextStep: jobs.nextStep,
+        assigneeName: sql<string | null>`(select m.name from company_members m where m.user_id = ${jobs.assignedUserId} limit 1)`,
+      })
+      .from(jobs)
+      .where(and(eq(jobs.companyId, ctx.companyId), inArray(jobs.id, jobIds)));
+    for (const fact of facts) {
+      jobFacts.set(fact.id, { assignedUserId: fact.assignedUserId, assigneeName: fact.assigneeName ?? null, nextStep: fact.nextStep });
+    }
+  }
+
   const steps = await tx
     .select({
       taskId: agentTaskSteps.taskId,
@@ -121,6 +145,7 @@ export async function listWaitingTasks(tx: Tx, ctx: TenantContext, now: Date): P
   const rows: WaitingTaskRow[] = [];
   for (const task of tasks) {
     const taskSteps = stepsByTask.get(task.taskId) ?? [];
+    const facts = task.subjectType === 'job' && task.subjectId !== null ? jobFacts.get(task.subjectId) : undefined;
     const isDraft = (DRAFT_STATUSES as readonly string[]).includes(task.status);
     const waiting: WaitingTaskRow['waiting'] = isDraft ? 'draft' : 'attention';
 
@@ -152,6 +177,9 @@ export async function listWaitingTasks(tx: Tx, ctx: TenantContext, now: Date): P
       reason,
       status: task.status,
       ownerName,
+      jobAssignedUserId: facts?.assignedUserId ?? null,
+      jobAssigneeName: facts?.assigneeName ?? null,
+      jobNextStep: facts?.nextStep ?? null,
     });
   }
 
@@ -213,8 +241,8 @@ function followUpQuery(tx: Tx, ctx: TenantContext, now: Date) {
         isNull(jobs.archivedAt),
         sql`${since} is not null`,
         jobScope(ctx),
-        // An open live Front Desk task for the job is already in the waiting list; do not list it twice.
-        sql`not exists (select 1 from agent_tasks t where t.company_id = ${jobs.companyId} and t.agent = 'front_desk' and t.mode = 'live' and t.status = 'needs_attention' and t.subject_type = 'job' and t.subject_id = ${jobs.id})`,
+        // An open live Front Desk task on ANY job of the same customer is already in the waiting list (and counted); do not list it twice.
+        sql`not exists (select 1 from agent_tasks t join jobs j2 on j2.id = t.subject_id and t.subject_type = 'job' where j2.company_id = ${jobs.companyId} and j2.customer_id = ${jobs.customerId} and t.company_id = ${jobs.companyId} and t.agent = 'front_desk' and t.mode = 'live' and t.status = 'needs_attention')`,
       ),
     );
 }

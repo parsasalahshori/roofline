@@ -1189,13 +1189,17 @@ export async function closeLiveTasksForSubject(
   return rows.length;
 }
 
-/** Adds counts to a finished live task's step result (a repeat on the same key), then refreshes its minutes. Writes no events. */
+/**
+ * Adds counts to a finished live task's step result (a repeat on the same key), then refreshes its minutes.
+ * Writes no events. `titleOf`, when given, renames the task from the new totals.
+ */
 export async function addToLiveTask(
   tx: Tx,
   ctx: TenantContext,
   idempotencyKey: string,
   add: Record<string, number>,
   now: Date,
+  titleOf?: (result: Record<string, number>) => string,
 ): Promise<string | null> {
   const found = await findStepByIdempotencyKey(tx, ctx, idempotencyKey);
   if (!found) return null;
@@ -1206,16 +1210,27 @@ export async function addToLiveTask(
   const next: Record<string, number> = { ...prev };
   for (const [k, v] of Object.entries(add)) next[k] = (Number(prev[k]) || 0) + v;
   await setStepResult(tx, ctx, row.id, next, now);
+  // Incremental snapshot: past replies keep the value they were counted at; only the added ones use today's baselines.
   const overrides = await loadBaselineOverrides(tx, ctx);
-  const m = stepMinutes(stepTypes[row.type] as never, row.payload as never, next as StepResult, overrides);
+  const def = stepTypes[row.type] as never;
+  const added = stepMinutes(def, row.payload as never, add as StepResult, overrides);
+  const total = stepMinutes(def, row.payload as never, next as StepResult, overrides);
+  const minutes = (Number(row.minutesSaved) || 0) + added.minutes;
+  const units = total.units;
   await setStepSnapshot(
     tx,
     ctx,
     row.id,
-    { baselineKey: m.baseline, units: m.units, minutesPerUnit: m.minutesPerUnit, minutesSaved: m.minutes },
+    { baselineKey: total.baseline, units, minutesPerUnit: units > 0 ? minutes / units : total.minutesPerUnit, minutesSaved: minutes },
     now,
   );
-  await updateTask(tx, ctx, found.taskId, { minutesSaved: await minutesSavedOf(tx, ctx, found.taskId) }, now);
+  await updateTask(
+    tx,
+    ctx,
+    found.taskId,
+    { minutesSaved: await minutesSavedOf(tx, ctx, found.taskId), ...(titleOf !== undefined && { title: titleOf(next) }) },
+    now,
+  );
   return found.taskId;
 }
 

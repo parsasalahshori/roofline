@@ -1,6 +1,6 @@
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import type { Db } from '../pools.ts';
-import { companies, companyPhoneNumbers, memberships, textingRegistrations } from '../schema/index.ts';
+import { companies, companyPhoneNumbers, memberships, textingRegistrations, users } from '../schema/index.ts';
 
 /*
  * Voice webhook routing on the app_system pool (D1 Task 10). Only apps/api/src/hooks/twilio-voice*.ts
@@ -40,6 +40,32 @@ export async function onCallMembers(system: Db, companyId: string): Promise<OnCa
   const out: OnCallMember[] = [];
   for (const r of rows) {
     if (r.phone !== null && r.onCallOrder !== null) out.push({ userId: r.userId, phone: r.phone, onCallOrder: r.onCallOrder });
+  }
+  return out;
+}
+
+/**
+ * First names of the on-call members (same filter and order as onCallMembers), for the Front Desk rule sentence.
+ * The first name is the first whitespace-separated token of users.name; empty names are skipped.
+ */
+export async function onCallFirstNames(system: Db, companyId: string): Promise<string[]> {
+  const rows = await system
+    .select({ name: users.name })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(
+      and(
+        eq(memberships.companyId, companyId),
+        eq(memberships.status, 'active'),
+        isNotNull(memberships.transferPhoneE164),
+        isNotNull(memberships.onCallOrder),
+      ),
+    )
+    .orderBy(asc(memberships.onCallOrder), asc(memberships.userId));
+  const out: string[] = [];
+  for (const r of rows) {
+    const first = r.name.trim().split(/\s+/)[0] ?? '';
+    if (first !== '') out.push(first);
   }
   return out;
 }

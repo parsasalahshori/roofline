@@ -10,6 +10,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { withTenant } from '@roofline/db';
+import { onCallFirstNames } from '@roofline/db/system';
 import { isScreenAgent, TIME_PERIODS } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { buildDetail, buildOverview } from '../agents/metrics.ts';
@@ -41,7 +42,9 @@ export function agentsRoutes(deps: AppDeps): Router {
     const query = parse(PeriodQuery, req.query);
     const period = query.period ?? 'month';
     const { ctx } = req;
-    const detail = await withTenant(pools, ctx, (tx) => buildDetail(tx, ctx, clock.now(), agent, period));
+    // Memberships are app_system only: read the on-call first names here and hand them to the rule facts.
+    const transferNames = agent === 'front_desk' ? await onCallFirstNames(pools.system, ctx.companyId) : [];
+    const detail = await withTenant(pools, ctx, (tx) => buildDetail(tx, ctx, clock.now(), agent, period, transferNames));
     res.json(detail);
   });
 

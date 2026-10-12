@@ -48,6 +48,15 @@ export const FEED_COPY = {
   waitingAttention: '{agent} needs help: {title}',
   waitingReason: '{sentence}. {reason}',
   fallback: '{agent} has an update: {title}',
+  frontDeskCall: 'Front Desk answered a call',
+  frontDeskTransfer: 'Front Desk transferred a call',
+  frontDeskMessage: 'Front Desk took a message',
+  frontDeskTexts: 'Front Desk answered {count} {texts}',
+  frontDeskTextsPlain: 'Front Desk answered texts',
+  frontDeskSpam: 'Front Desk blocked a spam call',
+  frontDeskFor: ' for {firstName}',
+  frontDeskFrom: ' from {firstName}',
+  liveDone: '{agent}: {title} is done',
 } as const;
 
 /** Words for the step count: "1 step", "3 steps". */
@@ -60,6 +69,22 @@ const STEP_UNIT_WORDS: Record<string, { label: string; verb: string }> = {
   create_ad_campaign: { label: 'Campaigns', verb: 'created' },
   send_proposal: { label: 'Proposals', verb: 'sent' },
 };
+
+/** Unit words for Front Desk text counts: "1 text", "3 texts". */
+export const FRONT_DESK_UNIT_WORDS = {
+  front_desk_call: { one: 'call', many: 'calls' },
+  front_desk_texts: { one: 'text', many: 'texts' },
+} as const;
+
+/** The task titles Front Desk live tasks are written with (apps/api/src/agents/front-desk-tasks.ts). */
+const FD_TITLES = {
+  call: 'Answered a call',
+  transfer: 'Transferred a call',
+  message: 'Took a message',
+  spam: 'Spam call blocked',
+  texts: 'Answered texts',
+} as const;
+const FD_TEXTS_COUNTED = /^Answered (\d+) texts?$/;
 
 /** Prefix for a created plan whose title does not already read as "a/an ...". */
 const PLAN_PREFIX = 'a plan: ';
@@ -99,9 +124,41 @@ function finishedSentence(row: FeedRow): string {
   }
 }
 
+/** The one-row sentence for a Front Desk live task, from its title and the customer's first name; null for an unknown title. */
+function frontDeskSentence(row: FeedRow): string | null {
+  const forName = row.customerFirstName ? fill(FEED_COPY.frontDeskFor, { firstName: row.customerFirstName }) : '';
+  const fromName = row.customerFirstName ? fill(FEED_COPY.frontDeskFrom, { firstName: row.customerFirstName }) : '';
+  switch (row.taskTitle) {
+    case FD_TITLES.call:
+      return FEED_COPY.frontDeskCall + forName;
+    case FD_TITLES.transfer:
+      return FEED_COPY.frontDeskTransfer + forName;
+    case FD_TITLES.message:
+      return FEED_COPY.frontDeskMessage + forName;
+    case FD_TITLES.spam:
+      return FEED_COPY.frontDeskSpam;
+    case FD_TITLES.texts:
+      return FEED_COPY.frontDeskTextsPlain + fromName;
+  }
+  const counted = FD_TEXTS_COUNTED.exec(row.taskTitle);
+  if (counted) {
+    const count = Number(counted[1]);
+    const words = FRONT_DESK_UNIT_WORDS.front_desk_texts;
+    return fill(FEED_COPY.frontDeskTexts, { count, texts: count === 1 ? words.one : words.many }) + fromName;
+  }
+  return null;
+}
+
 /** Plain sentence for one feed row. Never includes message text. */
 export function feedSentence(row: FeedRow): string {
   const agent = AGENT_NAMES[row.agent];
+  if (row.taskMode === 'live' && row.agent === 'front_desk') {
+    if (row.kind === 'finished' && row.closedLater === true) return fill(FEED_COPY.liveDone, { agent, title: row.taskTitle });
+    if (row.kind === 'finished' || row.kind === 'step_attention') {
+      const sentence = frontDeskSentence(row);
+      if (sentence !== null) return sentence;
+    }
+  }
   switch (row.kind) {
     case 'created': {
       // A person (not an agent) creates a task only by re-running an expired plan.
