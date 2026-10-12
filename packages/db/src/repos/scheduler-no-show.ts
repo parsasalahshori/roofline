@@ -34,7 +34,8 @@ export async function noShowTarget(tx: Tx, ctx: TenantContext, appointmentId: st
       propertyId: appointments.propertyId,
       firstName: customers.firstName,
       displayName: customers.displayName,
-      repName: sql<string | null>`(select m.name from company_members m where m.company_id = ${appointments.companyId} and m.user_id = ${appointments.assignedUserId} limit 1)`,
+      // company_members is the security-barrier view filtered to the current company (app.company_id).
+      repName: sql<string | null>`(select m.name from company_members m where m.user_id = ${appointments.assignedUserId} limit 1)`,
     })
     .from(appointments)
     .innerJoin(customers, and(eq(customers.companyId, appointments.companyId), eq(customers.id, appointments.customerId)))
