@@ -67,6 +67,7 @@ function format(value: number): string {
 
 function Loaded({ m }: { m: MeasurementView }) {
   const navigate = useNavigate();
+  const [lng, lat] = m.center;
   const patch = usePatchMeasurement(m.id);
   const exact = useExactReport(m.id);
   const proposal = useMakeProposal(m.id);
@@ -74,11 +75,11 @@ function Loaded({ m }: { m: MeasurementView }) {
   const [ring, setRing] = useState<Ring>(m.outline?.[0] ?? []);
   const [problem, setProblem] = useState<OutlineProblem | null>(null);
   const [drawMode, setDrawMode] = useState<boolean>(m.drawMode || !m.outline?.[0]?.length);
-  const [pitch, setPitch] = useState(m.pitchX12);
+  const [pitch, setPitch] = useState(m.estimate.pitchX12);
   const [overhangText, setOverhangText] = useState(String(m.overhangFt));
   const [overhang, setOverhang] = useState(m.overhangFt);
   const [included, setIncluded] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(m.structures.map((s) => [s.id, s.included])),
+    Object.fromEntries(m.structures.map((s) => [s.footprintId, s.included])),
   );
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -124,7 +125,7 @@ function Loaded({ m }: { m: MeasurementView }) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const instance = createMap(container, m.center);
+    const instance = createMap(container, [lng, lat]);
     if (!instance) {
       queueMicrotask(() => setMapFailed(true));
       return;
@@ -148,7 +149,7 @@ function Loaded({ m }: { m: MeasurementView }) {
       editorRef.current = null;
       instance.remove();
     };
-  }, [m.center]);
+  }, [lng, lat]);
 
   const estimate = useMemo(
     () =>
@@ -156,9 +157,9 @@ function Loaded({ m }: { m: MeasurementView }) {
         outline: ring.length > 0 ? [ring] : [],
         pitchX12: pitch,
         overhangFt: overhang,
-        valleyFt: m.valleyFt,
+        valleyFt: m.estimate.valleyFt,
       }),
-    [ring, pitch, overhang, m.valleyFt],
+    [ring, pitch, overhang, m.estimate.valleyFt],
   );
 
   const save = (body: MeasurementPatch) => patch.mutate(body);
@@ -166,7 +167,7 @@ function Loaded({ m }: { m: MeasurementView }) {
   const toggleStructure = (id: string, next: boolean) => {
     const map = { ...included, [id]: next };
     setIncluded(map);
-    save({ includedStructures: m.structures.filter((s) => map[s.id]).map((s) => s.id) });
+    save({ includedStructures: m.structures.filter((s) => map[s.footprintId]).map((s) => s.footprintId) });
   };
 
   const choosePitch = (x: number) => {
@@ -242,11 +243,11 @@ function Loaded({ m }: { m: MeasurementView }) {
             </h2>
             {m.structures.map((s, i) => (
               <Checkbox
-                key={s.id}
+                key={s.footprintId}
                 label={measure.structure(i + 1)}
-                checked={included[s.id] ?? false}
+                checked={included[s.footprintId] ?? false}
                 disabled={locked}
-                onChange={(next) => toggleStructure(s.id, next)}
+                onChange={(next) => toggleStructure(s.footprintId, next)}
               />
             ))}
           </section>
