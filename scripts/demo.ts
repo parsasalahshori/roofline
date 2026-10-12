@@ -184,6 +184,8 @@ const env: NodeJS.ProcessEnv = {
   POLICY_PAGES_DOMAIN: 'roofline.test',
   DATABASE_URL_TENANT: tenantUrl,
   DATABASE_URL_SYSTEM: systemUrl,
+  // Only the "Hail storm hits" simulation uses it: storms are written by the owner role.
+  DEMO_DATABASE_URL_OWNER: OWNER_URL,
   ENCRYPTION_KEY,
   WEB_DIST_DIR: 'apps/web/dist',
   API_RATE_LIMIT_PER_MIN: '100000',

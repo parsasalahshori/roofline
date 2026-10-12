@@ -168,6 +168,12 @@ const ConfigSchema = z
     DEMO_MODE: flag,
     /** The explicit override that lets DEMO_MODE run with NODE_ENV=production (a hosted demo). */
     DEMO_MODE_ALLOW_PROD: flag,
+    /**
+     * Demo mode only: a connection URL with the database owner's rights, used by the presenter's
+     * "Hail storm hits" simulation to write the global storms tables (the app roles cannot). Read
+     * only when DEMO_MODE is on; unset, that one simulation answers 409.
+     */
+    DEMO_DATABASE_URL_OWNER: postgresUrl.optional(),
 
     /**
      * Where the built web app is (apps/web/dist). When set, the API serves it too, so one process

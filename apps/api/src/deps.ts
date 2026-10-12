@@ -36,6 +36,7 @@ import { anthropicFor } from './providers/anthropic/index.ts';
 import { FakeCallControl } from './providers/fakes/call-control.ts';
 import { FakeLineLookup } from './providers/fakes/line-lookup.ts';
 import { ScriptedLlm } from './providers/fakes/scripted-llm.ts';
+import { demoLlm } from './demo/script.ts';
 import { twilioLookupFor } from './providers/twilio/lookup.ts';
 import { twilioCallControlFor } from './providers/twilio/voice.ts';
 import { RelaySessions } from './front-desk/relay-sessions.ts';
@@ -228,6 +229,8 @@ export class UnconfiguredCallControl implements CallControl {
 
 /** The fake Llm with FAKE_PROVIDERS, the real one when a key is set, else one that refuses. Never builds a client here. */
 export function createLlm(config: Config): Llm {
+  // Demo mode: the scripted Front Desk answers believable lines (demo/script.ts) instead of "say that again".
+  if (config.DEMO_MODE) return demoLlm();
   return config.FAKE_PROVIDERS ? new ScriptedLlm() : (anthropicFor(config) ?? new UnconfiguredLlm());
 }
 

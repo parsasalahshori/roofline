@@ -262,7 +262,7 @@ type OptOutType = 'STOP' | 'START' | 'HELP';
  * A text that came in. `from` is the sender's E.164 number or a short code. `optOutType` is Twilio's
  * OptOutType when it sent one (Advanced Opt-Out): it decides STOP / START / HELP instead of the body.
  */
-type Inbound = { messageSid: string; from: string; to: string; body: string; optOutType?: OptOutType };
+export type Inbound = { messageSid: string; from: string; to: string; body: string; optOutType?: OptOutType };
 
 /**
  * What the text is: Twilio's OptOutType when it is set (for STOP, the keyword is the body, normalized,
@@ -301,7 +301,7 @@ function readingOf(text: Inbound): InboundReading {
  * - anything else: no reply; a message that reads like an opt-out is flagged for a person to
  *   check, on each active customer's timeline or, with none, on the message's own; nobody is opted out.
  */
-async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): Promise<string | undefined> {
+export async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): Promise<string | undefined> {
   const ctx = systemCtx(companyId);
   const now = deps.clock.now();
 
