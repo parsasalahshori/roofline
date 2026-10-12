@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
+  EMERGENCY_INTENTS,
+  ROUTER_INTENTS,
+  emergencyReason,
   matchCaller,
   shouldTextBack,
   shouldTransfer,
@@ -60,6 +63,82 @@ describe('shouldTransfer', () => {
   ];
   test.each(rows)('%s', (_n, over, want) => {
     expect(shouldTransfer({ ...base, ...over })).toBe(want);
+  });
+});
+
+describe('emergencyReason and shouldTransfer with the caller text (Ruling BK amended)', () => {
+  const vocab: [string, 'leak' | 'danger'][] = [
+    ['leak', 'leak'],
+    ['active_leak', 'leak'],
+    ['water_inside', 'leak'],
+    ['storm_damage_active', 'leak'],
+    ['danger', 'danger'],
+    ['injury', 'danger'],
+    ['fire', 'danger'],
+    ['emergency', 'danger'],
+  ];
+  test('the vocabulary is exactly the eight intents', () => {
+    expect([...EMERGENCY_INTENTS].sort()).toEqual(vocab.map(([w]) => w).sort());
+  });
+  test.each(vocab)('intent %s alone gives %s', (intent, want) => {
+    expect(emergencyReason(intent)).toBe(want);
+    expect(shouldTransfer({ ...base, intent })).toBe(want);
+  });
+  test.each(['LEAK', 'Active_Leak', ' Water_Inside '])('the intent is matched case-insensitively (%s)', (intent) => {
+    expect(emergencyReason(intent)).toBe('leak');
+  });
+  test('an emergency intent is split by the caller text', () => {
+    expect(emergencyReason('emergency', 'Water is coming through my ceiling right now!')).toBe('leak');
+    expect(emergencyReason('emergency', 'I smell gas by the attic')).toBe('danger');
+  });
+  const phrases: [string, 'leak' | 'danger'][] = [
+    ['Water is coming in through the light fixture', 'leak'],
+    ['My ceiling is leaking', 'leak'],
+    ['Rain is pouring through the kitchen', 'leak'],
+    ['water dripping from the ceiling', 'leak'],
+    ['the bedroom is flooding', 'leak'],
+    ['I smell gas near the furnace', 'danger'],
+    ['there are sparks by the meter', 'danger'],
+    ['there is a FIRE on the roof', 'danger'],
+    ['my husband got injured on the ladder', 'danger'],
+    ['the porch roof collapsed', 'danger'],
+    ['part of the ceiling caved in', 'danger'],
+  ];
+  test.each(phrases)('a loose phrase hit with any intent: %s', (text, want) => {
+    expect(emergencyReason('other', text)).toBe(want);
+    expect(shouldTransfer({ ...base, intent: 'ask_for_person', askedForPersonCount: 1 }, text)).toBe(want);
+  });
+  test('the intent itself is scanned too', () => {
+    expect(emergencyReason('ceiling leaking')).toBe('leak');
+    expect(emergencyReason('gas smell')).toBe('danger');
+  });
+  test('danger outranks a leak in the same words', () => {
+    expect(emergencyReason('other', 'water is pouring in and the ceiling collapsed')).toBe('danger');
+  });
+  test('the intent wins over the words', () => {
+    expect(emergencyReason('leak', 'and there were sparks')).toBe('leak');
+  });
+  test.each([
+    ["It's urgent, please call me back tonight", 'urgent'],
+    ['This is really urgent', 'other'],
+    ['I need a quote for a new roof', 'quote'],
+    ['Can someone call me?', 'ask_for_person'],
+  ])('no leak or danger signal gives no emergency reason: %s', (text, intent) => {
+    expect(emergencyReason(intent, text)).toBeNull();
+  });
+  test('a bare urgent person-ask stays "asked" (not leak or danger), so after hours it takes a message', () => {
+    const reason = shouldTransfer({ ...base, intent: 'urgent', urgent: true, askedForPersonCount: 1 }, "It's urgent");
+    expect(reason).toBe('asked');
+    expect(transferPlan({ reason: reason!, urgent: false, inWorkHours: false, onCall: [{ userId: 'u1', phone: '+15555550101' }] }).mode).toBe('message');
+  });
+  test('no other router intent is read as leak or danger on its own', () => {
+    for (const intent of ROUTER_INTENTS) {
+      if (!EMERGENCY_INTENTS.has(intent)) expect(emergencyReason(intent), intent).toBeNull();
+    }
+  });
+  test('the existing call without caller text still works', () => {
+    expect(shouldTransfer({ ...base, intent: 'emergency', urgent: true })).toBe('danger');
+    expect(shouldTransfer({ ...base, urgent: true })).toBeNull();
   });
 });
 
