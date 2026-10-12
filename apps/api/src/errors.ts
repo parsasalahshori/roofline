@@ -136,7 +136,9 @@ export const notFoundHandler: RequestHandler = (_req, res) => {
  *   connection is cut.
  */
 export function errorHandler(logError: (err: unknown, path: string) => void): ErrorRequestHandler {
-  return (err: unknown, req, res, _next) => {
+  // Express knows an error handler by its four parameters, so `next` stays although it is unused.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return (err: unknown, req, res, next) => {
     // Too late to send a clean JSON body. The error is logged here, scrubbed, and the connection is
     // cut so the client can't take a partial body for a whole one. It is not handed on with
     // `next(err)`: Express's default handler prints the raw error and its `cause` (query params,
