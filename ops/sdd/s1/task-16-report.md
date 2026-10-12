@@ -20,3 +20,6 @@ typecheck clean, lint clean, vitest @roofline/shared: 28 files, 659 tests passed
 ## Carries
 
 - T17: implement AdsGoogle.unlink(customerId) in the real Google adapter (end the CustomerClientLink of our manager account). revokeAdAccount (apps/api/src/storm/ad-accounts.ts) calls deps.adsGoogle.unlink?.(); while it is missing, revoking a Google account leaves the manager link in place. Once T17 lands, make the member required.
+
+## CI fix
+Run 38215000785: Platform failed on ad-accounts.test.ts (toEqual lacked fromThrow: true added in review amendments); test updated.

@@ -70,7 +70,7 @@ test('evaluateAdAccount maps Meta access reasons', async () => {
 test('evaluateAdAccount never throws and never uses provider text', async () => {
   t.adsGoogle.failNext('payment');
   const res = await evaluateAdAccount(t.deps, { platform: 'google', externalAccountId: '1234567890' });
-  expect(res).toEqual({ status: 'error', name: null, currency: null, lastErrorPlain: AD_ERROR_MESSAGES.payment });
+  expect(res).toEqual({ status: 'error', name: null, currency: null, lastErrorPlain: AD_ERROR_MESSAGES.payment, fromThrow: true });
   expect(new AdPlatformError('payment').message).toContain('Ad platform error');
   expect(res.lastErrorPlain).not.toContain('Ad platform error');
 
