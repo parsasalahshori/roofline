@@ -13,7 +13,8 @@
     "seed:dev": "tsx src/scripts/seed-dev.ts",
     "sync:stripe-plans": "tsx src/scripts/sync-stripe-plans.ts",
     "smoke:stripe": "tsx src/scripts/smoke/stripe-test-clock.ts",
-    "smoke:texting": "tsx src/scripts/smoke/texting-real-brand.ts"
+    "smoke:texting": "tsx src/scripts/smoke/texting-real-brand.ts",
+    "smoke:storm": "tsx src/scripts/smoke/storm.ts"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
