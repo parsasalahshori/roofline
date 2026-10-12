@@ -1,8 +1,22 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, date, index, integer, jsonb, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigserial,
+  boolean,
+  char,
+  check,
+  date,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgTable,
+  text,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { CAMPAIGN_STATUSES, COMPANY_STATUSES, ROLES } from '@roofline/shared';
-import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
-import { MEMBERSHIP_STATUSES, PHONE_NUMBER_PURPOSES, USER_TOKEN_KINDS } from './enums.ts';
+import { bytea, citext, enumCheck, multiPolygon, pk, point4326, polygon4326, timestamps, tstz } from './columns.ts';
+import { FOOTPRINT_STATE_STATUSES, MEMBERSHIP_STATUSES, PHONE_NUMBER_PURPOSES, USER_TOKEN_KINDS } from './enums.ts';
 
 /*
  * Global tables (spec 3.1): read before a company is known, so they are not tenant-scoped.
@@ -218,3 +232,37 @@ export const lineLookups = pgTable('line_lookups', {
   lineType: text('line_type').notNull(),
   lookedUpAt: tstz('looked_up_at').notNull().defaultNow(),
 });
+/*
+ * Building footprints (spec 3.1, 8): public outlines loaded by the footprint loader job. No company
+ * and no RLS: `app_tenant` may read them, only `app_system` writes (migration 0016).
+ */
+
+export const buildingFootprints = pgTable(
+  'building_footprints',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    /** Two-letter USPS state code. */
+    state: char('state', { length: 2 }).notNull(),
+    geom: polygon4326('geom').notNull(),
+    areaSqFt: numeric('area_sq_ft', { precision: 12, scale: 1, mode: 'number' }).notNull(),
+    source: text('source').notNull(),
+    /** The provider's own id for the building, when it has one. */
+    sourceRef: text('source_ref'),
+  },
+  (t) => [index('building_footprints_geom_gist').using('gist', t.geom), index('building_footprints_state_idx').on(t.state)],
+);
+
+/** Load state per state (one row per state): what the loader is doing and why it failed, in plain words. */
+export const buildingFootprintStates = pgTable(
+  'building_footprint_states',
+  {
+    state: char('state', { length: 2 }).primaryKey(),
+    status: text('status').notNull(),
+    buildings: integer('buildings'),
+    sourceUrl: text('source_url'),
+    startedAt: tstz('started_at'),
+    loadedAt: tstz('loaded_at'),
+    errorPlain: text('error_plain'),
+  },
+  (t) => [enumCheck('building_footprint_states', 'status', t.status, FOOTPRINT_STATE_STATUSES)],
+);

@@ -8,6 +8,8 @@ export const JOB_NAMES = [
   'import-customers',
   'texting-registration',
   'calendar-push',
+  'footprints-load',
+  'signed-pdf',
   // D1 Front Desk
   'fd-after-call',
   'fd-recording-store',
@@ -23,10 +25,14 @@ export const JOB_NAMES = [
   'claims-reply',
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
+// 'footprints-load' is global work, but the worker requires a company id on every job: its data is
+// `{ companyId: <the requesting company>, state }` with singletonKey = state.
 export type JobData = {
   companyId: string;
   importId?: string;
   appointmentId?: string;
+  state?: string;
+  proposalId?: string;
   callId?: string;
   recordingSid?: string;
   conversationId?: string;

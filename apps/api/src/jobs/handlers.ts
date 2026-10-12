@@ -7,6 +7,8 @@ import { runAgenda } from '../agents/scheduler/agenda.ts';
 import { runReminders } from '../agents/scheduler/reminders.ts';
 import { runWeatherWatch } from '../agents/scheduler/weather.ts';
 import { pushAppointment } from '../calendar/push.ts';
+import { loadFootprintState } from '../estimator/footprints-load.ts';
+import { signedPdf } from '../estimator/signed-pdf.ts';
 import { runImport } from '../imports/run.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
 
@@ -31,4 +33,6 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'followup-daily': (deps, data, meta) => runFollowUps(deps, data.companyId, meta),
   // G1 Task 8
   'claims-reply': (deps, data) => runClaimsReply(deps, data.companyId, data.messageId!),
+  'footprints-load': (deps, data, meta) => loadFootprintState(deps, data.state!, meta),
+  'signed-pdf': (deps, data) => signedPdf(deps, data.companyId, data.proposalId!),
 };

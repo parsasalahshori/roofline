@@ -55,6 +55,8 @@ export type SetupFacts = {
   paymentMethod: boolean;
   /** Active members with a connected calendar (a dead grant does not count). */
   calendarsConnected: number;
+  /** The company has saved a pricebook and all three Good/Better/Best tier templates. */
+  pricesAndTiersSaved: boolean;
   skipped: ReadonlySet<SetupItemKey>;
 };
 
@@ -74,7 +76,6 @@ export type SetupView = {
 };
 
 const COMING_WITH_BY_KEY: Partial<Record<SetupItemKey, ComingWith>> = {
-  prices_and_tiers: 'estimator',
   phone_number: 'front_desk',
   connect_ads: 'storm_scout',
 };
@@ -118,6 +119,9 @@ function resolveItem(key: SetupItemKey, facts: SetupFacts): Resolved {
     case 'connect_calendar':
       // Not skippable, so a stored skip for this key is deliberately ignored.
       return facts.calendarsConnected > 0 ? { status: 'done', data: {} } : { status: 'todo', data: {} };
+    case 'prices_and_tiers':
+      // Not skippable, so a stored skip for this key is deliberately ignored.
+      return facts.pricesAndTiersSaved ? { status: 'done', data: {} } : { status: 'todo', data: {} };
     default:
       return { status: 'todo', data: {} };
   }

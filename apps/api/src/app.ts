@@ -28,7 +28,11 @@ import type { LineLookup } from './providers/line-lookup.ts';
 import type { Llm } from './providers/llm.ts';
 import type { RelaySessions } from './front-desk/relay-sessions.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
-import { apiRateLimit } from './rate-limit.ts';
+import type { FootprintSource } from './providers/footprints.ts';
+import type { AerialMeasure } from './providers/aerial.ts';
+import type { ExactReports } from './providers/exact-reports.ts';
+import type { ObjectStore } from './providers/object-store.ts';
+import { apiRateLimit, publicRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
 import { agentsFeedRoutes } from './routes/agents-feed.ts';
 import { agentsRoutes } from './routes/agents.ts';
@@ -60,6 +64,12 @@ import { timelineRoutes } from './routes/timeline.ts';
 import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
 import { agentSettingsRoutes } from './routes/agents-settings.ts';
+import { measurementRoutes } from './routes/measurements.ts';
+import { tierTemplateRoutes } from './routes/tier-templates.ts';
+import { estimatorSettingsRoutes } from './routes/estimator-settings.ts';
+import { proposalRoutes } from './routes/proposals.ts';
+import { publicProposalRoutes } from './public/proposals.ts';
+import { proposalSignRoutes } from './public/proposal-sign.ts';
 import type { StepQueue } from './tasks/queue.ts';
 import { policyPages } from './public/policies.ts';
 import { serveWeb } from './web.ts';
@@ -129,6 +139,14 @@ export type AppDeps = {
   callControl: CallControl;
   lineLookup: LineLookup;
   relaySessions: RelaySessions;
+  /** Where building footprints come from (providers/footprints.ts); tests pass `FakeFootprintSource`. */
+  footprints: FootprintSource;
+  /** Where aerial roof measurements come from (providers/aerial.ts); tests pass `FakeAerialMeasure`. */
+  aerial: AerialMeasure;
+  /** Where exact roof reports are ordered and fetched (providers/exact-reports.ts); tests pass `FakeExactReports`. */
+  exactReports: ExactReports;
+  /** Where proposal files are stored (providers/object-store.ts); tests pass `MemoryObjectStore`. */
+  objectStore: ObjectStore;
 };
 
 export type AppOptions = {
@@ -302,6 +320,16 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // G1 Agents
   app.use('/api/claims', claimBoardRoutes(deps));
   app.use('/api/agent-values', agentValueRoutes(deps));
+  app.use('/api/measurements', measurementRoutes(deps));
+  app.use('/api/tier-templates', tierTemplateRoutes(deps));
+  app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
+  app.use('/api/proposals', proposalRoutes(deps));
+  // Signed-out customers open and sign their proposal here. The sign-in gate lets every path under
+  // /api/public/ through (auth/middleware.ts), and the per-IP limit stands in for the session one.
+  const publicRouter = express.Router();
+  publicRouter.use('/proposals', publicProposalRoutes(deps));
+  publicRouter.use('/proposals', proposalSignRoutes(deps));
+  app.use('/api/public', publicRateLimit(), publicRouter);
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.

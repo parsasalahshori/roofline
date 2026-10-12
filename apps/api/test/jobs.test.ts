@@ -921,6 +921,8 @@ function queueHandlers(over: Partial<JobHandlers> = {}): JobHandlers {
     'import-customers': async () => {},
     'texting-registration': async () => {},
     'calendar-push': async () => {},
+    'footprints-load': async () => {},
+    'signed-pdf': async () => {},
     // D1 Front Desk
     'fd-after-call': async () => {},
     'fd-recording-store': async () => {},
@@ -1076,6 +1078,8 @@ describe('SCHEDULES', () => {
       ['bill-monthly-fees', '0 9 1 * *'],
       ['prune-early-reports', '17 3 * * *'],
       ['calendar-pull', '*/5 * * * *'],
+      ['footprints-ensure', '*/15 * * * *'],
+      ['exact-report-poll', '*/10 * * * *'],
       ['fd-retention', '17 3 * * *'],
       ['fd-health', '*/2 * * * *'],
       ['claims-daily-schedule', '*/15 * * * *'],
@@ -1088,5 +1092,10 @@ describe('SCHEDULES', () => {
 
   test('the calendar-push job queue is registered', () => {
     expect(JOB_NAMES).toContain('calendar-push');
+  });
+
+  test('the footprints-load and signed-pdf job queues are registered', () => {
+    expect(JOB_NAMES).toContain('footprints-load');
+    expect(JOB_NAMES).toContain('signed-pdf');
   });
 });

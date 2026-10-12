@@ -40,8 +40,15 @@ const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
   'GET /auth/config',
 ]);
 
-function isPublicRoute(method: string, path: string): boolean {
-  return PUBLIC_ROUTES.has(`${method} ${path.toLowerCase().replace(/\/+$/, '')}`);
+/**
+ * Whether a request needs no session. `path` is relative to /api and is Express's `req.path`, which
+ * is not percent-decoded, so `/%70ublic/x` is not public. Public when the method and path are one
+ * of PUBLIC_ROUTES, or when the lowercased path starts with `/public/` (any method): the customer
+ * pages for proposals live there. `/public` and `/publicx` are not public.
+ */
+export function isPublicRoute(method: string, path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.startsWith('/public/') || PUBLIC_ROUTES.has(`${method} ${lower.replace(/\/+$/, '')}`);
 }
 
 /** The TenantContext every repository takes, for the member behind a session. */

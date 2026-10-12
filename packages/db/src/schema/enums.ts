@@ -24,18 +24,29 @@ export {
   CLAIM_EVENT_ACTORS,
   CLAIM_STATUSES,
   FOLLOW_UP_KINDS,
+  EXACT_ORDER_STATUSES,
+  FOOTPRINT_STATE_STATUSES,
+  MEASUREMENT_KINDS,
+  MEASUREMENT_METHODS,
   MESSAGE_CHANNELS,
   MESSAGE_DIRECTIONS,
   MESSAGE_PURPOSES,
+  PROPOSAL_EVENT_KINDS,
+  PROPOSAL_STATUSES,
   QUOTE_STATUSES,
   RECORDING_STATUSES,
   SMS_CONSENT_SOURCES,
   TRANSFER_RESULTS,
   TURN_ROUTES,
   TURN_SPEAKERS,
+  STORED_FILE_KINDS,
+  TIERS,
   USAGE_KINDS,
   type UsageKind,
 } from '@roofline/shared';
+
+/** Roof material of a tier template (spec 4.1). Database-only: the homeowner page shows the tier name. */
+export const TIER_MATERIALS = ['architectural', 'premium', 'metal'] as const;
 
 export const MEMBERSHIP_STATUSES = ['invited', 'active', 'disabled'] as const;
 export const USER_TOKEN_KINDS = ['verify_email', 'reset_password'] as const;

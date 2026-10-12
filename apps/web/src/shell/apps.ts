@@ -17,7 +17,7 @@ export type DockApp = { key: AppKey; href: string; icon: ReactNode; shipped: boo
 export const DOCK_APPS: readonly DockApp[] = [
   { key: 'storm', href: '/storm', icon: createElement(StormIcon), shipped: false },
   { key: 'front-desk', href: '/front-desk', icon: createElement(FrontDeskIcon), shipped: false },
-  { key: 'estimator', href: '/estimator', icon: createElement(EstimatorIcon), shipped: false },
+  { key: 'estimator', href: '/estimator', icon: createElement(EstimatorIcon), shipped: true },
   { key: 'jobs', href: '/jobs', icon: createElement(JobsIcon), shipped: true },
   { key: 'calendar', href: '/calendar', icon: createElement(CalendarIcon), shipped: true },
   { key: 'agents', href: '/agents', icon: createElement(AgentsIcon), shipped: true },

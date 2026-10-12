@@ -67,6 +67,7 @@ export const setup = {
     fixAndResubmit: 'Fix and resubmit',
     invite: 'Invite',
     addCard: 'Add a card',
+    setPrices: 'Set prices',
     skip: 'Skip for now',
     undoSkip: 'Undo skip',
     connectCalendar: 'Connect your calendar',
