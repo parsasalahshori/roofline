@@ -1,4 +1,5 @@
 import type { StepType } from '@roofline/shared';
+import { orderExactReport } from '../estimator/exact-report.ts';
 import { sendSmsBatch } from '../messaging/send-batch.ts';
 import type { StepHandler } from './runner.ts';
 
@@ -21,5 +22,5 @@ export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   demo_spend: finishAtOnce,
   send_sms_batch: sendSmsBatch,
   send_proposal: notYet,
-  order_exact_report: notYet,
+  order_exact_report: orderExactReport,
 };
