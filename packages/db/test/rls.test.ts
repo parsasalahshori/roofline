@@ -792,6 +792,163 @@ describe('app_tenant isolation', () => {
   });
 });
 
+/**
+ * C1 tables with no other behavioural isolation test (security finding 22). Each case makes one row
+ * for a company as the owner (with the parents it needs, all in that company), and names a column
+ * the tenant role may set. Company A's session must not read, change or delete B's row, must not
+ * move its own row to B, and must not insert a row carrying B's company_id.
+ */
+describe('app_tenant isolation on the C1 calendar, schedule and pricing tables', () => {
+  async function connectionFor(company: SeededCompany): Promise<string> {
+    const [row] = await ownerQuery<{ id: string }>(
+      `insert into calendar_connections (company_id, user_id, provider, encrypted_credentials)
+       values ($1, $2, 'google', $3) returning id`,
+      [company.companyId, company.owner.userId, Buffer.from('encrypted-placeholder')],
+    );
+    return row!.id;
+  }
+
+  async function appointmentFor(company: SeededCompany): Promise<string> {
+    const [row] = await ownerQuery<{ id: string }>(
+      `insert into appointments (company_id, kind, starts_at, ends_at)
+       values ($1, 'other', now(), now() + interval '1 hour') returning id`,
+      [company.companyId],
+    );
+    return row!.id;
+  }
+
+  type Case = {
+    table: string;
+    /** The insert statement and its values for `company`, its parents made first. */
+    insert: (company: SeededCompany) => Promise<{ text: string; values: unknown[] }>;
+    /** A column assignment the tenant role is allowed to make. */
+    set: string;
+    /** app_tenant holds DELETE on the table. */
+    deletable: boolean;
+  };
+
+  const CASES: Case[] = [
+    {
+      table: 'calendar_event_links',
+      insert: async (c) => ({
+        text: `insert into calendar_event_links (company_id, appointment_id, connection_id, provider_event_id)
+               values ($1, $2, $3, $4) returning id`,
+        values: [c.companyId, await appointmentFor(c), await connectionFor(c), `evt-${c.companyId}`],
+      }),
+      set: `etag = 'changed'`,
+      deletable: true,
+    },
+    {
+      table: 'calendar_busy_blocks',
+      insert: async (c) => ({
+        text: `insert into calendar_busy_blocks (company_id, connection_id, user_id, provider_event_id, starts_at, ends_at)
+               values ($1, $2, $3, $4, now(), now() + interval '1 hour') returning id`,
+        values: [c.companyId, await connectionFor(c), c.owner.userId, `busy-${c.companyId}`],
+      }),
+      set: `all_day = true`,
+      deletable: true,
+    },
+    {
+      table: 'member_schedules',
+      insert: async (c) => ({
+        text: `insert into member_schedules (company_id, user_id, weekly_hours) values ($1, $2, '{}'::jsonb) returning id`,
+        values: [c.companyId, c.owner.userId],
+      }),
+      set: `weekly_hours = '{"mon": []}'::jsonb`,
+      deletable: false,
+    },
+    {
+      table: 'pricebooks',
+      insert: async (c) => ({
+        text: `insert into pricebooks (company_id, prices) values ($1, '{}'::jsonb) returning id`,
+        values: [c.companyId],
+      }),
+      set: `prices = '{"changed": true}'::jsonb`,
+      deletable: false,
+    },
+    {
+      table: 'quote_counters',
+      insert: async (c) => ({
+        text: `insert into quote_counters (company_id) values ($1) returning id`,
+        values: [c.companyId],
+      }),
+      set: `next_number = 99`,
+      deletable: false,
+    },
+  ];
+
+  async function rowFor(c: Case, company: SeededCompany): Promise<string> {
+    const { text, values } = await c.insert(company);
+    const [row] = await ownerQuery<{ id: string }>(text, values);
+    return row!.id;
+  }
+
+  /** The row as the owner sees it, to show a refused write changed nothing. */
+  const ownerRow = (c: Case, id: string) => ownerQuery(`select * from ${c.table} where id = $1`, [id]);
+
+  test.each(CASES.map((c) => [c.table, c] as const))('%s: company A reads only its own rows, never B\'s by id', async (_t, c) => {
+    const aId = await rowFor(c, seed.a);
+    const bId = await rowFor(c, seed.b);
+    expect(await tenantRaw(`select id, company_id from ${c.table}`, { companyId: seed.a.companyId })).toEqual([
+      { id: aId, company_id: seed.a.companyId },
+    ]);
+    expect(
+      await tenantRaw(`select id from ${c.table} where id = $1`, { companyId: seed.a.companyId, values: [bId] }),
+    ).toEqual([]);
+    expect(
+      await tenantRaw(`select id from ${c.table} where company_id = $1`, {
+        companyId: seed.a.companyId,
+        values: [seed.b.companyId],
+      }),
+    ).toEqual([]);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))("%s: company A cannot change or delete B's row", async (_t, c) => {
+    await rowFor(c, seed.a);
+    const bId = await rowFor(c, seed.b);
+    const before = await ownerRow(c, bId);
+
+    expect(
+      await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
+        companyId: seed.a.companyId,
+        values: [bId],
+      }),
+    ).toEqual([]);
+    if (c.deletable) {
+      expect(
+        await tenantRaw(`delete from ${c.table} where id = $1 returning id`, { companyId: seed.a.companyId, values: [bId] }),
+      ).toEqual([]);
+    }
+    expect(await ownerRow(c, bId)).toEqual(before);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))('%s: company A cannot move its own row to B', async (_t, c) => {
+    const aId = await rowFor(c, seed.a);
+    const before = await ownerRow(c, aId);
+    let error: unknown;
+    try {
+      await tenantRaw(`update ${c.table} set company_id = $1 where id = $2`, {
+        companyId: seed.a.companyId,
+        values: [seed.b.companyId, aId],
+      });
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toBeInstanceOf(pg.DatabaseError);
+    const { code, message } = error as pg.DatabaseError;
+    // RLS's WITH CHECK refuses it; a same-company foreign key may refuse it first.
+    expect(code === '23503' || /row-level security/.test(message)).toBe(true);
+    expect(await ownerRow(c, aId)).toEqual(before);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))("%s: company A cannot insert a row with B's company_id", async (_t, c) => {
+    // B's parents exist (made by the owner), so only row-level security stands in the way.
+    const { text, values } = await c.insert(seed.b);
+    await expect(tenantRaw(text, { companyId: seed.a.companyId, values })).rejects.toThrow(/row-level security/);
+    expect(await ownerQuery(`select count(*)::int n from ${c.table}`)).toEqual([{ n: 0 }]);
+  });
+});
+
 describe('withTenant', () => {
   test('sets app.company_id for its transaction only', async () => {
     const inside = await withTenant(pools, ctx(seed.a), async (tx) => {
