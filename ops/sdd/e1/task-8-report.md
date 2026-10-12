@@ -1,7 +1,7 @@
 # E1 Task 8 report: tier templates, estimator settings, proposals API, proposal PDF
 
 Branch `e1-t8`, base `693e2df` (e1-estimator + C1 T6 + scratch `apps/api/src/quotes/pdf.ts` with only `PDF_COLORS`).
-Commits: `fe3e12b` (build), `3523f8b` (CI fix), `1735fd2` (review fixes, this report).
+Commits: `fe3e12b` (build), `3523f8b` (CI fix), `1735fd2` (review fixes). Review CI 38216142539 on `1735fd2`: Platform passed, E2E passed.
 
 ## What T8 built (from the diff)
 
