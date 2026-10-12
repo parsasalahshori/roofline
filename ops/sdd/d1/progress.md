@@ -166,3 +166,8 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
   - So any new system-pool pass over calls or conversations (CV's stale-call sweep, RC's SMS idle-close) must list companies on the system pool, then work per company on the tenant pool inside withTenant, rather than adding grants back.
   - SMS detail now merges messages with turns (dedupe by text; re-check if RC changes what texts.ts writes).
   - Front Desk SMS bodies are blanked under retention.
+- 2026-10-12, controller plan to finish fast (owner):
+  - RC is split. RC-1 (S1 lead, d1-rc1): items 1-4, 6 and 9, the T19 minors, and E1's final-review F2 (texts part), F4, F5, F6 and N3 (book.ts toE164). RC-2 (me, d1-rc2 off d1-cv): notes 28 and 41, F2 (voice match at start), F3 (urgency through the handoff), and voice needs_attention.
+  - The final whole-branch review runs incrementally (E1 lead): d1-rev-e (F1 appointment ids), d1-rev-f (F7-F10), d1-rev-g (N2 dispatcher toE164, N4 transfer phone vs any Roofline number), and d1-rev-c (also N3's reply route).
+  - **Ruling BI** (owner, item N6): retention blanks only the AI exchange (inbound texts the assistant handled and its replies). It keeps STOP/START/HELP bodies, staff replies and booking confirmations, and the copy says so. Retention 0 deletes existing recordings, with copy that says so. Built by the A1 lead on d1-rev-h.
+  - Docker works locally (`nohup dockerd &`): run the db and api suites before every push.
