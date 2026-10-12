@@ -224,7 +224,7 @@ function PacketActions({ jobId, packet, dayFormat }: { jobId: string; packet: Jo
       <Button variant="ghost" busy={build.isPending} onClick={run}>
         {build.isPending ? claims.buildingPacket : claims.buildPacket}
       </Button>
-      {packet !== null ? (
+      {packet != null ? (
         <a className={styles.link} href={claimPacketUrl(jobId)} target="_blank" rel="noreferrer">
           {claims.downloadPacket(dayFormat.format(new Date(packet.builtAt)))}
         </a>

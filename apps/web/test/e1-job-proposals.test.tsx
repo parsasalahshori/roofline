@@ -66,7 +66,7 @@ function renderJob(list: ProposalView[], overrides: Record<string, () => { body?
     'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', timezone: 'America/Chicago' } }),
     'GET /api/jobs/j1/view': () => ({ body: VIEW }),
     'GET /api/proposals?jobId=j1': () => ({ body: { proposals: list, total: list.length } }),
-    'GET /api/jobs/j1/claim': () => ({ body: { claim: null, intake: null } }),
+    'GET /api/jobs/j1/claim': () => ({ body: { claim: null, intake: null, packet: null } }),
     ...overrides,
   });
   const queryClient = createQueryClient();

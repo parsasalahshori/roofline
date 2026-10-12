@@ -126,7 +126,8 @@ export function renderClaimPacketPdf(i: ClaimPacketPdfInput, o?: { compress?: bo
   if (lossDate === null) {
     line(doc, S.noDate);
   } else if (facts.hail !== null) {
-    line(doc, S.hail(trim(facts.hail.thresholdIn), lossDate), { bold: true });
+    // The radar row's own storm day, which can be the day before the date of loss.
+    line(doc, S.hail(trim(facts.hail.thresholdIn), formatPacketDate(facts.hail.convectiveDay, zone)), { bold: true });
   } else {
     line(doc, `${S.noRadarHail} ${lossDate}`);
   }
