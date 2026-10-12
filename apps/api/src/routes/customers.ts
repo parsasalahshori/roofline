@@ -5,6 +5,7 @@ import {
   type CustomerRow,
   DuplicatePhoneError,
   getCustomer,
+  getCustomerView,
   listCustomers,
   setArchived,
   type TenantContext,
@@ -254,6 +255,14 @@ export function customerRoutes(deps: AppDeps): Router {
     const row = await withTenant(pools, ctx, (tx) => getCustomer(tx, ctx, id));
     if (!row) throw new AppError(404, MESSAGES.notFound);
     res.json(customerBody(row));
+  });
+
+  router.get('/:id/view', async (req, res) => {
+    const { ctx } = req;
+    const id = customerId(req.params.id);
+    const view = await withTenant(pools, ctx, (tx) => getCustomerView(tx, ctx, id, clock.now()));
+    if (!view) throw new AppError(404, MESSAGES.notFound);
+    res.json(view);
   });
 
   router.patch('/:id', async (req, res) => {
