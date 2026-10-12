@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ApprovalClass } from './enums.ts';
 import { MESSAGE_PURPOSES } from './enums.ts';
 import { renderBody } from './render.ts';
+import { AD_PLATFORMS } from './storm.ts';
 
 /*
  * The step-type registry (spec 4.1): what each kind of step an agent can put in a task needs, in
@@ -14,7 +15,15 @@ import { renderBody } from './render.ts';
  * The API builds previews and checks payloads from here, and the runner adds up `minutesSaved`.
  */
 
-export const STEP_TYPES = ['demo_noop', 'demo_message', 'demo_spend', 'send_sms_batch'] as const;
+export const STEP_TYPES = [
+  'demo_noop',
+  'demo_message',
+  'demo_spend',
+  'send_sms_batch',
+  'send_email_batch',
+  'build_routes',
+  'create_ad_campaign',
+] as const;
 export type StepType = (typeof STEP_TYPES)[number];
 
 export function isStepType(value: unknown): value is StepType {
@@ -155,6 +164,24 @@ export const MARKETING_TEXT_MESSAGE = 'Marketing texts must include your company
 const WRITE_MESSAGE = 'Please write the message.';
 const PICK_CUSTOMERS = 'Please pick customers from your list.';
 
+/**
+ * Per-customer details for a batch (spec 4.5): the values a template reads, keyed by customer id.
+ * Each value is at most 60 characters, and a batch holds at most 5,000 customers.
+ */
+const FIELDS_MESSAGE = 'Please check the details for each customer.';
+const fieldsMap = z
+  .record(
+    z.string(),
+    z.record(
+      z.string(),
+      z
+        .string({ error: FIELDS_MESSAGE })
+        .max(60, 'Please keep each detail to 60 characters or fewer.')
+        .refine(noNul, CHECK_TEXT),
+    ),
+  )
+  .refine((fields) => Object.keys(fields).length <= 5000, 'You can fill in details for at most 5,000 customers.');
+
 const smsPayload = z.strictObject({
   purpose: z.enum(MESSAGE_PURPOSES, { error: 'Please pick marketing or informational.' }),
   body: z
@@ -179,6 +206,7 @@ const smsPayload = z.strictObject({
     .max(100, 'Please keep that to 100 characters or fewer.')
     .refine(noNul, CHECK_TEXT)
     .optional(),
+  fields: fieldsMap.optional(),
 });
 type SmsPayload = z.output<typeof smsPayload>;
 
@@ -220,6 +248,206 @@ const sendSmsBatch: StepTypeDef<SmsPayload> = {
 };
 
 // ---------------------------------------------------------------------------------------------
+// send_email_batch (marketing only: informational email is not a Storm Scout step)
+
+const SUBJECT_MESSAGE = 'Please write the subject.';
+const EMAIL_WRITE_MESSAGE = 'Please write the message.';
+const EMAIL_PICK_CUSTOMERS = 'Please pick customers from your list.';
+const STORM_MESSAGE = 'Please check this storm.';
+
+const sendEmailPayload = z.strictObject({
+  purpose: z.literal('marketing', { error: 'Emails to customers are marketing emails.' }),
+  subject: z
+    .string({ error: SUBJECT_MESSAGE })
+    .trim()
+    .min(1, SUBJECT_MESSAGE)
+    .max(200, 'Please keep the subject to 200 characters or fewer.')
+    .refine(noNul, CHECK_TEXT),
+  body: z
+    .string({ error: EMAIL_WRITE_MESSAGE })
+    .trim()
+    .min(1, EMAIL_WRITE_MESSAGE)
+    .max(10000, 'Please keep the message to 10,000 characters or fewer.')
+    .refine(noNul, CHECK_TEXT),
+  customerIds: z
+    .array(
+      z.uuid({ error: EMAIL_PICK_CUSTOMERS }).transform((id) => id.toLowerCase()),
+      { error: EMAIL_PICK_CUSTOMERS },
+    )
+    .min(1, 'Please pick at least one customer.')
+    .max(5000, 'You can email at most 5,000 customers in one go.')
+    .refine((ids) => new Set(ids).size === ids.length, 'Each customer can only be listed once.'),
+  fields: fieldsMap.optional(),
+  dedupePrefix: z
+    .string({ error: CHECK_TEXT })
+    .trim()
+    .min(1, CHECK_TEXT)
+    .max(100, 'Please keep that to 100 characters or fewer.')
+    .refine(noNul, CHECK_TEXT)
+    .optional(),
+  companyStormId: z.uuid({ error: STORM_MESSAGE }).optional(),
+});
+type SendEmailPayload = z.output<typeof sendEmailPayload>;
+
+const sendEmailBatch: StepTypeDef<SendEmailPayload> = {
+  type: 'send_email_batch',
+  approvalClass: 'message',
+  payload: sendEmailPayload,
+  preview(p, facts) {
+    const recipientCount = facts.recipientCount ?? p.customerIds.length;
+    return {
+      title: `Email ${plural(recipientCount, 'customer', 'customers')}`,
+      lines: ['Marketing email', "Customers who can't be emailed are skipped."],
+      messageSample: renderBody(p.body, {
+        ...(facts.sampleFirstName !== undefined && { first_name: facts.sampleFirstName }),
+        company: facts.companyName,
+      }),
+      recipientCount,
+    };
+  },
+  minutesSaved(_p, result) {
+    const sent = result.sent;
+    return typeof sent === 'number' && Number.isFinite(sent) && sent > 0 ? Math.min(120, 0.5 * sent) : 0;
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
+// build_routes (internal: the crew plans the knocks; nothing goes out to a customer)
+
+const DOORS_MESSAGE = 'Please enter the most doors, as a whole number.';
+const REP_MESSAGE = 'Please pick reps from your team.';
+
+const buildRoutesPayload = z.strictObject({
+  companyStormId: z.uuid({ error: STORM_MESSAGE }),
+  repUserIds: z
+    .array(
+      z.uuid({ error: REP_MESSAGE }).transform((id) => id.toLowerCase()),
+      { error: REP_MESSAGE },
+    )
+    .min(1, 'Please pick at least one rep.')
+    .refine((ids) => new Set(ids).size === ids.length, 'Each rep can only be listed once.'),
+  maxDoors: z
+    .number({ error: DOORS_MESSAGE })
+    .int(DOORS_MESSAGE)
+    .min(1, DOORS_MESSAGE)
+    .max(1500, 'You can plan at most 1,500 doors.'),
+});
+type BuildRoutesPayload = z.output<typeof buildRoutesPayload>;
+
+const buildRoutes: StepTypeDef<BuildRoutesPayload> = {
+  type: 'build_routes',
+  approvalClass: 'internal',
+  payload: buildRoutesPayload,
+  preview(p) {
+    const routes = p.repUserIds.length;
+    const doors = p.maxDoors;
+    const perRep = Math.ceil(doors / routes);
+    return {
+      title: `${plural(routes, 'door-knock route', 'door-knock routes')} · ${plural(doors, 'door', 'doors')}`,
+      lines: p.repUserIds.map((_id, i) => `Rep ${i + 1}: up to ${plural(perRep, 'door', 'doors')}`),
+    };
+  },
+  minutesSaved(p) {
+    return 120 * p.repUserIds.length;
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
+// create_ad_campaign (spend: the money is only spent once a person has approved the campaign)
+
+const AD_SPEND_MESSAGE = 'Please enter the most to spend, from $5 to $10,000.';
+const AD_DAYS_MESSAGE = 'Please pick 1 to 30 days.';
+const AD_PLATFORM_MESSAGE = 'Please pick Google or Facebook and Instagram.';
+const GOOGLE_KEYWORDS_MESSAGE = 'Google ads need at least one keyword.';
+const META_TEXT_MESSAGE = 'Facebook and Instagram ads need the main text.';
+
+const adKeyword = z
+  .string({ error: 'Please check the keywords.' })
+  .trim()
+  .min(1, 'Please check the keywords.')
+  .max(80, 'Please keep each keyword to 80 characters or fewer.')
+  .refine(noNul, CHECK_TEXT);
+
+const createAdPayload = z
+  .strictObject({
+    companyStormId: z.uuid({ error: STORM_MESSAGE }),
+    platform: z.enum(AD_PLATFORMS, { error: AD_PLATFORM_MESSAGE }),
+    maxSpendCents: z
+      .number({ error: AD_SPEND_MESSAGE })
+      .int(AD_SPEND_MESSAGE)
+      .min(500, AD_SPEND_MESSAGE)
+      .max(1_000_000, AD_SPEND_MESSAGE),
+    days: z.number({ error: AD_DAYS_MESSAGE }).int(AD_DAYS_MESSAGE).min(1, AD_DAYS_MESSAGE).max(30, AD_DAYS_MESSAGE),
+    headline: z
+      .string({ error: 'Please write the headline.' })
+      .trim()
+      .min(1, 'Please write the headline.')
+      .max(120, 'Please keep the headline to 120 characters or fewer.')
+      .refine(noNul, CHECK_TEXT),
+    description: z
+      .string({ error: 'Please write the description.' })
+      .trim()
+      .min(1, 'Please write the description.')
+      .max(300, 'Please keep the description to 300 characters or fewer.')
+      .refine(noNul, CHECK_TEXT),
+    keywords: z
+      .array(adKeyword, { error: 'Please check the keywords.' })
+      .max(20, 'You can use at most 20 keywords.')
+      .optional(),
+    primaryText: z
+      .string({ error: 'Please check the main text.' })
+      .trim()
+      .min(1, 'Please write the main text.')
+      .max(500, 'Please keep the main text to 500 characters or fewer.')
+      .refine(noNul, CHECK_TEXT)
+      .optional(),
+    photoId: z.uuid({ error: 'Please check this photo.' }).nullable().optional(),
+  })
+  .superRefine((p, ctx) => {
+    const problem = adNeedsProblem(p);
+    if (problem === null) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: [problem.field],
+      message: problem.message,
+    });
+  });
+type CreateAdPayload = z.output<typeof createAdPayload>;
+
+/** The platform's own minimum: Google needs keywords, Facebook and Instagram need the main text. */
+function adNeedsProblem(p: {
+  platform: 'google' | 'meta';
+  keywords?: string[] | undefined;
+  primaryText?: string | undefined;
+}): { field: 'keywords' | 'primaryText'; message: string } | null {
+  if (p.platform === 'google' && (p.keywords === undefined || p.keywords.length === 0)) {
+    return { field: 'keywords', message: GOOGLE_KEYWORDS_MESSAGE };
+  }
+  if (p.platform === 'meta' && p.primaryText === undefined) {
+    return { field: 'primaryText', message: META_TEXT_MESSAGE };
+  }
+  return null;
+}
+
+const createAdCampaign: StepTypeDef<CreateAdPayload> = {
+  type: 'create_ad_campaign',
+  approvalClass: 'spend',
+  payload: createAdPayload,
+  validate(p) {
+    return adNeedsProblem(p)?.message ?? null;
+  },
+  preview(p) {
+    const perDayCents = Math.round(p.maxSpendCents / p.days);
+    return {
+      title: p.platform === 'google' ? 'Google ads on the hail area' : 'Facebook and Instagram ads on the hail area',
+      lines: ['Circles cover the hail area', `${dollars.format(perDayCents / 100)} a day for ${p.days} days`],
+      maxSpendCents: p.maxSpendCents,
+    };
+  },
+  minutesSaved: () => 45,
+};
+
+// ---------------------------------------------------------------------------------------------
 
 // Each definition is checked against its own payload type above; the registry is indexed by a
 // step's type at run time, so it holds them as the wider type.
@@ -229,4 +457,7 @@ export const stepTypes: Record<StepType, StepTypeDef<any>> = {
   demo_message: demoMessage,
   demo_spend: demoSpend,
   send_sms_batch: sendSmsBatch,
+  send_email_batch: sendEmailBatch,
+  build_routes: buildRoutes,
+  create_ad_campaign: createAdCampaign,
 };
