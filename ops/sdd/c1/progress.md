@@ -20,7 +20,7 @@ Spec: docs/superpowers/specs/2026-10-12-roofline-core-crm-design.md. Branch `c1-
 
 | Pair / task | Produces vs consumes | Finding |
 |---|---|---|
-| T1↔all | migrations 0012/0013; F3 ends at 0011 and no F3 brief/branch adds one | consistent |
+| T1↔all | migrations 0013/0014; F3 ends at 0012 (P3a) and adds no more (Ruling AO) | consistent |
 | T1↔T5 | placeholders `repos/{appointments,quotes}.ts` (T1) get T5's three placeholder functions (Ruling 4) | consistent |
 | T1↔T13/T14 | separate `calendar-links.ts` / `calendar-busy.ts` placeholders | consistent |
 | T2/T3↔T4 | `BoardStage`, `WorkHours` imported by `crm.ts` while all three run in G1 | gap → note in T4 brief (stub until merge) — cost: none |
@@ -71,3 +71,4 @@ Ruling CD: `renderQuotePdf(i, opts?: { compress?: boolean })` (default `true`) s
 
 ## Build log
 c1-crm created at f3-setup 847de3b (F3 24 of 37 merged; the rest of F3 merges into c1-crm as it lands). C1 T1 started early on c1-t1 (base 847de3b) because F3 adds no more migrations (Ruling AO); T1's 0012 also takes the parked F3 index (partial unique on texting_registrations.messaging_service_sid where not null).
+Restart: F3 polish P3a landed 0012_early_reports_prune before Ruling AO reached it, so the first C1 T1 run (wf_9ced144f-9e5) was stopped early and its uncommitted output discarded; C1 migrations renumbered to 0013/0014 (brief, constraints, scan table). c1-t1 recreated from f3-setup bdc0f9f; c1-crm moved to bdc0f9f.

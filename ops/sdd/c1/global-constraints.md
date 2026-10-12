@@ -11,7 +11,7 @@ Adapted from `ops/sdd/f3/global-constraints.md` and the plan's Global Constraint
   - Each gets `ENABLE` + `FORCE ROW LEVEL SECURITY` and the `tenant_isolation` policy, using exactly `company_id = nullif(current_setting('app.company_id', true), '')::uuid`.
   - Links between tenant tables are composite `(company_id, x_id)` foreign keys.
 - **`app_system` on tenant tables:** column-level SELECT only, plus an `app_system_all` policy on each such table (the `rls.test.ts` rule). C1 grants it only on `calendar_connections`.
-- **Migrations:** C1 owns `0012_crm_schema.sql` (generated) and `0013_crm_grants_rls.sql` (custom), both in Task 1. F3 ends at `0011`; no other C1 task adds a migration.
+- **Migrations:** C1 owns `0013_crm_schema.sql` (generated) and `0014_crm_grants_rls.sql` (custom), both in Task 1. F3 ends at `0012_early_reports_prune.sql` (Ruling AO); no other C1 task adds a migration.
 - **Lockfile:** only Task 1 edits `package-lock.json` (`pdfkit`, `@types/pdfkit`).
 - **`@roofline/db/system` imports:** only from `apps/api/src/{auth,hooks,jobs/scheduler,scripts,account,public}/**`, `apps/worker/**`, `packages/db/**` and tests. No C1 route needs it; the calendar-pull scheduler (`jobs/scheduler/calendar-pull.ts`) uses `connectionsDueForPull`.
 - **No raw query path from routes:** every tenant read and write goes through `packages/db` repos inside `withTenant(pools, ctx, fn)`, applying `jobScope` / `customerScope` / `propertyScope` / `canSeeJobValue` (`packages/db/src/repos/scope.ts`) for reps.

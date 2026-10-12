@@ -1,18 +1,18 @@
 ### Task 1: Dependency, C1 schema and the module skeleton
 
-**Base:** `c1-crm`, branched from `f3-setup` when F3 is complete. F3 Tasks 1–13 and 23 are merged into `f3-setup` (7b988eb); F3 adds no migration after `0011_f3_grants_rls.sql` (checked: no F3 brief 14–37 and no open F3 branch touches `packages/db/migrations`). Existing shapes to extend: `packages/db/src/schema/tenant.ts` (`jobs` has `stage`, `stage_changed_at`, `value_cents`, `lost_reason`, `source`; `company_settings` has `hourly_rate_cents`; `TENANT_TABLES` list), `packages/db/src/schema/enums.ts`, `enumCheck`/`pk`/`companyId`/`tstz`/`timestamps` helpers in `schema/columns.ts`, `0011_f3_grants_rls.sql` (copy its section style), `packages/db/test/{migrations,rls}.test.ts`.
+**Base:** `c1-crm`, branched from `f3-setup` when F3 is complete. F3 Tasks 1–13 and 23 are merged into `f3-setup` (7b988eb); F3 ends at `0012_early_reports_prune.sql` (F3 polish P3a; Ruling AO: no more F3 migrations after it), so C1 starts at 0013 (checked: no F3 brief 14–37 and no open F3 branch touches `packages/db/migrations`). Existing shapes to extend: `packages/db/src/schema/tenant.ts` (`jobs` has `stage`, `stage_changed_at`, `value_cents`, `lost_reason`, `source`; `company_settings` has `hourly_rate_cents`; `TENANT_TABLES` list), `packages/db/src/schema/enums.ts`, `enumCheck`/`pk`/`companyId`/`tstz`/`timestamps` helpers in `schema/columns.ts`, `0011_f3_grants_rls.sql` (copy its section style), `packages/db/test/{migrations,rls}.test.ts`.
 
 Read first: `ops/sdd/c1/global-constraints.md`; spec `docs/superpowers/specs/2026-10-12-roofline-core-crm-design.md`.
 
 **Split:**
-- Builder 1: schema TS and the generated migration `0012`.
-- Builder 2: the custom grants/RLS migration `0013` plus the `rls.test.ts` and `migrations.test.ts` updates.
+- Builder 1: schema TS and the generated migration `0013`.
+- Builder 2: the custom grants/RLS migration `0014` plus the `rls.test.ts` and `migrations.test.ts` updates.
 - Builder 3: npm dependency, placeholder modules and barrels.
 
 **Files:**
 - Modify: `packages/db/src/schema/tenant.ts`, `packages/db/src/schema/enums.ts` (re-export the new shared enums), `packages/db/src/index.ts`, `packages/db/src/system/index.ts`, `packages/shared/src/index.ts`, `apps/api/package.json`, `package-lock.json`
 - Create:
-  - `packages/db/migrations/0012_crm_schema.sql` (`npm run db:generate -- --name crm_schema`), `packages/db/migrations/0013_crm_grants_rls.sql` (`npx drizzle-kit generate --custom --name crm_grants_rls` in `packages/db`), meta snapshots and journal entries
+  - `packages/db/migrations/0013_crm_schema.sql` (`npm run db:generate -- --name crm_schema`), `packages/db/migrations/0014_crm_grants_rls.sql` (`npx drizzle-kit generate --custom --name crm_grants_rls` in `packages/db`), meta snapshots and journal entries
   - placeholders (`export {};`): `packages/db/src/repos/{board,timeline,notes,appointments,today,schedules,calendar,calendar-links,calendar-busy,quotes,pricebook,export}.ts`, `packages/db/src/system/calendar-sync.ts`, `packages/shared/src/{pipeline,availability,crm,csv}.ts`
 - Test: `packages/db/test/migrations.test.ts`, `packages/db/test/rls.test.ts` (extend)
 
@@ -30,7 +30,7 @@ Read first: `ops/sdd/c1/global-constraints.md`; spec `docs/superpowers/specs/202
   - `pricebooks`: `prices jsonb not null`, `defaults jsonb not null default '{}'`, `updated_by_user_id`; unique `(company_id)`.
   - `quotes`: `job_id uuid not null` (composite FK), `number text not null`, `status` CHECK `QUOTE_STATUSES` default `'draft'`, `measurement jsonb not null`, `scope jsonb not null`, `prices jsonb not null`, `calculation jsonb not null`, `notes text`, `valid_until date not null`, `created_by_user_id`, `finalized_at`; unique `(company_id, number)`, unique `(company_id, id)`; index `(job_id)`.
   - `quote_counters`: `company_id` unique, `next_number integer not null default 1`.
-- **`0013_crm_grants_rls.sql`** (follow `0011`'s section style):
+- **`0014_crm_grants_rls.sql`** (follow `0011`'s section style):
   - `GRANT SELECT, INSERT, UPDATE` on the eight tables to `app_tenant`; `GRANT DELETE ON calendar_busy_blocks, calendar_event_links TO app_tenant`; each table's ENABLE / FORCE / `tenant_isolation`.
   - `GRANT UPDATE (work_hours, travel_buffer_minutes, min_notice_minutes, stuck_after_days) ON company_settings TO app_tenant` (if company_settings already grants table-wide UPDATE, assert it in the test instead).
   - `GRANT UPDATE (next_step, next_step_on) ON jobs TO app_tenant` likewise.
@@ -47,7 +47,7 @@ Read first: `ops/sdd/c1/global-constraints.md`; spec `docs/superpowers/specs/202
 
 **Verify notes:**
 - `npx vitest run --project @roofline/db` (CI: `ops/bin/ci-check`).
-- Generate `0012`; write `0013` by hand; `npm install pdfkit -w @roofline/api && npm install -D @types/pdfkit -w @roofline/api`.
+- Generate `0013`; write `0014` by hand; `npm install pdfkit -w @roofline/api && npm install -D @types/pdfkit -w @roofline/api`.
 - `npx vitest run --project @roofline/db && npm run typecheck && npm run lint && npx vitest run`. Expected: PASS; F1–F3 counts unchanged except the extended lists.
 - api/db suites need Docker (Testcontainers): locally `npm run typecheck && npm run lint` plus focused pure tests; prove the rest with `ops/bin/ci-check`.
 - Commit: `feat(db): C1 schema (appointments, calendar sync, schedules, pricebook, quotes) and module skeleton`
