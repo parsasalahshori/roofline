@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { hoursLabel } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { agentsCommon, timeBaselines } from '../src/copy/agents.ts';
@@ -97,5 +97,24 @@ describe('recount section', () => {
     await user.click(screen.getByRole('button', { name: timeBaselines.save }));
     await waitFor(() => expect(screen.getByRole('button', { name: timeBaselines.recountButton })).toBeEnabled());
     expect(screen.queryByText(timeBaselines.recountUnsaved)).toBeNull();
+  });
+
+  it('a typed value equal to the saved number is not unsaved; a different one is', async () => {
+    const rows = [{ key: 'text_sent', unit: 'text', basis: 'Each text', defaultMinutes: 2, minutes: 1.5, capMinutes: null, perCallLength: false }];
+    const body = { rows, canEdit: true, hourlyRateCents: 2800 };
+    api = stubApi({ 'GET /api/agents/time-baselines': () => ({ body }) });
+    const { user } = renderAt(<TimeBaselines />, '/settings/agents');
+    const recount = await screen.findByRole('button', { name: timeBaselines.recountButton });
+    const field = screen.getByRole('spinbutton');
+    fireEvent.change(field, { target: { value: '1.50' } });
+    expect((field as HTMLInputElement).value).toBe('1.50');
+    expect(recount).toBeEnabled();
+    expect(screen.queryByText(timeBaselines.recountUnsaved)).toBeNull();
+    await user.clear(field);
+    await user.type(field, '2');
+    expect(recount).toBeDisabled();
+    await user.clear(field);
+    await user.type(field, '700');
+    expect(recount).toBeDisabled();
   });
 });

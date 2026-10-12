@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { createMeasurement, exactReportOrders, getProposal, measurements, proposals, usageEvents, withTenant, type TenantContext } from '@roofline/db';
+import { createMeasurement, exactReportOrders, getProposal, listTaskEvents, measurements, proposals, usageEvents, withTenant, type TenantContext } from '@roofline/db';
 import { instantEstimate } from '@roofline/shared';
 import { buildProposal } from '../src/estimator/build.ts';
 import { completeExactReport } from '../src/estimator/exact-report-complete.ts';
@@ -212,5 +212,42 @@ describe('polling exact reports', () => {
     // Ruling EN: the step's result counts what was ordered
     expect(step!.result).toEqual({ ordered: 1 });
     expect((await dbTask(t, 'a', taskId)).status).toBe('done');
+  });
+});
+
+/** A1 Ruling AX-H: a parked exact-report step finishes through the task service, with its snapshot and event. */
+describe('exact-report steps record their outcome', () => {
+  const events = (taskId: string) => inCompany(t, ctx.companyId, (tx) => listTaskEvents(tx, ctx, taskId));
+
+  test('a completed report snapshots the minutes saved on the step and writes step_done', async () => {
+    const { taskId } = await orderIt();
+    t.exactReports.complete('rep-1');
+    await pollExactReports(t.deps, LATER);
+    const [step] = await dbSteps(t, 'a', taskId);
+    expect(step).toMatchObject({ status: 'done', baselineKey: 'exact_report', units: 1, minutesPerUnit: 10, minutesSaved: 10 });
+    expect((await dbTask(t, 'a', taskId)).minutesSaved).toBe(10);
+    const log = await events(taskId);
+    const done = log.filter((e) => e.kind === 'step_done');
+    expect(done).toHaveLength(1);
+    expect(done[0]).toMatchObject({ stepId: step!.id });
+    expect(log.some((e) => e.kind === 'step_attention')).toBe(false);
+  });
+
+  test('a failed order writes step_attention and no snapshot', async () => {
+    class Failing extends FakeExactReports {
+      override async report(id: string) {
+        this.calls.push({ method: 'report', args: { reportId: id } });
+        return { status: 'failed' as const, reasonKey: 'provider says no' };
+      }
+    }
+    const { taskId } = await orderIt();
+    await pollExactReports({ ...t.deps, exactReports: new Failing() }, LATER);
+    const [step] = await dbSteps(t, 'a', taskId);
+    expect(step).toMatchObject({ status: 'needs_attention', baselineKey: null, units: null, minutesSaved: null });
+    const log = await events(taskId);
+    const attention = log.filter((e) => e.kind === 'step_attention');
+    expect(attention).toHaveLength(1);
+    expect(attention[0]).toMatchObject({ stepId: step!.id });
+    expect(log.some((e) => e.kind === 'step_done')).toBe(false);
   });
 });

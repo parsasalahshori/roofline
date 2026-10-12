@@ -38,7 +38,7 @@ export const NOT_TAKEN_LATER = "The texting service didn't take this message. Yo
 /** A batch step whose waiting texts are all dealt with, but some the provider refused. */
 export const STEP_FAILED = "Some texts didn't go out. You can retry them.";
 
-/** The step types that wait on their messages: a batch's texts or emails, and a proposal's single text. */
+/** The step types that wait on messages: a batch's texts or emails, and a proposal's single text. */
 const PARKED_TEXT_STEP_TYPES = ['send_sms_batch', 'send_email_batch', 'send_proposal'] as const;
 
 /** A text with no customer has no consent on file. */

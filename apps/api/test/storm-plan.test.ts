@@ -111,12 +111,8 @@ const addAdAccount = (platform: 'google' | 'meta', status = 'active') =>
   ]);
 const setSettings = (set: string, values: unknown[] = []) =>
   q(`update company_settings set ${set} where company_id = $1`, [companyId(), ...values]);
-/** Storm Scout is not paused in these tests, so a plan is always drafted (null only when paused, A1 T14). */
-const draft = async () => {
-  const drafted = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
-  if (drafted === null) throw new Error('Storm Scout is paused');
-  return drafted;
-};
+/** Storm Scout is never paused here, so a plan always comes back. */
+const draft = async () => (await draftStormPlan(t.deps, companyId(), companyStormId, NOW))!;
 const stepsOf = (taskId: string) => dbSteps(t, 'a', taskId);
 const payloadOf = (s: StepRow) => s.payload as Record<string, unknown>;
 const sorted = (ids: string[]) => [...ids].sort();
@@ -345,6 +341,20 @@ describe('re-drafting', () => {
     expect((await companyStormRow()).plan_task_id).toBe(second.taskId);
   });
 
+  test('re-drafting writes one declined system event on the replaced plan', async () => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    const second = await draft();
+
+    const events = await q(
+      `select kind, actor_type, data from agent_task_events where task_id = $1 and kind = 'declined'`,
+      [first.taskId],
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].actor_type).toBe('system');
+    expect(events[0].data).toEqual({ skippedSteps: 5, replacedByTaskId: second.taskId });
+  });
+
   test('re-drafting never replaces an approved or running plan', async () => {
     await addHit({ email: 'a@example.com' });
 
@@ -366,6 +376,18 @@ describe('re-drafting', () => {
       expect(planEmails()).toHaveLength(mailsBefore);
       expect((await companyStormRow()).plan_task_id).toBe(approved.taskId);
     }
+  });
+
+  test('re-drafting a non-draft plan writes no declined event', async () => {
+    await addHit({ email: 'a@example.com' });
+    const approved = await draft();
+    await approveAs('owner', approved.taskId);
+    const declinedEvents = () =>
+      q(`select id from agent_task_events where task_id = $1 and kind = 'declined'`, [approved.taskId]);
+    const before = (await declinedEvents()).length;
+    expect((await draft()).taskId).toBe(approved.taskId);
+    expect(await declinedEvents()).toHaveLength(before);
+    expect(before).toBe(0);
   });
 
   test('a dismissed storm is not drafted', async () => {

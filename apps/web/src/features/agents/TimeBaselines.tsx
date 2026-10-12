@@ -4,6 +4,7 @@ import { Banner, Button, Field, Skeleton, UiLink } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { agentPage, timeBaselines as copy } from '../../copy/agents.ts';
 import { useSaveTimeBaselines, useTimeBaselines } from './api.ts';
+import { rateLabel } from './money.ts';
 import { RecountSection } from './RecountSection.tsx';
 import styles from './TimeBaselines.module.css';
 
@@ -15,11 +16,6 @@ export function validateMinutes(text: string): string | null {
   if (n < 0 || n > 600) return copy.errorRange;
   if (!Number.isInteger(n * 2)) return copy.errorStep;
   return null;
-}
-
-function rateLabel(cents: number): string {
-  const dollars = cents / 100;
-  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
 function basisWords(row: TimeBaselineRow): string {
@@ -35,7 +31,13 @@ export function TimeBaselines() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
 
-  if (query.isPending) return <Skeleton aria-label={copy.loading} />;
+  if (query.isPending) {
+    return (
+      <div role="status" aria-label={copy.loading}>
+        <Skeleton />
+      </div>
+    );
+  }
   if (query.isError) return <Banner tone="danger">{copy.loadError}</Banner>;
   const data = query.data;
 
@@ -50,7 +52,10 @@ export function TimeBaselines() {
     if (n === row.minutes) continue;
     changes[row.key] = n === row.defaultMinutes ? null : n;
   }
-  const unsaved = data.rows.some((row) => drafts[row.key] !== undefined && drafts[row.key] !== String(row.minutes));
+  // A valid draft that equals the saved number (1.50 and 1.5) is not an edit; an invalid one always is
+  const unsaved = data.rows.some(
+    (row) => drafts[row.key] !== undefined && (errors.get(row.key) !== null || Number(drafts[row.key]) !== row.minutes),
+  );
   const changed = Object.keys(changes).length > 0;
 
   const edit = (key: string, value: string) => {
@@ -94,13 +99,21 @@ export function TimeBaselines() {
               return (
                 <tr key={row.key}>
                   <th scope="row">{work}</th>
-                  <td>{row.unit}</td>
-                  <td>{basisWords(row)}</td>
                   <td>
+                    <span className={styles.cellLabel}>{copy.colUnit}</span>
+                    {row.unit}
+                  </td>
+                  <td>
+                    <span className={styles.cellLabel}>{copy.colBasis}</span>
+                    {basisWords(row)}
+                  </td>
+                  <td>
+                    <span className={styles.cellLabel}>{copy.colMinutes}</span>
                     {data.canEdit ? (
                       <div className={styles.edit}>
                         <Field
                           label={`${copy.inputLabelPrefix} ${work}`}
+                          labelHidden
                           type="number"
                           inputMode="decimal"
                           step={0.5}

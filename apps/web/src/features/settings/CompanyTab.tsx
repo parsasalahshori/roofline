@@ -273,9 +273,9 @@ function HourlyRateForm() {
           update.reset();
           setDraft(event.target.value);
         }}
+        help={settings.company.hourlyRate.hint}
         error={error}
       />
-      <p className={styles.hint}>{settings.company.hourlyRate.hint}</p>
       <Button className={styles.save} type="submit" variant="primary" busy={update.isPending} disabled={invalid || unchanged}>
         {settings.company.hourlyRate.save}
       </Button>

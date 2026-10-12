@@ -644,7 +644,8 @@ const sendProposal: StepTypeDef<ProposalPayload> = {
   },
   userCreatable: true,
   baseline: () => 'proposal_sent',
-  units: () => 1,
+  // Every done path (the handler, its already-sent path and the dispatcher) reports `sent`.
+  units: (_p, result) => (countOf(result.sent) > 0 ? 1 : 0),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -676,7 +677,8 @@ const orderExactReport: StepTypeDef<ExactReportPayload> = {
   preview: (p) => ({ title: 'Order an exact roof report', lines: [p.address], maxSpendCents: p.maxSpendCents }),
   userCreatable: true,
   baseline: () => 'exact_report',
-  units: () => 1,
+  // Every done path (the order step and the report's arrival) reports `ordered: 1`.
+  units: (_p, result) => (countOf(result.ordered) > 0 ? 1 : 0),
 };
 
 // ---------------------------------------------------------------------------------------------

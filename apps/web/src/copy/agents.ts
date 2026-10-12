@@ -8,6 +8,13 @@ import type { BaselineKey, TimePeriod } from '@roofline/shared';
 export const agentsCommon = {
   estimate: '(estimate)',
   comingSoon: 'Coming soon',
+  // The money line: "≈ $870 of staff time at $28/hour (estimate)" then a link for the owner
+  staffTime: 'of staff time at',
+  perHour: '/hour',
+  changeRate: 'Change the rate',
+  changeRateHref: '/settings/company',
+  retry: 'Try again',
+  refreshFailed: 'We could not refresh this. Showing what we had.',
 } as const;
 
 export const agents = {
@@ -30,6 +37,8 @@ export const agents = {
   waitingEmpty: 'Nothing is waiting on anyone.',
   waitingLoadError: 'The waiting list could not be loaded.',
   waitingOpen: 'Open',
+  waitingLoading: 'Loading what is waiting',
+  feedLoading: 'Loading the record',
 } as const;
 
 // --- Task 9: Agents window ---
@@ -50,6 +59,7 @@ export const agentsWindow = {
   status: { on: 'On', paused: 'Paused', waiting: 'Waiting on you', coming_soon: 'Coming soon' },
   loadError: 'We could not load your agents. Try again in a moment.',
   gridLabel: 'Your agents',
+  loading: 'Loading your agents',
 } as const;
 
 // --- Task 10: agent page ---
@@ -57,6 +67,7 @@ export const agentPage = {
   periodLabel: 'Time period',
   periods: { today: 'Today', week: 'This week', month: 'This month', last90: 'Last 90 days' } satisfies Record<TimePeriod, string>,
   loading: 'Loading this agent',
+  pausedNote: 'This agent is paused, so it cannot be run now. Turn it back on first.',
   loadError: 'We could not load this agent. Try again in a moment.',
   timeSaved: 'Time saved in this period:',
   breakdownTitle: 'Where the time came from',
@@ -69,7 +80,6 @@ export const agentPage = {
   rulesEmpty: 'No rules to show yet.',
   recentTitle: 'Recent work',
   recentEmpty: 'Nothing here yet.',
-  recentOpenLabel: 'Open',
   pauseLabel: 'Paused',
   pausedBy: 'Paused by',
   pauseTitle: 'Pause this agent?',

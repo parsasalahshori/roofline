@@ -44,7 +44,11 @@ const DB_SYSTEM_ALLOWED = [
  * refreshes task minutes. The names below may be imported from @roofline/db (or straight from its
  * source) only in those files. Tests and packages/db are not restricted.
  */
-const EVENT_WRITERS = ['insertAgentEvent', 'setStepSnapshot'];
+// The raw step finishers and the draft expiry write a step's or task's outcome without its snapshot
+// and event, so they too belong to the task service (completeClaimedStep, completeParkedStep, expireOverdueTasks).
+// moveStep and updateTask change a step's or task's status, so they pair with an event there as well
+// (declineTask, supersedeDraft).
+const EVENT_WRITERS = ['insertAgentEvent', 'setStepSnapshot', 'finishClaimedStep', 'finishParkedStep', 'expireOverdueDrafts', 'moveStep', 'updateTask'];
 const RECOUNT_WRITERS = ['rewriteStepSnapshot', 'refreshTaskMinutes'];
 // A regex, not a group: the group '@roofline/db' would also match '@roofline/db/system'.
 const DB_MODULE_REGEX = '^@roofline/db$|/packages/db/src/(?!system(/|$))';
@@ -52,7 +56,7 @@ const DB_MODULE_REGEX = '^@roofline/db$|/packages/db/src/(?!system(/|$))';
 const writerPattern = (importNames, owner) => ({
   regex: DB_MODULE_REGEX,
   importNames,
-  message: `${importNames.join(' and ')} may be imported only in ${owner}.`,
+  message: `${importNames.join(', ')} may be imported only in ${owner}.`,
 });
 const EVENTS_PATTERN = writerPattern(EVENT_WRITERS, 'apps/api/src/tasks/service.ts');
 const RECOUNT_PATTERN = writerPattern(RECOUNT_WRITERS, 'apps/api/src/agents/recount.ts');

@@ -102,4 +102,22 @@ describe('hourly rate', () => {
     await screen.findByLabelText(settings.company.fields.name);
     expect(screen.queryByLabelText(rate.label)).toBeNull();
   });
+
+  it('the hint is the input description', async () => {
+    ownerApi();
+    renderAt(<CompanyTab />);
+    expect(await screen.findByLabelText(rate.label)).toHaveAccessibleDescription(rate.hint);
+  });
+
+  it('saving the rate refreshes the Agents queries', async () => {
+    ownerApi();
+    const { user, queryClient } = renderAt(<CompanyTab />);
+    await queryClient.prefetchQuery({ queryKey: ['agents', 'overview'], queryFn: () => 1 });
+    const field = await screen.findByLabelText(rate.label);
+    await user.clear(field);
+    await user.type(field, '30');
+    await user.click(save());
+    await screen.findByText(rate.saved);
+    expect(queryClient.getQueryState(['agents', 'overview'])?.isInvalidated).toBe(true);
+  });
 });

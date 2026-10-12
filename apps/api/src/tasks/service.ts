@@ -307,6 +307,8 @@ const OFF_STEP_TITLES: Record<StepType, string> = {
   demo_message: 'Demo message',
   demo_spend: 'Demo spend',
   send_sms_batch: 'Text your customers',
+  front_desk_call: 'Answer a call',
+  front_desk_texts: 'Answer texts',
   send_email_batch: 'Email your customers',
   build_routes: 'Plan door-knocking routes',
   create_ad_campaign: 'Run an ad campaign',
@@ -705,6 +707,34 @@ export async function declineTask(
     at: opts.now,
   });
   return currentView(tx, ctx, taskId, opts.now);
+}
+
+/**
+ * Ruling AX-H: a newer storm plan supersedes an old draft. Locks the old task first, skips its open
+ * steps and declines it as the system, with one `declined` event that names the replacement. Returns
+ * true when it superseded, false when the task is gone or no longer a draft. No audit row.
+ */
+export async function supersedeDraft(tx: Tx, ctx: TenantContext, oldTaskId: string, newTaskId: string, now: Date): Promise<boolean> {
+  const task = await getTask(tx, ctx, oldTaskId, { forUpdate: true });
+  if (!task || task.status !== 'draft') return false;
+
+  let skipped = 0;
+  for (const step of await listSteps(tx, ctx, [oldTaskId])) {
+    if (!OPEN.includes(step.status)) continue;
+    if (!(await moveStep(tx, ctx, step.id, OPEN, { status: 'skipped' }, now))) {
+      throw new Error(`Step ${step.id} moved while its task was locked.`);
+    }
+    skipped += 1;
+  }
+  await updateTask(
+    tx,
+    ctx,
+    oldTaskId,
+    { status: 'declined', declinedByUserId: null, declinedAt: now, declineReason: 'Replaced by a newer plan.' },
+    now,
+  );
+  await event(tx, ctx, oldTaskId, 'declined', 'system', { skippedSteps: skipped, replacedByTaskId: newTaskId }, now);
+  return true;
 }
 
 /**

@@ -1,9 +1,10 @@
-import { createTask, type NewTask } from '../tasks/service.ts';
+import { createTask, supersedeDraft, type NewTask } from '../tasks/service.ts';
 import {
   isAgentPaused,
+  linkStormPlan,
   listStormPlanRecipients,
   loadStormPlanFacts,
-  replaceDraftPlan,
+  lockStormPlan,
   withTenant,
   type StormPlanFacts,
 } from '@roofline/db';
@@ -163,6 +164,7 @@ function buildSteps(
   ];
 }
 
+/** Drafts (or re-drafts) the storm's plan and returns its task; null when Storm Scout is paused (nothing is drafted). */
 export async function draftStormPlan(
   deps: AppDeps,
   companyId: string,
@@ -171,7 +173,8 @@ export async function draftStormPlan(
 ): Promise<{ taskId: string } | null> {
   const ctx = systemContext(companyId);
   const drafted = await withTenant(deps.pools, ctx, async (tx) => {
-    if (await isAgentPaused(tx, ctx, 'storm_scout')) return null; // A1 T14: paused, no new storm plan (alerts still go out)
+    // A1 T14 (Ruling AX-K): a paused Storm Scout drafts no new plan (the storm alerts still go out).
+    if (await isAgentPaused(tx, ctx, 'storm_scout')) return null;
     const facts = await loadStormPlanFacts(tx, ctx, companyStormId);
     if (!facts) throw new Error(NOT_FOUND);
     if (facts.status === 'dismissed') throw new Error(DISMISSED);
@@ -196,7 +199,10 @@ export async function draftStormPlan(
       },
       { now },
     );
-    if (!(await replaceDraftPlan(tx, ctx, companyStormId, taskId, now))) throw new Error(CHANGED);
+    const lock = await lockStormPlan(tx, ctx, companyStormId);
+    if (!lock.ok) throw new Error(CHANGED);
+    if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(CHANGED);
+    await linkStormPlan(tx, ctx, companyStormId, taskId, now);
     return { taskId, fresh: true };
   });
 

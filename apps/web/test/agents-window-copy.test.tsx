@@ -25,17 +25,24 @@ function show(c: AgentCardData) {
 describe('estimate copy', () => {
   it('marks every time and money figure on a live card as an estimate', () => {
     const container = show(card({}));
-    // Fails until the real AgentCard (package A) lands; the track lead reruns after merge.
-    const lines = [...container.querySelectorAll('p')].filter((p) => /about|≈/.test(p.textContent ?? ''));
+    const lines = [...container.querySelectorAll('p')].filter((p) => /about|less than|≈/.test(p.textContent ?? ''));
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) expect(line.textContent).toContain(agentsCommon.estimate);
     expect(container.textContent).toMatch(/about \d+ hours?/);
     expect(container.textContent).toContain('≈');
   });
 
+  it('says less than half an hour for a few minutes, with the estimate marker', () => {
+    const container = show(card({ minutesThisMonth: 5 }));
+    expect(container.textContent).toContain('less than half an hour');
+    expect(container.textContent).not.toContain('about 0');
+    const line = [...container.querySelectorAll('p')].find((p) => /less than/.test(p.textContent ?? ''));
+    expect(line?.textContent).toContain(agentsCommon.estimate);
+  });
+
   it('shows no figures on a coming soon card', () => {
     const container = show(card({ status: 'coming_soon', finishedToday: 0, successRate: null, notApproved30d: 0, minutesThisMonth: 0 }));
-    expect(container.textContent).not.toMatch(/about|≈/);
+    expect(container.textContent).not.toMatch(/about|less than|≈/);
     expect(container.textContent).not.toContain(agentsCommon.estimate);
     expect(screen.queryAllByText(agentsCommon.comingSoon).length).toBeGreaterThan(0);
   });

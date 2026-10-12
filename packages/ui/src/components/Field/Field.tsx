@@ -7,6 +7,8 @@ export type FieldProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string;
   help?: string;
   error?: string;
+  /** Hide the label visually. It stays in the accessibility tree and tied to the control. */
+  labelHidden?: boolean;
   /** A textarea instead of an input. Handlers still receive the change event; read event.target.value. */
   multiline?: boolean;
   rows?: number;
@@ -22,6 +24,7 @@ export function Field({
   label,
   help,
   error,
+  labelHidden = false,
   multiline = false,
   rows = 3,
   type,
@@ -42,7 +45,7 @@ export function Field({
 
   return (
     <div className={cx(styles.field, className)} style={style} data-invalid={error ? true : undefined}>
-      <label htmlFor={a11y.id} className={styles.label}>
+      <label htmlFor={a11y.id} className={cx(styles.label, labelHidden && 'visually-hidden')}>
         {label}
       </label>
       {multiline ? (
