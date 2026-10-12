@@ -29,8 +29,6 @@ export const storm = {
   detailHeading: 'Storm details',
   notFound: 'We could not find that storm.',
   mapLabel: 'Map of where hail fell (radar-estimated)',
-  legendHeading: 'Radar-estimated hail',
-  legendLevel: (inches: string) => `${inches}" or more`,
   planHeadingDetail: 'The plan',
   openPlan: 'Open the plan',
   redraft: 'Draft a new plan',

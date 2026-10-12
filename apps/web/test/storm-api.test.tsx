@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../src/app/providers.tsx';
-import { useDismissStorm, useRedraftStorm, useStorm, useStormLayer, useStorms } from '../src/features/storm/api.ts';
+import { useDismissStorm, useRedraftStorm, useStorm, useStorms } from '../src/features/storm/api.ts';
 import type { StormDetailView } from '../src/features/storm/types.ts';
 import { stubApi } from './helpers.tsx';
 
@@ -104,14 +104,5 @@ describe('storm hooks', () => {
     });
     expect(answer).toEqual({ taskId: 't9' });
     expect(api.count('POST /api/storms/s1/plan')).toBe(1);
-  });
-
-  it('useStormLayer reads the 7 day layer and exposes stale', async () => {
-    const api = stubApi({
-      'GET /api/map/storm-layer?days=7': () => ({ body: { stale: true, newestRunAt: null } }),
-    });
-    const { result } = renderHook(() => useStormLayer(), { wrapper });
-    await waitFor(() => expect(result.current.data?.stale).toBe(true));
-    expect(api.count('GET /api/map/storm-layer?days=7')).toBe(1);
   });
 });

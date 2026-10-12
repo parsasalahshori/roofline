@@ -13,9 +13,7 @@ export const mapCopy = {
   /** The hail layer switch. Its pressed state says whether the layer is on. */
   hailLayer: 'Hail layer',
   /** The hail size of each legend level, level 1 first. */
-  hailSizeLevels: ['0.75 in', '1 in', '1.5 in', '2 in', '2.75 in'] as const,
-  /** Shown when the hail data has not been refreshed lately. */
-  hailStale: 'Hail data is behind',
+  hailSizeLevels: ['0.75 in', '1.25 in', '1.75 in', '2.5 in', '3 in or more'] as const,
   /** Read aloud when the pins change. */
   summary: (customers: number, jobs: number): string =>
     `Map showing ${customers} ${customers === 1 ? 'customer' : 'customers'} and ${jobs} open ${jobs === 1 ? 'job' : 'jobs'}.`,

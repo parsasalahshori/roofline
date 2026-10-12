@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMapArea, useMapPins } from '../../api/hooks.ts';
 import type { PinsResult } from '../../api/types.ts';
 import { mapCopy } from '../../copy/map.ts';
+import { storm as stormCopy } from '../../copy/storm.ts';
 import { useStormLayer } from '../../features/storm/layerApi.ts';
 import type { StormLayerResponse } from '../../features/storm/layerTypes.ts';
 import { HailLegend } from './HailLegend.tsx';
@@ -177,7 +178,7 @@ export function MapView({ onOpen }: MapViewProps) {
   const satellite = satelliteAvailable(readMapEnv());
   // A map error, or a pins request that failed (the last good pins stay on the map meanwhile).
   const showBanner = failed || pins.isError;
-  const swathCount = shownStorm?.swaths.features.length ?? 0;
+  const swathCount = shownStorm?.swaths?.features?.length ?? 0;
 
   return (
     <div className={styles.root} data-mode={mode}>
@@ -187,7 +188,7 @@ export function MapView({ onOpen }: MapViewProps) {
       </p>
       <div role="status" className={styles.status} data-state={showBanner ? 'error' : 'idle'}>
         {showBanner ? <p className={styles.banner}>{mapCopy.error}</p> : null}
-        {hailOn && storm.data?.stale === true ? <p className={styles.banner}>{mapCopy.hailStale}</p> : null}
+        {hailOn && storm.data?.stale === true ? <p className={styles.banner}>{stormCopy.staleBanner}</p> : null}
       </div>
       <div className={styles.controls}>
         {satellite ? (

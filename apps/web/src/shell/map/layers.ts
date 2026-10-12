@@ -1,6 +1,7 @@
 import { tokens } from '@roofline/ui';
 import type { Feature, FeatureCollection, MultiPolygon } from 'geojson';
 import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap, SourceSpecification } from 'maplibre-gl';
+import { hailFillExpression } from './stormLayer.ts';
 
 /*
  * The map's sources and layers. Two groups are added in order: BASE (the storm swath, the service area
@@ -133,25 +134,6 @@ function stageColor(): unknown[] {
   ];
 }
 
-/** The fill colour of a hail swath, by its `level` (1 to 5). Anything unknown takes level 1. */
-function hailLevelColor(): unknown[] {
-  return [
-    'match',
-    ['get', 'level'],
-    1,
-    tokens['hail-1'],
-    2,
-    tokens['hail-2'],
-    3,
-    tokens['hail-3'],
-    4,
-    tokens['hail-4'],
-    5,
-    tokens['hail-5'],
-    tokens['hail-1'],
-  ];
-}
-
 /**
  * The transparent hit circle over a single pin: 40px across (radius 20), invisible, and with the same
  * source and filter as the pin it sits on, so a click on it reads the same feature.
@@ -211,7 +193,7 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void
       id: LAYER.stormSwathFill,
       type: 'fill',
       source: SOURCE.stormSwath,
-      paint: { 'fill-color': hailLevelColor(), 'fill-opacity': HAIL_FILL_OPACITY },
+      paint: { 'fill-color': hailFillExpression(), 'fill-opacity': HAIL_FILL_OPACITY },
     }),
   );
   addLayerOnce(

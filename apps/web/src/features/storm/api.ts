@@ -1,17 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api/client.ts';
 import { keys } from '../../api/keys.ts';
-import type { StormDetailView, StormLayerView, StormsList } from './types.ts';
+import type { StormDetailView, StormsList } from './types.ts';
 
 /** How often a running plan's results are read again. */
 const RESULTS_POLL_MS = 60_000;
-/** How often the storm layer's freshness is read again. */
-const LAYER_POLL_MS = 5 * 60_000;
 
 /** The company's storms, newest first. */
 export function useStorms() {
   return useQuery<StormsList>({
-    queryKey: ['storms'],
+    queryKey: keys.storms,
     queryFn: ({ signal }) => apiFetch<StormsList>('/api/storms', { signal }),
   });
 }
@@ -19,7 +17,7 @@ export function useStorms() {
 /** One storm with its swath, results and plan. Read again every 60 s, and only while the plan runs. */
 export function useStorm(id: string) {
   return useQuery<StormDetailView>({
-    queryKey: ['storm', id],
+    queryKey: keys.storm(id),
     queryFn: ({ signal }) => apiFetch<StormDetailView>(`/api/storms/${encodeURIComponent(id)}`, { signal }),
     enabled: id !== '',
     refetchInterval: (query) => (query.state.data?.plan?.status === 'running' ? RESULTS_POLL_MS : false),
@@ -32,8 +30,8 @@ export function useDismissStorm() {
   return useMutation<unknown, Error, string>({
     mutationFn: (id) => apiFetch<unknown>(`/api/storms/${encodeURIComponent(id)}/dismiss`, { method: 'POST', body: {} }),
     onSuccess: (_data, id) => {
-      void queryClient.invalidateQueries({ queryKey: ['storms'] });
-      void queryClient.invalidateQueries({ queryKey: ['storm', id] });
+      void queryClient.invalidateQueries({ queryKey: keys.storms });
+      void queryClient.invalidateQueries({ queryKey: keys.storm(id) });
     },
   });
 }
@@ -45,18 +43,9 @@ export function useRedraftStorm() {
     mutationFn: (id) =>
       apiFetch<{ taskId: string }>(`/api/storms/${encodeURIComponent(id)}/plan`, { method: 'POST', body: {} }),
     onSuccess: (_data, id) => {
-      void queryClient.invalidateQueries({ queryKey: ['storms'] });
-      void queryClient.invalidateQueries({ queryKey: ['storm', id] });
+      void queryClient.invalidateQueries({ queryKey: keys.storms });
+      void queryClient.invalidateQueries({ queryKey: keys.storm(id) });
       void queryClient.invalidateQueries({ queryKey: keys.approvals });
     },
-  });
-}
-
-/** The storm layer of the last 7 days (the Storm window reads only `stale`). */
-export function useStormLayer() {
-  return useQuery<StormLayerView>({
-    queryKey: ['storm-layer'],
-    queryFn: ({ signal }) => apiFetch<StormLayerView>('/api/map/storm-layer?days=7', { signal }),
-    refetchInterval: LAYER_POLL_MS,
   });
 }

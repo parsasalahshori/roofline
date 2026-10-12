@@ -49,6 +49,3 @@ export type StormDetailView = {
   results: StormResultsView;
   plan: { taskId: string; status: string } | null;
 };
-
-/** GET /api/map/storm-layer: only `stale` is read by the Storm window. */
-export type StormLayerView = { stale: boolean; newestRunAt: string | null };

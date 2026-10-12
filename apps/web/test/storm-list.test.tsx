@@ -2,7 +2,7 @@ import { cleanup, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StormWindow } from '../src/features/storm/StormWindow.tsx';
 import { storm } from '../src/copy/storm.ts';
-import { makeTask, renderAt, stubApi, SHELL_ROUTES } from './helpers.tsx';
+import { makeTask, renderAt, stubApi, SHELL_ROUTES, STORM_LAYER_KEY } from './helpers.tsx';
 
 const OLDER = {
   id: 's-old',
@@ -27,11 +27,20 @@ const NEWER = {
   planStatus: 'running',
 };
 
+function layerBody(stale: boolean) {
+  return {
+    swaths: { type: 'FeatureCollection', features: [] },
+    spots: { type: 'FeatureCollection', features: [] },
+    newestRunAt: null,
+    stale,
+  };
+}
+
 function stubStorms(storms: unknown[], stale = false) {
   return stubApi({
     ...SHELL_ROUTES,
     'GET /api/storms': () => ({ body: { storms } }),
-    'GET /api/map/storm-layer?days=7': () => ({ body: { stale, newestRunAt: null } }),
+    [STORM_LAYER_KEY]: () => ({ body: layerBody(stale) }),
   });
 }
 
@@ -76,7 +85,14 @@ describe('Storm list', () => {
   it('shows the empty state when there are no storms', async () => {
     stubStorms([]);
     renderAt(<StormWindow />);
-    expect(await screen.findByText('No hail in your area in the last 30 days. We check every 30 minutes.')).toBeInTheDocument();
+    expect(await screen.findByText(storm.empty)).toBeInTheDocument();
+  });
+
+  it('does not show the empty state when there are storms', async () => {
+    stubStorms([NEWER]);
+    renderAt(<StormWindow />);
+    await screen.findByText(storm.upTo('1.75'));
+    expect(screen.queryByText(storm.empty)).not.toBeInTheDocument();
   });
 
   it('keeps the two-click approve: one approve link to the newest plan', async () => {
@@ -84,7 +100,6 @@ describe('Storm list', () => {
       ...SHELL_ROUTES,
       'GET /api/approvals': () => ({ body: { count: 1, tasks: [makeTask({ id: 't9', title: 'Storm plan for Oak Park' })] } }),
       'GET /api/storms': () => ({ body: { storms: [NEWER] } }),
-      'GET /api/map/storm-layer?days=7': () => ({ body: { stale: false, newestRunAt: null } }),
     });
     renderAt(<StormWindow />);
     await screen.findByText(storm.upTo('1.75'));

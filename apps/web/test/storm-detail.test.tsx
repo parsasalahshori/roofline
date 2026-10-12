@@ -1,15 +1,22 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
+import { mapCopy } from '../src/copy/map.ts';
 import { storm } from '../src/copy/storm.ts';
 import { StormDetail } from '../src/features/storm/StormDetail.tsx';
+import { hailFillExpression } from '../src/shell/map/stormLayer.ts';
 import { ACCOUNT, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 import type { Routes } from './helpers.tsx';
 
+const fakeMaps = vi.hoisted(() => [] as Array<{ on: ReturnType<typeof vi.fn>; addLayer: ReturnType<typeof vi.fn> }>);
+
 vi.mock('maplibre-gl', () => {
   class FakeMap {
+    constructor() {
+      fakeMaps.push(this);
+    }
     on = vi.fn();
     addSource = vi.fn();
     addLayer = vi.fn();
@@ -105,6 +112,26 @@ describe('StormDetail', () => {
     expect(screen.getByText(storm.customersHit(12))).toBeInTheDocument();
     expect(screen.getByText(storm.homesHit(340))).toBeInTheDocument();
     expect(screen.getByRole('img', { name: storm.mapLabel })).toBeInTheDocument();
+  });
+
+  it('shows the shared hail legend', async () => {
+    setup();
+    const list = await screen.findByRole('list', { name: mapCopy.hailLegend });
+    expect(screen.getByRole('heading', { level: 3, name: mapCopy.hailLegend })).toBeInTheDocument();
+    const items = within(list).getAllByRole('listitem');
+    expect(items.map((item) => item.textContent)).toEqual([...mapCopy.hailSizeLevels]);
+  });
+
+  it('colours the swath with the shell hail expression', async () => {
+    fakeMaps.length = 0;
+    setup();
+    await screen.findByRole('img', { name: storm.mapLabel });
+    const map = fakeMaps.at(-1);
+    const load = map?.on.mock.calls.find((call) => call[0] === 'load')?.[1] as (() => void) | undefined;
+    expect(load).toBeTypeOf('function');
+    load?.();
+    const layer = map?.addLayer.mock.calls[0]?.[0] as { paint: Record<string, unknown> };
+    expect(layer.paint['fill-color']).toEqual(hailFillExpression());
   });
 
   it('links to the plan', async () => {

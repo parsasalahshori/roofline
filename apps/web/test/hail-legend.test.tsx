@@ -125,7 +125,7 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function swath(level: number): Feature {
+function swath(thresholdIn: number): Feature {
   return {
     type: 'Feature',
     geometry: {
@@ -139,7 +139,7 @@ function swath(level: number): Feature {
         ],
       ],
     },
-    properties: { level },
+    properties: { thresholdIn },
   };
 }
 
@@ -246,7 +246,7 @@ describe('HailLegend on the map', () => {
 
   it('is present with a swath and goes when the layer is switched off', async () => {
     const user = userEvent.setup();
-    stormBody = answer([swath(2)], []);
+    stormBody = answer([swath(1.25)], []);
     renderMap();
     loadMap(lastMap());
 

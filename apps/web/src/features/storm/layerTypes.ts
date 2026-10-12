@@ -4,7 +4,7 @@ import type { FeatureCollection } from 'geojson';
  * The answer of GET /api/map/storm-layer?bbox=<w,s,e,n>&zoom=<n>&days=7 (built by S1 Task 8).
  * Types only: nothing here runs.
  *
- * `swaths` features are Polygon/MultiPolygon with properties { level: 1 | 2 | 3 | 4 | 5, stormId: string, sizeIn: number }.
+ * `swaths` features are Polygon/MultiPolygon with properties { stormId, thresholdIn, maxIn, convectiveDay, status, placeName, label }.
  * `spots` features are Point with properties { sizeIn: number | null, reportedAt: string }.
  * `newestRunAt` is an ISO string, or null when no run exists. `stale` is true when the newest run is old.
  */

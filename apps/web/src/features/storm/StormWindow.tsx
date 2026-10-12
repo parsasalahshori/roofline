@@ -1,9 +1,10 @@
 import { Banner, Button, Card, EmptyState } from '@roofline/ui';
-import { useApprovals } from '../../api/hooks.ts';
+import { useApprovals, useMapArea } from '../../api/hooks.ts';
 import type { TaskView } from '../../api/types.ts';
 import { storm } from '../../copy/storm.ts';
 import { countedDrafts } from '../../shell/countedDrafts.ts';
-import { useStorms, useStormLayer } from './api.ts';
+import { useStorms } from './api.ts';
+import { useStormLayer } from './layerApi.ts';
 import type { StormSummary } from './types.ts';
 import styles from './StormWindow.module.css';
 
@@ -15,10 +16,9 @@ function newestPlan(plans: TaskView[]): TaskView | undefined {
   );
 }
 
-/** Newest day first; storms the company dismissed are left out. */
+/** Newest day first. The list answer already leaves out dismissed storms; the query data is not changed. */
 function visibleStorms(storms: StormSummary[]): StormSummary[] {
-  return storms
-    .filter((item) => (item.status as string) !== 'dismissed')
+  return [...storms]
     .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
 }
 
@@ -50,8 +50,11 @@ function StormRow({ item }: { item: StormSummary }) {
 export function StormWindow() {
   const approvals = useApprovals();
   const storms = useStorms();
-  const layer = useStormLayer();
+  const area = useMapArea();
+  const layer = useStormLayer(area.data?.bounds ?? null, 6, true);
   const plan = newestPlan(countedDrafts(approvals.data).filter((task) => task.agent === 'storm_scout'));
+
+  const rows = storms.data ? visibleStorms(storms.data.storms) : [];
 
   return (
     <>
@@ -64,14 +67,14 @@ export function StormWindow() {
           </Button>
         </Card>
       ) : null}
-      {layer.data?.stale ? <Banner tone="warning">{storm.staleBanner}</Banner> : null}
+      {layer.data?.stale === true ? <Banner tone="warning">{storm.staleBanner}</Banner> : null}
       {storms.isError ? <p role="alert">{storm.loadFailed}</p> : null}
       {storms.data ? (
         <section aria-label={storm.listHeading} className={styles.list}>
-          {visibleStorms([...storms.data.storms]).map((item) => (
+          {rows.map((item) => (
             <StormRow key={item.id} item={item} />
           ))}
-          {storms.data.storms.length === 0 ? <EmptyState title={storm.empty} /> : null}
+          {rows.length === 0 ? <EmptyState title={storm.empty} /> : null}
         </section>
       ) : null}
     </>

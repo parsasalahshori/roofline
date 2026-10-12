@@ -39,18 +39,48 @@ function empty(): FeatureCollection {
 const data: StormLayerResponse = { swaths: empty(), spots: empty(), newestRunAt: null, stale: false };
 
 describe('storm layers', () => {
-  it('colours swaths by level', () => {
+  it('colours swaths by contour level', () => {
     const fake = styleMap();
     installMapLayers(fake.map, emptyMapData());
     const fill = fake.layers.get('storm-swath-fill') as { paint: Spec };
     const color = fill.paint['fill-color'] as unknown[];
 
-    expect(color.slice(0, 2)).toEqual(['match', ['get', 'level']]);
-    for (let level = 1; level <= 5; level += 1) {
-      const at = color.indexOf(level);
-      expect(at).toBeGreaterThan(1);
-      expect(color[at + 1]).toBe(tokens[`hail-${level}` as 'hail-1']);
+    expect(color.slice(0, 2)).toEqual(['match', ['get', 'thresholdIn']]);
+    const pairs: [number[], string][] = [
+      [[0.75, 1], 'hail-1'],
+      [[1.25, 1.5], 'hail-2'],
+      [[1.75, 2], 'hail-3'],
+      [[2.5], 'hail-4'],
+      [[3], 'hail-5'],
+    ];
+    for (const [sizes, token] of pairs) {
+      for (const size of sizes) {
+        const at = color.findIndex((entry) => Array.isArray(entry) && entry.includes(size));
+        expect(at).toBeGreaterThan(1);
+        expect(color[at + 1]).toBe(tokens[token as 'hail-1']);
+      }
     }
+  });
+
+  it('colours a 2.5 in contour with the hail-4 colour', () => {
+    const fake = styleMap();
+    installMapLayers(fake.map, emptyMapData());
+    const fill = fake.layers.get('storm-swath-fill') as { paint: Spec };
+    const color = fill.paint['fill-color'] as unknown[];
+    const at = color.findIndex((entry) => Array.isArray(entry) && entry.includes(2.5));
+    expect(color[at + 1]).toBe(tokens['hail-4']);
+  });
+
+  it('does not throw on a malformed body', () => {
+    const swathSource = { setData: vi.fn() };
+    const spotSource = { setData: vi.fn() };
+    const map = {
+      getSource: vi.fn((id: string) => (id === 'storm-swath' ? swathSource : spotSource)),
+    } as unknown as MapLibreMap;
+    const bad = { newestRunAt: null, stale: false } as unknown as StormLayerResponse;
+    expect(() => applyStormData(map, bad)).not.toThrow();
+    expect(swathSource.setData).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] });
+    expect(spotSource.setData).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] });
   });
 
   it('adds the spots layer and outline', () => {
@@ -107,6 +137,6 @@ describe('storm layers', () => {
   });
 
   it('documents the size of each hail level', () => {
-    expect(HAIL_LEVEL_SIZES_IN).toEqual([0.75, 1, 1.5, 2, 2.75]);
+    expect(HAIL_LEVEL_SIZES_IN).toEqual([0.75, 1.25, 1.75, 2.5, 3]);
   });
 });

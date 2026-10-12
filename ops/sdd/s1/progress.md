@@ -112,3 +112,4 @@ Carries (contact-212 group check):
 - T21: routes/storms.ts stormRoutes already mounts '/layer' (T8) before the 404 fallthrough. Keep it ahead of '/:id' and keep layerHandler/stormLayerRoutes.
 - T24: take the legend label from web copy and ignore the swath properties.label.
 - Follow-up (whole-branch review): CURRENT_COMPANY is duplicated in repos/company-storms.ts and storm-hits.ts; SpotterReport is declared twice (structurally checked).
+- I2 (web integration fixes): hail fill now uses hailFillExpression() keyed on thresholdIn everywhere (layers.ts, StormSwathMap); one hail palette and legend copy (mapCopy.hailLegend/hailSizeLevels); StormWindow shows staleBanner from the real useStormLayer call (layer.data?.stale). Gate green: typecheck, lint, lint:css, web 522 tests. See task-i2-report.md.

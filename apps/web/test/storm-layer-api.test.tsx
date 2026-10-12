@@ -124,7 +124,7 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function swath(level: number): Feature {
+function swath(thresholdIn: number): Feature {
   return {
     type: 'Feature',
     geometry: {
@@ -138,7 +138,7 @@ function swath(level: number): Feature {
         ],
       ],
     },
-    properties: { level },
+    properties: { thresholdIn },
   };
 }
 
@@ -229,7 +229,7 @@ describe('storm layer on the map', () => {
   });
 
   it('sets the source data from the answer', async () => {
-    const body = answer([swath(3)], [spot()]);
+    const body = answer([swath(2.5)], [spot()]);
     stormBody = body;
     renderMap();
     const map = lastMap();
