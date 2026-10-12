@@ -35,6 +35,12 @@ export async function frontDeskTextsOn(tx: Tx, ctx: TenantContext): Promise<bool
 /**
  * Files an inbound text under the sender's active SMS conversation (reused within 24 h of its last
  * message), else under a new one; the old one, when stale, is ended. Counts it as unread.
+ *
+ * Two texts from one number can arrive together when it has no active conversation (its first text,
+ * or the first after a 24 h gap). FOR UPDATE locks no row then, so both would insert and the second
+ * would fail on conversations_active_sms_uniq, rolling back its whole webhook. A transaction-scoped
+ * advisory lock per company and number comes first: the second waits for the first's transaction and
+ * then finds, and reuses, the conversation it made.
  */
 export async function attachInboundToConversation(
   tx: Tx,
@@ -42,6 +48,7 @@ export async function attachInboundToConversation(
   i: { messageId: string; phoneE164: string; companyNumberE164: string; customerId: string | null },
   now: Date,
 ): Promise<TextConversationRef> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${ctx.companyId}::text || ':fd-sms:' || ${i.phoneE164}::text, 0))`);
   const [open] = await tx
     .select({ id: conversations.id, customerId: conversations.customerId, lastMessageAt: conversations.lastMessageAt })
     .from(conversations)
