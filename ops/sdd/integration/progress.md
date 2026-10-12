@@ -458,3 +458,10 @@ No merge-artifact fixes were needed after the merges (typecheck and lint passed 
    /api/proposals`), which the S1 stub does not answer, so the `unexpected` check in `afterEach` fails. Probe (90a79bf):
    the test passes `{ 'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }) }` to `signedInApi`, as
    E1's own `e1-routes.test.tsx:98` does. Owner: S1, at its next e1-estimator merge.
+
+### CI (pass 4)
+
+Run 38211391217 on 89281c6: Platform (lint, typecheck, tests) success; E2E (Playwright) success (including the
+2-line setup spec); Hail service (ruff, pytest) success; v1 (node:test) success. C1 T6's stage rules caused no
+failures in the database, API or worker suites when combined with the other tracks. No merge-artifact fixes were
+needed after CI, so ci-check was not re-run.
