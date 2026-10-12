@@ -250,3 +250,4 @@ For the next e1-estimator merge into s1-storm:
 
 Already done: s1-r2a is merged (28f3800) with the Ruling BD trim (41b970c). REDRAFTABLE_PLAN_STATUSES is `['draft']`, and replaceDraftPlan is restored to T11's version.
 - Carry for the a1-agents merge (controller, Ruling BD detail): delete REDRAFTABLE_PLAN_STATUSES from `apps/api/src/storm/plan-errors.ts`. Its callers import A1's db exports REDRAFTABLE_PLAN_STATUSES (['draft']) and FINISHED_REDRAFTABLE_PLAN_STATUSES (['expired','declined']).
+- CI run 38263313497 on s1-storm@c2e3a1f (R7 merge plus the 3f800e5 fixture fix): Platform, Hail and E2E all green.
