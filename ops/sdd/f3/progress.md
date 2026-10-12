@@ -84,3 +84,4 @@ P3b (sibling 2, wf_8340cb97-1c6, contact 40): 9eac742 incl. dcc2bca group-check 
 Plan note: the trial cutoff is 49 h (the F3 plan text still says 48 h; the code and tests are the source of truth).
 Parked: FakeBillingProvider.failNext holds one failure kind per counter (needs a queue if a test mixes kinds).
 Merged into f3-setup (controller): T26 f9efe6f, T35 95e35a3, T31 64ac1b6, T32 2b7918c, T33 919b204 (test-stub conflict with T32: kept both setup and billing reads), T34 8d0f7f0; fix 330ca23 (import-wizard fixture gains located/serviceAreaMiles). typecheck, lint, lint:css, web/ui/shared tests, build clean. Group checks for these never ran (sessions stopped). F3: 34 of 37 + P3a + P3b. Left: T28, T37, then T36.
+Relaunch (owner: usage not limited, full process): sibling 1 -> C1 T5, T18; sibling 2 -> F3 T28, T37; sibling 3 -> F3 integration review of f3-setup 330ca23 (group checks for T26, T31-T35 never ran) + fixes on f3-review, then T36 after T28.
