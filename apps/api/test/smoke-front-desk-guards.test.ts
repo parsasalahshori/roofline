@@ -21,6 +21,7 @@ const BASE_ENV = {
   DATABASE_URL_TENANT: 'postgres://app_tenant:pw@localhost:5432/roofline',
   DATABASE_URL_SYSTEM: 'postgres://app_system:pw@localhost:5432/roofline',
   ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
+  TRUST_PROXY: '1',
 } satisfies Record<string, string>;
 
 function recorder(): SmokeIo & { out: string[]; err: string[] } {
