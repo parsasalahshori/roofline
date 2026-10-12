@@ -1384,3 +1384,154 @@ New cross-track problem 3. **E1 x S1, production config fixtures.** E1's Ruling 
 three config-building tests above lack it and fail only in combination. Fix: add `R2_ACCOUNT_ID`,
 `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` to their production `VALID`. Owner: S1 when it merges
 e1-estimator (any later S1 test that builds a production config needs the same).
+
+## Pass 13
+
+Base: pass 12 head ab09bae5. `git fetch origin` (2026-10-12): every head matched the request. Merged in order with
+`git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 7758e82157918218b8b87e6237772874e2154469 | 2457931 | 4 files |
+| e1-estimator | 08da8321c31e17ce79c09b7d6666ed7255448227 | 5f93bfb | 1 file |
+| s1-storm | d07a440e7544021edfe9c6ea6afedb08145cee54 | dfc726b | 6 files + snapshot rebuild |
+| d1-front-desk | 6600b5cbec0fbd1aeb56a9a780bf051adcf3ed9e | b293550 | 21 files |
+| a1-agents | f48086c72df56af27b8ff910e04eaddde43d215c | f93ad30 | 1 file |
+| g1-agents | e9834cd980eda7e4ed1cce079b4759845bd555c5 | cddd1c2 | none (docs only) |
+
+Probe-only commit: ad3191c (cross-track fixes, below).
+
+What the tracks brought: C1 the security fixes (Ruling BF / SEC-1..4: TRUST_PROXY required in production, login and
+invite limits, `__Host-rl_session`, late errors, exact app_system grants in 0002 and a no-TRUNCATE/TRIGGER/REFERENCES
+test); E1 its security findings (0016 footprint grants exact) and c1; S1 T28 (storm e2e specs, a11y, phone), R1
+(`storms.merged_into`, 0018 in place), R2a/R2b with the Ruling BD trim, R4, R5, R7 and the NOT_USD fixture fix; D1
+Tasks 4-6 and 10-18 (voice hooks, relay, Front Desk texts, conversations, calls, recordings, retention, setup phone
+step real) and Ruling BF (0020 conversation_turns grants); A1 T20 (rerun; storm plans re-draft per amended Ruling BD,
+`allowFinished`); G1 docs only (g1-md4/g1-full are not merged into g1-agents yet). No dependency or lockfile change.
+
+### Conflict resolutions
+
+c1-crm: `config.ts` both (E1 EagleView/R2/proposal-origin, S1 ads/meta checks, C1 TRUST_PROXY); `geocodio.test.ts` and
+`microsoft-calendar.test.ts` production fixtures carry both R2 and TRUST_PROXY; `rls.test.ts` both (E1/S1 grant tests
+then C1's no-TRUNCATE test).
+
+e1-estimator: `config.ts` keeps S1's Google Ads/Meta checks (E1's side is C1's TRUST_PROXY check, already present).
+
+s1-storm:
+- `storm/plan.ts` (shared): A1's mechanism kept (pause check, `lockStormPlan`/`supersedeDraft`/`linkStormPlan`), with
+  S1's `plan-errors.ts` constants and S1 R2a's "a re-draft of a draft sends no second ready email"
+  (`fresh: !previousWasDraft`). S1's `replaceDraftPlan` does not come back.
+- `routes/storms.ts`: S1's side (`?since=`, `PLAN_*` constants, 409 `PLAN_PAUSED`).
+- `test/storm-plan.test.ts`: S1's `draft()` and its R2a tests, plus A1's "one declined system event" test; the old
+  mixed "never replaces an approved or running plan" test is S1's `test.each` now.
+- e2e `a11y.spec.ts`, `phone.spec.ts`: both (A1 agents screens, E1 estimator imports, S1 storm screens);
+  `fixtures.ts`: imports from both, `resetScenario` seeds the showcase, E1's footprint fixture and S1's storm fixture.
+
+d1-front-desk: resolved by applying G1's own resolution of the same merge (`g1-md4` 5c03479 = g1-agents ea5f097 + D1
+4ce5c7f) onto the probe side with `git merge-file` (base ea5f097, theirs g1-md4); the remainder by hand:
+- `providers/object-store.ts`, `fakes/object-store.ts`, `r2.ts` (add/add): E1's store plus D1's `signedGetUrl`/`delete`
+  (Ruling DV), as g1-md4.
+- `app.ts`, `deps.ts`: D1's deps, voice hooks and routes added to the probe's; CSP unchanged.
+- `hooks/twilio.ts` (Ruling AV): STOP/HELP/START, then S1 `onStormReply`, then D1 `queueFrontDeskText`; G1's claims
+  call is not on g1-agents yet.
+- `config.ts`: D1's Front Desk settings with C1's TRUST_PROXY comment; the transform carries D1's relay values and
+  S1/E1's defaults. `config.test.ts` expects D1's values with C1's `TRUST_PROXY: 1`; `helpers.ts` both.
+- `jobs/handlers.ts`, `worker.ts`, `queue.ts` (`SendOptions` with E1's per-job expiry), `jobs.test.ts`,
+  `pgboss.test.ts`: both schedule sets; `signed-pdf-sweep` stays in name order in the sorted list.
+- `index.ts`, `packages/db/src/index.ts`, `system/index.ts`: both barrels, E1 skeleton lines once.
+- setup (`repos/setup.ts`, `shared/setup.ts`, tests), `rls.test.ts` (D1 Ruling BF): D1's.
+Every resolved file was diffed against g1-md4: the only differences are newer C1/E1/S1 content.
+
+a1-agents: `storm/plan.ts` takes A1 T20's `draftStormPlan` (opts `allowFinished`, `rerunOfTaskId`, `createdByUserId`,
+`afterCreate`), keeps S1 R2a's `fresh: !previousWasDraft`, and `STORM_PLAN_ERRORS` is defined from `plan-errors.ts`
+(one set of strings). Per A1's merge rule (a), S1's `REDRAFTABLE_PLAN_STATUSES` is deleted from `storm/plan-errors.ts`
+and `routes/storms.ts` imports the db one (`['draft']`).
+
+Checked by hand: `dispatcher.ts` still calls `completeParkedStep` (item 5); `tasks/handlers.ts`, `tasks/service.ts`,
+`steps.ts`, `send-batch.ts`, the router and `routes/approvals.ts` merged clean; `routes/approvals.ts` (rerun) is the only
+caller with `allowFinished`.
+
+### Migration journal (Ruling AP) and Ruling AW
+
+S1 R1 amended 0018 in place (`storms.merged_into uuid REFERENCES storms(id)`, `GRANT UPDATE (merged_into)` to app_hail)
+and its snapshot. The probe's 0019-0024 snapshots were rebuilt on the new 0018 with a three-way JSON merge (base: old
+0018, theirs: new 0018; delta = the column and `storms_merged_into_storms_id_fk`), keeping each `id`/`prevId` and key
+order (22 lines each, the same as S1's 0018 diff). D1's 0020 edit (Ruling BF) and E1's 0016 edit change no snapshot.
+`drizzle-kit generate --name=probe_check`: "No schema changes, nothing to migrate"; no file created. Script: idx
+0..24 consecutive and in number order, `when` strictly increasing, `prevId` chained 0000..0024; 25 snapshots, 25 SQL
+files. Exactly one `messages (company_id, id)` unique, D1's `messages_company_id_id_uniq`.
+
+R8 (Ruling BF: global unique index on `ad_accounts (platform, external_account_id)` where not revoked, grant trims) is
+NOT on s1-storm d07a440 (R8-R10 are briefs; only the fixture side 3f800e5 landed). Not rebuilt.
+
+Post-0018 snapshots that disagree with S1's 0018 (neither `ad_campaigns.paused_by` nor `storms.merged_into`), checked
+per file: a1-agents 0021/0022 and `a1-t4` 0019-0022 (owner A1), g1-agents, `g1-md4` and `g1-full` 0019-0024 (owner G1;
+`ops/sdd/g1/snapshot-delta.py` is G1's tool for it), d1-front-desk 0019/0020 (owner D1; still chained from 0014, no S1).
+A1 and G1 have not rebuilt: neither has merged s1-storm since R1/R3.
+
+### Items: status
+
+Closed by a track this pass: none fully.
+- Item 3 (409 on `POST /api/storms/:id/plan`): now carried by S1 (R2a 28f3800, trim 41b970c): `draftStormPlan`
+  returns `{ taskId } | null`, the route answers 409 `PLAN_PAUSED`, `REDRAFTABLE_PLAN_STATUSES = ['draft']`,
+  `replaceDraftPlan` back to T11's form. The probe takes S1's route; its probe-only 409 is gone. With A1's
+  `isAgentPaused` check in `draftStormPlan` the 409 is reachable. The probe has one re-draft mechanism (A1's); S1's
+  `replaceDraftPlan` is not in the probe. Open part: S1's duplicate `REDRAFTABLE_PLAN_STATUSES` in `plan-errors.ts` (A1
+  carry (a)); the probe deletes it.
+- Item 4 (A1 T20 under amended Ruling BD): carried by a1-agents (181e4d7): automatic paths (storm-match, storm-draft job,
+  plain `draftStormPlan`) re-draft only over drafts; `allowFinished` is passed only by `routes/approvals.ts` (rerun).
+  Closed in code. Open as a ruling question (new problem 5).
+
+Still open (probe keeps its workaround):
+- Item 1: d1-front-desk 6600b5c still has 0019/0020 `when` = 1791770789451/1791770804997, below S1's 0018
+  (1791772862263), and its 0019 snapshot chains from 0014. Owner D1 at its s1-storm merge.
+- Item 2: the `a1-dock`, `a1-settings`, `settings`, `d1-routes`, `d1-settings`, `e1-routes`, `c1-routes`, `setup`
+  (web and shared) and `steps` tests still differ from every track head. Web tests pass on the combined set (1243).
+- Item 5: e1-estimator still calls `finishParkedStep` twice in `dispatcher.ts`; a1-agents has not merged e1 since.
+  The probe keeps `completeParkedStep`. Owner A1.
+- Item 6: s1-storm has not merged e1-estimator: its storm-config, google-ads-http and postmark-broadcast production
+  fixtures still lack R2 (and now TRUST_PROXY, below), and `s1-routes` still lacks `proposalListRoutes()`. Owner S1.
+- Item 7: R1 rebuilt this pass; R3 rebuilt in pass 12; R8 not on s1-storm. Tracks behind: A1, G1, D1 (list above).
+- Item 8: S1 R9/R10 are not merged. R5 moved the storm form's rate limit and Origin guard inside
+  `stormRequestRoutes`; T28 sends `Referrer-Policy: same-origin` on the storm page. No clash with D1/C1/E1 public
+  routes or the CSP yet.
+
+### New cross-track problems
+
+1. **C1 x S1, 0018 `GRANT ALL ON spotter_reports TO app_system`.** C1's new rls test (no TRUNCATE, TRIGGER or REFERENCES
+   for app_system on any relation) fails on it, and S1's own test pins `truncate: true`. Probe fix (ad3191c): 0018 grants
+   SELECT, INSERT, UPDATE, DELETE; the S1 test expects no TRUNCATE. Owner S1 at its c1 merge (Ruling AW, in place); the
+   loader itself needs only SELECT and INSERT (`insert .. on conflict do nothing returning id`).
+2. **C1 x D1, `company_phone_numbers` UPDATE.** C1 SEC-4 leaves app_system SELECT, INSERT on `company_phone_numbers`;
+   D1's `markVoiceUrlSet` (`system/voice-routing.ts`, called by the fd-health job) updates `capabilities` through the
+   system pool, so `apps/api/test/front-desk/number-voice.test.ts` and the fd-health job fail with permission denied.
+   Probe fix: 0020 adds `GRANT UPDATE (capabilities) ON company_phone_numbers TO app_system`. Owner D1 at its c1 merge
+   (C1's merge note: grant what you need in your own migration).
+3. **C1 x S1, production config fixtures need TRUST_PROXY.** S1's storm-config, google-ads-http and postmark-broadcast
+   tests build a production config without it and throw `ConfigError`. Probe fix: `TRUST_PROXY: '1'` (with the R2 four
+   from pass 12). Owner S1 at its c1/e1 merge.
+4. **C1 x E1, late-error log leaks the proposal token.** C1's new `res.headersSent` branch in `errors.ts` logs the raw
+   `req.path`; E1's `pathForLog` scrubs `/public/proposals/<token>`. The same code is on c1-crm and e1-estimator. Probe
+   fix: `logError(err, pathForLog(req.path))`. Owner E1 lead (sec-core).
+5. **Ruling BD wording (A1 x S1), "Draft a new plan".** A1's merge rule (b) and the comments in `storm/plan.ts`,
+   `storm/settle.ts` and `repos/storm-plans.ts` say S1's `POST /api/storms/:id/plan` should also pass `allowFinished`
+   (expired/declined -> 200 with a new draft); the amended Ruling BD says only the rerun route passes it. S1's R4 web
+   shows a Redraft button on expired/declined plans, which the route answers 409 `PLAN_EXISTS`. The probe follows the
+   ruling (storms route: drafts only, no `allowFinished`). Owner: controller decides; then S1 (route + web) or A1
+   (comments).
+6. **D1 x E1, recording playback blocked by the CSP.** With E1's R2 store, D1's `GET /api/calls/:id/recording` hands
+   the browser a presigned `https://<account>.r2.cloudflarestorage.com/...` URL for `<audio>` (`RecordingPlayer.tsx`),
+   but `app.ts`'s CSP has no `media-src`, so it falls back to `default-src 'self'` and production playback is blocked
+   (tests and e2e use the memory store, so nothing fails). Fix: add `mediaSrc: ["'self'", <the R2 origin from
+   R2_ACCOUNT_ID>]` (or proxy playback through the API). Owner D1 (Ruling DV), with E1 for `r2.ts`. Not changed in
+   the probe.
+7. **S1 R2a x A1 T20, plan-ready email on re-draft.** A1's `draftStormPlan` returns `fresh: true` for every new draft,
+   which drops S1 R2a's "a re-draft of a draft sends no second ready email" (S1 test in `storm-plan.test.ts`). The probe
+   keeps S1's rule inside A1's code (`fresh: !previousWasDraft`; a rerun over an expired/declined plan still emails).
+   Owner A1 at its s1 merge.
+
+### Checks (after all merges and ad3191c)
+
+`npm ci` clean (no package change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass, lint
+pass, lint:css pass; vitest @roofline/web 1243 pass (133 files), @roofline/ui 172 pass, @roofline/shared 1298 pass,
+@roofline/send-gate 532 pass. The database, API, worker and e2e suites run only in CI.
