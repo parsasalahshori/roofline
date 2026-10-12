@@ -27,6 +27,12 @@ describe('shouldTransfer', () => {
     ['danger', { intent: 'danger' }, 'danger'],
     ['injury', { intent: 'injury' }, 'danger'],
     ['fire', { intent: 'fire' }, 'danger'],
+    // The router's intent is a free label: the meaning is matched loosely (Ruling BK).
+    ['emergency', { intent: 'emergency' }, 'danger'],
+    ['gas smell', { intent: 'gas_smell' }, 'danger'],
+    ['water coming in', { intent: 'water_in_house' }, 'leak'],
+    ['roof leaking', { intent: 'roof_leaking' }, 'leak'],
+    ['flooding', { intent: 'flooding' }, 'leak'],
     ['angry', { mood: 'angry' }, 'angry'],
     ['upset alone', { mood: 'upset' }, null],
     ['trade_caller', { intent: 'trade_caller' }, 'trade_caller'],
