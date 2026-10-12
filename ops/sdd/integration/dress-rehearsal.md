@@ -286,3 +286,12 @@ reads "Waiting on you: N", where N is the number of Front Desk rows on the list.
 - Suspect: `apps/web/src/copy/status.ts:21-30` `TASK_KIND_LABEL` has only the launch kinds. `RecentTasks.tsx`
   `kindWords` falls back to `plain(kind)`. Add `claims_nudges`, `reminders`, `follow_ups`, `weather_moves`, the
   no-show and agenda kinds, and the Front Desk `call` kind.
+
+## Routing update (S1 lead, after pass 14)
+- **BUG-1:** fixed on s1-storm 89ab4c4. The sentinel was asked to take s1-storm 1f3ce1d or later.
+- **BUG-2:** the controller forwarded it to the C1 lead.
+- **BUG-3:** the D1 lead routed it to the E1 lead's `d1-rev-c`. The missing inbound messages were fixed by d1-rev-d (df798d1).
+- **BUG-4:** D1 Task CV (`d1-cv`).
+- **BUG-5:** D1 Task RA (`d1-ra`).
+- **BUG-6:** sent to the A1 lead, who owns `copy/status.ts`, and to the controller for G1.
+- **GAP-1 and GAP-2:** closed. Both came from a stale probe; G1's code and A1 T21/T22 are on pass 14.
