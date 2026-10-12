@@ -117,6 +117,7 @@ accounts), HIGH 2 (unsubscribe/landing Referrer-Policy + browser e2e), MEDIUM 3 
 conversation text (MEDIUM 6); the E1 lead fixes platform items (TRUST_PROXY startup check, login limits, F2/F3/E1 LOWs) on
 `sec-core` from c1-crm and merges into c1-crm. Grant/index changes go in the owning unreleased migration (Ruling AW).
 **Ruling BG (D1 read-only companies, pre-review item 22):** voice and fd-text check company status. A read-only company (trial ended or cancelled) gets voicemail or forwarding and no AI. The Front Desk "off" write is always allowed, even while read-only. Recommended option taken; the owner may revisit it.
+**Ruling BD clarified (sentinel pass 13):** only the rerun route passes `allowFinished`. `POST /api/storms/:id/plan` stays draft-only. S1's Redraft button on expired or declined plans calls the rerun route. A1 returns `fresh: !previousWasDraft`.
 
 ## How to do a task
 
