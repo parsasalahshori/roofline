@@ -81,3 +81,125 @@ No duplicate exported names, enum values, job names, schedules or route mounts w
 
 Run 38199485169 on 16bc0e1: Platform (lint, typecheck, tests) success; E2E (Playwright) success; v1 (node:test)
 success. No merge-artifact fixes were needed after CI.
+
+## Pass 2
+
+Base: pass 1 head 3b2c19d. Each track fetched again (heads unchanged since the request) and merged in order with
+`git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 3eb085d304b3d13f582fa4f135f02d82ae13c239 | b7746b3 | 1 file |
+| e1-estimator | d2504c7cbca5c37efb2dc904198bd20522d11fa5 | 6d8ddcb | none |
+| s1-storm | e2498bdd1e06ea453ef6eb2b07c9d0443dfca9f1 | 1dc7e2f | 10 files |
+| d1-front-desk | de9dfc5296142bbf251cbadd6131d81ff182d813 | 6f58866 | 2 files |
+| a1-agents | 7bc7777e3c2be9281520936e5e008321d6d35f9c | 5cd5422 | 7 files |
+| g1-agents | 4e4dc3c57950f64b2b7eda880303adeef2d7aaa2 | 592fe18 | 11 files |
+
+Probe-only commits: 76b41a2 and 8e665aa (storm and E1 step types, problem 1), dfca281 (job source copy, problem 3),
+c7becda (G1 step types and two shared tests, problem 2), f82f31e (web tests for the combined tracks).
+
+### Conflict resolutions
+
+c1-crm:
+- `packages/db/test/rls.test.ts`: C1 Ruling CF (app_tenant may DELETE `calendar_connections`, edited into 0014) plus
+  D1's `blocked_numbers`: the delete list and the grants test title name both.
+
+s1-storm:
+- `apps/api/package.json`: both (`@anthropic-ai/sdk` from A1, `@resvg/resvg-js` from S1).
+- `package-lock.json`: took ours, `npm install --package-lock-only`, `npm ci` clean, `npm ls playwright-core` only 1.56.1.
+- Barrels (`packages/db/src/index.ts`, `system/index.ts`, `packages/shared/src/index.ts`), `global.ts` (S1 hail
+  tables after D1's `line_lookups`), `tenant.ts` imports, `TENANT_TABLES` and `company_settings` columns: both.
+- `tenant.ts` `messages`: D1's `conversation_id` and S1's `to_email`/`subject` columns; one `(company_id, id)` unique,
+  D1's `messages_company_id_id_uniq`, beside S1's `messages_email_to_email_check`. Table tail: A1/G1 tables, then S1's
+  block (rebuilt from each side's text).
+- `packages/db/test/migrations.test.ts`: S1's `describe('S1 constraints')` after A1's; import of `MIGRATIONS_FOLDER`.
+- `packages/db/test/rls.test.ts`: `APP_SYSTEM_RLS_TABLES` both; `APP_TENANT_DELETE_TABLES` = opt_outs,
+  calendar_busy_blocks, calendar_event_links, calendar_connections, blocked_numbers, door_exclusions, storm_photos
+  (title says so); D1's `SELECT_INSERT_ONLY` kept; app_tenant relation list gets `line_lookups` and
+  `...HAIL_GLOBAL_TABLES`; app_system column list holds D1's `upd` and S1's `ins` helpers, with S1's
+  `company_storms` rows placed between `calls` and `conversation_turns` (the query orders by table name);
+  `describe('front desk tables')` then `describe('S1 storm tables')`.
+- Journal and snapshots: see below.
+
+d1-front-desk:
+- `apps/web/src/app/router.tsx`: D1's `front-desk` and `front-desk/:conversationId` routes and E1's three estimator
+  routes; both coming-soon placeholders dropped.
+- `apps/web/src/shell/apps.ts`: Front Desk and Estimator both `shipped: true`.
+
+a1-agents:
+- Router: front desk and estimator routes as above plus A1's four agents routes (no agents placeholder).
+- `ComingSoonKey` = `'storm' | 'estimator' | 'approvals'` (D1 removed front-desk, A1 removed agents).
+- Settings: ten tabs `company, team, prices, schedule, connections, billing, setup, front-desk, agents, profile`;
+  reps (and an unknown role) do not see prices, front-desk or agents. `copy/settings.ts`, `Settings.tsx` (both
+  redirects and both panels) and `test/settings.test.tsx` (ten links) follow.
+- `packages/shared/src/index.ts`: both (`agents-api.ts` added).
+
+g1-agents (G1 had merged A1 T1/T2 and D1 T2/T3, all already in the probe):
+- `tenant.ts`, `migrations.test.ts`, `rls.test.ts`: took ours; every G1 line is already in ours (checked line by line).
+- `packages/shared/src/index.ts`: ours (G1's copy only reorders the same exports; `front-desk-views.ts` kept).
+- `packages/shared/src/steps.ts`: imports from both; registry auto-merged (15 step types).
+- `packages/shared/test/steps.test.ts`: the registry test lists all fifteen step types and approval classes.
+- Snapshots 0021-0024 and the journal: ours (G1 changed no migration SQL; its snapshots only lack E1/S1).
+
+### Migration journal (Ruling AP)
+
+idx 0..24, consecutive, in number order: 0000 .. 0012 (F1/F3), 0013/0014 (C1), 0015/0016 (E1), 0017/0018 (S1, new),
+0019/0020 (D1), 0021/0022 (A1), 0023/0024 (G1). Every number is present once.
+
+`when` values (idx 17-24): 0017 1791772690993, 0018 1791772862263, 0019 1791772863263, 0020 1791772864263,
+0021 1791772865263, 0022 1791772866263, 0023 1791774729941, 0024 1791774749941. S1's 0017/0018 are newer than D1's
+and A1's migrations, so 0019-0022 are raised to 0018 + 1 s .. + 4 s (problem 4). 0023/0024 take G1's own new
+values (G1 regenerated them after merging A1). The pass-1 A1 workaround is subsumed by this raise.
+
+Snapshots: S1's 0017/0018 chain from E1's 0016 unchanged. 0019-0024 were rebased onto S1 with a three-way JSON merge
+(base E1 0016, theirs S1 0018; no overlapping changes), and 0019 `prevId` now points at 0018. After each merge
+`drizzle-kit generate --name=probe_check` reported "No schema changes"; no probe file was created.
+
+### Ruling AY status
+
+1. Step-type shape. A1 Task 3 (in 7bc7777) removed `minutesSaved` and `withMinutesSaved`: a `StepTypeDef` is a plain
+   object with `userCreatable`, `baseline()` and `units()`. E1 (d2504c7) has not converted `send_proposal` and
+   `order_exact_report` (they still set `minutesSaved`); the probe keeps the workaround, now as plain objects
+   (userCreatable true, baselines `proposal_sent` / `exact_report`, units 1). S1 (e2498bd, commit e57f982) did its
+   side of AY: optional `userCreatable`/`baseline`/`units` plus a hand-written `minutesSaved`; the probe takes A1's
+   interface, drops S1's optional members and `StormBaselineKey`, and removes the three `minutesSaved` (S1's ledger
+   plans exactly this at its A1 merge). Owner unchanged: A1 converts E1's two at its e1-estimator merge.
+2. Journal `when`. A1 (7bc7777) still carries 1791770537854/1791770544508 for 0021/0022: not fixed. Still needed and
+   now wider: see problem 4.
+
+### Checks (after all six merges)
+
+`npm ci` clean; `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass, lint pass, lint:css pass;
+vitest @roofline/web 561 pass (57 files), @roofline/ui 170 pass, @roofline/shared 1263 pass, @roofline/send-gate
+525 pass. Database, API, worker and e2e suites run only in CI (no Docker here).
+
+No duplicate exported names (typecheck), table, enum value, job name, schedule or route mount was found; no two
+tracks rewrite the same check constraint in their migrations.
+
+### New cross-track problems
+
+1. (see Ruling AY 1) E1's two step types still need A1's plain shape; the probe converts them.
+2. **G1 x A1, step-type shape.** `packages/shared/src/steps.ts` on g1-agents builds `send_personal_texts`,
+   `build_claim_packet`, `create_appointment` and `move_appointment` with `withMinutesSaved` (A1 Task 2), which A1
+   Task 3 deleted, so the combination fails at load (`ReferenceError: withMinutesSaved is not defined`, also breaking
+   drizzle-kit) and typecheck. E1's `test/steps-e1.test.ts` and S1's `test/steps-storm.test.ts` call
+   `def.minutesSaved(...)`, which no longer exists. Probe fix: the four G1 defs become
+   `const x: StepTypeDef<P> = { ... }` (fields unchanged), and the tests use `stepMinutes(def, p, result).minutes`.
+   Owner: G1, when it merges a1-agents again (E1 and S1 fix their tests at their A1 merge).
+3. **C1 x D1, job source copy.** D1 adds `front_desk` to `JOB_SOURCES` (0019 rewrites `jobs_source_check`). C1's
+   `apps/web/src/copy/create.ts` `sourceNames` and `copy/jobs.ts` `source` maps lack it, so `NewJob.tsx` (48) and
+   `BoardFilters.tsx` (19) fail typecheck (TS7053). Probe fix: `front_desk: 'Front Desk'` in both maps, and C1's
+   `create-job.test.tsx` expects eight sources. Owner: D1 at its c1-crm merge; C1 should decide whether a person may
+   pick Front Desk on the New job form (likely not: filter it from `sourceOptions` there and keep it in the board
+   filter).
+4. **S1 x D1/A1/G1, journal `when` order.** S1's 0017/0018 (1791772690993 / 1791772862263) are newer than D1's
+   0019/0020 (1791770789451 / 1791770804997), A1's 0021/0022 and G1's own raised 0021/0022 (1791770814997 /
+   1791770824997). A database already at 0018 would silently skip 0019-0022. Fresh databases are not affected.
+   Fix: whoever merges D1/A1/G1 after S1 sets 0019-0022 `when` above 0018's (probe: 1791772863263 ..
+   1791772866263); S1, D1 and A1 must not regenerate. Owner: the controller (Ruling AP) at the merge that first
+   combines s1-storm with d1-front-desk.
+5. **A1 x D1/E1, web tests for shipped apps and settings tabs** (test-only). `apps/web/test/a1-dock.test.tsx` expects
+   Front Desk and Estimator unshipped, `a1-settings.test.tsx` eight tabs, `d1-settings.test.tsx` nine tabs. The probe
+   updates them for the combination (Storm the only coming-soon app; ten tabs). Owner: whichever track merges the
+   other.
