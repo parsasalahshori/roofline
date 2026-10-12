@@ -13,7 +13,7 @@ services:
     volumes:
       - roofline-demo-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U roofline -d roofline"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U roofline -d roofline"]
       interval: 2s
       timeout: 3s
       retries: 60

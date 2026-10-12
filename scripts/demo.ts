@@ -137,14 +137,23 @@ const systemUrl = roleUrl(OWNER_URL, APP_ROLES.system, ROLE_PASSWORDS.system);
 // 3. Migrations and seed; 4. web build
 try {
   log('Running the migrations.');
-  await migrate(OWNER_URL);
+  // A brand-new database restarts once after its first-boot setup; retry through that.
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await migrate(OWNER_URL);
+      break;
+    } catch (err) {
+      if (attempt >= 15) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
   await setRolePasswords(OWNER_URL, ROLE_PASSWORDS);
   const pools = createPools({ tenant: tenantUrl, system: systemUrl });
   try {
     const world = await seedDemoWorld(pools, OWNER_URL, new Date(), { encryptionKey: ENCRYPTION_KEY });
     log(
       world.created
-        ? `Seeded ${DEMO_COMPANY_NAME}: ${Object.entries(world.counts).map(([name, n]) => `${n} ${name}`).join(', ')}.`
+        ? `Seeded ${DEMO_COMPANY_NAME}: ${Object.entries(world.counts).filter(([name]) => !name.includes('.')).map(([name, n]) => `${n} ${name}`).join(', ')}.`
         : `${DEMO_COMPANY_NAME} is already seeded (npm run demo:reset starts fresh).`,
     );
   } finally {
