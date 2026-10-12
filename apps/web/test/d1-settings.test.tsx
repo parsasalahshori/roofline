@@ -44,6 +44,8 @@ const SETUP_VIEW = {
   progress: { done: 0, total: 5 },
 } as const;
 
+const TEXTING_VIEW = { state: 'approved', reason: null, rejectedFields: [], brand: null, defaults: {}, submittedAt: null, approvedAt: '2026-10-01T10:00:00.000Z', number: '+14025550100', needsPaymentMethod: false, needsVerifiedEmail: false, hostedPolicyUrls: { privacy: 'https://example.test/privacy', terms: 'https://example.test/terms' } };
+
 type RoleName = 'owner' | 'office' | 'rep';
 
 const FRONT_DESK_SETTINGS = {
@@ -72,6 +74,7 @@ function signedInAs(role: RoleName) {
     'GET /api/setup': () => ({ body: SETUP_VIEW }),
     'GET /api/front-desk/settings': () => ({ body: FRONT_DESK_SETTINGS }),
     'GET /api/front-desk/voices': () => ({ body: [{ id: 'maya', label: 'Maya', previewUrl: null }] }),
+    'GET /api/texting': () => ({ body: TEXTING_VIEW }),
     'GET /api/me/transfer-phone': () => ({ body: { e164: null, prefill: null, recordingAcknowledgedAt: null } }),
   });
 }

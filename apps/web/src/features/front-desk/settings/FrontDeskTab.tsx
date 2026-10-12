@@ -5,6 +5,7 @@ import { useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/client.ts';
 import { errors } from '../../../copy/errors.ts';
 import { frontDeskSettings } from '../../../copy/front-desk-settings.ts';
+import { ForwardingGuide } from './ForwardingGuide.tsx';
 import { OnCallList } from './OnCallList.tsx';
 import { useFrontDeskSettings, useFrontDeskVoices, useSaveFrontDeskSettings } from './settings-api.ts';
 import styles from './FrontDeskTab.module.css';
@@ -365,8 +366,9 @@ export function FrontDeskTab() {
         onSave={onSave}
       />
 
-      {/* Task 24's forwarding guide goes here; this spot stays empty until then */}
-      <section className={styles.forwardingSlot} data-forwarding-slot />
+      <section className={styles.forwardingSlot} data-forwarding-slot>
+        <ForwardingGuide />
+      </section>
     </div>
   );
 }
