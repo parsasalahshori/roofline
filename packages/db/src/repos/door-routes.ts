@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type { DoorOutcome, DoorRouteStatus } from '@roofline/shared';
 import type { Tx } from '../tenant.ts';
 
 /** One home in the hail path that may be door-knocked. */
@@ -169,4 +170,191 @@ export async function insertRoutesOnce(
     built.push({ id: routeId, userId: route.userId, name: route.name, stops: route.stops.length });
   }
   return { created: true, routes: built };
+}
+
+/* ---- S1 Task 15: reading routes and recording door outcomes. SHELLS: package "repo" replaces every body below. ---- */
+
+export type DoorStopRow = {
+  id: string;
+  routeId: string;
+  position: number;
+  footprintId: number | null;
+  propertyId: string | null;
+  lng: number;
+  lat: number;
+  address: string | null;
+  hailIn: number | null;
+  outcome: DoorOutcome | null;
+  /** ISO string or null. */
+  outcomeAt: string | null;
+  outcomeBy: string | null;
+  createdCustomerId: string | null;
+  createdJobId: string | null;
+};
+
+export type DoorRouteRow = {
+  id: string;
+  companyStormId: string;
+  /** The storms.id (global) of the company storm; jobs.storm_id holds this. */
+  stormId: string;
+  userId: string;
+  name: string;
+  status: DoorRouteStatus;
+  stops: number;
+  /** Stops that have an outcome. */
+  doneStops: number;
+};
+
+type StopRaw = {
+  id: string;
+  route_id: string;
+  position: number | string;
+  footprint_id: number | string | null;
+  property_id: string | null;
+  lng: number | string;
+  lat: number | string;
+  address: string | null;
+  hail_in: number | string | null;
+  outcome: DoorOutcome | null;
+  outcome_at: Date | string | null;
+  outcome_by: string | null;
+  created_customer_id: string | null;
+  created_job_id: string | null;
+};
+
+type RouteRaw = {
+  id: string;
+  company_storm_id: string;
+  storm_id: string;
+  user_id: string;
+  name: string;
+  status: DoorRouteStatus;
+  stops: number | string;
+  done_stops: number | string;
+};
+
+function rowToStop(r: StopRaw): DoorStopRow {
+  return {
+    id: r.id,
+    routeId: r.route_id,
+    position: Number(r.position),
+    footprintId: r.footprint_id === null ? null : Number(r.footprint_id),
+    propertyId: r.property_id,
+    lng: Number(r.lng),
+    lat: Number(r.lat),
+    address: r.address,
+    hailIn: r.hail_in === null ? null : Number(r.hail_in),
+    outcome: r.outcome,
+    outcomeAt: r.outcome_at === null ? null : new Date(r.outcome_at).toISOString(),
+    outcomeBy: r.outcome_by,
+    createdCustomerId: r.created_customer_id,
+    createdJobId: r.created_job_id,
+  };
+}
+
+function rowToRoute(r: RouteRaw): DoorRouteRow {
+  return {
+    id: r.id,
+    companyStormId: r.company_storm_id,
+    stormId: r.storm_id,
+    userId: r.user_id,
+    name: r.name,
+    status: r.status,
+    stops: Number(r.stops),
+    doneStops: Number(r.done_stops),
+  };
+}
+
+const ROUTE_SELECT = sql`
+  select r.id::text as id, r.company_storm_id::text as company_storm_id, cs.storm_id::text as storm_id,
+         r.user_id::text as user_id, r.name, r.status, r.stops,
+         (select count(*) from door_stops s where s.route_id = r.id and s.outcome is not null) as done_stops
+    from door_routes r
+    join company_storms cs on cs.id = r.company_storm_id`;
+
+const STOP_SELECT = sql`
+  select s.id::text as id, s.route_id::text as route_id, s.position, s.footprint_id, s.property_id::text as property_id,
+         ST_X(s.point) as lng, ST_Y(s.point) as lat, s.address, s.hail_in, s.outcome, s.outcome_at,
+         s.outcome_by::text as outcome_by, s.created_customer_id::text as created_customer_id,
+         s.created_job_id::text as created_job_id
+    from door_stops s`;
+
+/** Routes assigned to `userId`, newest first. */
+export async function listRoutesForUser(tx: Tx, userId: string): Promise<DoorRouteRow[]> {
+  const res = await tx.execute(
+    sql`${ROUTE_SELECT} where r.user_id = ${userId}::uuid order by r.created_at desc, r.id`,
+  );
+  return (res.rows as unknown as RouteRaw[]).map(rowToRoute);
+}
+/** One route by id (RLS keeps it to the company); null when missing. */
+export async function getDoorRoute(tx: Tx, routeId: string): Promise<DoorRouteRow | null> {
+  const res = await tx.execute(sql`${ROUTE_SELECT} where r.id = ${routeId}::uuid`);
+  const row = (res.rows as unknown as RouteRaw[])[0];
+  return row ? rowToRoute(row) : null;
+}
+/** Stops of a route ordered by position. */
+export async function listDoorStops(tx: Tx, routeId: string): Promise<DoorStopRow[]> {
+  const res = await tx.execute(sql`${STOP_SELECT} where s.route_id = ${routeId}::uuid order by s.position, s.id`);
+  return (res.rows as unknown as StopRaw[]).map(rowToStop);
+}
+/** One stop of the route, locked `for update`; null when it is not in that route. */
+export async function lockDoorStop(tx: Tx, routeId: string, stopId: string): Promise<DoorStopRow | null> {
+  const res = await tx.execute(
+    sql`${STOP_SELECT} where s.id = ${stopId}::uuid and s.route_id = ${routeId}::uuid for update of s`,
+  );
+  const row = (res.rows as unknown as StopRaw[])[0];
+  return row ? rowToStop(row) : null;
+}
+/** Sets outcome, outcome_at, outcome_by on a stop that has no outcome yet and moves the route status. */
+export async function setDoorStopOutcome(
+  tx: Tx,
+  stop: { id: string; routeId: string },
+  v: { outcome: DoorOutcome; by: string; at: Date },
+): Promise<DoorStopRow> {
+  const at = v.at.toISOString();
+  const res = await tx.execute(sql`
+    update door_stops set outcome = ${v.outcome}, outcome_at = ${at}::timestamptz,
+           outcome_by = ${v.by}::uuid, updated_at = ${at}::timestamptz
+     where id = ${stop.id}::uuid and outcome is null
+    returning id::text as id, route_id::text as route_id, position, footprint_id, property_id::text as property_id,
+              ST_X(point) as lng, ST_Y(point) as lat, address, hail_in, outcome, outcome_at,
+              outcome_by::text as outcome_by, created_customer_id::text as created_customer_id,
+              created_job_id::text as created_job_id`);
+  const updated = (res.rows as unknown as StopRaw[])[0];
+  if (!updated) {
+    const existing = await lockDoorStop(tx, stop.routeId, stop.id);
+    if (!existing) throw new Error('Door stop not found.');
+    return existing;
+  }
+  await tx.execute(sql`
+    update door_routes
+       set status = case when (select count(*) from door_stops where route_id = ${stop.routeId}::uuid and outcome is null) = 0
+                         then 'done' else 'in_progress' end,
+           updated_at = ${at}::timestamptz
+     where id = ${stop.routeId}::uuid`);
+  return rowToStop(updated);
+}
+/** Stores the customer and job a wants_check stop created. */
+export async function setDoorStopCreated(
+  tx: Tx,
+  stopId: string,
+  v: { customerId: string; jobId: string },
+): Promise<DoorStopRow> {
+  const res = await tx.execute(sql`
+    update door_stops set created_customer_id = ${v.customerId}::uuid, created_job_id = ${v.jobId}::uuid, updated_at = now()
+     where id = ${stopId}::uuid
+    returning id::text as id, route_id::text as route_id, position, footprint_id, property_id::text as property_id,
+              ST_X(point) as lng, ST_Y(point) as lat, address, hail_in, outcome, outcome_at,
+              outcome_by::text as outcome_by, created_customer_id::text as created_customer_id,
+              created_job_id::text as created_job_id`);
+  const row = (res.rows as unknown as StopRaw[])[0];
+  if (!row) throw new Error('Door stop not found.');
+  return rowToStop(row);
+}
+/** Adds the footprint to door_exclusions for the current company; does nothing when already there. */
+export async function addDoorExclusion(tx: Tx, footprintId: number, reason: string): Promise<void> {
+  await tx.execute(sql`
+    insert into door_exclusions (company_id, footprint_id, reason)
+    values (${CURRENT_COMPANY}, ${footprintId}::bigint, ${reason})
+    on conflict (company_id, footprint_id) do nothing`);
 }
