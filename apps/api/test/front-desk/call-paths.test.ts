@@ -4,8 +4,9 @@ import { activities, appointments, calls, claimIntakes, customers, jobs } from '
 import { runAfterCall } from '../../src/front-desk/after-call.ts';
 import { SAY_SPAM_ENDING } from '../../src/front-desk/engine.ts';
 import { identifyCaller } from '../../src/front-desk/tools/caller.ts';
+import { ONLY_INSPECTIONS } from '../../src/front-desk/tools/move.ts';
 import { inCompany } from '../crm-helpers.ts';
-import { ADDRESS, expectOpusTiming, OPUS, type Rig, rig, seedCaller, SLOT, VERIFY } from './call-rig.ts';
+import { ADDRESS, expectOpusTiming, OPUS, rig, seedCaller, SLOT, VERIFY, type Rig } from './call-rig.ts';
 
 /*
  * NEEDS-FIX (for the lead; none blocks these tests):
@@ -302,6 +303,63 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     // Non-urgent: nobody is emailed.
     expect(r.t.mailer.sent).toHaveLength(0);
     expectOpusTiming(await r.assistantTurns());
+    expect(JSON.parse(r.session.endedWith!)).toEqual({ kind: 'end', reason: 'goodbye' });
+  });
+
+  test('install move: a verified caller asking to move an install is refused and offered a message (criterion 8)', async () => {
+    const r = await rig([]);
+    const seeded = await seedCaller(r);
+    const start = new Date(r.t.clock.now().getTime() + 3 * 24 * 60 * 60 * 1000);
+    const [install] = await inCompany(r.t, r.companyId, (tx) =>
+      tx
+        .insert(appointments)
+        .values({
+          companyId: r.companyId,
+          kind: 'install',
+          customerId: seeded.customerId,
+          propertyId: seeded.propertyId,
+          jobId: seeded.jobId,
+          assignedUserId: r.t.seed.a.owner.userId,
+          startsAt: start,
+          endsAt: new Date(start.getTime() + 8 * 60 * 60 * 1000),
+          allDay: false,
+          status: 'scheduled',
+          source: 'manual',
+        })
+        .returning(),
+    );
+    const newStart = new Date(start.getTime() + 24 * 60 * 60 * 1000).toISOString();
+    r.llm.script.push(
+      {
+        when: /move my install/,
+        route: { ...OPUS, intent: 'reschedule' },
+        answer: [
+          VERIFY,
+          { kind: 'tool', name: 'lookup_my_jobs', input: {} },
+          { kind: 'tool', name: 'move_inspection', input: { appointmentId: install!.id, slotStart: newStart, slotUserId: r.t.seed.a.owner.userId } },
+          { kind: 'text', text: 'I cannot move an install myself. I will take a message for the office.' },
+          { kind: 'tool', name: 'take_message', input: { reason: 'Wants to move the install to another day', urgent: false, callbackWhen: null, name: null } },
+        ],
+      },
+      { when: /bye/, route: OPUS, answer: [{ kind: 'tool', name: 'end_call', input: { reason: 'goodbye' } }] },
+    );
+
+    await r.say('I need to move my install');
+    await r.say('ok, bye');
+
+    const results = await r.toolResults();
+    expect(results.map((c) => c.name)).toEqual(['verify_caller', 'lookup_my_jobs', 'move_inspection', 'take_message', 'end_call']);
+    // The verified caller's lookup names the install, so the model may use its id.
+    expect(results[1]!.result).toContain(`Appointment ${install!.id}: install`);
+    // The move reaches the tool (not the shown-ids guard) and is refused there, pointing at a message.
+    expect(results[2]).toMatchObject({ ok: false });
+    expect(results[2]!.result).toBe(ONLY_INSPECTIONS);
+    expect(results[3]).toMatchObject({ ok: true });
+    // The install is untouched.
+    const [after] = await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments).where(eq(appointments.id, install!.id)));
+    expect(after).toMatchObject({ kind: 'install', status: 'scheduled' });
+    expect(after!.startsAt.toISOString()).toBe(start.toISOString());
+    expect((await r.conversation())?.outcome).toBe('message');
     expect(JSON.parse(r.session.endedWith!)).toEqual({ kind: 'end', reason: 'goodbye' });
   });
 
