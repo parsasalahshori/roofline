@@ -81,10 +81,5 @@ export const readOnlyGuard: RequestHandler = (req, res, next) => {
     next();
     return;
   }
-  const body = req.body as { enabled?: unknown } | undefined;
-  if (req.method === 'PUT' && /^\/front-desk\/settings\/?$/.test(path) && body?.enabled === false) {
-    next();
-    return;
-  }
   res.status(403).json({ error: READ_ONLY_MESSAGE[status] });
 };

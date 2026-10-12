@@ -23,6 +23,8 @@ export const ROUTER_INTENTS = [
   'schedule_inspection', 'spam', 'status', 'storm_damage_active', 'supplier', 'trade_caller', 'transfer', 'unknown', 'water_inside',
 ] as const;
 export type RouterIntent = (typeof ROUTER_INTENTS)[number];
+/** Router intents that mean the caller is asking for a person (RC-1: the engine and transfer count them once per turn). */
+export const ASK_PERSON_INTENTS: ReadonlySet<string> = new Set<RouterIntent>(['ask_for_person', 'transfer', 'human']);
 
 /**
  * Ruling BK (amended): the router's emergency vocabulary. ROUTER_PROMPT names these words, so the router emits them.
@@ -131,9 +133,17 @@ export function shouldTextBack(i: {
   return i.callerTurns === 0 || i.secondsInCall <= 15;
 }
 
+/** Turn-limit constants: a conversation is offered a person at this many caller turns (and this many minutes), ended at the end minutes. */
+export const TURN_LIMIT_OFFER_TURNS = 40;
+export const TURN_LIMIT_OFFER_MINUTES = 25;
+export const TURN_LIMIT_END_MINUTES = 30;
+
+/** The start of verify_caller's mismatch replies; the stored tool-call result of a failed try begins with it. */
+export const VERIFY_MISMATCH_PREFIX = 'That did not match our records';
+
 export function turnLimit(i: { turns: number; minutes: number }): 'ok' | 'offer_person' | 'end' {
-  if (i.minutes >= 30) return 'end';
-  if (i.turns >= 40 || i.minutes >= 25) return 'offer_person';
+  if (i.minutes >= TURN_LIMIT_END_MINUTES) return 'end';
+  if (i.turns >= TURN_LIMIT_OFFER_TURNS || i.minutes >= TURN_LIMIT_OFFER_MINUTES) return 'offer_person';
   return 'ok';
 }
 

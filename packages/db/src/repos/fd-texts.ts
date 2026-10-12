@@ -17,6 +17,8 @@ export const SMS_CONVERSATION_GAP_MS = 24 * 60 * 60 * 1000;
 const ASSISTANT_PREFIX = 'fd-text:';
 /** G1's "Thanks, got it." to a claims reply (`claims-ack:<message id>`): filed in the thread, but not a person's reply. */
 export const CLAIMS_ACK_PREFIX = 'claims-ack:';
+/** The dedupe key prefix of a reply a team member sends from the conversation (routes/conversations.ts). */
+const STAFF_REPLY_PREFIX = 'fd-reply:';
 
 export type TextConversationRef = { id: string; created: boolean; customerId: string | null };
 
@@ -143,9 +145,12 @@ export async function lastTeamReplyAt(tx: Tx, ctx: TenantContext, conversationId
         eq(messages.direction, 'out'),
         // Only a reply that went out (or will) quiets the assistant: a failed or blocked one reached nobody.
         inArray(messages.status, ['scheduled', 'queued', 'sent', 'delivered']),
+        // Only a person replying counts: staff replies (fd-reply:) and texts with no system key. Every Front Desk system
+        // text (fd-text:, fd-book:, fd-textback:, any fd-*) and claims acknowledgements are not a person (G1 review a).
         or(
           isNull(messages.dedupeKey),
-          and(not(like(messages.dedupeKey, `${ASSISTANT_PREFIX}%`)), not(like(messages.dedupeKey, `${CLAIMS_ACK_PREFIX}%`))),
+          like(messages.dedupeKey, `${STAFF_REPLY_PREFIX}%`),
+          and(not(like(messages.dedupeKey, 'fd-%')), not(like(messages.dedupeKey, `${CLAIMS_ACK_PREFIX}%`))),
         ),
       ),
     )

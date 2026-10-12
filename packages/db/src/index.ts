@@ -235,6 +235,7 @@ export * from './repos/stored-files.ts';
 // D1 skeleton (Task 1): one line per new repo file; later D1 tasks fill the files in.
 export * from './repos/conversations.ts';
 export * from './repos/turns.ts';
+export * from './repos/conversation-identity.ts';
 export * from './repos/calls.ts';
 export * from './repos/call-recording.ts';
 export * from './repos/fd-retention.ts';
