@@ -51,7 +51,8 @@ async function setup(script: Script, tools: ToolHandlers = {}, llm: ScriptedLlm 
     callId = row.id;
   }
   const state = await engine.start({ companyId: t.seed.a.companyId, channel: 'voice', phone: '+14025550199', callId });
-  const say = (text: string) => collect(engine.turn(state, text, new AbortController().signal));
+  const say = async (text: string) =>
+    (await collect(engine.turn(state, text, new AbortController().signal))).filter((e) => e.type !== 'turn_saved');
   return { t, deps, engine, state, llm, say };
 }
 
@@ -93,7 +94,7 @@ describe('front desk engine: spam calls', () => {
 
   test('a spam intent with route end ends politely and marks the conversation spam', async () => {
     const { t, state, say } = await setup([
-      { when: /seo/, route: { ...OPUS, intent: 'spam', route: 'end', fastReply: null } },
+      { when: /first page/, route: { ...OPUS, intent: 'spam', route: 'end', fastReply: null } },
     ]);
     const events = await say('we can get your business on the first page of Google');
     expect(events).toEqual([
@@ -106,7 +107,7 @@ describe('front desk engine: spam calls', () => {
 
   test('a spam intent wins over a fast reply from the router', async () => {
     const { state, say } = await setup([
-      { when: /leads/, route: { ...OPUS, intent: 'sales_pitch', route: 'fast', fastReply: 'We can help with leads.' } },
+      { when: /lead lists/, route: { ...OPUS, intent: 'sales_pitch', route: 'fast', fastReply: 'We can help with leads.' } },
     ]);
     const events = await say('we sell lead lists');
     expect(events.find((e) => e.type === 'say')).toEqual({ type: 'say', text: SAY_SPAM_ENDING });

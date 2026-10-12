@@ -189,10 +189,10 @@ describe('front desk fakes', () => {
     expect(l.lookups).toEqual(['+15555550100', '+15565550100', '+14025550100']);
   });
 
-  test('screenCall stub allows every call', () => {
+  test('screenCall rejects a blocked number', () => {
     expect(screenCall({ from: '+15555550100', stirVerstat: null, blocked: true, callsLastHour: 99, knownCustomer: false })).toEqual({
-      action: 'allow',
-      reason: null,
+      action: 'reject',
+      reason: 'blocked_number',
     });
   });
 
