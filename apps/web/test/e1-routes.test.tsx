@@ -72,10 +72,13 @@ describe('E1 windows', () => {
   });
 
   it('/p/abc renders without a session and without the shell', async () => {
-    api = stubApi({ 'GET /api/auth/me': () => ({ status: 401, body: { error: 'Sign in first.' } }) });
+    api = stubApi({
+      'GET /api/auth/me': () => ({ status: 401, body: { error: 'Sign in first.' } }),
+      'GET /api/public/proposals/abc': () => ({ status: 404, body: { error: homeowner.goneTitle } }),
+    });
     const { router } = renderApp('/p/abc');
 
-    expect(await screen.findByText(homeowner.comingSoon)).toBeInTheDocument();
+    expect(await screen.findByText(homeowner.goneTitle)).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: dock.label })).toBeNull();
     expect(document.querySelector('[data-map-mock]')).toBeNull();
     expect(where(router)).toBe('/p/abc');
