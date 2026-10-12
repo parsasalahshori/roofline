@@ -45,7 +45,11 @@ function usePresetCustomer(id: string | null) {
 // A job is created in one of the first three stages: Won needs a value, Lost needs a reason, and Installed only follows Won
 const CREATE_STAGES = ['lead', 'inspection', 'proposal'] as const satisfies readonly JobStage[];
 const stageOptions: SelectOption[] = CREATE_STAGES.map((stage) => ({ value: stage, label: create.stageNames[stage] }));
-const sourceOptions: SelectOption[] = JOB_SOURCES.map((source) => ({ value: source, label: create.sourceNames[source] }));
+// Front Desk jobs are made by the assistant, never picked by a person (C1 Ruling CG); the board filter keeps the source.
+const sourceOptions: SelectOption[] = JOB_SOURCES.filter((source) => source !== 'front_desk').map((source) => ({
+  value: source,
+  label: create.sourceNames[source],
+}));
 
 /** The New job screen: a customer, then a home, then the job's details. One form, no modal. */
 export function NewJob() {

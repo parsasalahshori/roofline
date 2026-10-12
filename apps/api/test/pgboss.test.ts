@@ -199,6 +199,8 @@ describe('the worker', () => {
         ['end-trials', '*/5 * * * *'],
         ['exact-report-poll', '*/10 * * * *'],
         ['expire-drafts', '*/5 * * * *'],
+        ['fd-health', '*/2 * * * *'],
+        ['fd-retention', '47 3 * * *'],
         ['footprints-ensure', '*/15 * * * *'],
         ['hail-health', '*/15 * * * *'],
         ['poll-texting', '0 * * * *'],
@@ -229,6 +231,8 @@ describe('the worker', () => {
       'storm-match',
       'ad-spend-sync',
       'hail-health',
+      'fd-retention',
+      'fd-health',
     ]);
   });
 });

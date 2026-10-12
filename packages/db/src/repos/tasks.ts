@@ -32,6 +32,12 @@ export type NewStepRow = {
   /** Default true. A step saved switched off sets false (with `errorPlain` saying why). */
   enabled?: boolean;
   errorPlain?: string | null;
+  /** Default a fresh uuid. A live task's step carries a caller-chosen key so a repeat finds it. */
+  idempotencyKey?: string;
+  /** Default `pending`. A live task's step is saved already `done`. */
+  status?: StepStatus;
+  /** Default null. A live task's step is saved with its result. */
+  result?: Record<string, unknown>;
 };
 
 export type NewTaskRow = {
@@ -42,6 +48,8 @@ export type NewTaskRow = {
   subjectType?: string | null;
   subjectId?: string | null;
   mode?: 'needs_approval' | 'live';
+  /** Default `draft`. A live task is saved `done` or `needs_attention`. */
+  status?: TaskStatus;
   expiresAt?: Date | null;
   /** The expired plan this one is a fresh copy of ("run again"); at most one copy per plan. */
   rerunOfTaskId?: string | null;
@@ -90,7 +98,7 @@ export async function insertTask(tx: Tx, ctx: TenantContext, input: NewTaskRow, 
       subjectType: input.subjectType ?? null,
       subjectId: input.subjectId ?? null,
       mode: input.mode ?? 'needs_approval',
-      status: 'draft',
+      status: input.status ?? 'draft',
       expiresAt: input.expiresAt ?? null,
       rerunOfTaskId: input.rerunOfTaskId ?? null,
       createdAt: now,
@@ -112,8 +120,9 @@ export async function insertTask(tx: Tx, ctx: TenantContext, input: NewTaskRow, 
         version: 1,
         payload: step.payload,
         preview: step.preview,
-        status: 'pending' as const,
-        idempotencyKey: randomUUID(),
+        status: step.status ?? ('pending' as const),
+        ...(step.result !== undefined && { result: step.result }),
+        idempotencyKey: step.idempotencyKey ?? randomUUID(),
         attempts: 0,
         createdAt: now,
         updatedAt: now,
@@ -121,6 +130,57 @@ export async function insertTask(tx: Tx, ctx: TenantContext, input: NewTaskRow, 
     );
   }
   return { taskId };
+}
+
+/** The step of this company that carries this idempotency key, or null. */
+export async function findStepByIdempotencyKey(
+  tx: Tx,
+  ctx: TenantContext,
+  key: string,
+): Promise<{ id: string; taskId: string } | null> {
+  const [row] = await tx
+    .select({ id: agentTaskSteps.id, taskId: agentTaskSteps.taskId })
+    .from(agentTaskSteps)
+    .where(and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.idempotencyKey, key)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Replaces a step's stored result (used to fold a repeat into a finished live task). */
+export async function setStepResult(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  result: Record<string, unknown>,
+  now: Date,
+): Promise<void> {
+  await tx
+    .update(agentTaskSteps)
+    .set({ result, updatedAt: now })
+    .where(and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.id, stepId)));
+}
+
+/** The company's live tasks of this agent about this subject, in this status, row-locked. */
+export async function listLiveTasksBySubject(
+  tx: Tx,
+  ctx: TenantContext,
+  where: { agent: Agent; subjectType: string; subjectId: string; status: TaskStatus },
+): Promise<TaskRow[]> {
+  return tx
+    .select()
+    .from(agentTasks)
+    .where(
+      and(
+        eq(agentTasks.companyId, ctx.companyId),
+        eq(agentTasks.mode, 'live'),
+        eq(agentTasks.agent, where.agent),
+        eq(agentTasks.subjectType, where.subjectType),
+        eq(agentTasks.subjectId, where.subjectId),
+        eq(agentTasks.status, where.status),
+      ),
+    )
+    .orderBy(asc(agentTasks.createdAt), asc(agentTasks.id))
+    .for('update');
 }
 
 /** The id of the plan made from `taskId` by "run again", or null when it has not been run again. */
@@ -180,14 +240,21 @@ export async function listSteps(
 }
 
 /** One step of one task, with its payload, or null. */
-export async function getStep(tx: Tx, ctx: TenantContext, taskId: string, stepId: string): Promise<StepRow | null> {
-  const [row] = await tx
+export async function getStep(
+  tx: Tx,
+  ctx: TenantContext,
+  taskId: string,
+  stepId: string,
+  options: { forUpdate?: boolean } = {},
+): Promise<StepRow | null> {
+  const query = tx
     .select()
     .from(agentTaskSteps)
     .where(
       and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.taskId, taskId), eq(agentTaskSteps.id, stepId)),
     )
     .limit(1);
+  const [row] = await (options.forUpdate === true ? query.for('update') : query);
   return row ?? null;
 }
 

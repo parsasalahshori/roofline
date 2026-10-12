@@ -6,7 +6,9 @@ import {
   breakdownByBaseline,
   companies,
   companySettings,
+  countFrontDeskFollowUps,
   dailyFinished,
+  frontDeskConversationCounts,
   minutesByAgent,
   recentTasks,
   type AgentCounts,
@@ -75,6 +77,7 @@ type Snapshot = {
   counts: Record<string, AgentCounts>;
   settings: Map<string, AgentSettingsInfo>;
   monthMinutes: Record<string, number>;
+  frontDeskRate: { finished: number; succeeded: number };
 };
 
 async function companyFacts(tx: Tx, ctx: TenantContext): Promise<{ zone: string; hourlyRateCents: number }> {
@@ -102,6 +105,7 @@ async function gather(tx: Tx, ctx: TenantContext, now: Date): Promise<Snapshot> 
   const counts = await agentCounts(tx, ctx, window);
   const settingRows = await agentSettingsInfo(tx, ctx);
   const monthMinutes = await minutesByAgent(tx, ctx, periodRange(now, zone, 'month'));
+  const frontDeskRate = await frontDeskConversationCounts(tx, ctx, window);
   return {
     now,
     zone,
@@ -110,6 +114,7 @@ async function gather(tx: Tx, ctx: TenantContext, now: Date): Promise<Snapshot> 
     counts,
     settings: new Map(settingRows.map((row) => [row.agent, row])),
     monthMinutes,
+    frontDeskRate,
   };
 }
 
@@ -139,8 +144,9 @@ function statusOf(settings: AgentSettingsInfo | undefined, waitingCount: number)
 }
 
 /**
- * One agent's card. `successRate` uses the task model for every agent. Front Desk's rate is meant to
- * read conversations.outcome instead (Ruling AX-D); that lands with D1, so it is not done here yet.
+ * One agent's card. `successRate` uses the task model, except Front Desk (Ruling AX-D): finished conversations
+ * in the last 30 days that were not abandoned and had no model-failure hand-off, null below 5 conversations.
+ * Front Desk's waitingCount also counts open follow-ups (customers it handed a message or a transfer for).
  */
 async function buildCard(tx: Tx, ctx: TenantContext, snap: Snapshot, agent: ScreenAgent): Promise<AgentCard> {
   if (isComingSoon(agent)) return emptyCard(agent);
@@ -151,15 +157,22 @@ async function buildCard(tx: Tx, ctx: TenantContext, snap: Snapshot, agent: Scre
     date,
     finished: finishedByDate.get(date) ?? 0,
   }));
+  const waitingCount =
+    agent === 'front_desk' ? counts.waitingCount + (await countFrontDeskFollowUps(tx, ctx, snap.now)) : counts.waitingCount;
+  let rate = successRate({ done: counts.done30d, partlyDone: counts.partlyDone30d, ran: counts.ran30d });
+  if (agent === 'front_desk') {
+    const { finished, succeeded } = snap.frontDeskRate;
+    rate = finished < 5 ? null : Math.round((succeeded / finished) * 100) / 100;
+  }
   return {
     agent,
-    status: statusOf(snap.settings.get(agent), counts.waitingCount),
+    status: statusOf(snap.settings.get(agent), waitingCount),
     finishedToday: counts.finishedToday,
-    successRate: successRate({ done: counts.done30d, partlyDone: counts.partlyDone30d, ran: counts.ran30d }),
+    successRate: rate,
     notApproved30d: counts.notApproved30d,
     minutesThisMonth: snap.monthMinutes[agent] ?? 0,
     last14Days,
-    waitingCount: counts.waitingCount,
+    waitingCount,
   };
 }
 

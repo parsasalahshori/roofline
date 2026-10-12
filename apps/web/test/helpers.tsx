@@ -85,6 +85,7 @@ export const SHELL_ROUTES: Record<string, () => Reply> = {
   'GET /api/storms': () => ({ body: { storms: [] } }),
   'GET /api/map/area': () => ({ body: { serviceArea: null, bounds: [-97.5, 32.5, -96.5, 33.5] } }),
   [STORM_LAYER_KEY]: () => ({ body: STORM_LAYER_BODY }),
+  'GET /api/conversations?filter=needs_attention': () => ({ body: { items: [], nextCursor: null } }),
 };
 
 /** Today's "Signed today" read, answered with nothing: spread it into a test that renders the Today window. */

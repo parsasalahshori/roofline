@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { JobSource, JobView } from '@roofline/shared';
+import { defaultScope, type JobSource, type JobView } from '@roofline/shared';
 import type { ProposalView } from '@roofline/shared';
 import { ApiError, apiFetch } from '../../api/client.ts';
 import type { ProposalList } from '../estimator/types.ts';
@@ -43,6 +43,7 @@ export function useUpdateJob(id: string) {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: jobKey(id) });
       void queryClient.invalidateQueries({ queryKey: ['jobs-board'] });
+      void queryClient.invalidateQueries({ queryKey: ['timeline'] });
     },
   });
 }
@@ -58,18 +59,28 @@ export function useArchiveJob(id: string) {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: jobKey(id) });
       void queryClient.invalidateQueries({ queryKey: ['jobs-board'] });
+      void queryClient.invalidateQueries({ queryKey: ['timeline'] });
     },
   });
 }
 
+/** The roof a new quote starts from: v1's default scope, as a manual measurement (the API requires one). */
+const DEFAULT_MEASUREMENT = {
+  source: 'manual',
+  areaSqFt: defaultScope.areaSqFt,
+  areaType: defaultScope.areaType,
+  pitch: defaultScope.pitch,
+  notes: null,
+} as const;
+
 /**
- * Starts a new draft quote on the job (`POST /api/jobs/:id/quotes`, body `{}`). Resolves to the new
+ * Starts a new draft quote on the job (`POST /api/jobs/:id/quotes`, body `{ measurement }`). Resolves to the new
  * quote's id, and invalidates the job's view on success so the quote shows up in the list.
  */
 export function useCreateQuote(id: string) {
   const queryClient = useQueryClient();
   return useMutation<{ id: string }, Error, void>({
-    mutationFn: () => apiFetch<{ id: string }>('/api/jobs/' + id + '/quotes', { method: 'POST', body: {} }),
+    mutationFn: () => apiFetch<{ id: string }>('/api/jobs/' + id + '/quotes', { method: 'POST', body: { measurement: DEFAULT_MEASUREMENT } }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: jobKey(id) }),
   });
 }

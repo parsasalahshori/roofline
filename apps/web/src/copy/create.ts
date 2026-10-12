@@ -63,5 +63,6 @@ export const create = {
     referral: 'Referral',
     import: 'Import',
     manual: 'Manual',
+    front_desk: 'Front Desk',
   },
 } as const;

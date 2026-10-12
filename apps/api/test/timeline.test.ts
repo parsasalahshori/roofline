@@ -174,6 +174,15 @@ describe('the timeline', () => {
     expect(both.status).toBe(400);
   });
 
+  test('a cursor date Postgres cannot store is a 400, not a 500', async () => {
+    const owner = await who.as('owner');
+    const customer = await mustCreate(owner, '/api/customers', { displayName: 'Far Cursor' });
+    for (const before of ['-271821-04-20T00:00:00.000Z', '+275760-09-13T00:00:00.000Z', '0500-01-01']) {
+      const res = await owner.get(`/api/timeline?customerId=${customer.id}&before=${encodeURIComponent(before)}`);
+      expect(res.status).toBe(400);
+    }
+  });
+
   test('company B gets 404', async () => {
     const owner = await who.as('owner');
     const customer = await mustCreate(owner, '/api/customers', { displayName: 'Acme Timeline' });

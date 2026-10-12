@@ -31,9 +31,16 @@ export {
   type RecentTaskRow,
   recentTasks,
   taskSubjectScope,
+  frontDeskConversationCounts,
 } from './repos/agent-metrics.ts';
 export { type FeedCursor, type FeedRow, feedRank, listFeedPage } from './repos/agent-feed.ts';
-export { listWaitingTasks, type WaitingTaskRow } from './repos/agent-waiting.ts';
+export {
+  countFrontDeskFollowUps,
+  listFrontDeskFollowUps,
+  listWaitingTasks,
+  type FrontDeskFollowUpRow,
+  type WaitingTaskRow,
+} from './repos/agent-waiting.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
 export {
   insertTimeRecount,
@@ -168,6 +175,9 @@ export {
   listTasks,
   listTasksByStatus,
   type ListTasksOptions,
+  findStepByIdempotencyKey,
+  setStepResult,
+  listLiveTasksBySubject,
   moveStep,
   type NewStepRow,
   type NewTaskRow,
@@ -235,3 +245,20 @@ export * from './repos/storm-geo.ts';
 export * from './repos/storm-pages.ts';
 export * from './repos/storm-requests.ts';
 export * from './repos/storm-results.ts';
+// D1 skeleton (Task 1): one line per new repo file; later D1 tasks fill the files in.
+export * from './repos/conversations.ts';
+export * from './repos/turns.ts';
+export * from './repos/calls.ts';
+export * from './repos/call-recording.ts';
+export * from './repos/fd-retention.ts';
+export * from './repos/forwarding-test.ts';
+export * from './repos/claim-intakes.ts';
+export * from './repos/front-desk-settings.ts';
+export * from './repos/blocked-numbers.ts';
+export * from './repos/fd-booking.ts';
+export * from './repos/fd-caller.ts';
+export * from './repos/fd-texts.ts';
+export * from './repos/fd-after-call.ts';
+export * from './repos/fd-text-back.ts';
+export * from './repos/conversation-inbox.ts';
+export * from './repos/front-desk-stats.ts';

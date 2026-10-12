@@ -138,12 +138,26 @@
     {
       "idx": 19,
       "version": "7",
+      "when": 1791772863000,
+      "tag": "0019_front_desk_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791772864000,
+      "tag": "0020_front_desk_grants_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
       "when": 1791780000000,
       "tag": "0021_agents_schema",
       "breakpoints": true
     },
     {
-      "idx": 20,
+      "idx": 22,
       "version": "7",
       "when": 1791780001000,
       "tag": "0022_agents_grants_rls",

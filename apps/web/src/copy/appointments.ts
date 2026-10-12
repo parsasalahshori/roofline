@@ -39,6 +39,8 @@ export const appointments = {
   detailAddress: 'Address',
   detailMap: 'Open in maps',
   detailNotes: 'Notes',
+  detailSource: 'Booked',
+  bookedByFrontDesk: 'Booked by Front Desk',
   unassigned: 'Nobody yet',
   allDay: 'All day',
   status: { scheduled: 'Scheduled', completed: 'Done', canceled: 'Canceled', no_show: 'No-show' },

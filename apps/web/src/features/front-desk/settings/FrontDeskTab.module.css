@@ -1,0 +1,84 @@
+/* The Front Desk tab: the form's cards one under another, the save row, then the empty slot for the forwarding guide */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* The on/off switches stack, each on its own line, with the reason sentence under the first */
+.switches {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.blocked {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.voice {
+  max-width: 320px;
+}
+
+.preview {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  min-height: 40px;
+}
+
+.counter {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* Number fields sit in a row that wraps, each at least as wide as a phone field */
+.numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 16px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The space for Task 24's forwarding guide: set off from the form by a rule and a gap, with nothing drawn in it */
+.forwardingSlot {
+  min-height: 0;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 767.98px) {
+  .actions {
+    justify-content: stretch;
+  }
+
+  .actions > button {
+    width: 100%;
+  }
+
+  .voice {
+    max-width: none;
+  }
+}

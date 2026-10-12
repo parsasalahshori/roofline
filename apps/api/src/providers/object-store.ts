@@ -7,6 +7,10 @@ export interface ObjectStore {
   readonly configured: boolean;
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
   get(key: string): Promise<Uint8Array | null>;
+  /** A GET URL that stops working after `seconds` (Ruling 6; Task 12 playback). */
+  signedGetUrl(key: string, seconds: number): Promise<string>;
+  /** Removes one object; a missing key is not an error (Task 16 sweep). */
+  delete(key: string): Promise<void>;
 }
 
 export class ObjectStoreUnavailableError extends Error {}
@@ -17,6 +21,12 @@ export class UnconfiguredObjectStore implements ObjectStore {
     throw new ObjectStoreUnavailableError("File storage isn't set up.");
   }
   async get(): Promise<Uint8Array | null> {
+    throw new ObjectStoreUnavailableError("File storage isn't set up.");
+  }
+  async signedGetUrl(): Promise<string> {
+    throw new ObjectStoreUnavailableError("File storage isn't set up.");
+  }
+  async delete(): Promise<void> {
     throw new ObjectStoreUnavailableError("File storage isn't set up.");
   }
 }
