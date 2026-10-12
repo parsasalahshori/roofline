@@ -10,7 +10,7 @@ import { connections } from '../src/copy/connections.ts';
 import { doors } from '../src/copy/doors.ts';
 import { settings } from '../src/copy/settings.ts';
 import { storm } from '../src/copy/storm.ts';
-import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
+import { ACCOUNT, proposalListRoutes, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The route map needs maplibre-gl, which these tests never need. RouteMap is package B's component.
 vi.mock('../src/features/storm/routes/RouteMap.tsx', () => ({ RouteMap: () => null }));
@@ -83,7 +83,7 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
     // C1's calendar card on Connections, the company read in Settings and E1's proposals list in the Estimator
     'GET /api/calendar/connection': () => ({ body: CALENDAR_NONE }),
     'GET /api/company': () => ({ body: COMPANY }),
-    'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }),
+    ...proposalListRoutes(),
     ...overrides,
   });
   return api;
