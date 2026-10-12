@@ -907,8 +907,8 @@ describe('app_tenant isolation on the C1 calendar, schedule and pricing tables',
     table: string;
     /** The insert statement and its values for `company`, its parents made first. */
     insert: (company: SeededCompany) => Promise<{ text: string; values: unknown[] }>;
-    /** A column assignment the tenant role is allowed to make. */
-    set: string;
+    /** A column assignment the tenant role is allowed to make; null when app_tenant holds no UPDATE (0020). */
+    set: string | null;
     /** app_tenant holds DELETE on the table. */
     deletable: boolean;
   };
@@ -1392,9 +1392,9 @@ describe('app_tenant isolation on the D1 tables', () => {
         text: `insert into blocked_numbers (company_id, e164) values ($1, $2) returning id`,
         values: [c.companyId, nextPhone()],
       }),
-      set: `reason = 'changed'`,
+      set: null,
       deletable: true,
-      movable: true,
+      movable: false,
     },
   ];
 
@@ -1432,12 +1432,18 @@ describe('app_tenant isolation on the D1 tables', () => {
     await rowFor(c, seed.a);
     const bId = await rowFor(c, seed.b);
     const before = await ownerRow(c, bId);
-    expect(
-      await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
-        companyId: seed.a.companyId,
-        values: [bId],
-      }),
-    ).toEqual([]);
+    if (c.set === null) {
+      await expect(
+        tenantRaw(`update ${c.table} set company_id = company_id where id = $1`, { companyId: seed.a.companyId, values: [bId] }),
+      ).rejects.toMatchObject({ code: '42501' });
+    } else {
+      expect(
+        await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
+          companyId: seed.a.companyId,
+          values: [bId],
+        }),
+      ).toEqual([]);
+    }
     if (c.deletable) {
       expect(
         await tenantRaw(`delete from ${c.table} where id = $1 returning id`, { companyId: seed.a.companyId, values: [bId] }),
@@ -1448,6 +1454,14 @@ describe('app_tenant isolation on the D1 tables', () => {
 
   test.each(CASES.map((c) => [c.table, c] as const))('%s: company A can change its own row (the control)', async (_t, c) => {
     const aId = await rowFor(c, seed.a);
+    if (c.set === null) {
+      // No UPDATE grant at all (blocked_numbers: insert-on-conflict and delete are enough).
+      expect(c.deletable).toBe(true);
+      expect(
+        await tenantRaw(`delete from ${c.table} where id = $1 returning id`, { companyId: seed.a.companyId, values: [aId] }),
+      ).toEqual([{ id: aId }]);
+      return;
+    }
     expect(
       await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
         companyId: seed.a.companyId,
