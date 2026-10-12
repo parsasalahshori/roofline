@@ -63,3 +63,6 @@ Ruling SG: Task 2 adds the whole `hail` CI job (its tests need it first); Task 3
 - W7: T28; T29 by hand.
 
 ## Tasks
+
+## Ruling AP (controller, 2026-10-12)
+Migration numbers override this plan and these briefs: F3 ends at 0012; C1 0013/0014; E1 0015/0016; S1 0017/0018; D1 0019/0020; A1 0021/0022; G1 0023/0024. Parallel tracks: see AGENTS.md.

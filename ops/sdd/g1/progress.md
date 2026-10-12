@@ -40,3 +40,6 @@ Ruling GX-F: Task 16 runs in W7 beside Task 15 (after T6's API), not in W3 — c
 W1 T1 · W2 T2 · W3 G1 = T3, T17 · W4 G2 = T4, T5, T6 · G3 = T9, T7 · W5 G4 = T8, T10, T13 · W6 G5 = T11, T12, T14 · W7 T15, T16 · W8 T18.
 
 ## Tasks
+
+## Ruling AP (controller, 2026-10-12)
+Migration numbers override this plan and these briefs: F3 ends at 0012; C1 0013/0014; E1 0015/0016; S1 0017/0018; D1 0019/0020; A1 0021/0022; G1 0023/0024. Parallel tracks: see AGENTS.md.

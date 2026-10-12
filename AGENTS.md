@@ -38,6 +38,22 @@ latest `f3-setup` into `c1-crm` (dfa9132).
 Then F3 Tasks 28, 37 and finally 36 (briefs in `ops/sdd/f3/`), merge `f3-setup` into `c1-crm`, and continue
 C1 from its plan's "Parallel lanes" table (next: T5 API skeleton, T18 web skeleton).
 
+
+## Parallel tracks (owner: "go", 2026-10-12)
+
+Milestones now run in parallel. Each track's integration branch started from `c1-crm` dfa9132 and later
+merges `c1-crm` (and its upstream milestone) in as they land:
+- Track A: `c1-crm` (C1), then `e1-estimator` (E1), then `s1-storm` (S1).
+- Track B: `d1-front-desk` (D1): early waves now, calendar-dependent tasks after C1's calendar lands.
+- Track C: `a1-agents` (A1), later `g1-agents` (G1): early waves now.
+A task whose brief depends on an unbuilt upstream name ([C1], [E1], [S1], [D1], [A1]) waits, or uses a
+scratch stub commit that the merge replaces (as C1 T2-T4 did; record the merge rule in the ledger).
+
+**Ruling AP (migration numbers, overrides every plan and brief):** F3 ends at 0012; C1 = 0013/0014;
+E1 = 0015/0016; S1 = 0017/0018; D1 = 0019/0020; A1 = 0021/0022; G1 = 0023/0024. Each track generates its
+migrations on its own base. When merging tracks together, the controller fixes the drizzle journal order
+and rebuilds the snapshots (`drizzle-kit generate` must then report no changes).
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the

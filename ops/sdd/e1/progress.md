@@ -61,3 +61,6 @@ Ruling EE: the signed-agreement email (T13) contains a link to `GET /api/public/
 - W6: T21; T22 by hand.
 
 ## Tasks
+
+## Ruling AP (controller, 2026-10-12)
+Migration numbers override this plan and these briefs: F3 ends at 0012; C1 0013/0014; E1 0015/0016; S1 0017/0018; D1 0019/0020; A1 0021/0022; G1 0023/0024. Parallel tracks: see AGENTS.md.

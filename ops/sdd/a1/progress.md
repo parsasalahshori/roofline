@@ -37,3 +37,6 @@ Ruling AX-D: Front Desk's success rate = conversations whose outcome is not `aba
 W1 T1 · W2 G1 = T2, T8 · W3 G2 = T3, T9, T10 · W4 G3 = T4, T5, T6 · G4 = T7, T11, T12 · W5 T13.
 
 ## Tasks
+
+## Ruling AP (controller, 2026-10-12)
+Migration numbers override this plan and these briefs: F3 ends at 0012; C1 0013/0014; E1 0015/0016; S1 0017/0018; D1 0019/0020; A1 0021/0022; G1 0023/0024. Parallel tracks: see AGENTS.md.
