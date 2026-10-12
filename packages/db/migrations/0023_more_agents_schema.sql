@@ -60,6 +60,7 @@ ALTER TABLE "company_settings" ADD COLUMN "review_delay_days" integer DEFAULT 3 
 ALTER TABLE "company_settings" ADD COLUMN "followup_reviews" boolean DEFAULT true NOT NULL;--> statement-breakpoint
 ALTER TABLE "company_settings" ADD COLUMN "followup_leads" boolean DEFAULT true NOT NULL;--> statement-breakpoint
 ALTER TABLE "company_settings" ADD COLUMN "followup_proposals" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "messages" ADD CONSTRAINT "messages_company_id_id_uniq" UNIQUE("company_id","id");--> statement-breakpoint
 ALTER TABLE "claim_events" ADD CONSTRAINT "claim_events_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "claim_events" ADD CONSTRAINT "claim_events_by_user_id_users_id_fk" FOREIGN KEY ("by_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "claim_events" ADD CONSTRAINT "claim_events_company_claim_fk" FOREIGN KEY ("company_id","claim_id") REFERENCES "public"."claims"("company_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -75,7 +76,6 @@ CREATE INDEX "claims_company_status_idx" ON "claims" USING btree ("company_id","
 CREATE INDEX "follow_up_log_customer_at_idx" ON "follow_up_log" USING btree ("company_id","customer_id","at");--> statement-breakpoint
 CREATE INDEX "follow_up_log_job_kind_idx" ON "follow_up_log" USING btree ("company_id","job_id","kind");--> statement-breakpoint
 ALTER TABLE "appointments" ADD CONSTRAINT "appointments_company_moved_by_task_fk" FOREIGN KEY ("company_id","moved_by_task_id") REFERENCES "public"."agent_tasks"("company_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "messages" ADD CONSTRAINT "messages_company_id_id_uniq" UNIQUE("company_id","id");--> statement-breakpoint
 ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_weather_rain_pct_check" CHECK ("company_settings"."weather_rain_pct" between 0 and 100);--> statement-breakpoint
 ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_weather_gust_mph_check" CHECK ("company_settings"."weather_gust_mph" between 1 and 100);--> statement-breakpoint
 ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_reminder_hour_check" CHECK ("company_settings"."reminder_hour" between 0 and 23);--> statement-breakpoint
