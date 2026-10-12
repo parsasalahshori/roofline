@@ -76,3 +76,5 @@ Wave 2 (wf_8c32dc49-5b4, contact 102), base scratch 4f9bae5:
 - T4 a96d7be: review clean, local verify clean; CI 38195634306 cancelled by the outage, re-run (same run id) green. Task 4: complete.
 Merged into e1-estimator: T2 387349a (roof.ts from T2; proposals/tiers/index from T1), T3 6fc70ba (tiers.ts from T3), origin/c1-crm 0a7c943 (C1 T18), T4 (clean). shared 454 tests, web copy-rules, typecheck, lint clean; playwright-core 1.56.1 only.
 Carries: send_proposal preview labels totals Good/Better/Best by position only when 3 totals: T8/T11 always send 3 totals in tier order, or extend the payload to {tier,totalCents} (group check 102). pitchFactor/geometry minors in task-2-report.md.
+Wave 3 (wf_52209e53-04e, contact 103, builders Sonnet per Ruling AQ): T5 on e1-t5 from e1-w3base 2504960 (= e1-estimator 278a478 + merge of origin/c1-t5 46e54e3, C1 T5 whose CI has not passed yet); T14 on e1-t14 from 278a478.
+Merge rule: e1-t5 is merged into e1-estimator only after C1 T5 is CI-green (ideally after c1-crm carries it and is merged into e1-estimator first); C1 T25 later rewrites PricesTab.tsx: keep C1's body and E1 T14's three section slots.
