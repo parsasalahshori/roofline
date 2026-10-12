@@ -70,6 +70,7 @@ const APP_TENANT_DELETE_TABLES = [
   'opt_outs',
   'calendar_busy_blocks',
   'calendar_event_links',
+  'calendar_connections',
   'door_exclusions',
   'storm_photos',
 ] as const;
@@ -399,7 +400,7 @@ describe('grants', () => {
     truncate: false,
   });
 
-  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, agent_task_events and time_recounts, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links, door_exclusions and storm_photos', async () => {
+  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, agent_task_events and time_recounts, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links, calendar_connections, door_exclusions and storm_photos', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
       SELECT_INSERT_ONLY.has(t) ? privs(t, true, true, false, false) : privs(t, true, true, true, deletable.has(t)),

@@ -40,7 +40,8 @@ const full = { addressLine: '12 Oak St', city: 'Omaha', state: 'NE', zip: '68102
 
 describe('adding an address', () => {
   test('the answer has the documented shape; with no time zone given it is null (the company zone applies)', async () => {
-    const res = await (await who.as('office')).post('/api/properties').send(full);
+    // lat/lng null: no server lookup, so no point and no zone
+    const res = await (await who.as('office')).post('/api/properties').send({ ...full, lat: null, lng: null });
     expect(res.status).toBe(201);
     expect(res.body).toEqual({
       id: expect.stringMatching(/^[0-9a-f-]{36}$/),
@@ -62,7 +63,8 @@ describe('adding an address', () => {
   test("with no time zone given, none is stored: the company's zone is not copied, so a later change to it applies", async () => {
     await inCompany(t, A(), (tx) => tx.update(companies).set({ timezone: 'America/Denver' }));
     const owner = await who.as('owner');
-    const res = await owner.post('/api/properties').send(full);
+    // lat/lng null: no server lookup, so no point and no zone
+    const res = await owner.post('/api/properties').send({ ...full, lat: null, lng: null });
     expect(res.body.timezone).toBeNull();
     expect((await dbProperty(t, A(), res.body.id)).timezone).toBeNull();
     // The audit row records what was stored.
@@ -313,7 +315,7 @@ describe('changing an address', () => {
   });
 
   test('the location is set from lat and lng together, and cleared with both null', async () => {
-    const p = await made();
+    const p = await made({ lat: null, lng: null });
     const owner = await who.as('owner');
     const set = await owner.patch(`/api/properties/${p.id}`).send({ lat: 40.8, lng: -96.7 });
     expect(set.body).toMatchObject({ lat: 40.8, lng: -96.7 });

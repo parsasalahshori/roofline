@@ -1,0 +1,28 @@
+{
+  "@odata.deltaLink": "https://graph.microsoft.com/v1.0/me/calendars/cal-default/calendarView/delta?$deltatoken=delta-2",
+  "value": [
+    {
+      "@odata.etag": "W/\"a2\"",
+      "id": "e-timed",
+      "subject": "Private title",
+      "isAllDay": false,
+      "isCancelled": false,
+      "showAs": "busy",
+      "start": {
+        "dateTime": "2030-01-10T17:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2030-01-10T18:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "lastModifiedDateTime": "2030-01-09T12:00:00Z"
+    },
+    {
+      "id": "e-free",
+      "@removed": {
+        "reason": "deleted"
+      }
+    }
+  ]
+}
