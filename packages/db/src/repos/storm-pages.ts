@@ -79,6 +79,25 @@ export async function ensureStormPage(
   throw new Error('ensureStormPage: could not find a free page code');
 }
 
+/**
+ * Keeps a page live until at least `until`: sets `active_until` to the later of its current value and `until`,
+ * so it only ever extends. Returns the resulting `activeUntil`, or null when the company has no such page.
+ * Runs inside `withTenant`.
+ */
+export async function extendStormPageUntil(
+  tx: Tx,
+  ctx: TenantContext,
+  pageId: string,
+  until: Date,
+): Promise<Date | null> {
+  const [row] = await tx
+    .update(stormPages)
+    .set({ activeUntil: sql`greatest(${stormPages.activeUntil}, ${until.toISOString()}::timestamptz)` })
+    .where(and(eq(stormPages.companyId, ctx.companyId), eq(stormPages.id, pageId)))
+    .returning({ activeUntil: stormPages.activeUntil });
+  return row?.activeUntil ?? null;
+}
+
 /** The storm's convective day (YYYY-MM-DD) for one of the company's storm rows. Throws when the company has no such row. */
 async function convectiveDayOf(tx: Tx, ctx: TenantContext, companyStormId: string): Promise<string> {
   const [row] = await tx
