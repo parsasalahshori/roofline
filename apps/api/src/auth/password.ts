@@ -1,4 +1,5 @@
 import { randomBytes, scrypt, scryptSync, type ScryptOptions, timingSafeEqual } from 'node:crypto';
+import { BusyError, WorkLimiter } from './work-limit.ts';
 
 /**
  * Password hashes are `scrypt$N$r$p$<salt base64>$<hash base64>` (a 64-byte key and a 16-byte
@@ -15,10 +16,28 @@ const MAX_N = 2 ** 17;
 const MAX_R = 16;
 const MAX_P = 4;
 
+/**
+ * At most this many password hashes run at once. scrypt runs on libuv's thread pool (4 threads by
+ * default), which DNS lookups and file reads share; 2 leaves the rest of the pool free, so a burst
+ * of logins cannot stall everything else in the process.
+ */
+export const SCRYPT_MAX_ACTIVE = 2;
+/** At most this many more wait their turn (about a second and a half of work); past that, a 503 at once. */
+export const SCRYPT_MAX_QUEUED = 64;
+
+/**
+ * Every hash and check (login, sign-up, password reset, invite acceptance) goes through this one
+ * gate, for the whole process. A full queue is a BusyError (503).
+ */
+export const passwordWork = new WorkLimiter(SCRYPT_MAX_ACTIVE, SCRYPT_MAX_QUEUED);
+
 function derive(password: string, salt: Buffer, keyBytes: number, options: ScryptOptions): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    scrypt(password, salt, keyBytes, options, (err, key) => (err ? reject(err) : resolve(key)));
-  });
+  return passwordWork.run(
+    () =>
+      new Promise<Buffer>((resolve, reject) => {
+        scrypt(password, salt, keyBytes, options, (err, key) => (err ? reject(err) : resolve(key)));
+      }),
+  );
 }
 
 function format(salt: Buffer, key: Buffer): string {
@@ -39,6 +58,7 @@ function wholeNumber(text: string | undefined): number | null {
 /**
  * True when `password` produces the stored hash. Compares in constant time. A stored value that is
  * not a hash this app could have written is simply "no match": this never throws for bad input.
+ * It throws BusyError (503) when the password gate's queue is full.
  */
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [scheme, nText, rText, pText, saltText, keyText, ...extra] = stored.split('$');
@@ -57,7 +77,9 @@ export async function verifyPassword(password: string, stored: string): Promise<
   try {
     // 128 * N * r bytes is what scrypt needs; leave room for the p-dependent buffers on top.
     actual = await derive(password, salt, expected.length, { N, r, p, maxmem: 256 * N * r + 1024 * 1024 });
-  } catch {
+  } catch (err) {
+    // Too busy is not "no match": the caller must hear it (a 503), not a wrong-password 401.
+    if (err instanceof BusyError) throw err;
     return false;
   }
   return timingSafeEqual(actual, expected);
