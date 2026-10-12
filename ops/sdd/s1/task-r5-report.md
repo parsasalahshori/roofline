@@ -40,4 +40,6 @@ Branch `s1-r5` (from `s1-storm` c5e8144). API and db only.
 
 ## CI
 
-See the final line, filled in after the run.
+Green: run 38255682720 on 5e75615 (Platform, E2E, Hail and v1 all success). The first run (38252140351, b3a3c8e)
+failed on two tests of mine: the malformed-code test sent a foreign-shaped Origin (the Origin guard answers 403
+first), and `storm-skeleton` posted to code `x`, which the new rule now refuses with 404. Both tests fixed.
