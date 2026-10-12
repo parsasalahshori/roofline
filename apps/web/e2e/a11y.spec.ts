@@ -54,3 +54,42 @@ test('setup has no serious accessibility violations', async ({ page, loginAs, ma
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
   await scan(page);
 });
+
+const agentsScreens: { name: string; path: string; ready: (page: Page) => Promise<void> }[] = [
+  {
+    name: 'agents window',
+    path: '/agents',
+    ready: (page) => expect(page.getByRole('heading', { name: 'Your agents' })).toBeAttached(),
+  },
+  {
+    name: 'agent page',
+    path: '/agents/storm-scout',
+    ready: (page) => expect(page.getByText('What it does').first()).toBeVisible(),
+  },
+  {
+    name: 'agents feed',
+    path: '/agents/feed',
+    ready: (page) => expect(page.getByRole('list', { name: 'What your agents did' })).toBeVisible(),
+  },
+  {
+    name: 'agents waiting list',
+    path: '/agents/waiting',
+    ready: (page) => expect(page.getByLabel('Waiting', { exact: true })).toBeVisible(),
+  },
+  {
+    name: 'settings agents tab',
+    path: '/settings/agents',
+    ready: (page) => expect(page.getByText('How we count time saved').first()).toBeVisible(),
+  },
+];
+
+for (const screen of agentsScreens) {
+  test(`${screen.name} has no serious accessibility violations`, async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+    void agentsSeed;
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto(screen.path);
+    await screen.ready(page);
+    await scan(page);
+  });
+}

@@ -117,3 +117,23 @@ test('F3 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen })
     await noSideScroll(page);
   }
 });
+
+test('agents screens fit the phone', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+  void agentsSeed;
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+
+  const screens: [string, (p: Page) => Locator][] = [
+    ['/agents', (p) => p.getByRole('heading', { name: 'Your agents' })],
+    ['/agents/storm-scout', (p) => p.getByText('What it does').first()],
+    ['/agents/feed', (p) => p.getByRole('list', { name: 'What your agents did' })],
+    ['/agents/waiting', (p) => p.getByLabel('Waiting', { exact: true })],
+    ['/settings/agents', (p) => p.getByText('How we count time saved').first()],
+  ];
+  for (const [path, landmark] of screens) {
+    await page.goto(path);
+    await expect(landmark(page)).toBeAttached();
+    if (path === '/agents') await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+    await noSideScroll(page);
+  }
+});
