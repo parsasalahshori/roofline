@@ -917,6 +917,24 @@ describe('InlineJobs', () => {
     expect(jobs.errors).toEqual([]);
   });
 
+  test('the same singletonKey on two queues runs both', async () => {
+    const jobs = new InlineJobs();
+    const runs: string[] = [];
+    await jobs.send('import-customers', { companyId: QUEUE_COMPANY, importId: QUEUE_IMPORT }, { singletonKey: 'k' });
+    await jobs.send('texting-registration', { companyId: QUEUE_COMPANY }, { singletonKey: 'k' });
+
+    expect(jobs.sent).toHaveLength(2);
+    await jobs.drain(
+      QUEUE_DEPS,
+      queueHandlers({
+        'import-customers': async () => { runs.push('import-customers'); },
+        'texting-registration': async () => { runs.push('texting-registration'); },
+      }),
+    );
+    expect(runs.sort()).toEqual(['import-customers', 'texting-registration']);
+    expect(jobs.errors).toEqual([]);
+  });
+
   test('a send without a singletonKey is never dropped, and sent records no key', async () => {
     const jobs = new InlineJobs();
     let runs = 0;

@@ -39,8 +39,8 @@ describe('FakeGeocoder', () => {
     expect(a?.lat).toBeGreaterThan(41);
     expect(a?.lat).toBeLessThan(42);
     expect(g.calls).toEqual([
-      { method: 'geocode', args: ['1200 Farnam St, Omaha, NE 68102'] },
-      { method: 'geocode', args: ['1200 Farnam St, Omaha, NE 68102'] },
+      { method: 'geocode', args: ['1200 Farnam St, Omaha, NE 68102', undefined] },
+      { method: 'geocode', args: ['1200 Farnam St, Omaha, NE 68102', undefined] },
     ]);
   });
 
@@ -65,6 +65,28 @@ describe('FakeGeocoder', () => {
     const g = new FakeGeocoder();
     const r = await g.geocode('1 Main St');
     expect(r).toMatchObject({ street: '1 Main St', city: null, state: null, zip: null });
+  });
+
+  test('two parts: a city before a state and zip gives the city', async () => {
+    const g = new FakeGeocoder();
+    expect(await g.geocode('1 A St, Omaha')).toMatchObject({ street: '1 A St', city: 'Omaha', state: null, zip: null });
+  });
+
+  test('two parts: a state and zip at the end gives state and zip, and no city', async () => {
+    const g = new FakeGeocoder();
+    expect(await g.geocode('1 A St, NE 68102')).toMatchObject({
+      street: '1 A St',
+      city: null,
+      state: 'NE',
+      zip: '68102',
+      timezone: 'America/Chicago',
+    });
+  });
+
+  test('a geocode call records the options it was given', async () => {
+    const g = new FakeGeocoder();
+    await g.geocode('1 A St, Omaha, NE 68102', { timeoutMs: 2000 });
+    expect(g.calls.at(-1)).toEqual({ method: 'geocode', args: ['1 A St, Omaha, NE 68102', { timeoutMs: 2000 }] });
   });
 
   test('timezone follows the state table, with Chicago as the fallback', async () => {

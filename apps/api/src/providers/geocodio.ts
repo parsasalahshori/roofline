@@ -102,11 +102,11 @@ export class GeocodioGeocoder implements Geocoder {
     this.fetchFn = (input, init) => impl(input, init);
   }
 
-  async geocode(address: string): Promise<GeocodeResult | null> {
+  async geocode(address: string, opts?: { timeoutMs?: number }): Promise<GeocodeResult | null> {
     const url =
       `${this.baseUrl}/geocode?q=${encodeURIComponent(address)}` +
       `&fields=timezone&limit=1&api_key=${encodeURIComponent(this.apiKey)}`;
-    const { status, body } = await this.request(url, { method: 'GET' });
+    const { status, body } = await this.request(url, { method: 'GET' }, opts?.timeoutMs ?? this.timeoutMs);
     if (status === 422) return null;
     const results = listOf(isRecord(body) ? body.results : undefined);
     if (results === null) throw unavailable();
@@ -125,11 +125,11 @@ export class GeocodioGeocoder implements Geocoder {
 
   private async geocodeChunk(chunk: readonly string[]): Promise<(GeocodeResult | null)[]> {
     const url = `${this.baseUrl}/geocode?fields=timezone&limit=1&api_key=${encodeURIComponent(this.apiKey)}`;
-    const { status, body } = await this.request(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(chunk),
-    });
+    const { status, body } = await this.request(
+      url,
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(chunk) },
+      this.timeoutMs,
+    );
     if (status === 422) return chunk.map(() => null);
     const results = listOf(isRecord(body) ? body.results : undefined);
     if (results === null) throw unavailable();
@@ -142,9 +142,13 @@ export class GeocodioGeocoder implements Geocoder {
   }
 
   /** One HTTP call with timeout. Returns 422 as a status; any other non-2xx, network or timeout error throws. */
-  private async request(url: string, init: RequestInitLike): Promise<{ status: number; body: unknown }> {
+  private async request(
+    url: string,
+    init: RequestInitLike,
+    timeoutMs: number,
+  ): Promise<{ status: number; body: unknown }> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await this.fetchFn(url, { ...init, signal: controller.signal });
       if (response.status === 422) return { status: 422, body: null };

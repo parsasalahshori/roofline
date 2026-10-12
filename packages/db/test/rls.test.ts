@@ -25,6 +25,7 @@ const APP_SYSTEM_RLS_TABLES = [
   'agent_task_steps',
   'messages',
   'usage_events',
+  'early_delivery_reports',
 ] as const;
 const COMPANY_PROFILE_COLUMNS = [
   'name',
@@ -384,12 +385,12 @@ describe('grants', () => {
     );
   });
 
-  test('app_system: ALL on global tables and no table-level privilege on tenant tables', async () => {
+  test('app_system: ALL on global tables, DELETE only on early_delivery_reports, and nothing else on tenant tables', async () => {
     expect(await tablePrivileges('app_system', GLOBAL_TABLES)).toEqual(
       GLOBAL_TABLES.map((t) => ({ ...privs(t, true, true, true, true), truncate: true })),
     );
     expect(await tablePrivileges('app_system', TENANT_TABLES)).toEqual(
-      TENANT_TABLES.map((t) => privs(t, false, false, false, false)),
+      TENANT_TABLES.map((t) => privs(t, false, false, false, t === 'early_delivery_reports')),
     );
   });
 
@@ -421,6 +422,9 @@ describe('grants', () => {
       sel('agent_tasks', 'expires_at'),
       sel('agent_tasks', 'id'),
       sel('agent_tasks', 'status'),
+      sel('early_delivery_reports', 'applied_at'),
+      sel('early_delivery_reports', 'id'),
+      sel('early_delivery_reports', 'received_at'),
       sel('messages', 'company_id'),
       sel('messages', 'id'),
       sel('messages', 'scheduled_for'),
@@ -820,7 +824,7 @@ describe('app_system', () => {
       agent_task_steps: `select id, task_id, company_id, status, updated_at, lease_expires_at, run_seq from agent_task_steps`,
       messages: `select id, company_id, status, scheduled_for from messages`,
       usage_events: `select id, company_id, kind, reported_to_stripe_at from usage_events`,
-    } satisfies Record<(typeof APP_SYSTEM_RLS_TABLES)[number], string>;
+    } satisfies Record<Exclude<(typeof APP_SYSTEM_RLS_TABLES)[number], 'early_delivery_reports'>, string>;
 
     const client = new pg.Client({ connectionString: urls.system });
     await client.connect();
@@ -885,6 +889,19 @@ describe('app_system', () => {
     expect(rows.map((r) => r.kind).sort()).toEqual(['ai_call_minute', 'sms_segment']);
     await expect(systemRaw(`select quantity from usage_events`)).rejects.toThrow(/permission denied/);
     await expect(systemRaw(`update usage_events set reported_to_stripe_at = now()`)).rejects.toThrow(/permission denied/);
+  });
+
+  test('system role reads only the prune columns of early_delivery_reports across companies, cannot update, and may delete', async () => {
+    const insert = `insert into early_delivery_reports (company_id, provider_message_sid, status) values ($1, 'SM' || repeat('a', 32), 'delivered')`;
+    await ownerQuery(insert, [seed.a.companyId]);
+    await ownerQuery(insert, [seed.b.companyId]);
+    expect(await systemRaw(`select id, received_at, applied_at from early_delivery_reports`)).toHaveLength(2);
+    await expect(systemRaw(`select company_id from early_delivery_reports`)).rejects.toThrow(/permission denied/);
+    await expect(systemRaw(`select status from early_delivery_reports`)).rejects.toThrow(/permission denied/);
+    await expect(systemRaw(`select reason from early_delivery_reports`)).rejects.toThrow(/permission denied/);
+    await expect(systemRaw(`update early_delivery_reports set applied_at = now()`)).rejects.toThrow(/permission denied/);
+    expect(await systemRaw(`delete from early_delivery_reports returning id`)).toHaveLength(2);
+    expect(await ownerQuery(`select count(*)::int as n from early_delivery_reports`)).toEqual([{ n: 0 }]);
   });
 
   test('system role cannot read or write tenant content', async () => {

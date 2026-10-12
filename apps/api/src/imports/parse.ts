@@ -9,8 +9,7 @@ export class ImportFileError extends Error {}
 
 const UNSUPPORTED_MESSAGE = 'Please upload a .csv or .xlsx file.';
 const NO_ROWS_MESSAGE = 'This file has no rows.';
-const TOO_MANY_ROWS_MESSAGE =
-  'This file has more than 20,000 rows. Split it into smaller files and import each one.';
+const TOO_MANY_ROWS_MESSAGE = `This file has more than ${MAX_IMPORT_ROWS.toLocaleString('en-US')} rows. Split it into smaller files and import each one.`;
 const UNREADABLE_XLSX_MESSAGE = "We couldn't read this spreadsheet. Save it as .csv and try again.";
 const UNREADABLE_CSV_MESSAGE = "We couldn't read this file. Check that it is a .csv and try again.";
 

@@ -24,7 +24,7 @@ import {
 } from '@roofline/db/system';
 import type { AppDeps } from '../app.ts';
 import { createBackground } from '../background.ts';
-import { DEFAULT_SERVICE_AREA_MILES, locateAddress } from '../company/location.ts';
+import { DEFAULT_SERVICE_AREA_MILES, locateAddress, SIGNUP_GEOCODE_TIMEOUT_MS } from '../company/location.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import {
   acceptInviteRateLimit,
@@ -72,7 +72,6 @@ const NAME_MESSAGE = 'Please enter a name.';
 const COMPANY_NAME_MESSAGE = 'Please enter your company name.';
 const PHONE_MESSAGE = "That doesn't look like a US phone number.";
 const ADDRESS_MESSAGE = 'Please enter your business address.';
-const ADDRESS_NOT_FOUND_MESSAGE = "We couldn't find that address. Check the street, city and state.";
 const MAX_ADDRESS_LENGTH = 300;
 
 const companyName = z
@@ -253,9 +252,11 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
    * Makes a user and their own new company, with everything a company starts with, and signs
    * nobody in. Used by sign-up and by Google sign-in, so slugs, the trial and the cleanup are the
    * same for both.
-   * - Before anything is written, the typed address is looked up on the map. Not found is a 400 on
-   *   `companyAddress` and nothing is created. A map that cannot be reached does not stop sign-up:
-   *   the company is made with the typed address and no point or time zone.
+   * - Before anything is written, the typed address is looked up on the map, with a short timeout
+   *   (SIGNUP_GEOCODE_TIMEOUT_MS). An address the map cannot place (not found, low accuracy, or a
+   *   map that cannot be reached) does not stop sign-up: the company is made with the typed address
+   *   and no point, time zone or service area. The owner places it later through Setup and
+   *   POST /api/company/locate.
    * - Step 1, one system transaction: the user, the company and the owner membership. The company's
    *   time zone stays at the column default until step 2 sets it from the map.
    * - Step 2, in the new company's own tenant transaction: its default settings, and its place on
@@ -268,8 +269,7 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     path: string,
     details: { phoneE164: string; addressText: string },
   ): Promise<CreatedAccount> {
-    const outcome = await locateAddress(deps.geocoder, details.addressText);
-    if (outcome.kind === 'not_found') throw new AppError(400, ADDRESS_NOT_FOUND_MESSAGE, 'companyAddress');
+    const outcome = await locateAddress(deps.geocoder, details.addressText, { timeoutMs: SIGNUP_GEOCODE_TIMEOUT_MS });
 
     const account = await createAccount(system, {
       ...input,
