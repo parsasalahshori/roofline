@@ -38,7 +38,14 @@ afterEach(() => {
 
 /** A signed-in person whose shell reads answer "nothing", unless a test gives its own answers. */
 function signedInApi(overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: ACCOUNT }), ...overrides });
+  api = stubApi({
+    ...SHELL_ROUTES,
+    // The pipeline board (the /jobs window) reads the board and the team; both are empty here
+    'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
+    'GET /api/team': () => ({ body: { members: [] } }),
+    'GET /api/auth/me': () => ({ body: ACCOUNT }),
+    ...overrides,
+  });
   return api;
 }
 
