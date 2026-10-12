@@ -108,7 +108,8 @@ step's off state. S1 adds the D1/G1 step titles to `OFF_STEP_TITLES` at its d1/g
 
 **Ruling BD (one storm re-draft mechanism):** A1 owns it (`lockStormPlan`/`supersedeDraft`/`linkStormPlan`,
 `REDRAFTABLE` = draft, expired, declined, no `replaceFinished` flag). S1 adds only the `{taskId} | null` signature and the
-paused 409 route; A1's re-draft code wins at merge.
+paused 409 route; A1's re-draft code wins at merge. Amended: the automatic path (storm-match, scheduled drafting) re-drafts only over drafts; expired/declined plans are
+replaced only by an explicit rerun (`allowFinished`, set only by the rerun route).
 
 ## How to do a task
 
