@@ -1,14 +1,14 @@
 ### Task 12: Scheduler — no-shows
 
-**Base:** `g1-agents` after Task 10 is merged. **[C1]** `setAppointmentStatus(..., 'no_show')` (C1 T8).
+**Base:** `g1-t13b` e9865ca. Builds in parallel with Tasks 11 and 13b; keep shared-file additions (`jobs/queue.ts`, `jobs/handlers.ts`, `routes/appointments.ts`, test skeleton slices) small and marked `// G1 Task 12`.
 
-Read first: `ops/sdd/g1/global-constraints.md`; spec `docs/superpowers/specs/2026-10-12-roofline-more-agents-design.md`. Names marked **[C1]** / **[E1]** / **[S1]** / **[D1]** / **[A1]** come from the plans and briefs of those milestones (`ops/sdd/<milestone>/`), not from built code: check each against the merged branch before starting and report any difference.
+Read first: `ops/sdd/g1/global-constraints.md`; `progress.md` (GX-E, GX-N, GX-R); spec §4 (no-shows); C1 `apps/api/src/routes/appointments.ts` (`POST /api/appointments/:id/no-show` → `setAppointmentStatus(..., 'no_show')`), T10 `agents/scheduler/reminders.ts` (read / draft outside / re-check pattern, `bodyOk`, `schedulerAgentOn`), T13a `agents/followup/draft.ts` (`pickTwoSlots`, `formatSlot`: reuse them, do not copy), `providers/llm.ts` (`draftTexts` kind `no_show`), `apps/api/src/jobs/queue.ts` + `test/front-desk-skeleton.test.ts` (end-relative slices of `JOB_NAMES` — append the new job after `claims-reply` and update the slices if they move).
 
-No-show → draft text with two times; tests.
+**Trigger:** after the no-show status change commits, the C1 route sends `deps.jobs.send('scheduler-no-show', { companyId, appointmentId }, { singletonKey: appointmentId })` (one line under `// G1 Task 12`; only for `no_show`, not cancel/complete). New job name `scheduler-no-show` in `JOB_NAMES` and its handler `runNoShow(deps, companyId, appointmentId)` in `agents/scheduler/no-show.ts`.
 
-**Carries and rulings:**
-- One draft per no-show.
+**`runNoShow`:** company active/trial, agent `scheduler` on; the appointment is still `no_show`, has a customer with a mobile phone (not do-not-contact, not archived); no agent task `agent 'scheduler', kind 'no_show'` with `subjectType 'appointment', subjectId` = this appointment exists (one draft per no-show). Two new times: `pickTwoSlots` for the appointment's assigned user (their busy blocks + appointments; company work hours) — none found → no task. Draft outside the transaction: `draftTexts({ instruction: 'no_show', facts })` (first name, rep first name, company, the original day/time, slot1, slot2), guards as T10, template fallback "Hi {first}, it's {rep} at {company}. Sorry we missed you today. We can come by {slot1} or {slot2}. Reply with the one that works." Then one needs-approval task: `kind 'no_show'`, title "Reschedule {first}'s {kind} (missed)", subject the appointment, one `send_personal_texts` step `{ purpose: 'informational', kind: 'no_show', messages: [one], dedupePrefix: 'no_show:{appointmentId}' }`, `expiresAt` = now + 2 days.
 
-**Verify notes:**
-- api/db suites need Docker (Testcontainers): locally `npm run typecheck && npm run lint`; prove the rest with `ops/bin/ci-check`.
-- Commit: `feat(api): Scheduler — rebook no-shows`
+**Tests (CI):** marking no-show sends the job (InlineJobs) and makes one task with two times; cancel/complete send nothing; a second run for the same appointment makes nothing; paused → nothing; no phone / do-not-contact → nothing; template fallback; the status changed back before the job ran → nothing.
+
+**Verify:** `npm run typecheck && npm run lint` (slot); CI with `CI_JOBS="Platform E2E"`.
+- Commit: `feat(api): Scheduler — no-show reschedule texts (G1 Task 12)`
