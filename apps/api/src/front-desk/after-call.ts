@@ -8,7 +8,7 @@ import {
   loadBookingActions,
   loadCallForAfterCall,
   loadCompanyFacts,
-  recordUsage,
+  recordCallMinutes,
   type TenantContext,
   updateConversation,
   withTenant,
@@ -69,7 +69,10 @@ function firstSentence(text: string): string {
   return (s === '' ? text.trim() : s).slice(0, 200);
 }
 
-export async function runAfterCall(deps: AppDeps, data: { companyId: string; callSid?: string; conversationId?: string }): Promise<void> {
+export async function runAfterCall(
+  deps: AppDeps,
+  data: { companyId: string; callSid?: string; conversationId?: string; swept?: boolean },
+): Promise<void> {
   const callSid = data.callSid;
   if (callSid === undefined) return;
   const ctx: TenantContext = { companyId: data.companyId, userId: null, role: 'system', canApproveSpend: false };
@@ -84,16 +87,8 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
 
     if (call.aiSeconds > 0) {
       const minutes = Math.ceil(call.aiSeconds / 60);
-      await recordUsage(tx, ctx, {
-        kind: 'ai_call_minute',
-        quantity: minutes,
-        unitCostCents: null,
-        refType: 'call',
-        refId: call.id,
-        description: 'AI call minutes',
-        at: now,
-      });
-      await closeCallAfterCall(tx, ctx, callSid, { billedMinutes: minutes });
+      const billed = await recordCallMinutes(tx, ctx, { callId: call.id, minutes, description: 'AI call minutes', at: now });
+      await closeCallAfterCall(tx, ctx, callSid, { billedMinutes: billed });
     }
     if (call.spamReason !== null) return { call, spam: true as const };
 
@@ -172,7 +167,8 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
     });
   }
 
-  if (transferred || call.status === 'rejected') return;
+  // A call the fd-health sweep ended (data.swept) is never texted back: its caller may still be on the line (CV#3).
+  if (transferred || call.status === 'rejected' || data.swept === true) return;
   const secondsInCall =
     call.aiSeconds > 0
       ? call.aiSeconds

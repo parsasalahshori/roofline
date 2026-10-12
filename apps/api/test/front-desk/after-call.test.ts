@@ -21,6 +21,7 @@ import { CONVERSATION_OUTCOMES, type ConversationOutcome } from '@roofline/share
 import { createEngine } from '../../src/front-desk/engine.ts';
 import { FRONT_DESK_HANDLERS } from '../../src/front-desk/tools/index.ts';
 import { pickOutcome, runAfterCall } from '../../src/front-desk/after-call.ts';
+import { fdHealth } from '../../src/jobs/scheduler/fd-health.ts';
 import { maybeTextBack, type TextBackInput, type TextBackResult } from '../../src/front-desk/text-back.ts';
 import { ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import { inCompany } from '../crm-helpers.ts';
@@ -349,6 +350,57 @@ describe('calls linked to conversations, finished calls only', () => {
     const rows = await usageRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ quantity: Math.ceil(125 / 60), refId: s.callId });
+  });
+});
+
+describe('final review CV#5 and CV#3: late minutes and swept calls', () => {
+  const setCall = (id: string, patch: Partial<typeof calls.$inferInsert>) =>
+    inCompany(t, idA(), (tx) => tx.update(calls).set(patch).where(eq(calls.id, id)));
+
+  test('a later run with more AI seconds raises the minutes until the row is in a meter batch', async () => {
+    const s = await seedCall({ aiSeconds: 125, turns: [CALLER_WORDS] });
+    await run(s);
+    expect((await usageRows())[0]).toMatchObject({ quantity: 3 });
+    // A slow second relay segment adds its seconds after the terminal job ran; the relay close queues after-call again.
+    await setCall(s.callId, { aiSeconds: 250 });
+    await run(s);
+    let rows = await usageRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ quantity: 5 });
+    expect((await callOf(s.callId)).billedMinutes).toBe(5);
+    // A smaller total never lowers it.
+    await setCall(s.callId, { aiSeconds: 60 });
+    await run(s);
+    expect((await usageRows())[0]).toMatchObject({ quantity: 5 });
+    // Once batched for Stripe, the row and the call's billed minutes stay as they are.
+    await inCompany(t, idA(), (tx) =>
+      tx.update(usageEvents).set({ meterBatchId: '00000000-0000-4000-8000-000000000001' }).where(eq(usageEvents.kind, 'ai_call_minute')),
+    );
+    await setCall(s.callId, { aiSeconds: 600 });
+    await run(s);
+    rows = await usageRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ quantity: 5 });
+    expect((await callOf(s.callId)).billedMinutes).toBe(5);
+  });
+
+  test('a call the fd-health sweep ended never gets a text-back; the same call ended normally does', async () => {
+    const longAgo = new Date(t.clock.now().getTime() - 5 * 60 * 60_000);
+    const swept = await seedCall({ from: MOBILE, withConversation: false, status: 'ringing', startedAt: longAgo, endedAt: null });
+    await fdHealth(t.deps, t.clock.now());
+    expect((await callOf(swept.callId)).status).toBe('ended');
+    const queued = t.jobs.sent.filter((j) => j.name === 'fd-after-call');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({ data: { companyId: idA(), callSid: swept.callSid, swept: true } });
+    await t.jobs.drain(t.deps);
+    expect(t.jobs.errors).toEqual([]);
+    expect(t.sms.sent).toHaveLength(0);
+    expect(await outboundRows()).toHaveLength(0);
+    expect((await callOf(swept.callId)).textBackMessageId).toBeNull();
+
+    const normal = await seedCall({ from: MOBILE_TWO, withConversation: false, status: 'ended', startedAt: longAgo });
+    await run(normal);
+    expect(t.sms.sent).toHaveLength(1);
   });
 });
 

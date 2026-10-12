@@ -187,28 +187,68 @@ describe('POST /hooks/twilio/voice', () => {
     expect(stale.text).toContain('<ConversationRelay');
   });
 
-  test('fd-health ends a call stuck for 40 minutes, queues its after-call work, and leaves a recent call alone', async () => {
+  test('fd-health ends an ai call stuck for 40 minutes and dial calls over 4 hours, per company, and leaves a connected ring_first call alone (Ruling BJ; CV#3)', async () => {
     const now = t.deps.clock.now();
-    const stuckSid = 'CA' + '1'.repeat(32);
-    const freshSid = 'CA' + '2'.repeat(32);
+    const ago = (minutes: number) => new Date(now.getTime() - minutes * 60_000);
+    const aiStuck = 'CA' + '1'.repeat(32);
+    const aiFresh = 'CA' + '2'.repeat(32);
+    const ringFirst = 'CA' + '3'.repeat(32);
+    const teamFirst = 'CA' + '4'.repeat(32);
+    const dialOld = 'CA' + '5'.repeat(32);
+    const bStuck = 'CA' + '6'.repeat(32);
+    const row = (company: 'a' | 'b', callSid: string, status: 'ai' | 'ringing' | 'ringing_team', startedAt: Date) => ({
+      companyId: idOf(company),
+      callSid,
+      fromE164: CALLER,
+      toE164: company === 'a' ? A_NUMBER : B_NUMBER,
+      status,
+      startedAt,
+    });
     await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
       tx.insert(calls).values([
-        { companyId: idOf('a'), callSid: stuckSid, fromE164: CALLER, toE164: A_NUMBER, status: 'ringing_team', startedAt: new Date(now.getTime() - 40 * 60_000) },
-        { companyId: idOf('a'), callSid: freshSid, fromE164: CALLER, toE164: A_NUMBER, status: 'ringing_team', startedAt: new Date(now.getTime() - 5 * 60_000) },
+        row('a', aiStuck, 'ai', ago(40)),
+        row('a', aiFresh, 'ai', ago(5)),
+        // A ring_first call answered by staff keeps 'ringing' for the whole bridged call.
+        row('a', ringFirst, 'ringing', ago(40)),
+        row('a', teamFirst, 'ringing_team', ago(40)),
+        row('a', dialOld, 'ringing', ago(4 * 60 + 1)),
       ]),
     );
+    await withTenant(t.deps.pools, ctxOf('b'), (tx) => tx.insert(calls).values([row('b', bStuck, 'ai', ago(40))]));
     t.jobs.sent.length = 0;
     await fdHealth(t.deps, now);
-    const rows = await callRows('a');
-    const stuck = rows.find((r) => r.callSid === stuckSid)!;
-    const fresh = rows.find((r) => r.callSid === freshSid)!;
-    expect(stuck.status).toBe('ended');
-    expect(stuck.endedAt).not.toBeNull();
-    expect(fresh.status).toBe('ringing_team');
-    expect(fresh.endedAt).toBeNull();
+    const status = async (c: 'a' | 'b', sid: string) => (await callRows(c)).find((r) => r.callSid === sid)!;
+    for (const sid of [aiStuck, dialOld]) {
+      expect((await status('a', sid)).status, sid).toBe('ended');
+      expect((await status('a', sid)).endedAt, sid).not.toBeNull();
+    }
+    expect((await status('b', bStuck)).status).toBe('ended');
+    expect((await status('a', aiFresh)).status).toBe('ai');
+    expect((await status('a', ringFirst)).status).toBe('ringing');
+    expect((await status('a', ringFirst)).endedAt).toBeNull();
+    expect((await status('a', teamFirst)).status).toBe('ringing_team');
     const queued = t.jobs.sent.filter((j) => j.name === 'fd-after-call');
-    expect(queued).toHaveLength(1);
-    expect(queued[0]).toMatchObject({ data: { companyId: idOf('a'), callSid: stuckSid }, singletonKey: `fd-after-call:${stuckSid}` });
+    expect(queued.map((j) => j.data.callSid).sort()).toEqual([aiStuck, dialOld, bStuck].sort());
+    for (const j of queued) {
+      expect(j.data.swept).toBe(true);
+      expect(j.singletonKey).toBe(`fd-after-call:${j.data.callSid!}`);
+      expect(j.data.companyId).toBe(j.data.callSid === bStuck ? idOf('b') : idOf('a'));
+    }
+  });
+
+  test('the stuck-call sweep updates on the tenant pool only: app_system cannot UPDATE calls (Ruling BJ)', async () => {
+    const sid = 'CA' + '7'.repeat(32);
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.insert(calls).values({ companyId: idOf('a'), callSid: sid, fromE164: CALLER, toE164: A_NUMBER, status: 'ai', startedAt: new Date(t.deps.clock.now().getTime() - 40 * 60_000) }),
+    );
+    const err = await t.deps.pools.system
+      .update(calls)
+      .set({ status: 'ended' })
+      .where(eq(calls.callSid, sid))
+      .then(() => null, (e: unknown) => e as { code?: string; cause?: { code?: string } });
+    expect(err?.code ?? err?.cause?.code).toBe('42501');
+    await fdHealth(t.deps, t.deps.clock.now());
+    expect((await callRows('a')).find((r) => r.callSid === sid)!.status).toBe('ended');
   });
 
   test('over the global cap (relaySessions.size) goes to voicemail path', async () => {
