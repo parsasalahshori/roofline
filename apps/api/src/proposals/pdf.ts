@@ -243,6 +243,10 @@ export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean 
   // Signature page.
   if (i.signature) {
     const { record, image, timeZone } = i.signature;
+    // One image source for both pages: PDFKit caches a string source, so the PNG is decoded and embedded
+    // once. Two Buffer sources decode asynchronously and finish in either order, which made the bytes
+    // (and so the signed PDF's hash) vary under load.
+    const imageSrc = image ? `data:image/png;base64,${image.toString('base64')}` : null;
     const chosen = proposal.options.find((x) => x.id === record.optionId);
     const signedAt = formatZonedTime(record.signedAt, timeZone);
     doc.addPage();
@@ -265,10 +269,10 @@ export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean 
     doc.moveDown(0.6);
     line(doc, 'Document SHA-256', { bold: true, size: 9 });
     line(doc, record.documentSha256, { size: 9 });
-    if (image) {
+    if (imageSrc) {
       doc.moveDown(0.8);
       ensure(doc, 100);
-      doc.image(image, MARGIN, doc.y, { fit: [220, 90] });
+      doc.image(imageSrc, MARGIN, doc.y, { fit: [220, 90] });
     }
 
     // Audit page: everything needed to show who signed what, when and how.
@@ -277,12 +281,12 @@ export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean 
     doc.moveDown(0.8);
     line(doc, `Signer: ${record.signerName}`);
     line(doc, `Typed signature: ${record.typedSignature}`);
-    if (image) {
+    if (imageSrc) {
       line(doc, 'Drawn signature:');
       doc.moveDown(0.3);
       ensure(doc, 100);
       const y = doc.y;
-      doc.image(image, MARGIN, y, { fit: [220, 90] });
+      doc.image(imageSrc, MARGIN, y, { fit: [220, 90] });
       doc.y = y + 96;
       doc.x = MARGIN;
     } else {

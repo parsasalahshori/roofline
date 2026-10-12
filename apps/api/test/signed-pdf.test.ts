@@ -233,6 +233,12 @@ describe('signed pdf job', () => {
     expect(Buffer.compare(first, second)).toBe(0);
   });
 
+  test('the drawn signature is embedded once, though both pages show it (one async decode keeps the bytes stable)', async () => {
+    const raw = Buffer.from(await renderFixture({ image: Buffer.from(TINY_PNG, 'base64'), compress: false })).toString('latin1');
+    // An RGBA PNG is one image plus its alpha mask.
+    expect(raw.match(/\/Subtype \/Image/g)).toHaveLength(2);
+  });
+
   test('the job prints the estimate clause and the audit page when the setting is on and the basis is estimate', async () => {
     const s = await signed();
     await run(s.proposal.id);
