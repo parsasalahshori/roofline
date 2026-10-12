@@ -118,6 +118,14 @@ export function logErrorToConsole(err: unknown, where: string): void {
   console.error(`Unhandled error on ${where}: ${describeErrorForLog(err)}`);
 }
 
+/**
+ * The request path as it may be logged: a homeowner link token (`/public/proposals/<token>/...`) is a
+ * credential and is replaced by `:token` (global constraints: the token is never logged).
+ */
+export function pathForLog(path: string): string {
+  return path.replace(/(\/public\/proposals\/)[^/]+/i, '$1:token');
+}
+
 /** Fallthrough for any request no route answered. */
 export const notFoundHandler: RequestHandler = (_req, res) => {
   res.status(404).json({ error: MESSAGES.notFound } satisfies ErrorBody);
@@ -158,7 +166,7 @@ export function errorHandler(logError: (err: unknown, path: string) => void): Er
       return;
     }
 
-    logError(err, req.path);
+    logError(err, pathForLog(req.path));
     res.status(500).json({ error: MESSAGES.internal } satisfies ErrorBody);
   };
 }
