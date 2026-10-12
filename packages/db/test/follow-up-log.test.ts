@@ -24,6 +24,7 @@ function ctxFor(c: SeededCompany): TenantContext {
   return { companyId: c.companyId, userId: c.owner.userId, role: 'owner', canApproveSpend: true };
 }
 
+let addrN = 0;
 const day = (d: number) => new Date(Date.UTC(2026, 9, d, 12));
 
 /** A customer with two jobs, in the given company. */
@@ -33,7 +34,7 @@ async function makeCustomer(c: SeededCompany) {
     const [cust] = await tx.insert(customers).values({ companyId: c.companyId, displayName: 'Pat Customer', createdByUserId: c.owner.userId }).returning({ id: customers.id });
     const [prop] = await tx
       .insert(properties)
-      .values({ companyId: c.companyId, customerId: cust!.id, addressLine: '1 Main St', city: 'Omaha', state: 'NE', zip: '68102', addressKey: 'main1' })
+      .values({ companyId: c.companyId, customerId: cust!.id, addressLine: '1 Main St', city: 'Omaha', state: 'NE', zip: '68102', addressKey: `main${++addrN}` })
       .returning({ id: properties.id });
     const jobIds: string[] = [];
     for (let i = 0; i < 2; i++) {

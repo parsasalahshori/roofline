@@ -1,14 +1,15 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { followUpLog, jobs, messages, properties, type StepRow } from '@roofline/db';
+import { followUpLog, jobs, messages, properties, type StepRow, withTenant } from '@roofline/db';
 import type { StepType } from '@roofline/shared';
 import { eq } from 'drizzle-orm';
 import { sendPersonalTexts } from '../src/agents/personal-texts.ts';
 import { inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { addSmsCustomers, BATCH_AT, DAY, DAYTIME, rowFor, stepMessages } from './sms-helpers.ts';
-import { agentCtx, dbSteps, newTask, setStep } from './task-helpers.ts';
+import { createTask } from '../src/tasks/service.ts';
+import { agentCtx, dbSteps, setStep } from './task-helpers.ts';
 
 let t: TestApp;
 
@@ -27,7 +28,22 @@ async function personalStep(
   overrides: Record<string, unknown> = {},
 ): Promise<{ taskId: string; stepId: string }> {
   const payload = { purpose: 'informational', kind: 'proposal', messages: messageList, dedupePrefix: 'pt:one', ...overrides };
-  const { taskId } = await newTask(t, 'a', { steps: [{ type: 'send_personal_texts' as StepType, payload }] });
+  // send_personal_texts is an agent-only step type (not user creatable), so create it the way the runner copies built-in steps.
+  const ctx = agentCtx(idOf());
+  const { taskId } = await withTenant(t.deps.pools, ctx, (tx) =>
+    createTask(
+      tx,
+      ctx,
+      {
+        agent: 'storm_scout',
+        kind: 'storm_plan',
+        title: 'Personal texts',
+        summary: 'One text per customer.',
+        steps: [{ type: 'send_personal_texts' as StepType, payload }],
+      },
+      { now: t.clock.now(), ip: '203.0.113.9', allowInternalStepTypes: true },
+    ),
+  );
   const step = (await dbSteps(t, 'a', taskId))[0]!;
   return { taskId, stepId: step.id };
 }
