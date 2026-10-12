@@ -18,7 +18,7 @@ import {
 import type { ConsentStatus, IdentityLevel } from '@roofline/shared';
 import type { ConversationState, ToolContext } from '../../src/front-desk/engine-types.ts';
 import { newConversationState } from '../../src/front-desk/state.ts';
-import { bookInspection, isAvailable as bookAvailable } from '../../src/front-desk/tools/book.ts';
+import { BOOK_FAILED, bookInspection, isAvailable as bookAvailable } from '../../src/front-desk/tools/book.ts';
 import {
   confirmAppointmentTool,
   confirmByText,
@@ -566,6 +566,16 @@ describe('book_inspection', () => {
     expect(res.ok).toBe(false);
     expect(await allAppointments()).toHaveLength(0);
     expect(await allCustomers()).toHaveLength(0);
+  });
+
+  test("a typed address that is another customer's home gets the neutral sentence, not who owns it (pre-review #30)", async () => {
+    await seedCustomer({ phone: '+14025550166', address: '123 Elm St' });
+    const state = await startConversation();
+    const res = await bookInspection(toolCtx(state), bookInput({ propertyId: null, address: ADDRESS }));
+    expect(res.ok).toBe(false);
+    expect(res.forModel).toBe(BOOK_FAILED);
+    expect(res.forModel).not.toMatch(/someone else|on file/i);
+    expect(await allAppointments()).toHaveLength(0);
   });
 
   test('a home on file for someone else is not booked for a new caller', async () => {

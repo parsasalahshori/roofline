@@ -1,5 +1,6 @@
-import { and, eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { and, eq, sql } from 'drizzle-orm';
+import pg from 'pg';
+import { beforeEach, describe, expect, inject, test } from 'vitest';
 import {
   activities,
   calls,
@@ -379,6 +380,76 @@ describe('missed-call text-back through the gate', () => {
     expect(result).toBe('skipped');
     expect(t.sms.sent).toHaveLength(0);
     expect(await outboundRows()).toHaveLength(0);
+  });
+
+  test('two text-backs at once for one new number: one customer, one text (the second waits, then sees the first)', async () => {
+    const one = await seedCall({ from: MOBILE, withConversation: false });
+    const two = await seedCall({ from: MOBILE, withConversation: false });
+    const input = (s: Seeded): TextBackInput => ({
+      callId: s.callId,
+      callSid: s.callSid,
+      fromE164: MOBILE,
+      toE164: A_NUMBER,
+      conversationId: null,
+      customerId: null,
+      status: 'completed',
+      callerTurns: 0,
+      secondsInCall: 5,
+      spam: false,
+    });
+    // Hold the number's lock (the one customer saves take) so both jobs line up behind it.
+    const holder = new pg.Client({ connectionString: inject('dbUrls').owner });
+    await holder.connect();
+    let waiting = 0;
+    let results: TextBackResult[];
+    try {
+      await holder.query('begin');
+      await holder.query(`select pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2::text, 0))`, [idA(), MOBILE]);
+      const both = Promise.all([maybeTextBack(t.deps, tenantCtx(), input(one)), maybeTextBack(t.deps, tenantCtx(), input(two))]);
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const { rows } = await holder.query<{ n: number }>("select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted");
+        waiting = rows[0]!.n;
+        if (waiting >= 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await holder.query('commit');
+      results = await both;
+    } finally {
+      await holder.end();
+    }
+    expect(waiting).toBe(2);
+    expect([...results].sort()).toEqual(['sent', 'skipped']);
+    const made = await inCompany(t, idA(), (tx) =>
+      tx.select().from(customers).where(sql`${customers.phones} @> ${JSON.stringify([{ e164: MOBILE }])}::jsonb`),
+    );
+    expect(made).toHaveLength(1);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(await outboundRows()).toHaveLength(1);
+  });
+
+  test('a known customer calling from their second number is texted back on that number', async () => {
+    const [cust] = await inCompany(t, idA(), (tx) =>
+      tx
+        .insert(customers)
+        .values({
+          companyId: idA(),
+          displayName: 'Nina Customer',
+          firstName: 'Nina',
+          phones: [
+            { e164: MOBILE_TWO, label: 'mobile', primary: true },
+            { e164: MOBILE, label: 'mobile' },
+          ],
+        })
+        .returning({ id: customers.id }),
+    );
+    const { result } = await textBack(MOBILE, { customerId: cust!.id });
+    expect(result).toBe('sent');
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: MOBILE });
+    const out = await outboundRows();
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ customerId: cust!.id, toE164: MOBILE });
   });
 
   test('during quiet hours the text waits: scheduled, not sent', async () => {

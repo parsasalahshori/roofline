@@ -56,7 +56,8 @@ function turnTranscriptStored(turn: TurnView, calls: CallView[]): boolean {
 
 export function ConversationView({ conversation }: { conversation: ConversationDetail }) {
   const headingId = useId();
-  const turns = [...conversation.turns].sort((a, b) => a.position - b.position);
+  // Time order; turns spoken at one instant keep their position order. A text's own line has position 0.
+  const turns = [...conversation.turns].sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.position - b.position);
 
   return (
     <article className={styles.view}>

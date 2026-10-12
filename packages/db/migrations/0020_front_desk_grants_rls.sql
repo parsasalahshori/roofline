@@ -8,14 +8,15 @@
 
 -- 1. app_tenant: the five new tenant tables. conversation_turns is the transcript, so it has no
 --    DELETE and no table-level UPDATE: only the columns the retention sweep and corrections need.
---    blocked_numbers is the only tenant table with DELETE (a number unblocked by its owner).
+--    blocked_numbers is the only tenant table with DELETE (a number unblocked by its owner); it has no
+--    UPDATE (a block is added or removed, never edited).
 GRANT SELECT, INSERT, UPDATE ON conversations, calls, claim_intakes TO app_tenant;
 --> statement-breakpoint
 GRANT SELECT, INSERT ON conversation_turns TO app_tenant;
 --> statement-breakpoint
 GRANT UPDATE (text, tool_calls, truncated) ON conversation_turns TO app_tenant;
 --> statement-breakpoint
-GRANT SELECT, INSERT, UPDATE, DELETE ON blocked_numbers TO app_tenant;
+GRANT SELECT, INSERT, DELETE ON blocked_numbers TO app_tenant;
 --> statement-breakpoint
 
 -- 2. Row-level security on the new tenant tables, ENABLED and FORCED, with the same tenant_isolation
@@ -69,18 +70,13 @@ CREATE POLICY tenant_isolation ON blocked_numbers
 --    so transfer_phone_e164, on_call_order and recording_ack_at are written only by app_system. A
 --    tenant grant on memberships would reach other companies' rows, since memberships has no RLS.
 
--- 4. app_system: the recording and retention fan-outs read only the ids, company, status and recording
---    columns they need, across companies, through the app_system_all policies below (section 6). These
---    grants are its real limit. It may write only the recording columns of a call. It never reads or
---    writes transcript text or tool records (Ruling BF): the retention sweep blanks turns on the tenant
---    pool, inside withTenant.
-GRANT SELECT (id, company_id, call_sid, status, conversation_id, recording_key, recording_status) ON calls TO app_system;
---> statement-breakpoint
-GRANT UPDATE (recording_key, recording_status) ON calls TO app_system;
---> statement-breakpoint
-GRANT SELECT (id, company_id, status) ON conversations TO app_system;
---> statement-breakpoint
-GRANT SELECT (id, company_id, at) ON conversation_turns TO app_system;
+-- 4. app_system: the voice-routing and relay fan-outs read only the ids, company, call_sid and status of a
+--    call, across companies, through the app_system_all policy below (section 6). That is its real limit
+--    (Ruling AW narrowing of review note 31): it has no grant on conversations or conversation_turns, and
+--    it writes no column of calls. It never reads or writes transcript text or tool records (Ruling BF):
+--    the retention sweep blanks turns on the tenant pool, inside withTenant. The recording columns are
+--    read and written by app_tenant inside withTenant.
+GRANT SELECT (id, company_id, call_sid, status) ON calls TO app_system;
 --> statement-breakpoint
 -- The fd-health repair marks a number whose voice URL it set (Task 17, markVoiceUrlSet). 0002 gives
 -- app_system only SELECT and INSERT on company_phone_numbers (Ruling SEC-4), so only that column and
@@ -92,13 +88,9 @@ GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers TO app_system;
 --    type is not a customer's data, and the cache is shared across companies.
 GRANT SELECT, INSERT, UPDATE ON line_lookups TO app_system;
 --> statement-breakpoint
-GRANT SELECT ON line_lookups TO app_tenant;
---> statement-breakpoint
 
--- 6. app_system_all: app_system holds grants on these RLS tables, so each needs the permissive policy
+-- 6. app_system_all: app_system holds a grant on calls, so it needs the permissive policy
 --    (a table it holds a grant on with no policy would silently return zero rows).
 CREATE POLICY app_system_all ON calls FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint
-CREATE POLICY app_system_all ON conversations FOR ALL TO app_system USING (true) WITH CHECK (true);
---> statement-breakpoint
-CREATE POLICY app_system_all ON conversation_turns FOR ALL TO app_system USING (true) WITH CHECK (true);
+

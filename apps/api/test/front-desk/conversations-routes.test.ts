@@ -254,6 +254,69 @@ describe('GET /api/conversations/:id', () => {
     expect(detail.calls).toHaveLength(2);
   });
 
+  test('a text conversation merges its texts with the turns in time order, without repeating what a turn shows (review note 20)', async () => {
+    const owner = await who.as('owner');
+    const customerId = await seedCustomer('a', { name: 'Pat Texter', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId });
+    const at = (m: number) => new Date(Date.UTC(2026, 9, 12, 15, m));
+    const text = (direction: 'in' | 'out', body: string, m: number, o: { dedupeKey?: string; status?: 'received' | 'sent' | 'blocked' } = {}) =>
+      inCompany(t, idA(), (tx) =>
+        tx.insert(messages).values({
+          companyId: idA(),
+          customerId,
+          conversationId: convo,
+          channel: 'sms',
+          direction,
+          purpose: direction === 'out' ? 'informational' : null,
+          body,
+          status: o.status ?? (direction === 'in' ? 'received' : 'sent'),
+          dedupeKey: o.dedupeKey ?? null,
+          createdAt: at(m),
+        }),
+      );
+    const turn = (position: number, speaker: 'caller' | 'assistant', body: string, m: number) =>
+      inCompany(t, idA(), (tx) =>
+        tx.insert(conversationTurns).values({ companyId: idA(), conversationId: convo, position, speaker, text: body, at: at(m) }),
+      );
+    // The assistant took a turn for the first text and answered it; both also sit in messages.
+    await text('in', 'Can you come Thursday?', 0);
+    await turn(1, 'caller', 'Can you come Thursday?', 1);
+    await text('out', 'Yes, Thursday works.', 2, { dedupeKey: 'fd-text:x' });
+    await turn(2, 'assistant', 'Yes, Thursday works.', 2);
+    // Then the team took over: a staff reply, a text the assistant never saw, and a reply that was blocked.
+    await text('out', 'This is Sam, I will bring a ladder.', 10, { dedupeKey: 'fd-reply:y' });
+    await text('in', 'Great, thanks', 11);
+    await text('out', 'Never sent', 12, { status: 'blocked', dedupeKey: 'fd-reply:z' });
+
+    const res = await owner.get(`${BASE}/${convo}`);
+    expect(res.status).toBe(200);
+    const detail = res.body as ConversationDetail;
+    expect(detail.turns.map((x) => [x.speaker, x.text])).toEqual([
+      ['caller', 'Can you come Thursday?'],
+      ['assistant', 'Yes, Thursday works.'],
+      ['team', 'This is Sam, I will bring a ladder.'],
+      ['caller', 'Great, thanks'],
+    ]);
+    expect(detail.turns.map((x) => x.position)).toEqual([1, 2, 0, 0]);
+  });
+
+  test('a voice conversation never pulls in texts', async () => {
+    const owner = await who.as('owner');
+    const convo = await seedConversation({ channel: 'voice' });
+    await inCompany(t, idA(), (tx) =>
+      tx.insert(messages).values({
+        companyId: idA(),
+        conversationId: convo,
+        channel: 'sms',
+        direction: 'in',
+        body: 'stray',
+        status: 'received',
+      }),
+    );
+    const detail = (await owner.get(`${BASE}/${convo}`)).body as ConversationDetail;
+    expect(detail.turns).toEqual([]);
+  });
+
   test('canPlayRecording per role (owner true, rep own-customer true, rep transferred call false)', async () => {
     const rep = await who.as('rep');
     const owner = await who.as('owner');
