@@ -68,3 +68,6 @@ Ruling CD: `renderQuotePdf(i, opts?: { compress?: boolean })` (default `true`) s
 - Gates from F3: W1 needs F3 complete (or at least T14, T16, T21 for W4; T29, T30, T32 for G6/G9; T36 for T28).
 
 ## Tasks
+
+## Build log
+c1-crm created at f3-setup 847de3b (F3 24 of 37 merged; the rest of F3 merges into c1-crm as it lands). C1 T1 started early on c1-t1 (base 847de3b) because F3 adds no more migrations (Ruling AO); T1's 0012 also takes the parked F3 index (partial unique on texting_registrations.messaging_service_sid where not null).
