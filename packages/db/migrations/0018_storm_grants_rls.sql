@@ -5,7 +5,7 @@
 -- deliberate, and test/rls.test.ts lists them.
 
 -- 1. app_hail: the hail worker's role (services/hail). Created NOLOGIN with the same guarded block 0002 uses
---    for app_tenant and app_system, and never BYPASSRLS. Login is granted by ops, never by a migration:
+--    for app_tenant and app_system, and never the bypass-RLS attribute. Login is granted by ops, never by a migration:
 --    `ALTER ROLE app_hail WITH LOGIN PASSWORD ...` (scripts/set-role-passwords does this when
 --    HAIL_DB_PASSWORD is set), and HAIL_DATABASE_URL is the worker's connection string.
 DO $$
