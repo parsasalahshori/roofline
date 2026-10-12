@@ -1,6 +1,6 @@
 /*
  * Agents screen (A1) display metrics: success rate and the "about ... hours" / "≈ $..." labels.
- * Pure functions: no DB, no clock. `hoursLabel` already says "about"; `moneyLabel` starts with "≈". The caller
+ * Pure functions: no DB, no clock. `hoursLabel` already says "about" (or "less than"); `moneyLabel` starts with "≈". The caller
  * adds "(estimate)" next to every time or money figure (spec 3.3).
  */
 
@@ -26,14 +26,18 @@ function safeMinutes(minutes: number): number {
 }
 
 /**
- * Hours as a short phrase: under 10 hours round to the nearest half hour, otherwise to the nearest hour.
- * Examples: 1860 -> 'about 31 hours', 270 -> 'about 4.5 hours', 60 -> 'about 1 hour', 30 -> 'about 0.5 hours'.
+ * Hours as a short phrase. Under 15 minutes: 'less than half an hour'. Otherwise under 10 hours round to the
+ * nearest half hour, else to the nearest hour, with thousands separators.
+ * Examples: 1860 -> 'about 31 hours', 270 -> 'about 4.5 hours', 60 -> 'about 1 hour', 30 -> 'about 0.5 hours',
+ * 10 -> 'less than half an hour', 60000 -> 'about 1,000 hours'.
  */
 export function hoursLabel(minutes: number): string {
-  const hours = safeMinutes(minutes) / 60;
+  const safe = safeMinutes(minutes);
+  if (safe < 15) return "less than half an hour";
+  const hours = safe / 60;
   const rounded = hours < 10 ? Math.round(hours * 2) / 2 : Math.round(hours);
   const unit = rounded === 1 ? "hour" : "hours";
-  return `about ${rounded} ${unit}`;
+  return `about ${rounded.toLocaleString("en-US")} ${unit}`;
 }
 
 /** Whole-dollar estimate of the time's worth at the hourly rate (cents), e.g. '≈ $870'. Uses the true minutes. */

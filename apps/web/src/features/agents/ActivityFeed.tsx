@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { LAUNCH_AGENTS, type ScreenAgent } from '@roofline/shared';
-import { Button, EmptyState, Skeleton } from '@roofline/ui';
-import { agents } from '../../copy/agents.ts';
+import { Banner, Button, EmptyState, Skeleton } from '@roofline/ui';
+import { agents, agentsCommon } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
+import { useCompany } from '../settings/api.ts';
 import { useAgentFeed } from './api.ts';
 import { agentTimeLabel } from './time.ts';
 import styles from './ActivityFeed.module.css';
@@ -11,6 +12,7 @@ import styles from './ActivityFeed.module.css';
 export function ActivityFeed() {
   const [filter, setFilter] = useState<ScreenAgent | undefined>(undefined);
   const feed = useAgentFeed(filter);
+  const zone = useCompany().data?.timezone;
   const items = feed.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
@@ -37,19 +39,25 @@ export function ActivityFeed() {
         ))}
       </div>
       {feed.isPending ? (
-        <Skeleton lines={4} height="2.5rem" />
-      ) : feed.isError ? (
-        <EmptyState title={agents.feedLoadError} />
+        <div role="status" aria-label={agents.feedLoading}>
+          <Skeleton lines={4} height="2.5rem" />
+        </div>
+      ) : !feed.data ? (
+        <EmptyState
+          title={agents.feedLoadError}
+          action={<Button onClick={() => void feed.refetch()}>{agentsCommon.retry}</Button>}
+        />
       ) : items.length === 0 ? (
         <EmptyState title={agents.feedEmpty} />
       ) : (
         <>
+          {feed.isError ? <Banner tone="warning">{agentsCommon.refreshFailed}</Banner> : null}
           <ul aria-label={agents.feedListLabel} className={styles.list}>
             {items.map((item) => (
               <li key={item.id} className={styles.row}>
                 <span className={styles.agent}>{AGENT_LABEL[item.agent]}</span>
                 <time dateTime={item.at} className={styles.time}>
-                  {agentTimeLabel(item.at)}
+                  {agentTimeLabel(item.at, zone)}
                 </time>
                 <span className={styles.text}>{item.text}</span>
                 {item.href ? (

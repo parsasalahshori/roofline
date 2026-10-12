@@ -24,7 +24,7 @@ export function TimeBreakdown({ rows }: { rows: BaselineBreakdownRow[] }) {
               {rows.map((row) => (
                 <tr key={row.baseline}>
                   <td>{agentPage.baselineLabels[row.baseline]}</td>
-                  <td>{row.units}</td>
+                  <td>{row.units.toLocaleString('en-US')}</td>
                   <td>{`${hoursLabel(row.minutes)} ${agentsCommon.estimate}`}</td>
                 </tr>
               ))}

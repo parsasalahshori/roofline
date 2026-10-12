@@ -36,16 +36,18 @@ describe("hoursLabel", () => {
     [600, "about 10 hours"],
     [570, "about 9.5 hours"],
     [589, "about 10 hours"],
-    [0, "about 0 hours"],
+    [0, "less than half an hour"],
     [90, "about 1.5 hours"],
-    [14, "about 0 hours"],
+    [14, "less than half an hour"],
     [15, "about 0.5 hours"],
+    [44, "about 0.5 hours"],
+    [60000, "about 1,000 hours"],
   ])("%d minutes -> %s", (minutes, expected) => {
     expect(hoursLabel(minutes)).toBe(expected);
   });
   test("negative and NaN minutes are treated as 0", () => {
-    expect(hoursLabel(-120)).toBe("about 0 hours");
-    expect(hoursLabel(Number.NaN)).toBe("about 0 hours");
+    expect(hoursLabel(-120)).toBe("less than half an hour");
+    expect(hoursLabel(Number.NaN)).toBe("less than half an hour");
   });
 });
 

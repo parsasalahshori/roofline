@@ -1,7 +1,8 @@
 import { cleanup, screen, within } from '@testing-library/react';
 import type { WaitingItem } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { agents } from '../src/copy/agents.ts';
+import { agents, agentsCommon } from '../src/copy/agents.ts';
+import { agentsKeys } from '../src/features/agents/api.ts';
 import { AGENT_LABEL } from '../src/copy/status.ts';
 import { WaitingList } from '../src/features/agents/WaitingList.tsx';
 import { type Routes, renderAt, stubApi } from './helpers.tsx';
@@ -18,8 +19,8 @@ function item(id: string, waitingOn: WaitingItem['waitingOn'], overrides: Partia
   return { id, agent: 'estimator', kind: 'draft', text: `Needs ${id}`, since: '2026-10-12T15:05:00.000Z', waitingOn, href: null, ...overrides };
 }
 
-function show(routes: Routes) {
-  api = stubApi(routes);
+function show(routes: Routes, timezone = 'America/Chicago') {
+  api = stubApi({ 'GET /api/company': () => ({ body: { id: 'c1', name: 'A', timezone } }), ...routes });
   return renderAt(<WaitingList />);
 }
 
@@ -75,5 +76,49 @@ describe('WaitingList', () => {
   it('shows the load error', async () => {
     show({ 'GET /api/agents/waiting': () => ({ status: 500, body: { error: 'x' } }) });
     expect(await screen.findByText(agents.waitingLoadError)).toBeTruthy();
+  });
+
+  it('is a labelled section', async () => {
+    show({ 'GET /api/agents/waiting': () => ({ body: { items: [item('a', { kind: 'you' })] } }) });
+    const region = await screen.findByRole('region', { name: agents.waitingListLabel });
+    expect(region.tagName).toBe('SECTION');
+  });
+
+  it('announces loading while pending', async () => {
+    show({ 'GET /api/agents/waiting': () => ({ body: { items: [] } }) });
+    expect(screen.getByRole('status', { name: agents.waitingLoading })).toBeTruthy();
+    await screen.findByText(agents.waitingEmpty);
+  });
+
+  it('first-load failure shows a retry that recovers', async () => {
+    let fail = true;
+    const { user } = show({
+      'GET /api/agents/waiting': () => (fail ? { status: 500, body: { error: 'x' } } : { body: { items: [item('a', { kind: 'you' })] } }),
+    });
+    expect(await screen.findByText(agents.waitingLoadError)).toBeTruthy();
+    fail = false;
+    await user.click(screen.getByRole('button', { name: agentsCommon.retry }));
+    expect(await screen.findByText('Needs a')).toBeTruthy();
+  });
+
+  it('a failed refetch keeps the rows and shows a banner', async () => {
+    let fail = false;
+    const { queryClient } = show({
+      'GET /api/agents/waiting': () => (fail ? { status: 500, body: { error: 'x' } } : { body: { items: [item('a', { kind: 'you' })] } }),
+    });
+    await screen.findByText('Needs a');
+    fail = true;
+    await queryClient.refetchQueries({ queryKey: agentsKeys.waiting });
+    expect(await screen.findByText(agentsCommon.refreshFailed)).toBeTruthy();
+    expect(screen.getByText('Needs a')).toBeTruthy();
+    expect(screen.queryByText(agents.waitingLoadError)).toBeNull();
+  });
+
+  it('writes times in the company time zone', async () => {
+    show(
+      { 'GET /api/agents/waiting': () => ({ body: { items: [item('a', { kind: 'you' }, { since: '2026-10-12T20:05:00Z' })] } }) },
+      'America/Los_Angeles',
+    );
+    expect(await screen.findByText('Oct 12, 1:05 PM')).toBeTruthy();
   });
 });

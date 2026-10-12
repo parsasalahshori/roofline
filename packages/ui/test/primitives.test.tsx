@@ -245,6 +245,17 @@ describe('Toggle', () => {
 });
 
 describe('Field', () => {
+  it('hides the label visually but keeps it tied to the input', () => {
+    render(<Field label="Minutes" labelHidden />);
+    expect(screen.getByLabelText('Minutes').tagName).toBe('INPUT');
+    expect(screen.getByText('Minutes')).toHaveClass('visually-hidden');
+  });
+
+  it('shows the label by default', () => {
+    render(<Field label="Minutes" />);
+    expect(screen.getByText('Minutes')).not.toHaveClass('visually-hidden');
+  });
+
   it('ties the label to the input', () => {
     render(<Field label="Email" type="email" />);
     const input = screen.getByLabelText('Email');
