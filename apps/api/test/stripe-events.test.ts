@@ -83,12 +83,17 @@ describe('billingUpdateFor', () => {
     expect(update?.set.status).toBe('past_due');
   });
 
-  it('maps subscription deleted to canceled', () => {
+  it('maps subscription deleted to canceled and clears the stored subscription id, only for that subscription', () => {
     const update = billingUpdateFor(
       eventObj('customer.subscription.deleted', { id: 'sub_4', customer: 'cus_D', status: 'canceled' }),
     );
-    expect(update?.set).toEqual({ status: 'canceled' });
-    expect(update?.customerId).toBe('cus_D');
+    expect(update).toEqual({
+      customerId: 'cus_D',
+      eventId: 'evt_1',
+      eventCreated: new Date(1_800_000_000 * 1000),
+      set: { status: 'canceled', stripeSubscriptionId: null },
+      onlyIfSubscription: 'sub_4',
+    });
     expect(update).not.toHaveProperty('onlyIfPastDue');
   });
 

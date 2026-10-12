@@ -9,7 +9,7 @@ import { hasPaymentMethod } from '../billing/guards.ts';
 import { billingConfig } from '../billing/plans.ts';
 import { AppError } from '../errors.ts';
 import { requireCapability } from '../permissions.ts';
-import { BillingUnavailableError } from '../providers/billing.ts';
+import { BillingRefusedError, BillingUnavailableError } from '../providers/billing.ts';
 import { parse } from '../validate.ts';
 
 // Messages for the billing routes (Ruling 33): plain English, shown as they are.
@@ -19,9 +19,10 @@ const NO_CARD_YET = 'Add a card first.';
 const NO_SUBSCRIPTION = 'Pick a plan first.';
 const NOT_CONFIGURED = "Billing isn't set up yet.";
 const UNREACHABLE = "We couldn't reach the payment service. Try again in a minute.";
+const REFUSED = 'The payment service turned this down. Check your plan details or try again later.';
 
-/** A trial ending sooner than this is billed at checkout instead of being kept (Ruling 7). */
-const TRIAL_KEEP_MS = 48 * 60 * 60 * 1000;
+/** Stripe's 48-hour minimum for subscription_data.trial_end, plus an hour for clock skew and slow requests (Ruling 7). */
+const TRIAL_KEEP_MS = 49 * 60 * 60 * 1000;
 
 const PlanBody = z.object({
   planKey: z.string({ error: UNKNOWN_PLAN }),
@@ -39,12 +40,16 @@ function requireConfigured(deps: AppDeps): void {
   if (!deps.billing.configured) throw new AppError(503, NOT_CONFIGURED);
 }
 
-/** Runs a provider call; a provider that is unreachable becomes a 503 with a plain message. */
+/**
+ * Runs a provider call. A provider that is unreachable becomes a 503 and a refusal becomes a 502,
+ * both with a plain message; anything else is a real bug and is rethrown (a 500).
+ */
 async function guarded<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
     if (err instanceof BillingUnavailableError) throw new AppError(503, UNREACHABLE);
+    if (err instanceof BillingRefusedError) throw new AppError(502, REFUSED);
     throw err;
   }
 }
