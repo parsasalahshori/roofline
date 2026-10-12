@@ -79,7 +79,9 @@ export type VoiceNumberToSet = {
 
 /**
  * Active company_phone_numbers with 'voice' and without the 'voice_url' marker, whose company has a
- * texting registration with a subaccount. Oldest first. `companyId` null means every company.
+ * texting registration with a subaccount. Least recently touched first: a failed attempt stamps
+ * updated_at (markVoiceUrlAttempt), so numbers that keep failing go to the back of the queue and never
+ * starve newer ones. `companyId` null means every company.
  */
 export async function numbersNeedingVoiceUrl(system: Db, companyId: string | null, limit: number): Promise<VoiceNumberToSet[]> {
   const rows = await system
@@ -103,7 +105,7 @@ export async function numbersNeedingVoiceUrl(system: Db, companyId: string | nul
         companyId === null ? undefined : eq(companyPhoneNumbers.companyId, companyId),
       ),
     )
-    .orderBy(asc(companyPhoneNumbers.createdAt), asc(companyPhoneNumbers.id))
+    .orderBy(asc(companyPhoneNumbers.updatedAt), asc(companyPhoneNumbers.id))
     .limit(limit);
   const out: VoiceNumberToSet[] = [];
   for (const r of rows) {
@@ -125,4 +127,9 @@ export async function markVoiceUrlSet(system: Db, numberId: string): Promise<voi
     .update(companyPhoneNumbers)
     .set({ capabilities: sql`array_append(${companyPhoneNumbers.capabilities}, ${VOICE_URL_MARKER})` })
     .where(and(eq(companyPhoneNumbers.id, numberId), sql`not (${VOICE_URL_MARKER} = any(${companyPhoneNumbers.capabilities}))`));
+}
+
+/** Records a failed voice URL attempt on a number (updated_at = now), so the next pass tries others first. */
+export async function markVoiceUrlAttempt(system: Db, numberId: string, now: Date): Promise<void> {
+  await system.update(companyPhoneNumbers).set({ updatedAt: now }).where(eq(companyPhoneNumbers.id, numberId));
 }
