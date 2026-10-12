@@ -62,6 +62,13 @@ async function setup() {
 }
 
 describe('lookup_my_jobs', () => {
+  test('a verified lookup shows each job and its property id', async () => {
+    const { ids, tool } = await setup();
+    const r = await lookupMyJobs(tool('verified'), {});
+    expect(r.ok).toBe(true);
+    expect(r.shownIds).toEqual(expect.arrayContaining([ids.jobId, ids.propertyId]));
+  });
+
   test('a phone-matched caller hears only the weekday of the next appointment', async () => {
     const { tool } = await setup();
     const r = await lookupMyJobs(tool('matched'), {});
@@ -78,7 +85,7 @@ describe('lookup_my_jobs', () => {
     expect(r.forModel).toContain(`Job ${ids.jobId} at 123 Elm St`);
     expect(r.forModel).toContain('inspection stage');
     expect(r.forModel).toMatch(/Next: (inspection or )?visit on /);
-    expect(r.shownIds).toEqual([ids.jobId]);
+    expect(r.shownIds).toEqual([ids.jobId, ids.propertyId]);
   });
 
   test('no customer is a plain refusal', async () => {

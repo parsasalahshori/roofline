@@ -1,5 +1,6 @@
-import { matchCustomersByPhone, verifyCustomerByNameStreet, withTenant, type TenantContext } from '@roofline/db';
+import { matchCustomersByPhone, verifyCustomerByNameStreet, withTenant } from '@roofline/db';
 import type { ConversationState, ToolContext, ToolHandler } from '../engine-types.ts';
+import { systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 7: who is calling. identifyCaller matches the caller's phone number to exactly one customer
@@ -12,13 +13,9 @@ const MAX_FAILURES = 3;
 /** Failed verification attempts per conversation, in memory only. */
 const failures = new WeakMap<ConversationState, number>();
 
-function tenantCtx(companyId: string): TenantContext {
-  return { companyId, userId: null, role: 'system', canApproveSpend: false };
-}
-
 /** Called at conversation start: exactly one customer with this phone number sets customerId and 'matched'. */
 export async function identifyCaller(ctx: ToolContext): Promise<void> {
-  const tctx = tenantCtx(ctx.companyId);
+  const tctx = systemCtx(ctx.companyId);
   const matches = await withTenant(ctx.deps.pools, tctx, (tx) => matchCustomersByPhone(tx, tctx, ctx.conversation.phone));
   const only = matches.length === 1 ? matches[0] : undefined;
   if (only && ctx.conversation.identity !== 'verified') {
@@ -32,7 +29,7 @@ export const verifyCaller: ToolHandler<'verify_caller'> = async (ctx, input) => 
   if (conversation.identity === 'verified' && conversation.customerId !== null) {
     return { ok: true, forModel: 'The caller is already verified.' };
   }
-  const tctx = tenantCtx(ctx.companyId);
+  const tctx = systemCtx(ctx.companyId);
   const candidates = await withTenant(ctx.deps.pools, tctx, async (tx) => {
     if (conversation.customerId !== null) return [conversation.customerId];
     const matches = await matchCustomersByPhone(tx, tctx, conversation.phone);

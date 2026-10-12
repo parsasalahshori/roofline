@@ -147,3 +147,10 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
     - `conversation_turns` app_system SELECT is narrowed to (id, company_id, at).
     - Voice hooks answer 403 to a request with no X-Twilio-Signature before any lookup.
   - **Rule for every later grant change:** a Drizzle update on a table that uses the timestamps helper also needs UPDATE on updated_at.
+- 2026-10-12: **Task 19 merged** (d1-t19 11edc89 from a7b8492; CI 38277873842 green on 698c010, plus the report).
+  - What it does: tools are wired through tools/index.ts (handlers filtered by channel and settings) into the relay and the text runner; call-paths.test covers 8 scenarios; carries EA, system-ctx, propertyIds in shownIds, transfer urgency and engine counters are done.
+  - Accepted beyond the brief: the engine hands off on the counters alone, before calling Opus.
+  - Minors moved to RC:
+    - (a) ASK_PERSON_INTENTS and 'not_understood' are guessed router labels, and the frozen ROUTER_PROMPT doesn't ask for them. RC adds the labels to the router's json_schema enum (Haiku format), not to the frozen prompt text.
+    - (b) transfer reason 'asked' plus the router intent can count one ask twice in a turn; count once.
+    - (c) drop the times.ts systemCtx re-export.
