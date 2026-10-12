@@ -8,6 +8,12 @@ export type EmailDispatchSummary = { sent: number; scheduled: number; blocked: n
 
 const NO_ADDRESS: TextState = { status: 'blocked', blockRule: 'contact', blockReason: 'No email address on file.' };
 
+const ADDRESS_CHANGED: TextState = {
+  status: 'blocked',
+  blockRule: 'contact',
+  blockReason: "This customer's email address changed after this email was written, so we did not send it.",
+};
+
 /** Sends the company's due `scheduled` email rows (channel 'email'), re-gating each one. */
 export async function dispatchEmail(deps: AppDeps, ctx: TenantContext, now: Date): Promise<EmailDispatchSummary> {
   const summary: EmailDispatchSummary = { sent: 0, scheduled: 0, blocked: 0, failed: 0 };
@@ -54,7 +60,10 @@ async function dispatchNextEmail(
       { customerId: row.customerId, subject, body: row.body, rendered: true, fields: undefined, companyStormId: null, dedupeKey: row.dedupeKey },
       at,
     );
-    const state: TextState = built ? emailStateFor(built, at) : NO_ADDRESS;
+    // The stored body's unsubscribe link opts out the old address; never send it to a different one.
+    const changed =
+      built !== null && toEmail !== '' && built.toEmail !== null && built.toEmail !== '' && built.toEmail.toLowerCase() !== toEmail.toLowerCase();
+    const state: TextState = changed ? ADDRESS_CHANGED : built ? emailStateFor(built, at) : NO_ADDRESS;
     const to = built?.toEmail ?? toEmail;
     if (!(await updateScheduledEmail(tx, ctx, row.id, { toEmail: to, subject, body: row.body }, state, at))) return { skipped: true as const };
     if (state.status !== 'queued' || !built) return { state, mail: null };

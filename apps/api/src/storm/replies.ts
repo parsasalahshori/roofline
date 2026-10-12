@@ -13,10 +13,13 @@ import { companies, createJob, customers, jobs, properties, updateJob, type Tena
 /** A storm text older than this no longer takes a YES. */
 export const STORM_REPLY_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
-/** The newest storm text sent to the customer: which storm, and when it went out. */
+/**
+ * The newest storm text actually sent to the customer (status sent or delivered; blocked, scheduled
+ * and failed texts never reached them): which storm, and its sent_at.
+ */
 async function newestStormText(tx: Tx, customerId: string): Promise<{ stormId: string; at: Date } | null> {
   const result = await tx.execute(sql`
-    select cs.storm_id as storm_id, coalesce(m.sent_at, m.created_at) as at
+    select cs.storm_id as storm_id, m.sent_at as at
     from messages m
     join agent_task_steps s on s.id = m.step_id
     join agent_tasks t on t.id = s.task_id
@@ -25,17 +28,18 @@ async function newestStormText(tx: Tx, customerId: string): Promise<{ stormId: s
       and m.direction = 'out'
       and m.channel = 'sms'
       and m.step_id is not null
+      and m.status in ('sent', 'delivered')
       and s.type = 'send_sms_batch'
       and t.kind = 'storm_plan'
       and t.subject_type = 'company_storm'
-    order by coalesce(m.sent_at, m.created_at) desc, m.id desc
+    order by m.sent_at desc, m.id desc
     limit 1`);
   const row = result.rows[0];
   if (!row) return null;
   return { stormId: row.storm_id as string, at: new Date(row.at as string | Date) };
 }
 
-/** Whether the customer already texted a YES after that storm text (not counting this message). */
+/** Whether the customer already texted a YES after that sent storm text (the anchor is its sent_at) (not counting this message). */
 async function repliedYesBefore(tx: Tx, customerId: string, messageId: string, after: Date): Promise<boolean> {
   const result = await tx.execute(sql`
     select body from messages

@@ -429,6 +429,42 @@ function changed(step: StepRow, ctx: TenantContext): AppError {
  *   before and after of `{ enabled, payload, version }`.
  * - Returns the step as saved, payload included (the editor refills from it).
  */
+/** The kind of task the Storm Scout plan builder makes (storm/plan.ts). */
+const STORM_PLAN_KIND = 'storm_plan';
+
+const STORM_MESSAGES = {
+  stayMarketing: "Storm texts and emails stay marketing messages, so that can't be changed.",
+  keyLocked: "The message key for a storm plan can't be changed.",
+  stormLocked: "The storm for a storm plan email can't be changed.",
+  adCeiling: "You can lower the ad budget or days, but not raise them above what was drafted.",
+} as const;
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+/**
+ * Edits to a storm plan step keep the rules the plan was drafted under: texts and emails stay
+ * marketing, their dedupe key and storm stay put, and an ad can be lowered but not raised.
+ * Compares the stored payload with the already-checked new one; other task kinds are not touched.
+ */
+function keepStormRules(type: string, stored: Record<string, unknown>, next: Record<string, unknown>): void {
+  if (type === 'send_sms_batch' || type === 'send_email_batch') {
+    if (next.purpose !== 'marketing') throw new AppError(400, STORM_MESSAGES.stayMarketing, 'payload.purpose');
+    if (next.dedupePrefix !== stored.dedupePrefix) throw new AppError(400, STORM_MESSAGES.keyLocked, 'payload.dedupePrefix');
+    if (type === 'send_email_batch' && next.companyStormId !== stored.companyStormId) {
+      throw new AppError(400, STORM_MESSAGES.stormLocked, 'payload.companyStormId');
+    }
+  } else if (type === 'create_ad_campaign') {
+    for (const field of ['maxSpendCents', 'days'] as const) {
+      const was = stored[field];
+      const now = next[field];
+      if (typeof was === 'number' && typeof now === 'number' && now > was) {
+        throw new AppError(400, STORM_MESSAGES.adCeiling, `payload.${field}`);
+      }
+    }
+  }
+}
+
 export async function editStep(
   tx: Tx,
   ctx: TenantContext,
@@ -451,6 +487,7 @@ export async function editStep(
   if (edit.payload !== undefined) {
     if (!isStepType(step.type)) throw new Error(`Step ${step.id} has a type this build does not know.`);
     checked = await checkPayload(tx, ctx, step.type, edit.payload, await companyNameOf(tx, ctx), 'payload');
+    if (task.kind === STORM_PLAN_KIND) keepStormRules(step.type, asRecord(step.payload), checked.payload);
   }
 
   const updated = await updatePendingStep(

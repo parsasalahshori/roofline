@@ -42,6 +42,24 @@ export async function claimNowAlert(tx: Tx, companyStormId: string, now: Date): 
   return result.rows.length > 0;
 }
 
+/** Undoes claimNowAlert (every send failed), so the next match alerts again. */
+export async function releaseNowAlert(tx: Tx, companyStormId: string): Promise<void> {
+  await tx.execute(sql`
+    update company_storms set alerted_at = null, updated_at = now()
+    where id = ${companyStormId}::uuid
+  `);
+}
+
+/** Ids of the tenant's matched company storms (new or planned) whose "now" alert was never claimed. */
+export async function listUnalertedMatched(tx: Tx): Promise<string[]> {
+  const result = await tx.execute(sql`
+    select id from company_storms
+    where alerted_at is null and status in ('new', 'planned')
+    order by created_at, id
+  `);
+  return (result.rows as { id: string }[]).map((r) => r.id);
+}
+
 /** Active owner and office members whose storm_alert_email is true, ordered by email. */
 export async function listAlertRecipients(tx: Tx): Promise<AlertRecipient[]> {
   const result = await tx.execute(sql`
