@@ -74,6 +74,26 @@ describe('the timeline', () => {
     expect(page.items.some((i) => i.kind === 'note' && i.summary === 'Wants metal roof')).toBe(true);
   });
 
+  test('items written at the same instant are never skipped across pages', async () => {
+    const owner = await who.as('owner');
+    const customer = await mustCreate(owner, '/api/customers', { displayName: 'Same Instant' });
+    tick();
+    // Three notes at one clock instant: a page boundary falls inside the tie.
+    for (let i = 1; i <= 3; i++) {
+      expect((await owner.post('/api/notes').send({ subjectType: 'customer', subjectId: customer.id, body: `Tie ${i}` })).status).toBe(201);
+    }
+    const all = (await owner.get(`/api/timeline?customerId=${customer.id}&limit=100`)).body as TimelinePage;
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const url: string = `/api/timeline?customerId=${customer.id}&limit=2${cursor === null ? '' : `&before=${encodeURIComponent(cursor)}`}`;
+      const page = (await owner.get(url)).body as TimelinePage;
+      seen.push(...page.items.map((i) => i.id));
+      cursor = page.nextBefore;
+    } while (cursor !== null);
+    expect(seen).toEqual(all.items.map((i) => i.id));
+  });
+
   test('pages with before: no overlap, a string cursor, and the last page has none', async () => {
     const owner = await who.as('owner');
     const customer = await mustCreate(owner, '/api/customers', { displayName: 'Paging Customer' });

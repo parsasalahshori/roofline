@@ -5,13 +5,21 @@ import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { limitParam, parse, UUID } from '../validate.ts';
 
-/** `?before=` must be a date the server can read; anything else is a bad request. */
+/** `?before=` is a page's `nextBefore` (`<iso>~<id>`) or a plain date; anything else is a bad request. */
+const CURSOR = /^([^~]+)(?:~([0-9a-f-]{36}))?$/i;
+const readCursor = (value: string): { at: Date; id: string | null } | null => {
+  const m = CURSOR.exec(value);
+  if (!m || Number.isNaN(Date.parse(m[1]!))) return null;
+  const id = m[2]?.toLowerCase() ?? null;
+  if (id !== null && !UUID.test(id)) return null;
+  return { at: new Date(m[1]!), id };
+};
 const TimelineParams = z.object({
   customerId: z.string({ error: MESSAGES.checkField }).optional(),
   jobId: z.string({ error: MESSAGES.checkField }).optional(),
   before: z
     .string({ error: MESSAGES.checkField })
-    .refine((value) => !Number.isNaN(Date.parse(value)), MESSAGES.checkField)
+    .refine((value) => readCursor(value) !== null, MESSAGES.checkField)
     .optional(),
   limit: limitParam,
 });
@@ -22,6 +30,12 @@ const TimelineParams = z.object({
  * - A subject the member may not see (another company's, out of their scope, or missing) is a 404,
  *   the same as an id that does not exist. A malformed id is a 404 too.
  */
+function cursorQuery(value: string): Pick<TimelineQuery, 'before' | 'beforeId'> {
+  const cursor = readCursor(value);
+  if (cursor === null) return {};
+  return cursor.id === null ? { before: cursor.at } : { before: cursor.at, beforeId: cursor.id };
+}
+
 export function timelineRoutes(deps: AppDeps): Router {
   const { pools } = deps;
   const router = Router();
@@ -38,7 +52,7 @@ export function timelineRoutes(deps: AppDeps): Router {
 
     const q: TimelineQuery = {
       ...(byCustomer ? { customerId: lower } : { jobId: lower }),
-      ...(query.before !== undefined && { before: new Date(query.before) }),
+      ...(query.before !== undefined && cursorQuery(query.before)),
       ...(query.limit !== undefined && { limit: query.limit }),
     };
     const page = await withTenant(pools, ctx, async (tx) =>

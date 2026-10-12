@@ -18,7 +18,11 @@ export const AGENT_NAMES: Record<Agent, string> = {
   system: 'Roofline',
 };
 
-export type TimelineQuery = { customerId?: string; jobId?: string; before?: Date; limit?: number };
+/**
+ * `before`/`beforeId` is the cursor: items strictly older than (before, beforeId) in the page order
+ * (time to the millisecond, then id, both descending). `beforeId` is optional for a plain date.
+ */
+export type TimelineQuery = { customerId?: string; jobId?: string; before?: Date; beforeId?: string; limit?: number };
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
@@ -83,8 +87,16 @@ type TimelineRow = {
   status: string | null;
 };
 
-const beforeClause = (at: SQL, before: string | null): SQL =>
-  before === null ? sql`` : sql` and ${at} < ${before}::timestamptz`;
+type Cursor = { at: string; id: string | null } | null;
+
+/** Rows after the cursor in page order. Times compare to the millisecond, as the cursor carries them. */
+const beforeClause = (at: SQL, id: SQL, before: Cursor): SQL => {
+  if (before === null) return sql``;
+  const ms = sql`date_trunc('milliseconds', ${at})`;
+  return before.id === null
+    ? sql` and ${ms} < ${before.at}::timestamptz`
+    : sql` and (${ms}, ${id}) < (${before.at}::timestamptz, ${before.id}::uuid)`;
+};
 
 /** The ids of the jobs the member may see that match `where`. Reps are held to jobScope; the owner and office see all. */
 function visibleJobIds(ctx: TenantContext, where: SQL): SQL {
@@ -93,7 +105,7 @@ function visibleJobIds(ctx: TenantContext, where: SQL): SQL {
 }
 
 /** The customer's activities (on the customer, its addresses and its visible jobs) and its texts. */
-function customerTimeline(ctx: TenantContext, customerId: string, before: string | null, fetch: number): SQL {
+function customerTimeline(ctx: TenantContext, customerId: string, before: Cursor, fetch: number): SQL {
   const jobIds = visibleJobIds(ctx, sql`${jobs.customerId} = ${customerId}`);
   const activityArm = sql`
     select a.id, a.at as item_at, 'activity'::text as item_type, a.kind, a.summary,
@@ -105,7 +117,7 @@ function customerTimeline(ctx: TenantContext, customerId: string, before: string
      where ((a.subject_type = 'customer' and a.subject_id = ${customerId})
          or (a.subject_type = 'property' and a.subject_id in (select p.id from properties p where p.customer_id = ${customerId}))
          or (a.subject_type = 'job' and a.subject_id in (${jobIds})))
-       ${beforeClause(sql`a.at`, before)}`;
+       ${beforeClause(sql`a.at`, sql`a.id`, before)}`;
   const textArm = sql`
     select m.id, coalesce(m.sent_at, m.created_at) as item_at, 'text'::text as item_type,
            case when m.direction = 'in' then 'text.in' else 'text.out' end as kind,
@@ -115,12 +127,12 @@ function customerTimeline(ctx: TenantContext, customerId: string, before: string
            m.direction, m.body, m.status
       from messages m
      where m.customer_id = ${customerId}
-       ${beforeClause(sql`coalesce(m.sent_at, m.created_at)`, before)}`;
+       ${beforeClause(sql`coalesce(m.sent_at, m.created_at)`, sql`m.id`, before)}`;
   return merged(activityArm, textArm, fetch);
 }
 
 /** The job's activities (on the job and its address) and the texts about it: from its agent tasks, or to its customer since it was created. */
-function jobTimeline(jobId: string, before: string | null, fetch: number): SQL {
+function jobTimeline(jobId: string, before: Cursor, fetch: number): SQL {
   const activityArm = sql`
     select a.id, a.at as item_at, 'activity'::text as item_type, a.kind, a.summary,
            a.actor_type, a.actor_agent, cm.name as actor_name,
@@ -130,7 +142,7 @@ function jobTimeline(jobId: string, before: string | null, fetch: number): SQL {
       left join company_members cm on cm.user_id = a.actor_user_id
      where ((a.subject_type = 'job' and a.subject_id = ${jobId})
          or (a.subject_type = 'property' and a.subject_id in (select j.property_id from jobs j where j.id = ${jobId})))
-       ${beforeClause(sql`a.at`, before)}`;
+       ${beforeClause(sql`a.at`, sql`a.id`, before)}`;
   const textArm = sql`
     select m.id, coalesce(m.sent_at, m.created_at) as item_at, 'text'::text as item_type,
            case when m.direction = 'in' then 'text.in' else 'text.out' end as kind,
@@ -145,15 +157,15 @@ function jobTimeline(jobId: string, before: string | null, fetch: number): SQL {
                where t.subject_type = 'job' and t.subject_id = ${jobId}))
          or (m.customer_id = (select j.customer_id from jobs j where j.id = ${jobId})
              and m.created_at >= (select j.created_at from jobs j where j.id = ${jobId})))
-       ${beforeClause(sql`coalesce(m.sent_at, m.created_at)`, before)}`;
+       ${beforeClause(sql`coalesce(m.sent_at, m.created_at)`, sql`m.id`, before)}`;
   return merged(activityArm, textArm, fetch);
 }
 
-/** One UNION ALL, newest first (ties broken by id), capped at `fetch` rows. */
+/** One UNION ALL, newest first to the millisecond (ties broken by id, so the cursor never skips a row), capped at `fetch` rows. */
 function merged(activityArm: SQL, textArm: SQL, fetch: number): SQL {
   return sql`
     select * from (${activityArm} union all ${textArm}) t
-     order by t.item_at desc, t.id desc
+     order by date_trunc('milliseconds', t.item_at) desc, t.id desc
      limit ${fetch}`;
 }
 
@@ -211,7 +223,7 @@ export async function timelinePage(tx: Tx, ctx: TenantContext, q: TimelineQuery)
   const subject = subjectOf(q);
   if (q.before !== undefined && Number.isNaN(q.before.getTime())) throw new Error('before must be a valid date.');
   const limit = clampLimit(q.limit);
-  const before = q.before === undefined ? null : q.before.toISOString();
+  const before: Cursor = q.before === undefined ? null : { at: q.before.toISOString(), id: q.beforeId ?? null };
   const query =
     subject.type === 'customer'
       ? customerTimeline(ctx, subject.id, before, limit + 1)
@@ -222,6 +234,7 @@ export async function timelinePage(tx: Tx, ctx: TenantContext, q: TimelineQuery)
   const last = items.at(-1);
   return {
     items,
-    nextBefore: rows.length > limit && last !== undefined ? last.at : null,
+    // An opaque cursor: the last item's time and id (`<iso>~<id>`), read back by the timeline route.
+    nextBefore: rows.length > limit && last !== undefined ? `${last.at}~${last.id}` : null,
   };
 }

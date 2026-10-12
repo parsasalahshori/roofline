@@ -1,11 +1,11 @@
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   type CustomerView,
+  daysInStage as daysInStageOf,
   type HomeSummary,
+  isStuck,
   isTimeZone,
   type JobCard,
-  type JobStage,
-  localDate,
   type MemberRef,
 } from '@roofline/shared';
 import { companies, companySettings, jobs, properties, type CustomerPhone } from '../schema/index.ts';
@@ -20,17 +20,6 @@ const FALLBACK_ZONE = 'America/Chicago';
 const DEFAULT_STUCK_AFTER_DAYS = 14;
 /** How many scheduled appointments the customer screen lists. */
 const UPCOMING_LIMIT = 5;
-/** The stages that can be stuck (spec Decision 4). */
-const STUCK_STAGES: readonly JobStage[] = ['lead', 'inspection', 'proposal'];
-const DAY_MS = 86_400_000;
-
-/** Whole calendar days from `from` to `to` (both `YYYY-MM-DD` in the company zone). */
-function wholeDays(from: string, to: string): number {
-  const [fy, fm, fd] = from.split('-').map(Number);
-  const [ty, tm, td] = to.split('-').map(Number);
-  return Math.round((Date.UTC(ty!, tm! - 1, td!) - Date.UTC(fy!, fm! - 1, fd!)) / DAY_MS);
-}
-
 /** The company's zone and stuck threshold, read once per view. */
 async function companyFacts(tx: Tx, ctx: TenantContext): Promise<{ zone: string; stuckAfterDays: number }> {
   const [company] = await tx.select({ timezone: companies.timezone }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
@@ -55,7 +44,8 @@ function jobCardOf(
   members: ReadonlyMap<string, string>,
 ): JobCard {
   const { job } = row;
-  const daysInStage = wholeDays(localDate(job.stageChangedAt, facts.zone), localDate(facts.now, facts.zone));
+  // The shared rules, so the customer screen and the board agree on days in stage and stuck.
+  const daysInStage = daysInStageOf(job.stageChangedAt, facts.now, facts.zone);
   const assignedName = job.assignedUserId === null ? undefined : members.get(job.assignedUserId);
   const assigned: MemberRef | null =
     job.assignedUserId !== null && assignedName !== undefined ? { userId: job.assignedUserId, name: assignedName } : null;
@@ -69,7 +59,7 @@ function jobCardOf(
     valueCents: canSeeJobValue(ctx, job) ? job.valueCents : null,
     assigned,
     daysInStage,
-    stuck: STUCK_STAGES.includes(job.stage) && daysInStage > facts.stuckAfterDays,
+    stuck: isStuck(job.stage, daysInStage, facts.stuckAfterDays),
     nextStep: job.nextStep,
     nextStepOn: job.nextStepOn,
     updatedAt: job.updatedAt.toISOString(),
