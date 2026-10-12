@@ -126,6 +126,23 @@ describe('schema', () => {
     }
   });
 
+  test('D1 tables are tenant tables with RLS forced', async () => {
+    const d1Tables = ['conversations', 'calls', 'conversation_turns', 'claim_intakes', 'blocked_numbers'] as const;
+    expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...d1Tables]));
+    for (const table of d1Tables) {
+      const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+        `select relrowsecurity, relforcerowsecurity from pg_class where oid = $1::regclass`,
+        [`public.${table}`],
+      );
+      expect(cls, table).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+      const policies = await ownerQuery<{ policyname: string }>(
+        `select policyname from pg_policies where schemaname = 'public' and tablename = $1`,
+        [table],
+      );
+      expect(policies.map((p) => p.policyname), table).toContain('tenant_isolation');
+    }
+  });
+
   test('G1 tables are tenant tables with RLS forced', async () => {
     const g1Tables = ['claims', 'claim_events', 'follow_up_log'] as const;
     expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...g1Tables]));
@@ -973,5 +990,141 @@ describe('seedTwoCompanies', () => {
     await resetDb(urls.owner);
     const s = await seedTwoCompanies(urls.owner);
     expect(await count('memberships', s.a.companyId)).toBe(4);
+  });
+});
+
+describe('D1 constraints', () => {
+  /** A voice conversation for a company, for rows that link to one. */
+  async function voiceConversation(companyId: string, phone: string): Promise<string> {
+    const [row] = await ownerQuery<{ id: string }>(
+      `insert into conversations (company_id, channel, phone_e164, company_number_e164)
+       values ($1, 'voice', $2, '+14025550100') returning id`,
+      [companyId, phone],
+    );
+    return row!.id;
+  }
+
+  test('call_sid is unique across companies', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const sid = `CA${'c'.repeat(32)}`;
+    const insert = `insert into calls (company_id, call_sid, from_e164, to_e164) values ($1, $2, '+14025550101', '+14025550100')`;
+    await ownerQuery(insert, [s.a.companyId, sid]);
+    const err = await rejected(insert, [s.b.companyId, sid]);
+    expect(err.code).toBe('23505');
+  });
+
+  test('one active SMS conversation per company and number; ended, voice and other-company rows are allowed', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const sms = `insert into conversations (company_id, channel, phone_e164, company_number_e164, status)
+      values ($1, 'sms', '+14025550102', '+14025550100', $2)`;
+    await ownerQuery(sms, [s.a.companyId, 'active']);
+    const err = await rejected(sms, [s.a.companyId, 'active']);
+    expect(err.code).toBe('23505');
+    await ownerQuery(sms, [s.a.companyId, 'ended']);
+    await ownerQuery(
+      `insert into conversations (company_id, channel, phone_e164, company_number_e164)
+       values ($1, 'voice', '+14025550102', '+14025550100')`,
+      [s.a.companyId],
+    );
+    await ownerQuery(sms, [s.b.companyId, 'active']);
+  });
+
+  test('conversations.channel accepts only voice and sms', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const err = await rejected(
+      `insert into conversations (company_id, channel, phone_e164, company_number_e164)
+       values ($1, 'pigeon', '+14025550102', '+14025550100')`,
+      [s.a.companyId],
+    );
+    expect(err.code).toBe('23514');
+  });
+
+  test('a conversation turn position is unique within its conversation', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const conversation = await voiceConversation(s.a.companyId, '+14025550103');
+    const insert = `insert into conversation_turns (company_id, conversation_id, position, speaker, text)
+      values ($1, $2, $3, 'caller', 'Hi')`;
+    await ownerQuery(insert, [s.a.companyId, conversation, 1]);
+    const err = await rejected(insert, [s.a.companyId, conversation, 1]);
+    expect(err.code).toBe('23505');
+    await ownerQuery(insert, [s.a.companyId, conversation, 2]);
+  });
+
+  test('a call must point at a conversation of its own company', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const conversationA = await voiceConversation(s.a.companyId, '+14025550104');
+    const insert = `insert into calls (company_id, call_sid, from_e164, to_e164, conversation_id)
+      values ($1, $2, '+14025550105', '+14025550100', $3)`;
+    const err = await rejected(insert, [s.b.companyId, `CA${'d'.repeat(32)}`, conversationA]);
+    expect(err.code).toBe('23503');
+    await ownerQuery(insert, [s.a.companyId, `CA${'e'.repeat(32)}`, conversationA]);
+  });
+
+  test('blocked numbers are unique per company, not across companies', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into blocked_numbers (company_id, e164) values ($1, '+14025550106')`;
+    await ownerQuery(insert, [s.a.companyId]);
+    const err = await rejected(insert, [s.a.companyId]);
+    expect(err.code).toBe('23505');
+    await ownerQuery(insert, [s.b.companyId]);
+  });
+
+  test('company_settings front desk CHECKs reject values outside their ranges', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const bad: [string, number][] = [
+      ['ring_team_first_seconds', 31],
+      ['recording_retention_days', 366],
+      ['transcript_retention_days', 29],
+      ['max_concurrent_ai_calls', 0],
+      ['max_concurrent_ai_calls', 11],
+    ];
+    for (const [column, value] of bad) {
+      const err = await rejected(`update company_settings set ${column} = $2 where company_id = $1`, [
+        s.a.companyId,
+        value,
+      ]);
+      expect(err.code, `${column} = ${value}`).toBe('23514');
+    }
+    // The edges of each range are accepted.
+    await ownerQuery(
+      `update company_settings set ring_team_first_seconds = 30, recording_retention_days = 365,
+         transcript_retention_days = 30, max_concurrent_ai_calls = 10 where company_id = $1`,
+      [s.a.companyId],
+    );
+    await ownerQuery(
+      `update company_settings set ring_team_first_seconds = 0, recording_retention_days = 0,
+         transcript_retention_days = 730, max_concurrent_ai_calls = 1 where company_id = $1`,
+      [s.a.companyId],
+    );
+  });
+
+  test('company_settings front desk defaults', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const rows = await ownerQuery(
+      `select front_desk_enabled, front_desk_texts, recording_retention_days, transcript_retention_days,
+              max_concurrent_ai_calls
+         from company_settings where company_id = $1`,
+      [s.a.companyId],
+    );
+    expect(rows).toEqual([
+      {
+        front_desk_enabled: false,
+        front_desk_texts: true,
+        recording_retention_days: 90,
+        transcript_retention_days: 365,
+        max_concurrent_ai_calls: 4,
+      },
+    ]);
+  });
+
+  test('appointments.confirmed_via accepts only call, text or manual', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into appointments (company_id, kind, starts_at, ends_at, confirmed_via)
+      values ($1, 'inspection', now() + interval '1 hour', now() + interval '2 hours', $2)`;
+    const err = await rejected(insert, [s.a.companyId, 'carrier_pigeon']);
+    expect(err.code).toBe('23514');
+    for (const via of ['call', 'text', 'manual']) {
+      await ownerQuery(insert, [s.a.companyId, via]);
+    }
   });
 });

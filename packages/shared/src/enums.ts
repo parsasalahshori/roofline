@@ -17,7 +17,7 @@ export const JOB_STAGE_LABELS: Record<JobStage, string> = {
   lost: 'Lost',
 };
 
-export const JOB_SOURCES = ['storm', 'call', 'text', 'web', 'referral', 'import', 'manual'] as const;
+export const JOB_SOURCES = ['storm', 'call', 'text', 'web', 'referral', 'import', 'manual', 'front_desk'] as const;
 export type JobSource = (typeof JOB_SOURCES)[number];
 
 export const CUSTOMER_SOURCES = ['import', 'manual', 'call', 'text', 'web', 'storm'] as const;

@@ -60,7 +60,6 @@ ALTER TABLE "company_settings" ADD COLUMN "review_delay_days" integer DEFAULT 3 
 ALTER TABLE "company_settings" ADD COLUMN "followup_reviews" boolean DEFAULT true NOT NULL;--> statement-breakpoint
 ALTER TABLE "company_settings" ADD COLUMN "followup_leads" boolean DEFAULT true NOT NULL;--> statement-breakpoint
 ALTER TABLE "company_settings" ADD COLUMN "followup_proposals" boolean DEFAULT true NOT NULL;--> statement-breakpoint
-ALTER TABLE "messages" ADD CONSTRAINT "messages_company_id_id_uniq" UNIQUE("company_id","id");--> statement-breakpoint
 ALTER TABLE "claim_events" ADD CONSTRAINT "claim_events_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "claim_events" ADD CONSTRAINT "claim_events_by_user_id_users_id_fk" FOREIGN KEY ("by_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "claim_events" ADD CONSTRAINT "claim_events_company_claim_fk" FOREIGN KEY ("company_id","claim_id") REFERENCES "public"."claims"("company_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

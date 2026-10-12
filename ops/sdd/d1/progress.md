@@ -55,3 +55,14 @@ Ruling DH: Task 20 edits `shell/Shell.tsx` once (the `'front-desk'` count from a
 - W7: T27.
 
 ## Tasks
+
+## Build log
+d1-front-desk started at c1-crm dfa9132 (F2, F3 34/37, C1 T1-T4) as parallel Track B (AGENTS.md "Parallel tracks"). Track lead: session_0166agXYjDy39PFyUw1BXtLR, reporting to the controller session_01LXtxzoHNoWz5SACkLF1d2p. Upstream checks: C1 `appointments` exists (T1); E1 `STORED_FILE_KINDS`/`stored_files` and S1 `door`/`storm_hits` do not exist yet.
+Ruling DI: D1 migrations are `0019_front_desk_schema.sql` (generated) and `0020_front_desk_grants_rls.sql` (custom) per Ruling AP; drizzle-kit generates them as 0015 on this base, so Task 1 renames the SQL, snapshot and journal tag (journal idx stays sequential) — cost if wrong: the controller re-orders the journal at track merge.
+Ruling DJ: Task 1 leaves `STORED_FILE_KINDS` alone (E1 has not built it). When `e1-estimator` merges into `d1-front-desk`, the merger adds `'call_recording'` to E1's `STORED_FILE_KINDS` and appends the `stored_files` kind CHECK swap to `0020` (pre-release, nothing deployed); Task 12 waits for E1's `ObjectStore` — cost if wrong: one migration edit at merge.
+Task 1 (wf_ce2e8d0c-fc0, contact 301; Haiku builders, launched before Ruling AQ reached this track): 94a84fc + CI fix b18462e (unique `messages (company_id, id)` for the `calls.text_back_message_id` composite FK) + report 703cd28. Review clean (0 rounds). CI 38194858730 green at b18462e (Platform, E2E, v1). Task 1: complete. Merged into d1-front-desk bbc2ef2; typecheck, lint clean; playwright-core 1.56.1 only.
+Ruling DK: `memberships` gets no app_tenant grant (global table, no RLS; a tenant grant would reach other companies' rows). `transfer_phone_e164`, `on_call_order`, `recording_ack_at` are written through `@roofline/db/system` on the app_system pool, which already has ALL on memberships (0002); Task 23's transfer-phone route uses a system function scoped to the session's own membership — cost if wrong: none.
+Ruling DL: 0020 also grants app_system SELECT on `calls.recording_key`/`recording_status` (the retention sweep needs the key to delete the file) — deliberate extension of the brief.
+Minors (deferred): rename the rls test 'app_system: column-level SELECT only on the scheduler columns' to 'column-level privileges only'; journal trailing newline.
+CI outage (Ruling AS): Actions was down 02:18Z-02:27Z (billing); the repo is now public, so never commit secrets, tokens or real customer data. Owner and controller confirmed the T1 merge push; Rulings DK, DL accepted by the controller; at the cross-track merge keep one `messages (company_id, id)` unique constraint with one name.
+Wave 2: T2 (Sonnet builders, Ruling AQ) and T3 branch from d1-t1 b18462e (= the merged T1 code).
