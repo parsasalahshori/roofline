@@ -60,8 +60,16 @@ export function relayConnectXml(
   );
 }
 
-/** Steps shared by every voice hook: route `To` -> company (404, empty body), then the signature (403). Returns the route or null (response already sent). */
+/**
+ * Steps shared by every voice hook: a request with no X-Twilio-Signature header is refused (403) before
+ * any lookup (Ruling BF, as hooks/twilio-registration.ts); then route `To` -> company (404, empty body),
+ * then the signature (403). Returns the route or null (response already sent).
+ */
 export async function routeVoice(deps: AppDeps, req: Request, res: Response): Promise<VoiceRoute | null> {
+  if (!req.get('X-Twilio-Signature')) {
+    res.status(403).end();
+    return null;
+  }
   const to = field(req, 'To');
   const route = to !== undefined && E164.test(to) ? await voiceRouteForNumber(deps.pools.system, to) : null;
   if (route === null) {
