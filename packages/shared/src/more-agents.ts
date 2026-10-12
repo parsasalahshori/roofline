@@ -24,3 +24,4 @@ export type FollowUpKind = (typeof FOLLOW_UP_KINDS)[number];
 
 export * from './follow-up-rules.ts';
 export * from './weather-claim-flow.ts';
+export * from './claims-guard.ts';

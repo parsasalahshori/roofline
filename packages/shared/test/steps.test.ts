@@ -22,13 +22,17 @@ function schemaMessage(type: StepType, value: unknown): string | null {
 }
 
 describe('the registry', () => {
-  test('lists the six step types with the approval class each one needs', () => {
+  test('lists the ten step types with the approval class each one needs', () => {
     expect(Object.keys(stepTypes).sort()).toEqual([
+      'build_claim_packet',
+      'create_appointment',
       'demo_message',
       'demo_noop',
       'demo_spend',
       'front_desk_call',
       'front_desk_texts',
+      'move_appointment',
+      'send_personal_texts',
       'send_sms_batch',
     ]);
     expect(Object.fromEntries(Object.entries(stepTypes).map(([k, d]) => [k, [d.type, d.approvalClass]]))).toEqual({
@@ -38,6 +42,10 @@ describe('the registry', () => {
       front_desk_call: ['front_desk_call', 'internal'],
       front_desk_texts: ['front_desk_texts', 'internal'],
       send_sms_batch: ['send_sms_batch', 'message'],
+      send_personal_texts: ['send_personal_texts', 'message'],
+      build_claim_packet: ['build_claim_packet', 'internal'],
+      create_appointment: ['create_appointment', 'internal'],
+      move_appointment: ['move_appointment', 'internal'],
     });
   });
 });
@@ -282,6 +290,7 @@ describe('minutesSaved', () => {
 
 describe('baselines, units and user-creatable step types', () => {
   const FRONT_DESK = ['front_desk_call', 'front_desk_texts'] as const;
+  const NOT_USER_CREATABLE = [...FRONT_DESK, 'send_personal_texts', 'build_claim_packet', 'create_appointment', 'move_appointment'] as const;
   const SAMPLES: [StepType, unknown, StepResult][] = [
     ['demo_noop', { label: 'Knock doors' }, { ok: 1 }],
     ['demo_message', { label: 'Text 31 customers' }, { sent: 3 }],
@@ -299,9 +308,9 @@ describe('baselines, units and user-creatable step types', () => {
     }
   });
 
-  test('only the two front desk types are not user-creatable, and the guard agrees', () => {
+  test('only the front desk and G1 agent types are not user-creatable, and the guard agrees', () => {
     for (const type of Object.keys(stepTypes) as StepType[]) {
-      const creatable = !(FRONT_DESK as readonly string[]).includes(type);
+      const creatable = !(NOT_USER_CREATABLE as readonly string[]).includes(type);
       expect(stepTypes[type].userCreatable, type).toBe(creatable);
       expect(isUserCreatableStepType(type), type).toBe(creatable);
     }
