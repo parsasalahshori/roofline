@@ -528,6 +528,7 @@ export const messages = pgTable(
     ...timestamps(),
   },
   (t) => [
+    unique('messages_company_id_id_uniq').on(t.companyId, t.id),
     foreignKey({
       name: 'messages_company_customer_fk',
       columns: [t.companyId, t.customerId],

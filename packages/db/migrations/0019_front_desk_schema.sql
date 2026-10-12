@@ -132,6 +132,7 @@ ALTER TABLE "company_settings" ADD COLUMN "transcript_retention_days" integer DE
 ALTER TABLE "company_settings" ADD COLUMN "max_concurrent_ai_calls" integer DEFAULT 4 NOT NULL;--> statement-breakpoint
 ALTER TABLE "company_settings" ADD COLUMN "forwarding_verified_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "messages" ADD COLUMN "conversation_id" uuid;--> statement-breakpoint
+ALTER TABLE "messages" ADD CONSTRAINT "messages_company_id_id_uniq" UNIQUE("company_id","id");--> statement-breakpoint
 ALTER TABLE "blocked_numbers" ADD CONSTRAINT "blocked_numbers_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "blocked_numbers" ADD CONSTRAINT "blocked_numbers_blocked_by_users_id_fk" FOREIGN KEY ("blocked_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "calls" ADD CONSTRAINT "calls_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
