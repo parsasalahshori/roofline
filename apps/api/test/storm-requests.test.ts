@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { insertOmahaStorm, type Query } from '@roofline/db/testing';
 import { stormRequests, withTenant, type TenantContext } from '@roofline/db';
+import { PUBLIC_RATE_LIMIT_PER_MIN } from '../src/rate-limit.ts';
 import { MESSAGES } from '../src/errors.ts';
 import { STORM_CONSENT_TEXT, STORM_REQUEST_LIMITS } from '../src/storm/landing-copy.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
@@ -13,8 +14,8 @@ import { makeTestApp, type TestApp } from './helpers.ts';
  * through the owner connection. Needs Docker: these run on CI only.
  */
 
-const ACME_CODE = 'k7m2p9qa';
-const BOLT_CODE = 'bq4t8w2z';
+const ACME_CODE = 'k7m2p5qa';
+const BOLT_CODE = 'bq4t7w2z';
 const LAPSED_CODE = 'lapsed23';
 const UNKNOWN_CODE = 'zzzzzzzz';
 const ACME_ORIGIN = 'https://acme-roofing.roofline.test';
@@ -297,5 +298,103 @@ describe('POST /api/public/storm-requests/:code', () => {
     expect(acmeRows[0]!.stormPageId).toBe(acmePageId);
     expect(boltRows).toHaveLength(1);
     expect(boltRows[0]!.stormPageId).toBe(boltPageId);
+  });
+});
+
+const FORM_BODY = 'name=Jane+Doe&phone=%28402%29+555-0950&address=1200+Farnam+St%2C+Omaha%2C+NE+68102';
+
+describe('the landing code rule', () => {
+  test.each(['bad-code', 'abc12345', 'abcd23456', 'abcd234', 'k7m2p9qa'])('a malformed code %s is a 404 as JSON and not a page', async (code) => {
+    const res = await post(code, FORM, { origin: ACME_ORIGIN });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: MESSAGES.notFound });
+    expect(await countRows('storm_requests')).toBe(0);
+  });
+
+  test('a malformed code on a urlencoded post is a 404, not a redirect to a page that cannot exist', async () => {
+    const res = await request(t.app).post('/api/public/storm-requests/abc12345').type('form').send(FORM_BODY);
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('form-friendly failures', () => {
+  /** Uses up the public limit with cheap GETs from one address (they never reach the per-IP form limit). */
+  async function useUpPublicLimit(ip: string): Promise<void> {
+    for (let i = 0; i < PUBLIC_RATE_LIMIT_PER_MIN; i += 1) {
+      await request(t.app).get('/api/public/storm-requests/x').set('X-Forwarded-For', ip);
+    }
+  }
+
+  test('a urlencoded form that trips the public rate limit is redirected with ?error=busy', async () => {
+    const ip = '198.51.100.60';
+    await useUpPublicLimit(ip);
+
+    const res = await request(t.app).post(`/api/public/storm-requests/${ACME_CODE}`).set('X-Forwarded-For', ip).type('form').send(FORM_BODY);
+
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe(`/storm/${ACME_CODE}?error=busy`);
+    expect(await countRows('storm_requests')).toBe(0);
+  });
+
+  test('a JSON post that trips the public rate limit keeps its JSON 429', async () => {
+    const ip = '198.51.100.61';
+    await useUpPublicLimit(ip);
+
+    const res = await post(ACME_CODE, FORM, { ip });
+
+    expect(res.status).toBe(429);
+    expect(res.body).toEqual({ error: MESSAGES.tooFast });
+  });
+
+  test('a urlencoded form that trips the per-address limit is redirected with ?error=busy', async () => {
+    const ip = '198.51.100.62';
+    for (let i = 0; i < STORM_REQUEST_LIMITS.perIpPerHour; i += 1) {
+      await post(ACME_CODE, { ...FORM, phone: `(402) 555-04${i}0` }, { origin: ACME_ORIGIN, ip });
+    }
+
+    const res = await request(t.app).post(`/api/public/storm-requests/${ACME_CODE}`).set('X-Forwarded-For', ip).type('form').send(FORM_BODY);
+
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe(`/storm/${ACME_CODE}?error=busy`);
+  });
+
+  test('a urlencoded body over the size limit is redirected with ?error=invalid', async () => {
+    const res = await request(t.app)
+      .post(`/api/public/storm-requests/${ACME_CODE}`)
+      .type('form')
+      .send(`name=Jane&address=${'a'.repeat(9000)}`);
+
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe(`/storm/${ACME_CODE}?error=invalid`);
+    expect(await countRows('storm_requests')).toBe(0);
+  });
+
+  test('a urlencoded body the parser cannot read is redirected with ?error=invalid', async () => {
+    const res = await request(t.app)
+      .post(`/api/public/storm-requests/${ACME_CODE}`)
+      .set('Content-Type', 'application/x-www-form-urlencoded; charset=utf-16')
+      .send(FORM_BODY);
+
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe(`/storm/${ACME_CODE}?error=invalid`);
+  });
+
+  test('a JSON body over the size limit keeps its JSON 413', async () => {
+    const res = await post(ACME_CODE, { ...FORM, address: 'a'.repeat(9000) });
+
+    expect(res.status).toBe(413);
+    expect(res.body).toEqual({ error: MESSAGES.tooLarge });
+  });
+
+  test('a malformed JSON body keeps its JSON 400', async () => {
+    const res = await request(t.app)
+      .post(`/api/public/storm-requests/${ACME_CODE}`)
+      .set('Content-Type', 'application/json')
+      .send('{"name": ');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: MESSAGES.unreadable });
   });
 });

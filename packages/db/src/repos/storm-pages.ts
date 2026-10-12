@@ -7,6 +7,13 @@ import type { TenantContext, Tx } from '../tenant.ts';
 export const STORM_PAGE_CODE_LENGTH = 8;
 
 const CODE_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
+
+/**
+ * The one rule for a landing page code as it appears in a URL: exactly the 8 base32 characters
+ * `newStormPageCode` makes, in any letter case (callers lowercase before looking a code up).
+ * No `g` flag, so `.test` keeps no state between calls.
+ */
+export const STORM_PAGE_CODE_RE = /^[a-z2-7]{8}$/i;
 /** Tries before giving up on finding a free code (a collision in 32^8 codes is very unlikely). */
 const CODE_ATTEMPTS = 5;
 /** A page stays live this many days after the storm's convective day. */

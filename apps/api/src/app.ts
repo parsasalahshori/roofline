@@ -60,7 +60,7 @@ import { stormLayerRoutes, stormRoutes } from './routes/storms.ts';
 import { doorRoutes } from './routes/door-routes.ts';
 import { stormSettingsRoutes } from './routes/storm-settings.ts';
 import { adsRoutes } from './routes/ads.ts';
-import { stormRequestOriginGuard, stormRequestRoutes } from './public/storm-requests.ts';
+import { stormRequestRoutes } from './public/storm-requests.ts';
 import { stormPage } from './public/storm-page.ts';
 import { unsubscribeRoutes } from './public/unsubscribe.ts';
 import { proposalRoutes } from './routes/proposals.ts';
@@ -237,8 +237,9 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // The public policy pages (privacy and terms): no session, no rate limit, served before /health.
   app.use(policyPages(deps));
   // The storm landing page's form (public/storm-requests.ts): posted from the company's own host, so it is
-  // mounted ahead of blockCrossSiteMutations and checks its own Origin. It brings its own body parsers.
-  app.use('/api/public/storm-requests', publicRateLimit(), stormRequestOriginGuard(deps), stormRequestRoutes(deps));
+  // mounted ahead of blockCrossSiteMutations. The router brings its own rate limit, Origin check and body
+  // parsers, so a no-JS form gets a redirect for every failure.
+  app.use('/api/public/storm-requests', stormRequestRoutes(deps));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });

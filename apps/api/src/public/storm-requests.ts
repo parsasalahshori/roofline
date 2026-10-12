@@ -1,8 +1,10 @@
 import express, { Router, type ErrorRequestHandler, type RequestHandler } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
+import { STORM_PAGE_CODE_RE } from '@roofline/db';
 import { stormPageForCode } from '@roofline/db/system';
 import type { AppDeps } from '../app.ts';
 import type { Config } from '../config.ts';
+import { publicRateLimit } from '../rate-limit.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { stormFormErrorKey, submitStormRequest } from '../storm/landing.ts';
 import { STORM_REQUEST_LIMITS } from '../storm/landing-copy.ts';
@@ -10,18 +12,19 @@ import { STORM_REQUEST_LIMITS } from '../storm/landing-copy.ts';
 /*
  * POST /api/public/storm-requests/:code: the storm landing page's form (S1 Task 20). The company's
  * page is on its own host, so the browser's Origin is that host, not the app's; the router is
- * mounted in app.ts ahead of blockCrossSiteMutations and checks its own Origin here.
+ * mounted in app.ts ahead of blockCrossSiteMutations and checks its own Origin here. The router also
+ * owns the public rate limit and the body parsers, so its error handler sees their errors too.
  * Plain HTML forms post urlencoded and get a 303 redirect to the thank-you page; scripts post JSON
  * and get `{ ok: true }`. A failed urlencoded form gets a 303 back to the page: with `?error=<key>`
  * on a 422, 429 or 503 (the key names the sentence the page shows), and to the page itself on a 404,
- * where the page shows its not-found text. JSON posts keep their `{ error, field? }` body.
+ * where the page shows its not-found text. A body the parsers refuse (too large, unreadable) goes back
+ * with `?error=invalid`. JSON posts keep their `{ error, field? }` body.
  */
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const HOUR_MS = 60 * 60 * 1000;
 const BODY_LIMIT = '8kb';
-/** A landing code as it appears in the path: letters and digits only. Anything else is not a page. */
-const CODE = /^[a-z0-9]{1,32}$/;
+const CODE = STORM_PAGE_CODE_RE;
 
 /**
  * The origin a company's landing page is served from: `<protocol>//<slug>.<POLICY_PAGES_DOMAIN>`,
@@ -79,8 +82,20 @@ function perIpLimit(): RequestHandler {
   });
 }
 
+/** An error from a body parser (body-parser sets a string `type` and a 4xx `status` on its errors). */
+function isBodyParserError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const { status, type } = err as { status?: unknown; type?: unknown };
+  return typeof type === 'string' && typeof status === 'number' && status >= 400 && status < 500;
+}
+
 export function stormRequestRoutes(deps: AppDeps): Router {
   const router = Router();
+
+  // Inside the router (not ahead of it in app.ts), so a no-JS visitor who trips the public limit
+  // gets the same redirect as any other form error instead of a JSON 429.
+  router.use(publicRateLimit());
+  router.use(stormRequestOriginGuard(deps));
 
   router.post(
     '/:code',
@@ -109,10 +124,18 @@ export function stormRequestRoutes(deps: AppDeps): Router {
     },
   );
 
-  // Router-level, so it also sees the per-IP limiter's 429 raised before the handler above.
+  // Router-level, so it also sees the 429s from both limiters and the body parsers' errors.
   const browserFormErrors: ErrorRequestHandler = (err, req, res, next) => {
     const code = /^\/([^/]+?)\/?$/.exec(req.path)?.[1]?.toLowerCase();
-    if (!req.is('urlencoded') || !(err instanceof AppError) || code === undefined || !CODE.test(code)) {
+    if (!req.is('urlencoded') || code === undefined || !CODE.test(code)) {
+      next(err);
+      return;
+    }
+    if (isBodyParserError(err)) {
+      res.redirect(303, `/storm/${code}?error=invalid`);
+      return;
+    }
+    if (!(err instanceof AppError)) {
       next(err);
       return;
     }

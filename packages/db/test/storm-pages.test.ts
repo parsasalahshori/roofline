@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { upsertCompanyStorm } from '../src/repos/company-storms.ts';
-import { ensureStormPage, extendStormPageUntil, newStormPageCode, STORM_PAGE_CODE_LENGTH } from '../src/repos/storm-pages.ts';
+import { ensureStormPage, extendStormPageUntil, newStormPageCode, STORM_PAGE_CODE_LENGTH, STORM_PAGE_CODE_RE } from '../src/repos/storm-pages.ts';
 import { createPools, type Pools } from '../src/pools.ts';
 import { type Tx, withTenant } from '../src/tenant.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
@@ -54,6 +54,13 @@ describe('newStormPageCode', () => {
   test('returns 8 lowercase base32 characters', () => {
     for (let i = 0; i < 50; i += 1) {
       expect(newStormPageCode()).toMatch(CODE_SHAPE);
+    }
+  });
+
+  test('every generated code passes the shared code rule, and other shapes do not', () => {
+    for (let i = 0; i < 200; i += 1) expect(STORM_PAGE_CODE_RE.test(newStormPageCode())).toBe(true);
+    for (const bad of ['', 'abcd234', 'abcd23456', 'abcd2348', 'abcd2341', 'abcd-345', 'abcd 345', 'abcd2345/']) {
+      expect(STORM_PAGE_CODE_RE.test(bad)).toBe(false);
     }
   });
 
