@@ -165,6 +165,9 @@ ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_paused_by_check CHECK ("ad_
 --    column list alone decides what app_system can see: ids, status and timing, never content.
 --    email_opt_outs also takes INSERT (company_id, email, source, at): the public unsubscribe link records an
 --    opt-out for a company without a tenant session (`at` has a default, so an insert may omit it).
+--    The email_opt_outs SELECT (id, company_id, email) is kept on purpose: recordEmailOptOut runs
+--    INSERT .. ON CONFLICT (company_id, email) DO NOTHING RETURNING id. Postgres checks SELECT on the columns of the
+--    conflict arbiter, and RETURNING needs SELECT on id. Nothing in app code reads the email column back as app_system.
 --    These are column grants only: app_system holds no table-level privilege on any of the four.
 GRANT SELECT (id, company_id, storm_id, status, plan_task_id, last_matched_at) ON company_storms TO app_system;
 --> statement-breakpoint

@@ -16,7 +16,7 @@ import type { AppDeps } from '../app.ts';
 import { leaseKeeper } from '../tasks/lease.ts';
 import type { StepHandler, StepOutcome } from '../tasks/runner.ts';
 import { buildGateRequest } from './gate-request.ts';
-import { STORM_TOKEN_IN_TEXT, stormTextRender, UNFILLED_TEXT_REASON } from './storm-text.ts';
+import { STORM_TOKEN_IN_TEXT, stormIdFromPrefix, stormSendDay, stormTextRender, UNFILLED_TEXT_REASON } from './storm-text.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, type QueuedText, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
 
 /*
@@ -81,15 +81,24 @@ type BatchText = {
 export const sendSmsBatch: StepHandler = async (deps, ctx, step) => {
   const parsed = stepTypes.send_sms_batch.payload.safeParse(step.payload);
   if (!parsed.success) return { status: 'needs_attention', result: {}, errorPlain: UNREADABLE };
-  const data = parsed.data as { body: string; fields?: Record<string, Record<string, string>> };
-  return runSmsBatch(deps, ctx, step, { render: stormTextRender(data.body, data.fields) });
+  const data = parsed.data as { body: string; fields?: Record<string, Record<string, string>>; dedupePrefix?: string };
+  const stormId = stormIdFromPrefix(data.dedupePrefix);
+  const draftRender = stormTextRender(data.body, data.fields);
+  if (draftRender === undefined || stormId === null) return runSmsBatch(deps, ctx, step, { render: draftRender });
+  // The {day} label is worked out when the text is sent (after the lease check), not when it was drafted.
+  const render = async (customerId: string): Promise<string> => {
+    const now = deps.clock.now();
+    const day = await withTenant(deps.pools, ctx, (tx) => stormSendDay(tx, ctx, stormId, now));
+    return (day === null ? draftRender : stormTextRender(data.body, data.fields, day)!)(customerId);
+  };
+  return runSmsBatch(deps, ctx, step, { render });
 };
 
 export async function runSmsBatch(
   deps: AppDeps,
   ctx: TenantContext,
   step: StepRow,
-  options: { render?: (customerId: string) => string } = {},
+  options: { render?: (customerId: string) => string | Promise<string> } = {},
 ): Promise<StepOutcome> {
   const parsed = stepTypes.send_sms_batch.payload.safeParse(step.payload);
   if (!parsed.success) return { status: 'needs_attention', result: {}, errorPlain: UNREADABLE };
@@ -107,7 +116,7 @@ export async function runSmsBatch(
     // run's (a newer run has it), so stop texting here and leave the rest to that run.
     if (!(await lease.keep())) return { status: 'running', result: {} };
     const dedupeKey = dedupePrefix !== undefined ? `${dedupePrefix}:${customerId}` : null;
-    const queued = await decideOne(deps, ctx, step.id, { customerId, purpose, template: options.render ? options.render(customerId) : body, dedupeKey });
+    const queued = await decideOne(deps, ctx, step.id, { customerId, purpose, template: options.render ? await options.render(customerId) : body, dedupeKey });
     if (queued && (await sendQueuedText(deps, ctx, queued, NOT_TAKEN)) === 'refused') refused += 1;
   }
 

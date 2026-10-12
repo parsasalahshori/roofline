@@ -42,10 +42,12 @@ describe('hailHealth', () => {
     expect(sent[0]!.text).toContain(newest.value.toISOString());
   });
 
-  test('does not email again on later ticks', async () => {
-    newest.value = ageOf(SUMMER, 211);
-    await hailHealth(deps, SUMMER);
+  test('is silent an hour after the first alert and alerts again six hours later', async () => {
+    newest.value = ageOf(SUMMER, 181);
+    await hailHealth(deps, new Date(SUMMER.getTime() + 60 * MINUTE));
     expect(sent).toHaveLength(0);
+    await hailHealth(deps, new Date(SUMMER.getTime() + 6 * 60 * MINUTE));
+    expect(sent).toHaveLength(1);
   });
 
   test('does not email when fresh', async () => {
@@ -63,9 +65,12 @@ describe('hailHealth', () => {
     expect(sent).toHaveLength(1);
   });
 
-  test('no processed run sends nothing', async () => {
-    await hailHealth(deps, SUMMER);
-    expect(sent).toHaveLength(0);
+  test('no processed run: alerts once the service has been up past the threshold', async () => {
+    await hailHealth(deps, SUMMER, ageOf(SUMMER, 181));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.subject).toBe('Hail data has never arrived');
+    await hailHealth(deps, SUMMER, ageOf(SUMMER, 100));
+    expect(sent).toHaveLength(1);
     expect(errors).toHaveLength(0);
   });
 });
