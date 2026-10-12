@@ -262,3 +262,30 @@ Order: R8–R10 first, so 0018 is narrowed and errors.ts carries the pathForLog 
 - app_system privileges are exact: no TRUNCATE, TRIGGER or REFERENCES. Tests write through the owner client where app_system lacks a grant.
 - The errors.ts late-error branch uses `pathForLog(req.path)`.
 - Sentinel carries: the R2 keys in the storm-config, google-ads-http and postmark-broadcast production VALID configs, and the `proposalListRoutes()` stub in s1-routes.
+
+## R8, R10 and R9 merged (Ruling BF): 2ce5f97, ed89f75, 3097bec
+**R8** (s1-r8 0f67728): an external ad account links to one company only.
+- Changes:
+  - a global partial unique index on (platform, external_account_id) where not revoked, in 0018 (Ruling AW);
+  - the connect claims the row first, so a conflict is a 409 with no provider call;
+  - unlink runs only for the live holder;
+  - 0018 grants narrowed;
+  - recordEmailOptOut now uses `on conflict do nothing` with no target (app_system no longer reads email_opt_outs.email).
+- CI: Platform was red only on the exact-report time bomb; E2E was red on a base that predates 3f800e5.
+- A pending row left behind by a crash between claim and settle keeps the account locked until the owner deletes it. This is accepted.
+
+**R10** (s1-r10 e4b61bf):
+- The form never writes or upgrades consent.
+- A Twilio-signed YES from that phone within 14 days makes consent express, with evidence.
+- Each IP is capped at 2 requests per page per hour; each phone at 1 per page per day.
+- CI on 1af8535: Platform and Hail passed; E2E was red on the old base.
+
+**R9** (s1-r9 012df2a):
+- The unsubscribe confirm page uses `Referrer-Policy: same-origin`.
+- Origin: null is refused, with tests.
+- The e2e spec `public-forms.spec.ts` submits both forms.
+- pathForLog scrubs `/u/:token`.
+- Limiters on the storm page, the policy pages, `/u` and `/hooks/postmark`; Postmark lets a 429 through.
+- CI on d42402d: Platform and Hail passed; E2E had 53 of 54 passing, the only failure being an a11y login "socket hang up", while 905266e passed E2E with the same specs. Judge it on the merged head.
+
+Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema changes" all pass.
