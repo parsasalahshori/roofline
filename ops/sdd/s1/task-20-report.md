@@ -20,3 +20,8 @@
 
 ## Verify
 typecheck and lint clean; @roofline/shared 28 files / 659 tests passed. DB suites run on CI only.
+
+## CI
+- Run 38224289996 (af3932b) failed: storm-requests api test reused one company_storms row (unique clash), storm-skeleton POST stub expected 404.
+- Run 38226401696 (e77c533) failed: okToText `z.any()` rejected a missing key (422 on every post), and a db test compared a date to a string.
+- Run 38228506054 (3cffbf6) PASSED (Platform, E2E, Hail).
