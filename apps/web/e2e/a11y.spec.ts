@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { test, expect, readStack, companyHostUrl, stormPageCode, draftAndApproveStormPlan, waitForStormSteps } from './fixtures.ts';
 import { makeAndSendProposal, BETTER_NAME } from './estimator-helpers.ts';
 import { seedFrontDesk, seedRooflineNumber } from './front-desk-seed.ts';
+import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 
 /*
  * Accessibility: each page is scanned with axe for WCAG 2.0 and 2.1 A and AA rules, and any
@@ -268,5 +269,42 @@ test('Settings Your profile has no serious accessibility violations', async ({ p
   await markTodaySeen('owner@a.test');
   await page.goto('/settings/profile');
   await expect(page.getByLabel('Your phone number')).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('agents window with the G1 cards has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/agents');
+  await expect(page.getByLabel('Your agents').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Follow-up', { exact: true }).first()).toBeVisible();
+  await scan(page);
+});
+
+test('job window claim section has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, db, scenario }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const job = await db.query<{ id: string }>(`select id from jobs where company_id = $1 order by id limit 1`, [
+    scenario.a.companyId,
+  ]);
+  await page.goto(`/jobs/${job.rows[0]?.id}`);
+  await expect(page.getByRole('heading', { name: 'Insurance claim' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('follow-up review with personal texts has no serious accessibility violations', async ({
+  page,
+  loginAs,
+  markTodaySeen,
+  db,
+  pools,
+  scenario,
+}) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const lead = await seedOldLead(db, scenario.a.companyId);
+  const { taskId } = await seedTextsPlan(pools, scenario.a.companyId, lead.customerId);
+  await page.goto('/approvals/' + taskId);
+  await expect(page.getByText('Send 1 personal text')).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });

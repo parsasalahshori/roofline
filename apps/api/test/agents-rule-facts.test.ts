@@ -37,7 +37,7 @@ describe('gatherRuleFacts (A1 Tasks 5 and 14)', () => {
         await tx.insert(companySettings).values({ companyId, hailThresholdIn: 1.5, stormAdBudgetCents: 50000, stormAdDays: 3 });
       }
     });
-    expect(await factsFor(companyId)).toEqual({ stormScout: { thresholdInches: 1.5, budgetCents: 50000, days: 3 } });
+    expect((await factsFor(companyId)).stormScout).toEqual({ thresholdInches: 1.5, budgetCents: 50000, days: 3 });
   });
 
   test('company B is unaffected by company A settings', async () => {
@@ -124,5 +124,63 @@ describe('gatherRuleFacts (A1 Tasks 5 and 14)', () => {
     const facts = await factsFor(companyId);
     expect(facts).not.toHaveProperty('frontDesk');
     expect(rulesFor('front_desk', facts)).toEqual([]);
+  });
+});
+
+describe('gatherRuleFacts (G1 Task 15)', () => {
+  test('gatherRuleFacts fills the three G1 fields with the default settings', async () => {
+    const facts = await inCompany(t, t.seed.a.companyId, (tx) => gatherRuleFacts(tx, systemCtx(t.seed.a.companyId)));
+    expect(facts).toMatchObject({
+      claims: { nudgeDays: [3, 5, 7] },
+      scheduler: { reminderHour: 15, rainPct: 60, gustMph: 25 },
+      followUp: {
+        proposalDays: [3, 4],
+        leadDays: 2,
+        reviewDelayDays: 3,
+        reviewsOn: false,
+        leadsOn: true,
+        proposalsOn: true,
+      },
+    });
+  });
+
+  test('gatherRuleFacts reflects changed settings and a saved review link', async () => {
+    const companyId = t.seed.a.companyId;
+    await inCompany(t, companyId, (tx) =>
+      tx
+        .update(companySettings)
+        .set({
+          claimsNudgeDays: [2, 4, 6],
+          reminderHour: 16,
+          weatherRainPct: 40,
+          weatherGustMph: 30,
+          followupDays: [1, 5],
+          leadFollowupDays: 4,
+          reviewDelayDays: 1,
+          reviewLink: 'https://example.com/review',
+          followupLeads: false,
+        })
+        .where(eq(companySettings.companyId, companyId)),
+    );
+    const facts = await inCompany(t, companyId, (tx) => gatherRuleFacts(tx, systemCtx(companyId)));
+    expect(facts.claims).toEqual({ nudgeDays: [2, 4, 6] });
+    expect(facts.scheduler).toEqual({ reminderHour: 16, rainPct: 40, gustMph: 30 });
+    expect(facts.followUp).toEqual({
+      proposalDays: [1, 5],
+      leadDays: 4,
+      reviewDelayDays: 1,
+      reviewsOn: true,
+      leadsOn: false,
+      proposalsOn: true,
+    });
+    const other = await inCompany(t, t.seed.b.companyId, (tx) => gatherRuleFacts(tx, systemCtx(t.seed.b.companyId)));
+    expect(other.claims).toEqual({ nudgeDays: [3, 5, 7] });
+  });
+
+  test('rulesFor gives the three G1 agents their sentences from the gathered facts', async () => {
+    const facts = await inCompany(t, t.seed.a.companyId, (tx) => gatherRuleFacts(tx, systemCtx(t.seed.a.companyId)));
+    expect(rulesFor('claims', facts)).toHaveLength(2);
+    expect(rulesFor('scheduler', facts)).toHaveLength(4);
+    expect(rulesFor('follow_up', facts).map((r) => r.text)).toContain('Reviews are off until you add your review link.');
   });
 });

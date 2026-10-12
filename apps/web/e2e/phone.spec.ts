@@ -2,6 +2,7 @@ import type { Page, Locator } from '@playwright/test';
 import { test, expect, companyHostUrl, draftAndApproveStormPlan, stormPageCode, waitForStormSteps } from './fixtures.ts';
 import { makeAndSendProposal } from './estimator-helpers.ts';
 import { seedFrontDesk, seedRooflineNumber } from './front-desk-seed.ts';
+import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 
 /*
  * The phone shell (below 768px): full-screen pages, the bottom tab bar that replaces the dock, and
@@ -227,4 +228,25 @@ test('D1 Front Desk pages do not scroll sideways', async ({ page, loginAs, markT
     await expect(ready()).toBeVisible({ timeout: 20_000 });
     await noSideScroll(page);
   }
+});
+
+test('follow-up texts review fits the phone', async ({ page, loginAs, markTodaySeen, db, pools, scenario }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const lead = await seedOldLead(db, scenario.a.companyId);
+  const { taskId } = await seedTextsPlan(pools, scenario.a.companyId, lead.customerId);
+  await page.goto('/approvals/' + taskId);
+  await expect(page.getByText('Send 1 personal text')).toBeVisible({ timeout: 20_000 });
+  await noSideScroll(page);
+  const button = page.getByRole('button', { name: /^Approve 1 step/ });
+  await expect(button).toBeVisible();
+  await expectAboveTabs(page, button);
+});
+
+test('Agents window with the G1 cards does not scroll sideways', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/agents');
+  await expect(page.getByText('Follow-up', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  await noSideScroll(page);
 });

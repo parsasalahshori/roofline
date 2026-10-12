@@ -6,6 +6,10 @@ export type AnthropicClients = {
   client: Anthropic;
   routerModel: string;
   answerModel: string;
+  /** G1 agents: drafts customer texts (AGENT_DRAFT_MODEL). */
+  draftModel: string;
+  /** G1 agents: extracts claim-reply facts (AGENT_EXTRACT_MODEL). */
+  extractModel: string;
 };
 export const ROUTE_TIMEOUT_MS = 5_000;
 export const ANSWER_TIMEOUT_MS = 20_000;
@@ -16,5 +20,11 @@ export function buildClients(config: Config, fetchImpl?: typeof fetch): Anthropi
     maxRetries: 1,
     ...(fetchImpl ? { fetch: fetchImpl } : {}),
   });
-  return { client, routerModel: config.FRONT_DESK_ROUTER_MODEL, answerModel: config.FRONT_DESK_ANSWER_MODEL };
+  return {
+    client,
+    routerModel: config.FRONT_DESK_ROUTER_MODEL,
+    answerModel: config.FRONT_DESK_ANSWER_MODEL,
+    draftModel: config.AGENT_DRAFT_MODEL,
+    extractModel: config.AGENT_EXTRACT_MODEL,
+  };
 }

@@ -7198,7 +7198,7 @@
       "checkConstraints": {
         "stored_files_kind_check": {
           "name": "stored_files_kind_check",
-          "value": "\"stored_files\".\"kind\" in ('signed_proposal_pdf', 'storm_photo', 'ad_image')"
+          "value": "\"stored_files\".\"kind\" in ('signed_proposal_pdf', 'storm_photo', 'ad_image', 'claim_packet')"
         }
       },
       "isRLSEnabled": false

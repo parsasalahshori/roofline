@@ -4,6 +4,7 @@ import { audit, companySettings, loadBaselineOverrides, setBaselineOverrides, se
 import type { Tx, TenantContext } from '@roofline/db';
 import {
   isEditableBaselineKey,
+  G1_AGENTS_SHIPPED,
   isScreenAgent,
   LAUNCH_AGENTS,
   TIME_BASELINES,
@@ -113,7 +114,7 @@ export function agentSettingsRoutes(deps: AppDeps): Router {
     const { ctx } = req;
     const agent = req.params.agent;
     if (!isScreenAgent(agent)) throw new AppError(404, MESSAGES.notFound);
-    if (!(LAUNCH_AGENTS as readonly string[]).includes(agent)) throw new AppError(409, 'This agent is coming soon.');
+    if (!(LAUNCH_AGENTS as readonly string[]).includes(agent) && !G1_AGENTS_SHIPPED) throw new AppError(409, 'This agent is coming soon.');
     const body: unknown = req.body;
     if (!isPlainObject(body)) throw new AppError(400, CHOOSE_MESSAGE, 'paused');
     assertKnownFields(body, ['paused']);

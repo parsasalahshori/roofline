@@ -1,4 +1,7 @@
 import type { StepType } from '@roofline/shared';
+import { buildClaimPacketStep } from '../claims/packet-step.ts'; // G1 Task 7
+import { createAppointmentStep, moveAppointmentStep } from '../agents/appointments-steps.ts'; // G1 Task 8
+import { sendPersonalTexts } from '../agents/personal-texts.ts';
 import { orderExactReport } from '../estimator/exact-report.ts';
 import { sendProposalStep } from '../estimator/send-proposal.ts';
 import { sendSmsBatch } from '../messaging/send-batch.ts';
@@ -9,6 +12,7 @@ import type { StepHandler } from './runner.ts';
 
 /** The demo steps (the F2 demo task, and the tests) do nothing and finish at once. */
 const finishAtOnce: StepHandler = async () => ({ status: 'done', result: { ok: 1 } });
+
 
 /**
  * What runs each kind of step, as the platform ships it; runner.ts starts from this. A type with
@@ -25,6 +29,11 @@ export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   demo_message: finishAtOnce,
   demo_spend: finishAtOnce,
   send_sms_batch: sendSmsBatch,
+  // G1 Agents
+  send_personal_texts: sendPersonalTexts,
+  build_claim_packet: buildClaimPacketStep, // G1 Task 7
+  create_appointment: createAppointmentStep, // G1 Task 8
+  move_appointment: moveAppointmentStep, // G1 Task 11
   send_proposal: sendProposalStep,
   order_exact_report: orderExactReport,
   // Storm Scout (S1)

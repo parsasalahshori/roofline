@@ -1,14 +1,16 @@
-### Task 10: Scheduler — reminders and crew agendas
+### Task 10: Scheduler — tomorrow's reminders and crew agendas
 
-**Base:** `g1-agents` after Tasks 4 and 5 are merged. **[C1]** appointments of tomorrow (C1 T8 `listAppointments`). Real: `Mailer`.
+**Base:** `g1-w5` (as Task 8).
 
-Read first: `ops/sdd/g1/global-constraints.md`; spec `docs/superpowers/specs/2026-10-12-roofline-more-agents-design.md`. Names marked **[C1]** / **[E1]** / **[S1]** / **[D1]** / **[A1]** come from the plans and briefs of those milestones (`ops/sdd/<milestone>/`), not from built code: check each against the merged branch before starting and report any difference.
+Read first: `ops/sdd/g1/global-constraints.md`; `progress.md` (GX-E, GX-N, T3/T4 carries); spec §4 (reminders, crew agenda, Decision 5); `agents/scheduler/{reminders,agenda}.ts` (T3 stubs), `agents/personal-texts.ts`, `providers/llm.ts` (`draftTexts`, kind `reminder`), C1's `repos/appointments.ts` (`listAppointments`, `appointmentViews`), `apps/api/src/mailer.ts` (`Mailer.send({ to, subject, text })`), A1's `agent_settings`, `company_settings.reminder_hour`, C1's member/notification preferences (look for an existing per-member email opt-out; if none exists, add `agenda_emails` handling as below).
 
-**Split:** reminders daily task (`send_personal_texts`, expiry 9 PM); crew agenda emails at 6 PM (Mailer; no approval; opt-out per member); tests.
+**Split:** Builder 1 `reminders.ts` (+ `packages/db/src/repos/scheduler.ts` queries); Builder 2 `agenda.ts`; Builder 3 tests.
 
-**Carries and rulings:**
-- Staff agendas need no approval (spec Decision 5).
+**Reminders (`runReminders`, T3's `scheduler-reminders` job at the company's `reminder_hour`, default 3 PM):** active/trial company and agent `scheduler` on (GX-E: missing row = paused) and not already created today; tomorrow's (company zone) `scheduled` appointments of kind `inspection`, `install`, `adjuster` with a customer who has a mobile phone. One task `agent 'scheduler'`, `kind 'reminders'`, title "Reminders for tomorrow ({n} texts)", one `send_personal_texts` step `{ purpose: 'informational', kind: 'reminder', messages, dedupePrefix: 'reminder:{tomorrowDate}' }`, `expiresAt` 9 PM local today. Bodies: drafted with `draftTexts({ instruction: 'reminder', facts })` (facts: first name, rep first name, company, address line, the window "between 10 and 11" or "all day" for installs); guards as Task 8; template fallback "Hi {first}, reminder: {rep} from {company} will be at {address} tomorrow between {start} and {end}. Reply C to confirm or call us to change." (installs: "tomorrow for your roof install"). Reminders are logistics: `followUpAllowed` lets `reminder` through (T2a), the gate still applies at send time.
 
-**Verify notes:**
-- api/db suites need Docker (Testcontainers): locally `npm run typecheck && npm run lint`; prove the rest with `ops/bin/ci-check`.
-- Commit: `feat(api): Scheduler — tomorrow's reminders and crew agendas`
+**Crew agendas (`runAgenda`, `scheduler-agenda` job at 6 PM):** no approval (Decision 5), no task with steps; for each member with appointments tomorrow, one email via `deps.mailer.send` — subject "Your appointments for {Weekday, Mon D}", text listing each visit (time, kind, customer name, address, customer phone, notes, a link `${APP_ORIGIN}/jobs/{jobId}`) in time order; members who opted out are skipped. Opt-out: if C1 already has a per-member email preference, use it; otherwise skip opt-out in code (all members get it) and record a carry — do not add a migration (G1's migrations are fixed). Idempotent per member per local day (record sends in the existing audit log or a `deps.jobs` singletonKey per member/day; choose one, test it). Also counts as an agent event for A1's feed if the task service offers a live note; otherwise no task.
+
+**Tests (CI):** reminders for tomorrow's three kinds only (not today's, not canceled, not `other`), paused → nothing, template fallback, the step's dedupe prefix, expiry 9 PM local; agenda email per member with the right visits in order and the job links, a member with no visits gets nothing, a second run the same day sends nothing new.
+
+**Verify:** `npm run typecheck && npm run lint` (slot); CI with `CI_JOBS="Platform E2E"`.
+- Commit: `feat(api): Scheduler — tomorrow's reminders and crew agendas (G1 Task 10)`

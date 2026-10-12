@@ -19,6 +19,16 @@ export const JOB_NAMES = [
   'fd-recording-store',
   'fd-text',
   'fd-forwarding-test',
+  // G1 Agents
+  'claims-daily',
+  'scheduler-reminders',
+  'scheduler-agenda',
+  'scheduler-weather',
+  'followup-daily',
+  // G1 Task 8
+  'claims-reply',
+  // G1 Task 12
+  'scheduler-no-show',
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 // 'footprints-load' is global work, but the worker requires a company id on every job: its data is
@@ -39,6 +49,8 @@ export type JobData = {
   recordingSid?: string;
   conversationId?: string;
   testId?: string;
+  // G1 Task 8
+  messageId?: string;
 };
 /** What a `send` may ask for: a dedupe key, and a delay in seconds before the job may run. */
 export type SendOptions = { singletonKey?: string; startAfter?: number };

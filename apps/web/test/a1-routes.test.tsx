@@ -108,6 +108,8 @@ describe('A1 windows', () => {
     signedInApi(ACCOUNT, {
       'GET /api/company': () => ({ body: COMPANY }),
       ['GET /api/agents/' + agent + '?period=month']: () => ({ body: detailFor(agent as ScreenAgent) }),
+      // The claims page also shows the claims board, which reads the claims and the company time zone
+      'GET /api/claims': () => ({ body: { claims: [] } }),
     });
     renderApp('/agents/' + agentSlug(agent));
 

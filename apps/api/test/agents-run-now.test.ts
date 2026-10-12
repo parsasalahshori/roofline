@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { agentSettings } from '@roofline/db';
+import { agentSettings, claimRunNow, isAgentPaused, setPaused } from '@roofline/db';
+import type { Agent } from '@roofline/shared';
 import { RUN_NOW } from '../src/agents/run-now.ts';
 import { Actors, inCompany, NO_UUID, NOT_FOUND } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
@@ -26,6 +27,12 @@ afterEach(() => {
 
 const run = async (agent: string, who: 'owner' | 'office' | 'rep' = 'owner', company: 'a' | 'b' = 'a') =>
   (await actors.as(who, company)).post(`/api/agents/${agent}/run`).send({});
+
+const ctxOf = (company: 'a' | 'b' = 'a') => ({ companyId: t.seed[company].companyId, userId: null, role: 'system' as const, canApproveSpend: false });
+const turnOn = (agent: Agent, company: 'a' | 'b' = 'a') =>
+  inCompany(t, t.seed[company].companyId, (tx) => setPaused(tx, ctxOf(company), agent, false, t.clock.now()));
+const pausedNow = (agent: Agent, company: 'a' | 'b' = 'a') =>
+  inCompany(t, t.seed[company].companyId, (tx) => isAgentPaused(tx, ctxOf(company), agent));
 
 const claimed = (company: 'a' | 'b' = 'a') =>
   inCompany(t, t.seed[company].companyId, (tx) => tx.select().from(agentSettings)).then((rows) =>
@@ -75,11 +82,56 @@ describe('POST /api/agents/:agent/run', () => {
     expect(res.body.error).toBe('Front Desk answers calls as they come in.');
   });
 
-  test('claims scheduler and follow_up run now are 409', async () => {
-    for (const agent of ['claims', 'scheduler', 'follow_up']) {
-      const res = await run(agent);
-      expect(res.status).toBe(409);
+  test.each(['claims', 'scheduler', 'follow_up'] as const)('%s run now while paused is 409 Turn this agent on first. and sends nothing', async (agent) => {
+    const res = await run(agent);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('Turn this agent on first.');
+    expect(t.jobs.sent).toEqual([]);
+    expect(await pausedNow(agent)).toBe(true);
+  });
+
+  test.each([
+    ['claims', 'claims-daily'],
+    ['scheduler', 'scheduler-reminders'],
+    ['follow_up', 'followup-daily'],
+  ] as const)('%s run now after turning on is 202 and sends %s for the company', async (agent, jobName) => {
+    await turnOn(agent);
+    const res = await run(agent);
+    expect(res.status).toBe(202);
+    expect(res.body.started).toBe(true);
+    expect(new Date(res.body.nextAllowedAt).getTime()).toBe(t.clock.now().getTime() + 5 * MINUTE);
+    const companyId = t.seed.a.companyId;
+    expect(t.jobs.sent).toEqual([{ name: jobName, data: { companyId }, singletonKey: `run-now:${agent}:${companyId}` }]);
+    expect(await pausedNow(agent)).toBe(false);
+  });
+
+  test('a second G1 run within five minutes is 409 and sends no second job', async () => {
+    await turnOn('claims');
+    expect((await run('claims')).status).toBe(202);
+    t.clock.advance(MINUTE);
+    const res = await run('claims');
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('You just ran this. You can run it again in 4 minutes.');
+    expect(t.jobs.sent).toHaveLength(1);
+  });
+
+  test('claimRunNow leaves a fresh G1 agent paused and a fresh launch agent on', async () => {
+    for (const agent of ['claims', 'scheduler', 'follow_up'] as const) {
+      const result = await inCompany(t, t.seed.a.companyId, (tx) => claimRunNow(tx, ctxOf(), agent, t.clock.now()));
+      expect(result.claimed).toBe(true);
+      expect(await pausedNow(agent), agent).toBe(true);
     }
+    for (const agent of ['storm_scout', 'estimator', 'front_desk'] as const) {
+      const result = await inCompany(t, t.seed.a.companyId, (tx) => claimRunNow(tx, ctxOf(), agent, t.clock.now()));
+      expect(result.claimed).toBe(true);
+      expect(await pausedNow(agent), agent).toBe(false);
+    }
+  });
+
+  test('claimRunNow never changes an existing G1 row: a turned-on agent stays on', async () => {
+    await turnOn('scheduler');
+    await inCompany(t, t.seed.a.companyId, (tx) => claimRunNow(tx, ctxOf(), 'scheduler', t.clock.now()));
+    expect(await pausedNow('scheduler')).toBe(false);
   });
 
   test('storm scout without a registered handler is 409 Storm Scout can check for hail once storm alerts are set up.', async () => {
