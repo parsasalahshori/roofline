@@ -38,6 +38,10 @@ export type FeedRow = {
   taskKind: string;
   taskTitle: string;
   taskStatus: string;
+  /** The task mode: 'live' for work already done (Front Desk), else a draft mode. */
+  taskMode: string;
+  /** True for a finished event written after the task was created (a later close), not at creation. Optional. */
+  closedLater?: boolean;
   subjectType: string | null;
   subjectId: string | null;
   /** The step this event is about (step_* events), else null. */
@@ -99,6 +103,9 @@ export async function listFeedPage(
       taskKind: agentTasks.kind,
       taskTitle: agentTasks.title,
       taskStatus: agentTasks.status,
+      taskMode: agentTasks.mode,
+      // A live task writes its created event at T and its creation-time finished/attention event at T + 2 ms.
+      closedLater: sql<boolean>`(${agentTaskEvents.kind} = 'finished' and exists (select 1 from agent_task_events c where c.company_id = ${agentTaskEvents.companyId} and c.task_id = ${agentTaskEvents.taskId} and c.kind = 'created' and c.at + interval '2 milliseconds' < ${agentTaskEvents.at}))`,
       subjectType: agentTasks.subjectType,
       subjectId: agentTasks.subjectId,
       stepType: agentTaskSteps.type,
@@ -119,6 +126,8 @@ export async function listFeedPage(
       and(
         eq(agentTaskEvents.companyId, ctx.companyId),
         eq(agentTasks.companyId, ctx.companyId),
+        // A live task reads as one row: its created and step_done events are hidden (in SQL, so paging stays exact).
+        sql`not (${agentTasks.mode} = 'live' and ${agentTaskEvents.kind} in ('created', 'step_done'))`,
         options.agent ? eq(agentTasks.agent, options.agent) : undefined,
         cursor
           ? sql`(${agentTaskEvents.at}, ${RANK_SQL}, ${agentTaskEvents.id}) < (${cursor.at}, ${cursor.rank}::int, ${cursor.id}::uuid)`
@@ -170,6 +179,8 @@ export async function listFeedPage(
       taskKind: r.taskKind,
       taskTitle: r.taskTitle,
       taskStatus: r.taskStatus,
+      taskMode: r.taskMode,
+      closedLater: r.closedLater,
       subjectType: r.subjectType,
       subjectId: r.subjectId,
       stepType: r.stepType,

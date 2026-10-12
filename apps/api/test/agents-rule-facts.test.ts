@@ -1,4 +1,5 @@
-import { companyPhoneNumbers, companySettings } from '@roofline/db';
+import { companyPhoneNumbers, companySettings, memberships, users } from '@roofline/db';
+import { onCallFirstNames } from '@roofline/db/system';
 import { rulesFor } from '@roofline/shared';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
@@ -73,7 +74,7 @@ describe('gatherRuleFacts (A1 Tasks 5 and 14)', () => {
     expect(owner).not.toHaveProperty('noLinks');
   });
 
-  test('Front Desk facts: number, what it may do, and the first rule sentence (transfer names wait for the view)', async () => {
+  test('Front Desk facts: number, what it may do, and the first rule sentence (no names passed: none)', async () => {
     const companyId = t.seed.a.companyId;
     await t.deps.pools.system
       .insert(companyPhoneNumbers)
@@ -88,12 +89,55 @@ describe('gatherRuleFacts (A1 Tasks 5 and 14)', () => {
         if (updated.length === 0) await tx.insert(companySettings).values({ companyId, frontDeskEnabled: true, frontDeskCanMove: canMove });
       });
       const facts = await factsFor(companyId);
-      // company_members does not expose transfer_phone_e164 / on_call_order, so the names are empty (no migration).
-      expect(facts.frontDesk).toEqual({ phoneNumber: '(949) 555-0100', transferNames: [], canBook: true, canConfirm: true, canMove });
+      expect(facts.frontDesk).toEqual({ phoneNumber: '(949) 555-0100', transferNames: [], canBook: true, canConfirm: true, canMove, canCancel: true });
       const rules = rulesFor('front_desk', facts);
       expect(rules[0]!.text).toContain('(949) 555-0100');
       expect(rules[0]!.links.every((l) => l.href === '/settings/front-desk')).toBe(true);
     }
+  });
+
+  test('transferNames are the names the caller passes, and the rule sentences name them and cancelling', async () => {
+    const companyId = t.seed.a.companyId;
+    await t.deps.pools.system
+      .insert(companyPhoneNumbers)
+      .values({ companyId, e164: '+19495550100', capabilities: ['voice'], providerSid: 'PN_RF4' });
+    await inCompany(t, companyId, async (tx) => {
+      const updated = await tx
+        .update(companySettings)
+        .set({ frontDeskEnabled: true })
+        .where(eq(companySettings.companyId, companyId))
+        .returning({ companyId: companySettings.companyId });
+      if (updated.length === 0) await tx.insert(companySettings).values({ companyId, frontDeskEnabled: true });
+    });
+    const facts = await inCompany(t, companyId, (tx) => gatherRuleFacts(tx, systemCtx(companyId), ['Sam', 'Pat']));
+    expect(facts.frontDesk?.transferNames).toEqual(['Sam', 'Pat']);
+    expect(facts.frontDesk?.canCancel).toBe(true);
+    const texts = rulesFor('front_desk', facts).map((r) => r.text);
+    expect(texts).toContain('I can cancel appointments when a customer asks.');
+    expect(texts).toContain('I transfer urgent calls to Sam, then Pat.');
+  });
+
+  test('onCallFirstNames: first names of active on-call members in order; no phone, no order or inactive are left out', async () => {
+    const companyId = t.seed.a.companyId;
+    const sys = t.deps.pools.system;
+    const mk = async (name: string, email: string, m: { phone: string | null; order: number | null; status?: 'active' | 'disabled' }) => {
+      const [u] = await sys.insert(users).values({ email, name }).returning({ id: users.id });
+      await sys.insert(memberships).values({
+        companyId,
+        userId: u!.id,
+        role: 'office',
+        status: m.status ?? 'active',
+        transferPhoneE164: m.phone,
+        onCallOrder: m.order,
+      });
+    };
+    await mk('Pat Second', 'pat@example.test', { phone: '+14025550102', order: 2 });
+    await mk('  Sam   First', 'sam@example.test', { phone: '+14025550101', order: 1 });
+    await mk('No Phone', 'nophone@example.test', { phone: null, order: 3 });
+    await mk('No Order', 'noorder@example.test', { phone: '+14025550103', order: null });
+    await mk('Gone Away', 'gone@example.test', { phone: '+14025550104', order: 4, status: 'disabled' });
+    expect(await onCallFirstNames(sys, companyId)).toEqual(['Sam', 'Pat']);
+    expect(await onCallFirstNames(sys, t.seed.b.companyId)).toEqual([]);
   });
 
   test('a rep gets the Front Desk sentences with no links', async () => {

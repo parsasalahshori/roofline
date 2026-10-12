@@ -45,7 +45,7 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
   - `apps/api/test/storm-pause.test.ts`: "a paused Storm Scout drafts nothing"; "an unpaused Storm Scout reaches the drafting body".
   - `apps/api/test/agents-settings.test.ts`: "pause is owner only and sets paused_at and paused_by"; "resume clears the pause"; "pausing does not change a running task"; "pausing a G1 agent is 409".
 - **Front Desk pause routes calls to the team**
-  - `apps/api/test/front-desk/voice-hooks.test.ts`, `apps/api/test/front-desk/voice-transfer-hooks.test.ts` (paused goes the Front Desk off path to the team ring list then voicemail; unpaused answers); `apps/api/test/front-desk/texts.test.ts` (a paused Front Desk does not answer texts).
+  - `apps/api/test/front-desk/voice-hooks.test.ts`: "a paused Front Desk takes the team-ring/voicemail path like Front Desk off"; "unpaused Front Desk answers (Connect ConversationRelay)"; `apps/api/test/front-desk/texts.test.ts`: "a paused Front Desk does not queue the text job; unpaused queues it".
 - **Run-now rate limit**
   - `apps/api/test/agents-run-now.test.ts`: "run now starts Storm Scout and returns 202 with the next allowed time five minutes out"; "a second run within five minutes is 409 with a plain sentence"; "run now is allowed again after five minutes (advance the test clock t.clock)"; "two concurrent run now calls start exactly one run"; "run now limit is per company: company B can still run after company A did"; "a rep cannot run now (403 Your role can't do that. Ask the owner.)"; "run now queues one storm-match-company job for the company".
 - **Cross-tenant 404s**
@@ -105,7 +105,7 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
   - `apps/web/test/agents-card.test.tsx`: "shows no numbers on a coming soon card"; "coming soon link name is just the agent name".
   - `apps/web/e2e/agents.spec.ts`: "agents window: the G1 agents say Coming soon".
 - **The dock's Agents app is shipped**
-  - `apps/web/test/a1-dock.test.tsx`: "shows Agents as shipped: no Coming soon note"; "keeps the Coming soon note on Front Desk only"; "ships every app but Front Desk (with E1 and S1 merged in)".
+  - `apps/web/test/a1-dock.test.tsx`: "shows Agents as shipped: no Coming soon note"; "shows no Coming soon note on any dock app"; "ships every app (with E1, S1 and D1 merged in)".
   - `apps/web/test/a1-routes.test.tsx`: "/agents shows the overview in the Agents window".
 
 ## Plan Review Focus
@@ -124,14 +124,19 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
 4. **Pause semantics (paused agents start nothing new; running work finishes)**
    - `apps/api/test/storm-pause.test.ts`: "a paused Storm Scout drafts nothing".
    - `apps/api/test/agents-settings.test.ts`: "pausing does not change a running task".
-   - Front Desk pause routing calls to the team: `apps/api/test/front-desk/voice-hooks.test.ts`, `apps/api/test/front-desk/voice-transfer-hooks.test.ts`, `apps/api/test/front-desk/texts.test.ts`.
+   - Front Desk pause routing calls to the team: `apps/api/test/front-desk/voice-hooks.test.ts` ("a paused Front Desk takes the team-ring/voicemail path like Front Desk off"); `apps/api/test/front-desk/texts.test.ts` ("a paused Front Desk does not queue the text job; unpaused queues it").
 
 ## Front Desk rows (live tasks and the card)
 - Front Desk live tasks from D1 calls and texts: `apps/api/test/front-desk-live-tasks.test.ts`, `apps/api/test/front-desk-live-text-tasks.test.ts`, `apps/api/test/live-tasks-service.test.ts`.
 - Front Desk success rate: see Integration above (`packages/db/test/agent-metrics.test.ts`, `apps/api/test/agents-api.test.ts`).
-- Front Desk pause routing calls to the team: `apps/api/test/front-desk/voice-hooks.test.ts`, `apps/api/test/front-desk/texts.test.ts`.
+- Front Desk pause routing calls to the team: `apps/api/test/front-desk/voice-hooks.test.ts` ("a paused Front Desk takes the team-ring/voicemail path like Front Desk off"); `apps/api/test/front-desk/texts.test.ts` ("a paused Front Desk does not queue the text job; unpaused queues it").
+- Front Desk feed rows: `apps/api/test/feed-text.test.ts`, `apps/api/test/agent-feed-repo.test.ts`.
+- Front Desk success rate (voice only, spam out of the denominator, rep customer scope) and model-failure hand-offs on texts: `apps/api/test/front-desk-combined-fixes.test.ts` ("frontDeskConversationCounts (success rate)"), `apps/api/test/front-desk-live-text-tasks.test.ts` ("a model_failure hand-off writes the marker turn and hands the conversation to the team"; "a scheduled reply (quiet hours) adds no replies to the live task"; "a sent reply adds exactly one reply to the live task").
+- Rejected spam calls make no task: `apps/api/test/front-desk/after-call.test.ts` ("a rejected spam call that Front Desk never answered makes no live task; one the AI had started still does").
+- Front Desk waiting: `apps/api/test/front-desk-followup-once.test.ts`.
+- Incremental live-task snapshot: `apps/api/test/live-tasks-service.test.ts`.
 - Front Desk card with real data: `apps/api/test/front-desk-live-tasks.test.ts`, `apps/api/test/front-desk-live-text-tasks.test.ts`, `apps/api/test/live-tasks-service.test.ts`; follow-ups counted once: `apps/api/test/front-desk-followup-once.test.ts`; only AI-handled calls counted, pause covers queued texts, archive closes the live task: `apps/api/test/front-desk-combined-fixes.test.ts`.
-- Front Desk rule sentence: `apps/api/test/agents-rule-facts.test.ts`. It names no transfer people (transfer names are empty) until D1 exposes the on-call names.
+- Front Desk rule facts: `apps/api/test/agents-rule-facts.test.ts` ("transferNames are the names the caller passes, and the rule sentences name them and cancelling"; "onCallFirstNames: first names of active on-call members in order; no phone, no order or inactive are left out"); the cancel sentence: `packages/shared/test/agent-rules.test.ts` ("canCancel adds the cancel sentence before the transfer sentence").
 
 ## Gaps and notes
 - **Known seam:** Storm Scout "Run now" enqueues a job whose S1 handler is still a stub; the e2e spec asserts the 202 and cooldown text only and never drains the queue.

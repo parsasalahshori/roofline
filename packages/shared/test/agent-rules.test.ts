@@ -9,6 +9,7 @@ const FRONT_DESK: AgentRuleFacts = {
     canBook: true,
     canConfirm: true,
     canMove: true,
+    canCancel: false,
   },
 };
 const STORM: AgentRuleFacts = {
@@ -89,6 +90,7 @@ describe("front_desk", () => {
         canBook: true,
         canConfirm: false,
         canMove: false,
+        canCancel: false,
       },
     });
     expect(rules[1]!.text).toBe("I can book inspections; I never give prices.");
@@ -101,6 +103,7 @@ describe("front_desk", () => {
         canBook: true,
         canConfirm: true,
         canMove: false,
+        canCancel: false,
       },
     });
     expect(rules[1]!.text).toBe(
@@ -115,6 +118,7 @@ describe("front_desk", () => {
         canBook: true,
         canConfirm: true,
         canMove: true,
+        canCancel: false,
       },
     });
     expect(rules).toHaveLength(2);
@@ -127,6 +131,7 @@ describe("front_desk", () => {
         canBook: false,
         canConfirm: false,
         canMove: false,
+        canCancel: false,
       },
     });
     expect(rules.map((r) => r.text)).toEqual([
@@ -143,11 +148,30 @@ describe("front_desk", () => {
         canBook: false,
         canConfirm: false,
         canMove: false,
+        canCancel: false,
       },
     });
     expect(rules[2]!.text).toBe(
       "I transfer urgent calls to Sam, then Pat, then Lee.",
     );
+  });
+  test("canCancel adds the cancel sentence before the transfer sentence", () => {
+    const rules = rulesFor("front_desk", {
+      frontDesk: {
+        phoneNumber: "(402) 555-0100",
+        transferNames: ["Sam"],
+        canBook: true,
+        canConfirm: true,
+        canMove: true,
+        canCancel: true,
+      },
+    });
+    expect(rules.map((r) => r.text)).toEqual([
+      "I answer every call to (402) 555-0100.",
+      "I can book, confirm and move inspections; I never give prices.",
+      "I can cancel appointments when a customer asks.",
+      "I transfer urgent calls to Sam.",
+    ]);
   });
   test("no front desk facts gives no sentences", () => {
     expect(rulesFor("front_desk", {})).toEqual([]);

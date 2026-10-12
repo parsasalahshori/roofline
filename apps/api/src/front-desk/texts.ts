@@ -9,6 +9,7 @@ import {
   frontDeskTextsOn,
   insertAssistantText,
   lockRecipient,
+  recordModelFailureHandoff,
   type TenantContext,
   type Tx,
   updateConversation,
@@ -162,10 +163,14 @@ export async function runFrontDeskText(
   const active = engine ?? createEngine(deps, TEXT_TOOL_HANDLERS);
   const said: string[] = [];
   let handoff = false;
+  let modelFailure = false;
   let spam = false;
   for await (const event of active.turn(state, callerText, new AbortController().signal)) {
     if (event.type === 'say') said.push(event.text);
-    else if (event.type === 'handoff') handoff = true;
+    else if (event.type === 'handoff') {
+      handoff = true;
+      if (event.reason === 'model_failure') modelFailure = true;
+    }
     else if (event.type === 'end' && event.reason === 'spam') spam = true;
   }
   if (spam) {
@@ -174,7 +179,11 @@ export async function runFrontDeskText(
     return;
   }
   if (handoff) {
-    await withTenant(deps.pools, ctx, (tx) => updateConversation(tx, ctx, conversationId, { handledBy: 'team' }));
+    await withTenant(deps.pools, ctx, async (tx) => {
+      await updateConversation(tx, ctx, conversationId, { handledBy: 'team' });
+      // The success rate counts a model-failure handoff as not succeeded: write the marker in the same transaction.
+      if (modelFailure) await recordModelFailureHandoff(tx, ctx, conversationId);
+    });
   }
 
   const reply = fitSegments(said.join(' ').trim());
@@ -226,7 +235,9 @@ export async function runFrontDeskText(
     return;
   }
   if (outcome) {
-    await sendQueuedText(deps, ctx, { messageId: outcome.messageId, to: outcome.to, body: reply, sender: outcome.sender }, 'We could not send this text.');
+    const sendResult = await sendQueuedText(deps, ctx, { messageId: outcome.messageId, to: outcome.to, body: reply, sender: outcome.sender }, 'We could not send this text.');
+    // Known gap: scheduled replies (held for quiet hours) never reach here, so they are not counted for the live task.
+    if (sendResult !== 'sent') return;
     // A1 Task 4: one live task per conversation per local day. The engine events carry no booking results, so bookings is 0.
     try {
       await withTenant(deps.pools, ctx, async (tx) => {
