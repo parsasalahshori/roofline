@@ -51,8 +51,8 @@ export type AgentsOverview = {
   cards: AgentCard[];
   /** All agents together, this month. */
   minutesThisMonth: number;
-  /** company_settings.hourly_rate_cents (default 2800). */
-  hourlyRateCents: number;
+  /** company_settings.hourly_rate_cents (default 2800); null unless the reader has view_money_totals (the web hides money then). */
+  hourlyRateCents: number | null;
 };
 
 /** "Run now" (spec 6): only Storm Scout (and G1's agents later) can run on request. */
@@ -74,6 +74,8 @@ export type RecentTask = {
   createdAt: string;
   finishedAt: string | null;
   minutesSaved: number | null;
+  /** Server-built like the feed's href: /approvals/<id> for reviewers, else the job, else null (plain row). */
+  href: string | null;
 };
 
 /** GET /api/agents/:agent?period=today|week|month|last90 (default month). */
@@ -87,11 +89,15 @@ export type AgentDetail = {
   paused: { at: string; byName: string | null } | null;
   runNow: RunNow;
   recentTasks: RecentTask[];
-  hourlyRateCents: number;
+  /** null unless the reader has view_money_totals (the web hides money then). */
+  hourlyRateCents: number | null;
 };
 
 /** PUT /api/agents/:agent/paused (owner). */
 export type PauseBody = { paused: boolean };
+
+/** Response of PUT /api/agents/:agent/paused. */
+export type PauseResult = { paused: boolean; pausedAt: string | null };
 
 /** POST /api/agents/:agent/run: 202 with the next allowed time; 409 with a plain sentence otherwise. */
 export type RunNowResult = { started: true; nextAllowedAt: string };

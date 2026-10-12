@@ -148,3 +148,28 @@ describe('Storm Scout run now (real handler)', () => {
     expect(matchSends()).toHaveLength(1);
   });
 });
+
+describe('run now: pause and commit order', () => {
+  beforeEach(() => {
+    RUN_NOW.storm_scout = original;
+  });
+
+  const matchSends = () => t.jobs.sent.filter((j) => j.name === 'storm-match-company');
+
+  test('a paused Storm Scout is 409 Storm Scout is paused., sends no job and does not claim the slot', async () => {
+    const owner = await actors.as('owner');
+    expect((await owner.put('/api/agents/storm_scout/paused').send({ paused: true })).status).toBe(200);
+    const res = await run('storm_scout');
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('Storm Scout is paused.');
+    expect(matchSends()).toHaveLength(0);
+    expect(await claimed()).toHaveLength(0);
+  });
+
+  test('a successful run sends exactly one job, after the claim has committed', async () => {
+    const res = await run('storm_scout');
+    expect(res.status).toBe(202);
+    expect(matchSends()).toHaveLength(1);
+    expect(await claimed()).toHaveLength(1);
+  });
+});
