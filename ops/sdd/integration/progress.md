@@ -1255,3 +1255,109 @@ a11y scans, the phone proposal view, `seedFootprintFixture` in the reset) pass b
 S1 I5 passes the database and API suites in combination. No fixes were needed after CI, so ci-check was not re-run.
 (The local `ci-check` wrapper was stopped by its time limit; the run was followed through the Actions API until it
 completed.)
+
+## Pass 12
+
+Base: pass 11 head 7aa860d. `git fetch origin` (2026-10-12): every head matched the request; c1-crm 5d2e3bd was
+already merged and was skipped. Merged in order with `git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 5d2e3bdf8c302084c9e98490c93a1b9846438f27 | (already in the probe) | - |
+| e1-estimator | a8df936573e00957a3efd2810ee9e469ac5f1faa | ae6f103 | 8 files |
+| s1-storm | fd42bc43310c0189db643abd839dd98645c521bd | 773ab0f | none (snapshot rebuild, below) |
+| d1-front-desk | 1f8dc5a2c5c2e5de79d80307b01a4985b195d8e5 | 45abb02 | 1 file |
+| a1-agents | 7fd771b8136581746e2d99fea8240fe667e2f5a5 | 6760d8d | none (ops only) |
+| g1-agents | f7c59d1fb65f5877bbdabfd54ca938f8a7821a89 | 8b61e47 | none (ops only) |
+
+Probe-only commit: ca5b5fe (merge artifact, below).
+
+What the tracks brought: E1 its whole-branch review fixes (signatures and sent prices immutable in the database,
+Ruling EQ, in 0016 in place; money, exact-report billing capped at the approved max, signed-PDF sweep schedule,
+signature PNG, per-status Estimator lists, measure window, homeowner page, config) and "E1 complete"; S1 R3 (ads stay
+guarded after a lost enable or a failed check, Meta ad sets ACTIVE under a PAUSED campaign, USD only,
+`ad_campaigns.paused_by` added to 0018 in place under Ruling AW) plus the Ruling BD notes; D1 Task 26 (Front Desk calls
+and bookings on timelines, the calendar and Today); A1 and G1 ledgers and briefs only (A1: T4/T21 built on `a1-t4`,
+Task 22 brief, Ruling BD and its amendment). No dependency or lockfile change.
+
+### Conflict resolutions
+
+e1-estimator:
+- `messaging/dispatcher.ts` (shared file): E1's C-I4 rule for a parked `send_proposal` step (a held text that was
+  blocked or failed puts the proposal back to draft and the step `needs_attention` with the reason) kept, written
+  through A1's `completeParkedStep` (A1's one-writer rule forbids `finishParkedStep` outside the task service; E1's
+  side called it directly). `finish` is typed from `completeParkedStep`. `settleUnsentProposal` writes no event.
+- `jobs/worker.ts`, `test/jobs.test.ts`, `test/pgboss.test.ts`: both schedule sets (S1's four storm schedules and E1's
+  `signed-pdf-sweep`, `*/15`); the header comment names both.
+- `packages/db/src/system/index.ts`: both barrels (E1's `signed-pdf-fanout.ts` after S1's block).
+- `packages/shared/src/proposals.ts`: E1's `US_STATE_CODES`/`isUsStateCode` plus the probe's `STORED_FILE_KINDS`
+  (`signed_proposal_pdf`, `storm_photo`, `ad_image`).
+- `test/exact-report-poll.test.ts` imports: both (`listTaskEvents` from A1, `proposalOptions` from E1).
+- `packages/db/test/rls.test.ts`: the app_tenant table-privileges test treats `SELECT_INSERT_ONLY` (D1/A1) and E1's
+  `proposal_signatures` (column-level UPDATE only, Ruling EQ) as no table-level UPDATE; E1's signature column test
+  follows E1's tenant-table test, then S1's hail tests.
+
+d1-front-desk:
+- `apps/web/test/helpers.tsx` `SHELL_ROUTES`: both (S1's storm reads, D1's `conversations?filter=needs_attention`).
+
+Checked by hand: `hooks/twilio.ts` (Ruling AV order), `tasks/handlers.ts`, `tasks/service.ts`, `steps.ts`,
+`send-batch.ts`, `router.tsx`, `routes/storms.ts`, `storm/plan.ts`, `repos/storm-plans.ts` and `routes/approvals.ts`
+unchanged this pass; `dispatcher.ts` is the only shared file that changed. No E1/S1/D1 code calls an A1 one-writer
+function directly (grep; lint passes).
+
+### Migration journal (Ruling AP) and Ruling AW
+
+S1 R3 amended 0018 in place (`ALTER TABLE ad_campaigns ADD COLUMN paused_by text`, `ad_campaigns_paused_by_check`, and
+`paused_by, updated_at` in app_system's column grant) and its snapshot. The probe's 0019-0024 snapshots were rebuilt on
+the new 0018 with a three-way JSON merge (base: old 0018, theirs: new 0018; delta = the column and the check), keeping
+each snapshot's `id`/`prevId` and key order (10 lines each). `drizzle-kit generate --name=probe_check`: "No schema
+changes, nothing to migrate"; no file created. Script: idx 0..24 consecutive and in number order, `when` strictly
+increasing, `prevId` chained 0000..0024; 25 snapshots, 25 SQL files. Exactly one `messages (company_id, id)` unique,
+D1's `messages_company_id_id_uniq`. E1's 0016 edit (Ruling EQ grants) changes no snapshot.
+
+`storms.merged_into` (S1 R1): still NOT on s1-storm fd42bc4; only on the unmerged `s1-r1` 6d503ab. Not rebuilt.
+
+Post-0018 snapshots that now disagree with S1's 0018 (no `ad_campaigns.paused_by`), checked per file:
+a1-agents 0021/0022 (owner A1, at its next s1-storm merge), g1-agents 0019-0024 (owner G1), `a1-t4` 0019-0022 (A1).
+d1-front-desk's 0019/0020 still chain from 0014 (no S1); D1 rebuilds when it merges s1-storm. Each must rebuild
+after 0018 so drizzle-kit reports no changes on its own branch; R1's `merged_into` will need the same again.
+
+### Earlier workarounds: status
+
+Closed by a track this pass: none.
+
+Still kept in the probe:
+- Item 1 (D1 journal `when`): d1-front-desk 1f8dc5a still has 0019/0020 = 1791770789451/1791770804997 (17 entries).
+- Item 2 (Ruling BA recounts): `a1-dock`, `a1-settings`, `settings`, `d1-routes`, `d1-settings`, `e1-routes`, `setup`,
+  `c1-routes` and `steps` tests still differ from every track head. Combined counts unchanged: six dock apps shipped,
+  eleven settings tabs, fifteen step types.
+- Item 3 (409 on `POST /api/storms/:id/plan`): probe-only. s1-storm `routes/storms.ts` has no paused 409 and
+  `draftStormPlan` on s1-storm still returns `Promise<{ taskId }>`; S1 R2a (`s1-r2a` aa9f2af) is not merged.
+- Item 4 (Ruling BC/BD storm-plan rerun and re-draft, A1 T20): not on a1-agents. `a1-t20` 5590993 builds on
+  `lockStormPlan`/`supersedeDraft`/`linkStormPlan` and widens re-draft to draft/expired/declined, but for every caller
+  with no `allowFinished`: that is the pre-amendment Ruling BD. A1's ledger says the amendment (automatic path drafts
+  only over drafts; `allowFinished` set only by the rerun route) is applied after T20's current run. The probe keeps
+  `REDRAFTABLE = ['draft']` and no rerun branch.
+
+Ruling BD: no track head carries two re-draft mechanisms (s1-storm has only its old `replaceDraftPlan`, which the probe
+replaces with A1's code, as since pass 10). Watch item: the unmerged `s1-r2a` aa9f2af still widens
+`replaceDraftPlan` and adds `REDRAFTABLE_PLAN_STATUSES` in `storm/plan-errors.ts` and `routes/storms.ts`; per Ruling BD
+the S1 lead must drop those at merge (S1 ledger plans exactly that).
+
+### New cross-track problems
+
+1. **E1 x A1, dispatcher one-writer.** E1's review (C-I4) calls `finishParkedStep` directly in
+   `messaging/dispatcher.ts` with a `needs_attention` finish; with A1 that bypasses `recordOutcome` (no step event) and
+   breaks A1's one-writer lint. Probe fix: route it through `completeParkedStep(tx, ctx, step.id, finish, now)`.
+   Owner: A1 at its next e1-estimator merge (the merge rule above). Database/API effect is verified by CI.
+2. **S1 R3 x A1/G1/D1, 0018 snapshot (Ruling AW).** See the list above; owners A1, G1, D1.
+
+Merge-artifact fixes (ca5b5fe): S1's `s1-routes` "dock Storm opens /storm" test starts at `/estimator` and stubbed
+only `GET /api/proposals`; E1's review made the Estimator read one URL per status, so the test saw five unexpected
+calls. It now spreads E1's `proposalListRoutes()`.
+
+### Checks (after all merges and the probe commit)
+
+`npm ci` clean (no package change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass, lint
+pass, lint:css pass; vitest @roofline/web 1213 pass (133 files, after ca5b5fe), @roofline/ui 172 pass,
+@roofline/shared 1296 pass, @roofline/send-gate 525 pass. The database, API, worker and e2e suites run only in CI.
