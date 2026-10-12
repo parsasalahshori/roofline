@@ -157,6 +157,11 @@ export function Today() {
               <li key={job.id}>
                 <UiLink href={'/jobs/' + encodeURIComponent(job.id)} className={styles.link}>
                   <Card className={styles.card}>
+                    {job.frontDesk === 'urgent' || job.frontDesk === 'message' ? (
+                      <span className={styles.fromFrontDesk}>
+                        {job.frontDesk === 'urgent' ? today.fromFrontDeskUrgent : today.fromFrontDesk}
+                      </span>
+                    ) : null}
                     <strong className={styles.title}>{job.customerName}</strong>
                     <span className={styles.agent}>{today.nextStep(job.nextStep)}</span>
                   </Card>
