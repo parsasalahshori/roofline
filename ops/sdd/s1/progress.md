@@ -140,3 +140,4 @@ Merged origin/e1-estimator e29d2d8 (E1 T7, T8, T15; C1 waves 4-5: T6 stage rules
 - MapView: both effects kept (T24 storm layer, C1 T27 ?focus=).
 - f3-routes and settings tests: both stubs.
 Follow-up test fixes: team-member fixtures carry stormAlertEmail; the sentinel's s1-routes GET /api/proposals stub; calendar/company stubs in s1-routes and settings-ads; storm-layer in map-focus. Local: typecheck, lint, lint:css clean; web 790, shared/send-gate 1192; drizzle-kit reports no changes; playwright-core only 1.56.1. E1 T13 (storeFile) is not on e1-estimator yet, so T19 waits.
+s1-storm 65f130b (G4 + G6 + the e1-estimator e29d2d8 merge): ci-check 38221280266 PASSED (Platform, Hail, E2E). The two earlier runs (527e406, 28cd486) had Platform cancelled by later pushes. Lead practice: no s1-storm pushes while an integration ci-check runs.
