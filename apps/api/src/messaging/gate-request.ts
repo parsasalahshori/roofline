@@ -34,6 +34,8 @@ export type GateRequestInput = {
   dedupeKey: string | null;
   /** When the customer's text this one answers arrived, if it is a reply. */
   replyToInboundAt: Date | null;
+  /** D1 Front Desk reply, see decide.ts. */
+  inReplyToInboundAt?: Date;
 };
 
 export type BuiltGateRequest = {
@@ -122,7 +124,13 @@ export async function buildGateRequest(
         timezone: recipient.timezone,
         state: recipient.state,
       },
-      message: { purpose: input.purpose, body, dedupeKey: input.dedupeKey, replyToInboundAt: input.replyToInboundAt },
+      message: {
+        purpose: input.purpose,
+        body,
+        dedupeKey: input.dedupeKey,
+        replyToInboundAt: input.replyToInboundAt,
+        ...(input.inReplyToInboundAt !== undefined && { inReplyToInboundAt: input.inReplyToInboundAt }),
+      },
       history,
     },
   };
