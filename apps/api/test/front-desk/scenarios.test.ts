@@ -1,5 +1,6 @@
+import { eq } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
-import { appointments, customers, properties } from '@roofline/db';
+import { appointments, calls, customers, properties } from '@roofline/db';
 import { guardSentence, normalizeAddressKey, type GuardHit } from '@roofline/shared';
 import { runAfterCall } from '../../src/front-desk/after-call.ts';
 import { inCompany } from '../crm-helpers.ts';
@@ -188,6 +189,10 @@ async function expectRows(sc: Scenario, { r, observed }: Played) {
 
   // The summary job ends the conversation (criterion 24). A spam call is billed and left unsummarised by design.
   if (derived !== 'spam') {
+    // Twilio's status callback ends the call before the after-call job runs (after-call waits for a finished call).
+    await inCompany(r.t, r.companyId, (tx) =>
+      tx.update(calls).set({ status: 'ended', endedAt: r.t.clock.now() }).where(eq(calls.id, r.call.callId)),
+    );
     await runAfterCall({ ...r.t.deps, llm: r.llm }, { companyId: r.companyId, callSid: r.call.callSid });
     const after = await r.conversation();
     expect(after?.summary).toBe('Scripted summary.');
