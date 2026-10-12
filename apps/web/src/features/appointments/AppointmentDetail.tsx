@@ -107,6 +107,13 @@ export function AppointmentDetail({ appointment, onReschedule }: AppointmentDeta
           </>
         ) : null}
 
+        {appointment.source === 'front_desk' ? (
+          <>
+            <dt>{appointments.detailSource}</dt>
+            <dd>{appointments.bookedByFrontDesk}</dd>
+          </>
+        ) : null}
+
         {appointment.notes !== null && appointment.notes !== '' ? (
           <>
             <dt>{appointments.detailNotes}</dt>

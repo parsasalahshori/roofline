@@ -15,6 +15,8 @@ import { pollExactReports } from './scheduler/exact-report-poll.ts';
 import { endTrials } from './scheduler/end-trials.ts';
 import { expireDrafts } from './scheduler/expire-drafts.ts';
 import { hailHealth } from './scheduler/hail-health.ts';
+import { fdHealth } from './scheduler/fd-health.ts';
+import { fdRetention } from './scheduler/fd-retention.ts';
 import { pollTexting } from './scheduler/poll-texting.ts';
 import { pruneEarlyReports } from './scheduler/prune-early-reports.ts';
 import { provisionTexting } from './scheduler/provision-texting.ts';
@@ -45,7 +47,7 @@ export type ScheduledJob = {
  * The worker's recurring jobs: draft expiry, the queued-step sweeper, the import sweeper (imports
  * stranded queued or processing), the scheduled-text
  * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
- * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll, and Storm Scout's Spotter sync, storm matching, ad-spend sync and hail-feed health check. A schedule dropped
+ * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll, and Storm Scout's Spotter sync, storm matching, ad-spend sync and hail-feed health check, and Front Desk's retention and health checks. A schedule dropped
  * from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [
@@ -66,6 +68,9 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'storm-match', cron: '*/10 * * * *', run: stormMatch },
   { name: 'ad-spend-sync', cron: '0 * * * *', run: adSpendSync },
   { name: 'hail-health', cron: '*/15 * * * *', run: hailHealth },
+  // D1 Front Desk
+  { name: 'fd-retention', cron: '47 3 * * *', run: fdRetention },
+  { name: 'fd-health', cron: '*/2 * * * *', run: fdHealth },
 ];
 
 /** How many steps one worker process runs at once. */

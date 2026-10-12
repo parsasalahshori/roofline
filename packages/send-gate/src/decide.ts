@@ -28,6 +28,8 @@ export type GateRequest = {
     dedupeKey: string | null;
     /** When the customer's text we are answering arrived, if this message is a reply. */
     replyToInboundAt: Date | null;
+    /** D1 Front Desk: when the customer's text this reply answers arrived. Quiet hours do not delay an informational reply sent within 10 minutes of it. */
+    inReplyToInboundAt?: Date;
   };
   history: {
     dedupeAlreadySent: boolean;
@@ -49,6 +51,8 @@ const DAY_MS = 24 * 60 * MINUTE_MS;
 
 /** An informational text answering a customer's text from within this long ago ignores quiet hours. */
 const REPLY_WINDOW_MS = 15 * MINUTE_MS;
+/** The same for a D1 Front Desk reply (`inReplyToInboundAt`). */
+const IN_REPLY_WINDOW_MS = 10 * MINUTE_MS;
 /** FL, OK and MD allow this many marketing texts to one person in any 24 hours. */
 const STRICT_STATE_DAILY_LIMIT = 3;
 
@@ -185,8 +189,14 @@ export function decide(req: GateRequest): GateDecision {
   // A reply to a customer who texted in the last 15 minutes is a conversation, not an interruption.
   // An inbound time after `now` is clock skew or bad data, and does not count.
   const replyMs = message.replyToInboundAt?.getTime();
+  const inReplyMs = message.inReplyToInboundAt?.getTime();
   const answeringNow =
-    informational && replyMs !== undefined && replyMs <= nowMs && nowMs - replyMs <= REPLY_WINDOW_MS;
+    (informational && replyMs !== undefined && replyMs <= nowMs && nowMs - replyMs <= REPLY_WINDOW_MS) ||
+    (informational &&
+      inReplyMs !== undefined &&
+      !Number.isNaN(inReplyMs) &&
+      inReplyMs <= nowMs &&
+      nowMs - inReplyMs <= IN_REPLY_WINDOW_MS);
 
   const sendAtMs = answeringNow
     ? earliestMs

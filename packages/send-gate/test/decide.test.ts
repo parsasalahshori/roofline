@@ -761,3 +761,45 @@ describe('bad input fails closed', () => {
     }
   });
 });
+
+describe('inReplyToInboundAt', () => {
+  const infoReq = (inIso: string | Date | undefined) =>
+    at('2026-06-10T23:00:00', {
+      message: {
+        purpose: 'informational',
+        body: INFO_BODY,
+        ...(inIso !== undefined && { inReplyToInboundAt: typeof inIso === 'string' ? chi(inIso) : inIso }),
+      },
+    });
+
+  test('a reply to a text 9 minutes ago sends at 23:00', () => {
+    expect(decide(infoReq('2026-06-10T22:51:00'))).toEqual({ action: 'send' });
+  });
+
+  test('exactly 10:00 ago sends', () => {
+    expect(decide(infoReq('2026-06-10T22:50:00'))).toEqual({ action: 'send' });
+  });
+
+  test('10:01 ago is scheduled at 08:00 with rule quiet_hours', () => {
+    const d = scheduled(decide(infoReq('2026-06-10T22:49:59')));
+    expect(d.at).toEqual(chi('2026-06-11T08:00:00'));
+    expect(d.rule).toBe('quiet_hours');
+  });
+
+  test('an inbound time in the future does not count', () => {
+    expect(decide(infoReq('2026-06-10T23:05:00'))).toMatchObject({ action: 'schedule', rule: 'quiet_hours' });
+  });
+
+  test('an invalid Date does not count', () => {
+    expect(decide(infoReq(new Date(NaN)))).toMatchObject({ action: 'schedule', rule: 'quiet_hours' });
+  });
+
+  test('marketing never gets it', () => {
+    const req = at('2026-06-10T23:00:00', { message: { inReplyToInboundAt: chi('2026-06-10T22:55:00') } });
+    expect(decide(req)).toMatchObject({ action: 'schedule', rule: 'quiet_hours' });
+  });
+
+  test('without the field nothing changes', () => {
+    expect(decide(infoReq(undefined))).toMatchObject({ action: 'schedule', rule: 'quiet_hours' });
+  });
+});

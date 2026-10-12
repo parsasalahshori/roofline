@@ -211,7 +211,7 @@ describe('settings tabs for the C1 screens', () => {
 });
 
 describe('dock notes', () => {
-  it('has no "Coming soon" note on Jobs, Calendar, Agents or Storm, but keeps it on Front Desk', async () => {
+  it('has no "Coming soon" note on Jobs, Calendar, Agents, Storm or Front Desk', async () => {
     signedInApi();
     renderApp('/');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
@@ -220,6 +220,6 @@ describe('dock notes', () => {
     expect(dockLink(dockNav, WINDOW_COPY.calendar.title).textContent ?? '').not.toContain(dock.comingSoon);
     expect(dockLink(dockNav, WINDOW_COPY.agents.title).textContent ?? '').not.toContain(dock.comingSoon);
     expect(dockLink(dockNav, WINDOW_COPY.storm.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY['front-desk'].title).textContent ?? '').toContain(dock.comingSoon);
+    expect(dockLink(dockNav, WINDOW_COPY['front-desk'].title).textContent ?? '').not.toContain(dock.comingSoon);
   });
 });
