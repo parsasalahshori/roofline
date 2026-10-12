@@ -1680,3 +1680,28 @@ Merge-artifact fixes: `app.ts` ObjectStore import (a1 merge); `deps.ts` `Unconfi
 `tsc -p scripts`), lint pass, lint:css pass; vitest @roofline/web 1316 pass (142 files), @roofline/ui 172 pass,
 @roofline/shared 1361 pass, @roofline/send-gate 532 pass. `ops/bin/launch-normalize --check`: fails only on the D1
 `calls` grant (above). The database, API, worker and e2e suites run only in CI.
+
+### CI (pass 14)
+
+Run 38282615492 on 44b263f, attempt 1: Hail service success; v1 success; E2E failure (4 tests); Platform failure (3 tests
+in 1 file), all from the combination, none a flake:
+- `e2e/agents-settings.spec.ts` (2, A1): the Settings Agents tab now holds A1's time-saved table and G1's agent rules form,
+  each with a "Save" button, so `getByRole('button', { name: 'Save', exact: true })` matched two. Now `.first()` (the
+  table's comes first).
+- `e2e/agents.spec.ts` "the G1 agents say Coming soon" (A1): G1 ships its agents (`G1_AGENTS_SHIPPED`), so the cards
+  say Paused and Turn on. Rewritten to that (Ruling BA, combined set).
+- `e2e/more-agents.spec.ts` (G1): A1's card link is labelled by name, chip and time line (`aria-labelledby`), so
+  `getByRole('link', { name: 'Claims', exact: true })` found nothing. The card is found by its heading, as A1's spec does.
+- `test/smoke-front-desk-guards.test.ts` (3, D1 T27): its production `BASE_ENV` lacks R2 (E1 Ruling ET) and TRUST_PROXY
+  (C1 security finding 4), so `loadConfig` throws before the guards. Added both (new problem 5).
+
+Fix commit 2a3cbe5. Run 38286869957 on 2a3cbe5, attempt 1: Platform (lint, typecheck, tests) success; E2E (Playwright)
+success; Hail service (ruff, pytest) success; v1 (node:test) success. All six tracks (G1 complete, D1 T19/T27, A1
+T4/T21/T22, S1 R8-R10, E1 sec fixes) and final Ruling BD pass the database, API, worker and e2e suites in combination.
+(The local `ci-check` wrapper was stopped by its time limit; both runs were followed through the Actions API.)
+
+New problem 5. **D1 x C1/E1, Front Desk smoke production fixture.** `apps/api/test/smoke-front-desk-guards.test.ts`
+`BASE_ENV` needs `TRUST_PROXY: '1'` (C1, already on d1-front-desk since c49523a, so this part is red on D1 itself) and
+the four R2 settings (E1, at D1's e1 merge). Owner D1.
+New problem 6. **A1 x G1, Agents e2e.** The three spec fixes above belong in A1 (agents, agents-settings) and G1
+(more-agents) at their next merge of each other. Owners A1 and G1.
