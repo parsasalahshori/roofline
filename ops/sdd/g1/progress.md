@@ -79,3 +79,8 @@ Ruling GX-A (confirmed by the controller, amending cross-track Ruling AV): inbou
 - Intended: the deductible guard also refuses denials ("We will not pay your deductible."): the conservative choice; T8/T13 prompts must not write deductible disclaimers.
 - Minors kept: appointment previews print raw ISO ranges (the R2 UI / T17 formats them); `lowerUuid`'s unused undefined branch.
 - Task 2b: complete (7f49765..7b87a6b), CI 38200942342 green. Merged into g1-agents.
+
+### Task 3 (Ruling AZ, controller)
+- Base `g1-t3` 8dc55bc = g1-agents 4e4dc3c + a real merge of origin/d1-t4 b548ebc (D1 T4: `Llm`, `ScriptedLlm`, Anthropic adapter). Keep-both conflicts resolved by D1's rule (C1 lines first, then `// D1 Front Desk`): app.ts imports, jobs/{handlers,queue,worker}.ts (JOB_NAMES gains `calendar-push` beside D1's fd-*; JobData gains appointmentId + D1 ids; D1's SendOptions kept), test/{helpers,jobs,pgboss}.test.ts (FakeWeatherSource keeps `hourly` and D1's `daily`). T3 is not merged into g1-agents until d1-front-desk contains T4; then d1-front-desk merges first, T3 after (any C1 T5 hunk that conflicts again takes D1's real resolution).
+- Brief by the track lead: `ops/sdd/g1/task-3-brief.md` (local-hour fan-out schedules, `DRAFT_KINDS`/`JobFacts`/`ClaimReplyFacts`, step stubs fail loudly, `onClaimsReply` stub in the GX-A position). Run wf_ccf7196d-f00 (contact 631, Sonnet builders).
+- CI rule (controller, 04:52Z): merges need `CI_JOBS="Platform E2E"` green. g1-agents 4e4dc3c: Platform, E2E and v1 green (run 38201766294).
