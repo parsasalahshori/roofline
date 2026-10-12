@@ -39,6 +39,8 @@ const APPOINTMENT: AppointmentView = {
   notes: 'Gate code at the side.',
   source: 'manual',
   sync: 'synced',
+  confirmedAt: null,
+  confirmedVia: null,
   canEdit: true,
 };
 

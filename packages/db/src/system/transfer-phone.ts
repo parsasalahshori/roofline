@@ -82,3 +82,13 @@ export async function saveTransferPhone(system: Db, companyId: string, userId: s
     .where(and(eq(memberships.companyId, companyId), eq(memberships.userId, userId)));
   return getTransferPhone(system, companyId, userId);
 }
+
+/** Active members on the ring list with their account email, in ring order (D1 Task 9: urgent message mail). */
+export async function onCallEmails(system: Db, companyId: string): Promise<{ userId: string; email: string }[]> {
+  return system
+    .select({ userId: memberships.userId, email: users.email })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(and(eq(memberships.companyId, companyId), eq(memberships.status, 'active'), sql`${memberships.onCallOrder} is not null`))
+    .orderBy(asc(memberships.onCallOrder), asc(memberships.userId));
+}

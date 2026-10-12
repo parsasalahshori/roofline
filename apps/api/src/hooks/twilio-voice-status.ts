@@ -1,7 +1,7 @@
 import express, { Router } from 'express';
 import { applyCallStatus, type TenantContext, withTenant } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
-import { routeVoice } from './twilio-voice-common.ts';
+import { routeVoice, validCallSid } from './twilio-voice-common.ts';
 import { field, FORM_BODY_LIMIT } from './twilio.ts';
 
 const TERMINAL = new Set(['completed', 'canceled', 'busy', 'no-answer', 'failed']);
@@ -14,9 +14,9 @@ export function twilioVoiceStatusHooks(deps: AppDeps): Router {
   router.post('/', async (req, res) => {
     const route = await routeVoice(deps, req, res);
     if (!route) return;
-    const callSid = field(req, 'CallSid');
+    const callSid = validCallSid(req);
     const status = field(req, 'CallStatus');
-    if (callSid === undefined || callSid === '' || status === undefined) {
+    if (callSid === null || status === undefined) {
       res.status(400).end();
       return;
     }

@@ -55,6 +55,8 @@ export type ToolActionCard = {
 /** One transcript line. `text` is null when the transcript was not kept (caller's request) or was swept. */
 export type TurnView = {
   id: string;
+  /** The call this turn was spoken on, or null for a text turn. */
+  callId: string | null;
   position: number;
   speaker: TurnSpeaker;
   text: string | null;

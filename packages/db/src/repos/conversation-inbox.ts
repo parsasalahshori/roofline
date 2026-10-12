@@ -361,6 +361,7 @@ export async function getConversationDetail(
     const kept = t.callId === null ? true : storedByCall.get(t.callId) === true;
     return {
       id: t.id,
+      callId: t.callId,
       position: t.position,
       speaker: t.speaker,
       text: kept && t.text !== '' ? t.text : null,

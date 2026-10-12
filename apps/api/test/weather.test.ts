@@ -241,6 +241,7 @@ function deferredSource() {
         calls.push({ lat, lng, settle: { resolve, reject } });
       }),
     hourly: async () => null,
+    daily: async () => null,
   };
   return { source, calls };
 }
@@ -255,6 +256,7 @@ describe('WeatherCache', () => {
         return FAKE_WEATHER;
       },
       hourly: async () => null,
+      daily: async () => null,
     };
     const cache = new WeatherCache(source, clock);
     expect(await cache.get('k', 1, 2)).toEqual(FAKE_WEATHER);
@@ -283,7 +285,7 @@ describe('WeatherCache', () => {
     const clock = handClock();
     const seen: [number, number][] = [];
     const cache = new WeatherCache(
-      { current: async (lat, lng) => (seen.push([lat, lng]), FAKE_WEATHER), hourly: async () => null },
+      { current: async (lat, lng) => (seen.push([lat, lng]), FAKE_WEATHER), hourly: async () => null, daily: async () => null },
       clock,
     );
     await cache.get('a:41.27,-96.05', 41.2701, -96.0501);

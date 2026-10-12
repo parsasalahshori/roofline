@@ -236,6 +236,7 @@ export * from './repos/fd-caller.ts';
 export * from './repos/fd-texts.ts';
 export * from './repos/fd-after-call.ts';
 export * from './repos/fd-text-back.ts';
+export * from './repos/fd-message.ts';
 export * from './repos/conversation-inbox.ts';
 export * from './repos/front-desk-stats.ts';
 // S1 skeleton (Task 1): one line per new repo file; later S1 tasks fill the files in.

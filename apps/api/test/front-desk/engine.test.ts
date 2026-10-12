@@ -437,4 +437,49 @@ describe('front desk engine', () => {
     const u = lastUserIndex(state);
     expect((state.history[u + 1] as unknown as { role: string }).role).toBe('system');
   });
+
+  test('three turns in a row not understood hand off with not_understood', async () => {
+    const NOT_UNDERSTOOD: RouteDecision = { ...OPUS, intent: 'not_understood' };
+    const { state, say } = await setup([{ when: /./, route: NOT_UNDERSTOOD, answer: [{ kind: 'text', text: 'Could you say that again?' }] }]);
+    expect((await say('mumble')).some((e) => e.type === 'handoff')).toBe(false);
+    expect((await say('mumble')).some((e) => e.type === 'handoff')).toBe(false);
+    expect(state.failedUnderstanding).toBe(2);
+    const events = await say('mumble');
+    expect(events.find((e) => e.type === 'handoff')).toMatchObject({ reason: 'not_understood' });
+  });
+
+  test('a person-ask intent counts once and hands off as asked', async () => {
+    const ASKED: RouteDecision = { ...OPUS, intent: 'ask_for_person', route: 'transfer' };
+    const { state, say } = await setup([{ when: /./, route: ASKED }]);
+    const events = await say('let me talk to someone');
+    expect(state.askedForPersonCount).toBe(1);
+    expect(events.find((e) => e.type === 'handoff')).toMatchObject({ reason: 'asked' });
+  });
+
+  test('a person-ask count only counts on a turn that is itself a person-ask', async () => {
+    const ASK: RouteDecision = { ...OPUS, intent: 'ask_for_person', route: 'opus' };
+    const answer = [{ kind: 'text' as const, text: 'Okay.' }];
+    const { state, say } = await setup([
+      { when: /first/, route: ASK, answer },
+      { when: /middle/, route: { ...OPUS, intent: 'other', route: 'opus' }, answer },
+      { when: /last/, route: ASK, answer },
+    ]);
+    state.taskInProgress = true;
+    expect((await say('first')).some((e) => e.type === 'handoff')).toBe(false);
+    expect(state.askedForPersonCount).toBe(1);
+    state.taskInProgress = false;
+    expect((await say('middle')).some((e) => e.type === 'handoff')).toBe(false);
+    expect(state.askedForPersonCount).toBe(1);
+    const events = await say('last');
+    expect(events.find((e) => e.type === 'handoff')).toMatchObject({ reason: 'asked' });
+  });
+
+  test('a clear turn resets the misunderstanding count', async () => {
+    const { state, say, llm } = await setup([{ when: /mumble/, route: { ...OPUS, intent: 'not_understood' }, answer: [{ kind: 'text', text: 'Again?' }] }, { when: /roof/, route: OPUS, answer: [{ kind: 'text', text: 'Sure.' }] }]);
+    await say('mumble');
+    expect(state.failedUnderstanding).toBe(1);
+    await say('my roof');
+    expect(state.failedUnderstanding).toBe(0);
+    void llm;
+  });
 });

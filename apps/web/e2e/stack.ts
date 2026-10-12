@@ -18,7 +18,10 @@ const STACK_FILE = fileURLToPath(new URL('.stack.json', import.meta.url));
 const SHUTDOWN_WAIT_MS = 10_000;
 
 const db = await startTestDatabase();
-const encryptionKey = randomBytes(32).toString('base64');
+
+const ENCRYPTION_KEY = randomBytes(32).toString('base64');
+/** Roofline's own test caller number for the Front Desk forwarding test (a 555 number; no call leaves the box). */
+const TEST_CALLER_NUMBER = '+14025550100';
 
 /** Both children read this one environment (on top of process.env). */
 const env: NodeJS.ProcessEnv = {
@@ -31,7 +34,8 @@ const env: NodeJS.ProcessEnv = {
   POLICY_PAGES_DOMAIN: E2E_POLICY_DOMAIN,
   DATABASE_URL_TENANT: db.urls.tenant,
   DATABASE_URL_SYSTEM: db.urls.system,
-  ENCRYPTION_KEY: encryptionKey,
+  ENCRYPTION_KEY,
+  TWILIO_TEST_CALLER_NUMBER: TEST_CALLER_NUMBER,
   WEATHER_DISABLED: '1',
   FAKE_PROVIDERS: '1',
   WEB_DIST_DIR: 'apps/web/dist',
@@ -86,7 +90,9 @@ try {
         tenantUrl: db.urls.tenant,
         systemUrl: db.urls.system,
         baseUrl: BASE_URL,
-        encryptionKey,
+        // Throwaway key of this run's database: the Front Desk specs encrypt a webhook signing token with it.
+        encryptionKey: ENCRYPTION_KEY,
+        testCallerNumber: TEST_CALLER_NUMBER,
       },
       null,
       2,

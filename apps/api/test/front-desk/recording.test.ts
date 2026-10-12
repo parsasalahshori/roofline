@@ -1,3 +1,5 @@
+import request from 'supertest';
+import twilio from 'twilio';
 import { describe, expect, test } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { companySettings, encrypt, findCallRecordingBySid, insertCall, listTurns, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
@@ -111,5 +113,33 @@ describe('call recording', () => {
     expect(system[0]!.text).toBe("Recording and transcript stopped at the caller's request");
     for (const turn of turns.filter((x) => x.speaker === 'caller' || x.speaker === 'assistant')) expect(turn.text).toBe('');
     expect(t.callControl.calls.some((c) => c.method === 'stopRecording')).toBe(true);
+  });
+});
+
+describe('POST /hooks/twilio/voice/recording', () => {
+  const BASE = 'https://app.roofline.test';
+  const TOKEN = 'test-subaccount-token';
+  const fields = { CallSid: SID, RecordingSid: `RE${'1'.repeat(32)}`, RecordingStatus: 'completed', RecordingDuration: '9' };
+
+  test('a tampered ?c= on the recording hook is 403', async () => {
+    const { t } = await rig();
+    const real = t.seed.a.companyId;
+    const signature = twilio.getExpectedTwilioSignature(TOKEN, `${BASE}/hooks/twilio/voice/recording?c=${real}`, fields);
+    const res = await request(t.app)
+      .post(`/hooks/twilio/voice/recording?c=${t.seed.b.companyId}`)
+      .type('form')
+      .set('X-Twilio-Signature', signature)
+      .send(fields);
+    expect(res.status).toBe(403);
+    expect(t.jobs.sent.filter((j) => j.name === 'fd-recording-store')).toHaveLength(0);
+  });
+
+  test('a malformed CallSid is 400', async () => {
+    const { t } = await rig();
+    const bad = { ...fields, CallSid: 'CA123' };
+    const path = `/hooks/twilio/voice/recording?c=${t.seed.a.companyId}`;
+    const signature = twilio.getExpectedTwilioSignature(TOKEN, BASE + path, bad);
+    const res = await request(t.app).post(path).type('form').set('X-Twilio-Signature', signature).send(bad);
+    expect(res.status).toBe(400);
   });
 });

@@ -27,6 +27,24 @@ const SAMPLES: Array<[string, string]> = [
   ...['303', '719', '720', '970'].map((c): [string, string] => [c, 'CO']),
   ...['404', '470', '678', '770', '912'].map((c): [string, string] => [c, 'GA']),
   ['202', 'DC'],
+  // Added in D1 Task 27 from libphonenumber's area-code table (see the note above AREA_CODES_BY_STATE).
+  ...['909', '350', '369', '738', '840'].map((c): [string, string] => [c, 'CA']),
+  ['308', 'NE'],
+  ...['324', '645', '689', '728'].map((c): [string, string] => [c, 'FL']),
+  ...['447', '464', '730'].map((c): [string, string] => [c, 'IL']),
+  ['227', 'MD'],
+  ['582', 'PA'],
+  ['945', 'TX'],
+  ['235', 'MO'],
+  ...['274', '353'].map((c): [string, string] => [c, 'WI']),
+  ...['283', '326'].map((c): [string, string] => [c, 'OH']),
+  ['327', 'AR'],
+  ...['329', '363'].map((c): [string, string] => [c, 'NY']),
+  ['472', 'NC'],
+  ['572', 'OK'],
+  ...['686', '826'].map((c): [string, string] => [c, 'VA']),
+  ['748', 'CO'],
+  ['821', 'SC'],
 ];
 
 describe('ALL_PARTY_STATES', () => {
@@ -47,6 +65,39 @@ describe('stateForAreaCode', () => {
   );
   test('trims input', () => {
     expect(stateForAreaCode(' 415 ')).toBe('CA');
+  });
+  test('Canadian and Caribbean NANP codes stay unknown', () => {
+    for (const npa of ['204', '226', '236', '250', '289', '306', '403', '438', '587', '613', '647', '780', '242', '246', '268', '284', '345', '441', '473', '649', '664', '721', '758', '767', '784', '787', '809', '829', '849', '868', '869', '876', '939']) {
+      expect(stateForAreaCode(npa), npa).toBeNull();
+    }
+  });
+});
+
+// The table is data typed by hand, so its shape is checked: every key a plain NANP area code, none twice.
+describe('the area code table', () => {
+  const codes = Array.from({ length: 800 }, (_, i) => String(i + 200).padStart(3, '0'))
+    .map((npa) => [npa, stateForAreaCode(npa)] as const)
+    .filter((entry): entry is readonly [string, string] => entry[1] !== null);
+
+  test('holds only valid area codes (first digit 2-9, not N11, not N9X) for 50 states and DC', () => {
+    expect(codes.length).toBeGreaterThan(330);
+    for (const [npa, state] of codes) {
+      expect(npa, npa).toMatch(/^[2-9]\d\d$/);
+      expect(npa.slice(1), npa).not.toBe('11');
+      expect(npa[1], npa).not.toBe('9');
+      expect(state, npa).toMatch(/^[A-Z]{2}$/);
+    }
+    expect(new Set(codes.map(([, state]) => state)).size).toBe(51);
+  });
+
+  test('never maps a code that is Canadian, Caribbean or toll-free', () => {
+    const toll = ['800', '833', '844', '855', '866', '877', '888'];
+    for (const npa of toll) expect(stateForAreaCode(npa)).toBeNull();
+  });
+
+  test('every all-party state has at least one area code', () => {
+    const states = new Set(codes.map(([, state]) => state));
+    for (const state of ALL_PARTY_STATES) expect(states.has(state), state).toBe(true);
   });
 });
 

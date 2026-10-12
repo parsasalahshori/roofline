@@ -82,8 +82,9 @@ GRANT SELECT (id, company_id, status) ON conversations TO app_system;
 --> statement-breakpoint
 GRANT SELECT (id, company_id, at) ON conversation_turns TO app_system;
 --> statement-breakpoint
--- The fd-health repair marks a number's voice URL as set (system/voice-routing.ts markVoiceUrlSet; Drizzle also sets updated_at). C1 Ruling
--- SEC-4 leaves app_system only SELECT and INSERT on company_phone_numbers, so this column is granted here.
+-- The fd-health repair marks a number whose voice URL it set (Task 17, markVoiceUrlSet). 0002 gives
+-- app_system only SELECT and INSERT on company_phone_numbers (Ruling SEC-4), so only that column and
+-- updated_at (Drizzle sets it on every update through the shared timestamps helper).
 GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers TO app_system;
 --> statement-breakpoint
 
