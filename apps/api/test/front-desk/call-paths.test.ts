@@ -25,6 +25,7 @@ import { createEngine, SAY_SPAM_ENDING } from '../../src/front-desk/engine.ts';
 import type { ConversationState, Engine } from '../../src/front-desk/engine-types.ts';
 import { createRecording } from '../../src/front-desk/recording.ts';
 import { type RelayCall, runRelayLoop } from '../../src/front-desk/relay-session-loop.ts';
+import { identifyCaller } from '../../src/front-desk/tools/caller.ts';
 import { FRONT_DESK_HANDLERS } from '../../src/front-desk/tools/index.ts';
 import { FakeVoiceSession } from '../../src/providers/fakes/voice-session.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
@@ -161,6 +162,29 @@ async function seedCaller(r: Rig) {
   });
 }
 
+/** An upcoming inspection on Thursday (DAYTIME is Tuesday) for the seeded caller's job and home. */
+async function seedInspection(r: Rig, seeded: Awaited<ReturnType<typeof seedCaller>>) {
+  const [a] = await inCompany(r.t, r.companyId, (tx) =>
+    tx
+      .insert(appointments)
+      .values({
+        companyId: r.companyId,
+        kind: 'inspection',
+        jobId: seeded.jobId,
+        customerId: seeded.customerId,
+        propertyId: seeded.propertyId,
+        assignedUserId: r.t.seed.a.owner.userId,
+        startsAt: new Date('2026-10-15T15:00:00.000Z'),
+        endsAt: new Date('2026-10-15T16:00:00.000Z'),
+        source: 'manual',
+      })
+      .returning({ id: appointments.id }),
+  );
+  return a!.id;
+}
+
+const APPOINTMENT = /Appointment ([0-9a-f-]{36}): inspection on /;
+
 const VERIFY = { kind: 'tool' as const, name: 'verify_caller' as const, input: { name: 'Nina Park', street: HOME_STREET } };
 
 describe('front desk call paths (real relay loop, real engine, real tools)', () => {
@@ -250,6 +274,99 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     expectOpusTiming(await r.assistantTurns());
     expect(r.loop.ended).toBe(false);
     expect(r.session.endedWith).toBeNull();
+  });
+
+  test('existing appointment (verified): lookup_my_jobs shows it, then confirm and move act on it', async () => {
+    const r = await rig([
+      {
+        when: /my Thursday inspection/,
+        route: { ...OPUS, intent: 'job_status' },
+        answer: [VERIFY, { kind: 'tool', name: 'lookup_my_jobs', input: {} }],
+      },
+    ]);
+    const seeded = await seedCaller(r);
+    const appointmentId = await seedInspection(r, seeded);
+    await r.say('about my Thursday inspection');
+
+    const lookup = (await r.toolResults()).find((c) => c.name === 'lookup_my_jobs');
+    expect(lookup?.ok).toBe(true);
+    const m = APPOINTMENT.exec(lookup!.result);
+    expect(m?.[1]).toBe(appointmentId);
+    expect(lookup!.result).toContain('Thursday, October 15');
+    expect(r.state().shownIds.has(appointmentId)).toBe(true);
+    // The id is for the model only: nothing spoken carries it.
+    expect(r.session.assistantText()).not.toContain(appointmentId);
+
+    r.llm.script.push({ when: /please confirm it/, route: OPUS, answer: [{ kind: 'tool', name: 'confirm_appointment', input: { appointmentId } }] });
+    await r.say('please confirm it');
+    const confirmed = (await r.toolResults()).find((c) => c.name === 'confirm_appointment');
+    expect(confirmed).toMatchObject({ ok: true });
+    expect(confirmed!.result).toMatch(/^Confirmed the inspection on /);
+    const [afterConfirm] = await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments).where(eq(appointments.id, appointmentId)));
+    expect(afterConfirm!.confirmedAt).not.toBeNull();
+
+    r.llm.script.push({
+      when: /move it to another day/,
+      route: OPUS,
+      answer: [{ kind: 'tool', name: 'find_inspection_times', input: { propertyId: seeded.propertyId, address: null, fromDate: '2026-10-19', partOfDay: 'any' } }],
+    });
+    await r.say('actually, can you move it to another day');
+    const found = (await r.toolResults()).find((c) => c.name === 'find_inspection_times');
+    expect(found?.ok).toBe(true);
+    const slot = SLOT.exec(found!.result);
+    expect(slot).not.toBeNull();
+    const [, slotStart, slotUserId] = slot!;
+
+    r.llm.script.push({
+      when: /first one works/,
+      route: OPUS,
+      answer: [{ kind: 'tool', name: 'move_inspection', input: { appointmentId, slotStart: slotStart!, slotUserId: slotUserId! } }],
+    });
+    await r.say('the first one works');
+    const moved = (await r.toolResults()).find((c) => c.name === 'move_inspection');
+    expect(moved).toMatchObject({ ok: true });
+    expect(moved!.result).toMatch(/^Moved the inspection to /);
+    const [afterMove] = await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments).where(eq(appointments.id, appointmentId)));
+    expect(afterMove!.startsAt.toISOString()).toBe(new Date(slotStart!).toISOString());
+    expect(afterMove!.assignedUserId).toBe(slotUserId);
+    expect((await r.conversation())?.outcome).toBe('moved');
+    expect(r.session.assistantText()).not.toContain(appointmentId);
+  });
+
+  test('existing appointment (phone-matched, not verified): no id is shown, and confirm and move are refused', async () => {
+    const r = await rig([
+      {
+        when: /my Thursday inspection/,
+        route: { ...OPUS, intent: 'job_status' },
+        answer: [{ kind: 'tool', name: 'lookup_my_jobs', input: {} }],
+      },
+    ]);
+    const seeded = await seedCaller(r);
+    const appointmentId = await seedInspection(r, seeded);
+    await r.loop.settled();
+    await identifyCaller({ deps: r.t.deps, companyId: r.companyId, conversation: r.state(), now: r.t.clock.now() });
+    expect(r.state().identity).toBe('matched');
+    await r.say('about my Thursday inspection');
+
+    const lookup = (await r.toolResults()).find((c) => c.name === 'lookup_my_jobs');
+    expect(lookup).toMatchObject({ ok: true, result: 'You have an appointment on Thursday.' });
+    expect(r.state().shownIds.has(appointmentId)).toBe(false);
+
+    // Even a model that somehow has the id cannot act on it.
+    r.llm.script.push({
+      when: /please confirm it/,
+      route: OPUS,
+      answer: [
+        { kind: 'tool', name: 'confirm_appointment', input: { appointmentId } },
+        { kind: 'tool', name: 'move_inspection', input: { appointmentId, slotStart: '2026-10-19T15:00:00.000Z', slotUserId: r.t.seed.a.owner.userId } },
+      ],
+    });
+    await r.say('please confirm it');
+    const results = await r.toolResults();
+    expect(results.find((c) => c.name === 'confirm_appointment')).toMatchObject({ ok: false, result: "That isn't one of this caller's records." });
+    expect(results.find((c) => c.name === 'move_inspection')).toMatchObject({ ok: false, result: "That isn't one of this caller's records." });
+    const [row] = await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments).where(eq(appointments.id, appointmentId)));
+    expect(row).toMatchObject({ confirmedAt: null, startsAt: new Date('2026-10-15T15:00:00.000Z') });
   });
 
   test('claim: take_claim_details links the intake to the verified caller job', async () => {
