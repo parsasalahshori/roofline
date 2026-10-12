@@ -1132,3 +1132,117 @@ service (ruff, pytest) success; v1 (node:test) success. E1 T13/T22 (signed PDF, 
 wider one-writer rule) and A1's Ruling BC pause pass the database, API, worker and e2e suites in combination with
 the probe's 409 and 87068ca. No fixes were needed after CI, so ci-check was not re-run. (The local `ci-check` wrapper
 was stopped by its time limit; the run was followed through the Actions API until it completed.)
+
+## Pass 11
+
+Base: pass 10 head 1af6f40. `git fetch origin` (2026-10-12): c1-crm 5d2e3bd (already merged, skipped); e1-estimator
+had moved past the requested 2f24bff to f44e536 (one ledger line, "controller accepts EQ-ET"), and f44e536 was merged.
+Merged in order with `git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 5d2e3bdf8c302084c9e98490c93a1b9846438f27 | (already in the probe) | - |
+| e1-estimator | f44e536d39bc2c85db77c842b2b878ece11df7b1 | b9462bb | 1 file |
+| s1-storm | 1c123b3f1a9c25a742b6931f5cdb2a57213fc102 | 0bca571 | none |
+| d1-front-desk | 1c90be5ead680dce2a3c13a94af3b7863d20ddd4 | e97bf60 | 2 files |
+| a1-agents | d0c012a8c2f6516ea866eaa65c33311076aa8215 | c0519f8 | none (ops only) |
+| g1-agents | f6a80bfb57008ca667b6237a003fb23b9736b3ba | d5f92c2 | 19 files |
+
+No probe-only commit this pass (no merge-artifact fix was needed).
+
+What the tracks brought: E1 T21 (estimator e2e: address to sent in 3 clicks, homeowner signs on a phone, a11y scans
+of the estimator, measure, proposal and homeowner pages, `seedFootprintFixture` in the e2e reset, E1 acceptance map),
+the read-only option card's axe fix, and its whole-branch review ledger and Rulings EQ-ET; S1 I5 (the landing page
+outlives its campaign, no campaign without landing pages, campaign length within 30 days, one ad error copy) and the
+R1-R4 review fix briefs; D1 its c1-crm 5d2e3bd sync (SetupRow) and wave 6A ledger notes (wave 6A code is not on
+d1-front-desk yet); A1 ledger notes (Task 21 brief, the Ruling AW merge rule); G1 its own merge of s1-storm 8824456
+(older than the probe's S1) plus briefs. No migration SQL, journal, dependency or lockfile change.
+
+### Conflict resolutions
+
+e1-estimator:
+- `apps/web/e2e/fixtures.ts` imports: both (`seedFootprintFixture` from E1, `seedAgentsFixture` from A1).
+
+d1-front-desk:
+- `features/setup/SetupRow.tsx`: D1's `later` line (calendar and phone number steps ignore the server's "coming
+  with"; same behavior as the probe's `phoneReady`, since `phone_number` only ever carries `front_desk`); ours for the
+  action switch (D1's side repeated the `connect_calendar` case and lacks E1's `prices_and_tiers`).
+- `test/setup.test.tsx`: ours ("Coming with the Estimator" is gone: E1 shipped its setup item; Ruling BA).
+
+g1-agents (G1's file versions are its own s1-storm 8824456 resolutions; every line G1 has that the probe lacks was
+checked):
+- `tasks/service.ts` `OFF_STEP_TITLES`: G1 now carries the four G1 titles (item 5). Kept A1's two D1 titles where
+  A1 put them and G1's `// G1 (Ruling BC)` comment; G1's side would have listed the D1 titles twice.
+- `Settings.tsx`, `tabs.ts`, `shell/apps.ts`, `a1-dock`, `a1-settings`, `c1-routes`, `settings` tests: ours (G1 has
+  no D1: nine tabs, Front Desk "Coming soon", A1's older settings test).
+- `steps.ts`, `steps-storm.test.ts`: ours (A1's `create_ad_campaign` units read `campaignId` or `campaigns`; G1 has
+  S1's older `campaigns`-only counter). `enums.ts`, `tenant.ts`, `steps.test.ts`: ours (G1 has nothing extra).
+- Snapshots 0019-0024: ours. G1's parse identical to the probe's (0019-0022 fully, 0023/0024 differ only in
+  `id`/`prevId` uuids); the conflicts were table key order only, so the probe text is kept to avoid ~56k lines of
+  reorder churn. SQL 0019-0024 byte-identical.
+
+Checked by hand: `hooks/twilio.ts` (Ruling AV), `dispatcher.ts`, `tasks/handlers.ts`, `send-batch.ts`, `router.tsx`,
+`routes/storms.ts`, `storm/plan.ts` unchanged this pass. The only API code change is S1 I5 (`storm/ad-campaign.ts`,
+`storm-pages` repo).
+
+### Migration journal (Ruling AP)
+
+Unchanged from pass 10: idx 0..24 consecutive, in number order, `when` strictly increasing (script). Snapshots chained
+by `prevId` 0000..0024 (script); 25 snapshots, 25 SQL files. `drizzle-kit generate --name=probe_check`: "No schema
+changes, nothing to migrate"; no file created. Exactly one `messages (company_id, id)` unique: D1's
+`messages_company_id_id_uniq` (0019, `tenant.ts:630`).
+
+Ruling AW (S1 R1, `storms.merged_into` in 0018 in place): not on s1-storm 1c123b3; no track head carries
+`merged_into` in packages/db or apps. It exists only on the unmerged task branch `s1-r1` 3976cd9 (0018 SQL +9 lines,
+0018 snapshot: `storms.merged_into` and `storms_merged_into_storms_id_fk`, schema `global.ts`, repos, `rls.test`,
+`storm-merged.test`). R1 keeps 0018's snapshot `id` and `prevId`, so later `prevId` links stay valid, but every
+snapshot after 0018 lacks the column and drizzle-kit would then report a change. Nothing rebuilt this pass. When R1
+lands on s1-storm: add the column and FK to the probe's 0019-0024 snapshots. Tracks whose own post-0018 snapshots
+will disagree: A1 0021/0022 (a1-agents), G1 0019-0024 (g1-agents, chained from S1's 0018 since its s1 merge), A1's
+`a1-t4` D1 0019/0020 rebuild; D1's own 0019/0020 on d1-front-desk still chain from 0014 (no S1 at all).
+
+### Earlier workarounds: status
+
+Closed by a track this pass (the probe carries the track's text):
+- Item 2 (G1 journal `when`): g1-agents f6a80bf's journal is identical to the probe's (0019/0020 =
+  1791772863263/1791772864263, 0021-0024 = 1791780000000 .. 1791780003000), from its s1-storm merge.
+- Item 5 (`OFF_STEP_TITLES` G1 titles): g1-agents carries `send_personal_texts`, `build_claim_packet`,
+  `create_appointment`, `move_appointment` with the probe's words. Closed by G1, not by S1 as Ruling BC planned
+  (s1-storm still lists only demo/S1/E1 titles; it will take D1/G1 titles when it merges those tracks).
+
+Still kept in the probe:
+- Item 1 (D1 journal `when`): d1-front-desk 1c90be5 has 17 entries, 0019/0020 = 1791770789451/1791770804997 (no
+  E1/S1 entries). A1's `a1-t4` raises them (1791772863000/1791772864000) but is not on any track head.
+- Item 3 (Ruling BA recounts): `a1-dock`, `a1-settings`, `settings`, `d1-routes`, `d1-settings`, `e1-routes`,
+  `setup`, `c1-routes` and `steps` tests still differ from every track head. Combined counts unchanged: six dock apps
+  shipped (no Coming soon app), eleven settings tabs, fifteen step types; setup shows no "Coming with" line for the
+  Estimator, calendar or Front Desk, and keeps Storm Scout's.
+- Item 4 (409 on `POST /api/storms/:id/plan`): still probe-only. s1-storm `routes/storms.ts` has no 409 and
+  `draftStormPlan` still returns `Promise<{ taskId }>`; S1 R2a has a brief but no branch yet.
+
+Item 6 (Ruling BC storm-plan rerun), status:
+- A1 T20: built on `a1-t20` 0f569ac (3 commits on a956d40: rerun keeps OFF steps off via `off: errorPlain`, a
+  storm_plan rerun re-drafts through `draftStormPlan(..., { replaceFinished: true })` in `routes/approvals.ts`,
+  `lockStormPlan(tx, ctx, id, opts)`, `STORM_PLAN_ERRORS`, `storm-rerun.test.ts`). Not merged into a1-agents.
+- S1 R2a: brief only (`ops/sdd/s1/task-r2a-brief.md`); `REDRAFTABLE` is still `['draft']` on s1-storm.
+- Not implemented in the probe.
+
+### New cross-track problems
+
+1. **S1 R2a x A1 T19/T20, storm re-draft (design overlap, not yet in code).** The R2a brief targets S1's
+   `replaceDraftPlan` (still on s1-storm), but A1 T19 (in the probe and a1-agents) replaced it with
+   `lockStormPlan` + `supersedeDraft` + `linkStormPlan`, and A1 T20 (`a1-t20`) already adds expired/declined
+   replacement behind `opts.replaceFinished` (rerun only). R2a makes `draftStormPlan` replace `draft`, `expired` and
+   `declined` for every caller. Merged naively, the probe gets two mechanisms for the same rule. Fix: R2a builds on
+   A1's `lockStormPlan` (from a1-agents or this probe), widens its allowed old statuses to draft/expired/declined
+   and `REDRAFTABLE` in `routes/storms.ts` to the same list; A1 T20 then drops `replaceFinished` (or keeps it as the
+   only switch if the controller wants the route to stay draft-only). R2a item 1 (status-guarded decline) is
+   already met by A1's `supersedeDraft`. Owner: S1 R2a with A1 T20; controller to pick which one lands first.
+
+Merge-artifact fixes: none.
+
+### Checks (after all merges)
+
+`npm ci` clean (no package change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass,
+lint pass, lint:css pass; vitest @roofline/web 1171 pass (126 files), @roofline/ui 172 pass, @roofline/shared 1292
+pass, @roofline/send-gate 525 pass. The database, API, worker and e2e suites run only in CI.
