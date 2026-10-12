@@ -106,6 +106,10 @@ prices to homeowners); job values hidden from a rep stay hidden. The C1 lead now
 Agents to draft a plan." A storm_plan rerun re-drafts through `draftStormPlan` with fresh data; other reruns keep each
 step's off state. S1 adds the D1/G1 step titles to `OFF_STEP_TITLES` at its d1/g1 merges.
 
+**Ruling BD (one storm re-draft mechanism):** A1 owns it (`lockStormPlan`/`supersedeDraft`/`linkStormPlan`,
+`REDRAFTABLE` = draft, expired, declined, no `replaceFinished` flag). S1 adds only the `{taskId} | null` signature and the
+paused 409 route; A1's re-draft code wins at merge.
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the
