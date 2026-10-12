@@ -24,6 +24,7 @@ import type { Geocoder } from './providers/geocoder.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
 import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
+import { agentsFeedRoutes } from './routes/agents-feed.ts';
 import { appointmentRoutes } from './routes/appointments.ts';
 import { approvalRoutes } from './routes/approvals.ts';
 import { calendarConnectRoutes } from './routes/calendar-connect.ts';
@@ -245,6 +246,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
   app.use('/api/tasks', taskRoutes(deps));
+  // Before /api/agents/:agent routes: /feed and /waiting must match first.
+  app.use('/api/agents', agentsFeedRoutes(deps));
   app.use('/api/search', searchRoutes(deps));
   app.use('/api/map', mapRoutes(deps));
   app.use('/api/weather', weatherRoutes(deps));

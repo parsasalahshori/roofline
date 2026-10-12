@@ -18,6 +18,8 @@ export {
   listTaskEvents,
   type NewAgentEvent,
 } from './repos/agent-events.ts';
+export { type FeedCursor, type FeedRow, listFeedPage } from './repos/agent-feed.ts';
+export { listWaitingTasks, type WaitingTaskRow } from './repos/agent-waiting.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
 export { loadBaselineOverrides } from './repos/time-baselines.ts';
 export { insertDefaultSettings, pickFreeSlug, setServiceArea, slugify } from './repos/companies.ts';
