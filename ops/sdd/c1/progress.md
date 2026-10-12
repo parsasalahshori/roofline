@@ -87,3 +87,4 @@ Actions outage (controller, 02:21Z): no ci-check, no merges into c1-crm until CI
 c1-t5 46e54e3 = c1-t5 59afe96 + merge of c1-crm 6e38d00 (T18), so wave 4 has one base with T5 and T18. T5 stays unmerged in c1-crm until its CI passes.
 Wave 4 launched from c1-t5 46e54e3, ci off: run A wf_4d0f3adc-2dd (contacts 65-66: T6, T7, T17 | T8, T9, T15); run B wf_9f291b53-d2e (contacts 67-68: T10, T11, T12 | T19, T22, T23). When CI returns: ci-check c1-t5 first, merge it, then each wave-4 branch (they already contain T5 and T18).
 CI back (repo public, 02:27Z). T5: CI run 38195617057 (re-run) green on c1-t5 46e54e3 (Platform, E2E, v1). Task 5: complete. Merged into c1-crm (typecheck and lint clean).
+Merged f3-setup e61ec14 (F3 T28, T37; CI 38196673343 green) into c1-crm (typecheck and lint clean).
