@@ -1,0 +1,26 @@
+/* The Billing tab: the plan summary, the usage, the plans and the invoices button, one under another */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.planName {
+  margin: 0;
+  font-size: var(--font-size-stat);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}

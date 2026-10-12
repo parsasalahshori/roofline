@@ -1,0 +1,5 @@
+/* The strip under the top bar. The gutter keeps the banner off the screen edges; nothing here scrolls sideways. */
+.slot {
+  box-sizing: border-box;
+  padding: 8px 16px;
+}
