@@ -15,4 +15,5 @@ export const keys = {
   search: (q: string) => ['search', q] as const,
   company: ['company'] as const,
   team: ['team'] as const,
+  texting: ['texting'] as const,
 };

@@ -84,12 +84,27 @@ it('import line shows for a single import inside the Settings window with the Se
   expect(within(nav).getByRole('link', { name: settings.tabs.setup })).toHaveAttribute('aria-current', 'page');
 });
 
-it('texting line shows inside the Settings window with the Setup tab current', async () => {
+it('texting form shows inside the Settings window with the Setup tab current', async () => {
   signedInApi();
+  api.routes['GET /api/texting'] = () => ({
+    body: {
+      state: 'not_started',
+      reason: null,
+      rejectedFields: [],
+      brand: null,
+      defaults: { legalName: 'Summit Roofing LLC', website: '' },
+      submittedAt: null,
+      approvedAt: null,
+      number: null,
+      needsPaymentMethod: false,
+      needsVerifiedEmail: false,
+      hostedPolicyUrls: { privacy: 'https://summit.example.test/privacy', terms: 'https://summit.example.test/terms' },
+    },
+  });
   renderApp('/settings/setup/texting');
 
   const dialog = await settingsWindow();
-  expect(await within(dialog).findByText(texting.comingSoon)).toBeInTheDocument();
+  expect(await within(dialog).findByRole('button', { name: texting.send })).toBeInTheDocument();
   const nav = await tabsNav();
   expect(within(nav).getByRole('link', { name: settings.tabs.setup })).toHaveAttribute('aria-current', 'page');
 });
