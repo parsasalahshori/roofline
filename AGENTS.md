@@ -28,7 +28,7 @@ lives anywhere else.
 |---|---|---|
 | F1 platform core | `docs/superpowers/plans/2026-10-10-roofline-f1-platform-core.md` | done |
 | F2 web shell and design kit | `docs/superpowers/plans/2026-10-11-roofline-f2-shell.md` | **done**: Tasks 1-19 + P1 on `f2-shell`, CI green incl. e2e |
-| F3 setup, texting, billing, import | `docs/superpowers/plans/2026-10-11-roofline-f3-setup.md` (on `f3-setup`) + briefs `ops/sdd/f3/` | 34 of 37 + polish P3a/P3b merged; left: T28, T37, T36 |
+| F3 setup, texting, billing, import | `docs/superpowers/plans/2026-10-11-roofline-f3-setup.md` (on `f3-setup`) + briefs `ops/sdd/f3/` | 36 of 37 + polish merged; left: T36 and the integration-review fixes (f3-review groups A-C) |
 | C1 Core CRM | `docs/superpowers/plans/2026-10-12-roofline-core-crm.md` + briefs `ops/sdd/c1/` | Tasks 1-4 merged on `c1-crm` |
 | E1, S1, D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{e1,s1,d1,a1,g1}/` | planned, briefs ready |
 
@@ -50,8 +50,8 @@ A task whose brief depends on an unbuilt upstream name ([C1], [E1], [S1], [D1], 
 scratch stub commit that the merge replaces (as C1 T2-T4 did; record the merge rule in the ledger).
 
 Track sessions (Claude Code cloud): C1 session_01MpVA7xTz6Bus8WPNZWUKRq; E1 session_01UtFnF1PL9Tbc2z44JfhQDM;
-S1 session_01XaGX8pcLBpR2SWeGqsd3gP; D1 session_0166agXYjDy39PFyUw1BXtLR; A1 session_01XjgURUvqk4BGTeumR86x2a; F3 finish
-(T28/T37) session_01NbXKpWjMvEQwTqNmQCt6wp; F3 review + T36 session_01RypesnL2fbawyJH5HtdS7E; controller
+S1 session_01XaGX8pcLBpR2SWeGqsd3gP; D1 session_0166agXYjDy39PFyUw1BXtLR; A1 session_01XjgURUvqk4BGTeumR86x2a; G1 track
+session_01NbXKpWjMvEQwTqNmQCt6wp; F3 review + T36 session_01RypesnL2fbawyJH5HtdS7E; controller
 session_01LXtxzoHNoWz5SACkLF1d2p. Each track lead owns and pushes its own integration branch.
 
 **Ruling AP (migration numbers, overrides every plan and brief):** F3 ends at 0012; C1 = 0013/0014;
