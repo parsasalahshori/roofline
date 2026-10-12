@@ -4,6 +4,7 @@ import {
   findCallBySid,
   findCallConversationId,
   hasUrgentNoticeFor,
+  isAgentPaused,
   lockAiCap,
   recordModelFailureHandoff,
   updateCall,
@@ -222,6 +223,8 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
         const call = await findCallBySid(tx, ctx, callSid);
         if (call === null) return null;
         if (!aiAllowed) return { callId: call.id, toAi: false };
+        // A Front Desk paused while the team was ringing is handled like Front Desk off (A1): voicemail.
+        if (await isAgentPaused(tx, ctx, 'front_desk')) return { callId: call.id, toAi: false };
         await lockAiCap(tx, ctx);
         const liveAi = await countLiveCallsInWindow(tx, ctx, now, call.id);
         if (liveAi >= route.maxConcurrentAiCalls) return { callId: call.id, toAi: false };
