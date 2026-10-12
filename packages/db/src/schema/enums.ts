@@ -26,4 +26,17 @@ export const USER_TOKEN_KINDS = ['verify_email', 'reset_password'] as const;
 export const INTEGRATION_STATUSES = ['connected', 'error', 'revoked'] as const;
 export const PHONE_NUMBER_PURPOSES = ['main'] as const;
 export const TASK_MODES = ['needs_approval', 'live'] as const;
+export const AGENT_EVENT_KINDS = [
+  'created',
+  'approved',
+  'partly_approved',
+  'declined',
+  'step_done',
+  'step_failed',
+  'step_attention',
+  'finished',
+  'expired',
+] as const;
+export const ACTOR_TYPES = ['user', 'agent', 'system'] as const;
+export const AGENT_STATUSES_VIEW = ['on', 'paused', 'waiting', 'coming_soon'] as const;
 export const EARLY_DELIVERY_STATUSES = ['delivered', 'failed'] as const;

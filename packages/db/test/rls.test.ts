@@ -30,6 +30,8 @@ const APP_SYSTEM_RLS_TABLES = [
 ] as const;
 /** Tenant tables app_tenant may delete from. No other tenant table grants it DELETE. */
 const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links'] as const;
+/** Tenant tables app_tenant may only select from and insert into: no UPDATE and no DELETE. */
+const SELECT_INSERT_ONLY = new Set<string>(['audit_log', 'agent_task_events', 'time_recounts']);
 const COMPANY_PROFILE_COLUMNS = [
   'name',
   'legal_name',
@@ -313,12 +315,22 @@ describe('grants', () => {
     truncate: false,
   });
 
-  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, and DELETE only on opt_outs, calendar_busy_blocks and calendar_event_links', async () => {
+  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, agent_task_events and time_recounts, and DELETE only on opt_outs, calendar_busy_blocks and calendar_event_links', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
-      t === 'audit_log' ? privs(t, true, true, false, false) : privs(t, true, true, true, deletable.has(t)),
+      SELECT_INSERT_ONLY.has(t) ? privs(t, true, true, false, false) : privs(t, true, true, true, deletable.has(t)),
     );
     expect(await tablePrivileges('app_tenant', TENANT_TABLES)).toEqual(expected);
+  });
+
+  test('app_tenant may update the four new agent_task_steps columns', async () => {
+    const columns = ['baseline_key', 'units', 'minutes_per_unit', 'minutes_saved'];
+    const rows = await ownerQuery<{ column_name: string; can_update: boolean }>(
+      `select c as column_name, has_column_privilege('app_tenant', 'public.agent_task_steps', c, 'UPDATE') as can_update
+         from unnest($1::text[]) as c`,
+      [columns],
+    );
+    expect(rows).toEqual(columns.map((column_name) => ({ column_name, can_update: true })));
   });
 
   test('app_tenant may update the new company_settings and jobs columns, table-wide or column-level', async () => {
@@ -756,6 +768,8 @@ describe('app_tenant isolation', () => {
       'early_delivery_reports',
       `insert into early_delivery_reports (company_id, provider_message_sid, status) values ($1, 'SM' || repeat('a', 32), 'delivered')`,
     ],
+    ['time_baselines', `insert into time_baselines (company_id, key, minutes_per_unit) values ($1, 'proposal_send', 10)`],
+    ['agent_settings', `insert into agent_settings (company_id, agent) values ($1, 'storm_scout')`],
   ])('tenant role sees and writes only its own %s rows and cannot delete them', async (table, insert) => {
     await ownerQuery(insert, [seed.a.companyId]);
     await ownerQuery(insert, [seed.b.companyId]);
@@ -765,6 +779,68 @@ describe('app_tenant isolation', () => {
     await expect(
       tenantRaw(insert, { companyId: seed.a.companyId, values: [seed.b.companyId] }),
     ).rejects.toThrow(/row-level security/);
+    await expect(tenantRaw(`delete from ${table}`, { companyId: seed.a.companyId })).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+
+  test('agent_task_events are immutable for app_tenant: it reads and inserts its own events only', async () => {
+    const taskA = await insertTask(seed.a.companyId, 'Storm plan A');
+    const taskB = await insertTask(seed.b.companyId, 'Storm plan B');
+    const insert = `insert into agent_task_events (company_id, task_id, kind, actor_type) values ($1, $2, 'created', 'system')`;
+    await ownerQuery(insert, [seed.a.companyId, taskA]);
+    await ownerQuery(insert, [seed.b.companyId, taskB]);
+    expect(await tenantRaw(`select company_id from agent_task_events`, { companyId: seed.a.companyId })).toEqual([
+      { company_id: seed.a.companyId },
+    ]);
+    await expect(
+      tenantRaw(insert, { companyId: seed.a.companyId, values: [seed.b.companyId, taskB] }),
+    ).rejects.toThrow(/row-level security/);
+    await expect(
+      tenantRaw(`update agent_task_events set kind = 'approved'`, { companyId: seed.a.companyId }),
+    ).rejects.toThrow(/permission denied/);
+    await expect(tenantRaw(`delete from agent_task_events`, { companyId: seed.a.companyId })).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+
+  test('time_recounts is append-only for app_tenant', async () => {
+    const insert = `insert into time_recounts (company_id, by_user_id, "from", "to", before_minutes, after_minutes)
+      values ($1, $2, now(), now(), 0, 0)`;
+    await ownerQuery(insert, [seed.a.companyId, seed.a.owner.userId]);
+    await ownerQuery(insert, [seed.b.companyId, seed.b.owner.userId]);
+    expect(await tenantRaw(`select company_id from time_recounts`, { companyId: seed.a.companyId })).toEqual([
+      { company_id: seed.a.companyId },
+    ]);
+    await expect(
+      tenantRaw(insert, { companyId: seed.a.companyId, values: [seed.b.companyId, seed.b.owner.userId] }),
+    ).rejects.toThrow(/row-level security/);
+    await expect(
+      tenantRaw(`update time_recounts set after_minutes = 5`, { companyId: seed.a.companyId }),
+    ).rejects.toThrow(/permission denied/);
+    await expect(tenantRaw(`delete from time_recounts`, { companyId: seed.a.companyId })).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+
+  test.each<[string, string, string]>([
+    [
+      'time_baselines',
+      `insert into time_baselines (company_id, key, minutes_per_unit) values ($1, 'proposal_send', 10)`,
+      `update time_baselines set minutes_per_unit = 12 returning company_id`,
+    ],
+    [
+      'agent_settings',
+      `insert into agent_settings (company_id, agent) values ($1, 'storm_scout')`,
+      `update agent_settings set paused_at = now() returning company_id`,
+    ],
+  ])('tenant role may update its own %s rows but cannot delete them', async (table, insert, update) => {
+    await ownerQuery(insert, [seed.a.companyId]);
+    await ownerQuery(insert, [seed.b.companyId]);
+    expect(await tenantRaw(update, { companyId: seed.a.companyId })).toEqual([{ company_id: seed.a.companyId }]);
+    expect(await ownerQuery(`select company_id from ${table} where company_id = $1`, [seed.b.companyId])).toEqual([
+      { company_id: seed.b.companyId },
+    ]);
     await expect(tenantRaw(`delete from ${table}`, { companyId: seed.a.companyId })).rejects.toThrow(
       /permission denied/,
     );

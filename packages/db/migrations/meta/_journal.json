@@ -106,6 +106,20 @@
       "when": 1791765397507,
       "tag": "0014_crm_grants_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791770537854,
+      "tag": "0021_agents_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791770544508,
+      "tag": "0022_agents_grants_rls",
+      "breakpoints": true
     }
   ]
 }
