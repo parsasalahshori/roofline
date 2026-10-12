@@ -17,7 +17,7 @@ import type { MeasurementView } from '../src/features/measure/types.ts';
 import { estimateCopy, financeCopy } from '../src/copy/financeEstimate.ts';
 import { tierEditor } from '../src/copy/tiersEditor.ts';
 import type { EstimatorSettings } from '@roofline/shared';
-import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
+import { ACCOUNT, proposalListRoutes, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -95,7 +95,7 @@ function dockLink(dockNav: HTMLElement, label: string) {
 
 describe('E1 windows', () => {
   it('/estimator shows the address box', async () => {
-    signedInApi(ACCOUNT, { 'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }) });
+    signedInApi(ACCOUNT, proposalListRoutes());
     renderApp('/estimator');
 
     expect(await screen.findByLabelText(estimator.addressLabel)).toBeInTheDocument();
@@ -139,7 +139,7 @@ describe('E1 windows', () => {
   });
 
   it('the dock Estimator has no Coming soon note', async () => {
-    signedInApi(ACCOUNT, { 'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }) });
+    signedInApi(ACCOUNT, proposalListRoutes());
     renderApp('/estimator');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
 

@@ -13,11 +13,17 @@ export const estimator = {
   customerPhone: 'Phone',
   askedByText: 'They asked for this proposal by text',
   estimateNote: 'Estimate',
+  findLabel: 'Find a proposal',
+  findHint: 'Search by name, address or number.',
+  showMore: 'Show more',
+  noMatchesFound: 'No proposals match.',
   listsFailed: 'The proposal lists would not load.',
   groups: {
     review: 'To review',
     out: 'Out with customers',
     signed: 'Signed',
+    declined: 'Declined',
+    expired: 'Expired',
   },
   emptyGroup: 'Nothing here yet.',
 } as const;

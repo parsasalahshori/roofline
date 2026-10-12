@@ -5,10 +5,10 @@ import { Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
+import { useMe } from '../../api/hooks.ts';
 import { legal } from '../../copy/legal.ts';
-import { estimator } from '../../copy/estimator.ts';
 import { measure } from '../../copy/measure.ts';
-import { useBuildProposal, useSendProposal } from '../estimator/api.ts';
+import { makeFailureMessage, useBuildProposal, useSendProposal } from '../estimator/api.ts';
 import { mapStyle, satelliteAvailable } from '../../shell/map/mapStyle.ts';
 import type { MapEnv } from '../../shell/map/types.ts';
 import { useExactReport, useMeasurement, usePatchMeasurement } from './api.ts';
@@ -73,11 +73,13 @@ function Loaded({ m }: { m: MeasurementView }) {
   const [lng, lat] = m.center;
   const patch = usePatchMeasurement(m.id);
   const exact = useExactReport(m.id);
+  const me = useMe();
+  const canOrderReport = (me.data?.role === 'owner' || me.data?.role === 'office') && m.kind !== 'exact';
   const handoff = readHandoff(useLocation().state);
   const build = useBuildProposal();
   const send = useSendProposal();
   const [making, setMaking] = useState(false);
-  const [makeFailed, setMakeFailed] = useState(false);
+  const [makeFailed, setMakeFailed] = useState<string | null>(null);
   const makingRef = useRef(false);
   const builtRef = useRef<ProposalView | null>(null);
 
@@ -102,21 +104,30 @@ function Loaded({ m }: { m: MeasurementView }) {
     patchAsyncRef.current = patch.mutateAsync;
   });
   const pending = useRef<MeasurementPatch>({});
+  // Saves go out one after another; flushing with nothing new waits for the ones already on their way
+  const inflight = useRef<Promise<void>>(Promise.resolve());
   const flushPending = useRef((): Promise<void> => {
     clearTimeout(saveTimer.current);
     clearTimeout(overhangTimer.current);
     const body = pending.current;
     pending.current = {};
-    if (Object.keys(body).length === 0) return Promise.resolve();
-    return patchAsyncRef.current(body).then(() => undefined);
+    if (Object.keys(body).length === 0) return inflight.current;
+    const saved = inflight.current.then(() => patchAsyncRef.current(body)).then(() => undefined);
+    inflight.current = saved.catch(() => undefined);
+    return saved;
   }).current;
-  const startRef = useRef({ ring: m.outline?.[0] ?? [], drawMode: m.drawMode || !m.outline?.[0]?.length });
+  const startRef = useRef({ ring: m.outline?.[0] ?? [], drawMode: m.drawMode || !m.outline?.[0]?.length, locked: m.locked });
   const [mapFailed, setMapFailed] = useState(false);
 
   const conflict = patch.error instanceof ApiError && patch.error.status === 409;
   const locked = m.locked || conflict;
 
   const onEdit = useRef((result: EditResult) => {
+    if (result.refused) {
+      // The edit was turned down: the outline and what is waiting to be saved stay as they were
+      setProblem(result.problem);
+      return;
+    }
     setRing(result.ring);
     setProblem(result.problem);
     clearTimeout(saveTimer.current);
@@ -144,6 +155,7 @@ function Loaded({ m }: { m: MeasurementView }) {
       editorRef.current = createOutlineEditor(instance, {
         ring: startRef.current.ring,
         drawMode: startRef.current.drawMode,
+        readOnly: startRef.current.locked,
         onChange: (result) => onEdit.current(result),
       });
     });
@@ -160,6 +172,12 @@ function Loaded({ m }: { m: MeasurementView }) {
     };
   }, [lng, lat]);
 
+  // A save refused as locked turns the outline read-only too
+  useEffect(() => {
+    startRef.current.locked = locked;
+    editorRef.current?.setReadOnly(locked);
+  }, [locked]);
+
   const estimate = useMemo(
     () =>
       instantEstimate({
@@ -171,7 +189,11 @@ function Loaded({ m }: { m: MeasurementView }) {
     [ring, pitch, overhang, m.estimate.valleyFt],
   );
 
-  const save = (body: MeasurementPatch) => patch.mutate(body);
+  // Price-changing edits go out at once through the same path as the outline, so Make proposal can wait for them
+  const save = (body: MeasurementPatch) => {
+    Object.assign(pending.current, body);
+    void flushPending().catch(() => {});
+  };
 
   const toggleStructure = (id: string, next: boolean) => {
     const map = { ...included, [id]: next };
@@ -201,7 +223,7 @@ function Loaded({ m }: { m: MeasurementView }) {
     if (makingRef.current) return;
     makingRef.current = true;
     setMaking(true);
-    setMakeFailed(false);
+    setMakeFailed(null);
     try {
       await flushPending();
       const built =
@@ -214,8 +236,8 @@ function Loaded({ m }: { m: MeasurementView }) {
       builtRef.current = built;
       const sent = await send.mutateAsync(built.id);
       void navigate(`/approvals/${sent.taskId}`);
-    } catch {
-      setMakeFailed(true);
+    } catch (error) {
+      setMakeFailed(makeFailureMessage(error));
     } finally {
       makingRef.current = false;
       setMaking(false);
@@ -223,7 +245,7 @@ function Loaded({ m }: { m: MeasurementView }) {
   };
 
   const noOutline = drawMode && ring.length < 3;
-  const proposalBlocked = making || problem !== null || noOutline || locked;
+  const proposalBlocked = making || problem !== null || noOutline || locked || patch.isPending;
   const rows: [string, string][] = [
     [measure.area, format(estimate.surfaceSqFt)],
     [measure.squares, format(estimate.squares)],
@@ -239,6 +261,18 @@ function Loaded({ m }: { m: MeasurementView }) {
         <div ref={containerRef} className={styles.map} role="region" aria-label={measure.mapLabel} />
         {mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
         {drawMode ? <p className={styles.hint}>{measure.drawHint}</p> : null}
+        {!drawMode && !mapFailed && !locked ? (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              editorRef.current?.setDrawMode(true);
+              setDrawMode(true);
+              setProblem(null);
+            }}
+          >
+            {measure.redraw}
+          </Button>
+        ) : null}
         {drawMode && !mapFailed ? (
           <>
             <Button onClick={() => editorRef.current?.finishDrawing()} disabled={locked}>
@@ -342,7 +376,7 @@ function Loaded({ m }: { m: MeasurementView }) {
                 {measure.waitingForOk}
               </Button>
             </div>
-          ) : (
+          ) : canOrderReport ? (
             <Button
               variant="ghost"
               className={styles.wide}
@@ -352,7 +386,7 @@ function Loaded({ m }: { m: MeasurementView }) {
             >
               {measure.getExactReport}
             </Button>
-          )}
+          ) : null}
           {exact.isError ? <Banner tone="danger">{measure.exactFailed}</Banner> : null}
           <Button
             className={styles.wide}
@@ -362,9 +396,9 @@ function Loaded({ m }: { m: MeasurementView }) {
           >
             {measure.makeProposal}
           </Button>
-          {makeFailed ? (
+          {makeFailed !== null ? (
             <div role="alert">
-              <Banner tone="danger">{estimator.makeFailed}</Banner>
+              <Banner tone="danger">{makeFailed}</Banner>
             </div>
           ) : null}
         </div>

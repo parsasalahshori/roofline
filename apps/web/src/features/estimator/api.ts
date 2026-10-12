@@ -1,25 +1,59 @@
-import type { MeasurementView, ProposalView } from '@roofline/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query';
-import { apiFetch } from '../../api/client.ts';
+import type { MeasurementView, ProposalStatus, ProposalView } from '@roofline/shared';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { InfiniteData, UseInfiniteQueryResult, UseMutationResult, UseQueryResult } from '@tanstack/react-query';
+import { ApiError, apiFetch } from '../../api/client.ts';
+import { estimator } from '../../copy/estimator.ts';
 import { keys } from '../../api/keys.ts';
 import type { PropertyRecord } from '../create/api.ts';
-import type { NewCustomerInput, ProposalFilter, ProposalList } from './types.ts';
+import type { NewCustomerInput, ProposalList } from './types.ts';
 
 /** The POST /api/proposals body. */
 export type BuildProposalInput = { measurementId: string; jobId?: string; customer?: NewCustomerInput };
 
+/** What to tell the person when making a proposal fails: the server's plain answer for 400, 403 and 409, else the general line. */
+export function makeFailureMessage(error: unknown): string {
+  if (error instanceof ApiError && [400, 403, 409].includes(error.status) && error.message !== '') return error.message;
+  return estimator.makeFailed;
+}
+
 const proposalsKey = ['estimator', 'proposals'] as const;
 
-/** GET /api/proposals?status=&q= -> { proposals, total } */
-export function useProposals(filter: ProposalFilter): UseQueryResult<ProposalList> {
-  const params: string[] = [];
-  if (filter.status !== undefined) params.push(`status=${encodeURIComponent(filter.status)}`);
-  if (filter.q !== undefined) params.push(`q=${encodeURIComponent(filter.q)}`);
-  const query = params.length > 0 ? `?${params.join('&')}` : '';
-  return useQuery({
-    queryKey: [...proposalsKey, filter],
-    queryFn: ({ signal }) => apiFetch<ProposalList>(`/api/proposals${query}`, { signal }),
+/** Where each status stands in a group: the next offset to read, or null once everything is loaded. */
+type GroupCursor = Record<string, number | null>;
+type GroupPage = { proposals: ProposalView[]; totals: Record<string, number>; cursor: GroupCursor };
+
+/**
+ * GET /api/proposals?status=&q=&offset= for every status of one window group, a page at a time (the server
+ * pages 50). `hasNextPage` stays true while any status has more than is loaded.
+ */
+export function useProposalGroup(statuses: readonly ProposalStatus[], q: string): UseInfiniteQueryResult<InfiniteData<GroupPage, GroupCursor>> {
+  const term = q.trim();
+  const first: GroupCursor = Object.fromEntries(statuses.map((status) => [status, 0]));
+  return useInfiniteQuery({
+    queryKey: [...proposalsKey, 'group', statuses.join(','), term],
+    initialPageParam: first,
+    queryFn: async ({ pageParam, signal }): Promise<GroupPage> => {
+      const proposals: ProposalView[] = [];
+      const totals: Record<string, number> = {};
+      const cursor: GroupCursor = {};
+      for (const status of statuses) {
+        const offset = pageParam[status];
+        if (offset === null || offset === undefined) {
+          cursor[status] = null;
+          continue;
+        }
+        const params = [`status=${encodeURIComponent(status)}`];
+        if (term !== '') params.push(`q=${encodeURIComponent(term)}`);
+        if (offset > 0) params.push(`offset=${offset}`);
+        const page = await apiFetch<ProposalList>(`/api/proposals?${params.join('&')}`, { signal });
+        proposals.push(...page.proposals);
+        totals[status] = page.total;
+        const loaded = offset + page.proposals.length;
+        cursor[status] = page.proposals.length > 0 && loaded < page.total ? loaded : null;
+      }
+      return { proposals, totals, cursor };
+    },
+    getNextPageParam: (last) => (Object.values(last.cursor).some((next) => next !== null) ? last.cursor : undefined),
   });
 }
 

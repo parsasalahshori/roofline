@@ -34,8 +34,8 @@ type Parsed = {
 
 /**
  * Checks the form before anything is sent. Both empty means "no financing" (both null). One filled
- * is an error on the empty one. APR is 0 to 100 percent, sent as basis points; the term is a whole
- * number of months from 1 to 600.
+ * is an error on the empty one. APR is 0 to 50 percent, sent as basis points; the term is a whole
+ * number of months from 1 to 360.
  */
 function parse(form: Form): Parsed {
   const aprText = form.apr.trim();
@@ -55,7 +55,7 @@ function parse(form: Form): Parsed {
     errors.financingAprBps = financeCopy.pairRequired;
   } else {
     const percent = Number(aprText);
-    if (Number.isFinite(percent) && percent >= 0 && percent <= 100) {
+    if (Number.isFinite(percent) && percent >= 0 && percent <= 50) {
       financingAprBps = Math.round(percent * 100);
     } else {
       errors.financingAprBps = financeCopy.aprRange;
@@ -66,7 +66,7 @@ function parse(form: Form): Parsed {
     errors.financingTermMonths = financeCopy.pairRequired;
   } else {
     const months = Number(termText);
-    if (Number.isInteger(months) && months >= 1 && months <= 600) {
+    if (Number.isInteger(months) && months >= 1 && months <= 360) {
       financingTermMonths = months;
     } else {
       errors.financingTermMonths = financeCopy.termRange;
@@ -173,7 +173,7 @@ function FinancingForm({ settings, canEdit }: { settings: EstimatorSettings; can
           inputMode="decimal"
           step="0.01"
           min="0"
-          max="100"
+          max="50"
           value={form.apr}
           onChange={(event) => setForm((current) => ({ ...current, apr: event.target.value }))}
           disabled={!canEdit}
@@ -186,7 +186,7 @@ function FinancingForm({ settings, canEdit }: { settings: EstimatorSettings; can
           inputMode="numeric"
           step="1"
           min="1"
-          max="600"
+          max="360"
           value={form.term}
           onChange={(event) => setForm((current) => ({ ...current, term: event.target.value }))}
           disabled={!canEdit}
