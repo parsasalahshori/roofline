@@ -407,3 +407,8 @@ extraction for FAKE_PROVIDERS (owner G1, with the test stack). Recorded as a gap
   `StormDetail.tsx:42` renders a second `<h1>` inside a window that already has one; an `<h2>` would read better.
 - Rehearsal journey d failed in that run because of the My day race described above (spec fixed). The rehearsal
   re-run after the fix: 12/12.
+
+## Follow-ups (controller, after the pass 16 dry run)
+- **BUG-7** (`GET /api/demo` returns 404 with demo mode off): routed to the demo-mode owner. The sentinel folds the fix into the probe.
+- **S1 a11y flake** (the storm-detail heading race): fixed on s1-storm 4e5954ee.
+- **G1 test gap (not blocking):** the claims-ack "Thanks, got it." branch cannot run on the e2e stack, because the fake model has no scripted claim extraction. Only `apps/api/test/claims-ack.test.ts` covers it. Follow-up for G1: give the e2e/demo fake model a scripted extraction, so the acknowledgement runs end to end.
