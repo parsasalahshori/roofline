@@ -3,7 +3,7 @@ import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { search } from '../src/copy/search.ts';
 import { SearchDialog } from '../src/shell/topbar/SearchDialog.tsx';
-import { renderAt, stubApi, where } from './helpers.tsx';
+import { ACCOUNT, renderAt, stubApi as baseStubApi, where } from './helpers.tsx';
 
 const LOP = {
   customers: [{ id: 'c1', displayName: 'Lopez Family', phone: '555-0100' }],
@@ -32,6 +32,10 @@ const LOP = {
 };
 
 const EMPTY = { customers: [], jobs: [], addresses: [] };
+
+/** The shell reads who is signed in (company and role), so every test answers it. */
+const stubApi = (routes: Parameters<typeof baseStubApi>[0]) =>
+  baseStubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }), ...routes });
 
 let api: ReturnType<typeof stubApi>;
 

@@ -1,4 +1,4 @@
-import type { SetupItemView } from '@roofline/shared';
+import type { ComingWith, SetupItemView } from '@roofline/shared';
 import { Button } from '@roofline/ui';
 import { useState, type ReactNode } from 'react';
 import { comingWith, setup, setupItems } from '../../copy/setup.ts';
@@ -12,8 +12,8 @@ type SetupRowProps = {
 };
 
 /** The chip's words: a later-spec item says what it comes with; a rejected registration says so. */
-function chipText(item: SetupItemView): string {
-  if (item.comingWith) return comingWith[item.comingWith];
+function chipText(item: SetupItemView, later: ComingWith | null): string {
+  if (later) return comingWith[later];
   if (item.data.rejected === true) return setup.chips.rejected;
   return setup.chips[item.status];
 }
@@ -25,7 +25,10 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
   const skip = useSkip();
   const unskip = useUnskip();
 
-  const offersActions = canAct && item.comingWith === null && item.status !== 'done';
+  // The calendar step is live now: the server still says it comes later, and the row ignores that
+  const later = item.key === 'connect_calendar' ? null : item.comingWith;
+  // Connecting the calendar is every member's own action, so it does not wait on the owner
+  const offersActions = (canAct || item.key === 'connect_calendar') && later === null && item.status !== 'done';
   const rejected = item.data.rejected === true;
 
   let primary: ReactNode = null;
@@ -68,6 +71,13 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
           </Button>
         );
         break;
+      case 'connect_calendar':
+        primary = (
+          <Button variant="primary" href="/settings/connections">
+            {setup.actions.connectCalendar}
+          </Button>
+        );
+        break;
       case 'prices_and_tiers':
         primary = (<Button variant="primary" href="/settings/prices">{setup.actions.setPrices}</Button>);
         break;
@@ -90,14 +100,14 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
       )
     ) : null;
 
-  const chipStatus = item.comingWith ? 'comingWith' : item.status;
+  const chipStatus = later ? 'comingWith' : item.status;
 
   return (
     <li className={styles.row}>
       <div className={styles.header}>
         <h3 className={styles.title}>{copy.title}</h3>
         <span className={styles.chip} data-status={chipStatus}>
-          {chipText(item)}
+          {chipText(item, later)}
         </span>
       </div>
       <p className={styles.description}>{copy.description}</p>

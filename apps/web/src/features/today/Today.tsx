@@ -6,7 +6,9 @@ import { errors } from '../../copy/errors.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
 import { today } from '../../copy/today.ts';
 import { countedDrafts } from '../../shell/countedDrafts.ts';
+import { formatTime, zonedDateKey } from '../calendar/time.ts';
 import { useCompany } from '../settings/api.ts';
+import { useToday } from './api.ts';
 import styles from './Today.module.css';
 
 /** How many drafts the window lists before pointing at the full list. */
@@ -43,6 +45,10 @@ export function Today() {
 
   const okId = useId();
   const appointmentsId = useId();
+  const followUpsId = useId();
+  const todayQuery = useToday();
+  const zone = timeZone ?? 'America/Chicago';
+  const seesEveryone = me.data?.role === 'owner' || me.data?.role === 'office';
 
   const drafts = newestFirst(countedDrafts(approvalsQuery.data));
   const shown = drafts.slice(0, SHOWN_DRAFTS);
@@ -79,6 +85,47 @@ export function Today() {
     );
   }
 
+  const seeEveryone = seesEveryone ? (
+    <div className={styles.seeAll}>
+      <Button variant="ghost" href={'/calendar?view=day&date=' + zonedDateKey(now, zone)}>
+        {today.seeEveryone}
+      </Button>
+    </div>
+  ) : null;
+
+  let appointmentsContent: ReactNode;
+  const view = todayQuery.data;
+  if (view === undefined) {
+    appointmentsContent = todayQuery.isPending ? <Skeleton lines={2} /> : <p className={styles.note}>{errors.generic}</p>;
+  } else if (view.appointments.length === 0) {
+    appointmentsContent = (
+      <>
+        <EmptyState title={today.noAppointments} />
+        {seeEveryone}
+      </>
+    );
+  } else {
+    appointmentsContent = (
+      <>
+        <ul aria-label={today.appointmentsLabel} className={styles.list}>
+          {view.appointments.map((a) => (
+            <li key={a.id}>
+              <UiLink href={'/calendar/appointments/' + encodeURIComponent(a.id)} className={styles.link}>
+                <Card className={styles.card}>
+                  <span className={styles.agent}>{a.allDay ? today.allDay : formatTime(new Date(a.startsAt), zone)}</span>
+                  <span className={styles.agent}>{today.kindLabel[a.kind]}</span>
+                  <strong className={styles.title}>{a.customerName ?? a.title}</strong>
+                  <span className={styles.agent}>{a.addressLine ?? ''}</span>
+                </Card>
+              </UiLink>
+            </li>
+          ))}
+        </ul>
+        {seeEveryone}
+      </>
+    );
+  }
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -97,8 +144,28 @@ export function Today() {
         <h3 id={appointmentsId} className={styles.sectionTitle}>
           {today.appointments}
         </h3>
-        <EmptyState title={today.noAppointments} />
+        {appointmentsContent}
       </section>
+
+      {view !== undefined && view.followUps.length > 0 ? (
+        <section aria-labelledby={followUpsId} className={styles.section}>
+          <h3 id={followUpsId} className={styles.sectionTitle}>
+            {today.followUps}
+          </h3>
+          <ul aria-label={today.followUpsLabel} className={styles.list}>
+            {view.followUps.map((job) => (
+              <li key={job.id}>
+                <UiLink href={'/jobs/' + encodeURIComponent(job.id)} className={styles.link}>
+                  <Card className={styles.card}>
+                    <strong className={styles.title}>{job.customerName}</strong>
+                    <span className={styles.agent}>{today.nextStep(job.nextStep)}</span>
+                  </Card>
+                </UiLink>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }

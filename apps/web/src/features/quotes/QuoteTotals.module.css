@@ -1,0 +1,57 @@
+/* The totals sit at the end of the quote: a narrow block on desktop, full width on a phone */
+.totals {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 0 0 auto;
+  font-size: var(--font-size-body);
+}
+
+/* Each label and its value share a line; a long label wraps before the value does */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.totals dt {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.totals dd {
+  margin: 0;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The total is the one number people read: bigger, bolder, and a rule above it */
+.grand {
+  padding-top: 10px;
+  border-bottom: none;
+  border-top: 2px solid var(--text);
+  font-weight: 600;
+}
+
+.grandValue {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: var(--font-size-stat);
+}
+
+/* The "Estimate" caption under the total: never smaller than the minimum type size */
+.caption {
+  font-size: var(--font-size-min);
+  font-weight: 400;
+  color: var(--text-muted);
+}
