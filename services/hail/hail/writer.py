@@ -136,8 +136,11 @@ def write_run(
             for threshold, geom in shape.contours.items():
                 conn.execute(_UPSERT_CONTOUR_UNION, (storm_id, threshold, bytes(shapely.to_wkb(geom))))
             for merged_id in m.merged_ids:
-                conn.execute(_MERGE_GEOM, (storm_id, merged_id))
-                conn.execute(_MERGE_CONTOURS, (storm_id, merged_id))
+                # In replace (final) mode the winning storm's geometry and contours were just replaced from the
+                # full-day grid, so unioning the merged storm's geometry would re-add stale area.
+                if not replace:
+                    conn.execute(_MERGE_GEOM, (storm_id, merged_id))
+                    conn.execute(_MERGE_CONTOURS, (storm_id, merged_id))
                 conn.execute(
                     "UPDATE storms SET merged_into = %s, updated_at = now() WHERE id = %s AND merged_into IS NULL",
                     (storm_id, merged_id),

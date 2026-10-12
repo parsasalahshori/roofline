@@ -55,8 +55,10 @@ There is no `render.yaml`; do not create one. Create the worker by hand:
    password.
 3. Set the environment variables:
    - `HAIL_DATABASE_URL`: login URL of the `app_hail` role.
-   - `OPS_ALERT_EMAIL`: receives the alert and is used as the Postmark From, so it must be a verified Postmark sender.
-   - `POSTMARK_SERVER_TOKEN`: Postmark server token.
+   - `OPS_ALERT_EMAIL`: receives the alert and is also the From address, so it must be a verified Postmark sender
+     address (its domain verified in Postmark).
+   - `POSTMARK_TOKEN`: Postmark server token, the same as the API. `POSTMARK_SERVER_TOKEN` still works but is
+     deprecated.
 
 Behaviour:
 
