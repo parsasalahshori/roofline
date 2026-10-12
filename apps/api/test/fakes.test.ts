@@ -276,6 +276,37 @@ describe('FakeTextingRegistrar', () => {
     });
   });
 
+  test('submitBrand reports each step through onProgress, in order, with the returned sids', async () => {
+    const r = new FakeTextingRegistrar();
+    const seen: unknown[] = [];
+    const out = await r.submitBrand(sub, { ...brand, onProgress: (p) => seen.push(p) });
+    expect(seen).toEqual([
+      { customerProfileSid: out.customerProfileSid },
+      { trustProductSid: out.trustProductSid },
+      { brandSid: out.brandSid },
+    ]);
+  });
+
+  test('failAfter(customerProfile, unavailable) reports the profile sid once, then throws, for one call only', async () => {
+    const r = new FakeTextingRegistrar();
+    r.failAfter('customerProfile', 'unavailable');
+    const seen: unknown[] = [];
+    const err = await r.submitBrand(sub, { ...brand, onProgress: (p) => seen.push(p) }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RegistrarUnavailableError);
+    expect(seen).toEqual([{ customerProfileSid: fakeSid('BU', 'cp:company-1') }]);
+    await expect(r.submitBrand(sub, brand)).resolves.toMatchObject({ brandSid: fakeSid('BN', 'company-1') });
+  });
+
+  test('failAfter(trustProduct, rejected) reports two steps, then rejects with the text', async () => {
+    const r = new FakeTextingRegistrar();
+    r.failAfter('trustProduct', { rejected: 'EIN mismatch' });
+    const seen: unknown[] = [];
+    const err = await r.submitBrand(sub, { ...brand, onProgress: (p) => seen.push(p) }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RegistrarRejectedError);
+    expect((err as RegistrarRejectedError).reasonText).toBe('EIN mismatch');
+    expect(seen).toHaveLength(2);
+  });
+
   test('submitCampaign gives a QE sid from the brand sid', async () => {
     const r = new FakeTextingRegistrar();
     const out = await r.submitCampaign(sub, {
