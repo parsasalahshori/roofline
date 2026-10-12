@@ -151,6 +151,14 @@ CREATE POLICY tenant_isolation ON storm_photos
   WITH CHECK (company_id = nullif(current_setting('app.company_id', true), '')::uuid);
 --> statement-breakpoint
 
+-- 6b. ad_campaigns.paused_by (Task R3, amended in place under Ruling AW): who paused a campaign. 'roofline' (the
+--     95% pause, or a failed/creating row confirmed off) stops the hourly sync; 'platform' or NULL keeps it
+--     syncing so a brief platform pause does not end the 95% guard. Nullable; NULL counts as not ours.
+ALTER TABLE ad_campaigns ADD COLUMN paused_by text;
+--> statement-breakpoint
+ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_paused_by_check CHECK ("ad_campaigns"."paused_by" in ('roofline', 'platform'));
+--> statement-breakpoint
+
 -- 7. app_system: column-level access to four tenant tables, for the storm-match and ad-sync fan-outs, the
 --    public storm page lookup and the public unsubscribe. The column grants are the real limit. The
 --    app_system_all policies let every row through on these tables (app_system is not RLS-exempt), so the
@@ -167,7 +175,9 @@ GRANT SELECT (company_id, status) ON ad_accounts TO app_system;
 --> statement-breakpoint
 CREATE POLICY app_system_all ON ad_accounts FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint
-GRANT SELECT (id, company_id, status, external_campaign_id, platform) ON ad_campaigns TO app_system;
+-- ad_campaigns: the fan-out lists companies with a campaign to guard (status, external_campaign_id, paused_by) and
+-- a creating row that went quiet (updated_at). Ids and status only, never content.
+GRANT SELECT (id, company_id, status, external_campaign_id, platform, paused_by, updated_at) ON ad_campaigns TO app_system;
 --> statement-breakpoint
 CREATE POLICY app_system_all ON ad_campaigns FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint

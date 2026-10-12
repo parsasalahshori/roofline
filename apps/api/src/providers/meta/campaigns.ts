@@ -3,7 +3,9 @@ import type { MetaCreate } from '../ads-meta.ts';
 import type { MetaHttp } from './http.ts';
 
 /*
- * Campaign, ad set, creative and ad creation for the Meta adapter. Every object is created PAUSED.
+ * Campaign, ad set, creative and ad creation for the Meta adapter. The campaign is created PAUSED and is the one
+ * switch (setStatus flips only it); the ad set and the ad are created ACTIVE so they deliver once it is enabled,
+ * and a campaign-level pause still stops everything.
  * A retried create finds the campaign first by its name tag, so nothing is duplicated.
  */
 
@@ -109,7 +111,7 @@ function imageHashOf(body: unknown): string {
 }
 
 /**
- * Creates the image, campaign, ad set, creative and ad, all PAUSED. A targeting error from the
+ * Creates the image, campaign (PAUSED), ad set (ACTIVE), creative and ad (ACTIVE). A targeting error from the
  * campaign step (Meta requires the Housing category) is rethrown as is, and nothing after it is posted.
  * If a step after the campaign fails, the campaign is deleted (best effort) so a retry's findCampaign
  * does not reuse a half-built campaign.
@@ -136,7 +138,7 @@ export async function createCampaign(http: MetaHttp, c: MetaCreate): Promise<{ c
     const adset = await http.post(`${account}/adsets`, {
       name: c.nameTag,
       campaign_id: campaignId,
-      status: 'PAUSED',
+      status: 'ACTIVE',
       billing_event: 'IMPRESSIONS',
       optimization_goal: 'LANDING_PAGE_VIEWS',
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
@@ -170,7 +172,7 @@ export async function createCampaign(http: MetaHttp, c: MetaCreate): Promise<{ c
       name: c.nameTag,
       adset_id: adsetId,
       creative: { creative_id: creativeId },
-      status: 'PAUSED',
+      status: 'ACTIVE',
     });
   } catch (err) {
     try {
