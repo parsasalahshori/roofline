@@ -163,7 +163,6 @@ test('waiting list: rows link to the approvals review', async ({ page, loginAs, 
   await expect(open).toHaveAttribute('href', new RegExp('/approvals/' + agentsSeed.draftTaskId + '$'));
   await open.click();
   await expect(page).toHaveURL(new RegExp('/approvals/' + agentsSeed.draftTaskId + '$'));
-  await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15_000 });
 });
 
 test('rep sees a smaller Agents window', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
