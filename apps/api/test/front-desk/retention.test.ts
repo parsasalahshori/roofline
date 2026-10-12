@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
+  BLANK_BATCH,
   blankExpiredTurns,
   calls,
   companySettings,
@@ -120,7 +121,14 @@ async function addTurn(companyId: string, conversationId: string, at: Date, posi
 
 async function addText(
   companyId: string,
-  o: { conversationId: string | null; at: Date; direction?: 'in' | 'out'; status?: 'received' | 'sent' | 'queued' | 'scheduled'; body?: string },
+  o: {
+    conversationId: string | null;
+    at: Date;
+    direction?: 'in' | 'out';
+    status?: 'received' | 'sent' | 'queued' | 'scheduled';
+    body?: string;
+    dedupeKey?: string;
+  },
 ): Promise<string> {
   seq++;
   const [row] = await inTenant(companyId, (tx) =>
@@ -137,6 +145,7 @@ async function addText(
         fromE164: '+14025553000',
         toE164: '+14025550200',
         providerMessageSid: `SM${String(seq).padStart(32, '0')}`,
+        dedupeKey: o.dedupeKey ?? (o.direction === 'out' ? `fd-text:${seq}` : null),
         createdAt: o.at,
       })
       .returning({ id: messages.id }),
@@ -409,6 +418,55 @@ describe('Front Desk retention: texts and batching (review note 43)', () => {
     expect((await textRow(a, waiting)).body).toBe('my roof is leaking');
 
     expect((await sweepCompanyRetention(t.deps, a, NOW)).messagesBlanked).toBe(0);
+  });
+
+  test('only the AI exchange is blanked: keyword texts, staff replies and booking confirmations stay (Ruling BI)', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const old = ago(400 * DAY);
+    const aiIn = await addText(a, { conversationId: conv, at: old });
+    const aiOut = await addText(a, { conversationId: conv, at: old, direction: 'out', status: 'sent', dedupeKey: 'fd-text:abc' });
+    const stop = await addText(a, { conversationId: conv, at: old, body: 'Stop.' });
+    const start = await addText(a, { conversationId: conv, at: old, body: 'START' });
+    const help = await addText(a, { conversationId: conv, at: old, body: ' help ' });
+    const staff = await addText(a, { conversationId: conv, at: old, direction: 'out', status: 'sent', body: 'Hi, this is Sam.', dedupeKey: 'fd-reply:x:y' });
+    const booking = await addText(a, { conversationId: conv, at: old, direction: 'out', status: 'sent', body: 'You are booked.', dedupeKey: 'fd-book:z' });
+    const textBack = await addText(a, { conversationId: conv, at: old, direction: 'out', status: 'sent', body: 'Sorry we missed you.', dedupeKey: 'fd-textback:c' });
+
+    expect((await sweepCompanyRetention(t.deps, a, NOW)).messagesBlanked).toBe(2);
+    expect((await textRow(a, aiIn)).body).toBe('');
+    expect((await textRow(a, aiOut)).body).toBe('');
+    expect((await textRow(a, stop)).body).toBe('Stop.');
+    expect((await textRow(a, start)).body).toBe('START');
+    expect((await textRow(a, help)).body).toBe(' help ');
+    expect((await textRow(a, staff)).body).toBe('Hi, this is Sam.');
+    expect((await textRow(a, booking)).body).toBe('You are booked.');
+    expect((await textRow(a, textBack)).body).toBe('Sorry we missed you.');
+    expect((await sweepCompanyRetention(t.deps, a, NOW)).messagesBlanked).toBe(0);
+  });
+
+  test('kept keyword texts do not stall the batches: AI texts after a full batch of them are still blanked', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const values = Array.from({ length: BLANK_BATCH }, (_, i) => ({
+      companyId: a,
+      conversationId: conv,
+      channel: 'sms' as const,
+      direction: 'in' as const,
+      body: 'STOP',
+      status: 'received' as const,
+      fromE164: '+14025553000',
+      toE164: '+14025550200',
+      providerMessageSid: `SMkeep${String(i).padStart(28, '0')}`,
+      createdAt: ago(500 * DAY),
+    }));
+    await inTenant(a, (tx) => tx.insert(messages).values(values));
+    const later = await addText(a, { conversationId: conv, at: ago(400 * DAY) });
+
+    expect((await sweepCompanyRetention(t.deps, a, NOW)).messagesBlanked).toBe(1);
+    expect((await textRow(a, later)).body).toBe('');
   });
 
   test('another company text is never blanked by this sweep', async () => {

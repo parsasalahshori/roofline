@@ -31,11 +31,12 @@ export const frontDeskSettings = {
   textBack: { label: 'Text back missed calls' },
   recordingDays: {
     label: 'Keep recordings (days)',
-    help: 'Zero keeps no recordings.',
+    help: 'Zero keeps no recordings and deletes the ones already saved at the next nightly cleanup.',
     range: (min: number, max: number) => `Enter a whole number from ${min} to ${max}.`,
   },
   transcriptDays: {
     label: 'Keep transcripts (days)',
+    help: 'After this, call transcripts and the texts between customers and the assistant are cleared. STOP, START and HELP texts, replies from your team and booking confirmations are kept.',
     range: (min: number, max: number) => `Enter a whole number from ${min} to ${max}.`,
   },
   maxCalls: {

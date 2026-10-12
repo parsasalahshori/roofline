@@ -147,6 +147,16 @@ describe('Settings -> Front Desk form', () => {
     expect(api.count(SAVE)).toBe(0);
   });
 
+  it('says what each retention setting clears and keeps (Ruling BI)', async () => {
+    signIn(makeSettings());
+    renderTab();
+    await screen.findByLabelText(frontDeskSettings.transcriptDays.label);
+    expect(screen.getByText(frontDeskSettings.transcriptDays.help)).toBeInTheDocument();
+    expect(screen.getByText(frontDeskSettings.recordingDays.help)).toBeInTheDocument();
+    expect(frontDeskSettings.transcriptDays.help).toMatch(/STOP, START and HELP/);
+    expect(frontDeskSettings.recordingDays.help).toMatch(/deletes the ones already saved/);
+  });
+
   it('shows range errors on the number fields and sends nothing', async () => {
     signIn(makeSettings());
     const { user } = renderTab();
