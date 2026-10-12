@@ -154,3 +154,4 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
     - (a) ASK_PERSON_INTENTS and 'not_understood' are guessed router labels, and the frozen ROUTER_PROMPT doesn't ask for them. RC adds the labels to the router's json_schema enum (Haiku format), not to the frozen prompt text.
     - (b) transfer reason 'asked' plus the router intent can count one ask twice in a turn; count once.
     - (c) drop the times.ts systemCtx re-export.
+- 2026-10-12: integration 092068c8 green (CI 38281636895, Platform+E2E): T27 + c1-crm 7758e82 + T19, with the smoke guard test's TRUST_PROXY fix (T27's production BASE_ENV met C1's BF check). CV and RA are building in parallel off 93dcfca; RC waits for CV; T25 is with the C1 lead; d1-rev-a/b/c are with E1 and d1-rev-d with C1.
