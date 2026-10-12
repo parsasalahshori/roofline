@@ -1,0 +1,20 @@
+.list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.item {
+  overflow-wrap: anywhere;
+}
+
+.link {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-muted);
+}
