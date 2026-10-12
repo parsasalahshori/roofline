@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { companySettings, findCallRecordingBySid, insertCall, listTurns, withTenant, type TenantContext } from '@roofline/db';
+import { companySettings, encrypt, findCallRecordingBySid, insertCall, listTurns, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import type { ConversationState, Engine } from '../../src/front-desk/engine-types.ts';
 import { createRecording, isRecordingObjection } from '../../src/front-desk/recording.ts';
@@ -8,7 +8,7 @@ import { runRelayLoop, type RelayCall } from '../../src/front-desk/relay-session
 import { FakeVoiceSession } from '../../src/providers/fakes/voice-session.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { RouteDecision } from '../../src/providers/llm.ts';
-import { makeTestApp } from '../helpers.ts';
+import { makeTestApp, TEST_ENCRYPTION_KEY } from '../helpers.ts';
 
 const OPUS: RouteDecision = { intent: 'other', urgent: false, mood: 'calm', route: 'opus', fastReply: null };
 const SAY: Script = [{ when: /./, route: OPUS, answer: [{ kind: 'text' as const, text: 'Of course.' }] }];
@@ -36,6 +36,13 @@ async function rig(script: Script = SAY) {
   const t = await makeTestApp();
   const deps = { ...t.deps, llm: new ScriptedLlm(script) };
   const ctx: TenantContext = { companyId: t.seed.a.companyId, userId: null, role: 'system', canApproveSpend: false };
+  await t.deps.pools.system
+    .insert(textingRegistrations)
+    .values({ companyId: ctx.companyId, subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt('test-subaccount-token', TEST_ENCRYPTION_KEY) })
+    .onConflictDoUpdate({
+      target: textingRegistrations.companyId,
+      set: { subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt('test-subaccount-token', TEST_ENCRYPTION_KEY) },
+    });
   const row = await withTenant(t.deps.pools, ctx, (tx) =>
     insertCall(tx, ctx, { callSid: SID, fromE164: '+15555550100', toE164: '+14025550100', forwardedFrom: null, stirVerstat: null, now: t.clock.now() }),
   );

@@ -7,3 +7,5 @@ Review 1: verify failed, 2 findings, fixed. Contact check: F1 approve, F2 amend.
 Minors: recording status hook routes by `To` which Twilio's recordingStatusCallback may not send (route by CallSid or carry the number in the callback URL); no test for a failing Twilio delete; no recording_objection router intent (phrase matcher only).
 
 Verify tail: typecheck ok, lint ok, vitest @roofline/shared 21 files / 805 tests passed.
+
+CI round 1 (run 38233277838): Platform failed. System pool has no grant on calls, so the CallSid lookup in the recording hook and the system-pool test inserts failed; recording tests lacked a subaccount sid. Fix: the callback URL carries ?c=<companyId> (signature covers it), companyIdForCallSid removed, tests insert through withTenant and upsert the texting registration.

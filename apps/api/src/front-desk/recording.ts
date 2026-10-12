@@ -58,7 +58,7 @@ export function createRecording(deps: AppDeps, call: RecordingCall): RecordingHa
           console.error(`recording skipped, no subaccount call=${call.callId} company=${call.companyId}`);
           return;
         }
-        const started2 = await deps.callControl.startRecording(sub, call.callSid, `${deps.config.PUBLIC_BASE_URL}/hooks/twilio/voice/recording`);
+        const started2 = await deps.callControl.startRecording(sub, call.callSid, `${deps.config.PUBLIC_BASE_URL}/hooks/twilio/voice/recording?c=${call.companyId}`);
         recordingSid = started2.recordingSid;
         if (objected) {
           // The caller objected while the start was in flight: stop at once.

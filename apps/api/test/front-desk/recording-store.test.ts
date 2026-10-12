@@ -17,7 +17,7 @@ const A_NUMBER = '+14025550200';
 const CALLER = '+14025550999';
 const TOKEN_A = 'test-subaccount-token-a';
 const BASE = 'https://app.roofline.test';
-const PATH = '/hooks/twilio/voice/recording';
+const PATH_BASE = '/hooks/twilio/voice/recording';
 const RECORDING_SID = 'RE00000000000000000000000000000001';
 const CALL_SID = 'CA00000000000000000000000000000001';
 const BYTES = Uint8Array.from([0x49, 0x44, 0x33, 0x04, 0x00]);
@@ -33,13 +33,18 @@ beforeEach(async () => {
   const { system } = t.deps.pools;
   await system.insert(companyPhoneNumbers).values({ companyId: companyId(), e164: A_NUMBER, capabilities: ['sms', 'voice'], providerSid: 'PN_A' });
   await system
-    .update(textingRegistrations)
-    .set({ subaccountAuthTokenEncrypted: encrypt(TOKEN_A, TEST_ENCRYPTION_KEY) })
-    .where(eq(textingRegistrations.companyId, companyId()));
-  const [row] = await system
-    .insert(calls)
-    .values({ companyId: companyId(), callSid: CALL_SID, fromE164: CALLER, toE164: A_NUMBER, recordingStatus: 'recording' })
-    .returning({ id: calls.id });
+    .insert(textingRegistrations)
+    .values({ companyId: companyId(), subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt(TOKEN_A, TEST_ENCRYPTION_KEY) })
+    .onConflictDoUpdate({
+      target: textingRegistrations.companyId,
+      set: { subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt(TOKEN_A, TEST_ENCRYPTION_KEY) },
+    });
+  const [row] = await withTenant(t.deps.pools, ctx(), (tx) =>
+    tx
+      .insert(calls)
+      .values({ companyId: companyId(), callSid: CALL_SID, fromE164: CALLER, toE164: A_NUMBER, recordingStatus: 'recording' })
+      .returning({ id: calls.id }),
+  );
   callId = row!.id;
   t.callControl.putRecording(RECORDING_SID, BYTES);
 });
@@ -111,9 +116,9 @@ describe('fd-recording-store job', () => {
 });
 
 describe('POST /hooks/twilio/voice/recording', () => {
-  const post = (fields: Record<string, string>, signature?: string | null) => {
-    const sig = signature !== undefined ? signature : twilio.getExpectedTwilioSignature(TOKEN_A, BASE + PATH, fields);
-    const req = request(t.app).post(PATH).type('form');
+  const post = (fields: Record<string, string>, signature?: string | null, path = `${PATH_BASE}?c=${companyId()}`) => {
+    const sig = signature !== undefined ? signature : twilio.getExpectedTwilioSignature(TOKEN_A, BASE + path, fields);
+    const req = request(t.app).post(path).type('form');
     if (sig !== null) req.set('X-Twilio-Signature', sig);
     return req.send(fields);
   };
@@ -134,8 +139,14 @@ describe('POST /hooks/twilio/voice/recording', () => {
     expect(t.jobs.sent.filter((j) => j.name === 'fd-recording-store')).toHaveLength(0);
   });
 
-  test('an unknown CallSid answers 404 without a job', async () => {
+  test('an unknown CallSid answers 204 without a job', async () => {
     const res = await post({ ...base, CallSid: 'CA_unknown', RecordingStatus: 'completed' });
+    expect(res.status).toBe(204);
+    expect(t.jobs.sent.filter((j) => j.name === 'fd-recording-store')).toHaveLength(0);
+  });
+
+  test('a callback without the company parameter answers 404', async () => {
+    const res = await post({ ...base, RecordingStatus: 'completed' }, null, PATH_BASE);
     expect(res.status).toBe(404);
     expect(t.jobs.sent.filter((j) => j.name === 'fd-recording-store')).toHaveLength(0);
   });

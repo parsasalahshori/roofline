@@ -1,5 +1,4 @@
 import express, { Router } from 'express';
-import { companyIdForCallSid } from '@roofline/db/system';
 import { findCallRecordingBySid, setCallRecording, type TenantContext, withTenant } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 import { checkSignature, field, FORM_BODY_LIMIT } from './twilio.ts';
@@ -7,9 +6,12 @@ import { checkSignature, field, FORM_BODY_LIMIT } from './twilio.ts';
 /**
  * POST /hooks/twilio/voice/recording: Twilio's recordingStatusCallback. Only a completed recording
  * is acted on: its length is saved and the fd-recording-store job copies it to file storage.
- * The company is found from CallSid, because Twilio's recording callback has no To or From.
+ * The company comes from the `c` query parameter on the callback URL (Twilio's recording callback has no
+ * To or From, and the system role cannot read calls); the signature covers the whole URL.
  * Always answers 204 once the request is accepted.
  */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function twilioVoiceRecordingHooks(deps: AppDeps): Router {
   const router = Router();
   router.use(express.urlencoded({ extended: false, limit: FORM_BODY_LIMIT }));
@@ -20,7 +22,8 @@ export function twilioVoiceRecordingHooks(deps: AppDeps): Router {
       res.status(400).end();
       return;
     }
-    const companyId = await companyIdForCallSid(deps.pools.system, callSid);
+    const queryCompany = req.query['c'];
+    const companyId = typeof queryCompany === 'string' && UUID.test(queryCompany) ? queryCompany : null;
     if (companyId === null) {
       res.status(404).end();
       return;
