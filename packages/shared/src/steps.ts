@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { ApprovalClass } from './enums.ts';
 import { MESSAGE_PURPOSES } from './enums.ts';
 import { renderBody } from './render.ts';
-import { AD_PLATFORMS } from './storm.ts';
+import { AD_PLATFORMS, dailyBudgetCents, renderStormTemplate } from './storm.ts';
+import { MAX_DOORS_PER_PLAN, MAX_DOORS_PER_ROUTE } from './door-routes.ts';
 import { MEASUREMENT_KINDS, type MeasurementKind } from './proposals.ts';
 
 /*
@@ -34,7 +35,7 @@ export function isStepType(value: unknown): value is StepType {
 }
 
 /** What a preview can be built from besides the payload itself. The API looks these up; the registry never does. */
-export type PreviewFacts = { companyName: string; recipientCount?: number; sampleFirstName?: string };
+export type PreviewFacts = { companyName: string; recipientCount?: number; sampleFirstName?: string; companyAddress?: string };
 
 /** What the review screen shows for one step. */
 export type StepPreview = {
@@ -281,7 +282,10 @@ const sendEmailPayload = z.strictObject({
     .min(1, 'Please pick at least one customer.')
     .max(5000, 'You can email at most 5,000 customers in one go.')
     .refine((ids) => new Set(ids).size === ids.length, 'Each customer can only be listed once.'),
-  fields: fieldsMap.optional(),
+  /** Email keys are lower-case customer ids, the same form as customerIds (the SMS map is not checked for case). */
+  fields: fieldsMap
+    .refine((fields) => Object.keys(fields).every((id) => id === id.toLowerCase()), FIELDS_MESSAGE)
+    .optional(),
   dedupePrefix: z
     .string({ error: CHECK_TEXT })
     .trim()
@@ -302,9 +306,14 @@ const sendEmailBatch: StepTypeDef<SendEmailPayload> = {
     return {
       title: `Email ${plural(recipientCount, 'customer', 'customers')}`,
       lines: ['Marketing email', "Customers who can't be emailed are skipped."],
-      messageSample: renderBody(p.body, {
-        ...(facts.sampleFirstName !== undefined && { first_name: facts.sampleFirstName }),
+      messageSample: renderStormTemplate(p.body, {
+        first_name: facts.sampleFirstName ?? 'Sam',
         company: facts.companyName,
+        hail_size: '1.75"',
+        street: 'Maple St',
+        day: 'yesterday',
+        ...(facts.companyAddress !== undefined ? { company_address: facts.companyAddress } : {}),
+        unsubscribe: '(unsubscribe link)',
       }),
       recipientCount,
     };
@@ -334,25 +343,39 @@ const buildRoutesPayload = z.strictObject({
     .number({ error: DOORS_MESSAGE })
     .int(DOORS_MESSAGE)
     .min(1, DOORS_MESSAGE)
-    .max(1500, 'You can plan at most 1,500 doors.'),
+    .max(MAX_DOORS_PER_PLAN, 'You can plan at most 1,500 doors.'),
 });
 type BuildRoutesPayload = z.output<typeof buildRoutesPayload>;
+
+/** How many routes a plan makes: at least one per rep, and no route over MAX_DOORS_PER_ROUTE doors (as splitIntoRoutes does). */
+function routeCount(reps: number, maxDoors: number): number {
+  return Math.max(reps, Math.ceil(maxDoors / MAX_DOORS_PER_ROUTE));
+}
 
 const buildRoutes: StepTypeDef<BuildRoutesPayload> = {
   type: 'build_routes',
   approvalClass: 'internal',
   payload: buildRoutesPayload,
   preview(p) {
-    const routes = p.repUserIds.length;
+    const reps = p.repUserIds.length;
     const doors = p.maxDoors;
-    const perRep = Math.ceil(doors / routes);
+    const routes = routeCount(reps, doors);
+    const perRoute = Math.ceil(doors / routes);
+    // Routes go to reps in turn (as splitIntoRoutes deals them), so the first `routes % reps` reps get one more.
+    let remaining = doors;
+    const lines = p.repUserIds.map((_id, i) => {
+      const repRoutes = Math.floor(routes / reps) + (i < routes % reps ? 1 : 0);
+      const repDoors = Math.min(repRoutes * perRoute, remaining);
+      remaining -= repDoors;
+      return `Rep ${i + 1}: ${plural(repRoutes, 'route', 'routes')}, up to ${plural(repDoors, 'door', 'doors')}`;
+    });
     return {
       title: `${plural(routes, 'door-knock route', 'door-knock routes')} · ${plural(doors, 'door', 'doors')}`,
-      lines: p.repUserIds.map((_id, i) => `Rep ${i + 1}: up to ${plural(perRep, 'door', 'doors')}`),
+      lines,
     };
   },
   minutesSaved(p) {
-    return 120 * p.repUserIds.length;
+    return 120 * routeCount(p.repUserIds.length, p.maxDoors);
   },
 };
 
@@ -441,7 +464,7 @@ const createAdCampaign: StepTypeDef<CreateAdPayload> = {
     return adNeedsProblem(p)?.message ?? null;
   },
   preview(p) {
-    const perDayCents = Math.round(p.maxSpendCents / p.days);
+    const perDayCents = dailyBudgetCents(p.maxSpendCents, p.days);
     return {
       title: p.platform === 'google' ? 'Google ads on the hail area' : 'Facebook and Instagram ads on the hail area',
       lines: ['Circles cover the hail area', `${dollars.format(perDayCents / 100)} a day for ${p.days} days`],
