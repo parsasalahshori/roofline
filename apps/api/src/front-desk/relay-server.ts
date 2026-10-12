@@ -170,6 +170,8 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
           // Transcript is stored unless the caller already stopped recording or recording is off for the company.
           const rec = await findCallRecordingBySid(tx, ctx, row.callSid);
           const stopped = rec?.recordingStatus === 'stopped_by_caller';
+          // A call-level recording from an earlier session on this call is still running (pre-review note 4).
+          const recording = rec?.recordingStatus === 'recording' || rec?.recordingStatus === 'stored';
           if (!stopped) {
             const [cs] = await tx
               .select({ days: companySettings.recordingRetentionDays })
@@ -178,7 +180,7 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
               .limit(1);
             if ((cs?.days ?? DEFAULT_RETENTION_DAYS) !== 0) await setCallRecording(tx, ctx, row.callSid, { transcriptStored: true });
           }
-          return { found, stopped };
+          return { found, stopped, recording };
         });
         if (call === 'denied') {
           deps.relaySessions.remove(row.callSid);
@@ -191,7 +193,13 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
         if (stage === 'dead' || ws.readyState !== WebSocket.OPEN) return;
         stage = 'running';
         uncount();
-        const recording = createRecording(deps, { callId: row.callId, companyId: row.companyId, callSid: row.callSid, stoppedByCaller: recordingStopped });
+        const recording = createRecording(deps, {
+          callId: row.callId,
+          companyId: row.companyId,
+          callSid: row.callSid,
+          stoppedByCaller: recordingStopped,
+          alreadyRecording: call.recording,
+        });
         loop = runRelayLoop(adapter, {
           deps,
           engine,

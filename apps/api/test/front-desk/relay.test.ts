@@ -3,13 +3,13 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import twilio from 'twilio';
 import WebSocket from 'ws';
-import { calls, findCallBySid, insertCall, setCallRecording, updateCall, withTenant } from '@roofline/db';
+import { calls, encrypt, findCallBySid, insertCall, setCallRecording, textingRegistrations, updateCall, withTenant } from '@roofline/db';
 import { signingTokenFor } from '@roofline/db/system';
 import { attachRelayUpgrade, RELAY_MAX_PAYLOAD, RELAY_MAX_QUEUED, RELAY_MAX_UNAUTH } from '../../src/front-desk/relay-server.ts';
 import { mintRelayToken } from '../../src/front-desk/relay-token.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { RouteDecision } from '../../src/providers/llm.ts';
-import { makeTestApp } from '../helpers.ts';
+import { makeTestApp, TEST_ENCRYPTION_KEY } from '../helpers.ts';
 
 const OPUS: RouteDecision = { intent: 'other', urgent: false, mood: 'calm', route: 'opus', fastReply: null };
 const SAY: Script = [{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'We can help with that.' }] }];
@@ -258,6 +258,31 @@ describe('relay websocket server', () => {
     const c = await r.open();
     await until(() => r.deps.relaySessions.size === 1);
     expect(await r.readTranscriptStored()).toBe(false);
+    c.ws.close();
+    await c.closed;
+  });
+
+  test('a second session on a call already recording starts no recording, and an objection stops the current one', async () => {
+    const r = await rig(SAY);
+    await withTenant(r.t.deps.pools, { companyId: r.row.companyId, userId: null, role: 'system', canApproveSpend: false }, (tx) =>
+      setCallRecording(tx, { companyId: r.row.companyId, userId: null, role: 'system', canApproveSpend: false }, CALL_SID, { recordingStatus: 'recording' }),
+    );
+    const c = await r.open();
+    await until(() => r.deps.relaySessions.size === 1);
+    // The company's Twilio subaccount (added after the upgrade, which this rig signs with the main token).
+    await r.t.deps.pools.system
+      .insert(textingRegistrations)
+      .values({ companyId: r.row.companyId, subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt('test-subaccount-token', TEST_ENCRYPTION_KEY) })
+      .onConflictDoUpdate({
+        target: textingRegistrations.companyId,
+        set: { subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt('test-subaccount-token', TEST_ENCRYPTION_KEY) },
+      });
+    c.send({ type: 'prompt', voicePrompt: "please don't record me", last: true });
+    await c.waitFor((f) => f.type === 'text' && f.last === true);
+    await until(() => r.t.callControl.calls.some((x) => x.method === 'stopRecording'));
+    expect(r.t.callControl.calls.filter((x) => x.method === 'startRecording')).toHaveLength(0);
+    const stop = r.t.callControl.calls.find((x) => x.method === 'stopRecording')!;
+    expect(stop.args[2]).toBe('Twilio.CURRENT');
     c.ws.close();
     await c.closed;
   });
