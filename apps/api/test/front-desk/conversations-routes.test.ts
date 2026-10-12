@@ -257,6 +257,18 @@ describe('GET /api/conversations/:id', () => {
     expect(detail.calls).toHaveLength(2);
   });
 
+  test('the list marks a conversation urgent only for a successful urgent take_message (final review RC-3)', async () => {
+    const owner = await who.as('owner');
+    const failed = await seedConversation({ channel: 'voice' });
+    await seedTurn(failed, 0, { toolCalls: [{ name: 'take_message', input: { reason: 'Leak', urgent: true }, result: 'failed', ok: false }] });
+    await seedTurn(failed, 2, { toolCalls: [{ name: 'take_message', ok: false, input: { urgent: true } } as ToolCallRecord] });
+    const taken = await seedConversation({ channel: 'voice' });
+    await seedTurn(taken, 0, { toolCalls: [{ name: 'take_message', ok: true, input: { urgent: true } } as ToolCallRecord] });
+    const page = (await owner.get(BASE)).body as ConversationPage;
+    expect(page.items.find((i) => i.id === failed)!.urgent).toBe(false);
+    expect(page.items.find((i) => i.id === taken)!.urgent).toBe(true);
+  });
+
   test("a message the caller left shows its words on the card, also with no customer; a redacted one keeps the plain label", async () => {
     const owner = await who.as('owner');
     const convo = await seedConversation({ channel: 'voice' });

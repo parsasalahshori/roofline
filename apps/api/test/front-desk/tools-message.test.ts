@@ -9,6 +9,7 @@ import {
   insertTurn,
   jobs,
   type TenantContext,
+  type ToolCallRecord,
   updateJob,
 } from '@roofline/db';
 import { localDate } from '@roofline/shared';
@@ -217,6 +218,47 @@ describe('take_message', () => {
     await run(second, urgent);
     expect(t.mailer.sent).toHaveLength(emails.length);
     expect(second.urgentNoticeSent).toBe(true);
+  });
+
+  test('a failed urgent take_message does not count as the notice: the retry sends the email once (final review RC-3)', async () => {
+    const emails = await putOnCall();
+    const first = await makeConversation(null);
+    const urgent = { ...INPUT, urgent: true };
+    // An earlier turn whose urgent take_message failed (the stored shape, and the redacted shape that keeps ok).
+    await inCompany(t, idA(), async (tx) => {
+      await insertTurn(tx, sys(), {
+        conversationId: first.conversationId,
+        position: 0,
+        speaker: 'assistant',
+        text: 'Sorry, something went wrong.',
+        toolCalls: [{ name: 'take_message', input: urgent, result: 'failed', ok: false }],
+        at: t.clock.now(),
+      });
+      await insertTurn(tx, sys(), {
+        conversationId: first.conversationId,
+        position: 1,
+        speaker: 'assistant',
+        text: '',
+        toolCalls: [{ name: 'take_message', ok: false, input: { urgent: true } } as unknown as ToolCallRecord],
+        at: t.clock.now(),
+      });
+    });
+    await run(first, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
+    expect(first.urgentNoticeSent).toBe(true);
+    // The successful retry is stored; a later fresh state sends nothing more.
+    await inCompany(t, idA(), (tx) =>
+      insertTurn(tx, sys(), {
+        conversationId: first.conversationId,
+        position: 2,
+        speaker: 'assistant',
+        text: 'I passed that on as urgent.',
+        toolCalls: [{ name: 'take_message', input: urgent, result: 'ok', ok: true }],
+        at: t.clock.now(),
+      }),
+    );
+    await run({ ...first, urgentNoticeSent: undefined }, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
   });
 
   test('a non-urgent message never sets the flag and never emails', async () => {
