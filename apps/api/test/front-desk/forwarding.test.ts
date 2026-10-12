@@ -199,5 +199,33 @@ describe('GET /api/front-desk/forwarding-test/:id', () => {
 });
 
 describe('forwarding test (Task 18 dependency)', () => {
-  it.todo('Front Desk cannot be enabled before verification unless override: true from the owner (Task 18)');
+  const settingsBody = (overrides: Record<string, unknown> = {}) => ({
+    enabled: true,
+    texts: true,
+    voice: 'maya',
+    facts: '',
+    canMove: true,
+    canCancel: true,
+    ringTeamFirstSeconds: 0,
+    missedCallTextBack: true,
+    recordingRetentionDays: 90,
+    transcriptRetentionDays: 365,
+    maxConcurrentAiCalls: 4,
+    onCallOrder: [],
+    ...overrides,
+  });
+
+  it('Front Desk cannot be enabled before verification unless override: true from the owner (Task 18)', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const blocked = await owner.put('/api/front-desk/settings').send(settingsBody());
+    expect(blocked.status).toBe(409);
+    expect(blocked.body).toMatchObject({ field: 'enabled' });
+
+    const office = await loginAs(t.app, t.seed.a.office);
+    expect((await office.put('/api/front-desk/settings').send(settingsBody({ override: true }))).status).toBe(409);
+
+    const allowed = await owner.put('/api/front-desk/settings').send(settingsBody({ override: true }));
+    expect(allowed.status).toBe(200);
+    expect(allowed.body).toMatchObject({ enabled: true });
+  });
 });
