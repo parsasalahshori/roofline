@@ -93,6 +93,8 @@ describe('creating a job', () => {
       assignedUserId: null,
       createdByUserId: who.user('owner').userId,
       lostReason: null,
+      nextStep: null,
+      nextStepOn: null,
       archivedAt: null,
       createdAt: '2026-10-12T15:00:00.000Z',
       updatedAt: '2026-10-12T15:00:00.000Z',

@@ -45,13 +45,19 @@ describe('the stage rules on PATCH', () => {
     expect(res.body).toEqual({ error, field });
   });
 
-  test('a new job cannot start Installed', async () => {
+  test('a new job may start Installed (a past job), but it still needs a value', async () => {
     const owner = await who.as('owner');
     const customer = await mustCreate(owner, '/api/customers', { displayName: 'Starts Installed' });
     const property = await mustCreate(owner, '/api/properties', { customerId: customer.id, ...addressFor(1) });
-    const res = await owner.post('/api/jobs').send({ customerId: customer.id, propertyId: property.id, stage: 'installed' });
-    expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: INSTALLED_NEEDS_WON, field: 'stage' });
+    const base = { customerId: customer.id, propertyId: property.id, stage: 'installed' };
+
+    const without = await owner.post('/api/jobs').send(base);
+    expect(without.status).toBe(400);
+    expect(without.body).toEqual({ error: WON_NEEDS_VALUE, field: 'valueCents' });
+
+    const res = await owner.post('/api/jobs').send({ ...base, valueCents: 900_000 });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ stage: 'installed', valueCents: 900_000 });
   });
 
   test('lead to won with a value succeeds, and won can then be installed', async () => {

@@ -133,14 +133,17 @@ describe('the pipeline board', () => {
       tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.stage, 'installed')),
     );
     t.clock.advance(31 * DAY_MS);
-    expect(column(await boardFor(owner), 'installed').count).toBe(0);
+    // Sessions last 30 days, so the owner signs in again at the new time.
+    who = new Actors(t);
+    const later = await who.as('owner');
+    expect(column(await boardFor(later), 'installed').count).toBe(0);
 
     // A job that moved to Installed 29 days before the clock stays on the board.
     const recent = new Date(t.clock.now().getTime() - 29 * DAY_MS);
     await inCompany(t, A(), (tx) =>
       tx.update(jobs).set({ stageChangedAt: recent }).where(eq(jobs.id, kept!.id)),
     );
-    const installed = column(await boardFor(owner), 'installed');
+    const installed = column(await boardFor(later), 'installed');
     expect(installed.count).toBe(1);
     expect(installed.jobs.map((j) => j.id)).toEqual([kept!.id]);
   });
