@@ -18,6 +18,19 @@ export {
   listTaskEvents,
   type NewAgentEvent,
 } from './repos/agent-events.ts';
+export {
+  type AgentCounts,
+  agentCounts,
+  type AgentSettingsInfo,
+  agentSettingsInfo,
+  breakdownByBaseline,
+  dailyFinished,
+  type MetricsWindow,
+  minutesByAgent,
+  type RecentTaskRow,
+  recentTasks,
+  taskSubjectScope,
+} from './repos/agent-metrics.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
 export { loadBaselineOverrides } from './repos/time-baselines.ts';
 export { insertDefaultSettings, pickFreeSlug, setServiceArea, slugify } from './repos/companies.ts';
