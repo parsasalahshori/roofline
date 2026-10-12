@@ -57,20 +57,24 @@ const env = {
   TRUST_PROXY: '1',
 };
 
-function run(argv: string[], models: EvalModels, llm: ScriptedLlm) {
+function run(argv: string[], models: EvalModels, llm: ScriptedLlm, envOverride: Record<string, string> = {}) {
   const out: string[] = [];
   const err: string[] = [];
   const written = new Map<string, string>();
-  const factory: EvalFactory = () => ({ llm, models });
+  let built = 0;
+  const factory: EvalFactory = () => {
+    built++;
+    return { llm, models };
+  };
   const done = main(
     argv,
-    env,
+    { ...env, ...envOverride },
     { log: (l) => out.push(l), error: (l) => err.push(l) },
     factory,
     { write: (path, text) => written.set(path, text) },
     () => new Date('2026-10-12T10:00:00.000Z'),
   );
-  return { done, out, err, written };
+  return { done, out, err, written, built: () => built };
 }
 
 describe('playCall (the live loop) with a scripted Llm', () => {
@@ -174,6 +178,27 @@ describe('eval:front-desk main with fakes', () => {
     expect(out.join('\n')).toMatch(/FAILED\s+price run 1 \(\$[\d.]+\): The tone grader did not score exactly the rubric/);
     const json = JSON.parse([...written.entries()].find(([p]) => p.endsWith('.json'))![1]) as { results: RunResult[] };
     expect(json.results[0]).toMatchObject({ pass: false, tone: null });
+  });
+
+  test('refuses in CI, before it builds any client', async () => {
+    const { done, out, err, written, built } = run(['--confirm-spend', '--scenario', 'price'], lineByLine, new ScriptedLlm([]), { CI: 'true' });
+    expect(await done).toBe(1);
+    expect(err).toEqual(['The eval spends real money, so it never runs in CI. Run it by hand on your own machine.']);
+    expect(out).toEqual([]);
+    expect(built()).toBe(0);
+    expect(written.size).toBe(0);
+  });
+
+  test('refuses when FAKE_PROVIDERS is on, before it builds any client', async () => {
+    const { done, out, err, written, built } = run(['--confirm-spend', '--scenario', 'price'], lineByLine, new ScriptedLlm([]), {
+      NODE_ENV: 'development',
+      FAKE_PROVIDERS: '1',
+    });
+    expect(await done).toBe(1);
+    expect(err).toEqual(['FAKE_PROVIDERS is on, so there are no real models to grade. Unset it to run the eval.']);
+    expect(out).toEqual([]);
+    expect(built()).toBe(0);
+    expect(written.size).toBe(0);
   });
 
   test('a model failure prints a plain sentence, never the provider text', async () => {

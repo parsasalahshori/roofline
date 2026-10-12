@@ -497,7 +497,7 @@ const realFiles: EvalFiles = {
   },
 };
 
-/** Runs the eval and returns the exit code. Refuses before it reads any setting or touches any provider when --confirm-spend is missing. */
+/** Runs the eval and returns the exit code. Refuses before it reads any setting or touches any provider when --confirm-spend is missing, and before it builds any client in CI or with FAKE_PROVIDERS on. */
 export async function main(
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
@@ -521,6 +521,9 @@ export async function main(
       if (err instanceof ConfigError) throw new SmokeRefused('The API settings are not valid. Load your .env first (set -a; . ./.env; set +a).');
       throw err;
     }
+    // Belt and braces (Ruling DA): never spend from CI, and never grade fakes as if they were the real models.
+    if (env.CI !== undefined && env.CI !== '') throw new SmokeRefused('The eval spends real money, so it never runs in CI. Run it by hand on your own machine.');
+    if (config.FAKE_PROVIDERS) throw new SmokeRefused('FAKE_PROVIDERS is on, so there are no real models to grade. Unset it to run the eval.');
 
     const chosen = args.scenarios ?? SCENARIOS.map((s) => s.id);
     const unknown = chosen.filter((id) => scenarioById(id) === undefined);
