@@ -1,5 +1,6 @@
 import type { AppDeps } from '../app.ts';
 import { advanceRegistration } from '../account/texting/advance.ts';
+import { runAfterCall } from '../front-desk/after-call.ts';
 import { expireForwardingTest } from '../front-desk/forwarding-test.ts';
 import { runFrontDeskText } from '../front-desk/texts.ts';
 import { runImport } from '../imports/run.ts';
@@ -13,7 +14,7 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'import-customers': (deps, data, meta) => runImport(deps, data.companyId, data.importId!, meta),
   'texting-registration': (deps, data) => advanceRegistration(deps, data.companyId),
   // D1 Front Desk
-  'fd-after-call': async () => {}, // Task 12 fills this in
+  'fd-after-call': (deps, data) => runAfterCall(deps, data),
   'fd-recording-store': async () => {}, // Task 12 fills this in
   'fd-text': (deps, data) => runFrontDeskText(deps, data),
   'fd-forwarding-test': (deps, data) => expireForwardingTest(deps, data.companyId, data.testId!),

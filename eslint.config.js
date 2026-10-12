@@ -26,6 +26,7 @@ const DB_SYSTEM_ALLOWED = [
   'apps/api/src/auth/**',
   'apps/api/src/hooks/**',
   'apps/api/src/front-desk/relay-server.ts',
+  'apps/api/src/front-desk/text-back.ts',
   'apps/api/src/jobs/scheduler/**',
   'apps/api/src/account/**',
   'apps/api/src/public/**',
