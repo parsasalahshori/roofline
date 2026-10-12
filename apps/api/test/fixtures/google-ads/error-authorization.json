@@ -1,0 +1,1 @@
+{"error":{"code":403,"message":"x","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.ads.googleads.v21.errors.GoogleAdsFailure","errors":[{"errorCode":{"authorizationError":"USER_PERMISSION_DENIED"},"message":"x"}]}]}}
