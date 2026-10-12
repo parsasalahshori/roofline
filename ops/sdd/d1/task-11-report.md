@@ -16,3 +16,6 @@
 
 ## Verify tail
 typecheck ok, lint ok, vitest @roofline/shared 802 passed (20 files).
+
+## CI round 1 (run 38224032023)
+Platform failed: relay-loop.test.ts used a made-up call id, so the engine's turn-row insert (FK to calls) failed silently. Fix: the rig inserts a real call and uses its id.

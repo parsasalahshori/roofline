@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { listTurns, withTenant } from '@roofline/db';
+import { insertCall, listTurns, withTenant } from '@roofline/db';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import type { ConversationState, Engine } from '../../src/front-desk/engine-types.ts';
 import { type RelayCall, runRelayLoop } from '../../src/front-desk/relay-session-loop.ts';
@@ -9,7 +9,7 @@ import type { RouteDecision } from '../../src/providers/llm.ts';
 import { makeTestApp } from '../helpers.ts';
 
 const OPUS: RouteDecision = { intent: 'other', urgent: false, mood: 'calm', route: 'opus', fastReply: null };
-const CALL_ID = '33333333-3333-4333-8333-333333333333';
+let CALL_ID = '33333333-3333-4333-8333-333333333333';
 
 async function rig(script: Script, over: Partial<RelayCall> = {}) {
   const t = await makeTestApp();
@@ -23,6 +23,11 @@ async function rig(script: Script, over: Partial<RelayCall> = {}) {
       return state;
     },
   };
+  const sysCtx = { companyId: t.seed.a.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+  const callRow = await withTenant(t.deps.pools, sysCtx, (tx) =>
+    insertCall(tx, sysCtx, { callSid: `CA${'b'.repeat(32)}`, fromE164: '+15555550100', toE164: '+14025550100', forwardedFrom: null, stirVerstat: null, now: t.clock.now() }),
+  );
+  CALL_ID = callRow.id;
   const call: RelayCall = {
     callId: CALL_ID,
     companyId: t.seed.a.companyId,
