@@ -29,6 +29,15 @@ const FAST = (reply: string | null): RouteDecision => ({ ...OPUS, route: 'fast',
 const UUID_A = '11111111-1111-4111-8111-111111111111';
 const UUID_B = '22222222-2222-4222-8222-222222222222';
 
+/** Remembers the history of every answer call. */
+class HistoryLlm extends ScriptedLlm {
+  histories: { role: string }[][] = [];
+  override answer(i: AnswerInput): AsyncIterable<LlmEvent> {
+    this.histories.push(i.history.map((m) => ({ role: m.role as string })));
+    return super.answer(i);
+  }
+}
+
 /** Remembers the abort signal of every answer call. */
 class CapturingLlm extends ScriptedLlm {
   signals: AbortSignal[] = [];
@@ -323,7 +332,8 @@ describe('front desk engine', () => {
     const { engine, state, say } = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] }]);
     appendUser(state, 'hello');
     engine.note(state, 'The caller is in a hurry.');
-    expect(state.history.at(-1)).toEqual({ role: 'system', content: 'The caller is in a hurry.' });
+    // Notes are queued and only reach the history right before the model is called.
+    expect(state.history.at(-1)).toEqual({ role: 'user', content: 'hello' });
     // A note made while the assistant spoke last waits for the next user message.
     state.history.length = 0;
     await say('first');
@@ -481,5 +491,58 @@ describe('front desk engine', () => {
     await say('my roof');
     expect(state.failedUnderstanding).toBe(0);
     void llm;
+  });
+
+  test('notes: interrupt, interrupt, reply never leaves a system entry before a user entry', async () => {
+    const llm = new HistoryLlm([
+      { when: /roof/, route: OPUS, answer: [{ kind: 'text', text: 'First sentence. ' }, { kind: 'text', text: 'Second sentence. ' }] },
+      { when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] },
+    ]);
+    const { engine, state, say } = await setup([], {}, llm);
+    const ac = new AbortController();
+    for await (const e of engine.turn(state, 'my roof leaks', ac.signal)) {
+      if (e.type === 'say') ac.abort();
+    }
+    expect(state.history.at(-1)?.role).toBe('assistant');
+    engine.note(state, 'x');
+    engine.note(state, 'y');
+    await say('next');
+    await say('and again');
+    expect(llm.histories.length).toBeGreaterThan(1);
+    for (const h of llm.histories) {
+      for (let i = 0; i < h.length - 1; i++) {
+        if (h[i]!.role === 'system') expect(h[i + 1]!.role).not.toBe('user');
+      }
+    }
+    const roles = state.history.map((m) => m.role as string);
+    for (let i = 0; i < roles.length - 1; i++) {
+      if (roles[i] === 'system') expect(roles[i + 1]).not.toBe('user');
+    }
+  });
+
+  test('a person-ask is counted once per turn', async () => {
+    const ASK: RouteDecision = { ...OPUS, intent: 'ask_for_person', route: 'opus' };
+    const { state, say } = await setup([
+      {
+        when: /./,
+        route: ASK,
+        answer: [{ kind: 'tool', name: 'transfer_to_person', input: { reason: 'asked', summary: 'Wants a person' } }],
+      },
+    ], {
+      transfer_to_person: async (ctx, input) => {
+        const { transferToPerson } = await import('../../src/front-desk/tools/transfer.ts');
+        return transferToPerson(ctx, input);
+      },
+    });
+    await say('let me talk to someone');
+    expect(state.askedForPersonCount).toBe(1);
+  });
+
+  test('a limit of 40 turns offers a person', async () => {
+    const { state, say } = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] }]);
+    state.turns = 40;
+    await say('hello');
+    const u = lastUserIndex(state);
+    expect((state.history[u + 1] as unknown as { role: string }).role).toBe('system');
   });
 });

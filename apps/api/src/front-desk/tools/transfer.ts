@@ -2,6 +2,7 @@ import { hasUrgentNoticeFor, loadCompanyFacts, withTenant } from '@roofline/db';
 import { onCallMembers } from '@roofline/db/system';
 import { transferPlan, workIntervals } from '@roofline/shared';
 import type { ToolHandler } from '../engine-types.ts';
+import { markPersonAskCounted, markUnderstandingCounted, personAskCounted, understandingCounted } from '../state.ts';
 import { systemCtx } from './system-ctx.ts';
 
 /*
@@ -11,8 +12,14 @@ import { systemCtx } from './system-ctx.ts';
 
 export const transferToPerson: ToolHandler<'transfer_to_person'> = async (ctx, input) => {
   const { conversation } = ctx;
-  if (input.reason === 'asked') conversation.askedForPersonCount += 1;
-  if (input.reason === 'not_understood') conversation.failedUnderstanding += 1;
+  if (input.reason === 'asked' && !personAskCounted(conversation)) {
+    conversation.askedForPersonCount += 1;
+    markPersonAskCounted(conversation);
+  }
+  if (input.reason === 'not_understood' && !understandingCounted(conversation)) {
+    conversation.failedUnderstanding += 1;
+    markUnderstandingCounted(conversation);
+  }
 
   const tctx = systemCtx(ctx.companyId);
   const { facts, urgentMessage } = await withTenant(ctx.deps.pools, tctx, async (tx) => ({

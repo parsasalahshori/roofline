@@ -50,7 +50,6 @@ export function isAvailable(settings: ToolSettings): boolean {
   return settings !== null;
 }
 
-export { systemCtx } from './system-ctx.ts';
 
 /** A slot some inspectors can take. `userIds` are in the order of the inspectors' names. */
 export type OpenSlot = { start: Date; end: Date; userIds: string[] };

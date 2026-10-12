@@ -36,11 +36,11 @@ import {
   NOT_THEIR_HOME,
   openInspectionSlots,
   queueCalendarPush,
-  systemCtx,
   whenShort,
   whenWords,
   zoneOf,
 } from './times.ts';
+import { systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 8: book_inspection. One transaction makes the customer (consent 'express', source 'call'),

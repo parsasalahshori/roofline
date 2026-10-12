@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { ROUTER_INTENTS } from '@roofline/shared';
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../src/config.ts';
 import { LlmUnavailableError } from '../src/providers/llm.ts';
@@ -20,12 +21,18 @@ function fakeFetch(respond: () => Response) {
   return { f, bodies };
 }
 const ok = (name: string) => () => new Response(fixture(name), { status: 200, headers: { 'content-type': 'application/json' } });
+// The shared fixture carries a free-text intent; the router intent is now a closed enum, so swap in a member.
+const okRoute = (intent = 'schedule_inspection') => () => {
+  const res = JSON.parse(fixture('route-response')) as Body;
+  res.content[0].text = JSON.stringify({ ...(JSON.parse(res.content[0].text) as Body), intent });
+  return new Response(JSON.stringify(res), { status: 200, headers: { 'content-type': 'application/json' } });
+};
 const routeInput = { companyBlock: 'Company: Acme Roofing', state: {} as never, callerText: 'I need an inspection', channel: 'voice' as const };
 const signal = () => new AbortController().signal;
 
 describe('anthropic route/summarize', () => {
   it('route request body: model claude-haiku-5-5, max_tokens 300, output_config.effort low, json_schema, no thinking, no tool_choice, two cached system blocks', async () => {
-    const { f, bodies } = fakeFetch(ok('route-response'));
+    const { f, bodies } = fakeFetch(okRoute());
     const route = createRoute(buildClients(config, f)!);
     await route(routeInput, signal());
     const b = bodies[0]!;
@@ -41,10 +48,24 @@ describe('anthropic route/summarize', () => {
   });
 
   it('route returns the parsed decision and usage mapping', async () => {
-    const { f } = fakeFetch(ok('route-response'));
+    const { f } = fakeFetch(okRoute());
     const r = await createRoute(buildClients(config, f)!)(routeInput, signal());
-    expect(r).toMatchObject({ intent: 'book inspection', urgent: false, mood: 'calm', route: 'opus', fastReply: null });
+    expect(r).toMatchObject({ intent: 'schedule_inspection', urgent: false, mood: 'calm', route: 'opus', fastReply: null });
     expect(r.usage).toMatchObject({ model: 'claude-haiku-5-5', cachedTokens: 100, inputTokens: 120, outputTokens: 30, firstTokenMs: null });
+  });
+
+  it('route schema intent is a closed enum equal to ROUTER_INTENTS', async () => {
+    const { f, bodies } = fakeFetch(okRoute());
+    await createRoute(buildClients(config, f)!)(routeInput, signal());
+    expect(bodies[0]!.output_config.format.schema.properties.intent.enum).toEqual([...ROUTER_INTENTS]);
+  });
+
+  it('route rejects an intent outside the enum', async () => {
+    const bad = JSON.parse(fixture('route-response')) as Body;
+    const decision = JSON.parse(bad.content[0].text) as Body;
+    bad.content[0].text = JSON.stringify({ ...decision, intent: 'banana' });
+    const { f } = fakeFetch(() => new Response(JSON.stringify(bad), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(createRoute(buildClients(config, f)!)(routeInput, signal())).rejects.toBeInstanceOf(LlmUnavailableError);
   });
 
   it('route: invalid JSON from the model throws LlmUnavailableError', async () => {
@@ -60,7 +81,7 @@ describe('anthropic route/summarize', () => {
   });
 
   it('route schema has none of minLength, maxLength, minimum, maximum, multipleOf, pattern', async () => {
-    const { f, bodies } = fakeFetch(ok('route-response'));
+    const { f, bodies } = fakeFetch(okRoute());
     await createRoute(buildClients(config, f)!)(routeInput, signal());
     expect(JSON.stringify(bodies[0]!.output_config.format.schema)).not.toMatch(/minLength|maxLength|minimum|maximum|multipleOf|pattern/);
   });

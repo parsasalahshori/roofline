@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
+  ASK_PERSON_INTENTS,
   matchCaller,
+  ROUTER_INTENTS,
   shouldTextBack,
   shouldTransfer,
   transferPlan,
@@ -170,5 +172,17 @@ describe('verifyCaller', () => {
   ];
   test.each(rows)('%s', (_n, card, said, want) => {
     expect(verifyCaller(card, said)).toBe(want);
+  });
+});
+
+describe('router intents', () => {
+  test('ROUTER_INTENTS contains every intent shouldTransfer keys on', () => {
+    for (const i of ['leak', 'active_leak', 'danger', 'injury', 'fire', 'trade_caller', 'adjuster', 'inspector', 'supplier', 'ask_for_person', 'transfer', 'human', 'not_understood', 'spam', 'sales_pitch']) {
+      expect(ROUTER_INTENTS as readonly string[]).toContain(i);
+    }
+  });
+
+  test('ASK_PERSON_INTENTS is ask_for_person, transfer, human', () => {
+    expect([...ASK_PERSON_INTENTS].sort()).toEqual(['ask_for_person', 'human', 'transfer']);
   });
 });

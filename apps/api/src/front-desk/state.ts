@@ -9,6 +9,26 @@ import type { ConversationState } from './engine-types.ts';
 
 // Notes that arrived while the last history entry was not a user message. Kept off ConversationState.
 const pendingNotes = new WeakMap<ConversationState, string[]>();
+const personAskCountedTurn = new WeakSet<ConversationState>();
+const understandingCountedTurn = new WeakSet<ConversationState>();
+
+/** Called at the start of every turn: per-turn counter flags are cleared. */
+export function beginTurn(state: ConversationState): void {
+  personAskCountedTurn.delete(state);
+  understandingCountedTurn.delete(state);
+}
+export function markPersonAskCounted(state: ConversationState): void {
+  personAskCountedTurn.add(state);
+}
+export function personAskCounted(state: ConversationState): boolean {
+  return personAskCountedTurn.has(state);
+}
+export function markUnderstandingCounted(state: ConversationState): void {
+  understandingCountedTurn.add(state);
+}
+export function understandingCounted(state: ConversationState): boolean {
+  return understandingCountedTurn.has(state);
+}
 
 export function newConversationState(i: {
   companyId: string;
@@ -53,11 +73,6 @@ function pushNote(state: ConversationState, note: string): void {
 
 export function appendUser(state: ConversationState, text: string): void {
   state.history.push({ role: 'user', content: text });
-  const queued = pendingNotes.get(state);
-  if (queued && queued.length > 0) {
-    pendingNotes.delete(state);
-    for (const n of queued) pushNote(state, n);
-  }
 }
 
 export function appendAssistant(state: ConversationState, content: Anthropic.ContentBlock[]): void {
@@ -77,13 +92,17 @@ export function appendToolResults(
   state.history.push({ role: 'user', content: blocks });
 }
 
-/** A system note may only follow a user message; otherwise it waits for the next one. */
+/** Notes are only queued here; flushSystemNotes puts them in the history right before the model is called. */
 export function appendSystemNote(state: ConversationState, note: string): void {
-  if (lastIsUser(state)) {
-    pushNote(state, note);
-    return;
-  }
   const queued = pendingNotes.get(state) ?? [];
   queued.push(note);
   pendingNotes.set(state, queued);
+}
+
+/** Pushes queued notes, but only when the last history entry is a user message. */
+export function flushSystemNotes(state: ConversationState): void {
+  const queued = pendingNotes.get(state);
+  if (!queued || queued.length === 0 || !lastIsUser(state)) return;
+  pendingNotes.delete(state);
+  for (const n of queued) pushNote(state, n);
 }

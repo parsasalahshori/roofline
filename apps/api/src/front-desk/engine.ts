@@ -3,6 +3,7 @@ import {
   FRONT_DESK_TOOLS,
   type FrontDeskToolName,
   guardSentence,
+  ASK_PERSON_INTENTS,
   type GuardHit,
   SentenceBuffer,
   shouldTransfer,
@@ -15,7 +16,6 @@ import {
   insertTurn,
   loadCompanyFacts,
   setCallSpamReason,
-  type TenantContext,
   updateConversation,
   updateTurn,
   withTenant,
@@ -34,7 +34,18 @@ import type {
 import { fillerFor } from './fillers.ts';
 import { toolNamesFor } from './tools/index.ts';
 import { buildCompanyBlock } from './prompt.ts';
-import { appendAssistant, appendSystemNote, appendToolResults, appendUser, newConversationState } from './state.ts';
+import {
+  appendAssistant,
+  appendSystemNote,
+  appendToolResults,
+  appendUser,
+  beginTurn,
+  flushSystemNotes,
+  markPersonAskCounted,
+  markUnderstandingCounted,
+  newConversationState,
+} from './state.ts';
+import { systemCtx } from './tools/system-ctx.ts';
 
 const DEFAULT_SERVICES = ['Roof inspections', 'Storm and hail damage inspections', 'Repairs', 'Roof replacement'];
 const MAX_TOOL_ROUNDS = 4;
@@ -76,10 +87,6 @@ function isAbort(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
 }
 
-function systemCtx(companyId: string): TenantContext {
-  return { companyId, userId: null, role: 'system', canApproveSpend: false };
-}
-
 /** Every string under a key ending in "Id" (except slotUserId) that looks like a UUID. */
 function idsIn(value: unknown, out: string[] = []): string[] {
   if (Array.isArray(value)) {
@@ -93,9 +100,6 @@ function idsIn(value: unknown, out: string[] = []): string[] {
   }
   return out;
 }
-
-/** Router intents that mean the caller is asking for a person (see shouldTransfer). */
-const ASK_PERSON_INTENTS = new Set(['ask_for_person', 'transfer', 'human']);
 
 export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
   const lastAssistantTurn = new WeakMap<ConversationState, string>();
@@ -148,6 +152,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       yield { type: 'end', reason: 'limit' };
       return;
     }
+    beginTurn(state);
     if (limit === 'offer_person') appendSystemNote(state, NOTE_OFFER);
     appendUser(state, callerText);
 
@@ -202,6 +207,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       let iter: AsyncIterator<LlmEvent>;
       let first: Promise<IteratorResult<LlmEvent>>;
       try {
+        flushSystemNotes(state);
         const answer = deps.llm.answer({
           companyId: state.companyId,
           companyBlock: state.companyBlock,
@@ -286,9 +292,14 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
 
       if (decision) {
         // Task 6 carry: count person-asks and misunderstandings once per turn, before shouldTransfer.
-        if (ASK_PERSON_INTENTS.has(decision.intent)) state.askedForPersonCount += 1;
-        if (decision.intent === 'not_understood') state.failedUnderstanding += 1;
-        else state.failedUnderstanding = 0;
+        if (ASK_PERSON_INTENTS.has(decision.intent)) {
+          state.askedForPersonCount += 1;
+          markPersonAskCounted(state);
+        }
+        if (decision.intent === 'not_understood') {
+          state.failedUnderstanding += 1;
+          markUnderstandingCounted(state);
+        } else state.failedUnderstanding = 0;
       }
 
       if (decision && SPAM_INTENTS.has(decision.intent)) {
@@ -478,7 +489,6 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         const caller = await insertTurn(tx, ctx, {
           conversationId: state.conversationId,
           callId: state.callId,
-          position: state.nextPosition,
           speaker: 'caller',
           text: state.transcriptOff === true ? '' : callerText,
           at: deps.clock.now(),
@@ -488,7 +498,6 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         const assistant = await insertTurn(tx, ctx, {
           conversationId: state.conversationId,
           callId: state.callId,
-          position: state.nextPosition + 1,
           speaker: 'assistant',
           text: state.transcriptOff === true ? '' : text,
           at: deps.clock.now(),
@@ -512,7 +521,10 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       yield { type: 'turn_saved', turnId };
     } catch (err) {
       state.turns += 1;
-      deps.logError?.(err, 'front-desk.save-turn');
+      const code = (err as { code?: string }).code ?? (err as { cause?: { code?: string } }).cause?.code;
+      const where = 'front-desk.save-turn ' + state.conversationId + (state.callId ? ' ' + state.callId : '');
+      deps.logError?.(err, where);
+      if (code === '23505') throw err;
     }
   }
 

@@ -11,6 +11,19 @@ export type TransferReason =
   | 'not_understood'
   | 'model_failure';
 
+/**
+ * D1 RC-1: the closed set of router intents (the router's json_schema enum and RouteDecision.intent).
+ * Every intent the engine or shouldTransfer keys on is here.
+ */
+export const ROUTER_INTENTS = [
+  'active_leak', 'adjuster', 'ask_for_person', 'cancel_appointment', 'complaint', 'confirm_appointment', 'danger', 'fire',
+  'greeting', 'goodbye', 'human', 'injury', 'inspector', 'insurance_claim', 'job_status', 'leak', 'message', 'not_understood',
+  'other', 'quote', 'reschedule', 'sales_pitch', 'schedule_inspection', 'spam', 'status', 'supplier', 'trade_caller', 'transfer', 'unknown',
+] as const;
+export type RouterIntent = (typeof ROUTER_INTENTS)[number];
+/** Router intents that mean the caller is asking for a person. */
+export const ASK_PERSON_INTENTS: ReadonlySet<string> = new Set<RouterIntent>(['ask_for_person', 'transfer', 'human']);
+
 const LEAK_INTENTS = new Set(['leak', 'active_leak']);
 const DANGER_INTENTS = new Set(['danger', 'injury', 'fire']);
 const TRADE_INTENTS = new Set(['trade_caller', 'adjuster', 'inspector', 'supplier']);

@@ -3,6 +3,7 @@ import { companySettings, conversations, createCustomer, type TenantContext } fr
 import { DEFAULT_WORK_HOURS } from '@roofline/shared';
 import { takeMessage } from '../../src/front-desk/tools/message.ts';
 import { endCall } from '../../src/front-desk/tools/end.ts';
+import { beginTurn } from '../../src/front-desk/state.ts';
 import { transferToPerson } from '../../src/front-desk/tools/transfer.ts';
 import type { ConversationState } from '../../src/front-desk/engine-types.ts';
 import { inCompany } from '../crm-helpers.ts';
@@ -81,6 +82,18 @@ describe('transfer_to_person', () => {
     const res = await transfer(await makeConversation(), 'asked');
     expect(res).toMatchObject({ ok: true, action: 'transfer_ring_all' });
     expect(res.forModel).not.toMatch(/\+?\d{7,}/);
+  });
+
+  test('transfer_to_person with reason asked bumps askedForPersonCount once when the engine has not counted', async () => {
+    await putOnCall(2);
+    const conv = await makeConversation();
+    await transfer(conv, 'asked');
+    expect(conv.askedForPersonCount).toBe(1);
+    await transfer(conv, 'asked');
+    expect(conv.askedForPersonCount).toBe(1);
+    beginTurn(conv);
+    await transfer(conv, 'asked');
+    expect(conv.askedForPersonCount).toBe(2);
   });
 
   test('after hours and not urgent gives message mode', async () => {
