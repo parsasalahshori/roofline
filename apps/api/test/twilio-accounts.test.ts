@@ -89,6 +89,7 @@ describe('TwilioAccounts', () => {
     const { f, accounts } = make({
       [`GET ${SERVICE_NUMBERS}`]: 'service-numbers-empty',
       [`GET ${AVAIL}`]: 'available-402',
+      [`GET ${INCOMING}`]: 'incoming-numbers-empty',
       [`POST ${INCOMING}`]: 'incoming-create',
       [`POST ${SERVICE_NUMBERS}`]: 'service-number-add',
     });
@@ -111,6 +112,7 @@ describe('TwilioAccounts', () => {
     const { f, accounts } = make({
       [`GET ${SERVICE_NUMBERS}`]: 'service-numbers-empty',
       [`GET ${AVAIL}`]: ['available-empty', 'available-empty', 'available-402'],
+      [`GET ${INCOMING}`]: 'incoming-numbers-empty',
       [`POST ${INCOMING}`]: 'incoming-create',
       [`POST ${SERVICE_NUMBERS}`]: 'service-number-add',
     });
@@ -132,6 +134,7 @@ describe('TwilioAccounts', () => {
     const none = make({
       [`GET ${SERVICE_NUMBERS}`]: 'service-numbers-empty',
       [`GET ${AVAIL}`]: 'available-empty',
+      [`GET ${INCOMING}`]: 'incoming-numbers-empty',
       [`POST ${INCOMING}`]: 'incoming-create',
       [`POST ${SERVICE_NUMBERS}`]: 'service-number-add',
     });
@@ -142,6 +145,59 @@ describe('TwilioAccounts', () => {
       none.accounts.ensureNumber(sub, { messagingServiceSid: MG, areaCode: '402', state: 'NE' }),
     ).rejects.toThrow('No numbers were available.');
     expect(none.f.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
+  });
+
+  test('an attach that failed is retried without a second purchase', async () => {
+    const args = { messagingServiceSid: MG, areaCode: '402', state: 'NE' };
+    const first = fixtureFetch({
+      [`GET ${SERVICE_NUMBERS}`]: 'service-numbers-empty',
+      [`GET ${INCOMING}`]: 'incoming-numbers-empty',
+      [`GET ${AVAIL}`]: 'available-402',
+      [`POST ${INCOMING}`]: 'incoming-create',
+    });
+    const firstFetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if ((init?.method ?? 'GET') === 'POST' && url === SERVICE_NUMBERS) {
+        return Promise.resolve(new Response('{"code":20500}', { status: 500 }));
+      }
+      return first(input, init);
+    }) as unknown as typeof fetch;
+    const one = new TwilioAccounts({ http: new TwilioHttp({ ...master, fetch: firstFetch }) });
+    await expect(one.ensureNumber(sub, args)).rejects.toBeInstanceOf(RegistrarUnavailableError);
+
+    const second = make({
+      [`GET ${SERVICE_NUMBERS}`]: 'service-numbers-empty',
+      [`GET ${INCOMING}`]: 'incoming-numbers-one',
+      [`POST ${SERVICE_NUMBERS}`]: 'service-number-add',
+    });
+    const result = await second.accounts.ensureNumber(sub, args);
+    expect(result.phoneNumberSid).toBe('PN44444444444444444444444444444444');
+
+    const purchases = [...first.requests, ...second.f.requests].filter((r) => r.method === 'POST' && r.url === INCOMING);
+    expect(purchases).toHaveLength(1);
+    expect(second.f.requests.some((r) => r.url.startsWith(AVAIL))).toBe(false);
+    const attach = second.f.requests.find((r) => r.method === 'POST' && r.url === SERVICE_NUMBERS);
+    expect(attach?.form?.get('PhoneNumberSid')).toBe('PN44444444444444444444444444444444');
+  });
+
+  test('an attach refused with 21710 counts as attached', async () => {
+    const base = fixtureFetch({
+      [`GET ${SERVICE_NUMBERS}`]: 'service-numbers-empty',
+      [`GET ${INCOMING}`]: 'incoming-numbers-one',
+    });
+    const f = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if ((init?.method ?? 'GET') === 'POST' && url === SERVICE_NUMBERS) {
+        return Promise.resolve(new Response('{"code":21710}', { status: 400 }));
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    const accounts = new TwilioAccounts({ http: new TwilioHttp({ ...master, fetch: f }) });
+    expect(await accounts.ensureNumber(sub, { messagingServiceSid: MG, areaCode: null, state: null })).toEqual({
+      e164: '+14025550123',
+      phoneNumberSid: 'PN44444444444444444444444444444444',
+      capabilities: ['sms', 'voice'],
+    });
   });
 
   test('reuses a number already on the service', async () => {
@@ -184,6 +240,7 @@ describe('TwilioAccounts', () => {
     const { f, accounts } = make({
       [`GET ${SERVICE_NUMBERS}`]: 'service-numbers-empty',
       [`GET ${AVAIL}`]: 'available-402',
+      [`GET ${INCOMING}`]: 'incoming-numbers-empty',
       [`POST ${INCOMING}`]: 'incoming-create',
       [`POST ${SERVICE_NUMBERS}`]: 'service-number-add',
     });

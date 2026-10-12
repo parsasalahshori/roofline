@@ -31,6 +31,7 @@ const env: NodeJS.ProcessEnv = {
   DATABASE_URL_SYSTEM: db.urls.system,
   ENCRYPTION_KEY: randomBytes(32).toString('base64'),
   WEATHER_DISABLED: '1',
+  FAKE_PROVIDERS: '1',
   WEB_DIST_DIR: 'apps/web/dist',
   API_RATE_LIMIT_PER_MIN: '100000',
 };

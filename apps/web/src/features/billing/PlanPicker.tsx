@@ -1,24 +1,23 @@
 import type { BillingView } from '@roofline/shared';
 import { Button, Card, useToast } from '@roofline/ui';
 import { billing } from '../../copy/billing.ts';
-import { errors } from '../../copy/errors.ts';
 import { useChangePlan, useCheckout } from './api.ts';
 import styles from './PlanPicker.module.css';
 
-/** The plans as cards. The company's own plan says so; the others offer a way to choose them. */
+/** The plans as cards. The company's own plan says so while its subscription is live; the others offer a way to choose them. */
 export function PlanPicker({ view }: { view: BillingView }) {
   const toast = useToast();
   const checkout = useCheckout();
   const changePlan = useChangePlan();
 
-  const onError = () => toast.show(errors.generic, 'error');
+  const onError = (error: Error) => toast.show(error.message, 'error');
 
   return (
     <section className={styles.section}>
       <h3 className={styles.heading}>{billing.plansHeading}</h3>
       <ul className={styles.list}>
         {view.plans.map((plan) => {
-          const current = plan.key === view.planKey;
+          const current = view.hasPaymentMethod && plan.key === view.planKey;
           return (
             <Card as="li" key={plan.key} className={styles.plan}>
               <h4 className={styles.name}>{plan.name}</h4>

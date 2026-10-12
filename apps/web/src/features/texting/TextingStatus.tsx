@@ -25,5 +25,12 @@ export function TextingStatus({ view }: { view: TextingView }) {
       </Card>
     );
   }
+  if (view.state === 'approved') {
+    return (
+      <Card className={styles.card}>
+        <p className={styles.line}>{texting.gettingNumber}</p>
+      </Card>
+    );
+  }
   return null;
 }
