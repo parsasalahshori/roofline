@@ -1123,3 +1123,12 @@ the probe's pass-9 addition; TS1117).
 `npm ci` clean (no package change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass
 (after 87068ca), lint pass, lint:css pass; vitest @roofline/web 1171 pass (126 files), @roofline/ui 172 pass,
 @roofline/shared 1292 pass, @roofline/send-gate 525 pass. The database, API, worker and e2e suites run only in CI.
+
+### CI (pass 10)
+
+Run 38244113600 on 34243bf, attempt 1: Platform (lint, typecheck, tests) success; E2E (Playwright) success; Hail
+service (ruff, pytest) success; v1 (node:test) success. E1 T13/T22 (signed PDF, R2, smoke guards), S1 T19 (real
+`create_ad_campaign`, ad sync), A1 T18/T19 (web review fixes, `lockStormPlan`/`supersedeDraft`/`linkStormPlan`, the
+wider one-writer rule) and A1's Ruling BC pause pass the database, API, worker and e2e suites in combination with
+the probe's 409 and 87068ca. No fixes were needed after CI, so ci-check was not re-run. (The local `ci-check` wrapper
+was stopped by its time limit; the run was followed through the Actions API until it completed.)
