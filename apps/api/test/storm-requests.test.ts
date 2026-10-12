@@ -44,7 +44,7 @@ afterAll(async () => {
 /** Inserts a storm page for a company's storm: the company storm row first, then the page. */
 async function makePage(companyId: string, code: string, activeUntil: Date): Promise<string> {
   const [companyStorm] = await q(
-    'insert into company_storms (company_id, storm_id, max_in) values ($1, $2, 1.5) returning id',
+    'insert into company_storms (company_id, storm_id, max_in) values ($1, $2, 1.5) on conflict (company_id, storm_id) do update set max_in = excluded.max_in returning id',
     [companyId, stormId],
   );
   const [page] = await q(
