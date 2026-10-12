@@ -208,6 +208,23 @@ test('an unknown setup key is not found', async () => {
   expect(res.body).toEqual({ error: NOT_FOUND });
 });
 
+test('phone number is todo until a forwarding test is verified, then done', async () => {
+  const owner = await loginAs(t.app, t.seed.a.owner);
+
+  const before = await getSetup(owner);
+  expect(item(before, 'phone_number')).toMatchObject({ status: 'todo', comingWith: null, skippable: false });
+
+  await ownerSql(
+    `insert into company_settings (company_id, forwarding_verified_at)
+     values ($1, now())
+     on conflict (company_id) do update set forwarding_verified_at = now()`,
+    [t.seed.a.companyId],
+  );
+
+  const after = await getSetup(owner);
+  expect(item(after, 'phone_number')).toMatchObject({ status: 'done', comingWith: null });
+});
+
 /** Saves a Google calendar connection for one member of a company, as the callback route does. */
 async function connectCalendar(companyId: string, userId: string, now: Date): Promise<{ id: string }> {
   const ctx: TenantContext = { companyId, userId, role: 'owner', canApproveSpend: true };

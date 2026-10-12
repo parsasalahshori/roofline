@@ -1,17 +1,38 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
+import { applyCallStatus, type TenantContext, withTenant } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
+import { routeVoice } from './twilio-voice-common.ts';
+import { field, FORM_BODY_LIMIT } from './twilio.ts';
 
-const VOICE_NOT_BUILT = 'Front Desk voice is not built yet.';
+const TERMINAL = new Set(['completed', 'canceled', 'busy', 'no-answer', 'failed']);
 
-/** A stub: answers 501 to every path under its mount, reads no body, needs no session. */
+/** POST /hooks/twilio/voice-status: Twilio's call status callback (To is the company's number). Answers 204. */
 export function twilioVoiceStatusHooks(deps: AppDeps): Router {
-  void deps;
   const router = Router();
-  router.all('/', (_req, res) => {
-    res.status(501).type('text/plain').send(VOICE_NOT_BUILT);
+  router.use(express.urlencoded({ extended: false, limit: FORM_BODY_LIMIT }));
+
+  router.post('/', async (req, res) => {
+    const route = await routeVoice(deps, req, res);
+    if (!route) return;
+    const callSid = field(req, 'CallSid');
+    const status = field(req, 'CallStatus');
+    if (callSid === undefined || callSid === '' || status === undefined) {
+      res.status(400).end();
+      return;
+    }
+    const ctx: TenantContext = { companyId: route.companyId, role: 'system', userId: null, canApproveSpend: false };
+    const now = deps.clock.now();
+    await withTenant(deps.pools, ctx, (tx) => applyCallStatus(tx, ctx, callSid, status, now));
+    if (TERMINAL.has(status)) {
+      try {
+        await deps.jobs.send('fd-after-call', { companyId: route.companyId, callSid }, { singletonKey: `fd-after-call:${callSid}`, startAfter: 5 });
+      } catch {
+        // The status is saved; a lost enqueue must not make Twilio retry the callback. Ids only.
+        console.error(`fd-after-call enqueue failed company=${route.companyId}`);
+      }
+    }
+    res.status(204).end();
   });
-  router.all('/{*rest}', (_req, res) => {
-    res.status(501).type('text/plain').send(VOICE_NOT_BUILT);
-  });
+
   return router;
 }

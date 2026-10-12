@@ -55,6 +55,8 @@ export type SetupFacts = {
   paymentMethod: boolean;
   /** Active members with a connected calendar (a dead grant does not count). */
   calendarsConnected: number;
+  /** A forwarding test call reached the business line (company_settings.forwarding_verified_at is set). */
+  forwardingVerified: boolean;
   skipped: ReadonlySet<SetupItemKey>;
 };
 
@@ -75,7 +77,6 @@ export type SetupView = {
 
 const COMING_WITH_BY_KEY: Partial<Record<SetupItemKey, ComingWith>> = {
   prices_and_tiers: 'estimator',
-  phone_number: 'front_desk',
   connect_ads: 'storm_scout',
 };
 
@@ -118,6 +119,9 @@ function resolveItem(key: SetupItemKey, facts: SetupFacts): Resolved {
     case 'connect_calendar':
       // Not skippable, so a stored skip for this key is deliberately ignored.
       return facts.calendarsConnected > 0 ? { status: 'done', data: {} } : { status: 'todo', data: {} };
+    case 'phone_number':
+      // Not skippable: done only when a forwarding test has reached the business line.
+      return facts.forwardingVerified ? { status: 'done', data: {} } : { status: 'todo', data: {} };
     default:
       return { status: 'todo', data: {} };
   }

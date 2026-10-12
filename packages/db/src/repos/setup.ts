@@ -18,6 +18,8 @@ type CompanyFactsRow = {
   payment_method: boolean;
 };
 
+type ForwardingRow = { forwarding_verified: boolean };
+
 /**
  * The facts the checklist rules read, gathered on `tx`. `pendingInvites` is not here: it comes from
  * the system role (`listPendingInvites`), so the caller adds it.
@@ -34,6 +36,15 @@ export async function setupFacts(tx: Tx, ctx: TenantContext): Promise<Omit<Setup
          limit 1`,
   );
   const company = companyResult.rows[0] as CompanyFactsRow | undefined;
+
+  // A row in company_settings is optional for a new company; no row means not verified.
+  const forwardingResult = await tx.execute(
+    sql`select forwarding_verified_at is not null as forwarding_verified
+          from company_settings
+         where company_id = ${ctx.companyId}
+         limit 1`,
+  );
+  const forwardingRow = forwardingResult.rows[0] as ForwardingRow | undefined;
 
   const importResult = await tx.execute(
     sql`select count(*) filter (where status = 'done')::int as done,
@@ -82,6 +93,7 @@ export async function setupFacts(tx: Tx, ctx: TenantContext): Promise<Omit<Setup
     activeMembers: membersRow?.active ?? 0,
     paymentMethod: company?.payment_method ?? false,
     calendarsConnected,
+    forwardingVerified: forwardingRow?.forwarding_verified ?? false,
     skipped,
   };
 }

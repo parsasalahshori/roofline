@@ -42,7 +42,7 @@ const DEFAULTS: Record<SetupItemKey, Omit<SetupItemView, 'key'>> = {
   payment_method: { status: 'done', comingWith: null, skippable: false, data: {} },
   prices_and_tiers: { status: 'todo', comingWith: 'estimator', skippable: false, data: {} },
   connect_calendar: { status: 'todo', comingWith: 'calendar', skippable: false, data: {} },
-  phone_number: { status: 'todo', comingWith: 'front_desk', skippable: false, data: {} },
+  phone_number: { status: 'todo', comingWith: null, skippable: false, data: {} },
   connect_ads: { status: 'todo', comingWith: 'storm_scout', skippable: false, data: {} },
 };
 

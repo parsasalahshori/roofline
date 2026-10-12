@@ -16,6 +16,7 @@ import { FakeBillingProvider } from '../src/providers/fakes/billing.ts';
 import { FakeCalendarApi } from '../src/providers/fakes/calendar.ts';
 import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
 import { FakeCallControl } from '../src/providers/fakes/call-control.ts';
+import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
 import { FakeLineLookup } from '../src/providers/fakes/line-lookup.ts';
 import { ScriptedLlm } from '../src/providers/fakes/scripted-llm.ts';
 import { RelaySessions } from '../src/front-desk/relay-sessions.ts';
@@ -139,6 +140,7 @@ export type TestApp = {
   callControl: FakeCallControl;
   lineLookup: FakeLineLookup;
   relaySessions: RelaySessions;
+  objectStore: MemoryObjectStore;
   /** What work outside a request (the runner) handed to `deps.logError`, in order. Nothing is printed. */
   logged: { err: unknown; where: string }[];
   seed: { a: SeededCompany; b: SeededCompany };
@@ -231,6 +233,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const jobs = new InlineJobs();
   const llm = new ScriptedLlm();
   const callControl = new FakeCallControl();
+  const objectStore = new MemoryObjectStore();
   const lineLookup = new FakeLineLookup();
   const relaySessions = new RelaySessions();
   const logged: { err: unknown; where: string }[] = [];
@@ -254,6 +257,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     callControl,
     lineLookup,
     relaySessions,
+    objectStore,
     logError: (err, where) => logged.push({ err, where }),
     onBackgroundTask: (task) => {
       pending.add(task);
@@ -280,6 +284,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     callControl,
     lineLookup,
     relaySessions,
+    objectStore,
     logged,
     seed,
     async settle() {

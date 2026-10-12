@@ -1,7 +1,15 @@
+import { companyIdsForRetention } from '@roofline/db/system';
 import type { AppDeps } from '../../app.ts';
+import { sweepCompanyRetention } from '../../front-desk/retention.ts';
 
-/** Retention sweep for Front Desk recordings and transcripts. A stub in Task 4; Task 16 fills it in. */
+/** Daily retention sweep for Front Desk recordings and transcripts. One company failing never stops the rest. */
 export async function fdRetention(deps: AppDeps, now: Date): Promise<void> {
-  void deps;
-  void now;
+  const ids = await companyIdsForRetention(deps.pools.system);
+  for (const id of ids) {
+    try {
+      await sweepCompanyRetention(deps, id, now);
+    } catch {
+      console.error(`Front Desk retention failed company=${id}`);
+    }
+  }
 }

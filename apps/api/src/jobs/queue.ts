@@ -20,6 +20,8 @@ export type JobData = {
   importId?: string;
   appointmentId?: string;
   callId?: string;
+  /** fd-after-call: the Twilio CallSid (callId stays the calls row id everywhere else). */
+  callSid?: string;
   recordingSid?: string;
   conversationId?: string;
   testId?: string;
