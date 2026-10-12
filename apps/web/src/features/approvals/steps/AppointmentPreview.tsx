@@ -1,23 +1,12 @@
 import { stepVisits } from '../../../copy/stepVisits.ts';
 import type { StepView } from '../../../api/types.ts';
-import { dateKeyToInstant, formatDayLabel, formatTime, zonedDateKey } from '../../calendar/time.ts';
+import { dateKeyToInstant, formatDayLabel, formatTime, zonedDateKey, zonedWallToInstant } from '../../calendar/time.ts';
 import { useCompany, useTeam } from '../../settings/api.ts';
 import styles from './AppointmentPreview.module.css';
+import { DEFAULT_ZONE, payloadOf, textOf } from './payload.ts';
 import type { EditFieldSpec, EditValues, StepKit, StepKitContext, StepPreviewProps } from './types.ts';
 
-type Payload = Record<string, unknown>;
-
-const DEFAULT_ZONE = 'America/Chicago';
 const NOTE_LIMIT = 500;
-
-function payloadOf(step: StepView): Payload {
-  const payload: unknown = step.payload;
-  return payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Payload) : {};
-}
-
-function textOf(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
 
 function instantOf(value: unknown): Date | null {
   if (typeof value !== 'string') return null;
@@ -49,7 +38,7 @@ function instantAt(date: string, clock: string, zone: string): Date | null {
   try {
     const midnight = dateKeyToInstant(date, zone);
     if (!Number.isFinite(midnight.getTime()) || zonedDateKey(midnight, zone) !== date) return null;
-    return new Date(midnight.getTime() + (parts.h * 60 + parts.m) * 60_000);
+    return zonedWallToInstant(date, parts.h, parts.m, zone);
   } catch {
     return null;
   }

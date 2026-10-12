@@ -20,7 +20,14 @@ export type JobFacts = { jobId: string; customerFirstName: string; companyName: 
  * failed the guards): callers write that job from the template instead and mark the task "Written
  * from a template". `refused` is true when the model refused the whole request (no texts at all).
  */
-export type DraftTextsResult = { texts: { jobId: string; body: string }[]; refused: boolean; usage: TurnUsage };
+export type DraftDropReason = 'guard' | 'claims_guard' | 'too_long' | 'unknown_job' | 'duplicate' | 'review_rule';
+export type DraftTextsResult = {
+  texts: { jobId: string; body: string }[];
+  refused: boolean;
+  usage: TurnUsage;
+  /** Texts the model wrote that were not used, and why. Absent when none were dropped. Callers may ignore it. */
+  dropped?: { jobId: string; reason: DraftDropReason }[];
+};
 /** What a homeowner's reply says about their claim. `adjusterAt` is an ISO 8601 instant, resolved in the company's time zone. */
 export type ClaimReplyFacts = {
   claimNumber?: string;

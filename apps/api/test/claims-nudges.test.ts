@@ -12,7 +12,8 @@ import {
   withTenant,
 } from '@roofline/db';
 import type { ClaimStatus } from '@roofline/shared';
-import { FROM_TEMPLATE, runClaimsDaily, templateFor } from '../src/agents/claims/nudges.ts';
+import { runClaimsDaily, templateFor } from '../src/agents/claims/nudges.ts';
+import { FROM_TEMPLATE } from '../src/agents/common.ts';
 import { LlmUnavailableError, type DraftTextsResult, type TurnUsage } from '../src/providers/llm.ts';
 import { inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';

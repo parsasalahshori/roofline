@@ -1,6 +1,6 @@
 import {
+  agentCompanyFacts,
   g1AgentOn,
-  schedulerCompany,
   userBusyIntervals,
   weatherInstallCandidates,
   weatherSettings,
@@ -8,14 +8,14 @@ import {
   withTenant,
   zoneDayAfter,
   zoneDayStart,
-  type TenantContext,
   type WeatherInstall,
 } from '@roofline/db';
-import { claimsGuard, guardSentence, weatherRisk, workIntervals, type HourlyForecast, type WorkHours } from '@roofline/shared';
+import { weatherRisk, workIntervals, type HourlyForecast, type WorkHours } from '@roofline/shared';
 import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
 import { LlmUnavailableError, MAX_DRAFT_JOBS, type JobFacts } from '../../providers/llm.ts';
 import { createTask } from '../../tasks/service.ts';
+import { draftBodyOk, systemCtx } from '../common.ts';
 import { localParts } from '../schedule.ts';
 
 const MAX_BODY = 300;
@@ -37,12 +37,6 @@ type Moved = {
   end: Date;
   reason: string;
 };
-
-function bodyOk(body: string): boolean {
-  if (body.trim() === '' || body.length > MAX_BODY) return false;
-  if (!claimsGuard(body).ok) return false;
-  return body.split(/(?<=[.!?])\s+/).every((s) => guardSentence(s, { repName: null }).hits.length === 0);
-}
 
 /** Whole calendar days from `a` to `b` (YYYY-MM-DD). */
 function daysBetween(a: string, b: string): number {
@@ -87,17 +81,17 @@ function titleFor(moved: Moved[]): string {
  */
 export async function runWeatherWatch(deps: AppDeps, companyId: string, meta: JobMeta): Promise<void> {
   void meta;
-  const ctx: TenantContext = { companyId, userId: null, role: 'system', canApproveSpend: false };
+  const ctx = systemCtx(companyId);
   const now = deps.clock.now();
   const since = new Date(now.getTime() - SIX_HOURS_MS);
 
   const plan = await withTenant(deps.pools, ctx, async (tx) => {
-    const company = await schedulerCompany(tx, ctx);
+    const company = await agentCompanyFacts(tx, ctx);
     if (!company || (company.status !== 'active' && company.status !== 'trial')) return null;
     if (!(await g1AgentOn(tx, ctx, 'scheduler'))) return null;
     if (await weatherTaskOpen(tx, ctx, since)) return null;
 
-    const tz = company.timezone;
+    const tz = company.timeZone;
     const today = localParts(now, tz).localDate;
     // The next three local days: today, tomorrow and the day after, ending at the start of today+3.
     const to = zoneDayStart(zoneDayAfter(zoneDayAfter(zoneDayAfter(today))), tz);
@@ -226,7 +220,7 @@ export async function runWeatherWatch(deps: AppDeps, companyId: string, meta: Jo
   const messages = targets.map((m) => {
     const text = drafted.get(keyOf(m.install));
     const body =
-      text !== undefined && bodyOk(text)
+      text !== undefined && draftBodyOk(text, { repName: null, maxChars: MAX_BODY })
         ? text
         : weatherTemplate(m.install.customerFirstName, company.name, m.reasons, dayLabel(m.oldDate, today), dayLabel(m.newDate, today));
     return { customerId: m.install.customerId!, jobId: m.install.jobId, body };

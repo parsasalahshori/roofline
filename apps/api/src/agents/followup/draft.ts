@@ -1,11 +1,11 @@
 import {
   type BusyItem,
-  claimsGuard,
   DEFAULT_DURATION_MINUTES,
   findSlots,
   localDate,
   type WorkHours,
 } from '@roofline/shared';
+import { draftBodyOk } from '../common.ts';
 import { type JobFacts, type Llm, LlmUnavailableError, MAX_DRAFT_JOBS } from '../../providers/llm.ts';
 
 /*
@@ -117,9 +117,7 @@ export function leadTemplate(i: {
 }
 
 function acceptable(body: string, slots: [string, string]): boolean {
-  // claimsGuard runs D1's guardSentence on every sentence, plus the claims rules (G1 Task 2b).
-  if (body.trim() === '' || body.length > MAX_BODY_CHARS) return false;
-  if (!claimsGuard(body).ok) return false;
+  if (!draftBodyOk(body, { repName: null, maxChars: MAX_BODY_CHARS })) return false;
   const lower = body.toLowerCase();
   return slots.every((s) => lower.includes(s.toLowerCase()));
 }
@@ -195,8 +193,7 @@ export function proposalTemplate(i: {
 }
 
 function acceptableProposalBody(body: string): boolean {
-  if (body.trim() === '' || body.length > MAX_BODY_CHARS) return false;
-  return claimsGuard(body).ok;
+  return draftBodyOk(body, { repName: null, maxChars: MAX_BODY_CHARS });
 }
 
 /**
@@ -274,8 +271,7 @@ export function reviewTemplate(i: { customerFirstName: string | null; companyNam
 }
 
 function acceptableReviewBody(body: string, link: string): boolean {
-  if (body.trim() === '' || body.length > MAX_BODY_CHARS) return false;
-  if (!claimsGuard(body).ok) return false;
+  if (!draftBodyOk(body, { repName: null, maxChars: MAX_BODY_CHARS })) return false;
   if (!body.includes(link)) return false;
   return /Reply STOP to opt out\.?$/.test(body.trim());
 }
