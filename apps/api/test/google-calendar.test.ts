@@ -432,6 +432,38 @@ describe('Google Calendar adapter', () => {
     expect((error as Error).message).toBe('Reconnect your calendar.');
   });
 
+  it('maps a rate-limit 403 to unavailable, not a reconnect', async () => {
+    const fetchImpl = calendarFixtureFetch({ [`GET ${CALENDAR_LIST_URL}`]: { status: 403, fixture: 'rate-limited-403' } });
+    const error = await rejectionOf(newApi(fetchImpl).listCalendars(ACCESS_TOKEN));
+
+    expect(error).toBeInstanceOf(CalendarUnavailableError);
+    expect((error as Error).message).toBe(UNAVAILABLE);
+  });
+
+  it('maps a RESOURCE_EXHAUSTED 403 to unavailable', async () => {
+    const body = { error: { code: 403, status: 'RESOURCE_EXHAUSTED' } };
+    const fetchImpl = calendarFixtureFetch({ [`GET ${CALENDAR_LIST_URL}`]: { status: 403, body } });
+    const error = await rejectionOf(newApi(fetchImpl).listCalendars(ACCESS_TOKEN));
+
+    expect(error).toBeInstanceOf(CalendarUnavailableError);
+  });
+
+  it('keeps a permission 403 as an auth error', async () => {
+    const body = { error: { code: 403, errors: [{ domain: 'global', reason: 'insufficientPermissions' }] } };
+    const fetchImpl = calendarFixtureFetch({ [`GET ${CALENDAR_LIST_URL}`]: { status: 403, body } });
+    const error = await rejectionOf(newApi(fetchImpl).listCalendars(ACCESS_TOKEN));
+
+    expect(error).toBeInstanceOf(CalendarAuthError);
+    expect((error as Error).message).toBe('Reconnect your calendar.');
+  });
+
+  it('maps a 200 that is not JSON to unavailable', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<html>oops</html>', { status: 200 })) as unknown as typeof fetch;
+    const error = await rejectionOf(newApi(fetchImpl).listCalendars(ACCESS_TOKEN));
+
+    expect(error).toBeInstanceOf(CalendarUnavailableError);
+  });
+
   it('is configured only when both Google client settings are present', () => {
     expect(googleCalendarFor({ GOOGLE_CLIENT_ID: 'cid' } as Config)).toBeNull();
     expect(googleCalendarFor({ GOOGLE_CLIENT_SECRET: 'secret' } as Config)).toBeNull();

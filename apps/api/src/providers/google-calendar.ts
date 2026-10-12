@@ -21,6 +21,7 @@ import {
   GOOGLE_RECONNECT_MESSAGE,
   GOOGLE_UNAVAILABLE_MESSAGE,
   makeGoogleHttp,
+  readJson,
   type GoogleHttp,
 } from './google-calendar-http.ts';
 
@@ -38,15 +39,6 @@ const FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded';
 
 function field(body: unknown, key: string): unknown {
   return typeof body === 'object' && body !== null ? (body as Record<string, unknown>)[key] : undefined;
-}
-
-/** Reads a JSON body; a body that is not JSON is an unavailable service, not a crash. */
-async function readJson(res: Response): Promise<unknown> {
-  try {
-    return await res.json();
-  } catch {
-    throw new CalendarUnavailableError(GOOGLE_UNAVAILABLE_MESSAGE);
-  }
 }
 
 /** Reads a JSON body for error classification only; a non-JSON body yields null. */

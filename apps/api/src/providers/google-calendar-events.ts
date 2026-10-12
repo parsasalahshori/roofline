@@ -1,5 +1,5 @@
 import { CalendarUnavailableError, type ExternalCalendar, type ExternalEvent, type ExternalEventInput, type SyncPage } from './calendar.ts';
-import { GOOGLE_UNAVAILABLE_MESSAGE, type GoogleHttp } from './google-calendar-http.ts';
+import { GOOGLE_UNAVAILABLE_MESSAGE, type GoogleHttp, readJson } from './google-calendar-http.ts';
 
 /** Calendar list, event CRUD and sync for Google. Every body is built here; tokens and event bodies never reach an error. */
 
@@ -114,7 +114,7 @@ export async function googleListCalendars(http: GoogleHttp, accessToken: string)
     if (pageToken !== undefined) q.set('pageToken', pageToken);
     const res = await http(`${CALENDAR_API}/users/me/calendarList?${q.toString()}`, { headers: authHeaders(accessToken, false) });
     if (res.status !== 200) throw unavailable();
-    const json = (await res.json()) as RawCalendarList;
+    const json = (await readJson(res)) as RawCalendarList;
     for (const item of json.items ?? []) {
       if (item.id === undefined) continue;
       calendars.push({
@@ -136,7 +136,7 @@ export async function googleCreateEvent(http: GoogleHttp, accessToken: string, c
     body: JSON.stringify(bodyFor(e)),
   });
   if (res.status !== 200) throw unavailable();
-  const json = (await res.json()) as RawEvent;
+  const json = (await readJson(res)) as RawEvent;
   return { id: json.id ?? '', etag: json.etag ?? null };
 }
 
@@ -154,7 +154,7 @@ export async function googleUpdateEvent(
   if (res.status === 412) return 'conflict';
   if (res.status === 404 || res.status === 410) return 'gone';
   if (res.status !== 200) throw unavailable();
-  const json = (await res.json()) as RawEvent;
+  const json = (await readJson(res)) as RawEvent;
   return { etag: json.etag ?? null };
 }
 
@@ -168,7 +168,7 @@ export async function googleGetEvent(http: GoogleHttp, accessToken: string, cale
   const res = await http(eventPath(calendarId, eventId), { headers: authHeaders(accessToken, false) });
   if (res.status === 404 || res.status === 410) return null;
   if (res.status !== 200) throw unavailable();
-  return mapEvent((await res.json()) as RawEvent);
+  return mapEvent((await readJson(res)) as RawEvent);
 }
 
 type CollectResult = { ok: true; events: ExternalEvent[]; nextSyncToken: string } | { ok: false };
@@ -183,7 +183,7 @@ async function collectPages(http: GoogleHttp, accessToken: string, calendarId: s
     const res = await http(`${calendarPath(calendarId)}/events?${q.toString()}`, { headers: authHeaders(accessToken, false) });
     if (res.status === 410) return { ok: false };
     if (res.status !== 200) throw unavailable();
-    const page = (await res.json()) as RawEventsPage;
+    const page = (await readJson(res)) as RawEventsPage;
     for (const item of page.items ?? []) events.push(mapEvent(item));
     if (page.nextPageToken !== undefined) {
       pageToken = page.nextPageToken;
