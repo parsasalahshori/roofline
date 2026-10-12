@@ -118,6 +118,7 @@ conversation text (MEDIUM 6); the E1 lead fixes platform items (TRUST_PROXY star
 `sec-core` from c1-crm and merges into c1-crm. Grant/index changes go in the owning unreleased migration (Ruling AW).
 **Ruling BG (D1 read-only companies, pre-review item 22):** voice and fd-text check company status. A read-only company (trial ended or cancelled) gets voicemail or forwarding and no AI. The Front Desk "off" write is always allowed, even while read-only. Recommended option taken; the owner may revisit it.
 **Ruling BD clarified (final, 16:45Z, supersedes the 16:40Z message):** `allowFinished` is set only by explicit owner actions: the rerun route and `POST /api/storms/:id/plan` (S1's "Draft a new plan" button on expired or declined plans). Automatic paths (storm-match, scheduled drafting) never set it. A1 returns `fresh: !previousWasDraft`.
+**Ruling BH (A1 T23):** setting a next step on a job that had none counts as a change, and it closes that job's open Front Desk live tasks.
 
 ## How to do a task
 
