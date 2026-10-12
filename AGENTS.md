@@ -59,6 +59,12 @@ E1 = 0015/0016; S1 = 0017/0018; D1 = 0019/0020; A1 = 0021/0022; G1 = 0023/0024. 
 migrations on its own base. When merging tracks together, the controller fixes the drizzle journal order
 and rebuilds the snapshots (`drizzle-kit generate` must then report no changes).
 
+**Ruling AQ (builder model):** team-script builders are Haiku 5.5 by default. Set the task field
+`builder: "sonnet"` for: UI integration across the shell (Shell, router, windows, phone layout), concurrency
+and locking (jobs, leases, advisory locks, SKIP LOCKED), migrations and RLS, LLM conversation/guardrail logic
+(D1, G1), and the Python hail service (S1). Leads, contacts and reviews are unchanged (Sonnet 5.5 leads,
+Opus 5.5 contacts).
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the
