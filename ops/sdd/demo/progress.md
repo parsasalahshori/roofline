@@ -21,3 +21,5 @@ Branch `demo-mode`, off `launch-integration` 2a3cbe5. The owner runs the demo li
 - **Smoke**: `apps/web/e2e/demo-walkthrough.spec.ts` via `apps/web/playwright.demo.config.ts`, in the E2E job. It tours every app and runs all 4 simulations; any error screen or 5xx fails it. It passes locally and in CI (run 38290257518).
 - **CI on 1a78f80**: E2E, arm64, Hail and v1 were green. Platform had 2 guard failures, fixed in 6e55f90.
 - **CI green** on 6e55f90 (run 38295342812): Platform, E2E (incl. demo smoke), Demo DB (arm64), Hail, v1 all pass.
+- **Signed PDF** (caveat 3): the DEMO_MODE file store is shared on disk (DEMO_FILES_DIR, `.demo-files/`). The seed renders the signed PDF; the sign simulation returns the homeowner link; the smoke test downloads the PDF. CI green on d657b2e (run 38303233078).
+- **launch-integration re-merge**: held. 999d4c4, 1884f17 and 235ce30 were not green (235ce30: main E2E red). The merged tree passed the smoke test locally (branch demo-merge-wip, local only).
