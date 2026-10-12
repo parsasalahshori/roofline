@@ -28,8 +28,6 @@ const APP_SYSTEM_RLS_TABLES = [
   'early_delivery_reports',
   'calendar_connections',
   'calls',
-  'conversations',
-  'conversation_turns',
 ] as const;
 /** Tenant tables app_tenant may delete from. No other tenant table grants it DELETE. */
 const APP_TENANT_DELETE_TABLES = [
@@ -334,13 +332,15 @@ describe('grants', () => {
     truncate: false,
   });
 
-  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log and conversation_turns, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links, calendar_connections and blocked_numbers', async () => {
+  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log and conversation_turns, S/I/D on blocked_numbers, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links, calendar_connections and blocked_numbers', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
       // audit_log is append-only; conversation_turns is updated by column only (see the column test below).
       t === 'audit_log' || t === 'conversation_turns'
         ? privs(t, true, true, false, false)
-        : privs(t, true, true, true, deletable.has(t)),
+        : t === 'blocked_numbers'
+          ? privs(t, true, true, false, true)
+          : privs(t, true, true, true, deletable.has(t)),
     );
     expect(await tablePrivileges('app_tenant', TENANT_TABLES)).toEqual(expected);
   });
@@ -353,7 +353,7 @@ describe('grants', () => {
       privs('calls', true, true, true, false),
       privs('conversation_turns', true, true, false, false),
       privs('claim_intakes', true, true, true, false),
-      privs('blocked_numbers', true, true, true, true),
+      privs('blocked_numbers', true, true, false, true),
     ]);
   });
 
@@ -373,9 +373,34 @@ describe('grants', () => {
     expect(rows).toEqual(columns.map(([column_name, can_update]) => ({ column_name, can_update })));
   });
 
-  test('app_tenant and app_system: line_lookups is a global cache, app_system read/write and app_tenant read only', async () => {
+  test('review note 31: the unused D1 grants are gone (app_system on conversations, turns and the call recording columns; app_tenant UPDATE on blocked_numbers and anything on line_lookups)', async () => {
+    const [row] = await ownerQuery<Record<string, boolean>>(
+      `select has_any_column_privilege('app_system', 'public.conversations', 'SELECT,INSERT,UPDATE') as conversations,
+              has_any_column_privilege('app_system', 'public.conversation_turns', 'SELECT,INSERT,UPDATE') as turns,
+              has_column_privilege('app_system', 'public.calls', 'conversation_id', 'SELECT') as call_conversation,
+              has_column_privilege('app_system', 'public.calls', 'recording_key', 'SELECT') as call_key_select,
+              has_column_privilege('app_system', 'public.calls', 'recording_status', 'SELECT') as call_status_select,
+              has_any_column_privilege('app_system', 'public.calls', 'UPDATE') as call_update,
+              has_column_privilege('app_system', 'public.calls', 'call_sid', 'SELECT') as call_sid,
+              has_table_privilege('app_tenant', 'public.blocked_numbers', 'UPDATE') as blocked_update,
+              has_table_privilege('app_tenant', 'public.line_lookups', 'SELECT') as lookups`,
+    );
+    expect(row).toEqual({
+      conversations: false,
+      turns: false,
+      call_conversation: false,
+      call_key_select: false,
+      call_status_select: false,
+      call_update: false,
+      call_sid: true,
+      blocked_update: false,
+      lookups: false,
+    });
+  });
+
+  test('app_tenant and app_system: line_lookups is a global cache, app_system read/write and app_tenant has no grant', async () => {
     expect(await tablePrivileges('app_system', ['line_lookups'])).toEqual([privs('line_lookups', true, true, true, false)]);
-    expect(await tablePrivileges('app_tenant', ['line_lookups'])).toEqual([privs('line_lookups', true, false, false, false)]);
+    expect(await tablePrivileges('app_tenant', ['line_lookups'])).toEqual([privs('line_lookups', false, false, false, false)]);
   });
 
   test('app_tenant may update the new company_settings and jobs columns, table-wide or column-level', async () => {
@@ -507,7 +532,6 @@ describe('grants', () => {
       [[...TENANT_TABLES]],
     );
     const sel = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'SELECT' });
-    const upd = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'UPDATE' });
     expect(rows).toEqual([
       sel('agent_task_steps', 'company_id'),
       sel('agent_task_steps', 'id'),
@@ -527,19 +551,8 @@ describe('grants', () => {
       sel('calendar_connections', 'user_id'),
       sel('calls', 'call_sid'),
       sel('calls', 'company_id'),
-      sel('calls', 'conversation_id'),
       sel('calls', 'id'),
-      sel('calls', 'recording_key'),
-      upd('calls', 'recording_key'),
-      sel('calls', 'recording_status'),
-      upd('calls', 'recording_status'),
       sel('calls', 'status'),
-      sel('conversation_turns', 'at'),
-      sel('conversation_turns', 'company_id'),
-      sel('conversation_turns', 'id'),
-      sel('conversations', 'company_id'),
-      sel('conversations', 'id'),
-      sel('conversations', 'status'),
       sel('early_delivery_reports', 'applied_at'),
       sel('early_delivery_reports', 'id'),
       sel('early_delivery_reports', 'received_at'),
@@ -1116,9 +1129,7 @@ describe('app_system', () => {
       messages: `select id, company_id, status, scheduled_for from messages`,
       usage_events: `select id, company_id, kind, reported_to_stripe_at from usage_events`,
       calendar_connections: `select id, company_id, user_id, status, last_synced_at from calendar_connections`,
-      calls: `select id, company_id, call_sid, status, conversation_id, recording_key, recording_status from calls`,
-      conversations: `select id, company_id, status from conversations`,
-      conversation_turns: `select id, company_id, at from conversation_turns`,
+      calls: `select id, company_id, call_sid, status from calls`,
     } satisfies Record<Exclude<(typeof APP_SYSTEM_RLS_TABLES)[number], 'early_delivery_reports'>, string>;
 
     const client = new pg.Client({ connectionString: urls.system });

@@ -1,11 +1,13 @@
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
+  blankExpiredTurns,
   calls,
   companySettings,
   conversations,
   conversationTurns,
   customers,
+  messages,
   setArchived,
   withTenant,
   type TenantContext,
@@ -116,6 +118,34 @@ async function addTurn(companyId: string, conversationId: string, at: Date, posi
   return row!.id;
 }
 
+async function addText(
+  companyId: string,
+  o: { conversationId: string | null; at: Date; direction?: 'in' | 'out'; status?: 'received' | 'sent' | 'queued' | 'scheduled'; body?: string },
+): Promise<string> {
+  seq++;
+  const [row] = await inTenant(companyId, (tx) =>
+    tx
+      .insert(messages)
+      .values({
+        companyId,
+        conversationId: o.conversationId,
+        channel: 'sms',
+        direction: o.direction ?? 'in',
+        purpose: o.direction === 'out' ? 'informational' : null,
+        body: o.body ?? 'my roof is leaking',
+        status: o.status ?? 'received',
+        fromE164: '+14025553000',
+        toE164: '+14025550200',
+        providerMessageSid: `SM${String(seq).padStart(32, '0')}`,
+        createdAt: o.at,
+      })
+      .returning({ id: messages.id }),
+  );
+  return row!.id;
+}
+const textRow = async (companyId: string, id: string) =>
+  (await inTenant(companyId, (tx) => tx.select().from(messages).where(eq(messages.id, id))))[0]!;
+
 const callRow = async (companyId: string, id: string) =>
   (await inTenant(companyId, (tx) => tx.select().from(calls).where(eq(calls.id, id))))[0]!;
 const turnRow = async (companyId: string, id: string) =>
@@ -134,7 +164,7 @@ describe('Front Desk retention', () => {
     const turnB = await addTurn(a, convB, ago(60 * DAY + 1));
 
     const result = await sweepCompanyRetention(t.deps, a, NOW);
-    expect(result).toEqual({ recordingsDeleted: 1, turnsBlanked: 1 });
+    expect(result).toEqual({ recordingsDeleted: 1, turnsBlanked: 1, messagesBlanked: 0 });
 
     const rowA = await callRow(a, callA.id);
     expect(rowA.recordingStatus).toBe('stored');
@@ -228,10 +258,10 @@ describe('Front Desk retention', () => {
     await addTurn(a, conv, ago(100 * DAY));
 
     const first = await sweepCompanyRetention(t.deps, a, NOW);
-    expect(first).toEqual({ recordingsDeleted: 1, turnsBlanked: 1 });
+    expect(first).toEqual({ recordingsDeleted: 1, turnsBlanked: 1, messagesBlanked: 0 });
     const deleteCount = deletes().length;
     const second = await sweepCompanyRetention(t.deps, a, NOW);
-    expect(second).toEqual({ recordingsDeleted: 0, turnsBlanked: 0 });
+    expect(second).toEqual({ recordingsDeleted: 0, turnsBlanked: 0, messagesBlanked: 0 });
     expect(deletes()).toHaveLength(deleteCount);
   });
 
@@ -337,5 +367,97 @@ describe('Front Desk retention', () => {
     expect(row.recordingKey).toBe(call.key);
     expect(deletes()).toHaveLength(0);
     expect((await turnRow(a, turn)).text).toBe('my roof is leaking');
+  });
+});
+
+describe('Front Desk retention: texts and batching (review note 43)', () => {
+  test('Front Desk text bodies are blanked under the transcript setting, metadata kept, other messages untouched', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const spamConv = await addConversation(a, { outcome: 'spam' });
+    const oldIn = await addText(a, { conversationId: conv, at: ago(61 * DAY) });
+    const oldOut = await addText(a, { conversationId: conv, at: ago(61 * DAY), direction: 'out', status: 'sent' });
+    const freshIn = await addText(a, { conversationId: conv, at: ago(59 * DAY) });
+    const outsideFd = await addText(a, { conversationId: null, at: ago(400 * DAY) });
+    const waiting = await addText(a, { conversationId: conv, at: ago(61 * DAY), direction: 'out', status: 'scheduled' });
+    const spamOld = await addText(a, { conversationId: spamConv, at: ago(8 * DAY) });
+    const spamFresh = await addText(a, { conversationId: spamConv, at: ago(6 * DAY) });
+    const before = await textRow(a, oldOut);
+
+    const result = await sweepCompanyRetention(t.deps, a, NOW);
+    expect(result.messagesBlanked).toBe(3);
+
+    const after = await textRow(a, oldOut);
+    expect(after.body).toBe('');
+    expect(after.status).toBe('sent');
+    expect(after.direction).toBe('out');
+    expect(after.toE164).toBe(before.toE164);
+    expect(after.conversationId).toBe(conv);
+    expect(after.createdAt).toEqual(before.createdAt);
+    expect((await textRow(a, oldIn)).body).toBe('');
+    expect((await textRow(a, spamOld)).body).toBe('');
+    expect((await textRow(a, freshIn)).body).toBe('my roof is leaking');
+    expect((await textRow(a, spamFresh)).body).toBe('my roof is leaking');
+    expect((await textRow(a, outsideFd)).body).toBe('my roof is leaking');
+    expect((await textRow(a, waiting)).body).toBe('my roof is leaking');
+
+    expect((await sweepCompanyRetention(t.deps, a, NOW)).messagesBlanked).toBe(0);
+  });
+
+  test('another company text is never blanked by this sweep', async () => {
+    const a = t.seed.a.companyId;
+    const b = t.seed.b.companyId;
+    await setRetention(a, 90, 60);
+    await setRetention(b, 90, 60);
+    const convB = await addConversation(b);
+    const textB = await addText(b, { conversationId: convB, at: ago(400 * DAY) });
+    await sweepCompanyRetention(t.deps, a, NOW);
+    expect((await textRow(b, textB)).body).toBe('my roof is leaking');
+  });
+
+  test('blanking is batched: a statement changes at most the limit, and the sweep loops until none are left', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      companyId: a,
+      conversationId: conv,
+      position: i + 1,
+      speaker: 'caller' as const,
+      text: 'my roof is leaking',
+      at: ago(100 * DAY),
+    }));
+    await inTenant(a, (tx) => tx.insert(conversationTurns).values(rows));
+    const counts: number[] = [];
+    for (;;) {
+      const n = await inTenant(a, (tx) => blankExpiredTurns(tx, ctxFor(a), { now: NOW, transcriptDays: 60, limit: 2 }));
+      counts.push(n);
+      if (n === 0) break;
+    }
+    expect(counts).toEqual([2, 2, 1, 0]);
+  });
+
+  test('a backlog larger than one batch is fully blanked by one sweep', async () => {
+    const a = t.seed.a.companyId;
+    await setRetention(a, 90, 60);
+    const conv = await addConversation(a);
+    const total = 1001;
+    await inTenant(a, (tx) =>
+      tx.insert(conversationTurns).values(
+        Array.from({ length: total }, (_, i) => ({
+          companyId: a,
+          conversationId: conv,
+          position: i + 1,
+          speaker: 'caller' as const,
+          text: 'my roof is leaking',
+          at: ago(100 * DAY),
+        })),
+      ),
+    );
+    const result = await sweepCompanyRetention(t.deps, a, NOW);
+    expect(result.turnsBlanked).toBe(total);
+    const left = await inTenant(a, (tx) => tx.select().from(conversationTurns).where(eq(conversationTurns.text, 'my roof is leaking')));
+    expect(left).toHaveLength(0);
   });
 });

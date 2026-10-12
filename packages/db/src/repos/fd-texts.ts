@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, isNull, like, not, or, sql } from 'drizzle-orm'
 import { companySettings, conversations, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { insertConversation } from './conversations.ts';
-import type { TextState } from './messages.ts';
+import { FD_DEDUPE_PREFIX, FD_DEDUPE_WHERE, type TextState } from './messages.ts';
 
 /*
  * D1 Task 14: the rows behind Front Desk texting. Every query names ctx.companyId. Imported by
@@ -187,28 +187,26 @@ export async function insertAssistantText(
   state: TextState,
   now: Date,
 ): Promise<string | null> {
-  const [existing] = await tx
-    .select({ id: messages.id })
-    .from(messages)
-    .where(and(eq(messages.companyId, ctx.companyId), eq(messages.dedupeKey, i.dedupeKey), eq(messages.direction, 'out')))
-    .limit(1);
-  if (existing) return null;
-  const [row] = await tx
-    .insert(messages)
-    .values({
-      companyId: ctx.companyId,
-      customerId: i.customerId,
-      conversationId: i.conversationId,
-      channel: 'sms',
-      direction: 'out',
-      purpose: 'informational',
-      body: i.body,
-      toE164: i.toE164,
-      dedupeKey: i.dedupeKey,
-      ...stateColumns(state),
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning({ id: messages.id });
+  const values = {
+    companyId: ctx.companyId,
+    customerId: i.customerId,
+    conversationId: i.conversationId,
+    channel: 'sms',
+    direction: 'out',
+    purpose: 'informational',
+    body: i.body,
+    toE164: i.toE164,
+    dedupeKey: i.dedupeKey,
+    ...stateColumns(state),
+    createdAt: now,
+    updatedAt: now,
+  } satisfies typeof messages.$inferInsert;
+  // An fd- key is covered by the partial unique index messages_fd_dedupe_uniq, which decides a race: the loser inserts nothing.
+  const insert = tx.insert(messages).values(values);
+  const [row] = await (
+    i.dedupeKey.startsWith(FD_DEDUPE_PREFIX)
+      ? insert.onConflictDoNothing({ target: [messages.companyId, messages.dedupeKey], where: FD_DEDUPE_WHERE })
+      : insert
+  ).returning({ id: messages.id });
   return row?.id ?? null;
 }
