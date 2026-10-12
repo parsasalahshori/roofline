@@ -20,3 +20,4 @@ Branch `demo-mode`, off `launch-integration` 2a3cbe5. The owner runs the demo li
 - **Mac**: `scripts/demo-mac.sh` and a one-liner (in `docs/demo.md`). It installs Homebrew, git, Docker Desktop and fnm/Node 22 (`.nvmrc`), then runs `npm ci` and `npm run demo`, and opens the browser. Shellcheck runs in CI. It has not been run on a real Mac.
 - **Smoke**: `apps/web/e2e/demo-walkthrough.spec.ts` via `apps/web/playwright.demo.config.ts`, in the E2E job. It tours every app and runs all 4 simulations; any error screen or 5xx fails it. It passes locally and in CI (run 38290257518).
 - **CI on 1a78f80**: E2E, arm64, Hail and v1 were green. Platform had 2 guard failures, fixed in 6e55f90.
+- **CI green** on 6e55f90 (run 38295342812): Platform, E2E (incl. demo smoke), Demo DB (arm64), Hail, v1 all pass.
