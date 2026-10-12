@@ -132,7 +132,8 @@ const outboundCount = () =>
 describe('onClaimsReply (the hook)', () => {
   test('hook sends claims-reply job only when claims text within 7 days and open claim', async () => {
     const recent = await replyCase({ claimsTextDaysAgo: 2 });
-    expect(await hook(recent)).toEqual({ consumed: false });
+    // A claims reply is consumed: the job answers it or hands it back to Front Desk (Ruling GX-V).
+    expect(await hook(recent)).toEqual({ consumed: true });
     expect(t.jobs.sent).toEqual([
       { name: 'claims-reply', data: { companyId: idOf(), messageId: recent.messageId }, singletonKey: recent.messageId, startAfter: 5 },
     ]);
@@ -265,12 +266,13 @@ describe('runClaimsReply (the job)', () => {
     expect(await claimsTasks()).toHaveLength(0);
   });
 
-  test('no text is sent by the job', async () => {
+  test('no text is sent when the reply has no Front Desk conversation', async () => {
     const c = await replyCase({ status: 'filed' });
     t.llm.scriptExtraction(extraction({ claimNumber: '0451-22', adjusterAt: new Date(DAYTIME.getTime() + 2 * DAY).toISOString() }));
 
-    // The whole path: the hook sends the job and the queue runs it.
-    expect(await hook(c)).toEqual({ consumed: false });
+    // The whole path: the hook sends the job and the queue runs it. Front Desk texts are off here, so the
+    // message has no conversation and neither "Thanks, got it." nor a Front Desk answer can go out.
+    expect(await hook(c)).toEqual({ consumed: true });
     await t.jobs.drain(t.deps);
 
     expect(await claimRow(c)).toMatchObject({ claimNumber: '0451-22' });

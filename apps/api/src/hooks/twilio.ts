@@ -347,15 +347,17 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
           const storm = await onStormReply(tx, ctx, { id: messageId, customerId: active[0] ?? null, body: text.body }, now);
           if (storm.consumed) return undefined;
         }
-        // G1 Agents: a reply to a claims text goes to the Claims agent (Ruling GX-A). It runs in this transaction, so a
+        // Inbound handler order (Ruling AV): STOP/HELP/START (above), then S1 onStormReply, then G1 claims, then Front Desk.
+        // G1 Agents: a reply to a claims text goes to the Claims agent (Ruling GX-A), which consumes it: its job later
+        // answers "Thanks, got it." or hands the reply back to Front Desk (Ruling GX-V). It runs in this transaction, so a
         // failure rolls the message back and Twilio's retry handles it again; it must stay a quick read and a job send.
+        let consumed = false;
         const customerId = active[0];
         if (customerId !== undefined) {
-          const claims = await onClaimsReply(tx, deps, { companyId, customerId, messageId, body: text.body, receivedAt: now });
-          if (claims.consumed) return undefined;
+          consumed = (await onClaimsReply(tx, deps, { companyId, customerId, messageId, body: text.body, receivedAt: now })).consumed;
         }
-        // Inbound handler order (Ruling AV): STOP/HELP/START (above), then S1 onStormReply, then G1 claims, then Front Desk. S1 and G1 call their hooks HERE, before this one, and set `consumed` when they answer the message.
-        const consumed = false;
+        // Front Desk still files a consumed text into its conversation (so the reply or the hand-on lands there); it
+        // queues no answer of its own for it.
         if (!looksLikeOptOut(text.body) && (await frontDeskTextsOn(tx, ctx))) {
           const conv = await attachInboundToConversation(
             tx,
