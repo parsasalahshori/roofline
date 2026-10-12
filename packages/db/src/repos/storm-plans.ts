@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { hailLabel, type CampaignStatus, type TaskStatus } from '@roofline/shared';
 import type { TenantContext, Tx } from '../tenant.ts';
-import { moveStep, listSteps, updateTask } from './tasks.ts';
+import { getTask, moveStep, listSteps } from './tasks.ts';
 
 /*
  * Data access for drafting a storm plan (S1 Task 11). The types below are the contract with
@@ -201,10 +201,16 @@ export async function listStormPlanRecipients(tx: Tx, ctx: TenantContext, compan
   return { smsIds, emailIds, fields };
 }
 
+/** Plan statuses that a newer plan may replace. Every other status has been acted on and is never replaced. */
+const REDRAFTABLE: readonly TaskStatus[] = ['draft', 'expired', 'declined'];
+
 /**
- * Points company_storms.plan_task_id at `newTaskId`, sets status 'planned', and, when the previous
- * plan is a DRAFT task, declines it (its open steps become 'skipped'). Never touches a plan that is
- * not a draft. Returns false (and changes nothing) when the current plan is not a draft.
+ * Points company_storms.plan_task_id at `newTaskId` and sets status 'planned'. Draft, expired and
+ * declined plans are replaced: a DRAFT old task is declined (its open steps become 'skipped'); an
+ * expired or declined one is left exactly as it is. Locks the old task first (the same order approve
+ * and edit use), then the company_storms row, and returns false if plan_task_id changed in between,
+ * so a concurrent approve and this serialize. Never touches an
+ * approved, running or finished plan. Returns false (and changes nothing) when the plan cannot be replaced.
  */
 export async function replaceDraftPlan(
   tx: Tx,
@@ -213,31 +219,42 @@ export async function replaceDraftPlan(
   newTaskId: string,
   now: Date,
 ): Promise<boolean> {
-  const locked = await tx.execute(sql`
-    select cs.plan_task_id, t.status as plan_status
-    from company_storms cs
-    left join agent_tasks t on t.id = cs.plan_task_id and t.company_id = cs.company_id
-    where cs.id = ${companyStormId}::uuid and cs.company_id = ${ctx.companyId}::uuid
-    for update of cs
+  const first = await tx.execute(sql`
+    select plan_task_id from company_storms
+    where id = ${companyStormId}::uuid and company_id = ${ctx.companyId}::uuid
   `);
-  const row = locked.rows[0] as { plan_task_id: string | null; plan_status: TaskStatus | null } | undefined;
-  if (!row) return false;
-  const oldId = row.plan_task_id;
-  if (oldId !== null && row.plan_status !== null && row.plan_status !== 'draft') return false;
+  if (first.rows.length === 0) return false;
+  const oldId = (first.rows[0] as { plan_task_id: string | null }).plan_task_id;
 
-  if (oldId !== null && row.plan_status === 'draft') {
+  let oldStatus: TaskStatus | null = null;
+  if (oldId !== null) {
+    const oldTask = await getTask(tx, ctx, oldId, { forUpdate: true });
+    oldStatus = (oldTask?.status as TaskStatus | undefined) ?? null;
+    if (oldStatus !== null && !REDRAFTABLE.includes(oldStatus)) return false;
+  }
+
+  const relocked = await tx.execute(sql`
+    select plan_task_id from company_storms
+    where id = ${companyStormId}::uuid and company_id = ${ctx.companyId}::uuid
+    for update
+  `);
+  if (relocked.rows.length === 0) return false;
+  if ((relocked.rows[0] as { plan_task_id: string | null }).plan_task_id !== oldId) return false;
+
+  if (oldId !== null && oldStatus === 'draft') {
     const steps = await listSteps(tx, ctx, [oldId]);
     for (const step of steps) {
       if (step.status !== 'pending' && step.status !== 'awaiting_owner') continue;
       await moveStep(tx, ctx, step.id, ['pending', 'awaiting_owner'], { status: 'skipped' }, now);
     }
-    await updateTask(
-      tx,
-      ctx,
-      oldId,
-      { status: 'declined', declinedByUserId: null, declinedAt: now, declineReason: 'Replaced by a newer plan.' },
-      now,
-    );
+    const declined = await tx.execute(sql`
+      update agent_tasks
+      set status = 'declined', declined_by_user_id = null, declined_at = ${now},
+          decline_reason = 'Replaced by a newer plan.', updated_at = ${now}
+      where id = ${oldId}::uuid and company_id = ${ctx.companyId}::uuid and status = 'draft'
+      returning id
+    `);
+    if (declined.rows.length === 0) return false;
   }
 
   await tx.execute(sql`

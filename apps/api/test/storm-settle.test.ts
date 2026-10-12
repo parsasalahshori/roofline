@@ -28,6 +28,20 @@ describe('shouldDraft', () => {
     expect(shouldDraft(cs, { status: 'final', lastGrewAt: NOW }, NOW, true)).toBe('skip');
   });
 
+  test('an expired or declined plan is never re-drafted by the machine', () => {
+    const cs = { status: 'planned' as const, planTaskId: 't1', planStatus: 'other' as const };
+    const storm = { status: 'final' as const, lastGrewAt: NOW };
+    expect(shouldDraft(cs, storm, NOW, true)).toBe('skip');
+    expect(shouldDraft(cs, storm, NOW, false)).toBe('skip');
+  });
+
+  test('a draft that grew is re-drafted, a draft that did not is skipped', () => {
+    const cs = { status: 'planned' as const, planTaskId: 't1', planStatus: 'draft' as const };
+    const storm = { status: 'provisional' as const, lastGrewAt: NOW };
+    expect(shouldDraft(cs, storm, NOW, true)).toBe('redraft');
+    expect(shouldDraft(cs, storm, NOW, false)).toBe('skip');
+  });
+
   test('a dismissed storm is skipped', () => {
     const cs = { status: 'dismissed' as const, planTaskId: null, planStatus: null };
     expect(shouldDraft(cs, { status: 'final', lastGrewAt: NOW }, NOW, true)).toBe('skip');

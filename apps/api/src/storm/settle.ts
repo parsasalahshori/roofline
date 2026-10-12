@@ -14,7 +14,8 @@ export type ShouldDraftStorm = { status: 'provisional' | 'final'; lastGrewAt: Da
 /**
  * Decides what to do with a company storm: 'skip' when dismissed, or when a plan exists and is not a draft
  * that the storm outgrew ('redraft'; an approved or running plan is never replaced); with no plan, 'draft'
- * once the storm is final or SETTLE_MINUTES passed since it last grew, else 'wait'.
+ * once the storm is final or SETTLE_MINUTES passed since it last grew, else 'wait'. The machine never
+ * re-drafts an expired or declined plan (planStatus 'other'); only the owner does, through the route.
  */
 export function shouldDraft(cs: ShouldDraftCompanyStorm, storm: ShouldDraftStorm, now: Date, grownSinceDraft: boolean): 'draft' | 'redraft' | 'wait' | 'skip' {
   if (cs.status === 'dismissed') return 'skip';

@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { insertOmahaStorm, type Query } from '@roofline/db/testing';
+import { PLAN_EXISTS } from '../src/storm/plan-errors.ts';
 import { Actors } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { NO_UUID } from './crm-helpers.ts';
@@ -11,6 +12,7 @@ import { NO_UUID } from './crm-helpers.ts';
  */
 
 const NOT_ALLOWED = "Your role can't do that. Ask the owner.";
+const SINCE_MESSAGE = 'Please give the date as year-month-day, like 2026-10-12.';
 const NOT_FOUND = "We couldn't find that.";
 const RESULT_KEYS = [
   'adClicks',
@@ -88,6 +90,41 @@ describe('GET /api/storms', () => {
       planStatus: null,
     });
     expect(typeof res.body.storms[0].maxIn).toBe('number');
+  });
+
+  test('without since, storms first matched more than 30 days ago are omitted', async () => {
+    const old = await addStorm('2026-08-01', 'Old, NE');
+    const recent = await addStorm('2026-10-11', 'Recent, NE');
+    const now = t.clock.now();
+    await q(`update company_storms set created_at = $2 where id = $1`, [old, new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000)]);
+    await q(`update company_storms set created_at = $2 where id = $1`, [recent, new Date(now.getTime() - 24 * 60 * 60 * 1000)]);
+    const res = await (await who.as('owner')).get('/api/storms');
+    expect(res.status).toBe(200);
+    expect(res.body.storms.map((s: { id: string }) => s.id)).toEqual([recent]);
+  });
+
+  test('with ?since= only newer storms are listed', async () => {
+    const old = await addStorm('2026-08-01', 'Old, NE');
+    const recent = await addStorm('2026-10-11', 'Recent, NE');
+    const now = t.clock.now();
+    await q(`update company_storms set created_at = $2 where id = $1`, [old, new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000)]);
+    await q(`update company_storms set created_at = $2 where id = $1`, [recent, new Date(now.getTime() - 24 * 60 * 60 * 1000)]);
+    const owner_ = await who.as('owner');
+    const since = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const wide = await owner_.get('/api/storms').query({ since });
+    expect(wide.body.storms.map((s: { id: string }) => s.id).sort()).toEqual([old, recent].sort());
+    const narrow = await owner_.get('/api/storms').query({ since: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString() });
+    expect(narrow.body.storms.map((s: { id: string }) => s.id)).toEqual([recent]);
+  });
+
+  test('a garbage since is 400 with field since and the SINCE_MESSAGE text', async () => {
+    const owner_ = await who.as('owner');
+    for (const since of ['yesterday', '2026-13-45', '2026-10-12; drop table']) {
+      const res = await owner_.get('/api/storms').query({ since });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe(SINCE_MESSAGE);
+      expect(res.body.field).toBe('since');
+    }
   });
 
   test('a rep may read the list', async () => {
@@ -190,15 +227,32 @@ describe('POST /api/storms/:id/plan', () => {
     expect(detail.body.plan).toEqual({ taskId: res.body.taskId, status: 'draft' });
   });
 
-  test('a storm whose plan is no longer a draft is a 409', async () => {
+  test('a storm whose plan is past draft and not expired or declined is a 409', async () => {
     const id = await addStorm('2026-10-11', 'Omaha, NE');
     const owner_ = await who.as('owner');
     const first = await owner_.post(`/api/storms/${id}/plan`).send({});
-    await q("update agent_tasks set status = 'approved' where id = $1", [first.body.taskId]);
+    for (const status of ['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done']) {
+      await q('update agent_tasks set status = $2 where id = $1', [first.body.taskId, status]);
+      const res = await owner_.post(`/api/storms/${id}/plan`).send({});
+      expect(res.status, status).toBe(409);
+      expect(res.body.error, status).toBe(PLAN_EXISTS);
+      const detail = await owner_.get(`/api/storms/${id}`);
+      expect(detail.body.plan.taskId).toBe(first.body.taskId);
+    }
+  });
+
+  test.each(['expired', 'declined'])('a %s plan is drafted again with a new task', async (status) => {
+    const id = await addStorm('2026-10-11', 'Omaha, NE');
+    const owner_ = await who.as('owner');
+    const first = await owner_.post(`/api/storms/${id}/plan`).send({});
+    await q('update agent_tasks set status = $2 where id = $1', [first.body.taskId, status]);
     const res = await owner_.post(`/api/storms/${id}/plan`).send({});
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
+    expect(res.body.taskId).not.toBe(first.body.taskId);
+    const old = await q('select status from agent_tasks where id = $1', [first.body.taskId]);
+    expect(old[0]!.status).toBe(status);
     const detail = await owner_.get(`/api/storms/${id}`);
-    expect(detail.body.plan.taskId).toBe(first.body.taskId);
+    expect(detail.body.plan).toEqual({ taskId: res.body.taskId, status: 'draft' });
   });
 
   test('a dismissed storm is a 409', async () => {

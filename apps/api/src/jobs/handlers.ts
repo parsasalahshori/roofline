@@ -8,7 +8,9 @@ import { syncCompanyAds } from '../storm/ad-sync.ts';
 import { sendStormAlert } from '../storm/alerts.ts';
 import { matchCompanyStorms } from '../storm/match.ts';
 import { draftStormPlan } from '../storm/plan.ts';
+import { PLAN_DISMISSED, PLAN_NOT_FOUND } from '../storm/plan-errors.ts';
 import { UUID } from '../validate.ts';
+import { reportJobError } from './scheduler/report.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
 
 function checkStormJob(data: JobData): void {
@@ -33,9 +35,18 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'footprints-load': (deps, data, meta) => loadFootprintState(deps, data.state!, meta),
   'signed-pdf': (deps, data, meta) => makeSignedPdf(deps, data.companyId, data.proposalId!, meta),
   'storm-match-company': (deps, data) => matchCompanyStorms(deps, data.companyId),
-  'storm-draft': (deps, data) => {
+  'storm-draft': async (deps, data) => {
     checkStormJob(data);
-    return draftStormPlan(deps, data.companyId, data.companyStormId!, deps.clock.now()).then(() => undefined);
+    try {
+      await draftStormPlan(deps, data.companyId, data.companyStormId!, deps.clock.now());
+    } catch (err) {
+      // An unknown or dismissed storm never becomes draftable by retrying: log it and drop the job.
+      if (err instanceof Error && (err.message === PLAN_NOT_FOUND || err.message === PLAN_DISMISSED)) {
+        reportJobError(deps, err, `storm-draft: company storm ${data.companyStormId}`);
+        return;
+      }
+      throw err;
+    }
   },
   'storm-alert': (deps, data) => {
     checkStormAlertJob(data);
