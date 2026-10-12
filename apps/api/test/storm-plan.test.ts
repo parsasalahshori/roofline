@@ -344,6 +344,20 @@ describe('re-drafting', () => {
     expect((await companyStormRow()).plan_task_id).toBe(second.taskId);
   });
 
+  test('re-drafting writes one declined system event on the replaced plan', async () => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    const second = await draft();
+
+    const events = await q(
+      `select kind, actor_type, data from agent_task_events where task_id = $1 and kind = 'declined'`,
+      [first.taskId],
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].actor_type).toBe('system');
+    expect(events[0].data).toEqual({ skippedSteps: 5, replacedByTaskId: second.taskId });
+  });
+
   test('returns { taskId } on success', async () => {
     await addHit({ email: 'a@example.com' });
     const drafted = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
@@ -352,7 +366,7 @@ describe('re-drafting', () => {
   });
 
   test.each(['approved', 'running', 'awaiting_owner', 'partly_done', 'needs_attention', 'done', 'expired', 'declined'] as const)(
-    'a %s plan is left alone (Ruling BD: A1 re-drafts expired and declined plans)',
+    'a %s plan is left alone by a plain call (amended Ruling BD: expired and declined only with allowFinished)',
     async (status) => {
       await addHit({ email: 'a@example.com' });
       const first = await draft();
@@ -378,6 +392,18 @@ describe('re-drafting', () => {
     const second = await draft();
     expect(second.taskId).not.toBe(first.taskId);
     expect(planEmails()).toHaveLength(perAlert);
+  });
+
+  test('re-drafting a non-draft plan writes no declined event', async () => {
+    await addHit({ email: 'a@example.com' });
+    const approved = await draft();
+    await approveAs('owner', approved.taskId);
+    const declinedEvents = () =>
+      q(`select id from agent_task_events where task_id = $1 and kind = 'declined'`, [approved.taskId]);
+    const before = (await declinedEvents()).length;
+    expect((await draft()).taskId).toBe(approved.taskId);
+    expect(await declinedEvents()).toHaveLength(before);
+    expect(before).toBe(0);
   });
 
   test('a dismissed storm is not drafted', async () => {
@@ -474,5 +500,72 @@ describe('the storm-draft job', () => {
     await q(`update company_storms set status = 'dismissed' where id = $1`, [companyStormId]);
     await expect(JOB_HANDLERS['storm-draft'](t.deps, { companyId: companyId(), companyStormId }, meta)).resolves.toBeUndefined();
     expect(await taskCount()).toBe(0);
+  });
+});
+
+describe('a finished plan is replaced only on request (Task 20, amended Ruling BD)', () => {
+  const META = { attempt: 1, lastAttempt: false };
+
+  test.each(['expired', 'declined'] as const)('a plain draftStormPlan call leaves a %s plan unchanged', async (status) => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status });
+    const before = await taskCount();
+
+    const again = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
+    expect(again!.taskId).toBe(first.taskId);
+    expect((await companyStormRow()).plan_task_id).toBe(first.taskId);
+    expect(await taskCount()).toBe(before);
+    expect((await dbTask(t, 'a', first.taskId)).status).toBe(status);
+  });
+
+  test.each(['expired', 'declined'] as const)('the storm-draft job handler leaves a %s plan unchanged', async (status) => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status });
+    const before = await taskCount();
+
+    await JOB_HANDLERS['storm-draft'](t.deps, { companyId: companyId(), companyStormId }, META);
+
+    expect((await companyStormRow()).plan_task_id).toBe(first.taskId);
+    expect(await taskCount()).toBe(before);
+    expect((await dbTask(t, 'a', first.taskId)).status).toBe(status);
+  });
+
+  test.each(['expired', 'declined'] as const)('re-drafts over a %s plan with allowFinished', async (status) => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status });
+    const mailsBefore = planEmails().length;
+
+    const next = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { allowFinished: true });
+    expect(next!.taskId).not.toBe(first.taskId);
+    // Not a re-draft of a draft, so the owner hears about the new plan (S1 R2a: fresh = !previousWasDraft).
+    expect(planEmails().length).toBeGreaterThan(mailsBefore);
+    expect((await dbTask(t, 'a', next!.taskId)).status).toBe('draft');
+    expect((await companyStormRow()).plan_task_id).toBe(next!.taskId);
+    expect((await dbTask(t, 'a', first.taskId)).status).toBe(status);
+  });
+
+  test.each(['approved', 'running'] as const)('never replaces a %s plan even with allowFinished', async (status) => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status });
+    const before = await taskCount();
+
+    const again = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { allowFinished: true });
+    expect(again!.taskId).toBe(first.taskId);
+    expect((await companyStormRow()).plan_task_id).toBe(first.taskId);
+    expect(await taskCount()).toBe(before);
+  });
+
+  test('a switched-off step of an expired plan is rebuilt with its reason', async () => {
+    // No hit at all: nobody has text consent, so the text step is saved off.
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status: 'expired' });
+
+    const next = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { allowFinished: true });
+    const steps = await stepsOf(next!.taskId);
+    expect(steps[0]).toMatchObject({ enabled: false, errorPlain: STORM_OFF.noSmsRecipients });
   });
 });

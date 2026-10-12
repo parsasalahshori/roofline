@@ -216,3 +216,48 @@ describe('pause', () => {
     expect(after!.status).toBe('running');
   });
 });
+
+describe('review fixes B: strict inputs', () => {
+  const RECOUNT = `${BASELINES}/recount`;
+
+  test('recount rejects dryRun=2 and an empty dryRun with 400 naming dryRun, and runs for real with none', async () => {
+    const owner = await actors.as('owner');
+    for (const url of [`${RECOUNT}?dryRun=2`, `${RECOUNT}?dryRun=`, `${RECOUNT}?dryRun=true`]) {
+      const res = await owner.post(url);
+      expect(res.status).toBe(400);
+      expect(res.body.field).toBe('dryRun');
+    }
+    const real = await owner.post(RECOUNT);
+    expect(real.status).toBe(200);
+    expect(real.body.dryRun).toBe(false);
+    const dry = await owner.post(`${RECOUNT}?dryRun=1`);
+    expect(dry.status).toBe(200);
+    expect(dry.body.dryRun).toBe(true);
+  });
+
+  test('PUT time-baselines with an extra field is 400', async () => {
+    const owner = await actors.as('owner');
+    const res = await owner.put(BASELINES).send({ minutes: { text: 3 }, extra: 1 });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('extra');
+    expect(await overrideRows('a')).toHaveLength(0);
+  });
+
+  test('PUT paused with an extra field is 400 and changes nothing', async () => {
+    const owner = await actors.as('owner');
+    const res = await owner.put('/api/agents/storm_scout/paused').send({ paused: true, extra: 1 });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('extra');
+    expect(await paused('a', 'storm_scout')).toBe(false);
+  });
+
+  test('PUT paused answers {paused, pausedAt} and then {paused:false, pausedAt:null}', async () => {
+    const owner = await actors.as('owner');
+    const on = await owner.put('/api/agents/storm_scout/paused').send({ paused: true });
+    expect(on.status).toBe(200);
+    expect(on.body.paused).toBe(true);
+    expect(new Date(on.body.pausedAt).toISOString()).toBe(on.body.pausedAt);
+    const off = await owner.put('/api/agents/storm_scout/paused').send({ paused: false });
+    expect(off.body).toEqual({ paused: false, pausedAt: null });
+  });
+});

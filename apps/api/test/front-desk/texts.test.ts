@@ -3,6 +3,7 @@ import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
+  agentSettings,
   appointments,
   companyPhoneNumbers,
   companySettings,
@@ -252,6 +253,28 @@ describe('Front Desk texts', () => {
       queueFrontDeskText(tx, { id: inbound!.id, conversationId: conv!.id, companyId: idA() }, { jobs: t.jobs, consumed: true }),
     );
     expect(fdTextJobs()).toEqual([]);
+  });
+
+  test('a paused Front Desk does not queue the text job; unpaused queues it', async () => {
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hello');
+    const [conv] = await conversationRows();
+    const [inbound] = await inCompany(t, idA(), (tx: Tx) =>
+      tx.select({ id: messages.id }).from(messages).where(and(eq(messages.companyId, idA()), eq(messages.direction, 'in'))),
+    );
+    const ctx = { companyId: idA(), userId: null, role: 'system' as const, canApproveSpend: false };
+    const message = { id: inbound!.id, conversationId: conv!.id, companyId: idA() };
+    t.jobs.sent.length = 0;
+    await withTenant(t.deps.pools, ctx, (tx) =>
+      tx.insert(agentSettings).values({ companyId: idA(), agent: 'front_desk', pausedAt: new Date() }),
+    );
+    await withTenant(t.deps.pools, ctx, (tx) => queueFrontDeskText(tx, message, { jobs: t.jobs }));
+    expect(fdTextJobs()).toEqual([]);
+    await withTenant(t.deps.pools, ctx, (tx) =>
+      tx.update(agentSettings).set({ pausedAt: null }).where(eq(agentSettings.companyId, idA())),
+    );
+    await withTenant(t.deps.pools, ctx, (tx) => queueFrontDeskText(tx, message, { jobs: t.jobs }));
+    expect(fdTextJobs()).toHaveLength(1);
   });
 
   test('queueFrontDeskText is idempotent per message', async () => {

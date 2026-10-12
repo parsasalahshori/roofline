@@ -59,15 +59,24 @@ function formatDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-/** The UTC instant at which local day `date` (YYYY-MM-DD) starts in `zone` (DST safe). */
+/** The UTC instant at which local day `date` (YYYY-MM-DD) starts in `zone` (DST safe). When local midnight
+ * does not exist (the clocks jump at midnight), the day starts at the first instant that is on that date. */
 export function startOfLocalDay(date: string, zone: string): Date {
   const { y, m, d } = parseDate(date);
   const guess = Date.UTC(y, m - 1, d);
-  const firstOffset = zoneOffsetMs(guess, zone);
-  const candidate = guess - firstOffset;
-  // If the offset changes between the guess and the candidate (a DST day), use the offset at the candidate.
-  const secondOffset = zoneOffsetMs(candidate, zone);
-  return new Date(secondOffset === firstOffset ? candidate : guess - secondOffset);
+  // Offsets a day either side cover both sides of any transition near this midnight.
+  const candidates = new Set<number>();
+  for (const probe of [guess - DAY_MS, guess, guess + DAY_MS]) {
+    candidates.add(guess - zoneOffsetMs(probe, zone));
+  }
+  const sorted = [...candidates].sort((a, b) => a - b);
+  const onDate = sorted.filter((ms) => localDate(new Date(ms), zone) === date);
+  if (onDate.length > 0) return new Date(onDate[0]!);
+  // No candidate lands on the date (the jump skips midnight): the first instant of the date is the first
+  // whole hour after the skipped gap. Walk forward from the earliest candidate until the date matches.
+  let ms = sorted[0]!;
+  for (let i = 0; i < 26 * 4 && localDate(new Date(ms), zone) !== date; i += 1) ms += 15 * 60_000;
+  return new Date(ms);
 }
 
 /** Adds `days` (may be negative) to a YYYY-MM-DD string using calendar arithmetic. */

@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
 import { type BaselineKey, TIME_BASELINES, isEditableBaselineKey } from '@roofline/shared';
 import { agentTasks, agentTaskSteps, timeBaselines, timeRecounts } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -86,7 +86,9 @@ export async function listRecountSteps(
       ),
     )
     .orderBy(asc(agentTaskSteps.id))
-    .limit(range.limit);
+    .limit(range.limit)
+    // Lock order is step, then task (as addToLiveTask): a recount cannot deadlock with a live-task repeat.
+    .for('update', { of: agentTaskSteps });
   return rows.map((r) => ({ ...r, payload: r.payload ?? {}, result: r.result ?? null }));
 }
 
@@ -109,15 +111,42 @@ export async function rewriteStepSnapshot(
     .where(and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.id, stepId)));
 }
 
-/** Sets agent_tasks.minutes_saved = Math.round(sumStepMinutesSaved) for each task id. Does NOT change updated_at. */
+/**
+ * Sets agent_tasks.minutes_saved = Math.round(sumStepMinutesSaved) for each task id. Does NOT change updated_at.
+ * Locks the task rows in id order first (so two recounts cannot deadlock), and only writes tasks that are
+ * finished (done, partly_done) or already carry a figure: a draft with a null stays null.
+ */
 export async function refreshTaskMinutes(tx: Tx, ctx: TenantContext, taskIds: string[]): Promise<void> {
-  for (const id of taskIds) {
+  const sorted = [...new Set(taskIds)].sort();
+  if (sorted.length === 0) return;
+  await tx
+    .select({ id: agentTasks.id })
+    .from(agentTasks)
+    .where(and(eq(agentTasks.companyId, ctx.companyId), inArray(agentTasks.id, sorted)))
+    .orderBy(agentTasks.id)
+    .for('update');
+  for (const id of sorted) {
     const total = Math.round(await sumStepMinutesSaved(tx, ctx, id));
     await tx
       .update(agentTasks)
       .set({ minutesSaved: total, updatedAt: sql`${agentTasks.updatedAt}` })
-      .where(and(eq(agentTasks.companyId, ctx.companyId), eq(agentTasks.id, id)));
+      .where(
+        and(
+          eq(agentTasks.companyId, ctx.companyId),
+          eq(agentTasks.id, id),
+          or(inArray(agentTasks.status, ['done', 'partly_done']), isNotNull(agentTasks.minutesSaved)),
+        ),
+      );
   }
+}
+
+/** Tries the company's recount lock for this transaction without waiting. False means another recount holds it. */
+export async function tryLockRecount(tx: Tx, ctx: TenantContext): Promise<boolean> {
+  const result = await tx.execute(
+    sql`select pg_try_advisory_xact_lock(hashtext('agents-recount:' || ${ctx.companyId}::text)) as locked`,
+  );
+  const row = result.rows[0] as { locked: boolean } | undefined;
+  return row?.locked === true;
 }
 
 /** Inserts the time_recounts row (by_user_id = ctx.userId, which must be non-null). */

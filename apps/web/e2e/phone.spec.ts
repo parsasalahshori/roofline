@@ -1,8 +1,8 @@
 import type { Page, Locator } from '@playwright/test';
 import { test, expect, companyHostUrl, draftAndApproveStormPlan, stormPageCode, waitForStormSteps } from './fixtures.ts';
 import { makeAndSendProposal } from './estimator-helpers.ts';
-import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 import { seedFrontDesk, seedRooflineNumber } from './front-desk-seed.ts';
+import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 
 /*
  * The phone shell (below 768px): full-screen pages, the bottom tab bar that replaces the dock, and
@@ -150,6 +150,78 @@ test('C1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, d
       '/calendar?view=list',
       () => page.locator('[data-testid^="agenda-day-"]').first().or(page.getByText('Nothing scheduled.', { exact: true })),
     ],
+  ];
+  for (const [path, ready] of pages) {
+    await page.goto(path);
+    await expect(ready()).toBeVisible({ timeout: 20_000 });
+    await noSideScroll(page);
+  }
+});
+
+test('agents screens fit the phone', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+  void agentsSeed;
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+
+  const screens: [string, (p: Page) => Locator][] = [
+    ['/agents', (p) => p.getByRole('heading', { name: 'Your agents' })],
+    ['/agents/storm-scout', (p) => p.getByText('What it does').first()],
+    ['/agents/feed', (p) => p.getByRole('list', { name: 'What your agents did' })],
+    ['/agents/waiting', (p) => p.getByLabel('Waiting', { exact: true })],
+    ['/settings/agents', (p) => p.getByText('How we count time saved').first()],
+  ];
+  for (const [path, landmark] of screens) {
+    await page.goto(path);
+    await expect(landmark(page)).toBeAttached();
+    if (path === '/agents') await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+    await noSideScroll(page);
+  }
+});
+
+test('S1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, scenario, db }) => {
+  test.setTimeout(90_000);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
+  await waitForStormSteps(page, taskId);
+
+  await page.goto('/storm');
+  await expect(page.getByRole('region', { name: 'Storms in your area' })).toBeVisible();
+  await noSideScroll(page);
+
+  await page.goto(`/storm/${scenario.companyStormId}`);
+  await expect(page.getByRole('heading', { name: 'Results so far' })).toBeVisible({ timeout: 20_000 });
+  await noSideScroll(page);
+
+  // The routes belong to the reps, so the route pages are read as the rep.
+  await loginAs(page, 'rep');
+  await markTodaySeen('rep@a.test');
+  await page.goto('/storm/routes');
+  const routeLink = page.getByRole('link', { name: /, 0 of \d+ doors$/ }).first();
+  await expect(routeLink).toBeVisible({ timeout: 20_000 });
+  await noSideScroll(page);
+  await routeLink.click();
+  await expect(page.getByRole('heading', { name: 'Doors in order' })).toBeVisible();
+  await noSideScroll(page);
+
+  const code = await stormPageCode(db, scenario.companyStormId);
+  await page.goto(companyHostUrl('/storm/' + code));
+  await expect(page.getByRole('button', { name: 'Request a free inspection' })).toBeVisible();
+  await noSideScroll(page);
+});
+
+test('D1 Front Desk pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, pools, scenario, db }) => {
+  const { ids } = await seedFrontDesk(pools, scenario);
+  await seedRooflineNumber(pools, db, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+
+  const pages: [string, () => Locator][] = [
+    ['/front-desk', () => page.getByRole('heading', { name: 'This week' })],
+    [`/front-desk/${ids.maria}`, () => page.getByRole('heading', { name: 'What was said' })],
+    [`/front-desk/${ids.tom}`, () => page.getByLabel('Your reply')],
+    ['/settings/front-desk', () => page.getByRole('button', { name: 'Test it' })],
+    ['/settings/profile', () => page.getByLabel('Your phone number')],
   ];
   for (const [path, ready] of pages) {
     await page.goto(path);

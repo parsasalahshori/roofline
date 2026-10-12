@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import type { Agent, TaskStatus } from '@roofline/shared';
-import { agentSettings, agentTasks, agentTaskSteps, customers, jobs } from '../schema/index.ts';
+import { agentSettings, agentTasks, agentTaskSteps, conversations, customers, jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { waitingNow } from './agent-waiting.ts';
 import { customerScope, jobScope } from './scope.ts';
 
 /*
@@ -11,6 +12,8 @@ import { customerScope, jobScope } from './scope.ts';
 
 /** Instants (UTC) that bound the windows, computed by the API in the company's time zone. */
 export type MetricsWindow = {
+  /** The moment of the read; waiting drafts that expired before it do not count. */
+  now: Date;
   /** IANA zone, used by SQL `at time zone` for day buckets. */
   timeZone: string;
   todayStart: Date;
@@ -32,14 +35,15 @@ export type AgentCounts = {
   ran30d: number;
   /** declined + expired in the last 30 days. */
   notApproved30d: number;
-  /** All-time current: status draft or awaiting_owner (drafts awaiting approval) plus needs_attention. */
+  /**
+   * All-time current: status draft or awaiting_owner (drafts awaiting approval) plus needs_attention,
+   * leaving out tasks whose expires_at is before `w.now` (the same rule as the waiting list).
+   */
   waitingCount: number;
 };
 
 const FINISHED: TaskStatus[] = ['done', 'partly_done'];
-const RAN: TaskStatus[] = ['done', 'partly_done', 'needs_attention'];
 const NOT_APPROVED: TaskStatus[] = ['declined', 'expired'];
-const WAITING: TaskStatus[] = ['draft', 'awaiting_owner', 'needs_attention'];
 const FINISHED_OR_HANDLED: TaskStatus[] = ['done', 'partly_done', 'needs_attention', 'declined', 'expired'];
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
@@ -68,16 +72,24 @@ export function taskSubjectScope(ctx: TenantContext): import('drizzle-orm').SQL 
 
 /** Counts per agent (only agents that have rows appear; callers default to zeros). */
 export async function agentCounts(tx: Tx, ctx: TenantContext, w: MetricsWindow): Promise<Record<string, AgentCounts>> {
+  // A done or partly_done task only counts as finished work when one of its steps really finished (N-1, N-6):
+  // a fully failed partly_done counts in ran30d only; an approved task with every step switched off is "not approved".
+  const hasDoneStep = sql`exists (select 1 from agent_task_steps s where s.task_id = ${agentTasks.id}
+    and s.company_id = ${ctx.companyId} and s.status = 'done')`;
+  const finishedStatus = sql`(${inArray(agentTasks.status, FINISHED)} and ${hasDoneStep})`;
+  const since = sql`${agentTasks.updatedAt} >= ${w.since30}`;
   const rows = await tx
     .select({
       agent: agentTasks.agent,
-      finishedToday: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, FINISHED)}
+      finishedToday: sql<number>`(count(*) filter (where ${finishedStatus}
         and ${agentTasks.updatedAt} >= ${w.todayStart} and ${agentTasks.updatedAt} < ${w.tomorrowStart}))::int`,
-      done30d: sql<number>`(count(*) filter (where ${agentTasks.status} = 'done' and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
-      partlyDone30d: sql<number>`(count(*) filter (where ${agentTasks.status} = 'partly_done' and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
-      ran30d: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, RAN)} and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
-      notApproved30d: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, NOT_APPROVED)} and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
-      waitingCount: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, WAITING)}))::int`,
+      done30d: sql<number>`(count(*) filter (where ${agentTasks.status} = 'done' and ${hasDoneStep} and ${since}))::int`,
+      partlyDone30d: sql<number>`(count(*) filter (where ${agentTasks.status} = 'partly_done' and ${hasDoneStep} and ${since}))::int`,
+      ran30d: sql<number>`(count(*) filter (where (${agentTasks.status} in ('partly_done', 'needs_attention')
+        or (${agentTasks.status} = 'done' and ${hasDoneStep})) and ${since}))::int`,
+      notApproved30d: sql<number>`(count(*) filter (where (${inArray(agentTasks.status, NOT_APPROVED)}
+        or (${agentTasks.status} = 'done' and not ${hasDoneStep})) and ${since}))::int`,
+      waitingCount: sql<number>`(count(*) filter (where ${waitingNow(w.now)}))::int`,
     })
     .from(agentTasks)
     .where(and(eq(agentTasks.companyId, ctx.companyId), taskSubjectScope(ctx)))
@@ -236,4 +248,39 @@ export async function agentSettingsInfo(tx: Tx, ctx: TenantContext): Promise<Age
     })
     .from(agentSettings)
     .where(eq(agentSettings.companyId, ctx.companyId));
+}
+
+/*
+ * A1 Task 21 SHELL (package B fills the body; keep name and signature).
+ * Front Desk success (Ruling AX-D): finished conversations in the last 30 days and how many succeeded.
+ */
+export async function frontDeskConversationCounts(
+  tx: Tx,
+  ctx: TenantContext,
+  w: MetricsWindow,
+): Promise<{ finished: number; succeeded: number }> {
+  let repScope = sql`true`;
+  if (ctx.role === 'rep') {
+    // AX-J: a rep sees conversations of customers in customerScope; no customer, no rep.
+    const scope = customerScope(ctx);
+    repScope = scope
+      ? sql`${conversations.customerId} in (select ${customers.id} from ${customers}
+          where ${customers.companyId} = ${ctx.companyId} and ${scope})`
+      : sql`false`;
+  }
+  const marker = sql`exists (select 1 from conversation_turns t where t.company_id = ${conversations.companyId}
+    and t.conversation_id = ${conversations.id} and t.route = 'transfer' and 'model_failure' = any(t.guard_hits))`;
+  // Voice conversations only (texts have their own tasks); spam is not a real conversation, so it leaves
+  // the denominator (and so the numerator).
+  const finishedWhere = sql`${conversations.channel} = 'voice' and ${conversations.status} <> 'active'
+    and ${conversations.outcome} is not null and ${conversations.outcome} <> 'spam'
+    and ${conversations.updatedAt} >= ${w.since30} and ${repScope}`;
+  const rows = await tx
+    .select({
+      finished: sql<number>`(count(*))::int`,
+      succeeded: sql<number>`(count(*) filter (where ${conversations.outcome} <> 'abandoned' and not ${marker}))::int`,
+    })
+    .from(conversations)
+    .where(and(eq(conversations.companyId, ctx.companyId), finishedWhere));
+  return { finished: Number(rows[0]?.finished ?? 0), succeeded: Number(rows[0]?.succeeded ?? 0) };
 }

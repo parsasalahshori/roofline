@@ -3,11 +3,11 @@ import type { ApprovalClass } from './enums.ts';
 import { MESSAGE_PURPOSES } from './enums.ts';
 import { type BaselineKey, minutesFor } from './agents.ts';
 import { renderBody } from './render.ts';
-import { claimsGuard } from './claims-guard.ts';
-import { FOLLOW_UP_KINDS } from './more-agents.ts';
 import { AD_PLATFORMS, dailyBudgetCents, renderStormTemplate } from './storm.ts';
 import { MAX_DOORS_PER_PLAN, MAX_DOORS_PER_ROUTE } from './door-routes.ts';
 import { MEASUREMENT_KINDS, TIERS, type MeasurementKind, type Tier } from './proposals.ts';
+import { claimsGuard } from './claims-guard.ts';
+import { FOLLOW_UP_KINDS } from './more-agents.ts';
 
 /*
  * The step-type registry (spec 4.1): what each kind of step an agent can put in a task needs, in
@@ -31,15 +31,15 @@ export const STEP_TYPES = [
   'send_sms_batch',
   'front_desk_call',
   'front_desk_texts',
-  'send_personal_texts',
-  'build_claim_packet',
-  'create_appointment',
-  'move_appointment',
   'send_email_batch',
   'build_routes',
   'create_ad_campaign',
   'send_proposal',
   'order_exact_report',
+  'send_personal_texts',
+  'build_claim_packet',
+  'create_appointment',
+  'move_appointment',
 ] as const;
 export type StepType = (typeof STEP_TYPES)[number];
 
@@ -110,12 +110,9 @@ export function stepMinutes<P>(
   return { baseline, units, minutesPerUnit, minutes };
 }
 
-/** A count from a step's result: a finite number above zero, else 0. */
-function resultCount(value: StepResult[string] | undefined): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
-}
-
 /** A count from a step's result: a finite number above zero, else 0. Anything else never counts. */
+const resultCount = (value: StepResult[string] | undefined): number => countOf(value);
+
 function countOf(value: StepResult[string] | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
 }
@@ -355,130 +352,6 @@ const frontDeskTexts: StepTypeDef<FrontDeskPayload> = {
 };
 
 // ---------------------------------------------------------------------------------------------
-// G1 steps (Task 2b): personal follow-up texts, the claim packet and the two calendar steps.
-// All four are written by the agent only; the texts need a person's approval, the rest are internal.
-
-const lowerUuid = (message?: string) =>
-  z.uuid(message === undefined ? undefined : { error: message }).transform((id) => id.toLowerCase());
-
-export const CLAIMS_TEXT_MESSAGE = 'This text talks about prices, insurance coverage or deductibles, or offers to deal with the insurer. Please change it.';
-export const REVIEW_PURPOSE_MESSAGE = 'Review requests go out as marketing texts.';
-
-const personalMessage = z.strictObject({
-  customerId: lowerUuid(PICK_CUSTOMERS),
-  jobId: lowerUuid(CHECK_TEXT).nullable(),
-  body: z
-    .string({ error: WRITE_MESSAGE })
-    .min(1, WRITE_MESSAGE)
-    .max(480, 'Please keep the message to 480 characters or fewer.')
-    .refine(noNul, CHECK_TEXT),
-});
-
-const personalTextsPayload = z.strictObject({
-  purpose: z.enum(MESSAGE_PURPOSES, { error: 'Please pick marketing or informational.' }),
-  kind: z.enum(FOLLOW_UP_KINDS, { error: CHECK_TEXT }),
-  messages: z
-    .array(personalMessage, { error: CHECK_TEXT })
-    .min(1, 'Please pick at least one customer.')
-    .max(100, 'You can text at most 100 customers in one go.')
-    .refine((items) => new Set(items.map((m) => m.customerId)).size === items.length, 'Each customer can only be listed once.'),
-  dedupePrefix: z
-    .string({ error: CHECK_TEXT })
-    .min(1, CHECK_TEXT)
-    .max(80, CHECK_TEXT)
-    .regex(/^[a-z0-9:_-]+$/, CHECK_TEXT),
-});
-type PersonalTextsPayload = z.output<typeof personalTextsPayload>;
-
-const sendPersonalTexts: StepTypeDef<PersonalTextsPayload> = {
-  type: 'send_personal_texts',
-  approvalClass: 'message',
-  userCreatable: false,
-  payload: personalTextsPayload,
-  validate(p) {
-    if (p.messages.some((m) => !claimsGuard(m.body).ok)) return CLAIMS_TEXT_MESSAGE;
-    if (p.kind === 'review' && p.purpose !== 'marketing') return REVIEW_PURPOSE_MESSAGE;
-    return null;
-  },
-  preview(p) {
-    const n = p.messages.length;
-    const lines = p.messages.slice(0, 20).map((m) => m.body);
-    if (n > 20) lines.push(`and ${n - 20} more`);
-    return {
-      title: `Send ${n} personal text${n === 1 ? '' : 's'}`,
-      lines,
-      ...(p.messages[0] !== undefined && { messageSample: p.messages[0].body }),
-      recipientCount: n,
-    };
-  },
-  baseline: (p) => (p.kind === 'reminder' ? 'reminder_sent' : 'follow_up_sent'),
-  units: (_p, result) => countOf(result.sent),
-};
-
-const claimPacketPayload = z.strictObject({ jobId: lowerUuid(CHECK_TEXT) });
-type ClaimPacketPayload = z.output<typeof claimPacketPayload>;
-
-const buildClaimPacket: StepTypeDef<ClaimPacketPayload> = {
-  type: 'build_claim_packet',
-  approvalClass: 'internal',
-  userCreatable: false,
-  payload: claimPacketPayload,
-  preview: () => ({ title: 'Build the claim packet', lines: [] }),
-  baseline: () => 'claim_packet',
-  units: (_p, result) => (countOf(result.built) > 0 ? 1 : 0),
-};
-
-const END_AFTER_START = 'The end must be after the start.';
-const isoTime = z.iso.datetime({ offset: true, error: CHECK_TEXT });
-const endsAfterStart = (v: { start: string; end: string }): boolean => Date.parse(v.end) > Date.parse(v.start);
-
-const createAppointmentPayload = z
-  .strictObject({
-    jobId: lowerUuid(CHECK_TEXT),
-    kind: z.enum(['adjuster', 'inspection'], { error: CHECK_TEXT }),
-    start: isoTime,
-    end: isoTime,
-    userId: lowerUuid(CHECK_TEXT),
-    note: z.string({ error: CHECK_TEXT }).max(500, 'Please keep the note to 500 characters or fewer.').refine(noNul, CHECK_TEXT),
-  })
-  .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
-type CreateAppointmentPayload = z.output<typeof createAppointmentPayload>;
-
-const createAppointment: StepTypeDef<CreateAppointmentPayload> = {
-  type: 'create_appointment',
-  approvalClass: 'internal',
-  userCreatable: false,
-  payload: createAppointmentPayload,
-  preview: (p) => ({
-    title: p.kind === 'adjuster' ? 'Book an adjuster visit' : 'Book an inspection',
-    lines: [`${p.start} to ${p.end}`],
-  }),
-  baseline: () => 'booking',
-  units: (_p, result) => countOf(result.created),
-};
-
-const moveAppointmentPayload = z
-  .strictObject({
-    appointmentId: lowerUuid(CHECK_TEXT),
-    start: isoTime,
-    end: isoTime,
-    userId: lowerUuid(CHECK_TEXT),
-    reason: z.string({ error: CHECK_TEXT }).max(200, 'Please keep the reason to 200 characters or fewer.').refine(noNul, CHECK_TEXT),
-  })
-  .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
-type MoveAppointmentPayload = z.output<typeof moveAppointmentPayload>;
-
-const moveAppointment: StepTypeDef<MoveAppointmentPayload> = {
-  type: 'move_appointment',
-  approvalClass: 'internal',
-  userCreatable: false,
-  payload: moveAppointmentPayload,
-  preview: (p) => ({ title: 'Move an install', lines: [p.reason, `${p.start} to ${p.end}`] }),
-  baseline: () => 'install_moved',
-  units: (_p, result) => countOf(result.moved),
-};
-
-// ---------------------------------------------------------------------------------------------
 // send_email_batch (marketing only: informational email is not a Storm Scout step)
 
 const SUBJECT_MESSAGE = 'Please write the subject.';
@@ -698,7 +571,7 @@ const createAdCampaign: StepTypeDef<CreateAdPayload> = {
   },
   userCreatable: true,
   baseline: () => 'ad_campaign',
-  units: (_p, result) => resultCount(result.campaigns),
+  units: (_p, result) => (typeof result.campaignId === 'string' ? 1 : resultCount(result.campaigns)),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -756,7 +629,6 @@ function tierTotalsLine(totals: ProposalPayload['totals']): string {
 const sendProposal: StepTypeDef<ProposalPayload> = {
   type: 'send_proposal',
   approvalClass: 'message',
-  userCreatable: true,
   payload: proposalPayload,
   validate: (p) => (p.body.includes(PROPOSAL_LINK_TOKEN) ? null : PROPOSAL_LINK_MESSAGE),
   preview(p, facts) {
@@ -770,8 +642,10 @@ const sendProposal: StepTypeDef<ProposalPayload> = {
       recipientCount: 1,
     };
   },
+  userCreatable: true,
   baseline: () => 'proposal_sent',
-  units: () => 1,
+  // Every done path (the handler, its already-sent path and the dispatcher) reports `sent`.
+  units: (_p, result) => (countOf(result.sent) > 0 ? 1 : 0),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -799,11 +673,136 @@ type ExactReportPayload = z.output<typeof exactReportPayload>;
 const orderExactReport: StepTypeDef<ExactReportPayload> = {
   type: 'order_exact_report',
   approvalClass: 'spend',
-  userCreatable: true,
   payload: exactReportPayload,
   preview: (p) => ({ title: 'Order an exact roof report', lines: [p.address], maxSpendCents: p.maxSpendCents }),
+  userCreatable: true,
   baseline: () => 'exact_report',
-  units: () => 1,
+  // Every done path (the order step and the report's arrival) reports `ordered: 1`.
+  units: (_p, result) => (countOf(result.ordered) > 0 ? 1 : 0),
+};
+
+// ---------------------------------------------------------------------------------------------
+// G1 steps (Task 2b): personal follow-up texts, the claim packet and the two calendar steps.
+// All four are written by the agent only; the texts need a person's approval, the rest are internal.
+
+const lowerUuid = (message?: string) =>
+  z.uuid(message === undefined ? undefined : { error: message }).transform((id) => id.toLowerCase());
+
+export const CLAIMS_TEXT_MESSAGE = 'This text talks about prices, insurance coverage or deductibles, or offers to deal with the insurer. Please change it.';
+export const REVIEW_PURPOSE_MESSAGE = 'Review requests go out as marketing texts.';
+
+const personalMessage = z.strictObject({
+  customerId: lowerUuid(PICK_CUSTOMERS),
+  jobId: lowerUuid(CHECK_TEXT).nullable(),
+  body: z
+    .string({ error: WRITE_MESSAGE })
+    .min(1, WRITE_MESSAGE)
+    .max(480, 'Please keep the message to 480 characters or fewer.')
+    .refine(noNul, CHECK_TEXT),
+});
+
+const personalTextsPayload = z.strictObject({
+  purpose: z.enum(MESSAGE_PURPOSES, { error: 'Please pick marketing or informational.' }),
+  kind: z.enum(FOLLOW_UP_KINDS, { error: CHECK_TEXT }),
+  messages: z
+    .array(personalMessage, { error: CHECK_TEXT })
+    .min(1, 'Please pick at least one customer.')
+    .max(100, 'You can text at most 100 customers in one go.')
+    .refine((items) => new Set(items.map((m) => m.customerId)).size === items.length, 'Each customer can only be listed once.'),
+  dedupePrefix: z
+    .string({ error: CHECK_TEXT })
+    .min(1, CHECK_TEXT)
+    .max(80, CHECK_TEXT)
+    .regex(/^[a-z0-9:_-]+$/, CHECK_TEXT),
+});
+type PersonalTextsPayload = z.output<typeof personalTextsPayload>;
+
+const sendPersonalTexts: StepTypeDef<PersonalTextsPayload> = {
+  type: 'send_personal_texts',
+  approvalClass: 'message',
+  userCreatable: false,
+  payload: personalTextsPayload,
+  validate(p) {
+    if (p.messages.some((m) => !claimsGuard(m.body).ok)) return CLAIMS_TEXT_MESSAGE;
+    if (p.kind === 'review' && p.purpose !== 'marketing') return REVIEW_PURPOSE_MESSAGE;
+    return null;
+  },
+  preview(p) {
+    const n = p.messages.length;
+    const lines = p.messages.slice(0, 20).map((m) => m.body);
+    if (n > 20) lines.push(`and ${n - 20} more`);
+    return {
+      title: `Send ${n} personal text${n === 1 ? '' : 's'}`,
+      lines,
+      ...(p.messages[0] !== undefined && { messageSample: p.messages[0].body }),
+      recipientCount: n,
+    };
+  },
+  baseline: (p) => (p.kind === 'reminder' ? 'reminder_sent' : 'follow_up_sent'),
+  units: (_p, result) => countOf(result.sent),
+};
+
+const claimPacketPayload = z.strictObject({ jobId: lowerUuid(CHECK_TEXT) });
+type ClaimPacketPayload = z.output<typeof claimPacketPayload>;
+
+const buildClaimPacket: StepTypeDef<ClaimPacketPayload> = {
+  type: 'build_claim_packet',
+  approvalClass: 'internal',
+  userCreatable: false,
+  payload: claimPacketPayload,
+  preview: () => ({ title: 'Build the claim packet', lines: [] }),
+  baseline: () => 'claim_packet',
+  units: (_p, result) => (countOf(result.built) > 0 ? 1 : 0),
+};
+
+const END_AFTER_START = 'The end must be after the start.';
+const isoTime = z.iso.datetime({ offset: true, error: CHECK_TEXT });
+const endsAfterStart = (v: { start: string; end: string }): boolean => Date.parse(v.end) > Date.parse(v.start);
+
+const createAppointmentPayload = z
+  .strictObject({
+    jobId: lowerUuid(CHECK_TEXT),
+    kind: z.enum(['adjuster', 'inspection'], { error: CHECK_TEXT }),
+    start: isoTime,
+    end: isoTime,
+    userId: lowerUuid(CHECK_TEXT),
+    note: z.string({ error: CHECK_TEXT }).max(500, 'Please keep the note to 500 characters or fewer.').refine(noNul, CHECK_TEXT),
+  })
+  .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
+type CreateAppointmentPayload = z.output<typeof createAppointmentPayload>;
+
+const createAppointment: StepTypeDef<CreateAppointmentPayload> = {
+  type: 'create_appointment',
+  approvalClass: 'internal',
+  userCreatable: false,
+  payload: createAppointmentPayload,
+  preview: (p) => ({
+    title: p.kind === 'adjuster' ? 'Book an adjuster visit' : 'Book an inspection',
+    lines: [`${p.start} to ${p.end}`],
+  }),
+  baseline: () => 'booking',
+  units: (_p, result) => countOf(result.created),
+};
+
+const moveAppointmentPayload = z
+  .strictObject({
+    appointmentId: lowerUuid(CHECK_TEXT),
+    start: isoTime,
+    end: isoTime,
+    userId: lowerUuid(CHECK_TEXT),
+    reason: z.string({ error: CHECK_TEXT }).max(200, 'Please keep the reason to 200 characters or fewer.').refine(noNul, CHECK_TEXT),
+  })
+  .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
+type MoveAppointmentPayload = z.output<typeof moveAppointmentPayload>;
+
+const moveAppointment: StepTypeDef<MoveAppointmentPayload> = {
+  type: 'move_appointment',
+  approvalClass: 'internal',
+  userCreatable: false,
+  payload: moveAppointmentPayload,
+  preview: (p) => ({ title: 'Move an install', lines: [p.reason, `${p.start} to ${p.end}`] }),
+  baseline: () => 'install_moved',
+  units: (_p, result) => countOf(result.moved),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -818,13 +817,13 @@ export const stepTypes: Record<StepType, StepTypeDef<any>> = {
   send_sms_batch: sendSmsBatch,
   front_desk_call: frontDeskCall,
   front_desk_texts: frontDeskTexts,
-  send_personal_texts: sendPersonalTexts,
-  build_claim_packet: buildClaimPacket,
-  create_appointment: createAppointment,
-  move_appointment: moveAppointment,
   send_email_batch: sendEmailBatch,
   build_routes: buildRoutes,
   create_ad_campaign: createAdCampaign,
   send_proposal: sendProposal,
   order_exact_report: orderExactReport,
+  send_personal_texts: sendPersonalTexts,
+  build_claim_packet: buildClaimPacket,
+  create_appointment: createAppointment,
+  move_appointment: moveAppointment,
 };

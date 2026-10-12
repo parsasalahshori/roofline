@@ -7,11 +7,22 @@ import {
   agentSettingsInfo,
   breakdownByBaseline,
   dailyFinished,
+  frontDeskConversationCounts,
   minutesByAgent,
   type MetricsWindow,
   recentTasks,
 } from '../src/repos/agent-metrics.ts';
-import { agentSettings, agentTaskSteps, agentTasks, customers, jobs, properties } from '../src/schema/index.ts';
+import { listWaitingTasks } from '../src/repos/agent-waiting.ts';
+import {
+  agentSettings,
+  agentTaskSteps,
+  agentTasks,
+  conversations,
+  conversationTurns,
+  customers,
+  jobs,
+  properties,
+} from '../src/schema/index.ts';
 import { type TenantContext, type Tx, withTenant } from '../src/tenant.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
 
@@ -39,6 +50,7 @@ function repCtx(c: SeededCompany): TenantContext {
 
 /** The window of Tuesday 12 October 2026 in Chicago (CDT, UTC-5), with the 30-day and month bounds. */
 const w: MetricsWindow = {
+  now: new Date('2026-10-12T17:00:00Z'),
   timeZone: 'America/Chicago',
   todayStart: new Date('2026-10-12T05:00:00Z'),
   tomorrowStart: new Date('2026-10-13T05:00:00Z'),
@@ -55,6 +67,7 @@ type TaskSeed = {
   status: TaskStatus;
   updatedAt: Date;
   createdAt?: Date;
+  expiresAt?: Date | null;
   mode?: 'needs_approval' | 'live';
   subjectType?: string | null;
   subjectId?: string | null;
@@ -76,6 +89,7 @@ function seedTask(c: SeededCompany, t: TaskSeed): Promise<string> {
         mode: t.mode ?? 'needs_approval',
         status: t.status,
         minutesSaved: t.minutesSaved ?? null,
+        expiresAt: t.expiresAt ?? null,
         createdAt: t.createdAt ?? t.updatedAt,
         updatedAt: t.updatedAt,
       })
@@ -86,7 +100,7 @@ function seedTask(c: SeededCompany, t: TaskSeed): Promise<string> {
 
 type StepSeed = {
   position?: number;
-  status: 'pending' | 'done' | 'failed';
+  status: 'pending' | 'done' | 'failed' | 'skipped';
   updatedAt: Date;
   baselineKey?: string | null;
   units?: number | null;
@@ -120,6 +134,13 @@ function seedStep(c: SeededCompany, taskId: string, s: StepSeed): Promise<void> 
   });
 }
 
+/** A finished task with one done step, so it counts as real finished work. */
+async function seedDoneTask(c: SeededCompany, status: TaskStatus, updatedAt: Date): Promise<string> {
+  const id = await seedTask(c, { status, updatedAt });
+  await seedStep(c, id, { status: 'done', updatedAt });
+  return id;
+}
+
 /** Counts, minutes and recent tasks for `ctx`, in one place so each test reads the same way. */
 function readAll(c: SeededCompany, ctx: TenantContext = ctxFor(c)) {
   return withTenant(pools, ctx, async (tx) => ({
@@ -131,10 +152,10 @@ function readAll(c: SeededCompany, ctx: TenantContext = ctxFor(c)) {
 describe('agent metrics', () => {
   test('agentCounts counts finished today, 30-day inputs and waiting per agent', async () => {
     const c = seed.a;
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-12T15:00:00Z') });
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-12T16:00:00Z') });
-    await seedTask(c, { status: 'partly_done', updatedAt: new Date('2026-10-12T17:00:00Z') });
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-07T15:00:00Z') });
+    await seedDoneTask(c, 'done', new Date('2026-10-12T15:00:00Z'));
+    await seedDoneTask(c, 'done', new Date('2026-10-12T16:00:00Z'));
+    await seedDoneTask(c, 'partly_done', new Date('2026-10-12T17:00:00Z'));
+    await seedDoneTask(c, 'done', new Date('2026-10-07T15:00:00Z'));
     await seedTask(c, { status: 'needs_attention', updatedAt: new Date('2026-10-10T12:00:00Z') });
     await seedTask(c, { status: 'draft', updatedAt: new Date('2026-10-12T09:00:00Z') });
     await seedTask(c, { status: 'awaiting_owner', updatedAt: new Date('2026-10-12T09:30:00Z') });
@@ -152,11 +173,62 @@ describe('agent metrics', () => {
     });
   });
 
+  test('waitingCount leaves out drafts that expired before now, like the waiting list', async () => {
+    const c = seed.a;
+    const updatedAt = new Date('2026-10-12T09:00:00Z');
+    await seedTask(c, { status: 'draft', updatedAt, expiresAt: new Date('2026-10-12T16:00:00Z') });
+    await seedTask(c, { status: 'draft', updatedAt, expiresAt: new Date('2026-10-12T18:00:00Z') });
+    await seedTask(c, { status: 'draft', updatedAt, expiresAt: null });
+
+    const { counts } = await readAll(c);
+    expect(counts.storm_scout!.waitingCount).toBe(2);
+  });
+
+  test('a partly_done task with only a failed step counts in ran30d only (N-1)', async () => {
+    const c = seed.a;
+    const at = new Date('2026-10-12T15:00:00Z');
+    const failed = await seedTask(c, { status: 'partly_done', updatedAt: at });
+    await seedStep(c, failed, { status: 'failed', updatedAt: at });
+    await seedDoneTask(c, 'partly_done', at);
+
+    const { counts } = await readAll(c);
+    expect(counts.storm_scout).toMatchObject({ partlyDone30d: 1, finishedToday: 1, ran30d: 2 });
+  });
+
+  test('an approved done task whose steps are all switched off is not approved, not run (N-6)', async () => {
+    const c = seed.a;
+    const at = new Date('2026-10-12T15:00:00Z');
+    const off = await seedTask(c, { status: 'done', updatedAt: at });
+    await seedStep(c, off, { status: 'skipped', updatedAt: at });
+    await seedDoneTask(c, 'done', at);
+
+    const { counts } = await readAll(c);
+    expect(counts.storm_scout).toMatchObject({ done30d: 1, finishedToday: 1, ran30d: 1, notApproved30d: 1 });
+  });
+
+  test('the waiting card count equals the waiting list length (E-I2)', async () => {
+    const c = seed.a;
+    const created = new Date('2026-10-12T09:00:00Z');
+    const past = new Date('2026-10-12T16:00:00Z');
+    await seedTask(c, { status: 'draft', updatedAt: created, expiresAt: past });
+    await seedTask(c, { status: 'awaiting_owner', updatedAt: created, expiresAt: past });
+    await seedTask(c, { status: 'needs_attention', updatedAt: created, expiresAt: past });
+
+    const ctx = ctxFor(c);
+    const { counts, list } = await withTenant(pools, ctx, async (tx) => ({
+      counts: await agentCounts(tx, ctx, w),
+      list: await listWaitingTasks(tx, ctx, w.now),
+    }));
+    expect(list).toHaveLength(2);
+    expect(list.map((r) => r.status).sort()).toEqual(['awaiting_owner', 'needs_attention']);
+    expect(counts.storm_scout!.waitingCount).toBe(list.length);
+  });
+
   test('a task finished at 03:00Z on Oct 13 counts for local Oct 12', async () => {
     const c = seed.a;
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-13T03:00:00Z') });
-    await seedTask(c, { status: 'partly_done', updatedAt: new Date('2026-10-10T16:00:00Z') });
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-12T15:00:00Z') });
+    await seedDoneTask(c, 'done', new Date('2026-10-13T03:00:00Z'));
+    await seedDoneTask(c, 'partly_done', new Date('2026-10-10T16:00:00Z'));
+    await seedDoneTask(c, 'done', new Date('2026-10-12T15:00:00Z'));
 
     const days = await withTenant(pools, ctxFor(c), (tx) => dailyFinished(tx, ctxFor(c), 'storm_scout', w));
     expect(days).toEqual([
@@ -341,5 +413,91 @@ describe('agent metrics', () => {
     expect(rows).toEqual([{ agent: 'storm_scout', pausedAt, pausedByName: 'Acme Owner', lastRunNowAt: null }]);
 
     expect(await withTenant(pools, ctxFor(seed.b), (tx) => agentSettingsInfo(tx, ctxFor(seed.b)))).toEqual([]);
+  });
+
+  describe('frontDeskConversationCounts (Ruling AX-D, AX-J)', () => {
+    type ConvSeed = { outcome?: string | null; status?: 'active' | 'ended'; updatedAt?: Date; customerId?: string | null; marker?: boolean };
+
+    async function seedConv(c: SeededCompany, cv: ConvSeed): Promise<string> {
+      return withTenant(pools, ctxFor(c), async (tx) => {
+        const at = cv.updatedAt ?? today;
+        const [row] = await tx
+          .insert(conversations)
+          .values({
+            companyId: c.companyId,
+            channel: 'voice',
+            customerId: cv.customerId ?? null,
+            phoneE164: `+1402555${String(Math.floor(Math.random() * 9000) + 1000)}`,
+            companyNumberE164: '+14025550000',
+            status: cv.status ?? 'ended',
+            outcome: (cv.outcome === undefined ? 'booked' : cv.outcome) as 'booked' | null,
+            createdAt: at,
+            updatedAt: at,
+          })
+          .returning({ id: conversations.id });
+        if (cv.marker) {
+          await tx.insert(conversationTurns).values({
+            companyId: c.companyId,
+            conversationId: row!.id,
+            position: 1,
+            speaker: 'system',
+            text: 'Handed off',
+            route: 'transfer',
+            guardHits: ['model_failure'],
+          });
+        }
+        return row!.id;
+      });
+    }
+
+    const counts = (c: SeededCompany, ctx: TenantContext = ctxFor(c)) =>
+      withTenant(pools, ctx, (tx) => frontDeskConversationCounts(tx, ctx, w));
+
+    test('succeeded excludes abandoned and model-failure hand-offs; old, active and outcome-less rows are not finished', async () => {
+      const c = seed.a;
+      await seedConv(c, {});
+      await seedConv(c, {});
+      await seedConv(c, {});
+      await seedConv(c, { outcome: 'abandoned' });
+      await seedConv(c, { marker: true, outcome: 'transferred' });
+      await seedConv(c, { updatedAt: new Date('2026-08-01T12:00:00Z') });
+      await seedConv(c, { status: 'active', outcome: null });
+      await seedConv(c, { outcome: null });
+      expect(await counts(c)).toEqual({ finished: 5, succeeded: 3 });
+      // Company B sees none of it.
+      expect(await counts(seed.b)).toEqual({ finished: 0, succeeded: 0 });
+    });
+
+    test('a rep counts only conversations whose customer has a job in the rep scope; owner counts all', async () => {
+      const c = seed.a;
+      const owner = ctxFor(c);
+      const { mine, theirs } = await withTenant(pools, owner, async (tx) => {
+        const make = async (name: string, n: number, assignee: string) => {
+          const [cust] = await tx
+            .insert(customers)
+            .values({ companyId: c.companyId, displayName: name, createdByUserId: c.owner.userId })
+            .returning({ id: customers.id });
+          const [prop] = await tx
+            .insert(properties)
+            .values({ companyId: c.companyId, customerId: cust!.id, addressLine: `${n} Elm St`, city: 'Omaha', state: 'NE', zip: '68102', addressKey: `elm${n}` })
+            .returning({ id: properties.id });
+          await tx.insert(jobs).values({
+            companyId: c.companyId,
+            customerId: cust!.id,
+            propertyId: prop!.id,
+            assignedUserId: assignee,
+            createdByUserId: c.owner.userId,
+          });
+          return cust!.id;
+        };
+        return { mine: await make('Mine', 1, c.rep.userId), theirs: await make('Theirs', 2, c.otherRep.userId) };
+      });
+      await seedConv(c, { customerId: mine });
+      await seedConv(c, { customerId: mine, outcome: 'abandoned' });
+      await seedConv(c, { customerId: theirs });
+      await seedConv(c, { customerId: null });
+      expect(await counts(c, repCtx(c))).toEqual({ finished: 2, succeeded: 1 });
+      expect(await counts(c, owner)).toEqual({ finished: 4, succeeded: 3 });
+    });
   });
 });

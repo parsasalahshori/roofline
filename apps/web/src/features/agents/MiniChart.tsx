@@ -6,6 +6,15 @@ const WIDTH = 140;
 const HEIGHT = 40;
 const GAP = 2;
 
+const DAY = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+/** 'Oct 12' from a 'YYYY-MM-DD' string, with no time zone shifting. */
+function dayLabel(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  if (!y || !m || !d) return date;
+  return DAY.format(new Date(Date.UTC(y, m - 1, d)));
+}
+
 /** Tiny SVG bar chart (hidden from assistive tech) plus a visually hidden table that carries the data. */
 export function MiniChart({ days, label }: { days: DayCount[]; label: string }) {
   const max = Math.max(1, ...days.map((d) => d.finished));
@@ -47,7 +56,7 @@ export function MiniChart({ days, label }: { days: DayCount[]; label: string }) 
         <tbody>
           {days.map((d) => (
             <tr key={d.date}>
-              <td>{d.date}</td>
+              <td>{dayLabel(d.date)}</td>
               <td>{d.finished}</td>
             </tr>
           ))}

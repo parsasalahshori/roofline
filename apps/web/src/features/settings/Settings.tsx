@@ -30,8 +30,8 @@ export function Settings({ subpage }: { subpage?: ReactNode } = {}) {
   const tab = subpage ? 'setup' : routeTab;
   if (!isSettingsTab(tab)) return <Navigate to="/settings/company" replace />;
   if ((tab === 'prices' || tab === 'storm') && role === 'rep') return <Navigate to="/settings/company" replace />;
-  if (tab === 'agents' && role === 'rep') return <Navigate to="/settings/company" replace />;
   if (tab === 'front-desk' && role === 'rep') return <Navigate to="/settings/company" replace />;
+  if (tab === 'agents' && role === 'rep') return <Navigate to="/settings/company" replace />;
 
   return (
     <>
@@ -80,9 +80,9 @@ function renderPanel(tab: SettingsTab, subpage: ReactNode, roleKnown: boolean) {
       return subpage ?? <SetupTab />;
     case 'front-desk':
       return roleKnown ? <FrontDeskTab /> : null;
-    case 'agents':
-      return roleKnown ? <AgentsTab /> : null;
     case 'profile':
       return <ProfileTab />;
+    case 'agents':
+      return roleKnown ? <AgentsTab /> : null;
   }
 }

@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
   activities,
+  agentTasks,
   calls,
   companyPhoneNumbers,
   companySettings,
@@ -78,7 +79,8 @@ async function setTextBack(on: boolean) {
 
 type SeedCall = {
   from?: string;
-  status?: 'ended' | 'failed' | 'transferred' | 'ringing';
+  status?: 'ended' | 'failed' | 'transferred' | 'ringing' | 'rejected';
+  aiStartedAt?: Date | null;
   aiSeconds?: number;
   spamReason?: string | null;
   transcriptStored?: boolean;
@@ -125,6 +127,7 @@ async function seedCall(o: SeedCall = {}): Promise<Seeded> {
         status: o.status ?? 'ended',
         conversationId,
         aiSeconds: o.aiSeconds ?? 0,
+        aiStartedAt: o.aiStartedAt ?? null,
         spamReason: o.spamReason ?? null,
         transcriptStored: o.transcriptStored ?? false,
         startedAt: o.startedAt ?? now,
@@ -210,6 +213,19 @@ describe('runAfterCall', () => {
     expect(await callActivities()).toHaveLength(0);
     expect(await outboundRows()).toHaveLength(0);
     expect(t.sms.sent).toHaveLength(0);
+  });
+
+  test('a rejected spam call that Front Desk never answered makes no live task; one the AI had started still does', async () => {
+    const liveTasks = () => inCompany(t, idA(), (tx) => tx.select().from(agentTasks).where(eq(agentTasks.kind, 'call')));
+    const screened = await seedCall({ status: 'rejected', spamReason: 'robocall', withConversation: false, aiStartedAt: null });
+    await run(screened);
+    expect(await liveTasks()).toHaveLength(0);
+
+    const started = await seedCall({ status: 'rejected', spamReason: 'robocall', withConversation: false, aiStartedAt: t.clock.now() });
+    await run(started);
+    const rows = await liveTasks();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.title).toBe('Spam call blocked');
   });
 
   test('forwarding-test calls are skipped', async () => {

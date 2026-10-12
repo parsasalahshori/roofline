@@ -17,6 +17,18 @@ export const TASK_STATUS_LABEL: Record<Exclude<TaskStatus, 'partly_done'>, strin
   needs_attention: 'Needs attention',
 };
 
+/** Plain words for a task kind; an unknown kind falls back to its name with underscores as spaces. */
+export const TASK_KIND_LABEL: Record<string, string> = {
+  storm_plan: 'Storm plan',
+  send_storm_plan: 'Storm plan sent',
+  send_proposal: 'Proposal sent',
+  create_ad_campaign: 'Ad campaign set up',
+  order_exact_report: 'Roof measurement ordered',
+  send_sms_batch: 'Texts sent',
+  send_email_batch: 'Emails sent',
+  front_desk_follow_up: 'Follow-up from the front desk',
+};
+
 export const STEP_STATUS_LABEL: Record<StepStatus, string> = {
   pending: 'Ready',
   awaiting_owner: 'Waiting for owner',

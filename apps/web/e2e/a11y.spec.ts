@@ -2,8 +2,8 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { test, expect, readStack, companyHostUrl, stormPageCode, draftAndApproveStormPlan, waitForStormSteps } from './fixtures.ts';
 import { makeAndSendProposal, BETTER_NAME } from './estimator-helpers.ts';
-import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 import { seedFrontDesk, seedRooflineNumber } from './front-desk-seed.ts';
+import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 
 /*
  * Accessibility: each page is scanned with axe for WCAG 2.0 and 2.1 A and AA rules, and any
@@ -140,6 +140,135 @@ test('calendar week has no serious accessibility violations', async ({ page, log
   await markTodaySeen('owner@a.test');
   await page.goto('/calendar?view=week');
   await expect(page.locator('[data-testid^="slot-"]').first()).toBeAttached({ timeout: 20_000 });
+  await scan(page);
+});
+
+const agentsScreens: { name: string; path: string; ready: (page: Page) => Promise<void> }[] = [
+  {
+    name: 'agents window',
+    path: '/agents',
+    ready: (page) => expect(page.getByRole('heading', { name: 'Your agents' })).toBeAttached(),
+  },
+  {
+    name: 'agent page',
+    path: '/agents/storm-scout',
+    ready: (page) => expect(page.getByText('What it does').first()).toBeVisible(),
+  },
+  {
+    name: 'agents feed',
+    path: '/agents/feed',
+    ready: (page) => expect(page.getByRole('list', { name: 'What your agents did' })).toBeVisible(),
+  },
+  {
+    name: 'agents waiting list',
+    path: '/agents/waiting',
+    ready: (page) => expect(page.getByLabel('Waiting', { exact: true })).toBeVisible(),
+  },
+  {
+    name: 'settings agents tab',
+    path: '/settings/agents',
+    ready: (page) => expect(page.getByText('How we count time saved').first()).toBeVisible(),
+  },
+];
+
+for (const screen of agentsScreens) {
+  test(`${screen.name} has no serious accessibility violations`, async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+    void agentsSeed;
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto(screen.path);
+    await screen.ready(page);
+    await scan(page);
+  });
+}
+
+test('storm window has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/storm');
+  await expect(page.getByRole('region', { name: 'Storms in your area' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('storm detail has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, scenario }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto(`/storm/${scenario.companyStormId}`);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('route view has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, scenario }) => {
+  test.setTimeout(90_000);
+  // The owner approves the plan so the routes are built; the routes belong to the reps.
+  await loginAs(page, 'owner');
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
+  await waitForStormSteps(page, taskId);
+
+  await loginAs(page, 'rep');
+  await markTodaySeen('rep@a.test');
+  const mine = await page.request.get('/api/routes/mine', { headers: { Origin: readStack().baseUrl } });
+  expect(mine.status()).toBe(200);
+  const { routes } = (await mine.json()) as { routes: { id: string }[] };
+  expect(routes.length).toBeGreaterThan(0);
+  await page.goto(`/storm/routes/${routes[0]?.id}`);
+  await expect(page.getByRole('heading', { name: 'Doors in order' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('storm landing page has no serious accessibility violations', async ({ page, loginAs, db, scenario }) => {
+  test.setTimeout(90_000);
+  await loginAs(page, 'owner');
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
+  await waitForStormSteps(page, taskId);
+  const code = await stormPageCode(db, scenario.companyStormId);
+  await page.goto(companyHostUrl('/storm/' + code));
+  await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
+  await scan(page);
+});
+
+test('Front Desk inbox has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, pools, scenario }) => {
+  await seedFrontDesk(pools, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/front-desk');
+  await expect(page.getByRole('heading', { name: 'This week' })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('link', { name: /Maria Alvarez/ })).toBeVisible();
+  await scan(page);
+});
+
+test('Front Desk conversation has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, pools, scenario }) => {
+  const { ids } = await seedFrontDesk(pools, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto(`/front-desk/${ids.maria}`);
+  await expect(page.getByRole('heading', { name: 'What was said' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('Front Desk text conversation has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, pools, scenario }) => {
+  const { ids } = await seedFrontDesk(pools, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto(`/front-desk/${ids.tom}`);
+  await expect(page.getByLabel('Your reply')).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('Settings Front Desk has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, pools, scenario, db }) => {
+  await seedRooflineNumber(pools, db, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/settings/front-desk');
+  await expect(page.getByRole('button', { name: 'Test it' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('Settings Your profile has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/settings/profile');
+  await expect(page.getByLabel('Your phone number')).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });
 

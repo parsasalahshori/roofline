@@ -15,8 +15,8 @@
     "smoke:front-desk": "tsx src/scripts/smoke/front-desk.ts",
     "smoke:stripe": "tsx src/scripts/smoke/stripe-test-clock.ts",
     "smoke:texting": "tsx src/scripts/smoke/texting-real-brand.ts",
-    "smoke:storm": "tsx src/scripts/smoke/storm.ts",
-    "smoke:estimator": "tsx src/scripts/smoke/estimator.ts"
+    "smoke:estimator": "tsx src/scripts/smoke/estimator.ts",
+    "smoke:storm": "tsx src/scripts/smoke/storm.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

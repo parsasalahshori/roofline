@@ -31,3 +31,12 @@
 .heading {
   margin: 0;
 }
+
+.content {
+  display: grid;
+  gap: 20px;
+}
+
+.dim {
+  opacity: 0.6;
+}

@@ -224,15 +224,8 @@ export function testConfig(
     API_RATE_LIMIT_PER_MIN: 600,
     PORT: 0,
     HOST: '127.0.0.1',
-    // D1 Front Desk (ANTHROPIC_API_KEY stays unset)
-    FRONT_DESK_ROUTER_MODEL: 'claude-haiku-5-5',
-    FRONT_DESK_ANSWER_MODEL: 'claude-opus-5-5',
     AGENT_DRAFT_MODEL: 'claude-opus-5-5',
     AGENT_EXTRACT_MODEL: 'claude-haiku-5-5',
-    FRONT_DESK_OPUS_FAST: false,
-    FRONT_DESK_MAX_CALLS: 40,
-    RELAY_PUBLIC_URL: 'wss://app.roofline.test/relay',
-    RELAY_TOKEN_SECRET: 'relay-test-secret-0123456789abcdef0123',
     // G1 Agents (no static map in tests)
     MAPTILER_SERVER_KEY: undefined,
     EAGLEVIEW_ENV: 'sandbox',
@@ -246,6 +239,13 @@ export function testConfig(
     HAIL_STALE_MINUTES: 90,
     HAIL_ALERT_STALE_MINUTES_SEASON: 180,
     HAIL_ALERT_STALE_MINUTES_OFFSEASON: 720,
+    // D1 Front Desk (ANTHROPIC_API_KEY stays unset)
+    FRONT_DESK_ROUTER_MODEL: 'claude-haiku-5-5',
+    FRONT_DESK_ANSWER_MODEL: 'claude-opus-5-5',
+    FRONT_DESK_OPUS_FAST: false,
+    FRONT_DESK_MAX_CALLS: 40,
+    RELAY_PUBLIC_URL: 'wss://app.roofline.test/relay',
+    RELAY_TOKEN_SECRET: 'relay-test-secret-0123456789abcdef0123',
     ...overrides,
   };
 }

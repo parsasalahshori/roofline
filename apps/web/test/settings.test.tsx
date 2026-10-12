@@ -78,6 +78,7 @@ function signedInApi(overrides: Routes = {}) {
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
     'GET /api/company': () => ({ body: COMPANY_BODY }),
+    'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
     'GET /api/team': () => ({ body: { members: [], invites: [] } }),
     // The user menu's ring reads the checklist too
     'GET /api/setup': () => ({ body: SETUP_VIEW }),

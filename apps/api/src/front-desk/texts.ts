@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import {
   getConversation,
+  isAgentPaused,
   listConversationTexts,
   listUnansweredInbound,
   loadCompanyFacts,
@@ -8,12 +9,14 @@ import {
   frontDeskTextsOn,
   insertAssistantText,
   lockRecipient,
+  recordModelFailureHandoff,
   type TenantContext,
   type Tx,
   updateConversation,
   withTenant,
 } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
+import { recordTextTask } from '../agents/front-desk-tasks.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { buildGateRequest } from '../messaging/gate-request.ts';
 import { sendQueuedText, textStateFor } from '../messaging/outbound.ts';
@@ -56,8 +59,9 @@ export const FD_TEXT_DEBOUNCE_SECONDS = 20;
  * message id>`. Passing `consumed: true` (an earlier handler, S1 onStormReply or G1 claims, already answered) queues
  * nothing. G1 may call it directly.
  */
-export async function queueFrontDeskText(_tx: Tx, message: InboundMessageRef, opts?: QueueFrontDeskTextOpts): Promise<void> {
+export async function queueFrontDeskText(tx: Tx, message: InboundMessageRef, opts?: QueueFrontDeskTextOpts): Promise<void> {
   if (opts?.consumed === true || opts?.jobs === undefined) return;
+  if (await isAgentPaused(tx, { companyId: message.companyId, userId: null, role: 'system', canApproveSpend: false }, 'front_desk')) return;
   await opts.jobs.send(
     'fd-text',
     { companyId: message.companyId, conversationId: message.conversationId },
@@ -101,6 +105,7 @@ export async function runFrontDeskText(
   const now = deps.clock.now();
 
   const prepared = await withTenant(deps.pools, ctx, async (tx) => {
+    if (await isAgentPaused(tx, ctx, 'front_desk')) return null;
     const conversation = await getConversation(tx, ctx, conversationId);
     if (!conversation || conversation.status !== 'active' || conversation.handledBy === 'team') return null;
     if (!(await frontDeskTextsOn(tx, ctx))) return null;
@@ -158,6 +163,7 @@ export async function runFrontDeskText(
   const active = engine ?? createEngine(deps, TEXT_TOOL_HANDLERS);
   const said: string[] = [];
   let handoff = false;
+  let modelFailure = false;
   let spam = false;
   if (prepared.customerId !== null && isConfirmShortcut(callerText)) {
     // "C" or "confirm" from a customer's own number confirms their next visit; the engine is not asked.
@@ -165,8 +171,10 @@ export async function runFrontDeskText(
   } else {
     for await (const event of active.turn(state, callerText, new AbortController().signal)) {
       if (event.type === 'say') said.push(event.text);
-      else if (event.type === 'handoff') handoff = true;
-      else if (event.type === 'end' && event.reason === 'spam') spam = true;
+      else if (event.type === 'handoff') {
+        handoff = true;
+        if (event.reason === 'model_failure') modelFailure = true;
+      } else if (event.type === 'end' && event.reason === 'spam') spam = true;
     }
   }
   if (spam) {
@@ -175,7 +183,11 @@ export async function runFrontDeskText(
     return;
   }
   if (handoff) {
-    await withTenant(deps.pools, ctx, (tx) => updateConversation(tx, ctx, conversationId, { handledBy: 'team' }));
+    await withTenant(deps.pools, ctx, async (tx) => {
+      await updateConversation(tx, ctx, conversationId, { handledBy: 'team' });
+      // The success rate counts a model-failure handoff as not succeeded: write the marker in the same transaction.
+      if (modelFailure) await recordModelFailureHandoff(tx, ctx, conversationId);
+    });
   }
 
   const reply = fitSegments(said.join(' ').trim());
@@ -227,6 +239,17 @@ export async function runFrontDeskText(
     return;
   }
   if (outcome) {
-    await sendQueuedText(deps, ctx, { messageId: outcome.messageId, to: outcome.to, body: reply, sender: outcome.sender }, 'We could not send this text.');
+    const sendResult = await sendQueuedText(deps, ctx, { messageId: outcome.messageId, to: outcome.to, body: reply, sender: outcome.sender }, 'We could not send this text.');
+    // Known gap: scheduled replies (held for quiet hours) never reach here, so they are not counted for the live task.
+    if (sendResult !== 'sent') return;
+    // A1 Task 4: one live task per conversation per local day. The engine events carry no booking results, so bookings is 0.
+    try {
+      await withTenant(deps.pools, ctx, async (tx) => {
+        const { timezone } = await loadCompanyFacts(tx, ctx);
+        await recordTextTask(tx, ctx, { conversationId, customerId, replies: 1, bookings: 0 }, sendAt, timezone);
+      });
+    } catch {
+      console.error(`fd live task failed conversation=${conversationId} company=${data.companyId}`);
+    }
   }
 }

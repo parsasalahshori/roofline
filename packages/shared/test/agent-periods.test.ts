@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { localDate } from '../src/time-zone.ts';
 import { addDays, chartDates, metricsWindow, periodRange, startOfLocalDay } from '../src/agent-periods.ts';
 
 const CHICAGO = 'America/Chicago';
@@ -26,6 +27,31 @@ describe('startOfLocalDay', () => {
   test('Auckland (ahead of UTC) starts the local day in the previous UTC day', () => {
     // NZDT (+13) in October: local midnight is 11:00Z the day before.
     expect(startOfLocalDay('2026-10-12', 'Pacific/Auckland').toISOString()).toBe('2026-10-11T11:00:00.000Z');
+  });
+});
+
+describe('startOfLocalDay at midnight DST jumps and US zones', () => {
+  const localHour = (d: Date, zone: string): string =>
+    new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', hour: 'numeric', minute: 'numeric' }).format(d);
+
+  test('America/Santiago 2026-09-06 starts at 01:00 local (midnight does not exist)', () => {
+    const start = startOfLocalDay('2026-09-06', 'America/Santiago');
+    expect(start.toISOString()).toBe('2026-09-06T04:00:00.000Z');
+    expect(localDate(start, 'America/Santiago')).toBe('2026-09-06');
+    expect(localHour(start, 'America/Santiago')).toBe('01:00');
+    expect(localDate(new Date(start.getTime() - 1000), 'America/Santiago')).toBe('2026-09-05');
+  });
+
+  test('America/Havana 2026-03-08 starts at 01:00 local', () => {
+    const start = startOfLocalDay('2026-03-08', 'America/Havana');
+    expect(start.toISOString()).toBe('2026-03-08T05:00:00.000Z');
+    expect(localHour(start, 'America/Havana')).toBe('01:00');
+  });
+
+  test('US zones', () => {
+    expect(startOfLocalDay('2026-03-08', 'America/New_York').toISOString()).toBe('2026-03-08T05:00:00.000Z');
+    expect(startOfLocalDay('2026-11-01', 'America/Chicago').toISOString()).toBe('2026-11-01T05:00:00.000Z');
+    expect(startOfLocalDay('2026-07-01', 'America/Los_Angeles').toISOString()).toBe('2026-07-01T07:00:00.000Z');
   });
 });
 

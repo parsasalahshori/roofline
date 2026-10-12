@@ -7,6 +7,7 @@ import { createPools, type Pools } from '@roofline/db';
 import { resetDb, seedTwoCompanies, SEED_PASSWORD, type SeededCompany } from '@roofline/db/testing';
 import type { CompanyStatus } from '@roofline/shared';
 import { seedDemoTask, seedFootprintFixture, seedShowcase, seedStormFixture, signUnsubscribeToken, unsubscribeKey } from '@roofline/api';
+import { seedAgentsFixture, type AgentsFixture } from './agents-seed.ts';
 
 /*
  * Shared end-to-end helpers. `stack.ts` writes `.stack.json` beside this file once the database is
@@ -73,7 +74,6 @@ export async function resetScenario(urls: { owner: string; tenant: string; syste
       now,
       query: async (text, values) => (await owner.query(text, values)).rows,
     });
-    await seedFootprintFixture(pools);
     return { a, taskId, stormId, companyStormId };
   } finally {
     await owner.end();
@@ -166,6 +166,7 @@ type Fixtures = {
   clicks: { count: number };
   click: (locator: Locator) => Promise<void>;
   markTodaySeen: (email: string) => Promise<void>;
+  agentsSeed: AgentsFixture;
 };
 
 export const test = base.extend<Fixtures>({
@@ -223,6 +224,11 @@ export const test = base.extend<Fixtures>({
       );
     });
   },
+
+  agentsSeed: async ({ db, scenario }, use) => {
+    await use(await seedAgentsFixture(db, scenario.a.companyId, new Date()));
+  },
 });
 
-export { expect, seedDemoTask };
+export { expect, seedDemoTask, seedAgentsFixture };
+export type { AgentsFixture };

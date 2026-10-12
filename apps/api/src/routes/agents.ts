@@ -2,16 +2,15 @@
  * `/api/agents` (A1 Task 5). This router defines only `GET /` (the overview) and `GET /:agent` (one
  * agent's detail, `?period=today|week|month|last90`, default month).
  *
- * MOUNT ORDER NOTE for Tasks 6 and 7: app.ts mounts this router at `/api/agents`, and Tasks 6/7 mount
- * their routers right after it on the same prefix (agents-feed.ts: GET /feed, GET /waiting,
- * GET /time-baselines; agents-settings.ts: PUT /:agent/paused, POST /:agent/run, and the time-baseline
- * writes). `/:agent` answers only for a real screen agent: any other name calls next(), so /feed,
- * /waiting and /time-baselines fall through to the later routers. Anything still unmatched gets the
- * app's 404 `{ error }`.
+ * Mount order: app.ts mounts the feed router (agents-feed.ts) first, this router (GET / and GET /:agent)
+ * after it, and the settings router (agents-settings.ts) later. `/:agent` answers only for a real screen
+ * agent and calls next() for anything else (e.g. /time-baselines), so the later routers get it. Anything
+ * still unmatched gets the app's 404 `{ error }`.
  */
 import { Router } from 'express';
 import { z } from 'zod';
 import { withTenant } from '@roofline/db';
+import { onCallFirstNames } from '@roofline/db/system';
 import { isScreenAgent, TIME_PERIODS } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { buildDetail, buildOverview } from '../agents/metrics.ts';
@@ -43,7 +42,9 @@ export function agentsRoutes(deps: AppDeps): Router {
     const query = parse(PeriodQuery, req.query);
     const period = query.period ?? 'month';
     const { ctx } = req;
-    const detail = await withTenant(pools, ctx, (tx) => buildDetail(tx, ctx, clock.now(), agent, period));
+    // Memberships are app_system only: read the on-call first names here and hand them to the rule facts.
+    const transferNames = agent === 'front_desk' ? await onCallFirstNames(pools.system, ctx.companyId) : [];
+    const detail = await withTenant(pools, ctx, (tx) => buildDetail(tx, ctx, clock.now(), agent, period, transferNames));
     res.json(detail);
   });
 

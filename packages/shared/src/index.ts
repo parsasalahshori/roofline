@@ -15,12 +15,10 @@ export * from './pipeline.ts';
 export * from './availability.ts';
 export * from './crm.ts';
 export * from './csv.ts';
-// A1 (Task 2)
-export * from './agents.ts';
-export * from './metrics.ts';
-export * from './agent-rules.ts';
-export * from './agent-periods.ts';
-export * from './agents-api.ts';
+// E1 skeleton (Task 1): one line per new shared file; later E1 tasks fill the files in.
+export * from './roof.ts';
+export * from './tiers.ts';
+export * from './proposals.ts';
 // D1 skeleton (Task 1): one line per new shared file; later D1 tasks fill the files in.
 export * from './front-desk.ts';
 export * from './front-desk-rules.ts';
@@ -28,15 +26,17 @@ export * from './front-desk-tools.ts';
 export * from './front-desk-views.ts';
 export * from './forwarding.ts';
 export * from './recording-consent.ts';
+// A1 (Task 2)
+export * from './agents.ts';
+export * from './metrics.ts';
+export * from './agent-rules.ts';
 // G1 skeleton (Task 1)
 export * from './more-agents.ts';
 export * from './claims.ts';
 // G1 Task 17s
 export * from './agent-values.ts';
-// E1 skeleton (Task 1): one line per new shared file; later E1 tasks fill the files in.
-export * from './roof.ts';
-export * from './tiers.ts';
-export * from './proposals.ts';
 // S1 skeleton (Task 1): one line per new shared file; later S1 tasks fill the files in.
 export * from './storm.ts';
 export * from './door-routes.ts';
+export * from './agent-periods.ts';
+export * from './agents-api.ts';

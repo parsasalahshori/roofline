@@ -105,9 +105,11 @@ describe('send_proposal', () => {
     expect(preview.lines[0]).toBe('Good $11,900 · Best $17,600');
   });
 
-  test('saves 20 minutes whatever the result', () => {
+  test('saves 20 minutes once the proposal text went out, none when it did not', () => {
     const p = proposal.payload.parse(proposalPayload());
-    expect(stepMinutes(proposal, p, {}).minutes).toBe(20);
+    expect(stepMinutes(proposal, p, { sent: 1 }).minutes).toBe(20);
+    expect(stepMinutes(proposal, p, { sent: 0, blocked: 1 }).minutes).toBe(0);
+    expect(stepMinutes(proposal, p, {}).minutes).toBe(0);
   });
 });
 
@@ -149,9 +151,11 @@ describe('order_exact_report', () => {
     });
   });
 
-  test('saves 10 minutes whatever the result', () => {
+  test('saves 10 minutes once the report was ordered, none when it was not', () => {
     const p = report.payload.parse(reportPayload());
-    expect(stepMinutes(report, p, {}).minutes).toBe(10);
+    expect(stepMinutes(report, p, { ordered: 1 }).minutes).toBe(10);
+    expect(stepMinutes(report, p, { ordered: 0 }).minutes).toBe(0);
+    expect(stepMinutes(report, p, {}).minutes).toBe(0);
   });
 });
 

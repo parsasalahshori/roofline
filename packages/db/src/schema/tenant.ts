@@ -60,12 +60,12 @@ import {
   CLAIM_EVENT_ACTORS,
   CLAIM_STATUSES,
   CLAIM_TAKEN_BY,
-  COMPANY_STORM_STATUSES,
   CONFIRMED_VIA,
   CONSENT_REGIMES,
   CONVERSATION_CHANNELS,
   CONVERSATION_OUTCOMES,
   CONVERSATION_STATUSES,
+  COMPANY_STORM_STATUSES,
   DOOR_OUTCOMES,
   DOOR_ROUTE_STATUSES,
   EARLY_DELIVERY_STATUSES,
@@ -80,11 +80,11 @@ import {
   PROPOSAL_EVENT_KINDS,
   PROPOSAL_STATUSES,
   QUOTE_STATUSES,
-  RECORDING_STATUSES,
   STORED_FILE_KINDS,
   TASK_MODES,
-  TIERS,
   TIER_MATERIALS,
+  TIERS,
+  RECORDING_STATUSES,
   TRANSFER_RESULTS,
   TURN_ROUTES,
   TURN_SPEAKERS,
@@ -123,18 +123,6 @@ export const TENANT_TABLES = [
   'pricebooks',
   'quotes',
   'quote_counters',
-  'conversations',
-  'calls',
-  'conversation_turns',
-  'claim_intakes',
-  'blocked_numbers',
-  'claims',
-  'claim_events',
-  'follow_up_log',
-  'time_baselines',
-  'agent_task_events',
-  'agent_settings',
-  'time_recounts',
   'measurements',
   'tier_templates',
   'proposals',
@@ -144,6 +132,18 @@ export const TENANT_TABLES = [
   'proposal_events',
   'exact_report_orders',
   'stored_files',
+  'conversations',
+  'calls',
+  'conversation_turns',
+  'claim_intakes',
+  'blocked_numbers',
+  'time_baselines',
+  'agent_task_events',
+  'agent_settings',
+  'time_recounts',
+  'claims',
+  'claim_events',
+  'follow_up_log',
   'company_storms',
   'storm_hits',
   'door_routes',
@@ -192,6 +192,15 @@ export const companySettings = pgTable(
     minNoticeMinutes: integer('min_notice_minutes').notNull().default(120),
     /** Days in stage before a Lead, Inspection or Proposal counts as stuck. */
     stuckAfterDays: integer('stuck_after_days').notNull().default(14),
+    /** The pitch assumed when a measurement has no measured pitch, in twelfths (6 = 6/12). */
+    defaultPitchX12: numeric('default_pitch_x12', { precision: 4, scale: 2, mode: 'number' }).notNull().default(6),
+    /** Roof overhang added to the footprint, in feet. */
+    overhangFt: numeric('overhang_ft', { precision: 3, scale: 1, mode: 'number' }).notNull().default(1),
+    /** How long a new proposal stays valid, in days. */
+    proposalValidDays: integer('proposal_valid_days').notNull().default(30),
+    aerialMeasure: boolean('aerial_measure').notNull().default(false),
+    /** Whether a signed proposal carries the estimate clause (spec 5.3). */
+    estimateChangeClause: boolean('estimate_change_clause').notNull().default(true),
     /** Front Desk: false until forwarding passes or the owner turns it on. */
     frontDeskEnabled: boolean('front_desk_enabled').notNull().default(false),
     /** Front Desk: text the caller back about a missed call and answer SMS. */
@@ -221,15 +230,6 @@ export const companySettings = pgTable(
     followupReviews: boolean('followup_reviews').notNull().default(true),
     followupLeads: boolean('followup_leads').notNull().default(true),
     followupProposals: boolean('followup_proposals').notNull().default(true),
-    /** The pitch assumed when a measurement has no measured pitch, in twelfths (6 = 6/12). */
-    defaultPitchX12: numeric('default_pitch_x12', { precision: 4, scale: 2, mode: 'number' }).notNull().default(6),
-    /** Roof overhang added to the footprint, in feet. */
-    overhangFt: numeric('overhang_ft', { precision: 3, scale: 1, mode: 'number' }).notNull().default(1),
-    /** How long a new proposal stays valid, in days. */
-    proposalValidDays: integer('proposal_valid_days').notNull().default(30),
-    aerialMeasure: boolean('aerial_measure').notNull().default(false),
-    /** Whether a signed proposal carries the estimate clause (spec 5.3). */
-    estimateChangeClause: boolean('estimate_change_clause').notNull().default(true),
     /** Storm Scout ad defaults (spec 5): total budget in cents, days to run, and Google's share in percent. */
     stormAdBudgetCents: integer('storm_ad_budget_cents').notNull().default(27000),
     stormAdDays: integer('storm_ad_days').notNull().default(7),
@@ -248,6 +248,9 @@ export const companySettings = pgTable(
     check('company_settings_travel_buffer_minutes_check', sql`${t.travelBufferMinutes} between 0 and 120`),
     check('company_settings_min_notice_minutes_check', sql`${t.minNoticeMinutes} between 0 and 4320`),
     check('company_settings_stuck_after_days_check', sql`${t.stuckAfterDays} between 3 and 90`),
+    check('company_settings_default_pitch_x12_check', sql`${t.defaultPitchX12} between 0 and 24`),
+    check('company_settings_overhang_ft_check', sql`${t.overhangFt} between 0 and 3`),
+    check('company_settings_proposal_valid_days_check', sql`${t.proposalValidDays} between 1 and 180`),
     check('company_settings_ring_team_first_seconds_check', sql`${t.ringTeamFirstSeconds} between 0 and 30`),
     enumCheck(
       'company_settings',
@@ -264,9 +267,6 @@ export const companySettings = pgTable(
     check('company_settings_reminder_hour_check', sql`${t.reminderHour} between 0 and 23`),
     check('company_settings_lead_followup_days_check', sql`${t.leadFollowupDays} between 1 and 30`),
     check('company_settings_review_delay_days_check', sql`${t.reviewDelayDays} between 0 and 30`),
-    check('company_settings_default_pitch_x12_check', sql`${t.defaultPitchX12} between 0 and 24`),
-    check('company_settings_overhang_ft_check', sql`${t.overhangFt} between 0 and 3`),
-    check('company_settings_proposal_valid_days_check', sql`${t.proposalValidDays} between 1 and 180`),
   ],
 );
 
@@ -628,8 +628,8 @@ export const messages = pgTable(
     ...timestamps(),
   },
   (t) => [
-    check('messages_email_to_email_check', sql`${t.channel} <> 'email' OR ${t.toEmail} IS NOT NULL`),
     unique('messages_company_id_id_uniq').on(t.companyId, t.id),
+    check('messages_email_to_email_check', sql`${t.channel} <> 'email' OR ${t.toEmail} IS NOT NULL`),
     foreignKey({
       name: 'messages_company_customer_fk',
       columns: [t.companyId, t.customerId],
@@ -995,379 +995,6 @@ export const quoteCounters = pgTable('quote_counters', {
 });
 
 /*
- * Front Desk (D1). A conversation is one thread with one other party: a phone call or the SMS
- * thread with one number. The transcript (`conversation_turns`) is shared by both channels.
- */
-
-export type ToolCallRecord = { name: string; input: unknown; result: string; ok: boolean };
-
-export const conversations = pgTable(
-  'conversations',
-  {
-    id: pk(),
-    companyId: companyId(),
-    channel: text('channel', { enum: CONVERSATION_CHANNELS }).notNull(),
-    customerId: uuid('customer_id'),
-    /** The other party's number (the caller, or the customer texting in). */
-    phoneE164: text('phone_e164').notNull(),
-    /** The company number the contact used. */
-    companyNumberE164: text('company_number_e164').notNull(),
-    status: text('status', { enum: CONVERSATION_STATUSES }).notNull().default('active'),
-    handledBy: text('handled_by', { enum: HANDLED_BY }).notNull().default('assistant'),
-    /** When a person took over; the assistant may answer again after this. */
-    teamUntil: tstz('team_until'),
-    lastMessageAt: tstz('last_message_at').notNull().defaultNow(),
-    unreadCount: integer('unread_count').notNull().default(0),
-    summary: text('summary'),
-    outcome: text('outcome', { enum: CONVERSATION_OUTCOMES }),
-    identity: text('identity', { enum: IDENTITY_LEVELS }).notNull().default('unknown'),
-    ...timestamps(),
-  },
-  (t) => [
-    unique('conversations_company_id_id_uniq').on(t.companyId, t.id),
-    foreignKey({
-      name: 'conversations_company_customer_fk',
-      columns: [t.companyId, t.customerId],
-      foreignColumns: [customers.companyId, customers.id],
-    }),
-    index('conversations_company_last_message_idx').on(t.companyId, t.lastMessageAt.desc()),
-    /** One open SMS thread per company number and contact. */
-    uniqueIndex('conversations_active_sms_uniq')
-      .on(t.companyId, t.phoneE164)
-      .where(sql`${t.channel} = 'sms' and ${t.status} = 'active'`),
-    enumCheck('conversations', 'channel', t.channel, CONVERSATION_CHANNELS),
-    enumCheck('conversations', 'status', t.status, CONVERSATION_STATUSES),
-    enumCheck('conversations', 'handled_by', t.handledBy, HANDLED_BY),
-    enumCheck('conversations', 'outcome', t.outcome, CONVERSATION_OUTCOMES),
-    enumCheck('conversations', 'identity', t.identity, IDENTITY_LEVELS),
-  ],
-);
-
-export const calls = pgTable(
-  'calls',
-  {
-    id: pk(),
-    companyId: companyId(),
-    conversationId: uuid('conversation_id'),
-    /** The provider's call id. Unique across companies: one call is one row. */
-    callSid: text('call_sid').notNull().unique(),
-    fromE164: text('from_e164').notNull(),
-    toE164: text('to_e164').notNull(),
-    forwardedFrom: text('forwarded_from'),
-    stirVerstat: text('stir_verstat'),
-    status: text('status', { enum: CALL_STATUSES }).notNull().default('ringing'),
-    startedAt: tstz('started_at').notNull().defaultNow(),
-    aiStartedAt: tstz('ai_started_at'),
-    endedAt: tstz('ended_at'),
-    aiSeconds: integer('ai_seconds').notNull().default(0),
-    billedMinutes: integer('billed_minutes').notNull().default(0),
-    recordingKey: text('recording_key'),
-    recordingStatus: text('recording_status', { enum: RECORDING_STATUSES }).notNull().default('none'),
-    recordingSeconds: integer('recording_seconds'),
-    consentRegime: text('consent_regime', { enum: CONSENT_REGIMES }),
-    transcriptStored: boolean('transcript_stored').notNull().default(false),
-    transferUserId: userRef('transfer_user_id'),
-    transferResult: text('transfer_result', { enum: TRANSFER_RESULTS }),
-    spamReason: text('spam_reason'),
-    textBackMessageId: uuid('text_back_message_id'),
-    ...timestamps(),
-  },
-  (t) => [
-    unique('calls_company_id_id_uniq').on(t.companyId, t.id),
-    foreignKey({
-      name: 'calls_company_conversation_fk',
-      columns: [t.companyId, t.conversationId],
-      foreignColumns: [conversations.companyId, conversations.id],
-    }),
-    foreignKey({
-      name: 'calls_company_text_back_message_fk',
-      columns: [t.companyId, t.textBackMessageId],
-      foreignColumns: [messages.companyId, messages.id],
-    }),
-    index('calls_company_started_idx').on(t.companyId, t.startedAt),
-    enumCheck('calls', 'status', t.status, CALL_STATUSES),
-    enumCheck('calls', 'recording_status', t.recordingStatus, RECORDING_STATUSES),
-    enumCheck('calls', 'consent_regime', t.consentRegime, CONSENT_REGIMES),
-    enumCheck('calls', 'transfer_result', t.transferResult, TRANSFER_RESULTS),
-  ],
-);
-
-export const conversationTurns = pgTable(
-  'conversation_turns',
-  {
-    id: pk(),
-    companyId: companyId(),
-    conversationId: uuid('conversation_id').notNull(),
-    callId: uuid('call_id'),
-    position: integer('position').notNull(),
-    speaker: text('speaker', { enum: TURN_SPEAKERS }).notNull(),
-    text: text('text').notNull(),
-    truncated: boolean('truncated').notNull().default(false),
-    at: tstz('at').notNull().defaultNow(),
-    model: text('model'),
-    route: text('route', { enum: TURN_ROUTES }),
-    routerMs: integer('router_ms'),
-    firstTokenMs: integer('first_token_ms'),
-    totalMs: integer('total_ms'),
-    inputTokens: integer('input_tokens'),
-    cachedTokens: integer('cached_tokens'),
-    outputTokens: integer('output_tokens'),
-    toolCalls: jsonb('tool_calls').$type<ToolCallRecord[]>(),
-    guardHits: text('guard_hits').array().notNull().default([]),
-  },
-  (t) => [
-    unique('conversation_turns_company_id_id_uniq').on(t.companyId, t.id),
-    uniqueIndex('conversation_turns_conversation_position_uniq').on(t.conversationId, t.position),
-    foreignKey({
-      name: 'conversation_turns_company_conversation_fk',
-      columns: [t.companyId, t.conversationId],
-      foreignColumns: [conversations.companyId, conversations.id],
-    }),
-    foreignKey({
-      name: 'conversation_turns_company_call_fk',
-      columns: [t.companyId, t.callId],
-      foreignColumns: [calls.companyId, calls.id],
-    }),
-    enumCheck('conversation_turns', 'speaker', t.speaker, TURN_SPEAKERS),
-    enumCheck('conversation_turns', 'route', t.route, TURN_ROUTES),
-  ],
-);
-
-/** A claim the assistant or a person took down for a customer (insurer, claim number, loss details). */
-export const claimIntakes = pgTable(
-  'claim_intakes',
-  {
-    id: pk(),
-    companyId: companyId(),
-    jobId: uuid('job_id'),
-    conversationId: uuid('conversation_id'),
-    insurer: text('insurer').notNull(),
-    claimNumber: text('claim_number'),
-    dateOfLoss: date('date_of_loss', { mode: 'string' }),
-    description: text('description').notNull(),
-    adjusterVisitAt: tstz('adjuster_visit_at'),
-    takenBy: text('taken_by', { enum: CLAIM_TAKEN_BY }).notNull(),
-    ...timestamps(),
-  },
-  (t) => [
-    foreignKey({
-      name: 'claim_intakes_company_job_fk',
-      columns: [t.companyId, t.jobId],
-      foreignColumns: [jobs.companyId, jobs.id],
-    }),
-    foreignKey({
-      name: 'claim_intakes_company_conversation_fk',
-      columns: [t.companyId, t.conversationId],
-      foreignColumns: [conversations.companyId, conversations.id],
-    }),
-    enumCheck('claim_intakes', 'taken_by', t.takenBy, CLAIM_TAKEN_BY),
-  ],
-);
-
-/** Numbers the company refuses to take calls or texts from. */
-export const blockedNumbers = pgTable(
-  'blocked_numbers',
-  {
-    id: pk(),
-    companyId: companyId(),
-    e164: text('e164').notNull(),
-    reason: text('reason'),
-    blockedBy: userRef('blocked_by'),
-    createdAt: tstz('created_at').notNull().defaultNow(),
-  },
-  (t) => [uniqueIndex('blocked_numbers_company_e164_uniq').on(t.companyId, t.e164)],
-);
-
-/** The insurance claim for a job (spec 6): one per job. */
-export const claims = pgTable(
-  'claims',
-  {
-    id: pk(),
-    companyId: companyId(),
-    jobId: uuid('job_id').notNull(),
-    insurer: text('insurer'),
-    claimNumber: text('claim_number'),
-    dateOfLoss: date('date_of_loss', { mode: 'string' }),
-    status: text('status', { enum: CLAIM_STATUSES }).notNull().default('not_filed'),
-    adjusterName: text('adjuster_name'),
-    adjusterPhone: text('adjuster_phone'),
-    adjusterEmail: text('adjuster_email'),
-    adjusterAppointmentId: uuid('adjuster_appointment_id'),
-    deductibleCents: integer('deductible_cents'),
-    notes: text('notes'),
-    statusChangedAt: tstz('status_changed_at').notNull().defaultNow(),
-    ...timestamps(),
-  },
-  (t) => [
-    unique('claims_company_id_id_uniq').on(t.companyId, t.id),
-    /** One claim per job. */
-    unique('claims_company_job_uniq').on(t.companyId, t.jobId),
-    foreignKey({
-      name: 'claims_company_job_fk',
-      columns: [t.companyId, t.jobId],
-      foreignColumns: [jobs.companyId, jobs.id],
-    }),
-    foreignKey({
-      name: 'claims_company_adjuster_appointment_fk',
-      columns: [t.companyId, t.adjusterAppointmentId],
-      foreignColumns: [appointments.companyId, appointments.id],
-    }),
-    index('claims_company_status_idx').on(t.companyId, t.status),
-    check('claims_deductible_cents_check', sql`${t.deductibleCents} >= 0`),
-    enumCheck('claims', 'status', t.status, CLAIM_STATUSES),
-  ],
-);
-
-/** Status history of a claim. `from_status` is null for the first event. */
-export const claimEvents = pgTable(
-  'claim_events',
-  {
-    id: pk(),
-    companyId: companyId(),
-    claimId: uuid('claim_id').notNull(),
-    fromStatus: text('from_status', { enum: CLAIM_STATUSES }),
-    toStatus: text('to_status', { enum: CLAIM_STATUSES }).notNull(),
-    by: text('by_actor', { enum: CLAIM_EVENT_ACTORS }).notNull(),
-    byUserId: userRef('by_user_id'),
-    at: tstz('at').notNull().defaultNow(),
-  },
-  (t) => [
-    foreignKey({
-      name: 'claim_events_company_claim_fk',
-      columns: [t.companyId, t.claimId],
-      foreignColumns: [claims.companyId, claims.id],
-    }),
-    index('claim_events_claim_at_idx').on(t.companyId, t.claimId, t.at),
-    enumCheck('claim_events', 'from_status', t.fromStatus, CLAIM_STATUSES),
-    enumCheck('claim_events', 'to_status', t.toStatus, CLAIM_STATUSES),
-    enumCheck('claim_events', 'by_actor', t.by, CLAIM_EVENT_ACTORS),
-  ],
-);
-
-/** Every follow-up the Follow-up agent sent, so it never nags twice. */
-export const followUpLog = pgTable(
-  'follow_up_log',
-  {
-    id: pk(),
-    companyId: companyId(),
-    customerId: uuid('customer_id').notNull(),
-    jobId: uuid('job_id'),
-    kind: text('kind', { enum: FOLLOW_UP_KINDS }).notNull(),
-    n: integer('n').notNull().default(1),
-    messageId: uuid('message_id'),
-    at: tstz('at').notNull().defaultNow(),
-  },
-  (t) => [
-    foreignKey({
-      name: 'follow_up_log_company_customer_fk',
-      columns: [t.companyId, t.customerId],
-      foreignColumns: [customers.companyId, customers.id],
-    }),
-    foreignKey({
-      name: 'follow_up_log_company_job_fk',
-      columns: [t.companyId, t.jobId],
-      foreignColumns: [jobs.companyId, jobs.id],
-    }),
-    foreignKey({
-      name: 'follow_up_log_company_message_fk',
-      columns: [t.companyId, t.messageId],
-      foreignColumns: [messages.companyId, messages.id],
-    }),
-    index('follow_up_log_customer_at_idx').on(t.companyId, t.customerId, t.at),
-    index('follow_up_log_job_kind_idx').on(t.companyId, t.jobId, t.kind),
-    check('follow_up_log_n_check', sql`${t.n} >= 1`),
-    enumCheck('follow_up_log', 'kind', t.kind, FOLLOW_UP_KINDS),
-  ],
-);
-
-/**
- * Minutes a unit of work is worth, per baseline key. A missing row means the default in code, so
- * the table only holds what a company has changed. The key is plain text: the list of keys lives
- * with the step definitions, and a new key needs no migration.
- */
-export const timeBaselines = pgTable(
-  'time_baselines',
-  {
-    id: pk(),
-    companyId: companyId(),
-    key: text('key').notNull(),
-    minutesPerUnit: numeric('minutes_per_unit', { precision: 6, scale: 2, mode: 'number' }).notNull(),
-    ...timestamps(),
-  },
-  (t) => [unique('time_baselines_company_key_uniq').on(t.companyId, t.key)],
-);
-
-/**
- * The feed: one row per thing that happened to a task. Written only by the task service and never
- * updated or deleted (the grants in the next migration allow INSERT and SELECT only).
- */
-export const agentTaskEvents = pgTable(
-  'agent_task_events',
-  {
-    id: pk(),
-    companyId: companyId(),
-    taskId: uuid('task_id').notNull(),
-    stepId: uuid('step_id'),
-    kind: text('kind', { enum: AGENT_EVENT_KINDS }).notNull(),
-    actorType: text('actor_type', { enum: ACTOR_TYPES }).notNull(),
-    actorUserId: userRef('actor_user_id'),
-    /** Counts and ids only, never message text or customer names. */
-    data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
-    at: tstz('at').notNull().defaultNow(),
-  },
-  (t) => [
-    foreignKey({
-      name: 'agent_task_events_company_task_fk',
-      columns: [t.companyId, t.taskId],
-      foreignColumns: [agentTasks.companyId, agentTasks.id],
-    }),
-    foreignKey({
-      name: 'agent_task_events_company_step_fk',
-      columns: [t.companyId, t.stepId],
-      foreignColumns: [agentTaskSteps.companyId, agentTaskSteps.id],
-    }),
-    index('agent_task_events_company_at_idx').on(t.companyId, t.at.desc()),
-    index('agent_task_events_task_idx').on(t.companyId, t.taskId, t.at),
-    enumCheck('agent_task_events', 'kind', t.kind, AGENT_EVENT_KINDS),
-    enumCheck('agent_task_events', 'actor_type', t.actorType, ACTOR_TYPES),
-  ],
-);
-
-/** Per-company switches for each agent. A missing row means the agent is on. */
-export const agentSettings = pgTable(
-  'agent_settings',
-  {
-    id: pk(),
-    companyId: companyId(),
-    agent: text('agent', { enum: AGENTS }).notNull(),
-    pausedAt: tstz('paused_at'),
-    pausedBy: userRef('paused_by'),
-    lastRunNowAt: tstz('last_run_now_at'),
-    ...timestamps(),
-  },
-  (t) => [
-    unique('agent_settings_company_agent_uniq').on(t.companyId, t.agent),
-    enumCheck('agent_settings', 'agent', t.agent, AGENTS),
-  ],
-);
-
-/** An audited owner recount of the minutes saved in a date range: the before and after totals. */
-export const timeRecounts = pgTable(
-  'time_recounts',
-  {
-    id: pk(),
-    companyId: companyId(),
-    byUserId: userRef('by_user_id').notNull(),
-    fromAt: tstz('from').notNull(),
-    toAt: tstz('to').notNull(),
-    beforeMinutes: numeric('before_minutes', { precision: 12, scale: 2, mode: 'number' }).notNull(),
-    afterMinutes: numeric('after_minutes', { precision: 12, scale: 2, mode: 'number' }).notNull(),
-    at: tstz('at').notNull().defaultNow(),
-  },
-  (t) => [index('time_recounts_company_at_idx').on(t.companyId, t.at)],
-);
-
-/*
  * E1 estimator tables (spec 3.4, 4.1, 4.3, 5.3, 8). Every link to another tenant table is a
  * same-company composite key, as above.
  */
@@ -1681,6 +1308,379 @@ export const exactReportOrders = pgTable(
       foreignColumns: [agentTasks.companyId, agentTasks.id],
     }),
     enumCheck('exact_report_orders', 'status', t.status, EXACT_ORDER_STATUSES),
+  ],
+);
+
+/*
+ * Front Desk (D1). A conversation is one thread with one other party: a phone call or the SMS
+ * thread with one number. The transcript (`conversation_turns`) is shared by both channels.
+ */
+
+export type ToolCallRecord = { name: string; input: unknown; result: string; ok: boolean };
+
+export const conversations = pgTable(
+  'conversations',
+  {
+    id: pk(),
+    companyId: companyId(),
+    channel: text('channel', { enum: CONVERSATION_CHANNELS }).notNull(),
+    customerId: uuid('customer_id'),
+    /** The other party's number (the caller, or the customer texting in). */
+    phoneE164: text('phone_e164').notNull(),
+    /** The company number the contact used. */
+    companyNumberE164: text('company_number_e164').notNull(),
+    status: text('status', { enum: CONVERSATION_STATUSES }).notNull().default('active'),
+    handledBy: text('handled_by', { enum: HANDLED_BY }).notNull().default('assistant'),
+    /** When a person took over; the assistant may answer again after this. */
+    teamUntil: tstz('team_until'),
+    lastMessageAt: tstz('last_message_at').notNull().defaultNow(),
+    unreadCount: integer('unread_count').notNull().default(0),
+    summary: text('summary'),
+    outcome: text('outcome', { enum: CONVERSATION_OUTCOMES }),
+    identity: text('identity', { enum: IDENTITY_LEVELS }).notNull().default('unknown'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('conversations_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'conversations_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    index('conversations_company_last_message_idx').on(t.companyId, t.lastMessageAt.desc()),
+    /** One open SMS thread per company number and contact. */
+    uniqueIndex('conversations_active_sms_uniq')
+      .on(t.companyId, t.phoneE164)
+      .where(sql`${t.channel} = 'sms' and ${t.status} = 'active'`),
+    enumCheck('conversations', 'channel', t.channel, CONVERSATION_CHANNELS),
+    enumCheck('conversations', 'status', t.status, CONVERSATION_STATUSES),
+    enumCheck('conversations', 'handled_by', t.handledBy, HANDLED_BY),
+    enumCheck('conversations', 'outcome', t.outcome, CONVERSATION_OUTCOMES),
+    enumCheck('conversations', 'identity', t.identity, IDENTITY_LEVELS),
+  ],
+);
+
+export const calls = pgTable(
+  'calls',
+  {
+    id: pk(),
+    companyId: companyId(),
+    conversationId: uuid('conversation_id'),
+    /** The provider's call id. Unique across companies: one call is one row. */
+    callSid: text('call_sid').notNull().unique(),
+    fromE164: text('from_e164').notNull(),
+    toE164: text('to_e164').notNull(),
+    forwardedFrom: text('forwarded_from'),
+    stirVerstat: text('stir_verstat'),
+    status: text('status', { enum: CALL_STATUSES }).notNull().default('ringing'),
+    startedAt: tstz('started_at').notNull().defaultNow(),
+    aiStartedAt: tstz('ai_started_at'),
+    endedAt: tstz('ended_at'),
+    aiSeconds: integer('ai_seconds').notNull().default(0),
+    billedMinutes: integer('billed_minutes').notNull().default(0),
+    recordingKey: text('recording_key'),
+    recordingStatus: text('recording_status', { enum: RECORDING_STATUSES }).notNull().default('none'),
+    recordingSeconds: integer('recording_seconds'),
+    consentRegime: text('consent_regime', { enum: CONSENT_REGIMES }),
+    transcriptStored: boolean('transcript_stored').notNull().default(false),
+    transferUserId: userRef('transfer_user_id'),
+    transferResult: text('transfer_result', { enum: TRANSFER_RESULTS }),
+    spamReason: text('spam_reason'),
+    textBackMessageId: uuid('text_back_message_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('calls_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'calls_company_conversation_fk',
+      columns: [t.companyId, t.conversationId],
+      foreignColumns: [conversations.companyId, conversations.id],
+    }),
+    foreignKey({
+      name: 'calls_company_text_back_message_fk',
+      columns: [t.companyId, t.textBackMessageId],
+      foreignColumns: [messages.companyId, messages.id],
+    }),
+    index('calls_company_started_idx').on(t.companyId, t.startedAt),
+    enumCheck('calls', 'status', t.status, CALL_STATUSES),
+    enumCheck('calls', 'recording_status', t.recordingStatus, RECORDING_STATUSES),
+    enumCheck('calls', 'consent_regime', t.consentRegime, CONSENT_REGIMES),
+    enumCheck('calls', 'transfer_result', t.transferResult, TRANSFER_RESULTS),
+  ],
+);
+
+export const conversationTurns = pgTable(
+  'conversation_turns',
+  {
+    id: pk(),
+    companyId: companyId(),
+    conversationId: uuid('conversation_id').notNull(),
+    callId: uuid('call_id'),
+    position: integer('position').notNull(),
+    speaker: text('speaker', { enum: TURN_SPEAKERS }).notNull(),
+    text: text('text').notNull(),
+    truncated: boolean('truncated').notNull().default(false),
+    at: tstz('at').notNull().defaultNow(),
+    model: text('model'),
+    route: text('route', { enum: TURN_ROUTES }),
+    routerMs: integer('router_ms'),
+    firstTokenMs: integer('first_token_ms'),
+    totalMs: integer('total_ms'),
+    inputTokens: integer('input_tokens'),
+    cachedTokens: integer('cached_tokens'),
+    outputTokens: integer('output_tokens'),
+    toolCalls: jsonb('tool_calls').$type<ToolCallRecord[]>(),
+    guardHits: text('guard_hits').array().notNull().default([]),
+  },
+  (t) => [
+    unique('conversation_turns_company_id_id_uniq').on(t.companyId, t.id),
+    uniqueIndex('conversation_turns_conversation_position_uniq').on(t.conversationId, t.position),
+    foreignKey({
+      name: 'conversation_turns_company_conversation_fk',
+      columns: [t.companyId, t.conversationId],
+      foreignColumns: [conversations.companyId, conversations.id],
+    }),
+    foreignKey({
+      name: 'conversation_turns_company_call_fk',
+      columns: [t.companyId, t.callId],
+      foreignColumns: [calls.companyId, calls.id],
+    }),
+    enumCheck('conversation_turns', 'speaker', t.speaker, TURN_SPEAKERS),
+    enumCheck('conversation_turns', 'route', t.route, TURN_ROUTES),
+  ],
+);
+
+/** A claim the assistant or a person took down for a customer (insurer, claim number, loss details). */
+export const claimIntakes = pgTable(
+  'claim_intakes',
+  {
+    id: pk(),
+    companyId: companyId(),
+    jobId: uuid('job_id'),
+    conversationId: uuid('conversation_id'),
+    insurer: text('insurer').notNull(),
+    claimNumber: text('claim_number'),
+    dateOfLoss: date('date_of_loss', { mode: 'string' }),
+    description: text('description').notNull(),
+    adjusterVisitAt: tstz('adjuster_visit_at'),
+    takenBy: text('taken_by', { enum: CLAIM_TAKEN_BY }).notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'claim_intakes_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'claim_intakes_company_conversation_fk',
+      columns: [t.companyId, t.conversationId],
+      foreignColumns: [conversations.companyId, conversations.id],
+    }),
+    enumCheck('claim_intakes', 'taken_by', t.takenBy, CLAIM_TAKEN_BY),
+  ],
+);
+
+/** Numbers the company refuses to take calls or texts from. */
+export const blockedNumbers = pgTable(
+  'blocked_numbers',
+  {
+    id: pk(),
+    companyId: companyId(),
+    e164: text('e164').notNull(),
+    reason: text('reason'),
+    blockedBy: userRef('blocked_by'),
+    createdAt: tstz('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('blocked_numbers_company_e164_uniq').on(t.companyId, t.e164)],
+);
+
+/**
+ * Minutes a unit of work is worth, per baseline key. A missing row means the default in code, so
+ * the table only holds what a company has changed. The key is plain text: the list of keys lives
+ * with the step definitions, and a new key needs no migration.
+ */
+export const timeBaselines = pgTable(
+  'time_baselines',
+  {
+    id: pk(),
+    companyId: companyId(),
+    key: text('key').notNull(),
+    minutesPerUnit: numeric('minutes_per_unit', { precision: 6, scale: 2, mode: 'number' }).notNull(),
+    ...timestamps(),
+  },
+  (t) => [unique('time_baselines_company_key_uniq').on(t.companyId, t.key)],
+);
+
+/**
+ * The feed: one row per thing that happened to a task. Written only by the task service and never
+ * updated or deleted (the grants in the next migration allow INSERT and SELECT only).
+ */
+export const agentTaskEvents = pgTable(
+  'agent_task_events',
+  {
+    id: pk(),
+    companyId: companyId(),
+    taskId: uuid('task_id').notNull(),
+    stepId: uuid('step_id'),
+    kind: text('kind', { enum: AGENT_EVENT_KINDS }).notNull(),
+    actorType: text('actor_type', { enum: ACTOR_TYPES }).notNull(),
+    actorUserId: userRef('actor_user_id'),
+    /** Counts and ids only, never message text or customer names. */
+    data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
+    at: tstz('at').notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'agent_task_events_company_task_fk',
+      columns: [t.companyId, t.taskId],
+      foreignColumns: [agentTasks.companyId, agentTasks.id],
+    }),
+    foreignKey({
+      name: 'agent_task_events_company_step_fk',
+      columns: [t.companyId, t.stepId],
+      foreignColumns: [agentTaskSteps.companyId, agentTaskSteps.id],
+    }),
+    index('agent_task_events_company_at_idx').on(t.companyId, t.at.desc()),
+    index('agent_task_events_task_idx').on(t.companyId, t.taskId, t.at),
+    enumCheck('agent_task_events', 'kind', t.kind, AGENT_EVENT_KINDS),
+    enumCheck('agent_task_events', 'actor_type', t.actorType, ACTOR_TYPES),
+  ],
+);
+
+/** Per-company switches for each agent. A missing row means the agent is on. */
+export const agentSettings = pgTable(
+  'agent_settings',
+  {
+    id: pk(),
+    companyId: companyId(),
+    agent: text('agent', { enum: AGENTS }).notNull(),
+    pausedAt: tstz('paused_at'),
+    pausedBy: userRef('paused_by'),
+    lastRunNowAt: tstz('last_run_now_at'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('agent_settings_company_agent_uniq').on(t.companyId, t.agent),
+    enumCheck('agent_settings', 'agent', t.agent, AGENTS),
+  ],
+);
+
+/** An audited owner recount of the minutes saved in a date range: the before and after totals. */
+export const timeRecounts = pgTable(
+  'time_recounts',
+  {
+    id: pk(),
+    companyId: companyId(),
+    byUserId: userRef('by_user_id').notNull(),
+    fromAt: tstz('from').notNull(),
+    toAt: tstz('to').notNull(),
+    beforeMinutes: numeric('before_minutes', { precision: 12, scale: 2, mode: 'number' }).notNull(),
+    afterMinutes: numeric('after_minutes', { precision: 12, scale: 2, mode: 'number' }).notNull(),
+    at: tstz('at').notNull().defaultNow(),
+  },
+  (t) => [index('time_recounts_company_at_idx').on(t.companyId, t.at)],
+);
+
+/** The insurance claim for a job (spec 6): one per job. */
+export const claims = pgTable(
+  'claims',
+  {
+    id: pk(),
+    companyId: companyId(),
+    jobId: uuid('job_id').notNull(),
+    insurer: text('insurer'),
+    claimNumber: text('claim_number'),
+    dateOfLoss: date('date_of_loss', { mode: 'string' }),
+    status: text('status', { enum: CLAIM_STATUSES }).notNull().default('not_filed'),
+    adjusterName: text('adjuster_name'),
+    adjusterPhone: text('adjuster_phone'),
+    adjusterEmail: text('adjuster_email'),
+    adjusterAppointmentId: uuid('adjuster_appointment_id'),
+    deductibleCents: integer('deductible_cents'),
+    notes: text('notes'),
+    statusChangedAt: tstz('status_changed_at').notNull().defaultNow(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('claims_company_id_id_uniq').on(t.companyId, t.id),
+    /** One claim per job. */
+    unique('claims_company_job_uniq').on(t.companyId, t.jobId),
+    foreignKey({
+      name: 'claims_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'claims_company_adjuster_appointment_fk',
+      columns: [t.companyId, t.adjusterAppointmentId],
+      foreignColumns: [appointments.companyId, appointments.id],
+    }),
+    index('claims_company_status_idx').on(t.companyId, t.status),
+    check('claims_deductible_cents_check', sql`${t.deductibleCents} >= 0`),
+    enumCheck('claims', 'status', t.status, CLAIM_STATUSES),
+  ],
+);
+
+/** Status history of a claim. `from_status` is null for the first event. */
+export const claimEvents = pgTable(
+  'claim_events',
+  {
+    id: pk(),
+    companyId: companyId(),
+    claimId: uuid('claim_id').notNull(),
+    fromStatus: text('from_status', { enum: CLAIM_STATUSES }),
+    toStatus: text('to_status', { enum: CLAIM_STATUSES }).notNull(),
+    by: text('by_actor', { enum: CLAIM_EVENT_ACTORS }).notNull(),
+    byUserId: userRef('by_user_id'),
+    at: tstz('at').notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'claim_events_company_claim_fk',
+      columns: [t.companyId, t.claimId],
+      foreignColumns: [claims.companyId, claims.id],
+    }),
+    index('claim_events_claim_at_idx').on(t.companyId, t.claimId, t.at),
+    enumCheck('claim_events', 'from_status', t.fromStatus, CLAIM_STATUSES),
+    enumCheck('claim_events', 'to_status', t.toStatus, CLAIM_STATUSES),
+    enumCheck('claim_events', 'by_actor', t.by, CLAIM_EVENT_ACTORS),
+  ],
+);
+
+/** Every follow-up the Follow-up agent sent, so it never nags twice. */
+export const followUpLog = pgTable(
+  'follow_up_log',
+  {
+    id: pk(),
+    companyId: companyId(),
+    customerId: uuid('customer_id').notNull(),
+    jobId: uuid('job_id'),
+    kind: text('kind', { enum: FOLLOW_UP_KINDS }).notNull(),
+    n: integer('n').notNull().default(1),
+    messageId: uuid('message_id'),
+    at: tstz('at').notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'follow_up_log_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'follow_up_log_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'follow_up_log_company_message_fk',
+      columns: [t.companyId, t.messageId],
+      foreignColumns: [messages.companyId, messages.id],
+    }),
+    index('follow_up_log_customer_at_idx').on(t.companyId, t.customerId, t.at),
+    index('follow_up_log_job_kind_idx').on(t.companyId, t.jobId, t.kind),
+    check('follow_up_log_n_check', sql`${t.n} >= 1`),
+    enumCheck('follow_up_log', 'kind', t.kind, FOLLOW_UP_KINDS),
   ],
 );
 

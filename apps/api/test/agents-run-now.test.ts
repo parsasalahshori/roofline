@@ -8,6 +8,8 @@ import { makeTestApp, type TestApp } from './helpers.ts';
 const NOT_ALLOWED = "Your role can't do that. Ask the owner.";
 const MINUTE = 60_000;
 
+const original = RUN_NOW.storm_scout;
+
 let t: TestApp;
 let actors: Actors;
 let handler: ReturnType<typeof vi.fn>;
@@ -20,7 +22,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  delete RUN_NOW.storm_scout;
+  RUN_NOW.storm_scout = original;
 });
 
 const run = async (agent: string, who: 'owner' | 'office' | 'rep' = 'owner', company: 'a' | 'b' = 'a') =>
@@ -164,5 +166,62 @@ describe('POST /api/agents/:agent/run', () => {
     expect((await run('storm_scout', 'owner', 'a')).status).toBe(409);
     expect((await run('storm_scout', 'owner', 'b')).status).toBe(202);
     expect(await claimed('b')).toHaveLength(1);
+  });
+});
+
+describe('Storm Scout run now (real handler)', () => {
+  beforeEach(() => {
+    RUN_NOW.storm_scout = original;
+  });
+
+  const matchSends = () => t.jobs.sent.filter((j) => j.name === 'storm-match-company');
+
+  test('run now queues one storm-match-company job for the company', async () => {
+    const res = await run('storm_scout');
+    expect(res.status).toBe(202);
+    const sends = matchSends();
+    expect(sends).toHaveLength(1);
+    expect(sends[0]?.data).toEqual({ companyId: t.seed.a.companyId });
+    expect(sends[0]?.singletonKey).toBe(t.seed.a.companyId);
+  });
+
+  test('a second run within five minutes is 409 and queues nothing more', async () => {
+    expect((await run('storm_scout')).status).toBe(202);
+    t.clock.advance(MINUTE);
+    const res = await run('storm_scout');
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('You just ran this. You can run it again in 4 minutes.');
+    expect(matchSends()).toHaveLength(1);
+  });
+
+  test('two concurrent run now calls queue exactly one job', async () => {
+    const [x, y] = await Promise.all([run('storm_scout'), run('storm_scout')]);
+    expect([x.status, y.status].sort()).toEqual([202, 409]);
+    expect(matchSends()).toHaveLength(1);
+  });
+});
+
+describe('run now: pause and commit order', () => {
+  beforeEach(() => {
+    RUN_NOW.storm_scout = original;
+  });
+
+  const matchSends = () => t.jobs.sent.filter((j) => j.name === 'storm-match-company');
+
+  test('a paused Storm Scout is 409 Storm Scout is paused., sends no job and does not claim the slot', async () => {
+    const owner = await actors.as('owner');
+    expect((await owner.put('/api/agents/storm_scout/paused').send({ paused: true })).status).toBe(200);
+    const res = await run('storm_scout');
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('Storm Scout is paused.');
+    expect(matchSends()).toHaveLength(0);
+    expect(await claimed()).toHaveLength(0);
+  });
+
+  test('a successful run sends exactly one job, after the claim has committed', async () => {
+    const res = await run('storm_scout');
+    expect(res.status).toBe(202);
+    expect(matchSends()).toHaveLength(1);
+    expect(await claimed()).toHaveLength(1);
   });
 });

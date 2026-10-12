@@ -15,6 +15,7 @@ import {
   withTenant,
 } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
+import { recordCallTask } from '../agents/front-desk-tasks.ts';
 import { buildCompanyBlock } from './prompt.ts';
 import { maybeTextBack } from './text-back.ts';
 
@@ -65,6 +66,15 @@ function firstSentence(text: string): string {
   const m = /^[^.!?]*[.!?]?/.exec(text.trim());
   const s = (m?.[0] ?? text).trim();
   return (s === '' ? text.trim() : s).slice(0, 200);
+}
+
+/** One live Front Desk task per call. A failure here never breaks the rest of the after-call work. */
+async function recordLiveTask(deps: AppDeps, ctx: TenantContext, input: Parameters<typeof recordCallTask>[2], now: Date): Promise<void> {
+  try {
+    await withTenant(deps.pools, ctx, (tx) => recordCallTask(tx, ctx, input, now));
+  } catch {
+    console.error(`fd live task failed call=${input.callId}`);
+  }
 }
 
 export async function runAfterCall(deps: AppDeps, data: { companyId: string; callSid?: string; conversationId?: string }): Promise<void> {
@@ -128,10 +138,20 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
   });
   if (!prep) return;
   const { call } = prep;
-  if (prep.spam) return;
+  const secondsInCall =
+    call.aiSeconds > 0
+      ? call.aiSeconds
+      : Math.max(0, Math.round(((call.endedAt ?? now).getTime() - call.startedAt.getTime()) / 1000));
+  if (prep.spam) {
+    // Screening rejected the call before Front Desk ran: no task. A spam call the AI had started still gets one.
+    if (call.status === 'rejected' && call.aiStartedAt === null) return;
+    await recordLiveTask(deps, ctx, { callId: call.id, conversationId: call.conversationId, customerId: null, seconds: secondsInCall, bookings: 0, spam: true, outcome: null }, now);
+    return;
+  }
 
   const transferred = call.status === 'transferred' || call.transferResult === 'answered';
   const { conversation, actions } = prep;
+  let pickedOutcome: ConversationOutcome | null = conversation?.outcome ?? null;
 
   if (conversation && conversation.summary === null && call.conversationId !== null) {
     const conversationId = call.conversationId;
@@ -149,6 +169,7 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
       summary = '';
     }
     const outcome = pickOutcome(actions, transferred, modelOutcome);
+    pickedOutcome = outcome;
     if (summary === '') summary = plainSummary(outcome);
 
     await withTenant(deps.pools, ctx, async (tx) => {
@@ -176,11 +197,25 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
     );
   }
 
+  // A paused or voicemail call the AI never answered makes no task; a call screening rejected as spam before Front Desk ran makes none either.
+  if (call.conversationId !== null || call.aiStartedAt !== null || call.aiSeconds > 0) {
+    await recordLiveTask(
+      deps,
+      ctx,
+      {
+        callId: call.id,
+        conversationId: call.conversationId,
+        customerId: conversation?.customerId ?? null,
+        seconds: secondsInCall,
+        bookings: actions.filter((a) => a === 'book_inspection' || a === 'move_inspection').length,
+        spam: false,
+        outcome: pickedOutcome,
+      },
+      now,
+    );
+  }
+
   if (transferred || call.status === 'rejected') return;
-  const secondsInCall =
-    call.aiSeconds > 0
-      ? call.aiSeconds
-      : Math.max(0, Math.round(((call.endedAt ?? now).getTime() - call.startedAt.getTime()) / 1000));
   await maybeTextBack(deps, ctx, {
     callId: call.id,
     callSid,

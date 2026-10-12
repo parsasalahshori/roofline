@@ -71,7 +71,6 @@ import { teamRoutes } from './routes/team.ts';
 import { timelineRoutes } from './routes/timeline.ts';
 import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
-import { agentSettingsRoutes } from './routes/agents-settings.ts';
 import { measurementRoutes } from './routes/measurements.ts';
 import { tierTemplateRoutes } from './routes/tier-templates.ts';
 import { estimatorSettingsRoutes } from './routes/estimator-settings.ts';
@@ -85,6 +84,7 @@ import { unsubscribeRoutes } from './public/unsubscribe.ts';
 import { proposalRoutes } from './routes/proposals.ts';
 import { publicProposalRoutes } from './public/proposals.ts';
 import { proposalSignRoutes } from './public/proposal-sign.ts';
+import { agentSettingsRoutes } from './routes/agents-settings.ts';
 import type { StepQueue } from './tasks/queue.ts';
 import { policyPages } from './public/policies.ts';
 import { serveWeb } from './web.ts';
@@ -352,11 +352,6 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/imports', importRoutes(deps));
   app.use('/api/texting', textingRoutes(deps));
   app.use('/api/agents', agentSettingsRoutes(deps));
-  // D1 Front Desk
-  app.use('/api/conversations', conversationRoutes(deps));
-  app.use('/api/front-desk', frontDeskRoutes(deps));
-  app.use('/api/calls', callRoutes(deps));
-  app.use('/api/blocked-numbers', blockedNumberRoutes(deps));
   // G1 Agents
   app.use('/api/claims', claimBoardRoutes(deps));
   app.use('/api/agent-values', agentValueRoutes(deps));
@@ -375,6 +370,11 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   publicRouter.use('/proposals', publicProposalRoutes(deps));
   publicRouter.use('/proposals', proposalSignRoutes(deps));
   app.use('/api/public', publicRateLimit(), publicRouter);
+  // D1 Front Desk
+  app.use('/api/conversations', conversationRoutes(deps));
+  app.use('/api/front-desk', frontDeskRoutes(deps));
+  app.use('/api/calls', callRoutes(deps));
+  app.use('/api/blocked-numbers', blockedNumberRoutes(deps));
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.

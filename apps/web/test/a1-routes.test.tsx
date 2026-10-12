@@ -1,10 +1,11 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AgentDetail, ScreenAgent } from '@roofline/shared';
+import { G1_AGENTS_SHIPPED, LAUNCH_AGENTS, type AgentDetail, type ScreenAgent } from '@roofline/shared';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
+import type { CompanyBody } from '../src/api/types.ts';
 import { createAppRouter } from '../src/app/router.tsx';
 import { agents, agentsWindow } from '../src/copy/agents.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
@@ -40,7 +41,14 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
   return api;
 }
 
+const COMPANY: CompanyBody = {
+  id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null,
+  website: null, addressStreet: null, addressCity: null, addressState: null, addressZip: null, timezone: 'America/Chicago',
+  logoUrl: null, located: false, serviceAreaMiles: null,
+};
+
 const AGENTS_EMPTY: Routes = {
+  'GET /api/company': () => ({ body: COMPANY }),
   'GET /api/agents/feed': () => ({ body: { items: [], nextCursor: null } }),
   'GET /api/agents/waiting': () => ({ body: { items: [] } }),
 };
@@ -94,17 +102,23 @@ describe('A1 windows', () => {
     expect(await within(dialog).findByText(line)).toBeInTheDocument();
   });
 
+  const isLaunched = (agent: string) => G1_AGENTS_SHIPPED || (LAUNCH_AGENTS as readonly string[]).includes(agent);
+
   it.each(PAGE_AGENTS)('shows the %s page with its name', async (agent) => {
     signedInApi(ACCOUNT, {
+      'GET /api/company': () => ({ body: COMPANY }),
       ['GET /api/agents/' + agent + '?period=month']: () => ({ body: detailFor(agent as ScreenAgent) }),
       // The claims page also shows the claims board, which reads the claims and the company time zone
       'GET /api/claims': () => ({ body: { claims: [] } }),
-      'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', timezone: 'America/Chicago' } }),
     });
     renderApp('/agents/' + agentSlug(agent));
 
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByRole('heading', { name: AGENT_LABEL[agent] })).toBeInTheDocument();
+    if (!isLaunched(agent)) {
+      expect(await within(dialog).findByText(agents.agentComingSoon)).toBeInTheDocument();
+      expect(api.count('GET /api/agents/' + agent + '?period=month')).toBe(0);
+    }
   });
 
   it('lets feed win over :agent', async () => {
