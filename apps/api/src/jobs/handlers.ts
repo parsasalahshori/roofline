@@ -2,7 +2,7 @@ import type { AppDeps } from '../app.ts';
 import { advanceRegistration } from '../account/texting/advance.ts';
 import { pushAppointment } from '../calendar/push.ts';
 import { loadFootprintState } from '../estimator/footprints-load.ts';
-import { signedPdf } from '../estimator/signed-pdf.ts';
+import { makeSignedPdf } from '../estimator/signed-pdf.ts';
 import { runImport } from '../imports/run.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
 
@@ -15,5 +15,5 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'texting-registration': (deps, data) => advanceRegistration(deps, data.companyId),
   'calendar-push': (deps, data, meta) => pushAppointment(deps, data.companyId, data.appointmentId!, meta),
   'footprints-load': (deps, data, meta) => loadFootprintState(deps, data.state!, meta),
-  'signed-pdf': (deps, data) => signedPdf(deps, data.companyId, data.proposalId!),
+  'signed-pdf': (deps, data, meta) => makeSignedPdf(deps, data.companyId, data.proposalId!, meta),
 };
