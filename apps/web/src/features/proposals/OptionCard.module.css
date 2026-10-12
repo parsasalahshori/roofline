@@ -87,6 +87,20 @@
   font-size: var(--font-size-body);
 }
 
+.readItem {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.readItem dt {
+  color: var(--text-muted);
+}
+
+.readItem dd {
+  margin: 0;
+}
+
 .lines {
   list-style: none;
   margin: 0;
