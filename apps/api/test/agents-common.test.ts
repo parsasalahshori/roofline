@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { draftBodyOk, FROM_TEMPLATE, localTimeToday, systemCtx } from '../src/agents/common.ts';
+import { draftBodyOk, FROM_TEMPLATE, localTimeToday, planExpiresAt, systemCtx } from '../src/agents/common.ts';
 
 const CT = 'America/Chicago';
 
@@ -40,6 +40,19 @@ describe('localTimeToday', () => {
       expect(localTimeToday(day, hour, CT).toISOString()).toBe(iso);
     });
   }
+});
+
+describe('planExpiresAt', () => {
+  test('before the hour: that hour today', () => {
+    expect(planExpiresAt('2026-10-13', 18, CT, new Date('2026-10-13T14:00:00.000Z')).toISOString()).toBe('2026-10-13T23:00:00.000Z');
+  });
+  test('at or after the hour (a Run now in the evening): the end of the local day, never already expired', () => {
+    expect(planExpiresAt('2026-10-13', 18, CT, new Date('2026-10-13T23:00:00.000Z')).toISOString()).toBe('2026-10-14T05:00:00.000Z');
+    expect(planExpiresAt('2026-10-13', 18, CT, new Date('2026-10-14T01:30:00.000Z')).toISOString()).toBe('2026-10-14T05:00:00.000Z');
+  });
+  test('fall back day: the end of the 25-hour local day', () => {
+    expect(planExpiresAt('2026-11-01', 18, CT, new Date('2026-11-02T01:00:00.000Z')).toISOString()).toBe('2026-11-02T06:00:00.000Z');
+  });
 });
 
 describe('shared constants', () => {
