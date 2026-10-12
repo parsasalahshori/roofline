@@ -34,10 +34,3 @@ export function useExactReport(id: string): UseMutationResult<{ taskId: string }
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.approvals }),
   });
 }
-
-/** POST /api/proposals { measurementId } -> { id } (the proposal; T8 shape assumed). The window then opens /estimator/proposals/<id>. */
-export function useMakeProposal(measurementId: string): UseMutationResult<{ id: string }, Error, void> {
-  return useMutation({
-    mutationFn: () => apiFetch<{ id: string }>('/api/proposals', { method: 'POST', body: { measurementId } }),
-  });
-}

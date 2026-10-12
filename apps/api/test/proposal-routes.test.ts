@@ -96,6 +96,22 @@ describe('reading proposals', () => {
     expect((await owner.get('/api/proposals?signedOn=yesterday')).body.field).toBe('signedOn');
   });
 
+  test('filters by jobId: that job only, never another job', async () => {
+    const { owner, customer, property, job, proposal } = await build();
+    const other = await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: property.id });
+    const otherMeasurement = await measurement(t.seed.a.companyId, property.id, other.id);
+    const made = await owner.post('/api/proposals').send({ measurementId: otherMeasurement });
+    expect(made.status).toBe(201);
+    expect((await owner.get('/api/proposals')).body.total).toBe(2);
+    const mine = await owner.get(`/api/proposals?jobId=${job.id}`);
+    expect(mine.body.total).toBe(1);
+    expect(mine.body.proposals.map((p: ProposalView) => p.id)).toEqual([proposal.id]);
+    const theirs = await owner.get(`/api/proposals?jobId=${other.id}`);
+    expect(theirs.body.proposals.map((p: ProposalView) => p.id)).toEqual([made.body.id]);
+    expect((await owner.get(`/api/proposals?jobId=${NO_UUID}`)).body.total).toBe(0);
+    expect((await owner.get('/api/proposals?jobId=nope')).body.field).toBe('jobId');
+  });
+
   test('gets one; unknown, malformed and other-company ids are 404', async () => {
     const { owner, proposal } = await build();
     expect((await owner.get(`/api/proposals/${proposal.id}`)).status).toBe(200);

@@ -236,9 +236,10 @@ export async function getProposal(tx: Tx, ctx: TenantContext, id: string): Promi
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-export async function listProposals(tx: Tx, ctx: TenantContext, q: { status?: ProposalStatus; q?: string; offset?: number; signedOn?: string }): Promise<{ proposals: ProposalView[]; total: number }> {
+export async function listProposals(tx: Tx, ctx: TenantContext, q: { status?: ProposalStatus; q?: string; offset?: number; signedOn?: string; jobId?: string }): Promise<{ proposals: ProposalView[]; total: number }> {
   const conds: (SQL | undefined)[] = [eq(proposals.companyId, ctx.companyId), visibleJob(ctx)];
   if (q.status) conds.push(eq(proposals.status, q.status));
+  if (q.jobId) conds.push(eq(proposals.jobId, q.jobId));
   const text = q.q?.trim();
   if (text) {
     const like = `%${escapeLike(text)}%`;
