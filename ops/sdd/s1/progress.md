@@ -164,3 +164,12 @@ I5 (to the C1 lead), from T19's carries:
 (b) When POLICY_PAGES_DOMAIN is unset, the PUBLIC_BASE_URL/storm/<code> fallback hits the web SPA's /storm/:id route, not the landing page. The step fails before any spend instead (needs attention, plain reason 'Storm landing pages are not set up yet.').
 (c) The smoke renders the real card via resvgCardFor (T29 carry).
 (d) Remove the duplicate AD_ERROR_COPY in the API, or document why it is kept.
+Merged origin/c1-crm 5d2e3bd (C1 complete: T28 e2e, whole-branch review fixes) and origin/e1-estimator 3dc8fee (E1 T10-T13, T20; Rulings EM-EO; completeParkedStep seam) into s1-storm.
+Conflicts:
+- jobs/handlers.ts: E1's makeSignedPdf with meta, plus S1's storm jobs.
+- tasks/handlers.ts: E1's real sendProposalStep/orderExactReport plus S1's three handlers; doc comment updated.
+- shared steps.ts: imports union, with TIERS/Tier.
+- messaging/dispatcher.ts: S1's scheduled-email dispatch kept; PARKED_TEXT_STEP_TYPES = send_sms_batch, send_proposal, send_email_batch with E1's typed settleParkedStep.
+- web job/api.ts: imports union.
+Then 33cbb86 drops a duplicate StepRow import in send-batch.ts. Local: typecheck/lint/lint:css clean, shared/send-gate 1193, web 915, drizzle-kit no changes, playwright --list 43 tests, playwright-core only 1.56.1.
+T28 launched from 33cbb86 (wf_6a01c1f2, contact 235, sonnet).
