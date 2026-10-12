@@ -2,6 +2,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import type { StepRow } from '@roofline/db';
 import { insertOmahaStorm, type Query } from '@roofline/db/testing';
+import { companyOriginFor } from '../src/public/storm-requests.ts';
 import { createAdCampaignHandler, NOT_APPROVED } from '../src/storm/ad-campaign.ts';
 import { Actors } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
@@ -76,6 +77,15 @@ async function makeStep(
   return (await dbSteps(t, 'a', taskId))[0]!;
 }
 
+/** The landing URL is the company origin plus the code ensureStormPage stored. */
+async function expectLandingUrl(row: CampaignRow) {
+  const pages = await q(`select code from storm_pages where company_id = $1 and company_storm_id = $2`, [companyA(), companyStormId]);
+  expect(pages).toHaveLength(1);
+  const [co] = await q(`select slug from companies where id = $1`, [companyA()]);
+  const origin = companyOriginFor(t.deps.config, String(co!.slug)) ?? t.deps.config.PUBLIC_BASE_URL;
+  expect(row.creative.landingUrl).toBe(`${origin}/storm/${String(pages[0]!.code)}`);
+}
+
 const run = (step: StepRow) => createAdCampaignHandler(t.deps, agentCtx(companyA()), step);
 type CampaignRow = {
   status: string;
@@ -115,7 +125,7 @@ describe('create_ad_campaign', () => {
     expect(row.external_campaign_id).toBe(id);
     expect(row.daily_budget_cents * row.days).toBeLessThanOrEqual(row.max_spend_cents);
     expect(row.creative).toMatchObject({ startDate: '2026-10-12', endDate: '2026-10-18', headline: 'Hail damage?' });
-    expect(String(row.creative.landingUrl)).toContain('/storm/');
+    await expectLandingUrl(row);
   });
 
   test.each([
@@ -248,7 +258,7 @@ describe('create_ad_campaign', () => {
     const row = await campaignRow(step.id);
     expect(row.status).toBe('active');
     expect(row.creative).toMatchObject({ startDate: '2026-10-12', endDate: '2026-10-18' });
-    expect(String(row.creative.landingUrl)).toContain('/storm/');
+    await expectLandingUrl(row);
     expect(t.adsGoogle.campaigns.size).toBe(1);
   });
 

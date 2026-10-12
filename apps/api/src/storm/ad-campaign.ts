@@ -1,8 +1,8 @@
-import { randomInt } from 'node:crypto';
 import {
   agentTaskSteps,
   claimAdCampaign,
   coverCircles,
+  ensureStormPage,
   getAdAccountByPlatform,
   getAdCampaignByStep,
   getCompanyName,
@@ -21,6 +21,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import type { AppDeps } from '../app.ts';
 import { can } from '../permissions.ts';
+import { companyOriginFor } from '../public/storm-requests.ts';
 import { type AdErrorKind, AdPlatformError } from '../providers/ads-google.ts';
 import type { StepHandler, StepOutcome } from '../tasks/runner.ts';
 import { resolveAdImage } from './creative.ts';
@@ -51,7 +52,6 @@ export const AD_ERROR_COPY: Record<AdErrorKind, string> = {
 const MAX_CIRCLES = 50;
 /** Meta's Housing category needs a wide, plain area: one 15 mile circle on the middle of the hail. */
 const HOUSING_RADIUS_M = 24140;
-const CODE_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
 
 const attention = (errorPlain: string): StepOutcome => ({ status: 'needs_attention', result: {}, errorPlain });
 
@@ -59,34 +59,6 @@ const attention = (errorPlain: string): StepOutcome => ({ status: 'needs_attenti
 function addDays(date: string, days: number): string {
   const [y, m, d] = date.split('-').map(Number) as [number, number, number];
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
-/*
- * The storm landing page row: looked up (or made) here with private SQL because the page and its repo are
- * Task 20's. Task 20 may move this into repos/storm-pages.ts.
- */
-async function landingCode(
-  deps: AppDeps,
-  ctx: TenantContext,
-  companyStormId: string,
-  activeUntil: Date,
-): Promise<string> {
-  return withTenant(deps.pools, ctx, async (tx) => {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const found = await tx.execute(
-        sql`select code from storm_pages where company_id = ${ctx.companyId} and company_storm_id = ${companyStormId} order by created_at, id limit 1`,
-      );
-      if (found.rows[0]) return String(found.rows[0].code);
-      let code = '';
-      for (let i = 0; i < 8; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
-      await tx.execute(
-        sql`insert into storm_pages (company_id, company_storm_id, code, active_until)
-            values (${ctx.companyId}, ${companyStormId}, ${code}, ${activeUntil.toISOString()}::timestamptz)
-            on conflict (code) do nothing`,
-      );
-    }
-    throw new Error('storm page code not made');
-  });
 }
 
 export const createAdCampaignHandler: StepHandler = async (deps: AppDeps, ctx: TenantContext, step) => {
@@ -180,10 +152,9 @@ export const createAdCampaignHandler: StepHandler = async (deps: AppDeps, ctx: T
 
   const startDate = localDate(now, timezone);
   const endDate = addDays(startDate, p.days - 1);
-  const code = await landingCode(deps, ctx, companyStormId, new Date(`${addDays(endDate, 30)}T23:59:59Z`));
-  const landingUrl = deps.config.POLICY_PAGES_DOMAIN
-    ? `https://${slug}.${deps.config.POLICY_PAGES_DOMAIN}/storm/${code}`
-    : `${deps.config.PUBLIC_BASE_URL}/storm/${code}`;
+  // The landing page is Task 20's: ensureStormPage owns the code and the active-until rule.
+  const page = await withTenant(deps.pools, ctx, (tx) => ensureStormPage(tx, ctx, { companyStormId, now }));
+  const landingUrl = `${companyOriginFor(deps.config, slug) ?? deps.config.PUBLIC_BASE_URL}/storm/${page.code}`;
 
   const creative: Record<string, unknown> = {
     headline: p.headline,
