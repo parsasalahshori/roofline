@@ -162,6 +162,11 @@ GRANT SELECT (id, company_id, storm_id, status, plan_task_id, last_matched_at) O
 --> statement-breakpoint
 CREATE POLICY app_system_all ON company_storms FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint
+-- ad_accounts: the hourly pending-account recheck lists which companies have a pending account (company_id, status only).
+GRANT SELECT (company_id, status) ON ad_accounts TO app_system;
+--> statement-breakpoint
+CREATE POLICY app_system_all ON ad_accounts FOR ALL TO app_system USING (true) WITH CHECK (true);
+--> statement-breakpoint
 GRANT SELECT (id, company_id, status, external_campaign_id, platform) ON ad_campaigns TO app_system;
 --> statement-breakpoint
 CREATE POLICY app_system_all ON ad_campaigns FOR ALL TO app_system USING (true) WITH CHECK (true);

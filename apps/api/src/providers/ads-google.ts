@@ -10,7 +10,9 @@ export class AdPlatformError extends Error {
   }
 }
 export interface AdsGoogle { readonly configured: boolean; managerId: string;
-  invite(customerId: string): Promise<void>; linkStatus(customerId: string): Promise<'pending' | 'active' | 'refused' | 'none'>;
+  invite(customerId: string): Promise<void>;
+  unlink?(customerId: string): Promise<void>; // REQUIRED in the real adapter (Task 17): ends the manager link (CustomerClientLink). Optional only so the parallel branches compile; revokeAdAccount calls it.
+  linkStatus(customerId: string): Promise<'pending' | 'active' | 'refused' | 'none'>;
   accountInfo(customerId: string): Promise<{ name: string; currency: string }>;
   findCampaign(customerId: string, nameTag: string): Promise<string | null>;
   createCampaign(c: AdCreate): Promise<{ campaignId: string }>;        // created PAUSED

@@ -50,6 +50,7 @@ export type SetupFacts = {
   activeMembers: number;
   pendingInvites: number;
   paymentMethod: boolean;
+  ads: { active: number; pending: number };
   skipped: ReadonlySet<SetupItemKey>;
 };
 
@@ -111,6 +112,10 @@ function resolveItem(key: SetupItemKey, facts: SetupFacts): Resolved {
     case 'payment_method':
       // Not skippable, so a stored skip for this key is deliberately ignored.
       return facts.paymentMethod ? { status: 'done', data: {} } : { status: 'todo', data: {} };
+    case 'connect_ads':
+      if (facts.ads.active > 0) return { status: 'done', data: {} };
+      if (facts.ads.pending > 0) return { status: 'waiting', data: {} };
+      return { status: 'todo', data: {} };
     default:
       return { status: 'todo', data: {} };
   }

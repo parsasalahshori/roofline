@@ -31,6 +31,7 @@ const APP_SYSTEM_RLS_TABLES = [
   'proposals',
   'exact_report_orders',
   'company_storms',
+  'ad_accounts',
   'ad_campaigns',
   'storm_pages',
   'email_opt_outs',
@@ -680,6 +681,8 @@ describe('grants', () => {
     const sel = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'SELECT' });
     const ins = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'INSERT' });
     expect(rows).toEqual([
+      sel('ad_accounts', 'company_id'),
+      sel('ad_accounts', 'status'),
       sel('ad_campaigns', 'company_id'),
       sel('ad_campaigns', 'external_campaign_id'),
       sel('ad_campaigns', 'id'),
@@ -1143,6 +1146,7 @@ describe('app_system', () => {
         | 'proposals'
         | 'exact_report_orders'
         | 'company_storms'
+        | 'ad_accounts'
         | 'ad_campaigns'
         | 'storm_pages'
         | 'email_opt_outs'
@@ -1499,6 +1503,14 @@ describe('S1 storm tables', () => {
       `select id, company_id, code, active_until, company_storm_id from storm_pages`,
     );
     expect(pageRows.map((r) => r.company_id).sort()).toEqual(both);
+    await ownerQuery(
+      `insert into ad_accounts (company_id, platform, external_account_id, status) values ($1, 'google', '1234567890', 'pending'), ($2, 'meta', 'act_99', 'active')`,
+      [seed.a.companyId, seed.b.companyId],
+    );
+    const adRows = await systemRaw<{ company_id: string; status: string }>(`select company_id, status from ad_accounts`);
+    expect(adRows.map((r) => r.company_id).sort()).toEqual(both);
+    const adErr = await rejectedWith(() => systemRaw(`select external_account_id from ad_accounts`));
+    expect(adErr.code).toBe('42501');
     for (const text of [
       `select max_in from company_storms`,
       `select customers_hit from company_storms`,

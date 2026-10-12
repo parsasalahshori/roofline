@@ -18,6 +18,7 @@ function facts(o: Partial<SetupFacts> = {}): SetupFacts {
     activeMembers: 0,
     pendingInvites: 0,
     paymentMethod: false,
+    ads: { active: 0, pending: 0 },
     skipped: new Set<SetupItemKey>(),
     ...o,
   };
@@ -116,5 +117,16 @@ describe('deriveSetup', () => {
 
     const addressOnly = deriveSetup(facts({ addressSaved: true, located: false }));
     expect(item(addressOnly, 'company_basics').status).toBe('in_progress');
+  });
+
+  it('connect_ads is todo by default, waiting when one is pending, done when one is active', () => {
+    expect(item(deriveSetup(facts()), 'connect_ads').status).toBe('todo');
+    expect(item(deriveSetup(facts({ ads: { active: 0, pending: 1 } })), 'connect_ads').status).toBe('waiting');
+    expect(item(deriveSetup(facts({ ads: { active: 1, pending: 0 } })), 'connect_ads').status).toBe('done');
+    expect(item(deriveSetup(facts({ ads: { active: 1, pending: 1 } })), 'connect_ads').status).toBe('done');
+  });
+
+  it('ad accounts do not change the Foundation progress', () => {
+    expect(deriveSetup(facts({ ads: { active: 2, pending: 1 } })).progress).toEqual({ done: 0, total: 5 });
   });
 });
