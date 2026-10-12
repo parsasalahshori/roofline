@@ -84,6 +84,19 @@ export async function routeVoice(deps: AppDeps, req: Request, res: Response): Pr
   return { ...route, ...settings };
 }
 
+/**
+ * Whether a call may go to the AI at all, before the per-company cap (no database needed): Front Desk on, not
+ * read-only (Ruling BG), under the process-wide relay cap, and the model healthy.
+ */
+export function aiAllowedNow(deps: AppDeps, route: VoiceRoute, now: Date): boolean {
+  return (
+    route.frontDeskEnabled &&
+    !route.readOnly &&
+    deps.relaySessions.size < deps.config.FRONT_DESK_MAX_CALLS &&
+    deps.relaySessions.isLlmHealthy(now)
+  );
+}
+
 /** TwiML out: 200 text/xml with the XML declaration. */
 export function sendVoiceTwiml(res: Response, xml: string): void {
   res.status(200).type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>${xml}`);

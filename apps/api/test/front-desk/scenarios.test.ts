@@ -1,11 +1,14 @@
 import { eq } from 'drizzle-orm';
+import request from 'supertest';
+import twilio from 'twilio';
 import { describe, expect, test } from 'vitest';
 import { appointments, calls, customers, properties } from '@roofline/db';
-import { guardSentence, normalizeAddressKey, type GuardHit } from '@roofline/shared';
+import { guardSentence, normalizeAddressKey, ROUTER_INTENTS, type GuardHit } from '@roofline/shared';
 import { runAfterCall } from '../../src/front-desk/after-call.ts';
 import { inCompany } from '../crm-helpers.ts';
-import { OPUS, rig, SLOT, seedCaller, type Rig } from './call-rig.ts';
+import { OPUS, rig, SLOT, seedCaller, TO, TOKEN, type Rig } from './call-rig.ts';
 import { allGuardHits, deriveOutcome, grade, gradeMust, gradeMustNot, percentile } from './scenarios/grade.ts';
+import { activeLeak } from './scenarios/active-leak.ts';
 import { SCENARIOS } from './scenarios/index.ts';
 import type { Ending, Observed, ObservedTurn, Scenario } from './scenarios/types.ts';
 
@@ -216,6 +219,13 @@ describe('scenario definitions', () => {
     expect(new Set(SCENARIOS.map((s) => s.id)).size).toBe(SCENARIOS.length);
   });
 
+  test('every intent a scenario routes with is one the router may emit (ROUTER_INTENTS)', () => {
+    const used = SCENARIOS.flatMap((s) => s.scripted.flatMap((step) => (step.route.intent === undefined ? [] : [step.route.intent])));
+    expect(used.length).toBeGreaterThan(0);
+    for (const intent of used) expect(ROUTER_INTENTS as readonly string[], intent).toContain(intent);
+    expect(ROUTER_INTENTS as readonly string[]).toContain(OPUS.intent);
+  });
+
   test.each(SCENARIOS.map((s) => [s.id, s] as const))('%s is complete and scriptable', (_id, sc) => {
     expect(sc.persona.length).toBeGreaterThan(20);
     expect(sc.toneRubric.length).toBeGreaterThan(0);
@@ -344,3 +354,39 @@ describe('a careless answer is stopped by the guards', () => {
   });
 });
 
+
+describe('Ruling BK amended: a real after-hours leak rings on-call staff', () => {
+  /** 04:00 on a Wednesday in Chicago: outside the default work hours everywhere in the US. */
+  const AFTER_HOURS = new Date('2026-10-14T09:00:00.000Z');
+
+  test('the active-leak call, routed transfer with intent emergency, rings each on-call member in turn, not message mode', async () => {
+    const routedTransfer: Scenario = {
+      ...activeLeak,
+      scripted: [{ route: { route: 'transfer', intent: 'emergency', urgent: true } }],
+    };
+    const { r, observed } = await play(routedTransfer);
+    expect(grade(routedTransfer, observed).failures).toEqual([]);
+    expect(observed.ending).toMatchObject({ kind: 'transfer' });
+    expect(['leak', 'danger']).toContain((observed.ending as { reason: string }).reason);
+    const handoffData = r.session.endedWith!;
+    expect(JSON.parse(handoffData)).toMatchObject({ kind: 'transfer', urgent: true });
+
+    // A second on-call member, so ring_each (one leg, the rest carried) is told apart from ring_all.
+    await r.t.deps.pools.system.$client.query(
+      'update memberships set transfer_phone_e164 = $1, on_call_order = $2 where company_id = $3 and user_id = $4',
+      ['+14025550151', 1, r.companyId, r.t.seed.a.office.userId],
+    );
+    r.t.clock.set(AFTER_HOURS);
+    const path = '/hooks/twilio/voice-transfer/after-relay';
+    const fields = { CallSid: r.call.callSid, From: r.call.from, To: TO, HandoffData: handoffData };
+    const signature = twilio.getExpectedTwilioSignature(TOKEN, r.t.deps.config.PUBLIC_BASE_URL + path, fields);
+    const res = await request(r.t.app).post(path).type('form').set('X-Twilio-Signature', signature).send(fields);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<Dial');
+    expect(res.text).toContain('+14025550150');
+    expect(res.text).not.toContain('+14025550151');
+    expect(res.text).toContain(`rest=${r.t.seed.a.office.userId}`);
+    expect(res.text).not.toContain('message_only');
+    expect((await r.callRow()).status).toBe('ringing_team');
+  });
+});

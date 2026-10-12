@@ -453,9 +453,7 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     r.session.caller.hangUp();
     await r.loop.settled();
 
-    // Segment 2: a new relay session for the same callId through the real loop and engine. A reused conversation's
-    // call time counts from its createdAt (the database clock), so the test clock moves next to it.
-    r.t.clock.set(new Date((await r.conversation())!.createdAt.getTime() + 2 * 60_000));
+    // Segment 2: a new relay session for the same callId through the real loop and engine.
     const deps = { ...r.t.deps, llm: r.llm };
     const engine = createEngine(deps, FRONT_DESK_HANDLERS);
     const recording = createRecording(deps, { ...r.call, alreadyRecording: true });
