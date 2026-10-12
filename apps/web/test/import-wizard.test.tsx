@@ -33,6 +33,8 @@ const COMPANY: CompanyBody = {
   addressZip: null,
   timezone: 'America/Chicago',
   logoUrl: null,
+  located: false,
+  serviceAreaMiles: null,
 };
 
 function importView(overrides: Partial<ImportView> = {}): ImportView {
