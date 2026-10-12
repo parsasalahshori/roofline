@@ -126,6 +126,33 @@ describe('schema', () => {
     }
   });
 
+  test('E1 tables are tenant tables with RLS forced', async () => {
+    const e1Tables = [
+      'measurements',
+      'tier_templates',
+      'proposals',
+      'proposal_counters',
+      'proposal_options',
+      'proposal_signatures',
+      'proposal_events',
+      'exact_report_orders',
+      'stored_files',
+    ] as const;
+    expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...e1Tables]));
+    for (const table of e1Tables) {
+      const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+        `select relrowsecurity, relforcerowsecurity from pg_class where oid = $1::regclass`,
+        [`public.${table}`],
+      );
+      expect(cls, table).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+      const policies = await ownerQuery<{ policyname: string }>(
+        `select policyname from pg_policies where schemaname = 'public' and tablename = $1`,
+        [table],
+      );
+      expect(policies.map((p) => p.policyname), table).toContain('tenant_isolation');
+    }
+  });
+
   test('running migrate a second time changes nothing', async () => {
     const before = await ownerQuery<{ n: number }>(`select count(*)::int as n from drizzle.__drizzle_migrations`);
     await migrate(urls.owner);
@@ -463,25 +490,93 @@ describe('constraints', () => {
   });
 });
 
-describe('C1 constraints', () => {
-  /** One customer, property and job in a company, for rows that link to a job. */
-  async function makeJob(companyId: string, tag: string): Promise<string> {
-    const [customer] = await ownerQuery<{ id: string }>(
-      `insert into customers (company_id, display_name) values ($1, $2) returning id`,
-      [companyId, `Customer ${tag}`],
-    );
-    const [property] = await ownerQuery<{ id: string }>(
-      `insert into properties (company_id, customer_id, address_line, city, state, zip, address_key)
-       values ($1, $2, '1 Main St', 'Omaha', 'NE', '68102', $3) returning id`,
-      [companyId, customer!.id, `${tag} main st|68102`],
-    );
-    const [job] = await ownerQuery<{ id: string }>(
-      `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3) returning id`,
-      [companyId, customer!.id, property!.id],
-    );
-    return job!.id;
-  }
+/** One customer, property and job in a company, for rows that link to a job. */
+async function makeJob(companyId: string, tag: string): Promise<string> {
+  const [customer] = await ownerQuery<{ id: string }>(
+    `insert into customers (company_id, display_name) values ($1, $2) returning id`,
+    [companyId, `Customer ${tag}`],
+  );
+  const [property] = await ownerQuery<{ id: string }>(
+    `insert into properties (company_id, customer_id, address_line, city, state, zip, address_key)
+     values ($1, $2, '1 Main St', 'Omaha', 'NE', '68102', $3) returning id`,
+    [companyId, customer!.id, `${tag} main st|68102`],
+  );
+  const [job] = await ownerQuery<{ id: string }>(
+    `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3) returning id`,
+    [companyId, customer!.id, property!.id],
+  );
+  return job!.id;
+}
 
+/** Runs SQL as app_tenant with app.company_id set, as withTenant does, and returns the rows. */
+async function asTenant(companyId: string, text: string, values: unknown[] = []): Promise<pg.QueryResultRow[]> {
+  const tenant = new pg.Client({ connectionString: urls.tenant });
+  await tenant.connect();
+  try {
+    await tenant.query('begin');
+    await tenant.query(`select set_config('app.company_id', $1, true)`, [companyId]);
+    const res = await tenant.query(text, values);
+    await tenant.query('commit');
+    return res.rows;
+  } finally {
+    // Closing the connection with a transaction still open rolls it back.
+    await tenant.end();
+  }
+}
+
+/** Runs a statement as app_tenant that must be refused and returns the Postgres error. */
+async function rejectedAsTenant(companyId: string, text: string, values: unknown[] = []): Promise<pg.DatabaseError> {
+  try {
+    await asTenant(companyId, text, values);
+  } catch (err) {
+    return err as pg.DatabaseError;
+  }
+  throw new Error(`Expected app_tenant to be refused: ${text}`);
+}
+
+/** The rows a proposal links to in one company: a customer, property, job and estimate measurement. */
+type ProposalParents = { customerId: string; propertyId: string; jobId: string; measurementId: string };
+
+async function makeProposalParents(companyId: string, tag: string): Promise<ProposalParents> {
+  const jobId = await makeJob(companyId, tag);
+  const [job] = await ownerQuery<{ customer_id: string; property_id: string }>(
+    `select customer_id, property_id from jobs where id = $1`,
+    [jobId],
+  );
+  const [measurement] = await ownerQuery<{ id: string }>(
+    `insert into measurements (company_id, property_id, kind, method)
+     values ($1, $2, 'estimate', 'manual') returning id`,
+    [companyId, job!.property_id],
+  );
+  return { customerId: job!.customer_id, propertyId: job!.property_id, jobId, measurementId: measurement!.id };
+}
+
+/** Parameters: company, customer, property, job, measurement, number, link_token_hash, link_token_encrypted. */
+const insertProposal = `insert into proposals (company_id, customer_id, property_id, job_id, measurement_id, number,
+    status, valid_until, estimate_basis, link_token_hash, link_token_encrypted)
+  values ($1, $2, $3, $4, $5, $6, 'draft', date '2026-12-31', 'estimate', $7, $8)`;
+
+/** The parameters of `insertProposal` for a proposal on `parents`. */
+function proposalValues(
+  companyId: string,
+  parents: ProposalParents,
+  number: string,
+  hash: Buffer,
+  measurementId: string = parents.measurementId,
+): unknown[] {
+  return [
+    companyId,
+    parents.customerId,
+    parents.propertyId,
+    parents.jobId,
+    measurementId,
+    number,
+    hash,
+    Buffer.from('encrypted-placeholder'),
+  ];
+}
+
+describe('C1 constraints', () => {
   test('an appointment cannot end before it starts', async () => {
     const s = await seedTwoCompanies(urls.owner);
     const err = await rejected(
@@ -558,8 +653,101 @@ describe('C1 constraints', () => {
   });
 });
 
+describe('E1 constraints', () => {
+  const linkHash = Buffer.alloc(32, 7);
+
+  test('proposals.link_token_hash is unique across companies', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const a = await makeProposalParents(s.a.companyId, 'a');
+    const b = await makeProposalParents(s.b.companyId, 'b');
+    await ownerQuery(insertProposal, proposalValues(s.a.companyId, a, 'P-0001', linkHash));
+    const err = await rejected(insertProposal, proposalValues(s.b.companyId, b, 'P-0001', linkHash));
+    expect(err.code).toBe('23505');
+    expect(err.constraint).toBe('proposals_link_token_hash_uniq');
+  });
+
+  test('tier_templates allows one row per tier per company', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insertTier = (companyId: string, tier: string) =>
+      ownerQuery(
+        `insert into tier_templates (company_id, tier, name, material, waste_percent)
+         values ($1, $2, 'Shingles', 'architectural', 10)`,
+        [companyId, tier],
+      );
+    const insertGood = `insert into tier_templates (company_id, tier, name, material, waste_percent)
+      values ($1, 'good', 'Shingles', 'architectural', 10)`;
+    await insertTier(s.a.companyId, 'good');
+    const err = await rejected(insertGood, [s.a.companyId]);
+    expect(err.code).toBe('23505');
+    expect(err.constraint).toBe('tier_templates_company_tier_uniq');
+    // The same tier is free in another company, and another tier is free in the same one.
+    await insertTier(s.b.companyId, 'good');
+    await insertTier(s.a.companyId, 'better');
+  });
+
+  test('building_footprints is readable by app_tenant with any app.company_id and not writable', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const square = `ST_GeomFromText('POLYGON((0 0,0 1,1 1,1 0,0 0))', 4326)`;
+    await ownerQuery(
+      `insert into building_footprints (state, geom, area_sq_ft, source)
+       values ('TX', ${square}, 100.5, 'test')`,
+    );
+    for (const companyId of [s.a.companyId, s.b.companyId]) {
+      expect(await asTenant(companyId, `select count(*)::int as n from building_footprints`)).toEqual([{ n: 1 }]);
+    }
+    const insertErr = await rejectedAsTenant(
+      s.a.companyId,
+      `insert into building_footprints (state, geom, area_sq_ft, source)
+       values ('NE', ${square}, 1, 'test')`,
+    );
+    expect(insertErr.code).toBe('42501');
+    const updateErr = await rejectedAsTenant(s.a.companyId, `update building_footprints set source = 'changed'`);
+    expect(updateErr.code).toBe('42501');
+  });
+
+  test('company_settings has the estimator defaults', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    expect(
+      await ownerQuery(
+        `select default_pitch_x12::float as pitch, overhang_ft::float as overhang, proposal_valid_days,
+                aerial_measure, estimate_change_clause
+           from company_settings where company_id = $1`,
+        [s.a.companyId],
+      ),
+    ).toEqual([
+      { pitch: 6, overhang: 1, proposal_valid_days: 30, aerial_measure: false, estimate_change_clause: true },
+    ]);
+  });
+
+  test.each([
+    ['default_pitch_x12', '25'],
+    ['default_pitch_x12', '-1'],
+    ['overhang_ft', '3.5'],
+    ['proposal_valid_days', '0'],
+    ['proposal_valid_days', '181'],
+  ])('company_settings.%s = %s is refused by its CHECK', async (column, value) => {
+    const s = await seedTwoCompanies(urls.owner);
+    const err = await rejected(`update company_settings set ${column} = ${value} where company_id = $1`, [
+      s.a.companyId,
+    ]);
+    expect(err.code).toBe('23514');
+  });
+
+  test('company_settings estimator columns accept their edge values', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    for (const [column, value] of [
+      ['default_pitch_x12', '24'],
+      ['overhang_ft', '3'],
+      ['proposal_valid_days', '1'],
+      ['proposal_valid_days', '180'],
+    ]) {
+      await ownerQuery(`update company_settings set ${column} = ${value} where company_id = $1`, [s.a.companyId]);
+    }
+  });
+});
+
 describe('same-company foreign keys', () => {
-  type Ids = { customerId: string; propertyId: string; taskId: string; stepId: string };
+  type Ids ={ customerId: string; propertyId: string; taskId: string; stepId: string };
 
   /** One customer, property, task and step for a company. */
   async function makeGraph(companyId: string, tag: string): Promise<Ids> {
@@ -642,6 +830,18 @@ describe('same-company foreign keys', () => {
     const err = await rejected(sql, values);
     expect(err.code).toBe('23503');
     expect(err.constraint).toBe(constraint);
+  });
+
+  test("a company-A proposal cannot reference company B's measurement", async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const a = await makeProposalParents(s.a.companyId, 'a');
+    const b = await makeProposalParents(s.b.companyId, 'b');
+    const err = await rejected(
+      insertProposal,
+      proposalValues(s.a.companyId, a, 'P-0001', Buffer.alloc(32, 9), b.measurementId),
+    );
+    expect(err.code).toBe('23503');
+    expect(err.constraint).toBe('proposals_company_measurement_fk');
   });
 });
 
