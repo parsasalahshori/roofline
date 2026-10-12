@@ -152,6 +152,8 @@ describe('approving the send', () => {
     expect((await s.owner.get(`/api/proposals/${s.proposal.id}`)).body.status).toBe('sent');
     expect((await dbJob(t, t.seed.a.companyId, s.job.id)).stage).toBe('proposal');
     expect(await eventsOf(s.proposal.id, 'sent')).toHaveLength(1);
+    // Ruling EN: the step's result counts what was sent
+    expect((await dbSteps(t, 'a', taskId))[0]!.result).toMatchObject({ sent: 1 });
   });
 
   test('a customer without texting consent is blocked with the gate reason, and the proposal goes back to draft', async () => {
@@ -162,6 +164,7 @@ describe('approving the send', () => {
     expect(t.sms.sent).toEqual([]);
     const [step] = await dbSteps(t, 'a', taskId);
     expect(step!.status).toBe('needs_attention');
+    expect(step!.result).toMatchObject({ sent: 0 });
     const rows = await stepMessages(t, 'a', step!.id);
     expect(rows[0]).toMatchObject({ status: 'blocked', blockRule: 'consent', blockReason: NO_CONSENT });
     expect((await proposalRow(s.proposal.id)).status).toBe('draft');

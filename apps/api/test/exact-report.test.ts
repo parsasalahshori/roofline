@@ -117,6 +117,7 @@ describe('the exact report order flow', () => {
     // ... and neither does the handler itself when it is called again.
     const again = await orderExactReport(t.deps, ctx, { ...step, payload: step.payload } as never);
     expect(again.status).toBe('needs_attention');
+    expect(again.result).toEqual({ ordered: 0 });
     expect(calls('order')).toHaveLength(1);
     expect((await order(orderId)).status).toBe('attention');
   });

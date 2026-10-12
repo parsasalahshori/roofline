@@ -17,7 +17,7 @@ import { AppError, logErrorToConsole, MESSAGES } from '../errors.ts';
 import { ExactOrderUncertainError, ExactReportsUnavailableError, type ExactOrderInput } from '../providers/exact-reports.ts';
 import { billingConfig } from '../billing/plans.ts';
 import { createTask } from '../tasks/service.ts';
-import type { StepHandler } from '../tasks/runner.ts';
+import type { StepHandler, StepOutcome } from '../tasks/runner.ts';
 
 /*
  * The exact report flow, the money path. price (no transaction) -> order row 'priced' + a draft
@@ -104,7 +104,7 @@ function parseAddress(line: string): ExactOrderInput['address'] {
 }
 
 /** The approved step: claims the order, re-prices if the price expired, orders once, parks the step. */
-export const orderExactReport: StepHandler = async (deps, ctx, step) => {
+export const orderExactReport: StepHandler = async (deps, ctx, step): Promise<StepOutcome> => {
   const payload = stepTypes['order_exact_report'].payload.parse(step.payload);
   const { orderId } = payload;
 
@@ -113,8 +113,9 @@ export const orderExactReport: StepHandler = async (deps, ctx, step) => {
   if (!claimed) {
     const existing = await withTenant(deps.pools, ctx, (tx) => getExactOrder(tx, ctx, orderId));
     if (existing?.status === 'waiting') return { status: 'running', result: {} };
-    if (existing?.status === 'complete') return { status: 'done', result: {} };
-    return { status: 'needs_attention', result: {}, errorPlain: UNCERTAIN_MESSAGE };
+    // Ruling EN: the result counts what was ordered (A1 reads it for time saved).
+    if (existing?.status === 'complete') return { status: 'done', result: { ordered: 1 } };
+    return { status: 'needs_attention', result: { ordered: 0 }, errorPlain: UNCERTAIN_MESSAGE };
   }
 
   const input = (referenceId: string): ExactOrderInput => ({
@@ -144,7 +145,7 @@ export const orderExactReport: StepHandler = async (deps, ctx, step) => {
     await withTenant(deps.pools, ctx, (tx) =>
       moveExactOrder(tx, ctx, orderId, 'ordering', 'attention', { errorPlain: PRICE_WENT_UP_MESSAGE }, deps.clock.now()),
     );
-    return { status: 'needs_attention', result: {}, errorPlain: PRICE_WENT_UP_MESSAGE };
+    return { status: 'needs_attention', result: { ordered: 0 }, errorPlain: PRICE_WENT_UP_MESSAGE };
   }
 
   // (c) Order, outside any transaction. Any failure here may still have taken effect: never retried.
