@@ -13,3 +13,7 @@
 
 ## Verify tail
 typecheck and lint clean; playwright --list: 54 tests in 14 files; npm ls playwright-core shows only 1.56.1. api and e2e specs prove on CI.
+
+## CI round 1 (run 38263197484, bfaca67): failed, fixed
+- Platform: unsubscribe.test.ts still expected no-referrer (updated to same-origin); the Postmark router's bodyErrors turned the limiter's 429 into 400 (429 now passes through).
+- E2E: seven storm specs stopped at needs_attention because the fixture ad accounts had no USD currency (base lacks 3f800e5); the same fixture change is applied here (identical content).

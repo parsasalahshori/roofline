@@ -96,6 +96,10 @@ export function postmarkHooks(deps: AppDeps): Router {
       res.status(413).end();
       return;
     }
+    if (status === 429) {
+      next(err);
+      return;
+    }
     if (typeof status === 'number' && status >= 400 && status < 500) {
       res.status(400).end();
       return;
