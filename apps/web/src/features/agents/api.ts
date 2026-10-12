@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import type { AgentsOverview } from '@roofline/shared';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import type { Agent, AgentsOverview, FeedPage, WaitingList } from '@roofline/shared';
 import { apiFetch } from '../../api/client.ts';
 
 /**
@@ -17,5 +17,30 @@ export function useAgentsOverview() {
   return useQuery({
     queryKey: agentsKeys.all,
     queryFn: ({ signal }) => apiFetch<AgentsOverview>('/api/agents', { signal }),
+  });
+}
+
+// --- Task 11: feed and waiting ---
+/** The activity feed, newest first, 'Show more' pages by cursor. `agent` filters to one agent. */
+export function useAgentFeed(agent?: Agent) {
+  return useInfiniteQuery({
+    queryKey: [...agentsKeys.feed, agent ?? 'all'] as const,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => {
+      const params = new URLSearchParams();
+      if (agent) params.set('agent', agent);
+      if (pageParam) params.set('cursor', pageParam);
+      const query = params.toString();
+      return apiFetch<FeedPage>(`/api/agents/feed${query ? `?${query}` : ''}`, { signal });
+    },
+    getNextPageParam: (last) => last.nextCursor,
+  });
+}
+
+/** Everything waiting on somebody, with who it waits on. */
+export function useWaiting() {
+  return useQuery({
+    queryKey: agentsKeys.waiting,
+    queryFn: ({ signal }) => apiFetch<WaitingList>('/api/agents/waiting', { signal }),
   });
 }

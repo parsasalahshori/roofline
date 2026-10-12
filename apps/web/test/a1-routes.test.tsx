@@ -39,6 +39,11 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
   return api;
 }
 
+const AGENTS_EMPTY: Routes = {
+  'GET /api/agents/feed': () => ({ body: { items: [], nextCursor: null } }),
+  'GET /api/agents/waiting': () => ({ body: { items: [] } }),
+};
+
 function renderApp(path: string) {
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
@@ -51,19 +56,7 @@ function renderApp(path: string) {
   return { router, queryClient, user: userEvent.setup() };
 }
 
-
 describe('A1 windows', () => {
-  it.each([
-    ['/agents/feed', agents.feedComingSoon],
-    ['/agents/waiting', agents.waitingComingSoon],
-  ])('%s shows its placeholder in the Agents window', async (path, line) => {
-    signedInApi();
-    renderApp(path);
-
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
-    expect(await within(dialog).findByText(line)).toBeInTheDocument();
-  });
-
   it('/agents shows the overview in the Agents window', async () => {
     signedInApi(ACCOUNT, {
       'GET /api/agents': () => ({ body: { cards: [], minutesThisMonth: 0, hourlyRateCents: 2800 } }),
@@ -73,6 +66,17 @@ describe('A1 windows', () => {
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
     expect(within(dialog).getByRole('navigation', { name: agents.tabsLabel })).toBeInTheDocument();
     expect(await within(dialog).findByRole('region', { name: agentsWindow.gridLabel })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['/agents/feed', agents.feedEmpty],
+    ['/agents/waiting', agents.waitingEmpty],
+  ])('%s shows its list in the Agents window', async (path, line) => {
+    signedInApi(ACCOUNT, AGENTS_EMPTY);
+    renderApp(path);
+
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    expect(await within(dialog).findByText(line)).toBeInTheDocument();
   });
 
   it.each(PAGE_AGENTS)('shows the %s page with its name', async (agent) => {
@@ -85,11 +89,11 @@ describe('A1 windows', () => {
   });
 
   it('lets feed win over :agent', async () => {
-    signedInApi();
+    signedInApi(ACCOUNT, AGENTS_EMPTY);
     renderApp('/agents/feed');
 
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
-    expect(await within(dialog).findByText(agents.feedComingSoon)).toBeInTheDocument();
+    expect(await within(dialog).findByText(agents.feedEmpty)).toBeInTheDocument();
     expect(within(dialog).queryByText(agents.agentComingSoon)).not.toBeInTheDocument();
   });
 
@@ -102,13 +106,14 @@ describe('A1 windows', () => {
   });
 
   it('marks the current tab and links the others', async () => {
-    signedInApi();
+    signedInApi(ACCOUNT, AGENTS_EMPTY);
     renderApp('/agents/feed');
 
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
     const tabs = within(dialog).getByRole('navigation', { name: agents.tabsLabel });
     expect(within(tabs).getByRole('link', { name: agents.tabs.feed })).toHaveAttribute('aria-current', 'page');
     expect(within(tabs).getByRole('link', { name: agents.tabs.waiting })).toHaveAttribute('href', '/agents/waiting');
+    expect(await within(dialog).findByText(agents.feedEmpty)).toBeInTheDocument();
   });
 });
 

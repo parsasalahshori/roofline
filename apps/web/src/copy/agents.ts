@@ -13,6 +13,21 @@ export const agents = {
   // The Agents tab in Settings
   settingsTab: 'Agents',
   settingsComingSoon: 'How we count time saved is coming soon.',
+
+  // --- Task 11: feed and waiting ---
+  feedFiltersLabel: 'Show work by',
+  feedFilterAll: 'All',
+  feedListLabel: 'What your agents did',
+  feedShowMore: 'Show more',
+  feedEmpty: 'Nothing yet. When your agents do something, it shows up here.',
+  feedLoadError: 'The record could not be loaded.',
+  feedOpen: 'Open',
+  waitingListLabel: 'Waiting',
+  waitingGroupYou: 'You',
+  waitingGroupOffice: 'Office',
+  waitingEmpty: 'Nothing is waiting on anyone.',
+  waitingLoadError: 'The waiting list could not be loaded.',
+  waitingOpen: 'Open',
 } as const;
 
 // --- Task 9: Agents window ---
