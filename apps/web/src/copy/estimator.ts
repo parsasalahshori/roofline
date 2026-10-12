@@ -1,4 +1,26 @@
-/** The Estimator window (E1 Task 14 placeholder). */
+/** The Estimator window (E1 Task 15). */
 export const estimator = {
+  title: 'Estimator',
+  addressLabel: 'Address',
+  addressHint: 'Type a street address to start an estimate.',
+  homesTitle: 'Homes we know',
+  noHomes: 'No saved home matches. Press Enter to look the address up.',
+  lookUp: 'Look up address',
+  makeProposal: 'Make proposal',
+  makingProposal: 'Making the proposal...',
+  makeFailed: 'We could not make the proposal. Please try again.',
+  drawNote: 'We could not find this roof. Draw it on the map next.',
+  newCustomerTitle: 'Who is this for?',
+  customerName: 'Name',
+  customerPhone: 'Phone',
+  askedByText: 'They asked for this proposal by text',
+  estimateNote: 'Estimate',
+  listsFailed: 'The proposal lists would not load.',
+  groups: {
+    review: 'To review',
+    out: 'Out with customers',
+    signed: 'Signed',
+  },
+  emptyGroup: 'Nothing here yet.',
   comingSoon: 'Your estimates are on their way.',
 } as const;
