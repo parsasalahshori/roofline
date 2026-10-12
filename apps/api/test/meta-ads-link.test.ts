@@ -57,7 +57,7 @@ describe('verifyAccess', () => {
   });
 
   it('returns not_shared when reading the account fails', async () => {
-    const { http, calls } = fakeHttp({ 'GET act_111': new AdPlatformError('access', 403) });
+    const { http, calls } = fakeHttp({ 'GET act_111': new AdPlatformError('access', 403, { code: 200 }) });
     expect(await verifyAccess(http, 'act_111', 'sys-1')).toEqual({ ok: false, reason: 'not_shared' });
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
@@ -71,7 +71,7 @@ describe('verifyAccess', () => {
   it('returns not_assigned when the assignment call fails', async () => {
     const { http } = fakeHttp({
       'GET act_111': JSON.parse(fixture('account.json')),
-      'POST act_111/assigned_users': new AdPlatformError('access', 400),
+      'POST act_111/assigned_users': new AdPlatformError('access', 400, { code: 100, subcode: 33 }),
     });
     expect(await verifyAccess(http, 'act_111', 'sys-1')).toEqual({ ok: false, reason: 'not_assigned' });
   });
@@ -87,9 +87,66 @@ describe('verifyAccess', () => {
   it('does not leak provider text in the result', async () => {
     const { http } = fakeHttp({
       'GET act_111': JSON.parse(fixture('account.json')),
-      'POST act_111/assigned_users': new AdPlatformError('access', 400),
+      'POST act_111/assigned_users': new AdPlatformError('access', 400, { code: 100, subcode: 33 }),
     });
     expect(JSON.stringify(await verifyAccess(http, 'act_111', 'sys-1'))).not.toMatch(/Graph|message|error/i);
+  });
+
+  it('maps code 100 subcode 33, code 10 and codes 200-299 on the account GET to not_shared', async () => {
+    for (const graph of [{ code: 100, subcode: 33 }, { code: 10 }, { code: 200 }, { code: 299 }]) {
+      const { http, calls } = fakeHttp({ 'GET act_111': new AdPlatformError('access', 403, graph) });
+      expect(await verifyAccess(http, 'act_111', 'sys-1')).toEqual({ ok: false, reason: 'not_shared' });
+      expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    }
+  });
+
+  it('maps the same permission errors on assigned_users to not_assigned', async () => {
+    for (const graph of [{ code: 10 }, { code: 100, subcode: 33 }, { code: 299 }]) {
+      const { http } = fakeHttp({
+        'GET act_111': JSON.parse(fixture('account.json')),
+        'POST act_111/assigned_users': new AdPlatformError('access', 400, graph),
+      });
+      expect(await verifyAccess(http, 'act_111', 'sys-1')).toEqual({ ok: false, reason: 'not_assigned' });
+    }
+  });
+
+  it('throws a rate limit (code 4 or 17) instead of returning not_shared', async () => {
+    for (const graph of [{ code: 17 }, { code: 4 }]) {
+      const thrown = new AdPlatformError('other', 400, graph);
+      const { http } = fakeHttp({ 'GET act_111': thrown });
+      await expect(verifyAccess(http, 'act_111', 'sys-1')).rejects.toBe(thrown);
+    }
+  });
+
+  it('throws an expired token (code 190) as access, on the GET and on assigned_users', async () => {
+    const onGet = new AdPlatformError('access', 400, { code: 190, subcode: 463 });
+    const getCase = fakeHttp({ 'GET act_111': onGet });
+    await expect(verifyAccess(getCase.http, 'act_111', 'sys-1')).rejects.toMatchObject({ kind: 'access' });
+
+    const onPost = new AdPlatformError('access', 400, { code: 190, subcode: 463 });
+    const postCase = fakeHttp({
+      'GET act_111': JSON.parse(fixture('account.json')),
+      'POST act_111/assigned_users': onPost,
+    });
+    await expect(verifyAccess(postCase.http, 'act_111', 'sys-1')).rejects.toBe(onPost);
+  });
+
+  it('throws a network failure with no graph info', async () => {
+    const thrown = new AdPlatformError('other');
+    const { http } = fakeHttp({ 'GET act_111': thrown });
+    await expect(verifyAccess(http, 'act_111', 'sys-1')).rejects.toBe(thrown);
+  });
+
+  it('does not call assigned_users when the GET is thrown', async () => {
+    const { http, calls } = fakeHttp({ 'GET act_111': new AdPlatformError('other', 500, { code: 17 }) });
+    await expect(verifyAccess(http, 'act_111', 'sys-1')).rejects.toBeInstanceOf(AdPlatformError);
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  it('throws code 100 with another subcode instead of mapping it', async () => {
+    const thrown = new AdPlatformError('other', 400, { code: 100, subcode: 1487851 });
+    const { http } = fakeHttp({ 'GET act_111': thrown });
+    await expect(verifyAccess(http, 'act_111', 'sys-1')).rejects.toBe(thrown);
   });
 });
 
