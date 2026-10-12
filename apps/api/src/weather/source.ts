@@ -17,6 +17,10 @@ export type CurrentWeather = {
   updatedAt: string;
 };
 
+/** One hour of forecast, shared with the weather-risk rule in @roofline/shared (G1). */
+export type { HourlyForecast } from '@roofline/shared';
+import type { HourlyForecast } from '@roofline/shared';
+
 export interface WeatherSource {
   /**
    * The weather now at a place, or null when there is none to show: the service is down or slow,
@@ -24,9 +28,15 @@ export interface WeatherSource {
    * throws for those; null is the whole answer and the screen simply shows no weather.
    */
   current(lat: number, lng: number): Promise<CurrentWeather | null>;
+  /**
+   * The next `hours` hourly periods at a place, soonest first, or null on any failure (same rule
+   * as `current`: never throws).
+   */
+  hourly(lat: number, lng: number, hours: number): Promise<HourlyForecast[] | null>;
 }
 
 /** A source with no weather to give. It asks nobody. */
 export class NullWeatherSource implements WeatherSource {
   readonly current: WeatherSource['current'] = async () => null;
+  readonly hourly: WeatherSource['hourly'] = async () => null;
 }

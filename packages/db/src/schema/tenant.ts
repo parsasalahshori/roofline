@@ -51,6 +51,8 @@ import {
   CALENDAR_CONNECTION_STATUSES,
   CALENDAR_PROVIDERS,
   CALL_STATUSES,
+  CLAIM_EVENT_ACTORS,
+  CLAIM_STATUSES,
   CLAIM_TAKEN_BY,
   CONFIRMED_VIA,
   CONSENT_REGIMES,
@@ -59,6 +61,7 @@ import {
   CONVERSATION_STATUSES,
   EARLY_DELIVERY_STATUSES,
   EXACT_ORDER_STATUSES,
+  FOLLOW_UP_KINDS,
   HANDLED_BY,
   IDENTITY_LEVELS,
   INTEGRATION_STATUSES,
@@ -128,6 +131,9 @@ export const TENANT_TABLES = [
   'agent_task_events',
   'agent_settings',
   'time_recounts',
+  'claims',
+  'claim_events',
+  'follow_up_log',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -191,6 +197,18 @@ export const companySettings = pgTable(
     transcriptRetentionDays: integer('transcript_retention_days').notNull().default(365),
     maxConcurrentAiCalls: integer('max_concurrent_ai_calls').notNull().default(4),
     forwardingVerifiedAt: tstz('forwarding_verified_at'),
+    /** Days after the claim status changes at which the Claims agent nudges. */
+    claimsNudgeDays: integer('claims_nudge_days').array().notNull().default(sql`'{3,5,7}'::integer[]`),
+    weatherRainPct: integer('weather_rain_pct').notNull().default(60),
+    weatherGustMph: integer('weather_gust_mph').notNull().default(25),
+    reminderHour: integer('reminder_hour').notNull().default(15),
+    followupDays: integer('followup_days').array().notNull().default(sql`'{3,4}'::integer[]`),
+    leadFollowupDays: integer('lead_followup_days').notNull().default(2),
+    reviewLink: text('review_link'),
+    reviewDelayDays: integer('review_delay_days').notNull().default(3),
+    followupReviews: boolean('followup_reviews').notNull().default(true),
+    followupLeads: boolean('followup_leads').notNull().default(true),
+    followupProposals: boolean('followup_proposals').notNull().default(true),
     ...timestamps(),
   },
   (t) => [
@@ -212,6 +230,11 @@ export const companySettings = pgTable(
     check('company_settings_recording_retention_days_check', sql`${t.recordingRetentionDays} between 0 and 365`),
     check('company_settings_transcript_retention_days_check', sql`${t.transcriptRetentionDays} between 30 and 730`),
     check('company_settings_max_concurrent_ai_calls_check', sql`${t.maxConcurrentAiCalls} between 1 and 10`),
+    check('company_settings_weather_rain_pct_check', sql`${t.weatherRainPct} between 0 and 100`),
+    check('company_settings_weather_gust_mph_check', sql`${t.weatherGustMph} between 1 and 100`),
+    check('company_settings_reminder_hour_check', sql`${t.reminderHour} between 0 and 23`),
+    check('company_settings_lead_followup_days_check', sql`${t.leadFollowupDays} between 1 and 30`),
+    check('company_settings_review_delay_days_check', sql`${t.reviewDelayDays} between 0 and 30`),
   ],
 );
 
@@ -741,6 +764,8 @@ export const appointments = pgTable(
     /** When the customer confirmed the visit, and how (a call, a text, or a person marking it). */
     confirmedAt: tstz('confirmed_at'),
     confirmedVia: text('confirmed_via', { enum: CONFIRMED_VIA }),
+    /** Set when the Scheduler agent moved this visit; the agent task that did it. */
+    movedByTaskId: uuid('moved_by_task_id'),
     ...timestamps(),
   },
   (t) => [
@@ -759,6 +784,11 @@ export const appointments = pgTable(
       name: 'appointments_company_property_fk',
       columns: [t.companyId, t.propertyId],
       foreignColumns: [properties.companyId, properties.id],
+    }),
+    foreignKey({
+      name: 'appointments_company_moved_by_task_fk',
+      columns: [t.companyId, t.movedByTaskId],
+      foreignColumns: [agentTasks.companyId, agentTasks.id],
     }),
     index('appointments_company_starts_idx').on(t.companyId, t.startsAt),
     index('appointments_company_assignee_starts_idx').on(t.companyId, t.assignedUserId, t.startsAt),
@@ -1513,4 +1543,106 @@ export const timeRecounts = pgTable(
     at: tstz('at').notNull().defaultNow(),
   },
   (t) => [index('time_recounts_company_at_idx').on(t.companyId, t.at)],
+);
+
+/** The insurance claim for a job (spec 6): one per job. */
+export const claims = pgTable(
+  'claims',
+  {
+    id: pk(),
+    companyId: companyId(),
+    jobId: uuid('job_id').notNull(),
+    insurer: text('insurer'),
+    claimNumber: text('claim_number'),
+    dateOfLoss: date('date_of_loss', { mode: 'string' }),
+    status: text('status', { enum: CLAIM_STATUSES }).notNull().default('not_filed'),
+    adjusterName: text('adjuster_name'),
+    adjusterPhone: text('adjuster_phone'),
+    adjusterEmail: text('adjuster_email'),
+    adjusterAppointmentId: uuid('adjuster_appointment_id'),
+    deductibleCents: integer('deductible_cents'),
+    notes: text('notes'),
+    statusChangedAt: tstz('status_changed_at').notNull().defaultNow(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('claims_company_id_id_uniq').on(t.companyId, t.id),
+    /** One claim per job. */
+    unique('claims_company_job_uniq').on(t.companyId, t.jobId),
+    foreignKey({
+      name: 'claims_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'claims_company_adjuster_appointment_fk',
+      columns: [t.companyId, t.adjusterAppointmentId],
+      foreignColumns: [appointments.companyId, appointments.id],
+    }),
+    index('claims_company_status_idx').on(t.companyId, t.status),
+    check('claims_deductible_cents_check', sql`${t.deductibleCents} >= 0`),
+    enumCheck('claims', 'status', t.status, CLAIM_STATUSES),
+  ],
+);
+
+/** Status history of a claim. `from_status` is null for the first event. */
+export const claimEvents = pgTable(
+  'claim_events',
+  {
+    id: pk(),
+    companyId: companyId(),
+    claimId: uuid('claim_id').notNull(),
+    fromStatus: text('from_status', { enum: CLAIM_STATUSES }),
+    toStatus: text('to_status', { enum: CLAIM_STATUSES }).notNull(),
+    by: text('by_actor', { enum: CLAIM_EVENT_ACTORS }).notNull(),
+    byUserId: userRef('by_user_id'),
+    at: tstz('at').notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'claim_events_company_claim_fk',
+      columns: [t.companyId, t.claimId],
+      foreignColumns: [claims.companyId, claims.id],
+    }),
+    index('claim_events_claim_at_idx').on(t.companyId, t.claimId, t.at),
+    enumCheck('claim_events', 'from_status', t.fromStatus, CLAIM_STATUSES),
+    enumCheck('claim_events', 'to_status', t.toStatus, CLAIM_STATUSES),
+    enumCheck('claim_events', 'by_actor', t.by, CLAIM_EVENT_ACTORS),
+  ],
+);
+
+/** Every follow-up the Follow-up agent sent, so it never nags twice. */
+export const followUpLog = pgTable(
+  'follow_up_log',
+  {
+    id: pk(),
+    companyId: companyId(),
+    customerId: uuid('customer_id').notNull(),
+    jobId: uuid('job_id'),
+    kind: text('kind', { enum: FOLLOW_UP_KINDS }).notNull(),
+    n: integer('n').notNull().default(1),
+    messageId: uuid('message_id'),
+    at: tstz('at').notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'follow_up_log_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'follow_up_log_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'follow_up_log_company_message_fk',
+      columns: [t.companyId, t.messageId],
+      foreignColumns: [messages.companyId, messages.id],
+    }),
+    index('follow_up_log_customer_at_idx').on(t.companyId, t.customerId, t.at),
+    index('follow_up_log_job_kind_idx').on(t.companyId, t.jobId, t.kind),
+    check('follow_up_log_n_check', sql`${t.n} >= 1`),
+    enumCheck('follow_up_log', 'kind', t.kind, FOLLOW_UP_KINDS),
+  ],
 );

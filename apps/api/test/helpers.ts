@@ -17,7 +17,7 @@ import { FakeCalendarApi } from '../src/providers/fakes/calendar.ts';
 import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
 import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
-import type { CurrentWeather, WeatherSource } from '../src/weather/source.ts';
+import type { CurrentWeather, HourlyForecast, WeatherSource } from '../src/weather/source.ts';
 
 /**
  * The company details every sign-up needs (F3). Tests spread it into each sign-up body; the
@@ -87,19 +87,36 @@ export const FAKE_WEATHER: CurrentWeather = {
   updatedAt: '2026-10-12T14:00:00.000Z',
 };
 
+/** What `FakeWeatherSource.hourly` answers until a test sets something else: three hours, soonest first. */
+export const FAKE_HOURLY: HourlyForecast[] = [
+  { at: '2026-10-12T14:00:00.000Z', precipPct: 10, gustMph: 12 },
+  { at: '2026-10-12T15:00:00.000Z', precipPct: 40, gustMph: 25 },
+  { at: '2026-10-12T16:00:00.000Z', precipPct: 80, gustMph: null },
+];
+
 /**
  * A weather source that never leaves the process. It records every place it was asked about and
  * answers `value` (null: the service has nothing); if `failure` is set it throws that instead.
+ * `hourly` works the same way: it records each call and answers the first `hours` entries of
+ * `hourlyValue` (null: the service has nothing), and throws `failure` when it is set.
  */
 export class FakeWeatherSource implements WeatherSource {
   readonly calls: { lat: number; lng: number }[] = [];
+  readonly hourlyCalls: { lat: number; lng: number; hours: number }[] = [];
   value: CurrentWeather | null = FAKE_WEATHER;
+  hourlyValue: HourlyForecast[] | null = FAKE_HOURLY;
   failure: unknown = undefined;
 
   async current(lat: number, lng: number): Promise<CurrentWeather | null> {
     this.calls.push({ lat, lng });
     if (this.failure !== undefined) throw this.failure;
     return this.value && { ...this.value };
+  }
+
+  async hourly(lat: number, lng: number, hours: number): Promise<HourlyForecast[] | null> {
+    this.hourlyCalls.push({ lat, lng, hours });
+    if (this.failure !== undefined) throw this.failure;
+    return this.hourlyValue && this.hourlyValue.slice(0, hours).map((h) => ({ ...h }));
   }
 }
 
