@@ -24,8 +24,9 @@ export async function hasUrgentNoticeFor(tx: Tx, ctx: TenantContext, conversatio
     )
     .limit(1);
   if (row !== undefined) return true;
-  // A caller with no customer gets no activity: an earlier turn of this conversation that called take_message
-  // with urgent true is the durable record (every texts.ts run and every relay session builds a fresh state).
+  // A caller with no customer gets no activity: an earlier turn of this conversation whose take_message with urgent
+  // true succeeded is the durable record (every texts.ts run and every relay session builds a fresh state). A failed
+  // one sent nothing, so a retry must still send (redacted rows keep ok).
   const [turn] = await tx
     .select({ id: conversationTurns.id })
     .from(conversationTurns)
@@ -34,7 +35,7 @@ export async function hasUrgentNoticeFor(tx: Tx, ctx: TenantContext, conversatio
         eq(conversationTurns.companyId, ctx.companyId),
         eq(conversationTurns.conversationId, conversationId),
         sql`exists (select 1 from jsonb_array_elements(coalesce(${conversationTurns.toolCalls}, '[]'::jsonb)) e
-          where e->>'name' = 'take_message' and e->'input'->>'urgent' = 'true')`,
+          where e->>'name' = 'take_message' and e->'input'->>'urgent' = 'true' and e->>'ok' = 'true')`,
       ),
     )
     .limit(1);

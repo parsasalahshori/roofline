@@ -12,40 +12,85 @@ export type TransferReason =
   | 'model_failure';
 
 /**
- * D1 RC-1: the closed set of router intents (the router's json_schema enum and RouteDecision.intent).
- * Every intent the engine or shouldTransfer keys on is here.
+/**
+ * The closed set of router intents (the router's json_schema enum). Every intent the engine, shouldTransfer, the
+ * scenarios and the eval key on is here, including the leak/danger vocabulary of Ruling BK (amended).
  */
 export const ROUTER_INTENTS = [
   'active_leak', 'adjuster', 'ask_for_person', 'cancel_appointment', 'complaint', 'confirm_appointment', 'danger', 'emergency', 'fire',
   'greeting', 'goodbye', 'human', 'injury', 'inspector', 'insurance_claim', 'insurance_question', 'job_status', 'leak', 'message',
   'not_understood', 'other', 'pricing', 'prompt_injection', 'quote', 'recording_objection', 'reschedule', 'sales_pitch',
-  'schedule_inspection', 'spam', 'status', 'supplier', 'trade_caller', 'transfer', 'unknown',
+  'schedule_inspection', 'spam', 'status', 'storm_damage_active', 'supplier', 'trade_caller', 'transfer', 'unknown', 'water_inside',
 ] as const;
 export type RouterIntent = (typeof ROUTER_INTENTS)[number];
-/** Router intents that mean the caller is asking for a person. */
+/** Router intents that mean the caller is asking for a person (RC-1: the engine and transfer count them once per turn). */
 export const ASK_PERSON_INTENTS: ReadonlySet<string> = new Set<RouterIntent>(['ask_for_person', 'transfer', 'human']);
 
-const LEAK_INTENTS = new Set(['leak', 'active_leak']);
-const DANGER_INTENTS = new Set(['danger', 'injury', 'fire']);
 /**
- * The router's intent is a free short label, so match the meaning loosely as well (Ruling BK makes the reason, not
- * the router's urgent flag, decide after-hours on-call: a real leak or danger must not fall back to 'asked').
+ * Ruling BK (amended): the router's emergency vocabulary. ROUTER_PROMPT names these words, so the router emits them.
+ * 'emergency' alone does not say which kind, so the caller's words decide (see emergencyReason).
  */
-const LEAK_WORDS = /leak|water|flood|drip/i;
-const DANGER_WORDS = /danger|injur|hurt|fire|smoke|gas|electr|spark|collaps|emergenc/i;
+export const EMERGENCY_INTENTS: ReadonlySet<RouterIntent> = new Set<RouterIntent>([
+  'leak',
+  'active_leak',
+  'emergency',
+  'danger',
+  'injury',
+  'fire',
+  'water_inside',
+  'storm_damage_active',
+]);
+const LEAK_INTENTS = new Set(['leak', 'active_leak', 'water_inside', 'storm_damage_active']);
+const DANGER_INTENTS = new Set(['danger', 'injury', 'fire']);
 const TRADE_INTENTS = new Set(['trade_caller', 'adjuster', 'inspector', 'supplier']);
 
-/** First match wins, in the documented priority order. */
-export function shouldTransfer(i: {
-  intent: string;
-  urgent: boolean;
-  mood: 'calm' | 'upset' | 'angry';
-  askedForPersonCount: number;
-  taskInProgress: boolean;
-  failedUnderstanding: number;
-}): TransferReason | null {
-  if (DANGER_INTENTS.has(i.intent) || DANGER_WORDS.test(i.intent)) return 'danger';
-  if (LEAK_INTENTS.has(i.intent) || LEAK_WORDS.test(i.intent)) return 'leak';
+/**
+ * The router's intent is a short label, so its meaning is matched loosely too (RC-4): a substring is enough on a label
+ * ('gas_smell', 'roof_leaking'). 'emergenc' is kept apart so the caller's words can say which kind of emergency it is.
+ */
+const LEAK_LABEL = /leak|water|flood|drip/i;
+const DANGER_LABEL = /danger|injur|hurt|fire|smoke|gas|electr|spark|collaps/i;
+const EMERGENCY_LABEL = /emergenc/i;
+/** The caller's own words, matched on word starts (looser substrings would catch "Vegas" or "electrician"). */
+const DANGER_PHRASES =
+  /\b(danger\w*|gas|smell\w* (of )?(gas|smoke|burning)|sparks?|sparking|arcing|live wires?|electrocut\w*|fire|flames?|smoke|burning|injur\w*|hurt|bleeding|unconscious|collaps\w*|caved? in|fell (off|through))\b/i;
+const LEAK_PHRASES =
+  /\b(leak\w*|water (is |was |keeps )?(coming|pouring|dripping|running|getting|gushing|flowing)|pour\w* (in|through|into|down)|drip\w*|flood\w*|soak\w*)\b/i;
+
+/**
+ * Leak or danger, in this order: the router's intent in the vocabulary (any case); a loose match on the intent label
+ * (danger before leak); the caller's words or a summary of them (danger before leak); then an 'emergency' label with
+ * no telling words is danger. A bare "it's urgent" with no leak or danger word is null.
+ */
+export function emergencyReason(intent: string, callerText?: string): 'leak' | 'danger' | null {
+  const label = intent.trim().toLowerCase();
+  if (LEAK_INTENTS.has(label)) return 'leak';
+  if (DANGER_INTENTS.has(label)) return 'danger';
+  if (DANGER_LABEL.test(label)) return 'danger';
+  if (LEAK_LABEL.test(label)) return 'leak';
+  const words = callerText ?? '';
+  if (DANGER_PHRASES.test(words)) return 'danger';
+  if (LEAK_PHRASES.test(words)) return 'leak';
+  return EMERGENCY_LABEL.test(label) ? 'danger' : null;
+}
+
+/**
+ * First match wins, in the documented priority order. `callerText` (optional) is the caller's utterance or a summary
+ * of it, matched loosely for leak and danger words (Ruling BK amended).
+ */
+export function shouldTransfer(
+  i: {
+    intent: string;
+    urgent: boolean;
+    mood: 'calm' | 'upset' | 'angry';
+    askedForPersonCount: number;
+    taskInProgress: boolean;
+    failedUnderstanding: number;
+  },
+  callerText?: string,
+): TransferReason | null {
+  const emergency = emergencyReason(i.intent, callerText);
+  if (emergency !== null) return emergency;
   if (i.mood === 'angry') return 'angry';
   if (TRADE_INTENTS.has(i.intent)) return 'trade_caller';
   if (i.intent === 'model_failure') return 'model_failure';

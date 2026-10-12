@@ -767,6 +767,9 @@ describe('front desk engine: caller match at call start and urgent handoffs', ()
     // The router's own label for a real emergency still reaches on-call (loose match, Ruling BK).
     const emergency = await setup([{ when: /./, route: { ...OPUS, route: 'transfer', intent: 'emergency', urgent: true } }]);
     expect(await emergency.say('there are sparks in the attic')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'danger', urgent: true }));
+    // A leak described only in the caller's words is still a leak (amended Ruling BK reads the caller text too).
+    const words = await setup([{ when: /./, route: { ...OPUS, route: 'transfer', intent: 'other', urgent: true } }]);
+    expect(await words.say('water is coming in through the ceiling')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'leak', urgent: true }));
     const leakRoute: RouteDecision = { ...OPUS, route: 'transfer', intent: 'leak', urgent: true };
     const l = await setup([{ when: /./, route: leakRoute }]);
     expect(await l.say('water is coming through the ceiling')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'leak', urgent: true }));

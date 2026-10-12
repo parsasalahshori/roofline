@@ -54,11 +54,11 @@ const notSpam = (): SQL | undefined => or(isNull(conversations.outcome), ne(conv
 /** Unread and not spam: the dock badge counts these as needing attention. */
 const NEEDS_ATTENTION = sql<boolean>`(${conversations.unreadCount} > 0 and ${conversations.outcome} is distinct from 'spam')`;
 
-/** True when the assistant took a message marked urgent on this conversation. */
+/** True when the assistant took a message marked urgent on this conversation and it succeeded (redacted rows keep ok). */
 const URGENT = sql<boolean>`exists (
   select 1 from conversation_turns ct, jsonb_array_elements(coalesce(ct.tool_calls, '[]'::jsonb)) tc
   where ct.company_id = ${conversations.companyId} and ct.conversation_id = ${conversations.id}
-    and tc ->> 'name' = 'take_message' and tc -> 'input' ->> 'urgent' = 'true'
+    and tc ->> 'name' = 'take_message' and tc -> 'input' ->> 'urgent' = 'true' and tc ->> 'ok' = 'true'
 )`;
 
 function filterCondition(filter: ConversationFilter): SQL | undefined {

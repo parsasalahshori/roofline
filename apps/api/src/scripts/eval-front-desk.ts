@@ -332,7 +332,7 @@ export async function playCall(sc: Scenario, llm: Llm, models: EvalModels): Prom
           askedForPersonCount: state.askedForPersonCount,
           taskInProgress: state.taskInProgress,
           failedUnderstanding: state.failedUnderstanding,
-        }) ?? 'asked';
+        }, callerText) ?? 'asked';
       turnEnding = { kind: 'transfer', reason };
       return finish();
     }

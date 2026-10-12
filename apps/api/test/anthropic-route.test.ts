@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { ROUTER_INTENTS } from '@roofline/shared';
+import { EMERGENCY_INTENTS, ROUTER_INTENTS } from '@roofline/shared';
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../src/config.ts';
 import { LlmUnavailableError } from '../src/providers/llm.ts';
 import { buildClients } from '../src/providers/anthropic/client.ts';
+import { ROUTER_PROMPT } from '../src/providers/anthropic/prompts.ts';
 import { createRoute } from '../src/providers/anthropic/route.ts';
 import { createSummarize } from '../src/providers/anthropic/summarize.ts';
 
@@ -102,5 +103,11 @@ describe('anthropic route/summarize', () => {
     const err = await createRoute(buildClients(config, f)!)(routeInput, signal()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(LlmUnavailableError);
     expect(String((err as Error).message) + String((err as Error).stack)).not.toContain(KEY);
+  });
+});
+
+describe('ROUTER_PROMPT (Ruling BK amended)', () => {
+  it('names every emergency intent, so the router emits the words shouldTransfer recognises', () => {
+    for (const intent of EMERGENCY_INTENTS) expect(ROUTER_PROMPT).toMatch(new RegExp(`\\b${intent}\\b`));
   });
 });

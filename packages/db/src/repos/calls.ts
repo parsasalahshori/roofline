@@ -198,7 +198,7 @@ export const STUCK_CALL_STATUSES = ['ringing', 'ai', 'ringing_team'] as const;
 
 /**
  * How long a 'ringing' or 'ringing_team' call may stay live before the sweep ends it: 4 hours, Twilio's
- * longest <Dial> (timeLimit 14400 s). A ring_first call answered by staff stays 'ringing' for the whole
+ * longest <Dial> (timeLimit 14400 s). A ring_first call answered by staff stays 'ringing_team' for the whole
  * bridged call, so the 35-minute bound applies to 'ai' calls only (the relay ends itself at 30 minutes).
  */
 export const DIAL_CALL_LIMIT_MS = 4 * 60 * 60 * 1000;
