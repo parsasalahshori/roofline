@@ -74,6 +74,9 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
     'GET /api/auth/me': () => ({ body: account }),
     // The Connections tab reads the ad accounts too; none are linked unless a test says so
     'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }),
+    // C1 Task 21: the Connections tab also shows the person's calendar
+    'GET /api/calendar/connection': () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } }),
+    'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null, website: null, addressStreet: null, addressCity: null, addressState: null, addressZip: null, timezone: 'America/Chicago', logoUrl: null, located: false, serviceAreaMiles: null } }),
     ...overrides,
   });
   return api;
