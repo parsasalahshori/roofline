@@ -55,17 +55,17 @@ export function tenantContextOf(session: SessionInfo): TenantContext {
 }
 
 /**
- * First half of the sign-in gate. Reads the rl_session cookie, and when it names a live session
- * with an active membership, sets `req.session` and `req.ctx`, slides the expiry (refreshing the
- * cookie when it moved), and records the token hash for the rate limiter. A missing or dead cookie
- * is not an error here: `requireSession` decides what that means for the route.
+ * First half of the sign-in gate. Reads the session cookie (named by `sessionCookieName`), and when
+ * it names a live session with an active membership, sets `req.session` and `req.ctx`, slides the
+ * expiry (refreshing the cookie when it moved), and records the token hash for the rate limiter.
+ * A missing or dead cookie is not an error here: `requireSession` decides what that means for the route.
  * It is a separate step so the per-session rate limiter can run between the two: requests with
  * cookies that name no live session fall into the shared per-IP bucket, and inventing cookie
  * values buys no extra budget.
  */
 export function attachSession(deps: AppDeps): RequestHandler {
   return async (req, res, next) => {
-    const token = readSessionToken(req);
+    const token = readSessionToken(req, deps.config);
     if (token === undefined) {
       next();
       return;

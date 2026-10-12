@@ -4,9 +4,18 @@ import { afterAll, beforeEach, describe, expect, inject, test, vi } from 'vitest
 import { companySettings, createPools, type Pools, withTenant } from '@roofline/db';
 import { hashPassword as seedHashPassword, resetDb, SEED_PASSWORD } from '@roofline/db/testing';
 import { createApp } from '../src/app.ts';
-import { COST, DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from '../src/auth/password.ts';
+import {
+  COST,
+  DUMMY_PASSWORD_HASH,
+  hashPassword,
+  passwordWork,
+  SCRYPT_MAX_ACTIVE,
+  SCRYPT_MAX_QUEUED,
+  verifyPassword,
+} from '../src/auth/password.ts';
 import * as passwordModule from '../src/auth/password.ts';
-import { resolveSession } from '../src/auth/sessions.ts';
+import { DEV_SESSION_COOKIE, resolveSession, SESSION_COOKIE } from '../src/auth/sessions.ts';
+import { BUSY_MESSAGE } from '../src/auth/work-limit.ts';
 import { loginAs, makeTestApp, SIGNUP_COMPANY, type SuperAgent, type TestApp } from './helpers.ts';
 
 // verifyPassword is wrapped (it still runs for real) so a test can see what it was called with.
@@ -56,12 +65,15 @@ function setCookies(res: { headers: Record<string, unknown> }): string[] {
   return Array.isArray(raw) ? (raw as string[]) : raw ? [String(raw)] : [];
 }
 
-/** The rl_session Set-Cookie header of a response, split into its value and attributes. */
-function sessionCookie(res: { headers: Record<string, unknown> }) {
-  const line = setCookies(res).find((c) => c.startsWith('rl_session='));
+/**
+ * The session Set-Cookie header of a response, split into its value and attributes. Tests talk
+ * plain http outside production, so the cookie is `DEV_SESSION_COOKIE` unless `name` says otherwise.
+ */
+function sessionCookie(res: { headers: Record<string, unknown> }, name: string = DEV_SESSION_COOKIE) {
+  const line = setCookies(res).find((c) => c.startsWith(`${name}=`));
   if (!line) return null;
   const [pair, ...attrs] = line.split('; ');
-  return { value: pair!.slice('rl_session='.length), attrs, line };
+  return { value: pair!.slice(name.length + 1), attrs, line };
 }
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -168,7 +180,7 @@ describe('sign-up', () => {
     expect(await verifyPassword(PASSWORD, user!.password_hash)).toBe(true);
   });
 
-  test('sets the rl_session cookie, and the database holds only its sha256', async () => {
+  test('sets the session cookie (rl_session over plain http outside production), and the database holds only its sha256', async () => {
     const res = await signup(t.app);
     const cookie = sessionCookie(res);
     expect(cookie).not.toBeNull();
@@ -188,11 +200,38 @@ describe('sign-up', () => {
     expect(rows[0]).toMatchObject({ user_id: res.body.user.id, active_company_id: res.body.company.id });
   });
 
-  test('the cookie is Secure in production', async () => {
+  test('in production the cookie is __Host-rl_session: Secure, Path=/, no Domain', async () => {
     const prod = await makeTestApp({ NODE_ENV: 'production' });
     const res = await request(prod.app).post('/api/auth/signup').send(signupBody());
     expect(res.status).toBe(201);
-    expect(sessionCookie(res)!.attrs).toEqual(expect.arrayContaining(['Secure', 'HttpOnly', 'SameSite=Lax']));
+    expect(SESSION_COOKIE).toBe('__Host-rl_session');
+    expect(sessionCookie(res)).toBeNull();
+    const cookie = sessionCookie(res, SESSION_COOKIE)!;
+    expect(cookie.attrs).toEqual(expect.arrayContaining(['Secure', 'HttpOnly', 'SameSite=Lax', 'Path=/']));
+    expect(cookie.line).not.toMatch(/domain=/i);
+
+    // It is the cookie production reads; the plain name is ignored there.
+    const me = await request(prod.app).get('/api/auth/me').set('Cookie', `${SESSION_COOKIE}=${cookie.value}`);
+    expect(me.status).toBe(200);
+    const plain = await request(prod.app).get('/api/auth/me').set('Cookie', `${DEV_SESSION_COOKIE}=${cookie.value}`);
+    expect(plain.status).toBe(401);
+  });
+
+  test('outside production, a request over https (behind a trusted proxy) also gets the Secure __Host- cookie', async () => {
+    const proxied = await makeTestApp({ TRUST_PROXY: 1 });
+    const res = await request(proxied.app)
+      .post('/api/auth/signup')
+      .set('X-Forwarded-Proto', 'https')
+      .send(signupBody());
+    expect(res.status).toBe(201);
+    expect(sessionCookie(res)).toBeNull();
+    const cookie = sessionCookie(res, SESSION_COOKIE)!;
+    expect(cookie.attrs).toEqual(expect.arrayContaining(['Secure', 'HttpOnly', 'Path=/']));
+    const me = await request(proxied.app)
+      .get('/api/auth/me')
+      .set('X-Forwarded-Proto', 'https')
+      .set('Cookie', `${SESSION_COOKIE}=${cookie.value}`);
+    expect(me.status).toBe(200);
   });
 
   test('the new user is signed in: GET /api/auth/me works with the cookie', async () => {
@@ -269,7 +308,12 @@ describe('sign-up', () => {
     const before = await sql<{ n: string }>('select (select count(*) from companies) as n');
     const again = await signup(t.app, { email: ' Owner@Example.COM ', companyName: 'Another Roofing' });
     expect(again.status).toBe(409);
-    expect(again.body).toEqual({ error: 'An account with that email already exists.', field: 'email' });
+    // Ruling SEC-1: the answer does not say outright that the email has an account.
+    expect(again.body).toEqual({
+      error: "We couldn't create an account with that email. If you already use Roofline, sign in or reset your password.",
+      field: 'email',
+    });
+    expect(again.body.error).not.toMatch(/already (exists|has)/i);
     expect(sessionCookie(again)).toBeNull();
     // The refused sign-up left nothing behind: no extra company, no extra membership.
     expect(await sql<{ n: string }>('select (select count(*) from companies) as n')).toEqual(before);
@@ -474,6 +518,61 @@ describe('login rate limit', () => {
     for (let i = 0; i < 11; i++) await wrongPassword(t.seed.a.owner.email);
     expect((await request(t.app).get('/health')).status).toBe(200);
   });
+
+  describe('across addresses', () => {
+    let proxied: TestApp;
+    beforeEach(async () => {
+      proxied = await makeTestApp({ TRUST_PROXY: 1 });
+    });
+    const from = (ip: string, email: string, password: string) =>
+      request(proxied.app).post('/api/auth/login').set('X-Forwarded-For', ip).send({ email, password });
+
+    test('one email: 20 failures an hour from any number of addresses, then even the right password is refused', async () => {
+      for (let i = 1; i <= 20; i++) {
+        expect((await from(`198.51.100.${i}`, proxied.seed.a.owner.email, 'wrong guess')).status, `attempt ${i}`).toBe(401);
+      }
+      const blocked = await from('198.51.100.200', proxied.seed.a.owner.email, SEED_PASSWORD);
+      expect(blocked.status).toBe(429);
+      expect(blocked.body).toEqual(TOO_MANY);
+      // Another account is untouched.
+      expect((await from('198.51.100.201', proxied.seed.a.office.email, SEED_PASSWORD)).status).toBe(200);
+    });
+
+    test('an email with no account gets the very same lock and answer', async () => {
+      for (let i = 1; i <= 20; i++) await from(`198.51.100.${i}`, 'nobody@example.com', 'wrong guess');
+      const blocked = await from('198.51.100.200', 'nobody@example.com', 'wrong guess');
+      expect(blocked.status).toBe(429);
+      expect(blocked.body).toEqual(TOO_MANY);
+    });
+
+    test('one address: 30 failures across any emails in 15 minutes, then every login from it is refused', async () => {
+      for (let i = 1; i <= 30; i++) {
+        expect((await from('203.0.113.50', `person${i}@example.com`, 'wrong guess')).status, `attempt ${i}`).toBe(401);
+      }
+      const blocked = await from('203.0.113.50', proxied.seed.a.owner.email, SEED_PASSWORD);
+      expect(blocked.status).toBe(429);
+      expect(blocked.body).toEqual(TOO_MANY);
+      expect((await from('203.0.113.51', proxied.seed.a.owner.email, SEED_PASSWORD)).status).toBe(200);
+    });
+  });
+
+  test('when password checking is saturated, login answers 503 with Retry-After and the attempt is not a failure', async () => {
+    let open!: () => void;
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const holders = Array.from({ length: SCRYPT_MAX_ACTIVE + SCRYPT_MAX_QUEUED }, () => passwordWork.run(() => held));
+    try {
+      const res = await request(t.app).post('/api/auth/login').send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: BUSY_MESSAGE });
+      expect(res.headers['retry-after']).toBe('5');
+    } finally {
+      open();
+      await Promise.all(holders);
+    }
+    expect((await request(t.app).post('/api/auth/login').send({ email: t.seed.a.owner.email, password: SEED_PASSWORD })).status).toBe(200);
+  });
 });
 
 describe('API rate limit', () => {
@@ -505,10 +604,10 @@ describe('API rate limit', () => {
   test('requests with no session share one budget per IP, and new cookie values do not reset it', async () => {
     const limited = await makeTestApp({ API_RATE_LIMIT_PER_MIN: 5 });
     for (let i = 1; i <= 5; i++) {
-      const res = await request(limited.app).get('/api/auth/me').set('Cookie', `rl_session=${'x'.repeat(42)}${i}`);
+      const res = await request(limited.app).get('/api/auth/me').set('Cookie', `${DEV_SESSION_COOKIE}=${'x'.repeat(42)}${i}`);
       expect(res.status, `request ${i}`).toBe(401);
     }
-    const res = await request(limited.app).get('/api/auth/me').set('Cookie', `rl_session=${'y'.repeat(43)}`);
+    const res = await request(limited.app).get('/api/auth/me').set('Cookie', `${DEV_SESSION_COOKIE}=${'y'.repeat(43)}`);
     expect(res.status).toBe(429);
     expect(res.body).toEqual(TOO_FAST);
   });
@@ -552,7 +651,7 @@ describe('requireSession', () => {
   test('a garbage cookie, a made-up token and a token for a deleted session are all 401', async () => {
     const bogus = ['garbage', 'x'.repeat(43), '%00', '', 'a'.repeat(5000)];
     for (const value of bogus) {
-      const res = await request(t.app).get('/api/auth/me').set('Cookie', `rl_session=${value}`);
+      const res = await request(t.app).get('/api/auth/me').set('Cookie', `${DEV_SESSION_COOKIE}=${value}`);
       expect(res.status, value.slice(0, 10)).toBe(401);
     }
     const agent = await loginAs(t.app, t.seed.a.owner);
@@ -565,7 +664,7 @@ describe('requireSession', () => {
       .post('/api/auth/login')
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
     const token = sessionCookie(login)!.value;
-    const res = await request(t.app).get('/api/auth/me').set('Cookie', `theme=dark; rl_session=${token}; other=1`);
+    const res = await request(t.app).get('/api/auth/me').set('Cookie', `theme=dark; ${DEV_SESSION_COOKIE}=${token}; other=1`);
     expect(res.status).toBe(200);
   });
 
@@ -622,7 +721,7 @@ describe('sessions', () => {
       .post('/api/auth/login')
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
     const token = sessionCookie(login)!.value;
-    const cookie = `rl_session=${token}`;
+    const cookie = `${DEV_SESSION_COOKIE}=${token}`;
     const start = t.clock.now().getTime();
     const before = await sessionRow(t.seed.a.owner.userId);
     expect(before.expires_at.getTime()).toBe(start + 30 * DAY);
@@ -820,14 +919,43 @@ describe('sign-up rate limit', () => {
     expect(await sql('select 1 from users where email = $1', ['owner11@example.com'])).toEqual([]);
   });
 
-  test('refused attempts count too, so the "email already used" answer cannot be asked 10+ times', async () => {
-    expect((await signup(t.app)).status).toBe(201);
-    for (let i = 2; i <= 10; i++) {
-      expect((await signup(t.app)).status, `attempt ${i}`).toBe(409);
+  test('refused attempts count too', async () => {
+    for (let i = 1; i <= 10; i++) {
+      expect((await signup(t.app, { password: 'short' })).status, `attempt ${i}`).toBe(400);
     }
     const blocked = await signup(t.app);
     expect(blocked.status).toBe(429);
     expect(blocked.body).toEqual(TOO_MANY);
+  });
+
+  test('Ruling SEC-1: only 3 "that email can\'t be used" answers an hour per address, then the plain sign-up 429', async () => {
+    const proxied = await makeTestApp({ TRUST_PROXY: 1 });
+    const from = (ip: string, email: string) =>
+      request(proxied.app).post('/api/auth/signup').set('X-Forwarded-For', ip).send(signupBody({ email }));
+    for (let i = 1; i <= 3; i++) {
+      expect((await from('203.0.113.7', proxied.seed.a.owner.email)).status, `attempt ${i}`).toBe(409);
+    }
+    const blocked = await from('203.0.113.7', proxied.seed.b.owner.email);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toEqual(TOO_MANY);
+    // Even a new email from that address waits; other addresses are not affected.
+    expect((await from('203.0.113.7', 'brand-new@example.com')).status).toBe(429);
+    expect((await from('203.0.113.8', proxied.seed.b.owner.email)).status).toBe(409);
+    expect((await from('203.0.113.8', 'brand-new@example.com')).status).toBe(201);
+  });
+
+  test('sign-ups in flight at the same moment do not use up the "email can\'t be used" budget', async () => {
+    const results = await Promise.all(
+      [1, 2, 3, 4, 5].map((n) => signup(t.app, { email: `burst${n}@example.com`, companyName: `Burst ${n}` })),
+    );
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201, 201]);
+  });
+
+  test('sign-ups that succeed do not use up the "email can\'t be used" budget', async () => {
+    for (let i = 1; i <= 5; i++) {
+      expect((await signup(t.app, { email: `owner${i}@example.com`, companyName: `Company ${i}` })).status).toBe(201);
+    }
+    for (let i = 1; i <= 3; i++) expect((await signup(t.app, { email: `owner${i}@example.com` })).status).toBe(409);
   });
 
   test('another address has its own budget', async () => {
@@ -915,14 +1043,14 @@ describe('signing in on a browser that is already signed in', () => {
     const first = await request(t.app)
       .post('/api/auth/login')
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
-    const oldCookie = `rl_session=${sessionCookie(first)!.value}`;
+    const oldCookie = `${DEV_SESSION_COOKIE}=${sessionCookie(first)!.value}`;
     const second = await request(t.app)
       .post('/api/auth/login')
       .set('Cookie', oldCookie)
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
     expect(second.status).toBe(200);
     expect((await request(t.app).get('/api/auth/me').set('Cookie', oldCookie)).status).toBe(401);
-    const newCookie = `rl_session=${sessionCookie(second)!.value}`;
+    const newCookie = `${DEV_SESSION_COOKIE}=${sessionCookie(second)!.value}`;
     expect((await request(t.app).get('/api/auth/me').set('Cookie', newCookie)).status).toBe(200);
   });
 
@@ -952,7 +1080,7 @@ describe('signing in on a browser that is already signed in', () => {
   test('a login with a dead cookie just starts one session', async () => {
     const res = await request(t.app)
       .post('/api/auth/login')
-      .set('Cookie', `rl_session=${'x'.repeat(43)}`)
+      .set('Cookie', `${DEV_SESSION_COOKIE}=${'x'.repeat(43)}`)
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
     expect(res.status).toBe(200);
     expect(await sql('select 1 from sessions where user_id = $1', [t.seed.a.owner.userId])).toHaveLength(1);
@@ -984,7 +1112,7 @@ describe('role and spend approval are read fresh on every request', () => {
       .post('/api/auth/login')
       .send({ email: t.seed.a.office.email, password: SEED_PASSWORD });
     const token = sessionCookie(login)!.value;
-    const cookie = `rl_session=${token}`;
+    const cookie = `${DEV_SESSION_COOKIE}=${token}`;
 
     const before = await request(t.app).get('/api/auth/me').set('Cookie', cookie);
     expect(before.body.role).toBe('office');
