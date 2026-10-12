@@ -1,7 +1,7 @@
 {
   "name": "Roofline storm cs-1 meta",
   "campaign_id": "120000001",
-  "status": "PAUSED",
+  "status": "ACTIVE",
   "billing_event": "IMPRESSIONS",
   "optimization_goal": "LANDING_PAGE_VIEWS",
   "bid_strategy": "LOWEST_COST_WITHOUT_CAP",

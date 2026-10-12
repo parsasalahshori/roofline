@@ -180,7 +180,8 @@ test('provider failures become our own plain messages', async () => {
   t.adsGoogle.failNext('payment');
   const res = await owner.post(`/api/ads/accounts/${acct.id}/check`);
   expect(res.status).toBe(200);
-  expect(res.body.account.status).toBe('error');
+  // A thrown Check keeps the previous status (here still waiting) and only notes the problem.
+  expect(res.body.account.status).toBe(acct.status);
   expect(res.body.account.lastErrorPlain).toBe(AD_ERROR_MESSAGES.payment);
   expect(JSON.stringify(res.body)).not.toContain('Ad platform error');
 

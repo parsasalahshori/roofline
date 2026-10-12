@@ -9650,6 +9650,12 @@
           "notNull": true,
           "default": false
         },
+        "paused_by": {
+          "name": "paused_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_synced_at": {
           "name": "last_synced_at",
           "type": "timestamp with time zone",
@@ -9784,6 +9790,10 @@
         "ad_campaigns_error_kind_check": {
           "name": "ad_campaigns_error_kind_check",
           "value": "\"ad_campaigns\".\"error_kind\" in ('policy', 'payment', 'access', 'targeting', 'other')"
+        },
+        "ad_campaigns_paused_by_check": {
+          "name": "ad_campaigns_paused_by_check",
+          "value": "\"ad_campaigns\".\"paused_by\" in ('roofline', 'platform')"
         }
       },
       "isRLSEnabled": false
