@@ -140,7 +140,7 @@ describe('POST /hooks/twilio/voice/recording', () => {
   });
 
   test('an unknown CallSid answers 204 without a job', async () => {
-    const res = await post({ ...base, CallSid: 'CA_unknown', RecordingStatus: 'completed' });
+    const res = await post({ ...base, CallSid: 'CA' + 'f'.repeat(32), RecordingStatus: 'completed' });
     expect(res.status).toBe(204);
     expect(t.jobs.sent.filter((j) => j.name === 'fd-recording-store')).toHaveLength(0);
   });

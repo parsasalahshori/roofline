@@ -1,6 +1,7 @@
 import express, { Router } from 'express';
 import { findCallRecordingBySid, setCallRecording, type TenantContext, withTenant } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
+import { validCallSid } from './twilio-voice-common.ts';
 import { checkSignature, field, FORM_BODY_LIMIT } from './twilio.ts';
 
 /**
@@ -17,8 +18,8 @@ export function twilioVoiceRecordingHooks(deps: AppDeps): Router {
   router.use(express.urlencoded({ extended: false, limit: FORM_BODY_LIMIT }));
 
   router.post('/', async (req, res) => {
-    const callSid = field(req, 'CallSid');
-    if (callSid === undefined || callSid === '') {
+    const callSid = validCallSid(req);
+    if (callSid === null) {
       res.status(400).end();
       return;
     }
