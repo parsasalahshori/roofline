@@ -17,3 +17,5 @@ typecheck and lint clean; playwright --list: 54 tests in 14 files; npm ls playwr
 ## CI round 1 (run 38263197484, bfaca67): failed, fixed
 - Platform: unsubscribe.test.ts still expected no-referrer (updated to same-origin); the Postmark router's bodyErrors turned the limiter's 429 into 400 (429 now passes through).
 - E2E: seven storm specs stopped at needs_attention because the fixture ad accounts had no USD currency (base lacks 3f800e5); the same fixture change is applied here (identical content).
+
+## CI round 2 (run 38265472388, 905266e): E2E and Hail green; Platform failed only on test/exact-report.test.ts:130 (re-price count, a clock-timing test in code R9 does not touch). Re-run on a report-only commit.
