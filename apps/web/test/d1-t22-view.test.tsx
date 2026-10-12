@@ -194,6 +194,6 @@ describe('ConversationView', () => {
   it('falls back to the unknown caller line when there is no customer', () => {
     renderView(makeConversation({ customer: null, turns: [] }));
     expect(screen.getByText(conversationCopy.unknownCaller)).toBeInTheDocument();
-    expect(screen.getByText('+15551230000')).toBeInTheDocument();
+    expect(screen.getByText('(555) 123-0000')).toBeInTheDocument();
   });
 });

@@ -1,7 +1,8 @@
 import { useId } from 'react';
 import { Button, Card } from '@roofline/ui';
-import type { ConversationDetail, ToolActionCard, TurnView } from '@roofline/shared';
+import type { CallView, ConversationDetail, ToolActionCard, TurnView } from '@roofline/shared';
 import { conversationCopy } from '../../copy/front-desk-conversation.ts';
+import { formatPhone } from '../../lib/phone.ts';
 import styles from './ConversationView.module.css';
 
 /** The record a tool action card links to. Claim intake has no route yet, so it is plain text. */
@@ -46,18 +47,24 @@ function TurnBody({ turn, transcriptStored }: { turn: TurnView; transcriptStored
   );
 }
 
+/**
+ * Whether the call behind this turn kept its transcript. A TurnView carries no call id, so a turn cannot be tied to
+ * one call: with a single call that call decides, and with several any call that kept nothing makes the line say so.
+ */
+function turnTranscriptStored(_turn: TurnView, calls: CallView[]): boolean {
+  if (calls.length === 1) return calls[0]!.transcriptStored;
+  return calls.every((call) => call.transcriptStored);
+}
+
 export function ConversationView({ conversation }: { conversation: ConversationDetail }) {
   const headingId = useId();
   const turns = [...conversation.turns].sort((a, b) => a.position - b.position);
-  // A turn with no text belongs to a call that kept no transcript: show the caller's-request line when any call did not store it.
-  const someCallNotStored = conversation.calls.some((call) => !call.transcriptStored);
-  const transcriptStored = !someCallNotStored;
 
   return (
     <article className={styles.view}>
       <header className={styles.header}>
         <h2 className={styles.name}>{conversation.customer?.name ?? conversationCopy.unknownCaller}</h2>
-        <p className={styles.phone}>{conversation.phoneE164}</p>
+        <p className={styles.phone}>{formatPhone(conversation.phoneE164)}</p>
       </header>
 
       <section className={styles.transcript} aria-labelledby={headingId}>
@@ -71,7 +78,7 @@ export function ConversationView({ conversation }: { conversation: ConversationD
             {turns.map((turn) => (
               <li key={turn.id} className={`${styles.turn} ${styles[turn.speaker]}`} data-speaker={turn.speaker}>
                 <span className={styles.speaker}>{conversationCopy.speaker[turn.speaker]}</span>
-                <TurnBody turn={turn} transcriptStored={transcriptStored} />
+                <TurnBody turn={turn} transcriptStored={turnTranscriptStored(turn, conversation.calls)} />
                 {turn.truncated ? <span className={styles.truncated}>{conversationCopy.truncated}</span> : null}
                 {turn.actions.length > 0 ? (
                   <ul className={styles.actions}>
