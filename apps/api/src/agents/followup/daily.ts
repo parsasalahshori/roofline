@@ -9,9 +9,7 @@ import {
   followUpSettings,
   lastInboundAt,
   lastStormTextAt,
-  listSteps,
   memberNames,
-  moveStep,
   recordStuckNudge,
   STUCK_NUDGE_GAP_DAYS,
   type StuckCandidate,
@@ -20,7 +18,6 @@ import {
   getAgentSettings,
   memberHours,
   updateJob,
-  updateTask,
   type Tx,
   withTenant,
   zoneDayStart,
@@ -28,7 +25,8 @@ import {
 import { DEFAULT_WORK_HOURS, followUpAllowed, NEXT_STEP_MAX, type WorkHours } from '@roofline/shared';
 import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
-import { createTask, refreshTask } from '../../tasks/service.ts';
+import { createTask } from '../../tasks/service.ts';
+import { writeAgentNote } from '../notes.ts';
 import { localParts } from '../schedule.ts';
 import { draftLeadTexts, type LeadDraftInput, pickTwoSlots } from './draft.ts';
 
@@ -212,23 +210,17 @@ async function runStuck(deps: AppDeps, ctx: TenantContext, timeZone: string, now
     }
     if (nudged === 0) return;
 
-    // A live task needs no approval and has no real step to run: createTask wants one step, so it
-    // carries an internal no-op that is marked done here, and the task is finished through
-    // refreshTask (which also writes its `finished` event).
-    const { taskId } = await createTask(
+    // A live note (Ruling GX-R): no approval, nothing sent.
+    await writeAgentNote(
       tx,
       ctx,
       {
         agent: AGENT,
         kind: STUCK_KIND,
         title: `Nudged reps about ${nudged} quiet jobs`,
-        mode: 'live',
-        steps: [{ type: 'demo_noop', payload: { label: `Reminded reps about ${nudged} quiet jobs (every ${STUCK_NUDGE_GAP_DAYS} days at most)` } }],
+        label: `Reminded reps about ${nudged} quiet jobs (every ${STUCK_NUDGE_GAP_DAYS} days at most)`,
       },
-      { now, allowInternalStepTypes: true },
+      now,
     );
-    await updateTask(tx, ctx, taskId, { status: 'running' }, now);
-    for (const step of await listSteps(tx, ctx, [taskId])) await moveStep(tx, ctx, step.id, ['pending'], { status: 'done' }, now);
-    await refreshTask(tx, ctx, taskId, now);
   });
 }

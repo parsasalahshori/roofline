@@ -6,19 +6,17 @@ import {
   companies,
   followUpLogFor,
   jobs,
-  listSteps,
   messages,
-  moveStep,
   saveClaim,
   type TenantContext,
   type Tx,
-  updateTask,
   withTenant,
 } from '@roofline/db';
 import { canMoveClaim } from '@roofline/shared';
 import type { AppDeps } from '../../app.ts';
 import { type ClaimReplyFacts, LlmUnavailableError } from '../../providers/llm.ts';
 import { createTask } from '../../tasks/service.ts';
+import { writeAgentNote } from '../notes.ts';
 
 export type ClaimsReplyMessage = {
   companyId: string;
@@ -102,9 +100,9 @@ async function loadReply(tx: Tx, ctx: TenantContext, messageId: string): Promise
 }
 
 /** The job's rep, else the company's owner; null when neither can be found. */
-async function visitUserId(tx: Tx, repUserId: string | null): Promise<string | null> {
+async function visitUserId(tx: Tx, ctx: TenantContext, repUserId: string | null): Promise<string | null> {
   if (repUserId !== null) return repUserId;
-  const result = await tx.execute(sql`select user_id from company_members where role = 'owner' and status = 'active' order by id limit 1`);
+  const result = await tx.execute(sql`select user_id from company_members where company_id = ${ctx.companyId} and role = 'owner' and status = 'active' order by id limit 1`);
   const row = result.rows[0];
   return row ? (row.user_id as string) : null;
 }
@@ -120,29 +118,14 @@ function noteTitle(facts: ClaimReplyFacts, applied: ClaimPatch): string {
   return 'Claims noted a claim update';
 }
 
-/**
- * Records what the agent changed as a finished `live` task. The task service refuses a plan with no
- * steps, so the note carries one internal step that is marked skipped (nothing runs), and the task is
- * marked done at once: it never waits for an approval.
- */
-async function writeLiveNote(tx: Tx, ctx: TenantContext, messageId: string, jobId: string, title: string, now: Date): Promise<void> {
-  const { taskId } = await createTask(
+/** Records what the agent changed as a finished live note (Ruling GX-R): it never waits for an approval. */
+async function writeLiveNote(tx: Tx, ctx: TenantContext, messageId: string, title: string, now: Date): Promise<void> {
+  await writeAgentNote(
     tx,
     ctx,
-    {
-      agent: 'claims',
-      kind: NOTE_KIND,
-      title,
-      summary: FROM_THE_TEXT,
-      subjectType: 'message',
-      subjectId: messageId,
-      mode: 'live',
-      steps: [{ type: 'build_claim_packet', payload: { jobId } }],
-    },
-    { now, allowInternalStepTypes: true },
+    { agent: 'claims', kind: NOTE_KIND, title, summary: FROM_THE_TEXT, subjectType: 'message', subjectId: messageId, label: title },
+    now,
   );
-  for (const step of await listSteps(tx, ctx, [taskId])) await moveStep(tx, ctx, step.id, ['pending'], { status: 'skipped' }, now);
-  await updateTask(tx, ctx, taskId, { status: 'done' }, now);
 }
 
 /**
@@ -198,10 +181,10 @@ export async function runClaimsReply(deps: AppDeps, companyId: string, messageId
     if (Object.keys(patch).length === 0 && visit === null) return;
 
     // D1 T14: queueFrontDeskText(...) goes here: "Thanks, got it." once the extraction fully answered the reply.
-    await writeLiveNote(tx, ctx, messageId, claim.jobId, noteTitle(facts, patch), now);
+    await writeLiveNote(tx, ctx, messageId, noteTitle(facts, patch), now);
 
     if (visit !== null) {
-      const userId = await visitUserId(tx, claim.repUserId);
+      const userId = await visitUserId(tx, ctx, claim.repUserId);
       if (userId === null) return;
       await createTask(
         tx,

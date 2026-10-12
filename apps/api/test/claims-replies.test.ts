@@ -169,7 +169,7 @@ describe('runClaimsReply (the job)', () => {
       subjectType: 'message',
       subjectId: c.messageId,
     });
-    expect((await dbSteps(t, 'a', tasks[0]!.id)).map((s) => s.status)).toEqual(['skipped']);
+    expect((await dbSteps(t, 'a', tasks[0]!.id)).map((s) => [s.type, s.status])).toEqual([['demo_noop', 'done']]);
 
     // A rerun of the job for the same message adds nothing.
     t.llm.scriptExtraction(extraction({ claimNumber: '0451-22', insurer: 'Acme Mutual', decision: 'approved' }));
