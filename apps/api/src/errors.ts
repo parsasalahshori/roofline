@@ -15,7 +15,6 @@ export const MESSAGES = {
   checkField: 'Please check this field.',
   signIn: 'Please sign in.',
   badLogin: "That email and password don't match.",
-  emailTaken: 'An account with that email already exists.',
   noAccess: 'Your access to this company is turned off. Ask the owner to turn it back on.',
   tooManyLogins: 'Too many sign-in attempts. Try again in a few minutes.',
   tooFast: "You're going a little fast. Try again in a minute.",
