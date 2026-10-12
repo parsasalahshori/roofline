@@ -99,6 +99,7 @@ async function main(): Promise<number> {
       const drafted = await llm.draftTexts({ instruction: c.kind, facts: [c.facts] });
       r.draftUsage = drafted.usage;
       r.draftRefused = drafted.refused;
+      if (drafted.dropped !== undefined) r.dropped = drafted.dropped;
       r.text = drafted.texts.find((t) => t.jobId === c.facts.jobId)?.body ?? null;
     } catch (err) {
       // The adapter turns SDK errors into LlmUnavailableError with the status only.

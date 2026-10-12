@@ -1,14 +1,7 @@
 import { Button } from '@roofline/ui';
 import { stepVisits } from '../../../copy/stepVisits.ts';
-import type { StepView } from '../../../api/types.ts';
+import { payloadOf } from './payload.ts';
 import type { StepKit, StepPreviewProps } from './types.ts';
-
-type Payload = Record<string, unknown>;
-
-function payloadOf(step: StepView): Payload {
-  const payload: unknown = step.payload;
-  return payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Payload) : {};
-}
 
 /** The claim packet under a build_claim_packet step: what it builds and a way to the job. */
 export function ClaimPacketPreview({ step }: StepPreviewProps) {

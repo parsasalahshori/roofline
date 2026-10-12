@@ -5,20 +5,14 @@ import { apiFetch } from '../../../api/client.ts';
 import type { StepView } from '../../../api/types.ts';
 import { stepTexts } from '../../../copy/stepTexts.ts';
 import styles from './SendTextsPreview.module.css';
+import { payloadOf } from './payload.ts';
 import type { EditFieldSpec, EditValues, StepKit, StepPreviewProps } from './types.ts';
 
-type Payload = Record<string, unknown>;
 type Message = Record<string, unknown>;
 
 const FIRST_ROWS = 20;
 const MAX_LENGTH = 480;
 const STOP_LINE = 'Reply STOP to opt out';
-
-/** The step's payload as an object. A payload that is missing or not an object reads as empty. */
-function payloadOf(step: StepView): Payload {
-  const payload: unknown = step.payload;
-  return payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Payload) : {};
-}
 
 /** The messages that are objects, in order. */
 function messagesOf(step: StepView): Message[] | null {

@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { auditLog, customers } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { primaryTextingPhone } from './agent-common.ts';
 import { audit } from './audit.ts';
 
 // G1 Task 10: crew agenda emails. Idempotency is the audit log: one `agenda.email_sent` row per member per local day.
@@ -40,8 +41,8 @@ export async function customerPhones(tx: Tx, ctx: TenantContext, customerIds: st
     .where(and(eq(customers.companyId, ctx.companyId), inArray(customers.id, customerIds)));
   for (const r of rows) {
     const phones = Array.isArray(r.phones) ? r.phones : [];
-    const pick = phones.find((p) => p.primary === true && p.e164) ?? phones.find((p) => p.e164);
-    if (pick) out.set(r.id, pick.e164);
+    const pick = primaryTextingPhone(phones);
+    if (pick !== null) out.set(r.id, pick);
   }
   return out;
 }
