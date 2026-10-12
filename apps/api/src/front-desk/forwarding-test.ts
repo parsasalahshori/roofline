@@ -28,8 +28,6 @@ const PHONE_FIRST = 'Add your business phone number in Settings → Company firs
 const TEST_CALLER_UNSET = "The forwarding test isn't available right now. Try again later.";
 const PLACE_FAILED = "We couldn't place the test call. Try again in a minute.";
 const WAIT = 'Wait a minute before testing again.';
-const NOT_RECEIVED =
-  'The test call never reached us. Check that forwarding is on for your business line and that it forwards to your Roofline number.';
 const TIMEOUT_SECONDS = 30;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -40,10 +38,12 @@ const ownerOrOffice: RequestHandler = (req, _res, next) => {
   next(allowed ? undefined : new AppError(403, MESSAGES.roleCannot));
 };
 
+/** The Ruling DR view: 'calling' until the call arrives (verified) or the 30 s timeout ends it (not_received). */
 function viewOf(row: ForwardingTestRecord): ForwardingTestView {
-  if (row.verified) return { id: row.id, status: 'verified', message: null };
-  if (row.status === 'ringing') return { id: row.id, status: 'pending', message: null };
-  return { id: row.id, status: 'not_received', message: NOT_RECEIVED };
+  const base = { id: row.id, startedAt: row.startedAt.toISOString(), finishedAt: row.endedAt ? row.endedAt.toISOString() : null };
+  if (row.verified) return { ...base, status: 'verified' };
+  if (row.status === 'ringing') return { ...base, status: 'calling' };
+  return { ...base, status: 'not_received' };
 }
 
 export function forwardingTestRoutes(deps: AppDeps): Router {

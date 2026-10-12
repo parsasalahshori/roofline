@@ -27,8 +27,6 @@ const PHONE_FIRST = 'Add your business phone number in Settings → Company firs
 const WAIT = 'Wait a minute before testing again.';
 const NOT_ALLOWED = "Your role can't do that. Ask the owner.";
 const NOT_FOUND = "We couldn't find that.";
-const NOT_RECEIVED =
-  'The test call never reached us. Check that forwarding is on for your business line and that it forwards to your Roofline number.';
 
 let t: TestApp;
 
@@ -134,12 +132,12 @@ describe('POST /api/front-desk/forwarding-test', () => {
 });
 
 describe('GET /api/front-desk/forwarding-test/:id', () => {
-  test('a new test is pending until its call arrives', async () => {
+  test('a new test is calling until its call arrives', async () => {
     const owner = await loginAs(t.app, t.seed.a.owner);
     const { body } = await startTest(owner);
     const view = await viewOf(owner, body.id as string);
     expect(view.status).toBe(200);
-    expect(view.body as ForwardingTestView).toEqual({ id: body.id, status: 'pending', message: null });
+    expect(view.body as ForwardingTestView).toMatchObject({ id: body.id, status: 'calling', finishedAt: null });
   });
 
   test('a call from the test caller to the company line marks forwarding verified and the setup item done', async () => {
@@ -151,7 +149,7 @@ describe('GET /api/front-desk/forwarding-test/:id', () => {
     expect(arrival.text).toContain(VERIFIED_TWIML);
 
     const view = await viewOf(owner, body.id as string);
-    expect(view.body).toEqual({ id: body.id, status: 'verified', message: null });
+    expect(view.body).toMatchObject({ id: body.id, status: 'verified' });
 
     const [settings] = await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
       tx.select({ at: companySettings.forwardingVerifiedAt }).from(companySettings).where(eq(companySettings.companyId, idOf('a'))),
@@ -166,14 +164,15 @@ describe('GET /api/front-desk/forwarding-test/:id', () => {
   test('no arrival by the 30 s timeout fails the test with the likely cause', async () => {
     const owner = await loginAs(t.app, t.seed.a.owner);
     const { body } = await startTest(owner);
-    expect((await viewOf(owner, body.id as string)).body).toMatchObject({ status: 'pending' });
+    expect((await viewOf(owner, body.id as string)).body).toMatchObject({ status: 'calling' });
 
     t.clock.advance(31_000);
     await t.jobs.drain(t.deps);
 
     const view = await viewOf(owner, body.id as string);
     expect(view.status).toBe(200);
-    expect(view.body).toEqual({ id: body.id, status: 'not_received', message: NOT_RECEIVED });
+    expect(view.body).toMatchObject({ id: body.id, status: 'not_received' });
+    expect((view.body as ForwardingTestView).finishedAt).not.toBeNull();
   });
 
   test("another company's pending test is not matched by a call to a different company's line", async () => {
@@ -185,7 +184,7 @@ describe('GET /api/front-desk/forwarding-test/:id', () => {
     expect(arrivalAtB.text).not.toContain(VERIFIED_TWIML);
 
     const view = await viewOf(ownerA, body.id as string);
-    expect(view.body).toMatchObject({ id: body.id, status: 'pending' });
+    expect(view.body).toMatchObject({ id: body.id, status: 'calling' });
   });
 
   test("another company's test is not found", async () => {
