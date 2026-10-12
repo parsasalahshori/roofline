@@ -13,3 +13,8 @@
 9. **Note 44:** the requeue path in texts.ts must not drop a finished turn: requeue only when no assistant turn was stored.
 
 **Verify:** typecheck, lint; api tests on CI via `CI_JOBS="Platform E2E" ops/bin/ci-check`. Commit: `fix(api): front desk keeps SMS threads, identity and notes straight`.
+
+**Also, T19 minors:**
+- (a) The engine's person-ask and not-understood counters key on router intents (`ask_for_person`, `transfer`, `human`, `not_understood`) that nothing asks the router to emit. Make them a closed enum in the router's structured-output schema (`output_config.format` json_schema in providers/anthropic) and the shared types. Leave the byte-frozen ROUTER_PROMPT text alone unless the schema can't carry it; if the text must change, say so in the report. Test with ScriptedLlm.
+- (b) `tools/transfer.ts` bumps askedForPersonCount on reason 'asked' while the engine also bumps it on the intent: count once per turn.
+- (c) Import systemCtx from tools/system-ctx.ts everywhere and drop the times.ts re-export.
