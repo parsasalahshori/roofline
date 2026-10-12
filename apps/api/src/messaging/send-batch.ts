@@ -5,6 +5,7 @@ import {
   markUnconfirmedTexts,
   type OutboundText,
   rewriteRetryableText,
+  type StepRow,
   stepTextCounts,
   type TenantContext,
   type TextState,
@@ -13,8 +14,9 @@ import {
 import { type MessagePurpose, stepTypes } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { leaseKeeper } from '../tasks/lease.ts';
-import type { StepHandler } from '../tasks/runner.ts';
+import type { StepHandler, StepOutcome } from '../tasks/runner.ts';
 import { buildGateRequest } from './gate-request.ts';
+import { STORM_TOKEN_IN_TEXT, stormTextRender, UNFILLED_TEXT_REASON } from './storm-text.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, type QueuedText, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
 
 /*
@@ -35,7 +37,14 @@ export const NOT_TAKEN = "The texting service didn't take this message. We'll tr
 
 const UNREADABLE = "We couldn't read who to text or what to send. Please make this plan again.";
 
-type BatchText = { customerId: string; purpose: MessagePurpose; template: string; dedupeKey: string | null };
+type BatchText = {
+  customerId: string;
+  purpose: MessagePurpose;
+  template: string;
+  dedupeKey: string | null;
+  /** True when `template` is already the finished text (a proposal's link is rendered by its step). */
+  bodyRendered?: true;
+};
 
 /**
  * The handler. For each customer in `payload.customerIds`, in order:
@@ -66,8 +75,22 @@ type BatchText = { customerId: string; purpose: MessagePurpose; template: string
  *   the dispatcher finishes it;
  * - else `done`.
  * A customer who is not in the company is skipped. A payload that is not a batch's needs attention.
+ * `options.render` (storm texts) gives each customer's own template; a body that still holds a storm
+ * token after the gate request is built is blocked ('content') instead of being texted.
  */
 export const sendSmsBatch: StepHandler = async (deps, ctx, step) => {
+  const parsed = stepTypes.send_sms_batch.payload.safeParse(step.payload);
+  if (!parsed.success) return { status: 'needs_attention', result: {}, errorPlain: UNREADABLE };
+  const data = parsed.data as { body: string; fields?: Record<string, Record<string, string>> };
+  return runSmsBatch(deps, ctx, step, { render: stormTextRender(data.body, data.fields) });
+};
+
+export async function runSmsBatch(
+  deps: AppDeps,
+  ctx: TenantContext,
+  step: StepRow,
+  options: { render?: (customerId: string) => string } = {},
+): Promise<StepOutcome> {
   const parsed = stepTypes.send_sms_batch.payload.safeParse(step.payload);
   if (!parsed.success) return { status: 'needs_attention', result: {}, errorPlain: UNREADABLE };
   const { purpose, body, customerIds, dedupePrefix } = parsed.data as {
@@ -84,7 +107,7 @@ export const sendSmsBatch: StepHandler = async (deps, ctx, step) => {
     // run's (a newer run has it), so stop texting here and leave the rest to that run.
     if (!(await lease.keep())) return { status: 'running', result: {} };
     const dedupeKey = dedupePrefix !== undefined ? `${dedupePrefix}:${customerId}` : null;
-    const queued = await decideOne(deps, ctx, step.id, { customerId, purpose, template: body, dedupeKey });
+    const queued = await decideOne(deps, ctx, step.id, { customerId, purpose, template: options.render ? options.render(customerId) : body, dedupeKey });
     if (queued && (await sendQueuedText(deps, ctx, queued, NOT_TAKEN)) === 'refused') refused += 1;
   }
 
@@ -121,12 +144,22 @@ function decideOne(deps: AppDeps, ctx: TenantContext, stepId: string, text: Batc
     const built = await buildGateRequest(
       tx,
       ctx,
-      { customerId: text.customerId, purpose: text.purpose, body: text.template, dedupeKey: text.dedupeKey, replyToInboundAt: null },
+      {
+        customerId: text.customerId,
+        purpose: text.purpose,
+        body: text.template,
+        dedupeKey: text.dedupeKey,
+        replyToInboundAt: null,
+        ...(text.bodyRendered === true && { bodyRendered: true }),
+      },
       now,
     );
     if (!built) return null;
 
     let state: TextState = textStateFor(built);
+    if (!built.archived && STORM_TOKEN_IN_TEXT.test(built.req.message.body)) {
+      state = { status: 'blocked', blockRule: 'content', blockReason: UNFILLED_TEXT_REASON };
+    }
     // The gate never lets a text through without a number; this keeps the type honest.
     if (state.status === 'queued' && built.toE164 === null) {
       state = { status: 'blocked', blockRule: 'contact', blockReason: 'No mobile number on file.' };
@@ -147,4 +180,51 @@ function decideOne(deps: AppDeps, ctx: TenantContext, stepId: string, text: Batc
     if (messageId === null || state.status !== 'queued') return null;
     return { messageId, to: built.toE164!, body: row.body, sender: built.sender };
   });
+}
+
+/**
+ * One text to one customer, for a step that sends exactly one (a proposal's text). The same gate,
+ * row and provider path as a batch customer, with the body already rendered by the caller. The
+ * step's message row for the customer is what makes it safe to repeat: a second call finds the row
+ * and reports where it stands instead of sending again.
+ *
+ * Returns what became of the text: `sent` (the provider took it now), `scheduled` (the gate held it;
+ * the dispatcher sends it when its time comes), `blocked` (the gate refused it, or no row exists),
+ * `failed` (the provider failed it for good), or `refused` (the provider refused it and it may be
+ * tried again). It takes no lease: the caller's step holds the lease.
+ */
+export async function sendOneText(
+  deps: AppDeps,
+  ctx: TenantContext,
+  step: StepRow,
+  i: { customerId: string; purpose: MessagePurpose; body: string; dedupeKey: string; bodyRendered: true },
+): Promise<'sent' | 'scheduled' | 'blocked' | 'failed' | 'refused'> {
+  const queued = await decideOne(deps, ctx, step.id, {
+    customerId: i.customerId,
+    purpose: i.purpose,
+    template: i.body,
+    dedupeKey: i.dedupeKey,
+    bodyRendered: i.bodyRendered,
+  });
+  if (queued) {
+    const r = await sendQueuedText(deps, ctx, queued, NOT_TAKEN);
+    return r === 'sent' ? 'sent' : r === 'refused' ? 'refused' : 'failed';
+  }
+
+  const row = await withTenant(deps.pools, ctx, (tx) => getStepText(tx, ctx, step.id, i.customerId));
+  if (!row) return 'blocked';
+  switch (row.status) {
+    case 'scheduled':
+      return 'scheduled';
+    case 'blocked':
+      return 'blocked';
+    case 'sent':
+    case 'delivered':
+    case 'queued':
+      return 'sent';
+    case 'failed':
+      return row.retryable ? 'refused' : 'failed';
+    default:
+      return 'blocked';
+  }
 }

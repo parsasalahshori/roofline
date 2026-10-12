@@ -12,13 +12,21 @@ import type { Config } from '../src/config.ts';
 import { AppError, MESSAGES } from '../src/errors.ts';
 import { InlineJobs } from '../src/jobs/queue.ts';
 import type { Mailer } from '../src/mailer.ts';
+import { FakeAdImageRenderer } from '../src/providers/fakes/ad-image.ts';
+import { FakeAdsGoogle } from '../src/providers/fakes/ads-google.ts';
+import { FakeAdsMeta } from '../src/providers/fakes/ads-meta.ts';
+import { FakeBroadcastMailer } from '../src/providers/fakes/broadcast.ts';
 import { FakeBillingProvider } from '../src/providers/fakes/billing.ts';
+import { FakeAerialMeasure } from '../src/providers/fakes/aerial.ts';
 import { FakeCalendarApi } from '../src/providers/fakes/calendar.ts';
+import { FakeExactReports } from '../src/providers/fakes/exact-reports.ts';
+import { FakeFootprintSource } from '../src/providers/fakes/footprints.ts';
 import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
 import { FakeCallControl } from '../src/providers/fakes/call-control.ts';
 import { FakeLineLookup } from '../src/providers/fakes/line-lookup.ts';
 import { ScriptedLlm } from '../src/providers/fakes/scripted-llm.ts';
 import { RelaySessions } from '../src/front-desk/relay-sessions.ts';
+import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
 import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
 import type { CurrentWeather, HourlyForecast, WeatherSource } from '../src/weather/source.ts';
@@ -145,6 +153,22 @@ export type TestApp = {
   geocoder: FakeGeocoder;
   /** Calendar providers: one fake per provider, the same instances the app's deps hold. */
   calendars: { google: FakeCalendarApi; microsoft: FakeCalendarApi };
+  /** Building footprints: it records each lookup and answers from a fixed table. */
+  footprints: FakeFootprintSource;
+  /** Aerial measurement: it records each request and answers what it was given. */
+  aerial: FakeAerialMeasure;
+  /** Exact reports: it records each price and order; `orderUncertainNext()` makes the next order uncertain. */
+  exactReports: FakeExactReports;
+  /** The object store for signed proposals, kept in memory. */
+  objectStore: MemoryObjectStore;
+  /** Google Ads: it records each campaign call and answers from memory. */
+  adsGoogle: FakeAdsGoogle;
+  /** Meta ads: it records each campaign call and answers from memory. */
+  adsMeta: FakeAdsMeta;
+  /** Broadcast email: it records every message it was asked to send. */
+  broadcast: FakeBroadcastMailer;
+  /** The ad image renderer: it answers a fixed image without drawing. */
+  adImage: FakeAdImageRenderer;
   /** Billing: it records each customer, checkout, and meter event. */
   billing: FakeBillingProvider;
   /** Texting registration: `failNext` makes the next registrar call fail. */
@@ -204,6 +228,15 @@ export function testConfig(
     RELAY_TOKEN_SECRET: 'relay-test-secret-0123456789abcdef0123',
     // G1 Agents (no static map in tests)
     MAPTILER_SERVER_KEY: undefined,
+    EAGLEVIEW_ENV: 'sandbox',
+    EAGLEVIEW_PRODUCT_ID: 0,
+    PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
+    FOOTPRINTS_BASE_URL: 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/',
+    GOOGLE_ADS_API_VERSION: 'v21',
+    META_GRAPH_VERSION: 'v24.0',
+    POSTMARK_BROADCAST_STREAM: 'broadcast',
+    STORM_MAIL_FROM: 'storms@roofline.test',
+    HAIL_STALE_MINUTES: 90,
     ...overrides,
   };
 }
@@ -247,6 +280,14 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const weather = new FakeWeatherSource();
   const geocoder = new FakeGeocoder();
   const calendars = { google: new FakeCalendarApi('google'), microsoft: new FakeCalendarApi('microsoft') };
+  const footprints = new FakeFootprintSource();
+  const aerial = new FakeAerialMeasure();
+  const exactReports = new FakeExactReports();
+  const objectStore = new MemoryObjectStore();
+  const adsGoogle = new FakeAdsGoogle();
+  const adsMeta = new FakeAdsMeta();
+  const broadcast = new FakeBroadcastMailer();
+  const adImage = new FakeAdImageRenderer();
   const billing = new FakeBillingProvider();
   const registrar = new FakeTextingRegistrar();
   const jobs = new InlineJobs();
@@ -267,6 +308,14 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     weather,
     geocoder,
     calendars,
+    footprints,
+    aerial,
+    exactReports,
+    objectStore,
+    adsGoogle,
+    adsMeta,
+    broadcast,
+    adImage,
     billing,
     registrar,
     jobs,
@@ -294,6 +343,14 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     weather,
     geocoder,
     calendars,
+    footprints,
+    aerial,
+    exactReports,
+    objectStore,
+    adsGoogle,
+    adsMeta,
+    broadcast,
+    adImage,
     billing,
     registrar,
     jobs,

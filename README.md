@@ -54,6 +54,31 @@
 | `STRIPE_WEBHOOK_SECRET` | when `STRIPE_SECRET_KEY` is set | Stripe webhook signing secret (`whsec_`). |
 | `BILLING_PLANS_FILE` | no | The billing plans JSON file. Defaults to `config/billing-plans.example.json` outside production; required in production when `STRIPE_SECRET_KEY` is set. |
 | `GEOCODIO_API_KEY` | no | Geocodio key for address lookup. Unset: addresses are not looked up. |
+| `EAGLEVIEW_CLIENT_ID` | no | EagleView client id. Both or neither with `EAGLEVIEW_CLIENT_SECRET`. Unset: aerial measurement and exact reports are off. |
+| `EAGLEVIEW_CLIENT_SECRET` | no | EagleView client secret. Both or neither with `EAGLEVIEW_CLIENT_ID`. |
+| `EAGLEVIEW_ENV` | no (`sandbox`) | `sandbox` or `production`. |
+| `EAGLEVIEW_PRODUCT_ID` | no (0) | The EagleView product id to order. 0 is a placeholder: ask before ordering. |
+| `R2_ACCOUNT_ID` | no | Cloudflare R2 account id. All four R2 settings or none. Expected in production once any company can sign; without them start-up warns and signed proposals cannot be stored. |
+| `R2_ACCESS_KEY_ID` | no | R2 access key id. All four R2 settings or none. |
+| `R2_SECRET_ACCESS_KEY` | no | R2 secret access key. All four R2 settings or none. |
+| `R2_BUCKET` | no | R2 bucket name. All four R2 settings or none. |
+| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be the same origin as `APP_ORIGIN` for the homeowner page to accept its signing and decline posts. |
+| `FOOTPRINTS_BASE_URL` | no | Where building footprint files are read from; a trailing slash is added. Defaults to `https://usbuildingdata.blob.core.windows.net/usbuildings-v2/`. |
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | no | Google Ads developer token. All five GOOGLE_ADS settings or none; unset means Google ads are off. |
+| `GOOGLE_ADS_MANAGER_ID` | no | Google Ads manager account id. All five GOOGLE_ADS settings or none. |
+| `GOOGLE_ADS_CLIENT_ID` | no | Google Ads OAuth client id. All five GOOGLE_ADS settings or none. |
+| `GOOGLE_ADS_CLIENT_SECRET` | no | Google Ads OAuth client secret. All five GOOGLE_ADS settings or none. |
+| `GOOGLE_ADS_REFRESH_TOKEN` | no | Google Ads OAuth refresh token. All five GOOGLE_ADS settings or none. |
+| `GOOGLE_ADS_API_VERSION` | no (`v21`) | The Google Ads API version, like `v21`. |
+| `META_APP_ID` | no | Meta app id. All four META settings or none; unset means Meta ads are off. |
+| `META_APP_SECRET` | no | Meta app secret. All four META settings or none. |
+| `META_SYSTEM_USER_TOKEN` | no | Meta system user token. All four META settings or none. |
+| `META_BUSINESS_ID` | no | Meta business id that ad accounts are shared with. All four META settings or none. |
+| `META_GRAPH_VERSION` | no (`v24.0`) | The Meta Graph API version, like `v24.0`. |
+| `POSTMARK_BROADCAST_STREAM` | no (`broadcast`) | The Postmark message stream for storm alert email. |
+| `POSTMARK_WEBHOOK_SECRET` | no | Basic-auth password for Postmark's bounce and complaint webhook at `/hooks/postmark` (16+ characters). Unset: the webhook refuses every call. |
+| `STORM_MAIL_FROM` | no | Plain From address for storm email, like `storms@roofline.app`. Unset: `storms@` plus the `MAIL_FROM` domain, else `POLICY_PAGES_DOMAIN`, else the `PUBLIC_BASE_URL` host. |
+| `HAIL_STALE_MINUTES` | no (90) | Minutes without a fresh hail report before the hail feed counts as stale (1 to 10080). |
 | `POLICY_PAGES_DOMAIN` | no | The bare hostname for the policy pages, like `roofline.app`. |
 | `FAKE_PROVIDERS` | no | `1` or `true` swaps every outside service for a fake. Development and test only; refused in production. |
 | `WEB_DIST_DIR` | no | Where the built web app is: `apps/web/dist` in production (a relative path is read from the repository root). When set, the API also serves the app, so one origin answers both; it must contain `index.html` or start-up stops. Leave unset in development, where Vite serves the app. |
@@ -77,6 +102,12 @@
 | `TWILIO_TEST_CALLER_NUMBER` | unset | Roofline's own number (E.164) for forwarding tests. |
 | `RELAY_TOKEN_SECRET` | derived from `ENCRYPTION_KEY` | Signs relay tokens; at least 32 bytes. |
 
+- **Calendar connections:**
+  - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google Calendar, and `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` for Outlook. A provider with either value missing shows as not set up in Settings.
+  - Register these redirect URIs with each provider: `<PUBLIC_BASE_URL>/api/calendar/oauth/google/callback` and `<PUBLIC_BASE_URL>/api/calendar/oauth/microsoft/callback`.
+  - The Google OAuth consent screen needs verification, which can take weeks; until it is verified, add the pilot users as test users.
+  - Refresh tokens are stored encrypted with `ENCRYPTION_KEY`. Changing that key breaks every existing connection, and each person has to reconnect.
+  - What is tested, and what only a real account can show, is listed in [`docs/superpowers/c1-acceptance.md`](docs/superpowers/c1-acceptance.md).
 - **Boot order:**
   0. Build the web app once per deploy: `npm run build:web` writes `apps/web/dist` (Vite is a dev dependency, so run it before `npm ci --omit=dev`, or in the host's build step) and set `WEB_DIST_DIR=apps/web/dist`. `APP_ORIGIN` is then the API's own public URL.
   1. `npm ci --omit=dev` (`tsx`, which runs the TypeScript, is a runtime dependency of the API, the worker and `@roofline/db`).

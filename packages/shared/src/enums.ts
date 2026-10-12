@@ -75,7 +75,7 @@ export const GATE_RULES = [
 ] as const;
 export type GateRule = (typeof GATE_RULES)[number];
 
-export const SMS_CONSENT_SOURCES = ['import', 'web_form', 'call', 'text', 'manual'] as const;
+export const SMS_CONSENT_SOURCES = ['import', 'web_form', 'call', 'text', 'manual', 'door'] as const;
 export type SmsConsentSource = (typeof SMS_CONSENT_SOURCES)[number];
 
 /** `message`: a text that came in from a number that is no customer's (a possible opt-out to check). */

@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   date,
@@ -38,11 +39,16 @@ import {
   SMS_CONSENT_SOURCES,
   STEP_STATUSES,
   TASK_STATUSES,
+  type AddOnUnit,
   type WorkHours,
 } from '@roofline/shared';
-import { bytea, enumCheck, pk, point4326, timestamps, tstz } from './columns.ts';
+import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
   ACTOR_TYPES,
+  AD_ACCOUNT_STATUSES,
+  AD_CAMPAIGN_STATUSES,
+  AD_ERROR_KINDS,
+  AD_PLATFORMS,
   AGENT_EVENT_KINDS,
   APPOINTMENT_KINDS,
   APPOINTMENT_SOURCES,
@@ -53,25 +59,37 @@ import {
   CLAIM_EVENT_ACTORS,
   CLAIM_STATUSES,
   CLAIM_TAKEN_BY,
+  COMPANY_STORM_STATUSES,
   CONFIRMED_VIA,
   CONSENT_REGIMES,
   CONVERSATION_CHANNELS,
   CONVERSATION_OUTCOMES,
   CONVERSATION_STATUSES,
+  DOOR_OUTCOMES,
+  DOOR_ROUTE_STATUSES,
   EARLY_DELIVERY_STATUSES,
+  EMAIL_OPT_OUT_SOURCES,
+  EXACT_ORDER_STATUSES,
   FOLLOW_UP_KINDS,
   HANDLED_BY,
   IDENTITY_LEVELS,
   INTEGRATION_STATUSES,
+  MEASUREMENT_KINDS,
+  MEASUREMENT_METHODS,
+  PROPOSAL_EVENT_KINDS,
+  PROPOSAL_STATUSES,
   QUOTE_STATUSES,
   RECORDING_STATUSES,
+  STORED_FILE_KINDS,
   TASK_MODES,
+  TIERS,
+  TIER_MATERIALS,
   TRANSFER_RESULTS,
   TURN_ROUTES,
   TURN_SPEAKERS,
   USAGE_KINDS,
 } from './enums.ts';
-import { companies, users } from './global.ts';
+import { companies, storms, users } from './global.ts';
 
 /*
  * Tenant tables (spec 3.1): every row carries `company_id uuid not null`, and Task 4 turns on
@@ -116,6 +134,26 @@ export const TENANT_TABLES = [
   'agent_task_events',
   'agent_settings',
   'time_recounts',
+  'measurements',
+  'tier_templates',
+  'proposals',
+  'proposal_counters',
+  'proposal_options',
+  'proposal_signatures',
+  'proposal_events',
+  'exact_report_orders',
+  'stored_files',
+  'company_storms',
+  'storm_hits',
+  'door_routes',
+  'door_stops',
+  'door_exclusions',
+  'ad_accounts',
+  'ad_campaigns',
+  'storm_pages',
+  'storm_requests',
+  'email_opt_outs',
+  'storm_photos',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -182,9 +220,29 @@ export const companySettings = pgTable(
     followupReviews: boolean('followup_reviews').notNull().default(true),
     followupLeads: boolean('followup_leads').notNull().default(true),
     followupProposals: boolean('followup_proposals').notNull().default(true),
+    /** The pitch assumed when a measurement has no measured pitch, in twelfths (6 = 6/12). */
+    defaultPitchX12: numeric('default_pitch_x12', { precision: 4, scale: 2, mode: 'number' }).notNull().default(6),
+    /** Roof overhang added to the footprint, in feet. */
+    overhangFt: numeric('overhang_ft', { precision: 3, scale: 1, mode: 'number' }).notNull().default(1),
+    /** How long a new proposal stays valid, in days. */
+    proposalValidDays: integer('proposal_valid_days').notNull().default(30),
+    aerialMeasure: boolean('aerial_measure').notNull().default(false),
+    /** Whether a signed proposal carries the estimate clause (spec 5.3). */
+    estimateChangeClause: boolean('estimate_change_clause').notNull().default(true),
+    /** Storm Scout ad defaults (spec 5): total budget in cents, days to run, and Google's share in percent. */
+    stormAdBudgetCents: integer('storm_ad_budget_cents').notNull().default(27000),
+    stormAdDays: integer('storm_ad_days').notNull().default(7),
+    stormAdGoogleSharePct: integer('storm_ad_google_share_pct').notNull().default(55),
+    stormEmailEnabled: boolean('storm_email_enabled').notNull().default(true),
+    stormSmsTemplate: text('storm_sms_template'),
+    stormEmailSubject: text('storm_email_subject'),
+    stormEmailTemplate: text('storm_email_template'),
     ...timestamps(),
   },
   (t) => [
+    check('company_settings_storm_ad_budget_cents_check', sql`${t.stormAdBudgetCents} between 0 and 1000000`),
+    check('company_settings_storm_ad_days_check', sql`${t.stormAdDays} between 1 and 30`),
+    check('company_settings_storm_ad_google_share_pct_check', sql`${t.stormAdGoogleSharePct} between 0 and 100`),
     check('company_settings_marketing_cap_per_7d_check', sql`${t.marketingCapPer7d} between 0 and 2`),
     check('company_settings_travel_buffer_minutes_check', sql`${t.travelBufferMinutes} between 0 and 120`),
     check('company_settings_min_notice_minutes_check', sql`${t.minNoticeMinutes} between 0 and 4320`),
@@ -205,6 +263,9 @@ export const companySettings = pgTable(
     check('company_settings_reminder_hour_check', sql`${t.reminderHour} between 0 and 23`),
     check('company_settings_lead_followup_days_check', sql`${t.leadFollowupDays} between 1 and 30`),
     check('company_settings_review_delay_days_check', sql`${t.reviewDelayDays} between 0 and 30`),
+    check('company_settings_default_pitch_x12_check', sql`${t.defaultPitchX12} between 0 and 24`),
+    check('company_settings_overhang_ft_check', sql`${t.overhangFt} between 0 and 3`),
+    check('company_settings_proposal_valid_days_check', sql`${t.proposalValidDays} between 1 and 180`),
   ],
 );
 
@@ -559,9 +620,14 @@ export const messages = pgTable(
     retryable: boolean('retryable').notNull().default(false),
     /** Front Desk: the conversation a text belongs to (null for texts outside Front Desk). */
     conversationId: uuid('conversation_id'),
+    /** Email rows: the recipient address. Null on texts. */
+    toEmail: citext('to_email'),
+    /** Email rows: the subject line. */
+    subject: text('subject'),
     ...timestamps(),
   },
   (t) => [
+    check('messages_email_to_email_check', sql`${t.channel} <> 'email' OR ${t.toEmail} IS NOT NULL`),
     unique('messages_company_id_id_uniq').on(t.companyId, t.id),
     foreignKey({
       name: 'messages_company_customer_fk',
@@ -1298,4 +1364,646 @@ export const timeRecounts = pgTable(
     at: tstz('at').notNull().defaultNow(),
   },
   (t) => [index('time_recounts_company_at_idx').on(t.companyId, t.at)],
+);
+
+/*
+ * E1 estimator tables (spec 3.4, 4.1, 4.3, 5.3, 8). Every link to another tenant table is a
+ * same-company composite key, as above.
+ */
+
+/** One add-on line of a tier template or a frozen proposal option (spec 4.1). */
+export type TierAddOn = { name: string; unit: AddOnUnit; rateCents: number; taxable: boolean };
+
+/** A measured (or manual) roof for a property; immutable once a proposal is sent from it (Decision 8). */
+export const measurements = pgTable(
+  'measurements',
+  {
+    id: pk(),
+    companyId: companyId(),
+    propertyId: uuid('property_id').notNull(),
+    jobId: uuid('job_id'),
+    kind: text('kind', { enum: MEASUREMENT_KINDS }).notNull(),
+    method: text('method', { enum: MEASUREMENT_METHODS }).notNull(),
+    /** Null for a manual measurement. `[longitude, latitude]` rings, SRID 4326. */
+    outline: multiPolygon('outline'),
+    /** Which footprints make up the roof, and which are included. */
+    structures: jsonb('structures').$type<Record<string, unknown>[]>().notNull().default([]),
+    footprintSqFt: numeric('footprint_sq_ft', { precision: 12, scale: 2, mode: 'number' }),
+    overhangFt: numeric('overhang_ft', { precision: 4, scale: 2, mode: 'number' }),
+    pitchX12: numeric('pitch_x12', { precision: 4, scale: 2, mode: 'number' }),
+    surfaceSqFt: numeric('surface_sq_ft', { precision: 12, scale: 2, mode: 'number' }),
+    edgeFt: numeric('edge_ft', { precision: 12, scale: 2, mode: 'number' }),
+    ridgeFt: numeric('ridge_ft', { precision: 12, scale: 2, mode: 'number' }),
+    valleyFt: numeric('valley_ft', { precision: 12, scale: 2, mode: 'number' }),
+    facets: integer('facets'),
+    providerRef: text('provider_ref'),
+    notes: text('notes'),
+    createdByUserId: userRef('created_by_user_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('measurements_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'measurements_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    foreignKey({
+      name: 'measurements_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    index('measurements_property_idx').on(t.propertyId),
+    enumCheck('measurements', 'kind', t.kind, MEASUREMENT_KINDS),
+    enumCheck('measurements', 'method', t.method, MEASUREMENT_METHODS),
+  ],
+);
+
+/** The three tier templates of a company (one per tier), the defaults of spec 4.1 until edited. */
+export const tierTemplates = pgTable(
+  'tier_templates',
+  {
+    id: pk(),
+    companyId: companyId(),
+    tier: text('tier', { enum: TIERS }).notNull(),
+    /** Shown to the homeowner, for example "Good: Architectural shingles". */
+    name: text('name').notNull(),
+    material: text('material', { enum: TIER_MATERIALS }).notNull(),
+    wastePercent: numeric('waste_percent', { precision: 5, scale: 2, mode: 'number' }).notNull().default(12),
+    /** Null: the company's pricebook default applies. */
+    markupPercent: numeric('markup_percent', { precision: 5, scale: 2, mode: 'number' }),
+    addOns: jsonb('add_ons').$type<TierAddOn[]>().notNull().default([]),
+    /** Up to four short bullets for the homeowner. */
+    highlights: text('highlights').array().notNull().default([]),
+    enabled: boolean('enabled').notNull().default(true),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('tier_templates_company_id_id_uniq').on(t.companyId, t.id),
+    unique('tier_templates_company_tier_uniq').on(t.companyId, t.tier),
+    check('tier_templates_highlights_check', sql`cardinality(${t.highlights}) <= 4`),
+    enumCheck('tier_templates', 'tier', t.tier, TIERS),
+    enumCheck('tier_templates', 'material', t.material, TIER_MATERIALS),
+  ],
+);
+
+/** A proposal for a job, built from one measurement. Sent proposals never re-price (Decision 11). */
+export const proposals = pgTable(
+  'proposals',
+  {
+    id: pk(),
+    companyId: companyId(),
+    jobId: uuid('job_id').notNull(),
+    customerId: uuid('customer_id').notNull(),
+    propertyId: uuid('property_id').notNull(),
+    measurementId: uuid('measurement_id').notNull(),
+    /** `P-0001` style, unique per company. */
+    number: text('number').notNull(),
+    status: text('status', { enum: PROPOSAL_STATUSES }).notNull().default('draft'),
+    validUntil: date('valid_until', { mode: 'string' }).notNull(),
+    /** SHA-256 of the link token. Unique across all companies, so a token maps to one proposal. */
+    linkTokenHash: bytea('link_token_hash').notNull(),
+    /** Encrypted link token, so the same link can be sent again. */
+    linkTokenEncrypted: bytea('link_token_encrypted').notNull(),
+    sentAt: tstz('sent_at'),
+    firstViewedAt: tstz('first_viewed_at'),
+    lastViewedAt: tstz('last_viewed_at'),
+    viewCount: integer('view_count').notNull().default(0),
+    signedAt: tstz('signed_at'),
+    declinedAt: tstz('declined_at'),
+    declineReason: text('decline_reason'),
+    /** Set when a revised draft replaces a sent proposal (Decision 11). */
+    replacedById: uuid('replaced_by_id'),
+    /** The text as sent. */
+    messageBody: text('message_body'),
+    estimateBasis: text('estimate_basis', { enum: MEASUREMENT_KINDS }).notNull(),
+    createdByUserId: userRef('created_by_user_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('proposals_company_id_id_uniq').on(t.companyId, t.id),
+    unique('proposals_company_number_uniq').on(t.companyId, t.number),
+    unique('proposals_link_token_hash_uniq').on(t.linkTokenHash),
+    foreignKey({
+      name: 'proposals_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'proposals_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'proposals_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    foreignKey({
+      name: 'proposals_company_measurement_fk',
+      columns: [t.companyId, t.measurementId],
+      foreignColumns: [measurements.companyId, measurements.id],
+    }),
+    foreignKey({
+      name: 'proposals_company_replaced_by_fk',
+      columns: [t.companyId, t.replacedById],
+      foreignColumns: [t.companyId, t.id],
+    }),
+    index('proposals_job_idx').on(t.jobId),
+    index('proposals_status_idx').on(t.status),
+    enumCheck('proposals', 'status', t.status, PROPOSAL_STATUSES),
+    enumCheck('proposals', 'estimate_basis', t.estimateBasis, MEASUREMENT_KINDS),
+  ],
+);
+
+/** The next proposal number for a company (one row per company). */
+export const proposalCounters = pgTable('proposal_counters', {
+  id: pk(),
+  companyId: companyId().unique(),
+  nextNumber: integer('next_number').notNull().default(1),
+  ...timestamps(),
+});
+
+/** One priced option (good, better or best) of a proposal. `calculation` and `total_cents` are frozen. */
+export const proposalOptions = pgTable(
+  'proposal_options',
+  {
+    id: pk(),
+    companyId: companyId(),
+    proposalId: uuid('proposal_id').notNull(),
+    tier: text('tier', { enum: TIERS }).notNull(),
+    position: integer('position').notNull(),
+    name: text('name').notNull(),
+    highlights: text('highlights').array().notNull().default([]),
+    scope: jsonb('scope').$type<Record<string, unknown>>().notNull(),
+    prices: jsonb('prices').$type<Record<string, unknown>>().notNull(),
+    addOns: jsonb('add_ons').$type<TierAddOn[]>().notNull(),
+    calculation: jsonb('calculation').$type<Record<string, unknown>>().notNull(),
+    totalCents: integer('total_cents').notNull(),
+    monthlyEstimateCents: integer('monthly_estimate_cents'),
+    enabled: boolean('enabled').notNull().default(true),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('proposal_options_company_id_id_uniq').on(t.companyId, t.id),
+    unique('proposal_options_proposal_tier_uniq').on(t.proposalId, t.tier),
+    foreignKey({
+      name: 'proposal_options_company_proposal_fk',
+      columns: [t.companyId, t.proposalId],
+      foreignColumns: [proposals.companyId, proposals.id],
+    }),
+    enumCheck('proposal_options', 'tier', t.tier, TIERS),
+  ],
+);
+
+/** A PDF or other file in object storage; the bytes are never in the database. */
+export const storedFiles = pgTable(
+  'stored_files',
+  {
+    id: pk(),
+    companyId: companyId(),
+    kind: text('kind', { enum: STORED_FILE_KINDS }).notNull(),
+    objectKey: text('object_key').notNull(),
+    sha256: text('sha256').notNull(),
+    bytes: integer('bytes').notNull(),
+    contentType: text('content_type').notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('stored_files_company_id_id_uniq').on(t.companyId, t.id),
+    enumCheck('stored_files', 'kind', t.kind, STORED_FILE_KINDS),
+  ],
+);
+
+/** The signature record of a signed proposal (spec 5.3). At most one per proposal. */
+export const proposalSignatures = pgTable(
+  'proposal_signatures',
+  {
+    id: pk(),
+    companyId: companyId(),
+    proposalId: uuid('proposal_id').notNull(),
+    optionId: uuid('option_id').notNull(),
+    signerName: text('signer_name').notNull(),
+    typedSignature: text('typed_signature').notNull(),
+    /** The drawn image itself goes into the signed PDF, not this table. */
+    drawnSignaturePngSha256: text('drawn_signature_png_sha256'),
+    consentText: text('consent_text').notNull(),
+    consentVersion: text('consent_version').notNull(),
+    /** SHA-256 of the canonical JSON of the proposal and the chosen option as shown. */
+    documentSha256: text('document_sha256').notNull(),
+    totalCents: integer('total_cents').notNull(),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    signedAt: tstz('signed_at').notNull(),
+    viewedFirstAt: tstz('viewed_first_at'),
+    pdfFileId: uuid('pdf_file_id'),
+    pdfSha256: text('pdf_sha256'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('proposal_signatures_company_id_id_uniq').on(t.companyId, t.id),
+    unique('proposal_signatures_proposal_uniq').on(t.proposalId),
+    foreignKey({
+      name: 'proposal_signatures_company_proposal_fk',
+      columns: [t.companyId, t.proposalId],
+      foreignColumns: [proposals.companyId, proposals.id],
+    }),
+    foreignKey({
+      name: 'proposal_signatures_company_option_fk',
+      columns: [t.companyId, t.optionId],
+      foreignColumns: [proposalOptions.companyId, proposalOptions.id],
+    }),
+    foreignKey({
+      name: 'proposal_signatures_company_pdf_fk',
+      columns: [t.companyId, t.pdfFileId],
+      foreignColumns: [storedFiles.companyId, storedFiles.id],
+    }),
+  ],
+);
+
+/** The homeowner side of a proposal's timeline (mirrored as job activities). */
+export const proposalEvents = pgTable(
+  'proposal_events',
+  {
+    id: pk(),
+    companyId: companyId(),
+    proposalId: uuid('proposal_id').notNull(),
+    kind: text('kind', { enum: PROPOSAL_EVENT_KINDS }).notNull(),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
+    ipHash: text('ip_hash'),
+    userAgent: text('user_agent'),
+    at: tstz('at').notNull().defaultNow(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('proposal_events_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'proposal_events_company_proposal_fk',
+      columns: [t.companyId, t.proposalId],
+      foreignColumns: [proposals.companyId, proposals.id],
+    }),
+    index('proposal_events_proposal_at_idx').on(t.proposalId, t.at),
+    enumCheck('proposal_events', 'kind', t.kind, PROPOSAL_EVENT_KINDS),
+  ],
+);
+
+/** An EagleView exact-report order for a measurement. Provider text is never stored here (error_plain is ours). */
+export const exactReportOrders = pgTable(
+  'exact_report_orders',
+  {
+    id: pk(),
+    companyId: companyId(),
+    measurementId: uuid('measurement_id').notNull(),
+    status: text('status', { enum: EXACT_ORDER_STATUSES }).notNull().default('priced'),
+    priceMinCents: integer('price_min_cents'),
+    priceMaxCents: integer('price_max_cents'),
+    priceExpiresAt: tstz('price_expires_at'),
+    providerProductId: text('provider_product_id'),
+    providerReportId: text('provider_report_id'),
+    referenceId: text('reference_id').notNull(),
+    taskId: uuid('task_id'),
+    lastPolledAt: tstz('last_polled_at'),
+    errorPlain: text('error_plain'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('exact_report_orders_company_id_id_uniq').on(t.companyId, t.id),
+    unique('exact_report_orders_company_reference_uniq').on(t.companyId, t.referenceId),
+    foreignKey({
+      name: 'exact_report_orders_company_measurement_fk',
+      columns: [t.companyId, t.measurementId],
+      foreignColumns: [measurements.companyId, measurements.id],
+    }),
+    foreignKey({
+      name: 'exact_report_orders_company_task_fk',
+      columns: [t.companyId, t.taskId],
+      foreignColumns: [agentTasks.companyId, agentTasks.id],
+    }),
+    enumCheck('exact_report_orders', 'status', t.status, EXACT_ORDER_STATUSES),
+  ],
+);
+
+/*
+ * Storm Scout (spec 3.3, 4.1, 5). Door stop and exclusion footprint ids carry no foreign key: the
+ * global building_footprints table is reloaded, so a hard link would break the loader (Ruling SH).
+ */
+
+/** A storm as one company sees it: how many of its customers and homes it hit, and what was done. */
+export const companyStorms = pgTable(
+  'company_storms',
+  {
+    id: pk(),
+    companyId: companyId(),
+    stormId: uuid('storm_id')
+      .notNull()
+      .references(() => storms.id),
+    status: text('status', { enum: COMPANY_STORM_STATUSES }).notNull().default('new'),
+    maxIn: numeric('max_in', { precision: 4, scale: 2, mode: 'number' }).notNull(),
+    customersHit: integer('customers_hit').notNull().default(0),
+    homesHit: integer('homes_hit').notNull().default(0),
+    alertedAt: tstz('alerted_at'),
+    planTaskId: uuid('plan_task_id'),
+    lastMatchedAt: tstz('last_matched_at').notNull().defaultNow(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('company_storms_company_id_id_uniq').on(t.companyId, t.id),
+    unique('company_storms_company_storm_uniq').on(t.companyId, t.stormId),
+    foreignKey({
+      name: 'company_storms_company_plan_task_fk',
+      columns: [t.companyId, t.planTaskId],
+      foreignColumns: [agentTasks.companyId, agentTasks.id],
+    }),
+    enumCheck('company_storms', 'status', t.status, COMPANY_STORM_STATUSES),
+  ],
+);
+
+/** One property a storm hit, with the hail size over it. */
+export const stormHits = pgTable(
+  'storm_hits',
+  {
+    id: pk(),
+    companyId: companyId(),
+    companyStormId: uuid('company_storm_id').notNull(),
+    propertyId: uuid('property_id').notNull(),
+    customerId: uuid('customer_id'),
+    hailIn: numeric('hail_in', { precision: 4, scale: 2, mode: 'number' }).notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('storm_hits_company_id_id_uniq').on(t.companyId, t.id),
+    unique('storm_hits_storm_property_uniq').on(t.companyStormId, t.propertyId),
+    foreignKey({
+      name: 'storm_hits_company_company_storm_fk',
+      columns: [t.companyId, t.companyStormId],
+      foreignColumns: [companyStorms.companyId, companyStorms.id],
+    }),
+    foreignKey({
+      name: 'storm_hits_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    foreignKey({
+      name: 'storm_hits_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+  ],
+);
+
+/** A door-knocking route for one rep over one storm. */
+export const doorRoutes = pgTable(
+  'door_routes',
+  {
+    id: pk(),
+    companyId: companyId(),
+    companyStormId: uuid('company_storm_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    status: text('status', { enum: DOOR_ROUTE_STATUSES }).notNull().default('ready'),
+    stops: integer('stops').notNull().default(0),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('door_routes_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'door_routes_company_company_storm_fk',
+      columns: [t.companyId, t.companyStormId],
+      foreignColumns: [companyStorms.companyId, companyStorms.id],
+    }),
+    enumCheck('door_routes', 'status', t.status, DOOR_ROUTE_STATUSES),
+  ],
+);
+
+export const doorStops = pgTable(
+  'door_stops',
+  {
+    id: pk(),
+    companyId: companyId(),
+    routeId: uuid('route_id').notNull(),
+    position: integer('position').notNull(),
+    /** No foreign key on purpose: building_footprints is reloaded (Ruling SH). */
+    footprintId: bigint('footprint_id', { mode: 'number' }),
+    propertyId: uuid('property_id'),
+    point: point4326('point').notNull(),
+    address: text('address'),
+    hailIn: numeric('hail_in', { precision: 4, scale: 2, mode: 'number' }),
+    outcome: text('outcome', { enum: DOOR_OUTCOMES }),
+    outcomeAt: tstz('outcome_at'),
+    outcomeBy: uuid('outcome_by').references(() => users.id),
+    createdCustomerId: uuid('created_customer_id'),
+    createdJobId: uuid('created_job_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('door_stops_company_id_id_uniq').on(t.companyId, t.id),
+    unique('door_stops_route_position_uniq').on(t.routeId, t.position),
+    foreignKey({
+      name: 'door_stops_company_route_fk',
+      columns: [t.companyId, t.routeId],
+      foreignColumns: [doorRoutes.companyId, doorRoutes.id],
+    }),
+    foreignKey({
+      name: 'door_stops_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    foreignKey({
+      name: 'door_stops_company_created_customer_fk',
+      columns: [t.companyId, t.createdCustomerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'door_stops_company_created_job_fk',
+      columns: [t.companyId, t.createdJobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    enumCheck('door_stops', 'outcome', t.outcome, DOOR_OUTCOMES),
+  ],
+);
+
+/** Buildings a company never wants on a route. No foreign key on the footprint (Ruling SH). */
+export const doorExclusions = pgTable(
+  'door_exclusions',
+  {
+    id: pk(),
+    companyId: companyId(),
+    footprintId: bigint('footprint_id', { mode: 'number' }).notNull(),
+    reason: text('reason'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('door_exclusions_company_id_id_uniq').on(t.companyId, t.id),
+    unique('door_exclusions_company_footprint_uniq').on(t.companyId, t.footprintId),
+  ],
+);
+
+export const adAccounts = pgTable(
+  'ad_accounts',
+  {
+    id: pk(),
+    companyId: companyId(),
+    platform: text('platform', { enum: AD_PLATFORMS }).notNull(),
+    externalAccountId: text('external_account_id').notNull(),
+    status: text('status', { enum: AD_ACCOUNT_STATUSES }).notNull().default('pending'),
+    name: text('name'),
+    currency: text('currency'),
+    linkedAt: tstz('linked_at'),
+    lastErrorPlain: text('last_error_plain'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('ad_accounts_company_id_id_uniq').on(t.companyId, t.id),
+    unique('ad_accounts_company_platform_uniq').on(t.companyId, t.platform),
+    enumCheck('ad_accounts', 'platform', t.platform, AD_PLATFORMS),
+    enumCheck('ad_accounts', 'status', t.status, AD_ACCOUNT_STATUSES),
+  ],
+);
+
+export const adCampaigns = pgTable(
+  'ad_campaigns',
+  {
+    id: pk(),
+    companyId: companyId(),
+    companyStormId: uuid('company_storm_id').notNull(),
+    stepId: uuid('step_id').notNull(),
+    platform: text('platform', { enum: AD_PLATFORMS }).notNull(),
+    externalCampaignId: text('external_campaign_id'),
+    status: text('status', { enum: AD_CAMPAIGN_STATUSES }).notNull().default('creating'),
+    dailyBudgetCents: integer('daily_budget_cents').notNull(),
+    days: integer('days').notNull(),
+    maxSpendCents: integer('max_spend_cents').notNull(),
+    spendCents: integer('spend_cents').notNull().default(0),
+    impressions: integer('impressions').notNull().default(0),
+    clicks: integer('clicks').notNull().default(0),
+    landingRequests: integer('landing_requests').notNull().default(0),
+    targets: jsonb('targets').$type<unknown[]>().notNull().default([]),
+    creative: jsonb('creative').$type<Record<string, unknown>>().notNull().default({}),
+    housingFallback: boolean('housing_fallback').notNull().default(false),
+    lastSyncedAt: tstz('last_synced_at'),
+    errorKind: text('error_kind', { enum: AD_ERROR_KINDS }),
+    errorPlain: text('error_plain'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('ad_campaigns_company_id_id_uniq').on(t.companyId, t.id),
+    unique('ad_campaigns_company_step_uniq').on(t.companyId, t.stepId),
+    uniqueIndex('ad_campaigns_platform_external_uniq')
+      .on(t.platform, t.externalCampaignId)
+      .where(sql`${t.externalCampaignId} is not null`),
+    foreignKey({
+      name: 'ad_campaigns_company_company_storm_fk',
+      columns: [t.companyId, t.companyStormId],
+      foreignColumns: [companyStorms.companyId, companyStorms.id],
+    }),
+    foreignKey({
+      name: 'ad_campaigns_company_step_fk',
+      columns: [t.companyId, t.stepId],
+      foreignColumns: [agentTaskSteps.companyId, agentTaskSteps.id],
+    }),
+    enumCheck('ad_campaigns', 'platform', t.platform, AD_PLATFORMS),
+    enumCheck('ad_campaigns', 'status', t.status, AD_CAMPAIGN_STATUSES),
+    enumCheck('ad_campaigns', 'error_kind', t.errorKind, AD_ERROR_KINDS),
+  ],
+);
+
+/** The public landing page of a storm (spec 5): the code is in the page URL, so it is globally unique. */
+export const stormPages = pgTable(
+  'storm_pages',
+  {
+    id: pk(),
+    companyId: companyId(),
+    companyStormId: uuid('company_storm_id').notNull(),
+    code: text('code').notNull(),
+    activeUntil: tstz('active_until').notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('storm_pages_company_id_id_uniq').on(t.companyId, t.id),
+    unique('storm_pages_code_uniq').on(t.code),
+    foreignKey({
+      name: 'storm_pages_company_company_storm_fk',
+      columns: [t.companyId, t.companyStormId],
+      foreignColumns: [companyStorms.companyId, companyStorms.id],
+    }),
+  ],
+);
+
+/** An inspection request a homeowner sent from a storm page. */
+export const stormRequests = pgTable(
+  'storm_requests',
+  {
+    id: pk(),
+    companyId: companyId(),
+    stormPageId: uuid('storm_page_id').notNull(),
+    name: text('name').notNull(),
+    phoneE164: text('phone_e164').notNull(),
+    address: text('address').notNull(),
+    smsConsent: boolean('sms_consent').notNull().default(false),
+    consentText: text('consent_text'),
+    consentAt: tstz('consent_at'),
+    customerId: uuid('customer_id'),
+    jobId: uuid('job_id'),
+    ipHash: text('ip_hash'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('storm_requests_company_id_id_uniq').on(t.companyId, t.id),
+    unique('storm_requests_page_phone_uniq').on(t.stormPageId, t.phoneE164),
+    foreignKey({
+      name: 'storm_requests_company_storm_page_fk',
+      columns: [t.companyId, t.stormPageId],
+      foreignColumns: [stormPages.companyId, stormPages.id],
+    }),
+    foreignKey({
+      name: 'storm_requests_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'storm_requests_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+  ],
+);
+
+/** Addresses that asked not to get marketing email from a company. */
+export const emailOptOuts = pgTable(
+  'email_opt_outs',
+  {
+    id: pk(),
+    companyId: companyId(),
+    email: citext('email').notNull(),
+    source: text('source', { enum: EMAIL_OPT_OUT_SOURCES }).notNull(),
+    at: tstz('at').notNull().defaultNow(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('email_opt_outs_company_id_id_uniq').on(t.companyId, t.id),
+    unique('email_opt_outs_company_email_uniq').on(t.companyId, t.email),
+    enumCheck('email_opt_outs', 'source', t.source, EMAIL_OPT_OUT_SOURCES),
+  ],
+);
+
+/** A photo a rep took at a storm door (the file itself is in stored_files). */
+export const stormPhotos = pgTable(
+  'storm_photos',
+  {
+    id: pk(),
+    companyId: companyId(),
+    storedFileId: uuid('stored_file_id').notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('storm_photos_company_id_id_uniq').on(t.companyId, t.id),
+    unique('storm_photos_company_stored_file_uniq').on(t.companyId, t.storedFileId),
+    foreignKey({
+      name: 'storm_photos_company_stored_file_fk',
+      columns: [t.companyId, t.storedFileId],
+      foreignColumns: [storedFiles.companyId, storedFiles.id],
+    }),
+  ],
 );

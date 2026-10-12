@@ -1,0 +1,1 @@
+{"error":{"code":500,"message":"x","status":"INTERNAL","details":[{"@type":"type.googleapis.com/google.ads.googleads.v21.errors.GoogleAdsFailure","errors":[{"errorCode":{"internalError":"INTERNAL_ERROR"},"message":"x"}]}]}}

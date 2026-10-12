@@ -7,7 +7,7 @@ import { crmKeys } from '../settings/crm-api.ts';
 /*
  * Appointment hooks. Every save or action invalidates the ['calendar'] prefix, which matches the
  * calendar keys in features/calendar/api.ts (['calendar', 'appointments', ...]), plus the
- * ['appointments'] prefix (this feature's own keys) and ['jobs'] (a job may have moved).
+ * ['appointments'] prefix (this feature's own keys) and the job keys ['job'], ['jobs-board'] and ['today'] (a job may have moved).
  */
 
 /** Keys of this feature. The single appointment is ['appointments', 'one', id]. */
@@ -18,7 +18,9 @@ function invalidateAfterChange(queryClient: ReturnType<typeof useQueryClient>): 
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ['calendar'] }),
     queryClient.invalidateQueries({ queryKey: ['appointments'] }),
-    queryClient.invalidateQueries({ queryKey: ['jobs'] }),
+    queryClient.invalidateQueries({ queryKey: ['job'] }),
+    queryClient.invalidateQueries({ queryKey: ['jobs-board'] }),
+    queryClient.invalidateQueries({ queryKey: ['today'] }),
   ]);
 }
 
@@ -31,7 +33,7 @@ export function useAppointment(id: string | undefined): { data: AppointmentView 
   });
 }
 
-/** POST /api/appointments -> SaveResult. Invalidates ['calendar'], ['appointments'] and ['jobs']. */
+/** POST /api/appointments -> SaveResult. Invalidates ['calendar'], ['appointments'] and the job keys. */
 export function useCreateAppointment(): { mutateAsync: (body: AppointmentBody) => Promise<SaveResult>; isPending: boolean } {
   const queryClient = useQueryClient();
   return useMutation({

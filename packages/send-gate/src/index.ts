@@ -1,4 +1,5 @@
 export { decide, type GateDecision, type GateRequest } from './decide.ts';
+export { decideEmail, type EmailGateDecision, type EmailGateRequest } from './email.ts';
 export { nextAllowedTime } from './quiet-hours.ts';
 export { classifyInbound, type InboundKind, type InboundReading, looksLikeOptOut, readInbound } from './inbound.ts';
 export {

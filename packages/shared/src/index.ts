@@ -32,3 +32,10 @@ export * from './more-agents.ts';
 export * from './claims.ts';
 // G1 Task 17s
 export * from './agent-values.ts';
+// E1 skeleton (Task 1): one line per new shared file; later E1 tasks fill the files in.
+export * from './roof.ts';
+export * from './tiers.ts';
+export * from './proposals.ts';
+// S1 skeleton (Task 1): one line per new shared file; later S1 tasks fill the files in.
+export * from './storm.ts';
+export * from './door-routes.ts';

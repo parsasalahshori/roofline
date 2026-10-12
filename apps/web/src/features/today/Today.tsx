@@ -4,11 +4,12 @@ import { useApprovals, useMe } from '../../api/hooks.ts';
 import type { TaskView } from '../../api/types.ts';
 import { errors } from '../../copy/errors.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
+import { proposals } from '../../copy/proposals.ts';
 import { today } from '../../copy/today.ts';
 import { countedDrafts } from '../../shell/countedDrafts.ts';
 import { formatTime, zonedDateKey } from '../calendar/time.ts';
 import { useCompany } from '../settings/api.ts';
-import { useToday } from './api.ts';
+import { useSignedToday, useToday } from './api.ts';
 import styles from './Today.module.css';
 
 /** How many drafts the window lists before pointing at the full list. */
@@ -46,8 +47,10 @@ export function Today() {
   const okId = useId();
   const appointmentsId = useId();
   const followUpsId = useId();
+  const signedId = useId();
   const todayQuery = useToday();
   const zone = timeZone ?? 'America/Chicago';
+  const signedQuery = useSignedToday(zonedDateKey(now, zone));
   const seesEveryone = me.data?.role === 'owner' || me.data?.role === 'office';
 
   const drafts = newestFirst(countedDrafts(approvalsQuery.data));
@@ -164,6 +167,33 @@ export function Today() {
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+      {signedQuery.data !== undefined ? (
+        <section aria-labelledby={signedId} className={styles.section}>
+          <h3 id={signedId} className={styles.sectionTitle}>
+            {today.signedToday}
+          </h3>
+          {signedQuery.data.proposals.length === 0 ? (
+            <p className={styles.note}>{today.signedNone}</p>
+          ) : (
+            <ul aria-label={today.signedLabel} className={styles.list}>
+              {signedQuery.data.proposals.map((p) => {
+                const option = p.options.find((o) => o.id === p.signed?.optionId);
+                return (
+                  <li key={p.id}>
+                    <UiLink href={'/estimator/proposals/' + encodeURIComponent(p.id)} className={styles.link}>
+                      <Card className={styles.card}>
+                        <strong className={styles.title}>{p.customer.name}</strong>
+                        <span className={styles.agent}>{p.address}</span>
+                        {option !== undefined ? <span className={styles.agent}>{p.basis === 'exact' ? proposals.money(option.totalCents) : today.signedEstimate(proposals.money(option.totalCents))}</span> : null}
+                      </Card>
+                    </UiLink>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       ) : null}
     </div>

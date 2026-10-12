@@ -3,6 +3,7 @@ import { Button, EmptyState, ReviewSteps, Skeleton, StatCard, useToast } from '@
 import { useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
+import type { StepView } from '../../api/types.ts';
 import { approvals } from '../../copy/approvals.ts';
 import { errors } from '../../copy/errors.ts';
 import { review } from '../../copy/review.ts';
@@ -13,8 +14,10 @@ import { pathAfterDecline, useApprove, useDecline, useEditStep, useRerun, useRet
 import { editableText } from './editable.ts';
 import { EditStepSheet } from './EditStepSheet.tsx';
 import { NotNowSheet } from './NotNowSheet.tsx';
+import { StepFieldsSheet } from './StepFieldsSheet.tsx';
 import { POLL_AFTER_APPROVE_MS } from './polling.ts';
 import styles from './Review.module.css';
+import { kitFor } from './steps/index.ts';
 import { reviewMode, seenSteps, toReviewStep } from './toReviewStep.ts';
 
 /** Which window the review screen sits in: the approvals window, or the Storm window (`/storm/plans/:taskId`). */
@@ -52,6 +55,8 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
 
   const editingStep = editingId === null ? undefined : loadedStep(editingId);
   const editable = editingStep === undefined ? null : editableText(editingStep);
+  // A step type with a review kit is edited through the generic sheet (fields from the kit)
+  const kit = editingStep === undefined ? undefined : kitFor(editingStep);
 
   function showError(error: Error) {
     toast.show(error instanceof ApiError ? error.message : errors.generic, 'error');
@@ -90,14 +95,10 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
     setEditError(undefined);
   }
 
-  function saveEdit(text: string) {
-    if (editingStep === undefined || editable === null) return;
+  /** Sends the step's new payload. A 400 keeps the sheet open with the server's sentence; a 409 closes it. */
+  function sendEdit(step: StepView, payload: Record<string, unknown>) {
     void edit
-      .mutateAsync({
-        stepId: editingStep.id,
-        version: editingStep.version,
-        payload: { ...(editingStep.payload ?? {}), [editable.key]: text },
-      })
+      .mutateAsync({ stepId: step.id, version: step.version, payload })
       .then(closeEdit, (error: Error) => {
         if (error instanceof ApiError && error.status === 400) {
           // The sentence belongs on the field, and the sheet stays open so the text can be fixed
@@ -107,6 +108,16 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
         if (error instanceof ApiError && error.status === 409) closeEdit();
         showError(error);
       });
+  }
+
+  function saveEdit(text: string) {
+    if (editingStep === undefined || editable === null) return;
+    sendEdit(editingStep, { ...(editingStep.payload ?? {}), [editable.key]: text });
+  }
+
+  function saveKitEdit(payload: Record<string, unknown>) {
+    if (editingStep === undefined) return;
+    sendEdit(editingStep, payload);
   }
 
   function onApprove() {
@@ -220,13 +231,14 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
     );
   } else {
     const mode = reviewMode(data);
+    const ordered = [...data.steps].sort((a, b) => a.position - b.position);
     body = (
       <section className={styles.plan} data-mode={mode}>
         <h2 className={styles.title}>{data.title}</h2>
         {data.summary ? <p className={styles.summary}>{data.summary}</p> : null}
         <ReviewSteps
           mode={mode}
-          steps={[...data.steps].sort((a, b) => a.position - b.position).map((item) => toReviewStep(item, data))}
+          steps={ordered.map((item) => toReviewStep(item, data))}
           copy={review}
           approving={approve.isPending || pending.size > 0}
           pendingStepIds={pending}
@@ -236,6 +248,15 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
           onApprove={onApprove}
           onNotNow={openNotNow}
         />
+        {ordered.map((item) => {
+          const itemKit = kitFor(item);
+          if (itemKit === undefined) return null;
+          return (
+            <div className={styles.detail} key={item.id}>
+              <itemKit.Preview step={item} canApprove={item.canApprove} />
+            </div>
+          );
+        })}
       </section>
     );
   }
@@ -243,7 +264,17 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
   return (
     <AppWindow app={app} stats={stats}>
       {body}
-      {editingStep !== undefined && editable !== null ? (
+      {editingStep !== undefined && kit !== undefined ? (
+        <StepFieldsSheet
+          key={editingStep.id}
+          step={editingStep}
+          kit={kit}
+          saving={edit.isPending}
+          error={editError}
+          onSave={saveKitEdit}
+          onClose={closeEdit}
+        />
+      ) : editingStep !== undefined && editable !== null ? (
         <EditStepSheet
           key={editingStep.id}
           fieldLabel={review.messageLabel}

@@ -6,7 +6,7 @@ import type { CompanyBody } from '../src/api/types.ts';
 import { createAppRouter } from '../src/app/router.tsx';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { today } from '../src/copy/today.ts';
-import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
+import { ACCOUNT, SHELL_ROUTES, signedTodayRoute, stubApi } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -51,6 +51,7 @@ afterEach(() => {
 function mount(initialEntries: string[], own: Parameters<typeof stubApi>[0] = {}) {
   api = stubApi({
     ...SHELL_ROUTES,
+    ...signedTodayRoute(),
     // The pipeline board (the /jobs window) reads the board and the team; both are empty here
     'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
     'GET /api/team': () => ({ body: { members: [] } }),

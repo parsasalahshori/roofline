@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import {
+  getStep,
   getTask,
   listParkedSteps,
   lockNextDueText,
@@ -14,10 +15,12 @@ import {
   withTenant,
 } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
+import { settleSentProposal } from '../estimator/proposal-sent.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
 import { completeParkedStep, refreshTask } from '../tasks/service.ts';
 import { type BuiltGateRequest, buildGateRequest } from './gate-request.ts';
+import { dispatchEmail } from './dispatch-email.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
 
 /*
@@ -34,6 +37,9 @@ import { batchResult, QUEUED_TOO_LONG_MS, sendQueuedText, textStateFor, UNCONFIR
 export const NOT_TAKEN_LATER = "The texting service didn't take this message. You can retry it.";
 /** A batch step whose waiting texts are all dealt with, but some the provider refused. */
 export const STEP_FAILED = "Some texts didn't go out. You can retry them.";
+
+/** The step types that wait on their messages: a text batch, a proposal's single text, and a storm email batch. */
+const PARKED_TEXT_STEP_TYPES = ['send_sms_batch', 'send_proposal', 'send_email_batch'] as const;
 
 /** A text with no customer has no consent on file. */
 const NO_CUSTOMER: TextState = { status: 'blocked', blockRule: 'consent', blockReason: 'No texting consent on file.' };
@@ -64,8 +70,10 @@ export const emptySummary = (): DispatchSummary => ({ sent: 0, scheduled: 0, blo
  *    - schedule → the row waits again, with its new `scheduled_for` and reason;
  *    - block → `blocked`, with the rule and reason.
  *    A text that throws is logged (its id only) and left for the next pass; the others go on.
- * 2. **Parked batch steps.** For every parked `send_sms_batch` step of the company (`running`, no
- *    lease): its texts left `queued` for longer than `QUEUED_TOO_LONG_MS` become unconfirmed (never
+ * 2. **Parked text steps.** For every parked `send_sms_batch` or `send_proposal` step of the company
+ *    (`running`, no lease). A proposal's step is settled the same way, and when its one text went
+ *    out here, the proposal is marked sent in the same transaction (`settleSentProposal`).
+ *    Each: its texts left `queued` for longer than `QUEUED_TOO_LONG_MS` become unconfirmed (never
  *    resent), and its result is counted again. While a text still waits (`scheduled`, or `queued`
  *    under a live run) the step stays parked, with the new result. Otherwise it is finished with
  *    one conditional UPDATE (only while it is still parked): `done`, or `failed` when the provider
@@ -93,12 +101,25 @@ export async function dispatchCompanyMessages(deps: AppDeps, companyId: string, 
     if (outcome !== 'skipped') summary[outcome] += 1;
   }
 
-  for (const step of await withTenant(deps.pools, ctx, (tx) => listParkedSteps(tx, ctx, 'send_sms_batch'))) {
-    // One step that cannot be settled is logged and left for the next pass; the others go on.
-    try {
-      if (await settleParkedStep(deps, ctx, step)) summary.finished += 1;
-    } catch (err) {
-      reportJobError(deps, err, `dispatch-messages: step ${step.id}`);
+  // Scheduled emails: a failure here never stops the texts or the parked steps.
+  try {
+    const email = await dispatchEmail(deps, ctx, now);
+    summary.sent += email.sent;
+    summary.scheduled += email.scheduled;
+    summary.blocked += email.blocked;
+    summary.failed += email.failed;
+  } catch (err) {
+    reportJobError(deps, err, 'dispatch-messages: email');
+  }
+
+  for (const type of PARKED_TEXT_STEP_TYPES) {
+    for (const step of await withTenant(deps.pools, ctx, (tx) => listParkedSteps(tx, ctx, type))) {
+      // One step that cannot be settled is logged and left for the next pass; the others go on.
+      try {
+        if (await settleParkedStep(deps, ctx, { ...step, type })) summary.finished += 1;
+      } catch (err) {
+        reportJobError(deps, err, `dispatch-messages: step ${step.id}`);
+      }
     }
   }
   return summary;
@@ -162,7 +183,7 @@ async function decideAgain(
 async function settleParkedStep(
   deps: AppDeps,
   ctx: TenantContext,
-  step: { id: string; taskId: string; result: Record<string, unknown> | null },
+  step: { id: string; taskId: string; type: string; result: Record<string, unknown> | null },
 ): Promise<boolean> {
   const now = deps.clock.now();
   return withTenant(deps.pools, ctx, async (tx) => {
@@ -180,6 +201,13 @@ async function settleParkedStep(
 
     const someRefused = counts.retryableFailed > 0;
     await getTask(tx, ctx, step.taskId, { forUpdate: true });
+    // A proposal's single text went out (now, or just now from the loop above): the proposal follows.
+    if (step.type === 'send_proposal' && counts.sent === 1 && !someRefused) {
+      const row = await getStep(tx, ctx, step.taskId, step.id);
+      const proposalId = (row?.payload as { proposalId?: unknown } | undefined)?.proposalId;
+      if (typeof proposalId !== 'string') throw new Error(`send_proposal step ${step.id} has no proposal id.`);
+      await settleSentProposal(tx, ctx, proposalId, now);
+    }
     const saved = await completeParkedStep(
       tx,
       ctx,

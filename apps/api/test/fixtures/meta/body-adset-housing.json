@@ -1,0 +1,20 @@
+{
+  "name": "Roofline storm cs-1 meta",
+  "campaign_id": "120000001",
+  "status": "PAUSED",
+  "billing_event": "IMPRESSIONS",
+  "optimization_goal": "LANDING_PAGE_VIEWS",
+  "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+  "lifetime_budget": 15000,
+  "start_time": "2026-10-13T00:00:00",
+  "end_time": "2026-10-15T23:59:59",
+  "targeting": {
+    "geo_locations": {
+      "custom_locations": [
+        { "latitude": 35.12345, "longitude": -97.5, "radius": 15, "distance_unit": "mile" }
+      ]
+    },
+    "age_min": 25,
+    "publisher_platforms": ["facebook", "instagram"]
+  }
+}

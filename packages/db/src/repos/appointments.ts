@@ -490,9 +490,18 @@ export async function createAppointment(
 
   let jobMoved = false;
   if (i.kind === 'inspection' && links.job !== null && links.job.stage === 'lead') {
-    await updateJob(tx, ctx, links.job.id, { stage: 'inspection' }, { now });
-    await addJobLineOnce(tx, ctx, links.job.id, 'Moved to Inspection — inspection booked', now);
-    jobMoved = true;
+    // The stage read in resolveLinks was not locked: lock the row and re-check, so a job that became Won meanwhile is not moved back.
+    const [locked] = await tx
+      .select({ stage: jobs.stage })
+      .from(jobs)
+      .where(and(eq(jobs.id, links.job.id), eq(jobs.companyId, ctx.companyId)))
+      .for('update')
+      .limit(1);
+    if (locked?.stage === 'lead') {
+      await updateJob(tx, ctx, links.job.id, { stage: 'inspection' }, { now });
+      await addJobLineOnce(tx, ctx, links.job.id, 'Moved to Inspection — inspection booked', now);
+      jobMoved = true;
+    }
   }
 
   const withName = assigneeName !== null ? ` with ${firstName(assigneeName)}` : '';

@@ -1,0 +1,19 @@
+{
+  "mutateOperationResponses": [
+    {
+      "campaignBudgetResult": {
+        "resourceName": "customers/9876543210/campaignBudgets/777"
+      }
+    },
+    {
+      "campaignResult": {
+        "resourceName": "customers/9876543210/campaigns/555"
+      }
+    },
+    {
+      "adGroupResult": {
+        "resourceName": "customers/9876543210/adGroups/888"
+      }
+    }
+  ]
+}

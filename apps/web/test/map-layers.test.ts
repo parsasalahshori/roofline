@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Feature, FeatureCollection, MultiPolygon } from 'geojson';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { tokens } from '@roofline/ui';
-import { emptyMapData, installMapLayers, removeMapLayers, updateMapData } from '../src/shell/map/layers.ts';
+import { emptyMapData, HAIL_FILL_OPACITY, installMapLayers, removeMapLayers, updateMapData } from '../src/shell/map/layers.ts';
 import type { MapData } from '../src/shell/map/layers.ts';
 
 type Spec = Record<string, unknown>;
@@ -99,9 +99,11 @@ const AREA: MultiPolygon = {
   ],
 };
 
-const BASE_SOURCES = ['storm-swath', 'service-area', 'clusters', 'customers', 'jobs'];
+const BASE_SOURCES = ['storm-swath', 'storm-spots', 'service-area', 'clusters', 'customers', 'jobs'];
 const BASE_LAYERS = [
   'storm-swath-fill',
+  'storm-swath-outline',
+  'storm-spots',
   'service-area',
   'clusters',
   'customers-clusters',
@@ -144,7 +146,7 @@ describe('emptyMapData', () => {
 });
 
 describe('installMapLayers', () => {
-  it('adds the five sources and the nine layers in order, with no count labels when the style has no glyphs', () => {
+  it('adds the six sources and the eleven layers in order, with no count labels when the style has no glyphs', () => {
     const fake = fakeMap();
     installMapLayers(fake.map, sampleData());
 
@@ -180,7 +182,7 @@ describe('installMapLayers', () => {
     expect(layerSpec(fake, 'storm-swath-fill')).toMatchObject({
       type: 'fill',
       source: 'storm-swath',
-      paint: { 'fill-color': tokens['hail-3'], 'fill-opacity': 0.35 },
+      paint: { 'fill-color': expect.arrayContaining(['match', tokens['hail-3']]), 'fill-opacity': HAIL_FILL_OPACITY },
     });
   });
 
@@ -244,6 +246,8 @@ describe('installMapLayers', () => {
 
     expect([...fake.layers.keys()]).toEqual([
       'storm-swath-fill',
+      'storm-swath-outline',
+      'storm-spots',
       'service-area',
       'clusters',
       'clusters-count',
@@ -404,16 +408,16 @@ describe('removeMapLayers', () => {
     const fake = fakeMap();
     fake.style.glyphs = 'https://example.com/{fontstack}/{range}.pbf';
     installMapLayers(fake.map, sampleData({ clustering: true }));
-    expect(fake.layers.size).toBe(12);
-    expect(fake.sources.size).toBe(5);
+    expect(fake.layers.size).toBe(14);
+    expect(fake.sources.size).toBe(6);
 
     removeMapLayers(fake.map);
     expect(fake.layers.size).toBe(0);
     expect(fake.sources.size).toBe(0);
 
     installMapLayers(fake.map, sampleData({ clustering: false }));
-    expect(fake.layers.size).toBe(12);
-    expect(fake.sources.size).toBe(5);
+    expect(fake.layers.size).toBe(14);
+    expect(fake.sources.size).toBe(6);
     expect(sourceSpec(fake, 'customers')).not.toHaveProperty('cluster');
   });
 
