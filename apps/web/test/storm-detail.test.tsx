@@ -187,8 +187,8 @@ describe('StormDetail', () => {
   });
 
   it.each([
-    ['expired', true, false],
-    ['declined', true, false],
+    ['expired', false, false],
+    ['declined', false, false],
     ['draft', true, true],
     ['running', false, true],
   ])('a %s plan: redraft button %s, open plan %s', async (status, redraftShown, openShown) => {

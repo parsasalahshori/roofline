@@ -33,9 +33,13 @@ export function StormDetail() {
   const canAct = role === 'owner' || role === 'office';
   const item = data.storm;
   const planStatus = data.plan?.status;
-  /** An expired or declined plan is over: only a new one makes sense. */
+  /** An expired or declined plan is over: it is not opened, and only a new one makes sense. */
   const plansReplaced = planStatus === 'expired' || planStatus === 'declined';
-  const canRedraft = data.plan === null || planStatus === 'draft' || plansReplaced;
+  /**
+   * The API drafts over no plan or a draft only (Ruling BD: A1 owns re-drafting an expired or declined plan and
+   * adds that action at its merge), so the button shows only when the request can succeed.
+   */
+  const canRedraft = data.plan === null || planStatus === 'draft';
 
   return (
     <div className={styles.page}>
