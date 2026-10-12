@@ -5,3 +5,4 @@ Lead change: 0020 app_system grants on calls extended in place (SELECT started_a
 Review 1: 3 findings. F1 approved (fixed), F2 amended (schema gap: no calls outcome/title column; recorded in progress.md), F3 rejected. Review 2: 0 findings.
 Minors: needs_attention is derived at read time; transferred call without conversation keeps only calls.status.
 Verify: typecheck, lint, shared (844 tests) and web (755 tests) all passed.
+CI: run 38281934878 failed (rls.test.ts grants list, voice-hooks cleanup delete, smoke-front-desk-guards); fixed the first two in d7529773. Run 38285366757: E2E passed; Platform failed only on 3 tests in apps/api/test/smoke-front-desk-guards.test.ts (loadConfig requires TRUST_PROXY in production; not touched by this task, a config/test mismatch on the base). All other 5303 tests passed, including the new db and api suites.
