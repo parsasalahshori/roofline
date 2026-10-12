@@ -78,3 +78,4 @@ Ruling GX-A (confirmed by the controller, amending cross-track Ruling AV): inbou
 - Ruling GX-N (track lead): the Scheduler's "your install moved" texts (T11) use `send_personal_texts.kind = 'reminder'` (appointment logistics: 1-minute `reminder_sent` baseline, outside the Decision 8 follow-up spacing). No-show rebooking texts (T12) use `'no_show'` — cost if wrong: a few minutes of time-saved math.
 - Intended: the deductible guard also refuses denials ("We will not pay your deductible."): the conservative choice; T8/T13 prompts must not write deductible disclaimers.
 - Minors kept: appointment previews print raw ISO ranges (the R2 UI / T17 formats them); `lowerUuid`'s unused undefined branch.
+- Task 2b: complete (7f49765..7b87a6b), CI 38200942342 green. Merged into g1-agents.
