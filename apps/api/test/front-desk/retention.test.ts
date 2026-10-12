@@ -39,10 +39,12 @@ beforeEach(async () => {
 });
 
 async function setRetention(companyId: string, recordingRetentionDays: number, transcriptRetentionDays: number): Promise<void> {
-  await t.deps.pools.system
-    .insert(companySettings)
-    .values({ companyId, recordingRetentionDays, transcriptRetentionDays })
-    .onConflictDoUpdate({ target: companySettings.companyId, set: { recordingRetentionDays, transcriptRetentionDays } });
+  await inTenant(companyId, (tx) =>
+    tx
+      .insert(companySettings)
+      .values({ companyId, recordingRetentionDays, transcriptRetentionDays })
+      .onConflictDoUpdate({ target: companySettings.companyId, set: { recordingRetentionDays, transcriptRetentionDays } }),
+  );
 }
 
 async function addConversation(
