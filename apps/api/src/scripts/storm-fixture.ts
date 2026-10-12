@@ -129,13 +129,16 @@ export async function seedStormFixture(
   );
   for (const s of spots) await insertFixtureFootprint(q, [Number(s.lng), Number(s.lat)]);
 
+  // Each company gets its own external ids: an external ad account belongs to one company (Ruling BF). USD, because
+  // the campaign step runs only on a US dollar account.
+  const digits = (BigInt(`0x${companyId.replace(/-/g, '').slice(0, 12)}`) % 10_000_000_000n).toString().padStart(10, '0');
   for (const [platform, external] of [
-    ['google', '1234567890'],
-    ['meta', 'act_555'],
+    ['google', digits],
+    ['meta', `act_${digits}`],
   ] as const) {
     await q(
-      `insert into ad_accounts (company_id, platform, external_account_id, status) values ($1, $2, $3, 'active')`,
-      [companyId, platform, external],
+      `insert into ad_accounts (company_id, platform, external_account_id, status, name, currency) values ($1, $2, $3, 'active', $4, 'USD')`,
+      [companyId, platform, external, `Fixture ${platform} ads`],
     );
   }
 
