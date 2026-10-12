@@ -19,7 +19,7 @@
 }
 
 .error {
-  color: var(--danger, var(--text));
+  color: var(--danger);
 }
 
 .sheetBody {
@@ -39,4 +39,10 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
 }

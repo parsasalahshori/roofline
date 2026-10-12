@@ -6,8 +6,10 @@ import type { AgentDetail } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { agentPage } from '../src/copy/agents.ts';
+import { RunNowButton } from '../src/features/agents/RunNowButton.tsx';
+import { agentPage, agentsCommon } from '../src/copy/agents.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { AGENT_LABEL } from '../src/copy/status.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -136,7 +138,7 @@ describe('agent page', () => {
   it.each([
     ['works_when_asked', agentPage.worksWhenAsked],
     ['answers_calls', agentPage.answersCalls],
-    ['coming_soon', agentPage.comingSoon],
+    ['coming_soon', agentsCommon.comingSoon],
   ])('run now state %s', async (kind, text) => {
     setup('/agents/storm-scout', 'owner', {
       [GET]: () => ({ body: { ...DETAIL, runNow: { kind } as AgentDetail['runNow'] } }),
@@ -196,5 +198,78 @@ describe('agent page', () => {
     setup('/agents/storm-scout', 'owner', { [GET]: () => ({ body: { ...DETAIL, breakdown: [], recentTasks: [] } }) });
     expect(await screen.findByText(agentPage.breakdownEmpty)).toBeInTheDocument();
     expect(screen.getByText(agentPage.recentEmpty)).toBeInTheDocument();
+  });
+
+  it('PauseSwitch cancel clears the error', async () => {
+    const { user } = setup('/agents/storm-scout', 'owner', { [PUT]: () => ({ status: 500, body: { error: 'x' } }) });
+    await user.click(await screen.findByRole('switch'));
+    await user.click(await screen.findByRole('button', { name: agentPage.pauseConfirm }));
+    expect(await screen.findByText(agentPage.pauseError)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: agentPage.pauseCancel }));
+    expect(screen.queryByRole('dialog', { name: agentPage.pauseTitle })).toBeNull();
+    expect(screen.queryByText(agentPage.pauseError)).toBeNull();
+  });
+
+  it.each([
+    ['rep', false],
+    ['office', true],
+    ['owner', true],
+  ] as const)('Run now for a %s: shown is %s', async (role, shown) => {
+    setup('/agents/storm-scout', role);
+    await screen.findByRole('link', { name: '1 inch' });
+    if (shown) {
+      expect(await screen.findByRole('button', { name: agentPage.runNowButton })).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole('button', { name: agentPage.runNowButton })).toBeNull();
+    }
+  });
+
+  it('a stale run error clears when a later nextAllowedAt arrives', async () => {
+    api = stubApi({
+      ...SHELL_ROUTES,
+      'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role: 'owner' } }),
+      [POST]: () => ({ status: 409, body: { error: 'It is already checking. Try again soon.' } }),
+    });
+    const queryClient = createQueryClient();
+    queryClient.setDefaultOptions({ queries: { retry: false } });
+    const view = (runNow: AgentDetail['runNow']) => (
+      <Providers client={queryClient}>
+        <RunNowButton agent="storm_scout" runNow={runNow} />
+      </Providers>
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(view({ kind: 'available', nextAllowedAt: null }));
+    await user.click(await screen.findByRole('button', { name: agentPage.runNowButton }));
+    expect(await screen.findByText('It is already checking. Try again soon.')).toBeInTheDocument();
+    rerender(view({ kind: 'available', nextAllowedAt: inAnHour() }));
+    await waitFor(() => expect(screen.queryByText('It is already checking. Try again soon.')).toBeNull());
+  });
+
+  it('section headings are h3 under the h2 title', async () => {
+    setup('/agents/storm-scout');
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    await within(dialog).findByRole('link', { name: '1 inch' });
+    expect(within(dialog).getByRole('heading', { level: 2, name: AGENT_LABEL.storm_scout })).toBeInTheDocument();
+    expect(within(dialog).getAllByRole('heading', { level: 2 })).toHaveLength(1);
+    expect(within(dialog).getAllByRole('heading', { level: 3 }).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps the previous period while the next loads', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { user } = setup('/agents/storm-scout', 'owner', {
+      'GET /api/agents/storm_scout?period=week': () => ({ body: { ...DETAIL, period: 'week', minutesInPeriod: 60 } }),
+    });
+    const inner = fetch;
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('period=week') ? gate.then(() => inner(input, init)) : inner(input, init),
+    );
+    await screen.findByText(/about 4\.5 hours/);
+    await user.click(screen.getByRole('button', { name: agentPage.periods.week }));
+    expect(screen.getAllByText(/about 4\.5 hours/).length).toBeGreaterThan(0);
+    release();
+    expect((await screen.findAllByText(/about 1 hour/)).length).toBeGreaterThan(0);
   });
 });

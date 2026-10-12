@@ -33,14 +33,19 @@
 
 .chip {
   padding: 2px 8px;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--border);
+  border-radius: 999px;
+  border: 1px solid var(--line);
   font-size: 0.8125rem;
   color: var(--text);
 }
 
 .chip[data-status='on'] {
-  border-color: var(--text);
+  border-color: var(--success);
+}
+
+.chip[data-status='paused'],
+.chip[data-status='waiting'] {
+  border-color: var(--accent);
 }
 
 .line {
@@ -53,6 +58,6 @@
 }
 
 .muted {
-  color: var(--text-muted, var(--text));
+  color: var(--text-muted);
   font-size: 0.875rem;
 }

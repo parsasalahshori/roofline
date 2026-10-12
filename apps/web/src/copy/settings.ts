@@ -45,6 +45,15 @@ export const settings = {
     ownerOnly: 'Only the owner can change company details.',
     save: 'Save',
     saved: 'Saved',
+    /** The owner-only rate the Agents screen uses to turn time saved into money */
+    hourlyRate: {
+      label: 'Hourly rate for time saved',
+      hint: 'In dollars an hour, from $0 to $1,000. The Agents screen uses it to turn time saved into money.',
+      error: 'Please enter an hourly rate between $0 and $1,000.',
+      saved: 'Saved',
+      save: 'Save hourly rate',
+      loadError: 'We could not load the hourly rate. Try again in a moment.',
+    },
     /** The US time zones, in the order of the list. `value` is the zone's name as the server stores it. */
     timeZones: [
       { value: 'America/New_York', label: 'Eastern Time (New York)' },

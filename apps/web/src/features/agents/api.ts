@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   Agent,
   AgentDetail,
@@ -21,13 +21,15 @@ export const agentsKeys = {
   all: ['agents'] as const,
   feed: ['agents', 'feed'] as const,
   waiting: ['agents', 'waiting'] as const,
+  overview: ['agents', 'overview'] as const,
+  detail: (agent: ScreenAgent, period: TimePeriod) => ['agents', 'detail', agent, period] as const,
 };
 
 // --- Task 9: Agents window ---
 /** GET /api/agents: the overview (cards, month totals, hourly rate). */
 export function useAgentsOverview() {
   return useQuery({
-    queryKey: agentsKeys.all,
+    queryKey: agentsKeys.overview,
     queryFn: ({ signal }) => apiFetch<AgentsOverview>('/api/agents', { signal }),
   });
 }
@@ -58,13 +60,12 @@ export function useWaiting() {
 }
 
 // --- Task 10: agent page ---
-export const agentDetailKey = (agent: ScreenAgent, period: TimePeriod) => ['agents', 'detail', agent, period] as const;
-
 /** GET /api/agents/:agent?period= */
 export function useAgentDetail(agent: ScreenAgent, period: TimePeriod) {
   return useQuery({
-    queryKey: agentDetailKey(agent, period),
+    queryKey: agentsKeys.detail(agent, period),
     queryFn: ({ signal }) => apiFetch<AgentDetail>(`/api/agents/${agent}?period=${period}`, { signal }),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -102,7 +103,10 @@ export function useSaveTimeBaselines() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: TimeBaselinesBody) => apiFetch<TimeBaselines>('/api/agents/time-baselines', { method: 'PUT', body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: agentsKeys.all }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(timeBaselinesKey, saved);
+      return queryClient.invalidateQueries({ queryKey: agentsKeys.all });
+    },
   });
 }
 

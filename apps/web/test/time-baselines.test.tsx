@@ -94,4 +94,15 @@ describe('TimeBaselines', () => {
     expect(within(rate.parentElement ?? rate).getByRole('link', { name: copy.rateLinkText })).toHaveAttribute('href', '/settings/company');
     expect(api.unexpected).toEqual([]);
   });
+
+  it('the rate link shows only for the owner', async () => {
+    const { api } = setup();
+    expect(await screen.findByRole('link', { name: copy.rateLinkText })).toHaveAttribute('href', '/settings/company');
+    cleanup();
+    setup(false);
+    expect(await screen.findByText(copy.ownerOnly)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: copy.rateLinkText })).toBeNull();
+    expect(screen.getByText(`${copy.ratePrefix} $28 ${copy.rateSuffix}`)).toBeInTheDocument();
+    expect(api.unexpected).toEqual([]);
+  });
 });

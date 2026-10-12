@@ -1,7 +1,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
-import { moneyLabel, type AgentCard as AgentCardData } from '@roofline/shared';
+import { hoursLabel, moneyLabel, type AgentCard as AgentCardData } from '@roofline/shared';
+import { agentsCommon } from '../src/copy/agents.ts';
 import { AgentCard } from '../src/features/agents/AgentCard.tsx';
 
 function fixture(over: Partial<AgentCardData> = {}): AgentCardData {
@@ -50,7 +51,7 @@ describe('AgentCard', () => {
 
   it('links to the agent page with the agent name', () => {
     show(fixture());
-    const link = screen.getByRole('link', { name: 'Storm Scout' });
+    const link = screen.getByRole('link', { name: /^Storm Scout/ });
     expect(link.getAttribute('href')).toBe('/agents/storm-scout');
   });
 
@@ -60,5 +61,23 @@ describe('AgentCard', () => {
     unmount();
     show(fixture({ status: 'waiting', waitingCount: 2 }));
     expect(screen.getAllByText('Waiting on you').length).toBeGreaterThan(0);
+  });
+
+  it('link accessible name includes the name, the time figure and (estimate)', () => {
+    show(fixture({ minutesThisMonth: 90 }));
+    const link = screen.getByRole('link');
+    const name = link.getAttribute('aria-labelledby')?.split(' ').map((id) => document.getElementById(id)?.textContent ?? '').join(' ') ?? '';
+    expect(name).toMatch(/Storm Scout/);
+    expect(name).toMatch(/Time saved this month/);
+    expect(name).toContain(hoursLabel(90));
+    expect(name).toContain(agentsCommon.estimate);
+    expect(name).toContain(moneyLabel(90, 2800));
+    expect(screen.getByRole('link', { name: /Time saved this month/ })).toBe(link);
+  });
+
+  it('coming soon link name is just the agent name', () => {
+    show(fixture({ status: 'coming_soon', agent: 'claims', minutesThisMonth: 0, successRate: null, notApproved30d: 0, finishedToday: 0 }));
+    expect(screen.getByRole('link').getAttribute('aria-labelledby')?.split(' ')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Claims' })).toBeTruthy();
   });
 });

@@ -12,6 +12,26 @@
   justify-self: start;
 }
 
+/* The hourly rate form sits under the details, as wide as they are */
+.rate {
+  display: grid;
+  gap: 12px;
+  max-width: 720px;
+  margin-top: 24px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.problem {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-size-body);
+}
+
 /* Who may change the details, shown above the read-only fields */
 .note {
   margin: 0 0 16px;

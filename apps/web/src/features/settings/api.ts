@@ -24,6 +24,31 @@ export type CompanyPatch = Partial<{
   logoUrl: string;
 }>;
 
+/** The company's owner-only settings (only the hourly rate is read here). */
+export const companySettingsKey = [...keys.company, 'settings'] as const;
+
+/** Reads the hourly rate for time saved. Owner only: pass `enabled` false for everyone else. */
+export function useCompanySettings(enabled: boolean) {
+  return useQuery({
+    queryKey: companySettingsKey,
+    enabled,
+    queryFn: ({ signal }) => apiFetch<{ hourlyRateCents: number }>('/api/company/settings', { signal }),
+  });
+}
+
+/** Saves the hourly rate in cents (owner only). The Agents screen shows it, so its reads are refreshed. */
+export function useUpdateHourlyRate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (hourlyRateCents: number) =>
+      apiFetch<{ hourlyRateCents: number }>('/api/company/settings', { method: 'PATCH', body: { hourlyRateCents } }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(companySettingsKey, (old: object | undefined) => ({ ...(old ?? {}), ...saved }));
+      void queryClient.invalidateQueries({ queryKey: ['agents'] });
+    },
+  });
+}
+
 /** What can change about one member of the team. Send only what changed. */
 export type MemberChanges = { role?: Role; canApproveSpend?: boolean; status?: 'active' | 'disabled' };
 

@@ -6,7 +6,7 @@ import type { CompanyBody } from '../../api/types.ts';
 import { errors } from '../../copy/errors.ts';
 import { settings } from '../../copy/settings.ts';
 import { formErrors } from '../auth/formErrors.ts';
-import { useCompany, useUpdateCompany, type CompanyPatch } from './api.ts';
+import { useCompany, useCompanySettings, useUpdateCompany, useUpdateHourlyRate, type CompanyPatch } from './api.ts';
 import styles from './CompanyTab.module.css';
 
 /** The form's fields, and the key each one sends in the PATCH body. */
@@ -212,6 +212,73 @@ function CompanyForm({ company, canEdit }: { company: CompanyBody; canEdit: bool
           </Button>
         ) : null}
       </form>
+      {canEdit ? <HourlyRateForm /> : null}
     </>
+  );
+}
+
+/** Cents as the field shows them: whole dollars without decimals, else two places. */
+function toDollars(cents: number): string {
+  return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
+}
+
+/** The typed dollars as cents, or null when they are not an amount from $0 to $1,000. */
+function toCents(text: string): number | null {
+  const clean = text.replace(/[$,\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(clean)) return null;
+  const cents = Math.round(Number(clean) * 100);
+  return cents > 100000 ? null : cents;
+}
+
+/** The owner's hourly rate for time saved. It has its own endpoint, so it has its own form. */
+function HourlyRateForm() {
+  const rate = useCompanySettings(true);
+  const update = useUpdateHourlyRate();
+  const toast = useToast();
+  const [draft, setDraft] = useState<string | null>(null);
+
+  if (rate.data === undefined) {
+    if (rate.error) return <p className={styles.problem} role="alert">{settings.company.hourlyRate.loadError}</p>;
+    return <Skeleton lines={1} />;
+  }
+
+  const saved = toDollars(rate.data.hourlyRateCents);
+  const text = draft ?? saved;
+  const cents = toCents(text);
+  const invalid = cents === null;
+  const unchanged = cents === rate.data.hourlyRateCents;
+  const serverMessage = update.error instanceof ApiError ? update.error.message : update.error ? settings.company.hourlyRate.error : undefined;
+  const error = invalid ? settings.company.hourlyRate.error : serverMessage;
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (cents === null || unchanged) return;
+    update.mutate(cents, {
+      onSuccess: () => {
+        setDraft(null);
+        toast.show(settings.company.hourlyRate.saved, 'success');
+      },
+    });
+  }
+
+  return (
+    <form className={styles.rate} onSubmit={submit} noValidate>
+      <Field
+        label={settings.company.hourlyRate.label}
+        name="hourlyRate"
+        type="text"
+        inputMode="decimal"
+        value={text}
+        onChange={(event) => {
+          update.reset();
+          setDraft(event.target.value);
+        }}
+        error={error}
+      />
+      <p className={styles.hint}>{settings.company.hourlyRate.hint}</p>
+      <Button className={styles.save} type="submit" variant="primary" busy={update.isPending} disabled={invalid || unchanged}>
+        {settings.company.hourlyRate.save}
+      </Button>
+    </form>
   );
 }
