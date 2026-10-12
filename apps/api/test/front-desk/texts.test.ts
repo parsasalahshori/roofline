@@ -61,10 +61,13 @@ async function setup(script: ConstructorParameters<typeof ScriptedLlm>[0] = [{ w
 }
 
 async function setFrontDesk(values: { frontDeskEnabled: boolean; frontDeskTexts: boolean }) {
-  await t.deps.pools.system
-    .insert(companySettings)
-    .values({ companyId: idA(), ...values })
-    .onConflictDoUpdate({ target: companySettings.companyId, set: values });
+  const ctx = { companyId: idA(), userId: null, role: 'system' as const, canApproveSpend: false };
+  await withTenant(t.deps.pools, ctx, (tx) =>
+    tx
+      .insert(companySettings)
+      .values({ companyId: idA(), ...values })
+      .onConflictDoUpdate({ target: companySettings.companyId, set: values }),
+  );
 }
 
 /** POSTs an inbound text from Nina to A's number, signed as Twilio would. */
