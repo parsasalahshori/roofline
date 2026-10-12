@@ -12,6 +12,8 @@ import { ACCOUNT, renderAt, type Routes, stubApi } from './helpers.tsx';
 
 const MANAGER = '123-456-7890';
 const BUSINESS = '984512300012345';
+const ACCESS = 'We do not have access to this account yet.';
+const PAYMENT = 'The account needs a payment method before it can run ads.';
 
 let api: ReturnType<typeof stubApi>;
 let accounts: AdAccount[];
@@ -29,7 +31,7 @@ afterEach(() => {
 });
 
 function account(overrides: Partial<AdAccount> & Pick<AdAccount, 'id' | 'platform' | 'externalAccountId'>): AdAccount {
-  return { status: 'pending', name: null, reason: null, linkedAt: null, ...overrides };
+  return { status: 'pending', name: null, currency: null, lastErrorPlain: null, linkedAt: null, ...overrides };
 }
 
 /** The answers of the ad API, reading and changing `accounts`. `extra` replaces any of them. */
@@ -48,21 +50,21 @@ function adRoutes(extra: Routes = {}): Routes {
     },
     'POST /api/ads/accounts/meta': ({ body }) => {
       const adAccountId = (body as { adAccountId: string }).adAccountId;
-      const created = account({ id: 'm1', platform: 'meta', externalAccountId: adAccountId, reason: 'access' });
+      const created = account({ id: 'm1', platform: 'meta', externalAccountId: adAccountId, lastErrorPlain: ACCESS });
       accounts = [...accounts, created];
       return { status: 201, body: { account: created } };
     },
     'POST /api/ads/accounts/g1/check': () => {
-      accounts = accounts.map((row) => (row.id === 'g1' ? { ...row, status: 'active' as const, reason: null } : row));
-      return { body: accounts.find((row) => row.id === 'g1') };
+      accounts = accounts.map((row) => (row.id === 'g1' ? { ...row, status: 'active' as const, lastErrorPlain: null } : row));
+      return { body: { account: accounts.find((row) => row.id === 'g1') } };
     },
     'POST /api/ads/accounts/m1/check': () => {
-      accounts = accounts.map((row) => (row.id === 'm1' ? { ...row, status: 'active' as const, reason: null } : row));
-      return { body: accounts.find((row) => row.id === 'm1') };
+      accounts = accounts.map((row) => (row.id === 'm1' ? { ...row, status: 'active' as const, lastErrorPlain: null } : row));
+      return { body: { account: accounts.find((row) => row.id === 'm1') } };
     },
     'DELETE /api/ads/accounts/g1': () => {
       accounts = accounts.map((row) => (row.id === 'g1' ? { ...row, status: 'revoked' as const } : row));
-      return { body: accounts.find((row) => row.id === 'g1') };
+      return { body: { account: accounts.find((row) => row.id === 'g1') } };
     },
     ...extra,
   };
@@ -139,11 +141,11 @@ describe('settings: ad connections', () => {
 
     await waitFor(() => expect(api.sent('POST /api/ads/accounts/meta')).toEqual([{ adAccountId: 'act_123456789' }]));
     expect(await within(meta).findByText(connections.statuses.pending)).toBeInTheDocument();
-    expect(within(meta).getByText(connections.reasons.access)).toBeInTheDocument();
+    expect(within(meta).getByText(ACCESS)).toBeInTheDocument();
   });
 
   it('meta: Check again turns the account active', async () => {
-    accounts = [account({ id: 'm1', platform: 'meta', externalAccountId: 'act_123456789', reason: 'access' })];
+    accounts = [account({ id: 'm1', platform: 'meta', externalAccountId: 'act_123456789', lastErrorPlain: ACCESS })];
     const { user } = renderConnections();
     const meta = await metaCard();
 
@@ -151,7 +153,7 @@ describe('settings: ad connections', () => {
 
     await waitFor(() => expect(api.count('POST /api/ads/accounts/m1/check')).toBe(1));
     expect(await within(meta).findByText(connections.statuses.active)).toBeInTheDocument();
-    expect(within(meta).queryByText(connections.reasons.access)).toBeNull();
+    expect(within(meta).queryByText(ACCESS)).toBeNull();
   });
 
   it('meta: server validation error shows under the field', async () => {
@@ -188,7 +190,7 @@ describe('settings: ad connections', () => {
     role = 'office';
     accounts = [
       account({ id: 'g1', platform: 'google', externalAccountId: '1234567890', status: 'active' }),
-      account({ id: 'm1', platform: 'meta', externalAccountId: 'act_123456789', status: 'pending', reason: 'payment' }),
+      account({ id: 'm1', platform: 'meta', externalAccountId: 'act_123456789', status: 'pending', lastErrorPlain: PAYMENT }),
     ];
     renderConnections();
     const google = await googleCard();
@@ -196,12 +198,38 @@ describe('settings: ad connections', () => {
 
     expect(within(google).getByText(connections.statuses.active)).toBeInTheDocument();
     expect(within(meta).getByText(connections.statuses.pending)).toBeInTheDocument();
-    expect(within(meta).getByText(connections.reasons.payment)).toBeInTheDocument();
+    expect(within(meta).getByText(PAYMENT)).toBeInTheDocument();
     for (const card of [google, meta]) {
       expect(within(card).queryByRole('button', { name: connections.adConnect })).toBeNull();
       expect(within(card).queryByRole('button', { name: connections.checkAgain })).toBeNull();
       expect(within(card).queryByRole('button', { name: connections.remove })).toBeNull();
     }
+  });
+
+  it('shows the plain reason of an account in error', async () => {
+    accounts = [account({ id: 'g1', platform: 'google', externalAccountId: '1234567890', status: 'error', lastErrorPlain: PAYMENT })];
+    renderConnections();
+    const google = await googleCard();
+
+    expect(await within(google).findByText(PAYMENT)).toBeInTheDocument();
+  });
+
+  it('does not show a reason on an active account', async () => {
+    accounts = [account({ id: 'g1', platform: 'google', externalAccountId: '1234567890', status: 'active', lastErrorPlain: PAYMENT })];
+    renderConnections();
+    const google = await googleCard();
+
+    expect(await within(google).findByText(connections.statuses.active)).toBeInTheDocument();
+    expect(within(google).queryByText(PAYMENT)).toBeNull();
+  });
+
+  it('shows no reason paragraph on a pending account without one', async () => {
+    accounts = [account({ id: 'm1', platform: 'meta', externalAccountId: 'act_123456789' })];
+    renderConnections();
+    const meta = await metaCard();
+
+    expect(await within(meta).findByText(connections.statuses.pending)).toBeInTheDocument();
+    expect(meta.querySelector('p[class*="reason"]')).toBeNull();
   });
 
   it('only one coming-soon line is shown', async () => {

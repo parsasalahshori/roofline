@@ -4,8 +4,8 @@ import { keys } from '../../api/keys.ts';
 import type { AdAccount, AdAccountsBody } from '../../api/types.ts';
 
 /*
- * The ad accounts under Settings, Connections (S1 Task 27). The ad API itself is built later
- * (Task 16); these hooks follow the shapes in api/types.ts.
+ * The ad accounts under Settings, Connections (S1 Task 27). These hooks follow the ad API's
+ * answers (apps/api/src/routes/ads.ts): check and remove answer `{ account }`.
  */
 
 /** How often the accounts are asked again while one waits for the person to accept it. */
@@ -50,16 +50,16 @@ export function useCheckAdAccount() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<AdAccount>('/api/ads/accounts/' + encodeURIComponent(id) + '/check', { method: 'POST' }),
+      apiFetch<{ account: AdAccount }>('/api/ads/accounts/' + encodeURIComponent(id) + '/check', { method: 'POST' }),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.adAccounts }),
   });
 }
 
-/** Removes an account from Roofline (owner only). The answer is the account, now revoked. */
+/** Removes an account from Roofline (owner only). The answer is `{ account }`, now revoked. */
 export function useRemoveAdAccount() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiFetch<AdAccount>('/api/ads/accounts/' + encodeURIComponent(id), { method: 'DELETE' }),
+    mutationFn: (id: string) => apiFetch<{ account: AdAccount }>('/api/ads/accounts/' + encodeURIComponent(id), { method: 'DELETE' }),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.adAccounts }),
   });
 }

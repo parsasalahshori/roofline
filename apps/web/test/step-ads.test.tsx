@@ -5,6 +5,8 @@ import { stepTypes } from '@roofline/shared';
 import type { StepView } from '../src/api/types.ts';
 import { keys } from '../src/api/keys.ts';
 import type { StormSummary } from '../src/features/storm/types.ts';
+import { StepFieldsSheet } from '../src/features/approvals/StepFieldsSheet.tsx';
+import { stepAds } from '../src/copy/stepAds.ts';
 import { adCampaignKit, AdCampaignPreview } from '../src/features/approvals/steps/AdCampaignPreview.tsx';
 import { renderAt, stubApi } from './helpers.tsx';
 
@@ -339,6 +341,17 @@ describe('the ad campaign kit', () => {
       keywords: 'roof repair',
     });
     expect(payload.photoId).toBe(PHOTO);
+  });
+
+  it('opens Edit with the maximum on the decimal keyboard and the days on the numeric one', async () => {
+    api = stubApi({
+      'GET /api/team': () => ({ body: { members: [], invites: [] } }),
+      'GET /api/storm/settings': () => ({ body: { photos: [] } }),
+    });
+    renderAt(<StepFieldsSheet step={step()} kit={adCampaignKit} saving={false} onSave={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByLabelText(stepAds.maxLabel)).toHaveAttribute('inputmode', 'decimal');
+    expect(screen.getByLabelText(stepAds.daysLabel)).toHaveAttribute('inputmode', 'numeric');
+    await waitFor(() => expect(api?.count('GET /api/storm/settings')).toBeGreaterThan(0));
   });
 
   it('refuses a maximum above the current one and allows one at or below it', () => {

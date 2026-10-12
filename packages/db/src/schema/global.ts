@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   bigserial,
   boolean,
   char,
@@ -312,6 +313,8 @@ export const storms = pgTable(
     updatedAt: tstz('updated_at').notNull().defaultNow(),
     lastGrewAt: tstz('last_grew_at').notNull().defaultNow(),
     finalAt: tstz('final_at'),
+    /** Set when this storm was found to be part of an older one; the older storm keeps the id. */
+    mergedInto: uuid('merged_into').references((): AnyPgColumn => storms.id),
   },
   (t) => [
     index('storms_geom_075_gist').using('gist', t.geom075),

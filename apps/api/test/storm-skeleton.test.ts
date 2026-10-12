@@ -28,8 +28,8 @@ describe('the storm skeleton', () => {
     expect(res.body).toEqual({ error: MESSAGES.notFound });
   });
 
-  test('POST /api/public/storm-requests/x without a session is not a 401', async () => {
-    const res = await request(t.app).post('/api/public/storm-requests/x').send({});
+  test('POST /api/public/storm-requests/<code> without a session is not a 401', async () => {
+    const res = await request(t.app).post('/api/public/storm-requests/abcd2345').send({});
     expect(res.status).not.toBe(401);
     // The real route validates the body before looking the page up, so an empty body is a 422.
     expect(res.status).toBe(422);

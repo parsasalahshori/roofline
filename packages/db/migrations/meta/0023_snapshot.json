@@ -9862,6 +9862,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "merged_into": {
+          "name": "merged_into",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -9896,7 +9902,21 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "storms_merged_into_storms_id_fk": {
+          "name": "storms_merged_into_storms_id_fk",
+          "tableFrom": "storms",
+          "columnsFrom": [
+            "merged_into"
+          ],
+          "tableTo": "storms",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -10177,6 +10197,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "paused_by": {
+          "name": "paused_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -10280,6 +10306,10 @@
         "ad_campaigns_error_kind_check": {
           "name": "ad_campaigns_error_kind_check",
           "value": "\"ad_campaigns\".\"error_kind\" in ('policy', 'payment', 'access', 'targeting', 'other')"
+        },
+        "ad_campaigns_paused_by_check": {
+          "name": "ad_campaigns_paused_by_check",
+          "value": "\"ad_campaigns\".\"paused_by\" in ('roofline', 'platform')"
         }
       },
       "isRLSEnabled": false

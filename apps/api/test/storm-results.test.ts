@@ -182,6 +182,51 @@ describe('storm results', () => {
     });
   });
 
+  describe('reply window', () => {
+    const planText = (customerId: string, stepId: string, ago: string) =>
+      q(
+        `insert into messages (company_id, customer_id, channel, direction, purpose, body, status, step_id, sent_at, created_at, to_e164)
+         values ($1, $2, 'sms', 'out', 'marketing', 'Hail hit', 'delivered', $3, now() - $4::interval, now() - $4::interval, '+14025550100')`,
+        [companyId(), customerId, stepId, ago],
+      );
+    const replyAt = (customerId: string, ago: string) =>
+      q(
+        `insert into messages (company_id, customer_id, channel, direction, body, status, created_at, from_e164, to_e164)
+         values ($1, $2, 'sms', 'in', 'YES', 'received', now() - $3::interval, '+14025550101', '+14025550100')`,
+        [companyId(), customerId, ago],
+      );
+
+    test('a reply 3 days after the text counts, one 15 days after does not', async () => {
+      await seedPlan();
+      const c1 = await customer();
+      const c2 = await customer();
+      await planText(c1.customerId!, smsStepId, '20 days');
+      await planText(c2.customerId!, smsStepId, '20 days');
+      await replyAt(c1.customerId!, '17 days');
+      await replyAt(c2.customerId!, '5 days');
+      expect((await results()).replies).toBe(1);
+    });
+
+    test('a reply after the customer got a second storm text does not count', async () => {
+      await seedPlan();
+      const c1 = await customer();
+      await planText(c1.customerId!, smsStepId, '3 days');
+      const other = await q(
+        `insert into agent_tasks (company_id, agent, kind, title, status) values ($1, 'storm_scout', 'storm_plan', 'Plan 2', 'approved') returning id`,
+        [companyId()],
+      );
+      const otherStep = await q(
+        `insert into agent_task_steps (company_id, task_id, position, type, approval_class, idempotency_key) values ($1, $2, 1, 'send_sms_batch', 'message', $3) returning id`,
+        [companyId(), other[0]!.id, `${other[0]!.id}-1`],
+      );
+      await planText(c1.customerId!, otherStep[0]!.id as string, '2 days');
+      await replyAt(c1.customerId!, '1 day');
+      expect((await results()).replies).toBe(0);
+      await replyAt(c1.customerId!, '60 hours');
+      expect((await results()).replies).toBe(1);
+    });
+  });
+
   test('a storm with no plan returns zeros', async () => {
     expect(await results()).toEqual(ZEROS);
   });

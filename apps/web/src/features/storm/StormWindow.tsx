@@ -1,6 +1,8 @@
-import { Banner, Button, Card, EmptyState } from '@roofline/ui';
+import type { TaskStatus } from '@roofline/shared';
+import { Banner, Button, Card, EmptyState, Skeleton } from '@roofline/ui';
 import { useApprovals, useMapArea } from '../../api/hooks.ts';
 import type { TaskView } from '../../api/types.ts';
+import { doors } from '../../copy/doors.ts';
 import { storm } from '../../copy/storm.ts';
 import { countedDrafts } from '../../shell/countedDrafts.ts';
 import { useStorms } from './api.ts';
@@ -31,7 +33,7 @@ function StormRow({ item }: { item: StormSummary }) {
       <p className={styles.size}>{storm.upTo(item.maxIn.toFixed(2))}</p>
       <p>{storm.customersHit(item.customersHit)}</p>
       <p>{storm.homesHit(item.homesHit)}</p>
-      <p>{(item.planStatus && storm.planStatus[item.planStatus]) ?? storm.noPlan}</p>
+      <p>{(item.planStatus === null ? undefined : storm.planStatus[item.planStatus as TaskStatus]) ?? storm.noPlan}</p>
       <div className={styles.actions}>
         <Button variant="ghost" href={'/storm/' + encodeURIComponent(item.id)}>
           {storm.viewStorm}
@@ -58,6 +60,11 @@ export function StormWindow() {
 
   return (
     <>
+      <div className={styles.routes}>
+        <Button variant="ghost" href="/storm/routes">
+          {doors.myRoutesLink}
+        </Button>
+      </div>
       {plan ? (
         <Card as="section" aria-label={storm.planHeading} className={styles.plan}>
           <h2>{plan.title}</h2>
@@ -68,6 +75,11 @@ export function StormWindow() {
         </Card>
       ) : null}
       {layer.data?.stale === true ? <Banner tone="warning">{storm.staleBanner}</Banner> : null}
+      {storms.isPending ? (
+        <div role="status" aria-label={storm.loading}>
+          <Skeleton lines={3} />
+        </div>
+      ) : null}
       {storms.isError ? <p role="alert">{storm.loadFailed}</p> : null}
       {storms.data ? (
         <section aria-label={storm.listHeading} className={styles.list}>

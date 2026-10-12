@@ -2,8 +2,9 @@ import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import type { StepRow } from '@roofline/db';
 import { insertOmahaStorm, type Query } from '@roofline/db/testing';
+import { AdPlatformError } from '../src/providers/ads-google.ts';
 import { companyOriginFor } from '../src/public/storm-requests.ts';
-import { createAdCampaignHandler, NOT_APPROVED } from '../src/storm/ad-campaign.ts';
+import { createAdCampaignHandler, NO_LANDING_PAGES, NOT_APPROVED, NOT_USD } from '../src/storm/ad-campaign.ts';
 import { Actors } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { agentCtx, dbSteps, enqueued, newTask, seenOf, setStep } from './task-helpers.ts';
@@ -16,6 +17,7 @@ import { agentCtx, dbSteps, enqueued, newTask, seenOf, setStep } from './task-he
 const NOW = new Date('2026-10-12T15:00:00Z');
 const DAY = '2026-10-11';
 const POLICY = "Google didn't approve the ad. Edit the words and try again.";
+const AD_OTHER = 'The ad could not be started. Try again in a minute.';
 const ACCESS = "Roofline can't reach this ad account anymore. Reconnect it in Settings → Connections.";
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -49,7 +51,7 @@ beforeEach(async () => {
     ['meta', 'act_555'],
   ] as const) {
     await q(
-      `insert into ad_accounts (company_id, platform, external_account_id, status) values ($1, $2, $3, 'active')`,
+      `insert into ad_accounts (company_id, platform, external_account_id, status, currency) values ($1, $2, $3, 'active', 'USD')`,
       [companyA(), platform, external],
     );
   }
@@ -82,7 +84,7 @@ async function expectLandingUrl(row: CampaignRow) {
   const pages = await q(`select code from storm_pages where company_id = $1 and company_storm_id = $2`, [companyA(), companyStormId]);
   expect(pages).toHaveLength(1);
   const [co] = await q(`select slug from companies where id = $1`, [companyA()]);
-  const origin = companyOriginFor(t.deps.config, String(co!.slug)) ?? t.deps.config.PUBLIC_BASE_URL;
+  const origin = companyOriginFor(t.deps.config, String(co!.slug))!;
   expect(row.creative.landingUrl).toBe(`${origin}/storm/${String(pages[0]!.code)}`);
 }
 
@@ -97,12 +99,38 @@ type CampaignRow = {
   housing_fallback: boolean;
   error_kind: string | null;
   error_plain: string | null;
+  paused_by: string | null;
 };
 const campaignRow = async (stepId: string) =>
   (await q(`select * from ad_campaigns where company_id = $1 and step_id = $2`, [companyA(), stepId]))[0] as unknown as CampaignRow;
 const methods = (calls: { method: string }[]) => calls.map((c) => c.method);
 
 describe('create_ad_campaign', () => {
+  test('the landing page outlives the campaign and is never shortened', async () => {
+    // A 30-day campaign from 2026-10-12 ends 2026-11-10; the page (convective day 10-11 + 30 = 11-10) would end a day early.
+    const long = await makeStep('google', { days: 30, maxSpendCents: 30000 });
+    expect((await run(long)).status).toBe('done');
+    const until = async () =>
+      new Date(String((await q(`select active_until from storm_pages where company_id = $1`, [companyA()]))[0]!.active_until)).toISOString();
+    expect(await until()).toBe('2026-11-11T00:00:00.000Z');
+
+    // A later, shorter campaign for the same storm leaves it alone.
+    const short = await makeStep('meta', { days: 3, maxSpendCents: 3000 });
+    expect((await run(short)).status).toBe('done');
+    expect(await until()).toBe('2026-11-11T00:00:00.000Z');
+  });
+
+  test('without a landing pages domain the step needs attention before any platform call', async () => {
+    const step = await makeStep('google');
+    const deps = { ...t.deps, config: { ...t.deps.config, POLICY_PAGES_DOMAIN: undefined } };
+    const outcome = await createAdCampaignHandler(deps, agentCtx(companyA()), step);
+    expect(outcome.status).toBe('needs_attention');
+    expect(outcome.errorPlain).toBe(NO_LANDING_PAGES);
+    expect(t.adsGoogle.calls).toEqual([]);
+    expect(t.adsMeta.calls).toEqual([]);
+    expect(await q(`select 1 from ad_campaigns where company_id = $1`, [companyA()])).toHaveLength(0);
+  });
+
   test('google happy path: one paused campaign, enabled, within the approved maximum', async () => {
     const step = await makeStep('google');
     const outcome = await run(step);
@@ -203,6 +231,70 @@ describe('create_ad_campaign', () => {
     expect(c.input.housing).toBe(true);
     expect(c.input.circles).toHaveLength(1);
     expect(c.input.circles[0]!.radiusM).toBe(24140);
+  });
+
+  test.each([null, 'EUR'])('an ad account that does not bill in USD (%s) is refused before the claim and any platform call', async (currency) => {
+    await q(`update ad_accounts set currency = $2 where company_id = $1`, [companyA(), currency]);
+    for (const platform of ['google', 'meta'] as const) {
+      const step = await makeStep(platform);
+      const outcome = await run(step);
+      expect(outcome.status).toBe('needs_attention');
+      expect(outcome.errorPlain).toBe(NOT_USD);
+      expect(await campaignRow(step.id)).toBeUndefined();
+    }
+    expect(t.adsGoogle.calls).toEqual([]);
+    expect(t.adsMeta.calls).toEqual([]);
+  });
+
+  test.each(['google', 'meta'] as const)(
+    '%s: an enable the platform applied but whose answer was lost is paused again, and the row is failed',
+    async (platform) => {
+      const fake = platform === 'google' ? t.adsGoogle : t.adsMeta;
+      fake.loseResponseOnNextSetStatus('other');
+      const step = await makeStep(platform);
+      const outcome = await run(step);
+      expect(outcome.status).toBe('needs_attention');
+      expect(outcome.errorPlain).toBe(AD_OTHER);
+      const row = await campaignRow(step.id);
+      expect(row.status).toBe('failed');
+      expect(row.error_kind).toBe('other');
+      expect(row.external_campaign_id).not.toBeNull();
+      expect(row.paused_by).toBeNull();
+      expect(fake.campaigns.size).toBe(1);
+      expect(fake.campaigns.get(row.external_campaign_id!)!.status).toBe('paused');
+      const statuses = fake.calls.filter((c) => c.method === 'setStatus').map((c) => c.args[2]);
+      expect(statuses).toEqual(['active', 'paused']);
+    },
+  );
+
+  test('a non-platform error after the id is stored also pauses the campaign before it is rethrown, and a failing pause is only logged', async () => {
+    const step = await makeStep('google');
+    const fake = t.adsGoogle;
+    const original = fake.setStatus.bind(fake);
+    let n = 0;
+    fake.setStatus = async (...args: Parameters<typeof original>) => {
+      n += 1;
+      if (n === 1) {
+        await original(...args); // the platform applies the enable
+        throw new Error('socket hang up');
+      }
+      throw new AdPlatformError('other'); // and the pause itself fails too
+    };
+    await expect(run(step)).rejects.toThrow('socket hang up');
+    expect(n).toBe(2);
+    expect(t.logged.some((l) => l.where.includes('pause after failure'))).toBe(true);
+    const row = await campaignRow(step.id);
+    expect(row.external_campaign_id).not.toBeNull();
+    expect(fake.campaigns.get(row.external_campaign_id!)!.status).toBe('active'); // the sync's sweep pauses it
+    expect(row.status).toBe('creating');
+  });
+
+  test('an error before the id is stored makes no pause call', async () => {
+    const step = await makeStep('google');
+    t.adsGoogle.failNext('policy'); // findCampaign throws
+    const outcome = await run(step);
+    expect(outcome.status).toBe('needs_attention');
+    expect(t.adsGoogle.calls.some((c) => c.method === 'setStatus')).toBe(false);
   });
 
   test('a revoked ad account is refused before any platform create', async () => {

@@ -23,7 +23,7 @@
   font-family: var(--font);
   font-size: 0.875rem;
   font-weight: 700;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  box-shadow: var(--shadow-marker);
 }
 
 .marker[data-state='done'] {
@@ -47,5 +47,5 @@
   border: 2px solid var(--surface);
   border-radius: 50%;
   background: var(--stage-lead);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+  box-shadow: var(--shadow-marker-ring);
 }

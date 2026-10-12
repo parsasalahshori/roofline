@@ -1,4 +1,5 @@
 import { cleanup, screen, within } from '@testing-library/react';
+import { TASK_STATUSES } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StormWindow } from '../src/features/storm/StormWindow.tsx';
 import { storm } from '../src/copy/storm.ts';
@@ -68,6 +69,17 @@ describe('Storm list', () => {
     const links = within(list).getAllByRole('link', { name: storm.viewStorm });
     expect(links.map((link) => link.getAttribute('href'))).toEqual(['/storm/s-new', '/storm/s-old']);
     expect(api.unexpected).toEqual([]);
+  });
+
+  it('has a label for every plan status', () => {
+    expect(Object.keys(storm.planStatus).sort()).toEqual([...TASK_STATUSES].sort());
+  });
+
+  it.each(Object.entries(storm.planStatus))('a storm whose plan is %s shows %s', async (status, label) => {
+    stubStorms([{ ...NEWER, planStatus: status }]);
+    renderAt(<StormWindow />);
+    const list = await screen.findByRole('region', { name: storm.listHeading });
+    expect(within(list).getByText(label)).toBeInTheDocument();
   });
 
   it('shows the behind banner when stale and not otherwise', async () => {

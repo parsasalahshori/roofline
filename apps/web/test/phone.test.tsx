@@ -5,6 +5,7 @@ import { RouterProvider } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
+import { doors } from '../src/copy/doors.ts';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { search } from '../src/copy/search.ts';
 import { shell } from '../src/copy/shell.ts';
@@ -106,7 +107,7 @@ it('marks the current tab', async () => {
   expect(within(mainAtMap).getByRole('link', { name: shell.tabJobs })).not.toHaveAttribute('aria-current');
 });
 
-it('More opens a sheet with five links', async () => {
+it('More opens a sheet with six links', async () => {
   stubPhone(true);
   signedInApi();
   const { user } = renderApp('/');
@@ -114,9 +115,10 @@ it('More opens a sheet with five links', async () => {
   await user.click(within(await MAIN()).getByRole('button', { name: shell.tabMore }));
   const sheet = await screen.findByRole('dialog', { name: shell.moreTitle });
   const links = within(sheet).getAllByRole('link');
-  expect(links).toHaveLength(5);
+  expect(links).toHaveLength(6);
   const expected: [string, string][] = [
     [WINDOW_COPY.storm.title, '/storm'],
+    [doors.myRoutesLink, '/storm/routes'],
     [WINDOW_COPY['front-desk'].title, '/front-desk'],
     [WINDOW_COPY.estimator.title, '/estimator'],
     [WINDOW_COPY.agents.title, '/agents'],

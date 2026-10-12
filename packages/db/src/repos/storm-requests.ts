@@ -1,10 +1,11 @@
 import { and, count, eq, gte, sql } from 'drizzle-orm';
 import { isTimeZone, localDate, normalizeAddressKey } from '@roofline/shared';
-import { companies, companyStorms, customers, jobs, properties, stormPages, stormRequests } from '../schema/index.ts';
+import { companies, companyStorms, customers, properties, stormPages, stormRequests } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
 import { CONSENT_LABELS } from './customers.ts';
+import { createJob } from './jobs.ts';
 
 export type StormRequestInput = {
   stormPageId: string;
@@ -46,7 +47,9 @@ type CustomerRow = typeof customers.$inferSelect;
  *    request go to that customer (the address keeps its one owner, and the phone customer from step 3
  *    stays as its own record). Otherwise a new address is added for the customer from step 3.
  *    No name of any other customer is ever returned.
- * 5. The lead job, source 'web', with the storm id and the follow-up for the company-local day.
+ * 5. The lead job through `createJob` (source 'web', the storm id, the follow-up for the company-local day), plus a
+ *    job line saying it came from the storm page. When step 4 attached the request to another customer's
+ *    home, that line also names who asked, so the owner can see it.
  * 6. The request row gets the customer, job, consent and IP hash.
  *
  * Phone and address takes an advisory lock first, the same way customers.ts does for phones, so two
@@ -86,49 +89,33 @@ export async function createStormRequest(tx: Tx, ctx: TenantContext, input: Stor
   const property = await addressRowFor(tx, ctx, input, addressKey, jobCustomer, now);
 
   const zone = await companyZone(tx, ctx);
-  const [job] = await tx
-    .insert(jobs)
-    .values({
-      companyId: ctx.companyId,
+  // The normal job path: its audit row, "Job created", next-step and customer timeline lines. The context is
+  // the system's (no signed-in user), so the actor on those rows is null / 'system', as the direct insert had it.
+  const createdJob = await createJob(
+    tx,
+    ctx,
+    {
       customerId: jobCustomer.id,
       propertyId: property.id,
       stage: 'lead',
-      stageChangedAt: now,
       source: 'web',
-      valueCents: null,
-      assignedUserId: null,
-      createdByUserId: null,
-      lostReason: null,
       stormId: page.stormId,
       nextStep: NEXT_STEP,
       nextStepOn: localDate(now, zone),
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  const createdJob = job!;
-
-  await audit(tx, ctx, {
-    action: 'job.create',
-    targetType: 'job',
-    targetId: createdJob.id,
-    after: { customerId: jobCustomer.id, propertyId: property.id, stage: 'lead', source: 'web', stormId: page.stormId },
-    ip: null,
-    at: now,
-  });
+    },
+    { now },
+  );
+  // Tells the owner where the lead came from. When the typed address was already another customer's home,
+  // the job sits on that customer, so the line says so and names who asked (the owner's own data).
+  const attached = jobCustomer.id !== phoneCustomer.id;
   await addActivity(tx, ctx, {
     subjectType: 'job',
     subjectId: createdJob.id,
     kind: 'job.created',
-    summary: 'Storm inspection request from the storm page',
-    at: now,
-  });
-  await addActivity(tx, ctx, {
-    subjectType: 'customer',
-    subjectId: jobCustomer.id,
-    kind: 'job.created',
-    summary: `New job: ${input.property.addressLine}`,
-    data: { jobId: createdJob.id, propertyId: property.id },
+    summary: attached
+      ? `Storm inspection request from the storm page, sent for this home by ${input.name}`
+      : 'Storm inspection request from the storm page',
+    data: { stormRequestId: claimed.id, ...(attached && { requestedByCustomerId: phoneCustomer.id }) },
     at: now,
   });
 

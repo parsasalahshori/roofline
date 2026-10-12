@@ -11,6 +11,7 @@ export class FakeAdsMeta implements AdsMeta {
   private readonly failures: AdErrorKind[] = [];
   private housingRequired = false;
   private nextId = 1;
+  private loseNextStatus: AdErrorKind | null = null;
 
   failNext(kind: AdErrorKind): void {
     this.failures.push(kind);
@@ -27,6 +28,10 @@ export class FakeAdsMeta implements AdsMeta {
   /** The next createCampaign with housing false throws 'targeting'; a housing true call clears the flag. */
   requireHousingNext(): void {
     this.housingRequired = true;
+  }
+  /** The next setStatus applies on the platform and then throws AdPlatformError(kind): a lost response. */
+  loseResponseOnNextSetStatus(kind: AdErrorKind = 'other'): void {
+    this.loseNextStatus = kind;
   }
   setSpend(campaignId: string, cents: number): void {
     const c = this.campaigns.get(campaignId);
@@ -71,6 +76,11 @@ export class FakeAdsMeta implements AdsMeta {
     const c = this.campaigns.get(campaignId);
     if (!c) throw new AdPlatformError('other');
     c.status = s;
+    if (this.loseNextStatus !== null) {
+      const kind = this.loseNextStatus;
+      this.loseNextStatus = null;
+      throw new AdPlatformError(kind);
+    }
   }
   async stats(adAccountId: string, campaignId: string): Promise<AdStats> {
     this.enter('stats', [adAccountId, campaignId]);

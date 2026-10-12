@@ -9,6 +9,7 @@ import { googleAdsFor } from '../../providers/google-ads/index.ts';
 import { type GoogleAdsSettings, createGoogleAdsHttp } from '../../providers/google-ads/http.ts';
 import { appSecretProof } from '../../providers/meta/http.ts';
 import { metaAdsFor } from '../../providers/meta/index.ts';
+import { resvgCardFor } from '../../providers/resvg-card.ts';
 import { postmarkBroadcastFor } from '../../providers/postmark-broadcast.ts';
 import { unsubscribeKey } from '../../public/unsubscribe-key.ts';
 import { signUnsubscribeToken } from '../../public/unsubscribe-token.ts';
@@ -55,10 +56,6 @@ const KEY_PATTERN = /<Key>([^<]+)<\/Key>/g;
 const KEY_TIME = /(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/;
 
 const META_GRAPH_BASE = 'https://graph.facebook.com';
-
-/** A 1x1 PNG. resvgCardFor is still a stub, so the Meta card upload uses this constant. */
-const CARD_PNG_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 /** The fixed smoke company id used for the unsubscribe token. The /u/ page proves the token verifies, not a real opt-out. */
 const SMOKE_COMPANY_ID = '00000000-0000-4000-8000-000000000029';
@@ -282,8 +279,12 @@ async function metaStep(
   io.log(`  Access ok: ${access.name} (${access.currency})`);
   captured.metaAccess = access;
 
-  const imagePng: Uint8Array = Buffer.from(CARD_PNG_BASE64, 'base64');
-  io.log(`  Card image upload: ${imagePng.byteLength} bytes (test PNG)`);
+  const imagePng: Uint8Array = await resvgCardFor(config).card({
+    companyName: SMOKE_COPY.companyName,
+    line: SMOKE_COPY.headline,
+    colorHex: '#1d4ed8',
+  });
+  io.log(`  Card image upload: ${imagePng.byteLength} bytes (rendered ad card)`);
 
   const nameTag = smokeNameTag('meta', runStamp());
   const existingMeta = await ads.findCampaign(adAccountId, nameTag);
