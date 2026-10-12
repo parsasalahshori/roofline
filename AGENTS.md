@@ -70,8 +70,10 @@ and locking (jobs, leases, advisory locks, SKIP LOCKED), migrations and RLS, LLM
 Opus 5.5 contacts).
 
 **Ruling AV (shared inbound-text hook):** in `apps/api/src/hooks/twilio.ts`, after the inbound message is stored,
-the calls run in a fixed order: S1 `onStormReply`, then D1 `queueFrontDeskText`, then G1 (marked `// G1 Agents`).
-A later handler skips a message an earlier one consumed. Tracks do not wait for each other: each adds its own
+the calls run in a fixed order (amended per the G1 spec §3.3): S1 `onStormReply`, then G1 claims (marked
+`// G1 Agents`; only acts when the customer got a claims text in the last 7 days, and when it consumes a reply
+it calls D1's path itself for "Thanks, got it." or the continuation), then D1 `queueFrontDeskText`. A later
+handler skips a message an earlier one consumed. Tracks do not wait for each other: each adds its own
 call, and the merger keeps both in this order.
 
 ## How to do a task
