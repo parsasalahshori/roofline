@@ -9,7 +9,17 @@ export {
   listActivities,
   type ListActivitiesOptions,
 } from './repos/activities.ts';
+export {
+  type ActorType,
+  type AgentEventKind,
+  type AgentEventRow,
+  insertAgentEvent,
+  listRecentEvents,
+  listTaskEvents,
+  type NewAgentEvent,
+} from './repos/agent-events.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
+export { loadBaselineOverrides } from './repos/time-baselines.ts';
 export { insertDefaultSettings, pickFreeSlug, setServiceArea, slugify } from './repos/companies.ts';
 export {
   CONSENT_LABELS,
@@ -137,11 +147,14 @@ export {
   reclaimExpiredLeases,
   renewStepLease,
   requeueForRetry,
+  setStepSnapshot,
   type StepEdit,
   type StepFinish,
   type StepMove,
   type StepRow,
+  type StepSnapshot,
   type StepSummaryRow,
+  sumStepMinutesSaved,
   type TaskRow,
   type TaskUpdate,
   updatePendingStep,

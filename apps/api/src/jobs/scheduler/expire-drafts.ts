@@ -1,7 +1,8 @@
-import { expireOverdueDrafts, withTenant } from '@roofline/db';
+import { withTenant } from '@roofline/db';
 import { companiesWithExpiredDrafts } from '@roofline/db/system';
 import type { AppDeps } from '../../app.ts';
 import { systemContext } from '../../permissions.ts';
+import { expireOverdueTasks } from '../../tasks/service.ts';
 import { reportJobError } from './report.ts';
 
 /**
@@ -18,7 +19,7 @@ export async function expireDrafts(deps: AppDeps, now: Date): Promise<{ expired:
   for (const companyId of await companiesWithExpiredDrafts(deps.pools.system, now)) {
     const ctx = systemContext(companyId);
     try {
-      expired += (await withTenant(deps.pools, ctx, (tx) => expireOverdueDrafts(tx, ctx, now))).length;
+      expired += (await withTenant(deps.pools, ctx, (tx) => expireOverdueTasks(tx, ctx, now))).length;
     } catch (err) {
       reportJobError(deps, err, `expire-drafts: company ${companyId}`);
     }
