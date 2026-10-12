@@ -281,3 +281,18 @@ test('reconnecting with another account does not reuse the old cached token', as
   expect((await owner.get(`${CONNECTION}/calendars`)).status).toBe(200);
   expect(listed().at(-1)).toBe('access-xyz');
 });
+
+test('a read-only company cannot connect a calendar: connect and callback both redirect to failed', async () => {
+  const state = await mintState('owner');
+  const owner = await actors.as('owner');
+  for (const status of ['trial_ended', 'canceled']) {
+    await t.deps.pools.system.$client.query('update companies set status = $1 where id = $2', [status, t.seed.a.companyId]);
+    const connect = await owner.get(CONNECT);
+    expect(connect.status).toBe(302);
+    expect(connect.headers.location).toBe(settingsUrl('failed'));
+    const res = await callbackWith(owner, state);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe(settingsUrl('failed'));
+    expect(await connectionRows(t.seed.a.companyId)).toHaveLength(0);
+  }
+});

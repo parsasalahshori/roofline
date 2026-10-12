@@ -77,6 +77,16 @@ describe('accessTokenFor', () => {
     expect(refreshCalls()).toBe(1);
   });
 
+  test('new credentials on the same connection id miss the cache', async () => {
+    const first = await seedConnection('refresh-abc');
+    expect(await accessTokenFor(t.deps, ctx, first)).toBe('access-abc');
+    // A reconnect upserts the same row id with new credentials.
+    const second = await seedConnection('refresh-xyz');
+    expect(second.id).toBe(first.id);
+    expect(await accessTokenFor(t.deps, ctx, second)).toBe('access-xyz');
+    expect(refreshCalls()).toBe(2);
+  });
+
   test('refreshes again once the token is within a minute of its expiry', async () => {
     const conn = await seedConnection();
     await accessTokenFor(t.deps, ctx, conn);

@@ -1,4 +1,4 @@
-import type { SetupItemView } from '@roofline/shared';
+import type { ComingWith, SetupItemView } from '@roofline/shared';
 import { Button } from '@roofline/ui';
 import { useState, type ReactNode } from 'react';
 import { comingWith, setup, setupItems } from '../../copy/setup.ts';
@@ -12,8 +12,8 @@ type SetupRowProps = {
 };
 
 /** The chip's words: a later-spec item says what it comes with; a rejected registration says so. */
-function chipText(item: SetupItemView, comingWithCopy: SetupItemView['comingWith']): string {
-  if (comingWithCopy) return comingWith[comingWithCopy];
+function chipText(item: SetupItemView, later: ComingWith | null): string {
+  if (later) return comingWith[later];
   if (item.data.rejected === true) return setup.chips.rejected;
   return setup.chips[item.status];
 }
@@ -25,10 +25,11 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
   const skip = useSkip();
   const unskip = useUnskip();
 
-  // The phone number step leads to the forwarding guide now, so it is not "coming with" anything for owners.
-  const phoneReady = item.key === 'phone_number' && item.comingWith === 'front_desk';
-  const comingWithCopy = phoneReady ? null : item.comingWith;
-  const offersActions = canAct && comingWithCopy === null && item.status !== 'done';
+  // The calendar step (C1) and the phone number step (D1, the forwarding guide) are live now: the server
+  // may still say they come later, and the row ignores that
+  const later = item.key === 'connect_calendar' || item.key === 'phone_number' ? null : item.comingWith;
+  // Connecting the calendar is every member's own action, so it does not wait on the owner
+  const offersActions = (canAct || item.key === 'connect_calendar') && later === null && item.status !== 'done';
   const rejected = item.data.rejected === true;
 
   let primary: ReactNode = null;
@@ -78,6 +79,13 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
           </Button>
         );
         break;
+      case 'connect_calendar':
+        primary = (
+          <Button variant="primary" href="/settings/connections">
+            {setup.actions.connectCalendar}
+          </Button>
+        );
+        break;
       default:
         primary = null;
     }
@@ -97,14 +105,14 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
       )
     ) : null;
 
-  const chipStatus = comingWithCopy ? 'comingWith' : item.status;
+  const chipStatus = later ? 'comingWith' : item.status;
 
   return (
     <li className={styles.row}>
       <div className={styles.header}>
         <h3 className={styles.title}>{copy.title}</h3>
         <span className={styles.chip} data-status={chipStatus}>
-          {chipText(item, comingWithCopy)}
+          {chipText(item, later)}
         </span>
       </div>
       <p className={styles.description}>{copy.description}</p>

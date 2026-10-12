@@ -2,7 +2,6 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import {
   calculateQuote,
   localDate,
-  money,
   type Calculation,
   type Pricebook,
   type QuoteMeasurement,
@@ -16,7 +15,7 @@ import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { getJob, updateJob } from './jobs.ts';
 import { getPricebook } from './pricebook.ts';
-import { jobScope } from './scope.ts';
+import { canSeeJobValue, jobScope, jobValueScope } from './scope.ts';
 
 type QuoteRow = typeof quotes.$inferSelect;
 
@@ -36,9 +35,11 @@ export class QuoteJobNotFoundError extends Error {
  * member's scope is reported exactly like one that does not exist.
  */
 function visibleQuoteCondition(ctx: TenantContext) {
-  // jobScope is undefined for the owner and office; interpolating it would leave a dangling `and )`.
+  // Both are undefined for the owner and office; interpolating one would leave a dangling `and )`.
+  // A quote carries the job's value, so a rep sees it only on jobs whose value they may see.
   const scope = jobScope(ctx);
-  return sql`exists (select 1 from ${jobs} where ${jobs.id} = ${quotes.jobId} and ${jobs.companyId} = ${quotes.companyId}${scope ? sql` and ${scope}` : sql``})`;
+  const valueScope = jobValueScope(ctx);
+  return sql`exists (select 1 from ${jobs} where ${jobs.id} = ${quotes.jobId} and ${jobs.companyId} = ${quotes.companyId}${scope ? sql` and ${scope}` : sql``}${valueScope ? sql` and ${valueScope}` : sql``})`;
 }
 
 async function findVisibleQuote(tx: Tx, ctx: TenantContext, id: string, lock: boolean): Promise<QuoteRow | null> {
@@ -65,17 +66,6 @@ function addDays(day: string, days: number): string {
 /** `Q-0001` style: at least four digits, growing past 9999 on its own. */
 function formatQuoteNumber(n: number): string {
   return `Q-${String(n).padStart(4, '0')}`;
-}
-
-/** Whole-dollar amounts read as `$14,250`; amounts with cents keep them. */
-function totalLabel(cents: number): string {
-  if (cents % 100 !== 0) return money(cents);
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
 }
 
 function toView(row: QuoteRow): QuoteView {
@@ -168,7 +158,7 @@ export async function createQuote(
   timeZone: string,
 ): Promise<QuoteView> {
   const job = await getJob(tx, ctx, i.jobId);
-  if (!job) throw new QuoteJobNotFoundError();
+  if (!job || !canSeeJobValue(ctx, job)) throw new QuoteJobNotFoundError();
   return insertDraft(tx, ctx, i, now, timeZone);
 }
 
@@ -237,7 +227,7 @@ export async function finalizeQuote(tx: Tx, ctx: TenantContext, id: string, now:
     subjectType: 'job',
     subjectId: row.jobId,
     kind: 'quote.finalized',
-    summary: `Quote ${number} marked final · ${totalLabel(calculation.totalCents)}`,
+    summary: `Quote ${number} marked final`,
     at: now,
   });
   return view;

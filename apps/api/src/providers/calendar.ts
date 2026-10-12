@@ -44,7 +44,10 @@ export class UnconfiguredCalendarApi implements CalendarApi {
 
 /** The calendar apis the app uses: fakes under FAKE_PROVIDERS, else the real adapters when configured. */
 export function createCalendarApis(config: Config): CalendarApis {
-  if (config.FAKE_PROVIDERS) return { google: new FakeCalendarApi('google'), microsoft: new FakeCalendarApi('microsoft') };
+  if (config.FAKE_PROVIDERS) return {
+    google: new FakeCalendarApi('google', { selfCallback: true }),
+    microsoft: new FakeCalendarApi('microsoft', { selfCallback: true }),
+  };
   return {
     google: googleCalendarFor(config) ?? new UnconfiguredCalendarApi('google'),
     microsoft: microsoftCalendarFor(config) ?? new UnconfiguredCalendarApi('microsoft'),
