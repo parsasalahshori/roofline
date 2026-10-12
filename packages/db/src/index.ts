@@ -54,6 +54,7 @@ export {
   listJobs,
   type ListJobsOptions,
   setJobArchived,
+  StageRuleError,
   updateJob,
 } from './repos/jobs.ts';
 export { type CompanyLocation, companyLocation } from './repos/location.ts';
