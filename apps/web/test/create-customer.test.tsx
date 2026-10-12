@@ -32,7 +32,13 @@ afterEach(() => {
 
 /** A signed-in owner on the New customer screen, with the shell's reads answering "nothing" and the given routes. */
 async function renderNewCustomer(routes: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: ACCOUNT }), ...routes });
+  api = stubApi({
+    ...SHELL_ROUTES,
+    'GET /api/auth/me': () => ({ body: ACCOUNT }),
+    // Saving lands on /customers/c9, whose window reads the customer; these tests only check the save, so it answers 404 (the not-found line, no further reads)
+    'GET /api/customers/c9/view': () => ({ status: 404, body: { error: 'Not found' } }),
+    ...routes,
+  });
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
   const router = createAppRouter({ initialEntries: ['/customers/new'] });

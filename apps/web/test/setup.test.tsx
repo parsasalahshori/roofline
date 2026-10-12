@@ -75,7 +75,7 @@ const COMPANY: CompanyBody = {
 };
 
 /** A signed-in owner (or the given role) whose Setup reads answer with `view`, unless a test gives its own answers. */
-function signedInApi(view: SetupView, overrides: Parameters<typeof stubApi>[0] = {}, role: 'owner' | 'office' = 'owner') {
+function signedInApi(view: SetupView, overrides: Parameters<typeof stubApi>[0] = {}, role: 'owner' | 'office' | 'rep' = 'owner') {
   api = stubApi({
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role } }),
@@ -123,7 +123,7 @@ describe('setup tab', () => {
 
     await stepList();
     expect(screen.getByText('Coming with the Estimator')).toBeInTheDocument();
-    expect(screen.getByText('Coming with the calendar')).toBeInTheDocument();
+    expect(screen.queryByText('Coming with the calendar')).not.toBeInTheDocument();
     expect(screen.queryByText('Coming with Front Desk')).not.toBeInTheDocument();
     expect(screen.getByText('Coming with Storm Scout')).toBeInTheDocument();
   });
@@ -154,6 +154,20 @@ describe('setup tab', () => {
     await waitFor(() => expect(api.count('POST /api/setup/import_customers/skip')).toBe(1));
     expect(await screen.findByRole('link', { name: '2 of 5 setup steps done' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '1 of 5 setup steps done' })).toBeNull();
+  });
+
+  it('the calendar step links to Connections for every member', async () => {
+    for (const role of ['owner', 'rep'] as const) {
+      signedInApi(viewOf(), {}, role);
+      renderApp('/settings/setup');
+
+      const list = await stepList();
+      const row = within(list).getByRole('heading', { name: setupItems.connect_calendar.title }).closest('li') as HTMLElement;
+      const action = within(row).getByRole('link', { name: setup.actions.connectCalendar });
+      expect(action, role).toHaveAttribute('href', '/settings/connections');
+      expect(api.unexpected, role).toEqual([]);
+      cleanup();
+    }
   });
 
   it('office sees no buttons', async () => {

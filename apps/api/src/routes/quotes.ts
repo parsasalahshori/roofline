@@ -6,8 +6,10 @@ import {
   copyQuote,
   createQuote,
   finalizeQuote,
+  getCustomer,
   getJob,
   getPricebook,
+  getProperty,
   getQuote,
   listQuoteSummaries,
   QuoteJobNotFoundError,
@@ -27,6 +29,7 @@ import {
 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
+import { type QuotePdfInput, renderQuotePdf } from '../quotes/pdf.ts';
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
 
 /** Used only when the company's stored zone is missing or not a real zone. */
@@ -106,6 +109,11 @@ function idParam(raw: unknown): string {
  * mount (`/api/jobs/:jobId/quotes`) supplies them through mergeParams.
  */
 const paramsOf = (req: { params: unknown }): Record<string, unknown> => req.params as Record<string, unknown>;
+
+/** The non-empty parts joined with `sep`; an empty list is an empty string. */
+function joinPresent(parts: ReadonlyArray<string | null | undefined>, sep: string): string {
+  return parts.filter((p): p is string => typeof p === 'string' && p.length > 0).join(sep);
+}
 
 /** The company's time zone, read inside the tenant transaction; the fallback covers a missing or unknown zone. */
 async function companyZone(tx: Tx, ctx: TenantContext): Promise<string> {
@@ -188,10 +196,12 @@ export function jobQuoteRoutes(deps: AppDeps): Router {
 }
 
 /**
- * `/api/quotes/:id` (mounted with mergeParams): read, edit a draft, finalize, and copy. Task 16 adds
- * the PDF here.
+ * `/api/quotes/:id` (mounted with mergeParams): read, edit a draft, finalize, copy, and the estimate
+ * PDF (`GET /:id/pdf`).
  * - A final quote never changes: an edit is a 409, and copying it makes a new draft at today's prices.
  * - Finalizing sets the job's value when the job has none, and leaves a set value alone.
+ * - The PDF is visible exactly when the quote is: a missing quote, job, customer or address, or a
+ *   quote outside the member's scope, is a 404. It is streamed as an attachment.
  */
 export function quoteRoutes(deps: AppDeps): Router {
   const { pools, clock } = deps;
@@ -225,6 +235,66 @@ export function quoteRoutes(deps: AppDeps): Router {
     const now = clock.now();
     const result = await withTenant(pools, ctx, (tx) => finalizeQuote(tx, ctx, id, now));
     res.json(settled(result));
+  });
+
+  router.get('/:id/pdf', async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(paramsOf(req).id);
+    const input = await withTenant(pools, ctx, async (tx): Promise<QuotePdfInput | null> => {
+      const quote = await getQuote(tx, ctx, id);
+      if (!quote) return null;
+      const job = await getJob(tx, ctx, quote.jobId);
+      if (!job) return null;
+      const customer = await getCustomer(tx, ctx, job.customerId);
+      const property = await getProperty(tx, ctx, job.propertyId);
+      if (!customer || !property) return null;
+      const [company] = await tx
+        .select({
+          name: companies.name,
+          phoneE164: companies.phoneE164,
+          email: companies.email,
+          website: companies.website,
+          addressStreet: companies.addressStreet,
+          addressCity: companies.addressCity,
+          addressState: companies.addressState,
+          addressZip: companies.addressZip,
+        })
+        .from(companies)
+        .where(eq(companies.id, ctx.companyId))
+        .limit(1);
+      if (!company) return null;
+
+      const cityLine = joinPresent(
+        [company.addressCity, joinPresent([company.addressState, company.addressZip], ' ')],
+        ', ',
+      );
+      const primaryPhone = customer.phones.find((p) => p.primary) ?? customer.phones[0];
+      return {
+        quote,
+        company: {
+          name: company.name,
+          phone: company.phoneE164 ?? null,
+          email: company.email ?? null,
+          website: company.website ?? null,
+          address: joinPresent([company.addressStreet, cityLine], ', ') || null,
+        },
+        customer: {
+          name: customer.displayName,
+          phone: primaryPhone?.e164 ?? null,
+          email: customer.emails[0] ?? null,
+        },
+        address: `${property.addressLine}, ${property.city}, ${property.state} ${property.zip}`,
+        timeZone: await companyZone(tx, ctx),
+      };
+    });
+    if (!input) throw new AppError(404, MESSAGES.notFound);
+
+    // Render before any header is sent, so a render failure still reaches the error handler as a clean error.
+    const doc = renderQuotePdf(input);
+    res.status(200);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${input.quote.number}-roofing-estimate.pdf"`);
+    doc.pipe(res);
   });
 
   router.post('/:id/copy', async (req, res) => {
