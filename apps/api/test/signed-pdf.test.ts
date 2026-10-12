@@ -25,6 +25,17 @@ const PHONE = '+14025550101';
 const NOT_READY = "The signed copy isn't ready yet.";
 const META = { attempt: 1, lastAttempt: false };
 const sha256 = (value: Uint8Array): string => createHash('sha256').update(value).digest('hex');
+
+/** A signature cannot be edited through app_tenant (Ruling EQ), so fixtures change its image hash as the database owner. */
+async function setDrawnHashAsOwner(proposalId: string, hash: string): Promise<void> {
+  const owner = new pg.Client({ connectionString: inject('dbUrls').owner });
+  await owner.connect();
+  try {
+    await owner.query('update proposal_signatures set drawn_signature_png_sha256 = $1 where proposal_id = $2', [hash, proposalId]);
+  } finally {
+    await owner.end();
+  }
+}
 // A 1x1 PNG, raw base64 as the sign route takes it.
 const TINY_PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -284,17 +295,7 @@ describe('signed pdf job', () => {
 
   test('a drawn signature whose image is missing fails the job and stores no PDF', async () => {
     const s = await signed('molly@example.com', { drawnSignature: TINY_PNG });
-    // A signature cannot be edited through app_tenant (Ruling EQ), so the fixture writes as the database owner.
-    const owner = new pg.Client({ connectionString: inject('dbUrls').owner });
-    await owner.connect();
-    try {
-      await owner.query('update proposal_signatures set drawn_signature_png_sha256 = $1 where proposal_id = $2', [
-        sha256(Buffer.from('never stored')),
-        s.proposal.id,
-      ]);
-    } finally {
-      await owner.end();
-    }
+    await setDrawnHashAsOwner(s.proposal.id, sha256(Buffer.from('never stored')));
     await expect(run(s.proposal.id)).rejects.toThrow('missing');
     expect(pdfPuts()).toHaveLength(0);
     expect(await fileRows()).toHaveLength(0);
@@ -307,9 +308,7 @@ describe('signed pdf job', () => {
     const bad = corruptPng();
     // As if a bad image had been stored before the sign route checked images in full.
     await t.objectStore.put(drawnSignatureKey(t.seed.a.companyId, s.proposal.id, sha256(bad)), bad, 'image/png');
-    await inCompany(t, t.seed.a.companyId, (tx) =>
-      tx.update(proposalSignatures).set({ drawnSignaturePngSha256: sha256(bad) }).where(eq(proposalSignatures.proposalId, s.proposal.id)),
-    );
+    await setDrawnHashAsOwner(s.proposal.id, sha256(bad));
     await expect(run(s.proposal.id)).rejects.toThrow('not a PNG this app can draw');
     // Give any stray async decode a chance to throw (it would fail the run as an unhandled error).
     await new Promise((resolve) => setTimeout(resolve, 50));
