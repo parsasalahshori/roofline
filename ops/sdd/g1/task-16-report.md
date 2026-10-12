@@ -15,3 +15,5 @@
 
 ## Verify
 Focused vitest (claim, copy-rules, appointments-form, job-window), lint, lint:css, typecheck, build:web all passed; full web project passed after the a1-routes fix (703 tests).
+
+CI: run 38218774059 failed (a1-routes), run 38220912369 on 08bcfdc PASSED (Platform and E2E).
