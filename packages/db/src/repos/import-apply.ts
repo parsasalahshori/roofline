@@ -11,10 +11,12 @@ import {
   type NormalizedRow,
 } from '@roofline/shared';
 import type { LngLat } from '../schema/columns.ts';
-import { activities, customers, importRows, imports, jobs, properties } from '../schema/index.ts';
+import { activities, customers, importRows, imports, jobs, optOuts, properties } from '../schema/index.ts';
 import type { CustomerPhone } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { audit } from './audit.ts';
+import { ensureOptOuts } from './customers.ts';
+import { lockRecipients } from './inbound.ts';
 import { existingIndexFor, type ImportRow } from './imports.ts';
 
 export const IMPORT_CHUNK = 250;
@@ -247,13 +249,29 @@ export async function applyImportChunk(tx: Tx, ctx: TenantContext, w: ChunkWrite
   const hitById = new Map<string, ExistingCustomer>();
   for (const h of hits) if (h !== null) hitById.set(h.id, h);
   const matchedIds = [...hitById.keys()];
+  // Same order as the STOP and carrier opt-out paths: texting lock first, then the customer rows by id.
+  // Consent is decided from these locked rows, so a STOP that committed first is seen and never raised.
+  await lockRecipients(tx, ctx, matchedIds);
   const current =
     matchedIds.length === 0
       ? []
       : await tx
           .select()
           .from(customers)
-          .where(and(eq(customers.companyId, ctx.companyId), inArray(customers.id, matchedIds)));
+          .where(
+            and(eq(customers.companyId, ctx.companyId), inArray(customers.id, matchedIds), isNull(customers.archivedAt)),
+          )
+          .orderBy(asc(customers.id))
+          .for('update');
+  const lockedPhones = [...new Set(current.flatMap((c) => c.phones.map((p) => p.e164)))];
+  const optedOutPhones = new Set<string>();
+  if (lockedPhones.length > 0) {
+    const outs = await tx
+      .select({ phoneE164: optOuts.phoneE164 })
+      .from(optOuts)
+      .where(and(eq(optOuts.companyId, ctx.companyId), inArray(optOuts.phoneE164, lockedPhones)));
+    for (const out of outs) optedOutPhones.add(out.phoneE164);
+  }
   const working = new Map<string, Working>();
   for (const c of current) {
     working.set(c.id, {
@@ -266,7 +284,7 @@ export async function applyImportChunk(tx: Tx, ctx: TenantContext, w: ChunkWrite
         id: c.id,
         status: c.smsConsentStatus,
         doNotContact: c.doNotContact,
-        optedOut: hitById.get(c.id)?.optedOut ?? false,
+        optedOut: c.phones.some((p) => optedOutPhones.has(p.e164)),
       },
       consentCols: null,
       dirty: false,
@@ -346,6 +364,12 @@ export async function applyImportChunk(tx: Tx, ctx: TenantContext, w: ChunkWrite
       })
       .where(and(eq(customers.companyId, ctx.companyId), eq(customers.id, s.id)));
   }
+
+  // A customer who is opted out keeps every number on the opt-out list, including numbers this chunk added.
+  const outs = [...working.values()]
+    .filter((s) => s.dirty && (s.state.status === 'revoked' || s.state.doNotContact))
+    .flatMap((s) => s.phones.map((p) => p.e164));
+  await ensureOptOuts(tx, ctx, outs, now);
 
   // Homes: one per address key (the first row with that key names its customer).
   const wanted = new Map<

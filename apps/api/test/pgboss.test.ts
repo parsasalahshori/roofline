@@ -188,7 +188,7 @@ describe('the worker', () => {
     }
   });
 
-  test('it schedules expire-drafts every 5 minutes, sweep-queued and dispatch-messages every minute, and prune-early-reports daily at 03:17', async () => {
+  test('it schedules expire-drafts every 5 minutes, sweep-queued, sweep-imports and dispatch-messages every minute, and prune-early-reports daily at 03:17', async () => {
     await withWorker(async (worker) => {
       const schedules = await worker.getSchedules();
       expect(schedules.map((s) => [s.name, s.cron]).sort()).toEqual([
@@ -201,12 +201,14 @@ describe('the worker', () => {
         ['provision-texting', '* * * * *'],
         ['prune-early-reports', '17 3 * * *'],
         ['report-usage', '* * * * *'],
+        ['sweep-imports', '* * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);
     });
     expect(SCHEDULES.map((s) => s.name)).toEqual([
       'expire-drafts',
       'sweep-queued',
+      'sweep-imports',
       'dispatch-messages',
       'end-trials',
       'report-usage',

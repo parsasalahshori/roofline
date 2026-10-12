@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { ExistingCustomer, ExistingIndex, ImportCounts, ImportMapping } from '@roofline/shared';
 import { customers, importRows, imports, optOuts } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -223,4 +223,17 @@ export async function listImports(tx: Tx, ctx: TenantContext, limit: number): Pr
     .where(eq(imports.companyId, ctx.companyId))
     .orderBy(desc(imports.createdAt), desc(imports.id))
     .limit(limit);
+}
+
+/** The company's imports that look stranded: `queued` with no change since `queuedBefore`, or `processing` with no progress since `processingBefore`. Oldest first. */
+export async function staleImportIds(tx: Tx, ctx: TenantContext, queuedBefore: Date, processingBefore: Date): Promise<string[]> {
+  const rows = await tx
+    .select({ id: imports.id })
+    .from(imports)
+    .where(and(eq(imports.companyId, ctx.companyId), or(
+      and(eq(imports.status, 'queued'), lt(imports.updatedAt, queuedBefore)),
+      and(eq(imports.status, 'processing'), lt(imports.updatedAt, processingBefore)),
+    )))
+    .orderBy(asc(imports.updatedAt), asc(imports.id));
+  return rows.map((r) => r.id);
 }
