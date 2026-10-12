@@ -49,11 +49,11 @@ describe('toLlmError', () => {
     }
   });
 
-  it('leaves non-API errors unchanged', () => {
+  it('leaves non-API errors unchanged and turns SDK aborts into AbortError', () => {
     const plain = new Error('plain');
     expect(toLlmError(plain)).toBe(plain);
     const abort = new Anthropic.APIUserAbortError();
-    expect(toLlmError(abort)).toBe(abort);
+    expect(toLlmError(abort)).toMatchObject({ name: 'AbortError' });
     const named = Object.assign(new Error('x'), { name: 'AbortError' });
     expect(toLlmError(named)).toBe(named);
   });

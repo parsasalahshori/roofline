@@ -3,7 +3,7 @@ import { toolJsonSchemas } from '@roofline/shared';
 import type { AnswerInput, Llm, LlmEvent, TurnUsage } from '../llm.ts';
 import { ANSWER_TIMEOUT_MS, type AnthropicClients } from './client.ts';
 import { isRateLimit, toLlmError } from './errors.ts';
-import { SYSTEM_PROMPT } from './prompts.ts';
+import { SYSTEM_PROMPT } from '../../front-desk/prompt.ts';
 
 /** Fast mode is off by default; the 429 fallback path is implemented and tested via opts.fast. */
 export const ANSWER_FAST_MODE = false;

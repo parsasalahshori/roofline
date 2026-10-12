@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../src/config.ts';
 import { buildClients } from '../src/providers/anthropic/client.ts';
 import { createAnswer } from '../src/providers/anthropic/answer.ts';
-import { SYSTEM_PROMPT } from '../src/providers/anthropic/prompts.ts';
+import { SYSTEM_PROMPT } from '../src/front-desk/prompt.ts';
 import type { AnswerInput, LlmEvent } from '../src/providers/llm.ts';
 
 const fx = (n: string) => readFileSync(new URL(`./fixtures/anthropic/${n}`, import.meta.url), 'utf8');

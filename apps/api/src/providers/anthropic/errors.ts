@@ -7,9 +7,11 @@ import { LlmUnavailableError } from '../llm.ts';
  */
 export function toLlmError(err: unknown): unknown {
   if (err instanceof LlmUnavailableError) return err;
-  if (err instanceof Anthropic.APIUserAbortError || (err as { name?: string } | null)?.name === 'AbortError') {
-    return err;
+  if (err instanceof Anthropic.APIUserAbortError) {
+    // The SDK's abort error is named 'Error'; callers (the engine's isAbort) look for 'AbortError'.
+    return new DOMException('The request was aborted.', 'AbortError');
   }
+  if ((err as { name?: string } | null)?.name === 'AbortError') return err;
   if (err instanceof Anthropic.APIError) {
     const status = err.status;
     return new LlmUnavailableError(`Claude request failed (${status ?? 'network'})`);
