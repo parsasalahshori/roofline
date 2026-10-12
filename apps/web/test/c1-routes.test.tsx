@@ -5,7 +5,6 @@ import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { appointments } from '../src/copy/appointments.ts';
 import { create } from '../src/copy/create.ts';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { job } from '../src/copy/job.ts';
@@ -77,8 +76,6 @@ describe('C1 windows', () => {
     ['/jobs', WINDOW_COPY.jobs.title, jobs.newJob],
     ['/jobs/j1', WINDOW_COPY.jobs.title, job.notFoundTitle],
     ['/jobs/j1/quotes/q1', WINDOW_COPY.jobs.title, quotes.comingSoon],
-    ['/calendar/new', WINDOW_COPY.calendar.title, appointments.comingSoon],
-    ['/calendar/appointments/a1', WINDOW_COPY.calendar.title, appointments.comingSoon],
   ])('%s shows its placeholder in the %s window', async (path, title, copy) => {
     signedInApi();
     renderApp(path);
