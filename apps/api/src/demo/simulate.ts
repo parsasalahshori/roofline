@@ -191,7 +191,8 @@ export async function simulateCall(deps: AppDeps, companyId: string): Promise<Si
       .update(calls)
       .set({ conversationId, transcriptStored: true })
       .where(and(eq(calls.companyId, companyId), eq(calls.id, call.id)));
-    await updateCall(tx, ctx, callSid, { endedAt: deps.clock.now(), aiSeconds: DEMO_CALL_SECONDS });
+    // The call is over, as Twilio's status callback would mark it: D1's after-call runs only for a finished call (probe pass 15).
+    await updateCall(tx, ctx, callSid, { status: 'ended', endedAt: deps.clock.now(), aiSeconds: DEMO_CALL_SECONDS });
     if (homeowner.customerId !== null) {
       await updateConversation(tx, ctx, conversationId, { customerId: homeowner.customerId, identity: 'matched' });
     }
