@@ -82,20 +82,44 @@ describe('ConversationWindow reply box', () => {
   });
 
   it('sends the typed text and clears the box', async () => {
-    const { user } = renderWindow(makeConversation(), () => ({ status: 201, body: { ok: true } }));
+    const { user } = renderWindow(makeConversation(), () => ({ body: { id: 'm1', status: 'sent', scheduledFor: null } }));
     const box = await screen.findByLabelText(conversationCopy.replyLabel);
     await user.type(box, 'On our way');
     await user.click(screen.getByRole('button', { name: conversationCopy.replySend }));
 
     await waitFor(() => expect(api?.sent('POST /api/conversations/conv1/reply')).toEqual([{ body: 'On our way' }]));
     await waitFor(() => expect(screen.getByLabelText(conversationCopy.replyLabel)).toHaveValue(''));
+    expect(screen.queryByText(/scheduled/i)).toBeNull();
+  });
+
+  it('says when a reply held by the send gate will go out', async () => {
+    const at = '2026-10-15T13:00:00.000Z';
+    const { user } = renderWindow(makeConversation(), () => ({ body: { id: 'm1', status: 'scheduled', scheduledFor: at } }));
+    const box = await screen.findByLabelText(conversationCopy.replyLabel);
+    await user.type(box, 'On our way');
+    await user.click(screen.getByRole('button', { name: conversationCopy.replySend }));
+
+    const when = new Intl.DateTimeFormat('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(at));
+    expect(await screen.findByText(conversationCopy.replyScheduled(when))).toBeInTheDocument();
+    expect(screen.getByLabelText(conversationCopy.replyLabel)).toHaveValue('');
+  });
+
+  it('shows the not-sent sentence for a reply the texting service refused, keeping the text', async () => {
+    const sentence = 'We could not send this text.';
+    const { user } = renderWindow(makeConversation(), () => ({ status: 422, body: { error: sentence } }));
+    const box = await screen.findByLabelText(conversationCopy.replyLabel);
+    await user.type(box, 'Hi there');
+    await user.click(screen.getByRole('button', { name: conversationCopy.replySend }));
+
+    expect(await screen.findByText(sentence)).toBeInTheDocument();
+    expect(screen.getByLabelText(conversationCopy.replyLabel)).toHaveValue('Hi there');
   });
 
   it('shows the send-gate sentence plainly and keeps the typed text', async () => {
     const gateSentence = 'This person asked us to stop texting.';
     const { user } = renderWindow(makeConversation(), () => ({
       status: 422,
-      body: { error: gateSentence, field: 'body' },
+      body: { error: gateSentence },
     }));
     const box = await screen.findByLabelText(conversationCopy.replyLabel);
     await user.type(box, 'Hi there');

@@ -106,6 +106,11 @@ export type ConversationDetail = {
 
 /** POST /api/conversations/:id/reply body; errors come back as { error, field? } with a plain sentence. */
 export type ReplyInput = { body: string };
+/**
+ * POST /api/conversations/:id/reply answer (200): the text went out, or the send gate will send it at
+ * `scheduledFor` (quiet hours). A reply the gate blocks or that could not be sent is a 422 instead.
+ */
+export type ReplyResult = { id: string; status: 'sent' | 'scheduled'; scheduledFor: string | null };
 /** POST /api/conversations/:id/handling body. */
 export type HandlingInput = { by: HandledBy };
 

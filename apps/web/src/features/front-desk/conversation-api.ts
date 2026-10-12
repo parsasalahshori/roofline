@@ -1,4 +1,4 @@
-import type { ConversationDetail, HandlingInput, RecordingLink, ReplyInput } from '@roofline/shared';
+import type { ConversationDetail, HandlingInput, RecordingLink, ReplyInput, ReplyResult } from '@roofline/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api/client.ts';
 
@@ -35,11 +35,14 @@ export function useMarkRead(id: string) {
   });
 }
 
-/** POST /api/conversations/:id/reply {body}. A send-gate error is an ApiError whose message is a plain sentence. */
+/**
+ * POST /api/conversations/:id/reply {body}: `ReplyResult` when it was sent or scheduled. A reply the
+ * send gate blocked, or that could not be sent, is an ApiError (422) whose message is a plain sentence.
+ */
 export function useSendReply(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: ReplyInput) => apiFetch<unknown>(`/api/conversations/${id}/reply`, { method: 'POST', body: input }),
+    mutationFn: (input: ReplyInput) => apiFetch<ReplyResult>(`/api/conversations/${id}/reply`, { method: 'POST', body: input }),
     onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: conversationKey(id) }), invalidateInbox(queryClient)]),
   });
 }

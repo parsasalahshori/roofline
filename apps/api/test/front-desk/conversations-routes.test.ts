@@ -16,7 +16,7 @@ import {
 import type { ConversationDetail, ConversationPage } from '@roofline/shared';
 import { Actors, inCompany, NO_UUID, NOT_FOUND } from '../crm-helpers.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
-import { DAYTIME, HOUR, OPTED_OUT } from '../sms-helpers.ts';
+import { DAYTIME, HOUR, NO_MOBILE, OPTED_OUT } from '../sms-helpers.ts';
 
 /*
  * D1 Task 18, conversations: the inbox list, detail, reply (through the send gate), handling and read.
@@ -29,6 +29,8 @@ const TEXTABLE = '+14025550101';
 const OPTED_OUT_NUMBER = '+14025550103';
 const UNKNOWN_NUMBER = '+14025550777';
 const BASE = '/api/conversations';
+/** 02:00 on a Wednesday in Chicago: inside quiet hours everywhere. */
+const NIGHT = new Date('2026-10-14T07:00:00.000Z');
 
 let t: TestApp;
 let who: Actors;
@@ -286,13 +288,13 @@ describe('GET /api/conversations/:id after retention', () => {
 });
 
 describe('POST /api/conversations/:id/reply', () => {
-  test('reply goes through the gate as informational, sets handledBy team and teamUntil = now+2h, message row queued', async () => {
+  test('reply goes through the gate as informational and is sent; it does not change who is handling', async () => {
     const owner = await who.as('owner');
     const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
     const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: TEXTABLE, unread: 1 });
     const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: '  We can come Friday.  ' });
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('queued');
+    expect(res.body).toEqual({ id: expect.any(String), status: 'sent', scheduledFor: null });
     const rows = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.conversationId, convo)));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -301,13 +303,15 @@ describe('POST /api/conversations/:id/reply', () => {
       purpose: 'informational',
       body: 'We can come Friday.',
       toE164: TEXTABLE,
+      status: 'sent',
     });
     expect(rows[0]!.dedupeKey).toMatch(/^fd-reply:/);
     expect(t.sms.sent).toHaveLength(1);
     expect(t.sms.sent[0]).toMatchObject({ to: TEXTABLE, body: 'We can come Friday.' });
     const [row] = await inCompany(t, idA(), (tx) => tx.select().from(conversations).where(eq(conversations.id, convo)));
-    expect(row!.handledBy).toBe('team');
-    expect(row!.teamUntil?.toISOString()).toBe(new Date(DAYTIME.getTime() + 2 * HOUR).toISOString());
+    // The 2-hour quiet after a team text comes from the message itself (texts.ts), not from a handover.
+    expect(row!.handledBy).toBe('assistant');
+    expect(row!.teamUntil).toBeNull();
   });
 
   test('reply validates the body and only works on texts', async () => {
@@ -324,7 +328,7 @@ describe('POST /api/conversations/:id/reply', () => {
     expect(t.sms.sent).toHaveLength(0);
   });
 
-  test('reply to a blocked/unsubscribed customer is not sent', async () => {
+  test('reply to a blocked/unsubscribed customer is a 422 with the reason; nothing is kept or handed over', async () => {
     const owner = await who.as('owner');
     const customer = await seedCustomer('a', { name: 'Pia Customer', phone: OPTED_OUT_NUMBER });
     await inCompany(t, idA(), async (tx) => {
@@ -332,12 +336,54 @@ describe('POST /api/conversations/:id/reply', () => {
     });
     const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: OPTED_OUT_NUMBER });
     const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'Hello again' });
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('blocked');
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: OPTED_OUT });
     expect(t.sms.sent).toHaveLength(0);
-    const [row] = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.id, res.body.id)));
-    expect(row).toMatchObject({ status: 'blocked' });
-    expect(row!.blockReason).toBe(OPTED_OUT);
+    const rows = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.conversationId, convo)));
+    expect(rows).toHaveLength(0);
+    const [row] = await inCompany(t, idA(), (tx) => tx.select().from(conversations).where(eq(conversations.id, convo)));
+    expect(row).toMatchObject({ handledBy: 'assistant', teamUntil: null });
+  });
+
+  test('reply to a customer with no mobile number is a 422 saying so', async () => {
+    const owner = await who.as('owner');
+    const customer = await seedCustomer('a', { name: 'Lin Customer' });
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: TEXTABLE });
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'Hello' });
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: NO_MOBILE });
+    expect(t.sms.sent).toHaveLength(0);
+  });
+
+  test('reply in quiet hours is scheduled: 200 with scheduledFor', async () => {
+    const owner = await who.as('owner');
+    t.clock.set(NIGHT);
+    const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: TEXTABLE });
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'We can come Friday.' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: expect.any(String), status: 'scheduled' });
+    expect(new Date(res.body.scheduledFor as string).getTime()).toBeGreaterThan(NIGHT.getTime());
+    expect(t.sms.sent).toHaveLength(0);
+    const [msg] = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.id, res.body.id)));
+    expect(msg).toMatchObject({ status: 'scheduled' });
+    expect(msg!.scheduledFor?.toISOString()).toBe(res.body.scheduledFor);
+    const [row] = await inCompany(t, idA(), (tx) => tx.select().from(conversations).where(eq(conversations.id, convo)));
+    expect(row).toMatchObject({ handledBy: 'assistant', teamUntil: null });
+  });
+
+  test('reply the texting service refuses is a 422, not a success', async () => {
+    const owner = await who.as('owner');
+    const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: TEXTABLE });
+    t.sms.failNext(1);
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'We can come Friday.' });
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: 'We could not send this text.' });
+    const [msg] = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.conversationId, convo)));
+    expect(msg).toMatchObject({ status: 'failed' });
+    const [row] = await inCompany(t, idA(), (tx) => tx.select().from(conversations).where(eq(conversations.id, convo)));
+    expect(row).toMatchObject({ handledBy: 'assistant', teamUntil: null });
   });
 });
 
