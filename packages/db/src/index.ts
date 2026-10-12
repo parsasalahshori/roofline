@@ -13,6 +13,7 @@ export {
   type ActorType,
   type AgentEventKind,
   type AgentEventRow,
+  hasTaskEvent,
   insertAgentEvent,
   listRecentEvents,
   listTaskEvents,
@@ -31,7 +32,7 @@ export {
   recentTasks,
   taskSubjectScope,
 } from './repos/agent-metrics.ts';
-export { type FeedCursor, type FeedRow, listFeedPage } from './repos/agent-feed.ts';
+export { type FeedCursor, type FeedRow, feedRank, listFeedPage } from './repos/agent-feed.ts';
 export { listWaitingTasks, type WaitingTaskRow } from './repos/agent-waiting.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
 export {

@@ -86,6 +86,21 @@ async function seedTask(s: TaskSeed, company: Company = 'a'): Promise<string> {
       })
       .returning({ id: agentTasks.id });
     const taskId = row!.id;
+    // A finished task always has at least one done step (the cards count only real work), with no snapshot.
+    const finishedWithoutSteps = steps.length === 0 && ['done', 'partly_done'].includes(s.status ?? 'done');
+    if (finishedWithoutSteps) {
+      await tx.insert(agentTaskSteps).values({
+        companyId,
+        taskId,
+        position: 1,
+        type: 'send_sms_batch',
+        approvalClass: 'message' as const,
+        status: 'done' as const,
+        idempotencyKey: randomUUID(),
+        createdAt: new Date(s.at),
+        updatedAt: new Date(s.at),
+      });
+    }
     if (steps.length > 0) {
       await tx.insert(agentTaskSteps).values(
         steps.map((step, i) => ({

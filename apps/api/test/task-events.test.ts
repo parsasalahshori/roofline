@@ -82,7 +82,7 @@ describe('task events', () => {
     expect(approved[0]).toMatchObject({
       actorType: 'user',
       actorUserId: t.seed.a.owner.userId,
-      data: { approvedSteps: 3, totalSteps: 3 },
+      data: { approvedSteps: 3, totalSteps: 3, forwardedSteps: 0 },
     });
     expect((await kinds(taskId)).filter((k) => k === 'finished')).toEqual([]);
   });
@@ -96,7 +96,7 @@ describe('task events', () => {
       kind: 'partly_approved',
       actorType: 'user',
       actorUserId: t.seed.a.office.userId,
-      data: { approvedSteps: 2, totalSteps: 3 },
+      data: { approvedSteps: 2, totalSteps: 3, forwardedSteps: 1 },
     });
   });
 
@@ -279,6 +279,52 @@ describe('finished events (Ruling AX-I)', () => {
     const finished = (await events(taskId)).filter((e) => e.kind === 'finished');
     expect(finished).toHaveLength(1);
     expect(finished[0]).toMatchObject({ data: { status: 'done' } });
+  });
+});
+
+describe('finished events, review fixes', () => {
+  test('failed -> partly_done -> retry -> done gives exactly one finished event', async () => {
+    let calls = 0;
+    const { taskId, step } = await oneDemoStep(async () => {
+      calls += 1;
+      return calls === 1 ? { status: 'failed', result: {}, errorPlain: 'No luck.' } : { status: 'done', result: {} };
+    });
+    expect((await dbTask(t, 'a', taskId)).status).toBe('partly_done');
+    const retry = await (await actors.as('owner')).post(`/api/approvals/${taskId}/steps/${step.id}/retry`).send();
+    expect(retry.status).toBe(200);
+    await t.queue.drain(t.deps);
+    expect((await dbTask(t, 'a', taskId)).status).toBe('done');
+    expect((await events(taskId)).filter((e) => e.kind === 'finished')).toHaveLength(1);
+  });
+
+  test("approving with every step switched off writes no finished event from approveTask beyond refreshTask's single one", async () => {
+    const { taskId } = await newTask(t, 'a');
+    const owner = await actors.as('owner');
+    for (const s of await dbSteps(t, 'a', taskId)) {
+      const off = await owner.patch(`/api/approvals/${taskId}/steps/${s.id}`).send({ version: s.version, enabled: false });
+      expect(off.status).toBe(200);
+    }
+    await approveAs('owner', taskId);
+    const task = await dbTask(t, 'a', taskId);
+    const finished = (await events(taskId)).filter((e) => e.kind === 'finished');
+    expect(finished).toHaveLength(1);
+    expect(finished[0]).toMatchObject({ actorType: 'system', data: { status: task.status } });
+  });
+
+  test('declining one step writes a declined event by the user with data { skippedSteps: 1 } and that step id', async () => {
+    const { taskId } = await newTask(t, 'a');
+    await approveAs('office', taskId);
+    const waiting = (await dbSteps(t, 'a', taskId)).find((s) => s.status === 'awaiting_owner')!;
+    const res = await (await actors.as('owner')).post(`/api/approvals/${taskId}/steps/${waiting.id}/decline`).send();
+    expect(res.status).toBe(200);
+    const declined = (await events(taskId)).filter((e) => e.kind === 'declined');
+    expect(declined).toHaveLength(1);
+    expect(declined[0]).toMatchObject({
+      actorType: 'user',
+      actorUserId: t.seed.a.owner.userId,
+      stepId: waiting.id,
+      data: { skippedSteps: 1 },
+    });
   });
 });
 

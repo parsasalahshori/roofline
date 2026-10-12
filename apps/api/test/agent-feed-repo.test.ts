@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import {
   type FeedCursor,
   type FeedRow,
+  feedRank,
   insertAgentEvent,
   listFeedPage,
   type NewAgentEvent,
@@ -101,6 +102,27 @@ describe('agents feed repo', () => {
     expect(rows[3]!.kind).toBe('created');
   });
 
+  test('events at the same time rank approved, then finished, then step events, and paging visits each once', async () => {
+    t.clock.set(at(0));
+    const { taskId } = await newTask(t, 'a');
+    await addEvent(taskId, 'step_done', at(9), { data: { units: 1 } });
+    await addEvent(taskId, 'finished', at(9), { data: { status: 'done' } });
+    await addEvent(taskId, 'approved', at(9), { actorType: 'user', actorUserId: t.seed.a.owner.userId });
+
+    const top = (await ownerFeed()).slice(0, 3).map((r) => r.kind);
+    expect(top).toEqual(['approved', 'finished', 'step_done']);
+
+    const paged: string[] = [];
+    let cursor: FeedCursor | null = null;
+    for (let i = 0; i < 3; i += 1) {
+      const page: FeedRow[] = await ownerFeed({ limit: 1, cursor });
+      expect(page).toHaveLength(1);
+      paged.push(page[0]!.kind);
+      cursor = { at: page[0]!.at, rank: feedRank(page[0]!.kind), id: page[0]!.id };
+    }
+    expect(paged).toEqual(['approved', 'finished', 'step_done']);
+  });
+
   test('cursor pages without gaps or repeats (limit 2 over 5 events)', async () => {
     t.clock.set(at(0));
     const { taskId } = await newTask(t, 'a');
@@ -119,7 +141,7 @@ describe('agents feed repo', () => {
       pages += 1;
       paged.push(...page.map((r) => r.id));
       const last = page[page.length - 1]!;
-      cursor = { at: last.at, id: last.id };
+      cursor = { at: last.at, rank: feedRank(last.kind), id: last.id };
       expect(pages).toBeLessThan(10);
     }
 

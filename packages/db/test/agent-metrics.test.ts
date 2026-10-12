@@ -11,6 +11,7 @@ import {
   type MetricsWindow,
   recentTasks,
 } from '../src/repos/agent-metrics.ts';
+import { listWaitingTasks } from '../src/repos/agent-waiting.ts';
 import { agentSettings, agentTaskSteps, agentTasks, customers, jobs, properties } from '../src/schema/index.ts';
 import { type TenantContext, type Tx, withTenant } from '../src/tenant.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
@@ -89,7 +90,7 @@ function seedTask(c: SeededCompany, t: TaskSeed): Promise<string> {
 
 type StepSeed = {
   position?: number;
-  status: 'pending' | 'done' | 'failed';
+  status: 'pending' | 'done' | 'failed' | 'skipped';
   updatedAt: Date;
   baselineKey?: string | null;
   units?: number | null;
@@ -123,6 +124,13 @@ function seedStep(c: SeededCompany, taskId: string, s: StepSeed): Promise<void> 
   });
 }
 
+/** A finished task with one done step, so it counts as real finished work. */
+async function seedDoneTask(c: SeededCompany, status: TaskStatus, updatedAt: Date): Promise<string> {
+  const id = await seedTask(c, { status, updatedAt });
+  await seedStep(c, id, { status: 'done', updatedAt });
+  return id;
+}
+
 /** Counts, minutes and recent tasks for `ctx`, in one place so each test reads the same way. */
 function readAll(c: SeededCompany, ctx: TenantContext = ctxFor(c)) {
   return withTenant(pools, ctx, async (tx) => ({
@@ -134,10 +142,10 @@ function readAll(c: SeededCompany, ctx: TenantContext = ctxFor(c)) {
 describe('agent metrics', () => {
   test('agentCounts counts finished today, 30-day inputs and waiting per agent', async () => {
     const c = seed.a;
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-12T15:00:00Z') });
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-12T16:00:00Z') });
-    await seedTask(c, { status: 'partly_done', updatedAt: new Date('2026-10-12T17:00:00Z') });
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-07T15:00:00Z') });
+    await seedDoneTask(c, 'done', new Date('2026-10-12T15:00:00Z'));
+    await seedDoneTask(c, 'done', new Date('2026-10-12T16:00:00Z'));
+    await seedDoneTask(c, 'partly_done', new Date('2026-10-12T17:00:00Z'));
+    await seedDoneTask(c, 'done', new Date('2026-10-07T15:00:00Z'));
     await seedTask(c, { status: 'needs_attention', updatedAt: new Date('2026-10-10T12:00:00Z') });
     await seedTask(c, { status: 'draft', updatedAt: new Date('2026-10-12T09:00:00Z') });
     await seedTask(c, { status: 'awaiting_owner', updatedAt: new Date('2026-10-12T09:30:00Z') });
@@ -166,11 +174,51 @@ describe('agent metrics', () => {
     expect(counts.storm_scout!.waitingCount).toBe(2);
   });
 
+  test('a partly_done task with only a failed step counts in ran30d only (N-1)', async () => {
+    const c = seed.a;
+    const at = new Date('2026-10-12T15:00:00Z');
+    const failed = await seedTask(c, { status: 'partly_done', updatedAt: at });
+    await seedStep(c, failed, { status: 'failed', updatedAt: at });
+    await seedDoneTask(c, 'partly_done', at);
+
+    const { counts } = await readAll(c);
+    expect(counts.storm_scout).toMatchObject({ partlyDone30d: 1, finishedToday: 1, ran30d: 2 });
+  });
+
+  test('an approved done task whose steps are all switched off is not approved, not run (N-6)', async () => {
+    const c = seed.a;
+    const at = new Date('2026-10-12T15:00:00Z');
+    const off = await seedTask(c, { status: 'done', updatedAt: at });
+    await seedStep(c, off, { status: 'skipped', updatedAt: at });
+    await seedDoneTask(c, 'done', at);
+
+    const { counts } = await readAll(c);
+    expect(counts.storm_scout).toMatchObject({ done30d: 1, finishedToday: 1, ran30d: 1, notApproved30d: 1 });
+  });
+
+  test('the waiting card count equals the waiting list length (E-I2)', async () => {
+    const c = seed.a;
+    const created = new Date('2026-10-12T09:00:00Z');
+    const past = new Date('2026-10-12T16:00:00Z');
+    await seedTask(c, { status: 'draft', updatedAt: created, expiresAt: past });
+    await seedTask(c, { status: 'awaiting_owner', updatedAt: created, expiresAt: past });
+    await seedTask(c, { status: 'needs_attention', updatedAt: created, expiresAt: past });
+
+    const ctx = ctxFor(c);
+    const { counts, list } = await withTenant(pools, ctx, async (tx) => ({
+      counts: await agentCounts(tx, ctx, w),
+      list: await listWaitingTasks(tx, ctx, w.now),
+    }));
+    expect(list).toHaveLength(2);
+    expect(list.map((r) => r.status).sort()).toEqual(['awaiting_owner', 'needs_attention']);
+    expect(counts.storm_scout!.waitingCount).toBe(list.length);
+  });
+
   test('a task finished at 03:00Z on Oct 13 counts for local Oct 12', async () => {
     const c = seed.a;
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-13T03:00:00Z') });
-    await seedTask(c, { status: 'partly_done', updatedAt: new Date('2026-10-10T16:00:00Z') });
-    await seedTask(c, { status: 'done', updatedAt: new Date('2026-10-12T15:00:00Z') });
+    await seedDoneTask(c, 'done', new Date('2026-10-13T03:00:00Z'));
+    await seedDoneTask(c, 'partly_done', new Date('2026-10-10T16:00:00Z'));
+    await seedDoneTask(c, 'done', new Date('2026-10-12T15:00:00Z'));
 
     const days = await withTenant(pools, ctxFor(c), (tx) => dailyFinished(tx, ctxFor(c), 'storm_scout', w));
     expect(days).toEqual([

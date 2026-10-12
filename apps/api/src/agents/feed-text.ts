@@ -28,6 +28,11 @@ export const FEED_COPY = {
   approved: '{actor} approved {count} {steps}',
   partlyApproved: '{actor} approved {count} of {total} {steps}',
   declined: '{actor} declined the plan',
+  declinedStep: '{actor} declined a step',
+  approvedNone: '{actor} approved the plan with every step switched off',
+  sentToOwner: '{actor} sent {count} {steps} to the owner',
+  reran: '{actor} re-ran {title}',
+  stepCount: '{label}: {count} {verb}',
   textsSent: 'Texts: {count} sent',
   textsSentPlain: 'Texts sent',
   stepDone: '{agent}: a step finished',
@@ -46,6 +51,14 @@ export const FEED_COPY = {
 
 /** Words for the step count: "1 step", "3 steps". */
 export const STEP_WORDS = { one: 'step', many: 'steps' } as const;
+
+/** Plural-label and verb per step type for a finished step's unit count (E-M6). */
+const STEP_UNIT_WORDS: Record<string, { label: string; verb: string }> = {
+  send_email_batch: { label: 'Emails', verb: 'sent' },
+  build_routes: { label: 'Routes', verb: 'built' },
+  create_ad_campaign: { label: 'Campaigns', verb: 'created' },
+  send_proposal: { label: 'Proposals', verb: 'sent' },
+};
 
 /** Prefix for a created plan whose title does not already read as "a/an ...". */
 const PLAN_PREFIX = 'a plan: ';
@@ -90,11 +103,14 @@ export function feedSentence(row: FeedRow): string {
   const agent = AGENT_NAMES[row.agent];
   switch (row.kind) {
     case 'created': {
+      // A person (not an agent) creates a task only by re-running an expired plan.
+      if (row.actorName !== null) return fill(FEED_COPY.reran, { actor: row.actorName, title: row.taskTitle });
       const base = fill(FEED_COPY.created, { agent, plan: planPhrase(row.taskTitle) });
       return row.customerFirstName ? base + fill(FEED_COPY.createdFor, { firstName: row.customerFirstName }) : base;
     }
     case 'approved': {
       const count = countOf(row.data.approvedSteps);
+      if (count === 0) return fill(FEED_COPY.approvedNone, { actor: row.actorName ?? SOMEONE });
       return fill(FEED_COPY.approved, {
         actor: row.actorName ?? SOMEONE,
         count,
@@ -104,17 +120,27 @@ export function feedSentence(row: FeedRow): string {
     case 'partly_approved': {
       const count = countOf(row.data.approvedSteps);
       const total = countOf(row.data.totalSteps);
-      return fill(FEED_COPY.partlyApproved, {
+      // forwardedSteps is the count of steps moved to awaiting_owner; total - approved is kept only as a
+      // fallback for events written before it existed.
+      const forwarded =
+        row.data.forwardedSteps !== undefined ? Math.max(1, countOf(row.data.forwardedSteps)) : Math.max(1, total - count);
+      return fill(FEED_COPY.sentToOwner, {
         actor: row.actorName ?? SOMEONE,
-        count,
-        total,
-        steps: total === 1 ? STEP_WORDS.one : STEP_WORDS.many,
+        count: forwarded,
+        steps: forwarded === 1 ? STEP_WORDS.one : STEP_WORDS.many,
       });
     }
     case 'declined':
+      if (row.stepType !== null) return fill(FEED_COPY.declinedStep, { actor: row.actorName ?? SOMEONE });
       return fill(FEED_COPY.declined, { actor: row.actorName ?? SOMEONE });
-    case 'step_done':
-      return row.stepType === 'send_sms_batch' ? textsSentSentence(row) : fill(FEED_COPY.stepDone, { agent });
+    case 'step_done': {
+      if (row.stepType === 'send_sms_batch') return textsSentSentence(row);
+      const words = row.stepType !== null ? STEP_UNIT_WORDS[row.stepType] : undefined;
+      if (words && row.data.units !== undefined) {
+        return fill(FEED_COPY.stepCount, { ...words, count: countOf(row.data.units) });
+      }
+      return fill(FEED_COPY.stepDone, { agent });
+    }
     case 'step_failed':
       return fill(FEED_COPY.stepFailed, { agent });
     case 'step_attention':

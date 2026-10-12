@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, or, type SQL, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, type SQL, sql } from 'drizzle-orm';
 import type { Agent } from '@roofline/shared';
 import { agentTaskEvents, agentTasks, agentTaskSteps, customers, jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -11,7 +11,20 @@ import { customerScope, jobScope } from './scope.ts';
  * ids only (`data`, `stepResult`); no payload, preview or message body is ever selected here.
  */
 
-export type FeedCursor = { at: Date; id: string };
+export type FeedCursor = { at: Date; rank: number; id: string };
+
+/*
+ * Events of one transaction share an `at`, so the order within it is a kind rank: approved is the
+ * newest, then finished, then everything else (step events and the rest), then id.
+ * Follow-up: a `seq bigint generated always as identity` column on agent_task_events (migration)
+ * replaces this rank; the feed then orders by (at desc, seq desc).
+ */
+const RANK_SQL = sql`(case ${agentTaskEvents.kind} when 'approved' then 3 when 'finished' then 2 else 1 end)`;
+
+/** The rank of an event kind, the same mapping as the SQL ordering. */
+export function feedRank(kind: string): number {
+  return kind === 'approved' ? 3 : kind === 'finished' ? 2 : 1;
+}
 
 /** One event row for the feed. Names are joined at read time and are null when the reader may not see them. */
 export type FeedRow = {
@@ -62,7 +75,7 @@ function repScope(ctx: TenantContext): SQL | undefined {
 }
 
 /**
- * Newest first by (at desc, id desc); returns at most `limit` rows after `cursor` (exclusive).
+ * Newest first by (at desc, kind rank desc, id desc); returns at most `limit` rows after `cursor` (exclusive).
  * `agent` filters on the task's agent. Reps only see subject_type 'job' inside jobScope(ctx) or
  * 'customer' inside customerScope(ctx). Company B never appears.
  */
@@ -108,15 +121,12 @@ export async function listFeedPage(
         eq(agentTasks.companyId, ctx.companyId),
         options.agent ? eq(agentTasks.agent, options.agent) : undefined,
         cursor
-          ? or(
-              lt(agentTaskEvents.at, cursor.at),
-              and(eq(agentTaskEvents.at, cursor.at), lt(agentTaskEvents.id, cursor.id)),
-            )
+          ? sql`(${agentTaskEvents.at}, ${RANK_SQL}, ${agentTaskEvents.id}) < (${cursor.at}, ${cursor.rank}::int, ${cursor.id}::uuid)`
           : undefined,
         repScope(ctx),
       ),
     )
-    .orderBy(desc(agentTaskEvents.at), desc(agentTaskEvents.id))
+    .orderBy(desc(agentTaskEvents.at), desc(RANK_SQL), desc(agentTaskEvents.id))
     .limit(limit);
 
   // The customer each row is about: the subject customer, or the customer of the subject job.
