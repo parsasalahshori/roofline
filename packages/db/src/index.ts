@@ -228,3 +228,5 @@ export * from './repos/scheduler.ts';
 export * from './repos/scheduler-agenda.ts';
 // G1 Task 8
 export * from './repos/claims-agent.ts';
+// G1 Task 13a
+export { findLeadCandidates, findStuckCandidates, followUpSettings, type LeadCandidate, recordStuckNudge, STUCK_NUDGE_ACTIVITY, STUCK_NUDGE_GAP_DAYS, type StuckCandidate } from './repos/follow-up-finder.ts';
