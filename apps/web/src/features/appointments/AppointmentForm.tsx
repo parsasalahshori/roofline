@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Banner, Button, Field, Select, Skeleton, useToast } from '@roofline/ui';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { apiFetch } from '../../api/client.ts';
+import { ApiError, apiFetch } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import type { Account } from '../../api/types.ts';
 import { appointments } from '../../copy/appointments.ts';
@@ -161,7 +161,9 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
   };
 
   // Person: a rep is always themselves; the owner and office start on themselves and may pick anyone (or '' = Anyone)
-  const [assigned, setAssigned] = useState<string>(existing ? (existing.assigned?.userId ?? '') : user.id);
+  const peopleParam = existing === undefined ? (params.get('people') ?? '') : '';
+  const queryPerson = !isRep && peopleParam !== '' && !peopleParam.includes(',') ? peopleParam : null;
+  const [assigned, setAssigned] = useState<string>(existing ? (existing.assigned?.userId ?? '') : (queryPerson ?? user.id));
   const person = isRep ? user.id : assigned;
   const memberOptions = (team.data?.members ?? [])
     .filter((member) => member.status === 'active')
@@ -172,10 +174,17 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
     : [{ value: '', label: appointments.anyone }, ...memberOptions];
 
   // Date and time, in the company zone
+  // A new appointment may start from a clicked calendar slot (?start=<iso>)
+  const startParam = existing === undefined ? params.get('start') : null;
+  const queryStart = startParam === null ? null : new Date(startParam);
+  const slotStart = queryStart !== null && Number.isFinite(queryStart.getTime()) ? queryStart : null;
   const [date, setDate] = useState<string>(() =>
-    existing ? zonedDateKey(new Date(existing.startsAt), zone) : zonedDateKey(new Date(), zone),
+    existing ? zonedDateKey(new Date(existing.startsAt), zone) : zonedDateKey(slotStart ?? new Date(), zone),
   );
-  const [time, setTime] = useState<string>(() => (existing && !existing.allDay ? hhmmOf(new Date(existing.startsAt), zone) : ''));
+  const [time, setTime] = useState<string>(() => {
+    if (existing) return !existing.allDay ? hhmmOf(new Date(existing.startsAt), zone) : '';
+    return slotStart !== null ? hhmmOf(slotStart, zone) : '';
+  });
   // An install's end date; '' means the same day as the start
   const [endDate, setEndDate] = useState<string>(() =>
     existing?.allDay ? zonedDateKey(new Date(Date.parse(existing.endsAt) - 1), zone) : '',
@@ -190,6 +199,7 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [warned, setWarned] = useState<SaveResult | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const targetId = savedId ?? existing?.id ?? null;
   const create = useCreateAppointment();
   const update = useUpdateAppointment(targetId ?? '');
@@ -247,7 +257,8 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
         return;
       }
       onDone(result.appointment);
-    } catch {
+    } catch (error) {
+      setSaveError(error instanceof ApiError && error.message !== '' ? error.message : null);
       setSaveFailed(true);
     }
   };
@@ -355,7 +366,7 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
         onChange={(event) => setNotes(event.target.value)}
       />
 
-      {saveFailed ? <Banner tone="danger">{appointments.saveError}</Banner> : null}
+      {saveFailed ? <Banner tone="danger">{saveError ?? appointments.saveError}</Banner> : null}
 
       {warned !== null ? (
         <ConflictWarnings

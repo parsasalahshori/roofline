@@ -41,6 +41,7 @@ export function useUpdateJob(id: string) {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: jobKey(id) });
       void queryClient.invalidateQueries({ queryKey: ['jobs-board'] });
+      void queryClient.invalidateQueries({ queryKey: ['timeline'] });
     },
   });
 }
@@ -56,6 +57,7 @@ export function useArchiveJob(id: string) {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: jobKey(id) });
       void queryClient.invalidateQueries({ queryKey: ['jobs-board'] });
+      void queryClient.invalidateQueries({ queryKey: ['timeline'] });
     },
   });
 }
