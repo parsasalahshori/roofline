@@ -78,7 +78,10 @@ export function useUpdateCustomer(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (patch: CustomerPatch) => apiFetch<unknown>(`/api/customers/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: customerKeys.all }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: customerKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ['timeline'] });
+    },
   });
 }
 

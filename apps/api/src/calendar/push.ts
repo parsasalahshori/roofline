@@ -39,6 +39,8 @@ type Loaded = {
   timeZone: string;
   link: Link | null;
   assignee: CalendarConnectionRow | null;
+  /** The assignee's own connection whatever its status; `assignee` is it only while connected with a calendar chosen. */
+  assigneeAny: CalendarConnectionRow | null;
   linkConn: CalendarConnectionRow | null;
 };
 
@@ -86,7 +88,7 @@ async function load(deps: AppDeps, ctx: TenantContext, appointmentId: string): P
         .where(and(eq(calendarConnections.id, link.connectionId), eq(calendarConnections.companyId, ctx.companyId)))
         .limit(1);
     }
-    return { view, row: row ?? null, timeZone: company?.timezone ?? 'America/Chicago', link, assignee, linkConn };
+    return { view, row: row ?? null, timeZone: company?.timezone ?? 'America/Chicago', link, assignee, assigneeAny: found, linkConn };
   });
 }
 
@@ -153,6 +155,10 @@ async function updateLinked(
 async function sync(deps: AppDeps, ctx: TenantContext, appointmentId: string, d: Loaded): Promise<void> {
   let link = d.link;
   const conn = d.assignee;
+  const alive = d.view && d.row && d.row.status !== 'canceled' && d.row.archivedAt === null;
+  // The link's connection is still the assignee's own but is not usable (e.g. status 'error'): keep the link,
+  // which is the only record of the remote event, and show 'reconnect' until the person reconnects.
+  if (link && alive && !conn && d.assigneeAny && link.connectionId === d.assigneeAny.id) throw new CalendarAuthError(RECONNECT_PLAIN);
   if (link && link.connectionId !== conn?.id) {
     await removeRemote(deps, ctx, appointmentId, d.linkConn, link);
     link = null;
