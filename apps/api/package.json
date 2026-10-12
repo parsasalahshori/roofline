@@ -12,6 +12,7 @@
     "seed:demo": "tsx src/scripts/seed-demo.ts",
     "seed:dev": "tsx src/scripts/seed-dev.ts",
     "sync:stripe-plans": "tsx src/scripts/sync-stripe-plans.ts",
+    "eval:front-desk": "tsx src/scripts/eval-front-desk.ts",
     "smoke:front-desk": "tsx src/scripts/smoke/front-desk.ts",
     "smoke:stripe": "tsx src/scripts/smoke/stripe-test-clock.ts",
     "smoke:texting": "tsx src/scripts/smoke/texting-real-brand.ts"
