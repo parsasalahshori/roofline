@@ -61,3 +61,9 @@ Ruling EE: the signed-agreement email (T13) contains a link to `GET /api/public/
 - W6: T21; T22 by hand.
 
 ## Tasks
+
+## Build log
+Track lead session_01UtFnF1PL9Tbc2z44JfhQDM (started by controller session_01LXtxzoHNoWz5SACkLF1d2p). `e1-estimator` = c1-crm dfa9132 + e4dbe2f (briefs/constraints renumbered to 0015/0016 per Ruling AP).
+Wave 1 (wf_c2f810c9-41c, contact 101): T1 on e1-t1, base e4dbe2f.
+Wave 2 in parallel (wf_8c32dc49-5b4, contact 102): T2, T3, T4 on scratch commit 4f9bae5 (branch e1-scratch, on e4dbe2f) that writes T1's shared constants block in `shared/proposals.ts`, type-only stubs of T2's `LngLat/Ring/Outline/InstantEstimate` (`roof.ts`) and T3's `AddOn` (`tiers.ts`), and the three barrel lines.
+Merge rule (T1 first): add/add conflicts → `roof.ts` takes T2, `tiers.ts` takes T3, `proposals.ts` = T1's constants block + T4's additions below it, `shared/index.ts` = T1's.
