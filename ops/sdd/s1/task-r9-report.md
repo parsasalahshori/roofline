@@ -19,3 +19,5 @@ typecheck and lint clean; playwright --list: 54 tests in 14 files; npm ls playwr
 - E2E: seven storm specs stopped at needs_attention because the fixture ad accounts had no USD currency (base lacks 3f800e5); the same fixture change is applied here (identical content).
 
 ## CI round 2 (run 38265472388, 905266e): E2E and Hail green; Platform failed only on test/exact-report.test.ts:130 (re-price count, a clock-timing test in code R9 does not touch). Re-run on a report-only commit.
+
+## CI round 3 (run 38269110686, 4e7b681): E2E and Hail green; Platform failed on exact-report.test.ts:130 again. Cause: the test pins the clock to 2026-10-12T15:00Z while the fake exact-report provider priced expiry off the real clock, so once the wall clock passed 15:00Z the re-price case no longer expired. Fix: the test harness gives the fake the test clock (apps/api/test/helpers.ts). Not caused by R9.
