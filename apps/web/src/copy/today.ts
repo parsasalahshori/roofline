@@ -15,5 +15,10 @@ export const today = {
   allDay: 'All day',
   /** One follow-up line: the job's next step, with its date when it has one. */
   nextStep: (text: string | null) => (text === null ? 'No next step set' : text),
+  signedToday: 'Signed today',
+  signedLabel: 'Proposals signed today',
+  signedBy: (name: string) => `Signed by ${name}`,
+  signedNone: 'No proposals signed today.',
+  signedEstimate: (money: string) => `Estimate ${money}`,
   draftsLabel: 'Plans waiting for your OK',
 } as const;

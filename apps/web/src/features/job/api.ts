@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { defaultScope, type JobSource, type JobView } from '@roofline/shared';
+import { defaultScope, type JobSource, type JobView, type ProposalView } from '@roofline/shared';
 import { ApiError, apiFetch } from '../../api/client.ts';
+import type { ProposalList } from '../estimator/types.ts';
 
 /**
  * Fields `PATCH /api/jobs/:id` takes from the edit sheet. Only the fields given are sent.
@@ -80,5 +81,14 @@ export function useCreateQuote(id: string) {
   return useMutation<{ id: string }, Error, void>({
     mutationFn: () => apiFetch<{ id: string }>('/api/jobs/' + id + '/quotes', { method: 'POST', body: { measurement: DEFAULT_MEASUREMENT } }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: jobKey(id) }),
+  });
+}
+
+/** This job's proposals, newest first, from the server's job filter (Ruling EM). */
+export function useJobProposals(jobId: string) {
+  return useQuery<ProposalList, Error, ProposalView[]>({
+    queryKey: ['job', jobId, 'proposals'],
+    queryFn: ({ signal }) => apiFetch<ProposalList>(`/api/proposals?jobId=${encodeURIComponent(jobId)}`, { signal }),
+    select: (list) => list.proposals,
   });
 }

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import {
   monthlyPaymentCents,
   priceTier,
@@ -8,6 +8,7 @@ import {
   type MeasurementKind,
   type MeasuredQuantities,
   type Pricebook,
+  type ProposalEventKind,
   type ProposalOptionView,
   type ProposalStatus,
   type ProposalView,
@@ -17,12 +18,16 @@ import {
   type TierTemplate,
 } from '@roofline/shared';
 import {
+  agentTaskSteps,
+  agentTasks,
   companySettings,
   customers,
   jobs,
   measurements,
+  messages,
   properties,
   proposalCounters,
+  proposalEvents,
   proposalOptions,
   proposalSignatures,
   proposals,
@@ -149,9 +154,17 @@ function iso(d: Date | null): string | null {
 
 type ViewRow = { proposal: typeof proposals.$inferSelect; customerName: string; customerPhones: CustomerPhone[]; addressLine: string; city: string; state: string; zip: string };
 
-async function viewsFor(tx: Tx, rows: ViewRow[]): Promise<ProposalView[]> {
+async function viewsFor(tx: Tx, ctx: TenantContext, rows: ViewRow[]): Promise<ProposalView[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.proposal.id);
+  // The latest task that texts each proposal (its id is the proposal's `taskId`), by subject.
+  const taskRows = await tx
+    .select({ id: agentTasks.id, subjectId: agentTasks.subjectId })
+    .from(agentTasks)
+    .where(and(eq(agentTasks.companyId, ctx.companyId), eq(agentTasks.subjectType, 'proposal'), inArray(agentTasks.subjectId, ids)))
+    .orderBy(desc(agentTasks.createdAt));
+  const taskByProposal = new Map<string, string>();
+  for (const t of taskRows) if (t.subjectId !== null && !taskByProposal.has(t.subjectId)) taskByProposal.set(t.subjectId, t.id);
   const optionRows = await tx
     .select()
     .from(proposalOptions)
@@ -191,7 +204,7 @@ async function viewsFor(tx: Tx, rows: ViewRow[]): Promise<ProposalView[]> {
       views: { count: p.viewCount, first: iso(p.firstViewedAt), last: iso(p.lastViewedAt) },
       signed: sig ? { optionId: sig.optionId, name: sig.signerName, at: sig.signedAt.toISOString() } : null,
       declined: p.declinedAt ? { reason: p.declineReason, at: p.declinedAt.toISOString() } : null,
-      taskId: null,
+      taskId: taskByProposal.get(p.id) ?? null,
       replacedById: p.replacedById,
       canEdit: p.status === 'draft',
     };
@@ -217,15 +230,16 @@ function selectViewRows(tx: Tx, where: SQL | undefined) {
 
 export async function getProposal(tx: Tx, ctx: TenantContext, id: string): Promise<ProposalView | null> {
   const rows = await selectViewRows(tx, and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, id), visibleJob(ctx))).limit(1);
-  const [view] = await viewsFor(tx, rows as ViewRow[]);
+  const [view] = await viewsFor(tx, ctx, rows as ViewRow[]);
   return view ?? null;
 }
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-export async function listProposals(tx: Tx, ctx: TenantContext, q: { status?: ProposalStatus; q?: string; offset?: number; signedOn?: string }): Promise<{ proposals: ProposalView[]; total: number }> {
+export async function listProposals(tx: Tx, ctx: TenantContext, q: { status?: ProposalStatus; q?: string; offset?: number; signedOn?: string; jobId?: string }): Promise<{ proposals: ProposalView[]; total: number }> {
   const conds: (SQL | undefined)[] = [eq(proposals.companyId, ctx.companyId), visibleJob(ctx)];
   if (q.status) conds.push(eq(proposals.status, q.status));
+  if (q.jobId) conds.push(eq(proposals.jobId, q.jobId));
   const text = q.q?.trim();
   if (text) {
     const like = `%${escapeLike(text)}%`;
@@ -245,7 +259,7 @@ export async function listProposals(tx: Tx, ctx: TenantContext, q: { status?: Pr
     .innerJoin(properties, eq(properties.id, proposals.propertyId))
     .where(where);
   const rows = await selectViewRows(tx, where).orderBy(desc(proposals.createdAt), desc(proposals.number)).limit(limit).offset(offset);
-  return { proposals: await viewsFor(tx, rows as ViewRow[]), total: count?.total ?? 0 };
+  return { proposals: await viewsFor(tx, ctx, rows as ViewRow[]), total: count?.total ?? 0 };
 }
 
 async function financing(tx: Tx, ctx: TenantContext): Promise<{ aprBps: number; months: number } | null> {
@@ -369,4 +383,198 @@ export async function replaceDraftOptions(tx: Tx, ctx: TenantContext, id: string
   }
   await tx.update(proposals).set({ measurementId: p.measurementId, estimateBasis: p.basis, updatedAt: now }).where(eq(proposals.id, id));
   return getProposal(tx, ctx, id);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sending (E1 Task 11: estimator/send-proposal.ts and proposal-sent.ts)
+
+/** Task statuses that mean a send is already queued or under way: asking again returns that task. */
+const OPEN_SEND_TASK_STATUSES = ['draft', 'awaiting_owner', 'approved', 'running'] as const;
+
+/** The proposal's row for a send, locked for the rest of the transaction, or null when it is missing or hidden from the member. */
+export async function lockProposalForSend(
+  tx: Tx,
+  ctx: TenantContext,
+  id: string,
+): Promise<{ status: ProposalStatus; signed: boolean; linkTokenEncrypted: Buffer } | null> {
+  const [row] = await tx
+    .select({
+      status: proposals.status,
+      signedAt: proposals.signedAt,
+      linkTokenEncrypted: proposals.linkTokenEncrypted,
+    })
+    .from(proposals)
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, id), visibleJob(ctx)))
+    .limit(1)
+    .for('update');
+  if (!row) return null;
+  return { status: row.status, signed: row.signedAt !== null, linkTokenEncrypted: row.linkTokenEncrypted };
+}
+
+/** The assigned user of a proposal's job, or undefined when the proposal is not found or its job is not visible to ctx. */
+export async function proposalJobAssignee(tx: Tx, ctx: TenantContext, proposalId: string): Promise<{ assignedUserId: string | null } | undefined> {
+  const [row] = await tx
+    .select({ assignedUserId: jobs.assignedUserId })
+    .from(proposals)
+    .innerJoin(jobs, and(eq(jobs.id, proposals.jobId), eq(jobs.companyId, proposals.companyId)))
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, proposalId), visibleJob(ctx)))
+    .limit(1);
+  return row ? { assignedUserId: row.assignedUserId } : undefined;
+}
+
+/** The stored encrypted link token (an empty Buffer until the first send), or null when the proposal is not found or not visible. */
+export async function getProposalLinkToken(tx: Tx, ctx: TenantContext, proposalId: string): Promise<Buffer | null> {
+  const [row] = await tx
+    .select({ encrypted: proposals.linkTokenEncrypted })
+    .from(proposals)
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, proposalId), visibleJob(ctx)))
+    .limit(1);
+  return row?.encrypted ?? null;
+}
+
+/** The id of a task that already texts this proposal and is open or under way (a send_proposal step on it), or null. */
+export async function findOpenSendTask(tx: Tx, ctx: TenantContext, proposalId: string): Promise<string | null> {
+  const [row] = await tx
+    .select({ id: agentTasks.id })
+    .from(agentTasks)
+    .innerJoin(
+      agentTaskSteps,
+      and(eq(agentTaskSteps.taskId, agentTasks.id), eq(agentTaskSteps.companyId, agentTasks.companyId)),
+    )
+    .where(
+      and(
+        eq(agentTasks.companyId, ctx.companyId),
+        eq(agentTasks.subjectType, 'proposal'),
+        eq(agentTasks.subjectId, proposalId),
+        inArray(agentTasks.status, [...OPEN_SEND_TASK_STATUSES]),
+        eq(agentTaskSteps.type, 'send_proposal'),
+      ),
+    )
+    .orderBy(desc(agentTasks.createdAt))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * Stores the link token's hash and encrypted form, but only while the proposal has none (its placeholder
+ * is empty). Returns the encrypted token that is stored, whichever run wrote it: a link is minted once
+ * and never changes, so a resend or a signed proposal keeps its link.
+ */
+export async function mintProposalLink(tx: Tx, ctx: TenantContext, proposalId: string, hash: Buffer, encrypted: Buffer): Promise<Buffer> {
+  const written = await tx
+    .update(proposals)
+    .set({ linkTokenHash: hash, linkTokenEncrypted: encrypted })
+    .where(
+      and(
+        eq(proposals.companyId, ctx.companyId),
+        eq(proposals.id, proposalId),
+        sql`octet_length(${proposals.linkTokenEncrypted}) = 0`,
+      ),
+    )
+    .returning({ encrypted: proposals.linkTokenEncrypted });
+  if (written[0]) return written[0].encrypted;
+  const [row] = await tx
+    .select({ encrypted: proposals.linkTokenEncrypted })
+    .from(proposals)
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, proposalId)))
+    .limit(1);
+  if (!row) throw new Error('The proposal was not found.');
+  return row.encrypted;
+}
+
+/** Moves a proposal from one of `from` to `to` (and sets `sentAt` when given). Returns false when its status is not one of `from`. */
+export async function setProposalStatus(
+  tx: Tx,
+  ctx: TenantContext,
+  id: string,
+  from: readonly ProposalStatus[],
+  to: ProposalStatus,
+  now: Date,
+  sentAt?: Date,
+): Promise<boolean> {
+  const rows = await tx
+    .update(proposals)
+    .set({ status: to, updatedAt: now, ...(sentAt !== undefined && { sentAt }) })
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, id), inArray(proposals.status, [...from])))
+    .returning({ id: proposals.id });
+  return rows.length > 0;
+}
+
+/** What the sent proposal's job move and activity need: its number, job and customer. */
+export type SentProposalCore = { id: string; number: string; jobId: string; customerId: string };
+
+/** Marks the proposal sent (sent_at = now) only while it is one of `from`; returns its core fields, or null when it was not. */
+export async function markProposalSent(tx: Tx, ctx: TenantContext, id: string, from: readonly ProposalStatus[], now: Date): Promise<SentProposalCore | null> {
+  const rows = await tx
+    .update(proposals)
+    .set({ status: 'sent', sentAt: now, updatedAt: now })
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, id), inArray(proposals.status, [...from])))
+    .returning({ id: proposals.id, number: proposals.number, jobId: proposals.jobId, customerId: proposals.customerId });
+  return rows[0] ?? null;
+}
+
+/** Appends one event to a proposal's history. */
+export async function addProposalEvent(
+  tx: Tx,
+  ctx: TenantContext,
+  e: { proposalId: string; kind: ProposalEventKind; at: Date; data?: Record<string, unknown> },
+): Promise<void> {
+  await tx.insert(proposalEvents).values({
+    companyId: ctx.companyId,
+    proposalId: e.proposalId,
+    kind: e.kind,
+    data: e.data ?? {},
+    at: e.at,
+  });
+}
+
+/**
+ * The sent proposal this one revises: the latest sent or viewed proposal of the same job and customer,
+ * never a signed one. It becomes 'replaced' (replaced_by_id = this one). Returns its id, or null.
+ */
+export async function markReplacedProposal(
+  tx: Tx,
+  ctx: TenantContext,
+  p: { proposalId: string; jobId: string; customerId: string; now: Date },
+): Promise<string | null> {
+  const [old] = await tx
+    .select({ id: proposals.id })
+    .from(proposals)
+    .where(
+      and(
+        eq(proposals.companyId, ctx.companyId),
+        eq(proposals.jobId, p.jobId),
+        eq(proposals.customerId, p.customerId),
+        ne(proposals.id, p.proposalId),
+        inArray(proposals.status, ['sent', 'viewed']),
+        ne(proposals.status, 'signed'),
+        isNull(proposals.replacedById),
+      ),
+    )
+    .orderBy(desc(proposals.sentAt))
+    .limit(1);
+  if (!old) return null;
+  const rows = await tx
+    .update(proposals)
+    .set({ status: 'replaced', replacedById: p.proposalId, updatedAt: p.now })
+    .where(
+      and(
+        eq(proposals.companyId, ctx.companyId),
+        eq(proposals.id, old.id),
+        inArray(proposals.status, ['sent', 'viewed']),
+        ne(proposals.status, 'signed'),
+      ),
+    )
+    .returning({ id: proposals.id });
+  return rows[0]?.id ?? null;
+}
+
+/** The blocked or failed text's reason for one customer of a step, as a person can read it, or null. */
+export async function stepTextReason(tx: Tx, ctx: TenantContext, stepId: string, customerId: string): Promise<string | null> {
+  const [row] = await tx
+    .select({ reason: messages.blockReason })
+    .from(messages)
+    .where(and(eq(messages.companyId, ctx.companyId), eq(messages.stepId, stepId), eq(messages.customerId, customerId)))
+    .limit(1);
+  return row?.reason ?? null;
 }

@@ -5,6 +5,7 @@ import {
   markUnconfirmedTexts,
   type OutboundText,
   rewriteRetryableText,
+  type StepRow,
   stepTextCounts,
   type StepRow,
   type TenantContext,
@@ -37,7 +38,14 @@ export const NOT_TAKEN = "The texting service didn't take this message. We'll tr
 
 const UNREADABLE = "We couldn't read who to text or what to send. Please make this plan again.";
 
-type BatchText = { customerId: string; purpose: MessagePurpose; template: string; dedupeKey: string | null };
+type BatchText = {
+  customerId: string;
+  purpose: MessagePurpose;
+  template: string;
+  dedupeKey: string | null;
+  /** True when `template` is already the finished text (a proposal's link is rendered by its step). */
+  bodyRendered?: true;
+};
 
 /**
  * The handler. For each customer in `payload.customerIds`, in order:
@@ -137,7 +145,14 @@ function decideOne(deps: AppDeps, ctx: TenantContext, stepId: string, text: Batc
     const built = await buildGateRequest(
       tx,
       ctx,
-      { customerId: text.customerId, purpose: text.purpose, body: text.template, dedupeKey: text.dedupeKey, replyToInboundAt: null },
+      {
+        customerId: text.customerId,
+        purpose: text.purpose,
+        body: text.template,
+        dedupeKey: text.dedupeKey,
+        replyToInboundAt: null,
+        ...(text.bodyRendered === true && { bodyRendered: true }),
+      },
       now,
     );
     if (!built) return null;
@@ -166,4 +181,51 @@ function decideOne(deps: AppDeps, ctx: TenantContext, stepId: string, text: Batc
     if (messageId === null || state.status !== 'queued') return null;
     return { messageId, to: built.toE164!, body: row.body, sender: built.sender };
   });
+}
+
+/**
+ * One text to one customer, for a step that sends exactly one (a proposal's text). The same gate,
+ * row and provider path as a batch customer, with the body already rendered by the caller. The
+ * step's message row for the customer is what makes it safe to repeat: a second call finds the row
+ * and reports where it stands instead of sending again.
+ *
+ * Returns what became of the text: `sent` (the provider took it now), `scheduled` (the gate held it;
+ * the dispatcher sends it when its time comes), `blocked` (the gate refused it, or no row exists),
+ * `failed` (the provider failed it for good), or `refused` (the provider refused it and it may be
+ * tried again). It takes no lease: the caller's step holds the lease.
+ */
+export async function sendOneText(
+  deps: AppDeps,
+  ctx: TenantContext,
+  step: StepRow,
+  i: { customerId: string; purpose: MessagePurpose; body: string; dedupeKey: string; bodyRendered: true },
+): Promise<'sent' | 'scheduled' | 'blocked' | 'failed' | 'refused'> {
+  const queued = await decideOne(deps, ctx, step.id, {
+    customerId: i.customerId,
+    purpose: i.purpose,
+    template: i.body,
+    dedupeKey: i.dedupeKey,
+    bodyRendered: i.bodyRendered,
+  });
+  if (queued) {
+    const r = await sendQueuedText(deps, ctx, queued, NOT_TAKEN);
+    return r === 'sent' ? 'sent' : r === 'refused' ? 'refused' : 'failed';
+  }
+
+  const row = await withTenant(deps.pools, ctx, (tx) => getStepText(tx, ctx, step.id, i.customerId));
+  if (!row) return 'blocked';
+  switch (row.status) {
+    case 'scheduled':
+      return 'scheduled';
+    case 'blocked':
+      return 'blocked';
+    case 'sent':
+    case 'delivered':
+    case 'queued':
+      return 'sent';
+    case 'failed':
+      return row.retryable ? 'refused' : 'failed';
+    default:
+      return 'blocked';
+  }
 }

@@ -116,6 +116,7 @@ function signedIn(job: JobView, overrides: Routes = {}, account = ACCOUNT) {
     }),
     'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', timezone: 'America/Chicago' } }),
     'GET /api/jobs/j1/view': () => ({ body: current }),
+    'GET /api/proposals?jobId=j1': () => ({ body: { proposals: [], total: 0 } }),
     ...overrides,
   });
   return api;

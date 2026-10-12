@@ -6,6 +6,9 @@ import { keys } from '../../api/keys.ts';
 import type { PropertyRecord } from '../create/api.ts';
 import type { NewCustomerInput, ProposalFilter, ProposalList } from './types.ts';
 
+/** The POST /api/proposals body. */
+export type BuildProposalInput = { measurementId: string; jobId?: string; customer?: NewCustomerInput };
+
 const proposalsKey = ['estimator', 'proposals'] as const;
 
 /** GET /api/proposals?status=&q= -> { proposals, total } */
@@ -39,11 +42,11 @@ export function useMeasure(): UseMutationResult<MeasurementView, Error, { proper
   });
 }
 
-/** POST /api/proposals { measurementId, customer? } -> ProposalView */
-export function useBuildProposal(): UseMutationResult<ProposalView, Error, { measurementId: string; customer?: NewCustomerInput }> {
+/** POST /api/proposals { measurementId, jobId?, customer? } -> ProposalView */
+export function useBuildProposal(): UseMutationResult<ProposalView, Error, BuildProposalInput> {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { measurementId: string; customer?: NewCustomerInput }) =>
+    mutationFn: (input: BuildProposalInput) =>
       apiFetch<ProposalView>('/api/proposals', { method: 'POST', body: input }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: proposalsKey }),
   });
