@@ -53,12 +53,13 @@ export function textingRoutes(deps: AppDeps): Router {
 
     const body = isPlainObject(req.body) ? req.body : {};
     let brandInput: unknown = body.brand;
-    // "Use the hosted pages" fills an empty website with the origin of the company's privacy page.
+    // "Use the hosted pages" fills an empty website with the full URL of the company's privacy page,
+    // not its origin: the company host answers 404 on / and vetting needs a 200 page that shows the
+    // legal name, address and privacy text.
     if (body.useHostedPolicyPages === true && isPlainObject(brandInput)) {
       const website = typeof brandInput.website === 'string' ? brandInput.website.trim() : '';
       if (website === '') {
-        const origin = new URL(policyUrls(config, company.slug).privacy).origin;
-        brandInput = { ...brandInput, website: origin };
+        brandInput = { ...brandInput, website: policyUrls(config, company.slug).privacy };
       }
     }
 

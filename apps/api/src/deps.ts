@@ -7,6 +7,7 @@ import { logErrorToConsole } from './errors.ts';
 import type { JobQueue } from './jobs/queue.ts';
 import { ConsoleMailer, type Mailer, PostmarkMailer } from './mailer.ts';
 import { createBillingProvider } from './providers/billing.ts';
+import { createCalendarApis } from './providers/calendar.ts';
 import { createGeocoder } from './providers/geocoder.ts';
 import type { CallControl } from './providers/call-control.ts';
 import type { LineLookup } from './providers/line-lookup.ts';
@@ -110,7 +111,8 @@ export function createLineLookup(config: Config): LineLookup {
  * logger, the weather (the National Weather Service, introducing itself as `NWS_USER_AGENT` or else
  * `Roofline (<PUBLIC_BASE_URL>)`; `WEATHER_DISABLED` swaps in the source that never asks), and the
  * outside-service seams: address lookup (`createGeocoder`), billing (`createBillingProvider`),
- * texting registration (`createRegistrar`) and SMS (`createSmsAdapter`). Each seam is the fake when
+ * texting registration (`createRegistrar`), SMS (`createSmsAdapter`) and calendars
+ * (`createCalendarApis`, one per provider). Each seam is the fake when
  * `FAKE_PROVIDERS` is set, the real provider when its settings are present, and otherwise an
  * unconfigured one that refuses its calls; the send gate's registration rule still stops a text to
  * a company that is not registered. `queue` is where approved steps go and `jobs` is where
@@ -151,6 +153,7 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     geocoder: createGeocoder(config),
     billing: createBillingProvider(config),
     registrar: createRegistrar(config),
+    calendars: createCalendarApis(config),
     jobs,
     // D1 Front Desk
     llm: createLlm(config),

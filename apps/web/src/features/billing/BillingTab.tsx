@@ -76,7 +76,7 @@ export function BillingTab() {
       <PlanPicker view={data} />
       {data.canOpenPortal ? (
         <div>
-          <Button variant="ghost" onClick={() => portal.mutate()} busy={portal.isPending}>
+          <Button variant="ghost" onClick={() => portal.mutate(undefined, { onError: (error) => toast.show(error.message, 'error') })} busy={portal.isPending}>
             {billing.invoicesAndCard}
           </Button>
         </div>

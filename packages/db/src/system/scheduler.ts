@@ -1,6 +1,6 @@
 import { and, asc, eq, isNotNull, isNull, lt, lte } from 'drizzle-orm';
 import type { Db } from '../pools.ts';
-import { agentTasks, agentTaskSteps, messages } from '../schema/index.ts';
+import { agentTasks, agentTaskSteps, companies, messages } from '../schema/index.ts';
 
 /*
  * The scheduler's fan-out. These run on the app_system pool, whose RLS policies let it see every
@@ -79,4 +79,10 @@ export async function companiesWithParkedSteps(system: Db): Promise<string[]> {
     .where(and(eq(agentTaskSteps.status, 'running'), isNull(agentTaskSteps.leaseExpiresAt)))
     .orderBy(asc(agentTaskSteps.companyId));
   return rows.map((r) => r.companyId);
+}
+
+/** Every company's id, in id order. The import sweep reads each company's imports in its own app_tenant transaction (app_system may not read imports). */
+export async function allCompanyIds(system: Db): Promise<string[]> {
+  const rows = await system.select({ id: companies.id }).from(companies).orderBy(asc(companies.id));
+  return rows.map((r) => r.id);
 }

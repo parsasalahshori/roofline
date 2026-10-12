@@ -198,6 +198,29 @@ export async function markInvoiced(
     .where(and(eq(usageEvents.companyId, ctx.companyId), eq(usageEvents.id, usageId)));
 }
 
+/**
+ * What the usage reporter needs to know about a company's billing: its Stripe customer id (null
+ * before any checkout) and whether it has a live subscription (the same rule as `hasPaymentMethod`:
+ * a subscription id and a status of active or past_due). Meter events only make sense once a
+ * subscription exists to attach them to.
+ */
+export async function meterTargetFor(tx: Tx, ctx: TenantContext): Promise<{ customerId: string | null; liveSubscription: boolean }> {
+  const [row] = await tx
+    .select({
+      stripeCustomerId: companies.stripeCustomerId,
+      stripeSubscriptionId: companies.stripeSubscriptionId,
+      status: companies.status,
+    })
+    .from(companies)
+    .where(eq(companies.id, ctx.companyId))
+    .limit(1);
+  if (!row) return { customerId: null, liveSubscription: false };
+  return {
+    customerId: row.stripeCustomerId ?? null,
+    liveSubscription: row.stripeSubscriptionId !== null && (row.status === 'active' || row.status === 'past_due'),
+  };
+}
+
 /** The company's Stripe customer id, or null when it has none yet (no checkout has happened). */
 export async function stripeCustomerIdFor(tx: Tx, ctx: TenantContext): Promise<string | null> {
   const [row] = await tx
