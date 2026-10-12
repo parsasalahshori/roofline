@@ -6,7 +6,7 @@ import { hashPassword as seedHashPassword, resetDb, SEED_PASSWORD } from '@roofl
 import { createApp } from '../src/app.ts';
 import { COST, DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from '../src/auth/password.ts';
 import * as passwordModule from '../src/auth/password.ts';
-import { resolveSession } from '../src/auth/sessions.ts';
+import { DEV_SESSION_COOKIE, resolveSession, SESSION_COOKIE } from '../src/auth/sessions.ts';
 import { loginAs, makeTestApp, SIGNUP_COMPANY, type SuperAgent, type TestApp } from './helpers.ts';
 
 // verifyPassword is wrapped (it still runs for real) so a test can see what it was called with.
@@ -56,12 +56,15 @@ function setCookies(res: { headers: Record<string, unknown> }): string[] {
   return Array.isArray(raw) ? (raw as string[]) : raw ? [String(raw)] : [];
 }
 
-/** The rl_session Set-Cookie header of a response, split into its value and attributes. */
-function sessionCookie(res: { headers: Record<string, unknown> }) {
-  const line = setCookies(res).find((c) => c.startsWith('rl_session='));
+/**
+ * The session Set-Cookie header of a response, split into its value and attributes. Tests talk
+ * plain http outside production, so the cookie is `DEV_SESSION_COOKIE` unless `name` says otherwise.
+ */
+function sessionCookie(res: { headers: Record<string, unknown> }, name: string = DEV_SESSION_COOKIE) {
+  const line = setCookies(res).find((c) => c.startsWith(`${name}=`));
   if (!line) return null;
   const [pair, ...attrs] = line.split('; ');
-  return { value: pair!.slice('rl_session='.length), attrs, line };
+  return { value: pair!.slice(name.length + 1), attrs, line };
 }
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -168,7 +171,7 @@ describe('sign-up', () => {
     expect(await verifyPassword(PASSWORD, user!.password_hash)).toBe(true);
   });
 
-  test('sets the rl_session cookie, and the database holds only its sha256', async () => {
+  test('sets the session cookie (rl_session over plain http outside production), and the database holds only its sha256', async () => {
     const res = await signup(t.app);
     const cookie = sessionCookie(res);
     expect(cookie).not.toBeNull();
@@ -188,11 +191,38 @@ describe('sign-up', () => {
     expect(rows[0]).toMatchObject({ user_id: res.body.user.id, active_company_id: res.body.company.id });
   });
 
-  test('the cookie is Secure in production', async () => {
+  test('in production the cookie is __Host-rl_session: Secure, Path=/, no Domain', async () => {
     const prod = await makeTestApp({ NODE_ENV: 'production' });
     const res = await request(prod.app).post('/api/auth/signup').send(signupBody());
     expect(res.status).toBe(201);
-    expect(sessionCookie(res)!.attrs).toEqual(expect.arrayContaining(['Secure', 'HttpOnly', 'SameSite=Lax']));
+    expect(SESSION_COOKIE).toBe('__Host-rl_session');
+    expect(sessionCookie(res)).toBeNull();
+    const cookie = sessionCookie(res, SESSION_COOKIE)!;
+    expect(cookie.attrs).toEqual(expect.arrayContaining(['Secure', 'HttpOnly', 'SameSite=Lax', 'Path=/']));
+    expect(cookie.line).not.toMatch(/domain=/i);
+
+    // It is the cookie production reads; the plain name is ignored there.
+    const me = await request(prod.app).get('/api/auth/me').set('Cookie', `${SESSION_COOKIE}=${cookie.value}`);
+    expect(me.status).toBe(200);
+    const plain = await request(prod.app).get('/api/auth/me').set('Cookie', `${DEV_SESSION_COOKIE}=${cookie.value}`);
+    expect(plain.status).toBe(401);
+  });
+
+  test('outside production, a request over https (behind a trusted proxy) also gets the Secure __Host- cookie', async () => {
+    const proxied = await makeTestApp({ TRUST_PROXY: 1 });
+    const res = await request(proxied.app)
+      .post('/api/auth/signup')
+      .set('X-Forwarded-Proto', 'https')
+      .send(signupBody());
+    expect(res.status).toBe(201);
+    expect(sessionCookie(res)).toBeNull();
+    const cookie = sessionCookie(res, SESSION_COOKIE)!;
+    expect(cookie.attrs).toEqual(expect.arrayContaining(['Secure', 'HttpOnly', 'Path=/']));
+    const me = await request(proxied.app)
+      .get('/api/auth/me')
+      .set('X-Forwarded-Proto', 'https')
+      .set('Cookie', `${SESSION_COOKIE}=${cookie.value}`);
+    expect(me.status).toBe(200);
   });
 
   test('the new user is signed in: GET /api/auth/me works with the cookie', async () => {
@@ -505,10 +535,10 @@ describe('API rate limit', () => {
   test('requests with no session share one budget per IP, and new cookie values do not reset it', async () => {
     const limited = await makeTestApp({ API_RATE_LIMIT_PER_MIN: 5 });
     for (let i = 1; i <= 5; i++) {
-      const res = await request(limited.app).get('/api/auth/me').set('Cookie', `rl_session=${'x'.repeat(42)}${i}`);
+      const res = await request(limited.app).get('/api/auth/me').set('Cookie', `${DEV_SESSION_COOKIE}=${'x'.repeat(42)}${i}`);
       expect(res.status, `request ${i}`).toBe(401);
     }
-    const res = await request(limited.app).get('/api/auth/me').set('Cookie', `rl_session=${'y'.repeat(43)}`);
+    const res = await request(limited.app).get('/api/auth/me').set('Cookie', `${DEV_SESSION_COOKIE}=${'y'.repeat(43)}`);
     expect(res.status).toBe(429);
     expect(res.body).toEqual(TOO_FAST);
   });
@@ -552,7 +582,7 @@ describe('requireSession', () => {
   test('a garbage cookie, a made-up token and a token for a deleted session are all 401', async () => {
     const bogus = ['garbage', 'x'.repeat(43), '%00', '', 'a'.repeat(5000)];
     for (const value of bogus) {
-      const res = await request(t.app).get('/api/auth/me').set('Cookie', `rl_session=${value}`);
+      const res = await request(t.app).get('/api/auth/me').set('Cookie', `${DEV_SESSION_COOKIE}=${value}`);
       expect(res.status, value.slice(0, 10)).toBe(401);
     }
     const agent = await loginAs(t.app, t.seed.a.owner);
@@ -565,7 +595,7 @@ describe('requireSession', () => {
       .post('/api/auth/login')
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
     const token = sessionCookie(login)!.value;
-    const res = await request(t.app).get('/api/auth/me').set('Cookie', `theme=dark; rl_session=${token}; other=1`);
+    const res = await request(t.app).get('/api/auth/me').set('Cookie', `theme=dark; ${DEV_SESSION_COOKIE}=${token}; other=1`);
     expect(res.status).toBe(200);
   });
 
@@ -622,7 +652,7 @@ describe('sessions', () => {
       .post('/api/auth/login')
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
     const token = sessionCookie(login)!.value;
-    const cookie = `rl_session=${token}`;
+    const cookie = `${DEV_SESSION_COOKIE}=${token}`;
     const start = t.clock.now().getTime();
     const before = await sessionRow(t.seed.a.owner.userId);
     expect(before.expires_at.getTime()).toBe(start + 30 * DAY);
@@ -915,14 +945,14 @@ describe('signing in on a browser that is already signed in', () => {
     const first = await request(t.app)
       .post('/api/auth/login')
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
-    const oldCookie = `rl_session=${sessionCookie(first)!.value}`;
+    const oldCookie = `${DEV_SESSION_COOKIE}=${sessionCookie(first)!.value}`;
     const second = await request(t.app)
       .post('/api/auth/login')
       .set('Cookie', oldCookie)
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
     expect(second.status).toBe(200);
     expect((await request(t.app).get('/api/auth/me').set('Cookie', oldCookie)).status).toBe(401);
-    const newCookie = `rl_session=${sessionCookie(second)!.value}`;
+    const newCookie = `${DEV_SESSION_COOKIE}=${sessionCookie(second)!.value}`;
     expect((await request(t.app).get('/api/auth/me').set('Cookie', newCookie)).status).toBe(200);
   });
 
@@ -952,7 +982,7 @@ describe('signing in on a browser that is already signed in', () => {
   test('a login with a dead cookie just starts one session', async () => {
     const res = await request(t.app)
       .post('/api/auth/login')
-      .set('Cookie', `rl_session=${'x'.repeat(43)}`)
+      .set('Cookie', `${DEV_SESSION_COOKIE}=${'x'.repeat(43)}`)
       .send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
     expect(res.status).toBe(200);
     expect(await sql('select 1 from sessions where user_id = $1', [t.seed.a.owner.userId])).toHaveLength(1);
@@ -984,7 +1014,7 @@ describe('role and spend approval are read fresh on every request', () => {
       .post('/api/auth/login')
       .send({ email: t.seed.a.office.email, password: SEED_PASSWORD });
     const token = sessionCookie(login)!.value;
-    const cookie = `rl_session=${token}`;
+    const cookie = `${DEV_SESSION_COOKIE}=${token}`;
 
     const before = await request(t.app).get('/api/auth/me').set('Cookie', cookie);
     expect(before.body.role).toBe('office');

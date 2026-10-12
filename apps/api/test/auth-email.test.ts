@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { SEED_PASSWORD } from '@roofline/db/testing';
 import { createApp } from '../src/app.ts';
 import { attachSession, requireVerifiedEmail } from '../src/auth/middleware.ts';
+import { DEV_SESSION_COOKIE } from '../src/auth/sessions.ts';
 import { consumeToken, issueToken } from '../src/auth/tokens.ts';
 import { errorHandler } from '../src/errors.ts';
 import type { Mailer } from '../src/mailer.ts';
@@ -591,7 +592,7 @@ describe('reset', () => {
     const token = await resetTokenFor(t.seed.a.owner.email);
     const res = await agent.post('/api/auth/reset').send({ token, password: NEW_PASSWORD });
     expect(res.status).toBe(200);
-    expect(String(res.headers['set-cookie'])).toMatch(/rl_session=;/);
+    expect(String(res.headers['set-cookie'])).toContain(`${DEV_SESSION_COOKIE}=;`);
     expect((await agent.get('/api/auth/me')).status).toBe(401);
   });
 

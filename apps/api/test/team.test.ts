@@ -4,7 +4,7 @@ import { auditLog, withTenant } from '@roofline/db';
 import { SEED_PASSWORD } from '@roofline/db/testing';
 import type { GoogleClaims } from '../src/auth/google.ts';
 import { LastOwnerError, updateMember } from '../src/auth/team-store.ts';
-import { generateToken, hashToken } from '../src/auth/sessions.ts';
+import { DEV_SESSION_COOKIE, generateToken, hashToken } from '../src/auth/sessions.ts';
 import { loginAs, makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -667,7 +667,7 @@ describe('POST /api/auth/accept-invite: a new person', () => {
       role: 'office',
       companies: [{ id: t.seed.a.companyId, name: 'Acme Roofing' }],
     });
-    expect(String(res.headers['set-cookie'])).toMatch(/rl_session=/);
+    expect(String(res.headers['set-cookie'])).toContain(`${DEV_SESSION_COOKIE}=`);
 
     const team = await owner.get('/api/team');
     expect(team.body.members).toHaveLength(before + 1);
@@ -1124,7 +1124,7 @@ describe('POST /api/auth/accept-invite: the session is made inside the acceptanc
     const agent = request.agent(t.app);
     const res = await agent.post('/api/auth/accept-invite').send({ token, password: SEED_PASSWORD });
     expect(res.status).toBe(200);
-    expect(String(res.headers['set-cookie'])).toMatch(/rl_session=/);
+    expect(String(res.headers['set-cookie'])).toContain(`${DEV_SESSION_COOKIE}=`);
     expect(await sessionCount(BREP().userId)).toBe(1);
     const me = await agent.get('/api/auth/me');
     expect(me.body.company.id).toBe(t.seed.a.companyId);
