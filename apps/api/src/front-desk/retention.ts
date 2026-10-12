@@ -1,5 +1,7 @@
 import {
+  BLANK_BATCH,
   blankCustomerTurns,
+  blankExpiredTexts,
   blankExpiredTurns,
   findExpiredRecordings,
   getRetentionSettings,
@@ -12,9 +14,11 @@ import {
 import type { AppDeps } from '../app.ts';
 import type { ObjectStore } from '../providers/object-store.ts';
 
-/* Front Desk retention (D1 Task 16, Ruling DX). Summaries and outcomes on conversations are never touched. */
+/* Front Desk retention (D1 Task 16, Ruling DX). Summaries and outcomes on conversations are never touched.
+   Turn text and Front Desk text bodies are blanked together under the transcript retention setting (review note 43). */
 
-export type SweepResult = { recordingsDeleted: number; turnsBlanked: number };
+export type SweepResult = { recordingsDeleted: number; turnsBlanked: number; messagesBlanked: number };
+export type PurgeResult = { recordingsDeleted: number; turnsBlanked: number };
 
 const BATCH = 200;
 
@@ -46,10 +50,23 @@ export async function sweepCompanyRetention(deps: AppDeps, companyId: string, no
     }
   }
 
-  const turnsBlanked = await withTenant(deps.pools, ctx, (tx) =>
-    blankExpiredTurns(tx, ctx, { now, transcriptDays: settings.transcriptRetentionDays }),
-  );
-  return { recordingsDeleted, turnsBlanked };
+  // Blanking runs BLANK_BATCH rows per statement, each in its own transaction, so a company with a large
+  // backlog never holds one unbounded UPDATE (or its locks) open. Blanked rows drop out of the next batch.
+  const transcriptDays = settings.transcriptRetentionDays;
+  let turnsBlanked = 0;
+  for (;;) {
+    const n = await withTenant(deps.pools, ctx, (tx) => blankExpiredTurns(tx, ctx, { now, transcriptDays, limit: BLANK_BATCH }));
+    turnsBlanked += n;
+    if (n < BLANK_BATCH) break;
+  }
+  // Front Desk texts (messages.body of a conversation) follow the same setting and age rule as the turns.
+  let messagesBlanked = 0;
+  for (;;) {
+    const n = await withTenant(deps.pools, ctx, (tx) => blankExpiredTexts(tx, ctx, { now, transcriptDays, limit: BLANK_BATCH }));
+    messagesBlanked += n;
+    if (n < BLANK_BATCH) break;
+  }
+  return { recordingsDeleted, turnsBlanked, messagesBlanked };
 }
 
 /**
@@ -58,7 +75,7 @@ export async function sweepCompanyRetention(deps: AppDeps, companyId: string, no
  * tool_calls to names. It runs inside the caller's transaction; object-store deletes are not transactional,
  * so a later rollback cannot bring a deleted file back.
  */
-export async function purgeCustomerConversations(tx: Tx, ctx: TenantContext, customerId: string, objectStore: ObjectStore): Promise<SweepResult> {
+export async function purgeCustomerConversations(tx: Tx, ctx: TenantContext, customerId: string, objectStore: ObjectStore): Promise<PurgeResult> {
   const keys = await recordingKeysForCustomer(tx, ctx, customerId);
   let recordingsDeleted = 0;
   for (const { callId, recordingKey } of keys) {

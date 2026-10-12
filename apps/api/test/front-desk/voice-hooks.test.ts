@@ -219,6 +219,32 @@ describe('POST /hooks/twilio/voice', () => {
     expect(res.text).not.toContain('<ConversationRelay');
   });
 
+  test('a read-only company (trial ended or canceled) gets the team then voicemail, never the AI (Ruling BG)', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 15 });
+    await seedTeam();
+    for (const status of ['trial_ended', 'canceled'] as const) {
+      await t.deps.pools.system.update(companies).set({ status }).where(eq(companies.id, idOf('a')));
+      const res = await post(VOICE, incoming());
+      expect(res.status, status).toBe(200);
+      expect(res.text, status).toContain('after-dial?mode=voicemail');
+      expect(res.text, status).not.toContain('mode=ring_first');
+      expect(res.text, status).not.toContain('<ConversationRelay');
+    }
+  });
+
+  test('the LLM health check reads the injected clock (pre-review #40)', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    const start = new Date('2030-01-01T12:00:00Z');
+    t.clock.set(start);
+    for (let i = 0; i < 3; i += 1) t.deps.relaySessions.recordLlmFailure(start);
+    const tripped = await post(VOICE, incoming());
+    expect(tripped.text).not.toContain('<ConversationRelay');
+    // 61 s later on the app's clock the breaker has reset, whatever the wall clock says.
+    t.clock.advance(61_000);
+    const healed = await post(VOICE, incoming());
+    expect(healed.text).toContain('<ConversationRelay');
+  });
+
   test('a screened call is rejected and the row is rejected', async () => {
     await setSettings('a', { frontDeskEnabled: true });
     screen.verdict = { action: 'reject', reason: 'blocked' };

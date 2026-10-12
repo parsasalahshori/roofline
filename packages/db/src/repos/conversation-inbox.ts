@@ -14,8 +14,7 @@ import type {
   TransferResult,
   TurnView,
 } from '@roofline/shared';
-import type { Db } from '../pools.ts';
-import { calls, claimIntakes, conversations, conversationTurns, customers, memberships } from '../schema/index.ts';
+import { calls, claimIntakes, conversations, conversationTurns, customers, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { canPlayCallRecording, findCallRecording } from './call-recording.ts';
 import { customerScope } from './scope.ts';
@@ -27,7 +26,7 @@ import { customerScope } from './scope.ts';
  * Who sees what: the owner and the office see every conversation. A rep sees the conversations of
  * their own customers (`customerScope`) and, only while they are on call, those of unknown numbers.
  * `memberships` is a global table the tenant role cannot read, so the route learns "on call" with
- * `isOnCallMember` (the system pool) and passes it in as `scope`.
+ * `isOnCallMember` (the system pool, in `@roofline/db/system`) and passes it in as `scope`.
  */
 
 export type InboxScope = { onCall: boolean };
@@ -39,17 +38,6 @@ export const INBOX_PAGE_SIZE = 30;
 export const TEAM_HANDLING_MS = 2 * 60 * 60 * 1000;
 
 const LIVE_CALL_STATUSES: CallStatus[] = ['ringing', 'ai', 'ringing_team'];
-
-/** Whether the user is on the company's call list (a rep sees unknown-number conversations only then). */
-export async function isOnCallMember(system: Db, ctx: TenantContext): Promise<boolean> {
-  if (ctx.userId === null) return false;
-  const [row] = await system
-    .select({ order: memberships.onCallOrder })
-    .from(memberships)
-    .where(and(eq(memberships.companyId, ctx.companyId), eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')))
-    .limit(1);
-  return row !== undefined && row.order !== null;
-}
 
 /** The WHERE condition for what this member may see; undefined means everything in the company. Needs customers joined. */
 function visibleTo(ctx: TenantContext, scope: InboxScope): SQL | undefined {
@@ -263,6 +251,91 @@ function cardOf(raw: { name: string; input?: unknown; ok?: unknown }): ToolActio
   return { tool: rec.name, ok: rec.ok, label, link };
 }
 
+/** The most recent texts one conversation detail shows. */
+const DETAIL_TEXT_LIMIT = 500;
+
+/** The dedupe_key prefixes of texts the assistant sent: its replies, booking confirmations and missed-call text-backs. */
+const ASSISTANT_TEXT_PREFIXES = ['fd-text:', 'fd-book:', 'fd-textback:'];
+
+/** Outbound states that mean the text went out (or is going out); a blocked, failed or scheduled one is not shown as said. */
+const SHOWN_OUT_STATUSES = ['queued', 'sent', 'delivered'];
+
+const squash = (v: string): string => v.replace(/\s+/g, ' ').trim();
+
+/** Time order; turns of one time keep their position order, and a text sorts after the turns at the same instant. */
+export function compareTurnViews(a: TurnView, b: TurnView): number {
+  const byTime = Date.parse(a.at) - Date.parse(b.at);
+  if (byTime !== 0) return byTime;
+  if (a.position !== b.position) return a.position - b.position;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * An SMS conversation's detail is built from its turns (what the assistant heard and said, with its tool
+ * cards) and from the conversation's texts (`messages.conversation_id`), which also hold the team's replies and
+ * the inbound texts the assistant never took a turn for. A text becomes a line of its own unless a turn already
+ * shows it: an inbound text whose words sit inside a caller turn, or an assistant text whose words sit inside an
+ * assistant turn. A text whose body was blanked by retention is hidden when a blanked turn of the same speaker
+ * already stands for it. Texts are shown as turns with `callId` null and `position` 0 (the sort is by time).
+ */
+async function textItems(tx: Tx, ctx: TenantContext, conversationId: string, turns: TurnView[]): Promise<TurnView[]> {
+  const rows = (
+    await tx
+      .select({
+        id: messages.id,
+        direction: messages.direction,
+        body: messages.body,
+        status: messages.status,
+        dedupeKey: messages.dedupeKey,
+        createdAt: messages.createdAt,
+      })
+      .from(messages)
+      .where(and(eq(messages.companyId, ctx.companyId), eq(messages.conversationId, conversationId)))
+      .orderBy(desc(messages.createdAt), desc(messages.id))
+      .limit(DETAIL_TEXT_LIMIT)
+  ).reverse();
+
+  const textTurns = turns.filter((t) => t.callId === null);
+  const said = (speaker: 'caller' | 'assistant') => textTurns.filter((t) => t.speaker === speaker);
+  const joined = (speaker: 'caller' | 'assistant') =>
+    squash(
+      said(speaker)
+        .map((t) => t.text ?? '')
+        .join(' '),
+    );
+  const shownWords = { caller: joined('caller'), assistant: joined('assistant') };
+  const hasBlankedTurn = {
+    caller: said('caller').some((t) => t.text === null),
+    assistant: said('assistant').some((t) => t.text === null),
+  };
+
+  const out: TurnView[] = [];
+  for (const r of rows) {
+    if (r.direction === 'out' && !SHOWN_OUT_STATUSES.includes(r.status)) continue;
+    const speaker: TurnView['speaker'] =
+      r.direction === 'in'
+        ? 'caller'
+        : ASSISTANT_TEXT_PREFIXES.some((p) => r.dedupeKey?.startsWith(p) ?? false)
+          ? 'assistant'
+          : 'team';
+    const body = squash(r.body);
+    if (speaker !== 'team') {
+      if (body === '' ? hasBlankedTurn[speaker] : shownWords[speaker].includes(body)) continue;
+    }
+    out.push({
+      id: r.id,
+      callId: null,
+      position: 0,
+      speaker,
+      text: body === '' ? null : r.body,
+      truncated: false,
+      at: r.createdAt.toISOString(),
+      actions: [],
+    });
+  }
+  return out;
+}
+
 /** One conversation with its calls, transcript and links, or null when the member may not see it. */
 export async function getConversationDetail(
   tx: Tx,
@@ -370,6 +443,9 @@ export async function getConversationDetail(
       actions: records.map(cardOf),
     };
   });
+
+  if (row.channel === 'sms') turns.push(...(await textItems(tx, ctx, id, turns)));
+  turns.sort(compareTurnViews);
 
   const claims = await tx
     .select({ id: claimIntakes.id, jobId: claimIntakes.jobId })

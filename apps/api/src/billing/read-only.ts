@@ -7,6 +7,25 @@ export const READ_ONLY_MESSAGE: Record<'trial_ended' | 'canceled', string> = {
   canceled: 'Your plan was canceled, so Roofline is read-only for now. Pick a plan to keep going.',
 };
 
+/** True for a company status that makes Roofline read-only: no writes, and no Front Desk calls or texts (Ruling BG). */
+export function isReadOnlyStatus(status: string | null | undefined): status is 'trial_ended' | 'canceled' {
+  return status === 'trial_ended' || status === 'canceled';
+}
+
+/**
+ * The one write a read-only company may still make outside the open sections (Ruling BG): turning
+ * Front Desk off. The route then saves only the switch.
+ */
+function turnsFrontDeskOff(method: string, path: string, body: unknown): boolean {
+  return (
+    method === 'PUT' &&
+    (path === '/front-desk/settings' || path === '/front-desk/settings/') &&
+    typeof body === 'object' &&
+    body !== null &&
+    (body as { enabled?: unknown }).enabled === false
+  );
+}
+
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
@@ -15,6 +34,12 @@ const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * with anything under it, so `/billing` and `/billing/checkout` are open and `/billingx` is not.
  */
 const ALWAYS_OPEN_SECTIONS = ['auth', 'billing', 'me'];
+
+/**
+ * Paths under an open section that still close in read-only mode: the Front Desk transfer phone is
+ * company setup (it is dialled on the company's account), not the member's own marker.
+ */
+const CLOSED_UNDER_OPEN = ['me/transfer-phone'];
 
 /**
  * Refuses writes from a company whose trial has ended or whose plan was canceled. Reads still work,
@@ -33,7 +58,7 @@ export const readOnlyGuard: RequestHandler = (req, res, next) => {
     return;
   }
   const status = session.companyStatus;
-  if (status !== 'trial_ended' && status !== 'canceled') {
+  if (!isReadOnlyStatus(status)) {
     next();
     return;
   }
@@ -42,7 +67,12 @@ export const readOnlyGuard: RequestHandler = (req, res, next) => {
     return;
   }
   const path = req.path.toLowerCase();
-  if (ALWAYS_OPEN_SECTIONS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`))) {
+  const closed = CLOSED_UNDER_OPEN.some((name) => path === `/${name}` || path.startsWith(`/${name}/`));
+  if (!closed && ALWAYS_OPEN_SECTIONS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`))) {
+    next();
+    return;
+  }
+  if (turnsFrontDeskOff(req.method, path, req.body)) {
     next();
     return;
   }

@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import {
   applyCallStatus,
-  companyReadOnly,
   countLiveCallsInWindow,
   findCallBySid,
   findCallConversationId,
@@ -10,6 +9,7 @@ import {
   linkCallConversation,
 } from '../src/repos/calls.ts';
 import { insertConversation } from '../src/repos/conversations.ts';
+import { companyReadOnly } from '../src/repos/front-desk-settings.ts';
 import { frontDeskTextsOn } from '../src/repos/fd-texts.ts';
 import { createPools } from '../src/pools.ts';
 import { calls, companies, companySettings } from '../src/schema/index.ts';

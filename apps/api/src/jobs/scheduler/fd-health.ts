@@ -1,8 +1,8 @@
-import { endStuckCalls, markVoiceUrlSet, numbersNeedingVoiceUrl } from '@roofline/db/system';
+import { endStuckCalls, markVoiceUrlAttempt, markVoiceUrlSet, numbersNeedingVoiceUrl } from '@roofline/db/system';
 import type { AppDeps } from '../../app.ts';
 import { applyVoiceUrls, type VoiceUrlResult } from '../../front-desk/number-voice.ts';
 
-/** How many numbers one repair pass takes (oldest first); the schedule runs every two minutes. */
+/** How many numbers one repair pass takes (least recently tried first); the schedule runs every two minutes. */
 const REPAIR_LIMIT = 20;
 
 /** How many stuck calls one pass ends at most. */
@@ -11,6 +11,9 @@ const STUCK_CALL_LIMIT = 100;
 /** How many numbers the first Front Desk save of one company sets at most. */
 const COMPANY_LIMIT = 100;
 
+/** Stamps a failed attempt so numbers that keep failing move behind the rest (pre-review #39). */
+const failedMarker = (deps: AppDeps) => (numberId: string) => markVoiceUrlAttempt(deps.pools.system, numberId, deps.clock.now());
+
 /**
  * Sets the voice URL on the company's Front Desk numbers that do not have it yet. Called by the first
  * Front Desk settings save (D1 Task 18) and by the repair pass below. Rows are read and marked on the
@@ -18,13 +21,13 @@ const COMPANY_LIMIT = 100;
  */
 export async function ensureVoiceUrl(deps: AppDeps, companyId: string): Promise<VoiceUrlResult> {
   const rows = await numbersNeedingVoiceUrl(deps.pools.system, companyId, COMPANY_LIMIT);
-  return applyVoiceUrls(deps, rows, (numberId) => markVoiceUrlSet(deps.pools.system, numberId));
+  return applyVoiceUrls(deps, rows, (numberId) => markVoiceUrlSet(deps.pools.system, numberId), failedMarker(deps));
 }
 
 /** The repair pass across every company: up to `limit` numbers that still lack the voice URL. */
 export async function repairVoiceUrls(deps: AppDeps, limit: number): Promise<VoiceUrlResult> {
   const rows = await numbersNeedingVoiceUrl(deps.pools.system, null, limit);
-  return applyVoiceUrls(deps, rows, (numberId) => markVoiceUrlSet(deps.pools.system, numberId));
+  return applyVoiceUrls(deps, rows, (numberId) => markVoiceUrlSet(deps.pools.system, numberId), failedMarker(deps));
 }
 
 /**

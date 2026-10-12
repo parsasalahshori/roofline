@@ -1,6 +1,6 @@
 import { DEFAULT_FRONT_DESK_VOICE, DEFAULT_WORK_HOURS, type ConsentRegime, type TransferResult, type WorkHours } from '@roofline/shared';
 import { and, eq, gt, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
-import { blockedNumbers, calls, companies, companySettings } from '../schema/index.ts';
+import { blockedNumbers, calls, companySettings } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { customersWithPhone } from './inbound.ts';
 
@@ -230,10 +230,4 @@ export async function countLiveCallsInWindow(tx: Tx, ctx: TenantContext, now: Da
       ),
     );
   return row?.n ?? 0;
-}
-
-/** True when companies.status is 'trial_ended' or 'canceled' (the same two statuses readOnlyGuard refuses writes for). */
-export async function companyReadOnly(tx: Tx, ctx: TenantContext): Promise<boolean> {
-  const [row] = await tx.select({ status: companies.status }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
-  return row !== undefined && (row.status === 'trial_ended' || row.status === 'canceled');
 }
