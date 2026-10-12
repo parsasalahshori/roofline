@@ -7,6 +7,7 @@ import { createPools, type Pools } from '@roofline/db';
 import { resetDb, seedTwoCompanies, SEED_PASSWORD, type SeededCompany } from '@roofline/db/testing';
 import type { CompanyStatus } from '@roofline/shared';
 import { seedDemoTask, seedShowcase } from '@roofline/api';
+import { seedAgentsFixture, type AgentsFixture } from './agents-seed.ts';
 
 /*
  * Shared end-to-end helpers. `stack.ts` writes `.stack.json` beside this file once the database is
@@ -69,6 +70,7 @@ type Fixtures = {
   clicks: { count: number };
   click: (locator: Locator) => Promise<void>;
   markTodaySeen: (email: string) => Promise<void>;
+  agentsSeed: AgentsFixture;
 };
 
 export const test = base.extend<Fixtures>({
@@ -126,6 +128,11 @@ export const test = base.extend<Fixtures>({
       );
     });
   },
+
+  agentsSeed: async ({ db, scenario }, use) => {
+    await use(await seedAgentsFixture(db, scenario.a.companyId, new Date()));
+  },
 });
 
-export { expect, seedDemoTask };
+export { expect, seedDemoTask, seedAgentsFixture };
+export type { AgentsFixture };
