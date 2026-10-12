@@ -54,6 +54,8 @@ import {
  * Nothing here logs message text or names.
  */
 
+/** The longest body a send_personal_texts message may have (packages/shared/src/steps.ts). */
+const MAX_STEP_BODY = 480;
 const AGENT = 'follow_up';
 const LEADS_KIND = 'follow_ups';
 const STUCK_KIND = 'stuck_nudges';
@@ -284,7 +286,9 @@ async function runTexts(deps: AppDeps, ctx: TenantContext, company: Company, now
   const reviewDraft = prepared.reviews.length > 0 ? await draftReviewTexts(deps.llm, company.name, prepared.reviews) : null;
   const leadTexts = leadDraft?.texts ?? [];
   const proposalTexts = proposalDraft?.texts ?? [];
-  const reviewTexts = reviewDraft?.texts ?? [];
+  // A link saved before the 200-character limit could make a text too long for the step (480); such a text is left
+  // out rather than failing the whole plan.
+  const reviewTexts = (reviewDraft?.texts ?? []).filter((t) => t.body.length <= MAX_STEP_BODY);
   const anyTemplate = (leadDraft?.anyTemplate ?? false) || (proposalDraft?.anyTemplate ?? false) || (reviewDraft?.anyTemplate ?? false);
   const jobIds = new Map(prepared.leads.map((l) => [l.customerId, l.jobId]));
 

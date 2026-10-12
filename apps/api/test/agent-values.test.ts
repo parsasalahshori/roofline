@@ -187,6 +187,13 @@ describe('PATCH /api/agent-values review link', () => {
     expect(res.body).toEqual({ error: LINK, field: 'reviewLink' });
   });
 
+  test('a link over 200 characters is refused, so a review request always fits one text', async () => {
+    const res = await patch({ reviewLink: `https://example.com/${'a'.repeat(181)}` });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Please keep the review link to 200 characters or fewer.', field: 'reviewLink' });
+    expect((await patch({ reviewLink: `https://example.com/${'a'.repeat(180)}` })).status).toBe(200);
+  });
+
   test('an https:// link is kept as written', async () => {
     const res = await patch({ reviewLink: 'https://x.example/r' });
     expect(res.status).toBe(200);

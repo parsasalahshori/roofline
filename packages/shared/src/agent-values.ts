@@ -27,9 +27,11 @@ export const AGENT_VALUE_MESSAGES = {
   leadDays: 'Please enter a whole number of days from 1 to 30.',
   reviewDelay: 'Please enter a whole number of days from 0 to 30.',
   reviewLink: 'Please enter a web address that starts with https://',
+  reviewLinkLength: 'Please keep the review link to 200 characters or fewer.',
 } as const;
 
-const MAX_REVIEW_LINK = 500;
+/** Short enough that a review request with the link always fits one personal text (480 characters). */
+const MAX_REVIEW_LINK = 200;
 
 const wholeNumber = (min: number, max: number, message: string) =>
   z.number({ error: message }).int(message).min(min, message).max(max, message);
@@ -65,7 +67,7 @@ const shape = {
   reviewLink: z
     .string({ error: AGENT_VALUE_MESSAGES.reviewLink })
     .trim()
-    .max(MAX_REVIEW_LINK, AGENT_VALUE_MESSAGES.reviewLink)
+    .max(MAX_REVIEW_LINK, AGENT_VALUE_MESSAGES.reviewLinkLength)
     .refine((v) => v === '' || isHttpsLink(v), AGENT_VALUE_MESSAGES.reviewLink)
     .transform((v) => (v === '' ? null : v))
     .nullable()
