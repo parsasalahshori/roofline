@@ -140,7 +140,7 @@ const ConfigSchema = z
       .optional(),
     /** Geocodio API key (address lookup). Unset: addresses are not looked up. */
     GEOCODIO_API_KEY: z.string().optional(),
-    /** MapTiler server key (static map in claim packets). Unset: claim packets have no map. */
+    /** G1 agents: MapTiler server-side key for the static map in claim packets. Optional; unset: claim packets have no map image. */
     MAPTILER_SERVER_KEY: z.string().optional(),
     /** Twilio account SID (`AC` + 32 hex digits). When set, TWILIO_AUTH_TOKEN is required. */
     TWILIO_ACCOUNT_SID: z
@@ -184,9 +184,9 @@ const ConfigSchema = z
     ANTHROPIC_API_KEY: z.string().optional(),
     FRONT_DESK_ROUTER_MODEL: z.string().min(1).default('claude-haiku-5-5'),
     FRONT_DESK_ANSWER_MODEL: z.string().min(1).default('claude-opus-5-5'),
-    /** G1 agents: the model that drafts customer texts. */
+    /** G1 agents: the model that drafts customer texts (default claude-opus-5-5). */
     AGENT_DRAFT_MODEL: z.string().min(1).default('claude-opus-5-5'),
-    /** G1 agents: the model that extracts claim facts from a homeowner's reply. */
+    /** G1 agents: the model that extracts claim facts from a homeowner's reply (default claude-haiku-5-5). */
     AGENT_EXTRACT_MODEL: z.string().min(1).default('claude-haiku-5-5'),
     /** `1` or `true` asks for the faster Opus output mode. */
     FRONT_DESK_OPUS_FAST: flagDefault(false),

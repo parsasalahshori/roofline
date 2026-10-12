@@ -102,6 +102,14 @@
 | `TWILIO_TEST_CALLER_NUMBER` | unset | Roofline's own number (E.164) for forwarding tests. |
 | `RELAY_TOKEN_SECRET` | derived from `ENCRYPTION_KEY` | Signs relay tokens; at least 32 bytes. |
 
+**Agents configuration (G1).** All optional. The Claims, Scheduler and Follow-up agents use `ANTHROPIC_API_KEY` above. Tests and CI never call Anthropic or MapTiler; `npm run eval:agent-texts -- --confirm-spend` grades real drafts by hand (it calls paid models).
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `AGENT_DRAFT_MODEL` | `claude-opus-5-5` | The model that drafts the agents' customer texts. |
+| `AGENT_EXTRACT_MODEL` | `claude-haiku-5-5` | The model that reads claim facts (claim number, insurer, adjuster date, decision) from a homeowner's reply. |
+| `MAPTILER_SERVER_KEY` | unset | MapTiler server-side key for the map image in claim packets. Unset: claim packets have no map image. |
+
 - **Calendar connections:**
   - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google Calendar, and `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` for Outlook. A provider with either value missing shows as not set up in Settings.
   - Register these redirect URIs with each provider: `<PUBLIC_BASE_URL>/api/calendar/oauth/google/callback` and `<PUBLIC_BASE_URL>/api/calendar/oauth/microsoft/callback`.
