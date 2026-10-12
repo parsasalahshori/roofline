@@ -1,12 +1,9 @@
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
-import type { CompanyStatus } from '@roofline/shared';
-import { agentTasks, appointments, companies, customers, properties } from '../schema/index.ts';
+import { appointments, customers, properties } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { firstWord } from './agent-common.ts';
 
 // G1 Task 10 (Builder 1 fills these in). Shell: signatures are final, bodies throw.
-
-/** The company row the Scheduler jobs need. */
-export type SchedulerCompany = { name: string; timezone: string; status: CompanyStatus };
 
 export type ReminderKind = 'inspection' | 'install' | 'adjuster';
 
@@ -23,40 +20,6 @@ export type ReminderCandidate = {
   repFirstName: string | null;
   addressLine: string | null;
 };
-
-/** The company (name, time zone, status), or null when it does not exist. */
-export async function schedulerCompany(tx: Tx, ctx: TenantContext): Promise<SchedulerCompany | null> {
-  const [row] = await tx
-    .select({ name: companies.name, timezone: companies.timezone, status: companies.status })
-    .from(companies)
-    .where(eq(companies.id, ctx.companyId))
-    .limit(1);
-  return row ?? null;
-}
-
-/** True when an agent task with this agent and kind was created in [from, to). */
-export async function agentTaskCreatedBetween(
-  tx: Tx,
-  ctx: TenantContext,
-  q: { agent: 'scheduler'; kind: string; from: Date; to: Date },
-): Promise<boolean> {
-  const rows = await tx
-    .select({ id: agentTasks.id })
-    .from(agentTasks)
-    .where(
-      and(
-        eq(agentTasks.companyId, ctx.companyId),
-        eq(agentTasks.agent, q.agent),
-        eq(agentTasks.kind, q.kind),
-        gte(agentTasks.createdAt, q.from),
-        lt(agentTasks.createdAt, q.to),
-      ),
-    )
-    .limit(1);
-  return rows.length > 0;
-}
-
-const firstWord = (s: string | null | undefined): string => (s ?? '').trim().split(/\s+/)[0] ?? '';
 
 /**
  * Scheduled (not canceled, not archived) inspection/install/adjuster appointments starting in [from, to)
@@ -110,8 +73,8 @@ export async function reminderCandidates(tx: Tx, ctx: TenantContext, q: { from: 
       startsAt: r.startsAt,
       endsAt: r.endsAt,
       allDay: r.allDay,
-      customerFirstName: firstWord(r.firstName) || firstWord(r.displayName),
-      repFirstName: firstWord(r.repName) || null,
+      customerFirstName: firstWord(r.firstName) ?? firstWord(r.displayName) ?? '',
+      repFirstName: firstWord(r.repName),
       addressLine: r.addressLine ?? null,
     });
   }

@@ -3,7 +3,8 @@
 // markdown report. Nothing here touches the network; scripts/eval-agent-texts.ts does the calls.
 import { z } from 'zod';
 import { claimsGuard, guardSentence, type ClaimsGuardHit, type GuardHit } from '@roofline/shared';
-import { DRAFT_KINDS, type DraftKind, type JobFacts, type TurnUsage } from '../../apps/api/src/providers/llm.ts';
+import { DRAFT_MAX_TOKENS } from '../../apps/api/src/providers/anthropic/draft-texts.ts';
+import { DRAFT_KINDS, type DraftDropReason, type DraftKind, type JobFacts, type TurnUsage } from '../../apps/api/src/providers/llm.ts';
 
 // ---------------------------------------------------------------------------
 // Models and prices
@@ -24,10 +25,10 @@ export const PRICES_PER_MTOK: Readonly<Record<string, { input: number; output: n
  * Conservative per-case token guesses (no network, so no countTokens). A draft sends the system
  * prompt, the kind's instruction and one job's facts (well under 1,000 tokens) and gets adaptive
  * thinking plus one short JSON text back. `ceiling` is each call's max_tokens: draft-texts.ts asks
- * for 6,000, the grader for 1,024.
+ * for DRAFT_MAX_TOKENS (6,000), the grader for 1,024.
  */
 export const TOKEN_ESTIMATE = {
-  draft: { input: 1_200, output: 1_500, ceiling: 6_000 },
+  draft: { input: 1_200, output: 1_500, ceiling: DRAFT_MAX_TOKENS },
   grade: { input: 800, output: 400, ceiling: 1_024 },
 } as const;
 
@@ -512,6 +513,8 @@ export type CaseResult = {
   grade: GradeOutcome | null;
   draftUsage: TurnUsage | null;
   gradeUsage: Tokens | null;
+  /** Texts the adapter wrote but did not use, and why. */
+  dropped?: { jobId: string; reason: DraftDropReason }[];
 };
 
 export type RunReport = {
@@ -627,6 +630,14 @@ export function renderReport(r: RunReport): string {
     lines.push(`| ${cell(c.id)} | ${c.kind} | ${cell(checks)} | ${g.grade} | ${cell(g.reason)} | ${cell(text)} |`);
   }
   const failed = r.cases.filter((c) => !c.checks.pass);
+  const withDrops = r.cases.filter((c) => (c.dropped?.length ?? 0) > 0);
+  if (withDrops.length > 0) {
+    lines.push('', '## Dropped by the adapter', '');
+    for (const c of withDrops) {
+      lines.push(`- **${c.id}** (${c.kind})`);
+      for (const d of c.dropped ?? []) lines.push(`  - dropped: ${d.jobId} (${d.reason})`);
+    }
+  }
   lines.push('', '## Failed code checks', '');
   if (failed.length === 0) lines.push('None.');
   for (const c of failed) {

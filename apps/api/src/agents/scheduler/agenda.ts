@@ -1,19 +1,19 @@
 import {
   agendaMembers,
+  agentCompanyFacts,
   agendaSentBetween,
   customerPhones,
   listAppointments,
   recordAgendaSent,
   g1AgentOn,
-  schedulerCompany,
   withTenant,
   zoneDayAfter,
   zoneDayStart,
-  type TenantContext,
 } from '@roofline/db';
 import type { AppointmentView } from '@roofline/shared';
 import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
+import { systemCtx } from '../common.ts';
 import { localParts } from '../schedule.ts';
 
 const KIND_LABEL: Record<string, string> = {
@@ -87,13 +87,13 @@ export function buildAgendaEmail(input: AgendaEmailInput): { subject: string; te
  */
 export async function runAgenda(deps: AppDeps, companyId: string, meta: JobMeta): Promise<void> {
   void meta;
-  const ctx: TenantContext = { companyId, userId: null, role: 'system', canApproveSpend: false };
+  const ctx = systemCtx(companyId);
 
-  const company = await withTenant(deps.pools, ctx, (tx) => schedulerCompany(tx, ctx));
+  const company = await withTenant(deps.pools, ctx, (tx) => agentCompanyFacts(tx, ctx));
   if (!company || (company.status !== 'active' && company.status !== 'trial')) return;
   if (!(await withTenant(deps.pools, ctx, (tx) => g1AgentOn(tx, ctx, 'scheduler')))) return;
 
-  const tz = company.timezone;
+  const tz = company.timeZone;
   const now = deps.clock.now();
   const today = localParts(now, tz).localDate;
   const tomorrow = zoneDayAfter(today);

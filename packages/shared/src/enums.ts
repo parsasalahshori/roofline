@@ -4,6 +4,9 @@ export type Role = (typeof ROLES)[number];
 export const CONSENT_STATUSES = ['none', 'express', 'attested', 'written', 'revoked'] as const;
 export type ConsentStatus = (typeof CONSENT_STATUSES)[number];
 
+/** The consent statuses that allow a marketing text (the send gate and the review finder share this list). */
+export const MARKETING_CONSENT_STATUSES = ['attested', 'written'] as const satisfies readonly ConsentStatus[];
+
 export const JOB_STAGES = ['lead', 'inspection', 'proposal', 'won', 'installed', 'lost'] as const;
 export type JobStage = (typeof JOB_STAGES)[number];
 
