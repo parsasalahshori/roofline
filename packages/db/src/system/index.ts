@@ -23,3 +23,9 @@ export * from './voice-routing.ts';
 export * from './relay-tokens.ts';
 export * from './line-lookups.ts';
 export * from './fd-retention.ts';
+// S1 skeleton (Task 1).
+export * from './spotter.ts';
+export * from './storm-match-fanout.ts';
+export * from './ad-sync-fanout.ts';
+export * from './storm-page-lookup.ts';
+export * from './unsubscribe-lookup.ts';
