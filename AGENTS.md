@@ -112,6 +112,11 @@ step's off state. S1 adds the D1/G1 step titles to `OFF_STEP_TITLES` at its d1/g
 paused 409 route; A1's re-draft code wins at merge. Amended: the automatic path (storm-match, scheduled drafting) re-drafts only over drafts; expired/declined plans are
 replaced only by an explicit rerun (`allowFinished`, set only by the rerun route).
 
+**Ruling BF (security review fixes, `ops/sdd/integration/security-review.md`):** S1 fixes HIGH 1 (cross-company ad
+accounts), HIGH 2 (unsubscribe/landing Referrer-Policy + browser e2e), MEDIUM 3 and its LOWs; D1 revokes app_system SELECT on
+conversation text (MEDIUM 6); the E1 lead fixes platform items (TRUST_PROXY startup check, login limits, F2/F3/E1 LOWs) on
+`sec-core` from c1-crm and merges into c1-crm. Grant/index changes go in the owning unreleased migration (Ruling AW).
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the
