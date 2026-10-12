@@ -22,13 +22,18 @@ function schemaMessage(type: StepType, value: unknown): string | null {
 }
 
 describe('the registry', () => {
-  test('lists the six step types with the approval class each one needs', () => {
+  test('lists the eleven step types with the approval class each one needs', () => {
     expect(Object.keys(stepTypes).sort()).toEqual([
+      'build_routes',
+      'create_ad_campaign',
       'demo_message',
       'demo_noop',
       'demo_spend',
       'front_desk_call',
       'front_desk_texts',
+      'order_exact_report',
+      'send_email_batch',
+      'send_proposal',
       'send_sms_batch',
     ]);
     expect(Object.fromEntries(Object.entries(stepTypes).map(([k, d]) => [k, [d.type, d.approvalClass]]))).toEqual({
@@ -38,6 +43,11 @@ describe('the registry', () => {
       front_desk_call: ['front_desk_call', 'internal'],
       front_desk_texts: ['front_desk_texts', 'internal'],
       send_sms_batch: ['send_sms_batch', 'message'],
+      send_email_batch: ['send_email_batch', 'message'],
+      build_routes: ['build_routes', 'internal'],
+      create_ad_campaign: ['create_ad_campaign', 'spend'],
+      send_proposal: ['send_proposal', 'message'],
+      order_exact_report: ['order_exact_report', 'spend'],
     });
   });
 });

@@ -41,6 +41,15 @@ describe('loadConfig', () => {
       API_RATE_LIMIT_PER_MIN: 600,
       PORT: 4400,
       HOST: '0.0.0.0',
+      EAGLEVIEW_ENV: 'sandbox',
+      EAGLEVIEW_PRODUCT_ID: 0,
+      PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
+      FOOTPRINTS_BASE_URL: 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/',
+      GOOGLE_ADS_API_VERSION: 'v21',
+      META_GRAPH_VERSION: 'v24.0',
+      POSTMARK_BROADCAST_STREAM: 'broadcast',
+      HAIL_STALE_MINUTES: 90,
+      STORM_MAIL_FROM: 'storms@app.roofline.test',
     });
   });
 
@@ -434,6 +443,92 @@ describe('F3 settings', () => {
     expect(message).toContain('must not be set in production');
     // Off in production is fine.
     expect(loadConfig({ ...VALID, FAKE_PROVIDERS: '0' }).FAKE_PROVIDERS).toBe(false);
+  });
+});
+
+describe('E1 settings', () => {
+  const R2 = {
+    R2_ACCOUNT_ID: 'acct',
+    R2_ACCESS_KEY_ID: 'key-id',
+    R2_SECRET_ACCESS_KEY: 'key-secret',
+    R2_BUCKET: 'proposals',
+  };
+
+  test('EAGLEVIEW_CLIENT_ID without the secret is refused (names EAGLEVIEW_CLIENT_SECRET)', () => {
+    const message = problem({ ...VALID, EAGLEVIEW_CLIENT_ID: 'ev-id' });
+    expect(message).toContain('EAGLEVIEW_CLIENT_SECRET');
+    expect(message).toContain('is required when EAGLEVIEW_CLIENT_ID is set');
+  });
+
+  test('EAGLEVIEW_CLIENT_SECRET without the id is refused (names EAGLEVIEW_CLIENT_ID)', () => {
+    const message = problem({ ...VALID, EAGLEVIEW_CLIENT_SECRET: 'ev-secret' });
+    expect(message).toContain('EAGLEVIEW_CLIENT_ID');
+    expect(message).toContain('is required when EAGLEVIEW_CLIENT_SECRET is set');
+    expect(message).not.toContain('ev-secret');
+  });
+
+  test('both EagleView settings load', () => {
+    expect(loadConfig({ ...VALID, EAGLEVIEW_CLIENT_ID: 'ev-id', EAGLEVIEW_CLIENT_SECRET: 'ev-secret' })).toMatchObject({
+      EAGLEVIEW_CLIENT_ID: 'ev-id',
+      EAGLEVIEW_CLIENT_SECRET: 'ev-secret',
+    });
+    expect(loadConfig(VALID).EAGLEVIEW_CLIENT_ID).toBeUndefined();
+  });
+
+  test('EAGLEVIEW_ENV defaults to sandbox and rejects other values', () => {
+    expect(loadConfig(VALID).EAGLEVIEW_ENV).toBe('sandbox');
+    expect(loadConfig({ ...VALID, EAGLEVIEW_ENV: 'production' }).EAGLEVIEW_ENV).toBe('production');
+    const message = problem({ ...VALID, EAGLEVIEW_ENV: 'staging' });
+    expect(message).toContain('EAGLEVIEW_ENV');
+    expect(message).toContain('must be sandbox or production');
+  });
+
+  test('EAGLEVIEW_PRODUCT_ID defaults to 0 and rejects non-integers', () => {
+    expect(loadConfig(VALID).EAGLEVIEW_PRODUCT_ID).toBe(0);
+    expect(loadConfig({ ...VALID, EAGLEVIEW_PRODUCT_ID: '11' }).EAGLEVIEW_PRODUCT_ID).toBe(11);
+    for (const value of ['1.5', '-1', 'abc', '2147483648']) {
+      expect(problem({ ...VALID, EAGLEVIEW_PRODUCT_ID: value })).toContain('EAGLEVIEW_PRODUCT_ID');
+    }
+  });
+
+  test('R2 settings: all four load; one alone is refused (names the missing ones); none loads; not required in production', () => {
+    expect(loadConfig({ ...VALID, ...R2 })).toMatchObject(R2);
+    const message = problem({ ...VALID, R2_BUCKET: 'proposals' });
+    for (const name of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) {
+      expect(message).toContain(name);
+    }
+    expect(message).toContain('is required when the other R2 settings are set');
+    expect(message).not.toContain('R2_BUCKET:');
+    const noBucket = problem({ ...VALID, ...R2, R2_BUCKET: undefined });
+    expect(noBucket).toContain('R2_BUCKET');
+    expect(noBucket).not.toContain('key-secret');
+    // None set loads, in production too (VALID is production): only a start-up warning.
+    const config = loadConfig(VALID);
+    expect(config.NODE_ENV).toBe('production');
+    expect(config.R2_BUCKET).toBeUndefined();
+  });
+
+  test('PROPOSAL_LINK_BASE_URL defaults to APP_ORIGIN, strips trailing slashes, rejects non-http', () => {
+    expect(loadConfig(VALID).PROPOSAL_LINK_BASE_URL).toBe('https://app.roofline.test');
+    expect(loadConfig({ ...VALID, PROPOSAL_LINK_BASE_URL: 'https://p.roofline.test/' }).PROPOSAL_LINK_BASE_URL).toBe(
+      'https://p.roofline.test',
+    );
+    expect(loadConfig({ ...VALID, PROPOSAL_LINK_BASE_URL: 'https://p.roofline.test/x//' }).PROPOSAL_LINK_BASE_URL).toBe(
+      'https://p.roofline.test/x',
+    );
+    expect(problem({ ...VALID, PROPOSAL_LINK_BASE_URL: 'ftp://p.roofline.test' })).toContain('PROPOSAL_LINK_BASE_URL');
+  });
+
+  test('FOOTPRINTS_BASE_URL defaults to the Microsoft set and always ends in a slash', () => {
+    const fallback = 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/';
+    expect(loadConfig(VALID).FOOTPRINTS_BASE_URL).toBe(fallback);
+    expect(loadConfig({ ...VALID, FOOTPRINTS_BASE_URL: 'https://files.test/fp' }).FOOTPRINTS_BASE_URL).toBe(
+      'https://files.test/fp/',
+    );
+    expect(loadConfig({ ...VALID, FOOTPRINTS_BASE_URL: 'https://files.test/fp/' }).FOOTPRINTS_BASE_URL).toBe(
+      'https://files.test/fp/',
+    );
+    expect(problem({ ...VALID, FOOTPRINTS_BASE_URL: 'file:///etc' })).toContain('FOOTPRINTS_BASE_URL');
   });
 });
 

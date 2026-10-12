@@ -49,6 +49,26 @@ export function apiRateLimit(config: Pick<Config, 'API_RATE_LIMIT_PER_MIN'>): Re
   });
 }
 
+/** Requests a minute one IP address may make under `/api/public`. */
+export const PUBLIC_RATE_LIMIT_PER_MIN = 60;
+
+/**
+ * `/api/public/*`: 60 requests a minute per IP address, never per session (the callers are signed
+ * out customers). Mount it on `/api/public` ahead of the public routers.
+ */
+export function publicRateLimit(): RequestHandler {
+  return rateLimit({
+    windowMs: MINUTE_MS,
+    limit: PUBLIC_RATE_LIMIT_PER_MIN,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => `ip:${ipKeyGenerator(req.ip ?? 'unknown')}`,
+    handler: (_req, _res, next) => {
+      next(new AppError(429, MESSAGES.tooFast));
+    },
+  });
+}
+
 /** The email a login attempt names, as the limiter keys it: trimmed and lowercased. */
 function loginEmail(body: unknown): string {
   const email = (body as { email?: unknown } | undefined)?.email;

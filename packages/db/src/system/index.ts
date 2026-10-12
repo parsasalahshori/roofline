@@ -14,3 +14,13 @@ export * from './scheduler.ts';
 export * from './routing.ts';
 // C1 skeleton (Task 1).
 export * from './calendar-sync.ts';
+// E1 skeleton (Task 1).
+export * from './footprints.ts';
+export * from './proposal-links.ts';
+export * from './exact-report-fanout.ts';
+// S1 skeleton (Task 1).
+export * from './spotter.ts';
+export * from './storm-match-fanout.ts';
+export * from './ad-sync-fanout.ts';
+export * from './storm-page-lookup.ts';
+export * from './unsubscribe-lookup.ts';

@@ -12,11 +12,12 @@ import { PricesTab } from './PricesTab.tsx';
 import { ScheduleTab } from './ScheduleTab.tsx';
 import styles from './Settings.module.css';
 import { isSettingsTab, type SettingsTab, visibleTabs } from './tabs.ts';
+import { StormTab } from './StormTab.tsx';
 import { TeamTab } from './TeamTab.tsx';
 
 /**
  * The Settings window: a row of tab links, and the one tab the address names. An unknown tab goes to
- * Company, and so does Prices for a field rep. A `subpage` (a screen under Setup, such as the import wizard)
+ * Company, and so do Prices and Storm for a field rep. A `subpage` (a screen under Setup, such as the import wizard)
  * takes the Setup tab's place in the panel.
  * The window itself (title, close button) is drawn by the router's AppWindow.
  */
@@ -26,8 +27,7 @@ export function Settings({ subpage }: { subpage?: ReactNode } = {}) {
   const role = me.data?.role;
   const tab = subpage ? 'setup' : routeTab;
   if (!isSettingsTab(tab)) return <Navigate to="/settings/company" replace />;
-  if (tab === 'prices' && role === 'rep') return <Navigate to="/settings/company" replace />;
-  if (tab === 'agents' && role === 'rep') return <Navigate to="/settings/company" replace />;
+  if ((tab === 'prices' || tab === 'storm' || tab === 'agents') && role === 'rep') return <Navigate to="/settings/company" replace />;
 
   return (
     <>
@@ -68,6 +68,8 @@ function renderPanel(tab: SettingsTab, subpage: ReactNode, roleKnown: boolean) {
       return <ScheduleTab />;
     case 'connections':
       return <ConnectionsTab />;
+    case 'storm':
+      return roleKnown ? <StormTab /> : null;
     case 'billing':
       return <BillingTab />;
     case 'setup':

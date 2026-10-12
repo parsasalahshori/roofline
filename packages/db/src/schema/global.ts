@@ -1,8 +1,25 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, date, index, integer, jsonb, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { CAMPAIGN_STATUSES, COMPANY_STATUSES, ROLES } from '@roofline/shared';
-import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
-import { MEMBERSHIP_STATUSES, PHONE_NUMBER_PURPOSES, USER_TOKEN_KINDS } from './enums.ts';
+import {
+  bigserial,
+  boolean,
+  char,
+  check,
+  date,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgTable,
+  primaryKey,
+  text,
+  time,
+  unique,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { CAMPAIGN_STATUSES, COMPANY_STATUSES, HAIL_RUN_STATUSES, ROLES, STORM_STATUSES } from '@roofline/shared';
+import { bytea, citext, enumCheck, multiPolygon, pk, point4326, polygon4326, timestamps, tstz } from './columns.ts';
+import { FOOTPRINT_STATE_STATUSES, MEMBERSHIP_STATUSES, PHONE_NUMBER_PURPOSES, USER_TOKEN_KINDS } from './enums.ts';
 
 /*
  * Global tables (spec 3.1): read before a company is known, so they are not tenant-scoped.
@@ -86,6 +103,8 @@ export const memberships = pgTable(
     role: text('role', { enum: ROLES }).notNull(),
     canApproveSpend: boolean('can_approve_spend').notNull().default(false),
     status: text('status', { enum: MEMBERSHIP_STATUSES }).notNull().default('active'),
+    /** Whether this member gets the storm alert email (spec 5). */
+    stormAlertEmail: boolean('storm_alert_email').notNull().default(true),
     /** The calendar day (company time zone) the Today window last opened for this member. */
     lastTodayShownOn: date('last_today_shown_on', { mode: 'string' }),
     ...timestamps(),
@@ -201,4 +220,121 @@ export const webhookEvents = pgTable(
     ...timestamps(),
   },
   (t) => [uniqueIndex('webhook_events_provider_event_uniq').on(t.provider, t.eventId)],
+);
+
+/*
+ * Building footprints (spec 3.1, 8): public outlines loaded by the footprint loader job. No company
+ * and no RLS: `app_tenant` may read them, only `app_system` writes (migration 0016).
+ */
+
+export const buildingFootprints = pgTable(
+  'building_footprints',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    /** Two-letter USPS state code. */
+    state: char('state', { length: 2 }).notNull(),
+    geom: polygon4326('geom').notNull(),
+    areaSqFt: numeric('area_sq_ft', { precision: 12, scale: 1, mode: 'number' }).notNull(),
+    source: text('source').notNull(),
+    /** The provider's own id for the building, when it has one. */
+    sourceRef: text('source_ref'),
+  },
+  (t) => [index('building_footprints_geom_gist').using('gist', t.geom), index('building_footprints_state_idx').on(t.state)],
+);
+
+/** Load state per state (one row per state): what the loader is doing and why it failed, in plain words. */
+export const buildingFootprintStates = pgTable(
+  'building_footprint_states',
+  {
+    state: char('state', { length: 2 }).primaryKey(),
+    status: text('status').notNull(),
+    buildings: integer('buildings'),
+    sourceUrl: text('source_url'),
+    startedAt: tstz('started_at'),
+    loadedAt: tstz('loaded_at'),
+    errorPlain: text('error_plain'),
+  },
+  (t) => [enumCheck('building_footprint_states', 'status', t.status, FOOTPRINT_STATE_STATUSES)],
+);
+
+/*
+ * Storm Scout (spec 3.3, 4.1): hail runs, storms, contours and spotter reports. Public weather
+ * data, no company and no RLS: the hail worker (`app_hail`) writes, `app_tenant` reads.
+ */
+
+/** One processed (or failed) hail source file; `source_key` makes a re-run a no-op. */
+export const hailRuns = pgTable(
+  'hail_runs',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    sourceKey: text('source_key').notNull().unique(),
+    validAt: tstz('valid_at').notNull(),
+    convectiveDay: date('convective_day', { mode: 'string' }).notNull(),
+    status: text('status', { enum: HAIL_RUN_STATUSES }).notNull(),
+    maxIn: numeric('max_in', { precision: 4, scale: 2, mode: 'number' }),
+    processedAt: tstz('processed_at').notNull().defaultNow(),
+    errorPlain: text('error_plain'),
+  },
+  (t) => [
+    index('hail_runs_convective_day_idx').on(t.convectiveDay),
+    enumCheck('hail_runs', 'status', t.status, HAIL_RUN_STATUSES),
+  ],
+);
+
+export const storms = pgTable(
+  'storms',
+  {
+    id: pk(),
+    convectiveDay: date('convective_day', { mode: 'string' }).notNull(),
+    status: text('status', { enum: STORM_STATUSES }).notNull().default('provisional'),
+    maxIn: numeric('max_in', { precision: 4, scale: 2, mode: 'number' }).notNull(),
+    /** The 0.75 inch contour, the outline of the whole storm. */
+    geom075: multiPolygon('geom_075').notNull(),
+    bbox: polygon4326('bbox').notNull(),
+    centroid: point4326('centroid').notNull(),
+    placeName: text('place_name'),
+    firstSeenAt: tstz('first_seen_at').notNull().defaultNow(),
+    updatedAt: tstz('updated_at').notNull().defaultNow(),
+    lastGrewAt: tstz('last_grew_at').notNull().defaultNow(),
+    finalAt: tstz('final_at'),
+  },
+  (t) => [
+    index('storms_geom_075_gist').using('gist', t.geom075),
+    index('storms_convective_day_idx').on(t.convectiveDay),
+    enumCheck('storms', 'status', t.status, STORM_STATUSES),
+  ],
+);
+
+export const stormContours = pgTable(
+  'storm_contours',
+  {
+    stormId: uuid('storm_id')
+      .notNull()
+      .references(() => storms.id, { onDelete: 'cascade' }),
+    thresholdIn: numeric('threshold_in', { precision: 4, scale: 2, mode: 'number' }).notNull(),
+    geom: multiPolygon('geom').notNull(),
+  },
+  (t) => [
+    primaryKey({ name: 'storm_contours_pk', columns: [t.stormId, t.thresholdIn] }),
+    index('storm_contours_geom_gist').using('gist', t.geom),
+  ],
+);
+
+/** NOAA/SPC spotter hail reports, used to cross-check the radar swath. */
+export const spotterReports = pgTable(
+  'spotter_reports',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    reportDate: date('report_date', { mode: 'string' }).notNull(),
+    timeUtc: time('time_utc').notNull(),
+    sizeIn: numeric('size_in', { precision: 4, scale: 2, mode: 'number' }).notNull(),
+    location: text('location'),
+    county: text('county'),
+    state: char('state', { length: 2 }).notNull(),
+    geom: point4326('geom').notNull(),
+  },
+  (t) => [
+    index('spotter_reports_geom_gist').using('gist', t.geom),
+    unique('spotter_reports_report_time_geom_uniq').on(t.reportDate, t.timeUtc, t.geom),
+  ],
 );

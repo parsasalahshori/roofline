@@ -89,3 +89,4 @@ Wave 4 launched from c1-t5 46e54e3, ci off: run A wf_4d0f3adc-2dd (contacts 65-6
 CI back (repo public, 02:27Z). T5: CI run 38195617057 (re-run) green on c1-t5 46e54e3 (Platform, E2E, v1). Task 5: complete. Merged into c1-crm (typecheck and lint clean).
 Merged f3-setup e61ec14 (F3 T28, T37; CI 38196673343 green) into c1-crm (typecheck and lint clean).
 Merged f3-setup c0d65d8 (F3 complete: review fixes A/B, T36; CI green per controller) into c1-crm (typecheck and lint clean).
+Merged f3-setup 8b8400a (F3 closed: all 37 tasks, polish, integration-review fixes A-C; CI green per controller) into c1-crm (typecheck and lint clean).
