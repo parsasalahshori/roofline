@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { agentSettings, agentTasks, agentTaskSteps } from '@roofline/db';
+import { agentSettings, agentTasks, agentTaskSteps, conversations, conversationTurns, countFrontDeskFollowUps } from '@roofline/db';
 import type { Agent, AgentCard, AgentsOverview, TaskStatus } from '@roofline/shared';
 import { Actors, addressFor, type CompanyKey, inCompany, mustCreate } from './crm-helpers.ts';
 import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
@@ -508,5 +508,72 @@ describe('money and links by role (A1 review S-M4, S-M6)', () => {
       expect(task.href ?? '').not.toContain('/approvals/');
     }
     expect(hrefOf(repBody, draft)).toBe(`/jobs/${job.id}`);
+  });
+});
+
+describe('Front Desk card (A1 Task 21: AX-D success rate, follow-ups in waiting)', () => {
+  async function conv(o: { outcome?: string | null; marker?: boolean; at?: string; status?: 'active' | 'ended'; customerId?: string }) {
+    const companyId = t.seed.a.companyId;
+    await inCompany(t, companyId, async (tx) => {
+      const at = new Date(o.at ?? '2026-10-12T15:00:00.000Z');
+      const [row] = await tx
+        .insert(conversations)
+        .values({
+          companyId,
+          channel: 'voice',
+          customerId: o.customerId ?? null,
+          phoneE164: `+1402555${String(Math.floor(Math.random() * 9000) + 1000)}`,
+          companyNumberE164: '+14025550000',
+          status: o.status ?? 'ended',
+          outcome: (o.outcome === undefined ? 'booked' : o.outcome) as 'booked' | null,
+          createdAt: at,
+          updatedAt: at,
+        })
+        .returning({ id: conversations.id });
+      if (o.marker) {
+        await tx.insert(conversationTurns).values({
+          companyId,
+          conversationId: row!.id,
+          position: 1,
+          speaker: 'system',
+          text: 'Handed off',
+          route: 'transfer',
+          guardHits: ['model_failure'],
+        });
+      }
+    });
+  }
+
+  test('success rate is null below 5 finished conversations, then succeeded over finished', async () => {
+    const owner = await who.as('owner');
+    await conv({});
+    await conv({ outcome: 'abandoned' });
+    await conv({ marker: true, outcome: 'transferred' });
+    await conv({ at: '2026-08-01T12:00:00.000Z' });
+    await conv({ status: 'active', outcome: null });
+    await conv({});
+    expect(cardOf(await overview(owner), 'front_desk').successRate).toBeNull();
+    await conv({});
+    expect(cardOf(await overview(owner), 'front_desk').successRate).toBe(0.6);
+  });
+
+  test('waitingCount adds the open follow-ups and only for Front Desk', async () => {
+    const owner = await who.as('owner');
+    await seedTask({ agent: 'front_desk', status: 'draft', at: '2026-10-12T12:00:00.000Z' });
+    const customer = await mustCreate(owner, '/api/customers', { displayName: 'Caller' });
+    const property = await mustCreate(owner, '/api/properties', { customerId: customer.id, ...addressFor(1) });
+    await mustCreate(owner, '/api/jobs', {
+      customerId: customer.id,
+      propertyId: property.id,
+      stage: 'inspection',
+      nextStep: 'Call back about the leak',
+    });
+    await conv({ outcome: 'message', customerId: customer.id });
+    const followUps = await inCompany(t, t.seed.a.companyId, (tx) =>
+      countFrontDeskFollowUps(tx, { companyId: t.seed.a.companyId, userId: t.seed.a.owner.userId, role: 'owner', canApproveSpend: true }, new Date(NOW)),
+    );
+    const body = await overview(owner);
+    expect(cardOf(body, 'front_desk').waitingCount).toBe(1 + followUps);
+    expect(cardOf(body, 'storm_scout').waitingCount).toBe(0);
   });
 });

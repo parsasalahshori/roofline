@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { findCallBySid, updateCall, withTenant } from '@roofline/db';
+import { findCallBySid, findCallConversationId, recordModelFailureHandoff, updateCall, withTenant } from '@roofline/db';
 import { onCallMembers } from '@roofline/db/system';
 import { disclosureGreeting, transferPlan, workIntervals, type TransferReason } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
@@ -118,6 +118,16 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
       else await updateCall(tx, ctx, callSid, { status: 'ringing_team' });
       return call.id;
     });
+    if (callId !== null && handoff.reason === 'model_failure') {
+      try {
+        await withTenant(deps.pools, ctx, async (tx) => {
+          const conversationId = await findCallConversationId(tx, ctx, callId);
+          if (conversationId !== null) await recordModelFailureHandoff(tx, ctx, conversationId);
+        });
+      } catch {
+        console.error(`model_failure marker failed call=${callId} company=${route.companyId}`);
+      }
+    }
     if (callId === null) {
       sendVoiceTwiml(res, HANGUP);
       return;

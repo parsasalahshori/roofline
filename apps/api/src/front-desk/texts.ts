@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import {
   getConversation,
+  isAgentPaused,
   listConversationTexts,
   listUnansweredInbound,
   loadCompanyFacts,
@@ -54,8 +55,9 @@ export const FD_TEXT_DEBOUNCE_SECONDS = 20;
  * message id>`. Passing `consumed: true` (an earlier handler, S1 onStormReply or G1 claims, already answered) queues
  * nothing. G1 may call it directly.
  */
-export async function queueFrontDeskText(_tx: Tx, message: InboundMessageRef, opts?: QueueFrontDeskTextOpts): Promise<void> {
+export async function queueFrontDeskText(tx: Tx, message: InboundMessageRef, opts?: QueueFrontDeskTextOpts): Promise<void> {
   if (opts?.consumed === true || opts?.jobs === undefined) return;
+  if (await isAgentPaused(tx, { companyId: message.companyId, userId: null, role: 'system', canApproveSpend: false }, 'front_desk')) return;
   await opts.jobs.send(
     'fd-text',
     { companyId: message.companyId, conversationId: message.conversationId },

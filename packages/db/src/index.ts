@@ -31,9 +31,16 @@ export {
   type RecentTaskRow,
   recentTasks,
   taskSubjectScope,
+  frontDeskConversationCounts,
 } from './repos/agent-metrics.ts';
 export { type FeedCursor, type FeedRow, feedRank, listFeedPage } from './repos/agent-feed.ts';
-export { listWaitingTasks, type WaitingTaskRow } from './repos/agent-waiting.ts';
+export {
+  countFrontDeskFollowUps,
+  listFrontDeskFollowUps,
+  listWaitingTasks,
+  type FrontDeskFollowUpRow,
+  type WaitingTaskRow,
+} from './repos/agent-waiting.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
 export {
   insertTimeRecount,

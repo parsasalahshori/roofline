@@ -100,10 +100,10 @@ export const agentPage = {
     ad_campaign: 'Ad campaigns set up',
     proposal_sent: 'Proposals sent',
     exact_report: 'Roof reports ordered',
-    call_answered: 'Calls answered',
+    call_answered: 'Calls answered (incl. bookings)',
     spam_call: 'Spam calls blocked',
     booking: 'Appointments booked',
-    text_reply: 'Text replies',
+    text_reply: 'Text replies (incl. bookings)',
     demo: 'Demo steps',
   } satisfies Record<BaselineKey, string>,
 } as const;

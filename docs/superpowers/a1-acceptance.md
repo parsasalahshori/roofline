@@ -16,7 +16,7 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
 - **Rule sentences from settings**
   - `packages/shared/test/agent-rules.test.ts`: "exact sentence and three links"; "fractional threshold is plural"; "one day is singular"; "different facts produce different text"; "no storm facts gives no sentences"; "every link label is a substring of its sentence and points into settings".
   - `apps/api/test/agents-rule-facts.test.ts`: "changed company settings flow into the Storm Scout facts"; "rulesFor gives Storm Scout one sentence with three settings links and Front Desk none".
-  - Front Desk rule sentence: pending D1 (Task 4). (The sentence builder is unit tested in `packages/shared/test/agent-rules.test.ts`: "exact three sentences for the full facts"; the live facts and card are pending D1.)
+  - Front Desk rule sentence, number and transfer names: `apps/api/test/agents-rule-facts.test.ts` (Front Desk facts from D1 settings); sentence builder in `packages/shared/test/agent-rules.test.ts`: "exact three sentences for the full facts".
 - **Local-day periods and 14-day series**
   - `packages/shared/test/agent-periods.test.ts`: "Chicago in daylight time starts at 05:00Z"; "DST end day (Nov 1) starts at 05:00Z, the day after at 06:00Z"; "month is the local month"; "last90 covers 90 local days including today"; "14 local dates, oldest first, ending today".
 
@@ -44,7 +44,8 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
 - **Pause stops Storm Scout drafting**
   - `apps/api/test/storm-pause.test.ts`: "a paused Storm Scout drafts nothing"; "an unpaused Storm Scout reaches the drafting body".
   - `apps/api/test/agents-settings.test.ts`: "pause is owner only and sets paused_at and paused_by"; "resume clears the pause"; "pausing does not change a running task"; "pausing a G1 agent is 409".
-- **Front Desk pause routes calls to the team**: pending D1 (Task 4).
+- **Front Desk pause routes calls to the team**
+  - `apps/api/test/front-desk/voice-hooks.test.ts`, `apps/api/test/front-desk/voice-transfer-hooks.test.ts` (paused goes the Front Desk off path to the team ring list then voicemail; unpaused answers); `apps/api/test/front-desk/texts.test.ts` (a paused Front Desk does not answer texts).
 - **Run-now rate limit**
   - `apps/api/test/agents-run-now.test.ts`: "run now starts Storm Scout and returns 202 with the next allowed time five minutes out"; "a second run within five minutes is 409 with a plain sentence"; "run now is allowed again after five minutes (advance the test clock t.clock)"; "two concurrent run now calls start exactly one run"; "run now limit is per company: company B can still run after company A did"; "a rep cannot run now (403 Your role can't do that. Ask the owner.)"; "run now queues one storm-match-company job for the company".
 - **Cross-tenant 404s**
@@ -96,7 +97,9 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
 - **All three launch agents appear with real data**
   - Storm Scout and Estimator: `apps/api/test/agents-api.test.ts`: "GET /api/agents returns six cards in order"; "numbers come from seeded tasks and snapshots"; `apps/web/e2e/agents.spec.ts`: "agents window: cards show the numbers from the seeded tasks".
   - Front Desk card with real data: pending D1 (Task 4).
-  - Front Desk success rate: pending D1 (Task 4).
+  - Front Desk success rate: `packages/db/test/agent-metrics.test.ts` (finished and succeeded conversation counts, model_failure hand-offs, rep scope); `apps/api/test/agents-api.test.ts` (successRate null under five).
+  - Front Desk waiting follow-ups: `packages/db/test/agent-waiting.test.ts`; `apps/api/test/agents-feed-routes.test.ts` (waiting lists Front Desk follow-ups).
+  - Bookings folded into call and text rows: `apps/web/test/agents-window-copy.test.tsx` ("says Front Desk call and text rows include bookings").
 - **G1 agents show "Coming soon"**
   - `apps/api/test/agents-api.test.ts`: "G1 agents are coming_soon with zeros and an empty series, even with seeded work".
   - `apps/web/test/agents-card.test.tsx`: "shows no numbers on a coming soon card"; "coming soon link name is just the agent name".
@@ -121,14 +124,14 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
 4. **Pause semantics (paused agents start nothing new; running work finishes)**
    - `apps/api/test/storm-pause.test.ts`: "a paused Storm Scout drafts nothing".
    - `apps/api/test/agents-settings.test.ts`: "pausing does not change a running task".
-   - Front Desk pause routing calls to the team: pending D1 (Task 4).
+   - Front Desk pause routing calls to the team: `apps/api/test/front-desk/voice-hooks.test.ts`, `apps/api/test/front-desk/voice-transfer-hooks.test.ts`, `apps/api/test/front-desk/texts.test.ts`.
 
-## Front Desk rows (all pending D1 (Task 4))
+## Front Desk rows (live tasks and the card pending D1 (Task 4))
 - Front Desk live tasks from D1 calls and texts: pending D1 (Task 4).
-- Front Desk success rate: pending D1 (Task 4).
-- Front Desk pause routing calls to the team: pending D1 (Task 4).
+- Front Desk success rate: see Integration above (`packages/db/test/agent-metrics.test.ts`, `apps/api/test/agents-api.test.ts`).
+- Front Desk pause routing calls to the team: `apps/api/test/front-desk/voice-hooks.test.ts`, `apps/api/test/front-desk/texts.test.ts`.
 - Front Desk card with real data: pending D1 (Task 4).
-- Front Desk rule sentence: pending D1 (Task 4).
+- Front Desk rule sentence: `apps/api/test/agents-rule-facts.test.ts`.
 
 ## Gaps and notes
 - **Known seam:** Storm Scout "Run now" enqueues a job whose S1 handler is still a stub; the e2e spec asserts the 202 and cooldown text only and never drains the queue.
