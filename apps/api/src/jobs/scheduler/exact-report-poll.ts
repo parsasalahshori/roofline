@@ -47,7 +47,9 @@ export async function pollExactReports(deps: AppDeps, now: Date): Promise<void> 
             await failOrder(deps, ctx, order, now);
             continue;
           }
-          const cost = result.costCents ?? order.priceMaxCents ?? 0;
+          // An unreadable cost bills the priced max; with neither, never bill 0: leave it waiting and report it.
+          const cost = result.costCents ?? order.priceMaxCents;
+          if (cost === null) throw new Error('exact report has no cost and no priced max');
           await completeExactReport(deps, ctx, order.id, result.report, cost, now);
         } catch (err) {
           reportJobError(deps, err, `exact-report-poll: order ${order.id}`);

@@ -147,6 +147,19 @@ describe('polling exact reports', () => {
     expect((await proposalOf(revised.id))?.basis).toBe('exact');
   });
 
+  test('a ready proposal (its send awaiting approval) gets a revised draft too (Ruling EO)', async () => {
+    const ready = await buildProposal(t.deps, ownerCtx, { measurementId, jobId });
+    await inCompany(t, ctx.companyId, (tx) => tx.update(proposals).set({ status: 'ready' }).where(eq(proposals.id, ready.id)));
+    await orderIt();
+    t.exactReports.complete('rep-1');
+    await pollExactReports(t.deps, LATER);
+    const rows = await allProposals();
+    expect(rows).toHaveLength(2);
+    const revised = rows.find((p) => p.id !== ready.id)!;
+    expect(revised.status).toBe('draft');
+    expect((await proposalOf(revised.id))?.basis).toBe('exact');
+  });
+
   test('an unreadable cost bills the quoted max, never zero', async () => {
     await orderIt();
     t.exactReports.complete('rep-1');
@@ -192,7 +205,10 @@ describe('polling exact reports', () => {
     t.exactReports.complete('rep-1');
     await pollExactReports(t.deps, LATER);
     expect((await dbOrder(orderId)).status).toBe('complete');
-    expect((await dbSteps(t, 'a', taskId))[0]!.status).toBe('done');
+    const [step] = await dbSteps(t, 'a', taskId);
+    expect(step!.status).toBe('done');
+    // Ruling EN: the step's result counts what was ordered
+    expect(step!.result).toEqual({ ordered: 1 });
     expect((await dbTask(t, 'a', taskId)).status).toBe('done');
   });
 });
