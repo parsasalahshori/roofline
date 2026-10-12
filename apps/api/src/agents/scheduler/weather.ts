@@ -1,5 +1,5 @@
 import {
-  schedulerAgentOn,
+  g1AgentOn,
   schedulerCompany,
   userBusyIntervals,
   weatherInstallCandidates,
@@ -94,7 +94,7 @@ export async function runWeatherWatch(deps: AppDeps, companyId: string, meta: Jo
   const plan = await withTenant(deps.pools, ctx, async (tx) => {
     const company = await schedulerCompany(tx, ctx);
     if (!company || (company.status !== 'active' && company.status !== 'trial')) return null;
-    if (!(await schedulerAgentOn(tx, ctx))) return null;
+    if (!(await g1AgentOn(tx, ctx, 'scheduler'))) return null;
     if (await weatherTaskOpen(tx, ctx, since)) return null;
 
     const tz = company.timezone;

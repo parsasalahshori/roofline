@@ -4,6 +4,7 @@ import { audit, companySettings, loadBaselineOverrides, setBaselineOverrides, se
 import type { Tx, TenantContext } from '@roofline/db';
 import {
   isEditableBaselineKey,
+  G1_AGENTS_SHIPPED,
   isScreenAgent,
   LAUNCH_AGENTS,
   TIME_BASELINES,
@@ -48,7 +49,7 @@ async function buildBaselines(tx: Tx, ctx: TenantContext): Promise<TimeBaselines
 
 /** A1 Task 7: /api/agents/time-baselines, /time-baselines/recount, /:agent/paused, /:agent/run. */
 export function agentSettingsRoutes(deps: AppDeps): Router {
-  const { pools, clock } = deps;
+  const { pools, clock, jobs } = deps;
   const router = Router();
 
   router.get('/time-baselines', requireCapability('view_money_totals'), async (req, res) => {
@@ -107,7 +108,7 @@ export function agentSettingsRoutes(deps: AppDeps): Router {
     const { ctx } = req;
     const agent = req.params.agent;
     if (!isScreenAgent(agent)) throw new AppError(404, MESSAGES.notFound);
-    if (!(LAUNCH_AGENTS as readonly string[]).includes(agent)) throw new AppError(409, 'This agent is coming soon.');
+    if (!(LAUNCH_AGENTS as readonly string[]).includes(agent) && !G1_AGENTS_SHIPPED) throw new AppError(409, 'This agent is coming soon.');
     const body: unknown = req.body;
     if (!isPlainObject(body) || typeof body.paused !== 'boolean') throw new AppError(400, CHOOSE_MESSAGE, 'paused');
     const paused = body.paused;
@@ -132,7 +133,7 @@ export function agentSettingsRoutes(deps: AppDeps): Router {
     const agent = req.params.agent;
     if (!isScreenAgent(agent)) throw new AppError(404, MESSAGES.notFound);
     const now = clock.now();
-    const result = await withTenant(pools, ctx, (tx) => runAgentNow(tx, ctx, agent, now));
+    const result = await withTenant(pools, ctx, (tx) => runAgentNow(tx, ctx, agent, now, jobs));
     res.status(202).json(result);
   });
 

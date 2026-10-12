@@ -4,7 +4,7 @@ import {
   customerPhones,
   listAppointments,
   recordAgendaSent,
-  schedulerAgentOn,
+  g1AgentOn,
   schedulerCompany,
   withTenant,
   zoneDayAfter,
@@ -91,7 +91,7 @@ export async function runAgenda(deps: AppDeps, companyId: string, meta: JobMeta)
 
   const company = await withTenant(deps.pools, ctx, (tx) => schedulerCompany(tx, ctx));
   if (!company || (company.status !== 'active' && company.status !== 'trial')) return;
-  if (!(await withTenant(deps.pools, ctx, (tx) => schedulerAgentOn(tx, ctx)))) return;
+  if (!(await withTenant(deps.pools, ctx, (tx) => g1AgentOn(tx, ctx, 'scheduler')))) return;
 
   const tz = company.timezone;
   const now = deps.clock.now();

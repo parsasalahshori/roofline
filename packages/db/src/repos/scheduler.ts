@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { CompanyStatus } from '@roofline/shared';
-import { agentSettings, agentTasks, appointments, companies, customers, properties } from '../schema/index.ts';
+import { agentTasks, appointments, companies, customers, properties } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
 // G1 Task 10 (Builder 1 fills these in). Shell: signatures are final, bodies throw.
@@ -32,16 +32,6 @@ export async function schedulerCompany(tx: Tx, ctx: TenantContext): Promise<Sche
     .where(eq(companies.id, ctx.companyId))
     .limit(1);
   return row ?? null;
-}
-
-/** True only when an agent_settings row for `scheduler` exists with paused_at null (Ruling GX-E: missing row = paused). */
-export async function schedulerAgentOn(tx: Tx, ctx: TenantContext): Promise<boolean> {
-  const [row] = await tx
-    .select({ pausedAt: agentSettings.pausedAt })
-    .from(agentSettings)
-    .where(and(eq(agentSettings.companyId, ctx.companyId), eq(agentSettings.agent, 'scheduler')))
-    .limit(1);
-  return row !== undefined && row.pausedAt === null;
 }
 
 /** True when an agent task with this agent and kind was created in [from, to). */
