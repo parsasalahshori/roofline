@@ -42,6 +42,7 @@ Start the long-lead items now. Approvals for texting, Google, Meta and EagleView
 | **Meta app: Business Verification, Advanced Access for ads_management/ads_read, a system user** | days to 2 weeks | S1 (Meta ads) |
 | Postmark **broadcast** stream | same day | S1 (storm emails) |
 | Second Render worker for the hail service, and an ops alert email | same day | S1 |
+| **Hosting: Render API web service, main background worker, managed Postgres with PostGIS** (full list in `docs/superpowers/launch-runbook.md`) | same day | everything |
 | **Anthropic organization, production key, rate tier and spend limits** | same day | D1 (also G1 drafting) |
 | Twilio voice on subaccounts, **ConversationRelay enabled, AI/ML addendum accepted**, and a Roofline test caller number | days | D1 |
 | Test phones on Verizon, AT&T, T-Mobile and a landline/VoIP line | — | D1 (forwarding codes) |
