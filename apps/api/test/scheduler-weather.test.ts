@@ -40,8 +40,8 @@ const A = () => t.seed.a.companyId;
 const ctxA = (): TenantContext => ({ companyId: A(), userId: null, role: 'system', canApproveSpend: false });
 
 /** Eight days of hourly points from local midnight today; `rule` overrides some hours. */
-function forecast(rule: (dayIndex: number, hour: number) => Partial<Pick<HourlyForecast, 'precipPct' | 'gustMph'>> = () => ({})): HourlyForecast[] {
-  return Array.from({ length: 24 * 8 }, (_, i) => ({
+function forecast(rule: (dayIndex: number, hour: number) => Partial<Pick<HourlyForecast, 'precipPct' | 'gustMph'>> = () => ({}), days = 8): HourlyForecast[] {
+  return Array.from({ length: 24 * days }, (_, i) => ({
     at: new Date(MIDNIGHT + i * HOUR).toISOString(),
     precipPct: 0,
     gustMph: 5,
@@ -243,9 +243,8 @@ describe('runWeatherWatch', () => {
 
   test('no clear day in two weeks: nothing to move, no task', async () => {
     await seedVisit({ first: 'Lee', day: TUE });
-    // Rain on every forecast day, and the installer is booked on every day after the forecast ends.
-    t.weather.hourlyValue = rainOn(0, 1, 2, 3, 4, 5, 6, 7);
-    for (let d = 8; d <= 15; d++) await seedVisit({ first: `Busy${d}`, kind: 'inspection', day: d });
+    // Rain on every day of a sixteen-day forecast, which covers the whole move search.
+    t.weather.hourlyValue = forecast(() => ({ precipPct: 70 }), 16);
     t.llm.scriptDraft(new LlmUnavailableError('down'));
 
     await run();

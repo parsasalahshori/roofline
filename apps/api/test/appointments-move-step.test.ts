@@ -147,9 +147,10 @@ describe('the move_appointment step', () => {
     expect(await run(await moveStep(canceled))).toEqual({ status: 'failed', result: {}, errorPlain: CHANGED });
 
     const other = await anInstall();
+    const otherBefore = await rowOf(other);
     const out = await run(await moveStep(other, { userId: t.seed.a.owner.userId }));
     expect(out).toEqual({ status: 'failed', result: {}, errorPlain: CHANGED });
-    expect((await rowOf(other)).startsAt).toEqual(OLD_START());
+    expect((await rowOf(other)).startsAt).toEqual(otherBefore.startsAt);
   });
 
   test('a rerun after success reports moved 1 and changes nothing more', async () => {
@@ -169,10 +170,11 @@ describe('the move_appointment step', () => {
 
   test('an unreadable payload needs attention', async () => {
     const id = await anInstall();
+    const before = await rowOf(id);
     const step = await (await moveStep(id)).step();
     const out = await moveAppointmentStep(t.deps, agentCtx(idOf()), { ...step, payload: { appointmentId: id } });
 
     expect(out).toEqual({ status: 'needs_attention', result: {}, errorPlain: "We couldn't read this move. Please make this plan again." });
-    expect((await rowOf(id)).startsAt).toEqual(OLD_START());
+    expect((await rowOf(id)).startsAt).toEqual(before.startsAt);
   });
 });
