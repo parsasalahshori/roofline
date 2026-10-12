@@ -2,11 +2,15 @@ import { Router } from 'express';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  addProposalEvent,
   companies,
   companySettings,
+  decrypt,
   getProposal,
+  getProposalLinkToken,
   listProposals,
   type ProposalPatch,
+  proposalJobAssignee,
   UnknownProposalOptionError,
   updateDraftProposal,
   withTenant,
@@ -14,14 +18,19 @@ import {
 import { AddOnSchema, PROPOSAL_STATUSES } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { buildProposal } from '../estimator/build.ts';
+import { draftProposalSend, linkFor } from '../estimator/send-proposal.ts';
 import { repriceFromMeasurement } from '../estimator/reprice.ts';
 import { AppError, MESSAGES } from '../errors.ts';
-import { can } from '../permissions.ts';
+import { can, requireCapability } from '../permissions.ts';
 import { pdfToBuffer, renderProposalPdf } from '../proposals/pdf.ts';
 import { assertKnownFields, emailField, noNul, offsetParam, parse, UUID } from '../validate.ts';
 
 /** The 409 for a change to a proposal that has been sent. */
 export const SENT_PROPOSAL_MESSAGE = 'This proposal was sent. Make a revised proposal to change it.';
+/** The 409 for a revision of a signed proposal (Ruling EJ): a signed price is never reworked. */
+export const SIGNED_PROPOSAL_MESSAGE = 'This proposal is signed. Make a new proposal for more work.';
+/** The 409 for a link asked for before the proposal was sent (its token is minted at send). */
+const NOT_SENT_YET_MESSAGE = 'Send the proposal first, then you can copy its link.';
 
 const lowercase = (v: string): string => v.toLowerCase();
 const uuid = z.string({ error: MESSAGES.checkField }).refine((v) => UUID.test(v), MESSAGES.checkField).transform(lowercase);
@@ -143,6 +152,7 @@ export function proposalRoutes(deps: AppDeps): Router {
     const id = proposalId(req.params.id);
     const current = await withTenant(pools, ctx, (tx) => getProposal(tx, ctx, id));
     if (!current) throw new AppError(404, MESSAGES.notFound);
+    if (current.status === 'signed') throw new AppError(409, SIGNED_PROPOSAL_MESSAGE);
     const result = await repriceFromMeasurement(deps, ctx, id, current.measurementId);
     res.status(201).json(result.proposal);
   });
@@ -176,7 +186,34 @@ export function proposalRoutes(deps: AppDeps): Router {
     res.send(pdf);
   });
 
-  // GET /:id/link and POST /:id/send arrive with E1 Task 11.
+  // The Estimator's send: one approval of this text sends it. Owner and office may ask for it, and so may
+  // the rep who is assigned the job; a rep on any other job gets the forbidden message.
+  router.post('/:id/send', async (req, res) => {
+    const { ctx } = req;
+    const id = proposalId(req.params.id);
+    const found = await withTenant(pools, ctx, (tx) => proposalJobAssignee(tx, ctx, id));
+    if (!found) throw new AppError(404, MESSAGES.notFound);
+    const mayAsk = can(ctx, 'approve_message') || (ctx.role === 'rep' && found.assignedUserId === ctx.userId);
+    if (!mayAsk) throw new AppError(403, MESSAGES.roleCannot);
+    const { taskId } = await draftProposalSend(deps, ctx, id);
+    res.status(201).json({ taskId });
+  });
+
+  // The link to copy. Owner and office only. The token is decrypted for this reply and never logged.
+  router.get('/:id/link', requireCapability('approve_message'), async (req, res) => {
+    const { ctx } = req;
+    const id = proposalId(req.params.id);
+    const url = await withTenant(pools, ctx, async (tx) => {
+      const encrypted = await getProposalLinkToken(tx, ctx, id);
+      if (encrypted === null) return null;
+      if (encrypted.length === 0) throw new AppError(409, NOT_SENT_YET_MESSAGE);
+      const token = decrypt(encrypted, deps.config.ENCRYPTION_KEY);
+      await addProposalEvent(tx, ctx, { proposalId: id, kind: 'link_copied', at: clock.now() });
+      return linkFor(deps.config, token);
+    });
+    if (url === null) throw new AppError(404, MESSAGES.notFound);
+    res.json({ url });
+  });
 
   return router;
 }

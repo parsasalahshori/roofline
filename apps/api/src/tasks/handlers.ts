@@ -1,5 +1,6 @@
 import type { StepType } from '@roofline/shared';
 import { sendSmsBatch } from '../messaging/send-batch.ts';
+import { sendProposalStep } from '../estimator/send-proposal.ts';
 import type { StepHandler } from './runner.ts';
 
 /** The demo steps (the F2 demo task, and the tests) do nothing and finish at once. */
@@ -20,6 +21,6 @@ export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   demo_message: finishAtOnce,
   demo_spend: finishAtOnce,
   send_sms_batch: sendSmsBatch,
-  send_proposal: notYet,
+  send_proposal: sendProposalStep,
   order_exact_report: notYet,
 };
