@@ -66,9 +66,10 @@ describe('the storm skeleton', () => {
     for (const name of STORM_JOBS) expect(JOB_NAMES).toContain(name);
   });
 
-  test('send_email_batch is registered and the other storm step stubs still refuse', async () => {
+  test('send_email_batch and build_routes are registered and create_ad_campaign still refuses', async () => {
     expect(builtInHandlers.send_email_batch).toBeDefined();
-    for (const type of ['build_routes', 'create_ad_campaign'] as const) {
+    expect(builtInHandlers.build_routes).toBeDefined();
+    for (const type of ['create_ad_campaign'] as const) {
       const handler = builtInHandlers[type];
       expect(handler).toBeDefined();
       await expect(handler!({} as never, {} as never, {} as never)).rejects.toThrow('not yet');
