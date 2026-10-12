@@ -108,6 +108,42 @@ describe('conversations repo', () => {
     expect(await withTenant(pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, 10))).toEqual([oldest, older]);
     expect(await withTenant(pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, 1))).toEqual([oldest]);
   });
+
+  test('listIdleSmsConversationIds with endedSince also lists unsummarised gap-ended threads in the lookback, never spam (RC-2 #5)', async () => {
+    const ctx = ctxFor(seed.a);
+    const now = new Date('2026-10-12T15:00:00Z');
+    const mk = (status: 'active' | 'ended', hoursAgo: number, phone: string, extra: { summary?: string; outcome?: 'spam' | 'other' } = {}) =>
+      withTenant(pools, ctx, async (tx) => {
+        const [r] = await tx
+          .insert(conversations)
+          .values({
+            companyId: ctx.companyId,
+            channel: 'sms',
+            status,
+            phoneE164: phone,
+            companyNumberE164: seed.a.phoneE164,
+            lastMessageAt: new Date(now.getTime() - hoursAgo * 3600_000),
+            ...extra,
+          })
+          .returning({ id: conversations.id });
+        return r!.id;
+      });
+    const gapEnded = await mk('ended', 40, '+14025550311');
+    const idle = await mk('active', 30, '+14025550312');
+    await mk('ended', 30, '+14025550313', { outcome: 'spam' });
+    await mk('ended', 30, '+14025550314', { summary: 'Done.' });
+    await mk('ended', 8 * 24, '+14025550315');
+    await mk('ended', 2, '+14025550316');
+    const gapEndedOtherOutcome = await mk('ended', 26, '+14025550317', { outcome: 'other' });
+    const before = new Date(now.getTime() - 24 * 3600_000);
+    const endedSince = new Date(now.getTime() - 7 * 24 * 3600_000);
+    expect(await withTenant(pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, 10, endedSince))).toEqual([
+      gapEnded,
+      idle,
+      gapEndedOtherOutcome,
+    ]);
+    expect(await withTenant(pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, 10))).toEqual([idle]);
+  });
 });
 
 describe('turns repo', () => {

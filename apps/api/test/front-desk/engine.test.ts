@@ -171,6 +171,22 @@ describe('a later relay session of the same call (RC-3)', () => {
     const turns = await savedTurns(t, second);
     expect(turns.map((x) => x.position)).toEqual([0, 1, 2, 3, 4, 5]);
   });
+
+  test('a later session after a long call still gets 10 minutes before the 30-minute end (RC-4)', async () => {
+    const t = await makeTestApp();
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] }]) }, {});
+    const ctx = { companyId: t.seed.a.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+    const call = await withTenant(t.deps.pools, ctx, (tx) =>
+      insertCall(tx, ctx, { callSid: 'CA' + 'd'.repeat(32), fromE164: '+14025550123', toE164: t.seed.a.phoneE164, forwardedFrom: null, stirVerstat: null, now: t.clock.now() }),
+    );
+    const start = () => engine.start({ companyId: t.seed.a.companyId, channel: 'voice', phone: '+14025550123', callId: call.id });
+    await start();
+    t.clock.advance(31 * 60_000);
+    const second = await start();
+    expect(second.startedAt.getTime()).toBe(t.clock.now().getTime() - 20 * 60_000);
+    const events = await collect(engine.turn(second, 'I want to leave a message', new AbortController().signal));
+    expect(events.some((e) => e.type === 'end')).toBe(false);
+  });
 });
 
 describe('front desk engine', () => {
@@ -748,6 +764,9 @@ describe('front desk engine: caller match at call start and urgent handoffs', ()
     const urgentRoute: RouteDecision = { ...OPUS, route: 'transfer', urgent: true };
     const a = await setup([{ when: /./, route: urgentRoute }]);
     expect(await a.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', urgent: false }));
+    // The router's own label for a real emergency still reaches on-call (loose match, Ruling BK).
+    const emergency = await setup([{ when: /./, route: { ...OPUS, route: 'transfer', intent: 'emergency', urgent: true } }]);
+    expect(await emergency.say('there are sparks in the attic')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'danger', urgent: true }));
     const leakRoute: RouteDecision = { ...OPUS, route: 'transfer', intent: 'leak', urgent: true };
     const l = await setup([{ when: /./, route: leakRoute }]);
     expect(await l.say('water is coming through the ceiling')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'leak', urgent: true }));

@@ -3,7 +3,12 @@ import { describe, expect, test } from 'vitest';
 import { activities, appointments, calls, claimIntakes, customers, jobs } from '@roofline/db';
 import { runAfterCall } from '../../src/front-desk/after-call.ts';
 import { SAY_SPAM_ENDING } from '../../src/front-desk/engine.ts';
+import { createEngine } from '../../src/front-desk/engine.ts';
+import { createRecording } from '../../src/front-desk/recording.ts';
+import { runRelayLoop } from '../../src/front-desk/relay-session-loop.ts';
 import { identifyCaller } from '../../src/front-desk/tools/caller.ts';
+import { FRONT_DESK_HANDLERS } from '../../src/front-desk/tools/index.ts';
+import { FakeVoiceSession } from '../../src/providers/fakes/voice-session.ts';
 import { ONLY_INSPECTIONS } from '../../src/front-desk/tools/move.ts';
 import { inCompany } from '../crm-helpers.ts';
 import { ADDRESS, expectOpusTiming, OPUS, rig, seedCaller, SLOT, VERIFY, type Rig } from './call-rig.ts';
@@ -429,6 +434,46 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     expect(assistant.firstTokenMs).not.toBeNull();
     expect(assistant.totalMs).not.toBeNull();
     expect(r.loop.ended).toBe(false);
+  });
+
+  test('two relay segments on one call: turn positions run 0..n in order in the one linked conversation', async () => {
+    const r = await rig(
+      [
+        { when: /leaks/, route: OPUS, answer: [{ kind: 'text', text: 'Sorry to hear that.' }] },
+        { when: /garage/, route: OPUS, answer: [{ kind: 'text', text: 'Got it, above the garage.' }] },
+        { when: /stop recording/, route: OPUS, answer: [{ kind: 'text', text: 'Of course, I stopped the recording.' }] },
+        { when: /Friday/, route: OPUS, answer: [{ kind: 'text', text: 'Friday works.' }] },
+      ],
+      { recording: true },
+    );
+    // Segment 1: two exchanges, then the socket drops (a transfer that came back, or a reconnect).
+    await r.say('my roof leaks');
+    await r.say('it is above the garage');
+    const conversationId = r.state().conversationId;
+    r.session.caller.hangUp();
+    await r.loop.settled();
+
+    // Segment 2: a new relay session for the same callId through the real loop and engine. A reused conversation's
+    // call time counts from its createdAt (the database clock), so the test clock moves next to it.
+    r.t.clock.set(new Date((await r.conversation())!.createdAt.getTime() + 2 * 60_000));
+    const deps = { ...r.t.deps, llm: r.llm };
+    const engine = createEngine(deps, FRONT_DESK_HANDLERS);
+    const recording = createRecording(deps, { ...r.call, alreadyRecording: true });
+    await recording.start();
+    const session = new FakeVoiceSession();
+    const loop = runRelayLoop(session, { deps, engine, call: r.call, recording });
+    session.caller.setup({ customParameters: { callId: r.call.callId } });
+    for (const line of ['please stop recording', 'can you come Friday']) {
+      session.caller.say(line);
+      await loop.settled();
+    }
+
+    const rows = await r.turns();
+    expect(rows.every((x) => x.conversationId === conversationId)).toBe(true);
+    expect(rows.map((x) => x.position)).toEqual(rows.map((_, i) => i));
+    expect(rows.map((x) => x.speaker)).toEqual(['caller', 'assistant', 'caller', 'assistant', 'system', 'caller', 'assistant', 'caller', 'assistant']);
+    expect(rows.filter((x) => x.speaker === 'system')).toHaveLength(1);
+    expect((await r.callRow()).conversationId).toBe(conversationId);
   });
 
   test('spam: a sales pitch is answered with the polite ending and marked spam on the conversation and the call', async () => {

@@ -1,6 +1,7 @@
-import { endStuckCallsForCompany, listIdleSmsConversationIds, withTenant } from '@roofline/db';
+import { endStuckCallsForCompany, frontDeskTextsOn, listIdleSmsConversationIds, withTenant } from '@roofline/db';
 import { companiesWithLiveCalls, companyIdsForRetention, markVoiceUrlAttempt, markVoiceUrlSet, numbersNeedingVoiceUrl } from '@roofline/db/system';
 import type { AppDeps } from '../../app.ts';
+import { IDLE_SMS_HOURS } from '../../front-desk/after-call.ts';
 import { applyVoiceUrls, type VoiceUrlResult } from '../../front-desk/number-voice.ts';
 import { systemContext } from '../../permissions.ts';
 
@@ -10,8 +11,18 @@ const REPAIR_LIMIT = 20;
 /** How many stuck calls one pass ends at most per company. */
 const STUCK_CALL_LIMIT = 100;
 
-/** An SMS conversation with no message for this long gets its after-call summary. */
-export const IDLE_SMS_HOURS = 24;
+export { IDLE_SMS_HOURS };
+
+/** How far back the idle pass still picks up threads the 24 h gap already ended without a summary (RC-2 #5). */
+export const IDLE_SMS_ENDED_LOOKBACK_DAYS = 7;
+
+/** The idle SMS pass runs at most this often (RC-2 #6): fd-health runs every two minutes, the pass on the first run of each slot. */
+export const IDLE_SMS_EVERY_MINUTES = 30;
+
+/** True for the fd-health run that starts an idle SMS slot: minutes 0-1 and 30-31 UTC (a late two-minute run still counts once). */
+export function idleSmsPassDue(now: Date): boolean {
+  return now.getUTCMinutes() % IDLE_SMS_EVERY_MINUTES < 2;
+}
 
 /** How many idle SMS conversations one company queues per pass. */
 export const IDLE_SMS_PER_COMPANY_LIMIT = 50;
@@ -53,7 +64,7 @@ export async function fdHealth(deps: AppDeps, now: Date): Promise<void> {
     console.error('Front Desk: the fd-number-voice repair pass failed.');
   }
   await endStuckCalls(deps, now);
-  await queueIdleSmsAfterCalls(deps, now);
+  if (idleSmsPassDue(now)) await queueIdleSmsAfterCalls(deps, now);
 }
 
 /**
@@ -89,7 +100,11 @@ export async function endStuckCalls(deps: AppDeps, now: Date): Promise<void> {
   }
 }
 
-/** Texting threads that went quiet: queue their after-call summary (singletonKey dedupes repeats). */
+/**
+ * Texting threads that went quiet: queue their after-call summary (singletonKey dedupes repeats). fd-health
+ * calls it every IDLE_SMS_EVERY_MINUTES. A read-only company (Ruling BG) or one with Front Desk texting off
+ * gets no paid summary (RC-2 #6); threads the 24 h gap ended without a summary are picked up for a week (RC-2 #5).
+ */
 export async function queueIdleSmsAfterCalls(deps: AppDeps, now: Date): Promise<void> {
   try {
     const before = new Date(now.getTime() - IDLE_SMS_HOURS * 3600_000);
@@ -97,7 +112,10 @@ export async function queueIdleSmsAfterCalls(deps: AppDeps, now: Date): Promise<
     for (const companyId of companyIds) {
       try {
         const ctx = systemContext(companyId);
-        const ids = await withTenant(deps.pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, IDLE_SMS_PER_COMPANY_LIMIT));
+        const endedSince = new Date(now.getTime() - IDLE_SMS_ENDED_LOOKBACK_DAYS * 24 * 3600_000);
+        const ids = await withTenant(deps.pools, ctx, async (tx) =>
+          (await frontDeskTextsOn(tx, ctx)) ? listIdleSmsConversationIds(tx, ctx, before, IDLE_SMS_PER_COMPANY_LIMIT, endedSince) : [],
+        );
         for (const conversationId of ids) {
           try {
             await deps.jobs.send('fd-after-call', { companyId, conversationId }, { singletonKey: `fd-after-call:sms:${conversationId}` });

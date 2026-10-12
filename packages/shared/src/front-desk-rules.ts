@@ -27,6 +27,12 @@ export const ASK_PERSON_INTENTS: ReadonlySet<string> = new Set<RouterIntent>(['a
 
 const LEAK_INTENTS = new Set(['leak', 'active_leak']);
 const DANGER_INTENTS = new Set(['danger', 'injury', 'fire']);
+/**
+ * The router's intent is a free short label, so match the meaning loosely as well (Ruling BK makes the reason, not
+ * the router's urgent flag, decide after-hours on-call: a real leak or danger must not fall back to 'asked').
+ */
+const LEAK_WORDS = /leak|water|flood|drip/i;
+const DANGER_WORDS = /danger|injur|hurt|fire|smoke|gas|electr|spark|collaps|emergenc/i;
 const TRADE_INTENTS = new Set(['trade_caller', 'adjuster', 'inspector', 'supplier']);
 
 /** First match wins, in the documented priority order. */
@@ -38,8 +44,8 @@ export function shouldTransfer(i: {
   taskInProgress: boolean;
   failedUnderstanding: number;
 }): TransferReason | null {
-  if (LEAK_INTENTS.has(i.intent)) return 'leak';
-  if (DANGER_INTENTS.has(i.intent)) return 'danger';
+  if (DANGER_INTENTS.has(i.intent) || DANGER_WORDS.test(i.intent)) return 'danger';
+  if (LEAK_INTENTS.has(i.intent) || LEAK_WORDS.test(i.intent)) return 'leak';
   if (i.mood === 'angry') return 'angry';
   if (TRADE_INTENTS.has(i.intent)) return 'trade_caller';
   if (i.intent === 'model_failure') return 'model_failure';
