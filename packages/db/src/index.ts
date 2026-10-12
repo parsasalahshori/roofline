@@ -184,3 +184,5 @@ export * from './repos/blocked-numbers.ts';
 export * from './repos/fd-booking.ts';
 export * from './repos/fd-caller.ts';
 export * from './repos/fd-texts.ts';
+export * from './repos/fd-after-call.ts';
+export * from './repos/fd-text-back.ts';

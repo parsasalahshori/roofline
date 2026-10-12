@@ -215,6 +215,7 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
           const seconds = Math.max(0, Math.round((deps.clock.now().getTime() - (startedAt ?? deps.clock.now()).getTime()) / 1000));
           const ctx: TenantContext = { companyId: id.companyId, userId: null, role: 'system', canApproveSpend: false };
           await withTenant(deps.pools, ctx, (tx) => addAiSeconds(tx, ctx, id.callSid, seconds));
+          await deps.jobs.send('fd-after-call', { companyId: id.companyId, callSid: id.callSid }, { singletonKey: `fd-after-call:${id.callSid}`, startAfter: 5 });
         } catch {
           console.error(`relay close failed call=${id.callId} company=${id.companyId}`);
         }
