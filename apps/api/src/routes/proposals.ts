@@ -70,6 +70,7 @@ const ListQuery = z.object({
   status: z.enum(PROPOSAL_STATUSES, { error: MESSAGES.checkField }).optional(),
   q: z.string({ error: MESSAGES.checkField }).trim().max(100, MESSAGES.checkField).refine(noNul, MESSAGES.checkField).optional(),
   signedOn: z.string({ error: MESSAGES.checkField }).regex(/^\d{4}-\d{2}-\d{2}$/, MESSAGES.checkField).optional(),
+  jobId: uuid.optional(),
   offset: offsetParam,
 });
 
@@ -106,6 +107,7 @@ export function proposalRoutes(deps: AppDeps): Router {
         ...(query.status !== undefined && { status: query.status }),
         ...(query.q !== undefined && query.q !== '' && { q: query.q }),
         ...(query.signedOn !== undefined && { signedOn: query.signedOn }),
+        ...(query.jobId !== undefined && { jobId: query.jobId }),
         ...(query.offset !== undefined && { offset: query.offset }),
       }),
     );

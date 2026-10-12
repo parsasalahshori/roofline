@@ -84,25 +84,11 @@ export function useCreateQuote(id: string) {
   });
 }
 
-/**
- * This job's proposals, newest first as the server returns them. `GET /api/proposals` has no job
- * filter, so every page is read and then narrowed to the job here.
- */
+/** This job's proposals, newest first, from the server's job filter (Ruling EM). */
 export function useJobProposals(jobId: string) {
   return useQuery<ProposalList, Error, ProposalView[]>({
     queryKey: ['job', jobId, 'proposals'],
-    queryFn: async ({ signal }) => {
-      const all: ProposalView[] = [];
-      let total = Infinity;
-      while (all.length < total) {
-        const path = all.length === 0 ? '/api/proposals' : '/api/proposals?offset=' + all.length;
-        const page = await apiFetch<ProposalList>(path, { signal });
-        total = page.total;
-        if (page.proposals.length === 0) break;
-        all.push(...page.proposals);
-      }
-      return { proposals: all, total: all.length };
-    },
-    select: (list) => list.proposals.filter((proposal) => proposal.jobId === jobId),
+    queryFn: ({ signal }) => apiFetch<ProposalList>(`/api/proposals?jobId=${encodeURIComponent(jobId)}`, { signal }),
+    select: (list) => list.proposals,
   });
 }

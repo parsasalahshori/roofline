@@ -204,6 +204,27 @@ describe('Estimator window', () => {
 
     await waitFor(() => expect(where(router)).toBe('/estimator/measure/m2'));
     expect(api.count('POST /api/proposals')).toBe(0);
+    expect(router.state.location.state).toEqual({});
+  });
+
+  it('draw mode carries the new customer in router state', async () => {
+    signedInApi(
+      flowRoutes({
+        'GET /api/properties?q=12%20Oak&limit=8': () => ({ body: { properties: [{ ...HOME, customerId: null }], total: 1 } }),
+        'POST /api/measurements': () => ({ body: measurement('m2', true) }),
+        'GET /api/measurements/m2': () => ({ body: measurement('m2', true) }),
+      }),
+    );
+    const { router, user } = renderApp();
+
+    await user.type(await screen.findByLabelText(estimator.addressLabel), '12 Oak');
+    await user.click(await screen.findByRole('button', { name: /12 Oak St/ }));
+    await user.type(screen.getByLabelText(estimator.customerName), 'Dana Fox');
+    await user.type(screen.getByLabelText(estimator.customerPhone), '5125550100');
+    await user.click(screen.getByRole('button', { name: estimator.makeProposal }));
+
+    await waitFor(() => expect(where(router)).toBe('/estimator/measure/m2'));
+    expect(router.state.location.state).toEqual({ customer: { name: 'Dana Fox', phone: '5125550100', askedByText: false } });
   });
 
   async function fillAddress(user: ReturnType<typeof userEvent.setup>, tick: boolean) {
