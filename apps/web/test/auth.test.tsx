@@ -30,7 +30,8 @@ const BAD_LOGIN = "That email and password don't match.";
 const SIGN_IN_FIRST = 'Sign in to accept this invite.';
 
 /** The shell's reads (Task 12) are answered with "nothing" unless a test gives its own answer. */
-const stubApi = (given: Routes) => stubApiBase({ ...SHELL_ROUTES, ...given });
+// The sign-in page asks whether Google sign-in is set up: here it is not
+const stubApi = (given: Routes) => stubApiBase({ ...SHELL_ROUTES, 'GET /api/auth/config': () => ({ body: { googleClientId: null } }), ...given });
 
 function renderApp(path: string, { strict = false } = {}) {
   const queryClient = createQueryClient();
