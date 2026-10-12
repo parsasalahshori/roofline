@@ -19,7 +19,18 @@ export async function resetDb(ownerUrl: string): Promise<void> {
         order by 1`,
     );
     if (rows.length === 0) return;
-    await client.query(`truncate table ${rows.map((r) => r.name).join(', ')} restart identity cascade`);
+    const sql = `truncate table ${rows.map((r) => r.name).join(', ')} restart identity cascade`;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await client.query(sql);
+        break;
+      } catch (err) {
+        // A worker transaction in the e2e stack can hold row locks on tables the truncate needs; Postgres
+        // picks the truncate as the deadlock victim (40P01). Nothing was truncated, so try again.
+        if ((err as { code?: string }).code !== '40P01' || attempt >= 5) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+      }
+    }
   } finally {
     await client.end();
   }
