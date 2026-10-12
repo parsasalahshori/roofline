@@ -1101,13 +1101,16 @@ export async function createLiveTask(
 
   await event(tx, ctx, taskId, 'created', 'agent', { stepCount: 1 }, now);
   const [step] = await listSteps(tx, ctx, [taskId], { payload: true });
-  await recordOutcome(tx, ctx, step!, now);
+  // One millisecond apart, so the events read back in the order they happened (the list sorts by time, then id).
+  const stepAt = new Date(now.getTime() + 1);
+  const endAt = new Date(now.getTime() + 2);
+  await recordOutcome(tx, ctx, step!, stepAt);
   const minutesSaved = await minutesSavedOf(tx, ctx, taskId);
   await updateTask(tx, ctx, taskId, { minutesSaved }, now);
   if (input.status === 'done') {
-    await event(tx, ctx, taskId, 'finished', 'system', { status: 'done', minutesSaved }, now);
+    await event(tx, ctx, taskId, 'finished', 'system', { status: 'done', minutesSaved }, endAt);
   } else {
-    await event(tx, ctx, taskId, 'step_attention', 'agent', { attempts: 0 }, now, step!.id);
+    await event(tx, ctx, taskId, 'step_attention', 'agent', { attempts: 0 }, endAt, step!.id);
   }
   await audit(tx, ctx, {
     action: 'task.create',

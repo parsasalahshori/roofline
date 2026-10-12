@@ -138,8 +138,8 @@ describe('closeLiveTasksForSubject', () => {
     expect((await taskRow(taskId)).status).toBe('needs_attention');
     const seenByB = await inCompany(t, idOf('b'), (tx) => tx.select().from(agentTasks).where(eq(agentTasks.id, taskId)));
     expect(seenByB).toHaveLength(0);
-    // The same key in company B is its own task, not company A's.
-    const other = await make(input, 'b');
+    // Company B's own call is its own task, not company A's.
+    const other = await make(live({ idempotencyKey: `fd-call:${randomUUID()}` }), 'b');
     expect(other.created).toBe(true);
     expect(other.taskId).not.toBe(taskId);
   });
