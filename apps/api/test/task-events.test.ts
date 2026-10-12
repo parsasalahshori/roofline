@@ -7,7 +7,7 @@ import { registerStepHandler, runStep, type StepHandler, type StepOutcome } from
 import { createTask, supersedeDraft } from '../src/tasks/service.ts';
 import { Actors, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
-import { agentCtx, dbSteps, dbTask, newCustomers, newTask, seenOf, setTask, smsStep } from './task-helpers.ts';
+import { agentCtx, dbSteps, dbTask, newCustomers, newTask, seenOf, setStep, setTask, smsStep } from './task-helpers.ts';
 
 const NOW = new Date('2026-10-12T15:00:00.000Z');
 const MINUTE = 60 * 1000;
@@ -380,6 +380,51 @@ describe('rerun of internal step types (Ruling AX-I)', () => {
     );
     await expect(attempt).rejects.toBeInstanceOf(AppError);
     await expect(attempt).rejects.toMatchObject({ status: 400, field: 'steps.0.type' });
+  });
+});
+
+describe('rerun keeps switched-off steps (Task 20, Ruling AX-P)', () => {
+  const expiredWithOffStep = async (reason: string | null) => {
+    const { taskId } = await newTask(t, 'a', {
+      agent: 'storm_scout',
+      kind: 'demo_kind',
+      expiresAt: new Date(NOW.getTime() + HOUR),
+      steps: [
+        { type: 'demo_noop', payload: { label: 'One' } },
+        { ...smsStep([]), off: 'There are no customers to text.' },
+        { type: 'demo_message', payload: { label: 'Three' } },
+      ],
+    });
+    if (reason === null) {
+      const off = (await dbSteps(t, 'a', taskId))[1]!;
+      await setStep(t, 'a', off.id, { errorPlain: null });
+    }
+    t.clock.set(new Date(NOW.getTime() + 2 * HOUR));
+    await expireDrafts(t.deps, t.clock.now());
+    expect((await dbTask(t, 'a', taskId)).status).toBe('expired');
+    return taskId;
+  };
+
+  test('an expired draft with a switched-off step reruns into a draft whose copy is still off with the same reason', async () => {
+    const taskId = await expiredWithOffStep('There are no customers to text.');
+    const res = await (await actors.as('owner')).post(`/api/approvals/${taskId}/rerun`).send();
+    expect(res.status).toBe(201);
+    const copied = await dbSteps(t, 'a', res.body.id);
+    expect(copied.map((s) => s.type)).toEqual(['demo_noop', 'send_sms_batch', 'demo_message']);
+    expect(copied.map((s) => s.enabled)).toEqual([true, false, true]);
+    expect(copied[1]!.errorPlain).toBe('There are no customers to text.');
+    const created = (await events(res.body.id)).filter((e) => e.kind === 'created');
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ actorType: 'user', actorUserId: t.seed.a.owner.userId });
+  });
+
+  test('a switched-off step without a reason gets the generic reason', async () => {
+    const taskId = await expiredWithOffStep(null);
+    const res = await (await actors.as('owner')).post(`/api/approvals/${taskId}/rerun`).send();
+    expect(res.status).toBe(201);
+    const copied = await dbSteps(t, 'a', res.body.id);
+    expect(copied.map((s) => s.enabled)).toEqual([true, false, true]);
+    expect(copied[1]!.errorPlain).toBe('This step was switched off.');
   });
 });
 

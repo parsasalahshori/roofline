@@ -45,9 +45,11 @@ export const STORM_OFF = {
 } as const;
 
 const EMAIL_INCOMPLETE = 'Your email needs your company name, mailing address and unsubscribe link.';
-const NOT_FOUND = 'We could not find that storm.';
-const DISMISSED = 'This storm was dismissed, so no plan is drafted.';
-const CHANGED = 'The plan changed while we were drafting. Please try again.';
+export const STORM_PLAN_ERRORS = {
+  notFound: 'We could not find that storm.',
+  dismissed: 'This storm was dismissed, so no plan is drafted.',
+  changed: 'The plan changed while we were drafting. Please try again.',
+} as const;
 const PLAN_LIFETIME_MS = 48 * 60 * 60 * 1000;
 const MIN_AD_CENTS = 500;
 const MAX_DOORS = 1500;
@@ -164,21 +166,26 @@ function buildSteps(
   ];
 }
 
-/** Drafts (or re-drafts) the storm's plan and returns its task; null when Storm Scout is paused (nothing is drafted). */
+/**
+ * Drafts (or re-drafts) the storm's plan and returns its task; null when Storm Scout is paused (nothing is drafted).
+ * opts.replaceFinished (A1 T20, rerun): also re-drafts over an expired or declined plan; default callers leave it alone.
+ */
 export async function draftStormPlan(
   deps: AppDeps,
   companyId: string,
   companyStormId: string,
   now: Date,
+  opts: { replaceFinished?: boolean } = {},
 ): Promise<{ taskId: string } | null> {
   const ctx = systemContext(companyId);
   const drafted = await withTenant(deps.pools, ctx, async (tx) => {
     // A1 T14 (Ruling AX-K): a paused Storm Scout drafts no new plan (the storm alerts still go out).
     if (await isAgentPaused(tx, ctx, 'storm_scout')) return null;
     const facts = await loadStormPlanFacts(tx, ctx, companyStormId);
-    if (!facts) throw new Error(NOT_FOUND);
-    if (facts.status === 'dismissed') throw new Error(DISMISSED);
-    if (facts.planTaskId !== null && facts.planStatus !== 'draft') return { taskId: facts.planTaskId, fresh: false };
+    if (!facts) throw new Error(STORM_PLAN_ERRORS.notFound);
+    if (facts.status === 'dismissed') throw new Error(STORM_PLAN_ERRORS.dismissed);
+    const replaceable = opts.replaceFinished === true && (facts.planStatus === 'expired' || facts.planStatus === 'declined');
+    if (facts.planTaskId !== null && facts.planStatus !== 'draft' && !replaceable) return { taskId: facts.planTaskId, fresh: false };
 
     const recipients = await listStormPlanRecipients(tx, ctx, companyStormId);
     const day = stormDayLabel(facts.convectiveDay, now, facts.company.timezone);
@@ -199,9 +206,9 @@ export async function draftStormPlan(
       },
       { now },
     );
-    const lock = await lockStormPlan(tx, ctx, companyStormId);
-    if (!lock.ok) throw new Error(CHANGED);
-    if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(CHANGED);
+    const lock = await lockStormPlan(tx, ctx, companyStormId, opts);
+    if (!lock.ok) throw new Error(STORM_PLAN_ERRORS.changed);
+    if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(STORM_PLAN_ERRORS.changed);
     await linkStormPlan(tx, ctx, companyStormId, taskId, now);
     return { taskId, fresh: true };
   });

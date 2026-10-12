@@ -477,3 +477,47 @@ describe('the storm-draft job', () => {
     expect(row.status).toBe('planned');
   });
 });
+
+describe('re-draft over a finished plan (Task 20)', () => {
+  test('without the option an expired plan is returned unchanged', async () => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status: 'expired' });
+
+    const again = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
+    expect(again!.taskId).toBe(first.taskId);
+    expect((await companyStormRow()).plan_task_id).toBe(first.taskId);
+  });
+
+  test.each(['expired', 'declined'] as const)('replaceFinished re-drafts over a %s plan', async (status) => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status });
+
+    const next = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { replaceFinished: true });
+    expect(next!.taskId).not.toBe(first.taskId);
+    expect((await dbTask(t, 'a', next!.taskId)).status).toBe('draft');
+    expect((await companyStormRow()).plan_task_id).toBe(next!.taskId);
+    expect((await dbTask(t, 'a', first.taskId)).status).toBe(status);
+  });
+
+  test('replaceFinished never replaces an approved plan', async () => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status: 'approved' });
+
+    const again = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { replaceFinished: true });
+    expect(again!.taskId).toBe(first.taskId);
+    expect((await companyStormRow()).plan_task_id).toBe(first.taskId);
+  });
+
+  test('a switched-off step of an expired plan is rebuilt with its reason', async () => {
+    // No hit at all: nobody has text consent, so the text step is saved off.
+    const first = await draft();
+    await setTask(t, 'a', first.taskId, { status: 'expired' });
+
+    const next = await draftStormPlan(t.deps, companyId(), companyStormId, NOW, { replaceFinished: true });
+    const steps = await stepsOf(next!.taskId);
+    expect(steps[0]).toMatchObject({ enabled: false, errorPlain: STORM_OFF.noSmsRecipients });
+  });
+});

@@ -204,10 +204,19 @@ export type StormPlanLock = { ok: false } | { ok: true; oldDraftId: string | nul
 
 /**
  * Locks the company_storms row (for update of cs) and checks it. ok:false when the storm is missing or
- * its plan is not a draft (S1 CHANGED path). oldDraftId is the existing draft plan task id, or null
- * when there was no plan. Superseding the old draft is the task service's job (supersedeDraft).
+ * its plan is not replaceable (S1 CHANGED path). By default only a 'draft' plan is replaceable; with
+ * opts.replaceFinished an 'expired' or 'declined' plan is too (never running, approved, done...).
+ * oldDraftId is the existing DRAFT plan task id, or null when there was no plan or the old plan is
+ * already finished (nothing to supersede; linkStormPlan just repoints). Superseding the old draft is
+ * the task service's job (supersedeDraft).
+ * Reconcile with S1's replaceDraftPlan version on merge.
  */
-export async function lockStormPlan(tx: Tx, ctx: TenantContext, companyStormId: string): Promise<StormPlanLock> {
+export async function lockStormPlan(
+  tx: Tx,
+  ctx: TenantContext,
+  companyStormId: string,
+  opts: { replaceFinished?: boolean } = {},
+): Promise<StormPlanLock> {
   const locked = await tx.execute(sql`
     select cs.plan_task_id, t.status as plan_status
     from company_storms cs
@@ -218,7 +227,10 @@ export async function lockStormPlan(tx: Tx, ctx: TenantContext, companyStormId: 
   const row = locked.rows[0] as { plan_task_id: string | null; plan_status: TaskStatus | null } | undefined;
   if (!row) return { ok: false };
   const oldId = row.plan_task_id;
-  if (oldId !== null && row.plan_status !== null && row.plan_status !== 'draft') return { ok: false };
+  if (oldId !== null && row.plan_status !== null && row.plan_status !== 'draft') {
+    const finished = row.plan_status === 'expired' || row.plan_status === 'declined';
+    if (!(opts.replaceFinished === true && finished)) return { ok: false };
+  }
   return { ok: true, oldDraftId: oldId !== null && row.plan_status === 'draft' ? oldId : null };
 }
 
@@ -237,4 +249,15 @@ export async function linkStormPlan(
         updated_at = ${now}
     where id = ${companyStormId}::uuid and company_id = ${ctx.companyId}::uuid
   `);
+}
+
+/** The company_storms id whose plan_task_id is this task, or null. */
+export async function findStormByPlanTask(tx: Tx, ctx: TenantContext, taskId: string): Promise<string | null> {
+  const result = await tx.execute(sql`
+    select id from company_storms
+    where plan_task_id = ${taskId}::uuid and company_id = ${ctx.companyId}::uuid
+    limit 1
+  `);
+  const row = result.rows[0] as { id: string } | undefined;
+  return row ? row.id : null;
 }
