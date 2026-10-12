@@ -106,13 +106,16 @@ const SAVE = 'PUT /api/front-desk/settings';
 const saveButton = () => screen.findByRole('button', { name: frontDeskSettings.save });
 
 describe('Settings -> Front Desk form', () => {
-  it('turns the switch off with the blocked sentence when forwarding is not verified', async () => {
+  it('shows the blocked sentence when forwarding is not verified; the owner may still turn it on after a confirm', async () => {
     signIn(makeSettings({ blockedReason: 'forwarding_not_verified' }));
-    renderTab();
+    const { user } = renderTab();
 
     const toggle = await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
-    expect(toggle).toBeDisabled();
     expect(screen.getByText(frontDeskSettings.onOff.blocked.forwarding_not_verified)).toBeInTheDocument();
+    await waitFor(() => expect(toggle).toBeEnabled());
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(frontDeskSettings.onOff.overrideConfirm)).toBeInTheDocument();
   });
 
   it('enables the switch when nothing blocks it', async () => {

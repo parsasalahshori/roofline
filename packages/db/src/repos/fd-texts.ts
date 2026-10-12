@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, gt, isNull, like, not, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, like, not, or, sql } from 'drizzle-orm';
 import { companySettings, conversations, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { companyReadOnly } from './front-desk-settings.ts';
 import { insertConversation } from './conversations.ts';
 import { FD_DEDUPE_PREFIX, FD_DEDUPE_WHERE, type TextState } from './messages.ts';
 
@@ -23,8 +24,9 @@ export type InboundTextRow = { id: string; body: string; createdAt: Date };
 /** One earlier text of a conversation (either direction), oldest first, for rebuilding history. */
 export type ConversationTextRow = { id: string; direction: 'in' | 'out'; body: string; createdAt: Date; assistant: boolean };
 
-/** True only when the company has Front Desk on and its texts on; false with no settings row. */
+/** True only when the company has Front Desk on and its texts on and is not read-only (trial ended or canceled, Ruling BG); false with no settings row. */
 export async function frontDeskTextsOn(tx: Tx, ctx: TenantContext): Promise<boolean> {
+  if (await companyReadOnly(tx, ctx)) return false;
   const [row] = await tx
     .select({ on: companySettings.frontDeskEnabled, texts: companySettings.frontDeskTexts })
     .from(companySettings)
@@ -136,6 +138,8 @@ export async function lastTeamReplyAt(tx: Tx, ctx: TenantContext, conversationId
         eq(messages.companyId, ctx.companyId),
         eq(messages.conversationId, conversationId),
         eq(messages.direction, 'out'),
+        // Only a reply that went out (or will) quiets the assistant: a failed or blocked one reached nobody.
+        inArray(messages.status, ['scheduled', 'queued', 'sent', 'delivered']),
         or(isNull(messages.dedupeKey), not(like(messages.dedupeKey, `${ASSISTANT_PREFIX}%`))),
       ),
     )

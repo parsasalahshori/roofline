@@ -4,6 +4,11 @@
   min-width: 0;
 }
 
+.note {
+  margin: 0;
+  color: var(--text-muted);
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;

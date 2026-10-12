@@ -42,13 +42,15 @@ function tile(label: string): HTMLElement {
 }
 
 describe('WeekStats', () => {
-  it('shows the week heading and one tile per number, with AI minutes as used of included', async () => {
+  it('shows the week heading and one tile per number, with this week\'s AI minutes alone', async () => {
     stubApi({ 'GET /api/front-desk/stats': () => ({ body: STATS }) });
     renderStats();
 
-    expect(await screen.findByText('212 of 500 minutes')).toBeTruthy();
+    // A week's minutes are never set against the monthly allowance (500 here): that would mislead.
+    expect(await screen.findByText('212 minutes')).toBeTruthy();
+    expect(screen.queryByText(/ of /)).toBeNull();
     expect(screen.getByRole('heading', { name: frontDeskInbox.stats.title })).toBeTruthy();
-    expect(screen.getByText(frontDeskInbox.stats.aiMinutes)).toBeTruthy();
+    expect(screen.getByText('AI minutes this week')).toBeTruthy();
 
     expect(within(tile(frontDeskInbox.stats.answered)).getByText('12')).toBeTruthy();
     expect(within(tile(frontDeskInbox.stats.booked)).getByText('4')).toBeTruthy();

@@ -44,7 +44,9 @@ const CLOSED_UNDER_OPEN = ['me/transfer-phone'];
 /**
  * Refuses writes from a company whose trial has ended or whose plan was canceled. Reads still work,
  * and signing in and out, billing (bare or under it) and the member's own marker stay open so the
- * company can pick a plan.
+ * company can pick a plan. One more write stays open: turning Front Desk off (`PUT /front-desk/settings`
+ * with `enabled: false`), so a company that can no longer pay can still stop the assistant. Turning it on,
+ * or any other change, is refused like every other write.
  * `past_due` is not read-only: the send gate pauses texts for it instead. The company status comes
  * from the session, which is read on every request, so a change applies without signing in again.
  * Mounted under `/api`, so `req.path` is relative to that prefix. Requests without a session pass.
@@ -71,6 +73,11 @@ export const readOnlyGuard: RequestHandler = (req, res, next) => {
     return;
   }
   if (turnsFrontDeskOff(req.method, path, req.body)) {
+    next();
+    return;
+  }
+  const body = req.body as { enabled?: unknown } | undefined;
+  if (req.method === 'PUT' && /^\/front-desk\/settings\/?$/.test(path) && body?.enabled === false) {
     next();
     return;
   }
