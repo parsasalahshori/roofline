@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { countLiveCallsInWindow, findCallBySid, lockAiCap, updateCall, withTenant } from '@roofline/db';
+import { countLiveCallsInWindow, findCallBySid, findCallConversationId, hasUrgentNoticeFor, lockAiCap, updateCall, withTenant } from '@roofline/db';
 import { onCallMembers } from '@roofline/db/system';
 import { disclosureGreeting, transferPlan, workIntervals, type TransferReason } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
@@ -119,19 +119,25 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
     }
 
     const onCall = (await onCallMembers(deps.pools.system, route.companyId)).map((m) => ({ userId: m.userId, phone: m.phone }));
-    const plan = transferPlan({ reason: handoff.reason, urgent: handoff.urgent, inWorkHours: inWorkHours(route, now), onCall });
 
-    const callId = await withTenant(deps.pools, ctx, async (tx) => {
+    const decided = await withTenant(deps.pools, ctx, async (tx) => {
       const call = await findCallBySid(tx, ctx, callSid);
       if (call === null) return null;
+      // Urgency is decided here too, not only from HandoffData: a hand-off (DTMF 0) made while an urgent take_message
+      // was in flight carries urgent false, but the notice is on the conversation once that commits (the conversation
+      // lock in hasUrgentNoticeFor waits for it). The conversation is locked before the call row is updated.
+      const conversationId = handoff.urgent ? null : await findCallConversationId(tx, ctx, call.id);
+      const urgent = handoff.urgent || (conversationId !== null && (await hasUrgentNoticeFor(tx, ctx, conversationId)));
+      const plan = transferPlan({ reason: handoff.reason, urgent, inWorkHours: inWorkHours(route, now), onCall });
       if (plan.mode === 'message') await updateCall(tx, ctx, callSid, { transferResult: 'no_answer' });
       else await updateCall(tx, ctx, callSid, { status: 'ringing_team' });
-      return call.id;
+      return { callId: call.id, plan };
     });
-    if (callId === null) {
+    if (decided === null) {
       sendVoiceTwiml(res, HANGUP);
       return;
     }
+    const { callId, plan } = decided;
     if (plan.mode === 'message') {
       sendVoiceTwiml(res, messageModeXml(deps, route, callId));
       return;
