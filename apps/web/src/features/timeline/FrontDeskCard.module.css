@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 4px;
   padding: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface-2);
 }

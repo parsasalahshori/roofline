@@ -43,7 +43,8 @@ test('the inbox lists calls and texts, newest first, with live, unread and urgen
 
   const dialog = page.getByRole('dialog', { name: FRONT_DESK });
   await expect(dialog.getByRole('heading', { name: 'This week' })).toBeVisible({ timeout: 20_000 });
-  for (const tile of ['Answered', 'Booked', 'Transferred', 'Messages', 'Spam', 'AI minutes']) {
+  // The AI minutes tile is this week's minutes alone, never set against the monthly allowance.
+  for (const tile of ['Answered', 'Booked', 'Transferred', 'Messages', 'Spam', 'AI minutes this week']) {
     await expect(dialog.getByText(tile, { exact: true }).first()).toBeVisible();
   }
 
@@ -143,7 +144,7 @@ test('the dock badge counts conversations that need attention and drops when one
   await expect(dock.getByRole('img', { name: '2 conversations waiting' })).toBeVisible({ timeout: 20_000 });
 });
 
-test('a staff reply to a text goes out through the gate and puts the team in charge; the switch hands it back', async ({
+test('a staff reply to a text goes out through the gate and leaves the assistant in charge; the switch hands it to the team and back', async ({
   page,
   loginAs,
   markTodaySeen,
@@ -181,14 +182,32 @@ test('a staff reply to a text goes out through the gate and puts the team in cha
     )
     .toEqual({ status: 'sent', to_e164: TOM.phone });
 
-  // Replying takes the conversation over for two hours.
-  await expect(handling).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
-  const held = await db.query<{ handled_by: string; team_until: Date | null }>(
+  // A reply does not hand the conversation over: the assistant only keeps quiet for a while after a
+  // team text. The switch stays off once the conversation reloads after the reply.
+  await page.reload();
+  await expect(dialog.getByText('Hi, can someone look at my roof this week?')).toBeVisible({ timeout: 20_000 });
+  await expect(handling).toHaveAttribute('aria-checked', 'false');
+  const kept = await db.query<{ handled_by: string; team_until: Date | null }>(
     `select handled_by, team_until from conversations where id = $1`,
     [ids.tom],
   );
-  expect(held.rows[0]?.handled_by).toBe('team');
-  expect(held.rows[0]?.team_until).not.toBeNull();
+  expect(kept.rows[0]).toEqual({ handled_by: 'assistant', team_until: null });
+
+  // The manual switch still hands it to the team (for two hours), and back.
+  await handling.click();
+  await expect(handling).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
+  await expect
+    .poll(
+      async () => {
+        const row = (await db.query<{ handled_by: string; team_until: Date | null }>(
+          `select handled_by, team_until from conversations where id = $1`,
+          [ids.tom],
+        )).rows[0];
+        return row ? { handledBy: row.handled_by, hasUntil: row.team_until !== null } : null;
+      },
+      { timeout: 20_000 },
+    )
+    .toEqual({ handledBy: 'team', hasUntil: true });
 
   await handling.click();
   await expect(handling).toHaveAttribute('aria-checked', 'false', { timeout: 20_000 });
@@ -269,7 +288,7 @@ test('a field rep sees none of the owner conversations and has no Front Desk set
   await expect(settings.getByRole('link', { name: FRONT_DESK, exact: true })).toHaveCount(0);
 });
 
-test('Settings: the switch is blocked until forwarding is verified, facts save, and bad numbers are refused', async ({
+test('Settings: the switch is blocked without a number, the owner must confirm before forwarding is verified, facts save, and bad numbers are refused', async ({
   page,
   loginAs,
   markTodaySeen,
@@ -288,8 +307,15 @@ test('Settings: the switch is blocked until forwarding is verified, facts save, 
 
   await seedRooflineNumber(pools, db, scenario);
   await page.reload();
-  await expect(onOff).toBeDisabled({ timeout: 20_000 });
-  await expect(settings.getByText("Forwarding isn't verified yet.")).toBeVisible();
+  await expect(settings.getByText("Forwarding isn't verified yet.")).toBeVisible({ timeout: 20_000 });
+  // The owner may turn it on before forwarding is verified, but only after a confirm; cancelling leaves it off.
+  await expect(onOff).toBeEnabled({ timeout: 20_000 });
+  await onOff.click();
+  await expect(settings.getByText('Turn Front Desk on anyway?', { exact: false })).toBeVisible();
+  await expect(settings.getByRole('region', { name: 'Turn on anyway' }).getByRole('button', { name: 'Turn on anyway' })).toBeVisible();
+  await settings.getByRole('region', { name: 'Turn on anyway' }).getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(settings.getByText('Turn Front Desk on anyway?', { exact: false })).toHaveCount(0);
+  await expect(onOff).toHaveAttribute('aria-checked', 'false');
 
   const facts = settings.getByLabel('What the assistant should know about your company');
   const text = 'Open Monday to Friday, 8 to 5. We serve the whole county.';
@@ -383,9 +409,12 @@ test('Settings: the forwarding guide shows codes per carrier, and the test verif
   await expect(guide.getByText(`**61*${tenDigits}#`, { exact: true })).toBeVisible();
   await expect(guide.getByText('##61#', { exact: true })).toBeVisible();
 
-  // The switch stays blocked until the test passes.
+  // Until the test passes, turning it on asks the owner to confirm (the override); nothing is switched yet.
   const onOff = settings.getByRole('switch', { name: 'Front Desk answers my calls' });
-  await expect(onOff).toBeDisabled();
+  await onOff.click();
+  await expect(settings.getByRole('region', { name: 'Turn on anyway' }).getByRole('button', { name: 'Turn on anyway' })).toBeVisible();
+  await settings.getByRole('region', { name: 'Turn on anyway' }).getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(onOff).toHaveAttribute('aria-checked', 'false');
 
   await guide.getByRole('button', { name: 'Test it' }).click();
   await expect(guide.getByText('Calling your business number…')).toBeVisible({ timeout: 20_000 });
@@ -408,8 +437,10 @@ test('Settings: the forwarding guide shows codes per carrier, and the test verif
   const items = ((await setup.json()) as { items: { key: string; status: string }[] }).items;
   expect(items.find((item) => item.key === 'phone_number')?.status).toBe('done');
 
+  // Verified: no confirm now, the switch simply turns on.
   await onOff.click();
   await expect(onOff).toHaveAttribute('aria-checked', 'true');
+  await expect(settings.getByRole('region', { name: 'Turn on anyway' }).getByRole('button', { name: 'Turn on anyway' })).toHaveCount(0);
   await settings.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Saved.')).toBeVisible({ timeout: 20_000 });
   const enabled = await db.query<{ front_desk_enabled: boolean; forwarding_verified_at: Date | null }>(
@@ -418,4 +449,42 @@ test('Settings: the forwarding guide shows codes per carrier, and the test verif
   );
   expect(enabled.rows[0]?.front_desk_enabled).toBe(true);
   expect(enabled.rows[0]?.forwarding_verified_at).not.toBeNull();
+});
+
+test('Settings: the office cannot turn Front Desk on before forwarding is verified; the owner can, with a confirm', async ({
+  page,
+  loginAs,
+  markTodaySeen,
+  pools,
+  scenario,
+  db,
+}) => {
+  await seedRooflineNumber(pools, db, scenario);
+  await loginAs(page, 'office');
+  await markTodaySeen('office@a.test');
+  await page.goto('/settings/front-desk');
+
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const onOff = settings.getByRole('switch', { name: 'Front Desk answers my calls' });
+  await expect(settings.getByText("Forwarding isn't verified yet.")).toBeVisible({ timeout: 20_000 });
+  await expect(onOff).toBeDisabled();
+
+  await page.context().clearCookies();
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/settings/front-desk');
+  await expect(onOff).toBeEnabled({ timeout: 20_000 });
+  await onOff.click();
+  await settings.getByRole('region', { name: 'Turn on anyway' }).getByRole('button', { name: 'Turn on anyway' }).click();
+  await expect(onOff).toHaveAttribute('aria-checked', 'true');
+  await settings.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('Saved.')).toBeVisible({ timeout: 20_000 });
+
+  const saved = await db.query<{ front_desk_enabled: boolean; forwarding_verified_at: Date | null }>(
+    `select front_desk_enabled, forwarding_verified_at from company_settings where company_id = $1`,
+    [scenario.a.companyId],
+  );
+  expect(saved.rows[0]).toEqual({ front_desk_enabled: true, forwarding_verified_at: null });
+  // Once it is on, it can always be turned off again.
+  await expect(onOff).toBeEnabled({ timeout: 20_000 });
 });
