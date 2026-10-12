@@ -10,6 +10,8 @@ export type NewConversation = {
   companyNumberE164: string;
   customerId?: string | null;
   identity?: IdentityLevel;
+  /** The app clock's now (deps.clock), so durations measured from it agree with the code's clock. */
+  now?: Date;
 };
 
 /** What the assistant may say about the company: profile plus the Front Desk settings. */
@@ -37,6 +39,7 @@ export async function insertConversation(tx: Tx, ctx: TenantContext, c: NewConve
       companyNumberE164: c.companyNumberE164,
       customerId: c.customerId ?? null,
       identity: c.identity ?? 'unknown',
+      ...(c.now !== undefined && { createdAt: c.now, updatedAt: c.now, lastMessageAt: c.now }),
     })
     .returning({ id: conversations.id });
   return { id: row!.id };

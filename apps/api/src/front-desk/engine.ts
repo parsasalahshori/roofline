@@ -104,6 +104,9 @@ function idsIn(value: unknown, out: string[] = []): string[] {
 /** Router intents that mean the caller is asking for a person (see shouldTransfer). */
 const ASK_PERSON_INTENTS = new Set(['ask_for_person', 'transfer', 'human']);
 
+/** A later relay session's clock starts at most 20 minutes back (turnLimit ends at 30), leaving 10 minutes. */
+const MESSAGE_SESSION_MIN_START_MS = 20 * 60 * 1000;
+
 /**
  * A handoff is urgent when the reason is danger or a leak, or an urgent message was already taken on this
  * conversation (Ruling BK: the router's own "urgent" flag, from the caller's words alone, never rings on-call staff).
@@ -171,6 +174,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             channel: i.channel,
             phoneE164: i.phone,
             companyNumberE164: companyNumber,
+            now: deps.clock.now(),
           })
         ).id;
         if (i.callId !== undefined) await linkCallConversation(tx, ctx, i.callId, id);
@@ -193,7 +197,10 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         const stored = await listTurns(tx, ctx, reusedRow.id);
         created.nextPosition = stored.reduce((max, t) => Math.max(max, t.position + 1), 0);
         created.turns = stored.filter((t) => t.speaker === 'caller').length;
-        created.startedAt = reusedRow.createdAt;
+        // The cap counts from the call's start, but a later session (message mode after a transfer) always gets
+        // at least 10 minutes before the 30-minute end, so a caller is never hung up on before leaving a message.
+        const now = deps.clock.now().getTime();
+        created.startedAt = new Date(Math.max(reusedRow.createdAt.getTime(), now - MESSAGE_SESSION_MIN_START_MS));
         if (await hasUrgentNoticeFor(tx, ctx, reusedRow.id)) created.urgentNoticeSent = true;
       }
       if (i.channel === 'voice') {
