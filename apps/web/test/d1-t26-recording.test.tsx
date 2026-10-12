@@ -31,11 +31,9 @@ const call: CallView = {
   canPlayRecording: true,
 };
 
-describe('RecordingPlayer expired link', () => {
-  it('returns to the play button when the audio errors', async () => {
-    api = stubApi({
-      'GET /api/calls/call1/recording': () => ({ body: { url: 'https://signed.example/rec.mp3', expiresAt: AT } }),
-    });
+describe('RecordingPlayer audio error', () => {
+  it('returns to the play button with the failure banner when the audio errors', async () => {
+    api = stubApi({});
     const queryClient = createQueryClient();
     const { container } = render(
       <Providers client={queryClient}>
@@ -44,10 +42,12 @@ describe('RecordingPlayer expired link', () => {
     );
     await userEvent.setup().click(screen.getByRole('button', { name: conversationCopy.playRecording }));
     await waitFor(() => expect(container.querySelector('audio')).not.toBeNull());
+    expect(container.querySelector('audio')?.getAttribute('src')).toMatch(/\/api\/calls\/call1\/recording$/);
 
     fireEvent.error(container.querySelector('audio') as HTMLAudioElement);
 
     expect(await screen.findByRole('button', { name: conversationCopy.playRecording })).toBeInTheDocument();
+    expect(screen.getByText(conversationCopy.recordingFailed)).toBeInTheDocument();
     expect(container.querySelector('audio')).toBeNull();
   });
 });

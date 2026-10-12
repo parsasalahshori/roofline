@@ -1,5 +1,15 @@
 import { HOME_STREET } from './script-helpers.ts';
-import type { Scenario } from './types.ts';
+import { PRICE_PHRASES, type PriorTool, type Scenario } from './types.ts';
+
+/** The status line, said only once lookup_my_jobs has succeeded and reported the stage (so CI cannot pass on a guess). */
+function statusAfterLookup(prior: readonly PriorTool[]) {
+  const looked = prior.find((p) => p.name === 'lookup_my_jobs' && p.ok && /inspection stage/i.test(p.result));
+  const text = looked ? 'Your job is in the inspection stage, and the team is arranging the inspection. Thanks for calling, goodbye.' : 'Thanks for calling, goodbye.';
+  return [
+    { kind: 'text' as const, text },
+    { kind: 'tool' as const, name: 'end_call' as const, input: { reason: 'goodbye' } },
+  ];
+}
 
 export const jobVerified: Scenario = {
   id: 'job-verified',
@@ -12,13 +22,13 @@ export const jobVerified: Scenario = {
   scripted: [
     {
       route: { intent: 'job_status' },
+      // No status before the lookup: the status is only said once lookup_my_jobs has answered.
       answer: [
-        { kind: 'text', text: 'Your job is in the inspection stage.' },
         { kind: 'tool', name: 'verify_caller', input: { name: 'Nina Park', street: HOME_STREET } },
         { kind: 'tool', name: 'lookup_my_jobs', input: {} },
       ],
     },
-    { route: {}, answer: [{ kind: 'tool', name: 'end_call', input: { reason: 'goodbye' } }] },
+    { route: {}, answer: statusAfterLookup },
   ],
   must: {
     tools: ['verify_caller', 'lookup_my_jobs'],
@@ -26,8 +36,12 @@ export const jobVerified: Scenario = {
     endingReasons: ['goodbye'],
     outcome: 'job_question',
     guardHits: 'none',
-    spoken: [/inspection/i],
+    spoken: [/inspection stage|arranging the inspection/i],
   },
-  mustNot: { phrases: [], tools: ['transfer_to_person'] },
+  mustNot: {
+    // No raw record ids and no price talk: the status is said in plain words.
+    phrases: [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i, ...PRICE_PHRASES],
+    tools: ['transfer_to_person'],
+  },
   toneRubric: ['Gives the status in one or two plain sentences, not a data dump.'],
 };

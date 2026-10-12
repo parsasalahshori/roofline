@@ -192,3 +192,57 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
   - Staff replies, booking confirmations, text-backs and STOP/START/HELP or opt-out-looking texts are kept.
   - The sweep uses a keyset cursor.
   - The settings copy says what is kept; retention 0 deletes existing recordings at the next nightly cleanup.
+
+Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.recording_key (object key recordings/<companyId>/<callId>-<recordingSid>.mp3), per the brief's "same column as the key". No new column and no change to 0019/0020. Twilio copies are deleted by fd-recording-store after the copy, when R2 is unset, or after the 5th failed attempt.
+- 2026-10-12: **Staging batch merged to d1-front-desk** (one push; local Docker suites green before the push: front-desk api 655, db 336, web 789; the previous full run api 2927). Each branch was green on its own CI:
+  - **d1-rev-e** (E1, F1): a verified caller's lookup_my_jobs lists appointment ids, so confirm, move and cancel can act on existing appointments.
+  - **RC-2** (8654fcf):
+    - SMS after-call through the idle-SMS pass (`queueIdleSmsAfterCalls`);
+    - caller phone match at call start (F2);
+    - urgency through the handoff into /after-relay (F3);
+    - voice needs_attention via unread_count;
+    - urgent email deduped once per conversation, made durable by D1 lead commit: hasUrgentNoticeFor row-locks the conversation and also matches an earlier urgent take_message turn.
+  - **RA** (284b2dc, finished by the D1 lead):
+    - relay verifies the signature and token before upgrade;
+    - transcript_stored set on authenticate;
+    - one recording choice per call, with the recording SID in the key;
+    - Twilio copy deleted (note 42);
+    - playback proxied through GET /api/calls/:id/recording, CSP media-src 'self' only.
+  - **d1-cap** (D1 lead): the AI cap counts only AI-bound calls; non-AI paths are marked ringing_team.
+  - **d1-rev-f** (E1, F7-F10): SMS detail matches texts to turn lines one to one; photo-only texts; unsigned webhooks are refused before any lookup.
+  - **d1-rev-g** (E1, N2/N4): the dispatcher keeps toE164; the transfer phone can't be any company's Roofline number.
+  - **d1-rev-i** (E1, **Ruling BJ** + CV review #3/#5/#8):
+    - the sweep is per company on the tenant pool;
+    - app_system keeps only SELECT (id, company_id, call_sid, status) on calls;
+    - `ai` calls end at 35 min, ringing calls at 4 h;
+    - swept calls get no text-back;
+    - recordCallMinutes takes the greatest value while unbatched;
+    - failed is final.
+  - **d1-rev-j** (E1, T25 review): strict tone grade, job-verified ordering, eval refuses under CI or fakes and prints a cost estimate, costs labelled as a lower bound.
+  - **d1-t25b** (C1): criterion 8 install-move test; acceptance-map fixes.
+  - **d1-rev-k** (C1, RA review):
+    - one recording per call;
+    - an objection in a later session stops Twilio.CURRENT;
+    - relay URL carries the company and is verified before any slot or DB read;
+    - per-SID alreadyCopied;
+    - failed Twilio deletes retry;
+    - an inverted Range is ignored.
+    - Deploy note: relay URLs minted before deploy (no o=) get 401, which only affects calls mid-transfer at deploy time.
+  - **RC-3** (D1 lead):
+    - **Ruling BK**: after hours, on-call staff are rung only for leak or danger or an urgent take_message, with settings copy;
+    - a reused conversation continues positions, turn count, start time and urgent notice;
+    - redaction is decided at save time and keeps take_message's urgent flag;
+    - DTMF-0, turn-failure and transfer_to_person carry the urgent flag;
+    - a take_message card shows the caller's message.
+  - **Merge resolutions:**
+    - rev-i x RC-2 x cap: the idle-SMS pass is its own function, called after endStuckCalls; after-call keeps the SMS path plus swept and recordCallMinutes;
+    - t25b's call-paths.test.ts taken;
+    - rev-e's tests ported onto call-rig.
+  - **Rulings recorded:**
+    - **BJ** (stale-call sweep per company; app_system calls grants trimmed);
+    - **BK** (above).
+  - **Still open:**
+    - RC-1/RC-1b (S1 lead): SMS turn positions, system-note ordering, verify_caller lockout and identity persistence, router intent enum, F4-F6, the "[photo]" placeholder. It ships as a follow-up merge.
+    - d1-rev-l (E1, RC-2 review minors).
+    - Restoring verifyFailures on reuse depends on RC-1's identity persistence.
+    - T25 finding 6 (the eval's playCall drift from engine.run) and C1 RA review #6 (ranged playback reads) are follow-ups.

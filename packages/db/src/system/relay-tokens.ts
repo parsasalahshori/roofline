@@ -5,7 +5,7 @@ import { calls } from '../schema/index.ts';
 /*
  * Call lookup for the ConversationRelay socket on the app_system pool (D1 Task 11). Only
  * apps/api/src/front-desk/relay-server.ts imports this. app_system may read only id, company_id,
- * call_sid, status (plus conversation_id and the recording columns) of calls.
+ * call_sid and status of calls (Ruling BJ).
  */
 
 export type RelayCallRow = { callId: string; companyId: string; callSid: string; status: string };

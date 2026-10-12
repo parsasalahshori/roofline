@@ -198,13 +198,18 @@ const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: nu
 /**
  * Step 2 (the signature), for a request already routed to `companyId`: checked with that company's
  * token (else TWILIO_AUTH_TOKEN). Answers 403 itself and returns null; otherwise the company's id.
+ * A request with no signature (or an empty one) is refused before the token lookup, so it costs no query.
  */
 export async function checkSignature(deps: AppDeps, req: Request, res: Response, companyId: string): Promise<string | null> {
+  const signature = req.get('X-Twilio-Signature');
+  if (signature === undefined || signature === '') {
+    res.status(403).end();
+    return null;
+  }
   const { system } = deps.pools;
   const token = await signingTokenFor(system, companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
-  const signature = req.get('X-Twilio-Signature');
   const url = deps.config.PUBLIC_BASE_URL + req.originalUrl;
-  if (token === null || signature === undefined || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
+  if (token === null || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
     res.status(403).end();
     return null;
   }

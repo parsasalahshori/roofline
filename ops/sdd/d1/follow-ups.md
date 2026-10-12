@@ -13,3 +13,5 @@
   - #8: seed turns and startedAt on reuse.
   - Plus Ruling BK, C1's RA review #8, T25 finding 6 (eval drift), and unknown-caller message visibility.
 - RC-3: on reuse, start() also restores verifyFailures (and identity/customerId) from the stored conversation (E1 RC-1 review finding 9).
+- call-paths.test.ts:205 uses +14025550200, outside the fictional 0100-0199 block (E1 leftover).
+- E1 T25 review finding 6 (after RC lands): the eval's playCall has drifted from engine.run(). It lacks the byCount transfer, the shortened retry on max_tokens, the second-invalid-input handoff and the turn limit, and it uses its own lines instead of SAY_REFUSAL/GOODBYE/TROUBLE. Export the SAY_* constants (and a shared decision helper) from engine.ts and import them in the eval.

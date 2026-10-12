@@ -31,13 +31,13 @@ async function setup() {
     );
     const job = await createJob(tx, ctx, { customerId: customer.id, propertyId: property.id }, { now });
     const starts = new Date(now.getTime() + 3 * 86_400_000);
-    await createAppointment(
+    const appt = await createAppointment(
       tx,
       ctx,
       { kind: 'inspection', jobId: job.id, customerId: customer.id, propertyId: property.id, startsAt: starts, endsAt: new Date(starts.getTime() + 3_600_000) },
       now,
     );
-    return { customerId: customer.id, propertyId: property.id, jobId: job.id, starts };
+    return { customerId: customer.id, propertyId: property.id, jobId: job.id, starts, appointmentId: appt.row.id };
   });
   const conversation: ConversationState = {
     ...newConversationState({
@@ -85,7 +85,9 @@ describe('lookup_my_jobs', () => {
     expect(r.forModel).toContain(`Job ${ids.jobId} at 123 Elm St`);
     expect(r.forModel).toContain('inspection stage');
     expect(r.forModel).toMatch(/Next: (inspection or )?visit on /);
-    expect(r.shownIds).toEqual([ids.jobId, ids.propertyId]);
+    // Ids for the model only, so confirm, move and cancel can act on the visit.
+    expect(r.forModel).toContain(`Appointment ${ids.appointmentId}: inspection on `);
+    expect(r.shownIds).toEqual([ids.jobId, ids.propertyId, ids.appointmentId]);
   });
 
   test('no customer is a plain refusal', async () => {

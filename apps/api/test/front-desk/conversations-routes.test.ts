@@ -257,6 +257,21 @@ describe('GET /api/conversations/:id', () => {
     expect(detail.calls).toHaveLength(2);
   });
 
+  test("a message the caller left shows its words on the card, also with no customer; a redacted one keeps the plain label", async () => {
+    const owner = await who.as('owner');
+    const convo = await seedConversation({ channel: 'voice' });
+    const call = await seedCall(convo, { transcriptStored: true });
+    await seedTurn(convo, 1, {
+      text: 'I will pass that on.',
+      callId: call,
+      toolCalls: [{ name: 'take_message', input: { reason: 'Gutter fell off the north side', urgent: false }, result: 'ok', ok: true }],
+    });
+    await seedTurn(convo, 2, { text: '', callId: call, toolCalls: [{ name: 'take_message', ok: true, input: { urgent: true } } as ToolCallRecord] });
+    const detail = (await owner.get(`${BASE}/${convo}`)).body as ConversationDetail;
+    expect(detail.turns[0]!.actions[0]!.label).toBe('Took a message for the team: Gutter fell off the north side');
+    expect(detail.turns[1]!.actions[0]!.label).toBe('Took a message for the team');
+  });
+
   test('a text conversation merges its texts with the turns in time order, without repeating what a turn shows (review note 20)', async () => {
     const owner = await who.as('owner');
     const customerId = await seedCustomer('a', { name: 'Pat Texter', phone: TEXTABLE });
@@ -301,6 +316,97 @@ describe('GET /api/conversations/:id', () => {
       ['caller', 'Great, thanks'],
     ]);
     expect(detail.turns.map((x) => x.position)).toEqual([1, 2, 0, 0]);
+  });
+
+  /** A text thread: `text` writes a messages row, `turn` a text turn (callId null), both at minute `m` (seconds `s`). */
+  async function smsThread() {
+    const customerId = await seedCustomer('a', { name: 'Pat Texter', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId });
+    const at = (m: number, s = 0) => new Date(Date.UTC(2026, 9, 12, 15, m, s));
+    const text = (direction: 'in' | 'out', body: string, m: number, o: { dedupeKey?: string; s?: number } = {}) =>
+      inCompany(t, idA(), (tx) =>
+        tx.insert(messages).values({
+          companyId: idA(),
+          customerId,
+          conversationId: convo,
+          channel: 'sms',
+          direction,
+          purpose: direction === 'out' ? 'informational' : null,
+          body,
+          status: direction === 'in' ? 'received' : 'sent',
+          dedupeKey: o.dedupeKey ?? null,
+          createdAt: at(m, o.s ?? 0),
+        }),
+      );
+    let position = 0;
+    const turn = (speaker: 'caller' | 'assistant', body: string, m: number) =>
+      inCompany(t, idA(), (tx) =>
+        tx.insert(conversationTurns).values({ companyId: idA(), conversationId: convo, position: ++position, speaker, text: body, at: at(m) }),
+      );
+    const detail = async () => {
+      const res = await (await who.as('owner')).get(`${BASE}/${convo}`);
+      expect(res.status).toBe(200);
+      return res.body as ConversationDetail;
+    };
+    const lines = async () => (await detail()).turns.map((x) => [x.speaker, x.text]);
+    return { text, turn, lines, detail };
+  }
+
+  test('a repeated text sent while the team is handling (no turn for it) is still shown (final review)', async () => {
+    const { text, turn, lines } = await smsThread();
+    await text('in', 'Yes', 0);
+    await turn('caller', 'Yes', 1);
+    await text('out', 'Great, see you Thursday.', 2, { dedupeKey: 'fd-text:a' });
+    await turn('assistant', 'Great, see you Thursday.', 2);
+    await text('in', 'Yes', 10);
+    expect(await lines()).toEqual([
+      ['caller', 'Yes'],
+      ['assistant', 'Great, see you Thursday.'],
+      ['caller', 'Yes'],
+    ]);
+  });
+
+  test('a short text is not hidden inside the words of a longer caller turn ("ok" in "look", "C" in "Can") (final review)', async () => {
+    const { text, turn, lines } = await smsThread();
+    await text('in', 'Can you look at my roof?', 0);
+    await turn('caller', 'Can you look at my roof?', 1);
+    await text('in', 'ok', 5);
+    await text('in', 'C', 6);
+    expect(await lines()).toEqual([
+      ['caller', 'Can you look at my roof?'],
+      ['caller', 'ok'],
+      ['caller', 'C'],
+    ]);
+  });
+
+  test('a photo-only text inside retention reads as a text with no words, not as removed by retention (final review)', async () => {
+    const { text, detail } = await smsThread();
+    await text('in', '', 0);
+    const shown = (await detail()).turns;
+    expect(shown.map((x) => [x.speaker, x.text, x.noWords])).toEqual([['caller', null, true]]);
+  });
+
+  test('an empty text past the retention period reads as removed by retention (final review)', async () => {
+    const { text, detail } = await smsThread();
+    await text('in', '', 0);
+    t.clock.set(new Date(DAYTIME.getTime() + 400 * 24 * HOUR));
+    const shown = (await detail()).turns;
+    expect(shown.map((x) => [x.speaker, x.text, x.noWords])).toEqual([['caller', null, undefined]]);
+  });
+
+  test('a turn answering several texts, and a reply cut short to fit, show each text once (final review)', async () => {
+    const { text, turn, lines } = await smsThread();
+    await text('in', 'Hi', 0);
+    await text('in', 'My  roof leaks', 0, { s: 30 });
+    await turn('caller', 'Hi\nMy roof leaks', 1);
+    await turn('assistant', 'Sorry to hear that. We can come Friday. Here is a lot more detail.', 2);
+    await text('out', 'Sorry to hear that. We can come Friday.', 2, { dedupeKey: 'fd-text:b' });
+    await text('in', 'Hi', 3);
+    expect(await lines()).toEqual([
+      ['caller', 'Hi\nMy roof leaks'],
+      ['assistant', 'Sorry to hear that. We can come Friday. Here is a lot more detail.'],
+      ['caller', 'Hi'],
+    ]);
   });
 
   test('a voice conversation never pulls in texts', async () => {

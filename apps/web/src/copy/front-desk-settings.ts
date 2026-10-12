@@ -49,7 +49,7 @@ export const frontDeskSettings = {
   saveFailed: 'We could not save. Try again.',
   onCall: {
     heading: 'Who answers when a call is passed to a person',
-    help: 'Calls ring people from the top down.',
+    help: 'Calls ring people from the top down. After hours, the list is rung only for a leak, a danger, or an urgent message the assistant took; otherwise the assistant takes a message.',
     empty: 'No one is on the list yet.',
     noPhone: 'No transfer phone yet',
     dragHandle: (name: string) => `Drag ${name} to reorder`,
