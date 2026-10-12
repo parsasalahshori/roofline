@@ -1,0 +1,22 @@
+/* The decline sheet's body: the intro, the optional reason, and the two buttons in the footer. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.intro {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-muted);
+}
+
+/* Inputs are 16px so iOS does not zoom the page when a person taps them. */
+.reason textarea {
+  font-size: 16px;
+}
+
+.action {
+  min-height: 40px;
+  min-width: 40px;
+}

@@ -31,10 +31,9 @@ test('skip the import and the ring moves', async ({ page }) => {
 });
 
 test('later steps say Coming with', async ({ page }) => {
-  await expect(page.getByText(/Coming with/)).toHaveCount(4);
+  await expect(page.getByText(/Coming with/)).toHaveCount(3);
   for (const line of [
     'Coming with the Estimator',
-    'Coming with the calendar',
     'Coming with Front Desk',
     'Coming with Storm Scout',
   ]) {
