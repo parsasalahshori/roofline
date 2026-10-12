@@ -1,0 +1,51 @@
+/* The route map: a box the width of the column, with the numbered doors on it */
+.map {
+  width: 100%;
+  min-width: 0;
+  height: 240px;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+/* A numbered door. The number is text, so it stays legible on the map tiles: dark ink on a light disc. */
+.marker {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.875rem;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+
+.marker[data-state='done'] {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.marker[data-state='current'] {
+  width: 40px;
+  height: 40px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--text);
+}
+
+/* The rep's own position: a blue dot */
+.you {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--stage-lead);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+}

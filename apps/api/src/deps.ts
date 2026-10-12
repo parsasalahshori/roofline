@@ -88,6 +88,9 @@ export class UnconfiguredAdsGoogle implements AdsGoogle {
   async invite(): Promise<never> {
     throw new Error("Google Ads isn't set up.");
   }
+  async unlink(): Promise<never> {
+    throw new Error("Google Ads isn't set up.");
+  }
   async linkStatus(): Promise<never> {
     throw new Error("Google Ads isn't set up.");
   }

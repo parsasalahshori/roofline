@@ -1,13 +1,13 @@
-import type { Config } from "../../config.ts";
-import type { AdsGoogle } from "../ads-google.ts";
-import { createCampaigns } from "./campaigns.ts";
+import type { Config } from '../../config.ts';
+import type { AdsGoogle } from '../ads-google.ts';
+import { createCampaigns } from './campaigns.ts';
 import {
   type FetchLike,
   type GoogleAdsSettings,
   createGoogleAdsHttp,
-} from "./http.ts";
-import { createLink } from "./link.ts";
-import { createReport } from "./report.ts";
+} from './http.ts';
+import { createLink } from './link.ts';
+import { createReport } from './report.ts';
 
 /** The real Google Ads adapter when configured; null when any of the five GOOGLE_ADS settings is unset. */
 export function googleAdsFor(
@@ -40,7 +40,7 @@ export function googleAdsFor(
     apiVersion: config.GOOGLE_ADS_API_VERSION,
   };
   const http = createGoogleAdsHttp(settings, fetchImpl);
-  const managerId = GOOGLE_ADS_MANAGER_ID.replace(/-/g, "");
+  const managerId = GOOGLE_ADS_MANAGER_ID.replace(/-/g, '');
   const link = createLink(http, managerId);
   const report = createReport(http);
   const campaigns = createCampaigns(http);
@@ -49,6 +49,7 @@ export function googleAdsFor(
     configured: true,
     managerId,
     invite: (customerId) => link.invite(customerId),
+    unlink: (customerId) => link.unlink(customerId),
     linkStatus: (customerId) => link.linkStatus(customerId),
     accountInfo: (customerId) => link.accountInfo(customerId),
     findCampaign: (customerId, nameTag) =>

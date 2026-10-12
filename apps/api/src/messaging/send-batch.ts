@@ -7,6 +7,7 @@ import {
   rewriteRetryableText,
   type StepRow,
   stepTextCounts,
+  type StepRow,
   type TenantContext,
   type TextState,
   withTenant,
@@ -14,8 +15,9 @@ import {
 import { type MessagePurpose, stepTypes } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { leaseKeeper } from '../tasks/lease.ts';
-import type { StepHandler } from '../tasks/runner.ts';
+import type { StepHandler, StepOutcome } from '../tasks/runner.ts';
 import { buildGateRequest } from './gate-request.ts';
+import { STORM_TOKEN_IN_TEXT, stormTextRender, UNFILLED_TEXT_REASON } from './storm-text.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, type QueuedText, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
 
 /*
@@ -74,8 +76,22 @@ type BatchText = {
  *   the dispatcher finishes it;
  * - else `done`.
  * A customer who is not in the company is skipped. A payload that is not a batch's needs attention.
+ * `options.render` (storm texts) gives each customer's own template; a body that still holds a storm
+ * token after the gate request is built is blocked ('content') instead of being texted.
  */
 export const sendSmsBatch: StepHandler = async (deps, ctx, step) => {
+  const parsed = stepTypes.send_sms_batch.payload.safeParse(step.payload);
+  if (!parsed.success) return { status: 'needs_attention', result: {}, errorPlain: UNREADABLE };
+  const data = parsed.data as { body: string; fields?: Record<string, Record<string, string>> };
+  return runSmsBatch(deps, ctx, step, { render: stormTextRender(data.body, data.fields) });
+};
+
+export async function runSmsBatch(
+  deps: AppDeps,
+  ctx: TenantContext,
+  step: StepRow,
+  options: { render?: (customerId: string) => string } = {},
+): Promise<StepOutcome> {
   const parsed = stepTypes.send_sms_batch.payload.safeParse(step.payload);
   if (!parsed.success) return { status: 'needs_attention', result: {}, errorPlain: UNREADABLE };
   const { purpose, body, customerIds, dedupePrefix } = parsed.data as {
@@ -92,7 +108,7 @@ export const sendSmsBatch: StepHandler = async (deps, ctx, step) => {
     // run's (a newer run has it), so stop texting here and leave the rest to that run.
     if (!(await lease.keep())) return { status: 'running', result: {} };
     const dedupeKey = dedupePrefix !== undefined ? `${dedupePrefix}:${customerId}` : null;
-    const queued = await decideOne(deps, ctx, step.id, { customerId, purpose, template: body, dedupeKey });
+    const queued = await decideOne(deps, ctx, step.id, { customerId, purpose, template: options.render ? options.render(customerId) : body, dedupeKey });
     if (queued && (await sendQueuedText(deps, ctx, queued, NOT_TAKEN)) === 'refused') refused += 1;
   }
 
@@ -142,6 +158,9 @@ function decideOne(deps: AppDeps, ctx: TenantContext, stepId: string, text: Batc
     if (!built) return null;
 
     let state: TextState = textStateFor(built);
+    if (!built.archived && STORM_TOKEN_IN_TEXT.test(built.req.message.body)) {
+      state = { status: 'blocked', blockRule: 'content', blockReason: UNFILLED_TEXT_REASON };
+    }
     // The gate never lets a text through without a number; this keeps the type honest.
     if (state.status === 'queued' && built.toE164 === null) {
       state = { status: 'blocked', blockRule: 'contact', blockReason: 'No mobile number on file.' };

@@ -1,7 +1,6 @@
-import { EmptyState } from '@roofline/ui';
-import { doors } from '../../../copy/doors.ts';
+import { MyRoutes } from './MyRoutes.tsx';
 
-/** The routes list: a line until door-knocking routes are built. */
+/** The routes list under Storm on the phone: the rep's routes, one card each. */
 export function RoutesWindow() {
-  return <EmptyState title={doors.routesComingSoon} />;
+  return <MyRoutes />;
 }

@@ -174,8 +174,10 @@ export async function checkAdAccount(deps: AppDeps, ctx: TenantContext, id: stri
   let ev: AdAccountEvaluation;
   if (row.platform === 'google' && deps.adsGoogle.configured) {
     try {
-      // No invitation exists on Google's side (the first invite failed, or the link was removed): send it again.
-      if ((await deps.adsGoogle.linkStatus(row.externalAccountId)) === 'none') await deps.adsGoogle.invite(row.externalAccountId);
+      // No live invitation on Google's side: none on record (the first invite failed, or the link was removed),
+      // or refused by the owner in Google Ads. invite() creates a fresh link in both cases, so send it again.
+      const link = await deps.adsGoogle.linkStatus(row.externalAccountId);
+      if (link === 'none' || link === 'refused') await deps.adsGoogle.invite(row.externalAccountId);
       ev = await evaluateAdAccount(deps, row);
     } catch (err) {
       ev = failed(errorMessage(err));
@@ -204,7 +206,7 @@ export async function revokeAdAccount(deps: AppDeps, ctx: TenantContext, id: str
   if (existing.platform === 'google') {
     // Outside any transaction. A platform failure never blocks the owner's removal and its text is dropped.
     try {
-      await deps.adsGoogle.unlink?.(existing.externalAccountId);
+      await deps.adsGoogle.unlink(existing.externalAccountId);
     } catch (err) {
       reportJobError(deps, err, `ad-account revoke: unlink ${existing.id}`);
     }

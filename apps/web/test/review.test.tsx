@@ -7,10 +7,15 @@ import { approvals } from '../src/copy/approvals.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
 import { review } from '../src/copy/review.ts';
 import { shell } from '../src/copy/shell.ts';
+import { stepAds } from '../src/copy/stepAds.ts';
+import { stepEmail } from '../src/copy/stepEmail.ts';
 import { Review, ReviewRoute } from '../src/features/approvals/Review.tsx';
+import type { StormDetailView } from '../src/features/storm/types.ts';
 import { makeTask, renderAt, stubApi, where } from './helpers.tsx';
 
 let api: ReturnType<typeof stubApi>;
+
+const STORM = '0b6f3a52-1c7d-4e8f-9a2b-3c4d5e6f7a8b';
 
 afterEach(() => {
   cleanup();
@@ -361,6 +366,120 @@ describe('the review screen', () => {
     expect(api.sent('POST /api/approvals/t1/approve')).toEqual([
       { steps: [{ id: 's1', version: 1 }, { id: 's2', version: 1 }, { id: 's3', version: 1 }] },
     ]);
+  });
+
+  it('office sees the owner-only notice on the ad step and cannot approve it', async () => {
+    const plan = makeTask({
+      id: 't1',
+      status: 'draft',
+      steps: [
+        step('s1', 1, 'Door-knock routes for 4 reps'),
+        step('s2', 2, 'Google ads on the hail area', {
+          type: 'create_ad_campaign',
+          approvalClass: 'spend',
+          canApprove: false,
+          preview: { title: 'Google ads on the hail area', lines: ['Circles cover the hail area', '$21.42 a day for 7 days'], maxSpendCents: 15000 },
+          payload: {
+            companyStormId: STORM,
+            platform: 'google',
+            maxSpendCents: 15000,
+            days: 7,
+            headline: 'Hail damage? Free roof check',
+            description: 'Local roofers on your street.',
+            keywords: ['roof repair'],
+          },
+        }),
+      ],
+    });
+    const storm: StormDetailView = {
+      storm: {
+        id: STORM,
+        placeName: 'Maple Ridge',
+        day: '2026-10-11',
+        maxIn: 1.75,
+        status: 'final',
+        customersHit: 0,
+        homesHit: 0,
+        planTaskId: 't1',
+        planStatus: 'draft',
+      },
+      swath: { type: 'FeatureCollection', features: [] },
+      results: {
+        textsSent: 0,
+        textsDelivered: 0,
+        replies: 0,
+        yesReplies: 0,
+        emailsSent: 0,
+        unsubscribes: 0,
+        doorsKnocked: 0,
+        wantsCheck: 0,
+        adSpendCents: 0,
+        adMaxCents: 0,
+        adClicks: 0,
+        landingRequests: 0,
+        inspectionsBooked: 0,
+      },
+      plan: { taskId: 't1', status: 'draft' },
+    };
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      [`GET /api/storms/${STORM}`]: () => ({ body: storm }),
+    });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    expect(await screen.findByText(stepAds.ownerOnly)).toBeInTheDocument();
+    expect(screen.getByText('Your owner approves spending')).toBeInTheDocument();
+    expect(screen.getAllByText('Up to $150').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('$21.42 a day for 7 days').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /send ad to owner/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Approve \d+ steps? · up to/ })).toBeNull();
+  });
+
+  it('editing a storm email saves the whole payload', async () => {
+    const original = {
+      purpose: 'marketing',
+      subject: 'Hail on your street',
+      body: 'Hi from {company}. {company_address} {unsubscribe}',
+      customerIds: ['5a1c2d3e-4f50-4617-8a9b-0c1d2e3f4a5b'],
+    };
+    let plan = makeTask({
+      id: 't1',
+      status: 'draft',
+      steps: [
+        step('s1', 1, 'Hail on your street', {
+          type: 'send_email_batch',
+          approvalClass: 'message',
+          payload: original,
+          preview: {
+            title: 'Hail on your street',
+            lines: ['Marketing email'],
+            recipientCount: 1,
+            messageSample: 'Hi from Summit Roofing. 12 Main St. (unsubscribe link)',
+          },
+        }),
+      ],
+    });
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      'GET /api/team': () => ({ body: { members: [], invites: [] } }),
+      'PATCH /api/approvals/t1/steps/s1': () => {
+        plan = withStep(plan, 's1', { version: 2, payload: { ...original, subject: 'New subject' } });
+        return { body: stepOf(plan, 's1') };
+      },
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    expect(await screen.findByText(stepEmail.sampleLabel)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: review.edit }));
+    const subject = await screen.findByRole('textbox', { name: stepEmail.subjectLabel });
+    await user.clear(subject);
+    await user.type(subject, 'New subject');
+    await user.click(screen.getByRole('button', { name: review.save }));
+
+    await waitFor(() =>
+      expect(api.sent('PATCH /api/approvals/t1/steps/s1')).toEqual([{ version: 1, payload: { ...original, subject: 'New subject' } }]),
+    );
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: stepEmail.subjectLabel })).toBeNull());
   });
 
   it('editing a message saves the new text', async () => {

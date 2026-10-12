@@ -29,6 +29,9 @@ export type NewStepRow = {
   approvalClass: ApprovalClass;
   payload: Record<string, unknown>;
   preview: Record<string, unknown>;
+  /** Default true. A step saved switched off sets false (with `errorPlain` saying why). */
+  enabled?: boolean;
+  errorPlain?: string | null;
 };
 
 export type NewTaskRow = {
@@ -104,7 +107,8 @@ export async function insertTask(tx: Tx, ctx: TenantContext, input: NewTaskRow, 
         position,
         type: step.type,
         approvalClass: step.approvalClass,
-        enabled: true,
+        enabled: step.enabled ?? true,
+        errorPlain: step.errorPlain ?? null,
         version: 1,
         payload: step.payload,
         preview: step.preview,

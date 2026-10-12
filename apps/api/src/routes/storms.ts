@@ -1,7 +1,20 @@
 import { Router } from 'express';
-import { stormLayer, withTenant } from '@roofline/db';
+import {
+  audit,
+  companyStormRef,
+  dismissCompanyStorm,
+  getCompanyStormSummary,
+  listCompanyStorms,
+  stormLayer,
+  stormSwath,
+  withTenant,
+} from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
+import { requireCapability } from '../permissions.ts';
+import { draftStormPlan } from '../storm/plan.ts';
+import { stormResults } from '../storm/results.ts';
+import { UUID } from '../validate.ts';
 
 const BBOX_MESSAGE = 'Please give the map area as west,south,east,north.';
 const ZOOM_MESSAGE = 'Please give the map zoom as a whole number from 0 to 22.';
@@ -73,10 +86,91 @@ export function stormLayerRoutes(deps: AppDeps): Router {
   return router;
 }
 
-/** `/api/storms`: `GET /layer` is the same storm layer; the rest answers 404 until later S1 tasks build it. */
+const DISMISSED_MESSAGE = 'This storm was dismissed, so no plan is drafted.';
+const PLAN_EXISTS_MESSAGE = 'This storm already has a plan. Open it in your tasks.';
+const PLAN_CHANGED_MESSAGE = 'The plan changed while we were drafting. Please try again.';
+const PLAN_NOT_FOUND_MESSAGE = 'We could not find that storm.';
+const PAUSED_MESSAGE = 'Storm Scout is paused. Turn it back on in Agents to draft a plan.';
+
+/** Only a draft plan may be drafted again (T11 draftStormPlan replaces a draft only). */
+const REDRAFTABLE: readonly string[] = ['draft'];
+
+/** The :id of a request as a lowercase UUID, or a 404 for anything else. */
+function stormId(raw: unknown): string {
+  const id = (typeof raw === 'string' ? raw : '').toLowerCase();
+  if (!UUID.test(id)) throw new AppError(404, MESSAGES.notFound);
+  return id;
+}
+
+/**
+ * `/api/storms`: `GET /layer` is the same storm layer; `GET /` and `GET /:id` list and show the company's
+ * storms (any member); `POST /:id/dismiss` and `POST /:id/plan` need `approve_internal`. `:id` is the
+ * company_storms id. Everything else answers 404.
+ */
 export function stormRoutes(deps: AppDeps): Router {
   const router = Router();
+  const guard = requireCapability('approve_internal');
+  // '/layer' stays ahead of '/:id'.
   router.use('/layer', layerHandler(deps));
+
+  router.get('/', async (req, res) => {
+    const storms = await withTenant(deps.pools, req.ctx, (tx) => listCompanyStorms(tx, req.ctx));
+    res.json({ storms });
+  });
+
+  router.get('/:id', async (req, res) => {
+    const id = stormId(req.params.id);
+    const body = await withTenant(deps.pools, req.ctx, async (tx) => {
+      const storm = await getCompanyStormSummary(tx, req.ctx, id);
+      const ref = await companyStormRef(tx, req.ctx, id);
+      if (!storm || !ref) throw new AppError(404, MESSAGES.notFound);
+      const swath = await stormSwath(tx, ref.stormId);
+      const results = await stormResults(tx, req.ctx, id);
+      const plan = storm.planTaskId === null ? null : { taskId: storm.planTaskId, status: storm.planStatus ?? 'draft' };
+      return { storm, swath, results, plan };
+    });
+    res.json(body);
+  });
+
+  router.post('/:id/dismiss', guard, async (req, res) => {
+    const id = stormId(req.params.id);
+    const now = deps.clock.now();
+    await withTenant(deps.pools, req.ctx, async (tx) => {
+      if (!(await dismissCompanyStorm(tx, req.ctx, id, now))) throw new AppError(404, MESSAGES.notFound);
+      await audit(tx, req.ctx, {
+        action: 'storm.dismiss',
+        targetType: 'company_storm',
+        targetId: id,
+        ip: req.ip ?? null,
+        at: now,
+      });
+    });
+    res.json({ ok: true });
+  });
+
+  router.post('/:id/plan', guard, async (req, res) => {
+    const id = stormId(req.params.id);
+    const { storm, ref } = await withTenant(deps.pools, req.ctx, async (tx) => ({
+      storm: await getCompanyStormSummary(tx, req.ctx, id),
+      ref: await companyStormRef(tx, req.ctx, id),
+    }));
+    if (!storm || !ref) throw new AppError(404, MESSAGES.notFound);
+    if (ref.status === 'dismissed') throw new AppError(409, DISMISSED_MESSAGE);
+    if (storm.planTaskId !== null && !REDRAFTABLE.includes(storm.planStatus ?? '')) {
+      throw new AppError(409, PLAN_EXISTS_MESSAGE);
+    }
+    try {
+      const drafted = await draftStormPlan(deps, req.ctx.companyId, id, deps.clock.now());
+      if (drafted === null) throw new AppError(409, PAUSED_MESSAGE); // A1 T14: a paused Storm Scout drafts nothing
+      res.json({ taskId: drafted.taskId });
+    } catch (err) {
+      const message = err instanceof Error && !(err instanceof AppError) ? err.message : '';
+      if (message === DISMISSED_MESSAGE || message === PLAN_CHANGED_MESSAGE) throw new AppError(409, message);
+      if (message === PLAN_NOT_FOUND_MESSAGE) throw new AppError(404, MESSAGES.notFound);
+      throw err;
+    }
+  });
+
   router.use((_req, _res, next) => {
     next(new AppError(404, MESSAGES.notFound));
   });

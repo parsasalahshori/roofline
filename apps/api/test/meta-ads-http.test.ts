@@ -147,6 +147,30 @@ describe('error mapping', () => {
   });
 });
 
+describe('graph code and subcode', () => {
+  test('API failures carry the Graph code and subcode on the error', async () => {
+    const token = await thrownBy('error-token.json', 400);
+    expect((token as AdPlatformError).graph).toEqual({ code: 190, subcode: 463 });
+
+    const rate = await thrownBy('error-rate-limit.json', 400);
+    expect(rate).toMatchObject({ graph: { code: 17 } });
+  });
+
+  test('a network failure has no graph info', async () => {
+    const { http } = clientWith(() => {
+      throw new TypeError('fetch failed');
+    });
+
+    const error = await http.get('/act_1').then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(AdPlatformError);
+    expect((error as AdPlatformError).graph).toBeUndefined();
+  });
+});
+
 describe('secrets and provider text stay out of errors', () => {
   test.each(ERROR_CASES)('$file: the thrown error exposes no token, secret, proof or provider text', async ({ file, status }) => {
     const providerMessage = (JSON.parse(fixture(file)) as { error: { message: string } }).error.message;

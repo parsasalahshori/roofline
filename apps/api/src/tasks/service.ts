@@ -300,6 +300,25 @@ async function checkPayload(
 // ---------------------------------------------------------------------------------------------
 // Making a task
 
+/** The short title a switched-off step shows when its payload is too incomplete to build a preview. */
+const OFF_STEP_TITLES: Record<StepType, string> = {
+  demo_noop: 'Demo step',
+  demo_message: 'Demo message',
+  demo_spend: 'Demo spend',
+  send_sms_batch: 'Text your customers',
+  send_email_batch: 'Email your customers',
+  build_routes: 'Plan door-knocking routes',
+  create_ad_campaign: 'Run an ad campaign',
+  send_proposal: 'Send a proposal',
+  order_exact_report: 'Order a roof report',
+  front_desk_call: 'Answer a call',
+  front_desk_texts: 'Answer texts',
+  send_personal_texts: 'Send personal texts',
+  build_claim_packet: 'Build the claim packet',
+  create_appointment: 'Book an appointment',
+  move_appointment: 'Move an appointment',
+};
+
 export type NewTask = {
   agent: Agent;
   kind: string;
@@ -313,7 +332,8 @@ export type NewTask = {
   rerunOfTaskId?: string;
   /** Who made the plan, for its `created` event. Default `agent`. */
   createdBy?: 'agent' | 'system' | 'user';
-  steps: { type: StepType; payload: unknown }[];
+  /** `off`: the step is saved switched off (enabled=false) with this plain reason; its payload may then be incomplete (for example no customers). */
+  steps: { type: StepType; payload: unknown; off?: string }[];
 };
 
 /**
@@ -326,6 +346,7 @@ export type NewTask = {
  * - The approval class comes from the step type, never from the agent.
  * - Steps start `pending`, enabled, at version 1, with a new idempotency key each; the task is a `draft`.
  * - The preview each step shows is built here, from the checked payload.
+ * - A step with `off` is saved switched off with that plain reason, and an incomplete payload is kept as given instead of a 400.
  * Runs in the caller's `withTenant` transaction.
  */
 export async function createTask(
@@ -343,8 +364,26 @@ export async function createTask(
     // from an expired plan. Every other caller, the API routes included, is refused them.
     const allowed = opts.allowInternalStepTypes ? isStepType(step.type) : isUserCreatableStepType(step.type);
     if (!allowed) throw new AppError(400, "That kind of step isn't supported.", `steps.${n}.type`);
-    const checked = await checkPayload(tx, ctx, step.type, step.payload, companyName, `steps.${n}.payload`);
-    steps.push({ type: step.type, approvalClass: stepTypes[step.type].approvalClass, ...checked });
+    let checked: { payload: Record<string, unknown>; preview: Record<string, unknown> };
+    if (step.off === undefined) {
+      checked = await checkPayload(tx, ctx, step.type, step.payload, companyName, `steps.${n}.payload`);
+    } else {
+      try {
+        checked = await checkPayload(tx, ctx, step.type, step.payload, companyName, `steps.${n}.payload`);
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        const raw = step.payload;
+        const payload = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+        checked = { payload, preview: { title: OFF_STEP_TITLES[step.type], lines: [] } };
+      }
+      checked = { payload: checked.payload, preview: { ...checked.preview, offReason: step.off } };
+    }
+    steps.push({
+      type: step.type,
+      approvalClass: stepTypes[step.type].approvalClass,
+      ...checked,
+      ...(step.off !== undefined && { enabled: false, errorPlain: step.off }),
+    });
   }
 
   const { taskId } = await insertTask(

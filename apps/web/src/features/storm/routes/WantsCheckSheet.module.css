@@ -1,0 +1,31 @@
+/* The lead form inside the sheet: one column, never wider than the phone */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.field {
+  min-width: 0;
+  width: 100%;
+}
+
+.alert {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* The save button is a full-width tap target, at least 48px tall */
+.save {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+}
