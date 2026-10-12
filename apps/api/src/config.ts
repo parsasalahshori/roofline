@@ -69,6 +69,9 @@ const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2
 /** The example plans file, shipped with the repository; the default outside production. */
 const EXAMPLE_BILLING_PLANS = 'config/billing-plans.example.json';
 
+/** The footprint files published by Microsoft (US Building Footprints); the default FOOTPRINTS_BASE_URL. */
+const DEFAULT_FOOTPRINTS_BASE_URL = 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/';
+
 const ConfigSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production'], {
@@ -161,6 +164,27 @@ const ConfigSchema = z
      * so a development server is not on the LAN. A HOST that is set always wins.
      */
     HOST: z.string().min(1).optional(),
+
+    /** EagleView API client id. Set with EAGLEVIEW_CLIENT_SECRET, or neither. Unset: aerial and exact reports are off. */
+    EAGLEVIEW_CLIENT_ID: z.string().optional(),
+    /** EagleView API client secret. Set with EAGLEVIEW_CLIENT_ID, or neither. */
+    EAGLEVIEW_CLIENT_SECRET: z.string().optional(),
+    /** Which EagleView environment to call. Default: sandbox. */
+    EAGLEVIEW_ENV: z.enum(['sandbox', 'production'], { error: 'must be sandbox or production' }).default('sandbox'),
+    /** The EagleView product id to order. 0 is a placeholder: ask before ordering anything. */
+    EAGLEVIEW_PRODUCT_ID: integer(0, 0, 2_147_483_647),
+    /** Cloudflare R2 account id. All four R2 settings come together, or none. Unset: signed proposals cannot be stored. */
+    R2_ACCOUNT_ID: z.string().optional(),
+    /** R2 access key id. See R2_ACCOUNT_ID. */
+    R2_ACCESS_KEY_ID: z.string().optional(),
+    /** R2 secret access key. See R2_ACCOUNT_ID. */
+    R2_SECRET_ACCESS_KEY: z.string().optional(),
+    /** R2 bucket name. See R2_ACCOUNT_ID. */
+    R2_BUCKET: z.string().optional(),
+    /** The base URL of customer proposal links. No trailing slash. Unset: APP_ORIGIN (applied in the final transform). */
+    PROPOSAL_LINK_BASE_URL: httpUrl.transform((v) => v.replace(/\/+$/, '')).optional(),
+    /** Where the building footprint files are read from. Always ends in a slash. Default: the Microsoft US buildings set. */
+    FOOTPRINTS_BASE_URL: httpUrl.transform((v) => (v.endsWith('/') ? v : `${v}/`)).default(DEFAULT_FOOTPRINTS_BASE_URL),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.GOOGLE_CLIENT_SECRET && !cfg.GOOGLE_CLIENT_ID) {
@@ -212,6 +236,28 @@ const ConfigSchema = z
         message: 'is required when TWILIO_ACCOUNT_SID is set',
       });
     }
+    if (cfg.EAGLEVIEW_CLIENT_ID && !cfg.EAGLEVIEW_CLIENT_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EAGLEVIEW_CLIENT_SECRET'],
+        message: 'is required when EAGLEVIEW_CLIENT_ID is set',
+      });
+    }
+    if (cfg.EAGLEVIEW_CLIENT_SECRET && !cfg.EAGLEVIEW_CLIENT_ID) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EAGLEVIEW_CLIENT_ID'],
+        message: 'is required when EAGLEVIEW_CLIENT_SECRET is set',
+      });
+    }
+    const r2 = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'] as const;
+    if (r2.some((name) => cfg[name])) {
+      for (const name of r2) {
+        if (!cfg[name]) {
+          ctx.addIssue({ code: 'custom', path: [name], message: 'is required when the other R2 settings are set' });
+        }
+      }
+    }
     if (cfg.FAKE_PROVIDERS && cfg.NODE_ENV === 'production') {
       ctx.addIssue({
         code: 'custom',
@@ -220,8 +266,9 @@ const ConfigSchema = z
       });
     }
   })
-  .transform(({ HOST, BILLING_PLANS_FILE, ...cfg }) => ({
+  .transform(({ HOST, BILLING_PLANS_FILE, PROPOSAL_LINK_BASE_URL, ...cfg }) => ({
     ...cfg,
+    PROPOSAL_LINK_BASE_URL: PROPOSAL_LINK_BASE_URL ?? cfg.APP_ORIGIN,
     HOST: HOST ?? (cfg.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'),
     // Outside production the example file is the default; in production without Stripe it stays unset.
     BILLING_PLANS_FILE:

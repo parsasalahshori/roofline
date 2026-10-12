@@ -22,6 +22,7 @@ const ALWAYS_OPEN_SECTIONS = ['auth', 'billing', 'me'];
  * company can pick a plan.
  * `past_due` is not read-only: the send gate pauses texts for it instead. The company status comes
  * from the session, which is read on every request, so a change applies without signing in again.
+ * Paths under `/public/` (the signed-out customer pages) pass for every method.
  * Mounted under `/api`, so `req.path` is relative to that prefix. Requests without a session pass.
  */
 export const readOnlyGuard: RequestHandler = (req, res, next) => {
@@ -40,7 +41,7 @@ export const readOnlyGuard: RequestHandler = (req, res, next) => {
     return;
   }
   const path = req.path.toLowerCase();
-  if (ALWAYS_OPEN_SECTIONS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`))) {
+  if (path.startsWith('/public/') || ALWAYS_OPEN_SECTIONS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`))) {
     next();
     return;
   }

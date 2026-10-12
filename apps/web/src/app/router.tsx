@@ -14,6 +14,10 @@ import { ComingSoon } from '../features/coming-soon/ComingSoon.tsx';
 import { NewCustomer } from '../features/create/NewCustomer.tsx';
 import { NewJob } from '../features/create/NewJob.tsx';
 import { ImportWizard } from '../features/imports/ImportWizard.tsx';
+import { EstimatorWindow } from '../features/estimator/EstimatorWindow.tsx';
+import { HomeownerPage } from '../features/homeowner/HomeownerPage.tsx';
+import { MeasureWindow } from '../features/measure/MeasureWindow.tsx';
+import { ProposalWindow } from '../features/proposals/ProposalWindow.tsx';
 import { JobWindow } from '../features/job/JobWindow.tsx';
 import { JobsWindow } from '../features/jobs/JobsWindow.tsx';
 import { QuoteWindow } from '../features/quotes/QuoteWindow.tsx';
@@ -45,6 +49,8 @@ const routes: RouteObject[] = [
   { path: '/reset', element: <ResetPassword /> },
   { path: '/verify', element: <VerifyEmail /> },
   { path: '/invite', element: <AcceptInvite /> },
+  // The homeowner page needs no session and has no dock or map
+  { path: '/p/:token', element: <HomeownerPage /> },
   {
     // Everything else needs a session. The shell (map, dock, windows) is the one layout under it.
     element: <RequireSession />,
@@ -68,7 +74,9 @@ const routes: RouteObject[] = [
           { path: 'storm/plans/:taskId', element: <ReviewRoute app="storm" /> },
           { path: 'storm/*', element: comingSoonWindow('storm') },
           { path: 'front-desk/*', element: comingSoonWindow('front-desk') },
-          { path: 'estimator/*', element: comingSoonWindow('estimator') },
+          { path: 'estimator', element: <AppWindow app="estimator"><EstimatorWindow /></AppWindow> },
+          { path: 'estimator/measure/:measurementId', element: <AppWindow app="estimator"><MeasureWindow /></AppWindow> },
+          { path: 'estimator/proposals/:proposalId', element: <AppWindow app="estimator"><ProposalWindow /></AppWindow> },
           { path: 'agents/*', element: comingSoonWindow('agents') },
           { path: 'jobs', element: <AppWindow app="jobs"><JobsWindow /></AppWindow> },
           { path: 'jobs/new', element: <AppWindow app="jobs"><NewJob /></AppWindow> },

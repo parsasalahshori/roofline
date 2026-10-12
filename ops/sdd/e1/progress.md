@@ -81,3 +81,13 @@ Merge rule: e1-t5 is merged into e1-estimator only after C1 T5 is CI-green (idea
 Merged origin/c1-crm 0fe2b16 (C1 T5 CI 38195617057; F3 T28, T37) into e1-estimator: typecheck, lint clean; drizzle-kit no changes.
 Ruling EF (controller, accepted): tier highlights capped at 4 (Better drops "Tear-off and cleanup"; spec D10's "highlights +" would exceed the cap).
 Ruling EG (controller, accepted): `offsetOutline` (named only in the T2 brief's Split, not its Interfaces) is not built; the edge allowance `perimeter + 8 × overhang` stands.
+Wave 3 (wf_52209e53-04e, contact 103):
+- T5 ae3d065: review round 1 fixed, CI 38197904378 green. Lead check: `isPublicRoute` adds only a lowercased `/public/` prefix (req.path is not percent-decoded; `/public`, `/publicx` stay gated); readOnlyGuard exempts `/public/`. Task 5: complete.
+- T14 20e2a6b: review clean, CI 38197723747 green (web 435). Task 14: complete.
+Merged into e1-estimator: T5 b802c80 (brings e1-w3base 2504960, which changes no files: C1 T5 was already in via c1-crm), T14 7817449. typecheck, lint, lint:css, web 435 clean.
+Carries: (T12/T19) blockCrossSiteMutations refuses mutations whose Origin is not APP_ORIGIN, so PROPOSAL_LINK_BASE_URL must be the same origin as APP_ORIGIN, or /api/public mutations must allow it (group check 103). (T6) FakeFootprintSource reads its fixture with readFileSync at module load from test/fixtures; make it lazy. Stub eslint-disable lines go when real bodies land.
+Merged origin/c1-crm 36a8cc5 (F3 closed) into e1-estimator fcaced6: typecheck, lint clean; drizzle-kit no changes.
+Wave 4a, base fcaced6 (C1 names not needed): run wf_9f1f57c2-275 (contact 104): T6 (Sonnet builders), T9, T19; run wf_569594ab-55b (contact 105): T16 (Sonnet), T17 (Sonnet), T18.
+Held for C1: T8 (C1 T6 createJob/updateJob, T12 SetupFacts.calendarsConnected, T15 getPricebook, T16 PDF_COLORS), and T20 (C1 T20 JobSections, T27 Today). T15 (CustomerPicker from C1 T22, optional import) and T7 (needs T6) go in the next run; T10-T13 follow T8.
+Sentinel (sibling 3, 03:40Z): A1 changes StepTypeDef (withMinutesSaved({userCreatable, baseline, units}) replaces minutesSaved); A1 converts E1's send_proposal and order_exact_report when it merges e1-estimator. New E1 step types keep the plain shape until then.
+Ruling AY (controller, 03:41Z, supersedes the sentinel note above): A1 T3's StepTypeDef = plain object {userCreatable, baseline(), units()}, no minutesSaved; A1 converts E1's two step types at its merge. Any NEW E1 step type uses that shape from the start (userCreatable true, baseline 'proposal_sent' or 'exact_report', units 1). No remaining E1 task adds a step type (T10/T11 register handlers for T4's two types only).
