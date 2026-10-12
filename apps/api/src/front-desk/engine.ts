@@ -174,6 +174,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             channel: i.channel,
             phoneE164: i.phone,
             companyNumberE164: companyNumber,
+            now: deps.clock.now(),
           })
         ).id;
         if (i.callId !== undefined) await linkCallConversation(tx, ctx, i.callId, id);
