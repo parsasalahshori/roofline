@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "campaign": {
+        "resourceName": "customers/9876543210/campaigns/555",
+        "id": "555",
+        "name": "Roofline storm cs_1 google",
+        "status": "PAUSED"
+      }
+    }
+  ]
+}
