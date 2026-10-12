@@ -14,6 +14,8 @@ export const meta = {
 }
 
 const A = args
+// Builders are Haiku by default. A task may set builder: 'sonnet' for risky work (Ruling AQ in AGENTS.md):
+// cross-shell UI integration, concurrency/locking, migrations, LLM conversation logic, the Python service.
 // Where dbtest and ci-check live: ops/bin in the repo (pass args.binDir), or ~/RooflineWork/bin on the Mac.
 const BIN = A.binDir || '~/RooflineWork/bin/'
 const MAX_ROUNDS = 3
@@ -82,7 +84,7 @@ function planPrompt(t) {
 }
 
 function buildPrompt(t, p, notes) {
-  return 'You are a Haiku builder on ' + head(t) + 'Your package: ' + p.id + '. Other builders are editing OTHER files in this same worktree at the same time.\n' +
+  return 'You are a ' + (t.builder === 'sonnet' ? 'Sonnet' : 'Haiku') + ' builder on ' + head(t) + 'Your package: ' + p.id + '. Other builders are editing OTHER files in this same worktree at the same time.\n' +
     'Files you own (touch only these): ' + p.files.join(', ') + '\n\nInstructions from your Sonnet lead:\n' + p.instructions + '\n\nShared notes from the lead:\n' + notes + '\n\n' + RULES + '\n\n' +
     'Work test-first: write your tests, run them and see them fail, then implement until they pass. Run only your own tests: ' + p.testCommand + '\n' +
     'A failure in a file you do not own is not yours; ignore it. Do not run whole-workspace suites. Do not commit, stage or install packages. If you are blocked, stop and say exactly why.\n' +
@@ -107,7 +109,7 @@ function checkPrompt(t, contact, review) {
 
 function fixPrompt(t, fixes) {
   const files = Array.from(new Set(fixes.map((f) => f.file)))
-  return 'You are a Haiku builder applying review fixes on ' + head(t) + '\n' + RULES + '\n\n' +
+  return 'You are a ' + (t.builder === 'sonnet' ? 'Sonnet' : 'Haiku') + ' builder applying review fixes on ' + head(t) + '\n' + RULES + '\n\n' +
     'Apply exactly these fixes (each approved by the Opus contact), nothing else. Other builders may be fixing other files at the same time. Files: ' + files.join(', ') + '\n\n' +
     fixes.map((f, i) => (i + 1) + '. [' + f.id + '] ' + f.file + ': ' + f.finalInstruction).join('\n') + '\n\n' +
     'Then run the tests that cover the files you changed (focused vitest paths) and, if you changed TypeScript, npm run typecheck from the worktree root. Do not commit or stage. Return status, files changed, what you ran and the result.'
@@ -153,7 +155,7 @@ async function runTask(t, contact) {
     if (!plan) return { n: t.n, status: 'failed-plan' }
     summary.push('Packages: ' + plan.packages.map((p) => p.id + ' [' + p.files.join(', ') + ']').join('; '))
     const built = await parallel(plan.packages.map((p, i) => () =>
-      agent(buildPrompt(t, p, plan.sharedNotes), { label: tag + ' haiku ' + (i + 1) + ': ' + p.id, phase: 'Build', model: 'haiku', schema: WORK })))
+      agent(buildPrompt(t, p, plan.sharedNotes), { label: tag + ' ' + (t.builder || 'haiku') + ' ' + (i + 1) + ': ' + p.id, phase: 'Build', model: t.builder || 'haiku', schema: WORK })))
     const stuck = plan.packages.filter((p, i) => !built[i] || built[i].status === 'blocked')
     built.forEach((b, i) => summary.push('Builder ' + (i + 1) + ' (' + plan.packages[i].id + '): ' + (b ? b.status + ' - ' + b.notes : 'no result')))
     if (stuck.length) {
@@ -184,7 +186,7 @@ async function runTask(t, contact) {
     if (!approved.length) { review = Object.assign({}, review, { clean: review.verifyPassed }); break }
     const buckets = groupFixes(approved, 3)
     await parallel(buckets.map((b, i) => () =>
-      agent(fixPrompt(t, b), { label: tag + ' haiku ' + (i + 1) + ': fix ' + (round + 1), phase: 'Fix', model: 'haiku', schema: WORK })))
+      agent(fixPrompt(t, b), { label: tag + ' ' + (t.builder || 'haiku') + ' ' + (i + 1) + ': fix ' + (round + 1), phase: 'Fix', model: t.builder || 'haiku', schema: WORK })))
   }
   let escalated = false
   if (round >= MAX_ROUNDS && approved.length) {
