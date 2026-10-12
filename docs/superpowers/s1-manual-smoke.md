@@ -78,7 +78,7 @@ CI runs the Python tests (`ruff` and `pytest`) in the `hail` job. Prove that wit
 **Expected result:**
 
 - The access check prints `ok` with the account name and currency. If it prints `not_shared`, `not_assigned` or `disabled`, the script stops. Fix the sharing or the assignment in Business Manager, then run the check again.
-- The card image uploads. The script uploads its built-in test image, not a rendered storm card.
+- The card image uploads. The script renders a real ad card (a 1080 x 1080 PNG with the smoke company name and line) with the same renderer the app uses, and uploads that.
 - The script prints "created paused", and then "deleted".
 - If the script prints "DELETE THE CAMPAIGN BY HAND", delete that campaign in Ads Manager before continuing, and note it in the sign-off table.
 

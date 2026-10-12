@@ -2,7 +2,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { insertFixtureStorm, OMAHA_CONTOURS, type Query } from '@roofline/db/testing';
 import { JOB_HANDLERS } from '../src/jobs/handlers.ts';
-import { alertNow, alertPlanReady, sendStormAlert } from '../src/storm/alerts.ts';
+import { alertNow, alertPlanReady, alertUnalerted, sendStormAlert } from '../src/storm/alerts.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 
 /*
@@ -110,6 +110,41 @@ describe('failures', () => {
     await expect(alertNow(t.deps, companyId(), companyStormId)).resolves.toBeUndefined();
     expect(recipients()).toEqual([t.seed.a.owner.email]);
     expect(t.logged).toHaveLength(1);
+  });
+});
+
+describe('retries', () => {
+  const alertedAt = async () => (await q('select alerted_at from company_storms where id = $1', [companyStormId]))[0]!.alerted_at;
+
+  test('when every send fails the claim is released and the next alert emails again', async () => {
+    const original = t.mailer.send.bind(t.mailer);
+    t.mailer.send = async () => {
+      throw new Error('mail down');
+    };
+    await alertNow(t.deps, companyId(), companyStormId);
+    expect(await alertedAt()).toBeNull();
+    t.mailer.send = original;
+    await alertNow(t.deps, companyId(), companyStormId);
+    expect(t.mailer.sent).toHaveLength(2);
+    expect(await alertedAt()).not.toBeNull();
+  });
+
+  test('when only one send fails the storm stays claimed', async () => {
+    const original = t.mailer.send.bind(t.mailer);
+    t.mailer.send = async (msg) => {
+      if (msg.to === t.seed.a.office.email) throw new Error('mailbox down');
+      return original(msg);
+    };
+    await alertNow(t.deps, companyId(), companyStormId);
+    expect(await alertedAt()).not.toBeNull();
+  });
+
+  test('alertUnalerted alerts a matched storm whose alert was never claimed', async () => {
+    await alertUnalerted(t.deps, companyId());
+    expect(t.mailer.sent).toHaveLength(2);
+    expect(await alertedAt()).not.toBeNull();
+    await alertUnalerted(t.deps, companyId());
+    expect(t.mailer.sent).toHaveLength(2);
   });
 });
 

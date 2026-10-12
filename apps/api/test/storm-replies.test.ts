@@ -50,7 +50,7 @@ beforeEach(async () => {
 });
 
 /** A storm, its company_storms row, a storm_plan task with a send_sms_batch step, and a text sent to Maria at `sentAt`. */
-async function stormText(sentAt: Date, day: string): Promise<string> {
+async function stormText(sentAt: Date, day: string, status = 'sent', blockRule: string | null = null): Promise<string> {
   const stormId = await insertOmahaStorm(q, day);
   const cs = await q(
     `insert into company_storms (company_id, storm_id, max_in, customers_hit, homes_hit) values ($1, $2, 1.75, 1, 1) returning id`,
@@ -68,9 +68,9 @@ async function stormText(sentAt: Date, day: string): Promise<string> {
     [companyId(), task[0]!.id, `storm-replies-${sid}`],
   );
   await q(
-    `insert into messages (company_id, customer_id, channel, direction, purpose, body, status, step_id, sent_at, to_e164)
-     values ($1, $2, 'sms', 'out', 'marketing', 'Hail hit your street.', 'sent', $3, $4, $5)`,
-    [companyId(), customerId, step[0]!.id, sentAt.toISOString(), MARIA],
+    `insert into messages (company_id, customer_id, channel, direction, purpose, body, status, block_rule, step_id, sent_at, to_e164)
+     values ($1, $2, 'sms', 'out', 'marketing', 'Hail hit your street.', $6, $7, $3, $4, $5)`,
+    [companyId(), customerId, step[0]!.id, ['sent', 'delivered'].includes(status) ? sentAt.toISOString() : null, MARIA, status, blockRule],
   );
   return stormId;
 }
@@ -138,6 +138,31 @@ describe('YES replies to a storm text', () => {
   test('"yes please call me" is not a YES', async () => {
     await stormText(new Date(DAYTIME.getTime() - DAY_MS), '2026-10-10');
     await reply('yes please call me');
+    expect(await jobRows()).toHaveLength(0);
+  });
+
+  test('a newer storm text blocked by the weekly cap does not capture the YES', async () => {
+    const older = await stormText(new Date(DAYTIME.getTime() - 5 * DAY_MS), '2026-10-05');
+    await stormText(new Date(DAYTIME.getTime() - DAY_MS), '2026-10-10', 'blocked', 'frequency');
+    await reply('YES');
+    const rows = await jobRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.stormId).toBe(older);
+  });
+
+  test('a newer scheduled-only or failed-only storm text is ignored', async () => {
+    const older = await stormText(new Date(DAYTIME.getTime() - 5 * DAY_MS), '2026-10-05');
+    await stormText(new Date(DAYTIME.getTime() - 2 * DAY_MS), '2026-10-08', 'scheduled');
+    await stormText(new Date(DAYTIME.getTime() - DAY_MS), '2026-10-10', 'failed');
+    await reply('YES');
+    const rows = await jobRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.stormId).toBe(older);
+  });
+
+  test('a customer whose only storm text was blocked gets no job from a YES', async () => {
+    await stormText(new Date(DAYTIME.getTime() - DAY_MS), '2026-10-10', 'blocked', 'frequency');
+    await reply('YES');
     expect(await jobRows()).toHaveLength(0);
   });
 });

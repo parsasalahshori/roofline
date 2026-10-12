@@ -2,12 +2,13 @@ import threading
 from datetime import datetime, timezone
 
 import httpx
+import psycopg
 
 from hail import main
-from hail.main import POSTMARK_URL, next_run_after, run_loop, run_once, send_alert
+from hail.main import POSTMARK_URL, next_run_after, postmark_token, run_loop, run_once, send_alert
 from hail.run import TickFailed
 
-ENV = {"OPS_ALERT_EMAIL": "ops@example.com", "POSTMARK_SERVER_TOKEN": "tok"}
+ENV = {"OPS_ALERT_EMAIL": "ops@example.com", "POSTMARK_TOKEN": "tok"}
 
 
 def at(day: int, hour: int, minute: int, second: int = 0) -> datetime:
@@ -91,7 +92,7 @@ def test_alert_retried_after_postmark_failure(monkeypatch):
 def test_alert_skipped_when_unconfigured(monkeypatch):
     monkeypatch.setattr(main, "tick", failing_tick([3]))
     client, seen = make_client()
-    env = {"OPS_ALERT_EMAIL": "", "POSTMARK_SERVER_TOKEN": ""}
+    env = {"OPS_ALERT_EMAIL": "", "POSTMARK_TOKEN": ""}
     assert run_once(None, None, client, env, False) is False
     assert seen == []
 
@@ -100,3 +101,44 @@ def test_run_loop_exits_when_stop_set():
     stop = threading.Event()
     stop.set()
     run_loop(None, None, None, ENV, stop)
+
+
+def test_db_down_counts_as_failure_and_alerts_on_third(monkeypatch):
+    def down(source, conn_factory, now):
+        raise psycopg.OperationalError("connection refused")
+
+    monkeypatch.setattr(main, "tick", down)
+    client, seen = make_client()
+    state = {"failures": 0}
+    flag = False
+    sent_after = []
+    for _ in range(4):
+        flag = run_once(None, None, client, ENV, flag, state=state)
+        sent_after.append(len(seen))
+    assert sent_after == [0, 0, 1, 1]
+    assert flag is True
+    assert state["failures"] == 4
+
+    monkeypatch.setattr(main, "tick", lambda source, conn_factory, now: None)
+    assert run_once(None, None, client, ENV, flag, state=state) is False
+    assert state["failures"] == 0
+    monkeypatch.setattr(main, "tick", down)
+    assert run_once(None, None, client, ENV, False, state=state) is False
+    assert state["failures"] == 1
+    assert len(seen) == 1
+
+
+def test_postmark_token_new_name_wins(caplog):
+    with caplog.at_level("WARNING"):
+        assert postmark_token({"POSTMARK_TOKEN": "new", "POSTMARK_SERVER_TOKEN": "old"}) == "new"
+    assert "deprecated" not in caplog.text
+
+
+def test_postmark_token_old_name_falls_back_and_warns(caplog):
+    with caplog.at_level("WARNING"):
+        assert postmark_token({"POSTMARK_SERVER_TOKEN": "old"}) == "old"
+    assert "POSTMARK_SERVER_TOKEN is deprecated; use POSTMARK_TOKEN" in caplog.text
+
+
+def test_postmark_token_neither_is_empty():
+    assert postmark_token({}) == ""

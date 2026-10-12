@@ -208,12 +208,12 @@ describe('createCampaign budget and status', () => {
     expect(adset.end_time).toBe('2026-10-04T23:59:59');
   });
 
-  test('everything is created PAUSED', async () => {
+  test('the campaign is created PAUSED as the one switch; the ad set and the ad are ACTIVE so they deliver once it is enabled', async () => {
     const { http, calls } = fakeHttp(happyAnswers());
     await createCampaign(http, BASE_CREATE);
     expect(bodyOf(calls, 'act_111/campaigns').status).toBe('PAUSED');
-    expect(bodyOf(calls, 'act_111/adsets').status).toBe('PAUSED');
-    expect(bodyOf(calls, 'act_111/ads').status).toBe('PAUSED');
+    expect(bodyOf(calls, 'act_111/adsets').status).toBe('ACTIVE');
+    expect(bodyOf(calls, 'act_111/ads').status).toBe('ACTIVE');
   });
 
   test('the sequence posts in order: image, campaign, ad set, creative, ad', async () => {

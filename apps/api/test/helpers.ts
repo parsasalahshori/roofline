@@ -240,6 +240,8 @@ export function testConfig(
     POSTMARK_BROADCAST_STREAM: 'broadcast',
     STORM_MAIL_FROM: 'storms@roofline.test',
     HAIL_STALE_MINUTES: 90,
+    HAIL_ALERT_STALE_MINUTES_SEASON: 180,
+    HAIL_ALERT_STALE_MINUTES_OFFSEASON: 720,
     ...overrides,
   };
 }

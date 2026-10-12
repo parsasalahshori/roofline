@@ -9,6 +9,7 @@ export class FakeAdsGoogle implements AdsGoogle {
   private readonly links = new Map<string, 'pending' | 'active' | 'refused'>();
   private readonly failures: AdErrorKind[] = [];
   private nextId = 1;
+  private loseNextStatus: AdErrorKind | null = null;
 
   /** Makes the next interface call throw AdPlatformError(kind); calls queue in order. */
   failNext(kind: AdErrorKind): void {
@@ -19,6 +20,10 @@ export class FakeAdsGoogle implements AdsGoogle {
   }
   refuse(customerId: string): void {
     this.links.set(customerId, 'refused');
+  }
+  /** The next setStatus applies on the platform and then throws AdPlatformError(kind): a lost response. */
+  loseResponseOnNextSetStatus(kind: AdErrorKind = 'other'): void {
+    this.loseNextStatus = kind;
   }
   setSpend(campaignId: string, cents: number): void {
     const c = this.campaigns.get(campaignId);
@@ -66,6 +71,11 @@ export class FakeAdsGoogle implements AdsGoogle {
     const c = this.campaigns.get(campaignId);
     if (!c) throw new AdPlatformError('other');
     c.status = s;
+    if (this.loseNextStatus !== null) {
+      const kind = this.loseNextStatus;
+      this.loseNextStatus = null;
+      throw new AdPlatformError(kind);
+    }
   }
   async stats(customerId: string, campaignId: string): Promise<AdStats> {
     this.enter('stats', [customerId, campaignId]);

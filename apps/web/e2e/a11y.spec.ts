@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures.ts';
+import { test, expect, readStack, companyHostUrl, stormPageCode, draftAndApproveStormPlan, waitForStormSteps } from './fixtures.ts';
 import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 
 /*
@@ -128,5 +128,50 @@ test('follow-up review with personal texts has no serious accessibility violatio
   const { taskId } = await seedTextsPlan(pools, scenario.a.companyId, lead.customerId);
   await page.goto('/approvals/' + taskId);
   await expect(page.getByText('Send 1 personal text')).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('storm window has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/storm');
+  await expect(page.getByRole('region', { name: 'Storms in your area' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('storm detail has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, scenario }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto(`/storm/${scenario.companyStormId}`);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('route view has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, scenario }) => {
+  test.setTimeout(90_000);
+  // The owner approves the plan so the routes are built; the routes belong to the reps.
+  await loginAs(page, 'owner');
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
+  await waitForStormSteps(page, taskId);
+
+  await loginAs(page, 'rep');
+  await markTodaySeen('rep@a.test');
+  const mine = await page.request.get('/api/routes/mine', { headers: { Origin: readStack().baseUrl } });
+  expect(mine.status()).toBe(200);
+  const { routes } = (await mine.json()) as { routes: { id: string }[] };
+  expect(routes.length).toBeGreaterThan(0);
+  await page.goto(`/storm/routes/${routes[0]?.id}`);
+  await expect(page.getByRole('heading', { name: 'Doors in order' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('storm landing page has no serious accessibility violations', async ({ page, loginAs, db, scenario }) => {
+  test.setTimeout(90_000);
+  await loginAs(page, 'owner');
+  const { taskId } = await draftAndApproveStormPlan(page, scenario.companyStormId);
+  await waitForStormSteps(page, taskId);
+  const code = await stormPageCode(db, scenario.companyStormId);
+  await page.goto(companyHostUrl('/storm/' + code));
+  await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
   await scan(page);
 });
