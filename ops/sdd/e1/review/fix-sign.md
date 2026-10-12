@@ -1,6 +1,6 @@
 # E1 review fixes: rev-sign
 
-Branch `e1-rev-sign` (worktree `/home/user/wt/e1-rev-sign`, base 7354f70). One commit: `fix(estimator): whole-branch review fixes — signing, proof, homeowner page`.
+Branch `e1-rev-sign` (worktree `/home/user/wt/e1-rev-sign`, base 7354f70). Head 81234f7, CI run 38249563896 green (Platform, E2E). One commit: `fix(estimator): whole-branch review fixes — signing, proof, homeowner page`.
 The DB-backed tests run on CI (Platform). Locally: typecheck, lint, lint:css, `@roofline/shared` (465), `@roofline/web` (742), and the pure API files
 `signature-png.test.ts` and `proposal-pdf.test.ts` (run with a no-database vitest config).
 
