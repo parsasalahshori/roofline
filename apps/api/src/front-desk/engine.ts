@@ -412,7 +412,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             askedForPersonCount: state.askedForPersonCount,
             taskInProgress: state.taskInProgress,
             failedUnderstanding: state.failedUnderstanding,
-          }) ?? 'asked';
+          }, callerText) ?? 'asked';
         yield* handoff(reason, `The caller needs a person (${decision.intent}).`, await urgentForHandoff(deps, state, reason));
         return;
       }
