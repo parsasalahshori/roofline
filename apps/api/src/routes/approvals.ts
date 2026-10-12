@@ -247,6 +247,7 @@ export function approvalRoutes(deps: AppDeps, logError: (err: unknown, path: str
         drafted = await draftStormPlan(deps, ctx.companyId, target.companyStormId, clock.now(), {
           ...(ctx.userId !== null && { createdByUserId: ctx.userId }),
           rerunOfTaskId: taskId,
+          allowFinished: true,
           afterCreate: (tx, newId) =>
             audit(tx, ctx, {
               action: 'task.rerun',

@@ -202,15 +202,27 @@ export async function listStormPlanRecipients(tx: Tx, ctx: TenantContext, compan
 
 export type StormPlanLock = { ok: false } | { ok: true; oldDraftId: string | null };
 
+/** Plan statuses the automatic path may replace (Amended Ruling BD). */
+export const REDRAFTABLE_PLAN_STATUSES = ['draft'] as const;
+/** Finished plan statuses replaced only by an explicit person action (the caller passes allowFinished). */
+export const FINISHED_REDRAFTABLE_PLAN_STATUSES = ['expired', 'declined'] as const;
+
 /**
  * Locks the company_storms row (for update of cs) and checks it. ok:false when the storm is missing or
- * its plan is not replaceable (S1 CHANGED path). Ruling BD: for every caller an old plan in 'draft',
- * 'expired' or 'declined' is replaceable; running, awaiting_owner, approved, partly_done, done and
- * needs_attention never are. oldDraftId is the existing DRAFT plan task id (superseded through the task
- * service's supersedeDraft), or null when there was no plan or the old plan is expired/declined (nothing
- * to supersede; linkStormPlan just repoints to the new plan).
+ * its plan is not replaceable (S1 CHANGED path). Amended Ruling BD: the automatic path (storm-draft job,
+ * storm-match, any default draftStormPlan call) replaces only a 'draft' plan; an 'expired' or 'declined'
+ * plan is replaced only when the caller passes allowFinished (the rerun route; S1's later 'Draft a new
+ * plan' route); running, awaiting_owner, approved, partly_done, done and needs_attention never are.
+ * oldDraftId is the existing DRAFT plan task id (superseded through the task service's supersedeDraft),
+ * or null when there was no plan or the old plan is expired/declined (nothing to supersede; linkStormPlan
+ * just repoints to the new plan).
  */
-export async function lockStormPlan(tx: Tx, ctx: TenantContext, companyStormId: string): Promise<StormPlanLock> {
+export async function lockStormPlan(
+  tx: Tx,
+  ctx: TenantContext,
+  companyStormId: string,
+  opts: { allowFinished?: boolean } = {},
+): Promise<StormPlanLock> {
   const locked = await tx.execute(sql`
     select cs.plan_task_id, t.status as plan_status
     from company_storms cs
@@ -221,8 +233,11 @@ export async function lockStormPlan(tx: Tx, ctx: TenantContext, companyStormId: 
   const row = locked.rows[0] as { plan_task_id: string | null; plan_status: TaskStatus | null } | undefined;
   if (!row) return { ok: false };
   const oldId = row.plan_task_id;
-  if (oldId !== null && row.plan_status !== null && !['draft', 'expired', 'declined'].includes(row.plan_status)) {
-    return { ok: false };
+  if (oldId !== null && row.plan_status !== null) {
+    const replaceable =
+      (REDRAFTABLE_PLAN_STATUSES as readonly string[]).includes(row.plan_status) ||
+      (opts.allowFinished === true && (FINISHED_REDRAFTABLE_PLAN_STATUSES as readonly string[]).includes(row.plan_status));
+    if (!replaceable) return { ok: false };
   }
   return { ok: true, oldDraftId: oldId !== null && row.plan_status === 'draft' ? oldId : null };
 }

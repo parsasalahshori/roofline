@@ -1,10 +1,12 @@
 import { createTask, supersedeDraft, type NewTask } from '../tasks/service.ts';
 import {
+  FINISHED_REDRAFTABLE_PLAN_STATUSES,
   isAgentPaused,
   linkStormPlan,
   listStormPlanRecipients,
   loadStormPlanFacts,
   lockStormPlan,
+  REDRAFTABLE_PLAN_STATUSES,
   withTenant,
   type StormPlanFacts,
   type Tx,
@@ -169,9 +171,10 @@ function buildSteps(
 
 /**
  * Drafts (or re-drafts) the storm's plan and returns its task; null when Storm Scout is paused (nothing is drafted).
- * Ruling BD: for every caller an old plan in draft, expired or declined is re-drafted; any other status is returned unchanged.
+ * Amended Ruling BD: by default an old plan is re-drafted only when it is a 'draft'; an 'expired' or 'declined' plan is replaced only
+ * with opts.allowFinished (set only by the rerun route and S1's later 'Draft a new plan' route); any other status is returned unchanged.
  * opts.rerunOfTaskId, opts.createdByUserId and opts.afterCreate (A1 T20 rerun): the rerun link, the acting member (the 'created'
- * event actor is that user) and the caller's audit commit with the draft in this one transaction, so a unique violation on
+ * event and audit actor is that user) and the caller's audit commit with the draft in this one transaction, so a unique violation on
  * agent_tasks_company_rerun_of_uniq rolls the whole re-draft back. Default storm drafting stays actor 'agent'.
  */
 export async function draftStormPlan(
@@ -179,7 +182,12 @@ export async function draftStormPlan(
   companyId: string,
   companyStormId: string,
   now: Date,
-  opts: { rerunOfTaskId?: string; createdByUserId?: string; afterCreate?: (tx: Tx, taskId: string) => Promise<void> } = {},
+  opts: {
+    rerunOfTaskId?: string;
+    createdByUserId?: string;
+    allowFinished?: boolean;
+    afterCreate?: (tx: Tx, taskId: string) => Promise<void>;
+  } = {},
 ): Promise<{ taskId: string } | null> {
   const ctx = systemContext(companyId);
   const drafted = await withTenant(deps.pools, ctx, async (tx) => {
@@ -188,7 +196,10 @@ export async function draftStormPlan(
     const facts = await loadStormPlanFacts(tx, ctx, companyStormId);
     if (!facts) throw new Error(STORM_PLAN_ERRORS.notFound);
     if (facts.status === 'dismissed') throw new Error(STORM_PLAN_ERRORS.dismissed);
-    const replaceable = facts.planStatus === 'draft' || facts.planStatus === 'expired' || facts.planStatus === 'declined';
+    const replaceable =
+      facts.planStatus !== null &&
+      ((REDRAFTABLE_PLAN_STATUSES as readonly string[]).includes(facts.planStatus) ||
+        (opts.allowFinished === true && (FINISHED_REDRAFTABLE_PLAN_STATUSES as readonly string[]).includes(facts.planStatus)));
     if (facts.planTaskId !== null && !replaceable) return { taskId: facts.planTaskId, fresh: false };
 
     const recipients = await listStormPlanRecipients(tx, ctx, companyStormId);
@@ -215,7 +226,7 @@ export async function draftStormPlan(
       },
       { now },
     );
-    const lock = await lockStormPlan(tx, ctx, companyStormId);
+    const lock = await lockStormPlan(tx, ctx, companyStormId, { allowFinished: opts.allowFinished === true });
     if (!lock.ok) throw new Error(STORM_PLAN_ERRORS.changed);
     if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(STORM_PLAN_ERRORS.changed);
     await linkStormPlan(tx, ctx, companyStormId, taskId, now);

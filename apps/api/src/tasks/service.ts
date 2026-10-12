@@ -406,7 +406,7 @@ export async function createTask(
     opts.now,
   );
   await event(tx, ctx, taskId, 'created', input.createdBy ?? 'agent', { stepCount: steps.length }, opts.now, undefined, input.createdByUserId);
-  await audit(tx, ctx, {
+  await audit(tx, input.createdByUserId !== undefined ? { ...ctx, userId: input.createdByUserId } : ctx, {
     action: 'task.create',
     targetType: 'agent_task',
     targetId: taskId,
