@@ -1,9 +1,9 @@
 import express, { Router } from 'express';
-import { findCallBySid, updateCall, withTenant } from '@roofline/db';
+import { countLiveCallsInWindow, findCallBySid, lockAiCap, updateCall, withTenant } from '@roofline/db';
 import { onCallMembers } from '@roofline/db/system';
 import { disclosureGreeting, transferPlan, workIntervals, type TransferReason } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import { DIAL_TIMEOUT_SECONDS, relayConnectXml, routeVoice, sendVoiceTwiml, systemCtx, validCallSid, VOICEMAIL_XML, type VoiceRoute } from './twilio-voice-common.ts';
+import { aiAllowedNow, DIAL_TIMEOUT_SECONDS, relayConnectXml, routeVoice, sendVoiceTwiml, systemCtx, validCallSid, VOICEMAIL_XML, type VoiceRoute } from './twilio-voice-common.ts';
 import { checkSignature, escapeXml, field, FORM_BODY_LIMIT } from './twilio.ts';
 
 /*
@@ -189,12 +189,29 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
       return;
     }
 
-    const callId = await withTenant(deps.pools, ctx, async (tx) => (await findCallBySid(tx, ctx, callSid))?.id ?? null);
-    if (callId === null) {
-      sendVoiceTwiml(res, HANGUP);
-      return;
-    }
     if (mode === 'ring_first') {
+      // The team did not pick up: the call goes to the AI only under the same checks and cap as a new call at /voice
+      // (taken under the per-company lock), and is then relay-bound ('ringing'); otherwise voicemail.
+      const aiAllowed = aiAllowedNow(deps, route, now);
+      const decided = await withTenant(deps.pools, ctx, async (tx) => {
+        const call = await findCallBySid(tx, ctx, callSid);
+        if (call === null) return null;
+        if (!aiAllowed) return { callId: call.id, toAi: false };
+        await lockAiCap(tx, ctx);
+        const liveAi = await countLiveCallsInWindow(tx, ctx, now, call.id);
+        if (liveAi >= route.maxConcurrentAiCalls) return { callId: call.id, toAi: false };
+        await updateCall(tx, ctx, callSid, { status: 'ringing' });
+        return { callId: call.id, toAi: true };
+      });
+      if (decided === null) {
+        sendVoiceTwiml(res, HANGUP);
+        return;
+      }
+      if (!decided.toAi) {
+        sendVoiceTwiml(res, VOICEMAIL_XML);
+        return;
+      }
+      const callId = decided.callId;
       sendVoiceTwiml(
         res,
         relayConnectXml(deps, route, callId, {
@@ -203,6 +220,11 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
           messageOnly: false,
         }),
       );
+      return;
+    }
+    const callId = await withTenant(deps.pools, ctx, async (tx) => (await findCallBySid(tx, ctx, callSid))?.id ?? null);
+    if (callId === null) {
+      sendVoiceTwiml(res, HANGUP);
       return;
     }
     if (mode === 'transfer') {

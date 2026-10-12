@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { calls, companyPhoneNumbers, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
+import { calls, companyPhoneNumbers, companySettings, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
 
 /*
@@ -275,6 +275,9 @@ describe('POST /hooks/twilio/voice-transfer/after-dial', () => {
 
   test('after-dial ring-first no answer hands the call to the Front Desk with the disclosure', async () => {
     await seedCall();
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.update(companySettings).set({ frontDeskEnabled: true }).where(eq(companySettings.companyId, idOf('a'))),
+    );
     const res = await post(`${PREFIX}/after-dial?mode=ring_first`, dialFields('busy'));
     expect(res.text).toContain('<ConversationRelay');
     expect(res.text).toContain('welcomeGreetingInterruptible="none"');
