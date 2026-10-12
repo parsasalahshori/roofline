@@ -220,3 +220,105 @@ Side note: c1-crm's own Platform job in that run failed on an order-dependent as
 `apps/api/test/isolation.test.ts:304` (steps compared in a different order); it passed in the probe run.
 
 No merge-artifact fixes were needed after CI, so ci-check was not re-run.
+
+## Pass 3
+
+Base: pass 2 head f8ccd37. `git fetch origin` (05:0xZ) gave the requested heads unchanged; merged in order with
+`git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 1ca7b32bf11f776f7e23e212ae0460f751c853bb | 29edc62 | none (ops reports only) |
+| e1-estimator | c2186ba360a503492919d6b35df0e1b60dff4c5a | 5870d7e | none |
+| s1-storm | 63673a2e5f8a66b08064bd1ce32c19c8b052983f | 11e0271 | 6 files |
+| d1-front-desk | 933b2f30f62598e84bd9b49ce0cf869e5b8b9a40 | 81fe0bc | 3 files |
+| a1-agents | b372fb0c37f453d48203abf3b6df537ca1dd857f | fbf93c3 | 2 files |
+| g1-agents | dde40c5f0a31a87737d4a443f24b40e9a53aaa7c | ff5d01a | none (ops only) |
+
+Probe-only commits: 44c9a6d (G1 baseline labels in A1's copy, problem 1), ada88e4 (unused coming-soon helper, merge
+artifact), b9132d5 (web tests for the combination, problem 3).
+
+### Reported track fixes: not on the merged heads
+
+The three fixes reported since pass 2 are not on the heads named for this pass, so the probe keeps its workarounds:
+- C1: 1ca7b32 only adds `ops/sdd/c1/task-13-report.md` and `task-14-report.md`. The setup spec (3 lines) and the
+  isolation snapshot order are in `5561dbd Merge c1-fix1 into c1-crm`, which is only on `origin/c1-int` (aa19f20).
+  The setup spec reaches the probe anyway through E1 (a3991a9, identical text per C1's 9052e72); the isolation
+  order fix does not (it passed in the pass-2 probe run).
+- D1: the C1 Ruling CG copy (`front_desk` in `sourceNames`/`source`, filtered from NewJob's `sourceOptions`) is in
+  `6f63b3a Merge c1-crm into d1-c1sync`, only on `origin/d1-c1sync`. d1-front-desk 933b2f3 still lacks it.
+- G1: the plain `StepTypeDef` objects and the four `baselineLabels` are in `94a13ed Merge a1-agents into g1-agents`,
+  only on `origin/g1-ma1c`. origin/g1-agents dde40c5 changes only ops files and still uses `withMinutesSaved` (11).
+
+### Conflict resolutions
+
+s1-storm (S1 ships Storm and adds a Storm settings tab):
+- `apps/web/src/app/router.tsx`: S1's `storm/routes`, `storm/routes/:routeId`, `storm/:id` and D1's `front-desk`,
+  `front-desk/:conversationId`; both placeholders (`storm/*`, `front-desk/*`) dropped.
+- `apps/web/src/shell/apps.ts`: Storm and Front Desk both `shipped: true` (every dock app is now shipped).
+- `apps/web/src/features/settings/tabs.ts`: eleven tabs `company, team, prices, schedule, connections, storm, billing,
+  setup, front-desk, agents, profile`; reps and an unknown role do not see prices, storm, front-desk or agents.
+- `Settings.tsx`: the rep redirect covers prices/storm (S1), front-desk and agents.
+- `test/settings.test.tsx` (eleven links), `test/c1-routes.test.tsx` (no Coming soon note on Jobs, Calendar, Agents,
+  Storm or Front Desk).
+
+d1-front-desk:
+- `apps/web/src/copy/setup.ts`, `features/setup/SetupRow.tsx`: both actions (E1 `setPrices` for `prices_and_tiers`,
+  D1 `forwardCalls` for `phone_number`).
+- `apps/web/e2e/setup.spec.ts`: E1 expected 3 lines (Estimator, Front Desk, Storm Scout), D1 3 lines (Estimator,
+  calendar, Storm Scout). Combined, C1 T12 removed the calendar line and D1 T24 hides Front Desk's, so the page shows
+  2: the spec expects `Coming with the Estimator` and `Coming with Storm Scout` (problem 2).
+
+a1-agents:
+- `apps/api/src/app.ts`: E1/S1 route imports and mounts plus A1's `agentSettingsRoutes` at `/api/agents`.
+- `packages/shared/src/index.ts`: both (`agent-periods.ts` added).
+
+No track changed `package-lock.json`, migrations or `steps.ts` since pass 2.
+
+### Migration journal (Ruling AP)
+
+Unchanged from pass 2: idx 0..24 consecutive, in number order, `when` strictly increasing (0019-0022 still raised to
+0018 + 1..4 s; 0023/0024 G1's values). Snapshots chained by `prevId` 0000..0024. `drizzle-kit generate
+--name=probe_check` reported "No schema changes"; no file created. Exactly one `messages (company_id, id)` unique:
+D1's `messages_company_id_id_uniq` (0019, `tenant.ts`).
+
+### Earlier workarounds: status
+
+Still kept in the probe (no track has fixed them on its integration head):
+- AY/BA step shape: E1's `send_proposal`/`order_exact_report` (e1-estimator still sets `minutesSaved`), S1's three
+  (s1-storm still has `minutesSaved`), G1's four (g1-agents still `withMinutesSaved`); the `steps-e1`, `steps-storm`
+  and `steps` tests still call `.minutesSaved(` on those tracks. G1's own fix waits on g1-ma1c.
+- BA job source copy: `front_desk` in `copy/create.ts`/`copy/jobs.ts` (probe), C1 create-job test with eight
+  sources. D1's version waits on d1-c1sync; the probe does not yet filter it from NewJob's `sourceOptions` (CG).
+- AY/BA journal `when`: d1-front-desk, a1-agents and g1-agents still carry their own older values; probe raise kept.
+- Pass-2 web test recounts (dock/tabs): extended again for Storm (problem 3).
+
+Resolved by a track: the pass-2 CI failure (`setup.spec.ts` expecting 4 "Coming with" lines): E1 a3991a9 carries
+the 3-line spec, superseded in the combination by the 2-line count (problem 2).
+
+### Checks (after all six merges and the probe commits)
+
+`npm ci` clean (lockfile unchanged); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass
+(after problem 1), lint pass (after the merge artifact), lint:css pass; vitest @roofline/web 781 pass (83 files,
+after problem 3), @roofline/ui 170 pass, @roofline/shared 1278 pass, @roofline/send-gate 525 pass.
+
+Merge artifact fixed: `apps/web/src/app/router.tsx` `comingSoonWindow` (and its `ComingSoon`/`ComingSoonKey`
+imports) became unused once both the Storm and Front Desk placeholders were dropped (eslint no-unused-vars).
+
+### New cross-track problems
+
+1. **A1 x G1, baseline labels.** A1 T9-T11 `apps/web/src/copy/agents.ts` `baselineLabels` is
+   `satisfies Record<BaselineKey, string>`, and G1 adds `claim_packet`, `reminder_sent`, `install_moved`,
+   `follow_up_sent` to `BaselineKey`: TS1360 at `copy/agents.ts:108` and TS7053 at
+   `features/agents/TimeBreakdown.tsx:26`. Probe fix (44c9a6d, identical to g1-ma1c 94a13ed): `Claim packets built`,
+   `Reminders sent`, `Installs moved`, `Follow-ups sent`. Owner: G1 (land g1-ma1c on g1-agents).
+2. **C1 x D1 x E1, setup "Coming with" count** (e2e only). C1 T12 drops the calendar line, D1 T24 hides Front Desk's
+   line in `SetupRow` (`phoneReady`); with E1's spec the combined page shows 2 lines (Estimator, Storm Scout), not 3.
+   `COMING_WITH_BY_KEY` still maps `phone_number: 'front_desk'` (D1 overrides it in the web only). Probe: spec expects
+   2. Owner: D1 at its c1-crm sync: d1-c1sync 6f63b3a took C1's 4-line spec, but there C1 T12 + D1 T24 also give 2
+   lines, so d1-c1sync's E2E should fail as written. E1 recounts again when it clears `prices_and_tiers`.
+3. **S1 x A1/D1/E1/C1, web tests for shipped apps and tabs** (test-only, Ruling BA). S1 ships Storm and adds the
+   Storm tab: `a1-dock.test.tsx` (Storm Coming soon; shipped map), `a1-settings.test.tsx` (ten tabs),
+   `d1-routes.test.tsx` (Storm Coming soon), `d1-settings.test.tsx` (ten tabs, no storm), and E1's
+   `e1-routes.test.tsx:150` (Front Desk Coming soon, vs D1) fail. Probe (b9132d5): no app is coming soon; eleven
+   tabs. Owner: whichever track merges the other (S1 at its A1/D1 merges; E1 at its D1 merge).
