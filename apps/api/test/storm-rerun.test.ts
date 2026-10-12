@@ -96,7 +96,7 @@ describe('storm plan rerun', () => {
     const oldId = await expiredPlan();
     const res = await rerun(oldId);
     expect(res.status).toBe(201);
-    const rows = await q(`select actor_type, actor_user_id from agent_events where task_id = $1 and kind = 'created'`, [res.body.id]);
+    const rows = await q(`select actor_type, actor_user_id from agent_task_events where task_id = $1 and kind = 'created'`, [res.body.id]);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.actor_type).toBe('user');
     expect(rows[0]!.actor_user_id).toBe(actors.user('owner').userId);
