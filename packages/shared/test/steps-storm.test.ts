@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { stepMinutes, stepTypes } from '../src/steps.ts';
+import { type StepResult, stepMinutes, stepTypes } from '../src/steps.ts';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const ID2 = '22222222-2222-4222-8222-222222222222';
@@ -355,6 +355,9 @@ describe('create_ad_campaign', () => {
     expect(stepMinutes(ads, p, {}).minutes).toBe(0);
     expect(ads.baseline(p, {})).toBe('ad_campaign');
     expect(ads.units(p, { campaigns: 1 })).toBe(1);
+    // A provider result that names the campaign by id is one campaign created.
+    expect(ads.units(p, { campaignId: 'c1' } as unknown as StepResult)).toBe(1);
+    expect(ads.units(p, { campaigns: 2 })).toBe(2);
     expect(ads.userCreatable).toBe(true);
   });
 });

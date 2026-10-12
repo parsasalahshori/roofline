@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { listTaskEvents } from '@roofline/db';
 import { addressFor, Actors, inCompany, mustCreate, type Who } from './crm-helpers.ts';
@@ -36,7 +37,7 @@ const at = (minutes: number) => {
 
 type FeedItem = { id: string; agent: string; kind: string; text: string; at: string; href: string | null };
 type FeedBody = { items: FeedItem[]; nextCursor: string | null };
-type WaitingItem = { id: string; agent: string; kind: string; text: string; since: string; waitingOn: { kind: string }; href: string | null };
+type WaitingItem = { id: string; agent: string; kind: string; text: string; since: string; waitingOn: { kind: string; name?: string }; href: string | null };
 
 /** GET a path as a member of a company; returns the status and body. */
 async function get(who: Who, path: string, company: 'a' | 'b' = 'a') {
@@ -146,6 +147,13 @@ describe('agents feed', () => {
     expect(res.body).toMatchObject({ field: 'agent' });
   });
 
+  test('an old cursor without a rank is 400', async () => {
+    const old = Buffer.from(`${NOW.toISOString()}|00000000-0000-4000-8000-000000000001`, 'utf8').toString('base64url');
+    const res = await get('owner', `/api/agents/feed?cursor=${encodeURIComponent(old)}`);
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ field: 'cursor' });
+  });
+
   test('bad cursor is 400', async () => {
     const res = await get('owner', '/api/agents/feed?cursor=garbage');
     expect(res.status).toBe(400);
@@ -199,7 +207,31 @@ describe('agents feed', () => {
   });
 });
 
+const ownerName = () =>
+  inCompany(t, A(), async (tx) => {
+    const res = await tx.execute(sql`select name from company_members where role = 'owner' and status = 'active' order by id limit 1`);
+    return res.rows[0]!.name as string;
+  });
+
 describe('agents waiting', () => {
+  test('waiting: an awaiting_owner draft read by the office waits on the owner by name', async () => {
+    const ids = await newCustomers(t, 'a', ['Ann']);
+    const { taskId } = await newTask(t, 'a', { title: 'Text Ann', steps: [smsStep(ids)] });
+    await setTask(t, 'a', taskId, { status: 'awaiting_owner' });
+
+    const item = (await waitingFor('office')).find((i) => i.id === taskId);
+    expect(item?.waitingOn).toEqual({ kind: 'person', name: await ownerName() });
+  });
+
+  test('waiting: a draft with no open steps is you for a reviewer and office otherwise', async () => {
+    const { repJob } = await repJobs();
+    const { taskId } = await newTask(t, 'a', { title: 'Nothing open', subjectType: 'job', subjectId: repJob, steps: NOOP });
+    for (const step of await dbSteps(t, 'a', taskId)) await setStep(t, 'a', step.id, { enabled: false });
+
+    expect((await waitingFor('owner')).find((i) => i.id === taskId)?.waitingOn).toEqual({ kind: 'you' });
+    expect((await waitingFor('rep')).find((i) => i.id === taskId)?.waitingOn).toEqual({ kind: 'office' });
+  });
+
   test('waiting: a draft sms task shows waitingOn you for owner and office (message class)', async () => {
     const ids = await newCustomers(t, 'a', ['Ann']);
     const { taskId } = await newTask(t, 'a', { title: 'Text Ann', steps: [smsStep(ids)] });
@@ -220,10 +252,11 @@ describe('agents waiting', () => {
     });
 
     expect((await waitingFor('owner')).find((i) => i.id === spend.taskId)?.waitingOn).toEqual({ kind: 'you' });
-    expect((await waitingFor('office')).find((i) => i.id === spend.taskId)?.waitingOn).toEqual({ kind: 'office' });
+    // Only spend is open and the office may not approve it: the owner is who it waits on.
+    expect((await waitingFor('office')).find((i) => i.id === spend.taskId)?.waitingOn).toEqual({ kind: 'person', name: await ownerName() });
 
     const repRow = (await waitingFor('rep')).find((i) => i.id === spend.taskId);
-    expect(repRow).toMatchObject({ waitingOn: { kind: 'office' }, href: `/jobs/${repJob}` });
+    expect(repRow).toMatchObject({ waitingOn: { kind: 'person', name: await ownerName() }, href: `/jobs/${repJob}` });
 
     await delegateSpendToOffice(t, actors);
     expect((await waitingFor('office')).find((i) => i.id === spend.taskId)?.waitingOn).toEqual({ kind: 'you' });

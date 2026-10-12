@@ -44,6 +44,16 @@ export async function insertAgentEvent(tx: Tx, ctx: TenantContext, event: NewAge
   return row!;
 }
 
+/** Whether the task already has an event of this kind. */
+export async function hasTaskEvent(tx: Tx, ctx: TenantContext, taskId: string, kind: AgentEventKind): Promise<boolean> {
+  const rows = await tx
+    .select({ id: agentTaskEvents.id })
+    .from(agentTaskEvents)
+    .where(and(eq(agentTaskEvents.companyId, ctx.companyId), eq(agentTaskEvents.taskId, taskId), eq(agentTaskEvents.kind, kind)))
+    .limit(1);
+  return rows.length > 0;
+}
+
 /** One task's events, oldest first. */
 export async function listTaskEvents(tx: Tx, ctx: TenantContext, taskId: string): Promise<AgentEventRow[]> {
   return tx

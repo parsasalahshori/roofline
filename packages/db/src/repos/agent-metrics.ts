@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzl
 import type { Agent, TaskStatus } from '@roofline/shared';
 import { agentSettings, agentTasks, agentTaskSteps, customers, jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { waitingNow } from './agent-waiting.ts';
 import { customerScope, jobScope } from './scope.ts';
 
 /*
@@ -42,9 +43,7 @@ export type AgentCounts = {
 };
 
 const FINISHED: TaskStatus[] = ['done', 'partly_done'];
-const RAN: TaskStatus[] = ['done', 'partly_done', 'needs_attention'];
 const NOT_APPROVED: TaskStatus[] = ['declined', 'expired'];
-const WAITING: TaskStatus[] = ['draft', 'awaiting_owner', 'needs_attention'];
 const FINISHED_OR_HANDLED: TaskStatus[] = ['done', 'partly_done', 'needs_attention', 'declined', 'expired'];
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
@@ -73,17 +72,24 @@ export function taskSubjectScope(ctx: TenantContext): import('drizzle-orm').SQL 
 
 /** Counts per agent (only agents that have rows appear; callers default to zeros). */
 export async function agentCounts(tx: Tx, ctx: TenantContext, w: MetricsWindow): Promise<Record<string, AgentCounts>> {
+  // A done or partly_done task only counts as finished work when one of its steps really finished (N-1, N-6):
+  // a fully failed partly_done counts in ran30d only; an approved task with every step switched off is "not approved".
+  const hasDoneStep = sql`exists (select 1 from agent_task_steps s where s.task_id = ${agentTasks.id}
+    and s.company_id = ${ctx.companyId} and s.status = 'done')`;
+  const finishedStatus = sql`(${inArray(agentTasks.status, FINISHED)} and ${hasDoneStep})`;
+  const since = sql`${agentTasks.updatedAt} >= ${w.since30}`;
   const rows = await tx
     .select({
       agent: agentTasks.agent,
-      finishedToday: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, FINISHED)}
+      finishedToday: sql<number>`(count(*) filter (where ${finishedStatus}
         and ${agentTasks.updatedAt} >= ${w.todayStart} and ${agentTasks.updatedAt} < ${w.tomorrowStart}))::int`,
-      done30d: sql<number>`(count(*) filter (where ${agentTasks.status} = 'done' and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
-      partlyDone30d: sql<number>`(count(*) filter (where ${agentTasks.status} = 'partly_done' and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
-      ran30d: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, RAN)} and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
-      notApproved30d: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, NOT_APPROVED)} and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
-      waitingCount: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, WAITING)}
-        and (${agentTasks.expiresAt} is null or ${agentTasks.expiresAt} > ${w.now})))::int`,
+      done30d: sql<number>`(count(*) filter (where ${agentTasks.status} = 'done' and ${hasDoneStep} and ${since}))::int`,
+      partlyDone30d: sql<number>`(count(*) filter (where ${agentTasks.status} = 'partly_done' and ${hasDoneStep} and ${since}))::int`,
+      ran30d: sql<number>`(count(*) filter (where (${agentTasks.status} in ('partly_done', 'needs_attention')
+        or (${agentTasks.status} = 'done' and ${hasDoneStep})) and ${since}))::int`,
+      notApproved30d: sql<number>`(count(*) filter (where (${inArray(agentTasks.status, NOT_APPROVED)}
+        or (${agentTasks.status} = 'done' and not ${hasDoneStep})) and ${since}))::int`,
+      waitingCount: sql<number>`(count(*) filter (where ${waitingNow(w.now)}))::int`,
     })
     .from(agentTasks)
     .where(and(eq(agentTasks.companyId, ctx.companyId), taskSubjectScope(ctx)))
