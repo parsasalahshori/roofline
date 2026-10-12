@@ -540,3 +540,12 @@ No merge-artifact fixes were needed.
 None found locally. (A1 T14's `storm-pause.test.ts` second test expects `draftStormPlan` to reject `not yet`; it
 must be rewritten when S1 T11 fills the drafting body, as the test's own comment says. Owner: S1 T11 / whoever
 merges it with a1-agents.)
+
+### CI (pass 5)
+
+Run 38214809818 on d5f3cd4: Platform (lint, typecheck, tests) success; E2E (Playwright) success; Hail service (ruff,
+pytest) success; v1 (node:test) success. C1 T13/T14 calendar sync, E1 T7 measurements, S1 T8/T9/T13 (storm match,
+storm layer, Postmark webhook, unsubscribe) and A1 T14 (Storm Scout pause, `storm-pause.test.ts`) pass the database,
+API and worker suites in combination. No merge-artifact fixes were needed after CI, so ci-check was not re-run.
+(The local `ci-check` wrapper was stopped by a session time limit while Platform was still running. The run was
+then followed directly through the Actions API until it completed.)
