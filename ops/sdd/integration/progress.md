@@ -1014,3 +1014,112 @@ review fixes, C1's export fix and the probe resolutions (`draftStormPlan` pause 
 database, API, worker and e2e suites in combination. `export.test.ts` passed. No fixes were needed after CI, so
 ci-check was not re-run. (The local `ci-check` wrapper was stopped by its time limit; the run was followed through
 the Actions API until it completed.)
+
+## Pass 10
+
+Base: pass 9 head 89825cc. `git fetch origin` (2026-10-12): c1-crm 5d2e3bd (already merged, skipped); g1-agents had
+moved past the requested e8ed4cc to 40c2f60 (G1 T11/T12 briefs only), and 40c2f60 was merged. Merged in order with
+`git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 5d2e3bdf8c302084c9e98490c93a1b9846438f27 | (already in the probe) | - |
+| e1-estimator | a60330f8f4afa89ba8a5eb1cde9d1cee3ca0a73f | c201ac3 | 2 files |
+| s1-storm | 882445625cf3547bc405061134c433a03393a4b7 | 2b5f010 | 3 files |
+| d1-front-desk | 1541fae47fe45eed5a27e0bfe8ce233c7847b00a | 41f8e3c | none (ops only) |
+| a1-agents | a956d4004d5c73994dab85aa62da530f873e2d05 | e8d9f54 | 8 files |
+| g1-agents | 40c2f60711fc9c3fde391a44c9e1b4ab30483bdb | 4580a32 | none (ops only) |
+
+Probe-only commit: 87068ca (merge artifact, below). After the merges s1-storm moved to 2d1555a (ops briefs R1-R4
+only); it was not merged this pass.
+
+What the tracks brought: E1 T13 (tamper-evident signed PDF stored privately in R2, `makeSignedPdf` with job meta,
+`stored-files` repo, email copy, Ruling EP) and T22 (estimator smoke script and guards, runbook); S1 T19 (real
+`create_ad_campaign` handler: paused campaign at the approved maximum, then enabled; ad sync, landing URL from the
+storm page, `ad-campaign-sync` repo); A1 T18 (web review fixes on the Agents screens) and T19 (storm draft
+replacement through the task service: `replaceDraftPlan` split into `lockStormPlan` + `supersedeDraft` +
+`linkStormPlan`; the ESLint one-writer list grows to `finishClaimedStep`, `finishParkedStep`, `expireOverdueDrafts`,
+`moveStep`, `updateTask`), A1's own merge of e1-estimator 2702fb2 and s1-storm c510ea8 with the Ruling BC pause; D1
+and G1 ledger notes and briefs only. No migration, snapshot, journal, dependency or lockfile change.
+
+### Conflict resolutions
+
+e1-estimator:
+- `apps/api/package.json` scripts: both `smoke:estimator` (E1) and `smoke:storm` (S1).
+- `apps/api/src/jobs/handlers.ts`: E1's `'signed-pdf': makeSignedPdf(deps, companyId, proposalId, meta)` plus S1's
+  storm job handlers.
+
+s1-storm:
+- `tasks/handlers.ts`: S1's text (real `createAdCampaignHandler`; the probe's `notYet` helper goes, nothing uses it).
+- `messaging/dispatcher.ts`: ours (same three parked types; S1's own file lacks A1's `completeParkedStep`).
+- `packages/shared/src/steps.ts`: imports from both (G1's `claimsGuard`, `FOLLOW_UP_KINDS`).
+
+a1-agents (A1 merged older E1/S1 heads; the probe has newer ones):
+- `tasks/handlers.ts`: ours (S1 T19's real `create_ad_campaign`; A1's copy still has `notYet`).
+- `shell/apps.ts`: ours (`ComingSoonKey = 'estimator' | 'approvals'`; Front Desk shipped by D1).
+- `packages/db/test/rls.test.ts`: ours (D1's `conversation_turns` in `SELECT_INSERT_ONLY`, `blocked_numbers` in the
+  delete list and title).
+- `steps.ts`: G1 imports kept; A1's `order_exact_report` units (`ordered`) auto-merged.
+- `dispatcher.ts`: A1's comment wording.
+- `storm/plan.ts`, `test/storm-pause.test.ts`, `test/storm-plan.test.ts`: A1's text (see item 4). The probe's
+  `plan.ts` is now identical to a1-agents.
+
+Checked by hand: `hooks/twilio.ts`, `send-batch.ts`, `router.tsx` unchanged this pass (Ruling AV order as in pass 9);
+A1's wider one-writer ESLint rule passes on E1, S1, D1 and G1 code; S1 T19's `create_ad_campaign` result
+(`campaigns: 1`) is counted by A1's units (`campaignId` or `campaigns`); no remaining `replaceDraftPlan` caller.
+
+### Migration journal (Ruling AP)
+
+Unchanged from pass 9: idx 0..24 consecutive, in number order, `when` strictly increasing (script); 0019/0020 still
+carry the probe raise (1791772863263/1791772864263); 0021-0024 are 1791780000000 .. 1791780003000 (A1's own raised
+0021/0022). Snapshots chained by `prevId` 0000..0024 (script); 25 snapshots, 25 SQL files. `drizzle-kit generate
+--name=probe_check`: "No schema changes, nothing to migrate"; no file created. Exactly one `messages (company_id,
+id)` unique: D1's `messages_company_id_id_uniq` (0019, `tenant.ts:630`).
+
+Controller note (S1 R1, `storms.merged_into` added to 0018 in place under Ruling AW): not landed. Neither s1-storm
+8824456 nor the newer 2d1555a (nor any `s1-*` branch) carries `merged_into`; 2d1555a has only the R1 brief. Nothing to
+rebuild this pass. When R1 lands, 0019-0024 snapshots must be rebuilt on the new 0018 snapshot in the probe, and every
+track that carries its own snapshots after 0018 (A1's 0021/0022 on s1-storm c510ea8; D1's 0019/0020 and G1's
+0019-0024, which do not chain from S1's 0018 at all) will disagree with that chain.
+
+### Earlier workarounds: status
+
+Closed by a track this pass (the probe carries the track's text):
+- Pass 9 problem 1 / item 4 (Ruling BC pause): a1-agents a956d40 carries it: `isAgentPaused` first in the drafting
+  transaction, returns null, `Promise<{ taskId } | null>`, job ignores the value; `storm-pause.test.ts` rewritten
+  (paused: null, no task, `plan_task_id` null; unpaused: one draft `storm_plan` with the returned id). Two
+  differences from the pass-9 probe text: `storm-plan.test`'s `draft()` uses a non-null assertion instead of
+  throwing (a null would still fail the test on `.taskId`), and the 409 on `POST /api/storms/:id/plan` is NOT in
+  either track (A1's `routes/storms.ts` predates S1 T26's plan route; S1 has not touched it). The probe keeps the 409
+  ("Storm Scout is paused. Turn it back on in Agents to draft a plan."); owner S1 (or A1 at its next s1-storm merge).
+- Pass 9 problem 2 / item 5, half: a1-agents carries `front_desk_call` and `front_desk_texts` in `OFF_STEP_TITLES`;
+  the probe's duplicates were removed (87068ca). The four G1 titles (`send_personal_texts`, `build_claim_packet`,
+  `create_appointment`, `move_appointment`) are still probe-only; owner S1 at its g1 merge (Ruling BC).
+
+Still kept in the probe:
+- D1 journal `when`: d1-front-desk 1541fae has 0019/0020 = 1791770789451/1791770804997 (and no E1/S1 entries).
+- G1 journal `when`: g1-agents 40c2f60 has 0019-0024 = 1791770789451 .. 1791774749941, below S1's 0018 and A1's
+  0021/0022.
+- Ruling BA recounts, test-only: `a1-dock`, `a1-settings`, `settings`, `d1-routes`, `d1-settings`, `e1-routes`,
+  `setup.test` and `steps.test` still differ from every track head. Combined counts unchanged: no Coming soon app
+  (six dock apps shipped), eleven settings tabs, fifteen step types.
+
+Item 6 (pass 9 problem 3, storm_plan rerun, Ruling BC): not implemented by any track. A1 has the Task 20 brief (a
+storm_plan rerun re-drafts through `draftStormPlan` in the rerun route, 409 when paused; other reruns keep each step's
+off state via `off: errorPlain`), but `rerunTask` on a1-agents a956d40 still copies `{ type, payload }` with no
+storm_plan branch. S1's half (re-drafting expired/declined plans: whole-branch review item 1) is not done either:
+`lockStormPlan` still refuses a non-draft plan and `routes/storms.ts` `REDRAFTABLE` is `['draft']`. Owners: A1 T20
+and S1.
+
+### New cross-track problems
+
+None new beyond the 409 above (still probe-only) and the pending S1 R1 snapshot rebuild.
+
+Merge-artifact fixes (87068ca): `OFF_STEP_TITLES` listed `front_desk_call`/`front_desk_texts` twice (A1's copy and
+the probe's pass-9 addition; TS1117).
+
+### Checks (after all merges and the probe commit)
+
+`npm ci` clean (no package change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass
+(after 87068ca), lint pass, lint:css pass; vitest @roofline/web 1171 pass (126 files), @roofline/ui 172 pass,
+@roofline/shared 1292 pass, @roofline/send-gate 525 pass. The database, API, worker and e2e suites run only in CI.
