@@ -306,3 +306,9 @@ Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema c
   - `proposalListRoutes()` in the s1-routes dock test.
 - R8 had already narrowed 0018, so C1's app_system test holds.
 - Local checks: typecheck and lint pass; web 970 and shared/ui/send-gate 1367 tests pass; drizzle-kit reports no changes.
+
+## Integration sentinel, pass 13
+- Item 1 (spotter_reports GRANT ALL): already fixed by R8. 0018 grants app_system only SELECT and INSERT on spotter_reports.
+- Item 2 (TRUST_PROXY, R2 and proposalListRoutes): done in e726ecf.
+- Item 3: StormDetail no longer offers Redraft on an expired or declined plan, because the route answers 409 under Ruling BD. A1 adds that action at its merge, pending the controller's decision on allowFinished.
+- Item 4 (fresh: !previousWasDraft): A1 carries it.
