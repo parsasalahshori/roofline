@@ -70,6 +70,8 @@ describe('draftLeadTexts', () => {
   test.each([
     ['a price', 'Hi Dana, a new roof is about $500. Thursday 10 AM or Friday 2 PM?'],
     ['coverage talk', 'Hi Dana, your deductible is waived. Thursday 10 AM or Friday 2 PM?'],
+    ['a spoken price (D1 sentence guard)', 'Hi Dana, it is twelve grand for the roof. Thursday 10 AM or Friday 2 PM?'],
+    ['damage talk (D1 sentence guard)', 'Hi Dana, your roof has hail damage. Thursday 10 AM or Friday 2 PM?'],
     ['missing slots', 'Hi Dana, when can we come by?'],
     ['empty', ''],
   ])('falls back on %s', async (_name, body) => {

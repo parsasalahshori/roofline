@@ -117,7 +117,7 @@ export function leadTemplate(i: {
 }
 
 function acceptable(body: string, slots: [string, string]): boolean {
-  // D1: guardSentence (per-sentence check) is not on this base; claimsGuard on the whole text only.
+  // claimsGuard runs D1's guardSentence on every sentence, plus the claims rules (G1 Task 2b).
   if (body.trim() === '' || body.length > MAX_BODY_CHARS) return false;
   if (!claimsGuard(body).ok) return false;
   const lower = body.toLowerCase();
