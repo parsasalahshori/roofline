@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import type { CallView, ConversationDetail } from '@roofline/shared';
@@ -21,7 +21,6 @@ afterEach(() => {
 });
 
 const AT = '2026-10-11T14:00:00.000Z';
-const SIGNED_URL = 'https://signed.example/rec.mp3';
 const RECORDING = 'GET /api/calls/call1/recording';
 const HANDLING = 'POST /api/conversations/conv1/handling';
 const SPAM = 'POST /api/calls/call1/spam';
@@ -91,36 +90,35 @@ describe('RecordingPlayer', () => {
     expect(container.querySelector('audio')).toBeNull();
   });
 
-  it('fetches the signed URL only when the person presses play, then plays it with native controls', async () => {
-    api = stubApi({
-      [RECORDING]: () => ({ body: { url: SIGNED_URL, expiresAt: '2026-10-11T14:05:00.000Z' } }),
-    });
+  it('loads nothing until the person presses play, then streams from the recording route with native controls', async () => {
+    api = stubApi({});
     const { container, user } = renderWith(<RecordingPlayer call={makeCall()} />);
 
     expect(screen.getByText(conversationCopy.recordingHeading)).toBeInTheDocument();
     expect(api.count(RECORDING)).toBe(0);
+    expect(container.querySelector('audio')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: conversationCopy.playRecording }));
 
     await waitFor(() => expect(container.querySelector('audio')).not.toBeNull());
-    expect(api.count(RECORDING)).toBe(1);
+    expect(api.count(RECORDING)).toBe(0);
     const audio = container.querySelector('audio');
-    expect(audio).toHaveAttribute('src', SIGNED_URL);
+    expect(audio?.getAttribute('src')).toMatch(/\/api\/calls\/call1\/recording$/);
     expect(audio).toHaveAttribute('controls');
     expect(audio).toHaveAttribute('aria-label', conversationCopy.recordingLabel);
     expect(screen.queryByRole('button', { name: conversationCopy.playRecording })).toBeNull();
   });
 
-  it('shows a plain danger message when the recording cannot be loaded', async () => {
-    api = stubApi({
-      [RECORDING]: () => ({ status: 500, body: { error: 'x' } }),
-    });
+  it('shows a plain danger message and the play button again when the audio cannot be loaded', async () => {
+    api = stubApi({});
     const { container, user } = renderWith(<RecordingPlayer call={makeCall()} />);
 
     await user.click(screen.getByRole('button', { name: conversationCopy.playRecording }));
+    fireEvent.error(container.querySelector('audio') as HTMLAudioElement);
 
     expect(await screen.findByText(conversationCopy.recordingFailed)).toBeInTheDocument();
     expect(container.querySelector('audio')).toBeNull();
+    expect(screen.getByRole('button', { name: conversationCopy.playRecording })).toBeInTheDocument();
   });
 });
 

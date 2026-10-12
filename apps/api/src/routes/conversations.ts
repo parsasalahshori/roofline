@@ -101,7 +101,7 @@ export function conversationRoutes(deps: AppDeps): Router {
     const { ctx } = req;
     const id = conversationId(req.params.id);
     const scope = await scopeOf(ctx);
-    const detail = await withTenant(pools, ctx, (tx) => getConversationDetail(tx, ctx, scope, id));
+    const detail = await withTenant(pools, ctx, (tx) => getConversationDetail(tx, ctx, scope, id, clock.now()));
     if (!detail) throw new AppError(404, MESSAGES.notFound);
     res.json(detail);
   });

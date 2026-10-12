@@ -20,7 +20,7 @@ const REASONS: readonly TransferReason[] = ['asked', 'leak', 'danger', 'angry', 
 
 type EndReason = 'spam' | 'silence' | 'goodbye' | 'limit';
 const END_REASONS: readonly EndReason[] = ['spam', 'silence', 'goodbye', 'limit'];
-type Handoff = { kind: 'transfer'; reason: TransferReason } | { kind: 'end'; reason: TransferReason | EndReason };
+type Handoff = { kind: 'transfer'; reason: TransferReason; urgent: boolean } | { kind: 'end'; reason: TransferReason | EndReason };
 
 /** HandoffData -> kind and reason; anything missing, invalid or unknown is an end (reason unknown -> asked). The summary is not read here. */
 function parseHandoff(raw: string | undefined): Handoff {
@@ -28,9 +28,9 @@ function parseHandoff(raw: string | undefined): Handoff {
   try {
     const data: unknown = JSON.parse(raw);
     if (typeof data !== 'object' || data === null) return { kind: 'end', reason: 'asked' };
-    const { kind, reason } = data as { kind?: unknown; reason?: unknown };
+    const { kind, reason, urgent } = data as { kind?: unknown; reason?: unknown; urgent?: unknown };
     if (kind !== 'transfer') return { kind: 'end', reason: END_REASONS.find((r) => r === reason) ?? 'asked' };
-    return { kind: 'transfer', reason: REASONS.find((r) => r === reason) ?? 'asked' };
+    return { kind: 'transfer', reason: REASONS.find((r) => r === reason) ?? 'asked', urgent: urgent === true };
   } catch {
     return { kind: 'end', reason: 'asked' };
   }
@@ -119,7 +119,7 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
     }
 
     const onCall = (await onCallMembers(deps.pools.system, route.companyId)).map((m) => ({ userId: m.userId, phone: m.phone }));
-    const plan = transferPlan({ reason: handoff.reason, urgent: false, inWorkHours: inWorkHours(route, now), onCall });
+    const plan = transferPlan({ reason: handoff.reason, urgent: handoff.urgent, inWorkHours: inWorkHours(route, now), onCall });
 
     const callId = await withTenant(deps.pools, ctx, async (tx) => {
       const call = await findCallBySid(tx, ctx, callSid);

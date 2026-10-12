@@ -31,11 +31,12 @@ export const frontDeskSettings = {
   textBack: { label: 'Text back missed calls' },
   recordingDays: {
     label: 'Keep recordings (days)',
-    help: 'Zero keeps no recordings.',
+    help: 'Zero keeps no recordings and deletes the ones already saved at the next nightly cleanup.',
     range: (min: number, max: number) => `Enter a whole number from ${min} to ${max}.`,
   },
   transcriptDays: {
     label: 'Keep transcripts (days)',
+    help: 'After this, call transcripts and the texts between customers and the assistant are cleared. STOP, START and HELP texts, replies from your team and booking confirmations are kept.',
     range: (min: number, max: number) => `Enter a whole number from ${min} to ${max}.`,
   },
   maxCalls: {
@@ -48,7 +49,7 @@ export const frontDeskSettings = {
   saveFailed: 'We could not save. Try again.',
   onCall: {
     heading: 'Who answers when a call is passed to a person',
-    help: 'Calls ring people from the top down.',
+    help: 'Calls ring people from the top down. After hours, the list is rung only for a leak, a danger, or an urgent message the assistant took; otherwise the assistant takes a message.',
     empty: 'No one is on the list yet.',
     noPhone: 'No transfer phone yet',
     dragHandle: (name: string) => `Drag ${name} to reorder`,

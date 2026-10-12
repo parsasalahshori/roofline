@@ -9,6 +9,7 @@ export const conversationCopy = {
   transcriptEmpty: 'Nothing was said yet.',
   transcriptNotKept: "Transcript not kept at the caller's request",
   transcriptRemoved: 'Transcript removed after the retention period',
+  noWords: 'Photo or empty text',
   actionFailed: 'Did not work',
   openRecord: 'Open',
   linkCustomer: 'Open customer',

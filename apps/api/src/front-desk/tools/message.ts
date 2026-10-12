@@ -15,7 +15,10 @@ import { isOpenJob, systemCtx } from './system-ctx.ts';
 /*
  * D1 Task 9: take_message. Scope comes from the server-side conversation. The follow-up is the job's
  * C1 next step (Today); urgent messages also email the on-call members once per conversation.
- * Known gap: with no job and no customer, an urgent message cannot be deduped and may email again.
+ * The urgent email dedupes durably: hasUrgentNoticeFor row-locks the conversation and finds an earlier urgent
+ * front_desk_message activity, or an earlier turn whose take_message call was urgent (this covers a caller with
+ * no customer across separate texts and relay sessions, each of which builds a fresh state). The in-memory
+ * conversation.urgentNoticeSent flag covers a second urgent call within the same turn.
  * Never logs the message, names or phone numbers.
  */
 
@@ -23,7 +26,7 @@ export const takeMessage: ToolHandler<'take_message'> = async (ctx, input) => {
   const { conversation } = ctx;
   const tctx = systemCtx(ctx.companyId);
 
-  const alreadyNotified = await withTenant(ctx.deps.pools, tctx, async (tx) => {
+  const seenInDb = await withTenant(ctx.deps.pools, tctx, async (tx) => {
     const seen = input.urgent ? await hasUrgentNoticeFor(tx, tctx, conversation.conversationId) : false;
     const data = { conversationId: conversation.conversationId, urgent: input.urgent, reason: input.reason };
 
@@ -72,6 +75,11 @@ export const takeMessage: ToolHandler<'take_message'> = async (ctx, input) => {
     });
     return seen;
   });
+
+  const alreadyNotified = seenInDb || conversation.urgentNoticeSent === true;
+  // Set before awaiting the mailer so a concurrent call in this conversation does not send again,
+  // and so the engine's handoff sees the notice even when every send fails.
+  if (input.urgent) conversation.urgentNoticeSent = true;
 
   if (input.urgent && !alreadyNotified) {
     try {

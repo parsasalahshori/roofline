@@ -315,6 +315,7 @@ function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave }: 
           />
           <Field
             label={frontDeskSettings.transcriptDays.label}
+            help={frontDeskSettings.transcriptDays.help}
             name="transcriptRetentionDays"
             type="number"
             inputMode="numeric"

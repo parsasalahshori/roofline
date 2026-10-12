@@ -8,8 +8,9 @@ import {
   loadBookingActions,
   loadCallForAfterCall,
   loadCompanyFacts,
-  recordUsage,
+  recordCallMinutes,
   type TenantContext,
+  type Tx,
   updateConversation,
   withTenant,
 } from '@roofline/db';
@@ -69,10 +70,87 @@ function firstSentence(text: string): string {
   return (s === '' ? text.trim() : s).slice(0, 200);
 }
 
-export async function runAfterCall(deps: AppDeps, data: { companyId: string; callSid?: string; conversationId?: string }): Promise<void> {
+/** The company block the summary prompt carries (the same for voice and SMS). */
+async function loadCompanyBlock(tx: Tx, ctx: TenantContext): Promise<string> {
+  const facts = await loadCompanyFacts(tx, ctx);
+  return buildCompanyBlock({
+    name: facts.name,
+    timezone: facts.timezone,
+    city: facts.city,
+    state: facts.state,
+    workHours: facts.workHours,
+    facts: facts.facts,
+    services: ['Roof inspections', 'Storm damage repair'],
+    towns: facts.city ? [facts.city] : [],
+    repName: null,
+    canMove: facts.canMove,
+    canCancel: facts.canCancel,
+  });
+}
+
+/** The model's summary, or '' when it fails (the caller falls back to the plain sentence). */
+async function summarizeOrEmpty(
+  deps: AppDeps,
+  input: { companyBlock: string; transcript: string; actions: string[] },
+  logRef: string,
+): Promise<{ summary: string; modelOutcome: ConversationOutcome; followUps: string[] }> {
+  try {
+    const out = await deps.llm.summarize(input);
+    const summary = out.summary.trim();
+    if (summary === '') throw new Error('empty summary');
+    return { summary, modelOutcome: out.outcome, followUps: out.followUps };
+  } catch {
+    console.error(`after-call summary fell back ${logRef}`);
+    return { summary: '', modelOutcome: 'other', followUps: [] };
+  }
+}
+
+/** Outcomes that leave the conversation unread so the inbox shows it as needing attention. */
+const ATTENTION_OUTCOMES = new Set<ConversationOutcome>(['booked', 'message', 'claim']);
+
+/** SMS threads have no call: summarize the idle conversation once, end it, log one activity. No usage, no text-back. */
+async function runSmsAfterCall(deps: AppDeps, ctx: TenantContext, conversationId: string): Promise<void> {
+  const now = deps.clock.now();
+  const prep = await withTenant(deps.pools, ctx, async (tx) => {
+    const conversation = await getConversation(tx, ctx, conversationId);
+    if (!conversation || conversation.channel !== 'sms' || conversation.summary !== null) return null;
+    const turns = await listTurns(tx, ctx, conversationId);
+    const transcript = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
+    const actions = await loadBookingActions(tx, ctx, conversationId);
+    return { transcript, actions, companyBlock: await loadCompanyBlock(tx, ctx) };
+  });
+  if (!prep) return;
+  const out = await summarizeOrEmpty(deps, prep, `conversation=${conversationId} company=${ctx.companyId}`);
+  const outcome = pickOutcome(prep.actions, false, out.modelOutcome);
+  const summary = out.summary === '' ? plainSummary(outcome) : out.summary;
+  await withTenant(deps.pools, ctx, async (tx) => {
+    const fresh = await getConversation(tx, ctx, conversationId);
+    if (!fresh || fresh.summary !== null) return;
+    await updateConversation(tx, ctx, conversationId, { status: 'ended', outcome, summary });
+    if (fresh.customerId !== null) {
+      await addActivity(tx, ctx, {
+        subjectType: 'customer',
+        subjectId: fresh.customerId,
+        kind: 'text_conversation',
+        summary: firstSentence(summary),
+        data: { summary, outcome, conversationId, followUps: out.followUps },
+        at: now,
+        actorAgent: 'front_desk',
+      });
+    }
+  });
+}
+
+export async function runAfterCall(
+  deps: AppDeps,
+  data: { companyId: string; callSid?: string; conversationId?: string; swept?: boolean },
+): Promise<void> {
   const callSid = data.callSid;
-  if (callSid === undefined) return;
   const ctx: TenantContext = { companyId: data.companyId, userId: null, role: 'system', canApproveSpend: false };
+  if (callSid === undefined) {
+    if (data.conversationId !== undefined) await runSmsAfterCall(deps, ctx, data.conversationId);
+    return;
+  }
   const now = deps.clock.now();
 
   const prep = await withTenant(deps.pools, ctx, async (tx) => {
@@ -84,16 +162,8 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
 
     if (call.aiSeconds > 0) {
       const minutes = Math.ceil(call.aiSeconds / 60);
-      await recordUsage(tx, ctx, {
-        kind: 'ai_call_minute',
-        quantity: minutes,
-        unitCostCents: null,
-        refType: 'call',
-        refId: call.id,
-        description: 'AI call minutes',
-        at: now,
-      });
-      await closeCallAfterCall(tx, ctx, callSid, { billedMinutes: minutes });
+      const billed = await recordCallMinutes(tx, ctx, { callId: call.id, minutes, description: 'AI call minutes', at: now });
+      await closeCallAfterCall(tx, ctx, callSid, { billedMinutes: billed });
     }
     if (call.spamReason !== null) return { call, spam: true as const };
 
@@ -111,20 +181,7 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
           const turns = await listTurns(tx, ctx, call.conversationId);
           transcript = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
         }
-        const facts = await loadCompanyFacts(tx, ctx);
-        companyBlock = buildCompanyBlock({
-          name: facts.name,
-          timezone: facts.timezone,
-          city: facts.city,
-          state: facts.state,
-          workHours: facts.workHours,
-          facts: facts.facts,
-          services: ['Roof inspections', 'Storm damage repair'],
-          towns: facts.city ? [facts.city] : [],
-          repName: null,
-          canMove: facts.canMove,
-          canCancel: facts.canCancel,
-        });
+        companyBlock = await loadCompanyBlock(tx, ctx);
       }
     }
     return { call, spam: false as const, conversation, transcript, actions, callerTurns, companyBlock };
@@ -138,26 +195,24 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
 
   if (conversation && conversation.summary === null && call.conversationId !== null) {
     const conversationId = call.conversationId;
-    let summary: string;
-    let modelOutcome: ConversationOutcome = 'other';
-    let followUps: string[] = [];
-    try {
-      const out = await deps.llm.summarize({ companyBlock: prep.companyBlock, transcript: prep.transcript, actions });
-      summary = out.summary.trim();
-      modelOutcome = out.outcome;
-      followUps = out.followUps;
-      if (summary === '') throw new Error('empty summary');
-    } catch {
-      console.error(`after-call summary fell back call=${call.id} company=${data.companyId}`);
-      summary = '';
-    }
+    const out = await summarizeOrEmpty(deps, { companyBlock: prep.companyBlock, transcript: prep.transcript, actions }, `call=${call.id} company=${data.companyId}`);
+    const followUps = out.followUps;
+    let summary = out.summary;
+    const modelOutcome = out.modelOutcome;
     const outcome = pickOutcome(actions, transferred, modelOutcome);
     if (summary === '') summary = plainSummary(outcome);
 
     await withTenant(deps.pools, ctx, async (tx) => {
       const fresh = await getConversation(tx, ctx, conversationId);
       if (!fresh || fresh.summary !== null) return;
-      await updateConversation(tx, ctx, conversationId, { status: 'ended', outcome, summary });
+      const unansweredTransfer = outcome === 'transferred' && !transferred;
+      const needsAttention = ATTENTION_OUTCOMES.has(outcome) || unansweredTransfer;
+      await updateConversation(tx, ctx, conversationId, {
+        status: 'ended',
+        outcome,
+        summary,
+        ...(needsAttention ? { unreadAtLeast: 1 } : {}),
+      });
       if (fresh.customerId !== null) {
         await addActivity(tx, ctx, {
           subjectType: 'customer',
@@ -172,7 +227,8 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
     });
   }
 
-  if (transferred || call.status === 'rejected') return;
+  // A call the fd-health sweep ended (data.swept) is never texted back: its caller may still be on the line (CV#3).
+  if (transferred || call.status === 'rejected' || data.swept === true) return;
   const secondsInCall =
     call.aiSeconds > 0
       ? call.aiSeconds

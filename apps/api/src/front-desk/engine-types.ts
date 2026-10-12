@@ -11,7 +11,7 @@ import type { AppDeps } from '../app.ts';
 export type EngineEvent =
   | { type: 'say'; text: string }
   | { type: 'filler'; text: string }
-  | { type: 'handoff'; reason: TransferReason; summary: string }
+  | { type: 'handoff'; reason: TransferReason; summary: string; urgent: boolean }
   | { type: 'end'; reason: 'goodbye' | 'spam' | 'silence' | 'limit' }
   | { type: 'turn_saved'; turnId: string };
 
@@ -48,6 +48,8 @@ export type ConversationState = {
   /** D1 Task 12: the caller objected to recording; turns are saved with text '' from then on. Absent = false. */
   transcriptOff?: boolean;
   /** D1 Task 19: the company's move/cancel settings at start(); decides which tools this conversation is offered. */
+  /** D1 RC-2: set by take_message after it emails the on-call staff about an urgent message; read by the engine's handoff. Absent = false. */
+  urgentNoticeSent?: boolean;
   toolSettings?: { canMove: boolean; canCancel: boolean };
 };
 

@@ -27,7 +27,7 @@ export const transferToPerson: ToolHandler<'transfer_to_person'> = async (ctx, i
     facts: await loadCompanyFacts(tx, tctx),
     urgentMessage: await hasUrgentNoticeFor(tx, tctx, conversation.conversationId),
   }));
-  const urgent = input.reason === 'danger' || input.reason === 'leak' || urgentMessage;
+  const urgent = input.reason === 'danger' || input.reason === 'leak' || urgentMessage || conversation.urgentNoticeSent === true;
   const members = await onCallMembers(ctx.deps.pools.system, ctx.companyId);
   const inWorkHours = workIntervals(facts.workHours, ctx.now, new Date(ctx.now.getTime() + 1), facts.timezone).length > 0;
   const plan = transferPlan({

@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, lt, sql } from 'drizzle-orm';
 import { DEFAULT_WORK_HOURS } from '@roofline/shared';
 import type { ConversationChannel, ConversationOutcome, HandledBy, IdentityLevel, WorkHours } from '@roofline/shared';
 import { companies, companyPhoneNumbers, companySettings, conversations } from '../schema/index.ts';
@@ -96,6 +96,8 @@ export async function updateConversation(
     outcome?: ConversationOutcome;
     summary?: string;
     lastMessageAt?: Date;
+    /** Raises the unread count to at least this number (never lowers it). */
+    unreadAtLeast?: number;
   },
 ): Promise<void> {
   const set: Partial<typeof conversations.$inferInsert> = {};
@@ -106,6 +108,7 @@ export async function updateConversation(
   if (patch.outcome !== undefined) set.outcome = patch.outcome;
   if (patch.summary !== undefined) set.summary = patch.summary;
   if (patch.lastMessageAt !== undefined) set.lastMessageAt = patch.lastMessageAt;
+  if (patch.unreadAtLeast !== undefined) set.unreadCount = sql`greatest(${conversations.unreadCount}, ${patch.unreadAtLeast})` as unknown as number;
   if (Object.keys(set).length === 0) return;
   set.updatedAt = sql`now()` as unknown as Date;
   await tx
@@ -125,4 +128,22 @@ export async function getConversation(
     .from(conversations)
     .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.id, id)));
   return row ?? null;
+}
+
+/** Ids of this company's active SMS conversations whose last message is older than `before`, oldest first. */
+export async function listIdleSmsConversationIds(tx: Tx, ctx: TenantContext, before: Date, limit: number): Promise<string[]> {
+  const rows = await tx
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.companyId, ctx.companyId),
+        eq(conversations.channel, 'sms'),
+        eq(conversations.status, 'active'),
+        lt(conversations.lastMessageAt, before),
+      ),
+    )
+    .orderBy(asc(conversations.lastMessageAt), asc(conversations.id))
+    .limit(limit);
+  return rows.map((r) => r.id);
 }
