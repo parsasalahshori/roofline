@@ -113,7 +113,7 @@ describe('texting registration submit', () => {
 
     const saved = await ownerQuery<{ brand_info: { website: string } }>('select brand_info from texting_registrations where company_id = $1', [t.seed.a.companyId]);
     expect(saved[0]!.brand_info.website).toBe(privacy);
-    expect(brandSubmissions()[0]).toMatchObject({ website: privacy });
+    expect(brandSubmissions()[0]).toMatchObject({ brand: { website: privacy } });
   });
 
   test('a second submit while waiting is refused', async () => {
