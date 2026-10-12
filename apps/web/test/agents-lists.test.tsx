@@ -43,7 +43,7 @@ describe('RecentTasks', () => {
     const kinds = ['storm_plan', 'send_storm_plan', 'create_ad_campaign', 'send_proposal', 'order_exact_report', 'exact_report'];
     // Front Desk live tasks and G1's agents (Claims, Scheduler, Follow-up).
     kinds.push('call', 'text_conversation', 'claims_nudges', 'claims_reply_noted', 'claims_adjuster_visit');
-    kinds.push('reminders', 'no_show', 'weather_moves', 'follow_ups', 'stuck_nudges');
+    kinds.push('claim_packet', 'reminders', 'no_show', 'weather_moves', 'follow_ups', 'stuck_nudges', 'proposal_call_rep');
     for (const kind of kinds) {
       expect(Object.hasOwn(TASK_KIND_LABEL, kind)).toBe(true);
     }
