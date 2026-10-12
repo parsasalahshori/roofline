@@ -35,9 +35,11 @@ const END = new Date(START.getTime() + 60 * 60 * 1000);
 const NOT_FREE = "That time isn't free any more.";
 
 /** A customer, a home and a job, with a claim in the given status when one is asked for. */
+let jobSeq = 0;
 async function aJob(claimStatus?: ClaimStatus): Promise<{ jobId: string; customerId: string; claimId: string | null }> {
   const companyId = idOf();
   const now = t.clock.now();
+  const house = 301 + jobSeq++;
   return inCompany(t, companyId, async (tx) => {
     const [customer] = await tx
       .insert(customers)
@@ -49,11 +51,11 @@ async function aJob(claimStatus?: ClaimStatus): Promise<{ jobId: string; custome
       .values({
         companyId,
         customerId,
-        addressLine: '301 Oak St',
+        addressLine: `${house} Oak St`,
         city: 'Omaha',
         state: 'NE',
         zip: '68102',
-        addressKey: '301 oak st|68102',
+        addressKey: `${house} oak st|68102`,
         timezone: 'America/Chicago',
         createdAt: now,
         updatedAt: now,

@@ -209,12 +209,12 @@ describe('runClaimsReply (the job)', () => {
 
     await runJob(withRep);
 
-    const tasks = await claimsTasks();
+    const tasks = (await claimsTasks()).sort((a, b) => a.kind.localeCompare(b.kind));
     expect(tasks.map((task) => [task.kind, task.mode, task.title])).toEqual([
-      ['claims_reply_noted', 'live', 'Claims noted the adjuster visit'],
       ['claims_adjuster_visit', 'needs_approval', 'Book the adjuster visit'],
+      ['claims_reply_noted', 'live', 'Claims noted the adjuster visit'],
     ]);
-    const draft = tasks[1]!;
+    const draft = tasks[0]!;
     expect(draft.status).toBe('draft');
     const [step] = await dbSteps(t, 'a', draft.id);
     expect(step).toMatchObject({ type: 'create_appointment', approvalClass: 'internal', status: 'pending' });

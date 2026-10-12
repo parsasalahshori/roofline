@@ -11,7 +11,7 @@ import {
   type Tx,
   withTenant,
 } from '@roofline/db';
-import { canMoveClaim, stepTypes } from '@roofline/shared';
+import { stepTypes } from '@roofline/shared';
 import type { StepHandler, StepOutcome } from '../tasks/runner.ts';
 
 /*
@@ -77,7 +77,8 @@ async function isBusy(tx: Tx, ctx: TenantContext, userId: string, startsAt: Date
 async function linkClaim(tx: Tx, ctx: TenantContext, jobId: string, appointmentId: string, now: Date): Promise<void> {
   const claim = (await getJobClaim(tx, ctx, jobId))?.claim;
   if (!claim) return; // no claim on this job: nothing to link (saveClaim would make one)
-  const moves = (claim.status === 'not_filed' || claim.status === 'filed') && canMoveClaim(claim.status, 'adjuster_scheduled');
+  // A person approved this visit, so it is not bound by the reply flow: any claim earlier than the visit moves on.
+  const moves = claim.status === 'not_filed' || claim.status === 'filed';
   await saveClaim(
     tx,
     ctx,
