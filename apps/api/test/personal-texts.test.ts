@@ -184,7 +184,7 @@ describe('send_personal_texts', () => {
 
   test('a review request to an express customer is blocked by the gate', async () => {
     const [ann] = await addSmsCustomers(t, 'a', [{ firstName: 'Ann', phone: '+14025550111', consent: 'express', ...NE }]);
-    const { taskId, stepId } = await personalStep([{ customerId: ann!, jobId: null, body: 'Hi Ann, would you leave us a review?' }], {
+    const { taskId, stepId } = await personalStep([{ customerId: ann!, jobId: null, body: "Hi Ann, it's Acme Roofing. Would you leave us a review? Reply STOP to opt out." }], {
       purpose: 'marketing',
       kind: 'review',
     });
@@ -199,7 +199,7 @@ describe('send_personal_texts', () => {
   test('quiet hours schedule the text', async () => {
     t.clock.set(BATCH_AT); // 21:30 in New York
     const [rosa] = await addSmsCustomers(t, 'a', [{ firstName: 'Rosa', phone: '+13055550105', consent: 'attested', ...FL }]);
-    const { taskId, stepId } = await personalStep([{ customerId: rosa!, jobId: null, body: 'Hi Rosa, would you leave us a review?' }], {
+    const { taskId, stepId } = await personalStep([{ customerId: rosa!, jobId: null, body: "Hi Rosa, it's Acme Roofing. Would you leave us a review? Reply STOP to opt out." }], {
       purpose: 'marketing',
       kind: 'review',
     });
@@ -280,9 +280,9 @@ describe('send_personal_texts', () => {
     ]);
     const { taskId, stepId } = await personalStep(
       [
-        { customerId: nina!, jobId: null, body: 'Hi Nina, would you leave us a review?' },
-        { customerId: rosa!, jobId: null, body: 'Hi Rosa, would you leave us a review?' },
-        { customerId: pia!, jobId: null, body: 'Hi Pia, would you leave us a review?' },
+        { customerId: nina!, jobId: null, body: "Hi Nina, it's Acme Roofing. Would you leave us a review? Reply STOP to opt out." },
+        { customerId: rosa!, jobId: null, body: "Hi Rosa, it's Acme Roofing. Would you leave us a review? Reply STOP to opt out." },
+        { customerId: pia!, jobId: null, body: "Hi Pia, it's Acme Roofing. Would you leave us a review? Reply STOP to opt out." },
       ],
       { purpose: 'marketing', kind: 'review' },
     );
@@ -292,8 +292,8 @@ describe('send_personal_texts', () => {
         kind: 'review',
         dedupePrefix: 'pt:one',
         messages: [
-          { customerId: nina!, jobId: null, body: 'Hi Nina, would you leave us a review?' },
-          { customerId: rosa!, jobId: null, body: 'Hi Rosa, would you leave us a review?' },
+          { customerId: nina!, jobId: null, body: "Hi Nina, it's Acme Roofing. Would you leave us a review? Reply STOP to opt out." },
+          { customerId: rosa!, jobId: null, body: "Hi Rosa, it's Acme Roofing. Would you leave us a review? Reply STOP to opt out." },
           { customerId: pia!, jobId: null, body: BAD_BODY },
         ],
       },
