@@ -38,9 +38,10 @@ GRANT USAGE, SELECT ON SEQUENCE hail_runs_id_seq TO app_hail;
 GRANT SELECT ON hail_runs, storms, storm_contours, spotter_reports TO app_tenant;
 --> statement-breakpoint
 
--- 4. app_system: the spotter-report loader runs as app_system, so it has ALL on spotter_reports (and its
---    bigserial sequence). On storms it reads, and may update only place_name (the reverse-geocoded label).
-GRANT ALL ON spotter_reports TO app_system;
+-- 4. app_system: the spotter-report loader runs as app_system, so it reads and writes spotter_reports (and its
+--    bigserial sequence), never with TRUNCATE, TRIGGER or REFERENCES (C1 Ruling SEC-4). On storms it reads, and
+--    may update only place_name (the reverse-geocoded label).
+GRANT SELECT, INSERT, UPDATE, DELETE ON spotter_reports TO app_system;
 --> statement-breakpoint
 GRANT USAGE, SELECT ON SEQUENCE spotter_reports_id_seq TO app_system;
 --> statement-breakpoint

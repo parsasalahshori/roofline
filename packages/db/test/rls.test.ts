@@ -680,12 +680,12 @@ describe('grants', () => {
     expect(row).toEqual({ hail: true, spotter: false, footprints: false });
   });
 
-  test('app_system: ALL on spotter_reports, SELECT only on hail_runs, SELECT and UPDATE (place_name) only on storms, nothing on storm_contours', async () => {
+  test('app_system: SELECT, INSERT, UPDATE and DELETE on spotter_reports, SELECT only on hail_runs, SELECT and UPDATE (place_name) only on storms, nothing on storm_contours', async () => {
     expect(await tablePrivileges('app_system', HAIL_GLOBAL_TABLES)).toEqual([
       privs('hail_runs', true, false, false, false),
       privs('storms', true, false, false, false),
       privs('storm_contours', false, false, false, false),
-      { ...privs('spotter_reports', true, true, true, true), truncate: true },
+      privs('spotter_reports', true, true, true, true),
     ]);
     const cols = await ownerQuery<{ column_name: string }>(
       `select column_name from information_schema.column_privileges

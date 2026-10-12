@@ -82,6 +82,10 @@ GRANT SELECT (id, company_id, status) ON conversations TO app_system;
 --> statement-breakpoint
 GRANT SELECT (id, company_id, at) ON conversation_turns TO app_system;
 --> statement-breakpoint
+-- The fd-health repair marks a number's voice URL as set (system/voice-routing.ts markVoiceUrlSet). C1 Ruling
+-- SEC-4 leaves app_system only SELECT and INSERT on company_phone_numbers, so this column is granted here.
+GRANT UPDATE (capabilities) ON company_phone_numbers TO app_system;
+--> statement-breakpoint
 
 -- 5. Global lookup cache for the line type (Twilio Lookup). It has no company_id and no RLS: a line's
 --    type is not a customer's data, and the cache is shared across companies.

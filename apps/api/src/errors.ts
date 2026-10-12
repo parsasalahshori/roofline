@@ -152,7 +152,7 @@ export function errorHandler(logError: (err: unknown, path: string) => void): Er
     // `next(err)`: Express's default handler prints the raw error and its `cause` (query params,
     // Postgres detail) before it destroys the socket.
     if (res.headersSent) {
-      logError(err, req.path);
+      logError(err, pathForLog(req.path));
       res.destroy();
       return;
     }

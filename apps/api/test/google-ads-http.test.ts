@@ -425,6 +425,8 @@ describe("googleAdsFor", () => {
     R2_ACCESS_KEY_ID: "key-id",
     R2_SECRET_ACCESS_KEY: "key-secret",
     R2_BUCKET: "proposals",
+    // Production requires TRUST_PROXY (C1 security finding 4).
+    TRUST_PROXY: "1",
   } satisfies Record<string, string>;
 
   const GOOGLE_ADS = {
