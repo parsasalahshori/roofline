@@ -17,7 +17,10 @@ export type SetupItemKey = (typeof SETUP_ITEM_KEYS)[number];
 export const SETUP_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'skipped'] as const;
 export type SetupStatus = (typeof SETUP_STATUSES)[number];
 
-/** The four later-spec items; each shows "Coming with [feature]" until its feature ships. */
+/**
+ * The later-spec items; each shows "Coming with [feature]" until its feature ships. 'calendar' is no
+ * longer returned by any item (connect_calendar is real now) but stays so copy/setup.ts still compiles.
+ */
 export const COMING_WITH = ['estimator', 'calendar', 'front_desk', 'storm_scout'] as const;
 export type ComingWith = (typeof COMING_WITH)[number];
 
@@ -50,6 +53,8 @@ export type SetupFacts = {
   activeMembers: number;
   pendingInvites: number;
   paymentMethod: boolean;
+  /** Active members with a connected calendar (a dead grant does not count). */
+  calendarsConnected: number;
   skipped: ReadonlySet<SetupItemKey>;
 };
 
@@ -70,7 +75,6 @@ export type SetupView = {
 
 const COMING_WITH_BY_KEY: Partial<Record<SetupItemKey, ComingWith>> = {
   prices_and_tiers: 'estimator',
-  connect_calendar: 'calendar',
   phone_number: 'front_desk',
   connect_ads: 'storm_scout',
 };
@@ -111,6 +115,9 @@ function resolveItem(key: SetupItemKey, facts: SetupFacts): Resolved {
     case 'payment_method':
       // Not skippable, so a stored skip for this key is deliberately ignored.
       return facts.paymentMethod ? { status: 'done', data: {} } : { status: 'todo', data: {} };
+    case 'connect_calendar':
+      // Not skippable, so a stored skip for this key is deliberately ignored.
+      return facts.calendarsConnected > 0 ? { status: 'done', data: {} } : { status: 'todo', data: {} };
     default:
       return { status: 'todo', data: {} };
   }
