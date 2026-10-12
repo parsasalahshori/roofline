@@ -41,7 +41,14 @@ describe('read-only guard', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  test.each([['POST', '/billingx'], ['POST', '/merge'], ['POST', '/customers'], ['PATCH', '/authz']])(
+  test.each([
+    ['POST', '/billingx'],
+    ['POST', '/merge'],
+    ['POST', '/customers'],
+    ['PATCH', '/authz'],
+    ['PUT', '/me/transfer-phone'],
+    ['PUT', '/me/Transfer-Phone/'],
+  ])(
     'a trial that has ended is refused on %s %s with the read-only message',
     (method, path) => {
       const { next, recorded } = run(method, path, 'trial_ended');

@@ -17,6 +17,12 @@ const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const ALWAYS_OPEN_SECTIONS = ['auth', 'billing', 'me'];
 
 /**
+ * Paths under an open section that still close in read-only mode: the Front Desk transfer phone is
+ * company setup (it is dialled on the company's account), not the member's own marker.
+ */
+const CLOSED_UNDER_OPEN = ['me/transfer-phone'];
+
+/**
  * Refuses writes from a company whose trial has ended or whose plan was canceled. Reads still work,
  * and signing in and out, billing (bare or under it) and the member's own marker stay open so the
  * company can pick a plan.
@@ -40,7 +46,8 @@ export const readOnlyGuard: RequestHandler = (req, res, next) => {
     return;
   }
   const path = req.path.toLowerCase();
-  if (ALWAYS_OPEN_SECTIONS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`))) {
+  const closed = CLOSED_UNDER_OPEN.some((name) => path === `/${name}` || path.startsWith(`/${name}/`));
+  if (!closed && ALWAYS_OPEN_SECTIONS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`))) {
     next();
     return;
   }
