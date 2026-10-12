@@ -3,7 +3,7 @@ import { Banner, EmptyState, Skeleton } from '@roofline/ui';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 import { useMe } from '../../api/hooks.ts';
-import { agentPage, agents } from '../../copy/agents.ts';
+import { agentPage, agents, agentsCommon } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
 import { AppWindow } from '../../shell/AppWindow.tsx';
 import { NotFoundWindow } from '../../shell/NotFoundWindow.tsx';
@@ -52,10 +52,10 @@ function ScreenAgentPage({ agent }: { agent: ScreenAgent }) {
         <>
           <p className={styles.saved}>
             <span>
-              {agentPage.timeSaved} {hoursLabel(d.minutesInPeriod)} {agentPage.estimateSuffix}
+              {agentPage.timeSaved} {hoursLabel(d.minutesInPeriod)} {agentsCommon.estimate}
             </span>
             <span className={styles.money}>
-              {moneyLabel(d.minutesInPeriod, d.hourlyRateCents)} {agentPage.estimateSuffix}
+              {moneyLabel(d.minutesInPeriod, d.hourlyRateCents)} {agentsCommon.estimate}
             </span>
           </p>
           <TimeBreakdown rows={d.breakdown} />

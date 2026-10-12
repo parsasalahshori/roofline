@@ -1,7 +1,15 @@
+import type { BaselineKey, TimePeriod } from '@roofline/shared';
+
 /*
  * The Agents screen (A1 Task 8): window and tab titles and the placeholder lines. Agent names are
  * AGENT_LABEL in status.ts. Tasks 9 to 12 add the real words here.
  */
+/** Words every Agents component shares (one source for the estimate mark and the placeholder). */
+export const agentsCommon = {
+  estimate: '(estimate)',
+  comingSoon: 'Coming soon',
+} as const;
+
 export const agents = {
   // The tab row in the Agents window
   tabsLabel: 'Agents sections',
@@ -26,7 +34,6 @@ export const agents = {
 
 // --- Task 9: Agents window ---
 export const agentsWindow = {
-  estimate: '(estimate)',
   totalsSaved: 'saved this month',
   separator: '·',
   successRate: 'Success rate',
@@ -35,7 +42,6 @@ export const agentsWindow = {
   finishedToday: 'Finished today',
   timeSaved: 'Time saved this month',
   waiting: 'Waiting on you:',
-  comingSoon: 'Coming soon',
   howWeCount: 'How we count',
   howWeCountHref: '/settings/agents',
   chartLabel: 'Tasks finished in the last 14 days',
@@ -47,16 +53,11 @@ export const agentsWindow = {
 } as const;
 
 // --- Task 10: agent page ---
-import type { BaselineKey, TimePeriod } from '@roofline/shared';
-
 export const agentPage = {
   periodLabel: 'Time period',
   periods: { today: 'Today', week: 'This week', month: 'This month', last90: 'Last 90 days' } satisfies Record<TimePeriod, string>,
   loading: 'Loading this agent',
   loadError: 'We could not load this agent. Try again in a moment.',
-  timeTitle: 'Time saved',
-  /** After hoursLabel(), e.g. 'about 4.5 hours (estimate)'. */
-  estimateSuffix: '(estimate)',
   timeSaved: 'Time saved in this period:',
   breakdownTitle: 'Where the time came from',
   breakdownCaption: 'Time saved by kind of work',
@@ -71,19 +72,15 @@ export const agentPage = {
   recentOpenLabel: 'Open',
   pauseLabel: 'Paused',
   pausedBy: 'Paused by',
-  pausedSince: 'Paused since',
   pauseTitle: 'Pause this agent?',
   pauseBody: 'It will stop doing new work until you turn it back on. Work already waiting for approval stays where it is.',
   pauseConfirm: 'Pause',
   pauseCancel: 'Cancel',
   pauseError: 'We could not change that. Try again.',
-  ownerOnly: 'Only the owner can pause or resume an agent.',
   runNowButton: 'Check for hail now',
   runNowAgain: 'You can run it again at',
   worksWhenAsked: 'Works when you ask',
   answersCalls: 'Answers as calls come in',
-  comingSoon: 'Coming soon',
-  runStarted: 'Started. It will finish in a moment.',
   runError: 'We could not start it. Try again in a moment.',
   /** Work label per baseline key (Time breakdown table). */
   baselineLabels: {
@@ -147,6 +144,6 @@ export const timeBaselines = {
   recountConfirm: 'Recount',
   recountCancel: 'Cancel',
   recountClose: 'Close',
+  recountUnsaved: 'Save your changes first, then recount.',
   recountDone: 'Done. The last 90 days now use these numbers.',
-  estimate: '(estimate)',
 } as const;

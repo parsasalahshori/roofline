@@ -3,7 +3,7 @@ import type { AgentCard as AgentCardData } from '@roofline/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { Providers, createQueryClient } from '../src/app/providers.tsx';
-import { agentsWindow } from '../src/copy/agents.ts';
+import { agentsCommon } from '../src/copy/agents.ts';
 import { AgentCard } from '../src/features/agents/AgentCard.tsx';
 
 afterEach(cleanup);
@@ -28,7 +28,7 @@ describe('estimate copy', () => {
     // Fails until the real AgentCard (package A) lands; the track lead reruns after merge.
     const lines = [...container.querySelectorAll('p')].filter((p) => /about|≈/.test(p.textContent ?? ''));
     expect(lines.length).toBeGreaterThan(0);
-    for (const line of lines) expect(line.textContent).toContain(agentsWindow.estimate);
+    for (const line of lines) expect(line.textContent).toContain(agentsCommon.estimate);
     expect(container.textContent).toMatch(/about \d+ hours?/);
     expect(container.textContent).toContain('≈');
   });
@@ -36,7 +36,7 @@ describe('estimate copy', () => {
   it('shows no figures on a coming soon card', () => {
     const container = show(card({ status: 'coming_soon', finishedToday: 0, successRate: null, notApproved30d: 0, minutesThisMonth: 0 }));
     expect(container.textContent).not.toMatch(/about|≈/);
-    expect(container.textContent).not.toContain(agentsWindow.estimate);
-    expect(screen.queryAllByText(agentsWindow.comingSoon).length).toBeGreaterThan(0);
+    expect(container.textContent).not.toContain(agentsCommon.estimate);
+    expect(screen.queryAllByText(agentsCommon.comingSoon).length).toBeGreaterThan(0);
   });
 });

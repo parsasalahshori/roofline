@@ -1,6 +1,6 @@
 import { hoursLabel, moneyLabel } from '@roofline/shared';
 import { Banner, Button, Skeleton } from '@roofline/ui';
-import { agentsWindow } from '../../copy/agents.ts';
+import { agentsCommon, agentsWindow } from '../../copy/agents.ts';
 import { AgentCard } from './AgentCard.tsx';
 import { AgentsTabs } from './AgentsTabs.tsx';
 import { useAgentsOverview } from './api.ts';
@@ -31,13 +31,16 @@ export function AgentsWindow() {
         <div className={styles.body}>
           <div className={styles.totals}>
             <p className={styles.totalsLine}>
-              {`${capitalise(hoursLabel(data.minutesThisMonth))} ${agentsWindow.totalsSaved} ${agentsWindow.estimate} ${agentsWindow.separator} ${moneyLabel(data.minutesThisMonth, data.hourlyRateCents)}`}
+              {`${capitalise(hoursLabel(data.minutesThisMonth))} ${agentsWindow.totalsSaved} ${agentsCommon.estimate} ${agentsWindow.separator} ${moneyLabel(data.minutesThisMonth, data.hourlyRateCents)}`}
             </p>
             <Button variant="ghost" href={agentsWindow.howWeCountHref}>
               {agentsWindow.howWeCount}
             </Button>
           </div>
-          <section className={styles.grid} aria-label={agentsWindow.gridLabel}>
+          <section className={styles.grid} aria-labelledby="agents-grid-heading">
+            <h2 id="agents-grid-heading" className="visually-hidden">
+              {agentsWindow.gridLabel}
+            </h2>
             {data.cards.map((card) => (
               <AgentCard key={card.agent} card={card} hourlyRateCents={data.hourlyRateCents} />
             ))}

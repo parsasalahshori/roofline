@@ -53,6 +53,7 @@ describe('company tab', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: COMPANY }),
+      'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
       'PATCH /api/company': () => ({ body: { ...COMPANY, phone: '+14025559999' } }),
     });
     const { user } = renderAt(<CompanyTab />);
@@ -71,6 +72,7 @@ describe('company tab', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: COMPANY }),
+      'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
     });
     const { user } = renderAt(<CompanyTab />);
     const city = await screen.findByLabelText(settings.company.fields.city);
@@ -84,6 +86,7 @@ describe('company tab', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: COMPANY }),
+      'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
     });
     const { user, queryClient } = renderAt(<CompanyTab />);
     const city = await screen.findByLabelText(settings.company.fields.city);
@@ -106,6 +109,7 @@ describe('company tab', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: COMPANY }),
+      'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
       'PATCH /api/company': () => ({ body: { ...COMPANY, website: null } }),
     });
     const { user } = renderAt(<CompanyTab />);
@@ -121,6 +125,7 @@ describe('company tab', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: COMPANY }),
+      'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
       'PATCH /api/company': () => ({ body: { ...COMPANY, timezone: 'America/Denver' } }),
     });
     const { user } = renderAt(<CompanyTab />);
@@ -137,6 +142,7 @@ describe('company tab', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: COMPANY }),
+      'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
       'PATCH /api/company': () => ({ status: 400, body: { error: message, field: 'website' } }),
     });
     const { user } = renderAt(<CompanyTab />);
@@ -157,6 +163,7 @@ describe('company tab', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: COMPANY }),
+      'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
       'PATCH /api/company': () => ({ status: 403, body: { error: message } }),
     });
     const { user } = renderAt(<CompanyTab />);
@@ -194,6 +201,7 @@ describe('company tab', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: { ...COMPANY, timezone: 'Europe/Berlin' } }),
+      'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
     });
     renderAt(<CompanyTab />);
     const timezone = await screen.findByLabelText(settings.company.fields.timezone);
@@ -209,6 +217,7 @@ describe('company tab', () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: COMPANY }),
+      'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
     });
     renderAt(<CompanyTab />);
     await screen.findByLabelText(settings.company.fields.name);

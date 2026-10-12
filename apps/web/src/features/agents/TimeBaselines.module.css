@@ -1,6 +1,6 @@
 .root {
   display: grid;
-  gap: var(--space-3, 12px);
+  gap: 12px;
   min-width: 0;
 }
 
@@ -14,7 +14,7 @@
 
 .problem {
   margin: 0;
-  color: var(--danger, inherit);
+  color: var(--danger);
 }
 
 .link {
@@ -41,7 +41,7 @@
 }
 
 .table tbody tr {
-  border-top: 1px solid var(--border, currentcolor);
+  border-top: 1px solid var(--line);
 }
 
 .caption {

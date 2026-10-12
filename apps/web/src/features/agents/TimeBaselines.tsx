@@ -17,7 +17,7 @@ export function validateMinutes(text: string): string | null {
   return null;
 }
 
-function moneyLabel(cents: number): string {
+function rateLabel(cents: number): string {
   const dollars = cents / 100;
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
@@ -50,6 +50,7 @@ export function TimeBaselines() {
     if (n === row.minutes) continue;
     changes[row.key] = n === row.defaultMinutes ? null : n;
   }
+  const unsaved = data.rows.some((row) => drafts[row.key] !== undefined && drafts[row.key] !== String(row.minutes));
   const changed = Object.keys(changes).length > 0;
 
   const edit = (key: string, value: string) => {
@@ -143,12 +144,17 @@ export function TimeBaselines() {
         <p className={styles.text}>{copy.ownerOnly}</p>
       )}
       <p className={styles.text}>
-        {`${copy.ratePrefix} ${moneyLabel(data.hourlyRateCents)} ${copy.rateSuffix}`}{' '}
-        <UiLink href={copy.rateHref} className={styles.link}>
-          {copy.rateLinkText}
-        </UiLink>
+        {`${copy.ratePrefix} ${rateLabel(data.hourlyRateCents)} ${copy.rateSuffix}`}
+        {data.canEdit ? (
+          <>
+            {' '}
+            <UiLink href={copy.rateHref} className={styles.link}>
+              {copy.rateLinkText}
+            </UiLink>
+          </>
+        ) : null}
       </p>
-      <RecountSection canRecount={data.canEdit} />
+      <RecountSection canRecount={data.canEdit} blocked={unsaved} />
     </section>
   );
 }

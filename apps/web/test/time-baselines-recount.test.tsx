@@ -1,8 +1,9 @@
 import { cleanup, screen, waitFor } from '@testing-library/react';
 import { hoursLabel } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { timeBaselines } from '../src/copy/agents.ts';
+import { agentsCommon, timeBaselines } from '../src/copy/agents.ts';
 import { agentsKeys } from '../src/features/agents/api.ts';
+import { TimeBaselines } from '../src/features/agents/TimeBaselines.tsx';
 import { RecountSection } from '../src/features/agents/RecountSection.tsx';
 import { renderAt, stubApi } from './helpers.tsx';
 
@@ -18,13 +19,13 @@ afterEach(() => {
   expect(api?.unexpected ?? []).toEqual([]);
 });
 
-function setup(canRecount = true, dry: { status?: number; body?: unknown } = { body: { dryRun: true, ...RESULT } }) {
+function setup(canRecount = true, blocked = false, dry: { status?: number; body?: unknown } = { body: { dryRun: true, ...RESULT } }) {
   api = stubApi({ [DRY]: () => dry, [REAL]: () => ({ body: { dryRun: false, ...RESULT } }) });
-  return renderAt(<RecountSection canRecount={canRecount} />);
+  return renderAt(<RecountSection canRecount={canRecount} blocked={blocked} />);
 }
 
-const before = `${timeBaselines.recountBefore} ${hoursLabel(1860)} ${timeBaselines.estimate}`;
-const after = `${timeBaselines.recountAfter} ${hoursLabel(1620)} ${timeBaselines.estimate}`;
+const before = `${timeBaselines.recountBefore} ${hoursLabel(1860)} ${agentsCommon.estimate}`;
+const after = `${timeBaselines.recountAfter} ${hoursLabel(1620)} ${agentsCommon.estimate}`;
 
 describe('recount section', () => {
   it('owner recount runs a dry run first and shows before and after', async () => {
@@ -58,7 +59,7 @@ describe('recount section', () => {
   });
 
   it('a failed dry run shows a plain error', async () => {
-    const { user } = setup(true, { status: 500, body: { error: 'Try again' } });
+    const { user } = setup(true, false, { status: 500, body: { error: 'Try again' } });
     await user.click(screen.getByRole('button', { name: timeBaselines.recountButton }));
     expect(await screen.findByText('Try again')).toHaveAttribute('role', 'alert');
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -67,5 +68,34 @@ describe('recount section', () => {
   it('renders nothing when not allowed', () => {
     setup(false);
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('recount is disabled with a hint only when blocked', () => {
+    setup(true, false);
+    expect(screen.getByRole('button', { name: timeBaselines.recountButton })).toBeEnabled();
+    expect(screen.queryByText(timeBaselines.recountUnsaved)).toBeNull();
+    cleanup();
+    setup(true, true);
+    const button = screen.getByRole('button', { name: timeBaselines.recountButton });
+    expect(button).toBeDisabled();
+    const hint = screen.getByText(timeBaselines.recountUnsaved);
+    expect(button.getAttribute('aria-describedby')).toBe(hint.id);
+  });
+
+  it('recount is disabled with a hint while there are unsaved edits', async () => {
+    const rows = [{ key: 'text_sent', unit: 'text', basis: 'Each text', defaultMinutes: 2, minutes: 2, capMinutes: null, perCallLength: false }];
+    const body = { rows, canEdit: true, hourlyRateCents: 2800 };
+    api = stubApi({ 'GET /api/agents/time-baselines': () => ({ body }), 'PUT /api/agents/time-baselines': () => ({ body }) });
+    const { user } = renderAt(<TimeBaselines />, '/settings/agents');
+    const recount = await screen.findByRole('button', { name: timeBaselines.recountButton });
+    expect(recount).toBeEnabled();
+    const field = screen.getByRole('spinbutton');
+    await user.clear(field);
+    await user.type(field, '3');
+    expect(recount).toBeDisabled();
+    expect(screen.getByText(timeBaselines.recountUnsaved)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: timeBaselines.save }));
+    await waitFor(() => expect(screen.getByRole('button', { name: timeBaselines.recountButton })).toBeEnabled());
+    expect(screen.queryByText(timeBaselines.recountUnsaved)).toBeNull();
   });
 });
