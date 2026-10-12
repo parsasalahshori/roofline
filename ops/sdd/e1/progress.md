@@ -86,3 +86,6 @@ Wave 3 (wf_52209e53-04e, contact 103):
 - T14 20e2a6b: review clean, CI 38197723747 green (web 435). Task 14: complete.
 Merged into e1-estimator: T5 b802c80 (brings e1-w3base 2504960, which changes no files: C1 T5 was already in via c1-crm), T14 7817449. typecheck, lint, lint:css, web 435 clean.
 Carries: (T12/T19) blockCrossSiteMutations refuses mutations whose Origin is not APP_ORIGIN, so PROPOSAL_LINK_BASE_URL must be the same origin as APP_ORIGIN, or /api/public mutations must allow it (group check 103). (T6) FakeFootprintSource reads its fixture with readFileSync at module load from test/fixtures; make it lazy. Stub eslint-disable lines go when real bodies land.
+Merged origin/c1-crm 36a8cc5 (F3 closed) into e1-estimator fcaced6: typecheck, lint clean; drizzle-kit no changes.
+Wave 4a, base fcaced6 (C1 names not needed): run wf_9f1f57c2-275 (contact 104): T6 (Sonnet builders), T9, T19; run wf_569594ab-55b (contact 105): T16 (Sonnet), T17 (Sonnet), T18.
+Held for C1: T8 (C1 T6 createJob/updateJob, T12 SetupFacts.calendarsConnected, T15 getPricebook, T16 PDF_COLORS), and T20 (C1 T20 JobSections, T27 Today). T15 (CustomerPicker from C1 T22, optional import) and T7 (needs T6) go in the next run; T10-T13 follow T8.
