@@ -104,6 +104,10 @@ export const agentPage = {
     spam_call: 'Spam calls blocked',
     booking: 'Appointments booked',
     text_reply: 'Text replies',
+    claim_packet: 'Claim packets built',
+    reminder_sent: 'Reminders sent',
+    install_moved: 'Installs moved',
+    follow_up_sent: 'Follow-ups sent',
     demo: 'Demo steps',
   } satisfies Record<BaselineKey, string>,
 } as const;
