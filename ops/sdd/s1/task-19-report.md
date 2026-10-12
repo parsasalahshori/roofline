@@ -23,3 +23,10 @@ All 13 failures were in ad-campaign.test.ts: the approval re-check selected `com
 
 ## CI round 2 (run 38232279041): Platform failed on one test, E2E and Hail passed
 "a re-run never re-enables a campaign the sync paused or ended": the second loop pass made a fresh step for the same storm, found the first pass's platform campaign by name tag and tried to give its id to a second row (ad_campaigns_platform_external_uniq). The handler is right (it adopts the existing campaign); the test now deletes the first row between passes.
+
+## Merge of s1-storm and landing URL change
+
+- Merged origin/s1-storm into s1-t19 (T20 landing page, I3, T26) with no conflicts.
+- `AdCreate.landingUrl` now comes from the T20 landing page: `ensureStormPage` (packages/db) makes or returns the page, and `companyOriginFor` (apps/api/src/public/storm-requests.ts) gives `https://<slug>.<POLICY_PAGES_DOMAIN>/storm/<code>`. When no policy pages domain is set the URL falls back to `PUBLIC_BASE_URL/storm/<code>`, as before.
+- The private storm_pages SQL, the code alphabet and `randomInt` in `ad-campaign.ts` are removed. The active-until rule is now T20's (convective day plus 30 days), not the campaign end date plus 30 days.
+- `ad-campaign.test.ts` asserts the landing URL equals the company origin plus `/storm/` plus the code stored in storm_pages (one page per storm). Typecheck, lint and the web project tests pass locally; api tests run on CI only.
