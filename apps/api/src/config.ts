@@ -168,6 +168,11 @@ const ConfigSchema = z
     DEMO_MODE: flag,
     /** The explicit override that lets DEMO_MODE run with NODE_ENV=production (a hosted demo). */
     DEMO_MODE_ALLOW_PROD: flag,
+    /** Demo mode only: the directory the API, the worker and the seed share as their object store (signed PDFs). Resolved from the repository root. */
+    DEMO_FILES_DIR: z
+      .string()
+      .transform((v) => path.resolve(REPO_ROOT, v))
+      .optional(),
     /**
      * Demo mode only: a connection URL with the database owner's rights, used by the presenter's
      * "Hail storm hits" simulation to write the global storms tables (the app roles cannot). Read

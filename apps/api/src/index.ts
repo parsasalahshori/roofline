@@ -34,6 +34,7 @@ export {
   type SyncPage,
 } from './providers/calendar.ts';
 export { FakeCalendarApi } from './providers/fakes/calendar.ts';
+export { DirObjectStore } from './providers/fakes/dir-object-store.ts';
 export { type AerialMeasure, type AerialRoof, AerialUnavailableError } from './providers/aerial.ts';
 export {
   type ExactPrice,

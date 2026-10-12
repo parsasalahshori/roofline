@@ -3,6 +3,7 @@ import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
 import { decrypt } from '@roofline/db';
 import { JOB_STAGES } from '@roofline/shared';
+import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
 import { DEMO_COMPANY_NAME, DEMO_COMPANY_SLUG, DEMO_LOGIN, seedDemoWorld } from '../src/scripts/demo-world.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from './helpers.ts';
 
@@ -23,8 +24,20 @@ describe('the demo world', () => {
   test('makes Summit Ridge Roofing with every part of the walkthrough, and a second run changes nothing', async () => {
     const ownerUrl = inject('dbUrls').owner;
     const now = t.clock.now();
-    const first = await seedDemoWorld(t.deps.pools, ownerUrl, now, { encryptionKey: TEST_ENCRYPTION_KEY });
+    const store = new MemoryObjectStore();
+    const first = await seedDemoWorld(t.deps.pools, ownerUrl, now, { encryptionKey: TEST_ENCRYPTION_KEY, objectStore: store });
     expect(first.created).toBe(true);
+
+    // The signed proposal's PDF is made by the seed, so the homeowner page offers it straight away.
+    const signedPdf = (
+      await owner.query(
+        `select f.object_key from proposal_signatures s join stored_files f on f.id = s.pdf_file_id where s.company_id = $1`,
+        [first.companyId],
+      )
+    ).rows;
+    expect(signedPdf).toHaveLength(1);
+    const pdf = await store.get(String(signedPdf[0]?.object_key));
+    expect(Buffer.from(pdf ?? []).subarray(0, 5).toString()).toBe('%PDF-');
 
     const company = (await owner.query(`select name, slug, timezone from companies where id = $1`, [first.companyId])).rows[0];
     expect(company).toMatchObject({ name: DEMO_COMPANY_NAME, slug: DEMO_COMPANY_SLUG });

@@ -31,6 +31,9 @@ import { findCompanyBySlug } from '@roofline/db/system';
 import { type Query, seedCompany } from '@roofline/db/testing';
 import { CONSENT_TEXT_V1, canonicalJson, instantEstimate, signedDocument, type JobStage, type Outline } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { systemClock } from '../clock.ts';
+import { makeSignedPdf } from '../estimator/signed-pdf.ts';
+import type { ObjectStore } from '../providers/object-store.ts';
 import { priceOptions, validUntilFor, noteDrafted, DEFAULT_PROPOSAL_MESSAGE } from '../estimator/build.ts';
 import { settleSentProposal } from '../estimator/proposal-sent.ts';
 import { systemContext } from '../permissions.ts';
@@ -62,6 +65,12 @@ export type DemoWorld = { created: boolean; companyId: string; counts: Record<st
 export type DemoWorldOptions = {
   /** ENCRYPTION_KEY of the API that will serve the world: proposal links are minted with it. Without it the proposals keep unminted links. */
   encryptionKey?: string;
+  /**
+   * The object store the API serving the world reads (DEMO_FILES_DIR in demo mode). Given with
+   * `encryptionKey`, the signed proposal's PDF is rendered into it now, so it opens straight away;
+   * without it the PDF waits for the worker's signed-pdf sweep.
+   */
+  objectStore?: ObjectStore;
 };
 
 /** The demo company's people. The owner signs in with DEMO_LOGIN. */
@@ -598,6 +607,7 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
     const draftJob = inspectionJobs[0];
     if (!sentA || !sentB || !signedJob || !draftJob) throw new Error('The showcase did not make enough proposal and inspection jobs.');
     for (const [i, job] of [sentA, sentB, signedJob, draftJob].entries()) await givePhone(q, job.customerId, `+1402555030${i + 1}`);
+    let signedProposalId: string | undefined;
     await withTenant(pools, ctx, async (tx) => {
       const a = await measureAndDraft(tx, ctx, sentA, { w: 58, d: 34, pitch: 6 }, ago(3 * DAY));
       await markSent(tx, ctx, a, ago(3 * DAY + 2 * HOUR), opts.encryptionKey);
@@ -614,9 +624,25 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
       const s = await measureAndDraft(tx, ctx, signedJob, { w: 52, d: 30, pitch: 5 }, ago(6 * DAY));
       await markSent(tx, ctx, s, ago(6 * DAY - HOUR), opts.encryptionKey);
       await signAs(tx, ctx, s, signedJob.displayName, ago(4 * DAY));
+      signedProposalId = s;
 
       await measureAndDraft(tx, ctx, draftJob, { w: 46, d: 32, pitch: 8 }, ago(2 * HOUR));
     });
+    // The signed copy, rendered as the signed-pdf job would (its email to the homeowner goes nowhere).
+    if (signedProposalId && opts.objectStore && opts.encryptionKey) {
+      await makeSignedPdf(
+        {
+          pools,
+          objectStore: opts.objectStore,
+          clock: systemClock,
+          mailer: { send: async () => undefined },
+          config: { ENCRYPTION_KEY: opts.encryptionKey, PROPOSAL_LINK_BASE_URL: 'http://localhost' },
+        },
+        companyId,
+        signedProposalId,
+        { attempt: 1, lastAttempt: true },
+      );
+    }
 
     // 4. Front Desk: the Roofline number, two calls with transcripts, three text threads.
     await q(
