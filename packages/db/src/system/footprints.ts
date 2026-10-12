@@ -67,10 +67,12 @@ export async function insertFootprints(system: Db, state: string, batch: readonl
   );
   const result = await system.execute(sql`
     with raw as (
-      select v.source_ref, ST_MakeValid(ST_GeomFromText(v.wkt, 4326)) as g
+      select v.source_ref, ST_CollectionExtract(ST_MakeValid(ST_GeomFromText(v.wkt, 4326)), 3) as g
       from (values ${values}) as v(source_ref, wkt)
     ), polys as (
-      select source_ref, g from raw where ST_GeometryType(g) = 'ST_Polygon'
+      -- Keep only results that are exactly one polygon. The projected value is always a Polygon
+      -- (or null, which the filter removes), so the column's Polygon type never rejects a batch.
+      select source_ref, ST_GeometryN(g, 1) as g from raw where ST_NumGeometries(g) = 1
     )
     insert into building_footprints (state, geom, area_sq_ft, source, source_ref)
     select ${s}, g, round((ST_Area(g::geography) * ${SQ_FT_PER_SQ_M})::numeric, 1), 'microsoft', source_ref
