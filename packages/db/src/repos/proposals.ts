@@ -37,11 +37,17 @@ import type { TenantContext, Tx } from '../tenant.ts';
 import { clampPage } from './paging.ts';
 import { jobScope } from './scope.ts';
 
-/** One option to insert. `prices` is stored as { pricebook, addOnLines, quantities } (see Package 2 instructions). */
+/**
+ * The money terms frozen with an option's price (Ruling ER): the financing its monthly amount was worked out
+ * with (null: no financing offered), and whether its signature carries the estimate clause.
+ */
+export type PricedTerms = { financing: { aprBps: number; months: number } | null; estimateClause: boolean };
+
+/** One option to insert. `prices` is stored as { pricebook, addOnLines, quantities, terms } (see Package 2 instructions). */
 export type NewProposalOption = {
   tier: Tier; position: number; name: string; highlights: string[]; scope: Scope; addOns: AddOn[];
   calculation: Calculation; addOnLines: QuoteLine[]; pricebook: Pricebook; quantities: MeasuredQuantities;
-  totalCents: number; monthlyEstimateCents: number | null; enabled: boolean;
+  totalCents: number; monthlyEstimateCents: number | null; enabled: boolean; terms: PricedTerms;
 };
 export type NewProposal = {
   jobId: string; customerId: string; propertyId: string; measurementId: string; basis: MeasurementKind;
@@ -68,7 +74,8 @@ export class UnknownProposalOptionError extends Error {
   }
 }
 
-type StoredPrices = { pricebook: Pricebook; addOnLines: QuoteLine[]; quantities: MeasuredQuantities };
+/** An option's `prices` jsonb. `terms` is missing on options priced before Ruling ER. */
+type StoredPrices = { pricebook: Pricebook; addOnLines: QuoteLine[]; quantities: MeasuredQuantities; terms?: PricedTerms };
 
 /** Allocates the next number for the company inside the caller's transaction. The conflict update locks the counter row, so concurrent creates serialize. */
 export async function nextProposalNumber(tx: Tx, ctx: TenantContext): Promise<string> {
@@ -85,7 +92,7 @@ export async function nextProposalNumber(tx: Tx, ctx: TenantContext): Promise<st
 }
 
 function optionRow(ctx: TenantContext, proposalId: string, o: NewProposalOption, now: Date): typeof proposalOptions.$inferInsert {
-  const prices: StoredPrices = { pricebook: o.pricebook, addOnLines: o.addOnLines, quantities: o.quantities };
+  const prices: StoredPrices = { pricebook: o.pricebook, addOnLines: o.addOnLines, quantities: o.quantities, terms: o.terms };
   return {
     companyId: ctx.companyId,
     proposalId,
@@ -262,13 +269,25 @@ export async function listProposals(tx: Tx, ctx: TenantContext, q: { status?: Pr
   return { proposals: await viewsFor(tx, ctx, rows as ViewRow[]), total: count?.total ?? 0 };
 }
 
-async function financing(tx: Tx, ctx: TenantContext): Promise<{ aprBps: number; months: number } | null> {
+/**
+ * The company's terms for a price worked out now (Ruling ER): financing when both its APR and term are set, and
+ * the estimate clause when the company keeps it on (the default) and the price rests on an estimate.
+ */
+export async function companyTerms(tx: Tx, ctx: TenantContext, basis: MeasurementKind): Promise<PricedTerms> {
   const [s] = await tx
-    .select({ apr: companySettings.financingAprBps, months: companySettings.financingTermMonths })
+    .select({ apr: companySettings.financingAprBps, months: companySettings.financingTermMonths, clause: companySettings.estimateChangeClause })
     .from(companySettings)
     .where(eq(companySettings.companyId, ctx.companyId))
     .limit(1);
-  return s && s.apr !== null && s.months !== null ? { aprBps: s.apr, months: s.months } : null;
+  return {
+    financing: s && s.apr !== null && s.months !== null ? { aprBps: s.apr, months: s.months } : null,
+    estimateClause: basis === 'estimate' && (s?.clause ?? true),
+  };
+}
+
+/** The monthly amount for a total under the terms, or null when no financing is offered. */
+export function monthlyFor(totalCents: number, terms: PricedTerms): number | null {
+  return terms.financing ? monthlyPaymentCents(totalCents, terms.financing.aprBps, terms.financing.months) : null;
 }
 
 /** The draft row if the member may see it: null when missing or hidden, 'not_draft' otherwise. */
@@ -287,7 +306,8 @@ export async function updateDraftProposal(tx: Tx, ctx: TenantContext, id: string
   const row = await draftRow(tx, ctx, id);
   if (row === null || row === 'not_draft') return row;
   const options = await tx.select().from(proposalOptions).where(eq(proposalOptions.proposalId, id));
-  const fin = await financing(tx, ctx);
+  // An edited draft is priced now, so its terms are today's.
+  const terms = await companyTerms(tx, ctx, row.estimateBasis);
   const known = new Set(options.map((o) => o.id));
   const patches = new Map<string, NonNullable<ProposalPatch['options']>[number]>();
   (p.options ?? []).forEach((o, index) => {
@@ -331,12 +351,12 @@ export async function updateDraftProposal(tx: Tx, ctx: TenantContext, id: string
       .set({
         scope: scope as unknown as Record<string, unknown>,
         calculation: calculation as unknown as Record<string, unknown>,
-        prices: { ...stored, addOnLines } as unknown as Record<string, unknown>,
+        prices: { ...stored, addOnLines, terms } as unknown as Record<string, unknown>,
         totalCents,
         addOns,
         name,
         enabled,
-        monthlyEstimateCents: fin ? monthlyPaymentCents(totalCents, fin.aprBps, fin.months) : null,
+        monthlyEstimateCents: monthlyFor(totalCents, terms),
         updatedAt: now,
       })
       .where(eq(proposalOptions.id, o.id));
@@ -368,21 +388,124 @@ export async function getMeasurementBasics(tx: Tx, ctx: TenantContext, id: strin
   };
 }
 
-/** Replaces a draft's options and basis in place (used by reprice). Returns null when not found, 'not_draft' otherwise. */
+/**
+ * Prices a draft again in place from a new measurement (used by reprice). Each option the draft already has keeps
+ * the rep's edits (name, enabled, material, waste, markup, add-ons) and its frozen pricebook and tax: only the
+ * measured quantities change. A tier the draft does not have yet is added as given. Returns null when not found,
+ * 'not_draft' otherwise.
+ */
 export async function replaceDraftOptions(tx: Tx, ctx: TenantContext, id: string, p: { basis: MeasurementKind; measurementId: string; options: NewProposalOption[] }, now: Date): Promise<ProposalView | 'not_draft' | null> {
   const row = await draftRow(tx, ctx, id);
   if (row === null || row === 'not_draft') return row;
+  const current = await tx.select().from(proposalOptions).where(and(eq(proposalOptions.companyId, ctx.companyId), eq(proposalOptions.proposalId, id)));
   // app_tenant has no DELETE on proposal_options (0016): upsert each tier in place instead.
-  for (const o of p.options) {
-    const row = optionRow(ctx, id, o, now);
-    const fields = { ...row, companyId: undefined, proposalId: undefined, tier: undefined, createdAt: undefined };
+  for (const fresh of p.options) {
+    const existing = current.find((o) => o.tier === fresh.tier);
+    const o = existing ? keepEdits(existing, fresh) : fresh;
+    const values = optionRow(ctx, id, o, now);
+    const fields = { ...values, companyId: undefined, proposalId: undefined, tier: undefined, createdAt: undefined };
     await tx
       .insert(proposalOptions)
-      .values(row)
+      .values(values)
       .onConflictDoUpdate({ target: [proposalOptions.proposalId, proposalOptions.tier], set: fields });
   }
   await tx.update(proposals).set({ measurementId: p.measurementId, estimateBasis: p.basis, updatedAt: now }).where(eq(proposals.id, id));
   return getProposal(tx, ctx, id);
+}
+
+/** A draft option priced again for the fresh option's measured quantities, keeping everything the rep chose (B10). */
+function keepEdits(existing: typeof proposalOptions.$inferSelect, fresh: NewProposalOption): NewProposalOption {
+  const scope = existing.scope as unknown as Scope;
+  const stored = existing.prices as unknown as StoredPrices;
+  const template: TierTemplate = {
+    tier: existing.tier,
+    name: existing.name,
+    material: scope.material,
+    wastePercent: scope.wastePercent,
+    markupPercent: scope.markupPercent,
+    addOns: existing.addOns,
+    highlights: existing.highlights,
+    enabled: existing.enabled,
+  };
+  const { material: _m, wastePercent: _w, ...rest } = scope;
+  void _m; void _w;
+  const measured = {
+    areaSqFt: fresh.scope.areaSqFt,
+    areaType: fresh.scope.areaType,
+    pitch: fresh.scope.pitch,
+    ridgeFt: fresh.scope.ridgeFt,
+    edgeFt: fresh.scope.edgeFt,
+    valleyFt: fresh.scope.valleyFt,
+  };
+  const priced = priceTier(template, { ...rest, ...measured }, stored.pricebook, fresh.quantities);
+  return {
+    ...fresh,
+    name: existing.name,
+    highlights: existing.highlights,
+    addOns: existing.addOns,
+    enabled: existing.enabled,
+    scope: priced.scope,
+    calculation: priced.calculation,
+    addOnLines: priced.addOnLines,
+    pricebook: stored.pricebook,
+    totalCents: priced.totalCents,
+    monthlyEstimateCents: monthlyFor(priced.totalCents, fresh.terms),
+  };
+}
+
+/** A proposal's row for a re-price, locked for the rest of the transaction; null when it is missing or hidden from the member. */
+export async function lockProposalForReprice(
+  tx: Tx,
+  ctx: TenantContext,
+  id: string,
+): Promise<{ status: ProposalStatus; number: string; jobId: string; customerId: string; propertyId: string } | null> {
+  const [row] = await tx
+    .select({ status: proposals.status, number: proposals.number, jobId: proposals.jobId, customerId: proposals.customerId, propertyId: proposals.propertyId })
+    .from(proposals)
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, id), visibleJob(ctx)))
+    .limit(1)
+    .for('update');
+  return row ?? null;
+}
+
+/**
+ * A 'ready' proposal (its send waiting for approval) that a revised draft replaces (Ruling EO, B1): it becomes
+ * 'replaced', pointing at the draft, so its waiting send step finds it closed and texts nothing. False when it
+ * was no longer 'ready'.
+ */
+export async function replaceReadyProposal(tx: Tx, ctx: TenantContext, id: string, replacedById: string, now: Date): Promise<boolean> {
+  const rows = await tx
+    .update(proposals)
+    .set({ status: 'replaced', replacedById, updatedAt: now })
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, id), eq(proposals.status, 'ready')))
+    .returning({ id: proposals.id });
+  return rows.length > 0;
+}
+
+/**
+ * Locks every proposal of a job, in id order (C-M1). Any transaction that changes more than one proposal of a
+ * job (a revised proposal's send replacing the old one; a signature replacing the others) takes these locks
+ * first, in this one order, so two of them never wait on each other in a circle.
+ */
+export async function lockJobProposals(tx: Tx, ctx: TenantContext, jobId: string): Promise<void> {
+  await tx
+    .select({ id: proposals.id })
+    .from(proposals)
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.jobId, jobId)))
+    .orderBy(asc(proposals.id))
+    .for('update');
+}
+
+/** lockJobProposals for the job of a proposal; returns that job's id, or null when the proposal is not found. */
+export async function lockJobProposalsOf(tx: Tx, ctx: TenantContext, proposalId: string): Promise<string | null> {
+  const [row] = await tx
+    .select({ jobId: proposals.jobId })
+    .from(proposals)
+    .where(and(eq(proposals.companyId, ctx.companyId), eq(proposals.id, proposalId)))
+    .limit(1);
+  if (!row) return null;
+  await lockJobProposals(tx, ctx, row.jobId);
+  return row.jobId;
 }
 
 // ---------------------------------------------------------------------------------------------

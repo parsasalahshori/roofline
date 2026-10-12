@@ -3,7 +3,7 @@ import type { ProposalStatus, ProposalView } from '@roofline/shared';
 import { Button, Field, Skeleton, UiLink } from '@roofline/ui';
 import type { PropertyRecord } from '../create/api.ts';
 import { estimator } from '../../copy/estimator.ts';
-import { useHomeSearch, useProposals } from './api.ts';
+import { useHomeSearch, useProposalGroup } from './api.ts';
 import { MakeProposal } from './MakeProposal.tsx';
 import type { MakeTarget } from './types.ts';
 import styles from './EstimatorWindow.module.css';
@@ -17,50 +17,76 @@ const GROUPS: { key: keyof typeof estimator.groups; statuses: readonly ProposalS
   { key: 'review', statuses: ['draft', 'ready'] },
   { key: 'out', statuses: ['sent', 'viewed'] },
   { key: 'signed', statuses: ['signed'] },
+  { key: 'declined', statuses: ['declined'] },
+  { key: 'expired', statuses: ['expired'] },
 ];
 
 function homeLabel(p: PropertyRecord): string {
   return `${p.addressLine}, ${p.city}, ${p.state} ${p.zip}`;
 }
 
+function ProposalGroup({ group, q }: { group: (typeof GROUPS)[number]; q: string }) {
+  const list = useProposalGroup(group.statuses, q);
+  const items: ProposalView[] = list.data?.pages.flatMap((page) => page.proposals) ?? [];
+  return (
+    <section className={styles.group}>
+      <h2 className={styles.heading}>{estimator.groups[group.key]}</h2>
+      {list.isError && items.length === 0 ? (
+        <p className={styles.note} role="alert">
+          {estimator.listsFailed}
+        </p>
+      ) : list.isPending ? (
+        <Skeleton lines={2} />
+      ) : items.length === 0 ? (
+        <p className={styles.note}>{q === '' ? estimator.emptyGroup : estimator.noMatchesFound}</p>
+      ) : (
+        <ul className={styles.list}>
+          {items.map((p) => (
+            <li key={p.id}>
+              <UiLink href={`/estimator/proposals/${p.id}`} className={styles.row}>
+                <span className={styles.number}>{p.number}</span>
+                <span>{p.customer.name}</span>
+                <span className={styles.address}>{p.address}</span>
+              </UiLink>
+            </li>
+          ))}
+        </ul>
+      )}
+      {list.isError && items.length > 0 ? (
+        <p className={styles.note} role="alert">
+          {estimator.listsFailed}
+        </p>
+      ) : null}
+      {list.hasNextPage ? (
+        <Button variant="ghost" busy={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>
+          {estimator.showMore}
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
 function ProposalGroups() {
-  const list = useProposals({});
-  if (list.isError) {
-    return (
-      <p className={styles.note} role="alert">
-        {estimator.listsFailed}
-      </p>
-    );
-  }
-  if (list.isPending || list.data === undefined) {
-    return <Skeleton lines={3} />;
-  }
-  const all: ProposalView[] = list.data.proposals;
+  const [text, setText] = useState('');
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(text.trim()), DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [text]);
   return (
     <div className={styles.groups}>
-      {GROUPS.map((group) => {
-        const items = all.filter((p) => group.statuses.includes(p.status));
-        return (
-          <section key={group.key} className={styles.group}>
-            <h2 className={styles.heading}>{estimator.groups[group.key]}</h2>
-            {items.length === 0 ? (
-              <p className={styles.note}>{estimator.emptyGroup}</p>
-            ) : (
-              <ul className={styles.list}>
-                {items.map((p) => (
-                  <li key={p.id}>
-                    <UiLink href={`/estimator/proposals/${p.id}`} className={styles.row}>
-                      <span className={styles.number}>{p.number}</span>
-                      <span>{p.customer.name}</span>
-                      <span className={styles.address}>{p.address}</span>
-                    </UiLink>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        );
-      })}
+      <Field
+        label={estimator.findLabel}
+        help={estimator.findHint}
+        type="search"
+        autoComplete="off"
+        maxLength={100}
+        value={text}
+        onChange={(event) => setText(event.currentTarget.value)}
+      />
+      {GROUPS.map((group) => (
+        <ProposalGroup key={group.key} group={group} q={q} />
+      ))}
     </div>
   );
 }

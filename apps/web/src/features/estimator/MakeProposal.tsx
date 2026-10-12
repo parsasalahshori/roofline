@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import type { MeasurementView, ProposalView } from '@roofline/shared';
 import { Button, Checkbox, Field } from '@roofline/ui';
 import { estimator } from '../../copy/estimator.ts';
-import { useBuildProposal, useMeasure, useSendProposal } from './api.ts';
+import { makeFailureMessage, useBuildProposal, useMeasure, useSendProposal } from './api.ts';
 import type { MakeTarget, NewCustomerInput } from './types.ts';
 import styles from './MakeProposal.module.css';
 
@@ -17,7 +17,7 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
   const [phone, setPhone] = useState('');
   const [askedByText, setAskedByText] = useState(false);
   const [running, setRunning] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const busyRef = useRef(false);
   const measurementRef = useRef<MeasurementView | null>(null);
   const proposalRef = useRef<ProposalView | null>(null);
@@ -29,7 +29,7 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
     if (busyRef.current || blocked) return;
     busyRef.current = true;
     setRunning(true);
-    setFailed(false);
+    setFailed(null);
     try {
       const measurement =
         measurementRef.current ??
@@ -53,8 +53,8 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
       proposalRef.current = proposal;
       const sent = await send.mutateAsync(proposal.id);
       navigate(`/approvals/${sent.taskId}`);
-    } catch {
-      setFailed(true);
+    } catch (error) {
+      setFailed(makeFailureMessage(error));
     } finally {
       busyRef.current = false;
       setRunning(false);
@@ -83,9 +83,9 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
       <Button variant="primary" disabled={running || blocked} onClick={() => void run()}>
         {running ? estimator.makingProposal : estimator.makeProposal}
       </Button>
-      {failed ? (
+      {failed !== null ? (
         <p role="alert" className={styles.error}>
-          {estimator.makeFailed}
+          {failed}
         </p>
       ) : null}
     </div>

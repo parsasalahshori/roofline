@@ -14,8 +14,8 @@ export const financeCopy = {
   notSet: 'Financing is not set. Proposals show no financing line.',
   // Field errors
   pairRequired: 'Enter both the APR and the term, or leave both empty.',
-  aprRange: 'Enter an APR from 0 to 100.',
-  termRange: 'Enter a whole number of months from 1 to 600.',
+  aprRange: 'Enter an APR from 0 to 50.',
+  termRange: 'Enter a whole number of months from 1 to 360.',
 } as const;
 
 /** Estimate settings: the defaults every new estimate starts from, and the proposal terms. */

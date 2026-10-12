@@ -226,8 +226,14 @@ export function OptionCard({ option, editable, basis, prices, onChange }: Option
         </div>
       ) : (
         <dl className={styles.readList}>
-          <dd>{draft.name}</dd>
-          <dd>{materialNames[draft.material]}</dd>
+          <div className={styles.readItem}>
+            <dt>{proposals.fieldName}</dt>
+            <dd>{draft.name}</dd>
+          </div>
+          <div className={styles.readItem}>
+            <dt>{proposals.fieldMaterial}</dt>
+            <dd>{materialNames[draft.material]}</dd>
+          </div>
         </dl>
       )}
 

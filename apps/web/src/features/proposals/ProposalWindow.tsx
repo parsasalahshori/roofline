@@ -66,7 +66,8 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
   const status = proposal.status;
   const editable = proposal.canEdit && status === 'draft';
   const prices = pricebook.data?.prices ?? null;
-  const canRevise = status === 'sent' || status === 'viewed' || status === 'ready';
+  const canRevise = ['sent', 'viewed', 'ready', 'declined', 'expired'].includes(status);
+  const canCopyLink = ['sent', 'viewed', 'signed', 'declined', 'expired'].includes(status);
 
   return (
     <div className={styles.page}>
@@ -80,7 +81,20 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
         {proposal.basis === 'exact' ? <p className={styles.meta}>{proposals.basisExactNote}</p> : null}
       </header>
 
-      {!editable && status !== 'draft' ? <Banner tone="info">{proposals.readOnlyNote}</Banner> : null}
+      {!editable && status !== 'draft' && status !== 'replaced' ? (
+        <Banner
+          tone="info"
+          action={
+            status === 'ready' && proposal.taskId ? (
+              <Button variant="ghost" href={`/approvals/${proposal.taskId}`}>
+                {proposals.waitingForOk}
+              </Button>
+            ) : undefined
+          }
+        >
+          {proposals.noteFor(status)}
+        </Banner>
+      ) : null}
       {proposal.replacedById ? (
         <Banner
           tone="info"
@@ -138,7 +152,7 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
             {proposals.send}
           </Button>
         ) : null}
-        {status !== 'draft' ? (
+        {canCopyLink ? (
           <Button variant="ghost" busy={copyLink.isPending} onClick={() => copyLink.mutate()}>
             {proposals.copyLink}
           </Button>

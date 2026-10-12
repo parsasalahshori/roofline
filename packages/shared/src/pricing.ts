@@ -16,14 +16,16 @@ export const defaultPricebook: Pricebook = {
   ridgePerFt: 5.5, edgePerFt: 3.5, valleyPerFt: 8, deckingPerSheet: 95,
   disposal: 450, permit: 250,
 };
+/** The largest roof the pricing engine prices: surface area in sq ft, and each measured length in ft. */
+export const PRICING_LIMITS = { maxAreaSqFt: 100000, maxLengthFt: 10000 } as const;
 export const scopeSchema = z.object({
-  areaSqFt: z.number().finite().positive().max(100000),
+  areaSqFt: z.number().finite().positive().max(PRICING_LIMITS.maxAreaSqFt),
   areaType: z.enum(['surface', 'footprint']), pitch: z.number().finite().min(0).max(24),
   material: z.enum(['architectural', 'premium', 'metal']),
   wastePercent: z.number().finite().min(0).max(50),
   stories: z.number().int().min(1).max(4), layers: z.number().int().min(0).max(4),
-  ridgeFt: z.number().finite().min(0).max(10000), edgeFt: z.number().finite().min(0).max(10000),
-  valleyFt: z.number().finite().min(0).max(10000), deckingSheets: z.number().int().min(0).max(1000),
+  ridgeFt: z.number().finite().min(0).max(PRICING_LIMITS.maxLengthFt), edgeFt: z.number().finite().min(0).max(PRICING_LIMITS.maxLengthFt),
+  valleyFt: z.number().finite().min(0).max(PRICING_LIMITS.maxLengthFt), deckingSheets: z.number().int().min(0).max(1000),
   markupPercent: z.number().finite().min(0).max(100), taxPercent: z.number().finite().min(0).max(15),
 });
 export type Scope = z.infer<typeof scopeSchema>;

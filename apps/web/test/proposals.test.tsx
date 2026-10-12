@@ -206,4 +206,64 @@ describe('proposal window', () => {
     expect(screen.queryByText(proposals.saveFailed)).toBeNull();
     expect(api.unexpected).toEqual([]);
   });
+
+  it('a declined proposal can be revised and says so', async () => {
+    open(makeProposal({ status: 'declined', sentAt: '2026-10-11T15:00:00.000Z', declined: { reason: null, at: '2026-10-12T15:00:00.000Z' } }));
+
+    expect(await screen.findByText(proposals.declinedNote)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: proposals.makeRevised })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: proposals.copyLink })).toBeInTheDocument();
+  });
+
+  it('an expired proposal can be revised and says so', async () => {
+    open(makeProposal({ status: 'expired', sentAt: '2026-09-01T15:00:00.000Z' }));
+
+    expect(await screen.findByText(proposals.expiredNote)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: proposals.makeRevised })).toBeInTheDocument();
+  });
+
+  it('a signed proposal is final: no revise, its own note', async () => {
+    open(makeProposal({ status: 'signed', sentAt: '2026-10-11T15:00:00.000Z', signed: { name: 'Maria Lopez', at: '2026-10-12T15:00:00.000Z' } as ProposalView['signed'] }));
+
+    expect(await screen.findByText(proposals.signedNote)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: proposals.makeRevised })).toBeNull();
+    expect(screen.queryByText(proposals.readOnlyNote)).toBeNull();
+  });
+
+  it('a ready proposal links to its waiting approval and has no Copy link', async () => {
+    open(makeProposal({ status: 'ready', taskId: 't7' }));
+
+    expect(await screen.findByText(proposals.readyNote)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: proposals.waitingForOk })).toHaveAttribute('href', '/approvals/t7');
+    expect(screen.queryByRole('button', { name: proposals.copyLink })).toBeNull();
+    expect(screen.getByRole('button', { name: proposals.makeRevised })).toBeInTheDocument();
+  });
+
+  it('a refused revise toasts the server message', async () => {
+    const { user } = open(makeProposal({ status: 'sent', sentAt: '2026-10-11T15:00:00.000Z' }), {
+      'POST /api/proposals/p1/revise': () => ({ status: 409, body: { error: 'This proposal is signed. Make a new proposal for more work.' } }),
+    });
+
+    await user.click(await screen.findByRole('button', { name: proposals.makeRevised }));
+    expect(await screen.findByText('This proposal is signed. Make a new proposal for more work.')).toBeInTheDocument();
+    expect(screen.queryByText(proposals.reviseFailed)).toBeNull();
+  });
+
+  it('a refused link copy toasts the server message', async () => {
+    const { user } = open(makeProposal({ status: 'sent', sentAt: '2026-10-11T15:00:00.000Z' }), {
+      'GET /api/proposals/p1/link': () => ({ status: 409, body: { error: 'Send the proposal first, then you can copy its link.' } }),
+    });
+
+    await user.click(await screen.findByRole('button', { name: proposals.copyLink }));
+    expect(await screen.findByText('Send the proposal first, then you can copy its link.')).toBeInTheDocument();
+  });
+
+  it('a refused send toasts the server message', async () => {
+    const { user } = open(makeProposal(), {
+      'POST /api/proposals/p1/send': () => ({ status: 409, body: { error: 'This proposal was already sent.' } }),
+    });
+
+    await user.click(await screen.findByRole('button', { name: proposals.send }));
+    expect(await screen.findByText('This proposal was already sent.')).toBeInTheDocument();
+  });
 });

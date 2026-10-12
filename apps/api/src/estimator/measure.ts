@@ -21,7 +21,7 @@ import {
   withTenant,
 } from '@roofline/db';
 import { footprintStateStatus } from '@roofline/db/system';
-import { instantEstimate, isTimeZone, type MeasurementView, normalizeAddressKey, type Outline } from '@roofline/shared';
+import { instantEstimate, isTimeZone, isUsStateCode, type MeasurementView, normalizeAddressKey, type Outline } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
@@ -218,10 +218,11 @@ export async function measureProperty(
     );
   }
 
-  const state = property.state.toUpperCase();
-  const status = await footprintStateStatus(deps.pools.system, state);
+  const state = property.state.trim().toUpperCase();
+  // Only a state with a footprint file is ever loaded: a territory or a free-text state opens draw mode.
+  const status = isUsStateCode(state) ? await footprintStateStatus(deps.pools.system, state) : null;
   if (status !== 'ready') {
-    await deps.jobs.send('footprints-load', { companyId: ctx.companyId, state }, { singletonKey: state });
+    if (isUsStateCode(state)) await deps.jobs.send('footprints-load', { companyId: ctx.companyId, state }, { singletonKey: state });
     return asNotFound(() =>
       withTenant(deps.pools, ctx, async (tx) =>
         createMeasurement(tx, ctx, drawInput(property, point, await settingsFor(tx, ctx), jobId), now),

@@ -95,6 +95,43 @@ function storedStructures(value: unknown): StoredStructure[] {
   }));
 }
 
+/** Metres in one degree of latitude (and of longitude at the equator). */
+const M_PER_DEG = 111_320;
+/** The furthest north a home in the US lies (Alaska's north coast is about 71.4 degrees). */
+const MAX_US_LAT = 72;
+/** The smallest box half-width, in degrees: about 50 m, so a tiny radius still finds the building under the point. */
+const MIN_BOX_DEG = 0.0005;
+
+/**
+ * The half-width in degrees of a box that holds every point within `radiusM` of a point at `lat`:
+ * the radius in degrees of longitude there (wider than latitude, which it also covers), with room to spare.
+ */
+export function footprintBoxDegrees(lat: number, radiusM: number): number {
+  const cos = Math.cos((Math.min(Math.abs(lat), MAX_US_LAT) * Math.PI) / 180);
+  return Math.max(MIN_BOX_DEG, (radiusM / (M_PER_DEG * cos)) * 1.5);
+}
+
+/**
+ * The footprintsNear query. `geom && ST_Expand(point, deg)` is a bounding-box test the GIST index on
+ * `geom` answers, so only the few buildings around the point are read; the exact geography distance
+ * then runs on those. (A test on `geom::geography` alone cannot use that index: it scans the table.)
+ */
+export function footprintsNearQuery(point: LngLat, radiusM: number) {
+  const pt = sql`ST_SetSRID(ST_MakePoint(${point[0]}::float8, ${point[1]}::float8), 4326)`;
+  const deg = footprintBoxDegrees(point[1], radiusM);
+  return sql`
+    select id::text as id,
+           ST_AsGeoJSON(geom) as geojson,
+           area_sq_ft::float8 as area_sq_ft,
+           ST_Covers(geom, ${pt}) as contains,
+           case when ST_Covers(geom, ${pt}) then 0
+                else ST_Distance(geom::geography, ${pt}::geography) end::float8 as distance_m
+      from building_footprints
+     where geom && ST_Expand(${pt}, ${deg}::float8)
+       and ST_DWithin(geom::geography, ${pt}::geography, ${radiusM}::float8)
+     order by contains desc, distance_m asc`;
+}
+
 /**
  * Footprints within `radiusM` metres of a point, global table (no company filter). The one that
  * contains the point comes first, then the nearest; `distanceM` is 0 for a containing footprint.
@@ -104,17 +141,7 @@ export async function footprintsNear(
   point: LngLat,
   radiusM: number,
 ): Promise<{ id: string; ring: Ring; areaSqFt: number; contains: boolean; distanceM: number }[]> {
-  const pt = sql`ST_SetSRID(ST_MakePoint(${point[0]}::float8, ${point[1]}::float8), 4326)`;
-  const result = await tx.execute(sql`
-    select id::text as id,
-           ST_AsGeoJSON(geom) as geojson,
-           area_sq_ft::float8 as area_sq_ft,
-           ST_Covers(geom, ${pt}) as contains,
-           case when ST_Covers(geom, ${pt}) then 0
-                else ST_Distance(geom::geography, ${pt}::geography) end::float8 as distance_m
-      from building_footprints
-     where ST_DWithin(geom::geography, ${pt}::geography, ${radiusM}::float8)
-     order by contains desc, distance_m asc`);
+  const result = await tx.execute(footprintsNearQuery(point, radiusM));
   return result.rows.map((row) => {
     const geojson = JSON.parse(String(row.geojson)) as { coordinates: [number, number][][] };
     return {
@@ -208,7 +235,10 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
   const pitchX12 = row.pitchX12 ?? 0;
   const overhangFt = row.overhangFt ?? 0;
   const valleyFt = row.valleyFt ?? 0;
-  const estimate: InstantEstimate = instantEstimate({ outline: outline ?? [], pitchX12, overhangFt, valleyFt });
+  const fromOutline: InstantEstimate = instantEstimate({ outline: outline ?? [], pitchX12, overhangFt, valleyFt });
+  // An exact report's or an aerial measure's numbers are the measurement itself: shown as stored, never
+  // worked out again from the outline (B5). Proposals are priced from the same stored columns.
+  const estimate: InstantEstimate = keepsStoredNumbers(row) ? storedEstimate(row, fromOutline) : fromOutline;
 
   const center: LngLat = found.propertyGeom ?? (outline?.[0] ? ringCentroid(outline[0]) : US_MAP_CENTER);
 
@@ -232,8 +262,29 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
   };
 }
 
+/** Whether a measurement's stored numbers come from a report or aerial imagery rather than from its outline. */
+function keepsStoredNumbers(row: { kind: MeasurementKind; method: MeasurementMethod }): boolean {
+  return row.kind === 'exact' || row.method === 'aerial';
+}
+
+/** The stored surface, lengths and pitch as an estimate; the footprint and plan areas come from the outline. */
+function storedEstimate(row: typeof measurements.$inferSelect, fromOutline: InstantEstimate): InstantEstimate {
+  const surfaceSqFt = row.surfaceSqFt ?? 0;
+  return {
+    footprintSqFt: row.footprintSqFt ?? fromOutline.footprintSqFt,
+    planSqFt: fromOutline.planSqFt,
+    surfaceSqFt,
+    squares: Math.round(surfaceSqFt) / 100,
+    edgeFt: row.edgeFt ?? 0,
+    ridgeFt: row.ridgeFt ?? 0,
+    valleyFt: row.valleyFt ?? 0,
+    pitchX12: row.pitchX12 ?? 0,
+  };
+}
+
 /**
- * Changes a measurement the member may see. Null when they may not (or it does not exist); 'locked'
+ * Changes a measurement the member may see. Null when they may not (or it does not exist); 'exact' for an
+ * exact report's measurement, which is never changed (B5); 'locked'
  * when a proposal has been sent from it; 'unknown_structure' when an included id is not one of its
  * structures (nothing is written). A hand-drawn outline replaces the outline and keeps the
  * structures; included structures rebuild the outline from their rings unless an outline is given.
@@ -246,7 +297,7 @@ export async function updateMeasurement(
   id: string,
   p: MeasurementPatch,
   now: Date,
-): Promise<MeasurementView | 'locked' | 'unknown_structure' | null> {
+): Promise<MeasurementView | 'exact' | 'locked' | 'unknown_structure' | null> {
   const [found] = await tx
     .select({ row: measurements, outlineGeoJson: sql<string | null>`ST_AsGeoJSON(${measurements.outline})` })
     .from(measurements)
@@ -258,6 +309,7 @@ export async function updateMeasurement(
     .limit(1)
     .for('update', { of: measurements });
   if (!found) return null;
+  if (found.row.kind === 'exact') return 'exact';
   if (await isMeasurementLocked(tx, ctx, id)) return 'locked';
 
   const current = found.row;

@@ -1086,6 +1086,7 @@ describe('SCHEDULES', () => {
       ['calendar-pull', '*/5 * * * *'],
       ['footprints-ensure', '*/15 * * * *'],
       ['exact-report-poll', '*/10 * * * *'],
+      ['signed-pdf-sweep', '*/15 * * * *'],
       ['spotter-sync', '*/30 * * * *'],
       ['storm-match', '*/10 * * * *'],
       ['ad-spend-sync', '0 * * * *'],

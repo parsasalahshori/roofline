@@ -68,13 +68,26 @@ async function publicFetch<T>(path: string, init: { method?: string; body?: unkn
   );
 }
 
-/** GET /api/public/proposals/:token. A 404 or 410 is an ApiError whose `status` says which; on 410 `error.latest` is the body `{ error, companyPhone }`. */
+/** How often a signed proposal is asked again while its signed copy is being made. */
+export const SIGNED_PDF_POLL_MS = 5000;
+/** The signed-copy poll stops after this many reads; the page then says to check back. */
+export const SIGNED_PDF_POLL_LIMIT = 24;
+
+/** True while the proposal is signed and its signed copy is not ready yet. */
+const waitingForPdf = (data: PublicProposalView | undefined): boolean => data?.status === 'signed' && data.signed?.pdfReady === false;
+
+/**
+ * GET /api/public/proposals/:token. A 404 or 410 is an ApiError whose `status` says which; on 410 `error.latest` is the body `{ error, companyPhone }`.
+ * While the proposal is signed and its signed copy is still being made, it is read again every 5 seconds (about 2 minutes at most), so the download appears without a reload.
+ */
 export function usePublicProposal(token: string): UseQueryResult<PublicProposalView, ApiError> {
   return useQuery<PublicProposalView, ApiError>({
     queryKey: publicProposalKey(token),
     queryFn: () => publicFetch<PublicProposalView>(proposalPath(token)),
     retry: false,
     refetchOnWindowFocus: false,
+    refetchInterval: (query) =>
+      waitingForPdf(query.state.data) && query.state.dataUpdateCount < SIGNED_PDF_POLL_LIMIT ? SIGNED_PDF_POLL_MS : false,
   });
 }
 
@@ -90,13 +103,19 @@ export function useRecordView(token: string, ready: boolean): void {
   }, [ready, token]);
 }
 
-/** POST .../sign. On success invalidates publicProposalKey(token). */
+/**
+ * POST .../sign. On success invalidates publicProposalKey(token). A 409 (signed on another phone, or
+ * expired) or a 410 (the link is gone) invalidates it too, so the page underneath shows what happened.
+ */
 export function useSignProposal(token: string): UseMutationResult<{ signed: true }, ApiError, SignBody> {
   const queryClient = useQueryClient();
   return useMutation<{ signed: true }, ApiError, SignBody>({
     mutationFn: (body) => publicFetch<{ signed: true }>(proposalPath(token, '/sign'), { method: 'POST', body }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: publicProposalKey(token) });
+    },
+    onError: (error) => {
+      if (error.status === 409 || error.status === 410) void queryClient.invalidateQueries({ queryKey: publicProposalKey(token) });
     },
   });
 }

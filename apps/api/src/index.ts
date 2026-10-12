@@ -89,3 +89,4 @@ export type { LineLookup } from './providers/line-lookup.ts';
 export { screenCall, type ScreenInput } from './providers/call-screen.ts';
 export { RelaySessions } from './front-desk/relay-sessions.ts';
 export type { EngineStateSummary } from './front-desk/engine-state.ts';
+export { seedFootprintFixture } from './scripts/footprint-fixture.ts';

@@ -1,21 +1,51 @@
 import { createHash } from 'node:crypto';
 import { attachSignedPdf, decrypt, signedPdfSource, storeFile, withTenant } from '@roofline/db';
-import { ESTIMATE_CLAUSE_V1, isTimeZone } from '@roofline/shared';
+import { ESTIMATE_CLAUSE_V1, isTimeZone, type ProposalView, type SignedDocument } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import type { JobMeta } from '../jobs/queue.ts';
 import { systemContext } from '../permissions.ts';
-import { pdfToBuffer, renderProposalPdf } from '../proposals/pdf.ts';
+import { pdfToBuffer, renderProposalPdf, type ProposalPdfInput } from '../proposals/pdf.ts';
+import { BadSignaturePng, flattenSignaturePng } from './signature-png.ts';
 
 const FALLBACK_TIME_ZONE = 'America/Chicago';
 const IMAGE_MISSING = 'The drawn signature image is missing from file storage.';
 const IMAGE_MISMATCH = 'The drawn signature image does not match its recorded hash.';
 const NOT_ATTACHED = 'The signed copy could not be attached to the signature.';
+const IMAGE_UNREADABLE = 'The drawn signature image is not a PNG this app can draw.';
 
 const sha256Hex = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
 /** Where the sign route stores a drawn signature: content-addressed, next to the signed PDF. */
 export function drawnSignatureKey(companyId: string, proposalId: string, sha256: string): string {
   return `companies/${companyId}/proposals/${proposalId}/signature-${sha256}.png`;
+}
+
+/** The proposal with the signed facts (address, validity, basis and the chosen option as shown) taken from the stored document. */
+function withSignedFacts(proposal: ProposalView, document: SignedDocument): ProposalView {
+  const d = document.option;
+  return {
+    ...proposal,
+    address: document.address,
+    validUntil: document.validUntil,
+    basis: document.basis,
+    options: proposal.options.map((o) =>
+      o.id === d.id ? { ...o, tier: d.tier, name: d.name, highlights: d.highlights, totalCents: d.totalCents, monthlyEstimateCents: d.monthlyEstimateCents } : o,
+    ),
+  };
+}
+
+/**
+ * Renders and collects the PDF inside one promise: a synchronous throw from the renderer and an 'error'
+ * from the document both reject it, so a rendering failure fails the job instead of escaping.
+ */
+function renderSignedPdf(input: ProposalPdfInput): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    try {
+      pdfToBuffer(renderProposalPdf(input)).then(resolve, reject);
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
 }
 
 /**
@@ -36,19 +66,28 @@ export async function makeSignedPdf(deps: AppDeps, companyId: string, proposalId
     const png = await deps.objectStore.get(drawnSignatureKey(companyId, proposalId, drawnSha));
     if (png === null) throw new Error(IMAGE_MISSING);
     if (sha256Hex(png) !== drawnSha) throw new Error(IMAGE_MISMATCH);
-    image = Buffer.from(png);
+    // Checked in full again and drawn as a flat RGB copy, which pdfkit embeds without decoding: a bad
+    // image fails this job cleanly, never the process (signature-png.ts).
+    try {
+      image = flattenSignaturePng(png);
+    } catch (err) {
+      if (err instanceof BadSignaturePng) throw new Error(IMAGE_UNREADABLE, { cause: err });
+      throw err;
+    }
   }
 
-  const bytes = await pdfToBuffer(
-    renderProposalPdf({
-      audience: 'homeowner',
-      company: src.company,
-      proposal: src.proposal,
-      estimateClause: src.estimateClause ? ESTIMATE_CLAUSE_V1 : null,
-      signature: { record: src.signature, image, timeZone: isTimeZone(src.timeZone) ? src.timeZone : FALLBACK_TIME_ZONE },
-      financing: src.financing,
-    }),
-  );
+  // The signed facts come from the document stored at signing (Ruling ER), so a retry or a later settings
+  // change cannot alter them. A signature made before documents were stored falls back to the rows.
+  const doc = src.document;
+  const bytes = await renderSignedPdf({
+    audience: 'homeowner',
+    company: doc ? doc.company : src.company,
+    proposal: doc ? withSignedFacts(src.proposal, doc) : src.proposal,
+    inclusions: doc ? { [doc.option.id]: doc.option.inclusions } : undefined,
+    estimateClause: doc ? doc.clause : src.estimateClause ? ESTIMATE_CLAUSE_V1 : null,
+    signature: { record: src.signature, image, timeZone: isTimeZone(src.timeZone) ? src.timeZone : FALLBACK_TIME_ZONE },
+    optionFinancing: doc ? { ...src.optionFinancing, [doc.option.id]: doc.option.financingTerms } : src.optionFinancing,
+  });
   const sha = sha256Hex(bytes);
   const objectKey = `companies/${companyId}/proposals/${proposalId}/signed-${sha}.pdf`;
 

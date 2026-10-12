@@ -34,6 +34,7 @@ export const measure = {
   deleteCorner: 'Delete corner',
   finishDrawing: 'Finish outline',
   clearDrawing: 'Start over',
+  redraw: 'Draw the outline again',
   problems: {
     too_few_corners: 'Add at least three corners.',
     self_intersecting: 'Corners must form a closed shape without crossing lines.',

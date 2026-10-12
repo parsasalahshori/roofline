@@ -423,7 +423,10 @@ describe('grants', () => {
   test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, agent_task_events, time_recounts and conversation_turns, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links, calendar_connections, blocked_numbers, door_exclusions and storm_photos', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
-      SELECT_INSERT_ONLY.has(t) ? privs(t, true, true, false, false) : privs(t, true, true, true, deletable.has(t)),
+      // proposal_signatures: UPDATE only on the three columns attaching the signed PDF writes (Ruling EQ)
+      SELECT_INSERT_ONLY.has(t) || t === 'proposal_signatures'
+        ? privs(t, true, true, false, false)
+        : privs(t, true, true, true, deletable.has(t)),
     );
     expect(await tablePrivileges('app_tenant', TENANT_TABLES)).toEqual(expected);
   });
@@ -586,10 +589,19 @@ describe('grants', () => {
     );
   });
 
-  test('app_system: ALL on global tables, DELETE only on early_delivery_reports, and nothing else on tenant tables', async () => {
-    expect(await tablePrivileges('app_system', GLOBAL_TABLES)).toEqual(
-      GLOBAL_TABLES.map((t) => ({ ...privs(t, true, true, true, true), truncate: true })),
-    );
+  test('app_system: only the privileges its code uses on global tables, DELETE only on early_delivery_reports, and nothing else on tenant tables', async () => {
+    const expected: Record<(typeof GLOBAL_TABLES)[number], Privs> = {
+      users: privs('users', true, true, true, true),
+      sessions: privs('sessions', true, true, true, true),
+      memberships: privs('memberships', true, true, true, true),
+      invites: privs('invites', true, true, true, true),
+      user_tokens: privs('user_tokens', true, true, true, true),
+      webhook_events: privs('webhook_events', true, true, false, false),
+      companies: privs('companies', true, true, true, true),
+      company_phone_numbers: privs('company_phone_numbers', true, true, false, false),
+      texting_registrations: privs('texting_registrations', true, true, true, false),
+    };
+    expect(await tablePrivileges('app_system', GLOBAL_TABLES)).toEqual(GLOBAL_TABLES.map((t) => expected[t]));
     // calendar_connections holds column-level SELECT only (see the column test below), so it has no table-level privilege here.
     expect(await tablePrivileges('app_system', TENANT_TABLES)).toEqual(
       TENANT_TABLES.map((t) => privs(t, false, false, false, t === 'early_delivery_reports')),
@@ -598,7 +610,7 @@ describe('grants', () => {
 
   test('app_tenant has SELECT, INSERT and UPDATE but no DELETE on each E1 tenant table', async () => {
     expect(await tablePrivileges('app_tenant', E1_TENANT_TABLES)).toEqual(
-      E1_TENANT_TABLES.map((t) => privs(t, true, true, true, false)),
+      E1_TENANT_TABLES.map((t) => privs(t, true, true, t !== 'proposal_signatures', false)),
     );
   });
 
@@ -673,6 +685,16 @@ describe('grants', () => {
     expect(cols).toEqual([{ column_name: 'place_name' }]);
   });
 
+  test('app_tenant may update only pdf_file_id, pdf_sha256 and updated_at of a signature (Ruling EQ)', async () => {
+    const rows = await ownerQuery<{ column_name: string; can_update: boolean }>(
+      `select column_name, has_column_privilege('app_tenant', 'public.proposal_signatures', column_name, 'UPDATE') as can_update
+         from information_schema.columns
+        where table_schema = 'public' and table_name = 'proposal_signatures'`,
+    );
+    const updatable = rows.filter((r) => r.can_update).map((r) => r.column_name).sort();
+    expect(updatable).toEqual(['pdf_file_id', 'pdf_sha256', 'updated_at']);
+  });
+
   test('app_tenant: SELECT only on building_footprints, and no privilege on building_footprint_states', async () => {
     expect(await tablePrivileges('app_tenant', FOOTPRINT_TABLES)).toEqual([
       privs('building_footprints', true, false, false, false),
@@ -680,10 +702,19 @@ describe('grants', () => {
     ]);
   });
 
-  test('app_system has SELECT, INSERT, UPDATE and DELETE on both footprint tables', async () => {
-    expect(await tablePrivileges('app_system', FOOTPRINT_TABLES)).toEqual(
-      FOOTPRINT_TABLES.map((t) => ({ ...privs(t, true, true, true, true), truncate: true })),
+  test('app_system holds only the footprint privileges the loader uses: no TRUNCATE, REFERENCES or TRIGGER (security finding 9)', async () => {
+    expect(await tablePrivileges('app_system', FOOTPRINT_TABLES)).toEqual([
+      privs('building_footprints', true, true, false, true),
+      privs('building_footprint_states', true, true, true, false),
+    ]);
+    const rows = await ownerQuery<{ table: string; references: boolean; trigger: boolean }>(
+      `select t as table,
+              has_table_privilege('app_system', 'public.' || t, 'REFERENCES') as references,
+              has_table_privilege('app_system', 'public.' || t, 'TRIGGER') as trigger
+         from unnest($1::text[]) as t`,
+      [[...FOOTPRINT_TABLES]],
     );
+    expect(rows).toEqual(FOOTPRINT_TABLES.map((table) => ({ table, references: false, trigger: false })));
   });
 
   test('app_system holds column-level SELECT on exactly the whitelisted proposal and exact order columns', async () => {
@@ -762,6 +793,18 @@ describe('grants', () => {
     expect(await tenantRaw(`select count(*)::int n from proposals`, { companyId: seed.a.companyId })).toEqual([
       { n: 1 },
     ]);
+  });
+
+  test('app_system holds no TRUNCATE, TRIGGER or REFERENCES on any relation in public', async () => {
+    // TRUNCATE skips row-level security; TRIGGER would let it plant code that runs as another role.
+    const rows = await ownerQuery<{ relname: string }>(
+      `select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm')
+          and (has_table_privilege('app_system', c.oid, 'TRUNCATE,TRIGGER,REFERENCES')
+               or has_any_column_privilege('app_system', c.oid, 'REFERENCES'))
+        order by 1`,
+    );
+    expect(rows).toEqual([]);
   });
 
   test('neither app role may create schemas in the database (pg-boss runs with createSchema: false in the schema 0002 made)', async () => {
@@ -1259,6 +1302,265 @@ describe('app_tenant isolation', () => {
     await expect(tenantRaw(`delete from ${table}`, { companyId: seed.a.companyId })).rejects.toThrow(
       /permission denied/,
     );
+  });
+});
+
+/** A company's proposal (with its customer, property, job and measurement), inserted as the owner. */
+async function insertProposal(companyId: string): Promise<{ proposalId: string; measurementId: string }> {
+  const customerId = await insertCustomer(companyId, 'Cust');
+  const propertyId = await insertProperty(companyId, customerId, `${companyId} main st|68102`);
+  const [job] = await ownerQuery<{ id: string }>(
+    `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3) returning id`,
+    [companyId, customerId, propertyId],
+  );
+  const [measurement] = await ownerQuery<{ id: string }>(
+    `insert into measurements (company_id, property_id, kind, method) values ($1, $2, 'estimate', 'manual') returning id`,
+    [companyId, propertyId],
+  );
+  const [proposal] = await ownerQuery<{ id: string }>(
+    `insert into proposals (company_id, customer_id, property_id, job_id, measurement_id, number,
+        status, valid_until, estimate_basis, link_token_hash, link_token_encrypted)
+     values ($1, $2, $3, $4, $5, 'P-0001', 'draft', date '2026-12-31', 'estimate', $6, $7) returning id`,
+    [companyId, customerId, propertyId, job!.id, measurement!.id, Buffer.from(`hash-${companyId}`), Buffer.from('encrypted-placeholder')],
+  );
+  return { proposalId: proposal!.id, measurementId: measurement!.id };
+}
+
+describe('E1 tenant tables: cross-company isolation (security finding 22)', () => {
+  type Refs = { proposalId: string; measurementId: string };
+  type Insert = (companyId: string, refs: Refs) => { text: string; values: unknown[] };
+  /** Each table: an insert returning id, and one column app_tenant may update (EQ limits proposal_signatures only). */
+  const E1_ISOLATION_CASES: { table: string; insert: Insert; column: string; value: unknown }[] = [
+    {
+      table: 'proposal_counters',
+      insert: (companyId) => ({ text: `insert into proposal_counters (company_id, next_number) values ($1, 7) returning id`, values: [companyId] }),
+      column: 'next_number',
+      value: 999,
+    },
+    {
+      table: 'proposal_events',
+      insert: (companyId, refs) => ({
+        text: `insert into proposal_events (company_id, proposal_id, kind, user_agent) values ($1, $2, 'viewed', 'Original') returning id`,
+        values: [companyId, refs.proposalId],
+      }),
+      column: 'user_agent',
+      value: 'Hacked',
+    },
+    {
+      table: 'exact_report_orders',
+      insert: (companyId, refs) => ({
+        text: `insert into exact_report_orders (company_id, measurement_id, reference_id, error_plain) values ($1, $2, $3, 'Original') returning id`,
+        values: [companyId, refs.measurementId, `ref-${companyId}`],
+      }),
+      column: 'error_plain',
+      value: 'Hacked',
+    },
+  ];
+
+  async function seedBoth(insert: Insert): Promise<{ aId: string; bId: string; b: Refs }> {
+    const a = await insertProposal(seed.a.companyId);
+    const b = await insertProposal(seed.b.companyId);
+    const qa = insert(seed.a.companyId, a);
+    const qb = insert(seed.b.companyId, b);
+    const [aRow] = await ownerQuery<{ id: string }>(qa.text, qa.values);
+    const [bRow] = await ownerQuery<{ id: string }>(qb.text, qb.values);
+    return { aId: aRow!.id, bId: bRow!.id, b };
+  }
+
+  describe.each(E1_ISOLATION_CASES)('$table', ({ table, insert, column, value }) => {
+    test("company A reads only its own row and never company B's, even by id", async () => {
+      const { aId, bId } = await seedBoth(insert);
+      const opts = { companyId: seed.a.companyId };
+      expect(await tenantRaw(`select id, company_id from ${table}`, opts)).toEqual([{ id: aId, company_id: seed.a.companyId }]);
+      expect(await tenantRaw(`select id from ${table} where id = $1`, { ...opts, values: [bId] })).toEqual([]);
+      expect(await tenantRaw(`select id from ${table} where company_id = $1`, { ...opts, values: [seed.b.companyId] })).toEqual([]);
+    });
+
+    test("company A's update of company B's row changes nothing", async () => {
+      const { bId } = await seedBoth(insert);
+      const before = await ownerQuery(`select ${column} from ${table} where id = $1`, [bId]);
+      const updated = await tenantRaw(`update ${table} set ${column} = $2 where id = $1 returning id`, {
+        companyId: seed.a.companyId,
+        values: [bId, value],
+      });
+      expect(updated).toEqual([]);
+      expect(await ownerQuery(`select ${column} from ${table} where id = $1`, [bId])).toEqual(before);
+    });
+
+    test("company A cannot move its own row to company B", async () => {
+      const { aId } = await seedBoth(insert);
+      await expect(
+        tenantRaw(`update ${table} set company_id = $2 where id = $1`, { companyId: seed.a.companyId, values: [aId, seed.b.companyId] }),
+      ).rejects.toThrow(/row-level security/);
+      expect(await ownerQuery(`select company_id from ${table} where id = $1`, [aId])).toEqual([{ company_id: seed.a.companyId }]);
+    });
+
+    test("company A cannot insert a row carrying company B's company_id", async () => {
+      const { b } = await seedBoth(insert);
+      const count = async () => (await ownerQuery<{ n: number }>(`select count(*)::int n from ${table} where company_id = $1`, [seed.b.companyId]))[0]!.n;
+      const before = await count();
+      // For proposal_counters B already has its row; the RLS check runs before the unique index is.
+      const q = insert(seed.b.companyId, b);
+      await expect(tenantRaw(q.text, { companyId: seed.a.companyId, values: q.values })).rejects.toThrow(/row-level security/);
+      expect(await count()).toBe(before);
+    });
+  });
+});
+
+/**
+ * C1 tables with no other behavioural isolation test (security finding 22). Each case makes one row
+ * for a company as the owner (with the parents it needs, all in that company), and names a column
+ * the tenant role may set. Company A's session must not read, change or delete B's row, must not
+ * move its own row to B, and must not insert a row carrying B's company_id.
+ */
+describe('app_tenant isolation on the C1 calendar, schedule and pricing tables', () => {
+  async function connectionFor(company: SeededCompany): Promise<string> {
+    const [row] = await ownerQuery<{ id: string }>(
+      `insert into calendar_connections (company_id, user_id, provider, encrypted_credentials)
+       values ($1, $2, 'google', $3) returning id`,
+      [company.companyId, company.owner.userId, Buffer.from('encrypted-placeholder')],
+    );
+    return row!.id;
+  }
+
+  async function appointmentFor(company: SeededCompany): Promise<string> {
+    const [row] = await ownerQuery<{ id: string }>(
+      `insert into appointments (company_id, kind, starts_at, ends_at)
+       values ($1, 'other', now(), now() + interval '1 hour') returning id`,
+      [company.companyId],
+    );
+    return row!.id;
+  }
+
+  type Case = {
+    table: string;
+    /** The insert statement and its values for `company`, its parents made first. */
+    insert: (company: SeededCompany) => Promise<{ text: string; values: unknown[] }>;
+    /** A column assignment the tenant role is allowed to make. */
+    set: string;
+    /** app_tenant holds DELETE on the table. */
+    deletable: boolean;
+  };
+
+  const CASES: Case[] = [
+    {
+      table: 'calendar_event_links',
+      insert: async (c) => ({
+        text: `insert into calendar_event_links (company_id, appointment_id, connection_id, provider_event_id)
+               values ($1, $2, $3, $4) returning id`,
+        values: [c.companyId, await appointmentFor(c), await connectionFor(c), `evt-${c.companyId}`],
+      }),
+      set: `etag = 'changed'`,
+      deletable: true,
+    },
+    {
+      table: 'calendar_busy_blocks',
+      insert: async (c) => ({
+        text: `insert into calendar_busy_blocks (company_id, connection_id, user_id, provider_event_id, starts_at, ends_at)
+               values ($1, $2, $3, $4, now(), now() + interval '1 hour') returning id`,
+        values: [c.companyId, await connectionFor(c), c.owner.userId, `busy-${c.companyId}`],
+      }),
+      set: `all_day = true`,
+      deletable: true,
+    },
+    {
+      table: 'member_schedules',
+      insert: async (c) => ({
+        text: `insert into member_schedules (company_id, user_id, weekly_hours) values ($1, $2, '{}'::jsonb) returning id`,
+        values: [c.companyId, c.owner.userId],
+      }),
+      set: `weekly_hours = '{"mon": []}'::jsonb`,
+      deletable: false,
+    },
+    {
+      table: 'pricebooks',
+      insert: async (c) => ({
+        text: `insert into pricebooks (company_id, prices) values ($1, '{}'::jsonb) returning id`,
+        values: [c.companyId],
+      }),
+      set: `prices = '{"changed": true}'::jsonb`,
+      deletable: false,
+    },
+    {
+      table: 'quote_counters',
+      insert: async (c) => ({
+        text: `insert into quote_counters (company_id) values ($1) returning id`,
+        values: [c.companyId],
+      }),
+      set: `next_number = 99`,
+      deletable: false,
+    },
+  ];
+
+  async function rowFor(c: Case, company: SeededCompany): Promise<string> {
+    const { text, values } = await c.insert(company);
+    const [row] = await ownerQuery<{ id: string }>(text, values);
+    return row!.id;
+  }
+
+  /** The row as the owner sees it, to show a refused write changed nothing. */
+  const ownerRow = (c: Case, id: string) => ownerQuery(`select * from ${c.table} where id = $1`, [id]);
+
+  test.each(CASES.map((c) => [c.table, c] as const))('%s: company A reads only its own rows, never B\'s by id', async (_t, c) => {
+    const aId = await rowFor(c, seed.a);
+    const bId = await rowFor(c, seed.b);
+    expect(await tenantRaw(`select id, company_id from ${c.table}`, { companyId: seed.a.companyId })).toEqual([
+      { id: aId, company_id: seed.a.companyId },
+    ]);
+    expect(
+      await tenantRaw(`select id from ${c.table} where id = $1`, { companyId: seed.a.companyId, values: [bId] }),
+    ).toEqual([]);
+    expect(
+      await tenantRaw(`select id from ${c.table} where company_id = $1`, {
+        companyId: seed.a.companyId,
+        values: [seed.b.companyId],
+      }),
+    ).toEqual([]);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))("%s: company A cannot change or delete B's row", async (_t, c) => {
+    await rowFor(c, seed.a);
+    const bId = await rowFor(c, seed.b);
+    const before = await ownerRow(c, bId);
+
+    expect(
+      await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
+        companyId: seed.a.companyId,
+        values: [bId],
+      }),
+    ).toEqual([]);
+    if (c.deletable) {
+      expect(
+        await tenantRaw(`delete from ${c.table} where id = $1 returning id`, { companyId: seed.a.companyId, values: [bId] }),
+      ).toEqual([]);
+    }
+    expect(await ownerRow(c, bId)).toEqual(before);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))('%s: company A cannot move its own row to B', async (_t, c) => {
+    const aId = await rowFor(c, seed.a);
+    const before = await ownerRow(c, aId);
+    let error: unknown;
+    try {
+      await tenantRaw(`update ${c.table} set company_id = $1 where id = $2`, {
+        companyId: seed.a.companyId,
+        values: [seed.b.companyId, aId],
+      });
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toBeInstanceOf(pg.DatabaseError);
+    const { code, message } = error as pg.DatabaseError;
+    // RLS's WITH CHECK refuses it; a same-company foreign key may refuse it first.
+    expect(code === '23503' || /row-level security/.test(message)).toBe(true);
+    expect(await ownerRow(c, aId)).toEqual(before);
+  });
+
+  test.each(CASES.map((c) => [c.table, c] as const))("%s: company A cannot insert a row with B's company_id", async (_t, c) => {
+    // B's parents exist (made by the owner), so only row-level security stands in the way.
+    const { text, values } = await c.insert(seed.b);
+    await expect(tenantRaw(text, { companyId: seed.a.companyId, values })).rejects.toThrow(/row-level security/);
+    expect(await ownerQuery(`select count(*)::int n from ${c.table}`)).toEqual([{ n: 0 }]);
   });
 });
 

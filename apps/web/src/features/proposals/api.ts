@@ -71,8 +71,8 @@ export function useSendProposal(id: string) {
     onSuccess: ({ taskId }) => {
       void navigate(`/approvals/${taskId}`);
     },
-    onError: () => {
-      toast.show(proposals.sendFailed, 'error');
+    onError: (error) => {
+      toast.show(messageOf(error, proposals.sendFailed), 'error');
     },
   });
 }
@@ -90,8 +90,8 @@ export function useCopyLink(id: string) {
       toast.show(proposals.linkCopied, 'success');
       void queryClient.invalidateQueries({ queryKey: proposalKey(id) });
     },
-    onError: () => {
-      toast.show(proposals.copyFailed, 'error');
+    onError: (error) => {
+      toast.show(messageOf(error, proposals.copyFailed), 'error');
     },
   });
 }
@@ -107,8 +107,8 @@ export function useReviseProposal(id: string) {
       queryClient.setQueryData(proposalKey(view.id), view);
       void navigate(`/estimator/proposals/${view.id}`);
     },
-    onError: () => {
-      toast.show(proposals.reviseFailed, 'error');
+    onError: (error) => {
+      toast.show(messageOf(error, proposals.reviseFailed), 'error');
     },
   });
 }
