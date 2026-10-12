@@ -33,7 +33,7 @@ lives anywhere else.
 | F3 setup, texting, billing, import | `docs/superpowers/plans/2026-10-11-roofline-f3-setup.md` (on `f3-setup`) + briefs `ops/sdd/f3/` | **done** (8b8400a): 37 tasks, polish, integration-review fixes A-C |
 | C1 Core CRM | `docs/superpowers/plans/2026-10-12-roofline-core-crm.md` + briefs `ops/sdd/c1/` | **done** except T29 (owner: real Google/Outlook smoke); T1-T28 + whole-branch review on `c1-crm` |
 | E1 Estimator | `docs/superpowers/plans/2026-10-12-roofline-estimator.md` | **done** (630ffcf): T1-T22 + whole-branch review; owner runs T22 smoke |
-| S1, D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{s1,d1,a1,g1}/` | G1 all tasks T1–T18 merged (g1-agents bbf8e5d); A1 all tasks 1–22 merged, re-merges in flight; S1 security fixes R8–R10 in progress; D1 T19 plus pre-review fixes (CV, RA, RC, d1-rev-a/b/c) in progress |
+| S1, D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{s1,d1,a1,g1}/` | S1 done (s1-storm 85a68e79); A1 done (a1-agents 81d1a601); G1 done (g1-agents 45b4d9f + launch-g1fix 309ccfd); D1 done at d1-front-desk 3c1d391, with follow-ups RC-4, rev-l, rev-m and RC-1/1b in flight; demo mode on demo-mode (green); launch merge next |
 
 All finished branches are merged (2026-10-12): F3 T26, T31-T35 into `f3-setup` (330ca23); C1 T2-T4 and the
 latest `f3-setup` into `c1-crm` (dfa9132).
