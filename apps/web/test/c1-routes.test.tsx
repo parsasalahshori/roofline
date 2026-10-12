@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { appointments } from '../src/copy/appointments.ts';
-import { calendar } from '../src/copy/calendar.ts';
 import { create } from '../src/copy/create.ts';
 import { customers } from '../src/copy/customers.ts';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
@@ -82,7 +81,6 @@ describe('C1 windows', () => {
     ['/customers', WINDOW_COPY.customers.title, customers.comingSoon],
     ['/customers/new', WINDOW_COPY.customers.title, create.newCustomer.comingSoon],
     ['/customers/c1', WINDOW_COPY.customers.title, customers.customerComingSoon],
-    ['/calendar', WINDOW_COPY.calendar.title, calendar.comingSoon],
     ['/calendar/new', WINDOW_COPY.calendar.title, appointments.comingSoon],
     ['/calendar/appointments/a1', WINDOW_COPY.calendar.title, appointments.comingSoon],
   ])('%s shows its placeholder in the %s window', async (path, title, copy) => {
