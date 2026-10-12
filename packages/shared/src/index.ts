@@ -15,3 +15,6 @@ export * from './pipeline.ts';
 export * from './availability.ts';
 export * from './crm.ts';
 export * from './csv.ts';
+// S1 skeleton (Task 1): one line per new shared file; later S1 tasks fill the files in.
+export * from './storm.ts';
+export * from './door-routes.ts';
