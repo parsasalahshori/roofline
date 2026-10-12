@@ -40,9 +40,9 @@ describe('Front Desk skeleton', () => {
     expect(jobs.sent[0]).toEqual({ name: 'fd-text', data, singletonKey: 'c-1', startAfter: 20 });
   });
 
-  test.each(['/hooks/twilio/voice', '/hooks/twilio/voice-status'])('%s is reachable without a session and answers 501', async (path) => {
-    const res = await request(t.app).post(path).type('form').send({ CallSid: 'CA1' });
-    expect(res.status).toBe(501);
+  test.each(['/hooks/twilio/voice', '/hooks/twilio/voice-status'])('%s is reachable without a session and answers 404 for an unknown number', async (path) => {
+    const res = await request(t.app).post(path).type('form').send({ CallSid: 'CA1', To: '+14025559999' });
+    expect(res.status).toBe(404);
   });
 
   test('the /api stubs sit behind the session gate', async () => {
