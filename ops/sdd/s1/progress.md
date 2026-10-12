@@ -233,3 +233,12 @@ The three tasks run in parallel from 83e9856, with Sonnet builders, and need CI 
 - Cause: R3 (577674c) made the ad campaign step refuse an account whose currency isn't USD. `scripts/storm-fixture.ts` inserted ad accounts with a null currency.
 - Fix 3f800e5: fixture accounts now have currency USD and a name, plus external ids per company (derived from the company id), so they stay valid under R8's global unique index.
 - R7–R10 branch from bases before 3f800e5, so their E2E shows the same 7 failures. Those are the base's failures: judge each task's E2E on the merge result after it lands on s1-storm.
+
+## R7 merged (s1-r7 0c2717a, merge on s1-storm)
+- R7 run 38259664396: Platform and Hail passed. E2E had the same 7 failures as the base (the NOT_USD fixture, fixed in 3f800e5). E2E is judged on the merged head.
+- Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema changes" all pass.
+- Decision recorded: a merged storm stays hidden from lists until it has a plan. Alerts and settle candidates always skip merged storms, so a merged storm with a draft plan is not re-drafted.
+- Ruling BE config:
+  - `HAIL_ALERT_STALE_MINUTES_SEASON` = 180;
+  - `HAIL_ALERT_STALE_MINUTES_OFFSEASON` = 720;
+  - `POSTMARK_TOKEN` in the hail service, with the deprecated `POSTMARK_SERVER_TOKEN` as fallback.
