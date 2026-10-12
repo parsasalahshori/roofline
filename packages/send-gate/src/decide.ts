@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { type CampaignStatus, type CompanyStatus, type ConsentStatus, type GateRule, isTimeZone, type MessagePurpose, textability } from '@roofline/shared';
+import { type CampaignStatus, type CompanyStatus, type ConsentStatus, type GateRule, isTimeZone, MARKETING_CONSENT_STATUSES, type MessagePurpose, textability } from '@roofline/shared';
 import { isStrictState, nextAllowedTime } from './quiet-hours.ts';
 
 /** Everything `decide` needs, already fetched: the gate itself touches no database and no network. */
@@ -58,7 +58,7 @@ const STRICT_STATE_DAILY_LIMIT = 3;
 
 // Allow-lists, not deny-lists: a status or consent value this code has not heard of fails closed.
 const SENDING_STATUSES: ReadonlySet<CompanyStatus> = new Set(['trial', 'active']);
-const MARKETING_CONSENT: ReadonlySet<ConsentStatus> = new Set(['attested', 'written']);
+const MARKETING_CONSENT: ReadonlySet<ConsentStatus> = new Set(MARKETING_CONSENT_STATUSES);
 const INFORMATIONAL_CONSENT: ReadonlySet<ConsentStatus> = new Set(['express', 'attested', 'written']);
 
 const OPT_OUT_PHRASE = /reply stop to opt out/i;

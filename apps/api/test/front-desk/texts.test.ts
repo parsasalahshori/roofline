@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import {
   agentSettings,
   appointments,
+  companies,
   companyPhoneNumbers,
   companySettings,
   conversations,
@@ -314,6 +315,16 @@ describe('Front Desk texts', () => {
     await t.jobs.drain(t.deps);
     const [row] = await outbound();
     expect(row).toMatchObject({ purpose: 'informational', status: 'blocked' });
+    expect(t.sms.sent).toHaveLength(0);
+  });
+
+  test.each(['trial_ended', 'canceled'] as const)('a read-only company (%s) gets no AI turn on an inbound text', async (status) => {
+    await t.deps.pools.system.update(companies).set({ status }).where(eq(companies.id, idA()));
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hi there');
+    await t.jobs.drain(t.deps);
+    expect(fdTextJobs()).toHaveLength(0);
+    expect(answerCalls(llm)).toHaveLength(0);
     expect(t.sms.sent).toHaveLength(0);
   });
 

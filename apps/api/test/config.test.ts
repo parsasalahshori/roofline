@@ -482,6 +482,39 @@ describe('F3 settings', () => {
     // Off in production is fine.
     expect(loadConfig({ ...VALID, FAKE_PROVIDERS: '0' }).FAKE_PROVIDERS).toBe(false);
   });
+
+  test('DEMO_MODE is refused in production unless DEMO_MODE_ALLOW_PROD is set', () => {
+    const message = problem({ ...VALID, DEMO_MODE: '1' });
+    expect(message).toContain('DEMO_MODE');
+    expect(message).toContain('is refused in production');
+    expect(problem({ ...VALID, DEMO_MODE: '1', DEMO_MODE_ALLOW_PROD: '0' })).toContain('DEMO_MODE');
+  });
+
+  test('DEMO_MODE with DEMO_MODE_ALLOW_PROD loads in production with every provider fake and the weather off', () => {
+    const config = loadConfig({ ...VALID, DEMO_MODE: '1', DEMO_MODE_ALLOW_PROD: '1' });
+    expect(config).toMatchObject({ DEMO_MODE: true, DEMO_MODE_ALLOW_PROD: true, FAKE_PROVIDERS: true, WEATHER_DISABLED: true });
+    // FAKE_PROVIDERS set explicitly is allowed alongside the override too.
+    expect(loadConfig({ ...VALID, DEMO_MODE: '1', DEMO_MODE_ALLOW_PROD: '1', FAKE_PROVIDERS: '1' }).FAKE_PROVIDERS).toBe(true);
+    // The override alone changes nothing.
+    const overrideOnly = loadConfig({ ...VALID, DEMO_MODE_ALLOW_PROD: '1' });
+    expect(overrideOnly.DEMO_MODE).toBeFalsy();
+    expect(overrideOnly.FAKE_PROVIDERS).toBeFalsy();
+  });
+
+  test('DEMO_MODE in development forces FAKE_PROVIDERS and WEATHER_DISABLED on', () => {
+    const dev = { ...VALID, NODE_ENV: 'development' };
+    expect(loadConfig({ ...dev, DEMO_MODE: '1', FAKE_PROVIDERS: '0' })).toMatchObject({ DEMO_MODE: true, FAKE_PROVIDERS: true, WEATHER_DISABLED: true });
+    const plain = loadConfig(dev);
+    expect(plain.DEMO_MODE).toBeFalsy();
+    expect(plain.FAKE_PROVIDERS).toBeFalsy();
+  });
+
+  test('DEMO_DATABASE_URL_OWNER is optional and must be a postgres URL', () => {
+    expect(loadConfig(VALID).DEMO_DATABASE_URL_OWNER).toBeUndefined();
+    const url = 'postgres://owner:pw@localhost:5432/roofline';
+    expect(loadConfig({ ...VALID, DEMO_DATABASE_URL_OWNER: url }).DEMO_DATABASE_URL_OWNER).toBe(url);
+    expect(problem({ ...VALID, DEMO_DATABASE_URL_OWNER: 'https://example.test' })).toContain('DEMO_DATABASE_URL_OWNER');
+  });
 });
 
 describe('E1 settings', () => {

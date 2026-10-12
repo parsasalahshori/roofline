@@ -13,6 +13,7 @@ import {
   conversationTurns,
   customers,
   encrypt,
+  frontDeskConversationCounts,
   jobs,
   messages,
   textingRegistrations,
@@ -53,7 +54,7 @@ beforeEach(async () => {
   (t.deps as unknown as { llm: ScriptedLlm }).llm = new ScriptedLlm([], { summary: 'The caller asked about a leak.' });
 });
 
-type Seed = { noConversation?: boolean; aiSeconds?: number; aiStarted?: boolean; spam?: boolean; toolCalls?: ToolCallRecord[]; company?: 'a' | 'b' };
+type Seed = { status?: 'ended' | 'rejected'; noConversation?: boolean; aiSeconds?: number; aiStarted?: boolean; spam?: boolean; toolCalls?: ToolCallRecord[]; company?: 'a' | 'b' };
 type Seeded = { callId: string; callSid: string; customerId: string | null; companyId: string };
 
 /** A finished call (with its conversation, customer and one caller turn) as the relay would have left it. */
@@ -82,7 +83,7 @@ async function seedCall(o: Seed = {}): Promise<Seeded> {
         callSid,
         fromE164: CALLER,
         toE164: o.company === 'b' ? B_NUMBER : A_NUMBER,
-        status: 'ended',
+        status: o.status ?? 'ended',
         conversationId,
         aiSeconds: o.aiSeconds ?? 0,
         aiStartedAt: o.aiStarted === true ? t.clock.now() : null,
@@ -161,8 +162,14 @@ describe('Front Desk combined fixes', () => {
     expect(await liveTasks()).toHaveLength(1);
   });
 
-  test('a spam call still creates its live task', async () => {
-    const s = await seedCall({ spam: true, aiSeconds: 0 });
+  test('a spam call screening rejected before the AI ran makes no live task', async () => {
+    const s = await seedCall({ spam: true, aiSeconds: 0, status: 'rejected' });
+    await run(s);
+    expect(await liveTasks()).toHaveLength(0);
+  });
+
+  test('a spam call the AI had started still creates its live task', async () => {
+    const s = await seedCall({ spam: true, aiSeconds: 0, aiStarted: true });
     await run(s);
     const rows = await liveTasks();
     expect(rows).toHaveLength(1);
@@ -212,5 +219,64 @@ describe('Front Desk combined fixes', () => {
     const [after] = await liveTasks();
     expect(after!.status).toBe('done');
     expect((await eventKinds(after!.id)).filter((k) => k === 'finished')).toHaveLength(1);
+  });
+
+  describe('frontDeskConversationCounts (success rate)', () => {
+    const owner = () => ({ companyId: idA(), userId: null, role: 'owner' as const, canApproveSpend: true });
+    const window = () => {
+      const now = t.clock.now();
+      return {
+        now,
+        timeZone: 'America/Chicago',
+        todayStart: new Date(now.getTime() - 12 * 3600_000),
+        tomorrowStart: new Date(now.getTime() + 12 * 3600_000),
+        since30: new Date(now.getTime() - 30 * 86_400_000),
+        monthStart: new Date(now.getTime() - 10 * 86_400_000),
+        chartStart: new Date(now.getTime() - 13 * 86_400_000),
+      };
+    };
+    const counts = (ctx: ReturnType<typeof owner> | { companyId: string; userId: string | null; role: 'rep'; canApproveSpend: boolean }) =>
+      withTenant(t.deps.pools, ctx, (tx) => frontDeskConversationCounts(tx, ctx, window()));
+
+    async function conv(o: { channel: 'voice' | 'sms'; outcome: 'booked' | 'spam'; customerId?: string | null }) {
+      await inCompany(t, idA(), (tx) =>
+        tx.insert(conversations).values({
+          companyId: idA(),
+          channel: o.channel,
+          customerId: o.customerId ?? null,
+          phoneE164: CALLER,
+          companyNumberE164: A_NUMBER,
+          status: 'ended',
+          outcome: o.outcome,
+        }),
+      );
+    }
+
+    test('text spam conversations alone give no rate', async () => {
+      await conv({ channel: 'sms', outcome: 'spam' });
+      await conv({ channel: 'sms', outcome: 'spam' });
+      expect(await counts(owner())).toEqual({ finished: 0, succeeded: 0 });
+    });
+
+    test('text conversations are not counted; a voice spam conversation leaves the denominator', async () => {
+      await conv({ channel: 'voice', outcome: 'booked' });
+      await conv({ channel: 'voice', outcome: 'spam' });
+      await conv({ channel: 'sms', outcome: 'booked' });
+      expect(await counts(owner())).toEqual({ finished: 1, succeeded: 1 });
+    });
+
+    test('a rep sees only conversations of customers in customerScope', async () => {
+      const ownerActor = await who.as('owner');
+      const mine = await mustCreate(ownerActor, '/api/customers', { displayName: 'Mine Customer' });
+      const theirs = await mustCreate(ownerActor, '/api/customers', { displayName: 'Theirs Customer' });
+      const repId = t.seed.a.rep.userId;
+      await inCompany(t, idA(), (tx) => tx.update(customers).set({ createdByUserId: repId }).where(eq(customers.id, mine.id)));
+      await conv({ channel: 'voice', outcome: 'booked', customerId: mine.id });
+      await conv({ channel: 'voice', outcome: 'booked', customerId: theirs.id });
+      await conv({ channel: 'voice', outcome: 'booked', customerId: null });
+      const rep = { companyId: idA(), userId: repId, role: 'rep' as const, canApproveSpend: false };
+      expect(await counts(rep)).toEqual({ finished: 1, succeeded: 1 });
+      expect(await counts(owner())).toEqual({ finished: 3, succeeded: 3 });
+    });
   });
 });

@@ -278,7 +278,11 @@ export function calendarConnectRoutes(deps: AppDeps): Router {
 
   router.post('/sync', async (req, res) => {
     const conn = await currentRow(req);
-    if (!conn) throw new AppError(404, MESSAGES.notFound);
+    // No calendar connected: nothing to sync. The Calendar posts this on every open, so it is not an error.
+    if (!conn) {
+      res.status(204).end();
+      return;
+    }
     // Rate limit per person, kept in the row so it holds across servers: a sync within 30 s of the last one is a no-op.
     if (conn.lastSyncedAt !== null && clock.now().getTime() - conn.lastSyncedAt.getTime() < 30_000) {
       res.status(202).json({});

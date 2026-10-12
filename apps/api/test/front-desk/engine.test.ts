@@ -1,7 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, test, vi } from 'vitest';
 import type { z } from 'zod';
-import { getConversation, listTurns, withTenant } from '@roofline/db';
+import { eq } from 'drizzle-orm';
+import { activities, conversationTurns, customers, getConversation, insertCall, jobs, listTurns, withTenant } from '@roofline/db';
 import {
   FRONT_DESK_TOOLS,
   type FrontDeskToolName,
@@ -10,6 +11,8 @@ import {
 } from '@roofline/shared';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import type { ConversationState, EngineEvent, ToolHandlers } from '../../src/front-desk/engine-types.ts';
+import { takeMessage } from '../../src/front-desk/tools/message.ts';
+import { inCompany } from '../crm-helpers.ts';
 import { appendUser } from '../../src/front-desk/state.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { AnswerInput, LlmEvent, RouteDecision, TurnUsage } from '../../src/providers/llm.ts';
@@ -108,6 +111,68 @@ async function savedTurns(t: TestApp, state: ConversationState) {
   const ctx = { companyId: state.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
   return withTenant(t.deps.pools, ctx, (tx) => listTurns(tx, ctx, state.conversationId));
 }
+
+async function savedToolCalls(t: TestApp, state: ConversationState) {
+  const ctx = { companyId: state.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+  const rows = await withTenant(t.deps.pools, ctx, (tx) =>
+    tx.select({ toolCalls: conversationTurns.toolCalls }).from(conversationTurns).where(eq(conversationTurns.conversationId, state.conversationId)),
+  );
+  return rows.map((r) => r.toolCalls).find((c) => c !== null);
+}
+
+describe('a later relay session of the same call (RC-3)', () => {
+  test('start reuses the conversation and continues positions, the turn count, the start time and the urgent notice', async () => {
+    const script: Script = [
+      { when: /message/, route: OPUS, answer: [{ kind: 'tool', name: 'take_message', input: { reason: 'Leak', urgent: true, callbackWhen: null, name: null } }] },
+      { when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] },
+    ];
+    const t = await makeTestApp();
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm(script) }, { take_message: takeMessage });
+    const ctx = { companyId: t.seed.a.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+    const call = await withTenant(t.deps.pools, ctx, (tx) =>
+      insertCall(tx, ctx, { callSid: 'CA' + 'c'.repeat(32), fromE164: '+14025550123', toE164: t.seed.a.phoneE164, forwardedFrom: null, stirVerstat: null, now: t.clock.now() }),
+    );
+    const start = () => engine.start({ companyId: t.seed.a.companyId, channel: 'voice', phone: '+14025550123', callId: call.id });
+
+    const first = await start();
+    // The caller objected to recording: the stored take_message keeps only its name, outcome and urgent flag.
+    first.transcriptOff = true;
+    await collect(engine.turn(first, 'take a message', new AbortController().signal));
+    await collect(engine.turn(first, 'thanks', new AbortController().signal));
+    expect(first.urgentNoticeSent).toBe(true);
+    const stored = await savedToolCalls(t, first);
+    expect(stored).toEqual([{ name: 'take_message', ok: true, input: { urgent: true } }]);
+
+    t.clock.advance(60_000);
+    const second = await start();
+    expect(second.conversationId).toBe(first.conversationId);
+    expect(second.nextPosition).toBe(first.nextPosition);
+    expect(second.turns).toBe(2);
+    const row = await withTenant(t.deps.pools, ctx, (tx) => getConversation(tx, ctx, first.conversationId));
+    expect(second.startedAt.toISOString()).toBe(row!.createdAt.toISOString());
+    // No customer, a fresh state: the earlier urgent turn is the durable record (no second on-call email).
+    expect(second.urgentNoticeSent).toBe(true);
+    await collect(engine.turn(second, 'are you there', new AbortController().signal));
+    const turns = await savedTurns(t, second);
+    expect(turns.map((x) => x.position)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  test('a later session after a long call still gets 10 minutes before the 30-minute end (RC-4)', async () => {
+    const t = await makeTestApp();
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] }]) }, {});
+    const ctx = { companyId: t.seed.a.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+    const call = await withTenant(t.deps.pools, ctx, (tx) =>
+      insertCall(tx, ctx, { callSid: 'CA' + 'd'.repeat(32), fromE164: '+14025550123', toE164: t.seed.a.phoneE164, forwardedFrom: null, stirVerstat: null, now: t.clock.now() }),
+    );
+    const start = () => engine.start({ companyId: t.seed.a.companyId, channel: 'voice', phone: '+14025550123', callId: call.id });
+    await start();
+    t.clock.advance(31 * 60_000);
+    const second = await start();
+    expect(second.startedAt.getTime()).toBe(t.clock.now().getTime() - 20 * 60_000);
+    const events = await collect(engine.turn(second, 'I want to leave a message', new AbortController().signal));
+    expect(events.some((e) => e.type === 'end')).toBe(false);
+  });
+});
 
 describe('front desk engine', () => {
   test('start stores the company number, or the one it is given', async () => {
@@ -347,6 +412,37 @@ describe('front desk engine', () => {
     expect(assistant).toMatchObject({ text: 'One long', truncated: true });
   });
 
+  test('with transcriptOff the tool-call rows hold only name and ok', async () => {
+    const script: Script = [{ when: /jobs/, route: OPUS, answer: [{ kind: 'tool', name: 'lookup_my_jobs', input: {} }] }];
+    const handler = vi.fn(async () => ({ ok: true, forModel: 'You have one job.' }));
+    const { t, state, say } = await setup(script, { lookup_my_jobs: handler });
+    state.transcriptOff = true;
+    await say('what jobs do I have');
+    expect(await savedToolCalls(t, state)).toEqual([{ name: 'lookup_my_jobs', ok: true }]);
+  });
+
+  test('with transcriptOff off the tool-call rows keep input and result', async () => {
+    const script: Script = [{ when: /jobs/, route: OPUS, answer: [{ kind: 'tool', name: 'lookup_my_jobs', input: {} }] }];
+    const handler = vi.fn(async () => ({ ok: true, forModel: 'You have one job.' }));
+    const { t, state, say } = await setup(script, { lookup_my_jobs: handler });
+    await say('what jobs do I have');
+    expect(await savedToolCalls(t, state)).toEqual([
+      { name: 'lookup_my_jobs', input: {}, result: 'You have one job.', ok: true },
+    ]);
+  });
+
+  test('interrupted() writes no spoken text when transcriptOff', async () => {
+    const { t, engine, state, say } = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'One long answer.' }] }]);
+    state.transcriptOff = true;
+    await say('hello');
+    const before = (await savedTurns(t, state)).find((r) => r.speaker === 'assistant');
+    await engine.interrupted(state, 'secret words');
+    const after = (await savedTurns(t, state)).find((r) => r.speaker === 'assistant');
+    expect(after?.text).toBe(before?.text);
+    expect(after?.text).not.toContain('secret');
+    expect(after?.truncated).toBe(false);
+  });
+
   test('max_tokens says a short apology, adds a note after the user message and goes on', async () => {
     const llm = new MaxTokensLlm([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Short answer.' }] }], false);
     const { state, say } = await setup([], {}, llm);
@@ -387,7 +483,7 @@ describe('front desk engine', () => {
     const a = await setup([
       { when: /./, route: OPUS, answer: [{ kind: 'tool', name: 'transfer_to_person', input: { reason: 'asked', summary: 'x' } }] },
     ]);
-    expect(await a.say('let me talk to someone')).toContainEqual({ type: 'handoff', reason: 'asked', summary: 'x' });
+    expect(await a.say('let me talk to someone')).toContainEqual({ type: 'handoff', reason: 'asked', summary: 'x', urgent: false });
     const b = await setup([
       { when: /./, route: OPUS, answer: [{ kind: 'tool', name: 'end_call', input: { reason: 'goodbye' } }] },
     ]);
@@ -481,5 +577,110 @@ describe('front desk engine', () => {
     await say('my roof');
     expect(state.failedUnderstanding).toBe(0);
     void llm;
+  });
+});
+
+
+describe('front desk engine: caller match at call start and urgent handoffs', () => {
+  const MATCH_PHONE = '+14025550177';
+  const ctxOf = (companyId: string) => ({ companyId, userId: null, role: 'system' as const, canApproveSpend: false });
+
+  async function addCustomer(t: TestApp, name: string, phone: string): Promise<string> {
+    const companyId = t.seed.a.companyId;
+    return inCompany(t, companyId, async (tx) => {
+      const [c] = await tx
+        .insert(customers)
+        .values({ companyId, displayName: name, phones: [{ e164: phone, primary: true }] })
+        .returning({ id: customers.id });
+      return c!.id;
+    });
+  }
+
+  async function row(t: TestApp, state: ConversationState) {
+    const ctx = ctxOf(state.companyId);
+    return withTenant(t.deps.pools, ctx, (tx) => getConversation(tx, ctx, state.conversationId));
+  }
+
+  test('start matches a known voice caller', async () => {
+    const t = await makeTestApp();
+    const customerId = await addCustomer(t, 'Nina Park', MATCH_PHONE);
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm([]) }, {});
+    const state = await engine.start({ companyId: t.seed.a.companyId, channel: 'voice', phone: MATCH_PHONE });
+    expect(state.identity).toBe('matched');
+    expect(state.customerId).toBe(customerId);
+    expect(await row(t, state)).toMatchObject({ customerId, identity: 'matched' });
+  });
+
+  test('start leaves two customers with one phone, no match, and sms unknown', async () => {
+    const t = await makeTestApp();
+    await addCustomer(t, 'Nina Park', MATCH_PHONE);
+    await addCustomer(t, 'Sam Park', MATCH_PHONE);
+    await addCustomer(t, 'Solo Person', '+14025550188');
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm([]) }, {});
+    const companyId = t.seed.a.companyId;
+    const two = await engine.start({ companyId, channel: 'voice', phone: MATCH_PHONE });
+    expect(two).toMatchObject({ identity: 'unknown', customerId: null });
+    const none = await engine.start({ companyId, channel: 'voice', phone: '+14025550166' });
+    expect(none).toMatchObject({ identity: 'unknown', customerId: null });
+    const sms = await engine.start({ companyId, channel: 'sms', phone: '+14025550188' });
+    expect(sms).toMatchObject({ identity: 'unknown', customerId: null });
+    expect(await row(t, two)).toMatchObject({ customerId: null, identity: 'unknown' });
+  });
+
+  test('a matched caller take_message notes the customer and leaves job next steps alone (Ruling EA)', async () => {
+    const t = await makeTestApp();
+    const customerId = await addCustomer(t, 'Nina Park', MATCH_PHONE);
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm([]) }, {});
+    const state = await engine.start({ companyId: t.seed.a.companyId, channel: 'voice', phone: MATCH_PHONE });
+    const result = await takeMessage(
+      { deps: t.deps, companyId: state.companyId, conversation: state, now: t.clock.now() },
+      { reason: 'Call me back', urgent: false, callbackWhen: null, name: null },
+    );
+    expect(result.ok).toBe(true);
+    const acts = await inCompany(t, state.companyId, (tx) => tx.select().from(activities));
+    const msg = acts.filter((a) => a.kind === 'front_desk_message');
+    expect(msg).toHaveLength(1);
+    expect(msg[0]).toMatchObject({ subjectType: 'customer', subjectId: customerId });
+    const jobRows = await inCompany(t, state.companyId, (tx) => tx.select().from(jobs));
+    expect(jobRows.every((j) => j.nextStep === null || !String(j.nextStep).startsWith('Call back'))).toBe(true);
+  });
+
+  test('handoff urgency follows the reason and an earlier urgent notice, never the router flag alone (Ruling BK)', async () => {
+    const urgentRoute: RouteDecision = { ...OPUS, route: 'transfer', urgent: true };
+    const a = await setup([{ when: /./, route: urgentRoute }]);
+    expect(await a.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', urgent: false }));
+    // The router's own label for a real emergency still reaches on-call (loose match, Ruling BK).
+    const emergency = await setup([{ when: /./, route: { ...OPUS, route: 'transfer', intent: 'emergency', urgent: true } }]);
+    expect(await emergency.say('there are sparks in the attic')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'danger', urgent: true }));
+    // A leak described only in the caller's words is still a leak (amended Ruling BK reads the caller text too).
+    const words = await setup([{ when: /./, route: { ...OPUS, route: 'transfer', intent: 'other', urgent: true } }]);
+    expect(await words.say('water is coming in through the ceiling')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'leak', urgent: true }));
+    const leakRoute: RouteDecision = { ...OPUS, route: 'transfer', intent: 'leak', urgent: true };
+    const l = await setup([{ when: /./, route: leakRoute }]);
+    expect(await l.say('water is coming through the ceiling')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'leak', urgent: true }));
+    const b = await setup([{ when: /./, route: { ...OPUS, route: 'transfer' } }]);
+    expect(await b.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', urgent: false }));
+    const tool = (reason: string) => [{ when: /./, route: OPUS, answer: [{ kind: 'tool' as const, name: 'transfer_to_person' as const, input: { reason, summary: 'x' } }] }];
+    const c = await setup(tool('leak'));
+    expect(await c.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'leak', urgent: true }));
+    const d = await setup(tool('asked'));
+    expect(await d.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'asked', urgent: false }));
+    const e = await setup(tool('asked'));
+    e.state.urgentNoticeSent = true;
+    expect(await e.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'asked', urgent: true }));
+  });
+
+  test('an urgent take_message followed by a person-ask hands off as urgent', async () => {
+    const { t, state, say } = await setup(
+      [
+        { when: /message/, route: OPUS, answer: [{ kind: 'tool', name: 'take_message', input: { reason: 'Leak', urgent: true, callbackWhen: null, name: null } }] },
+        { when: /person/, route: OPUS, answer: [{ kind: 'tool', name: 'transfer_to_person', input: { reason: 'asked', summary: 'x' } }] },
+      ],
+      { take_message: takeMessage },
+    );
+    state.customerId = await addCustomer(t, 'Nina Park', '+14025550155');
+    const first = await say('take a message');
+    expect(first.some((e) => e.type === 'handoff')).toBe(false);
+    expect(await say('let me talk to a person')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'asked', urgent: true }));
   });
 });

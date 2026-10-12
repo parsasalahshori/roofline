@@ -3,6 +3,9 @@ import { LlmRefusedError, LlmUnavailableError, type ClaimReplyFacts, type Llm } 
 import type { AnthropicClients } from './client.ts';
 import { toLlmError } from './errors.ts';
 
+/** The most output tokens one claim-reply extraction may use. */
+export const EXTRACT_MAX_TOKENS = 400;
+
 const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
 
 // Keyword-free for strict structured output; zod and the checks below enforce the limits.
@@ -47,7 +50,7 @@ export function createExtractClaimReply(c: AnthropicClients): Llm['extractClaimR
       res = await c.client.messages.create(
         {
           model: c.extractModel,
-          max_tokens: 400,
+          max_tokens: EXTRACT_MAX_TOKENS,
           output_config: { effort: 'low', format: { type: 'json_schema', schema: CLAIM_REPLY_SCHEMA as unknown as Record<string, unknown> } },
           system: [{ type: 'text', text: EXTRACT_PROMPT, cache_control: { type: 'ephemeral', ttl: '1h' } }],
           messages: [{ role: 'user', content: JSON.stringify({ now: now.toISOString(), timeZone, text }) }],

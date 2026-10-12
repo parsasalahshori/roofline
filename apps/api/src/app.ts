@@ -88,6 +88,7 @@ import { agentSettingsRoutes } from './routes/agents-settings.ts';
 import type { StepQueue } from './tasks/queue.ts';
 import { policyPages } from './public/policies.ts';
 import { serveWeb } from './web.ts';
+import { demoRoutes, demoStatusRoute } from './demo/routes.ts';
 import type { WeatherSource } from './weather/source.ts';
 
 /** Everything the app reaches outside itself through. Tests pass fakes for all of it. */
@@ -220,6 +221,7 @@ function contentSecurityPolicy(nodeEnv: Config['NODE_ENV']) {
       imgSrc: ["'self'", 'data:', 'blob:', ...MAP_HOSTS],
       connectSrc: ["'self'", ...MAP_HOSTS, 'https://accounts.google.com/gsi/'],
       fontSrc: ["'self'", 'data:'],
+      mediaSrc: ["'self'"],
       workerSrc: ["'self'", 'blob:'],
       childSrc: ['blob:'],
       // Google sign-in loads its script, frame, styles and calls from accounts.google.com/gsi.
@@ -307,6 +309,9 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // anyone who is not signed in. The public auth routes are the only exceptions (middleware.ts).
   // /health and /hooks/* are not under /api, so they are never limited.
   const logError = options.logError ?? logErrorToConsole;
+  // Demo mode only (demo/routes.ts): GET /api/demo answers signed out, so the shell can show its Demo badge.
+  // With DEMO_MODE off nothing is mounted and every /api/demo path is the ordinary 404.
+  if (config.DEMO_MODE) app.get('/api/demo', demoStatusRoute());
   app.use('/api', attachSession(deps), apiRateLimit(config), requireSession);
   // Refuses writes from a company whose billing has lapsed (billing/read-only.ts).
   app.use('/api', readOnlyGuard);
@@ -375,6 +380,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/front-desk', frontDeskRoutes(deps));
   app.use('/api/calls', callRoutes(deps));
   app.use('/api/blocked-numbers', blockedNumberRoutes(deps));
+  // Demo mode only: the presenter's simulate buttons (signed in, owner or office).
+  if (config.DEMO_MODE) app.use('/api/demo', demoRoutes(deps));
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.

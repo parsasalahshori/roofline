@@ -1,11 +1,18 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, max, ne, notExists, or, sql } from 'drizzle-orm';
-import { daysInStage, isStuck, leadFollowUpDue, localDate, proposalFollowUpDue, REPLY_STOP_DAYS } from '@roofline/shared';
+import {
+  daysInStage,
+  isStuck,
+  leadFollowUpDue,
+  localDate,
+  MARKETING_CONSENT_STATUSES,
+  proposalFollowUpDue,
+  REPLY_STOP_DAYS,
+} from '@roofline/shared';
 import {
   activities,
   agentTasks,
   appointments,
   companySettings,
-  type CustomerPhone,
   customers,
   followUpLog,
   jobs,
@@ -15,6 +22,7 @@ import {
 } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
+import { primaryTextingPhone, readAgentValues } from './agent-common.ts';
 
 /*
  * The Follow-up agent's finder (G1 Task 13a): which unbooked leads are due a text, which stuck jobs
@@ -38,13 +46,7 @@ export const STUCK_NUDGE_ACTIVITY = 'followup.stuck_nudge';
 export const STUCK_NUDGE_GAP_DAYS = 7;
 
 const DAY_MS = 86_400_000;
-const DEFAULT_LEAD_FOLLOWUP_DAYS = 2;
 const DEFAULT_STUCK_AFTER_DAYS = 14;
-
-function textingPhone(phones: readonly CustomerPhone[]): CustomerPhone | null {
-  const usable = phones.filter((p) => typeof p?.e164 === 'string' && p.e164.trim() !== '');
-  return usable.find((p) => p.primary === true) ?? usable[0] ?? null;
-}
 
 /** Leads that are due a follow-up text. */
 export async function findLeadCandidates(
@@ -91,11 +93,8 @@ export async function findLeadCandidates(
     )
     .orderBy(asc(jobs.createdAt), asc(jobs.id));
 
-  // The number the send gate will text (primary, else first) must exist and not be labelled landline.
-  const textable = rows.filter((r) => {
-    const p = textingPhone(r.phones ?? []);
-    return p !== null && (p.label ?? '').trim().toLowerCase() !== 'landline';
-  });
+  // The number the send gate will text (primary, else first, never a landline) must exist.
+  const textable = rows.filter((r) => primaryTextingPhone(r.phones ?? []) !== null);
   if (textable.length === 0) return [];
 
   const jobIds = textable.map((r) => r.jobId);
@@ -203,18 +202,15 @@ export async function followUpSettings(
   tx: Tx,
   ctx: TenantContext,
 ): Promise<{ leadFollowupDays: number; followupLeads: boolean; stuckAfterDays: number }> {
+  const values = await readAgentValues(tx, ctx);
   const [row] = await tx
-    .select({
-      leadFollowupDays: companySettings.leadFollowupDays,
-      followupLeads: companySettings.followupLeads,
-      stuckAfterDays: companySettings.stuckAfterDays,
-    })
+    .select({ stuckAfterDays: companySettings.stuckAfterDays })
     .from(companySettings)
     .where(eq(companySettings.companyId, ctx.companyId))
     .limit(1);
   return {
-    leadFollowupDays: row?.leadFollowupDays ?? DEFAULT_LEAD_FOLLOWUP_DAYS,
-    followupLeads: row?.followupLeads ?? true,
+    leadFollowupDays: values.leadFollowupDays,
+    followupLeads: values.followupLeads,
     stuckAfterDays: row?.stuckAfterDays ?? DEFAULT_STUCK_AFTER_DAYS,
   };
 }
@@ -290,10 +286,7 @@ export async function findProposalCandidates(
     )
     .orderBy(asc(proposals.sentAt), asc(proposals.id));
 
-  const textable = rows.filter((r) => {
-    const p = textingPhone(r.phones ?? []);
-    return p !== null && (p.label ?? '').trim().toLowerCase() !== 'landline';
-  });
+  const textable = rows.filter((r) => primaryTextingPhone(r.phones ?? []) !== null);
   if (textable.length === 0) return [];
 
   const jobIds = [...new Set(textable.map((r) => r.jobId))];
@@ -438,14 +431,11 @@ export async function findReviewCandidates(
         isNull(jobs.archivedAt),
         isNull(customers.archivedAt),
         eq(customers.doNotContact, false),
-        inArray(customers.smsConsentStatus, ['attested', 'written']),
+        inArray(customers.smsConsentStatus, [...MARKETING_CONSENT_STATUSES]),
       ),
     );
 
-  const textable = rows.filter((r) => {
-    const p = textingPhone(r.phones ?? []);
-    return p !== null && (p.label ?? '').trim().toLowerCase() !== 'landline';
-  });
+  const textable = rows.filter((r) => primaryTextingPhone(r.phones ?? []) !== null);
   if (textable.length === 0) return [];
 
   const jobIds = textable.map((r) => r.jobId);

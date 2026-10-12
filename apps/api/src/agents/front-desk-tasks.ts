@@ -1,6 +1,7 @@
 import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import { jobs, type TenantContext, type Tx } from '@roofline/db';
 import { addToLiveTask, closeLiveTasksForSubject, createLiveTask } from '../tasks/service.ts';
+import { FRONT_DESK_UNIT_WORDS } from './feed-text.ts';
 
 /*
  * A1 Task 4. Front Desk live tasks: one per finished call / text conversation, made through tasks/service.ts only.
@@ -67,6 +68,13 @@ export async function recordCallTask(
   return taskId;
 }
 
+/** The task title for a text conversation: counted once there are replies, plain at zero. */
+function textsTitle(replies: number): string {
+  const n = Math.max(0, Math.round(replies));
+  const w = FRONT_DESK_UNIT_WORDS.front_desk_texts;
+  return n > 0 ? `Answered ${n} ${n === 1 ? w.one : w.many}` : 'Answered texts';
+}
+
 /** Records one live task for a text conversation on its company-local day. Idempotent per conversation per day. */
 export async function recordTextTask(
   tx: Tx,
@@ -83,7 +91,7 @@ export async function recordTextTask(
     {
       agent: 'front_desk',
       kind: 'text_conversation',
-      title: 'Answered texts',
+      title: textsTitle(input.replies),
       ...(input.customerId !== null && { subjectType: 'customer', subjectId: input.customerId }),
       step: { type: 'front_desk_texts', result: { replies: input.replies, bookings: input.bookings } },
       status: 'done',
@@ -91,18 +99,26 @@ export async function recordTextTask(
     },
     now,
   );
-  if (!created) await addToLiveTask(tx, ctx, key, { replies: input.replies, bookings: input.bookings }, now);
+  if (!created) {
+    await addToLiveTask(tx, ctx, key, { replies: input.replies, bookings: input.bookings }, now, (r) => textsTitle(Number(r.replies) || 0));
+  }
   return taskId;
 }
 
-/** Called after a job's next step changed: when the job now has no next step, closes its open Front Desk live tasks. */
+/**
+ * Called after a job's next step changed: closes its open Front Desk live tasks when the job now has no next step,
+ * or (when `before` is given) when the next step text was changed to something else.
+ */
 export async function onJobNextStepChanged(
   tx: Tx,
   ctx: TenantContext,
   job: { id: string; nextStep: string | null },
   now: Date,
+  before?: string | null,
 ): Promise<void> {
-  if (job.nextStep === null || job.nextStep.trim() === '') {
+  const after = (job.nextStep ?? '').trim();
+  const changed = before !== undefined && (before ?? '').trim() !== after;
+  if (after === '' || changed) {
     await closeLiveTasksForSubject(tx, ctx, 'job', job.id, now);
   }
 }

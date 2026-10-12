@@ -74,6 +74,9 @@ export function RunNowButton({ agent, runNow, paused = false }: RunNowButtonProp
     );
   }
 
+  const label = agentPage.runNowLabels[agent];
+  if (label === undefined) return null;
+
   const run = () => {
     const at = propNext;
     setError(null);
@@ -99,7 +102,7 @@ export function RunNowButton({ agent, runNow, paused = false }: RunNowButtonProp
         ) : (
           <div className={styles.runButton}>
             <Button variant="primary" busy={mutation.isPending} onClick={run}>
-              {agentPage.runNowLabels[agent]}
+              {label}
             </Button>
           </div>
         )}

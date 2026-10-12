@@ -36,6 +36,12 @@ export type GateRequestInput = {
   replyToInboundAt: Date | null;
   /** D1 Front Desk reply, see decide.ts. */
   inReplyToInboundAt?: Date;
+  /**
+   * The number to text instead of the customer's primary one (the number that called or texted).
+   * Used only when it is one of the customer's numbers; otherwise the primary number is used as
+   * without it. The opt-out check runs against whichever number is texted.
+   */
+  toE164?: string | null;
 };
 
 export type BuiltGateRequest = {
@@ -55,9 +61,10 @@ export type BuiltGateRequest = {
   sender: { accountSid: string; messagingServiceSid: string } | null;
 };
 
-/** The customer's primary number, else their first, else null. */
-function textingNumber(phones: readonly CustomerPhone[]): string | null {
+/** `wanted` when it is one of the customer's numbers, else their primary number, else their first, else null. */
+function textingNumber(phones: readonly CustomerPhone[], wanted: string | null | undefined): string | null {
   const usable = phones.filter((p) => typeof p?.e164 === 'string' && p.e164.trim() !== '');
+  if (wanted != null && usable.some((p) => p.e164 === wanted)) return wanted;
   return (usable.find((p) => p.primary === true) ?? usable[0])?.e164 ?? null;
 }
 
@@ -65,7 +72,8 @@ function textingNumber(phones: readonly CustomerPhone[]): string | null {
  * The gate request for one text to one customer of the context's company, at `now`:
  * - **company:** name, zone and billing status, the registration's campaign status (`none` without
  *   a registration) and the weekly cap from the settings;
- * - **recipient:** the primary number (else the first, else none), consent, do-not-contact, whether
+ * - **recipient:** `input.toE164` when it is one of their numbers, else the primary number (else the
+ *   first, else none), consent, do-not-contact, whether
  *   that number is on the opt-out list, whether they are archived (`archived`), and the zone and
  *   state of their most recently updated home that is not archived (null without one: the gate then
  *   uses the company's zone and the standard hours);
@@ -88,7 +96,7 @@ export async function buildGateRequest(
   const recipient = await textingRecipientFacts(tx, ctx, input.customerId);
   if (!recipient) return null;
 
-  const phoneE164 = textingNumber(recipient.phones);
+  const phoneE164 = textingNumber(recipient.phones, input.toE164);
   const optedOut = phoneE164 !== null && (await isOptedOut(tx, ctx, phoneE164));
   const history = await textHistory(tx, ctx, {
     customerId: input.customerId,

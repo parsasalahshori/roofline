@@ -1,25 +1,14 @@
 import { stepMoves } from '../../../copy/stepMoves.ts';
 import type { StepView } from '../../../api/types.ts';
-import { dateKeyToInstant, formatDayLabel, formatTime, startOfZonedDay, zonedDateKey } from '../../calendar/time.ts';
+import { dateKeyToInstant, formatDayLabel, formatTime, startOfZonedDay, zonedDateKey, zonedParts, zonedWallToInstant } from '../../calendar/time.ts';
 import { useAppointment } from '../../appointments/api.ts';
 import { useCompany, useTeam } from '../../settings/api.ts';
 import styles from './MoveAppointmentPreview.module.css';
+import { DEFAULT_ZONE, payloadOf, textOf } from './payload.ts';
 import type { EditFieldSpec, EditValues, StepKit, StepKitContext, StepPreviewProps } from './types.ts';
 
-type Payload = Record<string, unknown>;
-
-const DEFAULT_ZONE = 'America/Chicago';
 const HOUR_MS = 3_600_000;
 const KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-function payloadOf(step: StepView): Payload {
-  const payload: unknown = step.payload;
-  return payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Payload) : {};
-}
-
-function textOf(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
 
 function dateOf(value: unknown): Date | null {
   if (typeof value !== 'string' || value === '') return null;
@@ -96,8 +85,14 @@ function toPayload(step: StepView, values: EditValues, ctx?: StepKitContext): Re
     const start = dateOf(payload.start);
     const end = dateOf(payload.end);
     if (start === null || end === null || !realDay(key)) return copy;
-    const offset = start.getTime() - startOfZonedDay(start, zone).getTime();
-    const newStart = new Date(dateKeyToInstant(key, zone).getTime() + offset);
+    // A whole-day move keeps the zone midnight; a timed one keeps the old wall clock (9:30 AM stays 9:30 AM).
+    let newStart: Date;
+    if (isAllDay(start, end, zone)) {
+      newStart = dateKeyToInstant(key, zone);
+    } else {
+      const wall = zonedParts(start, zone);
+      newStart = zonedWallToInstant(key, wall.hour, wall.minute, zone);
+    }
     const newEnd = new Date(newStart.getTime() + (end.getTime() - start.getTime()));
     return { ...copy, start: newStart.toISOString(), end: newEnd.toISOString() };
   } catch {

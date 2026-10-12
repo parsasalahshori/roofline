@@ -3,11 +3,13 @@ import twilio from 'twilio';
 import {
   attachInboundToConversation,
   companyContact,
+  companyReadOnly,
   customersWithPhone,
   type DeliveryOutcome,
   flagPossibleOptOut,
   frontDeskTextsOn,
   insertInboundText,
+  isNumberBlocked,
   lockDeliverySid,
   lockRecipients,
   recordDeliveryOutcome,
@@ -196,13 +198,18 @@ const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: nu
 /**
  * Step 2 (the signature), for a request already routed to `companyId`: checked with that company's
  * token (else TWILIO_AUTH_TOKEN). Answers 403 itself and returns null; otherwise the company's id.
+ * A request with no signature (or an empty one) is refused before the token lookup, so it costs no query.
  */
 export async function checkSignature(deps: AppDeps, req: Request, res: Response, companyId: string): Promise<string | null> {
+  const signature = req.get('X-Twilio-Signature');
+  if (signature === undefined || signature === '') {
+    res.status(403).end();
+    return null;
+  }
   const { system } = deps.pools;
   const token = await signingTokenFor(system, companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
-  const signature = req.get('X-Twilio-Signature');
   const url = deps.config.PUBLIC_BASE_URL + req.originalUrl;
-  if (token === null || signature === undefined || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
+  if (token === null || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
     res.status(403).end();
     return null;
   }
@@ -262,7 +269,7 @@ type OptOutType = 'STOP' | 'START' | 'HELP';
  * A text that came in. `from` is the sender's E.164 number or a short code. `optOutType` is Twilio's
  * OptOutType when it sent one (Advanced Opt-Out): it decides STOP / START / HELP instead of the body.
  */
-type Inbound = { messageSid: string; from: string; to: string; body: string; optOutType?: OptOutType };
+export type Inbound = { messageSid: string; from: string; to: string; body: string; optOutType?: OptOutType };
 
 /**
  * What the text is: Twilio's OptOutType when it is set (for STOP, the keyword is the body, normalized,
@@ -301,7 +308,7 @@ function readingOf(text: Inbound): InboundReading {
  * - anything else: no reply; a message that reads like an opt-out is flagged for a person to
  *   check, on each active customer's timeline or, with none, on the message's own; nobody is opted out.
  */
-async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): Promise<string | undefined> {
+export async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): Promise<string | undefined> {
   const ctx = systemCtx(companyId);
   const now = deps.clock.now();
 
@@ -359,7 +366,13 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
         }
         // Front Desk still files a consumed text into its conversation (so the reply or the hand-on lands there); it
         // queues no answer of its own for it.
-        if (!looksLikeOptOut(text.body) && (await frontDeskTextsOn(tx, ctx))) {
+        // A blocked number, or a read-only company (Ruling BG), gets no Front Desk work; the text is still stored above.
+        if (
+          !looksLikeOptOut(text.body) &&
+          (await frontDeskTextsOn(tx, ctx)) &&
+          !(await isNumberBlocked(tx, ctx, text.from)) &&
+          !(await companyReadOnly(tx, ctx))
+        ) {
           const conv = await attachInboundToConversation(
             tx,
             ctx,

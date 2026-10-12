@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { publicProposalState, publicProposalView, recordSignedDocument, signProposal, withTenant } from '@roofline/db';
+import { publicProposalState, publicProposalView, recordSignedDocument, signProposal, type TenantContext, withTenant } from '@roofline/db';
 import { CONSENT_TEXT_V1, canonicalJson, signedDocument, type SignatureRecord } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError } from '../errors.ts';
@@ -40,6 +40,73 @@ const signBody = z.object({
     .optional(),
 });
 
+/** What the homeowner chose and typed, with the drawn signature already checked (`isAcceptableSignaturePng`). */
+export type SignInput = {
+  optionId: string;
+  signerName: string;
+  typedSignature: string;
+  drawn: { png: Buffer; sha256: string } | null;
+};
+
+/**
+ * Signs a proposal whose link was already resolved: stores the drawn image, records the signature and the exact
+ * signed document, and queues the signed PDF. Throws AppError 404/409/400 as the public route answers them. The
+ * public sign route and the demo's "homeowner signs" simulation both come through here.
+ */
+export async function signResolvedProposal(
+  deps: AppDeps,
+  link: { ctx: TenantContext; proposalId: string },
+  body: SignInput,
+  meta: { ip: string; userAgent: string },
+): Promise<void> {
+  const { ctx, proposalId } = link;
+  const { drawn } = body;
+  const drawnHash = drawn?.sha256 ?? null;
+  const now = deps.clock.now();
+
+  // The image is stored before the signature commits, so a recorded hash always has its image (the
+  // signed PDF draws it). The key is content-addressed: a retried or refused sign leaves the same object.
+  if (drawn !== null) {
+    await deps.objectStore.put(drawnSignatureKey(ctx.companyId, proposalId, drawn.sha256), drawn.png, 'image/png');
+  }
+
+  const outcome = await withTenant(deps.pools, ctx, async (tx) => {
+    const view = await publicProposalView(tx, ctx, proposalId, now);
+    const state = await publicProposalState(tx, ctx, proposalId);
+    if (state === null) throw new AppError(404, "This proposal link doesn't work.");
+    if (view.status === 'signed') throw new AppError(409, ALREADY_SIGNED);
+    if (view.status !== 'open') throw new AppError(409, EXPIRED);
+    const option = view.options.find((o) => o.id === body.optionId);
+    if (!option) throw new AppError(400, PICK_OPTION, 'optionId');
+
+    // The exact document hashed is also stored with the signature (Ruling ER), so the proof can be
+    // re-checked and the signed PDF prints these facts, whatever changes in settings later.
+    const document = signedDocument(view, option.id, view.estimateClause);
+    const record: SignatureRecord = {
+      optionId: option.id,
+      signerName: body.signerName,
+      typedSignature: body.typedSignature,
+      drawnSignaturePngSha256: drawnHash,
+      consentText: CONSENT_TEXT_V1,
+      consentVersion: 'v1',
+      documentSha256: sha256Hex(canonicalJson(document)),
+      totalCents: option.totalCents,
+      ip: meta.ip,
+      userAgent: meta.userAgent.slice(0, MAX_USER_AGENT),
+      signedAt: now.toISOString(),
+      viewedFirstAt: null,
+    };
+    const ipHash = proposalIpHashFor(deps.config, record.ip, ctx.companyId);
+    const signed = await signProposal(tx, ctx, proposalId, { ...record, ipHash }, now);
+    if (signed === 'signed') await recordSignedDocument(tx, ctx, proposalId, document);
+    return signed;
+  });
+
+  if (outcome === 'already_signed') throw new AppError(409, ALREADY_SIGNED);
+  if (outcome === 'closed') throw new AppError(409, EXPIRED);
+  await deps.jobs.send('signed-pdf', { companyId: ctx.companyId, proposalId }, { singletonKey: proposalId });
+}
+
 export function proposalSignRoutes(deps: AppDeps): Router {
   const router = Router();
   router.use(publicProposalHeaders);
@@ -57,53 +124,9 @@ export function proposalSignRoutes(deps: AppDeps): Router {
         if (!isAcceptableSignaturePng(png)) throw new AppError(400, DRAW_AGAIN, 'drawnSignature');
         drawn = { png, sha256: sha256Hex(png) };
       }
-      const drawnHash = drawn?.sha256 ?? null;
-
       const now = deps.clock.now();
       const link = await resolveLink(deps, String(req.params['token'] ?? ''), now);
-      const { ctx, proposalId } = link;
-
-      // The image is stored before the signature commits, so a recorded hash always has its image (the
-      // signed PDF draws it). The key is content-addressed: a retried or refused sign leaves the same object.
-      if (drawn !== null) {
-        await deps.objectStore.put(drawnSignatureKey(ctx.companyId, proposalId, drawn.sha256), drawn.png, 'image/png');
-      }
-
-      const outcome = await withTenant(deps.pools, ctx, async (tx) => {
-        const view = await publicProposalView(tx, ctx, proposalId, now);
-        const state = await publicProposalState(tx, ctx, proposalId);
-        if (state === null) throw new AppError(404, "This proposal link doesn't work.");
-        if (view.status === 'signed') throw new AppError(409, ALREADY_SIGNED);
-        if (view.status !== 'open') throw new AppError(409, EXPIRED);
-        const option = view.options.find((o) => o.id === body.optionId);
-        if (!option) throw new AppError(400, PICK_OPTION, 'optionId');
-
-        // The exact document hashed is also stored with the signature (Ruling ER), so the proof can be
-        // re-checked and the signed PDF prints these facts, whatever changes in settings later.
-        const document = signedDocument(view, option.id, view.estimateClause);
-        const record: SignatureRecord = {
-          optionId: option.id,
-          signerName: body.signerName,
-          typedSignature: body.typedSignature,
-          drawnSignaturePngSha256: drawnHash,
-          consentText: CONSENT_TEXT_V1,
-          consentVersion: 'v1',
-          documentSha256: sha256Hex(canonicalJson(document)),
-          totalCents: option.totalCents,
-          ip: req.ip ?? '',
-          userAgent: (req.get('User-Agent') ?? '').slice(0, MAX_USER_AGENT),
-          signedAt: now.toISOString(),
-          viewedFirstAt: null,
-        };
-        const ipHash = proposalIpHashFor(deps.config, record.ip, ctx.companyId);
-        const signed = await signProposal(tx, ctx, proposalId, { ...record, ipHash }, now);
-        if (signed === 'signed') await recordSignedDocument(tx, ctx, proposalId, document);
-        return signed;
-      });
-
-      if (outcome === 'already_signed') throw new AppError(409, ALREADY_SIGNED);
-      if (outcome === 'closed') throw new AppError(409, EXPIRED);
-      await deps.jobs.send('signed-pdf', { companyId: ctx.companyId, proposalId }, { singletonKey: proposalId });
+      await signResolvedProposal(deps, link, { ...body, drawn }, { ip: req.ip ?? '', userAgent: req.get('User-Agent') ?? '' });
       res.json({ signed: true });
     } catch (err) {
       handleProposalError(err, res, next);

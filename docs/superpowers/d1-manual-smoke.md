@@ -166,11 +166,11 @@ select route,
 **Expected result:**
 
 - Each call has a summary, an outcome, a call card on the customer's timeline, and exactly one `ai_call_minute` usage event (`select count(*) from usage_events where kind = 'ai_call_minute' and ref_id = '<call id>'` is 1).
-- The latency table has no empty column. Copy the numbers (not any transcript) into `docs/superpowers/d1-latency.md` with the date, the number of calls and the route counts. The owner reads them to decide on Opus fast mode (spec section 18).
+- The latency table has no empty column. Copy the numbers (not any transcript) into the "Real calls" table of `docs/superpowers/d1-latency.md` with the date, the number of calls and the route counts. The owner reads them to decide on Opus fast mode (spec section 18).
 
 ## M14. The scripted evals (Task 25) and the sign-off table
 
-The scripted call evals with real models (`npm run eval:front-desk`, Task 25) are the other source of latency numbers (p50 and p95 per scenario) and of the tone grades. Run them once after M0 passes and record the result here. They are written and checked by Task 25, not by this runbook.
+The scripted call evals with real models are the other source of latency numbers (p50 and p95 per scenario) and of the tone grades. Run them once after M0 passes: `npm run eval:front-desk -w @roofline/api -- --confirm-spend --runs 3` (about $9; `--runs 1` is about $3). It needs `ANTHROPIC_API_KEY` and prints where it wrote its result files; do not commit them. Copy the numbers into `docs/superpowers/d1-latency.md` (how to run it, what each column means, and the empty results tables are there) and record a short sentence below.
 
 Record each check once it has been run. Use the result column for a short plain sentence, such as "Passed; greeting the same on both carriers" or "Blocked; R2 not wired". Do not put any key, token, phone number or transcript in this table.
 

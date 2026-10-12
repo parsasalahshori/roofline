@@ -6,8 +6,10 @@ import {
   createCustomer,
   createJob,
   createProperty,
+  insertTurn,
   jobs,
   type TenantContext,
+  type ToolCallRecord,
   updateJob,
 } from '@roofline/db';
 import { localDate } from '@roofline/shared';
@@ -159,6 +161,114 @@ describe('take_message', () => {
     expect(t.mailer.sent).toHaveLength(0);
   });
 
+  test('two urgent take_message calls in one conversation send one email', async () => {
+    const emails = await putOnCall();
+    const { customerId } = await customerWithJob(null);
+    const conv = await makeConversation(customerId);
+    const urgent = { ...INPUT, urgent: true };
+    await run(conv, urgent);
+    await run(conv, urgent);
+    expect(t.mailer.sent.map((m) => m.to).sort()).toEqual([...emails].sort());
+    expect(conv.urgentNoticeSent).toBe(true);
+  });
+
+  test('with no customer the state flag dedupes; a different conversation still emails', async () => {
+    const emails = await putOnCall();
+    const conv = await makeConversation(null);
+    const urgent = { ...INPUT, urgent: true };
+    await run(conv, urgent);
+    await run(conv, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
+    expect(conv.urgentNoticeSent).toBe(true);
+    const other = await makeConversation(null);
+    await run(other, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length * 2);
+    expect(other.urgentNoticeSent).toBe(true);
+  });
+
+  test('two state objects over one conversation: the second sends nothing and sets its flag', async () => {
+    const emails = await putOnCall();
+    const { customerId } = await customerWithJob(null);
+    const first = await makeConversation(customerId);
+    const second = { ...first };
+    const urgent = { ...INPUT, urgent: true };
+    await run(first, urgent);
+    await run(second, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
+    expect(second.urgentNoticeSent).toBe(true);
+  });
+
+  test('no customer, separate states (two texts or a second relay session): the earlier urgent turn dedupes', async () => {
+    const emails = await putOnCall();
+    const first = await makeConversation(null);
+    const urgent = { ...INPUT, urgent: true };
+    await run(first, urgent);
+    // The engine stores the turn with the tool call it ran; the next text builds a fresh state.
+    await inCompany(t, idA(), (tx) =>
+      insertTurn(tx, sys(), {
+        conversationId: first.conversationId,
+        position: 0,
+        speaker: 'assistant',
+        text: 'I passed that on as urgent.',
+        toolCalls: [{ name: 'take_message', input: urgent, result: 'ok', ok: true }],
+        at: t.clock.now(),
+      }),
+    );
+    const second: ConversationState = { ...first, urgentNoticeSent: undefined };
+    await run(second, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
+    expect(second.urgentNoticeSent).toBe(true);
+  });
+
+  test('a failed urgent take_message does not count as the notice: the retry sends the email once (final review RC-3)', async () => {
+    const emails = await putOnCall();
+    const first = await makeConversation(null);
+    const urgent = { ...INPUT, urgent: true };
+    // An earlier turn whose urgent take_message failed (the stored shape, and the redacted shape that keeps ok).
+    await inCompany(t, idA(), async (tx) => {
+      await insertTurn(tx, sys(), {
+        conversationId: first.conversationId,
+        position: 0,
+        speaker: 'assistant',
+        text: 'Sorry, something went wrong.',
+        toolCalls: [{ name: 'take_message', input: urgent, result: 'failed', ok: false }],
+        at: t.clock.now(),
+      });
+      await insertTurn(tx, sys(), {
+        conversationId: first.conversationId,
+        position: 1,
+        speaker: 'assistant',
+        text: '',
+        toolCalls: [{ name: 'take_message', ok: false, input: { urgent: true } } as unknown as ToolCallRecord],
+        at: t.clock.now(),
+      });
+    });
+    await run(first, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
+    expect(first.urgentNoticeSent).toBe(true);
+    // The successful retry is stored; a later fresh state sends nothing more.
+    await inCompany(t, idA(), (tx) =>
+      insertTurn(tx, sys(), {
+        conversationId: first.conversationId,
+        position: 2,
+        speaker: 'assistant',
+        text: 'I passed that on as urgent.',
+        toolCalls: [{ name: 'take_message', input: urgent, result: 'ok', ok: true }],
+        at: t.clock.now(),
+      }),
+    );
+    await run({ ...first, urgentNoticeSent: undefined }, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
+  });
+
+  test('a non-urgent message never sets the flag and never emails', async () => {
+    await putOnCall();
+    const conv = await makeConversation(null);
+    await run(conv);
+    expect(conv.urgentNoticeSent).toBeUndefined();
+    expect(t.mailer.sent).toHaveLength(0);
+  });
+
   test('no job: conversation outcome is message and nothing throws', async () => {
     const conv = await makeConversation(null);
     const res = await run(conv);
@@ -167,6 +277,18 @@ describe('take_message', () => {
       tx.select().from(conversations).where(eq(conversations.id, conv.conversationId)),
     );
     expect(row!.outcome).toBe('message');
-    expect(row!.summary).toBe(INPUT.reason);
+    expect(row!.summary).toBeNull();
+  });
+
+  test('the message text is in the activity, not in any summary', async () => {
+    const { customerId } = await customerWithJob(null);
+    const conv = await makeConversation(customerId);
+    await run(conv);
+    const [row] = await inCompany(t, idA(), (tx) =>
+      tx.select().from(conversations).where(eq(conversations.id, conv.conversationId)),
+    );
+    expect(row!.summary).toBeNull();
+    const acts = await inCompany(t, idA(), (tx) => tx.select().from(activities).where(eq(activities.kind, 'front_desk_message')));
+    expect(JSON.stringify(acts.map((a) => a.data))).toContain(INPUT.reason);
   });
 });

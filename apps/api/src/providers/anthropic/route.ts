@@ -1,3 +1,4 @@
+import { ROUTER_INTENTS } from '@roofline/shared';
 import { z } from 'zod';
 import { LlmUnavailableError, type Llm } from '../llm.ts';
 import { ROUTE_TIMEOUT_MS, type AnthropicClients } from './client.ts';
@@ -11,7 +12,7 @@ const ROUTES = ['fast', 'opus', 'transfer', 'end'] as const;
 export const ROUTE_SCHEMA = {
   type: 'object',
   properties: {
-    intent: { type: 'string' },
+    intent: { type: 'string', enum: [...ROUTER_INTENTS] },
     urgent: { type: 'boolean' },
     mood: { type: 'string', enum: [...MOODS] },
     route: { type: 'string', enum: [...ROUTES] },
@@ -23,7 +24,7 @@ export const ROUTE_SCHEMA = {
 
 const decisionSchema = z
   .object({
-    intent: z.string().max(40),
+    intent: z.enum(ROUTER_INTENTS),
     urgent: z.boolean(),
     mood: z.enum(MOODS),
     route: z.enum(ROUTES),

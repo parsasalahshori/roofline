@@ -3,6 +3,8 @@
  * Every step type in steps.ts names one of these keys; owners override the visible ones (time_baselines).
  */
 
+import type { Agent } from './enums.ts';
+
 export type BaselineDef = {
   /** Default minutes per unit (for the call keys: the fixed part; the call length is added on top). */
   minutes: number;
@@ -68,7 +70,7 @@ export const G1_AGENTS_SHIPPED = true as boolean;
 export const G1_AGENTS = ['claims', 'scheduler', 'follow_up'] as const;
 
 /** Ruling GX-E, the one pause rule. G1 agents: no row = paused. Launch agents: no row = on. A row is paused when pausedAt is set. */
-export function isPaused(agent: string, row: { pausedAt: Date | null } | null): boolean {
+export function isPaused(agent: Agent, row: { pausedAt: Date | null } | null): boolean {
   if (row === null) return (G1_AGENTS as readonly string[]).includes(agent);
   return row.pausedAt !== null;
 }

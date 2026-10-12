@@ -227,8 +227,10 @@ export async function draftStormPlan(
     if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(PLAN_CHANGED);
     await linkStormPlan(tx, ctx, companyStormId, taskId, now);
     if (opts.afterCreate) await opts.afterCreate(tx, taskId);
-    // No second "plan ready" email for a re-draft of a draft (S1 R2a).
-    return { taskId, fresh: lock.oldDraftId === null };
+    // S1 R2a: no second "plan ready" email when this superseded a draft; a first plan and a re-draft over an
+    // expired or declined plan (allowFinished) are fresh.
+    const previousWasDraft = lock.oldDraftId !== null;
+    return { taskId, fresh: !previousWasDraft };
   });
 
   if (drafted === null) return null;

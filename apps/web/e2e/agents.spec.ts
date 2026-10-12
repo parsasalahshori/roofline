@@ -59,7 +59,8 @@ test('agents window: totals line says about and (estimate)', async ({ page, logi
   await expect(totals).toContainText('≈ $');
 });
 
-test('agents window: the G1 agents say Coming soon', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+// G1 ships its three agents (G1_AGENTS_SHIPPED): they start paused with a Turn on hint, not Coming soon (probe pass 14).
+test('agents window: the G1 agents start paused', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
   void agentsSeed;
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
@@ -67,9 +68,10 @@ test('agents window: the G1 agents say Coming soon', async ({ page, loginAs, mar
   const grid = page.getByRole('region', { name: 'Your agents' });
   await expect(grid).toBeVisible({ timeout: 15_000 });
   for (const name of ['Claims', 'Scheduler', 'Follow-up']) {
-    await expect(card(page, name)).toContainText('Coming soon');
+    await expect(card(page, name)).toContainText('Paused');
+    await expect(card(page, name)).toContainText('Turn on');
   }
-  await expect(grid.getByText('Coming soon', { exact: true }).first()).toBeVisible();
+  await expect(grid.getByText('Coming soon', { exact: true })).toHaveCount(0);
 });
 
 test('agent page: Storm Scout shows its rule sentence and links to storm settings', async ({

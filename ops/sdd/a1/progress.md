@@ -171,3 +171,25 @@ Ruling AX-N (track lead): Front Desk steps fold booking minutes into the call/te
 - Controller hazard check ($onUpdate updated_at vs column-level GRANT UPDATE): A1 not affected. 0022 grants table-wide UPDATE on time_baselines/agent_settings, insert-only on agent_task_events/time_recounts, and the agent_task_steps columns use 0002's table-wide grant; no column-level UPDATE grant exists in 0021/0022.
 - **Controller (final, supersedes the 13:50Z message and merge rule (b)):** Ruling BD as amended stands. ONLY the rerun route passes `allowFinished`. S1's POST /api/storms/:id/plan stays draft-only, and S1's Redraft button calls the rerun route. Merge rule (b) is replaced by: POST /plan calls draftStormPlan without allowFinished; expired/declined → 409 (use the rerun). The comments in storm/plan.ts, settle.ts and storm-plans.ts are fixed in the a1-merge-up2 merge. Also: `fresh: !previousWasDraft` plus a test; post-0018 snapshots rebuilt on S1's paused_by/merged_into; no raw finishParkedStep after the e1 merge (ESLint enforces it). All passed to the a1-merge-up2 agent.
 - **Controller FINAL (16:41Z, overrides the 16:40Z note):** `allowFinished` comes from the rerun route AND S1's POST /api/storms/:id/plan (an explicit owner action), never from the automatic paths. Merge rule (b) and the code comments stand as originally written. Also stands: fresh: !previousWasDraft, a single REDRAFTABLE source, completeParkedStep, the snapshot rebuild. Passed to the a1-merge-up2 agent.
+
+## T23 merged (Front Desk review fixes)
+- a1-t23 8d6bc553 (CI run 38277565177 Platform+E2E green, base e50a055a; a1-agents had only ops commits since) merged --no-ff into a1-agents; typecheck+lint clean.
+- Accepted: `apps/api/src/routes/agents.ts` added to DB_SYSTEM_ALLOWED to read on-call first names (`onCallFirstNames(pools.system, ctx.companyId)`), company-scoped, for the Front Desk rule sentence.
+- Ruling BH (renamed from BG; BG is D1's): setting a next step on a job that had none (null → text) counts as a change and closes the job's open Front Desk live tasks (brief: "text changes").
+- Carried minors (non-blocking): feed `closedLater` relies on the 2 ms creation offset (a close-reason payload flag would be cleaner); jobs PATCH does one extra getJob even without nextStep; ' Next step: ' literal in routes/agents-feed.ts should move to copy; recount lock test does not exercise a concurrent wait.
+- a1-agents 3348b7c7 (T23 merged) green: run 38281414192 Platform+E2E.
+
+## a1-merge-up2 merged (c1-crm security fixes, e1-estimator, s1-storm)
+- a1-merge-up2 7bef5467 (CI run 38284329138: Platform, E2E, v1, Hail all green; a1-agents was ahead only by a ledger line) merged --no-ff into a1-agents; typecheck+lint clean; playwright-core only 1.56.1.
+- Contents: c1-crm 7758e82 (SEC fixes), e1-estimator 414b97b + 0609e8d, s1-storm 958a344, plus fixes 03912863 (fresh = !previousWasDraft, tested both ways) and 03585510 (D1 grant).
+- Merge rules applied: A (one writer: E1 C-I4 → completeParkedStep, E1 stub dropped); B (E1/S1 step units; OFF_STEP_TITLES typed Record<StepType,string>); C (BD final: rerun route and POST /api/storms/:id/plan pass allowFinished + createdByUserId; single REDRAFTABLE source in db; one PLAN_* error set, STORM_PLAN_ERRORS removed; PLAN_PAUSED = MESSAGES.stormScoutPaused); D (journal unchanged; S1's amended 0018; D1 0019/0020 snapshots 3-way merged; A1 0021/0022 snapshots regenerated, ids 7910f5c2/79bec56a, SQL as before; drizzle-kit "No schema changes"); E (TRUST_PROXY/R2 keys in production test configs).
+- Extra merge fixes: E1's R2ObjectStore gained signedGetUrl and delete (D1's ObjectStore interface), with tests; s1-routes dock test stubs proposal list; twilio inbound order per Ruling AV.
+- Cross-track migration edits under Ruling AW (routed to S1/D1 via the controller): S1 0018 app_system on spotter_reports narrowed to SELECT, INSERT (as S1 R8 4452777); D1 0020 adds GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers TO app_system (markVoiceUrlSet after SEC-4).
+- a1-agents 83c44c9a (a1-merge-up2 merged) green: run 38287793645 Platform+E2E.
+
+## BUG-6 merged (launch dress rehearsal)
+- a1-bug6 3722c2cf (CI run 38291327986 Platform+E2E green) merged --no-ff into a1-agents; typecheck+lint clean.
+- TASK_KIND_LABEL: Front Desk `call`, `text_conversation`; Estimator `exact_report`; G1's ten kinds in G1's exact wording (controller, so the launch merge is keep-both). agents-lists.test pins every created kind; a new kind needs a label in copy/status.ts.
+- TimeBaselines section is labelled by its heading; agents-settings e2e scopes Save/Saved. to that region (sentinel pass-14 item: G1 adds another Save on the tab).
+- Also done as a D1 helper: d1-rev-h (Ruling BI, retention blanks only the AI text exchange), green run 38290914284, merged by the D1 lead into d1-front-desk.
+- a1-agents 81d1a601 (BUG-6 merged) green: run 38294171379 Platform+E2E. A1 complete; track lead now a D1 helper (controller).

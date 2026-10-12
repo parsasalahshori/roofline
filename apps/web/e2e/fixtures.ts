@@ -74,6 +74,7 @@ export async function resetScenario(urls: { owner: string; tenant: string; syste
       now,
       query: async (text, values) => (await owner.query(text, values)).rows,
     });
+    await seedFootprintFixture(pools);
     return { a, taskId, stormId, companyStormId };
   } finally {
     await owner.end();

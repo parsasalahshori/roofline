@@ -34,6 +34,7 @@ export {
   type SyncPage,
 } from './providers/calendar.ts';
 export { FakeCalendarApi } from './providers/fakes/calendar.ts';
+export { DirObjectStore } from './providers/fakes/dir-object-store.ts';
 export { type AerialMeasure, type AerialRoof, AerialUnavailableError } from './providers/aerial.ts';
 export {
   type ExactPrice,
@@ -80,6 +81,17 @@ export { seedDemoTask } from './scripts/seed-demo.ts';
 export { createTask, type NewTask } from './tasks/service.ts';
 export { systemContext } from './permissions.ts';
 export { seedShowcase } from './scripts/showcase.ts';
+export {
+  DEMO_COMPANY_NAME,
+  DEMO_COMPANY_SLUG,
+  DEMO_LOGIN,
+  DEMO_ROOFLINE_NUMBER,
+  DEMO_USERS,
+  demoWorldCounts,
+  seedDemoWorld,
+  type DemoWorld,
+  type DemoWorldOptions,
+} from './scripts/demo-world.ts';
 export { seedStormFixture } from './scripts/storm-fixture.ts';
 export { unsubscribeKey } from './public/unsubscribe-key.ts';
 export { signUnsubscribeToken } from './public/unsubscribe-token.ts';

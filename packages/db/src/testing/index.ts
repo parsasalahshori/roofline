@@ -5,6 +5,7 @@ import type {} from './global-setup.ts';
 
 export { startTestDatabase, TEST_ROLE_PASSWORDS, type TestDatabase } from './database.ts';
 export { resetDb } from './reset.ts';
+export { APP_ROLES, roleUrl, setRolePasswords } from '../roles.ts';
 export {
   SEED_PASSWORD,
   hashPassword,

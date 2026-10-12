@@ -127,6 +127,18 @@ describe('Forwarding test: polling stops', () => {
 });
 
 describe('Forwarding test: start errors', () => {
+  it.each([422, 429])('shows the server sentence when the start is refused with %i', async (status) => {
+    const sentence = 'You have run the forwarding test 10 times today. Try again tomorrow.';
+    const { user } = renderTest({
+      [START]: () => ({ status, body: { error: sentence } }),
+    });
+
+    await user.click(await startButton());
+    expect(await screen.findByText(sentence)).toBeInTheDocument();
+    expect(screen.queryByText(copy.failed)).toBeNull();
+    expect(api.count(POLL_T1)).toBe(0);
+  });
+
   it('shows the failed message when the start request fails', async () => {
     const { user } = renderTest({
       [START]: () => ({ status: 500, body: { error: 'Something went wrong.' } }),
