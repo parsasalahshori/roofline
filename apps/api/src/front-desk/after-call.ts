@@ -210,7 +210,8 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
     await withTenant(deps.pools, ctx, async (tx) => {
       const fresh = await getConversation(tx, ctx, conversationId);
       if (!fresh || fresh.summary !== null) return;
-      const unansweredTransfer = outcome === 'transferred' && !transferred;
+      // A transfer nobody picked up needs a person, even when the router (not a tool call) started it (RC-2 #2).
+      const unansweredTransfer = (outcome === 'transferred' && !transferred) || call.transferResult === 'no_answer';
       const needsAttention = ATTENTION_OUTCOMES.has(outcome) || unansweredTransfer;
       await updateConversation(tx, ctx, conversationId, {
         status: 'ended',

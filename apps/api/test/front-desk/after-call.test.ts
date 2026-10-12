@@ -638,4 +638,13 @@ describe('voice needs attention', () => {
     expect(conv.outcome).toBe('other');
     expect(conv.unreadCount).toBe(0);
   });
+
+  test('an unanswered router-route transfer (no tool call) that ends in message mode with no message is unread (RC-2 #2)', async () => {
+    (llm as unknown as { summarize: unknown }).summarize = async () => ({ summary: SUMMARY, outcome: 'other', followUps: [] });
+    const s = await seedCall({ aiSeconds: 30, transcriptStored: true, turns: [CALLER_WORDS] });
+    await inCompany(t, idA(), (tx) => tx.update(calls).set({ transferResult: 'no_answer' }).where(eq(calls.id, s.callId)));
+    await run(s);
+    const conv = await conversationOf(s.conversationId!);
+    expect(conv.unreadCount).toBe(1);
+  });
 });
