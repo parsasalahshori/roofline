@@ -199,23 +199,27 @@ export function signupRateLimit(): RequestHandler {
 /**
  * `POST /api/auth/signup`, after `signupRateLimit`: at most 3 answers an hour per IP address that
  * say the email cannot be used (the 409 for an email that already has an account). Only those
- * answers count; once they are spent, every sign-up from the address gets the ordinary
- * "too many sign-ups" 429 until the window passes, so whether an address has an account can be
- * asked only a few times an hour. Mount it after the JSON body parser.
+ * answers count, recorded when they are sent; once they are spent, every sign-up from the
+ * address gets the ordinary "too many sign-ups" 429 until the window passes, so whether an
+ * address has an account can be asked only a few times an hour. Mount it after the JSON body parser.
  */
 export function signupTakenRateLimit(): RequestHandler {
-  return rateLimit({
-    windowMs: HOUR_MS,
-    limit: SIGNUP_TAKEN_PER_IP_PER_HOUR,
-    skipSuccessfulRequests: true,
-    requestWasSuccessful: (_req, res) => res.statusCode !== 409,
-    standardHeaders: false,
-    legacyHeaders: false,
-    keyGenerator: (req) => `signup-taken:${ipKeyGenerator(req.ip ?? 'unknown')}`,
-    handler: (_req, _res, next) => {
+  // Checked before the request and recorded only once it was answered 409, so sign-ups in flight at
+  // the same moment (which may all succeed) never use up the budget.
+  const store = new MemoryStore();
+  // MemoryStore reads only windowMs from the options.
+  store.init({ windowMs: HOUR_MS } as Options);
+  return async (req, res, next) => {
+    const key = `signup-taken:${ipKeyGenerator(req.ip ?? 'unknown')}`;
+    if (((await store.get(key))?.totalHits ?? 0) >= SIGNUP_TAKEN_PER_IP_PER_HOUR) {
       next(new AppError(429, MESSAGES.tooManySignups));
-    },
-  });
+      return;
+    }
+    res.once('finish', () => {
+      if (res.statusCode === 409) void store.increment(key);
+    });
+    next();
+  };
 }
 
 /**
@@ -295,7 +299,8 @@ export function resendVerificationRateLimit(): RequestHandler {
 }
 
 /**
- * `POST /api/team/invites`, three limits; every attempt counts. In order:
+ * `POST /api/team/invites`, three limits on invites SENT (refused requests, such as bad input, a
+ * person already on the team, or a request over a limit, are not counted). In order:
  * 1. 30 an hour per IP address, across every company and person, so one machine cannot sign up a
  *    string of companies and invite from each.
  * 2. 30 an hour per person, across every company they can invite for.
@@ -306,7 +311,7 @@ export function resendVerificationRateLimit(): RequestHandler {
  * use up the budgets). Returns the limiters in order.
  */
 export function inviteRateLimit(isNewCompany: (req: Request) => Promise<boolean>): RequestHandler[] {
-  const common = { windowMs: HOUR_MS, standardHeaders: 'draft-7', legacyHeaders: false } as const;
+  const common = { windowMs: HOUR_MS, skipFailedRequests: true, standardHeaders: 'draft-7', legacyHeaders: false } as const;
   const handler: RequestHandler = (_req, _res, next) => {
     next(new AppError(429, MESSAGES.tooManyInvites));
   };

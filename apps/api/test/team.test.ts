@@ -662,6 +662,16 @@ describe('POST /api/team/invites', () => {
       expect((await send(b, '198.51.100.2', 'bolt@example.com')).status).toBe(201);
     });
 
+    test('only invites that are sent count: refused requests use up nothing', async () => {
+      const owner = await loginAs(p.app, p.seed.a.owner);
+      for (let i = 0; i < 10; i++) {
+        expect((await send(owner, '198.51.100.1', 'not an email')).status).toBe(400);
+      }
+      for (let i = 0; i < 5; i++) {
+        expect([i, (await send(owner, '198.51.100.1', `hire${i}@example.com`)).status]).toEqual([i, 201]);
+      }
+    });
+
     test('a company less than a day old may send only 5 an hour', async () => {
       const owner = await loginAs(p.app, p.seed.a.owner);
       for (let i = 0; i < 5; i++) {

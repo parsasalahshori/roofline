@@ -944,6 +944,13 @@ describe('sign-up rate limit', () => {
     expect((await from('203.0.113.8', 'brand-new@example.com')).status).toBe(201);
   });
 
+  test('sign-ups in flight at the same moment do not use up the "email can\'t be used" budget', async () => {
+    const results = await Promise.all(
+      [1, 2, 3, 4, 5].map((n) => signup(t.app, { email: `burst${n}@example.com`, companyName: `Burst ${n}` })),
+    );
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201, 201]);
+  });
+
   test('sign-ups that succeed do not use up the "email can\'t be used" budget', async () => {
     for (let i = 1; i <= 5; i++) {
       expect((await signup(t.app, { email: `owner${i}@example.com`, companyName: `Company ${i}` })).status).toBe(201);
