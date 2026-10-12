@@ -113,3 +113,6 @@ Feature sub-projects, per the master spec §8, each with its own spec, plan and 
   `react-router`.
 - **Web tests time out under heavy load.** `apps/web/vitest.config.ts` sets 15 s.
 - **Several `role="status"` regions are always mounted.** Tests find banners and summaries by their text.
+
+## COST HOLD (owner, 2026-10-12 ~01:30 UTC)
+The owner paused new spending. Siblings 1-3 finish only their in-flight batches (C1 T2-T4; F3 T26, T31, T35; F3 T32-T34), report, and stop. The controller merges what arrives green and starts nothing new until the owner lifts the hold. State at the hold: F2 complete; F3 29 of 37 + P3a + P3b merged on f3-setup 52d2ee6; C1 T1 merged on c1-crm 7d37cbc; every milestone (C1, E1, S1, D1, A1, G1) has its spec, plan and task briefs. Remaining F3 after the in-flight batches: T28, T37, then T36.
