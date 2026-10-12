@@ -8,6 +8,7 @@ import {
   loadBookingActions,
   loadCallForAfterCall,
   loadCompanyFacts,
+  lockConversation,
   recordCallMinutes,
   type TenantContext,
   type Tx,
@@ -118,12 +119,30 @@ async function summarizeOrEmpty(
 /** Outcomes that leave the conversation unread so the inbox shows it as needing attention. */
 const ATTENTION_OUTCOMES = new Set<ConversationOutcome>(['booked', 'message', 'claim']);
 
-/** SMS threads have no call: summarize the idle conversation once, end it, log one activity. No usage, no text-back. */
+/** An SMS conversation with no message for this long gets its after-call summary (fd-health lists by it too). */
+export const IDLE_SMS_HOURS = 24;
+
+/** True while the thread still needs its summary: no summary, not spam-ended, and no message for IDLE_SMS_HOURS. */
+function stillIdleSms(conversation: { channel: string; summary: string | null; outcome: string | null; lastMessageAt: Date }, now: Date): boolean {
+  return (
+    conversation.channel === 'sms' &&
+    conversation.summary === null &&
+    conversation.outcome !== 'spam' &&
+    conversation.lastMessageAt.getTime() <= now.getTime() - IDLE_SMS_HOURS * 3600_000
+  );
+}
+
+/**
+ * SMS threads have no call: summarize the idle conversation once, end it, log one activity. No usage, no
+ * text-back. A thread the 24 h gap already ended is only summarised (RC-2 #5). The final write locks the
+ * conversation and changes nothing unless it is still idle, so a team reply sent while the summary ran
+ * keeps the thread active (RC-2 #4).
+ */
 async function runSmsAfterCall(deps: AppDeps, ctx: TenantContext, conversationId: string): Promise<void> {
   const now = deps.clock.now();
   const prep = await withTenant(deps.pools, ctx, async (tx) => {
     const conversation = await getConversation(tx, ctx, conversationId);
-    if (!conversation || conversation.channel !== 'sms' || conversation.summary !== null) return null;
+    if (!conversation || !stillIdleSms(conversation, now)) return null;
     const turns = await listTurns(tx, ctx, conversationId);
     const transcript = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
     const actions = await loadBookingActions(tx, ctx, conversationId);
@@ -134,9 +153,9 @@ async function runSmsAfterCall(deps: AppDeps, ctx: TenantContext, conversationId
   const outcome = pickOutcome(prep.actions, false, out.modelOutcome);
   const summary = out.summary === '' ? plainSummary(outcome) : out.summary;
   await withTenant(deps.pools, ctx, async (tx) => {
-    const fresh = await getConversation(tx, ctx, conversationId);
-    if (!fresh || fresh.summary !== null) return;
-    await updateConversation(tx, ctx, conversationId, { status: 'ended', outcome, summary });
+    const fresh = await lockConversation(tx, ctx, conversationId);
+    if (!fresh || !stillIdleSms(fresh, deps.clock.now())) return;
+    await updateConversation(tx, ctx, conversationId, { ...(fresh.status === 'ended' ? {} : { status: 'ended' as const }), outcome, summary });
     if (fresh.customerId !== null) {
       await addActivity(tx, ctx, {
         subjectType: 'customer',
@@ -226,7 +245,8 @@ export async function runAfterCall(
     await withTenant(deps.pools, ctx, async (tx) => {
       const fresh = await getConversation(tx, ctx, conversationId);
       if (!fresh || fresh.summary !== null) return;
-      const unansweredTransfer = outcome === 'transferred' && !transferred;
+      // A transfer nobody picked up needs a person, even when the router (not a tool call) started it (RC-2 #2).
+      const unansweredTransfer = (outcome === 'transferred' && !transferred) || call.transferResult === 'no_answer';
       const needsAttention = ATTENTION_OUTCOMES.has(outcome) || unansweredTransfer;
       await updateConversation(tx, ctx, conversationId, {
         status: 'ended',

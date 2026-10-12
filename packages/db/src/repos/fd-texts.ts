@@ -86,6 +86,7 @@ export async function attachInboundToConversation(
       phoneE164: i.phoneE164,
       companyNumberE164: i.companyNumberE164,
       customerId: i.customerId,
+      now,
     });
     id = made.id;
     created = true;

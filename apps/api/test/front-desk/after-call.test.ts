@@ -690,7 +690,9 @@ describe('line lookup cache', () => {
 });
 
 describe('SMS conversation after-call', () => {
-  async function seedSms(): Promise<{ conversationId: string; customerId: string }> {
+  /** An SMS thread whose last message was `hoursAgo` hours before the test clock (idle by default). */
+  async function seedSms(o: { hoursAgo?: number; status?: 'active' | 'ended' } = {}): Promise<{ conversationId: string; customerId: string }> {
+    const lastMessageAt = new Date(t.clock.now().getTime() - (o.hoursAgo ?? 25) * 3600_000);
     return inCompany(t, idA(), async (tx) => {
       const [c] = await tx
         .insert(customers)
@@ -698,7 +700,7 @@ describe('SMS conversation after-call', () => {
         .returning({ id: customers.id });
       const [conv] = await tx
         .insert(conversations)
-        .values({ companyId: idA(), channel: 'sms', customerId: c!.id, phoneE164: OTHER_CALLER, companyNumberE164: A_NUMBER, status: 'active' })
+        .values({ companyId: idA(), channel: 'sms', customerId: c!.id, phoneE164: OTHER_CALLER, companyNumberE164: A_NUMBER, status: o.status ?? 'active', lastMessageAt })
         .returning({ id: conversations.id });
       const lines: [string, string][] = [['caller', CALLER_WORDS], ['assistant', 'Thanks, we will look at it.']];
       for (let i = 0; i < lines.length; i += 1) {
@@ -734,6 +736,46 @@ describe('SMS conversation after-call', () => {
     expect(await textActivities()).toHaveLength(1);
     expect(summarizeCalls()).toHaveLength(1);
   });
+
+  test('a team reply that moves lastMessageAt while the summary runs leaves the thread active (RC-2 #4)', async () => {
+    const s = await seedSms();
+    const realSummarize = llm.summarize.bind(llm);
+    (llm as unknown as { summarize: unknown }).summarize = async (input: Parameters<ScriptedLlm['summarize']>[0]) => {
+      await inCompany(t, idA(), (tx) => tx.update(conversations).set({ lastMessageAt: t.clock.now() }).where(eq(conversations.id, s.conversationId)));
+      return realSummarize(input);
+    };
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    const conv = await conversationOf(s.conversationId);
+    expect(conv.status).toBe('active');
+    expect(conv.summary).toBeNull();
+    expect(await textActivities()).toHaveLength(0);
+  });
+
+  test('a thread that is no longer idle when the job starts is not summarised (RC-2 #4)', async () => {
+    const s = await seedSms({ hoursAgo: 1 });
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    expect(summarizeCalls()).toHaveLength(0);
+    const conv = await conversationOf(s.conversationId);
+    expect(conv.status).toBe('active');
+    expect(conv.summary).toBeNull();
+  });
+
+  test('a thread already ended by the 24 h gap is summarised and logged, and stays ended (RC-2 #5)', async () => {
+    const s = await seedSms({ status: 'ended', hoursAgo: 30 });
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    const conv = await conversationOf(s.conversationId);
+    expect(conv.status).toBe('ended');
+    expect(conv.summary).toBe(SUMMARY);
+    expect(await textActivities()).toHaveLength(1);
+  });
+
+  test('a spam-ended thread is never summarised (RC-2 #5)', async () => {
+    const s = await seedSms({ status: 'ended', hoursAgo: 30 });
+    await inCompany(t, idA(), (tx) => tx.update(conversations).set({ outcome: 'spam' }).where(eq(conversations.id, s.conversationId)));
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    expect(summarizeCalls()).toHaveLength(0);
+    expect((await conversationOf(s.conversationId)).summary).toBeNull();
+  });
 });
 
 describe('voice needs attention', () => {
@@ -757,5 +799,14 @@ describe('voice needs attention', () => {
     const conv = await conversationOf(s.conversationId!);
     expect(conv.outcome).toBe('other');
     expect(conv.unreadCount).toBe(0);
+  });
+
+  test('an unanswered router-route transfer (no tool call) that ends in message mode with no message is unread (RC-2 #2)', async () => {
+    (llm as unknown as { summarize: unknown }).summarize = async () => ({ summary: SUMMARY, outcome: 'other', followUps: [] });
+    const s = await seedCall({ aiSeconds: 30, transcriptStored: true, turns: [CALLER_WORDS] });
+    await inCompany(t, idA(), (tx) => tx.update(calls).set({ transferResult: 'no_answer' }).where(eq(calls.id, s.callId)));
+    await run(s);
+    const conv = await conversationOf(s.conversationId!);
+    expect(conv.unreadCount).toBe(1);
   });
 });

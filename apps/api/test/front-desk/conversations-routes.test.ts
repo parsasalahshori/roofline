@@ -257,6 +257,18 @@ describe('GET /api/conversations/:id', () => {
     expect(detail.calls).toHaveLength(2);
   });
 
+  test('the list marks a conversation urgent only for a successful urgent take_message (final review RC-3)', async () => {
+    const owner = await who.as('owner');
+    const failed = await seedConversation({ channel: 'voice' });
+    await seedTurn(failed, 0, { toolCalls: [{ name: 'take_message', input: { reason: 'Leak', urgent: true }, result: 'failed', ok: false }] });
+    await seedTurn(failed, 2, { toolCalls: [{ name: 'take_message', ok: false, input: { urgent: true } } as ToolCallRecord] });
+    const taken = await seedConversation({ channel: 'voice' });
+    await seedTurn(taken, 0, { toolCalls: [{ name: 'take_message', ok: true, input: { urgent: true } } as ToolCallRecord] });
+    const page = (await owner.get(BASE)).body as ConversationPage;
+    expect(page.items.find((i) => i.id === failed)!.urgent).toBe(false);
+    expect(page.items.find((i) => i.id === taken)!.urgent).toBe(true);
+  });
+
   test("a message the caller left shows its words on the card, also with no customer; a redacted one keeps the plain label", async () => {
     const owner = await who.as('owner');
     const convo = await seedConversation({ channel: 'voice' });
@@ -322,8 +334,8 @@ describe('GET /api/conversations/:id', () => {
   async function smsThread() {
     const customerId = await seedCustomer('a', { name: 'Pat Texter', phone: TEXTABLE });
     const convo = await seedConversation({ channel: 'sms', customerId });
-    const at = (m: number, s = 0) => new Date(Date.UTC(2026, 9, 12, 15, m, s));
-    const text = (direction: 'in' | 'out', body: string, m: number, o: { dedupeKey?: string; s?: number } = {}) =>
+    const at = (m: number, s = 0, ms = 0) => new Date(Date.UTC(2026, 9, 12, 15, m, s, ms));
+    const text = (direction: 'in' | 'out', body: string, m: number, o: { dedupeKey?: string; s?: number; ms?: number } = {}) =>
       inCompany(t, idA(), (tx) =>
         tx.insert(messages).values({
           companyId: idA(),
@@ -335,7 +347,7 @@ describe('GET /api/conversations/:id', () => {
           body,
           status: direction === 'in' ? 'received' : 'sent',
           dedupeKey: o.dedupeKey ?? null,
-          createdAt: at(m, o.s ?? 0),
+          createdAt: at(m, o.s ?? 0, o.ms ?? 0),
         }),
       );
     let position = 0;
@@ -406,6 +418,21 @@ describe('GET /api/conversations/:id', () => {
       ['caller', 'Hi\nMy roof leaks'],
       ['assistant', 'Sorry to hear that. We can come Friday. Here is a lot more detail.'],
       ['caller', 'Hi'],
+    ]);
+  });
+
+  test('a reply backdated to just after the text it answers (a newer text was pending) shows once (final review RC-1 #7)', async () => {
+    const { text, turn, lines } = await smsThread();
+    await text('in', 'Do you fix hail damage?', 0);
+    await turn('caller', 'Do you fix hail damage?', 1);
+    await text('in', 'Also gutters', 1, { s: 30 });
+    await turn('assistant', 'Yes, we repair hail damage.', 2);
+    // texts.ts stamps the reply lastUnanswered.createdAt + 1 ms, before its own assistant turn.
+    await text('out', 'Yes, we repair hail damage.', 0, { ms: 1, dedupeKey: 'fd-text:c' });
+    expect(await lines()).toEqual([
+      ['caller', 'Do you fix hail damage?'],
+      ['caller', 'Also gutters'],
+      ['assistant', 'Yes, we repair hail damage.'],
     ]);
   });
 

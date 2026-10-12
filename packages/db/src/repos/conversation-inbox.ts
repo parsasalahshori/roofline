@@ -54,11 +54,11 @@ const notSpam = (): SQL | undefined => or(isNull(conversations.outcome), ne(conv
 /** Unread and not spam: the dock badge counts these as needing attention. */
 const NEEDS_ATTENTION = sql<boolean>`(${conversations.unreadCount} > 0 and ${conversations.outcome} is distinct from 'spam')`;
 
-/** True when the assistant took a message marked urgent on this conversation. */
+/** True when the assistant took a message marked urgent on this conversation and it succeeded (redacted rows keep ok). */
 const URGENT = sql<boolean>`exists (
   select 1 from conversation_turns ct, jsonb_array_elements(coalesce(ct.tool_calls, '[]'::jsonb)) tc
   where ct.company_id = ${conversations.companyId} and ct.conversation_id = ${conversations.id}
-    and tc ->> 'name' = 'take_message' and tc -> 'input' ->> 'urgent' = 'true'
+    and tc ->> 'name' = 'take_message' and tc -> 'input' ->> 'urgent' = 'true' and tc ->> 'ok' = 'true'
 )`;
 
 function filterCondition(filter: ConversationFilter): SQL | undefined {
@@ -290,12 +290,19 @@ const startsAtWord = (a: string, b: string): boolean => a.startsWith(b) && (a.le
  *   inbound text, oldest first, takes the first unused run of lines (a text can hold line breaks of its own) of a
  *   caller turn at or after it that equals its own lines, compared after whitespace squashing.
  * - Assistant: the reply text is the assistant turn's words, possibly cut short at a sentence end to fit two
- *   segments (texts.ts fitSegments), and is written after the turn (turn `at` <= the text's createdAt). Each
- *   assistant text, oldest first, takes the first unused assistant turn at or before it whose words begin with the
+ *   segments (texts.ts fitSegments), and is written after the turn (turn `at` <= the text's createdAt), except a
+ *   reply backdated to just after the text it answers (ASSISTANT_TURN_AFTER_TEXT_TOLERANCE_MS). Each assistant
+ *   text, oldest first, takes the first unused assistant turn at or before it (or within that tolerance after it) whose words begin with the
  *   text's words, or the other way round, ending at a word boundary.
  * Each turn line (caller) or turn (assistant) is used once. A text that matches nothing is shown as its own line,
  * so a change in what texts.ts writes can repeat a text, never hide one.
  */
+/**
+ * How long after an assistant text its own turn may be stamped. texts.ts dates a reply sent while a newer text
+ * waits as lastUnanswered.createdAt + 1 ms, which is before the assistant turn it carries (final review RC-1 #7).
+ */
+const ASSISTANT_TURN_AFTER_TEXT_TOLERANCE_MS = 5 * 60_000;
+
 function turnMatcher(turns: TurnView[]) {
   const ordered = turns.filter((t) => t.callId === null && t.text !== null).sort(compareTurnViews);
   const callerTurns = ordered
@@ -323,7 +330,7 @@ function turnMatcher(turns: TurnView[]) {
     const words = squash(body);
     if (words === '') return false;
     const turn = assistantTurns.find(
-      (t) => !t.used && t.at <= createdAt.getTime() && t.words !== '' && (startsAtWord(t.words, words) || startsAtWord(words, t.words)),
+      (t) => !t.used && t.at <= createdAt.getTime() + ASSISTANT_TURN_AFTER_TEXT_TOLERANCE_MS && t.words !== '' && (startsAtWord(t.words, words) || startsAtWord(words, t.words)),
     );
     if (!turn) return false;
     turn.used = true;

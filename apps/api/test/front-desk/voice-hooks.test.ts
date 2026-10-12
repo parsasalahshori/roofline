@@ -240,6 +240,57 @@ describe('POST /hooks/twilio/voice', () => {
     expect(again.text).toContain('<ConversationRelay');
   });
 
+  test('a ring_first call whose ring times out takes the cap like a new AI call: voicemail when the slot is taken (final review RC-3)', async () => {
+    await seedTeam();
+    await setSettings('a', { frontDeskEnabled: true, maxConcurrentAiCalls: 1, ringTeamFirstSeconds: 20 });
+    const ringSid = 'CA' + '3'.repeat(32);
+    await post(VOICE, incoming(A_NUMBER, { CallSid: ringSid }));
+    expect((await callRows('a')).find((r) => r.callSid === ringSid)!.status).toBe('ringing_team');
+
+    // A new AI call takes the one slot while the team is being rung.
+    await setSettings('a', { ringTeamFirstSeconds: 0 });
+    const ai = await post(VOICE, incoming(A_NUMBER, { CallSid: 'CA' + '4'.repeat(32) }));
+    expect(ai.text).toContain('<ConversationRelay');
+
+    // The ring times out: the slot is taken, so voicemail, not a second AI call.
+    const afterDial = '/hooks/twilio/voice-transfer/after-dial?mode=ring_first';
+    const timedOut = { CallSid: ringSid, From: CALLER, To: A_NUMBER, DialCallStatus: 'no-answer' };
+    const full = await post(afterDial, timedOut);
+    expect(full.text).toContain('<Record maxLength="120" playBeep="true"/>');
+    expect(full.text).not.toContain('<ConversationRelay');
+    expect((await callRows('a')).find((r) => r.callSid === ringSid)!.status).toBe('ringing_team');
+
+    // With the slot free again, a timed-out ring goes to the AI and is counted as relay-bound ('ringing').
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.update(calls).set({ status: 'ended' }).where(eq(calls.callSid, 'CA' + '4'.repeat(32))));
+    const free = await post(afterDial, timedOut);
+    expect(free.text).toContain('<ConversationRelay');
+    expect((await callRows('a')).find((r) => r.callSid === ringSid)!.status).toBe('ringing');
+    const next = await post(VOICE, incoming(A_NUMBER, { CallSid: 'CA' + '5'.repeat(32) }));
+    expect(next.text).not.toContain('<ConversationRelay');
+  });
+
+  test('a timed-out ring_first call gets voicemail when the Front Desk was turned off meanwhile', async () => {
+    await seedTeam();
+    await setSettings('a', { frontDeskEnabled: true, maxConcurrentAiCalls: 2, ringTeamFirstSeconds: 20 });
+    const ringSid = 'CA' + '3'.repeat(32);
+    await post(VOICE, incoming(A_NUMBER, { CallSid: ringSid }));
+    await setSettings('a', { frontDeskEnabled: false });
+    const res = await post('/hooks/twilio/voice-transfer/after-dial?mode=ring_first', { CallSid: ringSid, From: CALLER, To: A_NUMBER, DialCallStatus: 'busy' });
+    expect(res.text).toContain('<Record maxLength="120" playBeep="true"/>');
+    expect(res.text).not.toContain('<ConversationRelay');
+  });
+
+  test('ring first with no team numbers goes straight to the AI, marked ringing and counted under the cap', async () => {
+    await setSettings('a', { frontDeskEnabled: true, maxConcurrentAiCalls: 1, ringTeamFirstSeconds: 20 });
+    const first = await post(VOICE, incoming(A_NUMBER, { CallSid: 'CA' + '3'.repeat(32) }));
+    expect(first.text).toContain('<ConversationRelay');
+    expect((await callRows('a')).find((r) => r.callSid === 'CA' + '3'.repeat(32))!.status).toBe('ringing');
+    const second = await post(VOICE, incoming(A_NUMBER, { CallSid: 'CA' + '4'.repeat(32) }));
+    expect(second.text).not.toContain('<ConversationRelay');
+    expect(second.text).toContain('<Record maxLength="120" playBeep="true"/>');
+    expect((await callRows('a')).find((r) => r.callSid === 'CA' + '4'.repeat(32))!.status).toBe('ringing_team');
+  });
+
   test('fd-health ends an ai call stuck for 40 minutes and dial calls over 4 hours, per company, and leaves a connected ring_first call alone (Ruling BJ; CV#3)', async () => {
     const now = t.deps.clock.now();
     const ago = (minutes: number) => new Date(now.getTime() - minutes * 60_000);
@@ -261,7 +312,8 @@ describe('POST /hooks/twilio/voice', () => {
       tx.insert(calls).values([
         row('a', aiStuck, 'ai', ago(40)),
         row('a', aiFresh, 'ai', ago(5)),
-        // A ring_first call answered by staff keeps 'ringing' for the whole bridged call.
+        // A 'ringing' call (relay-bound: sent to the AI, relay not yet set up) is left until 4 hours; a ring_first call
+        // answered by staff is 'ringing_team' for the whole bridged call (teamFirst below).
         row('a', ringFirst, 'ringing', ago(40)),
         row('a', teamFirst, 'ringing_team', ago(40)),
         row('a', dialOld, 'ringing', ago(4 * 60 + 1)),

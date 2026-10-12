@@ -246,3 +246,12 @@ Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.reco
     - d1-rev-l (E1, RC-2 review minors).
     - Restoring verifyFailures on reuse depends on RC-1's identity persistence.
     - T25 finding 6 (the eval's playCall drift from engine.run) and C1 RA review #6 (ranged playback reads) are follow-ups.
+- 2026-10-12: **Integration green at 3c1d391** (CI 38300366922, Platform and E2E): every D1 plan task (1-27), the pre-review fixes (CV, RA, RC-2, RC-3, d1-cap, rev-a through rev-k) and Rulings BG, BI, BJ and BK. **D1 complete**, with follow-up merges still in flight:
+  - RC-4 (D1 lead, d1-rc4): loose leak and danger matching, the message-mode clock, and conversation times from the app clock.
+  - d1-rev-m (E1): amended BK vocabulary, final ROUTER_INTENTS, ring_first after-dial cap check, ok-only dedupe, and /after-relay urgency.
+  - d1-rev-l (E1): RC-2 review minors.
+  - RC-1/RC-1b (S1): SMS turn positions and the SMS 30-minute HIGH; system-note ordering; verify_caller lockout and identity persistence (including on reuse); lastTeamReplyAt ignoring system texts; F4-F6; "[photo]".
+  - Later: ranged playback reads (C1 RA #6); the eval's playCall drift from engine.run (T25 finding 6).
+- 2026-10-12: **d1-rev-l merged** (E1, RC-2 review #2/#4/#5/#6 and the RC-1 matcher tolerance; a two-segment relay test; 6126009, CI 38300824666 green). The idle-SMS pass runs on the half hour, skips read-only and texting-off companies, rechecks idleness under a conversation lock, and also lists recently ended, unsummarised threads.
+- 2026-10-12: **RC-4 merged** (D1 lead; 10f55e0, CI 38302002040 green; local front-desk api 635 and shared 849 on the merge). shouldTransfer matches leak and danger loosely, so a router 'emergency' still rings on-call (Ruling BK). A reused conversation's clock starts at most 20 min back. insertConversation takes its times from the app clock.
+- 2026-10-12: **d1-rev-m merged** (E1; 4d34e8b, CI 38305050962 green). Amended **Ruling BK**: emergencyReason checks the exact vocabulary, RC-4's loose intent words and the caller's own phrases, a bare 'emergency' counts as danger, and the router prompt names the vocabulary; the D1 lead's engine commit passes callerText. Also the final ROUTER_INTENTS (36) for the router schema and zod; a ring_first after-dial cap check (aiAllowedNow plus lockAiCap); /voice marks ringing_team only with team numbers; dedupe and the inbox URGENT check need ok='true'; /after-relay urgency ORs in hasUrgentNoticeFor. Local: front-desk api 643, shared 883, rls 153.
