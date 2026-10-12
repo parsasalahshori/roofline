@@ -1,3 +1,4 @@
+import { calculateQuote, defaultPricebook, defaultScope, type QuoteView } from '@roofline/shared';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
@@ -12,7 +13,6 @@ import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { job } from '../src/copy/job.ts';
 import { jobs } from '../src/copy/jobs.ts';
 import { prices } from '../src/copy/prices.ts';
-import { quotes } from '../src/copy/quotes.ts';
 import { schedule } from '../src/copy/schedule.ts';
 import { settings } from '../src/copy/settings.ts';
 import { ACCOUNT, COMPANY, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
@@ -76,7 +76,6 @@ describe('C1 windows', () => {
   it.each([
     ['/jobs', WINDOW_COPY.jobs.title, jobs.newJob],
     ['/jobs/j1', WINDOW_COPY.jobs.title, job.comingSoon],
-    ['/jobs/j1/quotes/q1', WINDOW_COPY.jobs.title, quotes.comingSoon],
     ['/customers', WINDOW_COPY.customers.title, customers.comingSoon],
     ['/customers/c1', WINDOW_COPY.customers.title, customers.customerComingSoon],
     ['/calendar/new', WINDOW_COPY.calendar.title, appointments.comingSoon],
@@ -87,6 +86,32 @@ describe('C1 windows', () => {
 
     const dialog = await screen.findByRole('dialog', { name: title });
     expect(await within(dialog).findByText(copy)).toBeInTheDocument();
+  });
+
+  it('/jobs/j1/quotes/q1 shows the quote in the Jobs window', async () => {
+    const quote: QuoteView = {
+      id: 'q1',
+      jobId: 'j1',
+      number: 'Q-0001',
+      status: 'draft',
+      measurement: { source: 'manual', areaSqFt: 2480, areaType: 'surface', pitch: 6, notes: null },
+      scope: defaultScope,
+      prices: defaultPricebook,
+      calculation: calculateQuote(defaultScope, defaultPricebook),
+      notes: null,
+      validUntil: '2026-11-12T00:00:00.000Z',
+      createdAt: '2026-10-10T12:00:00.000Z',
+      finalizedAt: null,
+      canEdit: true,
+    };
+    signedInApi(ACCOUNT, {
+      'GET /api/quotes/q1': () => ({ body: quote }),
+      'GET /api/company': () => ({ body: { timezone: 'America/Chicago' } }),
+    });
+    renderApp('/jobs/j1/quotes/q1');
+
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.jobs.title });
+    expect(await within(dialog).findByText('Q-0001')).toBeInTheDocument();
   });
 
   it('shows the Jobs tabs on the pipeline, with Pipeline marked as the current page', async () => {
