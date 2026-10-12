@@ -218,3 +218,12 @@ Remaining group-check items go to R7 (brief task-r7-brief.md, which also folds i
 - R1 hail minors.
 Note: PLAN_PAUSED cannot be reached until A1 T14 wires isAgentPaused into plan.ts.
 R5 (C1 lead): 0d1c8d4 (5e75615 code). One landing code rule (STORM_PAGE_CODE_RE in repos/storm-pages.ts, used by both public routes). The rate limit and Origin guard moved inside stormRequestRoutes, so form posts get ?error=busy/invalid while JSON keeps its status codes. createStormRequest goes through createJob (audit and timeline lines; actor system). doors placeFor is synchronous with named fallbacks. When a landing request matches another customer's home, the job line says "sent for this home by <name>". CI 38255682720 Platform/E2E/Hail/v1. Merged into s1-storm (auto-merged storm-page.ts; T28's Referrer-Policy fix kept). Local: typecheck/lint clean, 668 shared, e2e list 52. Behaviour: a malformed code with a browser Origin gets 403 from the guard.
+
+## Ruling BF (controller, 2026-10-12): security review fixes before S1 completes
+Source: `ops/sdd/integration/security-review.md` on `origin/sec-review` (probe launch-integration a7e2b559). S1 owns:
+- **High 1:** ad accounts shared across companies. **R8:** a global partial unique index in 0018 (Ruling AW); claim the row before calling the platform; unlink only when this company was the live holder.
+- **High 2:** `Referrer-Policy: no-referrer` turns Origin into null on the public forms. **R9:** the unsubscribe confirm page uses same-origin; e2e specs submit both forms.
+- **Medium 3:** unverified SMS consent from the storm form. **R10:** the form never writes or upgrades consent; a YES from that phone within 14 days makes it express; per-IP share and per-phone caps.
+- **Lows 9, 10, 14, 18:** **R8** trims the 0018 grants; **R9** keeps `/u/` tokens out of logs and limits the S1 public routes.
+
+The three tasks run in parallel from 83e9856, with Sonnet builders, and need CI on Platform, E2E and Hail before each merge. Finding 4 (`TRUST_PROXY`, F2/F3) limits how effective the per-IP caps are; it is not S1's.
