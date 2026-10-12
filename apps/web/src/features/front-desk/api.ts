@@ -2,3 +2,4 @@
 export function useFrontDeskUnread(): number {
   return 0;
 }
+export { useConversations, useWeekStats, inboxPollInterval, LIVE_POLL_MS, IDLE_POLL_MS } from './inbox-api.ts';

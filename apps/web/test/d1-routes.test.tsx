@@ -7,7 +7,8 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { frontDesk } from '../src/copy/front-desk.ts';
-import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
+import { frontDeskInbox } from '../src/copy/front-desk-inbox.ts';
+import { ACCOUNT, COMPANY, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -33,9 +34,29 @@ afterEach(() => {
 
 /** A signed-in person whose shell reads answer "nothing", unless a test gives its own answers. */
 function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
+  api = stubApi({ ...SHELL_ROUTES, ...FRONT_DESK_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
   return api;
 }
+
+/** The Front Desk window's reads, answered with an empty inbox and zeroed week. */
+const FRONT_DESK_ROUTES: Routes = {
+  'GET /api/conversations?filter=all': () => ({ body: { items: [], nextCursor: null } }),
+  'GET /api/front-desk/stats': () => ({
+    body: {
+      weekStart: '2026-10-05',
+      answered: 0,
+      booked: 0,
+      transferred: 0,
+      messages: 0,
+      spam: 0,
+      firstReplyMsP50: null,
+      guardBlocks: 0,
+      aiMinutesUsed: 0,
+      aiMinutesIncluded: null,
+    },
+  }),
+  'GET /api/company': () => ({ body: { ...COMPANY, timezone: 'America/Los_Angeles' } }),
+};
 
 function renderApp(path: string) {
   const queryClient = createQueryClient();
@@ -59,7 +80,7 @@ describe('D1 Front Desk routes', () => {
     signedInApi();
     renderApp('/front-desk');
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY['front-desk'].title });
-    expect(await within(dialog).findByText(frontDesk.windowEmpty)).toBeInTheDocument();
+    expect(await within(dialog).findByText(frontDeskInbox.empty)).toBeInTheDocument();
   });
 
   it('/front-desk/abc shows the empty conversation', async () => {
