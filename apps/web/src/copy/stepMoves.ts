@@ -5,6 +5,8 @@ export const stepMoves = {
   /** "Move the install to Mon, Nov 2, 9:30 AM to 10:30 AM" */
   moveToAt: (day: string, from: string, to: string) => `Move the install to ${day}, ${from} to ${to}`,
   fallbackTitle: 'Move an install',
+  /** "Now on Thu, Oct 29": the day the install is booked for today. */
+  from: (day: string) => `Now on ${day}`,
   forMember: (name: string) => `For ${name}`,
   aTeamMember: 'a team member',
   dateLabel: 'New day',

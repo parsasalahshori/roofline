@@ -18,7 +18,7 @@ import { StepFieldsSheet } from './StepFieldsSheet.tsx';
 import { POLL_AFTER_APPROVE_MS } from './polling.ts';
 import styles from './Review.module.css';
 import { kitFor } from './steps/index.ts';
-import { reviewMode, seenSteps, toReviewStep } from './toReviewStep.ts';
+import { isOpen, reviewMode, seenSteps, toReviewStep } from './toReviewStep.ts';
 
 /** Which window the review screen sits in: the approvals window, or the Storm window (`/storm/plans/:taskId`). */
 export type ReviewApp = 'approvals' | 'storm';
@@ -118,6 +118,17 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
   function saveKitEdit(payload: Record<string, unknown>) {
     if (editingStep === undefined) return;
     sendEdit(editingStep, payload);
+  }
+
+  /** A change made from a step's own preview (a text removed): the same edit as the sheet's, and Approve waits for it. */
+  function savePayload(step: StepView, payload: Record<string, unknown>) {
+    markPending(step.id, true);
+    void edit
+      .mutateAsync({ stepId: step.id, version: step.version, payload })
+      .catch(showError)
+      .finally(() => {
+        markPending(step.id, false);
+      });
   }
 
   function onApprove() {
@@ -253,7 +264,16 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
           if (itemKit === undefined) return null;
           return (
             <div className={styles.detail} key={item.id}>
-              <itemKit.Preview step={item} canApprove={item.canApprove} taskId={taskId} />
+              <itemKit.Preview
+                step={item}
+                canApprove={item.canApprove}
+                taskId={taskId}
+                {...(mode === 'review' && isOpen(item, data) && !pending.has(item.id) && {
+                  onSavePayload: (payload: Record<string, unknown>) => {
+                    savePayload(item, payload);
+                  },
+                })}
+              />
             </div>
           );
         })}

@@ -1,10 +1,9 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Button, useToast } from '@roofline/ui';
-import { ApiError } from '../../../api/client.ts';
+import { Button } from '@roofline/ui';
+import { apiFetch } from '../../../api/client.ts';
 import type { StepView } from '../../../api/types.ts';
-import { errors } from '../../../copy/errors.ts';
 import { stepTexts } from '../../../copy/stepTexts.ts';
-import { useEditStep } from '../api.ts';
 import styles from './SendTextsPreview.module.css';
 import type { EditFieldSpec, EditValues, StepKit, StepPreviewProps } from './types.ts';
 
@@ -44,42 +43,55 @@ export function missingStopIndexes(payloadKind: unknown, bodies: string[]): numb
   return out;
 }
 
-/** The personal texts under a send_personal_texts step: one row per text, each removable. */
-export function SendTextsPreview({ step, taskId }: StepPreviewProps) {
-  const toast = useToast();
-  const edit = useEditStep(taskId ?? '');
+/** The customer's name for a row: first name, else the display name, else "Customer N" while it loads or if it is gone. */
+function RecipientName({ customerId, place }: { customerId: string; place: number }) {
+  const customer = useQuery({
+    queryKey: ['customers', 'one', customerId],
+    queryFn: ({ signal }) =>
+      apiFetch<{ firstName: string | null; displayName: string }>(`/api/customers/${encodeURIComponent(customerId)}`, { signal }),
+    enabled: customerId !== '',
+    staleTime: 60_000,
+  });
+  const name = customer.data?.displayName || customer.data?.firstName || stepTexts.customerN(place);
+  return <p className={styles.label}>{name}</p>;
+}
+
+function customerIdOf(message: Message): string {
+  return typeof message.customerId === 'string' ? message.customerId : '';
+}
+
+/** The personal texts under a send_personal_texts step: one row per text, each removable while the plan can change. */
+export function SendTextsPreview({ step, onSavePayload }: StepPreviewProps) {
   const [expanded, setExpanded] = useState(false);
   const payload = payloadOf(step);
   const messages = messagesOf(step) ?? [];
   const missing = new Set(missingStopIndexes(payload.kind, messages.map(bodyOf)));
   const shown = expanded ? messages : messages.slice(0, FIRST_ROWS);
-  const canRemove = taskId !== undefined && messages.length > 1 && !edit.isPending;
+  const canRemove = onSavePayload !== undefined && messages.length > 1;
 
   function remove(index: number) {
-    const rest = messages.filter((_, i) => i !== index);
-    edit.mutateAsync({ stepId: step.id, version: step.version, payload: { ...payload, messages: rest } }).catch((error: Error) => {
-      toast.show(error instanceof ApiError ? error.message : errors.generic, 'error');
-    });
+    onSavePayload?.({ ...payload, messages: messages.filter((_, i) => i !== index) });
   }
 
   return (
     <div className={styles.preview}>
       {shown.map((message, i) => (
-        <div key={i} className={styles.row}>
+        <div key={`${customerIdOf(message)}:${i}`} className={styles.row}>
           <div className={styles.text}>
-            <p className={styles.label}>{stepTexts.customerN(i + 1)}</p>
+            <RecipientName customerId={customerIdOf(message)} place={i + 1} />
             <p className={styles.body}>{bodyOf(message)}</p>
             {missing.has(i) ? <p className={styles.warning}>{stepTexts.missingStop}</p> : null}
           </div>
-          <Button
-            variant="ghost"
-            disabled={!canRemove}
-            onClick={() => {
-              remove(i);
-            }}
-          >
-            {stepTexts.remove}
-          </Button>
+          {canRemove ? (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                remove(i);
+              }}
+            >
+              {stepTexts.remove}
+            </Button>
+          ) : null}
         </div>
       ))}
       {!expanded && messages.length > FIRST_ROWS ? (
@@ -91,7 +103,7 @@ export function SendTextsPreview({ step, taskId }: StepPreviewProps) {
           {stepTexts.showMore(messages.length - FIRST_ROWS)}
         </Button>
       ) : null}
-      {messages.length === 1 ? <p className={styles.hint}>{stepTexts.lastOne}</p> : null}
+      {onSavePayload !== undefined && messages.length === 1 ? <p className={styles.hint}>{stepTexts.lastOne}</p> : null}
     </div>
   );
 }

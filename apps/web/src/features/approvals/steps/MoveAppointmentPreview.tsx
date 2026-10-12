@@ -1,6 +1,7 @@
 import { stepMoves } from '../../../copy/stepMoves.ts';
 import type { StepView } from '../../../api/types.ts';
 import { dateKeyToInstant, formatDayLabel, formatTime, startOfZonedDay, zonedDateKey } from '../../calendar/time.ts';
+import { useAppointment } from '../../appointments/api.ts';
 import { useCompany, useTeam } from '../../settings/api.ts';
 import styles from './MoveAppointmentPreview.module.css';
 import type { EditFieldSpec, EditValues, StepKit, StepKitContext, StepPreviewProps } from './types.ts';
@@ -43,6 +44,9 @@ export function MoveAppointmentPreview({ step }: StepPreviewProps) {
   const reason = textOf(payload.reason);
   const userId = textOf(payload.userId).toLowerCase();
   const member = userId === '' ? undefined : team.data?.members.find((m) => m.userId.toLowerCase() === userId);
+  const appointmentId = textOf(payload.appointmentId);
+  const current = useAppointment(appointmentId === '' ? undefined : appointmentId);
+  const oldStart = dateOf(current.data?.startsAt);
 
   let title: string = stepMoves.fallbackTitle;
   if (start !== null) {
@@ -54,6 +58,7 @@ export function MoveAppointmentPreview({ step }: StepPreviewProps) {
   return (
     <div className={styles.preview}>
       <h3 className={styles.title}>{title}</h3>
+      {oldStart !== null ? <p className={styles.reason}>{stepMoves.from(formatDayLabel(oldStart, zone))}</p> : null}
       {reason !== '' ? <p className={styles.reason}>{reason}</p> : null}
       <p className={styles.member}>{stepMoves.forMember(member ? member.name : stepMoves.aTeamMember)}</p>
     </div>

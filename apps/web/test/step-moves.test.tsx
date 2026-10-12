@@ -36,9 +36,14 @@ function step(payload: Record<string, unknown>): StepView {
   } as unknown as StepView;
 }
 
-function show(payload: Record<string, unknown>, members: { userId: string; name: string }[] = [{ userId: MEMBER.toUpperCase(), name: 'Dana Crew' }]) {
+function show(
+  payload: Record<string, unknown>,
+  members: { userId: string; name: string }[] = [{ userId: MEMBER.toUpperCase(), name: 'Dana Crew' }],
+  extra: Record<string, () => unknown> = {},
+) {
   stubApi({
     ...SHELL_ROUTES,
+    ...extra,
     'GET /api/company': () => ({ body: { timezone: ZONE } }),
     'GET /api/team': () => ({ body: { members, invites: [] } }),
   } as never);
@@ -55,6 +60,13 @@ describe('the move preview', () => {
     expect(await screen.findByText('For Dana Crew')).toBeTruthy();
     expect(container.textContent).not.toMatch(/\d:\d\d/);
     expect(container.textContent).not.toMatch(/payload|step|json/i);
+  });
+
+  it('shows the day the install is booked for now', async () => {
+    // 6 AM UTC on Tue, Nov 3 is midnight in Chicago (CST), so the local day is Tuesday.
+    show(ALL_DAY, undefined, { 'GET /api/appointments/a1': () => ({ body: { id: 'a1', startsAt: '2026-11-03T06:00:00.000Z' } }) });
+    expect(await screen.findByText('Now on Tue, Nov 3')).toBeTruthy();
+    expect(await screen.findByText('Move the install to Wed, Nov 4')).toBeTruthy();
   });
 
   it('says a team member for an unknown id', async () => {

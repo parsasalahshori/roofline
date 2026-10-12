@@ -2,7 +2,7 @@ import { cleanup, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { StepView } from '../src/api/types.ts';
 import { SendTextsPreview, sendTextsKit } from '../src/features/approvals/steps/SendTextsPreview.tsx';
-import { makeTask, renderAt, stubApi } from './helpers.tsx';
+import { renderAt, stubApi } from './helpers.tsx';
 
 afterEach(() => cleanup());
 
@@ -95,26 +95,33 @@ describe('the texts preview', () => {
     expect(screen.queryByRole('button', { name: /Show/ })).toBeNull();
   });
 
-  it('removes a text with a saved change', async () => {
-    const s = step(3);
-    const api = stubApi({
-      'GET /api/approvals/t1': () => ({ body: makeTask({ id: 't1', steps: [s] }) }),
-      'PATCH /api/approvals/t1/steps/s1': () => ({ body: s }),
-    });
-    const { user } = renderAt(<SendTextsPreview step={s} canApprove={true} taskId="t1" />);
+  it('removes a text through Review\'s save, keeping the rest of the payload', async () => {
+    const saved: Record<string, unknown>[] = [];
+    const { user } = renderAt(
+      <SendTextsPreview step={step(3)} canApprove={true} taskId="t1" onSavePayload={(p) => saved.push(p)} />,
+    );
     await user.click(screen.getAllByRole('button', { name: 'Remove' })[0]!);
-    await screen.findAllByRole('button', { name: 'Remove' });
-    const [sent] = api.sent('PATCH /api/approvals/t1/steps/s1') as { version: number; payload: Record<string, unknown> }[];
-    expect(sent).toEqual({
-      version: 1,
-      payload: { purpose: 'informational', kind: 'reminder', dedupePrefix: 'follow-up:abc', messages: messages(3).slice(1) },
-    });
+    expect(saved).toEqual([
+      { purpose: 'informational', kind: 'reminder', dedupePrefix: 'follow-up:abc', messages: messages(3).slice(1) },
+    ]);
+  });
+
+  it('offers no Remove once the plan can no longer change', () => {
+    renderAt(<SendTextsPreview step={step(3)} canApprove={true} taskId="t1" />);
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(screen.getAllByText(/^Body number/)).toHaveLength(3);
   });
 
   it('keeps the last text and shows a hint', () => {
-    renderAt(<SendTextsPreview step={step(1)} canApprove={true} taskId="t1" />);
+    renderAt(<SendTextsPreview step={step(1)} canApprove={true} taskId="t1" onSavePayload={() => {}} />);
     expect(screen.getByText('Keep at least one text, or turn this step off.')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Remove' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+  });
+
+  it('names each text\'s customer', async () => {
+    stubApi({ [`GET /api/customers/${CUSTOMER}`]: () => ({ body: { displayName: 'Maria Lopez', firstName: 'Maria' } }) });
+    renderAt(<SendTextsPreview step={step(2)} canApprove={true} taskId="t1" />);
+    expect(await screen.findAllByText('Maria Lopez')).toHaveLength(2);
   });
 
   it('shows the stop warning for review texts', () => {

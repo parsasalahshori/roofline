@@ -6,8 +6,13 @@ import type { StepView } from '../../../api/types.ts';
 export type StepPreviewProps = {
   step: StepView;
   canApprove: boolean;
-  /** The plan the step belongs to. A Preview that saves a change itself (G1 Task 17p) needs it; Review always passes it. */
+  /** The plan the step belongs to. */
   taskId?: string;
+  /**
+   * Saves a new payload for this step through Review's own edit, which Approve waits for. Present only while the step
+   * can still be changed (review mode, step still open); a Preview offers no change controls without it.
+   */
+  onSavePayload?: (payload: Record<string, unknown>) => void;
 };
 
 /** Facts the Edit sheet knows that a kit's pure functions cannot look up. Passed as the last argument; absent in unit tests. */
