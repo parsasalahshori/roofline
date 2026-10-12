@@ -26,6 +26,8 @@ const DB_SYSTEM_ALLOWED = [
   'apps/api/src/auth/**',
   'apps/api/src/hooks/**',
   'apps/api/src/jobs/scheduler/**',
+  // The footprint loader is global work as app_system (E1 Task 6).
+  'apps/api/src/estimator/footprints-load.ts',
   'apps/api/src/account/**',
   'apps/api/src/public/**',
   'apps/api/src/scripts/**',
