@@ -180,3 +180,4 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
   - **Gaps:**
     - (a) calls has no outcome or title column, so a transferred call with no conversation keeps only calls.status.
     - (b) Voice needs_attention: RC-2 sets unread_count.
+- **Ruling BJ** (controller): CV's stale-call sweep moves to per-company tenant transactions, and app_system's UPDATE and SELECT(started_at) grants on calls are dropped (BF and the rev-d rule). Built by the E1 lead on d1-rev-i, with the sweep fixes: 35 min for `ai` only, about 4 h for ringing and ringing_team, no text-back after a sweep, plus billing and status edge cases. The D1 lead keeps the reused-conversation turn positions and the AI cap counting non-AI calls (follow-ups.md).

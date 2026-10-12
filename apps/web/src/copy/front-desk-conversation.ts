@@ -32,4 +32,5 @@ export const conversationCopy = {
   replySend: 'Send',
   replyPlaceholder: 'Write a text message',
   replyFailed: 'We could not send that text.',
+  replyScheduled: (when: string) => `Your text is scheduled. It will go out ${when}.`,
 } as const;

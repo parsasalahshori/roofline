@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, isNull, like, not, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, like, not, or, sql } from 'drizzle-orm';
 import { companySettings, conversations, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { companyReadOnly } from './front-desk-settings.ts';
@@ -138,6 +138,8 @@ export async function lastTeamReplyAt(tx: Tx, ctx: TenantContext, conversationId
         eq(messages.companyId, ctx.companyId),
         eq(messages.conversationId, conversationId),
         eq(messages.direction, 'out'),
+        // Only a reply that went out (or will) quiets the assistant: a failed or blocked one reached nobody.
+        inArray(messages.status, ['scheduled', 'queued', 'sent', 'delivered']),
         or(isNull(messages.dedupeKey), not(like(messages.dedupeKey, `${ASSISTANT_PREFIX}%`))),
       ),
     )
