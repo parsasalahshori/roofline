@@ -187,6 +187,37 @@ describe('POST /hooks/twilio/voice', () => {
     expect(stale.text).toContain('<ConversationRelay');
   });
 
+  test('non-AI paths are marked ringing_team and never hold an AI slot (ring first, Front Desk off, over the cap)', async () => {
+    // Ring the team first: the call is the team's, not the AI's.
+    await seedTeam();
+    await setSettings('a', { frontDeskEnabled: true, maxConcurrentAiCalls: 1, ringTeamFirstSeconds: 20 });
+    const ringFirst = await post(VOICE, incoming(A_NUMBER, { CallSid: 'CA' + '3'.repeat(32) }));
+    expect(ringFirst.text).not.toContain('<ConversationRelay');
+    expect((await callRows('a')).find((r) => r.callSid === 'CA' + '3'.repeat(32))!.status).toBe('ringing_team');
+
+    // With that call still live at the team, an AI call still gets the one AI slot.
+    await setSettings('a', { frontDeskEnabled: true, maxConcurrentAiCalls: 1, ringTeamFirstSeconds: 0 });
+    const ai = await post(VOICE, incoming(A_NUMBER, { CallSid: 'CA' + '4'.repeat(32) }));
+    expect(ai.text).toContain('<ConversationRelay');
+    expect((await callRows('a')).find((r) => r.callSid === 'CA' + '4'.repeat(32))!.status).toBe('ringing');
+
+    // The next call is over the cap: voicemail, marked ringing_team, and it does not count either.
+    const over = await post(VOICE, incoming(A_NUMBER, { CallSid: 'CA' + '5'.repeat(32) }));
+    expect(over.text).not.toContain('<ConversationRelay');
+    expect((await callRows('a')).find((r) => r.callSid === 'CA' + '5'.repeat(32))!.status).toBe('ringing_team');
+
+    // Front Desk off: the team, then voicemail, marked ringing_team.
+    await setSettings('a', { frontDeskEnabled: false });
+    await post(VOICE, incoming(A_NUMBER, { CallSid: 'CA' + '6'.repeat(32) }));
+    expect((await callRows('a')).find((r) => r.callSid === 'CA' + '6'.repeat(32))!.status).toBe('ringing_team');
+
+    // Once the AI call ends, the slot is free again even though three team calls are still live.
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.update(calls).set({ status: 'ended' }).where(eq(calls.callSid, 'CA' + '4'.repeat(32))));
+    await setSettings('a', { frontDeskEnabled: true, maxConcurrentAiCalls: 1, ringTeamFirstSeconds: 0 });
+    const again = await post(VOICE, incoming(A_NUMBER, { CallSid: 'CA' + '7'.repeat(32) }));
+    expect(again.text).toContain('<ConversationRelay');
+  });
+
   test('fd-health ends a call stuck for 40 minutes, queues its after-call work, and leaves a recent call alone', async () => {
     const now = t.deps.clock.now();
     const stuckSid = 'CA' + '1'.repeat(32);

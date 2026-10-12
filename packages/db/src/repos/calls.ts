@@ -215,7 +215,11 @@ export async function lockAiCap(tx: Tx, ctx: TenantContext): Promise<void> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'fd-ai-cap:' + ctx.companyId}))`);
 }
 
-/** Calls with status in ('ringing','ai') and started_at > now - 35 minutes (the live count for the concurrent cap). The call being decided on is excluded when its id is passed. */
+/**
+ * Calls bound for the AI: status 'ai', or 'ringing' (relay TwiML sent, relay not yet set up), with started_at > now - 35
+ * minutes (the live count for the concurrent cap). The /voice hook marks every non-AI path 'ringing_team', so those never
+ * count. The call being decided on is excluded when its id is passed.
+ */
 export async function countLiveCallsInWindow(tx: Tx, ctx: TenantContext, now: Date, excludeCallId?: string): Promise<number> {
   const since = new Date(now.getTime() - LIVE_CALL_WINDOW_MS);
   const [row] = await tx
