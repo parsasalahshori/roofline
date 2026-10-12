@@ -5,7 +5,7 @@ import type { Clock } from '../src/clock.ts';
 import { WeatherCache } from '../src/weather/cache.ts';
 import type { CurrentWeather, WeatherSource } from '../src/weather/source.ts';
 import { Actors, addressFor, inCompany, mustCreate } from './crm-helpers.ts';
-import { FAKE_WEATHER, makeTestApp, type TestApp } from './helpers.ts';
+import { FAKE_HOURLY, FAKE_WEATHER, FakeWeatherSource, makeTestApp, type TestApp } from './helpers.ts';
 
 const MINUTE = 60_000;
 
@@ -240,6 +240,7 @@ function deferredSource() {
       new Promise((resolve, reject) => {
         calls.push({ lat, lng, settle: { resolve, reject } });
       }),
+    hourly: async () => null,
   };
   return { source, calls };
 }
@@ -253,6 +254,7 @@ describe('WeatherCache', () => {
         calls.push(clock.now().getTime());
         return FAKE_WEATHER;
       },
+      hourly: async () => null,
     };
     const cache = new WeatherCache(source, clock);
     expect(await cache.get('k', 1, 2)).toEqual(FAKE_WEATHER);
@@ -280,7 +282,10 @@ describe('WeatherCache', () => {
   test('a different key is a different entry; the key, not the exact place, decides', async () => {
     const clock = handClock();
     const seen: [number, number][] = [];
-    const cache = new WeatherCache({ current: async (lat, lng) => (seen.push([lat, lng]), FAKE_WEATHER) }, clock);
+    const cache = new WeatherCache(
+      { current: async (lat, lng) => (seen.push([lat, lng]), FAKE_WEATHER), hourly: async () => null },
+      clock,
+    );
     await cache.get('a:41.27,-96.05', 41.2701, -96.0501);
     await cache.get('a:41.27,-96.05', 41.2699, -96.0499);
     await cache.get('b:41.27,-96.05', 41.2701, -96.0501);
@@ -325,5 +330,24 @@ describe('WeatherCache', () => {
     expect(calls).toHaveLength(2);
     calls[1]!.settle.resolve(FAKE_WEATHER);
     expect(await retry).toEqual(FAKE_WEATHER);
+  });
+});
+
+describe('FakeWeatherSource.hourly', () => {
+  test('records the call and returns the first `hours` entries as copies', async () => {
+    const fake = new FakeWeatherSource();
+    const got = await fake.hourly(41.27, -96.05, 2);
+    expect(fake.hourlyCalls).toEqual([{ lat: 41.27, lng: -96.05, hours: 2 }]);
+    expect(got).toEqual(FAKE_HOURLY.slice(0, 2));
+    expect(got).not.toBe(fake.hourlyValue);
+    got![0]!.precipPct = 99;
+    expect(fake.hourlyValue![0]!.precipPct).toBe(FAKE_HOURLY[0]!.precipPct);
+  });
+
+  test('returns null when hourlyValue is null', async () => {
+    const fake = new FakeWeatherSource();
+    fake.hourlyValue = null;
+    expect(await fake.hourly(41.27, -96.05, 3)).toBeNull();
+    expect(fake.hourlyCalls).toHaveLength(1);
   });
 });

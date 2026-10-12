@@ -1,0 +1,48 @@
+{
+  "properties": {
+    "periods": [
+      {
+        "number": 1,
+        "startTime": "2026-10-12T09:00:00-05:00",
+        "temperature": 64,
+        "temperatureUnit": "F",
+        "isDaytime": true,
+        "probabilityOfPrecipitation": { "unitCode": "wmoUnit:percent", "value": null },
+        "windSpeed": "10 mph",
+        "shortForecast": "Mostly Sunny"
+      },
+      {
+        "number": 2,
+        "startTime": "2026-10-12T10:00:00-05:00",
+        "temperature": 66,
+        "temperatureUnit": "F",
+        "isDaytime": true,
+        "probabilityOfPrecipitation": { "unitCode": "wmoUnit:percent", "value": 30 },
+        "windSpeed": "5 to 15 mph",
+        "shortForecast": "Chance Showers"
+      },
+      {
+        "number": 3,
+        "startTime": "2026-10-12T11:00:00-05:00",
+        "temperature": 62,
+        "temperatureUnit": "F",
+        "isDaytime": true,
+        "probabilityOfPrecipitation": { "unitCode": "wmoUnit:percent", "value": 70 },
+        "windSpeed": "10 mph",
+        "windGust": "25 mph",
+        "shortForecast": "Showers Likely"
+      },
+      {
+        "number": 4,
+        "startTime": "2026-10-12T12:00:00-05:00",
+        "temperature": 58,
+        "temperatureUnit": "F",
+        "isDaytime": true,
+        "probabilityOfPrecipitation": { "unitCode": "wmoUnit:percent", "value": 100 },
+        "windSpeed": "8 mph",
+        "windGust": { "unitCode": "wmoUnit:km_h-1", "value": 40.4 },
+        "shortForecast": "Thunderstorms"
+      }
+    ]
+  }
+}
