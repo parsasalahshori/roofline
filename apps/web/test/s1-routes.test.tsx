@@ -81,7 +81,8 @@ describe('S1 Storm windows', () => {
   });
 
   it('the dock Storm opens /storm', async () => {
-    signedInApi();
+    // The Estimator window lists proposals since E1 Task 15.
+    signedInApi(ACCOUNT, { 'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }) });
     const { router, user } = renderApp('/estimator');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
     const link = dockLink(dockNav, WINDOW_COPY.storm.title);
