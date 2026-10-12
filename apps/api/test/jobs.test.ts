@@ -468,19 +468,27 @@ describe('changing a job', () => {
     ['installed', 'Installed'],
     ['lost', 'Lost'],
   ] as const)('moving to %s says "Moved to %s"', async (stage, label) => {
-    // Start from a different stage than the one moved to, so the move is real.
-    const { job } = await aJob({ stage: stage === 'proposal' ? 'won' : 'proposal' });
-    const res = await (await who.as('owner')).patch(`/api/jobs/${job.id}`).send({ stage });
+    // Start from a different stage than the one moved to, so the move is real (Installed comes from Won).
+    // Every job carries a value, and Lost a reason, as the stage rules require.
+    const start = stage === 'proposal' || stage === 'installed' ? 'won' : 'proposal';
+    const { job } = await aJob({ stage: start, valueCents: 500_000 });
+    const res = await (await who.as('owner'))
+      .patch(`/api/jobs/${job.id}`)
+      .send({ stage, ...(stage === 'lost' ? { lostReason: 'Went elsewhere' } : {}) });
     expect(res.status).toBe(200);
     expect(res.body.stageLabel).toBe(label);
     expect(await timeline(t, A(), job.id as string)).toContainEqual(['job.stage_changed', `Moved to ${label}`]);
   });
 
   test('every stage in the shared list has a label', async () => {
-    const { job } = await aJob();
+    // In list order (lead, inspection, proposal, won, installed, lost), which the stage rules allow
+    // when the job has a value and Lost gets a reason.
+    const { job } = await aJob({ valueCents: 500_000 });
     const owner = await who.as('owner');
     for (const stage of JOB_STAGES) {
-      const res = await owner.patch(`/api/jobs/${job.id}`).send({ stage });
+      const res = await owner
+        .patch(`/api/jobs/${job.id}`)
+        .send({ stage, ...(stage === 'lost' ? { lostReason: 'Went elsewhere' } : {}) });
       expect(res.status, stage).toBe(200);
       expect(res.body.stageLabel).toMatch(/^[A-Z][a-z]+$/);
     }
@@ -739,7 +747,7 @@ describe('opening and listing jobs', () => {
     const j1 = await make({});
     const j2 = await make({ stage: 'inspection', assignedUserId: who.user('rep').userId });
     const j3 = await make({ assignedUserId: who.user('rep').userId }, second.id as string);
-    const j4 = await make({ stage: 'won' }, second.id as string);
+    const j4 = await make({ stage: 'won', valueCents: 500_000 }, second.id as string);
     return { customer, property, second, j1, j2, j3, j4 };
   }
   const idsOf = (res: { body: { jobs: { id: string }[] } }) => res.body.jobs.map((j) => j.id);
