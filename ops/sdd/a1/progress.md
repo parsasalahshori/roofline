@@ -192,3 +192,4 @@ Ruling AX-N (track lead): Front Desk steps fold booking minutes into the call/te
 - TASK_KIND_LABEL: Front Desk `call`, `text_conversation`; Estimator `exact_report`; G1's ten kinds in G1's exact wording (controller, so the launch merge is keep-both). agents-lists.test pins every created kind; a new kind needs a label in copy/status.ts.
 - TimeBaselines section is labelled by its heading; agents-settings e2e scopes Save/Saved. to that region (sentinel pass-14 item: G1 adds another Save on the tab).
 - Also done as a D1 helper: d1-rev-h (Ruling BI, retention blanks only the AI text exchange), green run 38290914284, merged by the D1 lead into d1-front-desk.
+- a1-agents 81d1a601 (BUG-6 merged) green: run 38294171379 Platform+E2E. A1 complete; track lead now a D1 helper (controller).
