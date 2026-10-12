@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_TIER_TEMPLATES } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { appointments } from '../src/copy/appointments.ts';
@@ -45,6 +46,12 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
   api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
   return api;
 }
+
+/** The shell reads plus the two Prices reads, so the Prices tab can render its E1 sections. */
+const PRICES_ROUTES: Routes = {
+  'GET /api/tier-templates': () => ({ body: { templates: DEFAULT_TIER_TEMPLATES.map((t) => ({ ...t, addOns: [...t.addOns], highlights: [...t.highlights] })) } }),
+  'GET /api/estimator/settings': () => ({ body: { defaultPitchX12: 6, overhangFt: 1, proposalValidDays: 30, aerialMeasure: false, aerialConfigured: false, estimateChangeClause: true, financingAprBps: null, financingTermMonths: null } }),
+};
 
 function renderApp(path: string) {
   const queryClient = createQueryClient();
@@ -115,7 +122,7 @@ describe('C1 windows', () => {
 
 describe('settings tabs for the C1 screens', () => {
   it('shows Prices to the owner', async () => {
-    signedInApi();
+    signedInApi(ACCOUNT, PRICES_ROUTES);
     renderApp('/settings/prices');
 
     expect(await screen.findByText(prices.comingSoon)).toBeInTheDocument();
@@ -123,7 +130,7 @@ describe('settings tabs for the C1 screens', () => {
   });
 
   it('shows Prices to the office', async () => {
-    signedInApi({ ...ACCOUNT, role: 'office' });
+    signedInApi({ ...ACCOUNT, role: 'office' }, PRICES_ROUTES);
     renderApp('/settings/prices');
 
     expect(await screen.findByText(prices.comingSoon)).toBeInTheDocument();
