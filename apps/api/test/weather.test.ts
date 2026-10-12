@@ -240,6 +240,8 @@ function deferredSource() {
       new Promise((resolve, reject) => {
         calls.push({ lat, lng, settle: { resolve, reject } });
       }),
+
+    daily: async () => null,
   };
   return { source, calls };
 }
@@ -253,6 +255,7 @@ describe('WeatherCache', () => {
         calls.push(clock.now().getTime());
         return FAKE_WEATHER;
       },
+      daily: async () => null,
     };
     const cache = new WeatherCache(source, clock);
     expect(await cache.get('k', 1, 2)).toEqual(FAKE_WEATHER);
@@ -280,7 +283,7 @@ describe('WeatherCache', () => {
   test('a different key is a different entry; the key, not the exact place, decides', async () => {
     const clock = handClock();
     const seen: [number, number][] = [];
-    const cache = new WeatherCache({ current: async (lat, lng) => (seen.push([lat, lng]), FAKE_WEATHER) }, clock);
+    const cache = new WeatherCache({ current: async (lat, lng) => (seen.push([lat, lng]), FAKE_WEATHER), daily: async () => null }, clock);
     await cache.get('a:41.27,-96.05', 41.2701, -96.0501);
     await cache.get('a:41.27,-96.05', 41.2699, -96.0499);
     await cache.get('b:41.27,-96.05', 41.2701, -96.0501);

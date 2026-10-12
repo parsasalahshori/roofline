@@ -29,11 +29,11 @@ function call(overrides: Partial<CallView> = {}): CallView {
   };
 }
 
-function turn(): TurnView {
-  return { id: 't1', position: 1, speaker: 'caller', text: null, truncated: false, at: AT, actions: [] };
+function turn(overrides: Partial<TurnView> = {}): TurnView {
+  return { id: 't1', callId: 'call1', position: 1, speaker: 'caller', text: null, truncated: false, at: AT, actions: [], ...overrides };
 }
 
-function renderView(calls: CallView[], phoneE164 = '+15551230001') {
+function renderView(calls: CallView[], phoneE164 = '+15551230001', turns: TurnView[] = [turn()]) {
   const conversation: ConversationDetail = {
     id: 'conv1',
     channel: 'voice',
@@ -47,7 +47,7 @@ function renderView(calls: CallView[], phoneE164 = '+15551230001') {
     handledBy: 'assistant',
     teamUntil: null,
     calls,
-    turns: [turn()],
+    turns,
     links: { jobIds: [], appointmentIds: [], claimIntakeIds: [] },
     canReply: false,
   };
@@ -73,5 +73,15 @@ describe('ConversationView carries', () => {
     renderView([call({ transcriptStored: false })]);
     expect(screen.getByText(conversationCopy.transcriptNotKept)).toBeInTheDocument();
     expect(screen.queryByText(conversationCopy.transcriptRemoved)).toBeNull();
+  });
+
+  it('ties each turn to its own call when several calls exist', () => {
+    renderView(
+      [call({ id: 'kept', transcriptStored: true }), call({ id: 'dropped', transcriptStored: false })],
+      '+15551230001',
+      [turn({ id: 't1', callId: 'kept', position: 1 }), turn({ id: 't2', callId: 'dropped', position: 2 })],
+    );
+    expect(screen.getAllByText(conversationCopy.transcriptRemoved)).toHaveLength(1);
+    expect(screen.getAllByText(conversationCopy.transcriptNotKept)).toHaveLength(1);
   });
 });
