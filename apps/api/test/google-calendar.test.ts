@@ -228,6 +228,25 @@ describe('Google Calendar adapter', () => {
     expect((error as Error).message).toBe('Reconnect your calendar.');
   });
 
+  it('treats a bad client secret (401 invalid_client) on refresh as unavailable, not a reconnect', async () => {
+    const fetchImpl = calendarFixtureFetch({
+      [`POST ${TOKEN_URL}`]: { status: 401, body: { error: 'invalid_client', error_description: 'SECRET-DETAIL' } },
+    });
+    const error = await rejectionOf(newApi(fetchImpl).refresh(REFRESH_TOKEN));
+
+    expect(error).toBeInstanceOf(CalendarUnavailableError);
+    expect((error as Error).message).toBe(UNAVAILABLE);
+  });
+
+  it('treats unauthorized_client on exchangeCode as unavailable', async () => {
+    const fetchImpl = calendarFixtureFetch({
+      [`POST ${TOKEN_URL}`]: { status: 400, body: { error: 'unauthorized_client' } },
+    });
+    const error = await rejectionOf(newApi(fetchImpl).exchangeCode({ code: 'c', redirectUri: 'https://app.roofline.test/callback' }));
+
+    expect(error).toBeInstanceOf(CalendarUnavailableError);
+  });
+
   it('lists the writable calendars with their names and primary flag', async () => {
     const fetchImpl = calendarFixtureFetch({ [`GET ${CALENDAR_LIST_URL}`]: { fixture: 'calendar-list' } });
     const calendars = await newApi(fetchImpl).listCalendars(ACCESS_TOKEN);

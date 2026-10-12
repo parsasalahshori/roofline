@@ -1,0 +1,57 @@
+/* One row per weekday, stacked; the ranges of a day sit under its switch */
+.days {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.day {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.name {
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  min-width: 6.5em;
+}
+
+.state {
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+.ranges {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Start, end and Remove on one line; the line wraps on a phone */
+.range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.time {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger-hover);
+  font-size: var(--font-size-min);
+}

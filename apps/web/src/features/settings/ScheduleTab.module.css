@@ -1,0 +1,53 @@
+/* One section per block: company hours first, then the person's own hours */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  max-width: 720px;
+  margin-bottom: 32px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* The three numbers, side by side on a desktop and one under another on a phone */
+.numbers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* A switch as tall as a touch target, on a row of its own */
+.switchRow {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+/* Only as wide as its word */
+.save {
+  justify-self: start;
+}
+
+@media (max-width: 767.98px) {
+  .numbers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1,4 +1,5 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import type { TodayView } from '@roofline/shared';
 import { apiFetch } from '../../api/client.ts';
 
 /*
@@ -10,5 +11,13 @@ import { apiFetch } from '../../api/client.ts';
 export function useTodayShown() {
   return useMutation({
     mutationFn: () => apiFetch<{ show: boolean }>('/api/me/today-shown', { method: 'POST' }),
+  });
+}
+
+/** Today's appointments and the jobs to follow up today, for the signed-in person. */
+export function useToday() {
+  return useQuery({
+    queryKey: ['today', 'view'],
+    queryFn: () => apiFetch<TodayView>('/api/today'),
   });
 }
