@@ -18,6 +18,7 @@ function Page() {
         get file
       </Button>
       <Button href="/somewhere">go there</Button>
+      <Button href="/api/calendar/connect/google">connect it</Button>
       <output data-testid="path">{location.pathname}</output>
     </div>
   );
@@ -67,4 +68,15 @@ it('plain link without download is default-prevented', () => {
   fireEvent(anchor, event);
   expect(event.defaultPrevented).toBe(true);
   expect(router.state.location.pathname).toBe('/somewhere');
+});
+
+it('api link click is not default-prevented and does not navigate', () => {
+  const router = mount();
+  const watch = watchWindow();
+  const anchor = screen.getByRole('link', { name: 'connect it' });
+  fireEvent(anchor, createEvent.click(anchor));
+  watch.stop();
+  expect(watch.seen).toEqual([false]);
+  expect(router.state.location.pathname).toBe('/');
+  expect(anchor.getAttribute('href')).toBe('/api/calendar/connect/google');
 });
