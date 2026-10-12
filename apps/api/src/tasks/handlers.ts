@@ -1,4 +1,5 @@
 import type { StepType } from '@roofline/shared';
+import { sendPersonalTexts } from '../agents/personal-texts.ts';
 import { sendSmsBatch } from '../messaging/send-batch.ts';
 import type { StepHandler } from './runner.ts';
 
@@ -19,7 +20,7 @@ export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   demo_spend: finishAtOnce,
   send_sms_batch: sendSmsBatch,
   // G1 Agents
-  send_personal_texts: notBuilt, // G1 Task 5 fills this in
+  send_personal_texts: sendPersonalTexts,
   build_claim_packet: notBuilt, // G1 Task 7 fills this in
   create_appointment: notBuilt, // G1 Task 8 fills this in
   move_appointment: notBuilt, // G1 Task 11 fills this in
