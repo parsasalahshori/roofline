@@ -12,6 +12,7 @@ import { NullWeatherSource } from '../src/weather/source.ts';
 
 const POINTS = readFileSync(new URL('./fixtures/nws-points.json', import.meta.url), 'utf8');
 const HOURLY = readFileSync(new URL('./fixtures/nws-hourly.json', import.meta.url), 'utf8');
+const HOURLY_FORECAST = readFileSync(new URL('./fixtures/nws-hourly-forecast.json', import.meta.url), 'utf8');
 const HOURLY_URL = 'https://api.weather.gov/gridpoints/OAX/80,63/forecast/hourly';
 const USER_AGENT = 'Roofline (https://app.roofline.test)';
 
@@ -191,6 +192,145 @@ describe('NwsWeatherSource', () => {
   });
 });
 
+describe('NwsWeatherSource.hourly', () => {
+  const source = (fetch: typeof globalThis.fetch, timeoutMs?: number) =>
+    new NwsWeatherSource({ userAgent: USER_AGENT, fetch, timeoutMs });
+
+  /** Points answers from the fixture; the hourly route answers `hourly()`. */
+  const withHourly = (hourlyAnswer: () => Response | Promise<Response>) =>
+    fakeFetch((url) => {
+      if (url.startsWith('https://api.weather.gov/points/')) return new Response(POINTS, { status: 200 });
+      if (url === HOURLY_URL) return hourlyAnswer();
+      return undefined;
+    });
+
+  test('reads the next N hours', async () => {
+    const { fetch, calls } = serving(HOURLY_FORECAST);
+    expect(await source(fetch).hourly(...OMAHA, 3)).toEqual([
+      { at: '2026-10-12T14:00:00.000Z', precipPct: 0, gustMph: 10 },
+      { at: '2026-10-12T15:00:00.000Z', precipPct: 30, gustMph: 15 },
+      { at: '2026-10-12T16:00:00.000Z', precipPct: 70, gustMph: 25 },
+    ]);
+    expect(calls.map((c) => c.url)).toEqual(['https://api.weather.gov/points/41.2565,-95.9345', HOURLY_URL]);
+  });
+
+  test('returns fewer when the service has fewer', async () => {
+    const { fetch } = serving(HOURLY_FORECAST);
+    const forecast = await source(fetch).hourly(...OMAHA, 24);
+    expect(forecast).toHaveLength(4);
+    expect(forecast?.at(-1)).toEqual({ at: '2026-10-12T17:00:00.000Z', precipPct: 100, gustMph: 25 });
+  });
+
+  test('converts an object gust from its unit to mph', async () => {
+    const { fetch } = serving(
+      hourlyWith({ startTime: '2026-10-12T09:00:00-05:00', windSpeed: '5 mph', windGust: { unitCode: 'wmoUnit:m_s-1', value: 10 } }),
+    );
+    expect(await source(fetch).hourly(...OMAHA, 1)).toEqual([{ at: '2026-10-12T14:00:00.000Z', precipPct: 0, gustMph: 22 }]);
+  });
+
+  test('an object gust in an unknown unit is ignored, and windSpeed stands in', async () => {
+    const { fetch } = serving(
+      hourlyWith({ startTime: '2026-10-12T09:00:00-05:00', windSpeed: '5 to 12 mph', windGust: { unitCode: 'wmoUnit:furlong', value: 99 } }),
+    );
+    expect(await source(fetch).hourly(...OMAHA, 1)).toEqual([{ at: '2026-10-12T14:00:00.000Z', precipPct: 0, gustMph: 12 }]);
+  });
+
+  test('gust is null when neither a gust nor a wind speed is given', async () => {
+    const { fetch } = serving(hourlyWith({ startTime: '2026-10-12T09:00:00-05:00', probabilityOfPrecipitation: { value: 20 } }));
+    expect(await source(fetch).hourly(...OMAHA, 1)).toEqual([{ at: '2026-10-12T14:00:00.000Z', precipPct: 20, gustMph: null }]);
+  });
+
+  test('precipitation chance defaults to 0 when the field is absent', async () => {
+    const { fetch } = serving(hourlyWith({ startTime: '2026-10-12T09:00:00-05:00', windSpeed: '12 mph' }));
+    expect(await source(fetch).hourly(...OMAHA, 1)).toEqual([{ at: '2026-10-12T14:00:00.000Z', precipPct: 0, gustMph: 12 }]);
+  });
+
+  describe('returns null (and never throws)', () => {
+    test('on a 500 for the points call', async () => {
+      const points = fakeFetch(() => new Response('oops', { status: 500 }));
+      expect(await source(points.fetch).hourly(...OMAHA, 3)).toBeNull();
+      expect(points.calls).toHaveLength(1);
+    });
+
+    test('on a 500 for the hourly call', async () => {
+      const hourly = fakeFetch((url) =>
+        url === HOURLY_URL ? new Response('oops', { status: 500 }) : new Response(POINTS, { status: 200 }),
+      );
+      expect(await source(hourly.fetch).hourly(...OMAHA, 3)).toBeNull();
+      expect(hourly.calls).toHaveLength(2);
+    });
+
+    test('on a timeout (the request is aborted after timeoutMs)', async () => {
+      const hang = ((_url: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+        })) as unknown as typeof fetch;
+      expect(await source(hang, 20).hourly(...OMAHA, 3)).toBeNull();
+    });
+
+    test('on a network failure', async () => {
+      const down = (async () => {
+        throw new TypeError('fetch failed');
+      }) as unknown as typeof fetch;
+      expect(await source(down).hourly(...OMAHA, 3)).toBeNull();
+    });
+
+    test.each([
+      ['bad JSON from the hourly call', () => new Response('{"properties":', { status: 200 })],
+      ['no periods', () => new Response('{"properties":{"periods":[]}}', { status: 200 })],
+      [
+        'a period with a start time that is not a date',
+        () => new Response(hourlyWith({ startTime: 'sometime soon', probabilityOfPrecipitation: { value: 10 } }), { status: 200 }),
+      ],
+      [
+        'a period with no start time',
+        () => new Response(hourlyWith({ probabilityOfPrecipitation: { value: 10 }, windSpeed: '10 mph' }), { status: 200 }),
+      ],
+      [
+        'a bad period inside the first hours asked for',
+        () =>
+          new Response(
+            JSON.stringify({
+              properties: {
+                periods: [
+                  { startTime: '2026-10-12T09:00:00-05:00', probabilityOfPrecipitation: { value: 10 } },
+                  { startTime: 'sometime soon' },
+                ],
+              },
+            }),
+            { status: 200 },
+          ),
+      ],
+    ])('on %s', async (_name, hourlyAnswer) => {
+      const { fetch, calls } = withHourly(hourlyAnswer);
+      expect(await source(fetch).hourly(...OMAHA, 2)).toBeNull();
+      expect(calls.every((c) => c.url.startsWith('https://api.weather.gov/'))).toBe(true);
+    });
+
+    test('on a forecastHourly link on another host, which is never followed', async () => {
+      const { fetch, calls } = fakeFetch(() => new Response('{"properties":{"forecastHourly":"https://evil.example/hourly"}}', { status: 200 }));
+      expect(await source(fetch).hourly(...OMAHA, 3)).toBeNull();
+      expect(calls).toHaveLength(1);
+      expect(calls.every((c) => c.url.startsWith('https://api.weather.gov/'))).toBe(true);
+    });
+
+    test.each([
+      ['an hour count of 0', 0],
+      ['an hour count that is not a number', Number.NaN],
+    ])('on %s, without calling anything', async (_name, hours) => {
+      const { fetch, calls } = serving(HOURLY_FORECAST);
+      expect(await source(fetch).hourly(...OMAHA, hours)).toBeNull();
+      expect(calls).toHaveLength(0);
+    });
+
+    test('for a location that is not a place, without calling anything', async () => {
+      const { fetch, calls } = serving(HOURLY_FORECAST);
+      expect(await source(fetch).hourly(Number.NaN, -95.9, 3)).toBeNull();
+      expect(calls).toHaveLength(0);
+    });
+  });
+});
+
 describe('weatherIcon', () => {
   test.each([
     ['Mostly Sunny', true, 'sun'],
@@ -226,5 +366,9 @@ describe('weatherIcon', () => {
 describe('NullWeatherSource', () => {
   test('always answers null', async () => {
     expect(await new NullWeatherSource().current(...OMAHA)).toBeNull();
+  });
+
+  test('hourly answers null', async () => {
+    expect(await new NullWeatherSource().hourly(...OMAHA, 6)).toBeNull();
   });
 });

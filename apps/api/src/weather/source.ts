@@ -17,6 +17,15 @@ export type CurrentWeather = {
   updatedAt: string;
 };
 
+export type HourlyForecast = {
+  /** The start of the hour, as an ISO instant. */
+  at: string;
+  /** Chance of precipitation, 0 to 100. */
+  precipPct: number;
+  /** Wind gust in mph, or null when the service gives neither a gust nor a wind speed. */
+  gustMph: number | null;
+};
+
 export interface WeatherSource {
   /**
    * The weather now at a place, or null when there is none to show: the service is down or slow,
@@ -24,9 +33,15 @@ export interface WeatherSource {
    * throws for those; null is the whole answer and the screen simply shows no weather.
    */
   current(lat: number, lng: number): Promise<CurrentWeather | null>;
+  /**
+   * The next `hours` hourly periods at a place, soonest first, or null on any failure (same rule
+   * as `current`: never throws).
+   */
+  hourly(lat: number, lng: number, hours: number): Promise<HourlyForecast[] | null>;
 }
 
 /** A source with no weather to give. It asks nobody. */
 export class NullWeatherSource implements WeatherSource {
   readonly current: WeatherSource['current'] = async () => null;
+  readonly hourly: WeatherSource['hourly'] = async () => null;
 }
