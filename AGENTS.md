@@ -49,6 +49,11 @@ merges `c1-crm` (and its upstream milestone) in as they land:
 A task whose brief depends on an unbuilt upstream name ([C1], [E1], [S1], [D1], [A1]) waits, or uses a
 scratch stub commit that the merge replaces (as C1 T2-T4 did; record the merge rule in the ledger).
 
+Track sessions (Claude Code cloud): C1 session_01MpVA7xTz6Bus8WPNZWUKRq; E1 session_01UtFnF1PL9Tbc2z44JfhQDM;
+S1 session_01XaGX8pcLBpR2SWeGqsd3gP; D1 session_0166agXYjDy39PFyUw1BXtLR; A1 session_01XjgURUvqk4BGTeumR86x2a; F3 finish
+(T28/T37) session_01NbXKpWjMvEQwTqNmQCt6wp; F3 review + T36 session_01RypesnL2fbawyJH5HtdS7E; controller
+session_01LXtxzoHNoWz5SACkLF1d2p. Each track lead owns and pushes its own integration branch.
+
 **Ruling AP (migration numbers, overrides every plan and brief):** F3 ends at 0012; C1 = 0013/0014;
 E1 = 0015/0016; S1 = 0017/0018; D1 = 0019/0020; A1 = 0021/0022; G1 = 0023/0024. Each track generates its
 migrations on its own base. When merging tracks together, the controller fixes the drizzle journal order
