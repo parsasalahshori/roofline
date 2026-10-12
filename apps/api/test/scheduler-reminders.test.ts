@@ -36,6 +36,7 @@ const USAGE = { model: 'scripted', inputTokens: 1, cachedTokens: 0, outputTokens
 
 /** Each customer needs its own number (phones are unique within a company). */
 let phoneSeq = 0;
+let addrSeq = 0;
 const nextPhone = (): string => `+1512555${String(1000 + phoneSeq++)}`;
 
 let t: TestApp;
@@ -70,7 +71,7 @@ async function seedVisit(v: Visit): Promise<{ customerId: string; jobId: string;
     const property = await createProperty(
       tx,
       ctx,
-      { customerId: customer.id, addressLine: v.address ?? `${1000 + phoneSeq} Oak St`, city: 'Austin', state: 'TX', zip: '78701' },
+      { customerId: customer.id, addressLine: v.address ?? `${1000 + addrSeq++} Oak St`, city: 'Austin', state: 'TX', zip: '78701' },
       { now },
     );
     const job = await createJob(tx, ctx, { customerId: customer.id, propertyId: property.id }, { now });
