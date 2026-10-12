@@ -220,6 +220,8 @@ describe('create_ad_campaign', () => {
       expect(after).not.toContain('setStatus');
       expect(after).not.toContain('createCampaign');
       expect((await campaignRow(step.id)).status).toBe(stopped);
+      // The next pass is a fresh step for the same storm: drop this row so it can adopt the platform campaign.
+      await q(`delete from ad_campaigns where company_id = $1`, [companyA()]);
     }
   });
 

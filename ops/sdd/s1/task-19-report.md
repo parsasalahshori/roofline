@@ -20,3 +20,6 @@ typecheck: ok; lint: ok; vitest --project @roofline/web: 83 files, 790 tests pas
 
 ## CI round 1 (run 38230169483): Platform failed, E2E and Hail passed
 All 13 failures were in ad-campaign.test.ts: the approval re-check selected `company_id` from the `company_members` view, which has no such column (the view is already scoped to the tenant). Fixed by dropping the `company_id` predicate in apps/api/src/storm/ad-campaign.ts.
+
+## CI round 2 (run 38232279041): Platform failed on one test, E2E and Hail passed
+"a re-run never re-enables a campaign the sync paused or ended": the second loop pass made a fresh step for the same storm, found the first pass's platform campaign by name tag and tried to give its id to a second row (ad_campaigns_platform_external_uniq). The handler is right (it adopts the existing campaign); the test now deletes the first row between passes.
