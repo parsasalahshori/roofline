@@ -1,4 +1,4 @@
-import Stripe from 'stripe';
+import type Stripe from 'stripe';
 import {
   type BillingConfig,
   METER_EVENT_NAME,
@@ -7,6 +7,7 @@ import {
   meteredTiers,
   priceLookupKeys,
 } from '@roofline/shared';
+import { BillingRefusedError } from '../providers/billing.ts';
 import { stripeFailure } from '../providers/stripe.ts';
 
 /*
@@ -186,14 +187,14 @@ export async function applySyncAction(stripe: Stripe, action: SyncAction, state:
       }
       case 'rename_product': {
         const product = state.products.find((p) => p.planKey === action.planKey);
-        if (!product) throw new Error(MISSING_PRODUCT);
+        if (!product) throw new BillingRefusedError(MISSING_PRODUCT);
         await stripe.products.update(product.id, { name: action.name });
         product.name = action.name;
         break;
       }
       case 'create_price': {
         const product = state.products.find((p) => p.planKey === action.planKey);
-        if (!product) throw new Error(MISSING_PRODUCT);
+        if (!product) throw new BillingRefusedError(MISSING_PRODUCT);
         const spec = { ...action.spec };
         const recurring = spec.recurring as { meter?: unknown } | undefined;
         let meterId: string | null = null;
