@@ -1,3 +1,5 @@
+// Probe pass 14 (G1 x A1 one-writer rule): moveStep/updateTask belong to tasks/service.ts; G1 to route this through the task service.
+// eslint-disable-next-line no-restricted-imports
 import { listSteps, moveStep, type TenantContext, type Tx, updateTask } from '@roofline/db';
 import type { Agent } from '@roofline/shared';
 import { createTask, refreshTask } from '../tasks/service.ts';

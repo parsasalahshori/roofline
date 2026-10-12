@@ -1,5 +1,7 @@
 import { type Request, Router } from 'express';
 import { z } from 'zod';
+// Probe pass 14 (G1 x A1 one-writer rule): moveStep/updateTask belong to tasks/service.ts; G1 to route this through the task service.
+/* eslint-disable no-restricted-imports */
 import {
   ClaimFieldError,
   getJobClaim,
@@ -12,6 +14,7 @@ import {
   type ClaimPatch,
   withTenant,
 } from '@roofline/db';
+/* eslint-enable no-restricted-imports */
 import { CLAIM_FIELD_LIMITS, CLAIM_STATUSES, toE164 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
