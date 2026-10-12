@@ -1,0 +1,183 @@
+/* The shared week and day grid. Rows are 24px (--row-h, set inline); the page never scrolls sideways, the grid does. */
+.scroll {
+  position: relative;
+  max-height: 70vh;
+  overflow: auto;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  -webkit-overflow-scrolling: touch;
+}
+
+.grid {
+  display: grid;
+  min-width: 100%;
+  font-size: var(--font-size-min);
+  color: var(--text);
+}
+
+.corner {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.dayHead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.gutterAllDay {
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-muted);
+}
+
+.allDayCell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px;
+  border-bottom: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.allDayItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 24px;
+  padding: 2px 6px;
+  border-left: 4px solid var(--person);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--person) 16%, var(--surface));
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.allDayBusy {
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 12px);
+}
+
+.gutter {
+  display: grid;
+  grid-template-rows: repeat(30, var(--row-h));
+  color: var(--text-muted);
+}
+
+.gutterCell {
+  height: var(--row-h);
+  padding: 0 6px 0 0;
+  text-align: right;
+  line-height: var(--row-h);
+  white-space: nowrap;
+}
+
+.column {
+  position: relative;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+}
+
+.slots {
+  display: grid;
+  grid-template-rows: repeat(30, var(--row-h));
+}
+
+.slot {
+  height: var(--row-h);
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.slot[data-half="true"] {
+  border-top-style: dashed;
+}
+
+.slot:focus-visible,
+.appt:focus-visible,
+.allDayItem:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.appt {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 6px;
+  border-left: 4px solid var(--person);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--person) 16%, var(--surface));
+  cursor: pointer;
+  overflow: hidden;
+  line-height: 1.25;
+}
+
+.appt[data-status="canceled"] {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.itemTitle {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemTime {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.busy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  box-sizing: border-box;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 12px);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 2px;
+  background: var(--danger);
+  pointer-events: none;
+}
+
+@media (max-width: 767.98px) {
+  .scroll {
+    max-height: 62vh;
+  }
+}

@@ -45,7 +45,7 @@ const E1_TENANT_TABLES = [
   'stored_files',
 ] as const;
 /** Tenant tables app_tenant may delete from. No other tenant table grants it DELETE. */
-const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links'] as const;
+const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links', 'calendar_connections'] as const;
 const COMPANY_PROFILE_COLUMNS = [
   'name',
   'legal_name',
@@ -329,7 +329,7 @@ describe('grants', () => {
     truncate: false,
   });
 
-  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, and DELETE only on opt_outs, calendar_busy_blocks and calendar_event_links', async () => {
+  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links and calendar_connections', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
       t === 'audit_log' ? privs(t, true, true, false, false) : privs(t, true, true, true, deletable.has(t)),

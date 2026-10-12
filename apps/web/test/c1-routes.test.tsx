@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { appointments } from '../src/copy/appointments.ts';
-import { calendar } from '../src/copy/calendar.ts';
 import { create } from '../src/copy/create.ts';
 import { customers } from '../src/copy/customers.ts';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
@@ -42,7 +41,14 @@ afterEach(() => {
 
 /** A signed-in person whose shell reads answer "nothing", unless a test gives its own answers. */
 function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
+  // The pipeline board (the /jobs window) reads the board and the team; both are empty here
+  api = stubApi({
+    ...SHELL_ROUTES,
+    'GET /api/auth/me': () => ({ body: account }),
+    'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
+    'GET /api/team': () => ({ body: { members: [] } }),
+    ...overrides,
+  });
   return api;
 }
 
@@ -68,14 +74,11 @@ const settingsTabs = () => screen.findByRole('navigation', { name: settings.tabs
 
 describe('C1 windows', () => {
   it.each([
-    ['/jobs', WINDOW_COPY.jobs.title, jobs.comingSoon],
-    ['/jobs/new', WINDOW_COPY.jobs.title, create.newJob.comingSoon],
+    ['/jobs', WINDOW_COPY.jobs.title, jobs.newJob],
     ['/jobs/j1', WINDOW_COPY.jobs.title, job.comingSoon],
     ['/jobs/j1/quotes/q1', WINDOW_COPY.jobs.title, quotes.comingSoon],
     ['/customers', WINDOW_COPY.customers.title, customers.comingSoon],
-    ['/customers/new', WINDOW_COPY.customers.title, create.newCustomer.comingSoon],
     ['/customers/c1', WINDOW_COPY.customers.title, customers.customerComingSoon],
-    ['/calendar', WINDOW_COPY.calendar.title, calendar.comingSoon],
     ['/calendar/new', WINDOW_COPY.calendar.title, appointments.comingSoon],
     ['/calendar/appointments/a1', WINDOW_COPY.calendar.title, appointments.comingSoon],
   ])('%s shows its placeholder in the %s window', async (path, title, copy) => {
@@ -110,6 +113,23 @@ describe('C1 windows', () => {
     renderApp('/jobs/x/y/z');
 
     expect(await screen.findByRole('dialog', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
+  });
+});
+
+describe('the New job and New customer screens', () => {
+  it('/jobs/new shows the New job steps in the Jobs window', async () => {
+    signedInApi();
+    renderApp('/jobs/new');
+
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.jobs.title });
+    expect((await within(dialog).findAllByText(create.newJob.stepCustomer)).length).toBeGreaterThan(0);
+  });
+
+  it('/customers/new shows the New customer form in the Customers window', async () => {
+    signedInApi();
+    renderApp('/customers/new');
+
+    expect(await screen.findByLabelText(create.newCustomer.firstName)).toBeInTheDocument();
   });
 });
 

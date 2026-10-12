@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "syncStateNotFound",
+    "message": "The sync state generation is not found. Reset your sync state and retry."
+  }
+}
