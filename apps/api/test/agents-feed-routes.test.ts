@@ -345,9 +345,11 @@ describe('agents waiting', () => {
     expect(sinceMs).toEqual([...sinceMs].sort((a, b) => a - b));
     expect(rows.some((row) => row.id === draft.taskId)).toBe(true);
 
-    // The assigned rep sees their own follow-up as theirs; the other job is outside their scope.
+    // The assigned rep sees their own follow-up as theirs, and an unassigned lead (in every rep's scope)
+    // as the office's; they never see a job assigned to someone else.
     const repRows = (await waitingFor('rep')).filter((row) => row.kind === 'front_desk_follow_up');
-    expect(repRows.map((row) => row.id)).toEqual([`fd-follow-up:${assigned}`]);
-    expect(repRows[0]!.waitingOn).toEqual({ kind: 'you' });
+    expect(repRows.map((row) => row.id)).toEqual([`fd-follow-up:${unassigned}`, `fd-follow-up:${assigned}`]);
+    expect(repRows[1]!.waitingOn).toEqual({ kind: 'you' });
+    expect(repRows[0]!.waitingOn).toEqual({ kind: 'office' });
   });
 });
