@@ -1,6 +1,6 @@
 import { and, asc, eq, max, sql } from 'drizzle-orm';
 import type { TurnRoute, TurnSpeaker } from '@roofline/shared';
-import { conversationTurns } from '../schema/index.ts';
+import { conversations, conversationTurns } from '../schema/index.ts';
 import type { ToolCallRecord } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
@@ -92,8 +92,18 @@ export async function listTurns(
  * 'transfer' and guardHits ['model_failure'] at the next free position. Agents metrics read it to leave
  * the conversation out of the Front Desk success rate. It carries no customer text. Idempotent: a second
  * call for the same conversation is a no-op.
+ *
+ * The conversation row is locked first (the same lock D1's insertTurn takes, RC-1), so the existence check and
+ * the next position are read with no other turn writer of this conversation in between: concurrent calls never
+ * collide on a position and never write a second hand-off turn.
  */
 export async function recordModelFailureHandoff(tx: Tx, ctx: TenantContext, conversationId: string): Promise<void> {
+  const locked = await tx
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.id, conversationId)))
+    .for('update');
+  if (locked.length === 0) return;
   const [existing] = await tx
     .select({ id: conversationTurns.id })
     .from(conversationTurns)
