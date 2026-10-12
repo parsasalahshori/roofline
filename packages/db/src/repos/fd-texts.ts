@@ -15,6 +15,8 @@ export const SMS_CONVERSATION_GAP_MS = 24 * 60 * 60 * 1000;
 
 /** The dedupe_key prefix that marks a text the assistant sent. */
 const ASSISTANT_PREFIX = 'fd-text:';
+/** The dedupe key prefix of a reply a team member sends from the conversation (routes/conversations.ts). */
+const STAFF_REPLY_PREFIX = 'fd-reply:';
 
 export type TextConversationRef = { id: string; created: boolean; customerId: string | null };
 
@@ -140,7 +142,13 @@ export async function lastTeamReplyAt(tx: Tx, ctx: TenantContext, conversationId
         eq(messages.direction, 'out'),
         // Only a reply that went out (or will) quiets the assistant: a failed or blocked one reached nobody.
         inArray(messages.status, ['scheduled', 'queued', 'sent', 'delivered']),
-        or(isNull(messages.dedupeKey), not(like(messages.dedupeKey, `${ASSISTANT_PREFIX}%`))),
+        // Only a person replying counts: staff replies (fd-reply:) and texts with no system key. Every Front Desk system
+        // text (fd-text:, fd-book:, fd-textback:, any fd-*) and claims acknowledgements are not a person (G1 review a).
+        or(
+          isNull(messages.dedupeKey),
+          like(messages.dedupeKey, `${STAFF_REPLY_PREFIX}%`),
+          and(not(like(messages.dedupeKey, 'fd-%')), not(like(messages.dedupeKey, 'claims-ack:%'))),
+        ),
       ),
     )
     .orderBy(desc(messages.createdAt), desc(messages.id))

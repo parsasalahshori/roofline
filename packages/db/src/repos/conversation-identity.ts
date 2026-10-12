@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
-import { VERIFY_MISMATCH_PREFIX, type IdentityLevel } from '@roofline/shared';
+import type { IdentityLevel } from '@roofline/shared';
 import { conversations, conversationTurns } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
@@ -11,7 +11,7 @@ import type { TenantContext, Tx } from '../tenant.ts';
 export type StoredIdentity = {
   identity: IdentityLevel;
   customerId: string | null;
-  /** Failed verify_caller calls recorded in this conversation's stored turns (tool_calls entries with name 'verify_caller', ok false and a mismatch reply). */
+  /** Failed verify_caller calls recorded in this conversation's stored turns (tool_calls entries with name 'verify_caller' and ok false). */
   verifyFailures: number;
 };
 
@@ -44,7 +44,8 @@ export async function loadStoredIdentity(tx: Tx, ctx: TenantContext, conversatio
   let verifyFailures = 0;
   for (const t of turns) {
     for (const call of t.toolCalls ?? []) {
-      if (call.name === 'verify_caller' && call.ok === false && typeof call.result === 'string' && call.result.startsWith(VERIFY_MISMATCH_PREFIX)) {
+      // Name and ok only: redaction (after a recording objection) and retention strip `result`, and the lockout must survive both.
+      if (call.name === 'verify_caller' && call.ok === false) {
         verifyFailures += 1;
       }
     }

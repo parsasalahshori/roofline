@@ -2,9 +2,10 @@ import { eq, sql } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { describe, expect, test } from 'vitest';
-import { companyPhoneNumbers, companySettings, conversations, conversationTurns, encrypt, textingRegistrations, type Tx, withTenant } from '@roofline/db';
+import { companyPhoneNumbers, companySettings, conversations, conversationTurns, encrypt, insertCall, textingRegistrations, type Tx, withTenant } from '@roofline/db';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import { SMS_PHOTO_ONLY } from '../../src/front-desk/texts.ts';
+import { MAX_FAILURES, VERIFY_LOCKED, verifyCaller } from '../../src/front-desk/tools/caller.ts';
 import type { EngineEvent } from '../../src/front-desk/engine-types.ts';
 import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { AnswerInput, LlmEvent, RouteDecision } from '../../src/providers/llm.ts';
@@ -164,5 +165,35 @@ describe('RC-1 review regressions', () => {
     await t.jobs.drain(t.deps);
     const [conv] = await conversationRows();
     expect(conv!.identity).toBe('unknown');
+  });
+  test('verify_caller failures in one relay segment lock the next segment of the same call, even with the transcript off', async () => {
+    const app = await makeTestApp();
+    const bad = { name: 'Nobody Here', street: '9 Elm St' };
+    const llm = new ScriptedLlm([
+      { when: /./, route: OPUS, answer: [{ kind: 'tool', name: 'verify_caller', input: bad, id: 'tv' }] },
+    ]);
+    const engine = createEngine({ ...app.deps, llm }, { verify_caller: verifyCaller });
+    // A customer owns the number, so each wrong name and street is a real mismatch.
+    await addSmsCustomers(app, 'a', [{ firstName: 'Nina', phone: '+14025550123', consent: 'express' as const }]);
+    const ctx = { companyId: app.seed.a.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+    const call = await withTenant(app.deps.pools, ctx, (tx) =>
+      insertCall(tx, ctx, { callSid: 'CA' + 'd'.repeat(32), fromE164: '+14025550123', toE164: app.seed.a.phoneE164, forwardedFrom: null, stirVerstat: null, now: app.clock.now() }),
+    );
+    const start = () => engine.start({ companyId: app.seed.a.companyId, channel: 'voice', phone: '+14025550123', callId: call.id });
+    const drain = async (it: AsyncIterable<EngineEvent>) => {
+      for await (const e of it) void e;
+    };
+
+    const first = await start();
+    // The caller objected to recording: stored tool calls keep only their name and outcome.
+    first.transcriptOff = true;
+    for (let i = 0; i < MAX_FAILURES; i++) await drain(engine.turn(first, `I am at 9 Elm St, try ${i}`, new AbortController().signal));
+    expect(first.verifyFailures).toBe(MAX_FAILURES);
+
+    const second = await start();
+    expect(second.conversationId).toBe(first.conversationId);
+    expect(second.verifyFailures).toBe(MAX_FAILURES);
+    const res = await verifyCaller({ deps: app.deps, companyId: second.companyId, conversation: second, now: app.clock.now() }, bad);
+    expect(res).toEqual({ ok: false, forModel: VERIFY_LOCKED });
   });
 });
