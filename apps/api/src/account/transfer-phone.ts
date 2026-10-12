@@ -1,4 +1,4 @@
-import { getTransferPhone, isCompanyOwnNumber, listOnCallRows, saveTransferPhone, setOnCallOrder, type OnCallRow, type TransferPhone } from '@roofline/db/system';
+import { getTransferPhone, isAnyRooflineNumber, isCompanyOwnNumber, listOnCallRows, saveTransferPhone, setOnCallOrder, type OnCallRow, type TransferPhone } from '@roofline/db/system';
 import type { TenantContext } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 
@@ -32,4 +32,9 @@ export function isOwnCompanyNumber(deps: AppDeps, ctx: TenantContext, e164: stri
 
 export function writeOnCallOrder(deps: AppDeps, ctx: TenantContext, userIds: string[]): Promise<void> {
   return setOnCallOrder(deps.pools.system, ctx.companyId, userIds, deps.clock.now());
+}
+
+/** True when the number is any company's Roofline number (the forwarding test never calls one). */
+export function isRooflineNumber(deps: AppDeps, e164: string): Promise<boolean> {
+  return isAnyRooflineNumber(deps.pools.system, e164);
 }

@@ -92,6 +92,15 @@ export async function isCompanyOwnNumber(system: Db, companyId: string, e164: st
   return business !== undefined;
 }
 
+/**
+ * True when `e164` is a Roofline number of any company (company_phone_numbers, any status). The
+ * forwarding test refuses to call one (pre-review #26); the result says nothing about whose it is.
+ */
+export async function isAnyRooflineNumber(system: Db, e164: string): Promise<boolean> {
+  const [row] = await system.select({ id: companyPhoneNumbers.id }).from(companyPhoneNumbers).where(eq(companyPhoneNumbers.e164, e164)).limit(1);
+  return row !== undefined;
+}
+
 /** Saves the member's own transfer phone and the recording acknowledgement (`now`). Touches only that one membership. */
 export async function saveTransferPhone(
   system: Db,
