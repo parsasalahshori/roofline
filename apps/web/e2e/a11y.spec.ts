@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures.ts';
+import { seedFrontDesk, seedRooflineNumber } from './front-desk-seed.ts';
 
 /*
  * Accessibility: each page is scanned with axe for WCAG 2.0 and 2.1 A and AA rules, and any
@@ -90,5 +91,50 @@ test('calendar week has no serious accessibility violations', async ({ page, log
   await markTodaySeen('owner@a.test');
   await page.goto('/calendar?view=week');
   await expect(page.locator('[data-testid^="slot-"]').first()).toBeAttached({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('Front Desk inbox has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, pools, scenario }) => {
+  await seedFrontDesk(pools, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/front-desk');
+  await expect(page.getByRole('heading', { name: 'This week' })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('link', { name: /Maria Alvarez/ })).toBeVisible();
+  await scan(page);
+});
+
+test('Front Desk conversation has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, pools, scenario }) => {
+  const { ids } = await seedFrontDesk(pools, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto(`/front-desk/${ids.maria}`);
+  await expect(page.getByRole('heading', { name: 'What was said' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('Front Desk text conversation has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, pools, scenario }) => {
+  const { ids } = await seedFrontDesk(pools, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto(`/front-desk/${ids.tom}`);
+  await expect(page.getByLabel('Your reply')).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('Settings Front Desk has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, pools, scenario, db }) => {
+  await seedRooflineNumber(pools, db, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/settings/front-desk');
+  await expect(page.getByRole('button', { name: 'Test it' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('Settings Your profile has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/settings/profile');
+  await expect(page.getByLabel('Your phone number')).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });

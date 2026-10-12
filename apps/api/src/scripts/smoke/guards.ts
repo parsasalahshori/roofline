@@ -10,12 +10,18 @@ export function assertStripeTestKey(key: string | undefined): string {
   return key;
 }
 
-export function assertConfirmed(argv: readonly string[], flag: '--confirm-real-registration'): void {
-  if (!argv.includes(flag)) {
-    throw new SmokeRefused(
-      'This makes a real registration with the phone carriers and costs money. Pass --confirm-real-registration if you mean it.',
-    );
-  }
+/** The confirm flags, each with the plain sentence printed when it is missing. */
+const CONFIRM_REFUSALS = {
+  '--confirm-real-registration':
+    'This makes a real registration with the phone carriers and costs money. Pass --confirm-real-registration if you mean it.',
+  '--confirm-real-providers':
+    'This talks to the real Claude and Twilio services and costs money. Pass --confirm-real-providers if you mean it.',
+} as const;
+
+export type ConfirmFlag = keyof typeof CONFIRM_REFUSALS;
+
+export function assertConfirmed(argv: readonly string[], flag: ConfirmFlag): void {
+  if (!argv.includes(flag)) throw new SmokeRefused(CONFIRM_REFUSALS[flag]);
 }
 
 /**
