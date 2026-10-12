@@ -67,6 +67,11 @@ export type TurnView = {
   truncated: boolean;
   at: string;
   actions: ToolActionCard[];
+  /**
+   * Set only on a text line (position 0) whose text had no words, such as a photo-only text: `text` is null
+   * but retention did not remove anything. A text blanked by retention leaves this unset.
+   */
+  noWords?: true;
 };
 
 export type CallView = {

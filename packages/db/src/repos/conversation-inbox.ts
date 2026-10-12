@@ -17,6 +17,7 @@ import type {
 import { calls, claimIntakes, conversations, conversationTurns, customers, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { canPlayCallRecording, findCallRecording } from './call-recording.ts';
+import { getRetentionSettings, SPAM_RETENTION_DAYS } from './fd-retention.ts';
 import { customerScope } from './scope.ts';
 
 /*
@@ -332,8 +333,24 @@ function turnMatcher(turns: TurnView[]) {
  * shows it (`turnMatcher`, one text to one turn line). A text whose body was blanked by retention is hidden when a
  * blanked turn of the same speaker already stands for it. Texts are shown as turns with `callId` null and
  * `position` 0 (the sort is by time).
+ *
+ * An empty body is either a text with no words (a photo-only text) or one blanked by retention: blankExpiredTexts
+ * sets body '' and leaves no other mark, so an empty text counts as blanked only when it is past the same age rule
+ * (created before now - transcriptDays, or before now - SPAM_RETENTION_DAYS in a spam conversation). Any other
+ * empty text is shown with `noWords`.
  */
-async function textItems(tx: Tx, ctx: TenantContext, conversationId: string, turns: TurnView[]): Promise<TurnView[]> {
+async function textItems(
+  tx: Tx,
+  ctx: TenantContext,
+  conversation: { id: string; spam: boolean },
+  turns: TurnView[],
+  now: Date,
+): Promise<TurnView[]> {
+  const conversationId = conversation.id;
+  const { transcriptRetentionDays } = await getRetentionSettings(tx, ctx);
+  const daysAgo = (days: number) => now.getTime() - days * 86_400_000;
+  const pastRetention = (createdAt: Date) =>
+    createdAt.getTime() < daysAgo(transcriptRetentionDays) || (conversation.spam && createdAt.getTime() < daysAgo(SPAM_RETENTION_DAYS));
   const rows = (
     await tx
       .select({
@@ -367,8 +384,9 @@ async function textItems(tx: Tx, ctx: TenantContext, conversationId: string, tur
           ? 'assistant'
           : 'team';
     const body = squash(r.body);
+    const blanked = body === '' && pastRetention(r.createdAt);
     if (speaker !== 'team') {
-      if (body === '' ? hasBlankedTurn[speaker] : shownByTurn(speaker, r.body, r.createdAt)) continue;
+      if (blanked ? hasBlankedTurn[speaker] : shownByTurn(speaker, r.body, r.createdAt)) continue;
     }
     out.push({
       id: r.id,
@@ -379,17 +397,19 @@ async function textItems(tx: Tx, ctx: TenantContext, conversationId: string, tur
       truncated: false,
       at: r.createdAt.toISOString(),
       actions: [],
+      ...(body === '' && !blanked ? { noWords: true as const } : {}),
     });
   }
   return out;
 }
 
-/** One conversation with its calls, transcript and links, or null when the member may not see it. */
+/** One conversation with its calls, transcript and links, or null when the member may not see it. `now` dates the retention age rule for texts. */
 export async function getConversationDetail(
   tx: Tx,
   ctx: TenantContext,
   scope: InboxScope,
   id: string,
+  now: Date,
 ): Promise<ConversationDetail | null> {
   const [row] = await tx
     .select({
@@ -492,7 +512,7 @@ export async function getConversationDetail(
     };
   });
 
-  if (row.channel === 'sms') turns.push(...(await textItems(tx, ctx, id, turns)));
+  if (row.channel === 'sms') turns.push(...(await textItems(tx, ctx, { id, spam: row.outcome === 'spam' }, turns, now)));
   turns.sort(compareTurnViews);
 
   const claims = await tx

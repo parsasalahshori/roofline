@@ -325,12 +325,13 @@ describe('GET /api/conversations/:id', () => {
       inCompany(t, idA(), (tx) =>
         tx.insert(conversationTurns).values({ companyId: idA(), conversationId: convo, position: ++position, speaker, text: body, at: at(m) }),
       );
-    const lines = async () => {
+    const detail = async () => {
       const res = await (await who.as('owner')).get(`${BASE}/${convo}`);
       expect(res.status).toBe(200);
-      return (res.body as ConversationDetail).turns.map((x) => [x.speaker, x.text]);
+      return res.body as ConversationDetail;
     };
-    return { text, turn, lines };
+    const lines = async () => (await detail()).turns.map((x) => [x.speaker, x.text]);
+    return { text, turn, lines, detail };
   }
 
   test('a repeated text sent while the team is handling (no turn for it) is still shown (final review)', async () => {
@@ -358,6 +359,21 @@ describe('GET /api/conversations/:id', () => {
       ['caller', 'ok'],
       ['caller', 'C'],
     ]);
+  });
+
+  test('a photo-only text inside retention reads as a text with no words, not as removed by retention (final review)', async () => {
+    const { text, detail } = await smsThread();
+    await text('in', '', 0);
+    const shown = (await detail()).turns;
+    expect(shown.map((x) => [x.speaker, x.text, x.noWords])).toEqual([['caller', null, true]]);
+  });
+
+  test('an empty text past the retention period reads as removed by retention (final review)', async () => {
+    const { text, detail } = await smsThread();
+    await text('in', '', 0);
+    t.clock.set(new Date(DAYTIME.getTime() + 400 * 24 * HOUR));
+    const shown = (await detail()).turns;
+    expect(shown.map((x) => [x.speaker, x.text, x.noWords])).toEqual([['caller', null, undefined]]);
   });
 
   test('a turn answering several texts, and a reply cut short to fit, show each text once (final review)', async () => {
