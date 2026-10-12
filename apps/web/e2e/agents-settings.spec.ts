@@ -28,7 +28,8 @@ async function saveTextBaseline(page: Page): Promise<void> {
   await page.goto('/settings/agents');
   const input = page.getByRole('textbox', { name: INPUT }).or(page.getByRole('spinbutton', { name: INPUT }));
   await input.fill('2');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  // G1's agent rules form sits below on the same tab with its own Save; the time-saved table's comes first (probe pass 14).
+  await page.getByRole('button', { name: 'Save', exact: true }).first().click();
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
 }
 

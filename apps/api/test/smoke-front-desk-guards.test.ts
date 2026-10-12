@@ -21,6 +21,12 @@ const BASE_ENV = {
   DATABASE_URL_TENANT: 'postgres://app_tenant:pw@localhost:5432/roofline',
   DATABASE_URL_SYSTEM: 'postgres://app_system:pw@localhost:5432/roofline',
   ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
+  // Production requires R2 (E1 Ruling ET) and TRUST_PROXY (C1 security finding 4); probe pass 14.
+  R2_ACCOUNT_ID: 'acct',
+  R2_ACCESS_KEY_ID: 'key-id',
+  R2_SECRET_ACCESS_KEY: 'key-secret',
+  R2_BUCKET: 'proposals',
+  TRUST_PROXY: '1',
 } satisfies Record<string, string>;
 
 function recorder(): SmokeIo & { out: string[]; err: string[] } {

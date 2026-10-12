@@ -21,7 +21,8 @@ test('the three G1 agents start paused, Turn on Follow-up shows its rules, and R
 
   const grid = page.getByLabel('Your agents').first();
   for (const name of ['Claims', 'Scheduler', 'Follow-up']) {
-    const card = grid.getByRole('link', { name, exact: true });
+    // A1's card link is labelled by its name, status chip and time line, so it is found by its heading (probe pass 14).
+    const card = grid.locator('a', { has: page.getByRole('heading', { name, exact: true }) });
     await expect(card).toContainText('Paused', { timeout: 20_000 });
     await expect(card).toContainText('Turn on');
   }
