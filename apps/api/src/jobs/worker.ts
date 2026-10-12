@@ -7,6 +7,7 @@ import { UUID } from '../validate.ts';
 import { JOB_HANDLERS } from './handlers.ts';
 import { ensureJobQueues, JOB_NAMES, type JobData, type JobMeta } from './queue.ts';
 import { billMonthlyFees } from './scheduler/bill-monthly-fees.ts';
+import { pullCalendars } from './scheduler/calendar-pull.ts';
 import { dispatchDueMessages } from './scheduler/dispatch-messages.ts';
 import { endTrials } from './scheduler/end-trials.ts';
 import { expireDrafts } from './scheduler/expire-drafts.ts';
@@ -49,6 +50,7 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'poll-texting', cron: '0 * * * *', run: pollTexting },
   { name: 'bill-monthly-fees', cron: '0 9 1 * *', run: billMonthlyFees },
   { name: 'prune-early-reports', cron: '17 3 * * *', run: pruneEarlyReports },
+  { name: 'calendar-pull', cron: '*/5 * * * *', run: pullCalendars },
 ];
 
 /** How many steps one worker process runs at once. */
@@ -75,7 +77,10 @@ class JobFailed extends Error {
   }
 }
 
-/** A job-queue job's data: a company id (and, for an import, its import id). Checked before a handler runs. */
+/**
+ * A job-queue job's data: a company id, plus an import id for an import or an appointment id for a
+ * calendar push. Checked before a handler runs.
+ */
 function isJobData(data: unknown): data is JobData {
   if (typeof data !== 'object' || data === null) return false;
   const { companyId } = data as Record<string, unknown>;

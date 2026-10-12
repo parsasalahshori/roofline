@@ -13,6 +13,7 @@ import { AppError, MESSAGES } from '../src/errors.ts';
 import { InlineJobs } from '../src/jobs/queue.ts';
 import type { Mailer } from '../src/mailer.ts';
 import { FakeBillingProvider } from '../src/providers/fakes/billing.ts';
+import { FakeCalendarApi } from '../src/providers/fakes/calendar.ts';
 import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
 import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
@@ -116,6 +117,8 @@ export type TestApp = {
   weather: FakeWeatherSource;
   /** Address lookup: it records each call and answers from a fixed table. */
   geocoder: FakeGeocoder;
+  /** Calendar providers: one fake per provider, the same instances the app's deps hold. */
+  calendars: { google: FakeCalendarApi; microsoft: FakeCalendarApi };
   /** Billing: it records each customer, checkout, and meter event. */
   billing: FakeBillingProvider;
   /** Texting registration: `failNext` makes the next registrar call fail. */
@@ -201,6 +204,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const sms = new FakeSmsAdapter();
   const weather = new FakeWeatherSource();
   const geocoder = new FakeGeocoder();
+  const calendars = { google: new FakeCalendarApi('google'), microsoft: new FakeCalendarApi('microsoft') };
   const billing = new FakeBillingProvider();
   const registrar = new FakeTextingRegistrar();
   const jobs = new InlineJobs();
@@ -216,6 +220,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     sms,
     weather,
     geocoder,
+    calendars,
     billing,
     registrar,
     jobs,
@@ -237,6 +242,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     sms,
     weather,
     geocoder,
+    calendars,
     billing,
     registrar,
     jobs,
