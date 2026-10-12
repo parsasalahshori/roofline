@@ -343,9 +343,14 @@ export async function getMeasurementBasics(tx: Tx, ctx: TenantContext, id: strin
 export async function replaceDraftOptions(tx: Tx, ctx: TenantContext, id: string, p: { basis: MeasurementKind; measurementId: string; options: NewProposalOption[] }, now: Date): Promise<ProposalView | 'not_draft' | null> {
   const row = await draftRow(tx, ctx, id);
   if (row === null || row === 'not_draft') return row;
-  await tx.delete(proposalOptions).where(eq(proposalOptions.proposalId, id));
-  if (p.options.length > 0) {
-    await tx.insert(proposalOptions).values(p.options.map((o) => optionRow(ctx, id, o, now)));
+  // app_tenant has no DELETE on proposal_options (0016): upsert each tier in place instead.
+  for (const o of p.options) {
+    const row = optionRow(ctx, id, o, now);
+    const fields = { ...row, companyId: undefined, proposalId: undefined, tier: undefined, createdAt: undefined };
+    await tx
+      .insert(proposalOptions)
+      .values(row)
+      .onConflictDoUpdate({ target: [proposalOptions.proposalId, proposalOptions.tier], set: fields });
   }
   await tx.update(proposals).set({ measurementId: p.measurementId, estimateBasis: p.basis, updatedAt: now }).where(eq(proposals.id, id));
   return getProposal(tx, ctx, id);
