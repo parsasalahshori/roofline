@@ -253,3 +253,12 @@ Already done: s1-r2a is merged (28f3800) with the Ruling BD trim (41b970c). REDR
 - CI run 38263313497 on s1-storm@c2e3a1f (R7 merge plus the 3f800e5 fixture fix): Platform, Hail and E2E all green.
 - b46f1f5: `apps/api/test/helpers.ts` builds `FakeExactReports(() => clock.now())`. This defuses the E1 time bomb: exact-report.test.ts pins 2026-10-12T15:00Z, so it has been red everywhere since 15:01Z (the controller's request). R8–R10 branch from before this fix, so their Platform job may show the exact-report failure; it is the base's, so judge it on the merged head.
 - CI run 38270389296 on s1-storm@7159e1c (after the time bomb fix): Platform, Hail and E2E all green.
+
+## Re-merge of c1-crm 7758e82 and e1-estimator 414b97b requested (E1 lead for the controller, Ruling BF)
+Order: R8–R10 first, so 0018 is narrowed and errors.ts carries the pathForLog change. Then merge c1-crm and e1-estimator. Keep both sides in `config.ts`, `rls.test.ts` and the production config fixtures. Changes that come with the merge:
+- Production configs need `TRUST_PROXY: '1'` and the R2 keys.
+- The session cookie names come from the constants in `sessions.ts`.
+- `loginRateLimit()` and `inviteRateLimit()` return arrays, which the routes spread.
+- app_system privileges are exact: no TRUNCATE, TRIGGER or REFERENCES. Tests write through the owner client where app_system lacks a grant.
+- The errors.ts late-error branch uses `pathForLog(req.path)`.
+- Sentinel carries: the R2 keys in the storm-config, google-ads-http and postmark-broadcast production VALID configs, and the `proposalListRoutes()` stub in s1-routes.
