@@ -47,7 +47,7 @@ const until = async (fn: () => Promise<boolean> | boolean, ms = 5000): Promise<v
 async function rig(script: Script = SAY, opts: { idleMs?: number } = {}) {
   const t = await makeTestApp();
   const llm = new ScriptedLlm(script);
-  const deps = { ...t.deps, llm };
+  const deps = { ...t.deps, llm, config: { ...t.deps.config, TWILIO_AUTH_TOKEN: 'relay-test-master-token' } };
   const server: Server = createServer();
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const handle = attachRelayUpgrade(server, deps, opts);
