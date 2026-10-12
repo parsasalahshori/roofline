@@ -242,7 +242,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const calendars = { google: new FakeCalendarApi('google'), microsoft: new FakeCalendarApi('microsoft') };
   const footprints = new FakeFootprintSource();
   const aerial = new FakeAerialMeasure();
-  const exactReports = new FakeExactReports();
+  const exactReports = new FakeExactReports(() => clock.now());
   const objectStore = new MemoryObjectStore();
   const adsGoogle = new FakeAdsGoogle();
   const adsMeta = new FakeAdsMeta();
