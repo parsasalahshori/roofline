@@ -194,7 +194,7 @@ describe('POST /api/storms/:id/plan', () => {
     const id = await addStorm('2026-10-11', 'Omaha, NE');
     const owner_ = await who.as('owner');
     const first = await owner_.post(`/api/storms/${id}/plan`).send({});
-    await q("update tasks set status = 'approved' where id = $1", [first.body.taskId]);
+    await q("update agent_tasks set status = 'approved' where id = $1", [first.body.taskId]);
     const res = await owner_.post(`/api/storms/${id}/plan`).send({});
     expect(res.status).toBe(409);
     const detail = await owner_.get(`/api/storms/${id}`);
