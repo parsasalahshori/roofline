@@ -19,3 +19,6 @@
 
 ## Verify
 typecheck, lint, shared (667 tests) and web (848 tests) all passed.
+
+## CI
+Run 38232677536 (87a3f1d) failed: storm-routes test updated nonexistent table `tasks`; fixed to `agent_tasks` (99af3e5). Run 38234997601 (99af3e5): PASSED (Platform, v1, Hail, E2E).
