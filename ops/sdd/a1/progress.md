@@ -37,3 +37,12 @@ Ruling AX-D: Front Desk's success rate = conversations whose outcome is not `aba
 W1 T1 · W2 G1 = T2, T8 · W3 G2 = T3, T9, T10 · W4 G3 = T4, T5, T6 · G4 = T7, T11, T12 · W5 T13.
 
 ## Tasks
+
+## Track lead log (Track C, a1-agents)
+
+Base: `a1-agents` = `c1-crm` dfa9132 (C1 T1-T4 + F3 through T35). Upstream check at start: E1, S1, D1 integration branches are all still dfa9132 (nothing built); C1 T18 (router, `apps.ts` shipped flag, Settings tabs) is on `c1-t18`, not yet merged.
+
+Ruling AX-E (track lead): the F1 demo step types (`demo_noop`, `demo_message`, `demo_spend`, 5 minutes each today) get a hidden baseline `demo` (5 min per unit, 1 unit per done step) marked `hidden: true`: it is not editable and not shown in "How we count time saved". Keeps every F1/F2 minutes test stable — cost if wrong: one hidden key.
+Ruling AX-F (track lead): migrations are `0021_agents_schema.sql` (generated) and `0022_agents_grants_rls.sql` (custom) per Ruling AP; drizzle-kit generates them as 0015/0016 on this base, the builder renames the files, snapshots (`meta/0021_snapshot.json`, `meta/0022_snapshot.json`) and journal tags. Every plan/brief mention of 0020/0021 means 0021/0022 — cost if wrong: none.
+Ruling AX-G (track lead): Task 1 does not edit `packages/shared/src/steps.ts`; Task 2 (same wave) adds `front_desk_call`/`front_desk_texts` to `STEP_TYPES`. Task 1 owns only `packages/db` (+ db barrels) and the event/status constants, which live in `packages/shared/src/agents.ts` only if T2 creates it — so T1 puts `AGENT_EVENT_KINDS`, `ACTOR_TYPES` and `AGENT_STATUSES_VIEW` in `packages/db/src/schema/enums.ts` and T2 re-exports nothing of them — cost if wrong: none.
+Merge rule (E1/S1 step types): when `e1-estimator` or `s1-storm` merge into `a1-agents`, their new step types (`send_proposal`, `order_exact_report`, `send_email_batch`, `build_routes`, `create_ad_campaign`) are converted at merge to `baseline` + `units` (keys `proposal_sent`, `exact_report`, `email_sent`, `route_built`, `ad_campaign`), with `minutesSaved` removed once T3 lands.
