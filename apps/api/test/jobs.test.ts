@@ -1043,7 +1043,7 @@ describe('SCHEDULES', () => {
       ['poll-texting', '0 * * * *'],
       ['bill-monthly-fees', '0 9 1 * *'],
       ['prune-early-reports', '17 3 * * *'],
-      ['fd-retention', '17 3 * * *'],
+      ['fd-retention', '47 3 * * *'],
       ['fd-health', '*/2 * * * *'],
     ]);
   });

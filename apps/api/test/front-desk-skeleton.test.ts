@@ -28,7 +28,7 @@ describe('Front Desk skeleton', () => {
 
   test('SCHEDULES gain fd-retention and fd-health with their crons', () => {
     expect(SCHEDULES.slice(-2).map((s) => [s.name, s.cron])).toEqual([
-      ['fd-retention', '17 3 * * *'],
+      ['fd-retention', '47 3 * * *'],
       ['fd-health', '*/2 * * * *'],
     ]);
   });

@@ -52,7 +52,7 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'bill-monthly-fees', cron: '0 9 1 * *', run: billMonthlyFees },
   { name: 'prune-early-reports', cron: '17 3 * * *', run: pruneEarlyReports },
   // D1 Front Desk
-  { name: 'fd-retention', cron: '17 3 * * *', run: fdRetention },
+  { name: 'fd-retention', cron: '47 3 * * *', run: fdRetention },
   { name: 'fd-health', cron: '*/2 * * * *', run: fdHealth },
 ];
 
