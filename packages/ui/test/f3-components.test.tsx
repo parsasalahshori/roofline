@@ -67,6 +67,11 @@ describe('ProgressRing', () => {
       'data-complete',
     );
   });
+
+  it('is not marked complete when there are no steps yet', () => {
+    render(<ProgressRing done={0} total={0} label="Loading setup steps" />);
+    expect(screen.getByRole('img', { name: 'Loading setup steps' })).not.toHaveAttribute('data-complete');
+  });
 });
 
 describe('FilePicker', () => {

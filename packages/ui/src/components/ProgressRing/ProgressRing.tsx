@@ -12,7 +12,7 @@ const STROKE = 3;
 
 /** A small ring showing done out of total. It turns the success colour once everything is done. */
 export function ProgressRing({ done, total, label, size = 24 }: ProgressRingProps) {
-  const complete = done >= total;
+  const complete = total > 0 && done >= total;
   const fraction = total > 0 ? Math.min(Math.max(done / total, 0), 1) : 0;
   const r = (size - STROKE) / 2;
   const cx = size / 2;
