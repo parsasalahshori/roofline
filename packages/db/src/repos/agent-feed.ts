@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, lt, or, type SQL, sql } from 'drizzle-orm';
 import type { Agent } from '@roofline/shared';
-import { agentTaskEvents, agentTasks, agentTaskSteps, customers, jobs, users } from '../schema/index.ts';
+import { agentTaskEvents, agentTasks, agentTaskSteps, customers, jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import type { AgentEventKind } from './agent-events.ts';
 import { customerScope, jobScope } from './scope.ts';
@@ -90,7 +90,8 @@ export async function listFeedPage(
       subjectId: agentTasks.subjectId,
       stepType: agentTaskSteps.type,
       stepResult: agentTaskSteps.result,
-      actorName: users.name,
+      // company_members is the only way the tenant role sees names (no grant on users).
+      actorName: sql<string | null>`(select m.name from company_members m where m.user_id = ${agentTaskEvents.actorUserId} limit 1)`,
     })
     .from(agentTaskEvents)
     .innerJoin(
@@ -101,7 +102,6 @@ export async function listFeedPage(
       agentTaskSteps,
       and(eq(agentTaskSteps.companyId, agentTaskEvents.companyId), eq(agentTaskSteps.id, agentTaskEvents.stepId)),
     )
-    .leftJoin(users, eq(users.id, agentTaskEvents.actorUserId))
     .where(
       and(
         eq(agentTaskEvents.companyId, ctx.companyId),

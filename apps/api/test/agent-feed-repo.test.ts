@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import {
   type FeedCursor,
@@ -7,7 +7,6 @@ import {
   listFeedPage,
   type NewAgentEvent,
   type TenantContext,
-  users,
   withTenant,
 } from '@roofline/db';
 import type { Agent } from '@roofline/shared';
@@ -80,7 +79,7 @@ const approveAs = async (who: 'owner' | 'office', taskId: string) => {
 };
 
 const userName = (userId: string) =>
-  inCompany(t, t.seed.a.companyId, async (tx) => (await tx.select({ name: users.name }).from(users).where(eq(users.id, userId)))[0]!.name);
+  inCompany(t, t.seed.a.companyId, async (tx) => ((await tx.execute(sql`select name from company_members where user_id = ${userId} limit 1`)).rows[0]!.name as string));
 
 describe('agents feed repo', () => {
   test('newest first by at then id', async () => {
