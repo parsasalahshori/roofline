@@ -21,7 +21,7 @@ import { buildCompanyBlock } from '../front-desk/prompt.ts';
 import { isRecordingObjection } from '../front-desk/recording.ts';
 import { appendAssistant, appendToolResults, appendUser, newConversationState } from '../front-desk/state.ts';
 import { anthropicFor, evalModelsFor, type EvalModels } from '../providers/anthropic/index.ts';
-import type { TranscriptLine } from '../providers/anthropic/eval.ts';
+import { scoresMatchRubric, type TranscriptLine } from '../providers/anthropic/eval.ts';
 import type { Llm, LlmEvent, RouteDecision, TurnUsage } from '../providers/llm.ts';
 import { grade, percentile } from '../../test/front-desk/scenarios/grade.ts';
 import { SCENARIOS, scenarioById } from '../../test/front-desk/scenarios/index.ts';
@@ -52,6 +52,7 @@ export const USAGE =
 
 const CONFIRM_FLAG = '--confirm-spend' as const;
 const GENERIC_FAILURE = 'The Claude service turned this down or could not be reached.';
+const TONE_MISMATCH = 'The tone grader did not score exactly the rubric, so this run has no tone grade.';
 const MAX_RUNS = 10;
 const MAX_TOOL_ROUNDS = 4;
 const TURN_TIMEOUT_MS = 60_000;
@@ -571,9 +572,12 @@ async function runOnce(sc: Scenario, run: number, deps: EvalDeps): Promise<RunRe
   let tone: ToneResult | null = null;
   let error: string | null = null;
   try {
-    const graded = await deps.models.gradeTone({ rubric: [...BASE_TONE_RUBRIC, ...sc.toneRubric], transcript: played.transcript });
+    const rubric = [...BASE_TONE_RUBRIC, ...sc.toneRubric];
+    const graded = await deps.models.gradeTone({ rubric, transcript: played.transcript });
     usages.push({ role: 'grader', usage: graded.usage });
-    tone = toneResult(graded.scores);
+    // A grade that skips, adds, reorders or relabels a criterion is an error, never a pass.
+    if (scoresMatchRubric(rubric, graded.scores)) tone = toneResult(graded.scores);
+    else error = TONE_MISMATCH;
   } catch {
     error = GENERIC_FAILURE;
   }
