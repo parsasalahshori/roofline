@@ -197,8 +197,8 @@ describe('the worker', () => {
         ['end-trials', '*/5 * * * *'],
         ['expire-drafts', '*/5 * * * *'],
         ['poll-texting', '0 * * * *'],
-        ['prune-early-reports', '17 3 * * *'],
         ['provision-texting', '* * * * *'],
+        ['prune-early-reports', '17 3 * * *'],
         ['report-usage', '* * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);

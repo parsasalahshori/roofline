@@ -1032,7 +1032,7 @@ describe('InlineJobs', () => {
 });
 
 describe('SCHEDULES', () => {
-  test('the five new schedules follow the first three, with their exact crons', () => {
+  test('the later schedules follow the first three, with their exact crons', () => {
     expect(SCHEDULES.map((s) => [s.name, s.cron])).toEqual([
       ['expire-drafts', '*/5 * * * *'],
       ['sweep-queued', '* * * * *'],
@@ -1042,6 +1042,7 @@ describe('SCHEDULES', () => {
       ['provision-texting', '* * * * *'],
       ['poll-texting', '0 * * * *'],
       ['bill-monthly-fees', '0 9 1 * *'],
+      ['prune-early-reports', '17 3 * * *'],
     ]);
   });
 });
