@@ -204,6 +204,7 @@ export function useMoveJob() {
     onSettled: (_data, _error, input) => {
       void queryClient.invalidateQueries({ queryKey: ['jobs-board'] });
       void queryClient.invalidateQueries({ queryKey: ['job', input.jobId] });
+      void queryClient.invalidateQueries({ queryKey: ['timeline'] });
     },
   });
 }

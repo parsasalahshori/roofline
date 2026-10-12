@@ -54,3 +54,41 @@ test('setup has no serious accessibility violations', async ({ page, loginAs, ma
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
   await scan(page);
 });
+
+test('jobs board has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/jobs');
+  await expect(page.getByRole('heading', { name: 'Lead (8)', exact: true })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('job window has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, db, scenario }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const job = await db.query<{ id: string }>(`select id from jobs where company_id = $1 order by id limit 1`, [
+    scenario.a.companyId,
+  ]);
+  await page.goto(`/jobs/${job.rows[0]?.id}`);
+  await expect(page.getByRole('group', { name: 'Job stage' })).toBeVisible();
+  await scan(page);
+});
+
+test('customer window has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, db, scenario }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const customer = await db.query<{ id: string }>(`select id from customers where company_id = $1 order by id limit 1`, [
+    scenario.a.companyId,
+  ]);
+  await page.goto(`/customers/${customer.rows[0]?.id}`);
+  await expect(page.getByRole('group', { name: 'Customer actions' })).toBeVisible();
+  await scan(page);
+});
+
+test('calendar week has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/calendar?view=week');
+  await expect(page.locator('[data-testid^="slot-"]').first()).toBeAttached({ timeout: 20_000 });
+  await scan(page);
+});
