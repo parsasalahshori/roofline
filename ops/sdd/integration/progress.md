@@ -872,3 +872,20 @@ Merge-artifact fixes: the `notYet` helper restored in `handlers.ts` (above). Not
 lint pass, lint:css pass; vitest @roofline/web 1021 pass (114 files), @roofline/ui 170 pass, @roofline/shared 1284
 pass, @roofline/send-gate 525 pass. Typecheck and lint re-run after 3e16312: pass. The database, API, worker and
 e2e suites run only in CI.
+
+### CI (pass 8)
+
+Run 38229064772 on 69a81bd. Attempt 1: E2E (Playwright) success; Hail service (ruff, pytest) success; v1 (node:test)
+success; Platform (lint, typecheck, tests) **failure**, one test of 6317: `apps/api/test/export.test.ts` "CSV
+export > every export writes an audit row" (line 245: second `export.customers` audit row not seen, 1 instead of
+2). Pass 8 changed neither `routes/export.ts` nor the test, and c1-crm's own CI is green on 7b6d037 (its last code
+commit). Cause (by reading, not reproduced): `routes/export.ts` writes the audit row inside the `withTenant`
+transaction that streams the CSV, so the client can read the whole body before that transaction commits, and the
+test's next read on another connection can miss the row. Attempt 2 (re-run of the failed job, same sha): all four
+jobs success. Classified as a C1 timing flake, not a merge artifact; no fix in the probe, so ci-check was not
+re-run. Owner: C1 (commit the audit row before streaming, or have the test poll for the row). The local `ci-check`
+wrapper was stopped by its 10-minute limit; the run was followed through the Actions API.
+
+E1 T10/T11 (real `send_proposal` and `order_exact_report` handlers, the dispatcher's proposal settle, exact-report
+poll and completion), C1's review fixes and the probe's 3e16312 pass the database, API, worker and e2e suites in
+combination.
