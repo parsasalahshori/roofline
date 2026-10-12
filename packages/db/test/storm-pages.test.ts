@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { upsertCompanyStorm } from '../src/repos/company-storms.ts';
-import { ensureStormPage, newStormPageCode, STORM_PAGE_CODE_LENGTH } from '../src/repos/storm-pages.ts';
+import { ensureStormPage, extendStormPageUntil, newStormPageCode, STORM_PAGE_CODE_LENGTH } from '../src/repos/storm-pages.ts';
 import { createPools, type Pools } from '../src/pools.ts';
 import { type Tx, withTenant } from '../src/tenant.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
@@ -129,3 +129,22 @@ describe('ensureStormPage', () => {
 function ctxOf(company: SeededCompany) {
   return { companyId: company.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
 }
+
+describe('extendStormPageUntil', () => {
+  test('extends a page, never shortens it, and is tenant-scoped', async () => {
+    const stormId = await insertOmahaStorm(q, DAY);
+    const csId = await companyStormFor(seed.a.companyId, stormId);
+    const page = await asCompany(seed.a.companyId, (tx) => ensureStormPage(tx, { companyId: seed.a.companyId, userId: null, role: 'system', canApproveSpend: false }, { companyStormId: csId, now: NOW }));
+    const ctx = { companyId: seed.a.companyId, userId: null, role: 'system', canApproveSpend: false } as const;
+
+    const later = new Date(page.activeUntil.getTime() + 10 * 86_400_000);
+    expect((await asCompany(seed.a.companyId, (tx) => extendStormPageUntil(tx, ctx, page.id, later)))?.getTime()).toBe(later.getTime());
+
+    const earlier = new Date(page.activeUntil.getTime() - 5 * 86_400_000);
+    expect((await asCompany(seed.a.companyId, (tx) => extendStormPageUntil(tx, ctx, page.id, earlier)))?.getTime()).toBe(later.getTime());
+
+    // Another company cannot touch it.
+    const other = { ...ctx, companyId: seed.b.companyId };
+    expect(await asCompany(seed.b.companyId, (tx) => extendStormPageUntil(tx, other, page.id, new Date(later.getTime() + 86_400_000)))).toBeNull();
+  });
+});
