@@ -21,7 +21,7 @@ export type AgentRuleFacts = {
   };
 };
 
-const STORM_SETTINGS = "/settings/storm-scout";
+const STORM_SETTINGS = "/settings/storm";
 const FRONT_DESK_SETTINGS = "/settings/front-desk";
 
 /** '1 inch', '1.5 inches' (singular only for exactly 1). */

@@ -2,12 +2,10 @@
  * `/api/agents` (A1 Task 5). This router defines only `GET /` (the overview) and `GET /:agent` (one
  * agent's detail, `?period=today|week|month|last90`, default month).
  *
- * MOUNT ORDER NOTE for Tasks 6 and 7: app.ts mounts this router at `/api/agents`, and Tasks 6/7 mount
- * their routers right after it on the same prefix (agents-feed.ts: GET /feed, GET /waiting,
- * GET /time-baselines; agents-settings.ts: PUT /:agent/paused, POST /:agent/run, and the time-baseline
- * writes). `/:agent` answers only for a real screen agent: any other name calls next(), so /feed,
- * /waiting and /time-baselines fall through to the later routers. Anything still unmatched gets the
- * app's 404 `{ error }`.
+ * Mount order: app.ts mounts the feed router (agents-feed.ts) first, this router (GET / and GET /:agent)
+ * after it, and the settings router (agents-settings.ts) later. `/:agent` answers only for a real screen
+ * agent and calls next() for anything else (e.g. /time-baselines), so the later routers get it. Anything
+ * still unmatched gets the app's 404 `{ error }`.
  */
 import { Router } from 'express';
 import { z } from 'zod';
