@@ -14,11 +14,20 @@ const DEDUCTIBLE_PATTERNS: RegExp[] = [
   /paid for by (?:your )?insurance/,
 ];
 
+const CONTACT_VERB =
+  '(?:call|phone|text|email|contact|reach out to|talk to|talk with|speak to|speak with|deal with|handle|negotiate with|work with|message|meet with|get in touch with)';
+const FIRST_PERSON = "(?:we|we'll|we will|we can|we're|we are|we'd|i|i'll|i will|i can|i'd|let us|let me|our team|our office|our staff)";
+
+/**
+ * An offer to contact or negotiate with the insurer or adjuster for the homeowner. Only a
+ * first-person subject ("we'll call your insurer") or an explicit "for you" / "on your behalf"
+ * next to an insurer word counts: telling the homeowner to contact their own insurer is fine.
+ */
 const INSURER_CONTACT_PATTERNS: RegExp[] = [
-  new RegExp(
-    `\\b(?:call|calling|email|emailing|contact|contacting|talk to|talking to|speak (?:to|with)|speaking (?:to|with)|deal with|dealing with|handle|handling|negotiate with|negotiating with|work with|message)\\s+(?:your\\s+|the\\s+)?${INSURER}`,
-  ),
-  /on your behalf/,
+  // "We'll call your insurer", "I can talk to the adjuster" (not "we work with insurance claims").
+  new RegExp(`\\b${FIRST_PERSON}\\b[^.!?]{0,30}\\b${CONTACT_VERB}\\s+(?:your\\s+|the\\s+)?${INSURER}(?!\\s+claims?\\b)`),
+  // "... for you" / "on your behalf" in a sentence about the insurer, adjuster or claim.
+  /^(?=.*\b(?:for you|on your behalf)\b)(?=.*\b(?:insurance|insurer|adjuster|carrier|claim)\b)/,
 ];
 
 export function claimsGuard(text: string): { ok: boolean; hits: ClaimsGuardHit[] } {
@@ -37,6 +46,9 @@ export function claimsGuard(text: string): { ok: boolean; hits: ClaimsGuardHit[]
   ) {
     add('deductible');
   }
-  if (INSURER_CONTACT_PATTERNS.some((re) => re.test(lower))) add('insurer_contact');
+  const lowerSentences = lower.split(/(?<=[.!?])\s+/);
+  if (lowerSentences.some((sentence) => INSURER_CONTACT_PATTERNS.some((re) => re.test(sentence)))) {
+    add('insurer_contact');
+  }
   return { ok: hits.length === 0, hits };
 }

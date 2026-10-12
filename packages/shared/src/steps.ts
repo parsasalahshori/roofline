@@ -341,7 +341,7 @@ const frontDeskTexts = withMinutesSaved<FrontDeskPayload>({
 const lowerUuid = (message?: string) =>
   z.uuid(message === undefined ? undefined : { error: message }).transform((id) => id.toLowerCase());
 
-export const CLAIMS_TEXT_MESSAGE = 'This text talks about prices, coverage or deductibles. Please change it.';
+export const CLAIMS_TEXT_MESSAGE = 'This text talks about prices, insurance coverage or deductibles, or offers to deal with the insurer. Please change it.';
 export const REVIEW_PURPOSE_MESSAGE = 'Review requests go out as marketing texts.';
 
 const personalMessage = z.strictObject({

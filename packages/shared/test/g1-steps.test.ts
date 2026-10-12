@@ -83,13 +83,13 @@ describe('send_personal_texts.validate', () => {
 
   test('a text about prices is refused with the exact message', () => {
     expect(validate(textsPayload({ messages: one('Your roof will cost $9,000.') }))).toBe(
-      'This text talks about prices, coverage or deductibles. Please change it.',
+      'This text talks about prices, insurance coverage or deductibles, or offers to deal with the insurer. Please change it.',
     );
   });
 
   test('one bad message among clean ones is refused', () => {
     const messages = [...one('See you tomorrow.'), { customerId: C2, jobId: null, body: 'Your roof will cost $9,000.' }];
-    expect(validate(textsPayload({ messages }))).toBe('This text talks about prices, coverage or deductibles. Please change it.');
+    expect(validate(textsPayload({ messages }))).toBe('This text talks about prices, insurance coverage or deductibles, or offers to deal with the insurer. Please change it.');
   });
 
   test('a review request must be marketing', () => {

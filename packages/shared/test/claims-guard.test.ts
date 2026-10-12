@@ -15,6 +15,9 @@ describe('claimsGuard refuses', () => {
     ['We will talk to the adjuster for you.', ['insurer_contact']],
     ["We'll negotiate with your insurer.", ['insurer_contact']],
     ['We can handle the insurance company on your behalf.', ['insurer_contact']],
+    ["We'll handle your insurance claim for you.", ['insurer_contact']],
+    ["I'll phone your insurer tomorrow.", ['insurer_contact']],
+    ['Our team can reach out to the adjuster.', ['insurer_contact']],
   ];
   for (const [text, hits] of refused) {
     it(text, () => {
@@ -25,6 +28,11 @@ describe('claimsGuard refuses', () => {
 
 describe('claimsGuard allows', () => {
   const allowed = [
+    'Have you had a chance to call your insurance company yet?',
+    'Once you contact your insurer, send us the claim number.',
+    'Please talk to your adjuster about the date.',
+    'We work with insurance claims every day.',
+    'We can pick up the permit on your behalf.',
     'Did you get a chance to file your claim? Reply with the claim number and insurer.',
     'When is the adjuster coming out?',
     'How did the adjuster visit go?',
