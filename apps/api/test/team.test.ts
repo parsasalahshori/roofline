@@ -636,17 +636,75 @@ describe('POST /api/team/invites', () => {
     expect((await owner.post('/api/team/invites').send({ email: 'new@example.com', role: 'rep' })).status).toBe(201);
   });
 
-  test('30 an hour per company; the 31st is refused, and the other company is not affected', async () => {
-    const owner = await loginAs(t.app, t.seed.a.owner);
-    for (let i = 0; i < 30; i++) {
-      const res = await owner.post('/api/team/invites').send({ email: `hire${i}@example.com`, role: 'rep' });
-      expect([i, res.status]).toEqual([i, 201]);
-    }
-    const over = await owner.post('/api/team/invites').send({ email: 'one-too-many@example.com', role: 'rep' });
-    expect(over.status).toBe(429);
-    expect(over.body.error).toMatch(/invites/i);
-    const b = await loginAs(t.app, t.seed.b.owner);
-    expect((await b.post('/api/team/invites').send({ email: 'bolt@example.com', role: 'rep' })).status).toBe(201);
+  describe('invite limits', () => {
+    const TOO_MANY_INVITES = { error: "You've sent a lot of invites. Please try again in an hour." };
+    let p: TestApp;
+    beforeEach(async () => {
+      // Behind one trusted proxy, so each request can say which address it comes from.
+      p = await makeTestApp({ TRUST_PROXY: 1 });
+    });
+    /** The seeded companies were made a moment ago; this makes them two days old on the app's clock. */
+    const ageCompanies = () => p.clock.advance(2 * DAY);
+    const send = (agent: SuperAgent, ip: string, email: string) =>
+      agent.post('/api/team/invites').set('X-Forwarded-For', ip).send({ email, role: 'rep' });
+
+    test('30 an hour per company; the 31st is refused, and the other company is not affected', async () => {
+      ageCompanies();
+      const owner = await loginAs(p.app, p.seed.a.owner);
+      for (let i = 0; i < 30; i++) {
+        const res = await send(owner, '198.51.100.1', `hire${i}@example.com`);
+        expect([i, res.status]).toEqual([i, 201]);
+      }
+      const over = await send(owner, '198.51.100.1', 'one-too-many@example.com');
+      expect(over.status).toBe(429);
+      expect(over.body).toEqual(TOO_MANY_INVITES);
+      const b = await loginAs(p.app, p.seed.b.owner);
+      expect((await send(b, '198.51.100.2', 'bolt@example.com')).status).toBe(201);
+    });
+
+    test('a company less than a day old may send only 5 an hour', async () => {
+      const owner = await loginAs(p.app, p.seed.a.owner);
+      for (let i = 0; i < 5; i++) {
+        expect([i, (await send(owner, '198.51.100.1', `hire${i}@example.com`)).status]).toEqual([i, 201]);
+      }
+      const over = await send(owner, '198.51.100.1', 'sixth@example.com');
+      expect(over.status).toBe(429);
+      expect(over.body).toEqual(TOO_MANY_INVITES);
+      expect(await count('select count(*) from invites where company_id = $1', [p.seed.a.companyId])).toBe(5);
+    });
+
+    test('30 an hour from one address, across companies', async () => {
+      ageCompanies();
+      const a = await loginAs(p.app, p.seed.a.owner);
+      const b = await loginAs(p.app, p.seed.b.owner);
+      for (let i = 0; i < 20; i++) expect((await send(a, '203.0.113.5', `a${i}@example.com`)).status).toBe(201);
+      for (let i = 0; i < 10; i++) expect((await send(b, '203.0.113.5', `b${i}@example.com`)).status).toBe(201);
+      const over = await send(b, '203.0.113.5', 'b-over@example.com');
+      expect(over.status).toBe(429);
+      expect(over.body).toEqual(TOO_MANY_INVITES);
+      // The companies' own budgets are not spent; another address can go on.
+      expect((await send(b, '203.0.113.6', 'b-elsewhere@example.com')).status).toBe(201);
+    });
+
+    test('30 an hour for one person, across the companies they manage', async () => {
+      ageCompanies();
+      // Acme's owner is also an owner of Bolt.
+      await p.deps.pools.system.$client.query(
+        "insert into memberships (company_id, user_id, role, status) values ($1, $2, 'owner', 'active')",
+        [p.seed.b.companyId, p.seed.a.owner.userId],
+      );
+      const inA = await loginAs(p.app, p.seed.a.owner);
+      const inB = await loginAs(p.app, p.seed.a.owner);
+      await inB.post('/api/auth/switch-company').send({ companyId: p.seed.b.companyId }).expect(200);
+      for (let i = 0; i < 20; i++) expect((await send(inA, `198.51.100.${i + 1}`, `a${i}@example.com`)).status).toBe(201);
+      for (let i = 0; i < 10; i++) expect((await send(inB, `192.0.2.${i + 1}`, `b${i}@example.com`)).status).toBe(201);
+      const over = await send(inB, '192.0.2.200', 'b-over@example.com');
+      expect(over.status).toBe(429);
+      expect(over.body).toEqual(TOO_MANY_INVITES);
+      // Bolt's other owner still has Bolt's budget.
+      const boltOwner = await loginAs(p.app, p.seed.b.owner);
+      expect((await send(boltOwner, '192.0.2.201', 'bolt@example.com')).status).toBe(201);
+    });
   });
 });
 

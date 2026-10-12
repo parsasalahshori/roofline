@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import type { SessionInfo } from './auth/sessions.ts';
 import type { Config } from './config.ts';
@@ -29,6 +29,12 @@ const RESET_REQUEST_PER_IP_PER_HOUR = 20;
 const RESET_REQUEST_PER_EMAIL_PER_HOUR = 5;
 const RESEND_PER_USER_PER_HOUR = 3;
 const INVITES_PER_COMPANY_PER_HOUR = 30;
+/** A company made in the last day gets this many invites an hour instead (sign-up companies used to send spam). */
+const INVITES_PER_NEW_COMPANY_PER_HOUR = 5;
+/** Invites one person may send an hour, across every company they manage. */
+const INVITES_PER_USER_PER_HOUR = 30;
+/** Invites one IP address may send an hour, across every company and person. */
+const INVITES_PER_IP_PER_HOUR = 30;
 const ACCEPT_INVITE_PER_IP = 30;
 const ACCEPT_INVITE_FAILURES = 10;
 
@@ -243,24 +249,47 @@ export function resendVerificationRateLimit(): RequestHandler {
 }
 
 /**
- * `POST /api/team/invites`: 30 an hour per company, shared by everyone who can invite, so an owner
- * cannot be used to flood addresses with email. Every attempt counts. Mount it after the sign-in
- * gate and the permission checks (so people who may not invite cannot use up the company's budget).
+ * `POST /api/team/invites`, three limits; every attempt counts. In order:
+ * 1. 30 an hour per IP address, across every company and person, so one machine cannot sign up a
+ *    string of companies and invite from each.
+ * 2. 30 an hour per person, across every company they can invite for.
+ * 3. Per company, shared by everyone who can invite, so an owner cannot be used to flood addresses
+ *    with email: 30 an hour, or 5 an hour while the company is less than a day old (a fresh sign-up
+ *    is the cheap way to get an inviting owner). `isNewCompany` says which, for the request's company.
+ * Mount them after the sign-in gate and the permission checks (so people who may not invite cannot
+ * use up the budgets). Returns the limiters in order.
  */
-export function inviteRateLimit(): RequestHandler {
-  return rateLimit({
-    windowMs: HOUR_MS,
-    limit: INVITES_PER_COMPANY_PER_HOUR,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    keyGenerator: (req) => {
-      const session = req.session as SessionInfo | undefined;
-      return session ? `invite:${session.companyId}` : `invite-ip:${ipKeyGenerator(req.ip ?? 'unknown')}`;
-    },
-    handler: (_req, _res, next) => {
-      next(new AppError(429, MESSAGES.tooManyInvites));
-    },
-  });
+export function inviteRateLimit(isNewCompany: (req: Request) => Promise<boolean>): RequestHandler[] {
+  const common = { windowMs: HOUR_MS, standardHeaders: 'draft-7', legacyHeaders: false } as const;
+  const handler: RequestHandler = (_req, _res, next) => {
+    next(new AppError(429, MESSAGES.tooManyInvites));
+  };
+  const ipKey = (req: Request) => `invite-ip:${ipKeyGenerator(req.ip ?? 'unknown')}`;
+  return [
+    rateLimit({ ...common, limit: INVITES_PER_IP_PER_HOUR, keyGenerator: ipKey, handler }),
+    rateLimit({
+      ...common,
+      limit: INVITES_PER_USER_PER_HOUR,
+      keyGenerator: (req) => {
+        const session = req.session as SessionInfo | undefined;
+        return session ? `invite-user:${session.userId}` : ipKey(req);
+      },
+      handler,
+    }),
+    rateLimit({
+      ...common,
+      limit: async (req) => {
+        const session = req.session as SessionInfo | undefined;
+        if (!session) return INVITES_PER_NEW_COMPANY_PER_HOUR;
+        return (await isNewCompany(req)) ? INVITES_PER_NEW_COMPANY_PER_HOUR : INVITES_PER_COMPANY_PER_HOUR;
+      },
+      keyGenerator: (req) => {
+        const session = req.session as SessionInfo | undefined;
+        return session ? `invite:${session.companyId}` : ipKey(req);
+      },
+      handler,
+    }),
+  ];
 }
 
 /**
