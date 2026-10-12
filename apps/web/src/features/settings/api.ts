@@ -37,10 +37,11 @@ export type TeamMember = TeamBody['members'][number];
 export type TeamInvite = TeamBody['invites'][number];
 
 /** The company's details. Any member can read them. */
-export function useCompany() {
+export function useCompany(enabled = true) {
   return useQuery({
     queryKey: keys.company,
     queryFn: ({ signal }) => apiFetch<CompanyBody>('/api/company', { signal }),
+    enabled,
   });
 }
 

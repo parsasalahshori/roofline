@@ -3,7 +3,23 @@ import type { StepPreview, StepType } from '@roofline/shared';
 import type { StepView } from '../../../api/types.ts';
 
 /** What a step's Preview component takes. `canApprove` is the caller's right to approve this step (false for office on a spend step). */
-export type StepPreviewProps = { step: StepView; canApprove: boolean };
+export type StepPreviewProps = {
+  step: StepView;
+  canApprove: boolean;
+  /** The plan the step belongs to. */
+  taskId?: string;
+  /**
+   * Saves a new payload for this step through Review's own edit, which Approve waits for. Present only while the step
+   * can still be changed (review mode, step still open); a Preview offers no change controls without it.
+   */
+  onSavePayload?: (payload: Record<string, unknown>) => void;
+};
+
+/** Facts the Edit sheet knows that a kit's pure functions cannot look up. Passed as the last argument; absent in unit tests. */
+export type StepKitContext = {
+  /** The company's time zone (IANA name). */
+  zone: string;
+};
 
 /**
  * One field of a step's Edit sheet. Values are held as strings (`pick` as a string[]) while typing:
@@ -28,13 +44,13 @@ export type StepKit = {
   /** The preview data the kit's review list shows (title and lines); used by toReviewStep in place of the server's. */
   review(step: StepView): StepPreview;
   /** The fields the Edit sheet shows, filled from the step's current payload. */
-  editFields(step: StepView): EditFieldSpec[];
+  editFields(step: StepView, ctx?: StepKitContext): EditFieldSpec[];
   /** The step's whole payload with the edited values applied (unedited keys kept as they are). Must not throw. */
-  toPayload(step: StepView, values: EditValues): Record<string, unknown>;
+  toPayload(step: StepView, values: EditValues, ctx?: StepKitContext): Record<string, unknown>;
   /** A sentence under a field per field id for values that are allowed but worth a warning (missing tokens). Optional. */
   warnings?(step: StepView, values: EditValues): Record<string, string[]>;
   /** Field-id -> sentence for values that must not be saved (before the shared `validate` runs). Empty object when fine. */
-  fieldErrors?(step: StepView, values: EditValues): Record<string, string>;
+  fieldErrors?(step: StepView, values: EditValues, ctx?: StepKitContext): Record<string, string>;
 };
 
 export type StepKits = Partial<Record<StepType, StepKit>>;
