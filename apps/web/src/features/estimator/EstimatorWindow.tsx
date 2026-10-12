@@ -51,7 +51,7 @@ function ProposalGroups() {
                   <li key={p.id}>
                     <UiLink href={`/estimator/proposals/${p.id}`} className={styles.row}>
                       <span className={styles.number}>{p.number}</span>
-                      <span className={styles.name}>{p.customer.name}</span>
+                      <span>{p.customer.name}</span>
                       <span className={styles.address}>{p.address}</span>
                     </UiLink>
                   </li>
@@ -111,7 +111,7 @@ export function EstimatorWindow() {
                   <Button
                     variant="ghost"
                     className={styles.result}
-                    onClick={() => setTarget({ kind: 'home', propertyId: p.id, label: homeLabel(p) })}
+                    onClick={() => setTarget({ kind: 'home', propertyId: p.id, label: homeLabel(p), hasCustomer: p.customerId !== null })}
                   >
                     {homeLabel(p)}
                   </Button>

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { MeasurementView, ProposalView } from '@roofline/shared';
-import { Button, Checkbox, Field, Pill } from '@roofline/ui';
+import { Button, Checkbox, Field } from '@roofline/ui';
 import { estimator } from '../../copy/estimator.ts';
 import { useBuildProposal, useMeasure, useSendProposal } from './api.ts';
 import type { MakeTarget } from './types.ts';
@@ -22,8 +22,8 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
   const measurementRef = useRef<MeasurementView | null>(null);
   const proposalRef = useRef<ProposalView | null>(null);
 
-  const isAddress = target.kind === 'address';
-  const blocked = isAddress && (name.trim() === '' || phone.trim() === '');
+  const needsCustomer = target.kind === 'address' || !target.hasCustomer;
+  const blocked = needsCustomer && (name.trim() === '' || phone.trim() === '');
 
   async function run() {
     if (busyRef.current || blocked) return;
@@ -45,7 +45,7 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
         proposalRef.current ??
         (await build.mutateAsync({
           measurementId: measurement.id,
-          ...(target.kind === 'address'
+          ...(needsCustomer
             ? { customer: { name: name.trim(), phone: phone.trim(), askedByText } }
             : {}),
         }));
@@ -64,9 +64,9 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
     <div className={styles.root}>
       <div className={styles.target}>
         <p className={styles.targetText}>{target.kind === 'home' ? target.label : target.address}</p>
-        <Pill tone="neutral">{estimator.estimateNote}</Pill>
+        <span className={styles.estimate}>{estimator.estimateNote}</span>
       </div>
-      {isAddress ? (
+      {needsCustomer ? (
         <div className={styles.form}>
           <h3 className={styles.heading}>{estimator.newCustomerTitle}</h3>
           <Field label={estimator.customerName} value={name} onChange={(e) => setName(e.target.value)} />

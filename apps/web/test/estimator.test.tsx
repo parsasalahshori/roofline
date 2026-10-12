@@ -52,12 +52,14 @@ function measurement(id: string, drawMode: boolean): MeasurementView {
     drawMode,
     outline: null,
     structures: [],
-    pitchX12: 6,
     overhangFt: 1,
-    valleyFt: 0,
     center: [-97.7, 30.3],
     estimate: instantEstimate({ outline: [], pitchX12: 6, overhangFt: 1, valleyFt: 0 }),
     locked: false,
+    facets: null,
+    providerRef: null,
+    notes: null,
+    createdAt: '2026-10-12T12:00:00.000Z',
   };
 }
 
@@ -162,6 +164,28 @@ describe('Estimator window', () => {
     ]);
     expect(api.sent('POST /api/measurements')).toEqual([{ propertyId: 'pr1' }]);
     expect(api.sent('POST /api/proposals')).toEqual([{ measurementId: 'm1' }]);
+  });
+
+  it('a saved home nobody owns asks for the customer and sends it', async () => {
+    signedInApi(
+      flowRoutes({
+        'GET /api/properties?q=12%20Oak&limit=8': () => ({ body: { properties: [{ ...HOME, customerId: null }], total: 1 } }),
+      }),
+    );
+    const { router, user } = renderApp();
+
+    await user.type(await screen.findByLabelText(estimator.addressLabel), '12 Oak');
+    await user.click(await screen.findByRole('button', { name: /12 Oak St/ }));
+    expect(screen.getByRole('button', { name: estimator.makeProposal })).toBeDisabled();
+    await user.type(screen.getByLabelText(estimator.customerName), 'Dana Fox');
+    await user.type(screen.getByLabelText(estimator.customerPhone), '5125550100');
+    await user.click(screen.getByRole('button', { name: estimator.makeProposal }));
+
+    await waitFor(() => expect(where(router)).toBe('/approvals/t1'));
+    expect(api.sent('POST /api/measurements')).toEqual([{ propertyId: 'pr1' }]);
+    expect(api.sent('POST /api/proposals')).toEqual([
+      { measurementId: 'm1', customer: { name: 'Dana Fox', phone: '5125550100', askedByText: false } },
+    ]);
   });
 
   it('opens draw mode when the outline is not found', async () => {

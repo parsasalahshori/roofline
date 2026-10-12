@@ -5,11 +5,9 @@ export const estimator = {
   addressHint: 'Type a street address to start an estimate.',
   homesTitle: 'Homes we know',
   noHomes: 'No saved home matches. Press Enter to look the address up.',
-  lookUp: 'Look up address',
   makeProposal: 'Make proposal',
   makingProposal: 'Making the proposal...',
   makeFailed: 'We could not make the proposal. Please try again.',
-  drawNote: 'We could not find this roof. Draw it on the map next.',
   newCustomerTitle: 'Who is this for?',
   customerName: 'Name',
   customerPhone: 'Phone',
@@ -22,5 +20,4 @@ export const estimator = {
     signed: 'Signed',
   },
   emptyGroup: 'Nothing here yet.',
-  comingSoon: 'Your estimates are on their way.',
 } as const;
