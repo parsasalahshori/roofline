@@ -338,7 +338,7 @@ describe('reps and job value', () => {
     const rep = await who.as('rep');
 
     // The lead itself is visible to the rep, but its value, and so its quotes, are not.
-    const view = await rep.get(`/api/jobs/${job.id}`);
+    const view = await rep.get(`/api/jobs/${job.id}/view`);
     expect(view.status).toBe(200);
     expect(view.body.quotes).toEqual([]);
 
