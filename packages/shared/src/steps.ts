@@ -3,6 +3,8 @@ import type { ApprovalClass } from './enums.ts';
 import { MESSAGE_PURPOSES } from './enums.ts';
 import { type BaselineKey, minutesFor } from './agents.ts';
 import { renderBody } from './render.ts';
+import { claimsGuard } from './claims-guard.ts';
+import { FOLLOW_UP_KINDS } from './more-agents.ts';
 
 /*
  * The step-type registry (spec 4.1): what each kind of step an agent can put in a task needs, in
@@ -28,6 +30,10 @@ export const STEP_TYPES = [
   'send_sms_batch',
   'front_desk_call',
   'front_desk_texts',
+  'send_personal_texts',
+  'build_claim_packet',
+  'create_appointment',
+  'move_appointment',
 ] as const;
 export type StepType = (typeof STEP_TYPES)[number];
 
@@ -329,6 +335,130 @@ const frontDeskTexts = withMinutesSaved<FrontDeskPayload>({
 });
 
 // ---------------------------------------------------------------------------------------------
+// G1 steps (Task 2b): personal follow-up texts, the claim packet and the two calendar steps.
+// All four are written by the agent only; the texts need a person's approval, the rest are internal.
+
+const lowerUuid = (message?: string) =>
+  z.uuid(message === undefined ? undefined : { error: message }).transform((id) => id.toLowerCase());
+
+export const CLAIMS_TEXT_MESSAGE = 'This text talks about prices, insurance coverage or deductibles, or offers to deal with the insurer. Please change it.';
+export const REVIEW_PURPOSE_MESSAGE = 'Review requests go out as marketing texts.';
+
+const personalMessage = z.strictObject({
+  customerId: lowerUuid(PICK_CUSTOMERS),
+  jobId: lowerUuid(CHECK_TEXT).nullable(),
+  body: z
+    .string({ error: WRITE_MESSAGE })
+    .min(1, WRITE_MESSAGE)
+    .max(480, 'Please keep the message to 480 characters or fewer.')
+    .refine(noNul, CHECK_TEXT),
+});
+
+const personalTextsPayload = z.strictObject({
+  purpose: z.enum(MESSAGE_PURPOSES, { error: 'Please pick marketing or informational.' }),
+  kind: z.enum(FOLLOW_UP_KINDS, { error: CHECK_TEXT }),
+  messages: z
+    .array(personalMessage, { error: CHECK_TEXT })
+    .min(1, 'Please pick at least one customer.')
+    .max(100, 'You can text at most 100 customers in one go.')
+    .refine((items) => new Set(items.map((m) => m.customerId)).size === items.length, 'Each customer can only be listed once.'),
+  dedupePrefix: z
+    .string({ error: CHECK_TEXT })
+    .min(1, CHECK_TEXT)
+    .max(80, CHECK_TEXT)
+    .regex(/^[a-z0-9:_-]+$/, CHECK_TEXT),
+});
+type PersonalTextsPayload = z.output<typeof personalTextsPayload>;
+
+const sendPersonalTexts = withMinutesSaved<PersonalTextsPayload>({
+  type: 'send_personal_texts',
+  approvalClass: 'message',
+  userCreatable: false,
+  payload: personalTextsPayload,
+  validate(p) {
+    if (p.messages.some((m) => !claimsGuard(m.body).ok)) return CLAIMS_TEXT_MESSAGE;
+    if (p.kind === 'review' && p.purpose !== 'marketing') return REVIEW_PURPOSE_MESSAGE;
+    return null;
+  },
+  preview(p) {
+    const n = p.messages.length;
+    const lines = p.messages.slice(0, 20).map((m) => m.body);
+    if (n > 20) lines.push(`and ${n - 20} more`);
+    return {
+      title: `Send ${n} personal text${n === 1 ? '' : 's'}`,
+      lines,
+      ...(p.messages[0] !== undefined && { messageSample: p.messages[0].body }),
+      recipientCount: n,
+    };
+  },
+  baseline: (p) => (p.kind === 'reminder' ? 'reminder_sent' : 'follow_up_sent'),
+  units: (_p, result) => countOf(result.sent),
+});
+
+const claimPacketPayload = z.strictObject({ jobId: lowerUuid(CHECK_TEXT) });
+type ClaimPacketPayload = z.output<typeof claimPacketPayload>;
+
+const buildClaimPacket = withMinutesSaved<ClaimPacketPayload>({
+  type: 'build_claim_packet',
+  approvalClass: 'internal',
+  userCreatable: false,
+  payload: claimPacketPayload,
+  preview: () => ({ title: 'Build the claim packet', lines: [] }),
+  baseline: () => 'claim_packet',
+  units: (_p, result) => (countOf(result.built) > 0 ? 1 : 0),
+});
+
+const END_AFTER_START = 'The end must be after the start.';
+const isoTime = z.iso.datetime({ offset: true, error: CHECK_TEXT });
+const endsAfterStart = (v: { start: string; end: string }): boolean => Date.parse(v.end) > Date.parse(v.start);
+
+const createAppointmentPayload = z
+  .strictObject({
+    jobId: lowerUuid(CHECK_TEXT),
+    kind: z.enum(['adjuster', 'inspection'], { error: CHECK_TEXT }),
+    start: isoTime,
+    end: isoTime,
+    userId: lowerUuid(CHECK_TEXT),
+    note: z.string({ error: CHECK_TEXT }).max(500, 'Please keep the note to 500 characters or fewer.').refine(noNul, CHECK_TEXT),
+  })
+  .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
+type CreateAppointmentPayload = z.output<typeof createAppointmentPayload>;
+
+const createAppointment = withMinutesSaved<CreateAppointmentPayload>({
+  type: 'create_appointment',
+  approvalClass: 'internal',
+  userCreatable: false,
+  payload: createAppointmentPayload,
+  preview: (p) => ({
+    title: p.kind === 'adjuster' ? 'Book an adjuster visit' : 'Book an inspection',
+    lines: [`${p.start} to ${p.end}`],
+  }),
+  baseline: () => 'booking',
+  units: (_p, result) => countOf(result.created),
+});
+
+const moveAppointmentPayload = z
+  .strictObject({
+    appointmentId: lowerUuid(CHECK_TEXT),
+    start: isoTime,
+    end: isoTime,
+    userId: lowerUuid(CHECK_TEXT),
+    reason: z.string({ error: CHECK_TEXT }).max(200, 'Please keep the reason to 200 characters or fewer.').refine(noNul, CHECK_TEXT),
+  })
+  .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
+type MoveAppointmentPayload = z.output<typeof moveAppointmentPayload>;
+
+const moveAppointment = withMinutesSaved<MoveAppointmentPayload>({
+  type: 'move_appointment',
+  approvalClass: 'internal',
+  userCreatable: false,
+  payload: moveAppointmentPayload,
+  preview: (p) => ({ title: 'Move an install', lines: [p.reason, `${p.start} to ${p.end}`] }),
+  baseline: () => 'install_moved',
+  units: (_p, result) => countOf(result.moved),
+});
+
+// ---------------------------------------------------------------------------------------------
 
 // Each definition is checked against its own payload type above; the registry is indexed by a
 // step's type at run time, so it holds them as the wider type.
@@ -340,4 +470,8 @@ export const stepTypes: Record<StepType, StepTypeDef<any>> = {
   send_sms_batch: sendSmsBatch,
   front_desk_call: frontDeskCall,
   front_desk_texts: frontDeskTexts,
+  send_personal_texts: sendPersonalTexts,
+  build_claim_packet: buildClaimPacket,
+  create_appointment: createAppointment,
+  move_appointment: moveAppointment,
 };

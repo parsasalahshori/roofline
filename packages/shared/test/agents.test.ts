@@ -19,6 +19,10 @@ const SPEC_KEYS = [
   'spam_call',
   'booking',
   'text_reply',
+  'claim_packet',
+  'reminder_sent',
+  'install_moved',
+  'follow_up_sent',
 ];
 
 describe('TIME_BASELINES defaults (spec 3.1)', () => {
@@ -35,6 +39,17 @@ describe('TIME_BASELINES defaults (spec 3.1)', () => {
     expect(TIME_BASELINES.text_reply).toMatchObject({ minutes: 2, unit: 'reply' });
   });
 
+  test('the four G1 keys have their minutes, caps and units and are visible', () => {
+    expect(TIME_BASELINES.claim_packet).toMatchObject({ minutes: 30, unit: 'packet' });
+    expect(TIME_BASELINES.reminder_sent).toMatchObject({ minutes: 1, capMinutes: 120, unit: 'reminder' });
+    expect(TIME_BASELINES.install_moved).toMatchObject({ minutes: 10, unit: 'move' });
+    expect(TIME_BASELINES.follow_up_sent).toMatchObject({ minutes: 2, capMinutes: 120, unit: 'text' });
+    for (const key of ['claim_packet', 'reminder_sent', 'install_moved', 'follow_up_sent'] as const) {
+      expect(VISIBLE_BASELINE_KEYS).toContain(key);
+      expect(TIME_BASELINES[key]).not.toHaveProperty('hidden', true);
+    }
+  });
+
   test('the hidden demo key counts 5 minutes per step and is hidden', () => {
     expect(TIME_BASELINES.demo).toMatchObject({ minutes: 5, unit: 'step', hidden: true });
   });
@@ -43,12 +58,12 @@ describe('TIME_BASELINES defaults (spec 3.1)', () => {
     for (const key of SPEC_KEYS) expect(TIME_BASELINES).toHaveProperty(key);
   });
 
-  test('only the text and email keys carry a cap', () => {
+  test('only the text, email, reminder and follow-up keys carry a cap', () => {
     const capped = Object.entries(TIME_BASELINES)
       .filter(([, def]) => 'capMinutes' in def)
       .map(([key]) => key)
       .sort();
-    expect(capped).toEqual(['email_sent', 'text_sent']);
+    expect(capped).toEqual(['email_sent', 'follow_up_sent', 'reminder_sent', 'text_sent']);
   });
 
   test('only the two call keys use the per-call length', () => {
@@ -69,7 +84,7 @@ describe('TIME_BASELINES defaults (spec 3.1)', () => {
 });
 
 describe('VISIBLE_BASELINE_KEYS and isEditableBaselineKey', () => {
-  test('lists exactly the ten spec keys in table order and not demo', () => {
+  test('lists exactly the fourteen spec keys in table order and not demo', () => {
     expect([...VISIBLE_BASELINE_KEYS]).toEqual(SPEC_KEYS);
     expect(VISIBLE_BASELINE_KEYS).not.toContain('demo');
   });
