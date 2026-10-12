@@ -7,7 +7,7 @@ import {
   withTenant,
   type LiveCampaign,
 } from '@roofline/db';
-import { localDate } from '@roofline/shared';
+import { type AdPausedBy, localDate } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
@@ -42,16 +42,25 @@ type PlatformAds = {
 };
 
 /**
- * The hourly look at one company's live campaigns. Each gets one stats read on its platform (outside any
- * transaction), then its numbers are stored (only while the row is still 'active'). At 95% of the approved
- * maximum the campaign is paused on the platform; the row becomes 'paused' only once the platform reports
- * paused, so a failed pause is retried by the next run. After the end date the campaign is paused and
- * becomes 'ended'. A campaign whose ad account is not active is skipped with no provider call. One campaign
- * failing is logged (never provider text) and leaves that campaign untouched; the others continue.
+ * The hourly look at one company's campaigns (listActiveCampaigns): each gets one stats read on its platform
+ * (outside any transaction), then its numbers are stored (only while the row still has the status the list read).
+ * - 'active' and 'paused' rows Roofline did not pause itself: at 95% of the approved maximum the campaign is paused
+ *   on the platform; the row becomes 'paused' with paused_by 'roofline' only once the platform reports paused, so a
+ *   failed pause is retried by the next run. After the end date the campaign is paused and becomes 'ended'. A
+ *   platform-reported pause below the line is 'paused' with paused_by 'platform' (the row is still read every
+ *   hour); if the platform reports it active again, the row goes back to 'active'. Only our own 95% pause and
+ *   'ended' stop the sync.
+ * - 'failed' rows, and 'creating' rows quiet for an hour, that have a platform id (the sweep): the enable response
+ *   may have been lost after the platform applied it. If the platform reports active, it is paused and re-read;
+ *   once it is paused (or ended or removed) paused_by becomes 'roofline' and the row is not read again. The row's
+ *   status is never changed and the campaign is never enabled.
+ * A campaign whose ad account is missing or revoked is skipped with no provider call; any other account status
+ * (a failed Check must not turn the guard off) is synced. One campaign failing is logged (never provider text)
+ * and leaves that campaign untouched; the others continue.
  */
 export async function syncCampaignSpend(deps: AppDeps, companyId: string, now: Date = deps.clock.now()): Promise<void> {
   const ctx = systemContext(companyId);
-  const campaigns = await withTenant(deps.pools, ctx, (tx) => listActiveCampaigns(tx, ctx));
+  const campaigns = await withTenant(deps.pools, ctx, (tx) => listActiveCampaigns(tx, ctx, now));
   for (const campaign of campaigns) {
     try {
       await syncOne(deps, companyId, campaign, now);
@@ -65,7 +74,7 @@ async function syncOne(deps: AppDeps, companyId: string, campaign: LiveCampaign,
   const ctx = systemContext(companyId);
   const prep = await withTenant(deps.pools, ctx, async (tx) => {
     const account = await getAdAccountByPlatform(tx, ctx, campaign.platform);
-    if (!account || account.status !== 'active') return null;
+    if (!account || account.status === 'revoked') return null;
     return {
       accountId: account.externalAccountId,
       zone: await companyTimeZone(tx, ctx),
@@ -78,6 +87,7 @@ async function syncOne(deps: AppDeps, companyId: string, campaign: LiveCampaign,
   const stats = await ads.stats(accountId, campaign.externalCampaignId);
 
   let status: 'active' | 'paused' | 'ended' | undefined;
+  let pausedBy: AdPausedBy | null | undefined;
   let pauseError: unknown;
   const pause = async (): Promise<boolean> => {
     try {
@@ -88,9 +98,24 @@ async function syncOne(deps: AppDeps, companyId: string, campaign: LiveCampaign,
       return false;
     }
   };
+  /** Pauses (when active), re-reads, and says whether the platform now reports it off. */
+  const pauseAndConfirm = async (): Promise<boolean> => {
+    if (stats.status !== 'active') return true;
+    if (!(await pause())) return false;
+    try {
+      return (await ads.stats(accountId, campaign.externalCampaignId)).status !== 'active';
+    } catch (err) {
+      pauseError = err;
+      return false;
+    }
+  };
 
+  const sweep = campaign.status === 'failed' || campaign.status === 'creating';
   const pastEnd = campaign.endDate !== null && localDate(now, prep.zone) > campaign.endDate;
-  if (atPauseLine(stats.spendCents, campaign.maxSpendCents)) {
+  if (sweep) {
+    // Confirmed off: stop sweeping, keep the row's status.
+    if (await pauseAndConfirm()) pausedBy = 'roofline';
+  } else if (atPauseLine(stats.spendCents, campaign.maxSpendCents)) {
     let paused = stats.status === 'paused';
     if (!paused && (await pause())) {
       try {
@@ -99,12 +124,20 @@ async function syncOne(deps: AppDeps, companyId: string, campaign: LiveCampaign,
         pauseError = err;
       }
     }
-    if (paused) status = 'paused';
+    if (paused) {
+      status = 'paused';
+      pausedBy = 'roofline';
+    }
   } else if (pastEnd || stats.status === 'ended' || stats.status === 'removed') {
     if (stats.status === 'active' && !(await pause())) status = undefined;
     else status = 'ended';
   } else if (stats.status === 'paused') {
     status = 'paused';
+    pausedBy = 'platform';
+  } else if (stats.status === 'active' && campaign.status === 'paused') {
+    // The platform (or the owner there) switched it back on: it is guarded as an active campaign again.
+    status = 'active';
+    pausedBy = null;
   }
 
   await withTenant(deps.pools, ctx, (tx) =>
@@ -114,6 +147,8 @@ async function syncOne(deps: AppDeps, companyId: string, campaign: LiveCampaign,
       clicks: stats.clicks,
       landingRequests: prep.landingRequests,
       status,
+      pausedBy,
+      expectStatus: campaign.status,
       now,
     }),
   );

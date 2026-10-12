@@ -1,4 +1,4 @@
-import type { AdCampaignStatus, AdErrorKind, AdPlatform } from '@roofline/shared';
+import type { AdCampaignStatus, AdErrorKind, AdPausedBy, AdPlatform } from '@roofline/shared';
 import { and, eq } from 'drizzle-orm';
 import { adCampaigns } from '../schema/tenant.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -57,6 +57,7 @@ export async function claimAdCampaign(tx: Tx, ctx: TenantContext, input: ClaimAd
 export type AdCampaignPatch = Partial<{
   externalCampaignId: string | null;
   status: AdCampaignStatus;
+  pausedBy: AdPausedBy | null;
   housingFallback: boolean;
   targets: unknown[];
   creative: Record<string, unknown>;
@@ -69,6 +70,7 @@ export async function updateAdCampaign(tx: Tx, ctx: TenantContext, id: string, p
   const set: Partial<typeof adCampaigns.$inferInsert> = { updatedAt: patch.now ?? new Date() };
   if (patch.externalCampaignId !== undefined) set.externalCampaignId = patch.externalCampaignId;
   if (patch.status !== undefined) set.status = patch.status;
+  if (patch.pausedBy !== undefined) set.pausedBy = patch.pausedBy;
   if (patch.housingFallback !== undefined) set.housingFallback = patch.housingFallback;
   if (patch.targets !== undefined) set.targets = patch.targets;
   if (patch.creative !== undefined) set.creative = patch.creative;

@@ -44,6 +44,7 @@ import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz
 import {
   AD_ACCOUNT_STATUSES,
   AD_CAMPAIGN_STATUSES,
+  AD_PAUSED_BY,
   AD_ERROR_KINDS,
   AD_PLATFORMS,
   APPOINTMENT_KINDS,
@@ -1408,6 +1409,8 @@ export const adCampaigns = pgTable(
     targets: jsonb('targets').$type<unknown[]>().notNull().default([]),
     creative: jsonb('creative').$type<Record<string, unknown>>().notNull().default({}),
     housingFallback: boolean('housing_fallback').notNull().default(false),
+    /** Who paused it: 'roofline' stops the hourly sync, 'platform' (or null) keeps it syncing. See ad-campaign-sync.ts. */
+    pausedBy: text('paused_by', { enum: AD_PAUSED_BY }),
     lastSyncedAt: tstz('last_synced_at'),
     errorKind: text('error_kind', { enum: AD_ERROR_KINDS }),
     errorPlain: text('error_plain'),
@@ -1432,6 +1435,7 @@ export const adCampaigns = pgTable(
     enumCheck('ad_campaigns', 'platform', t.platform, AD_PLATFORMS),
     enumCheck('ad_campaigns', 'status', t.status, AD_CAMPAIGN_STATUSES),
     enumCheck('ad_campaigns', 'error_kind', t.errorKind, AD_ERROR_KINDS),
+    enumCheck('ad_campaigns', 'paused_by', t.pausedBy, AD_PAUSED_BY),
   ],
 );
 

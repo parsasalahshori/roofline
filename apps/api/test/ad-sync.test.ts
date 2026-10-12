@@ -50,7 +50,21 @@ const adCreate = (nameTag: string): AdCreate => ({
 });
 
 /** An active Google account, a fake campaign and an active ad_campaigns row for one company. */
-async function seed(company: 'a' | 'b', opts: { accountStatus?: string; day?: string } = {}): Promise<Seeded> {
+async function seed(
+  company: 'a' | 'b',
+  opts: {
+    accountStatus?: string;
+    day?: string;
+    /** The row's status (default 'active'). */
+    rowStatus?: string;
+    pausedBy?: string | null;
+    /** When the row was last touched (default NOW). */
+    updatedAt?: Date;
+    /** What the fake platform reports (default 'active'). */
+    platformStatus?: 'active' | 'paused';
+    externalId?: boolean;
+  } = {},
+): Promise<Seeded> {
   const companyId = t.seed[company].companyId;
   const stormId = await insertOmahaStorm(q, opts.day ?? (company === 'a' ? '2026-10-11' : '2026-10-10'));
   const storm = await q(
@@ -61,24 +75,29 @@ async function seed(company: 'a' | 'b', opts: { accountStatus?: string; day?: st
   const { taskId } = await newTask(t, company);
   const stepId = (await dbSteps(t, company, taskId))[0]!.id;
   await owner.query(
-    `insert into ad_accounts (company_id, platform, external_account_id, status) values ($1, 'google', $2, $3)`,
+    `insert into ad_accounts (company_id, platform, external_account_id, status, currency) values ($1, 'google', $2, $3, 'USD')`,
     [companyId, ACCOUNT, opts.accountStatus ?? 'active'],
   );
   const { campaignId } = await t.adsGoogle.createCampaign(adCreate(`Roofline storm ${companyStormId} google`));
   const rows = await q(
     `insert into ad_campaigns (company_id, company_storm_id, step_id, platform, external_campaign_id, status,
                                daily_budget_cents, days, max_spend_cents, creative)
-     values ($1, $2, $3, 'google', $4, 'active', 3857, 7, $5, '{"endDate":"2026-10-18","startDate":"2026-10-12"}')
+     values ($1, $2, $3, 'google', $4, $6, 3857, 7, $5, '{"endDate":"2026-10-18","startDate":"2026-10-12"}')
      returning id`,
-    [companyId, companyStormId, stepId, campaignId, MAX],
+    [companyId, companyStormId, stepId, opts.externalId === false ? null : campaignId, MAX, opts.rowStatus ?? 'active'],
   );
-  t.adsGoogle.campaigns.get(campaignId)!.status = 'active'; // the handler enabled it
+  await owner.query(`update ad_campaigns set paused_by = $2, updated_at = $3 where id = $1`, [
+    rows[0]!.id,
+    opts.pausedBy ?? null,
+    opts.updatedAt ?? NOW,
+  ]);
+  t.adsGoogle.campaigns.get(campaignId)!.status = opts.platformStatus ?? 'active'; // the handler enabled it
   t.adsGoogle.calls.length = 0;
   return { companyId, companyStormId, rowId: rows[0]!.id as string, campaignId };
 }
 
 const rowOf = async (id: string) =>
-  (await q(`select status, spend_cents, impressions, clicks, landing_requests, last_synced_at from ad_campaigns where id = $1`, [id]))[0]!;
+  (await q(`select status, paused_by, spend_cents, impressions, clicks, landing_requests, last_synced_at from ad_campaigns where id = $1`, [id]))[0]!;
 const calls = (method: string) => t.adsGoogle.calls.filter((c) => c.method === method);
 const fakeStatus = (campaignId: string) => t.adsGoogle.campaigns.get(campaignId)!.status;
 
@@ -198,6 +217,145 @@ describe('campaign spend sync', () => {
   });
 });
 
+describe('a lost enable: the sweep of failed and long-creating rows', () => {
+  const HOUR = 3_600_000;
+
+  test('the handler loses the enable response, and the next sync of the failed row pauses a campaign the platform still reports active', async () => {
+    const s = await seed('a', { rowStatus: 'failed', platformStatus: 'active' });
+    t.adsGoogle.setSpend(s.campaignId, 5000);
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(fakeStatus(s.campaignId)).toBe('paused');
+    const r = await rowOf(s.rowId);
+    expect(r.status).toBe('failed'); // never changed
+    expect(r.paused_by).toBe('roofline'); // confirmed off
+    expect(r.spend_cents).toBe(5000);
+    expect(calls('setStatus').map((c) => c.args[2])).toEqual(['paused']);
+    // Confirmed off: the row is not read again, and nothing re-enables it.
+    t.adsGoogle.calls.length = 0;
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(t.adsGoogle.calls).toEqual([]);
+  });
+
+  test('a failed row the platform reports paused (or ended) is only marked confirmed off: no pause call, status unchanged', async () => {
+    const s = await seed('a', { rowStatus: 'failed', platformStatus: 'paused' });
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(calls('setStatus')).toEqual([]);
+    const r = await rowOf(s.rowId);
+    expect(r.status).toBe('failed');
+    expect(r.paused_by).toBe('roofline');
+  });
+
+  test('a failed pause is retried by the next run; the row stays in the sweep until the platform confirms it paused', async () => {
+    const s = await seed('a', { rowStatus: 'failed' });
+    failSetStatusOnce();
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(fakeStatus(s.campaignId)).toBe('active');
+    expect((await rowOf(s.rowId)).paused_by).toBeNull();
+    expect(t.logged.length).toBeGreaterThan(0);
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(fakeStatus(s.campaignId)).toBe('paused');
+    expect((await rowOf(s.rowId)).paused_by).toBe('roofline');
+  });
+
+  test('a creating row is swept only after an hour (the handler may be mid-flight), and a row without a platform id never', async () => {
+    const fresh = await seed('a', { rowStatus: 'creating', updatedAt: new Date(NOW.getTime() - 10 * 60_000) });
+    await syncCompanyAds(t.deps, fresh.companyId);
+    expect(t.adsGoogle.calls).toEqual([]);
+    expect(fakeStatus(fresh.campaignId)).toBe('active');
+    await owner.query(`update ad_campaigns set updated_at = $2 where id = $1`, [fresh.rowId, new Date(NOW.getTime() - 2 * HOUR)]);
+    await syncCompanyAds(t.deps, fresh.companyId);
+    expect(fakeStatus(fresh.campaignId)).toBe('paused');
+    const r = await rowOf(fresh.rowId);
+    expect(r.status).toBe('creating');
+    expect(r.paused_by).toBe('roofline');
+
+    const noId = await seed('b', { rowStatus: 'failed', externalId: false });
+    t.adsGoogle.calls.length = 0;
+    await syncCompanyAds(t.deps, noId.companyId);
+    expect(t.adsGoogle.calls).toEqual([]);
+  });
+
+  test('the sweep works with an account whose Check failed, and never re-enables', async () => {
+    const s = await seed('a', { rowStatus: 'failed', accountStatus: 'error' });
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(fakeStatus(s.campaignId)).toBe('paused');
+    expect(calls('setStatus').every((c) => c.args[2] === 'paused')).toBe(true);
+  });
+});
+
+describe('a failed Check does not turn off the 95% guard', () => {
+  test.each(['error', 'pending'])('a campaign on a %s account is still paused at 95%%', async (accountStatus) => {
+    const s = await seed('a', { accountStatus });
+    t.adsGoogle.setSpend(s.campaignId, 25650);
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(fakeStatus(s.campaignId)).toBe('paused');
+    expect(await rowOf(s.rowId)).toMatchObject({ status: 'paused', paused_by: 'roofline' });
+  });
+});
+
+describe('who paused it', () => {
+  test('a platform-reported pause below the line is paused(platform) and is read again; back to active when the platform resumes', async () => {
+    const s = await seed('a');
+    t.adsGoogle.campaigns.get(s.campaignId)!.status = 'paused'; // In-process, with issues, or the owner paused it there
+    t.adsGoogle.setSpend(s.campaignId, 5000);
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(await rowOf(s.rowId)).toMatchObject({ status: 'paused', paused_by: 'platform', spend_cents: 5000 });
+    expect(calls('setStatus')).toEqual([]);
+
+    await syncCompanyAds(t.deps, s.companyId); // still read
+    expect(calls('stats').length).toBe(2);
+
+    t.adsGoogle.campaigns.get(s.campaignId)!.status = 'active';
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(await rowOf(s.rowId)).toMatchObject({ status: 'active', paused_by: null });
+    expect(calls('setStatus')).toEqual([]);
+  });
+
+  test('a paused row with no paused_by counts as not ours: it is read and can go back to active', async () => {
+    const s = await seed('a', { rowStatus: 'paused', pausedBy: null, platformStatus: 'active' });
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(await rowOf(s.rowId)).toMatchObject({ status: 'active', paused_by: null });
+  });
+
+  test('a paused(platform) row the platform reports active again still pauses at 95%, as ours', async () => {
+    const s = await seed('a', { rowStatus: 'paused', pausedBy: 'platform', platformStatus: 'active' });
+    t.adsGoogle.setSpend(s.campaignId, 25650);
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(fakeStatus(s.campaignId)).toBe('paused');
+    expect(await rowOf(s.rowId)).toMatchObject({ status: 'paused', paused_by: 'roofline' });
+  });
+
+  test('a paused(platform) row still ends after its end date', async () => {
+    const s = await seed('a', { rowStatus: 'paused', pausedBy: 'platform', platformStatus: 'paused' });
+    t.clock.set(new Date('2026-10-19T15:00:00Z'));
+    await syncCompanyAds(t.deps, s.companyId);
+    expect((await rowOf(s.rowId)).status).toBe('ended');
+  });
+
+  test('our own 95% pause and ended stop the sync: the rows are not read again', async () => {
+    const own = await seed('a', { rowStatus: 'paused', pausedBy: 'roofline', platformStatus: 'paused' });
+    await syncCompanyAds(t.deps, own.companyId);
+    expect(t.adsGoogle.calls).toEqual([]);
+    expect(await rowOf(own.rowId)).toMatchObject({ status: 'paused', paused_by: 'roofline', last_synced_at: null });
+    const ended = await seed('b', { rowStatus: 'ended' });
+    t.adsGoogle.calls.length = 0;
+    await syncCompanyAds(t.deps, ended.companyId);
+    expect(t.adsGoogle.calls).toEqual([]);
+  });
+
+  test('the write is guarded by the status the list read: a row changed meanwhile is left alone', async () => {
+    const s = await seed('a');
+    const original = t.adsGoogle.stats.bind(t.adsGoogle);
+    t.adsGoogle.stats = async (...args: Parameters<typeof original>) => {
+      await owner.query(`update ad_campaigns set status = 'ended' where id = $1`, [s.rowId]);
+      return original(...args);
+    };
+    t.adsGoogle.setSpend(s.campaignId, 5000);
+    await syncCompanyAds(t.deps, s.companyId);
+    expect(await rowOf(s.rowId)).toMatchObject({ status: 'ended', spend_cents: 0 });
+  });
+});
+
 describe('companiesNeedingAdSync', () => {
   test('lists a pending-account company and a live-campaign company once each', async () => {
     const b = await seed('b');
@@ -208,5 +366,28 @@ describe('companiesNeedingAdSync', () => {
     );
     const got = await companiesNeedingAdSync(t.deps.pools.system);
     expect(got).toEqual([t.seed.a.companyId, b.companyId].sort().map((companyId) => ({ companyId })));
+  });
+
+  test('lists a company with a failed, paused (not by Roofline) or long-creating campaign that has a platform id, and drops confirmed-off rows', async () => {
+    const a = await seed('a', { rowStatus: 'failed' });
+    const list = () => companiesNeedingAdSync(t.deps.pools.system, NOW);
+    const only = (id: string) => [{ companyId: id }];
+    expect(await list()).toEqual(only(a.companyId));
+    await owner.query(`update ad_campaigns set paused_by = 'roofline' where id = $1`, [a.rowId]);
+    expect(await list()).toEqual([]);
+    await owner.query(`update ad_campaigns set status = 'paused', paused_by = 'platform' where id = $1`, [a.rowId]);
+    expect(await list()).toEqual(only(a.companyId));
+    await owner.query(`update ad_campaigns set paused_by = null where id = $1`, [a.rowId]);
+    expect(await list()).toEqual(only(a.companyId));
+    await owner.query(`update ad_campaigns set paused_by = 'roofline' where id = $1`, [a.rowId]);
+    expect(await list()).toEqual([]);
+    await owner.query(`update ad_campaigns set status = 'creating', paused_by = null, updated_at = $2 where id = $1`, [a.rowId, NOW]);
+    expect(await list()).toEqual([]); // the handler may be mid-flight
+    await owner.query(`update ad_campaigns set updated_at = $2 where id = $1`, [a.rowId, new Date(NOW.getTime() - 2 * 3_600_000)]);
+    expect(await list()).toEqual(only(a.companyId));
+    await owner.query(`update ad_campaigns set external_campaign_id = null where id = $1`, [a.rowId]);
+    expect(await list()).toEqual([]);
+    await owner.query(`update ad_campaigns set external_campaign_id = 'g-x', status = 'ended' where id = $1`, [a.rowId]);
+    expect(await list()).toEqual([]);
   });
 });

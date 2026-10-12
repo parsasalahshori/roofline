@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { AdPlatformError } from '../src/providers/ads-google.ts';
+import { FakeAdsMeta } from '../src/providers/fakes/ads-meta.ts';
 import {
   AD_ERROR_MESSAGES,
   evaluateAdAccount,
@@ -108,4 +109,39 @@ test('checkAdAccount does not re-invite an active Google link', async () => {
   expect(checked.status).toBe(200);
   expect(checked.body.account.status).toBe('active');
   expect(t.adsGoogle.calls.slice(before).some((c) => c.method === 'invite')).toBe(false);
+});
+
+test('a Check that throws keeps an active Google account active and only notes the problem (the 95% guard stays on)', async () => {
+  const { owner, id } = await linkGoogleRoute('123-456-7890');
+  t.adsGoogle.accept('1234567890');
+  const ok = await owner.post(`/api/ads/accounts/${id}/check`);
+  expect(ok.body.account).toMatchObject({ status: 'active', name: 'Fake Ads 1234567890', lastErrorPlain: null });
+  t.adsGoogle.failNext('other'); // linkStatus throws
+  const bad = await owner.post(`/api/ads/accounts/${id}/check`);
+  expect(bad.status).toBe(200);
+  expect(bad.body.account).toMatchObject({
+    status: 'active',
+    name: 'Fake Ads 1234567890',
+    lastErrorPlain: AD_ERROR_MESSAGES.other,
+  });
+  // The next good Check clears the note.
+  const again = await owner.post(`/api/ads/accounts/${id}/check`);
+  expect(again.body.account).toMatchObject({ status: 'active', lastErrorPlain: null });
+});
+
+test('a Check that throws keeps a pending Meta account pending, and a definite answer still changes the status', async () => {
+  const owner = await loginAs(t.app, t.seed.a.owner);
+  const res = await owner.post('/api/ads/accounts/meta').send({ adAccountId: 'act_555666777' });
+  expect(res.status).toBe(201);
+  const id = res.body.account.id as string;
+  expect(res.body.account.status).toBe('pending');
+  t.adsMeta.verifyAccess = async () => {
+    throw new AdPlatformError('other');
+  };
+  const bad = await owner.post(`/api/ads/accounts/${id}/check`);
+  expect(bad.body.account).toMatchObject({ status: 'pending', lastErrorPlain: AD_ERROR_MESSAGES.other });
+  t.adsMeta.disable('act_555666777');
+  t.adsMeta.verifyAccess = FakeAdsMeta.prototype.verifyAccess.bind(t.adsMeta);
+  const disabled = await owner.post(`/api/ads/accounts/${id}/check`);
+  expect(disabled.body.account).toMatchObject({ status: 'error', lastErrorPlain: META_DISABLED });
 });
