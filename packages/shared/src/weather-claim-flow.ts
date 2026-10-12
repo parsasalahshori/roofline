@@ -2,8 +2,15 @@
 import { workIntervals, type WorkHours } from './availability.ts';
 import type { ClaimStatus } from './more-agents.ts';
 
-/** One hourly forecast point. `at` is an ISO instant; `precipPct` is 0-100. */
-export type HourlyForecast = { at: string; precipPct: number; gustMph: number | null };
+/** One hour of forecast (G1 weather watch; produced by apps/api's NWS source). */
+export type HourlyForecast = {
+  /** The start of the hour, as an ISO instant. */
+  at: string;
+  /** Chance of precipitation, 0 to 100. */
+  precipPct: number;
+  /** Wind gust in mph, or null when the service gives neither a gust nor a wind speed. */
+  gustMph: number | null;
+};
 
 /** Company thresholds: `rainPct` (weather_rain_pct) and `gustMph` (weather_gust_mph). */
 export type WeatherThresholds = { rainPct: number; gustMph: number };
