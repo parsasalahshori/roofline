@@ -1,9 +1,12 @@
+import { insertOmahaStorm, type Query } from '@roofline/db/testing';
 import pg from 'pg';
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { adSpendSync } from '../src/jobs/scheduler/ad-spend-sync.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
+import { dbSteps, newTask } from './task-helpers.ts';
 
 const owner = new pg.Pool({ connectionString: inject('dbUrls').owner });
+const q: Query = async (text, values) => (await owner.query(text, values)).rows;
 const NOW = new Date('2026-10-12T15:00:00Z');
 
 let t: TestApp;
@@ -17,6 +20,24 @@ async function insertAccount(companyId: string, status: string, platform = 'goog
     externalId,
     status,
   ]);
+}
+
+/** An active campaign row (with the company storm and agent step it needs) for the company. */
+async function insertActiveCampaign(company: 'a' | 'b'): Promise<void> {
+  const companyId = t.seed[company].companyId;
+  const stormId = await insertOmahaStorm(q, company === 'a' ? '2026-10-11' : '2026-10-10');
+  const storm = await owner.query(
+    `insert into company_storms (company_id, storm_id, max_in, customers_hit, homes_hit) values ($1, $2, 1.5, 0, 0) returning id`,
+    [companyId, stormId],
+  );
+  const { taskId } = await newTask(t, company);
+  const stepId = (await dbSteps(t, company, taskId))[0]!.id;
+  await owner.query(
+    `insert into ad_campaigns (company_id, company_storm_id, step_id, platform, external_campaign_id, status,
+                               daily_budget_cents, days, max_spend_cents, creative)
+     values ($1, $2, $3, 'google', $4, 'active', 3857, 7, 27000, '{"endDate":"2026-10-18"}')`,
+    [companyId, storm.rows[0].id, stepId, `g-sched-${company}`],
+  );
 }
 
 afterAll(async () => {
@@ -77,5 +98,18 @@ describe('ad spend sync schedule', () => {
     }
     expect(t.logged.map((l) => l.where)).toEqual([`ad-spend-sync: company ${first}`]);
     expect(t.jobs.sent).toEqual([{ name: 'ad-sync-company', data: { companyId: second }, singletonKey: second }]);
+  });
+
+  test('a company with an active campaign and no pending account is queued', async () => {
+    await insertActiveCampaign('a');
+    await adSpendSync(t.deps, NOW);
+    expect(t.jobs.sent).toEqual([{ name: 'ad-sync-company', data: { companyId: a }, singletonKey: a }]);
+  });
+
+  test('a company with both a pending account and an active campaign is queued once', async () => {
+    await insertAccount(a, 'pending');
+    await insertActiveCampaign('a');
+    await adSpendSync(t.deps, NOW);
+    expect(t.jobs.sent).toEqual([{ name: 'ad-sync-company', data: { companyId: a }, singletonKey: a }]);
   });
 });
