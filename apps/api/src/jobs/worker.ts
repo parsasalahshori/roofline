@@ -6,6 +6,7 @@ import { runStep } from '../tasks/runner.ts';
 import { UUID } from '../validate.ts';
 import { JOB_HANDLERS } from './handlers.ts';
 import { ensureJobQueues, JOB_NAMES, type JobData, type JobMeta } from './queue.ts';
+import { adSpendSync } from './scheduler/ad-spend-sync.ts';
 import { billMonthlyFees } from './scheduler/bill-monthly-fees.ts';
 import { pullCalendars } from './scheduler/calendar-pull.ts';
 import { dispatchDueMessages } from './scheduler/dispatch-messages.ts';
@@ -13,11 +14,14 @@ import { ensureFootprints } from './scheduler/footprints-ensure.ts';
 import { pollExactReports } from './scheduler/exact-report-poll.ts';
 import { endTrials } from './scheduler/end-trials.ts';
 import { expireDrafts } from './scheduler/expire-drafts.ts';
+import { hailHealth } from './scheduler/hail-health.ts';
 import { pollTexting } from './scheduler/poll-texting.ts';
 import { pruneEarlyReports } from './scheduler/prune-early-reports.ts';
 import { provisionTexting } from './scheduler/provision-texting.ts';
 import { reportJobError } from './scheduler/report.ts';
 import { reportUsage } from './scheduler/report-usage.ts';
+import { spotterSync } from './scheduler/spotter-sync.ts';
+import { stormMatch } from './scheduler/storm-match.ts';
 import { sweepImports } from './scheduler/sweep-imports.ts';
 import { sweepQueued } from './scheduler/sweep-queued.ts';
 
@@ -41,7 +45,7 @@ export type ScheduledJob = {
  * The worker's recurring jobs: draft expiry, the queued-step sweeper, the import sweeper (imports
  * stranded queued or processing), the scheduled-text
  * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
- * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up and the exact-report poll. A schedule dropped
+ * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll, and Storm Scout's Spotter sync, storm matching, ad-spend sync and hail-feed health check. A schedule dropped
  * from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [
@@ -58,6 +62,10 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'calendar-pull', cron: '*/5 * * * *', run: pullCalendars },
   { name: 'footprints-ensure', cron: '*/15 * * * *', run: ensureFootprints },
   { name: 'exact-report-poll', cron: '*/10 * * * *', run: pollExactReports },
+  { name: 'spotter-sync', cron: '*/30 * * * *', run: spotterSync },
+  { name: 'storm-match', cron: '*/10 * * * *', run: stormMatch },
+  { name: 'ad-spend-sync', cron: '0 * * * *', run: adSpendSync },
+  { name: 'hail-health', cron: '*/15 * * * *', run: hailHealth },
 ];
 
 /** How many steps one worker process runs at once. */
@@ -86,7 +94,7 @@ class JobFailed extends Error {
 
 /**
  * A job-queue job's data: a company id, plus an import id for an import or an appointment id for a
- * calendar push, or a state for a footprints load (which carries the requesting company's id), or a proposal id for a signed PDF. Checked before a handler runs.
+ * calendar push, or a state for a footprints load (which carries the requesting company's id), or a proposal id for a signed PDF, or a storm id (and an alert kind) for the storm jobs. Checked before a handler runs.
  */
 function isJobData(data: unknown): data is JobData {
   if (typeof data !== 'object' || data === null) return false;

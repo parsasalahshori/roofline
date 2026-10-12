@@ -158,8 +158,9 @@ export const sendProposalStep: StepHandler = async (deps, ctx, step): Promise<St
     return { kind: 'ready' as const, text };
   });
 
-  if (prepared.kind === 'done') return { status: 'done', result: {} };
-  if (prepared.kind === 'needs_attention') return { status: 'needs_attention', result: {}, errorPlain: prepared.errorPlain };
+  // Ruling EN: the result counts what was sent (A1 reads it for time saved); an earlier send counts once.
+  if (prepared.kind === 'done') return { status: 'done', result: { sent: 1 } };
+  if (prepared.kind === 'needs_attention') return { status: 'needs_attention', result: { sent: 0 }, errorPlain: prepared.errorPlain };
 
   const outcome = await sendOneText(deps, ctx, step, {
     customerId: payload.customerId,
@@ -182,7 +183,7 @@ export const sendProposalStep: StepHandler = async (deps, ctx, step): Promise<St
     return stepTextReason(tx, ctx, step.id, payload.customerId);
   });
   if (outcome === 'blocked') {
-    return { status: 'needs_attention', result: { blocked: 1 }, errorPlain: reason ?? BLOCKED_FALLBACK };
+    return { status: 'needs_attention', result: { sent: 0, blocked: 1 }, errorPlain: reason ?? BLOCKED_FALLBACK };
   }
-  return { status: 'needs_attention', result: { failed: 1 }, errorPlain: reason ?? FAILED_FALLBACK };
+  return { status: 'needs_attention', result: { sent: 0, failed: 1 }, errorPlain: reason ?? FAILED_FALLBACK };
 };

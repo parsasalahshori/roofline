@@ -473,9 +473,18 @@ describe('GET /api/team', () => {
       role: 'owner',
       canApproveSpend: false,
       status: 'active',
+      stormAlertEmail: true,
     });
     expect(JSON.stringify(res.body)).not.toMatch(/scrypt|password/i);
     expect(res.body.invites).toEqual([]);
+  });
+
+  test('GET /api/team shows stormAlertEmail true by default', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const res = await owner.get('/api/team');
+    expect(res.status).toBe(200);
+    expect(res.body.members).toHaveLength(4);
+    expect(res.body.members.every((m: { stormAlertEmail: unknown }) => m.stormAlertEmail === true)).toBe(true);
   });
 
   test('pending invites are listed for the owner: id, email, role, expiry; not accepted or expired ones', async () => {
@@ -1275,6 +1284,7 @@ describe('PATCH /api/team/members/:membershipId', () => {
       role: 'office',
       canApproveSpend: false,
       status: 'active',
+      stormAlertEmail: true,
     });
     const rows = await auditRows(t.seed.a.companyId, 'member.update');
     expect(rows).toHaveLength(1);
@@ -1289,6 +1299,63 @@ describe('PATCH /api/team/members/:membershipId', () => {
     // The rep's own next request already sees the new role (it is read fresh).
     const rep = await loginAs(t.app, t.seed.a.rep);
     expect((await rep.get('/api/auth/me')).body.role).toBe('office');
+  });
+
+  test('PATCH stormAlertEmail false turns the member off and the list shows it, the audit row records it, a role change keeps it', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const id = await membershipId(t.seed.a.companyId, t.seed.a.rep.userId);
+    const flagInList = async () => {
+      const team = await owner.get('/api/team');
+      const rep = team.body.members.find((m: { id: string }) => m.id === id);
+      return rep.stormAlertEmail as boolean;
+    };
+
+    const off = await owner.patch(`/api/team/members/${id}`).send({ stormAlertEmail: false });
+    expect(off.status).toBe(200);
+    expect(off.body).toEqual({
+      id,
+      userId: t.seed.a.rep.userId,
+      name: 'Acme Rep',
+      email: 'rep@a.test',
+      role: 'rep',
+      canApproveSpend: false,
+      status: 'active',
+      stormAlertEmail: false,
+    });
+    expect(await flagInList()).toBe(false);
+    const [row] = await sql<{ storm_alert_email: boolean }>('select storm_alert_email from memberships where id = $1', [id]);
+    expect(row!.storm_alert_email).toBe(false);
+
+    const rows = await auditRows(t.seed.a.companyId, 'member.update');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      before: { role: 'rep', canApproveSpend: false, status: 'active', stormAlertEmail: true },
+      after: { role: 'rep', canApproveSpend: false, status: 'active', stormAlertEmail: false },
+    });
+
+    // A role change does not reset the switch.
+    t.clock.advance(1000);
+    const promoted = await owner.patch(`/api/team/members/${id}`).send({ role: 'office' });
+    expect(promoted.status).toBe(200);
+    expect(promoted.body.stormAlertEmail).toBe(false);
+    expect(await flagInList()).toBe(false);
+    const after = await auditRows(t.seed.a.companyId, 'member.update');
+    expect(after[1]).toMatchObject({
+      before: { role: 'rep', stormAlertEmail: false },
+      after: { role: 'office', stormAlertEmail: false },
+    });
+
+    // Only the owner may change it, and it must be a yes or no.
+    const bad = await owner.patch(`/api/team/members/${id}`).send({ stormAlertEmail: 'no' });
+    expect(bad.status).toBe(400);
+    expect(bad.body).toEqual({ error: 'Please choose yes or no.', field: 'stormAlertEmail' });
+    const office = await loginAs(t.app, t.seed.a.office);
+    const officeId = await membershipId(t.seed.a.companyId, t.seed.a.office.userId);
+    expect((await office.patch(`/api/team/members/${officeId}`).send({ stormAlertEmail: false })).status).toBe(403);
+
+    // Turning it back on works too.
+    await owner.patch(`/api/team/members/${id}`).send({ stormAlertEmail: true }).expect(200);
+    expect(await flagInList()).toBe(true);
   });
 
   test("the team list shows the office user's spend delegation before and after a PATCH", async () => {

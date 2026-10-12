@@ -265,7 +265,7 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
   });
 
   return (
-    <div ref={scrollRef} className={styles.scroll} data-testid="time-grid">
+    <div ref={scrollRef} className={styles.scroll} data-testid="time-grid" role="region" aria-label={calendar.gridLabel} tabIndex={0}>
       <div
         ref={gridRef}
         className={styles.grid}

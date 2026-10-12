@@ -83,6 +83,18 @@ function accept(entry: unknown): GeocodeResult | null {
   };
 }
 
+/** Street, city, state and zip of one reverse-geocode result, or null when any part is missing. */
+function reverseAddress(entry: unknown): { street: string; city: string; state: string; zip: string } | null {
+  if (!isRecord(entry)) return null;
+  const parts: JsonRecord = isRecord(entry.address_components) ? entry.address_components : {};
+  const street = `${partText(parts.number)} ${partText(parts.formatted_street)}`.trim();
+  const city = optionalString(parts.city);
+  const state = optionalString(parts.state);
+  const zip = optionalString(parts.zip);
+  if (street === '' || !city || !state || !zip) return null;
+  return { street, city, state, zip };
+}
+
 type RequestInitLike = Pick<RequestInit, 'method' | 'headers' | 'body'>;
 
 export class GeocodioGeocoder implements Geocoder {
@@ -138,6 +150,42 @@ export class GeocodioGeocoder implements Geocoder {
       const response: unknown = isRecord(entry) ? entry.response : undefined;
       const list = listOf(isRecord(response) ? response.results : undefined);
       return accept(list?.[0]);
+    });
+  }
+
+  async reverseMany(
+    points: { lat: number; lng: number }[],
+  ): Promise<({ street: string; city: string; state: string; zip: string } | null)[]> {
+    if (points.length === 0) return [];
+    const out: ({ street: string; city: string; state: string; zip: string } | null)[] = [];
+    for (let start = 0; start < points.length; start += BATCH_SIZE) {
+      const chunk = points.slice(start, start + BATCH_SIZE);
+      for (const result of await this.reverseChunk(chunk)) out.push(result);
+    }
+    return out;
+  }
+
+  private async reverseChunk(
+    chunk: { lat: number; lng: number }[],
+  ): Promise<({ street: string; city: string; state: string; zip: string } | null)[]> {
+    const url = `${this.baseUrl}/reverse?api_key=${encodeURIComponent(this.apiKey)}`;
+    const { status, body } = await this.request(
+      url,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(chunk.map((p) => `${p.lat},${p.lng}`)),
+      },
+      this.timeoutMs,
+    );
+    if (status === 422) return chunk.map(() => null);
+    const results = listOf(isRecord(body) ? body.results : undefined);
+    if (results === null) throw unavailable();
+    return chunk.map((_, i) => {
+      const entry: unknown = results[i];
+      const response: unknown = isRecord(entry) ? entry.response : undefined;
+      const list = listOf(isRecord(response) ? response.results : undefined);
+      return reverseAddress(list?.[0]);
     });
   }
 

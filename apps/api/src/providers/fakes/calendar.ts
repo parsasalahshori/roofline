@@ -43,10 +43,20 @@ export class FakeCalendarApi implements CalendarApi {
   private changeSeq = 0;
   private tick = 0;
 
-  constructor(readonly provider: CalendarProvider) {}
+  /**
+   * `selfCallback` makes `authUrl` point straight at the redirect uri with `code=fake`, so a browser
+   * following it lands back in the app (the end-to-end stack, FAKE_PROVIDERS). Off by default.
+   */
+  constructor(
+    readonly provider: CalendarProvider,
+    private readonly options: { selfCallback?: boolean } = {},
+  ) {}
 
   authUrl(i: { state: string; redirectUri: string }): string {
     this.calls.push({ method: 'authUrl', args: [i] });
+    if (this.options.selfCallback === true) {
+      return `${i.redirectUri}?code=fake&state=${encodeURIComponent(i.state)}`;
+    }
     return `https://calendar.fake.test/${this.provider}/auth?state=${encodeURIComponent(i.state)}`;
   }
 

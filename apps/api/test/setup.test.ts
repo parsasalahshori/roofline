@@ -155,6 +155,18 @@ test('a pending registration is waiting', async () => {
   expect(item(body, 'texting_registration').status).toBe('waiting');
 });
 
+test('connect_ads turns done once an ad account is active', async () => {
+  await ownerSql(
+    `insert into ad_accounts (company_id, platform, external_account_id, status) values ($1, 'google', '1234567890', 'pending')`,
+    [t.seed.a.companyId],
+  );
+  const owner = await loginAs(t.app, t.seed.a.owner);
+  expect(item(await getSetup(owner), 'connect_ads').status).toBe('waiting');
+
+  await ownerSql(`update ad_accounts set status = 'active' where company_id = $1`, [t.seed.a.companyId]);
+  expect(item(await getSetup(owner), 'connect_ads').status).toBe('done');
+});
+
 test('a rejection lists only real brand fields', async () => {
   await ownerSql(
     `insert into texting_registrations (company_id, campaign_status, rejection_reason_plain, rejected_fields)

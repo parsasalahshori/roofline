@@ -18,6 +18,7 @@ import {
 import { companyIdForMessagingService, companyIdForNumber, signingTokenFor } from '@roofline/db/system';
 import { type InboundReading, looksLikeOptOut, readInbound } from '@roofline/send-gate';
 import type { AppDeps } from '../app.ts';
+import { onStormReply } from '../storm/replies.ts';
 
 /*
  * Twilio's webhooks (spec 4.5, R24), mounted at /hooks/twilio ahead of the /api session gate:
@@ -338,6 +339,11 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
         return twilioAnswered ? undefined : reply.start(company.name);
       case 'other':
         if (looksLikeOptOut(text.body)) await flagPossibleOptOut(tx, ctx, active, messageId, now);
+        {
+          const storm = await onStormReply(tx, ctx, { id: messageId, customerId: active[0] ?? null, body: text.body }, now);
+          if (storm.consumed) return undefined;
+        }
+        // Ruling AV order: S1 onStormReply (above), then G1 claims, then D1 queueFrontDeskText; each skips a message an earlier one consumed.
         return undefined;
     }
   });

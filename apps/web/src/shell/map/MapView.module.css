@@ -34,6 +34,9 @@
   position: absolute;
   top: 72px;
   right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .controls button[data-variant="ghost"] {

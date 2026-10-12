@@ -23,3 +23,10 @@ export * from './fd-retention.ts';
 export * from './footprints.ts';
 export * from './proposal-links.ts';
 export * from './exact-report-fanout.ts';
+// S1 skeleton (Task 1).
+export * from './spotter.ts';
+export * from './storm-match-fanout.ts';
+export * from './ad-sync-fanout.ts';
+export * from './storm-page-lookup.ts';
+export * from './unsubscribe-lookup.ts';
+export * from './hail-health.ts';
