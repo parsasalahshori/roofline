@@ -1,0 +1,17 @@
+/* The body of the sheet: the one field, stacked with room between. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* The buttons sit at the end of the footer and are full touch targets on a phone */
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.footer > * {
+  min-height: 40px;
+}

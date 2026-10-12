@@ -190,6 +190,52 @@ describe('TwilioBrands', () => {
     await expect(unavailable).rejects.toThrow("Twilio didn't answer.");
   });
 
+  /** A fetch that answers one method and url with a status and a body, and everything else from the fixtures. */
+  function failing(base: ReturnType<typeof fixtureFetch>, method: string, prefix: string, status: number, body: unknown): typeof fetch {
+    return ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if ((init?.method ?? 'GET').toUpperCase() === method && url === prefix) {
+        return Promise.resolve(
+          new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+        );
+      }
+      return base(input, init);
+    }) as typeof fetch;
+  }
+
+  test.each([429, 403, 401])('a %i from Twilio is unavailable, with the code only', async (status) => {
+    const f = failing(fixtureFetch(freshRoutes()), 'POST', `${MSG}/a2p/BrandRegistrations`, status, {
+      code: 20429,
+      message: 'secret+14025550199',
+    });
+    const error = await brandsWith(f)
+      .submitBrand(sub, submitArgs())
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(error).toBeInstanceOf(RegistrarUnavailableError);
+    expect((error as Error).message).toMatch(/code 20429/);
+    expect((error as Error).message).not.toContain('secret');
+    expect((error as Error).message).not.toContain('4025550199');
+  });
+
+  test('progress is reported as each id exists, and survives a later failure', async () => {
+    const ok: Array<Record<string, string | undefined>> = [];
+    await brandsWith(fixtureFetch(freshRoutes())).submitBrand(sub, {
+      ...submitArgs(),
+      onProgress: (p) => ok.push({ ...p }),
+    });
+    expect(ok).toEqual([{ customerProfileSid: BU }, { trustProductSid: BW }, { brandSid: BN }]);
+
+    const seen: Array<Record<string, string | undefined>> = [];
+    const f = failing(fixtureFetch(freshRoutes()), 'POST', `${TH}/TrustProducts`, 500, { code: 20500 });
+    await expect(
+      brandsWith(f).submitBrand(sub, { ...submitArgs(), onProgress: (p) => seen.push({ ...p }) }),
+    ).rejects.toBeInstanceOf(RegistrarUnavailableError);
+    expect(seen).toEqual([{ customerProfileSid: BU }]);
+  });
+
   test('brand statuses', async () => {
     const statusOf = (name: string) =>
       brandsWith(fixtureFetch({ [`GET ${MSG}/a2p/BrandRegistrations/${BN}`]: name })).brandStatus(sub, BN);
@@ -264,6 +310,7 @@ describe('TwilioBrands', () => {
       [`GET ${TH}/SupportingDocuments/${RD1}`]: 'document-get',
       [`POST ${TH}/EndUsers/${IT1}`]: 'enduser-update',
       [`POST ${TH}/EndUsers/${IT2}`]: 'enduser-update',
+      [`GET ${TH}/TrustProducts/${BW}/EntityAssignments`]: 'trust-assignments-both',
       [`POST ${API}/Accounts/${sub.accountSid}/Addresses/${AD1}.json`]: 'address-update',
       [`POST ${TH}/CustomerProfiles/${BU}/Evaluations`]: 'evaluation-compliant',
       [`POST ${TH}/CustomerProfiles/${BU}`]: 'profile-submit',
@@ -283,6 +330,7 @@ describe('TwilioBrands', () => {
       `POST /2010-04-01/Accounts/${sub.accountSid}/Addresses/${AD1}.json`,
       `POST /v1/CustomerProfiles/${BU}/Evaluations`,
       `POST /v1/CustomerProfiles/${BU}`,
+      `GET /v1/TrustProducts/${BW}/EntityAssignments`,
       `POST /v1/TrustProducts/${BW}/Evaluations`,
       `POST /v1/TrustProducts/${BW}`,
       `POST /v1/a2p/BrandRegistrations/${BN}`,
@@ -300,6 +348,42 @@ describe('TwilioBrands', () => {
     expect(address.get('PostalCode')).toBe('68102');
     expect(address.get('CustomerName')).toBe('Acme Roofing LLC');
     expect(address.get('IsoCountry')).toBe('US');
+  });
+
+  test('a saved but unfinished messaging profile is completed before review', async () => {
+    const f = fixtureFetch({
+      [`GET ${TH}/CustomerProfiles/${BU}/EntityAssignments`]: 'assignments-list',
+      [`GET ${TH}/EndUsers/${IT1}`]: 'enduser-get-business',
+      [`GET ${TH}/EndUsers/${IT2}`]: 'enduser-get-rep',
+      [`GET ${TH}/SupportingDocuments/${RD1}`]: 'document-get',
+      [`POST ${TH}/EndUsers/${IT1}`]: 'enduser-update',
+      [`POST ${TH}/EndUsers/${IT2}`]: 'enduser-update',
+      [`GET ${TH}/TrustProducts/${BW}/EntityAssignments`]: 'assignments-empty',
+      [`POST ${TH}/EndUsers`]: 'enduser-create',
+      [`POST ${TH}/TrustProducts/${BW}/EntityAssignments`]: 'assignment-create',
+      [`POST ${API}/Accounts/${sub.accountSid}/Addresses/${AD1}.json`]: 'address-update',
+      [`POST ${TH}/CustomerProfiles/${BU}/Evaluations`]: 'evaluation-compliant',
+      [`POST ${TH}/CustomerProfiles/${BU}`]: 'profile-submit',
+      [`POST ${TH}/TrustProducts/${BW}/Evaluations`]: 'evaluation-compliant',
+      [`POST ${TH}/TrustProducts/${BW}`]: 'profile-submit',
+      [`POST ${MSG}/a2p/BrandRegistrations/${BN}`]: 'brand-pending',
+    });
+    await brandsWith(f).submitBrand(sub, submitArgs(brand(), previous));
+
+    const entries = log(f);
+    const at = entries.indexOf(`GET /v1/TrustProducts/${BW}/EntityAssignments`);
+    expect(at).toBeGreaterThan(-1);
+    expect(entries.slice(at, at + 5)).toEqual([
+      `GET /v1/TrustProducts/${BW}/EntityAssignments`,
+      'POST /v1/EndUsers',
+      `POST /v1/TrustProducts/${BW}/EntityAssignments`,
+      `POST /v1/TrustProducts/${BW}/EntityAssignments`,
+      `POST /v1/TrustProducts/${BW}/Evaluations`,
+    ]);
+    expect(entries).not.toContain('POST /v1/TrustProducts');
+    const first = entries.indexOf(`POST /v1/TrustProducts/${BW}/EntityAssignments`);
+    expect(formAt(f, first).get('ObjectSid')).toBe(IT1);
+    expect(formAt(f, first + 1).get('ObjectSid')).toBe(BU);
   });
 
   test('every TrustHub and Messaging call uses the subaccount credentials', async () => {

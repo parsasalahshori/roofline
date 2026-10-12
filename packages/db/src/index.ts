@@ -163,6 +163,7 @@ export { type TenantContext, type Tx, withTenant } from './tenant.ts';
 export * from './repos/board.ts';
 export * from './repos/timeline.ts';
 export * from './repos/notes.ts';
+export * from './repos/customer-view.ts'; // C1 Task 7
 export * from './repos/appointments.ts';
 export * from './repos/today.ts';
 export * from './repos/schedules.ts';

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COMING_WITH,
   deriveSetup,
   SETUP_ITEM_KEYS,
   type SetupFacts,
@@ -18,6 +19,7 @@ function facts(o: Partial<SetupFacts> = {}): SetupFacts {
     activeMembers: 0,
     pendingInvites: 0,
     paymentMethod: false,
+    calendarsConnected: 0,
     skipped: new Set<SetupItemKey>(),
     ...o,
   };
@@ -49,7 +51,6 @@ describe('deriveSetup', () => {
 
     const later: [SetupItemKey, string][] = [
       ['prices_and_tiers', 'estimator'],
-      ['connect_calendar', 'calendar'],
       ['phone_number', 'front_desk'],
       ['connect_ads', 'storm_scout'],
     ];
@@ -57,6 +58,9 @@ describe('deriveSetup', () => {
       expect(item(view, key).status).toBe('todo');
       expect(item(view, key).comingWith).toBe(comingWith);
     }
+
+    expect(item(view, 'connect_calendar').status).toBe('todo');
+    expect(item(view, 'connect_calendar').comingWith).toBeNull();
 
     expect(view.progress).toEqual({ done: 0, total: 5 });
   });
@@ -116,5 +120,34 @@ describe('deriveSetup', () => {
 
     const addressOnly = deriveSetup(facts({ addressSaved: true, located: false }));
     expect(item(addressOnly, 'company_basics').status).toBe('in_progress');
+  });
+
+  it('connect_calendar is done once one calendar is connected', () => {
+    const one = deriveSetup(facts({ calendarsConnected: 1 }));
+    expect(item(one, 'connect_calendar').status).toBe('done');
+    expect(item(one, 'connect_calendar').comingWith).toBeNull();
+
+    const three = deriveSetup(facts({ calendarsConnected: 3 }));
+    expect(item(three, 'connect_calendar').status).toBe('done');
+  });
+
+  it('connect_calendar stays todo with none connected', () => {
+    const view = deriveSetup(facts({ calendarsConnected: 0 }));
+    expect(item(view, 'connect_calendar').status).toBe('todo');
+  });
+
+  it('a stored skip never hides connect_calendar', () => {
+    const view = deriveSetup(facts({ skipped: new Set(['connect_calendar']), calendarsConnected: 0 }));
+    expect(item(view, 'connect_calendar').status).toBe('todo');
+    expect(item(view, 'connect_calendar').skippable).toBe(false);
+  });
+
+  it('connect_calendar does not count toward progress', () => {
+    const view = deriveSetup(facts({ calendarsConnected: 2 }));
+    expect(view.progress).toEqual({ done: 0, total: 5 });
+  });
+
+  it("keeps 'calendar' in COMING_WITH (Ruling CC) even though no item returns it", () => {
+    expect(COMING_WITH).toContain('calendar');
   });
 });
