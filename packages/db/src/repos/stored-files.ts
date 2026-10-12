@@ -1,7 +1,8 @@
-import { and, eq, isNull } from 'drizzle-orm';
-import type { ProposalView, SignatureRecord, StoredFileKind } from '@roofline/shared';
-import { companies, companySettings, customers, proposalSignatures, proposals, storedFiles } from '../schema/index.ts';
+import { and, asc, eq, isNull, lt } from 'drizzle-orm';
+import type { FinancingTerms, ProposalView, SignatureRecord, SignedDocument, StoredFileKind } from '@roofline/shared';
+import { companies, customers, proposalSignatures, proposals, storedFiles } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { proposalOptionTerms, signedDocumentOf } from './proposal-public.ts';
 import { getProposal } from './proposals.ts';
 
 export async function storeFile(
@@ -31,11 +32,15 @@ export type SignedPdfSource = {
   signature: SignatureRecord;
   /** Set when the signature already has a stored PDF (the job then does nothing). */
   pdfFileId: string | null;
+  /** Today's company name and phone (for the email). The PDF prints the signed ones from `document`. */
   company: { name: string; phone: string | null };
   /** The company's time zone as stored (the caller checks it). */
   timeZone: string;
-  financing: { aprBps: number; months: number } | null;
-  /** True when the signed option's "Estimate" clause applies (basis 'estimate' and the company clause setting is on). */
+  /** The document signed, as hashed and stored at signing (Ruling ER); null for a signature made before it was stored. */
+  document: SignedDocument | null;
+  /** Each option's financing terms by option id: frozen with its price, or today's settings for an older option. */
+  optionFinancing: Record<string, FinancingTerms | null>;
+  /** Without a stored document only: true when the signed option's "Estimate" clause applies (basis 'estimate' and its clause on). */
   estimateClause: boolean;
   customerEmail: string | null;
   customerFirstName: string | null;
@@ -66,11 +71,8 @@ export async function signedPdfSource(tx: Tx, ctx: TenantContext, proposalId: st
     viewedFirstAt: sig.viewedFirstAt ? sig.viewedFirstAt.toISOString() : null,
   };
   const [company] = await tx.select({ name: companies.name, phone: companies.phoneE164, timezone: companies.timezone }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
-  const [settings] = await tx
-    .select({ apr: companySettings.financingAprBps, months: companySettings.financingTermMonths, clause: companySettings.estimateChangeClause })
-    .from(companySettings)
-    .where(eq(companySettings.companyId, ctx.companyId))
-    .limit(1);
+  const terms = await proposalOptionTerms(tx, ctx, proposalId);
+  const document = await signedDocumentOf(tx, ctx, proposalId);
   const [cust] = await tx
     .select({ name: customers.displayName, emails: customers.emails })
     .from(customers)
@@ -88,8 +90,9 @@ export async function signedPdfSource(tx: Tx, ctx: TenantContext, proposalId: st
     pdfFileId: sig.pdfFileId,
     company: { name: company?.name ?? '', phone: company?.phone ?? null },
     timeZone: company?.timezone ?? '',
-    financing: settings && settings.apr !== null && settings.months !== null ? { aprBps: settings.apr, months: settings.months } : null,
-    estimateClause: proposal.basis === 'estimate' && (settings?.clause ?? true),
+    document,
+    optionFinancing: Object.fromEntries(Object.entries(terms).map(([id, t]) => [id, t.financing])),
+    estimateClause: proposal.basis === 'estimate' && (terms[sig.optionId]?.estimateClause ?? true),
     customerEmail: cust?.emails[0] ?? null,
     customerFirstName: first === '' ? null : first,
     linkTokenEncrypted: tok && tok.encrypted.length > 0 ? tok.encrypted : null,
@@ -104,4 +107,17 @@ export async function attachSignedPdf(tx: Tx, ctx: TenantContext, proposalId: st
     .where(and(eq(proposalSignatures.companyId, ctx.companyId), eq(proposalSignatures.proposalId, proposalId), isNull(proposalSignatures.pdfFileId)))
     .returning({ id: proposalSignatures.id });
   return rows.length > 0;
+}
+
+/**
+ * The proposals whose signature was made before `before` and still has no signed PDF, oldest first:
+ * the sweep queues their 'signed-pdf' job again (its retries ran out, or it was never queued).
+ */
+export async function signaturesWithoutPdf(tx: Tx, ctx: TenantContext, before: Date): Promise<string[]> {
+  const rows = await tx
+    .select({ proposalId: proposalSignatures.proposalId })
+    .from(proposalSignatures)
+    .where(and(eq(proposalSignatures.companyId, ctx.companyId), isNull(proposalSignatures.pdfFileId), lt(proposalSignatures.signedAt, before)))
+    .orderBy(asc(proposalSignatures.signedAt), asc(proposalSignatures.proposalId));
+  return rows.map((r) => r.proposalId);
 }

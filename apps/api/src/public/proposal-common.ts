@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { publicProposalState, withTenant, type TenantContext } from '@roofline/db';
 import { resolveProposalToken } from '@roofline/db/system';
 import type { ProposalStatus } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import { AppError } from '../errors.ts';
+import { AppError, MESSAGES } from '../errors.ts';
 
 const NOT_WORKING = "This proposal link doesn't work.";
 const GONE = 'This proposal link has expired.';
@@ -28,6 +29,29 @@ export const publicProposalHeaders: RequestHandler = (_req, res, next) => {
   res.setHeader('X-Robots-Tag', 'noindex');
   next();
 };
+
+/** The rate-limit key of a link: a prefix of its token's sha256, never the token itself. */
+export function tokenRateKey(req: Request): string {
+  return `token:${tokenHashOf(String(req.params['token'] ?? '')).toString('hex').slice(0, 32)}`;
+}
+
+/**
+ * At most `limit` requests per link per `windowMs`, whatever address they come from (the per-IP limit
+ * is app-wide). Answers 429 with the plain "going a little fast" sentence. Mount it on `/:token` routes.
+ */
+export function perTokenRateLimit(limit: number, windowMs: number): RequestHandler {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: false,
+    legacyHeaders: false,
+    validate: { keyGeneratorIpFallback: false },
+    keyGenerator: tokenRateKey,
+    handler: (_req, _res, next) => {
+      next(new AppError(429, MESSAGES.tooFast));
+    },
+  });
+}
 
 export type ResolvedLink = { ctx: TenantContext; proposalId: string; status: ProposalStatus; validUntil: string; tokenHash: Buffer };
 

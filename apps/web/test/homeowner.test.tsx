@@ -7,7 +7,7 @@ import { CONSENT_TEXT_V1, ESTIMATE_CLAUSE_V1, type PublicProposalView } from '@r
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { homeowner, money } from '../src/copy/homeowner.ts';
-import { signedPdfUrl } from '../src/features/homeowner/api.ts';
+import { SIGNED_PDF_POLL_MS, signedPdfUrl } from '../src/features/homeowner/api.ts';
 import { type Reply, stubApi } from './helpers.tsx';
 
 /*
@@ -202,6 +202,110 @@ describe('the homeowner page', () => {
     await waitFor(() => expect(api.count(SIGN_KEY)).toBe(1));
     const [body] = api.sent(SIGN_KEY) as Record<string, unknown>[];
     expect(body?.drawnSignature).toBe('iVBORw0KGgo=');
+  });
+
+  it('a drawing on a closed sheet is never sent: reopening starts with an empty pad', async () => {
+    const context = {
+      setTransform: vi.fn(),
+      fillRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,iVBORw0KGgo=');
+
+    proposalApi(() => ({ body: fixture() }));
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: homeowner.chooseOption('Better') }));
+    const pad = await screen.findByTestId('signature-pad');
+    Object.assign(pad, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() });
+    fireEvent.pointerDown(pad, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(pad, { pointerId: 1, clientX: 60, clientY: 40 });
+    fireEvent.pointerUp(pad, { pointerId: 1, clientX: 60, clientY: 40 });
+
+    // Close the sheet with the drawing on it, then choose again: the pad is empty, so nothing is drawn.
+    await user.click(screen.getByRole('button', { name: homeowner.closeLabel }));
+    await waitFor(() => expect(screen.queryByTestId('signature-pad')).toBeNull());
+    await user.click(screen.getByRole('button', { name: homeowner.chooseOption('Better') }));
+    await screen.findByTestId('signature-pad');
+    await user.type(screen.getByRole('textbox', { name: homeowner.nameLabel }), 'Maria Lopez');
+    await user.click(screen.getByRole('checkbox', { name: homeowner.consentText }));
+    await user.click(screen.getByRole('button', { name: homeowner.signAndAccept(1425000) }));
+
+    await waitFor(() => expect(api.count(SIGN_KEY)).toBe(1));
+    const [body] = api.sent(SIGN_KEY) as Record<string, unknown>[];
+    expect(Object.keys(body ?? {})).not.toContain('drawnSignature');
+  });
+
+  it('a sign refused because someone else signed first shows the signed page underneath', async () => {
+    let signedElsewhere = false;
+    proposalApi(() => ({
+      body: signedElsewhere
+        ? fixture({ status: 'signed', signed: { optionId: MIDDLE_ID, name: 'Jo Lopez', at: '2026-10-12T15:00:00.000Z', pdfReady: true } })
+        : fixture(),
+    }));
+    api.routes[SIGN_KEY] = () => {
+      signedElsewhere = true;
+      return { status: 409, body: { error: 'This proposal is already signed.' } };
+    };
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: homeowner.chooseOption('Better') }));
+    await user.type(screen.getByRole('textbox', { name: homeowner.nameLabel }), 'Maria Lopez');
+    await user.click(screen.getByRole('checkbox', { name: homeowner.consentText }));
+    await user.click(screen.getByRole('button', { name: homeowner.signAndAccept(1425000) }));
+
+    expect(await screen.findByText(homeowner.signedTitle)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Choose / })).toBeNull();
+    expect(api.count(GET_KEY)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a sign refused because the link is gone shows the expired page underneath', async () => {
+    let gone = false;
+    proposalApi(() => (gone ? { status: 410, body: { error: 'x', companyPhone: null } } : { body: fixture() }));
+    api.routes[SIGN_KEY] = () => {
+      gone = true;
+      return { status: 410, body: { error: 'This proposal link has expired.', companyPhone: null } };
+    };
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: homeowner.chooseOption('Better') }));
+    await user.type(screen.getByRole('textbox', { name: homeowner.nameLabel }), 'Maria Lopez');
+    await user.click(screen.getByRole('checkbox', { name: homeowner.consentText }));
+    await user.click(screen.getByRole('button', { name: homeowner.signAndAccept(1425000) }));
+
+    expect(await screen.findByText(homeowner.expiredTitle)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Choose / })).toBeNull();
+  });
+
+  it('a signed proposal whose copy is being made is asked again every few seconds until the download shows, then no more', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let reads = 0;
+      const signed = (pdfReady: boolean) =>
+        fixture({ status: 'signed', signed: { optionId: MIDDLE_ID, name: 'Maria Lopez', at: '2026-10-12T15:00:00.000Z', pdfReady } });
+      proposalApi(() => {
+        reads += 1;
+        return { body: signed(reads >= 3) };
+      });
+      renderPage();
+
+      expect(await screen.findByText(homeowner.pdfPreparing)).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: homeowner.downloadPdf })).toBeNull();
+      await vi.advanceTimersByTimeAsync(SIGNED_PDF_POLL_MS);
+      await waitFor(() => expect(api.count(GET_KEY)).toBe(2));
+      await vi.advanceTimersByTimeAsync(SIGNED_PDF_POLL_MS);
+      expect(await screen.findByRole('link', { name: homeowner.downloadPdf })).toHaveAttribute('href', signedPdfUrl(TOKEN));
+      expect(api.count(GET_KEY)).toBe(3);
+
+      // Ready: the page stops asking.
+      await vi.advanceTimersByTimeAsync(SIGNED_PDF_POLL_MS * 3);
+      expect(api.count(GET_KEY)).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sign shows validation errors before posting', async () => {

@@ -203,6 +203,7 @@ describe('the worker', () => {
         ['provision-texting', '* * * * *'],
         ['prune-early-reports', '17 3 * * *'],
         ['report-usage', '* * * * *'],
+        ['signed-pdf-sweep', '*/15 * * * *'],
         ['sweep-imports', '* * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);
@@ -221,6 +222,7 @@ describe('the worker', () => {
       'calendar-pull',
       'footprints-ensure',
       'exact-report-poll',
+      'signed-pdf-sweep',
     ]);
   });
 });

@@ -3,6 +3,7 @@ import {
   CONSENT_TEXT_V1,
   ESTIMATE_CLAUSE_V1,
   canonicalJson,
+  parseSignedDocument,
   signedDocument,
   type PublicProposalView,
 } from '../src/proposals.ts';
@@ -120,4 +121,18 @@ test('consent and estimate clause text match the brief exactly', () => {
   expect(ESTIMATE_CLAUSE_V1).toBe(
     "This price is based on an estimate of your roof's size. If the measured size differs, we'll show you the updated price and ask you to confirm before work starts.",
   );
+});
+
+test('parseSignedDocument reads back a stored signed document with the same hash text, and refuses anything else', () => {
+  const doc = signedDocument(sampleView(), 'o1', true);
+  // Stored as jsonb and read back: the canonical text, and so the hash, is unchanged.
+  const stored = JSON.parse(JSON.stringify(doc)) as unknown;
+  const parsed = parseSignedDocument(stored);
+  expect(parsed).not.toBeNull();
+  expect(canonicalJson(parsed)).toBe(canonicalJson(doc));
+  expect(parsed?.option.financingTerms).toEqual({ aprBps: 0, months: 12 });
+  expect(parsed?.clause).toBe(ESTIMATE_CLAUSE_V1);
+  expect(parseSignedDocument(undefined)).toBeNull();
+  expect(parseSignedDocument({ optionId: 'o1' })).toBeNull();
+  expect(parseSignedDocument({ ...doc, option: { ...doc.option, totalCents: 'lots' } })).toBeNull();
 });

@@ -4,13 +4,13 @@ import { z } from 'zod';
 import {
   addProposalEvent,
   companies,
-  companySettings,
   decrypt,
   getProposal,
   getProposalLinkToken,
   listProposals,
   type ProposalPatch,
   proposalJobAssignee,
+  proposalOptionTerms,
   UnknownProposalOptionError,
   updateDraftProposal,
   withTenant,
@@ -166,21 +166,18 @@ export function proposalRoutes(deps: AppDeps): Router {
       const view = await getProposal(tx, ctx, id);
       if (!view) return null;
       const [company] = await tx.select({ name: companies.name, phone: companies.phoneE164 }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
-      const [settings] = await tx
-        .select({ apr: companySettings.financingAprBps, months: companySettings.financingTermMonths })
-        .from(companySettings)
-        .where(eq(companySettings.companyId, ctx.companyId))
-        .limit(1);
-      return { view, company, settings };
+      // Each option's financing as frozen with its price (Ruling ER), never today's settings beside an old monthly amount.
+      const terms = await proposalOptionTerms(tx, ctx, id);
+      return { view, company, terms };
     });
     if (!loaded) throw new AppError(404, MESSAGES.notFound);
-    const { view, company, settings } = loaded;
+    const { view, company, terms } = loaded;
     const doc = renderProposalPdf({
       audience: can(ctx, 'view_money_totals') ? 'internal' : 'homeowner',
       company: { name: company?.name ?? '', phone: company?.phone ?? null },
       proposal: view,
       estimateClause: null,
-      financing: settings?.apr != null && settings.months != null ? { aprBps: settings.apr, months: settings.months } : null,
+      optionFinancing: Object.fromEntries(Object.entries(terms).map(([optionId, t]) => [optionId, t.financing])),
     });
     // Rendered in full before any header goes out, so a failure is a plain 500, never a cut-off download.
     const pdf = await pdfToBuffer(doc);
