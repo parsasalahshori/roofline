@@ -133,15 +133,15 @@ describe('Your profile tab', () => {
 });
 
 describe('visibleTabs', () => {
-  const ALL = ['company', 'team', 'prices', 'schedule', 'connections', 'billing', 'setup', 'front-desk', 'agents', 'profile'];
+  const ALL = ['company', 'team', 'prices', 'schedule', 'connections', 'storm', 'billing', 'setup', 'front-desk', 'agents', 'profile'];
   const LIMITED = ['company', 'team', 'schedule', 'connections', 'billing', 'setup', 'profile'];
 
-  it('gives owner and office all ten tabs', () => {
+  it('gives owner and office all eleven tabs', () => {
     expect(visibleTabs('owner')).toEqual(ALL);
     expect(visibleTabs('office')).toEqual(ALL);
   });
 
-  it('hides Prices and Front Desk from a rep and while the role is unknown', () => {
+  it('hides Prices, Storm, Front Desk and Agents from a rep and while the role is unknown', () => {
     expect(visibleTabs('rep')).toEqual(LIMITED);
     expect(visibleTabs(undefined)).toEqual(LIMITED);
   });
