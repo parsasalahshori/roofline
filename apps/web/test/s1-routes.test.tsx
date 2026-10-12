@@ -118,7 +118,19 @@ describe('S1 Storm windows', () => {
   it('/storm/routes/r1 shows that route', async () => {
     signedInApi(ACCOUNT, {
       'GET /api/routes/r1': () => ({
-        body: { route: { id: 'r1', name: 'Omaha · Route 1 (Sam)', status: 'ready', stopCount: 0, doneCount: 0 }, stops: [] },
+        body: {
+          route: {
+            id: 'r1',
+            companyStormId: 'cs1',
+            stormId: 'st1',
+            userId: 'u1',
+            name: 'Omaha · Route 1 (Sam)',
+            status: 'ready',
+            stops: 0,
+            doneStops: 0,
+          },
+          stops: [],
+        },
       }),
     });
     renderApp('/storm/routes/r1');

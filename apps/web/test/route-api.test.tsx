@@ -20,8 +20,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const ROUTE = { id: 'r1', name: 'Omaha · Route 1', status: 'ready' as const, stopCount: 1, doneCount: 0 };
-const STOP: DoorStop = { id: 's1', position: 1, address: '101 Elm St', lat: 41.2, lng: -95.9, hailIn: 1.5, outcome: null };
+const ROUTE = {
+  id: 'r1',
+  companyStormId: 'cs1',
+  stormId: 'st1',
+  userId: 'u1',
+  name: 'Omaha · Route 1',
+  status: 'ready' as const,
+  stops: 1,
+  doneStops: 0,
+};
+const STOP: DoorStop = {
+  id: 's1',
+  routeId: 'r1',
+  position: 1,
+  footprintId: null,
+  propertyId: null,
+  address: '101 Elm St',
+  lat: 41.2,
+  lng: -95.9,
+  hailIn: 1.5,
+  outcome: null,
+  outcomeAt: null,
+  outcomeBy: null,
+  createdCustomerId: null,
+  createdJobId: null,
+};
 const DETAIL: RouteDetailView = { route: ROUTE, stops: [STOP] };
 
 describe('route hooks', () => {

@@ -31,7 +31,7 @@ vi.mock('maplibre-gl', () => ({
 }));
 
 function stop(id: string, position: number, lat: number, lng: number): DoorStop {
-  return { id, position, address: `${position} Main St`, lat, lng, hailIn: 1.25, outcome: null };
+  return { id, routeId: 'r1', position, footprintId: null, propertyId: null, address: `${position} Main St`, lat, lng, hailIn: 1.25, outcome: null, outcomeAt: null, outcomeBy: null, createdCustomerId: null, createdJobId: null };
 }
 
 const stops: DoorStop[] = [stop('s1', 1, 32.8, -96.9), stop('s2', 2, 32.85, -96.85)];

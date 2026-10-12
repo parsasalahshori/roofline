@@ -1,3 +1,4 @@
+import { DOOR_OUTCOMES } from '@roofline/shared';
 import { Button } from '@roofline/ui';
 import { useState } from 'react';
 import { doors } from '../../../copy/doors.ts';
@@ -6,9 +7,6 @@ import { useRecordOutcome } from './api.ts';
 import styles from './DoorOutcome.module.css';
 import type { DoorLead, DoorOutcomeKey, DoorStop } from './types.ts';
 import { WantsCheckSheet } from './WantsCheckSheet.tsx';
-
-/** The outcomes in the order they are shown. */
-const DOOR_OUTCOME: readonly DoorOutcomeKey[] = ['not_home', 'wants_check', 'not_interested', 'has_roofer', 'do_not_knock'];
 
 /** The five buttons for one door. A new door is a new key, so no state carries over from the last one. */
 export function DoorOutcome({ routeId, stop }: { routeId: string; stop: DoorStop }) {
@@ -23,6 +21,9 @@ function DoorOutcomeForStop({ routeId, stop }: { routeId: string; stop: DoorStop
   const failure = record.error;
   // A network failure (status 0) gets the plain "Not saved" line; any other refusal shows its own message
   const failureMessage = failure === null ? null : failure instanceof ApiError && failure.status === 0 ? doors.notSaved : failure.message;
+
+  // The sheet gets the failure as an ApiError: anything that is not one (no answer at all) counts as a network failure
+  const sheetError = !sheetOpen || failure === null ? null : failure instanceof ApiError ? failure : new ApiError(0, failure.message);
 
   const send = (outcome: Exclude<DoorOutcomeKey, 'wants_check'>) => {
     record.mutate({ routeId, stopId: stop.id, outcome });
@@ -46,7 +47,7 @@ function DoorOutcomeForStop({ routeId, stop }: { routeId: string; stop: DoorStop
         {doors.outcomeHeading}
       </h3>
       <div className={styles.buttons}>
-        {DOOR_OUTCOME.map((outcome) => (
+        {DOOR_OUTCOMES.map((outcome) => (
           <Button
             key={outcome}
             size="lg"
@@ -67,7 +68,7 @@ function DoorOutcomeForStop({ routeId, stop }: { routeId: string; stop: DoorStop
       <WantsCheckSheet
         open={sheetOpen}
         busy={record.isPending}
-        failed={sheetOpen && failure !== null}
+        error={sheetError}
         onClose={() => setSheetOpen(false)}
         onSubmit={submitLead}
       />

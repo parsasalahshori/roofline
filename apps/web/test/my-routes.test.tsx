@@ -15,8 +15,26 @@ afterEach(() => {
   expect(api?.unexpected ?? []).toEqual([]);
 });
 
-const ROUTE_1 = { id: 'r1', name: 'Omaha · Route 1 (Sam)', status: 'in_progress', stopCount: 12, doneCount: 3 };
-const ROUTE_2 = { id: 'r2', name: 'Omaha · Route 2 (Sam)', status: 'ready', stopCount: 8, doneCount: 0 };
+const ROUTE_1 = {
+  id: 'r1',
+  companyStormId: 'cs1',
+  stormId: 'st1',
+  userId: 'u1',
+  name: 'Omaha · Route 1 (Sam)',
+  status: 'in_progress' as const,
+  stops: 12,
+  doneStops: 3,
+};
+const ROUTE_2 = {
+  id: 'r2',
+  companyStormId: 'cs1',
+  stormId: 'st1',
+  userId: 'u1',
+  name: 'Omaha · Route 2 (Sam)',
+  status: 'ready' as const,
+  stops: 8,
+  doneStops: 0,
+};
 
 describe('my routes', () => {
   it('lists the rep routes with progress', async () => {
@@ -33,6 +51,31 @@ describe('my routes', () => {
     expect(second).toHaveAttribute('href', '/storm/routes/r2');
     expect(within(second).getByText(doors.routeStatus.ready)).toBeInTheDocument();
     expect(within(second).getByText(doors.progress(0, 8))).toBeInTheDocument();
+  });
+
+  it('renders the progress text from an API-shaped fixture', async () => {
+    api = stubApi({
+      'GET /api/routes/mine': () => ({
+        body: {
+          routes: [
+            {
+              id: 'r9',
+              companyStormId: 'cs1',
+              stormId: 'st1',
+              userId: 'u1',
+              name: 'Omaha · Route 9 (Sam)',
+              status: 'in_progress',
+              stops: 12,
+              doneStops: 3,
+            },
+          ],
+        },
+      }),
+    });
+    renderAt(<MyRoutes />, '/storm/routes');
+
+    const link = await screen.findByRole('link', { name: doors.routeLinkLabel('Omaha · Route 9 (Sam)', 3, 12) });
+    expect(within(link).getByText('3 of 12 doors')).toBeInTheDocument();
   });
 
   it('shows the empty line when there are no routes', async () => {

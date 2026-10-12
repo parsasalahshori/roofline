@@ -30,24 +30,42 @@ afterEach(() => {
   expect(api?.unexpected ?? []).toEqual([]);
 });
 
-const ROUTE = { id: 'r1', name: 'Omaha · Route 1', status: 'in_progress', stopCount: 3, doneCount: 1 } as const;
+const ROUTE = {
+  id: 'r1',
+  companyStormId: 'cs1',
+  stormId: 'st1',
+  userId: 'u1',
+  name: 'Omaha · Route 1',
+  status: 'in_progress',
+  stops: 3,
+  doneStops: 1,
+} as const;
 
 function stop(position: number, overrides: Partial<DoorStop> = {}): DoorStop {
   return {
     id: `s${position}`,
+    routeId: 'r1',
     position,
-    address: `${100 + position} Elm St`,
+    footprintId: null,
+    propertyId: null,
+    address: addressOf(position),
     lat: 41.2565,
     lng: -95.9345,
     hailIn: 1.75,
     outcome: null,
+    outcomeAt: null,
+    outcomeBy: null,
+    createdCustomerId: null,
+    createdJobId: null,
     ...overrides,
   };
 }
 
+const addressOf = (position: number): string => `${100 + position} Elm St`;
+
 /** Stops given out of order, so the view has to sort them by position. */
 function routeWith(stops: DoorStop[]): RouteDetailView {
-  return { route: { ...ROUTE, stopCount: stops.length, doneCount: stops.filter((s) => s.outcome !== null).length }, stops };
+  return { route: { ...ROUTE, stops: stops.length, doneStops: stops.filter((s) => s.outcome !== null).length }, stops };
 }
 
 const GOOGLE = 'https://www.google.com/maps/dir/?api=1&destination=41.2565,-95.9345';
@@ -71,20 +89,20 @@ describe('route view', () => {
     const list = await screen.findByRole('list');
     const items = within(list).getAllByRole('listitem');
     expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent(stop(1).address);
-    expect(items[1]).toHaveTextContent(stop(2).address);
-    expect(items[2]).toHaveTextContent(stop(3).address);
+    expect(items[0]).toHaveTextContent(addressOf(1));
+    expect(items[1]).toHaveTextContent(addressOf(2));
+    expect(items[2]).toHaveTextContent(addressOf(3));
     expect(items[0]).toHaveTextContent(doors.doneMark);
     expect(items[1]).toHaveAttribute('data-current');
 
     const current = screen.getByRole('region', { name: doors.doorOf(2, 3) });
-    expect(within(current).getByText(stop(2).address, { selector: 'p' })).toBeInTheDocument();
+    expect(within(current).getByText(addressOf(2), { selector: 'p' })).toBeInTheDocument();
     expect(within(current).getByText(doors.hailLine(1.75))).toBeInTheDocument();
     expect(within(current).getByRole('link', { name: doors.navigate })).toHaveAttribute('href', GOOGLE);
     expect(within(current).getByRole('link', { name: doors.navigate })).toHaveAttribute('target', '_blank');
     expect(within(current).getByRole('link', { name: doors.navigate })).toHaveAttribute('rel', 'noopener noreferrer');
 
-    expect(screen.getByTestId('outcome-stub')).toHaveTextContent(stop(2).address);
+    expect(screen.getByTestId('outcome-stub')).toHaveTextContent(addressOf(2));
   });
 
   it('shows the done state when every stop has an outcome', async () => {
@@ -95,6 +113,26 @@ describe('route view', () => {
     expect(await screen.findByText(doors.routeDone)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: doors.backToRoutes })).toHaveAttribute('href', '/storm/routes');
     expect(screen.queryByTestId('outcome-stub')).toBeNull();
+  });
+
+  it('shows the no-address copy when a stop has a null address', async () => {
+    const stops = [stop(1, { outcome: 'not_home' }), stop(2, { address: null, hailIn: null })];
+    api = stubApi({ 'GET /api/routes/r1': () => ({ body: routeWith(stops) }) });
+    renderAt(<RouteView routeId="r1" />, '/storm/routes/r1');
+
+    const current = await screen.findByRole('region', { name: doors.doorOf(2, 2) });
+    expect(within(current).getByText(doors.noAddress, { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByRole('list')).toHaveTextContent(doors.noAddress);
+    expect(document.body).not.toHaveTextContent(/Radar-estimated hail/);
+  });
+
+  it('still shows the hail line when the size is known', async () => {
+    const stops = [stop(1, { hailIn: 2.5 })];
+    api = stubApi({ 'GET /api/routes/r1': () => ({ body: routeWith(stops) }) });
+    renderAt(<RouteView routeId="r1" />, '/storm/routes/r1');
+
+    const current = await screen.findByRole('region', { name: doors.doorOf(1, 1) });
+    expect(within(current).getByText(doors.hailLine(2.5))).toBeInTheDocument();
   });
 
   it('never shows an owner name', async () => {

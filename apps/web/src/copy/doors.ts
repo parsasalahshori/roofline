@@ -24,6 +24,8 @@ export const doors = {
   doorOf: (n: number, total: number) => `Door ${n} of ${total}`,
   /** The hail size line under an address; always radar-estimated. */
   hailLine: (inches: number) => `Radar-estimated hail up to ${inches} in`,
+  /** Shown in place of an address when the home has none saved. */
+  noAddress: 'Home with no saved address',
   navigate: 'Navigate',
   navigateAppleBase: 'https://maps.apple.com/?daddr=',
   navigateGoogleBase: 'https://www.google.com/maps/dir/?api=1&destination=',

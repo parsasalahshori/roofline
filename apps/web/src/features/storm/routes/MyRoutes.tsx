@@ -7,12 +7,12 @@ import type { RouteSummary } from './types.ts';
 
 /** One route as a card: the whole card is the link, a 56px-tall target. Owner names are never shown. */
 function RouteCard({ route }: { route: RouteSummary }) {
-  const progress = doors.progress(route.doneCount, route.stopCount);
+  const progress = doors.progress(route.doneStops, route.stops);
   return (
     <li className={styles.item}>
       <Link
         to={`/storm/routes/${route.id}`}
-        aria-label={doors.routeLinkLabel(route.name, route.doneCount, route.stopCount)}
+        aria-label={doors.routeLinkLabel(route.name, route.doneStops, route.stops)}
         className={styles.card}
       >
         <span className={styles.top}>
@@ -22,7 +22,7 @@ function RouteCard({ route }: { route: RouteSummary }) {
           </span>
         </span>
         <span className={styles.progress}>{progress}</span>
-        <ProgressBar value={route.doneCount} max={route.stopCount} label={progress} />
+        <ProgressBar value={route.doneStops} max={route.stops} label={progress} />
       </Link>
     </li>
   );

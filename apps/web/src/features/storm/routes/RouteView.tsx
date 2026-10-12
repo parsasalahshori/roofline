@@ -62,8 +62,8 @@ export function RouteView({ routeId }: { routeId: string }) {
       {currentStop ? (
         <section className={styles.current} aria-label={doors.doorOf(currentIndex + 1, stops.length)}>
           <p className={styles.doorLabel}>{doors.doorOf(currentIndex + 1, stops.length)}</p>
-          <p className={styles.address}>{currentStop.address}</p>
-          <p className={styles.hail}>{doors.hailLine(currentStop.hailIn)}</p>
+          <p className={styles.address}>{currentStop.address ?? doors.noAddress}</p>
+          {currentStop.hailIn !== null ? <p className={styles.hail}>{doors.hailLine(currentStop.hailIn)}</p> : null}
           <Button variant="ghost" className={styles.navigate} href={navigateUrl(currentStop, ios)} {...NEW_TAB}>
             {doors.navigate}
           </Button>
@@ -92,7 +92,7 @@ export function RouteView({ routeId }: { routeId: string }) {
               data-done={stop.outcome !== null ? '' : undefined}
             >
               <span className={styles.number}>{index + 1}</span>
-              <span className={styles.stopAddress}>{stop.address}</span>
+              <span className={styles.stopAddress}>{stop.address ?? doors.noAddress}</span>
               {stop.outcome !== null ? <span className={styles.doneMark}>{doors.doneMark}</span> : null}
             </li>
           );

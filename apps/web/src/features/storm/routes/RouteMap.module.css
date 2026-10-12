@@ -46,6 +46,6 @@
   height: 16px;
   border: 2px solid var(--surface);
   border-radius: 50%;
-  background: #1a73e8;
+  background: var(--stage-lead);
   box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
 }
