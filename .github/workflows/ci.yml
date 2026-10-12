@@ -74,7 +74,7 @@ jobs:
         working-directory: apps/web
       # The stack starts PostGIS with Testcontainers on the runner's Docker (amd64, native).
       - run: npm run e2e -- --project desktop --project phone
-      # The demo smoke: `npm run demo:reset` on its own ports (docker compose, multi-arch PostGIS), then
+      # The demo check runs `npm run demo:reset` on its own ports (docker compose, multi-arch PostGIS), then
       # a tour of every app and each simulation (apps/web/playwright.demo.config.ts).
       - run: npx playwright test -c playwright.demo.config.ts
         working-directory: apps/web
