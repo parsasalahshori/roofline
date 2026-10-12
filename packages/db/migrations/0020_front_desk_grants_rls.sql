@@ -82,6 +82,11 @@ GRANT SELECT (id, company_id, status) ON conversations TO app_system;
 --> statement-breakpoint
 GRANT SELECT (id, company_id, at) ON conversation_turns TO app_system;
 --> statement-breakpoint
+-- fd-health marks a number whose voice URL it set by appending a marker to company_phone_numbers.capabilities
+-- (markVoiceUrlSet; Drizzle's $onUpdate also sets updated_at). C1's Ruling SEC-4 left app_system only SELECT and
+-- INSERT on that table, so it gets UPDATE on those two columns and nothing else.
+GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers TO app_system;
+--> statement-breakpoint
 
 -- 5. Global lookup cache for the line type (Twilio Lookup). It has no company_id and no RLS: a line's
 --    type is not a customer's data, and the cache is shared across companies.

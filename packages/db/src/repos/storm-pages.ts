@@ -7,6 +7,13 @@ import type { TenantContext, Tx } from '../tenant.ts';
 export const STORM_PAGE_CODE_LENGTH = 8;
 
 const CODE_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
+
+/**
+ * The one rule for a landing page code as it appears in a URL: exactly the 8 base32 characters
+ * `newStormPageCode` makes, in any letter case (callers lowercase before looking a code up).
+ * No `g` flag, so `.test` keeps no state between calls.
+ */
+export const STORM_PAGE_CODE_RE = /^[a-z2-7]{8}$/i;
 /** Tries before giving up on finding a free code (a collision in 32^8 codes is very unlikely). */
 const CODE_ATTEMPTS = 5;
 /** A page stays live this many days after the storm's convective day. */
@@ -77,6 +84,25 @@ export async function ensureStormPage(
     if (row) return { id: row.id, code: row.code, activeUntil, created: true };
   }
   throw new Error('ensureStormPage: could not find a free page code');
+}
+
+/**
+ * Keeps a page live until at least `until`: sets `active_until` to the later of its current value and `until`,
+ * so it only ever extends. Returns the resulting `activeUntil`, or null when the company has no such page.
+ * Runs inside `withTenant`.
+ */
+export async function extendStormPageUntil(
+  tx: Tx,
+  ctx: TenantContext,
+  pageId: string,
+  until: Date,
+): Promise<Date | null> {
+  const [row] = await tx
+    .update(stormPages)
+    .set({ activeUntil: sql`greatest(${stormPages.activeUntil}, ${until.toISOString()}::timestamptz)` })
+    .where(and(eq(stormPages.companyId, ctx.companyId), eq(stormPages.id, pageId)))
+    .returning({ activeUntil: stormPages.activeUntil });
+  return row?.activeUntil ?? null;
 }
 
 /** The storm's convective day (YYYY-MM-DD) for one of the company's storm rows. Throws when the company has no such row. */

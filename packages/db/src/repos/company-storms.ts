@@ -85,6 +85,7 @@ export async function candidateStormsForCompany(
     select s.id, s.status, s.max_in::float8 as max_in, s.final_at, s.convective_day::text as convective_day
     from storms s
     where s.convective_day in (${dayList})
+      and s.merged_into is null
       and ST_Intersects(s.geom_075, ${COMPANY_AREA})
     order by s.convective_day desc, s.id
   `);

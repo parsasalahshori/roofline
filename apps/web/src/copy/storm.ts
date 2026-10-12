@@ -1,3 +1,5 @@
+import type { TaskStatus } from '@roofline/shared';
+
 /** The Storm window. Never name a vendor here: the ad accounts are named in copy/connections.ts. */
 export const storm = {
   /** The name of the card that offers the newest storm plan. */
@@ -5,6 +7,7 @@ export const storm = {
   approve: 'Approve storm plan',
 
   /** Storm window. */
+  loading: 'Loading your storms',
   listHeading: 'Storms in your area',
   empty: 'No hail in your area in the last 30 days. We check every 30 minutes.',
   loadFailed: 'We could not load your storms. Try again in a minute.',
@@ -14,14 +17,21 @@ export const storm = {
   upTo: (inches: string) => `Up to ${inches}" (radar-estimated)`,
   customersHit: (n: number) => (n === 1 ? '1 customer hit' : `${n} customers hit`),
   homesHit: (n: number) => (n === 1 ? '1 home hit' : `${n} homes hit`),
+  customersHitLabel: 'Customers hit',
+  homesHitLabel: 'Homes hit',
   seePlan: 'See plan',
   viewStorm: 'See this storm',
   planStatus: {
     draft: 'Plan waiting for your OK',
     awaiting_owner: 'Plan waiting for your OK',
+    approved: 'Plan approved',
+    declined: 'Plan declined',
+    expired: 'Plan expired',
     running: 'Plan running',
     done: 'Plan finished',
-  } as Record<string, string>,
+    partly_done: 'Plan partly done',
+    needs_attention: 'Plan needs attention',
+  } satisfies Record<TaskStatus, string>,
   noPlan: 'No plan yet',
   dismissed: 'Dismissed',
 
@@ -105,3 +115,6 @@ export const storm = {
     remove: 'Remove',
   },
 } as const;
+
+/** The ad error sentences name the ad platforms, so they live in connections.ts. */
+export { adErrorCopy } from './connections.ts';

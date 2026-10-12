@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
-import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
-import { publicProposalState, publicProposalView, signProposal, withTenant } from '@roofline/db';
+import { publicProposalState, publicProposalView, recordSignedDocument, signProposal, withTenant } from '@roofline/db';
 import { CONSENT_TEXT_V1, canonicalJson, signedDocument, type SignatureRecord } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import { AppError, MESSAGES } from '../errors.ts';
+import { AppError } from '../errors.ts';
+import { isAcceptableSignaturePng } from '../estimator/signature-png.ts';
+import { drawnSignatureKey } from '../estimator/signed-pdf.ts';
 import { parse } from '../validate.ts';
-import { handleProposalError, publicProposalHeaders, resolveLink, tokenHashOf } from './proposal-common.ts';
+import { handleProposalError, perTokenRateLimit, proposalIpHashFor, publicProposalHeaders, resolveLink } from './proposal-common.ts';
 
 /** Signing a proposal, signed out, under `/api/public/proposals`. */
 
@@ -15,7 +16,6 @@ const HOUR_MS = 60 * 60 * 1000;
 const SIGN_ATTEMPTS_PER_TOKEN_PER_HOUR = 10;
 const MAX_DRAWN_CHARS = 200_000;
 const MAX_USER_AGENT = 300;
-const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
 const ALREADY_SIGNED = 'This proposal is already signed.';
 const EXPIRED = 'This proposal has expired.';
@@ -44,33 +44,30 @@ export function proposalSignRoutes(deps: AppDeps): Router {
   const router = Router();
   router.use(publicProposalHeaders);
 
-  const perToken = rateLimit({
-    windowMs: HOUR_MS,
-    limit: SIGN_ATTEMPTS_PER_TOKEN_PER_HOUR,
-    standardHeaders: false,
-    legacyHeaders: false,
-    validate: { keyGeneratorIpFallback: false },
-    keyGenerator: (req) => `token:${tokenHashOf(String(req.params['token'] ?? '')).toString('hex')}`,
-    handler: (_req, _res, next) => {
-      next(new AppError(429, MESSAGES.tooFast));
-    },
-  });
+  const perToken = perTokenRateLimit(SIGN_ATTEMPTS_PER_TOKEN_PER_HOUR, HOUR_MS);
 
   router.post('/:token/sign', perToken, async (req, res, next) => {
     try {
       const body = parse(signBody, req.body);
-      let drawnHash: string | null = null;
+      let drawn: { png: Buffer; sha256: string } | null = null;
       if (body.drawnSignature !== undefined) {
         const png = Buffer.from(body.drawnSignature, 'base64');
-        if (png.length < PNG_MAGIC.length || !png.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
-          throw new AppError(400, DRAW_AGAIN);
-        }
-        drawnHash = sha256Hex(png);
+        // Checked in full (chunks, size, and the image data inflated to exactly its expected length) before it
+        // is stored or signed: a bad PNG must never reach the signed PDF's renderer (signature-png.ts).
+        if (!isAcceptableSignaturePng(png)) throw new AppError(400, DRAW_AGAIN, 'drawnSignature');
+        drawn = { png, sha256: sha256Hex(png) };
       }
+      const drawnHash = drawn?.sha256 ?? null;
 
       const now = deps.clock.now();
       const link = await resolveLink(deps, String(req.params['token'] ?? ''), now);
       const { ctx, proposalId } = link;
+
+      // The image is stored before the signature commits, so a recorded hash always has its image (the
+      // signed PDF draws it). The key is content-addressed: a retried or refused sign leaves the same object.
+      if (drawn !== null) {
+        await deps.objectStore.put(drawnSignatureKey(ctx.companyId, proposalId, drawn.sha256), drawn.png, 'image/png');
+      }
 
       const outcome = await withTenant(deps.pools, ctx, async (tx) => {
         const view = await publicProposalView(tx, ctx, proposalId, now);
@@ -81,6 +78,9 @@ export function proposalSignRoutes(deps: AppDeps): Router {
         const option = view.options.find((o) => o.id === body.optionId);
         if (!option) throw new AppError(400, PICK_OPTION, 'optionId');
 
+        // The exact document hashed is also stored with the signature (Ruling ER), so the proof can be
+        // re-checked and the signed PDF prints these facts, whatever changes in settings later.
+        const document = signedDocument(view, option.id, view.estimateClause);
         const record: SignatureRecord = {
           optionId: option.id,
           signerName: body.signerName,
@@ -88,14 +88,17 @@ export function proposalSignRoutes(deps: AppDeps): Router {
           drawnSignaturePngSha256: drawnHash,
           consentText: CONSENT_TEXT_V1,
           consentVersion: 'v1',
-          documentSha256: sha256Hex(canonicalJson(signedDocument(view, option.id, state.estimateClause))),
+          documentSha256: sha256Hex(canonicalJson(document)),
           totalCents: option.totalCents,
           ip: req.ip ?? '',
           userAgent: (req.get('User-Agent') ?? '').slice(0, MAX_USER_AGENT),
           signedAt: now.toISOString(),
           viewedFirstAt: null,
         };
-        return signProposal(tx, ctx, proposalId, record, now);
+        const ipHash = proposalIpHashFor(deps.config, record.ip, ctx.companyId);
+        const signed = await signProposal(tx, ctx, proposalId, { ...record, ipHash }, now);
+        if (signed === 'signed') await recordSignedDocument(tx, ctx, proposalId, document);
+        return signed;
       });
 
       if (outcome === 'already_signed') throw new AppError(409, ALREADY_SIGNED);

@@ -1,6 +1,6 @@
-import { and, asc, eq, isNull, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import type { ExactOrderStatus } from '@roofline/shared';
-import { exactReportOrders } from '../schema/index.ts';
+import { agentTasks, exactReportOrders, measurements } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
 /*
@@ -49,6 +49,48 @@ const toRow = (r: typeof exactReportOrders.$inferSelect): ExactOrderRow => ({
 
 const mine = (ctx: TenantContext, id: string) =>
   and(eq(exactReportOrders.companyId, ctx.companyId), eq(exactReportOrders.id, id));
+
+/** Task statuses that mean the owner may still approve a priced order (or already did). */
+const OPEN_TASK_STATUSES = ['draft', 'awaiting_owner', 'approved', 'running'] as const;
+
+/**
+ * Locks the measurement's row for the rest of the transaction (B4): two requests for an exact report of the
+ * same measurement take this lock in turn, so the second one sees the first one's order. False when missing.
+ */
+export async function lockMeasurementForOrder(tx: Tx, ctx: TenantContext, measurementId: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: measurements.id })
+    .from(measurements)
+    .where(and(eq(measurements.companyId, ctx.companyId), eq(measurements.id, measurementId)))
+    .limit(1)
+    .for('update');
+  return row !== undefined;
+}
+
+/**
+ * The latest open order for a measurement, with its task, or null (B4): one being ordered or waiting for its
+ * report, or one priced whose task can still be approved. A priced order whose task was declined or expired
+ * is not open: a new request prices again.
+ */
+export async function findOpenExactOrder(tx: Tx, ctx: TenantContext, measurementId: string): Promise<{ id: string; taskId: string } | null> {
+  const [row] = await tx
+    .select({ id: exactReportOrders.id, taskId: agentTasks.id })
+    .from(exactReportOrders)
+    .innerJoin(agentTasks, and(eq(agentTasks.companyId, exactReportOrders.companyId), eq(agentTasks.id, exactReportOrders.taskId)))
+    .where(
+      and(
+        eq(exactReportOrders.companyId, ctx.companyId),
+        eq(exactReportOrders.measurementId, measurementId),
+        or(
+          inArray(exactReportOrders.status, ['ordering', 'waiting']),
+          and(eq(exactReportOrders.status, 'priced'), inArray(agentTasks.status, [...OPEN_TASK_STATUSES])),
+        ),
+      ),
+    )
+    .orderBy(desc(exactReportOrders.createdAt))
+    .limit(1);
+  return row ?? null;
+}
 
 /** Inserts an order row with status 'priced'. */
 export async function insertExactOrder(tx: Tx, ctx: TenantContext, o: NewExactOrder, now: Date): Promise<ExactOrderRow> {

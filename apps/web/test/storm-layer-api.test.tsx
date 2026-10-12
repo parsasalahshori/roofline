@@ -228,6 +228,22 @@ describe('storm layer on the map', () => {
     expect(url).toContain('days=7');
   });
 
+  it.each([
+    [3.5, 'zoom=4'],
+    [23.4, 'zoom=22'],
+    [-0.4, 'zoom=0'],
+  ])('asks for a whole-number zoom: %s becomes %s', async (zoom, expected) => {
+    renderMap();
+    const map = lastMap();
+    map.getZoom = () => zoom;
+    loadMap(map);
+
+    await waitFor(() => expect(stormRequests()).toHaveLength(1));
+    const url = stormRequests()[0] ?? '';
+    expect(url).toContain(expected + '&');
+    expect(url).not.toContain(`zoom=${zoom}`);
+  });
+
   it('sets the source data from the answer', async () => {
     const body = answer([swath(2.5)], [spot()]);
     stormBody = body;

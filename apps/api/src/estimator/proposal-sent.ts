@@ -2,9 +2,12 @@ import {
   addActivity,
   addProposalEvent,
   getJob,
+  lockJobProposalsOf,
   markProposalSent,
   markReplacedProposal,
+  setProposalStatus,
   StageRuleError,
+  stepTextReason,
   type TenantContext,
   type Tx,
   updateJob,
@@ -23,6 +26,9 @@ import {
  * this one revised becomes 'replaced' only if it is not signed. Idempotent.
  */
 export async function settleSentProposal(tx: Tx, ctx: TenantContext, proposalId: string, now: Date): Promise<void> {
+  // C-M1: this changes two proposals of the job (this one, and the one it replaces), so the job's proposals are
+  // locked first in the one order every such writer takes (signing does the same).
+  await lockJobProposalsOf(tx, ctx, proposalId);
   const sent = await markProposalSent(tx, ctx, proposalId, ['draft', 'ready'], now);
   if (sent === null) return;
 
@@ -46,4 +52,25 @@ export async function settleSentProposal(tx: Tx, ctx: TenantContext, proposalId:
   });
   await addProposalEvent(tx, ctx, { proposalId, kind: 'sent', at: now });
   await markReplacedProposal(tx, ctx, { proposalId, jobId: sent.jobId, customerId: sent.customerId, now });
+}
+
+/** The reason shown when a blocked text has none of its own. */
+export const BLOCKED_FALLBACK = "The texting service held this text. Check the customer's texting settings, then retry.";
+/** The reason shown when a failed text has none of its own. */
+export const FAILED_FALLBACK = "This text didn't go out. You can retry it.";
+
+/**
+ * Called inside a tenant transaction when the proposal's text was blocked or failed for good, from the send step
+ * or later from the dispatcher (C-I4): the proposal goes back from 'ready' to 'draft', so it can be edited and
+ * sent for approval again. Returns the reason for the step, as a person can read it.
+ */
+export async function settleUnsentProposal(
+  tx: Tx,
+  ctx: TenantContext,
+  t: { proposalId: string; stepId: string; customerId: string; blocked: boolean },
+  now: Date,
+): Promise<string> {
+  await setProposalStatus(tx, ctx, t.proposalId, ['ready'], 'draft', now);
+  const reason = await stepTextReason(tx, ctx, t.stepId, t.customerId);
+  return reason ?? (t.blocked ? BLOCKED_FALLBACK : FAILED_FALLBACK);
 }

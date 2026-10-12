@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { startTestDatabase } from '@roofline/db/testing';
-import { resetScenario } from './fixtures.ts';
+import { E2E_POLICY_DOMAIN, resetScenario } from './fixtures.ts';
 
 /*
  * The end-to-end stack, run by Playwright's webServer (`npx tsx e2e/stack.ts`, cwd apps/web). It
@@ -27,6 +27,7 @@ const env: NodeJS.ProcessEnv = {
   HOST: '127.0.0.1',
   APP_ORIGIN: BASE_URL,
   PUBLIC_BASE_URL: BASE_URL,
+  POLICY_PAGES_DOMAIN: E2E_POLICY_DOMAIN,
   DATABASE_URL_TENANT: db.urls.tenant,
   DATABASE_URL_SYSTEM: db.urls.system,
   ENCRYPTION_KEY: randomBytes(32).toString('base64'),

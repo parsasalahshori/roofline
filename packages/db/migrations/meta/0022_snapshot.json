@@ -1,6 +1,6 @@
 {
-  "id": "6a0ad44c-31f4-4f8d-9674-9251eeb9eb9e",
-  "prevId": "55181f9a-33ec-414f-879c-7cfbf170fb83",
+  "id": "79bec56a-6801-4f1b-bc40-fdf901271098",
+  "prevId": "7910f5c2-8f08-44fe-a1ee-31c241093da0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1235,6 +1235,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "merged_into": {
+          "name": "merged_into",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1269,7 +1275,21 @@
           "concurrently": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "storms_merged_into_storms_id_fk": {
+          "name": "storms_merged_into_storms_id_fk",
+          "tableFrom": "storms",
+          "columnsFrom": [
+            "merged_into"
+          ],
+          "tableTo": "storms",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -2128,6 +2148,12 @@
           "notNull": true,
           "default": false
         },
+        "paused_by": {
+          "name": "paused_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_synced_at": {
           "name": "last_synced_at",
           "type": "timestamp with time zone",
@@ -2262,6 +2288,10 @@
         "ad_campaigns_error_kind_check": {
           "name": "ad_campaigns_error_kind_check",
           "value": "\"ad_campaigns\".\"error_kind\" in ('policy', 'payment', 'access', 'targeting', 'other')"
+        },
+        "ad_campaigns_paused_by_check": {
+          "name": "ad_campaigns_paused_by_check",
+          "value": "\"ad_campaigns\".\"paused_by\" in ('roofline', 'platform')"
         }
       },
       "isRLSEnabled": false

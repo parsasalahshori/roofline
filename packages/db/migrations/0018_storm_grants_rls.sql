@@ -38,9 +38,11 @@ GRANT USAGE, SELECT ON SEQUENCE hail_runs_id_seq TO app_hail;
 GRANT SELECT ON hail_runs, storms, storm_contours, spotter_reports TO app_tenant;
 --> statement-breakpoint
 
--- 4. app_system: the spotter-report loader runs as app_system, so it has ALL on spotter_reports (and its
---    bigserial sequence). On storms it reads, and may update only place_name (the reverse-geocoded label).
-GRANT ALL ON spotter_reports TO app_system;
+-- 4. app_system: the spotter-report loader runs as app_system. It INSERTs reports with ON CONFLICT DO NOTHING
+--    RETURNING id (the conflict target reads its columns), so spotter_reports gets SELECT and INSERT only (Ruling BF,
+--    security review 9: never ALL, which carries TRUNCATE and TRIGGER), plus its bigserial sequence. On storms it
+--    reads, and may update only place_name (the reverse-geocoded label).
+GRANT SELECT, INSERT ON spotter_reports TO app_system;
 --> statement-breakpoint
 GRANT USAGE, SELECT ON SEQUENCE spotter_reports_id_seq TO app_system;
 --> statement-breakpoint
@@ -151,12 +153,23 @@ CREATE POLICY tenant_isolation ON storm_photos
   WITH CHECK (company_id = nullif(current_setting('app.company_id', true), '')::uuid);
 --> statement-breakpoint
 
+-- 6b. ad_campaigns.paused_by (Task R3, amended in place under Ruling AW): who paused a campaign. 'roofline' (the
+--     95% pause, or a failed/creating row confirmed off) stops the hourly sync; 'platform' or NULL keeps it
+--     syncing so a brief platform pause does not end the 95% guard. Nullable; NULL counts as not ours.
+ALTER TABLE ad_campaigns ADD COLUMN paused_by text;
+--> statement-breakpoint
+ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_paused_by_check CHECK ("ad_campaigns"."paused_by" in ('roofline', 'platform'));
+--> statement-breakpoint
+
 -- 7. app_system: column-level access to four tenant tables, for the storm-match and ad-sync fan-outs, the
 --    public storm page lookup and the public unsubscribe. The column grants are the real limit. The
 --    app_system_all policies let every row through on these tables (app_system is not RLS-exempt), so the
 --    column list alone decides what app_system can see: ids, status and timing, never content.
 --    email_opt_outs also takes INSERT (company_id, email, source, at): the public unsubscribe link records an
 --    opt-out for a company without a tenant session (`at` has a default, so an insert may omit it).
+--    The email_opt_outs SELECT (id, company_id, email) is kept on purpose: recordEmailOptOut runs
+--    INSERT .. ON CONFLICT (company_id, email) DO NOTHING RETURNING id. Postgres checks SELECT on the columns of the
+--    conflict arbiter, and RETURNING needs SELECT on id. Nothing in app code reads the email column back as app_system.
 --    These are column grants only: app_system holds no table-level privilege on any of the four.
 GRANT SELECT (id, company_id, storm_id, status, plan_task_id, last_matched_at) ON company_storms TO app_system;
 --> statement-breakpoint
@@ -167,7 +180,9 @@ GRANT SELECT (company_id, status) ON ad_accounts TO app_system;
 --> statement-breakpoint
 CREATE POLICY app_system_all ON ad_accounts FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint
-GRANT SELECT (id, company_id, status, external_campaign_id, platform) ON ad_campaigns TO app_system;
+-- ad_campaigns: the fan-out lists companies with a campaign to guard (status, external_campaign_id, paused_by) and
+-- a creating row that went quiet (updated_at). Ids and status only, never content.
+GRANT SELECT (id, company_id, status, external_campaign_id, platform, paused_by, updated_at) ON ad_campaigns TO app_system;
 --> statement-breakpoint
 CREATE POLICY app_system_all ON ad_campaigns FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint
@@ -206,3 +221,12 @@ CREATE OR REPLACE VIEW company_members WITH (security_barrier) AS
    WHERE m.company_id = nullif(current_setting('app.company_id', true), '')::uuid;
 --> statement-breakpoint
 GRANT SELECT ON company_members TO app_tenant;
+--> statement-breakpoint
+
+-- 10. Task R1 (Ruling AW, amended in place): merged storms keep one id.
+--     When the hail service finds that two stored storms are one, the older survives and the other points at it
+--     through merged_into. The column goes last so the order matches the schema file. The table-wide
+--     SELECT, INSERT and UPDATE grant from section 1 already covers app_hail; the column grant is explicit.
+ALTER TABLE storms ADD COLUMN merged_into uuid REFERENCES storms(id);
+--> statement-breakpoint
+GRANT UPDATE (merged_into) ON storms TO app_hail;

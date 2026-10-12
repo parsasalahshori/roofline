@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { normalizeAddressKey } from '@roofline/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { upsertCompanyStorm } from '../src/repos/company-storms.ts';
 import { countStormRequestsSince, createStormRequest, type StormRequestInput } from '../src/repos/storm-requests.ts';
@@ -116,6 +117,62 @@ describe('createStormRequest', () => {
     expect(requests[0]!.job_id).toBe(result.jobId);
     expect(requests[0]!.storm_page_id).toBe(pageId);
     expect(requests[0]!.ip_hash).toBe('ip-hash-1');
+  });
+
+  test('the landing-page lead has the normal job audit row and timeline lines, with no signed-in actor', async () => {
+    const { pageId, stormId } = await pageFor(seed.a, '2026-05-01');
+    const result = await create(seed.a, requestInput(pageId));
+    expect(result.status).toBe('created');
+    if (result.status !== 'created') return;
+
+    const audits = await q(`select * from audit_log where company_id = $1 and target_type = 'job' and target_id = $2`, [seed.a.companyId, result.jobId]);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ action: 'job.create', actor_user_id: null });
+    expect(audits[0]!.after).toMatchObject({ source: 'web', stage: 'lead', customerId: result.customerId });
+
+    const jobLines = await q(
+      `select kind, summary, actor_type, actor_user_id from activities where company_id = $1 and subject_type = 'job' and subject_id = $2 order by id`,
+      [seed.a.companyId, result.jobId],
+    );
+    const summaries = jobLines.map((r) => r.summary as string);
+    expect(summaries).toContain('Job created');
+    expect(summaries).toContain('Storm inspection request from the storm page');
+    expect(summaries.some((x) => x.startsWith('Next step: '))).toBe(true);
+    for (const line of jobLines) expect(line).toMatchObject({ actor_type: 'system', actor_user_id: null });
+
+    const customerLines = await q(
+      `select summary from activities where company_id = $1 and subject_type = 'customer' and subject_id = $2 and kind = 'job.created'`,
+      [seed.a.companyId, result.customerId],
+    );
+    expect(customerLines.map((r) => r.summary)).toEqual(['New job: 101 Maple St']);
+    const [job] = await rowsOf(seed.a.companyId, 'jobs');
+    expect(job!.storm_id).toBe(stormId);
+    expect(job!.created_by_user_id).toBeNull();
+  });
+
+  test('an address that is another customer\'s home attaches the lead to them, and the job line says it came from the storm page', async () => {
+    const [owner] = await q(
+      `insert into customers (company_id, display_name, phones, source) values ($1, 'Home Owner', $2::jsonb, 'manual') returning id`,
+      [seed.a.companyId, JSON.stringify([{ e164: '+14025550999', primary: true }])],
+    );
+    await q(
+      `insert into properties (company_id, customer_id, address_line, city, state, zip, address_key) values ($1, $2, '101 Maple St', 'Omaha', 'NE', '68102', $3)`,
+      [seed.a.companyId, owner!.id, normalizeAddressKey('101 Maple St', '68102')],
+    );
+    const { pageId } = await pageFor(seed.a, '2026-05-01');
+
+    const result = await create(seed.a, requestInput(pageId));
+    expect(result.status).toBe('created');
+    if (result.status !== 'created') return;
+    expect(result.customerId).toBe(owner!.id);
+
+    const lines = await q(
+      `select summary, data from activities where company_id = $1 and subject_type = 'job' and subject_id = $2 and summary like 'Storm inspection request%'`,
+      [seed.a.companyId, result.jobId],
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.summary).toBe('Storm inspection request from the storm page, sent for this home by Pat Homeowner');
+    expect(lines[0]!.data).toMatchObject({ requestedByCustomerId: expect.any(String) });
   });
 
   test('okToText false leaves consent at none with no evidence', async () => {

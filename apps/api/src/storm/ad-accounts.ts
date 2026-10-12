@@ -166,7 +166,10 @@ export async function connectMetaAccount(deps: AppDeps, ctx: TenantContext, adAc
   return { account };
 }
 
-/** The owner's on-demand check. For Google, re-sends the invitation when Google has none on record. */
+/**
+ * The owner's on-demand check. For Google, re-sends the invitation when Google has none on record. A check that
+ * throws (or hits a temporary error) keeps the account's previous status and only updates lastErrorPlain.
+ */
 export async function checkAdAccount(deps: AppDeps, ctx: TenantContext, id: string, now: Date): Promise<AdAccountRow> {
   const row = await withTenant(deps.pools, ctx, (tx) => getAdAccount(tx, ctx, id));
   if (!row) throw new AppError(404, MESSAGES.notFound);
@@ -180,10 +183,19 @@ export async function checkAdAccount(deps: AppDeps, ctx: TenantContext, id: stri
       if (link === 'none' || link === 'refused') await deps.adsGoogle.invite(row.externalAccountId);
       ev = await evaluateAdAccount(deps, row);
     } catch (err) {
-      ev = failed(errorMessage(err));
+      ev = { ...failed(errorMessage(err)), fromThrow: true };
     }
   } else {
     ev = await evaluateAdAccount(deps, row);
+  }
+  // A thrown call is not a definite answer about the account: keep its status (and name and currency) and only
+  // note the problem, so one temporary error cannot turn off the 95% spend guard for its campaigns.
+  if (ev.fromThrow) {
+    return withTenant(deps.pools, ctx, async (tx) => {
+      const updated = await updateAdAccount(tx, ctx, id, { lastErrorPlain: ev.lastErrorPlain, now });
+      if (!updated) throw new AppError(404, MESSAGES.notFound);
+      return updated;
+    });
   }
   return withTenant(deps.pools, ctx, async (tx) => {
     const updated = await updateAdAccount(tx, ctx, id, {

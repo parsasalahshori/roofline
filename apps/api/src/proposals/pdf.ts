@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit';
-import { money, TIERS, type ProposalOptionView, type ProposalView, type SignatureRecord } from '@roofline/shared';
+import { money, TIERS, type FinancingTerms, type ProposalOptionView, type ProposalView, type SignatureRecord } from '@roofline/shared';
 import { PDF_COLORS } from '../quotes/pdf.ts';
 
 export type ProposalPdfInput = {
@@ -8,11 +8,23 @@ export type ProposalPdfInput = {
   proposal: ProposalView;
   /** Per-option inclusions lines, keyed by option id (homeowner-safe text; no unit prices). */
   inclusions?: Record<string, string[]>;
-  /** Present for a signed proposal: adds the signature page. */
-  signature?: { record: SignatureRecord; image: Buffer | null };
+  /** Printed under the chosen option's total on the signature page; null when no clause applies. */
+  estimateClause: string | null;
+  /**
+   * Present for a signed proposal: adds the signature page and the audit page. `timeZone` is the
+   * company's zone, used for the signed and first viewed times; `image` is the drawn signature PNG.
+   */
+  signature?: { record: SignatureRecord; image: Buffer | null; timeZone: string };
   /** Financing terms for the "About $X/mo" line; null/absent hides it. */
-  financing?: { aprBps: number; months: number } | null;
+  financing?: FinancingTerms | null;
+  /** Per-option financing terms by option id (frozen with each option's price); an option listed here ignores `financing`. */
+  optionFinancing?: Record<string, FinancingTerms | null>;
 };
+
+function financingFor(i: ProposalPdfInput, option: ProposalOptionView): FinancingTerms | null {
+  if (i.optionFinancing && Object.hasOwn(i.optionFinancing, option.id)) return i.optionFinancing[option.id] ?? null;
+  return i.financing ?? null;
+}
 
 const MARGIN = 48;
 const FONT = 'Helvetica';
@@ -83,6 +95,29 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 }
 
+const two = (n: string | undefined): string => (n ?? '').padStart(2, '0');
+
+/**
+ * An instant written in `zone` with the zone shown, e.g. "October 12, 2026, 10:00 AM CDT (America/Chicago)".
+ * Built from parts so the text does not depend on how a runtime joins date and time.
+ */
+export function formatZonedTime(iso: string, zone: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  }).formatToParts(d);
+  const part = (type: Intl.DateTimeFormatPartTypes): string | undefined => parts.find((p) => p.type === type)?.value;
+  return `${part('month')} ${part('day')}, ${part('year')}, ${part('hour')}:${two(part('minute'))} ${part('dayPeriod')} ${part('timeZoneName')} (${zone})`;
+}
+
 function inclusionsFor(i: ProposalPdfInput, o: ProposalOptionView): string[] {
   const given = i.inclusions?.[o.id];
   if (given) return given;
@@ -100,7 +135,8 @@ function internalTables(doc: Doc, o: ProposalOptionView, isEstimate: boolean): v
     { x: cols.price, w: widths.price, text: 'Unit price', right: true },
     { x: cols.total, w: widths.total, text: 'Line total', right: true },
   ]);
-  const lines = [...o.calculation.lines, ...o.addOnLines];
+  // calculation.lines already ends with the add-on lines (withAddOns); addOnLines is the same lines again.
+  const lines = o.calculation.lines;
   for (const l of lines) {
     row(doc, [
       { x: cols.name, w: widths.name, text: l.name },
@@ -128,11 +164,18 @@ function internalTables(doc: Doc, o: ProposalOptionView, isEstimate: boolean): v
 
 export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean }): PDFKit.PDFDocument {
   const { proposal, company } = i;
+  const signedDate = i.signature ? new Date(i.signature.record.signedAt) : null;
   const doc = new PDFDocument({
     size: 'LETTER',
     margin: MARGIN,
     compress: o?.compress ?? true,
-    info: { Title: `Roof proposal ${proposal.number}`, Author: company.name, Subject: 'Roof proposal' },
+    info: {
+      Title: `Roof proposal ${proposal.number}`,
+      Author: company.name,
+      Subject: 'Roof proposal',
+      // A signed copy is dated by its signature, so the same signature always renders the same bytes.
+      ...(signedDate ? { CreationDate: signedDate, ModDate: signedDate } : {}),
+    },
   });
   const w = contentWidth(doc);
   const isEstimate = proposal.basis === 'estimate';
@@ -165,7 +208,8 @@ export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean 
   ]);
   for (const opt of enabled) {
     const bullets = opt.highlights.map((h) => `• ${h}`).join('\n');
-    const fin = i.financing ? financingLine(opt, i.financing) : null;
+    const terms = financingFor(i, opt);
+    const fin = terms ? financingLine(opt, terms) : null;
     const text = bullets === '' ? ' ' : bullets;
     const h = doc.font(FONT).fontSize(10).heightOfString(text, { width: widths.hl });
     ensure(doc, h + 40);
@@ -198,26 +242,66 @@ export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean 
 
   // Signature page.
   if (i.signature) {
-    const { record, image } = i.signature;
+    const { record, image, timeZone } = i.signature;
+    // One image source for both pages: PDFKit caches a string source, so the PNG is decoded and embedded
+    // once. Two Buffer sources decode asynchronously and finish in either order, which made the bytes
+    // (and so the signed PDF's hash) vary under load.
+    const imageSrc = image ? `data:image/png;base64,${image.toString('base64')}` : null;
     const chosen = proposal.options.find((x) => x.id === record.optionId);
+    const signedAt = formatZonedTime(record.signedAt, timeZone);
     doc.addPage();
     doc.fillColor(PDF_COLORS.ink).font(BOLD).fontSize(20).text('Signature', MARGIN, MARGIN, { width: w });
     doc.moveDown(0.8);
     line(doc, `Signed by ${record.signerName}`, { bold: true, size: 12 });
     line(doc, `Typed signature: ${record.typedSignature}`);
-    line(doc, `Signed at: ${record.signedAt}`);
+    line(doc, `Signed at: ${signedAt}`);
     if (chosen) line(doc, `Option: ${chosen.name}`);
     line(doc, `${totalLabel}: ${money(record.totalCents)}`);
+    const chosenTerms = chosen ? financingFor(i, chosen) : null;
+    const chosenFinancing = chosen && chosenTerms ? financingLine(chosen, chosenTerms) : null;
+    if (chosenFinancing) line(doc, chosenFinancing, { muted: true });
+    if (i.estimateClause !== null) {
+      doc.moveDown(0.3);
+      line(doc, i.estimateClause);
+    }
     doc.moveDown(0.6);
     line(doc, record.consentText, { muted: true });
     doc.moveDown(0.6);
     line(doc, 'Document SHA-256', { bold: true, size: 9 });
     line(doc, record.documentSha256, { size: 9 });
-    if (image) {
+    if (imageSrc) {
       doc.moveDown(0.8);
       ensure(doc, 100);
-      doc.image(image, MARGIN, doc.y, { fit: [220, 90] });
+      doc.image(imageSrc, MARGIN, doc.y, { fit: [220, 90] });
     }
+
+    // Audit page: everything needed to show who signed what, when and how.
+    doc.addPage();
+    doc.fillColor(PDF_COLORS.ink).font(BOLD).fontSize(20).text('Signing record', MARGIN, MARGIN, { width: w });
+    doc.moveDown(0.8);
+    line(doc, `Signer: ${record.signerName}`);
+    line(doc, `Typed signature: ${record.typedSignature}`);
+    if (imageSrc) {
+      line(doc, 'Drawn signature:');
+      doc.moveDown(0.3);
+      ensure(doc, 100);
+      const y = doc.y;
+      doc.image(imageSrc, MARGIN, y, { fit: [220, 90] });
+      doc.y = y + 96;
+      doc.x = MARGIN;
+    } else {
+      line(doc, 'Drawn signature: none');
+    }
+    line(doc, `Signed at: ${signedAt}`);
+    line(doc, `IP address: ${record.ip === '' ? 'not recorded' : record.ip}`);
+    line(doc, `Device (user agent): ${record.userAgent === '' ? 'not recorded' : record.userAgent}`);
+    line(doc, `First viewed: ${record.viewedFirstAt === null ? 'not recorded' : formatZonedTime(record.viewedFirstAt, timeZone)}`);
+    doc.moveDown(0.6);
+    line(doc, `Consent (version ${record.consentVersion})`, { bold: true });
+    line(doc, record.consentText);
+    doc.moveDown(0.6);
+    line(doc, 'Document SHA-256', { bold: true, size: 9 });
+    line(doc, record.documentSha256, { size: 9 });
   }
 
   return doc;

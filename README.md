@@ -58,11 +58,11 @@
 | `EAGLEVIEW_CLIENT_SECRET` | no | EagleView client secret. Both or neither with `EAGLEVIEW_CLIENT_ID`. |
 | `EAGLEVIEW_ENV` | no (`sandbox`) | `sandbox` or `production`. |
 | `EAGLEVIEW_PRODUCT_ID` | no (0) | The EagleView product id to order. 0 is a placeholder: ask before ordering. |
-| `R2_ACCOUNT_ID` | no | Cloudflare R2 account id. All four R2 settings or none. Expected in production once any company can sign; without them start-up warns and signed proposals cannot be stored. |
+| `R2_ACCOUNT_ID` | production | Cloudflare R2 account id. All four R2 settings or none; production refuses to start without them (signed proposals are stored in R2). |
 | `R2_ACCESS_KEY_ID` | no | R2 access key id. All four R2 settings or none. |
 | `R2_SECRET_ACCESS_KEY` | no | R2 secret access key. All four R2 settings or none. |
 | `R2_BUCKET` | no | R2 bucket name. All four R2 settings or none. |
-| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be the same origin as `APP_ORIGIN` for the homeowner page to accept its signing and decline posts. |
+| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be on the same origin as `APP_ORIGIN` (start-up refuses another origin), because the homeowner page posts its signing and decline requests there. |
 | `FOOTPRINTS_BASE_URL` | no | Where building footprint files are read from; a trailing slash is added. Defaults to `https://usbuildingdata.blob.core.windows.net/usbuildings-v2/`. |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | no | Google Ads developer token. All five GOOGLE_ADS settings or none; unset means Google ads are off. |
 | `GOOGLE_ADS_MANAGER_ID` | no | Google Ads manager account id. All five GOOGLE_ADS settings or none. |
@@ -79,15 +79,22 @@
 | `POSTMARK_WEBHOOK_SECRET` | no | Basic-auth password for Postmark's bounce and complaint webhook at `/hooks/postmark` (16+ characters). Unset: the webhook refuses every call. |
 | `STORM_MAIL_FROM` | no | Plain From address for storm email, like `storms@roofline.app`. Unset: `storms@` plus the `MAIL_FROM` domain, else `POLICY_PAGES_DOMAIN`, else the `PUBLIC_BASE_URL` host. |
 | `HAIL_STALE_MINUTES` | no (90) | Minutes without a fresh hail report before the hail feed counts as stale (1 to 10080). |
-| `POLICY_PAGES_DOMAIN` | no | The bare hostname for the policy pages, like `roofline.app`. |
+| `HAIL_ALERT_STALE_MINUTES_SEASON` | no (180) | Minutes without a new processed hail grid before ops is emailed in storm season, UTC April to September (1 to 10080). |
+| `HAIL_ALERT_STALE_MINUTES_OFFSEASON` | no (720) | The same threshold for the rest of the year (1 to 10080). |
+| `OPS_ALERT_EMAIL` | no | Where the hail service, hail-health and the ad sync send ops alerts (stale hail data, ad account trouble). Must be a verified Postmark sender address (its domain verified in Postmark): the hail service also uses it as the From. Unset: the problem is only logged. |
+| `POLICY_PAGES_DOMAIN` | no (required for Storm Scout) | The bare hostname for the policy pages, like `roofline.app`. Required for Storm Scout landing pages and ads. |
 | `FAKE_PROVIDERS` | no | `1` or `true` swaps every outside service for a fake. Development and test only; refused in production. |
 | `WEB_DIST_DIR` | no | Where the built web app is: `apps/web/dist` in production (a relative path is read from the repository root). When set, the API also serves the app, so one origin answers both; it must contain `index.html` or start-up stops. Leave unset in development, where Vite serves the app. |
-| `TRUST_PROXY` | no (0) | How many proxy hops to trust for the client address. |
+| `TRUST_PROXY` | in production (0 elsewhere) | How many proxy hops to trust for the client address: `1` on Render (one proxy in front). Unset or 0 stops start-up in production; a value above the real hop count lets clients choose their IP via `X-Forwarded-For`. |
 | `API_RATE_LIMIT_PER_MIN` | no (600) | Requests per minute per session on `/api/*`. |
 | `PORT` | no (4400) | Listen port (Render sets it). |
 | `HOST` | no | Listen address: `0.0.0.0` in production, `127.0.0.1` otherwise, unless set. |
 | `DATABASE_URL_OWNER` | migrations only | The migration owner. Only the migrate and role-password steps use it; never the API or worker. |
 | `TENANT_DB_PASSWORD`, `SYSTEM_DB_PASSWORD` | role passwords only | Set on `app_tenant` and `app_system`; must match the two app URLs. |
+| `HAIL_DB_PASSWORD` | role passwords only | Set on `app_hail`, the hail service's database role; must match `HAIL_DATABASE_URL`. |
+| `HAIL_DATABASE_URL` | hail service only | Login URL of `app_hail`, read by `services/hail` only (never the API or worker). |
+
+- **Building footprints and proposal links:** the worker's `footprints-ensure` job runs every 15 minutes (`*/15 * * * *`) and queues a `footprints-load` job for each state a company is in whose footprints are not yet `ready` or loading. Each load reads one state's file from Microsoft US Building Footprints (ODbL; the attribution is in `apps/web/src/copy/legal.ts`, shown on the measure view) into PostGIS from `FOOTPRINTS_BASE_URL`. A state is usable once its `building_footprint_states.status` is `ready`; until then homes there open draw mode. End-to-end and test stacks do not download anything: they seed a Nebraska fixture with `seedFootprintFixture` (exported from `apps/api/src/index.ts`). `PROPOSAL_LINK_BASE_URL` must share `APP_ORIGIN`'s origin, because the homeowner page posts its signing and decline requests there.
 
 - **Calendar connections:**
   - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google Calendar, and `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` for Outlook. A provider with either value missing shows as not set up in Settings.
@@ -127,6 +134,13 @@
   - **Stripe webhook:** add the endpoint `<PUBLIC_BASE_URL>/hooks/stripe` with exactly these five events: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`. Its signing secret is `STRIPE_WEBHOOK_SECRET`; without it the endpoint answers 503 and Stripe retries.
   - **Twilio registration callback:** point Twilio's registration status callback at `<PUBLIC_BASE_URL>/hooks/twilio-registration`. A daily poll also checks the carriers.
   - **Hosted policy pages:** set `POLICY_PAGES_DOMAIN` (like `roofline.app`) and add wildcard DNS `*.<POLICY_PAGES_DOMAIN>` pointing at the API service, so each company's `https://<company-slug>.<POLICY_PAGES_DOMAIN>/privacy` and `/terms` resolve.
+- **Storm Scout (S1):**
+  - **Hail service:** `services/hail` is a separate Python worker that reads radar hail data and writes storms. Its setup and tests are in [`services/hail/README.md`](services/hail/README.md). It connects as the database role `app_hail`, not as the API roles: run `HAIL_DB_PASSWORD=… set-role-passwords` (with the other two passwords) after `db:migrate`, and give the service `HAIL_DATABASE_URL`. Set `OPS_ALERT_EMAIL` (the hail service reads `POSTMARK_TOKEN`, same as the API) so it can email ops when hail data goes stale.
+  - **Ads:** storm ads need the five `GOOGLE_ADS_*` settings for Google (plus optional `GOOGLE_ADS_API_VERSION`) and the four `META_*` settings for Meta (plus optional `META_GRAPH_VERSION`); a platform with its settings missing is off. Companies connect their own ad accounts in Settings.
+  - **Storm email:** sent on the Postmark stream named by `POSTMARK_BROADCAST_STREAM` (default `broadcast`), from `STORM_MAIL_FROM`. Point Postmark's bounce and complaint webhook at `<PUBLIC_BASE_URL>/hooks/postmark` with basic-auth password `POSTMARK_WEBHOOK_SECRET`.
+  - **Storm pages:** each storm gets a page on the company's host, `https://<company-slug>.<POLICY_PAGES_DOMAIN>`, so `POLICY_PAGES_DOMAIN` and its wildcard DNS must be set (see the hosted policy pages above). `POLICY_PAGES_DOMAIN` is required for storm landing pages and ads: the ad step fails before any spend without it.
+  - **Alerts:** `OPS_ALERT_EMAIL` is where stale hail data and ad sync problems are sent.
+  - **End-to-end:** the Playwright suite resolves `*.roofline.test` to the local stack; how every spec section of the storm spec is tested is mapped in [`docs/superpowers/s1-acceptance.md`](docs/superpowers/s1-acceptance.md).
 - **Owner to-dos before texting goes live:**
   - Keep Twilio Advanced Opt-Out on, with its default keywords.
   - Have the lawyer review the policy templates and the consent sentence.

@@ -6,6 +6,7 @@ import { JOB_HANDLERS } from '../src/jobs/handlers.ts';
 import { JOB_NAMES, type JobHandlers } from '../src/jobs/queue.ts';
 import { SCHEDULES } from '../src/jobs/worker.ts';
 import { builtInHandlers } from '../src/tasks/handlers.ts';
+import { createAdCampaignHandler } from '../src/storm/ad-campaign.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 
 const STORM_JOBS = ['storm-match-company', 'storm-draft', 'storm-alert', 'ad-sync-company'] as const;
@@ -27,8 +28,8 @@ describe('the storm skeleton', () => {
     expect(res.body).toEqual({ error: MESSAGES.notFound });
   });
 
-  test('POST /api/public/storm-requests/x without a session is not a 401', async () => {
-    const res = await request(t.app).post('/api/public/storm-requests/x').send({});
+  test('POST /api/public/storm-requests/<code> without a session is not a 401', async () => {
+    const res = await request(t.app).post('/api/public/storm-requests/abcd2345').send({});
     expect(res.status).not.toBe(401);
     // The real route validates the body before looking the page up, so an empty body is a 422.
     expect(res.status).toBe(422);
@@ -67,14 +68,11 @@ describe('the storm skeleton', () => {
     for (const name of STORM_JOBS) expect(JOB_NAMES).toContain(name);
   });
 
-  test('send_email_batch and build_routes are registered and create_ad_campaign still refuses', async () => {
+  test('send_email_batch, build_routes and create_ad_campaign are registered with their real handlers', () => {
     expect(builtInHandlers.send_email_batch).toBeDefined();
     expect(builtInHandlers.build_routes).toBeDefined();
-    for (const type of ['create_ad_campaign'] as const) {
-      const handler = builtInHandlers[type];
-      expect(handler).toBeDefined();
-      await expect(handler!({} as never, {} as never, {} as never)).rejects.toThrow('not yet');
-    }
+    expect(builtInHandlers.create_ad_campaign).toBeDefined();
+    expect(builtInHandlers.create_ad_campaign).toBe(createAdCampaignHandler);
   });
 
   test('storm job handlers exist for every new job name', () => {

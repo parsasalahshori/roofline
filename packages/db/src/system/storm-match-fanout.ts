@@ -25,6 +25,7 @@ export async function companiesWithCandidateStorms(sys: Db, input: { days: strin
       and exists (
         select 1 from storms s
         where s.convective_day in (${days})
+          and s.merged_into is null
           and s.geom_075 && c.service_area
           and ST_Intersects(s.geom_075, c.service_area)
       )

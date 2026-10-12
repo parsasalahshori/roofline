@@ -10,13 +10,15 @@ from pathlib import Path
 import httpx
 
 S3_NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
-PREFIX = "CONUS/MESH_Max_1440min_00.50/"
-_NAME_RE = re.compile(r"^(?:MRMS_)?MESH_Max_1440min_00\.50_(\d{8})-(\d{6})\.grib2(?:\.gz)?$")
+PREFIX_60 = "CONUS/MESH_Max_60min_00.50/"
+PREFIX_1440 = "CONUS/MESH_Max_1440min_00.50/"
+PREFIX = PREFIX_1440
+_NAME_RE = re.compile(r"^(?:MRMS_)?MESH_Max_(60|1440)min_00\.50_(\d{8})-(\d{6})\.grib2(?:\.gz)?$")
 
 
-def list_keys(http: httpx.Client, base_url: str, day: date) -> list[str]:
+def list_keys(http: httpx.Client, base_url: str, day: date, prefix: str = PREFIX_1440) -> list[str]:
     """List every MESH key for one UTC day, following S3 continuation tokens."""
-    params = {"list-type": "2", "prefix": f"{PREFIX}{day:%Y%m%d}/"}
+    params = {"list-type": "2", "prefix": f"{prefix}{day:%Y%m%d}/"}
     keys: list[str] = []
     while True:
         resp = http.get(f"{base_url}/", params=params)
@@ -39,7 +41,16 @@ def parse_valid_at(key: str) -> datetime:
     match = _NAME_RE.match(name)
     if match is None:
         raise ValueError(f"not a MESH file name: {key}")
-    return datetime.strptime(f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+    return datetime.strptime(f"{match.group(2)}{match.group(3)}", "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+
+
+def product_of(key: str) -> str:
+    """'60min' or '1440min' for a MESH key or file name."""
+    name = key.rsplit("/", 1)[-1]
+    match = _NAME_RE.match(name)
+    if match is None:
+        raise ValueError(f"not a MESH file name: {key}")
+    return f"{match.group(1)}min"
 
 
 def download(http: httpx.Client, base_url: str, key: str, workdir: Path) -> Path:

@@ -10,6 +10,11 @@ const VALID = {
   DATABASE_URL_SYSTEM: 'postgres://app_system:pw@localhost:5432/roofline',
   ENCRYPTION_KEY: KEY,
   PUBLIC_BASE_URL: 'https://app.roofline.test',
+  TRUST_PROXY: '1',
+  R2_ACCOUNT_ID: 'acct',
+  R2_ACCESS_KEY_ID: 'key-id',
+  R2_SECRET_ACCESS_KEY: 'key-secret',
+  R2_BUCKET: 'proposals',
 } satisfies Record<string, string>;
 
 const GOOGLE_ADS = {
@@ -92,6 +97,21 @@ describe('storm settings', () => {
   test('HAIL_STALE_MINUTES is a whole number from 1 up', () => {
     expect(problem({ ...VALID, HAIL_STALE_MINUTES: '0' })).toContain('HAIL_STALE_MINUTES');
     expect(loadConfig({ ...VALID, HAIL_STALE_MINUTES: '120' }).HAIL_STALE_MINUTES).toBe(120);
+  });
+
+  test('hail alert thresholds default to 180 and 720, separate from the 90 minute banner', () => {
+    const config = loadConfig(VALID);
+    expect(config.HAIL_ALERT_STALE_MINUTES_SEASON).toBe(180);
+    expect(config.HAIL_ALERT_STALE_MINUTES_OFFSEASON).toBe(720);
+    expect(config.HAIL_STALE_MINUTES).toBe(90);
+  });
+
+  test('hail alert thresholds can be overridden and refuse 0', () => {
+    const config = loadConfig({ ...VALID, HAIL_ALERT_STALE_MINUTES_SEASON: '60', HAIL_ALERT_STALE_MINUTES_OFFSEASON: '240' });
+    expect(config.HAIL_ALERT_STALE_MINUTES_SEASON).toBe(60);
+    expect(config.HAIL_ALERT_STALE_MINUTES_OFFSEASON).toBe(240);
+    expect(problem({ ...VALID, HAIL_ALERT_STALE_MINUTES_SEASON: '0' })).toContain('HAIL_ALERT_STALE_MINUTES_SEASON');
+    expect(problem({ ...VALID, HAIL_ALERT_STALE_MINUTES_OFFSEASON: '0' })).toContain('HAIL_ALERT_STALE_MINUTES_OFFSEASON');
   });
 
   test('OPS_ALERT_EMAIL is optional and must be an email', () => {

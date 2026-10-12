@@ -78,8 +78,13 @@ export async function upsertAdAccount(
     .returning();
   return row!;
 }
-/** Applies a patch to one account of the company; returns the updated row or null when it is not found. */
-export async function updateAdAccount(tx: Tx, ctx: TenantContext, id: string, patch: AdAccountPatch): Promise<AdAccountRow | null> {
+/** Applies a patch to one account of the company (a patch without status keeps it); returns the updated row or null when it is not found. */
+export async function updateAdAccount(
+  tx: Tx,
+  ctx: TenantContext,
+  id: string,
+  patch: Omit<AdAccountPatch, 'status'> & { status?: AdAccountStatus },
+): Promise<AdAccountRow | null> {
   const set: Partial<typeof adAccounts.$inferInsert> = {
     status: patch.status,
     lastErrorPlain: patch.lastErrorPlain,

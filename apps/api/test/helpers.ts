@@ -216,6 +216,8 @@ export function testConfig(
     FRONT_DESK_MAX_CALLS: 40,
     RELAY_PUBLIC_URL: 'wss://app.roofline.test/relay',
     RELAY_TOKEN_SECRET: 'relay-test-secret-0123456789abcdef0123',
+    HAIL_ALERT_STALE_MINUTES_SEASON: 180,
+    HAIL_ALERT_STALE_MINUTES_OFFSEASON: 720,
     ...overrides,
   };
 }

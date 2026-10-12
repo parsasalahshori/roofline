@@ -67,8 +67,8 @@ function AdAccountCard({ heading, steps, account, owner, connectForm }: AdAccoun
               {connections.statuses[account.status]}
             </span>
           </p>
-          {(account.status === 'pending' || account.status === 'error') && account.reason ? (
-            <p className={styles.reason}>{connections.reasons[account.reason]}</p>
+          {(account.status === 'pending' || account.status === 'error') && account.lastErrorPlain ? (
+            <p className={styles.reason}>{account.lastErrorPlain}</p>
           ) : null}
           {owner ? (
             <div className={styles.actions}>

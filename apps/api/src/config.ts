@@ -209,7 +209,14 @@ const ConfigSchema = z
       .refine((v) => Buffer.byteLength(v, 'utf8') >= 32, 'must be at least 32 bytes')
       .optional(),
 
-    /** How many reverse-proxy hops to trust for `req.ip` (0 = none). */
+    /**
+     * How many reverse-proxy hops to trust for `req.ip` (0 = none), passed to Express's
+     * `trust proxy`. Every IP-keyed rate limit and the audit log's addresses depend on it.
+     * Required in production, and at least 1: Render puts one proxy in front of the service, so 1
+     * there. With 0 behind a proxy every visitor looks like the proxy and shares one IP limit; a
+     * value above the real hop count lets clients choose their IP through X-Forwarded-For.
+     * Development and tests default to 0 (nothing in front).
+     */
     TRUST_PROXY: integer(0, 0, 32),
     /** Per-session request limit for /api/*. Parsed here, applied by the rate limiter. */
     API_RATE_LIMIT_PER_MIN: integer(600, 1, 1_000_000),
@@ -229,7 +236,7 @@ const ConfigSchema = z
     EAGLEVIEW_ENV: z.enum(['sandbox', 'production'], { error: 'must be sandbox or production' }).default('sandbox'),
     /** The EagleView product id to order. 0 is a placeholder: ask before ordering anything. */
     EAGLEVIEW_PRODUCT_ID: integer(0, 0, 2_147_483_647),
-    /** Cloudflare R2 account id. All four R2 settings come together, or none. Unset: signed proposals cannot be stored. */
+    /** Cloudflare R2 account id. All four R2 settings come together, or none; production requires them. Unset: signed proposals cannot be stored. */
     R2_ACCOUNT_ID: z.string().optional(),
     /** R2 access key id. See R2_ACCOUNT_ID. */
     R2_ACCESS_KEY_ID: z.string().optional(),
@@ -237,7 +244,7 @@ const ConfigSchema = z
     R2_SECRET_ACCESS_KEY: z.string().optional(),
     /** R2 bucket name. See R2_ACCOUNT_ID. */
     R2_BUCKET: z.string().optional(),
-    /** The base URL of customer proposal links. No trailing slash. Unset: APP_ORIGIN (applied in the final transform). */
+    /** The base URL of customer proposal links. No trailing slash. Must be on APP_ORIGIN's origin. Unset: APP_ORIGIN (applied in the final transform). */
     PROPOSAL_LINK_BASE_URL: httpUrl.transform((v) => v.replace(/\/+$/, '')).optional(),
     /** Where the building footprint files are read from. Always ends in a slash. Default: the Microsoft US buildings set. */
     FOOTPRINTS_BASE_URL: httpUrl.transform((v) => (v.endsWith('/') ? v : `${v}/`)).default(DEFAULT_FOOTPRINTS_BASE_URL),
@@ -272,7 +279,14 @@ const ConfigSchema = z
     STORM_MAIL_FROM: z.string().email('must be an email address').optional(),
     /** Minutes without a fresh hail report before the hail feed counts as stale. */
     HAIL_STALE_MINUTES: integer(90, 1, 10080),
-    /** Where the hail-health schedule emails ops when the hail data goes stale. Unset: it only logs. */
+    /** Minutes without a new processed hail grid before hail-health emails ops in storm season (UTC April to September). Separate from HAIL_STALE_MINUTES, the storm-layer banner. */
+    HAIL_ALERT_STALE_MINUTES_SEASON: integer(180, 1, 10080),
+    /** Minutes without a new processed hail grid before hail-health emails ops off season (UTC October to March). */
+    HAIL_ALERT_STALE_MINUTES_OFFSEASON: integer(720, 1, 10080),
+    /**
+     * Where the hail service and the hail-health schedule email ops when hail data goes stale. Unset: it only logs.
+     * It must be a verified Postmark sender address (its domain verified in Postmark), because the hail service also uses it as the From.
+     */
     OPS_ALERT_EMAIL: z.string().email('must be an email address').optional(),
   })
   .superRefine((cfg, ctx) => {
@@ -346,6 +360,19 @@ const ConfigSchema = z
           ctx.addIssue({ code: 'custom', path: [name], message: 'is required when the other R2 settings are set' });
         }
       }
+    } else if (cfg.NODE_ENV === 'production') {
+      // Ruling ET: a homeowner can sign only when the signed proposal can be stored, so production needs R2.
+      for (const name of r2) {
+        ctx.addIssue({ code: 'custom', path: [name], message: 'is required in production (signed proposals are stored in R2)' });
+      }
+    }
+    // The homeowner page signs and declines with POST requests, which are only taken from APP_ORIGIN.
+    if (cfg.PROPOSAL_LINK_BASE_URL !== undefined && originOf(cfg.PROPOSAL_LINK_BASE_URL) !== originOf(cfg.APP_ORIGIN)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PROPOSAL_LINK_BASE_URL'],
+        message: 'must be on the same origin as APP_ORIGIN (homeowners sign through it)',
+      });
     }
     const googleAds = [
       'GOOGLE_ADS_DEVELOPER_TOKEN',
@@ -372,6 +399,13 @@ const ConfigSchema = z
           ctx.addIssue({ code: 'custom', path: [name], message: 'is required when the other META settings are set' });
         }
       }
+    }
+    if (cfg.NODE_ENV === 'production' && cfg.TRUST_PROXY === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TRUST_PROXY'],
+        message: 'is required in production: the number of proxies in front of the API (1 on Render)',
+      });
     }
     if (cfg.FAKE_PROVIDERS && cfg.NODE_ENV === 'production') {
       ctx.addIssue({
@@ -400,6 +434,15 @@ const ConfigSchema = z
   }));
 
 export type Config = z.infer<typeof ConfigSchema>;
+
+/** A URL's origin, or null when it is not a URL. */
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
 
 /** The environment was unusable. The message names the variables, never their values. */
 export class ConfigError extends Error {

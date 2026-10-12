@@ -68,6 +68,8 @@ describe('storm landing page on the company host', () => {
     expect(res.headers['content-type']).toMatch(/text\/html/);
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.headers['x-robots-tag']).toBe('noindex, nofollow');
+    // Not helmet's no-referrer: that makes the browser post the form with `Origin: null`, which the form's Origin guard refuses.
+    expect(res.headers['referrer-policy']).toBe('same-origin');
     expect(res.text).toContain('<meta name="robots" content="noindex,nofollow">');
     expect(res.text).toContain(t.seed.a.name);
     expect(res.text).toContain('Radar-estimated hail was reported near your area recently.');
@@ -158,6 +160,15 @@ describe('storm landing page on the company host', () => {
 
     expect(res.status).toBe(200);
     expect(res.text).not.toContain('role="alert"');
+  });
+});
+
+describe('storm landing page codes', () => {
+  test.each(['abc12345', 'abcd234', 'abcd23456', 'abcd-345'])('a malformed code %s is the generic 404 page', async (code) => {
+    const res = await request(t.app).get(`/storm/${code}`).set('Host', A_HOST);
+
+    expect(res.status).toBe(404);
+    expect(res.text).toContain(NOT_FOUND_TEXT);
   });
 });
 

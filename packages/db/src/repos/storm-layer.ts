@@ -71,6 +71,7 @@ export async function stormLayer(tx: Tx, input: StormLayerInput): Promise<StormL
     from storms s
     join storm_contours c on c.storm_id = s.id
     where s.convective_day >= ${cutoff}::date
+      and s.merged_into is null
       and ST_Intersects(s.geom_075, ${envelope})
       and ST_Intersects(c.geom, ${envelope})
     order by s.convective_day desc, s.id, c.threshold_in asc

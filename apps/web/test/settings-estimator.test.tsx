@@ -131,6 +131,21 @@ describe('Settings Prices: financing', () => {
     expect(api.sent(SETTINGS_PUT)[0]).toEqual({ financingAprBps: 999, financingTermMonths: 120 });
   });
 
+  it('financing refuses what the API refuses: APR over 50, term over 360', async () => {
+    settingsApi();
+    const { user } = renderAt(<FinancingSection />, '/settings/prices');
+
+    await user.type(await screen.findByLabelText(financeCopy.aprLabel), '60');
+    await user.type(screen.getByLabelText(financeCopy.termLabel), '480');
+    await user.click(screen.getByRole('button', { name: tiers.save }));
+
+    expect(await screen.findByText(financeCopy.aprRange)).toBeInTheDocument();
+    expect(screen.getByText(financeCopy.termRange)).toBeInTheDocument();
+    expect(financeCopy.aprRange).toContain('50');
+    expect(financeCopy.termRange).toContain('360');
+    expect(api.count(SETTINGS_PUT)).toBe(0);
+  });
+
   it('financing needs both or neither', async () => {
     settingsApi();
     const { user } = renderAt(<FinancingSection />, '/settings/prices');

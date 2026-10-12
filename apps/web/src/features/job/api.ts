@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { defaultScope, type JobSource, type JobView } from '@roofline/shared';
-import type { ProposalView } from '@roofline/shared';
+import { defaultScope, type JobSource, type JobView, type ProposalView } from '@roofline/shared';
 import { ApiError, apiFetch } from '../../api/client.ts';
 import type { ProposalList } from '../estimator/types.ts';
 

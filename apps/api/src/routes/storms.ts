@@ -1,11 +1,38 @@
 import { Router } from 'express';
-import { stormLayer, withTenant } from '@roofline/db';
+import {
+  audit,
+  companyStormRef,
+  dismissCompanyStorm,
+  FINISHED_REDRAFTABLE_PLAN_STATUSES,
+  getCompanyStormSummary,
+  listCompanyStorms,
+  REDRAFTABLE_PLAN_STATUSES,
+  stormLayer,
+  stormSwath,
+  withTenant,
+} from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
+import { requireCapability } from '../permissions.ts';
+import { draftStormPlan } from '../storm/plan.ts';
+import {
+  PLAN_CHANGED,
+  PLAN_DISMISSED,
+  PLAN_EXISTS,
+  PLAN_NOT_FOUND,
+  PLAN_PAUSED,
+} from '../storm/plan-errors.ts';
+import { stormResults } from '../storm/results.ts';
+import { UUID } from '../validate.ts';
 
 const BBOX_MESSAGE = 'Please give the map area as west,south,east,north.';
 const ZOOM_MESSAGE = 'Please give the map zoom as a whole number from 0 to 22.';
 const DAYS_MESSAGE = 'Please give the number of days as a whole number from 1 to 30.';
+const SINCE_MESSAGE = 'Please give the date as year-month-day, like 2026-10-12.';
+
+/** `GET /` lists storms first matched within this many days unless `?since=` says otherwise. */
+const SINCE_DEFAULT_DAYS = 30;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/;
 
 const ZOOM_MIN = 0;
 const ZOOM_MAX = 22;
@@ -73,10 +100,98 @@ export function stormLayerRoutes(deps: AppDeps): Router {
   return router;
 }
 
-/** `/api/storms`: `GET /layer` is the same storm layer; the rest answers 404 until later S1 tasks build it. */
+/** `?since=` as a Date: an ISO date or date-time, or `fallback` when left out. */
+function parseSince(value: unknown, fallback: Date): Date {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) throw new AppError(400, SINCE_MESSAGE, 'since');
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) throw new AppError(400, SINCE_MESSAGE, 'since');
+  return new Date(ms);
+}
+
+/** The :id of a request as a lowercase UUID, or a 404 for anything else. */
+function stormId(raw: unknown): string {
+  const id = (typeof raw === 'string' ? raw : '').toLowerCase();
+  if (!UUID.test(id)) throw new AppError(404, MESSAGES.notFound);
+  return id;
+}
+
+/**
+ * `/api/storms`: `GET /layer` is the same storm layer; `GET /` and `GET /:id` list and show the company's
+ * storms (any member; the list takes `?since=YYYY-MM-DD`, default the last 30 days); `POST /:id/dismiss` and `POST /:id/plan` need `approve_internal`. `:id` is the
+ * company_storms id. 'Draft a new plan' drafts when the storm has no plan or its plan is a draft, expired or declined
+ * (amended Ruling BD: a person's explicit re-draft, allowFinished); 409 PLAN_EXISTS otherwise; 409 too when Storm Scout
+ * is paused. The answer stays `{ taskId }`. Everything else answers 404.
+ */
 export function stormRoutes(deps: AppDeps): Router {
   const router = Router();
+  const guard = requireCapability('approve_internal');
+  // '/layer' stays ahead of '/:id'.
   router.use('/layer', layerHandler(deps));
+
+  router.get('/', async (req, res) => {
+    const since = parseSince(req.query['since'], new Date(deps.clock.now().getTime() - SINCE_DEFAULT_DAYS * 24 * 60 * 60 * 1000));
+    const storms = await withTenant(deps.pools, req.ctx, (tx) => listCompanyStorms(tx, req.ctx, { since }));
+    res.json({ storms });
+  });
+
+  router.get('/:id', async (req, res) => {
+    const id = stormId(req.params.id);
+    const body = await withTenant(deps.pools, req.ctx, async (tx) => {
+      const storm = await getCompanyStormSummary(tx, req.ctx, id);
+      const ref = await companyStormRef(tx, req.ctx, id);
+      if (!storm || !ref) throw new AppError(404, MESSAGES.notFound);
+      const swath = await stormSwath(tx, ref.stormId);
+      const results = await stormResults(tx, req.ctx, id);
+      const plan = storm.planTaskId === null ? null : { taskId: storm.planTaskId, status: storm.planStatus ?? 'draft' };
+      return { storm, swath, results, plan };
+    });
+    res.json(body);
+  });
+
+  router.post('/:id/dismiss', guard, async (req, res) => {
+    const id = stormId(req.params.id);
+    const now = deps.clock.now();
+    await withTenant(deps.pools, req.ctx, async (tx) => {
+      if (!(await dismissCompanyStorm(tx, req.ctx, id, now))) throw new AppError(404, MESSAGES.notFound);
+      await audit(tx, req.ctx, {
+        action: 'storm.dismiss',
+        targetType: 'company_storm',
+        targetId: id,
+        ip: req.ip ?? null,
+        at: now,
+      });
+    });
+    res.json({ ok: true });
+  });
+
+  router.post('/:id/plan', guard, async (req, res) => {
+    const id = stormId(req.params.id);
+    const { storm, ref } = await withTenant(deps.pools, req.ctx, async (tx) => ({
+      storm: await getCompanyStormSummary(tx, req.ctx, id),
+      ref: await companyStormRef(tx, req.ctx, id),
+    }));
+    if (!storm || !ref) throw new AppError(404, MESSAGES.notFound);
+    if (ref.status === 'dismissed') throw new AppError(409, PLAN_DISMISSED);
+    const redraftable: readonly string[] = [...REDRAFTABLE_PLAN_STATUSES, ...FINISHED_REDRAFTABLE_PLAN_STATUSES];
+    if (storm.planTaskId !== null && !redraftable.some((status) => status === storm.planStatus)) {
+      throw new AppError(409, PLAN_EXISTS);
+    }
+    try {
+      const drafted = await draftStormPlan(deps, req.ctx.companyId, id, deps.clock.now(), {
+        allowFinished: true,
+        createdByUserId: req.ctx.userId ?? undefined,
+      });
+      if (drafted === null) throw new AppError(409, PLAN_PAUSED);
+      res.json({ taskId: drafted.taskId });
+    } catch (err) {
+      const message = err instanceof Error && !(err instanceof AppError) ? err.message : '';
+      if (message === PLAN_DISMISSED || message === PLAN_CHANGED) throw new AppError(409, message);
+      if (message === PLAN_NOT_FOUND) throw new AppError(404, MESSAGES.notFound);
+      throw err;
+    }
+  });
+
   router.use((_req, _res, next) => {
     next(new AppError(404, MESSAGES.notFound));
   });

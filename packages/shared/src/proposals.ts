@@ -23,11 +23,25 @@ export type ExactOrderStatus = (typeof EXACT_ORDER_STATUSES)[number];
 export const FOOTPRINT_STATE_STATUSES = ['loading', 'ready', 'failed'] as const;
 export type FootprintStateStatus = (typeof FOOTPRINT_STATE_STATUSES)[number];
 
+/** The states (and DC) with a building footprint file: the only codes a footprint load is queued for. Territories are not in the set. */
+export const US_STATE_CODES = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS',
+  'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC',
+  'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+] as const;
+export type UsStateCode = (typeof US_STATE_CODES)[number];
+
+/** True for a two-letter code in US_STATE_CODES (any case, surrounding spaces ignored). */
+export function isUsStateCode(code: string): boolean {
+  return (US_STATE_CODES as readonly string[]).includes(code.trim().toUpperCase());
+}
+
 export const STORED_FILE_KINDS = ['signed_proposal_pdf', 'storm_photo', 'ad_image'] as const;
 export type StoredFileKind = (typeof STORED_FILE_KINDS)[number];
 
 // ---------------------------------------------------------------------------------------------
 // T4: proposal views, the signature record, canonical JSON.
+import { z } from 'zod';
 import type { Outline, InstantEstimate, LngLat, Ring } from './roof.ts';
 import type { AddOn } from './tiers.ts';
 import type { Scope, Calculation, QuoteLine } from './pricing.ts';
@@ -52,7 +66,7 @@ export type PublicProposalView = {
   companyName: string; companyPhone: string | null; firstName: string | null; address: string; validUntil: string;
   status: 'open' | 'signed' | 'declined' | 'expired'; basis: MeasurementKind;
   options: { id: string; tier: Tier; name: string; highlights: string[]; inclusions: string[]; totalCents: number; monthlyEstimateCents: number | null;
-    financingTerms: { aprBps: number; months: number } | null }[];
+    financingTerms: FinancingTerms | null }[];
   signed: { optionId: string; name: string; at: string; pdfReady: boolean } | null; estimateClause: boolean;
 };
 export const CONSENT_TEXT_V1 = 'I agree to sign electronically and to receive this agreement electronically. I can ask for a paper copy.';
@@ -86,8 +100,51 @@ function serializeCanonical(value: unknown): string {
   return `{${keys.map((key) => `${JSON.stringify(key)}:${serializeCanonical(record[key])}`).join(',')}}`;
 }
 
+/** Financing terms frozen on an option when it was priced (Ruling ER). */
+export type FinancingTerms = { aprBps: number; months: number };
+
+/**
+ * What document_sha256 covers, exactly as hashed (canonicalJson) and as stored on the 'signed'
+ * proposal_events row (`data.document`, Ruling ER). The signed PDF prints its signed facts from it.
+ */
+export type SignedDocument = {
+  company: { name: string; phone: string | null };
+  address: string;
+  validUntil: string;
+  basis: MeasurementKind;
+  option: {
+    id: string; tier: Tier; name: string; highlights: string[]; inclusions: string[]; totalCents: number;
+    monthlyEstimateCents: number | null; financingTerms: FinancingTerms | null;
+  };
+  clause: string | null;
+};
+
+const signedDocumentSchema = z.object({
+  company: z.object({ name: z.string(), phone: z.string().nullable() }),
+  address: z.string(),
+  validUntil: z.string(),
+  basis: z.enum(MEASUREMENT_KINDS),
+  option: z.object({
+    id: z.string(),
+    tier: z.enum(TIERS),
+    name: z.string(),
+    highlights: z.array(z.string()),
+    inclusions: z.array(z.string()),
+    totalCents: z.number().int(),
+    monthlyEstimateCents: z.number().int().nullable(),
+    financingTerms: z.object({ aprBps: z.number().int(), months: z.number().int() }).nullable(),
+  }),
+  clause: z.string().nullable(),
+});
+
+/** A stored signed document read back, or null when the value is not one (older signatures have none). */
+export function parseSignedDocument(value: unknown): SignedDocument | null {
+  const parsed = signedDocumentSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 /** What document_sha256 covers: company, address, the chosen option as shown, valid until, clause text when on. */
-export function signedDocument(p: PublicProposalView, optionId: string, clause: boolean): unknown {
+export function signedDocument(p: PublicProposalView, optionId: string, clause: boolean): SignedDocument {
   const option = p.options.find((candidate) => candidate.id === optionId);
   if (!option) throw new Error('Unknown option.');
   return {
