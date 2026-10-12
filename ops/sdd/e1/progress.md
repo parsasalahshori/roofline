@@ -67,3 +67,4 @@ Track lead session_01UtFnF1PL9Tbc2z44JfhQDM (started by controller session_01LXt
 Wave 1 (wf_c2f810c9-41c, contact 101): T1 on e1-t1, base e4dbe2f.
 Wave 2 in parallel (wf_8c32dc49-5b4, contact 102): T2, T3, T4 on scratch commit 4f9bae5 (branch e1-scratch, on e4dbe2f) that writes T1's shared constants block in `shared/proposals.ts`, type-only stubs of T2's `LngLat/Ring/Outline/InstantEstimate` (`roof.ts`) and T3's `AddOn` (`tiers.ts`), and the three barrel lines.
 Merge rule (T1 first): add/add conflicts → `roof.ts` takes T2, `tiers.ts` takes T3, `proposals.ts` = T1's constants block + T4's additions below it, `shared/index.ts` = T1's.
+On T1 merge: send_message S1 session_01XaGX8pcLBpR2SWeGqsd3gP with the e1-estimator sha, copy controller.
