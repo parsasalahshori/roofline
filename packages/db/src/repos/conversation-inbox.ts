@@ -14,8 +14,7 @@ import type {
   TransferResult,
   TurnView,
 } from '@roofline/shared';
-import type { Db } from '../pools.ts';
-import { calls, claimIntakes, conversations, conversationTurns, customers, memberships } from '../schema/index.ts';
+import { calls, claimIntakes, conversations, conversationTurns, customers } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { canPlayCallRecording, findCallRecording } from './call-recording.ts';
 import { customerScope } from './scope.ts';
@@ -27,7 +26,7 @@ import { customerScope } from './scope.ts';
  * Who sees what: the owner and the office see every conversation. A rep sees the conversations of
  * their own customers (`customerScope`) and, only while they are on call, those of unknown numbers.
  * `memberships` is a global table the tenant role cannot read, so the route learns "on call" with
- * `isOnCallMember` (the system pool) and passes it in as `scope`.
+ * `isOnCallMember` (the system pool, in `@roofline/db/system`) and passes it in as `scope`.
  */
 
 export type InboxScope = { onCall: boolean };
@@ -39,17 +38,6 @@ export const INBOX_PAGE_SIZE = 30;
 export const TEAM_HANDLING_MS = 2 * 60 * 60 * 1000;
 
 const LIVE_CALL_STATUSES: CallStatus[] = ['ringing', 'ai', 'ringing_team'];
-
-/** Whether the user is on the company's call list (a rep sees unknown-number conversations only then). */
-export async function isOnCallMember(system: Db, ctx: TenantContext): Promise<boolean> {
-  if (ctx.userId === null) return false;
-  const [row] = await system
-    .select({ order: memberships.onCallOrder })
-    .from(memberships)
-    .where(and(eq(memberships.companyId, ctx.companyId), eq(memberships.userId, ctx.userId), eq(memberships.status, 'active')))
-    .limit(1);
-  return row !== undefined && row.order !== null;
-}
 
 /** The WHERE condition for what this member may see; undefined means everything in the company. Needs customers joined. */
 function visibleTo(ctx: TenantContext, scope: InboxScope): SQL | undefined {
