@@ -30,7 +30,7 @@ lives anywhere else.
 |---|---|---|
 | F1 platform core | `docs/superpowers/plans/2026-10-10-roofline-f1-platform-core.md` | done |
 | F2 web shell and design kit | `docs/superpowers/plans/2026-10-11-roofline-f2-shell.md` | **done**: Tasks 1-19 + P1 on `f2-shell`, CI green incl. e2e |
-| F3 setup, texting, billing, import | `docs/superpowers/plans/2026-10-11-roofline-f3-setup.md` (on `f3-setup`) + briefs `ops/sdd/f3/` | 36 of 37 + polish merged; left: T36 and the integration-review fixes (f3-review groups A-C) |
+| F3 setup, texting, billing, import | `docs/superpowers/plans/2026-10-11-roofline-f3-setup.md` (on `f3-setup`) + briefs `ops/sdd/f3/` | all 37 tasks + polish + review fixes A/B merged (c0d65d8); left: review fix group C |
 | C1 Core CRM | `docs/superpowers/plans/2026-10-12-roofline-core-crm.md` + briefs `ops/sdd/c1/` | Tasks 1-4 merged on `c1-crm` |
 | E1, S1, D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{e1,s1,d1,a1,g1}/` | planned, briefs ready |
 
