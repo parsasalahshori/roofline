@@ -97,8 +97,10 @@ describe('PUT /api/jobs/:jobId/claim', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.events).toHaveLength(2);
-    expect(res.body.events[0]).toMatchObject({ from: null, to: 'filed', by: 'user' });
-    expect(res.body.events[1]).toMatchObject({ from: 'filed', to: 'adjuster_scheduled', by: 'user' });
+    // Both events can share one clock instant, so look them up by status, not by position.
+    const events = res.body.events as { from: string | null; to: string; by: string }[];
+    expect(events.find((e) => e.to === 'filed')).toMatchObject({ from: null, by: 'user' });
+    expect(events.find((e) => e.to === 'adjuster_scheduled')).toMatchObject({ from: 'filed', by: 'user' });
   });
 
   test("a rep cannot see another rep's job's claim (404)", async () => {
