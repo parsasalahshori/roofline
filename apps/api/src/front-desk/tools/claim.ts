@@ -6,11 +6,11 @@ import {
   insertClaimIntake,
   listJobs,
   listProperties,
-  type TenantContext,
   updateConversation,
   withTenant,
 } from '@roofline/db';
 import type { ToolHandler } from '../engine-types.ts';
+import { isOpenJob, systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 9: take_claim_details. Scope comes from the server-side conversation, never from the model.
@@ -21,7 +21,7 @@ const NOT_FOUND = 'I could not find that job.';
 
 export const takeClaimDetails: ToolHandler<'take_claim_details'> = async (ctx, input) => {
   const { conversation } = ctx;
-  const tctx: TenantContext = { companyId: ctx.companyId, role: 'system', userId: null, canApproveSpend: false };
+  const tctx = systemCtx(ctx.companyId);
 
   return withTenant(ctx.deps.pools, tctx, async (tx) => {
     const existing = await findClaimIntake(tx, tctx, {
@@ -47,7 +47,7 @@ export const takeClaimDetails: ToolHandler<'take_claim_details'> = async (ctx, i
     } else if (conversation.identity === 'verified' && conversation.customerId !== null) {
       const customerId = conversation.customerId;
       const { jobs } = await listJobs(tx, tctx, { customerId, limit: 200 });
-      const open = jobs.filter((j) => j.archivedAt === null && j.stage !== 'installed' && j.stage !== 'lost');
+      const open = jobs.filter(isOpenJob);
       if (open.length === 1) {
         jobId = open[0]!.id;
       } else {

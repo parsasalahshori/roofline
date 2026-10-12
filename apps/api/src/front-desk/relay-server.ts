@@ -9,6 +9,7 @@ import type { RelayIn, RelayOut, VoiceSession } from '../providers/voice-session
 import { createEngine } from './engine.ts';
 import { createRecording } from './recording.ts';
 import type { ToolHandlers } from './engine-types.ts';
+import { FRONT_DESK_HANDLERS } from './tools/index.ts';
 import { runRelayLoop } from './relay-session-loop.ts';
 import { verifyRelayToken } from './relay-token.ts';
 
@@ -49,7 +50,7 @@ function parseFrame(data: RawData): RelayIn | null {
  */
 export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {}): { close(): void } {
   const idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
-  const engine = createEngine(deps, opts.tools ?? {});
+  const engine = createEngine(deps, opts.tools ?? FRONT_DESK_HANDLERS);
   const wss = new WebSocketServer({ noServer: true, maxPayload: RELAY_MAX_PAYLOAD });
   const live = new Set<WebSocket>();
   let unauth = 0;

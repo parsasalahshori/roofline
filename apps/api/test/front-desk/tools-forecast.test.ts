@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { createCustomer, createProperty, withTenant } from '@roofline/db';
+import { createCustomer, createJob, createProperty, withTenant } from '@roofline/db';
 import type { ConversationState, ToolContext } from '../../src/front-desk/engine-types.ts';
 import { newConversationState } from '../../src/front-desk/state.ts';
 import { checkForecast } from '../../src/front-desk/tools/forecast.ts';
+import { lookupMyJobs } from '../../src/front-desk/tools/jobs.ts';
 import { makeTestApp } from '../helpers.ts';
 
 async function setup() {
@@ -66,6 +67,22 @@ describe('check_forecast', () => {
     const r = await checkForecast(tool([ids.propertyId]), { date: '2026-10-15', propertyId: ids.propertyId });
     expect(r.ok).toBe(true);
     expect(r.forModel).toBe('Forecast for Thursday Oct 15: mostly sunny, high 72, low 55, 10 percent chance of rain.');
+    expect(t.weather.dailyCalls).toHaveLength(1);
+  });
+
+  test('a property id taken from lookup_my_jobs shownIds is accepted', async () => {
+    const { t, ids, tool } = await setup();
+    t.weather.dailyValue = [{ date: '2026-10-15', highF: 72, lowF: 55, summary: 'Sunny', precipChancePercent: 0 }];
+    const ownCtx = { companyId: t.seed.a.companyId, userId: t.seed.a.owner.userId, role: 'owner' as const, canApproveSpend: true };
+    const jobId = await withTenant(t.deps.pools, ownCtx, async (tx) => {
+      const job = await createJob(tx, ownCtx, { customerId: ids.customerId, propertyId: ids.propertyId }, { now: new Date() });
+      return job.id;
+    });
+    expect(jobId).toBeTruthy();
+    const listed = await lookupMyJobs(tool(), {});
+    expect(listed.shownIds).toContain(ids.propertyId);
+    const r = await checkForecast(tool(listed.shownIds ?? []), { date: '2026-10-15', propertyId: ids.propertyId });
+    expect(r.ok).toBe(true);
     expect(t.weather.dailyCalls).toHaveLength(1);
   });
 

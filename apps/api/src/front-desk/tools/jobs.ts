@@ -4,11 +4,11 @@ import {
   listJobs,
   loadCompanyFacts,
   proposalStatusForJob,
-  type TenantContext,
   withTenant,
 } from '@roofline/db';
 import type { JobStage } from '@roofline/shared';
 import type { ToolHandler } from '../engine-types.ts';
+import { systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 7: lookup_my_jobs. Company and customer come from the conversation, never the model.
@@ -19,10 +19,6 @@ const MAX_JOBS = 5;
 const NO_CUSTOMER = "I don't have a customer record for this caller yet.";
 const NO_APPOINTMENT = 'There is no upcoming appointment on file for this caller.';
 const NO_JOBS = 'There are no jobs on file for this caller.';
-
-function systemCtx(companyId: string): TenantContext {
-  return { companyId, userId: null, role: 'system', canApproveSpend: false };
-}
 
 function weekday(at: Date, zone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'long' }).format(at);
@@ -90,6 +86,6 @@ export const lookupMyJobs: ToolHandler<'lookup_my_jobs'> = async (ctx) => {
       }
       lines.push(`Job ${job.id} at ${property?.addressLine ?? 'the property'}: ${parts.join('; ')}. Next: ${nextText}.`);
     }
-    return { ok: true, forModel: lines.join('\n'), shownIds: jobs.map((j) => j.id) };
+    return { ok: true, forModel: lines.join('\n'), shownIds: [...new Set(jobs.flatMap((j) => [j.id, j.propertyId]))] };
   });
 };
