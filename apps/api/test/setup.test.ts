@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { beforeEach, expect, inject, test } from 'vitest';
-import { auditLog, withTenant } from '@roofline/db';
+import { auditLog, encrypt, markConnectionError, saveConnection, withTenant, type TenantContext } from '@roofline/db';
 import type { SetupView } from '@roofline/shared';
 import { loginAs, makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 
@@ -206,4 +206,70 @@ test('an unknown setup key is not found', async () => {
   const res = await owner.post('/api/setup/bogus/skip');
   expect(res.status).toBe(404);
   expect(res.body).toEqual({ error: NOT_FOUND });
+});
+
+/** Saves a Google calendar connection for one member of a company, as the callback route does. */
+async function connectCalendar(companyId: string, userId: string, now: Date): Promise<{ id: string }> {
+  const ctx: TenantContext = { companyId, userId, role: 'owner', canApproveSpend: true };
+  return withTenant(t.deps.pools, ctx, (tx) =>
+    saveConnection(
+      tx,
+      ctx,
+      {
+        userId,
+        provider: 'google',
+        accountEmail: 'owner@example.test',
+        encryptedCredentials: encrypt(JSON.stringify({ refreshToken: 'refresh-x' }), t.deps.config.ENCRYPTION_KEY),
+        scopes: ['calendar'],
+        calendarId: 'primary',
+        calendarName: 'Primary',
+      },
+      now,
+    ),
+  );
+}
+
+test('connect_calendar turns done after one member connects a calendar', async () => {
+  await makeCompanyANew();
+  const owner = await loginAs(t.app, t.seed.a.owner);
+
+  const before = await getSetup(owner);
+  expect(item(before, 'connect_calendar').status).toBe('todo');
+  expect(item(before, 'connect_calendar').comingWith).toBeNull();
+
+  await connectCalendar(t.seed.a.companyId, t.seed.a.owner.userId, t.clock.now());
+
+  const after = await getSetup(owner);
+  expect(item(after, 'connect_calendar').status).toBe('done');
+  expect(item(after, 'connect_calendar').comingWith).toBeNull();
+  expect(after.progress).toEqual({ done: before.progress.done, total: 5 });
+});
+
+test('a calendar in error does not count', async () => {
+  await makeCompanyANew();
+  const owner = await loginAs(t.app, t.seed.a.owner);
+
+  const connection = await connectCalendar(t.seed.a.companyId, t.seed.a.owner.userId, t.clock.now());
+  const ctx: TenantContext = {
+    companyId: t.seed.a.companyId,
+    userId: t.seed.a.owner.userId,
+    role: 'owner',
+    canApproveSpend: true,
+  };
+  await withTenant(t.deps.pools, ctx, (tx) =>
+    markConnectionError(tx, ctx, connection.id, 'Reconnect your calendar.', t.clock.now()),
+  );
+
+  const body = await getSetup(owner);
+  expect(item(body, 'connect_calendar').status).toBe('todo');
+});
+
+test("another company's calendar connection does not mark this company done", async () => {
+  await makeCompanyANew();
+  const owner = await loginAs(t.app, t.seed.a.owner);
+
+  await connectCalendar(t.seed.b.companyId, t.seed.b.owner.userId, t.clock.now());
+
+  const body = await getSetup(owner);
+  expect(item(body, 'connect_calendar').status).toBe('todo');
 });

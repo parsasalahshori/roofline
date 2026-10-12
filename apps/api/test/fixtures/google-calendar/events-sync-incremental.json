@@ -1,0 +1,21 @@
+{
+  "kind": "calendar#events",
+  "etag": "\"etag-sync-incremental-1\"",
+  "summary": "crew@example.com",
+  "updated": "2026-10-12T16:00:00.000Z",
+  "timeZone": "America/Chicago",
+  "items": [
+    {
+      "kind": "calendar#event",
+      "etag": "\"etag-10\"",
+      "id": "evt2",
+      "status": "confirmed",
+      "summary": "Lunch",
+      "transparency": "opaque",
+      "updated": "2026-10-12T16:00:00.000Z",
+      "start": { "dateTime": "2026-10-15T12:00:00-05:00", "timeZone": "America/Chicago" },
+      "end": { "dateTime": "2026-10-15T13:00:00-05:00", "timeZone": "America/Chicago" }
+    }
+  ],
+  "nextSyncToken": "sync-2"
+}

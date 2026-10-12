@@ -1,0 +1,45 @@
+/* The price groups stack, each with its fields in two columns on a desktop */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 960px;
+}
+
+.group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  padding: 0;
+  margin-bottom: 12px;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* Only as wide as its word, under the last group */
+.save {
+  justify-self: start;
+}
+
+/* Who may change the prices, shown above the read-only fields */
+.note {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+@media (max-width: 767.98px) {
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -42,7 +42,7 @@ export const setupItems: Record<SetupItemKey, SetupItemCopy> = {
 
 export const comingWith: Record<ComingWith, string> = {
   estimator: 'Coming with the Estimator',
-  calendar: 'Coming with the calendar',
+  calendar: 'Calendar',
   front_desk: 'Coming with Front Desk',
   storm_scout: 'Coming with Storm Scout',
 };
@@ -69,6 +69,7 @@ export const setup = {
     addCard: 'Add a card',
     skip: 'Skip for now',
     undoSkip: 'Undo skip',
+    connectCalendar: 'Connect your calendar',
   },
   sheet: {
     title: 'Your company on the map',

@@ -459,8 +459,9 @@ describe('a home saved without a time zone', () => {
     const owner = await actors.as('owner');
     const [ann] = await addSmsCustomers(t, 'a', [{ firstName: 'Ann', phone: '+12125550131', consent: 'attested' }]);
     const home = await owner
+      // lat/lng null: no server lookup, so the home keeps no zone of its own
       .post('/api/properties')
-      .send({ customerId: ann, addressLine: '5 Bleecker St', city: 'New York', state: 'NY', zip: '10012' });
+      .send({ customerId: ann, addressLine: '5 Bleecker St', city: 'New York', state: 'NY', zip: '10012', lat: null, lng: null });
     expect(home.status).toBe(201);
     expect((await owner.patch('/api/company').send({ timezone: 'America/New_York' })).status).toBe(200);
 
