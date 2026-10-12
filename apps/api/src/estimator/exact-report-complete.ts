@@ -2,7 +2,6 @@ import { and, eq, inArray } from 'drizzle-orm';
 import {
   addActivity,
   createMeasurement,
-  finishParkedStep,
   getExactOrder,
   getMeasurement,
   getTask,
@@ -18,7 +17,7 @@ import {
 import type { AppDeps } from '../app.ts';
 import type { ExactReport } from '../providers/exact-reports.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
-import { refreshTask } from '../tasks/service.ts';
+import { completeParkedStep, refreshTask } from '../tasks/service.ts';
 import { repriceFromMeasurement } from './reprice.ts';
 
 /** Proposals a new exact measurement may re-price: a draft in place, a sent or viewed one by a revised draft (reprice's own rule). */
@@ -113,7 +112,7 @@ export async function completeExactReport(
       if (task) {
         const steps = await listParkedSteps(tx, ctx, 'order_exact_report');
         const step = steps.find((s) => s.taskId === order.taskId);
-        if (step) await finishParkedStep(tx, ctx, step.id, { status: 'done', result: { ordered: 1 } }, now);
+        if (step) await completeParkedStep(tx, ctx, step.id, { status: 'done', result: { ordered: 1 } }, now);
         await refreshTask(tx, ctx, order.taskId, now);
       }
     }

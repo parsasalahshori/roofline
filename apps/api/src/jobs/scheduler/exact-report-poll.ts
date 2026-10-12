@@ -1,9 +1,9 @@
-import { finishParkedStep, getTask, listParkedSteps, listWaitingExactOrders, moveExactOrder, touchExactOrderPolled, withTenant, type ExactOrderRow, type TenantContext } from '@roofline/db';
+import { getTask, listParkedSteps, listWaitingExactOrders, moveExactOrder, touchExactOrderPolled, withTenant, type ExactOrderRow, type TenantContext } from '@roofline/db';
 import { companiesWithWaitingExactOrders } from '@roofline/db/system';
 import type { AppDeps } from '../../app.ts';
 import { completeExactReport } from '../../estimator/exact-report-complete.ts';
 import { systemContext } from '../../permissions.ts';
-import { refreshTask } from '../../tasks/service.ts';
+import { completeParkedStep, refreshTask } from '../../tasks/service.ts';
 import { reportJobError } from './report.ts';
 
 const POLL_GAP_MS = 10 * 60_000;
@@ -19,7 +19,7 @@ async function failOrder(deps: AppDeps, ctx: TenantContext, order: ExactOrderRow
     if (!task) return;
     const steps = await listParkedSteps(tx, ctx, 'order_exact_report');
     const step = steps.find((s) => s.taskId === order.taskId);
-    if (step) await finishParkedStep(tx, ctx, step.id, { status: 'needs_attention', result: { orderId: order.id }, errorPlain: FAILED_PLAIN }, now);
+    if (step) await completeParkedStep(tx, ctx, step.id, { status: 'needs_attention', result: { ordered: 0 }, errorPlain: FAILED_PLAIN }, now);
     await refreshTask(tx, ctx, order.taskId, now);
   });
 }
