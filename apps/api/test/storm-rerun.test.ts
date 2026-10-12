@@ -91,7 +91,6 @@ describe('storm plan rerun', () => {
     expect((await dbTask(t, 'a', oldId)).status).toBe('expired');
   });
 
-
   test('the rerun created event is a user event carrying the owner id', async () => {
     const oldId = await expiredPlan();
     const res = await rerun(oldId);
@@ -101,6 +100,7 @@ describe('storm plan rerun', () => {
     expect(rows[0]!.actor_type).toBe('user');
     expect(rows[0]!.actor_user_id).toBe(actors.user('owner').userId);
   });
+
   test('two concurrent reruns of one expired storm plan give one 201 and one 409 and exactly one new draft linked to the old plan', async () => {
     const oldId = await expiredPlan();
     const [r1, r2] = await Promise.all([rerun(oldId), rerun(oldId)]);
