@@ -219,3 +219,5 @@ export * from './repos/blocked-numbers.ts';
 export * from './repos/fd-booking.ts';
 export * from './repos/fd-caller.ts';
 export * from './repos/follow-up-log.ts';
+// G1 Claims (Task 6)
+export * from './repos/claims.ts';
