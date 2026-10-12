@@ -687,10 +687,19 @@ describe('grants', () => {
     ]);
   });
 
-  test('app_system has SELECT, INSERT, UPDATE and DELETE on both footprint tables', async () => {
-    expect(await tablePrivileges('app_system', FOOTPRINT_TABLES)).toEqual(
-      FOOTPRINT_TABLES.map((t) => ({ ...privs(t, true, true, true, true), truncate: true })),
+  test('app_system holds only the footprint privileges the loader uses: no TRUNCATE, REFERENCES or TRIGGER (security finding 9)', async () => {
+    expect(await tablePrivileges('app_system', FOOTPRINT_TABLES)).toEqual([
+      privs('building_footprints', true, true, false, true),
+      privs('building_footprint_states', true, true, true, false),
+    ]);
+    const rows = await ownerQuery<{ table: string; references: boolean; trigger: boolean }>(
+      `select t as table,
+              has_table_privilege('app_system', 'public.' || t, 'REFERENCES') as references,
+              has_table_privilege('app_system', 'public.' || t, 'TRIGGER') as trigger
+         from unnest($1::text[]) as t`,
+      [[...FOOTPRINT_TABLES]],
     );
+    expect(rows).toEqual(FOOTPRINT_TABLES.map((table) => ({ table, references: false, trigger: false })));
   });
 
   test('app_system holds column-level SELECT on exactly the whitelisted proposal and exact order columns', async () => {
@@ -1282,6 +1291,108 @@ describe('app_tenant isolation', () => {
     await expect(tenantRaw(`delete from ${table}`, { companyId: seed.a.companyId })).rejects.toThrow(
       /permission denied/,
     );
+  });
+});
+
+/** A company's proposal (with its customer, property, job and measurement), inserted as the owner. */
+async function insertProposal(companyId: string): Promise<{ proposalId: string; measurementId: string }> {
+  const customerId = await insertCustomer(companyId, 'Cust');
+  const propertyId = await insertProperty(companyId, customerId, `${companyId} main st|68102`);
+  const [job] = await ownerQuery<{ id: string }>(
+    `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3) returning id`,
+    [companyId, customerId, propertyId],
+  );
+  const [measurement] = await ownerQuery<{ id: string }>(
+    `insert into measurements (company_id, property_id, kind, method) values ($1, $2, 'estimate', 'manual') returning id`,
+    [companyId, propertyId],
+  );
+  const [proposal] = await ownerQuery<{ id: string }>(
+    `insert into proposals (company_id, customer_id, property_id, job_id, measurement_id, number,
+        status, valid_until, estimate_basis, link_token_hash, link_token_encrypted)
+     values ($1, $2, $3, $4, $5, 'P-0001', 'draft', date '2026-12-31', 'estimate', $6, $7) returning id`,
+    [companyId, customerId, propertyId, job!.id, measurement!.id, Buffer.from(`hash-${companyId}`), Buffer.from('encrypted-placeholder')],
+  );
+  return { proposalId: proposal!.id, measurementId: measurement!.id };
+}
+
+describe('E1 tenant tables: cross-company isolation (security finding 22)', () => {
+  type Refs = { proposalId: string; measurementId: string };
+  type Insert = (companyId: string, refs: Refs) => { text: string; values: unknown[] };
+  /** Each table: an insert returning id, and one column app_tenant may update (EQ limits proposal_signatures only). */
+  const E1_ISOLATION_CASES: { table: string; insert: Insert; column: string; value: unknown }[] = [
+    {
+      table: 'proposal_counters',
+      insert: (companyId) => ({ text: `insert into proposal_counters (company_id, next_number) values ($1, 7) returning id`, values: [companyId] }),
+      column: 'next_number',
+      value: 999,
+    },
+    {
+      table: 'proposal_events',
+      insert: (companyId, refs) => ({
+        text: `insert into proposal_events (company_id, proposal_id, kind, user_agent) values ($1, $2, 'viewed', 'Original') returning id`,
+        values: [companyId, refs.proposalId],
+      }),
+      column: 'user_agent',
+      value: 'Hacked',
+    },
+    {
+      table: 'exact_report_orders',
+      insert: (companyId, refs) => ({
+        text: `insert into exact_report_orders (company_id, measurement_id, reference_id, error_plain) values ($1, $2, $3, 'Original') returning id`,
+        values: [companyId, refs.measurementId, `ref-${companyId}`],
+      }),
+      column: 'error_plain',
+      value: 'Hacked',
+    },
+  ];
+
+  async function seedBoth(insert: Insert): Promise<{ aId: string; bId: string; b: Refs }> {
+    const a = await insertProposal(seed.a.companyId);
+    const b = await insertProposal(seed.b.companyId);
+    const qa = insert(seed.a.companyId, a);
+    const qb = insert(seed.b.companyId, b);
+    const [aRow] = await ownerQuery<{ id: string }>(qa.text, qa.values);
+    const [bRow] = await ownerQuery<{ id: string }>(qb.text, qb.values);
+    return { aId: aRow!.id, bId: bRow!.id, b };
+  }
+
+  describe.each(E1_ISOLATION_CASES)('$table', ({ table, insert, column, value }) => {
+    test("company A reads only its own row and never company B's, even by id", async () => {
+      const { aId, bId } = await seedBoth(insert);
+      const opts = { companyId: seed.a.companyId };
+      expect(await tenantRaw(`select id, company_id from ${table}`, opts)).toEqual([{ id: aId, company_id: seed.a.companyId }]);
+      expect(await tenantRaw(`select id from ${table} where id = $1`, { ...opts, values: [bId] })).toEqual([]);
+      expect(await tenantRaw(`select id from ${table} where company_id = $1`, { ...opts, values: [seed.b.companyId] })).toEqual([]);
+    });
+
+    test("company A's update of company B's row changes nothing", async () => {
+      const { bId } = await seedBoth(insert);
+      const before = await ownerQuery(`select ${column} from ${table} where id = $1`, [bId]);
+      const updated = await tenantRaw(`update ${table} set ${column} = $2 where id = $1 returning id`, {
+        companyId: seed.a.companyId,
+        values: [bId, value],
+      });
+      expect(updated).toEqual([]);
+      expect(await ownerQuery(`select ${column} from ${table} where id = $1`, [bId])).toEqual(before);
+    });
+
+    test("company A cannot move its own row to company B", async () => {
+      const { aId } = await seedBoth(insert);
+      await expect(
+        tenantRaw(`update ${table} set company_id = $2 where id = $1`, { companyId: seed.a.companyId, values: [aId, seed.b.companyId] }),
+      ).rejects.toThrow(/row-level security/);
+      expect(await ownerQuery(`select company_id from ${table} where id = $1`, [aId])).toEqual([{ company_id: seed.a.companyId }]);
+    });
+
+    test("company A cannot insert a row carrying company B's company_id", async () => {
+      const { b } = await seedBoth(insert);
+      const count = async () => (await ownerQuery<{ n: number }>(`select count(*)::int n from ${table} where company_id = $1`, [seed.b.companyId]))[0]!.n;
+      const before = await count();
+      // For proposal_counters B already has its row; the RLS check runs before the unique index is.
+      const q = insert(seed.b.companyId, b);
+      await expect(tenantRaw(q.text, { companyId: seed.a.companyId, values: q.values })).rejects.toThrow(/row-level security/);
+      expect(await count()).toBe(before);
+    });
   });
 });
 

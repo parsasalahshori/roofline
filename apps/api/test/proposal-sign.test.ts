@@ -6,6 +6,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { customers, measurements, proposalEvents, proposalSignatures, proposals } from '@roofline/db';
 import { addressFor, Actors, dbJob, inCompany, mustCreate } from './crm-helpers.ts';
+import { proposalIpHashFor } from '../src/public/proposal-common.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { DAYTIME } from './sms-helpers.ts';
 import { dbSteps, seenOf } from './task-helpers.ts';
@@ -279,6 +280,9 @@ describe('what is checked', () => {
     expect(sha256(canonicalJson(stored))).toBe(row!.documentSha256);
     expect(parseSignedDocument(stored)).toEqual(signedDocument(view, body.optionId, view.basis === 'estimate'));
     expect(event!.data['optionId']).toBe(body.optionId);
+    // Security finding 8: the event keeps a keyed hash of the signer's address (the signature row keeps the raw one).
+    expect(event!.ipHash).toBe(proposalIpHashFor(t.deps.config, row!.ip ?? '', t.seed.a.companyId));
+    expect(event!.ipHash).not.toBe(createHash('sha256').update(`${row!.ip}${t.seed.a.companyId}`).digest('hex'));
   });
 
   test('a failed image store records no signature', async () => {
