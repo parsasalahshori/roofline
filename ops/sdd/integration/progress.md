@@ -465,3 +465,78 @@ Run 38211391217 on 89281c6: Platform (lint, typecheck, tests) success; E2E (Play
 2-line setup spec); Hail service (ruff, pytest) success; v1 (node:test) success. C1 T6's stage rules caused no
 failures in the database, API or worker suites when combined with the other tracks. No merge-artifact fixes were
 needed after CI, so ci-check was not re-run.
+
+## Pass 5
+
+Base: pass 4 head ee5fd2b. `git fetch origin` (06:5xZ) gave the requested heads unchanged; merged in order with
+`git merge --no-ff`. d1-front-desk 9c15240 is unchanged and already merged (pass 4), so it was skipped.
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | cf06ba416c9e27a5325f30dd73b10352150759dc | 7457ea4 | none |
+| e1-estimator | 305a899389461a2c8b49972537ec474ff94bf19a | f64ccc4 | none |
+| s1-storm | a15fb2b9852f0dcd7a9c7f9354ee4a271109c890 | 8e4ab44 | none |
+| d1-front-desk | 9c15240231ff7d9155bd6cfc112755d9de3c97e1 | (pass 4, fe6df2f) | skipped |
+| a1-agents | 679e67e6cdf93ec1147061e418a56ed3d0e3ac11 | 61bc61f | 1 file |
+| g1-agents | 8b02231a22d68f2c5329203c8b2e8e75c6da00b7 | 9a62df5 | none (ops only) |
+
+No probe-only commits this pass.
+
+What the tracks brought: C1 T13/T14 (calendar push and pull, busy blocks, event text); E1 T7 (measurements
+route and repo, `measure.ts`); S1 T8/T9/T13 (storm match and spotter sync, the map storm layer at
+`/api/map/storm-layer` and `/api/map/layer`, the Postmark bounce/complaint webhook at `/hooks/postmark` with
+`POSTMARK_WEBHOOK_SECRET`, unsubscribe tokens); A1 T14 (Storm Scout pause check in `storm/plan.ts`
+`draftStormPlan`, run-now and rule-facts changes, agent metrics) and A1's merge of c1-crm (C1 T6-T14, already in
+the probe); G1 only a ledger carry note.
+
+### Conflict resolutions
+
+a1-agents:
+- `packages/db/test/rls.test.ts`: ours in both hunks. A1's only change there (C1 Ruling CF: `calendar_connections`
+  in `APP_TENANT_DELETE_TABLES` and the grants test title) is already in ours; ours also has D1's
+  `blocked_numbers`, `SELECT_INSERT_ONLY` with `conversation_turns`, and the full title. No net change.
+
+Checked by hand (auto-merged): `apps/api/src/app.ts` gets S1's `postmarkHooks` and `stormLayerRoutes`; the second
+`/api/map` router (`/storm-layer`, `/layer`) does not overlap `mapRoutes` (`/pins`, `/area`). A1's pause check in
+S1's `storm/plan.ts` stub keeps the `not yet` body; its only caller is the `storm-draft` job handler. No package or
+lockfile change except `eslint.config.js` (E1, two lines).
+
+### Migration journal (Ruling AP)
+
+Unchanged from pass 4 (no track changed migrations, snapshots or the journal): idx 0..24 consecutive, in number
+order, `when` strictly increasing (checked by script); 0019/0020 = 1791772863263/1791772864263 (probe raise),
+0021/0022 = 1791780000000/1791780001000 (A1), 0023/0024 = 1791780002000/1791780003000 (probe raise). Snapshots
+chained by `prevId` 0000..0024 (checked by script). `drizzle-kit generate --name=probe_check`: "No schema changes,
+nothing to migrate"; no file created. Exactly one `messages (company_id, id)` unique: D1's
+`messages_company_id_id_uniq` (0019, `tenant.ts:630`).
+
+### Earlier workarounds: status
+
+Closed by a track this pass: none.
+
+Still kept in the probe:
+- D1 journal `when`: d1-front-desk 9c15240 (unchanged) still has 0019/0020 = 1791770789451/1791770804997, below
+  S1's 0018. Probe raise stays.
+- G1 journal `when`: g1-agents 8b02231 added only a ledger carry note (`ops/sdd/g1/progress.md`: set 0023/0024 to
+  1791780002000/1791780003000 at the next a1-agents merge). Its journal still has 0021-0024 =
+  1791770814997/1791770824997/1791774729941/1791774749941. Probe raise stays.
+- Ruling BA recounts (no Coming soon app, eleven settings tabs, fifteen step types): no track changed `a1-dock`,
+  `a1-settings`, `settings`, `d1-routes`, `d1-settings`, `e1-routes` or `steps.test` since pass 4. A1's
+  `c1-routes` change is C1's (already in the probe). a1-agents still has Front Desk coming soon and nine tabs
+  because it has not merged d1-front-desk. Probe versions stay.
+- `s1-routes.test.tsx` `GET /api/proposals` stub: s1-storm a15fb2b does not touch the file (S1 has not merged
+  e1-estimator T15 yet). Probe stub (90a79bf) stays.
+
+### Checks (after all merges)
+
+`npm ci` clean (lockfile unchanged); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass,
+lint pass, lint:css pass; vitest @roofline/web 822 pass (87 files), @roofline/ui 170 pass, @roofline/shared 1278
+pass, @roofline/send-gate 525 pass. The database, API, worker and e2e suites run only in CI.
+
+No merge-artifact fixes were needed.
+
+### New cross-track problems
+
+None found locally. (A1 T14's `storm-pause.test.ts` second test expects `draftStormPlan` to reject `not yet`; it
+must be rewritten when S1 T11 fills the drafting body, as the test's own comment says. Owner: S1 T11 / whoever
+merges it with a1-agents.)
