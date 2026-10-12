@@ -1,0 +1,22 @@
+.track {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+}

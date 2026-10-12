@@ -1021,13 +1021,9 @@ describe('InlineJobs', () => {
     await expect(jobs.drain(QUEUE_DEPS, forever, 3)).rejects.toThrow(/stopped after 3 runs/);
   });
 
-  test('the default handler map runs the stub import job without error', async () => {
-    const jobs = new InlineJobs();
-    await jobs.send('import-customers', { companyId: QUEUE_COMPANY, importId: QUEUE_IMPORT });
-    await jobs.drain(QUEUE_DEPS);
-
-    expect(jobs.errors).toEqual([]);
-  });
+  // Both default handlers are real now (import-customers: T24, covered by import-run.test.ts;
+  // texting-registration: T27, covered by texting-submit.test.ts); both need a database, so the old
+  // 'default handler map runs the stub job' test has no stub left to run.
 });
 
 describe('SCHEDULES', () => {

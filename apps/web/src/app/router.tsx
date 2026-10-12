@@ -7,9 +7,12 @@ import { ResetPassword } from '../features/auth/ResetPassword.tsx';
 import { SignIn } from '../features/auth/SignIn.tsx';
 import { VerifyEmail } from '../features/auth/VerifyEmail.tsx';
 import { ComingSoon } from '../features/coming-soon/ComingSoon.tsx';
+import { ImportWizard } from '../features/imports/ImportWizard.tsx';
+import { SignUp } from '../features/signup/SignUp.tsx';
 import { Settings } from '../features/settings/Settings.tsx';
 import { StormWindow } from '../features/storm/StormWindow.tsx';
 import { Today } from '../features/today/Today.tsx';
+import { TextingSetup } from '../features/texting/TextingSetup.tsx';
 import { AppWindow } from '../shell/AppWindow.tsx';
 import type { ComingSoonKey } from '../shell/apps.ts';
 import { NotFoundWindow } from '../shell/NotFoundWindow.tsx';
@@ -29,6 +32,7 @@ function comingSoonWindow(app: ComingSoonKey) {
 const routes: RouteObject[] = [
   // Open to everyone: signing in, and the pages that links in emails open
   { path: '/sign-in', element: <SignIn /> },
+  { path: '/sign-up', element: <SignUp /> },
   { path: '/reset', element: <ResetPassword /> },
   { path: '/verify', element: <VerifyEmail /> },
   { path: '/invite', element: <AcceptInvite /> },
@@ -61,6 +65,9 @@ const routes: RouteObject[] = [
           { path: 'agents/*', element: comingSoonWindow('agents') },
           { path: 'customers/*', element: comingSoonWindow('customers') },
           { path: 'settings', element: <Navigate to="/settings/company" replace /> },
+          { path: 'settings/setup/import', element: <AppWindow app="settings"><Settings subpage={<ImportWizard />} /></AppWindow> },
+          { path: 'settings/setup/import/:importId', element: <AppWindow app="settings"><Settings subpage={<ImportWizard />} /></AppWindow> },
+          { path: 'settings/setup/texting', element: <AppWindow app="settings"><Settings subpage={<TextingSetup />} /></AppWindow> },
           { path: 'settings/:tab', element: <AppWindow app="settings"><Settings /></AppWindow> },
           { path: 'today', element: <AppWindow app="today"><Today /></AppWindow> },
           // Anything else
