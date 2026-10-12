@@ -315,3 +315,19 @@ Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema c
   - app_system `UPDATE (place_name) ON storms`;
   - app_hail `UPDATE (merged_into) ON storms`, which is redundant beside app_hail's table-wide UPDATE on storms.
   `storms.updated_at` is a plain `tstz(...).defaultNow()` without the `timestamps()` helper's `$onUpdate`, so Drizzle adds no updated_at to those updates. No code path updates storms.place_name as app_system: the only writer is the e2e fixture, through the owner. No grant is affected, so nothing changes.
+
+## S1 COMPLETE (2026-10-12)
+- s1-storm@7ad99c9 (code head) passed CI run 38277874294 on Platform, Hail and E2E.
+- Included: Tasks 1–29, the whole-branch review fixes R1–R7, the Ruling BF security fixes R8–R10, and the c1-crm 7758e82 and e1-estimator 414b97b security re-merges.
+- AGENTS.md "Where things stand" is updated.
+- s1-r11 is not merged (final Ruling BD).
+- Carries for later merges are listed above:
+  - **a1-agents:** take A1's StepTypeDef, re-draft code and redraftable-status exports; allowFinished on the "Draft a new plan" POST; fresh: !previousWasDraft.
+  - **d1 / g1:** OFF_STEP_TITLES entries.
+- Owner to-dos:
+  - test accounts for Google Ads and Meta;
+  - a Postmark broadcast stream and its webhook secret;
+  - a Render worker for services/hail, with HAIL_DB_PASSWORD, POSTMARK_TOKEN, and OPS_ALERT_EMAIL set to a verified sender;
+  - POLICY_PAGES_DOMAIN;
+  - TRUST_PROXY=1 on the API and the worker;
+  - the T29 manual smoke run (docs/superpowers/s1-manual-smoke.md).
