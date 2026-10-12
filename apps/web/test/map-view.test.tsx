@@ -223,6 +223,7 @@ beforeEach(() => {
       requests.push(url);
       if (url === '/api/map/area') return json(areaBody);
       if (url.startsWith('/api/map/pins?')) return pinsStatus === 200 ? json(pinsBody) : json({ error: 'Nope' }, pinsStatus);
+      if (url.startsWith('/api/map/storm-layer?')) return json({ swaths: { type: 'FeatureCollection', features: [] }, spots: { type: 'FeatureCollection', features: [] }, newestRunAt: null, stale: false });
       unexpected.push(url);
       return json({ error: 'Unexpected request' }, 500);
     }),
