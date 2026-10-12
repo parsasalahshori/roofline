@@ -549,3 +549,109 @@ storm layer, Postmark webhook, unsubscribe) and A1 T14 (Storm Scout pause, `stor
 API and worker suites in combination. No merge-artifact fixes were needed after CI, so ci-check was not re-run.
 (The local `ci-check` wrapper was stopped by a session time limit while Platform was still running. The run was
 then followed directly through the Actions API until it completed.)
+
+## Pass 6
+
+Base: pass 5 head babc576. `git fetch origin` gave the requested heads unchanged; merged in order with
+`git merge --no-ff`.
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 903047f88c8178fcb69d9360f3685bbf3d29af5d | a784758 | 6 files |
+| e1-estimator | 7d903e5d0278ec380d5dc075e8e401bc2e69ce9b | d399195 | 2 files |
+| s1-storm | 7273fcc907a668a6ff3428ef04c210d5f8ffd4b7 | 57061c2 | 6 files |
+| d1-front-desk | ddb569d1aa45347ec095d140a68c612d683e2706 | ee6f869 | none (ops only) |
+| a1-agents | b63d7b1dc275f6822227ffc6da9354b114a2fc8a | 95189a9 | none (ops only) |
+| g1-agents | 329a9788a2a388fe75ce296b6c0077008af23f19 | 0343c6b | none (ops only) |
+
+What the tracks brought: C1 wave 5 (T16 quote PDF, T20 Prices tab, T21 Schedule tab and calendar connection card,
+T24-T27 customer/job/quote/appointment windows, map focus, search actions); E1 T8 (proposal PDF, proposals and
+tier-template routes, `prices_and_tiers` setup item now real) and its c1-crm T13/T14 merge; S1 T23/T24/T27 and I2
+(Storm settings tab body, ad connections cards, storm detail/results/swath map, hail legend and map storm layer,
+team `stormAlertEmail`); D1, A1, G1 ledger notes only. No migration, snapshot, journal, package or lockfile change.
+
+### Conflict resolutions
+
+c1-crm:
+- `copy/connections.ts`: kept both (S1's ad account names, C1's calendar keys).
+- `settings/ConnectionsTab.tsx`: both: `CalendarConnection`, the `later` line, then `AdConnections`.
+- `settings/PricesTab.tsx`: C1's form replaces the skeleton; it becomes the inner `PriceList`, and `PricesTab`
+  renders `PriceList` then E1's `TiersSection`, `FinancingSection`, `EstimateSection` (as before).
+- `setup/SetupRow.tsx`: all three: D1's `phoneReady` and `phone_number` case, E1's `prices_and_tiers` case, C1's
+  `connect_calendar` case and its `later` naming (calendar is every member's own action).
+- `test/c1-routes.test.tsx`: Prices tests get `{ ...PRICES_ROUTES, 'GET /api/pricebook' }`.
+- `test/setup.test.tsx`: neither "Coming with the calendar" nor "Coming with Front Desk".
+
+e1-estimator:
+- `apps/api/src/quotes/pdf.ts` (add/add): took C1 T16's file; E1's was a scratch `PDF_COLORS` stub marked
+  "take C1 T16's file" (Ruling EC). Values are identical.
+- `e2e/setup.spec.ts`: combined set leaves one "Coming with" line (Storm Scout): calendar (C1), phone (D1) and
+  prices (E1 T8) are real. Count 1.
+
+s1-storm:
+- `copy/connections.ts`: NEW key collision, see problem 1 below. Otherwise kept both; S1's `later` and `meta`
+  wording wins (S1's newer text).
+- `shell/apps.ts`, `copy/comingSoon.ts`: `ComingSoonKey = 'estimator' | 'approvals'` (storm shipped by S1,
+  front-desk by D1, agents by A1).
+- `shell/map/MapView.tsx`: kept both effects (C1's `?focus=` fly-to, S1's storm layer feed and hail switch).
+- `test/f3-routes.test.tsx`, `test/settings.test.tsx`: Connections tests answer both `GET /api/ads/accounts` and
+  `GET /api/calendar/connection` (plus `GET /api/company` in f3-routes).
+
+Checked by hand: E1's `proposals/pdf.ts` imports only `PDF_COLORS` from C1's `quotes/pdf.ts`.
+
+### Migration journal (Ruling AP)
+
+Unchanged from pass 5: idx 0..24 consecutive, in number order, `when` strictly increasing (script); 0019/0020 and
+0023/0024 still carry the probe raise. Snapshots chained by `prevId` 0000..0024 (script). `drizzle-kit generate
+--name=probe_check`: "No schema changes, nothing to migrate"; no file created. Exactly one `messages (company_id,
+id)` unique: D1's `messages_company_id_id_uniq` (0019).
+
+### Earlier workarounds: status
+
+Closed by a track this pass: none.
+
+Still kept in the probe:
+- D1 journal `when`: d1-front-desk ddb569d (ops only) still has 0019/0020 = 1791770789451/1791770804997.
+- G1 journal `when`: g1-agents 329a978 (ops only) still has 0021-0024 = 1791770814997/1791770824997/
+  1791774729941/1791774749941.
+- Ruling BA recounts: `a1-settings`, `settings`, `a1-dock`, `d1-routes`, `d1-settings`, `e1-routes`, `steps.test`
+  still differ from every track head (a1-agents still has nine settings tabs). Combined counts are unchanged: no
+  Coming soon app (all six dock apps shipped), eleven settings tabs, fifteen step types. Added this pass: the web
+  setup fixture's `prices_and_tiers` (see problem 5).
+- `s1-routes.test.tsx` `GET /api/proposals` stub: s1-storm 7273fcc changed the file but not that test (S1 has not
+  merged e1-estimator T15). Probe stub stays.
+
+Watch item: S1 T11 has not landed (`storm/plan.ts` `draftStormPlan` still throws `not yet`), so A1's
+`storm-pause.test.ts` is unchanged and still valid.
+
+### New cross-track problems (fixed in the probe)
+
+1. C1 x S1, `apps/web/src/copy/connections.ts`: both tracks add `connections.connect`. C1 T21 uses it as
+   `{ google, microsoft }` (CalendarConnection buttons), S1 T24 as the string `'Connect'` (ad cards). Probe:
+   C1's key renamed `connectCalendar` (`CalendarConnection.tsx` x2, `calendar-connection.test.tsx` x3); S1's
+   string kept. Owner: S1 at its next c1-crm merge (or C1, if C1 renames first).
+2. S1 x C1, `stormAlertEmail`: S1 T27 makes `TeamBody` members require `stormAlertEmail`; C1's new
+   `test/calendar.test.tsx` and `test/appointments-suggest.test.tsx` member fixtures lack it (typecheck fails).
+   Probe: `stormAlertEmail: false` on the four members. Owner: S1 at its c1-crm merge.
+3. C1 x E1, Prices tab: E1's `e1-routes.test.tsx` expects `prices.comingSoon`, which C1 T20 removed (typecheck
+   fails), and does not answer `GET /api/pricebook`. C1's `settings-prices.test.tsx` does not answer E1's
+   `GET /api/tier-templates` and `GET /api/estimator/settings`, and its read-only test sweeps every spinbutton on
+   the tab, including E1's sections (which use `disabled`). Probe: e1-routes answers the pricebook and finds
+   `prices.fields.permit`; settings-prices spreads `E1_SECTION_ROUTES` and checks readonly within the five
+   `prices.groups` fieldsets only. Owner: E1 at its next c1-crm merge.
+4. C1 x S1, unanswered reads: C1 T21's `CalendarConnection` on the Connections tab reads
+   `GET /api/calendar/connection` and `GET /api/company`, which S1's `s1-routes`, `settings-ads` and `settings`
+   ("lists the ad accounts slot") tests do not answer; S1's map storm layer (`/api/map/storm-layer`) is not
+   answered by C1's `map-focus.test.tsx`. Probe: the stubs added in each. Owner: S1 at its c1-crm merge.
+5. E1 x web setup fixture (Ruling BA): E1 T8 drops `prices_and_tiers` from `COMING_WITH_BY_KEY`, but
+   `test/setup.test.tsx` still feeds `comingWith: 'estimator'` and expects "Coming with the Estimator". Passes,
+   but against a shape the server no longer sends. Probe: fixture `comingWith: null`, assertion negated. Owner: E1.
+
+Merge-artifact fixes: none beyond the conflict resolutions above.
+
+### Checks (after all merges and the probe commits)
+
+`npm ci` clean (lockfile unchanged); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass,
+lint pass, lint:css pass; vitest @roofline/web 1000 pass (111 files), @roofline/ui 170 pass, @roofline/shared 1281
+pass, @roofline/send-gate 525 pass. Before the probe commits: typecheck 5 errors (problems 2, 3), web 23 failures
+in 5 files (problems 3, 4). The database, API, worker and e2e suites run only in CI.
