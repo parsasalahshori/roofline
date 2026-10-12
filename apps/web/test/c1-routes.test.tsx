@@ -69,11 +69,9 @@ const settingsTabs = () => screen.findByRole('navigation', { name: settings.tabs
 describe('C1 windows', () => {
   it.each([
     ['/jobs', WINDOW_COPY.jobs.title, jobs.comingSoon],
-    ['/jobs/new', WINDOW_COPY.jobs.title, create.newJob.comingSoon],
     ['/jobs/j1', WINDOW_COPY.jobs.title, job.comingSoon],
     ['/jobs/j1/quotes/q1', WINDOW_COPY.jobs.title, quotes.comingSoon],
     ['/customers', WINDOW_COPY.customers.title, customers.comingSoon],
-    ['/customers/new', WINDOW_COPY.customers.title, create.newCustomer.comingSoon],
     ['/customers/c1', WINDOW_COPY.customers.title, customers.customerComingSoon],
     ['/calendar', WINDOW_COPY.calendar.title, calendar.comingSoon],
     ['/calendar/new', WINDOW_COPY.calendar.title, appointments.comingSoon],
@@ -110,6 +108,23 @@ describe('C1 windows', () => {
     renderApp('/jobs/x/y/z');
 
     expect(await screen.findByRole('dialog', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
+  });
+});
+
+describe('the New job and New customer screens', () => {
+  it('/jobs/new shows the New job steps in the Jobs window', async () => {
+    signedInApi();
+    renderApp('/jobs/new');
+
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.jobs.title });
+    expect((await within(dialog).findAllByText(create.newJob.stepCustomer)).length).toBeGreaterThan(0);
+  });
+
+  it('/customers/new shows the New customer form in the Customers window', async () => {
+    signedInApi();
+    renderApp('/customers/new');
+
+    expect(await screen.findByLabelText(create.newCustomer.firstName)).toBeInTheDocument();
   });
 });
 
