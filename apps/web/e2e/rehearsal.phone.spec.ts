@@ -141,11 +141,8 @@ test('phone: Storm, Front Desk and Agents from the More sheet', async ({ page, d
   await expect(textRow).toBeVisible({ timeout: 20_000 });
   await look(page);
   await textRow.click();
-  // Turns are written by the debounced fd-text job and the open window does not refresh (BUG-3): reload.
-  await expect(async () => {
-    await page.reload();
-    await expect(page.getByText('Do you do gutters too?')).toBeVisible({ timeout: 3_000 });
-  }).toPass({ timeout: 75_000, intervals: [5_000] });
+  // BUG-3 fixed in pass 16 (rev-c): the open conversation refreshes itself, no reload
+  await expect(page.getByText('Do you do gutters too?')).toBeVisible({ timeout: 60_000 });
   await look(page);
 
   // Agents overview, feed and waiting

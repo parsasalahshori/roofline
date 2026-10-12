@@ -295,3 +295,115 @@ reads "Waiting on you: N", where N is the number of Front Desk rows on the list.
 - **BUG-5:** D1 Task RA (`d1-ra`).
 - **BUG-6:** sent to the A1 lead, who owns `copy/status.ts`, and to the controller for G1.
 - **GAP-1 and GAP-2:** closed. Both came from a stale probe; G1's code and A1 T21/T22 are on pass 14.
+
+## Pass 16 dry run (e93267b9)
+
+Base: `ops-rehearsal` 5e3b3fe1 = the pass 14 rehearsal + `launch-integration` e93267b9 (probe pass 16: CV, RA,
+RC-2/3/4, rev-*, demo-mode, the BUG-1 fix from s1-storm 85a68e7; **not** D1's RC-1). `npm ci` clean, `npm ls
+playwright-core` only 1.56.1, `npm run build -w @roofline/web` OK. One stack at a time. No product code changed.
+
+### Spec changes for pass 16
+
+- BUG-1 and BUG-2 are removed from `KNOWN_CONSOLE`. Journey b now requires that the home map shows no error banner.
+  Journey d now requires that the storm's swath map draws: a new helper, `drawnShare`, screenshots the map region and
+  counts non-background pixels; it measured 0.129, against 0 before the fix.
+- e1 and the phone test no longer reload: the open conversation must update by itself.
+- e2 is no longer `test.fail`. It requires the call row to be linked to its conversation with `transcript_stored`
+  true, the caller's and the assistant's words to be visible, no "removed after the retention period" line, and an
+  after-call summary.
+- **Relay handshake (spec-only):** pass 16 now requires `X-Twilio-Signature` on the ConversationRelay WebSocket
+  upgrade, signed over the wss URL with no fields. The helper now uses the `ws` client (Node's built-in WebSocket can't
+  send headers) and signs the upgrade as Twilio does.
+- Journey g now requires the plain kind labels from `TASK_KIND_LABEL` (BUG-6).
+- New journey i covers the claims reply ("claims-ack") path.
+- `signInViaUi` now closes My day when it opens itself on the first sign-in of the company's day. In the full-suite
+  run, My day opened a moment after landing and swallowed journey d's dock click (spec-only race; My day opening
+  itself is by design).
+- `KNOWN_CONSOLE` has one new entry, BUG-7 (below).
+- `run-now` labels are now `Partial<Record<…>>` in `copy/agents.ts`, so the spec uses `!` on them.
+
+### Item results
+
+| Item | Result | Evidence |
+|---|---|---|
+| BUG-1 (S1) hail swath | **fixed** | no console error on storm pages; swath map 12.9% drawn; no home-map banner |
+| BUG-2 (C1) calendar sync 404 | **fixed** (`/sync` answers 204 with no connection); allowlist entry removed | journey a console-clean on `/calendar` |
+| BUG-3 (D1) conversation refresh | **fixed** (rev-c: `useConversation` polls, 30 s idle) | no reload: the inbound text showed at once (0 s) and the assistant reply after 30 s; phone the same |
+| BUG-4 (D1) call to conversation link | **fixed** (CV) | `{"conversation_id":"b108e838-…","transcript_stored":true,"status":"ended"}`; transcript visible |
+| BUG-5 (D1) transcript_stored | **fixed** (RA) | same row; after-call summary "Scripted summary." shown |
+| BUG-6 (G1) task kind labels | **fixed** | "Claim check-ins", "Appointment reminders", "Lead follow-ups" |
+| GAP-1, GAP-2 | still closed | journeys g, h pass |
+| claims-ack | **pass (hand-on branch); the ack branch is not reachable on the e2e stack** | see journey i below |
+| New: BUG-7 (demo-mode) | **failing** (allowlisted) | below |
+| Existing suite: `a11y.spec.ts` "storm detail" | spec flake (order dependent) | below |
+
+### Journey results (final rehearsal run: 12 passed in 5.8 min)
+
+| Journey | Desktop | Phone |
+|---|---|---|
+| a. Sign up, Setup, six apps from the dock | pass | (phone.spec covers sign-up) |
+| b. CRM: customer → job → links, board; home map without banner | pass | pass |
+| c. Estimator: measure → proposal → send → homeowner signs → Won | pass | pass (to Sent) |
+| d. Storm: list → storm (swath drawn) → draft plan → approve 5 → results → feed | pass | pass (to the review) |
+| e1. Front Desk inbound text, live update, assistant reply | pass | pass |
+| e2. Front Desk inbound call: linked, transcript, summary | **pass** (was test.fail) | — |
+| f. Agents: Estimator and Storm Scout tasks and minutes saved | pass | pass (overview, feed, waiting) |
+| g. Claims, Scheduler, Follow-up fire once; cards, pages (plain labels), feed, minutes | pass | pass (G1 pages, no coming soon) |
+| h. Front Desk follow-up once on Waiting = card count | pass | — |
+| i. Claims reply (claims-ack path) | pass | — |
+| "Coming soon" on any visited screen | none | none |
+| Console errors / page errors / 5xx | only BUG-7 (allowlisted); no page errors; no 5xx | same |
+
+### Journey i: claims reply (claims-ack)
+
+The code is in `apps/api/src/agents/claims/replies.ts` (Ruling GX-V). A homeowner who had a Claims check-in text in
+the last 7 days, and who has an open claim, texts back. The inbound hook `onClaimsReply` consumes the text, so Front
+Desk does not answer it at once, and queues the `claims-reply` job (5 s delay). The job asks the model to extract
+facts. When something was noted and the text has no '?', it sends "Thanks, got it." (dedupe
+`claims-ack:<message id>`) into the same Front Desk conversation through the send gate. Otherwise it hands the text to
+Front Desk.
+
+Driven once:
+1. A Filed claim made in the UI, backdated 6 days.
+2. Claims turned on and run; the check-in plan approved and sent.
+3. The homeowner replies through the signed webhook: "We filed it, the claim number is CL-77001 with Prairie Mutual."
+
+Result: the reply is answered **exactly once**, through the fake SMS (`[{"body":"Sorry, could you say that
+again?","status":"sent","ack":false}]`). The conversation stays the assistant's (`handled_by: assistant`). A second,
+ordinary text in the same conversation gets its own Front Desk answer, so Front Desk is not silenced.
+
+**Limit, for the final run:** the e2e stack's model is `ScriptedLlm` (`deps.ts` `createLlm`, `FAKE_PROVIDERS`), and
+demo mode's `demoLlm()` is too. Neither has a scripted `extractClaimReply`, so the job always gets
+`LlmUnavailableError` and takes the hand-on branch. The "Thanks, got it." branch is covered only by
+`apps/api/test/claims-ack.test.ts`. The spec accepts either branch: it requires exactly one answer, and if that answer
+is the ack, that its text is "Thanks, got it.". To drive the ack branch end to end, the stack needs a scripted
+extraction for FAKE_PROVIDERS (owner G1, with the test stack). Recorded as a gap, not a bug.
+
+### New bug: BUG-7 (demo-mode) — GET /api/demo is a 404 on every full page load when demo mode is off
+
+- Owner: **demo-mode** (`ops/sdd/demo`, commit 55415dd4).
+- Steps: any signed-in page with DEMO_MODE off (the production setting), e.g. sign in and open `/`.
+- Expected: no failed request (the demo probe is part of every page load).
+- Actual: `GET /api/demo` → 404, and Chromium logs `Failed to load resource: the server responded with a status of
+  404 (Not Found) @ …/api/demo`. It happens once per full page load (it is cached for the session, but every hard
+  navigation asks again), so every customer's console shows an error on every visit. This is the same pattern as BUG-2.
+- Evidence: a known-bug annotation on every journey in this run (e.g. a on `/settings/setup`, d on `/storm/:id`, the
+  phone tests on the G1 pages).
+- Suspect: `apps/api/src/app.ts:312-314` mounts `GET /api/demo` only `if (config.DEMO_MODE)`, while
+  `apps/web/src/features/demo/api.ts:17-33` `useDemoMode` always asks. Fix: always answer `GET /api/demo` with
+  `{ demo: false }` (or 204), or put the flag in an existing response (`/api/auth/me` or the config the shell already
+  loads).
+
+### Full existing e2e suite on pass 16
+
+`npx playwright test` (both projects; it includes the 12 rehearsal tests): **117 passed, 2 failed (15.4 min).**
+- The existing specs: **106 passed, 1 failed**. Per spec: a11y 29/30, agents-settings 4, agents 9, approvals 4,
+  billing 2, calendar 2, crm 6, estimator 2, front-desk 11, homeowner 1, import 1, more-agents 3, public-forms 2,
+  setup 3, shell 6, signup 1, storm 2, today 3; phone: doors 2, phone 13.
+- `a11y.spec.ts:193` "storm detail has no serious accessibility violations" failed with a strict-mode violation:
+  `getByRole('heading', { level: 1 })` resolved to 2 elements, the window title "Storm" and StormDetail's own
+  `<h1>` "Omaha, NE". Run alone it passes, so whether the locator matches one or two elements depends on how fast the
+  storm loads. Spec issue for **S1** (a11y.spec.ts:197; scope the locator to the storm name). Product note for S1:
+  `StormDetail.tsx:42` renders a second `<h1>` inside a window that already has one; an `<h2>` would read better.
+- Rehearsal journey d failed in that run because of the My day race described above (spec fixed). The rehearsal
+  re-run after the fix: 12/12.

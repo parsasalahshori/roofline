@@ -11,12 +11,14 @@ import { frontDeskInbox } from '../src/copy/front-desk-inbox.ts';
 import { job } from '../src/copy/job.ts';
 import { mapCopy } from '../src/copy/map.ts';
 import { measure } from '../src/copy/measure.ts';
+import { TASK_KIND_LABEL } from '../src/copy/status.ts';
 import { storm } from '../src/copy/storm.ts';
 import { test, expect, readStack } from './fixtures.ts';
 import { BETTER_NAME, makeAndSendProposal } from './estimator-helpers.ts';
 import { draftAndApproveStormPlan, waitForStormSteps } from './fixtures.ts';
 import {
   checkScreen,
+  drawnShare,
   expectCleanBrowser,
   makeItDaytime,
   setUpFrontDesk,
@@ -127,12 +129,9 @@ test('b. CRM: sign in, add a customer and a job, and the windows link to each ot
   await signInViaUi(page, OWNER);
   await expect(page.getByText('Map showing 70 customers and 25 open jobs.')).toBeAttached({ timeout: 20_000 });
   await checkScreen(page, screens);
-  // BUG-1 (S1): the hail layer's fill-color is rejected by MapLibre, the map fires 'error' and the home map
-  // shows its error banner (the e2e build uses the blank style: no tiles are fetched, so nothing else fails).
+  // BUG-1 (fixed in pass 16): the hail layer installs, so the home map shows no error banner
   await page.waitForTimeout(2_000);
-  if ((await page.getByText(mapCopy.error).count()) > 0) {
-    test.info().annotations.push({ type: 'known-bug', description: `BUG-1 (S1): home map shows "${mapCopy.error}"` });
-  }
+  await expect(page.getByText(mapCopy.error)).toHaveCount(0);
   const { customerId, jobId } = await addCustomerAndJob(page, { first: 'Rae', last: 'Rehearsal' }, '4025550188');
 
   // Job window: the customer link and the timeline
@@ -238,6 +237,11 @@ test('d. Storm Scout: see the storm, draft a plan, approve it, see results', asy
   const planCard = page.getByRole('region', { name: storm.planHeadingDetail });
   await expect(planCard).toBeVisible({ timeout: 15_000 });
   await checkScreen(page, screens);
+  // BUG-1 (fixed in pass 16): the swath fill draws on the storm's map (no console error; the afterEach checks that)
+  const swathMap = page.getByRole('region', { name: storm.mapLabel });
+  await expect(swathMap).toBeVisible();
+  await expect.poll(async () => drawnShare(page, swathMap), { timeout: 15_000, message: 'share of the swath map that is not background' }).toBeGreaterThan(0.01);
+  test.info().annotations.push({ type: 'evidence', description: `swath map drawn share: ${(await drawnShare(page, swathMap)).toFixed(3)}` });
 
   // Draft a plan from the storm, then the storm links to the plan
   await planCard.getByRole('button', { name: storm.redraft, exact: true }).click();
@@ -278,22 +282,22 @@ test('e1. Front Desk: an inbound text shows up and is answered', async ({ page, 
   await checkScreen(page, screens);
   await textRow.click();
   await expect(page).toHaveURL(/\/front-desk\/[0-9a-f-]{36}$/);
-  // The conversation shows turns, which the debounced fd-text job writes (FD_TEXT_DEBOUNCE_SECONDS = 20),
-  // and the open window does not refresh itself (BUG-3): reload until the job has run.
-  await expect(async () => {
-    await page.reload();
-    await expect(page.getByText('Hi, I think hail hit my roof last night.')).toBeVisible({ timeout: 3_000 });
-  }).toPass({ timeout: 75_000, intervals: [5_000] });
-  // The assistant answers (the fake model's default line)
-  await expect(page.getByText('Sorry, could you say that again?')).toBeVisible();
+  // BUG-3 (fixed in pass 16, rev-c): the open conversation refreshes itself, no reload. The text shows, then the
+  // assistant's answer (the fake model's default line) after the 20 s debounce and the 30 s idle poll at most.
+  const opened = Date.now();
+  await expect(page.getByText('Hi, I think hail hit my roof last night.')).toBeVisible({ timeout: 60_000 });
+  const textAfter = Date.now() - opened;
+  await expect(page.getByText('Sorry, could you say that again?')).toBeVisible({ timeout: 60_000 });
+  test.info().annotations.push({
+    type: 'evidence',
+    description: `without reload: the text showed after ${Math.round(textAfter / 1000)} s, the reply after ${Math.round((Date.now() - opened) / 1000)} s`,
+  });
   await checkScreen(page, screens);
 });
 
-// BUG-4 / BUG-5 (D1): a call's conversation never gets its call row (calls.conversation_id is never
-// written), so the after-call summary never runs and the transcript reads "removed after the retention
-// period"; calls.transcript_stored is never set true either. The call row itself does show up.
+// BUG-4 / BUG-5 (D1, fixed in pass 16 by CV and RA): the call is linked to its conversation, its transcript is
+// kept, and the after-call job writes a summary.
 test('e2. Front Desk: an inbound call shows up with what was said and a summary', async ({ page, db, scenario }) => {
-  test.fail(true, 'BUG-4/BUG-5 (D1): call not linked to its conversation; transcript hidden, no summary');
   test.setTimeout(120_000);
   const token = await setUpFrontDesk(db, scenario.a.companyId);
   await makeItDaytime(db);
@@ -313,12 +317,18 @@ test('e2. Front Desk: an inbound call shows up with what was said and a summary'
     [call.callSid],
   );
   test.info().annotations.push({ type: 'evidence', description: `calls row after the call: ${JSON.stringify(rows[0])}` });
+  expect(rows[0]?.conversation_id, 'the call is linked to its conversation').toBeTruthy();
+  expect(rows[0]?.transcript_stored, 'the call kept its transcript').toBe(true);
 
   await callRow.click();
   await expect(page).toHaveURL(/\/front-desk\/[0-9a-f-]{36}$/);
   await checkScreen(page, screens);
   await expect(page.getByText('I need someone to look at my roof.')).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText(conversationCopy.summaryNone)).toHaveCount(0);
+  await expect(page.getByText(call.assistant.trim().slice(0, 30), { exact: false }).first()).toBeVisible();
+  await expect(page.getByText(conversationCopy.transcriptRemoved)).toHaveCount(0);
+  await expect(page.getByText(conversationCopy.summaryNone)).toHaveCount(0, { timeout: 20_000 });
+  const summary = page.getByRole('heading', { name: conversationCopy.summaryHeading }).locator('xpath=following-sibling::p[1]');
+  test.info().annotations.push({ type: 'evidence', description: `after-call summary: ${(await summary.textContent()) ?? ''}` });
 });
 
 test('f. Agents: the work done shows as tasks and minutes saved', async ({ page, db, scenario, click }) => {
@@ -469,9 +479,9 @@ test('g. Claims, Scheduler and Follow-up each fire once and show their tasks', a
 
   // Each agent: Turn on, Run now, its plan appears in Waiting, the owner approves it, the texts go out
   const runs = [
-    { slug: 'claims', title: 'Claims', agent: 'claims', kind: 'claims_nudges', run: agentsCopy.runNowLabels.claims },
-    { slug: 'scheduler', title: 'Scheduler', agent: 'scheduler', kind: 'reminders', run: agentsCopy.runNowLabels.scheduler },
-    { slug: 'follow-up', title: 'Follow-up', agent: 'follow_up', kind: 'follow_ups', run: agentsCopy.runNowLabels.follow_up },
+    { slug: 'claims', title: 'Claims', agent: 'claims', kind: 'claims_nudges', run: agentsCopy.runNowLabels.claims! },
+    { slug: 'scheduler', title: 'Scheduler', agent: 'scheduler', kind: 'reminders', run: agentsCopy.runNowLabels.scheduler! },
+    { slug: 'follow-up', title: 'Follow-up', agent: 'follow_up', kind: 'follow_ups', run: agentsCopy.runNowLabels.follow_up! },
   ] as const;
   const tasks: Record<string, string> = {};
   for (const r of runs) {
@@ -515,11 +525,9 @@ test('g. Claims, Scheduler and Follow-up each fire once and show their tasks', a
     await expect(row).toBeVisible({ timeout: 15_000 });
     await expect(row).toContainText(agentsCommon.estimate);
     const kindText = ((await row.locator('span').first().textContent()) ?? '').trim();
-    // BUG-6 (A1/G1): TASK_KIND_LABEL has no G1 kinds, so the row shows the raw kind ("claims nudges", "reminders", "follow ups")
     test.info().annotations.push({ type: 'evidence', description: `/agents/${r.slug} Recent work kind text: "${kindText}"` });
-    if (kindText.toLowerCase() === r.kind.replace(/_/g, ' ')) {
-      test.info().annotations.push({ type: 'known-bug', description: `BUG-6 (G1): /agents/${r.slug} Recent work shows the raw kind "${kindText}"` });
-    }
+    // BUG-6 (fixed in pass 16): the G1 kinds have plain names
+    expect(kindText).toBe(TASK_KIND_LABEL[r.kind]);
     await checkScreen(page, screens);
   }
   await page.goto('/agents/feed');
@@ -565,4 +573,95 @@ test('h. Front Desk follow-ups: listed once on Waiting, and the card count match
   const fdCard = page.getByRole('region', { name: 'Your agents' }).locator('a', { has: page.getByRole('heading', { name: 'Front Desk', exact: true }) });
   await expect(fdCard).toContainText(`${agentsWindow.waiting} ${listed}`, { timeout: 15_000 });
   await checkScreen(page, screens);
+});
+
+/*
+ * The claims reply path ("claims-ack", G1 Ruling GX-V). A homeowner who got a Claims check-in text in the last 7 days
+ * and has an open claim texts back. The inbound hook consumes the reply (Front Desk does not answer at once) and
+ * queues the `claims-reply` job, which either sends "Thanks, got it." (dedupe `claims-ack:<message id>`) when the
+ * extraction noted something and the text asks nothing, or hands the reply to Front Desk. Either way the reply is
+ * answered exactly once and Front Desk stays on for the conversation.
+ * On the e2e stack the fake model (ScriptedLlm) has no scripted extraction, so the job takes the hand-on branch.
+ */
+test('i. Claims reply: the homeowner answers a check-in and gets exactly one answer, Front Desk still on', async ({ page, db, scenario }) => {
+  test.setTimeout(240_000);
+  const companyId = scenario.a.companyId;
+  const token = await setUpFrontDesk(db, companyId);
+  await makeItDaytime(db);
+  await signInViaUi(page, OWNER);
+
+  // A filed claim (UI), filed 6 days ago (DB), then the Claims agent's check-in text, approved and sent (UI)
+  const phone = '4025550165';
+  const claimJob = await addCustomerAndJob(page, { first: 'Ike', last: 'Insured' }, phone, { ...HOME, street: '800 Claim Rd' });
+  await page.getByRole('button', { name: claimsCopy.addDetails, exact: true }).click();
+  const claimForm = page.getByRole('dialog', { name: claimsCopy.formTitle });
+  await claimForm.getByLabel(claimsCopy.insurerLabel).fill('Prairie Mutual');
+  await claimForm.getByLabel(claimsCopy.statusLabel, { exact: true }).selectOption({ label: claimsCopy.status.filed });
+  await claimForm.getByRole('button', { name: claimsCopy.save, exact: true }).click();
+  await expect(claimForm).toHaveCount(0, { timeout: 15_000 });
+  await db.query(`update claims set status_changed_at = now() - interval '6 days', created_at = now() - interval '6 days' where job_id = $1`, [claimJob.jobId]);
+  await turnOnAndRun(page, 'claims', 'Claims', agentsCopy.runNowLabels.claims!);
+  const nudgeTask = await newestTask(db, companyId, 'claims', 'claims_nudges');
+  await approveFromWaiting(page, nudgeTask);
+  const customerId = claimJob.customerId;
+  await expect
+    .poll(async () => (await db.query(`select 1 from follow_up_log where customer_id = $1 and kind = 'claims'`, [customerId])).rowCount, { timeout: 20_000 })
+    .toBeGreaterThan(0);
+
+  // The homeowner texts back (real signed webhook)
+  const replyText = 'We filed it, the claim number is CL-77001 with Prairie Mutual.';
+  await simulateInboundText(page.request, token, `+1${phone}`, replyText);
+  const inbound = await db.query<{ id: string; conversation_id: string | null }>(
+    `select id, conversation_id from messages where customer_id = $1 and direction = 'in' order by created_at desc limit 1`,
+    [customerId],
+  );
+  const inboundId = inbound.rows[0]!.id;
+
+  // Exactly one answer to the reply, sent through the fake SMS: the ack or Front Desk's line
+  await expect
+    .poll(
+      async () =>
+        (
+          await db.query(
+            `select 1 from messages where customer_id = $1 and direction = 'out' and conversation_id is not null and created_at > (select created_at from messages where id = $2)`,
+            [customerId, inboundId],
+          )
+        ).rowCount,
+      { timeout: 90_000, intervals: [2_000] },
+    )
+    .toBeGreaterThan(0);
+  await page.waitForTimeout(5_000);
+  const answers = await db.query<{ body: string; status: string; dedupe_key: string | null }>(
+    `select body, status, dedupe_key from messages where customer_id = $1 and direction = 'out' and conversation_id is not null
+       and created_at > (select created_at from messages where id = $2) order by created_at`,
+    [customerId, inboundId],
+  );
+  const ack = answers.rows.filter((m) => (m.dedupe_key ?? '').startsWith('claims-ack:'));
+  test.info().annotations.push({
+    type: 'evidence',
+    description: `answers to the claims reply: ${JSON.stringify(answers.rows.map((m) => ({ body: m.body, status: m.status, ack: (m.dedupe_key ?? '').startsWith('claims-ack:') })))}`,
+  });
+  expect(answers.rows, 'the reply is answered exactly once').toHaveLength(1);
+  expect(['sent', 'delivered']).toContain(answers.rows[0]!.status);
+  if (ack.length === 1) expect(ack[0]!.body).toBe('Thanks, got it.');
+
+  // The claims reply job ran (claims-reply), and Front Desk is not silenced: the conversation is still the assistant's
+  const conv = await db.query<{ handled_by: string; status: string }>(`select handled_by, status from conversations where id = $1`, [inbound.rows[0]!.conversation_id]);
+  test.info().annotations.push({ type: 'evidence', description: `conversation after the reply: ${JSON.stringify(conv.rows[0])}` });
+  expect(conv.rows[0]?.handled_by).not.toBe('team');
+  await page.goto(`/front-desk/${inbound.rows[0]!.conversation_id}`);
+  await expect(page.getByText(replyText)).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText(answers.rows[0]!.body).first()).toBeVisible({ timeout: 45_000 });
+  await checkScreen(page, screens);
+
+  // A second, ordinary text in the same conversation still gets a Front Desk answer
+  await simulateInboundText(page.request, token, `+1${phone}`, 'Also, do you do gutters?');
+  await expect(page.getByText('Also, do you do gutters?')).toBeVisible({ timeout: 60_000 });
+  await expect
+    .poll(
+      async () =>
+        (await db.query(`select 1 from messages where customer_id = $1 and direction = 'out' and conversation_id is not null and created_at > (select created_at from messages where id = $2)`, [customerId, inboundId])).rowCount,
+      { timeout: 90_000, intervals: [2_000] },
+    )
+    .toBe(2);
 });

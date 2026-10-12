@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import type pg from 'pg';
+import { WebSocket } from 'ws';
 import { encrypt } from '@roofline/db';
 import { SEED_PASSWORD } from '@roofline/db/testing';
 import { auth } from '../src/copy/auth.ts';
@@ -53,10 +54,9 @@ export function watchBrowser(context: BrowserContext): BrowserTrouble {
  * Delete an entry once its bug is fixed.
  */
 export const KNOWN_CONSOLE: { id: string; pattern: RegExp }[] = [
-  // S1: hailFillExpression() uses decimal `match` labels; MapLibre rejects the layer (swath never drawn).
-  { id: 'BUG-1 (S1) hail swath layer rejected by MapLibre', pattern: /Numeric branch labels must be integer values/ },
-  // C1: the Calendar window POSTs /api/calendar/sync on every open; with no calendar connected it answers 404.
-  { id: 'BUG-2 (C1) calendar sync 404 without a connection', pattern: /404 \(Not Found\) @ .*\/api\/calendar\/sync/ },
+  // BUG-1 (S1 hail match labels) and BUG-2 (C1 calendar sync 404) are fixed in pass 16 and removed from here.
+  // demo-mode: the shell asks GET /api/demo once per session; with DEMO_MODE off it is an ordinary 404, logged as an error.
+  { id: 'BUG-7 (demo-mode) /api/demo 404 when demo mode is off', pattern: /404 \(Not Found\) @ .*\/api\/demo$/ },
 ];
 
 /** Screens whose "coming soon" lines are a known gap (path pattern -> finding id). */
@@ -111,6 +111,14 @@ export async function signInViaUi(page: Page, email: string): Promise<void> {
   await page.getByLabel(auth.password, { exact: true }).fill(SEED_PASSWORD);
   await page.getByRole('button', { name: auth.signIn, exact: true }).click();
   await expect(page).not.toHaveURL(/\/sign-in/, { timeout: 15_000 });
+  // My day opens itself on the first sign-in of the company's day (by design). It can open a moment after the
+  // landing and swallow the next click, so wait for it to settle and close it, as a person would.
+  await page.waitForLoadState('networkidle');
+  const myDay = page.getByRole('dialog', { name: 'My day' });
+  if (await myDay.isVisible()) {
+    await myDay.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(myDay).toHaveCount(0);
+  }
 }
 
 /** Real place names, spread around the clock (a fixed offset is not accepted as a customer's zone). */
@@ -255,7 +263,8 @@ export async function simulateInboundCall(
   expect(url, `ConversationRelay in TwiML: ${twiml}`).toBeTruthy();
   expect(callId).toBeTruthy();
 
-  const ws = new WebSocket(url!);
+  // Twilio signs the ConversationRelay upgrade too (X-Twilio-Signature over the wss URL, no fields); pass 16 requires it.
+  const ws = new WebSocket(url!, { headers: { 'X-Twilio-Signature': twilioSignature(token, url!, {}) } });
   const frames: RelayFrame[] = [];
   let assistant = '';
   const done = new Promise<void>((resolve, reject) => {
@@ -297,4 +306,31 @@ export async function simulateInboundCall(
   });
   expect(status.status(), 'voice status webhook').toBe(204);
   return { assistant, callSid };
+}
+
+/**
+ * Whether a map region drew anything: screenshots the element and, in the page, counts the pixels that differ from
+ * the most common colour (the blank style's background). Returns that share (0 to 1).
+ */
+export async function drawnShare(page: Page, locator: import('@playwright/test').Locator): Promise<number> {
+  const png = (await locator.screenshot()).toString('base64');
+  return page.evaluate(async (data) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${data}`;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    const px = ctx.getImageData(0, 0, img.width, img.height).data;
+    const counts = new Map<number, number>();
+    for (let i = 0; i < px.length; i += 4) {
+      const key = ((px[i]! >> 3) << 10) | ((px[i + 1]! >> 3) << 5) | (px[i + 2]! >> 3);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const total = px.length / 4;
+    const top = Math.max(...counts.values());
+    return (total - top) / total;
+  }, png);
 }
