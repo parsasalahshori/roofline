@@ -1,0 +1,73 @@
+/* The address block: the street spans the row, city and state share the next, ZIP follows */
+.addressGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+/* The customer search: the field, its notes and the list of matches */
+.picker {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.results {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A match is as tall as a phone touch target and as wide as its column */
+.result {
+  width: 100%;
+  min-height: 40px;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* The chosen customer: the name, then Change beside it */
+.picked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pickedName {
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* The sheet's form: the address block, then Save as wide as its words */
+.sheetForm {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.save {
+  justify-self: start;
+  min-height: 40px;
+}
+
+@media (max-width: 767.98px) {
+  .addressGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
