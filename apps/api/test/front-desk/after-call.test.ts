@@ -18,6 +18,7 @@ import {
 } from '@roofline/db';
 import { CONVERSATION_OUTCOMES, type ConversationOutcome } from '@roofline/shared';
 import { pickOutcome, runAfterCall } from '../../src/front-desk/after-call.ts';
+import { dispatchDueMessages } from '../../src/jobs/scheduler/dispatch-messages.ts';
 import { maybeTextBack, type TextBackInput, type TextBackResult } from '../../src/front-desk/text-back.ts';
 import { ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import { inCompany } from '../crm-helpers.ts';
@@ -460,6 +461,57 @@ describe('missed-call text-back through the gate', () => {
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ status: 'scheduled', purpose: 'informational' });
     expect(t.sms.sent).toHaveLength(0);
+  });
+
+  /** Nina, whose primary number is MOBILE_TWO, misses a call from her second number MOBILE at 02:00. */
+  async function quietTextBackToSecondNumber() {
+    const [cust] = await inCompany(t, idA(), (tx) =>
+      tx
+        .insert(customers)
+        .values({
+          companyId: idA(),
+          displayName: 'Nina Customer',
+          firstName: 'Nina',
+          smsConsentStatus: 'express',
+          smsConsentSource: 'call',
+          phones: [
+            { e164: MOBILE_TWO, label: 'mobile', primary: true },
+            { e164: MOBILE, label: 'mobile' },
+          ],
+        })
+        .returning({ id: customers.id }),
+    );
+    t.clock.set(QUIET_NIGHT);
+    const { result } = await textBack(MOBILE, { customerId: cust!.id });
+    expect(result).toBe('scheduled');
+    const [row] = await outboundRows();
+    expect(row).toMatchObject({ status: 'scheduled', customerId: cust!.id, toE164: MOBILE });
+    expect(row!.scheduledFor).not.toBeNull();
+    return { customerId: cust!.id, dueAt: new Date(row!.scheduledFor!.getTime() + 60_000) };
+  }
+
+  test('a quiet-hours text-back to the second number goes to that number when dispatched in the morning', async () => {
+    const { dueAt } = await quietTextBackToSecondNumber();
+    t.clock.set(dueAt);
+    expect(await dispatchDueMessages(t.deps, t.clock.now())).toMatchObject({ sent: 1 });
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: MOBILE });
+    expect((await outboundRows())[0]).toMatchObject({ status: 'sent', toE164: MOBILE });
+  });
+
+  test('if that number left the customer overnight, the morning dispatch falls back to the primary number', async () => {
+    const { customerId, dueAt } = await quietTextBackToSecondNumber();
+    await inCompany(t, idA(), (tx) =>
+      tx
+        .update(customers)
+        .set({ phones: [{ e164: MOBILE_TWO, label: 'mobile', primary: true }] })
+        .where(eq(customers.id, customerId)),
+    );
+    t.clock.set(dueAt);
+    expect(await dispatchDueMessages(t.deps, t.clock.now())).toMatchObject({ sent: 1 });
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: MOBILE_TWO });
+    expect((await outboundRows())[0]).toMatchObject({ status: 'sent', toE164: MOBILE_TWO });
   });
 });
 
