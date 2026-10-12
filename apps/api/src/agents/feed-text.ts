@@ -28,6 +28,7 @@ export const FEED_COPY = {
   approved: '{actor} approved {count} {steps}',
   partlyApproved: '{actor} approved {count} of {total} {steps}',
   declined: '{actor} declined the plan',
+  replaced: '{agent} replaced {title} with a newer plan',
   declinedStep: '{actor} declined a step',
   approvedNone: '{actor} approved the plan with every step switched off',
   sentToOwner: '{actor} sent {count} {steps} to the owner',
@@ -132,6 +133,7 @@ export function feedSentence(row: FeedRow): string {
     }
     case 'declined':
       if (row.stepType !== null) return fill(FEED_COPY.declinedStep, { actor: row.actorName ?? SOMEONE });
+      if (row.actorName === null && typeof row.data.replacedByTaskId === 'string') return fill(FEED_COPY.replaced, { agent, title: row.taskTitle });
       return fill(FEED_COPY.declined, { actor: row.actorName ?? SOMEONE });
     case 'step_done': {
       if (row.stepType === 'send_sms_batch') return textsSentSentence(row);

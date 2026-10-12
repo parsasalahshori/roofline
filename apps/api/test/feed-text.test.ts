@@ -114,6 +114,23 @@ describe('feedSentence', () => {
     expect(feedSentence(row({ kind: 'declined', actorName: 'Lee', data: { skippedSteps: 2 } }))).toBe('Lee declined the plan');
   });
 
+  test('a superseded draft reads as a replacement', () => {
+    expect(
+      feedSentence(
+        row({
+          kind: 'declined',
+          actorName: null,
+          taskTitle: 'Hail up to 1.75" near Plano',
+          data: { skippedSteps: 5, replacedByTaskId: '00000000-0000-4000-8000-000000000009' },
+        }),
+      ),
+    ).toBe('Storm Scout replaced Hail up to 1.75" near Plano with a newer plan');
+  });
+
+  test('a declined row without a replacement id still reads as a decline', () => {
+    expect(feedSentence(row({ kind: 'declined', actorName: null, data: { skippedSteps: 2 } }))).toBe('Someone declined the plan');
+  });
+
   test('a send_sms_batch step reads its sent count from the stored result', () => {
     expect(
       feedSentence(row({ kind: 'step_done', agent: 'follow_up', stepType: 'send_sms_batch', stepResult: { sent: 212 } })),

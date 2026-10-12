@@ -704,6 +704,34 @@ export async function declineTask(
 }
 
 /**
+ * Ruling AX-H: a newer storm plan supersedes an old draft. Locks the old task first, skips its open
+ * steps and declines it as the system, with one `declined` event that names the replacement. Returns
+ * true when it superseded, false when the task is gone or no longer a draft. No audit row.
+ */
+export async function supersedeDraft(tx: Tx, ctx: TenantContext, oldTaskId: string, newTaskId: string, now: Date): Promise<boolean> {
+  const task = await getTask(tx, ctx, oldTaskId, { forUpdate: true });
+  if (!task || task.status !== 'draft') return false;
+
+  let skipped = 0;
+  for (const step of await listSteps(tx, ctx, [oldTaskId])) {
+    if (!OPEN.includes(step.status)) continue;
+    if (!(await moveStep(tx, ctx, step.id, OPEN, { status: 'skipped' }, now))) {
+      throw new Error(`Step ${step.id} moved while its task was locked.`);
+    }
+    skipped += 1;
+  }
+  await updateTask(
+    tx,
+    ctx,
+    oldTaskId,
+    { status: 'declined', declinedByUserId: null, declinedAt: now, declineReason: 'Replaced by a newer plan.' },
+    now,
+  );
+  await event(tx, ctx, oldTaskId, 'declined', 'system', { skippedSteps: skipped, replacedByTaskId: newTaskId }, now);
+  return true;
+}
+
+/**
  * Declines one step that waits on the owner, leaving the rest of the plan as it is. Needs the
  * spend approval (403 otherwise); a step that is not `awaiting_owner` is a 409 "This was already
  * handled.". The step is `skipped`, the task's status follows (`refreshTask`), and `step.decline` is

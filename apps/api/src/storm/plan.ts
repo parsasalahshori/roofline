@@ -1,9 +1,10 @@
-import { createTask, type NewTask } from '../tasks/service.ts';
+import { createTask, supersedeDraft, type NewTask } from '../tasks/service.ts';
 import {
   isAgentPaused,
+  linkStormPlan,
   listStormPlanRecipients,
   loadStormPlanFacts,
-  replaceDraftPlan,
+  lockStormPlan,
   withTenant,
   type StormPlanFacts,
 } from '@roofline/db';
@@ -198,7 +199,10 @@ export async function draftStormPlan(
       },
       { now },
     );
-    if (!(await replaceDraftPlan(tx, ctx, companyStormId, taskId, now))) throw new Error(CHANGED);
+    const lock = await lockStormPlan(tx, ctx, companyStormId);
+    if (!lock.ok) throw new Error(CHANGED);
+    if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(CHANGED);
+    await linkStormPlan(tx, ctx, companyStormId, taskId, now);
     return { taskId, fresh: true };
   });
 
