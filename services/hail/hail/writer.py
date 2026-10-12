@@ -73,15 +73,15 @@ DO UPDATE SET geom = ST_Multi(ST_Union(storm_contours.geom, EXCLUDED.geom))
 
 _MERGE_GEOM = """
 UPDATE storms s SET
-  geom_075 = u.g,
-  bbox = ST_Envelope(u.g),
-  centroid = ST_Centroid(u.g),
+  geom_075 = ST_Multi(ST_Union(s.geom_075, m.geom_075)),
+  bbox = ST_Envelope(ST_Union(s.geom_075, m.geom_075)),
+  centroid = ST_Centroid(ST_Union(s.geom_075, m.geom_075)),
   max_in = GREATEST(s.max_in, m.max_in),
   updated_at = now(),
-  last_grew_at = CASE WHEN ST_Area(u.g::geography) > ST_Area(s.geom_075::geography) * 1.01
+  last_grew_at = CASE WHEN ST_Area(ST_Union(s.geom_075, m.geom_075)::geography)
+                           > ST_Area(s.geom_075::geography) * 1.01
                       THEN now() ELSE s.last_grew_at END
-FROM storms m,
-     LATERAL (SELECT ST_Multi(ST_Union(s.geom_075, m.geom_075)) AS g) u
+FROM storms m
 WHERE s.id = %s AND m.id = %s
 """
 
