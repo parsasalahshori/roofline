@@ -61,7 +61,6 @@ export function Shell() {
     badge: badgeFor(app.key, counts[app.key]),
   }));
 
-  // Keyed by company: a switch remounts the map (no old pins or pin card) and clears a failed map
   const open = (target: { kind: 'customer' | 'job'; id: string }) => {
     void navigate((target.kind === 'customer' ? '/customers/' : '/jobs/') + encodeURIComponent(target.id));
   };
@@ -72,9 +71,10 @@ export function Shell() {
         <ShellTopBar />
       </div>
       <div className={styles.map}>
+        {/* Keyed by company: a switch remounts the map (no old pins or pin card) and clears a failed map */}
         <MapErrorBoundary key={companyId}>
           <Suspense fallback={null}>
-            <MapView key={companyId} onOpen={open} />
+            <MapView onOpen={open} />
           </Suspense>
         </MapErrorBoundary>
       </div>

@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { mapCopy } from '../../copy/map.ts';
 import styles from './MapErrorBoundary.module.css';
 
@@ -15,6 +15,11 @@ export class MapErrorBoundary extends Component<MapErrorBoundaryProps, MapErrorB
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // Kept for whoever reads the browser console; the person sees only the banner
+    console.error('The map failed to load', error, info.componentStack);
   }
 
   render() {

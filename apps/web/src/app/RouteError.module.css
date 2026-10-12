@@ -10,6 +10,14 @@
   font-size: var(--font-size-body);
 }
 
+.page[data-variant='window'] {
+  min-height: 0;
+  height: 100%;
+  background: var(--surface);
+  border-radius: var(--radius-window);
+  box-shadow: var(--shadow-window);
+}
+
 .title {
   margin: 0;
   font-size: var(--font-size-stat);
