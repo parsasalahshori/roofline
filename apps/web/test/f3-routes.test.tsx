@@ -55,13 +55,27 @@ const SETUP_VIEW = {
   progress: { done: 0, total: 5 },
 } as const;
 
-/** A signed-in owner, with the shell's reads answered as "nothing". */
+/** The owner's billing read with no plan yet and no plans listed. */
+const BILLING_BODY = {
+  status: 'active',
+  planKey: null,
+  planName: null,
+  trialEndsAt: null,
+  hasPaymentMethod: false,
+  canOpenPortal: false,
+  periodStart: '2026-10-01T00:00:00.000Z',
+  usage: [],
+  plans: [],
+};
+
+/** A signed-in owner, with the shell's reads answered as "nothing" and no billing plan yet. */
 function signedInApi() {
   api = stubApi({
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
     // The user menu's ring reads the checklist too
     'GET /api/setup': () => ({ body: SETUP_VIEW }),
+    'GET /api/billing': () => ({ body: BILLING_BODY }),
   });
   return api;
 }
@@ -117,11 +131,11 @@ it('texting form shows inside the Settings window with the Setup tab current', a
   expect(within(nav).getByRole('link', { name: settings.tabs.setup })).toHaveAttribute('aria-current', 'page');
 });
 
-it('billing says what is coming', async () => {
+it('billing says there is no plan yet', async () => {
   signedInApi();
   renderApp('/settings/billing');
 
-  expect(await screen.findByText(billing.later)).toBeInTheDocument();
+  expect(await screen.findByText(billing.noPlan)).toBeInTheDocument();
 });
 
 it('setup shows the checklist', async () => {
