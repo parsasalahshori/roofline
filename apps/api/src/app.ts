@@ -16,6 +16,7 @@ import { stripeHooks } from './hooks/stripe.ts';
 import { twilioHooks } from './hooks/twilio.ts';
 import { twilioVoiceHooks } from './hooks/twilio-voice.ts';
 import { twilioVoiceTransferHooks } from './hooks/twilio-voice-transfer.ts';
+import { twilioVoiceRecordingHooks } from './hooks/twilio-voice-recording.ts';
 import { twilioVoiceStatusHooks } from './hooks/twilio-voice-status.ts';
 import { twilioRegistrationHooks } from './hooks/twilio-registration.ts';
 import type { JobQueue } from './jobs/queue.ts';
@@ -214,6 +215,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // D1 Front Desk: the voice hooks are signed form posts, mounted before /hooks/twilio and the session gate
   app.use('/hooks/twilio/voice-transfer', twilioVoiceTransferHooks(deps)); // D1 Front Desk
   app.use('/hooks/twilio/voice-status', twilioVoiceStatusHooks(deps));
+  app.use('/hooks/twilio/voice/recording', twilioVoiceRecordingHooks(deps));
   app.use('/hooks/twilio/voice', twilioVoiceHooks(deps));
   app.use('/hooks/twilio', twilioHooks(deps));
   // Stripe's webhooks read the raw body (stripeHooks sets its own parser). The Twilio registration

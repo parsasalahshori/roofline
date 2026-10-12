@@ -27,8 +27,8 @@ export class FakeCallControl implements CallControl {
     }
   }
 
-  async startRecording(sub: SubaccountRef, callSid: string): Promise<{ recordingSid: string }> {
-    await this.enter('startRecording', [sub, callSid]);
+  async startRecording(sub: SubaccountRef, callSid: string, statusCallback?: string): Promise<{ recordingSid: string }> {
+    await this.enter('startRecording', statusCallback === undefined ? [sub, callSid] : [sub, callSid, statusCallback]);
     const recordingSid = sid('RE', ++this.counter);
     this.recordings.set(recordingSid, Uint8Array.from([0x49, 0x44, 0x33]));
     return { recordingSid };

@@ -7,6 +7,7 @@ import { relayCallById, signingTokenFor } from '@roofline/db/system';
 import type { AppDeps } from '../app.ts';
 import type { RelayIn, RelayOut, VoiceSession } from '../providers/voice-session.ts';
 import { createEngine } from './engine.ts';
+import { createRecording } from './recording.ts';
 import type { ToolHandlers } from './engine-types.ts';
 import { runRelayLoop } from './relay-session-loop.ts';
 import { verifyRelayToken } from './relay-token.ts';
@@ -156,9 +157,11 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
         // The socket may have closed while withTenant ran; the close handler already removed the registry entry.
         if (stage === 'dead' || ws.readyState !== WebSocket.OPEN) return;
         stage = 'running';
+        const recording = createRecording(deps, { callId: row.callId, companyId: row.companyId, callSid: row.callSid });
         loop = runRelayLoop(adapter, {
           deps,
           engine,
+          recording,
           call: {
             callId: row.callId,
             companyId: row.companyId,
@@ -170,6 +173,7 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
         });
         deliver(setup);
         for (const m of queued.splice(0)) deliver(m);
+        void recording.start();
         armIdle();
       } catch {
         console.error(`relay setup failed call=${row.callId} company=${row.companyId}`);

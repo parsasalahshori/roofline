@@ -1,7 +1,9 @@
+import { insertTurn, withTenant } from '@roofline/db';
 import { SentenceBuffer } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import type { RelayIn, VoiceSession } from '../providers/voice-session.ts';
 import type { ConversationState, Engine } from './engine-types.ts';
+import { isRecordingObjection, type RecordingHandle } from './recording.ts';
 
 /*
  * The conversation loop between one VoiceSession and the engine (D1 Task 11, package B).
@@ -26,8 +28,8 @@ function isAbort(e: unknown): boolean {
  * Runs one call's conversation over `session`. Registers session.onMessage; on `setup` starts the
  * engine conversation. Does NOT own the socket close, idle timers, DB accounting or the registry.
  */
-export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: Engine; call: RelayCall }): RelayLoop {
-  void o.deps;
+export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: Engine; call: RelayCall; recording?: RecordingHandle }): RelayLoop {
+  const { deps, recording } = o;
   const { engine, call } = o;
   let state: ConversationState | null = null;
   let setupSeen = false;
@@ -92,6 +94,32 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
     current?.abort();
   }
 
+  /** The caller asked not to be recorded: stop the recording, turn the transcript off, leave a system turn and a model note. */
+  async function handleObjection(st: ConversationState, rec: RecordingHandle): Promise<void> {
+    await rec.stopForObjection();
+    st.transcriptOff = true;
+    st.history.push({
+      role: 'user',
+      content: '[System note: the caller asked not to be recorded. Recording has been stopped. Tell them briefly, then continue.]',
+    });
+    try {
+      const ctx = { companyId: call.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+      await withTenant(deps.pools, ctx, (tx) =>
+        insertTurn(tx, ctx, {
+          conversationId: st.conversationId,
+          callId: call.callId,
+          position: st.nextPosition,
+          speaker: 'system',
+          text: "Recording and transcript stopped at the caller's request",
+          at: deps.clock.now(),
+        }),
+      );
+      st.nextPosition += 1;
+    } catch {
+      console.error(`recording note failed call=${call.callId} company=${call.companyId}`);
+    }
+  }
+
   async function handle(m: RelayIn): Promise<void> {
     switch (m.type) {
       case 'setup': {
@@ -112,6 +140,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
       }
       case 'prompt': {
         if (!m.last || !state || ended || closed) return;
+        if (recording && !recording.objected && isRecordingObjection(m.voicePrompt)) await handleObjection(state, recording);
         abortCurrent();
         const ac = new AbortController();
         current = ac;

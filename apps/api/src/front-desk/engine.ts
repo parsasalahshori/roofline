@@ -450,7 +450,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
           callId: state.callId,
           position: state.nextPosition,
           speaker: 'caller',
-          text: callerText,
+          text: state.transcriptOff === true ? '' : callerText,
           at: deps.clock.now(),
           route: rec.route,
         });
@@ -460,7 +460,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
           callId: state.callId,
           position: state.nextPosition + 1,
           speaker: 'assistant',
-          text,
+          text: state.transcriptOff === true ? '' : text,
           at: deps.clock.now(),
           model: rec.model,
           route: rec.route,

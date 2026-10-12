@@ -43,6 +43,8 @@ export type ConversationState = {
   mode: 'normal' | 'message_only';
   /** Consecutive model failures within the call (two in a row -> handoff). */
   modelErrors: number;
+  /** D1 Task 12: the caller objected to recording; turns are saved with text '' from then on. Absent = false. */
+  transcriptOff?: boolean;
 };
 
 export type ToolContext = { deps: AppDeps; companyId: string; conversation: ConversationState; now: Date };
