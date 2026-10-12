@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { STEP_TYPES, isStepType, stepTypes, type StepType } from '../src/steps.ts';
+import { STEP_TYPES, isStepType, stepMinutes, stepTypes, type StepType } from '../src/steps.ts';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const ID2 = '22222222-2222-4222-8222-222222222222';
@@ -92,7 +92,7 @@ describe('send_proposal', () => {
 
   test('saves 20 minutes whatever the result', () => {
     const p = proposal.payload.parse(proposalPayload());
-    expect(proposal.minutesSaved(p, {})).toBe(20);
+    expect(stepMinutes(proposal, p, {}).minutes).toBe(20);
   });
 });
 
@@ -136,7 +136,7 @@ describe('order_exact_report', () => {
 
   test('saves 10 minutes whatever the result', () => {
     const p = report.payload.parse(reportPayload());
-    expect(report.minutesSaved(p, {})).toBe(10);
+    expect(stepMinutes(report, p, {}).minutes).toBe(10);
   });
 });
 

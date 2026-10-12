@@ -714,7 +714,7 @@ const personalTextsPayload = z.strictObject({
 });
 type PersonalTextsPayload = z.output<typeof personalTextsPayload>;
 
-const sendPersonalTexts = withMinutesSaved<PersonalTextsPayload>({
+const sendPersonalTexts: StepTypeDef<PersonalTextsPayload> = {
   type: 'send_personal_texts',
   approvalClass: 'message',
   userCreatable: false,
@@ -737,12 +737,12 @@ const sendPersonalTexts = withMinutesSaved<PersonalTextsPayload>({
   },
   baseline: (p) => (p.kind === 'reminder' ? 'reminder_sent' : 'follow_up_sent'),
   units: (_p, result) => countOf(result.sent),
-});
+};
 
 const claimPacketPayload = z.strictObject({ jobId: lowerUuid(CHECK_TEXT) });
 type ClaimPacketPayload = z.output<typeof claimPacketPayload>;
 
-const buildClaimPacket = withMinutesSaved<ClaimPacketPayload>({
+const buildClaimPacket: StepTypeDef<ClaimPacketPayload> = {
   type: 'build_claim_packet',
   approvalClass: 'internal',
   userCreatable: false,
@@ -750,7 +750,7 @@ const buildClaimPacket = withMinutesSaved<ClaimPacketPayload>({
   preview: () => ({ title: 'Build the claim packet', lines: [] }),
   baseline: () => 'claim_packet',
   units: (_p, result) => (countOf(result.built) > 0 ? 1 : 0),
-});
+};
 
 const END_AFTER_START = 'The end must be after the start.';
 const isoTime = z.iso.datetime({ offset: true, error: CHECK_TEXT });
@@ -768,7 +768,7 @@ const createAppointmentPayload = z
   .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
 type CreateAppointmentPayload = z.output<typeof createAppointmentPayload>;
 
-const createAppointment = withMinutesSaved<CreateAppointmentPayload>({
+const createAppointment: StepTypeDef<CreateAppointmentPayload> = {
   type: 'create_appointment',
   approvalClass: 'internal',
   userCreatable: false,
@@ -779,7 +779,7 @@ const createAppointment = withMinutesSaved<CreateAppointmentPayload>({
   }),
   baseline: () => 'booking',
   units: (_p, result) => countOf(result.created),
-});
+};
 
 const moveAppointmentPayload = z
   .strictObject({
@@ -792,7 +792,7 @@ const moveAppointmentPayload = z
   .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
 type MoveAppointmentPayload = z.output<typeof moveAppointmentPayload>;
 
-const moveAppointment = withMinutesSaved<MoveAppointmentPayload>({
+const moveAppointment: StepTypeDef<MoveAppointmentPayload> = {
   type: 'move_appointment',
   approvalClass: 'internal',
   userCreatable: false,
@@ -800,7 +800,7 @@ const moveAppointment = withMinutesSaved<MoveAppointmentPayload>({
   preview: (p) => ({ title: 'Move an install', lines: [p.reason, `${p.start} to ${p.end}`] }),
   baseline: () => 'install_moved',
   units: (_p, result) => countOf(result.moved),
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 

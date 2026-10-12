@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { stepTypes } from '../src/steps.ts';
+import { stepMinutes, stepTypes } from '../src/steps.ts';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const ID2 = '22222222-2222-4222-8222-222222222222';
@@ -173,10 +173,10 @@ describe('send_email_batch', () => {
 
   test('minutes saved is half a minute per email, capped at 120', () => {
     const p = email.payload.parse(emailPayload());
-    expect(email.minutesSaved(p, { sent: 10 })).toBe(5);
-    expect(email.minutesSaved(p, { sent: 1000 })).toBe(120);
-    expect(email.minutesSaved(p, { sent: 0 })).toBe(0);
-    expect(email.minutesSaved(p, {})).toBe(0);
+    expect(stepMinutes(email, p, { sent: 10 }).minutes).toBe(5);
+    expect(stepMinutes(email, p, { sent: 1000 }).minutes).toBe(120);
+    expect(stepMinutes(email, p, { sent: 0 }).minutes).toBe(0);
+    expect(stepMinutes(email, p, {}).minutes).toBe(0);
     expect(email.baseline?.(p, {})).toBe('email_sent');
     expect(email.units?.(p, { sent: 10 })).toBe(10);
     expect(email.userCreatable).toBe(true);
@@ -223,8 +223,8 @@ describe('build_routes', () => {
 
   test('minutes saved is 45 per route built (A1 route_built), counted from the result', () => {
     const p = routes.payload.parse(routePayload());
-    expect(routes.minutesSaved(p, { routes: 4 })).toBe(180);
-    expect(routes.minutesSaved(p, {})).toBe(0);
+    expect(stepMinutes(routes, p, { routes: 4 }).minutes).toBe(180);
+    expect(stepMinutes(routes, p, {}).minutes).toBe(0);
     expect(routes.baseline?.(p, {})).toBe('route_built');
     expect(routes.units?.(p, { routes: 4 })).toBe(4);
     expect(routes.userCreatable).toBe(true);
@@ -351,8 +351,8 @@ describe('create_ad_campaign', () => {
 
   test('minutes saved is 45 per campaign created (A1 ad_campaign), counted from the result', () => {
     const p = ads.payload.parse(googlePayload());
-    expect(ads.minutesSaved(p, { campaigns: 1 })).toBe(45);
-    expect(ads.minutesSaved(p, {})).toBe(0);
+    expect(stepMinutes(ads, p, { campaigns: 1 }).minutes).toBe(45);
+    expect(stepMinutes(ads, p, {}).minutes).toBe(0);
     expect(ads.baseline?.(p, {})).toBe('ad_campaign');
     expect(ads.units?.(p, { campaigns: 1 })).toBe(1);
     expect(ads.userCreatable).toBe(true);
