@@ -39,6 +39,8 @@ export async function recountMinutes(
   let steps = 0;
   let afterId: string | null = null;
   let started = false;
+  let beforeMinutes = 0;
+  let afterMinutes = 0;
 
   const lock = async (tx: Tx): Promise<void> => {
     if (!(await tryLockRecount(tx, ctx))) throw new AppError(409, 'A recount is already running.');
@@ -98,6 +100,24 @@ export async function recountMinutes(
       if (lastId === null) break;
       afterId = lastId;
     }
+    beforeMinutes = round2(before);
+    afterMinutes = round2(after);
+
+    if (!dryRun) {
+      await withTenant(pools, ctx, async (tx) => {
+        await lock(tx);
+        const id = await insertTimeRecount(tx, ctx, { from, to, beforeMinutes, afterMinutes, at: now });
+        await audit(tx, ctx, {
+          action: 'agents.recount',
+          targetType: 'time_recount',
+          targetId: id,
+          before: { minutes: beforeMinutes },
+          after: { minutes: afterMinutes, steps },
+          ip,
+          at: now,
+        });
+      });
+    }
   } catch (error) {
     if (!dryRun && started) {
       try {
@@ -117,25 +137,6 @@ export async function recountMinutes(
       }
     }
     throw error;
-  }
-
-  const beforeMinutes = round2(before);
-  const afterMinutes = round2(after);
-
-  if (!dryRun) {
-    await withTenant(pools, ctx, async (tx) => {
-      await lock(tx);
-      const id = await insertTimeRecount(tx, ctx, { from, to, beforeMinutes, afterMinutes, at: now });
-      await audit(tx, ctx, {
-        action: 'agents.recount',
-        targetType: 'time_recount',
-        targetId: id,
-        before: { minutes: beforeMinutes },
-        after: { minutes: afterMinutes, steps },
-        ip,
-        at: now,
-      });
-    });
   }
 
   return { dryRun, from: from.toISOString(), to: to.toISOString(), beforeMinutes, afterMinutes, steps };

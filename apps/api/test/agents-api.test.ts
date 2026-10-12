@@ -336,6 +336,7 @@ describe('GET /api/agents/:agent (detail)', () => {
         createdAt: '2026-10-12T15:00:00.000Z',
         finishedAt: '2026-10-12T15:00:00.000Z',
         minutesSaved: 12,
+        href: null,
       },
     ]);
   });

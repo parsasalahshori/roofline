@@ -12,7 +12,7 @@ beforeEach(async () => {
   t = await makeTestApp();
 });
 
-const systemCtx = (companyId: string) => ({ companyId, userId: null, role: 'system' as const, canApproveSpend: false });
+const systemCtx = (companyId: string) => ({ companyId, userId: null, role: 'owner' as const, canApproveSpend: true });
 
 const factsFor = (companyId: string) => inCompany(t, companyId, (tx) => gatherRuleFacts(tx, systemCtx(companyId)));
 

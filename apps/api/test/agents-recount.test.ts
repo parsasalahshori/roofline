@@ -48,6 +48,7 @@ type Spec = {
 /** Makes a task and turns its first steps into done steps with the given frozen snapshots. */
 async function seedTask(specs: Spec[], company: CompanyKey = 'a'): Promise<{ taskId: string; stepIds: string[] }> {
   const { taskId } = await newTask(t, company);
+  await setTask(t, company, taskId, { status: 'done' });
   const steps = await dbSteps(t, company, taskId);
   const stepIds: string[] = [];
   for (const [i, spec] of specs.entries()) {
@@ -271,9 +272,9 @@ describe('recount', () => {
     const draftNull = await seedTask([{ sent: 10 }]);
     const done = await seedTask([{ sent: 10 }]);
     const draftSet = await seedTask([{ sent: 10 }]);
-    await setTask(t, 'a', draftNull.taskId, { minutesSaved: null });
+    await setTask(t, 'a', draftNull.taskId, { status: 'draft', minutesSaved: null });
     await setTask(t, 'a', done.taskId, { status: 'done', minutesSaved: null });
-    await setTask(t, 'a', draftSet.taskId, { minutesSaved: 5 });
+    await setTask(t, 'a', draftSet.taskId, { status: 'draft', minutesSaved: 5 });
     await setTextBaseline(2);
     const owner = await actors.as('owner');
     expect((await owner.post(RECOUNT)).status).toBe(200);
