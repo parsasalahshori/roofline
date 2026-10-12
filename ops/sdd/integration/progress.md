@@ -203,3 +203,20 @@ tracks rewrite the same check constraint in their migrations.
    Front Desk and Estimator unshipped, `a1-settings.test.tsx` eight tabs, `d1-settings.test.tsx` nine tabs. The probe
    updates them for the combination (Storm the only coming-soon app; ten tabs). Owner: whichever track merges the
    other.
+
+### CI (pass 2)
+
+Run 38204712356 on 9b242d3: Platform (lint, typecheck, tests) success; Hail service (ruff, pytest) success;
+v1 (node:test) success; E2E (Playwright) failure, 29 of 30 passed.
+
+The one failure, `apps/web/e2e/setup.spec.ts:33` "later steps say Coming with" (expects 4 "Coming with" lines, gets
+3), is not a merge artifact and not cross-track: c1-crm 3eb085d fails the same test on its own (run 38201748327).
+C1 Task 12 (1cd666b, calendar connect and the setup item) removed `connect_calendar: 'calendar'` from
+`COMING_WITH_BY_KEY` in `packages/shared/src/setup.ts`, so the calendar row now offers actions, but the e2e spec still
+expects 'Coming with the calendar'. Fix (owner C1): the spec expects 3 lines (Estimator, Front Desk, Storm Scout)
+and, if wanted, checks the calendar row's connect action instead. Later, E1, D1 and S1 will each drop their own line
+when they ship their setup item, so whichever track merges another must recount. Not fixed in the probe (track bug).
+Side note: c1-crm's own Platform job in that run failed on an order-dependent assertion in
+`apps/api/test/isolation.test.ts:304` (steps compared in a different order); it passed in the probe run.
+
+No merge-artifact fixes were needed after CI, so ci-check was not re-run.
