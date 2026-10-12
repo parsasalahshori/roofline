@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Launch-merge normalizer: run from the repo root (or anywhere inside it) after all six tracks are merged.
+#   ops/bin/launch-normalize            rewrite meta/_journal.json `when` order if needed, then check everything
+#   ops/bin/launch-normalize --check    change nothing; fail if the journal would need rewriting
+#   --skip-generate                     skip the drizzle-kit generate step
+# Steps and report: packages/db/scripts/launch-normalize.ts. Runbook: docs/superpowers/launch-runbook.md.
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+cd "$root/packages/db"
+exec "$root/node_modules/.bin/tsx" scripts/launch-normalize.ts "$@"
