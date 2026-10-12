@@ -106,3 +106,4 @@ jobs:
           bash -c "apt-get update -qq && apt-get install -y -qq python3-venv >/dev/null &&
           python3 -m venv --system-site-packages /tmp/v && /tmp/v/bin/pip install -q -e '.[dev]' &&
           /tmp/v/bin/ruff check . && /tmp/v/bin/pytest -q"
+      - run: docker build -t roofline-hail services/hail

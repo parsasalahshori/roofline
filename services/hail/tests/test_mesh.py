@@ -1,5 +1,5 @@
 import gzip
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -40,7 +40,7 @@ def test_list_keys_parses_recorded_page():
         return httpx.Response(200, text=recorded)
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        keys = list_keys(client, "https://example.test", datetime(2024, 5, 28).date())
+        keys = list_keys(client, "https://example.test", date(2024, 5, 28))
 
     expected = [f"{PREFIX_0528}20240528-{t}.grib2.gz" for t in ("000000", "003000", "010000", "013000")]
     assert keys == expected
@@ -79,3 +79,18 @@ def test_mesh_source_latest(tmp_path):
         assert grid.key.endswith(f"MRMS_MESH_Max_1440min_00.50_{today}-120000.grib2.gz")
         assert grid.path.exists()
         assert source.latest(grid.key) is None
+
+
+def test_download_rejects_non_gz_key(tmp_path):
+    http = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+    key = "CONUS/MESH_Max_1440min_00.50/20240528/MRMS_MESH_Max_1440min_00.50_20240528-120000.grib2"
+    with pytest.raises(ValueError):
+        download(http, "http://x", key, tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_download_leaves_no_part_file_on_success(tmp_path):
+    http = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, content=gzip.compress(b"abc"))))
+    result = download(http, "http://x", KEY_NOON, tmp_path)
+    assert result.read_bytes() == b"abc"
+    assert list(tmp_path.glob("*.part")) == []
