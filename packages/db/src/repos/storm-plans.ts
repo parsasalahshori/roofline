@@ -61,6 +61,7 @@ export async function loadStormPlanFacts(tx: Tx, ctx: TenantContext, companyStor
     left join company_settings st on st.company_id = cs.company_id
     left join texting_registrations tr on tr.company_id = cs.company_id
     where cs.id = ${companyStormId}::uuid and cs.company_id = ${ctx.companyId}::uuid
+      and (s.merged_into is null or cs.plan_task_id is not null)
   `);
   const r = result.rows[0] as
     | {

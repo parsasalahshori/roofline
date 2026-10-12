@@ -31,6 +31,17 @@ def next_run_after(now: datetime) -> datetime:
     return base + timedelta(minutes=65)
 
 
+def postmark_token(environ) -> str:
+    """POSTMARK_TOKEN, falling back to the deprecated POSTMARK_SERVER_TOKEN."""
+    token = environ.get("POSTMARK_TOKEN", "")
+    if token:
+        return token
+    old = environ.get("POSTMARK_SERVER_TOKEN", "")
+    if old:
+        log.warning("POSTMARK_SERVER_TOKEN is deprecated; use POSTMARK_TOKEN")
+    return old
+
+
 def send_alert(client: httpx.Client, token: str, to: str, count: int) -> None:
     response = client.post(
         POSTMARK_URL,
@@ -65,9 +76,9 @@ def run_once(source, conn_factory, client, env, failures_alerted: bool, state: d
     if failures_alerted:
         return True
     to = env.get("OPS_ALERT_EMAIL")
-    token = env.get("POSTMARK_SERVER_TOKEN")
+    token = env.get("POSTMARK_TOKEN")
     if not (to and token):
-        log.warning("hail alert threshold reached but OPS_ALERT_EMAIL or POSTMARK_SERVER_TOKEN is not set")
+        log.warning("hail alert threshold reached but OPS_ALERT_EMAIL or POSTMARK_TOKEN is not set")
         return False
     try:
         send_alert(client, token, to, count)
@@ -97,7 +108,7 @@ def main() -> None:
         raise SystemExit("HAIL_DATABASE_URL is required")
     env = {
         "OPS_ALERT_EMAIL": os.environ.get("OPS_ALERT_EMAIL", ""),
-        "POSTMARK_SERVER_TOKEN": os.environ.get("POSTMARK_SERVER_TOKEN", ""),
+        "POSTMARK_TOKEN": postmark_token(os.environ),
     }
 
     def conn_factory():

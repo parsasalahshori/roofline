@@ -12,7 +12,7 @@ const errors: unknown[] = [];
 const deps = {
   pools: { system: {} },
   mailer: { send: async (m: { to: string; subject: string; text: string }) => void sent.push(m) },
-  config: { OPS_ALERT_EMAIL: 'ops@example.com' },
+  config: { OPS_ALERT_EMAIL: 'ops@example.com', HAIL_ALERT_STALE_MINUTES_SEASON: 180, HAIL_ALERT_STALE_MINUTES_OFFSEASON: 720 },
   logError: (err: unknown) => void errors.push(err),
 } as unknown as AppDeps;
 
@@ -27,11 +27,13 @@ beforeEach(() => {
 });
 
 describe('hailHealth', () => {
-  test('staleThresholdMinutes is 180 from April to September and 720 otherwise', () => {
-    expect(staleThresholdMinutes(new Date(Date.UTC(2026, 3, 1)))).toBe(180);
-    expect(staleThresholdMinutes(new Date(Date.UTC(2026, 8, 30)))).toBe(180);
-    expect(staleThresholdMinutes(new Date(Date.UTC(2026, 9, 1)))).toBe(720);
-    expect(staleThresholdMinutes(new Date(Date.UTC(2026, 2, 31)))).toBe(720);
+  test('staleThresholdMinutes uses the season value from April to September and the off-season value otherwise', () => {
+    const cfg = { HAIL_ALERT_STALE_MINUTES_SEASON: 100, HAIL_ALERT_STALE_MINUTES_OFFSEASON: 400 };
+    expect(staleThresholdMinutes(new Date('2026-05-01T00:00:00Z'), cfg)).toBe(100);
+    expect(staleThresholdMinutes(new Date('2026-04-01T00:00:00Z'), cfg)).toBe(100);
+    expect(staleThresholdMinutes(new Date('2026-09-30T00:00:00Z'), cfg)).toBe(100);
+    expect(staleThresholdMinutes(new Date('2026-10-01T00:00:00Z'), cfg)).toBe(400);
+    expect(staleThresholdMinutes(new Date('2026-03-31T00:00:00Z'), cfg)).toBe(400);
   });
 
   test('emails ops once when the newest processed run is over 3 hours old in summer', async () => {

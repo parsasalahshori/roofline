@@ -35,7 +35,11 @@ def _close_days(conn, current: date) -> list[date]:
         "WHERE status = 'processed' AND source_key LIKE '%%MESH_Max_1440min%%' AND convective_day = ANY(%s)",
         (sorted(days),),
     ).fetchall()
-    return sorted(days - {row[0] for row in closed})
+    open_days = days - {row[0] for row in closed}
+    cutoff = current - timedelta(days=3)
+    for day in sorted(d for d in open_days if d < cutoff):
+        log.warning("giving up closing convective day %s: no 1440min key after 3 days", day)
+    return sorted(d for d in open_days if d >= cutoff)
 
 
 def tick(source: HailSource, conn_factory, now: datetime) -> RunSummary | None:
@@ -52,12 +56,9 @@ def tick(source: HailSource, conn_factory, now: datetime) -> RunSummary | None:
             grid = source.latest(after, tuple(close_days))
             if grid is None:
                 return None
-            if grid.product == "1440min":
-                final, replace = True, True
-                day = convective_day(grid.valid_at - timedelta(seconds=1))
-            else:
-                final, replace = False, False
-                day = convective_day(grid.valid_at)
+            # A grid valid exactly at D+1@12:00:00Z (either product) belongs to convective day D.
+            day = convective_day(grid.valid_at - timedelta(seconds=1))
+            final = replace = grid.product == "1440min"
             try:
                 contours = contour_grid(grid.path)
                 shapes = split_storms(contours)

@@ -5,10 +5,13 @@ import { reportJobError } from './report.ts';
 const MINUTE_MS = 60_000;
 const TICK_MINUTES = 15;
 
-/** Minutes without a new processed grid before hail data counts as stale: 3 hours in storm season (UTC April to September), 12 hours otherwise. */
-export function staleThresholdMinutes(now: Date): number {
+/** Minutes without a new processed grid before hail data counts as stale: the season setting in UTC April to September, the off-season setting otherwise. */
+export function staleThresholdMinutes(
+  now: Date,
+  cfg: { HAIL_ALERT_STALE_MINUTES_SEASON: number; HAIL_ALERT_STALE_MINUTES_OFFSEASON: number },
+): number {
   const month = now.getUTCMonth();
-  return month >= 3 && month <= 8 ? 180 : 720;
+  return month >= 3 && month <= 8 ? cfg.HAIL_ALERT_STALE_MINUTES_SEASON : cfg.HAIL_ALERT_STALE_MINUTES_OFFSEASON;
 }
 
 const COOLDOWN_MS = 6 * 60 * MINUTE_MS;
@@ -32,7 +35,7 @@ function dueNow(over: number): boolean {
  */
 export async function hailHealth(deps: AppDeps, now: Date, startedAt: Date = SERVICE_STARTED_AT): Promise<void> {
   const newest = await newestProcessedRunAt(deps.pools.system);
-  const threshold = staleThresholdMinutes(now) * MINUTE_MS;
+  const threshold = staleThresholdMinutes(now, deps.config) * MINUTE_MS;
   const since = newest ?? startedAt;
   if (!dueNow(now.getTime() - since.getTime() - threshold)) return;
 

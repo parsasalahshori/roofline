@@ -197,6 +197,24 @@ def test_merge_sets_merged_into_and_unions_geometry(hail_dsn, owner_dsn, clean_d
     assert scalar(owner_dsn, "SELECT count(*) FROM storms WHERE convective_day = %s", (DAY,)) == 2
 
 
+def test_replace_mode_merge_does_not_union_merged_geometry(hail_dsn, owner_dsn, clean_db):
+    with psycopg.connect(hail_dsn) as conn:
+        a = writer.write_run(conn, grid("test-a"), DAY, [Match(None, shape(box(-97, 35, -96, 36)), [])], False, False)
+        b = writer.write_run(conn, grid("test-b", 15, 30), DAY, [Match(None, shape(box(-94, 35, -93, 36)), [])], False, False)
+        sa, sb = a.storm_ids[0], b.storm_ids[0]
+        final = shape(box(-97, 35, -95, 36))
+        summary = writer.write_run(conn, grid("test-c", 16), DAY, [Match(sa, final, [sb])], True, True)
+    assert summary.merged_ids == [sb]
+    assert scalar(owner_dsn, "SELECT merged_into FROM storms WHERE id = %s", (sb,)) == sa
+    point = "ST_GeomFromText('POINT(-93.5 35.5)', 4326)"
+    assert not scalar(owner_dsn, f"SELECT ST_Covers(geom_075, {point}) FROM storms WHERE id = %s", (sa,))
+    assert not scalar(
+        owner_dsn,
+        f"SELECT bool_or(ST_Covers(geom, {point})) FROM storm_contours WHERE storm_id = %s",
+        (sa,),
+    )
+
+
 def test_split_shapes_one_storm_one_id(hail_dsn, owner_dsn, clean_db):
     with psycopg.connect(hail_dsn) as conn:
         first = writer.write_run(conn, grid("test-a"), DAY, [Match(None, shape(box(-97, 35, -94, 36)), [])], False, False)

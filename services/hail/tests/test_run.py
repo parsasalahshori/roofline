@@ -241,3 +241,49 @@ def test_failure_raises_tick_failed_with_count_and_success_resets(conn_factory, 
     with pytest.raises(TickFailed) as info:
         tick(bad, conn_factory, now())
     assert info.value.count == 1
+
+
+KEY_60_REAL = "CONUS/MESH_Max_60min_00.50/20260601/MRMS_MESH_Max_60min_00.50_20260601-130000.grib2.gz"
+
+
+def test_run_with_real_60min_key_uses_after_key_cursor(conn_factory, clean_db, tmp_path, monkeypatch):
+    source = FakeSource(
+        [
+            grid(tmp_path, "g1.grib2", KEY_60_REAL, utc(2026, 6, 1, 13, 0)),
+            grid(tmp_path, "g2.grib2", "test-60-next", utc(2026, 6, 1, 14, 0)),
+        ]
+    )
+    monkeypatch.setattr(run, "contour_grid", lambda path: BASE)
+    tick(source, conn_factory, utc(2026, 6, 1, 13, 30))
+    with conn_factory() as conn:
+        assert conn.execute("SELECT source_key FROM hail_runs").fetchall() == [(KEY_60_REAL,)]
+    tick(source, conn_factory, utc(2026, 6, 1, 14, 30))
+    assert source.after_keys == [None, KEY_60_REAL]
+    with conn_factory() as conn:
+        keys = [r[0] for r in conn.execute("SELECT source_key FROM hail_runs ORDER BY valid_at").fetchall()]
+    assert "MESH_Max_60min" in keys[0]
+
+
+def test_60min_grid_valid_at_noon_belongs_to_previous_day(conn_factory, clean_db, tmp_path, monkeypatch):
+    source = FakeSource([grid(tmp_path, "g1.grib2", "test-60-noon", utc(2026, 6, 2, 12, 0))])
+    monkeypatch.setattr(run, "contour_grid", lambda path: BASE)
+    summary = tick(source, conn_factory, utc(2026, 6, 2, 12, 5))
+    assert summary.convective_day == date(2026, 6, 1)
+    assert summary.final is False
+    with conn_factory() as conn:
+        rows = conn.execute("SELECT DISTINCT convective_day FROM storms").fetchall()
+    assert rows == [(date(2026, 6, 1),)]
+
+
+def test_day_older_than_three_days_is_given_up(conn_factory, clean_db, tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(run, "contour_grid", lambda path: BASE)
+    first = FakeSource([grid(tmp_path, "g1.grib2", "test-old", utc(2026, 6, 1, 15, 0))])
+    tick(first, conn_factory, utc(2026, 6, 1, 15, 30))
+    source = FakeSource([])
+    with caplog.at_level("WARNING", logger="hail.run"):
+        tick(source, conn_factory, utc(2026, 6, 5, 15, 0))
+        assert source.close_days == [()]
+        assert "giving up closing convective day 2026-06-01" in caplog.text
+    recent = FakeSource([])
+    tick(recent, conn_factory, utc(2026, 6, 3, 15, 0))
+    assert recent.close_days == [(date(2026, 6, 1),)]

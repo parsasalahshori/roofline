@@ -33,10 +33,20 @@ class MeshSource:
         self.workdir = workdir
         self.base_url = base_url
 
-    def _closing_key(self, day: date) -> str | None:
-        """The 1440min key that closes convective day `day`: exactly D+1@12:00:00Z, else the last one before it."""
+    def _closing_key(self, day: date, now: datetime | None = None) -> str | None:
+        """The 1440min key that closes convective day `day`.
+
+        The key valid exactly at D+1@12:00:00Z wins whenever it exists. Until 20 minutes past that instant we wait
+        for it (None); after that the last key valid before it is accepted, as the exact key may never be published.
+        """
         instant = final_instant(day)
+        now = datetime.now(timezone.utc) if now is None else now
         keys = list_keys(self.http, self.base_url, instant.date(), PREFIX_1440)
+        for k in keys:
+            if parse_valid_at(k) == instant:
+                return k
+        if now < instant + timedelta(minutes=20):
+            return None
         usable = [k for k in keys if parse_valid_at(k) <= instant]
         if not usable:
             return None

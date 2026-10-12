@@ -1,5 +1,19 @@
-import { describe, expect, test } from 'vitest';
-import { shouldDraft } from '../src/storm/settle.ts';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import type { AppDeps } from '../src/app.ts';
+
+const alerts = vi.hoisted(() => ({ calls: [] as string[], fail: false }));
+vi.mock('../src/storm/alerts.ts', () => ({
+  alertUnalerted: async (_deps: unknown, companyId: string) => {
+    alerts.calls.push(companyId);
+    if (alerts.fail) throw new Error('mail down');
+  },
+}));
+vi.mock('@roofline/db', () => ({
+  listSettleCandidates: async () => [],
+  withTenant: async (_pools: unknown, _ctx: unknown, fn: (tx: unknown) => unknown) => fn({}),
+}));
+
+const { afterMatch, shouldDraft } = await import('../src/storm/settle.ts');
 
 const NOW = new Date('2026-10-12T15:00:00Z');
 const MINUTE = 60_000;
@@ -45,5 +59,28 @@ describe('shouldDraft', () => {
   test('a dismissed storm is skipped', () => {
     const cs = { status: 'dismissed' as const, planTaskId: null, planStatus: null };
     expect(shouldDraft(cs, { status: 'final', lastGrewAt: NOW }, NOW, true)).toBe('skip');
+  });
+});
+
+describe('afterMatch alerts', () => {
+  const errors: unknown[] = [];
+  const deps = { pools: {}, jobs: { send: async () => undefined }, logError: (err: unknown) => void errors.push(err) } as unknown as AppDeps;
+  beforeEach(() => {
+    alerts.calls.length = 0;
+    alerts.fail = false;
+    errors.length = 0;
+  });
+
+  test('calls alertUnalerted once per run, even when nothing was created', async () => {
+    await afterMatch(deps, 'c1', NOW, { created: [], grown: [] });
+    expect(alerts.calls).toEqual(['c1']);
+    await afterMatch(deps, 'c1', NOW, { created: ['a', 'b'], grown: [] });
+    expect(alerts.calls).toEqual(['c1', 'c1']);
+  });
+
+  test('an alert failure is reported, not thrown', async () => {
+    alerts.fail = true;
+    await expect(afterMatch(deps, 'c1', NOW, { created: [], grown: [] })).resolves.toBeUndefined();
+    expect(errors).toHaveLength(1);
   });
 });

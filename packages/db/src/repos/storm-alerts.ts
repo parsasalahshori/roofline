@@ -50,12 +50,19 @@ export async function releaseNowAlert(tx: Tx, companyStormId: string): Promise<v
   `);
 }
 
-/** Ids of the tenant's matched company storms (new or planned) whose "now" alert was never claimed. */
+/**
+ * Ids of the tenant's matched company storms (new or planned) whose "now" alert was never claimed.
+ * Only storms that are not merged (merged storms are never alerted) and were matched in the last 3 days
+ * (so a release never emails about stale storms).
+ */
 export async function listUnalertedMatched(tx: Tx): Promise<string[]> {
   const result = await tx.execute(sql`
-    select id from company_storms
-    where alerted_at is null and status in ('new', 'planned')
-    order by created_at, id
+    select cs.id from company_storms cs
+    join storms s on s.id = cs.storm_id
+    where cs.alerted_at is null and cs.status in ('new', 'planned')
+      and s.merged_into is null
+      and cs.created_at > now() - interval '3 days'
+    order by cs.created_at, cs.id
   `);
   return (result.rows as { id: string }[]).map((r) => r.id);
 }
@@ -70,7 +77,7 @@ export async function listAlertRecipients(tx: Tx): Promise<AlertRecipient[]> {
   return (result.rows as { email: string; name: string }[]).map((r) => ({ email: r.email, name: r.name }));
 }
 
-/** The company storm joined to its storm, or null when it is not the company's. */
+/** The company storm joined to its storm, or null when it is not the company's or its storm was merged before a plan existed. */
 export async function getAlertFacts(tx: Tx, companyStormId: string): Promise<AlertFacts | null> {
   const result = await tx.execute(sql`
     select cs.id, cs.storm_id, cs.max_in::float8 as max_in, cs.customers_hit, cs.homes_hit,
@@ -78,6 +85,7 @@ export async function getAlertFacts(tx: Tx, companyStormId: string): Promise<Ale
     from company_storms cs
     join storms s on s.id = cs.storm_id
     where cs.id = ${companyStormId}::uuid
+      and (s.merged_into is null or cs.plan_task_id is not null)
   `);
   const r = result.rows[0] as
     | {
@@ -118,6 +126,7 @@ export async function listSettleCandidates(tx: Tx, days: string[]): Promise<Sett
     left join agent_tasks t on t.id = cs.plan_task_id and t.company_id = cs.company_id
     where s.convective_day in (${dayList})
       and cs.status <> 'dismissed'
+      and s.merged_into is null
     order by s.convective_day desc, cs.id
   `);
   return (

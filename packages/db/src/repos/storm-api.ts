@@ -54,12 +54,18 @@ const SELECT = sql`
   left join agent_tasks t on t.company_id = cs.company_id and t.id = cs.plan_task_id
 `;
 
+/*
+ * Merged storms (storms.merged_into set by the hail merge) are hidden from company reads BEFORE a plan exists
+ * (plan_task_id is null). Once a plan exists the row stays visible so the owner keeps seeing and approving it.
+ */
+const NOT_HIDDEN_MERGED = sql`and (s.merged_into is null or cs.plan_task_id is not null)`;
+
 /** The company's storms that are not dismissed, newest first. `since` keeps only storms first matched at or after it. */
 export async function listCompanyStorms(tx: Tx, ctx: TenantContext, opts: { since?: Date } = {}): Promise<StormSummaryRow[]> {
   const since = opts.since === undefined ? sql`` : sql`and cs.created_at >= ${opts.since.toISOString()}::timestamptz`;
   const rows = await tx.execute<RawSummary>(sql`
     ${SELECT}
-    where cs.company_id = ${ctx.companyId}::uuid and cs.status <> 'dismissed' ${since}
+    where cs.company_id = ${ctx.companyId}::uuid and cs.status <> 'dismissed' ${NOT_HIDDEN_MERGED} ${since}
     order by s.convective_day desc, cs.created_at desc, cs.id
   `);
   return rows.rows.map(toSummary);
@@ -69,7 +75,7 @@ export async function listCompanyStorms(tx: Tx, ctx: TenantContext, opts: { sinc
 export async function getCompanyStormSummary(tx: Tx, ctx: TenantContext, id: string): Promise<StormSummaryRow | null> {
   const rows = await tx.execute<RawSummary>(sql`
     ${SELECT}
-    where cs.company_id = ${ctx.companyId}::uuid and cs.id = ${id}::uuid
+    where cs.company_id = ${ctx.companyId}::uuid and cs.id = ${id}::uuid ${NOT_HIDDEN_MERGED}
   `);
   const row = rows.rows[0];
   return row ? toSummary(row) : null;
