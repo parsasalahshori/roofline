@@ -305,7 +305,7 @@ const FORM_BODY = 'name=Jane+Doe&phone=%28402%29+555-0950&address=1200+Farnam+St
 
 describe('the landing code rule', () => {
   test.each(['bad-code', 'abc12345', 'abcd23456', 'abcd234', 'k7m2p9qa'])('a malformed code %s is a 404 as JSON and not a page', async (code) => {
-    const res = await post(code, FORM, { origin: ACME_ORIGIN });
+    const res = await post(code, FORM);
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: MESSAGES.notFound });
