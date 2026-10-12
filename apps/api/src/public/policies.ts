@@ -1,6 +1,7 @@
 import { companyForPolicyPage } from '@roofline/db/system';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import type { AppDeps } from '../app.ts';
+import { publicPageRateLimit } from '../rate-limit.ts';
 import { notFoundHtml, privacyPolicyHtml, termsHtml } from './policy-text.ts';
 
 /** Slugs are lowercase letters, digits and hyphens. Anything else cannot be a company, so no lookup. */
@@ -42,6 +43,7 @@ function hostSlug(
  */
 export function policyPages(deps: AppDeps): Router {
   const router = Router();
+  const limit = publicPageRateLimit('policy-pages');
   const domain = deps.config.POLICY_PAGES_DOMAIN;
   const appHosts = new Set(
     [deps.config.PUBLIC_BASE_URL, deps.config.APP_ORIGIN]
@@ -82,16 +84,24 @@ export function policyPages(deps: AppDeps): Router {
     }
   }
 
+  /** Runs `serve` once the per-IP limit lets the request through; only a request that is a policy page counts. */
+  function limited(req: Request, res: Response, next: NextFunction, serve: () => void): void {
+    limit(req, res, (err?: unknown) => {
+      if (err !== undefined) next(err);
+      else serve();
+    });
+  }
+
   router.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       next();
       return;
     }
-
     const companyHost = hostSlug(req, domain, appHosts);
     if (companyHost !== null) {
       if (req.path === '/privacy' || req.path === '/terms') {
-        void servePage(res, next, companyHost, req.path === '/privacy' ? 'privacy' : 'terms');
+        const page = req.path === '/privacy' ? 'privacy' : 'terms';
+        limited(req, res, next, () => void servePage(res, next, companyHost, page));
       } else if (req.path === '/') {
         res.redirect(302, '/privacy');
       } else {
@@ -103,7 +113,7 @@ export function policyPages(deps: AppDeps): Router {
     const match = PATH_FORM.exec(req.path);
     if (match) {
       const [, rawSlug, page] = match;
-      void servePage(res, next, (rawSlug ?? '').toLowerCase(), page === 'privacy' ? 'privacy' : 'terms');
+      limited(req, res, next, () => void servePage(res, next, (rawSlug ?? '').toLowerCase(), page === 'privacy' ? 'privacy' : 'terms'));
       return;
     }
 

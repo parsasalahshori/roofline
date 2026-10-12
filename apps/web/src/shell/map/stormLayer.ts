@@ -17,12 +17,13 @@ export const HAIL_LEVEL_COLORS: readonly [string, string, string, string, string
 export const HAIL_LEVEL_SIZES_IN: readonly [number, number, number, number, number] = [0.75, 1.25, 1.75, 2.5, 3];
 
 /**
- * MapLibre fill-colour expression for a swath feature, matching `['get','thresholdIn']`:
- * 0.75 and 1 are hail-1, 1.25 and 1.5 hail-2, 1.75 and 2 hail-3, 2.5 hail-4, 3 hail-5; anything else hail-1.
+ * MapLibre fill-colour expression for a swath feature, stepping on `['get','thresholdIn']`: below 1.25 (0.75, 1)
+ * is hail-1, 1.25 and 1.5 hail-2, 1.75 and 2 hail-3, 2.5 hail-4, 3 and above hail-5. A `step`, not a `match`:
+ * MapLibre refuses a `match` with decimal labels, which left every swath undrawn.
  */
 export function hailFillExpression(): unknown[] {
   const [c1, c2, c3, c4, c5] = HAIL_LEVEL_COLORS;
-  return ['match', ['get', 'thresholdIn'], [0.75, 1], c1, [1.25, 1.5], c2, [1.75, 2], c3, [2.5], c4, [3], c5, c1];
+  return ['step', ['get', 'thresholdIn'], c1, 1.25, c2, 1.75, c3, 2.5, c4, 3, c5];
 }
 
 function emptyCollection(): FeatureCollection {

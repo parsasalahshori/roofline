@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { applyCallStatus, findCallBySid, frontDeskCallSettings, insertCall, screeningFacts } from '../src/repos/calls.ts';
 import { createPools } from '../src/pools.ts';
-import { blockedNumbers, companyPhoneNumbers, companySettings, customers, memberships } from '../src/schema/index.ts';
+import { blockedNumbers, companies, companyPhoneNumbers, companySettings, customers, memberships } from '../src/schema/index.ts';
 import { onCallMembers, teamDialNumbers, voiceRouteForNumber } from '../src/system/voice-routing.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
 import { type TenantContext, withTenant } from '../src/tenant.ts';
@@ -42,8 +42,17 @@ describe('voiceRouteForNumber', () => {
     const route = await voiceRouteForNumber(system, '+14025550100');
     expect(route?.companyId).toBe(seed.a.companyId);
     expect(route?.companyName).toBe(seed.a.name);
+    expect(route?.readOnly).toBe(false);
     expect(await voiceRouteForNumber(system, '+14025550101')).toBeNull();
     expect(await voiceRouteForNumber(system, '+14025550102')).toBeNull();
+  });
+
+  test('voiceRouteForNumber says when the company is read-only (Ruling BG)', async () => {
+    await system.insert(companyPhoneNumbers).values({ companyId: seed.a.companyId, e164: '+14025550100', capabilities: ['voice'] });
+    for (const [status, readOnly] of [['trial_ended', true], ['canceled', true], ['past_due', false], ['active', false]] as const) {
+      await system.update(companies).set({ status }).where(eq(companies.id, seed.a.companyId));
+      expect((await voiceRouteForNumber(system, '+14025550100'))?.readOnly, status).toBe(readOnly);
+    }
   });
 
   test('voiceRouteForNumber never returns another company', async () => {

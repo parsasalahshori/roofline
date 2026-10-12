@@ -1,6 +1,7 @@
 import { Banner, Button } from '@roofline/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { ApiError } from '../../../api/client.ts';
 import { forwarding } from '../../../copy/forwarding.ts';
 import { useForwardingTest, useStartForwardingTest } from './forwarding-api.ts';
 import styles from './ForwardingTest.module.css';
@@ -46,6 +47,12 @@ export function ForwardingTest() {
   }
 
   const retry = outcome === 'not_received' || outcome === 'failed';
+  // A refused start (no business number, too many tests today, ...) says why in a plain sentence; anything else is the generic line
+  const startError = start.error;
+  const failedSentence =
+    startError instanceof ApiError && startError.status >= 400 && startError.status < 500 && startError.message.trim() !== ''
+      ? startError.message
+      : copy.failed;
 
   return (
     <div className={styles.wrap}>
@@ -56,7 +63,7 @@ export function ForwardingTest() {
         {outcome === 'calling' ? <Banner tone="info">{copy.calling}</Banner> : null}
         {outcome === 'verified' ? <Banner tone="info">{copy.verified}</Banner> : null}
         {outcome === 'not_received' ? <Banner tone="warning">{copy.notReceived}</Banner> : null}
-        {outcome === 'failed' ? <Banner tone="danger">{copy.failed}</Banner> : null}
+        {outcome === 'failed' ? <Banner tone="danger">{failedSentence}</Banner> : null}
       </div>
     </div>
   );

@@ -17,6 +17,17 @@ export const STT_PROVIDER = 'Deepgram';
 export const VOICEMAIL_XML =
   '<Response><Say>Please leave a message after the tone.</Say><Record maxLength="120" playBeep="true"/><Hangup/></Response>';
 export const DIAL_TIMEOUT_SECONDS = 20;
+/** Answer for a replayed or already-finished call: no relay token is minted. */
+export const HANGUP_XML = '<Response><Hangup/></Response>';
+
+/** A Twilio CallSid: CA plus 32 lowercase hex characters. */
+export const CALL_SID = /^CA[0-9a-f]{32}$/;
+
+/** The request's CallSid when it has the Twilio shape, else null. */
+export function validCallSid(req: Request): string | null {
+  const value = field(req, 'CallSid');
+  return value !== undefined && CALL_SID.test(value) ? value : null;
+}
 
 /** Placeholder ElevenLabs voice ids until the owner picks the real voices (owner to-do). */
 export const FRONT_DESK_VOICE_IDS: Record<FrontDeskVoiceId, string> = {
@@ -39,7 +50,8 @@ export function relayConnectXml(
 ): string {
   const voice = escapeXml(voiceIdFor(route.frontDeskVoice));
   const token = mintRelayToken(deps.config.RELAY_TOKEN_SECRET, { callId, companyId: route.companyId }, deps.clock.now());
-  const url = `${deps.config.RELAY_PUBLIC_URL}?t=${encodeURIComponent(token)}`;
+  // The company rides in the URL so the relay can check the token's MAC before any database read.
+  const url = `${deps.config.RELAY_PUBLIC_URL}?t=${encodeURIComponent(token)}&c=${encodeURIComponent(callId)}&o=${encodeURIComponent(route.companyId)}`;
   const mode = o.messageOnly ? '<Parameter name="mode" value="message_only"/>' : '';
   return (
     `<Response><Connect action="${escapeXml(o.action)}"><ConversationRelay url="${escapeXml(url)}" ` +
@@ -49,8 +61,16 @@ export function relayConnectXml(
   );
 }
 
-/** Steps shared by every voice hook: route `To` -> company (404, empty body), then the signature (403). Returns the route or null (response already sent). */
+/**
+ * Steps shared by every voice hook: a request with no X-Twilio-Signature header is refused (403) before
+ * any lookup (Ruling BF, as hooks/twilio-registration.ts); then route `To` -> company (404, empty body),
+ * then the signature (403). Returns the route or null (response already sent).
+ */
 export async function routeVoice(deps: AppDeps, req: Request, res: Response): Promise<VoiceRoute | null> {
+  if (!req.get('X-Twilio-Signature')) {
+    res.status(403).end();
+    return null;
+  }
   const to = field(req, 'To');
   const route = to !== undefined && E164.test(to) ? await voiceRouteForNumber(deps.pools.system, to) : null;
   if (route === null) {
@@ -62,6 +82,19 @@ export async function routeVoice(deps: AppDeps, req: Request, res: Response): Pr
   const ctx = systemCtx(route.companyId);
   const settings = await withTenant(deps.pools, ctx, (tx) => frontDeskCallSettings(tx, ctx));
   return { ...route, ...settings };
+}
+
+/**
+ * Whether a call may go to the AI at all, before the per-company cap (no database needed): Front Desk on, not
+ * read-only (Ruling BG), under the process-wide relay cap, and the model healthy.
+ */
+export function aiAllowedNow(deps: AppDeps, route: VoiceRoute, now: Date): boolean {
+  return (
+    route.frontDeskEnabled &&
+    !route.readOnly &&
+    deps.relaySessions.size < deps.config.FRONT_DESK_MAX_CALLS &&
+    deps.relaySessions.isLlmHealthy(now)
+  );
 }
 
 /** TwiML out: 200 text/xml with the XML declaration. */

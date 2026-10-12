@@ -11,7 +11,7 @@ import { isRecordingObjection, type RecordingHandle } from './recording.ts';
  * relay-server.ts (package C). Logs carry the call id and company id only: never transcript text,
  * phone numbers or tokens.
  */
-export type RelayCall = { callId: string; companyId: string; callSid: string; from: string; to: string; messageOnly: boolean };
+export type RelayCall = { callId: string; companyId: string; callSid: string; from: string; to: string; messageOnly: boolean; /** True when calls.recording_status is 'stopped_by_caller' (a second relay session on the same call). Seeds state.transcriptOff. */ recordingStopped?: boolean };
 
 export type RelayLoop = {
   /** Resolves when the in-flight turn (if any) has been drained and saved. */
@@ -41,14 +41,14 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
 
   const endForm = (kind: 'transfer' | 'end'): 'transfer' | 'end' => (call.messageOnly ? 'end' : kind);
 
-  function sendEnd(handoffData: Record<string, string>): void {
+  function sendEnd(handoffData: Record<string, string | boolean>): void {
     if (ended) return;
     ended = true;
     session.send({ type: 'end', handoffData: JSON.stringify(handoffData) });
   }
 
-  function transfer(reason: string, summary: string): void {
-    if (endForm('transfer') === 'transfer') sendEnd({ kind: 'transfer', reason, summary });
+  function transfer(reason: string, summary: string, urgent: boolean): void {
+    if (endForm('transfer') === 'transfer') sendEnd({ kind: 'transfer', reason, summary, urgent });
     else sendEnd({ kind: 'end', reason });
   }
 
@@ -75,7 +75,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
         } else if (ev.type === 'handoff') {
           if (ended) continue;
           finishedByEnd = true;
-          transfer(ev.reason, ev.summary);
+          transfer(ev.reason, ev.summary, ev.urgent);
         } else if (ev.type === 'end') {
           if (ended) continue;
           finishedByEnd = true;
@@ -86,7 +86,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
     } catch (e) {
       if (isAbort(e) || ac.signal.aborted) return;
       console.error(`relay turn failed call=${call.callId} company=${call.companyId}`);
-      transfer('asked', '');
+      transfer('asked', '', state?.urgentNoticeSent === true);
     }
   }
 
@@ -136,6 +136,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
           callId: call.callId,
           companyNumber: call.to,
         });
+        if (call.recordingStopped === true && state) state.transcriptOff = true;
         return;
       }
       case 'prompt': {
@@ -159,7 +160,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
       case 'dtmf': {
         if (m.digit !== '0' || ended) return;
         abortCurrent();
-        transfer('asked', '');
+        transfer('asked', '', state?.urgentNoticeSent === true);
         return;
       }
       case 'error':

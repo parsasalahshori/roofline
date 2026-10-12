@@ -1,5 +1,6 @@
-import { and, eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { and, eq, sql } from 'drizzle-orm';
+import pg from 'pg';
+import { beforeEach, describe, expect, inject, test } from 'vitest';
 import {
   activities,
   agentTasks,
@@ -10,14 +11,20 @@ import {
   conversationTurns,
   customers,
   encrypt,
+  findCallConversationId,
   lineLookups,
+  listConversationInbox,
   messages,
   textingRegistrations,
   type ToolCallRecord,
   usageEvents,
 } from '@roofline/db';
 import { CONVERSATION_OUTCOMES, type ConversationOutcome } from '@roofline/shared';
+import { createEngine } from '../../src/front-desk/engine.ts';
+import { FRONT_DESK_HANDLERS } from '../../src/front-desk/tools/index.ts';
 import { pickOutcome, runAfterCall } from '../../src/front-desk/after-call.ts';
+import { dispatchDueMessages } from '../../src/jobs/scheduler/dispatch-messages.ts';
+import { fdHealth } from '../../src/jobs/scheduler/fd-health.ts';
 import { maybeTextBack, type TextBackInput, type TextBackResult } from '../../src/front-desk/text-back.ts';
 import { ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import { inCompany } from '../crm-helpers.ts';
@@ -290,6 +297,131 @@ describe('runAfterCall', () => {
   });
 });
 
+describe('calls linked to conversations, finished calls only', () => {
+  const convCount = () => inCompany(t, idA(), async (tx) => (await tx.select().from(conversations)).length);
+
+  test('a voice call through engine.start, a booking tool, then after-call', async () => {
+    const s = await seedCall({ withConversation: false, aiSeconds: 90, status: 'ended' });
+    const engine = createEngine(t.deps, FRONT_DESK_HANDLERS);
+    const first = await engine.start({ companyId: idA(), channel: 'voice', phone: OTHER_CALLER, callId: s.callId, companyNumber: A_NUMBER });
+    const linked = await inCompany(t, idA(), (tx) => findCallConversationId(tx, tenantCtx(), s.callId));
+    expect(linked).toBe(first.conversationId);
+    expect((await callOf(s.callId)).conversationId).toBe(first.conversationId);
+    const before = await convCount();
+    const second = await engine.start({ companyId: idA(), channel: 'voice', phone: OTHER_CALLER, callId: s.callId, companyNumber: A_NUMBER });
+    expect(second.conversationId).toBe(first.conversationId);
+    expect(await convCount()).toBe(before);
+
+    await inCompany(t, idA(), async (tx) => {
+      await tx.insert(conversationTurns).values({
+        companyId: idA(),
+        conversationId: first.conversationId,
+        callId: s.callId,
+        position: 0,
+        speaker: 'assistant',
+        text: 'Booked.',
+        toolCalls: [BOOKING],
+      });
+    });
+    await run(s);
+    const conv = await conversationOf(first.conversationId);
+    expect(conv.status).toBe('ended');
+    expect(conv.outcome).toBe('booked');
+    expect(conv.summary).not.toBeNull();
+  });
+
+  test('a transferred call with no conversation gets outcome transferred', async () => {
+    const s = await seedCall({ withConversation: false, status: 'transferred', aiSeconds: 30 });
+    await run(s);
+    expect((await callOf(s.callId)).status).toBe('transferred');
+    expect(summarizeCalls()).toHaveLength(0);
+    expect(t.sms.sent).toHaveLength(0);
+    expect(await usageRows()).toHaveLength(1);
+    expect(await convCount()).toBe(0);
+  });
+
+  test('the model-failure marker is written: a failing summary falls back to plain text', async () => {
+    const s = await seedCall({ aiSeconds: 90, turns: [CALLER_WORDS], toolCalls: [BOOKING] });
+    (t.deps.llm as unknown as { summarize: () => Promise<never> }).summarize = () => Promise.reject(new Error('model down'));
+    await run(s);
+    expect(await inCompany(t, idA(), (tx) => findCallConversationId(tx, tenantCtx(), s.callId))).toBe(s.conversationId);
+    const conv = await conversationOf(s.conversationId!);
+    expect(conv.summary).toBe('The caller booked an inspection.');
+    expect(conv.outcome).toBe('booked');
+  });
+
+  test('after-call mid-transfer does nothing', async () => {
+    const s = await seedCall({ status: 'ringing', aiSeconds: 60, turns: [CALLER_WORDS], transcriptStored: true });
+    await inCompany(t, idA(), (tx) => tx.update(calls).set({ status: 'ringing_team' }).where(eq(calls.id, s.callId)));
+    await run(s);
+    expect(await usageRows()).toHaveLength(0);
+    expect(await outboundRows()).toHaveLength(0);
+    expect(t.sms.sent).toHaveLength(0);
+    expect(summarizeCalls()).toHaveLength(0);
+    expect((await conversationOf(s.conversationId!)).summary).toBeNull();
+  });
+
+  test('a terminal run records one ai_call_minute event for the total, even run twice', async () => {
+    const s = await seedCall({ aiSeconds: 125, turns: [CALLER_WORDS] });
+    await run(s);
+    await run(s);
+    const rows = await usageRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ quantity: Math.ceil(125 / 60), refId: s.callId });
+  });
+});
+
+describe('final review CV#5 and CV#3: late minutes and swept calls', () => {
+  const setCall = (id: string, patch: Partial<typeof calls.$inferInsert>) =>
+    inCompany(t, idA(), (tx) => tx.update(calls).set(patch).where(eq(calls.id, id)));
+
+  test('a later run with more AI seconds raises the minutes until the row is in a meter batch', async () => {
+    const s = await seedCall({ aiSeconds: 125, turns: [CALLER_WORDS] });
+    await run(s);
+    expect((await usageRows())[0]).toMatchObject({ quantity: 3 });
+    // A slow second relay segment adds its seconds after the terminal job ran; the relay close queues after-call again.
+    await setCall(s.callId, { aiSeconds: 250 });
+    await run(s);
+    let rows = await usageRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ quantity: 5 });
+    expect((await callOf(s.callId)).billedMinutes).toBe(5);
+    // A smaller total never lowers it.
+    await setCall(s.callId, { aiSeconds: 60 });
+    await run(s);
+    expect((await usageRows())[0]).toMatchObject({ quantity: 5 });
+    // Once batched for Stripe, the row and the call's billed minutes stay as they are.
+    await inCompany(t, idA(), (tx) =>
+      tx.update(usageEvents).set({ meterBatchId: '00000000-0000-4000-8000-000000000001' }).where(eq(usageEvents.kind, 'ai_call_minute')),
+    );
+    await setCall(s.callId, { aiSeconds: 600 });
+    await run(s);
+    rows = await usageRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ quantity: 5 });
+    expect((await callOf(s.callId)).billedMinutes).toBe(5);
+  });
+
+  test('a call the fd-health sweep ended never gets a text-back; the same call ended normally does', async () => {
+    const longAgo = new Date(t.clock.now().getTime() - 5 * 60 * 60_000);
+    const swept = await seedCall({ from: MOBILE, withConversation: false, status: 'ringing', startedAt: longAgo, endedAt: null });
+    await fdHealth(t.deps, t.clock.now());
+    expect((await callOf(swept.callId)).status).toBe('ended');
+    const queued = t.jobs.sent.filter((j) => j.name === 'fd-after-call');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({ data: { companyId: idA(), callSid: swept.callSid, swept: true } });
+    await t.jobs.drain(t.deps);
+    expect(t.jobs.errors).toEqual([]);
+    expect(t.sms.sent).toHaveLength(0);
+    expect(await outboundRows()).toHaveLength(0);
+    expect((await callOf(swept.callId)).textBackMessageId).toBeNull();
+
+    const normal = await seedCall({ from: MOBILE_TWO, withConversation: false, status: 'ended', startedAt: longAgo });
+    await run(normal);
+    expect(t.sms.sent).toHaveLength(1);
+  });
+});
+
 describe('pickOutcome', () => {
   test('outcome precedence: actions win over the model', () => {
     const order: [string, ConversationOutcome][] = [
@@ -397,6 +529,76 @@ describe('missed-call text-back through the gate', () => {
     expect(await outboundRows()).toHaveLength(0);
   });
 
+  test('two text-backs at once for one new number: one customer, one text (the second waits, then sees the first)', async () => {
+    const one = await seedCall({ from: MOBILE, withConversation: false });
+    const two = await seedCall({ from: MOBILE, withConversation: false });
+    const input = (s: Seeded): TextBackInput => ({
+      callId: s.callId,
+      callSid: s.callSid,
+      fromE164: MOBILE,
+      toE164: A_NUMBER,
+      conversationId: null,
+      customerId: null,
+      status: 'completed',
+      callerTurns: 0,
+      secondsInCall: 5,
+      spam: false,
+    });
+    // Hold the number's lock (the one customer saves take) so both jobs line up behind it.
+    const holder = new pg.Client({ connectionString: inject('dbUrls').owner });
+    await holder.connect();
+    let waiting = 0;
+    let results: TextBackResult[];
+    try {
+      await holder.query('begin');
+      await holder.query(`select pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2::text, 0))`, [idA(), MOBILE]);
+      const both = Promise.all([maybeTextBack(t.deps, tenantCtx(), input(one)), maybeTextBack(t.deps, tenantCtx(), input(two))]);
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const { rows } = await holder.query<{ n: number }>("select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted");
+        waiting = rows[0]!.n;
+        if (waiting >= 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await holder.query('commit');
+      results = await both;
+    } finally {
+      await holder.end();
+    }
+    expect(waiting).toBe(2);
+    expect([...results].sort()).toEqual(['sent', 'skipped']);
+    const made = await inCompany(t, idA(), (tx) =>
+      tx.select().from(customers).where(sql`${customers.phones} @> ${JSON.stringify([{ e164: MOBILE }])}::jsonb`),
+    );
+    expect(made).toHaveLength(1);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(await outboundRows()).toHaveLength(1);
+  });
+
+  test('a known customer calling from their second number is texted back on that number', async () => {
+    const [cust] = await inCompany(t, idA(), (tx) =>
+      tx
+        .insert(customers)
+        .values({
+          companyId: idA(),
+          displayName: 'Nina Customer',
+          firstName: 'Nina',
+          phones: [
+            { e164: MOBILE_TWO, label: 'mobile', primary: true },
+            { e164: MOBILE, label: 'mobile' },
+          ],
+        })
+        .returning({ id: customers.id }),
+    );
+    const { result } = await textBack(MOBILE, { customerId: cust!.id });
+    expect(result).toBe('sent');
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: MOBILE });
+    const out = await outboundRows();
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ customerId: cust!.id, toE164: MOBILE });
+  });
+
   test('during quiet hours the text waits: scheduled, not sent', async () => {
     t.clock.set(QUIET_NIGHT);
     const { result } = await textBack(MOBILE);
@@ -405,6 +607,57 @@ describe('missed-call text-back through the gate', () => {
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ status: 'scheduled', purpose: 'informational' });
     expect(t.sms.sent).toHaveLength(0);
+  });
+
+  /** Nina, whose primary number is MOBILE_TWO, misses a call from her second number MOBILE at 02:00. */
+  async function quietTextBackToSecondNumber() {
+    const [cust] = await inCompany(t, idA(), (tx) =>
+      tx
+        .insert(customers)
+        .values({
+          companyId: idA(),
+          displayName: 'Nina Customer',
+          firstName: 'Nina',
+          smsConsentStatus: 'express',
+          smsConsentSource: 'call',
+          phones: [
+            { e164: MOBILE_TWO, label: 'mobile', primary: true },
+            { e164: MOBILE, label: 'mobile' },
+          ],
+        })
+        .returning({ id: customers.id }),
+    );
+    t.clock.set(QUIET_NIGHT);
+    const { result } = await textBack(MOBILE, { customerId: cust!.id });
+    expect(result).toBe('scheduled');
+    const [row] = await outboundRows();
+    expect(row).toMatchObject({ status: 'scheduled', customerId: cust!.id, toE164: MOBILE });
+    expect(row!.scheduledFor).not.toBeNull();
+    return { customerId: cust!.id, dueAt: new Date(row!.scheduledFor!.getTime() + 60_000) };
+  }
+
+  test('a quiet-hours text-back to the second number goes to that number when dispatched in the morning', async () => {
+    const { dueAt } = await quietTextBackToSecondNumber();
+    t.clock.set(dueAt);
+    expect(await dispatchDueMessages(t.deps, t.clock.now())).toMatchObject({ sent: 1 });
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: MOBILE });
+    expect((await outboundRows())[0]).toMatchObject({ status: 'sent', toE164: MOBILE });
+  });
+
+  test('if that number left the customer overnight, the morning dispatch falls back to the primary number', async () => {
+    const { customerId, dueAt } = await quietTextBackToSecondNumber();
+    await inCompany(t, idA(), (tx) =>
+      tx
+        .update(customers)
+        .set({ phones: [{ e164: MOBILE_TWO, label: 'mobile', primary: true }] })
+        .where(eq(customers.id, customerId)),
+    );
+    t.clock.set(dueAt);
+    expect(await dispatchDueMessages(t.deps, t.clock.now())).toMatchObject({ sent: 1 });
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: MOBILE_TWO });
+    expect((await outboundRows())[0]).toMatchObject({ status: 'sent', toE164: MOBILE_TWO });
   });
 });
 
@@ -433,5 +686,127 @@ describe('line lookup cache', () => {
     expect(t.lineLookup.lookups.filter((n) => n === OTHER_CALLER)).toHaveLength(2);
     const rows = await t.deps.pools.system.select().from(lineLookups).where(eq(lineLookups.e164, OTHER_CALLER));
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('SMS conversation after-call', () => {
+  /** An SMS thread whose last message was `hoursAgo` hours before the test clock (idle by default). */
+  async function seedSms(o: { hoursAgo?: number; status?: 'active' | 'ended' } = {}): Promise<{ conversationId: string; customerId: string }> {
+    const lastMessageAt = new Date(t.clock.now().getTime() - (o.hoursAgo ?? 25) * 3600_000);
+    return inCompany(t, idA(), async (tx) => {
+      const [c] = await tx
+        .insert(customers)
+        .values({ companyId: idA(), displayName: 'Sam Texter', firstName: 'Sam', phones: [{ e164: OTHER_CALLER, label: 'mobile', primary: true }] })
+        .returning({ id: customers.id });
+      const [conv] = await tx
+        .insert(conversations)
+        .values({ companyId: idA(), channel: 'sms', customerId: c!.id, phoneE164: OTHER_CALLER, companyNumberE164: A_NUMBER, status: o.status ?? 'active', lastMessageAt })
+        .returning({ id: conversations.id });
+      const lines: [string, string][] = [['caller', CALLER_WORDS], ['assistant', 'Thanks, we will look at it.']];
+      for (let i = 0; i < lines.length; i += 1) {
+        await tx.insert(conversationTurns).values({
+          companyId: idA(),
+          conversationId: conv!.id,
+          position: i,
+          speaker: lines[i]![0] as 'caller' | 'assistant',
+          text: lines[i]![1],
+        });
+      }
+      return { conversationId: conv!.id, customerId: c!.id };
+    });
+  }
+  const textActivities = () => inCompany(t, idA(), (tx) => tx.select().from(activities).where(eq(activities.kind, 'text_conversation')));
+  const anyUsage = () => inCompany(t, idA(), (tx) => tx.select().from(usageEvents));
+
+  test('summarizes, ends the conversation, logs one activity, and is idempotent', async () => {
+    const s = await seedSms();
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    const conv = await conversationOf(s.conversationId);
+    expect(conv.status).toBe('ended');
+    expect(conv.summary).toBe(SUMMARY);
+    expect((summarizeCalls()[0]!.request as { transcript: string }).transcript).toContain(CALLER_WORDS);
+    const acts = await textActivities();
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toMatchObject({ subjectId: s.customerId });
+    expect(await anyUsage()).toHaveLength(0);
+    expect(await outboundRows()).toHaveLength(0);
+    expect(t.sms.sent).toHaveLength(0);
+
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    expect(await textActivities()).toHaveLength(1);
+    expect(summarizeCalls()).toHaveLength(1);
+  });
+
+  test('a team reply that moves lastMessageAt while the summary runs leaves the thread active (RC-2 #4)', async () => {
+    const s = await seedSms();
+    const realSummarize = llm.summarize.bind(llm);
+    (llm as unknown as { summarize: unknown }).summarize = async (input: Parameters<ScriptedLlm['summarize']>[0]) => {
+      await inCompany(t, idA(), (tx) => tx.update(conversations).set({ lastMessageAt: t.clock.now() }).where(eq(conversations.id, s.conversationId)));
+      return realSummarize(input);
+    };
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    const conv = await conversationOf(s.conversationId);
+    expect(conv.status).toBe('active');
+    expect(conv.summary).toBeNull();
+    expect(await textActivities()).toHaveLength(0);
+  });
+
+  test('a thread that is no longer idle when the job starts is not summarised (RC-2 #4)', async () => {
+    const s = await seedSms({ hoursAgo: 1 });
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    expect(summarizeCalls()).toHaveLength(0);
+    const conv = await conversationOf(s.conversationId);
+    expect(conv.status).toBe('active');
+    expect(conv.summary).toBeNull();
+  });
+
+  test('a thread already ended by the 24 h gap is summarised and logged, and stays ended (RC-2 #5)', async () => {
+    const s = await seedSms({ status: 'ended', hoursAgo: 30 });
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    const conv = await conversationOf(s.conversationId);
+    expect(conv.status).toBe('ended');
+    expect(conv.summary).toBe(SUMMARY);
+    expect(await textActivities()).toHaveLength(1);
+  });
+
+  test('a spam-ended thread is never summarised (RC-2 #5)', async () => {
+    const s = await seedSms({ status: 'ended', hoursAgo: 30 });
+    await inCompany(t, idA(), (tx) => tx.update(conversations).set({ outcome: 'spam' }).where(eq(conversations.id, s.conversationId)));
+    await runAfterCall(t.deps, { companyId: idA(), conversationId: s.conversationId });
+    expect(summarizeCalls()).toHaveLength(0);
+    expect((await conversationOf(s.conversationId)).summary).toBeNull();
+  });
+});
+
+describe('voice needs attention', () => {
+  test('a booked call leaves the conversation unread and listed under needs_attention', async () => {
+    const s = await seedCall({ aiSeconds: 90, transcriptStored: true, turns: [CALLER_WORDS], toolCalls: [BOOKING] });
+    await run(s);
+    const conv = await conversationOf(s.conversationId!);
+    expect(conv.unreadCount).toBeGreaterThanOrEqual(1);
+    const page = await inCompany(t, idA(), (tx) =>
+      listConversationInbox(tx, tenantCtx(), { onCall: true }, { filter: 'needs_attention', cursor: null }),
+    );
+    const item = page.items.find((i) => i.id === s.conversationId);
+    expect(item).toBeDefined();
+    expect(item!.needsAttention).toBe(true);
+  });
+
+  test('an other-outcome call stays read', async () => {
+    (llm as unknown as { summarize: unknown }).summarize = async () => ({ summary: SUMMARY, outcome: 'other', followUps: [] });
+    const s = await seedCall({ aiSeconds: 30, transcriptStored: true, turns: [CALLER_WORDS] });
+    await run(s);
+    const conv = await conversationOf(s.conversationId!);
+    expect(conv.outcome).toBe('other');
+    expect(conv.unreadCount).toBe(0);
+  });
+
+  test('an unanswered router-route transfer (no tool call) that ends in message mode with no message is unread (RC-2 #2)', async () => {
+    (llm as unknown as { summarize: unknown }).summarize = async () => ({ summary: SUMMARY, outcome: 'other', followUps: [] });
+    const s = await seedCall({ aiSeconds: 30, transcriptStored: true, turns: [CALLER_WORDS] });
+    await inCompany(t, idA(), (tx) => tx.update(calls).set({ transferResult: 'no_answer' }).where(eq(calls.id, s.callId)));
+    await run(s);
+    const conv = await conversationOf(s.conversationId!);
+    expect(conv.unreadCount).toBe(1);
   });
 });

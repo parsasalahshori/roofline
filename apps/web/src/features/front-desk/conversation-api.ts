@@ -1,6 +1,7 @@
-import type { ConversationDetail, HandlingInput, RecordingLink, ReplyInput } from '@roofline/shared';
+import type { ConversationDetail, HandlingInput, ReplyInput, ReplyResult } from '@roofline/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api/client.ts';
+import { IDLE_POLL_MS, LIVE_POLL_MS } from './inbox-api.ts';
 
 /** Query key for one conversation. Local to this file (keys.ts is not ours). */
 export const conversationKey = (id: string) => ['front-desk', 'conversation', id] as const;
@@ -18,11 +19,24 @@ export function invalidateInbox(queryClient: QueryClient) {
   ]);
 }
 
-/** GET /api/conversations/:id. */
+/** A call still in progress: the open conversation is polled faster while one is. */
+const LIVE_CALL_STATUSES: ReadonlySet<string> = new Set(['ringing', 'ai', 'ringing_team']);
+
+/** The `refetchInterval` for an open conversation: LIVE_POLL_MS while one of its calls is live, else IDLE_POLL_MS (as the inbox). */
+export function conversationPollInterval(conversation: ConversationDetail | undefined): number {
+  return conversation?.calls.some((call) => LIVE_CALL_STATUSES.has(call.status)) ? LIVE_POLL_MS : IDLE_POLL_MS;
+}
+
+/**
+ * GET /api/conversations/:id. Asked for again like the inbox (5 s while a call is live, else 30 s), so
+ * new texts and replies show up without a reload. Background polling is off.
+ */
 export function useConversation(id: string) {
   return useQuery({
     queryKey: conversationKey(id),
     queryFn: ({ signal }) => apiFetch<ConversationDetail>(`/api/conversations/${id}`, { signal }),
+    refetchInterval: (query) => conversationPollInterval(query.state.data),
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -35,11 +49,14 @@ export function useMarkRead(id: string) {
   });
 }
 
-/** POST /api/conversations/:id/reply {body}. A send-gate error is an ApiError whose message is a plain sentence. */
+/**
+ * POST /api/conversations/:id/reply {body}: `ReplyResult` when it was sent or scheduled. A reply the
+ * send gate blocked, or that could not be sent, is an ApiError (422) whose message is a plain sentence.
+ */
 export function useSendReply(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: ReplyInput) => apiFetch<unknown>(`/api/conversations/${id}/reply`, { method: 'POST', body: input }),
+    mutationFn: (input: ReplyInput) => apiFetch<ReplyResult>(`/api/conversations/${id}/reply`, { method: 'POST', body: input }),
     onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: conversationKey(id) }), invalidateInbox(queryClient)]),
   });
 }
@@ -60,12 +77,5 @@ export function useMarkSpam(conversationId: string) {
     mutationFn: (callId: string) => apiFetch<unknown>(`/api/calls/${callId}/spam`, { method: 'POST', body: {} }),
     onSuccess: () => invalidateInbox(queryClient),
     meta: { conversationId },
-  });
-}
-
-/** GET /api/calls/:id/recording: call `mutateAsync(callId)` only when the person presses play. Never a query. */
-export function useRecordingLink() {
-  return useMutation({
-    mutationFn: (callId: string) => apiFetch<RecordingLink>(`/api/calls/${callId}/recording`),
   });
 }

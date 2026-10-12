@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { DEFAULT_WORK_HOURS } from '@roofline/shared';
 import type { ConversationChannel, ConversationOutcome, HandledBy, IdentityLevel, WorkHours } from '@roofline/shared';
 import { companies, companyPhoneNumbers, companySettings, conversations } from '../schema/index.ts';
@@ -10,6 +10,8 @@ export type NewConversation = {
   companyNumberE164: string;
   customerId?: string | null;
   identity?: IdentityLevel;
+  /** The app clock's now (deps.clock), so durations measured from it agree with the code's clock. */
+  now?: Date;
 };
 
 /** What the assistant may say about the company: profile plus the Front Desk settings. */
@@ -37,6 +39,7 @@ export async function insertConversation(tx: Tx, ctx: TenantContext, c: NewConve
       companyNumberE164: c.companyNumberE164,
       customerId: c.customerId ?? null,
       identity: c.identity ?? 'unknown',
+      ...(c.now !== undefined && { createdAt: c.now, updatedAt: c.now, lastMessageAt: c.now }),
     })
     .returning({ id: conversations.id });
   return { id: row!.id };
@@ -96,6 +99,8 @@ export async function updateConversation(
     outcome?: ConversationOutcome;
     summary?: string;
     lastMessageAt?: Date;
+    /** Raises the unread count to at least this number (never lowers it). */
+    unreadAtLeast?: number;
   },
 ): Promise<void> {
   const set: Partial<typeof conversations.$inferInsert> = {};
@@ -106,6 +111,7 @@ export async function updateConversation(
   if (patch.outcome !== undefined) set.outcome = patch.outcome;
   if (patch.summary !== undefined) set.summary = patch.summary;
   if (patch.lastMessageAt !== undefined) set.lastMessageAt = patch.lastMessageAt;
+  if (patch.unreadAtLeast !== undefined) set.unreadCount = sql`greatest(${conversations.unreadCount}, ${patch.unreadAtLeast})` as unknown as number;
   if (Object.keys(set).length === 0) return;
   set.updatedAt = sql`now()` as unknown as Date;
   await tx
@@ -124,5 +130,48 @@ export async function getConversation(
     .select()
     .from(conversations)
     .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.id, id)));
+  return row ?? null;
+}
+
+/**
+ * Ids of this company's SMS conversations that need their after-call summary, oldest first: active ones
+ * whose last message is older than `before`. With `endedSince`, also threads already ended by the 24 h
+ * gap of a new inbound text (status ended, no summary yet, last message older than `before` and newer
+ * than `endedSince`), but never a spam-ended one (RC-2 #5).
+ */
+export async function listIdleSmsConversationIds(tx: Tx, ctx: TenantContext, before: Date, limit: number, endedSince?: Date): Promise<string[]> {
+  const idleActive = eq(conversations.status, 'active');
+  const endedUnsummarised =
+    endedSince === undefined
+      ? undefined
+      : and(
+          eq(conversations.status, 'ended'),
+          isNull(conversations.summary),
+          gte(conversations.lastMessageAt, endedSince),
+          or(isNull(conversations.outcome), ne(conversations.outcome, 'spam')),
+        );
+  const rows = await tx
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.companyId, ctx.companyId),
+        eq(conversations.channel, 'sms'),
+        endedUnsummarised === undefined ? idleActive : or(idleActive, endedUnsummarised),
+        lt(conversations.lastMessageAt, before),
+      ),
+    )
+    .orderBy(asc(conversations.lastMessageAt), asc(conversations.id))
+    .limit(limit);
+  return rows.map((r) => r.id);
+}
+
+/** The conversation, locked FOR UPDATE until the transaction ends; null when it is not this company's. */
+export async function lockConversation(tx: Tx, ctx: TenantContext, id: string): Promise<typeof conversations.$inferSelect | null> {
+  const [row] = await tx
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.id, id)))
+    .for('update');
   return row ?? null;
 }

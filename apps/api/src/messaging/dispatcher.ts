@@ -170,6 +170,9 @@ async function decideAgain(
       bodyRendered: true,
       dedupeKey: row.dedupeKey,
       replyToInboundAt: null,
+      // Keep the number the text was meant for (a text-back to the line that called); the gate keeps it
+      // only while it is still one of the customer's numbers.
+      toE164: row.toE164,
     },
     at,
   );

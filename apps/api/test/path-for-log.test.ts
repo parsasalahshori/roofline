@@ -13,3 +13,15 @@ describe('pathForLog', () => {
     expect(pathForLog('/proposals/p1/pdf')).toBe('/proposals/p1/pdf');
   });
 });
+
+describe('pathForLog, unsubscribe links', () => {
+  test('an unsubscribe token never reaches the log', () => {
+    expect(pathForLog('/u/eyJjb21wYW55Ijoi.c2lnbmF0dXJl')).toBe('/u/:token');
+    expect(pathForLog('/U/abc.def')).toBe('/U/:token');
+  });
+
+  test('only the /u/ route is scrubbed', () => {
+    expect(pathForLog('/api/u/abc')).toBe('/api/u/abc');
+    expect(pathForLog('/users/abc')).toBe('/users/abc');
+  });
+});

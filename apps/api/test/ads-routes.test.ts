@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import type { SetupView } from '@roofline/shared';
 import {
+  AD_ACCOUNT_TAKEN,
   AD_ERROR_MESSAGES,
   ALREADY_LINKED,
   BAD_GOOGLE_ID,
@@ -226,4 +227,56 @@ test('another company cannot see or touch an account', async () => {
   expect(del.status).toBe(404);
   const bad = await ownerB.delete('/api/ads/accounts/not-a-uuid');
   expect(bad.status).toBe(404);
+});
+
+const calls = (): number => t.adsGoogle.calls.length + t.adsMeta.calls.length;
+
+test("one company's ad account cannot be connected by another company (Ruling BF)", async () => {
+  const ownerA = await loginAs(t.app, t.seed.a.owner);
+  const ownerB = await loginAs(t.app, t.seed.b.owner);
+  const googleB = await linkGoogle(ownerB, '1234567890');
+  t.adsGoogle.accept('1234567890');
+  const checkedB = await ownerB.post(`/api/ads/accounts/${googleB.id}/check`);
+  expect(checkedB.body.account.status).toBe('active');
+  const metaB = await ownerB.post('/api/ads/accounts/meta').send({ adAccountId: '555666777' });
+  expect(metaB.status).toBe(201);
+  t.adsMeta.share('act_555666777');
+  expect((await ownerB.post(`/api/ads/accounts/${metaB.body.account.id}/check`)).body.account.status).toBe('active');
+  const beforeB = (await ownerB.get('/api/ads/accounts')).body.accounts;
+  const callsBefore = calls();
+
+  const google = await ownerA.post('/api/ads/accounts/google').send({ customerId: '123-456-7890' });
+  expect(google.status).toBe(409);
+  expect(google.body).toEqual({ error: AD_ACCOUNT_TAKEN });
+  const meta = await ownerA.post('/api/ads/accounts/meta').send({ adAccountId: 'act_555666777' });
+  expect(meta.status).toBe(409);
+  expect(meta.body).toEqual({ error: AD_ACCOUNT_TAKEN });
+
+  // The platforms were never called, A stored nothing, and B's rows did not change.
+  expect(calls()).toBe(callsBefore);
+  expect((await ownerA.get('/api/ads/accounts')).body.accounts).toEqual([]);
+  expect((await ownerB.get('/api/ads/accounts')).body.accounts).toEqual(beforeB);
+  expect(JSON.stringify([google.body, meta.body])).not.toContain('Fake');
+});
+
+test("a company's delete never unlinks an account another company holds, and a revoke frees it", async () => {
+  const ownerA = await loginAs(t.app, t.seed.a.owner);
+  const ownerB = await loginAs(t.app, t.seed.b.owner);
+  const googleB = await linkGoogle(ownerB, '1234567890');
+  t.adsGoogle.accept('1234567890');
+  expect((await ownerA.post('/api/ads/accounts/google').send({ customerId: '1234567890' })).status).toBe(409);
+  // A has no row for it, so A's delete is a 404 and the manager link stays.
+  expect((await ownerA.delete(`/api/ads/accounts/${googleB.id}`)).status).toBe(404);
+  expect(t.adsGoogle.calls.filter((c) => c.method === 'unlink')).toHaveLength(0);
+  expect(await t.adsGoogle.linkStatus('1234567890')).toBe('active');
+
+  // After B revokes (the link is cut once, for B), A can connect.
+  expect((await ownerB.delete(`/api/ads/accounts/${googleB.id}`)).status).toBe(200);
+  expect(t.adsGoogle.calls.filter((c) => c.method === 'unlink')).toHaveLength(1);
+  const now = await ownerA.post('/api/ads/accounts/google').send({ customerId: '1234567890' });
+  expect(now.status).toBe(201);
+  expect(now.body.account.status).toBe('pending');
+  expect(t.adsGoogle.calls.filter((c) => c.method === 'invite' && c.args[0] === '1234567890')).toHaveLength(2);
+  // And the freed account is now A's: B cannot take it back.
+  expect((await ownerB.post('/api/ads/accounts/google').send({ customerId: '1234567890' })).status).toBe(409);
 });

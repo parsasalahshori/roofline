@@ -2,7 +2,7 @@ import pg from 'pg';
 import { normalizeAddressKey } from '@roofline/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { upsertCompanyStorm } from '../src/repos/company-storms.ts';
-import { countStormRequestsSince, createStormRequest, type StormRequestInput } from '../src/repos/storm-requests.ts';
+import { confirmFormConsentByYes, countStormRequestsSince, createStormRequest, type StormRequestInput } from '../src/repos/storm-requests.ts';
 import { ensureStormPage } from '../src/repos/storm-pages.ts';
 import { createPools, type Pools } from '../src/pools.ts';
 import { type TenantContext, type Tx, withTenant } from '../src/tenant.ts';
@@ -190,21 +190,92 @@ describe('createStormRequest', () => {
     expect(request!.consent_at).toBeNull();
   });
 
-  test('okToText true records express consent from the web form with the exact consent text as evidence', async () => {
+  test('okToText true records the ask and the consent text on the request, but the new customer stays at none (Ruling BF)', async () => {
     const { pageId } = await pageFor(seed.a, '2026-05-01');
     await create(seed.a, requestInput(pageId, { okToText: true }));
 
     const [customer] = await rowsOf(seed.a.companyId, 'customers');
-    expect(customer!.sms_consent_status).toBe('express');
-    expect(customer!.sms_consent_source).toBe('web_form');
-    expect(customer!.sms_consent_at).not.toBeNull();
-    expect((customer!.sms_consent_evidence as { consentText: string }).consentText).toBe(CONSENT);
-    expect((customer!.sms_consent_evidence as { source: string }).source).toBe('web_form');
+    expect(customer!.sms_consent_status).toBe('none');
+    expect(customer!.sms_consent_source).toBeNull();
+    expect(customer!.sms_consent_at).toBeNull();
+    expect(customer!.sms_consent_evidence).toBeNull();
+    expect(await q("select 1 from audit_log where company_id = $1 and action like 'customer.consent%'", [seed.a.companyId])).toHaveLength(0);
 
     const [request] = await rowsOf(seed.a.companyId, 'storm_requests');
     expect(request!.sms_consent).toBe(true);
     expect(request!.consent_text).toBe(CONSENT);
     expect(request!.consent_at).not.toBeNull();
+  });
+
+  test('an existing customer at none stays at none when the box is ticked', async () => {
+    await q(
+      `insert into customers (company_id, display_name, phones, source, sms_consent_status)
+       values ($1, 'Pat Existing', $2::jsonb, 'manual', 'none')`,
+      [seed.a.companyId, JSON.stringify([{ e164: PHONE, primary: true }])],
+    );
+    const { pageId } = await pageFor(seed.a, '2026-05-01');
+    await create(seed.a, requestInput(pageId, { okToText: true }));
+
+    const [customer] = await rowsOf(seed.a.companyId, 'customers');
+    expect(customer!.sms_consent_status).toBe('none');
+    expect(customer!.sms_consent_evidence).toBeNull();
+  });
+
+  describe('a YES from the phone (confirmFormConsentByYes)', () => {
+    const confirm = (company: SeededCompany, customerIds: string[], messageId: string, at: Date, phoneE164 = PHONE) =>
+      asCompany(company, (tx) => confirmFormConsentByYes(tx, ctxOf(company), { phoneE164, customerIds, messageId }, at));
+
+    async function asked(okToText = true) {
+      const { pageId } = await pageFor(seed.a, '2026-05-01');
+      const result = await create(seed.a, requestInput(pageId, { okToText }));
+      if (result.status !== 'created') throw new Error('expected a created request');
+      return result;
+    }
+
+    test('within 14 days makes the customer express from web_form, with the request and reply as evidence, and audits it', async () => {
+      const created = await asked();
+      const at = new Date(NOW.getTime() + 13 * 24 * 60 * 60 * 1000);
+      const changed = await confirm(seed.a, [created.customerId], '11111111-1111-4111-8111-111111111111', at);
+
+      expect(changed).toEqual([created.customerId]);
+      const [customer] = await rowsOf(seed.a.companyId, 'customers');
+      expect(customer).toMatchObject({ sms_consent_status: 'express', sms_consent_source: 'web_form' });
+      expect(customer!.sms_consent_evidence).toMatchObject({
+        source: 'web_form',
+        stormRequestId: created.requestId,
+        consentText: CONSENT,
+        replyMessageId: '11111111-1111-4111-8111-111111111111',
+      });
+      expect(await q("select 1 from audit_log where company_id = $1 and action = 'customer.consent_confirmed'", [seed.a.companyId])).toHaveLength(1);
+    });
+
+    test('after 14 days or from another number, nothing changes', async () => {
+      const created = await asked();
+      expect(await confirm(seed.a, [created.customerId], '11111111-1111-4111-8111-111111111111', new Date(NOW.getTime() + 15 * 24 * 60 * 60 * 1000))).toEqual([]);
+      expect(await confirm(seed.a, [created.customerId], '11111111-1111-4111-8111-111111111111', NOW, '+14025550199')).toEqual([]);
+      const [customer] = await rowsOf(seed.a.companyId, 'customers');
+      expect(customer!.sms_consent_status).toBe('none');
+    });
+
+    test('a request that did not ask to be texted changes nothing', async () => {
+      const unasked = await asked(false);
+      expect(await confirm(seed.a, [unasked.customerId], '11111111-1111-4111-8111-111111111111', NOW)).toEqual([]);
+    });
+
+    test('revoked, do-not-contact and opted-out numbers are never changed', async () => {
+      const created = await asked();
+      await q("update customers set do_not_contact = true where id = $1", [created.customerId]);
+      expect(await confirm(seed.a, [created.customerId], '11111111-1111-4111-8111-111111111111', NOW)).toEqual([]);
+
+      await q("update customers set do_not_contact = false, sms_consent_status = 'revoked' where id = $1", [created.customerId]);
+      expect(await confirm(seed.a, [created.customerId], '11111111-1111-4111-8111-111111111111', NOW)).toEqual([]);
+
+      await q("update customers set sms_consent_status = 'none' where id = $1", [created.customerId]);
+      await q("insert into opt_outs (company_id, phone_e164, keyword, at) values ($1, $2, 'STOP', $3)", [seed.a.companyId, PHONE, NOW]);
+      expect(await confirm(seed.a, [created.customerId], '11111111-1111-4111-8111-111111111111', NOW)).toEqual([]);
+      const [customer] = await rowsOf(seed.a.companyId, 'customers');
+      expect(customer!.sms_consent_status).toBe('none');
+    });
   });
 
   test('the same phone on the same page is a duplicate with no second job', async () => {

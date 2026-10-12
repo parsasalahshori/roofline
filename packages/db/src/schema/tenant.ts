@@ -628,6 +628,12 @@ export const messages = pgTable(
       .where(sql`${t.stepId} is not null`),
     index('messages_customer_idx').on(t.companyId, t.customerId, t.createdAt),
     index('messages_dedupe_idx').on(t.companyId, t.dedupeKey),
+    /** The inbox detail reads a conversation's texts in time order. */
+    index('messages_company_conversation_created_idx').on(t.companyId, t.conversationId, t.createdAt),
+    /** A Front Desk text is recorded once per dedupe key (`fd-text:`, `fd-book:`, `fd-textback:`, `fd-reply:`): a race inserts once. */
+    uniqueIndex('messages_fd_dedupe_uniq')
+      .on(t.companyId, t.dedupeKey)
+      .where(sql`${t.dedupeKey} like 'fd-%'`),
     index('messages_status_scheduled_idx').on(t.status, t.scheduledFor),
     index('messages_provider_sid_idx').on(t.providerMessageSid),
     /** A provider delivers an inbound text once per SID: a repeat for the same company is a duplicate. */
@@ -1455,6 +1461,10 @@ export const adAccounts = pgTable(
   (t) => [
     unique('ad_accounts_company_id_id_uniq').on(t.companyId, t.id),
     unique('ad_accounts_company_platform_uniq').on(t.companyId, t.platform),
+    // Ruling BF: an external ad account belongs to one company. Global, so it sees every company's rows; a revoked row frees it.
+    uniqueIndex('ad_accounts_platform_external_live_uq')
+      .on(t.platform, t.externalAccountId)
+      .where(sql`${t.status} <> 'revoked'`),
     enumCheck('ad_accounts', 'platform', t.platform, AD_PLATFORMS),
     enumCheck('ad_accounts', 'status', t.status, AD_ACCOUNT_STATUSES),
   ],
@@ -1733,6 +1743,7 @@ export const conversations = pgTable(
       foreignColumns: [customers.companyId, customers.id],
     }),
     index('conversations_company_last_message_idx').on(t.companyId, t.lastMessageAt.desc()),
+    index('conversations_company_customer_idx').on(t.companyId, t.customerId),
     /** One open SMS thread per company number and contact. */
     uniqueIndex('conversations_active_sms_uniq')
       .on(t.companyId, t.phoneE164)
@@ -1787,6 +1798,7 @@ export const calls = pgTable(
       foreignColumns: [messages.companyId, messages.id],
     }),
     index('calls_company_started_idx').on(t.companyId, t.startedAt),
+    index('calls_company_conversation_idx').on(t.companyId, t.conversationId),
     enumCheck('calls', 'status', t.status, CALL_STATUSES),
     enumCheck('calls', 'recording_status', t.recordingStatus, RECORDING_STATUSES),
     enumCheck('calls', 'consent_regime', t.consentRegime, CONSENT_REGIMES),

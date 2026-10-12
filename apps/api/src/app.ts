@@ -215,6 +215,7 @@ function contentSecurityPolicy(nodeEnv: Config['NODE_ENV']) {
       imgSrc: ["'self'", 'data:', 'blob:', ...MAP_HOSTS],
       connectSrc: ["'self'", ...MAP_HOSTS, 'https://accounts.google.com/gsi/'],
       fontSrc: ["'self'", 'data:'],
+      mediaSrc: ["'self'"],
       workerSrc: ["'self'", 'blob:'],
       childSrc: ['blob:'],
       // Google sign-in loads its script, frame, styles and calls from accounts.google.com/gsi.

@@ -40,6 +40,7 @@ function ActionCard({ card }: { card: ToolActionCard }) {
 
 function TurnBody({ turn, transcriptStored }: { turn: TurnView; transcriptStored: boolean }) {
   if (turn.text !== null) return <p className={styles.text}>{turn.text}</p>;
+  if (turn.noWords === true) return <p className={styles.note}>{conversationCopy.noWords}</p>;
   return (
     <p className={styles.note}>
       {transcriptStored ? conversationCopy.transcriptRemoved : conversationCopy.transcriptNotKept}
@@ -47,18 +48,17 @@ function TurnBody({ turn, transcriptStored }: { turn: TurnView; transcriptStored
   );
 }
 
-/**
- * Whether the call behind this turn kept its transcript. A TurnView carries no call id, so a turn cannot be tied to
- * one call: with a single call that call decides, and with several any call that kept nothing makes the line say so.
- */
-function turnTranscriptStored(_turn: TurnView, calls: CallView[]): boolean {
-  if (calls.length === 1) return calls[0]!.transcriptStored;
-  return calls.every((call) => call.transcriptStored);
+/** Whether the call behind this turn kept its transcript. A text turn (no call) is judged by its own text. */
+function turnTranscriptStored(turn: TurnView, calls: CallView[]): boolean {
+  if (turn.callId === null) return true;
+  const call = calls.find((c) => c.id === turn.callId);
+  return call ? call.transcriptStored : true;
 }
 
 export function ConversationView({ conversation }: { conversation: ConversationDetail }) {
   const headingId = useId();
-  const turns = [...conversation.turns].sort((a, b) => a.position - b.position);
+  // Time order; turns spoken at one instant keep their position order. A text's own line has position 0.
+  const turns = [...conversation.turns].sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.position - b.position);
 
   return (
     <article className={styles.view}>

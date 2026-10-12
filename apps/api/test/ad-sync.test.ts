@@ -13,7 +13,9 @@ import { dbSteps, newTask } from './task-helpers.ts';
  */
 
 const NOW = new Date('2026-10-12T15:00:00Z');
+// One external account belongs to one company (Ruling BF), so company b links its own customer id.
 const ACCOUNT = '1234567890';
+const accountOf = (company: 'a' | 'b'): string => (company === 'a' ? ACCOUNT : '9876543210');
 const MAX = 27000;
 
 let owner: pg.Pool;
@@ -34,8 +36,8 @@ beforeEach(async () => {
 
 type Seeded = { companyId: string; companyStormId: string; rowId: string; campaignId: string };
 
-const adCreate = (nameTag: string): AdCreate => ({
-  accountId: ACCOUNT,
+const adCreate = (nameTag: string, accountId: string = ACCOUNT): AdCreate => ({
+  accountId,
   nameTag,
   dailyBudgetCents: 3857,
   startDate: '2026-10-12',
@@ -76,9 +78,9 @@ async function seed(
   const stepId = (await dbSteps(t, company, taskId))[0]!.id;
   await owner.query(
     `insert into ad_accounts (company_id, platform, external_account_id, status, currency) values ($1, 'google', $2, $3, 'USD')`,
-    [companyId, ACCOUNT, opts.accountStatus ?? 'active'],
+    [companyId, accountOf(company), opts.accountStatus ?? 'active'],
   );
-  const { campaignId } = await t.adsGoogle.createCampaign(adCreate(`Roofline storm ${companyStormId} google`));
+  const { campaignId } = await t.adsGoogle.createCampaign(adCreate(`Roofline storm ${companyStormId} google`, accountOf(company)));
   const rows = await q(
     `insert into ad_campaigns (company_id, company_storm_id, step_id, platform, external_campaign_id, status,
                                daily_budget_cents, days, max_spend_cents, creative)

@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
+import userEvent from '@testing-library/user-event';
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
@@ -65,14 +66,16 @@ const FRONT_DESK_SETTINGS = {
   onCall: [],
 };
 
-function signedInAs(role: RoleName) {
+function signedInAs(role: RoleName, frontDesk: Partial<typeof FRONT_DESK_SETTINGS> | Record<string, unknown> = {}) {
+  const settingsBody = { ...FRONT_DESK_SETTINGS, ...frontDesk };
   api = stubApi({
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role } }),
     'GET /api/company': () => ({ body: COMPANY_BODY }),
     'GET /api/team': () => ({ body: { members: [], invites: [] } }),
     'GET /api/setup': () => ({ body: SETUP_VIEW }),
-    'GET /api/front-desk/settings': () => ({ body: FRONT_DESK_SETTINGS }),
+    'GET /api/front-desk/settings': () => ({ body: settingsBody }),
+    'PUT /api/front-desk/settings': ({ body }) => ({ body: { ...settingsBody, ...(body as object) } }),
     'GET /api/front-desk/voices': () => ({ body: [{ id: 'maya', label: 'Maya', previewUrl: null }] }),
     'GET /api/texting': () => ({ body: TEXTING_VIEW }),
     'GET /api/me/transfer-phone': () => ({ body: { e164: null, prefill: null, recordingAcknowledgedAt: null } }),
@@ -118,6 +121,72 @@ describe('Front Desk tab', () => {
 
     await waitFor(() => expect(where(router)).toBe('/settings/company'));
     expect(screen.queryByText(frontDeskSettings.onOff.label)).not.toBeInTheDocument();
+  });
+});
+
+describe('Front Desk on/off switch', () => {
+  const onOff = () => screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
+  const saveButton = () => screen.getByRole('button', { name: frontDeskSettings.save });
+  const PUT = 'PUT /api/front-desk/settings';
+
+  it('can always be turned off, even while forwarding is not verified', async () => {
+    signedInAs('office', { enabled: true, blockedReason: 'forwarding_not_verified' });
+    renderApp('/settings/front-desk');
+    const user = userEvent.setup();
+
+    const toggle = await onOff();
+    expect(toggle).toBeEnabled();
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await user.click(saveButton());
+    await waitFor(() => expect(api.sent(PUT)).toHaveLength(1));
+    expect(api.sent(PUT)[0]).toMatchObject({ enabled: false });
+    expect(api.sent(PUT)[0]).not.toHaveProperty('override');
+  });
+
+  it('lets the owner turn it on before forwarding is verified after a confirm, sending override', async () => {
+    signedInAs('owner', { enabled: false, blockedReason: 'forwarding_not_verified' });
+    renderApp('/settings/front-desk');
+    const user = userEvent.setup();
+
+    const toggle = await onOff();
+    await waitFor(() => expect(toggle).toBeEnabled());
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(frontDeskSettings.onOff.overrideConfirm)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: frontDeskSettings.onOff.overrideYes }));
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await user.click(saveButton());
+    await waitFor(() => expect(api.sent(PUT)).toHaveLength(1));
+    expect(api.sent(PUT)[0]).toMatchObject({ enabled: true, override: true });
+  });
+
+  it('the owner can cancel the confirm and nothing changes', async () => {
+    signedInAs('owner', { enabled: false, blockedReason: 'forwarding_not_verified' });
+    renderApp('/settings/front-desk');
+    const user = userEvent.setup();
+
+    const toggle = await onOff();
+    await waitFor(() => expect(toggle).toBeEnabled());
+    await user.click(toggle);
+    await user.click(screen.getByRole('button', { name: frontDeskSettings.onOff.overrideNo }));
+    expect(screen.queryByText(frontDeskSettings.onOff.overrideConfirm)).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('stays locked off for office while forwarding is not verified', async () => {
+    signedInAs('office', { enabled: false, blockedReason: 'forwarding_not_verified' });
+    renderApp('/settings/front-desk');
+    expect(await onOff()).toBeDisabled();
+  });
+
+  it('stays locked off for the owner too without a business number', async () => {
+    signedInAs('owner', { enabled: false, blockedReason: 'no_number' });
+    renderApp('/settings/front-desk');
+    const toggle = await onOff();
+    // Wait until the role is known, so the check is not passing only because it is still loading
+    await waitFor(() => expect(api.count('GET /api/auth/me')).toBeGreaterThan(0));
+    expect(toggle).toBeDisabled();
   });
 });
 

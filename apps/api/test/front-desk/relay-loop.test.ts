@@ -43,7 +43,7 @@ async function rig(script: Script, over: Partial<RelayCall> = {}) {
     const ctx = { companyId: call.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
     return withTenant(t.deps.pools, ctx, (tx) => listTurns(tx, ctx, state!.conversationId));
   };
-  return { session, loop, rows, call };
+  return { session, loop, rows, call, getState: () => state };
 }
 
 const SAY = [{ when: /./, route: OPUS, answer: [{ kind: 'text' as const, text: 'We can help with that.' }] }];
@@ -63,6 +63,17 @@ describe('relay session loop', () => {
     expect(session.assistantText()).toContain('We can help with that.');
   });
 
+  test('seeds transcriptOff when the call recording was stopped by the caller', async () => {
+    const stopped = await rig(SAY, { recordingStopped: true });
+    stopped.session.caller.setup({ customParameters: { callId: CALL_ID } });
+    await stopped.loop.settled();
+    expect(stopped.getState()?.transcriptOff).toBe(true);
+    const normal = await rig(SAY);
+    normal.session.caller.setup({ customParameters: { callId: CALL_ID } });
+    await normal.loop.settled();
+    expect(normal.getState()?.transcriptOff).not.toBe(true);
+  });
+
   test('a partial prompt (last false) starts no turn', async () => {
     const { session, loop } = await rig(SAY);
     session.caller.setup({ customParameters: { callId: CALL_ID } });
@@ -80,6 +91,19 @@ describe('relay session loop', () => {
     expect(JSON.parse(session.endedWith!)).toMatchObject({ kind: 'transfer', reason: 'asked', summary: 'x' });
     expect(session.sent.at(-1)?.type).toBe('end');
     expect((await rows()).some((r) => r.speaker === 'assistant')).toBe(true);
+  });
+
+  test('an urgent handoff event sends handoffData with a real boolean urgent', async () => {
+    const { session, loop } = await rig([
+      { when: /./, route: { ...OPUS, route: 'transfer', intent: 'leak', urgent: true }, answer: [] },
+    ]);
+    session.caller.setup({ customParameters: { callId: CALL_ID } });
+    session.caller.say('help me now');
+    await loop.settled();
+    const data = JSON.parse(session.endedWith!);
+    expect(data).toMatchObject({ kind: 'transfer', urgent: true });
+    expect(typeof data.reason).toBe('string');
+    expect(typeof data.summary).toBe('string');
   });
 
   test('setup with a callId that differs from the call closes the session', async () => {
@@ -108,7 +132,7 @@ describe('relay session loop', () => {
     expect(session.endedWith).toBeNull();
     session.caller.dtmf('0');
     await loop.settled();
-    expect(JSON.parse(session.endedWith!)).toEqual({ kind: 'transfer', reason: 'asked', summary: '' });
+    expect(JSON.parse(session.endedWith!)).toEqual({ kind: 'transfer', reason: 'asked', summary: '', urgent: false });
     expect(loop.ended).toBe(true);
   });
 

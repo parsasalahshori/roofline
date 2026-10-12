@@ -9,6 +9,7 @@ import type {
 } from './enums.ts';
 import type { Pricebook, Scope, Calculation } from './pricing.ts';
 import type { BoardStage } from './pipeline.ts';
+import type { ConfirmedVia } from './front-desk.ts';
 import type {
   AppointmentKind,
   AppointmentStatus,
@@ -35,6 +36,8 @@ export type JobCard = {
   nextStep: string | null;
   nextStepOn: string | null;
   updatedAt: string;
+  /** Today follow-ups only: set by a Front Desk message ('urgent' sorts first); null or absent otherwise. */
+  frontDesk?: 'urgent' | 'message' | null;
 };
 
 export type BoardColumn = {
@@ -76,6 +79,9 @@ export type AppointmentView = {
   notes: string | null;
   source: AppointmentSource;
   sync: 'none' | 'synced' | 'pending' | 'failed';
+  /** When the customer (or a person) confirmed the visit, and how. Both null until confirmed. */
+  confirmedAt: string | null;
+  confirmedVia: ConfirmedVia | null;
   canEdit: boolean;
 };
 

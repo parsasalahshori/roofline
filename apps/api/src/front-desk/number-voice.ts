@@ -26,12 +26,14 @@ export type VoiceUrlResult = { set: number; failed: number };
 /**
  * Sets the voice URL and status callback on each number, one at a time. A failure on one number is
  * counted and logged with the company id only (never the number), and the others still run. `markSet`
- * runs after a successful set; a number whose set or mark throws stays unmarked and is retried later.
+ * runs after a successful set; a number whose set or mark throws stays unmarked and is retried later,
+ * after `markFailed` (when given) has moved it to the back of the queue.
  */
 export async function applyVoiceUrls(
   deps: AppDeps,
   rows: VoiceNumberRow[],
   markSet: (numberId: string) => Promise<void>,
+  markFailed?: (numberId: string) => Promise<void>,
 ): Promise<VoiceUrlResult> {
   const result: VoiceUrlResult = { set: 0, failed: 0 };
   const base = deps.config.PUBLIC_BASE_URL;
@@ -47,6 +49,11 @@ export async function applyVoiceUrls(
     } catch {
       result.failed++;
       console.error(`Front Desk: the voice URL was not set for company ${row.companyId}.`);
+      try {
+        await markFailed?.(row.numberId);
+      } catch {
+        // Only the queue order is lost; the number is still retried.
+      }
     }
   }
   return result;

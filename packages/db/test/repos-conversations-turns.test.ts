@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { createPools } from '../src/pools.ts';
-import { insertConversation, loadCompanyFacts, updateConversation } from '../src/repos/conversations.ts';
+import { insertConversation, listIdleSmsConversationIds, loadCompanyFacts, updateConversation } from '../src/repos/conversations.ts';
 import { insertTurn, listTurns, updateTurn } from '../src/repos/turns.ts';
 import { conversations, conversationTurns } from '../src/schema/index.ts';
 import { type TenantContext, withTenant } from '../src/tenant.ts';
@@ -64,6 +64,85 @@ describe('conversations repo', () => {
     const [row] = await withTenant(pools, ctxFor(seed.a), (tx) => tx.select().from(conversations));
     expect(row).toMatchObject({ outcome: 'booked', status: 'ended', summary: 'Booked an inspection', identity: 'unknown' });
     expect(row!.lastMessageAt.toISOString()).toBe(at.toISOString());
+  });
+
+  test('updateConversation unreadAtLeast raises the count and never lowers it', async () => {
+    const id = await newConversation(seed.a);
+    const ctx = ctxFor(seed.a);
+    const unread = async () => (await withTenant(pools, ctx, (tx) => tx.select().from(conversations)))[0]!.unreadCount;
+    await withTenant(pools, ctx, (tx) => updateConversation(tx, ctx, id, { unreadAtLeast: 1 }));
+    expect(await unread()).toBe(1);
+    await withTenant(pools, ctx, (tx) => tx.update(conversations).set({ unreadCount: 3 }));
+    await withTenant(pools, ctx, (tx) => updateConversation(tx, ctx, id, { unreadAtLeast: 1 }));
+    expect(await unread()).toBe(3);
+  });
+
+  test('listIdleSmsConversationIds filters channel, status and age, respects the limit, and stays in the company', async () => {
+    const ctx = ctxFor(seed.a);
+    const now = new Date('2026-10-12T15:00:00Z');
+    const mk = (channel: 'sms' | 'voice', status: 'active' | 'ended', hoursAgo: number, phone: string) =>
+      withTenant(pools, ctx, async (tx) => {
+        const [r] = await tx
+          .insert(conversations)
+          .values({
+            companyId: ctx.companyId,
+            channel,
+            status,
+            phoneE164: phone,
+            companyNumberE164: seed.a.phoneE164,
+            lastMessageAt: new Date(now.getTime() - hoursAgo * 3600_000),
+          })
+          .returning({ id: conversations.id });
+        return r!.id;
+      });
+    const oldest = await mk('sms', 'active', 50, '+14025550301');
+    const older = await mk('sms', 'active', 30, '+14025550302');
+    await mk('sms', 'active', 1, '+14025550303');
+    await mk('voice', 'active', 30, '+14025550304');
+    await mk('sms', 'ended', 30, '+14025550305');
+    const cb = ctxFor(seed.b);
+    await withTenant(pools, cb, (tx) =>
+      tx.insert(conversations).values({ companyId: cb.companyId, channel: 'sms', phoneE164: '+14025550306', companyNumberE164: seed.b.phoneE164, lastMessageAt: new Date(now.getTime() - 40 * 3600_000) }),
+    );
+    const before = new Date(now.getTime() - 24 * 3600_000);
+    expect(await withTenant(pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, 10))).toEqual([oldest, older]);
+    expect(await withTenant(pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, 1))).toEqual([oldest]);
+  });
+
+  test('listIdleSmsConversationIds with endedSince also lists unsummarised gap-ended threads in the lookback, never spam (RC-2 #5)', async () => {
+    const ctx = ctxFor(seed.a);
+    const now = new Date('2026-10-12T15:00:00Z');
+    const mk = (status: 'active' | 'ended', hoursAgo: number, phone: string, extra: { summary?: string; outcome?: 'spam' | 'other' } = {}) =>
+      withTenant(pools, ctx, async (tx) => {
+        const [r] = await tx
+          .insert(conversations)
+          .values({
+            companyId: ctx.companyId,
+            channel: 'sms',
+            status,
+            phoneE164: phone,
+            companyNumberE164: seed.a.phoneE164,
+            lastMessageAt: new Date(now.getTime() - hoursAgo * 3600_000),
+            ...extra,
+          })
+          .returning({ id: conversations.id });
+        return r!.id;
+      });
+    const gapEnded = await mk('ended', 40, '+14025550311');
+    const idle = await mk('active', 30, '+14025550312');
+    await mk('ended', 30, '+14025550313', { outcome: 'spam' });
+    await mk('ended', 30, '+14025550314', { summary: 'Done.' });
+    await mk('ended', 8 * 24, '+14025550315');
+    await mk('ended', 2, '+14025550316');
+    const gapEndedOtherOutcome = await mk('ended', 26, '+14025550317', { outcome: 'other' });
+    const before = new Date(now.getTime() - 24 * 3600_000);
+    const endedSince = new Date(now.getTime() - 7 * 24 * 3600_000);
+    expect(await withTenant(pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, 10, endedSince))).toEqual([
+      gapEnded,
+      idle,
+      gapEndedOtherOutcome,
+    ]);
+    expect(await withTenant(pools, ctx, (tx) => listIdleSmsConversationIds(tx, ctx, before, 10))).toEqual([idle]);
   });
 });
 

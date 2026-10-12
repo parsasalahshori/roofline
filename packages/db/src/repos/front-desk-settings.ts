@@ -1,6 +1,6 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { DEFAULT_FRONT_DESK_VOICE, type FrontDeskSettingsInput, type FrontDeskVoiceId } from '@roofline/shared';
-import { companyPhoneNumbers, companySettings } from '../schema/index.ts';
+import { companies, companyPhoneNumbers, companySettings } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
 /** The Front Desk columns of company_settings, plus what the settings screen needs to say why it is blocked. */
@@ -69,6 +69,7 @@ export async function saveFrontDeskSettings(
   tx: Tx,
   ctx: TenantContext,
   input: FrontDeskSettingsInput,
+  now: Date = new Date(),
 ): Promise<void> {
   const values = {
     frontDeskEnabled: input.enabled,
@@ -86,5 +87,27 @@ export async function saveFrontDeskSettings(
   await tx
     .insert(companySettings)
     .values({ companyId: ctx.companyId, ...values })
-    .onConflictDoUpdate({ target: companySettings.companyId, set: { ...values, updatedAt: new Date() } });
+    .onConflictDoUpdate({ target: companySettings.companyId, set: { ...values, updatedAt: now } });
+}
+
+/** Turns Front Desk off and leaves every other setting as it is (a read-only company may still do this). */
+export async function turnFrontDeskOff(tx: Tx, ctx: TenantContext, now: Date): Promise<void> {
+  await tx
+    .update(companySettings)
+    .set({ frontDeskEnabled: false, updatedAt: now })
+    .where(eq(companySettings.companyId, ctx.companyId));
+}
+
+/** Forgets the forwarding test result: the business phone changed, so the old proof no longer holds. */
+export async function clearForwardingVerified(tx: Tx, ctx: TenantContext, now: Date): Promise<void> {
+  await tx
+    .update(companySettings)
+    .set({ forwardingVerifiedAt: null, updatedAt: now })
+    .where(and(eq(companySettings.companyId, ctx.companyId), isNotNull(companySettings.forwardingVerifiedAt)));
+}
+
+/** True when the company's trial ended or its plan was canceled: Roofline is read-only and Front Desk does no AI work (Ruling BG). */
+export async function companyReadOnly(tx: Tx, ctx: TenantContext): Promise<boolean> {
+  const [row] = await tx.select({ status: companies.status }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
+  return row?.status === 'trial_ended' || row?.status === 'canceled';
 }

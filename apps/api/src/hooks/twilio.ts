@@ -3,11 +3,13 @@ import twilio from 'twilio';
 import {
   attachInboundToConversation,
   companyContact,
+  companyReadOnly,
   customersWithPhone,
   type DeliveryOutcome,
   flagPossibleOptOut,
   frontDeskTextsOn,
   insertInboundText,
+  isNumberBlocked,
   lockDeliverySid,
   lockRecipients,
   recordDeliveryOutcome,
@@ -21,7 +23,7 @@ import { companyIdForMessagingService, companyIdForNumber, signingTokenFor } fro
 import { type InboundReading, looksLikeOptOut, readInbound } from '@roofline/send-gate';
 import type { AppDeps } from '../app.ts';
 import { queueFrontDeskText } from '../front-desk/texts.ts';
-import { onStormReply } from '../storm/replies.ts';
+import { onStormFormYes, onStormReply } from '../storm/replies.ts';
 
 /*
  * Twilio's webhooks (spec 4.5, R24), mounted at /hooks/twilio ahead of the /api session gate:
@@ -195,13 +197,18 @@ const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: nu
 /**
  * Step 2 (the signature), for a request already routed to `companyId`: checked with that company's
  * token (else TWILIO_AUTH_TOKEN). Answers 403 itself and returns null; otherwise the company's id.
+ * A request with no signature (or an empty one) is refused before the token lookup, so it costs no query.
  */
 export async function checkSignature(deps: AppDeps, req: Request, res: Response, companyId: string): Promise<string | null> {
+  const signature = req.get('X-Twilio-Signature');
+  if (signature === undefined || signature === '') {
+    res.status(403).end();
+    return null;
+  }
   const { system } = deps.pools;
   const token = await signingTokenFor(system, companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
-  const signature = req.get('X-Twilio-Signature');
   const url = deps.config.PUBLIC_BASE_URL + req.originalUrl;
-  if (token === null || signature === undefined || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
+  if (token === null || !twilio.validateRequest(token, signature, url, req.body ?? {})) {
     res.status(403).end();
     return null;
   }
@@ -342,6 +349,7 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
         return twilioAnswered ? undefined : reply.start(company.name);
       case 'other': {
         if (looksLikeOptOut(text.body)) await flagPossibleOptOut(tx, ctx, active, messageId, now);
+        await onStormFormYes(tx, ctx, { id: messageId, phoneE164: text.from, customerIds: active, body: text.body }, now);
         {
           const storm = await onStormReply(tx, ctx, { id: messageId, customerId: active[0] ?? null, body: text.body }, now);
           if (storm.consumed) return undefined;
@@ -350,7 +358,13 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
         // consumed the message), then G1 claims, then Front Desk. G1 calls its hook HERE, before this one, and sets
         // `consumed` when it answers the message.
         const consumed = false;
-        if (!looksLikeOptOut(text.body) && (await frontDeskTextsOn(tx, ctx))) {
+        // A blocked number, or a read-only company (Ruling BG), gets no Front Desk work; the text is still stored above.
+        if (
+          !looksLikeOptOut(text.body) &&
+          (await frontDeskTextsOn(tx, ctx)) &&
+          !(await isNumberBlocked(tx, ctx, text.from)) &&
+          !(await companyReadOnly(tx, ctx))
+        ) {
           const conv = await attachInboundToConversation(
             tx,
             ctx,

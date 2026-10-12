@@ -9,6 +9,7 @@ export const conversationCopy = {
   transcriptEmpty: 'Nothing was said yet.',
   transcriptNotKept: "Transcript not kept at the caller's request",
   transcriptRemoved: 'Transcript removed after the retention period',
+  noWords: 'Photo or empty text',
   actionFailed: 'Did not work',
   openRecord: 'Open',
   linkCustomer: 'Open customer',
@@ -32,4 +33,5 @@ export const conversationCopy = {
   replySend: 'Send',
   replyPlaceholder: 'Write a text message',
   replyFailed: 'We could not send that text.',
+  replyScheduled: (when: string) => `Your text is scheduled. It will go out ${when}.`,
 } as const;

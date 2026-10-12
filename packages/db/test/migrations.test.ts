@@ -1084,6 +1084,24 @@ describe('S1 constraints', () => {
     expect(err.code).toBe('23505');
     await ownerQuery(insert('POINT(-96 42)'));
   });
+
+  test('ad_accounts: a live (platform, external_account_id) belongs to one company; a revoked row frees it (Ruling BF)', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into ad_accounts (company_id, platform, external_account_id, status) values ($1, $2, $3, $4)`;
+    await ownerQuery(insert, [s.b.companyId, 'google', '1234567890', 'pending']);
+    // Another company cannot hold the same account, in any live status.
+    for (const status of ['pending', 'active', 'error']) {
+      const err = await rejected(insert, [s.a.companyId, 'google', '1234567890', status]);
+      expect(err.code, status).toBe('23505');
+      expect(err.constraint, status).toBe('ad_accounts_platform_external_live_uq');
+    }
+    // The same id on the other platform, and another id on the same platform, are different accounts.
+    await ownerQuery(insert, [s.a.companyId, 'meta', '1234567890', 'pending']);
+    await ownerQuery(insert, [s.b.companyId, 'meta', 'act_77', 'active']);
+    // Once the holder revokes, the other company can connect.
+    await ownerQuery(`update ad_accounts set status = 'revoked' where company_id = $1 and platform = 'google'`, [s.b.companyId]);
+    await ownerQuery(insert, [s.a.companyId, 'google', '1234567890', 'pending']);
+  });
 });
 
 describe('A1 constraints', () => {
@@ -1431,6 +1449,31 @@ describe('D1 constraints', () => {
       [s.a.companyId],
     );
     await ownerQuery(sms, [s.b.companyId, 'active']);
+  });
+
+  test('review note 35: a Front Desk dedupe key is unique per company on messages; other keys and other companies are not limited', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into messages (company_id, channel, direction, purpose, body, status, dedupe_key)
+      values ($1, 'sms', 'out', 'informational', 'Hi', 'queued', $2)`;
+    await ownerQuery(insert, [s.a.companyId, 'fd-text:one']);
+    const err = await rejected(insert, [s.a.companyId, 'fd-text:one']);
+    expect(err.code).toBe('23505');
+    await ownerQuery(insert, [s.b.companyId, 'fd-text:one']);
+    await ownerQuery(insert, [s.a.companyId, 'other:one']);
+    await ownerQuery(insert, [s.a.companyId, 'other:one']);
+  });
+
+  test('review note 33: the inbox indexes exist', async () => {
+    const rows = await ownerQuery<{ indexname: string }>(
+      `select indexname from pg_indexes where schemaname = 'public' and indexname = any($1::text[]) order by 1`,
+      [['calls_company_conversation_idx', 'conversations_company_customer_idx', 'messages_company_conversation_created_idx', 'messages_fd_dedupe_uniq']],
+    );
+    expect(rows.map((r) => r.indexname)).toEqual([
+      'calls_company_conversation_idx',
+      'conversations_company_customer_idx',
+      'messages_company_conversation_created_idx',
+      'messages_fd_dedupe_uniq',
+    ]);
   });
 
   test('conversations.channel accepts only voice and sms', async () => {

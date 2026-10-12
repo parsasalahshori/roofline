@@ -9,7 +9,7 @@ import { conversationCopy } from '../src/copy/front-desk-conversation.ts';
 const AT = '2026-10-11T14:00:00.000Z';
 
 function turn(overrides: Partial<TurnView> & Pick<TurnView, 'id' | 'position' | 'speaker'>): TurnView {
-  return { text: 'Hello', truncated: false, at: AT, actions: [], ...overrides };
+  return { callId: null, text: 'Hello', truncated: false, at: AT, actions: [], ...overrides };
 }
 
 function makeConversation(overrides: Partial<ConversationDetail> = {}): ConversationDetail {
@@ -82,6 +82,26 @@ describe('ConversationView', () => {
     }
   });
 
+  it('lists a text line (position 0) among the turns in time order', () => {
+    renderView(
+      makeConversation({
+        channel: 'sms',
+        calls: [],
+        turns: [
+          turn({ id: 't2', position: 2, speaker: 'assistant', text: 'We can come Thursday', at: '2026-10-11T14:05:00.000Z' }),
+          turn({ id: 'm9', position: 0, speaker: 'team', text: 'This is Sam, see you then', at: '2026-10-11T14:10:00.000Z' }),
+          turn({ id: 'm8', position: 0, speaker: 'caller', text: 'Are you coming Thursday', at: '2026-10-11T14:00:00.000Z' }),
+        ],
+      }),
+    );
+    const lines = screen.getAllByRole('listitem').map((li) => li.textContent ?? '');
+    const order = ['Are you coming Thursday', 'We can come Thursday', 'This is Sam, see you then'].map((w) =>
+      lines.findIndex((l) => l.includes(w)),
+    );
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
   it('lists turns in position order', () => {
     renderView(
       makeConversation({
@@ -108,7 +128,7 @@ describe('ConversationView', () => {
     renderView(
       makeConversation({
         calls: makeConversation().calls.map((call) => ({ ...call, transcriptStored: false })),
-        turns: [turn({ id: 't1', position: 1, speaker: 'caller', text: null })],
+        turns: [turn({ id: 't1', callId: 'call1', position: 1, speaker: 'caller', text: null })],
       }),
     );
     expect(screen.getByText("Transcript not kept at the caller's request")).toBeInTheDocument();
@@ -121,11 +141,23 @@ describe('ConversationView', () => {
   it('says the transcript was removed after the retention period when it was stored', () => {
     renderView(
       makeConversation({
-        turns: [turn({ id: 't1', position: 1, speaker: 'caller', text: null })],
+        turns: [turn({ id: 't1', callId: 'call1', position: 1, speaker: 'caller', text: null })],
       }),
     );
     expect(screen.getByText('Transcript removed after the retention period')).toBeInTheDocument();
     expect(screen.queryByText(conversationCopy.transcriptNotKept)).toBeNull();
+  });
+
+  it('says a text had no words (a photo or an empty text) rather than that retention removed it', () => {
+    renderView(
+      makeConversation({
+        channel: 'sms',
+        calls: [],
+        turns: [turn({ id: 'm1', position: 0, speaker: 'caller', text: null, noWords: true })],
+      }),
+    );
+    expect(screen.getByText('Photo or empty text')).toBeInTheDocument();
+    expect(screen.queryByText(conversationCopy.transcriptRemoved)).toBeNull();
   });
 
   it('links each tool action card to its record, and shows a claim intake as plain text', () => {

@@ -65,6 +65,7 @@ export {
   getCustomer,
   listCustomers,
   type ListCustomersOptions,
+  lockCustomerPhone,
   setArchived,
   updateCustomer,
   type WriteOptions,
@@ -262,5 +263,6 @@ export * from './repos/fd-caller.ts';
 export * from './repos/fd-texts.ts';
 export * from './repos/fd-after-call.ts';
 export * from './repos/fd-text-back.ts';
+export * from './repos/fd-message.ts';
 export * from './repos/conversation-inbox.ts';
 export * from './repos/front-desk-stats.ts';

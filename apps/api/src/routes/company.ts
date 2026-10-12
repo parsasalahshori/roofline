@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   audit,
+  clearForwardingVerified,
   companies,
   companyLocationFacts,
   companySettings,
@@ -256,6 +257,8 @@ export function companyRoutes(deps: AppDeps): Router {
         .set({ ...set, updatedAt: now })
         .where(eq(companies.id, ctx.companyId));
       const after = await loadCompany(tx, ctx);
+      // The forwarding test proved the old business line forwards to Roofline; a new line must be tested again.
+      if (after.phone !== before.phone) await clearForwardingVerified(tx, ctx, now);
       await audit(tx, ctx, {
         action: 'company.update',
         targetType: 'company',
