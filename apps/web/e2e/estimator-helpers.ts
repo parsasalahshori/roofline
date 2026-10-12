@@ -8,13 +8,27 @@ import { readStack } from './fixtures.ts';
  */
 export const OMAHA_ADDRESS = '22074 Farnam St, Omaha, NE 68102';
 
+/** Real place names (a fixed offset is not accepted as a customer's zone), spread around the clock. */
+const PLACES = [
+  'Pacific/Honolulu', 'America/Anchorage', 'America/Los_Angeles', 'America/Denver', 'America/Chicago',
+  'America/New_York', 'America/Halifax', 'America/Sao_Paulo', 'Atlantic/Azores', 'Europe/London',
+  'Europe/Berlin', 'Europe/Athens', 'Europe/Moscow', 'Asia/Dubai', 'Asia/Karachi', 'Asia/Dhaka',
+  'Asia/Bangkok', 'Asia/Shanghai', 'Asia/Tokyo', 'Australia/Sydney', 'Pacific/Auckland',
+];
+
+/** A place where it is between 10:00 and 17:00 right now. */
+function daytimePlace(): string {
+  const hourIn = (zone: string) =>
+    Number(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
+  return PLACES.find((zone) => hourIn(zone) >= 10 && hourIn(zone) <= 17) ?? 'America/Chicago';
+}
+
 /**
  * The text gate holds a text outside 8:00 to 21:00 in the customer's zone, and CI runs at any hour. This puts the
- * company and its properties in a fixed-offset zone where it is now 13:00, so the proposal text goes out at once.
+ * company and its properties in a place where it is daytime now, so the proposal text goes out at once.
  */
 async function makeItDaytime(): Promise<void> {
-  const offset = ((13 - new Date().getUTCHours() + 36) % 24) - 12;
-  const zone = offset === 0 ? 'Etc/GMT' : offset > 0 ? `Etc/GMT-${offset}` : `Etc/GMT+${-offset}`;
+  const zone = daytimePlace();
   const client = new pg.Client({ connectionString: readStack().ownerUrl });
   await client.connect();
   try {
