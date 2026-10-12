@@ -59,9 +59,15 @@ export async function makeAndSendProposal(
   await expect(page.getByText(/Good \$[\d,]+ · Better \$[\d,]+ · Best \$[\d,]+/)).toBeVisible();
   await makeItDaytime();
   await click(page.getByRole('button', { name: /^Approve 1 step/ }));
-  await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, {
-    timeout: 20_000,
-  });
+  try {
+    await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, {
+      timeout: 20_000,
+    });
+  } catch (err) {
+    // Say what the review window showed, so a held or failed text is named in the CI log.
+    const shown = await page.getByRole('dialog').innerText().catch(() => '(no dialog)');
+    throw new Error(`The send step did not finish. The window said: ${shown.replace(/\s+/g, ' ')}`, { cause: err });
+  }
 
   // The same address the Copy link button writes to the clipboard.
   const linkResponse = await page.request.get(`/api/proposals/${proposalId}/link`);
