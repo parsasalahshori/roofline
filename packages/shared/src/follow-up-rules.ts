@@ -41,7 +41,8 @@ function atLeastDays(now: Date, from: Date, days: number | undefined): boolean {
   return days !== undefined && now.getTime() - from.getTime() >= days * DAY_MS;
 }
 
-const NUDGE_KINDS: readonly FollowUpKind[] = ['proposal', 'lead', 'review'];
+/** Decision 8: every agent text that is not appointment logistics shares one 3-day spacing per customer. */
+const NUDGE_KINDS: readonly FollowUpKind[] = ['proposal', 'lead', 'review', 'claims'];
 
 /**
  * Decides whether a follow-up text of `c.kind` may go to the customer now.
@@ -60,6 +61,12 @@ export function followUpAllowed(c: FollowUpCheck): FollowUpDecision {
     return { allowed: false, reason: 'storm_text' };
   }
 
+  // Decision 8: proposal, lead, review and claims texts share one 3-day spacing per customer (across agents).
+  const spaced = c.log.some(
+    (e) => e.customerId === c.customerId && NUDGE_KINDS.includes(e.kind) && withinDays(c.now, e.at, FOLLOW_UP_SPACING_DAYS),
+  );
+  if (spaced) return { allowed: false, reason: 'spacing' };
+
   if (c.kind === 'claims') {
     const customerClaims = c.log.filter((e) => e.customerId === c.customerId && e.kind === 'claims');
     // Spec 3.3: one claims text per customer per 4 days.
@@ -71,14 +78,8 @@ export function followUpAllowed(c: FollowUpCheck): FollowUpDecision {
       const perJob = customerClaims.filter((e) => e.jobId === c.jobId).length;
       if (perJob >= CLAIMS_MAX_PER_CLAIM) return { allowed: false, reason: 'claims_max' };
     }
-    return { allowed: true };
   }
 
-  // Decision 8: proposal, lead and review texts share one 3-day spacing per customer.
-  const spaced = c.log.some(
-    (e) => e.customerId === c.customerId && NUDGE_KINDS.includes(e.kind) && withinDays(c.now, e.at, FOLLOW_UP_SPACING_DAYS),
-  );
-  if (spaced) return { allowed: false, reason: 'spacing' };
   return { allowed: true };
 }
 
@@ -89,23 +90,26 @@ export type ProposalFacts = {
   signedAt: Date | null;
   textsSent: number;
   lastTextAt: Date | null;
+  /** When the rep was asked to call (the C1 next step); after that the proposal is never asked about again. */
+  callRepAt: Date | null;
 };
 
 /**
  * Next proposal follow-up step, or null. `days` is the company followup_days (default [3, 4]).
- * Signed proposals are never followed up. After two texts the next step is a rep call.
+ * Signed proposals are never followed up. After two texts the next step is a rep call, asked once
+ * (the caller records `callRepAt`, and then this returns null).
  */
 export function proposalFollowUpDue(
   p: ProposalFacts,
   now: Date,
   days: readonly number[],
 ): 'text' | 'call_rep' | null {
-  if (p.signedAt !== null) return null;
+  if (p.signedAt !== null || p.callRepAt !== null) return null;
   const first = days[0];
   const second = days[1];
 
   if (p.textsSent === 0) {
-    // First text: after days[0] since sent, or 2 days after the customer first viewed it.
+    // First text: after days[0] since sent, or 2 days after the customer's last view.
     if (atLeastDays(now, p.sentAt, first)) return 'text';
     if (p.lastViewedAt && atLeastDays(now, p.lastViewedAt, 2)) return 'text';
     return null;

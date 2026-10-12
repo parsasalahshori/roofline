@@ -14,6 +14,7 @@ import {
   proposalFollowUpDue,
   weatherRisk,
 } from '../src/more-agents.ts';
+import { DEFAULT_WORK_HOURS, type WorkHours } from '../src/availability.ts';
 import type { FollowUpCheck, FollowUpKind, FollowUpLogEntry, HourlyForecast } from '../src/more-agents.ts';
 
 const MIN = 60 * 1000;
@@ -119,13 +120,17 @@ describe('followUpAllowed', () => {
     ).toEqual({ allowed: false, reason: 'claims_spacing' });
   });
 
-  test('claims entries do not block proposal, and proposal entries do not block claims', () => {
+  test('Decision 8 across agents: a claims text blocks a proposal text for 3 days, and the other way round', () => {
     expect(followUpAllowed(check({ kind: 'proposal', log: [entry('claims', minutesAgo(60))] }))).toEqual({
-      allowed: true,
+      allowed: false,
+      reason: 'spacing',
     });
     expect(followUpAllowed(check({ kind: 'claims', log: [entry('proposal', minutesAgo(60))] }))).toEqual({
-      allowed: true,
+      allowed: false,
+      reason: 'spacing',
     });
+    expect(followUpAllowed(check({ kind: 'lead', log: [entry('claims', daysAgo(3))] }))).toEqual({ allowed: true });
+    expect(followUpAllowed(check({ kind: 'claims', log: [entry('review', daysAgo(3))] }))).toEqual({ allowed: true });
   });
 
   test('claims_max: 4 claims entries on the same job block, 3 allow', () => {
@@ -146,7 +151,7 @@ describe('followUpAllowed', () => {
 
   test('claims_spacing beats claims_max when both apply', () => {
     const log = [
-      entry('claims', daysAgo(1)),
+      entry('claims', ago(3.5 * DAY)),
       entry('claims', daysAgo(5)),
       entry('claims', daysAgo(9)),
       entry('claims', daysAgo(13)),
@@ -177,6 +182,7 @@ describe('proposalFollowUpDue', () => {
     signedAt: null,
     textsSent: 0,
     lastTextAt: null,
+    callRepAt: null,
     ...over,
   });
 
@@ -211,6 +217,12 @@ describe('proposalFollowUpDue', () => {
     );
     expect(
       proposalFollowUpDue(proposal({ textsSent: 2, lastTextAt: ago(4 * DAY - MIN) }), NOW, [...DAYS]),
+    ).toBeNull();
+  });
+
+  test('call_rep is asked once: with callRepAt recorded, nothing more is due', () => {
+    expect(
+      proposalFollowUpDue(proposal({ textsSent: 2, lastTextAt: daysAgo(9), callRepAt: daysAgo(5) }), NOW, [...DAYS]),
     ).toBeNull();
   });
 
@@ -304,7 +316,10 @@ describe('claimNudgeDue', () => {
 
 describe('weatherRisk', () => {
   const CHICAGO = 'America/Chicago';
-  const WORK = { start: 7, end: 18 };
+  /** 07:00-18:00 every day, so the hour-boundary tests below do not depend on the weekday. */
+  const WORK: WorkHours = Object.fromEntries(
+    (['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const).map((d) => [d, [['07:00', '18:00']]]),
+  ) as WorkHours;
   const TH = { rainPct: 60, gustMph: 25 };
 
   /**
@@ -408,6 +423,30 @@ describe('weatherRisk', () => {
     const forecast: HourlyForecast[] = [{ at: '2026-10-12T22:00:00Z', precipPct: 70, gustMph: null }];
     expect(weatherRisk(forecast, WORK, TH, CHICAGO)).toMatchObject({ risky: true, reasons: ['rain'] });
     expect(weatherRisk(forecast, WORK, TH, 'UTC')).toMatchObject({ risky: false, reasons: [] });
+  });
+});
+
+describe('weatherRisk with the company work hours (C1 WorkHours)', () => {
+  const CHICAGO = 'America/Chicago';
+  const TH = { rainPct: 60, gustMph: 25 };
+  /** Chicago local `h:00` on 2026-10-`day` (CDT, UTC-5). 2026-10-17 is a Saturday, 2026-10-18 a Sunday. */
+  const local = (day: number, h: number, precipPct = 80): HourlyForecast => ({
+    at: new Date(Date.UTC(2026, 9, day, h + 5)).toISOString(),
+    precipPct,
+    gustMph: null,
+  });
+
+  test('Saturday morning counts, Saturday afternoon and Sunday do not (DEFAULT_WORK_HOURS)', () => {
+    expect(weatherRisk([local(17, 10)], DEFAULT_WORK_HOURS, TH, CHICAGO).risky).toBe(true);
+    expect(weatherRisk([local(17, 14)], DEFAULT_WORK_HOURS, TH, CHICAGO).risky).toBe(false);
+    expect(weatherRisk([local(18, 10)], DEFAULT_WORK_HOURS, TH, CHICAGO).risky).toBe(false);
+  });
+
+  test('a 07:30 start counts the 07:00 hour; an 18:00 end does not count the 18:00 hour', () => {
+    const hours: WorkHours = { ...DEFAULT_WORK_HOURS, mon: [['07:30', '18:00']] };
+    expect(weatherRisk([local(12, 7)], hours, TH, CHICAGO).risky).toBe(true);
+    expect(weatherRisk([local(12, 6)], hours, TH, CHICAGO).risky).toBe(false);
+    expect(weatherRisk([local(12, 18)], hours, TH, CHICAGO).risky).toBe(false);
   });
 });
 

@@ -1,11 +1,9 @@
 /** G1 weather risk and claim status flow (Task 2a). */
+import { workIntervals, type WorkHours } from './availability.ts';
 import type { ClaimStatus } from './more-agents.ts';
 
 /** One hourly forecast point. `at` is an ISO instant; `precipPct` is 0-100. */
 export type HourlyForecast = { at: string; precipPct: number; gustMph: number | null };
-
-/** Local work hours, 0-23, `end` exclusive (e.g. 7 and 18). */
-export type LocalWorkHours = { start: number; end: number };
 
 /** Company thresholds: `rainPct` (weather_rain_pct) and `gustMph` (weather_gust_mph). */
 export type WeatherThresholds = { rainPct: number; gustMph: number };
@@ -17,30 +15,42 @@ export type WeatherRisk = {
   worstGustMph: number | null;
 };
 
+const HOUR_MS = 60 * 60 * 1000;
+
 /**
- * Weather risk over the forecast hours that fall inside work hours in `timeZone`.
- * Rain when precipPct >= rainPct; wind when gustMph is non-null and >= gustMph threshold.
+ * Weather risk over the forecast hours that overlap the company's work hours (C1's per-weekday
+ * `WorkHours`, as stored in `company_settings.work_hours`) in `timeZone` (the company's zone).
+ * A forecast point covers the hour starting at `at`; it counts when that hour overlaps a work
+ * interval, so a 07:30 start counts the 07:00 hour and a day off counts nothing.
+ * Rain when precipPct >= rainPct; wind when gustMph is non-null and >= the gust threshold.
  */
 export function weatherRisk(
   hourly: readonly HourlyForecast[],
-  workHours: LocalWorkHours,
+  workHours: WorkHours,
   thresholds: WeatherThresholds,
   timeZone: string,
 ): WeatherRisk {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour: 'numeric',
-    hourCycle: 'h23',
-  });
+  const points = hourly
+    .map((p) => ({ ...p, startMs: Date.parse(p.at) }))
+    .filter((p) => Number.isFinite(p.startMs));
+  let intervals: { start: number; end: number }[] = [];
+  if (points.length > 0) {
+    const first = Math.min(...points.map((p) => p.startMs));
+    const last = Math.max(...points.map((p) => p.startMs)) + HOUR_MS;
+    intervals = workIntervals(workHours, new Date(first), new Date(last), timeZone).map((i) => ({
+      start: i.start.getTime(),
+      end: i.end.getTime(),
+    }));
+  }
 
   let rain = false;
   let wind = false;
   let worstPrecipPct = 0;
   let worstGustMph: number | null = null;
 
-  for (const point of hourly) {
-    const localHour = localHourOf(formatter, point.at);
-    if (localHour < workHours.start || localHour >= workHours.end) continue;
+  for (const point of points) {
+    const hourEnd = point.startMs + HOUR_MS;
+    if (!intervals.some((i) => i.start < hourEnd && point.startMs < i.end)) continue;
 
     if (point.precipPct > worstPrecipPct) worstPrecipPct = point.precipPct;
     if (point.gustMph !== null && (worstGustMph === null || point.gustMph > worstGustMph)) {
@@ -55,13 +65,6 @@ export function weatherRisk(
   if (wind) reasons.push('wind');
 
   return { risky: reasons.length > 0, reasons, worstPrecipPct, worstGustMph };
-}
-
-function localHourOf(formatter: Intl.DateTimeFormat, iso: string): number {
-  const part = formatter.formatToParts(new Date(iso)).find((p) => p.type === 'hour');
-  const hour = Number(part?.value ?? NaN);
-  // Some engines render midnight as 24 even with h23; normalize it to 0.
-  return hour === 24 ? 0 : hour;
 }
 
 /** Claim status flow: the statuses the agent may move a claim to from a reply. */
