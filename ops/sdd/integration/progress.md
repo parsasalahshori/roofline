@@ -328,3 +328,133 @@ imports) became unused once both the Storm and Front Desk placeholders were drop
 Run 38207792011 on c23f107: Platform (lint, typecheck, tests) success; E2E (Playwright) success (including the 2-line
 setup spec); Hail service (ruff, pytest) success; v1 (node:test) success. No merge-artifact fixes were needed after
 CI, so ci-check was not re-run.
+
+## Pass 4
+
+Base: pass 3 head 23b88a9. `git fetch origin` (06:0xZ) gave the requested heads; merged in order with
+`git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | eda1ad60d9825d67bac719670eee6fe3796725a7 | 80d6763 | 1 file |
+| e1-estimator | a7eef1faef391e1c1f2ba894929e3dc53e6e905d | b408328 | none |
+| s1-storm | 73374ba254ac63823e63d7d98cd08edadceae670 | 452e872 | none (ops only) |
+| d1-front-desk | 9c15240231ff7d9155bd6cfc112755d9de3c97e1 | fe6df2f | 2 files |
+| a1-agents | d4a542f36f4fe69521862d251d99f7ed861e2d57 | 458ba08 | 18 files |
+| g1-agents | ef871d01ab6bdb4cc50b6f197aea1b613c5efbf6 | 43df36d | 1 file |
+
+Probe-only commits: ac3cd95 (take D1's CG create-job test, drop the probe copy), 90a79bf (S1 dock test answers
+`GET /api/proposals`, problem 2).
+
+What the tracks brought: C1 T6 (jobs stage rules, next step, board and job view; `repos/board.ts`), the c1-fix1
+merge (setup spec, isolation id order); E1 T15 (Estimator window: type an address, make a proposal; Ruling EH);
+D1's c1-crm sync (Ruling CG copy, 2-line setup spec); A1 T12/T15 (owner-editable baselines, editable hourly rate)
+and A1's merge of s1-storm with e1-estimator (E1 and S1 step types in A1's shape, A1 journal `when` raised);
+G1's merge of A1 T3-T11 (plain step types, four baseline labels).
+
+### Conflict resolutions
+
+c1-crm:
+- `apps/web/e2e/setup.spec.ts`: C1 now expects 3 lines (Estimator, Front Desk, Storm Scout); the probe already has
+  D1 T24, so ours (2 lines: Estimator, Storm Scout) kept.
+
+d1-front-desk:
+- `apps/web/e2e/setup.spec.ts`: D1's text (same 2 lines plus a comment); identical to D1's file now.
+- `packages/db/test/rls.test.ts`: ours (superset: S1's delete tables, A1's `SELECT_INSERT_ONLY` with D1's
+  `conversation_turns`, the full grants title).
+- After the merge, D1's `apps/web/test/create-job.test.tsx` (seven sources, CG) replaces the probe's eight-source copy
+  (ac3cd95).
+
+a1-agents (A1 carries s1-storm 63673a2 with e1-estimator, but not D1 or G1):
+- `apps/api/src/app.ts`: one `agentSettingsRoutes` import (git placed A1's copy twice).
+- `apps/web/src/app/router.tsx`: ours (D1's `front-desk` routes; A1 still has the `front-desk/*` placeholder).
+- Settings `tabs.ts`, `Settings.tsx`: ours (eleven tabs; A1 has nine, without front-desk and profile).
+- `a1-dock`, `a1-settings`, `c1-routes`, `settings` web tests: ours (Ruling BA: no Coming soon app, eleven tabs; A1's
+  versions keep Front Desk coming soon and nine tabs).
+- `packages/shared/src/index.ts`: ours (every barrel).
+- `packages/shared/src/steps.ts`: A1's file plus G1's four (imports, `STEP_TYPES`/registry entries, the G1 block).
+  `front_desk_*` stay in A1's position. E1's `send_proposal`/`order_exact_report` now take A1's text, with
+  `userCreatable` in A1's place, and the probe's duplicate `resultCount` was dropped for A1's
+  `const resultCount = countOf`.
+- `steps-storm.test.ts`: A1's (required `baseline()`/`units()`); `steps-e1.test.ts` auto-merged to A1's text.
+  `steps.test.ts`: ours (fifteen step types).
+- `tenant.ts`: `AGENT_EVENT_KINDS` import in A1's sorted place; A1's tables and `TENANT_TABLES` entries are already in
+  ours (A1's copies dropped).
+- `packages/db/test/migrations.test.ts`: ours (D1 and G1 RLS tests; A1's `describe('A1 constraints')` is already
+  in ours, and its text matches A1's).
+- `packages/db/test/rls.test.ts`: ours; `SELECT_INSERT_ONLY` moved after `APP_TENANT_DELETE_TABLES` as on A1.
+- Snapshots 0021/0022: ours. A1 rebuilt them on S1 0018 without D1. The 0021/0022 SQL is unchanged, and ours chains
+  0020 -> 0021.
+- Journal: see below.
+
+g1-agents:
+- `packages/shared/src/index.ts`: ours (every barrel).
+- No conflict in `steps.ts` or `copy/agents.ts`: G1's step block and its four `baselineLabels` match the probe text
+  exactly.
+
+### Migration journal (Ruling AP)
+
+idx 0..24 consecutive, in number order, `when` strictly increasing (checked by script):
+
+| idx | tag | when | source |
+|---|---|---|---|
+| 17 | 0017_storm_schema | 1791772690993 | S1 |
+| 18 | 0018_storm_grants_rls | 1791772862263 | S1 |
+| 19 | 0019_front_desk_schema | 1791772863263 | probe raise (0018 + 1 s), D1 has 1791770789451 |
+| 20 | 0020_front_desk_grants_rls | 1791772864263 | probe raise (0018 + 2 s), D1 has 1791770804997 |
+| 21 | 0021_agents_schema | 1791780000000 | A1's own value (A1 raised it above 0018) |
+| 22 | 0022_agents_grants_rls | 1791780001000 | A1's own value |
+| 23 | 0023_more_agents_schema | 1791780002000 | probe raise (0022 + 1 s), G1 has 1791774729941 (problem 1) |
+| 24 | 0024_more_agents_grants_rls | 1791780003000 | probe raise (0022 + 2 s), G1 has 1791774749941 |
+
+Snapshots chained by `prevId` 0000..0024 (checked by script). After the A1 and G1 merges, `drizzle-kit generate
+--name=probe_check` reported "No schema changes, nothing to migrate"; no file created. Exactly one
+`messages (company_id, id)` unique: D1's `messages_company_id_id_uniq` (0019, `tenant.ts:630`).
+
+### Earlier workarounds: status
+
+Closed by the tracks (the probe now takes the track's text):
+- C1 isolation-test id order: c1-crm eda1ad6 (`apps/api/test/isolation.test.ts` identical to C1's).
+- Ruling CG job source copy: d1-front-desk 9c15240. `front_desk` is in `copy/create.ts`/`copy/jobs.ts`, is filtered
+  from NewJob's `sourceOptions` and is kept in BoardFilters. C1's create-job test (seven sources) comes from D1. All
+  five files are identical to D1's.
+- Setup spec count: d1-front-desk carries the 2-line spec (Estimator, Storm Scout); the probe file is D1's.
+- Step shape for E1's two and S1's three: a1-agents d4a542f (its s1-storm/e1-estimator merge). `steps-e1`/`steps-storm`
+  tests are identical to A1's.
+- G1 step shape and baseline labels (pass 3 problem 1): g1-agents ef871d0. The G1 block in `steps.ts` and the four
+  labels match G1's.
+- A1 journal `when` (pass 1 problem 2): A1 now carries 1791780000000/1791780001000 itself.
+
+Still kept in the probe:
+- D1 journal `when`: d1-front-desk still has 0019/0020 below S1's 0018, so the probe raise stays (Ruling BA:
+  normalized at launch).
+- G1 journal `when`: a new gap, now below A1's values (problem 1).
+- Combination test recounts (Ruling BA, test-only): `a1-dock` (A1: Front Desk coming soon), `a1-settings` and
+  `settings` (A1/C1: nine tabs), `c1-routes`, `d1-routes`, `d1-settings` (D1: ten tabs, no storm), `e1-routes`
+  (Front Desk coming soon) and `steps.test` (fifteen step types). The probe keeps these: no app coming soon, eleven
+  tabs. Each track still checks its own subset.
+- On their own heads, e1-estimator and s1-storm still define their step types with `minutesSaved`. The probe no
+  longer needs a workaround for that, because A1's merge of both carries the converted text.
+
+### Checks (after all six merges and the probe commits)
+
+`npm ci` clean (lockfile and package.json files unchanged this pass); `npm ls playwright-core` only 1.56.1. Through
+`ops/bin/slot`: typecheck pass, lint pass, lint:css pass; vitest @roofline/web 822 pass (87 files, after problem 2),
+@roofline/ui 170 pass, @roofline/shared 1278 pass, @roofline/send-gate 525 pass. The database, API, worker and e2e
+suites run only in CI.
+
+No merge-artifact fixes were needed after the merges (typecheck and lint passed first time).
+
+### New cross-track problems
+
+1. **A1 x G1, journal `when`.** A1 raised 0021/0022 to 1791780000000/1791780001000 (above S1's 0018). G1's
+   0023/0024 (1791774729941/1791774749941, in `packages/db/migrations/meta/_journal.json` on g1-agents) are now
+   older than A1's 0022, so a database at 0022 would silently skip G1's migrations. Fresh databases (CI) are not
+   affected. Probe: 0023/0024 = 1791780002000/1791780003000. Fix: when G1 next merges a1-agents, raise 0023/0024
+   above 0022's `when` (journal edit only; do not regenerate). Owner: G1, or the controller at the launch
+   normalization (Ruling BA).
+2. **S1 x E1, dock test fetch** (test-only). `apps/web/test/s1-routes.test.tsx` "the dock Storm opens /storm"
+   renders `/estimator`. Since E1 T15 (721ae6e/478e9e0), `EstimatorWindow` calls `useProposals` (`GET
+   /api/proposals`), which the S1 stub does not answer, so the `unexpected` check in `afterEach` fails. Probe (90a79bf):
+   the test passes `{ 'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }) }` to `signedInApi`, as
+   E1's own `e1-routes.test.tsx:98` does. Owner: S1, at its next e1-estimator merge.
