@@ -322,3 +322,9 @@ imports) became unused once both the Storm and Front Desk placeholders were drop
    `d1-routes.test.tsx` (Storm Coming soon), `d1-settings.test.tsx` (ten tabs, no storm), and E1's
    `e1-routes.test.tsx:150` (Front Desk Coming soon, vs D1) fail. Probe (b9132d5): no app is coming soon; eleven
    tabs. Owner: whichever track merges the other (S1 at its A1/D1 merges; E1 at its D1 merge).
+
+### CI (pass 3)
+
+Run 38207792011 on c23f107: Platform (lint, typecheck, tests) success; E2E (Playwright) success (including the 2-line
+setup spec); Hail service (ruff, pytest) success; v1 (node:test) success. No merge-artifact fixes were needed after
+CI, so ci-check was not re-run.
