@@ -10,7 +10,6 @@ import {
   loadCompanyFacts,
   recordUsage,
   type TenantContext,
-  updateCall,
   updateConversation,
   withTenant,
 } from '@roofline/db';
@@ -57,6 +56,9 @@ const PLAIN: Record<string, string> = {
   message: 'The caller left a message for the team.',
 };
 
+/** A call is finished once it is in one of these; mid-call (ringing, ai, ringing_team) the job does nothing. */
+const FINISHED = new Set<string>(['ended', 'transferred', 'failed', 'rejected']);
+
 function plainSummary(outcome: ConversationOutcome): string {
   return PLAIN[outcome] ?? 'The caller spoke with the assistant.';
 }
@@ -78,6 +80,7 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
     if (!call) return null;
     const testCaller = deps.config.TWILIO_TEST_CALLER_NUMBER;
     if (call.conversationId === null && testCaller !== undefined && call.fromE164 === testCaller) return null;
+    if (!FINISHED.has(call.status)) return null;
 
     if (call.aiSeconds > 0) {
       const minutes = Math.ceil(call.aiSeconds / 60);
@@ -155,9 +158,6 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
       const fresh = await getConversation(tx, ctx, conversationId);
       if (!fresh || fresh.summary !== null) return;
       await updateConversation(tx, ctx, conversationId, { status: 'ended', outcome, summary });
-      if (call.status === 'ringing' || call.status === 'ai') {
-        await updateCall(tx, ctx, callSid, { status: 'ended', ...(call.endedAt === null && { endedAt: now }) });
-      }
       if (fresh.customerId !== null) {
         await addActivity(tx, ctx, {
           subjectType: 'customer',
@@ -170,10 +170,6 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
         });
       }
     });
-  } else if (call.status === 'ringing' || call.status === 'ai') {
-    await withTenant(deps.pools, ctx, (tx) =>
-      updateCall(tx, ctx, callSid, { status: 'ended', ...(call.endedAt === null && { endedAt: now }) }),
-    );
   }
 
   if (transferred || call.status === 'rejected') return;

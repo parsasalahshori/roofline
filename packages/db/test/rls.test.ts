@@ -380,7 +380,7 @@ describe('grants', () => {
               has_column_privilege('app_system', 'public.calls', 'conversation_id', 'SELECT') as call_conversation,
               has_column_privilege('app_system', 'public.calls', 'recording_key', 'SELECT') as call_key_select,
               has_column_privilege('app_system', 'public.calls', 'recording_status', 'SELECT') as call_status_select,
-              has_any_column_privilege('app_system', 'public.calls', 'UPDATE') as call_update,
+              has_column_privilege('app_system', 'public.calls', 'recording_key', 'UPDATE') as call_update,
               has_column_privilege('app_system', 'public.calls', 'call_sid', 'SELECT') as call_sid,
               has_table_privilege('app_tenant', 'public.blocked_numbers', 'UPDATE') as blocked_update,
               has_table_privilege('app_tenant', 'public.line_lookups', 'SELECT') as lookups`,
@@ -532,6 +532,7 @@ describe('grants', () => {
       [[...TENANT_TABLES]],
     );
     const sel = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'SELECT' });
+    const upd = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'UPDATE' });
     expect(rows).toEqual([
       sel('agent_task_steps', 'company_id'),
       sel('agent_task_steps', 'id'),
@@ -551,8 +552,12 @@ describe('grants', () => {
       sel('calendar_connections', 'user_id'),
       sel('calls', 'call_sid'),
       sel('calls', 'company_id'),
+      upd('calls', 'ended_at'),
       sel('calls', 'id'),
+      sel('calls', 'started_at'),
       sel('calls', 'status'),
+      upd('calls', 'status'),
+      upd('calls', 'updated_at'),
       sel('early_delivery_reports', 'applied_at'),
       sel('early_delivery_reports', 'id'),
       sel('early_delivery_reports', 'received_at'),
@@ -1129,7 +1134,7 @@ describe('app_system', () => {
       messages: `select id, company_id, status, scheduled_for from messages`,
       usage_events: `select id, company_id, kind, reported_to_stripe_at from usage_events`,
       calendar_connections: `select id, company_id, user_id, status, last_synced_at from calendar_connections`,
-      calls: `select id, company_id, call_sid, status from calls`,
+      calls: `select id, company_id, call_sid, status, started_at from calls`,
     } satisfies Record<Exclude<(typeof APP_SYSTEM_RLS_TABLES)[number], 'early_delivery_reports'>, string>;
 
     const client = new pg.Client({ connectionString: urls.system });
@@ -1289,9 +1294,14 @@ describe('front desk tables', () => {
       ['calls', 'recording_key', 'SELECT', false],
       ['calls', 'recording_key', 'UPDATE', false],
       ['calls', 'recording_status', 'UPDATE', false],
+      // Task CV: the fd-health stuck-call sweep reads started_at and ends a call.
+      ['calls', 'started_at', 'SELECT', true],
+      ['calls', 'status', 'UPDATE', true],
+      ['calls', 'ended_at', 'UPDATE', true],
+      ['calls', 'updated_at', 'UPDATE', true],
       ['calls', 'from_e164', 'UPDATE', false],
       ['calls', 'recording_status', 'SELECT', false],
-      // Review note 31: app_system has no grant on conversations or the turns, and writes no column of calls.
+      // Review note 31: app_system has no grant on conversations or the turns; on calls it writes only the stuck-call sweep's columns.
       // Ruling BF: app_system never reads or writes transcript text or tool records.
       ['conversation_turns', 'at', 'SELECT', false],
       ['conversation_turns', 'text', 'UPDATE', false],
@@ -1337,6 +1347,8 @@ describe('app_tenant isolation on the D1 tables', () => {
     deletable: boolean;
     /** app_tenant may UPDATE company_id (else the grant refuses the move). */
     movable: boolean;
+    /** False when app_tenant has no UPDATE on the table at all: an update is refused with 42501. */
+    updatable?: boolean;
   };
 
   let phoneSeq = 0;
@@ -1394,7 +1406,9 @@ describe('app_tenant isolation on the D1 tables', () => {
       }),
       set: `reason = 'changed'`,
       deletable: true,
-      movable: true,
+      // Review note 31: app_tenant has no UPDATE on blocked_numbers (a number is blocked or unblocked, never edited).
+      movable: false,
+      updatable: false,
     },
   ];
 
@@ -1432,12 +1446,12 @@ describe('app_tenant isolation on the D1 tables', () => {
     await rowFor(c, seed.a);
     const bId = await rowFor(c, seed.b);
     const before = await ownerRow(c, bId);
-    expect(
-      await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
-        companyId: seed.a.companyId,
-        values: [bId],
-      }),
-    ).toEqual([]);
+    const update = tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
+      companyId: seed.a.companyId,
+      values: [bId],
+    });
+    if (c.updatable === false) await expect(update).rejects.toMatchObject({ code: '42501' });
+    else expect(await update).toEqual([]);
     if (c.deletable) {
       expect(
         await tenantRaw(`delete from ${c.table} where id = $1 returning id`, { companyId: seed.a.companyId, values: [bId] }),
@@ -1446,15 +1460,18 @@ describe('app_tenant isolation on the D1 tables', () => {
     expect(await ownerRow(c, bId)).toEqual(before);
   });
 
-  test.each(CASES.map((c) => [c.table, c] as const))('%s: company A can change its own row (the control)', async (_t, c) => {
-    const aId = await rowFor(c, seed.a);
-    expect(
-      await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
-        companyId: seed.a.companyId,
-        values: [aId],
-      }),
-    ).toEqual([{ id: aId }]);
-  });
+  test.each(CASES.filter((c) => c.updatable !== false).map((c) => [c.table, c] as const))(
+    '%s: company A can change its own row (the control)',
+    async (_t, c) => {
+      const aId = await rowFor(c, seed.a);
+      expect(
+        await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
+          companyId: seed.a.companyId,
+          values: [aId],
+        }),
+      ).toEqual([{ id: aId }]);
+    },
+  );
 
   test.each(CASES.map((c) => [c.table, c] as const))('%s: company A cannot move its own row to B', async (_t, c) => {
     const aId = await rowFor(c, seed.a);
