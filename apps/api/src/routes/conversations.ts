@@ -6,7 +6,6 @@ import {
   findVisibleConversation,
   getConversationDetail,
   insertAssistantText,
-  isOnCallMember,
   listConversationInbox,
   lockRecipient,
   markConversationRead,
@@ -17,6 +16,7 @@ import {
 import type { InboxScope, TenantContext } from '@roofline/db';
 import { CONVERSATION_FILTERS, HANDLED_BY } from '@roofline/shared';
 import type { ConversationFilter } from '@roofline/shared';
+import { inboxScopeOf } from '../account/inbox-scope.ts';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { buildGateRequest } from '../messaging/gate-request.ts';
@@ -69,9 +69,7 @@ export function conversationRoutes(deps: AppDeps): Router {
   };
 
   /** A rep's unknown-number access depends on the on-call list, which only the system pool can read. */
-  const scopeOf = async (ctx: TenantContext): Promise<InboxScope> => ({
-    onCall: ctx.role === 'rep' ? await isOnCallMember(pools.system, ctx) : false,
-  });
+  const scopeOf = (ctx: TenantContext): Promise<InboxScope> => inboxScopeOf(deps, ctx);
 
   router.get('/', async (req, res) => {
     const { ctx } = req;
