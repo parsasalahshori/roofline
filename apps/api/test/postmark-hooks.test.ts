@@ -44,9 +44,9 @@ function event(recordType: string, token: string | undefined, extra: Record<stri
   };
 }
 
-const send = (body: unknown, auth: string | undefined = basic(SECRET)) => {
+const send = (body: unknown, auth: string | null = basic(SECRET)) => {
   const req = request(t.app).post(HOOK);
-  if (auth !== undefined) req.set('Authorization', auth);
+  if (auth !== null) req.set('Authorization', auth);
   return req.send(body as object);
 };
 
@@ -67,7 +67,7 @@ async function rowsFor(companyId: string): Promise<{ email: string; source: stri
 describe('authentication', () => {
   test('a wrong secret, a missing header and a malformed header answer 401 and record nothing', async () => {
     const body = event('SpamComplaint', tokenFor(A()));
-    for (const auth of [basic('wrong-secret-0123456789'), undefined, 'Basic !!!', 'Bearer abc', basic('')]) {
+    for (const auth of [basic('wrong-secret-0123456789'), null, 'Basic !!!', 'Bearer abc', basic('')]) {
       const res = await send(body, auth);
       expect(res.status).toBe(401);
       expect(res.text).toBe('');

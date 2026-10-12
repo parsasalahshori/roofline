@@ -16,3 +16,7 @@ The app has no SESSION_SECRET (brief assumed one). Unsubscribe tokens are keyed 
 
 ## Verify
 typecheck clean, lint clean, @roofline/shared 28 files / 657 tests passed.
+
+## CI round 1 (run 38206876310, failed, 2 tests)
+- storm-skeleton.test.ts `GET /u/x`: expected the T7 stub's JSON body; the real page answers an html 404. Fixed the assertion (status 404, type text/html).
+- postmark-hooks.test.ts auth case: `send(body, undefined)` hit the default parameter and sent the valid secret. Fixed with `null` for no header.
