@@ -17,14 +17,9 @@ export type CurrentWeather = {
   updatedAt: string;
 };
 
-export type HourlyForecast = {
-  /** The start of the hour, as an ISO instant. */
-  at: string;
-  /** Chance of precipitation, 0 to 100. */
-  precipPct: number;
-  /** Wind gust in mph, or null when the service gives neither a gust nor a wind speed. */
-  gustMph: number | null;
-};
+/** One hour of forecast, shared with the weather-risk rule in @roofline/shared (G1). */
+export type { HourlyForecast } from '@roofline/shared';
+import type { HourlyForecast } from '@roofline/shared';
 
 export interface WeatherSource {
   /**
