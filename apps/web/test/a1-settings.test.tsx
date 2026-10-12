@@ -23,6 +23,20 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
   };
 });
 
+const AGENT_VALUES = {
+  claimsNudgeDays: [3, 5, 7],
+  weatherRainPct: 60,
+  weatherGustMph: 25,
+  reminderHour: 15,
+  followupDays: [3, 4],
+  leadFollowupDays: 2,
+  reviewLink: null,
+  reviewDelayDays: 3,
+  followupReviews: true,
+  followupLeads: true,
+  followupProposals: true,
+};
+
 let api: ReturnType<typeof stubApi>;
 
 afterEach(() => {
@@ -33,7 +47,12 @@ afterEach(() => {
 
 /** A signed-in person whose shell reads answer "nothing", unless a test gives its own answers. */
 function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
+  api = stubApi({
+    ...SHELL_ROUTES,
+    'GET /api/auth/me': () => ({ body: account }),
+    'GET /api/agent-values': () => ({ body: AGENT_VALUES }),
+    ...overrides,
+  });
   return api;
 }
 

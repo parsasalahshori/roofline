@@ -1,4 +1,4 @@
-import type { Role } from '@roofline/shared';
+import type { AgentValues, Role } from '@roofline/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api/client.ts';
 import { keys } from '../../api/keys.ts';
@@ -91,5 +91,31 @@ export function useUpdateMember() {
         queryClient.invalidateQueries({ queryKey: keys.me }),
         queryClient.invalidateQueries({ queryKey: keys.approvals }),
       ]).then(() => undefined),
+  });
+}
+
+/** The agent rule values (G1 Task 17s). Only the fields that changed are sent. */
+export type AgentValuesPatchBody = Partial<AgentValues>;
+
+/** The values behind each agent rule. Any company admin may read them. */
+export function useAgentValues() {
+  return useQuery({
+    queryKey: keys.agentValues,
+    queryFn: ({ signal }) => apiFetch<AgentValues>('/api/agent-values', { signal }),
+  });
+}
+
+/**
+ * Saves the changed agent rule values (company admin only). The answer is the values as saved,
+ * which replaces what was loaded.
+ */
+export function useUpdateAgentValues() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (changes: AgentValuesPatchBody) =>
+      apiFetch<AgentValues>('/api/agent-values', { method: 'PATCH', body: changes }),
+    onSuccess: (values) => {
+      queryClient.setQueryData(keys.agentValues, values);
+    },
   });
 }

@@ -16,4 +16,5 @@ export const keys = {
   company: ['company'] as const,
   team: ['team'] as const,
   texting: ['texting'] as const,
+  agentValues: ['agent-values'] as const,
 };

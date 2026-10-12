@@ -37,6 +37,7 @@ import { approvalRoutes } from './routes/approvals.ts';
 import { calendarConnectRoutes } from './routes/calendar-connect.ts';
 import { calendarRoutes } from './routes/calendar.ts';
 import { claimBoardRoutes, jobClaimRoutes } from './routes/claims.ts';
+import { agentValueRoutes } from './routes/agent-values.ts';
 import { blockedNumberRoutes } from './routes/blocked-numbers.ts';
 import { callRoutes } from './routes/calls.ts';
 import { companyRoutes } from './routes/company.ts';
@@ -300,6 +301,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/blocked-numbers', blockedNumberRoutes(deps));
   // G1 Agents
   app.use('/api/claims', claimBoardRoutes(deps));
+  app.use('/api/agent-values', agentValueRoutes(deps));
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.

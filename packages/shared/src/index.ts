@@ -30,3 +30,5 @@ export * from './recording-consent.ts';
 // G1 skeleton (Task 1)
 export * from './more-agents.ts';
 export * from './claims.ts';
+// G1 Task 17s
+export * from './agent-values.ts';
