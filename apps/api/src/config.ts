@@ -160,6 +160,20 @@ const ConfigSchema = z
       .optional(),
     /** Development and tests only: use the fake providers for every outside service. Refused in production. */
     FAKE_PROVIDERS: flag,
+    /**
+     * Demo mode: every outside service is its fake (FAKE_PROVIDERS), weather is off, email is only
+     * logged, the shell shows a Demo badge and the presenter's simulate routes are mounted. Refused in
+     * production unless DEMO_MODE_ALLOW_PROD is also set, so it can never quietly replace real providers.
+     */
+    DEMO_MODE: flag,
+    /** The explicit override that lets DEMO_MODE run with NODE_ENV=production (a hosted demo). */
+    DEMO_MODE_ALLOW_PROD: flag,
+    /**
+     * Demo mode only: a connection URL with the database owner's rights, used by the presenter's
+     * "Hail storm hits" simulation to write the global storms tables (the app roles cannot). Read
+     * only when DEMO_MODE is on; unset, that one simulation answers 409.
+     */
+    DEMO_DATABASE_URL_OWNER: postgresUrl.optional(),
 
     /**
      * Where the built web app is (apps/web/dist). When set, the API serves it too, so one process
@@ -366,7 +380,7 @@ const ConfigSchema = z
           ctx.addIssue({ code: 'custom', path: [name], message: 'is required when the other R2 settings are set' });
         }
       }
-    } else if (cfg.NODE_ENV === 'production') {
+    } else if (cfg.NODE_ENV === 'production' && !cfg.DEMO_MODE) {
       // Ruling ET: a homeowner can sign only when the signed proposal can be stored, so production needs R2.
       for (const name of r2) {
         ctx.addIssue({ code: 'custom', path: [name], message: 'is required in production (signed proposals are stored in R2)' });
@@ -413,7 +427,14 @@ const ConfigSchema = z
         message: 'is required in production: the number of proxies in front of the API (1 on Render)',
       });
     }
-    if (cfg.FAKE_PROVIDERS && cfg.NODE_ENV === 'production') {
+    if (cfg.DEMO_MODE && cfg.NODE_ENV === 'production' && !cfg.DEMO_MODE_ALLOW_PROD) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DEMO_MODE'],
+        message: 'is refused in production: it replaces every real provider with a fake. Set DEMO_MODE_ALLOW_PROD=1 only for a hosted demo',
+      });
+    }
+    if (cfg.FAKE_PROVIDERS && cfg.NODE_ENV === 'production' && !(cfg.DEMO_MODE && cfg.DEMO_MODE_ALLOW_PROD)) {
       ctx.addIssue({
         code: 'custom',
         path: ['FAKE_PROVIDERS'],
@@ -426,6 +447,8 @@ const ConfigSchema = z
   })
   .transform(({ HOST, BILLING_PLANS_FILE, RELAY_PUBLIC_URL, RELAY_TOKEN_SECRET, PROPOSAL_LINK_BASE_URL, STORM_MAIL_FROM, ...cfg }) => ({
     ...cfg,
+    // Demo mode wires every seam to its fake and never asks the weather service.
+    ...(cfg.DEMO_MODE ? { FAKE_PROVIDERS: true, WEATHER_DISABLED: true } : {}),
     // D1 Front Desk
     RELAY_PUBLIC_URL: (RELAY_PUBLIC_URL ?? `${cfg.PUBLIC_BASE_URL.replace(/^http/, 'ws')}/relay`).replace(/\/+$/, ''),
     RELAY_TOKEN_SECRET:

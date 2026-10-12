@@ -20,6 +20,7 @@ const ALLOWED_FILES: Record<string, string> = {
   'routes/claims.ts': 'stores the claim fields the rep types; its only send is res.send of the packet PDF to the signed-in user',
   'agents/personal-texts.ts': 'the word appears only in the owner-facing message shown when a customer text is held; recipients are customer ids',
   'agents/claims/replies.ts': 'copies an insurer name from a homeowner reply onto the claim; its only send is a background job enqueue',
+  'scripts/demo-world.ts': 'the demo seed stores a fictional adjuster on the open claim; its only send is a drafted send_personal_texts step to seeded customers',
 };
 
 function walk(dir: string): string[] {

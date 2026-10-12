@@ -24,3 +24,6 @@ v1/cli/roof/target/
 
 # G1 agent-text eval reports (hand-run, npm run eval:agent-texts)
 scripts/eval-results/
+
+# The demo smoke's output (DEMO_VIDEO=1 records into it)
+demo-artifacts/

@@ -83,7 +83,8 @@ function layerHandler(deps: AppDeps): Router {
     const days = parseWhole(req.query['days'], 'days', DAYS_MESSAGE, DAYS_MIN, DAYS_MAX, DAYS_DEFAULT);
     const now = deps.clock.now();
     const { swaths, spots, newestRunAt } = await withTenant(deps.pools, req.ctx, (tx) => stormLayer(tx, { bbox, days, zoom, now }));
-    const stale = newestRunAt === null || now.getTime() - newestRunAt.getTime() > deps.config.HAIL_STALE_MINUTES * 60_000;
+    // A demo has no hail feed to fall behind (DEMO_MODE), so it never shows the stale banner.
+    const stale = !deps.config.DEMO_MODE && (newestRunAt === null || now.getTime() - newestRunAt.getTime() > deps.config.HAIL_STALE_MINUTES * 60_000);
     res.json({ swaths, spots, newestRunAt: newestRunAt === null ? null : newestRunAt.toISOString(), stale });
   });
   return router;

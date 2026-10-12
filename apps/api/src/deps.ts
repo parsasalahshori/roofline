@@ -36,6 +36,7 @@ import { anthropicFor } from './providers/anthropic/index.ts';
 import { FakeCallControl } from './providers/fakes/call-control.ts';
 import { FakeLineLookup } from './providers/fakes/line-lookup.ts';
 import { ScriptedLlm } from './providers/fakes/scripted-llm.ts';
+import { demoLlm } from './demo/script.ts';
 import { twilioLookupFor } from './providers/twilio/lookup.ts';
 import { twilioCallControlFor } from './providers/twilio/voice.ts';
 import { RelaySessions } from './front-desk/relay-sessions.ts';
@@ -228,6 +229,8 @@ export class UnconfiguredCallControl implements CallControl {
 
 /** The fake Llm with FAKE_PROVIDERS, the real one when a key is set, else one that refuses. Never builds a client here. */
 export function createLlm(config: Config): Llm {
+  // Demo mode: the scripted Front Desk answers believable lines (demo/script.ts) instead of "say that again".
+  if (config.DEMO_MODE) return demoLlm();
   return config.FAKE_PROVIDERS ? new ScriptedLlm() : (anthropicFor(config) ?? new UnconfiguredLlm());
 }
 
@@ -263,7 +266,7 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
   const pools = createPools({ tenant: config.DATABASE_URL_TENANT, system: config.DATABASE_URL_SYSTEM });
 
   let mailer: Mailer;
-  if (config.POSTMARK_TOKEN && config.MAIL_FROM) {
+  if (config.POSTMARK_TOKEN && config.MAIL_FROM && !config.DEMO_MODE) {
     mailer = new PostmarkMailer({ token: config.POSTMARK_TOKEN, from: config.MAIL_FROM });
   } else {
     if (config.NODE_ENV === 'production') {
@@ -272,7 +275,9 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     mailer = new ConsoleMailer(config.NODE_ENV !== 'production');
   }
 
-  if (config.NODE_ENV === 'production' && !config.ANTHROPIC_API_KEY) {
+  if (config.DEMO_MODE) {
+    console.warn('DEMO_MODE is on: every outside service is a fake; no text, email, call or charge leaves this process.');
+  } else if (config.NODE_ENV === 'production' && !config.ANTHROPIC_API_KEY) {
     console.warn('ANTHROPIC_API_KEY is not set: Front Desk is off.');
   }
 

@@ -24,7 +24,9 @@
     "dev:web": "npm run dev -w @roofline/web",
     "build:web": "npm run build -w @roofline/web",
     "e2e": "npm run e2e -w @roofline/web --",
-    "eval:agent-texts": "tsx scripts/eval-agent-texts.ts"
+    "eval:agent-texts": "tsx scripts/eval-agent-texts.ts",
+    "demo": "tsx scripts/demo.ts",
+    "demo:reset": "tsx scripts/demo.ts --reset"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
