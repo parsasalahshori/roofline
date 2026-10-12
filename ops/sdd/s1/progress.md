@@ -252,3 +252,4 @@ Already done: s1-r2a is merged (28f3800) with the Ruling BD trim (41b970c). REDR
 - Carry for the a1-agents merge (controller, Ruling BD detail): delete REDRAFTABLE_PLAN_STATUSES from `apps/api/src/storm/plan-errors.ts`. Its callers import A1's db exports REDRAFTABLE_PLAN_STATUSES (['draft']) and FINISHED_REDRAFTABLE_PLAN_STATUSES (['expired','declined']).
 - CI run 38263313497 on s1-storm@c2e3a1f (R7 merge plus the 3f800e5 fixture fix): Platform, Hail and E2E all green.
 - b46f1f5: `apps/api/test/helpers.ts` builds `FakeExactReports(() => clock.now())`. This defuses the E1 time bomb: exact-report.test.ts pins 2026-10-12T15:00Z, so it has been red everywhere since 15:01Z (the controller's request). R8–R10 branch from before this fix, so their Platform job may show the exact-report failure; it is the base's, so judge it on the merged head.
+- CI run 38270389296 on s1-storm@7159e1c (after the time bomb fix): Platform, Hail and E2E all green.
