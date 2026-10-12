@@ -2,6 +2,7 @@ import {
   companyContact,
   findOrCreateCallerCustomer,
   insertTextBackMessage,
+  lockCustomerPhone,
   lockRecipient,
   missedCallTextBackOn,
   recordCallConsent,
@@ -65,6 +66,10 @@ export async function maybeTextBack(deps: AppDeps, ctx: TenantContext, input: Te
 
   const dedupeKey = `fd-textback:${input.callId}`;
   const outcome = await withTenant(deps.pools, ctx, async (tx) => {
+    // Two after-call jobs for one number (two quick missed calls) take turns here, and the second
+    // sees the first's text-back once it has the lock, so the caller is texted (and created) once.
+    await lockCustomerPhone(tx, ctx, input.fromE164);
+    if (await textedBackWithin24h(tx, ctx, input.fromE164, now)) return null;
     const customerId = input.customerId ?? (await findOrCreateCallerCustomer(tx, ctx, input.fromE164, now));
     if (customerId === null) return null;
     const company = await companyContact(tx, ctx);
