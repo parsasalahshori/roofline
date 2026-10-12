@@ -120,3 +120,11 @@ Add these tests to the T26 brands test file:
 Add a test to the T27 registration test: call t.registrar.failNext('submitBrand','unavailable'), then GET. Expect the state to still be pending or waiting, not needs_fix. The fake already models the unavailable case.
 
 Record this in progress.md as a ruling that amends task-26 brief line 37, so that T28's campaign POST and status reads use the same split.
+
+## R15 (added by the controller from sibling 2's T28 review; fold into R11/R13)
+
+**Problem:** the `phone_number_month` fee row is written in a separate `withTenant` transaction. If the registration lock transaction rolls back and the retry's `ensureNumber` returns a different phone number (PN), a stray fee row is left behind for a number the company does not have.
+
+**Fix:** record the number's monthly fee only after the number is durably saved (same rule as R12 for the brand fee: after the lock transaction commits, reload the saved main number and record the fee idempotently keyed by its phone number sid), so a rolled-back attempt never leaves a fee row. With R13, a retry reuses the already-owned number, so the sid stays the same. Add a test: a failure after ensureNumber but before the save, then a retry, leaves exactly one fee row, for the number actually saved.
+
+**Note:** the briefs' line numbers are from 330ca23; T28 (merged in e61ec14) changed advance.ts and accounts.ts. Re-locate each spot in the current code. W4 is already satisfied by T28.
