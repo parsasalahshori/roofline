@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
 import { appointments, calls, customers, properties } from '@roofline/db';
-import { guardSentence, normalizeAddressKey, type GuardHit } from '@roofline/shared';
+import { guardSentence, normalizeAddressKey, ROUTER_INTENTS, type GuardHit } from '@roofline/shared';
 import { runAfterCall } from '../../src/front-desk/after-call.ts';
 import { inCompany } from '../crm-helpers.ts';
 import { OPUS, rig, SLOT, seedCaller, type Rig } from './call-rig.ts';
@@ -214,6 +214,13 @@ describe('scenario definitions', () => {
   test('there is one scenario for every item in the spec section 16 list, and no other', () => {
     expect(SCENARIOS.map((s) => s.covers)).toEqual(SECTION_16_LIST);
     expect(new Set(SCENARIOS.map((s) => s.id)).size).toBe(SCENARIOS.length);
+  });
+
+  test('every intent a scenario routes with is one the router may emit (ROUTER_INTENTS)', () => {
+    const used = SCENARIOS.flatMap((s) => s.scripted.flatMap((step) => (step.route.intent === undefined ? [] : [step.route.intent])));
+    expect(used.length).toBeGreaterThan(0);
+    for (const intent of used) expect(ROUTER_INTENTS as readonly string[], intent).toContain(intent);
+    expect(ROUTER_INTENTS as readonly string[]).toContain(OPUS.intent);
   });
 
   test.each(SCENARIOS.map((s) => [s.id, s] as const))('%s is complete and scriptable', (_id, sc) => {

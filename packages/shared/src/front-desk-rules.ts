@@ -11,6 +11,18 @@ export type TransferReason =
   | 'not_understood'
   | 'model_failure';
 
+/**
+ * The closed set of router intents (the router's json_schema enum). Every intent the engine, shouldTransfer, the
+ * scenarios and the eval key on is here, including the leak/danger vocabulary of Ruling BK (amended).
+ */
+export const ROUTER_INTENTS = [
+  'active_leak', 'adjuster', 'ask_for_person', 'cancel_appointment', 'complaint', 'confirm_appointment', 'danger', 'emergency', 'fire',
+  'greeting', 'goodbye', 'human', 'injury', 'inspector', 'insurance_claim', 'insurance_question', 'job_status', 'leak', 'message',
+  'not_understood', 'other', 'pricing', 'prompt_injection', 'quote', 'recording_objection', 'reschedule', 'sales_pitch',
+  'schedule_inspection', 'spam', 'status', 'storm_damage_active', 'supplier', 'trade_caller', 'transfer', 'unknown', 'water_inside',
+] as const;
+export type RouterIntent = (typeof ROUTER_INTENTS)[number];
+
 const LEAK_INTENTS = new Set(['leak', 'active_leak']);
 const DANGER_INTENTS = new Set(['danger', 'injury', 'fire']);
 /**
