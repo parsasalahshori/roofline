@@ -16,6 +16,7 @@ import {
   loadCompanyFacts,
   setCallSpamReason,
   type TenantContext,
+  type ToolCallRecord,
   updateConversation,
   updateTurn,
   withTenant,
@@ -69,7 +70,7 @@ type TurnRecord = {
   usageSeen: boolean;
   said: string[];
   guardHits: Set<GuardHit>;
-  toolCalls: { name: string; input: unknown; result: string; ok: boolean }[];
+  toolCalls: { name: string; input?: unknown; result?: string; ok: boolean }[];
 };
 
 function isAbort(err: unknown): boolean {
@@ -449,7 +450,12 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
               finish = { type: 'end', reason: (parsed.data as { reason: 'goodbye' | 'spam' | 'silence' }).reason };
             }
           }
-          rec.toolCalls.push({ name: use.name, input: use.input, result: result.forModel, ok: result.ok });
+          // Transcript off (caller objected to recording): keep only the tool name and outcome.
+          rec.toolCalls.push(
+            state.transcriptOff === true
+              ? { name: use.name, ok: result.ok }
+              : { name: use.name, input: use.input, result: result.forModel, ok: result.ok },
+          );
           results.push({ toolUseId: use.id, content: result.forModel, isError: !result.ok });
         }
         appendToolResults(state, results);
@@ -500,7 +506,8 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
           inputTokens: rec.usageSeen ? rec.inputTokens : null,
           cachedTokens: rec.usageSeen ? rec.cachedTokens : null,
           outputTokens: rec.usageSeen ? rec.outputTokens : null,
-          toolCalls: rec.toolCalls.length > 0 ? rec.toolCalls : null,
+          // Transcript-off rows carry only name and ok; the column type predates that, so widen here.
+          toolCalls: rec.toolCalls.length > 0 ? (rec.toolCalls as ToolCallRecord[]) : null,
           guardHits: hits,
         });
         return { caller: caller.id, assistant: assistant.id, rows: 2 };
@@ -517,6 +524,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
   }
 
   async function interrupted(state: ConversationState, spoken: string): Promise<void> {
+    if (state.transcriptOff === true) return;
     const id = lastAssistantTurn.get(state);
     if (!id) return;
     const ctx = systemCtx(state.companyId);

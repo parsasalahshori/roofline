@@ -66,6 +66,15 @@ describe('call recording', () => {
     expect((await status()).recording_status).toBe('recording');
   });
 
+  test('does not start a new recording when the call is stopped_by_caller', async () => {
+    const { deps, call, t } = await rig();
+    const rec = createRecording(deps, { ...call, stoppedByCaller: true });
+    expect(rec.objected).toBe(true);
+    await rec.start();
+    expect(t.callControl.calls.filter((c) => c.method === 'startRecording')).toHaveLength(0);
+    expect(rec.objected).toBe(true);
+  });
+
   test('retention 0 never records', async () => {
     const { deps, call, t, ctx } = await rig();
     await withTenant(t.deps.pools, ctx, (tx) =>

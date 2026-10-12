@@ -1,4 +1,4 @@
-import type { ConversationDetail, HandlingInput, RecordingLink, ReplyInput } from '@roofline/shared';
+import type { ConversationDetail, HandlingInput, ReplyInput } from '@roofline/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api/client.ts';
 
@@ -60,12 +60,5 @@ export function useMarkSpam(conversationId: string) {
     mutationFn: (callId: string) => apiFetch<unknown>(`/api/calls/${callId}/spam`, { method: 'POST', body: {} }),
     onSuccess: () => invalidateInbox(queryClient),
     meta: { conversationId },
-  });
-}
-
-/** GET /api/calls/:id/recording: call `mutateAsync(callId)` only when the person presses play. Never a query. */
-export function useRecordingLink() {
-  return useMutation({
-    mutationFn: (callId: string) => apiFetch<RecordingLink>(`/api/calls/${callId}/recording`),
   });
 }

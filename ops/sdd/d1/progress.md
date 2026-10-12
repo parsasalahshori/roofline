@@ -154,3 +154,5 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
     - (a) ASK_PERSON_INTENTS and 'not_understood' are guessed router labels, and the frozen ROUTER_PROMPT doesn't ask for them. RC adds the labels to the router's json_schema enum (Haiku format), not to the frozen prompt text.
     - (b) transfer reason 'asked' plus the router intent can count one ask twice in a turn; count once.
     - (c) drop the times.ts systemCtx re-export.
+
+Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.recording_key (object key recordings/<companyId>/<callId>-<recordingSid>.mp3), per the brief's "same column as the key". No new column and no change to 0019/0020. Twilio copies are deleted by fd-recording-store after the copy, when R2 is unset, or after the 5th failed attempt.

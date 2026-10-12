@@ -1,7 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, test, vi } from 'vitest';
 import type { z } from 'zod';
-import { getConversation, listTurns, withTenant } from '@roofline/db';
+import { eq } from 'drizzle-orm';
+import { conversationTurns, getConversation, listTurns, withTenant } from '@roofline/db';
 import {
   FRONT_DESK_TOOLS,
   type FrontDeskToolName,
@@ -107,6 +108,14 @@ async function setup(script: Script, tools: ToolHandlers = {}, llm: ScriptedLlm 
 async function savedTurns(t: TestApp, state: ConversationState) {
   const ctx = { companyId: state.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
   return withTenant(t.deps.pools, ctx, (tx) => listTurns(tx, ctx, state.conversationId));
+}
+
+async function savedToolCalls(t: TestApp, state: ConversationState) {
+  const ctx = { companyId: state.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+  const rows = await withTenant(t.deps.pools, ctx, (tx) =>
+    tx.select({ toolCalls: conversationTurns.toolCalls }).from(conversationTurns).where(eq(conversationTurns.conversationId, state.conversationId)),
+  );
+  return rows.map((r) => r.toolCalls).find((c) => c !== null);
 }
 
 describe('front desk engine', () => {
@@ -345,6 +354,37 @@ describe('front desk engine', () => {
     const rows = await savedTurns(t, state);
     const assistant = rows.find((r) => r.speaker === 'assistant');
     expect(assistant).toMatchObject({ text: 'One long', truncated: true });
+  });
+
+  test('with transcriptOff the tool-call rows hold only name and ok', async () => {
+    const script: Script = [{ when: /jobs/, route: OPUS, answer: [{ kind: 'tool', name: 'lookup_my_jobs', input: {} }] }];
+    const handler = vi.fn(async () => ({ ok: true, forModel: 'You have one job.' }));
+    const { t, state, say } = await setup(script, { lookup_my_jobs: handler });
+    state.transcriptOff = true;
+    await say('what jobs do I have');
+    expect(await savedToolCalls(t, state)).toEqual([{ name: 'lookup_my_jobs', ok: true }]);
+  });
+
+  test('with transcriptOff off the tool-call rows keep input and result', async () => {
+    const script: Script = [{ when: /jobs/, route: OPUS, answer: [{ kind: 'tool', name: 'lookup_my_jobs', input: {} }] }];
+    const handler = vi.fn(async () => ({ ok: true, forModel: 'You have one job.' }));
+    const { t, state, say } = await setup(script, { lookup_my_jobs: handler });
+    await say('what jobs do I have');
+    expect(await savedToolCalls(t, state)).toEqual([
+      { name: 'lookup_my_jobs', input: {}, result: 'You have one job.', ok: true },
+    ]);
+  });
+
+  test('interrupted() writes no spoken text when transcriptOff', async () => {
+    const { t, engine, state, say } = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'One long answer.' }] }]);
+    state.transcriptOff = true;
+    await say('hello');
+    const before = (await savedTurns(t, state)).find((r) => r.speaker === 'assistant');
+    await engine.interrupted(state, 'secret words');
+    const after = (await savedTurns(t, state)).find((r) => r.speaker === 'assistant');
+    expect(after?.text).toBe(before?.text);
+    expect(after?.text).not.toContain('secret');
+    expect(after?.truncated).toBe(false);
   });
 
   test('max_tokens says a short apology, adds a note after the user message and goes on', async () => {
