@@ -12,13 +12,19 @@ function schemaMessage(type: StepType, value: unknown): string | null {
 
 const LINK_MESSAGE = 'Keep {link} in the message so they can open the proposal.';
 
+const THREE_TOTALS = [
+  { tier: 'good', totalCents: 1190000 },
+  { tier: 'better', totalCents: 1425000 },
+  { tier: 'best', totalCents: 1760000 },
+];
+
 const proposal = stepTypes.send_proposal;
 const proposalPayload = (overrides: Record<string, unknown> = {}) => ({
   proposalId: ID,
   customerId: ID2,
   body: 'Hi Dana, your proposal: {link}',
   basis: 'estimate',
-  totals: [1190000, 1425000, 1760000],
+  totals: THREE_TOTALS,
   ...overrides,
 });
 
@@ -42,7 +48,7 @@ describe('send_proposal', () => {
       proposalId: ID,
       customerId: ID2,
       basis: 'estimate',
-      totals: [1190000, 1425000, 1760000],
+      totals: THREE_TOTALS,
     });
   });
 
@@ -72,10 +78,13 @@ describe('send_proposal', () => {
     expect(schemaMessage('send_proposal', proposalPayload({ proposalId: 'nope' }))).toBe('Please pick a proposal.');
     expect(schemaMessage('send_proposal', proposalPayload({ customerId: 'nope' }))).toBe('Please pick a customer from your list.');
     expect(schemaMessage('send_proposal', proposalPayload({ basis: 'guess' }))).toBe('Please pick estimate or exact.');
-    expect(schemaMessage('send_proposal', proposalPayload({ totals: [1, 2, 3, 4] }))).toBe('Please check the prices.');
+    const total = (tier: string, totalCents: unknown) => ({ tier, totalCents });
     expect(schemaMessage('send_proposal', proposalPayload({ totals: [] }))).toBe('Please check the prices.');
-    expect(schemaMessage('send_proposal', proposalPayload({ totals: [-1] }))).toBe('Please check the prices.');
-    expect(schemaMessage('send_proposal', proposalPayload({ totals: [1.5] }))).toBe('Please check the prices.');
+    expect(schemaMessage('send_proposal', proposalPayload({ totals: [total('good', 1), total('better', 2), total('best', 3), total('good', 4)] }))).toBe('Please check the prices.');
+    expect(schemaMessage('send_proposal', proposalPayload({ totals: [total('good', -1)] }))).toBe('Please check the prices.');
+    expect(schemaMessage('send_proposal', proposalPayload({ totals: [total('good', 1.5)] }))).toBe('Please check the prices.');
+    expect(schemaMessage('send_proposal', proposalPayload({ totals: [total('gold', 100)] }))).toBe('Please check the prices.');
+    expect(schemaMessage('send_proposal', proposalPayload({ totals: [1190000] }))).toBe('Please check the prices.');
   });
 
   test('preview names the customer, shows the three tier totals and a rendered sample with a link', () => {
@@ -88,6 +97,12 @@ describe('send_proposal', () => {
     expect(preview.messageSample).not.toContain('{link}');
     expect(preview.messageSample).toContain('https://');
     expect(preview.recipientCount).toBe(1);
+  });
+
+  test('two enabled options show only their own tier totals, in tier order', () => {
+    const p = proposal.payload.parse(proposalPayload({ totals: [{ tier: 'good', totalCents: 1190000 }, { tier: 'best', totalCents: 1760000 }] }));
+    const preview = proposal.preview(p, { companyName: 'Acme Roofing', sampleFirstName: 'Dana' });
+    expect(preview.lines[0]).toBe('Good $11,900 · Best $17,600');
   });
 
   test('saves 20 minutes whatever the result', () => {

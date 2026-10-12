@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { getMeasurement, updateMeasurement, withTenant, type MeasurementPatch } from '@roofline/db';
 import { outlineProblem, type LngLat, type Outline, type Ring } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { aerialMeasure } from '../estimator/aerial.ts';
+import { requestExactReport } from '../estimator/exact-report.ts';
 import { measureProperty } from '../estimator/measure.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
@@ -19,6 +21,7 @@ const PITCH_MESSAGE = 'Please enter a pitch from 0 to 24.';
 const OVERHANG_MESSAGE = 'Please enter an overhang from 0 to 3 feet.';
 const VALLEY_MESSAGE = 'Please enter a valley length of 0 feet or more.';
 const LOCKED_MESSAGE = 'Make a new measurement to change a sent proposal.';
+const EXACT_NOT_SET_UP_MESSAGE = "Exact reports aren't set up yet.";
 
 const CREATE_FIELDS = ['propertyId', 'address', 'jobId'] as const;
 const PATCH_FIELDS = ['outline', 'includedStructures', 'pitchX12', 'overhangFt', 'valleyFt'] as const;
@@ -160,6 +163,22 @@ export function measurementRoutes(deps: AppDeps): Router {
     if (result === 'locked') throw new AppError(409, LOCKED_MESSAGE);
     if (result === 'unknown_structure') throw new AppError(400, STRUCTURES_MESSAGE, 'includedStructures');
     res.json(result);
+  });
+
+  router.post('/:id/exact-report', async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(req.params.id);
+    if (ctx.role !== 'owner' && ctx.role !== 'office') throw new AppError(403, MESSAGES.roleCannot);
+    if (!deps.exactReports.configured) throw new AppError(503, EXACT_NOT_SET_UP_MESSAGE);
+    const { taskId } = await requestExactReport(deps, ctx, id);
+    res.status(201).json({ taskId });
+  });
+
+  router.post('/:id/aerial', async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(req.params.id);
+    const view = await aerialMeasure(deps, ctx, id);
+    res.status(201).json(view);
   });
 
   return router;

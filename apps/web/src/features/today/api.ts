@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import type { TodayView } from '@roofline/shared';
+import type { ProposalView, TodayView } from '@roofline/shared';
 import { apiFetch } from '../../api/client.ts';
 
 /*
@@ -19,5 +19,17 @@ export function useToday() {
   return useQuery({
     queryKey: ['today', 'view'],
     queryFn: () => apiFetch<TodayView>('/api/today'),
+  });
+}
+
+/** Proposals signed on `dateKey` (the company-zone calendar day, YYYY-MM-DD). */
+export function useSignedToday(dateKey: string) {
+  return useQuery({
+    queryKey: ['today', 'signed', dateKey],
+    queryFn: ({ signal }) =>
+      apiFetch<{ proposals: ProposalView[]; total: number }>(
+        '/api/proposals?status=signed&signedOn=' + encodeURIComponent(dateKey),
+        { signal },
+      ),
   });
 }

@@ -87,6 +87,12 @@ export const SHELL_ROUTES: Record<string, () => Reply> = {
   [STORM_LAYER_KEY]: () => ({ body: STORM_LAYER_BODY }),
 };
 
+/** Today's "Signed today" read, answered with nothing: spread it into a test that renders the Today window. */
+export function signedTodayRoute(timeZone = 'America/Chicago'): Routes {
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  return { [`GET /api/proposals?status=signed&signedOn=${date}`]: () => ({ body: { proposals: [], total: 0 } }) };
+}
+
 /** A task as the server sends it. Pass what differs; `id` is required. */
 export function makeTask(overrides: Partial<TaskView> & { id: string }): TaskView {
   return {
