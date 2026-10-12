@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COMING_WITH,
   deriveSetup,
   SETUP_ITEM_KEYS,
   type SetupFacts,
@@ -19,6 +20,8 @@ function facts(o: Partial<SetupFacts> = {}): SetupFacts {
     pendingInvites: 0,
     paymentMethod: false,
     ads: { active: 0, pending: 0 },
+    calendarsConnected: 0,
+    pricesAndTiersSaved: false,
     skipped: new Set<SetupItemKey>(),
     ...o,
   };
@@ -49,8 +52,6 @@ describe('deriveSetup', () => {
     }
 
     const later: [SetupItemKey, string][] = [
-      ['prices_and_tiers', 'estimator'],
-      ['connect_calendar', 'calendar'],
       ['phone_number', 'front_desk'],
       ['connect_ads', 'storm_scout'],
     ];
@@ -58,6 +59,9 @@ describe('deriveSetup', () => {
       expect(item(view, key).status).toBe('todo');
       expect(item(view, key).comingWith).toBe(comingWith);
     }
+
+    expect(item(view, 'connect_calendar').status).toBe('todo');
+    expect(item(view, 'connect_calendar').comingWith).toBeNull();
 
     expect(view.progress).toEqual({ done: 0, total: 5 });
   });
@@ -128,5 +132,52 @@ describe('deriveSetup', () => {
 
   it('ad accounts do not change the Foundation progress', () => {
     expect(deriveSetup(facts({ ads: { active: 2, pending: 1 } })).progress).toEqual({ done: 0, total: 5 });
+  });
+
+  it('connect_calendar is done once one calendar is connected', () => {
+    const one = deriveSetup(facts({ calendarsConnected: 1 }));
+    expect(item(one, 'connect_calendar').status).toBe('done');
+    expect(item(one, 'connect_calendar').comingWith).toBeNull();
+
+    const three = deriveSetup(facts({ calendarsConnected: 3 }));
+    expect(item(three, 'connect_calendar').status).toBe('done');
+  });
+
+  it('connect_calendar stays todo with none connected', () => {
+    const view = deriveSetup(facts({ calendarsConnected: 0 }));
+    expect(item(view, 'connect_calendar').status).toBe('todo');
+  });
+
+  it('a stored skip never hides connect_calendar', () => {
+    const view = deriveSetup(facts({ skipped: new Set(['connect_calendar']), calendarsConnected: 0 }));
+    expect(item(view, 'connect_calendar').status).toBe('todo');
+    expect(item(view, 'connect_calendar').skippable).toBe(false);
+  });
+
+  it('connect_calendar does not count toward progress', () => {
+    const view = deriveSetup(facts({ calendarsConnected: 2 }));
+    expect(view.progress).toEqual({ done: 0, total: 5 });
+  });
+
+  it("keeps 'calendar' in COMING_WITH (Ruling CC) even though no item returns it", () => {
+    expect(COMING_WITH).toContain('calendar');
+  });
+});
+
+describe('prices_and_tiers', () => {
+  it('prices_and_tiers is todo with comingWith null when nothing is saved', () => {
+    const row = item(deriveSetup(facts()), 'prices_and_tiers');
+    expect(row.status).toBe('todo');
+    expect(row.comingWith).toBeNull();
+    expect(row.skippable).toBe(false);
+  });
+
+  it('prices_and_tiers is done when pricesAndTiersSaved is true', () => {
+    expect(item(deriveSetup(facts({ pricesAndTiersSaved: true })), 'prices_and_tiers').status).toBe('done');
+  });
+
+  it('prices_and_tiers cannot be skipped (a stored skip is ignored)', () => {
+    const view = deriveSetup(facts({ skipped: new Set<SetupItemKey>(['prices_and_tiers']) }));
+    expect(item(view, 'prices_and_tiers').status).toBe('todo');
   });
 });

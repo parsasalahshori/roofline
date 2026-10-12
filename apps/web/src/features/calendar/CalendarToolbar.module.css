@@ -1,0 +1,48 @@
+/* The calendar toolbar wraps onto as many lines as the width needs, so nothing scrolls sideways at 375px. */
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.nav,
+.views,
+.end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.label {
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.zoneNote {
+  margin: 0;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+@media (max-width: 767.98px) {
+  .nav > *,
+  .views > *,
+  .end > * {
+    min-height: 40px;
+    min-width: 40px;
+  }
+}

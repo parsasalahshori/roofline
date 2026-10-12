@@ -3,6 +3,7 @@ import { BRAND_FIELDS, type CampaignStatus, type SetupFacts, type SetupItemKey, 
 import type { TenantContext, Tx } from '../tenant.ts';
 import { setupItems } from '../schema/tenant.ts';
 import { adAccountCounts } from './ad-accounts.ts';
+import { connectedMemberCount } from './calendar.ts';
 
 /*
  * Data access for the setup checklist (F3 spec 5.3). Every read runs on the tenant transaction, so
@@ -58,6 +59,15 @@ export async function setupFacts(tx: Tx, ctx: TenantContext): Promise<Omit<Setup
   const membersRow = membersResult.rows[0] as { active: number } | undefined;
 
   const ads = await adAccountCounts(tx, ctx);
+  // Connected calendars of active members (calendar.ts): a dead grant (status error) does not count.
+  const calendarsConnected = await connectedMemberCount(tx, ctx);
+
+  // Prices and tiers are set up once the company has saved a pricebook and all three tier templates.
+  const pricesResult = await tx.execute(
+    sql`select exists(select 1 from pricebooks where company_id = ${ctx.companyId}) as pricebook,
+               (select count(*)::int from tier_templates where company_id = ${ctx.companyId}) as tiers`,
+  );
+  const pricesRow = pricesResult.rows[0] as { pricebook: boolean; tiers: number } | undefined;
 
   const skippedRows = await tx
     .select({ key: setupItems.key })
@@ -81,6 +91,8 @@ export async function setupFacts(tx: Tx, ctx: TenantContext): Promise<Omit<Setup
     activeMembers: membersRow?.active ?? 0,
     paymentMethod: company?.payment_method ?? false,
     ads,
+    calendarsConnected,
+    pricesAndTiersSaved: (pricesRow?.pricebook ?? false) && (pricesRow?.tiers ?? 0) === 3,
     skipped,
   };
 }

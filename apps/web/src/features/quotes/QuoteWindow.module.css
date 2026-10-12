@@ -1,0 +1,79 @@
+/* The quote window: stat strip, actions, then the editor, lines and totals stacked on a phone */
+.window {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Three stat cards side by side; the labels and values wrap on a narrow window, never past its width */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.stats > * {
+  min-width: 0;
+}
+
+/* The actions wrap onto as many rows as needed; every control keeps a 40px touch target */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.actions > * {
+  min-height: 40px;
+}
+
+/* The PDF download: a link drawn like a ghost button */
+.pdf {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: transparent;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.pdf:hover {
+  background: var(--surface-2);
+}
+
+.pdf:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.loading {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+}
+
+.sheetActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* On a phone the three stats stack, one per row */
+@media (max-width: 600px) {
+  .stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

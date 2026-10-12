@@ -19,7 +19,7 @@ export interface ExactReports {
     reportId: string,
   ): Promise<
     | { status: 'pending' }
-    | { status: 'complete'; report: ExactReport; costCents: number }
+    | { status: 'complete'; report: ExactReport; costCents: number | null }   // null: the report carried no readable cost (the caller falls back to the quoted max)
     | { status: 'failed'; reasonKey: string }
   >;
 }

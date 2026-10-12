@@ -182,6 +182,8 @@ it('setup shows the checklist', async () => {
 
 it('connections still says what is coming', async () => {
   signedInApi({ 'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }) });
+  api.routes['GET /api/calendar/connection'] = () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } });
+  api.routes['GET /api/company'] = () => ({ body: { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null, website: null, addressStreet: null, addressCity: null, addressState: null, addressZip: null, timezone: 'America/Chicago', logoUrl: null, located: false, serviceAreaMiles: null } });
   renderApp('/settings/connections');
 
   expect(await screen.findByText(connections.later)).toBeInTheDocument();

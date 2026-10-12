@@ -89,7 +89,7 @@ describe('settings: ad connections', () => {
     const google = await googleCard();
 
     await user.type(within(google).getByLabelText(connections.googleCustomerId), '123-456-7890');
-    await user.click(within(google).getByRole('button', { name: connections.connect }));
+    await user.click(within(google).getByRole('button', { name: connections.adConnect }));
 
     await waitFor(() => expect(api.sent('POST /api/ads/accounts/google')).toEqual([{ customerId: '123-456-7890' }]));
     expect(await within(google).findByText(connections.statuses.pending)).toBeInTheDocument();
@@ -112,7 +112,7 @@ describe('settings: ad connections', () => {
     const { user } = renderConnections();
     const google = await googleCard();
     const field = within(google).getByLabelText(connections.googleCustomerId);
-    const connect = within(google).getByRole('button', { name: connections.connect });
+    const connect = within(google).getByRole('button', { name: connections.adConnect });
 
     await user.type(field, '123-456-789');
     expect(connect).toBeDisabled();
@@ -121,7 +121,7 @@ describe('settings: ad connections', () => {
 
     await user.clear(field);
     await user.type(field, '1234567890123');
-    await user.click(within(google).getByRole('button', { name: connections.connect }));
+    await user.click(within(google).getByRole('button', { name: connections.adConnect }));
 
     expect(await within(google).findByText(connections.googleIdInvalid)).toBeInTheDocument();
     expect(api.sent('POST /api/ads/accounts/google')).toEqual([]);
@@ -132,7 +132,7 @@ describe('settings: ad connections', () => {
     const meta = await metaCard();
 
     await user.type(within(meta).getByLabelText(connections.metaAdAccountId), 'act_123456789');
-    await user.click(within(meta).getByRole('button', { name: connections.connect }));
+    await user.click(within(meta).getByRole('button', { name: connections.adConnect }));
 
     await waitFor(() => expect(api.sent('POST /api/ads/accounts/meta')).toEqual([{ adAccountId: 'act_123456789' }]));
     expect(await within(meta).findByText(connections.statuses.pending)).toBeInTheDocument();
@@ -162,7 +162,7 @@ describe('settings: ad connections', () => {
     const meta = await metaCard();
 
     await user.type(within(meta).getByLabelText(connections.metaAdAccountId), 'nope');
-    await user.click(within(meta).getByRole('button', { name: connections.connect }));
+    await user.click(within(meta).getByRole('button', { name: connections.adConnect }));
 
     expect(await within(meta).findByText(message)).toBeInTheDocument();
     expect(within(meta).getByLabelText(connections.metaAdAccountId)).toHaveAttribute('aria-invalid', 'true');
@@ -195,7 +195,7 @@ describe('settings: ad connections', () => {
     expect(within(meta).getByText(connections.statuses.pending)).toBeInTheDocument();
     expect(within(meta).getByText(connections.reasons.payment)).toBeInTheDocument();
     for (const card of [google, meta]) {
-      expect(within(card).queryByRole('button', { name: connections.connect })).toBeNull();
+      expect(within(card).queryByRole('button', { name: connections.adConnect })).toBeNull();
       expect(within(card).queryByRole('button', { name: connections.checkAgain })).toBeNull();
       expect(within(card).queryByRole('button', { name: connections.remove })).toBeNull();
     }
