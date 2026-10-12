@@ -119,3 +119,5 @@ The owner paused new spending. Siblings 1-3 finish only their in-flight batches 
 
 ## CI OUTAGE (2026-10-12 02:18 UTC)
 GitHub Actions refuses every job: "recent account payments have failed or your spending limit needs to be increased" (private-repo minutes likely used up). Ruling AS: no ci-check while it is down; tracks keep building and push TASK branches verified with local checks; NOTHING merges into an integration branch without a green CI run (merging untested code would bypass CI). When CI returns, each track runs ci-check on its waiting task branches, fixes failures, then merges in order. Owner action needed: GitHub Settings -> Billing and plans (add a payment method or raise the Actions spending limit), or make the repo public (free minutes), or wait for the monthly reset.
+
+CI RESTORED (2026-10-12 ~02:30 UTC): the owner made the repo public; Actions runs again (run 38195767182). All tracks told to ci-check waiting branches and merge in order. The repo is PUBLIC: never commit secrets, tokens or real customer data.

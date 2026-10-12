@@ -15,6 +15,8 @@ lives anywhere else.
 
 ## Owner rules
 
+- **This repo is PUBLIC.** Never commit secrets, API keys, tokens, `.env` files or real customer data.
+
 - Just build: take the recommended option and keep going. Do not stop for plan or design approval.
 - Ask the owner first before: merging or pushing to `main`, spending money, messaging real people, deleting
   data, entering credentials, or creating accounts with outside services.
