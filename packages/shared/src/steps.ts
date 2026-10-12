@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { ApprovalClass } from './enums.ts';
 import { MESSAGE_PURPOSES } from './enums.ts';
 import { renderBody } from './render.ts';
-import { MEASUREMENT_KINDS, type MeasurementKind } from './proposals.ts';
+import { MEASUREMENT_KINDS, TIERS, type MeasurementKind, type Tier } from './proposals.ts';
 
 /*
  * The step-type registry (spec 4.1): what each kind of step an agent can put in a task needs, in
@@ -235,7 +235,7 @@ const sendSmsBatch: StepTypeDef<SmsPayload> = {
 export const PROPOSAL_LINK_MESSAGE = 'Keep {link} in the message so they can open the proposal.';
 const PROPOSAL_LINK_TOKEN = '{link}';
 const SAMPLE_PROPOSAL_LINK = 'https://example.com/p/abc123';
-const TIER_LABELS = ['Good', 'Better', 'Best'] as const;
+const TIER_LABELS: Record<Tier, string> = { good: 'Good', better: 'Better', best: 'Best' };
 const BASIS_LINES: Record<MeasurementKind, string> = {
   estimate: 'Estimate based on the roof outline.',
   exact: 'Based on an exact roof report.',
@@ -258,22 +258,26 @@ const proposalPayload = z.strictObject({
     .max(640, 'Please keep the message to 640 characters or fewer.')
     .refine(noNul, CHECK_TEXT),
   basis: z.enum(MEASUREMENT_KINDS, { error: 'Please pick estimate or exact.' }),
+  /** One entry per enabled option, in TIERS order: the tier names the total in the preview. */
   totals: z
-    .array(z.number({ error: PRICES_MESSAGE }).int(PRICES_MESSAGE).min(0, PRICES_MESSAGE), { error: PRICES_MESSAGE })
+    .array(
+      z.strictObject(
+        {
+          tier: z.enum(TIERS, { error: PRICES_MESSAGE }),
+          totalCents: z.number({ error: PRICES_MESSAGE }).int(PRICES_MESSAGE).min(0, PRICES_MESSAGE),
+        },
+        { error: PRICES_MESSAGE },
+      ),
+      { error: PRICES_MESSAGE },
+    )
     .min(1, PRICES_MESSAGE)
     .max(3, PRICES_MESSAGE),
 });
 type ProposalPayload = z.output<typeof proposalPayload>;
 
-/** "Good $11,900 · Better $14,250 · Best $17,600" for three options; plain amounts for any other count. */
-function tierTotalsLine(totals: number[]): string {
-  return totals
-    .map((total, i) => {
-      const amount = wholeDollars.format(total / 100);
-      const label = totals.length === 3 ? TIER_LABELS[i] : undefined;
-      return label === undefined ? amount : `${label} ${amount}`;
-    })
-    .join(' · ');
+/** "Good $11,900 · Better $14,250 · Best $17,600": each enabled option's total, labelled by its tier. */
+function tierTotalsLine(totals: ProposalPayload['totals']): string {
+  return totals.map((t) => `${TIER_LABELS[t.tier]} ${wholeDollars.format(t.totalCents / 100)}`).join(' · ');
 }
 
 const sendProposal: StepTypeDef<ProposalPayload> = {

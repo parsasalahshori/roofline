@@ -62,7 +62,7 @@
 | `R2_ACCESS_KEY_ID` | no | R2 access key id. All four R2 settings or none. |
 | `R2_SECRET_ACCESS_KEY` | no | R2 secret access key. All four R2 settings or none. |
 | `R2_BUCKET` | no | R2 bucket name. All four R2 settings or none. |
-| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. |
+| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be the same origin as `APP_ORIGIN` for the homeowner page to accept its signing and decline posts. |
 | `FOOTPRINTS_BASE_URL` | no | Where building footprint files are read from; a trailing slash is added. Defaults to `https://usbuildingdata.blob.core.windows.net/usbuildings-v2/`. |
 | `POLICY_PAGES_DOMAIN` | no | The bare hostname for the policy pages, like `roofline.app`. |
 | `FAKE_PROVIDERS` | no | `1` or `true` swaps every outside service for a fake. Development and test only; refused in production. |
