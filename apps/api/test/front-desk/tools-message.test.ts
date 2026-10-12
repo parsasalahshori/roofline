@@ -159,6 +159,51 @@ describe('take_message', () => {
     expect(t.mailer.sent).toHaveLength(0);
   });
 
+  test('two urgent take_message calls in one conversation send one email', async () => {
+    const emails = await putOnCall();
+    const { customerId } = await customerWithJob(null);
+    const conv = await makeConversation(customerId);
+    const urgent = { ...INPUT, urgent: true };
+    await run(conv, urgent);
+    await run(conv, urgent);
+    expect(t.mailer.sent.map((m) => m.to).sort()).toEqual([...emails].sort());
+    expect(conv.urgentNoticeSent).toBe(true);
+  });
+
+  test('with no customer the state flag dedupes; a different conversation still emails', async () => {
+    const emails = await putOnCall();
+    const conv = await makeConversation(null);
+    const urgent = { ...INPUT, urgent: true };
+    await run(conv, urgent);
+    await run(conv, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
+    expect(conv.urgentNoticeSent).toBe(true);
+    const other = await makeConversation(null);
+    await run(other, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length * 2);
+    expect(other.urgentNoticeSent).toBe(true);
+  });
+
+  test('two state objects over one conversation: the second sends nothing and sets its flag', async () => {
+    const emails = await putOnCall();
+    const { customerId } = await customerWithJob(null);
+    const first = await makeConversation(customerId);
+    const second = { ...first };
+    const urgent = { ...INPUT, urgent: true };
+    await run(first, urgent);
+    await run(second, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
+    expect(second.urgentNoticeSent).toBe(true);
+  });
+
+  test('a non-urgent message never sets the flag and never emails', async () => {
+    await putOnCall();
+    const conv = await makeConversation(null);
+    await run(conv);
+    expect(conv.urgentNoticeSent).toBeUndefined();
+    expect(t.mailer.sent).toHaveLength(0);
+  });
+
   test('no job: conversation outcome is message and nothing throws', async () => {
     const conv = await makeConversation(null);
     const res = await run(conv);

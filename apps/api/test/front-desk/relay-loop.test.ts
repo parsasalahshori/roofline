@@ -82,6 +82,19 @@ describe('relay session loop', () => {
     expect((await rows()).some((r) => r.speaker === 'assistant')).toBe(true);
   });
 
+  test('an urgent handoff event sends handoffData with a real boolean urgent', async () => {
+    const { session, loop } = await rig([
+      { when: /./, route: { ...OPUS, route: 'transfer', urgent: true }, answer: [] },
+    ]);
+    session.caller.setup({ customParameters: { callId: CALL_ID } });
+    session.caller.say('help me now');
+    await loop.settled();
+    const data = JSON.parse(session.endedWith!);
+    expect(data).toMatchObject({ kind: 'transfer', urgent: true });
+    expect(typeof data.reason).toBe('string');
+    expect(typeof data.summary).toBe('string');
+  });
+
   test('setup with a callId that differs from the call closes the session', async () => {
     const { session, loop } = await rig(SAY);
     session.caller.setup({ customParameters: { callId: '44444444-4444-4444-8444-444444444444' } });
@@ -108,7 +121,7 @@ describe('relay session loop', () => {
     expect(session.endedWith).toBeNull();
     session.caller.dtmf('0');
     await loop.settled();
-    expect(JSON.parse(session.endedWith!)).toEqual({ kind: 'transfer', reason: 'asked', summary: '' });
+    expect(JSON.parse(session.endedWith!)).toEqual({ kind: 'transfer', reason: 'asked', summary: '', urgent: false });
     expect(loop.ended).toBe(true);
   });
 

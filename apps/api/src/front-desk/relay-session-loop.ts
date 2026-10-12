@@ -41,14 +41,14 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
 
   const endForm = (kind: 'transfer' | 'end'): 'transfer' | 'end' => (call.messageOnly ? 'end' : kind);
 
-  function sendEnd(handoffData: Record<string, string>): void {
+  function sendEnd(handoffData: Record<string, string | boolean>): void {
     if (ended) return;
     ended = true;
     session.send({ type: 'end', handoffData: JSON.stringify(handoffData) });
   }
 
-  function transfer(reason: string, summary: string): void {
-    if (endForm('transfer') === 'transfer') sendEnd({ kind: 'transfer', reason, summary });
+  function transfer(reason: string, summary: string, urgent: boolean): void {
+    if (endForm('transfer') === 'transfer') sendEnd({ kind: 'transfer', reason, summary, urgent });
     else sendEnd({ kind: 'end', reason });
   }
 
@@ -75,7 +75,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
         } else if (ev.type === 'handoff') {
           if (ended) continue;
           finishedByEnd = true;
-          transfer(ev.reason, ev.summary);
+          transfer(ev.reason, ev.summary, ev.urgent);
         } else if (ev.type === 'end') {
           if (ended) continue;
           finishedByEnd = true;
@@ -86,7 +86,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
     } catch (e) {
       if (isAbort(e) || ac.signal.aborted) return;
       console.error(`relay turn failed call=${call.callId} company=${call.companyId}`);
-      transfer('asked', '');
+      transfer('asked', '', false);
     }
   }
 
@@ -159,7 +159,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
       case 'dtmf': {
         if (m.digit !== '0' || ended) return;
         abortCurrent();
-        transfer('asked', '');
+        transfer('asked', '', false);
         return;
       }
       case 'error':
