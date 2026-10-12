@@ -270,13 +270,68 @@ export function compareTurnViews(a: TurnView, b: TurnView): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/** `a` begins with `b` and ends there or at a space: "We can come Friday. More." begins with "We can come Friday." */
+const startsAtWord = (a: string, b: string): boolean => a.startsWith(b) && (a.length === b.length || a[b.length] === ' ');
+
+/**
+ * Which texts a turn already shows, one text to one turn line (final review). The contract with the fd-text job
+ * (apps/api/src/front-desk/texts.ts and the engine's turn save):
+ * - Caller: one engine turn answers every unanswered inbound text at once, and its caller turn holds their bodies
+ *   joined with '\n' in arrival order, saved after the texts arrived (turn `at` >= each text's createdAt). Each
+ *   inbound text, oldest first, takes the first unused run of lines (a text can hold line breaks of its own) of a
+ *   caller turn at or after it that equals its own lines, compared after whitespace squashing.
+ * - Assistant: the reply text is the assistant turn's words, possibly cut short at a sentence end to fit two
+ *   segments (texts.ts fitSegments), and is written after the turn (turn `at` <= the text's createdAt). Each
+ *   assistant text, oldest first, takes the first unused assistant turn at or before it whose words begin with the
+ *   text's words, or the other way round, ending at a word boundary.
+ * Each turn line (caller) or turn (assistant) is used once. A text that matches nothing is shown as its own line,
+ * so a change in what texts.ts writes can repeat a text, never hide one.
+ */
+function turnMatcher(turns: TurnView[]) {
+  const ordered = turns.filter((t) => t.callId === null && t.text !== null).sort(compareTurnViews);
+  const callerTurns = ordered
+    .filter((t) => t.speaker === 'caller')
+    .map((t) => ({ at: Date.parse(t.at), lines: (t.text ?? '').split('\n').map(squash), used: [] as boolean[] }));
+  const assistantTurns = ordered
+    .filter((t) => t.speaker === 'assistant')
+    .map((t) => ({ at: Date.parse(t.at), words: squash(t.text ?? ''), used: false }));
+
+  const callerShown = (body: string, createdAt: Date): boolean => {
+    const want = body.split('\n').map(squash);
+    for (const turn of callerTurns) {
+      if (turn.at < createdAt.getTime()) continue;
+      for (let i = 0; i + want.length <= turn.lines.length; i++) {
+        if (want.every((line, k) => turn.used[i + k] !== true && turn.lines[i + k] === line)) {
+          for (let k = 0; k < want.length; k++) turn.used[i + k] = true;
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const assistantShown = (body: string, createdAt: Date): boolean => {
+    const words = squash(body);
+    if (words === '') return false;
+    const turn = assistantTurns.find(
+      (t) => !t.used && t.at <= createdAt.getTime() && t.words !== '' && (startsAtWord(t.words, words) || startsAtWord(words, t.words)),
+    );
+    if (!turn) return false;
+    turn.used = true;
+    return true;
+  };
+
+  return (speaker: 'caller' | 'assistant', body: string, createdAt: Date): boolean =>
+    speaker === 'caller' ? callerShown(body, createdAt) : assistantShown(body, createdAt);
+}
+
 /**
  * An SMS conversation's detail is built from its turns (what the assistant heard and said, with its tool
  * cards) and from the conversation's texts (`messages.conversation_id`), which also hold the team's replies and
  * the inbound texts the assistant never took a turn for. A text becomes a line of its own unless a turn already
- * shows it: an inbound text whose words sit inside a caller turn, or an assistant text whose words sit inside an
- * assistant turn. A text whose body was blanked by retention is hidden when a blanked turn of the same speaker
- * already stands for it. Texts are shown as turns with `callId` null and `position` 0 (the sort is by time).
+ * shows it (`turnMatcher`, one text to one turn line). A text whose body was blanked by retention is hidden when a
+ * blanked turn of the same speaker already stands for it. Texts are shown as turns with `callId` null and
+ * `position` 0 (the sort is by time).
  */
 async function textItems(tx: Tx, ctx: TenantContext, conversationId: string, turns: TurnView[]): Promise<TurnView[]> {
   const rows = (
@@ -295,19 +350,12 @@ async function textItems(tx: Tx, ctx: TenantContext, conversationId: string, tur
       .limit(DETAIL_TEXT_LIMIT)
   ).reverse();
 
-  const textTurns = turns.filter((t) => t.callId === null);
-  const said = (speaker: 'caller' | 'assistant') => textTurns.filter((t) => t.speaker === speaker);
-  const joined = (speaker: 'caller' | 'assistant') =>
-    squash(
-      said(speaker)
-        .map((t) => t.text ?? '')
-        .join(' '),
-    );
-  const shownWords = { caller: joined('caller'), assistant: joined('assistant') };
+  const said = (speaker: 'caller' | 'assistant') => turns.filter((t) => t.callId === null && t.speaker === speaker);
   const hasBlankedTurn = {
     caller: said('caller').some((t) => t.text === null),
     assistant: said('assistant').some((t) => t.text === null),
   };
+  const shownByTurn = turnMatcher(turns);
 
   const out: TurnView[] = [];
   for (const r of rows) {
@@ -320,7 +368,7 @@ async function textItems(tx: Tx, ctx: TenantContext, conversationId: string, tur
           : 'team';
     const body = squash(r.body);
     if (speaker !== 'team') {
-      if (body === '' ? hasBlankedTurn[speaker] : shownWords[speaker].includes(body)) continue;
+      if (body === '' ? hasBlankedTurn[speaker] : shownByTurn(speaker, r.body, r.createdAt)) continue;
     }
     out.push({
       id: r.id,
