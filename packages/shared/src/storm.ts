@@ -21,3 +21,7 @@ export const AD_ERROR_KINDS = ['policy', 'payment', 'access', 'targeting', 'othe
 export type AdErrorKind = (typeof AD_ERROR_KINDS)[number];
 export const EMAIL_OPT_OUT_SOURCES = ['link', 'one_click', 'complaint', 'manual'] as const;
 export type EmailOptOutSource = (typeof EMAIL_OPT_OUT_SOURCES)[number];
+
+// Task 4 logic lives in two files (one owner each); this file re-exports them so callers import from storm.ts.
+export * from './storm-templates.ts';
+export * from './storm-math.ts';
