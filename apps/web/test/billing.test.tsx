@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
@@ -246,4 +246,77 @@ it('thanks after checkout, once, and refreshes the plan', async () => {
   await waitFor(() => expect(api.count('GET /api/auth/me')).toBeGreaterThan(meBefore));
   await waitFor(() => expect(api.count('GET /api/billing')).toBeGreaterThan(billingBefore));
   expect(screen.getByRole('heading', { name: billing.plansHeading })).toBeInTheDocument();
+});
+
+it('shows the server message when checkout is refused', async () => {
+  const assign = vi.spyOn(go, 'assign').mockImplementation(() => {});
+  const message = 'Please confirm your email first. We sent you a link.';
+  signedIn({
+    view: billingView({ hasPaymentMethod: false, plans: [STARTER] }),
+    routes: {
+      'POST /api/billing/checkout': () => ({ status: 403, body: { error: message } }),
+    },
+  });
+  const { user } = renderApp('/settings/billing');
+
+  await user.click(await screen.findByRole('button', { name: billing.pickPlan }));
+
+  expect(await screen.findByText(message)).toBeInTheDocument();
+  expect(assign).not.toHaveBeenCalled();
+});
+
+it('shows the server message when the payment portal fails', async () => {
+  vi.spyOn(go, 'assign').mockImplementation(() => {});
+  signedIn({
+    status: 'past_due',
+    view: billingView({ status: 'past_due', canOpenPortal: true }),
+    routes: {
+      'POST /api/billing/portal': () => ({ status: 502, body: { error: 'X' } }),
+    },
+  });
+  const { user } = renderApp('/settings/billing');
+
+  await user.click(await screen.findByRole('button', { name: billing.banners.fixPayment }));
+
+  expect(await screen.findByText('X')).toBeInTheDocument();
+});
+
+it('a canceled company can pick its old plan again', async () => {
+  vi.spyOn(go, 'assign').mockImplementation(() => {});
+  signedIn({
+    status: 'canceled',
+    view: billingView({
+      status: 'canceled',
+      planKey: 'growth',
+      planName: 'Growth',
+      hasPaymentMethod: false,
+      plans: [STARTER, GROWTH],
+    }),
+    routes: {
+      'POST /api/billing/checkout': () => ({ body: { url: CHECKOUT_URL } }),
+    },
+  });
+  const { user } = renderApp('/settings/billing');
+
+  const card = (await screen.findByRole('heading', { name: 'Growth', level: 4 })).closest('li') as HTMLElement;
+  expect(within(card).queryByText(billing.yourPlan)).not.toBeInTheDocument();
+  await user.click(within(card).getByRole('button', { name: billing.pickPlan }));
+
+  await waitFor(() => expect(api.sent('POST /api/billing/checkout')).toEqual([{ planKey: 'growth' }]));
+});
+
+it('an active subscriber still sees Your plan on its own plan', async () => {
+  signedIn({
+    view: billingView({
+      status: 'active',
+      planKey: 'growth',
+      planName: 'Growth',
+      hasPaymentMethod: true,
+      plans: [STARTER, GROWTH],
+    }),
+  });
+  renderApp('/settings/billing');
+
+  const card = (await screen.findByRole('heading', { name: 'Growth', level: 4 })).closest('li') as HTMLElement;
+  expect(within(card).getByText(billing.yourPlan)).toBeInTheDocument();
 });

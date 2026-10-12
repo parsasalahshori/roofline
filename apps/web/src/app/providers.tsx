@@ -17,10 +17,12 @@ export function createQueryClient(): QueryClient {
 /**
  * The kit asks for links by `href`; the router's `Link` wants `to`. Defined here, at module level,
  * and not inline in `Providers`: the kit renders the component it is given, and a new function on
- * every render would remount every link.
+ * every render would remount every link. Download links must skip client-side navigation, because the
+ * router's `Link` ignores the `download` attribute.
  */
 function RouterLink({ href, ...rest }: UiLinkProps) {
-  return <Link to={href} {...rest} />;
+  const isDownload = rest.download !== undefined && rest.download !== false;
+  return <Link to={href} reloadDocument={isDownload} {...rest} />;
 }
 
 /** Everything the app's components expect above them, except the router. Pass `client` to use your own query cache. */
