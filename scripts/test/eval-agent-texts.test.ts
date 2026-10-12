@@ -358,6 +358,12 @@ describe('report', () => {
     expect(md).toContain('- **review-01** (review_request): facts not in the case: Selma (name)');
   });
 
+  it('prints the adapter drop reasons, and nothing for a case without drops', () => {
+    expect(renderReport(report)).not.toContain('dropped:');
+    const md = renderReport({ ...report, cases: [base({ dropped: [{ jobId: 'job-1', reason: 'too_long' }] })] });
+    expect(md).toContain('dropped: job-1 (too_long)');
+  });
+
   it('names the file by start time', () => {
     expect(reportFileName(report.startedAt)).toBe('agent-texts-2026-10-12T13-40-05Z.md');
   });

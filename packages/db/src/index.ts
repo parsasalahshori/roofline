@@ -44,6 +44,7 @@ export {
   setBaselineOverrides,
 } from './repos/time-baselines.ts';
 export * from './repos/agent-settings.ts';
+export * from './repos/agent-common.ts'; // G1 Task 19
 export { insertDefaultSettings, pickFreeSlug, setServiceArea, slugify } from './repos/companies.ts';
 export {
   CONSENT_LABELS,

@@ -5,22 +5,12 @@ import type { StepView } from '../../../api/types.ts';
 import { useStorm } from '../../storm/api.ts';
 import { outerRingsOf, SwathThumb } from './SwathThumb.tsx';
 import styles from './AdCampaignPreview.module.css';
+import { payloadOf, textOf } from './payload.ts';
 import type { EditFieldSpec, EditValues, StepKit, StepPreviewProps } from './types.ts';
 
-type Payload = Record<string, unknown>;
 type Platform = keyof typeof stepAds.platformName;
 
-/** The step's payload as an object. A payload that is missing or not an object reads as empty. */
-function payloadOf(step: StepView): Payload {
-  const payload: unknown = step.payload;
-  return payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Payload) : {};
-}
-
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-
-function textOf(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
 
 function platformOf(value: unknown): Platform | null {
   return value === 'google' || value === 'meta' ? value : null;

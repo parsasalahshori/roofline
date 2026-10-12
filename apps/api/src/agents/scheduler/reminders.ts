@@ -1,9 +1,9 @@
-import { agentTaskCreatedBetween, reminderCandidates, type ReminderCandidate, g1AgentOn, schedulerCompany, type TenantContext, withTenant, zoneDayAfter, zoneDayStart } from '@roofline/db';
-import { claimsGuard, guardSentence } from '@roofline/shared';
+import { agentCompanyFacts, hasAgentTaskBetween, reminderCandidates, type ReminderCandidate, g1AgentOn, withTenant, zoneDayAfter, zoneDayStart } from '@roofline/db';
 import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
 import { LlmUnavailableError, MAX_DRAFT_JOBS, type JobFacts } from '../../providers/llm.ts';
 import { createTask } from '../../tasks/service.ts';
+import { draftBodyOk, FROM_TEMPLATE, localTimeToday, systemCtx } from '../common.ts';
 import { localParts } from '../schedule.ts';
 
 const MAX_BODY = 300;
@@ -34,42 +34,26 @@ export function reminderTemplate(c: ReminderCandidate, companyName: string, time
     : `${head} between ${w.start} and ${w.end}. Reply C to confirm or call us to change.`;
 }
 
-function bodyOk(body: string): boolean {
-  if (body.trim() === '' || body.length > MAX_BODY) return false;
-  if (!claimsGuard(body).ok) return false;
-  return body.split(/(?<=[.!?])\s+/).every((s) => guardSentence(s, { repName: null }).hits.length === 0);
-}
-
-/** The local instant (today) at 9 PM in the zone: the first minute of the day whose local clock reads 21:00. */
-function nineLocal(today: string, timeZone: string): Date {
-  const start = zoneDayStart(today, timeZone).getTime();
-  for (let t = start + 20 * 3_600_000; t <= start + 22 * 3_600_000; t += 60_000) {
-    const p = localParts(new Date(t), timeZone);
-    if (p.localDate === today && p.hour === 21 && p.minute === 0) return new Date(t);
-  }
-  return new Date(start + 21 * 3_600_000);
-}
-
 /**
  * Tomorrow's reminder texts for one company: one approval task, once per local day. The model is
  * called outside any transaction; the once-a-day check runs again just before the task is made.
  */
 export async function runReminders(deps: AppDeps, companyId: string, meta: JobMeta): Promise<void> {
   void meta;
-  const ctx: TenantContext = { companyId, userId: null, role: 'system', canApproveSpend: false };
+  const ctx = systemCtx(companyId);
   const now = deps.clock.now();
 
   const plan = await withTenant(deps.pools, ctx, async (tx) => {
-    const company = await schedulerCompany(tx, ctx);
+    const company = await agentCompanyFacts(tx, ctx);
     if (!company || (company.status !== 'active' && company.status !== 'trial')) return null;
     if (!(await g1AgentOn(tx, ctx, 'scheduler'))) return null;
 
-    const tz = company.timezone;
+    const tz = company.timeZone;
     const today = localParts(now, tz).localDate;
     const tomorrow = zoneDayAfter(today);
     const todayStart = zoneDayStart(today, tz);
     const todayEnd = zoneDayStart(tomorrow, tz);
-    if (await agentTaskCreatedBetween(tx, ctx, { agent: 'scheduler', kind: 'reminders', from: todayStart, to: todayEnd })) return null;
+    if (await hasAgentTaskBetween(tx, ctx, { agent: 'scheduler', kind: 'reminders', from: todayStart, to: todayEnd })) return null;
 
     const candidates = await reminderCandidates(tx, ctx, { from: todayEnd, to: zoneDayStart(zoneDayAfter(tomorrow), tz) });
     if (candidates.length === 0) return null;
@@ -104,7 +88,7 @@ export async function runReminders(deps: AppDeps, companyId: string, meta: JobMe
   let usedTemplate = false;
   const messages = candidates.map((c) => {
     const text = drafted.get(keyOf(c));
-    if (text !== undefined && bodyOk(text)) return { customerId: c.customerId, jobId: c.jobId, body: text };
+    if (text !== undefined && draftBodyOk(text, { repName: null, maxChars: MAX_BODY })) return { customerId: c.customerId, jobId: c.jobId, body: text };
     usedTemplate = true;
     return { customerId: c.customerId, jobId: c.jobId, body: reminderTemplate(c, company.name, tz) };
   });
@@ -121,7 +105,7 @@ export async function runReminders(deps: AppDeps, companyId: string, meta: JobMe
 
   await withTenant(deps.pools, ctx, async (tx) => {
     // Another run may have made today's task while the model was writing.
-    if (await agentTaskCreatedBetween(tx, ctx, { agent: 'scheduler', kind: 'reminders', from: todayStart, to: todayEnd })) return;
+    if (await hasAgentTaskBetween(tx, ctx, { agent: 'scheduler', kind: 'reminders', from: todayStart, to: todayEnd })) return;
     await createTask(
       tx,
       ctx,
@@ -129,8 +113,8 @@ export async function runReminders(deps: AppDeps, companyId: string, meta: JobMe
         agent: 'scheduler',
         kind: 'reminders',
         title: `Reminders for tomorrow (${messages.length} texts)`,
-        summary: usedTemplate ? 'Written from a template' : "Drafted for tomorrow's visits.",
-        expiresAt: nineLocal(today, tz),
+        summary: usedTemplate ? FROM_TEMPLATE : "Drafted for tomorrow's visits.",
+        expiresAt: localTimeToday(today, 21, tz),
         steps,
       },
       { now, allowInternalStepTypes: true },

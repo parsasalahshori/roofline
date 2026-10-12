@@ -8,7 +8,6 @@ import {
   listSteps,
   moveStep,
   saveClaim,
-  updateTask,
   type ClaimPatch,
   withTenant,
 } from '@roofline/db';
@@ -17,7 +16,7 @@ import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { ObjectStoreUnavailableError } from '../providers/object-store.ts'; // G1 Task 7
 import { runStep } from '../tasks/runner.ts'; // G1 Task 7
-import { createTask } from '../tasks/service.ts'; // G1 Task 7
+import { runLiveStep } from '../agents/notes.ts';
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
 
 const NO_JOB = "We couldn't find that job.";
@@ -192,7 +191,7 @@ export function jobClaimRoutes(deps: AppDeps): Router {
 
     const now = clock.now();
     const { taskId, stepId } = await withTenant(pools, ctx, async (tx) => {
-      const created = await createTask(
+      const created = await runLiveStep(
         tx,
         ctx,
         {
@@ -201,16 +200,12 @@ export function jobClaimRoutes(deps: AppDeps): Router {
           title: 'Build the claim packet',
           subjectType: 'job',
           subjectId: id,
-          mode: 'live',
-          steps: [{ type: 'build_claim_packet', payload: { jobId: id } }],
+          step: { type: 'build_claim_packet', payload: { jobId: id } },
         },
-        { now, ip: null, allowInternalStepTypes: true },
+        now,
       );
-      await updateTask(tx, ctx, created.taskId, { status: 'running' }, now);
-      const [step] = await listSteps(tx, ctx, [created.taskId]);
-      if (!step) throw new Error('The claim packet step was not saved.');
-      await moveStep(tx, ctx, step.id, ['pending'], { status: 'queued', approvedAt: now }, now);
-      return { taskId: created.taskId, stepId: step.id };
+      await moveStep(tx, ctx, created.stepId, ['pending'], { status: 'queued', approvedAt: now }, now);
+      return created;
     });
     await runStep(deps, ctx.companyId, stepId);
 

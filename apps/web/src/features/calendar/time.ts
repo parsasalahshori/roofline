@@ -118,6 +118,24 @@ export function dateKeyToInstant(key: string, zone: string): Date {
   return zonedMidnight(Number(match[1]), Number(match[2]), Number(match[3]), zone);
 }
 
+/**
+ * The instant whose wall clock in `zone` on `dateKey` (YYYY-MM-DD) reads hour:minute. Correct on 23 and 25
+ * hour days; a wall time inside a spring-forward gap resolves to the following valid minute.
+ */
+export function zonedWallToInstant(dateKey: string, hour: number, minute: number, zone: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (match === null) throw new RangeError(`Not a calendar day: ${dateKey}`);
+  const target = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), hour, minute);
+  let instant = dateKeyToInstant(dateKey, zone).getTime() + (hour * 60 + minute) * 60_000;
+  // Read the wall clock back and move by the difference; two passes settle across a clock change.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const diff = target - wallAsUtc(instant, zone);
+    if (diff === 0) break;
+    instant += diff;
+  }
+  return new Date(instant);
+}
+
 /** Minutes since the zone-day start of `dayStart` (a startOfZonedDay result) to `instant`; real elapsed minutes, so DST days are 23h or 25h. */
 export function minutesIntoDay(dayStart: Date, instant: Date): number {
   return (instant.getTime() - dayStart.getTime()) / 60_000;

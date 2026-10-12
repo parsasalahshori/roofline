@@ -58,6 +58,9 @@ export function RunNowButton({ agent, runNow }: RunNowButtonProps) {
     );
   }
 
+  const label = agentPage.runNowLabels[agent];
+  if (label === undefined) return null;
+
   const run = () => {
     setError(null);
     mutation.mutate(undefined, {
@@ -79,7 +82,7 @@ export function RunNowButton({ agent, runNow }: RunNowButtonProps) {
         ) : (
           <div className={styles.runButton}>
             <Button variant="primary" busy={mutation.isPending} onClick={run}>
-              {agentPage.runNowLabels[agent]}
+              {label}
             </Button>
           </div>
         )}

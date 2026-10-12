@@ -1,6 +1,5 @@
-import { eq } from 'drizzle-orm';
 import type { AgentRuleFacts } from '@roofline/shared';
-import { companySettings, type TenantContext, type Tx } from '@roofline/db';
+import { readAgentValues, type TenantContext, type Tx } from '@roofline/db';
 
 /*
  * A1 Task 5 / G1 Task 15: the facts behind each agent card's rule sentences (`rulesFor` in @roofline/shared).
@@ -14,48 +13,14 @@ import { companySettings, type TenantContext, type Tx } from '@roofline/db';
  * where their settings land; until then they are left out and `rulesFor` gives [] for those two agents.
  */
 
-/** The company_settings column defaults (packages/db/src/schema/tenant.ts), used when there is no row. */
-const DEFAULTS = {
-  claimsNudgeDays: [3, 5, 7],
-  weatherRainPct: 60,
-  weatherGustMph: 25,
-  reminderHour: 15,
-  followupDays: [3, 4],
-  leadFollowupDays: 2,
-  reviewDelayDays: 3,
-  followupReviews: true,
-  followupLeads: true,
-  followupProposals: true,
-  reviewLink: null as string | null,
-};
-
 export async function gatherRuleFacts(tx: Tx, ctx: TenantContext): Promise<AgentRuleFacts> {
-  const [row] = await tx
-    .select({
-      claimsNudgeDays: companySettings.claimsNudgeDays,
-      reminderHour: companySettings.reminderHour,
-      weatherRainPct: companySettings.weatherRainPct,
-      weatherGustMph: companySettings.weatherGustMph,
-      followupDays: companySettings.followupDays,
-      leadFollowupDays: companySettings.leadFollowupDays,
-      reviewDelayDays: companySettings.reviewDelayDays,
-      followupReviews: companySettings.followupReviews,
-      followupLeads: companySettings.followupLeads,
-      followupProposals: companySettings.followupProposals,
-      reviewLink: companySettings.reviewLink,
-    })
-    .from(companySettings)
-    .where(eq(companySettings.companyId, ctx.companyId))
-    .limit(1);
-  const s = row ?? DEFAULTS;
-  const [n0, n1, n2] = s.claimsNudgeDays;
-  const [f0, f1] = s.followupDays;
+  const s = await readAgentValues(tx, ctx);
   const link = s.reviewLink;
   return {
-    claims: { nudgeDays: [n0!, n1!, n2!] },
+    claims: { nudgeDays: s.claimsNudgeDays },
     scheduler: { reminderHour: s.reminderHour, rainPct: s.weatherRainPct, gustMph: s.weatherGustMph },
     followUp: {
-      proposalDays: [f0!, f1!],
+      proposalDays: s.followupDays,
       leadDays: s.leadFollowupDays,
       reviewDelayDays: s.reviewDelayDays,
       reviewsOn: s.followupReviews && link !== null && link.trim() !== '',

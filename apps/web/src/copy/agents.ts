@@ -2,6 +2,8 @@
  * The Agents screen (A1 Task 8): window and tab titles and the placeholder lines. Agent names are
  * AGENT_LABEL in status.ts. Tasks 9 to 12 add the real words here.
  */
+import type { ScreenAgent } from '@roofline/shared';
+
 export const agents = {
   // The tab row in the Agents window
   tabsLabel: 'Agents sections',
@@ -87,13 +89,11 @@ export const agentPage = {
   ownerOnly: 'Only the owner can pause or resume an agent.',
   runNowButton: 'Check for hail now',
   runNowLabels: {
-    estimator: 'Check for hail now',
-    front_desk: 'Check for hail now',
     storm_scout: 'Check for hail now',
     claims: 'Check claims now',
     scheduler: 'Check tomorrow now',
     follow_up: 'Find follow-ups now',
-  },
+  } as Partial<Record<ScreenAgent, string>>,
   runStartedOncePerDay: 'Started. If it already ran today, it will not make a second plan.',
   turnOnButton: 'Turn on',
   turnOnTitle: 'Turn this agent on?',
