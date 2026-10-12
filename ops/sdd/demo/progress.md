@@ -23,3 +23,5 @@ Branch `demo-mode`, off `launch-integration` 2a3cbe5. The owner runs the demo li
 - **CI green** on 6e55f90 (run 38295342812): Platform, E2E (incl. demo smoke), Demo DB (arm64), Hail, v1 all pass.
 - **Signed PDF** (caveat 3): the DEMO_MODE file store is shared on disk (DEMO_FILES_DIR, `.demo-files/`). The seed renders the signed PDF; the sign simulation returns the homeowner link; the smoke test downloads the PDF. CI green on d657b2e (run 38303233078).
 - **launch-integration re-merge**: held. 999d4c4, 1884f17 and 235ce30 were not green (235ce30: main E2E red). The merged tree passed the smoke test locally (branch demo-merge-wip, local only).
+- **BUG-7** (4f6ab800): GET /api/demo is always mounted; it answers {demo:false} when demo mode is off. CI was green except the signed-pdf helper flake. My helper fix dcfcead8 was reverted (3bf442e2) in favour of E1 420f022 (cherry-picked). Sentinel takes 4f6ab800 only.
+- **Launch merge**: bb23b03e (green) merged at 402b272a. Local checks all pass, smoke 2.5 min. One-liner (Linux path): the raw URL serves the branch script, and fresh clone + npm ci + npm run demo seeds and logs in. The Mac steps need an owner dry run.
