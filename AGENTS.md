@@ -121,7 +121,7 @@ conversation text (MEDIUM 6); the E1 lead fixes platform items (TRUST_PROXY star
 **Ruling BH (A1 T23):** setting a next step on a job that had none counts as a change, and it closes that job's open Front Desk live tasks.
 **Ruling BI (D1 retention, final-review N6):** the retention sweep blanks only the AI exchange: inbound texts the assistant handled, and the assistant's replies. It keeps STOP/START/HELP keyword bodies (the compliance record), staff replies and booking confirmations. The settings copy says exactly that. Retention 0 deletes existing recordings, and the copy says so. Recommended option taken; the owner may revisit it.
 **Ruling BJ (D1 stale-call sweep):** `endStuckCalls` lists company ids on the system pool, then updates per company on the tenant pool inside `withTenant`. No app_system UPDATE grant on calls (in line with BF and the rev-d sweep rule).
-**Ruling BK (D1 after-hours escalation):** after hours, on-call staff are rung only for leak or danger reasons, or for an urgent take_message. Urgent wording from the caller alone does not ring them. Recommended option taken; the owner may revisit it.
+**Ruling BK (D1 after-hours escalation, amended):** after hours, on-call staff are rung only for a leak or danger reason. Matching is loose: the intents leak, active_leak, emergency, danger, injury, fire, water_inside and storm_damage_active, plus a loose regex over the intent and the caller summary. The vocabulary is named in ROUTER_PROMPT. A bare "it's urgent" does not ring. Recommended option taken; the owner may revisit it.
 
 ## How to do a task
 
