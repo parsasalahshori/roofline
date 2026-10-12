@@ -1,4 +1,4 @@
-import { decrypt, markConnectionError, type CalendarConnectionRow, type TenantContext, withTenant } from '@roofline/db';
+import { decrypt, encrypt, markConnectionError, updateConnectionCredentials, type CalendarConnectionRow, type TenantContext, withTenant } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 import { CalendarAuthError } from '../providers/calendar.ts';
 
@@ -19,6 +19,11 @@ export function clearTokenCache(): void {
   cache.clear();
 }
 
+/** Forgets the cached token of one connection. A reconnect keeps the row id, so the old token must not outlive the old grant. */
+export function forgetCachedToken(connectionId: string): void {
+  cache.delete(connectionId);
+}
+
 /** A usable access token for this connection, refreshed from its stored refresh token when needed. */
 export async function accessTokenFor(deps: AppDeps, ctx: TenantContext, conn: CalendarConnectionRow): Promise<string> {
   const cached = cache.get(conn.id);
@@ -27,9 +32,13 @@ export async function accessTokenFor(deps: AppDeps, ctx: TenantContext, conn: Ca
   const { refreshToken } = JSON.parse(decrypt(conn.encryptedCredentials, deps.config.ENCRYPTION_KEY)) as { refreshToken: string };
   const api = deps.calendars[conn.provider];
   try {
-    // A provider may rotate the refresh token here; we keep the stored one until rotation is needed.
     const r = await api.refresh(refreshToken);
     cache.set(conn.id, { token: r.accessToken, expiresAt: r.expiresAt.getTime() });
+    // A provider may rotate the refresh token; the old one can stop working, so the new one is stored.
+    if (r.refreshToken !== undefined && r.refreshToken !== refreshToken) {
+      const encrypted = encrypt(JSON.stringify({ refreshToken: r.refreshToken }), deps.config.ENCRYPTION_KEY);
+      await withTenant(deps.pools, ctx, (tx) => updateConnectionCredentials(tx, ctx, conn.id, encrypted, deps.clock.now()));
+    }
     return r.accessToken;
   } catch (err) {
     if (err instanceof CalendarAuthError) {

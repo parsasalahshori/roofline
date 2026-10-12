@@ -263,3 +263,21 @@ test('company B cannot touch company A connection', async () => {
   expect(removed.body.error).toBe(NOT_FOUND);
   expect(await connectionRows(t.seed.a.companyId)).toHaveLength(1);
 });
+
+test('reconnecting with another account does not reuse the old cached token', async () => {
+  const owner = await connectOwner();
+  const [first] = await connectionRows(t.seed.a.companyId);
+  expect(first).toBeDefined();
+  expect((await owner.get(`${CONNECTION}/calendars`)).status).toBe(200);
+  const listed = () => t.calendars.google.calls.filter((c) => c.method === 'listCalendars').map((c) => c.args[0]);
+  expect(listed().at(-1)).toBe('access-abc');
+
+  const state = await mintState('owner');
+  const res = await owner.get(`${CALLBACK}?code=xyz&state=${encodeURIComponent(state)}`);
+  expect(res.headers.location).toBe(settingsUrl('connected'));
+  const [second] = await connectionRows(t.seed.a.companyId);
+  expect(second?.id).toBe(first?.id);
+
+  expect((await owner.get(`${CONNECTION}/calendars`)).status).toBe(200);
+  expect(listed().at(-1)).toBe('access-xyz');
+});

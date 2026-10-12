@@ -15,7 +15,7 @@ import { CALENDAR_PROVIDERS, type CalendarConnectionView, type CalendarProvider 
 import type { AppDeps } from '../app.ts';
 import { makeOAuthState, readOAuthState } from '../calendar/oauth-state.ts';
 import { pullConnection } from '../calendar/pull.ts';
-import { accessTokenFor } from '../calendar/tokens.ts';
+import { accessTokenFor, forgetCachedToken } from '../calendar/tokens.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { CalendarAuthError, CalendarUnavailableError, type ExternalCalendar } from '../providers/calendar.ts';
 import { assertKnownFields, noNul, parse, TOO_LONG } from '../validate.ts';
@@ -179,7 +179,7 @@ export function calendarConnectRoutes(deps: AppDeps): Router {
         res.redirect(302, settingsRedirect('failed'));
         return;
       }
-      await withTenant(pools, ctx, async (tx) => {
+      const savedId = await withTenant(pools, ctx, async (tx) => {
         const row = await saveConnection(
           tx,
           ctx,
@@ -202,7 +202,10 @@ export function calendarConnectRoutes(deps: AppDeps): Router {
           ip: req.ip ?? null,
           at: now,
         });
+        return row.id;
       });
+      // The row id survives a reconnect, so a token cached for the old grant must go.
+      forgetCachedToken(savedId);
       res.redirect(302, settingsRedirect('connected'));
     } catch (err) {
       // The provider's own words never reach the person or the log line; the error is handed over whole.
@@ -238,11 +241,13 @@ export function calendarConnectRoutes(deps: AppDeps): Router {
   router.delete('/connection', async (req, res) => {
     const { ctx } = req;
     const now = clock.now();
+    let removedId: string | null = null;
     const removed = await withTenant(pools, ctx, async (tx) => {
       const conn = await getConnection(tx, ctx, req.session.userId);
       if (!conn) return false;
       const done = await deleteConnection(tx, ctx, req.session.userId);
       if (!done) return false;
+      removedId = conn.id;
       await audit(tx, ctx, {
         action: 'calendar.disconnected',
         targetType: 'calendar_connection',
@@ -254,6 +259,7 @@ export function calendarConnectRoutes(deps: AppDeps): Router {
       return true;
     });
     if (!removed) throw new AppError(404, MESSAGES.notFound);
+    if (removedId !== null) forgetCachedToken(removedId);
     // Disconnecting does not call the provider: the grant is simply forgotten here.
     res.status(204).end();
   });

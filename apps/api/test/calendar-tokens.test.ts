@@ -9,6 +9,7 @@ import {
   markConnectionError,
   saveConnection,
   setConnectionCalendar,
+  decrypt,
   withTenant,
   type CalendarConnectionRow,
   type TenantContext,
@@ -95,6 +96,32 @@ describe('accessTokenFor', () => {
     const after = await readConnection();
     expect(after?.status).toBe('error');
     expect(after?.lastErrorPlain).toBe(RECONNECT);
+  });
+});
+
+describe('rotated refresh tokens', () => {
+  test('a refresh token returned by the provider is stored encrypted, and used next time', async () => {
+    const conn = await seedConnection();
+    t.calendars.google.rotateNext('refresh-rotated');
+
+    expect(await accessTokenFor(t.deps, ctx, conn)).toBe('access-rotated');
+
+    const stored = await readConnection();
+    const creds = JSON.parse(decrypt(stored!.encryptedCredentials, t.deps.config.ENCRYPTION_KEY)) as { refreshToken: string };
+    expect(creds.refreshToken).toBe('refresh-rotated');
+
+    // Once the cached token is stale, the next refresh uses the rotated token.
+    clearTokenCache();
+    await accessTokenFor(t.deps, ctx, stored!);
+    const refreshArgs = t.calendars.google.calls.filter((c) => c.method === 'refresh').map((c) => c.args[0]);
+    expect(refreshArgs).toEqual(['refresh-abc', 'refresh-rotated']);
+  });
+
+  test('an unchanged refresh token leaves the stored credentials alone', async () => {
+    const conn = await seedConnection();
+    await accessTokenFor(t.deps, ctx, conn);
+    const stored = await readConnection();
+    expect(stored!.encryptedCredentials.equals(conn.encryptedCredentials)).toBe(true);
   });
 });
 

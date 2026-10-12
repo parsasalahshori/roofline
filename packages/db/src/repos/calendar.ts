@@ -106,6 +106,20 @@ export async function markConnectionError(tx: Tx, ctx: TenantContext, connection
     .where(and(eq(calendarConnections.companyId, ctx.companyId), eq(calendarConnections.id, connectionId)));
 }
 
+/** Replaces the stored credentials of a connection, e.g. after the provider rotated the refresh token. Status and cursor stay as they are. */
+export async function updateConnectionCredentials(
+  tx: Tx,
+  ctx: TenantContext,
+  connectionId: string,
+  encryptedCredentials: Buffer,
+  now: Date,
+): Promise<void> {
+  await tx
+    .update(calendarConnections)
+    .set({ encryptedCredentials, updatedAt: now })
+    .where(and(eq(calendarConnections.companyId, ctx.companyId), eq(calendarConnections.id, connectionId)));
+}
+
 /** Removes a person's connection. Its busy blocks and event links go with it (foreign keys cascade). True when a row was removed. */
 export async function deleteConnection(tx: Tx, ctx: TenantContext, userId: string): Promise<boolean> {
   const rows = await tx
