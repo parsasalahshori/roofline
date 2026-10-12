@@ -1,5 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { AgentDetail, ScreenAgent } from '@roofline/shared';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -56,6 +57,20 @@ function renderApp(path: string) {
   return { router, queryClient, user: userEvent.setup() };
 }
 
+function detailFor(agent: ScreenAgent): AgentDetail {
+  return {
+    card: { agent, status: 'on', finishedToday: 0, successRate: null, notApproved30d: 0, minutesThisMonth: 0, last14Days: [], waitingCount: 0 },
+    period: 'month',
+    minutesInPeriod: 0,
+    breakdown: [],
+    rules: [],
+    paused: null,
+    runNow: { kind: 'coming_soon' },
+    recentTasks: [],
+    hourlyRateCents: 0,
+  };
+}
+
 describe('A1 windows', () => {
   it('/agents shows the overview in the Agents window', async () => {
     signedInApi(ACCOUNT, {
@@ -80,12 +95,11 @@ describe('A1 windows', () => {
   });
 
   it.each(PAGE_AGENTS)('shows the %s page with its name', async (agent) => {
-    signedInApi();
+    signedInApi(ACCOUNT, { ['GET /api/agents/' + agent + '?period=month']: () => ({ body: detailFor(agent as ScreenAgent) }) });
     renderApp('/agents/' + agentSlug(agent));
 
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
-    expect(await within(dialog).findByText(AGENT_LABEL[agent])).toBeInTheDocument();
-    expect(within(dialog).getByText(agents.agentComingSoon)).toBeInTheDocument();
+    expect(await within(dialog).findByRole('heading', { name: AGENT_LABEL[agent] })).toBeInTheDocument();
   });
 
   it('lets feed win over :agent', async () => {
