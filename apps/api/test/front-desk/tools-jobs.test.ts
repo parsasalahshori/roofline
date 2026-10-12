@@ -85,7 +85,7 @@ describe('lookup_my_jobs', () => {
     expect(r.forModel).toContain(`Job ${ids.jobId} at 123 Elm St`);
     expect(r.forModel).toContain('inspection stage');
     expect(r.forModel).toMatch(/Next: (inspection or )?visit on /);
-    // Each upcoming appointment is named with its id, so move/cancel/confirm can use it.
+    // Ids for the model only, so confirm, move and cancel can act on the visit.
     expect(r.forModel).toContain(`Appointment ${ids.appointmentId}: inspection on `);
     expect(r.shownIds).toEqual([ids.jobId, ids.propertyId, ids.appointmentId]);
   });
