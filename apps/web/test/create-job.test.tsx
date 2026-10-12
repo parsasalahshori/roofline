@@ -30,9 +30,14 @@ afterEach(() => {
   expect(api?.unexpected ?? []).toEqual([]);
 });
 
+// After a save the app lands on the new job's window, which reads its view and gets a 404 here because these tests only check the URL.
+const LANDED_JOB_ROUTES: Routes = Object.fromEntries(
+  ['j5', 'j6', 'j7'].map((id) => [`GET /api/jobs/${id}/view`, () => ({ status: 404, body: { error: 'Not found' } })]),
+);
+
 /** The signed-in person (ACCOUNT unless a test gives its own) and the shell's reads, plus the given routes. */
 function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
+  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...LANDED_JOB_ROUTES, ...overrides });
   return api;
 }
 

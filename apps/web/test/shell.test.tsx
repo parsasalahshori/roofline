@@ -44,6 +44,8 @@ function signedInApi(overrides: Routes = {}) {
     // The pipeline board (the /jobs window) reads the board and the team; both are empty here
     'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
     'GET /api/team': () => ({ body: { members: [] } }),
+    // The map's job pin opens /jobs/j9, which reads its view; a 404 keeps the window out of these shell tests
+    'GET /api/jobs/j9/view': () => ({ status: 404, body: { error: 'Not found' } }),
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
     ...overrides,
   });
@@ -234,7 +236,7 @@ it('marks the open app in the dock', async () => {
 });
 
 it('opens a customer or a job from a pin card', async () => {
-  signedInApi();
+  signedInApi({ 'GET /api/customers/c9/view': () => ({ status: 404, body: { error: 'Not found' } }) });
   const { router, user } = renderApp('/');
 
   await user.click(await screen.findByRole('button', { name: 'job pin' }));
