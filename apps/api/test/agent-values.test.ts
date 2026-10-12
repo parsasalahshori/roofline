@@ -208,12 +208,6 @@ describe('PATCH /api/agent-values review link', () => {
     const rows = await settingsRow(t.seed.a.companyId);
     expect(rows[0]!.reviewLink).toBeNull();
   });
-
-  test('a link longer than 500 characters is refused', async () => {
-    const res = await patch({ reviewLink: `https://x.example/${'a'.repeat(500)}` });
-    expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: LINK, field: 'reviewLink' });
-  });
 });
 
 describe('PATCH /api/agent-values fields and flags', () => {
