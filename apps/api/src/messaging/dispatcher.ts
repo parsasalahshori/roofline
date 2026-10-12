@@ -19,7 +19,7 @@ import type { AppDeps } from '../app.ts';
 import { settleSentProposal, settleUnsentProposal } from '../estimator/proposal-sent.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
-import { refreshTask } from '../tasks/service.ts';
+import { completeParkedStep, refreshTask } from '../tasks/service.ts';
 import { type BuiltGateRequest, buildGateRequest } from './gate-request.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
 
@@ -210,7 +210,8 @@ async function settleParkedStep(
         finish = { status: 'needs_attention', result, errorPlain };
       }
     }
-    const saved = await finishParkedStep(tx, ctx, step.id, finish, now);
+    // Every parked step ends through completeParkedStep (A1 records the outcome there; Ruling AX-H).
+    const saved = await completeParkedStep(tx, ctx, step.id, finish, now);
     if (!saved) return false;
     await refreshTask(tx, ctx, saved.taskId, now);
     return true;
