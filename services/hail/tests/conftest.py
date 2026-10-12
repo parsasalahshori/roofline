@@ -34,3 +34,24 @@ def hail_dsn(owner_dsn: str) -> str:
     parts = urlsplit(owner_dsn)
     port = f":{parts.port}" if parts.port else ""
     return urlunsplit(parts._replace(netloc=f"app_hail:test@{parts.hostname}{port}"))
+
+
+@pytest.fixture
+def conn_factory(hail_dsn: str):
+    import psycopg
+
+    return lambda: psycopg.connect(hail_dsn)
+
+
+@pytest.fixture
+def clean_db(owner_dsn: str):
+    import psycopg
+
+    def wipe() -> None:
+        with psycopg.connect(owner_dsn, autocommit=True) as conn:
+            conn.execute("DELETE FROM hail_runs")
+            conn.execute("DELETE FROM storms")
+
+    wipe()
+    yield
+    wipe()

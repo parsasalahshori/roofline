@@ -30,6 +30,9 @@ import { QuoteWindow } from '../features/quotes/QuoteWindow.tsx';
 import { SignUp } from '../features/signup/SignUp.tsx';
 import { Settings } from '../features/settings/Settings.tsx';
 import { StormWindow } from '../features/storm/StormWindow.tsx';
+import { StormDetail } from '../features/storm/StormDetail.tsx';
+import { RoutesWindow } from '../features/storm/routes/RoutesWindow.tsx';
+import { RouteDetail } from '../features/storm/routes/RouteDetail.tsx';
 import { Today } from '../features/today/Today.tsx';
 import { TextingSetup } from '../features/texting/TextingSetup.tsx';
 import { AppWindow } from '../shell/AppWindow.tsx';
@@ -78,7 +81,9 @@ const routes: RouteObject[] = [
           { path: 'approvals/:taskId', element: <ReviewRoute app="approvals" /> },
           { path: 'storm', element: <AppWindow app="storm"><StormWindow /></AppWindow> },
           { path: 'storm/plans/:taskId', element: <ReviewRoute app="storm" /> },
-          { path: 'storm/*', element: comingSoonWindow('storm') },
+          { path: 'storm/routes', element: <AppWindow app="storm"><RoutesWindow /></AppWindow> },
+          { path: 'storm/routes/:routeId', element: <AppWindow app="storm"><RouteDetail /></AppWindow> },
+          { path: 'storm/:id', element: <AppWindow app="storm"><StormDetail /></AppWindow> },
           { path: 'front-desk', element: <AppWindow app="front-desk"><FrontDeskWindow /></AppWindow> },
           { path: 'front-desk/:conversationId', element: <AppWindow app="front-desk"><ConversationWindow /></AppWindow> },
           { path: 'estimator', element: <AppWindow app="estimator"><EstimatorWindow /></AppWindow> },

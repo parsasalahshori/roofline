@@ -44,16 +44,30 @@ def parse_valid_at(key: str) -> datetime:
 
 def download(http: httpx.Client, base_url: str, key: str, workdir: Path) -> Path:
     """Download a gzipped GRIB2 key into workdir and gunzip it; returns the .grib2 path."""
+    if not key.endswith(".gz"):
+        raise ValueError(f"not a gzipped MESH key: {key}")
     workdir.mkdir(parents=True, exist_ok=True)
     name = key.rsplit("/", 1)[-1]
     gz_path = workdir / name
-    with http.stream("GET", f"{base_url}/{key}") as resp:
-        resp.raise_for_status()
-        with gz_path.open("wb") as out:
-            for chunk in resp.iter_bytes():
-                out.write(chunk)
+    part = gz_path.with_name(gz_path.name + ".part")
+    try:
+        with http.stream("GET", f"{base_url}/{key}") as resp:
+            resp.raise_for_status()
+            with part.open("wb") as out:
+                for chunk in resp.iter_bytes():
+                    out.write(chunk)
+        part.replace(gz_path)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
     grib_path = workdir / name.removesuffix(".gz")
-    with gzip.open(gz_path, "rb") as src, grib_path.open("wb") as dst:
-        shutil.copyfileobj(src, dst)
+    grib_part = grib_path.with_name(grib_path.name + ".part")
+    try:
+        with gzip.open(gz_path, "rb") as src, grib_part.open("wb") as dst:
+            shutil.copyfileobj(src, dst)
+        grib_part.replace(grib_path)
+    except BaseException:
+        grib_part.unlink(missing_ok=True)
+        raise
     gz_path.unlink()
     return grib_path

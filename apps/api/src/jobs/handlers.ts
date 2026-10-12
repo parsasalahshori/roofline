@@ -4,6 +4,10 @@ import { pushAppointment } from '../calendar/push.ts';
 import { loadFootprintState } from '../estimator/footprints-load.ts';
 import { signedPdf } from '../estimator/signed-pdf.ts';
 import { runImport } from '../imports/run.ts';
+import { syncCompanyAds } from '../storm/ad-sync.ts';
+import { sendStormAlert } from '../storm/alerts.ts';
+import { matchCompanyStorms } from '../storm/match.ts';
+import { draftStormPlan } from '../storm/plan.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
 
 /**
@@ -16,4 +20,8 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'calendar-push': (deps, data, meta) => pushAppointment(deps, data.companyId, data.appointmentId!, meta),
   'footprints-load': (deps, data, meta) => loadFootprintState(deps, data.state!, meta),
   'signed-pdf': (deps, data) => signedPdf(deps, data.companyId, data.proposalId!),
+  'storm-match-company': (deps, data) => matchCompanyStorms(deps, data.companyId),
+  'storm-draft': (deps, data) => draftStormPlan(deps, data.companyId, data.companyStormId!),
+  'storm-alert': (deps, data) => sendStormAlert(deps, data.companyId, data.companyStormId!, data.kind!),
+  'ad-sync-company': (deps, data) => syncCompanyAds(deps, data.companyId),
 };

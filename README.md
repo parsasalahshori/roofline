@@ -64,6 +64,20 @@
 | `R2_BUCKET` | no | R2 bucket name. All four R2 settings or none. |
 | `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. |
 | `FOOTPRINTS_BASE_URL` | no | Where building footprint files are read from; a trailing slash is added. Defaults to `https://usbuildingdata.blob.core.windows.net/usbuildings-v2/`. |
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | no | Google Ads developer token. All five GOOGLE_ADS settings or none; unset means Google ads are off. |
+| `GOOGLE_ADS_MANAGER_ID` | no | Google Ads manager account id. All five GOOGLE_ADS settings or none. |
+| `GOOGLE_ADS_CLIENT_ID` | no | Google Ads OAuth client id. All five GOOGLE_ADS settings or none. |
+| `GOOGLE_ADS_CLIENT_SECRET` | no | Google Ads OAuth client secret. All five GOOGLE_ADS settings or none. |
+| `GOOGLE_ADS_REFRESH_TOKEN` | no | Google Ads OAuth refresh token. All five GOOGLE_ADS settings or none. |
+| `GOOGLE_ADS_API_VERSION` | no (`v21`) | The Google Ads API version, like `v21`. |
+| `META_APP_ID` | no | Meta app id. All four META settings or none; unset means Meta ads are off. |
+| `META_APP_SECRET` | no | Meta app secret. All four META settings or none. |
+| `META_SYSTEM_USER_TOKEN` | no | Meta system user token. All four META settings or none. |
+| `META_BUSINESS_ID` | no | Meta business id that ad accounts are shared with. All four META settings or none. |
+| `META_GRAPH_VERSION` | no (`v24.0`) | The Meta Graph API version, like `v24.0`. |
+| `POSTMARK_BROADCAST_STREAM` | no (`broadcast`) | The Postmark message stream for storm alert email. |
+| `STORM_MAIL_FROM` | no | Plain From address for storm email, like `storms@roofline.app`. Unset: `storms@` plus the `MAIL_FROM` domain, else `POLICY_PAGES_DOMAIN`, else the `PUBLIC_BASE_URL` host. |
+| `HAIL_STALE_MINUTES` | no (90) | Minutes without a fresh hail report before the hail feed counts as stale (1 to 10080). |
 | `POLICY_PAGES_DOMAIN` | no | The bare hostname for the policy pages, like `roofline.app`. |
 | `FAKE_PROVIDERS` | no | `1` or `true` swaps every outside service for a fake. Development and test only; refused in production. |
 | `WEB_DIST_DIR` | no | Where the built web app is: `apps/web/dist` in production (a relative path is read from the repository root). When set, the API also serves the app, so one origin answers both; it must contain `index.html` or start-up stops. Leave unset in development, where Vite serves the app. |

@@ -5,11 +5,13 @@ import { RouterProvider } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
+import { ads } from '../src/copy/ads.ts';
 import { billing } from '../src/copy/billing.ts';
 import { connections } from '../src/copy/connections.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
 import { setup } from '../src/copy/setup.ts';
 import { settings } from '../src/copy/settings.ts';
+import { storm } from '../src/copy/storm.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
@@ -142,19 +144,20 @@ it('settings goes to company', async () => {
   await waitFor(() => expect(where(router)).toBe('/settings/company'));
 });
 
-it("shows the owner's ten tabs as links and marks the current one", async () => {
+it("shows the owner's eleven tabs as links and marks the current one", async () => {
   signedInApi();
   renderApp('/settings/team');
 
   const nav = await tabsNav();
   const links = within(nav).getAllByRole('link');
-  expect(links).toHaveLength(10);
+  expect(links).toHaveLength(11);
   expect(links.map((link) => link.textContent)).toEqual([
     settings.tabs.company,
     settings.tabs.team,
     settings.tabs.prices,
     settings.tabs.schedule,
     settings.tabs.connections,
+    settings.tabs.storm,
     settings.tabs.billing,
     settings.tabs.setup,
     settings.tabs['front-desk'],
@@ -167,6 +170,7 @@ it("shows the owner's ten tabs as links and marks the current one", async () => 
     '/settings/prices',
     '/settings/schedule',
     '/settings/connections',
+    '/settings/storm',
     '/settings/billing',
     '/settings/setup',
     '/settings/front-desk',
@@ -193,4 +197,41 @@ it('opens in a window titled Settings', async () => {
   renderApp('/settings/company');
 
   expect(await screen.findByRole('dialog', { name: WINDOW_COPY.settings.title })).toBeInTheDocument();
+});
+
+it('shows the Storm tab to the owner and opens it', async () => {
+  signedInApi();
+  renderApp('/settings/storm');
+
+  expect(await screen.findByText(storm.settingsComingSoon)).toBeInTheDocument();
+  const nav = await tabsNav();
+  expect(within(nav).getByRole('link', { name: settings.tabs.storm })).toHaveAttribute('aria-current', 'page');
+});
+
+it('shows the Storm tab to the office', async () => {
+  signedInApi({ 'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role: 'office' } }) });
+  renderApp('/settings/company');
+
+  const nav = await tabsNav();
+  expect(await within(nav).findByRole('link', { name: settings.tabs.storm })).toBeInTheDocument();
+});
+
+it('hides the Storm tab from a rep and sends the address to Company', async () => {
+  signedInApi({ 'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role: 'rep' } }) });
+  const { router } = renderApp('/settings/storm');
+
+  await waitFor(() => expect(where(router)).toBe('/settings/company'));
+  const nav = await tabsNav();
+  expect(within(nav).queryByRole('link', { name: settings.tabs.storm })).not.toBeInTheDocument();
+  expect(screen.queryByText(storm.settingsComingSoon)).not.toBeInTheDocument();
+});
+
+it('connections lists the ad accounts slot', async () => {
+  signedInApi();
+  renderApp('/settings/connections');
+
+  expect(await screen.findByText(connections.later)).toBeInTheDocument();
+  expect(screen.getByText(ads.connectionsComingSoon)).toBeInTheDocument();
+  expect(screen.getByText(connections.googleAds)).toBeInTheDocument();
+  expect(screen.getByText(connections.meta)).toBeInTheDocument();
 });
