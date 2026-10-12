@@ -1,6 +1,8 @@
 ### Task 18: Evals by hand, end-to-end and the acceptance map
 
-**Base:** `g1-w7` = g1-w6 + Task 15 + Task 17p (every G1 feature on one branch). Builds alone.
+**Base:** `g1-w7` 01e4c7a = g1-w6 + Task 15 + Task 17p (every G1 feature on one branch).
+
+**Ruling GX-T split:** sections 1 and 4 are **18a**, built by the E1 lead on `g1-t18x`; the G1 team builds **18b** = sections 2 and 3 only (do not write the eval script or the config docs). The acceptance map may cite 18a's unit tests by the names in `scripts/` once they exist; until then list the eval under Gaps as "by hand, Task 18a".
 
 Read first: `ops/sdd/g1/global-constraints.md`; `progress.md` (all rulings and carries); spec §9 (testing and acceptance) and §11; the existing e2e setup `apps/web/e2e/{fixtures.ts,stack.ts,approvals.spec.ts,crm.spec.ts,phone.spec.ts,a11y.spec.ts}` and how the stack seeds (`seedTwoCompanies`, `seedShowcase`, `seedDemoTask`), FAKE_PROVIDERS (ScriptedLlm, fake SMS) in the e2e server; `docs/superpowers/c1-acceptance.md` (the acceptance-map format to copy); T4's `providers/anthropic/{draft-texts,extract-claim}.ts` and `providers/llm.ts`; the four G1 step previews (T17p) and the agent cards (T15).
 
