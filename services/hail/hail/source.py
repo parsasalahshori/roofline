@@ -1,6 +1,6 @@
 """Hail data sources."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import NamedTuple, Protocol
 
@@ -32,7 +32,7 @@ class MeshSource:
         self.base_url = base_url
 
     def latest(self, after_key: str | None) -> HailGrid | None:
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         keys = sorted(
             list_keys(self.http, self.base_url, (now - timedelta(days=1)).date())
             + list_keys(self.http, self.base_url, now.date())

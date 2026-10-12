@@ -1,5 +1,5 @@
 import gzip
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -20,11 +20,11 @@ def page(keys: list[str]) -> str:
 
 
 def test_parse_valid_at_with_and_without_mrms_prefix():
-    noon = datetime(2024, 5, 28, 12, 0, 0, tzinfo=UTC)
+    noon = datetime(2024, 5, 28, 12, 0, 0, tzinfo=timezone.utc)
     assert parse_valid_at(KEY_NOON) == noon
     assert parse_valid_at("MESH_Max_1440min_00.50_20240528-120000.grib2.gz") == noon
     assert parse_valid_at("MESH_Max_1440min_00.50_20240528-120000.grib2") == noon
-    assert parse_valid_at(f"{PREFIX_0528}20240528-115959.grib2.gz") == datetime(2024, 5, 28, 11, 59, 59, tzinfo=UTC)
+    assert parse_valid_at(f"{PREFIX_0528}20240528-115959.grib2.gz") == datetime(2024, 5, 28, 11, 59, 59, tzinfo=timezone.utc)
     with pytest.raises(ValueError):
         parse_valid_at("garbage")
 
@@ -75,7 +75,7 @@ def test_mesh_source_latest(tmp_path):
         source = MeshSource(client, tmp_path, base_url="https://example.test")
         grid = source.latest(None)
         assert isinstance(grid, HailGrid)
-        today = datetime.now(UTC).strftime("%Y%m%d")
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
         assert grid.key.endswith(f"MRMS_MESH_Max_1440min_00.50_{today}-120000.grib2.gz")
         assert grid.path.exists()
         assert source.latest(grid.key) is None

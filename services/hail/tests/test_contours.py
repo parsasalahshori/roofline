@@ -2,7 +2,7 @@ import gzip
 import json
 import re
 import shutil
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -50,9 +50,9 @@ def test_levels_match_shared_constant(contours):
 
 
 def test_convective_day_boundaries():
-    assert units.convective_day(datetime(2024, 5, 28, 11, 59, 59, tzinfo=UTC)) == date(2024, 5, 27)
-    assert units.convective_day(datetime(2024, 5, 28, 12, 0, 0, tzinfo=UTC)) == date(2024, 5, 28)
-    assert units.convective_day(datetime(2024, 5, 28, 0, 0, tzinfo=UTC)) == date(2024, 5, 27)
+    assert units.convective_day(datetime(2024, 5, 28, 11, 59, 59, tzinfo=timezone.utc)) == date(2024, 5, 27)
+    assert units.convective_day(datetime(2024, 5, 28, 12, 0, 0, tzinfo=timezone.utc)) == date(2024, 5, 28)
+    assert units.convective_day(datetime(2024, 5, 28, 0, 0, tzinfo=timezone.utc)) == date(2024, 5, 27)
     assert units.convective_day(datetime(2024, 5, 28, 12, 0)) == date(2024, 5, 28)
 
 

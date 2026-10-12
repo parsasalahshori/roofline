@@ -4,7 +4,7 @@ import gzip
 import re
 import shutil
 import xml.etree.ElementTree as ET
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -39,7 +39,7 @@ def parse_valid_at(key: str) -> datetime:
     match = _NAME_RE.match(name)
     if match is None:
         raise ValueError(f"not a MESH file name: {key}")
-    return datetime.strptime(f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S").replace(tzinfo=UTC)
+    return datetime.strptime(f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
 
 
 def download(http: httpx.Client, base_url: str, key: str, workdir: Path) -> Path:
