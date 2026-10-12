@@ -243,8 +243,9 @@ describe('runWeatherWatch', () => {
 
   test('no clear day in two weeks: nothing to move, no task', async () => {
     await seedVisit({ first: 'Lee', day: TUE });
-    // Rain on every day of a sixteen-day forecast, which covers the whole move search.
-    t.weather.hourlyValue = forecast(() => ({ precipPct: 70 }), 16);
+    // Rain on every forecast day (the fake serves 168 hours, days 0 to 6), and the installer is booked on every day after.
+    t.weather.hourlyValue = rainOn(0, 1, 2, 3, 4, 5, 6, 7);
+    for (let d = 7; d <= 15; d++) await seedVisit({ first: `Busy${d}`, kind: 'inspection', day: d });
     t.llm.scriptDraft(new LlmUnavailableError('down'));
 
     await run();
