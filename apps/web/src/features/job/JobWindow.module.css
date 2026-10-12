@@ -1,0 +1,21 @@
+.window {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.loading {
+  padding: 16px 0;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stats > * {
+  flex: 1 1 140px;
+  min-width: 0;
+}
