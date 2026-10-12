@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { createPools } from '../src/pools.ts';
 import { insertConversation, loadCompanyFacts, updateConversation } from '../src/repos/conversations.ts';
-import { insertTurn, listTurns, updateTurn } from '../src/repos/turns.ts';
+import { insertTurn, listTurns, recordModelFailureHandoff, updateTurn } from '../src/repos/turns.ts';
 import { conversations, conversationTurns } from '../src/schema/index.ts';
 import { type TenantContext, withTenant } from '../src/tenant.ts';
 import { resetDb, type SeededCompany, seedTwoCompanies } from '../src/testing/index.ts';
@@ -169,5 +169,42 @@ describe('turns repo', () => {
     await expect(
       withTenant(pools, b, (tx) => insertTurn(tx, b, { conversationId: convo, position: 2, speaker: 'caller', text: 'x' })),
     ).rejects.toThrow();
+  });
+});
+
+describe('recordModelFailureHandoff', () => {
+  test('adds one hand-off turn at the next position; a second call is a no-op', async () => {
+    const id = await newConversation(seed.a);
+    const ctx = ctxFor(seed.a);
+    await withTenant(pools, ctx, async (tx) => {
+      await insertTurn(tx, ctx, { conversationId: id, position: 0, speaker: 'caller', text: 'hello' });
+      await insertTurn(tx, ctx, { conversationId: id, position: 1, speaker: 'assistant', text: 'hi' });
+    });
+    await withTenant(pools, ctx, (tx) => recordModelFailureHandoff(tx, ctx, id));
+    await withTenant(pools, ctx, (tx) => recordModelFailureHandoff(tx, ctx, id));
+    const turns = await withTenant(pools, ctx, (tx) => listTurns(tx, ctx, id));
+    expect(turns.map((t) => t.position)).toEqual([0, 1, 2]);
+    expect(turns[2]).toMatchObject({ speaker: 'system', guardHits: ['model_failure'] });
+  });
+
+  test('concurrent calls on one conversation neither collide on a position nor write two hand-offs', async () => {
+    const id = await newConversation(seed.a);
+    const ctx = ctxFor(seed.a);
+    await withTenant(pools, ctx, (tx) => insertTurn(tx, ctx, { conversationId: id, position: 0, speaker: 'caller', text: 'hello' }));
+    const results = await Promise.allSettled(
+      Array.from({ length: 6 }, () => withTenant(pools, ctx, (tx) => recordModelFailureHandoff(tx, ctx, id))),
+    );
+    expect(results.filter((r) => r.status === 'rejected')).toEqual([]);
+    const turns = await withTenant(pools, ctx, (tx) => listTurns(tx, ctx, id));
+    expect(turns.map((t) => t.position)).toEqual([0, 1]);
+    expect(turns.filter((t) => t.guardHits.includes('model_failure'))).toHaveLength(1);
+  });
+
+  test('another company conversation id is a no-op', async () => {
+    const id = await newConversation(seed.a);
+    const ctxB = ctxFor(seed.b);
+    await withTenant(pools, ctxB, (tx) => recordModelFailureHandoff(tx, ctxB, id));
+    const turns = await withTenant(pools, ctxFor(seed.a), (tx) => listTurns(tx, ctxFor(seed.a), id));
+    expect(turns).toEqual([]);
   });
 });
