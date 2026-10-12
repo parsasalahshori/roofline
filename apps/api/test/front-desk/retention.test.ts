@@ -196,7 +196,7 @@ describe('Front Desk retention', () => {
 
     const after = await turnRow(a, turn);
     expect(after.text).toBe('');
-    expect(after.toolCalls).toEqual([{ name: 'lookup' }]);
+    expect(after.toolCalls).toEqual([{ name: 'lookup', ok: true }]);
     expect(after.model).toBe('test-model');
     expect(after.inputTokens).toBe(42);
     expect(after.position).toBe(3);
@@ -305,7 +305,7 @@ describe('Front Desk retention', () => {
     expect(rowMine.recordingKey).toBeNull();
     const tMine = await turnRow(a, turnMine);
     expect(tMine.text).toBe('');
-    expect(tMine.toolCalls).toEqual([{ name: 'lookup' }]);
+    expect(tMine.toolCalls).toEqual([{ name: 'lookup', ok: true }]);
 
     const rowOther = await callRow(a, callOther.id);
     expect(rowOther.recordingStatus).toBe('stored');

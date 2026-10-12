@@ -249,7 +249,9 @@ const ACTION_LABELS: Record<string, { ok: string; failed: string }> = {
   end_call: { ok: 'Ended the call', failed: 'Could not end the call' },
 };
 
-function cardOf(rec: { name: string; input: unknown; ok: boolean }): ToolActionCard {
+/** A record past transcript retention keeps only name and ok (Task 16); one with no boolean ok reads as done. */
+function cardOf(raw: { name: string; input?: unknown; ok?: unknown }): ToolActionCard {
+  const rec = { name: raw.name, input: raw.input ?? null, ok: raw.ok !== false };
   const labels = ACTION_LABELS[rec.name];
   const input = inputOf(rec.input);
   let link: ToolActionCard['link'] = null;
@@ -323,7 +325,11 @@ export async function getConversationDetail(
       transferResult: (c.transferResult ?? 'none') as TransferResult,
       transferTo: c.transferUserId === null ? null : { userId: c.transferUserId, name: names.get(c.transferUserId) ?? '' },
       spamReason: c.spamReason,
-      canPlayRecording: rec !== null && (await canPlayCallRecording(tx, ctx, rec)),
+      canPlayRecording:
+        rec !== null &&
+        rec.recordingKey !== null &&
+        (rec.recordingStatus === 'stored' || rec.recordingStatus === 'stopped_by_caller') &&
+        (await canPlayCallRecording(tx, ctx, rec)),
     });
   }
 

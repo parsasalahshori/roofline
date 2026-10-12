@@ -104,7 +104,7 @@ async function seedConversation(o: SeedConversation = {}): Promise<string> {
 
 async function seedCall(
   conversationId: string,
-  o: { status?: 'ended' | 'transferred' | 'ai'; transcriptStored?: boolean; recordingStatus?: 'none' | 'stored'; transferResult?: 'answered' | 'none' } = {},
+  o: { status?: 'ended' | 'transferred' | 'ai'; transcriptStored?: boolean; recordingStatus?: 'none' | 'stored' | 'deleted'; transferResult?: 'answered' | 'none' } = {},
 ): Promise<string> {
   const [row] = await inCompany(t, idA(), (tx) =>
     tx
@@ -118,7 +118,7 @@ async function seedCall(
         status: o.status ?? 'ended',
         transcriptStored: o.transcriptStored ?? true,
         recordingStatus: o.recordingStatus ?? 'stored',
-        recordingKey: o.recordingStatus === 'none' ? null : `rec/${sidCounter}.mp3`,
+        recordingKey: o.recordingStatus === 'none' || o.recordingStatus === 'deleted' ? null : `rec/${sidCounter}.mp3`,
         transferResult: o.transferResult ?? 'none',
       })
       .returning({ id: calls.id }),
@@ -268,6 +268,20 @@ describe('GET /api/conversations/:id', () => {
     const asRep = (await rep.get(`${BASE}/${convo}`)).body as ConversationDetail;
     expect(byCall(asRep, plain)).toBe(true);
     expect(byCall(asRep, moved)).toBe(false);
+  });
+});
+
+describe('GET /api/conversations/:id after retention', () => {
+  test('a swept tool record ({name, ok}) still reads as done, and a deleted or never-made recording is not playable', async () => {
+    const owner = await who.as('owner');
+    const convo = await seedConversation({ channel: 'voice' });
+    const deleted = await seedCall(convo, { recordingStatus: 'deleted' });
+    const never = await seedCall(convo, { recordingStatus: 'none' });
+    await seedTurn(convo, 1, { text: '', callId: deleted, toolCalls: [{ name: 'book_inspection', ok: true } as ToolCallRecord] });
+    const detail = (await owner.get(`${BASE}/${convo}`)).body as ConversationDetail;
+    expect(detail.turns[0]!.actions).toEqual([{ tool: 'book_inspection', ok: true, label: 'Booked an inspection', link: null }]);
+    expect(detail.calls.find((c) => c.id === deleted)!.canPlayRecording).toBe(false);
+    expect(detail.calls.find((c) => c.id === never)!.canPlayRecording).toBe(false);
   });
 });
 

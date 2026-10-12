@@ -70,13 +70,17 @@ export async function markRecordingDeleted(tx: Tx, ctx: TenantContext, callId: s
 
 /** A turn that still carries text or tool-call arguments (so a second blanking run skips it). */
 const blankable = sql`(${conversationTurns.text} <> '' OR (${conversationTurns.toolCalls} IS NOT NULL AND EXISTS (
-  SELECT 1 FROM jsonb_array_elements(${conversationTurns.toolCalls}) AS e WHERE e <> jsonb_build_object('name', e->>'name'))))`;
+  SELECT 1 FROM jsonb_array_elements(${conversationTurns.toolCalls}) AS e WHERE e <> jsonb_strip_nulls(jsonb_build_object('name', e->'name', 'ok', e->'ok')))))`;
 
-/** The shared SET clause: text emptied, tool_calls reduced to [{name}]. Metadata columns are never touched. */
+/**
+ * The shared SET clause: text emptied, tool_calls reduced to [{name, ok}] (the inbox's action cards need ok;
+ * input and result go). The predicate above uses the same expression, so a second run finds nothing.
+ * Metadata columns are never touched.
+ */
 const blankSet = {
   text: sql`''`,
   toolCalls: sql`CASE WHEN ${conversationTurns.toolCalls} IS NULL THEN NULL ELSE COALESCE(
-    (SELECT jsonb_agg(jsonb_build_object('name', e->>'name')) FROM jsonb_array_elements(${conversationTurns.toolCalls}) AS e), '[]'::jsonb) END`,
+    (SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('name', e->'name', 'ok', e->'ok'))) FROM jsonb_array_elements(${conversationTurns.toolCalls}) AS e), '[]'::jsonb) END`,
 };
 
 /**
