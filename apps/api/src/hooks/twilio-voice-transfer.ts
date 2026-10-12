@@ -1,5 +1,15 @@
 import express, { Router } from 'express';
-import { countLiveCallsInWindow, findCallBySid, findCallConversationId, hasUrgentNoticeFor, isAgentPaused, lockAiCap, recordModelFailureHandoff, updateCall, withTenant } from '@roofline/db';
+import {
+  countLiveCallsInWindow,
+  findCallBySid,
+  findCallConversationId,
+  hasUrgentNoticeFor,
+  isAgentPaused,
+  lockAiCap,
+  recordModelFailureHandoff,
+  updateCall,
+  withTenant,
+} from '@roofline/db';
 import { onCallMembers } from '@roofline/db/system';
 import { disclosureGreeting, transferPlan, workIntervals, type TransferReason } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
@@ -213,7 +223,7 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
         const call = await findCallBySid(tx, ctx, callSid);
         if (call === null) return null;
         if (!aiAllowed) return { callId: call.id, toAi: false };
-        // A paused Front Desk (A1) is handled like Front Desk off, as at /voice: voicemail.
+        // A Front Desk paused while the team was ringing is handled like Front Desk off (A1): voicemail.
         if (await isAgentPaused(tx, ctx, 'front_desk')) return { callId: call.id, toAi: false };
         await lockAiCap(tx, ctx);
         const liveAi = await countLiveCallsInWindow(tx, ctx, now, call.id);
