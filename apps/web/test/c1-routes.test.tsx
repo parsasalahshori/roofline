@@ -7,7 +7,6 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { appointments } from '../src/copy/appointments.ts';
 import { create } from '../src/copy/create.ts';
-import { customers } from '../src/copy/customers.ts';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { job } from '../src/copy/job.ts';
 import { jobs } from '../src/copy/jobs.ts';
@@ -78,8 +77,6 @@ describe('C1 windows', () => {
     ['/jobs', WINDOW_COPY.jobs.title, jobs.newJob],
     ['/jobs/j1', WINDOW_COPY.jobs.title, job.notFoundTitle],
     ['/jobs/j1/quotes/q1', WINDOW_COPY.jobs.title, quotes.comingSoon],
-    ['/customers', WINDOW_COPY.customers.title, customers.comingSoon],
-    ['/customers/c1', WINDOW_COPY.customers.title, customers.customerComingSoon],
     ['/calendar/new', WINDOW_COPY.calendar.title, appointments.comingSoon],
     ['/calendar/appointments/a1', WINDOW_COPY.calendar.title, appointments.comingSoon],
   ])('%s shows its placeholder in the %s window', async (path, title, copy) => {
@@ -101,7 +98,8 @@ describe('C1 windows', () => {
   });
 
   it('shows the Customers tab as the current page on the customers list', async () => {
-    signedInApi();
+    // The real list window reads its first page; this test only checks the tabs, so the page is empty
+    signedInApi(ACCOUNT, { 'GET /api/customers?limit=50&offset=0': () => ({ body: { customers: [], total: 0 } }) });
     renderApp('/customers');
 
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.customers.title });

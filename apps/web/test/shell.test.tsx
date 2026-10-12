@@ -236,7 +236,7 @@ it('marks the open app in the dock', async () => {
 });
 
 it('opens a customer or a job from a pin card', async () => {
-  signedInApi();
+  signedInApi({ 'GET /api/customers/c9/view': () => ({ status: 404, body: { error: 'Not found' } }) });
   const { router, user } = renderApp('/');
 
   await user.click(await screen.findByRole('button', { name: 'job pin' }));
