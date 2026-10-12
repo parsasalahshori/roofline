@@ -119,7 +119,7 @@ describe('serving the web app (WEB_DIST_DIR set)', () => {
     expect(res.body).toEqual(NOT_FOUND);
   });
 
-  test('the content-security-policy lets the map in and nothing else', async () => {
+  test('lets the map and Google sign-in in and nothing else', async () => {
     const { app } = await makeTestApp({ WEB_DIST_DIR: dist });
     const res = await request(app).get('/');
     const csp = res.headers['content-security-policy'] as string;
@@ -133,6 +133,8 @@ describe('serving the web app (WEB_DIST_DIR set)', () => {
     expect(csp).toContain("img-src 'self' data: blob: https://api.maptiler.com https://tile.openstreetmap.org");
     expect(csp).toContain("connect-src 'self' https://api.maptiler.com https://tile.openstreetmap.org");
     expect(csp).toContain("font-src 'self' data:");
+    expect(csp).toContain('https://accounts.google.com/gsi/client');
+    expect(csp).toContain('frame-src https://accounts.google.com/gsi/');
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'self'");

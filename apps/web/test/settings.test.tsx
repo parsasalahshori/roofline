@@ -52,13 +52,35 @@ const COMPANY_BODY = {
   logoUrl: null,
 };
 
-/** A signed-in owner whose Settings reads answer with a company and an empty team, unless a test gives its own answers. */
+/** A small checklist for the reads the Settings window makes; the Setup tab's own tests use the full nine steps. */
+const SETUP_VIEW = {
+  items: [{ key: 'company_basics', status: 'todo', comingWith: null, skippable: false, data: {} }],
+  progress: { done: 0, total: 5 },
+} as const;
+
+/** The owner's billing read with no plan yet and no plans listed. */
+const BILLING_BODY = {
+  status: 'active',
+  planKey: null,
+  planName: null,
+  trialEndsAt: null,
+  hasPaymentMethod: false,
+  canOpenPortal: false,
+  periodStart: '2026-10-01T00:00:00.000Z',
+  usage: [],
+  plans: [],
+};
+
+/** A signed-in owner whose Settings reads answer with a company, an empty team and no billing, unless a test gives its own answers. */
 function signedInApi(overrides: Routes = {}) {
   api = stubApi({
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
     'GET /api/company': () => ({ body: COMPANY_BODY }),
     'GET /api/team': () => ({ body: { members: [], invites: [] } }),
+    // The user menu's ring reads the checklist too
+    'GET /api/setup': () => ({ body: SETUP_VIEW }),
+    'GET /api/billing': () => ({ body: BILLING_BODY }),
     ...overrides,
   });
   return api;
@@ -79,11 +101,11 @@ function renderApp(path: string) {
 /** The row of tab links in the Settings window. Its name is the one from the copy, so the top bar's links are not matched. */
 const tabsNav = () => screen.findByRole('navigation', { name: settings.tabsLabel });
 
-it('later tabs say what is coming', async () => {
+it('billing tab shows the card note', async () => {
   signedInApi();
   renderApp('/settings/billing');
 
-  expect(await screen.findByText(billing.later)).toBeInTheDocument();
+  expect(await screen.findByText(billing.cardNote)).toBeInTheDocument();
   const nav = await tabsNav();
   expect(within(nav).getByRole('link', { name: settings.tabs.billing })).toHaveAttribute('aria-current', 'page');
 });
@@ -95,11 +117,13 @@ it('connections says what is coming', async () => {
   expect(await screen.findByText(connections.later)).toBeInTheDocument();
 });
 
-it('setup says what is coming', async () => {
-  signedInApi();
+it('setup shows the checklist', async () => {
+  signedInApi({
+    'GET /api/setup': () => ({ body: SETUP_VIEW }),
+  });
   renderApp('/settings/setup');
 
-  expect(await screen.findByText(setup.later)).toBeInTheDocument();
+  expect(await screen.findByRole('list', { name: setup.listLabel })).toBeInTheDocument();
 });
 
 it('unknown tab goes to company', async () => {
@@ -153,7 +177,7 @@ it('opens a tab from its link', async () => {
   await user.click(within(nav).getByRole('link', { name: settings.tabs.billing }));
 
   await waitFor(() => expect(where(router)).toBe('/settings/billing'));
-  expect(await screen.findByText(billing.later)).toBeInTheDocument();
+  expect(await screen.findByText(billing.cardNote)).toBeInTheDocument();
 });
 
 it('opens in a window titled Settings', async () => {

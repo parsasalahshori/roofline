@@ -1,0 +1,65 @@
+/* The plans: a card each, one column on a phone and as many as fit beside each other on a wider screen */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.name {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.price {
+  margin: 0;
+  font-size: var(--font-size-stat);
+  font-weight: 600;
+}
+
+.includes {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+}
+
+.current {
+  margin: auto 0 0;
+  padding-top: 8px;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.plan > button {
+  margin-top: auto;
+  width: 100%;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}

@@ -1,0 +1,71 @@
+/* The banners sit above the form, full width */
+.root {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Two fields to a row on a desktop, one under another on a phone */
+.form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 720px;
+  min-width: 0;
+}
+
+/* Spans both columns: the notes, the hosted-pages choice and the submit button */
+.wide {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* What the registration will say, under the fields it is built from */
+.useCase {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+/* A whole row is the target: the box and its label together stay 40px tall on a phone */
+.choice {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+/* The two hosted pages, each a 40px target that wraps under the other on a narrow screen */
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-left: 28px;
+}
+
+.link,
+.bannerLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--text);
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.submit {
+  justify-self: start;
+}
+
+@media (max-width: 767.98px) {
+  .form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .submit {
+    justify-self: stretch;
+    width: 100%;
+  }
+}

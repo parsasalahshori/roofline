@@ -80,6 +80,8 @@ export type CompanyBody = {
   addressZip: string | null;
   timezone: string;
   logoUrl: string | null;
+  located: boolean;
+  serviceAreaMiles: number | null;
 };
 
 export type TeamBody = {

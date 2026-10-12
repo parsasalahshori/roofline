@@ -1,0 +1,1 @@
+{"sid":"EL22222222222222222222222222222222","status":"noncompliant","results":[{"friendly_name":"Business Information","passed":false,"fields":[{"friendly_name":"Business Name","passed":true},{"friendly_name":"Business Registration Number","passed":false}]}]}

@@ -1,0 +1,22 @@
+/* The status card: one line of news, with the sent date under it while the carriers review */
+.card {
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+  min-width: 0;
+}
+
+/* The main message, in the body size and the main text colour */
+.line {
+  margin: 0;
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+}
+
+/* The sent date, under the main message; muted but still well above AA contrast */
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+}
