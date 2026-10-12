@@ -29,15 +29,26 @@ beforeEach(async () => {
 
 const idOf = (company: 'a' | 'b') => t.seed[company].companyId;
 
-/** Sets a company's Stripe customer id (or clears it) straight in the table, as the owner. */
-async function setCustomer(companyId: string, customerId: string | null): Promise<void> {
+/** Sets a company's Stripe customer, subscription and status straight in the table, as the owner. */
+async function setBilling(companyId: string, customerId: string | null, subscriptionId: string | null, status: string): Promise<void> {
   const owner = new pg.Client({ connectionString: inject('dbUrls').owner });
   await owner.connect();
   try {
-    await owner.query('update companies set stripe_customer_id = $1 where id = $2', [customerId, companyId]);
+    await owner.query('update companies set stripe_customer_id = $1, stripe_subscription_id = $2, status = $3 where id = $4', [
+      customerId,
+      subscriptionId,
+      status,
+      companyId,
+    ]);
   } finally {
     await owner.end();
   }
+}
+
+/** A company with a Stripe customer and a live subscription (or neither, when the customer is null). */
+async function setCustomer(companyId: string, customerId: string | null): Promise<void> {
+  if (customerId === null) await setBilling(companyId, null, null, 'active');
+  else await setBilling(companyId, customerId, customerId.replace('cus_', 'sub_'), 'active');
 }
 
 type Row = {
@@ -194,6 +205,34 @@ describe('report usage', () => {
     expect(waiting.filter((n) => n === 0)).toHaveLength(1);
     expect(t.logged).toHaveLength(loggedBefore + 1);
     expect(t.logged[loggedBefore]!.where).toMatch(/^report-usage/);
+  });
+
+  test('meter usage waits for a subscription; invoice items do not', async () => {
+    const a = idOf('a');
+    await setBilling(a, 'cus_fake_1', null, 'trial');
+    await addUsage(a, [
+      { kind: 'sms_segment', quantity: 3, unitCostCents: null, refId: 'sms-1', description: null },
+      { kind: 'exact_report', quantity: 1, unitCostCents: 4500, refId: 'report-1', description: EXACT },
+    ]);
+
+    await reportUsage(t.deps, NOW);
+
+    expect(t.billing.meterEvents).toEqual([]);
+    expect(t.billing.invoiceItems).toHaveLength(1);
+    const held = await usageOf(a);
+    const sms = held.find((r) => r.kind === 'sms_segment')!;
+    const report = held.find((r) => r.kind === 'exact_report')!;
+    expect(sms.reportedToStripeAt).toBeNull();
+    expect(sms.meterBatchId).toBeNull();
+    expect(report.reportedToStripeAt).not.toBeNull();
+    expect(report.stripeInvoiceItemId).not.toBeNull();
+
+    await setBilling(a, 'cus_fake_1', 'sub_fake_1', 'active');
+    await reportUsage(t.deps, NOW);
+
+    expect(t.billing.meterEvents).toMatchObject([{ eventName: 'roofline_sms_segment', customerId: 'cus_fake_1', value: 3 }]);
+    expect(t.billing.invoiceItems).toHaveLength(1);
+    expect(await unreportedOf(a)).toHaveLength(0);
   });
 
   test("company B's usage never goes to A's customer", async () => {

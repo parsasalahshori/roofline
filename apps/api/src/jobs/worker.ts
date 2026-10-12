@@ -15,6 +15,7 @@ import { pruneEarlyReports } from './scheduler/prune-early-reports.ts';
 import { provisionTexting } from './scheduler/provision-texting.ts';
 import { reportJobError } from './scheduler/report.ts';
 import { reportUsage } from './scheduler/report-usage.ts';
+import { sweepImports } from './scheduler/sweep-imports.ts';
 import { sweepQueued } from './scheduler/sweep-queued.ts';
 
 /*
@@ -34,7 +35,8 @@ export type ScheduledJob = {
 };
 
 /**
- * The worker's recurring jobs: draft expiry, the queued-step sweeper, the scheduled-text
+ * The worker's recurring jobs: draft expiry, the queued-step sweeper, the import sweeper (imports
+ * stranded queued or processing), the scheduled-text
  * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
  * end, usage reporting, texting provisioning and polling, and the monthly fees. A schedule dropped
  * from this list is unscheduled the next time a worker starts.
@@ -42,6 +44,7 @@ export type ScheduledJob = {
 export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'expire-drafts', cron: '*/5 * * * *', run: expireDrafts },
   { name: 'sweep-queued', cron: '* * * * *', run: sweepQueued },
+  { name: 'sweep-imports', cron: '* * * * *', run: sweepImports },
   { name: 'dispatch-messages', cron: '* * * * *', run: dispatchDueMessages },
   { name: 'end-trials', cron: '*/5 * * * *', run: endTrials },
   { name: 'report-usage', cron: '* * * * *', run: reportUsage },
