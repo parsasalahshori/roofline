@@ -10,6 +10,7 @@ import { NotFoundWindow } from '../../shell/NotFoundWindow.tsx';
 import styles from './AgentPage.module.css';
 import { useAgentDetail } from './api.ts';
 import { AgentsTabs } from './AgentsTabs.tsx';
+import { ClaimsBoard } from './ClaimsBoard.tsx';
 import { PauseSwitch } from './PauseSwitch.tsx';
 import { PeriodPicker } from './PeriodPicker.tsx';
 import { RecentTasks } from './RecentTasks.tsx';
@@ -63,6 +64,7 @@ function ScreenAgentPage({ agent }: { agent: ScreenAgent }) {
             <h3 className={styles.heading}>{agentPage.rulesTitle}</h3>
             <RulesList rules={d.rules} />
           </section>
+          {agent === 'claims' && <ClaimsBoard />}
           <PauseSwitch agent={agent} paused={d.paused} isOwner={me.data?.role === 'owner'} />
           <RunNowButton agent={agent} runNow={d.runNow} />
           <RecentTasks tasks={d.recentTasks} />

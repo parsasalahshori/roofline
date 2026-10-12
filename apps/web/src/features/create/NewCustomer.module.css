@@ -1,0 +1,64 @@
+/* The whole form: names, then the phones and emails, then the first home, then texting consent and Save */
+.form {
+  display: grid;
+  gap: 24px;
+  max-width: 720px;
+}
+
+/* First and last name on one row; the display name takes the whole row below them */
+.names {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+/* Phones on the left, emails on the right, each list one input under another */
+.contacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.input {
+  width: 100%;
+}
+
+/* The add buttons are as tall as a phone touch target and only as wide as their words */
+.addRow {
+  align-self: flex-start;
+  min-height: 40px;
+}
+
+.home {
+  display: grid;
+  gap: 12px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.save {
+  justify-self: start;
+}
+
+@media (max-width: 767.98px) {
+  .names,
+  .contacts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -15,8 +15,10 @@ import {
   updateProperty,
   withTenant,
 } from '@roofline/db';
+import { isTimeZone } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
+import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
 import {
   assertKnownFields,
   limitParam,
@@ -38,6 +40,8 @@ const SAVED_MESSAGE = 'This address is already saved.';
 const PICK_CUSTOMER = 'Pick the customer for this address.';
 const HAS_JOBS_MESSAGE = 'This address already has jobs for a different customer.';
 const NEEDS_CUSTOMER_MESSAGE = 'This address has jobs, so it needs a customer.';
+const NOT_LOCATED_MESSAGE = "We couldn't find that address. Check the street, city and state.";
+const MAP_UNAVAILABLE_MESSAGE = "We couldn't reach the map service. Try again in a minute.";
 
 const FIRST_YEAR = 1800;
 
@@ -160,6 +164,35 @@ function propertyBody(row: PropertyRow) {
   };
 }
 
+/** A place the geocoder found for an address: its point, and its time zone when the geocoder gave a real one. */
+type Located = { location: LngLat; timezone: string | null };
+
+/**
+ * Looks an address up with the geocoder. Provider calls never run inside a transaction, so callers
+ * invoke this before `withTenant` (or after it has returned). `notFound` when the geocoder has no
+ * match; `unavailable` when it cannot be reached or is not set up.
+ */
+async function locate(
+  deps: Pick<AppDeps, 'geocoder'>,
+  line: string,
+  city: string,
+  state: string,
+  zip: string,
+): Promise<Located | 'notFound' | 'unavailable'> {
+  let result: GeocodeResult | null;
+  try {
+    result = await deps.geocoder.geocode(`${line}, ${city}, ${state} ${zip}`);
+  } catch (err) {
+    if (err instanceof GeocoderUnavailableError) return 'unavailable';
+    throw err;
+  }
+  if (result === null) return 'notFound';
+  return {
+    location: [result.lng, result.lat],
+    timezone: result.timezone !== null && isTimeZone(result.timezone) ? result.timezone : null,
+  };
+}
+
 /** What the repository's refusals mean to the caller. */
 function refused(err: unknown): never {
   if (err instanceof DuplicateAddressError) throw new AppError(409, SAVED_MESSAGE, 'addressLine');
@@ -172,6 +205,10 @@ function refused(err: unknown): never {
 
 /**
  * `/api/properties`: list and search, add, open, edit, archive and restore addresses.
+ * - A new address without `lat`/`lng` is looked up with the geocoder before it is saved (outside
+ *   the transaction). A found point, and its time zone when no zone was given, are saved with it;
+ *   a miss or an unreachable geocoder saves the address with no point. `POST /:id/locate` tries
+ *   again for an address that has none (400 when the geocoder cannot find it, 503 when unreachable).
  * - A company cannot save the same street address in the same ZIP twice, however it is written (409).
  * - Reps work with the addresses the visibility rule gives them (scope.ts); any other is a 404, and
  *   the repository applies that, so no route can forget it. A customer named in a body must be one
@@ -207,6 +244,11 @@ export function propertyRoutes(deps: AppDeps): Router {
     const now = clock.now();
     const body = parse(schemas(now.getUTCFullYear()).create, assertKnownFields(req.body, FIELDS, { allowEmpty: true }));
     const location = locationOf(body.lat, body.lng);
+    // Only an address with no point of its own is looked up. A miss or an outage saves it with no point.
+    const found = location === undefined ? await locate(deps, body.addressLine, body.city, body.state, body.zip) : undefined;
+    const pin = found !== undefined && typeof found === 'object' ? found : undefined;
+    const point = location !== undefined ? location : pin?.location;
+    const timezone = body.timezone ?? pin?.timezone ?? undefined;
 
     const created = await withTenant(pools, ctx, (tx) =>
       createProperty(
@@ -218,8 +260,8 @@ export function propertyRoutes(deps: AppDeps): Router {
           city: body.city,
           state: body.state,
           zip: body.zip,
-          ...(location !== undefined && { location }),
-          ...(body.timezone !== undefined && { timezone: body.timezone }),
+          ...(point !== undefined && { location: point }),
+          ...(timezone !== undefined && { timezone }),
           ...(body.yearBuilt !== undefined && { yearBuilt: body.yearBuilt }),
         },
         { now, ip: req.ip ?? null },
@@ -234,6 +276,32 @@ export function propertyRoutes(deps: AppDeps): Router {
     const row = await withTenant(pools, ctx, (tx) => getProperty(tx, ctx, id));
     if (!row) throw new AppError(404, MESSAGES.notFound);
     res.json(propertyBody(row));
+  });
+
+  // Tries the geocoder again for an address that has no point. Anyone who may edit the address may do this.
+  router.post('/:id/locate', async (req, res) => {
+    const { ctx } = req;
+    const id = propertyId(req.params.id);
+    const row = await withTenant(pools, ctx, (tx) => getProperty(tx, ctx, id));
+    if (!row) throw new AppError(404, MESSAGES.notFound);
+    const found = await locate(deps, row.addressLine, row.city, row.state, row.zip);
+    if (found === 'notFound') throw new AppError(400, NOT_LOCATED_MESSAGE, 'addressLine');
+    if (found === 'unavailable') throw new AppError(503, MAP_UNAVAILABLE_MESSAGE);
+
+    const updated = await withTenant(pools, ctx, (tx) =>
+      updateProperty(
+        tx,
+        ctx,
+        id,
+        {
+          location: found.location,
+          ...(found.timezone !== null && row.timezone === null && { timezone: found.timezone }),
+        },
+        { now: clock.now(), ip: req.ip ?? null },
+      ),
+    );
+    if (!updated) throw new AppError(404, MESSAGES.notFound);
+    res.json({ located: true });
   });
 
   router.patch('/:id', async (req, res) => {

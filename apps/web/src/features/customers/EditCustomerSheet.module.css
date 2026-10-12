@@ -1,0 +1,95 @@
+/* The edit panel: the fields in one column, each list of phones or emails in its own section */
+.form {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+
+.names {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.heading {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+/* One phone or email: its fields, then its actions, and any conflict link under it */
+.row {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.rowFields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.emailField {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+/* The primary choice is as tall as a phone touch target */
+.primary {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+.remove {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.conflict {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--danger);
+  font-size: var(--font-size-body);
+}
+
+.addRow {
+  justify-self: start;
+  min-height: 40px;
+}
+
+.save {
+  justify-self: start;
+  min-height: 40px;
+}
+
+@media (max-width: 767.98px) {
+  .names,
+  .rowFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
