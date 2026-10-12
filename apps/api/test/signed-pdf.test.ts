@@ -4,7 +4,8 @@ import type { ProposalView, PublicProposalView, SignatureRecord } from '@rooflin
 import { calculateQuote, defaultPricebook, defaultScope, ESTIMATE_CLAUSE_V1 } from '@roofline/shared';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import pg from 'pg';
+import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
 import { companies, companySettings, customers, measurements, proposalSignatures, proposals, storedFiles } from '@roofline/db';
 import { drawnSignatureKey, makeSignedPdf } from '../src/estimator/signed-pdf.ts';
 import { pdfToBuffer, renderProposalPdf } from '../src/proposals/pdf.ts';
@@ -257,9 +258,17 @@ describe('signed pdf job', () => {
 
   test('a drawn signature whose image is missing fails the job and stores no PDF', async () => {
     const s = await signed('molly@example.com', { drawnSignature: TINY_PNG });
-    await inCompany(t, t.seed.a.companyId, (tx) =>
-      tx.update(proposalSignatures).set({ drawnSignaturePngSha256: sha256(Buffer.from('never stored')) }).where(eq(proposalSignatures.proposalId, s.proposal.id)),
-    );
+    // A signature cannot be edited through app_tenant (Ruling EQ), so the fixture writes as the database owner.
+    const owner = new pg.Client({ connectionString: inject('dbUrls').owner });
+    await owner.connect();
+    try {
+      await owner.query('update proposal_signatures set drawn_signature_png_sha256 = $1 where proposal_id = $2', [
+        sha256(Buffer.from('never stored')),
+        s.proposal.id,
+      ]);
+    } finally {
+      await owner.end();
+    }
     await expect(run(s.proposal.id)).rejects.toThrow('missing');
     expect(pdfPuts()).toHaveLength(0);
     expect(await fileRows()).toHaveLength(0);
