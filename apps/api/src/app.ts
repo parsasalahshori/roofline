@@ -13,6 +13,7 @@ import { setupRoutes } from './account/setup-routes.ts';
 import { textingRoutes } from './account/texting-routes.ts';
 import { errorHandler, logErrorToConsole, MESSAGES, notFoundHandler } from './errors.ts';
 import { stripeHooks } from './hooks/stripe.ts';
+import { postmarkHooks } from './hooks/postmark.ts';
 import { twilioHooks } from './hooks/twilio.ts';
 import { twilioRegistrationHooks } from './hooks/twilio-registration.ts';
 import type { JobQueue } from './jobs/queue.ts';
@@ -58,11 +59,11 @@ import { agentSettingsRoutes } from './routes/agents-settings.ts';
 import { measurementRoutes } from './routes/measurements.ts';
 import { tierTemplateRoutes } from './routes/tier-templates.ts';
 import { estimatorSettingsRoutes } from './routes/estimator-settings.ts';
-import { stormRoutes } from './routes/storms.ts';
+import { stormLayerRoutes, stormRoutes } from './routes/storms.ts';
 import { doorRoutes } from './routes/door-routes.ts';
 import { stormSettingsRoutes } from './routes/storm-settings.ts';
 import { adsRoutes } from './routes/ads.ts';
-import { stormRequestRoutes } from './public/storm-requests.ts';
+import { stormRequestOriginGuard, stormRequestRoutes } from './public/storm-requests.ts';
 import { stormPage } from './public/storm-page.ts';
 import { unsubscribeRoutes } from './public/unsubscribe.ts';
 import { proposalRoutes } from './routes/proposals.ts';
@@ -232,10 +233,15 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
 
   app.set('trust proxy', config.TRUST_PROXY);
   app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(config.NODE_ENV) }));
+  // The company-host storm landing page, GET /storm/:code: no session, no rate limit. It is mounted before
+  // policyPages, which answers its own 404 for any other path on a company host; stormPage calls next() for
+  // every non-/storm path and every other host.
+  app.use(stormPage(deps));
   // The public policy pages (privacy and terms): no session, no rate limit, served before /health.
   app.use(policyPages(deps));
-  // The company-host storm landing page, GET /storm/:code: no session, no rate limit.
-  app.use(stormPage(deps));
+  // The storm landing page's form (public/storm-requests.ts): posted from the company's own host, so it is
+  // mounted ahead of blockCrossSiteMutations and checks its own Origin. It brings its own body parsers.
+  app.use('/api/public/storm-requests', publicRateLimit(), stormRequestOriginGuard(deps), stormRequestRoutes(deps));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
@@ -248,6 +254,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // ahead of the JSON parser and the /api gate, with its own form parser (64 KB), so these routes
   // only ever read form bodies.
   app.use('/hooks/twilio', twilioHooks(deps));
+  // Postmark's bounce and complaint webhook (hooks/postmark.ts): basic-auth secret, no session; its router brings its own JSON parser (256 KB).
+  app.use('/hooks/postmark', postmarkHooks(deps));
   // Stripe's webhooks read the raw body (stripeHooks sets its own parser). The Twilio registration
   // callbacks are signed form posts too, like /hooks/twilio.
   app.use('/hooks/stripe', stripeHooks(deps));
@@ -295,6 +303,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/agents', agentsRoutes(deps));
   app.use('/api/search', searchRoutes(deps));
   app.use('/api/map', mapRoutes(deps));
+  app.use('/api/map', stormLayerRoutes(deps));
   app.use('/api/weather', weatherRoutes(deps));
   app.use('/api/appointments', appointmentRoutes(deps));
   app.use('/api/today', todayRoutes(deps));
@@ -317,15 +326,13 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // Storm Scout: storms and their plans, door-knock routes, per-company storm settings, and ads.
   app.use('/api/storms', stormRoutes(deps));
   app.use('/api/routes', doorRoutes(deps));
-  app.use('/api/storm/settings', stormSettingsRoutes(deps));
+  app.use('/api/storm', stormSettingsRoutes(deps));
   app.use('/api/ads', adsRoutes(deps));
   // Signed-out customers open and sign their proposal here. The sign-in gate lets every path under
   // /api/public/ through (auth/middleware.ts), and the per-IP limit stands in for the session one.
   const publicRouter = express.Router();
   publicRouter.use('/proposals', publicProposalRoutes(deps));
   publicRouter.use('/proposals', proposalSignRoutes(deps));
-  // A homeowner asks for a storm inspection from the company's storm page.
-  publicRouter.use('/storm-requests', stormRequestRoutes(deps));
   app.use('/api/public', publicRateLimit(), publicRouter);
 
   // The web app itself, when there is a build to serve. After every API route, so it can only

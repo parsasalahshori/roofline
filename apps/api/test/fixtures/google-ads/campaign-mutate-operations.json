@@ -1,0 +1,153 @@
+[
+  {
+    "campaignBudgetOperation": {
+      "create": {
+        "resourceName": "customers/9876543210/campaignBudgets/-1",
+        "name": "Roofline storm cs_1 google budget",
+        "amountMicros": "25000000",
+        "deliveryMethod": "STANDARD",
+        "explicitlyShared": false
+      }
+    }
+  },
+  {
+    "campaignOperation": {
+      "create": {
+        "resourceName": "customers/9876543210/campaigns/-2",
+        "name": "Roofline storm cs_1 google",
+        "advertisingChannelType": "SEARCH",
+        "status": "PAUSED",
+        "campaignBudget": "customers/9876543210/campaignBudgets/-1",
+        "maximizeClicks": {},
+        "startDate": "20261014",
+        "endDate": "20261017",
+        "networkSettings": {
+          "targetGoogleSearch": true,
+          "targetSearchNetwork": false,
+          "targetContentNetwork": false
+        },
+        "containsEuPoliticalAdvertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
+      }
+    }
+  },
+  {
+    "adGroupOperation": {
+      "create": {
+        "resourceName": "customers/9876543210/adGroups/-3",
+        "name": "Roofline storm cs_1 google ad group",
+        "campaign": "customers/9876543210/campaigns/-2",
+        "status": "ENABLED",
+        "type": "SEARCH_STANDARD"
+      }
+    }
+  },
+  {
+    "adGroupCriterionOperation": {
+      "create": {
+        "adGroup": "customers/9876543210/adGroups/-3",
+        "status": "ENABLED",
+        "keyword": {
+          "text": "roof repair",
+          "matchType": "PHRASE"
+        }
+      }
+    }
+  },
+  {
+    "adGroupCriterionOperation": {
+      "create": {
+        "adGroup": "customers/9876543210/adGroups/-3",
+        "status": "ENABLED",
+        "keyword": {
+          "text": "hail damage roof",
+          "matchType": "PHRASE"
+        }
+      }
+    }
+  },
+  {
+    "adGroupAdOperation": {
+      "create": {
+        "adGroup": "customers/9876543210/adGroups/-3",
+        "status": "ENABLED",
+        "ad": {
+          "finalUrls": [
+            "https://acme.example/storm/abc"
+          ],
+          "responsiveSearchAd": {
+            "headlines": [
+              {
+                "text": "Free Storm Roof Check"
+              },
+              {
+                "text": "Acme Roofing"
+              },
+              {
+                "text": "Roofing in Omaha"
+              }
+            ],
+            "descriptions": [
+              {
+                "text": "Hail hit your area. Get a free roof check."
+              },
+              {
+                "text": "Call Acme Roofing for a free roof check."
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "campaignCriterionOperation": {
+      "create": {
+        "campaign": "customers/9876543210/campaigns/-2",
+        "proximity": {
+          "geoPoint": {
+            "longitudeInMicroDegrees": -95934500,
+            "latitudeInMicroDegrees": 41256500
+          },
+          "radius": 8,
+          "radiusUnits": "KILOMETERS"
+        }
+      }
+    }
+  },
+  {
+    "campaignCriterionOperation": {
+      "create": {
+        "campaign": "customers/9876543210/campaigns/-2",
+        "negative": true,
+        "keyword": {
+          "text": "jobs",
+          "matchType": "BROAD"
+        }
+      }
+    }
+  },
+  {
+    "campaignCriterionOperation": {
+      "create": {
+        "campaign": "customers/9876543210/campaigns/-2",
+        "negative": true,
+        "keyword": {
+          "text": "salary",
+          "matchType": "BROAD"
+        }
+      }
+    }
+  },
+  {
+    "campaignCriterionOperation": {
+      "create": {
+        "campaign": "customers/9876543210/campaigns/-2",
+        "negative": true,
+        "keyword": {
+          "text": "diy",
+          "matchType": "BROAD"
+        }
+      }
+    }
+  }
+]

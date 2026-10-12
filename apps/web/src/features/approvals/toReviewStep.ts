@@ -1,6 +1,7 @@
 import type { ReviewStep } from '@roofline/ui';
 import type { StepView, TaskView } from '../../api/types.ts';
 import { editableText } from './editable.ts';
+import { kitFor } from './steps/index.ts';
 
 /**
  * Does the caller have a decision to make on this step? A draft's pending step is open to everyone
@@ -20,18 +21,20 @@ export function isOpen(step: StepView, task: TaskView): boolean {
 
 /** The step as the kit's review screen takes it. */
 export function toReviewStep(step: StepView, task: TaskView): ReviewStep {
+  const kit = kitFor(step);
+  const preview = kit?.review(step) ?? step.preview;
   return {
     id: step.id,
-    title: step.preview.title,
+    title: preview.title,
     approvalClass: step.approvalClass,
     status: step.status,
     enabled: step.enabled,
     canApprove: step.canApprove,
     open: isOpen(step, task),
-    preview: step.preview,
+    preview,
     result: step.result,
     errorPlain: step.errorPlain,
-    editable: editableText(step) !== null,
+    editable: editableText(step) !== null || (kit?.editFields(step).length ?? 0) > 0,
   };
 }
 

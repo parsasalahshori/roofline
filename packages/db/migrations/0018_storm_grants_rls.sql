@@ -162,6 +162,11 @@ GRANT SELECT (id, company_id, storm_id, status, plan_task_id, last_matched_at) O
 --> statement-breakpoint
 CREATE POLICY app_system_all ON company_storms FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint
+-- ad_accounts: the hourly pending-account recheck lists which companies have a pending account (company_id, status only).
+GRANT SELECT (company_id, status) ON ad_accounts TO app_system;
+--> statement-breakpoint
+CREATE POLICY app_system_all ON ad_accounts FOR ALL TO app_system USING (true) WITH CHECK (true);
+--> statement-breakpoint
 GRANT SELECT (id, company_id, status, external_campaign_id, platform) ON ad_campaigns TO app_system;
 --> statement-breakpoint
 CREATE POLICY app_system_all ON ad_campaigns FOR ALL TO app_system USING (true) WITH CHECK (true);
@@ -181,7 +186,23 @@ CREATE POLICY app_system_all ON email_opt_outs FOR ALL TO app_system USING (true
 --    - company_settings (the seven storm_* columns): 0002 section 2 grants app_tenant table-wide SELECT,
 --      INSERT and UPDATE on company_settings, and no later migration restricts that by column.
 --    - memberships.storm_alert_email: app_tenant has no grant on memberships (it reads members through the
---      company_members view). 0002 section 5 gives app_system GRANT ALL on memberships, table-wide, and the
---      team path runs as app_system, so it can already read and write the new column.
+--      company_members view). 0002 section 5 gives app_system GRANT ALL on memberships, table-wide, so the team
+--      path can already read and write the new column. The Task 10 alert read (as app_tenant) goes through
+--      the company_members view, extended with this column in section 9.
 --    - messages.to_email and messages.subject: app_tenant's table-wide SELECT, INSERT and UPDATE on messages
 --      (0002 section 2) covers them. app_system keeps only its column-level SELECT on messages.
+--> statement-breakpoint
+
+-- 9. Task 10 (Ruling AW, amended in place): the alert read and the hail-health schedule.
+--    - app_system reads hail_runs (global, no RLS) so the hail-health schedule can find the newest processed run.
+--    - company_members also exposes memberships.storm_alert_email, so the storm alert recipients are read
+--      inside withTenant. As in 0004, CREATE OR REPLACE VIEW can only append, so the column goes last.
+GRANT SELECT ON hail_runs TO app_system;
+--> statement-breakpoint
+CREATE OR REPLACE VIEW company_members WITH (security_barrier) AS
+  SELECT m.id, m.user_id, u.name, u.email, m.role, m.status, m.can_approve_spend, m.storm_alert_email
+    FROM memberships m
+    JOIN users u ON u.id = m.user_id
+   WHERE m.company_id = nullif(current_setting('app.company_id', true), '')::uuid;
+--> statement-breakpoint
+GRANT SELECT ON company_members TO app_tenant;

@@ -40,7 +40,7 @@ const DEFAULTS: Record<SetupItemKey, Omit<SetupItemView, 'key'>> = {
   texting_registration: { status: 'waiting', comingWith: null, skippable: false, data: {} },
   invite_team: { status: 'todo', comingWith: null, skippable: true, data: {} },
   payment_method: { status: 'done', comingWith: null, skippable: false, data: {} },
-  prices_and_tiers: { status: 'todo', comingWith: 'estimator', skippable: false, data: {} },
+  prices_and_tiers: { status: 'todo', comingWith: null, skippable: false, data: {} },
   connect_calendar: { status: 'todo', comingWith: 'calendar', skippable: false, data: {} },
   phone_number: { status: 'todo', comingWith: 'front_desk', skippable: false, data: {} },
   connect_ads: { status: 'todo', comingWith: 'storm_scout', skippable: false, data: {} },
@@ -75,7 +75,7 @@ const COMPANY: CompanyBody = {
 };
 
 /** A signed-in owner (or the given role) whose Setup reads answer with `view`, unless a test gives its own answers. */
-function signedInApi(view: SetupView, overrides: Parameters<typeof stubApi>[0] = {}, role: 'owner' | 'office' = 'owner') {
+function signedInApi(view: SetupView, overrides: Parameters<typeof stubApi>[0] = {}, role: 'owner' | 'office' | 'rep' = 'owner') {
   api = stubApi({
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role } }),
@@ -122,8 +122,8 @@ describe('setup tab', () => {
     renderApp('/settings/setup');
 
     await stepList();
-    expect(screen.getByText('Coming with the Estimator')).toBeInTheDocument();
-    expect(screen.getByText('Coming with the calendar')).toBeInTheDocument();
+    expect(screen.queryByText('Coming with the Estimator')).not.toBeInTheDocument();
+    expect(screen.queryByText('Coming with the calendar')).not.toBeInTheDocument();
     expect(screen.getByText('Coming with Front Desk')).toBeInTheDocument();
     expect(screen.getByText('Coming with Storm Scout')).toBeInTheDocument();
   });
@@ -143,6 +143,20 @@ describe('setup tab', () => {
     await waitFor(() => expect(api.count('POST /api/setup/import_customers/skip')).toBe(1));
     expect(await screen.findByRole('link', { name: '2 of 5 setup steps done' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '1 of 5 setup steps done' })).toBeNull();
+  });
+
+  it('the calendar step links to Connections for every member', async () => {
+    for (const role of ['owner', 'rep'] as const) {
+      signedInApi(viewOf(), {}, role);
+      renderApp('/settings/setup');
+
+      const list = await stepList();
+      const row = within(list).getByRole('heading', { name: setupItems.connect_calendar.title }).closest('li') as HTMLElement;
+      const action = within(row).getByRole('link', { name: setup.actions.connectCalendar });
+      expect(action, role).toHaveAttribute('href', '/settings/connections');
+      expect(api.unexpected, role).toEqual([]);
+      cleanup();
+    }
   });
 
   it('office sees no buttons', async () => {

@@ -1,0 +1,1 @@
+{"error":{"code":400,"message":"x","status":"INVALID_ARGUMENT","details":[{"@type":"type.googleapis.com/google.ads.googleads.v21.errors.GoogleAdsFailure","errors":[{"errorCode":{"policyViolationError":"POLICY_ERROR"},"message":"x"}]}]}}

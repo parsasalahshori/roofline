@@ -1,15 +1,16 @@
 import { IconButton, useFocusTrap } from '@roofline/ui';
-import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { useSearch } from '../../api/hooks.ts';
+import { useMe, useSearch } from '../../api/hooks.ts';
 import { search } from '../../copy/search.ts';
 import styles from './SearchDialog.module.css';
 import { SearchIcon } from './searchIcon.tsx';
-import { toOptions, type SearchOption } from './searchOptions.ts';
+import { readRecents } from '../recents.ts';
+import { actionOptions, recentOptions, toOptions, type SearchOption } from './searchOptions.ts';
 
 /** The groups in the order the dialog shows them. Each key is also the name of its heading in `search`. */
-const GROUPS = ['customers', 'jobs', 'addresses'] as const;
+const GROUPS = ['actions', 'recent', 'customers', 'jobs', 'addresses'] as const;
 
 /** Wait this long after the last key before asking, so a fast typist asks once. */
 const DEBOUNCE_MS = 200;
@@ -69,6 +70,10 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
     return () => clearTimeout(timer);
   }, [value]);
 
+  const me = useMe();
+  const companyId = me.data?.company.id;
+  const canDownload = me.data?.role === 'owner' || me.data?.role === 'office';
+  const recents = useMemo(() => recentOptions(companyId ? readRecents(companyId) : []), [companyId]);
   const query = useSearch(debounced);
   // Esc closes the dialog and focus goes back to whatever had it; Tab stays inside
   useFocusTrap(dialogRef, { active: true, onEscape: onClose, initialFocus: inputRef });
@@ -76,7 +81,10 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
   // Only the answer for exactly what is in the field counts. While a new query waits out the debounce
   // or loads, the old results are off the screen, so the arrow keys and Enter must not reach them.
   const current = value.trim().length >= 2 && debounced === value && query.isSuccess;
-  const options = current && query.data ? toOptions(query.data) : [];
+  const typing = value.trim() !== '';
+  const actions = useMemo(() => actionOptions(value, canDownload), [value, canDownload]);
+  const found = current && query.data ? toOptions(query.data) : [];
+  const options = typing ? [...actions, ...found] : recents;
   // Looked up by key, so an option that is no longer in the results is no longer active
   const active = options.find((option) => option.key === activeKey);
   const activeIndex = active ? options.indexOf(active) : -1;
@@ -91,7 +99,8 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
   }, [activeId]);
 
   function select(option: SearchOption) {
-    void navigate(option.href);
+    if (option.external) window.location.assign(option.href);
+    else void navigate(option.href);
     onClose();
   }
 
@@ -107,17 +116,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  let content: ReactNode;
-  if (value.trim().length < 2) {
-    content = <StatusLine text={search.hint} />;
-  } else if (debounced !== value || query.isPending) {
-    content = <StatusLine text={search.searching} />;
-  } else if (query.isError) {
-    content = <StatusLine text={query.error.message} />;
-  } else if (options.length === 0) {
-    content = <StatusLine text={search.noMatches(debounced)} />;
-  } else {
-    content = (
+  const list = (
       <div role="listbox" id={listId} aria-label={search.listLabel} className={styles.results}>
         {GROUPS.map((group) => {
           const items = options.map((option, index) => ({ option, index })).filter(({ option }) => option.group === group);
@@ -149,7 +148,25 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
           );
         })}
       </div>
+  );
+
+  let content: ReactNode;
+  if (showList) {
+    const loading = typing && value.trim().length >= 2 && (debounced !== value || query.isPending);
+    content = (
+      <>
+        {list}
+        {loading ? <StatusLine text={search.searching} /> : null}
+      </>
     );
+  } else if (!typing || value.trim().length < 2) {
+    content = <StatusLine text={search.hint} />;
+  } else if (debounced !== value || query.isPending) {
+    content = <StatusLine text={search.searching} />;
+  } else if (query.isError) {
+    content = <StatusLine text={query.error.message} />;
+  } else {
+    content = <StatusLine text={search.noMatches(debounced)} />;
   }
 
   // Portaled to the body, so the dialog sits above the top bar, the Window and the dock

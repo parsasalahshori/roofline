@@ -30,14 +30,15 @@ describe('the storm skeleton', () => {
   test('POST /api/public/storm-requests/x without a session is not a 401', async () => {
     const res = await request(t.app).post('/api/public/storm-requests/x').send({});
     expect(res.status).not.toBe(401);
-    expect(res.status).toBe(404);
+    // The real route validates the body before looking the page up, so an empty body is a 422.
+    expect(res.status).toBe(422);
   });
 
   test('GET /u/x works without a session', async () => {
     const res = await request(t.app).get('/u/x');
     expect(res.status).not.toBe(401);
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: MESSAGES.notFound });
+    expect(res.type).toBe('text/html');
   });
 
   test('POST /u/x works without a session', async () => {
@@ -66,8 +67,10 @@ describe('the storm skeleton', () => {
     for (const name of STORM_JOBS) expect(JOB_NAMES).toContain(name);
   });
 
-  test('the three storm step stubs are registered', async () => {
-    for (const type of ['send_email_batch', 'build_routes', 'create_ad_campaign'] as const) {
+  test('send_email_batch and build_routes are registered and create_ad_campaign still refuses', async () => {
+    expect(builtInHandlers.send_email_batch).toBeDefined();
+    expect(builtInHandlers.build_routes).toBeDefined();
+    for (const type of ['create_ad_campaign'] as const) {
       const handler = builtInHandlers[type];
       expect(handler).toBeDefined();
       await expect(handler!({} as never, {} as never, {} as never)).rejects.toThrow('not yet');

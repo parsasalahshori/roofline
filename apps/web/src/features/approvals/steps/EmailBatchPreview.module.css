@@ -1,0 +1,55 @@
+/* The storm email preview: the subject, the count, the lines, then what one customer reads. */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.subject {
+  margin: 0;
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+}
+
+.count {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  overflow-wrap: anywhere;
+}
+
+.lines {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  overflow-wrap: anywhere;
+}
+
+/* The per-customer sample, in a bordered block with its label and the estimate caption. */
+.sample {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+
+.sampleLabel,
+.caption {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  overflow-wrap: anywhere;
+}
+
+.sampleBody {
+  margin: 0;
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

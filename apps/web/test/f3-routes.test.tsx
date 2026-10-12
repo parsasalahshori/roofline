@@ -14,7 +14,7 @@ import { importCopy } from '../src/copy/import.ts';
 import { settings } from '../src/copy/settings.ts';
 import { setup } from '../src/copy/setup.ts';
 import { texting } from '../src/copy/texting.ts';
-import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
+import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -102,13 +102,14 @@ const BILLING_BODY = {
 };
 
 /** A signed-in owner, with the shell's reads answered as "nothing" and no billing plan yet. */
-function signedInApi() {
+function signedInApi(overrides: Routes = {}) {
   api = stubApi({
     ...SHELL_ROUTES,
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
     // The user menu's ring reads the checklist too
     'GET /api/setup': () => ({ body: SETUP_VIEW }),
     'GET /api/billing': () => ({ body: BILLING_BODY }),
+    ...overrides,
   });
   return api;
 }
@@ -180,10 +181,15 @@ it('setup shows the checklist', async () => {
 });
 
 it('connections still says what is coming', async () => {
-  signedInApi();
+  signedInApi({ 'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }) });
+  api.routes['GET /api/calendar/connection'] = () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } });
+  api.routes['GET /api/company'] = () => ({ body: { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null, website: null, addressStreet: null, addressCity: null, addressState: null, addressZip: null, timezone: 'America/Chicago', logoUrl: null, located: false, serviceAreaMiles: null } });
   renderApp('/settings/connections');
 
   expect(await screen.findByText(connections.later)).toBeInTheDocument();
+  expect(screen.getAllByText(connections.later)).toHaveLength(1);
+  expect(await screen.findByRole('heading', { name: connections.googleAds })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: connections.meta })).toBeInTheDocument();
 });
 
 it('sign-up is open without a session', async () => {

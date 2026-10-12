@@ -103,6 +103,18 @@ describe('agent event writer boundary', () => {
     expect(await restrictedImports('apps/api/src/jobs/scheduler/__fixture_bad.ts', src(name))).toHaveLength(1);
   });
 
+  test.each(['finishClaimedStep', 'finishParkedStep', 'expireOverdueDrafts'])(
+    '%s (a raw step or draft finisher) is allowed in tasks/service.ts and tests, flagged elsewhere in src',
+    async (name) => {
+      expect(await restrictedImports('apps/api/src/tasks/service.ts', src(name))).toEqual([]);
+      expect(await restrictedImports('apps/api/test/__fixture_ok.ts', src(name))).toEqual([]);
+      expect(await restrictedImports('apps/api/src/estimator/exact-report-complete.ts', src(name))).toHaveLength(1);
+      expect(await restrictedImports('apps/api/src/jobs/scheduler/exact-report-poll.ts', src(name))).toHaveLength(1);
+      expect(await restrictedImports('apps/api/src/messaging/dispatcher.ts', src(name))).toHaveLength(1);
+      expect(await restrictedImports('apps/api/src/tasks/runner.ts', src(name))).toHaveLength(1);
+    },
+  );
+
   test('the relative form into the db package source is flagged too', async () => {
     const source = "import { insertAgentEvent } from '../../../../packages/db/src/index.ts'; export { insertAgentEvent };";
     expect(await restrictedImports('apps/api/src/routes/agents-feed.ts', source)).toHaveLength(1);
