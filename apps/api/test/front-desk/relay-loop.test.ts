@@ -95,7 +95,7 @@ describe('relay session loop', () => {
 
   test('an urgent handoff event sends handoffData with a real boolean urgent', async () => {
     const { session, loop } = await rig([
-      { when: /./, route: { ...OPUS, route: 'transfer', urgent: true }, answer: [] },
+      { when: /./, route: { ...OPUS, route: 'transfer', intent: 'leak', urgent: true }, answer: [] },
     ]);
     session.caller.setup({ customParameters: { callId: CALL_ID } });
     session.caller.say('help me now');

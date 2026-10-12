@@ -257,6 +257,21 @@ describe('GET /api/conversations/:id', () => {
     expect(detail.calls).toHaveLength(2);
   });
 
+  test("a message the caller left shows its words on the card, also with no customer; a redacted one keeps the plain label", async () => {
+    const owner = await who.as('owner');
+    const convo = await seedConversation({ channel: 'voice' });
+    const call = await seedCall(convo, { transcriptStored: true });
+    await seedTurn(convo, 1, {
+      text: 'I will pass that on.',
+      callId: call,
+      toolCalls: [{ name: 'take_message', input: { reason: 'Gutter fell off the north side', urgent: false }, result: 'ok', ok: true }],
+    });
+    await seedTurn(convo, 2, { text: '', callId: call, toolCalls: [{ name: 'take_message', ok: true, input: { urgent: true } } as ToolCallRecord] });
+    const detail = (await owner.get(`${BASE}/${convo}`)).body as ConversationDetail;
+    expect(detail.turns[0]!.actions[0]!.label).toBe('Took a message for the team: Gutter fell off the north side');
+    expect(detail.turns[1]!.actions[0]!.label).toBe('Took a message for the team');
+  });
+
   test('a text conversation merges its texts with the turns in time order, without repeating what a turn shows (review note 20)', async () => {
     const owner = await who.as('owner');
     const customerId = await seedCustomer('a', { name: 'Pat Texter', phone: TEXTABLE });
