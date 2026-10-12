@@ -31,9 +31,23 @@ describe('AgentCard', () => {
     show(fixture());
     expect(screen.getByText(/about 31 hours/)).toBeTruthy();
     expect(screen.getAllByText(/\(estimate\)/).length).toBeGreaterThan(0);
-    expect(screen.getByText(moneyLabel(1860, 2800))).toBeTruthy();
+    expect(screen.getByText(`${moneyLabel(1860, 2800)} ${agentsCommon.estimate}`)).toBeTruthy();
     expect(screen.getByText('92%')).toBeTruthy();
     expect(screen.getByText('Not approved: 3')).toBeTruthy();
+  });
+
+  it('link name includes the status chip, also for coming soon', () => {
+    const { unmount } = show(fixture());
+    expect(screen.getByRole('link', { name: /Storm Scout.*On/ })).toBeTruthy();
+    unmount();
+    show(fixture({ status: 'coming_soon', agent: 'claims', minutesThisMonth: 0, successRate: null, notApproved30d: 0, finishedToday: 0 }));
+    expect(screen.getByRole('link', { name: /Claims.*Coming soon/ })).toBeTruthy();
+  });
+
+  it('says less than half an hour for a few minutes', () => {
+    show(fixture({ minutesThisMonth: 5 }));
+    expect(screen.getByText(/less than half an hour/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('about 0');
   });
 
   it('hides money when the rate is null', () => {
@@ -81,9 +95,9 @@ describe('AgentCard', () => {
     expect(screen.getByRole('link', { name: /Time saved this month/ })).toBe(link);
   });
 
-  it('coming soon link name is just the agent name', () => {
+  it('coming soon link name is the agent name and its chip', () => {
     show(fixture({ status: 'coming_soon', agent: 'claims', minutesThisMonth: 0, successRate: null, notApproved30d: 0, finishedToday: 0 }));
-    expect(screen.getByRole('link').getAttribute('aria-labelledby')?.split(' ')).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'Claims' })).toBeTruthy();
+    expect(screen.getByRole('link').getAttribute('aria-labelledby')?.split(' ')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'Claims Coming soon' })).toBeTruthy();
   });
 });

@@ -105,4 +105,20 @@ describe('TimeBaselines', () => {
     expect(screen.getByText(`${copy.ratePrefix} $28 ${copy.rateSuffix}`)).toBeInTheDocument();
     expect(api.unexpected).toEqual([]);
   });
+
+  it('announces loading as a named status', async () => {
+    stubApi({ 'GET /api/agents/time-baselines': () => new Promise(() => {}) as never });
+    renderAt(<TimeBaselines />, '/settings/agents');
+    expect(await screen.findByRole('status', { name: copy.loading })).toBeInTheDocument();
+  });
+
+  it('hides the visible input label and adds phone captions to each cell', async () => {
+    setup();
+    const field = await input('text_sent');
+    const label = document.querySelector(`label[for="${field.id}"]`);
+    expect(label).toHaveClass('visually-hidden');
+    for (const caption of [copy.colUnit, copy.colBasis, copy.colMinutes]) {
+      expect(screen.getAllByText(caption)).toHaveLength(ROWS.length + 1);
+    }
+  });
 });

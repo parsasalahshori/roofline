@@ -33,7 +33,8 @@ describe('MiniChart', () => {
     const { container } = render(<MiniChart days={makeDays(14, (i) => i + 20)} label="My label" />);
     expect(container.querySelector('caption')?.textContent).toBe('My label');
     const cells = [...container.querySelectorAll('tbody td, tbody th')].map((c) => c.textContent);
-    expect(cells).toContain('2026-10-03');
+    expect(cells).toContain('Oct 3');
+    expect(cells).not.toContain('2026-10-03');
     expect(cells).toContain('22');
   });
 

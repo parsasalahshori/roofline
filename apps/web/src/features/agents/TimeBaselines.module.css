@@ -53,6 +53,12 @@
   white-space: nowrap;
 }
 
+.cellLabel {
+  display: none;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 .edit {
   display: grid;
   gap: 4px;
@@ -89,5 +95,9 @@
 
   .table tbody tr {
     padding: 8px 0;
+  }
+
+  .cellLabel {
+    display: block;
   }
 }
