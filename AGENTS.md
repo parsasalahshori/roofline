@@ -101,6 +101,11 @@ with `userCreatable`, `baseline` and `units`, and has no `minutesSaved`; `withMi
 **Ruling BB (rep price visibility):** reps may see the full price list through the quote editor (they quote
 prices to homeowners); job values hidden from a rep stay hidden. The C1 lead now helps S1 on tasks the S1 lead assigns.
 
+**Ruling BC (Storm Scout pause and reruns):** `draftStormPlan` checks the pause first and returns `{taskId} | null`
+(null = paused: no task, no alert); `POST /api/storms/:id/plan` answers 409 "Storm Scout is paused. Turn it back on in
+Agents to draft a plan." A storm_plan rerun re-drafts through `draftStormPlan` with fresh data; other reruns keep each
+step's off state. S1 adds the D1/G1 step titles to `OFF_STEP_TITLES` at its d1/g1 merges.
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the
