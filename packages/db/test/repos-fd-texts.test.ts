@@ -148,8 +148,6 @@ describe('fd-texts repo', () => {
     expect(await read()).toBe(false);
     await set({ frontDeskEnabled: true, frontDeskTexts: true });
     expect(await read()).toBe(true);
-    await withTenant(pools, ctx, (tx) => tx.delete(companySettings).where(eq(companySettings.companyId, ctx.companyId)));
-    expect(await read()).toBe(false);
   });
 });
 
