@@ -12,15 +12,16 @@ export function AgentCard({ card, hourlyRateCents }: { card: AgentCardData; hour
   const id = useId();
   const nameId = `${id}-name`;
   const timeId = `${id}-time`;
+  const chipId = `${id}-chip`;
   const name = AGENT_LABEL[card.agent];
   const soon = card.status === 'coming_soon';
   return (
     <Card as="div">
-      <UiLink href={`/agents/${agentSlug(card.agent)}`} aria-labelledby={soon ? nameId : `${nameId} ${timeId}`} className={styles.link}>
+      <UiLink href={`/agents/${agentSlug(card.agent)}`} aria-labelledby={soon ? `${nameId} ${chipId}` : `${nameId} ${chipId} ${timeId}`} className={styles.link}>
         <div className={styles.card}>
           <div className={styles.head}>
             <h3 className={styles.name} id={nameId}>{name}</h3>
-            <span className={styles.chip} data-status={card.status}>
+            <span className={styles.chip} id={chipId} data-status={card.status}>
               {agentsWindow.status[card.status]}
             </span>
           </div>
@@ -39,7 +40,7 @@ export function AgentCard({ card, hourlyRateCents }: { card: AgentCardData; hour
                 {hourlyRateCents === null ? null : (
                   <>
                     <span>{agentsWindow.separator}</span>
-                    <span>{moneyLabel(card.minutesThisMonth, hourlyRateCents)}</span>
+                    <span>{`${moneyLabel(card.minutesThisMonth, hourlyRateCents)} ${agentsCommon.estimate}`}</span>
                   </>
                 )}
               </p>

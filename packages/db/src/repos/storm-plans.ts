@@ -1,7 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { hailLabel, type CampaignStatus, type TaskStatus } from '@roofline/shared';
 import type { TenantContext, Tx } from '../tenant.ts';
-import { moveStep, listSteps, updateTask } from './tasks.ts';
 
 /*
  * Data access for drafting a storm plan (S1 Task 11). The types below are the contract with
@@ -201,18 +200,14 @@ export async function listStormPlanRecipients(tx: Tx, ctx: TenantContext, compan
   return { smsIds, emailIds, fields };
 }
 
+export type StormPlanLock = { ok: false } | { ok: true; oldDraftId: string | null };
+
 /**
- * Points company_storms.plan_task_id at `newTaskId`, sets status 'planned', and, when the previous
- * plan is a DRAFT task, declines it (its open steps become 'skipped'). Never touches a plan that is
- * not a draft. Returns false (and changes nothing) when the current plan is not a draft.
+ * Locks the company_storms row (for update of cs) and checks it. ok:false when the storm is missing or
+ * its plan is not a draft (S1 CHANGED path). oldDraftId is the existing draft plan task id, or null
+ * when there was no plan. Superseding the old draft is the task service's job (supersedeDraft).
  */
-export async function replaceDraftPlan(
-  tx: Tx,
-  ctx: TenantContext,
-  companyStormId: string,
-  newTaskId: string,
-  now: Date,
-): Promise<boolean> {
+export async function lockStormPlan(tx: Tx, ctx: TenantContext, companyStormId: string): Promise<StormPlanLock> {
   const locked = await tx.execute(sql`
     select cs.plan_task_id, t.status as plan_status
     from company_storms cs
@@ -221,25 +216,20 @@ export async function replaceDraftPlan(
     for update of cs
   `);
   const row = locked.rows[0] as { plan_task_id: string | null; plan_status: TaskStatus | null } | undefined;
-  if (!row) return false;
+  if (!row) return { ok: false };
   const oldId = row.plan_task_id;
-  if (oldId !== null && row.plan_status !== null && row.plan_status !== 'draft') return false;
+  if (oldId !== null && row.plan_status !== null && row.plan_status !== 'draft') return { ok: false };
+  return { ok: true, oldDraftId: oldId !== null && row.plan_status === 'draft' ? oldId : null };
+}
 
-  if (oldId !== null && row.plan_status === 'draft') {
-    const steps = await listSteps(tx, ctx, [oldId]);
-    for (const step of steps) {
-      if (step.status !== 'pending' && step.status !== 'awaiting_owner') continue;
-      await moveStep(tx, ctx, step.id, ['pending', 'awaiting_owner'], { status: 'skipped' }, now);
-    }
-    await updateTask(
-      tx,
-      ctx,
-      oldId,
-      { status: 'declined', declinedByUserId: null, declinedAt: now, declineReason: 'Replaced by a newer plan.' },
-      now,
-    );
-  }
-
+/** Points the storm at the new plan task and flips status 'new' to 'planned'. */
+export async function linkStormPlan(
+  tx: Tx,
+  ctx: TenantContext,
+  companyStormId: string,
+  newTaskId: string,
+  now: Date,
+): Promise<void> {
   await tx.execute(sql`
     update company_storms
     set plan_task_id = ${newTaskId}::uuid,
@@ -247,5 +237,4 @@ export async function replaceDraftPlan(
         updated_at = ${now}
     where id = ${companyStormId}::uuid and company_id = ${ctx.companyId}::uuid
   `);
-  return true;
 }

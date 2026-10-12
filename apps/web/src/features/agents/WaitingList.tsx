@@ -1,8 +1,9 @@
 import { useId } from 'react';
 import type { WaitingItem } from '@roofline/shared';
-import { Button, EmptyState } from '@roofline/ui';
-import { agents } from '../../copy/agents.ts';
+import { Banner, Button, EmptyState, Skeleton } from '@roofline/ui';
+import { agents, agentsCommon } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
+import { useCompany } from '../settings/api.ts';
 import { useWaiting } from './api.ts';
 import { agentTimeLabel } from './time.ts';
 import styles from './WaitingList.module.css';
@@ -27,7 +28,7 @@ function groupItems(items: WaitingItem[]): Group[] {
   return [you, office, ...people.values()].filter((group) => group.items.length > 0);
 }
 
-function WaitingGroup({ group }: { group: Group }) {
+function WaitingGroup({ group, zone }: { group: Group; zone: string | undefined }) {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId}>
@@ -40,7 +41,7 @@ function WaitingGroup({ group }: { group: Group }) {
             <span className={styles.agent}>{AGENT_LABEL[item.agent]}</span>
             <span className={styles.text}>{item.text}</span>
             <time dateTime={item.since} className={styles.time}>
-              {agentTimeLabel(item.since)}
+              {agentTimeLabel(item.since, zone)}
             </time>
             {item.href ? (
               <Button href={item.href} variant="ghost" className={styles.open}>
@@ -57,15 +58,40 @@ function WaitingGroup({ group }: { group: Group }) {
 /** Everything waiting on somebody, grouped by who it waits on. */
 export function WaitingList() {
   const query = useWaiting();
-  if (query.isError) return <EmptyState title={agents.waitingLoadError} />;
-  if (!query.data) return null;
+  const zone = useCompany().data?.timezone;
+  if (!query.data) {
+    if (query.isError) {
+      return (
+        <EmptyState
+          title={agents.waitingLoadError}
+          action={<Button onClick={() => void query.refetch()}>{agentsCommon.retry}</Button>}
+        />
+      );
+    }
+    return (
+      <div role="status" aria-label={agents.waitingLoading}>
+        <Skeleton lines={3} />
+      </div>
+    );
+  }
   const groups = groupItems(query.data.items);
-  if (groups.length === 0) return <EmptyState title={agents.waitingEmpty} />;
+  const stale = query.isError ? <Banner tone="warning">{agentsCommon.refreshFailed}</Banner> : null;
+  if (groups.length === 0) {
+    return (
+      <>
+        {stale}
+        <EmptyState title={agents.waitingEmpty} />
+      </>
+    );
+  }
   return (
-    <div aria-label={agents.waitingListLabel} className={styles.groups}>
-      {groups.map((group) => (
-        <WaitingGroup key={group.key} group={group} />
-      ))}
-    </div>
+    <>
+      {stale}
+      <section aria-label={agents.waitingListLabel} className={styles.groups}>
+        {groups.map((group) => (
+          <WaitingGroup key={group.key} group={group} zone={zone} />
+        ))}
+      </section>
+    </>
   );
 }

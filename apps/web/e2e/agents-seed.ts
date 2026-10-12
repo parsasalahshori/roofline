@@ -110,6 +110,9 @@ export async function seedAgentsFixture(db: pg.Client, companyId: string, now: D
       status: string;
       step?: StepSeed;
       error?: string;
+      /** A valid payload and stored preview, for steps the review screen must render (default: empty). */
+      payload?: Record<string, unknown>;
+      preview?: Record<string, unknown>;
     },
   ): Promise<string> {
     seq += 1;
@@ -117,7 +120,7 @@ export async function seedAgentsFixture(db: pg.Client, companyId: string, now: D
       `insert into agent_task_steps (company_id, task_id, position, type, approval_class, status, payload, preview,
                                      idempotency_key, error_plain, baseline_key, units, minutes_per_unit, minutes_saved, result,
                                      created_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,'{}'::jsonb,'{}'::jsonb,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$14) returning id`,
+       values ($1,$2,$3,$4,$5,$6,$15::jsonb,$16::jsonb,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$14) returning id`,
       [
         companyId,
         taskId,
@@ -133,6 +136,8 @@ export async function seedAgentsFixture(db: pg.Client, companyId: string, now: D
         s.step?.minutes ?? null,
         s.step?.result ? JSON.stringify(s.step.result) : null,
         at,
+        JSON.stringify(s.payload ?? {}),
+        JSON.stringify(s.preview ?? {}),
       ],
     );
     return r.rows[0]!.id;
@@ -281,7 +286,14 @@ export async function seedAgentsFixture(db: pg.Client, companyId: string, now: D
     at: draftAt,
     expiresAt: new Date(now.getTime() + 2 * 24 * 60 * 60_000),
   });
-  await insertStep(draftTaskId, 1, draftAt, { type: 'send_proposal', approvalClass: 'internal', status: 'pending' });
+  // A demo text step with a valid payload and stored preview, so the review screen can render and approve it.
+  await insertStep(draftTaskId, 1, draftAt, {
+    type: 'demo_message',
+    approvalClass: 'message',
+    status: 'pending',
+    payload: { label: draftTitle },
+    preview: { title: draftTitle, lines: [] },
+  });
   await insertEvent(draftTaskId, null, 'created', 'agent', draftAt);
 
   return {

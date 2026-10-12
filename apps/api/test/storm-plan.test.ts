@@ -341,6 +341,20 @@ describe('re-drafting', () => {
     expect((await companyStormRow()).plan_task_id).toBe(second.taskId);
   });
 
+  test('re-drafting writes one declined system event on the replaced plan', async () => {
+    await addHit({ email: 'a@example.com' });
+    const first = await draft();
+    const second = await draft();
+
+    const events = await q(
+      `select kind, actor_type, data from agent_task_events where task_id = $1 and kind = 'declined'`,
+      [first.taskId],
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].actor_type).toBe('system');
+    expect(events[0].data).toEqual({ skippedSteps: 5, replacedByTaskId: second.taskId });
+  });
+
   test('re-drafting never replaces an approved or running plan', async () => {
     await addHit({ email: 'a@example.com' });
 
@@ -362,6 +376,18 @@ describe('re-drafting', () => {
       expect(planEmails()).toHaveLength(mailsBefore);
       expect((await companyStormRow()).plan_task_id).toBe(approved.taskId);
     }
+  });
+
+  test('re-drafting a non-draft plan writes no declined event', async () => {
+    await addHit({ email: 'a@example.com' });
+    const approved = await draft();
+    await approveAs('owner', approved.taskId);
+    const declinedEvents = () =>
+      q(`select id from agent_task_events where task_id = $1 and kind = 'declined'`, [approved.taskId]);
+    const before = (await declinedEvents()).length;
+    expect((await draft()).taskId).toBe(approved.taskId);
+    expect(await declinedEvents()).toHaveLength(before);
+    expect(before).toBe(0);
   });
 
   test('a dismissed storm is not drafted', async () => {
