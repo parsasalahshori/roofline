@@ -889,3 +889,118 @@ wrapper was stopped by its 10-minute limit; the run was followed through the Act
 E1 T10/T11 (real `send_proposal` and `order_exact_report` handlers, the dispatcher's proposal settle, exact-report
 poll and completion), C1's review fixes and the probe's 3e16312 pass the database, API, worker and e2e suites in
 combination.
+
+## Pass 9
+
+Base: pass 8 head 713e455. `git fetch origin` (2026-10-12) gave exactly the requested heads. Merged in order with
+`git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 5d2e3bdf8c302084c9e98490c93a1b9846438f27 | 6e64bec | none |
+| e1-estimator | 0d1c93239a810641aab33a0d66aa9943200fc934 | 497e896 | 3 files |
+| s1-storm | a3fc7a9e7f1fdeed54886f6bc698d406120e06d8 | c943d9a | 2 files |
+| d1-front-desk | a270c81696b70eee62e5a7f58779e9225ae4b696 | 3db6aeb | none (ops only) |
+| a1-agents | fa34cfd7544d06c440d0e5d10206ded91b4f8937 | a5686c6 | none |
+| g1-agents | 9b095fdd97b48fd7b61222309e20789a1182452e | aad9cb8 | 20 files (all ours) |
+
+Probe-only commit: 09c06d2 (merge-artifact fixes below).
+
+What the tracks brought: C1 72609eb (export audit row committed in its own transaction before the CSV streams);
+E1 T12 (homeowner proposal link: view, sign, decline; `proposal-common.ts`, `proposal-public` repo), T13 fixes
+(step results count what happened, `ready` proposals re-priced, one completion per exact report, link token kept out
+of the error log, measure handoff), and 961b654 (parked exact-report steps finish through `completeParkedStep`, with
+a stub `completeParkedStep` in `tasks/service.ts` that A1's real one replaces); S1 T11 (`draftStormPlan` drafts the
+real plan: text, email, routes, two ad campaigns, steps saved OFF with a reason via `NewTask.steps[].off`), T15/T26
+(storm landing page and requests, YES replies book a check, storm results and `/api/storms`), T20/T21/T25/T29
+(door outcomes, door-knock routes on the phone, review previews and Edit for storm steps, smoke scripts, Google/Meta
+link fixes); A1 review fixes T16/T17 (one `finished` event writer, role-aware money/rule facts, safe recount,
+run-now pause check, ESLint one-writer guard, `create_ad_campaign` units read `campaignId`); G1 merged e1-estimator
+8c42bab (already in the probe) plus its T13b brief; D1 ledger only. No migration, snapshot, journal, package,
+lockfile or ESLint-boundary conflict.
+
+### Conflict resolutions
+
+e1-estimator:
+- `estimator/exact-report-complete.ts`, `jobs/scheduler/exact-report-poll.ts`: E1's text (it now calls
+  `completeParkedStep` itself; result `{ ordered: 1 }` / `{ ordered: 0 }` per E1 T13).
+- `tasks/service.ts`: A1's import list and A1's real `completeParkedStep` (with `recordOutcome`); E1's stub
+  `completeParkedStep` (its comment says A1's body replaces it at merge) and E1's duplicate `finishParkedStep`
+  import dropped.
+
+s1-storm:
+- `storm/plan.ts`: S1 T11's body, with A1 T14's Storm Scout pause check moved to the start of the drafting
+  transaction (`isAgentPaused` → return null; A1's ledger asks for it before the draft insert, in the same
+  transaction). `draftStormPlan` now returns `{ taskId } | null` (null = paused; no task, no plan-ready alert).
+  See problem 1.
+- `routes/storms.ts` (auto-merged, edited in the merge): `POST /api/storms/:id/plan` answers 409 "Storm Scout is
+  paused. Turn it back on in Agents to draft a plan." when the draft returns null.
+- `tasks/service.ts` `createTask`: A1's `createdBy` field and `allowInternalStepTypes` / `isUserCreatableStepType`
+  gate kept, then S1's `off` handling (all S1 step types are `userCreatable: true`, so the storm plan passes the
+  gate). S1's `OFF_STEP_TITLES: Record<StepType, string>` named only demo, S1 and E1 types; the six D1/G1 types
+  (`front_desk_call`, `front_desk_texts`, `send_personal_texts`, `build_claim_packet`, `create_appointment`,
+  `move_appointment`) were added (problem 2).
+- `apps/api/test/storm-pause.test.ts` (watch item, see below): rewritten for T11.
+
+g1-agents: all 20 conflicted files (`app.ts`, `router.tsx`, `a1-dock.test.tsx`, journal, snapshots 0019-0024, db
+barrels, `enums.ts`, `global.ts`, `tenant.ts`, `migrations.test.ts`, `rls.test.ts`, shared barrel, `steps.ts`,
+`steps.test.ts`) taken as ours. G1's new code is only its e1-estimator 8c42bab merge, which the probe already has
+(newer); every G1 item checked (step types, `agentSettingsRoutes`, `line_lookups`, barrels) is present in ours. The
+merge changed only `ops/sdd/g1/`.
+
+Checked: Ruling AV order in `hooks/twilio.ts` (S1 `onStormReply` first; no G1 or D1 inbound call in the probe yet);
+no raw `finishParkedStep`/`finishClaimedStep` outside `tasks/service.ts`; A1's new ESLint one-writer rule passes on
+S1 and E1 code; A1's one-writer test passes.
+
+### Migration journal (Ruling AP)
+
+Unchanged from pass 8: idx 0..24 consecutive, in number order, `when` strictly increasing (script); 0019/0020 and
+0023/0024 still carry the probe raise. Snapshots chained by `prevId` 0000..0024 (script); 25 snapshots, 25 SQL files.
+`drizzle-kit generate --name=probe_check`: "No schema changes, nothing to migrate"; no file created. Exactly one
+`messages (company_id, id)` unique: D1's `messages_company_id_id_uniq` (0019, `tenant.ts:630`).
+
+### Earlier workarounds: status
+
+Closed by a track this pass (the probe now carries the track's text):
+- Pass 8 problem 1 (E1 x A1 parked-step outcome): E1 961b654 calls `completeParkedStep` in
+  `exact-report-complete.ts` and `exact-report-poll.ts` `failOrder`. Probe 3e16312 superseded.
+- Pass 8 CI flake (C1 export audit race, `export.test.ts:245`): C1 72609eb commits the audit row in its own
+  transaction before streaming.
+
+Still kept in the probe:
+- D1 journal `when`: d1-front-desk a270c81 still has 0019/0020 = 1791770789451/1791770804997, below S1's 0018.
+- G1 journal `when`: g1-agents 9b095fd has 0019-0024 = 1791770789451 .. 1791774749941 (G1 has not merged s1-storm),
+  below S1's 0018 and A1's 0022.
+- Ruling BA recounts, test-only: `a1-dock`, `a1-settings`, `settings`, `d1-routes`, `d1-settings`, `e1-routes`,
+  `setup.test` and `steps.test` still differ from every track head. Combined counts unchanged: no Coming soon app,
+  eleven settings tabs, fifteen step types (no track added a type, tab or app this pass).
+
+Watch item, now acted on: S1 T11 landed a real `draftStormPlan`. `storm-pause.test.ts` now uses the 4-argument
+signature; the paused case expects `null` and no Storm Scout task; the unpaused case inserts an Omaha storm and a
+`company_storms` row (no hits) and expects one `storm_plan` task in `draft` with the returned id. Owner: A1 (its
+ledger already assigns the rewrite to its next s1-storm merge).
+
+### New cross-track problems
+
+1. **S1 T11 x A1 T14, `draftStormPlan` pause.** S1's body has the comment "A1 T14 inserts the Storm Scout pause check
+   here" but no check, and returns `Promise<{ taskId }>`; A1's check returns early with no value. Combined, a paused
+   Storm Scout must return something: the probe returns `null` (`storm/plan.ts`), the job handler ignores it, `POST
+   /api/storms/:id/plan` answers 409 with a new plain sentence, and `storm-plan.test.ts`'s `draft()` helper throws on
+   null (09c06d2). Owner: S1 or A1, whichever merges the other first; S1 owns the 409 wording.
+2. **S1 T11 x D1/G1, `OFF_STEP_TITLES`.** `tasks/service.ts` `OFF_STEP_TITLES: Record<StepType, string>` lists only
+   demo, S1 and E1 types, so it does not typecheck once D1's and G1's six step types are in `StepType`. Probe adds
+   the six titles. Owner: whichever of S1/D1/G1 merges the others (S1 when it merges d1-front-desk or g1-agents).
+3. **A1 rerun x S1 OFF steps (not fixed, design).** `rerunTask` copies an expired plan's steps as `{ type, payload }`
+   and re-checks each payload, so an expired storm plan with an OFF step (for example `customerIds: []`, no address)
+   reruns as a 400 on `steps.N.payload`, and a rerun turns every OFF step back on. No test covers it. Fix: carry
+   `off: step.errorPlain` for steps with `enabled = false` in `rerunTask`'s copy (or re-draft storm plans through
+   `draftStormPlan`). Owner: A1 with S1.
+
+Merge-artifact fixes (09c06d2): duplicate `type StepRow` import in `messaging/send-batch.ts` (E1 T11 and S1 T11
+both added it; TS2300); `storm-plan.test.ts` `draft()` helper for the nullable return.
+
+### Checks (after all merges and the probe commit)
+
+`npm ci` clean; `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass (after 09c06d2), lint
+pass, lint:css pass; vitest @roofline/web 1129 pass (124 files), @roofline/ui 170 pass, @roofline/shared 1290 pass,
+@roofline/send-gate 525 pass. The database, API, worker and e2e suites run only in CI.
