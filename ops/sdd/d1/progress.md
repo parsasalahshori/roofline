@@ -187,3 +187,8 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
   - d1-latency.md as a template, empty until the owner's first run.
   - The T19 rows of d1-acceptance.md filled in.
   - Gap: criterion 8 (an install move is refused) has no end-to-end call test.
+- 2026-10-12: **d1-rev-h merged** (A1 lead; Ruling BI; 17d47e3, CI 38290914284 green with CV).
+  - blankExpiredTexts blanks only inbound texts in a conversation and the assistant's own replies (fd-text: keys).
+  - Staff replies, booking confirmations, text-backs and STOP/START/HELP or opt-out-looking texts are kept.
+  - The sweep uses a keyset cursor.
+  - The settings copy says what is kept; retention 0 deletes existing recordings at the next nightly cleanup.
