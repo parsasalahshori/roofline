@@ -57,3 +57,8 @@ Merge rule (E1/S1 step types): when `e1-estimator` or `s1-storm` merge into `a1-
   - UI tasks: `hoursLabel` already returns "about …"; callers add "(estimate)". `moneyLabel` returns "≈ $870"; callers add "(estimate)". The `metrics.ts` header comment says otherwise; fix it in T9.
   - T5/T8: if web needs `AGENT_STATUSES_VIEW`, move it to `shared/agents.ts` and import it in db enums.
   - Upstream merges (E1/S1/D1): keep the upstream journal entries first, renumber A1 idx after them, re-chain `0021_snapshot.prevId` to the last upstream snapshot, regenerate the 0021/0022 snapshots (drizzle-kit generate must then emit nothing).
+
+### c1-crm merged; wave 2 launched (2026-10-12)
+- `c1-crm` cd7d719 (C1 T5 API skeleton, T18 web skeleton; F3 complete) merged into a1-agents 1a84373, no conflicts. Journal: 0000-0014 then 0021/0022; `drizzle-kit generate` reports no changes. Local: typecheck, lint, lint:css, shared 457/457, web 437/437; playwright-core only 1.56.1.
+- Wave 2 from 1a84373, Sonnet builders (Ruling AQ): T3 (task service, touches runner leases), T8 (router, dock, Settings tab).
+Ruling AX-H (track lead): `tasks/service.ts` stays the single writer of events and step snapshots; `tasks/runner.ts` / `handlers.ts` change only to call new exported service functions for step outcomes, keeping the lease / run_seq / SKIP LOCKED guarantees. A runner that lost its lease writes neither a snapshot nor an event — cost if wrong: none.
