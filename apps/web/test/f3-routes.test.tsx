@@ -130,11 +130,12 @@ it('connections still says what is coming', async () => {
   expect(await screen.findByText(connections.later)).toBeInTheDocument();
 });
 
-it('sign-up says it is almost here, without a session', async () => {
+it('sign-up is open without a session', async () => {
   api = stubApi({
     'GET /api/auth/me': () => ({ status: 401, body: { error: 'Sign in first.' } }),
+    'GET /api/auth/config': () => ({ body: { googleClientId: null } }),
   });
   renderApp('/sign-up');
 
-  expect(await screen.findByText(auth.comingSoon)).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: auth.signUpTitle })).toBeInTheDocument();
 });

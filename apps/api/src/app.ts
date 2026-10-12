@@ -139,13 +139,15 @@ function contentSecurityPolicy(nodeEnv: Config['NODE_ENV']) {
   return {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", 'https://accounts.google.com/gsi/client'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com/gsi/style'],
       imgSrc: ["'self'", 'data:', 'blob:', ...MAP_HOSTS],
-      connectSrc: ["'self'", ...MAP_HOSTS],
+      connectSrc: ["'self'", ...MAP_HOSTS, 'https://accounts.google.com/gsi/'],
       fontSrc: ["'self'", 'data:'],
       workerSrc: ["'self'", 'blob:'],
       childSrc: ['blob:'],
+      // Google sign-in loads its script, frame, styles and calls from accounts.google.com/gsi.
+      frameSrc: ['https://accounts.google.com/gsi/'],
       frameAncestors: ["'none'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],

@@ -40,6 +40,16 @@ export const auth = {
   acceptInvite: 'Join the team',
   signInToJoin: 'Sign in to join',
 
-  // Sign-up, until its screen is built
-  comingSoon: 'Sign-up is almost here.',
+  // Signing up
+  signUpTitle: 'Start your free trial',
+  trialNote: '14 days free. No card needed.',
+  yourName: 'Your name',
+  companyName: 'Company name',
+  businessPhone: 'Business phone',
+  businessAddress: 'Business address',
+  addressHelp: 'Street, city, state and ZIP',
+  startTrial: 'Start my free trial',
+  haveAccount: 'Already have an account? Sign in',
+  createAccount: 'Create an account',
+  googleFallback: 'Sign in with Google',
 } as const;
