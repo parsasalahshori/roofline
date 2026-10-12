@@ -322,8 +322,8 @@ describe('GET /api/conversations/:id', () => {
   async function smsThread() {
     const customerId = await seedCustomer('a', { name: 'Pat Texter', phone: TEXTABLE });
     const convo = await seedConversation({ channel: 'sms', customerId });
-    const at = (m: number, s = 0) => new Date(Date.UTC(2026, 9, 12, 15, m, s));
-    const text = (direction: 'in' | 'out', body: string, m: number, o: { dedupeKey?: string; s?: number } = {}) =>
+    const at = (m: number, s = 0, ms = 0) => new Date(Date.UTC(2026, 9, 12, 15, m, s, ms));
+    const text = (direction: 'in' | 'out', body: string, m: number, o: { dedupeKey?: string; s?: number; ms?: number } = {}) =>
       inCompany(t, idA(), (tx) =>
         tx.insert(messages).values({
           companyId: idA(),
@@ -335,7 +335,7 @@ describe('GET /api/conversations/:id', () => {
           body,
           status: direction === 'in' ? 'received' : 'sent',
           dedupeKey: o.dedupeKey ?? null,
-          createdAt: at(m, o.s ?? 0),
+          createdAt: at(m, o.s ?? 0, o.ms ?? 0),
         }),
       );
     let position = 0;
@@ -406,6 +406,21 @@ describe('GET /api/conversations/:id', () => {
       ['caller', 'Hi\nMy roof leaks'],
       ['assistant', 'Sorry to hear that. We can come Friday. Here is a lot more detail.'],
       ['caller', 'Hi'],
+    ]);
+  });
+
+  test('a reply backdated to just after the text it answers (a newer text was pending) shows once (final review RC-1 #7)', async () => {
+    const { text, turn, lines } = await smsThread();
+    await text('in', 'Do you fix hail damage?', 0);
+    await turn('caller', 'Do you fix hail damage?', 1);
+    await text('in', 'Also gutters', 1, { s: 30 });
+    await turn('assistant', 'Yes, we repair hail damage.', 2);
+    // texts.ts stamps the reply lastUnanswered.createdAt + 1 ms, before its own assistant turn.
+    await text('out', 'Yes, we repair hail damage.', 0, { ms: 1, dedupeKey: 'fd-text:c' });
+    expect(await lines()).toEqual([
+      ['caller', 'Do you fix hail damage?'],
+      ['caller', 'Also gutters'],
+      ['assistant', 'Yes, we repair hail damage.'],
     ]);
   });
 
