@@ -15,3 +15,6 @@ v1/.buildcli/
 v1/cli/roof/target/
 
 .superpowers/
+
+# F3 manual smoke state (holds a subaccount token)
+.smoke-texting.json
