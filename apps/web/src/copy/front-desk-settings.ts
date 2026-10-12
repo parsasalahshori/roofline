@@ -8,6 +8,10 @@ export const frontDeskSettings = {
       forwarding_not_verified: "Forwarding isn't verified yet.",
       no_number: 'Add a business number first.',
     },
+    overrideConfirm:
+      "Forwarding isn't verified yet, so calls may not reach the assistant. Turn Front Desk on anyway? Run the forwarding test when you can.",
+    overrideYes: 'Turn on anyway',
+    overrideNo: 'Cancel',
   },
   texts: { label: 'Answer texts too' },
   voice: { label: 'Voice', preview: (name: string) => `Hear ${name}` },
