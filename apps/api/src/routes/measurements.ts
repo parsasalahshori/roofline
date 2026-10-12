@@ -18,7 +18,7 @@ const STRUCTURES_MESSAGE = 'Please pick the structures to include.';
 const PITCH_MESSAGE = 'Please enter a pitch from 0 to 24.';
 const OVERHANG_MESSAGE = 'Please enter an overhang from 0 to 3 feet.';
 const VALLEY_MESSAGE = 'Please enter a valley length of 0 feet or more.';
-const LOCKED_MESSAGE = 'This measurement is locked because a proposal was sent from it.';
+const LOCKED_MESSAGE = 'Make a new measurement to change a sent proposal.';
 
 const CREATE_FIELDS = ['propertyId', 'address', 'jobId'] as const;
 const PATCH_FIELDS = ['outline', 'includedStructures', 'pitchX12', 'overhangFt', 'valleyFt'] as const;

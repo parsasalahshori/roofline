@@ -53,6 +53,9 @@ const WIDER: Ring = [
   [-96.0, 41.25],
 ];
 
+/** The view hands out open rings (no repeated closing corner): what the outline editor expects. */
+const open = (ring: Ring): Ring => ring.slice(0, -1);
+
 /** Inside the house. */
 const INSIDE: LngLat = [-95.99985, 41.2501];
 /** About 15 m west of the house: outside it, but within the snap distance. */
@@ -151,7 +154,7 @@ describe('POST /api/measurements: outlines from footprints', () => {
     expect(view.method).toBe('outline');
     expect(view.kind).toBe('estimate');
     expect(view.drawMode).toBe(false);
-    expect(view.outline).toEqual([HOUSE]);
+    expect(view.outline).toEqual([open(HOUSE)]);
     expect(view.estimate).toEqual(instantEstimate({ outline: [HOUSE], pitchX12: PITCH, overhangFt: OVERHANG }));
     expect(view.structures).toHaveLength(1);
     expect(view.structures[0]).toMatchObject({ footprintId: houseId, included: true });
@@ -166,7 +169,7 @@ describe('POST /api/measurements: outlines from footprints', () => {
     // About 15 m away: the house is the main structure.
     const near = await measure(owner, { propertyId: await homeAt(2, NEAR_15M) });
     expect(near.drawMode).toBe(false);
-    expect(near.outline).toEqual([HOUSE]);
+    expect(near.outline).toEqual([open(HOUSE)]);
     const included = near.structures.filter((s) => s.included);
     expect(included).toHaveLength(1);
     expect(included[0]!.footprintId).toBe(houseId);
@@ -186,10 +189,10 @@ describe('POST /api/measurements: outlines from footprints', () => {
     const view = await measure(owner, { propertyId: await homeAt(4, INSIDE) });
 
     expect(view.drawMode).toBe(false);
-    expect(view.outline).toEqual([HOUSE]);
+    expect(view.outline).toEqual([open(HOUSE)]);
     expect(view.structures).toHaveLength(2);
     const byId = Object.fromEntries(view.structures.map((s) => [s.footprintId, s]));
-    expect(byId[ids.house!]).toMatchObject({ included: true, ring: HOUSE });
+    expect(byId[ids.house!]).toMatchObject({ included: true, ring: open(HOUSE) });
     expect(byId[ids.neighbor!]).toMatchObject({ included: false, ring: NEIGHBOR });
   });
 
@@ -269,7 +272,7 @@ describe('PATCH /api/measurements/:id: recomputes', () => {
     // A new outline: the estimate is that outline's, with the stored pitch and overhang.
     const outlined = await owner.patch(path).send({ outline: [WIDER] });
     expect(outlined.status).toBe(200);
-    expect(outlined.body.outline).toEqual([WIDER]);
+    expect(outlined.body.outline).toEqual([open(WIDER)]);
     expect(outlined.body.estimate).toEqual(estimateOf([WIDER]));
 
     // A new pitch: the pitch and the surface change, and both equal instantEstimate.
@@ -285,13 +288,13 @@ describe('PATCH /api/measurements/:id: recomputes', () => {
     const flags = Object.fromEntries(onlyNeighbor.body.structures.map((s: { footprintId: string; included: boolean }) => [s.footprintId, s.included]));
     expect(flags[ids.house!]).toBe(false);
     expect(flags[ids.neighbor!]).toBe(true);
-    expect(onlyNeighbor.body.outline).toEqual([NEIGHBOR]);
+    expect(onlyNeighbor.body.outline).toEqual([open(NEIGHBOR)]);
     expect(onlyNeighbor.body.estimate).toEqual(estimateOf([NEIGHBOR], 8));
 
     // Including the house again brings its outline back.
     const houseAgain = await owner.patch(path).send({ includedStructures: [ids.house!] });
     expect(houseAgain.status).toBe(200);
-    expect(houseAgain.body.outline).toEqual([HOUSE]);
+    expect(houseAgain.body.outline).toEqual([open(HOUSE)]);
     expect(houseAgain.body.estimate).toEqual(estimateOf([HOUSE], 8));
 
     // A later read answers the same view as the last change.
@@ -356,7 +359,7 @@ describe('PATCH /api/measurements/:id: bad input', () => {
 
     // Nothing changed.
     const after = await getView(created.id);
-    expect(after.outline).toEqual([HOUSE]);
+    expect(after.outline).toEqual([open(HOUSE)]);
     expect(after.estimate).toEqual(estimateOf([HOUSE]));
   });
 
@@ -376,13 +379,13 @@ describe('PATCH /api/measurements/:id: bad input', () => {
 
     const none = await owner.patch(path).send({ includedStructures: [] });
     expect(none.status).toBe(200);
-    expect(none.body.outline).toEqual([HOUSE]);
+    expect(none.body.outline).toEqual([open(HOUSE)]);
     expect(none.body.drawMode).toBe(false);
   });
 });
 
 describe('locking', () => {
-  it('a measurement with a sent proposal is locked; a draft proposal does not lock', async () => {
+  it('a measurement with a sent proposal is locked; a ready (unsent) proposal does not lock', async () => {
     await loadNE({ sourceRef: 'house', ring: HOUSE });
     const owner = await who.as('owner');
     const customer = await mustCreate(owner, '/api/customers', { displayName: 'Locked Customer' });
@@ -415,7 +418,7 @@ describe('locking', () => {
         propertyId,
         measurementId: draftMeasurement.id,
         number: 'P-0002',
-        status: 'draft',
+        status: 'ready',
         validUntil: '2026-11-30',
         linkTokenHash: Buffer.alloc(32, 2),
         linkTokenEncrypted: Buffer.alloc(16, 2),
@@ -426,7 +429,7 @@ describe('locking', () => {
 
     const locked = await owner.patch(`/api/measurements/${sentMeasurement.id}`).send({ pitchX12: 9 });
     expect(locked.status).toBe(409);
-    expect(locked.body.error).toBe('This measurement is locked because a proposal was sent from it.');
+    expect(locked.body.error).toBe('Make a new measurement to change a sent proposal.');
     const read = await owner.get(`/api/measurements/${sentMeasurement.id}`);
     expect(read.body.locked).toBe(true);
     expect(read.body.estimate.pitchX12).toBe(PITCH);

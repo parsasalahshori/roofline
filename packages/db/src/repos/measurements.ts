@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { instantEstimate, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type Ring } from '@roofline/shared';
 import { jobs, measurements, properties, proposals } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -51,6 +51,17 @@ function closeRing(ring: Ring): Ring {
   return [...ring, first];
 }
 
+/**
+ * Drops a repeated closing corner. PostGIS rings come back closed; the view hands out open rings so the
+ * outline editor shows one handle per corner.
+ */
+function openRing(ring: Ring): Ring {
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (ring.length > 1 && first && last && first[0] === last[0] && first[1] === last[1]) return ring.slice(0, -1);
+  return ring;
+}
+
 /** The outline as EWKT: one polygon per ring, SRID 4326. */
 function toMultiPolygonEwkt(outline: Outline): string {
   const polygons = outline.map((ring) => `((${closeRing(ring).map(([lng, lat]) => `${lng} ${lat}`).join(', ')}))`);
@@ -61,7 +72,7 @@ function toMultiPolygonEwkt(outline: Outline): string {
 function outlineFromGeoJson(geojson: string | null): Outline | null {
   if (geojson === null) return null;
   const parsed = JSON.parse(geojson) as { coordinates: [number, number][][][] };
-  return parsed.coordinates.map((polygon) => polygon[0] as Ring);
+  return parsed.coordinates.map((polygon) => openRing(polygon[0] as Ring));
 }
 
 /** The centroid (mean of the corners) of a ring, without a repeated closing corner. */
@@ -80,7 +91,7 @@ function storedStructures(value: unknown): StoredStructure[] {
     footprintId: String(s.footprintId),
     included: s.included === true,
     areaSqFt: Number(s.areaSqFt),
-    ring: s.ring as Ring,
+    ring: openRing(s.ring as Ring),
   }));
 }
 
@@ -108,7 +119,7 @@ export async function footprintsNear(
     const geojson = JSON.parse(String(row.geojson)) as { coordinates: [number, number][][] };
     return {
       id: String(row.id),
-      ring: geojson.coordinates[0] as Ring,
+      ring: openRing(geojson.coordinates[0] as Ring),
       areaSqFt: Number(row.area_sq_ft),
       contains: row.contains === true,
       distanceM: Number(row.distance_m),
@@ -116,7 +127,7 @@ export async function footprintsNear(
   });
 }
 
-/** Whether a proposal for this measurement has been sent (or is past draft): a locked measurement cannot change. */
+/** Whether a proposal for this measurement has been sent (spec §7): a locked measurement cannot change. A draft or ready proposal does not lock it. */
 export async function isMeasurementLocked(tx: Tx, ctx: TenantContext, id: string): Promise<boolean> {
   const [found] = await tx
     .select({ id: proposals.id })
@@ -125,7 +136,7 @@ export async function isMeasurementLocked(tx: Tx, ctx: TenantContext, id: string
       and(
         eq(proposals.companyId, ctx.companyId),
         eq(proposals.measurementId, id),
-        or(isNotNull(proposals.sentAt), ne(proposals.status, 'draft')),
+        or(isNotNull(proposals.sentAt), inArray(proposals.status, ['sent', 'viewed', 'signed', 'declined', 'expired'])),
       ),
     )
     .limit(1);
