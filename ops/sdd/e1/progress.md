@@ -78,3 +78,6 @@ Merged into e1-estimator: T2 387349a (roof.ts from T2; proposals/tiers/index fro
 Carries: send_proposal preview labels totals Good/Better/Best by position only when 3 totals: T8/T11 always send 3 totals in tier order, or extend the payload to {tier,totalCents} (group check 102). pitchFactor/geometry minors in task-2-report.md.
 Wave 3 (wf_52209e53-04e, contact 103, builders Sonnet per Ruling AQ): T5 on e1-t5 from e1-w3base 2504960 (= e1-estimator 278a478 + merge of origin/c1-t5 46e54e3, C1 T5 whose CI has not passed yet); T14 on e1-t14 from 278a478.
 Merge rule: e1-t5 is merged into e1-estimator only after C1 T5 is CI-green (ideally after c1-crm carries it and is merged into e1-estimator first); C1 T25 later rewrites PricesTab.tsx: keep C1's body and E1 T14's three section slots.
+Merged origin/c1-crm 0fe2b16 (C1 T5 CI 38195617057; F3 T28, T37) into e1-estimator: typecheck, lint clean; drizzle-kit no changes.
+Ruling EF (controller, accepted): tier highlights capped at 4 (Better drops "Tear-off and cleanup"; spec D10's "highlights +" would exceed the cap).
+Ruling EG (controller, accepted): `offsetOutline` (named only in the T2 brief's Split, not its Interfaces) is not built; the edge allowance `perimeter + 8 × overhang` stands.
