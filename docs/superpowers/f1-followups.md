@@ -3,20 +3,22 @@
 - **Built:** F1 platform core, on branch `f1-platform-core`, fd9603e..66638a8.
 - **Full decision record:** `docs/superpowers/f1-decision-log.md` (every controller ruling, plus every deferred finding).
 
-## Must be done before texting goes live (F3 blockers)
+## Done in F3
 
-- **Inbound STOP can be lost on a crash.** The webhook's dedupe claim commits separately from the work. Make the claim part of the tenant transaction, for example with a unique `(company_id, provider_message_sid)` on inbound rows plus `ON CONFLICT DO NOTHING`.
-- **Lease heartbeat for big batches.** A 5,000-recipient batch can outlive the 10-minute step lease at real provider latency. Add a lease heartbeat, or split batches into chunks.
-- **Reconcile with Twilio's own opt-out handling.** Messaging Services can intercept STOP/START before our webhook sees them.
-- **Supabase Data API exposure.** Supabase's default grants expose new `public` tables (including `users.password_hash` and `sessions`) to `anon`/`authenticated`. Revoke those grants or disable the Data API before the first deploy.
-- **Extensions schema.** Install `postgis` and `citext` into `public`. If they go into Supabase's `extensions` schema, app-role email lookups silently become case-sensitive.
-- **Delivery reports that arrive early.** A `delivered` callback that arrives before the message SID is saved is dropped.
-- **Inactive or unusual numbers.** STOPs and delivery reports for inactive numbers are dropped, and short-code senders get a 400.
-- **HELP reply.** It needs contact details even when the company has no phone number.
+Each item below was a blocker before texting could go live; the F3 task that did it is in brackets.
+
+- **Inbound STOP can be lost on a crash:** the inbound insert is now the claim, inside the tenant transaction (a unique `(company_id, provider_message_sid)` with `ON CONFLICT DO NOTHING`). (Task 10)
+- **Lease heartbeat for big batches:** a long batch keeps its step lease. (Task 12)
+- **Reconcile with Twilio's own opt-out handling:** Twilio's `OptOutType` STOP, START and HELP count, and carrier opt-outs are recorded without answering twice. (Tasks 10 and 13; keep Advanced Opt-Out on, see the README to-dos)
+- **Supabase Data API exposure:** the Data API grants are revoked on migrate and `db:preflight` checks them. (Task 2)
+- **Extensions schema:** `postgis` and `citext` are moved into `public` on migrate and checked by preflight. (Task 2)
+- **Delivery reports that arrive early:** an early report is saved and applied when the send is saved; a daily sweep prunes stale ones. (Task 11, prune: P3a)
+- **Inactive or unusual numbers:** STOPs and delivery reports for inactive numbers are handled, and short-code senders are stored without a 400. (Tasks 10 and 11)
+- **HELP reply:** it falls back from the company phone to email, website, then the number they texted. (Task 10)
 - **Smaller F3 items:**
-  - toll-free and Caribbean numbers are accepted, so a textability check is needed
-  - add a brand check alongside `instanceof SmsRefusedError` if the Twilio adapter is bundled separately
-  - add a GIN index on `customers.phones` before CSV import brings 20k-row companies
+  - toll-free and non-US NANP (Canada, Caribbean) numbers are refused as not textable. (Task 8)
+  - the brand check replaces `instanceof SmsRefusedError`, via `isSmsRefusedError`. (Tasks 8 and 13)
+  - a GIN index on `customers.phones` (and one on emails) is in the F3 schema. (Task 1)
 
 ## F2 (screens) needs these
 
