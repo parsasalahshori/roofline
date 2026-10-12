@@ -5,3 +5,10 @@
 - C1 RA review #8 (engine.ts, after RC-1): the {name, ok} choice for tool rows is made when the call is pushed, not when it is saved, so a turn in flight at the moment of an objection keeps the pre-objection tool args. Decide at save time.
 - C1 RA review #6 (later): playback reads the whole object for every Range or seek request; it needs a ranged get in the object-store seam.
 - C1 RA review #7: no change needed. relayCallById reads only SELECT (id, company_id, call_sid, status) on calls, which Ruling BJ keeps for app_system.
+- **Ruling BK** (controller, owner-approved; build in RC-3): after hours, on-call staff are rung only for leak or danger reasons or an urgent take_message, never for the router's "urgent" flag alone. The settings copy says so.
+- RC-3 scope (after RC-1 lands), from the E1 RC-2 review:
+  - #1: seed urgentNoticeSent in start() on reuse from the durable check, and keep `urgent` on redacted take_message tool rows.
+  - #3: the DTMF-0 and turn-failure handoffs pass the flag.
+  - #7: transfer.ts includes the flag.
+  - #8: seed turns and startedAt on reuse.
+  - Plus Ruling BK, C1's RA review #8, T25 finding 6 (eval drift), and unknown-caller message visibility.
