@@ -14,6 +14,8 @@ export const SMS_CONVERSATION_GAP_MS = 24 * 60 * 60 * 1000;
 
 /** The dedupe_key prefix that marks a text the assistant sent. */
 const ASSISTANT_PREFIX = 'fd-text:';
+/** G1's "Thanks, got it." to a claims reply (`claims-ack:<message id>`): filed in the thread, but not a person's reply. */
+export const CLAIMS_ACK_PREFIX = 'claims-ack:';
 
 export type TextConversationRef = { id: string; created: boolean; customerId: string | null };
 
@@ -119,7 +121,7 @@ export async function listUnansweredInbound(tx: Tx, ctx: TenantContext, conversa
     .orderBy(asc(messages.createdAt), asc(messages.id));
 }
 
-/** When a person on the team last texted in this conversation (an outbound the assistant did not send), else null. */
+/** When a person on the team last texted in this conversation (an outbound neither the assistant nor the Claims agent sent), else null. */
 export async function lastTeamReplyAt(tx: Tx, ctx: TenantContext, conversationId: string): Promise<Date | null> {
   const [row] = await tx
     .select({ at: messages.createdAt })
@@ -129,7 +131,10 @@ export async function lastTeamReplyAt(tx: Tx, ctx: TenantContext, conversationId
         eq(messages.companyId, ctx.companyId),
         eq(messages.conversationId, conversationId),
         eq(messages.direction, 'out'),
-        or(isNull(messages.dedupeKey), not(like(messages.dedupeKey, `${ASSISTANT_PREFIX}%`))),
+        or(
+          isNull(messages.dedupeKey),
+          and(not(like(messages.dedupeKey, `${ASSISTANT_PREFIX}%`)), not(like(messages.dedupeKey, `${CLAIMS_ACK_PREFIX}%`))),
+        ),
       ),
     )
     .orderBy(desc(messages.createdAt), desc(messages.id))

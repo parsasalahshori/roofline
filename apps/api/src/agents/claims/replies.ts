@@ -2,6 +2,7 @@ import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import {
   agentTasks,
   type ClaimPatch,
+  CLAIMS_ACK_PREFIX,
   claims,
   companies,
   followUpLogFor,
@@ -148,7 +149,7 @@ async function continueToFrontDesk(deps: AppDeps, ctx: TenantContext, messageId:
 async function sendClaimsAck(deps: AppDeps, ctx: TenantContext, messageId: string, reply: LoadedReply): Promise<void> {
   const conversationId = reply.conversationId;
   if (conversationId === null) return;
-  const dedupeKey = `claims-ack:${messageId}`;
+  const dedupeKey = `${CLAIMS_ACK_PREFIX}${messageId}`;
   const sendAt = deps.clock.now();
   const queued = await withTenant(deps.pools, ctx, async (tx) => {
     await lockRecipient(tx, ctx, reply.customerId);
