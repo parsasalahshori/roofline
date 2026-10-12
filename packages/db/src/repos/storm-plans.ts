@@ -209,7 +209,6 @@ export type StormPlanLock = { ok: false } | { ok: true; oldDraftId: string | nul
  * oldDraftId is the existing DRAFT plan task id, or null when there was no plan or the old plan is
  * already finished (nothing to supersede; linkStormPlan just repoints). Superseding the old draft is
  * the task service's job (supersedeDraft).
- * Reconcile with S1's replaceDraftPlan version on merge.
  */
 export async function lockStormPlan(
   tx: Tx,

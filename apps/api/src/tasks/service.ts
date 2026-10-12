@@ -72,7 +72,7 @@ const ALREADY_HANDLED = 'This was already handled.';
 const EXPIRED_PLAN = 'This plan expired before it was approved. You can run it again.';
 const RERUN_ONLY_EXPIRED = 'Only expired plans can be run again.';
 const RERUN_OFF_REASON = 'This step was switched off.';
-const ALREADY_RERUN = 'This plan was already run again.';
+export const ALREADY_RERUN = 'This plan was already run again.';
 /** The database's own guard on "one copy per plan" (migration 0006). */
 const RERUN_UNIQUE = 'agent_tasks_company_rerun_of_uniq';
 
@@ -1045,9 +1045,10 @@ export type StormRerunTarget = { kind: 'storm'; companyStormId: string } | { kin
 /**
  * Pre-flight for the rerun route. Null when the task is not there for this member. Only an expired
  * plan (409 otherwise). Anything but a storm plan is `copy` (nothing changed; `rerunTask` follows).
- * A storm plan is re-drafted when a company storm points at it (`plan_task_id`); otherwise it is
- * copied, and a plan a storm re-draft already replaced is a 409 "already run again" through its rerun link. A stale draft is marked `expired` here,
- * as `rerunTask` does, before the route re-drafts in its own transactions.
+ * A storm plan that already has a rerun is a 409 ALREADY_RERUN; one a company storm points at
+ * (`plan_task_id`) is re-drafted through Storm Scout; otherwise it is copied (a legacy plan with no
+ * company storm). A stale draft is marked `expired` here, as `rerunTask` does, before the route
+ * re-drafts in its own transaction.
  */
 export async function prepareRerun(tx: Tx, ctx: TenantContext, taskId: string, opts: WriteOptions): Promise<StormRerunTarget | null> {
   if (!canReview(ctx)) return null;
@@ -1055,18 +1056,12 @@ export async function prepareRerun(tx: Tx, ctx: TenantContext, taskId: string, o
   if (!task) return null;
   if (!isExpired(task, opts.now)) throw new AppError(409, RERUN_ONLY_EXPIRED);
   if (task.kind !== 'storm_plan') return { kind: 'copy' };
+  if ((await findRerunOf(tx, ctx, taskId)) !== null) throw new AppError(409, ALREADY_RERUN);
   const companyStormId = await findStormByPlanTask(tx, ctx, taskId);
-  // No storm points at this plan: it was never a storm's plan, or a rerun already replaced it. `rerunTask`
-  // answers both (a plain copy, or the 409 through the rerun link the storm re-draft records).
   if (companyStormId === null) return { kind: 'copy' };
   if (task.status === 'draft') {
     await updateTask(tx, ctx, taskId, { status: 'expired' }, opts.now);
     await event(tx, ctx, taskId, 'expired', 'system', {}, opts.now);
   }
   return { kind: 'storm', companyStormId };
-}
-
-/** Records on a storm plan's re-draft which plan it came from, as a copy has, so the old plan is run again once. */
-export async function linkRerun(tx: Tx, ctx: TenantContext, newTaskId: string, fromTaskId: string, now: Date): Promise<void> {
-  await updateTask(tx, ctx, newTaskId, { rerunOfTaskId: fromTaskId }, now);
 }

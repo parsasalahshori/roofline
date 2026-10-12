@@ -413,6 +413,10 @@ describe('rerun keeps switched-off steps (Task 20, Ruling AX-P)', () => {
     expect(copied.map((s) => s.type)).toEqual(['demo_noop', 'send_sms_batch', 'demo_message']);
     expect(copied.map((s) => s.enabled)).toEqual([true, false, true]);
     expect(copied[1]!.errorPlain).toBe('There are no customers to text.');
+    const original = await dbSteps(t, 'a', taskId);
+    const onCopied = copied.filter((s) => s.enabled);
+    expect(onCopied).toHaveLength(2);
+    expect(onCopied.map((s) => [s.type, s.payload])).toEqual(original.filter((s) => s.enabled).map((s) => [s.type, s.payload]));
     const created = (await events(res.body.id)).filter((e) => e.kind === 'created');
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ actorType: 'user', actorUserId: t.seed.a.owner.userId });

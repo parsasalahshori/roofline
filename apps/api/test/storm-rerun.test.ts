@@ -81,8 +81,37 @@ describe('storm plan rerun', () => {
     expect(off.length).toBeGreaterThan(0);
     // No Meta ad account is connected, so that step is rebuilt switched off with its reason.
     expect(off.some((s) => s.errorPlain === STORM_OFF.noMeta)).toBe(true);
+    const on = steps.filter((s) => s.enabled);
+    expect(on.length).toBeGreaterThan(0);
+    const link = await q('select rerun_of_task_id from agent_tasks where id = $1', [res.body.id]);
+    expect(link[0]!.rerun_of_task_id).toBe(oldId);
+    const audits = await q(`select count(*)::int as n from audit_log where action = 'task.rerun' and target_id = $1`, [res.body.id]);
+    expect(Number(audits[0]!.n)).toBe(1);
     expect((await planRow()).plan_task_id).toBe(res.body.id);
     expect((await dbTask(t, 'a', oldId)).status).toBe('expired');
+  });
+
+  test('two concurrent reruns of one expired storm plan give one 201 and one 409 and exactly one new draft linked to the old plan', async () => {
+    const oldId = await expiredPlan();
+    const [r1, r2] = await Promise.all([rerun(oldId), rerun(oldId)]);
+    expect([r1.status, r2.status].sort()).toEqual([201, 409]);
+    const loser = r1.status === 409 ? r1 : r2;
+    expect(loser.body.error).toBe('This plan was already run again.');
+    const winner = r1.status === 201 ? r1 : r2;
+    const linked = await q('select id from agent_tasks where company_id = $1 and rerun_of_task_id = $2', [companyId(), oldId]);
+    expect(linked.map((r) => r.id)).toEqual([winner.body.id]);
+    expect((await planRow()).plan_task_id).toBe(winner.body.id);
+    const live = await q(`select id from agent_tasks where company_id = $1 and agent = 'storm_scout' and status = 'draft'`, [companyId()]);
+    expect(live.map((r) => r.id)).toEqual([winner.body.id]);
+  });
+
+  test('a rerun of a storm plan that already has a rerun is a 409 even when no storm points at it', async () => {
+    const oldId = await expiredPlan();
+    expect((await rerun(oldId)).status).toBe(201);
+    await q('update company_storms set plan_task_id = null where id = $1', [companyStormId]);
+    const again = await rerun(oldId);
+    expect(again.status).toBe(409);
+    expect(again.body.error).toBe('This plan was already run again.');
   });
 
   test('a second rerun of the same expired plan is a 409 This plan was already run again.', async () => {

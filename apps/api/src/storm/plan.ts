@@ -7,6 +7,7 @@ import {
   lockStormPlan,
   withTenant,
   type StormPlanFacts,
+  type Tx,
 } from '@roofline/db';
 import {
   DEFAULT_STORM_EMAIL_BODY,
@@ -169,13 +170,15 @@ function buildSteps(
 /**
  * Drafts (or re-drafts) the storm's plan and returns its task; null when Storm Scout is paused (nothing is drafted).
  * opts.replaceFinished (A1 T20, rerun): also re-drafts over an expired or declined plan; default callers leave it alone.
+ * opts.rerunOfTaskId and opts.afterCreate (A1 T20 rerun): the rerun link and the caller's audit commit with the draft in this one
+ * transaction, so a unique violation on agent_tasks_company_rerun_of_uniq rolls the whole re-draft back.
  */
 export async function draftStormPlan(
   deps: AppDeps,
   companyId: string,
   companyStormId: string,
   now: Date,
-  opts: { replaceFinished?: boolean } = {},
+  opts: { replaceFinished?: boolean; rerunOfTaskId?: string; afterCreate?: (tx: Tx, taskId: string) => Promise<void> } = {},
 ): Promise<{ taskId: string } | null> {
   const ctx = systemContext(companyId);
   const drafted = await withTenant(deps.pools, ctx, async (tx) => {
@@ -203,6 +206,7 @@ export async function draftStormPlan(
         subjectId: companyStormId,
         expiresAt: new Date(now.getTime() + PLAN_LIFETIME_MS),
         steps,
+        ...(opts.rerunOfTaskId !== undefined && { rerunOfTaskId: opts.rerunOfTaskId, createdBy: 'user' as const }),
       },
       { now },
     );
@@ -210,6 +214,7 @@ export async function draftStormPlan(
     if (!lock.ok) throw new Error(STORM_PLAN_ERRORS.changed);
     if (lock.oldDraftId !== null && !(await supersedeDraft(tx, ctx, lock.oldDraftId, taskId, now))) throw new Error(STORM_PLAN_ERRORS.changed);
     await linkStormPlan(tx, ctx, companyStormId, taskId, now);
+    if (opts.afterCreate) await opts.afterCreate(tx, taskId);
     return { taskId, fresh: true };
   });
 

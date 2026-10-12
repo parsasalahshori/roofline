@@ -1,18 +1,18 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { audit, withTenant } from '@roofline/db';
+import { audit, isUniqueViolation, withTenant } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can, type Member } from '../permissions.ts';
 import { draftStormPlan, STORM_PLAN_ERRORS } from '../storm/plan.ts';
 import {
+  ALREADY_RERUN,
   approveTask,
   canReview,
   declineStep,
   declineTask,
   editStep,
   getApproval,
-  linkRerun,
   listApprovals,
   prepareRerun,
   rerunTask,
@@ -243,26 +243,27 @@ export function approvalRoutes(deps: AppDeps, logError: (err: unknown, path: str
     if (target.kind === 'storm') {
       let drafted: { taskId: string } | null;
       try {
-        drafted = await draftStormPlan(deps, ctx.companyId, target.companyStormId, clock.now(), { replaceFinished: true });
+        drafted = await draftStormPlan(deps, ctx.companyId, target.companyStormId, clock.now(), {
+          replaceFinished: true,
+          rerunOfTaskId: taskId,
+          afterCreate: (tx, newId) =>
+            audit(tx, ctx, {
+              action: 'task.rerun',
+              targetType: 'agent_task',
+              targetId: newId,
+              after: { fromTaskId: taskId },
+              ip: opts.ip,
+              at: opts.now,
+            }),
+        });
       } catch (err) {
+        if (isUniqueViolation(err, 'agent_tasks_company_rerun_of_uniq')) throw new AppError(409, ALREADY_RERUN);
         if (err instanceof Error && err.message === STORM_PLAN_ERRORS.notFound) throw new AppError(404, MESSAGES.notFound);
         if (err instanceof Error && (err.message === STORM_PLAN_ERRORS.dismissed || err.message === STORM_PLAN_ERRORS.changed)) throw new AppError(409, err.message);
         throw err;
       }
       if (drafted === null) throw new AppError(409, MESSAGES.stormScoutPaused);
-      const fresh = await withTenant(pools, ctx, async (tx) => {
-        // The link a copy has, so the old plan cannot be run again twice and the card shows where it came from.
-        await linkRerun(tx, ctx, drafted.taskId, taskId, opts.now);
-        await audit(tx, ctx, {
-          action: 'task.rerun',
-          targetType: 'agent_task',
-          targetId: drafted.taskId,
-          after: { fromTaskId: taskId },
-          ip: opts.ip,
-          at: opts.now,
-        });
-        return getApproval(tx, ctx, drafted.taskId, clock.now());
-      });
+      const fresh = await withTenant(pools, ctx, (tx) => getApproval(tx, ctx, drafted.taskId, clock.now()));
       if (!fresh) throw new AppError(404, MESSAGES.notFound);
       res.status(201).json(fresh);
       return;

@@ -242,7 +242,7 @@ export async function updatePendingStep(
 export type TaskUpdate = Partial<
   Pick<
     TaskRow,
-    'status' | 'approvedByUserId' | 'approvedAt' | 'declinedByUserId' | 'declinedAt' | 'declineReason' | 'minutesSaved' | 'rerunOfTaskId'
+    'status' | 'approvedByUserId' | 'approvedAt' | 'declinedByUserId' | 'declinedAt' | 'declineReason' | 'minutesSaved'
   >
 >;
 
