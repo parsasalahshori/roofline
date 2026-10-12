@@ -103,3 +103,4 @@ Minors (deferred): T6 memberNames includes inactive members; board runs 5 sequen
 - T10 dbf04b7 (8bca9d1 + 403 rate-limit fix) CI 38199497697 green. Task 10: complete. Merged into c1-crm (typecheck and lint clean).
 - T15 9784634 (4b8a98c + fix: visibleQuoteCondition interpolated an undefined jobScope for owner/office, a SQL syntax error that made most quote routes 500) CI 38200008775 green. Task 15: complete. Merged into c1-crm (typecheck and lint clean).
 - T9 ba8a857 (ddbd76e + fix: returning to company hours deleted the member_schedules row, which app_tenant may not delete; now stores weekly_hours JSON null = company hours) CI 38200027109 green. Task 9: complete. Merged into c1-crm (typecheck and lint clean).
+- T7 e8bd48f (0534720 + lead fix: compound timeline cursor; shared stage rules in customer view) CI 38200025306 green. Task 7: complete. Merged into c1-crm (typecheck and lint clean).
