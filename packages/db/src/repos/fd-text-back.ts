@@ -58,13 +58,13 @@ export async function textedBackWithin24h(tx: Tx, ctx: TenantContext, toE164: st
 }
 
 /**
- * A call is express texting consent, but only for a customer who has none yet: revoked, written,
+ * A call or an inbound text is express texting consent, but only for a customer who has none yet: revoked, written,
  * attested, express and do-not-contact are never touched. Writes the timeline line too.
  */
-export async function recordCallConsent(tx: Tx, ctx: TenantContext, customerId: string, now: Date): Promise<boolean> {
+export async function recordCallConsent(tx: Tx, ctx: TenantContext, customerId: string, now: Date, source: 'call' | 'text' = 'call'): Promise<boolean> {
   const changed = await tx
     .update(customers)
-    .set({ smsConsentStatus: 'express', smsConsentSource: 'call', smsConsentAt: now, updatedAt: now })
+    .set({ smsConsentStatus: 'express', smsConsentSource: source, smsConsentAt: now, updatedAt: now })
     .where(and(eq(customers.companyId, ctx.companyId), eq(customers.id, customerId), eq(customers.smsConsentStatus, 'none')))
     .returning({ id: customers.id });
   if (changed.length === 0) return false;
@@ -72,8 +72,8 @@ export async function recordCallConsent(tx: Tx, ctx: TenantContext, customerId: 
     subjectType: 'customer',
     subjectId: customerId,
     kind: 'customer.consent_changed',
-    summary: 'Texting consent changed to Express (the customer called)',
-    data: { from: 'none', to: 'express', source: 'call' },
+    summary: source === 'text' ? 'Texting consent changed to Express (the customer texted)' : 'Texting consent changed to Express (the customer called)',
+    data: { from: 'none', to: 'express', source },
     at: now,
   });
   return true;

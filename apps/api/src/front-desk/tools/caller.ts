@@ -1,5 +1,6 @@
-import { matchCustomersByPhone, verifyCustomerByNameStreet, withTenant } from '@roofline/db';
-import type { ConversationState, ToolContext, ToolHandler } from '../engine-types.ts';
+import { matchCustomersByPhone, saveCallerIdentity, verifyCustomerByNameStreet, withTenant } from '@roofline/db';
+import { VERIFY_MISMATCH_PREFIX } from '@roofline/shared';
+import type { ToolContext, ToolHandler } from '../engine-types.ts';
 import { systemCtx } from './system-ctx.ts';
 
 /*
@@ -8,10 +9,21 @@ import { systemCtx } from './system-ctx.ts';
  * which half of a failed check was wrong.
  */
 
-const MAX_FAILURES = 3;
+export const MAX_FAILURES = 3;
+export const VERIFY_LOCKED =
+  'Verification is locked for this conversation after three failed tries. Do not try again. Suggest a transfer to the team so they can help, or offer to take a message.';
 
-/** Failed verification attempts per conversation, in memory only. */
-const failures = new WeakMap<ConversationState, number>();
+async function persistIdentity(ctx: ToolContext): Promise<void> {
+  const c = ctx.conversation;
+  try {
+    const tctx = systemCtx(ctx.companyId);
+    await withTenant(ctx.deps.pools, tctx, (tx) =>
+      saveCallerIdentity(tx, tctx, c.conversationId, { identity: c.identity, customerId: c.customerId }),
+    );
+  } catch (err) {
+    ctx.deps.logError?.(err, 'front-desk.identity ' + c.conversationId);
+  }
+}
 
 /** Called at conversation start: exactly one customer with this phone number sets customerId and 'matched'. */
 export async function identifyCaller(ctx: ToolContext): Promise<void> {
@@ -21,6 +33,7 @@ export async function identifyCaller(ctx: ToolContext): Promise<void> {
   if (only && ctx.conversation.identity !== 'verified') {
     ctx.conversation.customerId = only.customerId;
     ctx.conversation.identity = 'matched';
+    await persistIdentity(ctx);
   }
 }
 
@@ -29,6 +42,7 @@ export const verifyCaller: ToolHandler<'verify_caller'> = async (ctx, input) => 
   if (conversation.identity === 'verified' && conversation.customerId !== null) {
     return { ok: true, forModel: 'The caller is already verified.' };
   }
+  if ((conversation.verifyFailures ?? 0) >= MAX_FAILURES) return { ok: false, forModel: VERIFY_LOCKED };
   const tctx = systemCtx(ctx.companyId);
   const candidates = await withTenant(ctx.deps.pools, tctx, async (tx) => {
     if (conversation.customerId !== null) return [conversation.customerId];
@@ -50,20 +64,21 @@ export const verifyCaller: ToolHandler<'verify_caller'> = async (ctx, input) => 
   });
 
   if (verifiedId !== null) {
-    failures.delete(conversation);
+    conversation.verifyFailures = 0;
     conversation.customerId = verifiedId;
     conversation.identity = 'verified';
+    await persistIdentity(ctx);
     return { ok: true, forModel: 'The caller is verified. You may now share their job details.' };
   }
 
-  const count = (failures.get(conversation) ?? 0) + 1;
-  failures.set(conversation, count);
+  const count = (conversation.verifyFailures ?? 0) + 1;
+  conversation.verifyFailures = count;
   if (count >= MAX_FAILURES) {
     return {
       ok: false,
       forModel:
-        'That did not match our records, and this was the third try. Do not try again. Suggest a transfer to the team so they can help, or offer to take a message.',
+        `${VERIFY_MISMATCH_PREFIX}, and this was the third try. Do not try again. Suggest a transfer to the team so they can help, or offer to take a message.`,
     };
   }
-  return { ok: false, forModel: 'That did not match our records. Ask the caller to say their full name and the street address again.' };
+  return { ok: false, forModel: `${VERIFY_MISMATCH_PREFIX}. Ask the caller to say their full name and the street address again.` };
 };

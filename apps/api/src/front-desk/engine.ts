@@ -3,6 +3,7 @@ import {
   FRONT_DESK_TOOLS,
   type FrontDeskToolName,
   guardSentence,
+  ASK_PERSON_INTENTS,
   type GuardHit,
   SentenceBuffer,
   shouldTransfer,
@@ -19,9 +20,9 @@ import {
   linkCallConversation,
   hasUrgentNoticeFor,
   loadCompanyFacts,
+  loadStoredIdentity,
   matchCustomersByPhone,
   setCallSpamReason,
-  type TenantContext,
   type ToolCallRecord,
   updateConversation,
   updateTurn,
@@ -41,7 +42,18 @@ import type {
 import { fillerFor } from './fillers.ts';
 import { toolNamesFor } from './tools/index.ts';
 import { buildCompanyBlock } from './prompt.ts';
-import { appendAssistant, appendSystemNote, appendToolResults, appendUser, newConversationState } from './state.ts';
+import {
+  appendAssistant,
+  appendSystemNote,
+  appendToolResults,
+  appendUser,
+  beginTurn,
+  historyForAnswer,
+  markPersonAskCounted,
+  markUnderstandingCounted,
+  newConversationState,
+} from './state.ts';
+import { systemCtx } from './tools/system-ctx.ts';
 
 const DEFAULT_SERVICES = ['Roof inspections', 'Storm and hail damage inspections', 'Repairs', 'Roof replacement'];
 const MAX_TOOL_ROUNDS = 4;
@@ -83,10 +95,6 @@ function isAbort(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
 }
 
-function systemCtx(companyId: string): TenantContext {
-  return { companyId, userId: null, role: 'system', canApproveSpend: false };
-}
-
 /** Every string under a key ending in "Id" (except slotUserId) that looks like a UUID. */
 function idsIn(value: unknown, out: string[] = []): string[] {
   if (Array.isArray(value)) {
@@ -100,9 +108,6 @@ function idsIn(value: unknown, out: string[] = []): string[] {
   }
   return out;
 }
-
-/** Router intents that mean the caller is asking for a person (see shouldTransfer). */
-const ASK_PERSON_INTENTS = new Set(['ask_for_person', 'transfer', 'human']);
 
 /** A later relay session's clock starts at most 20 minutes back (turnLimit ends at 30), leaving 10 minutes. */
 const MESSAGE_SESSION_MIN_START_MS = 20 * 60 * 1000;
@@ -202,6 +207,9 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         const now = deps.clock.now().getTime();
         created.startedAt = new Date(Math.max(reusedRow.createdAt.getTime(), now - MESSAGE_SESSION_MIN_START_MS));
         if (await hasUrgentNoticeFor(tx, ctx, reusedRow.id)) created.urgentNoticeSent = true;
+        // Who the caller is and how many verify_caller tries failed carry over too (RC-1 note 8: the lockout holds).
+        const who = await loadStoredIdentity(tx, ctx, reusedRow.id);
+        if (who !== null) created.verifyFailures = who.verifyFailures;
       }
       if (i.channel === 'voice') {
         if (reusedRow !== null && (reusedRow.identity === 'verified' || reusedRow.identity === 'matched')) {
@@ -222,12 +230,13 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
 
   async function* turn(state: ConversationState, callerText: string, signal: AbortSignal): AsyncGenerator<EngineEvent> {
     const startedMs = performance.now();
-    const minutes = (deps.clock.now().getTime() - state.startedAt.getTime()) / 60_000;
+    const minutes = state.channel === 'sms' ? 0 : (deps.clock.now().getTime() - state.startedAt.getTime()) / 60_000;
     const limit = turnLimit({ turns: state.turns, minutes });
     if (limit === 'end') {
       yield { type: 'end', reason: 'limit' };
       return;
     }
+    beginTurn(state);
     if (limit === 'offer_person') appendSystemNote(state, NOTE_OFFER);
     appendUser(state, callerText);
 
@@ -285,7 +294,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         const answer = deps.llm.answer({
           companyId: state.companyId,
           companyBlock: state.companyBlock,
-          history: [...state.history],
+          history: historyForAnswer(state),
           tools: toolNames,
           signal: ac.signal,
         });
@@ -366,9 +375,14 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
 
       if (decision) {
         // Task 6 carry: count person-asks and misunderstandings once per turn, before shouldTransfer.
-        if (ASK_PERSON_INTENTS.has(decision.intent)) state.askedForPersonCount += 1;
-        if (decision.intent === 'not_understood') state.failedUnderstanding += 1;
-        else state.failedUnderstanding = 0;
+        if (ASK_PERSON_INTENTS.has(decision.intent)) {
+          state.askedForPersonCount += 1;
+          markPersonAskCounted(state);
+        }
+        if (decision.intent === 'not_understood') {
+          state.failedUnderstanding += 1;
+          markUnderstandingCounted(state);
+        } else state.failedUnderstanding = 0;
       }
 
       if (decision && SPAM_INTENTS.has(decision.intent)) {
@@ -509,7 +523,8 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             result = { ok: false, forModel: NOT_THEIRS };
           } else {
             const handler = tools[use.name] as ((ctx: unknown, input: unknown) => Promise<ToolResult>) | undefined;
-            if (!toolNames.includes(use.name as FrontDeskToolName)) {
+            const offered = toolNames.includes(use.name as FrontDeskToolName);
+            if (!offered) {
               result = { ok: false, forModel: 'That is not available.' };
             } else if (!handler) {
               result = { ok: false, forModel: 'That is not available right now.' };
@@ -522,10 +537,10 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
               }
             }
             for (const id of result.shownIds ?? []) state.shownIds.add(id);
-            if (use.name === 'transfer_to_person' && !finish) {
+            if (offered && use.name === 'transfer_to_person' && !finish) {
               const p = parsed.data as { reason: Exclude<TransferReason, 'model_failure'>; summary: string };
               finish = { type: 'handoff', reason: p.reason, summary: p.summary, urgent: await urgentForHandoff(deps, state, p.reason) };
-            } else if (use.name === 'end_call' && !finish) {
+            } else if (offered && use.name === 'end_call' && !finish) {
               finish = { type: 'end', reason: (parsed.data as { reason: 'goodbye' | 'spam' | 'silence' }).reason };
             }
           }
@@ -558,7 +573,6 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         const caller = await insertTurn(tx, ctx, {
           conversationId: state.conversationId,
           callId: state.callId,
-          position: state.nextPosition,
           speaker: 'caller',
           text: state.transcriptOff === true ? '' : callerText,
           at: deps.clock.now(),
@@ -568,7 +582,6 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         const assistant = await insertTurn(tx, ctx, {
           conversationId: state.conversationId,
           callId: state.callId,
-          position: state.nextPosition + 1,
           speaker: 'assistant',
           text: state.transcriptOff === true ? '' : text,
           at: deps.clock.now(),
@@ -594,7 +607,10 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       yield { type: 'turn_saved', turnId };
     } catch (err) {
       state.turns += 1;
-      deps.logError?.(err, 'front-desk.save-turn');
+      const code = (err as { code?: string }).code ?? (err as { cause?: { code?: string } }).cause?.code;
+      const where = 'front-desk.save-turn ' + state.conversationId + (state.callId ? ' ' + state.callId : '');
+      deps.logError?.(err, where);
+      if (code === '23505') throw err;
     }
   }
 

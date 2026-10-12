@@ -198,7 +198,7 @@ async function everyoneBusy(start: string, propertyId: string | null = null) {
 }
 
 /** A customer with a number and a home. */
-async function seedCustomer(o: { phone?: string; consent?: ConsentStatus; address?: string } = {}) {
+async function seedCustomer(o: { phone?: string; secondPhone?: string; consent?: ConsentStatus; address?: string } = {}) {
   const now = t.clock.now();
   return inCompany(t, A(), async (tx) => {
     const [row] = await tx
@@ -208,7 +208,10 @@ async function seedCustomer(o: { phone?: string; consent?: ConsentStatus; addres
         displayName: 'Nina Park',
         firstName: 'Nina',
         lastName: 'Park',
-        phones: [{ e164: o.phone ?? CALLER, label: 'mobile', primary: true }],
+        phones: [
+          { e164: o.phone ?? CALLER, label: 'mobile', primary: true },
+          ...(o.secondPhone ? [{ e164: o.secondPhone, label: 'mobile', primary: false }] : []),
+        ],
         smsConsentStatus: o.consent ?? 'express',
         createdAt: now,
         updatedAt: now,
@@ -515,6 +518,25 @@ describe('book_inspection', () => {
     const [customer] = await allCustomers();
     expect(customer).toMatchObject({ smsConsentStatus: 'express', smsConsentSource: 'call' });
     expect(t.sms.sent).toHaveLength(1);
+  });
+
+  test('the confirmation goes to the number the conversation is on when it is the customer\'s second number', async () => {
+    const SECOND = '+14025550177';
+    const { customerId, propertyId } = await seedCustomer({ secondPhone: SECOND });
+    const state = await startConversation({ channel: 'sms', phone: SECOND, identity: 'matched', customerId });
+    const res = await bookInspection(toolCtx(state), bookInput({ propertyId, address: null }));
+    expect(res.ok).toBe(true);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]!.to).toBe(SECOND);
+  });
+
+  test('a conversation phone that is not one of the customer\'s numbers still gets the text on the primary number', async () => {
+    const { customerId, propertyId } = await seedCustomer({ secondPhone: '+14025550177' });
+    const state = await startConversation({ channel: 'sms', phone: '+14025550199', identity: 'matched', customerId });
+    const res = await bookInspection(toolCtx(state), bookInput({ propertyId, address: null }));
+    expect(res.ok).toBe(true);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]!.to).toBe(CALLER);
   });
 
   test('a confirmation text the gate blocks is recorded, and the booking stands', async () => {

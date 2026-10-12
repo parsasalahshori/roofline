@@ -44,6 +44,12 @@ describe('front desk fakes', () => {
     expect(miss).toMatchObject({ intent: 'unknown', urgent: false, mood: 'calm', route: 'opus', fastReply: null });
   });
 
+  test('ScriptedLlm returns a scripted router intent unchanged', async () => {
+    const llm = new ScriptedLlm([{ when: /person/, route: { ...ROUTE, intent: 'ask_for_person' } }]);
+    const got = await llm.route(routeInput('let me talk to a person'), new AbortController().signal);
+    expect(got.intent).toBe('ask_for_person');
+  });
+
   test('ScriptedLlm answers with the default sentence "Sorry, could you say that again?" when no rule matches', async () => {
     const llm = new ScriptedLlm();
     const events = await collect(llm.answer(answerInput('anything')));
