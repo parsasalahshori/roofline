@@ -6,10 +6,16 @@ import { measure } from '../../copy/measure.ts';
 import type { OutlineProblem } from './types.ts';
 
 /** What every pure reducer answers: the new ring and the first problem `outlineProblem(ring)` finds (null = fine). */
-export type EditResult = { ring: Ring; problem: OutlineProblem | null };
+export type EditResult = {
+  ring: Ring;
+  problem: OutlineProblem | null;
+  /** True when the edit was turned down and the ring is exactly as it was (the problem says why). */
+  refused?: true;
+};
 
 const METRES_PER_DEGREE = 111320;
 const NUDGE_METRES = 0.5;
+const MIN_CORNERS = 3;
 const LONG_PRESS_MS = 600;
 const LONG_PRESS_SLOP_PX = 4;
 
@@ -42,9 +48,10 @@ export function insertCorner(ring: Ring, afterIndex: number, at: LngLat): EditRe
   return result(next);
 }
 
-/** Remove one corner. Even if too few corners are left, the ring comes back and the problem says so. */
+/** Remove one corner. An outline never goes below three corners: that delete is refused and the problem says so. */
 export function deleteCorner(ring: Ring, index: number): EditResult {
   if (!Number.isInteger(index) || index < 0 || index >= ring.length) return result(ring.slice());
+  if (ring.length <= MIN_CORNERS) return { ring: ring.slice(), problem: 'too_few_corners', refused: true };
   const next = ring.slice();
   next.splice(index, 1);
   return result(next);
@@ -62,12 +69,15 @@ export function closeDrawing(points: Ring): EditResult {
 export type OutlineEditorOptions = {
   ring: Ring;
   drawMode: boolean;
+  /** True for a measurement behind a sent proposal: the outline shows but cannot be changed. */
+  readOnly?: boolean;
   /** Called on every edit with the new ring and its problem. */
   onChange: (result: EditResult) => void;
 };
 export type OutlineEditor = {
   setRing: (ring: Ring) => void;
   setDrawMode: (draw: boolean) => void;
+  setReadOnly: (readOnly: boolean) => void;
   finishDrawing: () => void;
   clearDrawing: () => void;
   destroy: () => void;
@@ -156,7 +166,8 @@ function dot(size: number, fill: string): HTMLDivElement {
 export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOptions): OutlineEditor {
   const m = map as unknown as LooseMap;
   let ring: Ring = options.ring.slice();
-  let drawing = options.drawMode;
+  let readOnly = options.readOnly === true;
+  let drawing = options.drawMode && !readOnly;
   let draft: Ring = [];
   let destroyed = false;
   let installed = false;
@@ -242,6 +253,10 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
 
   // Commit an edit: redraw everything, then tell the owner.
   const commit = (res: EditResult, focusIndex?: number) => {
+    if (res.refused) {
+      options.onChange(res);
+      return;
+    }
     editorApi.setRing(res.ring);
     if (focusIndex !== undefined && focusIndex >= 0) focusCorner(Math.min(focusIndex, res.ring.length - 1));
     options.onChange(res);
@@ -381,7 +396,7 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
 
   const rebuildHandles = () => {
     clearHandles();
-    if (drawing || destroyed) return;
+    if (drawing || readOnly || destroyed) return;
     cornerMarkers = ring.map((_, i) => buildCorner(i));
     if (ring.length >= 3) midMarkers = ring.map((_, i) => buildMid(i));
   };
@@ -447,6 +462,7 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
   };
 
   const enterDraw = () => {
+    if (readOnly) return;
     drawing = true;
     clearDraft();
     clearHandles();
@@ -470,7 +486,7 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
     },
     // Switch between drawing a fresh outline and editing the existing one.
     setDrawMode(draw) {
-      if (destroyed) return;
+      if (destroyed || readOnly) return;
       if (draw) {
         endDrag();
         enterDraw();
@@ -480,8 +496,21 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
         rebuildHandles();
       }
     },
-    finishDrawing() {
+    // Lock or unlock editing; locking drops any drawing in progress and every handle.
+    setReadOnly(next) {
       if (destroyed) return;
+      readOnly = next;
+      if (readOnly) {
+        endDrag();
+        if (drawing) {
+          clearDraft();
+          leaveDraw();
+        }
+      }
+      rebuildHandles();
+    },
+    finishDrawing() {
+      if (destroyed || readOnly) return;
       finish();
     },
     clearDrawing() {

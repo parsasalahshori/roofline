@@ -133,6 +133,8 @@ let calls: Call[];
 let current: MeasurementView;
 let patchStatus: number;
 let buildStatus: number;
+let role: string;
+let patchDelay: number;
 const sent = (key: string) => calls.filter((c) => c.key === key).map((c) => c.body as Record<string, unknown>);
 
 function json(body: unknown, status = 200): Response {
@@ -181,6 +183,8 @@ beforeEach(() => {
   calls = [];
   patchStatus = 200;
   buildStatus = 201;
+  role = 'owner';
+  patchDelay = 0;
   fake.FakeMap.instances.length = 0;
   vi.stubEnv('VITE_MAPTILER_KEY', '');
   vi.stubEnv('VITE_MAP_TILES', '');
@@ -190,9 +194,11 @@ beforeEach(() => {
       const key = `${init?.method ?? 'GET'} ${String(input)}`;
       const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
       calls.push({ key, body });
+      if (key === 'GET /api/auth/me') return json({ user: { id: 'u1', email: 'a@b.c', name: 'A', emailVerified: true }, company: { id: 'c1', name: 'C', slug: 'c', status: 'active' }, role, companies: [] });
       if (key === 'GET /api/measurements/m1') return json(current);
       if (key === 'PATCH /api/measurements/m1') {
         if (patchStatus !== 200) return json({ error: 'This measurement was already sent.' }, patchStatus);
+        if (patchDelay > 0) await wait(patchDelay);
         current = { ...current, ...(body as object) } as MeasurementView;
         return json(current);
       }
@@ -234,6 +240,8 @@ describe('outline reducers (pure)', () => {
     expect(three.problem).toBeNull();
     const two = deleteCorner(three.ring, 0);
     expect(two.problem).toBe('too_few_corners');
+    expect(two.refused).toBe(true);
+    expect(two.ring).toEqual(three.ring);
     expect(measure.problems.too_few_corners).toBe('Add at least three corners.');
   });
 
@@ -323,8 +331,73 @@ describe('measure window', () => {
     fireEvent.keyDown(corner(0), { key: 'Delete' });
     const text = await screen.findByText(measure.problems.too_few_corners);
     expect(text.closest('[role="alert"]')).not.toBeNull();
-    await wait(800);
-    expect(sent('PATCH /api/measurements/m1')).toHaveLength(0);
+    // The refused delete changes nothing: three corners stay, and the three-corner outline is still saved
+    expect(handles()).toHaveLength(3);
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(1), { timeout: 2000 });
+    expect((sent('PATCH /api/measurements/m1')[0] as { outline: Ring[] }).outline[0]).toHaveLength(3);
+  });
+
+  it('a long press on the third corner is refused too', async () => {
+    await open({ outline: [rect(30, 40).slice(0, 3)] });
+    expect(handles()).toHaveLength(3);
+    fireEvent.keyDown(corner(1), { key: 'Backspace' });
+    expect(await screen.findByText(measure.problems.too_few_corners)).toBeTruthy();
+    expect(handles()).toHaveLength(3);
+  });
+
+  it('Draw the outline again re-enters draw mode', async () => {
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: measure.redraw }));
+    expect(screen.getByText(measure.drawHint)).toBeTruthy();
+    expect(handles()).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: measure.redraw })).toBeNull();
+  });
+
+  it('a locked measurement has no corner handles and no redraw', async () => {
+    await open({ locked: true });
+    expect(handles()).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: measure.redraw })).toBeNull();
+  });
+
+  it('a save refused as locked turns the outline read-only', async () => {
+    await open();
+    expect(handles()).toHaveLength(4);
+    patchStatus = 409;
+    fireEvent.click(pitchButton(9));
+    expect(await screen.findByText(measure.locked)).toBeTruthy();
+    await waitFor(() => expect(handles()).toHaveLength(0));
+  });
+
+  it('Make proposal waits for a pitch change that is still saving', async () => {
+    patchDelay = 200;
+    await open();
+    fireEvent.click(pitchButton(9));
+    const make = screen.getByRole('button', { name: measure.makeProposal }) as HTMLButtonElement;
+    fireEvent.click(make);
+    await waitFor(() => expect(make.disabled).toBe(true));
+    await waitFor(() => expect(sent('POST /api/proposals')).toHaveLength(1), { timeout: 3000 });
+    expect(calls.findIndex((c) => c.key === 'PATCH /api/measurements/m1')).toBeLessThan(
+      calls.findIndex((c) => c.key === 'POST /api/proposals'),
+    );
+  });
+
+  it('a building toggle saves at once', async () => {
+    await open();
+    fireEvent.click(screen.getByLabelText(measure.structure(1)));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ includedStructures: [] }]));
+  });
+
+  it('Get exact report is not offered to a rep', async () => {
+    role = 'rep';
+    await open();
+    await wait(100);
+    expect(screen.queryByRole('button', { name: measure.getExactReport })).toBeNull();
+  });
+
+  it('Get exact report is not offered on an exact measurement', async () => {
+    await open({ kind: 'exact' });
+    await wait(100);
+    expect(screen.queryByRole('button', { name: measure.getExactReport })).toBeNull();
   });
 
   it('draw mode: three clicks then Enter saves a three-corner outline', async () => {
@@ -378,7 +451,7 @@ describe('measure window', () => {
 
   it('Get exact report posts and shows Waiting for your OK', async () => {
     await open();
-    fireEvent.click(screen.getByRole('button', { name: measure.getExactReport }));
+    fireEvent.click(await screen.findByRole('button', { name: measure.getExactReport }));
     await waitFor(() => expect(sent('POST /api/measurements/m1/exact-report')).toHaveLength(1));
     await waitFor(() => expect(screen.getAllByText('Waiting for your OK').length).toBeGreaterThan(0));
   });
@@ -463,5 +536,12 @@ describe('measure window', () => {
     fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
     expect(await screen.findByText(estimator.makeFailed)).toBeTruthy();
     expect(router.state.location.pathname).toBe('/estimator/measure/m1');
+  });
+
+  it('shows the server message when Make proposal is refused', async () => {
+    buildStatus = 409;
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
+    expect(await screen.findByText('boom')).toBeTruthy();
   });
 });

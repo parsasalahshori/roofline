@@ -36,6 +36,26 @@ export const proposals = {
   statusLabelFor: (status: ProposalStatus): string => proposals.statusLabel[status],
   /** Shown above a proposal that cannot be edited any more. */
   readOnlyNote: 'This proposal was sent. Make a revised proposal to change it.',
+  /** Banner text by status for a proposal that cannot be edited. */
+  readyNote: 'This proposal is waiting for your OK before it goes out.',
+  waitingForOk: 'Waiting for your OK',
+  signedNote: 'This proposal is signed. Make a new proposal for more work.',
+  declinedNote: 'The customer said not right now. Make a revised proposal to try again.',
+  expiredNote: 'This proposal has expired. Make a revised proposal to send it again.',
+  noteFor: (status: ProposalStatus): string => {
+    switch (status) {
+      case 'ready':
+        return proposals.readyNote;
+      case 'signed':
+        return proposals.signedNote;
+      case 'declined':
+        return proposals.declinedNote;
+      case 'expired':
+        return proposals.expiredNote;
+      default:
+        return proposals.readOnlyNote;
+    }
+  },
   signedLine: (name: string, when: string): string => `Signed by ${name} · ${when}`,
   declinedLine: (when: string): string => `Declined · ${when}`,
   declinedReason: (reason: string): string => `Reason: ${reason}`,
