@@ -80,6 +80,8 @@ type SeedConversation = {
   lastMessageAt?: Date;
 };
 
+let phoneSeq = 0;
+
 async function seedConversation(o: SeedConversation = {}): Promise<string> {
   const companyId = o.company === 'b' ? idB() : idA();
   return inCompany(t, companyId, async (tx) => {
@@ -89,7 +91,7 @@ async function seedConversation(o: SeedConversation = {}): Promise<string> {
         companyId,
         channel: o.channel ?? 'sms',
         customerId: o.customerId ?? null,
-        phoneE164: o.phone ?? UNKNOWN_NUMBER,
+        phoneE164: o.phone ?? `+1402556${String(++phoneSeq).padStart(4, '0')}`,
         companyNumberE164: A_NUMBER,
         outcome: o.outcome ?? null,
         unreadCount: o.unread ?? 0,

@@ -14,3 +14,6 @@
 
 ## Verify
 typecheck, lint clean; vitest @roofline/shared 21 files, 805 tests passed. DB suites run on CI.
+
+## CI round 1 (run 38240625386)
+Platform failed in conversations-routes and stats-routes tests only: the seed helpers reused one phone number for several active sms conversations and hit conversations_active_sms_uniq. Fixed by giving each seeded conversation a unique phone. E2E passed.

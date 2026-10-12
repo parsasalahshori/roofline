@@ -39,6 +39,8 @@ async function get(week?: string, as: 'owner' | 'office' | 'rep' = 'owner', comp
   return agent.get(week === undefined ? URL : `${URL}?week=${week}`);
 }
 
+let phoneSeq = 0;
+
 async function conv(o: { company?: 'a' | 'b'; channel?: 'voice' | 'sms'; outcome?: 'booked' | 'spam' | 'message' | null; createdAt?: Date } = {}) {
   const companyId = o.company === 'b' ? t.seed.b.companyId : idA();
   return inCompany(t, companyId, async (tx) => {
@@ -47,7 +49,7 @@ async function conv(o: { company?: 'a' | 'b'; channel?: 'voice' | 'sms'; outcome
       .values({
         companyId,
         channel: o.channel ?? 'voice',
-        phoneE164: CALLER,
+        phoneE164: `+1402556${String(++phoneSeq).padStart(4, '0')}`,
         companyNumberE164: NUMBER,
         outcome: o.outcome ?? null,
         createdAt: o.createdAt ?? wed(14),
