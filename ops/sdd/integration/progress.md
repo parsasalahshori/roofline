@@ -1361,3 +1361,26 @@ calls. It now spreads E1's `proposalListRoutes()`.
 `npm ci` clean (no package change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass, lint
 pass, lint:css pass; vitest @roofline/web 1213 pass (133 files, after ca5b5fe), @roofline/ui 172 pass,
 @roofline/shared 1296 pass, @roofline/send-gate 525 pass. The database, API, worker and e2e suites run only in CI.
+
+### CI (pass 12)
+
+Run 38257556433 on a7e2b55, attempt 1: E2E (Playwright) success; Hail service success; v1 success; Platform failure,
+16 tests in 4 API files, all from E1's review meeting S1's tests (merge artifacts, test-only):
+- `test/pgboss.test.ts`: the schedule list is sorted by name; the merge put `signed-pdf-sweep` after S1's
+  `spotter-sync`/`storm-match`. Moved it into name order.
+- `test/storm-config.test.ts`, `test/google-ads-http.test.ts`, `test/postmark-broadcast.test.ts`: E1's review (Ruling
+  ET) makes the four R2 settings required in production (`config.ts` superRefine) and adds them to E1's own production
+  fixtures; these S1-only files build a production config without them and threw `ConfigError`. They now carry the
+  same four settings (E1's comment and values). Owner of the real change: S1, at its next e1-estimator merge (new
+  cross-track problem 3).
+
+Fix commit 88a4d2b. Run 38260235945 on 88a4d2b, attempt 1: Platform (lint, typecheck, tests) success; E2E (Playwright)
+success; Hail service (ruff, pytest) success; v1 (node:test) success. E1's review fixes (immutable signatures, the
+signed-PDF sweep, C-I4 through A1's `completeParkedStep`), S1 R3 (`paused_by`, ad guards) on the rebuilt 0019-0024
+snapshots and D1 T26 pass the database, API, worker and e2e suites in combination. (The local `ci-check` wrapper was
+stopped by its time limit; both runs were followed through the Actions API until they completed.)
+
+New cross-track problem 3. **E1 x S1, production config fixtures.** E1's Ruling ET requires R2 in production; S1's
+three config-building tests above lack it and fail only in combination. Fix: add `R2_ACCOUNT_ID`,
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` to their production `VALID`. Owner: S1 when it merges
+e1-estimator (any later S1 test that builds a production config needs the same).
