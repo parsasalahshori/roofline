@@ -60,8 +60,8 @@ session_01LXtxzoHNoWz5SACkLF1d2p. Each track lead owns and pushes its own integr
 E1 = 0015/0016; S1 = 0017/0018; D1 = 0019/0020; A1 = 0021/0022; G1 = 0023/0024. Each track generates its
 migrations on its own base. When merging tracks together, the controller fixes the drizzle journal order
 and rebuilds the snapshots (`drizzle-kit generate` must then report no changes). Known cross-track overlap:
-D1 T1 adds a unique (company_id, id) on `messages` (for a composite FK); if another track adds the same
-constraint, keep exactly one, with one name, at the merge.
+D1 T1 (0019) and G1 T1 (0023) both add a unique (company_id, id) on `messages`; D1's wins and G1 drops its
+copy when it merges d1-front-desk (keep exactly one constraint, D1's name).
 
 **Ruling AQ (builder model):** team-script builders are Haiku 5.5 by default. Set the task field
 `builder: "sonnet"` for: UI integration across the shell (Shell, router, windows, phone layout), concurrency
