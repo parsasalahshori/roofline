@@ -10,7 +10,7 @@ import {
 import type { AppDeps } from '../app.ts';
 import { AppError } from '../errors.ts';
 import { parse, noNul } from '../validate.ts';
-import { handleProposalError, ipHashFor, perTokenRateLimit, publicProposalHeaders, resolveLink } from './proposal-common.ts';
+import { handleProposalError, perTokenRateLimit, proposalIpHashFor, publicProposalHeaders, resolveLink } from './proposal-common.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 /**
@@ -63,7 +63,7 @@ export function publicProposalRoutes(deps: AppDeps): Router {
     const now = deps.clock.now();
     const link = await resolveLink(deps, tokenOf(req), now);
     const body = parse(viewBody, bodyOf(req));
-    const ipHash = ipHashFor(req, link.ctx.companyId);
+    const ipHash = proposalIpHashFor(deps.config, req.ip ?? '', link.ctx.companyId);
     const userAgent = (req.get('user-agent') ?? '').slice(0, 300);
     await withTenant(deps.pools, link.ctx, async (tx) => {
       await recordProposalEvent(tx, link.ctx, link.proposalId, { kind: 'viewed', ipHash, userAgent }, now);

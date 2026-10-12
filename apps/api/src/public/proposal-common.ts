@@ -1,10 +1,11 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, hkdfSync } from 'node:crypto';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { publicProposalState, withTenant, type TenantContext } from '@roofline/db';
 import { resolveProposalToken } from '@roofline/db/system';
 import type { ProposalStatus } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import type { Config } from '../config.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 
 const NOT_WORKING = "This proposal link doesn't work.";
@@ -81,9 +82,17 @@ export async function resolveLink(deps: AppDeps, token: string, now: Date): Prom
   return { ctx, proposalId: found.proposalId, status: found.status, validUntil: found.validUntil, tokenHash };
 }
 
-/** sha256(ip + companyId) hex, for proposal_events.ip_hash. */
-export function ipHashFor(req: Request, companyId: string): string {
-  return createHash('sha256').update(`${req.ip ?? ''}${companyId}`).digest('hex');
+/**
+ * The HMAC key for hashing a homeowner's address: derived from ENCRYPTION_KEY with HKDF under its own info
+ * string. Keyed, so a stored hash cannot be reversed by hashing every IPv4 address (security finding 8).
+ */
+function ipHashKey(config: Pick<Config, 'ENCRYPTION_KEY'>): Buffer {
+  return Buffer.from(hkdfSync('sha256', Buffer.from(config.ENCRYPTION_KEY, 'base64'), Buffer.alloc(0), 'proposal-event-ip', 32));
+}
+
+/** HMAC(key, companyId + ':' + ip) hex, for proposal_events.ip_hash. Per company, so it never links companies. */
+export function proposalIpHashFor(config: Pick<Config, 'ENCRYPTION_KEY'>, ip: string, companyId: string): string {
+  return createHmac('sha256', ipHashKey(config)).update(`${companyId}:${ip}`).digest('hex');
 }
 
 /** Route catch helper: GoneLinkError -> 410 { error, companyPhone }; anything else -> next(err). */

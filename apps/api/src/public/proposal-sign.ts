@@ -8,7 +8,7 @@ import { AppError } from '../errors.ts';
 import { isAcceptableSignaturePng } from '../estimator/signature-png.ts';
 import { drawnSignatureKey } from '../estimator/signed-pdf.ts';
 import { parse } from '../validate.ts';
-import { handleProposalError, perTokenRateLimit, publicProposalHeaders, resolveLink } from './proposal-common.ts';
+import { handleProposalError, perTokenRateLimit, proposalIpHashFor, publicProposalHeaders, resolveLink } from './proposal-common.ts';
 
 /** Signing a proposal, signed out, under `/api/public/proposals`. */
 
@@ -95,7 +95,8 @@ export function proposalSignRoutes(deps: AppDeps): Router {
           signedAt: now.toISOString(),
           viewedFirstAt: null,
         };
-        const signed = await signProposal(tx, ctx, proposalId, record, now);
+        const ipHash = proposalIpHashFor(deps.config, record.ip, ctx.companyId);
+        const signed = await signProposal(tx, ctx, proposalId, { ...record, ipHash }, now);
         if (signed === 'signed') await recordSignedDocument(tx, ctx, proposalId, document);
         return signed;
       });
