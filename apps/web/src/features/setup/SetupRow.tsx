@@ -12,8 +12,8 @@ type SetupRowProps = {
 };
 
 /** The chip's words: a later-spec item says what it comes with; a rejected registration says so. */
-function chipText(item: SetupItemView): string {
-  if (item.comingWith) return comingWith[item.comingWith];
+function chipText(item: SetupItemView, comingWithCopy: SetupItemView['comingWith']): string {
+  if (comingWithCopy) return comingWith[comingWithCopy];
   if (item.data.rejected === true) return setup.chips.rejected;
   return setup.chips[item.status];
 }
@@ -25,7 +25,10 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
   const skip = useSkip();
   const unskip = useUnskip();
 
-  const offersActions = canAct && item.comingWith === null && item.status !== 'done';
+  // The phone number step leads to the forwarding guide now, so it is not "coming with" anything for owners.
+  const phoneReady = item.key === 'phone_number' && item.comingWith === 'front_desk';
+  const comingWithCopy = phoneReady ? null : item.comingWith;
+  const offersActions = canAct && comingWithCopy === null && item.status !== 'done';
   const rejected = item.data.rejected === true;
 
   let primary: ReactNode = null;
@@ -71,6 +74,13 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
       case 'prices_and_tiers':
         primary = (<Button variant="primary" href="/settings/prices">{setup.actions.setPrices}</Button>);
         break;
+      case 'phone_number':
+        primary = (
+          <Button variant="primary" href="/settings/front-desk#forwarding">
+            {setup.actions.forwardCalls}
+          </Button>
+        );
+        break;
       default:
         primary = null;
     }
@@ -90,14 +100,14 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
       )
     ) : null;
 
-  const chipStatus = item.comingWith ? 'comingWith' : item.status;
+  const chipStatus = comingWithCopy ? 'comingWith' : item.status;
 
   return (
     <li className={styles.row}>
       <div className={styles.header}>
         <h3 className={styles.title}>{copy.title}</h3>
         <span className={styles.chip} data-status={chipStatus}>
-          {chipText(item)}
+          {chipText(item, comingWithCopy)}
         </span>
       </div>
       <p className={styles.description}>{copy.description}</p>

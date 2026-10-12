@@ -68,6 +68,7 @@ export const setup = {
     invite: 'Invite',
     addCard: 'Add a card',
     setPrices: 'Set prices',
+    forwardCalls: 'Forward your calls',
     skip: 'Skip for now',
     undoSkip: 'Undo skip',
   },
