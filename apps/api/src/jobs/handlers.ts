@@ -1,5 +1,6 @@
 import type { AppDeps } from '../app.ts';
 import { advanceRegistration } from '../account/texting/advance.ts';
+import { expireForwardingTest } from '../front-desk/forwarding-test.ts';
 import { runFrontDeskText } from '../front-desk/texts.ts';
 import { runImport } from '../imports/run.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
@@ -15,5 +16,5 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'fd-after-call': async () => {}, // Task 12 fills this in
   'fd-recording-store': async () => {}, // Task 12 fills this in
   'fd-text': (deps, data) => runFrontDeskText(deps, data),
-  'fd-forwarding-test': async () => {}, // Task 17 fills this in
+  'fd-forwarding-test': (deps, data) => expireForwardingTest(deps, data.companyId, data.testId!),
 };

@@ -3,6 +3,7 @@ import { countLiveAiCalls, insertCall, screeningFacts, type TenantContext, updat
 import { teamDialNumbers } from '@roofline/db/system';
 import { disclosureGreeting } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { forwardingTestArrived } from '../front-desk/forwarding-test.ts';
 import { screenCall } from '../providers/call-screen.ts';
 import { DIAL_TIMEOUT_SECONDS, relayConnectXml, routeVoice, sendVoiceTwiml, VOICEMAIL_XML } from './twilio-voice-common.ts';
 import { E164, escapeXml, field, FORM_BODY_LIMIT } from './twilio.ts';
@@ -32,6 +33,11 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
   router.post('/', async (req, res) => {
     const route = await routeVoice(deps, req, res);
     if (!route) return;
+    // A forwarding test (Front Desk) is answered before anything else: the test caller's call proves forwarding.
+    if (await forwardingTestArrived(deps, route.companyId, field(req, 'From') ?? '')) {
+      sendVoiceTwiml(res, '<Response><Say>Forwarding works.</Say><Hangup/></Response>');
+      return;
+    }
     const callSid = field(req, 'CallSid');
     const to = field(req, 'To');
     if (callSid === undefined || callSid === '' || to === undefined) {

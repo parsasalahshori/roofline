@@ -18,6 +18,7 @@ function facts(o: Partial<SetupFacts> = {}): SetupFacts {
     activeMembers: 0,
     pendingInvites: 0,
     paymentMethod: false,
+    forwardingVerified: false,
     skipped: new Set<SetupItemKey>(),
     ...o,
   };
@@ -50,13 +51,15 @@ describe('deriveSetup', () => {
     const later: [SetupItemKey, string][] = [
       ['prices_and_tiers', 'estimator'],
       ['connect_calendar', 'calendar'],
-      ['phone_number', 'front_desk'],
       ['connect_ads', 'storm_scout'],
     ];
     for (const [key, comingWith] of later) {
       expect(item(view, key).status).toBe('todo');
       expect(item(view, key).comingWith).toBe(comingWith);
     }
+
+    expect(item(view, 'phone_number').status).toBe('todo');
+    expect(item(view, 'phone_number').comingWith).toBeNull();
 
     expect(view.progress).toEqual({ done: 0, total: 5 });
   });
@@ -107,6 +110,19 @@ describe('deriveSetup', () => {
     expect(skippable).toEqual(['import_customers', 'invite_team']);
   });
 
+  it('phone number is done once forwarding is verified, and never skippable', () => {
+    const unverified = deriveSetup(facts());
+    expect(item(unverified, 'phone_number')).toMatchObject({ status: 'todo', comingWith: null, skippable: false });
+
+    const verified = deriveSetup(facts({ forwardingVerified: true }));
+    expect(item(verified, 'phone_number')).toMatchObject({ status: 'done', comingWith: null, data: {} });
+    expect(verified.progress.done).toBe(0);
+
+    const skipIgnored = deriveSetup(facts({ skipped: new Set(['phone_number']) }));
+    expect(item(skipIgnored, 'phone_number').status).toBe('todo');
+    expect(skippableKeys(skipIgnored)).not.toContain('phone_number');
+  });
+
   it('invites pending is started', () => {
     const invites = deriveSetup(facts({ pendingInvites: 1, activeMembers: 1 }));
     expect(item(invites, 'invite_team').status).toBe('in_progress');
@@ -118,3 +134,7 @@ describe('deriveSetup', () => {
     expect(item(addressOnly, 'company_basics').status).toBe('in_progress');
   });
 });
+
+function skippableKeys(view: SetupView): SetupItemKey[] {
+  return view.items.filter((i) => i.skippable).map((i) => i.key);
+}
