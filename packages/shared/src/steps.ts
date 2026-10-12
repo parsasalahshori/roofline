@@ -3,6 +3,7 @@ import type { ApprovalClass } from './enums.ts';
 import { MESSAGE_PURPOSES } from './enums.ts';
 import { renderBody } from './render.ts';
 import { AD_PLATFORMS } from './storm.ts';
+import { MEASUREMENT_KINDS, type MeasurementKind } from './proposals.ts';
 
 /*
  * The step-type registry (spec 4.1): what each kind of step an agent can put in a task needs, in
@@ -23,6 +24,8 @@ export const STEP_TYPES = [
   'send_email_batch',
   'build_routes',
   'create_ad_campaign',
+  'send_proposal',
+  'order_exact_report',
 ] as const;
 export type StepType = (typeof STEP_TYPES)[number];
 
@@ -81,6 +84,7 @@ const maxSpendCents = z
   .max(MAX_SPEND_CENTS, SPEND_MESSAGE);
 
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const wholeDollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const plural = (n: number, one: string, many: string): string => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
 // ---------------------------------------------------------------------------------------------
@@ -445,6 +449,100 @@ const createAdCampaign: StepTypeDef<CreateAdPayload> = {
     };
   },
   minutesSaved: () => 45,
+// send_proposal
+
+/** A proposal text must keep the link, so the homeowner can open the proposal from it. */
+export const PROPOSAL_LINK_MESSAGE = 'Keep {link} in the message so they can open the proposal.';
+const PROPOSAL_LINK_TOKEN = '{link}';
+const SAMPLE_PROPOSAL_LINK = 'https://example.com/p/abc123';
+const TIER_LABELS = ['Good', 'Better', 'Best'] as const;
+const BASIS_LINES: Record<MeasurementKind, string> = {
+  estimate: 'Estimate based on the roof outline.',
+  exact: 'Based on an exact roof report.',
+};
+
+const PICK_CUSTOMER = 'Please pick a customer from your list.';
+const PRICES_MESSAGE = 'Please check the prices.';
+
+const proposalPayload = z.strictObject({
+  proposalId: z
+    .uuid({ error: 'Please pick a proposal.' })
+    .transform((id) => id.toLowerCase()),
+  customerId: z
+    .uuid({ error: PICK_CUSTOMER })
+    .transform((id) => id.toLowerCase()),
+  body: z
+    .string({ error: WRITE_MESSAGE })
+    .trim()
+    .min(1, WRITE_MESSAGE)
+    .max(640, 'Please keep the message to 640 characters or fewer.')
+    .refine(noNul, CHECK_TEXT),
+  basis: z.enum(MEASUREMENT_KINDS, { error: 'Please pick estimate or exact.' }),
+  totals: z
+    .array(z.number({ error: PRICES_MESSAGE }).int(PRICES_MESSAGE).min(0, PRICES_MESSAGE), { error: PRICES_MESSAGE })
+    .min(1, PRICES_MESSAGE)
+    .max(3, PRICES_MESSAGE),
+});
+type ProposalPayload = z.output<typeof proposalPayload>;
+
+/** "Good $11,900 · Better $14,250 · Best $17,600" for three options; plain amounts for any other count. */
+function tierTotalsLine(totals: number[]): string {
+  return totals
+    .map((total, i) => {
+      const amount = wholeDollars.format(total / 100);
+      const label = totals.length === 3 ? TIER_LABELS[i] : undefined;
+      return label === undefined ? amount : `${label} ${amount}`;
+    })
+    .join(' · ');
+}
+
+const sendProposal: StepTypeDef<ProposalPayload> = {
+  type: 'send_proposal',
+  approvalClass: 'message',
+  payload: proposalPayload,
+  validate: (p) => (p.body.includes(PROPOSAL_LINK_TOKEN) ? null : PROPOSAL_LINK_MESSAGE),
+  preview(p, facts) {
+    return {
+      title: `Text the proposal to ${facts.sampleFirstName ?? 'the customer'}`,
+      lines: [tierTotalsLine(p.totals), BASIS_LINES[p.basis]],
+      messageSample: renderBody(p.body.replaceAll(PROPOSAL_LINK_TOKEN, SAMPLE_PROPOSAL_LINK), {
+        ...(facts.sampleFirstName !== undefined && { first_name: facts.sampleFirstName }),
+        company: facts.companyName,
+      }),
+      recipientCount: 1,
+    };
+  },
+  minutesSaved: () => 20,
+};
+
+// ---------------------------------------------------------------------------------------------
+// order_exact_report
+
+const ADDRESS_MESSAGE = 'Please enter the address.';
+
+const exactReportPayload = z.strictObject({
+  orderId: z
+    .uuid({ error: 'Please pick an order.' })
+    .transform((id) => id.toLowerCase()),
+  measurementId: z
+    .uuid({ error: 'Please pick a measurement.' })
+    .transform((id) => id.toLowerCase()),
+  address: z
+    .string({ error: ADDRESS_MESSAGE })
+    .trim()
+    .min(1, ADDRESS_MESSAGE)
+    .max(300, 'Please keep the address to 300 characters or fewer.')
+    .refine(noNul, CHECK_TEXT),
+  maxSpendCents,
+});
+type ExactReportPayload = z.output<typeof exactReportPayload>;
+
+const orderExactReport: StepTypeDef<ExactReportPayload> = {
+  type: 'order_exact_report',
+  approvalClass: 'spend',
+  payload: exactReportPayload,
+  preview: (p) => ({ title: 'Order an exact roof report', lines: [p.address], maxSpendCents: p.maxSpendCents }),
+  minutesSaved: () => 10,
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -460,4 +558,6 @@ export const stepTypes: Record<StepType, StepTypeDef<any>> = {
   send_email_batch: sendEmailBatch,
   build_routes: buildRoutes,
   create_ad_campaign: createAdCampaign,
+  send_proposal: sendProposal,
+  order_exact_report: orderExactReport,
 };

@@ -18,22 +18,42 @@ import { twilioRegistrationHooks } from './hooks/twilio-registration.ts';
 import type { JobQueue } from './jobs/queue.ts';
 import { readOnlyGuard } from './billing/read-only.ts';
 import type { Mailer } from './mailer.ts';
+import type { CalendarApis } from './providers/calendar.ts';
 import type { BillingProvider } from './providers/billing.ts';
 import type { Geocoder } from './providers/geocoder.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
-import { apiRateLimit } from './rate-limit.ts';
+import type { FootprintSource } from './providers/footprints.ts';
+import type { AerialMeasure } from './providers/aerial.ts';
+import type { ExactReports } from './providers/exact-reports.ts';
+import type { ObjectStore } from './providers/object-store.ts';
+import { apiRateLimit, publicRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
+import { appointmentRoutes } from './routes/appointments.ts';
 import { approvalRoutes } from './routes/approvals.ts';
+import { calendarConnectRoutes } from './routes/calendar-connect.ts';
+import { calendarRoutes } from './routes/calendar.ts';
 import { companyRoutes } from './routes/company.ts';
 import { customerRoutes } from './routes/customers.ts';
+import { exportRoutes } from './routes/export.ts';
 import { importRoutes } from './routes/imports.ts';
 import { jobRoutes } from './routes/jobs.ts';
 import { mapRoutes } from './routes/map.ts';
+import { noteRoutes } from './routes/notes.ts';
+import { pricebookRoutes } from './routes/pricebook.ts';
 import { propertyRoutes } from './routes/properties.ts';
+import { jobQuoteRoutes, quoteRoutes } from './routes/quotes.ts';
 import { searchRoutes } from './routes/search.ts';
 import { taskRoutes } from './routes/tasks.ts';
 import { teamRoutes } from './routes/team.ts';
+import { timelineRoutes } from './routes/timeline.ts';
+import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
+import { measurementRoutes } from './routes/measurements.ts';
+import { tierTemplateRoutes } from './routes/tier-templates.ts';
+import { estimatorSettingsRoutes } from './routes/estimator-settings.ts';
+import { proposalRoutes } from './routes/proposals.ts';
+import { publicProposalRoutes } from './public/proposals.ts';
+import { proposalSignRoutes } from './public/proposal-sign.ts';
 import type { StepQueue } from './tasks/queue.ts';
 import { policyPages } from './public/policies.ts';
 import { serveWeb } from './web.ts';
@@ -81,6 +101,8 @@ export type AppDeps = {
    * unconfigured geocoder that fails each lookup with a setup message; tests pass `FakeGeocoder`.
    */
   geocoder: Geocoder;
+  /** The calendar provider seam (providers/calendar.ts): one api per provider; tests pass fakes. */
+  calendars: CalendarApis;
   /**
    * Where billing goes (providers/billing.ts): Stripe when configured, else an unconfigured
    * provider; tests pass `FakeBillingProvider`.
@@ -96,6 +118,14 @@ export type AppDeps = {
    * server and the worker, or `InlineJobs` in tests, which drain it themselves.
    */
   jobs: JobQueue;
+  /** Where building footprints come from (providers/footprints.ts); tests pass `FakeFootprintSource`. */
+  footprints: FootprintSource;
+  /** Where aerial roof measurements come from (providers/aerial.ts); tests pass `FakeAerialMeasure`. */
+  aerial: AerialMeasure;
+  /** Where exact roof reports are ordered and fetched (providers/exact-reports.ts); tests pass `FakeExactReports`. */
+  exactReports: ExactReports;
+  /** Where proposal files are stored (providers/object-store.ts); tests pass `MemoryObjectStore`. */
+  objectStore: ObjectStore;
 };
 
 export type AppOptions = {
@@ -227,6 +257,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/team', teamRoutes(deps, logError));
   app.use('/api/customers', customerRoutes(deps));
   app.use('/api/properties', propertyRoutes(deps));
+  // Before /api/jobs: Express matches in order, and jobRoutes would otherwise take /:id/quotes.
+  app.use('/api/jobs/:jobId/quotes', jobQuoteRoutes(deps));
   app.use('/api/jobs', jobRoutes(deps));
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
@@ -234,10 +266,29 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/search', searchRoutes(deps));
   app.use('/api/map', mapRoutes(deps));
   app.use('/api/weather', weatherRoutes(deps));
+  app.use('/api/appointments', appointmentRoutes(deps));
+  app.use('/api/today', todayRoutes(deps));
+  app.use('/api/calendar', calendarRoutes(deps));
+  app.use('/api/calendar', calendarConnectRoutes(deps));
+  app.use('/api/timeline', timelineRoutes(deps));
+  app.use('/api/notes', noteRoutes(deps));
+  app.use('/api/pricebook', pricebookRoutes(deps));
+  app.use('/api/quotes', quoteRoutes(deps));
+  app.use('/api/export', exportRoutes(deps));
   app.use('/api/billing', billingRoutes(deps));
   app.use('/api/setup', setupRoutes(deps));
   app.use('/api/imports', importRoutes(deps));
   app.use('/api/texting', textingRoutes(deps));
+  app.use('/api/measurements', measurementRoutes(deps));
+  app.use('/api/tier-templates', tierTemplateRoutes(deps));
+  app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
+  app.use('/api/proposals', proposalRoutes(deps));
+  // Signed-out customers open and sign their proposal here. The sign-in gate lets every path under
+  // /api/public/ through (auth/middleware.ts), and the per-IP limit stands in for the session one.
+  const publicRouter = express.Router();
+  publicRouter.use('/proposals', publicProposalRoutes(deps));
+  publicRouter.use('/proposals', proposalSignRoutes(deps));
+  app.use('/api/public', publicRateLimit(), publicRouter);
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.

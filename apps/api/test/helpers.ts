@@ -13,7 +13,12 @@ import { AppError, MESSAGES } from '../src/errors.ts';
 import { InlineJobs } from '../src/jobs/queue.ts';
 import type { Mailer } from '../src/mailer.ts';
 import { FakeBillingProvider } from '../src/providers/fakes/billing.ts';
+import { FakeAerialMeasure } from '../src/providers/fakes/aerial.ts';
+import { FakeCalendarApi } from '../src/providers/fakes/calendar.ts';
+import { FakeExactReports } from '../src/providers/fakes/exact-reports.ts';
+import { FakeFootprintSource } from '../src/providers/fakes/footprints.ts';
 import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
+import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
 import { FakeTextingRegistrar } from '../src/providers/fakes/registrar.ts';
 import { InlineQueue } from '../src/tasks/queue.ts';
 import type { CurrentWeather, WeatherSource } from '../src/weather/source.ts';
@@ -116,6 +121,16 @@ export type TestApp = {
   weather: FakeWeatherSource;
   /** Address lookup: it records each call and answers from a fixed table. */
   geocoder: FakeGeocoder;
+  /** Calendar providers: one fake per provider, the same instances the app's deps hold. */
+  calendars: { google: FakeCalendarApi; microsoft: FakeCalendarApi };
+  /** Building footprints: it records each lookup and answers from a fixed table. */
+  footprints: FakeFootprintSource;
+  /** Aerial measurement: it records each request and answers what it was given. */
+  aerial: FakeAerialMeasure;
+  /** Exact reports: it records each price and order; `orderUncertainNext()` makes the next order uncertain. */
+  exactReports: FakeExactReports;
+  /** The object store for signed proposals, kept in memory. */
+  objectStore: MemoryObjectStore;
   /** Billing: it records each customer, checkout, and meter event. */
   billing: FakeBillingProvider;
   /** Texting registration: `failNext` makes the next registrar call fail. */
@@ -159,6 +174,10 @@ export function testConfig(
     API_RATE_LIMIT_PER_MIN: 600,
     PORT: 0,
     HOST: '127.0.0.1',
+    EAGLEVIEW_ENV: 'sandbox',
+    EAGLEVIEW_PRODUCT_ID: 0,
+    PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
+    FOOTPRINTS_BASE_URL: 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/',
     ...overrides,
   };
 }
@@ -201,6 +220,11 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const sms = new FakeSmsAdapter();
   const weather = new FakeWeatherSource();
   const geocoder = new FakeGeocoder();
+  const calendars = { google: new FakeCalendarApi('google'), microsoft: new FakeCalendarApi('microsoft') };
+  const footprints = new FakeFootprintSource();
+  const aerial = new FakeAerialMeasure();
+  const exactReports = new FakeExactReports();
+  const objectStore = new MemoryObjectStore();
   const billing = new FakeBillingProvider();
   const registrar = new FakeTextingRegistrar();
   const jobs = new InlineJobs();
@@ -216,6 +240,11 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     sms,
     weather,
     geocoder,
+    calendars,
+    footprints,
+    aerial,
+    exactReports,
+    objectStore,
     billing,
     registrar,
     jobs,
@@ -237,6 +266,11 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     sms,
     weather,
     geocoder,
+    calendars,
+    footprints,
+    aerial,
+    exactReports,
+    objectStore,
     billing,
     registrar,
     jobs,

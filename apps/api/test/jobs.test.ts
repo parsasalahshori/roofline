@@ -28,7 +28,7 @@ import {
 } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import type { AppDeps } from '../src/app.ts';
-import { InlineJobs, type JobData, type JobHandlers, type JobMeta } from '../src/jobs/queue.ts';
+import { InlineJobs, JOB_NAMES, type JobData, type JobHandlers, type JobMeta } from '../src/jobs/queue.ts';
 import { SCHEDULES } from '../src/jobs/worker.ts';
 
 const NO_CUSTOMER = "We couldn't find that customer.";
@@ -898,6 +898,9 @@ function queueHandlers(over: Partial<JobHandlers> = {}): JobHandlers {
   return {
     'import-customers': async () => {},
     'texting-registration': async () => {},
+    'calendar-push': async () => {},
+    'footprints-load': async () => {},
+    'signed-pdf': async () => {},
     ...over,
   };
 }
@@ -1031,6 +1034,7 @@ describe('SCHEDULES', () => {
     expect(SCHEDULES.map((s) => [s.name, s.cron])).toEqual([
       ['expire-drafts', '*/5 * * * *'],
       ['sweep-queued', '* * * * *'],
+      ['sweep-imports', '* * * * *'],
       ['dispatch-messages', '* * * * *'],
       ['end-trials', '*/5 * * * *'],
       ['report-usage', '* * * * *'],
@@ -1038,6 +1042,18 @@ describe('SCHEDULES', () => {
       ['poll-texting', '0 * * * *'],
       ['bill-monthly-fees', '0 9 1 * *'],
       ['prune-early-reports', '17 3 * * *'],
+      ['calendar-pull', '*/5 * * * *'],
+      ['footprints-ensure', '*/15 * * * *'],
+      ['exact-report-poll', '*/10 * * * *'],
     ]);
+  });
+
+  test('the calendar-push job queue is registered', () => {
+    expect(JOB_NAMES).toContain('calendar-push');
+  });
+
+  test('the footprints-load and signed-pdf job queues are registered', () => {
+    expect(JOB_NAMES).toContain('footprints-load');
+    expect(JOB_NAMES).toContain('signed-pdf');
   });
 });

@@ -7,7 +7,10 @@ import { UUID } from '../validate.ts';
 import { JOB_HANDLERS } from './handlers.ts';
 import { ensureJobQueues, JOB_NAMES, type JobData, type JobMeta } from './queue.ts';
 import { billMonthlyFees } from './scheduler/bill-monthly-fees.ts';
+import { pullCalendars } from './scheduler/calendar-pull.ts';
 import { dispatchDueMessages } from './scheduler/dispatch-messages.ts';
+import { ensureFootprints } from './scheduler/footprints-ensure.ts';
+import { pollExactReports } from './scheduler/exact-report-poll.ts';
 import { endTrials } from './scheduler/end-trials.ts';
 import { expireDrafts } from './scheduler/expire-drafts.ts';
 import { pollTexting } from './scheduler/poll-texting.ts';
@@ -15,6 +18,7 @@ import { pruneEarlyReports } from './scheduler/prune-early-reports.ts';
 import { provisionTexting } from './scheduler/provision-texting.ts';
 import { reportJobError } from './scheduler/report.ts';
 import { reportUsage } from './scheduler/report-usage.ts';
+import { sweepImports } from './scheduler/sweep-imports.ts';
 import { sweepQueued } from './scheduler/sweep-queued.ts';
 
 /*
@@ -34,14 +38,16 @@ export type ScheduledJob = {
 };
 
 /**
- * The worker's recurring jobs: draft expiry, the queued-step sweeper, the scheduled-text
+ * The worker's recurring jobs: draft expiry, the queued-step sweeper, the import sweeper (imports
+ * stranded queued or processing), the scheduled-text
  * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
- * end, usage reporting, texting provisioning and polling, and the monthly fees. A schedule dropped
+ * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up and the exact-report poll. A schedule dropped
  * from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'expire-drafts', cron: '*/5 * * * *', run: expireDrafts },
   { name: 'sweep-queued', cron: '* * * * *', run: sweepQueued },
+  { name: 'sweep-imports', cron: '* * * * *', run: sweepImports },
   { name: 'dispatch-messages', cron: '* * * * *', run: dispatchDueMessages },
   { name: 'end-trials', cron: '*/5 * * * *', run: endTrials },
   { name: 'report-usage', cron: '* * * * *', run: reportUsage },
@@ -49,6 +55,9 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'poll-texting', cron: '0 * * * *', run: pollTexting },
   { name: 'bill-monthly-fees', cron: '0 9 1 * *', run: billMonthlyFees },
   { name: 'prune-early-reports', cron: '17 3 * * *', run: pruneEarlyReports },
+  { name: 'calendar-pull', cron: '*/5 * * * *', run: pullCalendars },
+  { name: 'footprints-ensure', cron: '*/15 * * * *', run: ensureFootprints },
+  { name: 'exact-report-poll', cron: '*/10 * * * *', run: pollExactReports },
 ];
 
 /** How many steps one worker process runs at once. */
@@ -75,7 +84,10 @@ class JobFailed extends Error {
   }
 }
 
-/** A job-queue job's data: a company id (and, for an import, its import id). Checked before a handler runs. */
+/**
+ * A job-queue job's data: a company id, plus an import id for an import or an appointment id for a
+ * calendar push, or a state for a footprints load (which carries the requesting company's id), or a proposal id for a signed PDF. Checked before a handler runs.
+ */
 function isJobData(data: unknown): data is JobData {
   if (typeof data !== 'object' || data === null) return false;
   const { companyId } = data as Record<string, unknown>;

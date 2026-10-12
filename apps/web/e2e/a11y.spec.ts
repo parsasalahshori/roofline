@@ -40,3 +40,17 @@ test('approval review has no serious accessibility violations', async ({ page, l
   await expect(page.getByRole('button', { name: 'Approve 3 steps · up to $270' })).toBeVisible();
   await scan(page);
 });
+
+test('sign-up has no serious accessibility violations', async ({ page }) => {
+  await page.goto('/sign-up');
+  await expect(page.getByLabel('Your name')).toBeVisible();
+  await scan(page);
+});
+
+test('setup has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/settings/setup');
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+  await scan(page);
+});

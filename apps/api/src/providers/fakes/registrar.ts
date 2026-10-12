@@ -3,6 +3,7 @@ import type { BrandInfo, CampaignInfo } from '@roofline/shared';
 import {
   RegistrarRejectedError,
   RegistrarUnavailableError,
+  type BrandProgress,
   type ReviewStatus,
   type SubaccountRef,
   type TextingAccounts,
@@ -17,6 +18,8 @@ export function fakeSid(prefix: string, seed: string): string {
 
 type Review = { status: ReviewStatus; failureReason: string | null };
 type Failure = 'unavailable' | { rejected: string };
+type BrandStep = 'customerProfile' | 'trustProduct' | 'brand';
+const BRAND_STEPS: BrandStep[] = ['customerProfile', 'trustProduct', 'brand'];
 type Method = keyof TextingAccounts | keyof TextingBrands;
 
 /** Deterministic texting registrar: no network. Statuses start pending until a test sets them. */
@@ -26,6 +29,15 @@ export class FakeTextingRegistrar implements TextingRegistrar {
   private brand: Review = { status: 'pending', failureReason: null };
   private campaign: Review = { status: 'pending', failureReason: null };
   private failures = new Map<Method, Failure[]>();
+  private afterStep: { step: BrandStep; what: Failure } | null = null;
+
+  /**
+   * The next submitBrand reports progress for every step up to and including `step`, then throws
+   * (a failure part-way through the brand flow). Consumed once, after any failNext.
+   */
+  failAfter(step: BrandStep, what: Failure): void {
+    this.afterStep = { step, what };
+  }
 
   /** Makes the next call of `method` throw: RegistrarUnavailableError, or RegistrarRejectedError with `rejected` as its reasonText. */
   failNext(method: Method, what: Failure): void {
@@ -79,14 +91,33 @@ export class FakeTextingRegistrar implements TextingRegistrar {
 
   async submitBrand(
     sub: SubaccountRef,
-    i: { companyId: string; brand: BrandInfo; statusCallback: string; previous: { customerProfileSid: string | null; trustProductSid: string | null; brandSid: string | null } },
+    i: {
+      companyId: string;
+      brand: BrandInfo;
+      statusCallback: string;
+      previous: { customerProfileSid: string | null; trustProductSid: string | null; brandSid: string | null };
+      onProgress?: (p: BrandProgress) => void;
+    },
   ): ReturnType<TextingBrands['submitBrand']> {
     this.record('submitBrand', [sub, i]);
-    return {
-      customerProfileSid: fakeSid('BU', 'cp:' + i.companyId),
-      trustProductSid: fakeSid('BU', 'tp:' + i.companyId),
-      brandSid: fakeSid('BN', i.companyId),
+    const sids = {
+      customerProfileSid: i.previous.customerProfileSid ?? fakeSid('BU', 'cp:' + i.companyId),
+      trustProductSid: i.previous.trustProductSid ?? fakeSid('BU', 'tp:' + i.companyId),
+      brandSid: i.previous.brandSid ?? fakeSid('BN', i.companyId),
     };
+    const failure = this.afterStep;
+    this.afterStep = null;
+    const last = failure === null ? BRAND_STEPS.length - 1 : BRAND_STEPS.indexOf(failure.step);
+    BRAND_STEPS.slice(0, last + 1).forEach((step) => {
+      if (step === 'customerProfile') i.onProgress?.({ customerProfileSid: sids.customerProfileSid });
+      else if (step === 'trustProduct') i.onProgress?.({ trustProductSid: sids.trustProductSid });
+      else i.onProgress?.({ brandSid: sids.brandSid });
+    });
+    if (failure !== null) {
+      if (failure.what === 'unavailable') throw new RegistrarUnavailableError('Fake texting registrar is unavailable.');
+      throw new RegistrarRejectedError(failure.what.rejected);
+    }
+    return sids;
   }
 
   async brandStatus(sub: SubaccountRef, brandSid: string): ReturnType<TextingBrands['brandStatus']> {

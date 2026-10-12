@@ -11,7 +11,9 @@
     "dev": "tsx watch src/server.ts",
     "seed:demo": "tsx src/scripts/seed-demo.ts",
     "seed:dev": "tsx src/scripts/seed-dev.ts",
-    "sync:stripe-plans": "tsx src/scripts/sync-stripe-plans.ts"
+    "sync:stripe-plans": "tsx src/scripts/sync-stripe-plans.ts",
+    "smoke:stripe": "tsx src/scripts/smoke/stripe-test-clock.ts",
+    "smoke:texting": "tsx src/scripts/smoke/texting-real-brand.ts"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
