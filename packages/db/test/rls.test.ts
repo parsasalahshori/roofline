@@ -907,8 +907,8 @@ describe('app_tenant isolation on the C1 calendar, schedule and pricing tables',
     table: string;
     /** The insert statement and its values for `company`, its parents made first. */
     insert: (company: SeededCompany) => Promise<{ text: string; values: unknown[] }>;
-    /** A column assignment the tenant role is allowed to make; null when app_tenant holds no UPDATE (0020). */
-    set: string | null;
+    /** A column assignment the tenant role is allowed to make. */
+    set: string;
     /** app_tenant holds DELETE on the table. */
     deletable: boolean;
   };
@@ -1331,8 +1331,8 @@ describe('app_tenant isolation on the D1 tables', () => {
     table: string;
     /** The insert statement and its values for `company`, its parents made first. */
     insert: (company: SeededCompany) => Promise<{ text: string; values: unknown[] }>;
-    /** A column assignment the tenant role is allowed to make. */
-    set: string;
+    /** A column assignment the tenant role is allowed to make; null when app_tenant holds no UPDATE (0020). */
+    set: string | null;
     /** app_tenant holds DELETE on the table. */
     deletable: boolean;
     /** app_tenant may UPDATE company_id (else the grant refuses the move). */
