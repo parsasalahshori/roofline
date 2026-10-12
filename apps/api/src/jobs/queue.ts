@@ -4,8 +4,8 @@ import { JOB_HANDLERS } from './handlers.ts';
 
 // The job queues: the names, what a job carries, and where jobs go. The worker (worker.ts) runs
 // them on pg-boss; the tests use `InlineJobs` below. handlers.ts imports only types from here.
-export const JOB_NAMES = ['import-customers', 'texting-registration'] as const; export type JobName = (typeof JOB_NAMES)[number];
-export type JobData = { companyId: string; importId?: string };
+export const JOB_NAMES = ['import-customers', 'texting-registration', 'calendar-push'] as const; export type JobName = (typeof JOB_NAMES)[number];
+export type JobData = { companyId: string; importId?: string; appointmentId?: string };
 export type JobMeta = { attempt: number; lastAttempt: boolean };
 export interface JobQueue { send(name: JobName, data: JobData, opts?: { singletonKey?: string }): Promise<void> }
 export const JOB_QUEUE_OPTIONS = { policy: 'stately', retryLimit: 4, retryBackoff: true, retryDelay: 30 } as const;   // 5 attempts

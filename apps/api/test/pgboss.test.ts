@@ -193,6 +193,7 @@ describe('the worker', () => {
       const schedules = await worker.getSchedules();
       expect(schedules.map((s) => [s.name, s.cron]).sort()).toEqual([
         ['bill-monthly-fees', '0 9 1 * *'],
+        ['calendar-pull', '*/5 * * * *'],
         ['dispatch-messages', '* * * * *'],
         ['end-trials', '*/5 * * * *'],
         ['expire-drafts', '*/5 * * * *'],
@@ -213,6 +214,7 @@ describe('the worker', () => {
       'poll-texting',
       'bill-monthly-fees',
       'prune-early-reports',
+      'calendar-pull',
     ]);
   });
 });

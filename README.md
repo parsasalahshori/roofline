@@ -42,6 +42,9 @@
 | `DATABASE_URL_SYSTEM` | yes | Postgres URL for `app_system` (auth, webhook routing, scheduler fan-out, pg-boss). |
 | `ENCRYPTION_KEY` | yes | `openssl rand -base64 32`. Encrypts secrets in the database; never change it once data exists. |
 | `GOOGLE_CLIENT_ID` | no | Turns on Sign in with Google. |
+| `GOOGLE_CLIENT_SECRET` | no | With `GOOGLE_CLIENT_ID`, turns on Google Calendar connections. |
+| `MICROSOFT_CLIENT_ID` | no | Both or neither with `MICROSOFT_CLIENT_SECRET`. Turns on Outlook calendar connections. |
+| `MICROSOFT_CLIENT_SECRET` | no | Both or neither with `MICROSOFT_CLIENT_ID`. Turns on Outlook calendar connections. |
 | `POSTMARK_TOKEN` | no | Sends email through Postmark; unset means email is only logged. |
 | `MAIL_FROM` | when `POSTMARK_TOKEN` is set | The verified From address. |
 | `TWILIO_AUTH_TOKEN` | no | Twilio master token for webhook signatures (companies without a subaccount token). |
