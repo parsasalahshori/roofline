@@ -3,6 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
+import { DEFAULT_TIER_TEMPLATES } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
@@ -12,8 +13,10 @@ import { homeowner } from '../src/copy/homeowner.ts';
 import { measure } from '../src/copy/measure.ts';
 import { prices } from '../src/copy/prices.ts';
 import { proposals } from '../src/copy/proposals.ts';
-import { tiers } from '../src/copy/tiers.ts';
 import type { MeasurementView } from '../src/features/measure/types.ts';
+import { estimateCopy, financeCopy } from '../src/copy/financeEstimate.ts';
+import { tierEditor } from '../src/copy/tiersEditor.ts';
+import type { EstimatorSettings } from '../src/features/settings/estimator-api.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
@@ -145,12 +148,25 @@ describe('E1 windows', () => {
   });
 
   it('Settings Prices shows the three E1 sections', async () => {
-    signedInApi();
+    const settingsBody: EstimatorSettings = {
+      defaultPitchX12: 6,
+      overhangFt: 1,
+      proposalValidDays: 30,
+      aerialMeasure: false,
+      aerialConfigured: false,
+      estimateChangeClause: true,
+      financingAprBps: null,
+      financingTermMonths: null,
+    };
+    signedInApi(ACCOUNT, {
+      'GET /api/tier-templates': () => ({ body: { templates: DEFAULT_TIER_TEMPLATES.map((t) => ({ ...t, addOns: [...t.addOns], highlights: [...t.highlights] })) } }),
+      'GET /api/estimator/settings': () => ({ body: settingsBody }),
+    });
     renderApp('/settings/prices');
 
-    expect(await screen.findByText(tiers.tiersComingSoon)).toBeInTheDocument();
-    expect(await screen.findByText(tiers.financingComingSoon)).toBeInTheDocument();
-    expect(await screen.findByText(tiers.estimateComingSoon)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: tierEditor.title })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: financeCopy.title })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: estimateCopy.title })).toBeInTheDocument();
     expect(await screen.findByText(prices.comingSoon)).toBeInTheDocument();
   });
 });
