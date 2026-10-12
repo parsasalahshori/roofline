@@ -110,14 +110,14 @@ step's off state. S1 adds the D1/G1 step titles to `OFF_STEP_TITLES` at its d1/g
 **Ruling BD (one storm re-draft mechanism):** A1 owns it (`lockStormPlan`/`supersedeDraft`/`linkStormPlan`,
 `REDRAFTABLE` = draft, expired, declined, no `replaceFinished` flag). S1 adds only the `{taskId} | null` signature and the
 paused 409 route; A1's re-draft code wins at merge. Amended: the automatic path (storm-match, scheduled drafting) re-drafts only over drafts; expired/declined plans are
-replaced only by an explicit rerun (`allowFinished`, set only by the rerun route).
+replaced only by an explicit rerun (`allowFinished`, set only by explicit owner actions; see the clarification below).
 
 **Ruling BF (security review fixes, `ops/sdd/integration/security-review.md`):** S1 fixes HIGH 1 (cross-company ad
 accounts), HIGH 2 (unsubscribe/landing Referrer-Policy + browser e2e), MEDIUM 3 and its LOWs; D1 revokes app_system SELECT on
 conversation text (MEDIUM 6); the E1 lead fixes platform items (TRUST_PROXY startup check, login limits, F2/F3/E1 LOWs) on
 `sec-core` from c1-crm and merges into c1-crm. Grant/index changes go in the owning unreleased migration (Ruling AW).
 **Ruling BG (D1 read-only companies, pre-review item 22):** voice and fd-text check company status. A read-only company (trial ended or cancelled) gets voicemail or forwarding and no AI. The Front Desk "off" write is always allowed, even while read-only. Recommended option taken; the owner may revisit it.
-**Ruling BD clarified (sentinel pass 13):** only the rerun route passes `allowFinished`. `POST /api/storms/:id/plan` stays draft-only. S1's Redraft button on expired or declined plans calls the rerun route. A1 returns `fresh: !previousWasDraft`.
+**Ruling BD clarified (final, 16:45Z, supersedes the 16:40Z message):** `allowFinished` is set only by explicit owner actions: the rerun route and `POST /api/storms/:id/plan` (S1's "Draft a new plan" button on expired or declined plans). Automatic paths (storm-match, scheduled drafting) never set it. A1 returns `fresh: !previousWasDraft`.
 
 ## How to do a task
 
