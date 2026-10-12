@@ -1,4 +1,4 @@
-import { instantEstimate } from '@roofline/shared';
+import { defaultPricebook, instantEstimate } from '@roofline/shared';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
@@ -162,12 +162,20 @@ describe('E1 windows', () => {
     signedInApi(ACCOUNT, {
       'GET /api/tier-templates': () => ({ body: { templates: DEFAULT_TIER_TEMPLATES.map((t) => ({ ...t, addOns: [...t.addOns], highlights: [...t.highlights] })) } }),
       'GET /api/estimator/settings': () => ({ body: settingsBody }),
+      // C1 Task 20: the price list above the E1 sections
+      'GET /api/pricebook': () => ({
+        body: {
+          prices: defaultPricebook,
+          defaults: { wastePercent: 12, markupPercent: 25, taxPercent: 0, material: 'architectural' as const },
+          isExample: false,
+        },
+      }),
     });
     renderApp('/settings/prices');
 
     expect(await screen.findByRole('heading', { name: tierEditor.title })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: financeCopy.title })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: estimateCopy.title })).toBeInTheDocument();
-    expect(await screen.findByText(prices.comingSoon)).toBeInTheDocument();
+    expect(await screen.findByLabelText(prices.fields.permit)).toBeInTheDocument();
   });
 });
