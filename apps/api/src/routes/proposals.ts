@@ -21,14 +21,14 @@ import { buildProposal } from '../estimator/build.ts';
 import { draftProposalSend, linkFor } from '../estimator/send-proposal.ts';
 import { repriceFromMeasurement } from '../estimator/reprice.ts';
 import { AppError, MESSAGES } from '../errors.ts';
-import { can, requireCapability } from '../permissions.ts';
+import { can } from '../permissions.ts';
 import { pdfToBuffer, renderProposalPdf } from '../proposals/pdf.ts';
 import { assertKnownFields, emailField, noNul, offsetParam, parse, UUID } from '../validate.ts';
 
 /** The 409 for a change to a proposal that has been sent. */
 export const SENT_PROPOSAL_MESSAGE = 'This proposal was sent. Make a revised proposal to change it.';
-/** The 409 for a revision of a signed proposal (Ruling EJ): a signed price is never reworked. */
-export const SIGNED_PROPOSAL_MESSAGE = 'This proposal is signed. Make a new proposal for more work.';
+/** The 409 for a revision of a signed proposal (Ruling EJ); checked again inside the re-price transaction (B9). */
+export { SIGNED_PROPOSAL_MESSAGE } from '../estimator/reprice.ts';
 /** The 409 for a link asked for before the proposal was sent (its token is minted at send). */
 const NOT_SENT_YET_MESSAGE = 'Send the proposal first, then you can copy its link.';
 
@@ -154,7 +154,7 @@ export function proposalRoutes(deps: AppDeps): Router {
     const id = proposalId(req.params.id);
     const current = await withTenant(pools, ctx, (tx) => getProposal(tx, ctx, id));
     if (!current) throw new AppError(404, MESSAGES.notFound);
-    if (current.status === 'signed') throw new AppError(409, SIGNED_PROPOSAL_MESSAGE);
+    // The status (signed, replaced; a 'ready' one becomes replaced) is decided inside the re-price, with the row locked.
     const result = await repriceFromMeasurement(deps, ctx, id, current.measurementId);
     res.status(201).json(result.proposal);
   });
@@ -202,8 +202,10 @@ export function proposalRoutes(deps: AppDeps): Router {
     res.status(201).json({ taskId });
   });
 
-  // The link to copy. Owner and office only. The token is decrypted for this reply and never logged.
-  router.get('/:id/link', requireCapability('approve_message'), async (req, res) => {
+  // The link to copy (Ruling ES): anyone who can see the proposal's job, reps included (the link is already in
+  // the texts on the job's timeline). The repository scopes reps to their jobs. The token is decrypted for this
+  // reply and never logged.
+  router.get('/:id/link', async (req, res) => {
     const { ctx } = req;
     const id = proposalId(req.params.id);
     const url = await withTenant(pools, ctx, async (tx) => {

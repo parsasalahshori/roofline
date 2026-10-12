@@ -21,6 +21,8 @@ const PITCH_MESSAGE = 'Please enter a pitch from 0 to 24.';
 const OVERHANG_MESSAGE = 'Please enter an overhang from 0 to 3 feet.';
 const VALLEY_MESSAGE = 'Please enter a valley length of 0 feet or more.';
 const LOCKED_MESSAGE = 'Make a new measurement to change a sent proposal.';
+/** B5: an exact report's numbers are what was measured; they are never edited. */
+export const EXACT_LOCKED_MESSAGE = 'An exact report cannot be changed. Make a new measurement to change it.';
 const EXACT_NOT_SET_UP_MESSAGE = "Exact reports aren't set up yet.";
 
 const CREATE_FIELDS = ['propertyId', 'address', 'jobId'] as const;
@@ -160,6 +162,7 @@ export function measurementRoutes(deps: AppDeps): Router {
 
     const result = await withTenant(pools, ctx, (tx) => updateMeasurement(tx, ctx, id, patch, clock.now()));
     if (result === null) throw new AppError(404, MESSAGES.notFound);
+    if (result === 'exact') throw new AppError(409, EXACT_LOCKED_MESSAGE);
     if (result === 'locked') throw new AppError(409, LOCKED_MESSAGE);
     if (result === 'unknown_structure') throw new AppError(400, STRUCTURES_MESSAGE, 'includedStructures');
     res.json(result);

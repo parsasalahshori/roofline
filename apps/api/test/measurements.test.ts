@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, inject, it } from 'vitest';
 import { Actors, addressFor, dbProperty, inCompany, mustCreate, NO_UUID, NOT_FOUND } from './crm-helpers.ts';
 import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
-import { proposals } from '@roofline/db';
+import { createMeasurement, proposals, type TenantContext } from '@roofline/db';
 import { claimFootprintState, finishFootprintState, insertFootprints, type FootprintInput } from '@roofline/db/system';
 import { instantEstimate, type LngLat, type MeasurementView, type Ring } from '@roofline/shared';
 
@@ -508,5 +508,67 @@ describe('company isolation', () => {
     // Company A's view is unchanged by those attempts.
     expect((await getView(view.id)).estimate).toEqual(estimateOf([HOUSE]));
     expect((await ownerB.get(`/api/measurements/${NO_UUID}`)).status).toBe(404);
+  });
+});
+
+describe('exact and aerial measurements keep their numbers (B5)', () => {
+  /** A measurement written as the exact-report poll (or the aerial measure) writes it: the outline is HOUSE, the numbers are the report's. */
+  async function storedMeasurement(kind: 'exact' | 'estimate', method: 'eagleview' | 'aerial'): Promise<string> {
+    const propertyId = await homeAt(30, INSIDE);
+    const ctx: TenantContext = { companyId: A(), userId: null, role: 'system', canApproveSpend: false };
+    const outline = estimateOf([HOUSE]);
+    const view = await inCompany(t, A(), (tx) =>
+      createMeasurement(
+        tx,
+        ctx,
+        {
+          propertyId,
+          kind,
+          method,
+          outline: [HOUSE],
+          structures: [],
+          estimate: { ...outline, surfaceSqFt: 2612, squares: 26.12, edgeFt: 188, ridgeFt: 62, valleyFt: 24, pitchX12: 7 },
+          overhangFt: OVERHANG,
+          center: INSIDE,
+        },
+        NOW,
+      ),
+    );
+    return view.id;
+  }
+
+  it("an exact report's measurement shows the report's surface, lengths and pitch, not the outline's", async () => {
+    const id = await storedMeasurement('exact', 'eagleview');
+    const view = await getView(id);
+    expect(view.kind).toBe('exact');
+    expect(view.estimate).toMatchObject({ surfaceSqFt: 2612, squares: 26.12, edgeFt: 188, ridgeFt: 62, valleyFt: 24, pitchX12: 7 });
+    expect(view.estimate.surfaceSqFt).not.toBe(estimateOf([HOUSE]).surfaceSqFt);
+  });
+
+  it('an aerial measurement shows its stored numbers too', async () => {
+    const id = await storedMeasurement('estimate', 'aerial');
+    expect((await getView(id)).estimate).toMatchObject({ surfaceSqFt: 2612, pitchX12: 7, edgeFt: 188, ridgeFt: 62 });
+  });
+
+  it("an exact report's measurement cannot be changed (409), and its numbers stay", async () => {
+    const id = await storedMeasurement('exact', 'eagleview');
+    const owner = await who.as('owner');
+    const res = await owner.patch(`/api/measurements/${id}`).send({ pitchX12: 9 });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'An exact report cannot be changed. Make a new measurement to change it.' });
+    expect((await getView(id)).estimate).toMatchObject({ surfaceSqFt: 2612, pitchX12: 7 });
+  });
+});
+
+describe('footprint loads only for US states (C-M4)', () => {
+  it('a home in a territory opens draw mode and queues no footprint load', async () => {
+    const owner = await who.as('owner');
+    const propertyId = await homeAt(31, INSIDE);
+    await ownerSql(`update properties set state = 'PR' where id = $1`, [propertyId]);
+
+    const view = await measure(owner, { propertyId });
+
+    expect(view.drawMode).toBe(true);
+    expect(t.jobs.sent.filter((s) => s.name === 'footprints-load')).toEqual([]);
   });
 });

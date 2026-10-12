@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import type { LngLat, Ring } from '../src/roof.ts';
-import { minRotatedRectangle, outlineProblem, perimeterFt, pitchFactor, polygonAreaSqFt } from '../src/roof.ts';
+import { instantEstimate, minRotatedRectangle, outlineProblem, perimeterFt, pitchFactor, polygonAreaSqFt, TOO_LARGE_SQFT } from '../src/roof.ts';
+import { PRICING_LIMITS } from '../src/pricing.ts';
 
 // Omaha origin used across the estimator tests.
 const LNG0 = -95.9345;
@@ -107,4 +108,25 @@ test('outlineProblem: a 600 x 500 ft rectangle is too large', () => {
 test('outlineProblem: a normal rectangle has no problem', () => {
   expect(outlineProblem(rectRing(40, 30))).toBeNull();
   expect(outlineProblem(rectRing(40, 30, 0, true))).toBeNull();
+});
+
+test('outlineProblem: three corners in a line enclose nothing, so they count as too few corners', () => {
+  expect(outlineProblem([ftToLngLat(0, 0), ftToLngLat(20, 0), ftToLngLat(40, 0)])).toBe('too_few_corners');
+});
+
+test('outlineProblem: the size limit keeps every accepted outline within the pricing limit (B8)', () => {
+  // The largest accepted square, at the steepest pitch with the most overhang, still prices.
+  const side = Math.sqrt(TOO_LARGE_SQFT) - 2;
+  const square = rectRing(side, side);
+  expect(outlineProblem(square)).toBeNull();
+  const steepest = instantEstimate({ outline: [square], pitchX12: 24, overhangFt: 3 });
+  expect(steepest.surfaceSqFt).toBeLessThanOrEqual(PRICING_LIMITS.maxAreaSqFt);
+  expect(steepest.edgeFt).toBeLessThanOrEqual(PRICING_LIMITS.maxLengthFt);
+  // Just over the limit is too large.
+  const over = Math.sqrt(TOO_LARGE_SQFT) + 2;
+  expect(outlineProblem(rectRing(over, over))).toBe('too_large');
+  // A long, narrow outline at the limit also stays within the pricing limit.
+  const long = rectRing(TOO_LARGE_SQFT / 40 - 10, 40);
+  expect(outlineProblem(long)).toBeNull();
+  expect(instantEstimate({ outline: [long], pitchX12: 24, overhangFt: 3 }).surfaceSqFt).toBeLessThanOrEqual(PRICING_LIMITS.maxAreaSqFt);
 });

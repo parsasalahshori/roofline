@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { createMeasurement, exactReportOrders, getProposal, measurements, proposals, usageEvents, withTenant, type TenantContext } from '@roofline/db';
+import { createMeasurement, exactReportOrders, getProposal, measurements, proposalOptions, proposals, usageEvents, withTenant, type TenantContext } from '@roofline/db';
 import { instantEstimate } from '@roofline/shared';
 import { buildProposal } from '../src/estimator/build.ts';
 import { completeExactReport } from '../src/estimator/exact-report-complete.ts';
 import { requestExactReport } from '../src/estimator/exact-report.ts';
-import { pollExactReports } from '../src/jobs/scheduler/exact-report-poll.ts';
+import { billedCostCents, pollExactReports } from '../src/jobs/scheduler/exact-report-poll.ts';
 import type { ExactReports } from '../src/providers/exact-reports.ts';
 import { FakeExactReports } from '../src/providers/fakes/exact-reports.ts';
 import { Actors, addressFor, inCompany, mustCreate } from './crm-helpers.ts';
@@ -158,6 +158,67 @@ describe('polling exact reports', () => {
     const revised = rows.find((p) => p.id !== ready.id)!;
     expect(revised.status).toBe('draft');
     expect((await proposalOf(revised.id))?.basis).toBe('exact');
+    // B1: the ready one is closed, pointing at the revision, so its waiting send texts nothing.
+    const old = rows.find((p) => p.id === ready.id)!;
+    expect(old.status).toBe('replaced');
+    expect(old.replacedById).toBe(revised.id);
+  });
+
+  test("B10: a draft re-priced in place keeps the rep's per-option edits and prices the new quantities", async () => {
+    const draft = await buildProposal(t.deps, ownerCtx, { measurementId, jobId });
+    const [good, better] = draft.options;
+    const owner = await actors.as('owner');
+    const edited = await owner.patch(`/api/proposals/${draft.id}`).send({
+      options: [
+        { id: good!.id, enabled: false },
+        { id: better!.id, name: 'Our pick', material: 'premium', markupPercent: 10, addOns: [] },
+      ],
+    });
+    expect(edited.status, JSON.stringify(edited.body)).toBe(200);
+    await orderIt();
+    t.exactReports.complete('rep-1');
+    await pollExactReports(t.deps, LATER);
+
+    const after = (await proposalOf(draft.id))!;
+    expect(after.basis).toBe('exact');
+    const g = after.options.find((o) => o.tier === 'good')!;
+    const b = after.options.find((o) => o.tier === 'better')!;
+    expect(g.enabled).toBe(false);
+    expect(b).toMatchObject({ name: 'Our pick', addOns: [], addOnLines: [] });
+    expect(b.scope).toMatchObject({ material: 'premium', markupPercent: 10, areaSqFt: 2612, pitch: 7, ridgeFt: 62, edgeFt: 188, valleyFt: 24 });
+    const stored = await inCompany(t, ctx.companyId, (tx) => tx.select().from(proposalOptions).where(eq(proposalOptions.id, b.id)));
+    expect((stored[0]!.prices as { quantities: unknown }).quantities).toEqual({ squares: 26.12, edgeFt: 188, ridgeFt: 62, valleyFt: 24 });
+    expect(b.totalCents).toBe(b.calculation.totalCents);
+  });
+
+  test('B3: a reported cost above the priced max is billed at the max the owner approved', async () => {
+    await orderIt();
+    t.exactReports.complete('rep-1');
+    const fake = t.exactReports;
+    const dear: ExactReports = {
+      configured: true,
+      price: (i) => fake.price(i),
+      order: (i) => fake.order(i),
+      report: async (id) => {
+        const r = await fake.report(id);
+        return r.status === 'complete' ? { ...r, costCents: 9900 } : r;
+      },
+    };
+    await pollExactReports({ ...t.deps, exactReports: dear }, LATER);
+    const rows = await usage();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.unitCostCents).toBe(6200);
+  });
+
+  test('B3: billedCostCents caps at the priced max and never bills 0', () => {
+    expect(billedCostCents(4500, 6200)).toBe(4500);
+    expect(billedCostCents(9900, 6200)).toBe(6200);
+    expect(billedCostCents(null, 6200)).toBe(6200);
+    expect(billedCostCents(0, 6200)).toBe(6200);
+    expect(billedCostCents(-5, 6200)).toBe(6200);
+    expect(billedCostCents(4500, null)).toBe(4500);
+    expect(billedCostCents(null, null)).toBeNull();
+    expect(billedCostCents(0, 0)).toBeNull();
   });
 
   test('an unreadable cost bills the quoted max, never zero', async () => {

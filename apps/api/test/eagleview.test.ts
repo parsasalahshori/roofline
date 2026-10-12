@@ -315,6 +315,14 @@ describe('EagleViewOrders', () => {
     expect(result).toMatchObject({ status: 'complete', costCents: null });
   });
 
+  test.each(['"Cost":0,', '"Cost":"0.00",'])('get-report complete with a cost of 0 (%s) is unreadable: costCents null (B3)', async (zero) => {
+    const text = fixtureText('get-report-complete.json').replace('"Cost":42.5,', zero);
+    expect(text).toContain(zero);
+    const { orders } = makeOrders([{ match: REPORT_ROUTE_PART, replies: [{ status: 200, text }] }]);
+    const result = await orders.report(REPORT_ID);
+    expect(result).toMatchObject({ status: 'complete', costCents: null });
+  });
+
   test('get-report complete', async () => {
     const { orders, calls } = makeOrders([
       { match: REPORT_ROUTE_PART, replies: [{ status: 200, text: fixtureText('get-report-complete.json') }] },

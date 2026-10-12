@@ -23,6 +23,19 @@ export type ExactOrderStatus = (typeof EXACT_ORDER_STATUSES)[number];
 export const FOOTPRINT_STATE_STATUSES = ['loading', 'ready', 'failed'] as const;
 export type FootprintStateStatus = (typeof FOOTPRINT_STATE_STATUSES)[number];
 
+/** The states (and DC) with a building footprint file: the only codes a footprint load is queued for. Territories are not in the set. */
+export const US_STATE_CODES = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS',
+  'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC',
+  'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+] as const;
+export type UsStateCode = (typeof US_STATE_CODES)[number];
+
+/** True for a two-letter code in US_STATE_CODES (any case, surrounding spaces ignored). */
+export function isUsStateCode(code: string): boolean {
+  return (US_STATE_CODES as readonly string[]).includes(code.trim().toUpperCase());
+}
+
 export const STORED_FILE_KINDS = ['signed_proposal_pdf'] as const;
 export type StoredFileKind = (typeof STORED_FILE_KINDS)[number];
 
