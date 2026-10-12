@@ -43,7 +43,7 @@ async function rig(script: Script, over: Partial<RelayCall> = {}) {
     const ctx = { companyId: call.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
     return withTenant(t.deps.pools, ctx, (tx) => listTurns(tx, ctx, state!.conversationId));
   };
-  return { session, loop, rows, call };
+  return { session, loop, rows, call, getState: () => state };
 }
 
 const SAY = [{ when: /./, route: OPUS, answer: [{ kind: 'text' as const, text: 'We can help with that.' }] }];
@@ -61,6 +61,17 @@ describe('relay session loop', () => {
     expect(texts.length).toBeGreaterThan(1);
     expect(texts.at(-1)).toMatchObject({ token: '', last: true });
     expect(session.assistantText()).toContain('We can help with that.');
+  });
+
+  test('seeds transcriptOff when the call recording was stopped by the caller', async () => {
+    const stopped = await rig(SAY, { recordingStopped: true });
+    stopped.session.caller.setup({ customParameters: { callId: CALL_ID } });
+    await stopped.loop.settled();
+    expect(stopped.getState()?.transcriptOff).toBe(true);
+    const normal = await rig(SAY);
+    normal.session.caller.setup({ customParameters: { callId: CALL_ID } });
+    await normal.loop.settled();
+    expect(normal.getState()?.transcriptOff).not.toBe(true);
   });
 
   test('a partial prompt (last false) starts no turn', async () => {
@@ -84,7 +95,7 @@ describe('relay session loop', () => {
 
   test('an urgent handoff event sends handoffData with a real boolean urgent', async () => {
     const { session, loop } = await rig([
-      { when: /./, route: { ...OPUS, route: 'transfer', urgent: true }, answer: [] },
+      { when: /./, route: { ...OPUS, route: 'transfer', intent: 'leak', urgent: true }, answer: [] },
     ]);
     session.caller.setup({ customParameters: { callId: CALL_ID } });
     session.caller.say('help me now');

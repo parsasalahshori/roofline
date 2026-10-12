@@ -15,9 +15,10 @@ import { isOpenJob, systemCtx } from './system-ctx.ts';
 /*
  * D1 Task 9: take_message. Scope comes from the server-side conversation. The follow-up is the job's
  * C1 next step (Today); urgent messages also email the on-call members once per conversation.
- * The urgent email dedupes two ways: the activity check (hasUrgentNoticeFor) and the in-memory
- * conversation.urgentNoticeSent flag, which also covers a caller with no customer (no activity is
- * written). A restarted process loses the flag only in that no-customer case; that gap is accepted.
+ * The urgent email dedupes durably: hasUrgentNoticeFor row-locks the conversation and finds an earlier urgent
+ * front_desk_message activity, or an earlier turn whose take_message call was urgent (this covers a caller with
+ * no customer across separate texts and relay sessions, each of which builds a fresh state). The in-memory
+ * conversation.urgentNoticeSent flag covers a second urgent call within the same turn.
  * Never logs the message, names or phone numbers.
  */
 

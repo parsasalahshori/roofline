@@ -55,6 +55,13 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
     const now = deps.clock.now();
     const publicUrl = deps.config.PUBLIC_BASE_URL;
 
+    // Whether this call may go to the AI at all, before the per-company cap (no database needed).
+    const aiAllowed =
+      route.frontDeskEnabled &&
+      !route.readOnly &&
+      deps.relaySessions.size < deps.config.FRONT_DESK_MAX_CALLS &&
+      deps.relaySessions.isLlmHealthy(now);
+
     const outcome = await withTenant(deps.pools, ctx, async (tx) => {
       const call = await insertCall(tx, ctx, {
         callSid,
@@ -73,10 +80,17 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
         return { kind: 'reject' as const };
       }
       // The cap decision is made under a per-company lock held until this transaction ends, so two calls
-      // arriving together cannot both see room for one more. Ringing and ai calls of the last 35 minutes count.
+      // arriving together cannot both see room for one more. Only calls bound for the AI count: 'ai', and
+      // 'ringing' calls of the last 35 minutes (relay TwiML sent, relay not yet set up). Every other path
+      // (Front Desk off, read-only, over a cap, ring the team first) is marked 'ringing_team' here, so a
+      // call the team answers or that goes to voicemail never holds an AI slot.
       await lockAiCap(tx, ctx);
       const liveAi = await countLiveCallsInWindow(tx, ctx, now, call.id);
-      return { kind: 'ok' as const, callId: call.id, overCompanyCap: liveAi >= route.maxConcurrentAiCalls };
+      const overCompanyCap = liveAi >= route.maxConcurrentAiCalls;
+      if (!aiAllowed || overCompanyCap || route.ringTeamFirstSeconds > 0) {
+        await updateCall(tx, ctx, callSid, { status: 'ringing_team' });
+      }
+      return { kind: 'ok' as const, callId: call.id, overCompanyCap };
     });
 
     if (outcome.kind === 'replay') {
@@ -88,13 +102,8 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
       return;
     }
 
-    const overCap =
-      outcome.overCompanyCap ||
-      deps.relaySessions.size >= deps.config.FRONT_DESK_MAX_CALLS ||
-      !deps.relaySessions.isLlmHealthy(now);
-
     // A read-only company (trial ended, plan canceled) gets no AI calls: the team, then voicemail (Ruling BG).
-    if (!route.frontDeskEnabled || route.readOnly || overCap) {
+    if (!aiAllowed || outcome.overCompanyCap) {
       sendVoiceTwiml(res, voicemailXml(publicUrl, await teamDialNumbers(deps.pools.system, route.companyId)));
       return;
     }

@@ -148,6 +148,18 @@ describe('ConversationView', () => {
     expect(screen.queryByText(conversationCopy.transcriptNotKept)).toBeNull();
   });
 
+  it('says a text had no words (a photo or an empty text) rather than that retention removed it', () => {
+    renderView(
+      makeConversation({
+        channel: 'sms',
+        calls: [],
+        turns: [turn({ id: 'm1', position: 0, speaker: 'caller', text: null, noWords: true })],
+      }),
+    );
+    expect(screen.getByText('Photo or empty text')).toBeInTheDocument();
+    expect(screen.queryByText(conversationCopy.transcriptRemoved)).toBeNull();
+  });
+
   it('links each tool action card to its record, and shows a claim intake as plain text', () => {
     renderView(
       makeConversation({

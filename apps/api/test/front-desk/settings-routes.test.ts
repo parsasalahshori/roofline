@@ -301,6 +301,20 @@ describe('/api/me/transfer-phone', () => {
     expect(ok.status).toBe(200);
   });
 
+  test("transfer phone: never another company's Roofline number", async () => {
+    const B_NUMBER = '+14025550300';
+    await t.deps.pools.system
+      .insert(companyPhoneNumbers)
+      .values({ companyId: idOf('b'), e164: B_NUMBER, capabilities: ['sms', 'voice'], providerSid: 'PN_B' });
+    for (const user of [t.seed.a.rep, t.seed.a.owner]) {
+      const agent = await loginAs(t.app, user);
+      const res = await agent.put(TRANSFER).send({ e164: B_NUMBER, ackRecording: true });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ field: 'e164' });
+      expect((await agent.get(TRANSFER)).body).toMatchObject({ e164: null });
+    }
+  });
+
   test('cross-tenant: a user of company B never changes company A', async () => {
     const ownerB = await loginAs(t.app, t.seed.b.owner);
     await ownerB.put(TRANSFER).send({ e164: '+14025550133', ackRecording: true });

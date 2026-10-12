@@ -6,6 +6,7 @@ import {
   createCustomer,
   createJob,
   createProperty,
+  insertTurn,
   jobs,
   type TenantContext,
   updateJob,
@@ -191,6 +192,28 @@ describe('take_message', () => {
     const second = { ...first };
     const urgent = { ...INPUT, urgent: true };
     await run(first, urgent);
+    await run(second, urgent);
+    expect(t.mailer.sent).toHaveLength(emails.length);
+    expect(second.urgentNoticeSent).toBe(true);
+  });
+
+  test('no customer, separate states (two texts or a second relay session): the earlier urgent turn dedupes', async () => {
+    const emails = await putOnCall();
+    const first = await makeConversation(null);
+    const urgent = { ...INPUT, urgent: true };
+    await run(first, urgent);
+    // The engine stores the turn with the tool call it ran; the next text builds a fresh state.
+    await inCompany(t, idA(), (tx) =>
+      insertTurn(tx, sys(), {
+        conversationId: first.conversationId,
+        position: 0,
+        speaker: 'assistant',
+        text: 'I passed that on as urgent.',
+        toolCalls: [{ name: 'take_message', input: urgent, result: 'ok', ok: true }],
+        at: t.clock.now(),
+      }),
+    );
+    const second: ConversationState = { ...first, urgentNoticeSent: undefined };
     await run(second, urgent);
     expect(t.mailer.sent).toHaveLength(emails.length);
     expect(second.urgentNoticeSent).toBe(true);

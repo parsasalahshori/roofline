@@ -1,7 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, test, vi } from 'vitest';
 import type { z } from 'zod';
-import { activities, customers, getConversation, jobs, listTurns, withTenant } from '@roofline/db';
+import { eq } from 'drizzle-orm';
+import { activities, conversationTurns, customers, getConversation, insertCall, jobs, listTurns, withTenant } from '@roofline/db';
 import {
   FRONT_DESK_TOOLS,
   type FrontDeskToolName,
@@ -110,6 +111,52 @@ async function savedTurns(t: TestApp, state: ConversationState) {
   const ctx = { companyId: state.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
   return withTenant(t.deps.pools, ctx, (tx) => listTurns(tx, ctx, state.conversationId));
 }
+
+async function savedToolCalls(t: TestApp, state: ConversationState) {
+  const ctx = { companyId: state.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+  const rows = await withTenant(t.deps.pools, ctx, (tx) =>
+    tx.select({ toolCalls: conversationTurns.toolCalls }).from(conversationTurns).where(eq(conversationTurns.conversationId, state.conversationId)),
+  );
+  return rows.map((r) => r.toolCalls).find((c) => c !== null);
+}
+
+describe('a later relay session of the same call (RC-3)', () => {
+  test('start reuses the conversation and continues positions, the turn count, the start time and the urgent notice', async () => {
+    const script: Script = [
+      { when: /message/, route: OPUS, answer: [{ kind: 'tool', name: 'take_message', input: { reason: 'Leak', urgent: true, callbackWhen: null, name: null } }] },
+      { when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] },
+    ];
+    const t = await makeTestApp();
+    const engine = createEngine({ ...t.deps, llm: new ScriptedLlm(script) }, { take_message: takeMessage });
+    const ctx = { companyId: t.seed.a.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+    const call = await withTenant(t.deps.pools, ctx, (tx) =>
+      insertCall(tx, ctx, { callSid: 'CA' + 'c'.repeat(32), fromE164: '+14025550123', toE164: t.seed.a.phoneE164, forwardedFrom: null, stirVerstat: null, now: t.clock.now() }),
+    );
+    const start = () => engine.start({ companyId: t.seed.a.companyId, channel: 'voice', phone: '+14025550123', callId: call.id });
+
+    const first = await start();
+    // The caller objected to recording: the stored take_message keeps only its name, outcome and urgent flag.
+    first.transcriptOff = true;
+    await collect(engine.turn(first, 'take a message', new AbortController().signal));
+    await collect(engine.turn(first, 'thanks', new AbortController().signal));
+    expect(first.urgentNoticeSent).toBe(true);
+    const stored = await savedToolCalls(t, first);
+    expect(stored).toEqual([{ name: 'take_message', ok: true, input: { urgent: true } }]);
+
+    t.clock.advance(60_000);
+    const second = await start();
+    expect(second.conversationId).toBe(first.conversationId);
+    expect(second.nextPosition).toBe(first.nextPosition);
+    expect(second.turns).toBe(2);
+    const row = await withTenant(t.deps.pools, ctx, (tx) => getConversation(tx, ctx, first.conversationId));
+    expect(second.startedAt.toISOString()).toBe(row!.createdAt.toISOString());
+    // No customer, a fresh state: the earlier urgent turn is the durable record (no second on-call email).
+    expect(second.urgentNoticeSent).toBe(true);
+    await collect(engine.turn(second, 'are you there', new AbortController().signal));
+    const turns = await savedTurns(t, second);
+    expect(turns.map((x) => x.position)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+});
 
 describe('front desk engine', () => {
   test('start stores the company number, or the one it is given', async () => {
@@ -349,6 +396,37 @@ describe('front desk engine', () => {
     expect(assistant).toMatchObject({ text: 'One long', truncated: true });
   });
 
+  test('with transcriptOff the tool-call rows hold only name and ok', async () => {
+    const script: Script = [{ when: /jobs/, route: OPUS, answer: [{ kind: 'tool', name: 'lookup_my_jobs', input: {} }] }];
+    const handler = vi.fn(async () => ({ ok: true, forModel: 'You have one job.' }));
+    const { t, state, say } = await setup(script, { lookup_my_jobs: handler });
+    state.transcriptOff = true;
+    await say('what jobs do I have');
+    expect(await savedToolCalls(t, state)).toEqual([{ name: 'lookup_my_jobs', ok: true }]);
+  });
+
+  test('with transcriptOff off the tool-call rows keep input and result', async () => {
+    const script: Script = [{ when: /jobs/, route: OPUS, answer: [{ kind: 'tool', name: 'lookup_my_jobs', input: {} }] }];
+    const handler = vi.fn(async () => ({ ok: true, forModel: 'You have one job.' }));
+    const { t, state, say } = await setup(script, { lookup_my_jobs: handler });
+    await say('what jobs do I have');
+    expect(await savedToolCalls(t, state)).toEqual([
+      { name: 'lookup_my_jobs', input: {}, result: 'You have one job.', ok: true },
+    ]);
+  });
+
+  test('interrupted() writes no spoken text when transcriptOff', async () => {
+    const { t, engine, state, say } = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'One long answer.' }] }]);
+    state.transcriptOff = true;
+    await say('hello');
+    const before = (await savedTurns(t, state)).find((r) => r.speaker === 'assistant');
+    await engine.interrupted(state, 'secret words');
+    const after = (await savedTurns(t, state)).find((r) => r.speaker === 'assistant');
+    expect(after?.text).toBe(before?.text);
+    expect(after?.text).not.toContain('secret');
+    expect(after?.truncated).toBe(false);
+  });
+
   test('max_tokens says a short apology, adds a note after the user message and goes on', async () => {
     const llm = new MaxTokensLlm([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Short answer.' }] }], false);
     const { state, say } = await setup([], {}, llm);
@@ -551,10 +629,13 @@ describe('front desk engine: caller match at call start and urgent handoffs', ()
     expect(jobRows.every((j) => j.nextStep === null || !String(j.nextStep).startsWith('Call back'))).toBe(true);
   });
 
-  test('handoff urgency follows the router, the reason, and an earlier urgent notice', async () => {
+  test('handoff urgency follows the reason and an earlier urgent notice, never the router flag alone (Ruling BK)', async () => {
     const urgentRoute: RouteDecision = { ...OPUS, route: 'transfer', urgent: true };
     const a = await setup([{ when: /./, route: urgentRoute }]);
-    expect(await a.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', urgent: true }));
+    expect(await a.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', urgent: false }));
+    const leakRoute: RouteDecision = { ...OPUS, route: 'transfer', intent: 'leak', urgent: true };
+    const l = await setup([{ when: /./, route: leakRoute }]);
+    expect(await l.say('water is coming through the ceiling')).toContainEqual(expect.objectContaining({ type: 'handoff', reason: 'leak', urgent: true }));
     const b = await setup([{ when: /./, route: { ...OPUS, route: 'transfer' } }]);
     expect(await b.say('help')).toContainEqual(expect.objectContaining({ type: 'handoff', urgent: false }));
     const tool = (reason: string) => [{ when: /./, route: OPUS, answer: [{ kind: 'tool' as const, name: 'transfer_to_person' as const, input: { reason, summary: 'x' } }] }];

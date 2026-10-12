@@ -40,6 +40,7 @@ function ActionCard({ card }: { card: ToolActionCard }) {
 
 function TurnBody({ turn, transcriptStored }: { turn: TurnView; transcriptStored: boolean }) {
   if (turn.text !== null) return <p className={styles.text}>{turn.text}</p>;
+  if (turn.noWords === true) return <p className={styles.note}>{conversationCopy.noWords}</p>;
   return (
     <p className={styles.note}>
       {transcriptStored ? conversationCopy.transcriptRemoved : conversationCopy.transcriptNotKept}

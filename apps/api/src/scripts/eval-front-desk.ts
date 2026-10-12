@@ -21,7 +21,7 @@ import { buildCompanyBlock } from '../front-desk/prompt.ts';
 import { isRecordingObjection } from '../front-desk/recording.ts';
 import { appendAssistant, appendToolResults, appendUser, newConversationState } from '../front-desk/state.ts';
 import { anthropicFor, evalModelsFor, type EvalModels } from '../providers/anthropic/index.ts';
-import type { TranscriptLine } from '../providers/anthropic/eval.ts';
+import { scoresMatchRubric, type TranscriptLine } from '../providers/anthropic/eval.ts';
 import type { Llm, LlmEvent, RouteDecision, TurnUsage } from '../providers/llm.ts';
 import { grade, percentile } from '../../test/front-desk/scenarios/grade.ts';
 import { SCENARIOS, scenarioById } from '../../test/front-desk/scenarios/index.ts';
@@ -52,6 +52,7 @@ export const USAGE =
 
 const CONFIRM_FLAG = '--confirm-spend' as const;
 const GENERIC_FAILURE = 'The Claude service turned this down or could not be reached.';
+const TONE_MISMATCH = 'The tone grader did not score exactly the rubric, so this run has no tone grade.';
 const MAX_RUNS = 10;
 const MAX_TOOL_ROUNDS = 4;
 const TURN_TIMEOUT_MS = 60_000;
@@ -103,6 +104,15 @@ export const PRICES: Readonly<Record<string, { input: number; cacheRead: number;
   'claude-haiku-5-5': { input: 0.1, cacheRead: 0.01, output: 0.5 },
   'claude-opus-5-5': { input: 4, cacheRead: 0.2, output: 20 },
 };
+
+/** The rough cost of one scenario played once (calls, simulator and grader): spec section 16's "about $3" over 13 scenarios. Printed as an estimate before the paid loop. */
+export const EST_USD_PER_SCENARIO_RUN = 0.25;
+
+/** The line printed before any money is spent. */
+export function costEstimateLine(scenarios: number, runs: number): string {
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  return `About $${(EST_USD_PER_SCENARIO_RUN * scenarios * runs).toFixed(2)} for ${plural(scenarios, 'scenario')} × ${plural(runs, 'run')} (an estimate; the report has the measured cost).`;
+}
 
 /** Cost of one request from its usage. Cache writes are not in the usage this adapter keeps, so they are not counted. An unknown model is priced as Opus, the dearer one. */
 export function costUsd(u: Pick<TurnUsage, 'model' | 'inputTokens' | 'cachedTokens' | 'outputTokens'>): number {
@@ -449,7 +459,7 @@ const usd = (x: number) => `$${x.toFixed(3)}`;
 export function renderMarkdown(o: { startedAt: string; scenarios: string[]; runs: number; results: readonly RunResult[] }): string {
   const lines: string[] = [];
   lines.push(`# Front Desk scripted call eval`, '', `Started ${o.startedAt}. Runs per scenario: ${o.runs}. Router model claude-haiku-5-5, answers claude-opus-5-5.`, '');
-  lines.push('| Scenario | Runs | Passed | Tone mean | Cost per run (call) | Cost per run (harness) |', '| --- | --- | --- | --- | --- | --- |');
+  lines.push('| Scenario | Runs | Passed | Tone mean | Cost per run (call, lower bound) | Cost per run (harness, lower bound) |', '| --- | --- | --- | --- | --- | --- |');
   for (const id of o.scenarios) {
     const rs = o.results.filter((r) => r.scenario === id);
     const passed = rs.filter((r) => r.pass).length;
@@ -459,7 +469,12 @@ export function renderMarkdown(o: { startedAt: string; scenarios: string[]; runs
     lines.push(`| ${id} | ${rs.length} | ${passed} | ${toneMean} | ${usd(avg((r) => r.cost.call))} | ${usd(avg((r) => r.cost.harness))} |`);
   }
   const total = o.results.reduce((a, r) => ({ call: a.call + r.cost.call, harness: a.harness + r.cost.harness }), { call: 0, harness: 0 });
-  lines.push('', `Total cost of this run: ${usd(total.call + total.harness)} (the calls ${usd(total.call)}, the simulator and grader ${usd(total.harness)}).`, '');
+  lines.push(
+    '',
+    `Total cost of this run, a lower bound: ${usd(total.call + total.harness)} (the calls ${usd(total.call)}, the simulator and grader ${usd(total.harness)}).`,
+    'Aborted speculative answers and cache writes are not counted, so the invoice is somewhat higher.',
+    '',
+  );
 
   const failed = o.results.filter((r) => !r.pass);
   lines.push('## Failures', '');
@@ -496,7 +511,7 @@ const realFiles: EvalFiles = {
   },
 };
 
-/** Runs the eval and returns the exit code. Refuses before it reads any setting or touches any provider when --confirm-spend is missing. */
+/** Runs the eval and returns the exit code. Refuses before it reads any setting or touches any provider when --confirm-spend is missing, and before it builds any client in CI or with FAKE_PROVIDERS on. */
 export async function main(
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
@@ -520,6 +535,9 @@ export async function main(
       if (err instanceof ConfigError) throw new SmokeRefused('The API settings are not valid. Load your .env first (set -a; . ./.env; set +a).');
       throw err;
     }
+    // Belt and braces (Ruling DA): never spend from CI, and never grade fakes as if they were the real models.
+    if (env.CI !== undefined && env.CI !== '') throw new SmokeRefused('The eval spends real money, so it never runs in CI. Run it by hand on your own machine.');
+    if (config.FAKE_PROVIDERS) throw new SmokeRefused('FAKE_PROVIDERS is on, so there are no real models to grade. Unset it to run the eval.');
 
     const chosen = args.scenarios ?? SCENARIOS.map((s) => s.id);
     const unknown = chosen.filter((id) => scenarioById(id) === undefined);
@@ -528,6 +546,7 @@ export async function main(
     const deps = factory(config);
     if (deps === null) throw new SmokeRefused('Set ANTHROPIC_API_KEY first.');
 
+    io.log(costEstimateLine(chosen.length, args.runs));
     const startedAt = now().toISOString();
     const results: RunResult[] = [];
     for (const id of chosen) {
@@ -571,9 +590,12 @@ async function runOnce(sc: Scenario, run: number, deps: EvalDeps): Promise<RunRe
   let tone: ToneResult | null = null;
   let error: string | null = null;
   try {
-    const graded = await deps.models.gradeTone({ rubric: [...BASE_TONE_RUBRIC, ...sc.toneRubric], transcript: played.transcript });
+    const rubric = [...BASE_TONE_RUBRIC, ...sc.toneRubric];
+    const graded = await deps.models.gradeTone({ rubric, transcript: played.transcript });
     usages.push({ role: 'grader', usage: graded.usage });
-    tone = toneResult(graded.scores);
+    // A grade that skips, adds, reorders or relabels a criterion is an error, never a pass.
+    if (scoresMatchRubric(rubric, graded.scores)) tone = toneResult(graded.scores);
+    else error = TONE_MISMATCH;
   } catch {
     error = GENERIC_FAILURE;
   }

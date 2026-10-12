@@ -57,7 +57,7 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
    - `apps/api/test/front-desk/tools-booking.test.ts`: "move_inspection > moves the caller's own inspection, clears the confirmation, queues the calendar push"; "move_inspection > a new time that was taken returns the next two and leaves the visit alone"; "move_inspection > an unverified caller cannot move"; "move_inspection > another customer's inspection is not found"; "move_inspection > with moving switched off it is refused"; "cancel_inspection > cancels the caller's own inspection with the reason, and queues the calendar push".
 8. **A caller is refused moving an install, and offered a message instead**
    - `apps/api/test/front-desk/tools-booking.test.ts`: "move_inspection > an install is refused with a message suggestion"; "cancel_inspection > an install is refused with a message suggestion".
-   - T19: no end-to-end call covers an install being refused; the refusal is proved at the tool above, and the hand-over to a message is the call path `apps/api/test/front-desk/call-paths.test.ts`: "message: a non-urgent take_message sets the job next step and leaves an activity" (a gap, listed under Gaps).
+   - T19: `apps/api/test/front-desk/call-paths.test.ts`: "install move: a verified caller asking to move an install is refused and offered a message (criterion 8)" (verify, lookup_my_jobs names the install, move_inspection refused with the message suggestion, take_message, goodbye; the install is unchanged).
 9. **A caller gives claim details: a claim intake on the job**
    - `apps/api/test/front-desk/tools-claim.test.ts`: "claim intake is stored and linked to the verified caller's single open job"; "verified caller with no open job gets a new Lead job with source front_desk"; "unknown caller's claim is stored without a job"; "the same claim twice in one conversation stores one row"; "a repeated claim with several open jobs creates one job, one row and one activity".
    - T19: `apps/api/test/front-desk/call-paths.test.ts`: "claim: take_claim_details links the intake to the verified caller job"; `apps/api/test/front-desk/scenarios.test.ts`: "scenario %s meets its must and mustNot" (the claim scenario).
@@ -114,13 +114,13 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
 
 18. **Texts get replies through the gate**
     - `apps/api/test/front-desk/texts.test.ts`: "three quick texts produce one reply"; "the reply goes through the gate as informational"; "an opted-out customer gets a blocked reply and nothing is sent"; "STOP never reaches Front Desk"; "a reply within 10 minutes of the customer text sends at 23:00 company time despite quiet hours"; "the engine is offered TEXT_CHANNEL_TOOLS only".
-    - `apps/api/test/front-desk/conversations-routes.test.ts`: "reply goes through the gate as informational, sets handledBy team and teamUntil = now+2h, message row queued"; "reply to a blocked/unsubscribed customer is not sent"; "reply validates the body and only works on texts".
+    - `apps/api/test/front-desk/conversations-routes.test.ts`: "reply goes through the gate as informational and is sent; it does not change who is handling"; "reply to a blocked/unsubscribed customer is a 422 with the reason; nothing is kept or handed over"; "reply validates the body and only works on texts".
     - `apps/web/e2e/front-desk.spec.ts`: "a staff reply to a text goes out through the gate and puts the team in charge; the switch hands it back".
     - `apps/web/test/d1-t22-reply.test.tsx`: "sends the typed text and clears the box"; "shows the send-gate sentence plainly and keeps the typed text".
     - Manual: M10.
 19. **...unless a team member replied in the last 2 hours**
     - `apps/api/test/front-desk/texts.test.ts`: "a team reply silences the assistant for 2 hours"; "a team reply older than 2 hours does not silence it".
-    - `apps/api/test/front-desk/conversations-routes.test.ts`: "reply goes through the gate as informational, sets handledBy team and teamUntil = now+2h, message row queued".
+    - `apps/api/test/front-desk/conversations-routes.test.ts`: "reply goes through the gate as informational and is sent; it does not change who is handling".
     - `apps/web/e2e/front-desk.spec.ts`: "a staff reply to a text goes out through the gate and puts the team in charge; the switch hands it back".
     - Manual: M10.
 20. **...or the conversation is set to "Team is handling"**
@@ -177,7 +177,7 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
 ## Retention
 
 28. **The retention sweep deletes recordings per the settings**
-    - `apps/api/test/front-desk/retention.test.ts`: "boundaries by days"; "recording_retention_days = 0 sweeps nothing"; "is idempotent"; "sweeping company A never touches company B"; "fans out across companies and isolates failures"; "forwarding-test calls are skipped".
+    - `apps/api/test/front-desk/retention.test.ts`: "boundaries by days"; "recording_retention_days = 0 expires every existing recording now, spam or not"; "is idempotent"; "sweeping company A never touches company B"; "fans out across companies and isolates failures"; "forwarding-test calls are skipped".
     - `apps/api/test/front-desk/recording-playback.test.ts`: "delete removes the object, and a missing key does not throw"; "a call with no stored recording is 404".
     - Manual: M8 (blocked until R2 is wired).
 29. **...and blanks transcripts per the settings**
@@ -201,7 +201,7 @@ Criterion 41 (the 12px floor) is proven by `npm run lint:css` in the Platform jo
 32. **Front Desk cannot be enabled before verification, unless the owner overrides**
     - `apps/api/test/front-desk/forwarding.test.ts`: "Front Desk cannot be enabled before verification unless override: true from the owner (Task 18)".
     - `apps/api/test/front-desk/settings-routes.test.ts`: "enable blocked before verification"; "a company without a number cannot enable, even with override"; "office can save but cannot override"; "owner override:true enables without verification".
-    - `apps/web/test/d1-t23-front-desk-tab.test.tsx`: "turns the switch off with the blocked sentence when forwarding is not verified"; "enables the switch when nothing blocks it".
+    - `apps/web/test/d1-t23-front-desk-tab.test.tsx`: "shows the blocked sentence when forwarding is not verified; the owner may still turn it on after a confirm"; "enables the switch when nothing blocks it".
     - `apps/web/e2e/front-desk.spec.ts`: "Settings: the switch is blocked until forwarding is verified, facts save, and bad numbers are refused".
     - Manual: M9.
 
@@ -279,5 +279,4 @@ Not a separate criterion; these are the spec section 16 browser items and where 
 - Everything that needs a real provider is the manual smoke: the real Claude models (M0, M13, M14), real calls and the disclosure as heard (M1), a real transfer (M5, M6), the codes on real carrier phones (M9), real texts (M10, M11).
 - R2 is not wired in this build (`apps/api/src/providers/r2.ts` returns nothing until E1's object store merges), so the recording-in-R2 and deleted-at-Twilio proof (criteria 28 and 30 in the real world, M8) cannot be run yet. The fakes prove the copy and the delete.
 - Criterion 34 (the p50 and p95 report) has no automated test and belongs to Task 25 and the manual runs M13 and M14.
-- Criterion 8 (an install the caller wants moved is refused, then a message is offered) has no end-to-end call: the refusal is proved at the tool and the message at the call-path level, but no scripted call asks to move an install. A scenario for it would need an install appointment whose id the model has been shown; spec section 16 does not list it.
 - The scripted scenarios in CI use a ScriptedLlm, so they prove the plumbing, the data and the grading code, not what the real models say. That is the by-hand eval (criterion 34).

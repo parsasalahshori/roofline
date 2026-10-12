@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { textability, type TransferPhoneView } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import { isOwnCompanyNumber, readTransferPhone, writeTransferPhone } from '../account/transfer-phone.ts';
+import { isOwnCompanyNumber, isRooflineNumber, readTransferPhone, writeTransferPhone } from '../account/transfer-phone.ts';
 import { AppError } from '../errors.ts';
 import { parse } from '../validate.ts';
 
@@ -41,6 +41,8 @@ export function transferPhoneRoutes(deps: AppDeps): Router {
     const body = parse(Body, req.body);
     if (textability(body.e164) !== 'ok') throw new AppError(400, US_ONLY_MESSAGE, 'e164');
     if (await isOwnCompanyNumber(deps, req.ctx, body.e164)) throw new AppError(400, OWN_NUMBER_MESSAGE, 'e164');
+    // Another company's Roofline number would send every transfer into that company's Front Desk.
+    if (await isRooflineNumber(deps, body.e164)) throw new AppError(400, OWN_NUMBER_MESSAGE, 'e164');
     res.json(view(await writeTransferPhone(deps, req.ctx, body.e164)));
   });
 

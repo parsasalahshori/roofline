@@ -9,16 +9,29 @@ import {
 import type { JobStage } from '@roofline/shared';
 import type { ToolHandler } from '../engine-types.ts';
 import { systemCtx } from './system-ctx.ts';
+import { whenWords } from './times.ts';
 
 /*
  * D1 Task 7: lookup_my_jobs. Company and customer come from the conversation, never the model.
  * A caller who is only phone-matched hears the weekday of the next appointment and nothing else.
+ * A verified caller's upcoming appointments are listed with their ids (for the model only) and added
+ * to shownIds, so confirm_appointment, move_inspection and cancel_inspection can act on them.
  */
 
 const MAX_JOBS = 5;
+const MAX_APPOINTMENTS = 10;
 const NO_CUSTOMER = "I don't have a customer record for this caller yet.";
 const NO_APPOINTMENT = 'There is no upcoming appointment on file for this caller.';
 const NO_JOBS = 'There are no jobs on file for this caller.';
+const APPOINTMENT_NOTE =
+  'Use an appointment id only in confirm_appointment, move_inspection or cancel_inspection. Say the visit and its time in words, never the id.';
+
+const KIND_WORD: Record<string, string> = {
+  inspection: 'inspection',
+  install: 'install',
+  adjuster: 'adjuster visit',
+  other: 'visit',
+};
 
 function weekday(at: Date, zone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'long' }).format(at);
@@ -69,7 +82,7 @@ export const lookupMyJobs: ToolHandler<'lookup_my_jobs'> = async (ctx) => {
     }
 
     const { jobs } = await listJobs(tx, tctx, { customerId, limit: MAX_JOBS });
-    if (jobs.length === 0) return { ok: true, forModel: NO_JOBS };
+    if (jobs.length === 0 && upcoming.length === 0) return { ok: true, forModel: NO_JOBS };
     const lines: string[] = [];
     for (const job of jobs) {
       const property = await getProperty(tx, tctx, job.propertyId);
@@ -86,6 +99,20 @@ export const lookupMyJobs: ToolHandler<'lookup_my_jobs'> = async (ctx) => {
       }
       lines.push(`Job ${job.id} at ${property?.addressLine ?? 'the property'}: ${parts.join('; ')}. Next: ${nextText}.`);
     }
-    return { ok: true, forModel: lines.join('\n'), shownIds: [...new Set(jobs.flatMap((j) => [j.id, j.propertyId]))] };
+    if (jobs.length === 0) lines.push(NO_JOBS);
+    const listed = upcoming.slice(0, MAX_APPOINTMENTS);
+    for (const a of listed) {
+      const at = new Date(a.startsAt);
+      const when = a.allDay ? `${weekday(at, timezone)}, ${monthDay(at, timezone)}` : whenWords(at, timezone);
+      const rep = a.assigned?.name.trim().split(/\s+/)[0];
+      const extras = [rep ? `with ${rep}` : null, a.addressLine ? `at ${a.addressLine}` : null, a.confirmedAt !== null ? 'confirmed' : 'not confirmed yet'];
+      lines.push(`Appointment ${a.id}: ${KIND_WORD[a.kind] ?? 'visit'} on ${when}, ${extras.filter((x) => x !== null).join(', ')}.`);
+    }
+    if (listed.length > 0) lines.push(APPOINTMENT_NOTE);
+    const shown = [
+      ...jobs.flatMap((j) => [j.id, j.propertyId]),
+      ...listed.flatMap((a) => (a.propertyId !== null ? [a.id, a.propertyId] : [a.id])),
+    ];
+    return { ok: true, forModel: lines.join('\n'), shownIds: [...new Set(shown)] };
   });
 };
