@@ -1,7 +1,6 @@
 /*
  * Agents screen (A1) shared pieces: the time-saved baselines (spec 3.1) and `minutesFor`.
- * SHELL by the lead: TIME_BASELINES and the types are final; `minutesFor`, `VISIBLE_BASELINE_KEYS`
- * and `G1_AGENTS_SHIPPED` are filled in by Package 1.
+ * Every step type in steps.ts names one of these keys; owners override the visible ones (time_baselines).
  */
 
 export type BaselineDef = {

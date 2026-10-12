@@ -1,6 +1,5 @@
 import {
   claimStep,
-  finishClaimedStep,
   getTask,
   type StepFinish,
   type StepRow,
@@ -13,7 +12,7 @@ import { logErrorToConsole } from '../errors.ts';
 import { systemContext } from '../permissions.ts';
 import { builtInHandlers } from './handlers.ts';
 import { LEASE_MS } from './lease.ts';
-import { refreshTask } from './service.ts';
+import { completeClaimedStep, refreshTask } from './service.ts';
 
 /*
  * Running one approved step (spec 4.1 "Running"). The queue calls `runStep` with a company and a
@@ -158,7 +157,7 @@ async function end(deps: AppDeps, ctx: TenantContext, claimed: StepRow, finish: 
   await withTenant(pools, ctx, async (tx) => {
     const now = clock.now();
     await getTask(tx, ctx, claimed.taskId, { forUpdate: true });
-    const saved = await finishClaimedStep(tx, ctx, claimed.id, claimed.runSeq, finish, now);
+    const saved = await completeClaimedStep(tx, ctx, claimed.id, claimed.runSeq, finish, now);
     if (saved) await refreshTask(tx, ctx, saved.taskId, now);
   });
 }

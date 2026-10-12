@@ -1,0 +1,33 @@
+.page {
+  display: grid;
+  gap: 20px;
+}
+
+.title {
+  margin: 0;
+}
+
+.periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.saved {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.money {
+  color: var(--text-muted);
+}
+
+.section {
+  display: grid;
+  gap: 8px;
+}
+
+.heading {
+  margin: 0;
+}

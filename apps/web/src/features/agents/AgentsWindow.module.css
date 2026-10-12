@@ -1,0 +1,33 @@
+/* The Agents overview: a totals line, then a grid of agent cards that is one column on a phone. */
+.body,
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.totalsLine {
+  margin: 0;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 34rem) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
