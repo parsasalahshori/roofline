@@ -172,3 +172,11 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
   - **Ruling BI** (owner, item N6): retention blanks only the AI exchange (inbound texts the assistant handled and its replies). It keeps STOP/START/HELP bodies, staff replies and booking confirmations, and the copy says so. Retention 0 deletes existing recordings, with copy that says so. Built by the A1 lead on d1-rev-h.
   - Docker works locally (`nohup dockerd &`): run the db and api suites before every push.
 - Task CV, Schema gap (finding F2): calls has no outcome or title column, so a transferred call with no conversation keeps only calls.status 'transferred' as its outcome. needs_attention is derived from unread_count (conversation-inbox.ts), which voice calls never set, so a booked voice call does not show as needs-attention. A column would need a new migration, which D1 does not own beyond 0019/0020, so it is left for the controller.
+- 2026-10-12: **Task CV merged** (d1-cv 77d57be, CI 38288296627 green; local Docker: db rls, repos-calls-cv, migrations and fd-texts, plus the api front-desk suite with 521 tests).
+  - What it does: calls.conversation_id is linked in engine.start, and start reuses the linked conversation. after-call runs only for finished calls (ended, transferred, failed, rejected), with usage once from the total aiSeconds. take_message no longer writes summary. The AI cap uses an advisory lock and a 35-minute window. fd-health ends stuck calls. applyCallStatus guards terminal states.
+  - Ruling BG: d1-rev-a's version is kept.
+  - 0020: app_system on calls has SELECT (id, company_id, call_sid, status, started_at) and UPDATE (status, ended_at, updated_at).
+  - Fixes integration red: rev-b's blocked_numbers isolation cases now expect 42501 (rev-d removed app_tenant UPDATE).
+  - **Gaps:**
+    - (a) calls has no outcome or title column, so a transferred call with no conversation keeps only calls.status.
+    - (b) Voice needs_attention: RC-2 sets unread_count.
