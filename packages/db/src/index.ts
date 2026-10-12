@@ -159,3 +159,16 @@ export * from './repos/delivery.ts';
 export type { LngLat } from './schema/columns.ts';
 export * from './schema/index.ts';
 export { type TenantContext, type Tx, withTenant } from './tenant.ts';
+// C1 skeleton (Task 1): one line per new repo file; later C1 tasks fill the files in.
+export * from './repos/board.ts';
+export * from './repos/timeline.ts';
+export * from './repos/notes.ts';
+export * from './repos/appointments.ts';
+export * from './repos/today.ts';
+export * from './repos/schedules.ts';
+export * from './repos/calendar.ts';
+export * from './repos/calendar-links.ts';
+export * from './repos/calendar-busy.ts';
+export * from './repos/quotes.ts';
+export * from './repos/pricebook.ts';
+export * from './repos/export.ts';

@@ -1,0 +1,12 @@
+export const APPOINTMENT_KINDS = ['inspection', 'install', 'adjuster', 'other'] as const;
+export type AppointmentKind = (typeof APPOINTMENT_KINDS)[number];
+export const APPOINTMENT_STATUSES = ['scheduled', 'completed', 'canceled', 'no_show'] as const;
+export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
+export const APPOINTMENT_SOURCES = ['manual', 'front_desk', 'scheduler', 'external'] as const;
+export type AppointmentSource = (typeof APPOINTMENT_SOURCES)[number];
+export const CALENDAR_PROVIDERS = ['google', 'microsoft'] as const;
+export type CalendarProvider = (typeof CALENDAR_PROVIDERS)[number];
+export const CALENDAR_CONNECTION_STATUSES = ['connected', 'error', 'revoked'] as const;
+export type CalendarConnectionStatus = (typeof CALENDAR_CONNECTION_STATUSES)[number];
+export const QUOTE_STATUSES = ['draft', 'final'] as const;
+export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
