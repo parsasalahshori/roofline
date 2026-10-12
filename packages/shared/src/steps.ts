@@ -449,6 +449,9 @@ const createAdCampaign: StepTypeDef<CreateAdPayload> = {
     };
   },
   minutesSaved: () => 45,
+};
+
+// ---------------------------------------------------------------------------------------------
 // send_proposal
 
 /** A proposal text must keep the link, so the homeowner can open the proposal from it. */
