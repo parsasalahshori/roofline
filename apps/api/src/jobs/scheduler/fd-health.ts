@@ -1,6 +1,10 @@
 import type { AppDeps } from '../../app.ts';
 
-/** LLM health flag in relaySessions; Task 6 fills it in. */
+/**
+ * Worker-side stub. The LLM health flag is a circuit breaker inside RelaySessions (Ruling DQ):
+ * the engine records each model success or failure there. The worker has no relay sessions, so
+ * this schedule writes nothing.
+ */
 export async function fdHealth(deps: AppDeps, now: Date): Promise<void> {
   void deps;
   void now;
