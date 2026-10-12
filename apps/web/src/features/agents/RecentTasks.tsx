@@ -2,6 +2,7 @@ import { UiLink } from '@roofline/ui';
 import { hoursLabel, type RecentTask } from '@roofline/shared';
 import { agentPage } from '../../copy/agents.ts';
 import { TASK_STATUS_LABEL } from '../../copy/status.ts';
+import { agentTimeLabel } from './time.ts';
 import styles from './AgentLists.module.css';
 
 function plain(value: string): string {
@@ -12,15 +13,6 @@ function statusWords(status: string): string {
   return Object.hasOwn(TASK_STATUS_LABEL, status)
     ? TASK_STATUS_LABEL[status as keyof typeof TASK_STATUS_LABEL]
     : plain(status);
-}
-
-function whenLabel(iso: string): string {
-  return new Date(iso).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
 }
 
 /** The latest work this agent did; each row opens that task in the review screen. */
@@ -41,7 +33,7 @@ export function RecentTasks({ tasks }: { tasks: RecentTask[] }) {
               >
                 <span className={styles.kind}>{plain(task.kind)}</span>
                 <span className={styles.meta}>{statusWords(task.status)}</span>
-                <span className={styles.meta}>{whenLabel(task.createdAt)}</span>
+                <span className={styles.meta}>{agentTimeLabel(task.createdAt)}</span>
                 {task.minutesSaved !== null ? (
                   <span className={styles.meta}>
                     {`${hoursLabel(task.minutesSaved)} ${agentPage.estimateSuffix}`}

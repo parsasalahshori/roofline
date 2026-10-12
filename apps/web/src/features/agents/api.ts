@@ -4,8 +4,11 @@ import type {
   AgentDetail,
   AgentsOverview,
   FeedPage,
+  RecountResult,
   RunNowResult,
   ScreenAgent,
+  TimeBaselines,
+  TimeBaselinesBody,
   TimePeriod,
   WaitingList,
 } from '@roofline/shared';
@@ -80,5 +83,35 @@ export function useRunNow(agent: ScreenAgent) {
   return useMutation({
     mutationFn: () => apiFetch<RunNowResult>(`/api/agents/${agent}/run`, { method: 'POST' }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: agentsKeys.all }),
+  });
+}
+
+// --- Task 12: time baselines ---
+export const timeBaselinesKey = [...agentsKeys.all, 'time-baselines'] as const;
+
+/** GET /api/agents/time-baselines (owner and office; a rep gets 403). */
+export function useTimeBaselines() {
+  return useQuery({
+    queryKey: timeBaselinesKey,
+    queryFn: ({ signal }) => apiFetch<TimeBaselines>('/api/agents/time-baselines', { signal }),
+  });
+}
+
+/** PUT /api/agents/time-baselines (owner): only the changed keys; null resets a key. Invalidates agentsKeys.all. */
+export function useSaveTimeBaselines() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TimeBaselinesBody) => apiFetch<TimeBaselines>('/api/agents/time-baselines', { method: 'PUT', body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: agentsKeys.all }),
+  });
+}
+
+/** POST /api/agents/time-baselines/recount (owner). dryRun true adds ?dryRun=1 and changes nothing. A real run invalidates agentsKeys.all. */
+export function useRecount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dryRun: boolean) =>
+      apiFetch<RecountResult>(`/api/agents/time-baselines/recount${dryRun ? '?dryRun=1' : ''}`, { method: 'POST' }),
+    onSuccess: (result) => (result.dryRun ? undefined : queryClient.invalidateQueries({ queryKey: agentsKeys.all })),
   });
 }
