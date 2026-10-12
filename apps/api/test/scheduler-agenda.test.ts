@@ -1,7 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
-  agentSettings,
   agentTasks,
   appointments,
   createAppointment,
@@ -20,8 +19,10 @@ const META: JobMeta = { attempt: 1, lastAttempt: false };
 /** 6 PM on Monday 2026-10-12 in Chicago (CDT, UTC-5). */
 const SIX_PM = new Date('2026-10-12T23:00:00.000Z');
 const SUBJECT = 'Your appointments for Tuesday, Oct 13';
-const PHONE = '+15125550101';
-const PHONE_DIGITS = '5125550101';
+/** Each customer needs its own number (phones are unique within a company). */
+let phoneSeq = 0;
+const nextPhone = (): string => `+1512555${String(1000 + phoneSeq++)}`;
+const PHONE_DIGITS = '1512555';
 
 /** Tuesday 2026-10-13, Chicago local hour h (CDT = UTC-5). */
 const tue = (h: number): Date => new Date(Date.UTC(2026, 9, 13, h + 5));
@@ -43,7 +44,7 @@ async function seedVisit(companyId: string, userId: string, v: Visit): Promise<{
     const customer = await createCustomer(
       tx,
       ctx,
-      { displayName: v.name, firstName: v.name.split(' ')[0]!, phones: [{ e164: PHONE, primary: true }] },
+      { displayName: v.name, firstName: v.name.split(' ')[0]!, phones: [{ e164: nextPhone(), primary: true }] },
       { now },
     );
     const property = await createProperty(
@@ -159,9 +160,9 @@ describe('runAgenda', () => {
     expect(mails[0]!.text).not.toContain('today-note');
   });
 
-  test('paused (no agent_settings row) sends nothing, and agent on sends', async () => {
+  test('paused row sends nothing, and agent on sends', async () => {
     await seedVisit(A(), t.seed.a.owner.userId, { name: 'Olson One', address: '1 One St', notes: 'n1', start: tue(9), end: tue(10) });
-    await t.deps.pools.system.delete(agentSettings).where(eq(agentSettings.agent, 'scheduler'));
+    await inCompany(t, A(), (tx) => setPaused(tx, ctxOf(A()), 'scheduler', true, t.clock.now()));
 
     await runAgenda(t.deps, A(), META);
     expect(t.mailer.sent).toHaveLength(0);

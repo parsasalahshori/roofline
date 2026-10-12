@@ -1,7 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
-  agentSettings,
   agentTasks,
   agentTaskSteps,
   appointments,
@@ -35,6 +34,10 @@ const TODAY_4PM = new Date('2026-10-12T21:00:00.000Z');
 const TODAY_5PM = new Date('2026-10-12T22:00:00.000Z');
 const USAGE = { model: 'scripted', inputTokens: 1, cachedTokens: 0, outputTokens: 1, firstTokenMs: 1, totalMs: 2 };
 
+/** Each customer needs its own number (phones are unique within a company). */
+let phoneSeq = 0;
+const nextPhone = (): string => `+1512555${String(1000 + phoneSeq++)}`;
+
 let t: TestApp;
 const A = () => t.seed.a.companyId;
 const ctxA = (): TenantContext => ({ companyId: A(), userId: null, role: 'system', canApproveSpend: false });
@@ -60,7 +63,7 @@ async function seedVisit(v: Visit): Promise<{ customerId: string; jobId: string;
       {
         displayName: `${v.first} Reminder`,
         firstName: v.first,
-        phones: v.phone === false ? [] : [{ e164: '+15125550101', primary: true }],
+        phones: v.phone === false ? [] : [{ e164: nextPhone(), primary: true }],
       },
       { now },
     );
@@ -193,8 +196,9 @@ describe('runReminders', () => {
     expect(messages.map((m) => m.customerId).sort()).toEqual([...ids].sort());
   });
 
-  test('paused: a missing agent_settings row makes nothing', async () => {
-    await t.deps.pools.system.delete(agentSettings).where(eq(agentSettings.agent, 'scheduler'));
+  test('paused: no agent_settings row makes nothing', async () => {
+    // A fresh app has no row; the beforeEach turned the agent on, so pause it again.
+    await agentOn(true);
     await seedVisit({ first: 'Ann' });
     await runReminders(t.deps, A(), META);
     expect(await tasks()).toHaveLength(0);
