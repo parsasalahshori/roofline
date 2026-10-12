@@ -5,10 +5,13 @@ import {
   loadBaselineOverrides,
   refreshTaskMinutes,
   rewriteStepSnapshot,
+  tryLockRecount,
   withTenant,
   type Pools,
   type TenantContext,
+  type Tx,
 } from '@roofline/db';
+import { AppError } from '../errors.ts';
 import { isStepType, stepMinutes, stepTypes, type RecountResult, type StepResult } from '@roofline/shared';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -35,33 +38,85 @@ export async function recountMinutes(
   let after = 0;
   let steps = 0;
   let afterId: string | null = null;
+  let started = false;
 
-  for (;;) {
-    const lastId: string | null = await withTenant(pools, ctx, async (tx) => {
-      const batch = await listRecountSteps(tx, ctx, { from, to, afterId, limit: BATCH });
-      if (batch.length === 0) return null;
-      const overrides = await loadBaselineOverrides(tx, ctx);
-      const touched = new Set<string>();
-      for (const step of batch) {
-        if (!isStepType(step.type)) continue;
-        const m = stepMinutes(stepTypes[step.type] as never, step.payload as never, (step.result ?? {}) as StepResult, overrides);
-        before += round2(step.minutesSaved ?? 0);
-        after += round2(m.minutes);
-        steps += 1;
-        if (!dryRun) {
-          await rewriteStepSnapshot(tx, ctx, step.id, {
-            units: m.units,
-            minutesPerUnit: m.minutesPerUnit,
-            minutesSaved: m.minutes,
+  const lock = async (tx: Tx): Promise<void> => {
+    if (!(await tryLockRecount(tx, ctx))) throw new AppError(409, 'A recount is already running.');
+  };
+
+  try {
+    // One read of the company's baselines, so every batch counts with the same numbers.
+    const overrides = await withTenant(pools, ctx, (tx) => loadBaselineOverrides(tx, ctx));
+    let first = true;
+    for (;;) {
+      const isFirst = first;
+      first = false;
+      // Counted in locals and added only after the transaction commits: a rolled-back batch adds nothing.
+      let batchBefore = 0;
+      let batchAfter = 0;
+      let batchSteps = 0;
+      const lastId: string | null = await withTenant(pools, ctx, async (tx) => {
+        batchBefore = 0;
+        batchAfter = 0;
+        batchSteps = 0;
+        await lock(tx);
+        if (isFirst && !dryRun) {
+          await audit(tx, ctx, {
+            action: 'agents.recount.started',
+            targetType: 'time_recount',
+            targetId: ctx.companyId,
+            after: { from: from.toISOString(), to: to.toISOString(), by: ctx.userId, baselines: overrides },
+            ip,
+            at: now,
           });
-          touched.add(step.taskId);
         }
+        const batch = await listRecountSteps(tx, ctx, { from, to, afterId, limit: BATCH });
+        if (batch.length === 0) return null;
+        const touched = new Set<string>();
+        for (const step of batch) {
+          if (!isStepType(step.type)) continue;
+          const m = stepMinutes(stepTypes[step.type] as never, step.payload as never, (step.result ?? {}) as StepResult, overrides);
+          batchBefore += round2(step.minutesSaved ?? 0);
+          batchAfter += round2(m.minutes);
+          batchSteps += 1;
+          if (!dryRun) {
+            await rewriteStepSnapshot(tx, ctx, step.id, {
+              units: m.units,
+              minutesPerUnit: m.minutesPerUnit,
+              minutesSaved: m.minutes,
+            });
+            touched.add(step.taskId);
+          }
+        }
+        if (!dryRun && touched.size > 0) await refreshTaskMinutes(tx, ctx, [...touched]);
+        return batch[batch.length - 1]!.id;
+      });
+      if (isFirst && !dryRun) started = true;
+      before += batchBefore;
+      after += batchAfter;
+      steps += batchSteps;
+      if (lastId === null) break;
+      afterId = lastId;
+    }
+  } catch (error) {
+    if (!dryRun && started) {
+      try {
+        await withTenant(pools, ctx, (tx) =>
+          audit(tx, ctx, {
+            action: 'agents.recount.partial',
+            targetType: 'time_recount',
+            targetId: ctx.companyId,
+            before: { minutes: round2(before) },
+            after: { minutes: round2(after), steps },
+            ip,
+            at: now,
+          }),
+        );
+      } catch {
+        // The original error is the one to report.
       }
-      if (!dryRun && touched.size > 0) await refreshTaskMinutes(tx, ctx, [...touched]);
-      return batch[batch.length - 1]!.id;
-    });
-    if (lastId === null) break;
-    afterId = lastId;
+    }
+    throw error;
   }
 
   const beforeMinutes = round2(before);
@@ -69,6 +124,7 @@ export async function recountMinutes(
 
   if (!dryRun) {
     await withTenant(pools, ctx, async (tx) => {
+      await lock(tx);
       const id = await insertTimeRecount(tx, ctx, { from, to, beforeMinutes, afterMinutes, at: now });
       await audit(tx, ctx, {
         action: 'agents.recount',

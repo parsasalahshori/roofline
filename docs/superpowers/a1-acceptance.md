@@ -112,7 +112,7 @@ Paths are under `apps/api/test/` (API), `apps/web/e2e/` (Playwright), `apps/web/
    - `apps/api/test/agents-recount.test.ts`: "recount is owner only: office and rep get 403 and company B is untouched"; "recount real run updates snapshots, inserts one time_recounts row and one audit_log entry with before and after totals".
 2. **One writer (`tasks/service.ts` writes every event and snapshot)**
    - `apps/api/test/task-events.test.ts`: the transition tests listed under "Events written by every task transition".
-   - GAP: no test yet that scans the source for other inserts into `agent_task_events`.
+   - `apps/api/test/boundaries.test.ts`: "agent event writer boundary"; `packages/shared/test/one-writer.test.ts`: only `packages/db/src/repos/agent-events.ts` inserts into `agent_task_events`.
 3. **Role scope in aggregates (reps count only their jobs' work)**
    - `apps/api/test/agents-api.test.ts`: "rep scope (AX-J): a rep sees only tasks on their own jobs and customers".
    - `packages/db/test/agent-metrics.test.ts`: "rep scope: a rep sees only tasks on their jobs and customers".

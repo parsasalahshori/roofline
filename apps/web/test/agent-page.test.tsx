@@ -37,7 +37,7 @@ const DETAIL: AgentDetail = {
   paused: null,
   runNow: { kind: 'available', nextAllowedAt: null },
   recentTasks: [
-    { id: 't1', kind: 'storm_check', status: 'done', mode: 'live', createdAt: '2026-10-12T15:00:00Z', finishedAt: '2026-10-12T15:05:00Z', minutesSaved: 45 },
+    { id: 't1', kind: 'storm_check', status: 'done', mode: 'live', createdAt: '2026-10-12T15:00:00Z', finishedAt: '2026-10-12T15:05:00Z', minutesSaved: 45, href: '/approvals/t1' },
   ],
   hourlyRateCents: 2800,
 };
@@ -177,6 +177,23 @@ describe('agent page', () => {
     setup('/agents/storm-scout');
     const link = await screen.findByRole('link', { name: /Open storm check/ });
     expect(link).toHaveAttribute('href', '/approvals/t1');
+  });
+
+  it('recent task with href is a link to it', async () => {
+    setup('/agents/storm-scout', 'owner', {
+      [GET]: () => ({ body: { ...DETAIL, recentTasks: [{ ...DETAIL.recentTasks[0]!, href: '/jobs/j9' }] } }),
+    });
+    const link = await screen.findByRole('link', { name: /Open storm check/ });
+    expect(link).toHaveAttribute('href', '/jobs/j9');
+  });
+
+  it('recent task without href is not a link', async () => {
+    setup('/agents/storm-scout', 'rep', {
+      [GET]: () => ({ body: { ...DETAIL, hourlyRateCents: null, recentTasks: [{ ...DETAIL.recentTasks[0]!, href: null }] } }),
+    });
+    expect(await screen.findByText('storm check')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Open storm check/ })).toBeNull();
+    expect(document.body.textContent).not.toContain('$');
   });
 
   it('breakdown table', async () => {

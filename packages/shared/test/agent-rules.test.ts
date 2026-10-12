@@ -176,3 +176,25 @@ describe("link integrity", () => {
     }
   });
 });
+
+describe("rep variant (S-M5)", () => {
+  test("rep variant has no budget clause", () => {
+    const rules = rulesFor("storm_scout", {
+      stormScout: { thresholdInches: 1, budgetCents: null, days: 7 },
+    });
+    expect(rules[0]!.text).toBe(
+      "When hail of 1 inch or more hits your service area, I draft a storm plan: texts, emails, door-knock routes and ads over 7 days.",
+    );
+    expect(rules[0]!.text).not.toContain("$");
+    expect(rules[0]!.text).not.toContain("up to");
+    expect(rules[0]!.links.map((l) => l.label)).toEqual(["1 inch", "7 days"]);
+  });
+  test("noLinks gives links [] for every rule", () => {
+    const facts = { ...STORM, ...FRONT_DESK, noLinks: true };
+    for (const agent of ["storm_scout", "estimator", "front_desk"] as const) {
+      const rules = rulesFor(agent, facts);
+      expect(rules.length).toBeGreaterThan(0);
+      expect(rules.every((r) => r.links.length === 0)).toBe(true);
+    }
+  });
+});

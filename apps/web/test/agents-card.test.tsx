@@ -19,8 +19,8 @@ function fixture(over: Partial<AgentCardData> = {}): AgentCardData {
   };
 }
 
-function show(card: AgentCardData) {
-  const router = createMemoryRouter([{ path: '/', element: <AgentCard card={card} hourlyRateCents={2800} /> }]);
+function show(card: AgentCardData, rate: number | null = 2800) {
+  const router = createMemoryRouter([{ path: '/', element: <AgentCard card={card} hourlyRateCents={rate} /> }]);
   return render(<RouterProvider router={router} />);
 }
 
@@ -34,6 +34,12 @@ describe('AgentCard', () => {
     expect(screen.getByText(moneyLabel(1860, 2800))).toBeTruthy();
     expect(screen.getByText('92%')).toBeTruthy();
     expect(screen.getByText('Not approved: 3')).toBeTruthy();
+  });
+
+  it('hides money when the rate is null', () => {
+    show(fixture(), null);
+    expect(screen.getByText(/about 31 hours/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('$');
   });
 
   it('says there are not enough runs when the rate is null', () => {

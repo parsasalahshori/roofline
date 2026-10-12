@@ -24,13 +24,9 @@ export function RecentTasks({ tasks }: { tasks: RecentTask[] }) {
         <p className={styles.empty}>{agentPage.recentEmpty}</p>
       ) : (
         <ul className={styles.list}>
-          {tasks.map((task) => (
-            <li key={task.id} className={styles.row}>
-              <UiLink
-                href={'/approvals/' + encodeURIComponent(task.id)}
-                className={styles.link}
-                aria-label={`${agentPage.recentOpenLabel} ${plain(task.kind)}`}
-              >
+          {tasks.map((task) => {
+            const content = (
+              <>
                 <span className={styles.kind}>{plain(task.kind)}</span>
                 <span className={styles.meta}>{statusWords(task.status)}</span>
                 <span className={styles.meta}>{agentTimeLabel(task.createdAt)}</span>
@@ -39,9 +35,24 @@ export function RecentTasks({ tasks }: { tasks: RecentTask[] }) {
                     {`${hoursLabel(task.minutesSaved)} ${agentsCommon.estimate}`}
                   </span>
                 ) : null}
-              </UiLink>
-            </li>
-          ))}
+              </>
+            );
+            return (
+              <li key={task.id} className={styles.row}>
+                {task.href === null ? (
+                  <div className={styles.link}>{content}</div>
+                ) : (
+                  <UiLink
+                    href={task.href}
+                    className={styles.link}
+                    aria-label={`${agentPage.recentOpenLabel} ${plain(task.kind)}`}
+                  >
+                    {content}
+                  </UiLink>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

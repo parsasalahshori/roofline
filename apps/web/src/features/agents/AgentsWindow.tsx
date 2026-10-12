@@ -31,7 +31,7 @@ export function AgentsWindow() {
         <div className={styles.body}>
           <div className={styles.totals}>
             <p className={styles.totalsLine}>
-              {`${capitalise(hoursLabel(data.minutesThisMonth))} ${agentsWindow.totalsSaved} ${agentsCommon.estimate} ${agentsWindow.separator} ${moneyLabel(data.minutesThisMonth, data.hourlyRateCents)}`}
+              {`${capitalise(hoursLabel(data.minutesThisMonth))} ${agentsWindow.totalsSaved} ${agentsCommon.estimate}${data.hourlyRateCents === null ? '' : ` ${agentsWindow.separator} ${moneyLabel(data.minutesThisMonth, data.hourlyRateCents)}`}`}
             </p>
             <Button variant="ghost" href={agentsWindow.howWeCountHref}>
               {agentsWindow.howWeCount}

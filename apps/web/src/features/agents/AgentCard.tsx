@@ -8,7 +8,7 @@ import styles from './AgentCard.module.css';
 import { agentSlug } from './slugs.ts';
 
 /** One agent on the Agents window: a card that links to the agent's page. Time and money are always marked as estimates. */
-export function AgentCard({ card, hourlyRateCents }: { card: AgentCardData; hourlyRateCents: number }) {
+export function AgentCard({ card, hourlyRateCents }: { card: AgentCardData; hourlyRateCents: number | null }) {
   const id = useId();
   const nameId = `${id}-name`;
   const timeId = `${id}-time`;
@@ -36,8 +36,12 @@ export function AgentCard({ card, hourlyRateCents }: { card: AgentCardData; hour
                 <span>{agentsWindow.timeSaved}</span>
                 <span>{hoursLabel(card.minutesThisMonth)}</span>
                 <span>{agentsCommon.estimate}</span>
-                <span>{agentsWindow.separator}</span>
-                <span>{moneyLabel(card.minutesThisMonth, hourlyRateCents)}</span>
+                {hourlyRateCents === null ? null : (
+                  <>
+                    <span>{agentsWindow.separator}</span>
+                    <span>{moneyLabel(card.minutesThisMonth, hourlyRateCents)}</span>
+                  </>
+                )}
               </p>
               <p className={styles.line}>
                 <span>{agentsWindow.successRate}</span>

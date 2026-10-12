@@ -42,6 +42,7 @@ export {
   type RecountStep,
   rewriteStepSnapshot,
   setBaselineOverrides,
+  tryLockRecount,
 } from './repos/time-baselines.ts';
 export * from './repos/agent-settings.ts';
 export { insertDefaultSettings, pickFreeSlug, setServiceArea, slugify } from './repos/companies.ts';

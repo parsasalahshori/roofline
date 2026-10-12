@@ -1,9 +1,25 @@
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
-import { agentTasks, agentTaskSteps, timeRecounts } from '@roofline/db';
+import { sql } from 'drizzle-orm';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { agentTasks, agentTaskSteps, refreshTaskMinutes, timeRecounts, withTenant, type TenantContext } from '@roofline/db';
+import { recountMinutes } from '../src/agents/recount.ts';
+import { AppError } from '../src/errors.ts';
 import { Actors, type CompanyKey, dbAudit, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
-import { dbSteps, dbTask, newTask } from './task-helpers.ts';
+import { dbSteps, dbTask, newTask, setTask } from './task-helpers.ts';
+
+// Lets one test make the recount's final transaction fail; everything else passes through.
+const faults = vi.hoisted(() => ({ insertTimeRecount: null as Error | null }));
+vi.mock('@roofline/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@roofline/db')>();
+  return {
+    ...actual,
+    insertTimeRecount: (...args: Parameters<typeof actual.insertTimeRecount>) => {
+      if (faults.insertTimeRecount) throw faults.insertTimeRecount;
+      return actual.insertTimeRecount(...args);
+    },
+  };
+});
 
 const DAY = 24 * 60 * 60 * 1000;
 const RECOUNT = '/api/agents/time-baselines/recount';
@@ -13,6 +29,7 @@ let t: TestApp;
 let actors: Actors;
 
 beforeEach(async () => {
+  faults.insertTimeRecount = null;
   t = await makeTestApp();
   actors = new Actors(t);
 });
@@ -177,5 +194,103 @@ describe('recount', () => {
     expect((await dbTask(t, 'a', taskId)).minutesSaved).toBe(Math.round(sum));
     const [task] = await inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(agentTasks).where(eq(agentTasks.id, taskId)));
     expect(task!.minutesSaved).toBe(30);
+  });
+
+  const ownerCtx = (): TenantContext => ({
+    companyId: t.seed.a.companyId,
+    userId: actors.user('owner').userId,
+    role: 'owner',
+    canApproveSpend: true,
+  });
+  const recountOpts = () => ({ dryRun: false, now: t.clock.now(), ip: '203.0.113.9' });
+
+  test('a real recount writes a started audit row and then the finished one', async () => {
+    await seedTask([{ sent: 10 }]);
+    await setTextBaseline(2);
+    const owner = await actors.as('owner');
+    expect((await owner.post(RECOUNT)).status).toBe(200);
+    const started = await dbAudit(t, t.seed.a.companyId, 'agents.recount.started');
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ targetType: 'time_recount', targetId: t.seed.a.companyId });
+    expect(JSON.stringify(started[0])).toContain('text_sent');
+    expect(await dbAudit(t, t.seed.a.companyId, 'agents.recount')).toHaveLength(1);
+    expect(await dbAudit(t, t.seed.a.companyId, 'agents.recount.partial')).toHaveLength(0);
+  });
+
+  test('a dry run writes no started audit row', async () => {
+    await seedTask([{ sent: 10 }]);
+    const owner = await actors.as('owner');
+    expect((await owner.post(`${RECOUNT}?dryRun=1`)).status).toBe(200);
+    expect(await dbAudit(t, t.seed.a.companyId, 'agents.recount.started')).toHaveLength(0);
+  });
+
+  test('a failure after the first batch writes a partial audit row and rethrows the original error', async () => {
+    const { stepIds } = await seedTask([{ sent: 10 }]);
+    await setTextBaseline(2);
+    const boom = new Error('boom');
+    faults.insertTimeRecount = boom;
+    await expect(recountMinutes(t.deps.pools, ownerCtx(), recountOpts())).rejects.toBe(boom);
+    expect(await dbAudit(t, t.seed.a.companyId, 'agents.recount.started')).toHaveLength(1);
+    const partial = await dbAudit(t, t.seed.a.companyId, 'agents.recount.partial');
+    expect(partial).toHaveLength(1);
+    expect(JSON.stringify(partial[0])).toContain('20');
+    expect(await dbAudit(t, t.seed.a.companyId, 'agents.recount')).toHaveLength(0);
+    expect((await stepRow('a', stepIds[0]!)).minutesSaved).toBe(20);
+  });
+
+  test('a recount that finds another one running answers 409 and writes nothing', async () => {
+    await seedTask([{ sent: 10 }]);
+    await setTextBaseline(2);
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const gotLock = new Promise<void>((resolve) => (locked = resolve));
+    const holder = t.deps.pools.tenant.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('agents-recount:' || ${t.seed.a.companyId}::text))`);
+      locked();
+      await hold;
+    });
+    await gotLock;
+    try {
+      for (const dryRun of [false, true]) {
+        const err = await recountMinutes(t.deps.pools, ownerCtx(), { ...recountOpts(), dryRun }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(AppError);
+        expect(err).toMatchObject({ status: 409, message: 'A recount is already running.' });
+      }
+    } finally {
+      release();
+      await holder;
+    }
+    expect(await dbAudit(t, t.seed.a.companyId, 'agents.recount.started')).toHaveLength(0);
+    expect(await dbAudit(t, t.seed.a.companyId, 'agents.recount.partial')).toHaveLength(0);
+    expect(await dbAudit(t, t.seed.a.companyId, 'agents.recount')).toHaveLength(0);
+    expect(await recounts('a')).toHaveLength(0);
+  });
+
+  test('a draft task with no figure stays null, a done task gets its sum, a draft with a figure is updated', async () => {
+    const draftNull = await seedTask([{ sent: 10 }]);
+    const done = await seedTask([{ sent: 10 }]);
+    const draftSet = await seedTask([{ sent: 10 }]);
+    await setTask(t, 'a', draftNull.taskId, { minutesSaved: null });
+    await setTask(t, 'a', done.taskId, { status: 'done', minutesSaved: null });
+    await setTask(t, 'a', draftSet.taskId, { minutesSaved: 5 });
+    await setTextBaseline(2);
+    const owner = await actors.as('owner');
+    expect((await owner.post(RECOUNT)).status).toBe(200);
+    expect((await dbTask(t, 'a', draftNull.taskId)).minutesSaved).toBeNull();
+    expect((await dbTask(t, 'a', done.taskId)).minutesSaved).toBe(20);
+    expect((await dbTask(t, 'a', draftSet.taskId)).minutesSaved).toBe(20);
+  });
+
+  test('refreshTaskMinutes accepts ids in any order and with repeats', async () => {
+    const one = await seedTask([{ sent: 7 }]);
+    const two = await seedTask([{ sent: 5 }]);
+    await setTask(t, 'a', one.taskId, { status: 'done' });
+    await setTask(t, 'a', two.taskId, { status: 'done' });
+    const ids = [one.taskId, two.taskId].sort().reverse();
+    const ctx = ownerCtx();
+    await withTenant(t.deps.pools, ctx, (tx) => refreshTaskMinutes(tx, ctx, [...ids, ids[0]!]));
+    expect((await dbTask(t, 'a', one.taskId)).minutesSaved).toBe(11);
+    expect((await dbTask(t, 'a', two.taskId)).minutesSaved).toBe(8);
   });
 });

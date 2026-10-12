@@ -60,4 +60,16 @@ describe('gatherRuleFacts (A1 Tasks 5 and 14)', () => {
     expect(storm[0]!.links.every((l) => l.href === '/settings/storm')).toBe(true);
     expect(rulesFor('front_desk', facts)).toEqual([]);
   });
+
+  test('a rep gets no ad budget and no links; an owner gets the number and no noLinks', async () => {
+    const companyId = t.seed.a.companyId;
+    const repCtx = { companyId, userId: null, role: 'rep' as const, canApproveSpend: false };
+    const ownerCtx = { ...repCtx, role: 'owner' as const };
+    const rep = await inCompany(t, companyId, (tx) => gatherRuleFacts(tx, repCtx));
+    expect(rep.stormScout?.budgetCents).toBeNull();
+    expect(rep.noLinks).toBe(true);
+    const owner = await inCompany(t, companyId, (tx) => gatherRuleFacts(tx, ownerCtx));
+    expect(owner.stormScout?.budgetCents).toBe(27000);
+    expect(owner).not.toHaveProperty('noLinks');
+  });
 });
