@@ -8,3 +8,5 @@
 4. **Note 27:** once transcriptOff is set, store tool-call rows as `{name, ok}` only (no args), and `interrupted()` must not write spoken text. Tests.
 
 **Verify:** typecheck, lint; api tests on CI via `CI_JOBS="Platform E2E" ops/bin/ci-check`. Logs carry ids only. No live Twilio. Commit: `fix(api): relay verifies before upgrade; one conversation and one recording choice per call`.
+
+**Also, integration sentinel (pass 13): recording playback in production.** `routes/calls.ts` hands RecordingPlayer a presigned `https://<account>.r2.cloudflarestorage.com/...` URL, and the CSP in `apps/api/src/app.ts` has no `mediaSrc`, so the browser falls back to `default-src 'self'` and blocks playback. Add `mediaSrc: ["'self'", <R2 origin>]`. Build the origin from `R2_ACCOUNT_ID` when the config has it (`https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`). Until E1's R2 config lands here, use `'https://*.r2.cloudflarestorage.com'` with a comment naming E1's r2.ts. Test: the CSP header of `GET /` includes that media-src.

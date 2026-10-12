@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { companies, companyPhoneNumbers, recordUsage, withTenant, type Db } from '@roofline/db';
-import { addMainNumber, loadRegistration, updateRegistration, withRegistrationLock } from '@roofline/db/system';
+import { activeMainNumber, addMainNumber, loadRegistration, updateRegistration, withRegistrationLock } from '@roofline/db/system';
 import { buildCampaign, displayUsPhone, plainRejection } from '@roofline/shared';
 import type { AppDeps } from '../../app.ts';
 import { billingConfig } from '../../billing/plans.ts';
@@ -184,19 +184,8 @@ export async function continueRegistration(deps: AppDeps, companyId: string): Pr
 
   // The monthly number fee is recorded after the number is saved, on every pass, once per
   // number and month (a repeat in the same month is a no-op on the unique ref).
-  const [saved] = await deps.pools.system
-    .select({ e164: companyPhoneNumbers.e164, providerSid: companyPhoneNumbers.providerSid, timezone: companies.timezone })
-    .from(companyPhoneNumbers)
-    .innerJoin(companies, eq(companies.id, companyPhoneNumbers.companyId))
-    .where(
-      and(
-        eq(companyPhoneNumbers.companyId, companyId),
-        eq(companyPhoneNumbers.purpose, 'main'),
-        eq(companyPhoneNumbers.status, 'active'),
-      ),
-    )
-    .limit(1);
-  if (saved === undefined || saved.providerSid === null) return;
+  const saved = await activeMainNumber(deps.pools.system, companyId);
+  if (saved === null || saved.providerSid === null) return;
   const now = deps.clock.now();
   const ctx = systemContext(companyId);
   await withTenant(deps.pools, ctx, (t) =>
