@@ -45,6 +45,11 @@ export const claims = {
   close: 'Close',
   saved: 'Claim saved.',
   saveFailed: 'We could not save the claim. Please try again.',
+  // G1 Task 7: claim packet
+  buildPacket: 'Build claim packet',
+  buildingPacket: 'Building the packet',
+  downloadPacket: (date: string): string => `Download packet (built ${date})`,
+  packetError: 'We could not build the claim packet. Please try again.',
   // board
   boardTitle: 'Claims',
   boardEmpty: 'No claims yet.',

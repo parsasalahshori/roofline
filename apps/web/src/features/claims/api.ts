@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClaimBoardRow, ClaimStatus, ClaimView, JobClaimResponse } from '@roofline/shared';
+import type { ClaimBoardRow, ClaimPacketInfo, ClaimStatus, ClaimView, JobClaimResponse } from '@roofline/shared';
 import { apiFetch } from '../../api/client.ts';
 import { jobKey } from '../job/api.ts';
 
@@ -30,7 +30,24 @@ export function useSaveClaim(jobId: string) {
   return useMutation<ClaimView, Error, ClaimEdit>({
     mutationFn: (edit) => apiFetch<ClaimView>('/api/jobs/' + jobId + '/claim', { method: 'PUT', body: edit }),
     onSuccess: (claim) => {
-      queryClient.setQueryData<JobClaimResponse>(['claim', jobId], (old) => ({ claim, intake: old?.intake ?? null }));
+      queryClient.setQueryData<JobClaimResponse>(['claim', jobId], (old) => ({ claim, intake: old?.intake ?? null, packet: old?.packet ?? null }));
+      void queryClient.invalidateQueries({ queryKey: jobKey(jobId) });
+    },
+  });
+}
+
+// G1 Task 7: where the newest claim packet is downloaded from.
+export function claimPacketUrl(jobId: string): string {
+  return '/api/jobs/' + jobId + '/claim/packet';
+}
+
+// G1 Task 7: builds a new claim packet now (`POST` answers `{ packet }`); the download link then shows its date.
+export function useBuildClaimPacket(jobId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<{ packet: ClaimPacketInfo }, Error, void>({
+    mutationFn: () => apiFetch<{ packet: ClaimPacketInfo }>(claimPacketUrl(jobId), { method: 'POST' }),
+    onSuccess: ({ packet }) => {
+      queryClient.setQueryData<JobClaimResponse>(['claim', jobId], (old) => (old ? { ...old, packet } : old));
       void queryClient.invalidateQueries({ queryKey: jobKey(jobId) });
     },
   });

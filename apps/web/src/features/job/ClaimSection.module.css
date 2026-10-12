@@ -26,6 +26,14 @@
   min-width: 0;
 }
 
+.link {
+  align-self: center;
+  font-size: 0.875rem;
+  color: var(--text);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
 .chip {
   align-self: flex-start;
   padding: 4px 12px;

@@ -61,6 +61,7 @@ describe('GET /api/jobs/:jobId/claim', () => {
         description: 'Hail on the north slope',
         adjusterVisitAt: null,
       },
+      packet: null,
     });
   });
 
@@ -68,7 +69,7 @@ describe('GET /api/jobs/:jobId/claim', () => {
     const job = await ownerJob();
     const res = await (await who.as('owner')).get(`/api/jobs/${job.id}/claim`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ claim: null, intake: null });
+    expect(res.body).toEqual({ claim: null, intake: null, packet: null });
   });
 });
 

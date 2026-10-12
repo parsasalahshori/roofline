@@ -23,7 +23,7 @@ export type ExactOrderStatus = (typeof EXACT_ORDER_STATUSES)[number];
 export const FOOTPRINT_STATE_STATUSES = ['loading', 'ready', 'failed'] as const;
 export type FootprintStateStatus = (typeof FOOTPRINT_STATE_STATUSES)[number];
 
-export const STORED_FILE_KINDS = ['signed_proposal_pdf', 'storm_photo', 'ad_image'] as const;
+export const STORED_FILE_KINDS = ['signed_proposal_pdf', 'storm_photo', 'ad_image', 'claim_packet'] as const;
 export type StoredFileKind = (typeof STORED_FILE_KINDS)[number];
 
 // ---------------------------------------------------------------------------------------------

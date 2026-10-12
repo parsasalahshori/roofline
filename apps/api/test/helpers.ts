@@ -13,6 +13,7 @@ import { AppError, MESSAGES } from '../src/errors.ts';
 import { InlineJobs } from '../src/jobs/queue.ts';
 import type { Mailer } from '../src/mailer.ts';
 import { FakeAdImageRenderer } from '../src/providers/fakes/ad-image.ts';
+import { FakeStaticMap } from '../src/providers/fakes/static-map.ts'; // G1 Task 7
 import { FakeAdsGoogle } from '../src/providers/fakes/ads-google.ts';
 import { FakeAdsMeta } from '../src/providers/fakes/ads-meta.ts';
 import { FakeBroadcastMailer } from '../src/providers/fakes/broadcast.ts';
@@ -169,6 +170,8 @@ export type TestApp = {
   broadcast: FakeBroadcastMailer;
   /** The ad image renderer: it answers a fixed image without drawing. */
   adImage: FakeAdImageRenderer;
+  /** G1 Task 7: the claim packet's map picture: a tiny PNG, `absent = true` answers null. */
+  staticMap: FakeStaticMap;
   /** Billing: it records each customer, checkout, and meter event. */
   billing: FakeBillingProvider;
   /** Texting registration: `failNext` makes the next registrar call fail. */
@@ -288,6 +291,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const adsMeta = new FakeAdsMeta();
   const broadcast = new FakeBroadcastMailer();
   const adImage = new FakeAdImageRenderer();
+  const staticMap = new FakeStaticMap();
   const billing = new FakeBillingProvider();
   const registrar = new FakeTextingRegistrar();
   const jobs = new InlineJobs();
@@ -316,6 +320,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     adsMeta,
     broadcast,
     adImage,
+    staticMap,
     billing,
     registrar,
     jobs,
@@ -351,6 +356,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     adsMeta,
     broadcast,
     adImage,
+    staticMap,
     billing,
     registrar,
     jobs,

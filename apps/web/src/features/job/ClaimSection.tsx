@@ -3,7 +3,7 @@ import { CLAIM_STATUSES, displayUsPhone, isTimeZone, type ClaimStatus, type JobC
 import { Banner, Button, Field, Select, Sheet, Skeleton, useToast, type SelectOption } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { claims } from '../../copy/claims.ts';
-import { useJobClaim, useSaveClaim, type ClaimEdit } from '../claims/api.ts';
+import { claimPacketUrl, useBuildClaimPacket, useJobClaim, useSaveClaim, type ClaimEdit } from '../claims/api.ts';
 import { formatDollars } from '../jobs/JobCardView.tsx';
 import { useCompany } from '../settings/api.ts';
 import styles from './ClaimSection.module.css';
@@ -212,6 +212,27 @@ function ClaimSheet({ jobId, data, onClose }: ClaimSheetProps) {
   );
 }
 
+/** G1 Task 7: the packet button (busy while it builds, an error toast on failure) and the download link. */
+function PacketActions({ jobId, packet, dayFormat }: { jobId: string; packet: JobClaimResponse['packet']; dayFormat: Intl.DateTimeFormat }) {
+  const build = useBuildClaimPacket(jobId);
+  const toast = useToast();
+  function run() {
+    build.mutate(undefined, { onError: () => toast.show(claims.packetError, 'error') });
+  }
+  return (
+    <>
+      <Button variant="ghost" busy={build.isPending} onClick={run}>
+        {build.isPending ? claims.buildingPacket : claims.buildPacket}
+      </Button>
+      {packet !== null ? (
+        <a className={styles.link} href={claimPacketUrl(jobId)} target="_blank" rel="noreferrer">
+          {claims.downloadPacket(dayFormat.format(new Date(packet.builtAt)))}
+        </a>
+      ) : null}
+    </>
+  );
+}
+
 /** The job's insurance claim: its status, details and history, with a form to add or edit them. */
 export function ClaimSection({ jobId }: { jobId: string }) {
   const headingId = useId();
@@ -284,6 +305,7 @@ export function ClaimSection({ jobId }: { jobId: string }) {
             {claims.edit}
           </Button>
           {/* G1 Task 7 */}
+          <PacketActions jobId={jobId} packet={query.data.packet} dayFormat={dayFormat} />
         </div>
         {claim.events.length > 0 ? (
           <>

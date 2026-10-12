@@ -1059,10 +1059,11 @@ describe('S1 constraints', () => {
     expect(err.code).toBe('23514');
   });
 
-  test('stored_files accepts the storm_photo and ad_image kinds and refuses an unknown one', async () => {
+  test('stored_files accepts the storm_photo, ad_image and claim_packet kinds and refuses an unknown one', async () => {
     const s = await seedTwoCompanies(urls.owner);
     await insertStoredFile(s.a.companyId, 'storm_photo', 'photo-1');
     await insertStoredFile(s.a.companyId, 'ad_image', 'ad-1');
+    await insertStoredFile(s.a.companyId, 'claim_packet', 'claim-packets/x/1.pdf');
     await insertStoredFile(s.a.companyId, 'signed_proposal_pdf', 'pdf-1');
     const err = await rejected(
       `insert into stored_files (company_id, kind, object_key, sha256, bytes, content_type)

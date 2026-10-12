@@ -33,6 +33,7 @@ import type { FootprintSource } from './providers/footprints.ts';
 import type { AerialMeasure } from './providers/aerial.ts';
 import type { ExactReports } from './providers/exact-reports.ts';
 import type { AdImageRenderer } from './providers/ad-image.ts';
+import type { StaticMap } from './providers/static-map.ts'; // G1 Task 7
 import type { AdsGoogle } from './providers/ads-google.ts';
 import type { AdsMeta } from './providers/ads-meta.ts';
 import type { BroadcastMailer } from './providers/broadcast.ts';
@@ -167,6 +168,8 @@ export type AppDeps = {
   broadcast: BroadcastMailer;
   /** Draws the ad card image (providers/ad-image.ts); tests pass `FakeAdImageRenderer`. */
   adImage: AdImageRenderer;
+  /** G1 Task 7: the map picture on the claim packet (providers/static-map.ts); tests pass `FakeStaticMap`. */
+  staticMap: StaticMap;
 };
 
 export type AppOptions = {
