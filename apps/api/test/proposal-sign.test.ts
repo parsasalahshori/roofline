@@ -198,13 +198,29 @@ describe('what is checked', () => {
     expect(res.body.error).toBe('Draw your signature again.');
   });
 
-  test('a tiny PNG without a prefix is accepted and its hash stored', async () => {
+  test('a tiny PNG without a prefix is accepted, its hash stored, and the image stored in file storage first', async () => {
     const s = await sent();
     const view = await viewOf(s.token);
     const res = await post(s.token, goodBody(view, { drawnSignature: TINY_PNG }));
     expect(res.status).toBe(200);
+    const png = Buffer.from(TINY_PNG, 'base64');
     const [row] = await signatures(s.proposal.id);
-    expect(row!.drawnSignaturePngSha256).toBe(sha256(Buffer.from(TINY_PNG, 'base64')));
+    expect(row!.drawnSignaturePngSha256).toBe(sha256(png));
+    const key = `companies/${t.seed.a.companyId}/proposals/${s.proposal.id}/signature-${sha256(png)}.png`;
+    const stored = await t.objectStore.get(key);
+    expect(stored).not.toBeNull();
+    expect(Buffer.compare(Buffer.from(stored!), png)).toBe(0);
+    expect(t.objectStore.calls).toContainEqual({ method: 'put', key, contentType: 'image/png' });
+  });
+
+  test('a failed image store records no signature', async () => {
+    const s = await sent();
+    const view = await viewOf(s.token);
+    t.objectStore.failNext(1);
+    const res = await post(s.token, goodBody(view, { drawnSignature: TINY_PNG }));
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(await signatures(s.proposal.id)).toHaveLength(0);
+    expect((await proposalRow(s.proposal.id)).status).not.toBe('signed');
   });
 
   test('the 11th attempt on one token within an hour is a 429', async () => {
