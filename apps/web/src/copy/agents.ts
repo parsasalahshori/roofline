@@ -14,3 +14,26 @@ export const agents = {
   settingsTab: 'Agents',
   settingsComingSoon: 'How we count time saved is coming soon.',
 } as const;
+
+// --- Task 9: Agents window ---
+export const agentsWindow = {
+  estimate: '(estimate)',
+  totalsPrefix: 'About',
+  totalsSaved: 'saved this month',
+  separator: '·',
+  successRate: 'Success rate',
+  successRateNone: 'Not enough runs yet',
+  notApproved: 'Not approved:',
+  finishedToday: 'Finished today',
+  timeSaved: 'Time saved this month',
+  waiting: 'Waiting on you:',
+  comingSoon: 'Coming soon',
+  howWeCount: 'How we count',
+  howWeCountHref: '/settings/agents',
+  chartLabel: 'Tasks finished in the last 14 days',
+  chartDate: 'Date',
+  chartFinished: 'Finished',
+  status: { on: 'On', paused: 'Paused', waiting: 'Waiting on you', coming_soon: 'Coming soon' },
+  loadError: 'We could not load your agents. Try again in a moment.',
+  gridLabel: 'Your agents',
+} as const;

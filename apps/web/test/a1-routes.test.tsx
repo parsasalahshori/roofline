@@ -5,7 +5,7 @@ import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { agents } from '../src/copy/agents.ts';
+import { agents, agentsWindow } from '../src/copy/agents.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
 import { AGENT_LABEL } from '../src/copy/status.ts';
 import { agentFromSlug, agentSlug, PAGE_AGENTS } from '../src/features/agents/slugs.ts';
@@ -54,7 +54,6 @@ function renderApp(path: string) {
 
 describe('A1 windows', () => {
   it.each([
-    ['/agents', agents.overviewComingSoon],
     ['/agents/feed', agents.feedComingSoon],
     ['/agents/waiting', agents.waitingComingSoon],
   ])('%s shows its placeholder in the Agents window', async (path, line) => {
@@ -63,6 +62,17 @@ describe('A1 windows', () => {
 
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByText(line)).toBeInTheDocument();
+  });
+
+  it('/agents shows the overview in the Agents window', async () => {
+    signedInApi(ACCOUNT, {
+      'GET /api/agents': () => ({ body: { cards: [], minutesThisMonth: 0, hourlyRateCents: 2800 } }),
+    });
+    renderApp('/agents');
+
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    expect(within(dialog).getByRole('navigation', { name: agents.tabsLabel })).toBeInTheDocument();
+    expect(await within(dialog).findByRole('region', { name: agentsWindow.gridLabel })).toBeInTheDocument();
   });
 
   it.each(PAGE_AGENTS)('shows the %s page with its name', async (agent) => {
