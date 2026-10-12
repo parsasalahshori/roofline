@@ -24,12 +24,18 @@ export type BillingUpdate = {
   /** The columns to set. Only the fields that are present are changed. */
   set: {
     status?: CompanyStatus;
-    stripeSubscriptionId?: string;
+    /** The stored subscription id; null clears it (a deleted subscription). */
+    stripeSubscriptionId?: string | null;
     planKey?: string;
     billingPeriodStart?: Date;
   };
   /** Apply only when the company is past due (a paid invoice clears past due and nothing else). */
   onlyIfPastDue?: boolean;
+  /**
+   * Apply only while the company's stored subscription is this one (or none). A deleted old
+   * subscription must not cancel a company that has already subscribed again.
+   */
+  onlyIfSubscription?: string;
 };
 
 const NOTHING = { applied: false, before: null, after: null } as const;
@@ -51,15 +57,15 @@ export async function companyIdForStripeCustomer(system: Db, customerId: string)
  * nothing and changes nothing; (2) a null company (an unknown customer) stops here, the claim
  * stays so the event is acknowledged once; (3) lock the company row; (4) an event older than the
  * company's `billing_event_at` is stale and ignored; (5) `onlyIfPastDue` on a company that is not
- * past due only moves `billing_event_at`; (6) otherwise set the given columns and
+ * past due only moves `billing_event_at`; (6) `onlyIfSubscription` on a company that stores a
+ * different subscription only moves `billing_event_at`; (7) otherwise set the given columns and
  * `billing_event_at`, stamping `past_due_at` on entering past due and clearing it on leaving.
  *
  * The claim and the company update commit or roll back together: if the update fails, the claim
  * is rolled back too, so Stripe's retry is handled instead of being mistaken for a repeat.
  *
- * The claim is written here rather than through `claimWebhookEvent` (system/routing.ts): that
- * function takes a `Db`, and a transaction handle is not one. Its insert is repeated verbatim so the
- * claim can share this transaction. routing.ts is left untouched.
+ * The webhook_events claim is written inline here, not by a separate helper, so it shares this
+ * transaction: if the company update fails, the claim rolls back with it.
  */
 export async function applyBillingEvent(
   system: Db,
@@ -77,7 +83,12 @@ export async function applyBillingEvent(
     if (companyId === null) return NOTHING;
 
     const [company] = await tx
-      .select({ id: companies.id, status: companies.status, billingEventAt: companies.billingEventAt })
+      .select({
+        id: companies.id,
+        status: companies.status,
+        billingEventAt: companies.billingEventAt,
+        stripeSubscriptionId: companies.stripeSubscriptionId,
+      })
       .from(companies)
       .where(eq(companies.id, companyId))
       .limit(1)
@@ -94,12 +105,22 @@ export async function applyBillingEvent(
       return { applied: false, before, after: before };
     }
 
+    const storedSubscription = company.stripeSubscriptionId;
+    if (
+      u.onlyIfSubscription !== undefined &&
+      storedSubscription !== null &&
+      storedSubscription !== u.onlyIfSubscription
+    ) {
+      await tx.update(companies).set({ billingEventAt: u.eventCreated }).where(eq(companies.id, companyId));
+      return { applied: false, before, after: before };
+    }
+
     const next = u.set.status;
     const after = next ?? before;
     const patch: {
       billingEventAt: Date;
       status?: CompanyStatus;
-      stripeSubscriptionId?: string;
+      stripeSubscriptionId?: string | null;
       planKey?: string;
       billingPeriodStart?: Date;
       pastDueAt?: SQL | null;

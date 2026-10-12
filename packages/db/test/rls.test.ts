@@ -26,7 +26,10 @@ const APP_SYSTEM_RLS_TABLES = [
   'messages',
   'usage_events',
   'early_delivery_reports',
+  'calendar_connections',
 ] as const;
+/** Tenant tables app_tenant may delete from. No other tenant table grants it DELETE. */
+const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links'] as const;
 const COMPANY_PROFILE_COLUMNS = [
   'name',
   'legal_name',
@@ -310,15 +313,30 @@ describe('grants', () => {
     truncate: false,
   });
 
-  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, and DELETE on opt_outs only', async () => {
+  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, and DELETE only on opt_outs, calendar_busy_blocks and calendar_event_links', async () => {
+    const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
-      t === 'audit_log'
-        ? privs(t, true, true, false, false)
-        : t === 'opt_outs'
-          ? privs(t, true, true, true, true)
-          : privs(t, true, true, true, false),
+      t === 'audit_log' ? privs(t, true, true, false, false) : privs(t, true, true, true, deletable.has(t)),
     );
     expect(await tablePrivileges('app_tenant', TENANT_TABLES)).toEqual(expected);
+  });
+
+  test('app_tenant may update the new company_settings and jobs columns, table-wide or column-level', async () => {
+    const columns: [string, string][] = [
+      ['company_settings', 'work_hours'],
+      ['company_settings', 'travel_buffer_minutes'],
+      ['company_settings', 'min_notice_minutes'],
+      ['company_settings', 'stuck_after_days'],
+      ['jobs', 'next_step'],
+      ['jobs', 'next_step_on'],
+    ];
+    const rows = await ownerQuery<{ table_name: string; column_name: string; can_update: boolean }>(
+      `select t as table_name, c as column_name,
+              has_column_privilege('app_tenant', 'public.' || t, c, 'UPDATE') as can_update
+         from unnest($1::text[], $2::text[]) as v(t, c)`,
+      [columns.map(([t]) => t), columns.map(([, c]) => c)],
+    );
+    expect(rows).toEqual(columns.map(([table_name, column_name]) => ({ table_name, column_name, can_update: true })));
   });
 
   test('app_tenant: SELECT only on the company-scoped global tables, nothing on the private ones', async () => {
@@ -389,6 +407,7 @@ describe('grants', () => {
     expect(await tablePrivileges('app_system', GLOBAL_TABLES)).toEqual(
       GLOBAL_TABLES.map((t) => ({ ...privs(t, true, true, true, true), truncate: true })),
     );
+    // calendar_connections holds column-level SELECT only (see the column test below), so it has no table-level privilege here.
     expect(await tablePrivileges('app_system', TENANT_TABLES)).toEqual(
       TENANT_TABLES.map((t) => privs(t, false, false, false, t === 'early_delivery_reports')),
     );
@@ -422,6 +441,11 @@ describe('grants', () => {
       sel('agent_tasks', 'expires_at'),
       sel('agent_tasks', 'id'),
       sel('agent_tasks', 'status'),
+      sel('calendar_connections', 'company_id'),
+      sel('calendar_connections', 'id'),
+      sel('calendar_connections', 'last_synced_at'),
+      sel('calendar_connections', 'status'),
+      sel('calendar_connections', 'user_id'),
       sel('early_delivery_reports', 'applied_at'),
       sel('early_delivery_reports', 'id'),
       sel('early_delivery_reports', 'received_at'),
@@ -811,6 +835,11 @@ describe('app_system', () => {
       await ownerQuery(`insert into usage_events (company_id, kind, quantity) values ($1, 'sms_segment', 1)`, [
         s.companyId,
       ]);
+      await ownerQuery(
+        `insert into calendar_connections (company_id, user_id, provider, encrypted_credentials)
+         values ($1, $2, 'google', $3)`,
+        [s.companyId, s.owner.userId, Buffer.from('encrypted-placeholder')],
+      );
     }
     await ownerQuery(
       `insert into company_phone_numbers (company_id, e164) values ($1, '+14025550100'), ($2, '+14025550101')`,
@@ -824,6 +853,7 @@ describe('app_system', () => {
       agent_task_steps: `select id, task_id, company_id, status, updated_at, lease_expires_at, run_seq from agent_task_steps`,
       messages: `select id, company_id, status, scheduled_for from messages`,
       usage_events: `select id, company_id, kind, reported_to_stripe_at from usage_events`,
+      calendar_connections: `select id, company_id, user_id, status, last_synced_at from calendar_connections`,
     } satisfies Record<Exclude<(typeof APP_SYSTEM_RLS_TABLES)[number], 'early_delivery_reports'>, string>;
 
     const client = new pg.Client({ connectionString: urls.system });

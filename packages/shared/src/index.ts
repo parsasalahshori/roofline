@@ -10,6 +10,7 @@ export * from './imports.ts';
 export * from './billing.ts';
 export * from './texting.ts';
 export * from './consent.ts';
+// C1 skeleton (Task 1): one line per new shared file; later C1 tasks fill the files in.
 export * from './pipeline.ts';
 export * from './availability.ts';
 export * from './crm.ts';

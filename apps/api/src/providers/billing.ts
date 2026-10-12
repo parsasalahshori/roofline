@@ -11,6 +11,7 @@ export interface BillingProvider { readonly configured: boolean;
   reportMeterEvent(i: { eventName: string; customerId: string; value: number; identifier: string; timestamp: Date }): Promise<void>;
   createInvoiceItem(i: { customerId: string; amountCents: number; description: string; idempotencyKey: string }): Promise<{ invoiceItemId: string }> }
 export class BillingUnavailableError extends Error {}
+export class BillingRefusedError extends Error {}
 
 /** Used when no real billing provider is configured: every call fails with a setup message. */
 export class UnconfiguredBillingProvider implements BillingProvider {

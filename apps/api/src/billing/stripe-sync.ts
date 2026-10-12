@@ -1,4 +1,4 @@
-import Stripe from 'stripe';
+import type Stripe from 'stripe';
 import {
   type BillingConfig,
   METER_EVENT_NAME,
@@ -7,7 +7,8 @@ import {
   meteredTiers,
   priceLookupKeys,
 } from '@roofline/shared';
-import { BillingUnavailableError } from '../providers/billing.ts';
+import { BillingRefusedError } from '../providers/billing.ts';
+import { stripeFailure } from '../providers/stripe.ts';
 
 /*
  * Makes Stripe match the plan config: the meters, one product per plan and the three prices per
@@ -33,8 +34,6 @@ export type SyncAction =
   | { kind: 'create_product' | 'rename_product'; planKey: string; name: string }
   | { kind: 'create_price'; lookupKey: string; planKey: string; spec: Record<string, unknown> };
 
-/** The message for a Stripe failure. Provider text is never kept: only this plain sentence leaves this module. */
-const REFUSED = 'Stripe refused the request.';
 const MISSING_PRODUCT = 'A Stripe product is missing; run sync:stripe-plans.';
 
 const METER_DISPLAY_NAME: Record<Meter, string> = {
@@ -131,7 +130,7 @@ export function describeAction(action: SyncAction): string {
 
 /** Reads the active meters, the roofline products and the roofline prices (with their tiers) from Stripe. */
 export async function readStripeState(stripe: Stripe): Promise<StripeState> {
-  return refusalAsPlainError(async () => {
+  return mapStripeFailure(async () => {
     const meters: StripeState['meters'] = [];
     for await (const m of stripe.billing.meters.list({ status: 'active', limit: 100 })) {
       meters.push({ id: m.id, eventName: m.event_name });
@@ -164,7 +163,7 @@ export async function readStripeState(stripe: Stripe): Promise<StripeState> {
  * created, so a later price in the same run can find a product or meter made earlier in the run.
  */
 export async function applySyncAction(stripe: Stripe, action: SyncAction, state: StripeState): Promise<string> {
-  return refusalAsPlainError(async () => {
+  return mapStripeFailure(async () => {
     switch (action.kind) {
       case 'create_meter': {
         const eventName = METER_EVENT_NAME[action.meter];
@@ -188,14 +187,14 @@ export async function applySyncAction(stripe: Stripe, action: SyncAction, state:
       }
       case 'rename_product': {
         const product = state.products.find((p) => p.planKey === action.planKey);
-        if (!product) throw new Error(MISSING_PRODUCT);
+        if (!product) throw new BillingRefusedError(MISSING_PRODUCT);
         await stripe.products.update(product.id, { name: action.name });
         product.name = action.name;
         break;
       }
       case 'create_price': {
         const product = state.products.find((p) => p.planKey === action.planKey);
-        if (!product) throw new Error(MISSING_PRODUCT);
+        if (!product) throw new BillingRefusedError(MISSING_PRODUCT);
         const spec = { ...action.spec };
         const recurring = spec.recurring as { meter?: unknown } | undefined;
         let meterId: string | null = null;
@@ -227,22 +226,11 @@ function stateTiers(tiers: { up_to: number | 'inf'; unit_amount_decimal: string 
   return tiers.map((t) => ({ up_to: t.up_to === 'inf' ? null : t.up_to, unit_amount_decimal: t.unit_amount_decimal }));
 }
 
-/**
- * Runs `work`; a Stripe failure becomes BillingUnavailableError when Stripe did not answer (a
- * connection error, a 5xx or a 429), and otherwise the plain 'Stripe refused the request.'. The
- * Stripe error itself, with its message, is dropped.
- */
-async function refusalAsPlainError<T>(work: () => Promise<T>): Promise<T> {
-  let failure: unknown;
+/** Runs `work`; a Stripe failure is mapped by `stripeFailure`, so the Stripe error and its message are dropped. */
+async function mapStripeFailure<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work();
   } catch (err) {
-    failure = err;
+    throw stripeFailure(err);
   }
-  if (!(failure instanceof Stripe.errors.StripeError)) throw failure;
-  const status = failure.statusCode;
-  if (failure instanceof Stripe.errors.StripeConnectionError || (status !== undefined && (status >= 500 || status === 429))) {
-    throw new BillingUnavailableError("Stripe didn't answer.");
-  }
-  throw new Error(REFUSED);
 }
