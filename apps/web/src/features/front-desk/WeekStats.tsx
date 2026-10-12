@@ -1,18 +1,10 @@
 import { useId } from 'react';
-import type { FrontDeskWeekStats } from '@roofline/shared';
 import { Skeleton, StatCard } from '@roofline/ui';
 import { frontDeskInbox } from '../../copy/front-desk-inbox.ts';
 import { useWeekStats } from './inbox-api.ts';
 import styles from './WeekStats.module.css';
 
 const copy = frontDeskInbox.stats;
-
-/** The AI minutes tile: "212 of 500 minutes" when the plan includes some, else "212 minutes". */
-function aiMinutesValue(stats: FrontDeskWeekStats): string {
-  return stats.aiMinutesIncluded === null
-    ? copy.aiMinutesUsed(stats.aiMinutesUsed)
-    : copy.aiMinutesOf(stats.aiMinutesUsed, stats.aiMinutesIncluded);
-}
 
 /** This week's counts and AI minutes as a row of stat tiles. It fetches its own numbers and never blocks the list below. */
 export function WeekStats() {
@@ -42,7 +34,8 @@ export function WeekStats() {
           <StatCard label={copy.transferred} value={data.transferred} />
           <StatCard label={copy.messages} value={data.messages} />
           <StatCard label={copy.spam} value={data.spam} />
-          <StatCard label={copy.aiMinutes} value={aiMinutesValue(data)} />
+          {/* This week's minutes only: the plan's included minutes are a monthly allowance, so "of N" would mislead */}
+          <StatCard label={copy.aiMinutes} value={copy.aiMinutesUsed(data.aiMinutesUsed)} />
         </div>
       )}
     </section>

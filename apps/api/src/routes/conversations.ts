@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   decodeInboxCursor,
   findVisibleConversation,
+  getConversation,
   getConversationDetail,
   insertAssistantText,
   listConversationInbox,
@@ -15,12 +16,12 @@ import {
 } from '@roofline/db';
 import type { InboxScope, TenantContext } from '@roofline/db';
 import { CONVERSATION_FILTERS, HANDLED_BY } from '@roofline/shared';
-import type { ConversationFilter } from '@roofline/shared';
+import type { ConversationFilter, ReplyResult } from '@roofline/shared';
 import { inboxScopeOf } from '../account/inbox-scope.ts';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { buildGateRequest } from '../messaging/gate-request.ts';
-import { sendQueuedText, textStateFor } from '../messaging/outbound.ts';
+import { sendQueuedText, textStateFor, UNCONFIRMED } from '../messaging/outbound.ts';
 import { parse, UUID } from '../validate.ts';
 
 const NOT_BUILT = 'This part of Front Desk (conversations) is not built yet.';
@@ -51,8 +52,12 @@ const handlingSchema = z.object({ by: z.enum(HANDLED_BY, { error: BAD_HANDLING }
  * `/api/conversations`: the Front Desk inbox.
  * - `GET /?filter=&cursor=`: `ConversationPage`, newest first, 30 a page.
  * - `GET /:id`: `ConversationDetail` (a turn's text is null when it was not kept or was swept).
- * - `POST /:id/reply { body }`: a staff text through the send gate (informational); silences the
- *   assistant for 2 hours. Answers `{ id, status }`.
+ * - `POST /:id/reply { body }`: a staff text through the send gate (informational). Answers 200
+ *   `ReplyResult` (`{ id, status: 'sent' | 'scheduled', scheduledFor }`) when it went out or will go out
+ *   later. When the gate blocks it, or the text could not be sent, it is a 422 with the plain reason
+ *   (nothing is kept for a block, so the draft stays the person's to edit). A reply never changes who
+ *   is handling the conversation: the assistant keeps quiet for 2 hours after a team text on its own
+ *   (texts.ts), and only the "Team is handling" switch hands the conversation over.
  * - `POST /:id/handling { by }`: `{ id, handledBy, teamUntil }`.
  * - `POST /:id/read`: `{ id }`.
  * Owner and office see every conversation; a rep sees their own customers' (and unknown numbers
@@ -133,7 +138,6 @@ export function conversationRoutes(deps: AppDeps): Router {
     const { body } = parse(replySchema, req.body);
     const scope = await scopeOf(ctx);
     const now = clock.now();
-    const teamUntil = new Date(now.getTime() + TEAM_HANDLING_MS);
 
     const outcome = await withTenant(pools, ctx, async (tx) => {
       const convo = await findVisibleConversation(tx, ctx, scope, id);
@@ -143,10 +147,12 @@ export function conversationRoutes(deps: AppDeps): Router {
       if (customerId === null) throw new AppError(409, NO_CUSTOMER);
       const dedupeKey = `fd-reply:${id}:${randomUUID()}`;
       await lockRecipient(tx, ctx, customerId);
+      // Reply to the number that texted; the gate uses it only when it is one of the customer's numbers.
+      const toE164 = (await getConversation(tx, ctx, id))?.phoneE164 ?? null;
       const built = await buildGateRequest(
         tx,
         ctx,
-        { customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null },
+        { customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null, toE164 },
         now,
       );
       if (!built) throw new AppError(404, MESSAGES.notFound);
@@ -154,6 +160,8 @@ export function conversationRoutes(deps: AppDeps): Router {
       if (state.status === 'queued' && built.toE164 === null) {
         state = { status: 'blocked', blockRule: 'contact', blockReason: NO_MOBILE };
       }
+      // Nothing will be sent: say why, and keep nothing (throwing rolls the transaction back).
+      if (state.status === 'blocked' || state.status === 'failed') throw new AppError(422, state.blockReason);
       const messageId = await insertAssistantText(
         tx,
         ctx,
@@ -162,15 +170,22 @@ export function conversationRoutes(deps: AppDeps): Router {
         now,
       );
       if (messageId === null) throw new AppError(409, SEND_FAILED);
-      // Replying takes the conversation over: the assistant stays quiet for two hours.
-      await setConversationHandling(tx, ctx, id, 'team', teamUntil, now);
       return { messageId, state, to: built.toE164, sender: built.sender };
     });
 
-    if (outcome.state.status === 'queued' && outcome.to !== null) {
-      await sendQueuedText(deps, ctx, { messageId: outcome.messageId, to: outcome.to, body, sender: outcome.sender }, SEND_FAILED);
+    const { state } = outcome;
+    if (state.status === 'scheduled') {
+      const result: ReplyResult = { id: outcome.messageId, status: 'scheduled', scheduledFor: state.scheduledFor.toISOString() };
+      res.json(result);
+      return;
     }
-    res.json({ id: outcome.messageId, status: outcome.state.status });
+    if (outcome.to === null) throw new AppError(422, NO_MOBILE);
+    const sent = await sendQueuedText(deps, ctx, { messageId: outcome.messageId, to: outcome.to, body, sender: outcome.sender }, SEND_FAILED);
+    // The row says what happened; a text the provider may have sent anyway is never sent again.
+    if (sent === 'unknown') throw new AppError(422, UNCONFIRMED);
+    if (sent !== 'sent') throw new AppError(422, SEND_FAILED);
+    const result: ReplyResult = { id: outcome.messageId, status: 'sent', scheduledFor: null };
+    res.json(result);
   });
 
   router.all('/{*rest}', (_req, res) => {

@@ -9,7 +9,7 @@ import { RecordingPlayer } from '../src/features/front-desk/RecordingPlayer.tsx'
 import { SummaryPanel } from '../src/features/front-desk/SummaryPanel.tsx';
 import { conversationCopy } from '../src/copy/front-desk-conversation.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
-import { stubApi } from './helpers.tsx';
+import { ACCOUNT, stubApi } from './helpers.tsx';
 
 let api: ReturnType<typeof stubApi> | undefined;
 
@@ -24,6 +24,9 @@ const AT = '2026-10-11T14:00:00.000Z';
 const RECORDING = 'GET /api/calls/call1/recording';
 const HANDLING = 'POST /api/conversations/conv1/handling';
 const SPAM = 'POST /api/calls/call1/spam';
+type Role = 'owner' | 'office' | 'rep';
+/** Who is signed in: the panel shows Mark as spam only to the owner and the office. */
+const meAs = (role: Role) => ({ 'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role } }) });
 
 function makeCall(overrides: Partial<CallView> = {}): CallView {
   return {
@@ -121,7 +124,7 @@ describe('RecordingPlayer', () => {
 
 describe('SummaryPanel', () => {
   it('renders the summary and the follow-ups', () => {
-    api = stubApi({});
+    api = stubApi({ ...meAs('owner') });
     renderWith(<SummaryPanel conversation={makeConversation()} />);
 
     expect(screen.getByText(conversationCopy.summaryHeading)).toBeInTheDocument();
@@ -132,7 +135,7 @@ describe('SummaryPanel', () => {
   });
 
   it('shows the empty summary line and no follow-ups heading when there are none', () => {
-    api = stubApi({});
+    api = stubApi({ ...meAs('owner') });
     renderWith(<SummaryPanel conversation={makeConversation({ summary: null, followUps: [] })} />);
 
     expect(screen.getByText(conversationCopy.summaryNone)).toBeInTheDocument();
@@ -140,7 +143,7 @@ describe('SummaryPanel', () => {
   });
 
   it('switches the team on: a switch on an assistant conversation posts by team', async () => {
-    api = stubApi({ [HANDLING]: () => ({ body: {} }) });
+    api = stubApi({ ...meAs('owner'), [HANDLING]: () => ({ body: {} }) });
     const { user } = renderWith(<SummaryPanel conversation={makeConversation({ handledBy: 'assistant' })} />);
 
     const toggle = screen.getByRole('switch', { name: conversationCopy.handling });
@@ -152,7 +155,7 @@ describe('SummaryPanel', () => {
   });
 
   it('switches the team off: a checked switch posts by assistant', async () => {
-    api = stubApi({ [HANDLING]: () => ({ body: {} }) });
+    api = stubApi({ ...meAs('owner'), [HANDLING]: () => ({ body: {} }) });
     const { user } = renderWith(<SummaryPanel conversation={makeConversation({ handledBy: 'team' })} />);
 
     const toggle = screen.getByRole('switch', { name: conversationCopy.handling });
@@ -164,24 +167,42 @@ describe('SummaryPanel', () => {
   });
 
   it('marks the last call as spam on a voice conversation', async () => {
-    api = stubApi({ [SPAM]: () => ({ body: {} }) });
+    api = stubApi({ ...meAs('owner'), [SPAM]: () => ({ body: {} }) });
     const { user } = renderWith(<SummaryPanel conversation={makeConversation({ channel: 'voice' })} />);
 
-    await user.click(screen.getByRole('button', { name: conversationCopy.markSpam }));
+    await user.click(await screen.findByRole('button', { name: conversationCopy.markSpam }));
 
     await waitFor(() => expect(api?.count(SPAM)).toBe(1));
     expect(api?.sent(SPAM)).toEqual([{}]);
   });
 
+  it('hides Mark as spam from a rep, who cannot mark spam', async () => {
+    api = stubApi({ ...meAs('rep') });
+    renderWith(<SummaryPanel conversation={makeConversation({ channel: 'voice' })} />);
+
+    await waitFor(() => expect(api?.count('GET /api/auth/me')).toBe(1));
+    // Let the answer render before checking the button is absent.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByRole('button', { name: conversationCopy.markSpam })).toBeNull();
+    expect(screen.getByRole('link', { name: conversationCopy.callBack })).toBeInTheDocument();
+  });
+
+  it('shows Mark as spam to the office', async () => {
+    api = stubApi({ ...meAs('office') });
+    renderWith(<SummaryPanel conversation={makeConversation({ channel: 'voice' })} />);
+
+    expect(await screen.findByRole('button', { name: conversationCopy.markSpam })).toBeInTheDocument();
+  });
+
   it('hides Mark as spam for a text conversation', () => {
-    api = stubApi({});
+    api = stubApi({ ...meAs('owner') });
     renderWith(<SummaryPanel conversation={makeConversation({ channel: 'sms' })} />);
 
     expect(screen.queryByRole('button', { name: conversationCopy.markSpam })).toBeNull();
   });
 
   it('shows the spam mark instead of the button once the call is marked', () => {
-    api = stubApi({});
+    api = stubApi({ ...meAs('owner') });
     renderWith(
       <SummaryPanel
         conversation={makeConversation({ calls: [makeCall({ spamReason: 'robocall' })] })}
@@ -193,7 +214,7 @@ describe('SummaryPanel', () => {
   });
 
   it('calls back as a tel: link, not a button', () => {
-    api = stubApi({});
+    api = stubApi({ ...meAs('owner') });
     renderWith(<SummaryPanel conversation={makeConversation()} />);
 
     const link = screen.getByRole('link', { name: conversationCopy.callBack });

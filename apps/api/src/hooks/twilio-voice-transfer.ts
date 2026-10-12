@@ -36,6 +36,15 @@ function parseHandoff(raw: string | undefined): Handoff {
   }
 }
 
+/** Best-effort: queue the after-call work for a finished call. Same key as the status hook, so a repeat is harmless. */
+async function enqueueAfterCall(deps: AppDeps, companyId: string, callSid: string): Promise<void> {
+  try {
+    await deps.jobs.send('fd-after-call', { companyId, callSid }, { singletonKey: `fd-after-call:${callSid}`, startAfter: 5 });
+  } catch {
+    console.error(`fd-after-call enqueue failed company=${companyId}`);
+  }
+}
+
 function transferUrl(deps: AppDeps, path: string): string {
   return `${deps.config.PUBLIC_BASE_URL}/hooks/twilio/voice-transfer${path}`;
 }
@@ -104,6 +113,7 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
 
     if (handoff.kind === 'end') {
       await withTenant(deps.pools, ctx, (tx) => updateCall(tx, ctx, callSid, { status: 'ended', endedAt: now }));
+      await enqueueAfterCall(deps, route.companyId, callSid);
       sendVoiceTwiml(res, HANGUP);
       return;
     }
@@ -170,6 +180,7 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
 
     if (answered) {
       await withTenant(deps.pools, ctx, (tx) => updateCall(tx, ctx, callSid, { status: 'ended', transferResult: 'answered', endedAt: now }));
+      await enqueueAfterCall(deps, route.companyId, callSid);
       sendVoiceTwiml(res, '<Response/>');
       return;
     }
