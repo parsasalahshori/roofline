@@ -4,7 +4,7 @@ import { READ_ONLY_MESSAGE, readOnlyGuard } from '../src/billing/read-only.ts';
 type Status = 'trial_ended' | 'canceled' | 'active';
 
 /** Runs the guard for one request. Plain objects only: no app, no database. */
-function run(method: string, path: string, companyStatus: Status | null) {
+function run(method: string, path: string, companyStatus: Status | null, body?: unknown) {
   const next = vi.fn();
   const recorded: { code?: number; body?: unknown } = {};
   const res = {
@@ -20,6 +20,7 @@ function run(method: string, path: string, companyStatus: Status | null) {
   const req = {
     method,
     path,
+    body,
     session: companyStatus === null ? undefined : { companyStatus },
   };
   readOnlyGuard(req as never, res as never, next);
@@ -65,5 +66,33 @@ describe('read-only guard', () => {
   test('an active company can write', () => {
     const { next } = run('POST', '/customers', 'active');
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  describe('Front Desk settings: turning it off stays open', () => {
+    test.each(['trial_ended', 'canceled'] as const)('PUT /front-desk/settings with enabled false is allowed for %s', (status) => {
+      const { next, recorded } = run('PUT', '/front-desk/settings', status, { enabled: false });
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(recorded.code).toBeUndefined();
+    });
+
+    test('the path is case-insensitive and may end in a slash', () => {
+      expect(run('PUT', '/Front-Desk/Settings/', 'trial_ended', { enabled: false }).next).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([[{ enabled: true }], [undefined], [{}], [{ enabled: 'false' }]])('turning it on (%j) gets the read-only message', (body) => {
+      const { next, recorded } = run('PUT', '/front-desk/settings', 'trial_ended', body);
+      expect(next).not.toHaveBeenCalled();
+      expect(recorded.code).toBe(403);
+      expect(recorded.body).toEqual({ error: READ_ONLY_MESSAGE.trial_ended });
+    });
+
+    test('another PUT path and another method are refused', () => {
+      for (const [method, path] of [['PUT', '/front-desk/other'], ['POST', '/front-desk/settings']] as const) {
+        const { next, recorded } = run(method, path, 'canceled', { enabled: false });
+        expect(next).not.toHaveBeenCalled();
+        expect(recorded.code).toBe(403);
+        expect(recorded.body).toEqual({ error: READ_ONLY_MESSAGE.canceled });
+      }
+    });
   });
 });

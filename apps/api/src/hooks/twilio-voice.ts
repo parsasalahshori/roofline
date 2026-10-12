@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { countLiveAiCalls, insertCall, screeningFacts, type TenantContext, updateCall, withTenant } from '@roofline/db';
+import { companyReadOnly, countLiveCallsInWindow, insertCall, lockAiCap, screeningFacts, type TenantContext, updateCall, withTenant } from '@roofline/db';
 import { teamDialNumbers } from '@roofline/db/system';
 import { disclosureGreeting } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
@@ -72,8 +72,12 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
         await updateCall(tx, ctx, callSid, { status: 'rejected', spamReason: screen.reason, endedAt: now });
         return { kind: 'reject' as const };
       }
-      const liveAi = await countLiveAiCalls(tx, ctx);
-      return { kind: 'ok' as const, callId: call.id, liveAi };
+      // The cap decision is made under a per-company lock held until this transaction ends, so two calls
+      // arriving together cannot both see room for one more. Ringing and ai calls of the last 35 minutes count.
+      await lockAiCap(tx, ctx);
+      const liveAi = await countLiveCallsInWindow(tx, ctx, now, call.id);
+      const readOnly = await companyReadOnly(tx, ctx);
+      return { kind: 'ok' as const, callId: call.id, overCompanyCap: liveAi >= route.maxConcurrentAiCalls, readOnly };
     });
 
     if (outcome.kind === 'replay') {
@@ -86,11 +90,12 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
     }
 
     const overCap =
-      outcome.liveAi >= route.maxConcurrentAiCalls ||
+      outcome.overCompanyCap ||
       deps.relaySessions.size >= deps.config.FRONT_DESK_MAX_CALLS ||
       !deps.relaySessions.llmHealthy;
 
-    if (!route.frontDeskEnabled || overCap) {
+    // A read-only company (trial ended, canceled) never gets the AI: it gets the team then voicemail.
+    if (!route.frontDeskEnabled || overCap || outcome.readOnly) {
       sendVoiceTwiml(res, voicemailXml(publicUrl, await teamDialNumbers(deps.pools.system, route.companyId)));
       return;
     }

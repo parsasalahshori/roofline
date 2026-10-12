@@ -167,6 +167,18 @@ describe('take_message', () => {
       tx.select().from(conversations).where(eq(conversations.id, conv.conversationId)),
     );
     expect(row!.outcome).toBe('message');
-    expect(row!.summary).toBe(INPUT.reason);
+    expect(row!.summary).toBeNull();
+  });
+
+  test('the message text is in the activity, not in any summary', async () => {
+    const { customerId } = await customerWithJob(null);
+    const conv = await makeConversation(customerId);
+    await run(conv);
+    const [row] = await inCompany(t, idA(), (tx) =>
+      tx.select().from(conversations).where(eq(conversations.id, conv.conversationId)),
+    );
+    expect(row!.summary).toBeNull();
+    const acts = await inCompany(t, idA(), (tx) => tx.select().from(activities).where(eq(activities.kind, 'front_desk_message')));
+    expect(JSON.stringify(acts.map((a) => a.data))).toContain(INPUT.reason);
   });
 });

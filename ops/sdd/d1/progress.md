@@ -154,3 +154,4 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
     - (a) ASK_PERSON_INTENTS and 'not_understood' are guessed router labels, and the frozen ROUTER_PROMPT doesn't ask for them. RC adds the labels to the router's json_schema enum (Haiku format), not to the frozen prompt text.
     - (b) transfer reason 'asked' plus the router intent can count one ask twice in a turn; count once.
     - (c) drop the times.ts systemCtx re-export.
+- Task CV, Schema gap (finding F2): calls has no outcome or title column, so a transferred call with no conversation keeps only calls.status 'transferred' as its outcome. needs_attention is derived from unread_count (conversation-inbox.ts), which voice calls never set, so a booked voice call does not show as needs-attention. A column would need a new migration, which D1 does not own beyond 0019/0020, so it is left for the controller.

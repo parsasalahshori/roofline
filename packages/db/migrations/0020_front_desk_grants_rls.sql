@@ -71,12 +71,13 @@ CREATE POLICY tenant_isolation ON blocked_numbers
 
 -- 4. app_system: the recording and retention fan-outs read only the ids, company, status and recording
 --    columns they need, across companies, through the app_system_all policies below (section 6). These
+-- Task CV: the stuck-call sweep (endStuckCalls) also reads started_at and ends a call (status, ended_at, updated_at).
 --    grants are its real limit. It may write only the recording columns of a call. It never reads or
 --    writes transcript text or tool records (Ruling BF): the retention sweep blanks turns on the tenant
 --    pool, inside withTenant.
-GRANT SELECT (id, company_id, call_sid, status, conversation_id, recording_key, recording_status) ON calls TO app_system;
+GRANT SELECT (id, company_id, call_sid, status, conversation_id, recording_key, recording_status, started_at) ON calls TO app_system;
 --> statement-breakpoint
-GRANT UPDATE (recording_key, recording_status) ON calls TO app_system;
+GRANT UPDATE (recording_key, recording_status, status, ended_at, updated_at) ON calls TO app_system;
 --> statement-breakpoint
 GRANT SELECT (id, company_id, status) ON conversations TO app_system;
 --> statement-breakpoint
