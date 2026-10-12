@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { agentTaskSteps, createMeasurement, exactReportOrders, type TenantContext } from '@roofline/db';
 import { instantEstimate, invoiceAmountCents } from '@roofline/shared';
 import { billingConfig } from '../src/billing/plans.ts';
-import { orderExactReport, requestExactReport } from '../src/estimator/exact-report.ts';
+import { NOT_SAVED_MESSAGE, orderExactReport, requestExactReport } from '../src/estimator/exact-report.ts';
 import { Actors, addressFor, inCompany, mustCreate } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { agentCtx, dbSteps, dbTask, seenOf } from './task-helpers.ts';
@@ -148,5 +148,95 @@ describe('the exact report order flow', () => {
     expect(after.status).toBe('needs_attention');
     expect(after.errorPlain).toBe('The report price went up. Ask again.');
     expect((await order(orderId)).status).toBe('attention');
+  });
+});
+
+describe('one open order per measurement (B4)', () => {
+  test('asking again while the order is priced, ordered or waiting gives the same task and order', async () => {
+    const first = await request();
+    const again = await requestExactReport(t.deps, ctx, measurementId);
+    expect(again).toEqual({ taskId: first.taskId, orderId: first.orderId });
+    expect(calls('price')).toHaveLength(1);
+
+    await ownerApproves(first.taskId, first.steps);
+    await t.queue.drain(t.deps);
+    expect((await order(first.orderId)).status).toBe('waiting');
+    expect(await requestExactReport(t.deps, ctx, measurementId)).toEqual({ taskId: first.taskId, orderId: first.orderId });
+    const orders = await inCompany(t, ctx.companyId, (tx) => tx.select().from(exactReportOrders).where(eq(exactReportOrders.measurementId, measurementId)));
+    expect(orders).toHaveLength(1);
+  });
+
+  test('two requests at the same moment make one order', async () => {
+    const [a, b] = await Promise.all([requestExactReport(t.deps, ctx, measurementId), requestExactReport(t.deps, ctx, measurementId)]);
+    expect(b).toEqual(a);
+    const orders = await inCompany(t, ctx.companyId, (tx) => tx.select().from(exactReportOrders).where(eq(exactReportOrders.measurementId, measurementId)));
+    expect(orders).toHaveLength(1);
+  });
+
+  test('the route answers the second click with the first task (201)', async () => {
+    const owner = await actors.as('owner');
+    const one = await owner.post(`/api/measurements/${measurementId}/exact-report`).send({});
+    const two = await owner.post(`/api/measurements/${measurementId}/exact-report`).send({});
+    expect(one.status).toBe(201);
+    expect(two.status).toBe(201);
+    expect(two.body).toEqual({ taskId: one.body.taskId });
+  });
+
+  test('an order that needed attention is not open: asking again makes a new one', async () => {
+    t.exactReports.orderUncertainNext();
+    const first = await request();
+    await ownerApproves(first.taskId, first.steps);
+    await t.queue.drain(t.deps);
+    expect((await order(first.orderId)).status).toBe('attention');
+    const again = await requestExactReport(t.deps, ctx, measurementId);
+    expect(again.orderId).not.toBe(first.orderId);
+  });
+});
+
+describe('a placed order whose save fails (C-I3)', () => {
+  /** After the next successful order call, the next `n` tenant transactions fail as a database blip would. */
+  function failSavesAfterOrder(n: number) {
+    const tenant = t.deps.pools.tenant as unknown as { transaction: (...args: unknown[]) => Promise<unknown> };
+    const realTransaction = tenant.transaction.bind(tenant);
+    let failing = 0;
+    tenant.transaction = (...args: unknown[]) => {
+      if (failing > 0) {
+        failing -= 1;
+        return Promise.reject(new Error('connection lost'));
+      }
+      return realTransaction(...args);
+    };
+    const realOrder = t.exactReports.order.bind(t.exactReports);
+    t.exactReports.order = async (input) => {
+      const placed = await realOrder(input);
+      failing = n;
+      return placed;
+    };
+  }
+
+  test('one failed write is tried again: the order waits with its report id', async () => {
+    const { taskId, orderId, steps } = await request();
+    await ownerApproves(taskId, steps);
+    failSavesAfterOrder(1);
+    await t.queue.drain(t.deps);
+    const o = await order(orderId);
+    expect(o.status).toBe('waiting');
+    expect(o.providerReportId).toBe('rep-1');
+    expect(calls('order')).toHaveLength(1);
+  });
+
+  test('two failed writes: never marked uncertain, our ids are logged, the step says not to order again', async () => {
+    const { taskId, orderId, steps } = await request();
+    await ownerApproves(taskId, steps);
+    failSavesAfterOrder(2);
+    await t.queue.drain(t.deps);
+    const o = await order(orderId);
+    expect(o.status).toBe('ordering');
+    expect(o.errorPlain).toBeNull();
+    const step = (await dbSteps(t, 'a', taskId))[0]!;
+    expect(step.status).toBe('needs_attention');
+    expect(step.errorPlain).toBe(NOT_SAVED_MESSAGE);
+    expect(t.logged.some((l) => l.where.includes(orderId) && l.where.includes('rep-1'))).toBe(true);
+    expect(calls('order')).toHaveLength(1);
   });
 });

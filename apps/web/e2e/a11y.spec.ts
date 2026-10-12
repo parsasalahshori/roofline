@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { test, expect, readStack, companyHostUrl, stormPageCode, draftAndApproveStormPlan, waitForStormSteps } from './fixtures.ts';
+import { makeAndSendProposal, BETTER_NAME } from './estimator-helpers.ts';
 import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 
 /*
@@ -54,6 +55,53 @@ test('setup has no serious accessibility violations', async ({ page, loginAs, ma
   await page.goto('/settings/setup');
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
   await scan(page);
+});
+
+test('estimator has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/estimator');
+  await expect(page.getByRole('dialog', { name: 'Estimator' })).toBeVisible();
+  await expect(page.getByLabel('Address')).toBeVisible();
+  await scan(page);
+});
+
+test('measure view has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, click }) => {
+  test.setTimeout(120_000);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const sent = await makeAndSendProposal(page, click);
+  const response = await page.request.get('/api/proposals/' + sent.proposalId);
+  const { measurementId } = (await response.json()) as { measurementId: string };
+  await page.goto('/estimator/measure/' + measurementId);
+  await expect(page.getByText('The numbers')).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('proposal view has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, click }) => {
+  test.setTimeout(120_000);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const sent = await makeAndSendProposal(page, click);
+  await page.goto('/estimator/proposals/' + sent.proposalId);
+  await expect(page.getByRole('button', { name: 'Copy link' })).toBeVisible();
+  await scan(page);
+});
+
+test('homeowner page has no serious accessibility violations', async ({ page, browser, loginAs, markTodaySeen, click }) => {
+  test.setTimeout(120_000);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const sent = await makeAndSendProposal(page, click);
+  const context = await browser.newContext({ baseURL: readStack().baseUrl });
+  try {
+    const home = await context.newPage();
+    await home.goto(sent.link);
+    await expect(home.getByRole('button', { name: `Choose ${BETTER_NAME}`, exact: true })).toBeVisible();
+    await scan(home);
+  } finally {
+    await context.close();
+  }
 });
 
 test('jobs board has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {

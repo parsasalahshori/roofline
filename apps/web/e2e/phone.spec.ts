@@ -1,5 +1,6 @@
 import type { Page, Locator } from '@playwright/test';
 import { test, expect, companyHostUrl, draftAndApproveStormPlan, stormPageCode, waitForStormSteps } from './fixtures.ts';
+import { makeAndSendProposal } from './estimator-helpers.ts';
 import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 
 /*
@@ -117,6 +118,17 @@ test('F3 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen })
     await expect(page.getByRole('dialog').first()).toBeVisible();
     await noSideScroll(page);
   }
+});
+
+test('the proposal view fits the phone', async ({ page, loginAs, markTodaySeen, click }) => {
+  test.setTimeout(120_000);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const sent = await makeAndSendProposal(page, click);
+
+  await page.goto('/estimator/proposals/' + sent.proposalId);
+  await expect(page.getByRole('button', { name: 'Copy link' })).toBeVisible();
+  await noSideScroll(page);
 });
 
 test('C1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, db, scenario }) => {

@@ -8,7 +8,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { estimator } from '../src/copy/estimator.ts';
 import type { MeasurementView } from '../src/features/measure/types.ts';
-import { ACCOUNT, makeTask, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
+import { ACCOUNT, makeTask, proposalListRoutes, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need.
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -107,7 +107,7 @@ const HOME = { id: 'pr1', customerId: 'c1', addressLine: '12 Oak St', city: 'Aus
 /** Routes for the make-proposal flow that ends on the approval review. */
 function flowRoutes(extra: Routes = {}): Routes {
   return {
-    'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }),
+    ...proposalListRoutes(),
     'POST /api/measurements': () => ({ body: measurement('m1', false) }),
     'POST /api/proposals': () => ({ body: proposal('p1', 'P-0001', 'draft') }),
     'POST /api/proposals/p1/send': () => ({ body: { taskId: 't1' } }),
@@ -118,7 +118,7 @@ function flowRoutes(extra: Routes = {}): Routes {
 
 describe('Estimator window', () => {
   it('groups the proposals', async () => {
-    signedInApi({ 'GET /api/proposals': () => ({ body: { proposals: FIVE, total: 5 } }) });
+    signedInApi(proposalListRoutes(FIVE));
     renderApp();
 
     expect(await screen.findByText('P-0001')).toBeInTheDocument();
@@ -132,11 +132,65 @@ describe('Estimator window', () => {
     const signed = within(group(estimator.groups.signed));
     expect(signed.getByText('P-0005')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /P-0005/ })).toHaveAttribute('href', '/estimator/proposals/p5');
-    expect(screen.queryByText(estimator.emptyGroup)).toBeNull();
+    for (const key of ['review', 'out', 'signed'] as const) {
+      expect(within(group(estimator.groups[key])).queryByText(estimator.emptyGroup)).toBeNull();
+    }
+  });
+
+  it('has Declined and Expired groups', async () => {
+    signedInApi(proposalListRoutes([...FIVE, proposal('p6', 'P-0006', 'declined'), proposal('p7', 'P-0007', 'expired', 'Sam Roe')]));
+    renderApp();
+
+    expect(await screen.findByText('P-0006')).toBeInTheDocument();
+    expect(within(group(estimator.groups.declined)).getByText('P-0006')).toBeInTheDocument();
+    expect(within(group(estimator.groups.expired)).getByText('P-0007')).toBeInTheDocument();
+  });
+
+  it('pages a group with Show more so nothing past 50 disappears', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => proposal(`s${i}`, `S-${String(i).padStart(4, '0')}`, 'signed'));
+    signedInApi({
+      ...proposalListRoutes(),
+      'GET /api/proposals?status=signed': () => ({ body: { proposals: many.slice(0, 50), total: 60 } }),
+      'GET /api/proposals?status=signed&offset=50': () => ({ body: { proposals: many.slice(50), total: 60 } }),
+    });
+    const { user } = renderApp();
+
+    await screen.findByText('S-0000');
+    expect(screen.queryByText('S-0059')).toBeNull();
+    const section = within(group(estimator.groups.signed));
+    await user.click(section.getByRole('button', { name: estimator.showMore }));
+    expect(await screen.findByText('S-0059')).toBeInTheDocument();
+    expect(section.queryByRole('button', { name: estimator.showMore })).toBeNull();
+  });
+
+  it('searches proposals by name or address with the server filter', async () => {
+    signedInApi({ ...proposalListRoutes(FIVE), ...proposalListRoutes([FIVE[1] as (typeof FIVE)[number]], 'Dana') });
+    const { user } = renderApp();
+
+    await screen.findByText('P-0001');
+    await user.type(screen.getByLabelText(estimator.findLabel), 'Dana');
+    await waitFor(() => expect(screen.queryByText('P-0001')).toBeNull());
+    expect(await screen.findByText('P-0002')).toBeInTheDocument();
+    expect(api.calls.map((c) => c.key)).toContain('GET /api/proposals?status=ready&q=Dana');
+  });
+
+  it('shows the server message when Make proposal is refused', async () => {
+    signedInApi(
+      flowRoutes({
+        'GET /api/properties?q=12%20Oak&limit=8': () => ({ body: { properties: [HOME], total: 1 } }),
+        'POST /api/proposals': () => ({ status: 403, body: { error: 'Your role cannot do that.' } }),
+      }),
+    );
+    const { user } = renderApp();
+
+    await user.type(await screen.findByLabelText(estimator.addressLabel), '12 Oak');
+    await user.click(await screen.findByRole('button', { name: /12 Oak St/ }));
+    await user.click(screen.getByRole('button', { name: estimator.makeProposal }));
+    expect(await screen.findByText('Your role cannot do that.')).toBeInTheDocument();
   });
 
   it('shows the empty note for a group with nothing in it', async () => {
-    signedInApi({ 'GET /api/proposals': () => ({ body: { proposals: FIVE.slice(0, 4), total: 4 } }) });
+    signedInApi(proposalListRoutes(FIVE.slice(0, 4)));
     renderApp();
 
     await screen.findByText('P-0001');
@@ -339,7 +393,7 @@ describe('Estimator window', () => {
   });
 
   it('shows the lists note when proposals fail to load', async () => {
-    signedInApi({ 'GET /api/proposals': () => ({ status: 500, body: { error: 'boom' } }) });
+    signedInApi({ ...proposalListRoutes(), 'GET /api/proposals?status=signed': () => ({ status: 500, body: { error: 'boom' } }) });
     renderApp();
 
     expect(await screen.findByText(estimator.listsFailed)).toBeInTheDocument();

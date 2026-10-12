@@ -10,7 +10,15 @@ import {
 import type { AppDeps } from '../app.ts';
 import { AppError } from '../errors.ts';
 import { parse, noNul } from '../validate.ts';
-import { handleProposalError, ipHashFor, publicProposalHeaders, resolveLink } from './proposal-common.ts';
+import { handleProposalError, perTokenRateLimit, proposalIpHashFor, publicProposalHeaders, resolveLink } from './proposal-common.ts';
+
+const HOUR_MS = 60 * 60 * 1000;
+/**
+ * Requests per link per hour across these routes (open, view, decline, signed copy), from any address:
+ * a leaked link replayed from many addresses cannot grow the events table or the view count without
+ * bound. A homeowner's page uses a few dozen at most, including the signed-copy poll.
+ */
+const REQUESTS_PER_TOKEN_PER_HOUR = 120;
 
 const viewBody = z.object({ optionId: z.uuid().optional() });
 const declineBody = z.object({
@@ -42,19 +50,20 @@ export function publicProposalRoutes(deps: AppDeps): Router {
     };
   };
   const tokenOf = (req: Request): string => String(req.params['token'] ?? '');
+  const perToken = perTokenRateLimit(REQUESTS_PER_TOKEN_PER_HOUR, HOUR_MS);
 
-  router.get('/:token', route(async (req, res) => {
+  router.get('/:token', perToken, route(async (req, res) => {
     const now = deps.clock.now();
     const link = await resolveLink(deps, tokenOf(req), now);
     const view = await withTenant(deps.pools, link.ctx, (tx) => publicProposalView(tx, link.ctx, link.proposalId, now));
     res.json(view);
   }));
 
-  router.post('/:token/view', route(async (req, res) => {
+  router.post('/:token/view', perToken, route(async (req, res) => {
     const now = deps.clock.now();
     const link = await resolveLink(deps, tokenOf(req), now);
     const body = parse(viewBody, bodyOf(req));
-    const ipHash = ipHashFor(req, link.ctx.companyId);
+    const ipHash = proposalIpHashFor(deps.config, req.ip ?? '', link.ctx.companyId);
     const userAgent = (req.get('user-agent') ?? '').slice(0, 300);
     await withTenant(deps.pools, link.ctx, async (tx) => {
       await recordProposalEvent(tx, link.ctx, link.proposalId, { kind: 'viewed', ipHash, userAgent }, now);
@@ -65,7 +74,7 @@ export function publicProposalRoutes(deps: AppDeps): Router {
     res.status(204).end();
   }));
 
-  router.post('/:token/decline', route(async (req, res) => {
+  router.post('/:token/decline', perToken, route(async (req, res) => {
     const now = deps.clock.now();
     const link = await resolveLink(deps, tokenOf(req), now);
     const body = parse(declineBody, bodyOf(req));
@@ -74,7 +83,7 @@ export function publicProposalRoutes(deps: AppDeps): Router {
     res.status(204).end();
   }));
 
-  router.get('/:token/signed.pdf', route(async (req, res) => {
+  router.get('/:token/signed.pdf', perToken, route(async (req, res) => {
     const link = await resolveLink(deps, tokenOf(req), deps.clock.now());
     const notReady = (): never => {
       throw new AppError(404, "The signed copy isn't ready yet.");

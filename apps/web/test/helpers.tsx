@@ -94,6 +94,16 @@ export function signedTodayRoute(timeZone = 'America/Chicago'): Routes {
   return { [`GET /api/proposals?status=signed&signedOn=${date}`]: () => ({ body: { proposals: [], total: 0 } }) };
 }
 
+/** The Estimator window's reads (one per status, first page): answers each with the entries of `all` of that status. */
+export function proposalListRoutes(all: { status: string }[] = [], q?: string): Routes {
+  const routes: Routes = {};
+  for (const status of ['draft', 'ready', 'sent', 'viewed', 'signed', 'declined', 'expired']) {
+    const items = all.filter((p) => p.status === status);
+    routes[`GET /api/proposals?status=${status}${q === undefined ? '' : `&q=${encodeURIComponent(q)}`}`] = () => ({ body: { proposals: items, total: items.length } });
+  }
+  return routes;
+}
+
 /** A task as the server sends it. Pass what differs; `id` is required. */
 export function makeTask(overrides: Partial<TaskView> & { id: string }): TaskView {
   return {

@@ -25,6 +25,7 @@ import { reportJobError } from './scheduler/report.ts';
 import { reportUsage } from './scheduler/report-usage.ts';
 import { spotterSync } from './scheduler/spotter-sync.ts';
 import { stormMatch } from './scheduler/storm-match.ts';
+import { sweepSignedPdfs } from './scheduler/signed-pdf-sweep.ts';
 import { sweepImports } from './scheduler/sweep-imports.ts';
 import { sweepQueued } from './scheduler/sweep-queued.ts';
 
@@ -48,7 +49,7 @@ export type ScheduledJob = {
  * The worker's recurring jobs: draft expiry, the queued-step sweeper, the import sweeper (imports
  * stranded queued or processing), the scheduled-text
  * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
- * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll, and Storm Scout's Spotter sync, storm matching, ad-spend sync and hail-feed health check, and Front Desk's retention and health checks. The G1 agents' schedules come last. A schedule dropped
+ * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll, and Storm Scout's Spotter sync, storm matching, ad-spend sync and hail-feed health check, and Front Desk's retention and health checks. The G1 agents' schedules come last, the signed-PDF sweep. A schedule dropped
  * from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [
@@ -65,6 +66,7 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'calendar-pull', cron: '*/5 * * * *', run: pullCalendars },
   { name: 'footprints-ensure', cron: '*/15 * * * *', run: ensureFootprints },
   { name: 'exact-report-poll', cron: '*/10 * * * *', run: pollExactReports },
+  { name: 'signed-pdf-sweep', cron: '*/15 * * * *', run: sweepSignedPdfs },
   { name: 'spotter-sync', cron: '*/30 * * * *', run: spotterSync },
   { name: 'storm-match', cron: '*/10 * * * *', run: stormMatch },
   { name: 'ad-spend-sync', cron: '0 * * * *', run: adSpendSync },

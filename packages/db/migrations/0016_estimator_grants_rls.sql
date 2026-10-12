@@ -9,8 +9,14 @@
 --    place, and measurements, options, signatures, events, stored files and report orders are kept.
 GRANT SELECT, INSERT, UPDATE ON
   measurements, tier_templates, proposals, proposal_counters, proposal_options,
-  proposal_signatures, proposal_events, exact_report_orders, stored_files
+  proposal_events, exact_report_orders, stored_files
   TO app_tenant;
+--> statement-breakpoint
+-- A signature is never edited (Review Focus 2, Ruling EQ): app_tenant may insert it and later attach the
+-- signed PDF, nothing else. The UPDATE grant is limited to the three columns that attaching writes.
+GRANT SELECT, INSERT ON proposal_signatures TO app_tenant;
+--> statement-breakpoint
+GRANT UPDATE (pdf_file_id, pdf_sha256, updated_at) ON proposal_signatures TO app_tenant;
 --> statement-breakpoint
 
 -- 2. Row-level security on the nine new tables, ENABLED and FORCED, with the same tenant_isolation
@@ -91,10 +97,15 @@ CREATE POLICY tenant_isolation ON stored_files
 -- 3. Global footprint tables: no company_id and no RLS (they hold no tenant data, Ruling EA). app_tenant
 --    reads building_footprints only, to show a property's footprint; it cannot write either table, and
 --    building_footprint_states (the loader's progress) is app_system's alone. Writes come from the loader
---    job, which runs as app_system.
+--    job, which runs as app_system. app_system gets exactly what packages/db/src/system/footprints.ts uses
+--    (security finding 9): on building_footprints it inserts (RETURNING id) and deletes a state's rows; on
+--    building_footprint_states it reads, upserts (INSERT ... ON CONFLICT DO UPDATE) and updates. Never ALL:
+--    TRUNCATE skips the delete path, and TRIGGER or REFERENCES would let app_system SQL attach code or keys.
 GRANT SELECT ON building_footprints TO app_tenant;
 --> statement-breakpoint
-GRANT ALL ON building_footprints, building_footprint_states TO app_system;
+GRANT SELECT, INSERT, DELETE ON building_footprints TO app_system;
+--> statement-breakpoint
+GRANT SELECT, INSERT, UPDATE ON building_footprint_states TO app_system;
 --> statement-breakpoint
 -- building_footprints.id is a bigserial, so the loader's inserts need USAGE on its sequence. Nothing
 -- else grants sequence access: 0002 sets no ALTER DEFAULT PRIVILEGES, and no earlier table has a serial
@@ -121,3 +132,23 @@ GRANT SELECT (id, company_id, status, last_polled_at) ON exact_report_orders TO 
 --> statement-breakpoint
 CREATE POLICY app_system_all ON exact_report_orders FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint
+
+-- 6. Ruling EQ (whole-branch review): a proposal's options change only while the proposal is a draft. A sent,
+--    signed or replaced proposal's prices are what the customer saw; the database refuses to rewrite them
+--    even if application code tried. SECURITY INVOKER: the lookup runs as the caller, under RLS.
+CREATE FUNCTION proposal_options_draft_only() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  IF (SELECT status FROM proposals WHERE id = OLD.proposal_id AND company_id = OLD.company_id) IS DISTINCT FROM 'draft' THEN
+    RAISE EXCEPTION 'proposal options can change only while the proposal is a draft' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+--> statement-breakpoint
+CREATE TRIGGER proposal_options_draft_only BEFORE UPDATE ON proposal_options
+  FOR EACH ROW EXECUTE FUNCTION proposal_options_draft_only();
+--> statement-breakpoint
+
+-- 7. The exact-report poll reads waiting orders by last_polled_at every 10 minutes (Ruling EQ).
+CREATE INDEX exact_report_orders_waiting_polled_idx ON exact_report_orders (last_polled_at) WHERE status = 'waiting';

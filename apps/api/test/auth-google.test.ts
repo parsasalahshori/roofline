@@ -22,6 +22,7 @@ import {
   JoseGoogleVerifier,
 } from '../src/auth/google.ts';
 import * as passwordModule from '../src/auth/password.ts';
+import { DEV_SESSION_COOKIE } from '../src/auth/sessions.ts';
 import { AppError } from '../src/errors.ts';
 import { loginAs, makeTestApp, SIGNUP_COMPANY, type SuperAgent, type TestApp } from './helpers.ts';
 
@@ -364,7 +365,7 @@ function googleSignIn(
 function hasSessionCookie(res: { headers: Record<string, unknown> }): boolean {
   const raw = res.headers['set-cookie'];
   const lines = Array.isArray(raw) ? (raw as string[]) : raw ? [String(raw)] : [];
-  return lines.some((c) => c.startsWith('rl_session='));
+  return lines.some((c) => c.startsWith(`${DEV_SESSION_COOKIE}=`));
 }
 
 /** Row counts of the tables a sign-in can touch, for "nothing was created" checks. */

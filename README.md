@@ -58,11 +58,11 @@
 | `EAGLEVIEW_CLIENT_SECRET` | no | EagleView client secret. Both or neither with `EAGLEVIEW_CLIENT_ID`. |
 | `EAGLEVIEW_ENV` | no (`sandbox`) | `sandbox` or `production`. |
 | `EAGLEVIEW_PRODUCT_ID` | no (0) | The EagleView product id to order. 0 is a placeholder: ask before ordering. |
-| `R2_ACCOUNT_ID` | no | Cloudflare R2 account id. All four R2 settings or none. Expected in production once any company can sign; without them start-up warns and signed proposals cannot be stored. |
+| `R2_ACCOUNT_ID` | production | Cloudflare R2 account id. All four R2 settings or none; production refuses to start without them (signed proposals are stored in R2). |
 | `R2_ACCESS_KEY_ID` | no | R2 access key id. All four R2 settings or none. |
 | `R2_SECRET_ACCESS_KEY` | no | R2 secret access key. All four R2 settings or none. |
 | `R2_BUCKET` | no | R2 bucket name. All four R2 settings or none. |
-| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be the same origin as `APP_ORIGIN` for the homeowner page to accept its signing and decline posts. |
+| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be on the same origin as `APP_ORIGIN` (start-up refuses another origin), because the homeowner page posts its signing and decline requests there. |
 | `FOOTPRINTS_BASE_URL` | no | Where building footprint files are read from; a trailing slash is added. Defaults to `https://usbuildingdata.blob.core.windows.net/usbuildings-v2/`. |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | no | Google Ads developer token. All five GOOGLE_ADS settings or none; unset means Google ads are off. |
 | `GOOGLE_ADS_MANAGER_ID` | no | Google Ads manager account id. All five GOOGLE_ADS settings or none. |
@@ -85,7 +85,7 @@
 | `POLICY_PAGES_DOMAIN` | no (required for Storm Scout) | The bare hostname for the policy pages, like `roofline.app`. Required for Storm Scout landing pages and ads. |
 | `FAKE_PROVIDERS` | no | `1` or `true` swaps every outside service for a fake. Development and test only; refused in production. |
 | `WEB_DIST_DIR` | no | Where the built web app is: `apps/web/dist` in production (a relative path is read from the repository root). When set, the API also serves the app, so one origin answers both; it must contain `index.html` or start-up stops. Leave unset in development, where Vite serves the app. |
-| `TRUST_PROXY` | no (0) | How many proxy hops to trust for the client address. |
+| `TRUST_PROXY` | in production (0 elsewhere) | How many proxy hops to trust for the client address: `1` on Render (one proxy in front). Unset or 0 stops start-up in production; a value above the real hop count lets clients choose their IP via `X-Forwarded-For`. |
 | `API_RATE_LIMIT_PER_MIN` | no (600) | Requests per minute per session on `/api/*`. |
 | `PORT` | no (4400) | Listen port (Render sets it). |
 | `HOST` | no | Listen address: `0.0.0.0` in production, `127.0.0.1` otherwise, unless set. |
@@ -114,6 +114,8 @@
 | `AGENT_DRAFT_MODEL` | `claude-opus-5-5` | The model that drafts the agents' customer texts. |
 | `AGENT_EXTRACT_MODEL` | `claude-haiku-5-5` | The model that reads claim facts (claim number, insurer, adjuster date, decision) from a homeowner's reply. |
 | `MAPTILER_SERVER_KEY` | unset | MapTiler server-side key for the map image in claim packets. Unset: claim packets have no map image. |
+
+- **Building footprints and proposal links:** the worker's `footprints-ensure` job runs every 15 minutes (`*/15 * * * *`) and queues a `footprints-load` job for each state a company is in whose footprints are not yet `ready` or loading. Each load reads one state's file from Microsoft US Building Footprints (ODbL; the attribution is in `apps/web/src/copy/legal.ts`, shown on the measure view) into PostGIS from `FOOTPRINTS_BASE_URL`. A state is usable once its `building_footprint_states.status` is `ready`; until then homes there open draw mode. End-to-end and test stacks do not download anything: they seed a Nebraska fixture with `seedFootprintFixture` (exported from `apps/api/src/index.ts`). `PROPOSAL_LINK_BASE_URL` must share `APP_ORIGIN`'s origin, because the homeowner page posts its signing and decline requests there.
 
 - **Calendar connections:**
   - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google Calendar, and `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` for Outlook. A provider with either value missing shows as not set up in Settings.

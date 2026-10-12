@@ -6,7 +6,7 @@ import pg from 'pg';
 import { createPools, type Pools } from '@roofline/db';
 import { resetDb, seedTwoCompanies, SEED_PASSWORD, type SeededCompany } from '@roofline/db/testing';
 import type { CompanyStatus } from '@roofline/shared';
-import { seedDemoTask, seedShowcase, seedStormFixture } from '@roofline/api';
+import { seedDemoTask, seedFootprintFixture, seedShowcase, seedStormFixture } from '@roofline/api';
 
 /*
  * Shared end-to-end helpers. `stack.ts` writes `.stack.json` beside this file once the database is
@@ -63,6 +63,7 @@ export async function resetScenario(urls: { owner: string; tenant: string; syste
       now,
       query: async (text, values) => (await owner.query(text, values)).rows,
     });
+    await seedFootprintFixture(pools);
     return { a, taskId, stormId, companyStormId };
   } finally {
     await owner.end();
