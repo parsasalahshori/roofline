@@ -39,3 +39,10 @@ Both make the assertion in `scenarios.test.ts` `expectRows` ("the summary job en
 
 ## CI
 Run 38281757972 (first push): Platform red (a bug of mine, since fixed), E2E and v1 green. Run 38283987813 (b45f96a9): Platform red only on the two bugs above, E2E and v1 green. No green Platform run yet.
+
+## Green after Task CV (C1 lead)
+- The 12 red scenario tests were the two engine bugs (calls.conversation_id never set; take_message writing the summary), both fixed by Task CV.
+- With CV's after-call waiting for a finished call, `expectRows` now ends the call (as Twilio's status callback does) before running after-call (efce699d). The assertion itself is unchanged.
+- d1-front-desk bd84d6b (CV) merged in as 2dd74adc; call-paths.test.ts keeps CV's after-call checks and imports the rig from ./call-rig.ts.
+- Local (Docker) on the CV merge: @roofline/api + @roofline/db 154 files, 3183 tests passed.
+- CI run 38290781537 on 2dd74adc: Platform and E2E green.
