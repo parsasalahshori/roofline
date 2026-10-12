@@ -31,7 +31,6 @@ test('skip the import and the ring moves', async ({ page }) => {
 });
 
 test('later steps say Coming with', async ({ page }) => {
-  // Connecting a calendar is a real step since C1 Task 12, so three steps are still to come.
   await expect(page.getByText(/Coming with/)).toHaveCount(3);
   for (const line of [
     'Coming with the Estimator',
