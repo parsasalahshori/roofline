@@ -31,7 +31,7 @@ lives anywhere else.
 | F1 platform core | `docs/superpowers/plans/2026-10-10-roofline-f1-platform-core.md` | done |
 | F2 web shell and design kit | `docs/superpowers/plans/2026-10-11-roofline-f2-shell.md` | **done**: Tasks 1-19 + P1 on `f2-shell`, CI green incl. e2e |
 | F3 setup, texting, billing, import | `docs/superpowers/plans/2026-10-11-roofline-f3-setup.md` (on `f3-setup`) + briefs `ops/sdd/f3/` | **done** (8b8400a): 37 tasks, polish, integration-review fixes A-C |
-| C1 Core CRM | `docs/superpowers/plans/2026-10-12-roofline-core-crm.md` + briefs `ops/sdd/c1/` | Tasks 1-4 merged on `c1-crm` |
+| C1 Core CRM | `docs/superpowers/plans/2026-10-12-roofline-core-crm.md` + briefs `ops/sdd/c1/` | **done** except T29 (owner: real Google/Outlook smoke); T1-T28 + whole-branch review on `c1-crm` |
 | E1, S1, D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{e1,s1,d1,a1,g1}/` | planned, briefs ready |
 
 All finished branches are merged (2026-10-12): F3 T26, T31-T35 into `f3-setup` (330ca23); C1 T2-T4 and the
@@ -97,6 +97,9 @@ with `userCreatable`, `baseline` and `units`, and has no `minutesSaved`; `withMi
   of the other track (E1, D1 and S1 recount the setup "Coming with" lines when they ship their setup items).
 - Journal `when` (Ruling AY): S1's 0017/0018 are newer than 0019-0024, so wherever s1-storm combines with D1/A1/G1,
   raise 0019+ above 0018. The controller normalizes every `when` to strictly increasing at the launch merge.
+
+**Ruling BB (rep price visibility):** reps may see the full price list through the quote editor (they quote
+prices to homeowners); job values hidden from a rep stay hidden. The C1 lead now helps S1 on tasks the S1 lead assigns.
 
 ## How to do a task
 
