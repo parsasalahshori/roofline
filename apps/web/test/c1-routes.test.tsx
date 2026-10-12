@@ -42,7 +42,14 @@ afterEach(() => {
 
 /** A signed-in person whose shell reads answer "nothing", unless a test gives its own answers. */
 function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
+  // The pipeline board (the /jobs window) reads the board and the team; both are empty here
+  api = stubApi({
+    ...SHELL_ROUTES,
+    'GET /api/auth/me': () => ({ body: account }),
+    'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
+    'GET /api/team': () => ({ body: { members: [] } }),
+    ...overrides,
+  });
   return api;
 }
 
@@ -68,7 +75,7 @@ const settingsTabs = () => screen.findByRole('navigation', { name: settings.tabs
 
 describe('C1 windows', () => {
   it.each([
-    ['/jobs', WINDOW_COPY.jobs.title, jobs.comingSoon],
+    ['/jobs', WINDOW_COPY.jobs.title, jobs.newJob],
     ['/jobs/new', WINDOW_COPY.jobs.title, create.newJob.comingSoon],
     ['/jobs/j1', WINDOW_COPY.jobs.title, job.comingSoon],
     ['/jobs/j1/quotes/q1', WINDOW_COPY.jobs.title, quotes.comingSoon],

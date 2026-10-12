@@ -1,0 +1,66 @@
+/* The board: the columns scroll sideways inside this box, so the page itself never scrolls sideways. */
+.board {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* The scroll box for the columns: a horizontal rail on a desktop, one column wide on a phone */
+.scroller {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 8px;
+}
+
+.columns {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  min-width: min-content;
+}
+
+/* On a phone the stages stack, one under the other, instead of a rail */
+@media (max-width: 767.98px) {
+  .columns {
+    flex-direction: column;
+    min-width: 0;
+  }
+}
+
+.lost {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* The drop zone of the Lost drawer: a dashed box a card can be dropped on */
+.lostDrop {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  gap: 8px;
+  min-height: 80px;
+  padding: 12px;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius-card);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
