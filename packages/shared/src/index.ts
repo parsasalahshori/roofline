@@ -15,3 +15,7 @@ export * from './pipeline.ts';
 export * from './availability.ts';
 export * from './crm.ts';
 export * from './csv.ts';
+// A1 (Task 2)
+export * from './agents.ts';
+export * from './metrics.ts';
+export * from './agent-rules.ts';

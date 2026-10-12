@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ApprovalClass } from './enums.ts';
 import { MESSAGE_PURPOSES } from './enums.ts';
+import { type BaselineKey, minutesFor } from './agents.ts';
 import { renderBody } from './render.ts';
 
 /*
@@ -9,16 +10,34 @@ import { renderBody } from './render.ts';
  * - which approval a person needs to give for it (`approvalClass`: the agent never chooses),
  * - what its payload must look like (`payload`, a zod schema with plain-English messages) and any
  *   rule that needs more than the shape (`validate`, today only the marketing-text rule),
- * - what the review screen shows (`preview`), and
- * - how many minutes of staff time it saved once it ran (`minutesSaved`).
- * The API builds previews and checks payloads from here, and the runner adds up `minutesSaved`.
+ * - what the review screen shows (`preview`),
+ * - whether a person may create it by hand (`userCreatable`; the front desk types are written by
+ *   the agent only), and
+ * - how many minutes of staff time it saved once it ran: a time-saved `baseline` key (from
+ *   TIME_BASELINES in agents.ts), a count of `units` from the step's result, optional call length
+ *   (`extraMinutes`) and optional `bookings`. `stepMinutes` turns those into minutes.
+ * `minutesSaved` is kept as a compatibility function that uses the default minutes. Task 3 moves
+ * the task service onto per-task snapshots and removes it.
+ * The API builds previews and checks payloads from here, and the runner adds up the minutes.
  */
 
-export const STEP_TYPES = ['demo_noop', 'demo_message', 'demo_spend', 'send_sms_batch'] as const;
+export const STEP_TYPES = [
+  'demo_noop',
+  'demo_message',
+  'demo_spend',
+  'send_sms_batch',
+  'front_desk_call',
+  'front_desk_texts',
+] as const;
 export type StepType = (typeof STEP_TYPES)[number];
 
 export function isStepType(value: unknown): value is StepType {
   return typeof value === 'string' && (STEP_TYPES as readonly string[]).includes(value);
+}
+
+/** True for a step type a person may create by hand (the API checks this in createTask). */
+export function isUserCreatableStepType(value: unknown): value is StepType {
+  return isStepType(value) && stepTypes[value].userCreatable;
 }
 
 /** What a preview can be built from besides the payload itself. The API looks these up; the registry never does. */
@@ -40,11 +59,59 @@ export type StepResult = Record<string, number | Record<string, number>>;
 export interface StepTypeDef<P> {
   type: StepType;
   approvalClass: ApprovalClass;
+  /** False for the step types only the agent writes (the front desk ones): a person cannot create them. */
+  userCreatable: boolean;
   payload: z.ZodType<P>;
   /** A rule the shape cannot say. Returns the sentence to show a person, or null when the payload is fine. */
   validate?(p: P, facts: { companyName: string }): string | null;
   preview(p: P, facts: PreviewFacts): StepPreview;
+  /** The time-saved baseline (TIME_BASELINES key) this step counts against. */
+  baseline(p: P, result: StepResult): BaselineKey;
+  /** How many units of that baseline the finished step did (0 when none). */
+  units(p: P, result: StepResult): number;
+  /** The call's own length in minutes, for the baselines with `perCallLength`. */
+  extraMinutes?(p: P, result: StepResult): { callMinutes?: number };
+  /** Booking units the step also did; each counts at the `booking` baseline. */
+  bookings?(p: P, result: StepResult): number;
+  /** Compatibility (Ruling AX-A): minutes saved at the default minutes. Task 3 removes it. */
   minutesSaved(p: P, result: StepResult): number;
+}
+
+export type StepMinutes = { baseline: BaselineKey; units: number; minutesPerUnit: number; minutes: number };
+
+/**
+ * The minutes one finished step saved, with `overrides` the owner's per-key minutes (hidden keys
+ * ignore them). Front desk steps count booking units too: minutes = call/reply minutes + bookings
+ * x the booking baseline. Caps apply inside `minutesFor` (send_sms_batch: text_sent at 120).
+ */
+export function stepMinutes<P>(
+  def: StepTypeDef<P>,
+  p: P,
+  result: StepResult,
+  overrides: Partial<Record<BaselineKey, number>> = {},
+): StepMinutes {
+  const baseline = def.baseline(p, result);
+  const units = def.units(p, result);
+  const main = minutesFor(baseline, units, overrides, def.extraMinutes?.(p, result));
+  const bookings = def.bookings?.(p, result) ?? 0;
+  const bookingMinutes = bookings > 0 ? minutesFor('booking', bookings, overrides).minutes : 0;
+  const minutes = main.minutes + bookingMinutes;
+  const minutesPerUnit = units > 0 ? minutes / units : main.minutesPerUnit;
+  return { baseline, units, minutesPerUnit, minutes };
+}
+
+/** A step type without its compatibility `minutesSaved`, which is derived from the definition below. */
+type StepTypeBase<P> = Omit<StepTypeDef<P>, 'minutesSaved'>;
+
+/** Adds the compatibility `minutesSaved` (default minutes, caps applied) to a definition. */
+function withMinutesSaved<P>(def: StepTypeBase<P>): StepTypeDef<P> {
+  const full: StepTypeDef<P> = { ...def, minutesSaved: (p, result) => stepMinutes(full, p, result).minutes };
+  return full;
+}
+
+/** A count from a step's result: a finite number above zero, else 0. Anything else never counts. */
+function countOf(value: StepResult[string] | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -80,13 +147,16 @@ const plural = (n: number, one: string, many: string): string => `${n.toLocaleSt
 const labelPayload = z.strictObject({ label });
 type LabelPayload = z.output<typeof labelPayload>;
 
-const demoNoop: StepTypeDef<LabelPayload> = {
+/** The demo steps count one `demo` unit (5 minutes, hidden) once they are done; the caller ensures that. */
+const demoNoop = withMinutesSaved<LabelPayload>({
   type: 'demo_noop',
   approvalClass: 'internal',
+  userCreatable: true,
   payload: labelPayload,
   preview: (p) => ({ title: p.label, lines: [] }),
-  minutesSaved: () => 5,
-};
+  baseline: () => 'demo',
+  units: () => 1,
+});
 
 /** A demo text's optional details: the sample message, how many customers, and when it goes out. */
 const COUNT_MESSAGE = 'Please enter the number of customers as a whole number.';
@@ -108,9 +178,10 @@ const messagePayload = z.strictObject({
 });
 type MessagePayload = z.output<typeof messagePayload>;
 
-const demoMessage: StepTypeDef<MessagePayload> = {
+const demoMessage = withMinutesSaved<MessagePayload>({
   type: 'demo_message',
   approvalClass: 'message',
+  userCreatable: true,
   payload: messagePayload,
   preview: (p) => ({
     title: p.label,
@@ -119,8 +190,9 @@ const demoMessage: StepTypeDef<MessagePayload> = {
     ...(p.recipientCount !== undefined && { recipientCount: p.recipientCount }),
     ...(p.sendTime !== undefined && { sendTime: p.sendTime }),
   }),
-  minutesSaved: () => 5,
-};
+  baseline: () => 'demo',
+  units: () => 1,
+});
 
 /** A demo spend step's optional area, which the preview shows after the spend line. */
 const spendPayload = z.strictObject({
@@ -135,17 +207,19 @@ const spendPayload = z.strictObject({
 });
 type SpendPayload = z.output<typeof spendPayload>;
 
-const demoSpend: StepTypeDef<SpendPayload> = {
+const demoSpend = withMinutesSaved<SpendPayload>({
   type: 'demo_spend',
   approvalClass: 'spend',
+  userCreatable: true,
   payload: spendPayload,
   preview: (p) => ({
     title: p.label,
     lines: [`Spends up to ${dollars.format(p.maxSpendCents / 100)}`, ...(p.area !== undefined ? [p.area] : [])],
     maxSpendCents: p.maxSpendCents,
   }),
-  minutesSaved: () => 5,
-};
+  baseline: () => 'demo',
+  units: () => 1,
+});
 
 // ---------------------------------------------------------------------------------------------
 // send_sms_batch
@@ -182,9 +256,10 @@ const smsPayload = z.strictObject({
 });
 type SmsPayload = z.output<typeof smsPayload>;
 
-const sendSmsBatch: StepTypeDef<SmsPayload> = {
+const sendSmsBatch = withMinutesSaved<SmsPayload>({
   type: 'send_sms_batch',
   approvalClass: 'message',
+  userCreatable: true,
   payload: smsPayload,
   /**
    * A marketing text must name the company and say how to opt out (spec 4.5: refused at draft time,
@@ -213,11 +288,45 @@ const sendSmsBatch: StepTypeDef<SmsPayload> = {
       recipientCount,
     };
   },
-  minutesSaved(_p, result) {
-    const sent = result.sent;
-    return typeof sent === 'number' && Number.isFinite(sent) && sent > 0 ? Math.min(120, 1.5 * sent) : 0;
-  },
-};
+  /** Only the `sent` count is a unit (blocked or other counts never are); text_sent caps at 120 minutes. */
+  baseline: () => 'text_sent',
+  units: (_p, result) => countOf(result.sent),
+});
+
+// ---------------------------------------------------------------------------------------------
+// Front desk steps (Ruling AX-E: the time they save is measured from what the agent handled).
+// They are written by the agent, never by a person: `userCreatable` is false and the approval is
+// internal. Bookings made during a call or a text count too, at the `booking` baseline.
+
+/** A front desk step's label is for the review screen only; the real payload is internal. */
+const frontDeskPayload = z.strictObject({ label });
+type FrontDeskPayload = z.output<typeof frontDeskPayload>;
+
+/** A spam call is counted at the length of the line only (baseline spam_call), with no bookings. */
+const isSpam = (result: StepResult): boolean => countOf(result.spam) > 0;
+
+const frontDeskCall = withMinutesSaved<FrontDeskPayload>({
+  type: 'front_desk_call',
+  approvalClass: 'internal',
+  userCreatable: false,
+  payload: frontDeskPayload,
+  preview: (p) => ({ title: p.label, lines: [] }),
+  baseline: (_p, result) => (isSpam(result) ? 'spam_call' : 'call_answered'),
+  units: () => 1,
+  extraMinutes: (_p, result) => ({ callMinutes: countOf(result.seconds) / 60 }),
+  bookings: (_p, result) => (isSpam(result) ? 0 : countOf(result.bookings)),
+});
+
+const frontDeskTexts = withMinutesSaved<FrontDeskPayload>({
+  type: 'front_desk_texts',
+  approvalClass: 'internal',
+  userCreatable: false,
+  payload: frontDeskPayload,
+  preview: (p) => ({ title: p.label, lines: [] }),
+  baseline: () => 'text_reply',
+  units: (_p, result) => countOf(result.replies),
+  bookings: (_p, result) => countOf(result.bookings),
+});
 
 // ---------------------------------------------------------------------------------------------
 
@@ -229,4 +338,6 @@ export const stepTypes: Record<StepType, StepTypeDef<any>> = {
   demo_message: demoMessage,
   demo_spend: demoSpend,
   send_sms_batch: sendSmsBatch,
+  front_desk_call: frontDeskCall,
+  front_desk_texts: frontDeskTexts,
 };
