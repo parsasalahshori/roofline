@@ -12,6 +12,7 @@ const VALID = {
   DATABASE_URL_SYSTEM: 'postgres://app_system:pw@localhost:5432/roofline',
   ENCRYPTION_KEY: KEY,
   PUBLIC_BASE_URL: 'https://app.roofline.test',
+  TRUST_PROXY: '1',
 } satisfies Record<string, string>;
 
 const MAIL: BroadcastMail = {
