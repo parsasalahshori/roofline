@@ -32,7 +32,13 @@ const APP_SYSTEM_RLS_TABLES = [
   'conversation_turns',
 ] as const;
 /** Tenant tables app_tenant may delete from. No other tenant table grants it DELETE. */
-const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links', 'blocked_numbers'] as const;
+const APP_TENANT_DELETE_TABLES = [
+  'opt_outs',
+  'calendar_busy_blocks',
+  'calendar_event_links',
+  'calendar_connections',
+  'blocked_numbers',
+] as const;
 const COMPANY_PROFILE_COLUMNS = [
   'name',
   'legal_name',
@@ -328,7 +334,7 @@ describe('grants', () => {
     truncate: false,
   });
 
-  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log and conversation_turns, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links and blocked_numbers', async () => {
+  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log and conversation_turns, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links, calendar_connections and blocked_numbers', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
       // audit_log is append-only; conversation_turns is updated by column only (see the column test below).

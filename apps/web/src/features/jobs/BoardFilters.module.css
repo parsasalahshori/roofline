@@ -1,0 +1,45 @@
+/* The filter bar: the controls wrap onto as many rows as the window needs, never past its width. */
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.control {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* The CSV download: a plain link drawn like a ghost button, with the same 40px target */
+.download {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: transparent;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.download:hover {
+  background: var(--surface-2);
+}
+
+.download:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}

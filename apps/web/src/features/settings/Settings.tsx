@@ -4,6 +4,8 @@ import { Navigate, useParams } from 'react-router';
 import { useMe } from '../../api/hooks.ts';
 import { settings } from '../../copy/settings.ts';
 import { BillingTab } from '../billing/BillingTab.tsx';
+import { FrontDeskTab } from '../front-desk/settings/FrontDeskTab.tsx';
+import { ProfileTab } from '../front-desk/settings/ProfileTab.tsx';
 import { SetupTab } from '../setup/SetupTab.tsx';
 import { CompanyTab } from './CompanyTab.tsx';
 import { ConnectionsTab } from './ConnectionsTab.tsx';
@@ -26,6 +28,7 @@ export function Settings({ subpage }: { subpage?: ReactNode } = {}) {
   const tab = subpage ? 'setup' : routeTab;
   if (!isSettingsTab(tab)) return <Navigate to="/settings/company" replace />;
   if (tab === 'prices' && role === 'rep') return <Navigate to="/settings/company" replace />;
+  if (tab === 'front-desk' && role === 'rep') return <Navigate to="/settings/company" replace />;
 
   return (
     <>
@@ -70,5 +73,9 @@ function renderPanel(tab: SettingsTab, subpage: ReactNode, roleKnown: boolean) {
       return <BillingTab />;
     case 'setup':
       return subpage ?? <SetupTab />;
+    case 'front-desk':
+      return roleKnown ? <FrontDeskTab /> : null;
+    case 'profile':
+      return <ProfileTab />;
   }
 }

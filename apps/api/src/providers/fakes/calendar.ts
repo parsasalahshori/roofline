@@ -36,16 +36,27 @@ export class FakeCalendarApi implements CalendarApi {
   /** Events keyed by `${refreshToken}/${calendarId}`, then by event id. */
   private readonly events = new Map<string, Map<string, EventRec>>();
   private readonly revoked = new Set<string>();
+  private rotateTo: string | null = null;
   private failures = 0;
   private cursorExpired = false;
   private eventSeq = 0;
   private changeSeq = 0;
   private tick = 0;
 
-  constructor(readonly provider: CalendarProvider) {}
+  /**
+   * `selfCallback` makes `authUrl` point straight at the redirect uri with `code=fake`, so a browser
+   * following it lands back in the app (the end-to-end stack, FAKE_PROVIDERS). Off by default.
+   */
+  constructor(
+    readonly provider: CalendarProvider,
+    private readonly options: { selfCallback?: boolean } = {},
+  ) {}
 
   authUrl(i: { state: string; redirectUri: string }): string {
     this.calls.push({ method: 'authUrl', args: [i] });
+    if (this.options.selfCallback === true) {
+      return `${i.redirectUri}?code=fake&state=${encodeURIComponent(i.state)}`;
+    }
     return `https://calendar.fake.test/${this.provider}/auth?state=${encodeURIComponent(i.state)}`;
   }
 
@@ -62,9 +73,15 @@ export class FakeCalendarApi implements CalendarApi {
     };
   }
 
-  async refresh(refreshToken: string): Promise<{ accessToken: string; expiresAt: Date }> {
+  async refresh(refreshToken: string): Promise<{ accessToken: string; expiresAt: Date; refreshToken?: string }> {
     this.calls.push({ method: 'refresh', args: [refreshToken] });
     this.guard(refreshToken);
+    const rotated = this.rotateTo;
+    if (rotated !== null) {
+      this.rotateTo = null;
+      this.ensureAccount(rotated);
+      return { accessToken: rotated.replace(/^refresh-/, 'access-'), expiresAt: EXPIRY, refreshToken: rotated };
+    }
     return { accessToken: refreshToken.replace(/^refresh-/, 'access-'), expiresAt: EXPIRY };
   }
 
@@ -186,6 +203,11 @@ export class FakeCalendarApi implements CalendarApi {
   /** Test helper: the grant for this refresh token is gone. */
   revoke(refreshToken: string): void {
     this.revoked.add(refreshToken);
+  }
+
+  /** Test helper: the next refresh returns this new refresh token (and an access token made from it). */
+  rotateNext(newRefreshToken: string): void {
+    this.rotateTo = newRefreshToken;
   }
 
   /** Test helper: the next sync returns a full resync. */

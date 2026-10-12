@@ -1,6 +1,7 @@
 import type { BrandInfo, CampaignInfo } from '@roofline/shared';
 import type { Config } from '../../config.ts';
 import {
+  type BrandProgress,
   RegistrarRejectedError,
   RegistrarUnavailableError,
   type ReviewStatus,
@@ -36,6 +37,7 @@ export class TwilioBrands implements TextingBrands {
       brand: BrandInfo;
       statusCallback: string;
       previous: BrandPrevious;
+      onProgress?: (p: BrandProgress) => void;
     },
   ): Promise<{ customerProfileSid: string; trustProductSid: string; brandSid: string }> {
     return mapErrors(() =>
@@ -46,6 +48,7 @@ export class TwilioBrands implements TextingBrands {
         brand: i.brand,
         statusCallback: i.statusCallback,
         previous: i.previous,
+        ...(i.onProgress ? { onProgress: i.onProgress } : {}),
       }),
     );
   }
@@ -136,6 +139,9 @@ async function mapErrors<T>(work: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof RegistrarRejectedError || error instanceof RegistrarUnavailableError) throw error;
     if (error instanceof TwilioUnreachableError) throw new RegistrarUnavailableError("Twilio didn't answer.");
+    if (error instanceof TwilioApiError && (error.status === 429 || error.status === 401 || error.status === 403)) {
+      throw new RegistrarUnavailableError(`Twilio refused a request (code ${error.code ?? 'none'}).`);
+    }
     if (error instanceof TwilioApiError) throw new RegistrarRejectedError(`Twilio error ${error.code ?? 'none'}`);
     throw error;
   }

@@ -1,0 +1,73 @@
+/* One card: the link on top, the Move-to menu under it. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* The whole top of the card is the link: a 40px target with a visible focus ring */
+.link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 40px;
+  color: inherit;
+  text-decoration: none;
+  cursor: grab;
+  border-radius: 8px;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.name {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.address,
+.next {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.value {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.rep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.unassigned,
+.meta {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.stuck {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--on-danger);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Stuck cards carry the stuck tone on their border as well as the chip */
+.card[data-stuck='true'] {
+  border-color: var(--danger);
+}

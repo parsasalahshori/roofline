@@ -1,0 +1,9 @@
+.window {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: 720px;
+  min-width: 0;
+  margin: 0 auto;
+  box-sizing: border-box;
+}

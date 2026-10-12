@@ -1,0 +1,16 @@
+{
+  "value": [
+    {
+      "id": "cal-default",
+      "name": "Calendar",
+      "isDefaultCalendar": true,
+      "canEdit": true
+    },
+    {
+      "id": "cal-shared",
+      "name": "Team board",
+      "isDefaultCalendar": false,
+      "canEdit": false
+    }
+  ]
+}

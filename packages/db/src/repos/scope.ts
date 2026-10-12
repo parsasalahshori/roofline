@@ -68,3 +68,13 @@ export function canSeeJobValue(
   const me = ctx.userId;
   return me !== null && (job.assignedUserId === me || job.createdByUserId === me);
 }
+
+/**
+ * Jobs whose value the member may see, as a condition: the SQL twin of `canSeeJobValue`. Quotes
+ * carry the job's value, so they follow this rule rather than `jobScope`.
+ */
+export function jobValueScope(ctx: TenantContext): SQL | undefined {
+  if (ctx.role !== 'rep') return undefined;
+  const me = userOf(ctx);
+  return or(eq(jobs.assignedUserId, me), eq(jobs.createdByUserId, me));
+}

@@ -111,7 +111,7 @@ it('billing tab shows the card note', async () => {
 });
 
 it('connections says what is coming', async () => {
-  signedInApi();
+  signedInApi({ 'GET /api/calendar/connection': () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } }) });
   renderApp('/settings/connections');
 
   expect(await screen.findByText(connections.later)).toBeInTheDocument();
@@ -142,13 +142,13 @@ it('settings goes to company', async () => {
   await waitFor(() => expect(where(router)).toBe('/settings/company'));
 });
 
-it("shows the owner's seven tabs as links and marks the current one", async () => {
+it("shows the owner's nine tabs as links and marks the current one", async () => {
   signedInApi();
   renderApp('/settings/team');
 
   const nav = await tabsNav();
   const links = within(nav).getAllByRole('link');
-  expect(links).toHaveLength(7);
+  expect(links).toHaveLength(9);
   expect(links.map((link) => link.textContent)).toEqual([
     settings.tabs.company,
     settings.tabs.team,
@@ -157,6 +157,8 @@ it("shows the owner's seven tabs as links and marks the current one", async () =
     settings.tabs.connections,
     settings.tabs.billing,
     settings.tabs.setup,
+    settings.tabs['front-desk'],
+    settings.tabs.profile,
   ]);
   expect(links.map((link) => link.getAttribute('href'))).toEqual([
     '/settings/company',
@@ -166,6 +168,8 @@ it("shows the owner's seven tabs as links and marks the current one", async () =
     '/settings/connections',
     '/settings/billing',
     '/settings/setup',
+    '/settings/front-desk',
+    '/settings/profile',
   ]);
   expect(links[1]).toHaveAttribute('aria-current', 'page');
   links.filter((_, i) => i !== 1).forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
