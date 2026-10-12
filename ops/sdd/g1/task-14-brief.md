@@ -1,14 +1,16 @@
 ### Task 14: Follow-up — review requests
 
-**Base:** `g1-agents` after Task 13 is merged. Real (F3): marketing consent rule in the gate.
+**Base:** `g1-t13b` 6869e71 (Task 13b done: the daily run has lead and proposal groups and the live rep notes). Builds alone on this branch; Tasks 7, 11, 12 run in parallel on other branches.
 
-Read first: `ops/sdd/g1/global-constraints.md`; spec `docs/superpowers/specs/2026-10-12-roofline-more-agents-design.md`. Names marked **[C1]** / **[E1]** / **[S1]** / **[D1]** / **[A1]** come from the plans and briefs of those milestones (`ops/sdd/<milestone>/`), not from built code: check each against the merged branch before starting and report any difference.
+Read first: `ops/sdd/g1/global-constraints.md`; `progress.md` (GX-E, GX-N, GX-Q, GX-R, 13a/13b carries); spec §5 (review requests) and Decisions 7–10; `apps/api/src/agents/followup/{daily,draft}.ts`, `packages/db/src/repos/follow-up-finder.ts` (13a/13b), T17s `company_settings.review_link` / `review_delay_days` / `followup_reviews` (`/api/agent-values`), T5 `send_personal_texts` (purpose `marketing` goes through F3's marketing gate: consent and the weekly cap are decided at send time), T4 `draftTexts` kind `review_request` (the adapter already drops a review text without the company name or the closing "Reply STOP to opt out"), `follow_up_log` kind `review`, C1 appointments (completed `install`), `customers.sms_consent_status`, C1's job stage `installed`.
 
-Installed + `review_delay_days`, once per job, marketing consent only, company name + STOP, no gating; settings; tests.
+**Finder group (d) reviews** (`findReviewCandidates` in follow-up-finder.ts): `followup_reviews` on **and** `review_link` set (no link → no group, and the daily summary does not mention it); jobs whose latest `install` appointment is `completed` and ended at least `review_delay_days` local days ago and at most 30 days ago (an old install never gets a late request); job not lost; no `follow_up_log` row of kind `review` for that job ever (once per job — Decision 10: every completed job, no gating on ratings or anything else); customer has a mobile phone, not do-not-contact, not archived, and `sms_consent_status` is `attested` or `written` (Decision 9; the gate re-checks at send time). Decision 7 stop rule: an inbound text in the last 3 days excludes the customer today. Decision 8 spacing: `followUpAllowed(kind 'review')` with the log, last inbound and last storm text, and a customer already chosen for a lead or proposal text today is skipped. Cap 25.
 
-**Carries and rulings:**
-- No review gating (spec Decision 10).
+**Drafting:** `draftTexts({ instruction: 'review_request', facts })` (first name, rep first name, company, the review link as a fact `reviewLink`), every body through the same guard helper as 13a/13b and must contain the review link; template fallback "Hi {first}, it's {company}. Thanks for choosing us for your new roof. If you have a minute, a short review helps a lot: {link} Reply STOP to opt out." (≤ 300 characters; if the link makes it longer, drop "If you have a minute, ").
 
-**Verify notes:**
-- api/db suites need Docker (Testcontainers): locally `npm run typecheck && npm run lint`; prove the rest with `ops/bin/ci-check`.
-- Commit: `feat(api): review requests after installs, with marketing consent`
+**Task:** a third `send_personal_texts` step in the same daily task: `{ purpose: 'marketing', kind: 'review', messages, dedupePrefix: 'followup-review:{localDate}' }`; the title counts all texts; the summary adds "{n} review requests". A task with only reviews is still the same kind `follow_ups`.
+
+**Tests (CI):** an install completed 3 days ago (default delay) gets a request with the link; 2 days ago does not; 31 days ago does not; a second day does not repeat it (log row); no review link or `followup_reviews` off → no group; consent `none`/`express` → skipped (attested/written included); the step is marketing with the STOP line; template fallback contains the link and the STOP line; spacing with a lead text yesterday blocks; a customer who texted yesterday is skipped.
+
+**Verify:** `npm run typecheck && npm run lint` (slot); CI with `CI_JOBS="Platform E2E"`.
+- Commit: `feat(api): Follow-up agent — review requests (G1 Task 14)`
