@@ -403,14 +403,35 @@ describe('grants', () => {
     );
   });
 
-  test('app_system: ALL on global tables, DELETE only on early_delivery_reports, and nothing else on tenant tables', async () => {
-    expect(await tablePrivileges('app_system', GLOBAL_TABLES)).toEqual(
-      GLOBAL_TABLES.map((t) => ({ ...privs(t, true, true, true, true), truncate: true })),
-    );
+  test('app_system: only the privileges its code uses on global tables, DELETE only on early_delivery_reports, and nothing else on tenant tables', async () => {
+    const expected: Record<(typeof GLOBAL_TABLES)[number], Privs> = {
+      users: privs('users', true, true, true, true),
+      sessions: privs('sessions', true, true, true, true),
+      memberships: privs('memberships', true, true, true, true),
+      invites: privs('invites', true, true, true, true),
+      user_tokens: privs('user_tokens', true, true, true, true),
+      webhook_events: privs('webhook_events', true, true, false, false),
+      companies: privs('companies', true, true, true, true),
+      company_phone_numbers: privs('company_phone_numbers', true, true, false, false),
+      texting_registrations: privs('texting_registrations', true, true, true, false),
+    };
+    expect(await tablePrivileges('app_system', GLOBAL_TABLES)).toEqual(GLOBAL_TABLES.map((t) => expected[t]));
     // calendar_connections holds column-level SELECT only (see the column test below), so it has no table-level privilege here.
     expect(await tablePrivileges('app_system', TENANT_TABLES)).toEqual(
       TENANT_TABLES.map((t) => privs(t, false, false, false, t === 'early_delivery_reports')),
     );
+  });
+
+  test('app_system holds no TRUNCATE, TRIGGER or REFERENCES on any relation in public', async () => {
+    // TRUNCATE skips row-level security; TRIGGER would let it plant code that runs as another role.
+    const rows = await ownerQuery<{ relname: string }>(
+      `select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm')
+          and (has_table_privilege('app_system', c.oid, 'TRUNCATE,TRIGGER,REFERENCES')
+               or has_any_column_privilege('app_system', c.oid, 'REFERENCES'))
+        order by 1`,
+    );
+    expect(rows).toEqual([]);
   });
 
   test('neither app role may create schemas in the database (pg-boss runs with createSchema: false in the schema 0002 made)', async () => {

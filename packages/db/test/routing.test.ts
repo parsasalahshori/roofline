@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import pg from 'pg';
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { encrypt } from '../src/crypto.ts';
 import { createPools } from '../src/pools.ts';
@@ -68,7 +69,14 @@ describe('signingTokenFor', () => {
   });
 
   test('no registration row at all: the fallback', async () => {
-    await system.delete(textingRegistrations).where(eq(textingRegistrations.companyId, seed.a.companyId));
+    // As the owner: app_system never deletes a registration.
+    const owner = new pg.Client({ connectionString: urls.owner });
+    await owner.connect();
+    try {
+      await owner.query('delete from texting_registrations where company_id = $1', [seed.a.companyId]);
+    } finally {
+      await owner.end();
+    }
     expect(await signingTokenFor(system, seed.a.companyId, 'master-token', KEY)).toBe('master-token');
   });
 
