@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { audit, withTenant } from '@roofline/db';
+import { audit, billingFacts, withTenant } from '@roofline/db';
 import { ROLES, type Role } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { createBackground } from '../background.ts';
@@ -19,6 +19,8 @@ import { inviteRateLimit } from '../rate-limit.ts';
 import { assertKnownFields, emailField, parse, UUID } from '../validate.ts';
 
 const ROLE_MESSAGE = 'Please pick a role.';
+/** A company younger than this gets the smaller invite allowance (see `inviteRateLimit`). */
+const NEW_COMPANY_MS = 24 * 60 * 60 * 1000;
 
 const InviteBody = z.object({
   email: emailField,
@@ -90,7 +92,10 @@ export function teamRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     '/invites',
     requireCapability('company_admin'),
     requireVerifiedEmail,
-    inviteRateLimit(),
+    ...inviteRateLimit(async (req) => {
+      const { createdAt } = await withTenant(pools, req.ctx, (tx) => billingFacts(tx, req.ctx));
+      return clock.now().getTime() - createdAt.getTime() < NEW_COMPANY_MS;
+    }),
     async (req, res) => {
       const { ctx } = req;
       const body = parse(InviteBody, req.body);

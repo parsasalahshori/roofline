@@ -6,6 +6,17 @@ export type Mailer = { send(msg: MailMessage): Promise<void> };
 const POSTMARK_URL = 'https://api.postmarkapp.com/email';
 const POSTMARK_TIMEOUT_MS = 10_000;
 
+/** The numeric `ErrorCode` of a Postmark error body, or null when the body has none. Nothing else is read. */
+async function postmarkErrorCode(res: Response): Promise<number | null> {
+  try {
+    const body: unknown = JSON.parse(await res.text());
+    const code = typeof body === 'object' && body !== null ? (body as { ErrorCode?: unknown }).ErrorCode : undefined;
+    return typeof code === 'number' && Number.isInteger(code) ? code : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The real mailer: Postmark's single-message API. */
 export class PostmarkMailer implements Mailer {
   private readonly token: string;
@@ -36,9 +47,10 @@ export class PostmarkMailer implements Mailer {
       signal: AbortSignal.timeout(POSTMARK_TIMEOUT_MS),
     });
     if (!res.ok) {
-      // Postmark's error body ({ErrorCode, Message}) is safe to log; the token is never in it.
-      const detail = await res.text().catch(() => '');
-      throw new Error(`Postmark rejected the email (HTTP ${res.status}): ${detail.slice(0, 500)}`);
+      // Only Postmark's numeric ErrorCode is kept: its Message echoes recipient addresses (406
+      // inactive recipients, 300 invalid email), and this error is logged.
+      const code = await postmarkErrorCode(res);
+      throw new Error(`Postmark rejected the email (HTTP ${res.status}${code === null ? '' : `, ErrorCode ${code}`}).`);
     }
   }
 }
