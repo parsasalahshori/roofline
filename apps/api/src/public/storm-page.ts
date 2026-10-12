@@ -1,11 +1,10 @@
+import { STORM_PAGE_CODE_RE } from '@roofline/db';
 import { stormPageForCode } from '@roofline/db/system';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import type { AppDeps } from '../app.ts';
 import { stormFormErrorMessage } from '../storm/landing.ts';
 import { stormPageHtml, stormPageNotFoundHtml } from './storm-page-html.ts';
 
-/** An 8-character base32 code (a-z, 2-7), in any letter case. Anything else cannot be a page. */
-const CODE = /^[a-z2-7]{8}$/i;
 /** `/storm/<code>` and `/storm/<code>/thanks`. */
 const PATH = /^\/storm\/([^/]+)(\/thanks)?$/;
 
@@ -52,12 +51,15 @@ export function stormPage(deps: AppDeps): Router {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.set('Cache-Control', 'no-store');
     res.set('X-Robots-Tag', 'noindex, nofollow');
+    // helmet's default no-referrer makes a browser send `Origin: null` on the form's POST, which the Origin
+    // guard in storm-requests.ts refuses. same-origin keeps the Origin and sends nothing off the site.
+    res.set('Referrer-Policy', 'same-origin');
     res.send(html);
   }
 
   /** Answers one page request. Every 404 is the same generic page; nothing says whose page it was. */
   async function serve(res: Response, slug: string, code: string, thanks: boolean, error: string | undefined): Promise<void> {
-    if (!CODE.test(code)) {
+    if (!STORM_PAGE_CODE_RE.test(code)) {
       send(res, 404, stormPageNotFoundHtml());
       return;
     }

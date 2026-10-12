@@ -4,7 +4,8 @@ import { audit, isUniqueViolation, withTenant } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can, type Member } from '../permissions.ts';
-import { draftStormPlan, STORM_PLAN_ERRORS } from '../storm/plan.ts';
+import { PLAN_CHANGED, PLAN_DISMISSED, PLAN_NOT_FOUND } from '../storm/plan-errors.ts';
+import { draftStormPlan } from '../storm/plan.ts';
 import {
   ALREADY_RERUN,
   approveTask,
@@ -260,8 +261,8 @@ export function approvalRoutes(deps: AppDeps, logError: (err: unknown, path: str
         });
       } catch (err) {
         if (isUniqueViolation(err, RERUN_UNIQUE)) throw new AppError(409, ALREADY_RERUN);
-        if (err instanceof Error && err.message === STORM_PLAN_ERRORS.notFound) throw new AppError(404, MESSAGES.notFound);
-        if (err instanceof Error && (err.message === STORM_PLAN_ERRORS.dismissed || err.message === STORM_PLAN_ERRORS.changed)) throw new AppError(409, err.message);
+        if (err instanceof Error && err.message === PLAN_NOT_FOUND) throw new AppError(404, MESSAGES.notFound);
+        if (err instanceof Error && (err.message === PLAN_DISMISSED || err.message === PLAN_CHANGED)) throw new AppError(409, err.message);
         throw err;
       }
       if (drafted === null) throw new AppError(409, MESSAGES.stormScoutPaused);

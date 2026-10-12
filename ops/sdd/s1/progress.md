@@ -152,3 +152,113 @@ Carries: the ad landing URL is not wired yet. ensureStormPage (T20) plus company
 I4 (s1-i4, phone routes vs the real door API): web reads stops/doneStops, null address/hailIn (doors.noAddress), duplicate-phone error on the phone field. Reviews: R1 2 findings (fixed/amended), R2 0. Local verify clean (web 830 tests). Report: task-i4-report.md.
 s1-storm 64447d6 (T11, T15, I3, T20, T25): ci-check 38231034811 PASSED (Platform, Hail, E2E).
 I4 (wf_fca30448, contact 232): cb3b1b9 on s1-i4 (T26 phone routes now match T15's API: stops/doneStops, null address/hail with doors.noAddress, the duplicate-phone 409 shown on the phone field, shared DOOR_OUTCOMES, --stage-lead token for the self dot; one amend round, then clean; CI 38230094771 Platform/E2E/Hail). s1-i4 merged into s1-storm as 97414da; local web 888 tests, typecheck/lint/lint:css clean. Review minors: the server phone error stays until the next submit; the self dot reuses --stage-lead (a --map-self token would be cleaner).
+s1-storm c510ea8 (+ T26/I4): ci-check 38233683925 PASSED (Platform, Hail, E2E).
+T29 (built by the C1 lead, run wf_8143b7ff, contact 76): e611a4e. smoke:storm script, docs/superpowers/s1-manual-smoke.md and guard tests; every live step is behind assertConfirmed and the owner's env credentials, and nothing was run. CI 38229690978 Platform/E2E/Hail. Merged into s1-storm (no conflicts; local typecheck and lint clean). Carry: after T19 merges, the smoke should render the real ad card through resvgCardFor instead of a 1x1 PNG (storm.ts:59, runbook :81), a one-line follow-up. The owner runs the smoke (OWNER TO-DO: Google and Meta test accounts, a Postmark broadcast stream, a real MESH run).
+T19 is green at ff02a51 (CI 38234595026). The C1 lead is merging s1-storm into s1-t19 to wire landingUrl through ensureStormPage + companyOriginFor; the merge waits for its new head. T19 notes: no grant change (spend writes run as app_tenant); the ad image follows T27's stored_files pattern (no storeFile scratch); adErrorCopy is in copy/connections.ts with a duplicate AD_ERROR_COPY in storm/ad-campaign.ts (minor); Review Focus 1 holds.
+T21 (wf_07f27434, contact 233, sonnet): ef034b2. YES replies via onStormReply -> { consumed }, called in hooks/twilio.ts after the inbound store, with the G1/D1 slot marked (Ruling AV). A YES attaches only to the newest storm text within 14 days, and only once. Also storm results (13 counts) and the storms API matching T23's web types (GET /, GET /:id, POST /:id/dismiss, POST /:id/plan; /layer stays first). One CI fix round; CI 38234997601 on 99af3e5 all jobs. Merged into s1-storm; local typecheck/lint clean, 1192 + web 888 tests.
+Whole-branch review items from T21: (1) Redrafting an expired or declined plan returns the old taskId (T11 replaceDraftPlan replaces only drafts, and the route allows only 'draft'). Review Focus 4 forbids replacing a running or approved plan, not an expired or declined one, so draftStormPlan should replace those too and the route should allow them. (2) Export plan.ts's error-message constants and import them in routes/storms.ts (it matches on copied text). (3) GET /api/storms ignores ?since=. (4) The storm_id backfill on an existing job in replies.ts writes no audit row.
+s1-storm T21 head: ci-check 38237669360 PASSED (Platform, Hail, E2E); covers T29 too.
+T19 (C1 lead, Sonnet builders): d15bdc1 (already contains s1-storm with T20/I3/T26). create_ad_campaign handler, creative card and spend sync. The ad landing URL comes from ensureStormPage + companyOriginFor (in public/storm-requests.ts). Review Focus 1 holds: the approval, approver and payload are re-checked before any platform call; a revoked account gets no call and failed:access; retries search by name tag first; budget x days <= max; the 95% pause is retried every run. No grant or migration change. CI 38237639710 Platform/E2E/Hail/v1. Merged into s1-storm; local typecheck/lint/lint:css clean, 1192 + web 888 tests, drizzle-kit reports no changes. All plan steps now have real handlers.
+I5 (to the C1 lead), from T19's carries:
+(a) A campaign running past the storm page's active_until (convective day + 30) points at an expired page. Creating a campaign extends the page's active_until to at least the campaign end date + 1 day.
+(b) When POLICY_PAGES_DOMAIN is unset, the PUBLIC_BASE_URL/storm/<code> fallback hits the web SPA's /storm/:id route, not the landing page. The step fails before any spend instead (needs attention, plain reason 'Storm landing pages are not set up yet.').
+(c) The smoke renders the real card via resvgCardFor (T29 carry).
+(d) Remove the duplicate AD_ERROR_COPY in the API, or document why it is kept.
+Merged origin/c1-crm 5d2e3bd (C1 complete: T28 e2e, whole-branch review fixes) and origin/e1-estimator 3dc8fee (E1 T10-T13, T20; Rulings EM-EO; completeParkedStep seam) into s1-storm.
+Conflicts:
+- jobs/handlers.ts: E1's makeSignedPdf with meta, plus S1's storm jobs.
+- tasks/handlers.ts: E1's real sendProposalStep/orderExactReport plus S1's three handlers; doc comment updated.
+- shared steps.ts: imports union, with TIERS/Tier.
+- messaging/dispatcher.ts: S1's scheduled-email dispatch kept; PARKED_TEXT_STEP_TYPES = send_sms_batch, send_proposal, send_email_batch with E1's typed settleParkedStep.
+- web job/api.ts: imports union.
+Then 33cbb86 drops a duplicate StepRow import in send-batch.ts. Local: typecheck/lint/lint:css clean, shared/send-gate 1193, web 915, drizzle-kit no changes, playwright --list 43 tests, playwright-core only 1.56.1.
+T28 launched from 33cbb86 (wf_6a01c1f2, contact 235, sonnet).
+Sentinel pass 9 (11:22Z; probe green 38239319966 with T11): (1) At the a1-agents merge, isAgentPaused is the first thing inside the drafting transaction and returns null when paused (no task, no alert). draftStormPlan returns { taskId } | null (the job ignores it). POST /api/storms/:id/plan answers 409 'Storm Scout is paused. Turn it back on in Agents to draft a plan.' (copy confirmed by the S1 lead), and storm-plan.test draft() throws on null. (2) At the d1/g1 merges, OFF_STEP_TITLES (tasks/service.ts, Record<StepType,string>) gains front_desk_call, front_desk_texts, send_personal_texts, build_claim_packet, create_appointment, move_appointment. (3) A1's rerunTask copies only { type, payload }, so an expired storm plan with off steps fails with a 400 and re-enables off steps. S1's answer: storm plans are re-drafted through draftStormPlan, never rerun. This goes with the whole-branch review fix that lets draftStormPlan replace expired/declined plans; A1 should send storm_plan tasks to the storms redraft route rather than rerunTask.
+Ruling BC (controller, 11:22Z): the draftStormPlan pause design is approved: returns { taskId } | null (null when paused: no task, no alert); POST /api/storms/:id/plan answers 409 "Storm Scout is paused. Turn it back on in Agents to draft a plan."; A1 implements it at its s1 merge, and if S1 touches draftStormPlan first (the whole-branch review redraft fix) it adopts the same signature. OFF_STEP_TITLES gains D1/G1 step types at the S1 d1/g1 merges. Storm-plan reruns re-draft through draftStormPlan (A1 implements).
+s1-storm (T19 + c1-crm/e1-estimator merge, code at 33cbb86): ci-check 38240818004 PASSED (Platform, Hail, E2E). S1 build tasks T1-T27 and T29 are all merged and green. Open: T28 (wf_6a01c1f2), I5 (C1 lead), then the whole-branch review.
+WHOLE-BRANCH REVIEW (three read-only reviewers on 8824456).
+- Pipeline/hail: 1 critical (yesterday's storms re-created as today's because MESH_Max_1440min is a rolling 24-hour max), 5 important (double or missed final run; merged/split storms double-text; re-draft can overwrite an approved plan; expired/declined plans can't be re-drafted; {day} frozen at draft time), 9 minor.
+- Money/consent/tenancy: 6 important (lost enable leaves a campaign unguarded; one Check error turns off the 95% guard; Meta ad sets created PAUSED never deliver; YES attaches to an unsent storm text; a storm text can be relabelled informational; ad max can be raised server-side), 3 minor.
+- Web: 1 critical (map layer sends a fractional zoom, so the API 400s), 2 important (no link to My routes; ad account reasons never shown), 7 minor.
+Fix tasks:
+- R1 (hail: 60min MESH accumulated into the day, one explicit final 12Z run, merged_into column; Ruling AW: column added to 0018 + snapshot), R2a (plans/locks/re-draft + Ruling BC signature), R2b (consent/messaging) run in wf_cabe1d1b (contact 237, sonnet), from 2c5c984 (R1 from b0d568d = + 60min fixtures and an eccodes oracle captured by the lead).
+- R3 (ad spend) goes to the C1 lead after I5.
+- R4 (web) launches when T28 finishes.
+Briefs: ops/sdd/s1/task-{r1,r2a,r2b,r3,r4}-brief.md. Accepted deviation: the default ad split is 55% ($148.50/$121.50 on $270); the spec's $150/$120 needs 55.56%, which an integer percent can't express.
+I5 (C1 lead): c3c6fe0 (+ report commit 10d066a). The storm page's active_until is extended to the campaign end + 1 day (extendStormPageUntil, extend-only, tenant-scoped). No POLICY_PAGES_DOMAIN: needs attention before any claim or platform call (the PUBLIC_BASE_URL fallback is removed). The smoke renders the real card. AD_ERROR_COPY stays in the API with a keep-in-sync comment (vendor names; the API can't import web copy). CI 38243119651 Platform/E2E/Hail/v1 green (after one fix for a 60-day test campaign). Merged into s1-storm; local typecheck/lint clean, drizzle-kit reports no changes. R3 (C1 lead) is now stacked on c3c6fe0.
+Sentinel pass 10 (12:04Z; probe green 38244113600): A1 carries the pause check (draftStormPlan returns null). The route 409 and the expired/declined re-draft are both in R2a (running). G1/D1 OFF_STEP_TITLES at those merges. When R1 lands its 0018 change, the other tracks rebuild their snapshots after 0018.
+s1-storm with I5: ci-check 38245555894 PASSED (Platform, Hail, E2E).
+R3 (C1 lead; stacked on I5): b2b600b (577674c main, 2e38104 test fixes). Fixes:
+- Lost enable: after the external id is stored, any throw makes a best-effort pause. The sync also sweeps failed rows and stale creating rows that have an external id, and pauses any the platform reports live. The fakes gained loseResponseOnNextSetStatus.
+- A thrown Check keeps the previous account status (only lastErrorPlain changes). syncOne runs for any non-revoked account.
+- Meta ad set and ad are created ACTIVE, with the campaign PAUSED as the one switch.
+- New ad_campaigns.paused_by ('roofline'|'platform'): a platform pause keeps being synced, and only our 95% pause, ended, or a confirmed-off sweep stops it.
+- USD-only accounts (NOT_USD before the claim).
+Ruling AW: 0018 amended in place (paused_by + CHECK; app_system SELECT on paused_by and updated_at) plus 0018_snapshot.json; drizzle-kit reports no changes. CI 38248652411 Platform/E2E/Hail/v1. Merged into s1-storm; local typecheck/lint clean, 668 shared tests, drizzle-kit no changes. Note: a deliberate step retry on a failed row re-enables it and clears paused_by (owner-initiated, acceptable).
+T28: CI rounds 1-3 failed E2E. Fixes so far: the company storm id, the map a11y role, row matching. Remaining cause: the send gate holds storm texts/emails in quiet hours when CI runs before 08:00 Chicago. 0909fb5 (seed a mid-day company zone) is on CI now.
+Ruling BD (controller, 12:56Z): A1 owns the storm re-draft mechanism (lockStormPlan, supersedeDraft, REDRAFTABLE widened to draft/expired/declined). S1 drops R2a's replaceDraftPlan re-draft and locking work. S1 keeps: draftStormPlan -> { taskId } | null with the pause check first; the POST /api/storms/:id/plan 409 paused copy on null; and the consent fixes (R2b). R2a was already running in wf_cabe1d1b with R1/R2b (stopping it would stop them), so at merge the lead keeps only the BD-allowed parts plus non-overlapping minors, and reverts replaceDraftPlan/lock/REDRAFTABLE changes. R1 (storms.merged_into) lands as soon as it is green; A1, G1, D1 and the probe rebuild their post-0018 snapshots after it.
+s1-storm with R3: ci-check 38251534932 PASSED (Platform, Hail, E2E). T28 on 0909fb5 (run 38250663843): 49/52 e2e pass, including storm plan in 2 clicks. Three remain (route view a11y, landing form post not redirecting on the phone, phone /storm heading); a focused agent is fixing them on s1-t28.
+Ruling BD amended (controller, 13:15Z): storm-match and automatic drafting re-draft only over draft plans. Expired/declined plans are replaced only by an explicit rerun (A1 allowFinished). R2a handling unchanged (keep the null signature, the 409, and non-overlapping minors).
+T28 (wf_6a01c1f2 + a focused fix agent): e89fa35. Adds storm.spec (storm plan in 2 clicks: all five steps Done with the fakes; office approves messages, owner approves spend), doors.spec (rep marks "Wants a check" and the lead reaches the rep's Today; the landing page on a phone submits a request), a11y and phone no-scroll for /storm, /storm/:id, the route view and the landing page, seedStormFixture (exported from @roofline/api), docs/superpowers/s1-acceptance.md and README env docs.
+Product bugs the e2e found and fixed:
+- (1) helmet's default Referrer-Policy no-referrer made browsers send Origin: null on the landing form POST, so the Origin guard refused EVERY homeowner request. The storm page now sends Referrer-Policy: same-origin, with an api test.
+- (2) RouteMap was role=img around focusable MapLibre links; it is now role=region.
+Test-side: e2e company zone set to a mid-day zone (9-19 local, every UTC hour covered, with a test) so quiet hours don't hold the storm texts/emails; the phone spec waits for the list region. CI 38254137473 Platform/E2E/Hail/v1 green (52 e2e tests). Merged into s1-storm.
+R4 (wf_6d1b30d1, contact 239): c2e0827 (bad1059 + tokens.ts mirror fix). Storm layer zoom rounded and clamped; My routes link in StormWindow and the phone More sheet; ad accounts show lastErrorPlain (the dead reason copy is gone); plan statuses cover all TASK_STATUSES; a loading skeleton; count-free stat labels; decimal input for the ad max; RouteMap dot effect split; marker shadow tokens. CI 38254351772 Platform/E2E/Hail. Merged after T28 (one test conflict: count-free labels plus T28 map role=region). Local: typecheck/lint/lint:css clean, web+ui 1115 tests, e2e list 52. Note: the Redraft button shows for expired/declined plans; on s1-storm the API still answers 409 for those until A1 widens REDRAFTABLE (Ruling BD).
+Ruling BE (controller 13:41Z, launch runbook 1.10): (1) unify on POSTMARK_TOKEN (hail main.py reads POSTMARK_SERVER_TOKEN; keep it as a fallback); (2) document OPS_ALERT_EMAIL (it must be a verified Postmark sender) in the config schema and .env.example; (3) hail-health 180/720 minutes come from config; (4) POLICY_PAGES_DOMAIN required: already done in I5. Items 1-3 are task R6 (brief task-r6-brief.md), after R1 and R2b merge (they edit main.py and hail-health.ts).
+Review fixes wave (wf_cabe1d1b, contact 237, sonnet):
+- R1 e0812a1: the hail day is built from MESH_Max_60min grids accumulated by union; one explicit final per day from the 12:00:00Z 1440min key, with old unfinalized days closed later; storms.merged_into (0018 + snapshot, Ruling AW; app_hail UPDATE(merged_into)); the oldest id survives a merge; in-memory failure counting; matching/layer/fan-out filters. CI 38250896980 on 6d503ab.
+- R2a 0edd7ae: draftStormPlan -> { taskId } | null with the A1 marker first; the route answers 409 PLAN_PAUSED on null; plan-errors.ts constants; storm-draft drops permanent failures; ?since= (default 30 days); no second ready email for a re-draft of a draft. CI 38254123531 on aa9f2af.
+- R2b 3ab6e88: YES only to sent/delivered storm texts; editStep keeps storm steps marketing with the same dedupe, and the ad max/days can't rise; the SMS {day} label is computed at send time; a scheduled email to a changed address is blocked; replies counted within 14 days; the now-alert claim is released on total failure and alertUnalerted added; hail-health alerts every tick past the threshold with a cooldown; the 0018 email_opt_outs SELECT(email) is kept with a reason comment (ON CONFLICT needs it). CI 38249000689 on 705a479.
+Merged R1, R2a, R2b (no conflicts). Then the Ruling BD trim: replaceDraftPlan restored to its T11 form, R2a's storm-plans db test dropped, REDRAFTABLE_PLAN_STATUSES = ['draft'], and the tests list expired/declined as "left alone". A1 widens these at its s1 merge. Local: typecheck/lint clean, shared/send-gate 1193, web 945, drizzle-kit no changes, Python parses.
+Remaining group-check items go to R7 (brief task-r7-brief.md, which also folds in R6/Ruling BE):
+- merged_into filters in storm-api.ts and storm-alerts.ts;
+- afterMatch calls alertUnalerted;
+- listUnalertedMatched bounded to 3 days;
+- R1 hail minors.
+Note: PLAN_PAUSED cannot be reached until A1 T14 wires isAgentPaused into plan.ts.
+R5 (C1 lead): 0d1c8d4 (5e75615 code). One landing code rule (STORM_PAGE_CODE_RE in repos/storm-pages.ts, used by both public routes). The rate limit and Origin guard moved inside stormRequestRoutes, so form posts get ?error=busy/invalid while JSON keeps its status codes. createStormRequest goes through createJob (audit and timeline lines; actor system). doors placeFor is synchronous with named fallbacks. When a landing request matches another customer's home, the job line says "sent for this home by <name>". CI 38255682720 Platform/E2E/Hail/v1. Merged into s1-storm (auto-merged storm-page.ts; T28's Referrer-Policy fix kept). Local: typecheck/lint clean, 668 shared, e2e list 52. Behaviour: a malformed code with a browser Origin gets 403 from the guard.
+
+## Ruling BF (controller, 2026-10-12): security review fixes before S1 completes
+Source: `ops/sdd/integration/security-review.md` on `origin/sec-review` (probe launch-integration a7e2b559). S1 owns:
+- **High 1:** ad accounts shared across companies. **R8:** a global partial unique index in 0018 (Ruling AW); claim the row before calling the platform; unlink only when this company was the live holder.
+- **High 2:** `Referrer-Policy: no-referrer` turns Origin into null on the public forms. **R9:** the unsubscribe confirm page uses same-origin; e2e specs submit both forms.
+- **Medium 3:** unverified SMS consent from the storm form. **R10:** the form never writes or upgrades consent; a YES from that phone within 14 days makes it express; per-IP share and per-phone caps.
+- **Lows 9, 10, 14, 18:** **R8** trims the 0018 grants; **R9** keeps `/u/` tokens out of logs and limits the S1 public routes.
+
+The three tasks run in parallel from 83e9856, with Sonnet builders, and need CI on Platform, E2E and Hail before each merge. Finding 4 (`TRUST_PROXY`, F2/F3) limits how effective the per-IP caps are; it is not S1's.
+
+## 2026-10-12: E2E red on 83e9856 (run 38259582760) and fix 3f800e5
+- Platform and Hail passed. E2E had 7 storm specs fail, all with `create_ad_campaign: needs_attention` and the `NOT_USD` message.
+- Cause: R3 (577674c) made the ad campaign step refuse an account whose currency isn't USD. `scripts/storm-fixture.ts` inserted ad accounts with a null currency.
+- Fix 3f800e5: fixture accounts now have currency USD and a name, plus external ids per company (derived from the company id), so they stay valid under R8's global unique index.
+- R7–R10 branch from bases before 3f800e5, so their E2E shows the same 7 failures. Those are the base's failures: judge each task's E2E on the merge result after it lands on s1-storm.
+
+## R7 merged (s1-r7 0c2717a, merge on s1-storm)
+- R7 run 38259664396: Platform and Hail passed. E2E had the same 7 failures as the base (the NOT_USD fixture, fixed in 3f800e5). E2E is judged on the merged head.
+- Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema changes" all pass.
+- Decision recorded: a merged storm stays hidden from lists until it has a plan. Alerts and settle candidates always skip merged storms, so a merged storm with a draft plan is not re-drafted.
+- Ruling BE config:
+  - `HAIL_ALERT_STALE_MINUTES_SEASON` = 180;
+  - `HAIL_ALERT_STALE_MINUTES_OFFSEASON` = 720;
+  - `POSTMARK_TOKEN` in the hail service, with the deprecated `POSTMARK_SERVER_TOKEN` as fallback.
+
+## Carries from the integration sentinel, pass 12 (session_01RypesnL2fbawyJH5HtdS7E)
+For the next e1-estimator merge into s1-storm:
+- Add R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET to the production `VALID` config in `apps/api/test/storm-config.test.ts`, `google-ads-http.test.ts` and `postmark-broadcast.test.ts` (E1 Ruling ET).
+- Add E1's `proposalListRoutes()` stub to the s1-routes test "dock Storm opens /storm".
+
+Already done: s1-r2a is merged (28f3800) with the Ruling BD trim (41b970c). REDRAFTABLE_PLAN_STATUSES is `['draft']`, and replaceDraftPlan is restored to T11's version.
+- Carry for the a1-agents merge (controller, Ruling BD detail): delete REDRAFTABLE_PLAN_STATUSES from `apps/api/src/storm/plan-errors.ts`. Its callers import A1's db exports REDRAFTABLE_PLAN_STATUSES (['draft']) and FINISHED_REDRAFTABLE_PLAN_STATUSES (['expired','declined']).
+- CI run 38263313497 on s1-storm@c2e3a1f (R7 merge plus the 3f800e5 fixture fix): Platform, Hail and E2E all green.
+- b46f1f5: `apps/api/test/helpers.ts` builds `FakeExactReports(() => clock.now())`. This defuses the E1 time bomb: exact-report.test.ts pins 2026-10-12T15:00Z, so it has been red everywhere since 15:01Z (the controller's request). R8–R10 branch from before this fix, so their Platform job may show the exact-report failure; it is the base's, so judge it on the merged head.
+- CI run 38270389296 on s1-storm@7159e1c (after the time bomb fix): Platform, Hail and E2E all green.
+
+## Re-merge of c1-crm 7758e82 and e1-estimator 414b97b requested (E1 lead for the controller, Ruling BF)
+Order: R8–R10 first, so 0018 is narrowed and errors.ts carries the pathForLog change. Then merge c1-crm and e1-estimator. Keep both sides in `config.ts`, `rls.test.ts` and the production config fixtures. Changes that come with the merge:
+- Production configs need `TRUST_PROXY: '1'` and the R2 keys.
+- The session cookie names come from the constants in `sessions.ts`.
+- `loginRateLimit()` and `inviteRateLimit()` return arrays, which the routes spread.
+- app_system privileges are exact: no TRUNCATE, TRIGGER or REFERENCES. Tests write through the owner client where app_system lacks a grant.
+- The errors.ts late-error branch uses `pathForLog(req.path)`.
+- Sentinel carries: the R2 keys in the storm-config, google-ads-http and postmark-broadcast production VALID configs, and the `proposalListRoutes()` stub in s1-routes.

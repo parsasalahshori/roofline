@@ -67,6 +67,8 @@ describe('loadConfig', () => {
       META_GRAPH_VERSION: 'v24.0',
       POSTMARK_BROADCAST_STREAM: 'broadcast',
       HAIL_STALE_MINUTES: 90,
+      HAIL_ALERT_STALE_MINUTES_SEASON: 180,
+      HAIL_ALERT_STALE_MINUTES_OFFSEASON: 720,
       STORM_MAIL_FROM: 'storms@app.roofline.test',
     });
   });

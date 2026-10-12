@@ -32,6 +32,7 @@ export const STORM_FORM_ERRORS = {
   addressNotFound: ADDRESS_NOT_FOUND,
   lookupDown: LOOKUP_DOWN,
   busy: MESSAGES.tooFast,
+  invalid: MESSAGES.unreadable,
   check: MESSAGES.checkField,
 } as const;
 export type StormFormErrorKey = keyof typeof STORM_FORM_ERRORS;

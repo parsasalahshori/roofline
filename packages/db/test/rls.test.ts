@@ -614,6 +614,21 @@ describe('grants', () => {
     ]);
   });
 
+  test('app_hail may UPDATE storms.merged_into', async () => {
+    const rows = await ownerQuery<{ ok: boolean }>(
+      `select has_column_privilege('app_hail', 'public.storms', 'merged_into', 'UPDATE') as ok`,
+    );
+    expect(rows).toEqual([{ ok: true }]);
+  });
+
+  test('app_tenant and app_system cannot UPDATE storms.merged_into', async () => {
+    const rows = await ownerQuery<{ tenant: boolean; system: boolean }>(
+      `select has_column_privilege('app_tenant', 'public.storms', 'merged_into', 'UPDATE') as tenant,
+              has_column_privilege('app_system', 'public.storms', 'merged_into', 'UPDATE') as system`,
+    );
+    expect(rows).toEqual([{ tenant: false, system: false }]);
+  });
+
   test('app_hail has privileges on no other relation than the three hail tables', async () => {
     const rows = await ownerQuery<{ relname: string }>(
       `select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -635,12 +650,12 @@ describe('grants', () => {
     expect(row).toEqual({ hail: true, spotter: false, footprints: false });
   });
 
-  test('app_system: ALL on spotter_reports, SELECT only on hail_runs, SELECT and UPDATE (place_name) only on storms, nothing on storm_contours', async () => {
+  test('app_system: SELECT and INSERT on spotter_reports (no UPDATE, DELETE, TRUNCATE or TRIGGER), SELECT only on hail_runs, SELECT and UPDATE (place_name) only on storms, nothing on storm_contours', async () => {
     expect(await tablePrivileges('app_system', HAIL_GLOBAL_TABLES)).toEqual([
       privs('hail_runs', true, false, false, false),
       privs('storms', true, false, false, false),
       privs('storm_contours', false, false, false, false),
-      { ...privs('spotter_reports', true, true, true, true), truncate: true },
+      privs('spotter_reports', true, true, false, false),
     ]);
     const cols = await ownerQuery<{ column_name: string }>(
       `select column_name from information_schema.column_privileges
@@ -796,8 +811,10 @@ describe('grants', () => {
       sel('ad_campaigns', 'company_id'),
       sel('ad_campaigns', 'external_campaign_id'),
       sel('ad_campaigns', 'id'),
+      sel('ad_campaigns', 'paused_by'),
       sel('ad_campaigns', 'platform'),
       sel('ad_campaigns', 'status'),
+      sel('ad_campaigns', 'updated_at'),
       sel('agent_task_steps', 'company_id'),
       sel('agent_task_steps', 'id'),
       sel('agent_task_steps', 'lease_expires_at'),
@@ -1870,13 +1887,17 @@ describe('S1 storm tables', () => {
     }
   });
 
-  test('app_system loads spotter_reports with the bigserial sequence', async () => {
+  test('app_system loads spotter_reports with the bigserial sequence, and cannot delete or truncate them', async () => {
     const [row] = await systemRaw<{ id: string }>(
       `insert into spotter_reports (report_date, time_utc, size_in, state, geom)
        values (date '2026-10-11', time '18:05', 1.25, 'NE', ${CENTER}) returning id`,
     );
     expect(row?.id).toBeTruthy();
-    expect(await systemRaw(`delete from spotter_reports returning id`)).toHaveLength(1);
+    const del = await rejectedWith(() => systemRaw(`delete from spotter_reports`));
+    expect(del.code).toBe('42501');
+    const truncate = await rejectedWith(() => systemRaw(`truncate spotter_reports`));
+    expect(truncate.code).toBe('42501');
+    await ownerQuery(`delete from spotter_reports`);
   });
 
   test('tenant role sees and writes only its own company_storms rows and cannot delete them', async () => {
@@ -2104,6 +2125,10 @@ describe('front desk tables', () => {
       ['conversation_turns', 'tool_calls', 'SELECT', false],
       ['conversations', 'status', 'SELECT', true],
       ['conversations', 'phone_e164', 'SELECT', false],
+      // fd-health's voice-URL marker (markVoiceUrlSet); every other company_phone_numbers column stays read-only.
+      ['company_phone_numbers', 'capabilities', 'UPDATE', true],
+      ['company_phone_numbers', 'status', 'UPDATE', false],
+      ['company_phone_numbers', 'e164', 'UPDATE', false],
     ];
     const rows = await ownerQuery<{ table_name: string; column_name: string; privilege: string; allowed: boolean }>(
       `select t as table_name, c as column_name, p as privilege,

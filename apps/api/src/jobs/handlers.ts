@@ -11,8 +11,10 @@ import { syncCompanyAds } from '../storm/ad-sync.ts';
 import { sendStormAlert } from '../storm/alerts.ts';
 import { matchCompanyStorms } from '../storm/match.ts';
 import { draftStormPlan } from '../storm/plan.ts';
+import { PLAN_DISMISSED, PLAN_NOT_FOUND } from '../storm/plan-errors.ts';
 import { UUID } from '../validate.ts';
 import { storeRecording } from './recording-store.ts';
+import { reportJobError } from './scheduler/report.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
 
 function checkStormJob(data: JobData): void {
@@ -24,6 +26,19 @@ function checkStormJob(data: JobData): void {
 function checkStormAlertJob(data: JobData): void {
   checkStormJob(data);
   if (data.kind !== 'now' && data.kind !== 'plan') throw new Error('A storm alert job did not name a kind.');
+}
+
+async function runStormDraft(deps: AppDeps, data: JobData): Promise<void> {
+  try {
+    await draftStormPlan(deps, data.companyId, data.companyStormId!, deps.clock.now());
+  } catch (err) {
+    // An unknown or dismissed storm never becomes draftable by retrying: log it and drop the job.
+    if (err instanceof Error && (err.message === PLAN_NOT_FOUND || err.message === PLAN_DISMISSED)) {
+      reportJobError(deps, err, `storm-draft: company storm ${data.companyStormId}`);
+      return;
+    }
+    throw err;
+  }
 }
 
 /**
@@ -39,7 +54,7 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'storm-match-company': (deps, data) => matchCompanyStorms(deps, data.companyId),
   'storm-draft': (deps, data) => {
     checkStormJob(data);
-    return draftStormPlan(deps, data.companyId, data.companyStormId!, deps.clock.now()).then(() => undefined);
+    return runStormDraft(deps, data);
   },
   'storm-alert': (deps, data) => {
     checkStormAlertJob(data);

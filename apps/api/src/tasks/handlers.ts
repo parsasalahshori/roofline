@@ -1,7 +1,8 @@
 import type { StepType } from '@roofline/shared';
 import { orderExactReport } from '../estimator/exact-report.ts';
-import { sendSmsBatch } from '../messaging/send-batch.ts';
 import { sendProposalStep } from '../estimator/send-proposal.ts';
+import { sendSmsBatch } from '../messaging/send-batch.ts';
+import { createAdCampaignHandler } from '../storm/ad-campaign.ts';
 import { sendEmailBatchHandler } from '../storm/email-batch.ts';
 import { buildRoutesHandler } from '../storm/routes-build.ts';
 import type { StepHandler } from './runner.ts';
@@ -9,18 +10,14 @@ import type { StepHandler } from './runner.ts';
 /** The demo steps (the F2 demo task, and the tests) do nothing and finish at once. */
 const finishAtOnce: StepHandler = async () => ({ status: 'done', result: { ok: 1 } });
 
-/** Steps whose real handler arrives in a later S1 task fail until then (the runner reports the step). */
-const notYet: StepHandler = async () => {
-  throw new Error('not yet');
-};
-
 /**
  * What runs each kind of step, as the platform ships it; runner.ts starts from this. A type with
  * no handler here cannot run yet: its step needs attention ("This kind of step can't run yet.").
- * The Storm Scout step `create_ad_campaign` fails with
- * 'not yet' until their handlers land.
+ * `send_proposal` texts or emails a proposal link (estimator/send-proposal.ts); `order_exact_report`
+ * orders an exact roof report (estimator/exact-report.ts).
  * `send_sms_batch` texts its customers through the send gate (messaging/send-batch.ts).
  * `send_email_batch` emails them through the email gate (storm/email-batch.ts).
+ * `create_ad_campaign` makes a paused ad campaign at the approved maximum, then enables it (storm/ad-campaign.ts).
  * `build_routes` turns a storm's hail zone into door-knock routes (storm/routes-build.ts).
  */
 export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
@@ -30,8 +27,8 @@ export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   send_sms_batch: sendSmsBatch,
   send_proposal: sendProposalStep,
   order_exact_report: orderExactReport,
-  // Storm Scout (S1): create_ad_campaign's real handler arrives in a later S1 task.
+  // Storm Scout (S1)
   send_email_batch: sendEmailBatchHandler,
   build_routes: buildRoutesHandler,
-  create_ad_campaign: notYet,
+  create_ad_campaign: createAdCampaignHandler,
 };

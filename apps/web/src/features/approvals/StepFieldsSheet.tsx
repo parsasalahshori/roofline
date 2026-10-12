@@ -170,7 +170,7 @@ export function StepFieldsSheet({ step, kit, saving, error, onSave, onClose }: S
           error={error}
           multiline={multiline}
           rows={6}
-          inputMode={field.kind === 'number' ? 'numeric' : undefined}
+          inputMode={field.inputMode ?? (field.kind === 'number' ? 'numeric' : undefined)}
           value={textOf(values, field.id)}
           onChange={(event) => setField(field.id, event.target.value)}
         />
