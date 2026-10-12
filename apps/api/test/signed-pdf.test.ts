@@ -50,15 +50,10 @@ function pdfText(bytes: Uint8Array): string {
   const raw = Buffer.from(bytes).toString('latin1');
   const bodies = [raw];
   for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
-    // A stream whose last byte is \r loses it to the `\r?\n` before `endstream`, so that byte is tried back on:
-    // the bytes change with every run (timestamps, hashes), and about one page in 256 ends that way.
-    for (const data of [m[1]!, `${m[1]!}\r`]) {
-      try {
-        bodies.push(inflateSync(Buffer.from(data, 'latin1')).toString('latin1'));
-        break;
-      } catch {
-        // Not a Flate stream (an image's raw data, say), or the byte above.
-      }
+    try {
+      bodies.push(inflateSync(Buffer.from(m[1]!, 'latin1')).toString('latin1'));
+    } catch {
+      // Not a Flate stream (an image's raw data, say).
     }
   }
   const pieces: string[] = [];
