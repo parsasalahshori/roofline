@@ -27,11 +27,14 @@ export class TwilioCallControl implements CallControl {
     return this.main.as({ accountSid: sub.accountSid, authToken: sub.authToken });
   }
 
-  async startRecording(sub: SubaccountRef, callSid: string): Promise<{ recordingSid: string }> {
+  async startRecording(sub: SubaccountRef, callSid: string, statusCallback?: string): Promise<{ recordingSid: string }> {
     const body = await this.sub(sub).request<{ sid?: unknown }>(
       'POST',
       `${TWILIO_API}/Accounts/${sub.accountSid}/Calls/${callSid}/Recordings.json`,
-      { RecordingChannels: 'dual' },
+      {
+        RecordingChannels: 'dual',
+        ...(statusCallback !== undefined && { RecordingStatusCallback: statusCallback, RecordingStatusCallbackEvent: 'completed' }),
+      },
     );
     if (typeof body.sid !== 'string') throw new TwilioUnreachableError();
     return { recordingSid: body.sid };

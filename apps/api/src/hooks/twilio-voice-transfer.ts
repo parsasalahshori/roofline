@@ -18,7 +18,9 @@ const HANGUP = '<Response><Hangup/></Response>';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REASONS: readonly TransferReason[] = ['asked', 'leak', 'danger', 'angry', 'trade_caller', 'not_understood', 'model_failure'];
 
-type Handoff = { kind: 'transfer' | 'end'; reason: TransferReason };
+type EndReason = 'spam' | 'silence' | 'goodbye' | 'limit';
+const END_REASONS: readonly EndReason[] = ['spam', 'silence', 'goodbye', 'limit'];
+type Handoff = { kind: 'transfer'; reason: TransferReason } | { kind: 'end'; reason: TransferReason | EndReason };
 
 /** HandoffData -> kind and reason; anything missing, invalid or unknown is an end (reason unknown -> asked). The summary is not read here. */
 function parseHandoff(raw: string | undefined): Handoff {
@@ -27,7 +29,7 @@ function parseHandoff(raw: string | undefined): Handoff {
     const data: unknown = JSON.parse(raw);
     if (typeof data !== 'object' || data === null) return { kind: 'end', reason: 'asked' };
     const { kind, reason } = data as { kind?: unknown; reason?: unknown };
-    if (kind !== 'transfer') return { kind: 'end', reason: 'asked' };
+    if (kind !== 'transfer') return { kind: 'end', reason: END_REASONS.find((r) => r === reason) ?? 'asked' };
     return { kind: 'transfer', reason: REASONS.find((r) => r === reason) ?? 'asked' };
   } catch {
     return { kind: 'end', reason: 'asked' };
@@ -98,7 +100,7 @@ export function twilioVoiceTransferHooks(deps: AppDeps): Router {
     }
     const ctx = systemCtx(route.companyId);
     const now = deps.clock.now();
-    const handoff = req.query.mode === 'message_only' ? { kind: 'end' as const, reason: 'asked' as const } : parseHandoff(field(req, 'HandoffData'));
+    const handoff: Handoff = req.query.mode === 'message_only' ? { kind: 'end', reason: 'asked' } : parseHandoff(field(req, 'HandoffData'));
 
     if (handoff.kind === 'end') {
       await withTenant(deps.pools, ctx, (tx) => updateCall(tx, ctx, callSid, { status: 'ended', endedAt: now }));

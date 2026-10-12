@@ -18,6 +18,7 @@ import { ScriptedLlm } from './providers/fakes/scripted-llm.ts';
 import { twilioLookupFor } from './providers/twilio/lookup.ts';
 import { twilioCallControlFor } from './providers/twilio/voice.ts';
 import { RelaySessions } from './front-desk/relay-sessions.ts';
+import { createObjectStore } from './providers/object-store.ts';
 import { createRegistrar } from './providers/registrar.ts';
 import { createSmsAdapter } from './providers/sms.ts';
 import type { StepQueue } from './tasks/queue.ts';
@@ -157,5 +158,6 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     callControl: createCallControl(config),
     lineLookup: createLineLookup(config),
     relaySessions: new RelaySessions(),
+    objectStore: createObjectStore(config, pools),
   };
 }
