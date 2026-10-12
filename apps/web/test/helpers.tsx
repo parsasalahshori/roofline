@@ -87,7 +87,7 @@ export const SHELL_ROUTES: Record<string, () => Reply> = {
   [STORM_LAYER_KEY]: () => ({ body: STORM_LAYER_BODY }),
   'GET /api/conversations?filter=needs_attention': () => ({ body: { items: [], nextCursor: null } }),
   // The Demo badge's probe (features/demo): a 404 means the API is not in demo mode, so no badge
-  'GET /api/demo': () => ({ status: 404, body: { error: "We couldn't find that." } }),
+  'GET /api/demo': () => ({ body: { demo: false } }),
 };
 
 /** Today's "Signed today" read, answered with nothing: spread it into a test that renders the Today window. */
