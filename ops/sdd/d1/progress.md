@@ -155,3 +155,9 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
     - (b) transfer reason 'asked' plus the router intent can count one ask twice in a turn; count once.
     - (c) drop the times.ts systemCtx re-export.
 - 2026-10-12: integration 092068c8 green (CI 38281636895, Platform+E2E): T27 + c1-crm 7758e82 + T19, with the smoke guard test's TRUST_PROXY fix (T27's production BASE_ENV met C1's BF check). CV and RA are building in parallel off 93dcfca; RC waits for CV; T25 is with the C1 lead; d1-rev-a/b/c are with E1 and d1-rev-d with C1.
+- 2026-10-12: **d1-rev-a and d1-rev-b merged** (E1 pre-review fixes).
+  - d1-rev-a 5267d58 (CI 38281600581): items 13, 25 hook part, 26, 29, 30, 38, 39, 40 and 45, plus **Ruling BG**. A read-only company gets team then voicemail, never AI; no fd-text; the "off" PUT is allowed.
+  - d1-rev-b 542a7e9 (CI 38281601513): items 14, 15, 16, 17 and 36. The lock order is the phone lock, then lockRecipient.
+  - Retention 0 now deletes existing recordings; the settings copy may need to say so.
+  - Since Ruling BG landed via d1-rev-a, Task CV's BG part is redundant: at CV's merge, keep d1-rev-a's version and drop CV's duplicate.
+  - RC must pass `toE164: conversation.phoneE164` in texts.ts (item 17).
