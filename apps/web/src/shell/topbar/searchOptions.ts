@@ -1,13 +1,16 @@
 import type { SearchResult } from '../../api/types.ts';
 import { search } from '../../copy/search.ts';
+import type { Recent } from '../recents.ts';
 
 /** One line in the search results: where it leads, and the two lines of text that say what it is. */
 export type SearchOption = {
   key: string;
   href: string;
-  group: 'customers' | 'jobs' | 'addresses';
+  group: 'actions' | 'recent' | 'customers' | 'jobs' | 'addresses';
   primary: string;
   secondary: string;
+  /** True when the href is a file download, not a page of the app. */
+  external?: boolean;
 };
 
 /**
@@ -49,4 +52,45 @@ export function toOptions(result: SearchResult): SearchOption[] {
       }),
     ),
   ];
+}
+
+const ACTION_HREFS = {
+  newJob: '/jobs/new',
+  newCustomer: '/customers/new',
+  bookInspection: '/calendar/new?kind=inspection',
+  openCalendar: '/calendar',
+  downloadCustomers: '/api/export/customers.csv',
+} as const;
+
+/** The actions whose words each start with the typed words. An empty query matches none. */
+export function actionOptions(query: string, canDownload: boolean): SearchOption[] {
+  const typed = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (typed.length === 0) return [];
+  const names = Object.keys(ACTION_HREFS) as (keyof typeof ACTION_HREFS)[];
+  return names
+    .filter((name) => name !== 'downloadCustomers' || canDownload)
+    .filter((name) => typed.every((word) => search.actionItems[name].words.some((candidate) => candidate.startsWith(word))))
+    .map(
+      (name): SearchOption => ({
+        key: 'action:' + name,
+        href: ACTION_HREFS[name],
+        group: 'actions',
+        primary: search.actionItems[name].label,
+        secondary: '',
+        ...(name === 'downloadCustomers' ? { external: true } : {}),
+      }),
+    );
+}
+
+/** The recent jobs and customers as options, in the order given. */
+export function recentOptions(recents: Recent[]): SearchOption[] {
+  return recents.map(
+    (recent): SearchOption => ({
+      key: `recent:${recent.kind}:${recent.id}`,
+      href: (recent.kind === 'job' ? '/jobs/' : '/customers/') + encodeURIComponent(recent.id),
+      group: 'recent',
+      primary: recent.label,
+      secondary: '',
+    }),
+  );
 }

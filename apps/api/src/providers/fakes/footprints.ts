@@ -3,9 +3,13 @@ import type { FootprintFeature, FootprintSource } from '../footprints.ts';
 
 export type FootprintCall = { method: 'stateFileUrl' | 'features'; args: { state: string } };
 
-const NE: FootprintFeature[] = JSON.parse(
-  readFileSync(new URL('../../../test/fixtures/footprints-ne.json', import.meta.url), 'utf8'),
-) as FootprintFeature[];
+let NE: FootprintFeature[] | null = null;
+function loadNE(): FootprintFeature[] {
+  NE ??= JSON.parse(
+    readFileSync(new URL('../../../test/fixtures/footprints-ne.json', import.meta.url), 'utf8'),
+  ) as FootprintFeature[];
+  return NE;
+}
 
 export class FakeFootprintSource implements FootprintSource {
   readonly configured = true;
@@ -27,6 +31,6 @@ export class FakeFootprintSource implements FootprintSource {
   }
   async *features(state: string): AsyncGenerator<FootprintFeature> {
     this.record({ method: 'features', args: { state } });
-    if (state.toUpperCase() === 'NE') yield* NE;
+    if (state.toUpperCase() === 'NE') yield* loadNE();
   }
 }

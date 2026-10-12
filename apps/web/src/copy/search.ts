@@ -10,6 +10,16 @@ export const search = {
   customers: 'Customers',
   jobs: 'Jobs',
   addresses: 'Addresses',
+  actions: 'Actions',
+  recent: 'Recent',
+  /** Each action: its label and the words a query is matched against (lower case). */
+  actionItems: {
+    newJob: { label: 'New job', words: ['new', 'job', 'add', 'create'] },
+    newCustomer: { label: 'New customer', words: ['new', 'customer', 'add', 'create'] },
+    bookInspection: { label: 'Book an inspection', words: ['book', 'inspection', 'schedule', 'appointment', 'new'] },
+    openCalendar: { label: 'Open calendar', words: ['open', 'calendar', 'schedule'] },
+    downloadCustomers: { label: 'Download customers', words: ['download', 'customers', 'export', 'csv'] },
+  },
   listLabel: 'Search results',
   noMatches: (query: string) => `No matches for “${query}”`,
   /** Joins the pieces of a result's second line: stage, address, phone. Pieces that are missing are left out. */

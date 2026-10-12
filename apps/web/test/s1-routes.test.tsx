@@ -28,6 +28,9 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
   };
 });
 
+const CALENDAR_NONE = { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } };
+const COMPANY = { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null, website: null, addressStreet: null, addressCity: null, addressState: null, addressZip: null, timezone: 'America/Chicago', logoUrl: null, located: false, serviceAreaMiles: null };
+
 let api: ReturnType<typeof stubApi>;
 
 afterEach(() => {
@@ -38,7 +41,15 @@ afterEach(() => {
 
 /** A signed-in person whose shell reads answer "nothing", unless a test gives its own answers. */
 function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
+  api = stubApi({
+    ...SHELL_ROUTES,
+    'GET /api/auth/me': () => ({ body: account }),
+    // C1's calendar card on Connections, the company read in Settings and E1's proposals list in the Estimator
+    'GET /api/calendar/connection': () => ({ body: CALENDAR_NONE }),
+    'GET /api/company': () => ({ body: COMPANY }),
+    'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }),
+    ...overrides,
+  });
   return api;
 }
 
