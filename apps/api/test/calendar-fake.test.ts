@@ -27,6 +27,13 @@ describe('FakeCalendarApi', () => {
     expect(calendars).toEqual([{ id: 'primary', name: 'My calendar', primary: true, canWrite: true }]);
   });
 
+  test('selfCallback points the auth url straight at the redirect uri', () => {
+    const api = new FakeCalendarApi('google', { selfCallback: true });
+    expect(api.authUrl({ state: 'a b', redirectUri: 'https://app.test/api/calendar/oauth/google/callback' })).toBe(
+      'https://app.test/api/calendar/oauth/google/callback?code=fake&state=a%20b',
+    );
+  });
+
   test('create shows in a full sync; the fake reports its own write after a cursor', async () => {
     const api = new FakeCalendarApi('google');
     const tokens = await api.exchangeCode({ code: 'a', redirectUri: 'r' });

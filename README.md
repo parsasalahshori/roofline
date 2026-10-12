@@ -89,6 +89,12 @@
 | `DATABASE_URL_OWNER` | migrations only | The migration owner. Only the migrate and role-password steps use it; never the API or worker. |
 | `TENANT_DB_PASSWORD`, `SYSTEM_DB_PASSWORD` | role passwords only | Set on `app_tenant` and `app_system`; must match the two app URLs. |
 
+- **Calendar connections:**
+  - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google Calendar, and `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` for Outlook. A provider with either value missing shows as not set up in Settings.
+  - Register these redirect URIs with each provider: `<PUBLIC_BASE_URL>/api/calendar/oauth/google/callback` and `<PUBLIC_BASE_URL>/api/calendar/oauth/microsoft/callback`.
+  - The Google OAuth consent screen needs verification, which can take weeks; until it is verified, add the pilot users as test users.
+  - Refresh tokens are stored encrypted with `ENCRYPTION_KEY`. Changing that key breaks every existing connection, and each person has to reconnect.
+  - What is tested, and what only a real account can show, is listed in [`docs/superpowers/c1-acceptance.md`](docs/superpowers/c1-acceptance.md).
 - **Boot order:**
   0. Build the web app once per deploy: `npm run build:web` writes `apps/web/dist` (Vite is a dev dependency, so run it before `npm ci --omit=dev`, or in the host's build step) and set `WEB_DIST_DIR=apps/web/dist`. `APP_ORIGIN` is then the API's own public URL.
   1. `npm ci --omit=dev` (`tsx`, which runs the TypeScript, is a runtime dependency of the API, the worker and `@roofline/db`).
