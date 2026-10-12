@@ -75,7 +75,12 @@ export function appendUser(state: ConversationState, text: string): void {
   state.history.push({ role: 'user', content: text });
 }
 
+/**
+ * Pushes the assistant's entry. Notes still queued (sent with the answer call that produced this reply, see
+ * historyForAnswer) are committed first, so the history reads `user, system, assistant`, never `system, user`.
+ */
 export function appendAssistant(state: ConversationState, content: Anthropic.ContentBlock[]): void {
+  commitSystemNotes(state);
   state.history.push({ role: 'assistant', content: content as unknown as Anthropic.MessageParam['content'] });
 }
 
@@ -92,15 +97,26 @@ export function appendToolResults(
   state.history.push({ role: 'user', content: blocks });
 }
 
-/** Notes are only queued here; flushSystemNotes puts them in the history right before the model is called. */
+/** Notes are only queued here: historyForAnswer sends them, and appendAssistant commits them with the reply. */
 export function appendSystemNote(state: ConversationState, note: string): void {
   const queued = pendingNotes.get(state) ?? [];
   queued.push(note);
   pendingNotes.set(state, queued);
 }
 
-/** Pushes queued notes, but only when the last history entry is a user message. */
-export function flushSystemNotes(state: ConversationState): void {
+/**
+ * The history for an answer call: the stored history plus the queued notes, without committing them (RC-1 note 7).
+ * A turn that ends with no assistant entry (interrupted before speech, a transfer route, spam) keeps its notes
+ * queued for the next answer, so no committed history ever has a system entry followed by a user entry.
+ */
+export function historyForAnswer(state: ConversationState): Anthropic.MessageParam[] {
+  const queued = pendingNotes.get(state);
+  if (!queued || queued.length === 0 || !lastIsUser(state)) return [...state.history];
+  return [...state.history, ...queued.map((n) => ({ role: 'system', content: n }) as unknown as Anthropic.MessageParam)];
+}
+
+/** Commits queued notes into the history, only right after a user entry (appendAssistant calls it). */
+function commitSystemNotes(state: ConversationState): void {
   const queued = pendingNotes.get(state);
   if (!queued || queued.length === 0 || !lastIsUser(state)) return;
   pendingNotes.delete(state);

@@ -17,6 +17,8 @@ import {
   matchCustomersByPhone,
   recordCallConsent,
   saveCallerIdentity,
+  setConversationHandling,
+  TEAM_HANDLING_MS,
   type Tx,
   updateConversation,
   withTenant,
@@ -89,6 +91,8 @@ export const SMS_MAX_AI_TURNS = TURN_LIMIT_OFFER_TURNS;
 /** Texted when the engine hands a text conversation to the team. */
 export const SMS_HANDOFF_REPLY = "I've passed this to the team; someone will text you back.";
 export const TEXT_HANDOFF_SUBJECT = 'Front Desk handed a text conversation to the team';
+/** The caller line stored for a text with no words (a photo-only MMS), so the detail never reads it as blanked by retention. */
+export const SMS_PHOTO_ONLY = '[photo]';
 
 /** Keeps whole sentences while they fit in two segments; the first sentence is always kept whole. */
 function fitSegments(reply: string): string {
@@ -117,9 +121,9 @@ export async function runFrontDeskText(
   const prepared = await withTenant(deps.pools, ctx, async (tx) => {
     const conversation = await getConversation(tx, ctx, conversationId);
     if (!conversation || conversation.status !== 'active') return null;
-    // Deliberate (lead ruling pending): the manual open-ended 'Team is handling' switch (no teamUntil) stays silent; a timed handoff whose teamUntil is
-    // set falls through to the 2-hour quiet check on the team's last reply below.
-    if (conversation.handledBy === 'team' && conversation.teamUntil === null) return null;
+    // 'Team is handling' keeps the assistant quiet until teamUntil (the switch and an SMS handoff both set now + 2 h);
+    // a null teamUntil is an open-ended switch and stays quiet.
+    if (conversation.handledBy === 'team' && (conversation.teamUntil === null || conversation.teamUntil.getTime() > now.getTime())) return null;
     if (await isNumberBlocked(tx, ctx, conversation.phoneE164)) return null;
     if (!(await frontDeskTextsOn(tx, ctx))) return null;
     const unanswered = await listUnansweredInbound(tx, ctx, conversationId);
@@ -177,9 +181,13 @@ export async function runFrontDeskText(
         state.identity = 'unknown';
       }
     } else if (state.identity === 'unknown') {
-      // The inbound hook linked the customer by phone; record that as 'matched' so it survives the next text.
-      state.identity = 'matched';
-      await saveCallerIdentity(tx, ctx, conversationId, { identity: 'matched', customerId: state.customerId });
+      // The inbound hook linked a customer by phone. Record 'matched' only when the number belongs to exactly that one
+      // customer: a shared number is a guess, so the texter stays unknown (E1 review 8).
+      const matches = await matchCustomersByPhone(tx, ctx, conversation.phoneE164);
+      if (matches.length === 1 && matches[0]!.customerId === state.customerId) {
+        state.identity = 'matched';
+        await saveCallerIdentity(tx, ctx, conversationId, { identity: 'matched', customerId: state.customerId });
+      }
     }
     state.toolSettings = { canMove: facts.canMove, canCancel: facts.canCancel };
     const firstUnanswered = unanswered[0]!;
@@ -208,7 +216,7 @@ export async function runFrontDeskText(
       state,
       customerId: state.customerId,
       toE164: conversation.phoneE164,
-      callerText: unanswered.map((u) => u.body).join('\n'),
+      callerText: unanswered.map((u) => (u.body.trim() === '' ? SMS_PHOTO_ONLY : u.body)).join('\n'),
       lastUnanswered: unanswered[unanswered.length - 1]!,
     };
   });
@@ -238,7 +246,7 @@ export async function runFrontDeskText(
   }
   // A booking during the turn may have created the customer, so read the link again.
   const customerId = await withTenant(deps.pools, ctx, async (tx) => {
-    if (handoff) await updateConversation(tx, ctx, conversationId, { handledBy: 'team' });
+    if (handoff) await setConversationHandling(tx, ctx, conversationId, 'team', new Date(now.getTime() + TEAM_HANDLING_MS));
     let fresh = (await getConversation(tx, ctx, conversationId))?.customerId ?? prepared.customerId;
     // An unknown texter who gets an answer (or a handoff) needs a customer record to text through the gate, as with the missed-call text-back.
     if (fresh === null && (said.length > 0 || turnSaved || handoff)) {

@@ -23,7 +23,6 @@ import {
   loadStoredIdentity,
   matchCustomersByPhone,
   setCallSpamReason,
-  type TenantContext,
   type ToolCallRecord,
   updateConversation,
   updateTurn,
@@ -49,7 +48,7 @@ import {
   appendToolResults,
   appendUser,
   beginTurn,
-  flushSystemNotes,
+  historyForAnswer,
   markPersonAskCounted,
   markUnderstandingCounted,
   newConversationState,
@@ -285,11 +284,10 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       let iter: AsyncIterator<LlmEvent>;
       let first: Promise<IteratorResult<LlmEvent>>;
       try {
-        flushSystemNotes(state);
         const answer = deps.llm.answer({
           companyId: state.companyId,
           companyBlock: state.companyBlock,
-          history: [...state.history],
+          history: historyForAnswer(state),
           tools: toolNames,
           signal: ac.signal,
         });
