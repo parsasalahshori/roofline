@@ -2,6 +2,7 @@ import {
   audit,
   countWorkingTasks,
   customerFirstNames,
+  emailCompanyFacts,
   findRerunOf,
   getCompanyName,
   getStep,
@@ -212,16 +213,21 @@ async function previewFacts(
   companyName: string,
   field: string,
 ): Promise<PreviewFacts> {
-  if (type !== 'send_sms_batch') return { companyName };
+  if (type !== 'send_sms_batch' && type !== 'send_email_batch') return { companyName };
   const { customerIds } = payload as { customerIds: string[] };
   const firstNames = await customerFirstNames(tx, ctx, customerIds);
   if (customerIds.some((id) => !firstNames.has(id))) throw new AppError(400, NO_CUSTOMERS, `${field}.customerIds`);
-  return {
+  const facts: PreviewFacts = {
     companyName,
     recipientCount: customerIds.length,
     // The first customer listed, whatever order the database would give them back in.
     sampleFirstName: firstNames.get(customerIds[0]!) ?? '',
   };
+  if (type === 'send_email_batch') {
+    const address = (await emailCompanyFacts(tx, ctx))?.address ?? null;
+    if (address !== null) facts.companyAddress = address;
+  }
+  return facts;
 }
 
 /**
