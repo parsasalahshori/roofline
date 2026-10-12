@@ -80,6 +80,13 @@ call, and the merger keeps both in this order.
 migration (grants, RLS, CHECK swaps) in place instead of taking a new number. Afterwards check that
 `drizzle-kit generate` reports no changes, and record the edit in the track's ledger.
 
+**Ruling AY (journal timestamps and step shape):** on every integration branch, the drizzle journal `when`
+values must strictly increase with the migration number, because drizzle skips any migration older than the
+last one applied. Whoever merges a lower-numbered track in after a higher-numbered one raises the later
+entries' `when` (edit the journal; do not regenerate). Since A1 T2, every `StepTypeDef` is built with
+`withMinutesSaved({... userCreatable, baseline, units})`. E1's `send_proposal`/`order_exact_report` and all
+S1 step types must use that shape. A1 fixes E1's two step types when it merges e1-estimator.
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the
