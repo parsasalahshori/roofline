@@ -218,6 +218,12 @@ export async function getStepText(tx: Tx, ctx: TenantContext, stepId: string, cu
   return row ?? null;
 }
 
+/** Every Front Desk dedupe key starts with this; the partial unique index messages_fd_dedupe_uniq covers exactly these keys. */
+export const FD_DEDUPE_PREFIX = 'fd-';
+
+/** The index predicate ON CONFLICT must repeat to infer messages_fd_dedupe_uniq. */
+export const FD_DEDUPE_WHERE = sql`${messages.dedupeKey} like 'fd-%'`;
+
 /** One outbound text: who it is for, what it says (already rendered) and where it goes. */
 export type OutboundText = {
   customerId: string;

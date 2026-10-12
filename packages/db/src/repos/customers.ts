@@ -87,6 +87,15 @@ export class DuplicatePhoneError extends Error {
  * This looks at every customer of the company, not only the ones the caller may see: a rep cannot
  * save a number that another rep's customer holds.
  */
+/**
+ * Takes the transaction-scoped advisory lock for one of the company's phone numbers, held until the
+ * caller's transaction ends. Every check-then-write on a customer's number takes it (customer saves
+ * here, the Front Desk caller customer in fd-text-back.ts), so they take turns.
+ */
+export async function lockCustomerPhone(tx: Tx, ctx: TenantContext, e164: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${ctx.companyId}::text || ':' || ${e164}::text, 0))`);
+}
+
 async function assertPhonesFree(
   tx: Tx,
   ctx: TenantContext,
@@ -94,11 +103,7 @@ async function assertPhonesFree(
   exceptId: string | null,
 ): Promise<void> {
   if (phones.length === 0) return;
-  for (const e164 of [...new Set(phones.map((p) => p.e164))].sort()) {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${ctx.companyId}::text || ':' || ${e164}::text, 0))`,
-    );
-  }
+  for (const e164 of [...new Set(phones.map((p) => p.e164))].sort()) await lockCustomerPhone(tx, ctx, e164);
   for (const { e164, index } of phones) {
     const [taken] = await tx
       .select({ id: customers.id })
