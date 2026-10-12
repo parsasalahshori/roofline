@@ -8,7 +8,7 @@
  */
 import { and, desc, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import { isYesReply, localDate, NEXT_STEP_MAX } from '@roofline/shared';
-import { companies, createJob, customers, jobs, properties, updateJob, type TenantContext, type Tx } from '@roofline/db';
+import { companies, confirmFormConsentByYes, createJob, customers, jobs, properties, updateJob, type TenantContext, type Tx } from '@roofline/db';
 
 /** A storm text older than this no longer takes a YES. */
 export const STORM_REPLY_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
@@ -107,4 +107,20 @@ export async function onStormReply(
     { now },
   );
   return { consumed: true };
+}
+
+/**
+ * A YES from a phone that asked, on a storm page form, to be texted (Ruling BF): the phone is
+ * verified, so each active customer with the number at consent 'none' becomes express (source
+ * web_form, the request and this reply as evidence). A request older than 14 days, another number or
+ * a message that is not a YES changes nothing. It never consumes the message.
+ */
+export async function onStormFormYes(
+  tx: Tx,
+  ctx: TenantContext,
+  message: { id: string; phoneE164: string; customerIds: readonly string[]; body: string },
+  now: Date,
+): Promise<void> {
+  if (!isYesReply(message.body)) return;
+  await confirmFormConsentByYes(tx, ctx, { phoneE164: message.phoneE164, customerIds: message.customerIds, messageId: message.id }, now);
 }

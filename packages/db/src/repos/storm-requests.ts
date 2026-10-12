@@ -1,6 +1,6 @@
-import { and, count, eq, gte, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { isTimeZone, localDate, normalizeAddressKey } from '@roofline/shared';
-import { companies, companyStorms, customers, properties, stormPages, stormRequests } from '../schema/index.ts';
+import { companies, companyStorms, customers, optOuts, properties, stormPages, stormRequests } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
@@ -38,10 +38,11 @@ type CustomerRow = typeof customers.$inferSelect;
  * 1. The page must exist for this company (its storm row gives the storm id for the job).
  * 2. One request per phone per page. The request row is inserted first with `on conflict do
  *    nothing`; no row back means the phone already asked on this page, and nothing else is written.
- * 3. The customer: an active customer of the company that already has this number is reused. Its
- *    consent only moves from 'none' to 'express' (web form) when the box was ticked; a revoked
- *    customer or a do-not-contact one is never changed. Otherwise a new 'web' customer is added,
- *    with express consent and the consent evidence when ticked, and 'none' when not.
+ * 3. The customer: an active customer of the company that already has this number is reused, and its
+ *    consent is never changed. Otherwise a new 'web' customer is added with consent 'none'. The form
+ *    never writes express consent (Ruling BF): the box only records the homeowner's ask on the request
+ *    (sms_consent, consent text and time, as evidence). The phone is verified only when a Twilio-signed
+ *    text from it replies YES (`confirmFormConsentByYes`, called from the inbound text hook).
  * 4. The address: a company address with the same key is reused. When it has no customer yet, the
  *    customer from step 3 takes it. When it already belongs to another customer, the job and the
  *    request go to that customer (the address keeps its one owner, and the phone customer from step 3
@@ -136,13 +137,124 @@ export async function createStormRequest(tx: Tx, ctx: TenantContext, input: Stor
   return { status: 'created', requestId: request!.id, customerId: jobCustomer.id, jobId: createdJob.id };
 }
 
-/** Counts the requests made on this page at or after `since`. RLS limits the count to the company. */
-export async function countStormRequestsSince(tx: Tx, _ctx: TenantContext, stormPageId: string, since: Date): Promise<number> {
+/**
+ * Counts the requests made on this page at or after `since`; with `ipHash`, only those from that
+ * requester (the per-IP share of one page). RLS limits the count to the company.
+ */
+export async function countStormRequestsSince(
+  tx: Tx,
+  _ctx: TenantContext,
+  stormPageId: string,
+  since: Date,
+  ipHash?: string,
+): Promise<number> {
   const [row] = await tx
     .select({ total: count() })
     .from(stormRequests)
-    .where(and(eq(stormRequests.stormPageId, stormPageId), gte(stormRequests.createdAt, since)));
+    .where(
+      and(
+        eq(stormRequests.stormPageId, stormPageId),
+        gte(stormRequests.createdAt, since),
+        ...(ipHash === undefined ? [] : [eq(stormRequests.ipHash, ipHash)]),
+      ),
+    );
   return row?.total ?? 0;
+}
+
+/** A YES to a storm request takes effect only within this long of the request. */
+export const STORM_FORM_YES_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * A Twilio-signed text from `phoneE164` that reads YES (the caller checks `isYesReply`, and that
+ * it is not a STOP, HELP or START). It verifies the phone: if the number has a storm request that
+ * asked to be texted (sms_consent) made within 14 days, each of the customers given (the active
+ * ones who have the number) that is at consent 'none' and not do-not-contact becomes `express`,
+ * source `web_form`, with the request and the reply message as evidence, a `customer.consent_confirmed`
+ * audit row and a timeline line. Revoked, written and express consent are left as they are, and a
+ * number on the opt-out list changes nothing. Returns the ids of the customers it changed.
+ */
+export async function confirmFormConsentByYes(
+  tx: Tx,
+  ctx: TenantContext,
+  yes: { phoneE164: string; customerIds: readonly string[]; messageId: string },
+  now: Date,
+): Promise<string[]> {
+  if (yes.customerIds.length === 0) return [];
+  const since = new Date(now.getTime() - STORM_FORM_YES_WINDOW_MS);
+  const [request] = await tx
+    .select({
+      id: stormRequests.id,
+      stormPageId: stormRequests.stormPageId,
+      consentText: stormRequests.consentText,
+      consentAt: stormRequests.consentAt,
+      ipHash: stormRequests.ipHash,
+      createdAt: stormRequests.createdAt,
+    })
+    .from(stormRequests)
+    .where(
+      and(
+        eq(stormRequests.companyId, ctx.companyId),
+        eq(stormRequests.phoneE164, yes.phoneE164),
+        eq(stormRequests.smsConsent, true),
+        gte(stormRequests.createdAt, since),
+      ),
+    )
+    .orderBy(desc(stormRequests.createdAt), desc(stormRequests.id))
+    .limit(1);
+  if (!request) return [];
+
+  const [optedOut] = await tx
+    .select({ id: optOuts.id })
+    .from(optOuts)
+    .where(and(eq(optOuts.companyId, ctx.companyId), eq(optOuts.phoneE164, yes.phoneE164)))
+    .limit(1);
+  if (optedOut) return [];
+
+  const locked = await tx
+    .select({ id: customers.id, status: customers.smsConsentStatus, source: customers.smsConsentSource, at: customers.smsConsentAt, doNotContact: customers.doNotContact })
+    .from(customers)
+    .where(and(eq(customers.companyId, ctx.companyId), inArray(customers.id, [...yes.customerIds])))
+    .orderBy(asc(customers.id))
+    .for('update');
+  const before = locked.filter((c) => c.status === 'none' && !c.doNotContact);
+  if (before.length === 0) return [];
+
+  const evidence = {
+    source: 'web_form',
+    verifiedBy: 'text_yes',
+    stormRequestId: request.id,
+    stormPageId: request.stormPageId,
+    consentText: request.consentText,
+    requestedAt: (request.consentAt ?? request.createdAt).toISOString(),
+    ipHash: request.ipHash,
+    replyMessageId: yes.messageId,
+    at: now.toISOString(),
+  };
+  await tx
+    .update(customers)
+    .set({
+      smsConsentStatus: 'express',
+      smsConsentSource: 'web_form',
+      smsConsentAt: now,
+      smsConsentByUserId: null,
+      smsConsentEvidence: evidence,
+      updatedAt: now,
+    })
+    .where(and(eq(customers.companyId, ctx.companyId), inArray(customers.id, before.map((c) => c.id))));
+
+  for (const was of before) {
+    await audit(tx, ctx, {
+      action: 'customer.consent_confirmed',
+      targetType: 'customer',
+      targetId: was.id,
+      before: { smsConsentStatus: 'none', smsConsentSource: was.source, smsConsentAt: was.at?.toISOString() ?? null },
+      after: { smsConsentStatus: 'express', smsConsentSource: 'web_form', smsConsentAt: now.toISOString(), stormRequestId: request.id, replyMessageId: yes.messageId },
+      ip: null,
+      at: now,
+    });
+    await consentLine(tx, ctx, was.id, 'none', 'express', now, { stormRequestId: request.id, messageId: yes.messageId, via: 'text' });
+  }
+  return before.map((c) => c.id);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -171,8 +283,8 @@ async function companyZone(tx: Tx, ctx: TenantContext): Promise<string> {
 }
 
 /**
- * The customer for this phone: an active one of the company that has the number, reused, with its
- * consent upgraded only when it was 'none' and the box is ticked; or a new 'web' customer.
+ * The customer for this phone: an active one of the company that has the number, reused with its
+ * consent untouched; or a new 'web' customer at consent 'none'.
  */
 async function phoneCustomerFor(tx: Tx, ctx: TenantContext, input: StormRequestInput, now: Date): Promise<CustomerRow> {
   await lock(tx, ctx.companyId, input.phoneE164);
@@ -187,9 +299,8 @@ async function phoneCustomerFor(tx: Tx, ctx: TenantContext, input: StormRequestI
       ),
     )
     .limit(1);
-  if (found) return upgradeConsent(tx, ctx, found, input, now);
+  if (found) return found;
 
-  const okToText = input.okToText;
   const [created] = await tx
     .insert(customers)
     .values({
@@ -201,13 +312,7 @@ async function phoneCustomerFor(tx: Tx, ctx: TenantContext, input: StormRequestI
       emails: [],
       tags: [],
       doNotContact: false,
-      smsConsentStatus: okToText ? 'express' : 'none',
-      ...(okToText && {
-        smsConsentSource: 'web_form' as const,
-        smsConsentAt: now,
-        smsConsentByUserId: null,
-        smsConsentEvidence: consentEvidence(input, now),
-      }),
+      smsConsentStatus: 'none',
       source: 'web',
       createdByUserId: null,
       createdAt: now,
@@ -225,58 +330,24 @@ async function phoneCustomerFor(tx: Tx, ctx: TenantContext, input: StormRequestI
     at: now,
   });
   await addActivity(tx, ctx, { subjectType: 'customer', subjectId: row.id, kind: 'customer.created', summary: 'Customer added', at: now });
-  if (okToText) await consentLine(tx, ctx, row.id, 'none', 'express', now);
   return row;
 }
 
-/** Moves a reused customer from 'none' to express consent when the box was ticked. Anything else is left as it is. */
-async function upgradeConsent(tx: Tx, ctx: TenantContext, found: CustomerRow, input: StormRequestInput, now: Date): Promise<CustomerRow> {
-  if (!input.okToText || found.smsConsentStatus !== 'none' || found.doNotContact) return found;
-
-  const [row] = await tx
-    .update(customers)
-    .set({
-      smsConsentStatus: 'express',
-      smsConsentSource: 'web_form',
-      smsConsentAt: now,
-      smsConsentByUserId: null,
-      smsConsentEvidence: consentEvidence(input, now),
-      updatedAt: now,
-    })
-    .where(eq(customers.id, found.id))
-    .returning();
-  const updated = row!;
-
-  await audit(tx, ctx, {
-    action: 'customer.update',
-    targetType: 'customer',
-    targetId: updated.id,
-    before: { smsConsentStatus: 'none' },
-    after: { smsConsentStatus: 'express', smsConsentSource: 'web_form' },
-    ip: null,
-    at: now,
-  });
-  await consentLine(tx, ctx, updated.id, 'none', 'express', now);
-  return updated;
-}
-
-function consentEvidence(input: StormRequestInput, now: Date): Record<string, unknown> {
-  return {
-    source: 'web_form',
-    consentText: input.consentText,
-    stormPageId: input.stormPageId,
-    ipHash: input.ipHash,
-    at: now.toISOString(),
-  };
-}
-
-async function consentLine(tx: Tx, ctx: TenantContext, customerId: string, from: 'none', to: 'express', now: Date): Promise<void> {
+async function consentLine(
+  tx: Tx,
+  ctx: TenantContext,
+  customerId: string,
+  from: 'none',
+  to: 'express',
+  now: Date,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
   await addActivity(tx, ctx, {
     subjectType: 'customer',
     subjectId: customerId,
     kind: 'customer.consent_changed',
     summary: `Texting consent changed to ${CONSENT_LABELS[to]}`,
-    data: { from, to },
+    data: { from, to, ...extra },
     at: now,
   });
 }
