@@ -19,3 +19,4 @@ export * from './csv.ts';
 export * from './agents.ts';
 export * from './metrics.ts';
 export * from './agent-rules.ts';
+export * from './agents-api.ts';
