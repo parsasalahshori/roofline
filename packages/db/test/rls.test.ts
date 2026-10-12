@@ -589,7 +589,6 @@ describe('grants', () => {
         'company_members',
         'building_footprints',
         ...HAIL_GLOBAL_TABLES,
-        'line_lookups',
       ].sort(),
     );
   });
