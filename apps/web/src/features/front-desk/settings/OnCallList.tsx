@@ -2,6 +2,7 @@ import type { OnCallMember } from '@roofline/shared';
 import { IconButton } from '@roofline/ui';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { frontDeskSettings } from '../../../copy/front-desk-settings.ts';
+import { formatPhone } from '../../../lib/phone.ts';
 import styles from './OnCallList.module.css';
 
 /*
@@ -176,7 +177,7 @@ export function OnCallList({ members, order, onChange, disabled = false }: OnCal
                   </span>
                   <div className={styles.who}>
                     <span className={styles.name}>{name}</span>
-                    <span className={styles.phone}>{member.transferPhoneE164 ?? copy.noPhone}</span>
+                    <span className={styles.phone}>{member.transferPhoneE164 ? formatPhone(member.transferPhoneE164) : copy.noPhone}</span>
                   </div>
                   <div className={styles.actions}>
                     <IconButton
@@ -215,7 +216,7 @@ export function OnCallList({ members, order, onChange, disabled = false }: OnCal
               <div key={member.userId} className={styles.row}>
                 <div className={styles.who}>
                   <span className={styles.name}>{member.name}</span>
-                  <span className={styles.phone}>{member.transferPhoneE164 ?? copy.noPhone}</span>
+                  <span className={styles.phone}>{member.transferPhoneE164 ? formatPhone(member.transferPhoneE164) : copy.noPhone}</span>
                 </div>
                 <div className={styles.actions}>
                   <IconButton

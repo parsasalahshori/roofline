@@ -46,5 +46,7 @@ export function useWeekStats(week?: string) {
   return useQuery({
     queryKey: ['front-desk', 'stats', week ?? 'current'],
     queryFn: ({ signal }) => apiFetch<FrontDeskWeekStats>(`/api/front-desk/stats${query}`, { signal }),
+    refetchInterval: IDLE_POLL_MS,
+    refetchIntervalInBackground: false,
   });
 }

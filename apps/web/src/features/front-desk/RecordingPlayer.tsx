@@ -32,7 +32,7 @@ export function RecordingPlayer({ call }: { call: CallView }) {
           {conversationCopy.playRecording}
         </Button>
       ) : (
-        <audio className={styles.audio} controls autoPlay src={url} aria-label={conversationCopy.recordingLabel} />
+        <audio className={styles.audio} controls autoPlay src={url} onError={() => setUrl(null)} aria-label={conversationCopy.recordingLabel} />
       )}
       {link.isPending ? <p className={styles.status}>{conversationCopy.recordingLoading}</p> : null}
       {link.isError ? <Banner tone="danger">{conversationCopy.recordingFailed}</Banner> : null}
