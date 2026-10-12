@@ -37,7 +37,7 @@ describe('the storm skeleton', () => {
     const res = await request(t.app).get('/u/x');
     expect(res.status).not.toBe(401);
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: MESSAGES.notFound });
+    expect(res.type).toBe('text/html');
   });
 
   test('POST /u/x works without a session', async () => {

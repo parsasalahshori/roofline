@@ -224,6 +224,8 @@ const ConfigSchema = z
     META_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/, 'must look like v24.0').default('v24.0'),
     /** The Postmark message stream for storm alerts and other broadcast email. */
     POSTMARK_BROADCAST_STREAM: z.string().min(1).default('broadcast'),
+    /** Basic-auth password Postmark's webhook calls us with at /hooks/postmark. Unset: the webhook refuses every call. */
+    POSTMARK_WEBHOOK_SECRET: z.string().min(16, 'must be at least 16 characters').optional(),
     /** The plain From address for storm email, like storms@roofline.app. Unset: `storms@` + the mail domain (final transform). */
     STORM_MAIL_FROM: z.string().email('must be an email address').optional(),
     /** Minutes without a fresh hail report before the hail feed counts as stale. */
