@@ -142,6 +142,20 @@ describe('a reply to a claims text', () => {
     expect(frontDeskAnswers()).toBe(0);
   });
 
+  test('after "Thanks, got it.", a question within two hours still gets Front Desk: the ack is not a person replying', async () => {
+    await ninaWithClaim();
+    llm.scriptExtraction(extraction({ claimNumber: '0451-22', insurer: 'Acme Mutual' }));
+    await ninaTexts('My claim number is 0451-22 with Acme Mutual.');
+    expect(await outboundBodies()).toEqual([CLAIMS_ACK_TEXT]);
+
+    t.clock.advance(10 * 60_000);
+    llm.scriptExtraction(extraction({}));
+    await ninaTexts('When can you come out?');
+
+    expect(await outboundBodies()).toEqual([CLAIMS_ACK_TEXT, FRONT_DESK_REPLY]);
+    expect(frontDeskAnswers()).toBe(1);
+  });
+
   test('a question as well as a fact: the claim is updated and Front Desk answers, with no "Thanks, got it."', async () => {
     const { claimId } = await ninaWithClaim();
     llm.scriptExtraction(extraction({ claimNumber: '0451-22' }));
