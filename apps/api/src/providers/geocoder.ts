@@ -6,7 +6,12 @@ export type GeocodeResult = { lng: number; lat: number; street: string | null; c
   timezone: string | null; accuracy: number; accuracyType: string; source: 'geocodio' | 'fake' };
 export interface Geocoder { readonly configured: boolean;
   geocode(address: string, opts?: { timeoutMs?: number }): Promise<GeocodeResult | null>;
-  geocodeMany(addresses: readonly string[]): Promise<(GeocodeResult | null)[]> }
+  geocodeMany(addresses: readonly string[]): Promise<(GeocodeResult | null)[]>;
+  /**
+   * Batch reverse geocode (Geocodio POST /v1.7/reverse, at most 1000 points per call, chunked by the adapter).
+   * The output has the same length and order as the input; a point with no usable address is null.
+   */
+  reverseMany(points: { lat: number; lng: number }[]): Promise<({ street: string; city: string; state: string; zip: string } | null)[]> }
 export class GeocoderUnavailableError extends Error {}
 
 /** Used when no real geocoder is configured: every lookup fails with a setup message. */
@@ -16,6 +21,9 @@ export class UnconfiguredGeocoder implements Geocoder {
     throw new GeocoderUnavailableError("Address lookup isn't set up.");
   }
   async geocodeMany(): Promise<(GeocodeResult | null)[]> {
+    throw new GeocoderUnavailableError("Address lookup isn't set up.");
+  }
+  async reverseMany(): Promise<({ street: string; city: string; state: string; zip: string } | null)[]> {
     throw new GeocoderUnavailableError("Address lookup isn't set up.");
   }
 }

@@ -65,6 +65,15 @@ export function stubApi(routes: Routes) {
   };
 }
 
+/** The storm layer call the Storm window makes for the SHELL_ROUTES service area at zoom 6. */
+export const STORM_LAYER_KEY = 'GET /api/map/storm-layer?bbox=-97.5,32.5,-96.5,33.5&zoom=6&days=7';
+const STORM_LAYER_BODY = {
+  swaths: { type: 'FeatureCollection', features: [] },
+  spots: { type: 'FeatureCollection', features: [] },
+  newestRunAt: null,
+  stale: false,
+};
+
 /** The reads every signed-in screen makes, each answered with "nothing": spread it under a test's own routes. */
 export const SHELL_ROUTES: Record<string, () => Reply> = {
   'GET /api/approvals': () => ({ body: { count: 0, tasks: [] } }),
@@ -73,6 +82,9 @@ export const SHELL_ROUTES: Record<string, () => Reply> = {
   'GET /api/weather': () => ({ body: { weather: null } }),
   'GET /api/setup': () => ({ body: { items: [], progress: { done: 5, total: 5 } } }),
   'POST /api/me/today-shown': () => ({ body: { show: false } }),
+  'GET /api/storms': () => ({ body: { storms: [] } }),
+  'GET /api/map/area': () => ({ body: { serviceArea: null, bounds: [-97.5, 32.5, -96.5, 33.5] } }),
+  [STORM_LAYER_KEY]: () => ({ body: STORM_LAYER_BODY }),
 };
 
 /** Today's "Signed today" read, answered with nothing: spread it into a test that renders the Today window. */

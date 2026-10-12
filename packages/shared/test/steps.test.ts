@@ -22,9 +22,11 @@ function schemaMessage(type: StepType, value: unknown): string | null {
 }
 
 describe('the registry', () => {
-  test('lists the twelve step types with the approval class each one needs', () => {
+  test('lists the fifteen step types with the approval class each one needs', () => {
     expect(Object.keys(stepTypes).sort()).toEqual([
       'build_claim_packet',
+      'build_routes',
+      'create_ad_campaign',
       'create_appointment',
       'demo_message',
       'demo_noop',
@@ -33,6 +35,7 @@ describe('the registry', () => {
       'front_desk_texts',
       'move_appointment',
       'order_exact_report',
+      'send_email_batch',
       'send_personal_texts',
       'send_proposal',
       'send_sms_batch',
@@ -48,6 +51,9 @@ describe('the registry', () => {
       build_claim_packet: ['build_claim_packet', 'internal'],
       create_appointment: ['create_appointment', 'internal'],
       move_appointment: ['move_appointment', 'internal'],
+      send_email_batch: ['send_email_batch', 'message'],
+      build_routes: ['build_routes', 'internal'],
+      create_ad_campaign: ['create_ad_campaign', 'spend'],
       send_proposal: ['send_proposal', 'message'],
       order_exact_report: ['order_exact_report', 'spend'],
     });

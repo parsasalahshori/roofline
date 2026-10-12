@@ -12,6 +12,7 @@ export const calendar = {
   showCanceled: 'Show canceled',
   busy: 'Busy',
   allDay: 'All day',
+  gridLabel: 'Calendar time grid',
   loadMore: 'Load more',
   empty: 'Nothing scheduled.',
   loadError: 'The calendar could not be loaded.',

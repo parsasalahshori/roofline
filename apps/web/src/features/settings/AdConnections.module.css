@@ -1,0 +1,121 @@
+/* The ad account cards under the Connections line: one card per platform, one under another */
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.card {
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.heading {
+  margin: 0 0 8px;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.stepsLabel {
+  margin: 0 0 4px;
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.steps {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+}
+
+.steps li + li {
+  margin-top: 4px;
+}
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.form > :first-child {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.account {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.accountId {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.statusLabel {
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+/* The status is a chip: green when connected, the accent while it waits, the danger colour when it needs attention */
+.status {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.status[data-status='active'] {
+  border-color: var(--success);
+}
+
+.status[data-status='pending'] {
+  border-color: var(--accent);
+}
+
+.status[data-status='error'] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.reason {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-muted);
+}
+
+.loading {
+  margin-top: 16px;
+}

@@ -2,7 +2,6 @@ import { and, eq, inArray } from 'drizzle-orm';
 import {
   addActivity,
   createMeasurement,
-  finishParkedStep,
   getExactOrder,
   getMeasurement,
   getTask,
@@ -18,11 +17,13 @@ import {
 import type { AppDeps } from '../app.ts';
 import type { ExactReport } from '../providers/exact-reports.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
-import { refreshTask } from '../tasks/service.ts';
+import { completeParkedStep, refreshTask } from '../tasks/service.ts';
 import { repriceFromMeasurement } from './reprice.ts';
 
 /** Proposals a new exact measurement may re-price: a draft in place, a sent or viewed one by a revised draft (reprice's own rule). */
-const OPEN_PROPOSAL_STATUSES = ['draft', 'sent', 'viewed'] as const;
+// Ruling EO: 'ready' (a send awaiting approval) is re-priced too; reprice makes it a revised draft, so the owner
+// never approves a text with the old estimate prices. Signed proposals are skipped (Ruling EJ).
+const OPEN_PROPOSAL_STATUSES = ['draft', 'ready', 'sent', 'viewed'] as const;
 
 /**
  * A waiting order whose report is ready: writes the exact measurement, records the usage once, marks
@@ -41,6 +42,9 @@ export async function completeExactReport(
   const done = await withTenant(deps.pools, ctx, async (tx) => {
     const order = await getExactOrder(tx, ctx, orderId);
     if (!order || order.status !== 'waiting') return null;
+    // Claim the completion first: a second poller (another instance) finds the order no longer waiting and stops,
+    // so only one exact measurement is made per report.
+    if (!(await moveExactOrder(tx, ctx, orderId, 'waiting', 'complete', { errorPlain: null }, now))) return null;
     const source = await getMeasurement(tx, ctx, order.measurementId);
     if (!source) return null;
     const [home] = await tx
@@ -102,15 +106,13 @@ export async function completeExactReport(
       });
     }
 
-    await moveExactOrder(tx, ctx, orderId, 'waiting', 'complete', { errorPlain: null }, now);
-
     // The parked step: lock the task first, then the step, then refresh the task.
     if (order.taskId !== null) {
       const task = await getTask(tx, ctx, order.taskId, { forUpdate: true });
       if (task) {
         const steps = await listParkedSteps(tx, ctx, 'order_exact_report');
         const step = steps.find((s) => s.taskId === order.taskId);
-        if (step) await finishParkedStep(tx, ctx, step.id, { status: 'done', result: { orderId } }, now);
+        if (step) await completeParkedStep(tx, ctx, step.id, { status: 'done', result: { ordered: 1 } }, now);
         await refreshTask(tx, ctx, order.taskId, now);
       }
     }

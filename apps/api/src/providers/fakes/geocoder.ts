@@ -92,4 +92,14 @@ export class FakeGeocoder implements Geocoder {
     this.takeFailure();
     return addresses.map((a) => (/outage|nowhere/i.test(a) ? null : this.resolve(a)));
   }
+
+  async reverseMany(
+    points: { lat: number; lng: number }[],
+  ): Promise<({ street: string; city: string; state: string; zip: string } | null)[]> {
+    this.calls.push({ method: 'reverseMany', args: [points] });
+    this.takeFailure();
+    return points.map((p, i) =>
+      p.lat < 0 ? null : { street: `${i + 1} Fake St`, city: 'Omaha', state: 'NE', zip: '68102' },
+    );
+  }
 }

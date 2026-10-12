@@ -12,6 +12,7 @@ import {
   createInvite,
   LastOwnerError,
   listInvites,
+  listStormAlertFlags,
   updateMember,
 } from '../auth/team-store.ts';
 import { can, requireCapability } from '../permissions.ts';
@@ -25,12 +26,13 @@ const InviteBody = z.object({
   role: z.enum(ROLES, { error: ROLE_MESSAGE }),
 });
 
-const MEMBER_FIELDS = ['role', 'canApproveSpend', 'status'] as const;
+const MEMBER_FIELDS = ['role', 'canApproveSpend', 'status', 'stormAlertEmail'] as const;
 
 const MemberPatchBody = z.object({
   role: z.enum(ROLES, { error: ROLE_MESSAGE }).optional(),
   canApproveSpend: z.boolean({ error: 'Please choose yes or no.' }).optional(),
   status: z.enum(['active', 'disabled'], { error: 'Please choose active or disabled.' }).optional(),
+  stormAlertEmail: z.boolean({ error: 'Please choose yes or no.' }).optional(),
 });
 
 /** How the invite email names the job. */
@@ -68,6 +70,8 @@ export function teamRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     const result = await withTenant(pools, ctx, (tx) =>
       tx.execute(sql`select id, user_id, name, email, role, status, can_approve_spend from company_members order by name, id`),
     );
+    // The storm alert switch is not in company_members; it is read from memberships (system pool).
+    const alertFlags = await listStormAlertFlags(pools.system, ctx.companyId);
     const members = result.rows.map((r) => ({
       id: r.id as string,
       userId: r.user_id as string,
@@ -77,6 +81,7 @@ export function teamRoutes(deps: AppDeps, logError: (err: unknown, path: string)
       // Only meaningful for the office role (see permissions.ts); shown as stored for everyone.
       canApproveSpend: r.can_approve_spend as boolean,
       status: r.status as string,
+      stormAlertEmail: alertFlags.get(r.id as string) ?? true,
     }));
     // Who has been invited is for the people who manage the team.
     const pending = can(ctx, 'company_admin') ? await listInvites(pools.system, ctx.companyId, clock.now()) : [];
@@ -154,6 +159,7 @@ export function teamRoutes(deps: AppDeps, logError: (err: unknown, path: string)
             ...(changes.role !== undefined && { role: changes.role }),
             ...(changes.canApproveSpend !== undefined && { canApproveSpend: changes.canApproveSpend }),
             ...(changes.status !== undefined && { status: changes.status }),
+            ...(changes.stormAlertEmail !== undefined && { stormAlertEmail: changes.stormAlertEmail }),
           },
         },
         (member) =>
@@ -183,6 +189,7 @@ export function teamRoutes(deps: AppDeps, logError: (err: unknown, path: string)
       role: updated.after.role,
       canApproveSpend: updated.after.canApproveSpend,
       status: updated.after.status,
+      stormAlertEmail: updated.after.stormAlertEmail,
     });
   });
 

@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { calendarBusyBlocks, calendarConnections, calendarEventLinks } from '../schema/tenant.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
@@ -55,6 +55,19 @@ export async function removeBusyBlocks(
         eq(calendarBusyBlocks.companyId, ctx.companyId),
         eq(calendarBusyBlocks.connectionId, connectionId),
         inArray(calendarBusyBlocks.providerEventId, [...providerEventIds]),
+      ),
+    );
+}
+
+/** Drops the connection's busy blocks that ended before `cutoff` (past the sync window, so they can no longer matter). */
+export async function pruneBusyBlocksEndingBefore(tx: Tx, ctx: TenantContext, connectionId: string, cutoff: Date): Promise<void> {
+  await tx
+    .delete(calendarBusyBlocks)
+    .where(
+      and(
+        eq(calendarBusyBlocks.companyId, ctx.companyId),
+        eq(calendarBusyBlocks.connectionId, connectionId),
+        lt(calendarBusyBlocks.endsAt, cutoff),
       ),
     );
 }

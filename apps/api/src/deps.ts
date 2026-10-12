@@ -14,6 +14,17 @@ import { eagleViewPropertyDataFor } from './providers/eagleview/property-data.ts
 import { type ExactReports, ExactReportsUnavailableError } from './providers/exact-reports.ts';
 import { FakeAerialMeasure } from './providers/fakes/aerial.ts';
 import { FakeExactReports } from './providers/fakes/exact-reports.ts';
+import type { AdsGoogle } from './providers/ads-google.ts';
+import type { AdsMeta } from './providers/ads-meta.ts';
+import type { BroadcastMailer } from './providers/broadcast.ts';
+import { FakeAdImageRenderer } from './providers/fakes/ad-image.ts';
+import { FakeAdsGoogle } from './providers/fakes/ads-google.ts';
+import { FakeAdsMeta } from './providers/fakes/ads-meta.ts';
+import { FakeBroadcastMailer } from './providers/fakes/broadcast.ts';
+import { googleAdsFor } from './providers/google-ads/index.ts';
+import { metaAdsFor } from './providers/meta/index.ts';
+import { postmarkBroadcastFor } from './providers/postmark-broadcast.ts';
+import { resvgCardFor } from './providers/resvg-card.ts';
 import { createFootprintSource } from './providers/footprints.ts';
 import { createObjectStore } from './providers/object-store.ts';
 import { createGeocoder } from './providers/geocoder.ts';
@@ -70,6 +81,80 @@ export class UnconfiguredExactReports implements ExactReports {
   }
 }
 
+/** Google Ads when it is not set up: it says so on every call. */
+export class UnconfiguredAdsGoogle implements AdsGoogle {
+  readonly configured = false;
+  managerId = '';
+  async invite(): Promise<never> {
+    throw new Error("Google Ads isn't set up.");
+  }
+  async unlink(): Promise<never> {
+    throw new Error("Google Ads isn't set up.");
+  }
+  async linkStatus(): Promise<never> {
+    throw new Error("Google Ads isn't set up.");
+  }
+  async accountInfo(): Promise<never> {
+    throw new Error("Google Ads isn't set up.");
+  }
+  async findCampaign(): Promise<never> {
+    throw new Error("Google Ads isn't set up.");
+  }
+  async createCampaign(): Promise<never> {
+    throw new Error("Google Ads isn't set up.");
+  }
+  async setStatus(): Promise<never> {
+    throw new Error("Google Ads isn't set up.");
+  }
+  async stats(): Promise<never> {
+    throw new Error("Google Ads isn't set up.");
+  }
+}
+
+/** Meta ads when they are not set up: it says so on every call. */
+export class UnconfiguredAdsMeta implements AdsMeta {
+  readonly configured = false;
+  businessId = '';
+  async verifyAccess(): Promise<never> {
+    throw new Error("Meta ads aren't set up.");
+  }
+  async findCampaign(): Promise<never> {
+    throw new Error("Meta ads aren't set up.");
+  }
+  async createCampaign(): Promise<never> {
+    throw new Error("Meta ads aren't set up.");
+  }
+  async setStatus(): Promise<never> {
+    throw new Error("Meta ads aren't set up.");
+  }
+  async stats(): Promise<never> {
+    throw new Error("Meta ads aren't set up.");
+  }
+}
+
+/** Broadcast email when Postmark is not set up: it says so on every send. */
+export class UnconfiguredBroadcastMailer implements BroadcastMailer {
+  readonly configured = false;
+  async send(): Promise<never> {
+    throw new Error("Broadcast email isn't set up.");
+  }
+}
+
+function adsGoogleFor(config: Config): AdsGoogle {
+  if (config.FAKE_PROVIDERS) return new FakeAdsGoogle();
+  return googleAdsFor(config) ?? new UnconfiguredAdsGoogle();
+}
+
+function adsMetaFor(config: Config): AdsMeta {
+  if (config.FAKE_PROVIDERS) return new FakeAdsMeta();
+  return metaAdsFor(config) ?? new UnconfiguredAdsMeta();
+}
+
+function broadcastFor(config: Config): BroadcastMailer {
+  if (config.FAKE_PROVIDERS) return new FakeBroadcastMailer();
+  return postmarkBroadcastFor(config) ?? new UnconfiguredBroadcastMailer();
+}
+
 function aerialFor(config: Config): AerialMeasure {
   if (config.FAKE_PROVIDERS) return new FakeAerialMeasure();
   return eagleViewPropertyDataFor(config) ?? new UnconfiguredAerial();
@@ -89,7 +174,9 @@ function exactReportsFor(config: Config): ExactReports {
  * texting registration (`createRegistrar`), SMS (`createSmsAdapter`) and calendars
  * (`createCalendarApis`, one per provider), and the estimator's four: building footprints
  * (`createFootprintSource`), aerial measurement (EagleView property data), exact reports (EagleView
- * orders) and the object store for signed proposals (`createObjectStore`, R2). Each seam is the fake when
+ * orders) and the object store for signed proposals (`createObjectStore`, R2), and the storm four:
+ * Google Ads (`adsGoogle`), Meta ads (`adsMeta`), broadcast email on Postmark's broadcast stream
+ * (`broadcast`) and the ad image renderer (`adImage`, resvg). Each seam is the fake when
  * `FAKE_PROVIDERS` is set, the real provider when its settings are present, and otherwise an
  * unconfigured one that refuses its calls; the send gate's registration rule still stops a text to
  * a company that is not registered. `queue` is where approved steps go and `jobs` is where
@@ -134,6 +221,10 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     aerial: aerialFor(config),
     exactReports: exactReportsFor(config),
     objectStore: createObjectStore(config, pools),
+    adsGoogle: adsGoogleFor(config),
+    adsMeta: adsMetaFor(config),
+    broadcast: broadcastFor(config),
+    adImage: config.FAKE_PROVIDERS ? new FakeAdImageRenderer() : resvgCardFor(config),
     jobs,
   };
 }

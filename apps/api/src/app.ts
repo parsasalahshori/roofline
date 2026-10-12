@@ -13,6 +13,7 @@ import { setupRoutes } from './account/setup-routes.ts';
 import { textingRoutes } from './account/texting-routes.ts';
 import { errorHandler, logErrorToConsole, MESSAGES, notFoundHandler } from './errors.ts';
 import { stripeHooks } from './hooks/stripe.ts';
+import { postmarkHooks } from './hooks/postmark.ts';
 import { twilioHooks } from './hooks/twilio.ts';
 import { twilioRegistrationHooks } from './hooks/twilio-registration.ts';
 import type { JobQueue } from './jobs/queue.ts';
@@ -25,6 +26,10 @@ import type { TextingRegistrar } from './providers/registrar.ts';
 import type { FootprintSource } from './providers/footprints.ts';
 import type { AerialMeasure } from './providers/aerial.ts';
 import type { ExactReports } from './providers/exact-reports.ts';
+import type { AdImageRenderer } from './providers/ad-image.ts';
+import type { AdsGoogle } from './providers/ads-google.ts';
+import type { AdsMeta } from './providers/ads-meta.ts';
+import type { BroadcastMailer } from './providers/broadcast.ts';
 import type { ObjectStore } from './providers/object-store.ts';
 import { apiRateLimit, publicRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
@@ -54,6 +59,13 @@ import { agentSettingsRoutes } from './routes/agents-settings.ts';
 import { measurementRoutes } from './routes/measurements.ts';
 import { tierTemplateRoutes } from './routes/tier-templates.ts';
 import { estimatorSettingsRoutes } from './routes/estimator-settings.ts';
+import { stormLayerRoutes, stormRoutes } from './routes/storms.ts';
+import { doorRoutes } from './routes/door-routes.ts';
+import { stormSettingsRoutes } from './routes/storm-settings.ts';
+import { adsRoutes } from './routes/ads.ts';
+import { stormRequestOriginGuard, stormRequestRoutes } from './public/storm-requests.ts';
+import { stormPage } from './public/storm-page.ts';
+import { unsubscribeRoutes } from './public/unsubscribe.ts';
 import { proposalRoutes } from './routes/proposals.ts';
 import { publicProposalRoutes } from './public/proposals.ts';
 import { proposalSignRoutes } from './public/proposal-sign.ts';
@@ -129,6 +141,14 @@ export type AppDeps = {
   exactReports: ExactReports;
   /** Where proposal files are stored (providers/object-store.ts); tests pass `MemoryObjectStore`. */
   objectStore: ObjectStore;
+  /** Where Google Ads campaigns are made and read (providers/ads-google.ts); tests pass `FakeAdsGoogle`. */
+  adsGoogle: AdsGoogle;
+  /** Where Meta ad campaigns are made and read (providers/ads-meta.ts); tests pass `FakeAdsMeta`. */
+  adsMeta: AdsMeta;
+  /** Where broadcast email (storm alerts) is sent (providers/broadcast.ts); tests pass `FakeBroadcastMailer`. */
+  broadcast: BroadcastMailer;
+  /** Draws the ad card image (providers/ad-image.ts); tests pass `FakeAdImageRenderer`. */
+  adImage: AdImageRenderer;
 };
 
 export type AppOptions = {
@@ -213,18 +233,29 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
 
   app.set('trust proxy', config.TRUST_PROXY);
   app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(config.NODE_ENV) }));
+  // The company-host storm landing page, GET /storm/:code: no session, no rate limit. It is mounted before
+  // policyPages, which answers its own 404 for any other path on a company host; stormPage calls next() for
+  // every non-/storm path and every other host.
+  app.use(stormPage(deps));
   // The public policy pages (privacy and terms): no session, no rate limit, served before /health.
   app.use(policyPages(deps));
+  // The storm landing page's form (public/storm-requests.ts): posted from the company's own host, so it is
+  // mounted ahead of blockCrossSiteMutations and checks its own Origin. It brings its own body parsers.
+  app.use('/api/public/storm-requests', publicRateLimit(), stormRequestOriginGuard(deps), stormRequestRoutes(deps));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
   });
 
   app.use(blockCrossSiteMutations(config.APP_ORIGIN));
+  // Email unsubscribe links (public/unsubscribe.ts): no session, outside /api; the router brings its own body parser.
+  app.use('/u', unsubscribeRoutes(deps));
   // Twilio's webhooks (hooks/twilio.ts): signed form posts, no session, no rate limit. Mounted
   // ahead of the JSON parser and the /api gate, with its own form parser (64 KB), so these routes
   // only ever read form bodies.
   app.use('/hooks/twilio', twilioHooks(deps));
+  // Postmark's bounce and complaint webhook (hooks/postmark.ts): basic-auth secret, no session; its router brings its own JSON parser (256 KB).
+  app.use('/hooks/postmark', postmarkHooks(deps));
   // Stripe's webhooks read the raw body (stripeHooks sets its own parser). The Twilio registration
   // callbacks are signed form posts too, like /hooks/twilio.
   app.use('/hooks/stripe', stripeHooks(deps));
@@ -272,6 +303,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/agents', agentsRoutes(deps));
   app.use('/api/search', searchRoutes(deps));
   app.use('/api/map', mapRoutes(deps));
+  app.use('/api/map', stormLayerRoutes(deps));
   app.use('/api/weather', weatherRoutes(deps));
   app.use('/api/appointments', appointmentRoutes(deps));
   app.use('/api/today', todayRoutes(deps));
@@ -291,6 +323,11 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/tier-templates', tierTemplateRoutes(deps));
   app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
   app.use('/api/proposals', proposalRoutes(deps));
+  // Storm Scout: storms and their plans, door-knock routes, per-company storm settings, and ads.
+  app.use('/api/storms', stormRoutes(deps));
+  app.use('/api/routes', doorRoutes(deps));
+  app.use('/api/storm', stormSettingsRoutes(deps));
+  app.use('/api/ads', adsRoutes(deps));
   // Signed-out customers open and sign their proposal here. The sign-in gate lets every path under
   // /api/public/ through (auth/middleware.ts), and the per-IP limit stands in for the session one.
   const publicRouter = express.Router();

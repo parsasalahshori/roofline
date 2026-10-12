@@ -19,6 +19,7 @@ import {
 } from './google-calendar-events.ts';
 import {
   GOOGLE_RECONNECT_MESSAGE,
+  GOOGLE_TOKEN_URL,
   GOOGLE_UNAVAILABLE_MESSAGE,
   makeGoogleHttp,
   readJson,
@@ -33,7 +34,7 @@ export const GOOGLE_CALENDAR_SCOPES = [
 ];
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const TOKEN_URL = GOOGLE_TOKEN_URL;
 const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 const FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded';
 
@@ -91,7 +92,7 @@ export class GoogleCalendarApi implements CalendarApi {
       grant_type: 'authorization_code',
     });
     if (res.status !== 200) {
-      if (res.status === 400 && field(await errorBody(res), 'error') === 'invalid_grant') {
+      if (field(await errorBody(res), 'error') === 'invalid_grant') {
         throw new CalendarAuthError(GOOGLE_RECONNECT_MESSAGE);
       }
       throw new CalendarUnavailableError(GOOGLE_UNAVAILABLE_MESSAGE);
@@ -126,7 +127,7 @@ export class GoogleCalendarApi implements CalendarApi {
       grant_type: 'refresh_token',
     });
     if (res.status !== 200) {
-      if (res.status === 400 && field(await errorBody(res), 'error') === 'invalid_grant') {
+      if (field(await errorBody(res), 'error') === 'invalid_grant') {
         throw new CalendarAuthError(GOOGLE_RECONNECT_MESSAGE);
       }
       throw new CalendarUnavailableError(GOOGLE_UNAVAILABLE_MESSAGE);

@@ -288,6 +288,80 @@ describe('outside events', () => {
     expect(await blocksOf(ctx)).toHaveLength(0);
   });
 
+  test('an all-day outside event is stored as company-zone day starts and blocks that whole local day', async () => {
+    await seedConnection(ctx, t.seed.a.owner, 'abc');
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    await t.calendars.google.refresh('refresh-abc');
+    // The adapters report all-day events as UTC midnights (end exclusive).
+    t.calendars.google.addOutsideEvent({ start: new Date('2026-10-13T00:00:00.000Z'), end: new Date('2026-10-14T00:00:00.000Z'), allDay: true });
+    await pull(ctx, t.seed.a.owner.userId);
+
+    const blocks = await blocksOf(ctx);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.allDay).toBe(true);
+    expect(blocks[0]!.startsAt.toISOString()).toBe(TUE_FROM);
+    expect(blocks[0]!.endsAt.toISOString()).toBe(TUE_TO);
+
+    const query = { kind: 'inspection', from: TUE_FROM, to: TUE_TO, userId: t.seed.a.owner.userId };
+    const res = await owner.get('/api/calendar/availability').query(query);
+    expect(res.status).toBe(200);
+    expect((res.body as { slots: unknown[] }).slots).toHaveLength(0);
+  });
+
+  test('a cursor older than 24 hours triggers a full resync and re-baselines the cursor', async () => {
+    const conn = await seedConnection(ctx, t.seed.a.owner, 'abc');
+    const fake = t.calendars.google;
+    await fake.refresh('refresh-abc');
+    const first = fake.addOutsideEvent({ start: VISIT_START, end: VISIT_END });
+    await pull(ctx, t.seed.a.owner.userId);
+    const stored = (await freshConnection(ctx, t.seed.a.owner.userId)).syncCursor;
+    expect(stored).toMatch(/^2026-10-12T15:00:00\.000Z\|/);
+
+    // A row the provider no longer reports: only a full resync removes it.
+    await withTenant(t.deps.pools, ctx, (tx) =>
+      tx.insert(calendarBusyBlocks).values({
+        companyId: ctx.companyId,
+        connectionId: conn.id,
+        userId: t.seed.a.owner.userId,
+        providerEventId: 'evt-stale',
+        startsAt: new Date('2026-10-14T15:00:00.000Z'),
+        endsAt: new Date('2026-10-14T16:00:00.000Z'),
+      }),
+    );
+    // Within 24 hours the stored provider cursor is followed.
+    t.clock.set(new Date(NOW.getTime() + 23 * 60 * MINUTE));
+    await pull(ctx, t.seed.a.owner.userId);
+    expect(fake.calls.filter((c) => c.method === 'syncEvents').at(-1)!.args[2]).not.toBeNull();
+    expect((await blocksOf(ctx)).map((b) => b.providerEventId).sort()).toEqual([first, 'evt-stale'].sort());
+
+    const later = new Date(NOW.getTime() + 25 * 60 * MINUTE);
+    t.clock.set(later);
+    await pull(ctx, t.seed.a.owner.userId);
+    expect(fake.calls.filter((c) => c.method === 'syncEvents').at(-1)!.args[2]).toBeNull();
+    expect((await blocksOf(ctx)).map((b) => b.providerEventId)).toEqual([first]);
+    expect((await freshConnection(ctx, t.seed.a.owner.userId)).syncCursor).toMatch(new RegExp('^' + later.toISOString().replace(/\./g, '\\.') + '\\|'));
+  });
+
+  test('a cursor without the baseline prefix counts as stale', async () => {
+    const conn = await seedConnection(ctx, t.seed.a.owner, 'abc');
+    await ownerSql('update calendar_connections set sync_cursor = $1 where id = $2', ['5', conn.id]);
+    await pull(ctx, t.seed.a.owner.userId);
+    expect(t.calendars.google.calls.filter((c) => c.method === 'syncEvents').at(-1)!.args[2]).toBeNull();
+  });
+
+  test('busy blocks that ended before the window are pruned', async () => {
+    const conn = await seedConnection(ctx, t.seed.a.owner, 'abc');
+    await pull(ctx, t.seed.a.owner.userId);
+    await withTenant(t.deps.pools, ctx, (tx) =>
+      tx.insert(calendarBusyBlocks).values([
+        { companyId: ctx.companyId, connectionId: conn.id, userId: t.seed.a.owner.userId, providerEventId: 'evt-old', startsAt: new Date('2026-10-01T15:00:00.000Z'), endsAt: new Date('2026-10-01T16:00:00.000Z') },
+        { companyId: ctx.companyId, connectionId: conn.id, userId: t.seed.a.owner.userId, providerEventId: 'evt-ahead', startsAt: new Date('2026-10-20T15:00:00.000Z'), endsAt: new Date('2026-10-20T16:00:00.000Z') },
+      ]),
+    );
+    await pull(ctx, t.seed.a.owner.userId);
+    expect((await blocksOf(ctx)).map((b) => b.providerEventId)).toEqual(['evt-ahead']);
+  });
+
   test('cursor expiry replaces the busy blocks with the full set', async () => {
     const conn = await seedConnection(ctx, t.seed.a.owner, 'abc');
     const fake = t.calendars.google;

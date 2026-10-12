@@ -4,7 +4,7 @@ import type { MeasurementView, ProposalView } from '@roofline/shared';
 import { Button, Checkbox, Field } from '@roofline/ui';
 import { estimator } from '../../copy/estimator.ts';
 import { useBuildProposal, useMeasure, useSendProposal } from './api.ts';
-import type { MakeTarget } from './types.ts';
+import type { MakeTarget, NewCustomerInput } from './types.ts';
 import styles from './MakeProposal.module.css';
 
 /** Measure, build and send a proposal for one target; a roof we cannot outline goes to the draw window. */
@@ -38,7 +38,8 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
         ));
       measurementRef.current = measurement;
       if (measurement.drawMode) {
-        navigate(`/estimator/measure/${measurement.id}`);
+        const customer: NewCustomerInput = { name: name.trim(), phone: phone.trim(), askedByText };
+        navigate(`/estimator/measure/${measurement.id}`, { state: needsCustomer ? { customer } : {} });
         return;
       }
       const proposal =

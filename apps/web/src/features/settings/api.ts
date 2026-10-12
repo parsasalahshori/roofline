@@ -25,7 +25,13 @@ export type CompanyPatch = Partial<{
 }>;
 
 /** What can change about one member of the team. Send only what changed. */
-export type MemberChanges = { role?: Role; canApproveSpend?: boolean; status?: 'active' | 'disabled' };
+export type MemberChanges = {
+  role?: Role;
+  canApproveSpend?: boolean;
+  /** Whether the member gets storm alert emails (owner only; S1 Task 27). */
+  stormAlertEmail?: boolean;
+  status?: 'active' | 'disabled';
+};
 
 export type TeamMember = TeamBody['members'][number];
 export type TeamInvite = TeamBody['invites'][number];

@@ -388,7 +388,7 @@ export class MicrosoftCalendarApi implements CalendarApi {
     return requireRecord(await readJson(res));
   }
 
-  /** The token endpoint: a revoked grant is a reconnect, anything else that fails is unavailable. */
+  /** The token endpoint: only a revoked grant (invalid_grant, interaction_required) is a reconnect; anything else that fails is unavailable. */
   private async tokenRequest(params: Record<string, string>): Promise<JsonRecord> {
     const res = await this.send(TOKEN, 'POST', FORM_HEADERS, new URLSearchParams(params).toString());
     const body = await tryJson(res);
@@ -398,7 +398,8 @@ export class MicrosoftCalendarApi implements CalendarApi {
         throw new CalendarAuthError(RECONNECT_MESSAGE);
       }
     }
-    ensureOk(res);
+    // Any other token-endpoint failure (invalid_client, unauthorized_client, 5xx, non-JSON) is not a dead grant.
+    if (!res.ok) throw unavailable();
     return requireRecord(body);
   }
 

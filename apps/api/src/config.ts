@@ -72,6 +72,20 @@ const EXAMPLE_BILLING_PLANS = 'config/billing-plans.example.json';
 /** The footprint files published by Microsoft (US Building Footprints); the default FOOTPRINTS_BASE_URL. */
 const DEFAULT_FOOTPRINTS_BASE_URL = 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/';
 
+/**
+ * The domain storm email comes from by default: the domain part of MAIL_FROM (after the last `@`,
+ * without a trailing `>`), else POLICY_PAGES_DOMAIN, else the host of PUBLIC_BASE_URL.
+ */
+function mailDomain(cfg: { MAIL_FROM?: string; POLICY_PAGES_DOMAIN?: string; PUBLIC_BASE_URL: string }): string {
+  if (cfg.MAIL_FROM) {
+    const domain = cfg.MAIL_FROM.slice(cfg.MAIL_FROM.lastIndexOf('@') + 1)
+      .replace(/>\s*$/, '')
+      .trim();
+    if (domain) return domain;
+  }
+  return cfg.POLICY_PAGES_DOMAIN ?? new URL(cfg.PUBLIC_BASE_URL).hostname;
+}
+
 const ConfigSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production'], {
@@ -185,6 +199,39 @@ const ConfigSchema = z
     PROPOSAL_LINK_BASE_URL: httpUrl.transform((v) => v.replace(/\/+$/, '')).optional(),
     /** Where the building footprint files are read from. Always ends in a slash. Default: the Microsoft US buildings set. */
     FOOTPRINTS_BASE_URL: httpUrl.transform((v) => (v.endsWith('/') ? v : `${v}/`)).default(DEFAULT_FOOTPRINTS_BASE_URL),
+
+    /** Google Ads developer token. All five GOOGLE_ADS settings come together, or none. Unset: Google ads are off. */
+    GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),
+    /** The Google Ads manager (MCC) account id that clients are linked under. See GOOGLE_ADS_DEVELOPER_TOKEN. */
+    GOOGLE_ADS_MANAGER_ID: z.string().optional(),
+    /** Google Ads OAuth client id. See GOOGLE_ADS_DEVELOPER_TOKEN. */
+    GOOGLE_ADS_CLIENT_ID: z.string().optional(),
+    /** Google Ads OAuth client secret. See GOOGLE_ADS_DEVELOPER_TOKEN. */
+    GOOGLE_ADS_CLIENT_SECRET: z.string().optional(),
+    /** Google Ads OAuth refresh token. See GOOGLE_ADS_DEVELOPER_TOKEN. */
+    GOOGLE_ADS_REFRESH_TOKEN: z.string().optional(),
+    /** The Google Ads API version to call, like v21. */
+    GOOGLE_ADS_API_VERSION: z.string().regex(/^v\d+$/, 'must look like v21').default('v21'),
+    /** Meta app id. All four META settings come together, or none. Unset: Meta ads are off. */
+    META_APP_ID: z.string().optional(),
+    /** Meta app secret. See META_APP_ID. */
+    META_APP_SECRET: z.string().optional(),
+    /** Meta system user token. See META_APP_ID. */
+    META_SYSTEM_USER_TOKEN: z.string().optional(),
+    /** The Meta business id that ad accounts are shared with. See META_APP_ID. */
+    META_BUSINESS_ID: z.string().optional(),
+    /** The Meta Graph API version to call, like v24.0. */
+    META_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/, 'must look like v24.0').default('v24.0'),
+    /** The Postmark message stream for storm alerts and other broadcast email. */
+    POSTMARK_BROADCAST_STREAM: z.string().min(1).default('broadcast'),
+    /** Basic-auth password Postmark's webhook calls us with at /hooks/postmark. Unset: the webhook refuses every call. */
+    POSTMARK_WEBHOOK_SECRET: z.string().min(16, 'must be at least 16 characters').optional(),
+    /** The plain From address for storm email, like storms@roofline.app. Unset: `storms@` + the mail domain (final transform). */
+    STORM_MAIL_FROM: z.string().email('must be an email address').optional(),
+    /** Minutes without a fresh hail report before the hail feed counts as stale. */
+    HAIL_STALE_MINUTES: integer(90, 1, 10080),
+    /** Where the hail-health schedule emails ops when the hail data goes stale. Unset: it only logs. */
+    OPS_ALERT_EMAIL: z.string().email('must be an email address').optional(),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.GOOGLE_CLIENT_SECRET && !cfg.GOOGLE_CLIENT_ID) {
@@ -258,6 +305,32 @@ const ConfigSchema = z
         }
       }
     }
+    const googleAds = [
+      'GOOGLE_ADS_DEVELOPER_TOKEN',
+      'GOOGLE_ADS_MANAGER_ID',
+      'GOOGLE_ADS_CLIENT_ID',
+      'GOOGLE_ADS_CLIENT_SECRET',
+      'GOOGLE_ADS_REFRESH_TOKEN',
+    ] as const;
+    if (googleAds.some((name) => cfg[name])) {
+      for (const name of googleAds) {
+        if (!cfg[name]) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [name],
+            message: 'is required when the other GOOGLE_ADS settings are set',
+          });
+        }
+      }
+    }
+    const meta = ['META_APP_ID', 'META_APP_SECRET', 'META_SYSTEM_USER_TOKEN', 'META_BUSINESS_ID'] as const;
+    if (meta.some((name) => cfg[name])) {
+      for (const name of meta) {
+        if (!cfg[name]) {
+          ctx.addIssue({ code: 'custom', path: [name], message: 'is required when the other META settings are set' });
+        }
+      }
+    }
     if (cfg.FAKE_PROVIDERS && cfg.NODE_ENV === 'production') {
       ctx.addIssue({
         code: 'custom',
@@ -266,8 +339,9 @@ const ConfigSchema = z
       });
     }
   })
-  .transform(({ HOST, BILLING_PLANS_FILE, PROPOSAL_LINK_BASE_URL, ...cfg }) => ({
+  .transform(({ HOST, BILLING_PLANS_FILE, PROPOSAL_LINK_BASE_URL, STORM_MAIL_FROM, ...cfg }) => ({
     ...cfg,
+    STORM_MAIL_FROM: STORM_MAIL_FROM ?? `storms@${mailDomain(cfg)}`,
     PROPOSAL_LINK_BASE_URL: PROPOSAL_LINK_BASE_URL ?? cfg.APP_ORIGIN,
     HOST: HOST ?? (cfg.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'),
     // Outside production the example file is the default; in production without Stripe it stays unset.
