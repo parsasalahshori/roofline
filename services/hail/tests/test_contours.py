@@ -56,7 +56,7 @@ def test_convective_day_boundaries():
     assert units.convective_day(datetime(2024, 5, 28, 11, 59, 59, tzinfo=timezone.utc)) == date(2024, 5, 27)
     assert units.convective_day(datetime(2024, 5, 28, 12, 0, 0, tzinfo=timezone.utc)) == date(2024, 5, 28)
     assert units.convective_day(datetime(2024, 5, 28, 0, 0, tzinfo=timezone.utc)) == date(2024, 5, 27)
-    assert units.convective_day(datetime(2024, 5, 28, 12, 0)) == date(2024, 5, 28)
+    assert units.convective_day(datetime(2024, 5, 28, 12, 0)) == date(2024, 5, 28)  # noqa: DTZ001
 
 
 def test_points_inside_outside(contours, expected):

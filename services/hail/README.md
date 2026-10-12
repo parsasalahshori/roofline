@@ -8,6 +8,10 @@ levels 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3 inches. These must equal `HAIL_LEVELS
 - `hail/source.py`: `HailSource` / `MeshSource`.
 - `hail/mesh.py`: list, parse and download MRMS keys.
 - `hail/contours.py`: `contour_grid`.
+- `hail/storms.py`: groups contours into storm shapes and matches them to existing storms so ids stay stable.
+- `hail/writer.py`: transactional writes of runs, storms and contours as the `app_hail` role.
+- `hail/run.py`: `tick`, one fetch, contour and write cycle; failures are recorded and raised as `TickFailed`.
+- `hail/main.py`: the worker loop at :05 and :35 each hour; one Postmark alert after 3 consecutive failures.
 - `hail/units.py`: `MM_PER_IN`, `HAIL_LEVELS_IN`, `convective_day` (12Z to 12Z).
 
 ## Running
@@ -31,8 +35,28 @@ Normally this only runs through the CI `hail` job in the image `ghcr.io/osgeo/gd
 
 To recapture: `pip install eccodes numpy`, decompress the grib2, run `capture_expected.py`.
 
-## Render setup (Ruling SB, owner step)
+## Local database tests
 
-There is no `render.yaml`. The hail worker (Task 3) is deployed by the owner as a Render background worker built from
-a Dockerfile based on `ghcr.io/osgeo/gdal:ubuntu-small-3.8.5`, with env `HAIL_DATABASE_URL` (the `app_hail` role).
-Owner step, to be completed when Task 3 lands.
+The writer and run tests need a database migrated with `npm run db:migrate`. Set `HAIL_TEST_DATABASE_URL` to the
+owner URL, for example `postgres://roofline:roofline@127.0.0.1:54329/roofline`. Without it those tests are skipped.
+
+## Render setup (Ruling SB, owner runbook)
+
+There is no `render.yaml`; do not create one. Create the worker by hand:
+
+1. In Render create a Background Worker with runtime Docker, Dockerfile path `services/hail/Dockerfile` and Docker
+   context `services/hail`. Leave the start command empty: the image `CMD` is `python -m hail.main`.
+2. Create the `app_hail` login. Run migration 0018 (`npm run db:migrate`), then run `set-role-passwords` in
+   `packages/db` with `HAIL_DB_PASSWORD` set (see `ops/sdd/s1/task-1-report.md`). Build the login URL from that
+   password.
+3. Set the environment variables:
+   - `HAIL_DATABASE_URL`: login URL of the `app_hail` role.
+   - `OPS_ALERT_EMAIL`: receives the alert and is used as the Postmark From, so it must be a verified Postmark sender.
+   - `POSTMARK_SERVER_TOKEN`: Postmark server token.
+
+Behaviour:
+
+- Ticks at :05 and :35 each hour (UTC).
+- A 12Z grid closes the previous convective day; its storms become final.
+- Three failed ticks in a row send one email. The next success resets the count.
+- SIGTERM stops the worker after the current tick.
