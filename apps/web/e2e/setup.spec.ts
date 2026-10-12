@@ -31,8 +31,9 @@ test('skip the import and the ring moves', async ({ page }) => {
 });
 
 test('later steps say Coming with', async ({ page }) => {
-  await expect(page.getByText(/Coming with/)).toHaveCount(3);
-  for (const line of ['Coming with the Estimator', 'Coming with the calendar', 'Coming with Storm Scout']) {
+  // The calendar step is real since C1 Task 12 and the phone number step since D1 Task 24.
+  await expect(page.getByText(/Coming with/)).toHaveCount(2);
+  for (const line of ['Coming with the Estimator', 'Coming with Storm Scout']) {
     await expect(page.getByText(line, { exact: true }).first()).toBeVisible();
   }
 });
