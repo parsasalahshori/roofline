@@ -26,7 +26,9 @@ export function shouldDraft(cs: ShouldDraftCompanyStorm, storm: ShouldDraftStorm
 /**
  * Runs after matchCompany committed: sends the "now" alert for each created storm, then queues 'storm-draft'
  * for every candidate storm that shouldDraft says to draft or redraft (singletonKey = company storm id).
- * A redraft replaces only a draft plan. The 10 minute storm-match cadence drives the 90 minute settle: each
+ * The automatic path (storm-match and the storm-draft job) re-drafts only over a 'draft' plan. An 'expired' or
+ * 'declined' plan is replaced only by an explicit person action (the rerun route, later S1's 'Draft a new plan'),
+ * which sets allowFinished on draftStormPlan; approved, running and other plans are never replaced. The 10 minute storm-match cadence drives the 90 minute settle: each
  * run re-checks. Failures are reported, never thrown.
  */
 export async function afterMatch(deps: AppDeps, companyId: string, now: Date, result: { created: string[]; grown: string[] }): Promise<void> {
