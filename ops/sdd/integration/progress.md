@@ -782,3 +782,93 @@ amended 0018 with the `company_members` view) and E1's C1 wave 5 merge pass the 
 in combination. No fixes were needed after CI, so ci-check was not re-run. (The local `ci-check` wrapper was stopped
 by its time limit while Platform was still running; the run was then followed through the Actions API until it
 completed.)
+
+## Pass 8
+
+Base: pass 7 head 6bbf064. `git fetch origin` (2026-10-12) gave exactly the requested heads. Merged in order with
+`git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 1c7e4afd61cba167c8bedcd89ef833d429a3ba67 | 1ed3414 | none |
+| e1-estimator | 8c42bab64530aa195fcc14bb82499dca3c30ff59 | 82f47ec | 4 files |
+| s1-storm | a25973af449a54e178036e2858aa9e4f55e7e501 | 1b7adf3 | none (ops only) |
+| d1-front-desk | 341c8aa9dfab37370f99f0769e8264465178bed8 | 79847f3 | none (ops only) |
+| a1-agents | 0951946d62775c740eb21ac60b8f8b143dfdd91d | eb31486 | none (ops only) |
+| g1-agents | 989dd0a223bbb03e054e2262da468c3f4ab8f34a | c737933 | none (ops only) |
+
+Probe-only commit: 3e16312 (problem 1 below).
+
+What the tracks brought: C1 whole-branch review fixes (calendar token cache and pull, OAuth client errors,
+read-only calendar connect, quote value scope via `repos/scope.ts`, timeline cursor, inspection race, web slot
+prefill and invalidations); E1 T10 (owner-approved exact reports, re-billing and re-pricing, aerial measure,
+`exact-report-complete.ts`, poll changes), T11 (the Estimator drafts the proposal text; one approval sends it:
+real `send_proposal` and `order_exact_report` handlers, `sendOneText`, `settleSentProposal`, `send_proposal`
+payload `totals` now `{ tier, totalCents }[]`), T20 web (proposals on the job, review previews, signed proposals
+on Today); S1, D1, A1, G1 ledger notes only. No migration, snapshot, journal, package, lockfile or eslint config
+change.
+
+### Conflict resolutions
+
+e1-estimator:
+- `apps/api/src/messaging/dispatcher.ts`: three sides meet. S1 T12 added the scheduled-email pass and loops parked
+  `send_sms_batch` and `send_email_batch` steps; E1 T11 loops `PARKED_TEXT_STEP_TYPES` (`send_sms_batch`,
+  `send_proposal`), passes `{ ...step, type }` and settles the proposal (`settleSentProposal`) before finishing the
+  step; A1 finishes parked steps through `completeParkedStep` (tasks/service.ts, records the outcome). Result:
+  S1's email pass kept; `PARKED_TEXT_STEP_TYPES = ['send_sms_batch', 'send_email_batch', 'send_proposal']` with
+  E1's loop; E1's proposal block, then A1's `completeParkedStep` (E1's `finishParkedStep` import dropped,
+  `getStep` kept); the doc comment names all three types.
+- `apps/api/src/tasks/handlers.ts`: E1's real `send_proposal`/`order_exact_report` handlers and S1's
+  `send_email_batch`/`build_routes`. E1 deleted the `notYet` helper, which S1's `create_ad_campaign` still uses
+  (and `storm-skeleton.test.ts` expects 'not yet'): restored, with the comment narrowed to `create_ad_campaign`.
+- `apps/web/src/features/job/api.ts`: one import of `defaultScope` (C1) and `JobSource`, `JobView`,
+  `ProposalView` (E1).
+- `packages/shared/src/steps.ts`: imports from both (S1/G1/A1 imports plus E1's `TIERS`, `Tier`).
+
+The pass-8 merge commits were rebuilt once locally before any push (the E1 merge message had git's `# Conflicts`
+block after the trailer); the trees are identical.
+
+Checked by hand: the A1 e2e `agentsSeed` draft `send_proposal` step stores `{}` payload and preview, so E1's new
+`totals` shape does not touch it; no other track builds a `send_proposal` payload.
+
+### Migration journal (Ruling AP)
+
+Unchanged from pass 7: idx 0..24 consecutive, in number order, `when` strictly increasing (script); 0019/0020 and
+0023/0024 still carry the probe raise. Snapshots chained by `prevId` 0000..0024 (script); 25 snapshots, 25 SQL
+files. `drizzle-kit generate --name=probe_check`: "No schema changes, nothing to migrate"; no file created.
+Exactly one `messages (company_id, id)` unique: D1's `messages_company_id_id_uniq` (0019, `tenant.ts:630`).
+
+### Earlier workarounds: status
+
+Closed by a track this pass: none (S1, D1, A1 and G1 brought ledger notes only).
+
+Still kept in the probe:
+- D1 journal `when`: d1-front-desk 341c8aa still has 0019/0020 = 1791770789451/1791770804997, below S1's 0018.
+- G1 journal `when`: g1-agents 989dd0a still has 0019-0024 = 1791770789451 .. 1791774749941, below S1's 0018 and
+  A1's 0022.
+- Ruling BA recounts, test-only: `a1-dock`, `a1-settings`, `settings`, `d1-routes`, `d1-settings`, `e1-routes`,
+  `setup.test` and `steps.test` still differ from every track head. Combined counts unchanged by this pass: no
+  Coming soon app (six dock apps shipped), eleven settings tabs, fifteen step types (E1 T10/T11 add none).
+
+Watch item: S1 T11 has not landed (s1-storm a25973a `storm/plan.ts` `draftStormPlan` still throws `not yet`), so
+A1's `apps/api/test/storm-pause.test.ts` is unchanged and still valid.
+
+### New cross-track problems
+
+1. **E1 x A1, parked-step outcome.** E1 T10 finishes a parked `order_exact_report` step with `finishParkedStep`
+   directly: `apps/api/src/estimator/exact-report-complete.ts` (report complete, `done`) and
+   `apps/api/src/jobs/scheduler/exact-report-poll.ts` `failOrder` (`needs_attention`). In the combination A1's
+   time-saved model expects every finished step to pass through `recordOutcome`, so such a step got no time-saved
+   snapshot (`baseline_key`, `units`, `minutes_saved` stay null, so the Agents dashboard counts 0 minutes for it)
+   and no `step_done`/`step_attention` event on the task timeline. No test fails. Probe fix (3e16312): both call
+   `completeParkedStep` from `tasks/service.ts` (already imported there for `refreshTask`), as the dispatcher does.
+   Owner: whichever of A1 (merging e1-estimator, per Ruling AY) or E1 (merging a1-agents) merges first.
+
+Merge-artifact fixes: the `notYet` helper restored in `handlers.ts` (above). Nothing else.
+
+### Checks (after all merges and the probe commit)
+
+`npm ci` clean (no package change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass,
+lint pass, lint:css pass; vitest @roofline/web 1021 pass (114 files), @roofline/ui 170 pass, @roofline/shared 1284
+pass, @roofline/send-gate 525 pass. Typecheck and lint re-run after 3e16312: pass. The database, API, worker and
+e2e suites run only in CI.
