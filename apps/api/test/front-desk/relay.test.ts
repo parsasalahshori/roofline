@@ -177,11 +177,12 @@ describe('relay websocket server', () => {
     await ok.closed;
   });
 
-  test('a bad token (right shape, wrong MAC) is denied after setup', async () => {
+  test('a bad token (right shape, wrong MAC) is refused at the upgrade', async () => {
     const r = await rig();
     const flipped = r.token.slice(0, -1) + (r.token.endsWith('0') ? '1' : '0');
-    const c2 = await r.open(flipped);
-    expect(await c2.closed).toBe(1006);
+    // The MAC is verified before handleUpgrade (the URL carries the call id), so no socket opens.
+    expect(await r.rawUpgrade(flipped, { 'X-Twilio-Signature': r.sign(flipped) })).toBe(401);
+    expect(r.deps.relaySessions.size).toBe(0);
   });
 
   test('an expired token is refused at the upgrade', async () => {
