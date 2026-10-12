@@ -1,9 +1,22 @@
 import { createHash } from 'node:crypto';
-import { attachSignedPdf, decrypt, signedPdfSource, storedFileById, storeFile, withTenant, type TenantContext } from '@roofline/db';
+import { attachSignedPdf, decrypt, signedPdfSource, storeFile, withTenant } from '@roofline/db';
+import { ESTIMATE_CLAUSE_V1, isTimeZone } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import type { JobMeta } from '../jobs/queue.ts';
 import { systemContext } from '../permissions.ts';
 import { pdfToBuffer, renderProposalPdf } from '../proposals/pdf.ts';
+
+const FALLBACK_TIME_ZONE = 'America/Chicago';
+const IMAGE_MISSING = 'The drawn signature image is missing from file storage.';
+const IMAGE_MISMATCH = 'The drawn signature image does not match its recorded hash.';
+const NOT_ATTACHED = 'The signed copy could not be attached to the signature.';
+
+const sha256Hex = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+
+/** Where the sign route stores a drawn signature: content-addressed, next to the signed PDF. */
+export function drawnSignatureKey(companyId: string, proposalId: string, sha256: string): string {
+  return `companies/${companyId}/proposals/${proposalId}/signature-${sha256}.png`;
+}
 
 /**
  * Renders the signed proposal, stores it, and records its sha256 on the file row and the signature.
@@ -16,16 +29,27 @@ export async function makeSignedPdf(deps: AppDeps, companyId: string, proposalId
   const src = await withTenant(deps.pools, ctx, (tx) => signedPdfSource(tx, ctx, proposalId));
   if (src === null || src.pdfFileId !== null) return;
 
+  // A drawn signature must be in the PDF: a missing or altered image fails the job (pg-boss retries), never a PDF without it.
+  let image: Buffer | null = null;
+  const drawnSha = src.signature.drawnSignaturePngSha256;
+  if (drawnSha !== null) {
+    const png = await deps.objectStore.get(drawnSignatureKey(companyId, proposalId, drawnSha));
+    if (png === null) throw new Error(IMAGE_MISSING);
+    if (sha256Hex(png) !== drawnSha) throw new Error(IMAGE_MISMATCH);
+    image = Buffer.from(png);
+  }
+
   const bytes = await pdfToBuffer(
     renderProposalPdf({
       audience: 'homeowner',
       company: src.company,
       proposal: src.proposal,
-      signature: { record: src.signature, image: null },
+      estimateClause: src.estimateClause ? ESTIMATE_CLAUSE_V1 : null,
+      signature: { record: src.signature, image, timeZone: isTimeZone(src.timeZone) ? src.timeZone : FALLBACK_TIME_ZONE },
       financing: src.financing,
     }),
   );
-  const sha = createHash('sha256').update(bytes).digest('hex');
+  const sha = sha256Hex(bytes);
   const objectKey = `companies/${companyId}/proposals/${proposalId}/signed-${sha}.pdf`;
 
   // Object first, outside any transaction: a failure here leaves the signature untouched and pg-boss retries.
@@ -36,7 +60,9 @@ export async function makeSignedPdf(deps: AppDeps, companyId: string, proposalId
     const again = await signedPdfSource(tx, ctx, proposalId);
     if (again === null || again.pdfFileId !== null) return false;
     const fileId = await storeFile(tx, ctx, { kind: 'signed_proposal_pdf', objectKey, sha256: sha, bytes: bytes.length, contentType: 'application/pdf' }, now);
-    return attachSignedPdf(tx, ctx, proposalId, fileId, sha, now);
+    // Throwing rolls the file row back, so a file row never exists without the signature pointing at it.
+    if (!(await attachSignedPdf(tx, ctx, proposalId, fileId, sha, now))) throw new Error(NOT_ATTACHED);
+    return true;
   });
   if (!created || src.customerEmail === null || src.linkTokenEncrypted === null) return;
 
@@ -49,12 +75,4 @@ export async function makeSignedPdf(deps: AppDeps, companyId: string, proposalId
   } catch {
     // The PDF is stored; a failed email must not fail or retry the job. Nothing is logged: the error could carry the link.
   }
-}
-
-/** The bytes and content type of a stored file, or null when the row or the object is missing. */
-export async function readStoredFile(deps: AppDeps, ctx: TenantContext, fileId: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
-  const row = await withTenant(deps.pools, ctx, (tx) => storedFileById(tx, ctx, fileId));
-  if (row === null) return null;
-  const bytes = await deps.objectStore.get(row.objectKey);
-  return bytes === null ? null : { bytes, contentType: row.contentType };
 }

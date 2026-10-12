@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
+import { inflateSync } from 'node:zlib';
 import type { ProposalView, PublicProposalView, SignatureRecord } from '@roofline/shared';
-import { calculateQuote, defaultPricebook, defaultScope } from '@roofline/shared';
+import { calculateQuote, defaultPricebook, defaultScope, ESTIMATE_CLAUSE_V1 } from '@roofline/shared';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { customers, measurements, proposalSignatures, storedFiles } from '@roofline/db';
-import { makeSignedPdf } from '../src/estimator/signed-pdf.ts';
+import { companies, companySettings, customers, measurements, proposalSignatures, proposals, storedFiles } from '@roofline/db';
+import { drawnSignatureKey, makeSignedPdf } from '../src/estimator/signed-pdf.ts';
 import { pdfToBuffer, renderProposalPdf } from '../src/proposals/pdf.ts';
 import { addressFor, Actors, inCompany, mustCreate } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
@@ -22,6 +23,35 @@ const PHONE = '+14025550101';
 const NOT_READY = "The signed copy isn't ready yet.";
 const META = { attempt: 1, lastAttempt: false };
 const sha256 = (value: Uint8Array): string => createHash('sha256').update(value).digest('hex');
+// A 1x1 PNG, raw base64 as the sign route takes it.
+const TINY_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const USER_AGENT = 'TestAgent/1.0';
+
+/**
+ * The text of a PDF: PDFKit writes Helvetica text as hex strings inside TJ arrays, split by kerning, and
+ * compresses page streams with Flate. Inflates every stream it can, joins each array's pieces, then joins
+ * all arrays with single spaces, so a sentence that wraps across lines still reads as one string.
+ */
+function pdfText(bytes: Uint8Array): string {
+  const raw = Buffer.from(bytes).toString('latin1');
+  const bodies = [raw];
+  for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    try {
+      bodies.push(inflateSync(Buffer.from(m[1]!, 'latin1')).toString('latin1'));
+    } catch {
+      // Not a Flate stream (an image's raw data, say).
+    }
+  }
+  const pieces: string[] = [];
+  for (const body of bodies) {
+    for (const m of body.matchAll(/\[([^\]]*)\] TJ/g)) {
+      pieces.push(Buffer.from([...m[1]!.matchAll(/<([0-9a-f]*)>/g)].map((h) => h[1]).join(''), 'hex').toString('latin1'));
+    }
+  }
+  return pieces.join(' ').replace(/\s+/g, ' ');
+}
+const hasImage = (bytes: Uint8Array): boolean => Buffer.from(bytes).toString('latin1').includes('/Subtype /Image');
 
 beforeEach(async () => {
   t = await makeTestApp();
@@ -34,7 +64,7 @@ afterEach(async () => {
 });
 
 /** A sent proposal, signed through the public route; the signed-pdf job is queued, not yet run. */
-async function signed(email: string | null = 'molly@example.com') {
+async function signed(email: string | null = 'molly@example.com', extra: { drawnSignature?: string } = {}) {
   const owner = await who.as('owner');
   const customer = await mustCreate(owner, '/api/customers', { displayName: 'Molly Lindgren' });
   const property = await mustCreate(owner, '/api/properties', { customerId: customer.id, ...addressFor(0) });
@@ -67,7 +97,8 @@ async function signed(email: string | null = 'molly@example.com') {
   const res = await request(t.app)
     .post(`/api/public/proposals/${token}/sign`)
     .set('Origin', t.deps.config.APP_ORIGIN)
-    .send({ optionId: view.options[1]?.id ?? view.options[0]!.id, consent: true, signerName: 'Molly Lindgren', typedSignature: 'Molly Lindgren' });
+    .set('User-Agent', USER_AGENT)
+    .send({ optionId: view.options[1]?.id ?? view.options[0]!.id, consent: true, signerName: 'Molly Lindgren', typedSignature: 'Molly Lindgren', ...extra });
   expect(res.status).toBe(200);
   return { proposal, token };
 }
@@ -76,6 +107,43 @@ const signatureRows = (proposalId: string) =>
   inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(proposalSignatures).where(eq(proposalSignatures.proposalId, proposalId)));
 const fileRows = () => inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(storedFiles).where(eq(storedFiles.kind, 'signed_proposal_pdf')));
 const run = (proposalId: string) => makeSignedPdf(t.deps, t.seed.a.companyId, proposalId, META);
+/** The stored signed PDF's bytes (after the job ran). */
+async function storedPdf(): Promise<Uint8Array> {
+  const files = await fileRows();
+  expect(files).toHaveLength(1);
+  const bytes = await t.objectStore.get(files[0]!.objectKey);
+  expect(bytes).not.toBeNull();
+  return bytes!;
+}
+const pdfPuts = () => t.objectStore.calls.filter((c) => c.method === 'put' && c.key.endsWith('.pdf'));
+
+// A renderer fixture: one signed estimate-based option.
+const calculation = calculateQuote({ ...defaultScope, areaSqFt: 2400, areaType: 'surface', pitch: 6 }, defaultPricebook);
+const fixtureProposal = {
+  id: 'p1', number: 'P-0001', status: 'signed', jobId: 'j1', customer: { id: 'c1', name: 'Molly Lindgren', phone: null },
+  address: '100 Oak St, Omaha, NE', measurementId: 'm1', basis: 'estimate',
+  options: [{ id: 'opt-better', tier: 'better', name: 'Bravo Shingles', highlights: [], scope: { ...defaultScope }, addOns: [], calculation, addOnLines: [], totalCents: 1_234_500, monthlyEstimateCents: null, enabled: true }],
+  messageBody: 'Hi', validUntil: '2026-11-11', sentAt: null, views: { count: 0, first: null, last: null },
+  signed: null, declined: null, taskId: null, replacedById: null, canEdit: false,
+} as unknown as ProposalView;
+const fixtureRecord: SignatureRecord = {
+  optionId: 'opt-better', signerName: 'Molly Q. Lindgren', typedSignature: 'Molly Q. Lindgren', drawnSignaturePngSha256: null,
+  consentText: 'I agree to sign electronically.', consentVersion: 'v1', documentSha256: 'ab12'.repeat(16), totalCents: 1_234_500,
+  ip: '203.0.113.9', userAgent: USER_AGENT, signedAt: '2026-10-12T15:00:00.000Z', viewedFirstAt: null,
+};
+const renderFixture = (o: { image?: Buffer | null; record?: Partial<SignatureRecord>; compress?: boolean } = {}) =>
+  pdfToBuffer(
+    renderProposalPdf(
+      {
+        audience: 'homeowner',
+        company: { name: 'Acme Roofing', phone: null },
+        proposal: fixtureProposal,
+        estimateClause: ESTIMATE_CLAUSE_V1,
+        signature: { record: { ...fixtureRecord, ...o.record }, image: o.image ?? null, timeZone: 'America/Chicago' },
+      },
+      { compress: o.compress ?? true },
+    ),
+  );
 
 describe('signed pdf job', () => {
   test('stores the signed PDF whose sha256 matches its bytes', async () => {
@@ -96,30 +164,107 @@ describe('signed pdf job', () => {
     expect(files[0]!.bytes).toBe(bytes!.length);
   });
 
-  test('the PDF text contains the signer name, the consent text, the document hash and the Estimate clause when it is on', async () => {
-    const calculation = calculateQuote({ ...defaultScope, areaSqFt: 2400, areaType: 'surface', pitch: 6 }, defaultPricebook);
-    const proposal = {
-      id: 'p1', number: 'P-0001', status: 'signed', jobId: 'j1', customer: { id: 'c1', name: 'Molly Lindgren', phone: null },
-      address: '100 Oak St, Omaha, NE', measurementId: 'm1', basis: 'estimate',
-      options: [{ id: 'opt-better', tier: 'better', name: 'Bravo Shingles', highlights: [], scope: { ...defaultScope }, addOns: [], calculation, addOnLines: [], totalCents: 1_234_500, monthlyEstimateCents: null, enabled: true }],
-      messageBody: 'Hi', validUntil: '2026-11-11', sentAt: null, views: { count: 0, first: null, last: null },
-      signed: null, declined: null, taskId: null, replacedById: null, canEdit: false,
-    } as unknown as ProposalView;
-    const record: SignatureRecord = {
-      optionId: 'opt-better', signerName: 'Molly Q. Lindgren', typedSignature: 'Molly Q. Lindgren', drawnSignaturePngSha256: null,
-      consentText: 'I agree to sign electronically.', consentVersion: 'v1', documentSha256: 'ab12'.repeat(16), totalCents: 1_234_500,
-      ip: '1.1.1.1', userAgent: 'x', signedAt: '2026-10-12T15:00:00.000Z', viewedFirstAt: null,
-    };
-    const doc = renderProposalPdf({ audience: 'homeowner', company: { name: 'Acme Roofing', phone: null }, proposal, signature: { record, image: null } }, { compress: false });
-    const raw = (await pdfToBuffer(doc)).toString('latin1');
-    const hexText = [...raw.matchAll(/\[([^\]]*)\] TJ/g)]
-      .map((m) => Buffer.from([...m[1]!.matchAll(/<([0-9a-f]*)>/g)].map((h) => h[1]).join(''), 'hex').toString('latin1'))
-      .join('\n');
-    const text = `${hexText}\n${raw}`;
+  test('the PDF text contains the signer name, the consent text, the document hash and the estimate clause', async () => {
+    const text = pdfText(await renderFixture({ compress: false }));
     expect(text).toContain('Molly Q. Lindgren');
     expect(text).toContain('I agree to sign electronically');
     expect(text).toContain('ab12'.repeat(16));
-    expect(text).toContain('Estimate');
+    expect(text).toContain(ESTIMATE_CLAUSE_V1);
+  });
+
+  test('the audit page shows the signer, the zoned time, the ip, the user agent, first viewed, the consent version and the document hash', async () => {
+    const text = pdfText(await renderFixture());
+    const audit = text.slice(text.indexOf('Signing record'));
+    expect(text).toContain('Signing record');
+    expect(audit).toContain('Signer: Molly Q. Lindgren');
+    expect(audit).toContain('Typed signature: Molly Q. Lindgren');
+    expect(audit).toContain('Signed at: October 12, 2026, 10:00 AM CDT (America/Chicago)');
+    expect(audit).toContain('IP address: 203.0.113.9');
+    expect(audit).toContain(`Device (user agent): ${USER_AGENT}`);
+    expect(audit).toContain('First viewed: not recorded');
+    expect(audit).toContain('Consent (version v1) I agree to sign electronically.');
+    expect(audit).toContain(`Document SHA-256 ${'ab12'.repeat(16)}`);
+    const viewed = pdfText(await renderFixture({ record: { viewedFirstAt: '2026-10-11T23:30:00.000Z' } }));
+    expect(viewed).toContain('First viewed: October 11, 2026, 6:30 PM CDT (America/Chicago)');
+  });
+
+  test('the same signature renders the same bytes', async () => {
+    const image = Buffer.from(TINY_PNG, 'base64');
+    const first = await renderFixture({ image });
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const second = await renderFixture({ image });
+    expect(Buffer.compare(first, second)).toBe(0);
+  });
+
+  test('the job prints the estimate clause and the audit page when the setting is on and the basis is estimate', async () => {
+    const s = await signed();
+    await run(s.proposal.id);
+    const text = pdfText(await storedPdf());
+    expect(text).toContain(ESTIMATE_CLAUSE_V1);
+    const [company] = await inCompany(t, t.seed.a.companyId, (tx) => tx.select({ zone: companies.timezone }).from(companies).where(eq(companies.id, t.seed.a.companyId)));
+    const audit = text.slice(text.indexOf('Signing record'));
+    expect(audit).toContain('Signer: Molly Lindgren');
+    expect(audit).toMatch(new RegExp(`Signed at: [A-Z][a-z]+ \\d{1,2}, \\d{4}, \\d{1,2}:\\d{2} [AP]M \\S+ \\(${company!.zone.replace('/', '\\/')}\\)`));
+    expect(audit).toContain(`Device (user agent): ${USER_AGENT}`);
+    const [sig] = await signatureRows(s.proposal.id);
+    expect(audit).toContain(`IP address: ${sig!.ip}`);
+    expect(audit).toContain(`Consent (version ${sig!.consentVersion})`);
+    expect(audit).toContain(`Document SHA-256 ${sig!.documentSha256}`);
+    expect(audit).toContain('Drawn signature: none');
+  });
+
+  test('the job leaves the estimate clause out when the setting is off', async () => {
+    await inCompany(t, t.seed.a.companyId, (tx) => tx.update(companySettings).set({ estimateChangeClause: false }).where(eq(companySettings.companyId, t.seed.a.companyId)));
+    const s = await signed();
+    await run(s.proposal.id);
+    const text = pdfText(await storedPdf());
+    expect(text).toContain('Signing record');
+    expect(text).not.toContain(ESTIMATE_CLAUSE_V1);
+  });
+
+  test('the job leaves the estimate clause out when the basis is exact', async () => {
+    const s = await signed();
+    await inCompany(t, t.seed.a.companyId, (tx) => tx.update(proposals).set({ estimateBasis: 'exact' }).where(eq(proposals.id, s.proposal.id)));
+    await run(s.proposal.id);
+    const text = pdfText(await storedPdf());
+    expect(text).toContain('Signing record');
+    expect(text).not.toContain(ESTIMATE_CLAUSE_V1);
+  });
+
+  test('the job draws the stored drawn signature after checking its hash', async () => {
+    const png = Buffer.from(TINY_PNG, 'base64');
+    const s = await signed('molly@example.com', { drawnSignature: TINY_PNG });
+    const key = drawnSignatureKey(t.seed.a.companyId, s.proposal.id, sha256(png));
+    expect(await t.objectStore.get(key)).not.toBeNull();
+    await run(s.proposal.id);
+    const bytes = await storedPdf();
+    expect(hasImage(bytes)).toBe(true);
+    expect(pdfText(bytes)).not.toContain('Drawn signature: none');
+  });
+
+  test('a drawn signature whose stored image does not match its hash fails the job and stores no PDF', async () => {
+    const png = Buffer.from(TINY_PNG, 'base64');
+    const s = await signed('molly@example.com', { drawnSignature: TINY_PNG });
+    const key = drawnSignatureKey(t.seed.a.companyId, s.proposal.id, sha256(png));
+    await t.objectStore.put(key, Buffer.concat([png, Buffer.from([0])]), 'image/png');
+    await expect(run(s.proposal.id)).rejects.toThrow('does not match');
+    expect(pdfPuts()).toHaveLength(0);
+    expect(await fileRows()).toHaveLength(0);
+    const [sig] = await signatureRows(s.proposal.id);
+    expect(sig!.pdfFileId).toBeNull();
+    expect(t.mailer.sent).toHaveLength(0);
+  });
+
+  test('a drawn signature whose image is missing fails the job and stores no PDF', async () => {
+    const s = await signed('molly@example.com', { drawnSignature: TINY_PNG });
+    await inCompany(t, t.seed.a.companyId, (tx) =>
+      tx.update(proposalSignatures).set({ drawnSignaturePngSha256: sha256(Buffer.from('never stored')) }).where(eq(proposalSignatures.proposalId, s.proposal.id)),
+    );
+    await expect(run(s.proposal.id)).rejects.toThrow('missing');
+    expect(pdfPuts()).toHaveLength(0);
+    expect(await fileRows()).toHaveLength(0);
+    const [sig] = await signatureRows(s.proposal.id);
+    expect(sig!.pdfFileId).toBeNull();
   });
 
   test('is idempotent: a second run does not duplicate the file or the email', async () => {

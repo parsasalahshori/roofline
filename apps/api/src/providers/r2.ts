@@ -46,7 +46,7 @@ export class R2ObjectStore implements ObjectStore {
     const signed = await this.client.sign(this.url(key), {
       method: 'PUT',
       headers: { 'Content-Type': contentType, 'x-amz-content-sha256': hash },
-      body: bytes as unknown as RequestInit["body"],
+      body: bytes,
     });
     const res = await this.doFetch(signed);
     if (!res.ok) throw unavailable(res.status);

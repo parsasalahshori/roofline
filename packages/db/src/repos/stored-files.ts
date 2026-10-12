@@ -18,13 +18,12 @@ export async function storeFile(
   return row.id;
 }
 
-export async function storedFileById(tx: Tx, ctx: TenantContext, fileId: string): Promise<{ objectKey: string; contentType: string; sha256: string } | null> {
-  const [row] = await tx
-    .select({ objectKey: storedFiles.objectKey, contentType: storedFiles.contentType, sha256: storedFiles.sha256 })
-    .from(storedFiles)
-    .where(and(eq(storedFiles.companyId, ctx.companyId), eq(storedFiles.id, fileId)))
-    .limit(1);
-  return row ?? null;
+const UNKNOWN_CONSENT_VERSION = 'The signature has a consent version this app does not know.';
+
+/** The stored consent version, read from the row; a version this code does not know is an error, never a guess. */
+function consentVersionOf(stored: string): SignatureRecord['consentVersion'] {
+  if (stored !== 'v1') throw new Error(UNKNOWN_CONSENT_VERSION);
+  return stored;
 }
 
 export type SignedPdfSource = {
@@ -33,6 +32,8 @@ export type SignedPdfSource = {
   /** Set when the signature already has a stored PDF (the job then does nothing). */
   pdfFileId: string | null;
   company: { name: string; phone: string | null };
+  /** The company's time zone as stored (the caller checks it). */
+  timeZone: string;
   financing: { aprBps: number; months: number } | null;
   /** True when the signed option's "Estimate" clause applies (basis 'estimate' and the company clause setting is on). */
   estimateClause: boolean;
@@ -56,7 +57,7 @@ export async function signedPdfSource(tx: Tx, ctx: TenantContext, proposalId: st
     typedSignature: sig.typedSignature,
     drawnSignaturePngSha256: sig.drawnSignaturePngSha256,
     consentText: sig.consentText,
-    consentVersion: 'v1',
+    consentVersion: consentVersionOf(sig.consentVersion),
     documentSha256: sig.documentSha256,
     totalCents: sig.totalCents,
     ip: sig.ip ?? '',
@@ -64,7 +65,7 @@ export async function signedPdfSource(tx: Tx, ctx: TenantContext, proposalId: st
     signedAt: sig.signedAt.toISOString(),
     viewedFirstAt: sig.viewedFirstAt ? sig.viewedFirstAt.toISOString() : null,
   };
-  const [company] = await tx.select({ name: companies.name, phone: companies.phoneE164 }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
+  const [company] = await tx.select({ name: companies.name, phone: companies.phoneE164, timezone: companies.timezone }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
   const [settings] = await tx
     .select({ apr: companySettings.financingAprBps, months: companySettings.financingTermMonths, clause: companySettings.estimateChangeClause })
     .from(companySettings)
@@ -86,6 +87,7 @@ export async function signedPdfSource(tx: Tx, ctx: TenantContext, proposalId: st
     signature,
     pdfFileId: sig.pdfFileId,
     company: { name: company?.name ?? '', phone: company?.phone ?? null },
+    timeZone: company?.timezone ?? '',
     financing: settings && settings.apr !== null && settings.months !== null ? { aprBps: settings.apr, months: settings.months } : null,
     estimateClause: proposal.basis === 'estimate' && (settings?.clause ?? true),
     customerEmail: cust?.emails[0] ?? null,

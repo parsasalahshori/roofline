@@ -179,6 +179,7 @@ export function proposalRoutes(deps: AppDeps): Router {
       audience: can(ctx, 'view_money_totals') ? 'internal' : 'homeowner',
       company: { name: company?.name ?? '', phone: company?.phone ?? null },
       proposal: view,
+      estimateClause: null,
       financing: settings?.apr != null && settings.months != null ? { aprBps: settings.apr, months: settings.months } : null,
     });
     // Rendered in full before any header goes out, so a failure is a plain 500, never a cut-off download.
