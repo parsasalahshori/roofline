@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../pools.ts';
-import { memberships, users } from '../schema/index.ts';
+import { companies, companyPhoneNumbers, memberships, users } from '../schema/index.ts';
 
 /*
  * The Front Desk transfer phone and on-call order (D1 Task 18), on the app_system pool because
@@ -38,16 +38,16 @@ export async function listOnCallRows(system: Db, companyId: string): Promise<OnC
  * member of the company off it. Only this company's memberships change. Ids that are not active
  * members of the company are ignored; the route checks them first.
  */
-export async function setOnCallOrder(system: Db, companyId: string, userIds: string[]): Promise<void> {
+export async function setOnCallOrder(system: Db, companyId: string, userIds: string[], now: Date = new Date()): Promise<void> {
   await system.transaction(async (tx) => {
     await tx
       .update(memberships)
-      .set({ onCallOrder: null, updatedAt: new Date() })
+      .set({ onCallOrder: null, updatedAt: now })
       .where(eq(memberships.companyId, companyId));
     for (const [index, userId] of userIds.entries()) {
       await tx
         .update(memberships)
-        .set({ onCallOrder: index, updatedAt: new Date() })
+        .set({ onCallOrder: index, updatedAt: now })
         .where(
           and(
             eq(memberships.companyId, companyId),
@@ -73,9 +73,33 @@ export async function getTransferPhone(system: Db, companyId: string, userId: st
   return row ?? { e164: null, prefill: null, recordingAckAt: null };
 }
 
-/** Saves the member's own transfer phone and the recording acknowledgement (now). Touches only that one membership. */
-export async function saveTransferPhone(system: Db, companyId: string, userId: string, e164: string): Promise<TransferPhone> {
-  const now = new Date();
+/**
+ * True when `e164` is one of the company's own numbers: a Roofline number it has (any status) or its
+ * business phone. A transfer to either would loop the call back into the company's own line.
+ */
+export async function isCompanyOwnNumber(system: Db, companyId: string, e164: string): Promise<boolean> {
+  const [roofline] = await system
+    .select({ id: companyPhoneNumbers.id })
+    .from(companyPhoneNumbers)
+    .where(and(eq(companyPhoneNumbers.companyId, companyId), eq(companyPhoneNumbers.e164, e164)))
+    .limit(1);
+  if (roofline) return true;
+  const [business] = await system
+    .select({ id: companies.id })
+    .from(companies)
+    .where(and(eq(companies.id, companyId), eq(companies.phoneE164, e164)))
+    .limit(1);
+  return business !== undefined;
+}
+
+/** Saves the member's own transfer phone and the recording acknowledgement (`now`). Touches only that one membership. */
+export async function saveTransferPhone(
+  system: Db,
+  companyId: string,
+  userId: string,
+  e164: string,
+  now: Date = new Date(),
+): Promise<TransferPhone> {
   await system
     .update(memberships)
     .set({ transferPhoneE164: e164, recordingAckAt: now, updatedAt: now })

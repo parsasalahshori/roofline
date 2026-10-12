@@ -252,6 +252,20 @@ describe('/api/me/transfer-phone', () => {
     }
   });
 
+  test('transfer phone: only a US number that is not the company own line (pre-review #13)', async () => {
+    await ownerSql('update companies set phone_e164 = $1 where id = $2', ['+14025550199', idOf('a')]);
+    const rep = await loginAs(t.app, t.seed.a.rep);
+    for (const bad of ['+18005550123', '+19005550123', '+14165550123', '+18765550123', '+442071234567', '+8821234567', A_NUMBER, '+14025550199']) {
+      const res = await rep.put(TRANSFER).send({ e164: bad, ackRecording: true });
+      expect(res.status, bad).toBe(400);
+      expect(res.body, bad).toMatchObject({ field: 'e164' });
+    }
+    expect((await rep.get(TRANSFER)).body).toMatchObject({ e164: null });
+    // A US territory number is a US number.
+    const ok = await rep.put(TRANSFER).send({ e164: '+17875550123', ackRecording: true });
+    expect(ok.status).toBe(200);
+  });
+
   test('cross-tenant: a user of company B never changes company A', async () => {
     const ownerB = await loginAs(t.app, t.seed.b.owner);
     await ownerB.put(TRANSFER).send({ e164: '+14025550133', ackRecording: true });

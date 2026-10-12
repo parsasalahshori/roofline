@@ -1,4 +1,4 @@
-import { getTransferPhone, listOnCallRows, saveTransferPhone, setOnCallOrder, type OnCallRow, type TransferPhone } from '@roofline/db/system';
+import { getTransferPhone, isCompanyOwnNumber, listOnCallRows, saveTransferPhone, setOnCallOrder, type OnCallRow, type TransferPhone } from '@roofline/db/system';
 import type { TenantContext } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 
@@ -22,9 +22,14 @@ export function readTransferPhone(deps: AppDeps, ctx: TenantContext): Promise<Tr
 }
 
 export function writeTransferPhone(deps: AppDeps, ctx: TenantContext, e164: string): Promise<TransferPhone> {
-  return saveTransferPhone(deps.pools.system, ctx.companyId, memberId(ctx), e164);
+  return saveTransferPhone(deps.pools.system, ctx.companyId, memberId(ctx), e164, deps.clock.now());
+}
+
+/** True when the number is one of the company's own Roofline numbers or its business phone. */
+export function isOwnCompanyNumber(deps: AppDeps, ctx: TenantContext, e164: string): Promise<boolean> {
+  return isCompanyOwnNumber(deps.pools.system, ctx.companyId, e164);
 }
 
 export function writeOnCallOrder(deps: AppDeps, ctx: TenantContext, userIds: string[]): Promise<void> {
-  return setOnCallOrder(deps.pools.system, ctx.companyId, userIds);
+  return setOnCallOrder(deps.pools.system, ctx.companyId, userIds, deps.clock.now());
 }
