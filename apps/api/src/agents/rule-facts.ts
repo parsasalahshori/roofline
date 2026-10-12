@@ -14,12 +14,12 @@ import { can } from '../permissions.ts';
  * Readers without `view_money_totals` (reps) get `budgetCents: null` (no ad-budget clause) and
  * `noLinks: true` (every rule without settings links), because they cannot open the settings pages.
  *
- * Front Desk facts (`frontDesk: { phoneNumber, transferNames, canBook, canConfirm, canMove }`) are filled
+ * Front Desk facts (`frontDesk: { phoneNumber, transferNames, canBook, canConfirm, canMove, canCancel }`) are filled
  * only when front_desk_enabled is true; otherwise the key is omitted. The
- * phone number is the company's first active voice number, formatted '(949) 555-0100'. Booking and
- * confirming are always allowed; moving follows `front_desk_can_move`. `transferNames` is [] today: the
- * tenant-readable `company_members` view does not expose transfer_phone_e164 / on_call_order (memberships
- * are app_system only), and no migration is added for this; filling it needs the view extended.
+ * phone number is the company's first active voice number, formatted '(949) 555-0100'. Booking,
+ * confirming and cancelling are always allowed (company_settings has no cancel flag); moving follows
+ * `front_desk_can_move`. `transferNames` is passed in by the caller: memberships are app_system only, so the API
+ * reads the on-call first names with `onCallFirstNames` (@roofline/db/system) and hands them in ([] by default).
  * Everything is read through the given `tx` (company-scoped by withTenant) and filtered by `ctx.companyId`.
  */
 
@@ -29,7 +29,7 @@ function formatPhone(e164: string): string {
   return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
 }
 
-export async function gatherRuleFacts(tx: Tx, ctx: TenantContext): Promise<AgentRuleFacts> {
+export async function gatherRuleFacts(tx: Tx, ctx: TenantContext, transferNames: string[] = []): Promise<AgentRuleFacts> {
   const [row] = await tx
     .select({
       hailThresholdIn: companySettings.hailThresholdIn,
@@ -60,9 +60,10 @@ export async function gatherRuleFacts(tx: Tx, ctx: TenantContext): Promise<Agent
       ? {
           frontDesk: {
             phoneNumber: number ? formatPhone(number.e164) : 'your business number',
-            transferNames: [] as string[],
+            transferNames,
             canBook: true,
             canConfirm: true,
+            canCancel: true,
             canMove: row ? row.frontDeskCanMove : true,
           },
         }

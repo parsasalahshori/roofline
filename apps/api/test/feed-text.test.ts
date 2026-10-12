@@ -14,6 +14,7 @@ function row(over: Partial<FeedRow>): FeedRow {
     taskKind: 'storm_plan',
     taskTitle: 'a storm plan',
     taskStatus: 'draft',
+    taskMode: 'needs_approval',
     subjectType: 'job',
     subjectId: '00000000-0000-4000-8000-000000000003',
     stepType: null,
@@ -179,6 +180,51 @@ describe('feedSentence', () => {
         expect(sentence.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe('Front Desk live rows', () => {
+  const live = (over: Partial<FeedRow>) =>
+    row({ agent: 'front_desk', taskMode: 'live', kind: 'finished', taskStatus: 'done', data: { status: 'done' }, ...over });
+
+  test('a call reads as one sentence with the first name', () => {
+    expect(feedSentence(live({ taskTitle: 'Answered a call', customerFirstName: 'Maria' }))).toBe('Front Desk answered a call for Maria');
+  });
+
+  test('a message and a transfer', () => {
+    expect(feedSentence(live({ taskTitle: 'Took a message', customerFirstName: 'Maria' }))).toBe('Front Desk took a message for Maria');
+    expect(feedSentence(live({ taskTitle: 'Transferred a call', customerFirstName: 'Maria' }))).toBe('Front Desk transferred a call for Maria');
+  });
+
+  test('texts use "from" and the count when the title has one', () => {
+    expect(feedSentence(live({ taskTitle: 'Answered 3 texts', customerFirstName: 'Maria' }))).toBe('Front Desk answered 3 texts from Maria');
+    expect(feedSentence(live({ taskTitle: 'Answered 1 text', customerFirstName: 'Maria' }))).toBe('Front Desk answered 1 text from Maria');
+    expect(feedSentence(live({ taskTitle: 'Answered 1 text' }))).toBe('Front Desk answered 1 text');
+    expect(feedSentence(live({ taskTitle: 'Answered texts', customerFirstName: 'Maria' }))).toBe('Front Desk answered texts from Maria');
+  });
+
+  test('a spam call names no one', () => {
+    expect(feedSentence(live({ taskTitle: 'Spam call blocked', customerFirstName: 'Maria' }))).toBe('Front Desk blocked a spam call');
+  });
+
+  test('no first name drops the for-clause', () => {
+    expect(feedSentence(live({ taskTitle: 'Answered a call', customerFirstName: null }))).toBe('Front Desk answered a call');
+  });
+
+  test('a needs-attention row reads the same way', () => {
+    expect(feedSentence(live({ kind: 'step_attention', taskTitle: 'Took a message', customerFirstName: 'Maria' }))).toBe(
+      'Front Desk took a message for Maria',
+    );
+  });
+
+  test('a later close reads as done', () => {
+    expect(feedSentence(live({ taskTitle: 'Took a message', closedLater: true }))).toBe('Front Desk: Took a message is done');
+  });
+
+  test('a draft row is unchanged', () => {
+    expect(feedSentence(row({ agent: 'front_desk', kind: 'finished', taskTitle: 'Answered a call', data: { status: 'done' } }))).toBe(
+      'Finished: Answered a call',
+    );
   });
 });
 

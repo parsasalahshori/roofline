@@ -143,6 +143,8 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
       ? call.aiSeconds
       : Math.max(0, Math.round(((call.endedAt ?? now).getTime() - call.startedAt.getTime()) / 1000));
   if (prep.spam) {
+    // Screening rejected the call before Front Desk ran: no task. A spam call the AI had started still gets one.
+    if (call.status === 'rejected' && call.aiStartedAt === null) return;
     await recordLiveTask(deps, ctx, { callId: call.id, conversationId: call.conversationId, customerId: null, seconds: secondsInCall, bookings: 0, spam: true, outcome: null }, now);
     return;
   }
@@ -195,7 +197,7 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
     );
   }
 
-  // A paused or voicemail call the AI never answered makes no task; spam is recorded because screening runs before the pause decision.
+  // A paused or voicemail call the AI never answered makes no task; a call screening rejected as spam before Front Desk ran makes none either.
   if (call.conversationId !== null || call.aiStartedAt !== null || call.aiSeconds > 0) {
     await recordLiveTask(
       deps,

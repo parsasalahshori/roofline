@@ -93,6 +93,13 @@ function draftWaitingOn(
 /** Attention tasks wait on the owner or the office; a rep's are the office's to pick up. */
 const attentionWaitingOn = (ctx: TenantContext): WaitingOn => (ctx.role === 'rep' ? { kind: 'office' } : { kind: 'you' });
 
+/** Who a Front Desk job task waits on: the job's assignee ('you' when it is the reader), else the office. */
+function jobAssigneeWaitingOn(row: { jobAssignedUserId: string | null; jobAssigneeName: string | null }, ctx: TenantContext): WaitingOn {
+  if (row.jobAssignedUserId === null) return { kind: 'office' };
+  if (ctx.userId !== undefined && ctx.userId === row.jobAssignedUserId) return { kind: 'you' };
+  return row.jobAssigneeName !== null ? { kind: 'person', name: row.jobAssigneeName } : { kind: 'office' };
+}
+
 /**
  * Front Desk follow-ups: jobs whose customer left a message or was handed to the team and whose next step
  * is still open (the repo's rule, scoped by jobScope for reps). Each waits on the person the job is
@@ -172,13 +179,18 @@ export function agentsFeedRoutes(deps: AppDeps): Router {
             href: canReview(ctx) ? `/approvals/${row.taskId}` : jobHref(row.subjectType, row.subjectId),
           };
         }
+        // A Front Desk task on a job waits on the job's assignee (the reader when that is them), else the office,
+        // and shows the job's next step like a follow-up row does.
+        const onJob = row.agent === 'front_desk' && row.subjectType === 'job';
+        let text = waitingAttentionText(row.agent, row.title, row.reason);
+        if (onJob && row.jobNextStep !== null && row.jobNextStep.trim() !== '') text += ` Next step: ${row.jobNextStep}`;
         return {
           id: row.taskId,
           agent: row.agent,
           kind: 'attention',
-          text: waitingAttentionText(row.agent, row.title, row.reason),
+          text,
           since: row.since.toISOString(),
-          waitingOn: attentionWaitingOn(ctx),
+          waitingOn: onJob ? jobAssigneeWaitingOn(row, ctx) : attentionWaitingOn(ctx),
           href: jobHref(row.subjectType, row.subjectId),
         };
       });

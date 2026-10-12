@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { agentTasks, agentTaskSteps, listTaskEvents, loadBaselineOverrides } from '@roofline/db';
+import { agentTasks, agentTaskSteps, listRecountSteps, listTaskEvents, loadBaselineOverrides, setBaselineOverrides } from '@roofline/db';
 import { stepMinutes, stepTypes, type StepResult } from '@roofline/shared';
-import { closeLiveTasksForSubject, createLiveTask, listApprovals, type NewLiveTask } from '../src/tasks/service.ts';
+import { addToLiveTask, closeLiveTasksForSubject, createLiveTask, listApprovals, type NewLiveTask } from '../src/tasks/service.ts';
 import { Actors, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 
@@ -117,6 +117,30 @@ describe('createLiveTask', () => {
     expect(kinds).toContain('step_attention');
     expect(kinds).not.toContain('finished');
     expect((await stepRows(taskId))[0]!.status).toBe('done');
+  });
+});
+
+describe('addToLiveTask', () => {
+  test('a repeat keeps past replies at their old value: 1 reply at 2 min, baseline to 5, 1 more reply -> 7 minutes, 2 units', async () => {
+    const key = `fd-texts:${randomUUID()}:2026-10-12`;
+    const { taskId } = await make(
+      live({ kind: 'text_conversation', step: { type: 'front_desk_texts', result: { replies: 1, bookings: 0 } }, idempotencyKey: key }),
+    );
+    await inCompany(t, idOf('a'), (tx) => setBaselineOverrides(tx, ctxOf('a'), { text_reply: 5 }, t.clock.now()));
+    await inCompany(t, idOf('a'), (tx) => addToLiveTask(tx, ctxOf('a'), key, { replies: 1, bookings: 0 }, t.clock.now()));
+    const [step] = await stepRows(taskId);
+    expect(step!.minutesSaved).toBe(7);
+    expect(step!.units).toBe(2);
+    expect(step!.minutesPerUnit).toBe(3.5);
+    expect((await taskRow(taskId)).minutesSaved).toBe(7);
+  });
+
+  test('listRecountSteps runs inside a transaction (it locks the steps it returns)', async () => {
+    await make(live({ kind: 'text_conversation', step: { type: 'front_desk_texts', result: { replies: 1, bookings: 0 } }, idempotencyKey: `fd-texts:${randomUUID()}:2026-10-12` }));
+    const rows = await inCompany(t, idOf('a'), (tx) =>
+      listRecountSteps(tx, ctxOf('a'), { from: new Date('2026-01-01T00:00:00Z'), to: new Date('2027-01-01T00:00:00Z'), afterId: null, limit: 10 }),
+    );
+    expect(rows.length).toBeGreaterThan(0);
   });
 });
 
