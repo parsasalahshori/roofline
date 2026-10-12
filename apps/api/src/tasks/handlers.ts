@@ -1,5 +1,5 @@
 import type { StepType } from '@roofline/shared';
-import { createAppointmentStep } from '../agents/appointments-steps.ts'; // G1 Task 8
+import { createAppointmentStep, moveAppointmentStep } from '../agents/appointments-steps.ts'; // G1 Task 8
 import { sendPersonalTexts } from '../agents/personal-texts.ts';
 import { orderExactReport } from '../estimator/exact-report.ts';
 import { sendSmsBatch } from '../messaging/send-batch.ts';
@@ -26,7 +26,7 @@ export const builtInHandlers: Partial<Record<StepType, StepHandler>> = {
   send_personal_texts: sendPersonalTexts,
   build_claim_packet: notBuilt, // G1 Task 7 fills this in
   create_appointment: createAppointmentStep, // G1 Task 8
-  move_appointment: notBuilt, // G1 Task 11 fills this in
+  move_appointment: moveAppointmentStep, // G1 Task 11
   send_proposal: sendProposalStep,
   order_exact_report: orderExactReport,
 };

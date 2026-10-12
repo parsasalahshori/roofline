@@ -6,9 +6,12 @@ import {
   createAppointment,
   getJobClaim,
   listBusyBlocks,
+  markMovedByTask,
   saveClaim,
   type TenantContext,
   type Tx,
+  updateAppointment,
+  userBusyIntervals,
   withTenant,
 } from '@roofline/db';
 import { stepTypes } from '@roofline/shared';
@@ -139,4 +142,67 @@ export const createAppointmentStep: StepHandler = async (deps, ctx, step): Promi
     await deps.jobs.send('calendar-push', { companyId: ctx.companyId, appointmentId: booked.appointmentId }, { singletonKey: booked.appointmentId });
   }
   return { status: 'done', result: { created: booked.created ? 1 : 0 } };
+};
+
+/*
+ * The `move_appointment` step (G1 Task 11): moves one scheduled install to a new time that a person
+ * approved after a weather warning. It checks again that the install is unchanged and the new time is
+ * free, never cancels, never texts or emails anyone, and never logs the reason.
+ */
+
+const UNREADABLE_MOVE = "We couldn't read this move. Please make this plan again.";
+const CHANGED = 'That install was changed since this plan was made.';
+const DAY_NOT_FREE = "That day isn't free any more.";
+
+type Moved = { kind: 'failed'; errorPlain: string } | { kind: 'moved'; pushDue: boolean } | { kind: 'already' };
+
+export const moveAppointmentStep: StepHandler = async (deps, ctx, step): Promise<StepOutcome> => {
+  const parsed = stepTypes.move_appointment.payload.safeParse(step.payload);
+  if (!parsed.success) return { status: 'needs_attention', result: {}, errorPlain: UNREADABLE_MOVE };
+  const { appointmentId, start, end, userId } = parsed.data as {
+    appointmentId: string;
+    start: string;
+    end: string;
+    userId: string;
+    reason: string;
+  };
+  const newStart = new Date(start);
+  const newEnd = new Date(end);
+  const now = deps.clock.now();
+
+  let moved: Moved;
+  try {
+    moved = await withTenant(deps.pools, ctx, async (tx): Promise<Moved> => {
+      const [row] = await tx
+        .select()
+        .from(appointments)
+        .where(and(eq(appointments.id, appointmentId), eq(appointments.companyId, ctx.companyId)))
+        .limit(1)
+        .for('update');
+      if (!row || row.archivedAt !== null) return { kind: 'failed', errorPlain: CHANGED };
+
+      // A rerun finds the install already moved by this task (an all-day install is snapped to the company day, so only the task is compared then).
+      const sameTime = row.startsAt.getTime() === newStart.getTime() && row.endsAt.getTime() === newEnd.getTime();
+      if (row.movedByTaskId === step.taskId && (sameTime || row.allDay)) return { kind: 'already' };
+
+      if (row.status !== 'scheduled' || row.assignedUserId !== userId) return { kind: 'failed', errorPlain: CHANGED };
+
+      const busy = await userBusyIntervals(tx, ctx, { userId, from: newStart, to: newEnd, excludeAppointmentId: appointmentId });
+      if (busy.length > 0) return { kind: 'failed', errorPlain: DAY_NOT_FREE };
+
+      const updated = await updateAppointment(tx, ctx, appointmentId, { startsAt: newStart, endsAt: newEnd }, now);
+      if (!updated) return { kind: 'failed', errorPlain: CHANGED };
+      await markMovedByTask(tx, ctx, appointmentId, step.taskId, now);
+      return { kind: 'moved', pushDue: updated.pushDue };
+    });
+  } catch (err) {
+    if (err instanceof AppointmentLinkError) return { status: 'failed', result: {}, errorPlain: CHANGED };
+    throw err;
+  }
+
+  if (moved.kind === 'failed') return { status: 'failed', result: {}, errorPlain: moved.errorPlain };
+  if (moved.kind === 'moved' && moved.pushDue) {
+    await deps.jobs.send('calendar-push', { companyId: ctx.companyId, appointmentId }, { singletonKey: appointmentId });
+  }
+  return { status: 'done', result: { moved: 1 } };
 };
