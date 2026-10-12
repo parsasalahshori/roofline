@@ -7,6 +7,7 @@ import {
   FRONT_DESK_TOOLS,
   type FrontDeskToolName,
   priceGuardReplacement,
+  TURN_LIMIT_OFFER_TURNS,
   type TransferReason,
 } from '@roofline/shared';
 import { createEngine } from '../../src/front-desk/engine.ts';
@@ -31,6 +32,15 @@ const OPUS: RouteDecision = { intent: 'other', urgent: false, mood: 'calm', rout
 const FAST = (reply: string | null): RouteDecision => ({ ...OPUS, route: 'fast', fastReply: reply });
 const UUID_A = '11111111-1111-4111-8111-111111111111';
 const UUID_B = '22222222-2222-4222-8222-222222222222';
+
+/** Remembers the history of every answer call. */
+class HistoryLlm extends ScriptedLlm {
+  histories: { role: string }[][] = [];
+  override answer(i: AnswerInput): AsyncIterable<LlmEvent> {
+    this.histories.push(i.history.map((m) => ({ role: m.role as string })));
+    return super.answer(i);
+  }
+}
 
 /** Remembers the abort signal of every answer call. */
 class CapturingLlm extends ScriptedLlm {
@@ -79,6 +89,11 @@ class LoopToolLlm extends ScriptedLlm {
     };
   }
 }
+
+const FINISH_TOOLS: ToolHandlers = {
+  transfer_to_person: async () => ({ ok: true, forModel: 'Handing off.' }),
+  end_call: async () => ({ ok: true, forModel: 'Ending.' }),
+};
 
 function toolResults(state: ConversationState): { type: string; content: string; is_error?: boolean }[] {
   return state.history
@@ -388,7 +403,8 @@ describe('front desk engine', () => {
     const { engine, state, say } = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] }]);
     appendUser(state, 'hello');
     engine.note(state, 'The caller is in a hurry.');
-    expect(state.history.at(-1)).toEqual({ role: 'system', content: 'The caller is in a hurry.' });
+    // Notes are queued and only reach the history right before the model is called.
+    expect(state.history.at(-1)).toEqual({ role: 'user', content: 'hello' });
     // A note made while the assistant spoke last waits for the next user message.
     state.history.length = 0;
     await say('first');
@@ -482,11 +498,11 @@ describe('front desk engine', () => {
   test('transfer_to_person and end_call finish the turn with their event', async () => {
     const a = await setup([
       { when: /./, route: OPUS, answer: [{ kind: 'tool', name: 'transfer_to_person', input: { reason: 'asked', summary: 'x' } }] },
-    ]);
+    ], FINISH_TOOLS);
     expect(await a.say('let me talk to someone')).toContainEqual({ type: 'handoff', reason: 'asked', summary: 'x', urgent: false });
     const b = await setup([
       { when: /./, route: OPUS, answer: [{ kind: 'tool', name: 'end_call', input: { reason: 'goodbye' } }] },
-    ]);
+    ], FINISH_TOOLS);
     expect(await b.say('bye')).toContainEqual({ type: 'end', reason: 'goodbye' });
   });
 
@@ -577,6 +593,105 @@ describe('front desk engine', () => {
     await say('my roof');
     expect(state.failedUnderstanding).toBe(0);
     void llm;
+  });
+
+  test('notes: interrupt, interrupt, reply never leaves a system entry before a user entry', async () => {
+    const llm = new HistoryLlm([
+      { when: /roof/, route: OPUS, answer: [{ kind: 'text', text: 'First sentence. ' }, { kind: 'text', text: 'Second sentence. ' }] },
+      { when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] },
+    ]);
+    const { engine, state, say } = await setup([], {}, llm);
+    const ac = new AbortController();
+    for await (const e of engine.turn(state, 'my roof leaks', ac.signal)) {
+      if (e.type === 'say') ac.abort();
+    }
+    expect(state.history.at(-1)?.role).toBe('assistant');
+    engine.note(state, 'x');
+    engine.note(state, 'y');
+    await say('next');
+    await say('and again');
+    expect(llm.histories.length).toBeGreaterThan(1);
+    for (const h of llm.histories) {
+      for (let i = 0; i < h.length - 1; i++) {
+        if (h[i]!.role === 'system') expect(h[i + 1]!.role).not.toBe('user');
+      }
+    }
+    const roles = state.history.map((m) => m.role as string);
+    for (let i = 0; i < roles.length - 1; i++) {
+      if (roles[i] === 'system') expect(roles[i + 1]).not.toBe('user');
+    }
+  });
+
+  test('a person-ask is counted once per turn', async () => {
+    const ASK: RouteDecision = { ...OPUS, intent: 'ask_for_person', route: 'opus' };
+    const { state, say } = await setup([
+      {
+        when: /./,
+        route: ASK,
+        answer: [{ kind: 'tool', name: 'transfer_to_person', input: { reason: 'asked', summary: 'Wants a person' } }],
+      },
+    ], {
+      transfer_to_person: async (ctx, input) => {
+        const { transferToPerson } = await import('../../src/front-desk/tools/transfer.ts');
+        return transferToPerson(ctx, input);
+      },
+    });
+    await say('let me talk to someone');
+    expect(state.askedForPersonCount).toBe(1);
+  });
+
+  test('a limit of 40 turns offers a person', async () => {
+    const { state, say } = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] }]);
+    state.turns = 40;
+    await say('hello');
+    const u = lastUserIndex(state);
+    expect((state.history[u + 1] as unknown as { role: string }).role).toBe('system');
+  });
+
+  test('on SMS, an end_call is refused and the turn continues to a reply', async () => {
+    const a = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'tool', name: 'end_call', input: { reason: 'goodbye' } }] }]);
+    a.state.channel = 'sms';
+    const events = await a.say('thanks, bye');
+    expect(events.some((e) => e.type === 'end')).toBe(false);
+    expect(events).toContainEqual({ type: 'say', text: 'Done.' });
+    expect(toolResults(a.state).map((r) => r.content)).toContain('That is not available.');
+    expect((await savedTurns(a.t, a.state)).length).toBeGreaterThan(0);
+  });
+
+  test('on SMS, a transfer_to_person is refused and does not hand off', async () => {
+    const a = await setup([
+      { when: /./, route: OPUS, answer: [{ kind: 'tool', name: 'transfer_to_person', input: { reason: 'asked', summary: 'x' } }] },
+    ]);
+    a.state.channel = 'sms';
+    const events = await a.say('let me talk to someone');
+    expect(events.some((e) => e.type === 'handoff')).toBe(false);
+    expect(events).toContainEqual({ type: 'say', text: 'Done.' });
+    expect(toolResults(a.state).map((r) => r.content)).toContain('That is not available.');
+  });
+
+  test('an SMS thread started two hours ago still gets a turn', async () => {
+    const a = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] }]);
+    a.state.channel = 'sms';
+    a.state.startedAt = new Date(a.t.clock.now().getTime() - 120 * 60_000);
+    a.state.turns = 0;
+    const events = await a.say('hello again');
+    expect(events.some((e) => e.type === 'say')).toBe(true);
+    expect(events).not.toContainEqual({ type: 'end', reason: 'limit' });
+
+    const b = await setup([{ when: /./, route: OPUS, answer: [{ kind: 'text', text: 'Okay.' }] }]);
+    b.state.channel = 'sms';
+    b.state.startedAt = new Date(b.t.clock.now().getTime() - 120 * 60_000);
+    b.state.turns = TURN_LIMIT_OFFER_TURNS;
+    const events2 = await b.say('hello again');
+    expect(events2.some((e) => e.type === 'say')).toBe(true);
+    const u = lastUserIndex(b.state);
+    expect((b.state.history[u + 1] as unknown as { role: string }).role).toBe('system');
+  });
+
+  test('a voice call started 31 minutes ago ends with reason limit', async () => {
+    const a = await setup([]);
+    a.state.startedAt = new Date(a.t.clock.now().getTime() - 31 * 60_000);
+    expect(await a.say('still there')).toEqual([{ type: 'end', reason: 'limit' }]);
   });
 });
 

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { customers, properties } from '@roofline/db';
-import { normalizeAddressKey } from '@roofline/shared';
+import { conversations, customers, getConversation, properties, withTenant, type TenantContext } from '@roofline/db';
+import { normalizeAddressKey, VERIFY_MISMATCH_PREFIX } from '@roofline/shared';
 import type { ToolContext } from '../../src/front-desk/engine-types.ts';
 import { newConversationState } from '../../src/front-desk/state.ts';
-import { identifyCaller, verifyCaller } from '../../src/front-desk/tools/caller.ts';
+import { identifyCaller, VERIFY_LOCKED, verifyCaller } from '../../src/front-desk/tools/caller.ts';
 import { inCompany } from '../crm-helpers.ts';
 import { makeTestApp, type TestApp } from '../helpers.ts';
 
@@ -55,7 +55,33 @@ function ctxFor(companyId: string, phone = PHONE): ToolContext {
   return { deps: t.deps, companyId, conversation, now: new Date('2026-10-12T15:00:00Z') };
 }
 
+async function realConversation(ctx: ToolContext): Promise<void> {
+  const id = await inCompany(t, ctx.companyId, async (tx) => {
+    const [row] = await tx
+      .insert(conversations)
+      .values({ companyId: ctx.companyId, channel: 'voice', phoneE164: PHONE, companyNumberE164: '+14025550100', status: 'active' })
+      .returning({ id: conversations.id });
+    return row!.id;
+  });
+  ctx.conversation.conversationId = id;
+}
+
+async function readRow(ctx: ToolContext) {
+  const sys: TenantContext = { companyId: ctx.companyId, userId: null, role: 'system', canApproveSpend: false };
+  return withTenant(t.deps.pools, sys, (tx) => getConversation(tx, sys, ctx.conversation.conversationId));
+}
+
 describe('identifyCaller', () => {
+  test('identifyCaller writes conversations.customer_id and identity', async () => {
+    const id = await addCustomer(A(), 'Nina Park', PHONE);
+    const ctx = ctxFor(A());
+    await realConversation(ctx);
+    await identifyCaller(ctx);
+    const row = await readRow(ctx);
+    expect(row?.customerId).toBe(id);
+    expect(row?.identity).toBe('matched');
+  });
+
   test('one match sets the customer and matched', async () => {
     const id = await addCustomer(A(), 'Nina Park', PHONE);
     const ctx = ctxFor(A());
@@ -123,6 +149,7 @@ describe('verifyCaller', () => {
     const third = await verifyCaller(ctx, bad);
     expect(third.ok).toBe(false);
     expect(third.forModel.toLowerCase()).toContain('transfer');
+    expect(third.forModel.startsWith(VERIFY_MISMATCH_PREFIX)).toBe(true);
   });
 
   test('with two phone matches, either customer can verify', async () => {
@@ -148,5 +175,38 @@ describe('verifyCaller', () => {
     const res = await verifyCaller(ctx, { name: 'Bea Other', street: '5 Birch Rd' });
     expect(res.ok).toBe(false);
     expect(ctx.conversation.customerId).toBeNull();
+  });
+
+  test('a successful verify_caller writes identity verified and customer_id on the conversation row (voice call)', async () => {
+    const id = await addCustomer(A(), 'Nina Park', PHONE, '412 Oak St');
+    const ctx = ctxFor(A());
+    await realConversation(ctx);
+    await identifyCaller(ctx);
+    const res = await verifyCaller(ctx, { name: 'Nina Park', street: '412 Oak St' });
+    expect(res.ok).toBe(true);
+    const row = await readRow(ctx);
+    expect(row?.identity).toBe('verified');
+    expect(row?.customerId).toBe(id);
+  });
+
+  test('verify_caller refuses with the locked sentence after 3 failures and does no repo lookup', async () => {
+    await addCustomer(A(), 'Nina Park', PHONE, '412 Oak St');
+    const ctx = ctxFor(A());
+    await identifyCaller(ctx);
+    const bad = { name: 'Nina Park', street: '9 Elm St' };
+    for (let i = 0; i < 3; i++) await verifyCaller(ctx, bad);
+    const res = await verifyCaller(ctx, { name: 'Nina Park', street: '412 Oak St' });
+    expect(res).toEqual({ ok: false, forModel: VERIFY_LOCKED });
+    expect(ctx.conversation.identity).toBe('matched');
+  });
+
+  test('verifyFailures resets to 0 on success', async () => {
+    await addCustomer(A(), 'Nina Park', PHONE, '412 Oak St');
+    const ctx = ctxFor(A());
+    await identifyCaller(ctx);
+    await verifyCaller(ctx, { name: 'Nina Park', street: '9 Elm St' });
+    expect(ctx.conversation.verifyFailures).toBe(1);
+    await verifyCaller(ctx, { name: 'Nina Park', street: '412 Oak St' });
+    expect(ctx.conversation.verifyFailures).toBe(0);
   });
 });

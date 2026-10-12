@@ -36,11 +36,11 @@ import {
   NOT_THEIR_HOME,
   openInspectionSlots,
   queueCalendarPush,
-  systemCtx,
   whenShort,
   whenWords,
   zoneOf,
 } from './times.ts';
+import { systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 8: book_inspection. One transaction makes the customer (consent 'express', source 'call'),
@@ -131,6 +131,7 @@ export async function sendConfirmationText(
   conversationId: string,
   s: Summary,
   now: Date,
+  toE164?: string | null,
 ): Promise<ConfirmationResult> {
   try {
     const body = confirmationBody(s);
@@ -141,7 +142,7 @@ export async function sendConfirmationText(
       const built = await buildGateRequest(
         tx,
         tctx,
-        { customerId: s.customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null },
+        { customerId: s.customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null, toE164: toE164 ?? undefined },
         now,
       );
       if (!built) return { result: 'failed' as const };
@@ -328,7 +329,7 @@ export const bookInspection: ToolHandler<'book_inspection'> = async (ctx, input)
 
   const { summary } = outcome;
   await queueCalendarPush(deps, companyId, summary.appointmentId);
-  const text = await sendConfirmationText(deps, tctx, conversation.conversationId, summary, deps.clock.now());
+  const text = await sendConfirmationText(deps, tctx, conversation.conversationId, summary, deps.clock.now(), conversation.phone);
   return {
     ok: true,
     forModel: `Booked for ${whenWords(summary.startsAt, summary.zone)}${withWho(summary.inspectorName)} at ${summary.addressLine}. ${confirmationNote(text)}`,
