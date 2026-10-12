@@ -54,6 +54,9 @@ export const point4326 = customType<{ data: LngLat; driverData: string }>({
  */
 export const multiPolygon = customType<{ data: string }>({ dataType: () => 'geometry(MultiPolygon,4326)' });
 
+/** `geometry(Polygon,4326)`: one building footprint (global `building_footprints`). Same EWKT rules as `multiPolygon`. */
+export const polygon4326 = customType<{ data: string }>({ dataType: () => 'geometry(Polygon,4326)' });
+
 function quote(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
