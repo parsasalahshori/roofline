@@ -13,6 +13,8 @@ import { systemCtx } from './system-ctx.ts';
 /*
  * D1 Task 7: lookup_my_jobs. Company and customer come from the conversation, never the model.
  * A caller who is only phone-matched hears the weekday of the next appointment and nothing else.
+ * A verified caller also hears each upcoming appointment with its id, so move_inspection,
+ * cancel_inspection and confirm_appointment can name it (the engine refuses ids it has not shown).
  */
 
 const MAX_JOBS = 5;
@@ -22,6 +24,10 @@ const NO_JOBS = 'There are no jobs on file for this caller.';
 
 function weekday(at: Date, zone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'long' }).format(at);
+}
+
+function timeOfDay(at: Date, zone: string): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(at);
 }
 
 function monthDay(at: Date, zone: string): string {
@@ -86,6 +92,11 @@ export const lookupMyJobs: ToolHandler<'lookup_my_jobs'> = async (ctx) => {
       }
       lines.push(`Job ${job.id} at ${property?.addressLine ?? 'the property'}: ${parts.join('; ')}. Next: ${nextText}.`);
     }
-    return { ok: true, forModel: lines.join('\n'), shownIds: [...new Set(jobs.flatMap((j) => [j.id, j.propertyId]))] };
+    for (const a of upcoming) {
+      const at = new Date(a.startsAt);
+      lines.push(`Appointment ${a.id}: ${a.kind} on ${weekday(at, timezone)}, ${monthDay(at, timezone)} at ${timeOfDay(at, timezone)}.`);
+    }
+    const ids = [...jobs.flatMap((j) => [j.id, j.propertyId]), ...upcoming.map((a) => a.id)];
+    return { ok: true, forModel: lines.join('\n'), shownIds: [...new Set(ids)] };
   });
 };
