@@ -19,6 +19,8 @@ export const JOB_NAMES = [
   'scheduler-agenda',
   'scheduler-weather',
   'followup-daily',
+  // G1 Task 8
+  'claims-reply',
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 export type JobData = {
@@ -29,6 +31,8 @@ export type JobData = {
   recordingSid?: string;
   conversationId?: string;
   testId?: string;
+  // G1 Task 8
+  messageId?: string;
 };
 /** What a `send` may ask for: a dedupe key, and a delay in seconds before the job may run. */
 export type SendOptions = { singletonKey?: string; startAfter?: number };

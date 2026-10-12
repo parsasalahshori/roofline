@@ -226,3 +226,5 @@ export * from './repos/claims.ts';
 // G1 Task 10
 export * from './repos/scheduler.ts';
 export * from './repos/scheduler-agenda.ts';
+// G1 Task 8
+export * from './repos/claims-agent.ts';

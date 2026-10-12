@@ -1,6 +1,7 @@
 import type { AppDeps } from '../app.ts';
 import { advanceRegistration } from '../account/texting/advance.ts';
 import { runClaimsDaily } from '../agents/claims/nudges.ts';
+import { runClaimsReply } from '../agents/claims/replies.ts'; // G1 Task 8
 import { runFollowUps } from '../agents/followup/daily.ts';
 import { runAgenda } from '../agents/scheduler/agenda.ts';
 import { runReminders } from '../agents/scheduler/reminders.ts';
@@ -28,4 +29,6 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'scheduler-agenda': (deps, data, meta) => runAgenda(deps, data.companyId, meta),
   'scheduler-weather': (deps, data, meta) => runWeatherWatch(deps, data.companyId, meta),
   'followup-daily': (deps, data, meta) => runFollowUps(deps, data.companyId, meta),
+  // G1 Task 8
+  'claims-reply': (deps, data) => runClaimsReply(deps, data.companyId, data.messageId!),
 };
