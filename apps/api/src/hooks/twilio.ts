@@ -310,7 +310,7 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
 
   const reading = readingOf(text);
   const twilioAnswered = text.optOutType === 'STOP' || text.optOutType === 'START';
-  const stored = await withTenant(deps.pools, ctx, async (tx): Promise<{ reply: string | undefined; claims: { customerId: string; messageId: string } | null }> => {
+  return withTenant(deps.pools, ctx, async (tx) => {
     const company = await companyContact(tx, ctx);
     if (company === null) throw new Error('The company that owns a texting number could not be read.');
     const everyone = await customersWithPhone(tx, ctx, text.from);
@@ -326,30 +326,33 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
       { customerId: active[0] ?? null, body: text.body, fromE164: text.from, toE164: text.to, providerSid: text.messageSid },
       now,
     );
-    if (messageId === null) return { reply: undefined, claims: null };
+    if (messageId === null) return undefined;
 
     switch (reading.kind) {
       case 'stop':
         await revokeConsentByText(tx, ctx, { phoneE164: text.from, keyword: reading.keyword, customerIds: all, messageId }, now);
-        return { reply: twilioAnswered ? undefined : reply.stop(company.name), claims: null };
+        return twilioAnswered ? undefined : reply.stop(company.name);
       case 'help':
-        return { reply: reply.help(company, text.to), claims: null };
+        return reply.help(company, text.to);
       case 'start':
         await restoreConsentByText(tx, ctx, { phoneE164: text.from, customerIds: active, messageId }, now);
-        return { reply: twilioAnswered ? undefined : reply.start(company.name), claims: null };
-      case 'other':
+        return twilioAnswered ? undefined : reply.start(company.name);
+      case 'other': {
         if (looksLikeOptOut(text.body)) await flagPossibleOptOut(tx, ctx, active, messageId, now);
-        return { reply: undefined, claims: active[0] === undefined ? null : { customerId: active[0], messageId } };
+        // Inbound order after the message is stored (Ruling GX-A): S1 storm replies, then G1 claims, then D1 Front Desk.
+        // S1 Storm Scout (onStormReply) goes here.
+        // G1 Agents: a reply to a claims text goes to the Claims agent (Ruling GX-A). It runs in this transaction, so a
+        // failure rolls the message back and Twilio's retry handles it again; it must stay a quick read and a job send.
+        const customerId = active[0];
+        if (customerId !== undefined) {
+          const claims = await onClaimsReply(tx, deps, { companyId, customerId, messageId, body: text.body, receivedAt: now });
+          if (claims.consumed) return undefined;
+        }
+        // D1 Front Desk (queueFrontDeskText) goes after this block; it also sees unknown senders.
+        return undefined;
+      }
     }
   });
-  if (stored.claims === null) return stored.reply;
-
-  const { customerId, messageId } = stored.claims;
-  // G1 Agents: a reply to a claims text goes to the Claims agent first (Ruling GX-A). S1's storm replies run before this block; D1's Front Desk after it.
-  const claimsReply = await onClaimsReply(deps, { companyId, customerId, messageId, body: text.body, receivedAt: now });
-  if (claimsReply.consumed) return undefined;
-  // D1 Front Desk (queueFrontDeskText) goes after this block
-  return undefined;
 }
 
 /** What a delivery report's MessageStatus does to the text; null for the ones that change nothing. */

@@ -1,7 +1,10 @@
 /*
  * When each G1 agent job runs for a company: at fixed hours of the company's own clock. The worker
- * ticks every 15 minutes; a job is due in the first quarter hour of its hour, and the singletonKey
- * on the send makes it at most one run per company per local day (and hour, for the weather job).
+ * ticks every 15 minutes; a job is due in the first quarter hour of its hour, so one tick falls in
+ * its window. The singletonKey on the send (job, company, local date, and hour for the weather job)
+ * collapses sends while a matching job is still queued or running; after it finishes, a late or
+ * doubled tick could queue it again, so each handler must be idempotent per local day (Tasks 8, 10,
+ * 11, 13).
  */
 
 export type AgentJob = 'claims-daily' | 'scheduler-reminders' | 'scheduler-agenda' | 'scheduler-weather' | 'followup-daily';

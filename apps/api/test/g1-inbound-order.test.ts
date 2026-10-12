@@ -57,31 +57,25 @@ function sms(fields: Record<string, string>) {
 const inboundRows = () => inCompany(t, idOf('a'), (tx) => tx.select().from(messages).where(eq(messages.direction, 'in')));
 
 describe('inbound text order: Claims agent first', () => {
-  test('an inbound text from a known customer calls onClaimsReply once, after the message row exists', async () => {
+  test('an inbound text from a known customer calls onClaimsReply once, in the same transaction, with the stored message', async () => {
     const [c1] = await addSmsCustomers(t, 'a', [{ firstName: 'Nina', phone: NINA, consent: 'express' }]);
     const fields = inbound();
-    let rowExisted = false;
-    vi.mocked(onClaimsReply).mockImplementation(async () => {
-      const rows = await inboundRows();
-      rowExisted = rows.some((r) => r.providerMessageSid === fields.MessageSid);
-      return { consumed: false };
-    });
-
     const res = await sms(fields);
 
     expect(res.status).toBe(200);
     expect(onClaimsReply).toHaveBeenCalledTimes(1);
+    const [stored] = (await inboundRows()).filter((r) => r.providerMessageSid === fields.MessageSid);
     expect(onClaimsReply).toHaveBeenCalledWith(
+      expect.anything(),
       expect.anything(),
       expect.objectContaining({
         companyId: idOf('a'),
         customerId: c1,
-        messageId: expect.any(String),
+        messageId: stored!.id,
         body: 'Is the claim moving?',
         receivedAt: expect.any(Date),
       }),
     );
-    expect(rowExisted).toBe(true);
   });
 
   test('when onClaimsReply consumes the reply the hook answers 200 with no TwiML message body', async () => {

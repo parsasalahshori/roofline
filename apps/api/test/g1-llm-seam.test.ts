@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { ScriptedLlm } from '../src/providers/fakes/scripted-llm.ts';
-import { DRAFT_KINDS, type JobFacts, LlmUnavailableError, type TurnUsage } from '../src/providers/llm.ts';
+import { DRAFT_KINDS, type JobFacts, LlmRefusedError, LlmUnavailableError, type TurnUsage } from '../src/providers/llm.ts';
 
 const USAGE: TurnUsage = { model: 'scripted', inputTokens: 1, cachedTokens: 0, outputTokens: 1, firstTokenMs: 1, totalMs: 2 };
 
@@ -11,8 +11,8 @@ function job(n: number): JobFacts {
 describe('G1 Llm seams (ScriptedLlm)', () => {
   test('returns scripted drafts in order and records inputs', async () => {
     const llm = new ScriptedLlm();
-    const r1 = { texts: [{ jobId: 'job-1', body: 'one' }], usage: USAGE };
-    const r2 = { texts: [{ jobId: 'job-2', body: 'two' }], usage: USAGE };
+    const r1 = { texts: [{ jobId: 'job-1', body: 'one' }], refused: false, usage: USAGE };
+    const r2 = { texts: [{ jobId: 'job-2', body: 'two' }], refused: false, usage: USAGE };
     llm.scriptDraft(r1);
     llm.scriptDraft(r2);
     const a = { instruction: 'reminder' as const, facts: [job(1)] };
@@ -53,7 +53,7 @@ describe('G1 Llm seams (ScriptedLlm)', () => {
 
   test('draftTexts with 26 facts throws RangeError', async () => {
     const llm = new ScriptedLlm();
-    const ok = { texts: [], usage: USAGE };
+    const ok = { texts: [], refused: false, usage: USAGE };
     llm.scriptDraft(ok);
     expect(await llm.draftTexts({ instruction: 'reminder', facts: Array.from({ length: 25 }, (_, n) => job(n)) })).toEqual(ok);
     await expect(llm.draftTexts({ instruction: 'reminder', facts: Array.from({ length: 26 }, (_, n) => job(n)) })).rejects.toBeInstanceOf(RangeError);
@@ -71,5 +71,13 @@ describe('G1 Llm seams (ScriptedLlm)', () => {
     const llm = new ScriptedLlm();
     const s = await llm.summarize({ companyBlock: 'c', transcript: 't', actions: [] });
     expect(s.summary).toBe('Scripted summary.');
+  });
+
+  test('a refusal is an LlmUnavailableError, so callers fall back to templates the same way', async () => {
+    const llm = new ScriptedLlm();
+    llm.scriptDraft(new LlmRefusedError('refused'));
+    const err = await llm.draftTexts({ instruction: 'reminder', facts: [job(1)] }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LlmRefusedError);
+    expect(err).toBeInstanceOf(LlmUnavailableError);
   });
 });

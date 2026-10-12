@@ -74,7 +74,7 @@ describe('agentJobSchedule', () => {
     ]);
   });
 
-  test('a second run in the same slot sends with the same singletonKey (pg-boss does the deduping)', async () => {
+  test('a second run in the same slot sends with the same singletonKey (collapsed while the first is still queued)', async () => {
     const run = agentJobSchedule('claims-daily');
     await run(t.deps, new Date('2026-10-12T15:00:00Z'));
     await run(t.deps, new Date('2026-10-12T15:10:00Z'));
