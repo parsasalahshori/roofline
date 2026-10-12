@@ -6,7 +6,7 @@ import pg from 'pg';
 import { createPools, type Pools } from '@roofline/db';
 import { resetDb, seedTwoCompanies, SEED_PASSWORD, type SeededCompany } from '@roofline/db/testing';
 import type { CompanyStatus } from '@roofline/shared';
-import { seedDemoTask, seedFootprintFixture, seedShowcase, seedStormFixture } from '@roofline/api';
+import { seedDemoTask, seedFootprintFixture, seedShowcase, seedStormFixture, signUnsubscribeToken, unsubscribeKey } from '@roofline/api';
 
 /*
  * Shared end-to-end helpers. `stack.ts` writes `.stack.json` beside this file once the database is
@@ -65,6 +65,7 @@ export async function resetScenario(urls: { owner: string; tenant: string; syste
   const pools = getPools(urls);
   const now = new Date();
   const { taskId } = await seedShowcase(pools, a.companyId, now, { companyName: 'Acme Roofing' });
+  await seedFootprintFixture(pools);
   // The storm tables are global or owner-written, so the fixture runs its SQL through the owner pool.
   const owner = new pg.Pool({ connectionString: urls.owner, max: 1 });
   try {
@@ -88,6 +89,11 @@ export async function setCompanyStatus(status: CompanyStatus): Promise<void> {
   } finally {
     await client.end();
   }
+}
+
+/** A valid unsubscribe token for an address at a company, signed with the running stack's own ENCRYPTION_KEY. */
+export function unsubscribeTokenFor(companyId: string, email: string): string {
+  return signUnsubscribeToken(unsubscribeKey({ ENCRYPTION_KEY: readStack().encryptionKey }), { companyId, email });
 }
 
 /** The 8-character code of the fixture storm's page (or of `companyStormId`'s), waiting up to 15 seconds for the page to exist. */

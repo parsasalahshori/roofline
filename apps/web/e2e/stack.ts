@@ -18,7 +18,6 @@ const STACK_FILE = fileURLToPath(new URL('.stack.json', import.meta.url));
 const SHUTDOWN_WAIT_MS = 10_000;
 
 const db = await startTestDatabase();
-
 const ENCRYPTION_KEY = randomBytes(32).toString('base64');
 /** Roofline's own test caller number for the Front Desk forwarding test (a 555 number; no call leaves the box). */
 const TEST_CALLER_NUMBER = '+14025550100';

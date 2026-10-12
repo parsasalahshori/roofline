@@ -118,11 +118,11 @@ export function logErrorToConsole(err: unknown, where: string): void {
 }
 
 /**
- * The request path as it may be logged: a homeowner link token (`/public/proposals/<token>/...`) is a
- * credential and is replaced by `:token` (global constraints: the token is never logged).
+ * The request path as it may be logged: a homeowner link token (`/public/proposals/<token>/...`) and an
+ * unsubscribe link token (`/u/<token>`) are credentials and are replaced by `:token` (global constraints: the token is never logged).
  */
 export function pathForLog(path: string): string {
-  return path.replace(/(\/public\/proposals\/)[^/]+/i, '$1:token');
+  return path.replace(/(\/public\/proposals\/)[^/]+/i, '$1:token').replace(/^(\/u\/)[^/]+/i, '$1:token');
 }
 
 /** Fallthrough for any request no route answered. */
@@ -151,7 +151,7 @@ export function errorHandler(logError: (err: unknown, path: string) => void): Er
     // `next(err)`: Express's default handler prints the raw error and its `cause` (query params,
     // Postgres detail) before it destroys the socket.
     if (res.headersSent) {
-      logError(err, req.path);
+      logError(err, pathForLog(req.path));
       res.destroy();
       return;
     }

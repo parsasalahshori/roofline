@@ -17,7 +17,7 @@ export async function companyForUnsubscribe(system: Db, companyId: string): Prom
  * Adds the address to the company's email_opt_outs (unique on company and email, so a repeat adds nothing). True when a row was added.
  * Raw SQL on purpose: Drizzle's insert lists every column (id, created_at, updated_at too), and app_system holds INSERT only on
  * company_id, email, source and at (migration 0018). Only those three are named here; `at` takes its default.
- * The email column is citext, so the conflict check ignores case.
+ * The email column is citext, so the conflict check ignores case. No conflict target is named, so app_system needs no SELECT on email (Ruling BF).
  */
 export async function recordEmailOptOut(
   system: Db,
@@ -26,7 +26,7 @@ export async function recordEmailOptOut(
   const result = await system.execute(sql`
     insert into email_opt_outs (company_id, email, source)
     values (${input.companyId}::uuid, ${input.email}::text, ${input.source}::text)
-    on conflict (company_id, email) do nothing
+    on conflict do nothing
     returning id`);
   return result.rows.length > 0;
 }

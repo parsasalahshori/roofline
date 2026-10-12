@@ -22,11 +22,15 @@ $$;
 GRANT USAGE ON SCHEMA public TO app_hail;
 --> statement-breakpoint
 
--- 2. app_hail: the three global hail tables, and nothing else. It writes runs, storms and contours;
---    DELETE only on storm_contours (a storm's contours are replaced when it is reprocessed). hail_runs.id is a
---    bigserial, so its inserts need the sequence; storms uses a uuid and storm_contours has no sequence.
---    It gets no grant on spotter_reports or on any tenant table.
-GRANT SELECT, INSERT, UPDATE ON hail_runs, storms, storm_contours TO app_hail;
+-- 2. app_hail: the three global hail tables, and nothing else (Ruling BF, security review 10). hail_runs is
+--    insert-only: services/hail/hail/writer.py only INSERTs and SELECTs it, so it gets no UPDATE. storms is
+--    updated (growth, status, merged_into). storm_contours keeps UPDATE because writer.py upserts a contour with
+--    INSERT .. ON CONFLICT (storm_id, threshold_in) DO UPDATE; DELETE only on storm_contours (a storm's contours
+--    are replaced when it is reprocessed). hail_runs.id is a bigserial, so its inserts need the sequence; storms
+--    uses a uuid and storm_contours has no sequence. It gets no grant on spotter_reports or on any tenant table.
+GRANT SELECT, INSERT ON hail_runs TO app_hail;
+--> statement-breakpoint
+GRANT SELECT, INSERT, UPDATE ON storms, storm_contours TO app_hail;
 --> statement-breakpoint
 GRANT DELETE ON storm_contours TO app_hail;
 --> statement-breakpoint
@@ -38,9 +42,11 @@ GRANT USAGE, SELECT ON SEQUENCE hail_runs_id_seq TO app_hail;
 GRANT SELECT ON hail_runs, storms, storm_contours, spotter_reports TO app_tenant;
 --> statement-breakpoint
 
--- 4. app_system: the spotter-report loader runs as app_system, so it has ALL on spotter_reports (and its
---    bigserial sequence). On storms it reads, and may update only place_name (the reverse-geocoded label).
-GRANT ALL ON spotter_reports TO app_system;
+-- 4. app_system: the spotter-report loader runs as app_system. It INSERTs reports with ON CONFLICT DO NOTHING
+--    RETURNING id (the conflict target reads its columns), so spotter_reports gets SELECT and INSERT only (Ruling BF,
+--    security review 9: never ALL, which carries TRUNCATE and TRIGGER), plus its bigserial sequence. On storms it
+--    reads, and may update only place_name (the reverse-geocoded label).
+GRANT SELECT, INSERT ON spotter_reports TO app_system;
 --> statement-breakpoint
 GRANT USAGE, SELECT ON SEQUENCE spotter_reports_id_seq TO app_system;
 --> statement-breakpoint
@@ -165,11 +171,11 @@ ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_paused_by_check CHECK ("ad_
 --    column list alone decides what app_system can see: ids, status and timing, never content.
 --    email_opt_outs also takes INSERT (company_id, email, source, at): the public unsubscribe link records an
 --    opt-out for a company without a tenant session (`at` has a default, so an insert may omit it).
---    The email_opt_outs SELECT (id, company_id, email) is kept on purpose: recordEmailOptOut runs
---    INSERT .. ON CONFLICT (company_id, email) DO NOTHING RETURNING id. Postgres checks SELECT on the columns of the
---    conflict arbiter, and RETURNING needs SELECT on id. Nothing in app code reads the email column back as app_system.
+--    The email_opt_outs SELECT is the id column only (Ruling BF, security review 10): recordEmailOptOut runs
+--    INSERT .. ON CONFLICT DO NOTHING RETURNING id, with no conflict target, so Postgres needs no SELECT on email
+--    and RETURNING needs only id. app_system cannot read any company's opt-out addresses.
 --    These are column grants only: app_system holds no table-level privilege on any of the four.
-GRANT SELECT (id, company_id, storm_id, status, plan_task_id, last_matched_at) ON company_storms TO app_system;
+GRANT SELECT (id, company_id, status) ON company_storms TO app_system;
 --> statement-breakpoint
 CREATE POLICY app_system_all ON company_storms FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint
@@ -188,7 +194,7 @@ GRANT SELECT (id, company_id, code, active_until, company_storm_id) ON storm_pag
 --> statement-breakpoint
 CREATE POLICY app_system_all ON storm_pages FOR ALL TO app_system USING (true) WITH CHECK (true);
 --> statement-breakpoint
-GRANT SELECT (id, company_id, email) ON email_opt_outs TO app_system;
+GRANT SELECT (id) ON email_opt_outs TO app_system;
 --> statement-breakpoint
 GRANT INSERT (company_id, email, source, at) ON email_opt_outs TO app_system;
 --> statement-breakpoint
@@ -228,3 +234,10 @@ GRANT SELECT ON company_members TO app_tenant;
 ALTER TABLE storms ADD COLUMN merged_into uuid REFERENCES storms(id);
 --> statement-breakpoint
 GRANT UPDATE (merged_into) ON storms TO app_hail;
+--> statement-breakpoint
+
+-- 11. Ruling BF (security review 1): an external ad account belongs to one company. This global partial unique
+--     index sees every company's rows regardless of RLS, so a second company cannot hold a live row for the same
+--     (platform, external_account_id). A revoked row frees the account. Connect inserts its 'pending' row first and
+--     turns the 23505 on this index into a 409 before it calls the platform.
+CREATE UNIQUE INDEX "ad_accounts_platform_external_live_uq" ON "ad_accounts" USING btree ("platform","external_account_id") WHERE "ad_accounts"."status" <> 'revoked';

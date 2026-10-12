@@ -380,13 +380,6 @@ const ConfigSchema = z
         message: 'must be on the same origin as APP_ORIGIN (homeowners sign through it)',
       });
     }
-    if (cfg.NODE_ENV === 'production' && cfg.TRUST_PROXY === 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['TRUST_PROXY'],
-        message: 'is required in production: the number of proxies in front of the API (1 on Render)',
-      });
-    }
     const googleAds = [
       'GOOGLE_ADS_DEVELOPER_TOKEN',
       'GOOGLE_ADS_MANAGER_ID',
@@ -412,6 +405,13 @@ const ConfigSchema = z
           ctx.addIssue({ code: 'custom', path: [name], message: 'is required when the other META settings are set' });
         }
       }
+    }
+    if (cfg.NODE_ENV === 'production' && cfg.TRUST_PROXY === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TRUST_PROXY'],
+        message: 'is required in production: the number of proxies in front of the API (1 on Render)',
+      });
     }
     if (cfg.FAKE_PROVIDERS && cfg.NODE_ENV === 'production') {
       ctx.addIssue({

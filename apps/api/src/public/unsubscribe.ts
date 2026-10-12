@@ -2,6 +2,7 @@ import express, { Router, type Request, type Response, type NextFunction } from 
 import { companyForUnsubscribe, recordEmailOptOut } from '@roofline/db/system';
 import type { EmailOptOutSource } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { publicPageRateLimit } from '../rate-limit.ts';
 import { escapeHtml } from './policy-text.ts';
 import { unsubscribeKey } from './unsubscribe-key.ts';
 import { type UnsubscribeClaim, verifyUnsubscribeToken } from './unsubscribe-token.ts';
@@ -145,10 +146,13 @@ function sendHtml(res: Response, status: number, html: string): void {
 
 export function unsubscribeRoutes(deps: AppDeps): Router {
   const router = Router();
+  router.use(publicPageRateLimit('unsubscribe'));
   router.use(express.urlencoded({ extended: false, limit: BODY_LIMIT }));
   router.use((_req: Request, res: Response, next: NextFunction) => {
     res.set('Cache-Control', 'no-store');
-    res.set('Referrer-Policy', 'no-referrer');
+    // Not no-referrer (helmet's default too): that makes the browser post the confirm form with `Origin: null`,
+    // which blockCrossSiteMutations refuses. same-origin keeps the Origin and sends nothing off the site.
+    res.set('Referrer-Policy', 'same-origin');
     next();
   });
 

@@ -81,6 +81,8 @@ export { createTask, type NewTask } from './tasks/service.ts';
 export { systemContext } from './permissions.ts';
 export { seedShowcase } from './scripts/showcase.ts';
 export { seedStormFixture } from './scripts/storm-fixture.ts';
+export { unsubscribeKey } from './public/unsubscribe-key.ts';
+export { signUnsubscribeToken } from './public/unsubscribe-token.ts';
 export { createBoss, ensureStepQueue, PgBossQueue, SENDER_OPTIONS, STEP_QUEUE } from './tasks/pgboss-queue.ts';
 export type { StepQueue } from './tasks/queue.ts';
 export type { AnswerInput, Llm, LlmEvent, RouteDecision, RouteInput, TurnUsage } from './providers/llm.ts';

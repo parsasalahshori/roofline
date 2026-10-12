@@ -252,3 +252,82 @@ Already done: s1-r2a is merged (28f3800) with the Ruling BD trim (41b970c). REDR
 - Carry for the a1-agents merge (controller, Ruling BD detail): delete REDRAFTABLE_PLAN_STATUSES from `apps/api/src/storm/plan-errors.ts`. Its callers import A1's db exports REDRAFTABLE_PLAN_STATUSES (['draft']) and FINISHED_REDRAFTABLE_PLAN_STATUSES (['expired','declined']).
 - CI run 38263313497 on s1-storm@c2e3a1f (R7 merge plus the 3f800e5 fixture fix): Platform, Hail and E2E all green.
 - b46f1f5: `apps/api/test/helpers.ts` builds `FakeExactReports(() => clock.now())`. This defuses the E1 time bomb: exact-report.test.ts pins 2026-10-12T15:00Z, so it has been red everywhere since 15:01Z (the controller's request). R8–R10 branch from before this fix, so their Platform job may show the exact-report failure; it is the base's, so judge it on the merged head.
+- CI run 38270389296 on s1-storm@7159e1c (after the time bomb fix): Platform, Hail and E2E all green.
+
+## Re-merge of c1-crm 7758e82 and e1-estimator 414b97b requested (E1 lead for the controller, Ruling BF)
+Order: R8–R10 first, so 0018 is narrowed and errors.ts carries the pathForLog change. Then merge c1-crm and e1-estimator. Keep both sides in `config.ts`, `rls.test.ts` and the production config fixtures. Changes that come with the merge:
+- Production configs need `TRUST_PROXY: '1'` and the R2 keys.
+- The session cookie names come from the constants in `sessions.ts`.
+- `loginRateLimit()` and `inviteRateLimit()` return arrays, which the routes spread.
+- app_system privileges are exact: no TRUNCATE, TRIGGER or REFERENCES. Tests write through the owner client where app_system lacks a grant.
+- The errors.ts late-error branch uses `pathForLog(req.path)`.
+- Sentinel carries: the R2 keys in the storm-config, google-ads-http and postmark-broadcast production VALID configs, and the `proposalListRoutes()` stub in s1-routes.
+
+## R8, R10 and R9 merged (Ruling BF): 2ce5f97, ed89f75, 3097bec
+**R8** (s1-r8 0f67728): an external ad account links to one company only.
+- Changes:
+  - a global partial unique index on (platform, external_account_id) where not revoked, in 0018 (Ruling AW);
+  - the connect claims the row first, so a conflict is a 409 with no provider call;
+  - unlink runs only for the live holder;
+  - 0018 grants narrowed;
+  - recordEmailOptOut now uses `on conflict do nothing` with no target (app_system no longer reads email_opt_outs.email).
+- CI: Platform was red only on the exact-report time bomb; E2E was red on a base that predates 3f800e5.
+- A pending row left behind by a crash between claim and settle keeps the account locked until the owner deletes it. This is accepted.
+
+**R10** (s1-r10 e4b61bf):
+- The form never writes or upgrades consent.
+- A Twilio-signed YES from that phone within 14 days makes consent express, with evidence.
+- Each IP is capped at 2 requests per page per hour; each phone at 1 per page per day.
+- CI on 1af8535: Platform and Hail passed; E2E was red on the old base.
+
+**R9** (s1-r9 012df2a):
+- The unsubscribe confirm page uses `Referrer-Policy: same-origin`.
+- Origin: null is refused, with tests.
+- The e2e spec `public-forms.spec.ts` submits both forms.
+- pathForLog scrubs `/u/:token`.
+- Limiters on the storm page, the policy pages, `/u` and `/hooks/postmark`; Postmark lets a 429 through.
+- CI on d42402d: Platform and Hail passed; E2E had 53 of 54 passing, the only failure being an a11y login "socket hang up", while 905266e passed E2E with the same specs. Judge it on the merged head.
+
+Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema changes" all pass.
+- CI run 38275152764 on s1-storm@07fa559 (R8–R10 merged): Platform, Hail and E2E all green.
+
+## c1-crm 7758e82 and e1-estimator 414b97b re-merged (Ruling BF / SEC-1..4 / EU)
+- Merged in the s1-sec worktree and fast-forwarded into s1-storm.
+- Conflicts:
+  - config.ts: S1's ad checks kept, plus C1's TRUST_PROXY check and E1's R2-in-production check;
+  - rls.test.ts: S1 and E1 grant tests and C1's no TRUNCATE/TRIGGER/REFERENCES test, all kept;
+  - the worker schedules, jobs.test and pgboss.test: S1's four schedules plus E1's signed-pdf-sweep;
+  - system/index.ts, the package.json smoke scripts and STORED_FILE_KINDS (S1's kinds kept);
+  - the e2e fixtures (seedFootprintFixture runs before the storm fixture);
+  - the a11y and phone spec imports.
+- e726ecf:
+  - TRUST_PROXY and the R2 keys in the production configs of the storm-config, postmark-broadcast and google-ads-http tests;
+  - `pathForLog` in the errors.ts late-error branch;
+  - `proposalListRoutes()` in the s1-routes dock test.
+- R8 had already narrowed 0018, so C1's app_system test holds.
+- Local checks: typecheck and lint pass; web 970 and shared/ui/send-gate 1367 tests pass; drizzle-kit reports no changes.
+
+## Sentinel pass 13 and the controller's final Ruling BD (16:41Z)
+- **Redraft button:** POST /api/storms/:id/plan from the "Draft a new plan" button is an explicit owner action and passes allowFinished, as the rerun route does; automatic paths never do. A1 wires this in a1-merge-up2. The button therefore stays on expired and declined plans. Branch s1-r11 (56f534a, which hid it) is NOT merged.
+- **spotter_reports grant:** already fixed by R8. app_system has SELECT and INSERT only, with no GRANT ALL in 0018.
+- **TRUST_PROXY and R2 in the production fixtures:** done in e726ecf.
+- **updated_at hazard (controller):** 0018 has two column-level UPDATE grants:
+  - app_system `UPDATE (place_name) ON storms`;
+  - app_hail `UPDATE (merged_into) ON storms`, which is redundant beside app_hail's table-wide UPDATE on storms.
+  `storms.updated_at` is a plain `tstz(...).defaultNow()` without the `timestamps()` helper's `$onUpdate`, so Drizzle adds no updated_at to those updates. No code path updates storms.place_name as app_system: the only writer is the e2e fixture, through the owner. No grant is affected, so nothing changes.
+
+## S1 COMPLETE (2026-10-12)
+- s1-storm@7ad99c9 (code head) passed CI run 38277874294 on Platform, Hail and E2E.
+- Included: Tasks 1–29, the whole-branch review fixes R1–R7, the Ruling BF security fixes R8–R10, and the c1-crm 7758e82 and e1-estimator 414b97b security re-merges.
+- AGENTS.md "Where things stand" is updated.
+- s1-r11 is not merged (final Ruling BD).
+- Carries for later merges are listed above:
+  - **a1-agents:** take A1's StepTypeDef, re-draft code and redraftable-status exports; allowFinished on the "Draft a new plan" POST; fresh: !previousWasDraft.
+  - **d1 / g1:** OFF_STEP_TITLES entries.
+- Owner to-dos:
+  - test accounts for Google Ads and Meta;
+  - a Postmark broadcast stream and its webhook secret;
+  - a Render worker for services/hail, with HAIL_DB_PASSWORD, POSTMARK_TOKEN, and OPS_ALERT_EMAIL set to a verified sender;
+  - POLICY_PAGES_DOMAIN;
+  - TRUST_PROXY=1 on the API and the worker;
+  - the T29 manual smoke run (docs/superpowers/s1-manual-smoke.md).

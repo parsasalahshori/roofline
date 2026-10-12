@@ -9,6 +9,10 @@ import { GeocoderUnavailableError } from '../providers/geocoder.ts';
 import { STORM_CONSENT_TEXT, STORM_REQUEST_LIMITS } from './landing-copy.ts';
 
 /*
+ * The form never gives SMS consent and never sends a text (Ruling BF): it records the homeowner's ask
+ * on the request, and consent becomes express only when a text from that phone replies YES
+ * (confirmFormConsentByYes, called by the Twilio inbound hook).
+ *
  * The storm landing page's request (POST /api/public/storm-requests/:code): the form body, the
  * honeypot, the page lookup and limits, the address lookup, and the write. The route itself is in
  * public/storm-requests.ts. Every message a person reads is a plain sentence defined here.
@@ -156,7 +160,8 @@ async function locate(deps: AppDeps, address: string): Promise<Place> {
 /**
  * Takes one request from a storm landing page. Resolves `{ ok: true }` for a new request and for a
  * repeat of a phone number already on the page (no second job). Throws AppError for a bad form
- * (422 with the field), an unknown or closed page (404), the page's hourly limit (429) and an
+ * (422 with the field), an unknown or closed page (404), the page's hourly limit or one IP's share
+ * of it (429) and an
  * address lookup that is down (503). A filled honeypot resolves at once, with no lookup and no write.
  */
 export async function submitStormRequest(
@@ -172,10 +177,15 @@ export async function submitStormRequest(
   if (page === null || page.activeUntil <= input.now) throw new AppError(404, MESSAGES.notFound);
 
   const ctx: TenantContext = { companyId: page.companyId, userId: null, role: 'system', canApproveSpend: false };
-  const recent = await withTenant(deps.pools, ctx, (tx) =>
-    countStormRequestsSince(tx, ctx, page.pageId, new Date(input.now.getTime() - HOUR_MS)),
-  );
-  if (recent >= STORM_REQUEST_LIMITS.perPagePerHour) throw new AppError(429, MESSAGES.tooFast);
+  const since = new Date(input.now.getTime() - HOUR_MS);
+  const ipHash = ipHashFor(deps.config, input.ip);
+  const [recent, fromThisIp] = await withTenant(deps.pools, ctx, async (tx) => [
+    await countStormRequestsSince(tx, ctx, page.pageId, since),
+    await countStormRequestsSince(tx, ctx, page.pageId, since, ipHash),
+  ]);
+  if (recent >= STORM_REQUEST_LIMITS.perPagePerHour || fromThisIp >= STORM_REQUEST_LIMITS.perIpPerPagePerHour) {
+    throw new AppError(429, MESSAGES.tooFast);
+  }
 
   const property = await locate(deps, form.address);
 
@@ -188,7 +198,7 @@ export async function submitStormRequest(
       property,
       okToText: form.okToText,
       consentText: STORM_CONSENT_TEXT,
-      ipHash: ipHashFor(deps.config, input.ip),
+      ipHash,
       now: input.now,
     }),
   );
