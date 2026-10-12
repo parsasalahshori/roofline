@@ -1,10 +1,29 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import pg from 'pg';
+import { readStack } from './fixtures.ts';
 
 /**
  * The fake geocoder places an address by a hash of its text; this one lands inside a footprint of the NE
  * fixture (footprints-ne.json), so the measurement finds an outline and goes straight to a proposal.
  */
 export const OMAHA_ADDRESS = '22074 Farnam St, Omaha, NE 68102';
+
+/**
+ * The text gate holds a text outside 8:00 to 21:00 in the customer's zone, and CI runs at any hour. This puts the
+ * company and its properties in a fixed-offset zone where it is now 13:00, so the proposal text goes out at once.
+ */
+async function makeItDaytime(): Promise<void> {
+  const offset = ((13 - new Date().getUTCHours() + 36) % 24) - 12;
+  const zone = offset === 0 ? 'Etc/GMT' : offset > 0 ? `Etc/GMT-${offset}` : `Etc/GMT+${-offset}`;
+  const client = new pg.Client({ connectionString: readStack().ownerUrl });
+  await client.connect();
+  try {
+    await client.query('update companies set timezone = $1', [zone]);
+    await client.query('update properties set timezone = $1', [zone]);
+  } finally {
+    await client.end();
+  }
+}
 
 export type SentProposal = { proposalId: string; taskId: string; link: string };
 
@@ -38,6 +57,7 @@ export async function makeAndSendProposal(
   await expect(page).toHaveURL(new RegExp('/approvals/' + taskId + '$'), { timeout: 15_000 });
   // The review shows each enabled option's total, labelled by its tier, before the owner approves.
   await expect(page.getByText(/Good \$[\d,]+ · Better \$[\d,]+ · Best \$[\d,]+/)).toBeVisible();
+  await makeItDaytime();
   await click(page.getByRole('button', { name: /^Approve 1 step/ }));
   await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, {
     timeout: 20_000,
