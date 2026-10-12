@@ -255,6 +255,8 @@ describe('outside events', () => {
     expect(freeBefore.status).toBe(200);
     expect(startsOf(freeBefore.body)).toContain(VISIT_START.toISOString());
 
+    // The fake puts outside events on the first account it has seen: make that this connection's.
+    await t.calendars.google.refresh('refresh-abc');
     t.calendars.google.addOutsideEvent({ start: VISIT_START, end: VISIT_END });
     await pull(ctx, t.seed.a.owner.userId);
 
@@ -278,6 +280,7 @@ describe('outside events', () => {
 
   test('a transparent event creates no block', async () => {
     await seedConnection(ctx, t.seed.a.owner, 'abc');
+    await t.calendars.google.refresh('refresh-abc');
     t.calendars.google.addOutsideEvent({ start: VISIT_START, end: VISIT_END, busy: false });
 
     await pull(ctx, t.seed.a.owner.userId);
@@ -288,6 +291,7 @@ describe('outside events', () => {
   test('cursor expiry replaces the busy blocks with the full set', async () => {
     const conn = await seedConnection(ctx, t.seed.a.owner, 'abc');
     const fake = t.calendars.google;
+    await fake.refresh('refresh-abc');
     const first = fake.addOutsideEvent({ start: VISIT_START, end: VISIT_END });
     await pull(ctx, t.seed.a.owner.userId);
     expect((await freshConnection(ctx, t.seed.a.owner.userId)).syncCursor).not.toBeNull();
