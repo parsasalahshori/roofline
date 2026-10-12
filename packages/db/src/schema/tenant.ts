@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -36,7 +37,18 @@ import {
   TASK_STATUSES,
 } from '@roofline/shared';
 import { bytea, enumCheck, pk, point4326, timestamps, tstz } from './columns.ts';
-import { EARLY_DELIVERY_STATUSES, INTEGRATION_STATUSES, TASK_MODES, USAGE_KINDS } from './enums.ts';
+import {
+  APPOINTMENT_KINDS,
+  APPOINTMENT_SOURCES,
+  APPOINTMENT_STATUSES,
+  CALENDAR_CONNECTION_STATUSES,
+  CALENDAR_PROVIDERS,
+  EARLY_DELIVERY_STATUSES,
+  INTEGRATION_STATUSES,
+  QUOTE_STATUSES,
+  TASK_MODES,
+  USAGE_KINDS,
+} from './enums.ts';
 import { companies, users } from './global.ts';
 
 /*
@@ -62,9 +74,32 @@ export const TENANT_TABLES = [
   'imports',
   'import_rows',
   'early_delivery_reports',
+  'appointments',
+  'calendar_connections',
+  'calendar_event_links',
+  'calendar_busy_blocks',
+  'member_schedules',
+  'pricebooks',
+  'quotes',
+  'quote_counters',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
+
+/** Weekly working hours: `[start, end]` pairs of `HH:MM` in the company's zone, per weekday. */
+export type WeekdayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+export type WeeklyHours = Record<WeekdayKey, [string, string][]>;
+
+/** The company default: Mon–Fri 08:00–18:00, Sat 08:00–12:00, Sun closed. */
+const DEFAULT_WORK_HOURS: WeeklyHours = {
+  mon: [['08:00', '18:00']],
+  tue: [['08:00', '18:00']],
+  wed: [['08:00', '18:00']],
+  thu: [['08:00', '18:00']],
+  fri: [['08:00', '18:00']],
+  sat: [['08:00', '12:00']],
+  sun: [],
+};
 
 const companyId = () =>
   uuid('company_id')
@@ -92,9 +127,21 @@ export const companySettings = pgTable(
     marketingCapPer7d: integer('marketing_cap_per_7d').notNull().default(2),
     financingAprBps: integer('financing_apr_bps'),
     financingTermMonths: integer('financing_term_months'),
+    workHours: jsonb('work_hours').$type<WeeklyHours>().notNull().default(DEFAULT_WORK_HOURS),
+    /** Minutes of driving between two appointments; 0 when both are at the same home. */
+    travelBufferMinutes: integer('travel_buffer_minutes').notNull().default(30),
+    /** The shortest notice a booking may have, in minutes. */
+    minNoticeMinutes: integer('min_notice_minutes').notNull().default(120),
+    /** Days in stage before a Lead, Inspection or Proposal counts as stuck. */
+    stuckAfterDays: integer('stuck_after_days').notNull().default(14),
     ...timestamps(),
   },
-  (t) => [check('company_settings_marketing_cap_per_7d_check', sql`${t.marketingCapPer7d} between 0 and 2`)],
+  (t) => [
+    check('company_settings_marketing_cap_per_7d_check', sql`${t.marketingCapPer7d} between 0 and 2`),
+    check('company_settings_travel_buffer_minutes_check', sql`${t.travelBufferMinutes} between 0 and 120`),
+    check('company_settings_min_notice_minutes_check', sql`${t.minNoticeMinutes} between 0 and 4320`),
+    check('company_settings_stuck_after_days_check', sql`${t.stuckAfterDays} between 3 and 90`),
+  ],
 );
 
 /** One entry of `customers.phones`. */
@@ -189,10 +236,14 @@ export const jobs = pgTable(
     createdByUserId: userRef('created_by_user_id'),
     stormId: uuid('storm_id'),
     lostReason: text('lost_reason'),
+    /** The next thing to do on the job, typed by a person. */
+    nextStep: text('next_step'),
+    nextStepOn: date('next_step_on', { mode: 'string' }),
     archivedAt: tstz('archived_at'),
     ...timestamps(),
   },
   (t) => [
+    unique('jobs_company_id_id_uniq').on(t.companyId, t.id),
     foreignKey({
       name: 'jobs_company_customer_fk',
       columns: [t.companyId, t.customerId],
@@ -204,6 +255,8 @@ export const jobs = pgTable(
       foreignColumns: [properties.companyId, properties.id],
     }),
     index('jobs_company_stage_idx').on(t.companyId, t.stage),
+    index('jobs_company_stage_changed_idx').on(t.companyId, t.stage, t.stageChangedAt),
+    check('jobs_next_step_check', sql`char_length(${t.nextStep}) <= 120`),
     index('jobs_customer_idx').on(t.customerId),
     index('jobs_property_idx').on(t.propertyId),
     index('jobs_assigned_idx').on(t.assignedUserId),
@@ -578,3 +631,210 @@ export const earlyDeliveryReports = pgTable(
     enumCheck('early_delivery_reports', 'status', t.status, EARLY_DELIVERY_STATUSES),
   ],
 );
+
+/** A booked visit (inspection, install, adjuster, other). Times are instants; days use the company zone. */
+export const appointments = pgTable(
+  'appointments',
+  {
+    id: pk(),
+    companyId: companyId(),
+    kind: text('kind', { enum: APPOINTMENT_KINDS }).notNull(),
+    title: text('title'),
+    /** Nullable: an appointment can stand alone. Same-company keys, see the note above. */
+    jobId: uuid('job_id'),
+    customerId: uuid('customer_id'),
+    propertyId: uuid('property_id'),
+    assignedUserId: userRef('assigned_user_id'),
+    startsAt: tstz('starts_at').notNull(),
+    endsAt: tstz('ends_at').notNull(),
+    allDay: boolean('all_day').notNull().default(false),
+    status: text('status', { enum: APPOINTMENT_STATUSES }).notNull().default('scheduled'),
+    notes: text('notes'),
+    source: text('source', { enum: APPOINTMENT_SOURCES }).notNull().default('manual'),
+    createdByUserId: userRef('created_by_user_id'),
+    canceledAt: tstz('canceled_at'),
+    archivedAt: tstz('archived_at'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('appointments_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'appointments_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'appointments_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'appointments_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    index('appointments_company_starts_idx').on(t.companyId, t.startsAt),
+    index('appointments_company_assignee_starts_idx').on(t.companyId, t.assignedUserId, t.startsAt),
+    index('appointments_job_idx').on(t.jobId),
+    check('appointments_ends_after_starts_check', sql`${t.endsAt} > ${t.startsAt}`),
+    enumCheck('appointments', 'kind', t.kind, APPOINTMENT_KINDS),
+    enumCheck('appointments', 'status', t.status, APPOINTMENT_STATUSES),
+    enumCheck('appointments', 'source', t.source, APPOINTMENT_SOURCES),
+  ],
+);
+
+/** One calendar account per person and company (Google or Microsoft). Credentials are encrypted. */
+export const calendarConnections = pgTable(
+  'calendar_connections',
+  {
+    id: pk(),
+    companyId: companyId(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    provider: text('provider', { enum: CALENDAR_PROVIDERS }).notNull(),
+    accountEmail: text('account_email'),
+    calendarId: text('calendar_id'),
+    calendarName: text('calendar_name'),
+    /** `encrypt(JSON.stringify({ refreshToken }), ENCRYPTION_KEY)`; never logged. */
+    encryptedCredentials: bytea('encrypted_credentials').notNull(),
+    scopes: text('scopes').array().notNull().default([]),
+    status: text('status', { enum: CALENDAR_CONNECTION_STATUSES }).notNull().default('connected'),
+    /** A reason key a person can read (for example `reconnect`), never a provider message. */
+    lastErrorPlain: text('last_error_plain'),
+    syncCursor: text('sync_cursor'),
+    lastSyncedAt: tstz('last_synced_at'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('calendar_connections_company_user_uniq').on(t.companyId, t.userId),
+    unique('calendar_connections_company_id_id_uniq').on(t.companyId, t.id),
+    enumCheck('calendar_connections', 'provider', t.provider, CALENDAR_PROVIDERS),
+    enumCheck('calendar_connections', 'status', t.status, CALENDAR_CONNECTION_STATUSES),
+  ],
+);
+
+/** The link between one appointment and its event on one connected calendar. */
+export const calendarEventLinks = pgTable(
+  'calendar_event_links',
+  {
+    id: pk(),
+    companyId: companyId(),
+    appointmentId: uuid('appointment_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
+    providerEventId: text('provider_event_id').notNull(),
+    etag: text('etag'),
+    lastPushedAt: tstz('last_pushed_at'),
+    /** A reason key (`reconnect`, `unavailable`), never a provider message. */
+    pushErrorPlain: text('push_error_plain'),
+    ...timestamps(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'calendar_event_links_company_appointment_fk',
+      columns: [t.companyId, t.appointmentId],
+      foreignColumns: [appointments.companyId, appointments.id],
+    }),
+    foreignKey({
+      name: 'calendar_event_links_company_connection_fk',
+      columns: [t.companyId, t.connectionId],
+      foreignColumns: [calendarConnections.companyId, calendarConnections.id],
+    }).onDelete('cascade'),
+    unique('calendar_event_links_appointment_uniq').on(t.appointmentId),
+    unique('calendar_event_links_connection_event_uniq').on(t.connectionId, t.providerEventId),
+  ],
+);
+
+/** Busy time from someone's outside calendar: times only, never titles, attendees or locations. */
+export const calendarBusyBlocks = pgTable(
+  'calendar_busy_blocks',
+  {
+    id: pk(),
+    companyId: companyId(),
+    connectionId: uuid('connection_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    providerEventId: text('provider_event_id').notNull(),
+    startsAt: tstz('starts_at').notNull(),
+    endsAt: tstz('ends_at').notNull(),
+    allDay: boolean('all_day').notNull().default(false),
+    ...timestamps(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'calendar_busy_blocks_company_connection_fk',
+      columns: [t.companyId, t.connectionId],
+      foreignColumns: [calendarConnections.companyId, calendarConnections.id],
+    }).onDelete('cascade'),
+    unique('calendar_busy_blocks_connection_event_uniq').on(t.connectionId, t.providerEventId),
+    index('calendar_busy_blocks_company_user_starts_idx').on(t.companyId, t.userId, t.startsAt),
+    check('calendar_busy_blocks_ends_after_starts_check', sql`${t.endsAt} > ${t.startsAt}`),
+  ],
+);
+
+/** A person's weekly working hours, when it differs from the company default. */
+export const memberSchedules = pgTable(
+  'member_schedules',
+  {
+    id: pk(),
+    companyId: companyId(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    weeklyHours: jsonb('weekly_hours').$type<WeeklyHours>().notNull(),
+    ...timestamps(),
+  },
+  (t) => [unique('member_schedules_company_user_uniq').on(t.companyId, t.userId)],
+);
+
+/** The company's price list (v1 shape, see `pricebookSchema` in @roofline/shared). One per company. */
+export const pricebooks = pgTable('pricebooks', {
+  id: pk(),
+  companyId: companyId().unique(),
+  prices: jsonb('prices').$type<Record<string, unknown>>().notNull(),
+  defaults: jsonb('defaults').$type<Record<string, unknown>>().notNull().default({}),
+  updatedByUserId: userRef('updated_by_user_id'),
+  ...timestamps(),
+});
+
+/** A quote for a job. Final quotes are frozen: their stored numbers never reprice. */
+export const quotes = pgTable(
+  'quotes',
+  {
+    id: pk(),
+    companyId: companyId(),
+    jobId: uuid('job_id').notNull(),
+    /** `Q-0001` style, unique per company. */
+    number: text('number').notNull(),
+    status: text('status', { enum: QUOTE_STATUSES }).notNull().default('draft'),
+    measurement: jsonb('measurement').$type<Record<string, unknown>>().notNull(),
+    scope: jsonb('scope').$type<Record<string, unknown>>().notNull(),
+    prices: jsonb('prices').$type<Record<string, unknown>>().notNull(),
+    calculation: jsonb('calculation').$type<Record<string, unknown>>().notNull(),
+    notes: text('notes'),
+    validUntil: date('valid_until', { mode: 'string' }).notNull(),
+    createdByUserId: userRef('created_by_user_id'),
+    finalizedAt: tstz('finalized_at'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('quotes_company_id_id_uniq').on(t.companyId, t.id),
+    unique('quotes_company_number_uniq').on(t.companyId, t.number),
+    foreignKey({
+      name: 'quotes_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    index('quotes_job_idx').on(t.jobId),
+    enumCheck('quotes', 'status', t.status, QUOTE_STATUSES),
+  ],
+);
+
+/** The next quote number for a company (one row per company). */
+export const quoteCounters = pgTable('quote_counters', {
+  id: pk(),
+  companyId: companyId().unique(),
+  nextNumber: integer('next_number').notNull().default(1),
+  ...timestamps(),
+});
