@@ -111,7 +111,7 @@ it('billing tab shows the card note', async () => {
 });
 
 it('connections says what is coming', async () => {
-  signedInApi();
+  signedInApi({ 'GET /api/calendar/connection': () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } }) });
   renderApp('/settings/connections');
 
   expect(await screen.findByText(connections.later)).toBeInTheDocument();
