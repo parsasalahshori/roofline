@@ -1,6 +1,9 @@
 node_modules/
 dist/
-.env
+# Every env file stays local (the repo is public), except the tracked templates and dev defaults.
+.env*
+!.env.example
+!apps/web/.env.development
 v1/data/*
 !v1/data/.gitkeep
 test-results/

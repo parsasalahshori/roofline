@@ -41,6 +41,7 @@ const VALID = {
   DATABASE_URL_SYSTEM: 'postgres://app_system:pw@localhost:5432/roofline',
   ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
   PUBLIC_BASE_URL: 'https://app.roofline.test',
+  TRUST_PROXY: '1',
 } satisfies Record<string, string>;
 
 type Call = { url: string; method: string; headers: Record<string, string>; body: string | undefined };
