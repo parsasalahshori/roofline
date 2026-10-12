@@ -1,10 +1,12 @@
 import express, { type Request, type Response, Router } from 'express';
 import twilio from 'twilio';
 import {
+  attachInboundToConversation,
   companyContact,
   customersWithPhone,
   type DeliveryOutcome,
   flagPossibleOptOut,
+  frontDeskTextsOn,
   insertInboundText,
   lockDeliverySid,
   lockRecipients,
@@ -18,6 +20,7 @@ import {
 import { companyIdForMessagingService, companyIdForNumber, signingTokenFor } from '@roofline/db/system';
 import { type InboundReading, looksLikeOptOut, readInbound } from '@roofline/send-gate';
 import type { AppDeps } from '../app.ts';
+import { queueFrontDeskText } from '../front-desk/texts.ts';
 
 /*
  * Twilio's webhooks (spec 4.5, R24), mounted at /hooks/twilio ahead of the /api session gate:
@@ -336,9 +339,21 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
       case 'start':
         await restoreConsentByText(tx, ctx, { phoneE164: text.from, customerIds: active, messageId }, now);
         return twilioAnswered ? undefined : reply.start(company.name);
-      case 'other':
+      case 'other': {
         if (looksLikeOptOut(text.body)) await flagPossibleOptOut(tx, ctx, active, messageId, now);
+        // Inbound handler order (Ruling AV): STOP/HELP/START (above), then S1 onStormReply, then G1 claims, then Front Desk. S1 and G1 call their hooks HERE, before this one, and set `consumed` when they answer the message.
+        const consumed = false;
+        if (!looksLikeOptOut(text.body) && (await frontDeskTextsOn(tx, ctx))) {
+          const conv = await attachInboundToConversation(
+            tx,
+            ctx,
+            { messageId, phoneE164: text.from, companyNumberE164: text.to, customerId: active[0] ?? null },
+            now,
+          );
+          await queueFrontDeskText(tx, { id: messageId, conversationId: conv.id, companyId }, { jobs: deps.jobs, consumed });
+        }
         return undefined;
+      }
     }
   });
 }
