@@ -24,6 +24,19 @@ function checkStormAlertJob(data: JobData): void {
   if (data.kind !== 'now' && data.kind !== 'plan') throw new Error('A storm alert job did not name a kind.');
 }
 
+async function runStormDraft(deps: AppDeps, data: JobData): Promise<void> {
+  try {
+    await draftStormPlan(deps, data.companyId, data.companyStormId!, deps.clock.now());
+  } catch (err) {
+    // An unknown or dismissed storm never becomes draftable by retrying: log it and drop the job.
+    if (err instanceof Error && (err.message === PLAN_NOT_FOUND || err.message === PLAN_DISMISSED)) {
+      reportJobError(deps, err, `storm-draft: company storm ${data.companyStormId}`);
+      return;
+    }
+    throw err;
+  }
+}
+
 /**
  * What each job does, by name. The worker (worker.ts) and `InlineJobs.drain` both run jobs through
  * this map. Imports only types from queue.ts, so the two files can refer to each other.
@@ -35,18 +48,9 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'footprints-load': (deps, data, meta) => loadFootprintState(deps, data.state!, meta),
   'signed-pdf': (deps, data, meta) => makeSignedPdf(deps, data.companyId, data.proposalId!, meta),
   'storm-match-company': (deps, data) => matchCompanyStorms(deps, data.companyId),
-  'storm-draft': async (deps, data) => {
+  'storm-draft': (deps, data) => {
     checkStormJob(data);
-    try {
-      await draftStormPlan(deps, data.companyId, data.companyStormId!, deps.clock.now());
-    } catch (err) {
-      // An unknown or dismissed storm never becomes draftable by retrying: log it and drop the job.
-      if (err instanceof Error && (err.message === PLAN_NOT_FOUND || err.message === PLAN_DISMISSED)) {
-        reportJobError(deps, err, `storm-draft: company storm ${data.companyStormId}`);
-        return;
-      }
-      throw err;
-    }
+    return runStormDraft(deps, data);
   },
   'storm-alert': (deps, data) => {
     checkStormAlertJob(data);

@@ -478,7 +478,7 @@ describe('the storm-draft job', () => {
     await addHit({ email: 'a@example.com' });
     const meta = { attempt: 1, lastAttempt: false };
 
-    await expect(JOB_HANDLERS['storm-draft'](t.deps, { companyId: companyId(), companyStormId: 'nope' }, meta)).rejects.toThrow();
+    expect(() => JOB_HANDLERS['storm-draft'](t.deps, { companyId: companyId(), companyStormId: 'nope' }, meta)).toThrow();
 
     await JOB_HANDLERS['storm-draft'](t.deps, { companyId: companyId(), companyStormId }, meta);
 
