@@ -120,6 +120,7 @@ conversation text (MEDIUM 6); the E1 lead fixes platform items (TRUST_PROXY star
 **Ruling BD clarified (final, 16:45Z, supersedes the 16:40Z message):** `allowFinished` is set only by explicit owner actions: the rerun route and `POST /api/storms/:id/plan` (S1's "Draft a new plan" button on expired or declined plans). Automatic paths (storm-match, scheduled drafting) never set it. A1 returns `fresh: !previousWasDraft`.
 **Ruling BH (A1 T23):** setting a next step on a job that had none counts as a change, and it closes that job's open Front Desk live tasks.
 **Ruling BI (D1 retention, final-review N6):** the retention sweep blanks only the AI exchange: inbound texts the assistant handled, and the assistant's replies. It keeps STOP/START/HELP keyword bodies (the compliance record), staff replies and booking confirmations. The settings copy says exactly that. Retention 0 deletes existing recordings, and the copy says so. Recommended option taken; the owner may revisit it.
+**Ruling BJ (D1 stale-call sweep):** `endStuckCalls` lists company ids on the system pool, then updates per company on the tenant pool inside `withTenant`. No app_system UPDATE grant on calls (in line with BF and the rev-d sweep rule).
 
 ## How to do a task
 
