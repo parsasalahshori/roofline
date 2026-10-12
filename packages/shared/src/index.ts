@@ -23,6 +23,7 @@ export * from './proposals.ts';
 export * from './front-desk.ts';
 export * from './front-desk-rules.ts';
 export * from './front-desk-tools.ts';
+export * from './front-desk-views.ts';
 export * from './forwarding.ts';
 export * from './recording-consent.ts';
 // A1 (Task 2)

@@ -13,6 +13,8 @@ import { CustomerWindow } from '../features/customers/CustomerWindow.tsx';
 import { ComingSoon } from '../features/coming-soon/ComingSoon.tsx';
 import { NewCustomer } from '../features/create/NewCustomer.tsx';
 import { NewJob } from '../features/create/NewJob.tsx';
+import { ConversationWindow } from '../features/front-desk/ConversationWindow.tsx';
+import { FrontDeskWindow } from '../features/front-desk/FrontDeskWindow.tsx';
 import { ImportWizard } from '../features/imports/ImportWizard.tsx';
 import { EstimatorWindow } from '../features/estimator/EstimatorWindow.tsx';
 import { HomeownerPage } from '../features/homeowner/HomeownerPage.tsx';
@@ -73,7 +75,8 @@ const routes: RouteObject[] = [
           { path: 'storm', element: <AppWindow app="storm"><StormWindow /></AppWindow> },
           { path: 'storm/plans/:taskId', element: <ReviewRoute app="storm" /> },
           { path: 'storm/*', element: comingSoonWindow('storm') },
-          { path: 'front-desk/*', element: comingSoonWindow('front-desk') },
+          { path: 'front-desk', element: <AppWindow app="front-desk"><FrontDeskWindow /></AppWindow> },
+          { path: 'front-desk/:conversationId', element: <AppWindow app="front-desk"><ConversationWindow /></AppWindow> },
           { path: 'estimator', element: <AppWindow app="estimator"><EstimatorWindow /></AppWindow> },
           { path: 'estimator/measure/:measurementId', element: <AppWindow app="estimator"><MeasureWindow /></AppWindow> },
           { path: 'estimator/proposals/:proposalId', element: <AppWindow app="estimator"><ProposalWindow /></AppWindow> },
