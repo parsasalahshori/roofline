@@ -1,7 +1,8 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Button } from '@roofline/ui';
 import { Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { UNSAFE_LocationContext } from 'react-router';
 import { useMapArea, useMapPins } from '../../api/hooks.ts';
 import type { PinsResult } from '../../api/types.ts';
 import { mapCopy } from '../../copy/map.ts';
@@ -34,6 +35,12 @@ function createMap(container: HTMLElement): MapLibreMap | null {
   }
 }
 
+/** The ?focus= value, or null. Reads the router location when there is one (null outside a router, as in tests). */
+function useFocusParam(): string | null {
+  const location = useContext(UNSAFE_LocationContext);
+  return location ? new URLSearchParams(location.location.search).get('focus') : null;
+}
+
 /** What the screen reader hears about the pins. Empty until the first answer arrives. */
 function summarize(result: PinsResult | undefined): string {
   if (result === undefined) return '';
@@ -60,6 +67,9 @@ export function MapView({ onOpen }: MapViewProps) {
   const [picked, setPicked] = useState<PickedPin | null>(null);
   const area = useMapArea();
   const pins = useMapPins(bbox);
+  const focus = useFocusParam();
+  // The focus value already flown to, so a pins refresh does not fly again or reopen a closed card.
+  const handledFocus = useRef<string | null>(null);
   // The last pins answer that arrived. A failed request leaves it alone, so the pins stay on the map.
   const [shownPins, setShownPins] = useState<PinsResult | undefined>(undefined);
   if (pins.data !== undefined && pins.data !== shownPins) setShownPins(pins.data);
@@ -129,6 +139,41 @@ export function MapView({ onOpen }: MapViewProps) {
     const instance = mapRef.current;
     if (instance && styleReady.current) updateMapData(instance, next);
   }, [area.data, shownPins]);
+
+  // /?focus=<propertyId>: fly to that property's pin and open its card, once per distinct value.
+  useEffect(() => {
+    if (focus === null || handledFocus.current === focus) return;
+    if (shownPins === undefined || shownPins.mode !== 'points') return;
+    const job = shownPins.jobs.find((pin) => pin.propertyId === focus);
+    const customer = job ? undefined : shownPins.customers.find((pin) => pin.propertyId === focus);
+    const found = job ?? customer;
+    if (!found) return;
+    handledFocus.current = focus;
+    mapRef.current?.easeTo({ center: [found.lng, found.lat], zoom: 16 });
+    const next: PickedPin = job
+      ? {
+          kind: 'job',
+          id: job.jobId,
+          name: job.name,
+          addressLine: job.addressLine,
+          stage: job.stage,
+          stageLabel: job.stageLabel,
+          lngLat: [job.lng, job.lat],
+        }
+      : {
+          kind: 'customer',
+          id: found.customerId,
+          name: found.name,
+          addressLine: found.addressLine,
+          stage: null,
+          stageLabel: null,
+          lngLat: [found.lng, found.lat],
+        };
+    // Not set synchronously: react-hooks/set-state-in-effect rejects a setState in the effect body.
+    queueMicrotask(() => {
+      setPicked(next);
+    });
+  }, [focus, shownPins]);
 
   // The satellite switch swaps the style. The style.load handler then installs the layers again.
   useEffect(() => {
