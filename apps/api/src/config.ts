@@ -230,6 +230,8 @@ const ConfigSchema = z
     STORM_MAIL_FROM: z.string().email('must be an email address').optional(),
     /** Minutes without a fresh hail report before the hail feed counts as stale. */
     HAIL_STALE_MINUTES: integer(90, 1, 10080),
+    /** Where the hail-health schedule emails ops when the hail data goes stale. Unset: it only logs. */
+    OPS_ALERT_EMAIL: z.string().email('must be an email address').optional(),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.GOOGLE_CLIENT_SECRET && !cfg.GOOGLE_CLIENT_ID) {

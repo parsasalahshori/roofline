@@ -93,6 +93,12 @@ describe('storm settings', () => {
     expect(problem({ ...VALID, HAIL_STALE_MINUTES: '0' })).toContain('HAIL_STALE_MINUTES');
     expect(loadConfig({ ...VALID, HAIL_STALE_MINUTES: '120' }).HAIL_STALE_MINUTES).toBe(120);
   });
+
+  test('OPS_ALERT_EMAIL is optional and must be an email', () => {
+    expect(loadConfig(VALID).OPS_ALERT_EMAIL).toBeUndefined();
+    expect(loadConfig({ ...VALID, OPS_ALERT_EMAIL: 'ops@example.org' }).OPS_ALERT_EMAIL).toBe('ops@example.org');
+    expect(problem({ ...VALID, OPS_ALERT_EMAIL: 'nope' })).toContain('OPS_ALERT_EMAIL');
+  });
 });
 
 describe('postmark webhook settings', () => {

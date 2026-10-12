@@ -162,16 +162,26 @@ describe('matchCompany', () => {
     expect(new Date(row!.last_matched_at as string).getTime()).toBe(t10.getTime());
   });
 
-  test('a created storm queues storm-draft once, after the commit', async () => {
-    await insertOmahaStorm(q, DAY);
+  test('a freshly created provisional storm queues no storm-draft and alerts once', async () => {
+    const stormId = await insertOmahaStorm(q, DAY);
+    await q('update storms set last_grew_at = $2 where id = $1', [stormId, NOW]);
+    const { created } = await matchCompany(t.deps, companyA(), NOW);
+    expect(created).toHaveLength(1);
+    expect(draftsSent()).toEqual([]);
+    const alertsAfterFirst = t.mailer.sent.length;
+    await matchCompany(t.deps, companyA(), new Date(NOW.getTime() + 10 * MINUTE));
+    expect(draftsSent()).toEqual([]);
+    expect(t.mailer.sent).toHaveLength(alertsAfterFirst);
+  });
+
+  test('a final storm queues storm-draft once, keyed by the company storm id', async () => {
+    await insertOmahaStorm(q, DAY, 'final');
     const { created } = await matchCompany(t.deps, companyA(), NOW);
     expect(created).toHaveLength(1);
     const id = created[0]!;
     expect(draftsSent()).toEqual([
       { name: 'storm-draft', data: { companyId: companyA(), companyStormId: id }, singletonKey: id },
     ]);
-    await matchCompany(t.deps, companyA(), new Date(NOW.getTime() + 10 * MINUTE));
-    expect(draftsSent()).toHaveLength(1);
   });
 
   test('footprint count with fixture footprints', async () => {

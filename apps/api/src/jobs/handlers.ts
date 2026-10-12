@@ -7,7 +7,19 @@ import { syncCompanyAds } from '../storm/ad-sync.ts';
 import { sendStormAlert } from '../storm/alerts.ts';
 import { matchCompanyStorms } from '../storm/match.ts';
 import { draftStormPlan } from '../storm/plan.ts';
+import { UUID } from '../validate.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
+
+function checkStormJob(data: JobData): void {
+  if (typeof data.companyStormId !== 'string' || !UUID.test(data.companyStormId)) {
+    throw new Error('A storm job did not name a company storm.');
+  }
+}
+
+function checkStormAlertJob(data: JobData): void {
+  checkStormJob(data);
+  if (data.kind !== 'now' && data.kind !== 'plan') throw new Error('A storm alert job did not name a kind.');
+}
 
 /**
  * What each job does, by name. The worker (worker.ts) and `InlineJobs.drain` both run jobs through
@@ -23,7 +35,13 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   },
   'signed-pdf': (deps, data) => signedPdf(deps, data.companyId, data.proposalId!),
   'storm-match-company': (deps, data) => matchCompanyStorms(deps, data.companyId),
-  'storm-draft': (deps, data) => draftStormPlan(deps, data.companyId, data.companyStormId!),
-  'storm-alert': (deps, data) => sendStormAlert(deps, data.companyId, data.companyStormId!, data.kind!),
+  'storm-draft': (deps, data) => {
+    checkStormJob(data);
+    return draftStormPlan(deps, data.companyId, data.companyStormId!);
+  },
+  'storm-alert': (deps, data) => {
+    checkStormAlertJob(data);
+    return sendStormAlert(deps, data.companyId, data.companyStormId!, data.kind!);
+  },
   'ad-sync-company': (deps, data) => syncCompanyAds(deps, data.companyId),
 };
