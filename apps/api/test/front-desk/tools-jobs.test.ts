@@ -76,7 +76,7 @@ describe('lookup_my_jobs', () => {
     const r = await lookupMyJobs(tool('verified'), {});
     expect(r.ok).toBe(true);
     expect(r.forModel).toContain(`Job ${ids.jobId} at 123 Elm St`);
-    expect(r.forModel).toContain('waiting on an inspection');
+    expect(r.forModel).toContain('inspection stage');
     expect(r.forModel).toMatch(/Next: (inspection or )?visit on /);
     expect(r.shownIds).toEqual([ids.jobId]);
   });
