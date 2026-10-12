@@ -94,13 +94,11 @@ function dockLink(dockNav: HTMLElement, label: string) {
 }
 
 describe('E1 windows', () => {
-  it.each([
-    ['/estimator', estimator.comingSoon],
-  ])('%s shows its placeholder', async (path, copy) => {
-    signedInApi();
-    renderApp(path);
+  it('/estimator shows the address box', async () => {
+    signedInApi(ACCOUNT, { 'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }) });
+    renderApp('/estimator');
 
-    expect(await screen.findByText(copy)).toBeInTheDocument();
+    expect(await screen.findByLabelText(estimator.addressLabel)).toBeInTheDocument();
   });
 
   it('/estimator/measure/m1 opens the measure window', async () => {
@@ -141,7 +139,7 @@ describe('E1 windows', () => {
   });
 
   it('the dock Estimator has no Coming soon note', async () => {
-    signedInApi();
+    signedInApi(ACCOUNT, { 'GET /api/proposals': () => ({ body: { proposals: [], total: 0 } }) });
     renderApp('/estimator');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
 

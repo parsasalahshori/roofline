@@ -1,0 +1,53 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.target {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.targetText {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text);
+}
+
+/* The "Estimate" tag: a label, not a control. */
+.estimate {
+  align-self: flex-start;
+  padding: 8px 16px;
+  border-radius: var(--radius-card);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
