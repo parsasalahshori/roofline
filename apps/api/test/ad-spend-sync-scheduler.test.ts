@@ -13,7 +13,7 @@ let t: TestApp;
 let a: string;
 let b: string;
 
-async function insertAccount(companyId: string, status: string, platform = 'google', externalId = '1234567890'): Promise<void> {
+async function insertAccount(companyId: string, status: string, platform = 'google', externalId = companyId === b ? '9876543210' : '1234567890'): Promise<void> {
   await owner.query(`insert into ad_accounts (company_id, platform, external_account_id, status) values ($1, $2, $3, $4)`, [
     companyId,
     platform,

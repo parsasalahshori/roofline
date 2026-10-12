@@ -2,6 +2,7 @@ import {
   audit,
   getAdAccount,
   getAdAccountByPlatform,
+  isUniqueViolation,
   updateAdAccount,
   upsertAdAccount,
   withTenant,
@@ -35,6 +36,10 @@ export const NOT_SET_UP = "Linking this ad platform isn't set up yet.";
 export const BAD_GOOGLE_ID = 'Enter your 10-digit Google Ads customer ID.';
 export const BAD_META_ID = 'Enter your Meta ad account ID (numbers, or act_ and numbers).';
 export const ALREADY_LINKED = 'Remove the linked account first, then link a different one.';
+/** Ruling BF: an external ad account belongs to one company. Nothing of the other company is named. */
+export const AD_ACCOUNT_TAKEN = 'That ad account is already connected to another Roofline company.';
+/** The global partial unique index on (platform, external_account_id) where status <> 'revoked' (migration 0018). */
+export const AD_ACCOUNT_LIVE_INDEX = 'ad_accounts_platform_external_live_uq';
 
 /** What one live look at the platform says about an account (no database access). */
 export type AdAccountEvaluation = {
@@ -103,28 +108,51 @@ export async function evaluateAdAccount(deps: AppDeps, account: Pick<AdAccountRo
 
 export type ConnectResult = { account: AdAccountRow; instructions?: { managerId: string } };
 
-async function assertNotLinked(deps: AppDeps, ctx: TenantContext, platform: 'google' | 'meta'): Promise<void> {
-  await withTenant(deps.pools, ctx, async (tx) => {
-    const existing = await getAdAccountByPlatform(tx, ctx, platform);
-    if (existing && existing.status !== 'revoked') throw new AppError(409, ALREADY_LINKED);
-  });
-}
-
-async function store(
+/**
+ * Claims the external account for this company BEFORE any platform call: inserts (or, over this company's revoked
+ * row, overwrites) its row as 'pending' inside withTenant. The global partial unique index sees every company's
+ * rows, so when another company holds the account live the insert fails with 23505 on that index. That becomes a
+ * 409 with a fixed sentence, the platform is never called, and nothing of the other company is read or stored.
+ */
+async function claim(
   deps: AppDeps,
   ctx: TenantContext,
   platform: 'google' | 'meta',
   externalAccountId: string,
+  now: Date,
+): Promise<AdAccountRow> {
+  try {
+    return await withTenant(deps.pools, ctx, async (tx) => {
+      // Inside the writing transaction: a second request of this company may have linked meanwhile.
+      const existing = await getAdAccountByPlatform(tx, ctx, platform);
+      if (existing && existing.status !== 'revoked') throw new AppError(409, ALREADY_LINKED);
+      return upsertAdAccount(tx, ctx, {
+        platform,
+        externalAccountId,
+        status: 'pending',
+        name: null,
+        currency: null,
+        linkedAt: null,
+        lastErrorPlain: null,
+        now,
+      });
+    });
+  } catch (err) {
+    if (isUniqueViolation(err, AD_ACCOUNT_LIVE_INDEX)) throw new AppError(409, AD_ACCOUNT_TAKEN);
+    throw err;
+  }
+}
+
+/** Stores what the platform said about a claimed account, and records the connect. */
+async function settle(
+  deps: AppDeps,
+  ctx: TenantContext,
+  claimed: AdAccountRow,
   ev: AdAccountEvaluation,
   now: Date,
 ): Promise<AdAccountRow> {
   return withTenant(deps.pools, ctx, async (tx) => {
-    // Re-check inside the writing transaction: a second request may have linked meanwhile.
-    const existing = await getAdAccountByPlatform(tx, ctx, platform);
-    if (existing && existing.status !== 'revoked') throw new AppError(409, ALREADY_LINKED);
-    const row = await upsertAdAccount(tx, ctx, {
-      platform,
-      externalAccountId,
+    const row = await updateAdAccount(tx, ctx, claimed.id, {
       status: ev.status,
       name: ev.name,
       currency: ev.currency,
@@ -132,11 +160,12 @@ async function store(
       lastErrorPlain: ev.lastErrorPlain,
       now,
     });
+    if (!row) throw new AppError(404, MESSAGES.notFound);
     await audit(tx, ctx, {
       action: 'ad_account.connect',
       targetType: 'ad_account',
       targetId: row.id,
-      after: { platform, status: row.status },
+      after: { platform: row.platform, status: row.status },
       ip: null,
       at: now,
     });
@@ -145,8 +174,8 @@ async function store(
 }
 
 export async function connectGoogleAccount(deps: AppDeps, ctx: TenantContext, customerId: string, now: Date): Promise<ConnectResult> {
-  await assertNotLinked(deps, ctx, 'google');
   if (!deps.adsGoogle.configured) throw new AppError(503, NOT_SET_UP);
+  const claimed = await claim(deps, ctx, 'google', customerId, now);
   let ev: AdAccountEvaluation;
   try {
     await deps.adsGoogle.invite(customerId);
@@ -154,15 +183,15 @@ export async function connectGoogleAccount(deps: AppDeps, ctx: TenantContext, cu
   } catch (err) {
     ev = failed(errorMessage(err));
   }
-  const account = await store(deps, ctx, 'google', customerId, ev, now);
+  const account = await settle(deps, ctx, claimed, ev, now);
   return { account, instructions: { managerId: deps.adsGoogle.managerId } };
 }
 
 export async function connectMetaAccount(deps: AppDeps, ctx: TenantContext, adAccountId: string, now: Date): Promise<ConnectResult> {
-  await assertNotLinked(deps, ctx, 'meta');
   if (!deps.adsMeta.configured) throw new AppError(503, NOT_SET_UP);
+  const claimed = await claim(deps, ctx, 'meta', adAccountId, now);
   const ev = await evaluateAdAccount(deps, { platform: 'meta', externalAccountId: adAccountId });
-  const account = await store(deps, ctx, 'meta', adAccountId, ev, now);
+  const account = await settle(deps, ctx, claimed, ev, now);
   return { account };
 }
 
@@ -216,6 +245,10 @@ export async function revokeAdAccount(deps: AppDeps, ctx: TenantContext, id: str
   if (!existing) throw new AppError(404, MESSAGES.notFound);
   if (existing.status === 'revoked') return existing;
   if (existing.platform === 'google') {
+    // Only this company's LIVE row may end Roofline's manager link. The row is not revoked (returned above), and the
+    // global unique index (platform, external_account_id) where status <> 'revoked' allows one live holder per
+    // account, so no other company holds this customer and the link is this company's to cut. It is cut before the
+    // row is revoked: while this row is live no other company can claim the account, so nobody's new link is cut.
     // Outside any transaction. A platform failure never blocks the owner's removal and its text is dropped.
     try {
       await deps.adsGoogle.unlink(existing.externalAccountId);
