@@ -7,8 +7,6 @@ export const money = (cents: number): string => dollars.format(cents / 100);
 
 /** The public proposal page a homeowner opens, and the electronic signing on it. */
 export const homeowner = {
-  // Placeholder from E1 Task 14, kept until the lead removes it after Task 19 merges.
-  comingSoon: 'Your proposal is on its way.',
   loading: 'Loading your proposal',
   pageTitle: 'Your proposal',
   greeting: (firstName: string | null): string => (firstName ? `Hi ${firstName}, here is your proposal` : 'Here is your proposal'),
