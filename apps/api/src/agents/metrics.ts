@@ -258,6 +258,7 @@ export async function buildDetail(
   now: Date,
   agent: ScreenAgent,
   period: TimePeriod,
+  transferNames: string[] = [],
 ): Promise<AgentDetail> {
   const snap = await gather(tx, ctx, now);
   const card = await buildCard(tx, ctx, snap, agent);
@@ -285,7 +286,7 @@ export async function buildDetail(
     units: row.units,
     minutes: row.minutes,
   }));
-  const rules = rulesFor(agent, await gatherRuleFacts(tx, ctx));
+  const rules = rulesFor(agent, await gatherRuleFacts(tx, ctx, transferNames));
   const tasks = await recentTasks(tx, ctx, agent, RECENT_LIMIT);
   const hrefs = await recentHrefs(tx, ctx, tasks);
 

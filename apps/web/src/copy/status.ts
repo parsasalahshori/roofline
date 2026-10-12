@@ -27,6 +27,20 @@ export const TASK_KIND_LABEL: Record<string, string> = {
   send_sms_batch: 'Texts sent',
   send_email_batch: 'Emails sent',
   front_desk_follow_up: 'Follow-up from the front desk',
+  exact_report: 'Roof measurement ordered',
+  call: 'Phone call',
+  text_conversation: 'Text conversation',
+  // G1's agents (Claims, Scheduler, Follow-up); same wording as G1's branch.
+  claims_nudges: 'Claim check-ins',
+  claims_reply_noted: 'Claim reply noted',
+  claims_adjuster_visit: 'Adjuster visit booked',
+  claim_packet: 'Claim packet',
+  reminders: 'Appointment reminders',
+  weather_moves: 'Weather moves',
+  no_show: 'Missed appointment',
+  follow_ups: 'Lead follow-ups',
+  stuck_nudges: 'Stuck jobs',
+  proposal_call_rep: 'Proposal follow-up call',
 };
 
 export const STEP_STATUS_LABEL: Record<StepStatus, string> = {

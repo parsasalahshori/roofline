@@ -21,6 +21,7 @@ export type AgentRuleFacts = {
     canBook: boolean;
     canConfirm: boolean;
     canMove: boolean;
+    canCancel: boolean;
   };
   claims?: { nudgeDays: [number, number, number] };
   scheduler?: { reminderHour: number; rainPct: number; gustMph: number };
@@ -121,6 +122,13 @@ function frontDeskRules(
     rules.push({
       text: "I take messages for your team; I never give prices.",
       links: [{ label: "take messages", href: FRONT_DESK_SETTINGS }],
+    });
+  }
+
+  if (desk.canCancel) {
+    rules.push({
+      text: "I can cancel appointments when a customer asks.",
+      links: [{ label: "cancel appointments", href: FRONT_DESK_SETTINGS }],
     });
   }
 

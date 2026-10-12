@@ -261,16 +261,19 @@ export async function frontDeskConversationCounts(
 ): Promise<{ finished: number; succeeded: number }> {
   let repScope = sql`true`;
   if (ctx.role === 'rep') {
-    // AX-J: a rep sees conversations whose customer has a job in the rep's scope; no customer, no rep.
-    const scope = jobScope(ctx);
+    // AX-J: a rep sees conversations of customers in customerScope; no customer, no rep.
+    const scope = customerScope(ctx);
     repScope = scope
-      ? sql`${conversations.customerId} in (select ${jobs.customerId} from ${jobs}
-          where ${jobs.companyId} = ${ctx.companyId} and ${scope})`
+      ? sql`${conversations.customerId} in (select ${customers.id} from ${customers}
+          where ${customers.companyId} = ${ctx.companyId} and ${scope})`
       : sql`false`;
   }
   const marker = sql`exists (select 1 from conversation_turns t where t.company_id = ${conversations.companyId}
     and t.conversation_id = ${conversations.id} and t.route = 'transfer' and 'model_failure' = any(t.guard_hits))`;
-  const finishedWhere = sql`${conversations.status} <> 'active' and ${conversations.outcome} is not null
+  // Voice conversations only (texts have their own tasks); spam is not a real conversation, so it leaves
+  // the denominator (and so the numerator).
+  const finishedWhere = sql`${conversations.channel} = 'voice' and ${conversations.status} <> 'active'
+    and ${conversations.outcome} is not null and ${conversations.outcome} <> 'spam'
     and ${conversations.updatedAt} >= ${w.since30} and ${repScope}`;
   const rows = await tx
     .select({
