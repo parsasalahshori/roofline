@@ -76,3 +76,8 @@ No duplicate exported names, enum values, job names, schedules or route mounts w
    is newer than the last applied one, so a database already at 0020 would silently skip 0021/0022. Fresh
    databases (CI) are not affected. Fix: whoever merges A1 after E1/D1 sets 0021/0022 `when` above 0020's in
    `_journal.json` (as the probe does); A1 should not regenerate its migrations.
+
+### CI
+
+Run 38199485169 on 16bc0e1: Platform (lint, typecheck, tests) success; E2E (Playwright) success; v1 (node:test)
+success. No merge-artifact fixes were needed after CI.
