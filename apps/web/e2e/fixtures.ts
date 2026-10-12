@@ -6,14 +6,14 @@ import pg from 'pg';
 import { createPools, type Pools } from '@roofline/db';
 import { resetDb, seedTwoCompanies, SEED_PASSWORD, type SeededCompany } from '@roofline/db/testing';
 import type { CompanyStatus } from '@roofline/shared';
-import { seedDemoTask, seedShowcase, seedStormFixture } from '@roofline/api';
+import { seedDemoTask, seedShowcase, seedStormFixture, signUnsubscribeToken, unsubscribeKey } from '@roofline/api';
 
 /*
  * Shared end-to-end helpers. `stack.ts` writes `.stack.json` beside this file once the database is
  * up; every test then resets the database to the same scenario before it runs.
  */
 
-export type Stack = { ownerUrl: string; tenantUrl: string; systemUrl: string; baseUrl: string };
+export type Stack = { ownerUrl: string; tenantUrl: string; systemUrl: string; baseUrl: string; encryptionKey: string };
 
 /** The three database URLs in the shape `resetScenario` and the pools take. */
 function dbUrls(stack: Stack): { owner: string; tenant: string; system: string } {
@@ -78,6 +78,11 @@ export async function setCompanyStatus(status: CompanyStatus): Promise<void> {
   } finally {
     await client.end();
   }
+}
+
+/** A valid unsubscribe token for an address at a company, signed with the running stack's own ENCRYPTION_KEY. */
+export function unsubscribeTokenFor(companyId: string, email: string): string {
+  return signUnsubscribeToken(unsubscribeKey({ ENCRYPTION_KEY: readStack().encryptionKey }), { companyId, email });
 }
 
 /** The 8-character code of the fixture storm's page (or of `companyStormId`'s), waiting up to 15 seconds for the page to exist. */

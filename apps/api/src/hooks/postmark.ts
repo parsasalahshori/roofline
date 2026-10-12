@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import express, { type ErrorRequestHandler, type Request, type Response, Router } from 'express';
 import { recordEmailOptOut } from '@roofline/db/system';
 import type { AppDeps } from '../app.ts';
+import { POSTMARK_HOOK_RATE_LIMIT_PER_MIN, publicPageRateLimit } from '../rate-limit.ts';
 import { unsubscribeKey } from '../public/unsubscribe-key.ts';
 import { verifyUnsubscribeToken } from '../public/unsubscribe-token.ts';
 
@@ -47,6 +48,8 @@ function optsOut(body: Record<string, unknown>): boolean {
 export function postmarkHooks(deps: AppDeps): Router {
   const router = Router();
 
+  // Per IP, ahead of the authentication so wrong secrets are limited too.
+  router.use(publicPageRateLimit('postmark', POSTMARK_HOOK_RATE_LIMIT_PER_MIN));
   // Authenticate before reading the body.
   router.use((req, res, next) => {
     if (!authorized(req, deps.config.POSTMARK_WEBHOOK_SECRET)) {
