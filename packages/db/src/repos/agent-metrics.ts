@@ -11,6 +11,8 @@ import { customerScope, jobScope } from './scope.ts';
 
 /** Instants (UTC) that bound the windows, computed by the API in the company's time zone. */
 export type MetricsWindow = {
+  /** The moment of the read; waiting drafts that expired before it do not count. */
+  now: Date;
   /** IANA zone, used by SQL `at time zone` for day buckets. */
   timeZone: string;
   todayStart: Date;
@@ -32,7 +34,10 @@ export type AgentCounts = {
   ran30d: number;
   /** declined + expired in the last 30 days. */
   notApproved30d: number;
-  /** All-time current: status draft or awaiting_owner (drafts awaiting approval) plus needs_attention. */
+  /**
+   * All-time current: status draft or awaiting_owner (drafts awaiting approval) plus needs_attention,
+   * leaving out tasks whose expires_at is before `w.now` (the same rule as the waiting list).
+   */
   waitingCount: number;
 };
 
@@ -77,7 +82,8 @@ export async function agentCounts(tx: Tx, ctx: TenantContext, w: MetricsWindow):
       partlyDone30d: sql<number>`(count(*) filter (where ${agentTasks.status} = 'partly_done' and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
       ran30d: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, RAN)} and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
       notApproved30d: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, NOT_APPROVED)} and ${agentTasks.updatedAt} >= ${w.since30}))::int`,
-      waitingCount: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, WAITING)}))::int`,
+      waitingCount: sql<number>`(count(*) filter (where ${inArray(agentTasks.status, WAITING)}
+        and (${agentTasks.expiresAt} is null or ${agentTasks.expiresAt} > ${w.now})))::int`,
     })
     .from(agentTasks)
     .where(and(eq(agentTasks.companyId, ctx.companyId), taskSubjectScope(ctx)))

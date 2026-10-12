@@ -1,23 +1,34 @@
-import type { AgentRuleFacts } from '@roofline/shared';
+import { eq } from 'drizzle-orm';
+import { companySettings } from '@roofline/db';
 import type { TenantContext, Tx } from '@roofline/db';
+import type { AgentRuleFacts } from '@roofline/shared';
 
 /*
- * A1 Task 5: the facts behind each agent card's rule sentences (`rulesFor` in @roofline/shared).
+ * A1 Task 5 and Task 14: the facts behind each agent card's rule sentences (`rulesFor` in @roofline/shared).
  *
- * On this base the storm-settings columns (budget cents, days) and the Front Desk settings (phone,
- * transfer list, booking flags, on-call list) do not exist yet, so there is nothing to read and the
- * result is `{}`. `rulesFor` then gives the Estimator sentence, and [] for storm_scout and front_desk.
+ * Storm Scout facts are filled from `company_settings` (hail threshold, ad budget cents, ad days). When the
+ * company has no settings row yet, the column defaults (1 inch, 27000 cents, 7 days) are returned so Storm
+ * Scout always has its sentences.
  *
- * MERGE RULE (S1 and D1): when S1 (storm settings: budget and days beside the existing
- * `company_settings.hail_threshold_in`) and D1 (Front Desk settings and the on-call list) are merged
- * into a1-agents, this function is where `stormScout: { thresholdInches, budgetCents, days }` and
- * `frontDesk: { phoneNumber, transferNames, canBook, canConfirm, canMove }` get filled. Read them
- * through the given `tx` (already company-scoped by withTenant) and filter by `ctx.companyId`.
- * Front Desk's success rate uses the task model until AX-D lands with D1.
+ * Front Desk facts (`frontDesk: { phoneNumber, transferNames, canBook, canConfirm, canMove }`) still wait
+ * for D1: when D1 is merged into a1-agents, this function is where they get filled. Read them through the
+ * given `tx` (already company-scoped by withTenant) and filter by `ctx.companyId`.
  */
 export async function gatherRuleFacts(tx: Tx, ctx: TenantContext): Promise<AgentRuleFacts> {
-  // Nothing to read on this base (see MERGE RULE): the settings reads will use `tx` and `ctx.companyId`.
-  void tx;
-  void ctx;
-  return {};
+  const [row] = await tx
+    .select({
+      hailThresholdIn: companySettings.hailThresholdIn,
+      stormAdBudgetCents: companySettings.stormAdBudgetCents,
+      stormAdDays: companySettings.stormAdDays,
+    })
+    .from(companySettings)
+    .where(eq(companySettings.companyId, ctx.companyId))
+    .limit(1);
+  return {
+    stormScout: {
+      thresholdInches: row ? Number(row.hailThresholdIn) : 1,
+      budgetCents: row ? row.stormAdBudgetCents : 27000,
+      days: row ? row.stormAdDays : 7,
+    },
+  };
 }

@@ -1,4 +1,6 @@
+import { companySettings } from '@roofline/db';
 import { rulesFor } from '@roofline/shared';
+import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { gatherRuleFacts } from '../src/agents/rule-facts.ts';
 import { inCompany } from './crm-helpers.ts';
@@ -12,18 +14,50 @@ beforeEach(async () => {
 
 const systemCtx = (companyId: string) => ({ companyId, userId: null, role: 'system' as const, canApproveSpend: false });
 
-describe('gatherRuleFacts (A1 Task 5)', () => {
-  test('gatherRuleFacts has no storm or front desk facts on this base', async () => {
-    const facts = await inCompany(t, t.seed.a.companyId, (tx) => gatherRuleFacts(tx, systemCtx(t.seed.a.companyId)));
-    expect(facts).toEqual({});
+const factsFor = (companyId: string) => inCompany(t, companyId, (tx) => gatherRuleFacts(tx, systemCtx(companyId)));
+
+const DEFAULTS = { thresholdInches: 1, budgetCents: 27000, days: 7 };
+
+describe('gatherRuleFacts (A1 Tasks 5 and 14)', () => {
+  test('a default company gets the Storm Scout defaults and no Front Desk facts', async () => {
+    const facts = await factsFor(t.seed.a.companyId);
+    expect(facts.stormScout).toEqual(DEFAULTS);
+    expect(facts).not.toHaveProperty('frontDesk');
   });
 
-  test('rulesFor gives the Estimator sentence only', () => {
-    const facts = {};
-    const estimator = rulesFor('estimator', facts);
-    expect(estimator).toHaveLength(1);
-    expect(estimator[0]!.text.startsWith('When you type an address')).toBe(true);
-    expect(rulesFor('storm_scout', facts)).toEqual([]);
+  test('changed company settings flow into the Storm Scout facts', async () => {
+    const companyId = t.seed.a.companyId;
+    await inCompany(t, companyId, async (tx) => {
+      const updated = await tx
+        .update(companySettings)
+        .set({ hailThresholdIn: 1.5, stormAdBudgetCents: 50000, stormAdDays: 3 })
+        .where(eq(companySettings.companyId, companyId))
+        .returning({ companyId: companySettings.companyId });
+      if (updated.length === 0) {
+        await tx.insert(companySettings).values({ companyId, hailThresholdIn: 1.5, stormAdBudgetCents: 50000, stormAdDays: 3 });
+      }
+    });
+    expect(await factsFor(companyId)).toEqual({ stormScout: { thresholdInches: 1.5, budgetCents: 50000, days: 3 } });
+  });
+
+  test('company B is unaffected by company A settings', async () => {
+    const aId = t.seed.a.companyId;
+    await inCompany(t, aId, async (tx) => {
+      await tx
+        .update(companySettings)
+        .set({ hailThresholdIn: 2, stormAdBudgetCents: 90000, stormAdDays: 2 })
+        .where(eq(companySettings.companyId, aId));
+    });
+    const facts = await factsFor(t.seed.b.companyId);
+    expect(facts.stormScout).toEqual(DEFAULTS);
+  });
+
+  test('rulesFor gives Storm Scout one sentence with three settings links and Front Desk none', async () => {
+    const facts = await factsFor(t.seed.a.companyId);
+    const storm = rulesFor('storm_scout', facts);
+    expect(storm).toHaveLength(1);
+    expect(storm[0]!.links).toHaveLength(3);
+    expect(storm[0]!.links.every((l) => l.href === '/settings/storm')).toBe(true);
     expect(rulesFor('front_desk', facts)).toEqual([]);
   });
 });

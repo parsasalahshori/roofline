@@ -39,6 +39,7 @@ function repCtx(c: SeededCompany): TenantContext {
 
 /** The window of Tuesday 12 October 2026 in Chicago (CDT, UTC-5), with the 30-day and month bounds. */
 const w: MetricsWindow = {
+  now: new Date('2026-10-12T17:00:00Z'),
   timeZone: 'America/Chicago',
   todayStart: new Date('2026-10-12T05:00:00Z'),
   tomorrowStart: new Date('2026-10-13T05:00:00Z'),
@@ -55,6 +56,7 @@ type TaskSeed = {
   status: TaskStatus;
   updatedAt: Date;
   createdAt?: Date;
+  expiresAt?: Date | null;
   mode?: 'needs_approval' | 'live';
   subjectType?: string | null;
   subjectId?: string | null;
@@ -76,6 +78,7 @@ function seedTask(c: SeededCompany, t: TaskSeed): Promise<string> {
         mode: t.mode ?? 'needs_approval',
         status: t.status,
         minutesSaved: t.minutesSaved ?? null,
+        expiresAt: t.expiresAt ?? null,
         createdAt: t.createdAt ?? t.updatedAt,
         updatedAt: t.updatedAt,
       })
@@ -150,6 +153,17 @@ describe('agent metrics', () => {
       notApproved30d: 2,
       waitingCount: 3,
     });
+  });
+
+  test('waitingCount leaves out drafts that expired before now, like the waiting list', async () => {
+    const c = seed.a;
+    const updatedAt = new Date('2026-10-12T09:00:00Z');
+    await seedTask(c, { status: 'draft', updatedAt, expiresAt: new Date('2026-10-12T16:00:00Z') });
+    await seedTask(c, { status: 'draft', updatedAt, expiresAt: new Date('2026-10-12T18:00:00Z') });
+    await seedTask(c, { status: 'draft', updatedAt, expiresAt: null });
+
+    const { counts } = await readAll(c);
+    expect(counts.storm_scout!.waitingCount).toBe(2);
   });
 
   test('a task finished at 03:00Z on Oct 13 counts for local Oct 12', async () => {
