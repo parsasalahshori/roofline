@@ -7,7 +7,6 @@ import styles from './MoveAppointmentPreview.module.css';
 import { DEFAULT_ZONE, payloadOf, textOf } from './payload.ts';
 import type { EditFieldSpec, EditValues, StepKit, StepKitContext, StepPreviewProps } from './types.ts';
 
-
 const HOUR_MS = 3_600_000;
 const KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
 

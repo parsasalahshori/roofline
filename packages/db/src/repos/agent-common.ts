@@ -1,8 +1,8 @@
-import { and, eq, gte, lt } from "drizzle-orm";
-import type { Agent, AgentValues } from "@roofline/shared";
-import { agentTasks, companies, companySettings } from "../schema/index.ts";
-import type { TenantContext, Tx } from "../tenant.ts";
-import { insertDefaultSettings } from "./companies.ts";
+import { and, eq, gte, lt } from 'drizzle-orm';
+import type { Agent, AgentValues } from '@roofline/shared';
+import { agentTasks, companies, companySettings } from '../schema/index.ts';
+import type { TenantContext, Tx } from '../tenant.ts';
+import { insertDefaultSettings } from './companies.ts';
 
 /*
  * G1 Task 19: the one set of db helpers the Claims, Scheduler and Follow-up agents share.
@@ -56,11 +56,11 @@ export function primaryTextingPhone(
   }[],
 ): string | null {
   const usable = phones.filter(
-    (p) => typeof p?.e164 === "string" && p.e164.trim() !== "",
+    (p) => typeof p?.e164 === 'string' && p.e164.trim() !== '',
   );
   const chosen = usable.find((p) => p.primary === true) ?? usable[0];
-  if (chosen && (chosen.label ?? "").trim().toLowerCase() === "landline") return null;
-  return typeof chosen?.e164 === "string" ? chosen.e164.trim() : null;
+  if (chosen && (chosen.label ?? '').trim().toLowerCase() === 'landline') return null;
+  return typeof chosen?.e164 === 'string' ? chosen.e164.trim() : null;
 }
 
 /** The first whitespace-separated word of a name, or null when there is none. */
@@ -107,7 +107,7 @@ export async function readAgentValues(
     .from(companySettings)
     .where(eq(companySettings.companyId, ctx.companyId))
     .limit(1);
-  const [row] = await (opts?.lock ? query.for("update") : query);
+  const [row] = await (opts?.lock ? query.for('update') : query);
   if (!row)
     return {
       ...AGENT_VALUE_DEFAULTS,

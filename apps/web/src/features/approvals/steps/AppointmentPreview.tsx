@@ -6,7 +6,6 @@ import styles from './AppointmentPreview.module.css';
 import { DEFAULT_ZONE, payloadOf, textOf } from './payload.ts';
 import type { EditFieldSpec, EditValues, StepKit, StepKitContext, StepPreviewProps } from './types.ts';
 
-
 const NOTE_LIMIT = 500;
 
 function instantOf(value: unknown): Date | null {
