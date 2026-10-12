@@ -1004,3 +1004,13 @@ both added it; TS2300); `storm-plan.test.ts` `draft()` helper for the nullable r
 `npm ci` clean; `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck pass (after 09c06d2), lint
 pass, lint:css pass; vitest @roofline/web 1129 pass (124 files), @roofline/ui 170 pass, @roofline/shared 1290 pass,
 @roofline/send-gate 525 pass. The database, API, worker and e2e suites run only in CI.
+
+### CI (pass 9)
+
+Run 38239319966 on e5715fc, attempt 1: Platform (lint, typecheck, tests) success; E2E (Playwright) success; Hail
+service (ruff, pytest) success; v1 (node:test) success. S1 T11/T15/T20/T21/T25/T26/T29, E1 T12/T13 and 961b654, A1's
+review fixes, C1's export fix and the probe resolutions (`draftStormPlan` pause returning null, the 409 on
+`POST /api/storms/:id/plan`, `OFF_STEP_TITLES` for D1/G1 types, the rewritten `storm-pause.test.ts`) pass the
+database, API, worker and e2e suites in combination. `export.test.ts` passed. No fixes were needed after CI, so
+ci-check was not re-run. (The local `ci-check` wrapper was stopped by its time limit; the run was followed through
+the Actions API until it completed.)
