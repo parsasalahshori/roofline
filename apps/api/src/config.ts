@@ -69,6 +69,23 @@ const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2
 /** The example plans file, shipped with the repository; the default outside production. */
 const EXAMPLE_BILLING_PLANS = 'config/billing-plans.example.json';
 
+/** The footprint files published by Microsoft (US Building Footprints); the default FOOTPRINTS_BASE_URL. */
+const DEFAULT_FOOTPRINTS_BASE_URL = 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/';
+
+/**
+ * The domain storm email comes from by default: the domain part of MAIL_FROM (after the last `@`,
+ * without a trailing `>`), else POLICY_PAGES_DOMAIN, else the host of PUBLIC_BASE_URL.
+ */
+function mailDomain(cfg: { MAIL_FROM?: string; POLICY_PAGES_DOMAIN?: string; PUBLIC_BASE_URL: string }): string {
+  if (cfg.MAIL_FROM) {
+    const domain = cfg.MAIL_FROM.slice(cfg.MAIL_FROM.lastIndexOf('@') + 1)
+      .replace(/>\s*$/, '')
+      .trim();
+    if (domain) return domain;
+  }
+  return cfg.POLICY_PAGES_DOMAIN ?? new URL(cfg.PUBLIC_BASE_URL).hostname;
+}
+
 const ConfigSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production'], {
@@ -161,6 +178,56 @@ const ConfigSchema = z
      * so a development server is not on the LAN. A HOST that is set always wins.
      */
     HOST: z.string().min(1).optional(),
+
+    /** EagleView API client id. Set with EAGLEVIEW_CLIENT_SECRET, or neither. Unset: aerial and exact reports are off. */
+    EAGLEVIEW_CLIENT_ID: z.string().optional(),
+    /** EagleView API client secret. Set with EAGLEVIEW_CLIENT_ID, or neither. */
+    EAGLEVIEW_CLIENT_SECRET: z.string().optional(),
+    /** Which EagleView environment to call. Default: sandbox. */
+    EAGLEVIEW_ENV: z.enum(['sandbox', 'production'], { error: 'must be sandbox or production' }).default('sandbox'),
+    /** The EagleView product id to order. 0 is a placeholder: ask before ordering anything. */
+    EAGLEVIEW_PRODUCT_ID: integer(0, 0, 2_147_483_647),
+    /** Cloudflare R2 account id. All four R2 settings come together, or none. Unset: signed proposals cannot be stored. */
+    R2_ACCOUNT_ID: z.string().optional(),
+    /** R2 access key id. See R2_ACCOUNT_ID. */
+    R2_ACCESS_KEY_ID: z.string().optional(),
+    /** R2 secret access key. See R2_ACCOUNT_ID. */
+    R2_SECRET_ACCESS_KEY: z.string().optional(),
+    /** R2 bucket name. See R2_ACCOUNT_ID. */
+    R2_BUCKET: z.string().optional(),
+    /** The base URL of customer proposal links. No trailing slash. Unset: APP_ORIGIN (applied in the final transform). */
+    PROPOSAL_LINK_BASE_URL: httpUrl.transform((v) => v.replace(/\/+$/, '')).optional(),
+    /** Where the building footprint files are read from. Always ends in a slash. Default: the Microsoft US buildings set. */
+    FOOTPRINTS_BASE_URL: httpUrl.transform((v) => (v.endsWith('/') ? v : `${v}/`)).default(DEFAULT_FOOTPRINTS_BASE_URL),
+
+    /** Google Ads developer token. All five GOOGLE_ADS settings come together, or none. Unset: Google ads are off. */
+    GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),
+    /** The Google Ads manager (MCC) account id that clients are linked under. See GOOGLE_ADS_DEVELOPER_TOKEN. */
+    GOOGLE_ADS_MANAGER_ID: z.string().optional(),
+    /** Google Ads OAuth client id. See GOOGLE_ADS_DEVELOPER_TOKEN. */
+    GOOGLE_ADS_CLIENT_ID: z.string().optional(),
+    /** Google Ads OAuth client secret. See GOOGLE_ADS_DEVELOPER_TOKEN. */
+    GOOGLE_ADS_CLIENT_SECRET: z.string().optional(),
+    /** Google Ads OAuth refresh token. See GOOGLE_ADS_DEVELOPER_TOKEN. */
+    GOOGLE_ADS_REFRESH_TOKEN: z.string().optional(),
+    /** The Google Ads API version to call, like v21. */
+    GOOGLE_ADS_API_VERSION: z.string().regex(/^v\d+$/, 'must look like v21').default('v21'),
+    /** Meta app id. All four META settings come together, or none. Unset: Meta ads are off. */
+    META_APP_ID: z.string().optional(),
+    /** Meta app secret. See META_APP_ID. */
+    META_APP_SECRET: z.string().optional(),
+    /** Meta system user token. See META_APP_ID. */
+    META_SYSTEM_USER_TOKEN: z.string().optional(),
+    /** The Meta business id that ad accounts are shared with. See META_APP_ID. */
+    META_BUSINESS_ID: z.string().optional(),
+    /** The Meta Graph API version to call, like v24.0. */
+    META_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/, 'must look like v24.0').default('v24.0'),
+    /** The Postmark message stream for storm alerts and other broadcast email. */
+    POSTMARK_BROADCAST_STREAM: z.string().min(1).default('broadcast'),
+    /** The plain From address for storm email, like storms@roofline.app. Unset: `storms@` + the mail domain (final transform). */
+    STORM_MAIL_FROM: z.string().email('must be an email address').optional(),
+    /** Minutes without a fresh hail report before the hail feed counts as stale. */
+    HAIL_STALE_MINUTES: integer(90, 1, 10080),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.GOOGLE_CLIENT_SECRET && !cfg.GOOGLE_CLIENT_ID) {
@@ -212,6 +279,54 @@ const ConfigSchema = z
         message: 'is required when TWILIO_ACCOUNT_SID is set',
       });
     }
+    if (cfg.EAGLEVIEW_CLIENT_ID && !cfg.EAGLEVIEW_CLIENT_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EAGLEVIEW_CLIENT_SECRET'],
+        message: 'is required when EAGLEVIEW_CLIENT_ID is set',
+      });
+    }
+    if (cfg.EAGLEVIEW_CLIENT_SECRET && !cfg.EAGLEVIEW_CLIENT_ID) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EAGLEVIEW_CLIENT_ID'],
+        message: 'is required when EAGLEVIEW_CLIENT_SECRET is set',
+      });
+    }
+    const r2 = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'] as const;
+    if (r2.some((name) => cfg[name])) {
+      for (const name of r2) {
+        if (!cfg[name]) {
+          ctx.addIssue({ code: 'custom', path: [name], message: 'is required when the other R2 settings are set' });
+        }
+      }
+    }
+    const googleAds = [
+      'GOOGLE_ADS_DEVELOPER_TOKEN',
+      'GOOGLE_ADS_MANAGER_ID',
+      'GOOGLE_ADS_CLIENT_ID',
+      'GOOGLE_ADS_CLIENT_SECRET',
+      'GOOGLE_ADS_REFRESH_TOKEN',
+    ] as const;
+    if (googleAds.some((name) => cfg[name])) {
+      for (const name of googleAds) {
+        if (!cfg[name]) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [name],
+            message: 'is required when the other GOOGLE_ADS settings are set',
+          });
+        }
+      }
+    }
+    const meta = ['META_APP_ID', 'META_APP_SECRET', 'META_SYSTEM_USER_TOKEN', 'META_BUSINESS_ID'] as const;
+    if (meta.some((name) => cfg[name])) {
+      for (const name of meta) {
+        if (!cfg[name]) {
+          ctx.addIssue({ code: 'custom', path: [name], message: 'is required when the other META settings are set' });
+        }
+      }
+    }
     if (cfg.FAKE_PROVIDERS && cfg.NODE_ENV === 'production') {
       ctx.addIssue({
         code: 'custom',
@@ -220,8 +335,10 @@ const ConfigSchema = z
       });
     }
   })
-  .transform(({ HOST, BILLING_PLANS_FILE, ...cfg }) => ({
+  .transform(({ HOST, BILLING_PLANS_FILE, PROPOSAL_LINK_BASE_URL, STORM_MAIL_FROM, ...cfg }) => ({
     ...cfg,
+    STORM_MAIL_FROM: STORM_MAIL_FROM ?? `storms@${mailDomain(cfg)}`,
+    PROPOSAL_LINK_BASE_URL: PROPOSAL_LINK_BASE_URL ?? cfg.APP_ORIGIN,
     HOST: HOST ?? (cfg.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'),
     // Outside production the example file is the default; in production without Stripe it stays unset.
     BILLING_PLANS_FILE:

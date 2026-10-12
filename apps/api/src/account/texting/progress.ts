@@ -178,20 +178,36 @@ export async function continueRegistration(deps: AppDeps, companyId: string): Pr
         providerSid: number.phoneNumberSid,
         capabilities: number.capabilities,
       });
-      const now = deps.clock.now();
-      const ctx = systemContext(companyId);
-      await withTenant(deps.pools, ctx, (t) =>
-        recordUsage(t, ctx, {
-          kind: 'phone_number_month',
-          quantity: 1,
-          unitCostCents: billingConfig(deps).pass_through_cents.phone_number_monthly,
-          refType: 'phone_number',
-          refId: `${number.phoneNumberSid}:${monthKey(now, company.timezone)}`,
-          description: numberFeeDescription(number.e164, now, company.timezone),
-          at: now,
-        }),
-      );
     }
     await updateRegistration(tx, companyId, { campaignStatus: 'approved', approvedAt: deps.clock.now() });
   });
+
+  // The monthly number fee is recorded after the number is saved, on every pass, once per
+  // number and month (a repeat in the same month is a no-op on the unique ref).
+  const [saved] = await deps.pools.system
+    .select({ e164: companyPhoneNumbers.e164, providerSid: companyPhoneNumbers.providerSid, timezone: companies.timezone })
+    .from(companyPhoneNumbers)
+    .innerJoin(companies, eq(companies.id, companyPhoneNumbers.companyId))
+    .where(
+      and(
+        eq(companyPhoneNumbers.companyId, companyId),
+        eq(companyPhoneNumbers.purpose, 'main'),
+        eq(companyPhoneNumbers.status, 'active'),
+      ),
+    )
+    .limit(1);
+  if (saved === undefined || saved.providerSid === null) return;
+  const now = deps.clock.now();
+  const ctx = systemContext(companyId);
+  await withTenant(deps.pools, ctx, (t) =>
+    recordUsage(t, ctx, {
+      kind: 'phone_number_month',
+      quantity: 1,
+      unitCostCents: billingConfig(deps).pass_through_cents.phone_number_monthly,
+      refType: 'phone_number',
+      refId: `${saved.providerSid}:${monthKey(now, saved.timezone)}`,
+      description: numberFeeDescription(saved.e164, now, saved.timezone),
+      at: now,
+    }),
+  );
 }

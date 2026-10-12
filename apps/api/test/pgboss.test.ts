@@ -192,15 +192,21 @@ describe('the worker', () => {
     await withWorker(async (worker) => {
       const schedules = await worker.getSchedules();
       expect(schedules.map((s) => [s.name, s.cron]).sort()).toEqual([
+        ['ad-spend-sync', '0 * * * *'],
         ['bill-monthly-fees', '0 9 1 * *'],
         ['calendar-pull', '*/5 * * * *'],
         ['dispatch-messages', '* * * * *'],
         ['end-trials', '*/5 * * * *'],
+        ['exact-report-poll', '*/10 * * * *'],
         ['expire-drafts', '*/5 * * * *'],
+        ['footprints-ensure', '*/15 * * * *'],
+        ['hail-health', '*/15 * * * *'],
         ['poll-texting', '0 * * * *'],
         ['provision-texting', '* * * * *'],
         ['prune-early-reports', '17 3 * * *'],
         ['report-usage', '* * * * *'],
+        ['spotter-sync', '*/30 * * * *'],
+        ['storm-match', '*/10 * * * *'],
         ['sweep-imports', '* * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);
@@ -217,6 +223,12 @@ describe('the worker', () => {
       'bill-monthly-fees',
       'prune-early-reports',
       'calendar-pull',
+      'footprints-ensure',
+      'exact-report-poll',
+      'spotter-sync',
+      'storm-match',
+      'ad-spend-sync',
+      'hail-health',
     ]);
   });
 });
