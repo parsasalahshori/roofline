@@ -96,7 +96,15 @@ export async function stormPageCode(db: pg.Client, companyStormId?: string): Pro
   }
 }
 
-type ApprovalStepView = { id: string; version: number; enabled: boolean; status: string };
+type ApprovalStepView = {
+  id: string;
+  version: number;
+  enabled: boolean;
+  status: string;
+  type?: string;
+  errorPlain?: string | null;
+  result?: unknown;
+};
 
 /** Drafts the storm plan for the company storm id and approves every step, as the signed-in owner on `page`. */
 export async function draftAndApproveStormPlan(page: Page, companyStormId: string): Promise<{ taskId: string }> {
@@ -123,7 +131,11 @@ export async function waitForStormSteps(page: Page, taskId: string): Promise<voi
         const response = await page.request.get(`/api/approvals/${taskId}`);
         if (response.status() !== 200) return 'unreadable';
         const { steps } = (await response.json()) as { steps: ApprovalStepView[] };
-        return steps.filter((step) => step.enabled).every((step) => step.status === 'done') ? 'done' : 'waiting';
+        const open = steps.filter((step) => step.enabled && step.status !== 'done');
+        // The unfinished steps are named in the failure so a CI log shows which one stopped.
+        return open.length === 0
+          ? 'done'
+          : open.map((step) => `${step.type ?? '?'}:${step.status}:${step.errorPlain ?? ''}:${JSON.stringify(step.result ?? null)}`).join(' | ');
       },
       { timeout: 60_000, intervals: [500, 1000] },
     )

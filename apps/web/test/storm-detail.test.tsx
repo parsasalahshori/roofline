@@ -111,7 +111,7 @@ describe('StormDetail', () => {
     expect(screen.getByText(storm.upTo('1.75'))).toBeInTheDocument();
     expect(screen.getByText(storm.customersHit(12))).toBeInTheDocument();
     expect(screen.getByText(storm.homesHit(340))).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: storm.mapLabel })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: storm.mapLabel })).toBeInTheDocument();
   });
 
   it('shows the shared hail legend', async () => {
@@ -125,7 +125,7 @@ describe('StormDetail', () => {
   it('colours the swath with the shell hail expression', async () => {
     fakeMaps.length = 0;
     setup();
-    await screen.findByRole('img', { name: storm.mapLabel });
+    await screen.findByRole('region', { name: storm.mapLabel });
     const map = fakeMaps.at(-1);
     const load = map?.on.mock.calls.find((call) => call[0] === 'load')?.[1] as (() => void) | undefined;
     expect(load).toBeTypeOf('function');

@@ -8,7 +8,7 @@ import { test, expect, readStack } from './fixtures.ts';
  * The hail worker, match timing and ad sync are proven by pytest and integration tests, not here.
  */
 
-function row(page: Page, title: string) {
+function row(page: Page, title: string | RegExp) {
   return page.getByRole('dialog').getByRole('listitem').filter({ hasText: title });
 }
 
@@ -71,8 +71,8 @@ test('office approves messages, owner approves spend', async ({
   await page.getByRole('button', { name: /^Approve \d+ steps · send (ad|\d+ steps) to owner/ }).click();
 
   // No reload: the review picks up the live result of the approval.
-  await expect(row(page, 'Text ')).toContainText('Done', { timeout: 60_000 });
-  await expect(row(page, 'Email ')).toContainText('Done', { timeout: 60_000 });
+  await expect(row(page, /^Text /)).toContainText('Done', { timeout: 60_000 });
+  await expect(row(page, /^Email /)).toContainText('Done', { timeout: 60_000 });
   await expect(row(page, 'door-knock route')).toContainText('Done', { timeout: 60_000 });
   await expect(row(page, google)).toContainText('Waiting for owner', { timeout: 60_000 });
   await expect(row(page, meta)).toContainText('Waiting for owner', { timeout: 60_000 });
