@@ -69,6 +69,11 @@ and locking (jobs, leases, advisory locks, SKIP LOCKED), migrations and RLS, LLM
 (D1, G1), and the Python hail service (S1). Leads, contacts and reviews are unchanged (Sonnet 5.5 leads,
 Opus 5.5 contacts).
 
+**Ruling AV (shared inbound-text hook):** in `apps/api/src/hooks/twilio.ts`, after the inbound message is stored,
+the calls run in a fixed order: S1 `onStormReply`, then D1 `queueFrontDeskText`, then G1 (marked `// G1 Agents`).
+A later handler skips a message an earlier one consumed. Tracks do not wait for each other: each adds its own
+call, and the merger keeps both in this order.
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the
@@ -112,6 +117,8 @@ Opus 5.5 contacts).
 - Migrations: F3 ends at `0012_early_reports_prune.sql`; C1 owns `0013`/`0014`. Never reuse a number. To
   generate, run from `packages/db`: `../../node_modules/.bin/drizzle-kit generate --name=<name>` (the npm
   script does not pass `--name`). drizzle-kit emits FKs before unique constraints; reorder by hand if needed.
+- `drizzle-kit generate` names its new snapshot by the next free number on your base, which can overwrite another
+  track's `meta/00NN_snapshot.json` after a merge. Check `git status` and restore any other track's snapshot from origin.
 - `apps/web/e2e/shell.spec.ts` dock test needs its 60 s timeout. Find banners by text: several
   `role="status"`/`role="alert"` regions are always mounted.
 - Under Vitest, import `RouterProvider` from `react-router` (not `react-router/dom`).
