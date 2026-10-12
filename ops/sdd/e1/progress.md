@@ -179,3 +179,7 @@ Launch runbook (docs/superpowers/launch-runbook.md, branch launch-docs 8a26610) 
 - e1-estimator c0bf326: CI 38272570409 green (Platform + E2E). S1, A1, G1 and D1 have been told to re-merge (c1-crm and e1-estimator).
 - 17:10Z sentinel pass 13: 0609e8d (the late-error branch logs pathForLog(req.path), so a proposal token never reaches the log; test streams /public/proposals/<token>/pdf) + be4793d (the dispatcher's final settle goes through completeParkedStep, Ruling AX-H; the intermediate 'running' update stays on finishParkedStep). e1-estimator be4793d CI 38279185728 green (Platform + E2E). Grants checked against the updated_at hazard: all of ours are table-level or include updated_at.
 - D1 pre-review (controller): 45 findings in ops/sdd/d1/pre-review-findings.md (branch d1-rev-notes). Ruling BG (controller, finding 22): a read-only company gets no AI calls or texts and may turn Front Desk off. Fixes are on d1-rev-a/b/c for the D1 lead to merge.
+- 20:45Z D1 final review (controller: the E1 lead runs it incrementally). Done, findings sent to the D1 lead:
+  - batches 1-3 over df798d1;
+  - incremental reviews of CV, T25, RC-2, RC-1 and its follow-up, RC-3, d1-cap and the dedupe (the C1 lead took RA).
+  E1-lead fix branches, all CI-green and handed to D1: d1-rev-c, e (via d1-t25b), f, g, i (Ruling BJ), j, l and m (Ruling BK amended, the final ROUTER_INTENTS). The RC-1 shared-number patch and 4 failing probes were handed to the S1 lead; I checked RC-1 5deb42b clean. Rulings from the controller: BG, BJ, BK (amended).
