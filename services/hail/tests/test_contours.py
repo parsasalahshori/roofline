@@ -1,4 +1,5 @@
 import gzip
+import itertools
 import json
 import re
 import shutil
@@ -32,9 +33,11 @@ def expected():
 @pytest.fixture(scope="module")
 def contours(tmp_path_factory):
     out = tmp_path_factory.mktemp("grib") / "mesh.grib2"
-    with gzip.open(FIXTURES / "MRMS_MESH_Max_1440min_00.50_20240528-120000.grib2.gz", "rb") as src:
-        with open(out, "wb") as dst:
-            shutil.copyfileobj(src, dst)
+    with (
+        gzip.open(FIXTURES / "MRMS_MESH_Max_1440min_00.50_20240528-120000.grib2.gz", "rb") as src,
+        open(out, "wb") as dst,
+    ):
+        shutil.copyfileobj(src, dst)
     return {c.threshold_in: c.geom for c in contour_grid(out)}
 
 
@@ -84,7 +87,7 @@ def test_area_regression_snapshot(contours, expected):
 
 def test_levels_nested(contours):
     levels = sorted(contours)
-    for lo, hi in zip(levels, levels[1:], strict=False):
+    for lo, hi in itertools.pairwise(levels):
         outside = contours[hi].difference(contours[lo].buffer(0.0005))
         assert outside.area == 0, f"level {hi} not inside level {lo}"
         assert area_km2(contours[hi]) < area_km2(contours[lo])
