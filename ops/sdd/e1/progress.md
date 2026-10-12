@@ -86,3 +86,4 @@ Wave 3 (wf_52209e53-04e, contact 103):
 - T14 20e2a6b: review clean, CI 38197723747 green (web 435). Task 14: complete.
 Merged into e1-estimator: T5 b802c80 (brings e1-w3base 2504960, which changes no files: C1 T5 was already in via c1-crm), T14 7817449. typecheck, lint, lint:css, web 435 clean.
 Carries: (T12/T19) blockCrossSiteMutations refuses mutations whose Origin is not APP_ORIGIN, so PROPOSAL_LINK_BASE_URL must be the same origin as APP_ORIGIN, or /api/public mutations must allow it (group check 103). (T6) FakeFootprintSource reads its fixture with readFileSync at module load from test/fixtures; make it lazy. Stub eslint-disable lines go when real bodies land.
+- T17 (e1-t17): the PDF endpoint (T8) must answer with Content-Disposition: attachment so the proposal window download link (Button href, no download attribute) downloads the file.
