@@ -207,6 +207,7 @@ describe('the worker', () => {
         ['report-usage', '* * * * *'],
         ['spotter-sync', '*/30 * * * *'],
         ['storm-match', '*/10 * * * *'],
+        ['signed-pdf-sweep', '*/15 * * * *'],
         ['sweep-imports', '* * * * *'],
         ['sweep-queued', '* * * * *'],
       ]);
@@ -229,6 +230,7 @@ describe('the worker', () => {
       'storm-match',
       'ad-spend-sync',
       'hail-health',
+      'signed-pdf-sweep',
     ]);
   });
 });

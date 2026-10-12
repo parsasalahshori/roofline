@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit';
-import { money, TIERS, type ProposalOptionView, type ProposalView, type SignatureRecord } from '@roofline/shared';
+import { money, TIERS, type FinancingTerms, type ProposalOptionView, type ProposalView, type SignatureRecord } from '@roofline/shared';
 import { PDF_COLORS } from '../quotes/pdf.ts';
 
 export type ProposalPdfInput = {
@@ -16,8 +16,15 @@ export type ProposalPdfInput = {
    */
   signature?: { record: SignatureRecord; image: Buffer | null; timeZone: string };
   /** Financing terms for the "About $X/mo" line; null/absent hides it. */
-  financing?: { aprBps: number; months: number } | null;
+  financing?: FinancingTerms | null;
+  /** Per-option financing terms by option id (frozen with each option's price); an option listed here ignores `financing`. */
+  optionFinancing?: Record<string, FinancingTerms | null>;
 };
+
+function financingFor(i: ProposalPdfInput, option: ProposalOptionView): FinancingTerms | null {
+  if (i.optionFinancing && Object.hasOwn(i.optionFinancing, option.id)) return i.optionFinancing[option.id] ?? null;
+  return i.financing ?? null;
+}
 
 const MARGIN = 48;
 const FONT = 'Helvetica';
@@ -128,7 +135,8 @@ function internalTables(doc: Doc, o: ProposalOptionView, isEstimate: boolean): v
     { x: cols.price, w: widths.price, text: 'Unit price', right: true },
     { x: cols.total, w: widths.total, text: 'Line total', right: true },
   ]);
-  const lines = [...o.calculation.lines, ...o.addOnLines];
+  // calculation.lines already ends with the add-on lines (withAddOns); addOnLines is the same lines again.
+  const lines = o.calculation.lines;
   for (const l of lines) {
     row(doc, [
       { x: cols.name, w: widths.name, text: l.name },
@@ -200,7 +208,8 @@ export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean 
   ]);
   for (const opt of enabled) {
     const bullets = opt.highlights.map((h) => `• ${h}`).join('\n');
-    const fin = i.financing ? financingLine(opt, i.financing) : null;
+    const terms = financingFor(i, opt);
+    const fin = terms ? financingLine(opt, terms) : null;
     const text = bullets === '' ? ' ' : bullets;
     const h = doc.font(FONT).fontSize(10).heightOfString(text, { width: widths.hl });
     ensure(doc, h + 40);
@@ -244,6 +253,9 @@ export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean 
     line(doc, `Signed at: ${signedAt}`);
     if (chosen) line(doc, `Option: ${chosen.name}`);
     line(doc, `${totalLabel}: ${money(record.totalCents)}`);
+    const chosenTerms = chosen ? financingFor(i, chosen) : null;
+    const chosenFinancing = chosen && chosenTerms ? financingLine(chosen, chosenTerms) : null;
+    if (chosenFinancing) line(doc, chosenFinancing, { muted: true });
     if (i.estimateClause !== null) {
       doc.moveDown(0.3);
       line(doc, i.estimateClause);

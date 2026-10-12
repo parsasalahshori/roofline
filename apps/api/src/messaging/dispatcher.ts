@@ -15,7 +15,7 @@ import {
   withTenant,
 } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
-import { settleSentProposal } from '../estimator/proposal-sent.ts';
+import { settleSentProposal, settleUnsentProposal } from '../estimator/proposal-sent.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
 import { completeParkedStep, refreshTask } from '../tasks/service.ts';
@@ -77,7 +77,9 @@ export const emptySummary = (): DispatchSummary => ({ sent: 0, scheduled: 0, blo
  *    resent), and its result is counted again. While a text still waits (`scheduled`, or `queued`
  *    under a live run) the step stays parked, with the new result. Otherwise it is finished with
  *    one conditional UPDATE (only while it is still parked): `done`, or `failed` when the provider
- *    refused some of its texts (a retry sends those), and its task follows (`refreshTask`). The task
+ *    refused some of its texts (a retry sends those), and its task follows (`refreshTask`). A
+ *    proposal's step whose text did not go out (blocked or failed) follows the step handler's rule
+ *    instead: the proposal goes back to draft and the step needs attention with the reason. The task
  *    row is locked first, then the step: the order every writer takes. A step that throws is logged
  *    (its id only) and left for the next pass; the other steps go on.
  */
@@ -201,20 +203,25 @@ async function settleParkedStep(
 
     const someRefused = counts.retryableFailed > 0;
     await getTask(tx, ctx, step.taskId, { forUpdate: true });
-    // A proposal's single text went out (now, or just now from the loop above): the proposal follows.
-    if (step.type === 'send_proposal' && counts.sent === 1 && !someRefused) {
+    let finish: Parameters<typeof completeParkedStep>[3] = { status: someRefused ? 'failed' : 'done', result, errorPlain: someRefused ? STEP_FAILED : null };
+    if (step.type === 'send_proposal') {
       const row = await getStep(tx, ctx, step.taskId, step.id);
-      const proposalId = (row?.payload as { proposalId?: unknown } | undefined)?.proposalId;
+      const payload = row?.payload as { proposalId?: unknown; customerId?: unknown } | undefined;
+      const proposalId = payload?.proposalId;
       if (typeof proposalId !== 'string') throw new Error(`send_proposal step ${step.id} has no proposal id.`);
-      await settleSentProposal(tx, ctx, proposalId, now);
+      if (counts.sent === 1 && !someRefused) {
+        // A proposal's single text went out (now, or just now from the loop above): the proposal follows.
+        await settleSentProposal(tx, ctx, proposalId, now);
+      } else if (counts.sent === 0) {
+        // C-I4: the held text was blocked or failed when its time came. The step handler's rule applies: the
+        // proposal is a draft again and the step needs attention with the reason.
+        const customerId = typeof payload?.customerId === 'string' ? payload.customerId : '';
+        const blocked = Object.values(counts.blocked).some((n) => n > 0);
+        const errorPlain = await settleUnsentProposal(tx, ctx, { proposalId, stepId: step.id, customerId, blocked }, now);
+        finish = { status: 'needs_attention', result, errorPlain };
+      }
     }
-    const saved = await completeParkedStep(
-      tx,
-      ctx,
-      step.id,
-      { status: someRefused ? 'failed' : 'done', result, errorPlain: someRefused ? STEP_FAILED : null },
-      now,
-    );
+    const saved = await completeParkedStep(tx, ctx, step.id, finish, now);
     if (!saved) return false;
     await refreshTask(tx, ctx, saved.taskId, now);
     return true;

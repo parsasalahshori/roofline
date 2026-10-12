@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   customerFirstNames,
   decrypt,
@@ -9,18 +10,17 @@ import {
   lockProposalForSend,
   mintProposalLink,
   setProposalStatus,
-  stepTextReason,
   withTenant,
   type TenantContext,
 } from '@roofline/db';
-import { stepTypes, TIERS } from '@roofline/shared';
+import { stepTypes, TIERS, type ProposalView, type Tier } from '@roofline/shared';
 import type { Config } from '../config.ts';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { sendOneText } from '../messaging/send-batch.ts';
 import { createTask } from '../tasks/service.ts';
 import type { StepHandler, StepOutcome } from '../tasks/runner.ts';
-import { settleSentProposal } from './proposal-sent.ts';
+import { settleSentProposal, settleUnsentProposal } from './proposal-sent.ts';
 
 /*
  * The Estimator agent's send step (E1 spec): a proposal's text goes to the customer as one approved
@@ -38,9 +38,9 @@ export const PROPOSAL_TEXT_TEMPLATE = "Hi {first_name}, it's {company}. Here's y
 const SENT_MESSAGE = 'This proposal was sent. Make a revised proposal to change it.';
 const SIGNED_MESSAGE = 'This proposal is signed. Make a new proposal for more work.';
 const CLOSED_MESSAGE = "This proposal can't be sent now. Make a revised proposal to change it.";
+/** B2: a draft (back from a blocked or failed send, maybe edited since) needs a fresh approval of its new preview. */
+export const CHANGED_MESSAGE = 'This proposal changed. Send it again for approval.';
 const UNREADABLE = "We couldn't read this proposal text. Please make the proposal again.";
-const BLOCKED_FALLBACK = "The texting service held this text. Check the customer's texting settings, then retry.";
-const FAILED_FALLBACK = "This text didn't go out. You can retry it.";
 const REFUSED = 'The texting service did not take the proposal text; the step will be tried again.';
 
 /** What the send's transaction decides before the text goes out. */
@@ -78,6 +78,11 @@ function newLinkToken(encryptionKey: string): { hash: Buffer; encrypted: Buffer 
   };
 }
 
+/** Enabled options only, in tier order: the homeowner-facing totals in the step's preview. */
+function previewTotals(view: ProposalView): { tier: Tier; totalCents: number }[] {
+  return TIERS.flatMap((tier) => view.options.filter((o) => o.enabled && o.tier === tier).map((o) => ({ tier, totalCents: o.totalCents })));
+}
+
 /**
  * Makes the proposal's send task: the proposal goes to 'ready' and one `send_proposal` step waits for the
  * approval. Idempotent: a send already queued or under way for this proposal returns its task.
@@ -97,10 +102,7 @@ export async function draftProposalSend(deps: AppDeps, ctx: TenantContext, propo
     if (!view) throw new AppError(404, MESSAGES.notFound);
     if (locked.status === 'draft') await setProposalStatus(tx, ctx, proposalId, ['draft'], 'ready', now);
 
-    // Enabled options only, in tier order: the homeowner-facing totals in the step's preview.
-    const totals = TIERS.flatMap((tier) =>
-      view.options.filter((o) => o.enabled && o.tier === tier).map((o) => ({ tier, totalCents: o.totalCents })),
-    );
+    const totals = previewTotals(view);
     const body = view.messageBody.trim() === '' ? PROPOSAL_TEXT_TEMPLATE : view.messageBody;
     const { taskId } = await createTask(
       tx,
@@ -138,7 +140,9 @@ export const sendProposalStep: StepHandler = async (deps, ctx, step): Promise<St
     const locked = await lockProposalForSend(tx, ctx, payload.proposalId);
     if (!locked) return { kind: 'needs_attention' as const, errorPlain: MESSAGES.notFound };
     if (locked.status === 'signed' || locked.status === 'sent' || locked.status === 'viewed') return { kind: 'done' };
-    if (locked.status !== 'draft' && locked.status !== 'ready') return { kind: 'needs_attention' as const, errorPlain: CLOSED_MESSAGE };
+    // Only what the owner approved goes out: a draft may have changed since the preview was made (B2).
+    if (locked.status === 'draft') return { kind: 'needs_attention' as const, errorPlain: CHANGED_MESSAGE };
+    if (locked.status !== 'ready') return { kind: 'needs_attention' as const, errorPlain: CLOSED_MESSAGE };
 
     // Mint once: when the proposal has no token yet, a new one is stored; either way the stored one is used.
     const minted = newLinkToken(deps.config.ENCRYPTION_KEY);
@@ -147,6 +151,8 @@ export const sendProposalStep: StepHandler = async (deps, ctx, step): Promise<St
 
     const view = await getProposal(tx, ctx, payload.proposalId);
     if (!view) return { kind: 'needs_attention' as const, errorPlain: MESSAGES.notFound };
+    // The prices must still be the ones the approval showed (an older task's retry after a newer send asked again).
+    if (!isDeepStrictEqual(previewTotals(view), payload.totals)) return { kind: 'needs_attention' as const, errorPlain: CHANGED_MESSAGE };
     const firstNames = await customerFirstNames(tx, ctx, [payload.customerId]);
     const company = (await getCompanyName(tx, ctx)) ?? '';
     const text = fillProposalText(payload.body, {
@@ -178,12 +184,9 @@ export const sendProposalStep: StepHandler = async (deps, ctx, step): Promise<St
   if (outcome === 'refused') throw new Error(REFUSED);
 
   // blocked or failed: the text did not go out, so the proposal is a draft again, with the reason.
-  const reason = await withTenant(deps.pools, ctx, async (tx) => {
-    await setProposalStatus(tx, ctx, payload.proposalId, ['ready'], 'draft', deps.clock.now());
-    return stepTextReason(tx, ctx, step.id, payload.customerId);
-  });
-  if (outcome === 'blocked') {
-    return { status: 'needs_attention', result: { sent: 0, blocked: 1 }, errorPlain: reason ?? BLOCKED_FALLBACK };
-  }
-  return { status: 'needs_attention', result: { sent: 0, failed: 1 }, errorPlain: reason ?? FAILED_FALLBACK };
+  const errorPlain = await withTenant(deps.pools, ctx, (tx) =>
+    settleUnsentProposal(tx, ctx, { proposalId: payload.proposalId, stepId: step.id, customerId: payload.customerId, blocked: outcome === 'blocked' }, deps.clock.now()),
+  );
+  if (outcome === 'blocked') return { status: 'needs_attention', result: { sent: 0, blocked: 1 }, errorPlain };
+  return { status: 'needs_attention', result: { sent: 0, failed: 1 }, errorPlain };
 };

@@ -135,8 +135,8 @@ export class EagleViewOrders implements ExactReports {
     try {
       const report = normalizeEagleView(body);
       const dollars = priceDollars(body, COST_KEYS);
-      // No readable cost: null, never 0, so the usage record is not silently a free report.
-      const costCents = dollars === null ? null : Math.round(dollars * 100);
+      // No readable cost (missing, or 0 or less): null, never 0, so the usage record is not silently a free report.
+      const costCents = dollars === null || dollars <= 0 ? null : Math.round(dollars * 100);
       return { status: 'complete', report, costCents };
     } catch (err) {
       if (err instanceof EagleViewNormalizeError) return { status: 'failed', reasonKey: 'unsupported_units' };

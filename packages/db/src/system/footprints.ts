@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { FootprintStateStatus } from '@roofline/shared';
+import { US_STATE_CODES, type FootprintStateStatus } from '@roofline/shared';
 import type { Db } from '../pools.ts';
 
 /*
@@ -15,11 +15,6 @@ export const STALE_LOADING_MS = 6 * 60 * 60 * 1000;
 
 const SQ_FT_PER_SQ_M = 10.7639104167;
 
-const STATE_CODES = [
-  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS',
-  'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC',
-  'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
-] as const;
 
 export async function footprintStateStatus(system: Db, state: string): Promise<FootprintStateStatus | null> {
   const s = state.toUpperCase();
@@ -105,7 +100,7 @@ export async function failFootprintState(system: Db, state: string, errorPlain: 
 /** One row per state some company is in that has no ready (or fresh loading) footprints, with the smallest such company id. */
 export async function statesNeedingFootprintsFor(system: Db): Promise<{ state: string; companyId: string }[]> {
   const cutoff = new Date(Date.now() - STALE_LOADING_MS);
-  const codes = sql.join(STATE_CODES.map((c) => sql`${c}`), sql`, `);
+  const codes = sql.join(US_STATE_CODES.map((c) => sql`${c}`), sql`, `);
   const result = await system.execute(sql`
     select upper(trim(c.address_state)) as state, min(c.id::text) as company_id
     from companies c

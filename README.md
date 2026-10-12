@@ -58,11 +58,11 @@
 | `EAGLEVIEW_CLIENT_SECRET` | no | EagleView client secret. Both or neither with `EAGLEVIEW_CLIENT_ID`. |
 | `EAGLEVIEW_ENV` | no (`sandbox`) | `sandbox` or `production`. |
 | `EAGLEVIEW_PRODUCT_ID` | no (0) | The EagleView product id to order. 0 is a placeholder: ask before ordering. |
-| `R2_ACCOUNT_ID` | no | Cloudflare R2 account id. All four R2 settings or none. Expected in production once any company can sign; without them start-up warns and signed proposals cannot be stored. |
+| `R2_ACCOUNT_ID` | production | Cloudflare R2 account id. All four R2 settings or none; production refuses to start without them (signed proposals are stored in R2). |
 | `R2_ACCESS_KEY_ID` | no | R2 access key id. All four R2 settings or none. |
 | `R2_SECRET_ACCESS_KEY` | no | R2 secret access key. All four R2 settings or none. |
 | `R2_BUCKET` | no | R2 bucket name. All four R2 settings or none. |
-| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be the same origin as `APP_ORIGIN` for the homeowner page to accept its signing and decline posts. |
+| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. Must be on the same origin as `APP_ORIGIN` (start-up refuses another origin), because the homeowner page posts its signing and decline requests there. |
 | `FOOTPRINTS_BASE_URL` | no | Where building footprint files are read from; a trailing slash is added. Defaults to `https://usbuildingdata.blob.core.windows.net/usbuildings-v2/`. |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | no | Google Ads developer token. All five GOOGLE_ADS settings or none; unset means Google ads are off. |
 | `GOOGLE_ADS_MANAGER_ID` | no | Google Ads manager account id. All five GOOGLE_ADS settings or none. |

@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import {
   claimExactOrder,
+  findOpenExactOrder,
   getExactOrder,
   getMeasurementBasics,
   getProperty,
   insertExactOrder,
+  lockMeasurementForOrder,
   moveExactOrder,
   setExactOrderTask,
   updateExactOrderPrice,
@@ -30,6 +32,8 @@ export { completeExactReport } from './exact-report-complete.ts';
 const NOT_SET_UP = "Exact reports aren't set up yet.";
 export const UNCERTAIN_MESSAGE = 'Needs attention: check with the report provider before ordering again.';
 export const PRICE_WENT_UP_MESSAGE = 'The report price went up. Ask again.';
+/** The report was ordered but its id could not be saved: someone must pick it up, never order it again. */
+export const NOT_SAVED_MESSAGE = "The report was ordered, but we couldn't save it. Don't order it again; we're looking into it.";
 
 async function priceOrThrow(deps: AppDeps, input: ExactOrderInput) {
   try {
@@ -40,19 +44,26 @@ async function priceOrThrow(deps: AppDeps, input: ExactOrderInput) {
   }
 }
 
-/** Prices a report for the measurement's home and makes the draft task the owner approves. */
+/**
+ * Prices a report for the measurement's home and makes the draft task the owner approves. A measurement that
+ * already has an open order (asked for, approved, or on its way) gets that order's task back instead (B4), so
+ * two clicks never make two orders that could both be approved and billed.
+ */
 export async function requestExactReport(
   deps: AppDeps,
   ctx: TenantContext,
   measurementId: string,
 ): Promise<{ taskId: string; orderId: string }> {
-  const address = await withTenant(deps.pools, ctx, async (tx) => {
+  const found = await withTenant(deps.pools, ctx, async (tx) => {
     const m = await getMeasurementBasics(tx, ctx, measurementId);
     if (!m) throw new AppError(404, MESSAGES.notFound);
     const p = await getProperty(tx, ctx, m.propertyId);
     if (!p) throw new AppError(404, MESSAGES.notFound);
-    return { street: p.addressLine, city: p.city, state: p.state, zip: p.zip };
+    const open = await findOpenExactOrder(tx, ctx, measurementId);
+    return { open, address: { street: p.addressLine, city: p.city, state: p.state, zip: p.zip } };
   });
+  if (found.open) return { taskId: found.open.taskId, orderId: found.open.id };
+  const { address } = found;
   if (!deps.exactReports.configured) throw new AppError(503, NOT_SET_UP);
 
   const productId = deps.config.EAGLEVIEW_PRODUCT_ID;
@@ -63,6 +74,11 @@ export async function requestExactReport(
   const maxSpendCents = invoiceAmountCents('exact_report', 1, price.maxCents, billingConfig(deps));
   const oneLine = `${address.street}, ${address.city}, ${address.state} ${address.zip}`;
   return withTenant(deps.pools, ctx, async (tx) => {
+    // The measurement's row lock makes the check and the insert one step: a request that raced this one
+    // waits here, then finds this order (the price asked for meanwhile is simply not used).
+    if (!(await lockMeasurementForOrder(tx, ctx, measurementId))) throw new AppError(404, MESSAGES.notFound);
+    const open = await findOpenExactOrder(tx, ctx, measurementId);
+    if (open) return { taskId: open.taskId, orderId: open.id };
     const order = await insertExactOrder(
       tx,
       ctx,
@@ -149,13 +165,9 @@ export const orderExactReport: StepHandler = async (deps, ctx, step): Promise<St
   }
 
   // (c) Order, outside any transaction. Any failure here may still have taken effect: never retried.
+  let reportId: string;
   try {
-    const { reportId } = await deps.exactReports.order(orderInput);
-    const at = deps.clock.now();
-    await withTenant(deps.pools, ctx, (tx) =>
-      moveExactOrder(tx, ctx, orderId, 'ordering', 'waiting', { providerReportId: reportId, lastPolledAt: at }, at),
-    );
-    return { status: 'running', result: {} };
+    ({ reportId } = await deps.exactReports.order(orderInput));
   } catch (e) {
     if (!(e instanceof ExactOrderUncertainError)) (deps.logError ?? logErrorToConsole)(e, 'order_exact_report');
     await withTenant(deps.pools, ctx, (tx) =>
@@ -163,4 +175,22 @@ export const orderExactReport: StepHandler = async (deps, ctx, step): Promise<St
     );
     return { status: 'needs_attention', result: {}, errorPlain: UNCERTAIN_MESSAGE };
   }
+
+  // (d) The order is placed and paid for: its report id must be kept (C-I3). The write is tried twice; if both
+  // fail, our ids go to the log so the order can be picked up by hand, and it is never called uncertain.
+  const saveWaiting = () => {
+    const at = deps.clock.now();
+    return withTenant(deps.pools, ctx, (tx) => moveExactOrder(tx, ctx, orderId, 'ordering', 'waiting', { providerReportId: reportId, lastPolledAt: at }, at));
+  };
+  try {
+    await saveWaiting();
+  } catch {
+    try {
+      await saveWaiting();
+    } catch (e) {
+      (deps.logError ?? logErrorToConsole)(e, `order_exact_report: order ${orderId} was placed as report ${reportId} but not saved`);
+      return { status: 'needs_attention', result: { ordered: 1 }, errorPlain: NOT_SAVED_MESSAGE };
+    }
+  }
+  return { status: 'running', result: {} };
 };

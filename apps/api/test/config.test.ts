@@ -15,7 +15,8 @@ import { NullWeatherSource } from '../src/weather/source.ts';
 
 const KEY = Buffer.alloc(32, 9).toString('base64');
 
-const VALID = {
+/** A production environment without R2 (which production requires: Ruling ET). */
+const BASE = {
   NODE_ENV: 'production',
   APP_ORIGIN: 'https://app.roofline.test',
   DATABASE_URL_TENANT: 'postgres://app_tenant:pw@localhost:5432/roofline',
@@ -23,6 +24,15 @@ const VALID = {
   ENCRYPTION_KEY: KEY,
   PUBLIC_BASE_URL: 'https://app.roofline.test',
 } satisfies Record<string, string>;
+
+const R2_SETTINGS = {
+  R2_ACCOUNT_ID: 'acct',
+  R2_ACCESS_KEY_ID: 'key-id',
+  R2_SECRET_ACCESS_KEY: 'key-secret',
+  R2_BUCKET: 'proposals',
+} satisfies Record<string, string>;
+
+const VALID = { ...BASE, ...R2_SETTINGS } satisfies Record<string, string>;
 
 function problem(env: Record<string, string | undefined>): string {
   try {
@@ -491,32 +501,49 @@ describe('E1 settings', () => {
     }
   });
 
-  test('R2 settings: all four load; one alone is refused (names the missing ones); none loads; not required in production', () => {
-    expect(loadConfig({ ...VALID, ...R2 })).toMatchObject(R2);
-    const message = problem({ ...VALID, R2_BUCKET: 'proposals' });
+  test('R2 settings: all four load; one alone is refused (names the missing ones); none loads outside production', () => {
+    const dev = { ...BASE, NODE_ENV: 'development' };
+    expect(loadConfig({ ...dev, ...R2 })).toMatchObject(R2);
+    const message = problem({ ...dev, R2_BUCKET: 'proposals' });
     for (const name of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) {
       expect(message).toContain(name);
     }
     expect(message).toContain('is required when the other R2 settings are set');
     expect(message).not.toContain('R2_BUCKET:');
-    const noBucket = problem({ ...VALID, ...R2, R2_BUCKET: undefined });
+    const noBucket = problem({ ...dev, ...R2, R2_BUCKET: undefined });
     expect(noBucket).toContain('R2_BUCKET');
     expect(noBucket).not.toContain('key-secret');
-    // None set loads, in production too (VALID is production): only a start-up warning.
-    const config = loadConfig(VALID);
-    expect(config.NODE_ENV).toBe('production');
-    expect(config.R2_BUCKET).toBeUndefined();
+    // None set loads outside production: signing is refused there until R2 is set.
+    for (const NODE_ENV of ['development', 'test']) expect(loadConfig({ ...BASE, NODE_ENV }).R2_BUCKET).toBeUndefined();
+  });
+
+  test('Ruling ET: production without R2 refuses to start, naming every R2 setting and no value', () => {
+    const message = problem(BASE);
+    for (const name of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET']) {
+      expect(message).toContain(`${name}: is required in production (signed proposals are stored in R2)`);
+    }
+    expect(message).not.toContain(KEY);
+    expect(loadConfig({ ...BASE, ...R2 }).R2_BUCKET).toBe('proposals');
+  });
+
+  test('C-M5: PROPOSAL_LINK_BASE_URL must be on the same origin as APP_ORIGIN (homeowners sign through it)', () => {
+    expect(loadConfig({ ...VALID, PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test/' }).PROPOSAL_LINK_BASE_URL).toBe('https://app.roofline.test');
+    expect(loadConfig({ ...VALID, PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test/x/' }).PROPOSAL_LINK_BASE_URL).toBe('https://app.roofline.test/x');
+    for (const other of ['https://p.roofline.test', 'http://app.roofline.test', 'https://app.roofline.test:8443']) {
+      const message = problem({ ...VALID, PROPOSAL_LINK_BASE_URL: other });
+      expect(message).toContain('PROPOSAL_LINK_BASE_URL: must be on the same origin as APP_ORIGIN (homeowners sign through it)');
+    }
   });
 
   test('PROPOSAL_LINK_BASE_URL defaults to APP_ORIGIN, strips trailing slashes, rejects non-http', () => {
     expect(loadConfig(VALID).PROPOSAL_LINK_BASE_URL).toBe('https://app.roofline.test');
-    expect(loadConfig({ ...VALID, PROPOSAL_LINK_BASE_URL: 'https://p.roofline.test/' }).PROPOSAL_LINK_BASE_URL).toBe(
-      'https://p.roofline.test',
+    expect(loadConfig({ ...VALID, PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test/' }).PROPOSAL_LINK_BASE_URL).toBe(
+      'https://app.roofline.test',
     );
-    expect(loadConfig({ ...VALID, PROPOSAL_LINK_BASE_URL: 'https://p.roofline.test/x//' }).PROPOSAL_LINK_BASE_URL).toBe(
-      'https://p.roofline.test/x',
+    expect(loadConfig({ ...VALID, PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test/x//' }).PROPOSAL_LINK_BASE_URL).toBe(
+      'https://app.roofline.test/x',
     );
-    expect(problem({ ...VALID, PROPOSAL_LINK_BASE_URL: 'ftp://p.roofline.test' })).toContain('PROPOSAL_LINK_BASE_URL');
+    expect(problem({ ...VALID, PROPOSAL_LINK_BASE_URL: 'ftp://app.roofline.test' })).toContain('PROPOSAL_LINK_BASE_URL');
   });
 
   test('FOOTPRINTS_BASE_URL defaults to the Microsoft set and always ends in a slash', () => {
