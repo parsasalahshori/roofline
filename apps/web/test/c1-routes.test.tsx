@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
+import { DEFAULT_WORK_HOURS, defaultPricebook } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
@@ -71,6 +72,19 @@ function dockLink(dockNav: HTMLElement, label: string) {
 /** The row of tab links in the Settings window. */
 const settingsTabs = () => screen.findByRole('navigation', { name: settings.tabsLabel });
 
+const PRICEBOOK_VIEW = {
+  prices: defaultPricebook,
+  defaults: { wastePercent: 12, markupPercent: 25, taxPercent: 0, material: 'architectural' as const },
+  isExample: false,
+};
+
+const SCHEDULE_ROUTES: Routes = {
+  'GET /api/calendar/settings': () => ({
+    body: { workHours: DEFAULT_WORK_HOURS, travelBufferMinutes: 30, minNoticeMinutes: 120, stuckAfterDays: 14 },
+  }),
+  'GET /api/calendar/my-hours': () => ({ body: { workHours: DEFAULT_WORK_HOURS, custom: false } }),
+};
+
 describe('C1 windows', () => {
   it.each([
     ['/jobs', WINDOW_COPY.jobs.title, jobs.newJob],
@@ -131,18 +145,18 @@ describe('the New job and New customer screens', () => {
 
 describe('settings tabs for the C1 screens', () => {
   it('shows Prices to the owner', async () => {
-    signedInApi();
+    signedInApi(ACCOUNT, { 'GET /api/pricebook': () => ({ body: PRICEBOOK_VIEW }) });
     renderApp('/settings/prices');
 
-    expect(await screen.findByText(prices.comingSoon)).toBeInTheDocument();
+    expect(await screen.findByLabelText(prices.fields.permit)).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.prices })).toBeInTheDocument();
   });
 
   it('shows Prices to the office', async () => {
-    signedInApi({ ...ACCOUNT, role: 'office' });
+    signedInApi({ ...ACCOUNT, role: 'office' }, { 'GET /api/pricebook': () => ({ body: PRICEBOOK_VIEW }) });
     renderApp('/settings/prices');
 
-    expect(await screen.findByText(prices.comingSoon)).toBeInTheDocument();
+    expect(await screen.findByLabelText(prices.fields.permit)).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.prices })).toBeInTheDocument();
   });
 
@@ -154,14 +168,14 @@ describe('settings tabs for the C1 screens', () => {
     const tabs = await settingsTabs();
     expect(within(tabs).getByRole('link', { name: settings.tabs.company })).toHaveAttribute('aria-current', 'page');
     expect(within(tabs).queryByRole('link', { name: settings.tabs.prices })).not.toBeInTheDocument();
-    expect(screen.queryByText(prices.comingSoon)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(prices.fields.permit)).not.toBeInTheDocument();
   });
 
   it('shows Schedule to a rep', async () => {
-    signedInApi({ ...ACCOUNT, role: 'rep' });
+    signedInApi({ ...ACCOUNT, role: 'rep' }, SCHEDULE_ROUTES);
     renderApp('/settings/schedule');
 
-    expect(await screen.findByText(schedule.comingSoon)).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: schedule.yourTitle })).toBeInTheDocument();
   });
 });
 
