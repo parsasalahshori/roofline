@@ -42,7 +42,7 @@ export type NewProposal = {
   jobId: string; customerId: string; propertyId: string; measurementId: string; basis: MeasurementKind;
   validUntil: string; messageBody: string; options: NewProposalOption[];
 };
-/** Changes to a draft; option changes are keyed by option id. Only keys present change. */
+/** Changes to a draft; option changes are keyed by option id (an id not on the proposal throws UnknownProposalOptionError). Only keys present change. */
 export type ProposalPatch = {
   messageBody?: string;
   options?: { id: string; enabled?: boolean; name?: string; material?: Scope['material']; wastePercent?: number; markupPercent?: number; addOns?: AddOn[] }[];
@@ -52,6 +52,16 @@ export type MeasurementBasics = {
   id: string; propertyId: string; jobId: string | null; kind: MeasurementKind;
   surfaceSqFt: number; pitchX12: number; edgeFt: number; ridgeFt: number; valleyFt: number;
 };
+
+/** A patch named an option id that is not one of the proposal's options (or named one twice). `index` is its place in `options`. */
+export class UnknownProposalOptionError extends Error {
+  readonly index: number;
+  constructor(index: number) {
+    super('That option is not part of this proposal.');
+    this.name = 'UnknownProposalOptionError';
+    this.index = index;
+  }
+}
 
 type StoredPrices = { pricebook: Pricebook; addOnLines: QuoteLine[]; quantities: MeasuredQuantities };
 
@@ -264,7 +274,12 @@ export async function updateDraftProposal(tx: Tx, ctx: TenantContext, id: string
   if (row === null || row === 'not_draft') return row;
   const options = await tx.select().from(proposalOptions).where(eq(proposalOptions.proposalId, id));
   const fin = await financing(tx, ctx);
-  const patches = new Map((p.options ?? []).map((o) => [o.id, o]));
+  const known = new Set(options.map((o) => o.id));
+  const patches = new Map<string, NonNullable<ProposalPatch['options']>[number]>();
+  (p.options ?? []).forEach((o, index) => {
+    if (!known.has(o.id) || patches.has(o.id)) throw new UnknownProposalOptionError(index);
+    patches.set(o.id, o);
+  });
   for (const o of options) {
     const patch = patches.get(o.id);
     const stored = o.prices as unknown as StoredPrices;

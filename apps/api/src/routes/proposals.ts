@@ -7,6 +7,7 @@ import {
   getProposal,
   listProposals,
   type ProposalPatch,
+  UnknownProposalOptionError,
   updateDraftProposal,
   withTenant,
 } from '@roofline/db';
@@ -16,7 +17,7 @@ import { buildProposal } from '../estimator/build.ts';
 import { repriceFromMeasurement } from '../estimator/reprice.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can } from '../permissions.ts';
-import { renderProposalPdf } from '../proposals/pdf.ts';
+import { pdfToBuffer, renderProposalPdf } from '../proposals/pdf.ts';
 import { assertKnownFields, emailField, noNul, offsetParam, parse, UUID } from '../validate.ts';
 
 /** The 409 for a change to a proposal that has been sent. */
@@ -45,15 +46,15 @@ const OptionPatch = z
     enabled: z.boolean({ error: MESSAGES.checkField }).optional(),
     name: z.string({ error: MESSAGES.checkField }).trim().min(1, MESSAGES.checkField).max(60, MESSAGES.checkField).refine(noNul, MESSAGES.checkField).optional(),
     material: z.enum(['architectural', 'premium', 'metal'], { error: MESSAGES.checkField }).optional(),
-    wastePercent: z.number({ error: MESSAGES.checkField }).finite().min(0).max(50).optional(),
-    markupPercent: z.number({ error: MESSAGES.checkField }).finite().min(0).max(100).optional(),
-    addOns: z.array(AddOnSchema).max(8).optional(),
+    wastePercent: z.number({ error: MESSAGES.checkField }).finite(MESSAGES.checkField).min(0, MESSAGES.checkField).max(50, MESSAGES.checkField).optional(),
+    markupPercent: z.number({ error: MESSAGES.checkField }).finite(MESSAGES.checkField).min(0, MESSAGES.checkField).max(100, MESSAGES.checkField).optional(),
+    addOns: z.array(AddOnSchema, { error: MESSAGES.checkField }).max(8, MESSAGES.checkField).optional(),
   })
   .strict();
 
 const PatchBody = z.object({
-  options: z.array(OptionPatch).max(3).optional(),
-  messageBody: z.string({ error: MESSAGES.checkField }).min(1).max(640).refine(noNul).optional(),
+  options: z.array(OptionPatch, { error: MESSAGES.checkField }).max(3, MESSAGES.checkField).optional(),
+  messageBody: z.string({ error: MESSAGES.checkField }).min(1, MESSAGES.checkField).max(640, MESSAGES.checkField).refine(noNul, MESSAGES.checkField).optional(),
 });
 
 const ListQuery = z.object({
@@ -128,7 +129,10 @@ export function proposalRoutes(deps: AppDeps): Router {
         })),
       }),
     };
-    const result = await withTenant(pools, ctx, (tx) => updateDraftProposal(tx, ctx, id, patch, clock.now()));
+    const result = await withTenant(pools, ctx, (tx) => updateDraftProposal(tx, ctx, id, patch, clock.now())).catch((err: unknown) => {
+      if (err instanceof UnknownProposalOptionError) throw new AppError(400, MESSAGES.checkField, `options.${err.index}.id`);
+      throw err;
+    });
     if (result === 'not_draft') throw new AppError(409, SENT_PROPOSAL_MESSAGE);
     if (!result) throw new AppError(404, MESSAGES.notFound);
     res.json(result);
@@ -165,10 +169,11 @@ export function proposalRoutes(deps: AppDeps): Router {
       proposal: view,
       financing: settings?.apr != null && settings.months != null ? { aprBps: settings.apr, months: settings.months } : null,
     });
+    // Rendered in full before any header goes out, so a failure is a plain 500, never a cut-off download.
+    const pdf = await pdfToBuffer(doc);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="proposal-${view.number}.pdf"`);
-    doc.pipe(res);
-    doc.end();
+    res.send(pdf);
   });
 
   // GET /:id/link and POST /:id/send arrive with E1 Task 11.

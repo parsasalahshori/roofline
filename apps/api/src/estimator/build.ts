@@ -1,4 +1,4 @@
-import { and, desc, eq, notInArray } from 'drizzle-orm';
+import { and, desc, eq, isNull, notInArray } from 'drizzle-orm';
 import {
   addActivity,
   companies,
@@ -148,17 +148,18 @@ export async function buildProposal(deps: AppDeps, ctx: TenantContext, i: BuildI
     if (i.jobId) {
       const job = await getJob(tx, ctx, i.jobId);
       if (!job) throw new AppError(404, MESSAGES.notFound);
+      // The job must be at the measured home: one home's job never carries another home's roof.
+      if (job.propertyId !== m.propertyId) throw new AppError(400, MESSAGES.checkField, 'jobId');
       ({ id: jobId, customerId, propertyId } = job);
     } else {
       const [open] = await tx
         .select()
         .from(jobs)
-        .where(and(eq(jobs.propertyId, m.propertyId), notInArray(jobs.stage, ['won', 'lost', 'installed']), jobScope(ctx)))
+        .where(and(eq(jobs.propertyId, m.propertyId), notInArray(jobs.stage, ['won', 'lost', 'installed']), isNull(jobs.archivedAt), jobScope(ctx)))
         .orderBy(desc(jobs.createdAt))
         .limit(1);
-      const openJob = open && open.archivedAt === null ? open : undefined;
-      if (openJob) {
-        ({ id: jobId, customerId, propertyId } = openJob);
+      if (open) {
+        ({ id: jobId, customerId, propertyId } = open);
       } else {
         const property = await getProperty(tx, ctx, m.propertyId);
         if (!property) throw new AppError(404, MESSAGES.notFound);

@@ -8,6 +8,7 @@ import {
   measurements,
   proposals,
   tierTemplates,
+  UnknownProposalOptionError,
   updateDraftProposal,
   withTenant,
   type TenantContext,
@@ -170,6 +171,13 @@ describe('building a proposal', () => {
     expect(asked.customer.phone).toBe('+14025550111');
   });
 
+  test("a job at another home is refused (field jobId): one home's job never carries another home's roof", async () => {
+    const s = await setup('a', {}, 0);
+    const elsewhere = await setup('a', {}, 1);
+    await expect(buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: elsewhere.job.id })).rejects.toMatchObject({ status: 400, field: 'jobId' });
+    expect((await inTx(ownerCtx(), (tx) => listProposals(tx, ownerCtx(), {}))).total).toBe(0);
+  });
+
   test('a missing measurement is a 404 and a home with no customer or job needs one', async () => {
     await expect(buildProposal(t.deps, ownerCtx(), { measurementId: NO_UUID })).rejects.toMatchObject({ status: 404 });
     const property = await mustCreate(await who.as('owner'), '/api/properties', addressFor(5));
@@ -184,7 +192,7 @@ describe('editing a draft', () => {
     const p = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
     const [good, better] = p.options;
     const updated = await inTx(ownerCtx(), (tx) =>
-      updateDraftProposal(tx, ownerCtx(), p.id, { messageBody: 'Hello', options: [{ id: good!.id, wastePercent: 20 }, { id: better!.id, enabled: false }, { id: NO_UUID, enabled: false }] }, NOW),
+      updateDraftProposal(tx, ownerCtx(), p.id, { messageBody: 'Hello', options: [{ id: good!.id, wastePercent: 20 }, { id: better!.id, enabled: false }] }, NOW),
     );
     if (updated === null || updated === 'not_draft') throw new Error('expected a view');
     const expected = priceTier({ ...DEFAULT_TIER_TEMPLATES[0]!, wastePercent: 20 }, { ...BASE, markupPercent: 25 }, defaultPricebook, QUANTITIES);
@@ -195,6 +203,20 @@ describe('editing a draft', () => {
     expect(updated.options[0]!.scope.wastePercent).toBe(20);
     expect(updated.options[1]!.enabled).toBe(false);
     expect(updated.options[1]!.totalCents).toBe(better!.totalCents);
+  });
+
+  test("an option id that is not the proposal's (or is named twice) is refused with its index and nothing changes", async () => {
+    const s = await setup();
+    const p = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
+    const other = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
+    const [good] = p.options;
+    const patch = (options: { id: string; enabled?: boolean }[]) => inTx(ownerCtx(), (tx) => updateDraftProposal(tx, ownerCtx(), p.id, { messageBody: 'Changed', options }, NOW));
+    await expect(patch([{ id: good!.id, enabled: false }, { id: NO_UUID, enabled: false }])).rejects.toMatchObject({ name: 'UnknownProposalOptionError', index: 1 });
+    await expect(patch([{ id: other.options[0]!.id, enabled: false }])).rejects.toBeInstanceOf(UnknownProposalOptionError);
+    await expect(patch([{ id: good!.id }, { id: good!.id, enabled: false }])).rejects.toMatchObject({ index: 1 });
+    const after = await inTx(ownerCtx(), (tx) => getProposal(tx, ownerCtx(), p.id));
+    expect(after?.messageBody).toBe(p.messageBody);
+    expect(after?.options.map((o) => o.enabled)).toEqual([true, true, true]);
   });
 
   test('updateDraftProposal on a sent proposal returns not_draft', async () => {
@@ -237,6 +259,18 @@ describe('repricing from a measurement', () => {
     expect(after).toEqual(before);
     const summaries = (await dbActivities(t, A(), s.job.id)).map((a) => a.summary);
     expect(summaries).toContain('Proposal P-0002 drafted (revised from P-0001)');
+  });
+});
+
+describe('repricing guards', () => {
+  test("another home's measurement is refused (field measurementId) and the proposal is unchanged", async () => {
+    const s = await setup('a', {}, 0);
+    const elsewhere = await setup('a', {}, 1, 3600);
+    const p = await buildProposal(t.deps, ownerCtx(), { measurementId: s.measurementId, jobId: s.job.id });
+    await expect(repriceFromMeasurement(t.deps, ownerCtx(), p.id, elsewhere.measurementId)).rejects.toMatchObject({ status: 400, field: 'measurementId' });
+    const after = await inTx(ownerCtx(), (tx) => getProposal(tx, ownerCtx(), p.id));
+    expect(after?.measurementId).toBe(s.measurementId);
+    expect(after?.options.map((o) => o.totalCents)).toEqual(p.options.map((o) => o.totalCents));
   });
 });
 

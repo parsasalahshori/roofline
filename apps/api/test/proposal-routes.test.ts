@@ -141,8 +141,19 @@ describe('editing a draft', () => {
     const waste = await owner.patch(`/api/proposals/${proposal.id}`).send({ options: [{ id, wastePercent: 99 }] });
     expect(waste.status).toBe(400);
     expect(waste.body.field).toBe('options.0.wastePercent');
+    expect(waste.body.error).toBe('Please check this field.');
     const msg = await owner.patch(`/api/proposals/${proposal.id}`).send({ messageBody: '' });
-    expect(msg.body.field).toBe('messageBody');
+    expect(msg.body).toEqual({ error: 'Please check this field.', field: 'messageBody' });
+  });
+
+  test("an option id that is not the proposal's is a 400 naming options.N.id", async () => {
+    const { owner, proposal } = await build();
+    const good = proposal.options[0]!;
+    const res = await owner.patch(`/api/proposals/${proposal.id}`).send({ options: [{ id: good.id, enabled: false }, { id: NO_UUID, enabled: false }] });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Please check this field.', field: 'options.1.id' });
+    const after = await owner.get(`/api/proposals/${proposal.id}`);
+    expect(after.body.options[0].enabled).toBe(true);
   });
 
   test('a sent proposal is a 409', async () => {

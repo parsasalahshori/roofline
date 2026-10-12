@@ -32,7 +32,8 @@ const RULES: Record<(typeof KEYS)[number], (v: unknown) => boolean> = {
 
 /**
  * `/api/estimator/settings`: pitch, overhang, validity, aerial, the estimate clause and financing.
- * Both verbs are for the owner (`company_admin`); each save is audited with the values before and after.
+ * GET is for owner and office (`view_money_totals`; Settings -> Prices shows office a read-only copy);
+ * PUT is for the owner (`company_admin`); each save is audited with the values before and after.
  */
 export function estimatorSettingsRoutes(deps: AppDeps): Router {
   const { pools, clock } = deps;
@@ -40,7 +41,7 @@ export function estimatorSettingsRoutes(deps: AppDeps): Router {
   const aerialConfigured = deps.aerial.configured;
   const router = Router();
 
-  router.get('/', requireCapability('company_admin'), async (req, res) => {
+  router.get('/', requireCapability('view_money_totals'), async (req, res) => {
     const { ctx } = req;
     res.json(await withTenant(pools, ctx, (tx) => getEstimatorSettings(tx, ctx, aerialConfigured)));
   });

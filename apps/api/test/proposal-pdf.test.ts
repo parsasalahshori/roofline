@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { ProposalOptionView, ProposalView, SignatureRecord } from '@roofline/shared';
 import { calculateQuote, defaultPricebook, defaultScope, money } from '@roofline/shared';
-import { renderProposalPdf, type ProposalPdfInput } from '../src/proposals/pdf.ts';
+import { pdfToBuffer, renderProposalPdf, type ProposalPdfInput } from '../src/proposals/pdf.ts';
 
 const calculation = calculateQuote({ ...defaultScope, areaSqFt: 2400, areaType: 'surface', pitch: 6 }, defaultPricebook);
 
@@ -121,5 +121,19 @@ describe('proposal pdf', () => {
     const exactInternal = await render(base({ audience: 'internal', proposal: proposal('exact'), signature }));
     expect(exactInternal).not.toContain('Estimate total');
     expect(exactInternal).toContain(`Total: ${money(signature.record.totalCents)}`);
+  });
+});
+
+describe('pdfToBuffer', () => {
+  test('collects the whole document', async () => {
+    const buf = await pdfToBuffer(renderProposalPdf(base()));
+    expect(buf.subarray(0, 4).toString('latin1')).toBe('%PDF');
+    expect(buf.subarray(-6).toString('latin1')).toContain('%%EOF');
+  });
+
+  test('rejects when the document fails while it is written', async () => {
+    const doc = renderProposalPdf(base());
+    doc.once('data', () => doc.emit('error', new Error('disk on fire')));
+    await expect(pdfToBuffer(doc)).rejects.toThrow('disk on fire');
   });
 });

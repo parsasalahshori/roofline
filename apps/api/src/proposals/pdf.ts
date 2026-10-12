@@ -222,3 +222,18 @@ export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean 
 
   return doc;
 }
+
+/** Ends the document and collects every byte; rejects when the document fails while it is written out. */
+export function pdfToBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    try {
+      doc.end();
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+}

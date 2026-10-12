@@ -16,6 +16,10 @@ export async function repriceFromMeasurement(deps: AppDeps, ctx: TenantContext, 
     if (!existing) throw new AppError(404, MESSAGES.notFound);
     const m = await getMeasurementBasics(tx, ctx, measurementId);
     if (!m) throw new AppError(404, MESSAGES.notFound);
+    const [row] = await tx.select({ customerId: proposals.customerId, propertyId: proposals.propertyId }).from(proposals).where(eq(proposals.id, proposalId)).limit(1);
+    if (!row) throw new AppError(404, MESSAGES.notFound);
+    // Only a measurement of the proposal's own home may price it.
+    if (m.propertyId !== row.propertyId) throw new AppError(400, MESSAGES.checkField, 'measurementId');
     const options = await priceOptions(tx, ctx, m);
 
     if (existing.status === 'draft') {
@@ -24,8 +28,6 @@ export async function repriceFromMeasurement(deps: AppDeps, ctx: TenantContext, 
       return { proposal: view, revised: false };
     }
 
-    const [row] = await tx.select({ customerId: proposals.customerId, propertyId: proposals.propertyId }).from(proposals).where(eq(proposals.id, proposalId)).limit(1);
-    if (!row) throw new AppError(404, MESSAGES.notFound);
     const validUntil = await validUntilFor(tx, ctx, now);
     const draft = await createProposal(
       tx,

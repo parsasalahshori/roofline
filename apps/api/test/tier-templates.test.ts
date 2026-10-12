@@ -123,10 +123,12 @@ describe('/api/estimator/settings', () => {
     expect((await owner.put('/api/estimator/settings').send({})).status).toBe(400);
   });
 
-  test('office is refused', async () => {
+  test('office reads but cannot save; a rep can do neither', async () => {
     const office = await who.as('office');
-    expect((await office.get('/api/estimator/settings')).status).toBe(403);
+    expect((await office.get('/api/estimator/settings')).status).toBe(200);
     expect((await office.put('/api/estimator/settings').send({ proposalValidDays: 20 })).status).toBe(403);
+    const rep = await who.as('rep');
+    expect((await rep.get('/api/estimator/settings')).status).toBe(403);
   });
 });
 
