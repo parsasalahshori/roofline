@@ -223,6 +223,29 @@ export async function addMainNumber(
     .onConflictDoNothing({ target: companyPhoneNumbers.e164 });
 }
 
+/**
+ * The company's active main number (purpose 'main', status 'active') with the company's time zone,
+ * or null when it has none. Only that company's row is read.
+ */
+export async function activeMainNumber(
+  system: Db,
+  companyId: string,
+): Promise<{ e164: string; providerSid: string | null; timezone: string } | null> {
+  const [row] = await system
+    .select({ e164: companyPhoneNumbers.e164, providerSid: companyPhoneNumbers.providerSid, timezone: companies.timezone })
+    .from(companyPhoneNumbers)
+    .innerJoin(companies, eq(companies.id, companyPhoneNumbers.companyId))
+    .where(
+      and(
+        eq(companyPhoneNumbers.companyId, companyId),
+        eq(companyPhoneNumbers.purpose, 'main'),
+        eq(companyPhoneNumbers.status, 'active'),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 /** Companies with an active main number or an approved campaign (ids, in order). */
 export async function companiesWithTextingFees(system: Db): Promise<string[]> {
   const [numbers, campaigns] = await Promise.all([
