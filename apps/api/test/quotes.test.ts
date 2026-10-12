@@ -267,7 +267,7 @@ describe('finalizing a quote', () => {
 
     const lines = (await timeline(t, A(), job.id)).map(([, summary]) => summary);
     expect(lines).toContain('Value set from quote Q-0001');
-    expect(lines).toContainEqual(expect.stringMatching(/^Quote Q-0001 marked final · \$[\d,]+(\.\d{2})?$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^Quote Q-0001 marked final$/));
   });
 
   test('finalize leaves a job value that is already set', async () => {
@@ -327,6 +327,30 @@ describe('reps', () => {
     expect((await other.patch(`/api/quotes/${quoteId}`).send({ notes: 'nope' })).status).toBe(404);
     expect((await other.post(`/api/quotes/${quoteId}/finalize`)).status).toBe(404);
     expect((await other.post(`/api/quotes/${quoteId}/copy`)).status).toBe(404);
+  });
+});
+
+describe('reps and job value', () => {
+  test('a rep who neither created nor is assigned an unassigned lead cannot see its quotes', async () => {
+    const { job } = await jobWith(75); // an unassigned lead made by the owner
+    const quote = await quoteOn(job.id);
+    expect((await finalize(quote.id)).status).toBe(200);
+    const rep = await who.as('rep');
+
+    // The lead itself is visible to the rep, but its value, and so its quotes, are not.
+    const view = await rep.get(`/api/jobs/${job.id}`);
+    expect(view.status).toBe(200);
+    expect(view.body.quotes).toEqual([]);
+
+    const list = await rep.get(`/api/jobs/${job.id}/quotes`);
+    expect(list.status).toBe(200);
+    expect(list.body).toEqual({ quotes: [] });
+
+    const hidden = await rep.get(`/api/quotes/${quote.id}`);
+    expect(hidden.status).toBe(404);
+    expect(hidden.body).toEqual({ error: NOT_FOUND });
+    expect((await rep.get(`/api/quotes/${quote.id}/pdf`)).status).toBe(404);
+    expect((await postQuote(rep, job.id)).status).toBe(404);
   });
 });
 
