@@ -290,7 +290,8 @@ describe('POST /hooks/twilio/voice', () => {
       tx.insert(calls).values([
         row('a', aiStuck, 'ai', ago(40)),
         row('a', aiFresh, 'ai', ago(5)),
-        // A ring_first call answered by staff keeps 'ringing' for the whole bridged call.
+        // A 'ringing' call (relay-bound: sent to the AI, relay not yet set up) is left until 4 hours; a ring_first call
+        // answered by staff is 'ringing_team' for the whole bridged call (teamFirst below).
         row('a', ringFirst, 'ringing', ago(40)),
         row('a', teamFirst, 'ringing_team', ago(40)),
         row('a', dialOld, 'ringing', ago(4 * 60 + 1)),
