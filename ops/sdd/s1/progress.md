@@ -338,3 +338,4 @@ Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema c
 - Fix: `hailFillExpression()` is now a `step` on thresholdIn.
 - Test: `apps/web/test/storm-layer-expression.test.ts` compiles the expression with `@maplibre/maplibre-gl-style-spec`, a transitive dependency of maplibre-gl, and checks each level's colour.
 - Source: `ops/sdd/integration/dress-rehearsal.md` on ops-rehearsal.
+- s1-storm@85a68e7 (the BUG-1 fix plus its test update): CI run 38288147079 is green on Platform, Hail and E2E.
