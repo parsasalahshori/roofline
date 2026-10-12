@@ -16,6 +16,13 @@ const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const LOGIN_WINDOW_MS = 15 * MINUTE_MS;
 const LOGIN_ATTEMPTS = 10;
+/** Failed logins for one email, from every address together, per hour (a soft lock on the account). */
+const LOGIN_FAILURES_PER_EMAIL_PER_HOUR = 20;
+/** Failed logins from one address, for every email together, per 15 minutes (password spraying). */
+const LOGIN_FAILURES_PER_IP = 30;
+/** Failed logins across the whole process per 10 minutes, after which every login is refused for the rest of the window. */
+const LOGIN_FAILURES_GLOBAL = 2000;
+const LOGIN_GLOBAL_WINDOW_MS = 10 * MINUTE_MS;
 const GOOGLE_ATTEMPTS = 20;
 const SIGNUP_PER_IP_PER_HOUR = 10;
 const RESET_REQUEST_PER_IP_PER_HOUR = 20;
@@ -55,24 +62,90 @@ function loginEmail(body: unknown): string {
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
 }
 
+/** The login limits. Tests pass smaller numbers to `loginRateLimit`; the app uses these. */
+export type LoginLimits = {
+  /** Failed attempts per IP address + email, per 15 minutes. */
+  perIpAndEmail: number;
+  /** Failed attempts per email, from any address, per hour. */
+  perEmail: number;
+  /** Failed attempts per IP address, for any email, per 15 minutes. */
+  perIp: number;
+  /** Failed attempts in this process, per 10 minutes. */
+  global: number;
+};
+
+export const LOGIN_LIMITS: LoginLimits = {
+  perIpAndEmail: LOGIN_ATTEMPTS,
+  perEmail: LOGIN_FAILURES_PER_EMAIL_PER_HOUR,
+  perIp: LOGIN_FAILURES_PER_IP,
+  global: LOGIN_FAILURES_GLOBAL,
+};
+
+/** A login failed when it was answered 401: a wrong password, an unknown email, or an account with no password. */
+const loginFailed = (_req: unknown, res: { statusCode: number }): boolean => res.statusCode === 401;
+
 /**
- * `POST /api/auth/login`: 10 failed attempts per 15 minutes for one IP address + email. Attempts
- * that end in a sign-in are not counted, so nobody is locked out by signing in on several devices;
- * but once the budget is spent every attempt, even with the right password, is refused until the
- * window passes, so the budget cannot be used to test guesses. Mount it after the JSON body parser.
+ * `POST /api/auth/login`, four limits, all answered with the same "too many sign-in attempts" 429
+ * (whether or not the email has an account), in this order:
+ * 1. 30 failed attempts per 15 minutes from one IP address, across every email (password spraying).
+ * 2. 10 failed attempts per 15 minutes for one IP address + email.
+ * 3. 20 failed attempts an hour for one email, from every address together: a soft lock on the
+ *    account against guessing spread over many addresses. The key is the typed email, so an email
+ *    with no account is locked the same way and the answer reveals nothing.
+ * 4. 2000 failed attempts per 10 minutes across the whole process, a ceiling on the password
+ *    checks a botnet can make us run.
+ * Limits 1, 3 and 4 count only failures (401: a wrong password or an unknown email); limit 2 counts
+ * every attempt that does not end in a sign-in. Sign-ins are never counted, so nobody is limited
+ * by signing in on several devices; but once a budget is spent every attempt it covers, even
+ * with the right password, is refused until the window passes, so the budget cannot be used to
+ * test guesses. Returns the limiters in order; mount them after the JSON body parser.
  */
-export function loginRateLimit(): RequestHandler {
-  return rateLimit({
-    windowMs: LOGIN_WINDOW_MS,
-    limit: LOGIN_ATTEMPTS,
+export function loginRateLimit(limits: LoginLimits = LOGIN_LIMITS): RequestHandler[] {
+  const handler: RequestHandler = (_req, _res, next) => {
+    next(new AppError(429, MESSAGES.tooManyLogins));
+  };
+  // The new limits send no RateLimit headers: the per-email and process-wide counts are nobody's business.
+  const failuresOnly = {
     skipSuccessfulRequests: true,
-    standardHeaders: 'draft-7',
+    requestWasSuccessful: (req: unknown, res: { statusCode: number }) => !loginFailed(req, res),
+    standardHeaders: false,
     legacyHeaders: false,
-    keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? 'unknown')}|${loginEmail(req.body)}`,
-    handler: (_req, _res, next) => {
-      next(new AppError(429, MESSAGES.tooManyLogins));
-    },
-  });
+    handler,
+  } as const;
+  return [
+    rateLimit({
+      ...failuresOnly,
+      windowMs: LOGIN_WINDOW_MS,
+      limit: limits.perIp,
+      keyGenerator: (req) => `login-ip:${ipKeyGenerator(req.ip ?? 'unknown')}`,
+    }),
+    rateLimit({
+      windowMs: LOGIN_WINDOW_MS,
+      limit: limits.perIpAndEmail,
+      skipSuccessfulRequests: true,
+      standardHeaders: 'draft-7',
+      legacyHeaders: false,
+      keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? 'unknown')}|${loginEmail(req.body)}`,
+      handler,
+    }),
+    rateLimit({
+      ...failuresOnly,
+      windowMs: HOUR_MS,
+      limit: limits.perEmail,
+      // Only an email of a possible length gets a bucket; anything else is refused as invalid (400).
+      skip: (req) => {
+        const email = loginEmail(req.body);
+        return email === '' || email.length > MAX_EMAIL_LENGTH;
+      },
+      keyGenerator: (req) => `login-email:${loginEmail(req.body)}`,
+    }),
+    rateLimit({
+      ...failuresOnly,
+      windowMs: LOGIN_GLOBAL_WINDOW_MS,
+      limit: limits.global,
+      keyGenerator: () => 'login-global',
+    }),
+  ];
 }
 
 /**

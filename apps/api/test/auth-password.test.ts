@@ -4,9 +4,18 @@ import { afterAll, beforeEach, describe, expect, inject, test, vi } from 'vitest
 import { companySettings, createPools, type Pools, withTenant } from '@roofline/db';
 import { hashPassword as seedHashPassword, resetDb, SEED_PASSWORD } from '@roofline/db/testing';
 import { createApp } from '../src/app.ts';
-import { COST, DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from '../src/auth/password.ts';
+import {
+  COST,
+  DUMMY_PASSWORD_HASH,
+  hashPassword,
+  passwordWork,
+  SCRYPT_MAX_ACTIVE,
+  SCRYPT_MAX_QUEUED,
+  verifyPassword,
+} from '../src/auth/password.ts';
 import * as passwordModule from '../src/auth/password.ts';
 import { DEV_SESSION_COOKIE, resolveSession, SESSION_COOKIE } from '../src/auth/sessions.ts';
+import { BUSY_MESSAGE } from '../src/auth/work-limit.ts';
 import { loginAs, makeTestApp, SIGNUP_COMPANY, type SuperAgent, type TestApp } from './helpers.ts';
 
 // verifyPassword is wrapped (it still runs for real) so a test can see what it was called with.
@@ -503,6 +512,61 @@ describe('login rate limit', () => {
   test('the limit does not touch other routes', async () => {
     for (let i = 0; i < 11; i++) await wrongPassword(t.seed.a.owner.email);
     expect((await request(t.app).get('/health')).status).toBe(200);
+  });
+
+  describe('across addresses', () => {
+    let proxied: TestApp;
+    beforeEach(async () => {
+      proxied = await makeTestApp({ TRUST_PROXY: 1 });
+    });
+    const from = (ip: string, email: string, password: string) =>
+      request(proxied.app).post('/api/auth/login').set('X-Forwarded-For', ip).send({ email, password });
+
+    test('one email: 20 failures an hour from any number of addresses, then even the right password is refused', async () => {
+      for (let i = 1; i <= 20; i++) {
+        expect((await from(`198.51.100.${i}`, proxied.seed.a.owner.email, 'wrong guess')).status, `attempt ${i}`).toBe(401);
+      }
+      const blocked = await from('198.51.100.200', proxied.seed.a.owner.email, SEED_PASSWORD);
+      expect(blocked.status).toBe(429);
+      expect(blocked.body).toEqual(TOO_MANY);
+      // Another account is untouched.
+      expect((await from('198.51.100.201', proxied.seed.a.office.email, SEED_PASSWORD)).status).toBe(200);
+    });
+
+    test('an email with no account gets the very same lock and answer', async () => {
+      for (let i = 1; i <= 20; i++) await from(`198.51.100.${i}`, 'nobody@example.com', 'wrong guess');
+      const blocked = await from('198.51.100.200', 'nobody@example.com', 'wrong guess');
+      expect(blocked.status).toBe(429);
+      expect(blocked.body).toEqual(TOO_MANY);
+    });
+
+    test('one address: 30 failures across any emails in 15 minutes, then every login from it is refused', async () => {
+      for (let i = 1; i <= 30; i++) {
+        expect((await from('203.0.113.50', `person${i}@example.com`, 'wrong guess')).status, `attempt ${i}`).toBe(401);
+      }
+      const blocked = await from('203.0.113.50', proxied.seed.a.owner.email, SEED_PASSWORD);
+      expect(blocked.status).toBe(429);
+      expect(blocked.body).toEqual(TOO_MANY);
+      expect((await from('203.0.113.51', proxied.seed.a.owner.email, SEED_PASSWORD)).status).toBe(200);
+    });
+  });
+
+  test('when password checking is saturated, login answers 503 with Retry-After and the attempt is not a failure', async () => {
+    let open!: () => void;
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const holders = Array.from({ length: SCRYPT_MAX_ACTIVE + SCRYPT_MAX_QUEUED }, () => passwordWork.run(() => held));
+    try {
+      const res = await request(t.app).post('/api/auth/login').send({ email: t.seed.a.owner.email, password: SEED_PASSWORD });
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: BUSY_MESSAGE });
+      expect(res.headers['retry-after']).toBe('5');
+    } finally {
+      open();
+      await Promise.all(holders);
+    }
+    expect((await request(t.app).post('/api/auth/login').send({ email: t.seed.a.owner.email, password: SEED_PASSWORD })).status).toBe(200);
   });
 });
 

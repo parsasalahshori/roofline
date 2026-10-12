@@ -1,4 +1,4 @@
-import { type Request, type Response, Router } from 'express';
+import { type ErrorRequestHandler, type Request, type Response, Router } from 'express';
 import { toE164 } from '@roofline/shared';
 import { z } from 'zod';
 import { audit, insertDefaultSettings, setCompanyLocation, type TenantContext, withTenant } from '@roofline/db';
@@ -37,6 +37,7 @@ import {
 import { EMAIL_MESSAGE, emailField as email, MAX_EMAIL_LENGTH, parse } from '../validate.ts';
 import { type GoogleClaims, GoogleUnavailableError, isGoogleAuthoritative } from './google.ts';
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from './password.ts';
+import { BUSY_RETRY_AFTER_SECONDS, BusyError } from './work-limit.ts';
 import {
   clearSessionCookie,
   createSession,
@@ -350,7 +351,7 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     res.status(201).json({ user: userBody(account.user), company: companyBody(account.company) });
   });
 
-  router.post('/login', loginRateLimit(), async (req, res) => {
+  router.post('/login', ...loginRateLimit(), async (req, res) => {
     const body = parse(LoginBody, req.body);
     const user = await findUserByEmail(system, body.email);
     // Always spend one scrypt, even for an unknown email or an account with no password, so the
@@ -710,6 +711,14 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     if (id === session.sessionId) clearSessionCookie(res, config);
     res.json({ ok: true });
   });
+
+  // Password hashing was too busy to queue the request (see `passwordWork`): the app's error
+  // handler answers the 503; this only says when to come back.
+  const busyRetryAfter: ErrorRequestHandler = (err, _req, res, next) => {
+    if (err instanceof BusyError) res.set('Retry-After', String(BUSY_RETRY_AFTER_SECONDS));
+    next(err);
+  };
+  router.use(busyRetryAfter);
 
   return router;
 }
