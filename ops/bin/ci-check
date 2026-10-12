@@ -25,9 +25,9 @@ done
 echo "ci-check: watching run $id for $branch@${sha:0:7} (about 10-20 minutes)"
 # By default judge the platform job only: older task branches carry an empty v1 data file (fixed on f2-shell in
 # 0b81e1b), so their v1 job fails for a reason that is not theirs.
-# CI_JOBS: space-separated job-name prefixes that must all succeed (default "Platform"; Task 13 adds "E2E").
+# CI_JOBS: space-separated job-name prefixes that must all succeed (default "Platform E2E"; merge only when every judged job is green).
 fail=0
-for prefix in ${CI_JOBS:-Platform}; do
+for prefix in ${CI_JOBS:-Platform E2E}; do
   conclusion=""; jobid=""
   for i in $(seq 1 240); do
     job=$(curl -sS "$API/actions/runs/$id/jobs" 2>/dev/null | jq -c --arg p "$prefix" '[.jobs[] | select(.name | startswith($p))][0] // empty' 2>/dev/null)
