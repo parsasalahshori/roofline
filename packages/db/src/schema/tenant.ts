@@ -21,6 +21,7 @@ import {
   APPROVAL_CLASSES,
   CONSENT_STATUSES,
   CUSTOMER_SOURCES,
+  DEFAULT_WORK_HOURS,
   GATE_RULES,
   IMPORT_ROW_OUTCOMES,
   IMPORT_STATUSES,
@@ -35,6 +36,7 @@ import {
   SMS_CONSENT_SOURCES,
   STEP_STATUSES,
   TASK_STATUSES,
+  type WorkHours,
 } from '@roofline/shared';
 import { bytea, enumCheck, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
@@ -86,21 +88,6 @@ export const TENANT_TABLES = [
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
 
-/** Weekly working hours: `[start, end]` pairs of `HH:MM` in the company's zone, per weekday. */
-export type WeekdayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
-export type WeeklyHours = Record<WeekdayKey, [string, string][]>;
-
-/** The company default: Mon–Fri 08:00–18:00, Sat 08:00–12:00, Sun closed. */
-const DEFAULT_WORK_HOURS: WeeklyHours = {
-  mon: [['08:00', '18:00']],
-  tue: [['08:00', '18:00']],
-  wed: [['08:00', '18:00']],
-  thu: [['08:00', '18:00']],
-  fri: [['08:00', '18:00']],
-  sat: [['08:00', '12:00']],
-  sun: [],
-};
-
 const companyId = () =>
   uuid('company_id')
     .notNull()
@@ -127,7 +114,7 @@ export const companySettings = pgTable(
     marketingCapPer7d: integer('marketing_cap_per_7d').notNull().default(2),
     financingAprBps: integer('financing_apr_bps'),
     financingTermMonths: integer('financing_term_months'),
-    workHours: jsonb('work_hours').$type<WeeklyHours>().notNull().default(DEFAULT_WORK_HOURS),
+    workHours: jsonb('work_hours').$type<WorkHours>().notNull().default(DEFAULT_WORK_HOURS),
     /** Minutes of driving between two appointments; 0 when both are at the same home. */
     travelBufferMinutes: integer('travel_buffer_minutes').notNull().default(30),
     /** The shortest notice a booking may have, in minutes. */
@@ -782,7 +769,7 @@ export const memberSchedules = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id),
-    weeklyHours: jsonb('weekly_hours').$type<WeeklyHours>().notNull(),
+    weeklyHours: jsonb('weekly_hours').$type<WorkHours>().notNull(),
     ...timestamps(),
   },
   (t) => [unique('member_schedules_company_user_uniq').on(t.companyId, t.userId)],
