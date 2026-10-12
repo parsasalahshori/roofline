@@ -36,6 +36,8 @@ export type JobCard = {
   nextStep: string | null;
   nextStepOn: string | null;
   updatedAt: string;
+  /** Today follow-ups only: set by a Front Desk message ('urgent' sorts first); null or absent otherwise. */
+  frontDesk?: 'urgent' | 'message' | null;
 };
 
 export type BoardColumn = {
