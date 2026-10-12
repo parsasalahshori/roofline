@@ -131,3 +131,4 @@ Four parallel reviewers (honest numbers; events/one writer/concurrency; security
 - `OFF_STEP_TITLES` (S1) gained A1's `front_desk_call` / `front_desk_texts`; `ComingSoonKey = 'front-desk' | 'estimator' | 'approvals'`.
 - Migrations: no new upstream migrations. S1 edited 0018 in place (grants and the company_members view); the journal is unchanged and 0021's prevId is still 0018's id.
 - **Open AX-H gap (Task 19):** `packages/db/src/repos/storm-plans.ts` `replaceDraftPlan` (S1) supersedes an old draft by skipping its steps and setting the task `declined` outside tasks/service.ts, with no event.
+- a1-agents head after the e1+s1 merge: CI run 38239027641 green (Platform + E2E).
