@@ -172,3 +172,12 @@ export * from './repos/calendar-busy.ts';
 export * from './repos/quotes.ts';
 export * from './repos/pricebook.ts';
 export * from './repos/export.ts';
+// D1 skeleton (Task 1): one line per new repo file; later D1 tasks fill the files in.
+export * from './repos/conversations.ts';
+export * from './repos/turns.ts';
+export * from './repos/calls.ts';
+export * from './repos/claim-intakes.ts';
+export * from './repos/front-desk-settings.ts';
+export * from './repos/blocked-numbers.ts';
+export * from './repos/fd-booking.ts';
+export * from './repos/fd-caller.ts';
