@@ -263,7 +263,10 @@ const SHOWN_OUT_STATUSES = ['queued', 'sent', 'delivered'];
 
 const squash = (v: string): string => v.replace(/\s+/g, ' ').trim();
 
-/** Time order; turns of one time keep their position order, and a text sorts after the turns at the same instant. */
+/**
+ * Time order; at one instant, position order, then id. A text line has position 0, so it sorts before the turns at
+ * the same instant (a turn at position 0 ties with it and the id decides).
+ */
 export function compareTurnViews(a: TurnView, b: TurnView): number {
   const byTime = Date.parse(a.at) - Date.parse(b.at);
   if (byTime !== 0) return byTime;
