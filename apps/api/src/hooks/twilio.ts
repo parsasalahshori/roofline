@@ -63,7 +63,7 @@ export const FORM_BODY_LIMIT = '64kb';
 /** Delivery reports that fail a text, and what the message row then says. */
 export const CARRIER_FAILED = "The carrier couldn't deliver this text.";
 
-const E164 = /^\+[1-9]\d{1,14}$/;
+export const E164 = /^\+[1-9]\d{1,14}$/;
 /** Twilio's id of a messaging service: MG and 32 lowercase hex digits. */
 const MESSAGING_SERVICE_SID = /^MG[0-9a-f]{32}$/;
 /** A short code, the 3 to 8 digit sender of a carrier message. */
@@ -71,7 +71,7 @@ const SHORT_CODE = /^\d{3,8}$/;
 /** Twilio's id of a text: SM (or MM for one with media) and 32 lowercase hex digits. */
 const MESSAGE_SID = /^(SM|MM)[0-9a-f]{32}$/;
 
-const XML_HEAD = '<?xml version="1.0" encoding="UTF-8"?>';
+export const XML_HEAD = '<?xml version="1.0" encoding="UTF-8"?>';
 const XML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
 
 /**
@@ -142,7 +142,7 @@ function sendTwiml(res: Response, messageXml?: string): void {
 }
 
 /** A form field, only when it is a single string (a repeated or missing field is undefined). */
-function field(req: Request, name: string): string | undefined {
+export function field(req: Request, name: string): string | undefined {
   const body = req.body as Record<string, unknown> | undefined;
   const value = body?.[name];
   return typeof value === 'string' ? value : undefined;
@@ -192,7 +192,7 @@ const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: nu
  * Step 2 (the signature), for a request already routed to `companyId`: checked with that company's
  * token (else TWILIO_AUTH_TOKEN). Answers 403 itself and returns null; otherwise the company's id.
  */
-async function checkSignature(deps: AppDeps, req: Request, res: Response, companyId: string): Promise<string | null> {
+export async function checkSignature(deps: AppDeps, req: Request, res: Response, companyId: string): Promise<string | null> {
   const { system } = deps.pools;
   const token = await signingTokenFor(system, companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
   const signature = req.get('X-Twilio-Signature');
