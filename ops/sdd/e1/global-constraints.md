@@ -5,7 +5,7 @@ Adapted from `ops/sdd/c1/global-constraints.md` (which carries F1–F3's rules) 
 **C1 is not built yet.** Every name marked **[C1]** in a brief comes from the C1 plan and briefs (`ops/sdd/c1/`). Before starting a task, the lead checks each [C1] name against `c1-crm` and records any difference in the task report; a renamed C1 export is followed, not re-created.
 
 **Everything in `ops/sdd/c1/global-constraints.md` applies** (code and repo, time, web, tests), with these E1 changes:
-- **Migrations:** E1 owns `0014_estimator_schema.sql` (generated) and `0015_estimator_grants_rls.sql` (custom), both in Task 1. C1 ends at `0013`.
+- **Migrations:** E1 owns `0015_estimator_schema.sql` (generated) and `0016_estimator_grants_rls.sql` (custom), both in Task 1. C1 ends at `0014` (Ruling AP).
 - **Lockfile:** only Task 1 edits `package-lock.json` (`yauzl`, `stream-json`, `aws4fetch` + types). `pdfkit` is already there from C1 T1 **[C1]**.
 - **`@roofline/db/system`** is also used in `apps/api/src/public/**` (token → company, F3 Ruling 4) and `apps/api/src/jobs/scheduler/**` (footprint and exact-report fan-outs).
 - **Global footprint tables** (`building_footprints`, `building_footprint_states`) hold no tenant data: `app_tenant` SELECT on `building_footprints` only; writes are `app_system` from the loader job.
@@ -19,7 +19,7 @@ Adapted from `ops/sdd/c1/global-constraints.md` (which carries F1–F3's rules) 
 - **Money:** integer cents everywhere; the pricing engine's output is frozen per option; homeowners never see unit prices (spec Decision 15).
 - **"Estimate"** labels every instant number and every price derived from one, in the app, the PDF and the homeowner page (master §9.2).
 - **Provider text** (EagleView, R2, Microsoft download errors) is never stored or shown; keep status codes and our own plain messages.
-- **Lockfile:** only Task 1 edits `package-lock.json`. **Migrations:** only Task 1 (0014 generated, 0015 custom) — C1 used 0012/0013.
+- **Lockfile:** only Task 1 edits `package-lock.json`. **Migrations:** only Task 1 (0015 generated, 0016 custom) — C1 used 0013/0014 (Ruling AP).
 - **Public page:** no session, no third-party scripts, `noindex`, `Referrer-Policy: no-referrer`, rate limits per IP and per token, and the token is never logged (log `token_hash` prefix only).
 
 ## Review Focus

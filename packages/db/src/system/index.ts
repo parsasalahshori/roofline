@@ -14,3 +14,7 @@ export * from './scheduler.ts';
 export * from './routing.ts';
 // C1 skeleton (Task 1).
 export * from './calendar-sync.ts';
+// E1 skeleton (Task 1).
+export * from './footprints.ts';
+export * from './proposal-links.ts';
+export * from './exact-report-fanout.ts';

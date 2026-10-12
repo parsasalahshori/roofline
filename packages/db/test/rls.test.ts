@@ -27,6 +27,22 @@ const APP_SYSTEM_RLS_TABLES = [
   'usage_events',
   'early_delivery_reports',
   'calendar_connections',
+  'proposals',
+  'exact_report_orders',
+] as const;
+/** Global estimator tables: no tenant data, no RLS. app_system writes them from the loader job. */
+const FOOTPRINT_TABLES = ['building_footprints', 'building_footprint_states'] as const;
+/** The E1 tenant tables app_tenant reads and writes through its own company's transaction. */
+const E1_TENANT_TABLES = [
+  'measurements',
+  'tier_templates',
+  'proposals',
+  'proposal_counters',
+  'proposal_options',
+  'proposal_signatures',
+  'proposal_events',
+  'exact_report_orders',
+  'stored_files',
 ] as const;
 /** Tenant tables app_tenant may delete from. No other tenant table grants it DELETE. */
 const APP_TENANT_DELETE_TABLES = ['opt_outs', 'calendar_busy_blocks', 'calendar_event_links'] as const;
@@ -327,6 +343,11 @@ describe('grants', () => {
       ['company_settings', 'travel_buffer_minutes'],
       ['company_settings', 'min_notice_minutes'],
       ['company_settings', 'stuck_after_days'],
+      ['company_settings', 'default_pitch_x12'],
+      ['company_settings', 'overhang_ft'],
+      ['company_settings', 'proposal_valid_days'],
+      ['company_settings', 'aerial_measure'],
+      ['company_settings', 'estimate_change_clause'],
       ['jobs', 'next_step'],
       ['jobs', 'next_step_on'],
     ];
@@ -399,7 +420,7 @@ describe('grants', () => {
         order by 1`,
     );
     expect(rows.map((r) => r.relname)).toEqual(
-      [...TENANT_TABLES, 'companies', ...COMPANY_SCOPED_GLOBALS, 'company_members'].sort(),
+      [...TENANT_TABLES, 'companies', ...COMPANY_SCOPED_GLOBALS, 'company_members', 'building_footprints'].sort(),
     );
   });
 
@@ -411,6 +432,103 @@ describe('grants', () => {
     expect(await tablePrivileges('app_system', TENANT_TABLES)).toEqual(
       TENANT_TABLES.map((t) => privs(t, false, false, false, t === 'early_delivery_reports')),
     );
+  });
+
+  test('app_tenant has SELECT, INSERT and UPDATE but no DELETE on each E1 tenant table', async () => {
+    expect(await tablePrivileges('app_tenant', E1_TENANT_TABLES)).toEqual(
+      E1_TENANT_TABLES.map((t) => privs(t, true, true, true, false)),
+    );
+  });
+
+  test('app_tenant: SELECT only on building_footprints, and no privilege on building_footprint_states', async () => {
+    expect(await tablePrivileges('app_tenant', FOOTPRINT_TABLES)).toEqual([
+      privs('building_footprints', true, false, false, false),
+      privs('building_footprint_states', false, false, false, false),
+    ]);
+  });
+
+  test('app_system has SELECT, INSERT, UPDATE and DELETE on both footprint tables', async () => {
+    expect(await tablePrivileges('app_system', FOOTPRINT_TABLES)).toEqual(
+      FOOTPRINT_TABLES.map((t) => ({ ...privs(t, true, true, true, true), truncate: true })),
+    );
+  });
+
+  test('app_system holds column-level SELECT on exactly the whitelisted proposal and exact order columns', async () => {
+    const rows = await ownerQuery<{ table_name: string; column_name: string; privilege_type: string }>(
+      `select table_name, column_name, privilege_type from information_schema.column_privileges
+        where grantee = 'app_system' and table_schema = 'public'
+          and table_name in ('proposals', 'exact_report_orders')
+        order by 1, 2, 3`,
+    );
+    const sel = (table_name: string, column_name: string) => ({ table_name, column_name, privilege_type: 'SELECT' });
+    expect(rows).toEqual([
+      sel('exact_report_orders', 'company_id'),
+      sel('exact_report_orders', 'id'),
+      sel('exact_report_orders', 'last_polled_at'),
+      sel('exact_report_orders', 'status'),
+      sel('proposals', 'company_id'),
+      sel('proposals', 'id'),
+      sel('proposals', 'link_token_hash'),
+      sel('proposals', 'status'),
+      sel('proposals', 'valid_until'),
+    ]);
+    const denied: [string, string][] = [
+      ['proposals', 'link_token_encrypted'],
+      ['proposals', 'message_body'],
+      ['exact_report_orders', 'error_plain'],
+    ];
+    const checks = await ownerQuery<{ table_name: string; column_name: string; can_select: boolean }>(
+      `select t as table_name, c as column_name,
+              has_column_privilege('app_system', 'public.' || t, c, 'SELECT') as can_select
+         from unnest($1::text[], $2::text[]) as v(t, c)`,
+      [denied.map(([t]) => t), denied.map(([, c]) => c)],
+    );
+    expect(checks).toEqual(denied.map(([table_name, column_name]) => ({ table_name, column_name, can_select: false })));
+  });
+
+  test('app_system reads whitelisted proposal columns of every company with no app.company_id, while app_tenant sees none', async () => {
+    for (const s of [seed.a, seed.b]) {
+      const [customer] = await ownerQuery<{ id: string }>(
+        `insert into customers (company_id, display_name) values ($1, 'Cust') returning id`,
+        [s.companyId],
+      );
+      const propertyId = await insertProperty(s.companyId, customer!.id, `${s.companyId} main st|68102`);
+      const [job] = await ownerQuery<{ id: string }>(
+        `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3) returning id`,
+        [s.companyId, customer!.id, propertyId],
+      );
+      const [measurement] = await ownerQuery<{ id: string }>(
+        `insert into measurements (company_id, property_id, kind, method) values ($1, $2, 'estimate', 'manual') returning id`,
+        [s.companyId, propertyId],
+      );
+      await ownerQuery(
+        `insert into proposals (company_id, customer_id, property_id, job_id, measurement_id, number,
+            status, valid_until, estimate_basis, link_token_hash, link_token_encrypted)
+         values ($1, $2, $3, $4, $5, 'P-0001', 'draft', date '2026-12-31', 'estimate', $6, $7)`,
+        [
+          s.companyId,
+          customer!.id,
+          propertyId,
+          job!.id,
+          measurement!.id,
+          Buffer.from(`hash-${s.companyId}`),
+          Buffer.from('encrypted-placeholder'),
+        ],
+      );
+    }
+
+    const rows = await systemRaw<{ company_id: string; status: string; link_token_hash: Buffer }>(
+      `select company_id, status, link_token_hash from proposals`,
+    );
+    expect(rows.map((r) => r.company_id).sort()).toEqual([seed.a.companyId, seed.b.companyId].sort());
+    expect(rows.every((r) => r.status === 'draft')).toBe(true);
+    await expect(systemRaw(`select message_body from proposals`)).rejects.toThrow(/permission denied/);
+    await expect(systemRaw(`select link_token_encrypted from proposals`)).rejects.toThrow(/permission denied/);
+
+    expect(await tenantRaw(`select count(*)::int n from proposals`)).toEqual([{ n: 0 }]);
+    expect(await tenantRaw(`select count(*)::int n from proposals`, { companyId: seed.a.companyId })).toEqual([
+      { n: 1 },
+    ]);
   });
 
   test('neither app role may create schemas in the database (pg-boss runs with createSchema: false in the schema 0002 made)', async () => {
@@ -449,10 +567,19 @@ describe('grants', () => {
       sel('early_delivery_reports', 'applied_at'),
       sel('early_delivery_reports', 'id'),
       sel('early_delivery_reports', 'received_at'),
+      sel('exact_report_orders', 'company_id'),
+      sel('exact_report_orders', 'id'),
+      sel('exact_report_orders', 'last_polled_at'),
+      sel('exact_report_orders', 'status'),
       sel('messages', 'company_id'),
       sel('messages', 'id'),
       sel('messages', 'scheduled_for'),
       sel('messages', 'status'),
+      sel('proposals', 'company_id'),
+      sel('proposals', 'id'),
+      sel('proposals', 'link_token_hash'),
+      sel('proposals', 'status'),
+      sel('proposals', 'valid_until'),
       sel('usage_events', 'company_id'),
       sel('usage_events', 'id'),
       sel('usage_events', 'kind'),
@@ -854,7 +981,10 @@ describe('app_system', () => {
       messages: `select id, company_id, status, scheduled_for from messages`,
       usage_events: `select id, company_id, kind, reported_to_stripe_at from usage_events`,
       calendar_connections: `select id, company_id, user_id, status, last_synced_at from calendar_connections`,
-    } satisfies Record<Exclude<(typeof APP_SYSTEM_RLS_TABLES)[number], 'early_delivery_reports'>, string>;
+    } satisfies Record<
+      Exclude<(typeof APP_SYSTEM_RLS_TABLES)[number], 'early_delivery_reports' | 'proposals' | 'exact_report_orders'>,
+      string
+    >;
 
     const client = new pg.Client({ connectionString: urls.system });
     await client.connect();
