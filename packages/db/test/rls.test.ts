@@ -380,7 +380,7 @@ describe('grants', () => {
               has_column_privilege('app_system', 'public.calls', 'conversation_id', 'SELECT') as call_conversation,
               has_column_privilege('app_system', 'public.calls', 'recording_key', 'SELECT') as call_key_select,
               has_column_privilege('app_system', 'public.calls', 'recording_status', 'SELECT') as call_status_select,
-              has_any_column_privilege('app_system', 'public.calls', 'UPDATE') as call_update,
+              has_column_privilege('app_system', 'public.calls', 'recording_key', 'UPDATE') as call_update,
               has_column_privilege('app_system', 'public.calls', 'call_sid', 'SELECT') as call_sid,
               has_table_privilege('app_tenant', 'public.blocked_numbers', 'UPDATE') as blocked_update,
               has_table_privilege('app_tenant', 'public.line_lookups', 'SELECT') as lookups`,
@@ -1347,6 +1347,8 @@ describe('app_tenant isolation on the D1 tables', () => {
     deletable: boolean;
     /** app_tenant may UPDATE company_id (else the grant refuses the move). */
     movable: boolean;
+    /** False when app_tenant has no UPDATE on the table at all: an update is refused with 42501. */
+    updatable?: boolean;
   };
 
   let phoneSeq = 0;
@@ -1404,7 +1406,9 @@ describe('app_tenant isolation on the D1 tables', () => {
       }),
       set: `reason = 'changed'`,
       deletable: true,
-      movable: true,
+      // Review note 31: app_tenant has no UPDATE on blocked_numbers (a number is blocked or unblocked, never edited).
+      movable: false,
+      updatable: false,
     },
   ];
 
@@ -1442,12 +1446,12 @@ describe('app_tenant isolation on the D1 tables', () => {
     await rowFor(c, seed.a);
     const bId = await rowFor(c, seed.b);
     const before = await ownerRow(c, bId);
-    expect(
-      await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
-        companyId: seed.a.companyId,
-        values: [bId],
-      }),
-    ).toEqual([]);
+    const update = tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
+      companyId: seed.a.companyId,
+      values: [bId],
+    });
+    if (c.updatable === false) await expect(update).rejects.toMatchObject({ code: '42501' });
+    else expect(await update).toEqual([]);
     if (c.deletable) {
       expect(
         await tenantRaw(`delete from ${c.table} where id = $1 returning id`, { companyId: seed.a.companyId, values: [bId] }),
@@ -1456,15 +1460,18 @@ describe('app_tenant isolation on the D1 tables', () => {
     expect(await ownerRow(c, bId)).toEqual(before);
   });
 
-  test.each(CASES.map((c) => [c.table, c] as const))('%s: company A can change its own row (the control)', async (_t, c) => {
-    const aId = await rowFor(c, seed.a);
-    expect(
-      await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
-        companyId: seed.a.companyId,
-        values: [aId],
-      }),
-    ).toEqual([{ id: aId }]);
-  });
+  test.each(CASES.filter((c) => c.updatable !== false).map((c) => [c.table, c] as const))(
+    '%s: company A can change its own row (the control)',
+    async (_t, c) => {
+      const aId = await rowFor(c, seed.a);
+      expect(
+        await tenantRaw(`update ${c.table} set ${c.set} where id = $1 returning id`, {
+          companyId: seed.a.companyId,
+          values: [aId],
+        }),
+      ).toEqual([{ id: aId }]);
+    },
+  );
 
   test.each(CASES.map((c) => [c.table, c] as const))('%s: company A cannot move its own row to B', async (_t, c) => {
     const aId = await rowFor(c, seed.a);
