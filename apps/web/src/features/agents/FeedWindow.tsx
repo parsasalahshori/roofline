@@ -1,13 +1,12 @@
-import { EmptyState } from '@roofline/ui';
-import { agents } from '../../copy/agents.ts';
+import { ActivityFeed } from './ActivityFeed.tsx';
 import { AgentsTabs } from './AgentsTabs.tsx';
 
-/** Placeholder until the real screen is built. */
+/** The Agents window's Feed tab. */
 export function FeedWindow() {
   return (
     <>
       <AgentsTabs current="feed" />
-      <EmptyState title={agents.feedComingSoon} />
+      <ActivityFeed />
     </>
   );
 }

@@ -1,0 +1,68 @@
+/* Waiting rows grouped by who they wait on. Rows stack on a phone and sit on one line on wider screens. */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.heading {
+  margin: 0 0 8px;
+  font-size: var(--font-size-body);
+  color: var(--text-muted);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.agent {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.text {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.time {
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.open {
+  align-self: flex-start;
+  min-height: 40px;
+}
+
+@media (min-width: 640px) {
+  .row {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .agent {
+    flex: none;
+    min-width: 120px;
+  }
+
+  .text {
+    flex: 1;
+  }
+
+  .time {
+    flex: none;
+  }
+}

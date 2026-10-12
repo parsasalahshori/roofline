@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { listTaskEvents, reclaimExpiredLeases, timeBaselines, withTenant } from '@roofline/db';
+import { type StepType, stepTypes } from '@roofline/shared';
 import { expireDrafts } from '../src/jobs/scheduler/expire-drafts.ts';
 import { AppError } from '../src/errors.ts';
 import { registerStepHandler, runStep, type StepHandler, type StepOutcome } from '../src/tasks/runner.ts';
@@ -245,3 +246,93 @@ describe('expiry and refused step types', () => {
   });
 });
 
+
+describe('finished events (Ruling AX-I)', () => {
+  test('a task that lands in needs_attention writes no finished event', async () => {
+    const { taskId } = await oneDemoStep(async () => ({ status: 'needs_attention', result: {}, errorPlain: 'Look at this.' }));
+    expect((await dbTask(t, 'a', taskId)).status).toBe('needs_attention');
+    expect((await kinds(taskId)).filter((k) => k === 'finished')).toEqual([]);
+  });
+
+  test('a task that reaches done writes exactly one finished event', async () => {
+    const { taskId } = await oneDemoStep(async () => ({ status: 'done', result: {} }));
+    expect((await dbTask(t, 'a', taskId)).status).toBe('done');
+    const finished = (await events(taskId)).filter((e) => e.kind === 'finished');
+    expect(finished).toHaveLength(1);
+    expect(finished[0]).toMatchObject({ actorType: 'system', data: { status: 'done' } });
+  });
+
+  test('after attention then retry to done, finished is written once with status done', async () => {
+    let calls = 0;
+    const { taskId, step } = await oneDemoStep(async () => {
+      calls += 1;
+      return calls === 1 ? { status: 'needs_attention', result: {}, errorPlain: 'Look at this.' } : { status: 'done', result: {} };
+    });
+    expect((await dbTask(t, 'a', taskId)).status).toBe('needs_attention');
+    expect((await kinds(taskId)).filter((k) => k === 'finished')).toEqual([]);
+
+    const retry = await (await actors.as('owner')).post(`/api/approvals/${taskId}/steps/${step.id}/retry`).send();
+    expect(retry.status).toBe(200);
+    await t.queue.drain(t.deps);
+
+    expect((await dbTask(t, 'a', taskId)).status).toBe('done');
+    const finished = (await events(taskId)).filter((e) => e.kind === 'finished');
+    expect(finished).toHaveLength(1);
+    expect(finished[0]).toMatchObject({ data: { status: 'done' } });
+  });
+});
+
+describe('rerun of internal step types (Ruling AX-I)', () => {
+  test('rerunTask copies an expired plan whose steps are built-in front_desk_* types', async () => {
+    const internal = (Object.values(stepTypes) as { type: StepType; userCreatable: boolean }[])
+      .filter((def) => !def.userCreatable && def.type.startsWith('front_desk_'))
+      .map((def) => def.type);
+    expect(internal.length).toBeGreaterThan(0);
+
+    const ctx = agentCtx(idOf());
+    const { taskId } = await withTenant(t.deps.pools, ctx, (tx) =>
+      createTask(
+        tx,
+        ctx,
+        {
+          agent: 'front_desk',
+          kind: 'front_desk_day',
+          title: 'Front desk day',
+          summary: 'Calls and texts handled.',
+          expiresAt: new Date(NOW.getTime() + HOUR),
+          steps: internal.map((type) => ({ type, payload: { label: 'Handled by the front desk' } })),
+        },
+        { now: NOW, ip: '203.0.113.9', allowInternalStepTypes: true },
+      ),
+    );
+    t.clock.set(new Date(NOW.getTime() + 2 * HOUR));
+    await expireDrafts(t.deps, t.clock.now());
+    expect((await dbTask(t, 'a', taskId)).status).toBe('expired');
+
+    const owner = await actors.as('owner');
+    const res = await owner.post(`/api/approvals/${taskId}/rerun`).send();
+    expect(res.status).toBe(201);
+    expect(res.body.id).not.toBe(taskId);
+    const copied = await dbSteps(t, 'a', res.body.id);
+    expect(copied.map((s) => s.type)).toEqual(internal);
+  });
+
+  test('createTask without the option still refuses a front_desk_* step with AppError 400 on steps.0.type', async () => {
+    const ctx = agentCtx(idOf());
+    const attempt = withTenant(t.deps.pools, ctx, (tx) =>
+      createTask(
+        tx,
+        ctx,
+        {
+          agent: 'front_desk',
+          kind: 'front_desk_day',
+          title: 'Front desk texts',
+          steps: [{ type: 'front_desk_texts', payload: { label: 'Texts' } }],
+        },
+        { now: NOW, ip: '203.0.113.9' },
+      ),
+    );
+    await expect(attempt).rejects.toBeInstanceOf(AppError);
+    await expect(attempt).rejects.toMatchObject({ status: 400, field: 'steps.0.type' });
+  });
+});

@@ -1,13 +1,12 @@
-import { EmptyState } from '@roofline/ui';
-import { agents } from '../../copy/agents.ts';
 import { AgentsTabs } from './AgentsTabs.tsx';
+import { WaitingList } from './WaitingList.tsx';
 
-/** Placeholder until the real screen is built. */
+/** The "Waiting on you" tab. */
 export function WaitingWindow() {
   return (
     <>
       <AgentsTabs current="waiting" />
-      <EmptyState title={agents.waitingComingSoon} />
+      <WaitingList />
     </>
   );
 }
