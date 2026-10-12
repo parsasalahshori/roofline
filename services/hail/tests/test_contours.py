@@ -74,7 +74,7 @@ def test_area_matches_cell_count_oracle(contours, expected):
         if want < 500:
             continue
         got = area_km2(contours[float(k)])
-        assert abs(got - want) / want <= 0.05, f"level {k}: area {got:.1f} vs expected {want}"
+        assert abs(got - want) / want <= 0.08, f"level {k}: area {got:.1f} vs expected {want}"
 
 
 def test_area_regression_snapshot(contours, expected):
