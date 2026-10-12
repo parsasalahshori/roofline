@@ -17,6 +17,15 @@ export type CurrentWeather = {
   updatedAt: string;
 };
 
+export type DailyForecast = {
+  /** YYYY-MM-DD, the place's local date. */
+  date: string;
+  highF: number | null;
+  lowF: number | null;
+  summary: string;
+  precipChancePercent: number | null;
+};
+
 export interface WeatherSource {
   /**
    * The weather now at a place, or null when there is none to show: the service is down or slow,
@@ -24,9 +33,12 @@ export interface WeatherSource {
    * throws for those; null is the whole answer and the screen simply shows no weather.
    */
   current(lat: number, lng: number): Promise<CurrentWeather | null>;
+  /** Up to `days` days of forecast, or null on any failure or when the place is not covered. Never throws. */
+  daily(lat: number, lng: number, days: number): Promise<DailyForecast[] | null>;
 }
 
 /** A source with no weather to give. It asks nobody. */
 export class NullWeatherSource implements WeatherSource {
   readonly current: WeatherSource['current'] = async () => null;
+  readonly daily: WeatherSource['daily'] = async () => null;
 }

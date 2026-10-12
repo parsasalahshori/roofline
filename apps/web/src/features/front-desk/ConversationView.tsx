@@ -47,13 +47,11 @@ function TurnBody({ turn, transcriptStored }: { turn: TurnView; transcriptStored
   );
 }
 
-/**
- * Whether the call behind this turn kept its transcript. A TurnView carries no call id, so a turn cannot be tied to
- * one call: with a single call that call decides, and with several any call that kept nothing makes the line say so.
- */
-function turnTranscriptStored(_turn: TurnView, calls: CallView[]): boolean {
-  if (calls.length === 1) return calls[0]!.transcriptStored;
-  return calls.every((call) => call.transcriptStored);
+/** Whether the call behind this turn kept its transcript. A text turn (no call) is judged by its own text. */
+function turnTranscriptStored(turn: TurnView, calls: CallView[]): boolean {
+  if (turn.callId === null) return true;
+  const call = calls.find((c) => c.id === turn.callId);
+  return call ? call.transcriptStored : true;
 }
 
 export function ConversationView({ conversation }: { conversation: ConversationDetail }) {
