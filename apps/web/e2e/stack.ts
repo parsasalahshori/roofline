@@ -18,6 +18,7 @@ const STACK_FILE = fileURLToPath(new URL('.stack.json', import.meta.url));
 const SHUTDOWN_WAIT_MS = 10_000;
 
 const db = await startTestDatabase();
+const encryptionKey = randomBytes(32).toString('base64');
 
 /** Both children read this one environment (on top of process.env). */
 const env: NodeJS.ProcessEnv = {
@@ -30,7 +31,7 @@ const env: NodeJS.ProcessEnv = {
   POLICY_PAGES_DOMAIN: E2E_POLICY_DOMAIN,
   DATABASE_URL_TENANT: db.urls.tenant,
   DATABASE_URL_SYSTEM: db.urls.system,
-  ENCRYPTION_KEY: randomBytes(32).toString('base64'),
+  ENCRYPTION_KEY: encryptionKey,
   WEATHER_DISABLED: '1',
   FAKE_PROVIDERS: '1',
   WEB_DIST_DIR: 'apps/web/dist',
@@ -80,7 +81,13 @@ try {
   await writeFile(
     STACK_FILE,
     `${JSON.stringify(
-      { ownerUrl: db.urls.owner, tenantUrl: db.urls.tenant, systemUrl: db.urls.system, baseUrl: BASE_URL },
+      {
+        ownerUrl: db.urls.owner,
+        tenantUrl: db.urls.tenant,
+        systemUrl: db.urls.system,
+        baseUrl: BASE_URL,
+        encryptionKey,
+      },
       null,
       2,
     )}\n`,

@@ -2,6 +2,7 @@ import { STORM_PAGE_CODE_RE } from '@roofline/db';
 import { stormPageForCode } from '@roofline/db/system';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import type { AppDeps } from '../app.ts';
+import { publicPageRateLimit } from '../rate-limit.ts';
 import { stormFormErrorMessage } from '../storm/landing.ts';
 import { stormPageHtml, stormPageNotFoundHtml } from './storm-page-html.ts';
 
@@ -39,6 +40,7 @@ function hostSlug(req: Request, domain: string | undefined, appHosts: ReadonlySe
  */
 export function stormPage(deps: AppDeps): Router {
   const router = Router();
+  const limit = publicPageRateLimit('storm-page');
   const domain = deps.config.POLICY_PAGES_DOMAIN;
   const appHosts = new Set(
     [deps.config.PUBLIC_BASE_URL, deps.config.APP_ORIGIN]
@@ -103,7 +105,13 @@ export function stormPage(deps: AppDeps): Router {
     const code = match[1] ?? '';
     const thanks = match[2] !== undefined;
     const error = thanks ? undefined : stormFormErrorMessage(req.query.error);
-    serve(res, slug, code, thanks, error).catch(next);
+    limit(req, res, (limited?: unknown) => {
+      if (limited !== undefined) {
+        next(limited);
+        return;
+      }
+      serve(res, slug, code, thanks, error).catch(next);
+    });
   });
 
   return router;
