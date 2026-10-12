@@ -21,4 +21,6 @@ export const keys = {
   storm: (id: string) => ['storm', id] as const,
   stormSettings: ['storm-settings'] as const,
   adAccounts: ['ad-accounts'] as const,
+  myRoutes: ['my-routes'] as const,
+  route: (id: string) => ['route', id] as const,
 };
