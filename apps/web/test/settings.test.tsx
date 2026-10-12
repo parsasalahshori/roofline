@@ -52,6 +52,12 @@ const COMPANY_BODY = {
   logoUrl: null,
 };
 
+/** A small checklist for the reads the Settings window makes; the Setup tab's own tests use the full nine steps. */
+const SETUP_VIEW = {
+  items: [{ key: 'company_basics', status: 'todo', comingWith: null, skippable: false, data: {} }],
+  progress: { done: 0, total: 5 },
+} as const;
+
 /** A signed-in owner whose Settings reads answer with a company and an empty team, unless a test gives its own answers. */
 function signedInApi(overrides: Routes = {}) {
   api = stubApi({
@@ -59,6 +65,8 @@ function signedInApi(overrides: Routes = {}) {
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
     'GET /api/company': () => ({ body: COMPANY_BODY }),
     'GET /api/team': () => ({ body: { members: [], invites: [] } }),
+    // The user menu's ring reads the checklist too
+    'GET /api/setup': () => ({ body: SETUP_VIEW }),
     ...overrides,
   });
   return api;
@@ -95,11 +103,13 @@ it('connections says what is coming', async () => {
   expect(await screen.findByText(connections.later)).toBeInTheDocument();
 });
 
-it('setup says what is coming', async () => {
-  signedInApi();
+it('setup shows the checklist', async () => {
+  signedInApi({
+    'GET /api/setup': () => ({ body: SETUP_VIEW }),
+  });
   renderApp('/settings/setup');
 
-  expect(await screen.findByText(setup.later)).toBeInTheDocument();
+  expect(await screen.findByRole('list', { name: setup.listLabel })).toBeInTheDocument();
 });
 
 it('unknown tab goes to company', async () => {

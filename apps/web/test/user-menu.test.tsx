@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Account } from '../src/api/types.ts';
 import { shell } from '../src/copy/shell.ts';
 import { UserMenu } from '../src/shell/topbar/UserMenu.tsx';
-import { ACCOUNT, ACCOUNT_TWO, renderAt, stubApi, USER, where } from './helpers.tsx';
+import { ACCOUNT, ACCOUNT_TWO, renderAt, SHELL_ROUTES, stubApi, USER, where } from './helpers.tsx';
 
 /** The same person, after switching to the second company. */
 const RIDGE_ACCOUNT: Account = {
@@ -56,7 +56,7 @@ async function openMenu(user: UserEvent) {
 
 describe('user menu', () => {
   it('shows the name and opens a menu with My day, Settings and Sign out', async () => {
-    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
+    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }), 'GET /api/setup': SHELL_ROUTES['GET /api/setup'] });
     const { user } = renderAt(<UserMenu />);
 
     const trigger = await screen.findByRole('button', { name: USER.name });
@@ -75,6 +75,7 @@ describe('user menu', () => {
   it('switches company and goes to the map', async () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT_TWO }),
+      'GET /api/setup': SHELL_ROUTES['GET /api/setup'],
       'POST /api/auth/switch-company': () => ({ body: RIDGE_ACCOUNT }),
     });
     const { router, user } = renderAt(<UserMenu />, '/jobs');
@@ -91,6 +92,7 @@ describe('user menu', () => {
   it('signs out', async () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
+      'GET /api/setup': SHELL_ROUTES['GET /api/setup'],
       'POST /api/auth/logout': () => ({ body: { ok: true } }),
     });
     const { router, user } = renderAt(<UserMenu />, '/jobs');
@@ -105,7 +107,7 @@ describe('user menu', () => {
   });
 
   it('opens My day and closes', async () => {
-    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
+    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }), 'GET /api/setup': SHELL_ROUTES['GET /api/setup'] });
     const { router, user } = renderAt(<UserMenu />, '/jobs');
     await openMenu(user);
 
@@ -116,7 +118,7 @@ describe('user menu', () => {
   });
 
   it('closes on Esc and returns focus to the name', async () => {
-    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
+    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }), 'GET /api/setup': SHELL_ROUTES['GET /api/setup'] });
     const { user } = renderAt(<UserMenu />);
     const trigger = await openMenu(user);
     expect(screen.getByRole('link', { name: shell.myDay })).toBeInTheDocument();
@@ -128,7 +130,7 @@ describe('user menu', () => {
   });
 
   it('closes when the page behind is clicked', async () => {
-    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
+    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }), 'GET /api/setup': SHELL_ROUTES['GET /api/setup'] });
     const { user } = renderAt(
       <>
         <UserMenu />
@@ -144,7 +146,7 @@ describe('user menu', () => {
   });
 
   it('is not a dialog on desktop', async () => {
-    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
+    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }), 'GET /api/setup': SHELL_ROUTES['GET /api/setup'] });
     const { user } = renderAt(<UserMenu />);
     await openMenu(user);
 
@@ -154,7 +156,7 @@ describe('user menu', () => {
 
   it('opens a sheet on a phone', async () => {
     stubPhone();
-    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
+    api = stubApi({ 'GET /api/auth/me': () => ({ body: ACCOUNT }), 'GET /api/setup': SHELL_ROUTES['GET /api/setup'] });
     const { user } = renderAt(<UserMenu />, '/jobs');
     await openMenu(user);
 

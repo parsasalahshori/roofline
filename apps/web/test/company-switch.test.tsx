@@ -118,6 +118,7 @@ it('a mounted list reloads for the new company', async () => {
 it('closing the menu before the switch resolves still goes home', async () => {
   api = stubApi({
     'GET /api/auth/me': () => ({ body: ACCOUNT_TWO }),
+    'GET /api/setup': SHELL_ROUTES['GET /api/setup'],
     'POST /api/auth/switch-company': () => ({ body: RIDGE_ACCOUNT }),
   });
   const release = holdSwitch();
@@ -137,6 +138,7 @@ it('closing the menu before the switch resolves still goes home', async () => {
 it('a failed switch with the menu closed still shows the error toast', async () => {
   api = stubApi({
     'GET /api/auth/me': () => ({ body: ACCOUNT_TWO }),
+    'GET /api/setup': SHELL_ROUTES['GET /api/setup'],
     'POST /api/auth/switch-company': () => ({ status: 400, body: { error: 'That company is not available to you.' } }),
   });
   const release = holdSwitch();
