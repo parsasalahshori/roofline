@@ -776,6 +776,8 @@ export async function appointmentViews(
       notes: a.notes,
       source: a.source,
       sync,
+      confirmedAt: a.confirmedAt?.toISOString() ?? null,
+      confirmedVia: a.confirmedVia,
       canEdit: canEditAppointment(a, ctx),
     };
   });

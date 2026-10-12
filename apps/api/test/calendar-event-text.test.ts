@@ -23,6 +23,8 @@ function view(over: Partial<AppointmentView> = {}): AppointmentView {
     notes: NOTES,
     source: 'manual',
     sync: 'none',
+    confirmedAt: null,
+    confirmedVia: null,
     canEdit: true,
     ...over,
   };

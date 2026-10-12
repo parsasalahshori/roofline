@@ -3,6 +3,7 @@ import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
+  appointments,
   companyPhoneNumbers,
   companySettings,
   conversations,
@@ -16,6 +17,7 @@ import { TEXT_CHANNEL_TOOLS } from '@roofline/shared';
 import { createEngine } from '../../src/front-desk/engine.ts';
 import type { Engine } from '../../src/front-desk/engine-types.ts';
 import { queueFrontDeskText, runFrontDeskText } from '../../src/front-desk/texts.ts';
+import { NOTHING_TO_CONFIRM } from '../../src/front-desk/tools/confirm.ts';
 import { ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
 import type { RouteDecision } from '../../src/providers/llm.ts';
 import { inCompany } from '../crm-helpers.ts';
@@ -281,13 +283,38 @@ describe('Front Desk texts', () => {
     expect(await conversationRows()).toEqual([expect.objectContaining({ outcome: 'spam', status: 'ended' })]);
   });
 
-  test('the C / confirm shortcut is routed through the engine for now', async () => {
+  test('the C / confirm shortcut is answered by the confirm helper, not the engine', async () => {
     await addSmsCustomers(t, 'a', [nina()]);
     await inboundText('C');
     await t.jobs.drain(t.deps);
-    // TODO(Task 8): this becomes the confirm helper's reply once it exists.
-    expect(answerCalls(llm)).toHaveLength(1);
+    // Nina has no upcoming visit, so the helper says so (the booking tests cover a real confirmation).
+    expect(answerCalls(llm)).toHaveLength(0);
     expect(t.sms.sent).toHaveLength(1);
+    expect((await outbound())[0]).toMatchObject({ body: NOTHING_TO_CONFIRM });
+  });
+
+  test('C confirms the next visit and the reply says which one', async () => {
+    const [ninaId] = await addSmsCustomers(t, 'a', [nina()]);
+    const startsAt = new Date(DAYTIME.getTime() + 24 * HOUR);
+    await inCompany(t, idA(), (tx: Tx) =>
+      tx.insert(appointments).values({
+        companyId: idA(),
+        kind: 'inspection',
+        customerId: ninaId!,
+        assignedUserId: t.seed.a.owner.userId,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + HOUR),
+        status: 'scheduled',
+        source: 'front_desk',
+      }),
+    );
+    await inboundText('confirm');
+    await t.jobs.drain(t.deps);
+    expect(answerCalls(llm)).toHaveLength(0);
+    expect((await outbound())[0]).toMatchObject({ body: 'Thanks, your inspection on Wed Oct 14, 10:00 AM is confirmed.' });
+    const rows = await inCompany(t, idA(), (tx: Tx) => tx.select().from(appointments));
+    expect(rows[0]).toMatchObject({ confirmedVia: 'text' });
+    expect(rows[0]!.confirmedAt).not.toBeNull();
   });
 
   test('a reply within 10 minutes of the customer text sends at 23:00 company time despite quiet hours', async () => {

@@ -20,6 +20,7 @@ import { sendQueuedText, textStateFor } from '../messaging/outbound.ts';
 import { createEngine } from './engine.ts';
 import type { Engine, ToolHandlers } from './engine-types.ts';
 import { buildCompanyBlock } from './prompt.ts';
+import { confirmByText, isConfirmShortcut } from './tools/confirm.ts';
 import { appendAssistant, appendUser, newConversationState } from './state.ts';
 
 /*
@@ -153,16 +154,19 @@ export async function runFrontDeskText(
   if (!prepared) return;
 
   const { state, callerText, lastUnanswered } = prepared;
-  // TODO(Task 8): when the booking-confirm helper exists, call it here for 'C' / 'confirm' instead of the engine.
-  // Until then 'C' / 'confirm' is a normal text for the engine.
   const active = engine ?? createEngine(deps, TEXT_TOOL_HANDLERS);
   const said: string[] = [];
   let handoff = false;
   let spam = false;
-  for await (const event of active.turn(state, callerText, new AbortController().signal)) {
-    if (event.type === 'say') said.push(event.text);
-    else if (event.type === 'handoff') handoff = true;
-    else if (event.type === 'end' && event.reason === 'spam') spam = true;
+  if (prepared.customerId !== null && isConfirmShortcut(callerText)) {
+    // "C" or "confirm" from a customer's own number confirms their next visit; the engine is not asked.
+    said.push(await confirmByText(deps, { companyId: data.companyId, conversationId, customerId: prepared.customerId }, deps.clock.now()));
+  } else {
+    for await (const event of active.turn(state, callerText, new AbortController().signal)) {
+      if (event.type === 'say') said.push(event.text);
+      else if (event.type === 'handoff') handoff = true;
+      else if (event.type === 'end' && event.reason === 'spam') spam = true;
+    }
   }
   if (spam) {
     // Spam is never answered: end the conversation so later texts from the number open a new one.

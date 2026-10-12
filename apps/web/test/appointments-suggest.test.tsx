@@ -78,6 +78,8 @@ function makeAppointment(overrides: Partial<AppointmentView> & { id: string }): 
     notes: null,
     source: 'manual',
     sync: 'none',
+    confirmedAt: null,
+    confirmedVia: null,
     canEdit: true,
     ...overrides,
   };
