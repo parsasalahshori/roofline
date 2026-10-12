@@ -177,6 +177,7 @@ export * from './repos/conversations.ts';
 export * from './repos/turns.ts';
 export * from './repos/calls.ts';
 export * from './repos/call-recording.ts';
+export * from './repos/fd-retention.ts';
 export * from './repos/forwarding-test.ts';
 export * from './repos/claim-intakes.ts';
 export * from './repos/front-desk-settings.ts';
