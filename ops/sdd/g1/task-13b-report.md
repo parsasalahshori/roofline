@@ -14,4 +14,4 @@
 
 ## Verify
 - typecheck and lint: passed (no output errors).
-- CI: first run 38243852264 cancelled (superseded by the push of 6869e71). Result of run 38244341011: see the lead's summary.
+- CI: first run 38243852264 cancelled (superseded by the push of 6869e71). Run 38244341011 (head 6869e71, includes 8dca6d1): PASSED (Platform, E2E, v1 all success).
