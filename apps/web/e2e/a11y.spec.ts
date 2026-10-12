@@ -194,7 +194,8 @@ test('storm detail has no serious accessibility violations', async ({ page, logi
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto(`/storm/${scenario.companyStormId}`);
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 20_000 });
+  // The storm's own heading (the fixture's place name), not the window title: waiting for "any h1" raced the load.
+  await expect(page.getByRole('heading', { level: 1, name: 'Omaha, NE' })).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });
 
