@@ -1,0 +1,7 @@
+{
+  "token_type": "Bearer",
+  "scope": "offline_access User.Read Calendars.ReadWrite",
+  "expires_in": 3599,
+  "access_token": "ms-access-1",
+  "refresh_token": "ms-refresh-1"
+}
