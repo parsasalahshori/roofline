@@ -3,7 +3,7 @@ import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
 import { LlmUnavailableError, MAX_DRAFT_JOBS, type JobFacts } from '../../providers/llm.ts';
 import { createTask } from '../../tasks/service.ts';
-import { draftBodyOk, FROM_TEMPLATE, localTimeToday, systemCtx } from '../common.ts';
+import { draftBodyOk, FROM_TEMPLATE, planExpiresAt, systemCtx } from '../common.ts';
 import { localParts } from '../schedule.ts';
 
 const MAX_BODY = 300;
@@ -114,7 +114,7 @@ export async function runReminders(deps: AppDeps, companyId: string, meta: JobMe
         kind: 'reminders',
         title: `Reminders for tomorrow (${messages.length} texts)`,
         summary: usedTemplate ? FROM_TEMPLATE : "Drafted for tomorrow's visits.",
-        expiresAt: localTimeToday(today, 21, tz),
+        expiresAt: planExpiresAt(today, 21, tz, now),
         steps,
       },
       { now, allowInternalStepTypes: true },
