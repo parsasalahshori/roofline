@@ -163,6 +163,7 @@ conversation text (MEDIUM 6); the E1 lead fixes platform items (TRUST_PROXY star
   script does not pass `--name`). drizzle-kit emits FKs before unique constraints; reorder by hand if needed.
 - `drizzle-kit generate` names its new snapshot by the next free number on your base, which can overwrite another
   track's `meta/00NN_snapshot.json` after a merge. Check `git status` and restore any other track's snapshot from origin.
+- Column-level grants: the shared timestamps helper (`packages/db/src/schema/columns.ts`, `$onUpdate`) adds `updated_at` to every Drizzle UPDATE. A narrowed `GRANT UPDATE (col)` must also list `updated_at`, or every update on that table is refused (D1 voice-URL failure).
 - `apps/web/e2e/shell.spec.ts` dock test needs its 60 s timeout. Find banners by text: several
   `role="status"`/`role="alert"` regions are always mounted.
 - Under Vitest, import `RouterProvider` from `react-router` (not `react-router/dom`).
