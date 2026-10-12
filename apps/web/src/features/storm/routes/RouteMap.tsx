@@ -98,5 +98,5 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
     };
   }, [stops, currentStopId, position]);
 
-  return <div ref={containerRef} className={styles.map} role="img" aria-label={doors.routeMapLabel} />;
+  return <div ref={containerRef} className={styles.map} role="region" aria-label={doors.routeMapLabel} />;
 }

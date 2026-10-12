@@ -22,20 +22,35 @@ function dayBefore(now: Date): string {
 }
 
 /** The hour (0-23) it is at `now` in an IANA zone. */
-function localHour(now: Date, timeZone: string): number {
+export function localHour(now: Date, timeZone: string): number {
   return Number(new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' }).format(now));
 }
 
-const DAYTIME_ZONES = ['America/Chicago', 'America/Los_Angeles', 'America/New_York', 'Pacific/Honolulu', 'Europe/London', 'Asia/Kolkata', 'Asia/Tokyo', 'Australia/Sydney'];
+export const DAYTIME_ZONES = [
+  'America/Chicago',
+  'America/Los_Angeles',
+  'America/New_York',
+  'Pacific/Honolulu',
+  'Europe/London',
+  'Europe/Berlin',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+];
+
+/** The local hours (inclusive) the fixture treats as safely outside quiet hours. */
+const DAY_FROM = 9;
+const DAY_TO = 19;
 
 /**
  * A company zone where `now` is mid-day, so the send gate (quiet hours) lets the texts and emails go
  * whatever time CI runs. Keeps the default Chicago whenever it is already mid-day there.
  */
-function daytimeZone(now: Date): string {
+export function daytimeZone(now: Date): string {
   return DAYTIME_ZONES.find((zone) => {
     const hour = localHour(now, zone);
-    return hour >= 11 && hour <= 15;
+    return hour >= DAY_FROM && hour <= DAY_TO;
   }) ?? 'America/Chicago';
 }
 

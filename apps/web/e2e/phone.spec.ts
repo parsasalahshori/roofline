@@ -152,7 +152,7 @@ test('S1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, s
   await waitForStormSteps(page, taskId);
 
   await page.goto('/storm');
-  await expect(page.getByRole('heading', { name: 'Storms in your area' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Storms in your area' })).toBeVisible();
   await noSideScroll(page);
 
   await page.goto(`/storm/${scenario.companyStormId}`);

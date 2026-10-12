@@ -52,6 +52,9 @@ export function stormPage(deps: AppDeps): Router {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.set('Cache-Control', 'no-store');
     res.set('X-Robots-Tag', 'noindex, nofollow');
+    // helmet's default no-referrer makes a browser send `Origin: null` on the form's POST, which the Origin
+    // guard in storm-requests.ts refuses. same-origin keeps the Origin and sends nothing off the site.
+    res.set('Referrer-Policy', 'same-origin');
     res.send(html);
   }
 

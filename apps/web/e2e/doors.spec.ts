@@ -16,7 +16,7 @@ async function noSideScroll(page: Page): Promise<void> {
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 }
 
-test('rep marks a door Wants a check and the lead reaches the owner Today', async ({
+test('rep marks a door Wants a check and the lead reaches the rep Today', async ({
   page,
   loginAs,
   markTodaySeen,
