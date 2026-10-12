@@ -111,7 +111,12 @@ const addAdAccount = (platform: 'google' | 'meta', status = 'active') =>
   ]);
 const setSettings = (set: string, values: unknown[] = []) =>
   q(`update company_settings set ${set} where company_id = $1`, [companyId(), ...values]);
-const draft = () => draftStormPlan(t.deps, companyId(), companyStormId, NOW);
+/** Storm Scout is not paused in these tests, so a plan is always drafted (null only when paused, A1 T14). */
+const draft = async () => {
+  const drafted = await draftStormPlan(t.deps, companyId(), companyStormId, NOW);
+  if (drafted === null) throw new Error('Storm Scout is paused');
+  return drafted;
+};
 const stepsOf = (taskId: string) => dbSteps(t, 'a', taskId);
 const payloadOf = (s: StepRow) => s.payload as Record<string, unknown>;
 const sorted = (ids: string[]) => [...ids].sort();
