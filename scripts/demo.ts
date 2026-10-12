@@ -163,9 +163,13 @@ try {
     log('Database ready (--db-only).');
     process.exit(0);
   }
-  if (process.env.DEMO_BUILD === '1' || !existsSync(`${REPO_ROOT}apps/web/dist/index.html`)) {
+  // The demo's own build (OpenStreetMap tiles under the map, no key needed), marked so a build made
+  // for anything else is rebuilt (vite empties dist/ on every build, marker included).
+  const marker = `${REPO_ROOT}apps/web/dist/.demo-build`;
+  if (process.env.DEMO_BUILD === '1' || !existsSync(marker)) {
     log('Building the web app (about 1 minute).');
-    execFileSync('npm', ['run', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit' });
+    execFileSync('npm', ['run', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit', env: { ...process.env, VITE_MAP_TILES: 'osm' } });
+    writeFileSync(marker, 'VITE_MAP_TILES=osm\n');
   }
 } catch (err) {
   console.error(err);

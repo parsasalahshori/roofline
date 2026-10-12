@@ -17,11 +17,22 @@ async function linger(page: Page, ms = 1500): Promise<void> {
   await page.waitForTimeout(ms);
 }
 
-/** Opens a path and waits for the window to settle. */
+/** API answers of 500 and up seen during the tour; any one fails the smoke. */
+const serverErrors: string[] = [];
+let shotNumber = 0;
+
+/** Opens a path, waits for the window to settle, and checks it shows no error. */
 async function visit(page: Page, path: string): Promise<void> {
   await page.goto(path);
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await linger(page);
+  await expect(page.getByText(/Something went wrong|couldn.t load/i), `error shown on ${path}`).toHaveCount(0);
+  expect(serverErrors, `server errors by ${path}`).toEqual([]);
+  // DEMO_SHOTS=<dir> keeps a numbered screenshot of every screen, for checking the tour by eye.
+  if (process.env.DEMO_SHOTS) {
+    shotNumber += 1;
+    await page.screenshot({ path: `${process.env.DEMO_SHOTS}/${String(shotNumber).padStart(2, '0')}${path.replaceAll('/', '-')}.png` });
+  }
 }
 
 /** Clicks the first visible match, if there is one; a tour step never fails on an optional click. */
@@ -47,6 +58,9 @@ async function simulate(page: Page, which: 'text' | 'call' | 'storm' | 'sign'): 
 }
 
 test('Roofline demo walkthrough', async ({ page }) => {
+  page.on('response', (response) => {
+    if (response.url().includes('/api/') && response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`);
+  });
 
   await test.step('Sign in', async () => {
     await page.goto('/sign-in');
