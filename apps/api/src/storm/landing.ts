@@ -79,7 +79,7 @@ export const StormRequestBody = z.object({
     .trim()
     .min(ADDRESS_MIN, ADDRESS_MESSAGE)
     .max(ADDRESS_MAX, ADDRESS_TOO_LONG),
-  okToText: z.any().transform((value) => typeof value === 'boolean' ? value : typeof value === 'string' && TICKED_VALUES.has(value)),
+  okToText: z.unknown().optional().transform((value) => typeof value === 'boolean' ? value : typeof value === 'string' && TICKED_VALUES.has(value)),
   website: z.string().optional(),
 });
 

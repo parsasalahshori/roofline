@@ -106,7 +106,7 @@ describe('createStormRequest', () => {
     expect(jobs[0]!.storm_id).toBe(stormId);
     expect(jobs[0]!.customer_id).toBe(customers[0]!.id);
     expect(jobs[0]!.property_id).toBe(properties[0]!.id);
-    expect(jobs[0]!.next_step_on).toBe('2026-05-02');
+    expect(new Date(jobs[0]!.next_step_on as Date).toISOString().slice(0, 10)).toBe('2026-05-02');
     expect(jobs[0]!.next_step).toBeTruthy();
 
     const requests = await rowsOf(seed.a.companyId, 'storm_requests');
