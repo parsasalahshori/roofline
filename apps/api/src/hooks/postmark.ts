@@ -89,7 +89,7 @@ export function postmarkHooks(deps: AppDeps): Router {
     }
   });
 
-  // A body that is not JSON (or is too large) is the sender's mistake: an empty 400, no stack text.
+  // A body that is not JSON (or is too large) is the sender's mistake: an empty 400, no stack text. A 429 from the limiter passes on.
   const bodyErrors: ErrorRequestHandler = (err, _req, res, next) => {
     const status = (err as { status?: unknown } | null)?.status;
     if (status === 413) {
