@@ -17,6 +17,7 @@ import { isUniqueViolation } from '../errors.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { updateJob } from './jobs.ts';
+import { lockJobProposalsOf } from './proposals.ts';
 
 /*
  * What the homeowner's link reads and writes. Everything runs in the caller's withTenant
@@ -204,6 +205,8 @@ export async function signProposal(
   s: Omit<SignatureRecord, 'documentSha256'> & { documentSha256: string },
   now: Date,
 ): Promise<'signed' | 'already_signed' | 'closed'> {
+  // C-M1: signing changes every open proposal of the job, so they are all locked first, in id order (as a send does).
+  await lockJobProposalsOf(tx, ctx, proposalId);
   const p = await lockProposal(tx, ctx, proposalId);
   if (!p) return 'closed';
   if (p.signedAt !== null) return 'already_signed';

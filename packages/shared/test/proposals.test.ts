@@ -3,7 +3,9 @@ import {
   CONSENT_TEXT_V1,
   ESTIMATE_CLAUSE_V1,
   canonicalJson,
+  isUsStateCode,
   signedDocument,
+  US_STATE_CODES,
   type PublicProposalView,
 } from '../src/proposals.ts';
 
@@ -120,4 +122,11 @@ test('consent and estimate clause text match the brief exactly', () => {
   expect(ESTIMATE_CLAUSE_V1).toBe(
     "This price is based on an estimate of your roof's size. If the measured size differs, we'll show you the updated price and ask you to confirm before work starts.",
   );
+});
+
+test('US state codes: the 50 states and DC, no territories (C-M4)', () => {
+  expect(US_STATE_CODES).toHaveLength(51);
+  expect(isUsStateCode('NE')).toBe(true);
+  expect(isUsStateCode(' dc ')).toBe(true);
+  for (const code of ['PR', 'GU', 'VI', 'AS', 'MP', 'Nebraska', '', 'N']) expect(isUsStateCode(code)).toBe(false);
 });

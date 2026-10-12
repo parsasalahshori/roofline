@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { beforeEach, describe, expect, inject, test } from 'vitest';
-import { withTenant } from '@roofline/db';
+import { footprintBoxDegrees, footprintsNear, footprintsNearQuery, withTenant } from '@roofline/db';
 import {
   claimFootprintState,
   failFootprintState,
@@ -18,7 +18,8 @@ import {
 import { SEED_PASSWORD, seedCompany } from '@roofline/db/testing';
 import type { AppDeps } from '../src/app.ts';
 import { FOOTPRINT_BATCH_SIZE, FOOTPRINT_LOAD_FAILED_PLAIN, loadFootprintState } from '../src/estimator/footprints-load.ts';
-import { InlineJobs } from '../src/jobs/queue.ts';
+import type { PgBoss } from 'pg-boss';
+import { ensureJobQueues, InlineJobs, jobQueueOptions, PgBossJobs } from '../src/jobs/queue.ts';
 import { ensureFootprints } from '../src/jobs/scheduler/footprints-ensure.ts';
 import { FakeFootprintSource } from '../src/providers/fakes/footprints.ts';
 import type { FootprintFeature, FootprintSource } from '../src/providers/footprints.ts';
@@ -160,6 +161,15 @@ describe('loadFootprintState', () => {
     expect(row!.error_plain).toBe(FOOTPRINT_LOAD_FAILED_PLAIN);
     expect(String(row!.error_plain)).not.toContain('SECRET');
     expect(JSON.stringify(row)).not.toContain('SECRET');
+  });
+
+  test('a code that is not a US state (or DC) returns quietly: nothing claimed, nothing thrown (C-M4)', async () => {
+    const source = squaresSource(3);
+    for (const code of ['PR', 'GU', 'Nebraska']) {
+      await expect(loadFootprintState(depsWith(source), code, FIRST_ATTEMPT)).resolves.toBeUndefined();
+      expect(await stateRow(code.toUpperCase())).toBeUndefined();
+    }
+    expect(await countFor('PR')).toBe(0);
   });
 
   test('a retry after a failure loads cleanly', async () => {
@@ -331,6 +341,66 @@ describe('ensureFootprints', () => {
     expect(await footprintStateStatus(system(), 'NE')).toBe('ready');
     expect(await countFor('NE')).toBe(6);
     expect(await collectAll(t.footprints.features('NE'))).toHaveLength(6);
+  });
+});
+
+describe('footprintsNear (C-C1)', () => {
+  const ctx = () => ({ companyId: t.seed.a.companyId, userId: null, role: 'system', canApproveSpend: false }) as const;
+
+  test('the box around the point covers the radius at every US latitude', () => {
+    // A degree of longitude is about 111 km at the equator and about 36 km in northern Alaska.
+    for (const lat of [19, 41, 49, 64, 71.4]) {
+      const metresPerDegLng = 111_320 * Math.cos((lat * Math.PI) / 180);
+      expect(footprintBoxDegrees(lat, 40) * metresPerDegLng).toBeGreaterThanOrEqual(40);
+    }
+    expect(footprintBoxDegrees(41, 0)).toBeGreaterThan(0);
+  });
+
+  test('finds the buildings near a point through the GIST index on geom', async () => {
+    await insertFootprints(system(), 'NE', [
+      { sourceRef: 'here', ring: square(-96, 41.25) },
+      { sourceRef: 'far', ring: square(-95.9, 41.3) },
+    ]);
+    const near = await withTenant(t.deps.pools, ctx(), (tx) => footprintsNear(tx, [-95.9998, 41.2502], 40));
+    expect(near).toHaveLength(1);
+    expect(near[0]!.contains).toBe(true);
+
+    const plan = await withTenant(t.deps.pools, ctx(), async (tx) => {
+      // With a handful of rows the planner would scan anyway; turned off, an index-usable query shows its index.
+      await tx.execute(sql`set local enable_seqscan = off`);
+      const result = await tx.execute(sql`explain ${footprintsNearQuery([-95.9998, 41.2502], 40)}`);
+      return result.rows.map((r) => String(Object.values(r)[0])).join('\n');
+    });
+    expect(plan).toContain('building_footprints_geom_gist');
+  });
+});
+
+describe('the footprints-load queue expiry (C-M3)', () => {
+  test('a footprint load may run about six hours; other jobs keep the default', async () => {
+    expect(jobQueueOptions('footprints-load')).toMatchObject({ policy: 'stately', retryLimit: 4, expireInSeconds: 6 * 60 * 60 });
+    expect(jobQueueOptions('signed-pdf')).not.toHaveProperty('expireInSeconds');
+
+    const sends: { name: string; opts: Record<string, unknown> }[] = [];
+    const created: { name: string; opts: Record<string, unknown> }[] = [];
+    const boss = {
+      send: async (name: string, _data: unknown, opts: Record<string, unknown>) => {
+        sends.push({ name, opts });
+        return 'id';
+      },
+      createQueue: async (name: string, opts: Record<string, unknown>) => {
+        created.push({ name, opts });
+      },
+      getQueue: async () => ({ policy: 'stately' }),
+    } as unknown as PgBoss;
+    const jobs = new PgBossJobs(boss);
+    await jobs.send('footprints-load', { companyId: t.seed.a.companyId, state: 'NE' }, { singletonKey: 'NE' });
+    await jobs.send('signed-pdf', { companyId: t.seed.a.companyId, proposalId: 'p' });
+    expect(sends[0]).toEqual({ name: 'footprints-load', opts: { singletonKey: 'NE', expireInSeconds: 21600 } });
+    expect(sends[1]).toEqual({ name: 'signed-pdf', opts: {} });
+
+    await ensureJobQueues(boss);
+    expect(created.find((c) => c.name === 'footprints-load')!.opts).toMatchObject({ expireInSeconds: 21600 });
+    expect(created.find((c) => c.name === 'import-customers')!.opts).not.toHaveProperty('expireInSeconds');
   });
 });
 
