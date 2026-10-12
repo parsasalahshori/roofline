@@ -71,7 +71,9 @@ export async function seedRooflineNumber(pools: Pools, db: pg.Client, scenario: 
   await pools.system
     .insert(companyPhoneNumbers)
     .values({ companyId, e164: ROOFLINE_NUMBER, capabilities: ['sms', 'voice'], providerSid: 'PN_e2e_a' });
-  await db.query(`update texting_registrations set subaccount_auth_token_encrypted = $1 where company_id = $2`, [
+  // The sid is set too: provision-texting (every minute) fills any registration whose subaccount_sid is
+  // null and would replace this token mid-test, so the signed call below would be refused (403).
+  await db.query(`update texting_registrations set subaccount_sid = 'AC_e2e_a', subaccount_auth_token_encrypted = $1 where company_id = $2`, [
     encrypt(SUBACCOUNT_TOKEN, readStack().encryptionKey),
     companyId,
   ]);

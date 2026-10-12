@@ -21,6 +21,7 @@ import {
   type TenantContext,
 } from '@roofline/db';
 import { DEFAULT_WORK_HOURS, normalizeAddressKey } from '@roofline/shared';
+import { runAfterCall } from '../../src/front-desk/after-call.ts';
 import { createEngine, SAY_SPAM_ENDING } from '../../src/front-desk/engine.ts';
 import type { ConversationState, Engine } from '../../src/front-desk/engine-types.ts';
 import { createRecording } from '../../src/front-desk/recording.ts';
@@ -242,6 +243,21 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     // (d) the end message
     expect(r.loop.ended).toBe(true);
     expect(JSON.parse(r.session.endedWith!)).toEqual({ kind: 'end', reason: 'goodbye' });
+
+    // (e) the call is linked to the conversation, and after-call finishes it
+    await inCompany(r.t, r.companyId, (tx) => tx.update(calls).set({ status: 'ended', endedAt: r.t.clock.now() }).where(eq(calls.id, r.call.callId)));
+    await runAfterCall({ ...r.t.deps, llm: r.llm }, { companyId: r.companyId, callSid: r.call.callSid });
+    expect((await r.callRow()).conversationId).toBe(r.state().conversationId);
+    const conv = await r.conversation();
+    expect(conv?.status).toBe('ended');
+    expect(conv?.outcome).toBe('booked');
+    expect(conv?.summary).not.toBeNull();
+    expect(await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments))).toHaveLength(1);
+    const callActs = await inCompany(r.t, r.companyId, (tx) =>
+      tx.select().from(activities).where(and(eq(activities.subjectId, customer!.id), eq(activities.kind, 'call'))),
+    );
+    expect(callActs).toHaveLength(1);
+    expect(callActs[0]).toMatchObject({ actorAgent: 'front_desk' });
   });
 
   test('job question (verified): verify_caller then lookup_my_jobs shows the job', async () => {

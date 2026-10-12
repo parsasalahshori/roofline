@@ -213,6 +213,15 @@ describe('POST /hooks/twilio/voice-transfer/after-dial', () => {
     expect(row.transferResult).toBe('answered');
   });
 
+  test('after-dial answered queues fd-after-call once', async () => {
+    await seedCall();
+    t.jobs.sent.length = 0;
+    await post(`${PREFIX}/after-dial?mode=transfer`, dialFields('completed'));
+    const queued = t.jobs.sent.filter((j) => j.name === 'fd-after-call');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({ data: { companyId: idOf('a'), callSid: CALL_SID }, singletonKey: `fd-after-call:${CALL_SID}`, startAfter: 5 });
+  });
+
   test('after-dial no answer returns to the relay in message_only mode', async () => {
     const call = await seedCall();
     const res = await post(`${PREFIX}/after-dial?mode=transfer`, dialFields('no-answer'));
