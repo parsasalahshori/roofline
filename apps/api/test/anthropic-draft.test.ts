@@ -134,4 +134,29 @@ describe('anthropic draftTexts', () => {
     const b = await run(() => new Response(JSON.stringify(cut), { status: 200, headers: { 'content-type': 'application/json' } }), ['j1']);
     await expect(b.p).rejects.toBeInstanceOf(LlmUnavailableError);
   });
+
+  it('a review request without the company name or the closing opt-out line is dropped for the template', async () => {
+    const texts = [
+      { jobId: 'j1', body: 'Hi Dana, thanks for choosing Test Roofing! Would you leave us a review? Reply STOP to opt out.' },
+      { jobId: 'j2', body: 'Hi Dana, thanks for choosing Test Roofing! Would you leave us a review?' },
+      { jobId: 'j3', body: 'Hi Dana, thanks for choosing us! Would you leave a review? Reply STOP to opt out.' },
+    ];
+    const respond = () =>
+      new Response(
+        JSON.stringify({
+          id: 'msg_review',
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-opus-5-5',
+          content: [{ type: 'text', text: JSON.stringify({ texts }) }],
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    const { f } = fakeFetch(respond);
+    const out = await createDraftTexts(buildClients(config, f)!)({ instruction: 'review_request', facts: ['j1', 'j2', 'j3'].map(job) });
+    expect(out.texts.map((t) => t.jobId)).toEqual(['j1']);
+  });
 });

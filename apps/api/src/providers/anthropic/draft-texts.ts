@@ -45,7 +45,8 @@ export function createDraftTexts(c: AnthropicClients): Llm['draftTexts'] {
     const start = Date.now();
     const params = {
       model: c.draftModel,
-      max_tokens: 4000,
+      // Up to 25 texts of up to 300 characters, plus the JSON around them; a truncated answer sends the whole batch to templates.
+      max_tokens: 6000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       output_config: { effort: 'low', format: { type: 'json_schema', schema: DRAFT_SCHEMA } },
@@ -90,7 +91,10 @@ export function createDraftTexts(c: AnthropicClients): Llm['draftTexts'] {
     for (const f of facts) {
       const body = byJob.get(f.jobId);
       if (body === undefined || body.length > 300 || !claimsGuard(body).ok) continue;
-      if (texts.some((t) => t.jobId === f.jobId)) continue;
+      // A review request is a marketing text: it must name the company and end with the opt-out line
+      // (spec Decision 9). One that does not would be refused at step validation, so it is dropped here
+      // and the caller writes it from the template instead.
+      if (instruction === 'review_request' && (!body.includes(f.companyName) || !/Reply STOP to opt out\.?$/.test(body.trim()))) continue;
       texts.push({ jobId: f.jobId, body });
     }
     return { texts, refused: false, usage };
