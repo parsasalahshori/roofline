@@ -663,3 +663,112 @@ pytest) success; v1 (node:test) success. C1 wave 5 (quote PDF, Prices/Schedule t
 E1 T8 (proposal PDF and routes, real `prices_and_tiers`) and S1 T23/T24/T27 (Storm settings, ad connections, storm
 layer, `stormAlertEmail`) pass the database, API, worker and e2e suites in combination, including the setup e2e
 with one "Coming with" line. No fixes were needed after CI, so ci-check was not re-run.
+
+## Pass 7
+
+Base: pass 6 head 6dda391. `git fetch origin` (2026-10-12) gave the requested heads, except e1-estimator, which had
+moved from the named ae1da39 to d8cd04f (two ops-only commits: T20 results, Ruling EM, task reports). The fetched
+heads were merged in order with `git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | c657b89b7ac61484b3f44c88d626f18ed0d4b969 | 3536f5c | none |
+| e1-estimator | d8cd04f87b0230f436ef6edc7318dbe4bbb4a8bc | 5e30609 | 5 files |
+| s1-storm | 65f130be896c209ca6ef35c5f108a395f6f9576e | 2735f7a | 11 files |
+| d1-front-desk | 485d150f21826b735f300a08861cce5e106e5891 | 8b13ab6 | none (ops only) |
+| a1-agents | ceeabf34b49e4b0cbe26091263caa927c7487a04 | bcbd3ea | 2 files |
+| g1-agents | f40a8b9d5fae00d9891f7766eacd6b346aee580e | 21c9124 | 1 file |
+
+No probe-only commits this pass.
+
+What the tracks brought: C1 T28 (CRM, calendar, a11y and phone e2e specs; acceptance map; new quote sends a
+measurement, stage moves refresh the timeline, keyboard-reachable time grid; the calendar fake); E1's own c1-crm wave 5
+merge (c7a65b1) with its fixes for the pass-6 Prices tab and setup fixture items, plus ledgers; S1 T10 (storm
+alerts, settle trigger, hail-health schedule; 0018 amended in place per Ruling AW: `ad_accounts` app_system grant,
+`hail_runs` SELECT for app_system, `company_members` view gains `storm_alert_email`), T12 (`send_email_batch` with
+the email gate and scheduled sends), T14 (`build_routes` door-knock routes), and its e1-estimator merge with the
+pass-6 fixes; A1 T13 (Agents e2e specs, `agentsSeed` fixture, acceptance map); D1 and G1 ledger notes (G1 also
+merged c1-crm C1 T1-T27, all already in the probe).
+
+### Conflict resolutions
+
+e1-estimator (E1 merged C1 wave 5 itself, so these are files the probe and E1 both resolved):
+- `settings/PricesTab.tsx`: E1's text (same structure: C1's list, renamed `PricebookPart`, then the three E1 sections).
+- `setup/SetupRow.tsx`: E1's text (`prices_and_tiers` case after `connect_calendar`) plus D1's `phoneReady` and
+  `phone_number` case, which E1 does not have.
+- `test/settings-prices.test.tsx`: E1's text (`ESTIMATOR_ROUTES`, readonly-or-disabled check). Probe copy dropped.
+- `test/e1-routes.test.tsx`: E1's text (pricebook stub, `prices.fields.permit`) plus the Ruling BA dock recount
+  (Storm and Front Desk not coming soon; E1 has merged neither).
+- `test/setup.test.tsx`: E1's text (`prices_and_tiers` `comingWith: null`) plus D1's recount (no "Coming with Front
+  Desk") and D1's "phone number step links the owner to the forwarding guide" test, which E1 does not have.
+
+s1-storm:
+- `apps/api/src/tasks/service.ts`: import list, both (`emailCompanyFacts` from S1 T12, `expireOverdueDrafts` from A1).
+- `copy/connections.ts`, `settings/ConnectionsTab.tsx`: S1's text. C1's `connect = { google, microsoft }` is unchanged
+  (block identical to c1-crm's); S1's ad cards use `adConnect`. Order: `CalendarConnection`, `AdConnections`, then
+  one `later` line.
+- `settings/CalendarConnection.tsx`, `test/calendar-connection.test.tsx`: restored to c1-crm's text (the probe's
+  pass-6 `connectCalendar` rename reverted).
+- `shell/map/MapView.tsx`: S1's text (both effects; only their order and one blank line differed).
+- `test/appointments-suggest`, `calendar`, `map-focus`, `s1-routes`, `settings-ads`: S1's text.
+- `test/settings.test.tsx`: S1's text plus the Ruling BA recount (eleven tabs; A1's `GET /api/company/settings`).
+- `packages/db/test/rls.test.ts`: ours in both hunks (D1's `blocked_numbers`, `SELECT_INSERT_ONLY`, full grants title);
+  S1's 0018 changes (`ad_accounts` in `APP_SYSTEM_RLS_TABLES`, its column grants and isolation rows, `hail_runs`
+  SELECT, `storm_alert_email` on `company_members`) auto-merged. No later migration redefines `company_members`
+  (0020 only mentions it in a comment), so S1's `CREATE OR REPLACE VIEW` in 0018 is safe in the combination.
+
+a1-agents:
+- `e2e/a11y.spec.ts`, `e2e/phone.spec.ts`: pure list conflicts at the end of each file. Both kept: C1 T28's tests
+  first, then A1 T13's.
+
+g1-agents:
+- `packages/db/test/rls.test.ts`: ours (G1 lacks S1's delete tables and the full title).
+
+### Migration journal (Ruling AP)
+
+idx 0..24 consecutive, in number order, `when` strictly increasing (checked by script). The values are unchanged from
+pass 6: 0017/0018 S1, 0019/0020 = 1791772863263/1791772864263 (probe raise), 0021/0022 = 1791780000000/1791780001000
+(A1), 0023/0024 = 1791780002000/1791780003000 (probe raise). Snapshots chained by `prevId` 0000..0024 (script);
+25 snapshots, 25 SQL files. `drizzle-kit generate --name=probe_check`: "No schema changes, nothing to migrate"; no
+file created. Exactly one `messages (company_id, id)` unique: D1's `messages_company_id_id_uniq` (0019,
+`tenant.ts:630`).
+
+### Earlier workarounds: status
+
+Closed by a track this pass (the probe now carries the track's text):
+- Pass 6 problem 1 (copy collision): S1 65f130b renamed its key `connections.adConnect` (`AdConnections.tsx`,
+  `settings-ads.test.tsx`). The probe's `connectCalendar` rename in `CalendarConnection.tsx` and
+  `calendar-connection.test.tsx` is reverted to C1's text.
+- Pass 6 problem 2 (`stormAlertEmail` on C1 fixtures): S1 e9036bc. The four members in `calendar.test.tsx` and
+  `appointments-suggest.test.tsx` carry it (S1 uses `true`).
+- Pass 6 problem 3 (Prices tab tests): E1 c7a65b1. `e1-routes` answers `GET /api/pricebook` and finds
+  `prices.fields.permit`; `settings-prices` answers E1's two reads and accepts readonly or disabled.
+- Pass 6 problem 4 (unanswered reads): S1 5ab121e. Calendar/connection and company stubs in `s1-routes`,
+  `settings-ads` and `settings`; storm-layer stub in `map-focus`.
+- Pass 4 problem 2 (`GET /api/proposals` in `s1-routes`): S1 5ab121e (in the shared route stubs).
+- Pass 6 problem 5 (setup fixture): E1 09c614c. The web fixture has `prices_and_tiers` `comingWith: null`.
+
+Still kept in the probe:
+- D1 journal `when`: d1-front-desk 485d150 still has 0019/0020 = 1791770789451/1791770804997, below S1's 0018.
+- G1 journal `when`: g1-agents f40a8b9 still has 0019-0024 = 1791770789451 .. 1791774749941, below S1's 0018 and
+  A1's 0022.
+- Ruling BA recounts, test-only (no Coming soon app, eleven settings tabs, fifteen step types): `a1-dock`,
+  `a1-settings`, `settings`, `d1-routes`, `d1-settings`, `e1-routes` (dock), `setup.test` (Front Desk line and the
+  forwarding test) and `steps.test` still differ from each track head. No track has merged every shipping track.
+
+Watch item: S1 T11 has not landed (`storm/plan.ts` `draftStormPlan` still throws `not yet` on s1-storm 65f130b), so
+A1's `apps/api/test/storm-pause.test.ts` is unchanged and still valid.
+
+### Checks (after all merges)
+
+`npm ci` clean (no package.json, lockfile or eslint config change this pass); `npm ls playwright-core` only 1.56.1.
+Through `ops/bin/slot`: typecheck pass, lint pass, lint:css pass; vitest @roofline/web 1001 pass (111 files),
+@roofline/ui 170 pass, @roofline/shared 1283 pass, @roofline/send-gate 525 pass. The database, API, worker and e2e
+suites run only in CI.
+
+Merge-artifact fixes: none beyond the conflict resolutions above (typecheck and lint passed first time).
+
+### New cross-track problems
+
+None found locally. C1 T28 and A1 T13 add e2e specs that share the seeded scenario (C1 reads board column counts such
+as `Lead (8)`; A1 seeds agent tasks through `agentsSeed`); CI checks them together.
