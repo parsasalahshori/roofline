@@ -107,7 +107,7 @@ const NO_RAW_BUTTON = {
 export default defineConfig(
   { ignores: ['v1/**', '**/node_modules/**', '.superpowers/**', 'ops/**', 'apps/web/dist/**', '**/playwright-report/**', '**/test-results/**'] },
   {
-    files: ['{apps,packages}/**/*.{ts,tsx}'],
+    files: ['{apps,packages,scripts}/**/*.{ts,tsx}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     rules: { 'no-restricted-imports': ['error', DB_SYSTEM_RESTRICTION] },
   },
