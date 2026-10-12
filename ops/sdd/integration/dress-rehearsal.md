@@ -212,3 +212,77 @@ Phrases searched: `/coming soon/i` on the visible text of every visited screen (
 
 Docker works on these cloud boxes once `dockerd` is started (`nohup dockerd &` as root). The whole rehearsal ran
 locally that way.
+
+## Pass 14 re-run (44b263f7)
+
+Base: `ops-rehearsal` 9b902732 = the rehearsal commit a23bf27 + `launch-integration` 44b263f7 (probe pass 14). `npm ci`
+clean (`playwright-core` only 1.56.1), `npm run build -w @roofline/web`. `.stack.json` now carries the stack's
+`encryptionKey`, so the helper reads it from there (the `/proc` lookup is only a fallback). One stack at a time.
+
+Full run, `npx playwright test e2e/rehearsal.spec.ts e2e/rehearsal.phone.spec.ts`: **11 passed** (9 desktop + 2
+phone). e2 is still `test.fail` and fails as expected (BUG-4/5).
+
+### Journey g: Claims, Scheduler, Follow-up (GAP-1 closed)
+
+g no longer uses `test.fail`. It runs as one desktop journey, through the UI except where noted:
+
+| Step | How | Result |
+|---|---|---|
+| Agents window, the three cards | UI | Paused with Turn on; no "Coming soon" |
+| Claims data: customer + job, then Add claim details (Prairie Mutual, CL-50101, Status Filed) | UI, then DB backdates `claims.status_changed_at` 6 days (no UI to move time; default nudge waits are 3/5/7) | saved |
+| Scheduler data: customer + job, then Book inspection for tomorrow 10:00 (company zone) | UI | appointment saved |
+| Follow-up data: customer + lead job | UI, then DB backdates the job 10 days | — |
+| Each agent: Turn on (rules sheet) → Check claims now / Check tomorrow now / Find follow-ups now | UI | "You can run it again at…" shows; the worker runs `claims-daily` / `scheduler-reminders` / `followup-daily` |
+| Each plan, found on Waiting (Open link) → review → Approve | UI (the test polls the database for the task id) | `claims_nudges`, `reminders`, `follow_ups` tasks each made once; all steps Done |
+| Texts sent | DB check | an outbound text through the fake SMS to each of the 3 customers |
+| Agents window | UI | each card: Finished today ≥ 1; "Time saved this month: less than half an hour (estimate)" (Claims ≈ $1, Scheduler ≈ $0, Follow-up ≈ $1); not Coming soon |
+| Agent pages /agents/claims, /agents/scheduler, /agents/follow-up | UI | Recent work row Done, with "less than half an hour (estimate)"; the kind shows raw (BUG-6) |
+| Feed | UI | rows for Claims, Scheduler and Follow-up |
+
+The approve, send and minutes counting chain works for all three agents. A few texts count as a few minutes, so the
+cards read "less than half an hour" and Scheduler's money line rounds to "≈ $0", which is correct but looks odd (not
+filed as a bug).
+
+### "Coming soon" check
+
+The GAP-1 entry is removed from `KNOWN_COMING_SOON` (now empty), so any "coming soon" on any screen fails a test.
+**No screen says "coming soon"** on desktop or phone. That covers `/agents`, `/agents/claims`, `/agents/scheduler`,
+`/agents/follow-up`, `/agents/estimator`, `/agents/feed`, `/agents/waiting`, `/settings/agents` and
+`/settings/front-desk`, plus every screen listed in the first pass and the new `/calendar/new`,
+`/calendar/appointments/:id` and the G1 reviews `/approvals/:id`.
+
+### GAP-2: Front Desk follow-ups on Waiting (closed)
+
+New journey h. A customer and job are made in the UI, and the job gets the next step "Call back about the leak" in the
+Edit sheet. The customer texts in through the real signed webhook, which creates a conversation filed under the
+customer. The conversation's `outcome` is then set to `message` in the DB. That field is what the after-call summary
+writes, and the fake model and BUG-4 keep it from being set by a real flow. Result: `/agents/waiting` lists exactly one
+Front Desk row, "A caller left a message. Next step: Call back about the leak", linking to the job. The Front Desk card
+reads "Waiting on you: N", where N is the number of Front Desk rows on the list. Pass.
+
+### Earlier findings on pass 14
+
+| Finding | Status on 44b263f7 |
+|---|---|
+| BUG-1 (S1) hail `match` labels | **still present**: `stormLayer.ts:23-26` unchanged; 89ab4c4 is not an ancestor of HEAD. Console error on every storm page; home map banner. Allowlist entry kept. |
+| BUG-2 (C1) calendar sync 404 | still present (journey a). Allowlist entry kept. |
+| BUG-3 (D1) conversation does not refresh; text invisible until the fd-text job | still present (`useConversation` has no refetch; e1 and the phone test still need reloads) |
+| BUG-4 (D1) call not linked to its conversation | still present: `{"conversation_id":null,"transcript_stored":false,"status":"ended"}` after a relay call |
+| BUG-5 (D1) `transcript_stored` never true | still present (same evidence) |
+| GAP-1 (G1) | closed (journey g) |
+| GAP-2 (A1 x D1) | closed (journey h) |
+
+### New bug
+
+#### BUG-6: G1 task kinds show as raw words in an agent's Recent work
+
+- Owner: **G1** (with A1, who owns `copy/status.ts`).
+- Steps: run any G1 agent once (journey g), then open `/agents/claims`, `/agents/scheduler` or `/agents/follow-up`.
+- Expected: Recent work names the work in plain words, e.g. "Claim check-ins", "Reminders for tomorrow", "Follow-ups".
+- Actual: the row's kind reads "claims nudges", "reminders" and "follow ups": the snake_case kind with the underscores
+  replaced.
+- Evidence: journey g annotations: `/agents/claims Recent work kind text: "claims nudges"`, `/agents/scheduler …
+  "reminders"`, `/agents/follow-up … "follow ups"`. These are reported as `known-bug` annotations, so the test passes.
+- Suspect: `apps/web/src/copy/status.ts:21-30` `TASK_KIND_LABEL` has only the launch kinds. `RecentTasks.tsx`
+  `kindWords` falls back to `plain(kind)`. Add `claims_nudges`, `reminders`, `follow_ups`, `weather_moves`, the
+  no-show and agenda kinds, and the Front Desk `call` kind.

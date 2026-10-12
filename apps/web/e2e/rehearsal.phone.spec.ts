@@ -152,7 +152,7 @@ test('phone: Storm, Front Desk and Agents from the More sheet', async ({ page, d
   await openFromMore(page, 'Agents');
   await expect(page.getByRole('heading', { name: 'Your agents' })).toBeAttached({ timeout: 15_000 });
   await look(page);
-  for (const path of ['/agents/feed', '/agents/waiting', '/settings/agents', '/settings/front-desk']) {
+  for (const path of ['/agents/feed', '/agents/waiting', '/agents/claims', '/agents/scheduler', '/agents/follow-up', '/settings/agents', '/settings/front-desk']) {
     await page.goto(path);
     await expect(page.getByRole('dialog').first()).toBeVisible({ timeout: 15_000 });
     await page.waitForLoadState('networkidle');

@@ -1,6 +1,9 @@
 /* eslint-disable no-empty-pattern -- Playwright reads the `{}` pattern of a hook with no fixtures. */
 import type { Page } from '@playwright/test';
-import { agentsWindow } from '../src/copy/agents.ts';
+import type pg from 'pg';
+import { agentPage as agentsCopy, agentsCommon, agentsWindow } from '../src/copy/agents.ts';
+import { appointments as appointmentsCopy } from '../src/copy/appointments.ts';
+import { claims as claimsCopy } from '../src/copy/claims.ts';
 import { create } from '../src/copy/create.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
 import { conversationCopy } from '../src/copy/front-desk-conversation.ts';
@@ -58,7 +61,7 @@ async function openFromDock(page: Page, title: string): Promise<void> {
 }
 
 /** New customer (with a home and a phone) through the search box, then New job from their window. Returns the ids. */
-async function addCustomerAndJob(page: Page, name: { first: string; last: string }, phone: string) {
+async function addCustomerAndJob(page: Page, name: { first: string; last: string }, phone: string, home: typeof HOME = HOME) {
   // The top bar's Search button (My day may have opened itself on the first sign-in of the day)
   await page.getByRole('banner').getByRole('button', { name: 'Search', exact: true }).click();
   const search = page.getByRole('dialog', { name: 'Search' });
@@ -71,10 +74,10 @@ async function addCustomerAndJob(page: Page, name: { first: string; last: string
   await page.getByLabel(create.newCustomer.firstName, { exact: true }).fill(name.first);
   await page.getByLabel(create.newCustomer.lastName, { exact: true }).fill(name.last);
   await page.getByLabel(create.newCustomer.phone, { exact: true }).first().fill(phone);
-  await page.getByLabel(create.address.street).fill(HOME.street);
-  await page.getByLabel(create.address.city).fill(HOME.city);
-  await page.getByLabel(create.address.state, { exact: true }).selectOption(HOME.state);
-  await page.getByLabel(create.address.zip).fill(HOME.zip);
+  await page.getByLabel(create.address.street).fill(home.street);
+  await page.getByLabel(create.address.city).fill(home.city);
+  await page.getByLabel(create.address.state, { exact: true }).selectOption(home.state);
+  await page.getByLabel(create.address.zip).fill(home.zip);
   const consent = page.getByLabel(create.newCustomer.textConsent);
   if (await consent.count()) await consent.check();
   await page.getByRole('button', { name: create.newCustomer.save, exact: true }).click();
@@ -355,21 +358,211 @@ test('f. Agents: the work done shows as tasks and minutes saved', async ({ page,
   await checkScreen(page, screens);
 });
 
-// GAP-1 (G1): the Claims, Scheduler and Follow-up agents (G1 Tasks 3-17) are not on launch-integration:
-// origin/g1-agents holds only G1's ledger; the code sits on g1-w7 / g1-full, never merged. No job,
-// route or UI exists to fire them, and the Agents window shows them as "Coming soon".
-test('g. Claims, Scheduler and Follow-up each fire once and show their tasks', async ({ page }) => {
-  test.fail(true, 'GAP-1 (G1): G1 agents are not merged into launch-integration (see dress-rehearsal.md)');
+/** The newest task of `agent` and `kind` for the company, polled until the worker has made it (empty string while none). */
+async function newestTask(db: pg.Client, companyId: string, agent: string, kind: string): Promise<string> {
+  let taskId = '';
+  await expect
+    .poll(
+      async () => {
+        const found = await db.query<{ id: string }>(
+          `select id from agent_tasks where company_id = $1 and agent = $2 and kind = $3 order by created_at desc limit 1`,
+          [companyId, agent, kind],
+        );
+        taskId = found.rows[0]?.id ?? '';
+        return taskId;
+      },
+      { timeout: 60_000, intervals: [1_000, 2_000] },
+    )
+    .not.toBe('');
+  return taskId;
+}
+
+/** On the agent's page: Turn on (through the rules sheet), then its Run now button. */
+async function turnOnAndRun(page: Page, slug: string, title: string, runLabel: string): Promise<void> {
+  await page.goto(`/agents/${slug}`);
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible({ timeout: 20_000 });
+  await checkScreen(page, screens);
+  await page.getByRole('button', { name: agentsCopy.turnOnButton, exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: agentsCopy.turnOnTitle });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByText(agentsCopy.turnOnIntro)).toBeVisible();
+  await sheet.getByRole('button', { name: agentsCopy.turnOnConfirm, exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole('switch', { name: 'Paused' })).not.toBeChecked();
+  await page.getByRole('button', { name: runLabel, exact: true }).click();
+  await expect(page.getByText(agentsCopy.runNowAgain)).toBeVisible({ timeout: 15_000 });
+}
+
+/** From the Waiting list, open the task's review and approve every step; waits for every step to be Done. */
+async function approveFromWaiting(page: Page, taskId: string): Promise<void> {
+  await page.goto('/agents/waiting');
+  const open = page.getByLabel('Waiting', { exact: true }).locator(`a[href="/approvals/${taskId}"]`);
+  await expect(open).toBeVisible({ timeout: 15_000 });
+  await checkScreen(page, screens);
+  await open.click();
+  await expect(page).toHaveURL(new RegExp(`/approvals/${taskId}$`));
+  const approve = page.getByRole('button', { name: /^Approve \d+ steps?/ });
+  await expect(approve).toBeVisible({ timeout: 20_000 });
+  await checkScreen(page, screens);
+  const steps = Number(/^Approve (\d+)/.exec((await approve.textContent()) ?? '')?.[1] ?? '1');
+  await approve.click();
+  await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(steps, {
+    timeout: 30_000,
+  });
+}
+
+test('g. Claims, Scheduler and Follow-up each fire once and show their tasks', async ({ page, db, scenario }) => {
+  test.setTimeout(240_000);
+  const companyId = scenario.a.companyId;
+  await makeItDaytime(db);
   await signInViaUi(page, OWNER);
-  await page.goto('/agents');
+
+  // The three cards are real agents now: paused, with Turn on, and not "Coming soon"
+  await openFromDock(page, WINDOW_COPY.agents.title);
   const grid = page.getByRole('region', { name: 'Your agents' });
   await expect(grid).toBeVisible({ timeout: 15_000 });
+  const cardOf = (name: string) => grid.locator('a', { has: page.getByRole('heading', { name, exact: true }) });
   for (const name of ['Claims', 'Scheduler', 'Follow-up']) {
-    const card = grid.locator('a', { has: page.getByRole('heading', { name }) });
-    await expect(card).not.toContainText(agentsWindow.status.coming_soon, { timeout: 5_000 });
+    await expect(cardOf(name)).toContainText(agentsWindow.status.paused, { timeout: 15_000 });
+    await expect(cardOf(name)).not.toContainText(agentsWindow.status.coming_soon);
   }
-  for (const slug of ['claims', 'scheduler', 'follow-up']) {
-    await page.goto(`/agents/${slug}`);
-    await expect(page.getByRole('button', { name: /now$/ })).toBeVisible({ timeout: 5_000 });
+  await checkScreen(page, screens);
+
+  // --- Claims: a job with a claim the owner marked Filed (UI); the claim was filed 6 days ago (DB: no UI for time) ---
+  const claimJob = await addCustomerAndJob(page, { first: 'Cora', last: 'Claimant' }, '4025550161', { ...HOME, street: '400 Claim Ct' });
+  await page.getByRole('button', { name: claimsCopy.addDetails, exact: true }).click();
+  const claimForm = page.getByRole('dialog', { name: claimsCopy.formTitle });
+  await claimForm.getByLabel(claimsCopy.insurerLabel).fill('Prairie Mutual');
+  await claimForm.getByLabel(claimsCopy.claimNumberLabel).fill('CL-50101');
+  await claimForm.getByLabel(claimsCopy.statusLabel, { exact: true }).selectOption({ label: claimsCopy.status.filed });
+  await claimForm.getByRole('button', { name: claimsCopy.save, exact: true }).click();
+  await expect(claimForm).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByText('CL-50101').first()).toBeVisible();
+  await checkScreen(page, screens);
+  const filed = await db.query(
+    `update claims set status_changed_at = now() - interval '6 days', created_at = now() - interval '6 days' where job_id = $1 and status = 'filed'`,
+    [claimJob.jobId],
+  );
+  expect(filed.rowCount, 'the claim saved from the job window, as Filed').toBe(1);
+
+  // --- Scheduler: an inspection booked for tomorrow from the job window (UI) ---
+  const visitJob = await addCustomerAndJob(page, { first: 'Sal', last: 'Schedule' }, '4025550162', { ...HOME, street: '500 Visit Way' });
+  const tomorrow = (
+    await db.query<{ day: string }>(`select to_char((now() at time zone timezone)::date + 1, 'YYYY-MM-DD') as day from companies where id = $1`, [companyId])
+  ).rows[0]!.day;
+  await page.getByRole('link', { name: job.bookInspection, exact: true }).click();
+  await expect(page).toHaveURL(/\/calendar\/new\?/);
+  await checkScreen(page, screens);
+  await page.getByLabel(appointmentsCopy.dateLabel, { exact: true }).fill(tomorrow);
+  await page.getByLabel(appointmentsCopy.timeLabel, { exact: true }).fill('10:00');
+  await page.getByRole('button', { name: appointmentsCopy.save, exact: true }).click();
+  await expect(page).toHaveURL(/\/calendar\/appointments\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+  await checkScreen(page, screens);
+  void visitJob;
+
+  // --- Follow-up: a new lead (UI) that has waited 10 days with no visit (DB: no UI for time) ---
+  const leadJob = await addCustomerAndJob(page, { first: 'Fay', last: 'Followup' }, '4025550163', { ...HOME, street: '600 Lead Ln' });
+  await db.query(
+    `update jobs set created_at = now() - interval '10 days', stage_changed_at = now() - interval '10 days', updated_at = now() - interval '10 days' where id = $1`,
+    [leadJob.jobId],
+  );
+
+  // Each agent: Turn on, Run now, its plan appears in Waiting, the owner approves it, the texts go out
+  const runs = [
+    { slug: 'claims', title: 'Claims', agent: 'claims', kind: 'claims_nudges', run: agentsCopy.runNowLabels.claims },
+    { slug: 'scheduler', title: 'Scheduler', agent: 'scheduler', kind: 'reminders', run: agentsCopy.runNowLabels.scheduler },
+    { slug: 'follow-up', title: 'Follow-up', agent: 'follow_up', kind: 'follow_ups', run: agentsCopy.runNowLabels.follow_up },
+  ] as const;
+  const tasks: Record<string, string> = {};
+  for (const r of runs) {
+    await turnOnAndRun(page, r.slug, r.title, r.run);
+    tasks[r.agent] = await newestTask(db, companyId, r.agent, r.kind);
+    await approveFromWaiting(page, tasks[r.agent]!);
   }
+
+  // The texts reached the fake SMS for the three customers made above
+  const sent = await db.query<{ n: string }>(
+    `select count(distinct m.customer_id)::text as n from messages m join customers c on c.id = m.customer_id
+      where m.company_id = $1 and m.direction = 'out' and m.status in ('sent', 'scheduled', 'delivered')
+        and c.display_name in ('Cora Claimant', 'Sal Schedule', 'Fay Followup')`,
+    [companyId],
+  );
+  expect(Number(sent.rows[0]!.n), 'customers texted by the three plans').toBe(3);
+
+  // Agents window: each card is On, finished a task today and counts time saved
+  const savedLines: Record<string, string> = {};
+  await page.goto('/agents');
+  await expect(grid).toBeVisible({ timeout: 15_000 });
+  for (const name of ['Claims', 'Scheduler', 'Follow-up']) {
+    const card = cardOf(name);
+    await expect(card).not.toContainText(agentsWindow.status.coming_soon);
+    await expect(card.locator('p', { hasText: agentsWindow.finishedToday }).locator('span').nth(1)).toHaveText(/^[1-9]\d*$/, { timeout: 15_000 });
+    // A few texts are minutes of work: the line reads "less than half an hour", never zero
+    const saved = card.locator('p', { hasText: agentsWindow.timeSaved });
+    await expect(saved).toContainText(/less than half an hour|about [1-9][\d.]* hours?|about 0\.5 hours/);
+    await expect(saved).toContainText(agentsCommon.estimate);
+    savedLines[name] = (await saved.innerText()).replace(/\s+/g, ' ');
+  }
+  test.info().annotations.push({ type: 'evidence', description: `time saved lines: ${JSON.stringify(savedLines)}` });
+  await checkScreen(page, screens);
+
+  // Each agent page lists its task under Recent work, Done, with its time saved
+  for (const r of runs) {
+    await page.goto(`/agents/${r.slug}`);
+    await expect(page.getByRole('heading', { name: r.title, exact: true })).toBeVisible({ timeout: 15_000 });
+    const recent = page.locator('section', { has: page.getByRole('heading', { name: agentsCopy.recentTitle }) }).getByRole('listitem');
+    const row = recent.filter({ hasText: 'Done' }).first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await expect(row).toContainText(agentsCommon.estimate);
+    const kindText = ((await row.locator('span').first().textContent()) ?? '').trim();
+    // BUG-6 (A1/G1): TASK_KIND_LABEL has no G1 kinds, so the row shows the raw kind ("claims nudges", "reminders", "follow ups")
+    test.info().annotations.push({ type: 'evidence', description: `/agents/${r.slug} Recent work kind text: "${kindText}"` });
+    if (kindText.toLowerCase() === r.kind.replace(/_/g, ' ')) {
+      test.info().annotations.push({ type: 'known-bug', description: `BUG-6 (G1): /agents/${r.slug} Recent work shows the raw kind "${kindText}"` });
+    }
+    await checkScreen(page, screens);
+  }
+  await page.goto('/agents/feed');
+  const feed = page.getByRole('list', { name: 'What your agents did' });
+  for (const name of ['Claims', 'Scheduler', 'Follow-up']) {
+    await expect(feed.getByRole('listitem').filter({ hasText: name }).first()).toBeVisible({ timeout: 15_000 });
+  }
+  await checkScreen(page, screens);
+});
+
+test('h. Front Desk follow-ups: listed once on Waiting, and the card count matches', async ({ page, db, scenario }) => {
+  test.setTimeout(120_000);
+  const token = await setUpFrontDesk(db, scenario.a.companyId);
+  await makeItDaytime(db);
+  await signInViaUi(page, OWNER);
+
+  // A customer and job with a next step (UI)
+  const { customerId, jobId } = await addCustomerAndJob(page, { first: 'Mo', last: 'Message' }, '4025550164', { ...HOME, street: '700 Note St' });
+  await page.getByRole('button', { name: job.edit, exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: job.editTitle });
+  await sheet.getByLabel(job.nextStepFieldLabel, { exact: true }).fill('Call back about the leak');
+  await sheet.getByRole('button', { name: job.save, exact: true }).click();
+  await expect(sheet).toHaveCount(0, { timeout: 15_000 });
+
+  // The customer texts in (real webhook); Front Desk's outcome for it is "took a message" (DB: the outcome is set
+  // by the after-call/after-text summary, which the fake model does not produce for texts)
+  await simulateInboundText(page.request, token, '+14025550164', 'Please have someone call me back about the leak.');
+  await expect
+    .poll(async () => (await db.query(`select 1 from conversations where customer_id = $1`, [customerId])).rowCount, { timeout: 15_000 })
+    .toBe(1);
+  await db.query(`update conversations set outcome = 'message' where customer_id = $1`, [customerId]);
+
+  await page.goto('/agents/waiting');
+  const waiting = page.getByLabel('Waiting', { exact: true });
+  await expect(waiting).toBeVisible({ timeout: 15_000 });
+  const fdRows = waiting.getByRole('listitem').filter({ hasText: /^Front Desk/ });
+  await expect(fdRows.filter({ hasText: 'Call back about the leak' })).toHaveCount(1, { timeout: 15_000 });
+  await expect(fdRows.filter({ hasText: 'Call back about the leak' }).locator(`a[href="/jobs/${jobId}"]`)).toHaveCount(1);
+  const listed = await fdRows.count();
+  await checkScreen(page, screens);
+
+  await page.goto('/agents');
+  const fdCard = page.getByRole('region', { name: 'Your agents' }).locator('a', { has: page.getByRole('heading', { name: 'Front Desk', exact: true }) });
+  await expect(fdCard).toContainText(`${agentsWindow.waiting} ${listed}`, { timeout: 15_000 });
+  await checkScreen(page, screens);
 });

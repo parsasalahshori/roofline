@@ -61,8 +61,7 @@ export const KNOWN_CONSOLE: { id: string; pattern: RegExp }[] = [
 
 /** Screens whose "coming soon" lines are a known gap (path pattern -> finding id). */
 export const KNOWN_COMING_SOON: { id: string; path: RegExp }[] = [
-  // GAP-1: the G1 agents (Claims, Scheduler, Follow-up) are not merged; their cards say Coming soon.
-  { id: 'GAP-1 (G1) Claims, Scheduler, Follow-up are Coming soon', path: /^\/agents$/ },
+  // Empty since pass 14: GAP-1 (G1 not merged) is closed. Add { id, path } for a known unfinished screen.
 ];
 
 /** Fails (softly, so the journey goes on) on any console error, page error or 5xx not already a known bug; attaches them all. */
@@ -139,10 +138,13 @@ export const ACME_NUMBER = '+14025550100';
 const SUBACCOUNT_TOKEN = 'rehearsal-subaccount-token';
 
 /**
- * The API's ENCRYPTION_KEY. stack.ts makes a random one and does not write it to .stack.json, so it
- * is read from the environment of the running API process (Linux /proc). Null when it cannot be found.
+ * The API's ENCRYPTION_KEY: from .stack.json when stack.ts wrote it there, else from the environment of the
+ * running API process (Linux /proc). Null when it cannot be found.
  */
 function stackEncryptionKey(): string | null {
+  // Pass 14's stack.ts writes the key to .stack.json; older stacks only have it in the API's environment.
+  const written = (readStack() as { encryptionKey?: string }).encryptionKey;
+  if (written) return written;
   const tenantUrl = readStack().tenantUrl;
   let pids: string[];
   try {
