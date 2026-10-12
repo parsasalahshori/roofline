@@ -56,6 +56,11 @@ Start the long-lead items now. Approvals for texting, Google, Meta and EagleView
 - **Email-first sign-up** (security review finding 16): today sign-up says when an email is already registered (neutral wording, rate-limited, owner notified). Fully hiding it needs an email-first sign-up flow, which changes onboarding. Decide before launch.
 - **Rulings taken for you, which you may revisit:** BG (when a trial ends or the account is cancelled, Front Desk calls go to voicemail or forwarding, and the Off switch is always allowed); BI (retention blanks only the AI's text exchanges; it keeps staff replies, bookings and STOP/HELP); BK (after hours, on-call staff are rung only for leaks or danger, not every "urgent").
 
+### Known post-launch follow-ups (non-blocking)
+
+- Front Desk: a resent first text can appear twice in history after a silent turn; playback reads the whole recording per range request; the eval's playCall has drifted from engine.run; the calls table has no outcome/title columns.
+- Back-port probe-only integration fixes from the launch merge onto the track branches.
+
 ### Branch cleanup for the owner (deleting needs your OK)
 
 - Leftover temporary branches, safe to delete after launch: c1-int, c1-fix1, c1-w5, c1-rev-*, d1-t4m, g1-a1, and the probe and task branches listed in each ledger.
