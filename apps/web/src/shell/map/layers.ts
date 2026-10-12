@@ -17,11 +17,15 @@ export const SOURCE = {
   jobs: 'jobs',
   clusters: 'clusters',
   stormSwath: 'storm-swath',
+  stormSpots: 'storm-spots',
 } as const;
 
 /** The ids of the layers this app adds. Count labels (only when the style has glyphs) are `<cluster layer id>-count`. */
 export const LAYER = {
   stormSwathFill: 'storm-swath-fill',
+  stormSwathOutline: 'storm-swath-outline',
+  /** Spotter-report circles (source `storm-spots`); no hit layer. */
+  stormSpots: 'storm-spots',
   serviceArea: 'service-area',
   /** Server clusters (source `clusters`). */
   clusters: 'clusters',
@@ -38,6 +42,9 @@ export const LAYER = {
   /** Transparent 40px hit layer over the single job pins; added right after `jobs`. */
   jobsHit: 'jobs-hit',
 } as const;
+
+/** Opacity of the hail swath fill. */
+export const HAIL_FILL_OPACITY = 0.45;
 
 /** Everything the layers draw. */
 export type MapData = {
@@ -62,6 +69,8 @@ const CLIENT_CLUSTER_RADIUS = 40;
 /** Every layer this module can add, so that removal leaves none behind. */
 const LAYER_IDS: readonly string[] = [
   LAYER.stormSwathFill,
+  LAYER.stormSwathOutline,
+  LAYER.stormSpots,
   LAYER.serviceArea,
   LAYER.clusters,
   COUNT_LAYER.clusters,
@@ -78,6 +87,7 @@ const LAYER_IDS: readonly string[] = [
 /** Every source this module can add. */
 const SOURCE_IDS: readonly string[] = [
   SOURCE.stormSwath,
+  SOURCE.stormSpots,
   SOURCE.serviceArea,
   SOURCE.clusters,
   SOURCE.customers,
@@ -120,6 +130,25 @@ function stageColor(): unknown[] {
     'lost',
     tokens.text,
     tokens['stage-lead'],
+  ];
+}
+
+/** The fill colour of a hail swath, by its `level` (1 to 5). Anything unknown takes level 1. */
+function hailLevelColor(): unknown[] {
+  return [
+    'match',
+    ['get', 'level'],
+    1,
+    tokens['hail-1'],
+    2,
+    tokens['hail-2'],
+    3,
+    tokens['hail-3'],
+    4,
+    tokens['hail-4'],
+    5,
+    tokens['hail-5'],
+    tokens['hail-1'],
   ];
 }
 
@@ -182,7 +211,32 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void
       id: LAYER.stormSwathFill,
       type: 'fill',
       source: SOURCE.stormSwath,
-      paint: { 'fill-color': tokens['hail-3'], 'fill-opacity': 0.35 },
+      paint: { 'fill-color': hailLevelColor(), 'fill-opacity': HAIL_FILL_OPACITY },
+    }),
+  );
+  addLayerOnce(
+    map,
+    asLayer({
+      id: LAYER.stormSwathOutline,
+      type: 'line',
+      source: SOURCE.stormSwath,
+      paint: { 'line-color': tokens.text, 'line-width': 1.5, 'line-opacity': 0.8 },
+    }),
+  );
+
+  addSourceOnce(map, SOURCE.stormSpots, { type: 'geojson', data: empty() });
+  addLayerOnce(
+    map,
+    asLayer({
+      id: LAYER.stormSpots,
+      type: 'circle',
+      source: SOURCE.stormSpots,
+      paint: {
+        'circle-radius': 5,
+        'circle-color': tokens['hail-5'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': tokens.surface,
+      },
     }),
   );
 

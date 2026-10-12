@@ -8,6 +8,14 @@ export const mapCopy = {
   open: 'Open',
   /** Shown once, over the map, when its style, a source or a tile fails to load. */
   error: 'The map is having trouble loading. Your work is safe.',
+  /** The legend title and the name of its region. */
+  hailLegend: 'Radar-estimated hail',
+  /** The hail layer switch. Its pressed state says whether the layer is on. */
+  hailLayer: 'Hail layer',
+  /** The hail size of each legend level, level 1 first. */
+  hailSizeLevels: ['0.75 in', '1 in', '1.5 in', '2 in', '2.75 in'] as const,
+  /** Shown when the hail data has not been refreshed lately. */
+  hailStale: 'Hail data is behind',
   /** Read aloud when the pins change. */
   summary: (customers: number, jobs: number): string =>
     `Map showing ${customers} ${customers === 1 ? 'customer' : 'customers'} and ${jobs} open ${jobs === 1 ? 'job' : 'jobs'}.`,

@@ -198,6 +198,7 @@ beforeEach(() => {
       }
       if (url === '/api/map/area') return Promise.resolve(json({ serviceArea: null, bounds: null }));
       if (url === '/api/auth/me') return Promise.resolve(json(signedIn));
+      if (url.startsWith('/api/map/storm-layer?')) return Promise.resolve(json({ swaths: { type: 'FeatureCollection', features: [] }, spots: { type: 'FeatureCollection', features: [] }, newestRunAt: null, stale: false }));
       const key = `${init?.method ?? 'GET'} ${url}`;
       const handler = SHELL_ROUTES[key];
       if (!handler) unexpected.push(key);
