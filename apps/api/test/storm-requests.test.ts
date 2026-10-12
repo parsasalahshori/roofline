@@ -147,25 +147,66 @@ describe('POST /api/public/storm-requests/:code', () => {
     expect(await countRows('storm_requests', acme())).toBe(1);
   });
 
-  test('consent is recorded as express web_form with the exact text only when the box was ticked', async () => {
+  test('a ticked box is recorded on the request as the ask, but the new customer stays at none (Ruling BF)', async () => {
     await post(ACME_CODE, { ...FORM, phone: '(402) 555-0101', okToText: 'on' }, { origin: ACME_ORIGIN });
 
-    const [ticked] = await q(
+    const [customer] = await q(
       'select sms_consent_status, sms_consent_source, sms_consent_evidence from customers where company_id = $1 and phones::text like $2',
       [acme(), '%+14025550101%'],
     );
-    expect(ticked).toMatchObject({ sms_consent_status: 'express', sms_consent_source: 'web_form' });
-    expect(JSON.stringify(ticked!.sms_consent_evidence)).toContain(STORM_CONSENT_TEXT);
+    expect(customer).toMatchObject({ sms_consent_status: 'none', sms_consent_source: null, sms_consent_evidence: null });
+    const [row] = await q('select sms_consent, consent_text, consent_at from storm_requests where company_id = $1', [acme()]);
+    expect(row).toMatchObject({ sms_consent: true, consent_text: STORM_CONSENT_TEXT });
+    expect(row!.consent_at).not.toBeNull();
   });
 
-  test('consent is not recorded when the box was left unticked', async () => {
-    await post(ACME_CODE, { ...FORM, phone: '(402) 555-0102' }, { origin: ACME_ORIGIN });
-
-    const [unticked] = await q(
-      'select sms_consent_status, sms_consent_source from customers where company_id = $1 and phones::text like $2',
-      [acme(), '%+14025550102%'],
+  test('the form never changes an existing customer, and sends no text', async () => {
+    await q(
+      `insert into customers (company_id, display_name, phones, source, sms_consent_status)
+       values ($1, 'Pat Existing', $2::jsonb, 'manual', 'none')`,
+      [acme(), JSON.stringify([{ e164: '+14025550103', primary: true }])],
     );
-    expect(unticked).toMatchObject({ sms_consent_status: 'none', sms_consent_source: null });
+    const res = await post(ACME_CODE, { ...FORM, phone: '(402) 555-0103', okToText: 'on' }, { origin: ACME_ORIGIN });
+
+    expect(res.status).toBe(201);
+    const customers = await q('select sms_consent_status, sms_consent_source from customers where company_id = $1', [acme()]);
+    expect(customers).toEqual([{ sms_consent_status: 'none', sms_consent_source: null }]);
+    expect(await countRows('messages', acme())).toBe(0);
+  });
+
+  test('a ticked box without a YES leaves no consent audit row', async () => {
+    await post(ACME_CODE, { ...FORM, phone: '(402) 555-0104', okToText: 'on' }, { origin: ACME_ORIGIN });
+
+    const rows = await q("select 1 from audit_log where company_id = $1 and action like 'customer.consent%'", [acme()]);
+    expect(rows).toHaveLength(0);
+  });
+
+  test('a repeat of the same phone on the page is accepted silently: no second customer or job', async () => {
+    await post(ACME_CODE, { ...FORM, phone: '(402) 555-0105' }, { origin: ACME_ORIGIN, ip: '198.51.100.71' });
+    const again = await post(ACME_CODE, { ...FORM, phone: '(402) 555-0105', name: 'Other' }, { origin: ACME_ORIGIN, ip: '198.51.100.72' });
+
+    expect(again.status).toBe(201);
+    expect(await countRows('customers', acme())).toBe(1);
+    expect(await countRows('jobs', acme())).toBe(1);
+    expect(STORM_REQUEST_LIMITS.perPhonePerPage).toBe(1);
+  });
+
+  test('one address gets only its share of one page in an hour, and another address is still served', async () => {
+    const ip = '198.51.100.80';
+    for (let i = 0; i < STORM_REQUEST_LIMITS.perIpPerPagePerHour; i++) {
+      const ok = await post(ACME_CODE, { ...FORM, phone: `(402) 555-081${i}` }, { origin: ACME_ORIGIN, ip });
+      expect(ok.status).toBe(201);
+    }
+    const refused = await post(ACME_CODE, { ...FORM, phone: '(402) 555-0819' }, { origin: ACME_ORIGIN, ip });
+    expect(refused.status).toBe(429);
+    expect(refused.body).toEqual({ error: MESSAGES.tooFast });
+
+    expect((await post(ACME_CODE, { ...FORM, phone: '(402) 555-0820' }, { origin: ACME_ORIGIN, ip: '198.51.100.81' })).status).toBe(201);
+    expect(await countRows('storm_requests', acme())).toBe(STORM_REQUEST_LIMITS.perIpPerPagePerHour + 1);
+  });
+
+  test('the per-page budget needs at least 25 addresses to fill', () => {
+    expect(STORM_REQUEST_LIMITS.perPagePerHour / STORM_REQUEST_LIMITS.perIpPerPagePerHour).toBeGreaterThanOrEqual(25);
   });
 
   test('an address the geocoder cannot find is a 422 on the address field', async () => {
@@ -191,17 +232,31 @@ describe('POST /api/public/storm-requests/:code', () => {
     expect(res.body).toEqual({ error: MESSAGES.notFound });
   });
 
-  test('the sixth post in an hour from one address is a 429', async () => {
+  test('the sixth post in an hour from one address, across pages, is a 429', async () => {
     const ip = '198.51.100.20';
-    for (let i = 0; i < STORM_REQUEST_LIMITS.perIpPerHour; i++) {
-      const res = await post(ACME_CODE, { ...FORM, phone: `(402) 555-03${i}0` }, { origin: ACME_ORIGIN, ip });
+    // One address may only take its share of each page, so the five allowed posts go to three pages.
+    const otherStorm = await insertOmahaStorm(q, '2026-10-09');
+    const [cs] = await q(
+      'insert into company_storms (company_id, storm_id, max_in) values ($1, $2, 1.5) returning id',
+      [acme(), otherStorm],
+    );
+    await q('insert into storm_pages (company_id, company_storm_id, code, active_until) values ($1, $2, $3, $4)', [
+      acme(),
+      cs!.id,
+      'm3n4p5qr',
+      new Date(t.clock.now().getTime() + 30 * DAY_MS),
+    ]);
+    const targets = [ACME_CODE, ACME_CODE, 'm3n4p5qr', 'm3n4p5qr', BOLT_CODE];
+    for (const [i, code] of targets.entries()) {
+      const origin = code === BOLT_CODE ? BOLT_ORIGIN : ACME_ORIGIN;
+      const res = await post(code, { ...FORM, phone: `(402) 555-03${i}0` }, { origin, ip });
       expect(res.status).toBe(201);
     }
 
-    const sixth = await post(ACME_CODE, { ...FORM, phone: '(402) 555-0399' }, { origin: ACME_ORIGIN, ip });
+    const sixth = await post(BOLT_CODE, { ...FORM, phone: '(402) 555-0399' }, { origin: BOLT_ORIGIN, ip });
     expect(sixth.status).toBe(429);
     expect(sixth.body).toEqual({ error: MESSAGES.tooFast });
-    expect(await countRows('storm_requests', acme())).toBe(STORM_REQUEST_LIMITS.perIpPerHour);
+    expect(await countRows('storm_requests')).toBe(STORM_REQUEST_LIMITS.perIpPerHour);
   });
 
   test('a page at its hourly limit answers 429 to a new address, and older requests do not count', async () => {

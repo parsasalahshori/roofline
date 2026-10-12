@@ -1084,6 +1084,24 @@ describe('S1 constraints', () => {
     expect(err.code).toBe('23505');
     await ownerQuery(insert('POINT(-96 42)'));
   });
+
+  test('ad_accounts: a live (platform, external_account_id) belongs to one company; a revoked row frees it (Ruling BF)', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into ad_accounts (company_id, platform, external_account_id, status) values ($1, $2, $3, $4)`;
+    await ownerQuery(insert, [s.b.companyId, 'google', '1234567890', 'pending']);
+    // Another company cannot hold the same account, in any live status.
+    for (const status of ['pending', 'active', 'error']) {
+      const err = await rejected(insert, [s.a.companyId, 'google', '1234567890', status]);
+      expect(err.code, status).toBe('23505');
+      expect(err.constraint, status).toBe('ad_accounts_platform_external_live_uq');
+    }
+    // The same id on the other platform, and another id on the same platform, are different accounts.
+    await ownerQuery(insert, [s.a.companyId, 'meta', '1234567890', 'pending']);
+    await ownerQuery(insert, [s.b.companyId, 'meta', 'act_77', 'active']);
+    // Once the holder revokes, the other company can connect.
+    await ownerQuery(`update ad_accounts set status = 'revoked' where company_id = $1 and platform = 'google'`, [s.b.companyId]);
+    await ownerQuery(insert, [s.a.companyId, 'google', '1234567890', 'pending']);
+  });
 });
 
 describe('A1 constraints', () => {

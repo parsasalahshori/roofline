@@ -182,7 +182,7 @@ describe('installMapLayers', () => {
     expect(layerSpec(fake, 'storm-swath-fill')).toMatchObject({
       type: 'fill',
       source: 'storm-swath',
-      paint: { 'fill-color': expect.arrayContaining(['match', tokens['hail-3']]), 'fill-opacity': HAIL_FILL_OPACITY },
+      paint: { 'fill-color': expect.arrayContaining(['step', tokens['hail-3']]), 'fill-opacity': HAIL_FILL_OPACITY },
     });
   });
 
