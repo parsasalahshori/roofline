@@ -36,6 +36,8 @@ export type JobData = {
   callId?: string;
   /** fd-after-call: the Twilio CallSid (callId stays the calls row id everywhere else). */
   callSid?: string;
+  /** fd-after-call: set by the fd-health stuck-call sweep; such a call never gets a text-back. */
+  swept?: boolean;
   recordingSid?: string;
   conversationId?: string;
   testId?: string;

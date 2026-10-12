@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import {
   companyContact,
+  countForwardingTestsSince,
   createForwardingTestCall,
   failForwardingTest,
   findPendingForwardingTest,
@@ -11,8 +12,9 @@ import {
   recentForwardingTestAt,
   withTenant,
 } from '@roofline/db';
-import type { ForwardingTestView } from '@roofline/shared';
+import { textability, type ForwardingTestView } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { isRooflineNumber } from '../account/transfer-phone.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { systemContext } from '../permissions.ts';
 
@@ -25,9 +27,15 @@ import { systemContext } from '../permissions.ts';
  */
 
 const PHONE_FIRST = 'Add your business phone number in Settings → Company first.';
+const UNSUPPORTED_PHONE = 'The forwarding test only works with a US business phone number. Check the number in Settings → Company.';
 const TEST_CALLER_UNSET = "The forwarding test isn't available right now. Try again later.";
 const PLACE_FAILED = "We couldn't place the test call. Try again in a minute.";
 const WAIT = 'Wait a minute before testing again.';
+const ROOFLINE_PHONE = 'The business phone in Settings → Company is a Roofline number. Enter the phone line your customers call.';
+const DAILY_LIMIT_REACHED = "You've run the forwarding test 10 times in the last day. Try again tomorrow.";
+/** At most this many test calls per company in any rolling 24 hours (pre-review #26). */
+export const FORWARDING_TESTS_PER_DAY = 10;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const TIMEOUT_SECONDS = 30;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -57,12 +65,18 @@ export function forwardingTestRoutes(deps: AppDeps): Router {
 
     const businessPhone = await withTenant(pools, ctx, async (tx) => (await companyContact(tx, ctx))?.phoneE164 ?? null);
     if (!businessPhone) throw new AppError(422, PHONE_FIRST, 'phone');
+    const kind = textability(businessPhone);
+    if (kind === 'toll_free' || kind === 'not_us') throw new AppError(422, UNSUPPORTED_PHONE, 'phone');
+    if (await isRooflineNumber(deps, businessPhone)) throw new AppError(422, ROOFLINE_PHONE, 'phone');
     if (testCaller === undefined) throw new AppError(503, TEST_CALLER_UNSET);
 
     const id = await withTenant(pools, ctx, async (tx) => {
       await lockForwardingTests(tx, ctx);
       if (await recentForwardingTestAt(tx, ctx, testCaller, new Date(now.getTime() - 60 * 1000))) {
         throw new AppError(429, WAIT);
+      }
+      if ((await countForwardingTestsSince(tx, ctx, testCaller, new Date(now.getTime() - DAY_MS))) >= FORWARDING_TESTS_PER_DAY) {
+        throw new AppError(429, DAILY_LIMIT_REACHED);
       }
       let placed: { callSid: string };
       try {
@@ -111,12 +125,25 @@ export async function expireForwardingTest(deps: AppDeps, companyId: string, tes
  * Returns true when it did, so the hook answers with the test TwiML and nothing else. Any other call
  * returns false.
  */
-export async function forwardingTestArrived(deps: AppDeps, companyId: string, fromE164: string): Promise<boolean> {
+export type ForwardingArrival = { forwardedFrom?: string | null; stirVerstat?: string | null };
+
+export async function forwardingTestArrived(
+  deps: AppDeps,
+  companyId: string,
+  fromE164: string,
+  arrival: ForwardingArrival = {},
+): Promise<boolean> {
   const testCaller = deps.config.TWILIO_TEST_CALLER_NUMBER;
   if (testCaller === undefined || fromE164 !== testCaller) return false;
   const ctx = systemContext(companyId);
   const now = deps.clock.now();
   return withTenant(deps.pools, ctx, async (tx) => {
+    // A caller id alone can be spoofed: the call must also show it was forwarded from the business line
+    // (the signed ForwardedFrom) or carry a passing STIR/SHAKEN verdict.
+    const businessPhone = (await companyContact(tx, ctx))?.phoneE164 ?? null;
+    const forwarded = businessPhone !== null && arrival.forwardedFrom === businessPhone;
+    const attested = typeof arrival.stirVerstat === 'string' && arrival.stirVerstat.startsWith('TN-Validation-Passed');
+    if (!forwarded && !attested) return false;
     const pending = await findPendingForwardingTest(tx, ctx, fromE164, now);
     if (!pending) return false;
     await markForwardingVerified(tx, ctx, pending.callSid, now);

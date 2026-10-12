@@ -51,7 +51,10 @@ export function createAnswer(c: AnthropicClients, opts?: { fast?: boolean }): Ll
       }
     }
     const final = await stream.finalMessage();
-    const stopReason = STOP[final.stop_reason ?? ''] ?? 'end_turn';
+    // An unknown stop reason (pause_turn, model_context_window_exceeded, ...) is not a finished turn: it
+    // is surfaced as max_tokens, which the engine already handles (one shortened retry, then a handoff),
+    // and its tool_use blocks are never yielded, so they cannot become an unanswered tool round.
+    const stopReason = STOP[final.stop_reason ?? ''] ?? 'max_tokens';
     if (stopReason !== 'refusal' && stopReason !== 'max_tokens') {
       for (const block of final.content as { type: string; id?: string; name?: string; input?: unknown }[]) {
         if (block.type !== 'tool_use') continue;

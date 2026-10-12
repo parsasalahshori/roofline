@@ -6,7 +6,9 @@ import type { AppDeps } from '../app.ts';
 /*
  * Call recording for the relay (D1 Task 12). Starts once after the greeting began; the caller can
  * object, which stops the recording and turns the transcript off. Logs carry ids only: never
- * numbers, urls, keys or transcript text.
+ * numbers, urls, keys or transcript text. A call already stopped_by_caller (a later relay session)
+ * starts with objected true and start() does nothing. A call an earlier session already records keeps
+ * that one recording: start() does nothing, and an objection stops it (Twilio.CURRENT).
  * TODO(e1-estimator merge, Ruling DJ/DV): the stored_files row of kind 'call_recording' is added there.
  */
 export type RecordingHandle = {
@@ -17,7 +19,22 @@ export type RecordingHandle = {
   /** True once the caller has objected: turns from now on are stored with text ''. */
   readonly objected: boolean;
 };
-export type RecordingCall = { callId: string; companyId: string; callSid: string };
+export type RecordingCall = {
+  callId: string;
+  companyId: string;
+  callSid: string;
+  /** True when the call's status is already 'stopped_by_caller': start() must do nothing and objected starts true. */
+  stoppedByCaller?: boolean;
+  /**
+   * True when an earlier relay session on this call already started the call's recording ('recording' or 'stored'):
+   * a call-level recording keeps running across sessions, so start() does nothing and an objection stops the call's
+   * current recording at Twilio (Twilio.CURRENT) rather than one this handle started.
+   */
+  alreadyRecording?: boolean;
+};
+
+/** Twilio's name for the call's in-progress recording, for a session that did not start it. */
+export const CURRENT_RECORDING = 'Twilio.CURRENT';
 
 const OBJECTION = new RegExp(
   [
@@ -37,12 +54,16 @@ export function createRecording(deps: AppDeps, call: RecordingCall): RecordingHa
   let recordingSid: string | null = null;
   let sub: { accountSid: string; authToken: string } | null = null;
   let started = false;
-  let objected = false;
+  let objected = call.stoppedByCaller === true;
 
   return {
     async start() {
+      // A second relay session on a call the caller already objected on: never record again.
+      if (call.stoppedByCaller === true) return;
       if (started) return;
       started = true;
+      // An earlier session's recording is still running for this call: never start a second one.
+      if (call.alreadyRecording === true) return;
       try {
         const days = await withTenant(deps.pools, ctx, async (tx) => {
           const [row] = await tx
@@ -74,7 +95,13 @@ export function createRecording(deps: AppDeps, call: RecordingCall): RecordingHa
       if (objected) return;
       objected = true;
       try {
-        if (recordingSid !== null && sub !== null) await deps.callControl.stopRecording(sub, call.callSid, recordingSid);
+        if (recordingSid !== null && sub !== null) {
+          await deps.callControl.stopRecording(sub, call.callSid, recordingSid);
+        } else if (call.alreadyRecording === true) {
+          // The recording was started by an earlier session on this call: stop whatever is recording now.
+          const owner = sub ?? (await recordingSubaccount(deps.pools.system, call.companyId, deps.config.ENCRYPTION_KEY));
+          if (owner !== null) await deps.callControl.stopRecording(owner, call.callSid, CURRENT_RECORDING);
+        }
       } catch {
         console.error(`recording stop failed call=${call.callId} company=${call.companyId}`);
       }

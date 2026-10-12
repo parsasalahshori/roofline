@@ -111,6 +111,26 @@ describe('Front Desk window (Task 21)', () => {
     expect(screen.getByText('No calls yet. Once forwarding is on, every call shows up here.')).toBeInTheDocument();
   });
 
+  it('shows the week stats to the owner', async () => {
+    signedInApi({ 'GET /api/conversations?filter=all': () => ({ body: page([]) }) });
+    renderApp('/front-desk');
+    expect(await screen.findByText(frontDeskInbox.stats.title)).toBeInTheDocument();
+    await waitFor(() => expect(api.count('GET /api/front-desk/stats')).toBe(1));
+  });
+
+  it('never asks a field rep for the week stats (owner and office only)', async () => {
+    signedInApi({
+      'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role: 'rep' } }),
+      'GET /api/conversations?filter=all': () => ({ body: page([]) }),
+    });
+    renderApp('/front-desk');
+    expect(await screen.findByText(frontDeskInbox.empty)).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(api.count('GET /api/front-desk/stats')).toBe(0);
+    expect(screen.queryByText(frontDeskInbox.stats.title)).toBeNull();
+    expect(screen.queryByText(frontDeskInbox.stats.loadError)).toBeNull();
+  });
+
   it('renders name, outcome, unread badge, the link to the conversation, and the unknown caller', async () => {
     signedInApi({ 'GET /api/conversations?filter=all': () => ({ body: page([DANA, UNKNOWN]) }) });
     renderApp('/front-desk');

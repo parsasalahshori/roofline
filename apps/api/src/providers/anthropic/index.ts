@@ -16,3 +16,5 @@ export function anthropicFor(config: Config, fetchImpl?: typeof fetch): Llm | nu
     summarize: createSummarize(clients),
   };
 }
+
+export { evalModelsFor, type EvalModels } from './eval.ts';

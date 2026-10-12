@@ -21,8 +21,10 @@ import type { JobQueue } from '../jobs/queue.ts';
 import { buildGateRequest } from '../messaging/gate-request.ts';
 import { sendQueuedText, textStateFor } from '../messaging/outbound.ts';
 import { createEngine } from './engine.ts';
-import type { Engine, ToolHandlers } from './engine-types.ts';
+import type { Engine } from './engine-types.ts';
 import { buildCompanyBlock } from './prompt.ts';
+import { confirmByText, isConfirmShortcut } from './tools/confirm.ts';
+import { FRONT_DESK_HANDLERS } from './tools/index.ts';
 import { appendAssistant, appendUser, newConversationState } from './state.ts';
 
 /*
@@ -67,9 +69,8 @@ export async function queueFrontDeskText(tx: Tx, message: InboundMessageRef, opt
   );
 }
 
-/** No real tool handlers yet; the engine offers only TEXT_CHANNEL_TOOLS on the sms channel. */
-// TODO(Task 7/8): real tool handlers
-const TEXT_TOOL_HANDLERS: ToolHandlers = {};
+/** The engine offers only TEXT_CHANNEL_TOOLS on the sms channel. */
+const TEXT_TOOL_HANDLERS = FRONT_DESK_HANDLERS;
 
 const TEAM_QUIET_MS = 2 * 60 * 60 * 1000;
 const HISTORY_TEXTS = 20;
@@ -139,6 +140,7 @@ export async function runFrontDeskText(
       startedAt: now,
     });
     state.customerId = conversation.customerId;
+    state.toolSettings = { canMove: facts.canMove, canCancel: facts.canCancel };
     const firstUnanswered = unanswered[0]!;
     const earlier = await listConversationTexts(tx, ctx, conversationId, HISTORY_TEXTS);
     for (const text of earlier) {
@@ -158,20 +160,23 @@ export async function runFrontDeskText(
   if (!prepared) return;
 
   const { state, callerText, lastUnanswered } = prepared;
-  // TODO(Task 8): when the booking-confirm helper exists, call it here for 'C' / 'confirm' instead of the engine.
-  // Until then 'C' / 'confirm' is a normal text for the engine.
   const active = engine ?? createEngine(deps, TEXT_TOOL_HANDLERS);
   const said: string[] = [];
   let handoff = false;
   let modelFailure = false;
   let spam = false;
-  for await (const event of active.turn(state, callerText, new AbortController().signal)) {
-    if (event.type === 'say') said.push(event.text);
-    else if (event.type === 'handoff') {
-      handoff = true;
-      if (event.reason === 'model_failure') modelFailure = true;
+  if (prepared.customerId !== null && isConfirmShortcut(callerText)) {
+    // "C" or "confirm" from a customer's own number confirms their next visit; the engine is not asked.
+    said.push(await confirmByText(deps, { companyId: data.companyId, conversationId, customerId: prepared.customerId }, deps.clock.now()));
+  } else {
+    for await (const event of active.turn(state, callerText, new AbortController().signal)) {
+      if (event.type === 'say') said.push(event.text);
+      else if (event.type === 'handoff') {
+        handoff = true;
+        if (event.reason === 'model_failure') modelFailure = true;
+      }
+      else if (event.type === 'end' && event.reason === 'spam') spam = true;
     }
-    else if (event.type === 'end' && event.reason === 'spam') spam = true;
   }
   if (spam) {
     // Spam is never answered: end the conversation so later texts from the number open a new one.

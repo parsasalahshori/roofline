@@ -63,7 +63,7 @@ beforeEach(async () => {
 });
 
 let sidCounter = 0;
-const nextSid = (): string => `CB${String(++sidCounter).padStart(32, '0')}`;
+const nextSid = (): string => `CA${String(++sidCounter).padStart(32, '0')}`;
 
 type Signing = { token?: string; signature?: string | null };
 

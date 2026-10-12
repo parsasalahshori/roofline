@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { type Clock, systemClock } from '../clock.ts';
-import type { CurrentWeather, WeatherIcon, WeatherSource } from './source.ts';
+import type { CurrentWeather, DailyForecast, WeatherIcon, WeatherSource } from './source.ts';
 
 const API = 'https://api.weather.gov';
 const DEFAULT_TIMEOUT_MS = 4_000;
@@ -28,6 +28,16 @@ export function weatherIcon(shortForecast: string, isDaytime: boolean): WeatherI
 // anything these do not accept makes the whole answer "no weather".
 const PointsAnswer = z.object({ properties: z.object({ forecastHourly: z.string() }) });
 // The periods are checked one at a time (only the first is read), so a bad later one does not matter.
+const PointsForecastAnswer = z.object({ properties: z.object({ forecast: z.string() }) });
+const ForecastAnswer = z.object({ properties: z.object({ periods: z.array(z.unknown()).min(1) }) });
+const DailyPeriod = z.object({
+  temperature: z.number(),
+  temperatureUnit: z.enum(['F', 'C']).nullish(),
+  shortForecast: z.string().min(1),
+  isDaytime: z.boolean(),
+  startTime: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
+  probabilityOfPrecipitation: z.object({ value: z.number().nullish() }).nullish(),
+});
 const HourlyAnswer = z.object({ properties: z.object({ periods: z.array(z.unknown()).min(1) }) });
 const Period = z.object({
   temperature: z.number(),
@@ -82,6 +92,48 @@ export class NwsWeatherSource implements WeatherSource {
       };
     } catch {
       // A timeout, a refused connection, a body that is not JSON, a link that is not a URL.
+      return null;
+    }
+  }
+
+  /** Day-by-day forecast: day and night periods grouped by the date in their own start time. Null on any failure. */
+  async daily(lat: number, lng: number, days: number): Promise<DailyForecast[] | null> {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !(days >= 1)) return null;
+    try {
+      const points = PointsForecastAnswer.safeParse(await this.get(`${API}/points/${lat.toFixed(4)},${lng.toFixed(4)}`));
+      if (!points.success) return null;
+      const url = points.data.properties.forecast;
+      if (new URL(url).origin !== API) return null;
+      const answer = ForecastAnswer.safeParse(await this.get(url));
+      if (!answer.success) return null;
+
+      const byDate = new Map<string, DailyForecast & { dayText: string | null; nightText: string | null }>();
+      for (const raw of answer.data.properties.periods) {
+        const p = DailyPeriod.safeParse(raw);
+        if (!p.success) continue;
+        const date = p.data.startTime.slice(0, 10);
+        const f = Math.round(p.data.temperatureUnit === 'C' ? (p.data.temperature * 9) / 5 + 32 : p.data.temperature);
+        const chance = p.data.probabilityOfPrecipitation?.value ?? null;
+        let day = byDate.get(date);
+        if (!day) {
+          day = { date, highF: null, lowF: null, summary: '', precipChancePercent: null, dayText: null, nightText: null };
+          byDate.set(date, day);
+        }
+        if (p.data.isDaytime) {
+          day.highF = f;
+          day.dayText = p.data.shortForecast;
+        } else {
+          day.lowF = f;
+          day.nightText = p.data.shortForecast;
+        }
+        if (chance !== null) day.precipChancePercent = Math.max(day.precipChancePercent ?? 0, chance);
+      }
+      const out = [...byDate.values()]
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(0, Math.floor(days))
+        .map(({ dayText, nightText, ...d }) => ({ ...d, summary: dayText ?? nightText ?? '' }));
+      return out.length > 0 ? out : null;
+    } catch {
       return null;
     }
   }

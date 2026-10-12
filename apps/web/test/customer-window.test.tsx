@@ -79,6 +79,8 @@ function makeView(overrides: { customer?: Partial<CustomerView['customer']>; can
         notes: null,
         source: 'manual',
         sync: 'none',
+        confirmedAt: null,
+        confirmedVia: null,
         canEdit: true,
       },
     ],

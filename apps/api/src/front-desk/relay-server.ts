@@ -2,26 +2,46 @@ import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
 import twilio from 'twilio';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
-import { addAiSeconds, findCallBySid, updateCall, withTenant, type TenantContext } from '@roofline/db';
+import { eq } from 'drizzle-orm';
+import {
+  addAiSeconds,
+  companySettings,
+  findCallBySid,
+  findCallRecordingBySid,
+  setCallRecording,
+  updateCall,
+  withTenant,
+  type TenantContext,
+} from '@roofline/db';
 import { relayCallById, signingTokenFor } from '@roofline/db/system';
+import { UUID } from '../validate.ts';
 import type { AppDeps } from '../app.ts';
 import type { RelayIn, RelayOut, VoiceSession } from '../providers/voice-session.ts';
 import { createEngine } from './engine.ts';
 import { createRecording } from './recording.ts';
 import type { ToolHandlers } from './engine-types.ts';
+import { FRONT_DESK_HANDLERS } from './tools/index.ts';
 import { runRelayLoop } from './relay-session-loop.ts';
 import { verifyRelayToken } from './relay-token.ts';
 
 export const RELAY_PATH = '/relay';
 export const RELAY_CLOSE_POLICY = 1008;
+export const RELAY_MAX_PAYLOAD = 64 * 1024;
+export const RELAY_MAX_QUEUED = 32;
+export const RELAY_MAX_UNAUTH = 50;
+const UNAVAILABLE = 'HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n';
+const ENDED_STATUSES = new Set(['ended', 'failed', 'rejected']);
+const REASON_FLOOD = 'Too many messages.';
 const REFUSED = 'HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n';
+const UNAUTHORIZED = 'HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n';
+const DEFAULT_RETENTION_DAYS = 90;
 const SETUP_WITHIN_MS = 5000;
 const DEFAULT_IDLE_MS = 20_000;
-const TOKEN_SHAPE = /^(\d+)\.[0-9a-f]{64}$/;
 const REASON_AUTH = 'Not allowed.';
 const REASON_SETUP = 'Setup expected.';
 const IDLE_PROMPT = 'Are you still there?';
 
+type RelayRow = NonNullable<Awaited<ReturnType<typeof relayCallById>>>;
 type Opts = { tools?: ToolHandlers; idleMs?: number };
 
 function parseFrame(data: RawData): RelayIn | null {
@@ -37,27 +57,35 @@ function parseFrame(data: RawData): RelayIn | null {
 
 /**
  * Attaches the ConversationRelay WebSocket upgrade to the HTTP server. Only /relay upgrades; any
- * other upgrade path is refused. The `?t=` token is checked for shape and expiry at the upgrade and
- * fully (call and company) on the first `setup` message, which names the call. Logs carry the call
- * id and company id only.
+ * other upgrade path is refused. The upgrade itself verifies the Twilio signature, the `?t=` token
+ * (bound to the `?c=` call and its company) and that the call is live before it upgrades; the first
+ * `setup` message must then name the same call. Logs carry the call id and company id only.
  */
 export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {}): { close(): void } {
   const idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
-  const engine = createEngine(deps, opts.tools ?? {});
-  const wss = new WebSocketServer({ noServer: true });
+  const engine = createEngine(deps, opts.tools ?? FRONT_DESK_HANDLERS);
+  const wss = new WebSocketServer({ noServer: true, maxPayload: RELAY_MAX_PAYLOAD });
   const live = new Set<WebSocket>();
+  let unauth = 0;
 
-  function onConnection(ws: WebSocket, req: IncomingMessage, token: string | null): void {
+  function onConnection(ws: WebSocket, verified: RelayRow): void {
     live.add(ws);
+    unauth += 1;
+    let counted = true;
+    const uncount = (): void => {
+      if (counted) {
+        counted = false;
+        unauth -= 1;
+      }
+    };
+    ws.on('close', uncount);
     ws.on('close', () => live.delete(ws));
     ws.on('error', () => undefined);
     const deny = (reason: string): void => {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(RELAY_CLOSE_POLICY, reason);
+      void reason;
+      uncount();
+      ws.terminate();
     };
-    if (token === null) {
-      deny(REASON_AUTH);
-      return;
-    }
 
     type Stage = 'waiting' | 'authenticating' | 'running' | 'dead';
     let stage: Stage = 'waiting';
@@ -124,21 +152,8 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
     };
 
     async function authenticate(setup: Extract<RelayIn, { type: 'setup' }>): Promise<void> {
-      const callId = setup.customParameters?.callId;
-      if (typeof callId !== 'string') return deny(REASON_AUTH);
-      const row = await relayCallById(deps.pools.system, callId);
-      if (row === null || !verifyRelayToken(deps.config.RELAY_TOKEN_SECRET, token as string, { callId, companyId: row.companyId }, deps.clock.now())) {
-        return deny(REASON_AUTH);
-      }
-      const signature = req.headers['x-twilio-signature'];
-      if (signature !== undefined) {
-        const signer = await signingTokenFor(deps.pools.system, row.companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
-        const search = new URL(req.url ?? '/', 'http://localhost').search;
-        const sig = Array.isArray(signature) ? signature[0] : signature;
-        if (signer === null || sig === undefined || !twilio.validateRequest(signer, sig, deps.config.RELAY_PUBLIC_URL + search, {})) {
-          return deny(REASON_AUTH);
-        }
-      }
+      const row = verified;
+      if (setup.customParameters?.callId !== row.callId) return deny(REASON_AUTH);
       if (ws.readyState !== WebSocket.OPEN) return;
       // The check and the add are one synchronous step: no second socket can slip between them.
       if (deps.relaySessions.has(row.callSid)) return deny(REASON_AUTH);
@@ -150,14 +165,41 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
         const call = await withTenant(deps.pools, ctx, async (tx) => {
           const found = await findCallBySid(tx, ctx, row.callSid);
           if (found === null) return null;
+          if (ENDED_STATUSES.has(found.status)) return 'denied' as const;
           await updateCall(tx, ctx, row.callSid, { status: 'ai', aiStartedAt: startedAt as Date });
-          return found;
+          // Transcript is stored unless the caller already stopped recording or recording is off for the company.
+          const rec = await findCallRecordingBySid(tx, ctx, row.callSid);
+          const stopped = rec?.recordingStatus === 'stopped_by_caller';
+          // A call-level recording from an earlier session on this call is still running (pre-review note 4).
+          const recording = rec?.recordingStatus === 'recording' || rec?.recordingStatus === 'stored';
+          if (!stopped) {
+            const [cs] = await tx
+              .select({ days: companySettings.recordingRetentionDays })
+              .from(companySettings)
+              .where(eq(companySettings.companyId, ctx.companyId))
+              .limit(1);
+            if ((cs?.days ?? DEFAULT_RETENTION_DAYS) !== 0) await setCallRecording(tx, ctx, row.callSid, { transcriptStored: true });
+          }
+          return { found, stopped, recording };
         });
+        if (call === 'denied') {
+          deps.relaySessions.remove(row.callSid);
+          identity = null;
+          return deny(REASON_AUTH);
+        }
         if (call === null) return deny(REASON_AUTH);
+        const recordingStopped = call.stopped;
         // The socket may have closed while withTenant ran; the close handler already removed the registry entry.
         if (stage === 'dead' || ws.readyState !== WebSocket.OPEN) return;
         stage = 'running';
-        const recording = createRecording(deps, { callId: row.callId, companyId: row.companyId, callSid: row.callSid });
+        uncount();
+        const recording = createRecording(deps, {
+          callId: row.callId,
+          companyId: row.companyId,
+          callSid: row.callSid,
+          stoppedByCaller: recordingStopped,
+          alreadyRecording: call.recording,
+        });
         loop = runRelayLoop(adapter, {
           deps,
           engine,
@@ -166,8 +208,9 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
             callId: row.callId,
             companyId: row.companyId,
             callSid: row.callSid,
-            from: call.fromE164,
-            to: call.toE164,
+            from: call.found.fromE164,
+            to: call.found.toE164,
+            recordingStopped,
             messageOnly: setup.customParameters?.mode === 'message_only',
           },
         });
@@ -193,6 +236,10 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
           deny(REASON_AUTH);
         });
       } else if (stage === 'authenticating') {
+        if (queued.length >= RELAY_MAX_QUEUED) {
+          queued.length = 0;
+          return deny(REASON_FLOOD);
+        }
         queued.push(m);
       } else if (stage === 'running') {
         deliver(m);
@@ -223,17 +270,60 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
     });
   }
 
+  const reject = (socket: Duplex): void => {
+    try {
+      socket.write(UNAUTHORIZED);
+    } catch {
+      // the socket is already gone
+    }
+    socket.destroy();
+  };
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    void upgrade(req, socket, head).catch(() => reject(socket));
+  };
+  const upgrade = async (req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> => {
+    socket.on('error', () => undefined);
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== RELAY_PATH) {
       socket.write(REFUSED);
       socket.destroy();
       return;
     }
+    // Every check that needs no database comes first: the shape, the Twilio signature header, and the token's
+    // MAC over this call and company. A peer without a token we minted is refused here and never takes a slot
+    // or a database query (pre-review notes 1 and 23).
     const t = url.searchParams.get('t');
-    const m = t === null ? null : TOKEN_SHAPE.exec(t);
-    const token = m !== null && Number(m[1]) > deps.clock.now().getTime() ? t : null;
-    wss.handleUpgrade(req, socket, head, (ws) => onConnection(ws, req, token));
+    const c = url.searchParams.get('c');
+    const o = url.searchParams.get('o');
+    const header = req.headers['x-twilio-signature'];
+    const sig = Array.isArray(header) ? header[0] : header;
+    if (t === null || c === null || o === null || !UUID.test(c) || c !== c.toLowerCase() || !UUID.test(o) || o !== o.toLowerCase()) return reject(socket);
+    if (typeof sig !== 'string' || sig === '') return reject(socket);
+    if (!verifyRelayToken(deps.config.RELAY_TOKEN_SECRET, t, { callId: c, companyId: o }, deps.clock.now())) return reject(socket);
+    if (unauth >= RELAY_MAX_UNAUTH) {
+      socket.write(UNAVAILABLE);
+      socket.destroy();
+      return;
+    }
+    unauth += 1;
+    let held = true;
+    const release = (): void => {
+      if (held) {
+        held = false;
+        unauth -= 1;
+      }
+    };
+    try {
+      const row = await relayCallById(deps.pools.system, c);
+      if (row === null || row.companyId !== o || ENDED_STATUSES.has(row.status)) return reject(socket);
+      const signer = await signingTokenFor(deps.pools.system, row.companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
+      if (signer === null || !twilio.validateRequest(signer, sig, deps.config.RELAY_PUBLIC_URL + url.search, {})) return reject(socket);
+      if (socket.destroyed) return;
+      release();
+      wss.handleUpgrade(req, socket, head, (ws) => onConnection(ws, row));
+    } finally {
+      release();
+    }
   };
   server.on('upgrade', onUpgrade);
   return {

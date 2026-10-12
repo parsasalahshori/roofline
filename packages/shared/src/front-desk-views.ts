@@ -52,15 +52,26 @@ export type ToolActionCard = {
   link: { kind: 'customer' | 'job' | 'appointment' | 'claim_intake'; id: string } | null;
 };
 
-/** One transcript line. `text` is null when the transcript was not kept (caller's request) or was swept. */
+/**
+ * One transcript line. `text` is null when the transcript was not kept (caller's request) or was swept.
+ * In a text conversation the list also holds a line for each text no turn shows (the team's replies, texts the
+ * assistant never answered): `callId` null, `position` 0, `id` the message id. Show lines in time order, then position.
+ */
 export type TurnView = {
   id: string;
+  /** The call this turn was spoken on, or null for a text turn. */
+  callId: string | null;
   position: number;
   speaker: TurnSpeaker;
   text: string | null;
   truncated: boolean;
   at: string;
   actions: ToolActionCard[];
+  /**
+   * Set only on a text line (position 0) whose text had no words, such as a photo-only text: `text` is null
+   * but retention did not remove anything. A text blanked by retention leaves this unset.
+   */
+  noWords?: true;
 };
 
 export type CallView = {
@@ -104,6 +115,11 @@ export type ConversationDetail = {
 
 /** POST /api/conversations/:id/reply body; errors come back as { error, field? } with a plain sentence. */
 export type ReplyInput = { body: string };
+/**
+ * POST /api/conversations/:id/reply answer (200): the text went out, or the send gate will send it at
+ * `scheduledFor` (quiet hours). A reply the gate blocks or that could not be sent is a 422 instead.
+ */
+export type ReplyResult = { id: string; status: 'sent' | 'scheduled'; scheduledFor: string | null };
 /** POST /api/conversations/:id/handling body. */
 export type HandlingInput = { by: HandledBy };
 
@@ -154,6 +170,8 @@ export type FrontDeskSettings = {
 export type FrontDeskSettingsInput = Omit<FrontDeskSettings, 'blockedReason' | 'forwardingVerifiedAt' | 'onCall'> & {
   /** User ids in ring order; members left out are taken off the list. */
   onCallOrder: string[];
+  /** Owner only: turn Front Desk on although the forwarding test has not passed. */
+  override?: boolean;
 };
 
 /** Limits the settings form and the route both enforce (spec §10). */

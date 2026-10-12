@@ -115,6 +115,19 @@ describe('anthropic answer adapter', () => {
     expect(done(events).stopReason).toBe('refusal');
   });
 
+  it.each(['pause_turn', 'model_context_window_exceeded', 'something_new'])(
+    'an unknown stop_reason (%s) surfaces as max_tokens and yields no tool_use (pre-review #29)',
+    async (reason) => {
+      const body = fx('answer-tool-use.sse').replace('"stop_reason": "tool_use"', `"stop_reason": "${reason}"`);
+      expect(body).toContain(reason);
+      const { f } = fakeFetch(() => new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }));
+      const events: LlmEvent[] = [];
+      for await (const e of createAnswer(buildClients(config, f)!)(input())) events.push(e);
+      expect(events.some((e) => e.type === 'tool_use')).toBe(false);
+      expect(done(events).stopReason).toBe('max_tokens');
+    },
+  );
+
   it('fallback content blocks are not yielded as text but stay in assistantContent', async () => {
     const { events } = await run('answer-with-fallback-block.sse');
     expect(events.filter((e) => e.type === 'text').map((e) => (e as { text: string }).text).join('')).toBe('Sure, I can help.');

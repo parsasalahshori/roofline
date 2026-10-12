@@ -1,6 +1,7 @@
 import type { Page, Locator } from '@playwright/test';
 import { test, expect, companyHostUrl, draftAndApproveStormPlan, stormPageCode, waitForStormSteps } from './fixtures.ts';
 import { makeAndSendProposal } from './estimator-helpers.ts';
+import { seedFrontDesk, seedRooflineNumber } from './front-desk-seed.ts';
 
 /*
  * The phone shell (below 768px): full-screen pages, the bottom tab bar that replaces the dock, and
@@ -206,4 +207,24 @@ test('S1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, s
   await page.goto(companyHostUrl('/storm/' + code));
   await expect(page.getByRole('button', { name: 'Request a free inspection' })).toBeVisible();
   await noSideScroll(page);
+});
+
+test('D1 Front Desk pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, pools, scenario, db }) => {
+  const { ids } = await seedFrontDesk(pools, scenario);
+  await seedRooflineNumber(pools, db, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+
+  const pages: [string, () => Locator][] = [
+    ['/front-desk', () => page.getByRole('heading', { name: 'This week' })],
+    [`/front-desk/${ids.maria}`, () => page.getByRole('heading', { name: 'What was said' })],
+    [`/front-desk/${ids.tom}`, () => page.getByLabel('Your reply')],
+    ['/settings/front-desk', () => page.getByRole('button', { name: 'Test it' })],
+    ['/settings/profile', () => page.getByLabel('Your phone number')],
+  ];
+  for (const [path, ready] of pages) {
+    await page.goto(path);
+    await expect(ready()).toBeVisible({ timeout: 20_000 });
+    await noSideScroll(page);
+  }
 });

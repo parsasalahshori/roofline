@@ -41,8 +41,17 @@ describe('Front Desk skeleton', () => {
   });
 
   test.each(['/hooks/twilio/voice', '/hooks/twilio/voice-status'])('%s is reachable without a session and answers 404 for an unknown number', async (path) => {
-    const res = await request(t.app).post(path).type('form').send({ CallSid: 'CA1', To: '+14025559999' });
+    const res = await request(t.app)
+      .post(path)
+      .type('form')
+      .set('X-Twilio-Signature', 'not-checked-before-routing')
+      .send({ CallSid: 'CA1', To: '+14025559999' });
     expect(res.status).toBe(404);
+  });
+
+  test.each(['/hooks/twilio/voice', '/hooks/twilio/voice-status'])('%s refuses a request with no signature before any lookup', async (path) => {
+    const res = await request(t.app).post(path).type('form').send({ CallSid: 'CA1', To: '+14025559999' });
+    expect(res.status).toBe(403);
   });
 
   test('the /api stubs sit behind the session gate', async () => {
@@ -52,7 +61,7 @@ describe('Front Desk skeleton', () => {
     }
   });
 
-  test('the /relay upgrade closes with 1008 and any other upgrade path is refused', async () => {
+  test('the /relay upgrade without a signed token is refused with 401 and any other upgrade path is refused', async () => {
     const server = http.createServer(t.app).listen(0, '127.0.0.1');
     await once(server, 'listening');
     const relay = attachRelayUpgrade(server, t.deps);
@@ -61,11 +70,12 @@ describe('Front Desk skeleton', () => {
     try {
       const good = new WebSocket(`ws://127.0.0.1:${port}/relay`);
       clients.push(good);
-      const [code] = (await Promise.race([
-        once(good, 'close'),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('relay close timed out')), WAIT_MS)),
-      ])) as [number];
-      expect(code).toBe(1008);
+      good.on('error', () => undefined);
+      const [, res] = (await Promise.race([
+        once(good, 'unexpected-response'),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('relay refusal timed out')), WAIT_MS)),
+      ])) as [unknown, { statusCode: number }];
+      expect(res.statusCode).toBe(401);
 
       const bad = new WebSocket(`ws://127.0.0.1:${port}/other`);
       clients.push(bad);

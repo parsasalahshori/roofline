@@ -14,7 +14,16 @@ import { seedAgentsFixture, type AgentsFixture } from './agents-seed.ts';
  * up; every test then resets the database to the same scenario before it runs.
  */
 
-export type Stack = { ownerUrl: string; tenantUrl: string; systemUrl: string; baseUrl: string };
+export type Stack = {
+  ownerUrl: string;
+  tenantUrl: string;
+  systemUrl: string;
+  baseUrl: string;
+  /** The stack's ENCRYPTION_KEY (a throwaway key for the throwaway database). */
+  encryptionKey: string;
+  /** TWILIO_TEST_CALLER_NUMBER: the number the Front Desk forwarding test calls from. */
+  testCallerNumber: string;
+};
 
 /** The three database URLs in the shape `resetScenario` and the pools take. */
 function dbUrls(stack: Stack): { owner: string; tenant: string; system: string } {

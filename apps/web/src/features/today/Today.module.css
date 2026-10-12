@@ -99,3 +99,10 @@
   display: flex;
   min-width: 0;
 }
+
+/* A small label on a follow-up that came from the Front Desk */
+.fromFrontDesk {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
