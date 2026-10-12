@@ -17,6 +17,7 @@ export const settings = {
     connections: 'Connections',
     billing: 'Billing',
     setup: 'Setup',
+    agents: 'Agents',
   } satisfies Record<SettingsTab, string>,
 
   // While a tab's information loads

@@ -1,0 +1,44 @@
+/* Pause switch and run-now control on the agent page. */
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text);
+  font-size: var(--font-size-body);
+}
+
+.sheetBody p {
+  margin: 0;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.runButton {
+  align-self: flex-start;
+  min-height: 40px;
+}

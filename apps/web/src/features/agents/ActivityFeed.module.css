@@ -1,0 +1,74 @@
+/* The filter chips and the list of what the agents did. Chips scroll sideways on a phone; rows stack when narrow. */
+.filters {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  margin: -4px -4px 12px;
+  padding: 4px;
+}
+
+.chip {
+  flex: none;
+  min-height: 40px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 8rem 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.agent {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.text {
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.time {
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  white-space: nowrap;
+}
+
+.open {
+  grid-column: 2 / -1;
+  justify-self: start;
+  min-height: 40px;
+}
+
+.more {
+  margin-top: 16px;
+  min-height: 40px;
+}
+
+@media (max-width: 40rem) {
+  .row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .text {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .open {
+    grid-column: 1 / -1;
+  }
+}

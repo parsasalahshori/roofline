@@ -30,6 +30,8 @@ import type { RelaySessions } from './front-desk/relay-sessions.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
 import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
+import { agentsFeedRoutes } from './routes/agents-feed.ts';
+import { agentsRoutes } from './routes/agents.ts';
 import { appointmentRoutes } from './routes/appointments.ts';
 import { approvalRoutes } from './routes/approvals.ts';
 import { calendarConnectRoutes } from './routes/calendar-connect.ts';
@@ -55,6 +57,7 @@ import { teamRoutes } from './routes/team.ts';
 import { timelineRoutes } from './routes/timeline.ts';
 import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
+import { agentSettingsRoutes } from './routes/agents-settings.ts';
 import type { StepQueue } from './tasks/queue.ts';
 import { policyPages } from './public/policies.ts';
 import { serveWeb } from './web.ts';
@@ -266,6 +269,10 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/activities', activityRoutes(deps));
   app.use('/api/approvals', approvalRoutes(deps, logError));
   app.use('/api/tasks', taskRoutes(deps));
+  // Agents (A1): feed and waiting (T6) first, then the overview and /:agent (T5; non-agent names call next()).
+  // T7's settings router (time baselines, pause, run) is mounted further down on the same prefix.
+  app.use('/api/agents', agentsFeedRoutes(deps));
+  app.use('/api/agents', agentsRoutes(deps));
   app.use('/api/search', searchRoutes(deps));
   app.use('/api/map', mapRoutes(deps));
   app.use('/api/weather', weatherRoutes(deps));
@@ -282,6 +289,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/setup', setupRoutes(deps));
   app.use('/api/imports', importRoutes(deps));
   app.use('/api/texting', textingRoutes(deps));
+  app.use('/api/agents', agentSettingsRoutes(deps));
   // D1 Front Desk
   app.use('/api/conversations', conversationRoutes(deps));
   app.use('/api/front-desk', frontDeskRoutes(deps));

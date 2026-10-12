@@ -559,3 +559,44 @@ export async function countWorkingTasks(tx: Tx, ctx: TenantContext): Promise<num
     .where(and(eq(agentTaskSteps.companyId, ctx.companyId), inArray(agentTaskSteps.status, ['queued', 'running'])));
   return row?.n ?? 0;
 }
+
+/** What a done step saved, frozen at the moment it finished. */
+export type StepSnapshot = { baselineKey: string; units: number; minutesPerUnit: number; minutesSaved: number };
+
+const round2 = (x: number): number => Math.round(x * 100) / 100;
+
+/** Freezes a step's time-saved snapshot (each number rounded to 2 decimals). */
+export async function setStepSnapshot(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  snapshot: StepSnapshot,
+  now: Date,
+): Promise<void> {
+  await tx
+    .update(agentTaskSteps)
+    .set({
+      baselineKey: snapshot.baselineKey,
+      units: round2(snapshot.units),
+      minutesPerUnit: round2(snapshot.minutesPerUnit),
+      minutesSaved: round2(snapshot.minutesSaved),
+      updatedAt: now,
+    })
+    .where(and(eq(agentTaskSteps.companyId, ctx.companyId), eq(agentTaskSteps.id, stepId)));
+}
+
+/** The sum of the snapshots of a task's done steps (0 when there are none). */
+export async function sumStepMinutesSaved(tx: Tx, ctx: TenantContext, taskId: string): Promise<number> {
+  const [row] = await tx
+    .select({ total: sql<string>`coalesce(sum(${agentTaskSteps.minutesSaved}), 0)` })
+    .from(agentTaskSteps)
+    .where(
+      and(
+        eq(agentTaskSteps.companyId, ctx.companyId),
+        eq(agentTaskSteps.taskId, taskId),
+        eq(agentTaskSteps.status, 'done'),
+        isNotNull(agentTaskSteps.minutesSaved),
+      ),
+    );
+  return Number(row?.total ?? 0);
+}

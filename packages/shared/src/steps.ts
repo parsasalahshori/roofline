@@ -18,8 +18,6 @@ import { FOLLOW_UP_KINDS } from './more-agents.ts';
  * - how many minutes of staff time it saved once it ran: a time-saved `baseline` key (from
  *   TIME_BASELINES in agents.ts), a count of `units` from the step's result, optional call length
  *   (`extraMinutes`) and optional `bookings`. `stepMinutes` turns those into minutes.
- * `minutesSaved` is kept as a compatibility function that uses the default minutes. Task 3 moves
- * the task service onto per-task snapshots and removes it.
  * The API builds previews and checks payloads from here, and the runner adds up the minutes.
  */
 
@@ -79,8 +77,6 @@ export interface StepTypeDef<P> {
   extraMinutes?(p: P, result: StepResult): { callMinutes?: number };
   /** Booking units the step also did; each counts at the `booking` baseline. */
   bookings?(p: P, result: StepResult): number;
-  /** Compatibility (Ruling AX-A): minutes saved at the default minutes. Task 3 removes it. */
-  minutesSaved(p: P, result: StepResult): number;
 }
 
 export type StepMinutes = { baseline: BaselineKey; units: number; minutesPerUnit: number; minutes: number };
@@ -104,15 +100,6 @@ export function stepMinutes<P>(
   const minutes = main.minutes + bookingMinutes;
   const minutesPerUnit = units > 0 ? minutes / units : main.minutesPerUnit;
   return { baseline, units, minutesPerUnit, minutes };
-}
-
-/** A step type without its compatibility `minutesSaved`, which is derived from the definition below. */
-type StepTypeBase<P> = Omit<StepTypeDef<P>, 'minutesSaved'>;
-
-/** Adds the compatibility `minutesSaved` (default minutes, caps applied) to a definition. */
-function withMinutesSaved<P>(def: StepTypeBase<P>): StepTypeDef<P> {
-  const full: StepTypeDef<P> = { ...def, minutesSaved: (p, result) => stepMinutes(full, p, result).minutes };
-  return full;
 }
 
 /** A count from a step's result: a finite number above zero, else 0. Anything else never counts. */
@@ -154,7 +141,7 @@ const labelPayload = z.strictObject({ label });
 type LabelPayload = z.output<typeof labelPayload>;
 
 /** The demo steps count one `demo` unit (5 minutes, hidden) once they are done; the caller ensures that. */
-const demoNoop = withMinutesSaved<LabelPayload>({
+const demoNoop: StepTypeDef<LabelPayload> = {
   type: 'demo_noop',
   approvalClass: 'internal',
   userCreatable: true,
@@ -162,7 +149,7 @@ const demoNoop = withMinutesSaved<LabelPayload>({
   preview: (p) => ({ title: p.label, lines: [] }),
   baseline: () => 'demo',
   units: () => 1,
-});
+};
 
 /** A demo text's optional details: the sample message, how many customers, and when it goes out. */
 const COUNT_MESSAGE = 'Please enter the number of customers as a whole number.';
@@ -184,7 +171,7 @@ const messagePayload = z.strictObject({
 });
 type MessagePayload = z.output<typeof messagePayload>;
 
-const demoMessage = withMinutesSaved<MessagePayload>({
+const demoMessage: StepTypeDef<MessagePayload> = {
   type: 'demo_message',
   approvalClass: 'message',
   userCreatable: true,
@@ -198,7 +185,7 @@ const demoMessage = withMinutesSaved<MessagePayload>({
   }),
   baseline: () => 'demo',
   units: () => 1,
-});
+};
 
 /** A demo spend step's optional area, which the preview shows after the spend line. */
 const spendPayload = z.strictObject({
@@ -213,7 +200,7 @@ const spendPayload = z.strictObject({
 });
 type SpendPayload = z.output<typeof spendPayload>;
 
-const demoSpend = withMinutesSaved<SpendPayload>({
+const demoSpend: StepTypeDef<SpendPayload> = {
   type: 'demo_spend',
   approvalClass: 'spend',
   userCreatable: true,
@@ -225,7 +212,7 @@ const demoSpend = withMinutesSaved<SpendPayload>({
   }),
   baseline: () => 'demo',
   units: () => 1,
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 // send_sms_batch
@@ -262,7 +249,7 @@ const smsPayload = z.strictObject({
 });
 type SmsPayload = z.output<typeof smsPayload>;
 
-const sendSmsBatch = withMinutesSaved<SmsPayload>({
+const sendSmsBatch: StepTypeDef<SmsPayload> = {
   type: 'send_sms_batch',
   approvalClass: 'message',
   userCreatable: true,
@@ -297,7 +284,7 @@ const sendSmsBatch = withMinutesSaved<SmsPayload>({
   /** Only the `sent` count is a unit (blocked or other counts never are); text_sent caps at 120 minutes. */
   baseline: () => 'text_sent',
   units: (_p, result) => countOf(result.sent),
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 // Front desk steps (Ruling AX-E: the time they save is measured from what the agent handled).
@@ -311,7 +298,7 @@ type FrontDeskPayload = z.output<typeof frontDeskPayload>;
 /** A spam call is counted at the length of the line only (baseline spam_call), with no bookings. */
 const isSpam = (result: StepResult): boolean => countOf(result.spam) > 0;
 
-const frontDeskCall = withMinutesSaved<FrontDeskPayload>({
+const frontDeskCall: StepTypeDef<FrontDeskPayload> = {
   type: 'front_desk_call',
   approvalClass: 'internal',
   userCreatable: false,
@@ -321,9 +308,9 @@ const frontDeskCall = withMinutesSaved<FrontDeskPayload>({
   units: () => 1,
   extraMinutes: (_p, result) => ({ callMinutes: countOf(result.seconds) / 60 }),
   bookings: (_p, result) => (isSpam(result) ? 0 : countOf(result.bookings)),
-});
+};
 
-const frontDeskTexts = withMinutesSaved<FrontDeskPayload>({
+const frontDeskTexts: StepTypeDef<FrontDeskPayload> = {
   type: 'front_desk_texts',
   approvalClass: 'internal',
   userCreatable: false,
@@ -332,7 +319,7 @@ const frontDeskTexts = withMinutesSaved<FrontDeskPayload>({
   baseline: () => 'text_reply',
   units: (_p, result) => countOf(result.replies),
   bookings: (_p, result) => countOf(result.bookings),
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 // G1 steps (Task 2b): personal follow-up texts, the claim packet and the two calendar steps.
@@ -370,7 +357,7 @@ const personalTextsPayload = z.strictObject({
 });
 type PersonalTextsPayload = z.output<typeof personalTextsPayload>;
 
-const sendPersonalTexts = withMinutesSaved<PersonalTextsPayload>({
+const sendPersonalTexts: StepTypeDef<PersonalTextsPayload> = {
   type: 'send_personal_texts',
   approvalClass: 'message',
   userCreatable: false,
@@ -393,12 +380,12 @@ const sendPersonalTexts = withMinutesSaved<PersonalTextsPayload>({
   },
   baseline: (p) => (p.kind === 'reminder' ? 'reminder_sent' : 'follow_up_sent'),
   units: (_p, result) => countOf(result.sent),
-});
+};
 
 const claimPacketPayload = z.strictObject({ jobId: lowerUuid(CHECK_TEXT) });
 type ClaimPacketPayload = z.output<typeof claimPacketPayload>;
 
-const buildClaimPacket = withMinutesSaved<ClaimPacketPayload>({
+const buildClaimPacket: StepTypeDef<ClaimPacketPayload> = {
   type: 'build_claim_packet',
   approvalClass: 'internal',
   userCreatable: false,
@@ -406,7 +393,7 @@ const buildClaimPacket = withMinutesSaved<ClaimPacketPayload>({
   preview: () => ({ title: 'Build the claim packet', lines: [] }),
   baseline: () => 'claim_packet',
   units: (_p, result) => (countOf(result.built) > 0 ? 1 : 0),
-});
+};
 
 const END_AFTER_START = 'The end must be after the start.';
 const isoTime = z.iso.datetime({ offset: true, error: CHECK_TEXT });
@@ -424,7 +411,7 @@ const createAppointmentPayload = z
   .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
 type CreateAppointmentPayload = z.output<typeof createAppointmentPayload>;
 
-const createAppointment = withMinutesSaved<CreateAppointmentPayload>({
+const createAppointment: StepTypeDef<CreateAppointmentPayload> = {
   type: 'create_appointment',
   approvalClass: 'internal',
   userCreatable: false,
@@ -435,7 +422,7 @@ const createAppointment = withMinutesSaved<CreateAppointmentPayload>({
   }),
   baseline: () => 'booking',
   units: (_p, result) => countOf(result.created),
-});
+};
 
 const moveAppointmentPayload = z
   .strictObject({
@@ -448,7 +435,7 @@ const moveAppointmentPayload = z
   .refine(endsAfterStart, { message: END_AFTER_START, path: ['end'] });
 type MoveAppointmentPayload = z.output<typeof moveAppointmentPayload>;
 
-const moveAppointment = withMinutesSaved<MoveAppointmentPayload>({
+const moveAppointment: StepTypeDef<MoveAppointmentPayload> = {
   type: 'move_appointment',
   approvalClass: 'internal',
   userCreatable: false,
@@ -456,7 +443,7 @@ const moveAppointment = withMinutesSaved<MoveAppointmentPayload>({
   preview: (p) => ({ title: 'Move an install', lines: [p.reason, `${p.start} to ${p.end}`] }),
   baseline: () => 'install_moved',
   units: (_p, result) => countOf(result.moved),
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 

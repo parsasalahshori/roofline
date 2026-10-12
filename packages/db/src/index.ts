@@ -9,7 +9,41 @@ export {
   listActivities,
   type ListActivitiesOptions,
 } from './repos/activities.ts';
+export {
+  type ActorType,
+  type AgentEventKind,
+  type AgentEventRow,
+  insertAgentEvent,
+  listRecentEvents,
+  listTaskEvents,
+  type NewAgentEvent,
+} from './repos/agent-events.ts';
+export {
+  type AgentCounts,
+  agentCounts,
+  type AgentSettingsInfo,
+  agentSettingsInfo,
+  breakdownByBaseline,
+  dailyFinished,
+  type MetricsWindow,
+  minutesByAgent,
+  type RecentTaskRow,
+  recentTasks,
+  taskSubjectScope,
+} from './repos/agent-metrics.ts';
+export { type FeedCursor, type FeedRow, listFeedPage } from './repos/agent-feed.ts';
+export { listWaitingTasks, type WaitingTaskRow } from './repos/agent-waiting.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
+export {
+  insertTimeRecount,
+  listRecountSteps,
+  loadBaselineOverrides,
+  refreshTaskMinutes,
+  type RecountStep,
+  rewriteStepSnapshot,
+  setBaselineOverrides,
+} from './repos/time-baselines.ts';
+export * from './repos/agent-settings.ts';
 export { insertDefaultSettings, pickFreeSlug, setServiceArea, slugify } from './repos/companies.ts';
 export {
   CONSENT_LABELS,
@@ -137,11 +171,14 @@ export {
   reclaimExpiredLeases,
   renewStepLease,
   requeueForRetry,
+  setStepSnapshot,
   type StepEdit,
   type StepFinish,
   type StepMove,
   type StepRow,
+  type StepSnapshot,
   type StepSummaryRow,
+  sumStepMinutesSaved,
   type TaskRow,
   type TaskUpdate,
   updatePendingStep,

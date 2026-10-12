@@ -1,22 +1,32 @@
 import {
+  type ActorType,
+  type AgentEventKind,
   audit,
   countWorkingTasks,
   customerFirstNames,
+  expireOverdueDrafts,
   findRerunOf,
+  finishClaimedStep,
+  finishParkedStep,
   getCompanyName,
   getStep,
   getTask,
+  insertAgentEvent,
   insertTask,
   isUniqueViolation,
   listSteps,
   listTasks,
   listTasksByStatus,
+  loadBaselineOverrides,
   type ListTasksOptions,
   moveStep,
   requeueForRetry,
+  setStepSnapshot,
+  type StepFinish,
   type NewStepRow,
   type StepRow,
   type StepSummaryRow,
+  sumStepMinutesSaved,
   type TaskRow,
   type TenantContext,
   type Tx,
@@ -28,10 +38,12 @@ import {
   type Agent,
   type ApprovalClass,
   isStepType,
+  isUserCreatableStepType,
   type PreviewFacts,
   type StepResult,
   type StepStatus,
   type StepType,
+  stepMinutes,
   stepTypes,
   type TaskStatus,
 } from '@roofline/shared';
@@ -71,6 +83,34 @@ const APPROVE: Record<ApprovalClass, Capability> = {
   internal: 'approve_internal',
   spend: 'approve_spend',
 };
+
+/** Rounds to 2 decimals, as the snapshot columns do. */
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Writes the one event for a transition, in the transition's own transaction. `data` holds counts and
+ * ids only, never message text or names. The actor's user id is recorded only for a person.
+ */
+async function event(
+  tx: Tx,
+  ctx: TenantContext,
+  taskId: string,
+  kind: AgentEventKind,
+  actorType: ActorType,
+  data: Record<string, unknown>,
+  at: Date,
+  stepId?: string,
+): Promise<void> {
+  await insertAgentEvent(tx, ctx, {
+    taskId,
+    ...(stepId !== undefined && { stepId }),
+    kind,
+    actorType,
+    ...(actorType === 'user' && { actorUserId: ctx.userId }),
+    data,
+    at,
+  });
+}
 
 // ---------------------------------------------------------------------------------------------
 // Who sees the queue
@@ -265,12 +305,16 @@ export type NewTask = {
   mode?: 'needs_approval' | 'live';
   /** Only `rerunTask` sets this: the expired plan the new one is a fresh copy of. */
   rerunOfTaskId?: string;
+  /** Who made the plan, for its `created` event. Default `agent`. */
+  createdBy?: 'agent' | 'system' | 'user';
   steps: { type: StepType; payload: unknown }[];
 };
 
 /**
  * Makes a draft task with its steps, for an agent. This is the service the agents and the demo seed
- * call; no HTTP route creates tasks.
+ * call; no HTTP route creates tasks (`rerunTask` copies an expired one, through this function).
+ * Built-in step types a person cannot create (front_desk_*) are refused unless the caller passes
+ * `allowInternalStepTypes`, which only `rerunTask` does.
  * - Each step's payload is checked by its step type, so a bad one is a 400 on `steps.N.payload`
  *   (a text to customers that do not exist is one on `steps.N.payload.customerIds`) and nothing is saved.
  * - The approval class comes from the step type, never from the agent.
@@ -278,13 +322,21 @@ export type NewTask = {
  * - The preview each step shows is built here, from the checked payload.
  * Runs in the caller's `withTenant` transaction.
  */
-export async function createTask(tx: Tx, ctx: TenantContext, input: NewTask, opts: WriteOptions): Promise<{ taskId: string }> {
+export async function createTask(
+  tx: Tx,
+  ctx: TenantContext,
+  input: NewTask,
+  opts: WriteOptions & { allowInternalStepTypes?: boolean },
+): Promise<{ taskId: string }> {
   if (input.steps.length === 0) throw new AppError(400, 'A plan needs at least one step.', 'steps');
 
   const companyName = await companyNameOf(tx, ctx);
   const steps: NewStepRow[] = [];
   for (const [n, step] of input.steps.entries()) {
-    if (!isStepType(step.type)) throw new AppError(400, "That kind of step isn't supported.", `steps.${n}.type`);
+    // Only `rerunTask` passes allowInternalStepTypes: built-in steps (front_desk_*) are copied over
+    // from an expired plan. Every other caller, the API routes included, is refused them.
+    const allowed = opts.allowInternalStepTypes ? isStepType(step.type) : isUserCreatableStepType(step.type);
+    if (!allowed) throw new AppError(400, "That kind of step isn't supported.", `steps.${n}.type`);
     const checked = await checkPayload(tx, ctx, step.type, step.payload, companyName, `steps.${n}.payload`);
     steps.push({ type: step.type, approvalClass: stepTypes[step.type].approvalClass, ...checked });
   }
@@ -306,6 +358,7 @@ export async function createTask(tx: Tx, ctx: TenantContext, input: NewTask, opt
     },
     opts.now,
   );
+  await event(tx, ctx, taskId, 'created', input.createdBy ?? 'agent', { stepCount: steps.length }, opts.now);
   await audit(tx, ctx, {
     action: 'task.create',
     targetType: 'agent_task',
@@ -528,8 +581,21 @@ export async function approveTask(
     { status, ...(firstApproval && { approvedByUserId: ctx.userId, approvedAt: opts.now }) },
     opts.now,
   );
-  // A plan with nothing left to run is finished now; this records its minutes.
-  await refreshTask(tx, ctx, taskId, opts.now);
+  await event(
+    tx,
+    ctx,
+    taskId,
+    awaitingOwner.length > 0 ? 'partly_approved' : 'approved',
+    'user',
+    { approvedSteps: toEnqueue.length, totalSteps: steps.length },
+    opts.now,
+  );
+  // A plan with nothing left to run is finished now; this records its minutes. The task is already
+  // `done` here, so refreshTask sees no change and writes no event: the finish is recorded here.
+  const refreshed = await refreshTask(tx, ctx, taskId, opts.now);
+  if (status === 'done') {
+    await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved: refreshed?.minutesSaved ?? 0 }, opts.now);
+  }
 
   await audit(tx, ctx, {
     action: 'task.approve',
@@ -582,6 +648,7 @@ export async function declineTask(
     { status: 'declined', declinedByUserId: ctx.userId, declinedAt: opts.now, declineReason: reason },
     opts.now,
   );
+  await event(tx, ctx, taskId, 'declined', 'user', { skippedSteps: skipped.length }, opts.now);
   // What was approved before the decline may have finished already: its minutes still count.
   await refreshTask(tx, ctx, taskId, opts.now);
 
@@ -715,7 +782,10 @@ export async function rerunTask(tx: Tx, ctx: TenantContext, taskId: string, opts
   if (!task) return null;
   if (!isExpired(task, opts.now)) throw new AppError(409, RERUN_ONLY_EXPIRED);
   if ((await findRerunOf(tx, ctx, taskId)) !== null) throw new AppError(409, ALREADY_RERUN);
-  if (task.status === 'draft') await updateTask(tx, ctx, taskId, { status: 'expired' }, opts.now);
+  if (task.status === 'draft') {
+    await updateTask(tx, ctx, taskId, { status: 'expired' }, opts.now);
+    await event(tx, ctx, taskId, 'expired', 'system', {}, opts.now);
+  }
 
   const window = task.expiresAt === null ? null : task.expiresAt.getTime() - task.createdAt.getTime();
   const steps = await listSteps(tx, ctx, [taskId], { payload: true });
@@ -734,10 +804,12 @@ export async function rerunTask(tx: Tx, ctx: TenantContext, taskId: string, opts
         mode: task.mode,
         ...(window !== null && { expiresAt: new Date(opts.now.getTime() + window) }),
         rerunOfTaskId: taskId,
-        // createTask refuses a type this build does not know (400 on steps.N.type).
+        createdBy: 'user',
+        // Rerun passes allowInternalStepTypes so built-in steps (front_desk_*) copy over; a type this
+        // build does not know is still a 400 on steps.N.type.
         steps: steps.map((step) => ({ type: step.type as StepType, payload: step.payload })),
       },
-      opts,
+      { ...opts, allowInternalStepTypes: true },
     ));
   } catch (err) {
     // A copy that slipped past the check above (made by a path that did not take the lock).
@@ -759,14 +831,74 @@ export async function rerunTask(tx: Tx, ctx: TenantContext, taskId: string, opts
 // ---------------------------------------------------------------------------------------------
 // Following the steps
 
-/** Minutes of staff time the task's finished steps saved: each done step's own `minutesSaved`, added up and rounded. */
+/** Minutes of staff time the task's finished steps saved: the sum of their snapshots, rounded. */
 async function minutesSavedOf(tx: Tx, ctx: TenantContext, taskId: string): Promise<number> {
-  let total = 0;
-  for (const step of await listSteps(tx, ctx, [taskId], { payload: true })) {
-    if (step.status !== 'done' || !isStepType(step.type)) continue;
-    total += stepTypes[step.type].minutesSaved(step.payload, (step.result ?? {}) as StepResult);
+  return Math.round(await sumStepMinutesSaved(tx, ctx, taskId));
+}
+
+/**
+ * Records how a step's run ended, in the transaction that saved it: a done step gets its time-saved
+ * snapshot (units from its result, minutes per unit from the company's baselines as they are now)
+ * and every outcome its one event. A step still queued or running writes nothing; a failed or
+ * attention step gets no snapshot and so counts zero.
+ */
+async function recordOutcome(tx: Tx, ctx: TenantContext, row: StepRow, now: Date): Promise<void> {
+  if (row.status === 'done') {
+    if (!isStepType(row.type)) return;
+    const overrides = await loadBaselineOverrides(tx, ctx);
+    const m = stepMinutes(stepTypes[row.type] as never, row.payload as never, (row.result ?? {}) as StepResult, overrides);
+    await setStepSnapshot(
+      tx,
+      ctx,
+      row.id,
+      { baselineKey: m.baseline, units: m.units, minutesPerUnit: m.minutesPerUnit, minutesSaved: m.minutes },
+      now,
+    );
+    await event(tx, ctx, row.taskId, 'step_done', 'agent', { units: round2(m.units), minutes: round2(m.minutes) }, now, row.id);
+  } else if (row.status === 'failed') {
+    await event(tx, ctx, row.taskId, 'step_failed', 'agent', { attempts: row.attempts }, now, row.id);
+  } else if (row.status === 'needs_attention') {
+    await event(tx, ctx, row.taskId, 'step_attention', 'agent', { attempts: row.attempts }, now, row.id);
   }
-  return Math.round(total);
+}
+
+/**
+ * The runner's end of a run: saves how it ended (only if the run still holds the step's lease) and
+ * its snapshot and event in the same transaction. A stale run returns null and writes nothing.
+ */
+export async function completeClaimedStep(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  runSeq: number,
+  finish: StepFinish,
+  now: Date,
+): Promise<StepRow | null> {
+  const saved = await finishClaimedStep(tx, ctx, stepId, runSeq, finish, now);
+  if (!saved) return null;
+  await recordOutcome(tx, ctx, saved, now);
+  return saved;
+}
+
+/** The dispatcher's end of a parked step: the same as `completeClaimedStep`, for a step finished by its texts. */
+export async function completeParkedStep(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  finish: Parameters<typeof finishParkedStep>[3],
+  now: Date,
+): Promise<StepRow | null> {
+  const saved = await finishParkedStep(tx, ctx, stepId, finish, now);
+  if (!saved) return null;
+  await recordOutcome(tx, ctx, saved, now);
+  return saved;
+}
+
+/** The expiry job's write: drafts past their time become `expired`, each with its one event. Returns their ids. */
+export async function expireOverdueTasks(tx: Tx, ctx: TenantContext, now: Date): Promise<string[]> {
+  const ids = await expireOverdueDrafts(tx, ctx, now);
+  for (const id of ids) await event(tx, ctx, id, 'expired', 'system', {}, now);
+  return ids;
 }
 
 /**
@@ -800,7 +932,12 @@ export async function refreshTask(tx: Tx, ctx: TenantContext, taskId: string, no
 
   const status: TaskStatus = any(['needs_attention']) ? 'needs_attention' : any(['failed']) ? 'partly_done' : 'done';
   const minutesSaved = await minutesSavedOf(tx, ctx, taskId);
-  return updateTask(tx, ctx, taskId, { ...(!declined && { status }), minutesSaved }, now);
+  const updated = await updateTask(tx, ctx, taskId, { ...(!declined && { status }), minutesSaved }, now);
+  // One `finished` event per real move into a final status; a declined plan's status does not move.
+  // Only a final status is finished: needs_attention is not, and a status already written is not written twice.
+  const final = status !== 'needs_attention';
+  if (!declined && final && task.status !== status) await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved }, now);
+  return updated;
 }
 
 // ---------------------------------------------------------------------------------------------

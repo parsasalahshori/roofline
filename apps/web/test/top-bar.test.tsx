@@ -31,6 +31,14 @@ describe('agents working', () => {
     expect(text).toHaveAttribute('data-state', working > 0 ? 'working' : 'quiet');
   });
 
+  it('is a link to the activity feed', async () => {
+    api = stubApi({ ...SHELL_ROUTES, 'GET /api/tasks/summary': () => ({ body: { working: 2 } }) });
+    renderAt(<AgentsWorking />);
+    const text = await screen.findByText(shell.agentsWorking(2));
+    expect(text).toHaveAttribute('data-state', 'working');
+    expect(screen.getByRole('link', { name: shell.agentsWorking(2) })).toHaveAttribute('href', '/agents/feed');
+  });
+
   it('shows nothing when the count cannot be loaded', async () => {
     api = stubApi({
       ...SHELL_ROUTES,

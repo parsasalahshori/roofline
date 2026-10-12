@@ -1,6 +1,7 @@
 /*
  * Agents screen (A1) display metrics: success rate and the "about ... hours" / "≈ $..." labels.
- * Pure functions: no DB, no clock. Every label is shown with "about" next to it by the caller.
+ * Pure functions: no DB, no clock. `hoursLabel` already says "about"; `moneyLabel` starts with "≈". The caller
+ * adds "(estimate)" next to every time or money figure (spec 3.3).
  */
 
 /** A success rate needs at least this many runs; below it the rate is not shown. */

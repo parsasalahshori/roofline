@@ -1,6 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
 import {
-  finishParkedStep,
   getTask,
   listParkedSteps,
   lockNextDueText,
@@ -17,7 +16,7 @@ import {
 import type { AppDeps } from '../app.ts';
 import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
-import { refreshTask } from '../tasks/service.ts';
+import { completeParkedStep, refreshTask } from '../tasks/service.ts';
 import { type BuiltGateRequest, buildGateRequest } from './gate-request.ts';
 import { batchResult, QUEUED_TOO_LONG_MS, sendQueuedText, textStateFor, UNCONFIRMED } from './outbound.ts';
 
@@ -175,13 +174,13 @@ async function settleParkedStep(
     if (counts.scheduled > 0 || counts.queued > 0) {
       if (isDeepStrictEqual(result, step.result)) return false;
       await getTask(tx, ctx, step.taskId, { forUpdate: true });
-      await finishParkedStep(tx, ctx, step.id, { status: 'running', result }, now);
+      await completeParkedStep(tx, ctx, step.id, { status: 'running', result }, now);
       return false;
     }
 
     const someRefused = counts.retryableFailed > 0;
     await getTask(tx, ctx, step.taskId, { forUpdate: true });
-    const saved = await finishParkedStep(
+    const saved = await completeParkedStep(
       tx,
       ctx,
       step.id,

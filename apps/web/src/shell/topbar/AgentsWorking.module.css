@@ -6,6 +6,11 @@
   color: var(--text-muted);
   font-size: var(--font-size-body);
   white-space: nowrap;
+  text-decoration: none;
+}
+
+.agents:hover {
+  color: var(--text);
 }
 
 /* Green marks that work is going on; the text itself never turns green (white text on it fails contrast) */

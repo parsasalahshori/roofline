@@ -19,6 +19,8 @@ export * from './csv.ts';
 export * from './agents.ts';
 export * from './metrics.ts';
 export * from './agent-rules.ts';
+export * from './agent-periods.ts';
+export * from './agents-api.ts';
 // D1 skeleton (Task 1): one line per new shared file; later D1 tasks fill the files in.
 export * from './front-desk.ts';
 export * from './front-desk-rules.ts';
