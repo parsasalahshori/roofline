@@ -22,6 +22,11 @@ const BASE_ENV = {
   DATABASE_URL_SYSTEM: 'postgres://app_system:pw@localhost:5432/roofline',
   ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
   TRUST_PROXY: '1',
+  // Required in production since E1 (signed proposals are stored in R2).
+  R2_ACCOUNT_ID: 'acct',
+  R2_ACCESS_KEY_ID: 'key-id',
+  R2_SECRET_ACCESS_KEY: 'key-secret',
+  R2_BUCKET: 'proposals',
 } satisfies Record<string, string>;
 
 function recorder(): SmokeIo & { out: string[]; err: string[] } {
