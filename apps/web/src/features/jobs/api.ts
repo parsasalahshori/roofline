@@ -205,6 +205,7 @@ export function useMoveJob() {
       void queryClient.invalidateQueries({ queryKey: ['jobs-board'] });
       void queryClient.invalidateQueries({ queryKey: ['job', input.jobId] });
       void queryClient.invalidateQueries({ queryKey: ['timeline'] });
+      void queryClient.invalidateQueries({ queryKey: ['customers'] });
     },
   });
 }
