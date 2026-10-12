@@ -1,5 +1,5 @@
 import { and, asc, eq, gt, gte, isNotNull, lte, sql } from 'drizzle-orm';
-import { type BaselineKey, isEditableBaselineKey } from '@roofline/shared';
+import { type BaselineKey, TIME_BASELINES, isEditableBaselineKey } from '@roofline/shared';
 import { agentTasks, agentTaskSteps, timeBaselines, timeRecounts } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { sumStepMinutesSaved } from './tasks.ts';
@@ -35,7 +35,11 @@ export type RecountStep = {
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
 
-/** Upserts a number, deletes the row for null. Keys are already validated. Stamps updatedAt = now. */
+/**
+ * Upserts a number. A null resets the key to its default: app_tenant has no DELETE on time_baselines
+ * (migration 0022), so the reset writes the default minutes, which counts exactly like no override.
+ * Keys are already validated. Stamps updatedAt = now.
+ */
 export async function setBaselineOverrides(
   tx: Tx,
   ctx: TenantContext,
@@ -44,17 +48,14 @@ export async function setBaselineOverrides(
 ): Promise<void> {
   for (const [key, value] of Object.entries(changes)) {
     if (value === undefined) continue;
-    if (value === null) {
-      await tx.delete(timeBaselines).where(and(eq(timeBaselines.companyId, ctx.companyId), eq(timeBaselines.key, key)));
-    } else {
-      await tx
-        .insert(timeBaselines)
-        .values({ companyId: ctx.companyId, key, minutesPerUnit: value, createdAt: now, updatedAt: now })
-        .onConflictDoUpdate({
-          target: [timeBaselines.companyId, timeBaselines.key],
-          set: { minutesPerUnit: value, updatedAt: now },
-        });
-    }
+    const minutes = value === null ? TIME_BASELINES[key as BaselineKey].minutes : value;
+    await tx
+      .insert(timeBaselines)
+      .values({ companyId: ctx.companyId, key, minutesPerUnit: minutes, createdAt: now, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [timeBaselines.companyId, timeBaselines.key],
+        set: { minutesPerUnit: minutes, updatedAt: now },
+      });
   }
 }
 

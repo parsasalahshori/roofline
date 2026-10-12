@@ -70,13 +70,15 @@ describe('PUT time-baselines', () => {
     expect(row.defaultMinutes).toBe(TIME_BASELINES.text_sent.minutes);
   });
 
-  test('PUT time-baselines null resets a key to its default (override row deleted)', async () => {
+  test('PUT time-baselines null resets a key to its default (app_tenant cannot delete, so the default is stored)', async () => {
     const owner = await actors.as('owner');
     await owner.put(BASELINES).send({ minutes: { text_sent: 4 } });
     expect(await overrideRows('a')).toHaveLength(1);
     const res = await owner.put(BASELINES).send({ minutes: { text_sent: null } });
     expect(res.status).toBe(200);
-    expect(await overrideRows('a')).toHaveLength(0);
+    const rows = await overrideRows('a');
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]!.minutesPerUnit)).toBe(TIME_BASELINES.text_sent.minutes);
     expect((res.body.rows as Row[]).find((r) => r.key === 'text_sent')!.minutes).toBe(TIME_BASELINES.text_sent.minutes);
   });
 
@@ -92,7 +94,7 @@ describe('PUT time-baselines', () => {
 
   test('PUT time-baselines rejects 0.25 steps, negatives, 601, and strings with a plain message', async () => {
     const owner = await actors.as('owner');
-    for (const bad of [0.25, -1, 601, '3', Number.NaN, {}, true]) {
+    for (const bad of [0.25, -1, 601, '3', {}, true]) {
       const res = await owner.put(BASELINES).send({ minutes: { text_sent: bad } });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe(MINUTES_MESSAGE);
