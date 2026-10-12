@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { audit, updateTask, withTenant } from '@roofline/db';
+import { audit, withTenant } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can, type Member } from '../permissions.ts';
@@ -12,6 +12,7 @@ import {
   declineTask,
   editStep,
   getApproval,
+  linkRerun,
   listApprovals,
   prepareRerun,
   rerunTask,
@@ -251,7 +252,7 @@ export function approvalRoutes(deps: AppDeps, logError: (err: unknown, path: str
       if (drafted === null) throw new AppError(409, MESSAGES.stormScoutPaused);
       const fresh = await withTenant(pools, ctx, async (tx) => {
         // The link a copy has, so the old plan cannot be run again twice and the card shows where it came from.
-        await updateTask(tx, ctx, drafted.taskId, { rerunOfTaskId: taskId }, opts.now);
+        await linkRerun(tx, ctx, drafted.taskId, taskId, opts.now);
         await audit(tx, ctx, {
           action: 'task.rerun',
           targetType: 'agent_task',

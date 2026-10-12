@@ -1065,3 +1065,8 @@ export async function prepareRerun(tx: Tx, ctx: TenantContext, taskId: string, o
   }
   return { kind: 'storm', companyStormId };
 }
+
+/** Records on a storm plan's re-draft which plan it came from, as a copy has, so the old plan is run again once. */
+export async function linkRerun(tx: Tx, ctx: TenantContext, newTaskId: string, fromTaskId: string, now: Date): Promise<void> {
+  await updateTask(tx, ctx, newTaskId, { rerunOfTaskId: fromTaskId }, now);
+}
