@@ -181,7 +181,13 @@ export const textingRegistrations = pgTable(
     lastCheckedAt: tstz('last_checked_at'),
     ...timestamps(),
   },
-  (t) => [enumCheck('texting_registrations', 'campaign_status', t.campaignStatus, CAMPAIGN_STATUSES)],
+  (t) => [
+    enumCheck('texting_registrations', 'campaign_status', t.campaignStatus, CAMPAIGN_STATUSES),
+    /** One registration per messaging service (the parked F3 index, Ruling AO). Null is not counted. */
+    uniqueIndex('texting_registrations_messaging_service_sid_uniq')
+      .on(t.messagingServiceSid)
+      .where(sql`${t.messagingServiceSid} is not null`),
+  ],
 );
 
 /** Provider webhook deliveries already handled, so repeated deliveries are ignored. */

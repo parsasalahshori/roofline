@@ -17,6 +17,7 @@ export { type ScheduledJob, SCHEDULES, startWorker, type WorkerOptions } from '.
 export { ConsoleMailer, type MailMessage, type Mailer, PostmarkMailer } from './mailer.ts';
 export {
   type BillingProvider,
+  BillingRefusedError,
   BillingUnavailableError,
   createBillingProvider,
 } from './providers/billing.ts';

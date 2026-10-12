@@ -4,6 +4,7 @@ import { useMe, useSignOut, useSwitchCompany } from '../../api/hooks.ts';
 import type { Account } from '../../api/types.ts';
 import { common } from '../../copy/common.ts';
 import { shell } from '../../copy/shell.ts';
+import { SetupRing } from '../../features/setup/SetupRing.tsx';
 import { useIsPhone } from '../useIsPhone.ts';
 import styles from './UserMenu.module.css';
 
@@ -45,6 +46,7 @@ export function UserMenu() {
         <Avatar name={account.user.name} size={24} />
         <span className={styles.name}>{account.user.name}</span>
       </Button>
+      <SetupRing />
       {open && !phone ? (
         <div ref={popoverRef} tabIndex={-1} className={styles.popover}>
           <Card as="section" padded={false} aria-label={shell.menuLabel}>

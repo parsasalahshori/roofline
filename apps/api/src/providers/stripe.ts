@@ -1,12 +1,28 @@
 import Stripe from 'stripe';
 import type { Config } from '../config.ts';
-import { BillingUnavailableError, type BillingProvider } from './billing.ts';
+import { BillingRefusedError, BillingUnavailableError, type BillingProvider } from './billing.ts';
 
 /** The three price kinds a plan has, told apart by the suffix of the lookup key. */
 const KIND_SUFFIXES = ['_monthly', '_ai_call_minute', '_sms_segment'] as const;
 
-const UNAVAILABLE = "Stripe didn't answer.";
-const REFUSED = 'Stripe refused the request.';
+export const STRIPE_UNAVAILABLE = "Stripe didn't answer.";
+export const STRIPE_REFUSED = 'Stripe refused the request.';
+
+/**
+ * Maps a thrown value from the Stripe SDK. A connection failure, a 5xx, a 429 or a 409 (an
+ * idempotency key still in use by a concurrent request, so a retry succeeds) is unavailable; any
+ * other Stripe error is refused. Stripe's own message is never read. Non-Stripe errors come back
+ * unchanged, so real bugs are not hidden.
+ */
+export function stripeFailure(err: unknown): unknown {
+  if (err instanceof Stripe.errors.StripeConnectionError) return new BillingUnavailableError(STRIPE_UNAVAILABLE);
+  if (!(err instanceof Stripe.errors.StripeError)) return err;
+  const status = err.statusCode;
+  if (status !== undefined && (status >= 500 || status === 429 || status === 409)) {
+    return new BillingUnavailableError(STRIPE_UNAVAILABLE);
+  }
+  return new BillingRefusedError(STRIPE_REFUSED);
+}
 
 /** Stripe through its SDK, with a fetch we can record in tests. No provider message is kept. */
 export class StripeBillingProvider implements BillingProvider {
@@ -67,7 +83,7 @@ export class StripeBillingProvider implements BillingProvider {
         cancel_url: i.cancelUrl,
       }),
     );
-    if (!session.url) throw new Error(REFUSED);
+    if (!session.url) throw new BillingRefusedError(STRIPE_REFUSED);
     return { url: session.url };
   }
 
@@ -89,6 +105,12 @@ export class StripeBillingProvider implements BillingProvider {
       const index = i.priceLookupKeys.findIndex((k) => k.endsWith(suffix));
       if (index < 0) continue;
       items.push({ id: item.id, price: newIds[index] });
+    }
+    // One item per kind, or nothing: never send empty or partial items to Stripe.
+    if (items.length !== KIND_SUFFIXES.length) {
+      throw new BillingRefusedError(
+        "This subscription's prices are out of date; run sync:stripe-plans, then change the plan in the Stripe portal.",
+      );
     }
     await this.call(() =>
       this.stripe.subscriptions.update(i.subscriptionId, {
@@ -143,28 +165,19 @@ export class StripeBillingProvider implements BillingProvider {
     const ids: string[] = [];
     for (const key of keys) {
       const id = this.prices.get(key);
-      if (!id) throw new Error('A Stripe price is missing; run sync:stripe-plans.');
+      if (!id) throw new BillingRefusedError('A Stripe price is missing; run sync:stripe-plans.');
       ids.push(id);
     }
     return ids;
   }
 
-  /** Runs one SDK call. A connection failure, 5xx or 429 is "unavailable"; anything else is refused. */
+  /** Runs one SDK call, with its Stripe failure mapped by `stripeFailure`. */
   private async call<T>(fn: () => Promise<T>): Promise<T> {
-    let failure: unknown;
     try {
       return await fn();
     } catch (err) {
-      failure = err;
+      throw stripeFailure(err);
     }
-    if (failure instanceof Stripe.errors.StripeConnectionError) {
-      throw new BillingUnavailableError(UNAVAILABLE);
-    }
-    const status = (failure as { statusCode?: unknown } | null)?.statusCode;
-    if (typeof status === 'number' && (status >= 500 || status === 429)) {
-      throw new BillingUnavailableError(UNAVAILABLE);
-    }
-    throw new Error(REFUSED);
   }
 }
 

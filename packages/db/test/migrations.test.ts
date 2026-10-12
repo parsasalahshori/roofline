@@ -100,6 +100,32 @@ describe('schema', () => {
     }
   });
 
+  test('C1 tables are tenant tables with RLS forced', async () => {
+    const c1Tables = [
+      'appointments',
+      'calendar_connections',
+      'calendar_event_links',
+      'calendar_busy_blocks',
+      'member_schedules',
+      'pricebooks',
+      'quotes',
+      'quote_counters',
+    ] as const;
+    expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...c1Tables]));
+    for (const table of c1Tables) {
+      const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+        `select relrowsecurity, relforcerowsecurity from pg_class where oid = $1::regclass`,
+        [`public.${table}`],
+      );
+      expect(cls, table).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+      const policies = await ownerQuery<{ policyname: string }>(
+        `select policyname from pg_policies where schemaname = 'public' and tablename = $1`,
+        [table],
+      );
+      expect(policies.map((p) => p.policyname), table).toContain('tenant_isolation');
+    }
+  });
+
   test('running migrate a second time changes nothing', async () => {
     const before = await ownerQuery<{ n: number }>(`select count(*)::int as n from drizzle.__drizzle_migrations`);
     await migrate(urls.owner);
@@ -434,6 +460,101 @@ describe('constraints', () => {
       const err = await rejected(sql);
       expect(err.code, sql).toBe('23514');
     }
+  });
+});
+
+describe('C1 constraints', () => {
+  /** One customer, property and job in a company, for rows that link to a job. */
+  async function makeJob(companyId: string, tag: string): Promise<string> {
+    const [customer] = await ownerQuery<{ id: string }>(
+      `insert into customers (company_id, display_name) values ($1, $2) returning id`,
+      [companyId, `Customer ${tag}`],
+    );
+    const [property] = await ownerQuery<{ id: string }>(
+      `insert into properties (company_id, customer_id, address_line, city, state, zip, address_key)
+       values ($1, $2, '1 Main St', 'Omaha', 'NE', '68102', $3) returning id`,
+      [companyId, customer!.id, `${tag} main st|68102`],
+    );
+    const [job] = await ownerQuery<{ id: string }>(
+      `insert into jobs (company_id, customer_id, property_id) values ($1, $2, $3) returning id`,
+      [companyId, customer!.id, property!.id],
+    );
+    return job!.id;
+  }
+
+  test('an appointment cannot end before it starts', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const err = await rejected(
+      `insert into appointments (company_id, kind, starts_at, ends_at)
+       values ($1, 'inspection', now() + interval '2 hours', now() + interval '1 hour')`,
+      [s.a.companyId],
+    );
+    expect(err.code).toBe('23514');
+    await ownerQuery(
+      `insert into appointments (company_id, kind, starts_at, ends_at)
+       values ($1, 'inspection', now() + interval '1 hour', now() + interval '2 hours')`,
+      [s.a.companyId],
+    );
+  });
+
+  test('one calendar connection per person per company', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into calendar_connections (company_id, user_id, provider, encrypted_credentials)
+      values ($1, $2, 'google', $3)`;
+    const credentials = Buffer.from('encrypted-placeholder');
+    await ownerQuery(insert, [s.a.companyId, s.a.rep.userId, credentials]);
+    const err = await rejected(insert, [s.a.companyId, s.a.rep.userId, credentials]);
+    expect(err.code).toBe('23505');
+    // A second person in the same company may connect their own calendar.
+    await ownerQuery(insert, [s.a.companyId, s.a.otherRep.userId, credentials]);
+  });
+
+  test('quote numbers are unique per company', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const jobA = await makeJob(s.a.companyId, 'a');
+    const jobB = await makeJob(s.b.companyId, 'b');
+    const insert = `insert into quotes (company_id, job_id, number, measurement, scope, prices, calculation, valid_until)
+      values ($1, $2, 'Q-0001', '{}', '{}', '{}', '{}', '2026-12-31')`;
+    await ownerQuery(insert, [s.a.companyId, jobA]);
+    const err = await rejected(insert, [s.a.companyId, jobA]);
+    expect(err.code).toBe('23505');
+    // The same number is free in another company.
+    await ownerQuery(insert, [s.b.companyId, jobB]);
+  });
+
+  test('stuck_after_days accepts 3 to 90', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const update = `update company_settings set stuck_after_days = $2 where company_id = $1`;
+    const err = await rejected(update, [s.a.companyId, 2]);
+    expect(err.code).toBe('23514');
+    for (const days of [3, 90]) {
+      await ownerQuery(update, [s.a.companyId, days]);
+    }
+    expect((await rejected(update, [s.a.companyId, 91])).code).toBe('23514');
+    expect(await ownerQuery(`select stuck_after_days from company_settings where company_id = $1`, [s.a.companyId])).toEqual(
+      [{ stuck_after_days: 90 }],
+    );
+  });
+
+  test('texting_registrations.messaging_service_sid is unique when set', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const sid = 'MG' + 'a'.repeat(32);
+    const set = `update texting_registrations set messaging_service_sid = $2 where company_id = $1`;
+    await ownerQuery(set, [s.a.companyId, sid]);
+    const err = await rejected(set, [s.b.companyId, sid]);
+    expect(err.code).toBe('23505');
+
+    // Unset values never collide: two registrations may both have no messaging service SID.
+    await ownerQuery(
+      `update texting_registrations set messaging_service_sid = null where company_id = any($1::uuid[])`,
+      [[s.a.companyId, s.b.companyId]],
+    );
+    const nulls = await ownerQuery<{ n: number }>(
+      `select count(*)::int as n from texting_registrations
+        where company_id = any($1::uuid[]) and messaging_service_sid is null`,
+      [[s.a.companyId, s.b.companyId]],
+    );
+    expect(nulls).toEqual([{ n: 2 }]);
   });
 });
 

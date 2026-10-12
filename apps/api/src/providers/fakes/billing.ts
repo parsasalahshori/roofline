@@ -1,4 +1,5 @@
 import {
+  BillingRefusedError,
   BillingUnavailableError,
   type BillingProvider,
 } from '../billing.ts';
@@ -15,6 +16,7 @@ export class FakeBillingProvider implements BillingProvider {
   readonly meterEvents: Input<'reportMeterEvent'>[] = [];
   readonly invoiceItems: (Input<'createInvoiceItem'> & { invoiceItemId: string })[] = [];
   private failures = 0;
+  private failKind: 'unavailable' | 'refused' = 'unavailable';
   private customerByCompany = new Map<string, string>();
   private customerSeq = 0;
   private checkoutSeq = 0;
@@ -24,7 +26,8 @@ export class FakeBillingProvider implements BillingProvider {
   private invoiceByKey = new Map<string, string>();
 
   /** Makes the next `n` calls throw BillingUnavailableError. */
-  failNext(n = 1): void {
+  failNext(n = 1, kind: 'unavailable' | 'refused' = 'unavailable'): void {
+    this.failKind = kind;
     this.failures += n;
   }
 
@@ -32,6 +35,7 @@ export class FakeBillingProvider implements BillingProvider {
     this.calls.push({ method, args });
     if (this.failures > 0) {
       this.failures--;
+      if (this.failKind === 'refused') throw new BillingRefusedError('Fake billing refused.');
       throw new BillingUnavailableError('Fake billing is unavailable.');
     }
   }

@@ -6,11 +6,16 @@ export type BillingUpdate = {
   eventCreated: Date;
   set: {
     status?: CompanyStatus;
-    stripeSubscriptionId?: string;
+    stripeSubscriptionId?: string | null;
     planKey?: string;
     billingPeriodStart?: Date;
   };
   onlyIfPastDue?: boolean;
+  /**
+   * Apply only while the company's stored subscription is this one (or none). A deleted old
+   * subscription must not cancel a company that has already subscribed again.
+   */
+  onlyIfSubscription?: string;
 };
 
 type StripeEventLike = {
@@ -106,8 +111,15 @@ export function billingUpdateFor(event: StripeEventLike): BillingUpdate | null {
     case 'customer.subscription.created':
     case 'customer.subscription.updated':
       return { ...base, set: subscriptionUpdate(object) };
-    case 'customer.subscription.deleted':
-      return { ...base, set: { status: 'canceled' } };
+    case 'customer.subscription.deleted': {
+      const subscriptionId = str(object.id);
+      if (subscriptionId === undefined) return null;
+      return {
+        ...base,
+        set: { status: 'canceled', stripeSubscriptionId: null },
+        onlyIfSubscription: subscriptionId,
+      };
+    }
     case 'invoice.payment_failed':
       return { ...base, set: { status: 'past_due' } };
     case 'invoice.paid':

@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import { priceLookupKeys } from '@roofline/shared';
 import type { Config } from '../src/config.ts';
-import { BillingUnavailableError } from '../src/providers/billing.ts';
-import { StripeBillingProvider, stripeFor } from '../src/providers/stripe.ts';
+import { BillingRefusedError, BillingUnavailableError } from '../src/providers/billing.ts';
+import {
+  STRIPE_REFUSED,
+  StripeBillingProvider,
+  stripeFailure,
+  stripeFor,
+} from '../src/providers/stripe.ts';
 
 type Recorded = {
   method: string;
@@ -219,7 +224,22 @@ describe('StripeBillingProvider', () => {
     expect(failure).toBeInstanceOf(BillingUnavailableError);
   });
 
-  test('a 400 becomes a generic error', async () => {
+  test('a 409 (idempotency key in use) becomes BillingUnavailableError', async () => {
+    const rec = makeRecordingFetch((method, path) =>
+      method === 'POST' && path === '/v1/customers'
+        ? jsonResponse({ error: { message: 'key in use', type: 'idempotency_error' } }, 409)
+        : null,
+    );
+    const provider = providerWith(rec.fetch);
+
+    const failure = await provider
+      .ensureCustomer({ companyId: 'co_1', name: 'Acme', email: null, existingCustomerId: null })
+      .catch((err: unknown) => err);
+    expect(failure).toBeInstanceOf(BillingUnavailableError);
+    expect((failure as Error).message).toBe("Stripe didn't answer.");
+  });
+
+  test('a 400 becomes BillingRefusedError with the plain message, not Stripe text', async () => {
     const rec = makeRecordingFetch((method, path) =>
       method === 'POST' && path === '/v1/customers'
         ? jsonResponse({ error: { message: 'secret provider words', type: 'invalid_request_error' } }, 400)
@@ -230,10 +250,84 @@ describe('StripeBillingProvider', () => {
     const failure = await provider
       .ensureCustomer({ companyId: 'co_1', name: 'Acme', email: null, existingCustomerId: null })
       .catch((err: unknown) => err);
-    expect(failure).toBeInstanceOf(Error);
+    expect(failure).toBeInstanceOf(BillingRefusedError);
     expect(failure).not.toBeInstanceOf(BillingUnavailableError);
+    expect((failure as Error).message).toBe(STRIPE_REFUSED);
     expect((failure as Error).message).toBe('Stripe refused the request.');
     expect((failure as Error).message).not.toContain('secret provider words');
+  });
+
+  test('a fetch that fails without an answer stays BillingUnavailableError', async () => {
+    const failingFetch = (async () => {
+      throw new TypeError('socket hang up');
+    }) as unknown as typeof fetch;
+    const provider = providerWith(failingFetch);
+
+    const failure = await provider
+      .ensureCustomer({ companyId: 'co_1', name: 'Acme', email: null, existingCustomerId: null })
+      .catch((err: unknown) => err);
+    expect(failure).toBeInstanceOf(BillingUnavailableError);
+    expect((failure as Error).message).toBe("Stripe didn't answer.");
+  });
+
+  test('a checkout session without a url is BillingRefusedError', async () => {
+    const rec = makeRecordingFetch((method, path) =>
+      method === 'POST' && path === '/v1/checkout/sessions' ? jsonResponse({ id: 'cs_2', url: null }) : null,
+    );
+    const provider = providerWith(rec.fetch);
+
+    const failure = await provider
+      .createCheckout({
+        ...checkoutBase,
+        priceLookupKeys: [
+          priceLookupKeys('starter').monthly,
+          priceLookupKeys('starter').ai_call_minute,
+          priceLookupKeys('starter').sms_segment,
+        ],
+        trialEnd: null,
+      })
+      .catch((err: unknown) => err);
+    expect(failure).toBeInstanceOf(BillingRefusedError);
+    expect((failure as Error).message).toBe(STRIPE_REFUSED);
+  });
+
+  test('changePlan with items that have no lookup key is refused before any update', async () => {
+    const rec = makeRecordingFetch((method, path) =>
+      method === 'GET' && path === '/v1/subscriptions/sub_1'
+        ? jsonResponse({
+            id: 'sub_1',
+            object: 'subscription',
+            items: {
+              object: 'list',
+              has_more: false,
+              data: [
+                { id: 'si_1', object: 'subscription_item', price: { id: 'price_old_m', lookup_key: null } },
+                { id: 'si_2', object: 'subscription_item', price: { id: 'price_old_ai', lookup_key: null } },
+                { id: 'si_3', object: 'subscription_item', price: { id: 'price_old_sms', lookup_key: null } },
+              ],
+            },
+          })
+        : null,
+    );
+    const provider = providerWith(rec.fetch);
+
+    const failure = await provider
+      .changePlan({
+        subscriptionId: 'sub_1',
+        planKey: 'starter',
+        priceLookupKeys: [
+          priceLookupKeys('starter').monthly,
+          priceLookupKeys('starter').ai_call_minute,
+          priceLookupKeys('starter').sms_segment,
+        ],
+      })
+      .catch((err: unknown) => err);
+    expect(failure).toBeInstanceOf(BillingRefusedError);
+    expect((failure as Error).message).toBe(
+      "This subscription's prices are out of date; run sync:stripe-plans, then change the plan in the Stripe portal.",
+    );
+    const updates = rec.calls.filter((c) => c.method === 'POST' && c.url.includes('/v1/subscriptions/sub_1'));
+    expect(updates).toHaveLength(0);
   });
 
   test('the price list is fetched once for two checkouts', async () => {
@@ -253,6 +347,13 @@ describe('StripeBillingProvider', () => {
 
     const priceCalls = rec.calls.filter((c) => c.method === 'GET' && c.url.includes('/v1/prices'));
     expect(priceCalls).toHaveLength(1);
+  });
+});
+
+describe('stripeFailure', () => {
+  test('a non-Stripe error comes back as the same object', () => {
+    const err = new TypeError('x');
+    expect(stripeFailure(err)).toBe(err);
   });
 });
 
