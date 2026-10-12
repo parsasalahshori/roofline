@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { candidateStormsForCompany, findCompanyStorm, maxInInArea, upsertCompanyStorm } from '../src/repos/company-storms.ts';
@@ -44,11 +44,14 @@ async function companyStormId(tx: Tx, stormId: string): Promise<string> {
   return companyStorm.id;
 }
 
-async function hitRows(companyStormIdValue: string) {
-  return q(
-    `select property_id, customer_id, hail_in::float8 as hail_in from storm_hits where company_storm_id = $1 order by hail_in desc`,
-    [companyStormIdValue],
-  );
+/** Reads hit rows. Pass the open transaction to see its uncommitted writes (the owner pool cannot). */
+async function hitRows(companyStormIdValue: string, tx?: Tx) {
+  const text = `select property_id, customer_id, hail_in::float8 as hail_in from storm_hits where company_storm_id = $1 order by hail_in desc`;
+  if (!tx) return q(text, [companyStormIdValue]);
+  const result = await tx.execute(sql`
+    select property_id, customer_id, hail_in::float8 as hail_in from storm_hits
+    where company_storm_id = ${companyStormIdValue}::uuid order by hail_in desc`);
+  return result.rows as Array<Record<string, unknown>>;
 }
 
 beforeAll(async () => {
@@ -153,7 +156,7 @@ describe('storm match repos', () => {
     await asCompany(seed.a.companyId, async (tx) => {
       const csId = await companyStormId(tx, storm);
       expect(await refreshHits(tx, csId, storm, 1.0)).toEqual({ customersHit: 2 });
-      const rows = await hitRows(csId);
+      const rows = await hitRows(csId, tx);
       expect(rows.map((r) => [r.property_id, r.hail_in])).toEqual([
         [core.propertyId, 1.5],
         [middle.propertyId, 1.0],
@@ -162,7 +165,7 @@ describe('storm match repos', () => {
     await asCompany(seed.a.companyId, async (tx) => {
       const cs = (await findCompanyStorm(tx, storm))!;
       expect(await refreshHits(tx, cs.id, storm, 0.75)).toEqual({ customersHit: 3 });
-      const rows = await hitRows(cs.id);
+      const rows = await hitRows(cs.id, tx);
       expect(rows).toHaveLength(3);
       expect(rows.find((r) => r.property_id === edge.propertyId)?.hail_in).toBe(0.75);
       expect(await countCustomersHit(tx, storm, 0.75)).toBe(3);
@@ -178,7 +181,7 @@ describe('storm match repos', () => {
     await asCompany(seed.a.companyId, async (tx) => {
       const csId = await companyStormId(tx, storm);
       expect(await refreshHits(tx, csId, storm, 1.0)).toEqual({ customersHit: 1 });
-      const rows = await hitRows(csId);
+      const rows = await hitRows(csId, tx);
       expect(rows).toHaveLength(2);
       expect(rows.filter((r) => r.customer_id === null)).toHaveLength(1);
     });
