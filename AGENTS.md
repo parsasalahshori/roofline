@@ -87,6 +87,17 @@ entries' `when` (edit the journal; do not regenerate). Since A1 T3, every `StepT
 with `userCreatable`, `baseline` and `units`, and has no `minutesSaved`; `withMinutesSaved` is gone. E1's
 `send_proposal`/`order_exact_report` and all S1 step types must use that shape. A1 fixes E1's two step types when it merges e1-estimator.
 
+**Ruling BA (integration pass 2 fixes; each is done by whoever does the merge named):**
+- Step types: write them as plain `const x: StepTypeDef<P> = {...}`; tests read `stepMinutes(def, p, result).minutes`.
+  G1 converts its four at its a1-agents merge, and E1 and S1 fix their tests at theirs.
+- `JOB_SOURCES` gains `front_desk` (D1). When D1 merges c1-crm, add `front_desk: 'Front Desk'` to the
+  `sourceNames` map in `create.ts` and to the `source` map in `jobs.ts`. C1 hides it from NewJob's
+  `sourceOptions` and keeps it in the board filter.
+- Setup checklist counts and shell tab/app counts in tests: whoever merges a shipping feature in updates the tests
+  of the other track (E1, D1 and S1 recount the setup "Coming with" lines when they ship their setup items).
+- Journal `when` (Ruling AY): S1's 0017/0018 are newer than 0019-0024, so wherever s1-storm combines with D1/A1/G1,
+  raise 0019+ above 0018. The controller normalizes every `when` to strictly increasing at the launch merge.
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the
