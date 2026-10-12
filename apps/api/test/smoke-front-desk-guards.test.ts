@@ -16,6 +16,7 @@ const SECRET = 'twilio-secret-that-must-not-print';
 
 const BASE_ENV = {
   NODE_ENV: 'production',
+  TRUST_PROXY: '1',
   APP_ORIGIN: 'https://app.roofline.test',
   PUBLIC_BASE_URL: 'https://app.roofline.test',
   DATABASE_URL_TENANT: 'postgres://app_tenant:pw@localhost:5432/roofline',

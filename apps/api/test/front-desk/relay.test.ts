@@ -177,13 +177,14 @@ describe('relay websocket server', () => {
     await ok.closed;
   });
 
-  test('a bad token closes 1008', async () => {
+  test('a bad token (right shape, wrong MAC) is denied after setup', async () => {
     const r = await rig();
-    const c2 = await r.open(`${Date.now() + 100000}.${'0'.repeat(64)}`);
-    expect(await c2.closed).toBe(1008);
+    const flipped = r.token.slice(0, -1) + (r.token.endsWith('0') ? '1' : '0');
+    const c2 = await r.open(flipped);
+    expect(await c2.closed).toBe(1006);
   });
 
-  test('an expired token closes 1008', async () => {
+  test('an expired token is refused at the upgrade', async () => {
     const r = await rig();
     r.t.clock.advance(11 * 60 * 1000);
     expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': r.sign(r.token) })).toBe(401);
@@ -222,22 +223,22 @@ describe('relay websocket server', () => {
     await c.closed;
   });
 
-  test('company A token with company B call closes 1008', async () => {
+  test('company A token with company B call is denied (1006)', async () => {
     const r = await rig();
     const ctxB = { companyId: r.t.seed.b.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
     const rowB = await withTenant(r.t.deps.pools, ctxB, (tx) =>
       insertCall(tx, ctxB, { callSid: `CA${'d'.repeat(32)}`, fromE164: CALLER_PHONE, toE164: '+14025550101', forwardedFrom: null, stirVerstat: null, now: r.t.clock.now() }),
     );
     const c = await r.open(r.token, rowB.id);
-    expect(await c.closed).toBe(1008);
+    expect(await c.closed).toBe(1006);
   });
 
-  test('a second socket for the same call closes 1008', async () => {
+  test('a second socket for the same call is denied (1006)', async () => {
     const r = await rig();
     const first = await r.open();
     await until(() => r.deps.relaySessions.size === 1);
     const second = await r.open();
-    expect(await second.closed).toBe(1008);
+    expect(await second.closed).toBe(1006);
     expect(r.deps.relaySessions.size).toBe(1);
     first.ws.close();
     await first.closed;
@@ -347,13 +348,13 @@ describe('relay websocket server', () => {
     expect(await c.closed).toBe(1009);
   });
 
-  test('a flood of frames before setup completes closes with 1008', async () => {
+  test('a flood of frames before setup completes is denied (1006)', async () => {
     const r = await rig();
     const c = r.connect(r.token);
     await new Promise<void>((res) => c.ws.once('open', () => res()));
     c.send(r.setupMsg());
     for (let i = 0; i < RELAY_MAX_QUEUED + 300; i += 1) c.send({ type: 'prompt', voicePrompt: 'hi', last: false });
-    expect(await c.closed).toBe(1008);
+    expect(await c.closed).toBe(1006);
   });
 
   test('the pre-auth cap refuses extra upgrades with 503', async () => {
@@ -403,8 +404,7 @@ describe('relay websocket server', () => {
   test.each(['ended', 'failed', 'rejected'] as const)('a token for a %s call is refused', async (status) => {
     const r = await rig();
     await r.setStatus(status);
-    const c = await r.open();
-    expect(await c.closed).toBe(1008);
+    expect(await r.rawUpgrade(r.token, { 'X-Twilio-Signature': r.sign(r.token) })).toBe(401);
     expect((await r.readCall()).status).toBe(status);
     expect(r.deps.relaySessions.size).toBe(0);
   });
