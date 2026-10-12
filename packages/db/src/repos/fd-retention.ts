@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, like, lt, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { calls, companySettings, conversations, conversationTurns, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
@@ -126,45 +126,68 @@ export async function blankExpiredTurns(
   return rows.length;
 }
 
+/** The dedupe-key prefix of the assistant's own text replies (front-desk/texts.ts). */
+export const ASSISTANT_REPLY_KEY_PREFIX = 'fd-text:';
+
+/** Where a blanking pass over texts stopped: the last row it looked at, oldest-first order. */
+export type TextCursor = { at: Date; id: string };
+
+export type BlankTextsResult = { blanked: number; scanned: number; next: TextCursor | null };
+
 /**
- * Blanks up to `limit` (default BLANK_BATCH) Front Desk texts of this company that are past retention: body = '',
- * everything else kept (who, when, status, the gate's reasons). Only messages that belong to a conversation
- * (messages.conversation_id not null) are Front Desk texts; every other message is left alone, and so is a text
- * still waiting to go out (queued or scheduled). The age rule is the turns' rule: created_at < now - transcriptDays,
- * or < now - SPAM_RETENTION_DAYS in a conversation with outcome 'spam'. Returns the number changed.
+ * Blanks Front Desk texts of this company that are past retention, the AI exchange only (Ruling BI): body = '',
+ * everything else kept (who, when, status, the gate's reasons). A text is in the AI exchange when it belongs to a
+ * conversation (messages.conversation_id not null) and is either an inbound text the assistant handled or the
+ * assistant's own reply (dedupe key `fd-text:…`). Staff replies (`fd-reply:`), booking confirmations (`fd-book:`),
+ * missed-call text-backs and every other outbound text keep their body whatever their age, and so does a text still
+ * waiting to go out (queued or scheduled). `keep(body)` is asked about each inbound candidate: the caller passes the
+ * shared STOP/START/HELP matcher so keyword texts stay. The age rule is the turns' rule: created_at < now -
+ * transcriptDays, or < now - SPAM_RETENTION_DAYS in a conversation with outcome 'spam'.
+ *
+ * Looks at up to `limit` (default BLANK_BATCH) candidates after `after`, oldest first. Kept rows stay candidates, so
+ * the caller passes `next` back as `after` and repeats while `scanned` equals `limit` (each call in its own transaction).
  */
 export async function blankExpiredTexts(
   tx: Tx,
   ctx: TenantContext,
-  opts: { now: Date; transcriptDays: number; limit?: number },
-): Promise<number> {
+  opts: { now: Date; transcriptDays: number; limit?: number; after?: TextCursor | null; keep?: (body: string) => boolean },
+): Promise<BlankTextsResult> {
   const spamConversations = tx
     .select({ id: conversations.id })
     .from(conversations)
     .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.outcome, 'spam')));
-  const due = tx
-    .select({ id: messages.id })
+  const conds: (SQL | undefined)[] = [
+    eq(messages.companyId, ctx.companyId),
+    isNotNull(messages.conversationId),
+    ne(messages.body, ''),
+    notInArray(messages.status, ['queued', 'scheduled']),
+    or(eq(messages.direction, 'in'), and(eq(messages.direction, 'out'), like(messages.dedupeKey, `${ASSISTANT_REPLY_KEY_PREFIX}%`))),
+    or(
+      lt(messages.createdAt, daysAgo(opts.now, opts.transcriptDays)),
+      and(lt(messages.createdAt, daysAgo(opts.now, SPAM_RETENTION_DAYS)), inArray(messages.conversationId, spamConversations)),
+    ),
+  ];
+  if (opts.after) {
+    conds.push(sql`(${messages.createdAt}, ${messages.id}) > (${opts.after.at.toISOString()}::timestamptz, ${opts.after.id}::uuid)`);
+  }
+  const limit = opts.limit ?? BLANK_BATCH;
+  const candidates = await tx
+    .select({ id: messages.id, at: messages.createdAt, direction: messages.direction, body: messages.body })
     .from(messages)
-    .where(
-      and(
-        eq(messages.companyId, ctx.companyId),
-        isNotNull(messages.conversationId),
-        ne(messages.body, ''),
-        notInArray(messages.status, ['queued', 'scheduled']),
-        or(
-          lt(messages.createdAt, daysAgo(opts.now, opts.transcriptDays)),
-          and(lt(messages.createdAt, daysAgo(opts.now, SPAM_RETENTION_DAYS)), inArray(messages.conversationId, spamConversations)),
-        ),
-      ),
-    )
+    .where(and(...conds))
     .orderBy(asc(messages.createdAt), asc(messages.id))
-    .limit(opts.limit ?? BLANK_BATCH);
+    .limit(limit);
+  const last = candidates.at(-1);
+  const next = last ? { at: last.at, id: last.id } : null;
+  const keep = opts.keep;
+  const ids = candidates.filter((c) => !(c.direction === 'in' && keep !== undefined && keep(c.body))).map((c) => c.id);
+  if (ids.length === 0) return { blanked: 0, scanned: candidates.length, next };
   const rows = await tx
     .update(messages)
     .set({ body: '', updatedAt: sql`now()` as unknown as Date })
-    .where(and(eq(messages.companyId, ctx.companyId), inArray(messages.id, due)))
+    .where(and(eq(messages.companyId, ctx.companyId), inArray(messages.id, ids)))
     .returning({ id: messages.id });
-  return rows.length;
+  return { blanked: rows.length, scanned: candidates.length, next };
 }
 
 /** The recording keys (not deleted) of every call in this customer's conversations. */

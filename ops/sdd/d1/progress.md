@@ -181,3 +181,14 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
     - (a) calls has no outcome or title column, so a transferred call with no conversation keeps only calls.status.
     - (b) Voice needs_attention: RC-2 sets unread_count.
 - **Ruling BJ** (controller): CV's stale-call sweep moves to per-company tenant transactions, and app_system's UPDATE and SELECT(started_at) grants on calls are dropped (BF and the rev-d rule). Built by the E1 lead on d1-rev-i, with the sweep fixes: 35 min for `ai` only, about 4 h for ringing and ringing_team, no text-back after a sweep, plus billing and status edge cases. The D1 lead keeps the reused-conversation turn positions and the AI cap counting non-AI calls (follow-ups.md).
+- 2026-10-12: **Task 25 merged** (C1 lead; d1-t25 c6a72d1, CI 38290781537 green on 2dd74adc with CV). It adds:
+  - 13 §16 scenarios with a CI runner over ScriptedLlm through the real relay loop, engine and tools.
+  - `npm run eval:front-desk -- --confirm-spend` (refuses without the flag or a key; model calls only in providers/anthropic/eval.ts).
+  - d1-latency.md as a template, empty until the owner's first run.
+  - The T19 rows of d1-acceptance.md filled in.
+  - Gap: criterion 8 (an install move is refused) has no end-to-end call test.
+- 2026-10-12: **d1-rev-h merged** (A1 lead; Ruling BI; 17d47e3, CI 38290914284 green with CV).
+  - blankExpiredTexts blanks only inbound texts in a conversation and the assistant's own replies (fd-text: keys).
+  - Staff replies, booking confirmations, text-backs and STOP/START/HELP or opt-out-looking texts are kept.
+  - The sweep uses a keyset cursor.
+  - The settings copy says what is kept; retention 0 deletes existing recordings at the next nightly cleanup.

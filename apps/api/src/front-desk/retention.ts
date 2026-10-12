@@ -9,8 +9,11 @@ import {
   recordingKeysForCustomer,
   withTenant,
   type TenantContext,
+  type BlankTextsResult,
+  type TextCursor,
   type Tx,
 } from '@roofline/db';
+import { looksLikeOptOut, readInbound } from '@roofline/send-gate';
 import type { AppDeps } from '../app.ts';
 import type { ObjectStore } from '../providers/object-store.ts';
 
@@ -21,6 +24,11 @@ export type SweepResult = { recordingsDeleted: number; turnsBlanked: number; mes
 export type PurgeResult = { recordingsDeleted: number; turnsBlanked: number };
 
 const BATCH = 200;
+
+/** A STOP, START or HELP text, or one that reads like an opt-out: kept as the record of what the customer asked. */
+export function isKeywordText(body: string): boolean {
+  return readInbound(body).kind !== 'other' || looksLikeOptOut(body);
+}
 
 /** Sweeps one company: recordings then turns past retention. Idempotent. Logs ids only. */
 export async function sweepCompanyRetention(deps: AppDeps, companyId: string, now: Date): Promise<SweepResult> {
@@ -59,12 +67,18 @@ export async function sweepCompanyRetention(deps: AppDeps, companyId: string, no
     turnsBlanked += n;
     if (n < BLANK_BATCH) break;
   }
-  // Front Desk texts (messages.body of a conversation) follow the same setting and age rule as the turns.
+  // Front Desk texts follow the same setting and age rule as the turns, the AI exchange only (Ruling BI): STOP/START/HELP
+  // texts (the inbound hook's own matcher), staff replies and booking confirmations keep their body.
   let messagesBlanked = 0;
+  let after: TextCursor | null = null;
   for (;;) {
-    const n = await withTenant(deps.pools, ctx, (tx) => blankExpiredTexts(tx, ctx, { now, transcriptDays, limit: BLANK_BATCH }));
-    messagesBlanked += n;
-    if (n < BLANK_BATCH) break;
+    const from: TextCursor | null = after;
+    const r: BlankTextsResult = await withTenant(deps.pools, ctx, (tx) =>
+      blankExpiredTexts(tx, ctx, { now, transcriptDays, limit: BLANK_BATCH, after: from, keep: isKeywordText }),
+    );
+    messagesBlanked += r.blanked;
+    if (r.scanned < BLANK_BATCH || r.next === null) break;
+    after = r.next;
   }
   return { recordingsDeleted, turnsBlanked, messagesBlanked };
 }
