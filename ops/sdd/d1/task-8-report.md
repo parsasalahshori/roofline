@@ -73,4 +73,4 @@ None. `confirmed_at` / `confirmed_via` already exist in 0019 and are covered by 
 
 ## CI
 
-See the final line below (filled in after the run).
+Green: run 38267536210 on b77d184 (Platform, E2E, v1 all success).
