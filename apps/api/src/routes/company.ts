@@ -15,7 +15,12 @@ import {
 } from '@roofline/db';
 import { toE164 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import { DEFAULT_SERVICE_AREA_MILES, locateAddress, SERVICE_AREA_CHOICES } from '../company/location.ts';
+import {
+  ADDRESS_NOT_FOUND_MESSAGE,
+  DEFAULT_SERVICE_AREA_MILES,
+  locateAddress,
+  SERVICE_AREA_CHOICES,
+} from '../company/location.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { requireCapability } from '../permissions.ts';
 import { assertKnownFields, EMAIL_MESSAGE, emailField, parse, timeZoneField, TOO_LONG } from '../validate.ts';
@@ -31,7 +36,6 @@ const ZIP_MESSAGE = 'Please enter a ZIP code, like 68102.';
 
 // The map and service-area messages (F3). They live here, not in errors.ts MESSAGES.
 const ADDRESS_FIRST_MESSAGE = 'Please add your business address first.';
-const NOT_FOUND_MESSAGE = "We couldn't find that address. Check the street, city and state.";
 const MAP_DOWN_MESSAGE = "We couldn't reach the map service. Try again in a minute.";
 const RADIUS_MESSAGE = 'Pick 10, 20, 40 or 60 miles.';
 const NOT_ON_MAP_MESSAGE = 'Place your address on the map first.';
@@ -273,7 +277,7 @@ export function companyRoutes(deps: AppDeps): Router {
 
     // No transaction is open here: the lookup is a network call and must not hold a connection.
     const outcome = await locateAddress(deps.geocoder, addressText);
-    if (outcome.kind === 'not_found') throw new AppError(400, NOT_FOUND_MESSAGE, 'addressStreet');
+    if (outcome.kind === 'not_found') throw new AppError(400, ADDRESS_NOT_FOUND_MESSAGE, 'addressStreet');
     if (outcome.kind === 'unavailable') throw new AppError(503, MAP_DOWN_MESSAGE);
     const { result } = outcome;
 

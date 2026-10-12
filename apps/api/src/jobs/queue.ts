@@ -46,8 +46,9 @@ export type JobHandlers = Record<JobName, (deps: AppDeps, data: JobData, meta: J
 
 /**
  * The tests' job queue: it records every `send` call and runs nothing until `drain` is called. A
- * send whose `singletonKey` matches a job still waiting is recorded but not queued (the way pg-boss
- * drops a duplicate on a singleton-key policy). `drain` runs the waiting jobs in order, including
+ * send whose `singletonKey` matches a job of the same name still waiting is recorded but not queued
+ * (the way pg-boss drops a duplicate: its singleton key is per queue, so the same key on another
+ * queue still queues). `drain` runs the waiting jobs in order, including
  * any sent while it drains. A job that throws goes to the back of the line with its next attempt
  * number, the way pg-boss retries it. Every throw goes to `errors`. Its fifth run is the last
  * (`lastAttempt` is true there); a job that throws on it is dropped. It stops with an error after `maxRuns` runs, so a job that never
@@ -63,7 +64,9 @@ export class InlineJobs implements JobQueue {
   async send(name: JobName, data: JobData, opts?: { singletonKey?: string }): Promise<void> {
     const singletonKey = opts?.singletonKey;
     this.sent.push(singletonKey === undefined ? { name, data } : { name, data, singletonKey });
-    if (singletonKey !== undefined && this.waiting.some((job) => job.singletonKey === singletonKey)) return;
+    if (singletonKey !== undefined && this.waiting.some((job) => job.name === name && job.singletonKey === singletonKey)) {
+      return;
+    }
     this.waiting.push(singletonKey === undefined ? { name, data, attempt: 1 } : { name, data, singletonKey, attempt: 1 });
   }
 

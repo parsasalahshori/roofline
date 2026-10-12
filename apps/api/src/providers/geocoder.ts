@@ -4,7 +4,8 @@ import { geocodioFor } from './geocodio.ts';
 
 export type GeocodeResult = { lng: number; lat: number; street: string | null; city: string | null; state: string | null; zip: string | null;
   timezone: string | null; accuracy: number; accuracyType: string; source: 'geocodio' | 'fake' };
-export interface Geocoder { readonly configured: boolean; geocode(address: string): Promise<GeocodeResult | null>;
+export interface Geocoder { readonly configured: boolean;
+  geocode(address: string, opts?: { timeoutMs?: number }): Promise<GeocodeResult | null>;
   geocodeMany(addresses: readonly string[]): Promise<(GeocodeResult | null)[]> }
 export class GeocoderUnavailableError extends Error {}
 

@@ -165,6 +165,16 @@ describe('GeocodioGeocoder.geocode', () => {
     expect((error as Error).message).not.toContain('api_key');
     expect((error as Error).message).not.toContain(API_KEY);
   });
+
+  test('a per-call timeout overrides the default', async () => {
+    const geocoder = new GeocodioGeocoder({ apiKey: API_KEY, fetch: hangingFetch, baseUrl: BASE });
+
+    const started = Date.now();
+    const error = await geocoder.geocode('x', { timeoutMs: 20 }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(GeocoderUnavailableError);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
 });
 
 describe('GeocodioGeocoder.geocodeMany', () => {

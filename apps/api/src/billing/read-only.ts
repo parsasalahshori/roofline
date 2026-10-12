@@ -9,12 +9,17 @@ export const READ_ONLY_MESSAGE: Record<'trial_ended' | 'canceled', string> = {
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** Paths that stay open in read-only mode: signing out, billing (to pick a plan), and the member's own Today marker. */
-const ALWAYS_OPEN_PREFIXES = ['/auth/', '/billing/', '/me/'];
+/**
+ * Sections that stay open in read-only mode: signing in and out (`auth`), billing (to pick a plan),
+ * and the member's own Today marker (`me`). A path is open when it is one of these names, bare or
+ * with anything under it, so `/billing` and `/billing/checkout` are open and `/billingx` is not.
+ */
+const ALWAYS_OPEN_SECTIONS = ['auth', 'billing', 'me'];
 
 /**
  * Refuses writes from a company whose trial has ended or whose plan was canceled. Reads still work,
- * and signing out, billing and the member's own marker stay open so the company can pick a plan.
+ * and signing in and out, billing (bare or under it) and the member's own marker stay open so the
+ * company can pick a plan.
  * `past_due` is not read-only: the send gate pauses texts for it instead. The company status comes
  * from the session, which is read on every request, so a change applies without signing in again.
  * Mounted under `/api`, so `req.path` is relative to that prefix. Requests without a session pass.
@@ -35,7 +40,7 @@ export const readOnlyGuard: RequestHandler = (req, res, next) => {
     return;
   }
   const path = req.path.toLowerCase();
-  if (ALWAYS_OPEN_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+  if (ALWAYS_OPEN_SECTIONS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`))) {
     next();
     return;
   }
