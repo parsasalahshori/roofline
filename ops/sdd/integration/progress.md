@@ -1705,3 +1705,242 @@ New problem 5. **D1 x C1/E1, Front Desk smoke production fixture.** `apps/api/te
 the four R2 settings (E1, at D1's e1 merge). Owner D1.
 New problem 6. **A1 x G1, Agents e2e.** The three spec fixes above belong in A1 (agents, agents-settings) and G1
 (more-agents) at their next merge of each other. Owners A1 and G1.
+
+## Pass 15
+
+Base: pass 14 head e9b48f94. `git fetch origin` (2026-10-12 19:11Z): every head matched the request (s1-storm carries
+85a68e79, a1-agents 394b7b90 and 05a3d38d, g1-agents 1316794e). The only `origin/launch-*fix` branch is launch-g1fix.
+After launch-g1fix the controller added two merges (near-final pass): d1-front-desk again (now 3c1d3912, 53 commits
+past 57e119d6: staging batch, RA, RC-2/RC-3, final-review T25/CV fixes, Rulings BJ/BK) and demo-mode (25d93c5f, off
+probe 2a3cbe50, CI green on 6e55f909 run 38295342812), treated as a launch-*fix branch. Then G1's g1-d1fix (9564ebee,
+one commit on e9b48f94, CI 38301093923 green on Platform and E2E): `CLAIMS_ACK_PREFIX` so the Claims agent's "Thanks,
+got it." no longer counts as a team reply and silences Front Desk for 2 h. Merged in order with `git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| c1-crm | 0dee2b991871717248aed59bbbef96d56be4ae46 | 615c607c | - (BUG-2 calendar sync 204) |
+| e1-estimator | aa87ce37e28cec0375a82684a6f90bbcfe7f4c94 | d4607097 | - (ledger only) |
+| s1-storm | 5983bdd921c2941592f283e004effa0cc7a3029c | 38745d89 | - (BUG-1 swath step expression + tests) |
+| d1-front-desk | 57e119d6a51e53ab1cffb137da50308529ddddac | f5b2063c | 10 files + snapshot rebuild |
+| a1-agents | 81d1a601dbdd213a2c30f8fc36fc2eb95c91c2b4 | a72492e5 | 29 files (mostly A1's re-merge of older c1/e1/s1) |
+| g1-agents | 45b4d9f2f2ffb7f785cbba4e7b5323dee756e1e5 | 41fbc883 | 19 files (mostly G1's re-merge of older s1/d1/e1) |
+| launch-g1fix | 309ccfd2cd0063c01c68f193c46b2a50ac9bf674 | 999d4c43 | 2 files |
+| d1-front-desk (delta) | 3c1d391265176c27cbeb36d5944d354a15db819a | 12acae95 | 3 files |
+| demo-mode | 25d93c5f2c910c35a86b825f897949978adb1703 | dc60a71a | - |
+| g1-d1fix | 9564ebee22c3f6f728bd3886efff2a0a0002e89d | 48fcd748 | 1 file |
+
+launch-g1fix was merged after its CI run 38293414340 (on 309ccfd2) finished green on Platform and E2E (19:24Z; also
+v1 and Hail). Probe-only commits: 1884f179 (eval:front-desk test env gets the R2 settings, new problem 11), 235ce301 (demo
+simulated call marked ended before after-call, new problem 13). Every pass-14 probe
+workaround that a track replaced went out in the merges.
+
+### Conflict resolutions
+
+d1-front-desk (Tasks CV, RC-split, T25, d1-rev-a/b/d/h, BUG-3, Rulings BG-BK):
+- `billing/read-only.ts`: D1's version (CLOSED_UNDER_OPEN, Front Desk off) plus the probe's `/public/` pass, kept as its
+  own early return before the open sections.
+- `hooks/twilio-voice.ts`: D1's `lockAiCap` + `countLiveCallsInWindow` + `route.readOnly` with A1's
+  `isAgentPaused(tx, ctx, 'front_desk')` kept (`outcome.paused` added to the voicemail condition).
+- `hooks/twilio.ts` (Ruling AV): the probe's S1 `onStormFormYes`/`onStormReply`, then G1 `onClaimsReply`, then Front
+  Desk with D1's new guard (`isNumberBlocked`, `companyReadOnly`, Ruling BG).
+- `repos/calls.ts`: D1's (Task CV `linkCallConversation`, `lockAiCap`, `countLiveCallsInWindow`).
+- `system/index.ts`: both export lists. `front-desk/voice-hooks.test.ts`: both imports (`agentSettings`, `companies`).
+- `smoke-front-desk-guards.test.ts`: D1's (it now carries TRUST_PROXY and the four R2 settings: the probe copy is gone).
+- `rls.test.ts`: D1's review-note-31 grant narrowing applied to the probe's lists (app_system no longer reads
+  conversations/conversation_turns or the recording columns; app_tenant no line_lookups; blocked_numbers S/I/D), with
+  S1/E1 tables, the S1 `company_storms` column rows and the S1 storm-tables describe kept; D1's new
+  "app_tenant isolation on the D1 tables" describe appended.
+- Snapshots: D1 added four indexes to 0019 (`calls_company_conversation_idx`, `conversations_company_customer_idx`,
+  `messages_company_conversation_created_idx`, `messages_fd_dedupe_uniq`). The probe's 0019-0024 snapshots were rebuilt by
+  three-way JSON merge (base: d1 93dcfca 0019/0020, theirs: d1 57e119d 0019/0020; delta applied to each probe snapshot,
+  `id`/`prevId` kept). No conflicts in the delta.
+
+a1-agents (a1-merge-up2, T23, BUG-6): A1's merges re-bring older c1 7758e82 / e1 0609e8d / s1 958a344 content the probe
+already has newer. For every conflicted file I listed the lines A1 added since 50295eb that the probe-side resolution
+would lose; only comments and older-version lines came up, except A1's own commits:
+- `storm/plan.ts`: A1's 03912863 (`previousWasDraft`, `fresh: !previousWasDraft`).
+- `agents/rule-facts.ts`: A1's `transferNames` parameter and `canCancel` comment plus the G1 paragraph.
+- `front-desk/texts.ts`: the probe's D1 confirm shortcut with A1's `modelFailure` flag inside the engine loop.
+- `e2e/agents-settings.spec.ts`: A1's region-scoped Save (`baselinesSection(page)`): the probe's `.first()` is gone.
+- Every other conflicted file (twilio.ts, index.ts, jobs handlers/worker, dispatcher, r2.ts, tasks/handlers, the S1
+  config tests, test helpers, e2e a11y/fixtures/phone, s1-routes test, db/system barrels, shared proposals, rls.test,
+  0019-0022 snapshots): probe side.
+- Merge artifact: A1's 03585510 appended a second `GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers TO
+  app_system` to 0020, duplicating D1's identical grant (auto-merged). The probe keeps D1's 0020 unchanged (new item 7).
+
+g1-agents (g1-ms3: Task 19, BUG-6 revert, security re-merge, S1 complete): G1-own conflicts:
+- `agents/rule-facts.ts`: G1's `readAgentValues` replaces the probe's local DEFAULTS and G1 column reads; A1's Storm
+  Scout and Front Desk reads (and `transferNames`) kept; one `@roofline/db` import.
+- `copy/agents.ts`: probe's `agentsCommon` plus G1's `ScreenAgent` import (merged into the existing type import) and
+  G1's `Partial<Record<ScreenAgent, string>>` run-now labels.
+- `RunNowButton.tsx`: A1's `canRun`/`paused` gates, then G1's `label === undefined` return.
+- Other conflicts (index.ts, jobs handlers/worker, dispatcher, weather nws/source, e2e a11y/phone/stack, rls.test,
+  0019-0024 snapshots): probe side; no G1-only line lost.
+
+launch-g1fix: G1 Task 19 had added `runLiveStep` to `agents/notes.ts` (still writing through `updateTask`/`moveStep`
+under the probe's eslint-disables). Took launch-g1fix's `notes.ts` and `routes/claims.ts`: `writeLiveNote` and
+`startLiveTask` in `tasks/service.ts` (one definition each), `runLiveStep` gone (no other caller), no
+`no-restricted-imports` disable left in `apps/api/src`.
+
+d1-front-desk delta (3c1d3912):
+- `front-desk/after-call.ts`: D1's `loadCompanyBlock`, `summarizeOrEmpty`, `runSmsAfterCall` and the `swept` flag, with
+  A1's `recordLiveTask` (one live Front Desk task per call) kept; the swept guard joins A1's
+  `if (transferred || call.status === 'rejected' || data.swept === true) return;` and D1's second `secondsInCall`
+  (identical to the probe's, defined earlier for A1's task) is not repeated.
+- `hooks/twilio-voice.ts`: D1's `aiAllowed` / `ringing_team` marking (only calls bound for the AI hold a slot) with A1's
+  paused check folded in: a paused Front Desk is marked `ringing_team` and goes to the team then voicemail like
+  Front Desk off (`!aiAllowed || paused || overCompanyCap || ringTeamFirstSeconds > 0`).
+- `rls.test.ts`: D1's Ruling BJ grant (app_system on calls is SELECT (id, company_id, call_sid, status) only; the
+  stuck-call sweep ends calls on the tenant pool) in the probe's lists; the now-unused `upd` helper removed from that
+  test (lint).
+- 0020 SQL changed (grants only): no snapshot change. Note: this supersedes the d1-rev-d / CV grant the request
+  expected (SELECT incl. started_at, UPDATE (status, ended_at, updated_at)); BJ removed app_system's UPDATE on calls.
+
+demo-mode (25d93c5f): merged clean. It adds `DEMO_MODE` (config, deps: demo Llm, console mailer), `/api/demo` routes,
+the Summit Ridge demo world, the DemoBadge, `npm run demo`, `docker-compose.demo.yml`, and CI changes (shellcheck in
+Platform, `playwright.demo.config.ts` in E2E, a new `Demo DB (arm64)` job). It touches other tracks' files: E1
+`public/proposal-sign.ts` (sign logic moved into an exported `signResolvedProposal`, used by the demo's "homeowner
+signs"), D1 `hooks/twilio.ts` (`Inbound` and `handleInbound` exported), S1 `routes/storms.ts` (no stale banner in
+demo), the web top bar, `no-insurer-contact.test.ts` allow-list. None conflicted.
+
+g1-d1fix: `packages/db/src/repos/fd-texts.ts` `lastTeamReplyAt`: D1's status filter (`scheduled`, `queued`, `sent`,
+`delivered`) kept, G1's `or(isNull, and(not fd-text:, not claims-ack:))` replaces the single-prefix check.
+
+### Ruling BD (final): holds
+
+`allowFinished: true` is passed only by `routes/approvals.ts` (rerun) and `routes/storms.ts` (POST
+/api/storms/:id/plan); `settle.ts` and the storm-draft job do not set it (comment only). `fresh: !previousWasDraft` with
+`previousWasDraft = lock.oldDraftId !== null` (A1 03912863). One `REDRAFTABLE_PLAN_STATUSES` /
+`FINISHED_REDRAFTABLE_PLAN_STATUSES` pair, in `packages/db/src/repos/storm-plans.ts`. S1's StormDetail keeps "Draft a new
+plan" for expired and declined plans.
+
+### Migration journal (Ruling AP) and Rulings AW/BF
+
+25 journal entries, number order, `when` increasing; 25 snapshots chained. s1-storm's 0018 (5983bdd) carries R1
+(`storms.merged_into`), R3 (`ad_campaigns.paused_by`) and R8 (`ad_accounts_platform_external_live_uq` where status <>
+'revoked') plus the grant trims: checked in the SQL. A1's claim that R8 is not on s1-storm is wrong: R8 is on s1-storm since 19963e0e, but a1-agents
+last merged s1-storm 958a344 (before R8), so A1's own 0018 lacks it. Migration SQL in the
+probe equals each owner's head (0017/0018 = s1-storm, 0019/0020 = d1-front-desk, 0021/0022 = a1-agents, 0023/0024 =
+g1-agents). g1-agents' 0019-0024 snapshots now agree with the probe except D1's four new indexes (they carry R1/R3/R8).
+Exactly one `messages_company_id_id_uniq` (0019). `drizzle-kit generate`: no changes.
+
+Grant check: `ops/bin/launch-normalize --check` (probe 546e745 copy; no track ships a newer one): journal OK, snapshots
+OK (25 chained), drizzle-kit OK, grants OK (59 tables with an auto-updated updated_at). PASSED. D1's CV dropped the
+app_system recording grant and its new `GRANT UPDATE (status, ended_at, updated_at) ON calls` includes updated_at.
+
+### Items: status
+
+Closed by a track this pass:
+- Pass-14 new problem 1 (G1 one-writer): closed by launch-g1fix (`startLiveTask`, `writeLiveNote`); eslint-disables gone.
+- Pass-14 new problem 5 (D1 smoke fixture R2 + TRUST_PROXY): closed by D1 (probe takes D1's file).
+- Item 6 (D1 `calls` grant without updated_at): closed by D1 Task CV / d1-rev-d (SELECT (id, company_id, call_sid,
+  status, started_at); UPDATE (status, ended_at, updated_at)).
+- Item 3 (A1): a1-merge-up2 is in a1-agents: BD route, `fresh`, one REDRAFTABLE pair (probe 6d5c496 copies now equal A1).
+- A1 a1-bug6: region-scoped Save in agents-settings (closes that part of new problem 6) and BUG-6 task-kind labels.
+- G1's front-desk e2e seed sets `subaccount_sid` (equals d1-front-desk's file).
+- S1 BUG-1 MapLibre step-expression fix and tests.
+- `e1-routes.test.tsx` (item 2) now equals a1-agents and g1-agents.
+- Item 6b (D1 Task RA, recording CSP): landed with the d1 delta (`mediaSrc: ["'self'"]` in `app.ts`, playback through
+  the API).
+- Ruling AV order holds after both d1 merges: STOP/HELP/START, S1 `onStormFormYes`/`onStormReply`, G1 `onClaimsReply`,
+  then D1 `queueFrontDeskText` behind the blocked/read-only guard.
+
+Still open:
+- Item 1 (D1): d1-front-desk 57e119d still has 17 journal entries; 0019/0020 `when` below S1's 0018 and 0019 snapshot
+  chained from 0014 (prevId 7b71ab88), not S1's 0018 (cea16d42); its 0019/0020 snapshots lack S1's tables.
+- Item 2 (Ruling BA): a1-dock, a1-settings, settings, a1-routes and g1-turn-on tests still differ from every head
+  (a1-agents 2-26 lines, g1-agents 2-18 lines; g1-turn-on matches g1 within 2 lines).
+- Pass-14 new problems 2 and 3 (G1 x A1 Run now after commit; Agents screen and facts): still probe-only in `run-now.ts`,
+  `metrics.ts`, `AgentsTab.tsx`, `AgentPage.tsx` (g1-agents differs by 46/74/10/63 lines; a1-agents 24/16/10/10).
+- Pass-14 new problem 6: `e2e/agents.spec.ts` "G1 agents Paused/Turn on" (A1, 8 lines off a1-agents) and
+  `e2e/more-agents.spec.ts` card-by-heading (G1, 3 lines off g1-agents) still probe-only.
+- Post-0018 snapshots: a1-agents 0019-0022 have R1/R3 but lack S1's R8 index (A1 last merged s1-storm 958a344, before
+  R8) and D1's four indexes; g1-agents 0019-0024 lack only D1's four indexes; d1-front-desk 0019/0020 chained from 0014
+  (item 1).
+
+### New cross-track problems
+
+7. **A1 x D1, duplicate 0020 grant.** a1-agents 03585510 appends `GRANT UPDATE (capabilities, updated_at) ON
+   company_phone_numbers TO app_system` to `packages/db/migrations/0020_front_desk_grants_rls.sql`; d1-front-desk's 0020
+   already has the identical grant (just above it). Git merges both copies cleanly, so 0020 issues it twice (harmless in
+   Postgres, but 0020 is D1's file and A1's copy diverges it). Fix: A1 drops its hunk and takes d1-front-desk's 0020 at
+   its next d1 merge. Owner A1. (The probe keeps D1's file.)
+8. **D1 x A1, Front Desk pause on calls.** D1 Task CV rewrote the voice hook's cap check (`lockAiCap`,
+   `countLiveCallsInWindow`, `route.readOnly`) and dropped `countLiveAiCalls`; A1 had added `isAgentPaused(tx, ctx,
+   'front_desk')` to the same lines. Probe: D1's code plus `paused` in the outcome and `|| outcome.paused` in the voicemail
+   condition (`apps/api/src/hooks/twilio-voice.ts`). `countLiveAiCalls` in `packages/db/src/repos/calls.ts` is now unused.
+   Fix: A1, at its next d1 merge, takes D1's hook and re-adds the paused check exactly as the probe has it; D1 or A1
+   deletes `countLiveAiCalls`. Owner A1.
+9. **D1, read-only guard duplicate check.** `apps/api/src/billing/read-only.ts` on d1-front-desk tests "turn Front Desk
+   off" twice (`turnsFrontDeskOff(...)` and an inline `PUT /front-desk/settings` regex check right after it). Harmless.
+   Fix: drop the inline copy. Owner D1. (Also, the probe adds a `/public/` early pass from E1/S1; D1 takes it at its next
+   e1/s1 merge.)
+10. **G1 Task 19 x A1 rule facts (extends pass-14 problem 3).** G1's `readAgentValues` refactor of `agents/rule-facts.ts` dropped A1's Storm Scout
+   and Front Desk facts and A1's `transferNames` parameter on g1-agents (g1 has no A1 Front Desk yet). Probe:
+   `gatherRuleFacts(tx, ctx, transferNames = [])` reads Storm Scout/Front Desk columns itself and the G1 numbers through
+   `readAgentValues`. Fix: G1 takes the probe's `rule-facts.ts` at its a1 merge. Owner G1.
+
+11. **D1 x E1, eval:front-desk production env.** `apps/api/test/front-desk/eval-front-desk.test.ts` (D1 Task 25) runs
+   `main` with `NODE_ENV: 'production'` and no R2 settings; E1 Ruling ET makes `loadConfig` require all four in
+   production, so every `main` test exits 1 (CI 38297570547: 5 failures). d1-front-desk has no Ruling ET yet, so it passes
+   there. Probe 1884f179 adds `R2_ACCOUNT_ID: 'acct'`, `R2_ACCESS_KEY_ID: 'key-id'`, `R2_SECRET_ACCESS_KEY: 'key-secret'`,
+   `R2_BUCKET: 'proposals'` to the test's `env`. Fix: D1 adds the same four lines at its e1 merge. Owner D1.
+12. **demo-mode x E1/D1/S1 files.** demo-mode refactors E1's `public/proposal-sign.ts` into `signResolvedProposal` and
+   exports D1's `handleInbound`/`Inbound`. Nothing breaks in combination, but those owners must take the change at
+   their next merge of the probe/demo-mode or a later edit will conflict. Owners: demo-mode (tell E1 and D1).
+
+13. **demo-mode x D1, simulated call never finishes.** D1 Task CV (06d07be0) runs after-call only for a call whose status
+   is ended, transferred, failed or rejected (Twilio's status callback sets it). demo-mode's `simulateCall`
+   (`apps/api/src/demo/simulate.ts`) set `endedAt` and `aiSeconds` but left status 'ai', so `runAfterCall` returned early:
+   no summary, conversation still active (CI 38301894199, `demo-routes.test.ts` "call: a scripted call leaves a
+   transcript and the summary"). Probe 235ce301: `updateCall(tx, ctx, callSid, { status: 'ended', endedAt, aiSeconds })`.
+   Fix: demo-mode takes the same one-word change. Owner demo-mode.
+
+Merge-artifact fixes: rule-facts.ts duplicate `@roofline/db` import merged into one (g1 merge); A1's duplicate 0020
+grant not taken (a1 merge); `twilio-voice.ts` import line both sides (d1 merge).
+
+### Checks (after all merges and 235ce301)
+
+`npm ci` clean (no lockfile change this pass); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot`: typecheck
+pass, lint pass (no eslint-disable for no-restricted-imports left), lint:css pass; vitest @roofline/web 1370 pass (146
+files), @roofline/ui 172 pass (7), @roofline/shared 1364 pass (43), @roofline/send-gate 532 pass (5).
+`ops/bin/launch-normalize --check`: PASSED. The database, API, worker and e2e suites run only in CI.
+
+### CI (pass 15)
+
+- Run 38297570547 on 999d4c43 (all track merges + launch-g1fix, before the controller's additions): E2E success, v1
+  success, Hail success; Platform failure, 5 tests in `apps/api/test/front-desk/eval-front-desk.test.ts` (new problem 11:
+  production env without R2, `loadConfig` throws, `main` exits 1). Fixed in 1884f179.
+- Run 38301894199 on 1884f179 (+ d1 delta, demo-mode): E2E success (incl. the demo walkthrough), v1, Hail and Demo DB
+  (arm64) success; Platform failure, 1 test, `apps/api/test/demo-routes.test.ts` "call: a scripted call leaves a
+  transcript and the summary" (new problem 13). Fixed in 235ce301 (g1-d1fix merged 48fcd748 before the push).
+- Run 38306115580 on 235ce301: Platform (lint, typecheck, tests) **success**; v1, Hail, Demo DB (arm64) success;
+  **E2E failure**, 1 test: `e2e/agents.spec.ts` "feed: rows and filter chips" died in its fixture: `error: deadlock
+  detected` at `packages/db/src/testing/reset.ts:22` (`resetDb`'s `truncate ... restart identity cascade`, called from
+  `apps/web/e2e/fixtures.ts:64` resetScenario). The e2e stack's worker was running a storm-match/storm-draft transaction
+  at that instant (its "Hail is hitting your area now" and "Your storm plan is ready" mails are logged at 20:49:25.58 and
+  20:49:26.55; the test failed at 20:49:26.07). TRUNCATE takes ACCESS EXCLUSIVE on every public table one after another,
+  the worker's transaction holds row locks on several of them, and Postgres aborts the truncate as the deadlock victim.
+  106 other e2e tests passed; the demo Playwright step after it did not run. Not re-run: this pass already used its two fix re-runs (new problem 14).
+
+New problem 14. **Shared test reset vs the e2e worker (owner: platform / whoever owns `packages/db/src/testing`, C1 lead
+by default).** `resetDb` truncates every table while the e2e stack's worker keeps running its crons (storm-match every 10
+minutes over the fixture storm, and since D1's Ruling BJ, fd-health's per-company tenant-pool sweep every 2 minutes), so
+a worker transaction and the truncate can deadlock (40P01) and fail whichever test is starting. Exact fix in
+`packages/db/src/testing/reset.ts`: retry the truncate when it is the deadlock victim, e.g.
+```ts
+const sql = `truncate table ${rows.map((r) => r.name).join(', ')} restart identity cascade`;
+for (let attempt = 1; ; attempt++) {
+  try {
+    await client.query(sql);
+    break;
+  } catch (err) {
+    // A worker transaction in the e2e stack can hold row locks on tables the truncate needs; Postgres
+    // picks the truncate as the deadlock victim (40P01). Nothing was truncated, so try again.
+    if ((err as { code?: string }).code !== '40P01' || attempt >= 5) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+  }
+}
+```
+Not applied in the
+probe: a third fix run is over this pass's limit. The controller decides whether the probe takes it in the D1 delta pass.
