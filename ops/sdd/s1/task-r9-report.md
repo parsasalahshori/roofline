@@ -21,3 +21,5 @@ typecheck and lint clean; playwright --list: 54 tests in 14 files; npm ls playwr
 ## CI round 2 (run 38265472388, 905266e): E2E and Hail green; Platform failed only on test/exact-report.test.ts:130 (re-price count, a clock-timing test in code R9 does not touch). Re-run on a report-only commit.
 
 ## CI round 3 (run 38269110686, 4e7b681): E2E and Hail green; Platform failed on exact-report.test.ts:130 again. Cause: the test pins the clock to 2026-10-12T15:00Z while the fake exact-report provider priced expiry off the real clock, so once the wall clock passed 15:00Z the re-price case no longer expired. Fix: the test harness gives the fake the test clock (apps/api/test/helpers.ts). Not caused by R9.
+
+## CI round 4 (run 38272126524, d42402d): Platform and Hail green; E2E 53 passed (both new public-forms specs included), 1 failed: a11y.spec.ts:28 login POST "socket hang up" (infrastructure flake, passed in run 38265472388). Retry budget used; re-run E2E on the next push.
