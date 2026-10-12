@@ -2,6 +2,7 @@ import { and, eq, gte, isNotNull, like } from 'drizzle-orm';
 import { calls, companySettings, customers, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
+import { lockCustomerPhone } from './customers.ts';
 import { customersWithPhone } from './inbound.ts';
 import type { TextState } from './messages.ts';
 
@@ -82,8 +83,13 @@ export async function recordCallConsent(tx: Tx, ctx: TenantContext, customerId: 
  * The company's customer for this number: the one non-archived customer who has it; a new minimal
  * customer when nobody has it; null when several do (shared phones are never guessed) or only an
  * archived customer has it.
+ *
+ * Takes the per-number lock customer saves take (lockCustomerPhone) before looking, so two calls from
+ * one new number, or a call and a customer save, cannot both find nobody and both insert: the second
+ * waits for the first's transaction and then finds its customer.
  */
 export async function findOrCreateCallerCustomer(tx: Tx, ctx: TenantContext, e164: string, now: Date = new Date()): Promise<string | null> {
+  await lockCustomerPhone(tx, ctx, e164);
   const found = await customersWithPhone(tx, ctx, e164);
   const active = found.filter((c) => !c.archived);
   if (active.length === 1) return active[0]!.id;
