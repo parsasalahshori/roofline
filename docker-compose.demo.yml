@@ -1,0 +1,22 @@
+# The demo database (npm run demo). A multi-arch PostGIS image (amd64 and arm64, so it runs natively
+# on Apple Silicon) with the same PostgreSQL 16 / PostGIS 3.4 as CI. Its own port and volume, so it
+# never touches the dev database in docker-compose.yml. `npm run demo:reset` drops the volume.
+services:
+  db:
+    image: imresamu/postgis:16-3.4
+    ports:
+      - "127.0.0.1:${DEMO_DB_PORT:-54339}:5432"
+    environment:
+      POSTGRES_USER: roofline
+      POSTGRES_PASSWORD: roofline
+      POSTGRES_DB: roofline
+    volumes:
+      - roofline-demo-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roofline -d roofline"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+volumes:
+  roofline-demo-db:
