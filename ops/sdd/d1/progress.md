@@ -246,3 +246,9 @@ Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.reco
     - d1-rev-l (E1, RC-2 review minors).
     - Restoring verifyFailures on reuse depends on RC-1's identity persistence.
     - T25 finding 6 (the eval's playCall drift from engine.run) and C1 RA review #6 (ranged playback reads) are follow-ups.
+- 2026-10-12: **Integration green at 3c1d391** (CI 38300366922, Platform and E2E): every D1 plan task (1-27), the pre-review fixes (CV, RA, RC-2, RC-3, d1-cap, rev-a through rev-k) and Rulings BG, BI, BJ and BK. **D1 complete**, with follow-up merges still in flight:
+  - RC-4 (D1 lead, d1-rc4): loose leak and danger matching, the message-mode clock, and conversation times from the app clock.
+  - d1-rev-m (E1): amended BK vocabulary, final ROUTER_INTENTS, ring_first after-dial cap check, ok-only dedupe, and /after-relay urgency.
+  - d1-rev-l (E1): RC-2 review minors.
+  - RC-1/RC-1b (S1): SMS turn positions and the SMS 30-minute HIGH; system-note ordering; verify_caller lockout and identity persistence (including on reuse); lastTeamReplyAt ignoring system texts; F4-F6; "[photo]".
+  - Later: ranged playback reads (C1 RA #6); the eval's playCall drift from engine.run (T25 finding 6).
