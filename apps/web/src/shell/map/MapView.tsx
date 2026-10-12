@@ -142,7 +142,12 @@ export function MapView({ onOpen }: MapViewProps) {
 
   // /?focus=<propertyId>: fly to that property's pin and open its card, once per distinct value.
   useEffect(() => {
-    if (focus === null || handledFocus.current === focus) return;
+    // Leaving ?focus= forgets the last one, so following the same address link again flies again.
+    if (focus === null) {
+      handledFocus.current = null;
+      return;
+    }
+    if (handledFocus.current === focus) return;
     if (shownPins === undefined || shownPins.mode !== 'points') return;
     const job = shownPins.jobs.find((pin) => pin.propertyId === focus);
     const customer = job ? undefined : shownPins.customers.find((pin) => pin.propertyId === focus);

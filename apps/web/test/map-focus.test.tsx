@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useNavigate } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { mapCopy } from '../src/copy/map.ts';
@@ -233,6 +233,38 @@ describe('MapView focus', () => {
     await waitFor(() => expect(screen.getByText(mapCopy.summary(1, 0))).toBeInTheDocument());
     expect(map.easeTo).not.toHaveBeenCalled();
     expect(screen.queryByText('Maria Lopez')).toBeNull();
+  });
+
+  it('flies again when the same focus link is followed a second time', async () => {
+    let go: (to: string) => void = () => undefined;
+    function Nav() {
+      const navigate = useNavigate();
+      go = (to) => {
+        void navigate(to);
+      };
+      return null;
+    }
+    render(
+      <Providers client={createQueryClient()}>
+        <MemoryRouter initialEntries={['/?focus=p1']}>
+          <Nav />
+          <MapView onOpen={vi.fn()} />
+        </MemoryRouter>
+      </Providers>,
+    );
+    const map = lastMap();
+    act(() => {
+      map.emit('load');
+    });
+    await waitFor(() => expect(map.easeTo).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      go('/jobs/j1');
+    });
+    act(() => {
+      go('/?focus=p1');
+    });
+    await waitFor(() => expect(map.easeTo).toHaveBeenCalledTimes(2));
   });
 
   it('does not fly again when pins refresh', async () => {

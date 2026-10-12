@@ -2,6 +2,7 @@ import type { AppointmentView, CalendarConnectionView } from '@roofline/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api/client.ts';
 import type { AppointmentBody, AvailabilityQuery, SaveResult, Slot } from './types.ts';
+import { crmKeys } from '../settings/crm-api.ts';
 
 /*
  * Appointment hooks. Every save or action invalidates the ['calendar'] prefix, which matches the
@@ -96,7 +97,8 @@ export function useAvailability({
  */
 export function useCalendarProvider(): 'google' | 'microsoft' | null {
   const query = useQuery({
-    queryKey: ['calendar', 'connection'],
+    // Settings' key, so connecting, choosing or disconnecting there updates this line too.
+    queryKey: crmKeys.connection,
     queryFn: ({ signal }) => apiFetch<CalendarConnectionView>('/api/calendar/connection', { signal }),
     retry: false,
   });
