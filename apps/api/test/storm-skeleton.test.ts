@@ -31,7 +31,8 @@ describe('the storm skeleton', () => {
   test('POST /api/public/storm-requests/x without a session is not a 401', async () => {
     const res = await request(t.app).post('/api/public/storm-requests/x').send({});
     expect(res.status).not.toBe(401);
-    expect(res.status).toBe(404);
+    // The real route validates the body before looking the page up, so an empty body is a 422.
+    expect(res.status).toBe(422);
   });
 
   test('GET /u/x works without a session', async () => {

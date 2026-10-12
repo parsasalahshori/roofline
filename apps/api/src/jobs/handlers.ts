@@ -35,7 +35,7 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'storm-match-company': (deps, data) => matchCompanyStorms(deps, data.companyId),
   'storm-draft': (deps, data) => {
     checkStormJob(data);
-    return draftStormPlan(deps, data.companyId, data.companyStormId!);
+    return draftStormPlan(deps, data.companyId, data.companyStormId!, deps.clock.now()).then(() => undefined);
   },
   'storm-alert': (deps, data) => {
     checkStormAlertJob(data);

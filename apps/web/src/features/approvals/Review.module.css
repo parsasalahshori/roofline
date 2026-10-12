@@ -32,3 +32,11 @@
   flex-direction: column;
   gap: 12px;
 }
+
+/* A step's own detail under the list (its kit's preview): a card with its border, its corners and its padding. */
+.detail {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}

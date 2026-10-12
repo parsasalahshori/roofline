@@ -60,7 +60,7 @@ import { stormLayerRoutes, stormRoutes } from './routes/storms.ts';
 import { doorRoutes } from './routes/door-routes.ts';
 import { stormSettingsRoutes } from './routes/storm-settings.ts';
 import { adsRoutes } from './routes/ads.ts';
-import { stormRequestRoutes } from './public/storm-requests.ts';
+import { stormRequestOriginGuard, stormRequestRoutes } from './public/storm-requests.ts';
 import { stormPage } from './public/storm-page.ts';
 import { unsubscribeRoutes } from './public/unsubscribe.ts';
 import { proposalRoutes } from './routes/proposals.ts';
@@ -230,10 +230,15 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
 
   app.set('trust proxy', config.TRUST_PROXY);
   app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(config.NODE_ENV) }));
+  // The company-host storm landing page, GET /storm/:code: no session, no rate limit. It is mounted before
+  // policyPages, which answers its own 404 for any other path on a company host; stormPage calls next() for
+  // every non-/storm path and every other host.
+  app.use(stormPage(deps));
   // The public policy pages (privacy and terms): no session, no rate limit, served before /health.
   app.use(policyPages(deps));
-  // The company-host storm landing page, GET /storm/:code: no session, no rate limit.
-  app.use(stormPage(deps));
+  // The storm landing page's form (public/storm-requests.ts): posted from the company's own host, so it is
+  // mounted ahead of blockCrossSiteMutations and checks its own Origin. It brings its own body parsers.
+  app.use('/api/public/storm-requests', publicRateLimit(), stormRequestOriginGuard(deps), stormRequestRoutes(deps));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
@@ -320,8 +325,6 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   const publicRouter = express.Router();
   publicRouter.use('/proposals', publicProposalRoutes(deps));
   publicRouter.use('/proposals', proposalSignRoutes(deps));
-  // A homeowner asks for a storm inspection from the company's storm page.
-  publicRouter.use('/storm-requests', stormRequestRoutes(deps));
   app.use('/api/public', publicRateLimit(), publicRouter);
 
   // The web app itself, when there is a build to serve. After every API route, so it can only

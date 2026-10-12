@@ -1,4 +1,4 @@
-import { type AdErrorKind, AdPlatformError } from "../ads-google.ts";
+import { type AdErrorKind, AdPlatformError } from '../ads-google.ts';
 
 export { AdPlatformError };
 
@@ -26,14 +26,14 @@ export interface GoogleAdsHttp {
   ): Promise<Record<string, unknown>[]>;
   /** POST/GET any other path under /{apiVersion}/ (e.g. customers/{id}/customerClientLinks:mutate); returns parsed JSON. */
   request(
-    method: "GET" | "POST",
+    method: 'GET' | 'POST',
     path: string,
     body?: unknown,
   ): Promise<Record<string, unknown>>;
 }
 
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const API_HOST = "https://googleads.googleapis.com";
+const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const API_HOST = 'https://googleads.googleapis.com';
 /** Refresh this long before the token's stated expiry, so a request never starts with a stale token. */
 const EXPIRY_MARGIN_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -41,7 +41,7 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 type JsonRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function records(value: unknown): JsonRecord[] {
@@ -50,7 +50,7 @@ function records(value: unknown): JsonRecord[] {
 
 /** Google Ads ids are digits; the console shows them with dashes. */
 function digitsOnly(id: string): string {
-  return id.replace(/-/g, "");
+  return id.replace(/-/g, '');
 }
 
 /** Parses an error body if it is JSON; anything else is treated as no detail. */
@@ -70,7 +70,7 @@ function errorCodePairs(body: unknown): Array<{ key: string; value: string }> {
     for (const failure of records(detail.errors)) {
       if (!isRecord(failure.errorCode)) continue;
       for (const [key, value] of Object.entries(failure.errorCode)) {
-        pairs.push({ key, value: typeof value === "string" ? value : "" });
+        pairs.push({ key, value: typeof value === 'string' ? value : '' });
       }
     }
   }
@@ -81,27 +81,27 @@ function errorCodePairs(body: unknown): Array<{ key: string; value: string }> {
 function errorStatusWord(body: unknown): string {
   return isRecord(body) &&
     isRecord(body.error) &&
-    typeof body.error.status === "string"
+    typeof body.error.status === 'string'
     ? body.error.status
-    : "";
+    : '';
 }
 
 const POLICY_KEYS: ReadonlySet<string> = new Set([
-  "policyViolationError",
-  "policyFindingError",
+  'policyViolationError',
+  'policyFindingError',
 ]);
 const PAYMENT_KEYS: ReadonlySet<string> = new Set([
-  "billingSetupError",
-  "paymentsAccountError",
-  "accountBudgetError",
+  'billingSetupError',
+  'paymentsAccountError',
+  'accountBudgetError',
 ]);
 const ACCESS_KEYS: ReadonlySet<string> = new Set([
-  "authorizationError",
-  "authenticationError",
+  'authorizationError',
+  'authenticationError',
 ]);
 const ACCESS_STATUS_WORDS: ReadonlySet<string> = new Set([
-  "PERMISSION_DENIED",
-  "UNAUTHENTICATED",
+  'PERMISSION_DENIED',
+  'UNAUTHENTICATED',
 ]);
 
 /**
@@ -113,23 +113,23 @@ function classify(status: number | undefined, body: unknown): AdErrorKind {
   const has = (test: (p: { key: string; value: string }) => boolean): boolean =>
     pairs.some(test);
 
-  if (has((p) => POLICY_KEYS.has(p.key) || p.value.startsWith("POLICY_")))
-    return "policy";
-  if (has((p) => PAYMENT_KEYS.has(p.key) || p.value.startsWith("BILLING_")))
-    return "payment";
+  if (has((p) => POLICY_KEYS.has(p.key) || p.value.startsWith('POLICY_')))
+    return 'policy';
+  if (has((p) => PAYMENT_KEYS.has(p.key) || p.value.startsWith('BILLING_')))
+    return 'payment';
   if (
-    has((p) => p.key === "criterionError" || p.value.startsWith("CRITERION_"))
+    has((p) => p.key === 'criterionError' || p.value.startsWith('CRITERION_'))
   )
-    return "targeting";
+    return 'targeting';
   if (
     has((p) => ACCESS_KEYS.has(p.key)) ||
     status === 401 ||
     status === 403 ||
     ACCESS_STATUS_WORDS.has(errorStatusWord(body))
   ) {
-    return "access";
+    return 'access';
   }
-  return "other";
+  return 'other';
 }
 
 /** Authenticated Google Ads REST client: OAuth refresh with a cached access token, and JSON calls. */
@@ -153,10 +153,10 @@ class GoogleAdsRest implements GoogleAdsHttp {
     do {
       const body: JsonRecord =
         pageToken === undefined ? { query } : { query, pageToken };
-      const page = await this.call("POST", path, body);
+      const page = await this.call('POST', path, body);
       results.push(...records(page.results));
       pageToken =
-        typeof page.nextPageToken === "string" && page.nextPageToken !== ""
+        typeof page.nextPageToken === 'string' && page.nextPageToken !== ''
           ? page.nextPageToken
           : undefined;
     } while (pageToken !== undefined);
@@ -168,30 +168,30 @@ class GoogleAdsRest implements GoogleAdsHttp {
     mutateOperations: Record<string, unknown>[],
   ): Promise<Record<string, unknown>[]> {
     const path = `customers/${digitsOnly(customerId)}/googleAds:mutate`;
-    const json = await this.call("POST", path, { mutateOperations });
+    const json = await this.call('POST', path, { mutateOperations });
     return records(json.mutateOperationResponses);
   }
 
   request(
-    method: "GET" | "POST",
+    method: 'GET' | 'POST',
     path: string,
     body?: unknown,
   ): Promise<Record<string, unknown>> {
-    return this.call(method, path.replace(/^\/+/, ""), body);
+    return this.call(method, path.replace(/^\/+/, ''), body);
   }
 
   /** Calls one API path under /{apiVersion}/ and returns the parsed JSON object. */
   private async call(
-    method: "GET" | "POST",
+    method: 'GET' | 'POST',
     path: string,
     body?: unknown,
   ): Promise<JsonRecord> {
     const accessToken = await this.accessToken();
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
-      "developer-token": this.settings.developerToken,
-      "login-customer-id": digitsOnly(this.settings.managerId),
-      "Content-Type": "application/json",
+      'developer-token': this.settings.developerToken,
+      'login-customer-id': digitsOnly(this.settings.managerId),
+      'Content-Type': 'application/json',
     };
     const init: RequestInit = {
       method,
@@ -220,7 +220,7 @@ class GoogleAdsRest implements GoogleAdsHttp {
   private async refresh(): Promise<string> {
     const started = this.now();
     const form = new URLSearchParams({
-      grant_type: "refresh_token",
+      grant_type: 'refresh_token',
       client_id: this.settings.clientId,
       client_secret: this.settings.clientSecret,
       refresh_token: this.settings.refreshToken,
@@ -228,19 +228,19 @@ class GoogleAdsRest implements GoogleAdsHttp {
     const res = await this.send(
       TOKEN_URL,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: form.toString(),
         signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
       },
-      "access",
+      'access',
     );
     const grant = await readJsonObject(res);
     if (
-      typeof grant.access_token !== "string" ||
-      typeof grant.expires_in !== "number"
+      typeof grant.access_token !== 'string' ||
+      typeof grant.expires_in !== 'number'
     ) {
-      throw new AdPlatformError("access", res.status);
+      throw new AdPlatformError('access', res.status);
     }
     this.token = {
       value: grant.access_token,
@@ -262,13 +262,13 @@ class GoogleAdsRest implements GoogleAdsHttp {
     try {
       res = await this.fetchImpl(url, init);
     } catch {
-      throw new AdPlatformError("other");
+      throw new AdPlatformError('other');
     }
     if (res.ok) return res;
 
     if (failureKind !== undefined)
       throw new AdPlatformError(failureKind, res.status);
-    const text = await res.text().catch(() => "");
+    const text = await res.text().catch(() => '');
     throw new AdPlatformError(
       classify(res.status, parseJson(text)),
       res.status,
@@ -282,11 +282,11 @@ async function readJsonObject(res: Response): Promise<JsonRecord> {
   try {
     text = await res.text();
   } catch {
-    throw new AdPlatformError("other", res.status);
+    throw new AdPlatformError('other', res.status);
   }
-  if (text.trim() === "") return {};
+  if (text.trim() === '') return {};
   const parsed = parseJson(text);
-  if (!isRecord(parsed)) throw new AdPlatformError("other", res.status);
+  if (!isRecord(parsed)) throw new AdPlatformError('other', res.status);
   return parsed;
 }
 

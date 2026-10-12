@@ -76,6 +76,62 @@ describe('invite', () => {
   });
 });
 
+describe('unlink', () => {
+  test('unlink sets an ACTIVE link INACTIVE', async () => {
+    const { http, request } = fakeHttp(rowsOf('link-search-active-id'), fixture('link-mutate-response'));
+    await createLink(http, '111-222-3333').unlink('987-654-3210');
+
+    expect(request).toHaveBeenCalledTimes(1);
+    const [method, path, body] = request.mock.calls[0] ?? [];
+    expect(method).toBe('POST');
+    expect(path).toBe('customers/1112223333/customerClientLinks:mutate');
+    expect(body).toEqual({
+      operation: {
+        update: { resourceName: 'customers/1112223333/customerClientLinks/9876543210~111', status: 'INACTIVE' },
+        updateMask: 'status',
+      },
+    });
+  });
+
+  test('unlink cancels a PENDING link', async () => {
+    const { http, request } = fakeHttp(rowsOf('link-search-pending-id'), fixture('link-mutate-response'));
+    await createLink(http, '1112223333').unlink('9876543210');
+
+    expect(request).toHaveBeenCalledTimes(1);
+    const [method, path, body] = request.mock.calls[0] ?? [];
+    expect(method).toBe('POST');
+    expect(path).toBe('customers/1112223333/customerClientLinks:mutate');
+    expect(body).toEqual({
+      operation: {
+        update: { resourceName: 'customers/1112223333/customerClientLinks/9876543210~222', status: 'CANCELED' },
+        updateMask: 'status',
+      },
+    });
+  });
+
+  test('unlink does nothing when no link exists', async () => {
+    const { http, request } = fakeHttp(rowsOf('link-search-none'));
+    await expect(createLink(http, '1112223333').unlink('9876543210')).resolves.toBeUndefined();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  test('unlink ignores a refused link', async () => {
+    const { http, request } = fakeHttp(rowsOf('link-search-refused'));
+    await createLink(http, '1112223333').unlink('9876543210');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  test('unlink searches the manager link id and client under the manager with dashes stripped', async () => {
+    const { http, search } = fakeHttp(rowsOf('link-search-active-id'), fixture('link-mutate-response'));
+    await createLink(http, '111-222-3333').unlink('987-654-3210');
+    expect(search).toHaveBeenCalledTimes(1);
+    const [customerId, query] = search.mock.calls[0] ?? [];
+    expect(customerId).toBe('1112223333');
+    expect(query).toContain('customer_client_link.manager_link_id');
+    expect(query).toContain("customer_client_link.client_customer = 'customers/9876543210'");
+  });
+});
+
 describe('accountInfo', () => {
   test('accountInfo returns name and currency', async () => {
     const { http, search } = fakeHttp(rowsOf('customer-info'));
