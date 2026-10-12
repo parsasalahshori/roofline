@@ -46,7 +46,7 @@ Start the long-lead items now. Approvals for texting, Google, Meta and EagleView
 | Twilio voice on subaccounts, **ConversationRelay enabled, AI/ML addendum accepted**, and a Roofline test caller number | days | D1 |
 | Test phones on Verizon, AT&T, T-Mobile and a landline/VoIP line | — | D1 (forwarding codes) |
 | **Voice choice for the phone front desk**: pick the ElevenLabs voices Twilio ConversationRelay should use (the code has placeholder voice ids) | same day | D1 (voice calls) |
-| **Manual smoke tests (owner runs them, with real accounts)**: C1 T29 real Google/Outlook calendars; E1 `npm run smoke:estimator -w @roofline/api -- --confirm-real-providers --eagleview-sandbox --r2 --sms <test phone>` (runbook `docs/superpowers/e1-manual-smoke.md`) | when accounts exist | C1, E1 go-live |
+| **Manual smoke tests (owner runs them, with real accounts)**: C1 T29 real Google/Outlook calendars; E1 `npm run smoke:estimator -w @roofline/api -- --confirm-real-providers --eagleview-sandbox --r2 --sms <test phone>` (runbook `docs/superpowers/e1-manual-smoke.md`); S1 T29 storm smoke (runbook `docs/superpowers/s1-manual-smoke.md`: Google Ads/Meta test accounts, Postmark broadcast stream + webhook secret, Render worker for `services/hail` with `HAIL_DB_PASSWORD` and `OPS_ALERT_EMAIL`) | when accounts exist | C1, E1, S1 go-live |
 
 ### Money and pricing decisions
 
