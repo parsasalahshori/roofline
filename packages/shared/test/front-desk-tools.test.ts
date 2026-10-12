@@ -195,3 +195,22 @@ describe('zod input schemas', () => {
     }
   });
 });
+
+describe('strict-mode schema keywords', () => {
+  it('emitted tool schemas contain no unsupported strict-mode keywords', () => {
+    const banned = ['minLength', 'maxLength', 'minimum', 'maximum', 'multipleOf', 'pattern'];
+    for (const tool of toolJsonSchemas()) {
+      walk(tool.input_schema, (node, path) => {
+        // A property named like a keyword lives inside a 'properties' map; skip those maps.
+        if (path.endsWith('.properties')) return;
+        for (const key of banned) {
+          expect(Object.prototype.hasOwnProperty.call(node, key), `${tool.name} ${path} ${key}`).toBe(false);
+        }
+        if (node.type === 'object') {
+          expect(node.additionalProperties, `${tool.name} ${path}`).toBe(false);
+        }
+      });
+    }
+    expect(propertySchema('check_forecast', 'date')).toEqual({ type: 'string', format: 'date' });
+  });
+});

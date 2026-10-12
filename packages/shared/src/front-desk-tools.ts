@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Calendar date as YYYY-MM-DD. Shared by the Front Desk tool schemas.
-export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+export const IsoDate = z.string().date();
 
 // Tool input schemas. Every object is strict; nullable fields are nullable, never optional.
 export const FRONT_DESK_TOOLS = {
@@ -145,6 +145,9 @@ function isJsonNode(value: unknown): value is JsonNode {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// Keywords strict tool use rejects (Ruling DM). The engine's zod .parse still enforces every limit.
+const UNSUPPORTED_KEYWORDS = new Set(['minLength', 'maxLength', 'minimum', 'maximum', 'multipleOf', 'pattern']);
+
 // Makes every object strict: additionalProperties false, and every property required.
 // Recurses through all nested schema nodes; drops $schema and any default.
 function strictify(node: unknown): unknown {
@@ -156,7 +159,7 @@ function strictify(node: unknown): unknown {
   }
   const out: JsonNode = {};
   for (const [key, value] of Object.entries(node)) {
-    if (key === '$schema' || key === 'default') continue;
+    if (key === '$schema' || key === 'default' || UNSUPPORTED_KEYWORDS.has(key)) continue;
     out[key] =
       key === 'properties' && isJsonNode(value)
         ? Object.fromEntries(Object.entries(value).map(([prop, schema]) => [prop, strictify(schema)]))
