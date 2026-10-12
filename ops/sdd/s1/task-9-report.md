@@ -18,3 +18,4 @@ typecheck clean, lint clean, vitest @roofline/shared: 28 files, 657 tests passed
 
 ## CI round 1 (run 38206854416, Platform failed)
 Two storm-hits tests read storm_hits through the owner pool while the writes were still uncommitted inside the tenant transaction, so they saw no rows. Fixed in the test only: hitRows now reads through the open transaction. CI re-run below.
+CI round 2: run 38208363292 PASSED at ee63a7a.
