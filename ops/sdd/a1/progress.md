@@ -186,3 +186,9 @@ Ruling AX-N (track lead): Front Desk steps fold booking minutes into the call/te
 - Extra merge fixes: E1's R2ObjectStore gained signedGetUrl and delete (D1's ObjectStore interface), with tests; s1-routes dock test stubs proposal list; twilio inbound order per Ruling AV.
 - Cross-track migration edits under Ruling AW (routed to S1/D1 via the controller): S1 0018 app_system on spotter_reports narrowed to SELECT, INSERT (as S1 R8 4452777); D1 0020 adds GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers TO app_system (markVoiceUrlSet after SEC-4).
 - a1-agents 83c44c9a (a1-merge-up2 merged) green: run 38287793645 Platform+E2E.
+
+## BUG-6 merged (launch dress rehearsal)
+- a1-bug6 3722c2cf (CI run 38291327986 Platform+E2E green) merged --no-ff into a1-agents; typecheck+lint clean.
+- TASK_KIND_LABEL: Front Desk `call`, `text_conversation`; Estimator `exact_report`; G1's ten kinds in G1's exact wording (controller, so the launch merge is keep-both). agents-lists.test pins every created kind; a new kind needs a label in copy/status.ts.
+- TimeBaselines section is labelled by its heading; agents-settings e2e scopes Save/Saved. to that region (sentinel pass-14 item: G1 adds another Save on the tab).
+- Also done as a D1 helper: d1-rev-h (Ruling BI, retention blanks only the AI text exchange), green run 38290914284, merged by the D1 lead into d1-front-desk.
