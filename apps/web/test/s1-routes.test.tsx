@@ -12,6 +12,9 @@ import { settings } from '../src/copy/settings.ts';
 import { storm } from '../src/copy/storm.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
+// The route map needs maplibre-gl, which these tests never need. RouteMap is package B's component.
+vi.mock('../src/features/storm/routes/RouteMap.tsx', () => ({ RouteMap: () => null }));
+
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
 vi.mock('../src/shell/map/MapView.tsx', async () => {
   const { createElement } = await import('react');
@@ -104,14 +107,35 @@ function dockLink(dockNav: HTMLElement, label: string) {
 }
 
 describe('S1 Storm windows', () => {
-  it.each([
-    ['/storm/routes', doors.routesComingSoon],
-    ['/storm/routes/r1', doors.routeComingSoon],
-  ])('%s shows its placeholder', async (path, copy) => {
-    signedInApi();
-    renderApp(path);
+  it('/storm/routes shows the empty line when the rep has no routes', async () => {
+    const api = signedInApi(ACCOUNT, { 'GET /api/routes/mine': () => ({ body: { routes: [] } }) });
+    renderApp('/storm/routes');
 
-    expect(await screen.findByText(copy)).toBeInTheDocument();
+    expect(await screen.findByText(doors.myRoutesEmpty)).toBeInTheDocument();
+    expect(api.count('GET /api/storms/routes')).toBe(0);
+  });
+
+  it('/storm/routes/r1 shows that route', async () => {
+    signedInApi(ACCOUNT, {
+      'GET /api/routes/r1': () => ({
+        body: {
+          route: {
+            id: 'r1',
+            companyStormId: 'cs1',
+            stormId: 'st1',
+            userId: 'u1',
+            name: 'Omaha · Route 1 (Sam)',
+            status: 'ready',
+            stops: 0,
+            doneStops: 0,
+          },
+          stops: [],
+        },
+      }),
+    });
+    renderApp('/storm/routes/r1');
+
+    expect(await screen.findByRole('heading', { name: 'Omaha · Route 1 (Sam)' })).toBeInTheDocument();
   });
 
   it('/storm shows the storms list', async () => {
@@ -126,14 +150,6 @@ describe('S1 Storm windows', () => {
     renderApp('/storm/s1');
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Maple Ridge' })).toBeInTheDocument();
-  });
-
-  it('/storm/routes is the routes list and not a storm called routes', async () => {
-    const api = signedInApi();
-    renderApp('/storm/routes');
-
-    expect(await screen.findByText(doors.routesComingSoon)).toBeInTheDocument();
-    expect(api.count('GET /api/storms/routes')).toBe(0);
   });
 
   it('the dock Storm opens /storm', async () => {
