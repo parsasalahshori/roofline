@@ -15,6 +15,7 @@ import {
   getConversation,
   insertConversation,
   insertTurn,
+  listTurns,
   linkCallConversation,
   hasUrgentNoticeFor,
   loadCompanyFacts,
@@ -103,9 +104,12 @@ function idsIn(value: unknown, out: string[] = []): string[] {
 /** Router intents that mean the caller is asking for a person (see shouldTransfer). */
 const ASK_PERSON_INTENTS = new Set(['ask_for_person', 'transfer', 'human']);
 
-/** A handoff is urgent when the router said so, the reason is danger or a leak, or an urgent message was already taken on this conversation. */
-async function urgentForHandoff(deps: AppDeps, state: ConversationState, reason: TransferReason, routerUrgent: boolean): Promise<boolean> {
-  if (routerUrgent || reason === 'danger' || reason === 'leak' || state.urgentNoticeSent === true) return true;
+/**
+ * A handoff is urgent when the reason is danger or a leak, or an urgent message was already taken on this
+ * conversation (Ruling BK: the router's own "urgent" flag, from the caller's words alone, never rings on-call staff).
+ */
+async function urgentForHandoff(deps: AppDeps, state: ConversationState, reason: TransferReason): Promise<boolean> {
+  if (reason === 'danger' || reason === 'leak' || state.urgentNoticeSent === true) return true;
   try {
     const ctx = systemCtx(state.companyId);
     return await withTenant(deps.pools, ctx, (tx) => hasUrgentNoticeFor(tx, ctx, state.conversationId));
@@ -113,6 +117,19 @@ async function urgentForHandoff(deps: AppDeps, state: ConversationState, reason:
     deps.logError?.(err, 'front-desk.handoff');
     return false;
   }
+}
+
+/**
+ * Transcript off (the caller objected to recording): a stored tool call keeps only its name and outcome. A
+ * take_message keeps its urgent flag, which is not the caller's words: the durable once-per-conversation check for
+ * the on-call email reads it (hasUrgentNoticeFor).
+ */
+function redactToolCall(c: { name: string; input?: unknown; result?: string; ok: boolean }): { name: string; ok: boolean; input?: { urgent: boolean } } {
+  if (c.name === 'take_message') {
+    const urgent = (c.input as { urgent?: unknown } | undefined)?.urgent === true;
+    return { name: c.name, ok: c.ok, input: { urgent } };
+  }
+  return { name: c.name, ok: c.ok };
 }
 
 export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
@@ -169,6 +186,16 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         startedAt: deps.clock.now(),
       });
       created.toolSettings = { canMove: facts.canMove, canCancel: facts.canCancel };
+      if (reusedRow !== null) {
+        // A later relay session of the same call (message mode after a transfer) continues the conversation:
+        // turn positions follow the stored turns, the turn limit and the 30-minute cap count from the call's
+        // start, and an urgent message already taken stays taken (E1 RC-2 review #1/#8, C1 RA review #2).
+        const stored = await listTurns(tx, ctx, reusedRow.id);
+        created.nextPosition = stored.reduce((max, t) => Math.max(max, t.position + 1), 0);
+        created.turns = stored.filter((t) => t.speaker === 'caller').length;
+        created.startedAt = reusedRow.createdAt;
+        if (await hasUrgentNoticeFor(tx, ctx, reusedRow.id)) created.urgentNoticeSent = true;
+      }
       if (i.channel === 'voice') {
         if (reusedRow !== null && (reusedRow.identity === 'verified' || reusedRow.identity === 'matched')) {
           created.identity = reusedRow.identity;
@@ -379,7 +406,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             taskInProgress: state.taskInProgress,
             failedUnderstanding: state.failedUnderstanding,
           }) ?? 'asked';
-        yield* handoff(reason, `The caller needs a person (${decision.intent}).`, await urgentForHandoff(deps, state, reason, decision.urgent));
+        yield* handoff(reason, `The caller needs a person (${decision.intent}).`, await urgentForHandoff(deps, state, reason));
         return;
       }
       if (decision && decision.route === 'opus') {
@@ -395,7 +422,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         if (byCount) {
           dropSpeculative();
           rec.route = 'transfer';
-          yield* handoff(byCount, `The caller needs a person (${decision.intent}).`, await urgentForHandoff(deps, state, byCount, false));
+          yield* handoff(byCount, `The caller needs a person (${decision.intent}).`, await urgentForHandoff(deps, state, byCount));
           return;
         }
       }
@@ -420,7 +447,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
           state.modelErrors += 1;
           if (state.modelErrors >= 2) {
             yield speak(SAY_TROUBLE);
-            yield* handoff('model_failure', 'The assistant had trouble answering and needs a person to take over.', await urgentForHandoff(deps, state, 'model_failure', false));
+            yield* handoff('model_failure', 'The assistant had trouble answering and needs a person to take over.', await urgentForHandoff(deps, state, 'model_failure'));
             return;
           }
           stream = openStream();
@@ -433,12 +460,12 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         if (out.stopReason === 'refusal') {
           if (out.content.length > 0) appendAssistant(state, out.content);
           yield speak(SAY_REFUSAL);
-          yield* handoff('model_failure', 'The assistant could not help with this request and needs a person to take over.', await urgentForHandoff(deps, state, 'model_failure', false));
+          yield* handoff('model_failure', 'The assistant could not help with this request and needs a person to take over.', await urgentForHandoff(deps, state, 'model_failure'));
           return;
         }
         if (out.stopReason === 'max_tokens') {
           if (shortened) {
-            yield* handoff('model_failure', 'The assistant could not finish an answer and needs a person to take over.', await urgentForHandoff(deps, state, 'model_failure', false));
+            yield* handoff('model_failure', 'The assistant could not finish an answer and needs a person to take over.', await urgentForHandoff(deps, state, 'model_failure'));
             return;
           }
           shortened = true;
@@ -456,7 +483,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         // Tool round.
         rounds += 1;
         if (rounds > MAX_TOOL_ROUNDS) {
-          yield* handoff('not_understood', 'The assistant took too many steps and needs a person to take over.', await urgentForHandoff(deps, state, 'not_understood', false));
+          yield* handoff('not_understood', 'The assistant took too many steps and needs a person to take over.', await urgentForHandoff(deps, state, 'not_understood'));
           return;
         }
         appendAssistant(state, out.content);
@@ -470,7 +497,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
           if (!parsed.success) {
             invalidInputs += 1;
             result = { ok: false, forModel: 'Those details were not valid. Check them and try once more.' };
-            if (invalidInputs > 1) finish = { type: 'handoff', reason: 'not_understood', summary: 'The assistant could not fill in the details and needs a person to take over.', urgent: await urgentForHandoff(deps, state, 'not_understood', false) };
+            if (invalidInputs > 1) finish = { type: 'handoff', reason: 'not_understood', summary: 'The assistant could not fill in the details and needs a person to take over.', urgent: await urgentForHandoff(deps, state, 'not_understood') };
           } else if (idsIn(parsed.data).some((id) => !state.shownIds.has(id))) {
             result = { ok: false, forModel: NOT_THEIRS };
           } else {
@@ -490,17 +517,12 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
             for (const id of result.shownIds ?? []) state.shownIds.add(id);
             if (use.name === 'transfer_to_person' && !finish) {
               const p = parsed.data as { reason: Exclude<TransferReason, 'model_failure'>; summary: string };
-              finish = { type: 'handoff', reason: p.reason, summary: p.summary, urgent: await urgentForHandoff(deps, state, p.reason, false) };
+              finish = { type: 'handoff', reason: p.reason, summary: p.summary, urgent: await urgentForHandoff(deps, state, p.reason) };
             } else if (use.name === 'end_call' && !finish) {
               finish = { type: 'end', reason: (parsed.data as { reason: 'goodbye' | 'spam' | 'silence' }).reason };
             }
           }
-          // Transcript off (caller objected to recording): keep only the tool name and outcome.
-          rec.toolCalls.push(
-            state.transcriptOff === true
-              ? { name: use.name, ok: result.ok }
-              : { name: use.name, input: use.input, result: result.forModel, ok: result.ok },
-          );
+          rec.toolCalls.push({ name: use.name, input: use.input, result: result.forModel, ok: result.ok });
           results.push({ toolUseId: use.id, content: result.forModel, isError: !result.ok });
         }
         appendToolResults(state, results);
@@ -551,8 +573,9 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
           inputTokens: rec.usageSeen ? rec.inputTokens : null,
           cachedTokens: rec.usageSeen ? rec.cachedTokens : null,
           outputTokens: rec.usageSeen ? rec.outputTokens : null,
-          // Transcript-off rows carry only name and ok; the column type predates that, so widen here.
-          toolCalls: rec.toolCalls.length > 0 ? (rec.toolCalls as ToolCallRecord[]) : null,
+          // Decided at save time, so a turn in flight when the caller objects is redacted too (C1 RA review #8).
+          // The column type predates the redacted shape, so widen here.
+          toolCalls: rec.toolCalls.length > 0 ? (rec.toolCalls.map((c) => (state.transcriptOff === true ? redactToolCall(c) : c)) as ToolCallRecord[]) : null,
           guardHits: hits,
         });
         return { caller: caller.id, assistant: assistant.id, rows: 2 };

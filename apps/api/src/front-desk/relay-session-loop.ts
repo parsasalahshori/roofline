@@ -86,7 +86,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
     } catch (e) {
       if (isAbort(e) || ac.signal.aborted) return;
       console.error(`relay turn failed call=${call.callId} company=${call.companyId}`);
-      transfer('asked', '', false);
+      transfer('asked', '', state?.urgentNoticeSent === true);
     }
   }
 
@@ -160,7 +160,7 @@ export function runRelayLoop(session: VoiceSession, o: { deps: AppDeps; engine: 
       case 'dtmf': {
         if (m.digit !== '0' || ended) return;
         abortCurrent();
-        transfer('asked', '', false);
+        transfer('asked', '', state?.urgentNoticeSent === true);
         return;
       }
       case 'error':

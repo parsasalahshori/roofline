@@ -377,7 +377,7 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     const q = r.t.deps.pools.system.$client;
     await q.query(
       'update memberships set transfer_phone_e164 = $1, on_call_order = $2 where company_id = $3 and user_id = $4',
-      ['+14025550200', 0, r.companyId, r.t.seed.a.owner.userId],
+      ['+14025550166', 0, r.companyId, r.t.seed.a.owner.userId],
     );
     await r.say('my roof is leaking into the kitchen');
 

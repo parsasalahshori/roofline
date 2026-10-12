@@ -249,6 +249,11 @@ function cardOf(raw: { name: string; input?: unknown; ok?: unknown }): ToolActio
     else if (rec.name === 'take_claim_details' && isUuid(input.jobId)) link = { kind: 'job', id: input.jobId };
   }
   const label = labels ? (rec.ok ? labels.ok : labels.failed) : rec.ok ? 'Did something for the caller' : 'Could not finish a step';
+  // A message the caller left for the team is what staff need to read, also for a caller with no record
+  // (E1 CV review #6). A turn redacted after a recording objection has no reason, and keeps the plain label.
+  if (rec.name === 'take_message' && rec.ok && typeof input.reason === 'string' && input.reason.trim() !== '') {
+    return { tool: rec.name, ok: rec.ok, label: `${labels!.ok}: ${input.reason.trim().slice(0, 300)}`, link };
+  }
   return { tool: rec.name, ok: rec.ok, label, link };
 }
 
