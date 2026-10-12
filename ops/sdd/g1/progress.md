@@ -148,3 +148,4 @@ Ruling GX-A (confirmed by the controller, amending cross-track Ruling AV): inbou
 - `g1-w6` (staging) = g1-t14 (13b + 14) + g1-t11 + g1-t12 (db barrel keep-both) 20d7040; T7 joins after its fix is green.
 - Ruling BE (controller 13:40Z, launch runbook): AGENT_DRAFT_MODEL, AGENT_EXTRACT_MODEL and MAPTILER_SERVER_KEY get descriptions in config.ts, `.env.example` entries and README rows — folded into the Task 18 brief (section 4). Closes the T3 minor (MAPTILER not in README/.env.example).
 - Task 17p launched (wf_da6f3da3-a10, contact 741) on g1-w6 d071fb9 alongside Task 15 (wf_07868a18-e02, contact 731). Task 18 brief written; it runs on g1-w7 = g1-w6 + T15 + T17p.
+- g1-w6 d071fb9 (13b, 14, 11, 12, 7 with E1 and S1): CI 38255096049 Platform + E2E green.
