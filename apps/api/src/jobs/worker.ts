@@ -11,6 +11,7 @@ import { dispatchDueMessages } from './scheduler/dispatch-messages.ts';
 import { endTrials } from './scheduler/end-trials.ts';
 import { expireDrafts } from './scheduler/expire-drafts.ts';
 import { pollTexting } from './scheduler/poll-texting.ts';
+import { pruneEarlyReports } from './scheduler/prune-early-reports.ts';
 import { provisionTexting } from './scheduler/provision-texting.ts';
 import { reportJobError } from './scheduler/report.ts';
 import { reportUsage } from './scheduler/report-usage.ts';
@@ -47,6 +48,7 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'provision-texting', cron: '* * * * *', run: provisionTexting },
   { name: 'poll-texting', cron: '0 * * * *', run: pollTexting },
   { name: 'bill-monthly-fees', cron: '0 9 1 * *', run: billMonthlyFees },
+  { name: 'prune-early-reports', cron: '17 3 * * *', run: pruneEarlyReports },
 ];
 
 /** How many steps one worker process runs at once. */

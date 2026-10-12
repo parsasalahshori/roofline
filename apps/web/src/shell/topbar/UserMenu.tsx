@@ -1,10 +1,10 @@
 import { Avatar, Button, Card, Sheet, useFocusTrap, useToast } from '@roofline/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
 import { useMe, useSignOut, useSwitchCompany } from '../../api/hooks.ts';
 import type { Account } from '../../api/types.ts';
 import { common } from '../../copy/common.ts';
 import { shell } from '../../copy/shell.ts';
+import { SetupRing } from '../../features/setup/SetupRing.tsx';
 import { useIsPhone } from '../useIsPhone.ts';
 import styles from './UserMenu.module.css';
 
@@ -46,6 +46,7 @@ export function UserMenu() {
         <Avatar name={account.user.name} size={24} />
         <span className={styles.name}>{account.user.name}</span>
       </Button>
+      <SetupRing />
       {open && !phone ? (
         <div ref={popoverRef} tabIndex={-1} className={styles.popover}>
           <Card as="section" padded={false} aria-label={shell.menuLabel}>
@@ -62,7 +63,6 @@ export function UserMenu() {
 
 /** The menu's entries. The same list is shown in the desktop popover and in the phone sheet. */
 function MenuList({ account, close }: { account: Account; close: () => void }) {
-  const navigate = useNavigate();
   const toast = useToast();
   const switchCompany = useSwitchCompany();
   const signOut = useSignOut();
@@ -87,16 +87,8 @@ function MenuList({ account, close }: { account: Account; close: () => void }) {
             variant="ghost"
             busy={switchCompany.isPending}
             className={styles.item}
-            onClick={() =>
-              switchCompany.mutate(company.id, {
-                onSuccess: () => {
-                  close();
-                  // The ids on the old company's pages mean nothing in the new one, so the map is the place to land
-                  void navigate('/');
-                },
-                onError: (error) => toast.show(error.message, 'error'),
-              })
-            }
+            /* The hook goes to the map and reports a failure, even once this menu has closed */
+            onClick={() => switchCompany.mutate(company.id, { onSuccess: close })}
           >
             {shell.switchTo(company.name)}
           </Button>

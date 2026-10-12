@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { makeTestApp, SIGNUP_COMPANY, type TestApp } from './helpers.ts';
 
 const PASSWORD = 'a long enough password';
-const ADDRESS_NOT_FOUND = "We couldn't find that address. Check the street, city and state.";
 const PHONE_MESSAGE = "That doesn't look like a US phone number.";
 const SQUARE_METERS_40_MILES = Math.PI * 64373.76 ** 2;
 
@@ -17,16 +16,6 @@ beforeEach(async () => {
 async function sql<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
   const result = await t.deps.pools.system.$client.query(text, params);
   return result.rows as T[];
-}
-
-/** Row counts for "nothing was created" checks. */
-async function countUsersAndCompanies(name: string, email: string) {
-  const [row] = await sql<{ users: string; companies: string }>(
-    `select (select count(*) from users where email = $1) as users,
-            (select count(*) from companies where name = $2) as companies`,
-    [email, name],
-  );
-  return row!;
 }
 
 function signup(overrides: Record<string, unknown> = {}) {
@@ -76,12 +65,33 @@ describe('sign-up with company details', () => {
     expect(row!.timezone).toBe('America/New_York');
   });
 
-  test("an address we can't find is a field error and creates nothing", async () => {
-    const res = await signup({ companyAddress: '1 Nowhere Rd, Omaha, NE 68102' });
-    expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: ADDRESS_NOT_FOUND, field: 'companyAddress' });
+  test("an address we can't find still creates the account, unlocated", async () => {
+    const typed = '1 Nowhere Rd, Omaha, NE 68102';
+    const res = await signup({ companyAddress: typed });
+    expect(res.status).toBe(201);
 
-    expect(await countUsersAndCompanies('Summit Roofing', 'owner@example.com')).toEqual({ users: '0', companies: '0' });
+    const [row] = await sql<{ address_street: string; has_location: boolean; timezone: string }>(
+      `select address_street, (location is not null) as has_location, timezone
+         from companies where id = $1`,
+      [res.body.company.id],
+    );
+    const [defaults] = await sql<{ expr: string }>(
+      `select pg_get_expr(d.adbin, d.adrelid) as expr
+         from pg_attrdef d join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
+        where d.adrelid = 'companies'::regclass and a.attname = 'timezone'`,
+    );
+    expect(row!.has_location).toBe(false);
+    expect(row!.address_street).toBe(typed);
+    // The column default is written as 'America/Chicago'::text; compare the text inside the quotes.
+    expect(row!.timezone).toBe(/^'(.*)'::/.exec(defaults!.expr)?.[1]);
+  });
+
+  test('sign-up gives the map 2 seconds', async () => {
+    const res = await signup({ companyAddress: '1200 Farnam St, Omaha, NE 68102' });
+    expect(res.status).toBe(201);
+
+    const lookups = t.geocoder.calls.filter((c) => c.method === 'geocode');
+    expect(lookups.at(-1)?.args[1]).toEqual({ timeoutMs: 2000 });
   });
 
   test('when the map service is down, sign-up still works', async () => {

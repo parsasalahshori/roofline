@@ -1,0 +1,23 @@
+.ring {
+  display: block;
+  flex: none;
+}
+
+.track {
+  stroke: var(--line);
+}
+
+.arc {
+  stroke: var(--accent);
+  transition: stroke-dashoffset 200ms ease;
+}
+
+.ring[data-complete] .arc {
+  stroke: var(--success);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arc {
+    transition: none;
+  }
+}

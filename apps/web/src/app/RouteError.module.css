@@ -1,0 +1,28 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--font-size-body);
+}
+
+.page[data-variant='window'] {
+  min-height: 0;
+  height: 100%;
+  background: var(--surface);
+  border-radius: var(--radius-window);
+  box-shadow: var(--shadow-window);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-stat);
+}
+
+.body {
+  margin: 0;
+}

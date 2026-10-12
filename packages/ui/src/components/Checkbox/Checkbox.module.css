@@ -1,0 +1,61 @@
+.checkbox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The whole row is the hit area: at least 40px tall, and clicking the label text toggles the box. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--font-size-body);
+  cursor: pointer;
+}
+
+.row[data-disabled="true"] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: inherit;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Indented to line up with the label text, past the 20px box and its 12px gap. */
+.description {
+  margin: 0;
+  padding-left: 32px;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+/* The error is --text on a --danger bar: --danger itself is under 4.5:1 as small text. */
+.error {
+  margin: 0;
+  margin-left: 32px;
+  padding-left: 8px;
+  border-left: 3px solid var(--danger);
+  color: var(--text);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}

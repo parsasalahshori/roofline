@@ -39,4 +39,7 @@ export const auth = {
   name: 'Your name',
   acceptInvite: 'Join the team',
   signInToJoin: 'Sign in to join',
+
+  // Sign-up, until its screen is built
+  comingSoon: 'Sign-up is almost here.',
 } as const;

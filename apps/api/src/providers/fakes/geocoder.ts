@@ -22,15 +22,31 @@ function round6(x: number): number {
   return Math.round(x * 1e6) / 1e6;
 }
 
-/** Parses `street, city, ST zip`. Missing parts come back as null. */
+/**
+ * Parses `street, city, ST zip`. Missing parts come back as null. With two parts, the last one is the state
+ * and zip when it looks like `ST` or `ST zip`; otherwise it is the city.
+ */
 function parseAddress(address: string): Pick<GeocodeResult, 'street' | 'city' | 'state' | 'zip' | 'timezone'> {
   const parts = address.split(',').map((p) => p.trim());
   const street = parts[0] || null;
-  const city = parts.length >= 3 && parts[1] ? parts[1] : null;
-  const tail = parts.length >= 2 ? (parts[parts.length - 1] ?? '') : '';
-  const m = /\b([A-Za-z]{2})\s+(\d{5})\b/.exec(tail);
-  const state = m?.[1] ? m[1].toUpperCase() : null;
-  const zip = m?.[2] ?? null;
+  const last = parts.length >= 2 ? (parts[parts.length - 1] ?? '') : '';
+  let city: string | null = null;
+  let state: string | null = null;
+  let zip: string | null = null;
+  if (parts.length >= 3) {
+    city = parts[1] || null;
+    const m = /\b([A-Za-z]{2})\s+(\d{5})\b/.exec(last);
+    state = m?.[1] ? m[1].toUpperCase() : null;
+    zip = m?.[2] ?? null;
+  } else if (parts.length === 2) {
+    const m = /^([A-Za-z]{2})(?:\s+(\d{5}))?$/.exec(last);
+    if (m) {
+      state = m[1]!.toUpperCase();
+      zip = m[2] ?? null;
+    } else {
+      city = last || null;
+    }
+  }
   const timezone = state ? (STATE_TIMEZONES[state] ?? 'America/Chicago') : null;
   return { street, city, state, zip, timezone };
 }
@@ -63,8 +79,8 @@ export class FakeGeocoder implements Geocoder {
     return { lng, lat, ...parseAddress(address.trim()), accuracy: 1, accuracyType: 'rooftop', source: 'fake' };
   }
 
-  async geocode(address: string): Promise<GeocodeResult | null> {
-    this.calls.push({ method: 'geocode', args: [address] });
+  async geocode(address: string, opts?: { timeoutMs?: number }): Promise<GeocodeResult | null> {
+    this.calls.push({ method: 'geocode', args: [address, opts] });
     this.takeFailure();
     if (/outage/i.test(address)) throw new GeocoderUnavailableError('Fake geocoder is unavailable.');
     return this.resolve(address);
