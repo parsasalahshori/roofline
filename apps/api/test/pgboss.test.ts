@@ -196,7 +196,9 @@ describe('the worker', () => {
         ['calendar-pull', '*/5 * * * *'],
         ['dispatch-messages', '* * * * *'],
         ['end-trials', '*/5 * * * *'],
+        ['exact-report-poll', '*/10 * * * *'],
         ['expire-drafts', '*/5 * * * *'],
+        ['footprints-ensure', '*/15 * * * *'],
         ['poll-texting', '0 * * * *'],
         ['provision-texting', '* * * * *'],
         ['prune-early-reports', '17 3 * * *'],
@@ -215,6 +217,8 @@ describe('the worker', () => {
       'bill-monthly-fees',
       'prune-early-reports',
       'calendar-pull',
+      'footprints-ensure',
+      'exact-report-poll',
     ]);
   });
 });

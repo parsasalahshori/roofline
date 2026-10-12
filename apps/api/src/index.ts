@@ -34,6 +34,20 @@ export {
   type SyncPage,
 } from './providers/calendar.ts';
 export { FakeCalendarApi } from './providers/fakes/calendar.ts';
+export { type AerialMeasure, type AerialRoof, AerialUnavailableError } from './providers/aerial.ts';
+export {
+  type ExactPrice,
+  type ExactReport,
+  type ExactReports,
+  ExactOrderUncertainError,
+  ExactReportsUnavailableError,
+} from './providers/exact-reports.ts';
+export { type FootprintFeature, type FootprintSource, createFootprintSource } from './providers/footprints.ts';
+export { type ObjectStore, createObjectStore } from './providers/object-store.ts';
+export { FakeAerialMeasure } from './providers/fakes/aerial.ts';
+export { FakeExactReports } from './providers/fakes/exact-reports.ts';
+export { FakeFootprintSource } from './providers/fakes/footprints.ts';
+export { MemoryObjectStore } from './providers/fakes/object-store.ts';
 export { type GeocodeResult, type Geocoder, GeocoderUnavailableError, createGeocoder } from './providers/geocoder.ts';
 export {
   createRegistrar,

@@ -54,6 +54,16 @@
 | `STRIPE_WEBHOOK_SECRET` | when `STRIPE_SECRET_KEY` is set | Stripe webhook signing secret (`whsec_`). |
 | `BILLING_PLANS_FILE` | no | The billing plans JSON file. Defaults to `config/billing-plans.example.json` outside production; required in production when `STRIPE_SECRET_KEY` is set. |
 | `GEOCODIO_API_KEY` | no | Geocodio key for address lookup. Unset: addresses are not looked up. |
+| `EAGLEVIEW_CLIENT_ID` | no | EagleView client id. Both or neither with `EAGLEVIEW_CLIENT_SECRET`. Unset: aerial measurement and exact reports are off. |
+| `EAGLEVIEW_CLIENT_SECRET` | no | EagleView client secret. Both or neither with `EAGLEVIEW_CLIENT_ID`. |
+| `EAGLEVIEW_ENV` | no (`sandbox`) | `sandbox` or `production`. |
+| `EAGLEVIEW_PRODUCT_ID` | no (0) | The EagleView product id to order. 0 is a placeholder: ask before ordering. |
+| `R2_ACCOUNT_ID` | no | Cloudflare R2 account id. All four R2 settings or none. Expected in production once any company can sign; without them start-up warns and signed proposals cannot be stored. |
+| `R2_ACCESS_KEY_ID` | no | R2 access key id. All four R2 settings or none. |
+| `R2_SECRET_ACCESS_KEY` | no | R2 secret access key. All four R2 settings or none. |
+| `R2_BUCKET` | no | R2 bucket name. All four R2 settings or none. |
+| `PROPOSAL_LINK_BASE_URL` | no (`APP_ORIGIN`) | Base URL of customer proposal links; trailing slashes are removed. |
+| `FOOTPRINTS_BASE_URL` | no | Where building footprint files are read from; a trailing slash is added. Defaults to `https://usbuildingdata.blob.core.windows.net/usbuildings-v2/`. |
 | `POLICY_PAGES_DOMAIN` | no | The bare hostname for the policy pages, like `roofline.app`. |
 | `FAKE_PROVIDERS` | no | `1` or `true` swaps every outside service for a fake. Development and test only; refused in production. |
 | `WEB_DIST_DIR` | no | Where the built web app is: `apps/web/dist` in production (a relative path is read from the repository root). When set, the API also serves the app, so one origin answers both; it must contain `index.html` or start-up stops. Leave unset in development, where Vite serves the app. |
