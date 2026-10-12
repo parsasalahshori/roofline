@@ -62,6 +62,13 @@ async function setup() {
 }
 
 describe('lookup_my_jobs', () => {
+  test('a verified lookup shows each job and its property id', async () => {
+    const { ids, tool } = await setup();
+    const r = await lookupMyJobs(tool('verified'), {});
+    expect(r.ok).toBe(true);
+    expect(r.shownIds).toEqual(expect.arrayContaining([ids.jobId, ids.propertyId]));
+  });
+
   test('a phone-matched caller hears only the weekday of the next appointment', async () => {
     const { tool } = await setup();
     const r = await lookupMyJobs(tool('matched'), {});

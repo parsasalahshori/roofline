@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { companySettings, conversations } from '@roofline/db';
+import { companySettings, conversations, createCustomer, type TenantContext } from '@roofline/db';
 import { DEFAULT_WORK_HOURS } from '@roofline/shared';
+import { takeMessage } from '../../src/front-desk/tools/message.ts';
 import { endCall } from '../../src/front-desk/tools/end.ts';
 import { transferToPerson } from '../../src/front-desk/tools/transfer.ts';
 import type { ConversationState } from '../../src/front-desk/engine-types.ts';
@@ -95,6 +96,18 @@ describe('transfer_to_person', () => {
     t.clock.set(AFTER_HOURS);
     const res = await transfer(await makeConversation(), 'leak');
     expect(res.action).toBe('transfer_ring_each');
+  });
+
+  test('after hours, an urgent message earlier in the conversation makes a plain request ring each', async () => {
+    await putOnCall(2);
+    t.clock.set(AFTER_HOURS);
+    const sys: TenantContext = { companyId: idA(), userId: null, role: 'system', canApproveSpend: false };
+    const customerId = await inCompany(t, idA(), async (tx) => (await createCustomer(tx, sys, { displayName: 'Nina Test' }, { now: t.clock.now() })).id);
+    const conv = { ...(await makeConversation()), customerId, identity: 'matched' as const };
+    const ctx = { deps: t.deps, companyId: idA(), conversation: conv, now: t.clock.now() };
+    expect((await transfer(conv, 'asked')).action).toBe('message');
+    await takeMessage(ctx, { reason: 'Water coming in', urgent: true, callbackWhen: null, name: null });
+    expect((await transfer(conv, 'asked')).action).toBe('transfer_ring_each');
   });
 
   test('no on-call members gives message mode', async () => {

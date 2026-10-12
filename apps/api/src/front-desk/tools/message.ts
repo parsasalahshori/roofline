@@ -3,7 +3,6 @@ import {
   hasUrgentNoticeFor,
   listJobs,
   loadCompanyFacts,
-  type TenantContext,
   updateConversation,
   updateJob,
   withTenant,
@@ -11,6 +10,7 @@ import {
 import { onCallEmails } from '@roofline/db/system';
 import { localDate, NEXT_STEP_MAX } from '@roofline/shared';
 import type { ToolHandler } from '../engine-types.ts';
+import { isOpenJob, systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 9: take_message. Scope comes from the server-side conversation. The follow-up is the job's
@@ -21,7 +21,7 @@ import type { ToolHandler } from '../engine-types.ts';
 
 export const takeMessage: ToolHandler<'take_message'> = async (ctx, input) => {
   const { conversation } = ctx;
-  const tctx: TenantContext = { companyId: ctx.companyId, role: 'system', userId: null, canApproveSpend: false };
+  const tctx = systemCtx(ctx.companyId);
 
   const alreadyNotified = await withTenant(ctx.deps.pools, tctx, async (tx) => {
     const seen = input.urgent ? await hasUrgentNoticeFor(tx, tctx, conversation.conversationId) : false;
@@ -31,12 +31,13 @@ export const takeMessage: ToolHandler<'take_message'> = async (ctx, input) => {
     if (conversation.customerId !== null) {
       const { jobs } = await listJobs(tx, tctx, { customerId: conversation.customerId, limit: 200 });
       const open = jobs
-        .filter((j) => j.archivedAt === null && j.stage !== 'installed' && j.stage !== 'lost')
+        .filter(isOpenJob)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       jobId = open[0]?.id ?? null;
     }
 
-    if (jobId !== null) {
+    // Ruling EA: only a verified caller changes a job; a phone-matched caller leaves a note on the customer.
+    if (jobId !== null && conversation.identity === 'verified') {
       const { timezone } = await loadCompanyFacts(tx, tctx);
       await updateJob(
         tx,

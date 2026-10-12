@@ -112,6 +112,25 @@ describe('take_message', () => {
     expect(acts[0]!.data).toEqual({ conversationId: conv.conversationId, urgent: false, reason: INPUT.reason });
   });
 
+  test('a phone-matched caller does not change the job next step; the activity goes on the customer', async () => {
+    const { customerId, jobId } = await customerWithJob(null);
+    const conv = { ...(await makeConversation(customerId)), identity: 'matched' as const };
+    const res = await run(conv);
+    expect(res.ok).toBe(true);
+    const job = await getJobRow(jobId);
+    expect(job.nextStep).toBeNull();
+    expect(job.nextStepOn).toBeNull();
+    const onJob = await inCompany(t, idA(), (tx) =>
+      tx.select().from(activities).where(and(eq(activities.subjectId, jobId), eq(activities.kind, 'front_desk_message'))),
+    );
+    expect(onJob).toHaveLength(0);
+    const onCustomer = await inCompany(t, idA(), (tx) =>
+      tx.select().from(activities).where(and(eq(activities.subjectId, customerId), eq(activities.kind, 'front_desk_message'))),
+    );
+    expect(onCustomer).toHaveLength(1);
+    expect(onCustomer[0]!.subjectType).toBe('customer');
+  });
+
   test('unassigned job keeps assignee null (office)', async () => {
     const { customerId, jobId } = await customerWithJob(null);
     await run(await makeConversation(customerId));

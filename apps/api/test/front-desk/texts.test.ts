@@ -62,7 +62,12 @@ async function setup(script: ConstructorParameters<typeof ScriptedLlm>[0] = [{ w
   return llm;
 }
 
-async function setFrontDesk(values: { frontDeskEnabled: boolean; frontDeskTexts: boolean }) {
+async function setFrontDesk(values: {
+  frontDeskEnabled: boolean;
+  frontDeskTexts: boolean;
+  frontDeskCanMove?: boolean;
+  frontDeskCanCancel?: boolean;
+}) {
   const ctx = { companyId: idA(), userId: null, role: 'system' as const, canApproveSpend: false };
   await withTenant(t.deps.pools, ctx, (tx) =>
     tx
@@ -128,6 +133,32 @@ describe('Front Desk texts', () => {
     expect(out[0]).toMatchObject({ channel: 'sms', purpose: 'informational', status: 'sent', body: 'We can help with that.' });
     expect(t.sms.sent).toHaveLength(1);
     expect(answerCalls(llm)).toHaveLength(1);
+  });
+
+  const answerToolNames = () => {
+    const call = llm.calls.find((c) => c.kind === 'answer');
+    expect(call).toBeDefined();
+    return ((call!.request as { tools?: { name: string }[] }).tools ?? []).map((x) => x.name);
+  };
+
+  test('the text runner offers move and cancel when the settings allow them', async () => {
+    await setFrontDesk({ frontDeskEnabled: true, frontDeskTexts: true, frontDeskCanMove: true, frontDeskCanCancel: true });
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hi there');
+    await runFrontDeskText(t.deps, { companyId: idA(), conversationId: (await conversationRows())[0]!.id }, createEngine(t.deps, {}));
+    const names = answerToolNames();
+    expect(names).toContain('move_inspection');
+    expect(names).toContain('cancel_inspection');
+  });
+
+  test('the text runner hides move and cancel when the settings turn them off', async () => {
+    await setFrontDesk({ frontDeskEnabled: true, frontDeskTexts: true, frontDeskCanMove: false, frontDeskCanCancel: false });
+    await addSmsCustomers(t, 'a', [nina()]);
+    await inboundText('Hi there');
+    await runFrontDeskText(t.deps, { companyId: idA(), conversationId: (await conversationRows())[0]!.id }, createEngine(t.deps, {}));
+    const names = answerToolNames();
+    expect(names).not.toContain('move_inspection');
+    expect(names).not.toContain('cancel_inspection');
   });
 
   test('a text that arrives while the engine runs gets its own reply', async () => {

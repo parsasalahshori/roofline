@@ -17,6 +17,7 @@ import { locateAddress } from '../../company/location.ts';
 import type { GeocodeResult } from '../../providers/geocoder.ts';
 import type { AppDeps } from '../../app.ts';
 import type { CompanyBlockInput, ToolHandler } from '../engine-types.ts';
+import { systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 8: find_inspection_times, and the pieces the booking tools share. The slot logic is C1's
@@ -49,9 +50,7 @@ export function isAvailable(settings: ToolSettings): boolean {
   return settings !== null;
 }
 
-export function systemCtx(companyId: string): TenantContext {
-  return { companyId, userId: null, role: 'system', canApproveSpend: false };
-}
+export { systemCtx } from './system-ctx.ts';
 
 /** A slot some inspectors can take. `userIds` are in the order of the inspectors' names. */
 export type OpenSlot = { start: Date; end: Date; userIds: string[] };

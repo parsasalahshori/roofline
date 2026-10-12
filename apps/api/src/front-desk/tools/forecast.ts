@@ -1,6 +1,7 @@
-import { companyLocation, propertiesForCustomer, type TenantContext, withTenant } from '@roofline/db';
+import { companyLocation, propertiesForCustomer, withTenant } from '@roofline/db';
 import type { DailyForecast } from '../../weather/source.ts';
 import type { ToolHandler } from '../engine-types.ts';
+import { systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 7: check_forecast. The place is the caller's own property (shown to the model and owned by the
@@ -9,10 +10,6 @@ import type { ToolHandler } from '../engine-types.ts';
 
 const CANT_REACH = "I can't reach the forecast right now.";
 const FORECAST_DAYS = 7;
-
-function systemCtx(companyId: string): TenantContext {
-  return { companyId, userId: null, role: 'system', canApproveSpend: false };
-}
 
 /** `2026-10-15` as `Thursday Oct 15`; the date has no zone, so it is read as UTC both ways. */
 function dayWords(isoDate: string): string {
