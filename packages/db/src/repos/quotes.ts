@@ -36,7 +36,9 @@ export class QuoteJobNotFoundError extends Error {
  * member's scope is reported exactly like one that does not exist.
  */
 function visibleQuoteCondition(ctx: TenantContext) {
-  return sql`exists (select 1 from ${jobs} where ${jobs.id} = ${quotes.jobId} and ${jobs.companyId} = ${quotes.companyId} and ${jobScope(ctx)})`;
+  // jobScope is undefined for the owner and office; interpolating it would leave a dangling `and )`.
+  const scope = jobScope(ctx);
+  return sql`exists (select 1 from ${jobs} where ${jobs.id} = ${quotes.jobId} and ${jobs.companyId} = ${quotes.companyId}${scope ? sql` and ${scope}` : sql``})`;
 }
 
 async function findVisibleQuote(tx: Tx, ctx: TenantContext, id: string, lock: boolean): Promise<QuoteRow | null> {
