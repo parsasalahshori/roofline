@@ -38,6 +38,10 @@ export const TIME_BASELINES = {
   },
   booking: { minutes: 3, unit: 'booking', basis: 'Checking the calendar and entering the appointment' },
   text_reply: { minutes: 2, unit: 'reply', basis: 'Reading and answering one text' },
+  claim_packet: { minutes: 30, unit: 'packet', basis: 'Gathering the storm evidence and measurements into a claim packet' },
+  reminder_sent: { minutes: 1, capMinutes: 120, unit: 'reminder', basis: "Looking up tomorrow's visit and texting a reminder" },
+  install_moved: { minutes: 10, unit: 'move', basis: 'Rescheduling an install around the weather and telling the customer' },
+  follow_up_sent: { minutes: 2, capMinutes: 120, unit: 'text', basis: 'Writing and sending one personal follow-up text' },
   /** Ruling AX-E: the three demo step types count 5 minutes per done step. Hidden: never editable or listed. */
   demo: { minutes: 5, unit: 'step', basis: 'A demo step', hidden: true },
 } as const satisfies Record<string, BaselineDef>;
