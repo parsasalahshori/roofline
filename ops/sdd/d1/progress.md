@@ -252,3 +252,4 @@ Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.reco
   - d1-rev-l (E1): RC-2 review minors.
   - RC-1/RC-1b (S1): SMS turn positions and the SMS 30-minute HIGH; system-note ordering; verify_caller lockout and identity persistence (including on reuse); lastTeamReplyAt ignoring system texts; F4-F6; "[photo]".
   - Later: ranged playback reads (C1 RA #6); the eval's playCall drift from engine.run (T25 finding 6).
+- 2026-10-12: **d1-rev-l merged** (E1, RC-2 review #2/#4/#5/#6 and the RC-1 matcher tolerance; a two-segment relay test; 6126009, CI 38300824666 green). The idle-SMS pass runs on the half hour, skips read-only and texting-off companies, rechecks idleness under a conversation lock, and also lists recently ended, unsummarised threads.

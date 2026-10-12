@@ -1,4 +1,4 @@
-import { and, asc, eq, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { DEFAULT_WORK_HOURS } from '@roofline/shared';
 import type { ConversationChannel, ConversationOutcome, HandledBy, IdentityLevel, WorkHours } from '@roofline/shared';
 import { companies, companyPhoneNumbers, companySettings, conversations } from '../schema/index.ts';
@@ -133,8 +133,23 @@ export async function getConversation(
   return row ?? null;
 }
 
-/** Ids of this company's active SMS conversations whose last message is older than `before`, oldest first. */
-export async function listIdleSmsConversationIds(tx: Tx, ctx: TenantContext, before: Date, limit: number): Promise<string[]> {
+/**
+ * Ids of this company's SMS conversations that need their after-call summary, oldest first: active ones
+ * whose last message is older than `before`. With `endedSince`, also threads already ended by the 24 h
+ * gap of a new inbound text (status ended, no summary yet, last message older than `before` and newer
+ * than `endedSince`), but never a spam-ended one (RC-2 #5).
+ */
+export async function listIdleSmsConversationIds(tx: Tx, ctx: TenantContext, before: Date, limit: number, endedSince?: Date): Promise<string[]> {
+  const idleActive = eq(conversations.status, 'active');
+  const endedUnsummarised =
+    endedSince === undefined
+      ? undefined
+      : and(
+          eq(conversations.status, 'ended'),
+          isNull(conversations.summary),
+          gte(conversations.lastMessageAt, endedSince),
+          or(isNull(conversations.outcome), ne(conversations.outcome, 'spam')),
+        );
   const rows = await tx
     .select({ id: conversations.id })
     .from(conversations)
@@ -142,11 +157,21 @@ export async function listIdleSmsConversationIds(tx: Tx, ctx: TenantContext, bef
       and(
         eq(conversations.companyId, ctx.companyId),
         eq(conversations.channel, 'sms'),
-        eq(conversations.status, 'active'),
+        endedUnsummarised === undefined ? idleActive : or(idleActive, endedUnsummarised),
         lt(conversations.lastMessageAt, before),
       ),
     )
     .orderBy(asc(conversations.lastMessageAt), asc(conversations.id))
     .limit(limit);
   return rows.map((r) => r.id);
+}
+
+/** The conversation, locked FOR UPDATE until the transaction ends; null when it is not this company's. */
+export async function lockConversation(tx: Tx, ctx: TenantContext, id: string): Promise<typeof conversations.$inferSelect | null> {
+  const [row] = await tx
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.id, id)))
+    .for('update');
+  return row ?? null;
 }
