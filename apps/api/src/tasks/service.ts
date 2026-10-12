@@ -1,4 +1,5 @@
 import {
+  finishParkedStep,
   audit,
   countWorkingTasks,
   customerFirstNames,
@@ -823,4 +824,20 @@ export async function listTaskFeed(tx: Tx, ctx: TenantContext, query: TaskFeedQu
  */
 export async function workingCount(tx: Tx, ctx: TenantContext): Promise<number> {
   return canReview(ctx) ? countWorkingTasks(tx, ctx) : 0;
+}
+
+/**
+ * Finishes a parked step (one the runner left waiting for something outside it: a text, a report).
+ * Every parked step ends here, not through the raw repository call, so the place that records how a
+ * step ended is one function. A1 adds its outcome record (time-saved snapshot, step_done /
+ * step_attention event) to this body at its merge (A1 Ruling AX-H); the signature is A1's.
+ */
+export async function completeParkedStep(
+  tx: Tx,
+  ctx: TenantContext,
+  stepId: string,
+  finish: Parameters<typeof finishParkedStep>[3],
+  now: Date,
+): Promise<StepRow | null> {
+  return finishParkedStep(tx, ctx, stepId, finish, now);
 }

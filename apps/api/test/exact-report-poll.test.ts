@@ -195,6 +195,8 @@ describe('polling exact reports', () => {
     const step = (await dbSteps(t, 'a', taskId))[0]!;
     expect(step.status).toBe('needs_attention');
     expect(step.errorPlain).toBe(plain);
+    // Ruling EN: nothing was ordered
+    expect(step.result).toEqual({ ordered: 0 });
     expect(await exactMeasurements()).toHaveLength(0);
     expect(await usage()).toHaveLength(0);
   });
