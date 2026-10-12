@@ -42,6 +42,8 @@ import {
 } from '@roofline/shared';
 import { bytea, enumCheck, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
+  ACTOR_TYPES,
+  AGENT_EVENT_KINDS,
   APPOINTMENT_KINDS,
   APPOINTMENT_SOURCES,
   APPOINTMENT_STATUSES,
@@ -110,6 +112,10 @@ export const TENANT_TABLES = [
   'claims',
   'claim_events',
   'follow_up_log',
+  'time_baselines',
+  'agent_task_events',
+  'agent_settings',
+  'time_recounts',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -501,6 +507,11 @@ export const agentTaskSteps = pgTable(
      * mistaken for a newer one.
      */
     runSeq: integer('run_seq').notNull().default(0),
+    /** Set when the step is done: the snapshot every time-saved number comes from. */
+    baselineKey: text('baseline_key'),
+    units: numeric('units', { precision: 10, scale: 2, mode: 'number' }),
+    minutesPerUnit: numeric('minutes_per_unit', { precision: 6, scale: 2, mode: 'number' }),
+    minutesSaved: numeric('minutes_saved', { precision: 10, scale: 2, mode: 'number' }),
     ...timestamps(),
   },
   (t) => [
@@ -1200,4 +1211,91 @@ export const followUpLog = pgTable(
     check('follow_up_log_n_check', sql`${t.n} >= 1`),
     enumCheck('follow_up_log', 'kind', t.kind, FOLLOW_UP_KINDS),
   ],
+);
+
+/**
+ * Minutes a unit of work is worth, per baseline key. A missing row means the default in code, so
+ * the table only holds what a company has changed. The key is plain text: the list of keys lives
+ * with the step definitions, and a new key needs no migration.
+ */
+export const timeBaselines = pgTable(
+  'time_baselines',
+  {
+    id: pk(),
+    companyId: companyId(),
+    key: text('key').notNull(),
+    minutesPerUnit: numeric('minutes_per_unit', { precision: 6, scale: 2, mode: 'number' }).notNull(),
+    ...timestamps(),
+  },
+  (t) => [unique('time_baselines_company_key_uniq').on(t.companyId, t.key)],
+);
+
+/**
+ * The feed: one row per thing that happened to a task. Written only by the task service and never
+ * updated or deleted (the grants in the next migration allow INSERT and SELECT only).
+ */
+export const agentTaskEvents = pgTable(
+  'agent_task_events',
+  {
+    id: pk(),
+    companyId: companyId(),
+    taskId: uuid('task_id').notNull(),
+    stepId: uuid('step_id'),
+    kind: text('kind', { enum: AGENT_EVENT_KINDS }).notNull(),
+    actorType: text('actor_type', { enum: ACTOR_TYPES }).notNull(),
+    actorUserId: userRef('actor_user_id'),
+    /** Counts and ids only, never message text or customer names. */
+    data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
+    at: tstz('at').notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'agent_task_events_company_task_fk',
+      columns: [t.companyId, t.taskId],
+      foreignColumns: [agentTasks.companyId, agentTasks.id],
+    }),
+    foreignKey({
+      name: 'agent_task_events_company_step_fk',
+      columns: [t.companyId, t.stepId],
+      foreignColumns: [agentTaskSteps.companyId, agentTaskSteps.id],
+    }),
+    index('agent_task_events_company_at_idx').on(t.companyId, t.at.desc()),
+    index('agent_task_events_task_idx').on(t.companyId, t.taskId, t.at),
+    enumCheck('agent_task_events', 'kind', t.kind, AGENT_EVENT_KINDS),
+    enumCheck('agent_task_events', 'actor_type', t.actorType, ACTOR_TYPES),
+  ],
+);
+
+/** Per-company switches for each agent. A missing row means the agent is on. */
+export const agentSettings = pgTable(
+  'agent_settings',
+  {
+    id: pk(),
+    companyId: companyId(),
+    agent: text('agent', { enum: AGENTS }).notNull(),
+    pausedAt: tstz('paused_at'),
+    pausedBy: userRef('paused_by'),
+    lastRunNowAt: tstz('last_run_now_at'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('agent_settings_company_agent_uniq').on(t.companyId, t.agent),
+    enumCheck('agent_settings', 'agent', t.agent, AGENTS),
+  ],
+);
+
+/** An audited owner recount of the minutes saved in a date range: the before and after totals. */
+export const timeRecounts = pgTable(
+  'time_recounts',
+  {
+    id: pk(),
+    companyId: companyId(),
+    byUserId: userRef('by_user_id').notNull(),
+    fromAt: tstz('from').notNull(),
+    toAt: tstz('to').notNull(),
+    beforeMinutes: numeric('before_minutes', { precision: 12, scale: 2, mode: 'number' }).notNull(),
+    afterMinutes: numeric('after_minutes', { precision: 12, scale: 2, mode: 'number' }).notNull(),
+    at: tstz('at').notNull().defaultNow(),
+  },
+  (t) => [index('time_recounts_company_at_idx').on(t.companyId, t.at)],
 );

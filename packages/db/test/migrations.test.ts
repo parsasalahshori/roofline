@@ -6,6 +6,7 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { migrate } from '../src/migrate.ts';
+import { ACTOR_TYPES, AGENT_EVENT_KINDS } from '../src/schema/enums.ts';
 import { companies, customers, properties } from '../src/schema/index.ts';
 import * as tenantSchema from '../src/schema/tenant.ts';
 import { TENANT_TABLES } from '../src/schema/tenant.ts';
@@ -113,6 +114,23 @@ describe('schema', () => {
     ] as const;
     expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...c1Tables]));
     for (const table of c1Tables) {
+      const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+        `select relrowsecurity, relforcerowsecurity from pg_class where oid = $1::regclass`,
+        [`public.${table}`],
+      );
+      expect(cls, table).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+      const policies = await ownerQuery<{ policyname: string }>(
+        `select policyname from pg_policies where schemaname = 'public' and tablename = $1`,
+        [table],
+      );
+      expect(policies.map((p) => p.policyname), table).toContain('tenant_isolation');
+    }
+  });
+
+  test('A1 tables are tenant tables with RLS forced', async () => {
+    const a1Tables = ['time_baselines', 'agent_task_events', 'agent_settings', 'time_recounts'] as const;
+    expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...a1Tables]));
+    for (const table of a1Tables) {
       const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
         `select relrowsecurity, relforcerowsecurity from pg_class where oid = $1::regclass`,
         [`public.${table}`],
@@ -589,6 +607,87 @@ describe('C1 constraints', () => {
       [[s.a.companyId, s.b.companyId]],
     );
     expect(nulls).toEqual([{ n: 2 }]);
+  });
+});
+
+describe('A1 constraints', () => {
+  /** One agent task for a company, for agent events and steps. */
+  async function makeTask(companyId: string, tag: string): Promise<string> {
+    const [task] = await ownerQuery<{ id: string }>(
+      `insert into agent_tasks (company_id, agent, kind, title) values ($1, 'storm_scout', 'storm_plan', $2) returning id`,
+      [companyId, `Storm plan ${tag}`],
+    );
+    return task!.id;
+  }
+
+  /** One step of a task for a company. */
+  async function makeStep(companyId: string, taskId: string, tag: string): Promise<string> {
+    const [step] = await ownerQuery<{ id: string }>(
+      `insert into agent_task_steps (company_id, task_id, position, type, approval_class, idempotency_key)
+       values ($1, $2, 0, 'demo_noop', 'internal', $3) returning id`,
+      [companyId, taskId, `key-${tag}`],
+    );
+    return step!.id;
+  }
+
+  test('agent_settings.agent takes only known agents, one row per company and agent', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into agent_settings (company_id, agent) values ($1, $2)`;
+    expect((await rejected(insert, [s.a.companyId, 'bogus'])).code).toBe('23514');
+    await ownerQuery(insert, [s.a.companyId, 'storm_scout']);
+    expect((await rejected(insert, [s.a.companyId, 'storm_scout'])).code).toBe('23505');
+    // The same agent may be set up in another company.
+    await ownerQuery(insert, [s.b.companyId, 'storm_scout']);
+  });
+
+  test('time_baselines: one row per company and key, any key text, minutes_per_unit kept to two places', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into time_baselines (company_id, key, minutes_per_unit) values ($1, $2, $3)`;
+    await ownerQuery(insert, [s.a.companyId, 'proposal_send', 10]);
+    expect((await rejected(insert, [s.a.companyId, 'proposal_send', 10])).code).toBe('23505');
+    // The same key is free in another company.
+    await ownerQuery(insert, [s.b.companyId, 'proposal_send', 10]);
+    // The key is plain text: any value is accepted.
+    await ownerQuery(insert, [s.a.companyId, 'anything_goes', 5]);
+    await ownerQuery(insert, [s.a.companyId, 'rounded', 1.239]);
+    expect(
+      await ownerQuery<{ v: string }>(
+        `select minutes_per_unit::text as v from time_baselines where company_id = $1 and key = 'rounded'`,
+        [s.a.companyId],
+      ),
+    ).toEqual([{ v: '1.24' }]);
+  });
+
+  test('agent_task_events.kind and actor_type take only the listed values', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const task = await makeTask(s.a.companyId, 'a');
+    const insert = `insert into agent_task_events (company_id, task_id, kind, actor_type) values ($1, $2, $3, $4)`;
+    expect((await rejected(insert, [s.a.companyId, task, 'bogus', 'system'])).code).toBe('23514');
+    expect((await rejected(insert, [s.a.companyId, task, 'created', 'robot'])).code).toBe('23514');
+    for (const kind of AGENT_EVENT_KINDS) {
+      await ownerQuery(insert, [s.a.companyId, task, kind, 'system']);
+    }
+    for (const actor of ACTOR_TYPES) {
+      await ownerQuery(insert, [s.a.companyId, task, 'created', actor]);
+    }
+    expect(
+      await ownerQuery<{ n: number }>(`select count(*)::int as n from agent_task_events where company_id = $1`, [
+        s.a.companyId,
+      ]),
+    ).toEqual([{ n: AGENT_EVENT_KINDS.length + ACTOR_TYPES.length }]);
+  });
+
+  test('an agent event cannot point at a step of another company', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const taskA = await makeTask(s.a.companyId, 'a');
+    const taskB = await makeTask(s.b.companyId, 'b');
+    const stepA = await makeStep(s.a.companyId, taskA, 'a');
+    const stepB = await makeStep(s.b.companyId, taskB, 'b');
+    const insert = `insert into agent_task_events (company_id, task_id, step_id, kind, actor_type)
+      values ($1, $2, $3, 'step_done', 'agent')`;
+    const err = await rejected(insert, [s.a.companyId, taskA, stepB]);
+    expect(err.code).toBe('23503');
+    await ownerQuery(insert, [s.a.companyId, taskA, stepA]);
   });
 });
 
