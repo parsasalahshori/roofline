@@ -177,6 +177,9 @@ describe('send_email_batch', () => {
     expect(email.minutesSaved(p, { sent: 1000 })).toBe(120);
     expect(email.minutesSaved(p, { sent: 0 })).toBe(0);
     expect(email.minutesSaved(p, {})).toBe(0);
+    expect(email.baseline?.(p, {})).toBe('email_sent');
+    expect(email.units?.(p, { sent: 10 })).toBe(10);
+    expect(email.userCreatable).toBe(true);
   });
 
   test('needs a message approval', () => {
@@ -218,25 +221,27 @@ describe('build_routes', () => {
     expect(preview.lines).toHaveLength(4);
   });
 
-  test('minutes saved is 120 per route', () => {
+  test('minutes saved is 45 per route built (A1 route_built), counted from the result', () => {
     const p = routes.payload.parse(routePayload());
-    expect(routes.minutesSaved(p, {})).toBe(480);
+    expect(routes.minutesSaved(p, { routes: 4 })).toBe(180);
+    expect(routes.minutesSaved(p, {})).toBe(0);
+    expect(routes.baseline?.(p, {})).toBe('route_built');
+    expect(routes.units?.(p, { routes: 4 })).toBe(4);
+    expect(routes.userCreatable).toBe(true);
   });
 
-  test('1 rep and 400 doors plans 3 routes (150 doors each at most), 360 minutes saved', () => {
+  test('1 rep and 400 doors plans 3 routes (150 doors each at most)', () => {
     const p = routes.payload.parse(routePayload({ repUserIds: [ID2], maxDoors: 400 }));
     const preview = routes.preview(p, FACTS);
     expect(preview.title).toBe('3 door-knock routes · 400 doors');
     expect(preview.lines).toEqual(['Rep 1: 3 routes, up to 400 doors']);
-    expect(routes.minutesSaved(p, {})).toBe(360);
   });
 
-  test('2 reps and 100 doors plan 2 routes, one per rep, 240 minutes saved', () => {
+  test('2 reps and 100 doors plan 2 routes, one per rep', () => {
     const p = routes.payload.parse(routePayload({ repUserIds: [ID2, ID3], maxDoors: 100 }));
     const preview = routes.preview(p, FACTS);
     expect(preview.title).toBe('2 door-knock routes · 100 doors');
     expect(preview.lines).toEqual(['Rep 1: 1 route, up to 50 doors', 'Rep 2: 1 route, up to 50 doors']);
-    expect(routes.minutesSaved(p, {})).toBe(240);
   });
 
   test('the per-rep door counts never add up to more than the plan', () => {
@@ -344,8 +349,12 @@ describe('create_ad_campaign', () => {
     expect(ads.preview(p, FACTS).title).toBe('Facebook and Instagram ads on the hail area');
   });
 
-  test('minutes saved is 45 per campaign', () => {
+  test('minutes saved is 45 per campaign created (A1 ad_campaign), counted from the result', () => {
     const p = ads.payload.parse(googlePayload());
-    expect(ads.minutesSaved(p, {})).toBe(45);
+    expect(ads.minutesSaved(p, { campaigns: 1 })).toBe(45);
+    expect(ads.minutesSaved(p, {})).toBe(0);
+    expect(ads.baseline?.(p, {})).toBe('ad_campaign');
+    expect(ads.units?.(p, { campaigns: 1 })).toBe(1);
+    expect(ads.userCreatable).toBe(true);
   });
 });

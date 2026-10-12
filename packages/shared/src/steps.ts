@@ -58,6 +58,22 @@ export interface StepTypeDef<P> {
   validate?(p: P, facts: { companyName: string }): string | null;
   preview(p: P, facts: PreviewFacts): StepPreview;
   minutesSaved(p: P, result: StepResult): number;
+  /**
+   * Ruling AY (A1's step shape, ahead of the a1-agents merge, which drops `minutesSaved` and makes
+   * these required): whether a person may create the step by hand, the time-saved baseline it counts
+   * against (A1's TIME_BASELINES key) and how many units of it the finished step did.
+   */
+  userCreatable?: boolean;
+  baseline?(p: P, result: StepResult): StormBaselineKey;
+  units?(p: P, result: StepResult): number;
+}
+
+/** The A1 TIME_BASELINES keys the storm steps count against (A1: 0.5 min an email capped at 120, 45 min a route, 45 min a campaign). */
+export type StormBaselineKey = 'email_sent' | 'route_built' | 'ad_campaign';
+
+/** A count from a step's result: a finite number above zero, else 0. */
+function resultCount(value: StepResult[string] | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -319,9 +335,11 @@ const sendEmailBatch: StepTypeDef<SendEmailPayload> = {
     };
   },
   minutesSaved(_p, result) {
-    const sent = result.sent;
-    return typeof sent === 'number' && Number.isFinite(sent) && sent > 0 ? Math.min(120, 0.5 * sent) : 0;
+    return Math.min(120, 0.5 * resultCount(result.sent));
   },
+  userCreatable: true,
+  baseline: () => 'email_sent',
+  units: (_p, result) => resultCount(result.sent),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -374,9 +392,12 @@ const buildRoutes: StepTypeDef<BuildRoutesPayload> = {
       lines,
     };
   },
-  minutesSaved(p) {
-    return 120 * routeCount(p.repUserIds.length, p.maxDoors);
+  minutesSaved(_p, result) {
+    return 45 * resultCount(result.routes);
   },
+  userCreatable: true,
+  baseline: () => 'route_built',
+  units: (_p, result) => resultCount(result.routes),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -471,7 +492,10 @@ const createAdCampaign: StepTypeDef<CreateAdPayload> = {
       maxSpendCents: p.maxSpendCents,
     };
   },
-  minutesSaved: () => 45,
+  minutesSaved: (_p, result) => 45 * resultCount(result.campaigns),
+  userCreatable: true,
+  baseline: () => 'ad_campaign',
+  units: (_p, result) => resultCount(result.campaigns),
 };
 
 // ---------------------------------------------------------------------------------------------
