@@ -144,3 +144,4 @@ Four parallel reviewers (honest numbers; events/one writer/concurrency; security
 - Wave: Task 4 (Front Desk live tasks) and Task 21 (Front Desk wiring: rule facts, pause, success rate AX-D, waiting follow-ups, AX-N) in parallel from 03dac82.
 Ruling AX-N (track lead): Front Desk steps fold booking minutes into the call/text step (spec Decision 4: one internal step); the breakdown labels say "(incl. bookings)" — cost if wrong: bookings are not a separate breakdown row.
 - Controller (Ruling AW): S1 R1 adds `storms.merged_into` inside S1's 0018 and its snapshot. **Merge rule for the next s1-storm merge:** rebuild every later snapshot (D1 0019/0020 on a1-t4, A1 0021/0022) on the new 0018 snapshot, then drizzle-kit must report no changes; keep `when` ordered (Ruling AY).
+- a1-agents a956d40 (T18 + T19 on top of the e1+s1 merge) CI run 38243080323 green (Platform + E2E).
