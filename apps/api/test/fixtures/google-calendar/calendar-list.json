@@ -1,0 +1,29 @@
+{
+  "kind": "calendar#calendarList",
+  "etag": "\"etag-calendar-list-1\"",
+  "items": [
+    {
+      "kind": "calendar#calendarListEntry",
+      "id": "crew@example.com",
+      "summary": "crew@example.com",
+      "timeZone": "America/Chicago",
+      "accessRole": "owner",
+      "primary": true
+    },
+    {
+      "kind": "calendar#calendarListEntry",
+      "id": "team@group.calendar.google.com",
+      "summary": "Team Calendar",
+      "summaryOverride": "Crew",
+      "timeZone": "America/Chicago",
+      "accessRole": "writer"
+    },
+    {
+      "kind": "calendar#calendarListEntry",
+      "id": "holidays@group.v.calendar.google.com",
+      "summary": "Holidays in United States",
+      "timeZone": "America/Chicago",
+      "accessRole": "reader"
+    }
+  ]
+}

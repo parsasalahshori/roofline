@@ -1,0 +1,4 @@
+/* The day view adds no chrome of its own: the shared grid draws it. */
+.day {
+  min-width: 0;
+}

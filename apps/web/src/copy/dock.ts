@@ -6,6 +6,7 @@ export const dock = {
   comingSoon: 'Coming soon',
   stormBadge: (count: number) => (count === 1 ? '1 new storm plan' : `${count} new storm plans`),
   estimatorBadge: (count: number) => (count === 1 ? '1 proposal waiting' : `${count} proposals waiting`),
+  frontDeskBadge: (count: number) => (count === 1 ? '1 conversation waiting' : `${count} conversations waiting`),
   agentsBadge: (count: number) => (count === 1 ? '1 task needs attention' : `${count} tasks need attention`),
 } as const;
 
@@ -20,6 +21,6 @@ export const WINDOW_COPY: Record<WindowKey, { title: string; description: string
   approvals: { title: 'Need your OK', description: 'Plans your agents drafted, waiting for a yes' },
   today: { title: 'My day', description: 'What needs you today' },
   settings: { title: 'Settings', description: 'Your company, team and accounts' },
-  customers: { title: 'Customer', description: 'Customer details' },
+  customers: { title: 'Customers', description: 'Everyone you work with' },
   notFound: { title: 'Not found', description: "We couldn't find that page" },
 };

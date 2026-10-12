@@ -174,7 +174,7 @@ describe('GET /api/weather', () => {
       ]);
       const owner = await who.as('owner');
       await owner.post(`/api/properties/${far}/archive`);
-      await mustCreate(owner, '/api/properties', { ...addressFor(9) }); // no pin
+      await mustCreate(owner, '/api/properties', { ...addressFor(9), lat: null, lng: null }); // no pin (lat/lng null: no server lookup)
       await addPins('b', [{ lat: 30, lng: -90 }]);
 
       await owner.get('/api/weather');

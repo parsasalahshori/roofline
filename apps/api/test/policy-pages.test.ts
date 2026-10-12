@@ -53,6 +53,12 @@ describe('hosted policy pages', () => {
     expect(res.text).toContain('<meta name="policy-version" content="draft-2026-10">');
   });
 
+  test('the company host root redirects to the privacy page', async () => {
+    const res = await request(t.app).get('/').set('Host', COMPANY_HOST);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/privacy');
+  });
+
   test('terms carry the texting program terms', async () => {
     const res = await request(t.app).get('/terms').set('Host', COMPANY_HOST);
 

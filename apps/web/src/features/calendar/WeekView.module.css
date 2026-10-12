@@ -1,0 +1,4 @@
+/* The week view adds no chrome of its own: the shared grid draws it. */
+.week {
+  min-width: 0;
+}
