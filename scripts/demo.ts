@@ -1,6 +1,6 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { createPools, migrate } from '@roofline/db';
@@ -117,6 +117,20 @@ process.on('SIGTERM', () => {
   if (!shuttingDown) void shutdown(0);
 });
 
+/**
+ * This machine's demo ENCRYPTION_KEY, made once and kept in .env.demo (git-ignored, like every .env
+ * file): the demo database outlives a run, and its proposal links and sessions need the same key.
+ */
+function demoEncryptionKey(): string {
+  const file = `${REPO_ROOT}.env.demo`;
+  const found = existsSync(file) ? /^DEMO_ENCRYPTION_KEY=(\S+)$/m.exec(readFileSync(file, 'utf8'))?.[1] : undefined;
+  if (found) return found;
+  const key = randomBytes(32).toString('base64');
+  writeFileSync(file, `# Made by npm run demo for this machine's demo database only. Never commit it.\nDEMO_ENCRYPTION_KEY=${key}\n`, { mode: 0o600 });
+  return key;
+}
+const ENCRYPTION_KEY = demoEncryptionKey();
+
 const tenantUrl = roleUrl(OWNER_URL, APP_ROLES.tenant, ROLE_PASSWORDS.tenant);
 const systemUrl = roleUrl(OWNER_URL, APP_ROLES.system, ROLE_PASSWORDS.system);
 
@@ -127,7 +141,7 @@ try {
   await setRolePasswords(OWNER_URL, ROLE_PASSWORDS);
   const pools = createPools({ tenant: tenantUrl, system: systemUrl });
   try {
-    const world = await seedDemoWorld(pools, OWNER_URL, new Date());
+    const world = await seedDemoWorld(pools, OWNER_URL, new Date(), { encryptionKey: ENCRYPTION_KEY });
     log(
       world.created
         ? `Seeded ${DEMO_COMPANY_NAME}: ${Object.entries(world.counts).map(([name, n]) => `${n} ${name}`).join(', ')}.`
@@ -161,8 +175,7 @@ const env: NodeJS.ProcessEnv = {
   POLICY_PAGES_DOMAIN: 'roofline.test',
   DATABASE_URL_TENANT: tenantUrl,
   DATABASE_URL_SYSTEM: systemUrl,
-  // Random per run: nothing the demo stores needs to outlive it except sessions.
-  ENCRYPTION_KEY: randomBytes(32).toString('base64'),
+  ENCRYPTION_KEY,
   WEB_DIST_DIR: 'apps/web/dist',
   API_RATE_LIMIT_PER_MIN: '100000',
 };

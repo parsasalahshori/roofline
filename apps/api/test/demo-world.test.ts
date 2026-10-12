@@ -1,0 +1,74 @@
+import request from 'supertest';
+import pg from 'pg';
+import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
+import { decrypt } from '@roofline/db';
+import { JOB_STAGES } from '@roofline/shared';
+import { DEMO_COMPANY_NAME, DEMO_COMPANY_SLUG, DEMO_LOGIN, seedDemoWorld } from '../src/scripts/demo-world.ts';
+import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from './helpers.ts';
+
+let t: TestApp;
+let owner: pg.Client;
+
+beforeEach(async () => {
+  t = await makeTestApp();
+  owner = new pg.Client({ connectionString: inject('dbUrls').owner });
+  await owner.connect();
+});
+
+afterEach(async () => {
+  await owner.end();
+});
+
+describe('the demo world', () => {
+  test('makes Summit Ridge Roofing with every part of the walkthrough, and a second run changes nothing', async () => {
+    const ownerUrl = inject('dbUrls').owner;
+    const now = t.clock.now();
+    const first = await seedDemoWorld(t.deps.pools, ownerUrl, now, { encryptionKey: TEST_ENCRYPTION_KEY });
+    expect(first.created).toBe(true);
+
+    const company = (await owner.query(`select name, slug, timezone from companies where id = $1`, [first.companyId])).rows[0];
+    expect(company).toMatchObject({ name: DEMO_COMPANY_NAME, slug: DEMO_COMPANY_SLUG });
+
+    const c = first.counts;
+    expect(c.members).toBe(4);
+    expect(c.customers).toBeGreaterThanOrEqual(60);
+    for (const stage of JOB_STAGES) expect(c[`jobs.${stage}`] ?? 0, stage).toBeGreaterThan(0);
+    expect(c['proposals.signed']).toBe(1);
+    expect((c['proposals.sent'] ?? 0) + (c['proposals.viewed'] ?? 0)).toBe(2);
+    expect(c['proposals.draft']).toBe(1);
+    expect(c.measurements).toBe(4);
+    expect(c.stormHits).toBeGreaterThan(0);
+    expect(c.calls).toBe(2);
+    expect(c.conversations).toBe(5);
+    expect(c.claims).toBe(1);
+    expect(c.appointments).toBeGreaterThanOrEqual(8);
+    expect(c.minutesSaved).toBeGreaterThan(0);
+    expect(c['agentTasks.draft']).toBeGreaterThanOrEqual(3);
+
+    // The storm plan is drafted for the company storm, and the hit properties are the demo company's own.
+    const storm = (await owner.query(`select plan_task_id from company_storms where company_id = $1`, [first.companyId])).rows[0];
+    expect(storm?.plan_task_id).toBeTruthy();
+    const foreign = await owner.query(
+      `select count(*)::int as n from storm_hits h join properties p on p.id = h.property_id where h.company_id = $1 and p.company_id <> $1`,
+      [first.companyId],
+    );
+    expect(foreign.rows[0].n).toBe(0);
+
+    // The owner signs in with the demo credential.
+    const login = await request(t.app).post('/api/auth/login').send({ email: DEMO_LOGIN.email, password: DEMO_LOGIN.password });
+    expect(login.status).toBe(200);
+
+    // A sent proposal's minted link opens the homeowner page.
+    const sent = await owner.query(
+      `select link_token_encrypted from proposals where company_id = $1 and status in ('sent', 'viewed') order by number limit 1`,
+      [first.companyId],
+    );
+    const token = decrypt(sent.rows[0].link_token_encrypted as Buffer, TEST_ENCRYPTION_KEY);
+    const page = await request(t.app).get(`/api/public/proposals/${token}`);
+    expect(page.status).toBe(200);
+    expect(page.body.status).toBe('open');
+
+    const second = await seedDemoWorld(t.deps.pools, ownerUrl, now, { encryptionKey: TEST_ENCRYPTION_KEY });
+    expect(second).toEqual({ created: false, companyId: first.companyId, counts: first.counts });
+  });
+});
