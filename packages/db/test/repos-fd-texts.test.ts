@@ -116,11 +116,17 @@ describe('fd-texts repo', () => {
     );
     const at = await withTenant(pools, ctx, (tx) => lastTeamReplyAt(tx, ctx, conv.id));
     expect(at?.toISOString()).toBe(hours(0.2).toISOString());
+    // A later team reply that failed reached nobody, so it does not move the quiet window.
+    await withTenant(pools, ctx, (tx) =>
+      insertAssistantText(tx, ctx, { conversationId: conv.id, customerId, body: 'failed', toE164: PHONE, dedupeKey: 'team:2' }, { status: 'failed', blockReason: 'Provider refused.', retryable: false }, hours(0.3)),
+    );
+    expect((await withTenant(pools, ctx, (tx) => lastTeamReplyAt(tx, ctx, conv.id)))?.toISOString()).toBe(hours(0.2).toISOString());
     const texts = await withTenant(pools, ctx, (tx) => listConversationTexts(tx, ctx, conv.id, 10));
     expect(texts.map((t) => [t.body, t.assistant])).toEqual([
       ['hello', false],
       ['bot', true],
       ['person', false],
+      ['failed', false],
     ]);
   });
 
