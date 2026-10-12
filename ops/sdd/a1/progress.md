@@ -1,0 +1,39 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-10-12-roofline-agents-screen.md
+
+Spec: docs/superpowers/specs/2026-10-12-roofline-agents-screen-design.md. Branch `a1-agents`, to be created from `d1-front-desk` once D1 is merged (C1, E1, S1 and D1 are not built yet; at writing `origin/f3-setup` is 7b988eb). Rulings use the prefix **AX-** (plain A–H belong to F2). Names marked **[C1]** / **[E1]** / **[S1]** / **[D1]** come from those plans and briefs and must be checked against the merged branches before each task starts.
+
+## Upstream dependencies
+
+| From | Name A1 uses | A1 tasks |
+|---|---|---|
+| F1 (real) | `tasks/service.ts` `minutesSavedOf`, `TASK_MODES` (`needs_approval`, `live`), `hourly_rate_cents` | T1, T3 |
+| E1 T4 | step types `send_proposal`, `order_exact_report` (minutes 20, 10) | T2 |
+| S1 T6 | step types `send_email_batch`, `build_routes`, `create_ad_campaign` | T2 |
+| S1 T1/T10 | storm settings columns; `storm/settle.ts` | T5, T7 |
+| E1 T1/T8 | estimator settings | T5 |
+| D1 T1/T13/T14/T18 | `conversations` (outcome), `after-call.ts`, `texts.ts`, Front Desk settings, on-call list | T4, T5, T6 |
+| D1 T10 | `hooks/twilio-voice.ts` (Front Desk off path) | T7 |
+| C1 T6 | next-step clearing in `updateJob` | T4 |
+| C1 T18 | `router.tsx`, `shell/apps.ts`, Settings tabs | T8 |
+
+## Pre-flight scan
+
+| Pair / task | Produces vs consumes | Finding |
+|---|---|---|
+| T2↔T3 | T2 replaces `minutesSaved` in `steps.ts` while `tasks/service.ts` (T3) still calls it | conflict → Ruling AX-A |
+| T2↔G1 | `G1_AGENTS_SHIPPED` flag location | consistent → Ruling AX-B |
+| T8↔T11 | both could touch the top bar's `AgentsWorking.tsx` | conflict → Ruling AX-C |
+| T5↔D1 | Front Desk success rate needs a definition over conversations | gap → Ruling AX-D |
+| T4↔D1 | live tasks from D1's after-call and text jobs | consistent ([D1]) |
+| T7↔S1/D1 | one-line pause checks in S1 and D1 files | consistent (T7 only) |
+
+Ruling AX-A: Task 2 keeps `StepTypeDef.minutesSaved` as a compatibility function derived from `baseline` + `units` with default minutes; Task 3 switches `tasks/service.ts` to per-step snapshots and removes the field — typecheck stays green between merges — cost if wrong: none.
+Ruling AX-B: `G1_AGENTS_SHIPPED = false` lives in `packages/shared/src/agents.ts`; G1 Task 15 flips it — cost if wrong: none.
+Ruling AX-C: only Task 11 edits `shell/topbar/AgentsWorking.tsx` (link to `/agents/feed`); Task 8 leaves it — cost if wrong: none.
+Ruling AX-D: Front Desk's success rate = conversations whose outcome is not `abandoned` and that had no model-failure hand-off, over the last 30 days, at least 5 — the spec defines it in words — cost if wrong: none.
+
+## Waves (from the plan)
+
+W1 T1 · W2 G1 = T2, T8 · W3 G2 = T3, T9, T10 · W4 G3 = T4, T5, T6 · G4 = T7, T11, T12 · W5 T13.
+
+## Tasks

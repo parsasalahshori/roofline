@@ -4,20 +4,21 @@ Written 2026-10-12 by Architect 2. The plans in `docs/superpowers/plans/` hold t
 
 ## Order and dependencies
 
-| # | Milestone | Plan | Tasks | Depends on | Status (2026-10-12) | Rough build time |
+| # | Milestone | Plan | Tasks | Depends on | Status (2026-10-12, late) | Rough build time |
 |---|---|---|---|---|---|---|
 | 1 | **F1** Platform core | `2026-10-10-roofline-f1-platform-core.md` | 19 | — | done | — |
-| 2 | **F2** Shell and design kit | `2026-10-11-roofline-f2-shell.md` | 17 + P1 | F1 | merged; acceptance CI finishing | — |
-| 3 | **F3** Setup, texting, billing | `ops/sdd/f3/` briefs | 37 | F2 | in progress (about 12 merged) | ~1–1.5 days |
-| 4 | **C1** Core CRM | `2026-10-12-roofline-core-crm.md` | 29 | F3 | planned | ~2 days |
-| 5 | **E1** Estimator and homeowner page | `2026-10-12-roofline-estimator.md` | 22 | C1 | planned | ~1.5 days |
-| 6 | **S1** Storm Scout (includes the Python hail service) | `2026-10-12-roofline-storm-scout.md` | 29 | E1 | planned | ~2–2.5 days |
-| 7 | **D1** Front Desk | `2026-10-12-roofline-front-desk.md` | 27 | S1 (by branch; really C1 + F3) | planned | ~2–2.5 days, plus real-call tuning |
-| 8 | **A1** Agents screen | `2026-10-12-roofline-agents-screen.md` | 13 | D1 | planned | ~1 day |
-| 9 | **G1** Claims, Scheduler, Follow-up (next release) | `2026-10-12-roofline-more-agents.md` | 18 | A1 | planned | ~1.5 days |
+| 2 | **F2** Shell and design kit | `2026-10-11-roofline-f2-shell.md` | 17 + P1 | F1 | merged; only the final-review fix task T19 left (briefs in `ops/sdd/f2/`) | — |
+| 3 | **F3** Setup, texting, billing | `ops/sdd/f3/` briefs | 37 | F2 | in progress: 23 of 37 merged (briefs in `ops/sdd/f3/`) | ~1 day |
+| 4 | **C1** Core CRM | `2026-10-12-roofline-core-crm.md` | 29 | F3 | planned; briefs ready (`ops/sdd/c1/`) | ~2 days |
+| 5 | **E1** Estimator and homeowner page | `2026-10-12-roofline-estimator.md` | 22 | C1 | planned; briefs ready (`ops/sdd/e1/`) | ~1.5 days |
+| 6 | **S1** Storm Scout (includes the Python hail service) | `2026-10-12-roofline-storm-scout.md` | 29 | E1 | planned; briefs ready (`ops/sdd/s1/`) | ~2–2.5 days |
+| 7 | **D1** Front Desk | `2026-10-12-roofline-front-desk.md` | 27 | S1 (by branch; really C1 + F3) | planned; briefs ready (`ops/sdd/d1/`) | ~2–2.5 days, plus real-call tuning |
+| 8 | **A1** Agents screen | `2026-10-12-roofline-agents-screen.md` | 13 | D1 | planned; briefs ready (`ops/sdd/a1/`) | ~1 day |
+| 9 | **G1** Claims, Scheduler, Follow-up (next release) | `2026-10-12-roofline-more-agents.md` | 18 | A1 | planned; briefs ready (`ops/sdd/g1/`) | ~1.5 days |
 
 - **Launch = F1–F3, C1, E1, S1, D1, A1** (master §4). G1 is the next release.
 - **Branch chain:** each integration branch starts from the previous one (`c1-crm` ← F3, `e1-estimator` ← C1, `s1-storm` ← E1, `d1-front-desk` ← S1, `a1-agents` ← D1, `g1-agents` ← A1). D1 needs only C1 and F3, so it could run alongside E1/S1 on a second team if one becomes free. That would need its own migration numbers; ask the controller before doing it.
+- **Every plan has task briefs** (`ops/sdd/<milestone>/task-N-brief.md`, `global-constraints.md`, `progress.md` with the pre-flight scan and rulings). Briefs for C1 onward name upstream exports from plans not yet built, marked [C1]/[E1]/[S1]/[D1]/[A1], to be checked against the merged code when each task starts.
 - **Build time** is wall-clock at the pace seen so far: F2's 17 tasks took about 14 hours with three teams, which is roughly 1.2 tasks per hour. The estimate covers about 12 working days for F3 through G1. Manual smoke tests and owner lead times (below) usually take longer than the building.
 
 ## Owner to-do list (what blocks going live)
