@@ -105,3 +105,6 @@ export const storm = {
     remove: 'Remove',
   },
 } as const;
+
+/** The ad error sentences name the ad platforms, so they live in connections.ts. */
+export { adErrorCopy } from './connections.ts';

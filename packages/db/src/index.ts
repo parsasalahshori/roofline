@@ -192,6 +192,7 @@ export * from './repos/email-opt-outs.ts';
 export * from './repos/door-routes.ts';
 export * from './repos/ad-accounts.ts';
 export * from './repos/ad-campaigns.ts';
+export * from './repos/ad-campaign-sync.ts';
 export * from './repos/storm-geo.ts';
 export * from './repos/storm-pages.ts';
 export * from './repos/storm-results.ts';

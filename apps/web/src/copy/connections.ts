@@ -91,3 +91,12 @@ export const connections = {
 export function providerWord(provider: 'google' | 'microsoft'): string {
   return connections.providers[provider];
 }
+
+/** Why a storm ad could not start, in plain words (vendor names are allowed in this file). Mirrors apps/api/src/storm/ad-campaign.ts. */
+export const adErrorCopy: Record<'policy' | 'payment' | 'access' | 'targeting' | 'other', string> = {
+  policy: "Google didn't approve the ad. Edit the words and try again.",
+  payment: 'The ad account has a payment problem. Fix it in Google Ads.',
+  access: "Roofline can't reach this ad account anymore. Reconnect it in Settings → Connections.",
+  targeting: 'The ad platform did not accept the area. Try again, or pick a smaller area.',
+  other: 'The ad could not be started. Try again in a minute.',
+};
