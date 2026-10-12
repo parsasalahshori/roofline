@@ -100,3 +100,20 @@ test('long text does not widen the page', async ({ page, loginAs, markTodaySeen,
   await expect(page.getByRole('dialog').first()).toBeVisible();
   await noSideScroll(page);
 });
+
+test('sign-up does not scroll sideways', async ({ page }) => {
+  await page.goto('/sign-up');
+  await expect(page.getByLabel('Your name')).toBeVisible();
+  await noSideScroll(page);
+});
+
+test('F3 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+
+  for (const path of ['/settings/setup', '/settings/billing', '/settings/setup/import']) {
+    await page.goto(path);
+    await expect(page.getByRole('dialog').first()).toBeVisible();
+    await noSideScroll(page);
+  }
+});

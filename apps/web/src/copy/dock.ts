@@ -20,6 +20,6 @@ export const WINDOW_COPY: Record<WindowKey, { title: string; description: string
   approvals: { title: 'Need your OK', description: 'Plans your agents drafted, waiting for a yes' },
   today: { title: 'My day', description: 'What needs you today' },
   settings: { title: 'Settings', description: 'Your company, team and accounts' },
-  customers: { title: 'Customer', description: 'Customer details' },
+  customers: { title: 'Customers', description: 'Everyone you work with' },
   notFound: { title: 'Not found', description: "We couldn't find that page" },
 };
