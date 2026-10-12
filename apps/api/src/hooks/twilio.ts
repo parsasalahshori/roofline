@@ -19,6 +19,7 @@ import {
 } from '@roofline/db';
 import { companyIdForMessagingService, companyIdForNumber, signingTokenFor } from '@roofline/db/system';
 import { type InboundReading, looksLikeOptOut, readInbound } from '@roofline/send-gate';
+import { onClaimsReply } from '../agents/claims/replies.ts';
 import type { AppDeps } from '../app.ts';
 import { queueFrontDeskText } from '../front-desk/texts.ts';
 import { onStormReply } from '../storm/replies.ts';
@@ -345,6 +346,13 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
         {
           const storm = await onStormReply(tx, ctx, { id: messageId, customerId: active[0] ?? null, body: text.body }, now);
           if (storm.consumed) return undefined;
+        }
+        // G1 Agents: a reply to a claims text goes to the Claims agent (Ruling GX-A). It runs in this transaction, so a
+        // failure rolls the message back and Twilio's retry handles it again; it must stay a quick read and a job send.
+        const customerId = active[0];
+        if (customerId !== undefined) {
+          const claims = await onClaimsReply(tx, deps, { companyId, customerId, messageId, body: text.body, receivedAt: now });
+          if (claims.consumed) return undefined;
         }
         // Inbound handler order (Ruling AV): STOP/HELP/START (above), then S1 onStormReply, then G1 claims, then Front Desk. S1 and G1 call their hooks HERE, before this one, and set `consumed` when they answer the message.
         const consumed = false;

@@ -1,0 +1,1239 @@
+{
+  "cases": [
+    {
+      "id": "lead-01",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-001",
+        "customerFirstName": "Dana",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Marco",
+        "address": "1137 Wexford Court, Millbrook Falls",
+        "facts": {
+          "askedFor": "roof inspection",
+          "askedOn": "Monday, October 5",
+          "leadSource": "website form",
+          "officePhone": "(555) 010-4400"
+        }
+      },
+      "expectedFacts": [
+        "Dana",
+        "Ridgeline Roofing",
+        "Marco",
+        "1137 Wexford Court, Millbrook Falls",
+        "roof inspection",
+        "Monday, October 5",
+        "website form",
+        "(555) 010-4400"
+      ]
+    },
+    {
+      "id": "lead-02",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-002",
+        "customerFirstName": "Luis",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": "Tessa",
+        "address": "1274 Alder Ridge Road, Elm Crossing",
+        "facts": {
+          "askedFor": "storm damage inspection",
+          "askedOn": "Tuesday, October 6",
+          "leadSource": "phone call"
+        }
+      },
+      "expectedFacts": [
+        "Luis",
+        "Summit Peak Roofing",
+        "Tessa",
+        "1274 Alder Ridge Road, Elm Crossing",
+        "storm damage inspection",
+        "Tuesday, October 6",
+        "phone call"
+      ]
+    },
+    {
+      "id": "lead-03",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-003",
+        "customerFirstName": "Margo",
+        "companyName": "Cedar Hollow Roofing",
+        "repFirstName": "Priya",
+        "address": "1411 Copperleaf Drive, Stonebridge",
+        "facts": {
+          "askedFor": "estimate for a new roof",
+          "askedOn": "Wednesday, October 7",
+          "leadSource": "referral from a neighbor"
+        }
+      },
+      "expectedFacts": [
+        "Margo",
+        "Cedar Hollow Roofing",
+        "Priya",
+        "1411 Copperleaf Drive, Stonebridge",
+        "estimate for a new roof",
+        "Wednesday, October 7",
+        "referral from a neighbor"
+      ]
+    },
+    {
+      "id": "lead-04",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-004",
+        "customerFirstName": "Trent",
+        "companyName": "Bluejay Roofing",
+        "repFirstName": null,
+        "address": "1548 Larkspur Way, Pine Hollow",
+        "facts": {
+          "askedFor": "gutter and roof check",
+          "askedOn": "Thursday, October 8",
+          "leadSource": "yard sign",
+          "officePhone": "(555) 013-4433"
+        }
+      },
+      "expectedFacts": [
+        "Trent",
+        "Bluejay Roofing",
+        "1548 Larkspur Way, Pine Hollow",
+        "gutter and roof check",
+        "Thursday, October 8",
+        "yard sign",
+        "(555) 013-4433"
+      ]
+    },
+    {
+      "id": "lead-05",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-005",
+        "customerFirstName": "Imani",
+        "companyName": "Northgate Roofing",
+        "repFirstName": "Dale",
+        "address": "1685 Thistle Hollow Lane, Fairhaven",
+        "facts": {
+          "askedFor": "leak inspection",
+          "askedOn": "Friday, October 9",
+          "leadSource": "storm canvass"
+        }
+      },
+      "expectedFacts": [
+        "Imani",
+        "Northgate Roofing",
+        "Dale",
+        "1685 Thistle Hollow Lane, Fairhaven",
+        "leak inspection",
+        "Friday, October 9",
+        "storm canvass"
+      ]
+    },
+    {
+      "id": "lead-06",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-006",
+        "customerFirstName": "Corwin",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Marco",
+        "address": "1822 Harrow Point Road, Millbrook Falls",
+        "facts": {
+          "askedFor": "roof inspection",
+          "askedOn": "Monday, October 12",
+          "leadSource": "website form"
+        }
+      },
+      "expectedFacts": [
+        "Corwin",
+        "Ridgeline Roofing",
+        "Marco",
+        "1822 Harrow Point Road, Millbrook Falls",
+        "roof inspection",
+        "Monday, October 12",
+        "website form"
+      ]
+    },
+    {
+      "id": "lead-07",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-007",
+        "customerFirstName": "Hattie",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": "Tessa",
+        "address": null,
+        "facts": {
+          "askedFor": "storm damage inspection",
+          "askedOn": "Tuesday, October 13",
+          "leadSource": "phone call",
+          "officePhone": "(555) 016-4466"
+        }
+      },
+      "expectedFacts": [
+        "Hattie",
+        "Summit Peak Roofing",
+        "Tessa",
+        "storm damage inspection",
+        "Tuesday, October 13",
+        "phone call",
+        "(555) 016-4466"
+      ]
+    },
+    {
+      "id": "lead-08",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-008",
+        "customerFirstName": "Reuben",
+        "companyName": "Cedar Hollow Roofing",
+        "repFirstName": "Priya",
+        "address": "2096 Quarry Bend Drive, Stonebridge",
+        "facts": {
+          "askedFor": "estimate for a new roof",
+          "askedOn": "Wednesday, October 14",
+          "leadSource": "referral from a neighbor"
+        }
+      },
+      "expectedFacts": [
+        "Reuben",
+        "Cedar Hollow Roofing",
+        "Priya",
+        "2096 Quarry Bend Drive, Stonebridge",
+        "estimate for a new roof",
+        "Wednesday, October 14",
+        "referral from a neighbor"
+      ]
+    },
+    {
+      "id": "lead-09",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-009",
+        "customerFirstName": "Selma",
+        "companyName": "Bluejay Roofing",
+        "repFirstName": null,
+        "address": "2233 Marigold Terrace, Pine Hollow",
+        "facts": {
+          "askedFor": "gutter and roof check",
+          "askedOn": "Thursday, October 15",
+          "leadSource": "yard sign"
+        }
+      },
+      "expectedFacts": [
+        "Selma",
+        "Bluejay Roofing",
+        "2233 Marigold Terrace, Pine Hollow",
+        "gutter and roof check",
+        "Thursday, October 15",
+        "yard sign"
+      ]
+    },
+    {
+      "id": "lead-10",
+      "kind": "lead_follow_up",
+      "facts": {
+        "jobId": "job-eval-010",
+        "customerFirstName": "Wade",
+        "companyName": "Northgate Roofing",
+        "repFirstName": "Dale",
+        "address": "2370 Juniper Lane, Fairhaven",
+        "facts": {
+          "askedFor": "leak inspection",
+          "askedOn": "Friday, October 16",
+          "leadSource": "storm canvass",
+          "officePhone": "(555) 019-4499"
+        }
+      },
+      "expectedFacts": [
+        "Wade",
+        "Northgate Roofing",
+        "Dale",
+        "2370 Juniper Lane, Fairhaven",
+        "leak inspection",
+        "Friday, October 16",
+        "storm canvass",
+        "(555) 019-4499"
+      ]
+    },
+    {
+      "id": "proposal-01",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-011",
+        "customerFirstName": "Ophelia",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Priya",
+        "address": "2507 Wexford Court, Millbrook Falls",
+        "facts": {
+          "proposalTitle": "Full roof replacement",
+          "proposalSentOn": "Thursday, October 8"
+        }
+      },
+      "expectedFacts": [
+        "Ophelia",
+        "Ridgeline Roofing",
+        "Priya",
+        "2507 Wexford Court, Millbrook Falls",
+        "Full roof replacement",
+        "Thursday, October 8"
+      ]
+    },
+    {
+      "id": "proposal-02",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-012",
+        "customerFirstName": "Desmond",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": null,
+        "address": "2644 Alder Ridge Road, Elm Crossing",
+        "facts": {
+          "proposalTitle": "Architectural shingle roof",
+          "proposalSentOn": "Friday, October 9",
+          "proposalLink": "https://roofline.example.test/p/eval02"
+        }
+      },
+      "expectedFacts": [
+        "Desmond",
+        "Summit Peak Roofing",
+        "2644 Alder Ridge Road, Elm Crossing",
+        "Architectural shingle roof",
+        "Friday, October 9",
+        "https://roofline.example.test/p/eval02"
+      ]
+    },
+    {
+      "id": "proposal-03",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-013",
+        "customerFirstName": "Kira",
+        "companyName": "Cedar Hollow Roofing",
+        "repFirstName": "Dale",
+        "address": "2781 Copperleaf Drive, Stonebridge",
+        "facts": {
+          "proposalTitle": "Metal roof over the porch",
+          "proposalSentOn": "Monday, October 12",
+          "proposalTotal": "$15,710"
+        }
+      },
+      "expectedFacts": [
+        "Kira",
+        "Cedar Hollow Roofing",
+        "Dale",
+        "2781 Copperleaf Drive, Stonebridge",
+        "Metal roof over the porch",
+        "Monday, October 12"
+      ]
+    },
+    {
+      "id": "proposal-04",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-014",
+        "customerFirstName": "Abel",
+        "companyName": "Bluejay Roofing",
+        "repFirstName": "Marco",
+        "address": null,
+        "facts": {
+          "proposalTitle": "Repair of the north slope",
+          "proposalSentOn": "Tuesday, October 13"
+        }
+      },
+      "expectedFacts": [
+        "Abel",
+        "Bluejay Roofing",
+        "Marco",
+        "Repair of the north slope",
+        "Tuesday, October 13"
+      ]
+    },
+    {
+      "id": "proposal-05",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-015",
+        "customerFirstName": "Juniper",
+        "companyName": "Northgate Roofing",
+        "repFirstName": "Tessa",
+        "address": "3055 Thistle Hollow Lane, Fairhaven",
+        "facts": {
+          "proposalTitle": "Roof and gutter replacement",
+          "proposalSentOn": "Wednesday, October 14"
+        }
+      },
+      "expectedFacts": [
+        "Juniper",
+        "Northgate Roofing",
+        "Tessa",
+        "3055 Thistle Hollow Lane, Fairhaven",
+        "Roof and gutter replacement",
+        "Wednesday, October 14"
+      ]
+    },
+    {
+      "id": "proposal-06",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-016",
+        "customerFirstName": "Tomas",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Priya",
+        "address": "3192 Harrow Point Road, Millbrook Falls",
+        "facts": {
+          "proposalTitle": "Full roof replacement",
+          "proposalSentOn": "Thursday, October 15",
+          "proposalLink": "https://roofline.example.test/p/eval06"
+        }
+      },
+      "expectedFacts": [
+        "Tomas",
+        "Ridgeline Roofing",
+        "Priya",
+        "3192 Harrow Point Road, Millbrook Falls",
+        "Full roof replacement",
+        "Thursday, October 15",
+        "https://roofline.example.test/p/eval06"
+      ]
+    },
+    {
+      "id": "proposal-07",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-017",
+        "customerFirstName": "Noreen",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": null,
+        "address": "3329 Bellwether Street, Elm Crossing",
+        "facts": {
+          "proposalTitle": "Architectural shingle roof",
+          "proposalSentOn": "Friday, October 16"
+        }
+      },
+      "expectedFacts": [
+        "Noreen",
+        "Summit Peak Roofing",
+        "3329 Bellwether Street, Elm Crossing",
+        "Architectural shingle roof",
+        "Friday, October 16"
+      ]
+    },
+    {
+      "id": "proposal-08",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-018",
+        "customerFirstName": "Ezra",
+        "companyName": "Cedar Hollow Roofing",
+        "repFirstName": "Dale",
+        "address": "3466 Quarry Bend Drive, Stonebridge",
+        "facts": {
+          "proposalTitle": "Metal roof over the porch",
+          "proposalSentOn": "Monday, October 5",
+          "proposalTotal": "$19,360"
+        }
+      },
+      "expectedFacts": [
+        "Ezra",
+        "Cedar Hollow Roofing",
+        "Dale",
+        "3466 Quarry Bend Drive, Stonebridge",
+        "Metal roof over the porch",
+        "Monday, October 5"
+      ]
+    },
+    {
+      "id": "proposal-09",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-019",
+        "customerFirstName": "Lacey",
+        "companyName": "Bluejay Roofing",
+        "repFirstName": "Marco",
+        "address": "3603 Marigold Terrace, Pine Hollow",
+        "facts": {
+          "proposalTitle": "Repair of the north slope",
+          "proposalSentOn": "Tuesday, October 6"
+        }
+      },
+      "expectedFacts": [
+        "Lacey",
+        "Bluejay Roofing",
+        "Marco",
+        "3603 Marigold Terrace, Pine Hollow",
+        "Repair of the north slope",
+        "Tuesday, October 6"
+      ]
+    },
+    {
+      "id": "proposal-10",
+      "kind": "proposal_follow_up",
+      "facts": {
+        "jobId": "job-eval-020",
+        "customerFirstName": "Bram",
+        "companyName": "Northgate Roofing",
+        "repFirstName": "Tessa",
+        "address": "3740 Juniper Lane, Fairhaven",
+        "facts": {
+          "proposalTitle": "Roof and gutter replacement",
+          "proposalSentOn": "Wednesday, October 7",
+          "proposalLink": "https://roofline.example.test/p/eval10"
+        }
+      },
+      "expectedFacts": [
+        "Bram",
+        "Northgate Roofing",
+        "Tessa",
+        "3740 Juniper Lane, Fairhaven",
+        "Roof and gutter replacement",
+        "Wednesday, October 7",
+        "https://roofline.example.test/p/eval10"
+      ]
+    },
+    {
+      "id": "review-01",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-021",
+        "customerFirstName": "Yvette",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Dale",
+        "address": null,
+        "facts": {
+          "finishedOn": "Monday, October 12",
+          "work": "roof replacement",
+          "reviewLink": "https://reviews.example.test/ridgeline/1"
+        }
+      },
+      "expectedFacts": [
+        "Yvette",
+        "Ridgeline Roofing",
+        "Dale",
+        "Monday, October 12",
+        "roof replacement",
+        "https://reviews.example.test/ridgeline/1"
+      ]
+    },
+    {
+      "id": "review-02",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-022",
+        "customerFirstName": "Calvin",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": "Marco",
+        "address": "4014 Alder Ridge Road, Elm Crossing",
+        "facts": {
+          "finishedOn": "Tuesday, October 13",
+          "work": "roof repair",
+          "reviewLink": "https://reviews.example.test/summit/2"
+        }
+      },
+      "expectedFacts": [
+        "Calvin",
+        "Summit Peak Roofing",
+        "Marco",
+        "4014 Alder Ridge Road, Elm Crossing",
+        "Tuesday, October 13",
+        "roof repair",
+        "https://reviews.example.test/summit/2"
+      ]
+    },
+    {
+      "id": "review-03",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-023",
+        "customerFirstName": "Rosalind",
+        "companyName": "Cedar Hollow Roofing",
+        "repFirstName": "Tessa",
+        "address": "4151 Copperleaf Drive, Stonebridge",
+        "facts": {
+          "finishedOn": "Wednesday, October 14",
+          "work": "gutter replacement",
+          "reviewLink": "https://reviews.example.test/cedar/3"
+        }
+      },
+      "expectedFacts": [
+        "Rosalind",
+        "Cedar Hollow Roofing",
+        "Tessa",
+        "4151 Copperleaf Drive, Stonebridge",
+        "Wednesday, October 14",
+        "gutter replacement",
+        "https://reviews.example.test/cedar/3"
+      ]
+    },
+    {
+      "id": "review-04",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-024",
+        "customerFirstName": "Fergus",
+        "companyName": "Bluejay Roofing",
+        "repFirstName": "Priya",
+        "address": "4288 Larkspur Way, Pine Hollow",
+        "facts": {
+          "finishedOn": "Thursday, October 15",
+          "work": "skylight flashing repair",
+          "reviewLink": "https://reviews.example.test/bluejay/4"
+        }
+      },
+      "expectedFacts": [
+        "Fergus",
+        "Bluejay Roofing",
+        "Priya",
+        "4288 Larkspur Way, Pine Hollow",
+        "Thursday, October 15",
+        "skylight flashing repair",
+        "https://reviews.example.test/bluejay/4"
+      ]
+    },
+    {
+      "id": "review-05",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-025",
+        "customerFirstName": "Tamsin",
+        "companyName": "Northgate Roofing",
+        "repFirstName": null,
+        "address": "4425 Thistle Hollow Lane, Fairhaven",
+        "facts": {
+          "finishedOn": "Friday, October 16",
+          "work": "storm damage repair",
+          "reviewLink": "https://reviews.example.test/northgate/5"
+        }
+      },
+      "expectedFacts": [
+        "Tamsin",
+        "Northgate Roofing",
+        "4425 Thistle Hollow Lane, Fairhaven",
+        "Friday, October 16",
+        "storm damage repair",
+        "https://reviews.example.test/northgate/5"
+      ]
+    },
+    {
+      "id": "review-06",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-026",
+        "customerFirstName": "Otis",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Dale",
+        "address": "4562 Harrow Point Road, Millbrook Falls",
+        "facts": {
+          "finishedOn": "Monday, October 5",
+          "work": "roof replacement",
+          "reviewLink": "https://reviews.example.test/ridgeline/6"
+        }
+      },
+      "expectedFacts": [
+        "Otis",
+        "Ridgeline Roofing",
+        "Dale",
+        "4562 Harrow Point Road, Millbrook Falls",
+        "Monday, October 5",
+        "roof replacement",
+        "https://reviews.example.test/ridgeline/6"
+      ]
+    },
+    {
+      "id": "review-07",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-027",
+        "customerFirstName": "Greer",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": "Marco",
+        "address": "4699 Bellwether Street, Elm Crossing",
+        "facts": {
+          "finishedOn": "Tuesday, October 6",
+          "work": "roof repair",
+          "reviewLink": "https://reviews.example.test/summit/7"
+        }
+      },
+      "expectedFacts": [
+        "Greer",
+        "Summit Peak Roofing",
+        "Marco",
+        "4699 Bellwether Street, Elm Crossing",
+        "Tuesday, October 6",
+        "roof repair",
+        "https://reviews.example.test/summit/7"
+      ]
+    },
+    {
+      "id": "review-08",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-028",
+        "customerFirstName": "Lionel",
+        "companyName": "Cedar Hollow Roofing",
+        "repFirstName": "Tessa",
+        "address": null,
+        "facts": {
+          "finishedOn": "Wednesday, October 7",
+          "work": "gutter replacement",
+          "reviewLink": "https://reviews.example.test/cedar/8"
+        }
+      },
+      "expectedFacts": [
+        "Lionel",
+        "Cedar Hollow Roofing",
+        "Tessa",
+        "Wednesday, October 7",
+        "gutter replacement",
+        "https://reviews.example.test/cedar/8"
+      ]
+    },
+    {
+      "id": "review-09",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-029",
+        "customerFirstName": "Mabel",
+        "companyName": "Bluejay Roofing",
+        "repFirstName": "Priya",
+        "address": "4973 Marigold Terrace, Pine Hollow",
+        "facts": {
+          "finishedOn": "Thursday, October 8",
+          "work": "skylight flashing repair",
+          "reviewLink": "https://reviews.example.test/bluejay/9"
+        }
+      },
+      "expectedFacts": [
+        "Mabel",
+        "Bluejay Roofing",
+        "Priya",
+        "4973 Marigold Terrace, Pine Hollow",
+        "Thursday, October 8",
+        "skylight flashing repair",
+        "https://reviews.example.test/bluejay/9"
+      ]
+    },
+    {
+      "id": "review-10",
+      "kind": "review_request",
+      "facts": {
+        "jobId": "job-eval-030",
+        "customerFirstName": "Silas",
+        "companyName": "Northgate Roofing",
+        "repFirstName": null,
+        "address": "5110 Juniper Lane, Fairhaven",
+        "facts": {
+          "finishedOn": "Friday, October 9",
+          "work": "storm damage repair",
+          "reviewLink": "https://reviews.example.test/northgate/10"
+        }
+      },
+      "expectedFacts": [
+        "Silas",
+        "Northgate Roofing",
+        "5110 Juniper Lane, Fairhaven",
+        "Friday, October 9",
+        "storm damage repair",
+        "https://reviews.example.test/northgate/10"
+      ]
+    },
+    {
+      "id": "claims-01",
+      "kind": "claims_ask_filed",
+      "facts": {
+        "jobId": "job-eval-031",
+        "customerFirstName": "Petra",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Tessa",
+        "address": "5247 Wexford Court, Millbrook Falls",
+        "facts": {
+          "stormDate": "September 24",
+          "inspectedOn": "Monday, October 5",
+          "damageFound": "hail bruising on the north slope"
+        }
+      },
+      "expectedFacts": [
+        "Petra",
+        "Ridgeline Roofing",
+        "Tessa",
+        "5247 Wexford Court, Millbrook Falls",
+        "September 24",
+        "Monday, October 5",
+        "hail bruising on the north slope"
+      ]
+    },
+    {
+      "id": "claims-02",
+      "kind": "claims_ask_filed",
+      "facts": {
+        "jobId": "job-eval-032",
+        "customerFirstName": "Hugo",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": "Priya",
+        "address": "5384 Alder Ridge Road, Elm Crossing",
+        "facts": {
+          "stormDate": "September 27",
+          "inspectedOn": "Tuesday, October 6",
+          "damageFound": "missing shingles on the ridge"
+        }
+      },
+      "expectedFacts": [
+        "Hugo",
+        "Summit Peak Roofing",
+        "Priya",
+        "5384 Alder Ridge Road, Elm Crossing",
+        "September 27",
+        "Tuesday, October 6",
+        "missing shingles on the ridge"
+      ]
+    },
+    {
+      "id": "claims-03",
+      "kind": "claims_ask_filed",
+      "facts": {
+        "jobId": "job-eval-033",
+        "customerFirstName": "Ines",
+        "companyName": "Cedar Hollow Roofing",
+        "repFirstName": null,
+        "address": "5521 Copperleaf Drive, Stonebridge",
+        "facts": {
+          "stormDate": "September 30",
+          "inspectedOn": "Wednesday, October 7",
+          "damageFound": "dented gutters and cracked shingles"
+        }
+      },
+      "expectedFacts": [
+        "Ines",
+        "Cedar Hollow Roofing",
+        "5521 Copperleaf Drive, Stonebridge",
+        "September 30",
+        "Wednesday, October 7",
+        "dented gutters and cracked shingles"
+      ]
+    },
+    {
+      "id": "claims-04",
+      "kind": "claims_ask_filed",
+      "facts": {
+        "jobId": "job-eval-034",
+        "customerFirstName": "Jasper",
+        "companyName": "Bluejay Roofing",
+        "repFirstName": "Dale",
+        "address": "5658 Larkspur Way, Pine Hollow",
+        "facts": {
+          "stormDate": "October 1",
+          "inspectedOn": "Thursday, October 8",
+          "damageFound": "wind-lifted shingles over the garage"
+        }
+      },
+      "expectedFacts": [
+        "Jasper",
+        "Bluejay Roofing",
+        "Dale",
+        "5658 Larkspur Way, Pine Hollow",
+        "October 1",
+        "Thursday, October 8",
+        "wind-lifted shingles over the garage"
+      ]
+    },
+    {
+      "id": "claims-05",
+      "kind": "claims_ask_filed",
+      "facts": {
+        "jobId": "job-eval-035",
+        "customerFirstName": "Odette",
+        "companyName": "Northgate Roofing",
+        "repFirstName": "Marco",
+        "address": null,
+        "facts": {
+          "stormDate": "October 2",
+          "inspectedOn": "Friday, October 9",
+          "damageFound": "hail damage on two slopes"
+        }
+      },
+      "expectedFacts": [
+        "Odette",
+        "Northgate Roofing",
+        "Marco",
+        "October 2",
+        "Friday, October 9",
+        "hail damage on two slopes"
+      ]
+    },
+    {
+      "id": "claims-06",
+      "kind": "claims_ask_filed",
+      "facts": {
+        "jobId": "job-eval-036",
+        "customerFirstName": "Rafe",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Tessa",
+        "address": "5932 Harrow Point Road, Millbrook Falls",
+        "facts": {
+          "stormDate": "September 24",
+          "inspectedOn": "Monday, October 12",
+          "damageFound": "hail bruising on the north slope"
+        }
+      },
+      "expectedFacts": [
+        "Rafe",
+        "Ridgeline Roofing",
+        "Tessa",
+        "5932 Harrow Point Road, Millbrook Falls",
+        "September 24",
+        "Monday, October 12",
+        "hail bruising on the north slope"
+      ]
+    },
+    {
+      "id": "claims-07",
+      "kind": "claims_ask_filed",
+      "facts": {
+        "jobId": "job-eval-037",
+        "customerFirstName": "Wren",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": "Priya",
+        "address": "6069 Bellwether Street, Elm Crossing",
+        "facts": {
+          "stormDate": "September 27",
+          "inspectedOn": "Tuesday, October 13",
+          "damageFound": "missing shingles on the ridge"
+        }
+      },
+      "expectedFacts": [
+        "Wren",
+        "Summit Peak Roofing",
+        "Priya",
+        "6069 Bellwether Street, Elm Crossing",
+        "September 27",
+        "Tuesday, October 13",
+        "missing shingles on the ridge"
+      ]
+    },
+    {
+      "id": "claims-08",
+      "kind": "claims_ask_adjuster_date",
+      "facts": {
+        "jobId": "job-eval-038",
+        "customerFirstName": "Ansel",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": null,
+        "address": "6206 Quarry Bend Drive, Stonebridge",
+        "facts": {
+          "insurer": "Harborview Mutual",
+          "claimNumber": "HM-20931",
+          "filedOn": "Wednesday, October 7"
+        }
+      },
+      "expectedFacts": [
+        "Ansel",
+        "Ridgeline Roofing",
+        "6206 Quarry Bend Drive, Stonebridge",
+        "Harborview Mutual",
+        "HM-20931",
+        "Wednesday, October 7"
+      ]
+    },
+    {
+      "id": "claims-09",
+      "kind": "claims_ask_adjuster_date",
+      "facts": {
+        "jobId": "job-eval-039",
+        "customerFirstName": "Delphine",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": "Dale",
+        "address": "6343 Marigold Terrace, Pine Hollow",
+        "facts": {
+          "insurer": "Granite State Assurance",
+          "claimNumber": "GS-21348",
+          "filedOn": "Thursday, October 8"
+        }
+      },
+      "expectedFacts": [
+        "Delphine",
+        "Summit Peak Roofing",
+        "Dale",
+        "6343 Marigold Terrace, Pine Hollow",
+        "Granite State Assurance",
+        "GS-21348",
+        "Thursday, October 8"
+      ]
+    },
+    {
+      "id": "claims-10",
+      "kind": "claims_ask_adjuster_date",
+      "facts": {
+        "jobId": "job-eval-040",
+        "customerFirstName": "Gideon",
+        "companyName": "Cedar Hollow Roofing",
+        "repFirstName": "Marco",
+        "address": "6480 Juniper Lane, Fairhaven",
+        "facts": {
+          "insurer": "Lakeshore Home Insurance",
+          "claimNumber": "LH-21765",
+          "filedOn": "Friday, October 9"
+        }
+      },
+      "expectedFacts": [
+        "Gideon",
+        "Cedar Hollow Roofing",
+        "Marco",
+        "6480 Juniper Lane, Fairhaven",
+        "Lakeshore Home Insurance",
+        "LH-21765",
+        "Friday, October 9"
+      ]
+    },
+    {
+      "id": "claims-11",
+      "kind": "claims_ask_adjuster_date",
+      "facts": {
+        "jobId": "job-eval-041",
+        "customerFirstName": "Hollis",
+        "companyName": "Bluejay Roofing",
+        "repFirstName": "Tessa",
+        "address": "6617 Wexford Court, Millbrook Falls",
+        "facts": {
+          "insurer": "Prairie Shield Insurance",
+          "claimNumber": "PS-22182",
+          "filedOn": "Monday, October 12"
+        }
+      },
+      "expectedFacts": [
+        "Hollis",
+        "Bluejay Roofing",
+        "Tessa",
+        "6617 Wexford Court, Millbrook Falls",
+        "Prairie Shield Insurance",
+        "PS-22182",
+        "Monday, October 12"
+      ]
+    },
+    {
+      "id": "claims-12",
+      "kind": "claims_ask_adjuster_date",
+      "facts": {
+        "jobId": "job-eval-042",
+        "customerFirstName": "Ivy",
+        "companyName": "Northgate Roofing",
+        "repFirstName": "Priya",
+        "address": null,
+        "facts": {
+          "insurer": "Keystone Hearth Insurance",
+          "claimNumber": "KH-22599",
+          "filedOn": "Tuesday, October 13"
+        }
+      },
+      "expectedFacts": [
+        "Ivy",
+        "Northgate Roofing",
+        "Priya",
+        "Keystone Hearth Insurance",
+        "KH-22599",
+        "Tuesday, October 13"
+      ]
+    },
+    {
+      "id": "claims-13",
+      "kind": "claims_ask_adjuster_date",
+      "facts": {
+        "jobId": "job-eval-043",
+        "customerFirstName": "Lorcan",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": null,
+        "address": "6891 Copperleaf Drive, Stonebridge",
+        "facts": {
+          "insurer": "Harborview Mutual",
+          "claimNumber": "HM-23016",
+          "filedOn": "Wednesday, October 14"
+        }
+      },
+      "expectedFacts": [
+        "Lorcan",
+        "Ridgeline Roofing",
+        "6891 Copperleaf Drive, Stonebridge",
+        "Harborview Mutual",
+        "HM-23016",
+        "Wednesday, October 14"
+      ]
+    },
+    {
+      "id": "claims-14",
+      "kind": "claims_ask_adjuster_date",
+      "facts": {
+        "jobId": "job-eval-044",
+        "customerFirstName": "Maren",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": "Dale",
+        "address": "7028 Larkspur Way, Pine Hollow",
+        "facts": {
+          "insurer": "Granite State Assurance",
+          "claimNumber": "GS-23433",
+          "filedOn": "Thursday, October 15"
+        }
+      },
+      "expectedFacts": [
+        "Maren",
+        "Summit Peak Roofing",
+        "Dale",
+        "7028 Larkspur Way, Pine Hollow",
+        "Granite State Assurance",
+        "GS-23433",
+        "Thursday, October 15"
+      ]
+    },
+    {
+      "id": "claims-15",
+      "kind": "claims_ask_outcome",
+      "facts": {
+        "jobId": "job-eval-045",
+        "customerFirstName": "Nico",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Marco",
+        "address": "7165 Thistle Hollow Lane, Fairhaven",
+        "facts": {
+          "insurer": "Lakeshore Home Insurance",
+          "claimNumber": "LH-31452",
+          "adjusterVisitOn": "Friday, October 9",
+          "adjusterVisitTime": "9:30 a.m."
+        }
+      },
+      "expectedFacts": [
+        "Nico",
+        "Ridgeline Roofing",
+        "Marco",
+        "7165 Thistle Hollow Lane, Fairhaven",
+        "Lakeshore Home Insurance",
+        "LH-31452",
+        "Friday, October 9",
+        "9:30 a.m."
+      ]
+    },
+    {
+      "id": "claims-16",
+      "kind": "claims_ask_outcome",
+      "facts": {
+        "jobId": "job-eval-046",
+        "customerFirstName": "Orla",
+        "companyName": "Summit Peak Roofing",
+        "repFirstName": "Tessa",
+        "address": "7302 Harrow Point Road, Millbrook Falls",
+        "facts": {
+          "insurer": "Prairie Shield Insurance",
+          "claimNumber": "PS-31841",
+          "adjusterVisitOn": "Monday, October 12"
+        }
+      },
+      "expectedFacts": [
+        "Orla",
+        "Summit Peak Roofing",
+        "Tessa",
+        "7302 Harrow Point Road, Millbrook Falls",
+        "Prairie Shield Insurance",
+        "PS-31841",
+        "Monday, October 12"
+      ]
+    },
+    {
+      "id": "claims-17",
+      "kind": "claims_ask_outcome",
+      "facts": {
+        "jobId": "job-eval-047",
+        "customerFirstName": "Pascal",
+        "companyName": "Cedar Hollow Roofing",
+        "repFirstName": "Priya",
+        "address": "7439 Bellwether Street, Elm Crossing",
+        "facts": {
+          "insurer": "Keystone Hearth Insurance",
+          "claimNumber": "KH-32230",
+          "adjusterVisitOn": "Tuesday, October 13",
+          "adjusterVisitTime": "1 p.m."
+        }
+      },
+      "expectedFacts": [
+        "Pascal",
+        "Cedar Hollow Roofing",
+        "Priya",
+        "7439 Bellwether Street, Elm Crossing",
+        "Keystone Hearth Insurance",
+        "KH-32230",
+        "Tuesday, October 13",
+        "1 p.m."
+      ]
+    },
+    {
+      "id": "claims-18",
+      "kind": "claims_ask_outcome",
+      "facts": {
+        "jobId": "job-eval-048",
+        "customerFirstName": "Quinn",
+        "companyName": "Bluejay Roofing",
+        "repFirstName": null,
+        "address": "7576 Quarry Bend Drive, Stonebridge",
+        "facts": {
+          "insurer": "Harborview Mutual",
+          "claimNumber": "HM-32619",
+          "adjusterVisitOn": "Wednesday, October 14"
+        }
+      },
+      "expectedFacts": [
+        "Quinn",
+        "Bluejay Roofing",
+        "7576 Quarry Bend Drive, Stonebridge",
+        "Harborview Mutual",
+        "HM-32619",
+        "Wednesday, October 14"
+      ]
+    },
+    {
+      "id": "claims-19",
+      "kind": "claims_ask_outcome",
+      "facts": {
+        "jobId": "job-eval-049",
+        "customerFirstName": "Rhea",
+        "companyName": "Northgate Roofing",
+        "repFirstName": "Dale",
+        "address": null,
+        "facts": {
+          "insurer": "Granite State Assurance",
+          "claimNumber": "GS-33008",
+          "adjusterVisitOn": "Thursday, October 15",
+          "adjusterVisitTime": "3:00 PM"
+        }
+      },
+      "expectedFacts": [
+        "Rhea",
+        "Northgate Roofing",
+        "Dale",
+        "Granite State Assurance",
+        "GS-33008",
+        "Thursday, October 15",
+        "3:00 PM"
+      ]
+    },
+    {
+      "id": "claims-20",
+      "kind": "claims_ask_outcome",
+      "facts": {
+        "jobId": "job-eval-050",
+        "customerFirstName": "Sven",
+        "companyName": "Ridgeline Roofing",
+        "repFirstName": "Marco",
+        "address": "7850 Juniper Lane, Fairhaven",
+        "facts": {
+          "insurer": "Lakeshore Home Insurance",
+          "claimNumber": "LH-33397",
+          "adjusterVisitOn": "Friday, October 16"
+        }
+      },
+      "expectedFacts": [
+        "Sven",
+        "Ridgeline Roofing",
+        "Marco",
+        "7850 Juniper Lane, Fairhaven",
+        "Lakeshore Home Insurance",
+        "LH-33397",
+        "Friday, October 16"
+      ]
+    }
+  ]
+}

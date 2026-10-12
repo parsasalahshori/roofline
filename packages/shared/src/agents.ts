@@ -62,7 +62,16 @@ export function isEditableBaselineKey(k: string): k is BaselineKey {
 }
 
 /** Ruling AX-B: flipped to true by G1 Task 15. */
-export const G1_AGENTS_SHIPPED = false as boolean;
+export const G1_AGENTS_SHIPPED = true as boolean;
+
+/** The three G1 agents start paused: with no agent_settings row they are paused (Ruling GX-E). */
+export const G1_AGENTS = ['claims', 'scheduler', 'follow_up'] as const;
+
+/** Ruling GX-E, the one pause rule. G1 agents: no row = paused. Launch agents: no row = on. A row is paused when pausedAt is set. */
+export function isPaused(agent: string, row: { pausedAt: Date | null } | null): boolean {
+  if (row === null) return (G1_AGENTS as readonly string[]).includes(agent);
+  return row.pausedAt !== null;
+}
 
 function finiteNonNegative(value: number | undefined): number {
   return value !== undefined && Number.isFinite(value) && value >= 0 ? value : 0;

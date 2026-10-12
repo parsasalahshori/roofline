@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
+import { STORED_FILE_KINDS } from '@roofline/shared';
 import { MIGRATIONS_FOLDER, migrate } from '../src/migrate.ts';
 import { ACTOR_TYPES, AGENT_EVENT_KINDS } from '../src/schema/enums.ts';
 import { companies, customers, properties } from '../src/schema/index.ts';
@@ -1059,11 +1060,10 @@ describe('S1 constraints', () => {
     expect(err.code).toBe('23514');
   });
 
-  test('stored_files accepts the storm_photo and ad_image kinds and refuses an unknown one', async () => {
+  test('stored_files accepts every STORED_FILE_KINDS value and refuses an unknown one', async () => {
     const s = await seedTwoCompanies(urls.owner);
-    await insertStoredFile(s.a.companyId, 'storm_photo', 'photo-1');
-    await insertStoredFile(s.a.companyId, 'ad_image', 'ad-1');
-    await insertStoredFile(s.a.companyId, 'signed_proposal_pdf', 'pdf-1');
+    // Every kind the code knows must pass the check: the last migration that recreates it lists them all.
+    for (const kind of STORED_FILE_KINDS) await insertStoredFile(s.a.companyId, kind, `file-${kind}`);
     const err = await rejected(
       `insert into stored_files (company_id, kind, object_key, sha256, bytes, content_type)
        values ($1, 'bogus', 'x', repeat('a', 64), 1, 'image/jpeg')`,

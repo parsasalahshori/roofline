@@ -10,6 +10,7 @@ import { NotFoundWindow } from '../../shell/NotFoundWindow.tsx';
 import styles from './AgentPage.module.css';
 import { useAgentDetail } from './api.ts';
 import { AgentsTabs } from './AgentsTabs.tsx';
+import { ClaimsBoard } from './ClaimsBoard.tsx';
 import { PauseSwitch } from './PauseSwitch.tsx';
 import { PeriodPicker } from './PeriodPicker.tsx';
 import { RecentTasks } from './RecentTasks.tsx';
@@ -17,6 +18,9 @@ import { RulesList } from './RulesList.tsx';
 import { RunNowButton } from './RunNowButton.tsx';
 import { TimeBreakdown } from './TimeBreakdown.tsx';
 import { agentFromSlug, type PageAgent } from './slugs.ts';
+
+/** Claims, Scheduler and Follow-up cannot run while paused (GX-E), so their page offers no Run now then. */
+const G1_SCREEN_AGENTS: readonly ScreenAgent[] = ['claims', 'scheduler', 'follow_up'];
 
 /** One agent's page: time saved, what it does, pause and run controls, and its recent work. */
 export function AgentPage({ agent }: { agent: PageAgent }) {
@@ -63,8 +67,10 @@ function ScreenAgentPage({ agent }: { agent: ScreenAgent }) {
             <h3 className={styles.heading}>{agentPage.rulesTitle}</h3>
             <RulesList rules={d.rules} />
           </section>
-          <PauseSwitch agent={agent} paused={d.paused} isOwner={me.data?.role === 'owner'} />
-          <RunNowButton agent={agent} runNow={d.runNow} />
+          {agent === 'claims' && <ClaimsBoard />}
+          <PauseSwitch agent={agent} paused={d.paused} rules={d.rules} isOwner={me.data?.role === 'owner'} />
+          {/* A paused Claims, Scheduler or Follow-up agent cannot run (the server answers 409), so it offers no Run now. */}
+          {G1_SCREEN_AGENTS.includes(agent) && d.paused !== null ? null : <RunNowButton agent={agent} runNow={d.runNow} />}
           <RecentTasks tasks={d.recentTasks} />
         </>
       )}

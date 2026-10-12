@@ -25,6 +25,7 @@ import { googleAdsFor } from './providers/google-ads/index.ts';
 import { metaAdsFor } from './providers/meta/index.ts';
 import { postmarkBroadcastFor } from './providers/postmark-broadcast.ts';
 import { resvgCardFor } from './providers/resvg-card.ts';
+import { createStaticMap } from './providers/static-map.ts'; // G1 Task 7
 import { createFootprintSource } from './providers/footprints.ts';
 import { createObjectStore } from './providers/object-store.ts';
 import { createGeocoder } from './providers/geocoder.ts';
@@ -190,6 +191,13 @@ export class UnconfiguredLlm implements Llm {
   summarize(): never {
     return this.fail();
   }
+  // G1 Agents
+  draftTexts(): never {
+    return this.fail();
+  }
+  extractClaimReply(): never {
+    return this.fail();
+  }
 }
 
 /** Call control that refuses every call (Twilio voice is not configured). */
@@ -297,6 +305,7 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     adsMeta: adsMetaFor(config),
     broadcast: broadcastFor(config),
     adImage: config.FAKE_PROVIDERS ? new FakeAdImageRenderer() : resvgCardFor(config),
+    staticMap: createStaticMap(config), // G1 Task 7
     jobs,
     // D1 Front Desk
     llm: createLlm(config),

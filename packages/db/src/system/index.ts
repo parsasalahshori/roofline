@@ -21,6 +21,8 @@ export * from './line-lookups.ts';
 export * from './fd-retention.ts';
 export * from './recording.ts';
 export * from './transfer-phone.ts';
+// G1 skeleton (Task 3).
+export * from './agents.ts';
 // E1 skeleton (Task 1).
 export * from './footprints.ts';
 export * from './proposal-links.ts';
