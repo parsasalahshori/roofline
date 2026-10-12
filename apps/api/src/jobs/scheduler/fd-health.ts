@@ -1,12 +1,18 @@
-import { markVoiceUrlSet, numbersNeedingVoiceUrl } from '@roofline/db/system';
+import { endStuckCalls, markVoiceUrlAttempt, markVoiceUrlSet, numbersNeedingVoiceUrl } from '@roofline/db/system';
 import type { AppDeps } from '../../app.ts';
 import { applyVoiceUrls, type VoiceUrlResult } from '../../front-desk/number-voice.ts';
 
-/** How many numbers one repair pass takes (oldest first); the schedule runs every two minutes. */
+/** How many numbers one repair pass takes (least recently tried first); the schedule runs every two minutes. */
 const REPAIR_LIMIT = 20;
+
+/** How many stuck calls one pass ends at most. */
+const STUCK_CALL_LIMIT = 100;
 
 /** How many numbers the first Front Desk save of one company sets at most. */
 const COMPANY_LIMIT = 100;
+
+/** Stamps a failed attempt so numbers that keep failing move behind the rest (pre-review #39). */
+const failedMarker = (deps: AppDeps) => (numberId: string) => markVoiceUrlAttempt(deps.pools.system, numberId, deps.clock.now());
 
 /**
  * Sets the voice URL on the company's Front Desk numbers that do not have it yet. Called by the first
@@ -15,26 +21,39 @@ const COMPANY_LIMIT = 100;
  */
 export async function ensureVoiceUrl(deps: AppDeps, companyId: string): Promise<VoiceUrlResult> {
   const rows = await numbersNeedingVoiceUrl(deps.pools.system, companyId, COMPANY_LIMIT);
-  return applyVoiceUrls(deps, rows, (numberId) => markVoiceUrlSet(deps.pools.system, numberId));
+  return applyVoiceUrls(deps, rows, (numberId) => markVoiceUrlSet(deps.pools.system, numberId), failedMarker(deps));
 }
 
 /** The repair pass across every company: up to `limit` numbers that still lack the voice URL. */
 export async function repairVoiceUrls(deps: AppDeps, limit: number): Promise<VoiceUrlResult> {
   const rows = await numbersNeedingVoiceUrl(deps.pools.system, null, limit);
-  return applyVoiceUrls(deps, rows, (numberId) => markVoiceUrlSet(deps.pools.system, numberId));
+  return applyVoiceUrls(deps, rows, (numberId) => markVoiceUrlSet(deps.pools.system, numberId), failedMarker(deps));
 }
 
 /**
  * Scheduled job `fd-health` (worker, every two minutes). The LLM health flag is a circuit breaker
  * inside RelaySessions (Ruling DQ), so the worker writes nothing for it. Its one job here is the
- * `fd-number-voice` repair pass: numbers without a voice URL get one. A failure of the whole pass is
+ * `fd-number-voice` repair pass: numbers without a voice URL get one. It then ends calls stuck live for
+ * over 35 minutes and queues their `fd-after-call`. A failure of the whole pass is
  * logged without any id and never thrown, so the schedule keeps running.
  */
 export async function fdHealth(deps: AppDeps, now: Date): Promise<void> {
-  void now;
   try {
     await repairVoiceUrls(deps, REPAIR_LIMIT);
   } catch {
     console.error('Front Desk: the fd-number-voice repair pass failed.');
+  }
+  // Calls whose Twilio status callback never came: end them and queue their after-call work.
+  try {
+    const ended = await endStuckCalls(deps.pools.system, now, STUCK_CALL_LIMIT);
+    for (const { companyId, callSid } of ended) {
+      try {
+        await deps.jobs.send('fd-after-call', { companyId, callSid }, { singletonKey: `fd-after-call:${callSid}` });
+      } catch {
+        console.error(`fd-after-call enqueue failed company=${companyId}`);
+      }
+    }
+  } catch {
+    console.error('Front Desk: ending stuck calls failed.');
   }
 }

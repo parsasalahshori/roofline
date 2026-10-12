@@ -154,3 +154,41 @@ Integration CI on d1-front-desk a7b8492 (T7 + T8 + T9 together): 38272017267 gre
     - (a) ASK_PERSON_INTENTS and 'not_understood' are guessed router labels, and the frozen ROUTER_PROMPT doesn't ask for them. RC adds the labels to the router's json_schema enum (Haiku format), not to the frozen prompt text.
     - (b) transfer reason 'asked' plus the router intent can count one ask twice in a turn; count once.
     - (c) drop the times.ts systemCtx re-export.
+- 2026-10-12: integration 092068c8 green (CI 38281636895, Platform+E2E): T27 + c1-crm 7758e82 + T19, with the smoke guard test's TRUST_PROXY fix (T27's production BASE_ENV met C1's BF check). CV and RA are building in parallel off 93dcfca; RC waits for CV; T25 is with the C1 lead; d1-rev-a/b/c are with E1 and d1-rev-d with C1.
+- 2026-10-12: **d1-rev-a and d1-rev-b merged** (E1 pre-review fixes).
+  - d1-rev-a 5267d58 (CI 38281600581): items 13, 25 hook part, 26, 29, 30, 38, 39, 40 and 45, plus **Ruling BG**. A read-only company gets team then voicemail, never AI; no fd-text; the "off" PUT is allowed.
+  - d1-rev-b 542a7e9 (CI 38281601513): items 14, 15, 16, 17 and 36. The lock order is the phone lock, then lockRecipient.
+  - Retention 0 now deletes existing recordings; the settings copy may need to say so.
+  - Since Ruling BG landed via d1-rev-a, Task CV's BG part is redundant: at CV's merge, keep d1-rev-a's version and drop CV's duplicate.
+  - RC must pass `toE164: conversation.phoneE164` in texts.ts (item 17).
+- 2026-10-12: **d1-rev-d merged** (C1 lead, notes 20, 31, 32, 33, 35, 43; 5e58c80, CI 38284192214 green on b1c782d5).
+  - 0020 is narrowed in place: app_system has no grants left on conversations or conversation_turns (their app_system_all policies are dropped), and on calls only SELECT (id, company_id, call_sid, status).
+  - So any new system-pool pass over calls or conversations (CV's stale-call sweep, RC's SMS idle-close) must list companies on the system pool, then work per company on the tenant pool inside withTenant, rather than adding grants back.
+  - SMS detail now merges messages with turns (dedupe by text; re-check if RC changes what texts.ts writes).
+  - Front Desk SMS bodies are blanked under retention.
+- 2026-10-12, controller plan to finish fast (owner):
+  - RC is split. RC-1 (S1 lead, d1-rc1): items 1-4, 6 and 9, the T19 minors, and E1's final-review F2 (texts part), F4, F5, F6 and N3 (book.ts toE164). RC-2 (me, d1-rc2 off d1-cv): notes 28 and 41, F2 (voice match at start), F3 (urgency through the handoff), and voice needs_attention.
+  - The final whole-branch review runs incrementally (E1 lead): d1-rev-e (F1 appointment ids), d1-rev-f (F7-F10), d1-rev-g (N2 dispatcher toE164, N4 transfer phone vs any Roofline number), and d1-rev-c (also N3's reply route).
+  - **Ruling BI** (owner, item N6): retention blanks only the AI exchange (inbound texts the assistant handled and its replies). It keeps STOP/START/HELP bodies, staff replies and booking confirmations, and the copy says so. Retention 0 deletes existing recordings, with copy that says so. Built by the A1 lead on d1-rev-h.
+  - Docker works locally (`nohup dockerd &`): run the db and api suites before every push.
+- Task CV, Schema gap (finding F2): calls has no outcome or title column, so a transferred call with no conversation keeps only calls.status 'transferred' as its outcome. needs_attention is derived from unread_count (conversation-inbox.ts), which voice calls never set, so a booked voice call does not show as needs-attention. A column would need a new migration, which D1 does not own beyond 0019/0020, so it is left for the controller.
+- 2026-10-12: **Task CV merged** (d1-cv 77d57be, CI 38288296627 green; local Docker: db rls, repos-calls-cv, migrations and fd-texts, plus the api front-desk suite with 521 tests).
+  - What it does: calls.conversation_id is linked in engine.start, and start reuses the linked conversation. after-call runs only for finished calls (ended, transferred, failed, rejected), with usage once from the total aiSeconds. take_message no longer writes summary. The AI cap uses an advisory lock and a 35-minute window. fd-health ends stuck calls. applyCallStatus guards terminal states.
+  - Ruling BG: d1-rev-a's version is kept.
+  - 0020: app_system on calls has SELECT (id, company_id, call_sid, status, started_at) and UPDATE (status, ended_at, updated_at).
+  - Fixes integration red: rev-b's blocked_numbers isolation cases now expect 42501 (rev-d removed app_tenant UPDATE).
+  - **Gaps:**
+    - (a) calls has no outcome or title column, so a transferred call with no conversation keeps only calls.status.
+    - (b) Voice needs_attention: RC-2 sets unread_count.
+- **Ruling BJ** (controller): CV's stale-call sweep moves to per-company tenant transactions, and app_system's UPDATE and SELECT(started_at) grants on calls are dropped (BF and the rev-d rule). Built by the E1 lead on d1-rev-i, with the sweep fixes: 35 min for `ai` only, about 4 h for ringing and ringing_team, no text-back after a sweep, plus billing and status edge cases. The D1 lead keeps the reused-conversation turn positions and the AI cap counting non-AI calls (follow-ups.md).
+- 2026-10-12: **Task 25 merged** (C1 lead; d1-t25 c6a72d1, CI 38290781537 green on 2dd74adc with CV). It adds:
+  - 13 §16 scenarios with a CI runner over ScriptedLlm through the real relay loop, engine and tools.
+  - `npm run eval:front-desk -- --confirm-spend` (refuses without the flag or a key; model calls only in providers/anthropic/eval.ts).
+  - d1-latency.md as a template, empty until the owner's first run.
+  - The T19 rows of d1-acceptance.md filled in.
+  - Gap: criterion 8 (an install move is refused) has no end-to-end call test.
+- 2026-10-12: **d1-rev-h merged** (A1 lead; Ruling BI; 17d47e3, CI 38290914284 green with CV).
+  - blankExpiredTexts blanks only inbound texts in a conversation and the assistant's own replies (fd-text: keys).
+  - Staff replies, booking confirmations, text-backs and STOP/START/HELP or opt-out-looking texts are kept.
+  - The sweep uses a keyset cursor.
+  - The settings copy says what is kept; retention 0 deletes existing recordings at the next nightly cleanup.

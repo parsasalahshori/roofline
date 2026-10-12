@@ -8,6 +8,10 @@ export const frontDeskSettings = {
       forwarding_not_verified: "Forwarding isn't verified yet.",
       no_number: 'Add a business number first.',
     },
+    overrideConfirm:
+      "Forwarding isn't verified yet, so calls may not reach the assistant. Turn Front Desk on anyway? Run the forwarding test when you can.",
+    overrideYes: 'Turn on anyway',
+    overrideNo: 'Cancel',
   },
   texts: { label: 'Answer texts too' },
   voice: { label: 'Voice', preview: (name: string) => `Hear ${name}` },
@@ -27,11 +31,12 @@ export const frontDeskSettings = {
   textBack: { label: 'Text back missed calls' },
   recordingDays: {
     label: 'Keep recordings (days)',
-    help: 'Zero keeps no recordings.',
+    help: 'Zero keeps no recordings and deletes the ones already saved at the next nightly cleanup.',
     range: (min: number, max: number) => `Enter a whole number from ${min} to ${max}.`,
   },
   transcriptDays: {
     label: 'Keep transcripts (days)',
+    help: 'After this, call transcripts and the texts between customers and the assistant are cleared. STOP, START and HELP texts, replies from your team and booking confirmations are kept.',
     range: (min: number, max: number) => `Enter a whole number from ${min} to ${max}.`,
   },
   maxCalls: {

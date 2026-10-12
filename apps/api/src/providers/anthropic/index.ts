@@ -20,3 +20,5 @@ export function anthropicFor(config: Config, fetchImpl?: typeof fetch): Llm | nu
     extractClaimReply: createExtractClaimReply(clients),
   };
 }
+
+export { evalModelsFor, type EvalModels } from './eval.ts';

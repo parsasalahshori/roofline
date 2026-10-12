@@ -18,3 +18,9 @@
 - (a) The engine's person-ask and not-understood counters key on router intents (`ask_for_person`, `transfer`, `human`, `not_understood`) that nothing asks the router to emit. Make them a closed enum in the router's structured-output schema (`output_config.format` json_schema in providers/anthropic) and the shared types. Leave the byte-frozen ROUTER_PROMPT text alone unless the schema can't carry it; if the text must change, say so in the report. Test with ScriptedLlm.
 - (b) `tools/transfer.ts` bumps askedForPersonCount on reason 'asked' while the engine also bumps it on the intent: count once per turn.
 - (c) Import systemCtx from tools/system-ctx.ts everywhere and drop the times.ts re-export.
+
+**Updates since this brief was written (d1-front-desk now has d1-rev-a/b/d and CV):**
+- d1-rev-b added `toE164` to buildGateRequest. Item 6: pass `toE164: conversation.phoneE164` in texts.ts (no TODO).
+- d1-rev-d removed every app_system grant on conversations and conversation_turns. The item 8 idle-close pass may only list company ids on the system pool. It ends conversations per company on the tenant pool, inside withTenant. Do not add grants.
+- d1-rev-d's SMS detail merges messages with turns and dedupes by text. If item 1 changes what texts.ts writes into turns, keep that dedupe working (conversations-routes.test, d1-t22-view.test).
+- T25 moved T19's test rig into `apps/api/test/front-desk/call-rig.ts`; call-paths.test.ts imports it.

@@ -11,8 +11,11 @@ import {
   type TurnRoute,
 } from '@roofline/shared';
 import {
+  findCallConversationId,
+  getConversation,
   insertConversation,
   insertTurn,
+  linkCallConversation,
   loadCompanyFacts,
   setCallSpamReason,
   type TenantContext,
@@ -120,11 +123,22 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         canCancel: facts.canCancel,
       };
       const companyBlock = buildCompanyBlock(input);
-      const { id } = await insertConversation(tx, ctx, {
-        channel: i.channel,
-        phoneE164: i.phone,
-        companyNumberE164: companyNumber,
-      });
+      // A call row links to its conversation once: a second start for the same call reuses it.
+      let id: string | null = null;
+      if (i.callId !== undefined) {
+        const linked = await findCallConversationId(tx, ctx, i.callId);
+        if (linked !== null) id = (await getConversation(tx, ctx, linked))?.id ?? null;
+      }
+      if (id === null) {
+        id = (
+          await insertConversation(tx, ctx, {
+            channel: i.channel,
+            phoneE164: i.phone,
+            companyNumberE164: companyNumber,
+          })
+        ).id;
+        if (i.callId !== undefined) await linkCallConversation(tx, ctx, i.callId, id);
+      }
       const created = newConversationState({
         companyId: i.companyId,
         conversationId: id,

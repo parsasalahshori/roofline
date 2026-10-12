@@ -65,6 +65,7 @@ export {
   getCustomer,
   listCustomers,
   type ListCustomersOptions,
+  lockCustomerPhone,
   setArchived,
   updateCustomer,
   type WriteOptions,

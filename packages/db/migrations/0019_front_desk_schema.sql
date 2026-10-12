@@ -160,4 +160,8 @@ ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_front_desk_facts
 ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_recording_retention_days_check" CHECK ("company_settings"."recording_retention_days" between 0 and 365);--> statement-breakpoint
 ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_transcript_retention_days_check" CHECK ("company_settings"."transcript_retention_days" between 30 and 730);--> statement-breakpoint
 ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_max_concurrent_ai_calls_check" CHECK ("company_settings"."max_concurrent_ai_calls" between 1 and 10);--> statement-breakpoint
-ALTER TABLE "jobs" ADD CONSTRAINT "jobs_source_check" CHECK ("jobs"."source" in ('storm', 'call', 'text', 'web', 'referral', 'import', 'manual', 'front_desk'));
+ALTER TABLE "jobs" ADD CONSTRAINT "jobs_source_check" CHECK ("jobs"."source" in ('storm', 'call', 'text', 'web', 'referral', 'import', 'manual', 'front_desk'));--> statement-breakpoint
+CREATE INDEX "calls_company_conversation_idx" ON "calls" USING btree ("company_id","conversation_id");--> statement-breakpoint
+CREATE INDEX "conversations_company_customer_idx" ON "conversations" USING btree ("company_id","customer_id");--> statement-breakpoint
+CREATE INDEX "messages_company_conversation_created_idx" ON "messages" USING btree ("company_id","conversation_id","created_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "messages_fd_dedupe_uniq" ON "messages" USING btree ("company_id","dedupe_key") WHERE "messages"."dedupe_key" like 'fd-%';

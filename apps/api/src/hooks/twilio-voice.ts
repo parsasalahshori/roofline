@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { countLiveAiCalls, insertCall, isAgentPaused, screeningFacts, type TenantContext, updateCall, withTenant } from '@roofline/db';
+import { countLiveCallsInWindow, insertCall, isAgentPaused, lockAiCap, screeningFacts, type TenantContext, updateCall, withTenant } from '@roofline/db';
 import { teamDialNumbers } from '@roofline/db/system';
 import { disclosureGreeting } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
@@ -72,9 +72,12 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
         await updateCall(tx, ctx, callSid, { status: 'rejected', spamReason: screen.reason, endedAt: now });
         return { kind: 'reject' as const };
       }
-      const liveAi = await countLiveAiCalls(tx, ctx);
+      // The cap decision is made under a per-company lock held until this transaction ends, so two calls
+      // arriving together cannot both see room for one more. Ringing and ai calls of the last 35 minutes count.
+      await lockAiCap(tx, ctx);
+      const liveAi = await countLiveCallsInWindow(tx, ctx, now, call.id);
       const paused = await isAgentPaused(tx, ctx, 'front_desk');
-      return { kind: 'ok' as const, callId: call.id, liveAi, paused };
+      return { kind: 'ok' as const, callId: call.id, overCompanyCap: liveAi >= route.maxConcurrentAiCalls, paused };
     });
 
     if (outcome.kind === 'replay') {
@@ -87,11 +90,12 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
     }
 
     const overCap =
-      outcome.liveAi >= route.maxConcurrentAiCalls ||
+      outcome.overCompanyCap ||
       deps.relaySessions.size >= deps.config.FRONT_DESK_MAX_CALLS ||
-      !deps.relaySessions.llmHealthy;
+      !deps.relaySessions.isLlmHealthy(now);
 
-    if (!route.frontDeskEnabled || overCap || outcome.paused) {
+    // A read-only company (trial ended, plan canceled) gets no AI calls: the team, then voicemail (Ruling BG).
+    if (!route.frontDeskEnabled || route.readOnly || overCap || outcome.paused) {
       sendVoiceTwiml(res, voicemailXml(publicUrl, await teamDialNumbers(deps.pools.system, route.companyId)));
       return;
     }

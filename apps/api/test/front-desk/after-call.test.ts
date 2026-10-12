@@ -1,5 +1,6 @@
-import { and, eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { and, eq, sql } from 'drizzle-orm';
+import pg from 'pg';
+import { beforeEach, describe, expect, inject, test } from 'vitest';
 import {
   activities,
   calls,
@@ -9,6 +10,7 @@ import {
   conversationTurns,
   customers,
   encrypt,
+  findCallConversationId,
   lineLookups,
   messages,
   textingRegistrations,
@@ -16,6 +18,8 @@ import {
   usageEvents,
 } from '@roofline/db';
 import { CONVERSATION_OUTCOMES, type ConversationOutcome } from '@roofline/shared';
+import { createEngine } from '../../src/front-desk/engine.ts';
+import { FRONT_DESK_HANDLERS } from '../../src/front-desk/tools/index.ts';
 import { pickOutcome, runAfterCall } from '../../src/front-desk/after-call.ts';
 import { maybeTextBack, type TextBackInput, type TextBackResult } from '../../src/front-desk/text-back.ts';
 import { ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
@@ -274,6 +278,80 @@ describe('runAfterCall', () => {
   });
 });
 
+describe('calls linked to conversations, finished calls only', () => {
+  const convCount = () => inCompany(t, idA(), async (tx) => (await tx.select().from(conversations)).length);
+
+  test('a voice call through engine.start, a booking tool, then after-call', async () => {
+    const s = await seedCall({ withConversation: false, aiSeconds: 90, status: 'ended' });
+    const engine = createEngine(t.deps, FRONT_DESK_HANDLERS);
+    const first = await engine.start({ companyId: idA(), channel: 'voice', phone: OTHER_CALLER, callId: s.callId, companyNumber: A_NUMBER });
+    const linked = await inCompany(t, idA(), (tx) => findCallConversationId(tx, tenantCtx(), s.callId));
+    expect(linked).toBe(first.conversationId);
+    expect((await callOf(s.callId)).conversationId).toBe(first.conversationId);
+    const before = await convCount();
+    const second = await engine.start({ companyId: idA(), channel: 'voice', phone: OTHER_CALLER, callId: s.callId, companyNumber: A_NUMBER });
+    expect(second.conversationId).toBe(first.conversationId);
+    expect(await convCount()).toBe(before);
+
+    await inCompany(t, idA(), async (tx) => {
+      await tx.insert(conversationTurns).values({
+        companyId: idA(),
+        conversationId: first.conversationId,
+        callId: s.callId,
+        position: 0,
+        speaker: 'assistant',
+        text: 'Booked.',
+        toolCalls: [BOOKING],
+      });
+    });
+    await run(s);
+    const conv = await conversationOf(first.conversationId);
+    expect(conv.status).toBe('ended');
+    expect(conv.outcome).toBe('booked');
+    expect(conv.summary).not.toBeNull();
+  });
+
+  test('a transferred call with no conversation gets outcome transferred', async () => {
+    const s = await seedCall({ withConversation: false, status: 'transferred', aiSeconds: 30 });
+    await run(s);
+    expect((await callOf(s.callId)).status).toBe('transferred');
+    expect(summarizeCalls()).toHaveLength(0);
+    expect(t.sms.sent).toHaveLength(0);
+    expect(await usageRows()).toHaveLength(1);
+    expect(await convCount()).toBe(0);
+  });
+
+  test('the model-failure marker is written: a failing summary falls back to plain text', async () => {
+    const s = await seedCall({ aiSeconds: 90, turns: [CALLER_WORDS], toolCalls: [BOOKING] });
+    (t.deps.llm as unknown as { summarize: () => Promise<never> }).summarize = () => Promise.reject(new Error('model down'));
+    await run(s);
+    expect(await inCompany(t, idA(), (tx) => findCallConversationId(tx, tenantCtx(), s.callId))).toBe(s.conversationId);
+    const conv = await conversationOf(s.conversationId!);
+    expect(conv.summary).toBe('The caller booked an inspection.');
+    expect(conv.outcome).toBe('booked');
+  });
+
+  test('after-call mid-transfer does nothing', async () => {
+    const s = await seedCall({ status: 'ringing', aiSeconds: 60, turns: [CALLER_WORDS], transcriptStored: true });
+    await inCompany(t, idA(), (tx) => tx.update(calls).set({ status: 'ringing_team' }).where(eq(calls.id, s.callId)));
+    await run(s);
+    expect(await usageRows()).toHaveLength(0);
+    expect(await outboundRows()).toHaveLength(0);
+    expect(t.sms.sent).toHaveLength(0);
+    expect(summarizeCalls()).toHaveLength(0);
+    expect((await conversationOf(s.conversationId!)).summary).toBeNull();
+  });
+
+  test('a terminal run records one ai_call_minute event for the total, even run twice', async () => {
+    const s = await seedCall({ aiSeconds: 125, turns: [CALLER_WORDS] });
+    await run(s);
+    await run(s);
+    const rows = await usageRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ quantity: Math.ceil(125 / 60), refId: s.callId });
+  });
+});
+
 describe('pickOutcome', () => {
   test('outcome precedence: actions win over the model', () => {
     const order: [string, ConversationOutcome][] = [
@@ -379,6 +457,76 @@ describe('missed-call text-back through the gate', () => {
     expect(result).toBe('skipped');
     expect(t.sms.sent).toHaveLength(0);
     expect(await outboundRows()).toHaveLength(0);
+  });
+
+  test('two text-backs at once for one new number: one customer, one text (the second waits, then sees the first)', async () => {
+    const one = await seedCall({ from: MOBILE, withConversation: false });
+    const two = await seedCall({ from: MOBILE, withConversation: false });
+    const input = (s: Seeded): TextBackInput => ({
+      callId: s.callId,
+      callSid: s.callSid,
+      fromE164: MOBILE,
+      toE164: A_NUMBER,
+      conversationId: null,
+      customerId: null,
+      status: 'completed',
+      callerTurns: 0,
+      secondsInCall: 5,
+      spam: false,
+    });
+    // Hold the number's lock (the one customer saves take) so both jobs line up behind it.
+    const holder = new pg.Client({ connectionString: inject('dbUrls').owner });
+    await holder.connect();
+    let waiting = 0;
+    let results: TextBackResult[];
+    try {
+      await holder.query('begin');
+      await holder.query(`select pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2::text, 0))`, [idA(), MOBILE]);
+      const both = Promise.all([maybeTextBack(t.deps, tenantCtx(), input(one)), maybeTextBack(t.deps, tenantCtx(), input(two))]);
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const { rows } = await holder.query<{ n: number }>("select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted");
+        waiting = rows[0]!.n;
+        if (waiting >= 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await holder.query('commit');
+      results = await both;
+    } finally {
+      await holder.end();
+    }
+    expect(waiting).toBe(2);
+    expect([...results].sort()).toEqual(['sent', 'skipped']);
+    const made = await inCompany(t, idA(), (tx) =>
+      tx.select().from(customers).where(sql`${customers.phones} @> ${JSON.stringify([{ e164: MOBILE }])}::jsonb`),
+    );
+    expect(made).toHaveLength(1);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(await outboundRows()).toHaveLength(1);
+  });
+
+  test('a known customer calling from their second number is texted back on that number', async () => {
+    const [cust] = await inCompany(t, idA(), (tx) =>
+      tx
+        .insert(customers)
+        .values({
+          companyId: idA(),
+          displayName: 'Nina Customer',
+          firstName: 'Nina',
+          phones: [
+            { e164: MOBILE_TWO, label: 'mobile', primary: true },
+            { e164: MOBILE, label: 'mobile' },
+          ],
+        })
+        .returning({ id: customers.id }),
+    );
+    const { result } = await textBack(MOBILE, { customerId: cust!.id });
+    expect(result).toBe('sent');
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: MOBILE });
+    const out = await outboundRows();
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ customerId: cust!.id, toE164: MOBILE });
   });
 
   test('during quiet hours the text waits: scheduled, not sent', async () => {

@@ -2,9 +2,10 @@ import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { agentSettings, calls, companyPhoneNumbers, companySettings, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
+import { agentSettings, calls, companies, companyPhoneNumbers, companySettings, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { disclosureGreeting } from '@roofline/shared';
 import { escapeXml } from '../../src/hooks/twilio.ts';
+import { fdHealth } from '../../src/jobs/scheduler/fd-health.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
 
 /* The screening rules arrive in Task 15 (the real one allows everything today): tests steer the verdict. */
@@ -174,12 +175,96 @@ describe('POST /hooks/twilio/voice', () => {
     expect(res.text).not.toContain('<ConversationRelay');
   });
 
+  test.each(['trial_ended', 'canceled'] as const)('a read-only company (%s) with Front Desk on gets voicemail TwiML and no relay TwiML', async (status) => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    await t.deps.pools.system.update(companies).set({ status }).where(eq(companies.id, idOf('a')));
+    const res = await post(VOICE, incoming());
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<Record maxLength="120" playBeep="true"/>');
+    expect(res.text).not.toContain('<ConversationRelay');
+  });
+
+  test('the cap decision counts ringing and ai calls from the last 35 minutes', async () => {
+    await setSettings('a', { frontDeskEnabled: true, maxConcurrentAiCalls: 1, ringTeamFirstSeconds: 0 });
+    const now = t.deps.clock.now();
+    const seed = (sid: string, minutesAgo: number) =>
+      withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+        tx.insert(calls).values({
+          companyId: idOf('a'),
+          callSid: sid,
+          fromE164: CALLER,
+          toE164: A_NUMBER,
+          status: 'ai',
+          startedAt: new Date(now.getTime() - minutesAgo * 60_000),
+        }),
+      );
+    await seed('CA' + 'd'.repeat(32), 10);
+    const full = await post(VOICE, incoming());
+    expect(full.text).toContain('<Record maxLength="120" playBeep="true"/>');
+    expect(full.text).not.toContain('<ConversationRelay');
+
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.update(calls).set({ status: 'ended' }).where(eq(calls.companyId, idOf('a'))));
+    await seed('CA' + 'f'.repeat(32), 40);
+    const stale = await post(VOICE, incoming());
+    expect(stale.text).toContain('<ConversationRelay');
+  });
+
+  test('fd-health ends a call stuck for 40 minutes, queues its after-call work, and leaves a recent call alone', async () => {
+    const now = t.deps.clock.now();
+    const stuckSid = 'CA' + '1'.repeat(32);
+    const freshSid = 'CA' + '2'.repeat(32);
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.insert(calls).values([
+        { companyId: idOf('a'), callSid: stuckSid, fromE164: CALLER, toE164: A_NUMBER, status: 'ringing_team', startedAt: new Date(now.getTime() - 40 * 60_000) },
+        { companyId: idOf('a'), callSid: freshSid, fromE164: CALLER, toE164: A_NUMBER, status: 'ringing_team', startedAt: new Date(now.getTime() - 5 * 60_000) },
+      ]),
+    );
+    t.jobs.sent.length = 0;
+    await fdHealth(t.deps, now);
+    const rows = await callRows('a');
+    const stuck = rows.find((r) => r.callSid === stuckSid)!;
+    const fresh = rows.find((r) => r.callSid === freshSid)!;
+    expect(stuck.status).toBe('ended');
+    expect(stuck.endedAt).not.toBeNull();
+    expect(fresh.status).toBe('ringing_team');
+    expect(fresh.endedAt).toBeNull();
+    const queued = t.jobs.sent.filter((j) => j.name === 'fd-after-call');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({ data: { companyId: idOf('a'), callSid: stuckSid }, singletonKey: `fd-after-call:${stuckSid}` });
+  });
+
   test('over the global cap (relaySessions.size) goes to voicemail path', async () => {
     await setSettings('a', { frontDeskEnabled: true });
     for (let i = 0; i < t.deps.config.FRONT_DESK_MAX_CALLS; i += 1) t.deps.relaySessions.add(`CAlive${String(i)}`);
     const res = await post(VOICE, incoming());
     expect(res.text).toContain('<Record maxLength="120" playBeep="true"/>');
     expect(res.text).not.toContain('<ConversationRelay');
+  });
+
+  test('a read-only company (trial ended or canceled) gets the team then voicemail, never the AI (Ruling BG)', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 15 });
+    await seedTeam();
+    for (const status of ['trial_ended', 'canceled'] as const) {
+      await t.deps.pools.system.update(companies).set({ status }).where(eq(companies.id, idOf('a')));
+      const res = await post(VOICE, incoming());
+      expect(res.status, status).toBe(200);
+      expect(res.text, status).toContain('after-dial?mode=voicemail');
+      expect(res.text, status).not.toContain('mode=ring_first');
+      expect(res.text, status).not.toContain('<ConversationRelay');
+    }
+  });
+
+  test('the LLM health check reads the injected clock (pre-review #40)', async () => {
+    await setSettings('a', { frontDeskEnabled: true, ringTeamFirstSeconds: 0 });
+    const start = new Date('2030-01-01T12:00:00Z');
+    t.clock.set(start);
+    for (let i = 0; i < 3; i += 1) t.deps.relaySessions.recordLlmFailure(start);
+    const tripped = await post(VOICE, incoming());
+    expect(tripped.text).not.toContain('<ConversationRelay');
+    // 61 s later on the app's clock the breaker has reset, whatever the wall clock says.
+    t.clock.advance(61_000);
+    const healed = await post(VOICE, incoming());
+    expect(healed.text).toContain('<ConversationRelay');
   });
 
   test('a screened call is rejected and the row is rejected', async () => {

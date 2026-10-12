@@ -1651,6 +1651,31 @@ describe('D1 constraints', () => {
     await ownerQuery(sms, [s.b.companyId, 'active']);
   });
 
+  test('review note 35: a Front Desk dedupe key is unique per company on messages; other keys and other companies are not limited', async () => {
+    const s = await seedTwoCompanies(urls.owner);
+    const insert = `insert into messages (company_id, channel, direction, purpose, body, status, dedupe_key)
+      values ($1, 'sms', 'out', 'informational', 'Hi', 'queued', $2)`;
+    await ownerQuery(insert, [s.a.companyId, 'fd-text:one']);
+    const err = await rejected(insert, [s.a.companyId, 'fd-text:one']);
+    expect(err.code).toBe('23505');
+    await ownerQuery(insert, [s.b.companyId, 'fd-text:one']);
+    await ownerQuery(insert, [s.a.companyId, 'other:one']);
+    await ownerQuery(insert, [s.a.companyId, 'other:one']);
+  });
+
+  test('review note 33: the inbox indexes exist', async () => {
+    const rows = await ownerQuery<{ indexname: string }>(
+      `select indexname from pg_indexes where schemaname = 'public' and indexname = any($1::text[]) order by 1`,
+      [['calls_company_conversation_idx', 'conversations_company_customer_idx', 'messages_company_conversation_created_idx', 'messages_fd_dedupe_uniq']],
+    );
+    expect(rows.map((r) => r.indexname)).toEqual([
+      'calls_company_conversation_idx',
+      'conversations_company_customer_idx',
+      'messages_company_conversation_created_idx',
+      'messages_fd_dedupe_uniq',
+    ]);
+  });
+
   test('conversations.channel accepts only voice and sms', async () => {
     const s = await seedTwoCompanies(urls.owner);
     const err = await rejected(
