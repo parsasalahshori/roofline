@@ -19,6 +19,8 @@ export const tokens = {
   'radius-card': '12px',
   'radius-window': '14px',
   'shadow-window': '0 12px 30px rgba(60,40,0,.15)',
+  'shadow-marker': '0 1px 3px rgb(0 0 0 / 0.35)',
+  'shadow-marker-ring': '0 0 0 1px rgb(0 0 0 / 0.35)',
   font: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   'font-size-min': '12px',
   'font-size-body': '14px',

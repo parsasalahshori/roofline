@@ -13,3 +13,6 @@
 
 ## Verify tail
 typecheck, lint, lint:css clean; vitest @roofline/web: 96 files, 945 tests passed.
+
+## CI round 1 (run 38251690554)
+Platform failed: packages/ui/test/tokens.test.ts "tokens.ts mirrors tokens.css" (29 vs 31). Fix: added shadow-marker and shadow-marker-ring to packages/ui/src/tokens.ts (outside the stated scope, but required by the mirror test). E2E and Hail passed.
