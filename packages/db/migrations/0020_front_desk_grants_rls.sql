@@ -83,8 +83,9 @@ GRANT SELECT (id, company_id, status) ON conversations TO app_system;
 GRANT SELECT (id, company_id, at) ON conversation_turns TO app_system;
 --> statement-breakpoint
 -- The fd-health repair marks a number whose voice URL it set (Task 17, markVoiceUrlSet). 0002 gives
--- app_system only SELECT and INSERT on company_phone_numbers (Ruling SEC-4), so this one column only.
-GRANT UPDATE (capabilities) ON company_phone_numbers TO app_system;
+-- app_system only SELECT and INSERT on company_phone_numbers (Ruling SEC-4), so only that column and
+-- updated_at (Drizzle sets it on every update through the shared timestamps helper).
+GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers TO app_system;
 --> statement-breakpoint
 
 -- 5. Global lookup cache for the line type (Twilio Lookup). It has no company_id and no RLS: a line's

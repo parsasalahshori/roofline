@@ -1289,6 +1289,7 @@ describe('front desk tables', () => {
       ['conversations', 'status', 'SELECT', true],
       // Task 17's voice-URL repair marks the number; nothing else on company_phone_numbers changes.
       ['company_phone_numbers', 'capabilities', 'UPDATE', true],
+      ['company_phone_numbers', 'updated_at', 'UPDATE', true],
       ['company_phone_numbers', 'e164', 'UPDATE', false],
       ['company_phone_numbers', 'status', 'UPDATE', false],
       ['conversations', 'phone_e164', 'SELECT', false],
