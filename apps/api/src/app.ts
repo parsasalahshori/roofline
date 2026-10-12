@@ -46,6 +46,7 @@ import { teamRoutes } from './routes/team.ts';
 import { timelineRoutes } from './routes/timeline.ts';
 import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
+import { agentSettingsRoutes } from './routes/agents-settings.ts';
 import type { StepQueue } from './tasks/queue.ts';
 import { policyPages } from './public/policies.ts';
 import { serveWeb } from './web.ts';
@@ -267,6 +268,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/setup', setupRoutes(deps));
   app.use('/api/imports', importRoutes(deps));
   app.use('/api/texting', textingRoutes(deps));
+  app.use('/api/agents', agentSettingsRoutes(deps));
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.

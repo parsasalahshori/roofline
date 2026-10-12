@@ -34,7 +34,16 @@ export {
 export { type FeedCursor, type FeedRow, listFeedPage } from './repos/agent-feed.ts';
 export { listWaitingTasks, type WaitingTaskRow } from './repos/agent-waiting.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
-export { loadBaselineOverrides } from './repos/time-baselines.ts';
+export {
+  insertTimeRecount,
+  listRecountSteps,
+  loadBaselineOverrides,
+  refreshTaskMinutes,
+  type RecountStep,
+  rewriteStepSnapshot,
+  setBaselineOverrides,
+} from './repos/time-baselines.ts';
+export * from './repos/agent-settings.ts';
 export { insertDefaultSettings, pickFreeSlug, setServiceArea, slugify } from './repos/companies.ts';
 export {
   CONSENT_LABELS,
