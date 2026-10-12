@@ -37,6 +37,9 @@ function adRoutes(extra: Routes = {}): Routes {
   return {
     'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role } }),
     'GET /api/ads/accounts': () => ({ body: { accounts, managerId: MANAGER, businessId: BUSINESS } }),
+    // C1's calendar card and the company read on the same Settings tab
+    'GET /api/calendar/connection': () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } }),
+    'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null, website: null, addressStreet: null, addressCity: null, addressState: null, addressZip: null, timezone: 'America/Chicago', logoUrl: null, located: false, serviceAreaMiles: null } }),
     'POST /api/ads/accounts/google': ({ body }) => {
       const customerId = (body as { customerId: string }).customerId;
       const created = account({ id: 'g1', platform: 'google', externalAccountId: customerId });

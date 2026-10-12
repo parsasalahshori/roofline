@@ -239,7 +239,10 @@ it('hides the Storm tab from a rep and sends the address to Company', async () =
 });
 
 it('connections lists the ad accounts slot', async () => {
-  signedInApi({ 'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }) });
+  signedInApi({
+    'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }),
+    'GET /api/calendar/connection': () => ({ body: { provider: null, status: null, accountEmail: null, calendarId: null, calendarName: null, lastSyncedAt: null, configured: { google: false, microsoft: false } } }),
+  });
   renderApp('/settings/connections');
 
   expect(await screen.findByText(connections.later)).toBeInTheDocument();
