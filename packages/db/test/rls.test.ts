@@ -557,9 +557,9 @@ describe('grants', () => {
     expect(row).toEqual({ hail: true, spotter: false, footprints: false });
   });
 
-  test('app_system: ALL on spotter_reports, SELECT and UPDATE (place_name) only on storms, nothing on the other hail tables', async () => {
+  test('app_system: ALL on spotter_reports, SELECT only on hail_runs, SELECT and UPDATE (place_name) only on storms, nothing on storm_contours', async () => {
     expect(await tablePrivileges('app_system', HAIL_GLOBAL_TABLES)).toEqual([
-      privs('hail_runs', false, false, false, false),
+      privs('hail_runs', true, false, false, false),
       privs('storms', true, false, false, false),
       privs('storm_contours', false, false, false, false),
       { ...privs('spotter_reports', true, true, true, true), truncate: true },
@@ -973,6 +973,7 @@ describe('app_tenant isolation', () => {
       role: string;
       status: string;
       can_approve_spend: boolean;
+      storm_alert_email: boolean;
     };
     const rows = await tenantRaw<Member>(`select * from company_members order by email`, {
       companyId: seed.a.companyId,
@@ -981,8 +982,8 @@ describe('app_tenant isolation', () => {
       `select id, user_id from memberships where company_id = $1`,
       [seed.a.companyId],
     );
-    // can_approve_spend was appended by migration 0004; the first six keep their order.
-    const columns = ['id', 'user_id', 'name', 'email', 'role', 'status', 'can_approve_spend'];
+    // can_approve_spend was appended by migration 0004 and storm_alert_email by 0018; the first six keep their order.
+    const columns = ['id', 'user_id', 'name', 'email', 'role', 'status', 'can_approve_spend', 'storm_alert_email'];
     expect(rows.map((r) => Object.keys(r))).toEqual(rows.map(() => columns));
     expect(rows.every((r) => r.can_approve_spend === false)).toBe(true);
     expect(rows.map((r) => r.email)).toEqual(['office@a.test', 'owner@a.test', 'rep2@a.test', 'rep@a.test']);

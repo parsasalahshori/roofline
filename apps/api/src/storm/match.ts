@@ -9,9 +9,9 @@ import {
   withTenant,
 } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
-import { reportJobError } from '../jobs/scheduler/report.ts';
 import { systemContext } from '../permissions.ts';
 import { candidateDays } from './candidate-days.ts';
+import { afterMatch } from './settle.ts';
 
 /**
  * Matches one company's service area against the recent storms (the 'storm-match-company' job body).
@@ -28,8 +28,8 @@ import { candidateDays } from './candidate-days.ts';
  *   company storm is created or updated.
  *
  * A storm is "grown" when it existed and its max hail, customers or homes went up.
- * `storm-draft` is queued once per newly created company storm, after the transaction committed; a failed
- * send is reported and does not throw (the next run does not re-create the row, so it is only logged).
+ * Alerts and the draft trigger run in `afterMatch` (settle.ts) after the transaction committed: the "now"
+ * alert for created storms, and 'storm-draft' once a storm settled. A failure there is reported, never thrown.
  */
 export async function matchCompany(
   deps: AppDeps,
@@ -77,13 +77,7 @@ export async function matchCompany(
     }
   });
 
-  for (const companyStormId of created) {
-    try {
-      await deps.jobs.send('storm-draft', { companyId, companyStormId }, { singletonKey: companyStormId });
-    } catch (err) {
-      reportJobError(deps, err, `storm-match: company ${companyId}`);
-    }
-  }
+  await afterMatch(deps, companyId, now, { created, grown });
   return { created, grown };
 }
 
