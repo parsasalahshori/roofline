@@ -313,7 +313,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // Storm Scout: storms and their plans, door-knock routes, per-company storm settings, and ads.
   app.use('/api/storms', stormRoutes(deps));
   app.use('/api/routes', doorRoutes(deps));
-  app.use('/api/storm/settings', stormSettingsRoutes(deps));
+  app.use('/api/storm', stormSettingsRoutes(deps));
   app.use('/api/ads', adsRoutes(deps));
   // Signed-out customers open and sign their proposal here. The sign-in gate lets every path under
   // /api/public/ through (auth/middleware.ts), and the per-IP limit stands in for the session one.

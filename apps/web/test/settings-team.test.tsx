@@ -9,9 +9,9 @@ import { ACCOUNT, renderAt, stubApi } from './helpers.tsx';
 function makeTeam(): TeamBody {
   return {
     members: [
-      { id: 'm1', userId: 'u1', name: 'Sam Roofer', email: 'sam@example.com', role: 'owner', canApproveSpend: true, status: 'active' },
-      { id: 'm2', userId: 'u2', name: 'Olive Office', email: 'olive@example.com', role: 'office', canApproveSpend: false, status: 'active' },
-      { id: 'm3', userId: 'u3', name: 'Ray Rep', email: 'ray@example.com', role: 'rep', canApproveSpend: false, status: 'active' },
+      { id: 'm1', userId: 'u1', name: 'Sam Roofer', email: 'sam@example.com', role: 'owner', canApproveSpend: true, status: 'active', stormAlertEmail: true },
+      { id: 'm2', userId: 'u2', name: 'Olive Office', email: 'olive@example.com', role: 'office', canApproveSpend: false, status: 'active', stormAlertEmail: true },
+      { id: 'm3', userId: 'u3', name: 'Ray Rep', email: 'ray@example.com', role: 'rep', canApproveSpend: false, status: 'active', stormAlertEmail: false },
     ],
     invites: [{ id: 'i1', email: 'new@example.com', role: 'rep', expiresAt: '2026-10-18T12:00:00.000Z' }],
   };
@@ -229,8 +229,45 @@ describe('team tab', () => {
     renderAt(<TeamTab />);
 
     await screen.findByRole('switch', { name: settings.team.spendFor('Olive Office') });
-    expect(screen.getAllByRole('switch')).toHaveLength(1);
+    expect(screen.getAllByRole('switch', { name: /^Can approve spending:/ })).toHaveLength(1);
     expect(within(screen.getByRole('row', { name: /Sam Roofer/ })).getByText(settings.team.spendAlways)).toBeInTheDocument();
-    expect(within(screen.getByRole('row', { name: /Ray Rep/ })).getByText(settings.team.spendNever)).toBeInTheDocument();
+    // Both the spending and the storm alerts cells say Never for a rep: the spending cell is the fourth of six
+    expect(screen.getByRole('row', { name: /Ray Rep/ }).querySelectorAll('td')[3]).toHaveTextContent(settings.team.spendNever);
+  });
+
+  it('storm alerts switch is shown for owner and office, not for a rep', async () => {
+    api = stubApi(ownerRoutes());
+    renderAt(<TeamTab />);
+
+    expect(await screen.findByRole('switch', { name: settings.team.stormAlertsFor('Sam Roofer') })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: settings.team.stormAlertsFor('Olive Office') })).toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: settings.team.stormAlertsFor('Ray Rep') })).toBeNull();
+    // The storm alerts cell is the fifth of the row's six cells (name, email, role, spend, storm alerts, status)
+    expect(screen.getByRole('row', { name: /Ray Rep/ }).querySelectorAll('td')[4]).toHaveTextContent(settings.team.stormAlertsNever);
+  });
+
+  it('the owner turns storm alerts off for an office member', async () => {
+    api = stubApi(ownerRoutes());
+    const { user } = renderAt(<TeamTab />);
+
+    const alerts = await screen.findByRole('switch', { name: settings.team.stormAlertsFor('Olive Office') });
+    expect(alerts).toHaveAttribute('aria-checked', 'true');
+    await user.click(alerts);
+
+    await waitFor(() => expect(api.sent('PATCH /api/team/members/m2')).toEqual([{ stormAlertEmail: false }]));
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: settings.team.stormAlertsFor('Olive Office') })).toHaveAttribute('aria-checked', 'false'),
+    );
+  });
+
+  it('an office viewer sees the storm alerts switch disabled', async () => {
+    api = stubApi({
+      'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role: 'office' } }),
+      'GET /api/team': () => ({ body: { ...team, invites: [] } }),
+    });
+    renderAt(<TeamTab />);
+
+    expect(await screen.findByRole('switch', { name: settings.team.stormAlertsFor('Olive Office') })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: settings.team.stormAlertsFor('Sam Roofer') })).toBeDisabled();
   });
 });
