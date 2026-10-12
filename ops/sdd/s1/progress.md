@@ -331,3 +331,11 @@ Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema c
   - POLICY_PAGES_DOMAIN;
   - TRUST_PROXY=1 on the API and the worker;
   - the T29 manual smoke run (docs/superpowers/s1-manual-smoke.md).
+
+## Launch dress rehearsal BUG-1 fixed (89ab4c4)
+- The hail swath fill used a MapLibre `match` with decimal labels, which MapLibre refuses ("Numeric branch labels must be integer values").
+- Effect: no swath was ever drawn, and the home map showed its loading error.
+- Fix: `hailFillExpression()` is now a `step` on thresholdIn.
+- Test: `apps/web/test/storm-layer-expression.test.ts` compiles the expression with `@maplibre/maplibre-gl-style-spec`, a transitive dependency of maplibre-gl, and checks each level's colour.
+- Source: `ops/sdd/integration/dress-rehearsal.md` on ops-rehearsal.
+- s1-storm@85a68e7 (the BUG-1 fix plus its test update): CI run 38288147079 is green on Platform, Hail and E2E.

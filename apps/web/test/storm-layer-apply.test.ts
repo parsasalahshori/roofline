@@ -39,27 +39,25 @@ function empty(): FeatureCollection {
 const data: StormLayerResponse = { swaths: empty(), spots: empty(), newestRunAt: null, stale: false };
 
 describe('storm layers', () => {
-  it('colours swaths by contour level', () => {
+  it('colours swaths by contour level (a step on thresholdIn)', () => {
     const fake = styleMap();
     installMapLayers(fake.map, emptyMapData());
     const fill = fake.layers.get('storm-swath-fill') as { paint: Spec };
     const color = fill.paint['fill-color'] as unknown[];
 
-    expect(color.slice(0, 2)).toEqual(['match', ['get', 'thresholdIn']]);
-    const pairs: [number[], string][] = [
-      [[0.75, 1], 'hail-1'],
-      [[1.25, 1.5], 'hail-2'],
-      [[1.75, 2], 'hail-3'],
-      [[2.5], 'hail-4'],
-      [[3], 'hail-5'],
-    ];
-    for (const [sizes, token] of pairs) {
-      for (const size of sizes) {
-        const at = color.findIndex((entry) => Array.isArray(entry) && entry.includes(size));
-        expect(at).toBeGreaterThan(1);
-        expect(color[at + 1]).toBe(tokens[token as 'hail-1']);
-      }
-    }
+    expect(color).toEqual([
+      'step',
+      ['get', 'thresholdIn'],
+      tokens['hail-1'],
+      1.25,
+      tokens['hail-2'],
+      1.75,
+      tokens['hail-3'],
+      2.5,
+      tokens['hail-4'],
+      3,
+      tokens['hail-5'],
+    ]);
   });
 
   it('colours a 2.5 in contour with the hail-4 colour', () => {
@@ -67,8 +65,7 @@ describe('storm layers', () => {
     installMapLayers(fake.map, emptyMapData());
     const fill = fake.layers.get('storm-swath-fill') as { paint: Spec };
     const color = fill.paint['fill-color'] as unknown[];
-    const at = color.findIndex((entry) => Array.isArray(entry) && entry.includes(2.5));
-    expect(color[at + 1]).toBe(tokens['hail-4']);
+    expect(color[color.indexOf(2.5) + 1]).toBe(tokens['hail-4']);
   });
 
   it('does not throw on a malformed body', () => {
