@@ -1,0 +1,68 @@
+/* One column of the board: a fixed-width card rail, scrolled with the board, never with the page. */
+.column {
+  display: flex;
+  flex: 0 0 280px;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+
+/* The header: the stage colour on top, the name and the total under it */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 4px solid var(--line);
+}
+
+.column[data-stage='lead'] .header {
+  border-top-color: var(--stage-lead);
+}
+
+.column[data-stage='inspection'] .header {
+  border-top-color: var(--stage-inspection);
+}
+
+.column[data-stage='proposal'] .header {
+  border-top-color: var(--stage-proposal);
+}
+
+.column[data-stage='won'] .header,
+.column[data-stage='installed'] .header {
+  border-top-color: var(--stage-won);
+}
+
+.title {
+  margin: 8px 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.total {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 80px;
+}
+
+.empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* On a phone the column is as wide as the window; the stages stack */
+@media (max-width: 767.98px) {
+  .column {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+}

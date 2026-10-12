@@ -5,14 +5,15 @@
 -- deliberate, and test/rls.test.ts lists them.
 
 -- 1. app_tenant: the eight C1 tenant tables. No DELETE except the calendar link and busy-block rows
---    (below), which are rebuilt from the provider; appointments are canceled or archived, and quotes,
---    schedules, pricebooks and counters are never deleted.
+--    (below), which are rebuilt from the provider, and a calendar connection, which disconnecting
+--    deletes (its token goes with it; links and busy blocks cascade). Appointments are canceled or
+--    archived, and quotes, schedules, pricebooks and counters are never deleted.
 GRANT SELECT, INSERT, UPDATE ON
   appointments, calendar_connections, calendar_event_links, calendar_busy_blocks,
   member_schedules, pricebooks, quotes, quote_counters
   TO app_tenant;
 --> statement-breakpoint
-GRANT DELETE ON calendar_busy_blocks, calendar_event_links TO app_tenant;
+GRANT DELETE ON calendar_busy_blocks, calendar_event_links, calendar_connections TO app_tenant;
 --> statement-breakpoint
 
 -- 2. Row-level security on the eight new tables, ENABLED and FORCED, with the same tenant_isolation

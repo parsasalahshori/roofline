@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, inject, test, vi } from 'vitest';
 import { plainRejection } from '@roofline/shared';
 import { advanceRegistration } from '../src/account/texting/advance.ts';
 import { MESSAGES } from '../src/errors.ts';
@@ -210,6 +210,105 @@ describe('texting registration submit', () => {
         brandSid: stored!.brand_sid,
       },
     });
+  });
+
+  test('partial sids are saved when the flow fails part-way', async () => {
+    const companyId = t.seed.a.companyId;
+    await addCard();
+    t.registrar.failAfter('customerProfile', 'unavailable');
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    expect((await owner.post('/api/texting/registration').send(submitBody())).status).toBe(202);
+
+    await expect(advanceRegistration(t.deps, companyId)).rejects.toThrow();
+
+    const [row] = await ownerQuery<{ customer_profile_sid: string | null; brand_sid: string | null }>(
+      'select customer_profile_sid, brand_sid from texting_registrations where company_id = $1',
+      [companyId],
+    );
+    expect(row!.customer_profile_sid).toBeTruthy();
+    expect(row!.brand_sid).toBeNull();
+
+    await advanceRegistration(t.deps, companyId);
+
+    const submissions = brandSubmissions();
+    expect(submissions).toHaveLength(2);
+    expect(submissions[1]).toMatchObject({ previous: { customerProfileSid: row!.customer_profile_sid } });
+  });
+
+  test('a noncompliant profile keeps its sid and the fix updates it in place', async () => {
+    const companyId = t.seed.a.companyId;
+    await addCard();
+    t.registrar.failAfter('customerProfile', { rejected: 'EIN does not match' });
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    expect((await owner.post('/api/texting/registration').send(submitBody())).status).toBe(202);
+
+    await advanceRegistration(t.deps, companyId);
+
+    const [row] = await ownerQuery<{ campaign_status: string; customer_profile_sid: string | null }>(
+      'select campaign_status, customer_profile_sid from texting_registrations where company_id = $1',
+      [companyId],
+    );
+    expect(row!.campaign_status).toBe('rejected');
+    expect(row!.customer_profile_sid).toBeTruthy();
+
+    const fixed = { ...BRAND, legalName: 'Acme Roofing Company LLC' };
+    expect((await owner.post('/api/texting/registration').send(submitBody(fixed))).status).toBe(202);
+    await advanceRegistration(t.deps, companyId);
+
+    const submissions = brandSubmissions();
+    expect(submissions).toHaveLength(2);
+    expect(submissions[1]).toMatchObject({ previous: { customerProfileSid: row!.customer_profile_sid } });
+  });
+
+  test('a fee that failed once is recorded on the retry without a second brand', async () => {
+    const companyId = t.seed.a.companyId;
+    await addCard();
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    expect((await owner.post('/api/texting/registration').send(submitBody())).status).toBe(202);
+
+    // The first tenant transaction is the fee write, after submitBrand succeeded and the sids committed.
+    const spy = vi.spyOn(t.deps.pools.tenant, 'transaction').mockRejectedValueOnce(new Error('tenant write failed'));
+    try {
+      await expect(advanceRegistration(t.deps, companyId)).rejects.toThrow('tenant write failed');
+    } finally {
+      spy.mockRestore();
+    }
+
+    const [row] = await ownerQuery<{ brand_sid: string | null }>(
+      'select brand_sid from texting_registrations where company_id = $1',
+      [companyId],
+    );
+    expect(row!.brand_sid).toBeTruthy();
+    expect(
+      await ownerQuery("select id from usage_events where company_id = $1 and kind = 'texting_registration_fee'", [
+        companyId,
+      ]),
+    ).toHaveLength(0);
+
+    await advanceRegistration(t.deps, companyId);
+
+    expect(brandSubmissions()).toHaveLength(1);
+    const fees = await ownerQuery<{ ref_id: string }>(
+      "select ref_id from usage_events where company_id = $1 and kind = 'texting_registration_fee'",
+      [companyId],
+    );
+    expect(fees).toHaveLength(1);
+    expect(fees[0]!.ref_id).toBe(row!.brand_sid);
+  });
+
+  test('an unavailable provider is retried, not shown as a rejection', async () => {
+    const companyId = t.seed.a.companyId;
+    await addCard();
+    t.registrar.failNext('submitBrand', 'unavailable');
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    expect((await owner.post('/api/texting/registration').send(submitBody())).status).toBe(202);
+
+    await expect(advanceRegistration(t.deps, companyId)).rejects.toThrow();
+
+    const view = await owner.get('/api/texting');
+    expect(view.status).toBe(200);
+    expect(view.body.state).not.toBe('needs_fix');
+    expect(['pending', 'waiting']).toContain(view.body.state);
   });
 
   test('the form defaults come from the company', async () => {

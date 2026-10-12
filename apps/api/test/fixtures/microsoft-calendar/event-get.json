@@ -1,0 +1,17 @@
+{
+  "@odata.etag": "W/\"etag-2\"",
+  "id": "evt-1",
+  "subject": "Inspection - Dana Lee",
+  "isAllDay": false,
+  "isCancelled": false,
+  "showAs": "busy",
+  "start": {
+    "dateTime": "2030-01-10T16:00:00.0000000",
+    "timeZone": "UTC"
+  },
+  "end": {
+    "dateTime": "2030-01-10T17:00:00.0000000",
+    "timeZone": "UTC"
+  },
+  "lastModifiedDateTime": "2030-01-05T12:00:00Z"
+}
