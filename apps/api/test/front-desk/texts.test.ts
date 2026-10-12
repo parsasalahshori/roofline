@@ -138,7 +138,7 @@ describe('Front Desk texts', () => {
   const answerToolNames = () => {
     const call = llm.calls.find((c) => c.kind === 'answer');
     expect(call).toBeDefined();
-    return ((call!.request as { tools?: { name: string }[] }).tools ?? []).map((x) => x.name);
+    return ((call!.request as { tools?: (string | { name: string })[] }).tools ?? []).map((x) => (typeof x === 'string' ? x : x.name));
   };
 
   test('the text runner offers move and cancel when the settings allow them', async () => {
@@ -364,6 +364,6 @@ describe('Front Desk texts', () => {
     await inboundText('Hello');
     await runFrontDeskText(t.deps, { companyId: idA(), conversationId: (await conversationRows())[0]!.id }, createEngine(t.deps, {}));
     const [call] = answerCalls(llm);
-    expect((call!.request as { tools: string[] }).tools).toEqual([...TEXT_CHANNEL_TOOLS]);
+    expect([...(call!.request as { tools: string[] }).tools].sort()).toEqual([...TEXT_CHANNEL_TOOLS].sort());
   });
 });

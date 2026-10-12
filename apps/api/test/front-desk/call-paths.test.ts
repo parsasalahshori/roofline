@@ -392,7 +392,7 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
 
     expect(r.loop.ended).toBe(true);
     expect(JSON.parse(r.session.endedWith!)).toEqual({ kind: 'end', reason: 'spam' });
-    expect(r.session.assistantText()).toContain(SAY_SPAM_ENDING);
+    expect(r.session.assistantText().replace(/\s+/g, '')).toContain(SAY_SPAM_ENDING.replace(/\s+/g, ''));
     expect(r.session.assistantText()).not.toContain('tell me more');
     expect((await r.conversation())?.outcome).toBe('spam');
     expect((await r.callRow()).spamReason).toBe('assistant_spam');

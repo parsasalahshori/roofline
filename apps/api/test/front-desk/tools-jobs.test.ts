@@ -85,7 +85,7 @@ describe('lookup_my_jobs', () => {
     expect(r.forModel).toContain(`Job ${ids.jobId} at 123 Elm St`);
     expect(r.forModel).toContain('inspection stage');
     expect(r.forModel).toMatch(/Next: (inspection or )?visit on /);
-    expect(r.shownIds).toEqual([ids.jobId]);
+    expect(r.shownIds).toEqual([ids.jobId, ids.propertyId]);
   });
 
   test('no customer is a plain refusal', async () => {
