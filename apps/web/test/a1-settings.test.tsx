@@ -4,7 +4,7 @@ import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { agents } from '../src/copy/agents.ts';
+import { agentRules } from '../src/copy/agents.ts';
 import { settings } from '../src/copy/settings.ts';
 import { isSettingsTab, SETTINGS_TABS, visibleTabs } from '../src/features/settings/tabs.ts';
 import { ACCOUNT, COMPANY, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
@@ -75,7 +75,7 @@ describe('settings agents tab', () => {
     signedInApi();
     renderApp('/settings/agents');
 
-    expect(await screen.findByText(agents.settingsComingSoon)).toBeInTheDocument();
+    expect(await screen.findByText(agentRules.title)).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.agents })).toHaveAttribute('href', '/settings/agents');
   });
 
@@ -83,7 +83,7 @@ describe('settings agents tab', () => {
     signedInApi({ ...ACCOUNT, role: 'office' });
     renderApp('/settings/agents');
 
-    expect(await screen.findByText(agents.settingsComingSoon)).toBeInTheDocument();
+    expect(await screen.findByText(agentRules.title)).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.agents })).toHaveAttribute('href', '/settings/agents');
   });
 
@@ -93,7 +93,7 @@ describe('settings agents tab', () => {
 
     await waitFor(() => expect(where(router)).toBe('/settings/company'));
     expect(within(await settingsTabs()).queryByRole('link', { name: settings.tabs.agents })).not.toBeInTheDocument();
-    expect(screen.queryByText(agents.settingsComingSoon)).not.toBeInTheDocument();
+    expect(screen.queryByText(agentRules.title)).not.toBeInTheDocument();
   });
 });
 

@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import { Banner, Button, Sheet, Toggle } from '@roofline/ui';
-import type { AgentDetail, ScreenAgent } from '@roofline/shared';
+import { G1_AGENTS, type AgentDetail, type RuleSentence, type ScreenAgent } from '@roofline/shared';
 import { agentPage } from '../../copy/agents.ts';
 import { common } from '../../copy/common.ts';
 import { usePauseAgent } from './api.ts';
+import { TurnOnSheet } from './TurnOnSheet.tsx';
 import styles from './AgentControls.module.css';
 
 export type PauseSwitchProps = {
   agent: ScreenAgent;
   paused: AgentDetail['paused'];
   isOwner: boolean;
+  rules?: RuleSentence[];
 };
 
 /** Owner: a switch (pausing asks first, resuming does not). Everyone else: a read-only status line. */
-export function PauseSwitch({ agent, paused, isOwner }: PauseSwitchProps) {
+export function PauseSwitch({ agent, paused, isOwner, rules = [] }: PauseSwitchProps) {
+  const [turningOn, setTurningOn] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [failed, setFailed] = useState(false);
   const mutation = usePauseAgent(agent);
@@ -27,6 +30,17 @@ export function PauseSwitch({ agent, paused, isOwner }: PauseSwitchProps) {
         <p className={styles.status} aria-live="polite">
           {statusText}
         </p>
+      </div>
+    );
+  }
+
+  if (paused !== null && (G1_AGENTS as readonly string[]).includes(agent)) {
+    return (
+      <div className={styles.controls}>
+        <Button variant="primary" onClick={() => setTurningOn(true)}>
+          {agentPage.turnOnButton}
+        </Button>
+        {turningOn ? <TurnOnSheet agent={agent} rules={rules} onClose={() => setTurningOn(false)} /> : null}
       </div>
     );
   }

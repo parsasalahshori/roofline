@@ -12,7 +12,6 @@ export const agents = {
   agentComingSoon: 'This agent’s page is coming soon.',
   // The Agents tab in Settings
   settingsTab: 'Agents',
-  settingsComingSoon: 'How we count time saved is coming soon.',
 
   // --- Task 11: feed and waiting ---
   feedFiltersLabel: 'Show work by',
@@ -43,6 +42,7 @@ export const agentsWindow = {
   timeSaved: 'Time saved this month',
   waiting: 'Waiting on you:',
   comingSoon: 'Coming soon',
+  turnOnHint: 'Turn on',
   howWeCount: 'How we count',
   howWeCountHref: '/settings/agents',
   chartLabel: 'Tasks finished in the last 14 days',
@@ -86,6 +86,20 @@ export const agentPage = {
   pauseError: 'We could not change that. Try again.',
   ownerOnly: 'Only the owner can pause or resume an agent.',
   runNowButton: 'Check for hail now',
+  runNowLabels: {
+    estimator: 'Check for hail now',
+    front_desk: 'Check for hail now',
+    storm_scout: 'Check for hail now',
+    claims: 'Check claims now',
+    scheduler: 'Check tomorrow now',
+    follow_up: 'Find follow-ups now',
+  },
+  runStartedOncePerDay: 'Started. If it already ran today, it will not make a second plan.',
+  turnOnButton: 'Turn on',
+  turnOnTitle: 'Turn this agent on?',
+  turnOnIntro: 'This is what I will do. I only draft texts for you to approve.',
+  turnOnConfirm: 'Turn on',
+  turnOnCancel: 'Not now',
   runNowAgain: 'You can run it again at',
   worksWhenAsked: 'Works when you ask',
   answersCalls: 'Answers as calls come in',

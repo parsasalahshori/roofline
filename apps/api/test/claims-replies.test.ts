@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { agentTasks, claimEvents, claims, customers, followUpLog, jobs, messages, properties } from '@roofline/db';
+import { agentTasks, claimEvents, claims, customers, followUpLog, jobs, messages, properties, setPaused, withTenant } from '@roofline/db';
 import type { ClaimStatus } from '@roofline/shared';
 import { onClaimsReply, runClaimsReply } from '../src/agents/claims/replies.ts';
 import { LlmUnavailableError, type ClaimReplyFacts, type TurnUsage } from '../src/providers/llm.ts';
@@ -16,6 +16,9 @@ beforeEach(async () => {
   t = await makeTestApp();
   t.clock.set(DAYTIME);
   houses = 0;
+  // Claims starts paused (Ruling GX-E): these tests are about a company with Claims on.
+  const ctx = { companyId: t.seed.a.companyId, userId: null, role: 'system' as const, canApproveSpend: false };
+  await withTenant(t.deps.pools, ctx, (tx) => setPaused(tx, ctx, 'claims', false, t.clock.now()));
 });
 
 const idOf = () => t.seed.a.companyId;

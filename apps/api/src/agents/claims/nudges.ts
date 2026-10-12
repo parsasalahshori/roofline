@@ -3,7 +3,7 @@ import {
   claimNudgeDays,
   companyRunFacts,
   followUpLogFor,
-  getAgentSettings,
+  g1AgentOn,
   hasAgentTaskToday,
   lastInboundAt,
   lastStormTextAt,
@@ -48,15 +48,6 @@ export type ClaimsDraftKind = (typeof KIND_OF)[ClaimNudge];
 export const FROM_TEMPLATE = 'Written from a template';
 
 const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: null, role: 'system', canApproveSpend: false });
-
-/**
- * Whether the Claims agent may run for the company. Until the shared pause check lands (G1 Task 15),
- * a missing `agent_settings` row means paused (Ruling GX-E), and so does a row with `paused_at` set.
- */
-export async function claimsAgentOn(tx: Tx, ctx: TenantContext): Promise<boolean> {
-  const row = await getAgentSettings(tx, ctx, 'claims');
-  return row !== null && row.pausedAt === null;
-}
 
 // ---------------------------------------------------------------------------------------------
 // Templates: plain, short, and they pass the claims guard (no coverage, deductible or insurer-contact words).
@@ -124,7 +115,7 @@ const dayBounds = (day: string, timeZone: string): [Date, Date] => [zoneDayStart
 async function planRun(tx: Tx, ctx: TenantContext, now: Date): Promise<Plan | null> {
   const company = await companyRunFacts(tx, ctx);
   if (company === null || (company.status !== 'active' && company.status !== 'trial')) return null;
-  if (!(await claimsAgentOn(tx, ctx))) return null;
+  if (!(await g1AgentOn(tx, ctx, 'claims'))) return null;
 
   const day = localDate(now, company.timezone);
   const [dayStart, dayEnd] = dayBounds(day, company.timezone);

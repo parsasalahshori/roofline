@@ -65,7 +65,7 @@ function ScreenAgentPage({ agent }: { agent: ScreenAgent }) {
             <RulesList rules={d.rules} />
           </section>
           {agent === 'claims' && <ClaimsBoard />}
-          <PauseSwitch agent={agent} paused={d.paused} isOwner={me.data?.role === 'owner'} />
+          <PauseSwitch agent={agent} paused={d.paused} rules={d.rules} isOwner={me.data?.role === 'owner'} />
           <RunNowButton agent={agent} runNow={d.runNow} />
           <RecentTasks tasks={d.recentTasks} />
         </>

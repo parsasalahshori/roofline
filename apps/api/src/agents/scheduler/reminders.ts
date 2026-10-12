@@ -1,4 +1,4 @@
-import { agentTaskCreatedBetween, reminderCandidates, type ReminderCandidate, schedulerAgentOn, schedulerCompany, type TenantContext, withTenant, zoneDayAfter, zoneDayStart } from '@roofline/db';
+import { agentTaskCreatedBetween, reminderCandidates, type ReminderCandidate, g1AgentOn, schedulerCompany, type TenantContext, withTenant, zoneDayAfter, zoneDayStart } from '@roofline/db';
 import { claimsGuard, guardSentence } from '@roofline/shared';
 import type { AppDeps } from '../../app.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
@@ -62,7 +62,7 @@ export async function runReminders(deps: AppDeps, companyId: string, meta: JobMe
   const plan = await withTenant(deps.pools, ctx, async (tx) => {
     const company = await schedulerCompany(tx, ctx);
     if (!company || (company.status !== 'active' && company.status !== 'trial')) return null;
-    if (!(await schedulerAgentOn(tx, ctx))) return null;
+    if (!(await g1AgentOn(tx, ctx, 'scheduler'))) return null;
 
     const tz = company.timezone;
     const today = localParts(now, tz).localDate;

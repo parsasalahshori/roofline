@@ -5,7 +5,7 @@ import {
   memberHours,
   noShowTaskExists,
   noShowTarget,
-  schedulerAgentOn,
+  g1AgentOn,
   schedulerCompany,
   type TenantContext,
   withTenant,
@@ -36,7 +36,7 @@ export async function runNoShow(deps: AppDeps, companyId: string, appointmentId:
   const plan = await withTenant(deps.pools, ctx, async (tx) => {
     const company = await schedulerCompany(tx, ctx);
     if (!company || (company.status !== 'active' && company.status !== 'trial')) return null;
-    if (!(await schedulerAgentOn(tx, ctx))) return null;
+    if (!(await g1AgentOn(tx, ctx, 'scheduler'))) return null;
     const target = await noShowTarget(tx, ctx, appointmentId);
     if (!target) return null;
     if (await noShowTaskExists(tx, ctx, appointmentId)) return null;

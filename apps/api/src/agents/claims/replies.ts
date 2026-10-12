@@ -5,6 +5,7 @@ import {
   claims,
   companies,
   followUpLogFor,
+  g1AgentOn,
   jobs,
   messages,
   saveClaim,
@@ -135,7 +136,7 @@ async function writeLiveNote(tx: Tx, ctx: TenantContext, messageId: string, titl
  */
 export async function runClaimsReply(deps: AppDeps, companyId: string, messageId: string): Promise<void> {
   const ctx = systemCtx(companyId);
-  const loaded = await withTenant(deps.pools, ctx, (tx) => loadReply(tx, ctx, messageId));
+  const loaded = await withTenant(deps.pools, ctx, async (tx) => ((await g1AgentOn(tx, ctx, 'claims')) ? loadReply(tx, ctx, messageId) : null));
   if (loaded === null) return;
 
   // The model is called outside any transaction.

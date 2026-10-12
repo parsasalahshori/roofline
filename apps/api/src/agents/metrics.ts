@@ -18,6 +18,7 @@ import {
 import {
   chartDates,
   G1_AGENTS_SHIPPED,
+  isPaused,
   LAUNCH_AGENTS,
   metricsWindow,
   periodRange,
@@ -110,7 +111,7 @@ async function gather(tx: Tx, ctx: TenantContext, now: Date): Promise<Snapshot> 
   };
 }
 
-/** Claims, Scheduler and Follow-up show "Coming soon" until G1 ships (Ruling AX-B). */
+/** Claims, Scheduler and Follow-up show "Coming soon" only while G1_AGENTS_SHIPPED is false (Ruling AX-B). */
 function isComingSoon(agent: ScreenAgent): boolean {
   return !(LAUNCH_AGENTS as readonly string[]).includes(agent) && !G1_AGENTS_SHIPPED;
 }
@@ -129,8 +130,8 @@ function emptyCard(agent: ScreenAgent): AgentCard {
 }
 
 /** Paused wins over waiting; waiting means drafts or needs_attention tasks are waiting for a person. */
-function statusOf(settings: AgentSettingsInfo | undefined, waitingCount: number): AgentStatusView {
-  if (settings !== undefined && settings.pausedAt !== null) return 'paused';
+function statusOf(agent: ScreenAgent, settings: AgentSettingsInfo | undefined, waitingCount: number): AgentStatusView {
+  if (isPaused(agent, settings === undefined ? null : { pausedAt: settings.pausedAt })) return 'paused';
   if (waitingCount > 0) return 'waiting';
   return 'on';
 }
@@ -150,7 +151,7 @@ async function buildCard(tx: Tx, ctx: TenantContext, snap: Snapshot, agent: Scre
   }));
   return {
     agent,
-    status: statusOf(snap.settings.get(agent), counts.waitingCount),
+    status: statusOf(agent, snap.settings.get(agent), counts.waitingCount),
     finishedToday: counts.finishedToday,
     successRate: successRate({ done: counts.done30d, partlyDone: counts.partlyDone30d, ran: counts.ran30d }),
     notApproved30d: counts.notApproved30d,
@@ -175,6 +176,9 @@ export async function buildOverview(tx: Tx, ctx: TenantContext, now: Date): Prom
 function runNowOf(agent: ScreenAgent, lastRunNowAt: Date | null): RunNow {
   switch (agent) {
     case 'storm_scout':
+    case 'claims':
+    case 'scheduler':
+    case 'follow_up':
       // The POST that starts a run is Task 7's; this only says whether one can be asked for, and when.
       return {
         kind: 'available',
@@ -212,7 +216,7 @@ export async function buildDetail(
   const snap = await gather(tx, ctx, now);
   const card = await buildCard(tx, ctx, snap, agent);
   const settings = snap.settings.get(agent);
-  const pausedAt = settings?.pausedAt ?? null;
+  const paused = isPaused(agent, settings === undefined ? null : { pausedAt: settings.pausedAt });
 
   if (isComingSoon(agent)) {
     return {
@@ -244,7 +248,7 @@ export async function buildDetail(
     minutesInPeriod,
     breakdown,
     rules,
-    paused: pausedAt === null ? null : { at: pausedAt.toISOString(), byName: settings?.pausedByName ?? null },
+    paused: !paused ? null : { at: (settings?.pausedAt ?? now).toISOString(), byName: settings?.pausedByName ?? null },
     runNow: runNowOf(agent, settings?.lastRunNowAt ?? null),
     recentTasks: tasks.map(recentTaskOf),
     hourlyRateCents: snap.hourlyRateCents,

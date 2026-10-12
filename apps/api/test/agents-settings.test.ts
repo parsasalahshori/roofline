@@ -19,7 +19,7 @@ beforeEach(async () => {
 
 const companyId = (c: CompanyKey) => t.seed[c].companyId;
 const overrideRows = (c: CompanyKey) => inCompany(t, companyId(c), (tx) => tx.select().from(timeBaselines));
-const paused = (c: CompanyKey, agent: 'storm_scout' | 'estimator' | 'front_desk') =>
+const paused = (c: CompanyKey, agent: 'storm_scout' | 'estimator' | 'front_desk' | 'claims' | 'scheduler' | 'follow_up') =>
   inCompany(t, companyId(c), (tx) => isAgentPaused(tx, { companyId: companyId(c), userId: null, role: 'system', canApproveSpend: false }, agent));
 
 type Row = { key: string; minutes: number; defaultMinutes: number };
@@ -173,12 +173,18 @@ describe('pause', () => {
     expect(await paused('a', 'front_desk')).toBe(false);
   });
 
-  test('pausing a G1 agent is 409', async () => {
+  test('a fresh company has the G1 agents paused; turning on and pausing again work', async () => {
     const owner = await actors.as('owner');
-    for (const agent of ['claims', 'scheduler', 'follow_up']) {
-      const res = await owner.put(`/api/agents/${agent}/paused`).send({ paused: true });
-      expect(res.status).toBe(409);
-      expect(res.body.error).toBe('This agent is coming soon.');
+    for (const agent of ['claims', 'scheduler', 'follow_up'] as const) {
+      expect(await paused('a', agent), agent).toBe(true);
+      const on = await owner.put(`/api/agents/${agent}/paused`).send({ paused: false });
+      expect(on.status).toBe(200);
+      expect(on.body).toEqual({ paused: false, pausedAt: null });
+      expect(await paused('a', agent), agent).toBe(false);
+      const off = await owner.put(`/api/agents/${agent}/paused`).send({ paused: true });
+      expect(off.status).toBe(200);
+      expect(off.body.paused).toBe(true);
+      expect(await paused('a', agent), agent).toBe(true);
     }
   });
 

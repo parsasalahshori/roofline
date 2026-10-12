@@ -20,7 +20,7 @@ import {
   type StuckCandidate,
   type TenantContext,
   busyFor,
-  getAgentSettings,
+  g1AgentOn,
   memberHours,
   updateJob,
   type Tx,
@@ -69,15 +69,6 @@ const PLAN_EXPIRES_HOUR = 18;
 
 const systemCtx = (companyId: string): TenantContext => ({ companyId, userId: null, role: 'system', canApproveSpend: false });
 
-/**
- * Whether the Follow-up agent is on for the company. Ruling GX-E: until Task 15 wires pause, a
- * missing agent_settings row means off. Task 15 replaces this one helper.
- */
-async function followUpAgentOn(tx: Tx, ctx: TenantContext): Promise<boolean> {
-  const row = await getAgentSettings(tx, ctx, AGENT);
-  return row !== null && row.pausedAt === null;
-}
-
 /** True when the agent already made a task of this kind on the company-local day that starts at `dayStart`. */
 async function madeToday(tx: Tx, ctx: TenantContext, kind: string, dayStart: Date): Promise<boolean> {
   const [row] = await tx
@@ -115,7 +106,7 @@ export async function runFollowUps(deps: AppDeps, companyId: string, meta: JobMe
       .where(eq(companies.id, companyId))
       .limit(1);
     if (!row || (row.status !== 'active' && row.status !== 'trial')) return null;
-    if (!(await followUpAgentOn(tx, ctx))) return null;
+    if (!(await g1AgentOn(tx, ctx, AGENT))) return null;
     return { timeZone: row.timeZone, name: row.name, workHours: (row.workHours ?? DEFAULT_WORK_HOURS) as WorkHours };
   });
   if (company === null) return;
