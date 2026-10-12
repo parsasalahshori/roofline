@@ -95,7 +95,12 @@ describe('A1 windows', () => {
   });
 
   it.each(PAGE_AGENTS)('shows the %s page with its name', async (agent) => {
-    signedInApi(ACCOUNT, { ['GET /api/agents/' + agent + '?period=month']: () => ({ body: detailFor(agent as ScreenAgent) }) });
+    signedInApi(ACCOUNT, {
+      ['GET /api/agents/' + agent + '?period=month']: () => ({ body: detailFor(agent as ScreenAgent) }),
+      // The claims page also shows the claims board, which reads the claims and the company time zone
+      'GET /api/claims': () => ({ body: [] }),
+      'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', timezone: 'America/Chicago' } }),
+    });
     renderApp('/agents/' + agentSlug(agent));
 
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
