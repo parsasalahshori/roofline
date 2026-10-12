@@ -27,6 +27,7 @@ import type { CallControl } from './providers/call-control.ts';
 import type { LineLookup } from './providers/line-lookup.ts';
 import type { Llm } from './providers/llm.ts';
 import type { RelaySessions } from './front-desk/relay-sessions.ts';
+import type { ObjectStore } from './providers/object-store.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
 import { apiRateLimit } from './rate-limit.ts';
 import { activityRoutes } from './routes/activities.ts';
@@ -113,6 +114,8 @@ export type AppDeps = {
   callControl: CallControl;
   lineLookup: LineLookup;
   relaySessions: RelaySessions;
+  // scratch: E1's object store (E1 T5); at the e1-estimator merge E1's line wins (Ruling DV)
+  objectStore: ObjectStore;
 };
 
 export type AppOptions = {
