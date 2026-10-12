@@ -4,10 +4,10 @@ import { type StepType, stepTypes } from '@roofline/shared';
 import { expireDrafts } from '../src/jobs/scheduler/expire-drafts.ts';
 import { AppError } from '../src/errors.ts';
 import { registerStepHandler, runStep, type StepHandler, type StepOutcome } from '../src/tasks/runner.ts';
-import { createTask } from '../src/tasks/service.ts';
+import { createTask, supersedeDraft } from '../src/tasks/service.ts';
 import { Actors, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
-import { agentCtx, dbSteps, dbTask, newCustomers, newTask, seenOf, smsStep } from './task-helpers.ts';
+import { agentCtx, dbSteps, dbTask, newCustomers, newTask, seenOf, setTask, smsStep } from './task-helpers.ts';
 
 const NOW = new Date('2026-10-12T15:00:00.000Z');
 const MINUTE = 60 * 1000;
@@ -380,5 +380,39 @@ describe('rerun of internal step types (Ruling AX-I)', () => {
     );
     await expect(attempt).rejects.toBeInstanceOf(AppError);
     await expect(attempt).rejects.toMatchObject({ status: 400, field: 'steps.0.type' });
+  });
+});
+
+describe('supersedeDraft (Ruling AX-H)', () => {
+  const supersede = (oldId: string, newId: string) =>
+    withTenant(t.deps.pools, agentCtx(idOf()), (tx) => supersedeDraft(tx, agentCtx(idOf()), oldId, newId, t.clock.now()));
+
+  test('declines a draft as the system, skips its steps and writes one declined event', async () => {
+    const { taskId } = await newTask(t, 'a');
+    const { taskId: newId } = await newTask(t, 'a');
+    const stepCount = (await dbSteps(t, 'a', taskId)).length;
+
+    expect(await supersede(taskId, newId)).toBe(true);
+
+    expect(await dbTask(t, 'a', taskId)).toMatchObject({
+      status: 'declined',
+      declineReason: 'Replaced by a newer plan.',
+      declinedByUserId: null,
+    });
+    for (const step of await dbSteps(t, 'a', taskId)) expect(step.status).toBe('skipped');
+    const declined = (await events(taskId)).filter((e) => e.kind === 'declined');
+    expect(declined).toHaveLength(1);
+    expect(declined[0]).toMatchObject({ actorType: 'system', data: { skippedSteps: stepCount, replacedByTaskId: newId } });
+  });
+
+  test('leaves a task that is not a draft alone', async () => {
+    const { taskId } = await newTask(t, 'a');
+    const { taskId: newId } = await newTask(t, 'a');
+    await setTask(t, 'a', taskId, { status: 'awaiting_owner' });
+
+    expect(await supersede(taskId, newId)).toBe(false);
+
+    expect((await dbTask(t, 'a', taskId)).status).toBe('awaiting_owner');
+    expect((await kinds(taskId)).includes('declined')).toBe(false);
   });
 });
