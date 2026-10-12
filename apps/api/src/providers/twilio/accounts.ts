@@ -90,20 +90,33 @@ export class TwilioAccounts implements TextingAccounts {
         };
       }
 
-      const chosen = await findAvailableNumber(http, sub.accountSid, i);
-
-      const purchased = await http.request<{ sid: string; phone_number: string; capabilities: unknown }>(
-        'POST',
+      // A number bought by an earlier attempt that failed to attach is still in the subaccount: use it.
+      type Owned = { sid: string; phone_number: string; capabilities: unknown };
+      const incoming = await http.request<{ incoming_phone_numbers: Owned[] }>(
+        'GET',
         `${TWILIO_API}/Accounts/${sub.accountSid}/IncomingPhoneNumbers.json`,
-        { PhoneNumber: chosen },
+        { PageSize: '20' },
       );
-      await http.request<unknown>('POST', `${TWILIO_MESSAGING}/Services/${mg}/PhoneNumbers`, {
-        PhoneNumberSid: purchased.sid,
-      });
+      let owned: Owned | undefined = incoming.incoming_phone_numbers[0];
+      if (!owned) {
+        const chosen = await findAvailableNumber(http, sub.accountSid, i);
+        owned = await http.request<Owned>('POST', `${TWILIO_API}/Accounts/${sub.accountSid}/IncomingPhoneNumbers.json`, {
+          PhoneNumber: chosen,
+        });
+      }
+
+      try {
+        await http.request<unknown>('POST', `${TWILIO_MESSAGING}/Services/${mg}/PhoneNumbers`, {
+          PhoneNumberSid: owned.sid,
+        });
+      } catch (error) {
+        // 21710: the number is already on the service, which is what we wanted.
+        if (!(error instanceof TwilioApiError && error.code === 21710)) throw error;
+      }
       return {
-        e164: purchased.phone_number,
-        phoneNumberSid: purchased.sid,
-        capabilities: normalizeCapabilities(purchased.capabilities),
+        e164: owned.phone_number,
+        phoneNumberSid: owned.sid,
+        capabilities: normalizeCapabilities(owned.capabilities),
       };
     });
   }

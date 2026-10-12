@@ -1,8 +1,9 @@
 import pg from 'pg';
-import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, inject, test, vi } from 'vitest';
 import { textingCompanyFacts, withTenant } from '@roofline/db';
 import { buildCampaign, plainRejection } from '@roofline/shared';
 import { advanceRegistration } from '../src/account/texting/advance.ts';
+import { continueRegistration } from '../src/account/texting/progress.ts';
 import { systemContext } from '../src/permissions.ts';
 import { policyUrls } from '../src/public/policy-urls.ts';
 import { loginAs, makeTestApp, type TestApp } from './helpers.ts';
@@ -185,5 +186,52 @@ describe('texting registration progress', () => {
       [companyId],
     );
     expect(numbers).toHaveLength(1);
+  });
+
+  test('a failure after the number is bought but before it is saved leaves one fee row, for the saved number', async () => {
+    const companyId = t.seed.a.companyId;
+    t.registrar.setBrand('approved');
+    t.registrar.setCampaign('approved');
+    await addCard();
+    const realEnsureNumber = t.registrar.ensureNumber.bind(t.registrar);
+    let calls = 0;
+    vi.spyOn(t.registrar, 'ensureNumber').mockImplementation(async (sub, input) => {
+      const out = await realEnsureNumber(sub, input);
+      calls += 1;
+      // The first purchase succeeds at the provider, then the attempt fails before the number is saved.
+      if (calls === 1) throw new Error('lost before the save');
+      return out;
+    });
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const res = await owner.post('/api/texting/registration').send({ brand: BRAND, useHostedPolicyPages: false });
+    expect(res.status).toBe(202);
+
+    await expect(advanceRegistration(t.deps, companyId)).rejects.toThrow('lost before the save');
+
+    const feeRows = () =>
+      ownerQuery<{ ref_id: string }>(
+        "select ref_id from usage_events where company_id = $1 and kind = 'phone_number_month'",
+        [companyId],
+      );
+    expect(await feeRows()).toHaveLength(0);
+    expect(
+      await ownerQuery("select id from company_phone_numbers where company_id = $1 and purpose = 'main'", [companyId]),
+    ).toHaveLength(0);
+
+    await advanceRegistration(t.deps, companyId);
+
+    const [saved] = await ownerQuery<{ provider_sid: string }>(
+      "select provider_sid from company_phone_numbers where company_id = $1 and purpose = 'main'",
+      [companyId],
+    );
+    expect(saved!.provider_sid).toBeTruthy();
+    const fees = await feeRows();
+    expect(fees).toHaveLength(1);
+    expect(fees[0]!.ref_id.startsWith(saved!.provider_sid)).toBe(true);
+
+    // A further run records no second fee.
+    await continueRegistration(t.deps, companyId);
+    await advanceRegistration(t.deps, companyId);
+    expect(await feeRows()).toHaveLength(1);
   });
 });

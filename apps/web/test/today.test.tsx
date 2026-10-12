@@ -53,6 +53,9 @@ afterEach(() => {
 function mount(initialEntries: string[], own: Parameters<typeof stubApi>[0] = {}, { strict = false } = {}) {
   api = stubApi({
     ...SHELL_ROUTES,
+    // The pipeline board (the /jobs window) reads the board and the team; both are empty here
+    'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
+    'GET /api/team': () => ({ body: { members: [] } }),
     'GET /api/auth/me': () => ({ body: DANA }),
     'GET /api/company': () => ({ body: COMPANY_BODY }),
     ...own,
