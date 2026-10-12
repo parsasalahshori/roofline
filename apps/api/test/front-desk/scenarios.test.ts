@@ -95,7 +95,8 @@ async function play(sc: Scenario, o: { slip?: boolean } = {}): Promise<Played> {
   for (const [i, line] of sc.callerLines.entries()) {
     if (r.loop.ended) break;
     const step = sc.scripted[i]!;
-    const prior = (await r.toolResults()).map((c) => ({ name: c.name, ok: c.ok, result: c.result }));
+    // The conversation only exists once the first line is said, so earlier tool results are read only when a step needs them.
+    const prior = typeof step.answer === 'function' ? (await r.toolResults()).map((c) => ({ name: c.name, ok: c.ok, result: c.result })) : [];
     let answer = typeof step.answer === 'function' ? step.answer(prior) : step.answer;
     if (o.slip && sc.slip?.turn === i) answer = [{ kind: 'text', text: sc.slip.sentence }];
     r.llm.script.push({ when: new RegExp(escapeRe(line)), route: { ...OPUS, ...step.route }, ...(answer ? { answer } : {}) });
