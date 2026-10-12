@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Banner, Button } from '@roofline/ui';
-import type { RunNow, ScreenAgent } from '@roofline/shared';
+import { G1_AGENTS, type RunNow, type ScreenAgent } from '@roofline/shared';
 import { agentPage } from '../../copy/agents.ts';
 import { useRunNow } from './api.ts';
 import styles from './AgentControls.module.css';
@@ -70,11 +70,16 @@ export function RunNowButton({ agent, runNow }: RunNowButtonProps) {
     <div className={styles.controls}>
       <div aria-live="polite">
         {isFuture(until) ? (
-          <p className={styles.status}>{`${agentPage.runNowAgain} ${clock(until)}`}</p>
+          <>
+            <p className={styles.status}>{`${agentPage.runNowAgain} ${clock(until)}`}</p>
+            {startedUntil !== null && (G1_AGENTS as readonly string[]).includes(agent) ? (
+              <p className={styles.status}>{agentPage.runStartedOncePerDay}</p>
+            ) : null}
+          </>
         ) : (
           <div className={styles.runButton}>
             <Button variant="primary" busy={mutation.isPending} onClick={run}>
-              {agentPage.runNowButton}
+              {agentPage.runNowLabels[agent]}
             </Button>
           </div>
         )}

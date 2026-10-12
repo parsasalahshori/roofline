@@ -39,6 +39,8 @@ describe('loadConfig', () => {
       ...VALID,
       FRONT_DESK_ROUTER_MODEL: 'claude-haiku-5-5',
       FRONT_DESK_ANSWER_MODEL: 'claude-opus-5-5',
+      AGENT_DRAFT_MODEL: 'claude-opus-5-5',
+      AGENT_EXTRACT_MODEL: 'claude-haiku-5-5',
       FRONT_DESK_OPUS_FAST: false,
       FRONT_DESK_MAX_CALLS: 40,
       RELAY_PUBLIC_URL: 'wss://app.roofline.test/relay',

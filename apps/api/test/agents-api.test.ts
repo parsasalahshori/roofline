@@ -215,31 +215,30 @@ describe('GET /api/agents (overview)', () => {
     expect((await owner.get('/api/agents/storm_scout')).body.paused).toBeNull();
   });
 
-  test('G1 agents are coming_soon with zeros and an empty series, even with seeded work', async () => {
-    await finished({ agent: 'claims', at: '2026-10-12T15:00:00.000Z', steps: [{ minutes: 10, baseline: 'text_sent', units: 1 }] });
-    await seedTask({ agent: 'scheduler', status: 'draft', at: '2026-10-12T12:00:00.000Z' });
+  test('a fresh company sees the three G1 agents paused and the launch agents not paused', async () => {
     const owner = await who.as('owner');
     const body = await overview(owner);
+    for (const agent of G1) expect(cardOf(body, agent).status, agent).toBe('paused');
+    for (const agent of ['storm_scout', 'estimator', 'front_desk']) expect(cardOf(body, agent).status, agent).not.toBe('paused');
     for (const agent of G1) {
-      const card = cardOf(body, agent);
-      expect(card, agent).toEqual({
-        agent,
-        status: 'coming_soon',
-        finishedToday: 0,
-        successRate: null,
-        notApproved30d: 0,
-        minutesThisMonth: 0,
-        last14Days: [],
-        waitingCount: 0,
-      });
       const detail = await owner.get(`/api/agents/${agent}`);
       expect(detail.status).toBe(200);
-      expect(detail.body.runNow).toEqual({ kind: 'coming_soon' });
-      expect(detail.body.card.status).toBe('coming_soon');
-      expect(detail.body.minutesInPeriod).toBe(0);
-      expect(detail.body.breakdown).toEqual([]);
-      expect(detail.body.recentTasks).toEqual([]);
+      expect(detail.body.card.status).toBe('paused');
+      expect(detail.body.paused).toEqual({ at: NOW, byName: null });
+      expect(detail.body.runNow).toEqual({ kind: 'available', nextAllowedAt: null });
+      expect(detail.body.rules.length).toBeGreaterThan(0);
     }
+  });
+
+  test('a G1 agent with a row and no pause is on, and shows its seeded work', async () => {
+    await setSettings('claims', {});
+    await finished({ agent: 'claims', at: '2026-10-12T15:00:00.000Z', steps: [{ minutes: 10, baseline: 'text_sent', units: 1 }] });
+    const owner = await who.as('owner');
+    const body = await overview(owner);
+    expect(cardOf(body, 'claims').status).toBe('on');
+    expect(cardOf(body, 'claims').finishedToday).toBe(1);
+    expect(cardOf(body, 'claims').minutesThisMonth).toBe(10);
+    expect((await owner.get('/api/agents/claims')).body.paused).toBeNull();
   });
 });
 

@@ -30,6 +30,9 @@ export * from './forwarding.ts';
 export * from './recording-consent.ts';
 // G1 skeleton (Task 1)
 export * from './more-agents.ts';
+export * from './claims.ts';
+// G1 Task 17s
+export * from './agent-values.ts';
 // E1 skeleton (Task 1): one line per new shared file; later E1 tasks fill the files in.
 export * from './roof.ts';
 export * from './tiers.ts';

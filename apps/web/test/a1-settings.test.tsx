@@ -4,7 +4,7 @@ import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { agents } from '../src/copy/agents.ts';
+import { agentRules } from '../src/copy/agents.ts';
 import { settings } from '../src/copy/settings.ts';
 import { isSettingsTab, SETTINGS_TABS, visibleTabs } from '../src/features/settings/tabs.ts';
 import { ACCOUNT, COMPANY, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
@@ -23,6 +23,20 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
   };
 });
 
+const AGENT_VALUES = {
+  claimsNudgeDays: [3, 5, 7],
+  weatherRainPct: 60,
+  weatherGustMph: 25,
+  reminderHour: 15,
+  followupDays: [3, 4],
+  leadFollowupDays: 2,
+  reviewLink: null,
+  reviewDelayDays: 3,
+  followupReviews: true,
+  followupLeads: true,
+  followupProposals: true,
+};
+
 let api: ReturnType<typeof stubApi>;
 
 afterEach(() => {
@@ -33,7 +47,12 @@ afterEach(() => {
 
 /** A signed-in person whose shell reads answer "nothing", unless a test gives its own answers. */
 function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
+  api = stubApi({
+    ...SHELL_ROUTES,
+    'GET /api/auth/me': () => ({ body: account }),
+    'GET /api/agent-values': () => ({ body: AGENT_VALUES }),
+    ...overrides,
+  });
   return api;
 }
 
@@ -56,7 +75,7 @@ describe('settings agents tab', () => {
     signedInApi();
     renderApp('/settings/agents');
 
-    expect(await screen.findByText(agents.settingsComingSoon)).toBeInTheDocument();
+    expect(await screen.findByText(agentRules.title)).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.agents })).toHaveAttribute('href', '/settings/agents');
   });
 
@@ -64,7 +83,7 @@ describe('settings agents tab', () => {
     signedInApi({ ...ACCOUNT, role: 'office' });
     renderApp('/settings/agents');
 
-    expect(await screen.findByText(agents.settingsComingSoon)).toBeInTheDocument();
+    expect(await screen.findByText(agentRules.title)).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.agents })).toHaveAttribute('href', '/settings/agents');
   });
 
@@ -74,7 +93,7 @@ describe('settings agents tab', () => {
 
     await waitFor(() => expect(where(router)).toBe('/settings/company'));
     expect(within(await settingsTabs()).queryByRole('link', { name: settings.tabs.agents })).not.toBeInTheDocument();
-    expect(screen.queryByText(agents.settingsComingSoon)).not.toBeInTheDocument();
+    expect(screen.queryByText(agentRules.title)).not.toBeInTheDocument();
   });
 });
 

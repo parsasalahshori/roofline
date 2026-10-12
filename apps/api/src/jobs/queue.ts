@@ -10,6 +10,7 @@ export const JOB_NAMES = [
   'calendar-push',
   'footprints-load',
   'signed-pdf',
+  // S1 Storm Scout
   'storm-match-company',
   'storm-draft',
   'storm-alert',
@@ -19,18 +20,28 @@ export const JOB_NAMES = [
   'fd-recording-store',
   'fd-text',
   'fd-forwarding-test',
+  // G1 Agents
+  'claims-daily',
+  'scheduler-reminders',
+  'scheduler-agenda',
+  'scheduler-weather',
+  'followup-daily',
+  // G1 Task 8
+  'claims-reply',
+  // G1 Task 12
+  'scheduler-no-show',
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 // 'footprints-load' is global work, but the worker requires a company id on every job: its data is
 // `{ companyId: <the requesting company>, state }` with singletonKey = state.
-// Storm Scout: 'storm-match-company' is `{ companyId }`, sent with singletonKey companyId; 'storm-draft' is
-// `{ companyId, companyStormId }`; 'storm-alert' is `{ companyId, companyStormId, kind }`; 'ad-sync-company' is `{ companyId }`.
 export type JobData = {
   companyId: string;
   importId?: string;
   appointmentId?: string;
   state?: string;
   proposalId?: string;
+  // S1: 'storm-match-company' is `{ companyId }` (singletonKey companyId); 'storm-draft' is `{ companyId, companyStormId }`;
+  // 'storm-alert' is `{ companyId, companyStormId, kind }`; 'ad-sync-company' is `{ companyId }`.
   companyStormId?: string;
   kind?: 'now' | 'plan';
   callId?: string;
@@ -39,6 +50,8 @@ export type JobData = {
   recordingSid?: string;
   conversationId?: string;
   testId?: string;
+  // G1 Task 8
+  messageId?: string;
 };
 /** What a `send` may ask for: a dedupe key, and a delay in seconds before the job may run. */
 export type SendOptions = { singletonKey?: string; startAfter?: number };

@@ -154,8 +154,122 @@ describe("front_desk", () => {
   });
 });
 
+const CLAIMS: AgentRuleFacts = { claims: { nudgeDays: [3, 5, 7] } };
+const SCHEDULER: AgentRuleFacts = {
+  scheduler: { reminderHour: 15, rainPct: 60, gustMph: 25 },
+};
+const FOLLOW_UP: AgentRuleFacts = {
+  followUp: {
+    proposalDays: [3, 4],
+    leadDays: 2,
+    reviewDelayDays: 3,
+    reviewsOn: true,
+  },
+};
+
+describe("claims", () => {
+  test("default sentences and links", () => {
+    const rules = rulesFor("claims", CLAIMS);
+    expect(rules.map((r) => r.text)).toEqual([
+      "I check claims every morning at 10 and draft check-in texts for you to approve: 3 days after the inspection if no claim is filed, 5 days after filing if no adjuster date, 7 days after the adjuster visit.",
+      "I never contact insurers or adjusters, and I never talk about coverage or deductibles.",
+    ]);
+    expect(rules[0]!.links).toEqual([
+      { label: "3 days", href: "/settings/agents" },
+      { label: "5 days", href: "/settings/agents" },
+      { label: "7 days", href: "/settings/agents" },
+    ]);
+    expect(rules[1]!.links).toEqual([]);
+  });
+  test("no facts gives no sentences", () => {
+    expect(rulesFor("claims", {})).toEqual([]);
+  });
+});
+
+describe("scheduler", () => {
+  test("default sentences and links", () => {
+    const rules = rulesFor("scheduler", SCHEDULER);
+    expect(rules.map((r) => r.text)).toEqual([
+      "At 3 PM I draft reminder texts for tomorrow's visits for you to approve.",
+      "At 6 PM I email each crew member their visits for tomorrow.",
+      "At 6 AM and 2 PM I check the weather for the next three days of installs and suggest moving any with rain of 60% or more or gusts of 25 mph or more. I never cancel.",
+      "When a visit is marked no-show, I draft a text offering two new times.",
+    ]);
+    expect(rules[0]!.links).toEqual([{ label: "3 PM", href: "/settings/agents" }]);
+    expect(rules[2]!.links).toEqual([
+      { label: "60%", href: "/settings/agents" },
+      { label: "25 mph", href: "/settings/agents" },
+    ]);
+  });
+  test.each([
+    [0, "12 AM"],
+    [9, "9 AM"],
+    [12, "12 PM"],
+    [16, "4 PM"],
+    [23, "11 PM"],
+  ])("hour %i reads %s", (reminderHour, label) => {
+    const rules = rulesFor("scheduler", {
+      scheduler: { reminderHour, rainPct: 60, gustMph: 25 },
+    });
+    expect(rules[0]!.text).toBe(
+      `At ${label} I draft reminder texts for tomorrow's visits for you to approve.`,
+    );
+    expect(rules[0]!.links).toEqual([{ label, href: "/settings/agents" }]);
+  });
+  test("no facts gives no sentences", () => {
+    expect(rulesFor("scheduler", {})).toEqual([]);
+  });
+});
+
+describe("follow_up", () => {
+  test("default sentences with reviews on", () => {
+    const rules = rulesFor("follow_up", FOLLOW_UP);
+    expect(rules.map((r) => r.text)).toEqual([
+      "After a proposal goes out, I draft a follow-up text for you to approve 3 days and 4 days later if there is no answer.",
+      "I draft a follow-up text for a lead that has gone quiet for 2 days.",
+      "When a job is stuck, I leave a next step for the rep and send no text.",
+      "3 days after an install, I draft a review request, only to customers who agreed to marketing texts.",
+      "At most one text per customer every 3 days, and none after they reply.",
+    ]);
+    expect(rules[0]!.links.map((l) => l.label)).toEqual(["3 days", "4 days"]);
+    expect(rules[3]!.links).toEqual([{ label: "3 days", href: "/settings/agents" }]);
+  });
+  test("reviews off points at the review link", () => {
+    const rules = rulesFor("follow_up", {
+      followUp: { ...FOLLOW_UP.followUp!, reviewsOn: false },
+    });
+    expect(rules.map((r) => r.text)).toEqual([
+      "After a proposal goes out, I draft a follow-up text for you to approve 3 days and 4 days later if there is no answer.",
+      "I draft a follow-up text for a lead that has gone quiet for 2 days.",
+      "When a job is stuck, I leave a next step for the rep and send no text.",
+      "Reviews are off until you add your review link.",
+      "At most one text per customer every 3 days, and none after they reply.",
+    ]);
+    expect(rules[3]!.links).toEqual([{ label: "review link", href: "/settings/agents" }]);
+  });
+  test("leads and proposals switched off leave their sentences out", () => {
+    const rules = rulesFor("follow_up", {
+      followUp: { ...FOLLOW_UP.followUp!, leadsOn: false, proposalsOn: false },
+    });
+    expect(rules.map((r) => r.text)).toEqual([
+      "When a job is stuck, I leave a next step for the rep and send no text.",
+      "3 days after an install, I draft a review request, only to customers who agreed to marketing texts.",
+      "At most one text per customer every 3 days, and none after they reply.",
+    ]);
+  });
+  test("one day reads singular", () => {
+    const rules = rulesFor("follow_up", {
+      followUp: { ...FOLLOW_UP.followUp!, leadDays: 1 },
+    });
+    expect(rules[1]!.text).toBe("I draft a follow-up text for a lead that has gone quiet for 1 day.");
+  });
+  test("no facts gives no sentences", () => {
+    expect(rulesFor("follow_up", {})).toEqual([]);
+  });
+});
+
 describe("agents without rules", () => {
-  test.each<Agent>(["claims", "scheduler", "follow_up", "system"])(
+  test.each<Agent>(["system"])(
     "%s has no rules",
     (agent) => {
       expect(rulesFor(agent, { ...STORM, ...FRONT_DESK })).toEqual([]);
@@ -165,7 +279,7 @@ describe("agents without rules", () => {
 
 describe("link integrity", () => {
   test("every link label is a substring of its sentence and points into settings", () => {
-    const all: AgentRuleFacts = { ...STORM, ...FRONT_DESK };
+    const all: AgentRuleFacts = { ...STORM, ...FRONT_DESK, ...CLAIMS, ...SCHEDULER, ...FOLLOW_UP };
     for (const agent of AGENTS) {
       for (const rule of rulesFor(agent, all)) {
         for (const link of rule.links) {

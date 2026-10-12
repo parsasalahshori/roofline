@@ -13,6 +13,7 @@ import { AppError, MESSAGES } from '../src/errors.ts';
 import { InlineJobs } from '../src/jobs/queue.ts';
 import type { Mailer } from '../src/mailer.ts';
 import { FakeAdImageRenderer } from '../src/providers/fakes/ad-image.ts';
+import { FakeStaticMap } from '../src/providers/fakes/static-map.ts'; // G1 Task 7
 import { FakeAdsGoogle } from '../src/providers/fakes/ads-google.ts';
 import { FakeAdsMeta } from '../src/providers/fakes/ads-meta.ts';
 import { FakeBroadcastMailer } from '../src/providers/fakes/broadcast.ts';
@@ -169,6 +170,8 @@ export type TestApp = {
   broadcast: FakeBroadcastMailer;
   /** The ad image renderer: it answers a fixed image without drawing. */
   adImage: FakeAdImageRenderer;
+  /** G1 Task 7: the claim packet's map picture: a tiny PNG, `absent = true` answers null. */
+  staticMap: FakeStaticMap;
   /** Billing: it records each customer, checkout, and meter event. */
   billing: FakeBillingProvider;
   /** Texting registration: `failNext` makes the next registrar call fail. */
@@ -217,6 +220,17 @@ export function testConfig(
     API_RATE_LIMIT_PER_MIN: 600,
     PORT: 0,
     HOST: '127.0.0.1',
+    // D1 Front Desk (ANTHROPIC_API_KEY stays unset)
+    FRONT_DESK_ROUTER_MODEL: 'claude-haiku-5-5',
+    FRONT_DESK_ANSWER_MODEL: 'claude-opus-5-5',
+    AGENT_DRAFT_MODEL: 'claude-opus-5-5',
+    AGENT_EXTRACT_MODEL: 'claude-haiku-5-5',
+    FRONT_DESK_OPUS_FAST: false,
+    FRONT_DESK_MAX_CALLS: 40,
+    RELAY_PUBLIC_URL: 'wss://app.roofline.test/relay',
+    RELAY_TOKEN_SECRET: 'relay-test-secret-0123456789abcdef0123',
+    // G1 Agents (no static map in tests)
+    MAPTILER_SERVER_KEY: undefined,
     EAGLEVIEW_ENV: 'sandbox',
     EAGLEVIEW_PRODUCT_ID: 0,
     PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
@@ -226,13 +240,6 @@ export function testConfig(
     POSTMARK_BROADCAST_STREAM: 'broadcast',
     STORM_MAIL_FROM: 'storms@roofline.test',
     HAIL_STALE_MINUTES: 90,
-    // D1 Front Desk (ANTHROPIC_API_KEY stays unset)
-    FRONT_DESK_ROUTER_MODEL: 'claude-haiku-5-5',
-    FRONT_DESK_ANSWER_MODEL: 'claude-opus-5-5',
-    FRONT_DESK_OPUS_FAST: false,
-    FRONT_DESK_MAX_CALLS: 40,
-    RELAY_PUBLIC_URL: 'wss://app.roofline.test/relay',
-    RELAY_TOKEN_SECRET: 'relay-test-secret-0123456789abcdef0123',
     ...overrides,
   };
 }
@@ -284,6 +291,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const adsMeta = new FakeAdsMeta();
   const broadcast = new FakeBroadcastMailer();
   const adImage = new FakeAdImageRenderer();
+  const staticMap = new FakeStaticMap();
   const billing = new FakeBillingProvider();
   const registrar = new FakeTextingRegistrar();
   const jobs = new InlineJobs();
@@ -312,6 +320,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     adsMeta,
     broadcast,
     adImage,
+    staticMap,
     billing,
     registrar,
     jobs,
@@ -347,6 +356,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     adsMeta,
     broadcast,
     adImage,
+    staticMap,
     billing,
     registrar,
     jobs,

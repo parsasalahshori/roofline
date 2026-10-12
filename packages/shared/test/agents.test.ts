@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   G1_AGENTS_SHIPPED,
+  isPaused,
   TIME_BASELINES,
   VISIBLE_BASELINE_KEYS,
   isEditableBaselineKey,
@@ -99,8 +100,34 @@ describe('VISIBLE_BASELINE_KEYS and isEditableBaselineKey', () => {
 });
 
 describe('G1_AGENTS_SHIPPED (Ruling AX-B)', () => {
-  test('is false until G1 Task 15 flips it', () => {
-    expect(G1_AGENTS_SHIPPED).toBe(false);
+  test('is true once G1 Task 15 ships', () => {
+    expect(G1_AGENTS_SHIPPED).toBe(true);
+  });
+});
+
+describe('isPaused (Ruling GX-E)', () => {
+  const when = new Date('2026-05-01T12:00:00Z');
+  test.each([
+    ['storm_scout', null, false],
+    ['estimator', null, false],
+    ['front_desk', null, false],
+    ['storm_scout', { pausedAt: null }, false],
+    ['estimator', { pausedAt: null }, false],
+    ['front_desk', { pausedAt: null }, false],
+    ['storm_scout', { pausedAt: when }, true],
+    ['estimator', { pausedAt: when }, true],
+    ['front_desk', { pausedAt: when }, true],
+    ['claims', null, true],
+    ['scheduler', null, true],
+    ['follow_up', null, true],
+    ['claims', { pausedAt: null }, false],
+    ['scheduler', { pausedAt: null }, false],
+    ['follow_up', { pausedAt: null }, false],
+    ['claims', { pausedAt: when }, true],
+    ['scheduler', { pausedAt: when }, true],
+    ['follow_up', { pausedAt: when }, true],
+  ] as const)('%s with %j is paused: %s', (agent, row, expected) => {
+    expect(isPaused(agent, row)).toBe(expected);
   });
 });
 

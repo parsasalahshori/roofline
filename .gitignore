@@ -18,3 +18,6 @@ v1/cli/roof/target/
 
 # F3 manual smoke state (holds a subaccount token)
 .smoke-texting.json
+
+# G1 agent-text eval reports (hand-run, npm run eval:agent-texts)
+scripts/eval-results/
