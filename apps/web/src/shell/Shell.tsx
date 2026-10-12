@@ -1,8 +1,9 @@
 import { Dock, type DockItem } from '@roofline/ui';
-import { lazy, Suspense, useState } from 'react';
+import { type CSSProperties, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useApprovals, useAttentionCount } from '../api/hooks.ts';
 import { dock, WINDOW_COPY } from '../copy/dock.ts';
+import { ShellBanners } from '../features/billing/ShellBanners.tsx';
 import { useTodayAutoOpen } from '../features/today/useTodayAutoOpen.ts';
 import { type AppKey, DOCK_APPS } from './apps.ts';
 import { countedDrafts } from './countedDrafts.ts';
@@ -38,6 +39,19 @@ export function Shell() {
   const phone = useIsPhone();
   const [moreOpen, setMoreOpen] = useState(false);
   const sheetOpen = phone && moreOpen;
+  const bannersRef = useRef<HTMLDivElement>(null);
+  const [bannerHeight, setBannerHeight] = useState(0);
+
+  // The banner slot's height moves the windows down while a banner shows. No ResizeObserver (jsdom): nothing is measured.
+  useEffect(() => {
+    const el = bannersRef.current;
+    if (typeof ResizeObserver === 'undefined' || !el) return;
+    const measure = () => setBannerHeight(Math.round(el.getBoundingClientRect().height));
+    const observer = new ResizeObserver(measure);
+    measure();
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const counts: Record<AppKey, number> = {
     storm: drafts.filter((task) => task.agent === 'storm_scout').length,
@@ -64,9 +78,12 @@ export function Shell() {
   };
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} style={{ '--shell-banner-height': bannerHeight + 'px' } as CSSProperties}>
       <div className={styles.topBar}>
         <ShellTopBar />
+      </div>
+      <div ref={bannersRef} className={styles.banners}>
+        <ShellBanners />
       </div>
       <div className={styles.map}>
         <Suspense fallback={null}>
