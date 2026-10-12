@@ -81,3 +81,8 @@ Merge rule: e1-t5 is merged into e1-estimator only after C1 T5 is CI-green (idea
 Merged origin/c1-crm 0fe2b16 (C1 T5 CI 38195617057; F3 T28, T37) into e1-estimator: typecheck, lint clean; drizzle-kit no changes.
 Ruling EF (controller, accepted): tier highlights capped at 4 (Better drops "Tear-off and cleanup"; spec D10's "highlights +" would exceed the cap).
 Ruling EG (controller, accepted): `offsetOutline` (named only in the T2 brief's Split, not its Interfaces) is not built; the edge allowance `perimeter + 8 × overhang` stands.
+Wave 3 (wf_52209e53-04e, contact 103):
+- T5 ae3d065: review round 1 fixed, CI 38197904378 green. Lead check: `isPublicRoute` adds only a lowercased `/public/` prefix (req.path is not percent-decoded; `/public`, `/publicx` stay gated); readOnlyGuard exempts `/public/`. Task 5: complete.
+- T14 20e2a6b: review clean, CI 38197723747 green (web 435). Task 14: complete.
+Merged into e1-estimator: T5 b802c80 (brings e1-w3base 2504960, which changes no files: C1 T5 was already in via c1-crm), T14 7817449. typecheck, lint, lint:css, web 435 clean.
+Carries: (T12/T19) blockCrossSiteMutations refuses mutations whose Origin is not APP_ORIGIN, so PROPOSAL_LINK_BASE_URL must be the same origin as APP_ORIGIN, or /api/public mutations must allow it (group check 103). (T6) FakeFootprintSource reads its fixture with readFileSync at module load from test/fixtures; make it lazy. Stub eslint-disable lines go when real bodies land.
