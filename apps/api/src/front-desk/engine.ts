@@ -15,7 +15,9 @@ import {
   insertConversation,
   insertTurn,
   loadCompanyFacts,
+  setCallSpamReason,
   type TenantContext,
+  updateConversation,
   updateTurn,
   withTenant,
 } from '@roofline/db';
@@ -43,6 +45,9 @@ const SAY_REFUSAL = 'Let me get someone who can help with that.';
 const SAY_MAX_TOKENS = 'Sorry — let me put that more simply.';
 const SAY_TROUBLE = "Sorry, I'm having trouble on my end. Let me get someone for you.";
 const SAY_GOODBYE = 'Thank you for calling. Goodbye.';
+export const SAY_SPAM_ENDING = 'Thank you for calling. We are not interested in this, so we will end the call now. Goodbye.';
+/** Router intents that end the call politely and mark it spam (Decision 13). */
+const SPAM_INTENTS = new Set(['spam', 'sales_pitch']);
 const NOTE_SHORT = 'Answer in one or two short sentences.';
 const NOTE_OFFER = 'Offer a person or a message.';
 
@@ -171,6 +176,19 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
       return { type, text: g.text };
     };
 
+    /** Marks the conversation and the call as spam (the engine's polite-ending path). Errors are logged, as the turn save does. */
+    const markSpam = async (): Promise<void> => {
+      try {
+        const ctx = systemCtx(state.companyId);
+        await withTenant(deps.pools, ctx, async (tx) => {
+          await updateConversation(tx, ctx, state.conversationId, { outcome: 'spam' });
+          if (state.callId !== null) await setCallSpamReason(tx, ctx, state.callId, 'assistant_spam');
+        });
+      } catch (err) {
+        deps.logError?.(err, 'front-desk.spam');
+      }
+    };
+
     const toolNames: FrontDeskToolName[] =
       state.channel === 'sms' ? [...TEXT_CHANNEL_TOOLS] : (Object.keys(FRONT_DESK_TOOLS) as FrontDeskToolName[]);
 
@@ -262,6 +280,16 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         void Promise.resolve(speculative.iter.return?.(undefined)).catch(() => undefined);
       };
 
+      if (decision && SPAM_INTENTS.has(decision.intent)) {
+        dropSpeculative();
+        rec.route = 'end';
+        const ev = speak(SAY_SPAM_ENDING);
+        appendAssistant(state, [{ type: 'text', text: ev.text }] as unknown as Anthropic.ContentBlock[]);
+        yield ev;
+        await markSpam();
+        yield { type: 'end', reason: 'spam' };
+        return;
+      }
       if (decision && decision.route === 'fast' && decision.fastReply) {
         dropSpeculative();
         rec.route = 'fast';
@@ -393,6 +421,7 @@ export function createEngine(deps: AppDeps, tools: ToolHandlers): Engine {
         }
         appendToolResults(state, results);
         if (finish) {
+          if (finish.type === 'end' && finish.reason === 'spam') await markSpam();
           yield finish;
           return;
         }
