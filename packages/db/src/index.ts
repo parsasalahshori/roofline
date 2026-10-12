@@ -19,7 +19,16 @@ export {
   type NewAgentEvent,
 } from './repos/agent-events.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
-export { loadBaselineOverrides } from './repos/time-baselines.ts';
+export {
+  insertTimeRecount,
+  listRecountSteps,
+  loadBaselineOverrides,
+  refreshTaskMinutes,
+  type RecountStep,
+  rewriteStepSnapshot,
+  setBaselineOverrides,
+} from './repos/time-baselines.ts';
+export * from './repos/agent-settings.ts';
 export { insertDefaultSettings, pickFreeSlug, setServiceArea, slugify } from './repos/companies.ts';
 export {
   CONSENT_LABELS,
