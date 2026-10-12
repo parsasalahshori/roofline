@@ -1031,6 +1031,7 @@ describe('SCHEDULES', () => {
     expect(SCHEDULES.map((s) => [s.name, s.cron])).toEqual([
       ['expire-drafts', '*/5 * * * *'],
       ['sweep-queued', '* * * * *'],
+      ['sweep-imports', '* * * * *'],
       ['dispatch-messages', '* * * * *'],
       ['end-trials', '*/5 * * * *'],
       ['report-usage', '* * * * *'],

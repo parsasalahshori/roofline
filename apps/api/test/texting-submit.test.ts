@@ -102,6 +102,20 @@ describe('texting registration submit', () => {
     expect(t.jobs.sent).toMatchObject([{ name: 'texting-registration', data: { companyId: t.seed.a.companyId } }]);
   });
 
+  test('the hosted policy pages fill an empty website with the full privacy URL', async () => {
+    await addCard();
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    const privacy = policyUrls(t.deps.config, 'acme-roofing').privacy;
+
+    const res = await owner.post('/api/texting/registration').send({ brand: { ...BRAND, website: '' }, useHostedPolicyPages: true });
+    expect(res.status).toBe(202);
+    await t.jobs.drain(t.deps);
+
+    const saved = await ownerQuery<{ brand_info: { website: string } }>('select brand_info from texting_registrations where company_id = $1', [t.seed.a.companyId]);
+    expect(saved[0]!.brand_info.website).toBe(privacy);
+    expect(brandSubmissions()[0]).toMatchObject({ brand: { website: privacy } });
+  });
+
   test('a second submit while waiting is refused', async () => {
     await addCard();
     const owner = await loginAs(t.app, t.seed.a.owner);
