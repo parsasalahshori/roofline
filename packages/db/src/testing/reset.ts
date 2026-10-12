@@ -19,19 +19,25 @@ export async function resetDb(ownerUrl: string): Promise<void> {
         order by 1`,
     );
     if (rows.length === 0) return;
-    const sql = `truncate table ${rows.map((r) => r.name).join(', ')} restart identity cascade`;
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await client.query(sql);
-        break;
-      } catch (err) {
-        // A worker transaction in the e2e stack can hold row locks on tables the truncate needs; Postgres
-        // picks the truncate as the deadlock victim (40P01). Nothing was truncated, so try again.
-        if ((err as { code?: string }).code !== '40P01' || attempt >= 5) throw err;
-        await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
-      }
-    }
+    await truncateWithRetry(client, `truncate table ${rows.map((r) => r.name).join(', ')} restart identity cascade`);
   } finally {
     await client.end();
+  }
+}
+
+/**
+ * Runs the truncate, retrying when Postgres picks it as the deadlock victim (40P01) up to 5 attempts
+ * with a 100 ms x attempt backoff. A worker transaction in the e2e stack (its crons keep running) can hold
+ * row locks on tables the truncate needs; a deadlock victim truncated nothing, so it is safe to try again.
+ */
+export async function truncateWithRetry(client: Pick<pg.Client, 'query'>, sql: string): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await client.query(sql);
+      return;
+    } catch (err) {
+      if ((err as { code?: string }).code !== '40P01' || attempt >= 5) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+    }
   }
 }
