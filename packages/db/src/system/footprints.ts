@@ -3,7 +3,8 @@ import { US_STATE_CODES, type FootprintStateStatus } from '@roofline/shared';
 import type { Db } from '../pools.ts';
 
 /*
- * The footprint loader's database side. Runs on the app_system pool (ALL on both footprint tables,
+ * The footprint loader's database side. Runs on the app_system pool (SELECT, INSERT, DELETE on
+ * building_footprints; SELECT, INSERT, UPDATE on building_footprint_states;
  * and only id and address_state of companies). Every function takes a two-letter state code and
  * upper-cases it.
  */

@@ -97,10 +97,15 @@ CREATE POLICY tenant_isolation ON stored_files
 -- 3. Global footprint tables: no company_id and no RLS (they hold no tenant data, Ruling EA). app_tenant
 --    reads building_footprints only, to show a property's footprint; it cannot write either table, and
 --    building_footprint_states (the loader's progress) is app_system's alone. Writes come from the loader
---    job, which runs as app_system.
+--    job, which runs as app_system. app_system gets exactly what packages/db/src/system/footprints.ts uses
+--    (security finding 9): on building_footprints it inserts (RETURNING id) and deletes a state's rows; on
+--    building_footprint_states it reads, upserts (INSERT ... ON CONFLICT DO UPDATE) and updates. Never ALL:
+--    TRUNCATE skips the delete path, and TRIGGER or REFERENCES would let app_system SQL attach code or keys.
 GRANT SELECT ON building_footprints TO app_tenant;
 --> statement-breakpoint
-GRANT ALL ON building_footprints, building_footprint_states TO app_system;
+GRANT SELECT, INSERT, DELETE ON building_footprints TO app_system;
+--> statement-breakpoint
+GRANT SELECT, INSERT, UPDATE ON building_footprint_states TO app_system;
 --> statement-breakpoint
 -- building_footprints.id is a bigserial, so the loader's inserts need USAGE on its sequence. Nothing
 -- else grants sequence access: 0002 sets no ALTER DEFAULT PRIVILEGES, and no earlier table has a serial

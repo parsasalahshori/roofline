@@ -460,10 +460,19 @@ describe('grants', () => {
     ]);
   });
 
-  test('app_system has SELECT, INSERT, UPDATE and DELETE on both footprint tables', async () => {
-    expect(await tablePrivileges('app_system', FOOTPRINT_TABLES)).toEqual(
-      FOOTPRINT_TABLES.map((t) => ({ ...privs(t, true, true, true, true), truncate: true })),
+  test('app_system holds only the footprint privileges the loader uses: no TRUNCATE, REFERENCES or TRIGGER (security finding 9)', async () => {
+    expect(await tablePrivileges('app_system', FOOTPRINT_TABLES)).toEqual([
+      privs('building_footprints', true, true, false, true),
+      privs('building_footprint_states', true, true, true, false),
+    ]);
+    const rows = await ownerQuery<{ table: string; references: boolean; trigger: boolean }>(
+      `select t as table,
+              has_table_privilege('app_system', 'public.' || t, 'REFERENCES') as references,
+              has_table_privilege('app_system', 'public.' || t, 'TRIGGER') as trigger
+         from unnest($1::text[]) as t`,
+      [[...FOOTPRINT_TABLES]],
     );
+    expect(rows).toEqual(FOOTPRINT_TABLES.map((table) => ({ table, references: false, trigger: false })));
   });
 
   test('app_system holds column-level SELECT on exactly the whitelisted proposal and exact order columns', async () => {
