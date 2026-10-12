@@ -289,3 +289,20 @@ Order: R8–R10 first, so 0018 is narrowed and errors.ts carries the pathForLog 
 - CI on d42402d: Platform and Hail passed; E2E had 53 of 54 passing, the only failure being an a11y login "socket hang up", while 905266e passed E2E with the same specs. Judge it on the merged head.
 
 Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema changes" all pass.
+- CI run 38275152764 on s1-storm@07fa559 (R8–R10 merged): Platform, Hail and E2E all green.
+
+## c1-crm 7758e82 and e1-estimator 414b97b re-merged (Ruling BF / SEC-1..4 / EU)
+- Merged in the s1-sec worktree and fast-forwarded into s1-storm.
+- Conflicts:
+  - config.ts: S1's ad checks kept, plus C1's TRUST_PROXY check and E1's R2-in-production check;
+  - rls.test.ts: S1 and E1 grant tests and C1's no TRUNCATE/TRIGGER/REFERENCES test, all kept;
+  - the worker schedules, jobs.test and pgboss.test: S1's four schedules plus E1's signed-pdf-sweep;
+  - system/index.ts, the package.json smoke scripts and STORED_FILE_KINDS (S1's kinds kept);
+  - the e2e fixtures (seedFootprintFixture runs before the storm fixture);
+  - the a11y and phone spec imports.
+- e726ecf:
+  - TRUST_PROXY and the R2 keys in the production configs of the storm-config, postmark-broadcast and google-ads-http tests;
+  - `pathForLog` in the errors.ts late-error branch;
+  - `proposalListRoutes()` in the s1-routes dock test.
+- R8 had already narrowed 0018, so C1's app_system test holds.
+- Local checks: typecheck and lint pass; web 970 and shared/ui/send-gate 1367 tests pass; drizzle-kit reports no changes.
