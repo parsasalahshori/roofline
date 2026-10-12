@@ -1858,6 +1858,10 @@ export const adAccounts = pgTable(
   (t) => [
     unique('ad_accounts_company_id_id_uniq').on(t.companyId, t.id),
     unique('ad_accounts_company_platform_uniq').on(t.companyId, t.platform),
+    // Ruling BF: an external ad account belongs to one company. Global, so it sees every company's rows; a revoked row frees it.
+    uniqueIndex('ad_accounts_platform_external_live_uq')
+      .on(t.platform, t.externalAccountId)
+      .where(sql`${t.status} <> 'revoked'`),
     enumCheck('ad_accounts', 'platform', t.platform, AD_PLATFORMS),
     enumCheck('ad_accounts', 'status', t.status, AD_ACCOUNT_STATUSES),
   ],

@@ -614,16 +614,6 @@ describe('grants', () => {
     );
   });
 
-  test('app_tenant may update only pdf_file_id, pdf_sha256 and updated_at of a signature (Ruling EQ)', async () => {
-    const rows = await ownerQuery<{ column_name: string; can_update: boolean }>(
-      `select column_name, has_column_privilege('app_tenant', 'public.proposal_signatures', column_name, 'UPDATE') as can_update
-         from information_schema.columns
-        where table_schema = 'public' and table_name = 'proposal_signatures'`,
-    );
-    const updatable = rows.filter((r) => r.can_update).map((r) => r.column_name).sort();
-    expect(updatable).toEqual(['pdf_file_id', 'pdf_sha256', 'updated_at']);
-  });
-
   test('app_tenant has SELECT, INSERT and UPDATE on each S1 tenant table, and DELETE only on door_exclusions and storm_photos', async () => {
     expect(await tablePrivileges('app_tenant', S1_TENANT_TABLES)).toEqual(
       S1_TENANT_TABLES.map((t) => privs(t, true, true, true, t === 'door_exclusions' || t === 'storm_photos')),
@@ -636,9 +626,9 @@ describe('grants', () => {
     );
   });
 
-  test('app_hail privileges: SELECT, INSERT and UPDATE on the three hail tables, DELETE only on storm_contours', async () => {
+  test('app_hail privileges: SELECT and INSERT on hail_runs, SELECT, INSERT and UPDATE on storms and storm_contours, DELETE only on storm_contours', async () => {
     expect(await tablePrivileges('app_hail', ['hail_runs', 'storms', 'storm_contours'])).toEqual([
-      privs('hail_runs', true, true, true, false),
+      privs('hail_runs', true, true, false, false),
       privs('storms', true, true, true, false),
       privs('storm_contours', true, true, true, true),
     ]);
@@ -680,12 +670,12 @@ describe('grants', () => {
     expect(row).toEqual({ hail: true, spotter: false, footprints: false });
   });
 
-  test('app_system: SELECT, INSERT, UPDATE and DELETE on spotter_reports, SELECT only on hail_runs, SELECT and UPDATE (place_name) only on storms, nothing on storm_contours', async () => {
+  test('app_system: SELECT and INSERT on spotter_reports (no UPDATE, DELETE, TRUNCATE or TRIGGER), SELECT only on hail_runs, SELECT and UPDATE (place_name) only on storms, nothing on storm_contours', async () => {
     expect(await tablePrivileges('app_system', HAIL_GLOBAL_TABLES)).toEqual([
       privs('hail_runs', true, false, false, false),
       privs('storms', true, false, false, false),
       privs('storm_contours', false, false, false, false),
-      privs('spotter_reports', true, true, true, true),
+      privs('spotter_reports', true, true, false, false),
     ]);
     const cols = await ownerQuery<{ column_name: string }>(
       `select column_name from information_schema.column_privileges
@@ -693,6 +683,16 @@ describe('grants', () => {
           and privilege_type = 'UPDATE' order by 1`,
     );
     expect(cols).toEqual([{ column_name: 'place_name' }]);
+  });
+
+  test('app_tenant may update only pdf_file_id, pdf_sha256 and updated_at of a signature (Ruling EQ)', async () => {
+    const rows = await ownerQuery<{ column_name: string; can_update: boolean }>(
+      `select column_name, has_column_privilege('app_tenant', 'public.proposal_signatures', column_name, 'UPDATE') as can_update
+         from information_schema.columns
+        where table_schema = 'public' and table_name = 'proposal_signatures'`,
+    );
+    const updatable = rows.filter((r) => r.can_update).map((r) => r.column_name).sort();
+    expect(updatable).toEqual(['pdf_file_id', 'pdf_sha256', 'updated_at']);
   });
 
   test('app_tenant: SELECT only on building_footprints, and no privilege on building_footprint_states', async () => {
@@ -862,10 +862,7 @@ describe('grants', () => {
       sel('calls', 'status'),
       sel('company_storms', 'company_id'),
       sel('company_storms', 'id'),
-      sel('company_storms', 'last_matched_at'),
-      sel('company_storms', 'plan_task_id'),
       sel('company_storms', 'status'),
-      sel('company_storms', 'storm_id'),
       sel('conversation_turns', 'at'),
       sel('conversation_turns', 'company_id'),
       sel('conversation_turns', 'id'),
@@ -877,9 +874,7 @@ describe('grants', () => {
       sel('early_delivery_reports', 'received_at'),
       ins('email_opt_outs', 'at'),
       ins('email_opt_outs', 'company_id'),
-      sel('email_opt_outs', 'company_id'),
       ins('email_opt_outs', 'email'),
-      sel('email_opt_outs', 'email'),
       sel('email_opt_outs', 'id'),
       ins('email_opt_outs', 'source'),
       sel('exact_report_orders', 'company_id'),
@@ -1897,14 +1892,15 @@ describe('S1 storm tables', () => {
     ]);
   });
 
-  test('app_hail can SELECT, INSERT and UPDATE hail_runs, storms and storm_contours, and DELETE contours', async () => {
+  test('app_hail can INSERT hail_runs, UPDATE storms and storm_contours, and DELETE contours', async () => {
     const [run] = await hailRaw<{ id: string }>(
       `insert into hail_runs (source_key, valid_at, convective_day, status, max_in)
        values ('mrms-1', now(), date '2026-10-11', 'processed', 1.25) returning id`,
     );
     expect(run?.id).toBeTruthy();
-    await hailRaw(`update hail_runs set max_in = 1.5 where source_key = 'mrms-1'`);
-    expect(await hailRaw(`select max_in::float as max_in from hail_runs`)).toEqual([{ max_in: 1.5 }]);
+    expect(await hailRaw(`select max_in::float as max_in from hail_runs`)).toEqual([{ max_in: 1.25 }]);
+    const updateRun = await rejectedWith(() => hailRaw(`update hail_runs set max_in = 1.5 where source_key = 'mrms-1'`));
+    expect(updateRun.code).toBe('42501');
 
     const [storm] = await hailRaw<{ id: string }>(
       `insert into storms (convective_day, max_in, geom_075, bbox, centroid)
@@ -2009,13 +2005,17 @@ describe('S1 storm tables', () => {
     }
   });
 
-  test('app_system loads spotter_reports with the bigserial sequence', async () => {
+  test('app_system loads spotter_reports with the bigserial sequence, and cannot delete or truncate them', async () => {
     const [row] = await systemRaw<{ id: string }>(
       `insert into spotter_reports (report_date, time_utc, size_in, state, geom)
        values (date '2026-10-11', time '18:05', 1.25, 'NE', ${CENTER}) returning id`,
     );
     expect(row?.id).toBeTruthy();
-    expect(await systemRaw(`delete from spotter_reports returning id`)).toHaveLength(1);
+    const del = await rejectedWith(() => systemRaw(`delete from spotter_reports`));
+    expect(del.code).toBe('42501');
+    const truncate = await rejectedWith(() => systemRaw(`truncate spotter_reports`));
+    expect(truncate.code).toBe('42501');
+    await ownerQuery(`delete from spotter_reports`);
   });
 
   test('tenant role sees and writes only its own company_storms rows and cannot delete them', async () => {
@@ -2098,7 +2098,7 @@ describe('S1 storm tables', () => {
     }
     const both = [seed.a.companyId, seed.b.companyId].sort();
     const stormRows = await systemRaw<{ company_id: string }>(
-      `select id, company_id, storm_id, status, plan_task_id, last_matched_at from company_storms`,
+      `select id, company_id, status from company_storms`,
     );
     expect(stormRows.map((r) => r.company_id).sort()).toEqual(both);
     const pageRows = await systemRaw<{ company_id: string }>(
@@ -2136,8 +2136,13 @@ describe('S1 storm tables', () => {
     expect(stored).toHaveLength(1);
     expect(stored[0]).toMatchObject({ email: 'Pat@Example.com', source: 'one_click' });
     expect(stored[0]!.at).toBeInstanceOf(Date);
-    expect(await systemRaw(`select id, company_id, email from email_opt_outs`)).toHaveLength(1);
+    expect(await systemRaw(`select id from email_opt_outs`)).toHaveLength(1);
     for (const text of [
+      `select company_id from email_opt_outs`,
+      `select email from email_opt_outs`,
+      `select storm_id from company_storms`,
+      `select plan_task_id from company_storms`,
+      `select last_matched_at from company_storms`,
       `select source from email_opt_outs`,
       `select at from email_opt_outs`,
       `update email_opt_outs set source = 'manual'`,
@@ -2156,6 +2161,13 @@ describe('S1 storm tables', () => {
     await systemRaw(`insert into email_opt_outs (company_id, email, source) values ($1, 'pat@example.com', 'manual')`, [
       seed.b.companyId,
     ]);
+    // The unsubscribe write needs no SELECT on email: ON CONFLICT DO NOTHING (no target) RETURNING id.
+    const again = await systemRaw(
+      `insert into email_opt_outs (company_id, email, source) values ($1, 'PAT@example.com', 'manual')
+       on conflict do nothing returning id`,
+      [seed.a.companyId],
+    );
+    expect(again).toHaveLength(0);
   });
 
   test('app_tenant sees only its own email_opt_outs, and app_system cannot write other tenant tables', async () => {

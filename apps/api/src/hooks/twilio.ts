@@ -21,7 +21,7 @@ import { companyIdForMessagingService, companyIdForNumber, signingTokenFor } fro
 import { type InboundReading, looksLikeOptOut, readInbound } from '@roofline/send-gate';
 import type { AppDeps } from '../app.ts';
 import { queueFrontDeskText } from '../front-desk/texts.ts';
-import { onStormReply } from '../storm/replies.ts';
+import { onStormFormYes, onStormReply } from '../storm/replies.ts';
 
 /*
  * Twilio's webhooks (spec 4.5, R24), mounted at /hooks/twilio ahead of the /api session gate:
@@ -342,6 +342,7 @@ async function handleInbound(deps: AppDeps, companyId: string, text: Inbound): P
         return twilioAnswered ? undefined : reply.start(company.name);
       case 'other': {
         if (looksLikeOptOut(text.body)) await flagPossibleOptOut(tx, ctx, active, messageId, now);
+        await onStormFormYes(tx, ctx, { id: messageId, phoneE164: text.from, customerIds: active, body: text.body }, now);
         {
           const storm = await onStormReply(tx, ctx, { id: messageId, customerId: active[0] ?? null, body: text.body }, now);
           if (storm.consumed) return undefined;

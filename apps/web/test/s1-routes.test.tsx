@@ -153,7 +153,7 @@ describe('S1 Storm windows', () => {
   });
 
   it('the dock Storm opens /storm', async () => {
-    signedInApi();
+    signedInApi(ACCOUNT, proposalListRoutes());
     const { router, user } = renderApp('/estimator');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
     const link = dockLink(dockNav, WINDOW_COPY.storm.title);

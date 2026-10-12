@@ -86,6 +86,30 @@ export function publicRateLimit(): RequestHandler {
   });
 }
 
+/** Requests a minute one IP address may make to the public pages (storm page, policy pages, unsubscribe links). */
+export const PUBLIC_PAGE_RATE_LIMIT_PER_MIN = 120;
+
+/** Requests a minute one IP address may make to the Postmark webhook (the provider calls from a few addresses). */
+export const POSTMARK_HOOK_RATE_LIMIT_PER_MIN = 600;
+
+/**
+ * The public, signed-out pages outside /api (`GET /storm/:code`, the policy pages, `/u/:token`,
+ * `/hooks/postmark`): per IP address, one bucket per `scope` so the groups do not share a budget.
+ * Generous for real use; a script walking codes or tokens runs into 429.
+ */
+export function publicPageRateLimit(scope: string, limit: number = PUBLIC_PAGE_RATE_LIMIT_PER_MIN): RequestHandler {
+  return rateLimit({
+    windowMs: MINUTE_MS,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => `${scope}:${ipKeyGenerator(req.ip ?? 'unknown')}`,
+    handler: (_req, _res, next) => {
+      next(new AppError(429, MESSAGES.tooFast));
+    },
+  });
+}
+
 /** The email a login attempt names, as the limiter keys it: trimmed and lowercased. */
 function loginEmail(body: unknown): string {
   const email = (body as { email?: unknown } | undefined)?.email;
