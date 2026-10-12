@@ -153,7 +153,14 @@ const ConfigSchema = z
     /** `1` or `true` turns weather off (the null source: no network). `0` or `false` leaves it on. */
     WEATHER_DISABLED: flag,
 
-    /** How many reverse-proxy hops to trust for `req.ip` (0 = none). */
+    /**
+     * How many reverse-proxy hops to trust for `req.ip` (0 = none), passed to Express's
+     * `trust proxy`. Every IP-keyed rate limit and the audit log's addresses depend on it.
+     * Required in production, and at least 1: Render puts one proxy in front of the service, so 1
+     * there. With 0 behind a proxy every visitor looks like the proxy and shares one IP limit; a
+     * value above the real hop count lets clients choose their IP through X-Forwarded-For.
+     * Development and tests default to 0 (nothing in front).
+     */
     TRUST_PROXY: integer(0, 0, 32),
     /** Per-session request limit for /api/*. Parsed here, applied by the rate limiter. */
     API_RATE_LIMIT_PER_MIN: integer(600, 1, 1_000_000),
@@ -269,6 +276,13 @@ const ConfigSchema = z
         code: 'custom',
         path: ['PROPOSAL_LINK_BASE_URL'],
         message: 'must be on the same origin as APP_ORIGIN (homeowners sign through it)',
+      });
+    }
+    if (cfg.NODE_ENV === 'production' && cfg.TRUST_PROXY === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TRUST_PROXY'],
+        message: 'is required in production: the number of proxies in front of the API (1 on Render)',
       });
     }
     if (cfg.FAKE_PROVIDERS && cfg.NODE_ENV === 'production') {

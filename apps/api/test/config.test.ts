@@ -23,6 +23,8 @@ const BASE = {
   DATABASE_URL_SYSTEM: 'postgres://app_system:pw@localhost:5432/roofline',
   ENCRYPTION_KEY: KEY,
   PUBLIC_BASE_URL: 'https://app.roofline.test',
+  // Required in production: Render puts one proxy in front of the API.
+  TRUST_PROXY: '1',
 } satisfies Record<string, string>;
 
 const R2_SETTINGS = {
@@ -47,7 +49,7 @@ describe('loadConfig', () => {
   test('parses a complete environment and fills the defaults', () => {
     expect(loadConfig(VALID)).toEqual({
       ...VALID,
-      TRUST_PROXY: 0,
+      TRUST_PROXY: 1,
       API_RATE_LIMIT_PER_MIN: 600,
       PORT: 4400,
       HOST: '0.0.0.0',
@@ -97,10 +99,26 @@ describe('loadConfig', () => {
   });
 
   test('empty values count as unset (a blank line in an env file)', () => {
-    const config = loadConfig({ ...VALID, POSTMARK_TOKEN: '', TRUST_PROXY: '', GOOGLE_CLIENT_ID: '  ' });
+    const config = loadConfig({ ...VALID, NODE_ENV: 'development', POSTMARK_TOKEN: '', TRUST_PROXY: '', GOOGLE_CLIENT_ID: '  ' });
     expect(config.POSTMARK_TOKEN).toBeUndefined();
     expect(config.GOOGLE_CLIENT_ID).toBeUndefined();
     expect(config.TRUST_PROXY).toBe(0);
+  });
+
+  test('TRUST_PROXY is required in production and must be at least 1; development and tests default to 0', () => {
+    for (const value of [undefined, '', '0']) {
+      const message = problem({ ...VALID, TRUST_PROXY: value });
+      expect(message, String(value)).toContain('TRUST_PROXY');
+      expect(message).toContain('is required in production');
+      // The message names the variable, never the values of the others.
+      expect(message).not.toContain(KEY);
+    }
+    expect(loadConfig({ ...VALID, TRUST_PROXY: '1' }).TRUST_PROXY).toBe(1);
+    expect(loadConfig({ ...VALID, TRUST_PROXY: '2' }).TRUST_PROXY).toBe(2);
+    for (const NODE_ENV of ['development', 'test']) {
+      expect(loadConfig({ ...VALID, NODE_ENV, TRUST_PROXY: undefined }).TRUST_PROXY, NODE_ENV).toBe(0);
+      expect(loadConfig({ ...VALID, NODE_ENV, TRUST_PROXY: '0' }).TRUST_PROXY, NODE_ENV).toBe(0);
+    }
   });
 
   test('APP_ORIGIN is reduced to an origin, PUBLIC_BASE_URL loses its trailing slash', () => {

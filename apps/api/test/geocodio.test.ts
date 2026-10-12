@@ -29,6 +29,7 @@ const VALID = {
   R2_ACCESS_KEY_ID: 'key-id',
   R2_SECRET_ACCESS_KEY: 'key-secret',
   R2_BUCKET: 'proposals',
+  TRUST_PROXY: '1',
 } satisfies Record<string, string>;
 
 type Answer = {

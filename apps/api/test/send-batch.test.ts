@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, test } from 'vitest';
+import pg from 'pg';
+import { beforeEach, describe, expect, inject, test } from 'vitest';
 import {
   companies,
   customers,
@@ -46,6 +47,17 @@ import {
 import { agentCtx, dbSteps, dbTask, RETRYING, setStep } from './task-helpers.ts';
 
 let t: TestApp;
+
+/** Runs one statement as the owner role: app_system may not update phone numbers or delete registrations. */
+async function ownerQuery(sql: string, params: unknown[] = []): Promise<void> {
+  const client = new pg.Client({ connectionString: inject('dbUrls').owner });
+  await client.connect();
+  try {
+    await client.query(sql, params);
+  } finally {
+    await client.end();
+  }
+}
 let actors: Actors;
 
 beforeEach(async () => {
@@ -270,7 +282,7 @@ describe('send_sms_batch', () => {
     expect(sentTo(t.sms.sent)).toEqual(['+14025550112']);
 
     // With texting not registered, the registration rule (which comes first) is the one reported.
-    await t.deps.pools.system.$client.query('delete from texting_registrations where company_id = $1', [idOf('a')]);
+    await ownerQuery('delete from texting_registrations where company_id = $1', [idOf('a')]);
     const second = await approvedBatch(t, actors, [ann!]);
     await t.queue.drain(t.deps);
     rows = await stepMessages(t, 'a', second.stepId);
@@ -661,8 +673,8 @@ describe('buildGateRequest', () => {
     const [ann] = await addSmsCustomers(t, 'a', [{ firstName: 'Ann', phone: '+14025550111', consent: 'attested' }]);
     await (await actors.as('owner')).patch('/api/company/settings').send({ marketingCapPer7d: 1 });
     expect((await build(ann!))!.req.company.marketingCapPer7d).toBe(1);
-    // app_system owns the registration; take company A's away.
-    await t.deps.pools.system.$client.query('delete from texting_registrations where company_id = $1', [idOf('a')]);
+    // Take company A's registration away (as the owner: app_system never deletes one).
+    await ownerQuery('delete from texting_registrations where company_id = $1', [idOf('a')]);
     expect((await build(ann!))!.req.company.campaignStatus).toBe('none');
   });
 

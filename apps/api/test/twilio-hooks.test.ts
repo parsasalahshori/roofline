@@ -47,6 +47,17 @@ import {
 
 let t: TestApp;
 
+/** Runs one statement as the owner role: app_system may not update phone numbers or delete registrations. */
+async function ownerQuery(sql: string, params: unknown[] = []): Promise<void> {
+  const client = new pg.Client({ connectionString: inject('dbUrls').owner });
+  await client.connect();
+  try {
+    await client.query(sql, params);
+  } finally {
+    await client.end();
+  }
+}
+
 /** The texting numbers (company_phone_numbers) of A and B. Not the profile phone (`companies.phone_e164`). */
 const A_NUMBER = '+14025550100';
 const B_NUMBER = '+14025550200';
@@ -320,7 +331,7 @@ describe('POST /hooks/twilio/sms: the brief', () => {
 
   test('a number that is no longer active → /status still reaches the company, and the report is applied (texts to it are accepted; see the STOP tests)', async () => {
     const text = await sentText(OUT(11));
-    await t.deps.pools.system.update(companyPhoneNumbers).set({ status: 'released' }).where(eq(companyPhoneNumbers.e164, A_NUMBER));
+    await ownerQuery(`update company_phone_numbers set status = 'released' where e164 = $1`, [A_NUMBER]);
     const res = await status(statusOf(OUT(11), 'delivered'));
     expect(res.status).toBe(200);
     expect(res.text).toBe('');
@@ -900,7 +911,7 @@ describe('POST /hooks/twilio/sms: atomic claim and carrier rules', () => {
 
   test('a STOP to a number that is no longer active still opts out', async () => {
     await addSmsCustomers(t, 'a', [nina()]);
-    await t.deps.pools.system.update(companyPhoneNumbers).set({ status: 'released' }).where(eq(companyPhoneNumbers.e164, A_NUMBER));
+    await ownerQuery(`update company_phone_numbers set status = 'released' where e164 = $1`, [A_NUMBER]);
 
     const res = await sms(inbound({ Body: 'STOP' }));
 
