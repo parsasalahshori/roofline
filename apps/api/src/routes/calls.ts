@@ -70,7 +70,9 @@ export function callRoutes(deps: AppDeps): Router {
     const total = bytes.byteLength;
     res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'Accept-Ranges': 'bytes' });
     const range = /^bytes=(\d*)-(\d*)$/.exec(req.get('range') ?? '');
-    if (range && (range[1] !== '' || range[2] !== '')) {
+    // A last position before the first (bytes=5-2) is not a valid range at all: ignore it and send the whole file (RFC 9110).
+    const backwards = range !== null && range[1] !== '' && range[2] !== '' && Number(range[2]) < Number(range[1]);
+    if (range && !backwards && (range[1] !== '' || range[2] !== '')) {
       let start: number;
       let end: number;
       if (range[1] === '') {

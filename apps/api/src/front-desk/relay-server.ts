@@ -281,6 +281,17 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
       socket.destroy();
       return;
     }
+    // Every check that needs no database comes first: the shape, the Twilio signature header, and the token's
+    // MAC over this call and company. A peer without a token we minted is refused here and never takes a slot
+    // or a database query (pre-review notes 1 and 23).
+    const t = url.searchParams.get('t');
+    const c = url.searchParams.get('c');
+    const o = url.searchParams.get('o');
+    const header = req.headers['x-twilio-signature'];
+    const sig = Array.isArray(header) ? header[0] : header;
+    if (t === null || c === null || o === null || !UUID.test(c) || c !== c.toLowerCase() || !UUID.test(o) || o !== o.toLowerCase()) return reject(socket);
+    if (typeof sig !== 'string' || sig === '') return reject(socket);
+    if (!verifyRelayToken(deps.config.RELAY_TOKEN_SECRET, t, { callId: c, companyId: o }, deps.clock.now())) return reject(socket);
     if (unauth >= RELAY_MAX_UNAUTH) {
       socket.write(UNAVAILABLE);
       socket.destroy();
@@ -295,14 +306,8 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
       }
     };
     try {
-      const t = url.searchParams.get('t');
-      const c = url.searchParams.get('c');
-      const header = req.headers['x-twilio-signature'];
-      const sig = Array.isArray(header) ? header[0] : header;
-      if (t === null || c === null || !UUID.test(c) || c !== c.toLowerCase() || typeof sig !== 'string' || sig === '') return reject(socket);
       const row = await relayCallById(deps.pools.system, c);
-      if (row === null || ENDED_STATUSES.has(row.status)) return reject(socket);
-      if (!verifyRelayToken(deps.config.RELAY_TOKEN_SECRET, t, { callId: c, companyId: row.companyId }, deps.clock.now())) return reject(socket);
+      if (row === null || row.companyId !== o || ENDED_STATUSES.has(row.status)) return reject(socket);
       const signer = await signingTokenFor(deps.pools.system, row.companyId, deps.config.TWILIO_AUTH_TOKEN, deps.config.ENCRYPTION_KEY);
       if (signer === null || !twilio.validateRequest(signer, sig, deps.config.RELAY_PUBLIC_URL + url.search, {})) return reject(socket);
       if (socket.destroyed) return;

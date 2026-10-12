@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { calls, companyPhoneNumbers, encrypt, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { storeRecording } from '../../src/jobs/recording-store.ts';
 import { UnconfiguredObjectStore } from '../../src/providers/object-store.ts';
+import { TwilioApiError } from '../../src/providers/twilio/http.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
 
 /*
@@ -101,8 +102,44 @@ describe('fd-recording-store job', () => {
 
   test('the object key carries the recording sid', async () => {
     await run();
-    expect(keyFor(callId)).toBe(`recordings/${companyId()}/${callId}-${RECORDING_SID}.mp3`);
     expect((await callRow()).recordingKey).toBe(`recordings/${companyId()}/${callId}-${RECORDING_SID}.mp3`);
+  });
+
+  test('a failed delete at Twilio fails the job, and the retry deletes it without copying again', async () => {
+    const del = vi.spyOn(t.callControl, 'deleteRecording').mockRejectedValueOnce(new Error('twilio 503'));
+    await expect(run(1)).rejects.toThrow();
+    expect((await callRow()).recordingStatus).toBe('stored');
+    expect(t.callControl.recordings.has(RECORDING_SID)).toBe(true);
+    del.mockRestore();
+    await run(2);
+    expect(puts()).toHaveLength(1);
+    expect(t.callControl.recordings.has(RECORDING_SID)).toBe(false);
+  });
+
+  test('a recording Twilio no longer has (404) counts as deleted', async () => {
+    vi.spyOn(t.callControl, 'deleteRecording').mockRejectedValueOnce(new TwilioApiError(404, 20404));
+    await expect(run(1)).resolves.toBeUndefined();
+    expect((await callRow()).recordingStatus).toBe('stored');
+  });
+
+  test('on the last attempt a failed delete is logged, not thrown', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(t.callControl, 'deleteRecording').mockRejectedValueOnce(new Error('twilio 503'));
+    await expect(run(5)).resolves.toBeUndefined();
+    expect(warn.mock.calls.flat().join(' ')).toContain(`call=${callId}`);
+  });
+
+  test('a second recording on a call already stored is copied, not only deleted', async () => {
+    await run();
+    const second = 'RE00000000000000000000000000000002';
+    const secondBytes = Uint8Array.from([0x49, 0x44, 0x33, 0x05]);
+    t.callControl.putRecording(second, secondBytes);
+    await storeRecording(t.deps, { companyId: companyId(), callId, recordingSid: second }, { attempt: 1, lastAttempt: false });
+    const secondKey = `recordings/${companyId()}/${callId}-${second}.mp3`;
+    expect(puts()).toHaveLength(2);
+    expect(await t.objectStore.get(secondKey)).toEqual(secondBytes);
+    expect((await callRow()).recordingKey).toBe(secondKey);
+    expect(t.callControl.recordings.has(second)).toBe(false);
   });
 
   test('without file storage the Twilio copy is deleted and only metadata stays', async () => {
