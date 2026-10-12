@@ -15,6 +15,8 @@ test('the three G1 agents start paused, Turn on Follow-up shows its rules, and R
   scenario,
   db,
 }) => {
+  // The waits below (the worker's plan alone may take 45 s) add up to more than the default 30 s.
+  test.setTimeout(120_000);
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/agents');
