@@ -11,7 +11,7 @@ import {
   recentForwardingTestAt,
   withTenant,
 } from '@roofline/db';
-import type { ForwardingTestView } from '@roofline/shared';
+import { textability, type ForwardingTestView } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { systemContext } from '../permissions.ts';
@@ -25,6 +25,7 @@ import { systemContext } from '../permissions.ts';
  */
 
 const PHONE_FIRST = 'Add your business phone number in Settings → Company first.';
+const UNSUPPORTED_PHONE = 'The forwarding test only works with a US business phone number. Check the number in Settings → Company.';
 const TEST_CALLER_UNSET = "The forwarding test isn't available right now. Try again later.";
 const PLACE_FAILED = "We couldn't place the test call. Try again in a minute.";
 const WAIT = 'Wait a minute before testing again.';
@@ -57,6 +58,8 @@ export function forwardingTestRoutes(deps: AppDeps): Router {
 
     const businessPhone = await withTenant(pools, ctx, async (tx) => (await companyContact(tx, ctx))?.phoneE164 ?? null);
     if (!businessPhone) throw new AppError(422, PHONE_FIRST, 'phone');
+    const kind = textability(businessPhone);
+    if (kind === 'toll_free' || kind === 'not_us') throw new AppError(422, UNSUPPORTED_PHONE, 'phone');
     if (testCaller === undefined) throw new AppError(503, TEST_CALLER_UNSET);
 
     const id = await withTenant(pools, ctx, async (tx) => {
@@ -111,12 +114,25 @@ export async function expireForwardingTest(deps: AppDeps, companyId: string, tes
  * Returns true when it did, so the hook answers with the test TwiML and nothing else. Any other call
  * returns false.
  */
-export async function forwardingTestArrived(deps: AppDeps, companyId: string, fromE164: string): Promise<boolean> {
+export type ForwardingArrival = { forwardedFrom?: string | null; stirVerstat?: string | null };
+
+export async function forwardingTestArrived(
+  deps: AppDeps,
+  companyId: string,
+  fromE164: string,
+  arrival: ForwardingArrival = {},
+): Promise<boolean> {
   const testCaller = deps.config.TWILIO_TEST_CALLER_NUMBER;
   if (testCaller === undefined || fromE164 !== testCaller) return false;
   const ctx = systemContext(companyId);
   const now = deps.clock.now();
   return withTenant(deps.pools, ctx, async (tx) => {
+    // A caller id alone can be spoofed: the call must also show it was forwarded from the business line
+    // (the signed ForwardedFrom) or carry a passing STIR/SHAKEN verdict.
+    const businessPhone = (await companyContact(tx, ctx))?.phoneE164 ?? null;
+    const forwarded = businessPhone !== null && arrival.forwardedFrom === businessPhone;
+    const attested = typeof arrival.stirVerstat === 'string' && arrival.stirVerstat.startsWith('TN-Validation-Passed');
+    if (!forwarded && !attested) return false;
     const pending = await findPendingForwardingTest(tx, ctx, fromE164, now);
     if (!pending) return false;
     await markForwardingVerified(tx, ctx, pending.callSid, now);

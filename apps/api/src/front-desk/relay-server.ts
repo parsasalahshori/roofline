@@ -14,6 +14,12 @@ import { verifyRelayToken } from './relay-token.ts';
 
 export const RELAY_PATH = '/relay';
 export const RELAY_CLOSE_POLICY = 1008;
+export const RELAY_MAX_PAYLOAD = 64 * 1024;
+export const RELAY_MAX_QUEUED = 32;
+export const RELAY_MAX_UNAUTH = 50;
+const UNAVAILABLE = 'HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n';
+const ENDED_STATUSES = new Set(['ended', 'failed', 'rejected']);
+const REASON_FLOOD = 'Too many messages.';
 const REFUSED = 'HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n';
 const SETUP_WITHIN_MS = 5000;
 const DEFAULT_IDLE_MS = 20_000;
@@ -44,11 +50,21 @@ function parseFrame(data: RawData): RelayIn | null {
 export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {}): { close(): void } {
   const idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
   const engine = createEngine(deps, opts.tools ?? {});
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: RELAY_MAX_PAYLOAD });
   const live = new Set<WebSocket>();
+  let unauth = 0;
 
   function onConnection(ws: WebSocket, req: IncomingMessage, token: string | null): void {
     live.add(ws);
+    unauth += 1;
+    let counted = true;
+    const uncount = (): void => {
+      if (counted) {
+        counted = false;
+        unauth -= 1;
+      }
+    };
+    ws.on('close', uncount);
     ws.on('close', () => live.delete(ws));
     ws.on('error', () => undefined);
     const deny = (reason: string): void => {
@@ -150,13 +166,20 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
         const call = await withTenant(deps.pools, ctx, async (tx) => {
           const found = await findCallBySid(tx, ctx, row.callSid);
           if (found === null) return null;
+          if (ENDED_STATUSES.has(found.status)) return 'denied' as const;
           await updateCall(tx, ctx, row.callSid, { status: 'ai', aiStartedAt: startedAt as Date });
           return found;
         });
+        if (call === 'denied') {
+          deps.relaySessions.remove(row.callSid);
+          identity = null;
+          return deny(REASON_AUTH);
+        }
         if (call === null) return deny(REASON_AUTH);
         // The socket may have closed while withTenant ran; the close handler already removed the registry entry.
         if (stage === 'dead' || ws.readyState !== WebSocket.OPEN) return;
         stage = 'running';
+        uncount();
         const recording = createRecording(deps, { callId: row.callId, companyId: row.companyId, callSid: row.callSid });
         loop = runRelayLoop(adapter, {
           deps,
@@ -193,6 +216,10 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
           deny(REASON_AUTH);
         });
       } else if (stage === 'authenticating') {
+        if (queued.length >= RELAY_MAX_QUEUED) {
+          queued.length = 0;
+          return deny(REASON_FLOOD);
+        }
         queued.push(m);
       } else if (stage === 'running') {
         deliver(m);
@@ -227,6 +254,11 @@ export function attachRelayUpgrade(server: Server, deps: AppDeps, opts: Opts = {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== RELAY_PATH) {
       socket.write(REFUSED);
+      socket.destroy();
+      return;
+    }
+    if (unauth >= RELAY_MAX_UNAUTH) {
+      socket.write(UNAVAILABLE);
       socket.destroy();
       return;
     }
