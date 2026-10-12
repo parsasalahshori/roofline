@@ -1,11 +1,12 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
-import { ADD_ON_UNITS, TIERS, TierTemplateSchema, type AddOnUnit, type Tier, type TierTemplate } from '@roofline/shared';
+import { ADD_ON_UNITS, TIERS, materialNames, TierTemplateSchema, type AddOnUnit, type Tier, type TierTemplate } from '@roofline/shared';
 import { Banner, Button, Card, Checkbox, EmptyState, Field, Select, Skeleton, Toggle, useToast, type SelectOption } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { errors } from '../../copy/errors.ts';
 import { settings } from '../../copy/settings.ts';
 import { tiers } from '../../copy/tiers.ts';
+import { proposals } from '../../copy/proposals.ts';
 import { tierEditor } from '../../copy/tiersEditor.ts';
 import { useSaveTierTemplates, useTierTemplates } from './estimator-api.ts';
 import styles from './TiersSection.module.css';
@@ -17,8 +18,8 @@ import styles from './TiersSection.module.css';
  */
 
 const MATERIALS: readonly TierTemplate['material'][] = ['architectural', 'premium', 'metal'];
-const MATERIAL_OPTIONS: SelectOption[] = MATERIALS.map((material) => ({ value: material, label: tierEditor.materials[material] }));
-const UNIT_OPTIONS: SelectOption[] = ADD_ON_UNITS.map((unit) => ({ value: unit, label: tierEditor.units[unit] }));
+const MATERIAL_OPTIONS: SelectOption[] = MATERIALS.map((material) => ({ value: material, label: materialNames[material] }));
+const UNIT_OPTIONS: SelectOption[] = ADD_ON_UNITS.map((unit) => ({ value: unit, label: proposals.addOnUnitLabel[unit] }));
 const MAX_ADD_ONS = 8;
 const MAX_HIGHLIGHTS = 4;
 
@@ -307,17 +308,17 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
 
   return (
     <Card as="section" aria-label={tierEditor.regionLabels[tier]} className={styles.tier}>
-      <h3 className={styles.tierHeading}>{tierEditor.tierLabels[tier]}</h3>
+      <h3 className={styles.tierHeading}>{proposals.tierName[tier]}</h3>
       <div className={styles.grid}>
         <Field
-          label={tierEditor.fields.name}
+          label={proposals.fieldName}
           value={draft.name}
           disabled={!canEdit}
           error={error('name')}
           onChange={(event) => set({ name: event.target.value })}
         />
         <Select
-          label={tierEditor.fields.material}
+          label={proposals.fieldMaterial}
           value={draft.material}
           options={MATERIAL_OPTIONS}
           disabled={!canEdit}
@@ -325,7 +326,7 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
           onChange={(value) => set({ material: value as TierTemplate['material'] })}
         />
         <Field
-          label={tierEditor.fields.waste}
+          label={proposals.fieldWaste}
           inputMode="decimal"
           value={draft.waste}
           disabled={!canEdit}
@@ -333,7 +334,7 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
           onChange={(event) => set({ waste: event.target.value })}
         />
         <Field
-          label={tierEditor.fields.markup}
+          label={proposals.fieldMarkup}
           inputMode="decimal"
           value={draft.markup}
           help={tierEditor.help.markup}
@@ -346,18 +347,18 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
         <Toggle label={tierEditor.fields.enabled} checked={draft.enabled} disabled={!canEdit} onChange={(enabled) => set({ enabled })} />
       </div>
 
-      <h4 className={styles.subheading}>{tierEditor.fields.addOns}</h4>
+      <h4 className={styles.subheading}>{proposals.addOnsHeading}</h4>
       {draft.addOns.map((addOn, index) => (
         <div key={addOn.id} className={styles.row}>
           <Field
-            label={tierEditor.fields.addOnName}
+            label={proposals.addOnName}
             value={addOn.name}
             disabled={!canEdit}
             error={error('addOns', index, 'name')}
             onChange={(event) => setAddOn(addOn.id, { name: event.target.value })}
           />
           <Select
-            label={tierEditor.fields.addOnUnit}
+            label={proposals.addOnUnit}
             value={addOn.unit}
             options={UNIT_OPTIONS}
             disabled={!canEdit}
@@ -365,7 +366,7 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
             onChange={(value) => setAddOn(addOn.id, { unit: value as AddOnUnit })}
           />
           <Field
-            label={tierEditor.fields.addOnRate}
+            label={proposals.addOnRate}
             inputMode="decimal"
             value={addOn.rate}
             disabled={!canEdit}
@@ -373,7 +374,7 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
             onChange={(event) => setAddOn(addOn.id, { rate: event.target.value })}
           />
           <div className={styles.toggle}>
-            <Checkbox label={tierEditor.fields.taxable} checked={addOn.taxable} disabled={!canEdit} onChange={(taxable) => setAddOn(addOn.id, { taxable })} />
+            <Checkbox label={proposals.addOnTaxable} checked={addOn.taxable} disabled={!canEdit} onChange={(taxable) => setAddOn(addOn.id, { taxable })} />
           </div>
           <div className={styles.rowAction}>
             <Button
@@ -397,7 +398,7 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
             }))
           }
         >
-          {tierEditor.addAddOn}
+          {proposals.addOnAdd}
         </Button>
       </div>
 

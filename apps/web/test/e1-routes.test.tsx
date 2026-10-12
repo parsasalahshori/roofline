@@ -16,7 +16,7 @@ import { proposals } from '../src/copy/proposals.ts';
 import type { MeasurementView } from '../src/features/measure/types.ts';
 import { estimateCopy, financeCopy } from '../src/copy/financeEstimate.ts';
 import { tierEditor } from '../src/copy/tiersEditor.ts';
-import type { EstimatorSettings } from '../src/features/settings/estimator-api.ts';
+import type { EstimatorSettings } from '@roofline/shared';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
@@ -52,11 +52,13 @@ const MEASUREMENT: MeasurementView = {
   drawMode: false,
   outline: null,
   structures: [],
-  pitchX12: 6,
   overhangFt: 1,
-  valleyFt: 0,
   center: [-97.7, 30.3],
   estimate: instantEstimate({ outline: [], pitchX12: 6, overhangFt: 1, valleyFt: 0 }),
+  facets: null,
+  providerRef: null,
+  notes: null,
+  createdAt: '2026-10-12T12:00:00.000Z',
   locked: false,
 };
 

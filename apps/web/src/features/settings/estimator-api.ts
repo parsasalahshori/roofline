@@ -1,4 +1,4 @@
-import type { TierTemplate } from '@roofline/shared';
+import type { EstimatorSettings, EstimatorSettingsPatch, TierTemplate } from '@roofline/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api/client.ts';
 
@@ -11,22 +11,6 @@ export const estimatorKeys = {
   templates: ['tier-templates'] as const,
   settings: ['estimator-settings'] as const,
 };
-
-/** The estimator settings as the API answers. `aerialConfigured` is false when no aerial provider is set up (the switch is then hidden). */
-export type EstimatorSettings = {
-  defaultPitchX12: number;
-  overhangFt: number;
-  proposalValidDays: number;
-  aerialMeasure: boolean;
-  aerialConfigured: boolean;
-  estimateChangeClause: boolean;
-  /** Basis points: 999 means 9.99%; 0 means no interest; null means financing is not set. */
-  financingAprBps: number | null;
-  financingTermMonths: number | null;
-};
-
-/** What PUT /api/estimator/settings takes: the same fields without the read-only `aerialConfigured`. Send only what the section edits. */
-export type EstimatorSettingsPatch = Partial<Omit<EstimatorSettings, 'aerialConfigured'>>;
 
 /** The three templates, good, better, best. */
 export function useTierTemplates() {
