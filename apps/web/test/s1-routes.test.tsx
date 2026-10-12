@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
-import { ads } from '../src/copy/ads.ts';
 import { comingSoon } from '../src/copy/comingSoon.ts';
 import { connections } from '../src/copy/connections.ts';
 import { doors } from '../src/copy/doors.ts';
@@ -38,7 +37,13 @@ afterEach(() => {
 
 /** A signed-in person whose shell reads answer "nothing", unless a test gives its own answers. */
 function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
-  api = stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: account }), ...overrides });
+  api = stubApi({
+    ...SHELL_ROUTES,
+    'GET /api/auth/me': () => ({ body: account }),
+    // The Connections tab reads the ad accounts too; none are linked unless a test says so
+    'GET /api/ads/accounts': () => ({ body: { accounts: [], managerId: null, businessId: null } }),
+    ...overrides,
+  });
   return api;
 }
 
@@ -116,8 +121,8 @@ describe('S1 Storm windows', () => {
     signedInApi();
     renderApp('/settings/connections');
 
-    expect(await screen.findByText(connections.googleAds)).toBeInTheDocument();
-    expect(await screen.findByText(connections.meta)).toBeInTheDocument();
-    expect(await screen.findByText(ads.connectionsComingSoon)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: connections.googleAds })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: connections.meta })).toBeInTheDocument();
+    expect(screen.getAllByText(connections.later)).toHaveLength(1);
   });
 });

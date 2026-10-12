@@ -68,16 +68,20 @@ export const settings = {
       email: 'Email',
       role: 'Role',
       spend: 'Can approve spending',
+      stormAlerts: 'Storm alerts',
       status: 'Status',
     },
     /** The accessible names of the controls in a member's row (the row's own words are the column titles). */
     roleFor: (name: string) => `Role for ${name}`,
     spendFor: (name: string) => `Can approve spending: ${name}`,
+    /** The storm alerts switch: office members and owners get storm emails, field reps never do. */
+    stormAlertsFor: (name: string) => `Storm alerts: ${name}`,
     turnOffFor: (name: string) => `Turn off ${name}`,
     turnBackOnFor: (name: string) => `Turn back on ${name}`,
     // The spending cell of an owner (always may) and of a field rep (never may); only office members get a switch
     spendAlways: 'Always',
     spendNever: 'Never',
+    stormAlertsNever: 'Never',
     statusActive: 'Active',
     statusOff: 'Turned off',
     turnOff: 'Turn off',

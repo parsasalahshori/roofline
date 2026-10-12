@@ -16,4 +16,6 @@ export const keys = {
   company: ['company'] as const,
   team: ['team'] as const,
   texting: ['texting'] as const,
+  stormSettings: ['storm-settings'] as const,
+  adAccounts: ['ad-accounts'] as const,
 };
