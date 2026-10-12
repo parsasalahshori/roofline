@@ -899,6 +899,11 @@ function queueHandlers(over: Partial<JobHandlers> = {}): JobHandlers {
     'import-customers': async () => {},
     'texting-registration': async () => {},
     'calendar-push': async () => {},
+    // D1 Front Desk
+    'fd-after-call': async () => {},
+    'fd-recording-store': async () => {},
+    'fd-text': async () => {},
+    'fd-forwarding-test': async () => {},
     ...over,
   };
 }
@@ -1041,6 +1046,8 @@ describe('SCHEDULES', () => {
       ['bill-monthly-fees', '0 9 1 * *'],
       ['prune-early-reports', '17 3 * * *'],
       ['calendar-pull', '*/5 * * * *'],
+      ['fd-retention', '17 3 * * *'],
+      ['fd-health', '*/2 * * * *'],
     ]);
   });
 
