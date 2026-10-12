@@ -1239,6 +1239,62 @@ export async function addToLiveTask(
   return found.taskId;
 }
 
+// ---------------------------------------------------------------------------------------------
+// G1 live tasks (Ruling GX-R): an agent's own one-step task that waits for nobody's yes.
+
+/** A live task with exactly one step (any type, internal ones too). */
+export type NewOneStepTask = Omit<NewTask, 'mode' | 'steps'> & { step: NewTask['steps'][number] };
+
+/**
+ * Creates a live task whose one step starts at once: the task is `running` and the step `queued`
+ * (approved now, by nobody). The caller runs or enqueues the step after this transaction commits.
+ */
+export async function startLiveTask(
+  tx: Tx,
+  ctx: TenantContext,
+  input: NewOneStepTask,
+  now: Date,
+): Promise<{ taskId: string; stepId: string }> {
+  const { step, ...task } = input;
+  const { taskId } = await createTask(tx, ctx, { ...task, mode: 'live', steps: [step] }, { now, ip: null, allowInternalStepTypes: true });
+  const [row] = await listSteps(tx, ctx, [taskId]);
+  if (!row) throw new Error('The task step was not saved.');
+  if (!(await moveStep(tx, ctx, row.id, ['pending'], { status: 'queued', approvedAt: now }, now))) {
+    throw new Error(`Step ${row.id} moved while its task was being made.`);
+  }
+  await updateTask(tx, ctx, taskId, { status: 'running' }, now);
+  return { taskId, stepId: row.id };
+}
+
+/**
+ * Writes a finished live note (Ruling GX-R): a record of something an agent did that needs no
+ * approval and sends nothing. Its one internal no-op step is `done` with a `step_done` event (0 minutes:
+ * a note saves no time), and `refreshTask` finishes the task with its `finished` event. Returns the task id.
+ */
+export async function writeLiveNote(
+  tx: Tx,
+  ctx: TenantContext,
+  input: Omit<NewOneStepTask, 'step'> & { label: string },
+  now: Date,
+): Promise<string> {
+  const { label, ...task } = input;
+  const { taskId } = await createTask(
+    tx,
+    ctx,
+    { ...task, mode: 'live', steps: [{ type: 'demo_noop', payload: { label } }] },
+    { now, ip: null, allowInternalStepTypes: true },
+  );
+  await updateTask(tx, ctx, taskId, { status: 'running' }, now);
+  const [row] = await listSteps(tx, ctx, [taskId]);
+  const done = row ? await moveStep(tx, ctx, row.id, ['pending'], { status: 'done' }, now) : null;
+  if (!done) throw new Error('The note step was not saved.');
+  // A note saves nobody any time: no snapshot (the no-op's demo baseline would count 5 minutes), and its event says 0.
+  // One millisecond apart, so the events read back in the order they happened (as createLiveTask).
+  await event(tx, ctx, taskId, 'step_done', 'agent', { units: 0, minutes: 0 }, new Date(now.getTime() + 1), done.id);
+  await refreshTask(tx, ctx, taskId, new Date(now.getTime() + 2));
+  return taskId;
+}
+
 /** What the rerun route does next: re-draft a storm plan through Storm Scout, or copy the plan. */
 export type StormRerunTarget = { kind: 'storm'; companyStormId: string } | { kind: 'copy' };
 

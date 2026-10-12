@@ -1,25 +1,21 @@
 import { type Request, Router } from 'express';
 import { z } from 'zod';
-// Probe pass 14 (G1 x A1 one-writer rule): moveStep/updateTask belong to tasks/service.ts; G1 to route this through the task service.
-/* eslint-disable no-restricted-imports */
 import {
   ClaimFieldError,
   getJobClaim,
   latestClaimPacket,
   listClaims,
   listSteps,
-  moveStep,
   saveClaim,
   type ClaimPatch,
   withTenant,
 } from '@roofline/db';
-/* eslint-enable no-restricted-imports */
 import { CLAIM_FIELD_LIMITS, CLAIM_STATUSES, toE164 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { ObjectStoreUnavailableError } from '../providers/object-store.ts'; // G1 Task 7
 import { runStep } from '../tasks/runner.ts'; // G1 Task 7
-import { runLiveStep } from '../agents/notes.ts';
+import { startLiveTask } from '../tasks/service.ts'; // G1 Task 7
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
 
 const NO_JOB = "We couldn't find that job.";
@@ -193,8 +189,8 @@ export function jobClaimRoutes(deps: AppDeps): Router {
     if (visible.claim === null) throw new AppError(409, 'Save the claim details first.');
 
     const now = clock.now();
-    const { taskId, stepId } = await withTenant(pools, ctx, async (tx) => {
-      const created = await runLiveStep(
+    const { taskId, stepId } = await withTenant(pools, ctx, (tx) =>
+      startLiveTask(
         tx,
         ctx,
         {
@@ -206,10 +202,8 @@ export function jobClaimRoutes(deps: AppDeps): Router {
           step: { type: 'build_claim_packet', payload: { jobId: id } },
         },
         now,
-      );
-      await moveStep(tx, ctx, created.stepId, ['pending'], { status: 'queued', approvedAt: now }, now);
-      return created;
-    });
+      ),
+    );
     await runStep(deps, ctx.companyId, stepId);
 
     const after = await withTenant(pools, ctx, async (tx) => ({
