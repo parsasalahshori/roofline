@@ -4,6 +4,7 @@ import type {
   AgentDetail,
   AgentsOverview,
   FeedPage,
+  PauseResult,
   RecountResult,
   RunNowResult,
   ScreenAgent,
@@ -73,7 +74,7 @@ export function useAgentDetail(agent: ScreenAgent, period: TimePeriod) {
 export function usePauseAgent(agent: ScreenAgent) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (paused: boolean) => apiFetch<unknown>(`/api/agents/${agent}/paused`, { method: 'PUT', body: { paused } }),
+    mutationFn: (paused: boolean) => apiFetch<PauseResult>(`/api/agents/${agent}/paused`, { method: 'PUT', body: { paused } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: agentsKeys.all }),
   });
 }

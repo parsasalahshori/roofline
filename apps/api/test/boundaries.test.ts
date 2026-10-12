@@ -83,3 +83,39 @@ describe('@roofline/db/system import boundary', () => {
     expect(result!.messages).toEqual([]);
   });
 });
+
+describe('agent event writer boundary', () => {
+  const src = (name: string) => `import { ${name} } from '@roofline/db'; export { ${name} };`;
+
+  test.each(['insertAgentEvent', 'setStepSnapshot'])('%s is allowed in tasks/service.ts and tests, flagged elsewhere in src', async (name) => {
+    expect(await restrictedImports('apps/api/src/tasks/service.ts', src(name))).toEqual([]);
+    expect(await restrictedImports('apps/api/test/__fixture_ok.ts', src(name))).toEqual([]);
+    expect(await restrictedImports('apps/api/src/routes/agents-feed.ts', src(name))).toHaveLength(1);
+    expect(await restrictedImports('apps/api/src/agents/recount.ts', src(name))).toHaveLength(1);
+    expect(await restrictedImports('apps/api/src/auth/__fixture_bad.ts', src(name))).toHaveLength(1);
+  });
+
+  test.each(['rewriteStepSnapshot', 'refreshTaskMinutes'])('%s is allowed in agents/recount.ts and tests, flagged elsewhere in src', async (name) => {
+    expect(await restrictedImports('apps/api/src/agents/recount.ts', src(name))).toEqual([]);
+    expect(await restrictedImports('apps/api/test/__fixture_ok.ts', src(name))).toEqual([]);
+    expect(await restrictedImports('apps/api/src/tasks/service.ts', src(name))).toHaveLength(1);
+    expect(await restrictedImports('apps/api/src/routes/agents-settings.ts', src(name))).toHaveLength(1);
+    expect(await restrictedImports('apps/api/src/jobs/scheduler/__fixture_bad.ts', src(name))).toHaveLength(1);
+  });
+
+  test('the relative form into the db package source is flagged too', async () => {
+    const source = "import { insertAgentEvent } from '../../../../packages/db/src/index.ts'; export { insertAgentEvent };";
+    expect(await restrictedImports('apps/api/src/routes/agents-feed.ts', source)).toHaveLength(1);
+  });
+
+  test('other @roofline/db imports are not restricted', async () => {
+    const source = "import { withTenant } from '@roofline/db'; export { withTenant };";
+    expect(await restrictedImports('apps/api/src/routes/agents-feed.ts', source)).toEqual([]);
+  });
+
+  test('files that may import @roofline/db/system still may, and other src files still may not', async () => {
+    expect(await restrictedImports('apps/api/src/auth/__fixture_ok_import.ts')).toEqual([]);
+    expect(await restrictedImports('apps/api/src/tasks/service.ts')).toHaveLength(1);
+    expect(await restrictedImports('apps/api/src/agents/recount.ts')).toHaveLength(1);
+  });
+});

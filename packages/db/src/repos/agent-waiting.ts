@@ -1,5 +1,5 @@
 import type { Agent } from '@roofline/shared';
-import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, or, type SQL, sql } from 'drizzle-orm';
 import { agentTasks, agentTaskSteps, customers, jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { customerScope, jobScope } from './scope.ts';
@@ -24,9 +24,24 @@ export type WaitingTaskRow = {
   approvalClasses: ('message' | 'internal' | 'spend')[];
   /** Attention: error_plain of the first needs_attention step (by position), else null. Drafts: null. */
   reason: string | null;
+  /** The task's status (draft, awaiting_owner or needs_attention). */
+  status: string;
+  /** Full name of the company's owner (company_members, role 'owner'); null when there is none. */
+  ownerName: string | null;
 };
 
 const DRAFT_STATUSES = ['draft', 'awaiting_owner'] as const;
+
+/**
+ * The one rule for "waits on a person", shared by the waiting list and the card counts: a draft that has
+ * not expired, or an awaiting_owner / needs_attention task (those two ignore expires_at).
+ */
+export function waitingNow(now: Date): SQL {
+  return or(
+    and(eq(agentTasks.status, 'draft'), or(isNull(agentTasks.expiresAt), gt(agentTasks.expiresAt, now))),
+    inArray(agentTasks.status, ['awaiting_owner', 'needs_attention']),
+  )!;
+}
 const OPEN_STEP_STATUSES = ['pending', 'awaiting_owner'] as const;
 
 /**
@@ -35,14 +50,6 @@ const OPEN_STEP_STATUSES = ['pending', 'awaiting_owner'] as const;
  * customerScope(ctx). A task with no subject is invisible to a rep.
  */
 export async function listWaitingTasks(tx: Tx, ctx: TenantContext, now: Date): Promise<WaitingTaskRow[]> {
-  const waitingNow = or(
-    and(
-      inArray(agentTasks.status, [...DRAFT_STATUSES]),
-      or(isNull(agentTasks.expiresAt), gt(agentTasks.expiresAt, now)),
-    ),
-    eq(agentTasks.status, 'needs_attention'),
-  );
-
   // A rep's subjects must be inside their scope (Ruling AX-J). jobScope and customerScope are only
   // undefined for non-reps, so the `true` fallbacks never narrow anything.
   const repScope =
@@ -72,10 +79,16 @@ export async function listWaitingTasks(tx: Tx, ctx: TenantContext, now: Date): P
       subjectId: agentTasks.subjectId,
     })
     .from(agentTasks)
-    .where(and(eq(agentTasks.companyId, ctx.companyId), waitingNow, repScope))
+    .where(and(eq(agentTasks.companyId, ctx.companyId), waitingNow(now), repScope))
     .orderBy(agentTasks.createdAt, agentTasks.id);
 
   if (tasks.length === 0) return [];
+
+  // company_members is the only way the tenant role sees names; the view is already limited to this company.
+  const ownerResult = await tx.execute(
+    sql`select name from company_members where role = 'owner' and status = 'active' order by id limit 1`,
+  );
+  const ownerName = (ownerResult.rows[0]?.name as string | null | undefined) ?? null;
 
   const steps = await tx
     .select({
@@ -137,6 +150,8 @@ export async function listWaitingTasks(tx: Tx, ctx: TenantContext, now: Date): P
       subjectId: task.subjectId,
       approvalClasses,
       reason,
+      status: task.status,
+      ownerName,
     });
   }
 

@@ -54,9 +54,11 @@ function ScreenAgentPage({ agent }: { agent: ScreenAgent }) {
             <span>
               {agentPage.timeSaved} {hoursLabel(d.minutesInPeriod)} {agentsCommon.estimate}
             </span>
-            <span className={styles.money}>
-              {moneyLabel(d.minutesInPeriod, d.hourlyRateCents)} {agentsCommon.estimate}
-            </span>
+            {d.hourlyRateCents === null ? null : (
+              <span className={styles.money}>
+                {moneyLabel(d.minutesInPeriod, d.hourlyRateCents)} {agentsCommon.estimate}
+              </span>
+            )}
           </p>
           <TimeBreakdown rows={d.breakdown} />
           <section className={styles.section}>

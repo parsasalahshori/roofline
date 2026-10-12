@@ -571,7 +571,7 @@ const createAdCampaign: StepTypeDef<CreateAdPayload> = {
   },
   userCreatable: true,
   baseline: () => 'ad_campaign',
-  units: (_p, result) => resultCount(result.campaigns),
+  units: (_p, result) => (typeof result.campaignId === 'string' ? 1 : resultCount(result.campaigns)),
 };
 
 // ---------------------------------------------------------------------------------------------

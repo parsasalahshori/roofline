@@ -72,6 +72,13 @@ describe('Agents window', () => {
     expect(cards.map((el) => el.textContent)).toEqual(OVERVIEW.cards.map((c) => AGENT_LABEL[c.agent]));
   });
 
+  it('hides money when the rate is null', async () => {
+    renderApp({ 'GET /api/agents': () => ({ body: { ...OVERVIEW, hourlyRateCents: null } }) });
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    expect(await within(dialog).findByText('About 31 hours saved this month (estimate)')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('$');
+  });
+
   it('links How we count to the agent settings', async () => {
     renderApp({ 'GET /api/agents': () => ({ body: OVERVIEW }) });
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });

@@ -71,10 +71,43 @@ describe('feedSentence', () => {
     );
   });
 
-  test('partly approved shows the count of the plan', () => {
+  test('partly approved reads as steps sent to the owner', () => {
     expect(feedSentence(row({ kind: 'partly_approved', actorName: 'Pat', data: { approvedSteps: 2, totalSteps: 3 } }))).toBe(
-      'Pat approved 2 of 3 steps',
+      'Pat sent 1 step to the owner',
     );
+    expect(feedSentence(row({ kind: 'partly_approved', actorName: 'Pat', data: { approvedSteps: 0, totalSteps: 3 } }))).toBe(
+      'Pat sent 3 steps to the owner',
+    );
+    expect(
+      feedSentence(row({ kind: 'partly_approved', actorName: 'Pat', data: { approvedSteps: 1, totalSteps: 3, forwardedSteps: 1 } })),
+    ).toBe('Pat sent 1 step to the owner');
+    expect(
+      feedSentence(row({ kind: 'partly_approved', actorName: 'Pat', data: { approvedSteps: 0, totalSteps: 3, forwardedSteps: 2 } })),
+    ).toBe('Pat sent 2 steps to the owner');
+  });
+
+  test('approving with every step switched off never says 0 steps', () => {
+    expect(feedSentence(row({ kind: 'approved', actorName: 'Pat', data: { approvedSteps: 0, totalSteps: 2 } }))).toBe(
+      'Pat approved the plan with every step switched off',
+    );
+  });
+
+  test('a declined step reads as a step, not the plan', () => {
+    expect(feedSentence(row({ kind: 'declined', actorName: 'Lee', stepType: 'send_sms_batch', data: { skippedSteps: 1 } }))).toBe(
+      'Lee declined a step',
+    );
+  });
+
+  test('a task created by a person reads as a re-run', () => {
+    expect(feedSentence(row({ kind: 'created', actorName: 'Pat', taskTitle: 'Storm plan: Elm' }))).toBe('Pat re-ran Storm plan: Elm');
+  });
+
+  test('finished steps show their unit count with the unit word', () => {
+    const done = (stepType: string, units: number) => feedSentence(row({ kind: 'step_done', stepType, data: { units } }));
+    expect(done('send_email_batch', 212)).toBe('Emails: 212 sent');
+    expect(done('build_routes', 3)).toBe('Routes: 3 built');
+    expect(done('create_ad_campaign', 1)).toBe('Campaigns: 1 created');
+    expect(done('send_proposal', 1)).toBe('Proposals: 1 sent');
   });
 
   test('declined names who declined the plan', () => {

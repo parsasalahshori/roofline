@@ -86,6 +86,21 @@ async function seedTask(s: TaskSeed, company: Company = 'a'): Promise<string> {
       })
       .returning({ id: agentTasks.id });
     const taskId = row!.id;
+    // A finished task always has at least one done step (the cards count only real work), with no snapshot.
+    const finishedWithoutSteps = steps.length === 0 && ['done', 'partly_done'].includes(s.status ?? 'done');
+    if (finishedWithoutSteps) {
+      await tx.insert(agentTaskSteps).values({
+        companyId,
+        taskId,
+        position: 1,
+        type: 'send_sms_batch',
+        approvalClass: 'message' as const,
+        status: 'done' as const,
+        idempotencyKey: randomUUID(),
+        createdAt: new Date(s.at),
+        updatedAt: new Date(s.at),
+      });
+    }
     if (steps.length > 0) {
       await tx.insert(agentTaskSteps).values(
         steps.map((step, i) => ({
@@ -336,6 +351,7 @@ describe('GET /api/agents/:agent (detail)', () => {
         createdAt: '2026-10-12T15:00:00.000Z',
         finishedAt: '2026-10-12T15:00:00.000Z',
         minutesSaved: 12,
+        href: null,
       },
     ]);
   });
@@ -446,5 +462,51 @@ describe('role scope and company isolation', () => {
 
     expect((await ownerA.get('/api/agents/nope')).status).toBe(404);
     expect((await ownerB.get('/api/agents/nope')).status).toBe(404);
+  });
+});
+
+describe('money and links by role (A1 review S-M4, S-M6)', () => {
+  test('rep gets hourlyRateCents null on overview and detail; owner and office get the number', async () => {
+    const rep = await who.as('rep');
+    expect((await overview(rep)).hourlyRateCents).toBeNull();
+    expect((await rep.get('/api/agents/storm_scout')).body.hourlyRateCents).toBeNull();
+    expect((await rep.get('/api/agents/claims')).body.hourlyRateCents).toBeNull();
+    for (const role of ['owner', 'office'] as const) {
+      const agent = await who.as(role);
+      expect((await overview(agent)).hourlyRateCents).toBe(2800);
+      expect((await agent.get('/api/agents/storm_scout')).body.hourlyRateCents).toBe(2800);
+    }
+  });
+
+  test('recent task hrefs: reviewers open drafts in approvals, others the job, a rep never approvals', async () => {
+    const owner = await who.as('owner');
+    const rep = await who.as('rep');
+    const repId = who.user('rep').userId;
+    const customer = await mustCreate(owner, '/api/customers', { displayName: 'Href Customer' });
+    const property = await mustCreate(owner, '/api/properties', { customerId: customer.id, ...addressFor(1) });
+    const job = await mustCreate(owner, '/api/jobs', {
+      customerId: customer.id,
+      propertyId: property.id,
+      stage: 'inspection',
+      assignedUserId: repId,
+    });
+    const at = '2026-10-12T15:00:00.000Z';
+    const draft = await seedTask({ status: 'draft', subject: { type: 'job', id: job.id }, at });
+    const done = await finished({ at, subject: { type: 'job', id: job.id }, steps: [{ minutes: 5, baseline: 'text_sent', units: 1 }] });
+    const bare = await finished({ at, subject: { type: 'job', id: job.id } });
+
+    const hrefOf = (body: { recentTasks: { id: string; href: string | null }[] }, id: string) =>
+      body.recentTasks.find((r) => r.id === id)?.href;
+    const ownerBody = (await owner.get('/api/agents/storm_scout')).body;
+    expect(hrefOf(ownerBody, draft)).toBe(`/approvals/${draft}`);
+    expect(hrefOf(ownerBody, done)).toBe(`/jobs/${job.id}`);
+    expect(hrefOf(ownerBody, bare)).toBe(`/jobs/${job.id}`);
+
+    const repBody = (await rep.get('/api/agents/storm_scout')).body;
+    for (const task of repBody.recentTasks as { id: string; href: string | null }[]) {
+      expect(task.href === null || task.href === `/jobs/${job.id}`).toBe(true);
+      expect(task.href ?? '').not.toContain('/approvals/');
+    }
+    expect(hrefOf(repBody, draft)).toBe(`/jobs/${job.id}`);
   });
 });

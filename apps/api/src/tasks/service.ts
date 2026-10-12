@@ -12,6 +12,7 @@ import {
   getCompanyName,
   getStep,
   getTask,
+  hasTaskEvent,
   insertAgentEvent,
   insertTask,
   isUniqueViolation,
@@ -623,7 +624,7 @@ export async function approveTask(
     tx,
     ctx,
     taskId,
-    { status, ...(firstApproval && { approvedByUserId: ctx.userId, approvedAt: opts.now }) },
+    { status: status === 'done' ? 'running' : status, ...(firstApproval && { approvedByUserId: ctx.userId, approvedAt: opts.now }) },
     opts.now,
   );
   await event(
@@ -632,15 +633,12 @@ export async function approveTask(
     taskId,
     awaitingOwner.length > 0 ? 'partly_approved' : 'approved',
     'user',
-    { approvedSteps: toEnqueue.length, totalSteps: steps.length },
+    { approvedSteps: toEnqueue.length, totalSteps: steps.length, forwardedSteps: awaitingOwner.length },
     opts.now,
   );
-  // A plan with nothing left to run is finished now; this records its minutes. The task is already
-  // `done` here, so refreshTask sees no change and writes no event: the finish is recorded here.
-  const refreshed = await refreshTask(tx, ctx, taskId, opts.now);
-  if (status === 'done') {
-    await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved: refreshed?.minutesSaved ?? 0 }, opts.now);
-  }
+  // A plan with nothing left to run was written as `running` above, so refreshTask moves it to `done`,
+  // records its minutes and writes the one `finished` event. It is the only writer of that event.
+  await refreshTask(tx, ctx, taskId, opts.now);
 
   await audit(tx, ctx, {
     action: 'task.approve',
@@ -732,6 +730,7 @@ export async function declineStep(
   if (!(await moveStep(tx, ctx, step.id, ['awaiting_owner'], { status: 'skipped' }, opts.now))) {
     throw new Error(`Step ${step.id} moved while its task was locked.`);
   }
+  await event(tx, ctx, taskId, 'declined', 'user', { skippedSteps: 1 }, opts.now, step.id);
   await refreshTask(tx, ctx, taskId, opts.now);
   await audit(tx, ctx, {
     action: 'step.decline',
@@ -981,7 +980,9 @@ export async function refreshTask(tx: Tx, ctx: TenantContext, taskId: string, no
   // One `finished` event per real move into a final status; a declined plan's status does not move.
   // Only a final status is finished: needs_attention is not, and a status already written is not written twice.
   const final = status !== 'needs_attention';
-  if (!declined && final && task.status !== status) await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved }, now);
+  if (!declined && final && task.status !== status && !(await hasTaskEvent(tx, ctx, taskId, 'finished'))) {
+    await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved }, now);
+  }
   return updated;
 }
 

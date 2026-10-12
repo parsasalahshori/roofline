@@ -11,7 +11,10 @@ export type RuleSentence = {
 };
 
 export type AgentRuleFacts = {
-  stormScout?: { thresholdInches: number; budgetCents: number; days: number };
+  /** budgetCents null = leave the ad-budget clause out (reps). */
+  stormScout?: { thresholdInches: number; budgetCents: number | null; days: number };
+  /** true = every rule gets `links: []` (reps cannot open the settings pages). */
+  noLinks?: boolean;
   frontDesk?: {
     phoneNumber: string;
     transferNames: string[];
@@ -55,8 +58,19 @@ function stormRules(
   storm: NonNullable<AgentRuleFacts["stormScout"]>,
 ): RuleSentence[] {
   const threshold = inchesText(storm.thresholdInches);
-  const budget = dollarsText(storm.budgetCents);
   const days = daysText(storm.days);
+  if (storm.budgetCents === null) {
+    return [
+      {
+        text: `When hail of ${threshold} or more hits your service area, I draft a storm plan: texts, emails, door-knock routes and ads over ${days}.`,
+        links: [
+          { label: threshold, href: STORM_SETTINGS },
+          { label: days, href: STORM_SETTINGS },
+        ],
+      },
+    ];
+  }
+  const budget = dollarsText(storm.budgetCents);
   return [
     {
       text: `When hail of ${threshold} or more hits your service area, I draft a storm plan: texts, emails, door-knock routes and ads up to ${budget} over ${days}.`,
@@ -112,6 +126,11 @@ function frontDeskRules(
 
 /** The rule sentences for one agent's card. Agents without facts (or without rules) return []. */
 export function rulesFor(agent: Agent, s: AgentRuleFacts): RuleSentence[] {
+  const rules = rulesForAgent(agent, s);
+  return s.noLinks === true ? rules.map((rule) => ({ ...rule, links: [] })) : rules;
+}
+
+function rulesForAgent(agent: Agent, s: AgentRuleFacts): RuleSentence[] {
   switch (agent) {
     case "storm_scout":
       return s.stormScout ? stormRules(s.stormScout) : [];
