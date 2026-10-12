@@ -293,16 +293,16 @@ describe("company B's owner against company A's approval tasks", () => {
   test.each(approvalCases.map((c) => [`${c.method} ${c.path}`, c] as const))('%s → 404 for B, and A gets its answer', async (_name, c) => {
     const { taskId, stepId, body } = await c.prepare();
     const url = c.path.replace(':taskId', taskId).replace(':stepId', stepId);
-    const tasksBefore = await inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(agentTasks));
-    const stepsBefore = await inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(agentTaskSteps));
+    const tasksBefore = await inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(agentTasks).orderBy(agentTasks.id));
+    const stepsBefore = await inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(agentTaskSteps).orderBy(agentTaskSteps.id));
 
     const res = await send(bOwner, c, url, body);
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: NOT_FOUND });
 
-    expect(await inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(agentTasks))).toEqual(tasksBefore);
-    expect(await inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(agentTaskSteps))).toEqual(stepsBefore);
-    expect(await inCompany(t, t.seed.b.companyId, (tx) => tx.select().from(agentTasks))).toEqual([]);
+    expect(await inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(agentTasks).orderBy(agentTasks.id))).toEqual(tasksBefore);
+    expect(await inCompany(t, t.seed.a.companyId, (tx) => tx.select().from(agentTaskSteps).orderBy(agentTaskSteps.id))).toEqual(stepsBefore);
+    expect(await inCompany(t, t.seed.b.companyId, (tx) => tx.select().from(agentTasks).orderBy(agentTasks.id))).toEqual([]);
     expect(await inCompany(t, t.seed.b.companyId, (tx) => tx.select().from(auditLog))).toEqual([]);
     expect(t.queue.calls).toEqual([]);
 
