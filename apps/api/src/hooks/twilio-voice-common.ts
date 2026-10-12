@@ -3,6 +3,7 @@ import { frontDeskCallSettings, type FrontDeskCallSettings, type TenantContext, 
 import { voiceRouteForNumber, type VoiceNumberRoute } from '@roofline/db/system';
 import { DEFAULT_FRONT_DESK_VOICE, type FrontDeskVoiceId } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { mintRelayToken } from '../front-desk/relay-token.ts';
 import { checkSignature, E164, escapeXml, field } from './twilio.ts';
 
 export type VoiceRoute = VoiceNumberRoute & FrontDeskCallSettings;
@@ -37,9 +38,11 @@ export function relayConnectXml(
   o: { greeting: string; action: string; messageOnly: boolean },
 ): string {
   const voice = escapeXml(voiceIdFor(route.frontDeskVoice));
+  const token = mintRelayToken(deps.config.RELAY_TOKEN_SECRET, { callId, companyId: route.companyId }, deps.clock.now());
+  const url = `${deps.config.RELAY_PUBLIC_URL}?t=${encodeURIComponent(token)}`;
   const mode = o.messageOnly ? '<Parameter name="mode" value="message_only"/>' : '';
   return (
-    `<Response><Connect action="${escapeXml(o.action)}"><ConversationRelay url="${escapeXml(deps.config.RELAY_PUBLIC_URL)}" ` +
+    `<Response><Connect action="${escapeXml(o.action)}"><ConversationRelay url="${escapeXml(url)}" ` +
     `welcomeGreeting="${escapeXml(o.greeting)}" welcomeGreetingInterruptible="none" interruptible="speech" ` +
     `ttsProvider="${TTS_PROVIDER}" voice="${voice}" transcriptionProvider="${STT_PROVIDER}" language="en-US">` +
     `<Parameter name="callId" value="${escapeXml(callId)}"/>${mode}</ConversationRelay></Connect></Response>`

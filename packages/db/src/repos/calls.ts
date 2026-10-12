@@ -104,6 +104,8 @@ export async function updateCall(
     transferResult?: TransferResult;
     transferUserId?: string | null;
     endedAt?: Date;
+    aiStartedAt?: Date;
+    aiSeconds?: number;
   },
 ): Promise<void> {
   const set: Partial<typeof calls.$inferInsert> = {};
@@ -112,8 +114,18 @@ export async function updateCall(
   if (patch.transferResult !== undefined) set.transferResult = patch.transferResult;
   if (patch.transferUserId !== undefined) set.transferUserId = patch.transferUserId;
   if (patch.endedAt !== undefined) set.endedAt = patch.endedAt;
+  if (patch.aiStartedAt !== undefined) set.aiStartedAt = patch.aiStartedAt;
+  if (patch.aiSeconds !== undefined) set.aiSeconds = patch.aiSeconds;
   if (Object.keys(set).length === 0) return;
   await tx.update(calls).set(set).where(bySid(ctx, callSid));
+}
+
+/** Adds seconds of AI talk time to the call (by CallSid). */
+export async function addAiSeconds(tx: Tx, ctx: TenantContext, callSid: string, seconds: number): Promise<void> {
+  await tx
+    .update(calls)
+    .set({ aiSeconds: sql`${calls.aiSeconds} + ${Math.max(0, Math.round(seconds))}` })
+    .where(bySid(ctx, callSid));
 }
 
 /** Twilio's CallStatus on /voice/status -> row: completed/canceled -> ended, busy/no-answer/failed -> failed, in-progress/ringing -> unchanged. Never moves an 'ended'/'rejected' row back. Sets endedAt = now for terminal ones. Returns false when the call is unknown. */
