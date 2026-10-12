@@ -67,7 +67,7 @@ test('the three G1 agents start paused, Turn on Follow-up shows its rules, and R
   await expect
     .poll(
       async () => {
-        const rows = await db.query(`select 1 from messages where company_id = $1 and customer_id = $2 and direction = 'out'`, [
+        const rows = await db.query(`select 1 from messages where company_id = $1 and customer_id = $2 and direction = 'out' and status in ('sent', 'scheduled')`, [
           scenario.a.companyId,
           lead.customerId,
         ]);
