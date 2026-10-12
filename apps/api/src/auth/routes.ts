@@ -32,7 +32,9 @@ import {
   loginRateLimit,
   resendVerificationRateLimit,
   resetRequestRateLimit,
+  signupNoticeAllowance,
   signupRateLimit,
+  signupTakenRateLimit,
 } from '../rate-limit.ts';
 import { EMAIL_MESSAGE, emailField as email, MAX_EMAIL_LENGTH, parse } from '../validate.ts';
 import { type GoogleClaims, GoogleUnavailableError, isGoogleAuthoritative } from './google.ts';
@@ -73,6 +75,13 @@ const NAME_MESSAGE = 'Please enter a name.';
 const COMPANY_NAME_MESSAGE = 'Please enter your company name.';
 const PHONE_MESSAGE = "That doesn't look like a US phone number.";
 const ADDRESS_MESSAGE = 'Please enter your business address.';
+/**
+ * Sign-up's answer for an email that already has an account (Ruling SEC-1). It does not say so
+ * outright; it points the person to sign-in and password reset, and the account's owner is told
+ * by email (see `signupAttemptText`).
+ */
+export const SIGNUP_EMAIL_UNAVAILABLE =
+  "We couldn't create an account with that email. If you already use Roofline, sign in or reset your password.";
 const MAX_ADDRESS_LENGTH = 300;
 
 const companyName = z
@@ -167,6 +176,22 @@ function confirmEmailText(link: string): string {
     link,
     '',
     "The link works for 7 days. If you didn't create a Roofline account, you can ignore this email.",
+  ].join('\n');
+}
+
+/** The email to an account's owner when someone tried to sign up with their address. */
+function signupAttemptText(appOrigin: string): string {
+  return [
+    'Someone just tried to create a new Roofline account with this email address.',
+    'Your account already uses it, so nothing was created and nothing about your account changed.',
+    '',
+    'If it was you, sign in here instead:',
+    `${appOrigin}/sign-in`,
+    '',
+    'Forgot your password? You can reset it here:',
+    `${appOrigin}/reset`,
+    '',
+    "If it wasn't you, you can ignore this email.",
   ].join('\n');
 }
 
@@ -325,7 +350,25 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     res.json({ googleClientId: config.GOOGLE_CLIENT_ID ?? null });
   });
 
-  router.post('/signup', signupRateLimit(), async (req, res) => {
+  const signupNoticeAllowed = signupNoticeAllowance();
+
+  /**
+   * Tells the owner of `email` that someone tried to sign up with it, at most once an hour per
+   * address, after the answer has gone out. Failures are logged, never shown.
+   */
+  function noticeSignupAttempt(email: string, path: string): void {
+    background(path, async () => {
+      if (!(await signupNoticeAllowed(email))) return;
+      const user = await findUserByEmail(system, email);
+      if (!user) return;
+      queueMail(
+        { to: user.email, subject: 'Someone tried to sign up with your email', text: signupAttemptText(config.APP_ORIGIN) },
+        path,
+      );
+    });
+  }
+
+  router.post('/signup', signupRateLimit(), signupTakenRateLimit(), async (req, res) => {
     const body = parse(SignupBody, req.body);
     const passwordHash = await hashPassword(body.password);
 
@@ -337,7 +380,10 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
         { phoneE164: body.companyPhone, addressText: body.companyAddress },
       );
     } catch (err) {
-      if (err instanceof EmailInUseError) throw new AppError(409, MESSAGES.emailTaken, 'email');
+      if (err instanceof EmailInUseError) {
+        noticeSignupAttempt(body.email, req.path);
+        throw new AppError(409, SIGNUP_EMAIL_UNAVAILABLE, 'email');
+      }
       throw err;
     }
 

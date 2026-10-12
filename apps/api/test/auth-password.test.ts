@@ -308,7 +308,12 @@ describe('sign-up', () => {
     const before = await sql<{ n: string }>('select (select count(*) from companies) as n');
     const again = await signup(t.app, { email: ' Owner@Example.COM ', companyName: 'Another Roofing' });
     expect(again.status).toBe(409);
-    expect(again.body).toEqual({ error: 'An account with that email already exists.', field: 'email' });
+    // Ruling SEC-1: the answer does not say outright that the email has an account.
+    expect(again.body).toEqual({
+      error: "We couldn't create an account with that email. If you already use Roofline, sign in or reset your password.",
+      field: 'email',
+    });
+    expect(again.body.error).not.toMatch(/already (exists|has)/i);
     expect(sessionCookie(again)).toBeNull();
     // The refused sign-up left nothing behind: no extra company, no extra membership.
     expect(await sql<{ n: string }>('select (select count(*) from companies) as n')).toEqual(before);
@@ -914,14 +919,36 @@ describe('sign-up rate limit', () => {
     expect(await sql('select 1 from users where email = $1', ['owner11@example.com'])).toEqual([]);
   });
 
-  test('refused attempts count too, so the "email already used" answer cannot be asked 10+ times', async () => {
-    expect((await signup(t.app)).status).toBe(201);
-    for (let i = 2; i <= 10; i++) {
-      expect((await signup(t.app)).status, `attempt ${i}`).toBe(409);
+  test('refused attempts count too', async () => {
+    for (let i = 1; i <= 10; i++) {
+      expect((await signup(t.app, { password: 'short' })).status, `attempt ${i}`).toBe(400);
     }
     const blocked = await signup(t.app);
     expect(blocked.status).toBe(429);
     expect(blocked.body).toEqual(TOO_MANY);
+  });
+
+  test('Ruling SEC-1: only 3 "that email can\'t be used" answers an hour per address, then the plain sign-up 429', async () => {
+    const proxied = await makeTestApp({ TRUST_PROXY: 1 });
+    const from = (ip: string, email: string) =>
+      request(proxied.app).post('/api/auth/signup').set('X-Forwarded-For', ip).send(signupBody({ email }));
+    for (let i = 1; i <= 3; i++) {
+      expect((await from('203.0.113.7', proxied.seed.a.owner.email)).status, `attempt ${i}`).toBe(409);
+    }
+    const blocked = await from('203.0.113.7', proxied.seed.b.owner.email);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toEqual(TOO_MANY);
+    // Even a new email from that address waits; other addresses are not affected.
+    expect((await from('203.0.113.7', 'brand-new@example.com')).status).toBe(429);
+    expect((await from('203.0.113.8', proxied.seed.b.owner.email)).status).toBe(409);
+    expect((await from('203.0.113.8', 'brand-new@example.com')).status).toBe(201);
+  });
+
+  test('sign-ups that succeed do not use up the "email can\'t be used" budget', async () => {
+    for (let i = 1; i <= 5; i++) {
+      expect((await signup(t.app, { email: `owner${i}@example.com`, companyName: `Company ${i}` })).status).toBe(201);
+    }
+    for (let i = 1; i <= 3; i++) expect((await signup(t.app, { email: `owner${i}@example.com` })).status).toBe(409);
   });
 
   test('another address has its own budget', async () => {

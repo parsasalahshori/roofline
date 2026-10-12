@@ -233,14 +233,46 @@ describe('email verification', () => {
     expect((await reset(resetToken)).status).toBe(200);
   });
 
-  test('a refused sign-up (duplicate email, bad input) sends no email', async () => {
+  test('a refused sign-up sends no verification email; a duplicate only warns the account owner (Ruling SEC-1)', async () => {
     await signUp();
     expect(t.mailer.sent).toHaveLength(1);
-    const dup = await request(t.app).post('/api/auth/signup').send(signupBody());
+    const dup = await request(t.app).post('/api/auth/signup').send(signupBody({ email: ' Owner@Example.com ' }));
     expect(dup.status).toBe(409);
+    await t.settle();
+    expect(t.mailer.sent).toHaveLength(2);
+    const notice = t.mailer.sent[1]!;
+    expect(notice).toMatchObject({ to: 'owner@example.com', subject: 'Someone tried to sign up with your email' });
+    expect(notice.text).toContain(`${APP_ORIGIN}/sign-in`);
+    expect(notice.text).toContain(`${APP_ORIGIN}/reset`);
+    expect(notice.text).not.toMatch(/token=/);
+
     const bad = await request(t.app).post('/api/auth/signup').send(signupBody({ email: 'nope' }));
     expect(bad.status).toBe(400);
-    expect(t.mailer.sent).toHaveLength(1);
+    await t.settle();
+    expect(t.mailer.sent).toHaveLength(2);
+  });
+
+  test('the owner is warned at most once an hour per address', async () => {
+    await signUp();
+    await signUp({ email: 'second@example.com', companyName: 'Second Roofing' });
+    expect((await request(t.app).post('/api/auth/signup').send(signupBody())).status).toBe(409);
+    expect((await request(t.app).post('/api/auth/signup').send(signupBody())).status).toBe(409);
+    expect((await request(t.app).post('/api/auth/signup').send(signupBody({ email: 'second@example.com' }))).status).toBe(409);
+    await t.settle();
+    const notices = t.mailer.sent.filter((m) => m.subject === 'Someone tried to sign up with your email');
+    expect(notices.map((m) => m.to)).toEqual(['owner@example.com', 'second@example.com']);
+  });
+
+  test('a failing mailer for the warning is logged, and the answer is still the plain 409', async () => {
+    await signUp();
+    const logError = vi.fn();
+    const broken: Mailer = { send: () => Promise.reject(new Error('postmark down')) };
+    const app = createApp({ ...t.deps, mailer: broken }, { logError });
+    const dup = await request(app).post('/api/auth/signup').send(signupBody());
+    expect(dup.status).toBe(409);
+    await t.settle();
+    expect(logError).toHaveBeenCalledTimes(1);
+    expect((logError.mock.calls[0]![0] as Error).message).toBe('postmark down');
   });
 
   test('if the email cannot be sent, sign-up still succeeds, the failure is logged, and resending recovers', async () => {

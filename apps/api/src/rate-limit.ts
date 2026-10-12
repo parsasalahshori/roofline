@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Request, RequestHandler } from 'express';
-import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
+import { ipKeyGenerator, MemoryStore, type Options, rateLimit } from 'express-rate-limit';
 import type { SessionInfo } from './auth/sessions.ts';
 import type { Config } from './config.ts';
 import { AppError, MESSAGES } from './errors.ts';
@@ -25,6 +25,10 @@ const LOGIN_FAILURES_GLOBAL = 2000;
 const LOGIN_GLOBAL_WINDOW_MS = 10 * MINUTE_MS;
 const GOOGLE_ATTEMPTS = 20;
 const SIGNUP_PER_IP_PER_HOUR = 10;
+/** "That email can't be used" answers per IP address per hour (Ruling SEC-1: they reveal an account exists). */
+const SIGNUP_TAKEN_PER_IP_PER_HOUR = 3;
+/** "Someone tried to sign up with your address" emails per address per hour. */
+const SIGNUP_NOTICES_PER_EMAIL_PER_HOUR = 1;
 const RESET_REQUEST_PER_IP_PER_HOUR = 20;
 const RESET_REQUEST_PER_EMAIL_PER_HOUR = 5;
 const RESEND_PER_USER_PER_HOUR = 3;
@@ -190,6 +194,48 @@ export function signupRateLimit(): RequestHandler {
       next(new AppError(429, MESSAGES.tooManySignups));
     },
   });
+}
+
+/**
+ * `POST /api/auth/signup`, after `signupRateLimit`: at most 3 answers an hour per IP address that
+ * say the email cannot be used (the 409 for an email that already has an account). Only those
+ * answers count; once they are spent, every sign-up from the address gets the ordinary
+ * "too many sign-ups" 429 until the window passes, so whether an address has an account can be
+ * asked only a few times an hour. Mount it after the JSON body parser.
+ */
+export function signupTakenRateLimit(): RequestHandler {
+  return rateLimit({
+    windowMs: HOUR_MS,
+    limit: SIGNUP_TAKEN_PER_IP_PER_HOUR,
+    skipSuccessfulRequests: true,
+    requestWasSuccessful: (_req, res) => res.statusCode !== 409,
+    standardHeaders: false,
+    legacyHeaders: false,
+    keyGenerator: (req) => `signup-taken:${ipKeyGenerator(req.ip ?? 'unknown')}`,
+    handler: (_req, _res, next) => {
+      next(new AppError(429, MESSAGES.tooManySignups));
+    },
+  });
+}
+
+/**
+ * A counter outside the request chain, in the same in-process store the limiters use: the
+ * returned function answers true for the first `limit` calls with one key in each window of
+ * `windowMs`, and false after that. For things a route does on the side, like a warning email.
+ */
+export function createAllowance(windowMs: number, limit: number): (key: string) => Promise<boolean> {
+  const store = new MemoryStore();
+  // MemoryStore reads only windowMs from the options.
+  store.init({ windowMs } as Options);
+  return async (key) => (await store.increment(key)).totalHits <= limit;
+}
+
+/**
+ * The "someone tried to sign up with your address" email: at most 1 an hour per address
+ * (lowercased), so failed sign-ups cannot be used to flood someone's inbox. True: send it.
+ */
+export function signupNoticeAllowance(): (email: string) => Promise<boolean> {
+  return createAllowance(HOUR_MS, SIGNUP_NOTICES_PER_EMAIL_PER_HOUR);
 }
 
 /** What `POST /api/auth/reset-request` answers, to everyone, whatever happened behind it. */
