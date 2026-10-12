@@ -45,6 +45,7 @@ Start the long-lead items now. Approvals for texting, Google, Meta and EagleView
 | **Anthropic organization, production key, rate tier and spend limits** | same day | D1 (also G1 drafting) |
 | Twilio voice on subaccounts, **ConversationRelay enabled, AI/ML addendum accepted**, and a Roofline test caller number | days | D1 |
 | Test phones on Verizon, AT&T, T-Mobile and a landline/VoIP line | — | D1 (forwarding codes) |
+| **Voice choice for the phone front desk**: pick the ElevenLabs voices Twilio ConversationRelay should use (the code has placeholder voice ids) | same day | D1 (voice calls) |
 
 ### Money and pricing decisions
 
