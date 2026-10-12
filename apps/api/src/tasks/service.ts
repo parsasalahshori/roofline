@@ -314,8 +314,6 @@ const OFF_STEP_TITLES: Record<StepType, string> = {
   create_ad_campaign: 'Run an ad campaign',
   send_proposal: 'Send a proposal',
   order_exact_report: 'Order a roof report',
-  front_desk_call: 'Answer a call',
-  front_desk_texts: 'Answer texts',
   send_personal_texts: 'Send personal texts',
   build_claim_packet: 'Build the claim packet',
   create_appointment: 'Book an appointment',
