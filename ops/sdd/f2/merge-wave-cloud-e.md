@@ -1,0 +1,18 @@
+minor [19]: In useSwitchCompany.onSuccess, `void navigate('/')` is followed immediately by `resetQueries`. The comment says navigating first unmounts the old company's id-based pages so they are not refetched. That is not guaranteed: a data router's navigate is async and React commits the route change later, so resetQueries can still refetch the active queries of the old page (e.g. approvals/:taskId) under the new company's session. That gives a 404/403 and possibly an error toast or flash before the unmount.
+ -> Await the navigation before resetting (`await navigate('/')`, then resetQueries in an async onSuccess), or use `queryClient.removeQueries` for non-me keys and then `resetQueries`/`invalidateQueries` on what remains. At minimum, soften the comment. Make sure company-switch.test.tsx starts from an id route and asserts no request for the old id.
+
+minor [19]: apps/web/src/shell/Shell.tsx: the new comment '// Keyed by company: a switch remounts the map ...' sits above the `open` callback, not above the `<MapErrorBoundary key={companyId}>` JSX it describes. Also, `key={companyId}` on MapView is redundant because the boundary's key already remounts its whole subtree.
+ -> Move the comment onto the MapErrorBoundary element and drop the duplicate key on MapView (or keep it and say why).
+
+minor [19]: MapErrorBoundary latches `failed: true` for the rest of the session, unless the company changes. A transient chunk-load failure (flaky network) leaves the map banner up with no retry, and the error is swallowed with no componentDidCatch log.
+ -> Optional: add componentDidCatch that logs (console.error or the app's reporter). Consider a retry Button taken from copy (e.g. errors.tryAgain) that resets state. Not blocking if spec 4.3 says banner only.
+
+There is only one task in this group (T19, branch f2-t19, head b47d785, one commit on top of base ab75ea5). Base ab75ea5 is an ancestor of origin/f2-shell (036006a), and f2-shell has not touched any of T19's files since the base: Shell.tsx, api/hooks.ts, app/router.tsx, topbar/UserMenu.tsx, copy/review.ts, copy/errors.ts and features/settings/api.ts all show no diff between ab75ea5 and origin/f2-shell. Expect a clean merge with no conflicts. Note that the local `f2-shell` ref is stale (b51c7c1, ab75ea5 is not an ancestor of it); merge onto origin/f2-shell, not the local ref.
+
+What T19 changes for code that consumes it:
+- useSwitchCompany (api/hooks.ts) now calls useNavigate and useToast itself, navigates to '/' and toasts on error. UserMenu is its only caller, and it now passes just `{ onSuccess: close }`. Any later task that calls useSwitchCompany must be inside both the RouterProvider and the ToastProvider (providers.tsx wraps RouterProvider, so production is fine; test harnesses must supply both), and should not add its own navigate or toast, or the error will toast twice.
+- useUpdateMember now also invalidates keys.me and keys.approvals.
+- RESULT_WORDS in copy/review.ts changed from string to a [singular, plural] tuple. It is module-private, so the only consumer is review.resultLines. `recipients` is now pluralized.
+- New copy keys errors.pageTitle, errors.pageBody and errors.reload, and new components app/RouteError.tsx and shell/map/MapErrorBoundary.tsx (which uses the existing mapCopy.error).
+
+The lint and copy rules are respected: no letter literals in JSX, Button from @roofline/ui (no raw <button>), CSS Modules with tokens, and .ts/.tsx import extensions. UserMenu still uses toast (sign-out path, line 102), so there is no unused-variable lint error. The router errorElement placement issue above is the one to settle before merge, because it decides whether a window crash blanks the shell.

@@ -1,0 +1,18 @@
+/* Top left, under the page's top bar, where the map's own banner sits. */
+.status {
+  position: absolute;
+  top: 72px;
+  left: 16px;
+  max-width: calc(100% - 32px);
+}
+
+.banner {
+  margin: 0;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-window);
+  font-size: var(--font-size-body);
+}

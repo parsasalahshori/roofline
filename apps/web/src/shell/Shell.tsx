@@ -1,11 +1,12 @@
 import { Dock, type DockItem } from '@roofline/ui';
 import { lazy, Suspense, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
-import { useApprovals, useAttentionCount } from '../api/hooks.ts';
+import { useApprovals, useAttentionCount, useMe } from '../api/hooks.ts';
 import { dock, WINDOW_COPY } from '../copy/dock.ts';
 import { useTodayAutoOpen } from '../features/today/useTodayAutoOpen.ts';
 import { type AppKey, DOCK_APPS } from './apps.ts';
 import { countedDrafts } from './countedDrafts.ts';
+import { MapErrorBoundary } from './map/MapErrorBoundary.tsx';
 import { BottomTabs } from './phone/BottomTabs.tsx';
 import { MoreSheet } from './phone/MoreSheet.tsx';
 import styles from './Shell.module.css';
@@ -30,6 +31,7 @@ function badgeFor(app: AppKey, count: number): DockItem['badge'] {
  */
 export function Shell() {
   useTodayAutoOpen();
+  const companyId = useMe().data?.company.id ?? 'none';
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const approvals = useApprovals();
@@ -69,9 +71,12 @@ export function Shell() {
         <ShellTopBar />
       </div>
       <div className={styles.map}>
-        <Suspense fallback={null}>
-          <MapView onOpen={open} />
-        </Suspense>
+        {/* Keyed by company: a switch remounts the map (no old pins or pin card) and clears a failed map */}
+        <MapErrorBoundary key={companyId}>
+          <Suspense fallback={null}>
+            <MapView onOpen={open} />
+          </Suspense>
+        </MapErrorBoundary>
       </div>
       <div className={styles.windows}>
         <Outlet />
