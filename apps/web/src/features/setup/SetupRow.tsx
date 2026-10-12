@@ -73,9 +73,6 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
           </Button>
         );
         break;
-      case 'prices_and_tiers':
-        primary = (<Button variant="primary" href="/settings/prices">{setup.actions.setPrices}</Button>);
-        break;
       case 'phone_number':
         primary = (
           <Button variant="primary" href="/settings/front-desk#forwarding">
@@ -89,6 +86,9 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
             {setup.actions.connectCalendar}
           </Button>
         );
+        break;
+      case 'prices_and_tiers':
+        primary = (<Button variant="primary" href="/settings/prices">{setup.actions.setPrices}</Button>);
         break;
       default:
         primary = null;

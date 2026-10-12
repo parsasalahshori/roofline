@@ -40,7 +40,6 @@ const DEFAULTS: Record<SetupItemKey, Omit<SetupItemView, 'key'>> = {
   texting_registration: { status: 'waiting', comingWith: null, skippable: false, data: {} },
   invite_team: { status: 'todo', comingWith: null, skippable: true, data: {} },
   payment_method: { status: 'done', comingWith: null, skippable: false, data: {} },
-  // E1 Task 8: the server no longer says prices come with the Estimator
   prices_and_tiers: { status: 'todo', comingWith: null, skippable: false, data: {} },
   connect_calendar: { status: 'todo', comingWith: 'calendar', skippable: false, data: {} },
   phone_number: { status: 'todo', comingWith: 'front_desk', skippable: false, data: {} },
