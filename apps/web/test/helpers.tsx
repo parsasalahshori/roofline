@@ -73,6 +73,8 @@ export const SHELL_ROUTES: Record<string, () => Reply> = {
   'GET /api/weather': () => ({ body: { weather: null } }),
   'GET /api/setup': () => ({ body: { items: [], progress: { done: 5, total: 5 } } }),
   'POST /api/me/today-shown': () => ({ body: { show: false } }),
+  'GET /api/storms': () => ({ body: { storms: [] } }),
+  'GET /api/map/storm-layer?days=7': () => ({ body: { stale: false, newestRunAt: null } }),
 };
 
 /** A task as the server sends it. Pass what differs; `id` is required. */

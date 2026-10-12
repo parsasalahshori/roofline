@@ -7,7 +7,6 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { ads } from '../src/copy/ads.ts';
-import { comingSoon } from '../src/copy/comingSoon.ts';
 import { connections } from '../src/copy/connections.ts';
 import { doors } from '../src/copy/doors.ts';
 import { settings } from '../src/copy/settings.ts';
@@ -27,6 +26,39 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
       ),
   };
 });
+
+vi.mock('../src/features/storm/StormSwathMap.tsx', () => ({ StormSwathMap: () => null }));
+
+const DETAIL = {
+  storm: {
+    id: 's1',
+    placeName: 'Maple Ridge',
+    day: '2026-10-10',
+    maxIn: 1.75,
+    status: 'final',
+    customersHit: 12,
+    homesHit: 340,
+    planTaskId: null,
+    planStatus: null,
+  },
+  swath: { type: 'FeatureCollection', features: [] },
+  results: {
+    textsSent: 0,
+    textsDelivered: 0,
+    replies: 0,
+    yesReplies: 0,
+    emailsSent: 0,
+    unsubscribes: 0,
+    doorsKnocked: 0,
+    wantsCheck: 0,
+    adSpendCents: 0,
+    adMaxCents: 0,
+    adClicks: 0,
+    landingRequests: 0,
+    inspectionsBooked: 0,
+  },
+  plan: null,
+};
 
 let api: ReturnType<typeof stubApi>;
 
@@ -61,8 +93,6 @@ function dockLink(dockNav: HTMLElement, label: string) {
 
 describe('S1 Storm windows', () => {
   it.each([
-    ['/storm', comingSoon.storm],
-    ['/storm/s1', storm.detailComingSoon],
     ['/storm/routes', doors.routesComingSoon],
     ['/storm/routes/r1', doors.routeComingSoon],
   ])('%s shows its placeholder', async (path, copy) => {
@@ -72,12 +102,26 @@ describe('S1 Storm windows', () => {
     expect(await screen.findByText(copy)).toBeInTheDocument();
   });
 
-  it('/storm/routes is the routes list and not a storm called routes', async () => {
+  it('/storm shows the storms list', async () => {
     signedInApi();
+    renderApp('/storm');
+
+    expect(await screen.findByText(storm.empty)).toBeInTheDocument();
+  });
+
+  it('/storm/s1 shows that storm', async () => {
+    signedInApi(ACCOUNT, { 'GET /api/storms/s1': () => ({ body: DETAIL }) });
+    renderApp('/storm/s1');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Maple Ridge' })).toBeInTheDocument();
+  });
+
+  it('/storm/routes is the routes list and not a storm called routes', async () => {
+    const api = signedInApi();
     renderApp('/storm/routes');
 
     expect(await screen.findByText(doors.routesComingSoon)).toBeInTheDocument();
-    expect(screen.queryByText(storm.detailComingSoon)).toBeNull();
+    expect(api.count('GET /api/storms/routes')).toBe(0);
   });
 
   it('the dock Storm opens /storm', async () => {
