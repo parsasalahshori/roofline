@@ -1,0 +1,831 @@
+{
+  "baseline_commit": "81b9251490cfa05eac4baecc68f6952b549a1460",
+  "complete_app_ancestor": "ff772d5cbf87eac051759e9049fb29930845a45f",
+  "kind": "Source inventory; not proof of execution",
+  "staff_and_public_router_paths": [
+    "/sign-in",
+    "/sign-up",
+    "/reset",
+    "/verify",
+    "/invite",
+    "/p/:token",
+    "approvals",
+    "approvals/:taskId",
+    "storm",
+    "storm/plans/:taskId",
+    "storm/routes",
+    "storm/routes/:routeId",
+    "storm/:id",
+    "front-desk",
+    "front-desk/:conversationId",
+    "estimator",
+    "estimator/measure/:measurementId",
+    "estimator/proposals/:proposalId",
+    "agents",
+    "agents/feed",
+    "agents/waiting",
+    "agents/:agent",
+    "jobs",
+    "jobs/new",
+    "jobs/:jobId",
+    "jobs/:jobId/quotes/:quoteId",
+    "customers",
+    "customers/new",
+    "customers/:customerId",
+    "calendar",
+    "calendar/new",
+    "calendar/appointments/:appointmentId",
+    "settings",
+    "settings/setup/import",
+    "settings/setup/import/:importId",
+    "settings/setup/texting",
+    "settings/:tab",
+    "today",
+    "*"
+  ],
+  "frozen_tracked_file_counts": {
+    "apps/api/": 783,
+    "apps/worker/": 3,
+    "packages/db/": 238,
+    "packages/send-gate/": 13,
+    "packages/shared/": 94
+  },
+  "changed_frozen_paths": [],
+  "browser_http_modules": {
+    "apps/web/src/api/client.ts": {
+      "sha256": "50c9983c1170c93fde88c20a69f08e593d250c68a9006b3cef8be73f78a6bed9",
+      "exports": [
+        "ApiRequest",
+        "setUnauthorizedHandler",
+        "apiFetch"
+      ],
+      "request_paths": []
+    },
+    "apps/web/src/api/hooks.ts": {
+      "sha256": "52413d2652f6ec10c4e9a7b7d9deec746432a43144147b7a8c4f7e96326df3e0",
+      "exports": [
+        "useMe",
+        "useSignIn",
+        "useSignOut",
+        "useSwitchCompany",
+        "useMapArea",
+        "useMapPins",
+        "useApprovals",
+        "useTasksSummary",
+        "useAttentionCount",
+        "useWeather",
+        "useSearch"
+      ],
+      "request_paths": [
+        "/api/approvals",
+        "/api/auth/login",
+        "/api/auth/logout",
+        "/api/auth/me",
+        "/api/auth/switch-company",
+        "/api/map/area",
+        "/api/map/pins?bbox=${bboxKey}&layers=customers,jobs",
+        "/api/search?q=",
+        "/api/tasks/summary",
+        "/api/tasks?status=needs_attention&limit=200",
+        "/api/weather"
+      ]
+    },
+    "apps/web/src/api/keys.ts": {
+      "sha256": "4357bb687e453e3b22438b32cb617ab0050ffadd646f9d4755cac3f8ebb7dfaf",
+      "exports": [
+        "keys"
+      ],
+      "request_paths": []
+    },
+    "apps/web/src/api/types.ts": {
+      "sha256": "a3ffc8057482d99d3d2390f38dacaa2c441af4b47e0f1d4b67e514e15af75f77",
+      "exports": [
+        "User",
+        "CompanySummary",
+        "SignInResult",
+        "Account",
+        "StepView",
+        "TaskView",
+        "ApprovalsList",
+        "CompanyBody",
+        "TeamBody",
+        "SearchResult",
+        "PinsResult",
+        "MapArea",
+        "CurrentWeather",
+        "Bbox",
+        "StormTemplates",
+        "StormPhoto",
+        "StormSettingsBody",
+        "StormSettingsPatch",
+        "AdPlatform",
+        "AdAccountStatus",
+        "AdAccount",
+        "AdAccountsBody"
+      ],
+      "request_paths": [
+        "/api/ads/accounts.",
+        "/api/storm/photos/:id/file",
+        "/api/storm/settings",
+        "/api/storm/settings."
+      ]
+    },
+    "apps/web/src/features/agents/api.ts": {
+      "sha256": "69e6d74bf88d49dba70c93568ca13ad5dfe6c0be78c1c585eeb39c3762fd25d2",
+      "exports": [
+        "agentsKeys",
+        "useAgentsOverview",
+        "useAgentFeed",
+        "useWaiting",
+        "useAgentDetail",
+        "usePauseAgent",
+        "useRunNow",
+        "timeBaselinesKey",
+        "useTimeBaselines",
+        "useSaveTimeBaselines",
+        "useRecount"
+      ],
+      "request_paths": [
+        "/api/agents",
+        "/api/agents/${agent}/paused",
+        "/api/agents/${agent}/run",
+        "/api/agents/${agent}?period=${period}",
+        "/api/agents/:agent/paused",
+        "/api/agents/:agent/run:",
+        "/api/agents/:agent?period=",
+        "/api/agents/feed${query",
+        "/api/agents/time-baselines",
+        "/api/agents/time-baselines/recount",
+        "/api/agents/time-baselines/recount${dryRun",
+        "/api/agents/waiting",
+        "/api/agents:",
+        "/api/client.ts"
+      ]
+    },
+    "apps/web/src/features/appointments/api.ts": {
+      "sha256": "f02d3cfd9c925eb546a756e069e823d302d77b31016021a76c9f441fa7baba9e",
+      "exports": [
+        "useAppointment",
+        "useCreateAppointment",
+        "useUpdateAppointment",
+        "useAppointmentAction",
+        "useAvailability",
+        "useCalendarProvider"
+      ],
+      "request_paths": [
+        "/api/appointments",
+        "/api/appointments/${encodeURIComponent",
+        "/api/appointments/:id",
+        "/api/appointments/:id/{cancel",
+        "/api/calendar/availability?kind&from&to",
+        "/api/calendar/availability?kind=${kind}&from=${encodeURIComponent",
+        "/api/calendar/connection",
+        "/api/client.ts"
+      ]
+    },
+    "apps/web/src/features/approvals/api.ts": {
+      "sha256": "5c62a85e6eef23840d2d6feeee5b4a1353193ef2facd4f6203a6602486d9d3a9",
+      "exports": [
+        "EditStepVariables",
+        "reconcileConflict",
+        "useTask",
+        "useEditStep",
+        "useApprove",
+        "useDecline",
+        "useRetryStep",
+        "useRerun",
+        "pathAfterDecline"
+      ],
+      "request_paths": [
+        "/api/approvals",
+        "/api/approvals/${id}",
+        "/api/approvals/${id}/approve",
+        "/api/approvals/${id}/decline",
+        "/api/approvals/${id}/rerun",
+        "/api/approvals/${id}/steps/${encodeURIComponent",
+        "/api/client.ts",
+        "/api/keys.ts",
+        "/api/types.ts"
+      ]
+    },
+    "apps/web/src/features/billing/api.ts": {
+      "sha256": "786499225380e3f5de569b119d23d37c6d78a6d881d17696146b979af99d4015",
+      "exports": [
+        "go",
+        "billingKey",
+        "useBilling",
+        "useCheckout",
+        "usePortal",
+        "useChangePlan"
+      ],
+      "request_paths": [
+        "/api/billing",
+        "/api/billing/checkout",
+        "/api/billing/plan",
+        "/api/billing/portal",
+        "/api/client.ts",
+        "/api/hooks.ts"
+      ]
+    },
+    "apps/web/src/features/calendar/api.ts": {
+      "sha256": "c303c545b5aca9e486311cad63f91b59784c5768603916ff9aa0d55b3996dd39",
+      "exports": [
+        "AppointmentsQuery",
+        "useAppointments",
+        "useSyncNow"
+      ],
+      "request_paths": [
+        "/api/appointments?from&to&userIds=a,b&withBusy=true.",
+        "/api/appointments?from=${encodeURIComponent",
+        "/api/calendar/sync",
+        "/api/client.ts"
+      ]
+    },
+    "apps/web/src/features/claims/api.ts": {
+      "sha256": "7469d2fd6ca9c38a76136425fa4ecf11af3e40fefd05d6e10e0ed8c43781dd42",
+      "exports": [
+        "ClaimEdit",
+        "useJobClaim",
+        "useSaveClaim",
+        "claimPacketUrl",
+        "useBuildClaimPacket",
+        "useClaimsBoard"
+      ],
+      "request_paths": [
+        "/api/claims",
+        "/api/client.ts",
+        "/api/jobs/",
+        "/api/jobs/:jobId/claim"
+      ]
+    },
+    "apps/web/src/features/create/api.ts": {
+      "sha256": "5c6ae055183ccf5616a9f00a13a1d347d0e3951ad46c602b1fae71fd0ad74412",
+      "exports": [
+        "PhoneInput",
+        "CustomerInput",
+        "CustomerRecord",
+        "PropertyInput",
+        "PropertyRecord",
+        "JobInput",
+        "JobRecord",
+        "useCreateCustomer",
+        "useCreateProperty",
+        "useCreateJob",
+        "useCustomerSearch",
+        "useCustomerHomes"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/customers",
+        "/api/customers?q=",
+        "/api/customers?q=${encodeURIComponent",
+        "/api/jobs",
+        "/api/properties",
+        "/api/properties?customerId=",
+        "/api/properties?customerId=${customerId"
+      ]
+    },
+    "apps/web/src/features/customers/api.ts": {
+      "sha256": "619cad8f0a0a01128ad3486ee5df365310b16168beb24b0a9968c375d4cd5d0b",
+      "exports": [
+        "CustomerListItem",
+        "CustomerListPage",
+        "PAGE_SIZE",
+        "customerKeys",
+        "CustomersParams",
+        "useCustomers",
+        "useCustomerView",
+        "CustomerPatch",
+        "useUpdateCustomer",
+        "useArchiveCustomer",
+        "useLocateProperty"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/customers",
+        "/api/customers/${encodeURIComponent",
+        "/api/customers/:id",
+        "/api/customers/:id/archive",
+        "/api/customers/:id/view",
+        "/api/customers?${query.toString",
+        "/api/customers?q=&limit=50&offset=&includeArchived=true",
+        "/api/properties/${encodeURIComponent",
+        "/api/properties/:id/locate"
+      ]
+    },
+    "apps/web/src/features/demo/api.ts": {
+      "sha256": "3b6d3277c5827fdaa7a41ef6c4d4f6e70e1ad0153bfefbfe8bb2cdacc4736885",
+      "exports": [
+        "SIMULATIONS",
+        "Simulation",
+        "SimulateResult",
+        "demoKey",
+        "useDemoMode",
+        "useSimulate"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/demo",
+        "/api/demo/simulate/${kind}",
+        "/api/demo/simulate/:kind"
+      ]
+    },
+    "apps/web/src/features/estimator/api.ts": {
+      "sha256": "2752963c97c41c2a1ab28a59a994a12f46a7955c97e86b75c5095b066d3f607c",
+      "exports": [
+        "BuildProposalInput",
+        "makeFailureMessage",
+        "useProposalGroup",
+        "useHomeSearch",
+        "useMeasure",
+        "useBuildProposal",
+        "useSendProposal"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/keys.ts",
+        "/api/measurements",
+        "/api/properties?q=",
+        "/api/properties?q=${encodeURIComponent",
+        "/api/proposals",
+        "/api/proposals/${id}/send",
+        "/api/proposals/:id/send",
+        "/api/proposals?${params.join",
+        "/api/proposals?status=&q=&offset="
+      ]
+    },
+    "apps/web/src/features/front-desk/api.ts": {
+      "sha256": "0fd4460406a4a07aff9001311199527fb3072d4fd217afb2e7e0a72fb98a0b05",
+      "exports": [
+        "UNREAD_COUNT_KEY",
+        "useFrontDeskUnread"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/conversations?filter=needs_attention"
+      ]
+    },
+    "apps/web/src/features/front-desk/conversation-api.ts": {
+      "sha256": "afb9fb34984930c968bfe91ee400feb4efca95a2f68a627f292e8d9fff48fc39",
+      "exports": [
+        "conversationKey",
+        "invalidateInbox",
+        "conversationPollInterval",
+        "useConversation",
+        "useMarkRead",
+        "useSendReply",
+        "useSetHandling",
+        "useMarkSpam"
+      ],
+      "request_paths": [
+        "/api/calls/${callId}/spam",
+        "/api/calls/:id/spam.",
+        "/api/client.ts",
+        "/api/conversations/${id}",
+        "/api/conversations/${id}/handling",
+        "/api/conversations/${id}/read",
+        "/api/conversations/${id}/reply",
+        "/api/conversations/:id.",
+        "/api/conversations/:id/handling",
+        "/api/conversations/:id/read.",
+        "/api/conversations/:id/reply"
+      ]
+    },
+    "apps/web/src/features/front-desk/inbox-api.ts": {
+      "sha256": "11254a2de21950fef1eaf8143ff08146bed478b9e1e184c03a4219fc7a8ff380",
+      "exports": [
+        "LIVE_POLL_MS",
+        "IDLE_POLL_MS",
+        "inboxPollInterval",
+        "flattenItems",
+        "useConversations",
+        "useWeekStats"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/conversations?filter=${filter}${cursor}",
+        "/api/front-desk/stats${query}"
+      ]
+    },
+    "apps/web/src/features/front-desk/settings/forwarding-api.ts": {
+      "sha256": "91444a184ce3f93c39cb0014e83f012f5735c43f7bed4b6a730a4941d02f60cd",
+      "exports": [
+        "forwardingKeys",
+        "useStartForwardingTest",
+        "useForwardingTest"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/front-desk/forwarding-test",
+        "/api/front-desk/forwarding-test/${id}",
+        "/api/front-desk/forwarding-test/:id"
+      ]
+    },
+    "apps/web/src/features/front-desk/settings/settings-api.ts": {
+      "sha256": "d35afeef0a3167ae5b22d46105ee466d9499abc5bb4b865630e8e367f1db33ad",
+      "exports": [
+        "settingsKeys",
+        "useFrontDeskSettings",
+        "useSaveFrontDeskSettings",
+        "useFrontDeskVoices",
+        "useTransferPhone",
+        "useSaveTransferPhone"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/front-desk/settings",
+        "/api/front-desk/settings.",
+        "/api/front-desk/voices",
+        "/api/front-desk/voices.",
+        "/api/me/transfer-phone",
+        "/api/me/transfer-phone."
+      ]
+    },
+    "apps/web/src/features/homeowner/api.ts": {
+      "sha256": "2ba7d0edc51e2f694fbe0607f1f7047d3e27c8ae4e9c912d4c807465ab998d42",
+      "exports": [
+        "SignBody",
+        "DeclineBody",
+        "publicProposalKey",
+        "SIGNED_PDF_POLL_MS",
+        "SIGNED_PDF_POLL_LIMIT",
+        "usePublicProposal",
+        "useRecordView",
+        "useSignProposal",
+        "useDeclineProposal",
+        "signedPdfUrl"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/public/proposals/${encodeURIComponent",
+        "/api/public/proposals/${token}/signed.pdf",
+        "/api/public/proposals/:token."
+      ]
+    },
+    "apps/web/src/features/imports/api.ts": {
+      "sha256": "61f61320a7f79d32b77a7e92f621b61a5c5e35a23e429f87bd15ca285a259f49",
+      "exports": [
+        "uploadImport",
+        "useUploadImport",
+        "useImport",
+        "useSetMapping",
+        "StartBody",
+        "useStartImport",
+        "useRetryImport"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/imports/${id}",
+        "/api/imports/${id}/retry",
+        "/api/imports/${id}/start",
+        "/api/imports/${id}?attested=${attested}",
+        "/api/imports?fileName="
+      ]
+    },
+    "apps/web/src/features/job/api.ts": {
+      "sha256": "17c659cfc2046f6c7d8d439bd05180e560a3fe7477cbbc42e310e953523e5ca4",
+      "exports": [
+        "JobEdit",
+        "jobKey",
+        "useJobView",
+        "useUpdateJob",
+        "useArchiveJob",
+        "useCreateQuote",
+        "useJobProposals"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/jobs/",
+        "/api/jobs/:id",
+        "/api/jobs/:id/archive",
+        "/api/jobs/:id/quotes",
+        "/api/jobs/:id/unarchive",
+        "/api/jobs/:id/view",
+        "/api/proposals?jobId=${encodeURIComponent"
+      ]
+    },
+    "apps/web/src/features/jobs/api.ts": {
+      "sha256": "582d920e4de2e4a9080c614402a3c93c93821f5dbf737ab810eb6e662c8aba93",
+      "exports": [
+        "BoardFilterParams",
+        "MoveJobInput",
+        "jobsKeys",
+        "useBoard",
+        "useBoardColumnPage",
+        "useColumnPages",
+        "findCachedColumnJob",
+        "applyMove",
+        "useMoveJob"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/jobs/",
+        "/api/jobs/:id",
+        "/api/jobs/board",
+        "/api/jobs/board?${text}"
+      ]
+    },
+    "apps/web/src/features/measure/api.ts": {
+      "sha256": "0694edddd0cf06b35ac067717658de38e8e0eae08d164f12eb212af29374479c",
+      "exports": [
+        "useMeasurement",
+        "usePatchMeasurement",
+        "useExactReport"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/keys.ts",
+        "/api/measurements/${id}",
+        "/api/measurements/${id}/exact-report",
+        "/api/measurements/:id.",
+        "/api/measurements/:id/exact-report"
+      ]
+    },
+    "apps/web/src/features/proposals/api.ts": {
+      "sha256": "3bad0c03b8b19132d8ea4542b8edf94ab4d0cfc2e9ca543c2f4328373c2e33ba",
+      "exports": [
+        "OptionPatch",
+        "ProposalPatch",
+        "proposalKey",
+        "useProposal",
+        "usePricebook",
+        "usePatchProposal",
+        "useSendProposal",
+        "useCopyLink",
+        "useReviseProposal",
+        "proposalPdfUrl"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/pricebook",
+        "/api/proposals/",
+        "/api/proposals/${id}",
+        "/api/proposals/${id}/link",
+        "/api/proposals/${id}/pdf",
+        "/api/proposals/${id}/revise",
+        "/api/proposals/${id}/send",
+        "/api/proposals/:id",
+        "/api/proposals/:id/link",
+        "/api/proposals/:id/revise",
+        "/api/proposals/:id/send"
+      ]
+    },
+    "apps/web/src/features/quotes/api.ts": {
+      "sha256": "fe1aa0e33bafc3667fb26469467a594c0cf193fd3ffeb724066b07bc97f4108c",
+      "exports": [
+        "quotesKeys",
+        "quotePdfHref",
+        "useQuote",
+        "useSaveQuote",
+        "useFinalizeQuote",
+        "useCopyQuote"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/quotes/${id}",
+        "/api/quotes/${id}/copy",
+        "/api/quotes/${id}/finalize",
+        "/api/quotes/${id}/pdf",
+        "/api/quotes/:id",
+        "/api/quotes/:id/copy",
+        "/api/quotes/:id/finalize"
+      ]
+    },
+    "apps/web/src/features/settings/adsApi.ts": {
+      "sha256": "bfe136021c323d991cce4f54edc207a6b99ee6c182fab60b38c578a42a138f0b",
+      "exports": [
+        "useAdAccounts",
+        "useConnectGoogle",
+        "useConnectMeta",
+        "useCheckAdAccount",
+        "useRemoveAdAccount"
+      ],
+      "request_paths": [
+        "/api/ads/accounts",
+        "/api/ads/accounts/",
+        "/api/ads/accounts/google",
+        "/api/ads/accounts/meta",
+        "/api/client.ts",
+        "/api/keys.ts",
+        "/api/src/routes/ads.ts",
+        "/api/types.ts"
+      ]
+    },
+    "apps/web/src/features/settings/api.ts": {
+      "sha256": "7ba8eb14d39d211e0ea901ac749cf7ebd90ec7b310884c786af4be2f19dd4269",
+      "exports": [
+        "CompanyPatch",
+        "companySettingsKey",
+        "useCompanySettings",
+        "useUpdateHourlyRate",
+        "MemberChanges",
+        "TeamMember",
+        "TeamInvite",
+        "useCompany",
+        "useUpdateCompany",
+        "useTeam",
+        "useInvite",
+        "useUpdateMember",
+        "AgentValuesPatchBody",
+        "useAgentValues",
+        "useUpdateAgentValues"
+      ],
+      "request_paths": [
+        "/api/agent-values",
+        "/api/client.ts",
+        "/api/company",
+        "/api/company/settings",
+        "/api/keys.ts",
+        "/api/team",
+        "/api/team/invites",
+        "/api/team/members/",
+        "/api/types.ts"
+      ]
+    },
+    "apps/web/src/features/settings/crm-api.ts": {
+      "sha256": "05c11b56ccca7debd25f8091463df0c101b8d0eb5234963bbff3c611d473fbf7",
+      "exports": [
+        "crmKeys",
+        "ExternalCalendar",
+        "MyHours",
+        "PricebookSave",
+        "usePricebook",
+        "useSavePricebook",
+        "useScheduleSettings",
+        "useSaveScheduleSettings",
+        "useMyHours",
+        "useSaveMyHours",
+        "useCalendarConnection",
+        "useCalendars",
+        "useChooseCalendar",
+        "useDisconnectCalendar"
+      ],
+      "request_paths": [
+        "/api/calendar/connection",
+        "/api/calendar/connection/calendars",
+        "/api/calendar/my-hours",
+        "/api/calendar/settings",
+        "/api/client.ts",
+        "/api/pricebook"
+      ]
+    },
+    "apps/web/src/features/settings/estimator-api.ts": {
+      "sha256": "b43eb52a1baa48f955b59536061be9f1c56f59d8aa4a7884f7f75ef51ff10d7c",
+      "exports": [
+        "estimatorKeys",
+        "useTierTemplates",
+        "useSaveTierTemplates",
+        "useEstimatorSettings",
+        "useSaveEstimatorSettings"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/estimator/settings",
+        "/api/tier-templates",
+        "/api/tier-templates,"
+      ]
+    },
+    "apps/web/src/features/settings/stormApi.ts": {
+      "sha256": "a16f4737bd3997eefc3215e357af60550af6d02c6c57f8e52fa3a6b18c7650c0",
+      "exports": [
+        "uploadStormPhoto",
+        "useStormSettings",
+        "useSaveStormSettings",
+        "useUploadStormPhoto",
+        "useDeleteStormPhoto"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/keys.ts",
+        "/api/storm/photos",
+        "/api/storm/photos/${id}",
+        "/api/storm/settings",
+        "/api/types.ts"
+      ]
+    },
+    "apps/web/src/features/setup/api.ts": {
+      "sha256": "450b5f7ff655f7f64fad5fb6f175c8622027dba0da19db424d676eb3c959a976",
+      "exports": [
+        "setupKey",
+        "useSetup",
+        "useSkip",
+        "useUnskip",
+        "useLocateCompany",
+        "useServiceArea"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/company/locate",
+        "/api/company/service-area",
+        "/api/keys.ts",
+        "/api/setup",
+        "/api/setup/${key}/skip",
+        "/api/setup/${key}/unskip"
+      ]
+    },
+    "apps/web/src/features/signup/api.ts": {
+      "sha256": "a211d5bf3da45eee30377599c014c2eef219f59fe24b2359e9d294eea91b8c67",
+      "exports": [
+        "AuthConfig",
+        "CompanyDetails",
+        "SignUpBody",
+        "GoogleBody",
+        "useAuthConfig",
+        "useSignUp",
+        "useGoogleSignIn"
+      ],
+      "request_paths": [
+        "/api/auth/config",
+        "/api/auth/google",
+        "/api/auth/signup",
+        "/api/client.ts"
+      ]
+    },
+    "apps/web/src/features/storm/api.ts": {
+      "sha256": "4c661d537cdafcdeabd3f3e8602a0ef9adc8819fc0c27ff1a84e9fcb9b2a17fc",
+      "exports": [
+        "useStorms",
+        "useStorm",
+        "useDismissStorm",
+        "useRedraftStorm"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/keys.ts",
+        "/api/storms",
+        "/api/storms/${encodeURIComponent"
+      ]
+    },
+    "apps/web/src/features/storm/layerApi.ts": {
+      "sha256": "e4413ecd256d774b97ee91de3d7b0eea08caf467dcf6b16a936575c3fb6df558",
+      "exports": [
+        "STORM_LAYER_DAYS",
+        "useStormLayer"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/keys.ts",
+        "/api/map/storm-layer?bbox=${bboxKey}&zoom=${roundedZoom}&days=${STORM_LAYER_DAYS}",
+        "/api/types.ts"
+      ]
+    },
+    "apps/web/src/features/storm/routes/api.ts": {
+      "sha256": "ba19c2e33c9673f1950650ba770b78fd9614d6f8c31db49817b5ed449a398d0e",
+      "exports": [
+        "useMyRoutes",
+        "useRoute",
+        "useRecordOutcome"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/keys.ts",
+        "/api/routes/${encodeURIComponent",
+        "/api/routes/mine"
+      ]
+    },
+    "apps/web/src/features/texting/api.ts": {
+      "sha256": "69d25c3696fda0d6c91435b9c0a7ebde4dd104975835bae230714b67ad891967",
+      "exports": [
+        "RegistrationBody",
+        "useTexting",
+        "useSubmitRegistration"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/keys.ts",
+        "/api/texting",
+        "/api/texting.",
+        "/api/texting/registration"
+      ]
+    },
+    "apps/web/src/features/timeline/api.ts": {
+      "sha256": "14565b5c6e642c50dc2737ef1832fea1f51ca06845300dba54ff6eecd9aca430",
+      "exports": [
+        "TimelineSubject",
+        "timelineKeys",
+        "useTimeline",
+        "AddNoteInput",
+        "useAddNote"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/notes",
+        "/api/timeline?${subjectParam"
+      ]
+    },
+    "apps/web/src/features/today/api.ts": {
+      "sha256": "c2d4035a726bf3bc9cd5c0ec4df1b8eb6616aad29fef4f86e5ea73fdc7a30b4b",
+      "exports": [
+        "useTodayShown",
+        "useToday",
+        "useSignedToday"
+      ],
+      "request_paths": [
+        "/api/client.ts",
+        "/api/me/today-shown",
+        "/api/proposals?status=signed&signedOn=",
+        "/api/today"
+      ]
+    }
+  }
+}
