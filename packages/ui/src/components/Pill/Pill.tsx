@@ -15,7 +15,7 @@ export type PillProps = {
 export function Pill({ children, href, onClick, tone = 'accent' }: PillProps) {
   return (
     <Pressable href={href} onClick={onClick} className={styles.pill} data-tone={tone}>
-      {children}
+      <span className={styles.label}>{children}</span>
     </Pressable>
   );
 }

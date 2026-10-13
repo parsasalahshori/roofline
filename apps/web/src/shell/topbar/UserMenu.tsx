@@ -7,7 +7,7 @@ import { shell } from '../../copy/shell.ts';
 import { useIsPhone } from '../useIsPhone.ts';
 import styles from './UserMenu.module.css';
 
-/** The person's name in the top bar. Opens the account menu: a popover on desktop, a sheet on phone. */
+/** The person's name in the top bar (initials only on a phone). Opens the account menu: a popover on desktop, a sheet on phone. */
 export function UserMenu() {
   const me = useMe();
   const phone = useIsPhone();
@@ -39,11 +39,13 @@ export function UserMenu() {
         variant="ghost"
         aria-haspopup="true"
         aria-expanded={open}
+        // On a phone only the initials show, so the name is the button's label.
+        aria-label={phone ? account.user.name : undefined}
         onClick={() => setOpen((current) => !current)}
         className={styles.trigger}
       >
         <Avatar name={account.user.name} size={24} />
-        <span className={styles.name}>{account.user.name}</span>
+        {phone ? null : <span className={styles.name}>{account.user.name}</span>}
       </Button>
       {open && !phone ? (
         <div ref={popoverRef} tabIndex={-1} className={styles.popover}>
