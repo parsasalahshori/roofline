@@ -40,4 +40,5 @@ export const billing = {
 /** Paid one-off reports, named by who supplies them (spend: each goes through an approval). */
 export const paidReports = {
   exactChoice: 'Order EagleView report',
+  exactRequest: 'Request EagleView report',
 } as const;

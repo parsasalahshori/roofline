@@ -403,13 +403,13 @@ describe('measure window', () => {
     role = 'rep';
     await open();
     await wait(100);
-    expect(screen.queryByRole('button', { name: measure.getExactReport })).toBeNull();
+    expect(screen.queryByRole('button', { name: paidReports.exactRequest })).toBeNull();
   });
 
   it('Get exact report is not offered on an exact measurement', async () => {
     await open({ kind: 'exact' });
     await wait(100);
-    expect(screen.queryByRole('button', { name: measure.getExactReport })).toBeNull();
+    expect(screen.queryByRole('button', { name: paidReports.exactRequest })).toBeNull();
   });
 
   it('draw mode: three clicks then Enter saves a three-corner outline', async () => {
@@ -464,7 +464,7 @@ describe('measure window', () => {
   it('Get exact report posts and shows Waiting for your OK', async () => {
     await open();
     fireEvent.click(screen.getByRole('button', { name: new RegExp(paidReports.exactChoice.replace(/[()]/g, '\\$&')) }));
-    fireEvent.click(await screen.findByRole('button', { name: measure.getExactReport }));
+    fireEvent.click(await screen.findByRole('button', { name: paidReports.exactRequest }));
     await waitFor(() => expect(sent('POST /api/measurements/m1/exact-report')).toHaveLength(1));
     await waitFor(() => expect(screen.getAllByText('Waiting for your OK').length).toBeGreaterThan(0));
   });
@@ -557,10 +557,10 @@ describe('measure window', () => {
     const exact = screen.getByRole('button', { name: new RegExp(paidReports.exactChoice.replace(/[()]/g, '\\$&')) });
     expect(free.getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByText(measure.choiceExactNote)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: measure.getExactReport })).toBeNull();
+    expect(screen.queryByRole('button', { name: paidReports.exactRequest })).toBeNull();
     fireEvent.click(exact);
     expect(exact.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: measure.getExactReport })).toBeTruthy();
+    expect(screen.getByRole('button', { name: paidReports.exactRequest })).toBeTruthy();
     expect(screen.queryByRole('button', { name: measure.makeProposal })).toBeNull();
     fireEvent.click(free);
     expect(screen.getByRole('button', { name: measure.makeProposal })).toBeTruthy();
@@ -669,7 +669,7 @@ describe('the EagleView option after measuring', () => {
     expect(order.textContent).toContain(measure.choiceExactNote);
     expect(screen.getByRole('button', { name: measure.makeProposal })).toBeTruthy();
     fireEvent.click(order);
-    fireEvent.click(await screen.findByRole('button', { name: measure.getExactReport }));
+    fireEvent.click(await screen.findByRole('button', { name: paidReports.exactRequest }));
     const waiting = await screen.findByRole('link', { name: measure.waitingForOk });
     expect(waiting.getAttribute('href')).toBe('/approvals/t1');
     expect(sent('POST /api/measurements/m1/exact-report')).toHaveLength(1);
