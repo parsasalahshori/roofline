@@ -1,0 +1,36 @@
+/* A small trend line. Colors follow the dashboard tokens, with the reference values as fallbacks. */
+.svg {
+  display: block;
+  overflow: visible;
+}
+
+.grid {
+  stroke: var(--ds-hairline, #d9dee2);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.area {
+  fill: var(--ds-surface-2, #e8eaec);
+  opacity: 0.9;
+}
+
+.line {
+  fill: none;
+  stroke: var(--ds-text-1, #151c22);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.dot {
+  fill: var(--ds-text-1, #151c22);
+}
+
+.endLabel {
+  fill: var(--ds-text-1, #151c22);
+  font-family: var(--ds-font, inherit);
+  font-size: 15px;
+  font-weight: 700;
+}

@@ -13,6 +13,7 @@ import { withTenant } from '@roofline/db';
 import { onCallFirstNames } from '@roofline/db/system';
 import { isScreenAgent, TIME_PERIODS } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { buildDashboard } from '../agents/dashboard.ts';
 import { buildDetail, buildOverview } from '../agents/metrics.ts';
 import { parse } from '../validate.ts';
 
@@ -31,6 +32,13 @@ export function agentsRoutes(deps: AppDeps): Router {
     const { ctx } = req;
     const overview = await withTenant(pools, ctx, (tx) => buildOverview(tx, ctx, clock.now()));
     res.json(overview);
+  });
+
+  /** The Agents dashboard numbers (tiles, sparkline, handoffs, latest action per agent). Before `/:agent`. */
+  router.get('/dashboard', async (req, res) => {
+    const { ctx } = req;
+    const dashboard = await withTenant(pools, ctx, (tx) => buildDashboard(tx, ctx, clock.now()));
+    res.json(dashboard);
   });
 
   router.get('/:agent', async (req, res, next) => {

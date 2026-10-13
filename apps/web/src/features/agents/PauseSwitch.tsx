@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Banner, Button, Sheet, Toggle } from '@roofline/ui';
 import { G1_AGENTS, type AgentDetail, type RuleSentence, type ScreenAgent } from '@roofline/shared';
-import { agentPage } from '../../copy/agents.ts';
+import { agentPage, agentsDash } from '../../copy/agents.ts';
 import { common } from '../../copy/common.ts';
+import { AGENT_LABEL } from '../../copy/status.ts';
 import { usePauseAgent } from './api.ts';
 import { TurnOnSheet } from './TurnOnSheet.tsx';
 import styles from './AgentControls.module.css';
@@ -12,10 +13,13 @@ export type PauseSwitchProps = {
   paused: AgentDetail['paused'];
   isOwner: boolean;
   rules?: RuleSentence[];
+  /** `card` is the dashboard switch: on means running, and a reader who cannot change it sees no control. */
+  variant?: 'page' | 'card';
 };
 
 /** Owner: a switch (pausing asks first, resuming does not). Everyone else: a read-only status line. */
-export function PauseSwitch({ agent, paused, isOwner, rules = [] }: PauseSwitchProps) {
+export function PauseSwitch({ agent, paused, isOwner, rules = [], variant = 'page' }: PauseSwitchProps) {
+  const card = variant === 'card';
   const [turningOn, setTurningOn] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -25,6 +29,7 @@ export function PauseSwitch({ agent, paused, isOwner, rules = [] }: PauseSwitchP
     paused === null ? null : paused.byName ? `${agentPage.pausedBy} ${paused.byName}` : agentPage.pauseLabel;
 
   if (!isOwner) {
+    if (card) return null;
     return paused === null ? null : (
       <div className={styles.controls}>
         <p className={styles.status} aria-live="polite">
@@ -37,9 +42,13 @@ export function PauseSwitch({ agent, paused, isOwner, rules = [] }: PauseSwitchP
   if (paused !== null && (G1_AGENTS as readonly string[]).includes(agent)) {
     return (
       <div className={styles.controls}>
-        <Button variant="primary" onClick={() => setTurningOn(true)}>
-          {agentPage.turnOnButton}
-        </Button>
+        {card ? (
+          <Toggle checked={false} onChange={() => setTurningOn(true)} label={`${AGENT_LABEL[agent]} ${agentsDash.running}`} labelHidden />
+        ) : (
+          <Button variant="primary" onClick={() => setTurningOn(true)}>
+            {agentPage.turnOnButton}
+          </Button>
+        )}
         {turningOn ? <TurnOnSheet agent={agent} rules={rules} onClose={() => setTurningOn(false)} /> : null}
       </div>
     );
@@ -51,7 +60,9 @@ export function PauseSwitch({ agent, paused, isOwner, rules = [] }: PauseSwitchP
     mutation.reset();
   };
 
-  const onToggle = (next: boolean) => {
+  // The page switch is "paused"; the card switch is "running", so its value is the other way round.
+  const onToggle = (value: boolean) => {
+    const next = card ? !value : value;
     if (next) {
       setFailed(false);
       mutation.reset();
@@ -68,8 +79,14 @@ export function PauseSwitch({ agent, paused, isOwner, rules = [] }: PauseSwitchP
 
   return (
     <div className={styles.controls}>
-      <Toggle checked={paused !== null} onChange={onToggle} label={agentPage.pauseLabel} disabled={mutation.isPending && !confirming} />
-      {statusText !== null && paused?.byName ? (
+      <Toggle
+        checked={card ? paused === null : paused !== null}
+        onChange={onToggle}
+        label={card ? `${AGENT_LABEL[agent]} ${agentsDash.running}` : agentPage.pauseLabel}
+        labelHidden={card}
+        disabled={mutation.isPending && !confirming}
+      />
+      {!card && statusText !== null && paused?.byName ? (
         <p className={styles.status} aria-live="polite">
           {statusText}
         </p>

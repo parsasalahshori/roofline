@@ -13,6 +13,8 @@ export type RunNowButtonProps = {
   runNow: RunNow;
   /** The agent is paused: the server would refuse a run, so the button gives way to a note. */
   paused?: boolean;
+  /** Words on the button when it is not this agent's own (the dashboard panel says "Run now"). */
+  label?: string;
 };
 
 function isFuture(value: string | null): value is string {
@@ -26,7 +28,7 @@ function later(a: string | null, b: string | null): string | null {
 }
 
 /** What "run now" looks like for this agent: a button, a cooldown line, or a plain statement. */
-export function RunNowButton({ agent, runNow, paused = false }: RunNowButtonProps) {
+export function RunNowButton({ agent, runNow, paused = false, label: wording }: RunNowButtonProps) {
   const propNext = runNow.kind === 'available' ? runNow.nextAllowedAt : null;
   const [startedUntil, setStartedUntil] = useState<string | null>(null);
   const [, setTick] = useState(0);
@@ -74,7 +76,7 @@ export function RunNowButton({ agent, runNow, paused = false }: RunNowButtonProp
     );
   }
 
-  const label = agentPage.runNowLabels[agent];
+  const label = wording ?? agentPage.runNowLabels[agent];
   if (label === undefined) return null;
 
   const run = () => {

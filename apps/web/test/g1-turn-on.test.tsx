@@ -6,8 +6,8 @@ import type { AgentCard, AgentDetail } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { agentPage, agentRules, agentsWindow } from '../src/copy/agents.ts';
-import { ACCOUNT, COMPANY, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
+import { agentPage, agentRules } from '../src/copy/agents.ts';
+import { ACCOUNT, AGENTS_DASH_ROUTES, COMPANY, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 vi.mock('../src/shell/map/MapView.tsx', async () => {
   const { createElement } = await import('react');
@@ -50,6 +50,7 @@ function detail(agent: AgentCard['agent']): AgentDetail {
 function setup(path: string, overrides: Routes = {}) {
   api = stubApi({
     ...SHELL_ROUTES,
+    ...AGENTS_DASH_ROUTES,
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
     'GET /api/company': () => ({ body: COMPANY }),
     'GET /api/claims': () => ({ body: { claims: [] } }),
@@ -75,7 +76,9 @@ describe('G1 agents start paused', () => {
     setup('/agents', {
       'GET /api/agents': () => ({ body: { cards: [card('storm_scout'), ...G1.map(card)], totals: { minutesThisMonth: 0 }, hourlyRateCents: 2800 } }),
     });
-    await waitFor(() => expect(screen.getAllByText(agentsWindow.turnOnHint)).toHaveLength(3));
+    for (const label of ['Claims', 'Scheduler', 'Follow-up']) {
+      expect(await screen.findByRole('switch', { name: `${label} Running`, checked: false })).toBeInTheDocument();
+    }
   });
 
   it('shows the rules before turning on, and sends one request only on confirm', async () => {

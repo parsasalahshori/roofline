@@ -4,14 +4,12 @@ import { RouterProvider } from 'react-router';
 import type { AgentCard, AgentDetail, AgentsOverview } from '@roofline/shared';
 import { moneyLabel } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createMemoryRouter } from 'react-router';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import type { CompanyBody } from '../src/api/types.ts';
-import { agentsCommon } from '../src/copy/agents.ts';
+import { agentsCommon, agentsDash } from '../src/copy/agents.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
-import { AgentCard as Card } from '../src/features/agents/AgentCard.tsx';
-import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
+import { ACCOUNT, AGENTS_DASH_ROUTES, DASH_BODY, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 vi.mock('../src/shell/map/MapView.tsx', async () => {
   const { createElement } = await import('react');
@@ -29,8 +27,6 @@ afterEach(() => {
 const MINUTES = 1860;
 const MONEY = moneyLabel(MINUTES, 2800);
 const LINE = `${MONEY} of staff time at $28/hour ${agentsCommon.estimate}`;
-
-const WINDOW_LINE = `About 31 hours saved this month ${agentsCommon.estimate} · ${LINE}`;
 
 const COMPANY: CompanyBody = {
   id: 'c1', name: 'Summit Roofing', slug: 'summit-roofing', status: 'active', legalName: null, phone: null, email: null,
@@ -50,6 +46,7 @@ const detail = (rate: number | null): AgentDetail => ({
 function renderApp(path: string, role: 'owner' | 'office' | 'rep', overrides: Routes) {
   api = stubApi({
     ...SHELL_ROUTES,
+    ...AGENTS_DASH_ROUTES,
     'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role } }),
     'GET /api/company': () => ({ body: COMPANY }),
     ...overrides,
@@ -64,50 +61,55 @@ function renderApp(path: string, role: 'owner' | 'office' | 'rep', overrides: Ro
 }
 
 describe('the money line', () => {
-  it.each([
-    ['/agents', { 'GET /api/agents': () => ({ body: overview(2800) }) }, WINDOW_LINE],
-    ['/agents/storm-scout', { 'GET /api/agents/storm_scout?period=month': () => ({ body: detail(2800) }) }, LINE],
-  ] as const)('owner sees the rate and a link to change it on %s', async (path, routes, text) => {
-    renderApp(path, 'owner', routes);
+  it('owner sees the rate and a link to change it on the agent page', async () => {
+    renderApp('/agents/storm-scout', 'owner', { 'GET /api/agents/storm_scout?period=month': () => ({ body: detail(2800) }) });
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
-    expect(await within(dialog).findByText(text)).toBeInTheDocument();
+    expect(await within(dialog).findByText(LINE)).toBeInTheDocument();
     const link = within(dialog).getByRole('link', { name: agentsCommon.changeRate });
     expect(link).toHaveAttribute('href', agentsCommon.changeRateHref);
   });
 
-  it.each([
-    ['/agents', { 'GET /api/agents': () => ({ body: overview(2800) }) }],
-    ['/agents/storm-scout', { 'GET /api/agents/storm_scout?period=month': () => ({ body: detail(2800) }) }],
-  ] as const)('office sees the text but no link on %s', async (path, routes) => {
-    renderApp(path, 'office', routes);
+  it('office sees the text but no link on the agent page', async () => {
+    renderApp('/agents/storm-scout', 'office', { 'GET /api/agents/storm_scout?period=month': () => ({ body: detail(2800) }) });
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByText(new RegExp(LINE.replace(/[$()]/g, '\\$&')))).toBeInTheDocument();
     expect(within(dialog).queryByRole('link', { name: agentsCommon.changeRate })).toBeNull();
   });
 
-  it.each([
-    ['/agents', { 'GET /api/agents': () => ({ body: overview(null) }) }, /^About 31 hours saved this month/],
-    ['/agents/storm-scout', { 'GET /api/agents/storm_scout?period=month': () => ({ body: detail(null) }) }, /Time saved in this period/],
-  ] as const)('shows no money at all without a rate on %s', async (path, routes, anchor) => {
-    renderApp(path, 'owner', routes);
+  it('shows no money at all without a rate on the agent page', async () => {
+    renderApp('/agents/storm-scout', 'owner', { 'GET /api/agents/storm_scout?period=month': () => ({ body: detail(null) }) });
     const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
-    await within(dialog).findByText(anchor);
+    await within(dialog).findByText(/Time saved in this period/);
     expect(dialog.textContent).not.toContain('≈');
     expect(dialog.textContent).not.toContain('staff time');
     expect(within(dialog).queryByRole('link', { name: agentsCommon.changeRate })).toBeNull();
   });
+});
 
-  it('the card shows the amount and the estimate marker but not the rate', () => {
-    const router = createMemoryRouter([{ path: '/', element: <Card card={CARD} hourlyRateCents={2800} /> }]);
-    render(<RouterProvider router={router} />);
-    expect(screen.getByText(`${MONEY} ${agentsCommon.estimate}`)).toBeInTheDocument();
-    expect(document.body.textContent).not.toContain('staff time');
-    expect(document.body.textContent).not.toContain('/hour');
+describe('the office time tile on the dashboard', () => {
+  it('owner sees the dollars, the rate marked as an estimate, and a link to change it', async () => {
+    renderApp('/agents', 'owner', { 'GET /api/agents': () => ({ body: overview(2800) }) });
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    expect(await within(dialog).findByText('$3,080')).toBeInTheDocument();
+    expect(within(dialog).getByText(`${agentsDash.officeSub} $28 ${agentsDash.officeSubSuffix}`)).toBeInTheDocument();
+    expect(within(dialog).getByRole('link', { name: agentsCommon.changeRate })).toHaveAttribute('href', agentsCommon.changeRateHref);
   });
 
-  it('the card shows no money without a rate', () => {
-    const router = createMemoryRouter([{ path: '/', element: <Card card={CARD} hourlyRateCents={null} /> }]);
-    render(<RouterProvider router={router} />);
-    expect(document.body.textContent).not.toContain('≈');
+  it('office sees the dollars but no link', async () => {
+    renderApp('/agents', 'office', { 'GET /api/agents': () => ({ body: overview(2800) }) });
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    expect(await within(dialog).findByText('$3,080')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('link', { name: agentsCommon.changeRate })).toBeNull();
+  });
+
+  it('shows no money at all without a rate', async () => {
+    renderApp('/agents', 'owner', {
+      'GET /api/agents': () => ({ body: overview(null) }),
+      'GET /api/agents/dashboard': () => ({ body: { ...DASH_BODY, hourlyRateCents: null } }),
+    });
+    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    await within(dialog).findByText('110');
+    expect(dialog.textContent).not.toContain('$');
+    expect(within(dialog).queryByRole('link', { name: agentsCommon.changeRate })).toBeNull();
   });
 });

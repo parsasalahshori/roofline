@@ -1,63 +1,262 @@
-.link {
+/*
+ * One agent card on the dashboard. The whole card selects the agent (a stretched button over the name);
+ * the switch sits above it. On a phone the card sits beside a node on a vertical rail.
+ */
+.item {
+  position: relative;
   display: block;
-  min-height: 40px;
-  border-radius: var(--radius-card);
-  color: inherit;
-  text-decoration: none;
+  min-width: 0;
+  list-style: none;
 }
 
-.link:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
+/* The node only shows on a phone, where the roof diagram is replaced by a rail. */
+.node {
+  display: none;
 }
 
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  height: 100%;
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  border-radius: var(--ds-r-card, 14px);
+  background: var(--ds-surface, #fff);
+  box-shadow: var(--ds-shadow, 0 0 0 1px rgb(21 28 34 / 8%), 0 6px 16px -8px rgb(21 28 34 / 30%));
+  color: var(--ds-text-1, #151c22);
+  font-family: var(--ds-font, inherit);
+}
+
+.card[data-selected='true'] {
+  box-shadow: 0 0 0 2px var(--ds-info, #2f6de0), 0 6px 16px -8px rgb(21 28 34 / 30%);
+}
+
+.card[data-status='paused'] .big,
+.card[data-status='coming_soon'] .big {
+  color: var(--ds-text-3, #6b7680);
+}
+
+.tab {
+  position: absolute;
+  top: 0;
+  left: 12px;
+  width: 28px;
+  height: 4px;
+  border-radius: 0 0 4px 4px;
+  background: var(--agent);
 }
 
 .head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .name {
   margin: 0;
+  min-width: 0;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--text);
+  line-height: 1.25;
 }
 
-.chip {
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  font-size: 0.8125rem;
-  color: var(--text);
+/* The name is the button: it fills the card so a click anywhere selects the agent. */
+.pick {
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--ds-r-ctl, 9px);
+  color: var(--ds-text-1, #151c22);
+  font-size: inherit;
+  font-weight: inherit;
+  text-align: left;
+  white-space: normal;
 }
 
-.chip[data-status='on'] {
-  border-color: var(--success);
+.pick:hover {
+  background: transparent;
 }
 
-.chip[data-status='paused'],
-.chip[data-status='waiting'] {
-  border-color: var(--accent);
+.pick::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--ds-r-card, 14px);
 }
 
-.line {
+.pick:focus-visible {
+  outline: none;
+}
+
+.pick:focus-visible::after {
+  outline: 2px solid var(--ds-text-1, #151c22);
+  outline-offset: 2px;
+}
+
+.statusRow {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.status {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ds-success, #107a2c);
+}
+
+.status[data-status='paused'],
+.status[data-status='coming_soon'] {
+  color: var(--ds-text-3, #6b7680);
+}
+
+/* The switch sits above the stretched name button. It is drawn in the dashboard green, not the kit's amber. */
+.toggle {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+}
+
+.toggle button[role='switch'] {
+  min-height: 28px;
+}
+
+.toggle button[role='switch'] > span:first-child {
+  width: 46px;
+  height: 26px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--ds-hairline, #c3cbd1);
+}
+
+.toggle button[role='switch'] > span:first-child > span {
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: var(--ds-surface, #fff);
+  box-shadow: 0 1px 2px rgb(21 28 34 / 30%);
+}
+
+.toggle button[role='switch'][data-state='on'] > span:first-child {
+  border: 0;
+  background: var(--ds-success, #17a34a);
+}
+
+.toggle button[role='switch'][data-state='on'] > span:first-child > span {
+  background: var(--ds-surface, #fff);
+  transform: translateX(20px);
+}
+
+.big {
+  margin: 6px 0 0;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.bigLabel {
+  margin: 2px 0 0;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 14px;
+}
+
+.stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+.stat dd {
+  display: flex;
+  flex-direction: column;
   margin: 0;
-  color: var(--text);
-  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .muted {
-  color: var(--text-muted);
-  font-size: 0.875rem;
+  color: var(--ds-text-3, #6b7680);
+}
+
+.spark {
+  margin-top: 10px;
+}
+
+.latest {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.latestText {
+  color: var(--ds-text-1, #151c22);
+}
+
+@container (max-width: 49.99rem) {
+  .item {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    column-gap: 12px;
+    padding-bottom: 12px;
+  }
+
+  /* The rail: a line behind the nodes of every card in the list. */
+  .item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 24px;
+    width: 3px;
+    background: var(--ds-text-1, #151c22);
+    opacity: 0.85;
+  }
+
+  .node {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: start;
+    margin-top: 6px;
+    width: 50px;
+    height: 50px;
+    border: 3px solid var(--agent);
+    border-radius: 50%;
+    background: var(--ds-surface, #fff);
+    color: var(--agent);
+  }
+
+  .stats {
+    justify-content: flex-end;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .stat dd {
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .spark {
+    display: none;
+  }
+
+  .card {
+    height: auto;
+  }
 }

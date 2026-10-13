@@ -11,7 +11,7 @@ import { agents, agentsWindow } from '../src/copy/agents.ts';
 import { WINDOW_COPY } from '../src/copy/dock.ts';
 import { AGENT_LABEL } from '../src/copy/status.ts';
 import { agentFromSlug, agentSlug, PAGE_AGENTS } from '../src/features/agents/slugs.ts';
-import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
+import { ACCOUNT, AGENTS_DASH_ROUTES, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -82,6 +82,7 @@ function detailFor(agent: ScreenAgent): AgentDetail {
 describe('A1 windows', () => {
   it('/agents shows the overview in the Agents window', async () => {
     signedInApi(ACCOUNT, {
+      ...AGENTS_DASH_ROUTES,
       'GET /api/agents': () => ({ body: { cards: [], minutesThisMonth: 0, hourlyRateCents: 2800 } }),
     });
     renderApp('/agents');
