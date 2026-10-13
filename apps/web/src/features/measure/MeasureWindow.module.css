@@ -1,11 +1,13 @@
+/* The Measure window frame, matched to the reference app. Tokens fall back to its values. */
 .window {
   display: flex;
   flex-direction: column;
   min-width: 0;
   max-width: 100%;
-  color: var(--text);
-  font-family: var(--font);
-  font-size: var(--font-size-body);
+  background: var(--ds-bg, #fdf9f3);
+  color: var(--ds-text-1, #2b2620);
+  font-family: var(--ds-font, var(--font));
+  font-size: 13px;
 }
 
 .header {
@@ -13,23 +15,20 @@
   align-items: baseline;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
 }
 
 .heading {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .subtitle {
   flex: 1;
   min-width: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
-}
-
-.subtitle::before {
-  content: "\2014\00a0";
+  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
+  font-size: 12px;
 }
 
 .listToggle {
@@ -55,8 +54,8 @@
   transform: translateX(-100%);
   visibility: hidden;
   transition: transform 0.2s ease, visibility 0.2s;
-  border-right: 1px solid var(--line);
-  box-shadow: var(--shadow-window);
+  border-right: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+  box-shadow: var(--ds-shadow, var(--shadow-window));
 }
 
 .list[data-open="true"] {
@@ -67,16 +66,16 @@
 .main {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
-  padding: 16px;
+  padding: 12px;
   box-sizing: border-box;
 }
 
 .stage {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -84,85 +83,32 @@
   min-width: 0;
 }
 
-.stats > div {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
 .loading {
   margin: 16px;
-  color: var(--text-muted);
+  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
 }
 
-.mapColumn {
+/* The controls that change the estimate. They live inside the stats card, so they are flat. */
+.panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
 }
 
-.map {
-  position: relative;
-  height: 45vh;
-  min-height: 240px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  overflow: hidden;
-}
-
-.hint,
-.attribution {
-  margin: 0;
-  font-size: var(--font-size-min);
-  color: var(--text-muted);
-}
-
-.hint {
-  color: var(--text);
-  font-size: var(--font-size-body);
-}
-
-/* Vertex handles are DOM markers: 40px hit areas, set by the editor; keep them clear of MapLibre's clip. */
-.map :global(.maplibregl-canvas-container) {
-  touch-action: none;
-}
-
-.kind {
-  align-self: flex-start;
-  padding: 8px 16px;
-  border-radius: var(--radius-card);
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: var(--font-size-min);
-  font-weight: 600;
-}
-
-.kind[data-kind="exact"] {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-}
-
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-}
-
 .title {
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .pitches {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px;
 }
 
 .pitch {
@@ -171,27 +117,30 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+  border-radius: var(--ds-r-ctl, 10px);
+  background: var(--ds-surface, #fffdf8);
+  font-size: 12px;
 }
 
 .pitch[data-state="on"] {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: var(--accent);
+  background: var(--ds-accent, #f5b324);
+  color: var(--ds-accent-ink, #2b2620);
+  border-color: var(--ds-accent, #f5b324);
 }
 
 .diagram {
   flex: none;
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
 }
 
 .numbers {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
 }
 
@@ -199,17 +148,17 @@
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+  padding-bottom: 6px;
 }
 
 .row dt {
-  color: var(--text-muted);
+  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
 }
 
 .row dd {
   margin: 0;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -228,10 +177,9 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface-2);
+  padding: 12px;
+  border-radius: var(--ds-r-ctl, 10px);
+  background: var(--ds-surface-2, #f6f1e6);
 }
 
 @media (min-width: 900px) {
@@ -247,7 +195,7 @@
   .list {
     position: static;
     flex: none;
-    width: 300px;
+    width: 280px;
     transform: none;
     visibility: visible;
     transition: none;
@@ -262,25 +210,16 @@
     position: relative;
   }
 
-  .map {
-    height: 70vh;
-  }
-
-  /* The numbers float over the bottom-left corner of the roof view */
+  /* The numbers card floats over the bottom-left corner of the roof view */
   .stats {
     position: absolute;
     left: 16px;
     bottom: 16px;
-    width: 340px;
+    width: 420px;
     max-width: calc(100% - 32px);
     max-height: calc(100% - 32px);
     overflow-y: auto;
-    padding: 12px;
-    box-sizing: border-box;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-card);
-    background: var(--surface);
-    box-shadow: var(--shadow-window);
+    border-radius: var(--ds-r-card, 14px);
   }
 }
 

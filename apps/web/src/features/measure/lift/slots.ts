@@ -1,9 +1,41 @@
-import { createContext, type ReactNode } from 'react';
+import type { instantEstimate, Ring } from '@roofline/shared';
+import type { Map as MapLibreMap } from 'maplibre-gl';
+import { createContext, type ReactNode, type RefObject } from 'react';
+import type { OutlineProblem } from '../types.ts';
 
 /**
- * What MeasureWindow's editor and numbers look like, handed down so RoofView and StatsPanel can place them.
- * MeasureWindow keeps every hook and handler; a RoofView or StatsPanel that draws its own content ignores this.
+ * The one roof editor, owned by MeasureWindow (it has the saves, the draw mode and the lock), handed down so
+ * RoofView can place the map container and draw its overlays around it. RoofView never makes a second map
+ * when this is present.
  */
-export type MeasureSlots = { map: ReactNode; panels: ReactNode };
+export type RoofSession = {
+  /** MeasureWindow's map is created inside this element, so RoofView must render it exactly once. */
+  containerRef: RefObject<HTMLDivElement | null>;
+  /** The map once it has loaded; null before then and when it could not start. */
+  map: MapLibreMap | null;
+  zoom: number;
+  ring: Ring;
+  drawMode: boolean;
+  locked: boolean;
+  conflict: boolean;
+  problem: OutlineProblem | null;
+  mapFailed: boolean;
+  saving: boolean;
+  saveFailed: boolean;
+  finishDrawing: () => void;
+  clearDrawing: () => void;
+  redraw: () => void;
+};
 
-export const MeasureSlotsContext = createContext<MeasureSlots>({ map: null, panels: null });
+/**
+ * What MeasureWindow hands down. `roof` is the editor; `panels` are the controls that change the estimate
+ * (buildings, pitch, overhang, the numbers); `estimate` is the live number set, ahead of what is saved.
+ * A RoofView or StatsPanel used on its own gets the empty value and draws from its own data.
+ */
+export type MeasureSlots = {
+  roof: RoofSession | null;
+  panels: ReactNode;
+  estimate: ReturnType<typeof instantEstimate> | null;
+};
+
+export const MeasureSlotsContext = createContext<MeasureSlots>({ roof: null, panels: null, estimate: null });

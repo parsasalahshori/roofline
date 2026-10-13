@@ -1,20 +1,21 @@
+/* The roof view and what sits over it, matched to the reference app. */
 .frame {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
   max-width: 100%;
-  color: var(--text);
-  font-family: var(--font);
-  font-size: var(--font-size-body);
+  color: var(--ds-text-1, #2b2620);
+  font-family: var(--ds-font, var(--font));
+  font-size: 14px;
 }
 
 .mapBox {
   position: relative;
   height: 45vh;
   min-height: 240px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--ds-r-card, 14px);
+  background: var(--ds-surface-2, #f6f1e6);
   overflow: hidden;
 }
 
@@ -28,30 +29,43 @@
   touch-action: none;
 }
 
+/* "Estimator is measuring": a warm pill, top left */
 .pill {
   position: absolute;
   top: 12px;
   left: 12px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: var(--font-size-min);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 5px;
+  border-radius: var(--ds-r-chip, 999px);
+  background: var(--ds-accent-tint, #fde7b0);
+  color: var(--ds-accent-ink, #5c3b00);
+  font-size: 12px;
   font-weight: 600;
-  box-shadow: var(--shadow-marker);
+  box-shadow: var(--ds-shadow, var(--shadow-marker));
   pointer-events: none;
+}
+
+.pillIcon {
+  flex: none;
+  box-sizing: content-box;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--ds-accent, #f5b324);
+  color: var(--ds-accent-ink, #2b2620);
 }
 
 .compass {
   position: absolute;
-  top: 12px;
   right: 12px;
+  bottom: 56px;
   display: flex;
   padding: 4px;
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-marker);
+  border-radius: var(--ds-r-ctl, 10px);
+  background: var(--ds-surface, #fffdf8);
+  color: var(--ds-text-1, #2b2620);
+  box-shadow: var(--ds-shadow, var(--shadow-marker));
   pointer-events: none;
 }
 
@@ -68,32 +82,37 @@
   align-items: flex-end;
   gap: 2px;
   padding: 4px 8px;
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--font-size-min);
+  border-radius: var(--ds-r-ctl, 10px);
+  background: var(--ds-surface, #fffdf8);
+  color: var(--ds-text-1, #2b2620);
+  font-size: 12px;
   font-weight: 600;
-  box-shadow: var(--shadow-marker);
+  box-shadow: var(--ds-shadow, var(--shadow-marker));
   pointer-events: none;
+}
+
+.scaleLabel {
+  line-height: 1;
 }
 
 .scaleBar {
   display: block;
   height: 6px;
-  border: 2px solid var(--text);
+  border: 2px solid var(--ds-text-1, #2b2620);
   border-top: 0;
   box-sizing: border-box;
 }
 
+/* A facet label: white pill with the area, as the reference puts on each roof plane */
 .structureLabel {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--font-size-min);
-  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--ds-r-chip, 999px);
+  background: var(--ds-surface, #fffdf8);
+  color: var(--ds-text-1, #2b2620);
+  font-size: 12px;
+  font-weight: 700;
   white-space: nowrap;
-  box-shadow: var(--shadow-marker);
+  box-shadow: var(--ds-shadow, var(--shadow-marker));
   pointer-events: none;
 }
 
@@ -107,14 +126,42 @@
   gap: 8px;
 }
 
+/* The attribution lines ride on the map, bottom left of the scale bar */
+.credits {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  max-width: calc(100% - 140px);
+  padding: 2px 8px;
+  border-radius: var(--ds-r-ctl, 10px);
+  background: var(--ds-surface, #fffdf8);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
 .hint,
 .attribution {
   margin: 0;
-  font-size: var(--font-size-min);
-  color: var(--text-muted);
+  font-size: 12px;
+  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
 }
 
 .hint {
-  color: var(--text);
-  font-size: var(--font-size-body);
+  color: var(--ds-text-1, #2b2620);
+  font-size: 14px;
+}
+
+@media (min-width: 900px) {
+  .mapBox {
+    height: calc(100vh - 220px);
+    min-height: 420px;
+  }
+
+  /* The numbers card holds the bottom-left corner, so the credits move to the middle */
+  .credits {
+    left: 50%;
+    max-width: none;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
 }

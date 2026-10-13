@@ -1,64 +1,107 @@
+/* The floating numbers card over the roof, matched to the reference app. */
 .panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
+  padding: 14px 16px;
   max-width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: var(--font-size-body);
+  border: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+  border-radius: var(--ds-r-card, 14px);
+  background: var(--ds-surface, #fffdf8);
+  box-shadow: var(--ds-shadow, 0 10px 30px rgba(43, 30, 0, 0.18));
+  color: var(--ds-text-1, #2b2620);
+  font-family: var(--ds-font, var(--font));
+  font-size: 13px;
 }
 
 .head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 
+/* A small amber tile in front of the title */
+.icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--ds-accent-tint, #fde7b0);
+  color: var(--ds-accent-ink, #5c3b00);
+}
+
 .title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .kind {
   flex: none;
-  padding: 4px 8px;
-  border-radius: var(--radius-card);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  font-size: var(--font-size-min);
+  padding: 1px 8px;
+  border: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+  border-radius: var(--ds-r-chip, 999px);
+  background: var(--ds-surface-2, #f6f1e6);
+  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
+  font-size: 12px;
   font-weight: 600;
+}
+
+.body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 24px;
 }
 
 .big {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+
+.label {
+  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
+  font-size: 12px;
+}
+
+.squaresRow {
+  display: flex;
   align-items: baseline;
-  gap: 4px 8px;
+  gap: 6px;
 }
 
 .squares {
-  font-size: var(--font-size-stat);
-  font-weight: 700;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 
-.unit,
+.unit {
+  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
+  font-size: 12px;
+}
+
 .sqft {
-  color: var(--text-muted);
-  font-size: var(--font-size-body);
+  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
+  font-size: 12px;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  gap: 12px 8px;
+  flex: 1;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: 12px 12px;
+  min-width: 0;
   margin: 0;
 }
 
@@ -70,17 +113,57 @@
 }
 
 .cell dt {
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
+  font-size: 12px;
+}
+
+/* The line colours of the reference: ridges, valleys and edges get their own dash */
+.cell[data-stat="ridges"] dt::before,
+.cell[data-stat="valleys"] dt::before,
+.cell[data-stat="edges"] dt::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--stat-line, currentColor);
+}
+
+.cell[data-stat="ridges"] {
+  --stat-line: #d9534f;
+}
+
+.cell[data-stat="valleys"] {
+  --stat-line: #2bb3a3;
+}
+
+.cell[data-stat="edges"] {
+  --stat-line: #8a8fb8;
 }
 
 .cell dd {
   margin: 0;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+}
+
+/* The controls that change the estimate sit under the buttons, quieter than the numbers */
+.adjust {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
 }

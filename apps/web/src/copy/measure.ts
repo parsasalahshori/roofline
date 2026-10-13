@@ -44,6 +44,7 @@ export const measure = {
   requestsTitle: 'Measurement requests',
   requestsCount: (n: number) => `${n} measurement ${n === 1 ? 'request' : 'requests'}`,
   requestsSearch: 'Search name or address',
+  requestsSubtitle: 'New leads, inspections, and open estimates',
   requestsEmpty: 'No measurement requests yet.',
   requestsNoMatches: 'No requests match that search.',
   requestsFailed: 'We could not load the measurement requests.',

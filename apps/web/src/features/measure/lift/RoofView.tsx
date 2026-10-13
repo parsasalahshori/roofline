@@ -2,7 +2,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { Banner, Button, Skeleton } from '@roofline/ui';
 import type { Ring } from '@roofline/shared';
 import { Map as MapLibreMap, Marker } from 'maplibre-gl';
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/client.ts';
 import { liftMeasure } from '../../../copy/liftMeasure.ts';
 import { legal } from '../../../copy/legal.ts';
@@ -13,6 +13,8 @@ import { useMeasurement, usePatchMeasurement } from '../api.ts';
 import { createOutlineEditor, type EditResult, type OutlineEditor } from '../OutlineEditor.ts';
 import type { MeasurementPatch, MeasurementView, OutlineProblem } from '../types.ts';
 import styles from './RoofView.module.css';
+import { MeasureSlotsContext, type RoofSession } from './slots.ts';
+import { addStructureLayers, STRUCTURES_SOURCE, structuresData } from './structures.ts';
 
 const SAVE_DEBOUNCE_MS = 500;
 const START_ZOOM = 20;
@@ -22,9 +24,6 @@ const SCALE_MAX_PX = 96;
 // Metres per pixel at zoom 0 on the equator for 512 px tiles (MapLibre's tile size).
 const METRES_PER_PIXEL_ZOOM0 = 78271.517;
 const NICE_FEET = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000] as const;
-const STRUCTURES_SOURCE = 'lift-structures-src';
-const INCLUDED_COLOR = '#2563eb';
-const LEFT_OUT_COLOR = '#475569';
 
 function readMapEnv(): MapEnv {
   return { maptilerKey: import.meta.env.VITE_MAPTILER_KEY, tiles: import.meta.env.VITE_MAP_TILES };
@@ -62,19 +61,6 @@ export function ringCenter(ring: Ring): [number, number] {
   return [ring.reduce((sum, p) => sum + p[0], 0) / n, ring.reduce((sum, p) => sum + p[1], 0) / n];
 }
 
-function structuresData(structures: MeasurementView['structures']) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: structures
-      .filter((s) => s.ring.length >= 3)
-      .map((s) => ({
-        type: 'Feature' as const,
-        properties: { included: s.included },
-        geometry: { type: 'Polygon' as const, coordinates: [[...s.ring, s.ring[0] as [number, number]]] },
-      })),
-  };
-}
-
 function labelElement(structure: MeasurementView['structures'][number]): HTMLDivElement {
   const el = document.createElement('div');
   el.className = styles.structureLabel ?? '';
@@ -101,14 +87,95 @@ function NorthArrow() {
   );
 }
 
+/** Tint and dim follow the saved structures; each structure carries its own label. */
+function useStructureLabels(instance: MapLibreMap | null, structures: MeasurementView['structures']) {
+  useEffect(() => {
+    if (!instance) return;
+    try {
+      (instance.getSource(STRUCTURES_SOURCE) as { setData?: (data: unknown) => void } | undefined)?.setData?.(
+        structuresData(structures),
+      );
+    } catch {
+      // Ignored: the map is going away.
+    }
+    const markers = structures
+      .filter((s) => s.ring.length >= 3)
+      .map((s) => new Marker({ element: labelElement(s), draggable: false }).setLngLat(ringCenter(s.ring)).addTo(instance));
+    return () => {
+      for (const marker of markers) marker.remove();
+    };
+  }, [instance, structures]);
+}
+
+/** The compass, the scale bar and the measuring pill that sit over the map. */
+function Overlays({ latitude, zoom, saving }: { latitude: number; zoom: number; saving: boolean }) {
+  const scale = scaleBarFor(latitude, zoom);
+  return (
+    <>
+      <div className={styles.compass}>
+        <NorthArrow />
+      </div>
+      <div className={styles.scale} role="img" aria-label={liftMeasure.scaleBarLabel(scale.feet)}>
+        <span className={styles.scaleLabel}>{liftMeasure.scaleBar(scale.feet)}</span>
+        <span className={styles.scaleBar} style={{ width: `${scale.widthPx}px` }} />
+      </div>
+      {saving ? <Pill /> : null}
+    </>
+  );
+}
+
+function Pill() {
+  return (
+    <span className={styles.pill} role="status">
+      <svg className={styles.pillIcon} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+        <path d="M3 10.5 8 5.5l5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {liftMeasure.measuring}
+    </span>
+  );
+}
+
+type Notices = {
+  mapFailed: boolean;
+  locked: boolean;
+  problem: OutlineProblem | null;
+  saveFailed: boolean;
+  drawMode: boolean;
+};
+
+function NoticeList({ mapFailed, locked, problem, saveFailed, drawMode }: Notices) {
+  return (
+    <>
+      {mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
+      {locked ? <Banner tone="warning">{measure.locked}</Banner> : null}
+      {problem !== null ? (
+        <div role="alert">
+          <Banner tone="danger">{measure.problems[problem]}</Banner>
+        </div>
+      ) : null}
+      {saveFailed ? <Banner tone="danger">{measure.saveFailed}</Banner> : null}
+      {drawMode ? <p className={styles.hint}>{measure.drawHint}</p> : null}
+    </>
+  );
+}
+
+function Attribution() {
+  return (
+    <div className={styles.credits}>
+      <p className={styles.attribution}>{legal.footprintAttribution}</p>
+      <p className={styles.attribution}>{measure.attribution}</p>
+    </div>
+  );
+}
+
 function Loaded({ m }: { m: MeasurementView }) {
   const [lng, lat] = m.center;
   const patch = usePatchMeasurement(m.id);
-  const [ring, setRing] = useState<Ring>(m.outline?.[0] ?? []);
+  const [, setRing] = useState<Ring>(m.outline?.[0] ?? []);
   const [problem, setProblem] = useState<OutlineProblem | null>(null);
   const [drawMode, setDrawMode] = useState<boolean>(m.drawMode || !m.outline?.[0]?.length);
   const [mapFailed, setMapFailed] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
+  const [readyMap, setReadyMap] = useState<MapLibreMap | null>(null);
   const [zoom, setZoom] = useState(START_ZOOM);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -162,37 +229,14 @@ function Loaded({ m }: { m: MeasurementView }) {
     instance.on('zoom', () => setZoom(instance.getZoom()));
     instance.on('load', () => {
       // The structures go in first, so the editable outline draws on top of them.
-      try {
-        instance.addSource(STRUCTURES_SOURCE, { type: 'geojson', data: structuresData(structuresRef.current) });
-        instance.addLayer({
-          id: 'lift-structures-fill',
-          type: 'fill',
-          source: STRUCTURES_SOURCE,
-          paint: {
-            'fill-color': ['case', ['get', 'included'], INCLUDED_COLOR, LEFT_OUT_COLOR],
-            'fill-opacity': ['case', ['get', 'included'], 0.28, 0.1],
-          },
-        });
-        instance.addLayer({
-          id: 'lift-structures-line',
-          type: 'line',
-          source: STRUCTURES_SOURCE,
-          paint: {
-            'line-color': ['case', ['get', 'included'], INCLUDED_COLOR, LEFT_OUT_COLOR],
-            'line-width': 2,
-            'line-opacity': ['case', ['get', 'included'], 1, 0.35],
-          },
-        });
-      } catch {
-        // The map may be mid-teardown; the outline still works without the tint.
-      }
+      addStructureLayers(instance, structuresRef.current);
       editorRef.current = createOutlineEditor(instance, {
         ring: startRef.current.ring,
         drawMode: startRef.current.drawMode,
         readOnly: startRef.current.locked,
         onChange: (result) => onEdit.current(result),
       });
-      setMapReady(true);
+      setReadyMap(instance);
     });
     return () => {
       clearTimeout(saveTimer.current);
@@ -212,59 +256,22 @@ function Loaded({ m }: { m: MeasurementView }) {
     editorRef.current?.setReadOnly(locked);
   }, [locked]);
 
-  // Tint and dim follow the saved structures; each structure carries its own label.
-  useEffect(() => {
-    const instance = mapRef.current;
-    if (!mapReady || !instance) return;
-    try {
-      (instance.getSource(STRUCTURES_SOURCE) as { setData?: (data: unknown) => void } | undefined)?.setData?.(
-        structuresData(m.structures),
-      );
-    } catch {
-      // Ignored: the map is going away.
-    }
-    const markers = m.structures
-      .filter((s) => s.ring.length >= 3)
-      .map((s) => new Marker({ element: labelElement(s), draggable: false }).setLngLat(ringCenter(s.ring)).addTo(instance));
-    return () => {
-      for (const marker of markers) marker.remove();
-    };
-  }, [mapReady, m.structures]);
-
-  const scale = scaleBarFor(lat, zoom);
-  const noOutline = drawMode && ring.length < 3;
+  useStructureLabels(readyMap, m.structures);
 
   return (
     <div className={styles.frame}>
-      <div className={styles.mapBox}>
-        <div ref={containerRef} className={styles.map} role="region" aria-label={liftMeasure.mapLabel} />
-        <div className={styles.compass}>
-          <NorthArrow />
-        </div>
-        <div className={styles.scale} role="img" aria-label={liftMeasure.scaleBarLabel(scale.feet)}>
-          <span className={styles.scaleLabel}>{liftMeasure.scaleBar(scale.feet)}</span>
-          <span className={styles.scaleBar} style={{ width: `${scale.widthPx}px` }} />
-        </div>
-        {patch.isPending ? (
-          <span className={styles.pill} role="status">
-            {liftMeasure.measuring}
-          </span>
-        ) : null}
-      </div>
-      {mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
-      {locked ? <Banner tone="warning">{measure.locked}</Banner> : null}
-      {problem !== null ? (
-        <div role="alert">
-          <Banner tone="danger">{measure.problems[problem]}</Banner>
-        </div>
-      ) : null}
-      {patch.isError && !conflict ? <Banner tone="danger">{measure.saveFailed}</Banner> : null}
-      {drawMode ? <p className={styles.hint}>{measure.drawHint}</p> : null}
+      <NoticeList
+        mapFailed={mapFailed}
+        locked={locked}
+        problem={problem}
+        saveFailed={patch.isError && !conflict}
+        drawMode={drawMode}
+      />
       {!mapFailed && !locked ? (
         <div className={styles.tools}>
           {drawMode ? (
             <>
-              <Button onClick={() => editorRef.current?.finishDrawing()} disabled={noOutline && ring.length === 0}>
+              <Button onClick={() => editorRef.current?.finishDrawing()}>
                 {measure.finishDrawing}
               </Button>
               <Button
@@ -291,15 +298,59 @@ function Loaded({ m }: { m: MeasurementView }) {
           )}
         </div>
       ) : null}
-      <p className={styles.attribution}>{legal.footprintAttribution}</p>
-      <p className={styles.attribution}>{measure.attribution}</p>
+      <div className={styles.mapBox}>
+        <div ref={containerRef} className={styles.map} role="region" aria-label={liftMeasure.mapLabel} />
+        <Overlays latitude={lat} zoom={zoom} saving={patch.isPending} />
+        <Attribution />
+      </div>
+    </div>
+  );
+}
+
+/** The roof as MeasureWindow's one editor draws it: this view only places the map's container and what goes over it. */
+function Slotted({ m, roof }: { m: MeasurementView; roof: RoofSession }) {
+  const { containerRef, zoom, saving, map } = roof;
+  useStructureLabels(map, m.structures);
+  return (
+    <div className={styles.frame}>
+      <NoticeList
+        mapFailed={roof.mapFailed}
+        locked={roof.locked}
+        problem={roof.problem}
+        saveFailed={roof.saveFailed}
+        drawMode={roof.drawMode}
+      />
+      {!roof.mapFailed && !roof.locked ? (
+        <div className={styles.tools}>
+          {roof.drawMode ? (
+            <>
+              <Button onClick={roof.finishDrawing}>
+                {measure.finishDrawing}
+              </Button>
+              <Button variant="ghost" onClick={roof.clearDrawing}>
+                {measure.clearDrawing}
+              </Button>
+            </>
+          ) : (
+            <Button variant="ghost" onClick={roof.redraw}>
+              {measure.redraw}
+            </Button>
+          )}
+        </div>
+      ) : null}
+      <div className={styles.mapBox}>
+        <div ref={containerRef} className={styles.map} role="region" aria-label={liftMeasure.mapLabel} />
+        <Overlays latitude={m.center[1]} zoom={zoom} saving={saving} />
+        <Attribution />
+      </div>
     </div>
   );
 }
 
 export function RoofView({ measurementId }: { measurementId: string }) {
   const query = useMeasurement(measurementId);
-  if (query.data !== undefined) return <Loaded m={query.data} />;
+  const { roof } = useContext(MeasureSlotsContext);
+  if (query.data !== undefined) return roof ? <Slotted m={query.data} roof={roof} /> : <Loaded m={query.data} />;
   if (query.isError) {
     return (
       <div className={styles.frame} role="alert">
@@ -313,9 +364,7 @@ export function RoofView({ measurementId }: { measurementId: string }) {
         <div className={styles.map}>
           <Skeleton width="100%" height="100%" />
         </div>
-        <span className={styles.pill} role="status">
-          {liftMeasure.measuring}
-        </span>
+        <Pill />
       </div>
     </div>
   );

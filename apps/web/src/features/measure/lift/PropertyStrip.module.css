@@ -1,3 +1,4 @@
+/* The address strip above the roof, matched to the reference app. */
 .strip {
   display: flex;
   flex-wrap: wrap;
@@ -5,38 +6,48 @@
   justify-content: space-between;
   gap: 8px 16px;
   min-width: 0;
+  color: var(--ds-text-1, #2b2620);
+  font-family: var(--ds-font, var(--font));
 }
 
 .who {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
 .address {
-  font-size: 1.125rem;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .owner {
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
+  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
+  font-size: 12px;
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .chip {
-  padding: 2px 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  font-size: var(--font-size-min);
+  padding: 3px 10px;
+  border: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+  border-radius: var(--ds-r-chip, 999px);
+  background: var(--ds-surface-2, #f6f1e6);
+  color: var(--ds-text-1, #2b2620);
+  font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
+/* Hail size is the one warm chip: amber on a pale amber ground */
 .chip[data-tone="hail"] {
-  border-color: var(--hail-3);
+  border-color: transparent;
+  background: var(--ds-accent-tint, #fde7b0);
+  color: var(--ds-accent-ink, #5c3b00);
 }

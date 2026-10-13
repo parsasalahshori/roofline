@@ -29,16 +29,23 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
           </span>
         ) : null}
       </header>
-      <Field
-        label={measure.requestsSearch}
-        labelHidden
-        placeholder={measure.requestsSearch}
-        type="search"
-        autoComplete="off"
-        maxLength={100}
-        value={text}
-        onChange={(event) => setText(event.currentTarget.value)}
-      />
+      <p className={styles.subtitle}>{measure.requestsSubtitle}</p>
+      <div className={styles.search}>
+        <svg className={styles.glass} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <Field
+          label={measure.requestsSearch}
+          labelHidden
+          placeholder={measure.requestsSearch}
+          type="search"
+          autoComplete="off"
+          maxLength={100}
+          value={text}
+          onChange={(event) => setText(event.currentTarget.value)}
+        />
+      </div>
       {list.isError && rows.length === 0 ? (
         <p className={styles.note} role="alert">
           {measure.requestsFailed}

@@ -12,6 +12,7 @@ export const liftMeasure = {
   statsLabel: 'Roof measurements',
   statsTracing: (facets: number) => `Traced ${facets} ${facets === 1 ? 'facet' : 'facets'} and read the pitch`,
   statsTracingPlain: 'Read the roof from its outline',
+  totalArea: 'Total roof area',
   squaresUnit: 'squares',
   roofArea: (sqFt: number) => `${sqFt.toLocaleString()} sq ft`,
   pitch: 'Pitch',

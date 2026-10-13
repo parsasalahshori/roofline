@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
-import { legal } from '../../copy/legal.ts';
 import { measure } from '../../copy/measure.ts';
 import { makeFailureMessage, useBuildProposal, useSendProposal } from '../estimator/api.ts';
 import { mapStyle, satelliteAvailable } from '../../shell/map/mapStyle.ts';
@@ -17,7 +16,8 @@ import styles from './MeasureWindow.module.css';
 import { PropertyStrip } from './lift/PropertyStrip.tsx';
 import { RequestsList } from './lift/RequestsList.tsx';
 import { RoofView } from './lift/RoofView.tsx';
-import { MeasureSlotsContext } from './lift/slots.ts';
+import { MeasureSlotsContext, type RoofSession } from './lift/slots.ts';
+import { addStructureLayers } from './lift/structures.ts';
 import { StatsPanel } from './lift/StatsPanel.tsx';
 import { createOutlineEditor, type EditResult, type OutlineEditor } from './OutlineEditor.ts';
 import type { MeasurementPatch, MeasurementView, OutlineProblem } from './types.ts';
@@ -123,6 +123,12 @@ function Loaded({ m }: { m: MeasurementView }) {
   }).current;
   const startRef = useRef({ ring: m.outline?.[0] ?? [], drawMode: m.drawMode || !m.outline?.[0]?.length, locked: m.locked });
   const [mapFailed, setMapFailed] = useState(false);
+  const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
+  const [zoom, setZoom] = useState(START_ZOOM);
+  const structuresRef = useRef(m.structures);
+  useEffect(() => {
+    structuresRef.current = m.structures;
+  });
 
   const conflict = patch.error instanceof ApiError && patch.error.status === 409;
   const locked = m.locked || conflict;
@@ -156,13 +162,17 @@ function Loaded({ m }: { m: MeasurementView }) {
       return;
     }
     instance.on('error', () => setMapFailed(true));
+    instance.on('zoom', () => setZoom(instance.getZoom()));
     instance.on('load', () => {
+      // The buildings tint goes in first, so the editable outline draws on top of it
+      addStructureLayers(instance, structuresRef.current);
       editorRef.current = createOutlineEditor(instance, {
         ring: startRef.current.ring,
         drawMode: startRef.current.drawMode,
         readOnly: startRef.current.locked,
         onChange: (result) => onEdit.current(result),
       });
+      setMapInstance(instance);
     });
     return () => {
       clearTimeout(saveTimer.current);
@@ -260,57 +270,32 @@ function Loaded({ m }: { m: MeasurementView }) {
     [measure.valley, format(estimate.valleyFt)],
   ];
 
-  const mapNode = (
-      <section className={styles.mapColumn}>
-        <div ref={containerRef} className={styles.map} role="region" aria-label={measure.mapLabel} />
-        {mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
-        {drawMode ? <p className={styles.hint}>{measure.drawHint}</p> : null}
-        {!drawMode && !mapFailed && !locked ? (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              editorRef.current?.setDrawMode(true);
-              setDrawMode(true);
-              setProblem(null);
-            }}
-          >
-            {measure.redraw}
-          </Button>
-        ) : null}
-        {drawMode && !mapFailed ? (
-          <>
-            <Button onClick={() => editorRef.current?.finishDrawing()} disabled={locked}>
-              {measure.finishDrawing}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                editorRef.current?.clearDrawing();
-                setProblem(null);
-              }}
-            >
-              {measure.clearDrawing}
-            </Button>
-          </>
-        ) : null}
-        <p className={styles.attribution}>{legal.footprintAttribution}</p>
-        <p className={styles.attribution}>{measure.attribution}</p>
-      </section>
-  );
+  const roof: RoofSession = {
+    containerRef,
+    map: mapInstance,
+    zoom,
+    ring,
+    drawMode,
+    locked,
+    conflict,
+    problem,
+    mapFailed,
+    saving: patch.isPending,
+    saveFailed: patch.isError && !conflict,
+    finishDrawing: () => editorRef.current?.finishDrawing(),
+    clearDrawing: () => {
+      editorRef.current?.clearDrawing();
+      setProblem(null);
+    },
+    redraw: () => {
+      editorRef.current?.setDrawMode(true);
+      setDrawMode(true);
+      setProblem(null);
+    },
+  };
 
   const panelsNode = (
     <>
-        <span className={styles.kind} data-kind={m.kind}>
-          {m.kind === 'exact' ? measure.exactLabel : measure.estimateLabel}
-        </span>
-        {locked ? <Banner tone="warning">{measure.locked}</Banner> : null}
-        {problem !== null ? (
-          <div role="alert">
-            <Banner tone="danger">{measure.problems[problem]}</Banner>
-          </div>
-        ) : null}
-        {patch.isError && !conflict ? <Banner tone="danger">{measure.saveFailed}</Banner> : null}
-
         {m.structures.length > 0 ? (
           <section className={styles.panel} aria-labelledby="measure-structures">
             <h2 id="measure-structures" className={styles.title}>
@@ -415,7 +400,7 @@ function Loaded({ m }: { m: MeasurementView }) {
   );
 
   return (
-    <MeasureSlotsContext value={{ map: mapNode, panels: panelsNode }}>
+    <MeasureSlotsContext value={{ roof, panels: panelsNode, estimate }}>
       <PropertyStrip measurementId={m.id} />
       <div className={styles.stage}>
         <RoofView measurementId={m.id} />
