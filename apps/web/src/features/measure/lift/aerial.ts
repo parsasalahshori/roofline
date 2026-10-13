@@ -1,40 +1,21 @@
 import type { StyleSpecification } from 'maplibre-gl';
 import { useEffect, useState } from 'react';
-import { legal } from '../../../copy/legal.ts';
-import { mapStyle, satelliteAvailable } from '../../../shell/map/mapStyle.ts';
+import { mapStyle } from '../../../shell/map/mapStyle.ts';
 import type { MapEnv } from '../../../shell/map/types.ts';
 
-const IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const IMAGERY_IDENTIFY = 'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/identify';
 
-/** The free world aerial photo as a raster style (no key needed). */
-export function aerialStyle(): StyleSpecification {
-  return {
-    version: 8,
-    sources: {
-      aerial: {
-        type: 'raster',
-        tiles: [IMAGERY_TILES],
-        tileSize: 256,
-        maxzoom: 19,
-        attribution: legal.imageryAttribution,
-      },
-    },
-    layers: [
-      { id: 'aerial-ground', type: 'background', paint: { 'background-color': '#6d8446' } },
-      { id: 'aerial', type: 'raster', source: 'aerial' },
-    ],
-  };
-}
-
-/** Measure always shows a photo: the keyed satellite style when there is a key, else the free aerial. */
+/**
+ * Measure always shows a photo: the shared map style in satellite mode, asked for the free aerial photos when the
+ * build names no imagery (a MapTiler key still wins and gives its hybrid style).
+ */
 export function measureStyle(env: MapEnv): StyleSpecification | string {
-  return satelliteAvailable(env) ? mapStyle(env, 'satellite') : aerialStyle();
+  return mapStyle({ ...env, imagery: 'aerial' }, 'satellite');
 }
 
-/** True when the free aerial is drawn, so its capture date can be looked up. */
+/** True when the free aerial is drawn (no key), so its capture date can be looked up. */
 export function usesFreeAerial(env: MapEnv): boolean {
-  return !satelliteAvailable(env);
+  return (env.maptilerKey ?? '').trim() === '';
 }
 
 /** Reads "3/13/2025" or "20250313" into a date; anything else is no date. */

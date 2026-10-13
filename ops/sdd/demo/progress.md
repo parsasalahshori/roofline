@@ -67,3 +67,10 @@ Branch `demo-mode`, off `launch-integration` 2a3cbe5. The owner runs the demo li
 - Agents panel: icon + name on one row, the description under it, then the run control or status line (`AgentPanel`). Agent cards on a phone show success and hours saved in one row.
 - Tests/e2e that open the numbers now press Adjust first (`measure.test`, `a11y`, `map-estimate`, `demo-estimator` specs).
 - Environment note: in a git worktree under a `.claude/` directory the API's `sendFile(index.html)` answers 404 for dotfile paths, so the demo stack returned 500 for pages; I patched `apps/api/src/web.ts` locally for the e2e run only and did not commit it.
+
+## demo-imagery (2026-10-13): aerial photos in demo mode
+
+- New map option `aerial` (Esri World Imagery, z/y/x, tileSize 256, maxzoom 19 so MapLibre overzooms to 21; attribution `legal.imageryAttribution`). No key. `VITE_MAP_TILES=aerial` draws it in both modes; `VITE_MAP_IMAGERY=aerial` draws it for satellite only. A MapTiler key still wins. The demo build (`scripts/demo.ts`) sets `VITE_MAP_TILES=osm` + `VITE_MAP_IMAGERY=aerial`, so streets stay OSM, the main map's Satellite toggle and the Measure map (which asks for satellite when `satelliteAvailable`) show aerial photos. A failed tile leaves a gap, nothing else.
+- The API's CSP (`MAP_HOSTS` in `apps/api/src/app.ts`) now allows `https://server.arcgisonline.com` for img and connect; without it the browser blocks the tiles.
+- Demo and development only: Esri's terms do not cover a paid product, so production needs a licensed imagery provider (a MapTiler key already does that).
+- Known: `test/e1-routes.test.tsx` "/estimator/measure/m1 opens the measure window" fails on the base commit too (not from this change). The seeded measurement centres sit over a parking lot / field, so the imagery shows no house under the (unseen) outline; that is seed data, not tiles.

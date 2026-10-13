@@ -11,6 +11,8 @@ function keyOf(env: MapEnv): string | undefined {
   return trimmed === '' ? undefined : trimmed;
 }
 
+const AERIAL_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
 /** The plain page colour, with no sources: it asks the network for nothing and needs no glyphs. */
 function blankStyle(): StyleSpecification {
   return {
@@ -46,9 +48,34 @@ function osmStyle(): StyleSpecification {
 }
 
 /**
+ * Aerial photos from Esri World Imagery (no key), sharp to zoom 19; `maxzoom: 19` makes MapLibre stretch that last
+ * level for the closer zooms the roof view uses. The URL order is z/y/x. A tile that fails to load leaves a gap in
+ * the picture and nothing else.
+ *
+ * Demo and development only. Esri's terms do not cover a paid product, so production needs a licensed imagery
+ * provider (a MapTiler key already switches satellite to its hybrid style, and beats this).
+ */
+function aerialStyle(): StyleSpecification {
+  return {
+    version: 8,
+    sources: {
+      aerial: {
+        type: 'raster',
+        tiles: [AERIAL_TILES],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: legal.imageryAttribution,
+      },
+    },
+    layers: [{ id: 'aerial', type: 'raster', source: 'aerial' }],
+  };
+}
+
+/**
  * The style the map loads. With a MapTiler key it is a URL (the light gray dataviz style, or hybrid for satellite), and
- * the key beats `tiles`. Without one it is the OpenStreetMap style when `tiles` is `osm`, and the
- * blank style otherwise.
+ * the key beats `tiles` and `imagery`. Without one, `tiles` of `aerial` draws the Esri aerial photos in both modes,
+ * `imagery` of `aerial` draws them in satellite mode only (the demo build: streets stay on OpenStreetMap), `tiles` of
+ * `osm` draws OpenStreetMap, and anything else is the blank style.
  */
 export function mapStyle(env: MapEnv, mode: MapMode): StyleSpecification | string {
   const key = keyOf(env);
@@ -56,11 +83,12 @@ export function mapStyle(env: MapEnv, mode: MapMode): StyleSpecification | strin
     const style = mode === 'satellite' ? 'hybrid' : 'dataviz-light';
     return `https://api.maptiler.com/maps/${style}/style.json?key=${encodeURIComponent(key)}`;
   }
+  if (env.tiles === 'aerial' || (mode === 'satellite' && env.imagery === 'aerial')) return aerialStyle();
   if (env.tiles === 'osm') return osmStyle();
   return blankStyle();
 }
 
-/** Satellite needs the MapTiler hybrid style, so it is offered only when there is a key. */
+/** Satellite needs the MapTiler hybrid style or the free aerial photos, so it is offered only with a key or `aerial`. */
 export function satelliteAvailable(env: MapEnv): boolean {
-  return keyOf(env) !== undefined;
+  return keyOf(env) !== undefined || env.tiles === 'aerial' || env.imagery === 'aerial';
 }
