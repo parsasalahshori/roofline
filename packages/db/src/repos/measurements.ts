@@ -167,15 +167,25 @@ export async function footprintById(tx: Tx, id: string): Promise<{ id: string; r
   return { id: String(row.id), ring: openRing(geojson.coordinates[0] as Ring), areaSqFt: Number(row.area_sq_ft) };
 }
 
-/** The company's saved, not archived home on this footprint that the caller may see (the oldest), or null. */
+/**
+ * The company's saved, not archived home on this footprint that the caller may see, or null: one already linked to
+ * it first, else one with no footprint yet whose point lies inside it (homes saved before any measure); the oldest wins.
+ */
 export async function propertyOnFootprint(tx: Tx, ctx: TenantContext, footprintId: string): Promise<PropertyRow | null> {
+  if (!/^\d{1,19}$/.test(footprintId)) return null;
+  const inside = sql`(${properties.footprintId} is null and ${properties.geom} is not null and ST_Covers((select f.geom from building_footprints f where f.id = ${footprintId}::bigint), ${properties.geom}))`;
   const [row] = await tx
     .select()
     .from(properties)
     .where(
-      and(eq(properties.companyId, ctx.companyId), eq(properties.footprintId, footprintId), isNull(properties.archivedAt), propertyScope(ctx)),
+      and(
+        eq(properties.companyId, ctx.companyId),
+        or(eq(properties.footprintId, footprintId), inside),
+        isNull(properties.archivedAt),
+        propertyScope(ctx),
+      ),
     )
-    .orderBy(asc(properties.createdAt), asc(properties.id))
+    .orderBy(sql`(${properties.footprintId} is null)`, asc(properties.createdAt), asc(properties.id))
     .limit(1);
   return row ?? null;
 }

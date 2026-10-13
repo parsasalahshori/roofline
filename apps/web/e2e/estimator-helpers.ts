@@ -51,8 +51,8 @@ export async function makeAndSendProposal(
   click: (locator: Locator) => Promise<void>,
 ): Promise<SentProposal> {
   await page.goto('/estimator');
-  await page.getByLabel('Address', { exact: true }).fill(OMAHA_ADDRESS);
-  await page.getByLabel('Address', { exact: true }).press('Enter');
+  await page.getByLabel('Type an address to measure a roof', { exact: true }).fill(OMAHA_ADDRESS);
+  await page.getByLabel('Type an address to measure a roof', { exact: true }).press('Enter');
 
   await page.getByLabel('Name', { exact: true }).fill('Dana Homeowner');
   await page.getByLabel('Phone', { exact: true }).fill('4025550142');

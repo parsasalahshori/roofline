@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /*
- * The demo smoke test (e2e/demo-walkthrough.spec.ts), kept apart from the e2e suite:
+ * The demo smoke tests (e2e/demo-walkthrough.spec.ts, e2e/demo-estimator.spec.ts), kept apart from the e2e suite:
  *
  *   npx playwright test -c apps/web/playwright.demo.config.ts
  *
@@ -16,7 +16,7 @@ const SIZE = { width: 1440, height: 900 };
 
 export default defineConfig({
   testDir: 'e2e',
-  testMatch: /demo-walkthrough\.spec\.ts/,
+  testMatch: /demo-(walkthrough|estimator)\.spec\.ts/,
   outputDir: '../../demo-artifacts/run',
   workers: 1,
   retries: 0,

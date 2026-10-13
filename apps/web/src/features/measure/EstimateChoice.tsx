@@ -1,4 +1,5 @@
 import { Button } from '@roofline/ui';
+import { paidReports } from '../../copy/billing.ts';
 import { measure } from '../../copy/measure.ts';
 import styles from './EstimateChoice.module.css';
 
@@ -6,7 +7,7 @@ export type PriceChoice = 'free' | 'exact';
 
 const OPTIONS: { value: PriceChoice; label: string; note: string }[] = [
   { value: 'free', label: measure.choiceFree, note: measure.choiceFreeNote },
-  { value: 'exact', label: measure.choiceExact, note: measure.choiceExactNote },
+  { value: 'exact', label: paidReports.exactChoice, note: measure.choiceExactNote },
 ];
 
 /** Free estimate (the default) or a paid exact report, which goes through the usual approval. */
