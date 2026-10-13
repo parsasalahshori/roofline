@@ -153,7 +153,6 @@ describe('turns repo', () => {
     const { id } = await withTenant(pools, c, (tx) =>
       insertTurn(tx, c, {
         conversationId: convo,
-        position: 1,
         speaker: 'assistant',
         text: 'Hello there.',
         model: 'claude-test',
@@ -173,7 +172,7 @@ describe('turns repo', () => {
       id,
       companyId: seed.a.companyId,
       conversationId: convo,
-      position: 1,
+      position: 0,
       speaker: 'assistant',
       text: 'Hello there.',
       truncated: false,
@@ -190,46 +189,66 @@ describe('turns repo', () => {
     expect(row!.toolCalls).toEqual([{ name: 'lookup', input: { a: 1 }, result: 'ok', ok: true }]);
 
     const { id: id2 } = await withTenant(pools, c, (tx) =>
-      insertTurn(tx, c, { conversationId: convo, position: 2, speaker: 'caller', text: 'Hi' }),
+      insertTurn(tx, c, { conversationId: convo, speaker: 'caller', text: 'Hi' }),
     );
     const rows = await withTenant(pools, c, (tx) => listTurns(tx, c, convo));
     expect(rows.find((r) => r.id === id2)?.guardHits).toEqual([]);
   });
 
-  test('insertTurn rejects a duplicate position in one conversation', async () => {
+  test('insertTurn allocates consecutive positions starting at 0', async () => {
     const convo = await newConversation(seed.a);
     const c = ctxFor(seed.a);
-    await withTenant(pools, c, (tx) => insertTurn(tx, c, { conversationId: convo, position: 1, speaker: 'caller', text: 'a' }));
-    await expect(
-      withTenant(pools, c, (tx) => insertTurn(tx, c, { conversationId: convo, position: 1, speaker: 'assistant', text: 'b' })),
-    ).rejects.toThrow();
+    for (const speaker of ['caller', 'assistant', 'caller'] as const) {
+      await withTenant(pools, c, (tx) => insertTurn(tx, c, { conversationId: convo, speaker, text: 'x' }));
+    }
+    const rows = await withTenant(pools, c, (tx) => listTurns(tx, c, convo));
+    expect(rows.map((r) => r.position)).toEqual([0, 1, 2]);
+  });
+
+  test('a passed position is ignored', async () => {
+    const convo = await newConversation(seed.a);
+    const c = ctxFor(seed.a);
+    await withTenant(pools, c, (tx) => insertTurn(tx, c, { conversationId: convo, position: 7, speaker: 'caller', text: 'a' }));
+    const rows = await withTenant(pools, c, (tx) => listTurns(tx, c, convo));
+    expect(rows.map((r) => r.position)).toEqual([0]);
+  });
+
+  test('two concurrent insertTurn calls in separate transactions get distinct positions', async () => {
+    const convo = await newConversation(seed.a);
+    const c = ctxFor(seed.a);
+    await Promise.all([
+      withTenant(pools, c, (tx) => insertTurn(tx, c, { conversationId: convo, speaker: 'caller', text: 'a' })),
+      withTenant(pools, c, (tx) => insertTurn(tx, c, { conversationId: convo, speaker: 'assistant', text: 'b' })),
+    ]);
+    const rows = await withTenant(pools, c, (tx) => listTurns(tx, c, convo));
+    expect(rows.map((r) => r.position).sort()).toEqual([0, 1]);
   });
 
   test('updateTurn changes only text, tool_calls and truncated', async () => {
     const convo = await newConversation(seed.a);
     const c = ctxFor(seed.a);
     const { id } = await withTenant(pools, c, (tx) =>
-      insertTurn(tx, c, { conversationId: convo, position: 1, speaker: 'assistant', text: 'Long answer', model: 'm', totalMs: 500, guardHits: ['x'] }),
+      insertTurn(tx, c, { conversationId: convo, speaker: 'assistant', text: 'Long answer', model: 'm', totalMs: 500, guardHits: ['x'] }),
     );
     await withTenant(pools, c, (tx) =>
       updateTurn(tx, c, id, { text: 'Long', truncated: true, toolCalls: [{ name: 't', input: {}, result: 'r', ok: false }] }),
     );
     await withTenant(pools, c, (tx) => updateTurn(tx, c, id, {}));
     const [row] = await withTenant(pools, c, (tx) => tx.select().from(conversationTurns));
-    expect(row).toMatchObject({ text: 'Long', truncated: true, model: 'm', totalMs: 500, guardHits: ['x'], position: 1, speaker: 'assistant' });
+    expect(row).toMatchObject({ text: 'Long', truncated: true, model: 'm', totalMs: 500, guardHits: ['x'], position: 0, speaker: 'assistant' });
     expect(row!.toolCalls).toEqual([{ name: 't', input: {}, result: 'r', ok: false }]);
   });
 
   test('listTurns returns turns in position order', async () => {
     const convo = await newConversation(seed.a);
     const c = ctxFor(seed.a);
-    for (const position of [3, 1, 2]) {
+    for (const n of [1, 2, 3]) {
       await withTenant(pools, c, (tx) =>
-        insertTurn(tx, c, { conversationId: convo, position, speaker: position % 2 ? 'caller' : 'assistant', text: `t${position}` }),
+        insertTurn(tx, c, { conversationId: convo, speaker: n % 2 ? 'caller' : 'assistant', text: `t${n}` }),
       );
     }
     const rows = await withTenant(pools, c, (tx) => listTurns(tx, c, convo));
-    expect(rows.map((r) => r.position)).toEqual([1, 2, 3]);
+    expect(rows.map((r) => r.position)).toEqual([0, 1, 2]);
     expect(rows.map((r) => r.text)).toEqual(['t1', 't2', 't3']);
   });
 
@@ -238,7 +257,7 @@ describe('turns repo', () => {
     const a = ctxFor(seed.a);
     const b = ctxFor(seed.b);
     const { id } = await withTenant(pools, a, (tx) =>
-      insertTurn(tx, a, { conversationId: convo, position: 1, speaker: 'caller', text: 'secret' }),
+      insertTurn(tx, a, { conversationId: convo, speaker: 'caller', text: 'secret' }),
     );
     expect(await withTenant(pools, b, (tx) => listTurns(tx, b, convo))).toEqual([]);
     await withTenant(pools, b, (tx) => updateTurn(tx, b, id, { text: 'hacked', truncated: true }));
@@ -246,7 +265,7 @@ describe('turns repo', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ text: 'secret', truncated: false });
     await expect(
-      withTenant(pools, b, (tx) => insertTurn(tx, b, { conversationId: convo, position: 2, speaker: 'caller', text: 'x' })),
+      withTenant(pools, b, (tx) => insertTurn(tx, b, { conversationId: convo, speaker: 'caller', text: 'x' })),
     ).rejects.toThrow();
   });
 });

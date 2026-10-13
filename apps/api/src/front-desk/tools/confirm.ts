@@ -7,7 +7,8 @@ import {
 } from '@roofline/db';
 import type { AppDeps } from '../../app.ts';
 import type { ToolHandler } from '../engine-types.ts';
-import { isAvailable as timesAvailable, systemCtx, whenShort, zoneOf } from './times.ts';
+import { isAvailable as timesAvailable, whenShort, zoneOf } from './times.ts';
+import { systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 8: confirm_appointment (any kind of visit, for the verified caller only) and the text

@@ -255,3 +255,16 @@ Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.reco
 - 2026-10-12: **d1-rev-l merged** (E1, RC-2 review #2/#4/#5/#6 and the RC-1 matcher tolerance; a two-segment relay test; 6126009, CI 38300824666 green). The idle-SMS pass runs on the half hour, skips read-only and texting-off companies, rechecks idleness under a conversation lock, and also lists recently ended, unsummarised threads.
 - 2026-10-12: **RC-4 merged** (D1 lead; 10f55e0, CI 38302002040 green; local front-desk api 635 and shared 849 on the merge). shouldTransfer matches leak and danger loosely, so a router 'emergency' still rings on-call (Ruling BK). A reused conversation's clock starts at most 20 min back. insertConversation takes its times from the app clock.
 - 2026-10-12: **d1-rev-m merged** (E1; 4d34e8b, CI 38305050962 green). Amended **Ruling BK**: emergencyReason checks the exact vocabulary, RC-4's loose intent words and the caller's own phrases, a bare 'emergency' counts as danger, and the router prompt names the vocabulary; the D1 lead's engine commit passes callerText. Also the final ROUTER_INTENTS (36) for the router schema and zod; a ring_first after-dial cap check (aiAllowedNow plus lockAiCap); /voice marks ringing_team only with team numbers; dedupe and the inbox URGENT check need ok='true'; /after-relay urgency ORs in hasUrgentNoticeFor. Local: front-desk api 643, shared 883, rls 153.
+- 2026-10-12: **RC-1/RC-1b merged** (S1 lead; d1-rc1 5893457, CI 38308593201 green, on b2c4a97). **This clears the launch blocker.** Local suites on the merge: db 346, api 3003, web 789, shared 887.
+  - SMS uses only the AI-turn cap, so a reused thread of any age keeps answering.
+  - insertTurn allocates the position under the conversation row lock.
+  - System notes commit only together with an assistant reply.
+  - verify_caller locks out at MAX, and identity and failures persist and are restored on reuse. Failures are counted from verify_caller ok:false rows whose result is a mismatch or empty, so the count survives redaction. Engine refusals are not counted.
+  - Shared numbers are never 'matched', and the guessed customer is cleared.
+  - lastTeamReplyAt counts only staff replies. The "Team is handling" switch quiets until teamUntil.
+  - An SMS handoff replies once and carries urgency.
+  - A photo-only text is stored as '[photo]'.
+  - The router intents are the shared ROUTER_INTENTS (from rev-m); ASK_PERSON_INTENTS is re-added.
+  - Known minor still open: E1 review 11 (a duplicate first text in history after a silent turn; rare).
+  - Also merged: integration sentinel problems 9 (one Front Desk-off check in read-only.ts) and 11 (the eval test env sets E1's R2 settings).
+- 2026-10-12: **Final D1 head f2c0e8b green** (integration CI 38311041750, Platform and E2E). Every D1 follow-up has landed (RC-4, rev-l, rev-m, RC-1/1b).
