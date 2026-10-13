@@ -52,8 +52,13 @@ export async function makeAndSendProposal(
   click: (locator: Locator) => Promise<void>,
 ): Promise<SentProposal> {
   await page.goto('/estimator');
-  // /estimator opens the Measure window; the search takes any address, and one no request matches offers to measure it
-  await page.getByRole('searchbox', { name: 'Search name or address' }).fill(OMAHA_ADDRESS);
+  // /estimator opens the Measure window; the search takes any address, and one no request matches offers to measure it.
+  // The request list (with its search) may start folded away behind "Show measurement requests".
+  const search = page.getByRole('searchbox', { name: 'Search name or address' });
+  const showList = page.getByRole('button', { name: 'Show measurement requests' });
+  await expect(search.or(showList).first()).toBeVisible({ timeout: 20_000 });
+  if (!(await search.isVisible())) await showList.click();
+  await search.fill(OMAHA_ADDRESS);
   await click(page.getByRole('button', { name: 'Measure a new roof at ' + OMAHA_ADDRESS }));
   await click(page.getByRole('button', { name: 'Measure roof' }));
 
