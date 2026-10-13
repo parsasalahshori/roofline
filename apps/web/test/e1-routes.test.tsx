@@ -9,6 +9,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { homeowner } from '../src/copy/homeowner.ts';
+import { liftMeasure } from '../src/copy/liftMeasure.ts';
 import { measure } from '../src/copy/measure.ts';
 import { prices } from '../src/copy/prices.ts';
 import { proposals } from '../src/copy/proposals.ts';
@@ -104,9 +105,17 @@ describe('E1 windows', () => {
   });
 
   it('/estimator/measure/m1 opens the measure window', async () => {
-    signedInApi(ACCOUNT, { ...proposalListRoutes(), 'GET /api/measurements/m1': () => ({ body: MEASUREMENT }) });
-    renderApp('/estimator/measure/m1');
+    signedInApi(ACCOUNT, {
+      ...proposalListRoutes(),
+      'GET /api/measurements/m1': () => ({ body: MEASUREMENT }),
+      'GET /api/measurements/m1/preview': () => ({
+        body: { addressLine: '1 Main St', city: 'Austin', state: 'TX', customerName: null, hailIn: null, options: null, financing: null },
+      }),
+    });
+    const { user } = renderApp('/estimator/measure/m1');
 
+    // A roof with no outline opens measured (nothing to scan); its numbers sit under the card's Adjust
+    await user.click(await screen.findByRole('button', { name: liftMeasure.adjust }));
     expect(await screen.findByText(measure.numbersTitle)).toBeInTheDocument();
   });
 

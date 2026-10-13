@@ -1,17 +1,18 @@
 import { instantEstimate, type Ring } from '@roofline/shared';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { estimator } from '../src/copy/estimator.ts';
 import { legal } from '../src/copy/legal.ts';
 import { paidReports } from '../src/copy/billing.ts';
-import { liftMeasure } from '../src/copy/liftMeasure.ts';
+import { liftMeasure, liftProposal } from '../src/copy/liftMeasure.ts';
 import { measure } from '../src/copy/measure.ts';
 import { forgetRevealed } from '../src/features/measure/lift/scan.ts';
 import { closeDrawing, deleteCorner, insertCorner, moveCorner, nudgeCorner } from '../src/features/measure/OutlineEditor.ts';
 import { MeasureWindow } from '../src/features/measure/MeasureWindow.tsx';
-import type { MeasurementView } from '../src/features/measure/types.ts';
+import type { MeasurementPreview, MeasurementView } from '../src/features/measure/types.ts';
+import { gableRoof } from './roof-model-fixture.ts';
 
 /* A stand-in for MapLibre (jsdom has no WebGL): records what the app adds and lets a test emit map events. */
 const fake = vi.hoisted(() => {
@@ -35,6 +36,7 @@ const fake = vi.hoisted(() => {
     addLayer = vi.fn((spec: { id: string }) => void this.layers.set(spec.id, spec));
     getLayer = (id: string) => this.layers.get(id);
     removeLayer = (id: string) => void this.layers.delete(id);
+    setLayoutProperty = vi.fn();
     removeSource = (id: string) => void this.sources.delete(id);
     // A pixel maps to a spot near the house: 10 pixels are about one metre.
     unproject = ([x, y]: [number, number]) => ({ lng: -96.8002 + x * 1e-5, lat: 32.7998 + y * 1e-5 });
@@ -89,6 +91,36 @@ const fake = vi.hoisted(() => {
 });
 
 vi.mock('maplibre-gl', () => ({ Map: fake.FakeMap, Marker: fake.FakeMarker, NavigationControl: fake.FakeNavigationControl }));
+
+function previewOption(tier: 'good' | 'better' | 'best', totalCents: number) {
+  return {
+    tier,
+    name: `${tier} shingles`,
+    highlights: ['Shingles', 'Synthetic underlayment'],
+    material: 'architectural' as const,
+    wastePercent: 12,
+    enabled: true,
+    calculation: {
+      surfaceAreaSqFt: 1200, roofSquares: 12, materialBundles: 41, orderedSquares: 13.67, subtotalCents: 600000, markupCents: 150000, taxCents: 0, totalCents,
+      lines: [
+        { code: 'material', name: 'Architectural shingles', quantity: 41, unit: 'bundle', unitCents: 4200, totalCents: 172200, taxable: true },
+        { code: 'labor', name: 'Roof installation', quantity: 12, unit: 'sq', unitCents: 13500, totalCents: 162000, taxable: false },
+      ],
+    },
+    addOnLines: [],
+    totalCents,
+    monthlyEstimateCents: Math.round(totalCents / 76),
+  };
+}
+const PREVIEW: MeasurementPreview = {
+  addressLine: '410 Truss Ave',
+  city: 'Omaha',
+  state: 'NE',
+  customerName: 'Carmen Castellano',
+  hailIn: null,
+  options: [previewOption('good', 1900000), previewOption('better', 2300000), previewOption('best', 3700000)],
+  financing: { aprBps: 999, months: 120 },
+};
 
 const LNG = -96.8;
 const LAT = 32.8;
@@ -217,6 +249,7 @@ beforeEach(() => {
       calls.push({ key, body });
       if (key === 'GET /api/auth/me') return json({ user: { id: 'u1', email: 'a@b.c', name: 'A', emailVerified: true }, company: { id: 'c1', name: 'C', slug: 'c', status: 'active' }, role, companies: [] });
       if (key === 'GET /api/measurements/m1') return json(current);
+      if (key.startsWith('GET /api/measurements/m1/preview')) return json(PREVIEW);
       if (key === 'PATCH /api/measurements/m1') {
         if (patchStatus !== 200) return json({ error: 'This measurement was already sent.' }, patchStatus);
         if (patchDelay > 0) await wait(patchDelay);
@@ -643,23 +676,56 @@ describe('the Measure roof scan', () => {
     expect(screen.getByText(/^Aerial imagery/)).toBeTruthy();
   });
 
-  it('plays the scan with the real facet count, then shows the measured roof and its numbers', async () => {
-    vi.stubEnv('VITE_MEASURE_SCAN_MS', '400');
+  it('plays the scan: finding the roof, then tracing the real facet count, then the measured roof and its numbers', async () => {
+    vi.stubEnv('VITE_MEASURE_SCAN_MS', '1200');
     const button = await openUnscanned({ facets: 7, structures: [structure] });
     fireEvent.click(button);
-    expect(await screen.findByText(/Tracing 7 facets and reading pitch/)).toBeTruthy();
-    expect(document.querySelector('[data-structure-label]')).toBeNull();
-    expect(await screen.findByRole('button', { name: liftMeasure.adjust }, { timeout: 2000 })).toBeTruthy();
+    expect(await screen.findByText(liftMeasure.stage.finding)).toBeTruthy();
+    expect(screen.getByText(liftMeasure.measuring)).toBeTruthy();
+    expect(await screen.findByText(liftMeasure.stage.tracing(7), {}, { timeout: 2000 })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: liftMeasure.adjust }, { timeout: 3000 })).toBeTruthy();
+    expect(screen.getByText(liftMeasure.measuredBy)).toBeTruthy();
     expect(screen.queryByRole('button', { name: liftMeasure.scanButton })).toBeNull();
-    expect(document.querySelector('[data-structure-label]')?.textContent).toBe(liftMeasure.structureLabel(2400));
     expect(screen.getByRole('button', { name: measure.makeProposal })).toBeTruthy();
   });
 
   it('does not invent a facet count the measurement lacks', async () => {
-    vi.stubEnv('VITE_MEASURE_SCAN_MS', '400');
+    vi.stubEnv('VITE_MEASURE_SCAN_MS', '1200');
     fireEvent.click(await openUnscanned({ facets: null }));
-    expect(await screen.findByText(/Tracing the roof and reading pitch/)).toBeTruthy();
+    expect(await screen.findByText(liftMeasure.stage.tracing(null), {}, { timeout: 2000 })).toBeTruthy();
     expect(screen.queryByText(/Tracing \d/)).toBeNull();
+  });
+
+  it('draws the facets and lines on the photo, labels each facet and shows the legend once measured', async () => {
+    const roof = gableRoof(view().outline![0] as [number, number][]);
+    const button = await openUnscanned({ roof } as Partial<MeasurementView>);
+    expect(lastMap().getLayer('roof-facets-fill')).toBeTruthy();
+    expect(lastMap().getLayer('roof-lines')).toBeTruthy();
+    expect(document.querySelector('[data-facet-label]')).toBeNull();
+    fireEvent.click(button);
+    expect(await screen.findByRole('img', { name: liftMeasure.facetLabel('A', 671, '6/12') })).toBeTruthy();
+    expect(screen.getByRole('img', { name: liftMeasure.facetLabel('B', 671, '6/12') })).toBeTruthy();
+    const legend = screen.getByRole('list', { name: liftMeasure.legendLabel });
+    expect(legend.textContent).toBe('RidgeValleyEaveRake');
+    expect(screen.getByText('13.4')).toBeTruthy();
+    expect(screen.getByText(liftMeasure.feet(90))).toBeTruthy();
+    expect(lastMap().setLayoutProperty).toHaveBeenCalledWith('roof-lines', 'visibility', 'visible');
+  });
+
+  it('a roof with no facets shows the outline only, and says so', async () => {
+    fireEvent.click(await openUnscanned({ roof: null } as Partial<MeasurementView>));
+    expect(await screen.findByText(liftMeasure.outlineOnly)).toBeTruthy();
+    expect(screen.queryByRole('list', { name: liftMeasure.legendLabel })).toBeNull();
+  });
+
+  it('opens the proposal beside the measured roof, priced by the preview', async () => {
+    fireEvent.click(await openUnscanned());
+    const panel = await screen.findByRole('complementary', { name: liftProposal.label });
+    expect(await within(panel).findByText(liftProposal.title('Carmen'))).toBeTruthy();
+    const radios = within(panel).getAllByRole('radio');
+    expect(radios.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
+    expect(within(panel).getByText(liftProposal.totalFor('Better'))).toBeTruthy();
+    expect(within(panel).getByRole('button', { name: measure.makeProposal })).toBeTruthy();
   });
 
   it('skips the scan for a sent (locked) measurement', async () => {

@@ -241,7 +241,9 @@ function Legend({ model }: { model: RoofModel }) {
   );
 }
 
-function Notices({ roof }: { roof: RoofSession }) {
+type NoticeState = Pick<RoofSession, 'mapFailed' | 'locked' | 'problem' | 'saveFailed' | 'drawMode' | 'finishDrawing' | 'clearDrawing'>;
+
+function Notices({ roof }: { roof: NoticeState }) {
   const any = roof.mapFailed || roof.locked || roof.problem !== null || roof.saveFailed || roof.drawMode;
   if (!any) return null;
   return (
@@ -270,30 +272,31 @@ function Notices({ roof }: { roof: RoofSession }) {
 /** The roof as MeasureWindow's one editor draws it: this view places the map's container and what goes over it. */
 function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: MeasureSlots; roof: RoofSession; scan: ScanSession; captured: Date | null }) {
   const { model, editing } = slots;
+  const { containerRef, drawMode, saving, map, ring, zoom, mapFailed, locked, problem, saveFailed, finishDrawing, clearDrawing } = roof;
   const done = scan.phase === 'done';
   const roofDrawn = done || (scan.phase === 'scanning' && scan.progress >= ROOF_DRAWN_AT);
-  useLayerVisibility(roof.map, m, model, roofDrawn, done, editing, roof.drawMode);
-  useFacetLabels(roof.map, model, roofDrawn && !editing);
+  useLayerVisibility(map, m, model, roofDrawn, done, editing, drawMode);
+  useFacetLabels(map, model, roofDrawn && !editing);
   const estimate = slots.estimate ?? m.estimate;
   const numbers = cardNumbers(m, estimate, model, slots.wastePct);
 
   return (
     <div className={styles.frame}>
-      <div className={styles.mapBox} data-phase={scan.phase} data-editing={editing || roof.drawMode ? 'true' : 'false'}>
-        <div ref={roof.containerRef} className={styles.map} role="region" aria-label={liftMeasure.mapLabel} />
+      <div className={styles.mapBox} data-phase={scan.phase} data-editing={editing || drawMode ? 'true' : 'false'}>
+        <div ref={containerRef} className={styles.map} role="region" aria-label={liftMeasure.mapLabel} />
         <div className={styles.topLeft}>
-          <ImageryChip scanning={scan.phase === 'scanning' || roof.saving} captured={captured} />
+          <ImageryChip scanning={scan.phase === 'scanning' || saving} captured={captured} />
         </div>
         {roofDrawn && model !== null ? <Legend model={model} /> : null}
-        <Notices roof={roof} />
-        {scan.phase === 'scanning' ? <ScanOverlay instance={roof.map} ring={roof.ring} scan={scan} /> : null}
-        <ScaleAndNorth latitude={m.center[1]} zoom={roof.zoom} />
+        <Notices roof={{ mapFailed, locked, problem, saveFailed, drawMode, finishDrawing, clearDrawing }} />
+        {scan.phase === 'scanning' ? <ScanOverlay instance={map} ring={ring} scan={scan} /> : null}
+        <ScaleAndNorth latitude={m.center[1]} zoom={zoom} />
         <p className={styles.credits}>
-          {legal.imageryAttribution}
+          <span>{legal.imageryAttribution}</span>
           {' · '}
-          {legal.footprintAttribution}
+          <span>{legal.footprintAttribution}</span>
           {' · '}
-          {measure.attribution}
+          <span>{measure.attribution}</span>
         </p>
         {scan.phase === 'idle' ? (
           <ScanBar scan={scan} />

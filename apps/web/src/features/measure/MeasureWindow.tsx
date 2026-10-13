@@ -31,9 +31,10 @@ import { createOutlineEditor, type EditResult, type OutlineEditor } from './Outl
 import type { MeasurementPatch, MeasurementView, OutlineProblem } from './types.ts';
 
 const SAVE_DEBOUNCE_MS = 500;
-const START_ZOOM = 20;
-const MAX_ZOOM = 21;
-const FIT_MAX_ZOOM = 20.5;
+// The free aerial photos are sharp to zoom 19: the camera starts there and fitting never goes past 19.5
+const START_ZOOM = 19;
+const MAX_ZOOM = 20;
+const FIT_MAX_ZOOM = 19.5;
 const PITCHES = [4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 const MAX_OVERHANG_FT = 3;
 const DIAGRAM_SIZE = 24;
@@ -63,9 +64,12 @@ function createMap(container: HTMLElement, center: [number, number]): MapLibreMa
 
 type FitMap = { fitBounds?: (b: [[number, number], [number, number]], o: Record<string, unknown>) => void; resize?: () => void };
 
-/** Frames the roof: centred, with room for the card along the bottom. */
-function fitRoof(instance: MapLibreMap, ring: Ring): void {
+/** Frames the roof: centred, about 55% of the photo, with a little more room at the bottom for the card. */
+function fitRoof(instance: MapLibreMap, ring: Ring, box: HTMLElement): void {
   if (ring.length < 3) return;
+  const w = box.clientWidth;
+  const h = box.clientHeight;
+  if (w < 50 || h < 50) return;
   const lngs = ring.map((p) => p[0]);
   const lats = ring.map((p) => p[1]);
   try {
@@ -74,7 +78,7 @@ function fitRoof(instance: MapLibreMap, ring: Ring): void {
         [Math.min(...lngs), Math.min(...lats)],
         [Math.max(...lngs), Math.max(...lats)],
       ],
-      { padding: { top: 90, bottom: 190, left: 90, right: 90 }, maxZoom: FIT_MAX_ZOOM, duration: 0 },
+      { padding: { top: Math.round(h * 0.18), bottom: Math.round(h * 0.27), left: Math.round(w * 0.22), right: Math.round(w * 0.22) }, maxZoom: FIT_MAX_ZOOM, duration: 0 },
     );
   } catch {
     // A map too small to fit into keeps its start view.
@@ -118,7 +122,6 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   const scan = useRoofScan(m, model?.totals.facetCount ?? m.facets);
   const e = m.estimate;
   const preview = useMeasurementPreview(m.id, [e.surfaceSqFt, e.pitchX12, e.edgeFt, e.ridgeFt, e.valleyFt].join(':'));
-  const captured = useImageryDate(lng, lat, usesFreeAerial(readMapEnv()));
   const [editing, setEditing] = useState(false);
   const [making, setMaking] = useState(false);
   const [makeFailed, setMakeFailed] = useState<string | null>(null);
@@ -215,7 +218,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
         readOnly: startRef.current.locked,
         onChange: (result) => onEdit.current(result),
       });
-      fitRoof(instance, startRef.current.ring);
+      fitRoof(instance, startRef.current.ring, container);
       setMapInstance(instance);
     });
     // The proposal column opens beside the roof once it is measured: the photo follows its box
@@ -241,6 +244,8 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     editorRef.current?.setReadOnly(locked);
   }, [locked]);
 
+  // The photo's date is asked for once the map has started (a map that cannot start shows no photo)
+  const captured = useImageryDate(lng, lat, mapInstance !== null && usesFreeAerial(readMapEnv()));
   const done = scan.phase === 'done';
   useEffect(() => {
     onProposalReady(done);
@@ -326,6 +331,12 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     [measure.valley, format(estimate.valleyFt)],
   ];
 
+  const redraw = () => {
+    editorRef.current?.setDrawMode(true);
+    setDrawMode(true);
+    setProblem(null);
+  };
+
   const roof: RoofSession = {
     containerRef,
     map: mapInstance,
@@ -343,11 +354,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
       editorRef.current?.clearDrawing();
       setProblem(null);
     },
-    redraw: () => {
-      editorRef.current?.setDrawMode(true);
-      setDrawMode(true);
-      setProblem(null);
-    },
+    redraw,
   };
 
   const panelsNode = (
@@ -418,7 +425,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
       </section>
 
       {!mapFailed && !locked && !drawMode ? (
-        <Button variant="ghost" className={styles.wide} onClick={roof.redraw}>
+        <Button variant="ghost" className={styles.wide} onClick={redraw}>
           {measure.redraw}
         </Button>
       ) : null}
