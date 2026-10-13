@@ -50,6 +50,7 @@ function measurement(id: string, drawMode: boolean): MeasurementView {
     kind: 'estimate',
     method: 'outline',
     drawMode,
+    hasCustomer: true,
     outline: null,
     structures: [],
     overhangFt: 1,

@@ -248,6 +248,24 @@ describe('POST /api/measurements: outlines from footprints', () => {
     expect(saved).toMatchObject({ addressLine: '512 Maple Ave', city: 'Omaha', state: 'NE', zip: '68102' });
   });
 
+  it('hasCustomer: false for a home nobody owns, true once the home has a customer or the measurement a job', async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    const owner = await who.as('owner');
+    const home = await homeAt(22, INSIDE);
+    expect((await measure(owner, { propertyId: home })).hasCustomer).toBe(false);
+
+    const customer = await mustCreate(owner, '/api/customers', { displayName: 'Owner Of Home' });
+    await ownerSql(`update properties set customer_id = $1 where id = $2`, [customer.id, home]);
+    expect((await measure(owner, { propertyId: home })).hasCustomer).toBe(true);
+
+    const jobHome = await homeAt(23, INSIDE);
+    const job = await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId: jobHome });
+    await ownerSql(`update properties set customer_id = null where id = $1`, [jobHome]);
+    const onJob = await measure(owner, { propertyId: jobHome, jobId: job.id });
+    expect(onJob.hasCustomer).toBe(true);
+    expect((await getView(onJob.id)).hasCustomer).toBe(true);
+  });
+
   it('a job at another address is a 404', async () => {
     await loadNE({ sourceRef: 'house', ring: HOUSE });
     const owner = await who.as('owner');
