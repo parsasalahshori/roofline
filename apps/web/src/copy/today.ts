@@ -1,4 +1,10 @@
 export const today = {
+  intro: 'Your plans, visits and follow-ups, all in one place.',
+  reviewPlans: 'Review plans',
+  openCalendar: 'Open calendar',
+  exploreMap: 'Explore map',
+  showDay: 'Show my day',
+  tryAgain: 'Try again',
   greeting: (part: 'morning' | 'afternoon' | 'evening', firstName: string) =>
     firstName ? `Good ${part}, ${firstName}` : `Good ${part}`,
   needYourOk: 'Need your OK',

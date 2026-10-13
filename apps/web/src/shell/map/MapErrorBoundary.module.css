@@ -1,18 +1,18 @@
 /* Top left, under the page's top bar, where the map's own banner sits. */
 .status {
   position: absolute;
-  top: 72px;
-  left: 16px;
-  max-width: calc(100% - 32px);
+  top: calc(var(--shell-top-inset, 34px) + 16px);
+  left: 20px;
+  max-width: calc(100% - 40px);
 }
 
 .banner {
   margin: 0;
   padding: 8px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-window);
-  font-size: var(--font-size-body);
+  border: 1px solid rgba(21, 28, 34, 0.12);
+  border-radius: 12px;
+  background: rgba(246, 247, 248, 0.97);
+  color: #151c22;
+  box-shadow: 0 8px 24px -12px rgba(21, 28, 34, 0.3);
+  font-size: 13px;
 }
