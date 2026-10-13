@@ -10,6 +10,10 @@ export const mapCopy = {
   error: 'The map is having trouble loading. Your work is safe.',
   /** The legend title and the name of its region. */
   hailLegend: 'Radar-estimated hail',
+  /** The visible title of the map's hail legend chips. */
+  hailLegendTitle: "Last night's hail",
+  /** The everyday object each legend level is named for, level 1 first; its size is `hailSizeLevels`. */
+  hailSizeNames: ['Penny', 'Quarter', 'Ping-pong', 'Golf ball', 'Tennis ball'] as const,
   /** The hail layer switch. Its pressed state says whether the layer is on. */
   hailLayer: 'Hail layer',
   /** The hail size of each legend level, level 1 first. */

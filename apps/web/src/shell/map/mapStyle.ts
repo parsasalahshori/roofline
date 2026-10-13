@@ -33,19 +33,27 @@ function osmStyle(): StyleSpecification {
         attribution: legal.mapAttribution,
       },
     },
-    layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+    // Washed out to a light, low-contrast gray so the hail layer carries the colour.
+    layers: [
+      {
+        id: 'osm',
+        type: 'raster',
+        source: 'osm',
+        paint: { 'raster-saturation': -1, 'raster-contrast': -0.35, 'raster-brightness-min': 0.35, 'raster-brightness-max': 1 },
+      },
+    ],
   };
 }
 
 /**
- * The style the map loads. With a MapTiler key it is a URL (streets, or hybrid for satellite), and
+ * The style the map loads. With a MapTiler key it is a URL (the light gray dataviz style, or hybrid for satellite), and
  * the key beats `tiles`. Without one it is the OpenStreetMap style when `tiles` is `osm`, and the
  * blank style otherwise.
  */
 export function mapStyle(env: MapEnv, mode: MapMode): StyleSpecification | string {
   const key = keyOf(env);
   if (key !== undefined) {
-    const style = mode === 'satellite' ? 'hybrid' : 'streets-v2';
+    const style = mode === 'satellite' ? 'hybrid' : 'dataviz-light';
     return `https://api.maptiler.com/maps/${style}/style.json?key=${encodeURIComponent(key)}`;
   }
   if (env.tiles === 'osm') return osmStyle();
