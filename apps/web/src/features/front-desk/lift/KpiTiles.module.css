@@ -1,38 +1,60 @@
-/* Today's numbers: a row of tiles, two to a row at 375px, one row of six when there is room. */
+/*
+ * Today's numbers: five tiles and the Answering tile in one row on a desktop (221px and 201px at 1400);
+ * on a phone the tiles slide sideways and the Answering status is its own strip under them.
+ */
 .root {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
   min-width: 0;
+}
+
+/* The five tiles: a sideways-sliding row on a phone, grid columns of the root on a desktop */
+.tiles {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  /* the tiles bleed to the window edge so the next one peeks in */
+  margin: 0 -16px -10px;
+  padding: 2px 16px 14px;
+  overflow-x: auto;
+  scroll-padding: 0 16px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.tiles::-webkit-scrollbar {
+  display: none;
 }
 
 .tile {
   display: flex;
+  flex: 0 0 auto;
+  min-width: 218px;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--ds-hairline, #e9e3d8);
+  gap: 5.5px;
+  padding: 12px 16px;
+  border: 0;
   border-radius: var(--ds-r-card, 14px);
-  background: var(--ds-surface, #fffdf9);
-  color: var(--ds-text-1, #1d1b17);
-  font-family: var(--ds-font, inherit);
+  background: var(--ds-surface, #fff);
+  box-shadow:
+    0 0 0 1px var(--ds-hairline-soft, rgb(21 28 34 / 8%)),
+    0 6px 16px -8px rgb(21 28 34 / 30%);
+  color: var(--ds-text-1, #151c22);
+  font-family: var(--ds-font, "Archivo Variable", ui-sans-serif, system-ui, sans-serif);
+  scroll-snap-align: start;
 }
 
 .tile[data-highlight="true"] {
-  border-color: var(--ds-accent, #f2c14e);
-  background: var(--ds-accent-tint, #fdeeba);
-}
-
-.tile[data-status="true"] {
-  grid-column: 1 / -1;
+  background: var(--ds-accent-tint, #fff3cf);
+  box-shadow: inset 0 0 0 1px rgb(217 158 0 / 40%);
 }
 
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 5.5px;
   margin: 0;
   min-width: 0;
 }
@@ -42,63 +64,135 @@
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.label,
+.hint {
   white-space: nowrap;
-  color: var(--ds-text-2, #5f5a52);
-  font-size: 12px;
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text-2, #505b64);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
 .hint {
-  color: var(--ds-text-3, #8d877d);
+  color: var(--ds-text-3, #6b7680);
+  font-size: 12px;
+  line-height: 17.4px;
+}
+
+.tile[data-highlight="true"] .hint {
+  color: #6b4c00;
+}
+
+/* The little amber logo square before the highlighted tile's label */
+.mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  background: var(--ds-accent, #ffc21a);
+  box-shadow: inset 0 0 0 1px rgb(217 158 0 / 60%);
+  color: var(--ds-text-1, #151c22);
+}
+
+.mark svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .value {
   margin: 0;
   font-size: 24px;
   font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.2;
+  letter-spacing: -0.6px;
+  line-height: 24px;
 }
 
 .note {
-  grid-column: 1 / -1;
+  flex: 1;
   margin: 0;
-  color: var(--ds-text-3, #8d877d);
+  color: var(--ds-text-3, #6b7680);
+}
+
+/* The Answering tile: on a phone one strip with the status left and the button right */
+.tile[data-status="true"] {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
 }
 
 .answering {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
   margin: 0;
-  font-size: 12px;
+  color: var(--ds-text-2, #505b64);
+  font-size: 14px;
   font-weight: 600;
+  line-height: 18px;
 }
 
+.answeringShort {
+  white-space: nowrap;
+}
+
+.answeringFull {
+  display: none;
+}
+
+/* A green dot with a soft halo */
 .dot {
   width: 8px;
   height: 8px;
   flex-shrink: 0;
+  margin: 5px;
   border-radius: 50%;
-  background: var(--ds-success, #1f9d4d);
+  background: var(--ds-success-dot, #0ca30c);
+  box-shadow: 0 0 0 5px rgb(12 163 12 / 18%);
 }
 
 /* The one dark button of the window: the presenter's Simulate a call */
 .root .simulate[data-variant] {
-  align-self: stretch;
-  gap: 6px;
-  border-radius: var(--ds-r-ctl, 10px);
-  background: var(--ds-text-1, #1d1b17);
-  color: var(--ds-surface, #fffdf9);
+  flex: none;
+  align-self: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ds-text-1, #151c22);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
+  color: #fff;
+  font-size: 13.5px;
   font-weight: 600;
+  line-height: 19.5px;
 }
 
 .root .simulate[data-variant]:hover {
-  background: var(--ds-text-2, #3b372f);
+  background: #26313a;
+  filter: none;
 }
 
 .simulateIcon {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
@@ -106,18 +200,79 @@
   stroke-linejoin: round;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 1000px) {
   .root {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 221fr)) minmax(0, 201fr);
+  }
+
+  /* the five tiles become the first five columns of the row */
+  .tiles {
+    display: contents;
+  }
+
+  .tile {
+    flex: none;
+    min-width: 0;
+    min-height: 94px;
+  }
+
+  .hint {
+    white-space: normal;
   }
 
   .tile[data-status="true"] {
-    grid-column: auto;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .answering {
+    font-size: 12.5px;
+  }
+
+  .answeringFull {
+    display: block;
+  }
+
+  .answeringShort {
+    display: none;
+  }
+
+  .root .simulate[data-variant] {
+    align-self: flex-start;
+    min-height: 36px;
   }
 }
 
-@media (min-width: 1000px) {
-  .root {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+/* A tablet: the tiles wrap into columns, the status beside them */
+@media (min-width: 640px) and (max-width: 999.98px) {
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .tile {
+    flex: none;
+    min-width: 0;
+  }
+
+  .hint {
+    white-space: normal;
+  }
+
+  .answering {
+    font-size: 12.5px;
+  }
+
+  .answeringFull {
+    display: block;
+  }
+
+  .answeringShort {
+    display: none;
   }
 }

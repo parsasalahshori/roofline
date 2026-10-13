@@ -1,37 +1,47 @@
 /* One row of "Latest calls". Flex children get min-width: 0 so long text ellipsizes at 375px. */
 .item {
   display: flex;
+  flex: none;
   min-width: 0;
+  border-bottom: 1px solid var(--ds-hairline-soft, rgb(21 28 34 / 8%));
   list-style: none;
 }
 
-/* The whole row is the link: at least a 40px touch target with a visible focus ring */
+/* The whole row is the link: a 71px target with a visible focus ring; the picked row is blue with a bar on its left edge */
 .link {
+  position: relative;
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
-  min-height: 52px;
-  padding: 8px 10px;
-  border-radius: var(--ds-r-ctl, 10px);
+  min-height: 71px;
+  padding: 12px 16px;
   background: transparent;
-  color: var(--ds-text-1, #1d1b17);
-  font-family: var(--ds-font, inherit);
+  color: var(--ds-text-1, #151c22);
+  font-family: var(--ds-font, "Archivo Variable", ui-sans-serif, system-ui, sans-serif);
   text-decoration: none;
 }
 
 .link:hover {
-  background: color-mix(in srgb, var(--ds-surface-2, #f4f0e8) 55%, transparent);
+  background: var(--ds-surface-2-soft, rgb(236 239 241 / 55%));
 }
 
 .link[data-selected="true"] {
-  background: var(--ds-surface-2, #f4f0e8);
+  background: var(--ds-info-tint, #e3ecfb);
+}
+
+.link[data-selected="true"]::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--ds-info, #2f6fde);
+  content: "";
 }
 
 .link:focus-visible {
-  outline: 2px solid var(--ds-text-1, #1d1b17);
-  outline-offset: 2px;
+  outline: 2px solid var(--ds-text-1, #151c22);
+  outline-offset: -2px;
 }
 
 .avatar {
@@ -39,18 +49,33 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: var(--ds-surface-2, #f1ede5);
-  color: var(--ds-text-2, #5f5a52);
-  font-size: 12px;
+  background: var(--ds-avatar-bg, #d8dee2);
+  color: var(--ds-text-2, #3a444d);
+  font-size: 13.7px;
   font-weight: 600;
 }
 
 .avatar[data-unknown="true"] {
-  background: var(--ds-danger-tint, #fbe6e3);
-  color: var(--ds-danger, #c4372b);
+  background: var(--ds-danger-tint, #fbe3e3);
+  color: var(--ds-danger, #a32424);
+}
+
+.avatarIcon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* a text thread has no initials, only a speech bubble on the pale chip color */
+.avatar:not([data-unknown]):has(.avatarIcon) {
+  background: var(--ds-chip-bg, #e4e8eb);
 }
 
 .body {
@@ -64,7 +89,7 @@
 .titleRow {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -73,16 +98,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 19.5px;
 }
 
 .time {
   flex-shrink: 0;
   margin-left: auto;
-  color: var(--ds-text-3, #8d877d);
-  font-size: 12px;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 13px;
   white-space: nowrap;
 }
 
@@ -91,8 +116,8 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  color: var(--ds-text-3, #8d877d);
-  font-size: 12px;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 13px;
 }
 
 .chips {
@@ -111,10 +136,10 @@
 .urgent {
   display: inline-flex;
   align-items: center;
-  min-height: 20px;
-  padding: 0 7px;
-  border-radius: var(--ds-r-chip, 6px);
-  background: var(--ds-danger, #c4372b);
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--ds-danger, #a32424);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -135,7 +160,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--ds-text-1, #1d1b17);
+  color: var(--ds-text-1, #151c22);
   font-weight: 600;
 }
 
@@ -145,7 +170,7 @@
   height: 8px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--ds-danger, #c4372b);
+  background: var(--ds-danger, #a32424);
   animation: live-pulse 1.5s ease-in-out infinite;
 }
 
