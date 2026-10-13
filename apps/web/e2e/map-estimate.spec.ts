@@ -5,7 +5,7 @@ import { expect, readStack, test } from './fixtures.ts';
  * The map click itself (card, highlight, button) is proven by map-roof.test.tsx; a canvas click here would
  * need the live map's projection. Here the same two calls the card makes run against the real stack, then the
  * measuring screen is driven by hand: the picked building is preselected, the free estimate is the default,
- * and a home with no customer asks for one before Make proposal. The browser clock is fixed.
+ * and a home with no customer asks for one before Make proposal. The browser clock starts at a fixed time.
  */
 
 /** Inside fake-ne-1 of the NE footprint fixture (apps/api/test/fixtures/footprints-ne.json). */
@@ -13,7 +13,7 @@ const POINT = { lat: 41.2565, lng: -95.9345 };
 
 test('estimate this roof: picked building to a proposal for a new customer', async ({ page, loginAs, markTodaySeen }) => {
   test.setTimeout(60_000);
-  await page.clock.setFixedTime(new Date('2026-10-13T16:00:00.000Z'));
+  await page.clock.install({ time: new Date('2026-10-13T16:00:00.000Z') });
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   const headers = { Origin: readStack().baseUrl };
