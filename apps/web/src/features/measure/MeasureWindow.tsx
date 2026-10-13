@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
+import { paidReports } from '../../copy/billing.ts';
 import { measure } from '../../copy/measure.ts';
 import { makeFailureMessage, useBuildProposal, useSendProposal } from '../estimator/api.ts';
 import { mapStyle, satelliteAvailable } from '../../shell/map/mapStyle.ts';
@@ -395,7 +396,7 @@ function Loaded({ m }: { m: MeasurementView }) {
               disabled={exact.isPending}
               onClick={() => void flushPending().then(() => exact.mutate(), () => {})}
             >
-              {measure.getExactReport}
+              {paidReports.exactRequest}
             </Button>
           )}
           {exact.isError ? <Banner tone="danger">{measure.exactFailed}</Banner> : null}
