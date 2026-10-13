@@ -13,7 +13,8 @@ import { LogoMark } from './topbarIcons.tsx';
 /**
  * The bar across the top of the shell: the company on the left, what needs the person and what
  * the agents are doing in the middle, the weather, search and the account on the right.
- * On a phone the bar is compact: the logo, the OK pill, search and the account. The agents line,
+ * On a phone the bar is compact: the logo, the OK pill, search and the account (initials only; the pill
+ * shrinks rather than overlap them). The agents line,
  * the weather and the company name are not rendered there, so they make no requests. In demo mode a Demo badge
  * sits after the company (features/demo), opening the presenter's Simulate panel.
  */
@@ -24,6 +25,7 @@ export function ShellTopBar() {
   if (phone) {
     return (
       <TopBar
+        compact
         start={
           <>
             <LogoMark className={styles.logo} />
