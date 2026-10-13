@@ -84,6 +84,9 @@ export const DEMO_USERS = [
 const COMPANY_PHONE = '+14025550180';
 /** The company's Roofline (Front Desk) number. */
 export const DEMO_ROOFLINE_NUMBER = '+14025550181';
+/** What Front Desk knows about the demo company; plain facts it answers from. */
+const DEMO_FRONT_DESK_FACTS =
+  'Free roof inspections, usually within two days. We work with all major insurance companies and can meet the adjuster. Office hours: Mon-Fri 8 AM-6 PM, Sat 9 AM-1 PM. Serving Omaha and nearby towns.';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -266,6 +269,8 @@ async function seedFrontDeskWorld(pools: Pools, ctx: TenantContext, now: Date, c
     };
 
     const call = async (conversationId: string, from: string, minutesAgo: number, aiSeconds: number): Promise<string> => {
+      // Front Desk picks up in 0.6-1.2 seconds, so the answer-time tile reads like a real line.
+      const pickupMs = 600 + ((aiSeconds * 37) % 7) * 100;
       const [row] = await tx
         .insert(calls)
         .values({
@@ -276,7 +281,8 @@ async function seedFrontDeskWorld(pools: Pools, ctx: TenantContext, now: Date, c
           toE164: DEMO_ROOFLINE_NUMBER,
           status: 'ended',
           startedAt: at(minutesAgo),
-          endedAt: new Date(at(minutesAgo).getTime() + aiSeconds * 1000),
+          aiStartedAt: new Date(at(minutesAgo).getTime() + pickupMs),
+          endedAt: new Date(at(minutesAgo).getTime() + pickupMs + aiSeconds * 1000),
           aiSeconds,
           transcriptStored: true,
           recordingStatus: 'none',
@@ -648,6 +654,11 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
     await q(
       `insert into company_phone_numbers (company_id, e164, capabilities, provider_sid) values ($1, $2, array['sms','voice'], 'PN_demo_summit_ridge')`,
       [companyId, DEMO_ROOFLINE_NUMBER],
+    );
+    // Front Desk is on: answering calls and texts, forwarding checked, with a few facts to answer from.
+    await q(
+      `update company_settings set front_desk_enabled = true, front_desk_texts = true, forwarding_verified_at = $2, front_desk_facts = $3 where company_id = $1`,
+      [companyId, ago(3 * DAY), DEMO_FRONT_DESK_FACTS],
     );
     const booked = await seedFrontDeskWorld(pools, ctx, now, DEMO_COMPANY_NAME);
 

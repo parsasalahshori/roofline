@@ -133,22 +133,27 @@ describe('CallDetail', () => {
     expect(screen.getByRole('button', { name: liftCall.listen })).toBeEnabled();
   });
 
-  it('disables Listen with No recording, and draws the same decorative bars for the same call', async () => {
-    const stored = makeConversation({ calls: [makeCall({ recordingStatus: 'none' })] });
-    const first = renderDetail(stored);
-    expect(await screen.findByRole('button', { name: liftCall.listen })).toBeDisabled();
-    expect(screen.getByText(liftCall.noRecording)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: liftCall.speedLabel })).toBeNull();
+  it('leaves the audio row out when there is no recording to play', async () => {
+    renderDetail(makeConversation({ calls: [makeCall({ recordingStatus: 'none' })] }));
+    expect(await screen.findByRole('heading', { name: 'Mei Blakely' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: liftCall.listen })).toBeNull();
+    expect(screen.queryByTestId('waveform')).toBeNull();
+    expect(screen.queryByText(liftCall.noRecording)).toBeNull();
+  });
+
+  it('draws the same placeholder bars for the same call until the recording is decoded', async () => {
+    const first = renderDetail(makeConversation());
+    await screen.findByRole('button', { name: liftCall.listen });
     const one = [...heights()].map((bar) => bar.style.height);
     expect(one.length).toBeGreaterThan(10);
     first.unmount();
 
-    renderDetail(stored);
+    renderDetail(makeConversation());
     await screen.findByRole('button', { name: liftCall.listen });
     expect([...heights()].map((bar) => bar.style.height)).toEqual(one);
     cleanup();
 
-    renderDetail({ ...stored, calls: [makeCall({ id: 'call2', recordingStatus: 'none' })] });
+    renderDetail(makeConversation({ calls: [makeCall({ id: 'call2' })] }));
     await screen.findByRole('button', { name: liftCall.listen });
     expect([...heights()].map((bar) => bar.style.height)).not.toEqual(one);
   });
