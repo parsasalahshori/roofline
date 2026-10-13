@@ -3,7 +3,8 @@ import type { CallView, ConversationDetail, TurnView } from "@roofline/shared";
 import { Button, EmptyState, Skeleton } from "@roofline/ui";
 import { liftCall } from "../../../copy/liftCall.ts";
 import { formatPhone } from "../../../lib/phone.ts";
-import { useConversation } from "../conversation-api.ts";
+import { useConversation, useMarkRead } from "../conversation-api.ts";
+import { ReplyBox } from "../ReplyBox.tsx";
 import { initialsOf, outcomeChip } from "./format.ts";
 import { OutcomeChipView } from "./OutcomeChipView.tsx";
 import styles from "./CallDetail.module.css";
@@ -489,6 +490,11 @@ function Detail({ conversation }: { conversation: ConversationDetail }) {
           )}
         </section>
       </div>
+      {conversation.canReply ? (
+        <div className={styles.reply}>
+          <ReplyBox conversationId={conversation.id} />
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -496,6 +502,14 @@ function Detail({ conversation }: { conversation: ConversationDetail }) {
 /** The right side of the Front Desk window: who called, what the assistant did, the recording and what was said. */
 export function CallDetail({ conversationId }: { conversationId: string }) {
   const conversation = useConversation(conversationId);
+  const { mutate: markReadNow } = useMarkRead(conversationId);
+  // The read receipt goes out once per conversation id, even when the effect runs twice (StrictMode).
+  const markedId = useRef<string | null>(null);
+  useEffect(() => {
+    if (conversationId === "" || markedId.current === conversationId) return;
+    markedId.current = conversationId;
+    markReadNow();
+  }, [conversationId, markReadNow]);
 
   if (conversation.isPending) {
     return (

@@ -64,7 +64,7 @@ function renderApp(path: string) {
   return { router, queryClient, user: userEvent.setup() };
 }
 
-const DOCK_KEYS = ['storm', 'front-desk', 'estimator', 'jobs', 'calendar', 'agents'] as const;
+const DOCK_KEYS = ['storm', 'jobs', 'estimator', 'calendar', 'front-desk', 'agents'] as const;
 const LABELS = DOCK_KEYS.map((key) => WINDOW_COPY[key].title);
 
 /** A dock link by its label. Its name also holds the "Coming soon" note and any badge, so only the start of the name is matched. */
@@ -72,13 +72,14 @@ function dockLink(dockNav: HTMLElement, label: string) {
   return within(dockNav).getByRole('link', { name: new RegExp('^' + label) });
 }
 
-it('shows six labeled dock apps', async () => {
+it('shows the Home launcher and six labeled dock apps', async () => {
   signedInApi();
   renderApp('/');
 
   const links = within(await screen.findByRole('navigation', { name: dock.label })).getAllByRole('link');
-  expect(links).toHaveLength(6);
-  LABELS.forEach((label, i) => expect(links[i]).toHaveAccessibleName(new RegExp('^' + label)));
+  expect(links).toHaveLength(7);
+  expect(links[0]).toHaveAccessibleName(dock.launcherLabel);
+  LABELS.forEach((label, i) => expect(links[i + 1]).toHaveAccessibleName(new RegExp('^' + label)));
 });
 
 it('opens each app in one centered window with its own URL', async () => {

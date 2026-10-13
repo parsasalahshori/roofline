@@ -235,6 +235,7 @@ describe('Front Desk tabs and rows (piece 8)', () => {
           teamUntil: null,
           turns: [],
           calls: [],
+          links: { jobIds: [], appointmentIds: [], claimIntakeIds: [] },
           canReply: false,
         },
       }),

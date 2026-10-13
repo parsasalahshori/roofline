@@ -157,15 +157,22 @@ describe('Front Desk window (Task 21)', () => {
 
     const group = await screen.findByRole('group', { name: frontDeskInbox.lift.tabsLabel });
     const tabs = frontDeskInbox.lift.tabs;
-    expect(within(group).getAllByRole('button').map((chip) => chip.textContent)).toEqual([tabs.all, tabs.booked, tabs.messages, tabs.spam]);
-    expect(within(group).getByRole('button', { name: tabs.all })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(group).getByRole('button', { name: tabs.booked })).toHaveAttribute('aria-pressed', 'false');
+    // A tab is its name, then today's count once the day's numbers arrive, so match the start of the name
+    const tab = (label: string) => within(group).getByRole('button', { name: new RegExp('^' + label) });
+    expect(within(group).getAllByRole('button').map((chip) => chip.textContent)).toEqual([
+      expect.stringMatching(new RegExp('^' + tabs.all)),
+      expect.stringMatching(new RegExp('^' + tabs.booked)),
+      expect.stringMatching(new RegExp('^' + tabs.messages)),
+      expect.stringMatching(new RegExp('^' + tabs.spam)),
+    ]);
+    expect(tab(tabs.all)).toHaveAttribute('aria-pressed', 'true');
+    expect(tab(tabs.booked)).toHaveAttribute('aria-pressed', 'false');
 
-    await user.click(within(group).getByRole('button', { name: tabs.booked }));
+    await user.click(tab(tabs.booked));
 
     expect(await screen.findByRole('link', { name: /Lee Park/ })).toHaveAttribute('href', '/front-desk/b-1');
     expect(api.count('GET /api/conversations?filter=booked')).toBe(1);
-    expect(within(group).getByRole('button', { name: tabs.booked })).toHaveAttribute('aria-pressed', 'true');
+    expect(tab(tabs.booked)).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('link', { name: /Dana Ruiz/ })).toBeNull();
   });
 

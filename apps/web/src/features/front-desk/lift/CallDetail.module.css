@@ -522,3 +522,10 @@
     max-width: 100%;
   }
 }
+
+/* The text reply box, pinned under the scrolling conversation */
+.reply {
+  flex: none;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--ds-hairline-soft, rgb(21 28 34 / 8%));
+}
