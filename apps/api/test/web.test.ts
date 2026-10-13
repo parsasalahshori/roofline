@@ -148,8 +148,9 @@ describe('serving the web app (WEB_DIST_DIR set)', () => {
     expect(csp).toContain('child-src blob:');
     expect(csp).toContain('https://api.maptiler.com');
     expect(csp).toContain('https://tile.openstreetmap.org');
-    expect(csp).toContain("img-src 'self' data: blob: https://api.maptiler.com https://tile.openstreetmap.org");
-    expect(csp).toContain("connect-src 'self' https://api.maptiler.com https://tile.openstreetmap.org");
+    expect(csp).toContain('https://server.arcgisonline.com');
+    expect(csp).toContain("img-src 'self' data: blob: https://api.maptiler.com https://tile.openstreetmap.org https://server.arcgisonline.com");
+    expect(csp).toContain("connect-src 'self' https://api.maptiler.com https://tile.openstreetmap.org https://server.arcgisonline.com");
     expect(csp).toContain("font-src 'self' data:");
     expect(csp).toContain('https://accounts.google.com/gsi/client');
     expect(csp).toContain('frame-src https://accounts.google.com/gsi/');

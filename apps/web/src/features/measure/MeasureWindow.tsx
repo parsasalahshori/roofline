@@ -37,7 +37,7 @@ const DIAGRAM_SIZE = 24;
 
 /** The only place the two build-time map settings are read. It is called at use time, so tests can stub them. */
 function readMapEnv(): MapEnv {
-  return { maptilerKey: import.meta.env.VITE_MAPTILER_KEY, tiles: import.meta.env.VITE_MAP_TILES };
+  return { maptilerKey: import.meta.env.VITE_MAPTILER_KEY, tiles: import.meta.env.VITE_MAP_TILES, imagery: import.meta.env.VITE_MAP_IMAGERY };
 }
 
 /** Creates the map, or answers null when it cannot start (MapLibre throws when the browser has no WebGL). */

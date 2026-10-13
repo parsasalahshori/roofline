@@ -20,7 +20,7 @@
   2. `npm run dev:worker` (runs approved steps and the scheduled jobs; without it, approvals wait in the queue).
   3. `npm run dev:web` (Vite, on http://127.0.0.1:4401, handing `/api`, `/hooks` and `/health` on to the API).
 - **Open** http://127.0.0.1:4401.
-- **Map tiles:** the map draws tiles only when `VITE_MAPTILER_KEY` is set where Vite starts (never commit it), or `VITE_MAP_TILES=osm` is set for OpenStreetMap's tiles. With neither it is a blank map and makes no network requests.
+- **Map tiles:** the map draws tiles only when `VITE_MAPTILER_KEY` is set where Vite starts (never commit it), or `VITE_MAP_TILES=osm` is set for OpenStreetMap's tiles (`VITE_MAP_TILES=aerial` or `VITE_MAP_IMAGERY=aerial` draws Esri's aerial photos, for demos only (production needs a licensed imagery provider); the demo build sets the latter, so its satellite view and roof view are aerial). With neither it is a blank map and makes no network requests.
 
 ## Running locally with demo data
 - **Database:** `npm run db:up` starts the local PostGIS database (needs Docker). Migrate it with `DATABASE_URL_OWNER=… npm run db:migrate`, then set the app role passwords with `DATABASE_URL_OWNER=… TENANT_DB_PASSWORD=… SYSTEM_DB_PASSWORD=… npm run set-role-passwords -w @roofline/db`, as the production boot order below describes.
