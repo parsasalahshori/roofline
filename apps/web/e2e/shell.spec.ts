@@ -55,7 +55,8 @@ test('dock has six labeled apps that each open one window with its own URL', asy
     expect(box).not.toBeNull();
     const { x, width, height } = box!;
     expect(Math.abs(x - (viewportWidth - x - width))).toBeLessThanOrEqual(2);
-    expect(width).toBeLessThanOrEqual(1280);
+    // Measure is the one wide window (three columns, like the reference): 20px from each side. The rest stay at 1280.
+    expect(width).toBeLessThanOrEqual(path === '/estimator' ? viewportWidth - 40 : 1280);
     expect(height).toBeLessThanOrEqual(860);
   }
 });

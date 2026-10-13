@@ -51,7 +51,14 @@ const ctxOf = (scenario: Scenario): TenantContext => ({
 
 /** A zone whose wall clock is between 10:00 and 17:59 now, so a staff text is never held for quiet hours. */
 export function daytimeZone(now: Date): string {
-  const zones = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu'];
+  // Places around the whole clock: US zones alone have no daytime hour from about 04:00 to 14:00 UTC, and the
+  // fallback (Chicago at night) made the staff text wait for quiet hours to end (status 'scheduled', not 'sent').
+  const zones = [
+    'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu',
+    'Pacific/Auckland', 'Australia/Sydney', 'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Bangkok', 'Asia/Dhaka', 'Asia/Karachi',
+    'Asia/Dubai', 'Europe/Moscow', 'Europe/Athens', 'Europe/Berlin', 'Europe/London', 'Atlantic/Azores', 'America/Sao_Paulo',
+    'America/Halifax',
+  ];
   for (const zone of zones) {
     const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', hourCycle: 'h23' }).format(now));
     if (hour >= 10 && hour < 18) return zone;
