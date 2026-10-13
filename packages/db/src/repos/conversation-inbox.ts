@@ -179,6 +179,7 @@ async function latestCallFacts(tx: Tx, ctx: TenantContext, conversationIds: stri
       conversationId: calls.conversationId,
       startedAt: calls.startedAt,
       endedAt: calls.endedAt,
+      aiSeconds: calls.aiSeconds,
       transferUserId: calls.transferUserId,
       textBackMessageId: calls.textBackMessageId,
     })
@@ -198,7 +199,13 @@ async function latestCallFacts(tx: Tx, ctx: TenantContext, conversationIds: stri
       continue;
     }
     out.set(r.conversationId, {
-      durationSeconds: r.endedAt === null ? null : Math.max(0, Math.round((r.endedAt.getTime() - r.startedAt.getTime()) / 1000)),
+      // Same length the call detail shows: the AI's talk time when known, else the whole call.
+      durationSeconds:
+        r.aiSeconds !== null && r.aiSeconds > 0
+          ? r.aiSeconds
+          : r.endedAt === null
+            ? null
+            : Math.max(0, Math.round((r.endedAt.getTime() - r.startedAt.getTime()) / 1000)),
       transferredToName: r.transferUserId === null ? null : (names.get(r.transferUserId) ?? null),
       textBackSent: r.textBackMessageId !== null,
     });

@@ -13,7 +13,7 @@ const ANSWER: RouteDecision = { intent: 'other', urgent: false, mood: 'calm', ro
 export const DEMO_CALL_LINES = [
   "Hi, that hail storm last night came right over our street and I think it damaged my roof.",
   "I can see a few dents on the gutters and some shingle pieces in the yard.",
-  'Yes, this number is the best one to reach me. Thank you!',
+  'Thursday at 10 works great, and this number is the best one to reach me. Thank you!',
 ] as const;
 
 /** The texts a demo homeowner sends; the simulate route rotates through them. */
@@ -25,7 +25,7 @@ export const DEMO_TEXTS = [
 
 /** The after-call summary the demo call ends with. */
 export const DEMO_CALL_SUMMARY =
-  'Homeowner reported hail damage after last night\'s storm: dented gutters and shingle pieces in the yard. They asked for an inspection and want a call back on this number.';
+  'Homeowner reported hail damage after last night\'s storm: dented gutters and shingle pieces in the yard. Front Desk booked a free inspection for Thursday at 10 AM.';
 
 export const DEMO_SCRIPT: Script = [
   {
@@ -44,14 +44,14 @@ export const DEMO_SCRIPT: Script = [
     answer: [
       {
         kind: 'text',
-        text: 'Thanks, that helps. Dented gutters usually mean the roof took hits too. I will pass this to the team and someone will call you back today to pick a time. Is this the best number for you?',
+        text: 'Thanks, that helps. Dented gutters usually mean the roof took hits too. I can book a free inspection for Thursday at 10 AM. Does that work, and is this the best number for you?',
       },
     ],
   },
   {
     when: /best one to reach me|thank you/i,
     route: ANSWER,
-    answer: [{ kind: 'text', text: "Perfect. You'll hear from us today. Have a good afternoon!" }],
+    answer: [{ kind: 'text', text: "You're booked for Thursday at 10 AM. We'll text you a reminder the day before. Have a good afternoon!" }],
   },
   {
     when: /inspection|look at my roof|check the leak|come by/i,

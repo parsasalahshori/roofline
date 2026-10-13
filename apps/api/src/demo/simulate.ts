@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
+  appointments,
   calls,
   companies,
+  createAppointment,
+  jobs,
   companyPhoneNumbers,
   conversations,
   createPools,
@@ -145,6 +148,59 @@ export async function simulateText(deps: AppDeps, companyId: string): Promise<Si
 
 /** Seconds of AI talk time the demo call is billed as. */
 const DEMO_CALL_SECONDS = 96;
+/** How long the line rings before Front Desk picks up, in milliseconds (the "Average answer time" tile). */
+const DEMO_PICKUP_MS = 800;
+
+/**
+ * The inspection the demo call's script promises: Thursday at 10 AM (company time zone), an hour, at the
+ * homeowner's first home and open job, booked by Front Desk. Skipped when the homeowner has no home on file.
+ */
+async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2]>[0], ctx: TenantContext, customerId: string, now: Date): Promise<void> {
+  const [home] = await tx
+    .select({ id: properties.id })
+    .from(properties)
+    .where(and(eq(properties.companyId, ctx.companyId), eq(properties.customerId, customerId), isNull(properties.archivedAt)))
+    .limit(1);
+  if (!home) return;
+  const [job] = await tx
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.companyId, ctx.companyId), eq(jobs.customerId, customerId), eq(jobs.propertyId, home.id)))
+    .orderBy(desc(jobs.createdAt))
+    .limit(1);
+  const [zone] = await tx.select({ tz: companies.timezone }).from(companies).where(eq(companies.id, ctx.companyId));
+  const tz = zone?.tz ?? 'America/Chicago';
+  // Next Thursday (never today) at 10:00 in the company's zone.
+  const result = await tx.execute<{ start: Date | string }>(sql`
+    with d as (select (${now}::timestamptz at time zone ${tz})::date as today)
+    select ((today + (((4 - extract(isodow from today)::int + 6) % 7) + 1))::date + time '10:00') at time zone ${tz} as start from d`);
+  const start = new Date(result.rows[0]!.start);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  const [already] = await tx
+    .select({ id: appointments.id })
+    .from(appointments)
+    .where(and(eq(appointments.companyId, ctx.companyId), eq(appointments.customerId, customerId), eq(appointments.startsAt, start)))
+    .limit(1);
+  if (already) return;
+  await createAppointment(
+    tx,
+    ctx,
+    {
+      kind: 'inspection',
+      title: 'Roof inspection',
+      jobId: job?.id ?? null,
+      customerId,
+      propertyId: home.id,
+      assignedUserId: null,
+      startsAt: start,
+      endsAt: end,
+      allDay: false,
+      notes: 'Booked by Front Desk on a call.',
+      source: 'front_desk',
+    },
+    now,
+  );
+}
 
 /** "Incoming call": a homeowner calls, talks with Front Desk over the fake voice session, and hangs up. */
 export async function simulateCall(deps: AppDeps, companyId: string): Promise<SimulateResult> {
@@ -153,11 +209,14 @@ export async function simulateCall(deps: AppDeps, companyId: string): Promise<Si
   const ctx = systemContext(companyId);
   const demo = demoDeps(deps);
   const callSid = `CA${randomUUID().replace(/-/g, '')}`;
-  const startedAt = deps.clock.now();
+  // The call "rang" a little before the assistant picked up and lasted DEMO_CALL_SECONDS, ending now.
+  const endedAt = deps.clock.now();
+  const aiStartedAt = new Date(endedAt.getTime() - DEMO_CALL_SECONDS * 1000);
+  const startedAt = new Date(aiStartedAt.getTime() - DEMO_PICKUP_MS);
 
   const call = await withTenant(deps.pools, ctx, async (tx) => {
     const row = await insertCall(tx, ctx, { callSid, fromE164: homeowner.phone, toE164: to, forwardedFrom: null, stirVerstat: null, now: startedAt });
-    await updateCall(tx, ctx, callSid, { status: 'ai', aiStartedAt: startedAt });
+    await updateCall(tx, ctx, callSid, { status: 'ai', aiStartedAt });
     return row;
   });
 
@@ -193,9 +252,10 @@ export async function simulateCall(deps: AppDeps, companyId: string): Promise<Si
       .set({ conversationId, transcriptStored: true })
       .where(and(eq(calls.companyId, companyId), eq(calls.id, call.id)));
     // As Twilio's status callback would on hang-up: after-call work runs only on a finished call.
-    await updateCall(tx, ctx, callSid, { status: 'ended', endedAt: deps.clock.now(), aiSeconds: DEMO_CALL_SECONDS });
+    await updateCall(tx, ctx, callSid, { status: 'ended', endedAt, aiSeconds: DEMO_CALL_SECONDS });
     if (homeowner.customerId !== null) {
       await updateConversation(tx, ctx, conversationId, { customerId: homeowner.customerId, identity: 'matched' });
+      await bookDemoInspection(tx, ctx, homeowner.customerId, endedAt);
     }
   });
   await runAfterCall(demo, { companyId, callSid });

@@ -140,10 +140,14 @@ function AssistantMark() {
   );
 }
 
-/** The audio row: Listen, the bars, the time and the speed. Disabled, with the reason, when there is no recording. */
+/** Whether this viewer can play the call's recording; without one the audio row is left out. */
+function hasRecording(call: CallView): boolean {
+  return call.canPlayRecording && call.recordingStatus === 'stored';
+}
+
+/** The audio row: Listen, the bars, the time and the speed. Shown only for a call with a recording to play. */
 function AudioRow({ call, seedId }: { call: CallView | null; seedId: string }) {
-  const playable =
-    call !== null && call.canPlayRecording && call.recordingStatus === "stored";
+  const playable = call !== null && hasRecording(call);
   const source = playable ? `/api/calls/${call.id}/recording` : null;
   const audio = useRef<HTMLAudioElement>(null);
   const [started, setStarted] = useState(false);
@@ -451,12 +455,8 @@ function Detail({ conversation }: { conversation: ConversationDetail }) {
           </section>
         ) : null}
 
-        {isCall ? (
-          <AudioRow
-            key={lastCall?.id ?? conversation.id}
-            call={lastCall}
-            seedId={lastCall?.id ?? conversation.id}
-          />
+        {isCall && lastCall !== null && hasRecording(lastCall) ? (
+          <AudioRow key={lastCall.id} call={lastCall} seedId={lastCall.id} />
         ) : null}
 
         <section
