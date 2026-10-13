@@ -36,6 +36,8 @@ Branch `demo-mode`, off `launch-integration` 2a3cbe5. The owner runs the demo li
   - Tests: `d1-lift-front-desk.test.tsx` (tiles, tabs, rows, selection), `stats-routes.test.ts` (day stats). `d1-t21-window` and `d1-routes` were updated for the new tabs, chips and stats route. The e2e `front-desk.spec.ts` still expects the old "This week" tiles and Booked chip text: update it with the lift (not run here).
 - **UI lift piece 9** (`lift-09-call`): new `CallDetail` for the Front Desk call detail panel (`apps/web/src/features/front-desk/lift/CallDetail.tsx`, `.module.css`, copy in `apps/web/src/copy/liftCall.ts`, test `apps/web/test/lift-09-call-detail.test.tsx`). Reads the existing `useConversation` hook; recording streams from `/api/calls/:id/recording` only after Listen; bars are decoded from the recording once asked for, else seeded by call id (deterministic) and shown disabled with "No recording". Open job links to `/jobs/<first linked job>`, hidden when none. Texts render bubbles without the audio row. The window wiring is another agent's piece.
 - **Final launch head** ff772d5c merged (G1 Ruling BL expiry, C1 phone top bar, S1 a11y, A1 paused-mid-ring). Locally all checks pass, smoke 2.5 min. `map-est-demo` 86615b29 handed to the controller (demo-lift comes separately).
+- **CI green** on 963b9d5d (run 38331973311), which carries launch ff772d5c plus the ROOFLINE_DEMO_BRANCH switch with reseed. The typed-address mapping is owned by E1 (e1-map-estimate 6658167e).
+- **demo-oct13 777e5517 FINAL CHECK PASS** (2026-10-13 ~02:50 UTC): fresh clone, npm ci, `npm run demo -- --reset` seeds and logs in; demo-walkthrough plus 2 demo-estimator specs, 3/3 in 4.9 min.
 
 ## design-a2 (2026-10-13): tokens, shell and Home to match the reference
 
