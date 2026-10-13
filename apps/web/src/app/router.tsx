@@ -16,7 +16,6 @@ import { CustomersWindow } from '../features/customers/CustomersWindow.tsx';
 import { CustomerWindow } from '../features/customers/CustomerWindow.tsx';
 import { NewCustomer } from '../features/create/NewCustomer.tsx';
 import { NewJob } from '../features/create/NewJob.tsx';
-import { ConversationWindow } from '../features/front-desk/ConversationWindow.tsx';
 import { FrontDeskWindow } from '../features/front-desk/FrontDeskWindow.tsx';
 import { ImportWizard } from '../features/imports/ImportWizard.tsx';
 import { EstimatorWindow } from '../features/estimator/EstimatorWindow.tsx';
@@ -73,8 +72,7 @@ const routes: RouteObject[] = [
           { path: 'storm/routes', element: <AppWindow app="storm"><RoutesWindow /></AppWindow> },
           { path: 'storm/routes/:routeId', element: <AppWindow app="storm"><RouteDetail /></AppWindow> },
           { path: 'storm/:id', element: <AppWindow app="storm"><StormDetail /></AppWindow> },
-          { path: 'front-desk', element: <AppWindow app="front-desk"><FrontDeskWindow /></AppWindow> },
-          { path: 'front-desk/:conversationId', element: <AppWindow app="front-desk"><ConversationWindow /></AppWindow> },
+          { path: 'front-desk/:conversationId?', element: <AppWindow app="front-desk"><FrontDeskWindow /></AppWindow> },
           { path: 'estimator', element: <AppWindow app="estimator"><EstimatorWindow /></AppWindow> },
           { path: 'estimator/measure/:measurementId', element: <AppWindow app="estimator"><MeasureWindow /></AppWindow> },
           { path: 'estimator/proposals/:proposalId', element: <AppWindow app="estimator"><ProposalWindow /></AppWindow> },

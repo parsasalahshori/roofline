@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import type { FrontDeskWeekStats } from '@roofline/shared';
+import type { FrontDeskDayStats, FrontDeskWeekStats } from '@roofline/shared';
 import { companies } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
@@ -102,5 +102,69 @@ export async function frontDeskWeekStats(
     guardBlocks: row.guard_blocks,
     aiMinutesUsed: Math.round((row.ai_seconds / 60) * 10) / 10,
     aiMinutesIncluded: null,
+  };
+}
+
+/** The office is open Monday to Friday, 08:00 to 17:00 company time. A call outside that is after hours. */
+export const OFFICE_OPENS_HOUR = 8;
+export const OFFICE_CLOSES_HOUR = 17;
+
+type DayRow = {
+  calls_today: number;
+  picked_up: number;
+  booked: number;
+  escalated: number;
+  avg_answer_ms: number | null;
+  after_hours: number;
+};
+
+/**
+ * Today's numbers, from the calls and conversations tables, for the company's local calendar day `day` (YYYY-MM-DD).
+ * `answeredPct` is the share of the day's calls that were not rejected, failed or still ringing; spam counts as
+ * picked up (the assistant answers it, then blocks it). Forwarding-test calls count nowhere. `tabCounts` is filled by the caller.
+ */
+export async function frontDeskDayStats(
+  tx: Tx,
+  ctx: TenantContext,
+  day: string,
+  timeZone: string,
+  testCallerE164: string | null = null,
+): Promise<Omit<FrontDeskDayStats, 'tabCounts'>> {
+  const company = ctx.companyId;
+  const start = sql`((${day}::date)::timestamp at time zone ${timeZone})`;
+  const end = sql`(((${day}::date + 1))::timestamp at time zone ${timeZone})`;
+  const notTest = testCallerE164 === null ? sql`true` : sql`c.from_e164 <> ${testCallerE164}`;
+  const result = await tx.execute(sql`
+    with
+    day_calls as (
+      select c.* from calls c
+      where c.company_id = ${company} and c.started_at >= ${start} and c.started_at < ${end} and ${notTest}
+    ),
+    day_convs as (
+      select v.* from conversations v
+      where v.company_id = ${company} and v.created_at >= ${start} and v.created_at < ${end}
+    )
+    select
+      (select count(*)::int from day_calls) as calls_today,
+      (select count(*)::int from day_calls where status not in ('rejected', 'failed', 'ringing')) as picked_up,
+      (select count(*)::int from day_convs where outcome = 'booked') as booked,
+      (select count(*)::int from day_calls where transfer_result in ('answered', 'no_answer') or status = 'transferred') as escalated,
+      (select round(avg(extract(epoch from (ai_started_at - started_at)) * 1000))::int from day_calls where ai_started_at is not null) as avg_answer_ms,
+      (select count(*)::int from day_calls k
+        where extract(isodow from (k.started_at at time zone ${timeZone})) > 5
+           or extract(hour from (k.started_at at time zone ${timeZone})) < ${OFFICE_OPENS_HOUR}
+           or extract(hour from (k.started_at at time zone ${timeZone})) >= ${OFFICE_CLOSES_HOUR}) as after_hours
+  `);
+  const row = result.rows[0] as DayRow | undefined;
+  if (!row) throw new Error('frontDeskDayStats: the stats query returned no row.');
+  return {
+    day,
+    callsToday: row.calls_today,
+    answeredPct: row.calls_today === 0 ? null : Math.round((row.picked_up / row.calls_today) * 100),
+    booked: row.booked,
+    escalated: row.escalated,
+    avgAnswerMs: row.avg_answer_ms === null ? null : Number(row.avg_answer_ms),
+    inspectionsBooked: row.booked,
+    afterHours: row.after_hours,
   };
 }

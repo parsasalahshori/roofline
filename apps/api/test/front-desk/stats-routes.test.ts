@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { calls, companies, conversations, conversationTurns, messages } from '@roofline/db';
-import type { FrontDeskWeekStats } from '@roofline/shared';
+import type { FrontDeskDayStats, FrontDeskWeekStats } from '@roofline/shared';
 import { Actors, inCompany } from '../crm-helpers.ts';
 import { makeTestApp, type TestApp } from '../helpers.ts';
 
@@ -66,6 +66,7 @@ async function call(
     from?: string;
     status?: 'ended' | 'ai' | 'ringing' | 'rejected' | 'failed' | 'transferred';
     startedAt?: Date;
+    aiStartedAt?: Date | null;
     aiSeconds?: number;
     transferResult?: 'answered' | 'no_answer' | 'none';
     spamReason?: string | null;
@@ -81,6 +82,7 @@ async function call(
       toE164: NUMBER,
       status: o.status ?? 'ended',
       startedAt: o.startedAt ?? wed(14),
+      aiStartedAt: o.aiStartedAt ?? null,
       aiSeconds: o.aiSeconds ?? 0,
       transferResult: o.transferResult ?? 'none',
       spamReason: o.spamReason ?? null,
@@ -238,5 +240,60 @@ describe('GET /api/front-desk/stats', () => {
       aiMinutesUsed: 0,
       aiMinutesIncluded: null,
     });
+  });
+});
+
+describe('GET /api/front-desk/stats?day=today', () => {
+  // The clock is Wednesday 2026-10-14 15:00Z = 10:00 Central, so today runs 05:00Z to 05:00Z the next day.
+  const getToday = async (as: 'owner' | 'office' | 'rep' = 'owner', company: 'a' | 'b' = 'a') =>
+    (await who.as(as, company)).get(`${URL}?day=today`);
+
+  test('today only: calls, answer rate and speed, bookings, escalations, after-hours and tab counts', async () => {
+    const booked = await conv({ outcome: 'booked' });
+    await call({ conversationId: booked, startedAt: wed(15), aiStartedAt: new Date(wed(15).getTime() + 1000) });
+    await call({ status: 'transferred', transferResult: 'answered', startedAt: wed(16), aiStartedAt: new Date(wed(16).getTime() + 3000) });
+    await call({ status: 'rejected', startedAt: wed(17) });
+    await call({ startedAt: at('2026-10-15T01:00:00Z') }); // 20:00 Central: after hours, still today
+    await call({ startedAt: at('2026-10-14T04:00:00Z') }); // 23:00 Central yesterday: not today
+    await conv({ outcome: 'spam' });
+    await conv({ channel: 'sms' });
+
+    const res = await getToday();
+    expect(res.status).toBe(200);
+    const body = res.body as FrontDeskDayStats;
+    expect(body).toMatchObject({
+      day: '2026-10-14',
+      callsToday: 4,
+      answeredPct: 75,
+      booked: 1,
+      inspectionsBooked: 1,
+      escalated: 1,
+      avgAnswerMs: 2000,
+      afterHours: 1,
+      // "All" leaves the spam out, the way the list does
+      tabCounts: { all: 2, booked: 1, messages: 1, spam: 1 },
+    });
+  });
+
+  test('no calls: a null rate and speed, never a made-up number', async () => {
+    const body = (await getToday()).body as FrontDeskDayStats;
+    expect(body).toMatchObject({ callsToday: 0, answeredPct: null, avgAnswerMs: null, afterHours: 0, booked: 0 });
+  });
+
+  test('excludes forwarding-test calls and never counts another company', async () => {
+    await call({ from: TEST_CALLER });
+    await call({ company: 'b' });
+    await call();
+    expect(((await getToday()).body as FrontDeskDayStats).callsToday).toBe(1);
+    expect(((await getToday('owner', 'b')).body as FrontDeskDayStats).callsToday).toBe(1);
+  });
+
+  test('office reads it, a rep is refused, and only day=today is accepted', async () => {
+    expect((await getToday('office')).status).toBe(200);
+    const rep = await getToday('rep');
+    expect(rep.status).toBe(403);
+    expect(rep.body).toMatchObject({ error: NOT_ALLOWED });
+    const agent = await who.as('owner', 'a');
+    expect((await agent.get(`${URL}?day=yesterday`)).status).toBe(400);
   });
 });

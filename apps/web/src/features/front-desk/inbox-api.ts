@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import type { ConversationFilter, ConversationListItem, ConversationPage, FrontDeskWeekStats } from '@roofline/shared';
+import type { ConversationFilter, ConversationListItem, ConversationPage, FrontDeskDayStats, FrontDeskWeekStats } from '@roofline/shared';
 import { apiFetch } from '../../api/client.ts';
 
 /*
@@ -36,6 +36,17 @@ export function useConversations(filter: ConversationFilter) {
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     refetchInterval: (query) => inboxPollInterval(flattenItems(query.state.data?.pages)),
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** Today's numbers (owner and office): calls, answer rate and speed, bookings, after-hours calls, and the tab counts. */
+export function useDayStats(enabled = true) {
+  return useQuery({
+    enabled,
+    queryKey: ['front-desk', 'stats', 'today'],
+    queryFn: ({ signal }) => apiFetch<FrontDeskDayStats>('/api/front-desk/stats?day=today', { signal }),
+    refetchInterval: IDLE_POLL_MS,
     refetchIntervalInBackground: false,
   });
 }

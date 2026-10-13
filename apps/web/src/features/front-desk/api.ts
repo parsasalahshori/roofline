@@ -16,4 +16,4 @@ export function useFrontDeskUnread(): number {
   });
   return (data?.items ?? []).filter((row) => row.unreadCount > 0 || row.needsAttention).length;
 }
-export { useConversations, useWeekStats, inboxPollInterval, LIVE_POLL_MS, IDLE_POLL_MS } from './inbox-api.ts';
+export { useConversations, useDayStats, useWeekStats, inboxPollInterval, LIVE_POLL_MS, IDLE_POLL_MS } from './inbox-api.ts';

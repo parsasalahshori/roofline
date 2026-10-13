@@ -38,6 +38,12 @@ export type ConversationListItem = {
   lastMessageAt: string;
   /** Set while a call on this conversation is live (status ringing, ai or ringing_team). */
   liveCall: { callId: string; status: CallStatus; startedAt: string } | null;
+  /** Length of the latest call in whole seconds; null for a text thread or a call still running. */
+  durationSeconds?: number | null;
+  /** Name of the team member the latest call was sent to, when it was transferred. */
+  transferredToName?: string | null;
+  /** True when the assistant texted the caller back after a call it could not take (a text-back). */
+  textBackSent?: boolean;
 };
 
 /** GET /api/conversations: newest first; `nextCursor` is null on the last page. */
@@ -138,6 +144,25 @@ export type FrontDeskWeekStats = {
   guardBlocks: number;
   aiMinutesUsed: number;
   aiMinutesIncluded: number | null;
+};
+
+/** How many conversations each Front Desk tab holds, keyed by the inbox filter the tab asks for. */
+export type FrontDeskTabCounts = Record<'all' | 'booked' | 'messages' | 'spam', number>;
+
+/** GET /api/front-desk/stats?day=today: today's numbers in the company's time zone (owner, office). */
+export type FrontDeskDayStats = {
+  /** The company's local date, YYYY-MM-DD. */
+  day: string;
+  callsToday: number;
+  /** Calls the assistant or the team picked up, as a whole percent of today's calls; null with no calls. */
+  answeredPct: number | null;
+  booked: number;
+  escalated: number;
+  /** Mean time from the call's first ring to the assistant's first word, in milliseconds; null with no answered call. */
+  avgAnswerMs: number | null;
+  inspectionsBooked: number;
+  afterHours: number;
+  tabCounts: FrontDeskTabCounts;
 };
 
 /** One member on the on-call list, in ring order (Settings → Front Desk). */

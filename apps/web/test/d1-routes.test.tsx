@@ -41,18 +41,17 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
 /** The Front Desk window's reads, answered with an empty inbox and zeroed week. */
 const FRONT_DESK_ROUTES: Routes = {
   'GET /api/conversations?filter=all': () => ({ body: { items: [], nextCursor: null } }),
-  'GET /api/front-desk/stats': () => ({
+  'GET /api/front-desk/stats?day=today': () => ({
     body: {
-      weekStart: '2026-10-05',
-      answered: 0,
+      day: '2026-10-12',
+      callsToday: 0,
+      answeredPct: null,
       booked: 0,
-      transferred: 0,
-      messages: 0,
-      spam: 0,
-      firstReplyMsP50: null,
-      guardBlocks: 0,
-      aiMinutesUsed: 0,
-      aiMinutesIncluded: null,
+      escalated: 0,
+      avgAnswerMs: null,
+      inspectionsBooked: 0,
+      afterHours: 0,
+      tabCounts: { all: 0, booked: 0, messages: 0, spam: 0 },
     },
   }),
   'GET /api/company': () => ({ body: { ...COMPANY, timezone: 'America/Los_Angeles' } }),
