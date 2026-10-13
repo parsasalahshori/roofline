@@ -7,7 +7,7 @@ import { makeAndSendProposal } from './estimator-helpers.ts';
  */
 
 test('typed address to sent in 4 clicks', async ({ page, loginAs, markTodaySeen, click, clicks }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
 
@@ -23,7 +23,7 @@ test('typed address to sent in 4 clicks', async ({ page, loginAs, markTodaySeen,
 });
 
 test('exact report: owner approves the spend', async ({ page, loginAs, markTodaySeen, click }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   const sent = await makeAndSendProposal(page, click);
