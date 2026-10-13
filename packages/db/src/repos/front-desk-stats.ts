@@ -151,11 +151,12 @@ export async function frontDeskDayStats(
       (select count(*)::int from day_calls where status not in ('rejected', 'failed', 'ringing')) as picked_up,
       (select count(*)::int from day_convs where outcome = 'booked') as booked,
       (select count(*)::int from day_calls where transfer_result in ('answered', 'no_answer') or status = 'transferred') as escalated,
-      (select round(avg(g.ms))::int from (
-          select greatest(0, extract(epoch from (
+      -- greatest() skips nulls (greatest(0, null) is 0), so a call with no answer time is dropped before clamping.
+      (select round(avg(greatest(0, g.ms)))::int from (
+          select extract(epoch from (
             coalesce(k.ai_started_at, (select min(t.at) from conversation_turns t
               where t.company_id = ${company} and t.call_id = k.id and t.speaker = 'assistant')) - k.started_at
-          )) * 1000) as ms
+          )) * 1000 as ms
           from day_calls k
         ) g where g.ms is not null) as avg_answer_ms,
       (select count(*)::int from day_calls k
