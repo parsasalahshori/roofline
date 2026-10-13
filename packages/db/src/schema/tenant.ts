@@ -1030,6 +1030,8 @@ export const measurements = pgTable(
     ridgeFt: numeric('ridge_ft', { precision: 12, scale: 2, mode: 'number' }),
     valleyFt: numeric('valley_ft', { precision: 12, scale: 2, mode: 'number' }),
     facets: integer('facets'),
+    /** The roof facets being priced (e.g. only the damaged side), as the roof model letters them; null for the whole roof. */
+    selectedFacets: jsonb('selected_facets').$type<string[]>(),
     providerRef: text('provider_ref'),
     notes: text('notes'),
     createdByUserId: userRef('created_by_user_id'),

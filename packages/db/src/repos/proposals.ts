@@ -17,6 +17,7 @@ import {
   type Tier,
   type TierTemplate,
 } from '@roofline/shared';
+import { pricedValleyFt } from './measurements.ts';
 import {
   agentTaskSteps,
   agentTasks,
@@ -384,7 +385,7 @@ export async function getMeasurementBasics(tx: Tx, ctx: TenantContext, id: strin
     pitchX12: m.pitchX12 ?? 6,
     edgeFt: m.edgeFt ?? 0,
     ridgeFt: m.ridgeFt ?? 0,
-    valleyFt: m.valleyFt ?? 0,
+    valleyFt: await pricedValleyFt(tx, ctx, m),
   };
 }
 

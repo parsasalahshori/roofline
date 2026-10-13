@@ -82,6 +82,7 @@ export function ProposalPanel({
   customerName,
   controls,
   footer,
+  sectionLetters = null,
 }: {
   preview: MeasurementPreview | undefined;
   pending: boolean;
@@ -89,6 +90,8 @@ export function ProposalPanel({
   customerName: string | null;
   controls: ReactNode;
   footer: ReactNode;
+  /** The facets priced when only part of the roof is ("B, C"); null for the whole roof. */
+  sectionLetters?: string | null;
 }) {
   const options = (preview?.options ?? []).filter((o) => o.enabled);
   const [picked, setPicked] = useState<Tier | null>(null);
@@ -108,6 +111,7 @@ export function ProposalPanel({
             {liftProposal.builtBy}
           </span>
         </div>
+        {sectionLetters !== null ? <p className={styles.section}>{liftProposal.sectionLine(sectionLetters)}</p> : null}
         {squares !== null ? <p className={styles.squares}>{liftProposal.squaresLine(squares.ordered, squares.measured, squares.wastePct)}</p> : null}
       </div>
       <div className={styles.scroll}>

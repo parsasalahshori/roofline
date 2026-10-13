@@ -297,3 +297,15 @@
     border-left: 0;
   }
 }
+
+/* Only part of the roof is priced: said above the squares. */
+.section {
+  display: inline-block;
+  margin: 4px 0 0;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--ds-accent, #ffc21a);
+  color: var(--ds-text-1, #151c22);
+  font-size: 12px;
+  font-weight: 600;
+}

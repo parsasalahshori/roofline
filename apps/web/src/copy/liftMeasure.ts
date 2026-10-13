@@ -51,6 +51,13 @@ export const liftMeasure = {
   facetArea: (sqFt: number) => `${Math.round(sqFt).toLocaleString()} sq ft`,
   facetPitch: (pitch: string) => `${pitch} pitch`,
   appIcon: 'Measure app icon',
+  sectionsTitle: 'What to price',
+  sectionsHint: 'Only part of the roof damaged? Tap its facets on the photo, or pick them here, to price just that part.',
+  wholeRoof: 'Whole roof',
+  facetToggle: (letter: string) => `Facet ${letter}`,
+  sectionArea: 'Section area',
+  sectionOf: (letters: string, squares: number, total: number) =>
+    `Pricing facet${letters.includes(',') ? 's' : ''} ${letters} only: ${squares.toFixed(1)} of ${total.toFixed(1)} squares`,
 } as const;
 
 /** The proposal panel beside a measured roof. */
@@ -60,6 +67,7 @@ export const liftProposal = {
   builtBy: 'Built by Estimator',
   squaresLine: (ordered: number, measured: number, wastePct: number) =>
     `${ordered.toFixed(1)} squares, ${measured.toFixed(1)} measured plus ${Math.round(wastePct)}% waste`,
+  sectionLine: (letters: string) => `Part of the roof: facet${letters.includes(',') ? 's' : ''} ${letters}`,
   tiersLabel: 'Proposal tier',
   tier: { good: 'Good', better: 'Better', best: 'Best' },
   recommended: 'Recommended',

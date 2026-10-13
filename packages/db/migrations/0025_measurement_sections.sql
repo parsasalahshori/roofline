@@ -1,0 +1,1 @@
+ALTER TABLE "measurements" ADD COLUMN "selected_facets" jsonb;

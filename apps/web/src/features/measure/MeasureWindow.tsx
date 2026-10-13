@@ -1,8 +1,8 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Banner, Button, Checkbox, EmptyState, Field } from '@roofline/ui';
-import { instantEstimate, type ProposalView, type Ring } from '@roofline/shared';
+import { instantEstimate, measureRoof, type ProposalView, type Ring } from '@roofline/shared';
 import { Map as MapLibreMap } from 'maplibre-gl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
@@ -22,7 +22,7 @@ import { PropertyStrip } from './lift/PropertyStrip.tsx';
 import { ProposalPanel } from './lift/ProposalPanel.tsx';
 import { RequestsList } from './lift/RequestsList.tsx';
 import { useRequestRows } from './lift/requests.ts';
-import { addRoofLayers, readRoof } from './lift/roofModel.ts';
+import { addRoofLayers, nextSection, readRoof, sectionLetters } from './lift/roofModel.ts';
 import { RoofView } from './lift/RoofView.tsx';
 import { useRoofScan } from './lift/scan.ts';
 import { MeasureSlotsContext, type RoofSession } from './lift/slots.ts';
@@ -61,6 +61,14 @@ function createMap(container: HTMLElement, center: [number, number]): MapLibreMa
     return null;
   }
 }
+
+const ROOF_FACETS_FILL = 'roof-facets-fill';
+type FacetTap = { features?: { properties?: Record<string, unknown> | null }[] };
+type FacetTaps = {
+  on?: (type: string, layer: string, fn: (e: FacetTap) => void) => void;
+  off?: (type: string, layer: string, fn: (e: FacetTap) => void) => void;
+  getCanvas?: () => HTMLElement;
+};
 
 type FitMap = { fitBounds?: (b: [[number, number], [number, number]], o: Record<string, unknown>) => void; resize?: () => void };
 
@@ -142,6 +150,8 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   const [pitch, setPitch] = useState(m.estimate.pitchX12);
   const [overhangText, setOverhangText] = useState(String(m.overhangFt));
   const [overhang, setOverhang] = useState(m.overhangFt);
+  // The facets being priced (only the damaged part of the roof), or null for the whole roof
+  const [section, setSection] = useState<string[] | null>(m.section?.facets ?? null);
   const [included, setIncluded] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(m.structures.map((s) => [s.footprintId, s.included])),
   );
@@ -195,6 +205,8 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
       return;
     }
     setDrawMode((current) => (current && result.ring.length >= 3 ? false : current));
+    // A new outline re-letters the facets: the server prices the whole roof again, and so does this screen
+    setSection(null);
     pending.current.outline = [result.ring];
     saveTimer.current = setTimeout(() => {
       void flushPending().catch(() => {});
@@ -268,13 +280,15 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
 
   const estimate = useMemo(
     () =>
-      instantEstimate({
-        outline: ring.length > 0 ? [ring] : [],
-        pitchX12: pitch,
-        overhangFt: overhang,
-        valleyFt: m.estimate.valleyFt,
-      }),
-    [ring, pitch, overhang, m.estimate.valleyFt],
+      section === null
+        ? instantEstimate({
+            outline: ring.length > 0 ? [ring] : [],
+            pitchX12: pitch,
+            overhangFt: overhang,
+            valleyFt: m.estimate.valleyFt,
+          })
+        : measureRoof({ outline: ring.length > 0 ? [ring] : [], pitchX12: pitch, overhangFt: overhang, facets: section }).estimate,
+    [ring, pitch, overhang, m.estimate.valleyFt, section],
   );
 
   // Price-changing edits go out at once through the same path as the outline, so Send proposal can wait for them
@@ -283,9 +297,44 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     void flushPending().catch(() => {});
   };
 
+  const pickable = !locked && !editing && !drawMode && done && model !== null;
+  const pickFacet = (id: string) => {
+    if (!pickable) return;
+    const next = nextSection(model, section, id);
+    setSection(next);
+    save({ selectedFacets: next });
+  };
+  const wholeRoof = () => {
+    if (section === null || locked) return;
+    setSection(null);
+    save({ selectedFacets: null });
+  };
+  const onFacetTap = useEffectEvent((id: string) => pickFacet(id));
+  // Tapping a facet on the photo adds it to (or takes it out of) the part of the roof being priced
+  useEffect(() => {
+    const loose = mapInstance as unknown as FacetTaps | null;
+    if (!pickable || !loose?.on) return;
+    const tap = (e: FacetTap) => {
+      const id = e.features?.[0]?.properties?.id;
+      if (typeof id === 'string') onFacetTap(id);
+    };
+    const pointer = () => loose.getCanvas?.().style.setProperty('cursor', 'pointer');
+    const plain = () => loose.getCanvas?.().style.removeProperty('cursor');
+    loose.on('click', ROOF_FACETS_FILL, tap);
+    loose.on('mouseenter', ROOF_FACETS_FILL, pointer);
+    loose.on('mouseleave', ROOF_FACETS_FILL, plain);
+    return () => {
+      loose.off?.('click', ROOF_FACETS_FILL, tap);
+      loose.off?.('mouseenter', ROOF_FACETS_FILL, pointer);
+      loose.off?.('mouseleave', ROOF_FACETS_FILL, plain);
+      plain();
+    };
+  }, [mapInstance, pickable]);
+
   const toggleStructure = (id: string, next: boolean) => {
     const map = { ...included, [id]: next };
     setIncluded(map);
+    setSection(null);
     save({ includedStructures: m.structures.filter((s) => map[s.footprintId]).map((s) => s.footprintId) });
   };
 
@@ -300,6 +349,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     if (!Number.isFinite(value)) return;
     const clamped = Math.min(MAX_OVERHANG_FT, Math.max(0, value));
     setOverhang(clamped);
+    setSection(null);
     clearTimeout(overhangTimer.current);
     pending.current.overhangFt = clamped;
     overhangTimer.current = setTimeout(() => {
@@ -509,6 +559,9 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
         wastePct: recommended?.wastePercent ?? null,
         editing,
         setEditing,
+        section,
+        pickFacet: pickable ? pickFacet : null,
+        wholeRoof,
       }}
     >
       <main className={styles.main}>
@@ -524,6 +577,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
             customerName={customerName}
             controls={controls}
             footer={footer}
+            sectionLetters={model !== null && section !== null ? sectionLetters(model, section) : null}
           />
         </div>
       ) : null}

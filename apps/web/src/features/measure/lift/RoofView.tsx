@@ -1,6 +1,6 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Banner, Button, Skeleton } from '@roofline/ui';
-import type { Ring } from '@roofline/shared';
+import { roofSection, type Ring } from '@roofline/shared';
 import { Marker, type Map as MapLibreMap } from 'maplibre-gl';
 import { useContext, useEffect, useReducer } from 'react';
 import { legal } from '../../../copy/legal.ts';
@@ -118,10 +118,16 @@ export function labelLayouts(facets: { planSqFt: number; at: { x: number; y: num
   return out;
 }
 
-function useFacetLabels(instance: MapLibreMap | null, model: RoofModel | null, visible: boolean) {
+function useFacetLabels(instance: MapLibreMap | null, model: RoofModel | null, visible: boolean, section: string[] | null) {
+  const picked = section?.join(',') ?? '';
   useEffect(() => {
     if (!instance || !model || !visible) return;
-    const elements = model.facets.map((f, i) => facetLabel(facetName(f.id, i), f.areaSqFt, f.pitch, f.planSqFt >= WIDE_LABEL_SQFT));
+    const inSection = picked === '' ? null : new Set(picked.split(','));
+    const elements = model.facets.map((f, i) => {
+      const el = facetLabel(facetName(f.id, i), f.areaSqFt, f.pitch, f.planSqFt >= WIDE_LABEL_SQFT);
+      if (inSection !== null) el.dataset.section = inSection.has(f.id) ? 'in' : 'out';
+      return el;
+    });
     const markers = model.facets.map((f, i) => new Marker({ element: elements[i]!, draggable: false }).setLngLat(f.labelAt).addTo(instance));
     const loose = instance as unknown as Loose;
     const layout = () => {
@@ -146,14 +152,23 @@ function useFacetLabels(instance: MapLibreMap | null, model: RoofModel | null, v
       loose.off?.('resize', layout);
       for (const marker of markers) marker.remove();
     };
-  }, [instance, model, visible]);
+  }, [instance, model, visible, picked]);
 }
 
 /**
  * What shows on the photo when: nothing before the scan; the facets and lines once traced; the outline and the
  * buildings' tint while Adjust is open, or when the roof has no facets.
  */
-function useLayerVisibility(instance: MapLibreMap | null, m: MeasurementView, model: RoofModel | null, roofDrawn: boolean, done: boolean, editing: boolean, drawMode: boolean) {
+function useLayerVisibility(
+  instance: MapLibreMap | null,
+  m: MeasurementView,
+  model: RoofModel | null,
+  roofDrawn: boolean,
+  done: boolean,
+  editing: boolean,
+  drawMode: boolean,
+  section: string[] | null,
+) {
   useEffect(() => {
     if (!instance) return;
     try {
@@ -164,8 +179,8 @@ function useLayerVisibility(instance: MapLibreMap | null, m: MeasurementView, mo
     const outlineShown = drawMode || (done && (editing || model === null));
     setVisible(instance, OUTLINE_LAYERS, outlineShown);
     setVisible(instance, STRUCTURE_LAYERS, done && (editing || model === null));
-    setRoofLayers(instance, model, roofDrawn && !(editing && drawMode));
-  }, [instance, m.structures, model, roofDrawn, done, editing, drawMode]);
+    setRoofLayers(instance, model, roofDrawn && !(editing && drawMode), section);
+  }, [instance, m.structures, model, roofDrawn, done, editing, drawMode, section]);
 }
 
 /** Re-renders when the map moves or resizes, so overlays drawn in screen space follow the photo. */
@@ -321,10 +336,11 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
   const { containerRef, drawMode, saving, map, ring, zoom, mapFailed, locked, problem, saveFailed, finishDrawing, clearDrawing } = roof;
   const done = scan.phase === 'done';
   const roofDrawn = done || (scan.phase === 'scanning' && scan.progress >= ROOF_DRAWN_AT);
-  useLayerVisibility(map, m, model, roofDrawn, done, editing, drawMode);
-  useFacetLabels(map, model, roofDrawn && !editing);
+  useLayerVisibility(map, m, model, roofDrawn, done, editing, drawMode, slots.section);
+  useFacetLabels(map, model, roofDrawn && !editing, slots.section);
   const estimate = slots.estimate ?? m.estimate;
-  const numbers = cardNumbers(m, estimate, model, slots.wastePct);
+  const section = model !== null ? roofSection(model, slots.section) : null;
+  const numbers = cardNumbers(m, estimate, model, slots.wastePct, section);
 
   return (
     <div className={styles.frame}>
@@ -353,6 +369,10 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
             editing={editing}
             onEdit={slots.setEditing}
             panels={slots.panels}
+            model={model}
+            section={section}
+            onPick={slots.pickFacet}
+            onWholeRoof={slots.wholeRoof}
           />
         )}
       </div>

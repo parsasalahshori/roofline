@@ -21,6 +21,8 @@ export const LINE_COLORS: Record<RoofLineKind, string> = {
 };
 export const LINE_ORDER: readonly RoofLineKind[] = ['ridge', 'hip', 'valley', 'eave', 'rake'];
 const FACET_COLOR = '#2f6fde';
+/** A facet picked for a section (the part of the roof being priced). */
+const PICKED_COLOR = '#ffc21a';
 const CASING_COLOR = '#151c22';
 
 /** The facet's own letter (the API names them A, B… largest first), else A, B, C… by position. */
@@ -46,14 +48,19 @@ export const ROOF_FACETS_SOURCE = 'roof-facets-src';
 export const ROOF_LINES_SOURCE = 'roof-lines-src';
 export const ROOF_LAYERS = ['roof-facets-fill', 'roof-facets-casing', 'roof-facets-edge', 'roof-lines-casing', 'roof-lines'] as const;
 
-export function facetsData(roof: RoofModel | null) {
+/**
+ * The facets as map features. With a section (`picked`, some facets only), each says whether it is picked or left
+ * out, so the photo shows which part of the roof is being priced.
+ */
+export function facetsData(roof: RoofModel | null, picked: readonly string[] | null = null) {
+  const inSection = picked !== null && picked.length > 0 ? new Set(picked) : null;
   return {
     type: 'FeatureCollection' as const,
     features: (roof?.facets ?? [])
       .filter((f) => f.ring.length >= 3)
       .map((f) => ({
         type: 'Feature' as const,
-        properties: { id: f.id },
+        properties: { id: f.id, picked: inSection?.has(f.id) === true, dimmed: inSection !== null && !inSection.has(f.id) },
         geometry: { type: 'Polygon' as const, coordinates: [closed(f.ring)] },
       })),
   };
@@ -82,7 +89,16 @@ export function addRoofLayers(instance: MapLibreMap, roof: RoofModel | null): vo
     instance.addSource(ROOF_FACETS_SOURCE, { type: 'geojson', data: facetsData(roof) });
     instance.addSource(ROOF_LINES_SOURCE, { type: 'geojson', data: linesData(roof) });
     const hidden = { visibility: 'none' as const };
-    instance.addLayer({ id: 'roof-facets-fill', type: 'fill', source: ROOF_FACETS_SOURCE, layout: hidden, paint: { 'fill-color': FACET_COLOR, 'fill-opacity': 0.17 } });
+    instance.addLayer({
+      id: 'roof-facets-fill',
+      type: 'fill',
+      source: ROOF_FACETS_SOURCE,
+      layout: hidden,
+      paint: {
+        'fill-color': ['case', ['get', 'picked'], PICKED_COLOR, FACET_COLOR],
+        'fill-opacity': ['case', ['get', 'picked'], 0.45, ['get', 'dimmed'], 0.04, 0.17],
+      },
+    });
     instance.addLayer({
       id: 'roof-facets-casing',
       type: 'line',
@@ -95,7 +111,11 @@ export function addRoofLayers(instance: MapLibreMap, roof: RoofModel | null): vo
       type: 'line',
       source: ROOF_FACETS_SOURCE,
       layout: { ...hidden, 'line-join': 'round' },
-      paint: { 'line-color': FACET_COLOR, 'line-opacity': 0.65, 'line-width': 2 },
+      paint: {
+        'line-color': ['case', ['get', 'picked'], PICKED_COLOR, FACET_COLOR],
+        'line-opacity': ['case', ['get', 'dimmed'], 0.3, 0.65],
+        'line-width': ['case', ['get', 'picked'], 3, 2],
+      },
     });
     instance.addLayer({
       id: 'roof-lines-casing',
@@ -116,11 +136,11 @@ export function addRoofLayers(instance: MapLibreMap, roof: RoofModel | null): vo
   }
 }
 
-/** New roof data (after an edit) and whether it shows. */
-export function setRoofLayers(instance: MapLibreMap, roof: RoofModel | null, visible: boolean): void {
+/** New roof data (after an edit), the facets picked for a section (null for the whole roof), and whether it shows. */
+export function setRoofLayers(instance: MapLibreMap, roof: RoofModel | null, visible: boolean, picked: readonly string[] | null = null): void {
   const loose = instance as unknown as LooseMap;
   try {
-    (loose.getSource?.(ROOF_FACETS_SOURCE) as { setData?: (d: unknown) => void } | undefined)?.setData?.(facetsData(roof));
+    (loose.getSource?.(ROOF_FACETS_SOURCE) as { setData?: (d: unknown) => void } | undefined)?.setData?.(facetsData(roof, picked));
     (loose.getSource?.(ROOF_LINES_SOURCE) as { setData?: (d: unknown) => void } | undefined)?.setData?.(linesData(roof));
     for (const id of ROOF_LAYERS) {
       if (loose.getLayer?.(id) !== undefined) loose.setLayoutProperty?.(id, 'visibility', visible && roof !== null ? 'visible' : 'none');
@@ -128,4 +148,23 @@ export function setRoofLayers(instance: MapLibreMap, roof: RoofModel | null, vis
   } catch {
     // Ignored: the map is going away.
   }
+}
+
+/** The facets picked, or null for the whole roof: nothing picked, or every facet picked, is the whole roof. */
+export function nextSection(roof: RoofModel | null, picked: readonly string[] | null, id: string): string[] | null {
+  if (roof === null || !roof.facets.some((f) => f.id === id)) return picked === null ? null : [...picked];
+  const set = new Set(picked ?? []);
+  if (set.has(id)) set.delete(id);
+  else set.add(id);
+  // Kept in the roof's own order (A, B, C…), so the same section always reads the same way
+  const out = roof.facets.map((f) => f.id).filter((f) => set.has(f));
+  return out.length === 0 || out.length === roof.facets.length ? null : out;
+}
+
+/** The letters of a section as people read them: "B, C". */
+export function sectionLetters(roof: RoofModel, picked: readonly string[]): string {
+  return roof.facets
+    .map((f, i) => (picked.includes(f.id) ? facetName(f.id, i) : null))
+    .filter((x): x is string => x !== null)
+    .join(', ');
 }

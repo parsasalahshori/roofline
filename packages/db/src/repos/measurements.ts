@@ -32,6 +32,8 @@ export type MeasurementPatch = {
   pitchX12?: number;
   overhangFt?: number;
   valleyFt?: number;
+  /** The facets to price (the roof model's letters); null or every facet prices the whole roof. */
+  selectedFacets?: string[] | null;
 };
 
 /** The property (or the job) a measurement is for is not one the member can see, or the job is not at that property. */
@@ -276,7 +278,7 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
   const valleyFt = row.valleyFt ?? 0;
   // The roof drawn over the outline is worked out on read (deterministic), and its lines give the ridge, valley
   // and edge lengths, so what is drawn and what is priced agree.
-  const measured = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt });
+  const measured = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt, facets: row.selectedFacets ?? null });
   const fromOutline: InstantEstimate = measured.estimate;
   // An exact report's or an aerial measure's numbers are the measurement itself: shown as stored, never
   // worked out again from the outline (B5). Proposals are priced from the same stored columns.
@@ -303,6 +305,8 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
     drawMode: outline === null,
     hasCustomer: row.jobId !== null || found.propertyCustomerId !== null,
     roof: measured.roof,
+    // A report's or an aerial measure's stored numbers are the whole roof's: a section only applies to the outline's
+    section: keepsStoredNumbers(row) ? null : measured.section,
   };
 }
 
@@ -341,7 +345,7 @@ export async function updateMeasurement(
   id: string,
   p: MeasurementPatch,
   now: Date,
-): Promise<MeasurementView | 'exact' | 'locked' | 'unknown_structure' | null> {
+): Promise<MeasurementView | 'exact' | 'locked' | 'unknown_structure' | 'unknown_facet' | null> {
   const [found] = await tx
     .select({ row: measurements, outlineGeoJson: sql<string | null>`ST_AsGeoJSON(${measurements.outline})` })
     .from(measurements)
@@ -378,8 +382,18 @@ export async function updateMeasurement(
   // A new outline or pitch gets the valleys its roof has (0 means "the roof's"), unless a length is sent with it.
   const roofChanged = p.outline !== undefined || p.includedStructures !== undefined || p.pitchX12 !== undefined;
   const valleyIn = p.valleyFt ?? (roofChanged ? 0 : (current.valleyFt ?? 0));
-  const { estimate, roof } = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn });
-  const valleyFt = p.valleyFt ?? estimate.valleyFt;
+  // A new outline, new buildings or a new overhang re-letter the facets: the section starts over unless one is sent.
+  // A new pitch keeps it (the facets' shapes do not depend on the pitch).
+  const facetsMoved = p.outline !== undefined || p.includedStructures !== undefined || p.overhangFt !== undefined;
+  const asked = p.selectedFacets !== undefined ? p.selectedFacets : facetsMoved ? null : (current.selectedFacets ?? null);
+  const whole = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn });
+  if (p.selectedFacets !== undefined && p.selectedFacets !== null) {
+    const known = new Set((whole.roof?.facets ?? []).map((f) => f.id));
+    if (p.selectedFacets.some((id) => !known.has(id))) return 'unknown_facet';
+  }
+  const { estimate, roof, section } = asked === null ? whole : measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn, facets: asked });
+  // The whole roof's valleys are stored, so the section's share is worked out again on every read
+  const valleyFt = p.valleyFt ?? whole.estimate.valleyFt;
 
   await tx
     .update(measurements)
@@ -394,11 +408,28 @@ export async function updateMeasurement(
       edgeFt: estimate.edgeFt,
       ridgeFt: estimate.ridgeFt,
       facets: roof?.totals.facetCount ?? null,
+      selectedFacets: section?.facets ?? null,
       updatedAt: now,
     })
     .where(and(eq(measurements.id, id), eq(measurements.companyId, ctx.companyId)));
 
   return getMeasurement(tx, ctx, id);
+}
+
+/**
+ * The valley length a measurement is priced with. Stored is the whole roof's; a measurement priced for a section of
+ * its roof (selected facets) gets the section's share, worked out from its outline as getMeasurement does.
+ */
+export async function pricedValleyFt(tx: Tx, ctx: TenantContext, row: typeof measurements.$inferSelect): Promise<number> {
+  const stored = row.valleyFt ?? 0;
+  if (row.selectedFacets === null || row.selectedFacets.length === 0 || keepsStoredNumbers(row)) return stored;
+  const [found] = await tx
+    .select({ outlineGeoJson: sql<string | null>`ST_AsGeoJSON(${measurements.outline})` })
+    .from(measurements)
+    .where(and(eq(measurements.id, row.id), eq(measurements.companyId, ctx.companyId)))
+    .limit(1);
+  const outline = outlineFromGeoJson(found?.outlineGeoJson ?? null) ?? [];
+  return measureRoof({ outline, pitchX12: row.pitchX12 ?? 0, overhangFt: row.overhangFt ?? 0, valleyFt: stored, facets: row.selectedFacets }).estimate.valleyFt;
 }
 
 /** Points an address at the footprint the estimator chose. No error when the member cannot see the address. */
