@@ -104,7 +104,7 @@ export function BoardFilters() {
       />
       <Field
         label={jobs.filterSearch}
-        help={jobs.filterSearchHelp}
+        placeholder={jobs.filterSearchHelp}
         type="search"
         value={searchText}
         onChange={(event) => onSearch(event.currentTarget.value)}

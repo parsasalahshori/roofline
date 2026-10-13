@@ -1,10 +1,23 @@
+.workspace {
+  --surface: #fff;
+  --surface-2: #eaf0f4;
+  --text: #151c22;
+  --text-muted: #505b64;
+  --line: #d8dfe4;
+  --accent: #dceaff;
+  --accent-ink: #204f98;
+  --radius-card: 12px;
+  min-width: 0;
+}
+
 /* The loading placeholder keeps its height so the list does not jump when it arrives */
 .loading {
   display: block;
   padding: 8px 0;
 }
 
-/* The toolbar: search on its own row, then the filters and the buttons; wraps rather than scrolls */
+/* The toolbar: search on its own row, then the filters and the buttons;
+wraps rather than scrolls */
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -71,7 +84,7 @@
 
 .table th,
 .table td {
-  padding: 8px;
+  padding: 10px 12px;
   text-align: left;
   vertical-align: middle;
   border-bottom: 1px solid var(--line);
@@ -82,7 +95,8 @@
   font-weight: 600;
 }
 
-/* Phone: one card-like row per customer; nothing scrolls sideways */
+/* Phone: one card-like row per customer;
+nothing scrolls sideways */
 .stack {
   display: flex;
   flex-direction: column;
@@ -109,7 +123,8 @@
   font-size: 14px;
 }
 
-/* Paging: the buttons keep their 40px targets; the range wraps under them on a phone */
+/* Paging: the buttons keep their 40px targets;
+the range wraps under them on a phone */
 .paging {
   display: flex;
   flex-wrap: wrap;
@@ -122,4 +137,24 @@
 .range {
   color: var(--text-muted);
   font-size: 14px;
+}
+
+.table {
+  background: #fff;
+  border: 1px solid #d8dfe4;
+}
+.table th {
+  background: #eaf0f4;
+  font-size: 12px;
+}
+.table td {
+  overflow-wrap: anywhere;
+}
+.table tbody tr:hover {
+  background: #f4f7fb;
+}
+.row {
+  border: 1px solid #d8dfe4;
+  border-radius: 13px;
+  box-shadow: 0 2px 5px #151c220a;
 }

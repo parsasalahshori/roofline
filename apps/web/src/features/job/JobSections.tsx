@@ -143,11 +143,13 @@ export function JobSections({ view }: JobSectionsProps) {
                 data-kind={appointment.kind}
                 data-status={appointment.status}
               >
-                {job.appointmentLine(
-                  job.appointmentKind[appointment.kind],
-                  whenText(appointment),
-                  appointment.assigned?.name ?? jobs.unassigned,
-                )}
+                <UiLink href={`/calendar/appointments/${appointment.id}`} className={styles.appointmentLink}>
+                  {job.appointmentLine(
+                    job.appointmentKind[appointment.kind],
+                    whenText(appointment),
+                    appointment.assigned?.name ?? jobs.unassigned,
+                  )}
+                </UiLink>
               </li>
             ))}
           </ul>

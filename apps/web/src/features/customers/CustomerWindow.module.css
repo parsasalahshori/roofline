@@ -1,8 +1,17 @@
 /* The customer window: the header, the action row, and the sections below it. Shared by CustomerHeader and CustomerHomes. */
 .page {
+  --surface: #fff;
+  --surface-2: #eaf0f4;
+  --text: #151c22;
+  --text-muted: #505b64;
+  --line: #d8dfe4;
+  --accent: #dceaff;
+  --accent-ink: #204f98;
+  --radius-card: 12px;
+
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
   min-width: 0;
   color: var(--text);
   font-size: var(--font-size-body);
@@ -16,7 +25,7 @@
 
 .name {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 20px;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -184,3 +193,43 @@
   flex-direction: column;
   gap: 12px;
 }
+
+.header {
+  padding: 16px;
+  border: 1px solid #d8dfe4;
+  border-radius: 14px;
+  background: #fff;
+}
+.section {
+  padding: 16px;
+  border: 1px solid #d8dfe4;
+  border-radius: 14px;
+  background: #fff;
+}
+.home, .appointment {
+  background: #f6f7f8;
+}
+.sectionHeading {
+  font-size: 14px;
+}
+@media (min-width: 1000px) {
+  .page {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .header, .page > .actions, .page > .confirm, .page > .section:last-of-type {
+    grid-column: 1 / -1;
+  }
+  .header {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .name, .header > .chips {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 767.98px) {
+  .section, .header {
+    padding: 12px;
+  } }

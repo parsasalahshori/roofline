@@ -20,3 +20,14 @@
 .counter[data-over] {
   color: var(--danger);
 }
+
+.composer {
+  padding: 12px;
+  border: 1px solid #d8dfe4;
+  border-radius: 12px;
+  background: #f6f7f8;
+}
+.counter {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}

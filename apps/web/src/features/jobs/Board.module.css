@@ -1,61 +1,43 @@
-/* The board: the columns scroll sideways inside this box, so the page itself never scrolls sideways. */
 .board {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   min-width: 0;
   max-width: 100%;
 }
-
-/* The scroll box for the columns: a horizontal rail on a desktop, one column wide on a phone */
 .scroller {
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  padding-bottom: 8px;
+  padding: 2px 2px 8px;
 }
-
 .columns {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(190px, 1fr));
   align-items: stretch;
-  gap: 12px;
-  min-width: min-content;
+  gap: 8px;
+  min-width: 982px;
 }
-
-/* On a phone the stages stack, one under the other, instead of a rail */
-@media (max-width: 767.98px) {
-  .columns {
-    flex-direction: column;
-    min-width: 0;
-  }
-}
-
 .lost {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
-}
-
-/* The drop zone of the Lost drawer: a dashed box a card can be dropped on */
-.lostDrop {
-  display: flex;
-  flex-direction: column;
-  align-self: stretch;
   gap: 8px;
+}
+.lostDrop {
+  align-self: stretch;
   min-height: 80px;
   padding: 12px;
-  border: 2px dashed var(--line);
-  border-radius: var(--radius-card);
+  border: 1px dashed #77838d;
+  border-radius: 12px;
+  background: #f0f3f6;
 }
-
 .hint {
   margin: 0;
-  font-size: 0.875rem;
-  color: var(--text-muted);
+  font-size: 13px;
+  color: #505b64;
 }
-
 .visuallyHidden {
   position: absolute;
   width: 1px;
@@ -64,3 +46,8 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+@media (max-width: 767.98px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  } }

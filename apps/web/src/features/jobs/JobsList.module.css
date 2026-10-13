@@ -37,7 +37,7 @@
 
 .table th,
 .table td {
-  padding: 8px;
+  padding: 10px 12px;
   text-align: left;
   vertical-align: middle;
   border-bottom: 1px solid var(--line);
@@ -52,7 +52,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Phone: one card-like row per job; nothing scrolls sideways */
+/* Phone: one card-like row per job;
+nothing scrolls sideways */
 .stack {
   display: flex;
   flex-direction: column;
@@ -77,4 +78,24 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
+}
+
+.table {
+  background: #fff;
+  border: 1px solid #d8dfe4;
+}
+.table th {
+  background: #eaf0f4;
+  font-size: 12px;
+}
+.table td {
+  overflow-wrap: anywhere;
+}
+.table tbody tr:hover {
+  background: #f4f7fb;
+}
+.row {
+  border: 1px solid #d8dfe4;
+  border-radius: 13px;
+  box-shadow: 0 2px 5px #151c220a;
 }

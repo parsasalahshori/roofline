@@ -56,6 +56,15 @@
 
 /* The sheet's form: the address block, then Save as wide as its words */
 .sheetForm {
+  --surface: #fff;
+  --surface-2: #eaf0f4;
+  --text: #151c22;
+  --text-muted: #505b64;
+  --line: #d8dfe4;
+  --accent: #dceaff;
+  --accent-ink: #204f98;
+  --radius-card: 12px;
+
   display: grid;
   gap: 16px;
   min-width: 0;
@@ -70,4 +79,14 @@
   .addressGrid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.results {
+  padding: 4px;
+  border: 1px solid #d8dfe4;
+  border-radius: 10px;
+  background: #fff;
+}
+.result:hover, .result:focus-visible {
+  background: #eaf0f4;
 }

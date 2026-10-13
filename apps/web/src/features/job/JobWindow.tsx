@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import type { JobView } from '@roofline/shared';
-import { Button, EmptyState, Skeleton, StatCard } from '@roofline/ui';
+import { Button, EmptyState, Skeleton } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { job } from '../../copy/job.ts';
 import { jobs } from '../../copy/jobs.ts';
@@ -68,13 +68,25 @@ function LoadedJob({ view }: { view: JobView }) {
 
   return (
     <div className={styles.window}>
-      <div className={styles.stats}>
-        <StatCard label={job.statStage} value={jobs.stage[view.job.stage]} />
+      <Button href="/jobs" variant="ghost" className={styles.back}>
+        {job.backToJobs}
+      </Button>
+      <dl className={styles.stats}>
+        <div>
+          <dt>{job.statStage}</dt>
+          <dd>{jobs.stage[view.job.stage]}</dd>
+        </div>
         {showValue && view.job.valueCents !== null ? (
-          <StatCard label={job.statValue} value={formatDollars(view.job.valueCents)} />
+          <div>
+            <dt>{job.statValue}</dt>
+            <dd>{formatDollars(view.job.valueCents)}</dd>
+          </div>
         ) : null}
-        <StatCard label={job.statDays} value={job.daysInStage(view.job.daysInStage)} />
-      </div>
+        <div>
+          <dt>{job.statDays}</dt>
+          <dd>{job.daysInStage(view.job.daysInStage)}</dd>
+        </div>
+      </dl>
 
       <JobHeader view={view} onEdit={() => setEditing(true)} />
       <JobSections view={view} />

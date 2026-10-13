@@ -1,9 +1,7 @@
-/* The compact form, for a table cell or a card: a small select whose label is kept for screen readers only */
 .compact {
   position: relative;
   min-width: 0;
 }
-
 .compact label {
   position: absolute;
   width: 1px;
@@ -12,8 +10,17 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-
 .compact select {
-  min-height: 40px;
-  font-size: 14px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 1px solid #77838d;
+  border-radius: 7px;
+  background: #f6f7f8;
+  color: #505b64;
+  font-size: 12px;
 }
+@media (max-width: 767.98px) {
+  .compact select {
+    min-height: 44px;
+    font-size: 14px;
+  } }

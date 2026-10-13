@@ -81,3 +81,36 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+.activity {
+  position: relative;
+  margin-left: 5px;
+  padding: 0 0 14px 18px;
+  border-left: 1px solid #d8dfe4;
+}
+.activity::before {
+  position: absolute;
+  top: 5px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6682a6;
+  content: '';
+}
+.summary, .body {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.meta {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.bubble {
+  border: 1px solid #d8dfe4;
+  background: #f0f3f6;
+}
+.bubble[data-direction='out'] {
+  background: #e3edfc;
+  color: #204f98;
+}
