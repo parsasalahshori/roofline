@@ -1,4 +1,5 @@
 /* The drawing pad: a white canvas that takes pointer, pen and touch input without scrolling the page. */
+
 .pad {
   display: flex;
   flex-direction: column;
@@ -11,7 +12,7 @@
   height: 160px;
   box-sizing: border-box;
   background: #ffffff;
-  border: 1px solid var(--line);
+  border: 1px solid #a7b0b8;
   border-radius: 12px;
   touch-action: none;
   cursor: crosshair;

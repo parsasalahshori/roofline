@@ -1,6 +1,8 @@
 /** The measuring screen. Owned by the tests/copy package. Keys here are used by MeasureWindow and OutlineEditor. */
 export const measure = {
   title: 'Measure',
+  help: 'Check the roof outline and measurements before preparing a proposal.',
+  reviewHelp: 'A proposal opens in review before sending. Exact reports also need approval.',
   estimateLabel: 'Estimate',
   exactLabel: 'Exact measurements',
   loading: 'Loading the measurement.',

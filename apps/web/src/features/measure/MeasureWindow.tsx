@@ -257,6 +257,10 @@ function Loaded({ m }: { m: MeasurementView }) {
 
   return (
     <div className={styles.root}>
+      <header className={styles.header}>
+        <h1 className={styles.pageTitle}>{measure.title}</h1>
+        <p className={styles.hint}>{measure.help}</p>
+      </header>
       <section className={styles.mapColumn}>
         <div ref={containerRef} className={styles.map} role="region" aria-label={measure.mapLabel} />
         {mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
@@ -370,6 +374,8 @@ function Loaded({ m }: { m: MeasurementView }) {
         </section>
 
         <div className={styles.actions}>
+          <p className={styles.hint}>{measure.reviewHelp}</p>
+          {patch.isPending ? <p className={styles.hint} role="status">{measure.saving}</p> : null}
           {exact.isSuccess ? (
             <div className={styles.waiting} role="status">
               <Button variant="ghost" className={styles.wide} href={`/approvals/${exact.data.taskId}`}>

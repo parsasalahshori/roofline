@@ -80,7 +80,8 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
           <Checkbox label={estimator.askedByText} checked={askedByText} onChange={setAskedByText} />
         </div>
       ) : null}
-      <Button variant="primary" disabled={running || blocked} onClick={() => void run()}>
+      <p className={styles.help}>{estimator.reviewHelp}</p>
+      <Button variant="primary" busy={running} disabled={running || blocked} onClick={() => void run()}>
         {running ? estimator.makingProposal : estimator.makeProposal}
       </Button>
       {failed !== null ? (

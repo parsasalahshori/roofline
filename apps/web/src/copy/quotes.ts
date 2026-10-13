@@ -54,6 +54,7 @@ export const quotes = {
   save: 'Save',
   saving: 'Saving',
   saved: 'Quote saved.',
+  unsaved: 'Unsaved changes — save to update this quote.',
   saveFailed: 'We could not save the quote.',
   markFinal: 'Mark final',
   confirmFinalTitle: 'Mark this quote final?',

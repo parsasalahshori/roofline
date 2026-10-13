@@ -125,13 +125,13 @@ function differs(a: Form, b: Form): boolean {
 /** The Prices tab: C1's price list, then E1's Estimator sections (each loads its own data). */
 export function PricesTab() {
   return (
-    <>
+    <div className={styles.page}>
       <PricebookPart />
       {/* E1 Task 14: Estimator sections, kept apart from C1's price list above */}
       <TiersSection />
       <FinancingSection />
       <EstimateSection />
-    </>
+    </div>
   );
 }
 

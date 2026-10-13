@@ -1,8 +1,22 @@
 .page {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --surface-2: #edf0f2;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dce0e4;
+  --accent: #ffcc24;
+  --accent-ink: #151c22;
+  --radius-card: 16px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 16px;
+  padding: 20px;
   min-width: 0;
 }
 
@@ -21,7 +35,7 @@
 
 .title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 16px;
 }
 
 .meta {
@@ -32,8 +46,9 @@
 }
 
 .options {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  align-items: start;
   gap: 12px;
   min-width: 0;
 }
@@ -57,7 +72,7 @@
 
 .heading {
   margin: 0;
-  font-size: 1rem;
+  font-size: 14px;
 }
 
 .messageText {
@@ -81,5 +96,47 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 20px;
+}
+
+.header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.events {
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: 16px;
+}
+
+.events:empty {
+  display: none;
+}
+
+.message {
   padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.actions {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 599px) {
+  .page {
+    padding: 12px;
+  }
+
+  .actions > * {
+    flex: 1 1 140px;
+    min-height: 44px;
+  }
+
+  .message textarea {
+    font-size: 16px;
+  }
 }

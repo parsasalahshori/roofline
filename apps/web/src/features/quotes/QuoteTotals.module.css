@@ -1,4 +1,5 @@
 /* The totals sit at the end of the quote: a narrow block on desktop, full width on a phone */
+
 .totals {
   display: flex;
   flex-direction: column;
@@ -7,9 +8,15 @@
   max-width: 360px;
   margin: 0 0 0 auto;
   font-size: var(--font-size-body);
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
 }
 
 /* Each label and its value share a line; a long label wraps before the value does */
+
 .row {
   display: flex;
   flex-wrap: wrap;
@@ -35,10 +42,11 @@
 }
 
 /* The total is the one number people read: bigger, bolder, and a rule above it */
+
 .grand {
   padding-top: 10px;
   border-bottom: none;
-  border-top: 2px solid var(--text);
+  border-top: 1px solid var(--line);
   font-weight: 600;
 }
 
@@ -50,6 +58,7 @@
 }
 
 /* The "Estimate" caption under the total: never smaller than the minimum type size */
+
 .caption {
   font-size: var(--font-size-min);
   font-weight: 400;

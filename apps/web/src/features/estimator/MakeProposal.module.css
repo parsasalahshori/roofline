@@ -1,53 +1,70 @@
 .root {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  gap: 16px;
   min-width: 0;
-  max-width: 100%;
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 2px 4px rgb(21 28 34 / 4%);
 }
 
 .target {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  min-height: 40px;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .targetText {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 16px;
+  font-weight: 650;
   color: var(--text);
   overflow-wrap: anywhere;
 }
 
 .form {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 12px;
   min-width: 0;
 }
 
 .heading {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
 }
 
 .error {
   margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--text);
+  padding: 12px;
+  font-size: 14px;
+  color: #912c2c;
+  background: #fff1f1;
+  border-radius: 10px;
 }
 
-/* The "Estimate" tag: a label, not a control. */
 .estimate {
-  align-self: flex-start;
-  padding: 8px 16px;
-  border-radius: var(--radius-card);
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: var(--font-size-min);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #fff2c7;
+  color: #715400;
+  font-size: 12px;
   font-weight: 600;
+}
+
+.help {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 599px) {
+  .form input {
+    font-size: 16px;
+  }
 }

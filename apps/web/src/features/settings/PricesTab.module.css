@@ -1,16 +1,39 @@
+.page {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --surface-2: #edf0f2;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dce0e4;
+  --accent: #ffcc24;
+  --accent-ink: #151c22;
+  --radius-card: 16px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+  background: var(--bg);
+}
+
 /* The price groups stack, each with its fields in two columns on a desktop */
+
 .form {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 960px;
+  max-width: 100%;
 }
 
 .group {
   min-width: 0;
   margin: 0;
-  padding: 0;
-  border: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
 }
 
 .legend {
@@ -27,11 +50,13 @@
 }
 
 /* Only as wide as its word, under the last group */
+
 .save {
-  justify-self: start;
+  align-self: flex-start;
 }
 
 /* Who may change the prices, shown above the read-only fields */
+
 .note {
   margin: 0 0 16px;
   color: var(--text-muted);
@@ -41,5 +66,11 @@
 @media (max-width: 767.98px) {
   .fields {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 599px) {
+  .page input, .page select {
+    font-size: 16px;
   }
 }
