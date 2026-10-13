@@ -109,6 +109,17 @@
   color: var(--ds-success, #107a2c);
 }
 
+.status[data-status='waiting'] {
+  color: var(--ds-accent-ink, #8a5a00);
+}
+
+.waiting {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ds-accent-ink, #8a5a00);
+}
+
 .status[data-status='paused'],
 .status[data-status='coming_soon'] {
   color: var(--ds-text-3, #6b7680);

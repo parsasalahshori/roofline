@@ -62,7 +62,9 @@ describe('AgentCard', () => {
     expect(screen.getByText('636')).toBeTruthy();
     expect(screen.getByText(agentsDash.tasksTodayLine)).toBeTruthy();
     expect(screen.getByText('92%')).toBeTruthy();
-    expect(screen.getByText(`18 ${agentsDash.hoursUnit}`)).toBeTruthy();
+    expect(screen.getByText(`${agentsDash.about} 18 ${agentsDash.hoursUnit}`)).toBeTruthy();
+    expect(screen.getAllByText(agentsDash.savedLine).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Waiting/)).toBeNull();
     expect(screen.getByText('Scored 636 roofs in last night’s hail path')).toBeTruthy();
     expect(screen.getByText('3 hr ago')).toBeTruthy();
     expect(screen.getByText(agentsDash.running)).toBeTruthy();
@@ -88,6 +90,14 @@ describe('AgentCard', () => {
     expect(pick.getAttribute('aria-pressed')).toBe('true');
     await userEvent.setup().click(pick);
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('says Waiting, with the count, when something waits on a person', () => {
+    show(fixture({ status: 'waiting', waitingCount: 2 }));
+    expect(screen.getByText(agentsDash.waiting)).toBeTruthy();
+    expect(screen.getByText(agentsDash.waitingCount(2))).toBeTruthy();
+    expect(screen.queryByText(agentsDash.running)).toBeNull();
+    expect(screen.getByRole('switch', { name: `Storm Scout ${agentsDash.running}` }).getAttribute('aria-checked')).toBe('true');
   });
 
   it('shows Paused with the switch off', () => {

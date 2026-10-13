@@ -4,18 +4,19 @@ import { test, expect } from './fixtures.ts';
 /*
  * Settings, Agents tab: the time baselines table and the 90-day recount. The Storm Scout task finished
  * today sent 60 texts at 1.5 minutes (90 minutes). Raising the text baseline to 2 and recounting makes
- * that step 120 minutes (at the 120 cap, not over it), so the month total grows by exactly 30 minutes.
- * Every other seeded step recounts to the same minutes because it carries its result.
+ * that step 120 minutes (at the 120 cap, not over it), so the total grows by exactly 30 minutes.
+ * Every other seeded step recounts to the same minutes because it carries its result. The
+ * dashboard shows the week, which always holds today's Storm Scout step.
  */
 
 const INPUT = 'Minutes saved for Texts sent';
 
 /**
- * The totals line on the Agents window ("About 9 hours saved this month (estimate) · ..."). It always starts
- * with "About", unlike the per-card "Time saved this month" spans, so this matches exactly one element.
+ * The "Office time saved this week" tile ("about $514") on the Agents dashboard: this week's minutes at the hourly rate, in dollars. The
+ * recount's 30 minutes land on today's Storm Scout step, so it always moves ($14 at the default $28 an hour).
  */
 function totalsLine(page: Page) {
-  return page.getByText(/^About .+ saved this month/);
+  return page.getByRole('region', { name: 'Totals for your agents' }).getByText(/^about \$[\d,]+$/);
 }
 
 async function readTotals(page: Page): Promise<string> {
@@ -59,9 +60,6 @@ test('settings agents: owner changes a baseline, saves, recounts, and the month 
   await page.goto('/agents');
   await expect(totalsLine(page)).toBeVisible();
   await expect.poll(async () => (await totalsLine(page).innerText()).trim()).not.toBe(before);
-  const total = (await totalsLine(page).innerText()).trim();
-  expect(total).toContain('(estimate)');
-  expect(total.toLowerCase()).toContain('about');
 });
 
 test('settings agents: saving a baseline alone does not change past totals', async ({

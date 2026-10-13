@@ -19,12 +19,12 @@ test('the three G1 agents start paused, Turn on Follow-up shows its rules, and R
   await markTodaySeen('owner@a.test');
   await page.goto('/agents');
 
-  const grid = page.getByLabel('Your agents').first();
+  const grid = page.getByRole('region', { name: 'Your agents', exact: true });
   for (const name of ['Claims', 'Scheduler', 'Follow-up']) {
-    // A1's card link is labelled by its name, status chip and time line, so it is found by its heading (probe pass 14).
-    const card = grid.locator('a', { has: page.getByRole('heading', { name, exact: true }) });
+    // The dashboard card: its heading picks the agent; its switch is on while the agent runs.
+    const card = grid.getByRole('listitem').filter({ has: page.getByRole('heading', { name: `Show details for ${name}`, exact: true }) });
     await expect(card).toContainText('Paused', { timeout: 20_000 });
-    await expect(card).toContainText('Turn on');
+    await expect(card.getByRole('switch', { name: `${name} Running` })).toHaveAttribute('aria-checked', 'false');
   }
 
   await page.goto('/agents/follow-up');
