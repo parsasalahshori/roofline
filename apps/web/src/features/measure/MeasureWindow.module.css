@@ -2,6 +2,9 @@
 .window {
   display: flex;
   flex-direction: column;
+  /* Fill the app window, so the header stays put and the columns below scroll on their own */
+  height: 100%;
+  min-height: 0;
   min-width: 0;
   max-width: 100%;
   background: var(--ds-bg, #fdf9f3);
@@ -12,6 +15,7 @@
 
 .header {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 12px;
   padding: 14px 56px 14px 20px;
@@ -40,7 +44,13 @@
   letter-spacing: -0.01em;
 }
 
+.heading {
+  flex: none;
+}
+
+/* Phone: no room for the subtitle beside the title and the list button */
 .subtitle {
+  display: none;
   flex: 1;
   min-width: 0;
   color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
@@ -48,15 +58,23 @@
 }
 
 .listToggle {
+  flex: 1 1 auto;
   min-height: 40px;
+  min-width: 0;
   align-self: center;
+  margin-left: auto;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: normal;
 }
 
 .body {
   position: relative;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 /* Phone: the requests list is a drawer over the content */
@@ -81,11 +99,14 @@
 
 .main {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
   padding: 12px;
   box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .stage {
@@ -203,6 +224,10 @@
     display: none;
   }
 
+  .subtitle {
+    display: block;
+  }
+
   .body {
     flex-direction: row;
     align-items: stretch;
@@ -211,6 +236,8 @@
   .list {
     position: static;
     flex: none;
+    min-height: 0;
+    overflow: hidden;
     width: 280px;
     transform: none;
     visibility: visible;
@@ -218,12 +245,15 @@
     box-shadow: none;
   }
 
+  /* The roof stage keeps its own height (the map fills it); the list on the left scrolls separately */
   .main {
-    flex: 1;
+    overflow-y: auto;
   }
 
   .stage {
     position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   /* The numbers card floats over the bottom-left corner of the roof view */
@@ -233,7 +263,8 @@
     bottom: 16px;
     width: 420px;
     max-width: calc(100% - 32px);
-    max-height: calc(100% - 32px);
+    /* Leaves the strip, the tools and the imagery chip at the top of the stage clear */
+    max-height: calc(100% - 190px);
     overflow-y: auto;
     border-radius: var(--ds-r-card, 14px);
   }

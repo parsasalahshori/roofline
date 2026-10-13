@@ -33,13 +33,13 @@ export function AgentPanel({ agent, now }: { agent: ScreenAgent; now: number }) 
   return (
     <aside className={styles.panel} aria-label={`${agentsDash.panelLabel}: ${name}`} style={{ '--agent': AGENT_COLOR[agent] } as CSSProperties}>
       <header className={styles.head}>
-        <span className={styles.icon} aria-hidden="true">
-          <AgentIcon agent={agent} size={26} />
-        </span>
-        <div className={styles.titles}>
+        <div className={styles.top}>
+          <span className={styles.icon} aria-hidden="true">
+            <AgentIcon agent={agent} size={24} />
+          </span>
           <h2 className={styles.name}>{name}</h2>
-          <p className={styles.blurb}>{agentsDash.blurb[agent]}</p>
         </div>
+        <p className={styles.blurb}>{agentsDash.blurb[agent]}</p>
         <div className={styles.run}>
           {d ? <RunNowButton agent={agent} runNow={d.runNow} paused={d.paused !== null} label={agentsDash.runNow} /> : null}
         </div>

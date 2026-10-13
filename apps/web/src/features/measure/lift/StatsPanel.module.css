@@ -2,8 +2,8 @@
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 12px 16px;
   max-width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
@@ -159,11 +159,40 @@
   border-top: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
 }
 
-/* The controls that change the estimate sit under the buttons, quieter than the numbers */
+/* The controls that change the estimate fold away under an Adjust row, so the card stays short */
 .adjust {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+}
+
+.adjustToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 40px;
+}
+
+.chevron {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.adjustToggle[aria-expanded="true"] .chevron {
+  transform: rotate(180deg);
+}
+
+.adjustBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
 }

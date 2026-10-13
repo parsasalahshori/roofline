@@ -1,5 +1,5 @@
-import { Banner, Skeleton } from '@roofline/ui';
-import { useContext, type ReactNode } from 'react';
+import { Banner, Button, Skeleton } from '@roofline/ui';
+import { useContext, useId, useState, type ReactNode } from 'react';
 import { liftMeasure } from '../../../copy/liftMeasure.ts';
 import { measure } from '../../../copy/measure.ts';
 import { useMeasurement } from '../api.ts';
@@ -26,6 +26,8 @@ export function statCells(m: MeasurementView): { key: string; label: string; val
 
 export function StatsPanel({ measurementId, actions }: { measurementId: string; actions?: ReactNode }) {
   const query = useMeasurement(measurementId);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const adjustId = useId();
   const { panels, estimate: live } = useContext(MeasureSlotsContext);
   // The editor's numbers run ahead of what is saved, so a dragged corner shows at once
   const m = query.data !== undefined && live !== null ? { ...query.data, estimate: live } : query.data;
@@ -82,7 +84,27 @@ export function StatsPanel({ measurementId, actions }: { measurementId: string; 
         </>
       )}
       {actions !== undefined ? <div className={styles.actions}>{actions}</div> : null}
-      {panels !== null ? <div className={styles.adjust}>{panels}</div> : null}
+      {panels !== null ? (
+        <div className={styles.adjust}>
+          <Button
+            variant="ghost"
+            className={styles.adjustToggle}
+            aria-expanded={adjustOpen}
+            aria-controls={adjustId}
+            onClick={() => setAdjustOpen((open) => !open)}
+          >
+            <span>{liftMeasure.adjust}</span>
+            <svg className={styles.chevron} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+              <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </Button>
+          {adjustOpen ? (
+            <div id={adjustId} className={styles.adjustBody}>
+              {panels}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

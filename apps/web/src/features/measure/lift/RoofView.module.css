@@ -183,9 +183,16 @@
 }
 
 @media (min-width: 900px) {
+  /* The map takes what the window leaves below the address strip */
+  .frame {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
   .mapBox {
-    height: calc(100vh - 220px);
-    min-height: 420px;
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 360px;
   }
 
   /* The numbers card holds the bottom-left corner, so the credits move to the middle */

@@ -15,6 +15,7 @@ export const liftMeasure = {
   totalArea: 'Total roof area',
   squaresUnit: 'squares',
   roofArea: (sqFt: number) => `${sqFt.toLocaleString()} sq ft`,
+  adjust: 'Adjust',
   pitch: 'Pitch',
   pitchValue: (x: number) => `${x}/12`,
   facets: 'Facets',
