@@ -1,6 +1,6 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { createPools, migrate } from '@roofline/db';
@@ -42,6 +42,8 @@ const SHUTDOWN_WAIT_MS = 10_000;
 const RESET = process.argv.includes('--reset');
 /** The demo's file store (signed PDFs), shared by the seed, the API and the worker; git-ignored, emptied by --reset. */
 const FILES_DIR = `${REPO_ROOT}.demo-files/${COMPOSE_PROJECT}`;
+/** The commit whose seed made the demo database (git-ignored, beside FILES_DIR): new code means fresh demo data. */
+const SEED_MARKER = `${REPO_ROOT}.demo-files/${COMPOSE_PROJECT}.seeded-commit`;
 /** `--db-only`: start the database, migrate and seed, then stop (the arm64 CI check uses it). */
 const DB_ONLY = process.argv.includes('--db-only');
 
@@ -86,8 +88,15 @@ if (!(await portIsFree(PORT))) fail(portProblem(PORT, 'DEMO_PORT'));
 const dbRunning = docker([...COMPOSE, 'ps', '--status', 'running', '-q', 'db']).out.trim() !== '';
 if (!dbRunning && !(await portIsFree(DB_PORT))) fail(portProblem(DB_PORT, 'DEMO_DB_PORT'));
 
-// 2. Database
-if (RESET) {
+// 2. Database. The seed skips a company that already exists, so data seeded by older code would stay, without
+// whatever the new seed adds (houses, footprints, agent work). When the code is not the commit that seeded the
+// demo database, the data starts fresh, as with --reset.
+const head = headCommit();
+const seededFor = existsSync(SEED_MARKER) ? readFileSync(SEED_MARKER, 'utf8').trim() : null;
+const hasData = docker(['volume', 'ls', '-q', '--filter', `name=^${COMPOSE_PROJECT}_`]).out.trim() !== '';
+const stale = !RESET && hasData && head !== null && seededFor !== head;
+if (stale) log('The demo code changed since its data was made: starting from fresh demo data.');
+if (RESET || stale) {
   log('Resetting: removing the demo database.');
   docker([...COMPOSE, 'down', '-v'], true);
   rmSync(FILES_DIR, { recursive: true, force: true });
@@ -120,6 +129,16 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
   if (!shuttingDown) void shutdown(0);
 });
+
+/** The checked-out commit, or null when git cannot tell (not a clone, git missing). */
+function headCommit(): string | null {
+  try {
+    const out = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return /^[0-9a-f]{40}$/.test(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * What the demo web build is for: the commit it was built from and the map tiles, or null when git cannot tell
@@ -174,6 +193,10 @@ try {
         ? `Seeded ${DEMO_COMPANY_NAME}: ${Object.entries(world.counts).filter(([name]) => !name.includes('.')).map(([name, n]) => `${n} ${name}`).join(', ')}.`
         : `${DEMO_COMPANY_NAME} is already seeded (npm run demo:reset starts fresh).`,
     );
+    if (head !== null) {
+      mkdirSync(`${REPO_ROOT}.demo-files`, { recursive: true });
+      writeFileSync(SEED_MARKER, `${head}\n`);
+    }
   } finally {
     await pools.end();
   }
