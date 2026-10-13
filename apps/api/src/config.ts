@@ -79,8 +79,8 @@ const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2
 /** The example plans file, shipped with the repository; the default outside production. */
 const EXAMPLE_BILLING_PLANS = 'config/billing-plans.example.json';
 
-/** The footprint files published by Microsoft (US Building Footprints); the default FOOTPRINTS_BASE_URL. */
-const DEFAULT_FOOTPRINTS_BASE_URL = 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/';
+/** The index of Microsoft Global ML Building Footprints (ODbL); the default FOOTPRINTS_INDEX_URL. */
+export const DEFAULT_FOOTPRINTS_INDEX_URL = 'https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv';
 
 /**
  * The domain storm email comes from by default: the domain part of MAIL_FROM (after the last `@`,
@@ -271,8 +271,14 @@ const ConfigSchema = z
     R2_BUCKET: z.string().optional(),
     /** The base URL of customer proposal links. No trailing slash. Must be on APP_ORIGIN's origin. Unset: APP_ORIGIN (applied in the final transform). */
     PROPOSAL_LINK_BASE_URL: httpUrl.transform((v) => v.replace(/\/+$/, '')).optional(),
-    /** Where the building footprint files are read from. Always ends in a slash. Default: the Microsoft US buildings set. */
-    FOOTPRINTS_BASE_URL: httpUrl.transform((v) => (v.endsWith('/') ? v : `${v}/`)).default(DEFAULT_FOOTPRINTS_BASE_URL),
+    /** The CSV index of the building footprint tiles (Microsoft Global ML Building Footprints layout). Default: Microsoft's own index. */
+    FOOTPRINTS_INDEX_URL: httpUrl.default(DEFAULT_FOOTPRINTS_INDEX_URL),
+    /**
+     * Legacy: a folder of per-state `<StateName>.geojson.zip` files (the old Microsoft US Building Footprints
+     * layout, whose public host now refuses downloads). Always ends in a slash. Set only for a mirror of those
+     * files; when set it is used instead of FOOTPRINTS_INDEX_URL. Unset by default.
+     */
+    FOOTPRINTS_BASE_URL: httpUrl.transform((v) => (v.endsWith('/') ? v : `${v}/`)).optional(),
 
     /** Google Ads developer token. All five GOOGLE_ADS settings come together, or none. Unset: Google ads are off. */
     GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),

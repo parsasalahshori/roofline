@@ -52,29 +52,52 @@ function wkt(ring: readonly (readonly [number, number])[]): string {
   return `POLYGON((${ring.map(([lng, lat]) => `${lng} ${lat}`).join(',')}))`;
 }
 
-/** Inserts one batch; returns how many polygons were stored (invalid or non-polygon results are skipped). */
+/** Serialises footprint inserts across loads, so two states reading the same tile cannot both store a building. */
+const INSERT_LOCK_KEY = 0x6670_6c64; // 'fpld'
+
+/**
+ * Inserts one batch; returns how many polygons were stored (invalid or non-polygon results are skipped).
+ * A row is skipped as a duplicate when a stored footprint (of any state) or an earlier row of the batch
+ * has the same source_ref and the same bounding box: a neighbour state that read the same tile, or a
+ * retry. Loaders that key buildings by an outline hash (Global ML) therefore never store one twice.
+ */
 export async function insertFootprints(system: Db, state: string, batch: readonly FootprintInput[]): Promise<number> {
   const s = state.toUpperCase();
   const usable = batch.filter((f) => f.ring.length >= 4);
   if (usable.length === 0) return 0;
   const values = sql.join(
-    usable.map((f) => sql`(${f.sourceRef}::text, ${wkt(f.ring)}::text)`),
+    usable.map((f, i) => sql`(${i}::int, ${f.sourceRef}::text, ${wkt(f.ring)}::text)`),
     sql`, `,
   );
-  const result = await system.execute(sql`
-    with raw as (
-      select v.source_ref, ST_CollectionExtract(ST_MakeValid(ST_GeomFromText(v.wkt, 4326)), 3) as g
-      from (values ${values}) as v(source_ref, wkt)
-    ), polys as (
-      -- Keep only results that are exactly one polygon. The projected value is always a Polygon
-      -- (or null, which the filter removes), so the column's Polygon type never rejects a batch.
-      select source_ref, ST_GeometryN(g, 1) as g from raw where ST_NumGeometries(g) = 1
-    )
-    insert into building_footprints (state, geom, area_sq_ft, source, source_ref)
-    select ${s}, g, round((ST_Area(g::geography) * ${SQ_FT_PER_SQ_M})::numeric, 1), 'microsoft', source_ref
-    from polys
-    returning id`);
-  return result.rows.length;
+  return system.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(${INSERT_LOCK_KEY}::bigint)`);
+    const result = await tx.execute(sql`
+      with raw as (
+        select v.n, v.source_ref, ST_CollectionExtract(ST_MakeValid(ST_GeomFromText(v.wkt, 4326)), 3) as g
+        from (values ${values}) as v(n, source_ref, wkt)
+      ), polys as (
+        -- Keep only results that are exactly one polygon. The projected value is always a Polygon
+        -- (or null, which the filter removes), so the column's Polygon type never rejects a batch.
+        select n, source_ref, ST_GeometryN(g, 1) as g from raw where ST_NumGeometries(g) = 1
+      ), firsts as (
+        select n, source_ref, g,
+               row_number() over (partition by source_ref, ST_XMin(g), ST_YMin(g), ST_XMax(g), ST_YMax(g) order by n) as k
+        from polys
+      ), fresh as (
+        select n, source_ref, g from firsts p
+        where k = 1
+          and not exists (
+            select 1 from building_footprints b
+            where b.geom && p.g and b.geom ~= p.g and b.source_ref = p.source_ref
+          )
+      )
+      insert into building_footprints (state, geom, area_sq_ft, source, source_ref)
+      select ${s}, g, round((ST_Area(g::geography) * ${SQ_FT_PER_SQ_M})::numeric, 1), 'microsoft', source_ref
+      from fresh
+      order by n
+      returning id`);
+    return result.rows.length;
+  });
 }
 
 export async function finishFootprintState(system: Db, state: string, buildings: number, now: Date): Promise<void> {

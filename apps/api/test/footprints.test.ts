@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { beforeEach, describe, expect, inject, test } from 'vitest';
@@ -17,12 +18,18 @@ import {
 } from '@roofline/db/system';
 import { SEED_PASSWORD, seedCompany } from '@roofline/db/testing';
 import type { AppDeps } from '../src/app.ts';
-import { FOOTPRINT_BATCH_SIZE, FOOTPRINT_LOAD_FAILED_PLAIN, loadFootprintState } from '../src/estimator/footprints-load.ts';
+import {
+  FOOTPRINT_BATCH_SIZE,
+  FOOTPRINT_LOAD_FAILED_PLAIN,
+  footprintTileFailedPlain,
+  loadFootprintState,
+} from '../src/estimator/footprints-load.ts';
 import type { PgBoss } from 'pg-boss';
 import { ensureJobQueues, InlineJobs, jobQueueOptions, PgBossJobs } from '../src/jobs/queue.ts';
 import { ensureFootprints } from '../src/jobs/scheduler/footprints-ensure.ts';
 import { FakeFootprintSource } from '../src/providers/fakes/footprints.ts';
 import type { FootprintFeature, FootprintSource } from '../src/providers/footprints.ts';
+import { GlobalMlFootprints } from '../src/providers/global-footprints.ts';
 import { MicrosoftFootprints } from '../src/providers/ms-footprints.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 
@@ -217,6 +224,60 @@ describe('loadFootprintState', () => {
   });
 });
 
+describe('loadFootprintState from the Global ML tiles', () => {
+  // One tile (Omaha NE and Council Bluffs IA share it) with an Omaha house, a Council Bluffs house (inside both
+  // state boxes) and a house further east in Iowa.
+  const INDEX = 'https://idx.test/dataset-links.csv';
+  const TILE = 'https://idx.test/UnitedStates/021332333.csv.gz';
+  const omaha = square(-95.94, 41.25);
+  const councilBluffs = square(-95.85, 41.25);
+  const eastIowa = square(-95.2, 41.0);
+  const line = (ring: FootprintFeature['ring']) =>
+    JSON.stringify({ type: 'Feature', properties: { height: -1, confidence: -1 }, geometry: { type: 'Polygon', coordinates: [ring] } });
+
+  function globalSource(tile: () => Response): GlobalMlFootprints {
+    const f = (async (input: unknown) => {
+      if (String(input) === INDEX) return new Response(`Location,QuadKey,Url,Size,UploadDate\nUnitedStates,021332333,${TILE},1KB,2026-02-23\n`);
+      if (String(input) === TILE) return tile();
+      return new Response('nope', { status: 404 });
+    }) as unknown as typeof fetch;
+    return new GlobalMlFootprints({ indexUrl: INDEX, fetch: f });
+  }
+  const goodTile = () => new Response(gzipSync(Buffer.from([omaha, councilBluffs, eastIowa].map(line).join('\n'))));
+
+  test('NE then IA from a shared tile stores each building once, and footprintsNear finds the Omaha house', async () => {
+    const source = globalSource(goodTile);
+    await loadFootprintState(depsWith(source), 'NE', FIRST_ATTEMPT);
+    expect(await stateRow('NE')).toMatchObject({ status: 'ready', buildings: 2, source_url: `${INDEX}#NE` });
+
+    await loadFootprintState(depsWith(source), 'IA', FIRST_ATTEMPT);
+    // Omaha and Council Bluffs (inside both boxes) came with Nebraska's load; Iowa adds only the house further east.
+    expect(await stateRow('IA')).toMatchObject({ status: 'ready', buildings: 1 });
+    const all = await owner<{ n: string; refs: string }>(`select count(*) as n, count(distinct source_ref) as refs from building_footprints`);
+    expect(all[0]).toEqual({ n: '3', refs: '3' });
+
+    const ctx = { companyId: t.seed.a.companyId, userId: null, role: 'system', canApproveSpend: false } as const;
+    const near = await withTenant(t.deps.pools, ctx, (tx) => footprintsNear(tx, [-95.9398, 41.2502], 40));
+    expect(near).toHaveLength(1);
+    expect(near[0]!.contains).toBe(true);
+  });
+
+  test('a failed tile marks the state failed with the tile named (never loading), and the next attempt loads it', async () => {
+    let broken = true;
+    const source = globalSource(() => (broken ? new Response('PROVIDER SECRET', { status: 500 }) : goodTile()));
+    await expect(loadFootprintState(depsWith(source), 'NE', LAST_ATTEMPT)).rejects.toThrow();
+    const row = await stateRow('NE');
+    expect(row).toMatchObject({ status: 'failed', error_plain: footprintTileFailedPlain('021332333') });
+    expect(JSON.stringify(row)).not.toContain('SECRET');
+    await companyIn('NE');
+    expect(await statesNeedingFootprints(system())).toContain('NE');
+
+    broken = false;
+    await loadFootprintState(depsWith(source), 'NE', { attempt: 2, lastAttempt: false });
+    expect(await stateRow('NE')).toMatchObject({ status: 'ready', buildings: 2, error_plain: null });
+  });
+});
+
 describe('claimFootprintState', () => {
   test('a second claim while loading is refused; a ready state cannot be claimed; a stale claim can', async () => {
     const start = t.clock.now();
@@ -279,6 +340,30 @@ describe('insertFootprints', () => {
     expect(await countFor('NE')).toBe(1 + bowtieCount);
     const invalid = await owner<{ n: string }>(`select count(*) as n from building_footprints where not ST_IsValid(geom)`);
     expect(Number(invalid[0]!.n)).toBe(0);
+  });
+});
+
+describe('insertFootprints dedupe', () => {
+  test('the same source_ref and outline is stored once, across states and within a batch', async () => {
+    const house: FootprintInput = { sourceRef: 'gml:abc', ring: square(-95.85, 41.25) };
+    expect(await insertFootprints(system(), 'NE', [house, house])).toBe(1);
+    expect(await insertFootprints(system(), 'IA', [house])).toBe(0);
+    expect(await insertFootprints(system(), 'NE', [house, { sourceRef: 'gml:def', ring: square(-95.84, 41.25) }])).toBe(1);
+    expect(await countFor('NE')).toBe(2);
+    expect(await countFor('IA')).toBe(0);
+  });
+
+  test('a shared source_ref with a different outline (old per-file ids) is not a duplicate', async () => {
+    expect(await insertFootprints(system(), 'NE', [{ sourceRef: '1', ring: square(-96, 41) }])).toBe(1);
+    expect(await insertFootprints(system(), 'IA', [{ sourceRef: '1', ring: square(-93, 41) }])).toBe(1);
+  });
+
+  test('two loads inserting the same buildings at once store each one once', async () => {
+    const batch = Array.from({ length: 50 }, (_, i) => ({ sourceRef: `gml:${i}`, ring: square(-95.9 + i * 0.001, 41.2) }));
+    const counts = await Promise.all([insertFootprints(system(), 'NE', batch), insertFootprints(system(), 'IA', batch)]);
+    expect(counts[0]! + counts[1]!).toBe(50);
+    const all = await owner<{ n: string }>(`select count(*) as n from building_footprints`);
+    expect(all[0]!.n).toBe('50');
   });
 });
 
