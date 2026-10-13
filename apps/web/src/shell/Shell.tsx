@@ -34,7 +34,10 @@ function badgeFor(app: AppKey, count: number): DockItem['badge'] {
  */
 export function Shell() {
   useTodayAutoOpen();
-  const companyId = useMe().data?.company.id ?? 'none';
+  const me = useMe();
+  const companyId = me.data?.company.id ?? 'none';
+  // Starting an estimate from a roof on the map is for owner and office; reps get no roof card.
+  const canEstimateRoof = me.data?.role === 'owner' || me.data?.role === 'office';
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const approvals = useApprovals();
@@ -94,7 +97,12 @@ export function Shell() {
         {/* Keyed by company: a switch remounts the map (no old pins or pin card) and clears a failed map */}
         <MapErrorBoundary key={companyId}>
           <Suspense fallback={null}>
-            <MapView onOpen={open} />
+            <MapView
+              onOpen={open}
+              onEstimate={
+                canEstimateRoof ? (measurementId) => void navigate(`/estimator/measure/${encodeURIComponent(measurementId)}`) : undefined
+              }
+            />
           </Suspense>
         </MapErrorBoundary>
       </div>
