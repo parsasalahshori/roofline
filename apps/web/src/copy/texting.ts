@@ -1,5 +1,7 @@
 /** Texting registration. */
 export const texting = {
+  title: 'Set up business texting',
+  intro: 'Register your business with phone carriers to text customers from Roofline.',
   loading: 'Loading your texting setup',
   fields: {
     legalName: 'Legal business name',

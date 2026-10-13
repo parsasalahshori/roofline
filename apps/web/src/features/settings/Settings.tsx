@@ -1,5 +1,5 @@
 import { Button } from '@roofline/ui';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router';
 import { useMe } from '../../api/hooks.ts';
 import { settings } from '../../copy/settings.ts';
@@ -28,14 +28,18 @@ export function Settings({ subpage }: { subpage?: ReactNode } = {}) {
   const me = useMe();
   const role = me.data?.role;
   const tab = subpage ? 'setup' : routeTab;
+  const navigation = useRef<HTMLElement>(null);
+  useEffect(() => {
+    navigation.current?.querySelector('[aria-current="page"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [tab, role]);
   if (!isSettingsTab(tab)) return <Navigate to="/settings/company" replace />;
   if ((tab === 'prices' || tab === 'storm') && role === 'rep') return <Navigate to="/settings/company" replace />;
   if (tab === 'front-desk' && role === 'rep') return <Navigate to="/settings/company" replace />;
   if (tab === 'agents' && role === 'rep') return <Navigate to="/settings/company" replace />;
 
   return (
-    <>
-      <nav aria-label={settings.tabsLabel} className={styles.tabs}>
+    <div className={styles.workspace}>
+      <nav ref={navigation} aria-label={settings.tabsLabel} className={styles.tabs}>
         {visibleTabs(role).map((key) => (
           <Button
             key={key}
@@ -50,9 +54,15 @@ export function Settings({ subpage }: { subpage?: ReactNode } = {}) {
       </nav>
       {/* The key resets a tab's own state (what was typed, what was saved) when another tab opens */}
       <div key={tab} className={styles.panel}>
+        {!subpage && (tab === 'company' || tab === 'team' || tab === 'connections' || tab === 'billing' || tab === 'setup') ? (
+          <header className={styles.intro}>
+            <h2 className={styles.title}>{settings.tabs[tab]}</h2>
+            <p className={styles.description}>{settings.descriptions[tab]}</p>
+          </header>
+        ) : null}
         {renderPanel(tab, subpage, role !== undefined)}
       </div>
-    </>
+    </div>
   );
 }
 

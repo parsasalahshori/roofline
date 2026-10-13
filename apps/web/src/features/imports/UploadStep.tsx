@@ -17,6 +17,8 @@ export function UploadStep() {
 
   return (
     <div className={styles.wizard}>
+      <h2 className={styles.title}>{importCopy.uploadTitle}</h2>
+      <p className={styles.note}>{importCopy.uploadIntro}</p>
       <FilePicker
         label={importCopy.uploadLabel}
         buttonLabel={importCopy.uploadButton}

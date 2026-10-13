@@ -40,6 +40,7 @@ export function SignUp() {
   const [passwordTooShort, setPasswordTooShort] = useState(false);
   // A Google credential waiting for the company details that step 2 collects
   const credential = useRef<string | null>(null);
+  const [usingGoogle, setUsingGoogle] = useState(false);
 
   function change(field: AccountFieldName | CompanyFieldName, value: string) {
     setValues((previous) => ({ ...previous, [field]: value }));
@@ -120,6 +121,7 @@ export function SignUp() {
           // The account is new and needs its company first: keep the credential for step 2
           if (failure instanceof ApiError && failure.field === 'companyName') {
             credential.current = value;
+            setUsingGoogle(true);
             showStep(2);
             return;
           }
@@ -137,6 +139,10 @@ export function SignUp() {
   return (
     <AuthLayout title={auth.signUpTitle}>
       <p className={styles.note}>{auth.trialNote}</p>
+      <ol className={styles.steps} aria-label={auth.signUpSteps}>
+        <li aria-current={step === 1 ? 'step' : undefined}>{auth.accountStep}</li>
+        <li aria-current={step === 2 ? 'step' : undefined}>{auth.companyStep}</li>
+      </ol>
       {step === 1 ? (
         <AccountStep
           name={values.name}
@@ -159,6 +165,11 @@ export function SignUp() {
           onSubmit={submitCompany}
         />
       )}
+      {step === 2 && !usingGoogle ? (
+        <Button variant="ghost" disabled={signUp.isPending || googleSignIn.isPending} onClick={() => showStep(1)}>
+          {auth.backToDetails}
+        </Button>
+      ) : null}
       <Button variant="ghost" href="/sign-in">
         {auth.haveAccount}
       </Button>

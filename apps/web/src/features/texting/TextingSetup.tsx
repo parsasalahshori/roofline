@@ -5,6 +5,7 @@ import { texting } from '../../copy/texting.ts';
 import { TextingForm } from './TextingForm.tsx';
 import { useTexting } from './api.ts';
 import { TextingStatus } from './TextingStatus.tsx';
+import styles from './TextingForm.module.css';
 
 /** The texting registration screen: the form until the company sends it, then the carrier status. */
 export function TextingSetup() {
@@ -33,9 +34,15 @@ export function TextingSetup() {
     );
   }
 
-  if (data.state === 'not_started' || data.state === 'needs_fix') {
-    // Keyed on the state so the form starts fresh when the answer changes from one to the other
-    return <TextingForm key={data.state} view={data} />;
-  }
-  return <TextingStatus view={data} />;
+  return (
+    <section className={styles.root}>
+      <header className={styles.intro}>
+        <h2 className={styles.title}>{texting.title}</h2>
+        <p className={styles.description}>{texting.intro}</p>
+      </header>
+      {data.state === 'not_started' || data.state === 'needs_fix' ? (
+        <TextingForm key={data.state} view={data} />
+      ) : <TextingStatus view={data} />}
+    </section>
+  );
 }

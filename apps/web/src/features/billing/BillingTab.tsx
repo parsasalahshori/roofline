@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import type { BillingView } from '@roofline/shared';
-import { Button, Card, EmptyState, useToast } from '@roofline/ui';
+import { Button, Card, EmptyState, Skeleton, useToast } from '@roofline/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { useMe } from '../../api/hooks.ts';
+import { ApiError } from '../../api/client.ts';
 import { keys } from '../../api/keys.ts';
 import { billing } from '../../copy/billing.ts';
 import { errors } from '../../copy/errors.ts';
@@ -62,13 +63,19 @@ export function BillingTab() {
     return <EmptyState title={billing.ownerOnly} />;
   }
   if (view.data === undefined) {
-    return view.isError ? <EmptyState title={errors.generic} /> : null;
+    return view.isError ? (
+      <EmptyState
+        title={view.error instanceof ApiError ? view.error.message : errors.generic}
+        action={<Button variant="primary" onClick={() => void view.refetch()}>{errors.tryAgain}</Button>}
+      />
+    ) : <div role="status" aria-label={billing.loading}><Skeleton lines={4} /></div>;
   }
 
   const data = view.data;
   return (
     <div className={styles.page}>
       <Card as="section" className={styles.summary}>
+        <p className={styles.eyebrow}>{billing.currentPlan}</p>
         <h2 className={styles.planName}>{data.planName ?? billing.noPlan}</h2>
         <p className={styles.status}>{statusText(data)}</p>
       </Card>

@@ -1,5 +1,10 @@
 /** Signing in, resetting a password, and the pages that email links open. */
 export const auth = {
+  workspaceNote: 'Your roofing business, in one place.',
+  signUpSteps: 'Create your account',
+  accountStep: 'Your details',
+  companyStep: 'Your company',
+  backToDetails: 'Back to your details',
   signInTitle: 'Sign in',
   email: 'Email',
   password: 'Password',

@@ -88,7 +88,7 @@ function SimulatePanel() {
         ))}
       </ul>
       {message ? (
-        <p className={styles.message} data-testid="simulate-message" data-tone={simulate.isError ? 'error' : 'ok'}>
+        <p className={styles.message} role={simulate.isError ? 'alert' : 'status'} data-testid="simulate-message" data-tone={simulate.isError ? 'error' : 'ok'}>
           {message}
         </p>
       ) : null}

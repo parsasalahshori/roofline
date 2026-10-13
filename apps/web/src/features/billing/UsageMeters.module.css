@@ -14,13 +14,17 @@
 .list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-  gap: 16px;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .meter {
+  padding: 16px;
+  border: 1px solid #dce0e3;
+  border-radius: 16px;
+  background: #fff;
   display: flex;
   flex-direction: column;
   gap: 8px;

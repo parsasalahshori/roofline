@@ -40,7 +40,7 @@ export function PreviewStep({ view, onBack, onNext }: PreviewStepProps) {
           ) : null}
         </li>
       </ul>
-      <div className={styles.tableBox}>
+      <div className={styles.tableBox} role="region" aria-label={importCopy.previewTableLabel} tabIndex={0}>
         <table className={styles.table} aria-label={importCopy.previewTableLabel}>
           <thead>
             <tr>

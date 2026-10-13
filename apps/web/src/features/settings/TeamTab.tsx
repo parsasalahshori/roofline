@@ -33,10 +33,10 @@ type MemberRowProps = {
 function MemberRow({ member, isOwner, updating, change }: MemberRowProps) {
   const active = member.status === 'active';
   return (
-    <tr>
-      <td>{member.name}</td>
-      <td>{member.email}</td>
-      <td>
+    <tr role="row">
+      <td role="cell" data-label={settings.team.columns.name}>{member.name}</td>
+      <td role="cell" data-label={settings.team.columns.email}>{member.email}</td>
+      <td role="cell" data-label={settings.team.columns.role}>
         {isOwner ? (
           <Select
             label={settings.team.roleFor(member.name)}
@@ -53,7 +53,7 @@ function MemberRow({ member, isOwner, updating, change }: MemberRowProps) {
           settings.roles[member.role]
         )}
       </td>
-      <td>
+      <td role="cell" data-label={settings.team.columns.spend}>
         {/* Spending delegation is for office members; an owner always may and a field rep never may */}
         {member.role === 'office' ? (
           <Toggle
@@ -69,7 +69,7 @@ function MemberRow({ member, isOwner, updating, change }: MemberRowProps) {
           settings.team.spendNever
         )}
       </td>
-      <td>
+      <td role="cell" data-label={settings.team.columns.stormAlerts}>
         {/* Storm alert emails go to owners and office members; a field rep never gets them */}
         {member.role === 'rep' ? (
           settings.team.stormAlertsNever
@@ -83,7 +83,7 @@ function MemberRow({ member, isOwner, updating, change }: MemberRowProps) {
           />
         )}
       </td>
-      <td>
+      <td role="cell" data-label={settings.team.columns.status}>
         <div className={styles.statusCell}>
           <span data-status={member.status}>{active ? settings.team.statusActive : settings.team.statusOff}</span>
           {isOwner ? (
@@ -182,9 +182,9 @@ export function TeamTab() {
     <div className={styles.page}>
       <Card padded={false}>
         <div className={styles.tableWrap}>
-          <table className={styles.table} aria-label={settings.team.tableLabel}>
-            <thead>
-              <tr>
+          <table role="table" className={styles.table} aria-label={settings.team.tableLabel}>
+            <thead role="rowgroup">
+              <tr role="row">
                 <th scope="col">{settings.team.columns.name}</th>
                 <th scope="col">{settings.team.columns.email}</th>
                 <th scope="col">{settings.team.columns.role}</th>
@@ -193,7 +193,7 @@ export function TeamTab() {
                 <th scope="col">{settings.team.columns.status}</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {members.map((member) => (
                 <MemberRow
                   key={member.id}

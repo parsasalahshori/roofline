@@ -117,3 +117,67 @@
     width: 100%;
   }
 }
+
+.table thead {
+  background: #edf0f2;
+}
+.table td {
+  padding: 12px;
+}
+.table td:first-child {
+  font-weight: 650;
+}
+.table td {
+  overflow-wrap: anywhere;
+}
+.statusCell span[data-status='active'] {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #e2f3e6;
+  color: #25603a;
+  font-size: 12px;
+  font-weight: 600;
+}
+@media (max-width: 767.98px) {
+  .tableWrap {
+    overflow: visible;
+  }
+  .table {
+    min-width: 0;
+    display: block;
+  }
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .table tbody {
+    display: grid;
+  }
+  .table tbody tr {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .table td {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+  .table td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .roleSelect {
+    min-width: 0;
+  }
+}

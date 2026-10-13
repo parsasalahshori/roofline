@@ -5,22 +5,22 @@
   gap: 12px;
   padding: 16px;
   text-align: center;
-  background: var(--bg);
-  color: var(--text);
+  background: #f6f7f8;
+  color: #151c22;
   font-size: var(--font-size-body);
 }
 
 .page[data-variant='window'] {
   min-height: 0;
   height: 100%;
-  background: var(--surface);
+  background: #fff;
   border-radius: var(--radius-window);
   box-shadow: var(--shadow-window);
 }
 
 .title {
   margin: 0;
-  font-size: var(--font-size-stat);
+  font-size: 20px;
 }
 
 .body {

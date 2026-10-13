@@ -1,22 +1,73 @@
-/* The row of tab links under the window title. It scrolls sideways on a phone rather than wrapping. */
+.workspace {
+  --bg: #f6f7f8;
+  --surface: #fff;
+  --surface-2: #edf0f2;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dce0e3;
+  --accent: #151c22;
+  --accent-ink: #fff;
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+}
 .tabs {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  overflow-x: auto;
-  margin: -4px -4px 16px;
-  padding: 4px;
-  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
 }
-
-/* A tab is a whole target on a phone: at least 40px tall, and never squeezed to fit the row */
-.tab {
+.tab.tab {
   flex: none;
+  padding: 0 12px;
+  min-height: 36px;
+  border-radius: 8px;
+  font-size: 13px;
   white-space: nowrap;
-  min-height: 40px;
 }
-
-/* A tab's panel may be narrower than its content, so long text inside it wraps instead of pushing the window wide */
+.tab.tab[aria-current] {
+  background: #fff;
+  color: #151c22;
+  box-shadow: 0 1px 4px rgb(21 28 34 / 16%);
+}
 .panel {
   min-width: 0;
+}
+.intro {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 20px;
+}
+.title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 750;
+}
+.description {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.connections {
+  display: grid;
+  gap: 16px;
+}
+@media (max-width: 767.98px) {
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  .tab.tab {
+    min-height: 44px;
+  }
+  .workspace input, .workspace select, .workspace textarea {
+    font-size: 16px;
+  }
 }
