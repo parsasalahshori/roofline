@@ -14,6 +14,11 @@ import type { MapEnv } from '../../shell/map/types.ts';
 import { useExactReport, useMeasurement, usePatchMeasurement } from './api.ts';
 import { readHandoff } from './handoff.ts';
 import styles from './MeasureWindow.module.css';
+import { PropertyStrip } from './lift/PropertyStrip.tsx';
+import { RequestsList } from './lift/RequestsList.tsx';
+import { RoofView } from './lift/RoofView.tsx';
+import { MeasureSlotsContext } from './lift/slots.ts';
+import { StatsPanel } from './lift/StatsPanel.tsx';
 import { createOutlineEditor, type EditResult, type OutlineEditor } from './OutlineEditor.ts';
 import type { MeasurementPatch, MeasurementView, OutlineProblem } from './types.ts';
 
@@ -255,8 +260,7 @@ function Loaded({ m }: { m: MeasurementView }) {
     [measure.valley, format(estimate.valleyFt)],
   ];
 
-  return (
-    <div className={styles.root}>
+  const mapNode = (
       <section className={styles.mapColumn}>
         <div ref={containerRef} className={styles.map} role="region" aria-label={measure.mapLabel} />
         {mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
@@ -292,7 +296,10 @@ function Loaded({ m }: { m: MeasurementView }) {
         <p className={styles.attribution}>{legal.footprintAttribution}</p>
         <p className={styles.attribution}>{measure.attribution}</p>
       </section>
-      <div className={styles.panels}>
+  );
+
+  const panelsNode = (
+    <>
         <span className={styles.kind} data-kind={m.kind}>
           {m.kind === 'exact' ? measure.exactLabel : measure.estimateLabel}
         </span>
@@ -368,7 +375,10 @@ function Loaded({ m }: { m: MeasurementView }) {
             ))}
           </dl>
         </section>
+    </>
+  );
 
+  const actions = (
         <div className={styles.actions}>
           {exact.isSuccess ? (
             <div className={styles.waiting} role="status">
@@ -402,17 +412,55 @@ function Loaded({ m }: { m: MeasurementView }) {
             </div>
           ) : null}
         </div>
+  );
+
+  return (
+    <MeasureSlotsContext value={{ map: mapNode, panels: panelsNode }}>
+      <PropertyStrip measurementId={m.id} />
+      <div className={styles.stage}>
+        <RoofView measurementId={m.id} />
+        <div className={styles.stats}>
+          <StatsPanel measurementId={m.id} actions={actions} />
+        </div>
       </div>
-    </div>
+    </MeasureSlotsContext>
   );
 }
 
-/** The measuring screen: a satellite map with the editable roof outline, and the numbers beside it. */
+/** The measuring screen: the requests list on the left, then the roof with its numbers over it. */
 export function MeasureWindow() {
   const { measurementId = '' } = useParams();
   const query = useMeasurement(measurementId);
+  const [listOpen, setListOpen] = useState(false);
 
-  if (query.isError) return <EmptyState title={measure.loadFailed} />;
-  if (!query.data) return <p className={styles.loading}>{measure.loading}</p>;
-  return <Loaded key={query.data.id} m={query.data} />;
+  return (
+    <div className={styles.window}>
+      <header className={styles.header}>
+        <h1 className={styles.heading}>{measure.title}</h1>
+        <span className={styles.subtitle}>{measure.subtitle}</span>
+        <Button
+          variant="ghost"
+          className={styles.listToggle}
+          aria-expanded={listOpen}
+          onClick={() => setListOpen((open) => !open)}
+        >
+          {listOpen ? measure.closeRequests : measure.openRequests}
+        </Button>
+      </header>
+      <div className={styles.body}>
+        <aside className={styles.list} data-open={listOpen ? 'true' : undefined}>
+          <RequestsList selectedId={measurementId} onPick={() => setListOpen(false)} />
+        </aside>
+        <main className={styles.main}>
+          {query.isError ? (
+            <EmptyState title={measure.loadFailed} />
+          ) : !query.data ? (
+            <p className={styles.loading}>{measure.loading}</p>
+          ) : (
+            <Loaded key={query.data.id} m={query.data} />
+          )}
+        </main>
+      </div>
+    </div>
+  );
 }
