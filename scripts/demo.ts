@@ -15,7 +15,7 @@ import { dockerProblem, nodeProblem, portIsFree, portProblem } from './demo-pref
  *  2. Starts the demo database with docker compose (docker-compose.demo.yml: multi-arch PostGIS on
  *     its own port and volume) and runs every migration.
  *  3. Seeds Summit Ridge Roofing (apps/api/src/scripts/demo-world.ts) unless it is already there.
- *  4. Builds the web app when apps/web/dist is missing (DEMO_BUILD=1 forces it).
+ *  4. Builds the web app when apps/web/dist was not built from this commit (DEMO_BUILD=1 forces it).
  *  5. Runs the API (which serves the web app) and the worker with DEMO_MODE=1, so every outside
  *     service is a fake: no text, email, call or charge leaves the machine.
  *
@@ -122,6 +122,20 @@ process.on('SIGTERM', () => {
 });
 
 /**
+ * What the demo web build is for: the commit it was built from and the map tiles, or null when git cannot tell
+ * (not a clone, git missing) or the working tree has uncommitted changes, in which case the build is always redone.
+ */
+function demoBuildStamp(): string | null {
+  try {
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return /^[0-9a-f]{40}$/.test(head) && dirty === '' ? `commit=${head}\nVITE_MAP_TILES=osm\n` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * This machine's demo ENCRYPTION_KEY, made once and kept in .env.demo (git-ignored, like every .env
  * file): the demo database outlives a run, and its proposal links and sessions need the same key.
  */
@@ -167,13 +181,16 @@ try {
     log('Database ready (--db-only).');
     process.exit(0);
   }
-  // The demo's own build (OpenStreetMap tiles under the map, no key needed), marked so a build made
-  // for anything else is rebuilt (vite empties dist/ on every build, marker included).
+  // The demo's own build (OpenStreetMap tiles under the map, no key needed). The marker records the commit it was
+  // built from, so switching branches or pulling new code rebuilds; so do uncommitted changes, an unreadable
+  // git, a build made for anything else (vite empties dist/ on every build, marker included) and DEMO_BUILD=1.
   const marker = `${REPO_ROOT}apps/web/dist/.demo-build`;
-  if (process.env.DEMO_BUILD === '1' || !existsSync(marker)) {
+  const wanted = demoBuildStamp();
+  const built = existsSync(marker) ? readFileSync(marker, 'utf8') : '';
+  if (process.env.DEMO_BUILD === '1' || wanted === null || built !== wanted) {
     log('Building the web app (about 1 minute).');
     execFileSync('npm', ['run', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit', env: { ...process.env, VITE_MAP_TILES: 'osm' } });
-    writeFileSync(marker, 'VITE_MAP_TILES=osm\n');
+    if (wanted !== null) writeFileSync(marker, wanted);
   }
 } catch (err) {
   console.error(err);

@@ -57,7 +57,10 @@ if [[ -z "$REPO_ROOT" ]]; then
   if [[ -d "$CLONE_DIR/.git" ]]; then
     say "Updating the code in $CLONE_DIR"
     # Switching to another demo branch (ROOFLINE_DEMO_BRANCH) starts from fresh demo data, seeded by that branch.
-    if [[ "$(git -C "$CLONE_DIR" rev-parse --abbrev-ref HEAD)" != "$BRANCH" ]]; then DEMO_SCRIPT="demo:reset"; fi
+    if [[ "$(git -C "$CLONE_DIR" rev-parse --abbrev-ref HEAD)" != "$BRANCH" ]]; then
+      DEMO_SCRIPT="demo:reset"
+      export DEMO_BUILD=1
+    fi
     git -C "$CLONE_DIR" fetch origin "$BRANCH"
     git -C "$CLONE_DIR" checkout "$BRANCH"
     git -C "$CLONE_DIR" merge --ff-only "origin/$BRANCH" || echo "(Local changes in $CLONE_DIR: keeping them.)"
