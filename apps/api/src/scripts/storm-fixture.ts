@@ -57,7 +57,7 @@ export function daytimeZone(now: Date): string {
 export async function seedStormFixture(
   pools: Pools,
   companyId: string,
-  opts: { now?: Date; query?: Query } = {},
+  opts: { now?: Date; query?: Query; footprints?: boolean } = {},
 ): Promise<{ stormId: string; companyStormId: string }> {
   void pools;
   const q = opts.query;
@@ -119,8 +119,9 @@ export async function seedStormFixture(
     [companyStormId, CONSENTED_CUSTOMERS],
   );
 
-  // Footprints over hit properties inside the 1.0 inch contour, so build_routes has doors.
-  const spots = await q(
+  // Footprints over hit properties inside the 1.0 inch contour, so build_routes has doors. The demo world already has
+  // real building outlines under every home and passes `footprints: false`.
+  const spots = opts.footprints === false ? [] : await q(
     `select ST_X(p.geom) as lng, ST_Y(p.geom) as lat
        from storm_hits h join properties p on p.id = h.property_id
       where h.company_storm_id = $1 and h.hail_in >= 1.0

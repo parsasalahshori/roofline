@@ -14,11 +14,13 @@ import {
   createProperty,
   createProposal,
   encrypt,
+  footprintsNear,
   getMeasurementBasics,
   mintProposalLink,
   publicProposalView,
   recordSignedDocument,
   saveClaim,
+  setPropertyFootprint,
   signProposal,
   withTenant,
   type LngLat,
@@ -27,8 +29,8 @@ import {
   type ToolCallRecord,
   type Tx,
 } from '@roofline/db';
-import { findCompanyBySlug, insertFootprints, type FootprintInput } from '@roofline/db/system';
-import { type Query, seedCompany } from '@roofline/db/testing';
+import { findCompanyBySlug } from '@roofline/db/system';
+import { OMAHA_CONTOURS, type Query, seedCompany } from '@roofline/db/testing';
 import { CONSENT_TEXT_V1, canonicalJson, instantEstimate, signedDocument, type JobStage, type Outline } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { systemClock } from '../clock.ts';
@@ -39,7 +41,7 @@ import { settleSentProposal } from '../estimator/proposal-sent.ts';
 import { systemContext } from '../permissions.ts';
 import { draftStormPlan } from '../storm/plan.ts';
 import { createTask } from '../tasks/service.ts';
-import { DEMO_LOOKUP_LOTS } from '../providers/fakes/geocoder.ts';
+import { DemoPlacer, hailOver } from '../demo/places.ts';
 import { seedFootprintFixture } from './footprint-fixture.ts';
 import { seedShowcase } from './showcase.ts';
 import { seedStormFixture } from './storm-fixture.ts';
@@ -115,21 +117,6 @@ async function jobsAt(q: Query, companyId: string, stage: JobStage): Promise<Job
   }));
 }
 
-/** A rectangular roof outline of `widthFt` x `depthFt` around a point (rough feet-to-degrees at Omaha's latitude). */
-function roofOutline([lng, lat]: LngLat, widthFt: number, depthFt: number): Outline {
-  const dLng = widthFt / 2 / (364_000 * Math.cos((lat * Math.PI) / 180));
-  const dLat = depthFt / 2 / 364_000;
-  const r = (x: number) => Math.round(x * 1e7) / 1e7;
-  return [
-    [
-      [r(lng - dLng), r(lat - dLat)],
-      [r(lng + dLng), r(lat - dLat)],
-      [r(lng + dLng), r(lat + dLat)],
-      [r(lng - dLng), r(lat + dLat)],
-    ],
-  ];
-}
-
 /** Gives a customer a (fictional) mobile number and text consent, unless it already has a number. */
 async function givePhone(q: Query, customerId: string, e164: string): Promise<void> {
   await q(
@@ -140,16 +127,33 @@ async function givePhone(q: Query, customerId: string, e164: string): Promise<vo
   );
 }
 
-/** Measures the job's roof and drafts a proposal from it; returns the proposal id. */
-async function measureAndDraft(tx: Tx, ctx: TenantContext, job: JobPick, size: { w: number; d: number; pitch: number }, at: Date): Promise<string> {
-  const outline = roofOutline([job.lng, job.lat], size.w, size.d);
-  const estimate = instantEstimate({ outline, pitchX12: size.pitch, overhangFt: 1, valleyFt: 18 });
+/** The distance within which neighbouring buildings are listed beside the house, as the live measure does. */
+const NEIGHBOUR_SEARCH_M = 40;
+
+/** Measures the job's real building (the outline the demo loaded under its home) and drafts a proposal from it; returns the proposal id. */
+async function measureAndDraft(tx: Tx, ctx: TenantContext, job: JobPick, pitchX12: number, at: Date): Promise<string> {
+  const rows = await footprintsNear(tx, [job.lng, job.lat], NEIGHBOUR_SEARCH_M);
+  const main = rows.find((r) => r.contains);
+  if (main === undefined) throw new Error(`The demo home ${job.displayName} is not on a building outline.`);
+  const outline: Outline = [main.ring];
+  const estimate = instantEstimate({ outline, pitchX12, overhangFt: 1, valleyFt: 18 });
   const measurement = await createMeasurement(
     tx,
     ctx,
-    { propertyId: job.propertyId, jobId: job.id, kind: 'estimate', method: 'outline', outline, structures: [], estimate, overhangFt: 1, center: [job.lng, job.lat] },
+    {
+      propertyId: job.propertyId,
+      jobId: job.id,
+      kind: 'estimate',
+      method: 'outline',
+      outline,
+      structures: rows.map((r) => ({ footprintId: r.id, included: r.id === main.id, areaSqFt: r.areaSqFt, ring: r.ring })),
+      estimate,
+      overhangFt: 1,
+      center: [job.lng, job.lat],
+    },
     at,
   );
+  await setPropertyFootprint(tx, ctx, job.propertyId, main.id);
   const basics = await getMeasurementBasics(tx, ctx, measurement.id);
   if (!basics) throw new Error('The demo measurement was not found after saving.');
   const options = await priceOptions(tx, ctx, basics);
@@ -222,12 +226,12 @@ const FRONT_DESK_PEOPLE = {
 } as const;
 
 /** Writes the Front Desk threads; returns the customer and home of the caller who booked an inspection. */
-async function seedFrontDeskWorld(pools: Pools, ctx: TenantContext, now: Date, companyName: string): Promise<{ customerId: string; propertyId: string }> {
+async function seedFrontDeskWorld(pools: Pools, ctx: TenantContext, now: Date, companyName: string, homes: readonly LngLat[]): Promise<{ customerId: string; propertyId: string }> {
   const { companyId } = ctx;
   const at = (minutesAgo: number) => new Date(now.getTime() - minutesAgo * MINUTE);
 
   return withTenant(pools, ctx, async (tx) => {
-    const homes = new Map<string, string>();
+    const homeIds = new Map<string, string>();
     const customer = async (p: { name: string; phone: string; address: string }, lngLat: LngLat): Promise<string> => {
       const [first, ...rest] = p.name.split(' ');
       const row = await createCustomer(
@@ -237,7 +241,7 @@ async function seedFrontDeskWorld(pools: Pools, ctx: TenantContext, now: Date, c
         { now: at(60 * 24 * 2) },
       );
       const home = await createProperty(tx, ctx, { customerId: row.id, addressLine: p.address, city: 'Omaha', state: 'NE', zip: '68134', location: lngLat }, { now: at(60 * 24 * 2) });
-      homes.set(row.id, home.id);
+      homeIds.set(row.id, home.id);
       return row.id;
     };
 
@@ -308,10 +312,10 @@ async function seedFrontDeskWorld(pools: Pools, ctx: TenantContext, now: Date, c
     };
 
     const p = FRONT_DESK_PEOPLE;
-    const gloriaId = await customer(p.gloria, [-96.0712, 41.2687]);
-    const walterId = await customer(p.walter, [-96.0418, 41.2459]);
-    const rosaId = await customer(p.rosa, [-96.1123, 41.2391]);
-    const benId = await customer(p.ben, [-95.9874, 41.2915]);
+    const gloriaId = await customer(p.gloria, homes[0]!);
+    const walterId = await customer(p.walter, homes[1]!);
+    const rosaId = await customer(p.rosa, homes[2]!);
+    const benId = await customer(p.ben, homes[3]!);
 
     // Call 1: a booked inspection.
     const gloria = await conversation({
@@ -423,7 +427,7 @@ async function seedFrontDeskWorld(pools: Pools, ctx: TenantContext, now: Date, c
       30,
       8,
     );
-    return { customerId: gloriaId, propertyId: homes.get(gloriaId)! };
+    return { customerId: gloriaId, propertyId: homeIds.get(gloriaId)! };
   });
 }
 
@@ -657,68 +661,6 @@ export async function demoWorldCounts(q: Query, companyId: string): Promise<Reco
  * `created: false` with the existing company's counts. `ownerUrl` connects as the table owner (the
  * company, its users, and the global storm and footprint rows are written with it).
  */
-/** Metres to degrees around Omaha (latitude 41.25). */
-const M_LAT = 1 / 111_320;
-const M_LNG = 1 / 83_700;
-
-/** A house-sized rectangle (about 11-19 m by 8-13 m) centred on a point, its size from `seed` (0..1). */
-function houseRing(lng: number, lat: number, seed: number): [number, number][] {
-  const w = (11 + 8 * seed) / 2;
-  const d = (8 + 5 * ((seed * 7) % 1)) / 2;
-  const [x0, x1, y0, y1] = [lng - w * M_LNG, lng + w * M_LNG, lat - d * M_LAT, lat + d * M_LAT];
-  return [
-    [x0, y0],
-    [x1, y0],
-    [x1, y1],
-    [x0, y1],
-    [x0, y0],
-  ];
-}
-
-/**
- * Building outlines for "Estimate this roof" on the demo map, with no network: one around every Summit Ridge home,
- * and empty neighbouring houses (no customer) 30 m east and west and 40 m across the street, skipped where they
- * would sit on another home. Written to the same building-footprint table the measurement code reads (NE).
- */
-export async function seedDemoFootprints(pools: Pools, q: Query, companyId: string): Promise<number> {
-  const homes = (await q(`select ST_X(geom) as lng, ST_Y(geom) as lat from properties where company_id = $1 and geom is not null`, [
-    companyId,
-  ])) as { lng: number; lat: number }[];
-  const near = (lng: number, lat: number, metres: number) =>
-    homes.some((h) => Math.hypot((h.lng - lng) / M_LNG, (h.lat - lat) / M_LAT) < metres);
-  const centre = (f: FootprintInput) => [(f.ring[0]![0] + f.ring[2]![0]) / 2, (f.ring[0]![1] + f.ring[2]![1]) / 2] as const;
-  const apart = (a: FootprintInput, b: FootprintInput) => {
-    const [ax, ay] = centre(a);
-    const [bx, by] = centre(b);
-    return Math.hypot((ax - bx) / M_LNG, (ay - by) / M_LAT);
-  };
-  // Every home keeps its own outline; a neighbour is added only clear of every home and of the neighbours kept so far.
-  const kept: FootprintInput[] = homes.map((h, i) => ({
-    sourceRef: `demo-home-${i}`,
-    ring: houseRing(h.lng, h.lat, ((i * 0.6180339887) % 1 + 1) % 1),
-  }));
-  homes.forEach((h, i) => {
-    const seed = ((i * 0.6180339887) % 1 + 1) % 1;
-    const neighbours: [number, number][] = [
-      [h.lng + 30 * M_LNG, h.lat],
-      [h.lng - 30 * M_LNG, h.lat],
-      [h.lng, h.lat + 40 * M_LAT],
-    ];
-    neighbours.forEach(([lng, lat], j) => {
-      if (near(lng, lat, 22)) return;
-      const next = { sourceRef: `demo-next-${i}-${j}`, ring: houseRing(lng, lat, (seed + 0.37 * (j + 1)) % 1) };
-      if (kept.some((k) => apart(k, next) < 20)) return;
-      kept.push(next);
-    });
-  });
-  // The empty lots the demo geocoder sends every typed address to: every one gets its roof (never skipped, or an
-  // address sent there would open draw mode). They sit in open ground west of the demo homes.
-  DEMO_LOOKUP_LOTS.forEach(([lng, lat], i) => {
-    kept.push({ sourceRef: `demo-lot-${i}`, ring: houseRing(lng, lat, ((i * 0.6180339887 + 0.2) % 1 + 1) % 1) });
-  });
-  return insertFootprints(pools.system, 'NE', kept);
-}
-
 export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, opts: DemoWorldOptions = {}): Promise<DemoWorld> {
   const owner = new pg.Pool({ connectionString: ownerUrl, max: 2 });
   const q: Query = async (text, values) => (await owner.query(text, values)).rows as Record<string, unknown>[];
@@ -744,8 +686,20 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
     const ago = (ms: number) => new Date(now.getTime() - ms);
     const ahead = (ms: number) => new Date(now.getTime() + ms);
 
+    // Every home sits on a real Omaha building (demo/places.ts), so Measure over real aerial imagery shows the real roof
+    // with a matching outline. The six homes added after the storm (front desk and old leads) take theirs first; the
+    // showcase addresses then take a building under the same hail as their old spot, so the storm still hits the same 37.
+    const placer = new DemoPlacer();
+    const placeAt = (b: { pt: readonly [number, number] }): LngLat => [b.pt[0], b.pt[1]];
+    const extraHomes = Array.from({ length: 6 }, () => placeAt(placer.take(0)));
+    const frontDeskHomes = extraHomes.slice(0, 4);
+    const leadHomes = extraHomes.slice(4);
+
     // 1. The CRM book: 60 customers, 70 addresses, 28 jobs in every stage, and a sample storm plan.
-    await seedShowcase(pools, companyId, now, { companyName: DEMO_COMPANY_NAME });
+    await seedShowcase(pools, companyId, now, {
+      companyName: DEMO_COMPANY_NAME,
+      relocate: (old) => placeAt(placer.take(hailOver(old, OMAHA_CONTOURS))),
+    });
     // Half the worked jobs go to the second rep, so the board shows two people.
     await q(
       `update jobs set assigned_user_id = $2
@@ -755,8 +709,9 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
     );
 
     // 2. Yesterday's hail storm over the book, the homes it hit, and a drafted storm plan.
-    await seedFootprintFixture(pools);
-    const { companyStormId } = await seedStormFixture(pools, companyId, { now, query: q });
+    // The building outlines are the real ones from the asset (state NE, ready), not the e2e fixture's rectangles.
+    await seedFootprintFixture(pools, placer.footprints());
+    const { companyStormId } = await seedStormFixture(pools, companyId, { now, query: q, footprints: false });
     await q(`update storms set place_name = 'West Omaha, NE' where id = (select storm_id from company_storms where id = $1)`, [companyStormId]);
     await q(`update company_storms set created_at = $2 where id = $1`, [companyStormId, ago(14 * HOUR)]);
     await q(`update ad_accounts set name = $2 where company_id = $1 and platform = 'google'`, [companyId, 'Summit Ridge Google Ads']);
@@ -778,7 +733,7 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
     for (const [i, job] of [sentA, sentB, signedJob, draftJob].entries()) await givePhone(q, job.customerId, `+1402555030${i + 1}`);
     let signedProposalId: string | undefined;
     await withTenant(pools, ctx, async (tx) => {
-      const a = await measureAndDraft(tx, ctx, sentA, { w: 58, d: 34, pitch: 6 }, ago(3 * DAY));
+      const a = await measureAndDraft(tx, ctx, sentA, 6, ago(3 * DAY));
       await markSent(tx, ctx, a, ago(3 * DAY + 2 * HOUR), opts.encryptionKey);
       await tx.execute(
         // The homeowner opened it twice.
@@ -787,15 +742,15 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
       await addProposalEvent(tx, ctx, { proposalId: a, kind: 'viewed', at: ago(2 * DAY) });
       await addProposalEvent(tx, ctx, { proposalId: a, kind: 'viewed', at: ago(5 * HOUR) });
 
-      const b = await measureAndDraft(tx, ctx, sentB, { w: 64, d: 38, pitch: 7 }, ago(DAY + 3 * HOUR));
+      const b = await measureAndDraft(tx, ctx, sentB, 7, ago(DAY + 3 * HOUR));
       await markSent(tx, ctx, b, ago(DAY), opts.encryptionKey);
 
-      const s = await measureAndDraft(tx, ctx, signedJob, { w: 52, d: 30, pitch: 5 }, ago(6 * DAY));
+      const s = await measureAndDraft(tx, ctx, signedJob, 5, ago(6 * DAY));
       await markSent(tx, ctx, s, ago(6 * DAY - HOUR), opts.encryptionKey);
       await signAs(tx, ctx, s, signedJob.displayName, ago(4 * DAY));
       signedProposalId = s;
 
-      await measureAndDraft(tx, ctx, draftJob, { w: 46, d: 32, pitch: 8 }, ago(2 * HOUR));
+      await measureAndDraft(tx, ctx, draftJob, 8, ago(2 * HOUR));
     });
     // The signed copy, rendered as the signed-pdf job would (its email to the homeowner goes nowhere).
     if (signedProposalId && opts.objectStore && opts.encryptionKey) {
@@ -823,7 +778,7 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
       `update company_settings set front_desk_enabled = true, front_desk_texts = true, forwarding_verified_at = $2, front_desk_facts = $3 where company_id = $1`,
       [companyId, ago(3 * DAY), DEMO_FRONT_DESK_FACTS],
     );
-    const booked = await seedFrontDeskWorld(pools, ctx, now, DEMO_COMPANY_NAME);
+    const booked = await seedFrontDeskWorld(pools, ctx, now, DEMO_COMPANY_NAME, frontDeskHomes);
 
     // 5. Agents history: finished plans with minutes saved, one needing attention.
     await seedAgentsHistory(q, companyId, ownerId, now);
@@ -938,8 +893,8 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
 
       // Two old leads nobody has followed up with, and the Follow-up agent's drafted texts to them.
       const oldLeads = [
-        { first: 'Teresa', last: 'Vaughn', phone: '+14025550341', address: '5402 Aspen Grove Rd', lngLat: [-96.0981, 41.2612] as LngLat },
-        { first: 'Malik', last: 'Osei', phone: '+14025550342', address: '918 Hickory Bend Dr', lngLat: [-96.0237, 41.2233] as LngLat },
+        { first: 'Teresa', last: 'Vaughn', phone: '+14025550341', address: '5402 Aspen Grove Rd', lngLat: leadHomes[0]! },
+        { first: 'Malik', last: 'Osei', phone: '+14025550342', address: '918 Hickory Bend Dr', lngLat: leadHomes[1]! },
       ];
       const messages: { customerId: string; jobId: string | null; body: string }[] = [];
       for (const lead of oldLeads) {
@@ -1001,8 +956,6 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
     // 9. The Agents dashboard: finished work for all six agents (hourly trend, handoffs, week hours).
     await seedAgentsDashboardActivity(q, companyId, now);
 
-    // Last, so the homes every later step added have outlines too ("Estimate this roof" on the map).
-    await seedDemoFootprints(pools, q, companyId);
     return { created: true, companyId, counts: await demoWorldCounts(q, companyId) };
   } finally {
     await owner.end();

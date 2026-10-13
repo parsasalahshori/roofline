@@ -208,13 +208,13 @@ async function firstRepId(tx: Tx): Promise<string | null> {
  *
  * Not idempotent: a second run in the same company collides on the addresses. The dev seed calls it
  * only for a company it has just made. Two runs on fresh databases give identical names and
- * coordinates.
+ * coordinates. `relocate` moves each address's point (the demo world puts them on real buildings).
  */
 export async function seedShowcase(
   pools: Pools,
   companyId: string,
   now: Date,
-  opts: { companyName?: string } = {},
+  opts: { companyName?: string; relocate?: (location: LngLat) => LngLat } = {},
 ): Promise<{ customers: number; properties: number; jobs: number; taskId: string }> {
   const ctx = systemContext(companyId);
   const data = buildShowcaseData();
@@ -250,7 +250,7 @@ export async function seedShowcase(
               city: place.city,
               state: place.state,
               zip: place.zip,
-              location: place.location,
+              location: opts.relocate === undefined ? place.location : opts.relocate(place.location),
             },
             { now },
           ),
