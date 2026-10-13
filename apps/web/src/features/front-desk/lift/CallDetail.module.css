@@ -1,26 +1,44 @@
 /* The open call: header, summary callout, audio row and transcript. Grid and flex children get min-width: 0. */
 .detail {
-  display: grid;
-  align-content: start;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
   min-width: 0;
-  color: var(--ds-text-1, #1d1b17);
-  font-family: var(--ds-font, inherit);
+  min-height: 0;
+  color: var(--ds-text-1, #151c22);
+  font-family: var(--ds-font, "Archivo Variable", ui-sans-serif, system-ui, sans-serif);
   font-size: 14px;
 }
 
-/* Header: avatar, name with the outcome chip, phone, time and length, then Open job */
+/* Header: avatar, name with the outcome chip, phone, time and length, then Open job. It stays put while the call scrolls under it. */
 .header {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 12px;
+  gap: 12px 14px;
   min-width: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--ds-hairline-soft, rgb(21 28 34 / 8%));
+}
+
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--ds-avatar-bg, #d8dee2);
+  color: var(--ds-text-2, #3a444d);
+  font-size: 17.5px;
+  font-weight: 600;
 }
 
 .who {
   display: grid;
   flex: 1;
-  gap: 2px;
+  gap: 0;
   min-width: 0;
 }
 
@@ -34,42 +52,93 @@
 
 .name {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
-  line-height: 1.2;
+  letter-spacing: -0.2px;
+  line-height: 25px;
   overflow-wrap: anywhere;
 }
 
+/* phone, when and how long, spaced apart (no dots between them) */
 .meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 2px;
+  gap: 0 14px;
   margin: 0;
-  color: var(--ds-text-3, #8d877d);
-  font-size: 12px;
+  color: var(--ds-text-2, #505b64);
+  font-size: 13px;
+  line-height: 18.85px;
+}
+
+.meta > [aria-hidden="true"] {
+  display: none;
+}
+
+.phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.phoneIcon {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--ds-text-3, #6b7680);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .detail .openJob[data-variant] {
   flex: none;
-  border-radius: var(--ds-r-ctl, 10px);
-  background: var(--ds-text-1, #1d1b17);
-  color: var(--ds-surface, #fffdf9);
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ds-text-1, #151c22);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
+  color: #fff;
+  font-size: 13.5px;
   font-weight: 600;
 }
 
 .detail .openJob[data-variant]:hover {
-  background: var(--ds-text-2, #3b372f);
+  background: #26313a;
+  filter: none;
+}
+
+.openJobIcon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Everything under the header scrolls inside the card */
+.scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Summary callout: an amber panel with the assistant's mark, its heading and the summary */
 .summary {
   display: flex;
+  flex: none;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 14px;
-  border: 1px solid var(--ds-accent, #f2c14e);
-  border-radius: var(--ds-r-card, 14px);
-  background: var(--ds-accent-tint, #fdf1c7);
+  gap: 12px;
+  margin: 16px 20px 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--ds-accent-tint, #fff3cf);
+  box-shadow: inset 0 0 0 1px rgb(217 158 0 / 30%);
 }
 
 .summaryMark {
@@ -78,54 +147,78 @@
   place-items: center;
   width: 20px;
   height: 20px;
-  margin-top: 1px;
-  border-radius: 6px;
-  background: var(--ds-accent, #f2c14e);
-  color: var(--ds-text-1, #1d1b17);
+  margin-top: 8px;
+  border-radius: 5px;
+  background: var(--ds-accent, #ffc21a);
+  box-shadow: inset 0 0 0 1px rgb(217 158 0 / 60%);
+  color: var(--ds-text-1, #151c22);
+}
+
+.summaryMark svg,
+.mark svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .summaryMark svg {
-  width: 12px;
-  height: 12px;
-  fill: currentColor;
+  width: 13px;
+  height: 13px;
 }
 
 .summaryBody {
   display: grid;
-  gap: 2px;
+  gap: 0;
   min-width: 0;
 }
 
 .summaryHeading {
   margin: 0;
+  color: #6b4c00;
   font-size: 12px;
-  font-weight: 700;
-  color: var(--ds-text-1, #1d1b17);
+  font-weight: 600;
+  line-height: 17.4px;
 }
 
 .summaryText {
   margin: 0;
+  font-size: 14px;
+  line-height: 19.25px;
   overflow-wrap: anywhere;
 }
 
-/* Audio row */
+/* Audio row: a bordered bar with Listen, the waveform, the time and the speed */
 .audio {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: 8px 14px;
   min-width: 0;
+  margin: 12px 20px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--ds-hairline, #d8dee2);
+  border-radius: 12px;
 }
 
 .detail .listen[data-variant] {
   flex: none;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 14px;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px 0 14px;
+  border: 0;
   border-radius: 999px;
-  background: var(--ds-text-1, #1d1b17);
-  color: var(--ds-surface, #fffdf9);
+  background: var(--ds-text-1, #151c22);
+  color: #fff;
+  font-size: 13.5px;
   font-weight: 600;
+}
+
+.detail .listen[data-variant]:hover {
+  background: #26313a;
+  filter: none;
 }
 
 .detail .listen[data-variant]:disabled {
@@ -134,8 +227,8 @@
 }
 
 .icon {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   fill: currentColor;
 }
 
@@ -143,7 +236,7 @@
   position: relative;
   flex: 1;
   min-width: 120px;
-  height: 32px;
+  height: 40px;
 }
 
 .bars {
@@ -157,15 +250,39 @@
   flex: 1;
   min-width: 1px;
   border-radius: 2px;
-  background: var(--ds-hairline, #e0d9cc);
+  background: var(--ds-wave, #aab4bc);
 }
 
 .bar[data-played="true"] {
-  background: var(--ds-text-1, #1d1b17);
+  background: var(--ds-text-1, #151c22);
 }
 
 .audio[data-disabled="true"] .bar {
   opacity: 0.7;
+}
+
+/* The playhead: a thin blue line with a dot on top, at how far the call has played */
+.playhead {
+  position: absolute;
+  top: -2px;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ds-info, #2f6fde);
+  pointer-events: none;
+}
+
+.playhead::before {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: var(--ds-info, #2f6fde);
+  box-shadow: 0 0 0 2px #fff;
+  content: "";
 }
 
 .seek {
@@ -180,25 +297,26 @@
 
 .seek:focus-visible {
   opacity: 1;
-  outline: 2px solid var(--ds-accent, #f2c14e);
+  outline: 2px solid var(--ds-accent, #ffc21a);
   background: transparent;
 }
 
 .time {
   flex: none;
-  color: var(--ds-text-3, #8d877d);
-  font-size: 12px;
+  color: var(--ds-text-2, #505b64);
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .detail .speed[data-variant] {
   flex: none;
-  min-height: 24px;
+  min-width: 30px;
+  min-height: 28px;
   padding: 0 8px;
-  border: 1px solid var(--ds-hairline, #e9e3d8);
-  border-radius: var(--ds-r-chip, 6px);
-  background: var(--ds-surface-2, #f4f0e8);
-  color: var(--ds-text-2, #5f5a52);
+  border: 0;
+  border-radius: 7px;
+  background: var(--ds-surface-2, #eceff1);
+  color: var(--ds-text-2, #3a444d);
   font-size: 12px;
   font-weight: 600;
 }
@@ -210,7 +328,7 @@
 .failed {
   flex-basis: 100%;
   margin: 0;
-  color: var(--ds-danger, #c4372b);
+  color: var(--ds-danger, #a32424);
   font-size: 12px;
   font-weight: 600;
 }
@@ -218,8 +336,9 @@
 /* Transcript */
 .transcript {
   display: grid;
-  gap: 10px;
+  gap: 0;
   min-width: 0;
+  padding: 16px 20px 20px;
 }
 
 .transcriptHead {
@@ -227,23 +346,25 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+  padding-bottom: 8px;
 }
 
 .transcriptHeading {
   margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ds-text-1, #1d1b17);
+  color: var(--ds-text-1, #151c22);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18.85px;
 }
 
 .count {
-  color: var(--ds-text-3, #8d877d);
-  font-size: 12px;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 13px;
 }
 
 .empty {
   margin: 0;
-  color: var(--ds-text-3, #8d877d);
+  color: var(--ds-text-3, #6b7680);
 }
 
 .turns {
@@ -265,27 +386,38 @@
   justify-content: flex-end;
 }
 
+/* The caller's little initials disc */
 .caller {
+  display: inline-flex;
   flex: none;
-  width: 20px;
-  height: 20px;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: var(--ds-hairline, #e5dfd3);
+  background: var(--ds-avatar-bg, #d8dee2);
+  color: var(--ds-text-2, #3a444d);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .bubble {
   display: grid;
   gap: 4px;
-  max-width: 78%;
+  max-width: 74%;
   min-width: 0;
   padding: 8px 14px;
-  border-radius: var(--ds-r-card, 14px);
-  background: var(--ds-surface-2, #f4f0e8);
-  color: var(--ds-text-1, #1d1b17);
+  border-radius: 16px 16px 16px 5px;
+  background: var(--ds-surface-2, #eceff1);
+  color: var(--ds-text-1, #151c22);
+  font-size: 13.5px;
+  line-height: 20.25px;
 }
 
 .turn[data-side="right"] .bubble {
-  background: var(--ds-accent-tint, #fdf1c7);
+  border-radius: 16px 16px 5px;
+  background: var(--ds-accent-tint, #fff3cf);
+  box-shadow: inset 0 0 0 1px rgb(217 158 0 / 30%);
 }
 
 /* Who spoke is carried by the side and the colour; the name is still read out */
@@ -306,48 +438,83 @@
 
 .note {
   margin: 0;
-  color: var(--ds-text-2, #5f5a52);
+  color: var(--ds-text-2, #505b64);
   font-style: italic;
 }
 
 .chip {
   justify-self: start;
   padding: 0 8px;
-  border: 1px solid var(--ds-hairline, #e9e3d8);
-  border-radius: var(--ds-r-chip, 6px);
-  background: var(--ds-surface, #fffdf9);
-  color: var(--ds-text-2, #5f5a52);
+  border-radius: 999px;
+  background: var(--ds-surface, #fff);
+  color: var(--ds-text-2, #505b64);
   font-size: 12px;
 }
 
 .chip[data-ok="false"] {
-  color: var(--ds-danger, #c4372b);
+  color: var(--ds-danger, #a32424);
   font-weight: 600;
 }
 
+/* The assistant's amber logo square beside its lines */
 .mark {
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: var(--ds-accent, #f2c14e);
-  color: var(--ds-text-1, #1d1b17);
+  width: 22px;
+  height: 22px;
+  margin-bottom: 7px;
+  border-radius: 5px;
+  background: var(--ds-accent, #ffc21a);
+  box-shadow: inset 0 0 0 1px rgb(217 158 0 / 60%);
+  color: var(--ds-text-1, #151c22);
 }
 
 .mark svg {
-  width: 12px;
-  height: 12px;
-  fill: currentColor;
+  width: 15px;
+  height: 15px;
 }
 
 .system {
   justify-self: center;
-  color: var(--ds-text-3, #8d877d);
+  color: var(--ds-text-3, #6b7680);
   font-size: 12px;
   text-align: center;
   list-style: none;
+}
+
+@media (max-width: 767.98px) {
+  .header {
+    padding: 12px 0;
+  }
+
+  .summary,
+  .audio {
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .transcript {
+    padding: 16px 0 20px;
+  }
+
+  /* Listen and the time on one line, the waveform across the full width under them */
+  .wave {
+    order: 4;
+    flex: 1 1 100%;
+  }
+
+  .bar:nth-child(even) {
+    display: none;
+  }
+
+  .time {
+    margin-left: auto;
+  }
+
+  .bubble {
+    max-width: 85%;
+  }
 }
 
 @media (max-width: 374.98px) {

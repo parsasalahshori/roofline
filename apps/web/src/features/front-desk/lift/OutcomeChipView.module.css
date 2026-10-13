@@ -3,16 +3,16 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 20px;
-  padding: 0 7px 0 5px;
-  border: 1px solid var(--ds-hairline, #e9e3d8);
-  border-radius: var(--ds-r-chip, 6px);
-  background: var(--ds-surface-2, #f4f0e8);
-  color: var(--ds-text-2, #5f5a52);
-  font-family: var(--ds-font, inherit);
+  min-height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ds-chip-bg, #e4e8eb);
+  color: var(--ds-text-2, #3a444d);
+  font-family: var(--ds-font, "Archivo Variable", ui-sans-serif, system-ui, sans-serif);
   font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
+  font-weight: 600;
+  line-height: 16.7px;
   white-space: nowrap;
 }
 
@@ -28,19 +28,17 @@
 }
 
 .chip[data-tone="good"] {
-  border-color: transparent;
-  background: var(--ds-success-tint, #e2f3e6);
-  color: var(--ds-success, #1f7a3d);
+  background: var(--ds-success-tint, #e2f4e2);
+  color: var(--ds-success, #0a6e1d);
 }
 
 .chip[data-tone="warn"] {
-  border-color: transparent;
-  background: var(--ds-danger-tint, #fbe6e3);
-  color: var(--ds-danger, #c4372b);
+  background: var(--ds-danger-tint, #fbe3e3);
+  color: var(--ds-danger, #a32424);
 }
 
+/* a claim chip reads as plain grey, as the other neutral outcomes do */
 .chip[data-tone="info"] {
-  border-color: transparent;
-  background: var(--ds-info-tint, #e3edfb);
-  color: var(--ds-info, #2760c4);
+  background: var(--ds-chip-bg, #e4e8eb);
+  color: var(--ds-text-2, #3a444d);
 }

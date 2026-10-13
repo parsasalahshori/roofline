@@ -14,7 +14,16 @@ function Tile({ label, value, hint, highlight }: { label: string; value: ReactNo
   return (
     <div className={styles.tile} data-highlight={highlight ? 'true' : undefined} data-testid="kpi-tile">
       <dl className={styles.stat}>
-        <dt className={styles.label}>{label}</dt>
+        <dt className={styles.label}>
+          {highlight ? (
+            <span className={styles.mark} aria-hidden="true">
+              <svg viewBox="0 0 16 16" focusable="false">
+                <path d="M3.5 10.5L8 6l4.5 4.5" />
+              </svg>
+            </span>
+          ) : null}
+          {label}
+        </dt>
         <dd className={styles.value}>{value}</dd>
         <dd className={styles.hint}>{hint}</dd>
       </dl>
@@ -32,12 +41,15 @@ function AnsweringTile() {
     <div className={styles.tile} data-status="true" data-testid="kpi-answering">
       <p className={styles.answering}>
         <span className={styles.dot} aria-hidden="true" />
-        {number === null ? copy.answeringNoNumber : copy.answering(number)}
+        <span className={styles.answeringFull}>{number === null ? copy.answeringNoNumber : copy.answering(number)}</span>
+        <span className={styles.answeringShort} aria-hidden="true">
+          {copy.answeringShort}
+        </span>
       </p>
       {isDemo ? (
         <Button className={styles.simulate} data-testid="simulate-call" busy={simulate.isPending} onClick={() => simulate.mutate('call')}>
           <svg className={styles.simulateIcon} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-            <path d="M4 2.5h2.2l1 3-1.5 1a8 8 0 003.8 3.8l1-1.5 3 1v1.7a1.5 1.5 0 01-1.5 1.5A10 10 0 012.5 4 1.5 1.5 0 014 2.5zM10.5 2.5a3 3 0 013 3M10.5 5a.5.5 0 01.5.5" />
+            <path d="M4 2.5h2.2l1 3-1.5 1a8 8 0 003.8 3.8l1-1.5 3 1v1.7a1.5 1.5 0 01-1.5 1.5A10 10 0 012.5 4 1.5 1.5 0 014 2.5zM9.5 6.5l3-3M9.5 4v2.5H12" />
           </svg>
           {copy.simulateCall}
         </Button>
@@ -91,7 +103,7 @@ export function KpiTiles() {
 
   return (
     <section className={styles.root} aria-label={copy.kpisLabel}>
-      {tiles}
+      <div className={styles.tiles}>{tiles}</div>
       <AnsweringTile />
     </section>
   );
