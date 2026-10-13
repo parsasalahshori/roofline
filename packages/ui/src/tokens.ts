@@ -1,24 +1,24 @@
 /*
- * The S1 tokens as literal values, keyed by custom property name without the `--`. Mirrors
+ * The compatible Ironclad tokens as literal values, keyed by custom property name without the `--`. Mirrors
  * tokens.css (test/tokens.test.ts fails if they drift). Use CSS variables in styles; use this
  * map where CSS variables cannot reach, such as the map's paint expressions.
  */
 export const tokens = {
-  bg: '#efe9dc',
-  surface: '#fffdf8',
-  'surface-2': '#f6f1e6',
-  text: '#2b2620',
-  'text-muted': 'rgba(43, 38, 32, 0.72)',
-  accent: '#f5b324',
-  'accent-ink': '#2b2620',
+  bg: '#e9edf0',
+  surface: '#f6f7f8',
+  'surface-2': '#e9edf0',
+  text: '#151c22',
+  'text-muted': '#53616b',
+  accent: '#ffc400',
+  'accent-ink': '#151c22',
   success: '#2f9e44',
-  danger: '#e03131',
+  danger: '#c9343d',
   'on-danger': '#ffffff',
   'danger-hover': '#c92a2a',
-  line: '#eee5cf',
-  'radius-card': '12px',
-  'radius-window': '14px',
-  'shadow-window': '0 12px 30px rgba(60,40,0,.15)',
+  line: '#d9dee2',
+  'radius-card': '20px',
+  'radius-window': '18px',
+  'shadow-window': '0 20px 40px -18px rgba(21, 28, 34, 0.45), 0 0 0 1px rgba(21, 28, 34, 0.08)',
   'shadow-marker': '0 1px 3px rgb(0 0 0 / 0.35)',
   'shadow-marker-ring': '0 0 0 1px rgb(0 0 0 / 0.35)',
   font: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
@@ -35,6 +35,16 @@ export const tokens = {
   'stage-inspection': '#0b7285',
   'stage-proposal': '#e67700',
   'stage-won': '#2f9e44',
+  'surface-raised': '#ffffff',
+  'surface-glass': 'rgba(246, 247, 248, 0.82)',
+  'radius-control': '8px',
+  'shadow-card': '0 2px 5px rgba(21, 28, 34, 0.06)',
+  'app-storm': '#343268',
+  'app-front-desk': '#147e80',
+  'app-estimator': '#ffc400',
+  'app-jobs': '#3269cb',
+  'app-calendar': '#a85724',
+  'app-agents': '#151c22',
 } as const;
 
 export type TokenName = keyof typeof tokens;

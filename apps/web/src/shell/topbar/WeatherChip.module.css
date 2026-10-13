@@ -4,7 +4,7 @@
   gap: 6px;
   min-width: 0;
   color: var(--text);
-  font-size: var(--font-size-body);
+  font-size: 13px;
 }
 
 .chip > svg {
@@ -13,7 +13,7 @@
 
 .temp {
   flex: none;
-  font-weight: 700;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

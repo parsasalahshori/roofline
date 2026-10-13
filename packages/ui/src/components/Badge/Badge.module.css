@@ -6,8 +6,8 @@
   height: 20px;
   padding: 0 6px;
   border-radius: 10px;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--danger);
+  color: var(--on-danger);
   font-size: var(--font-size-min);
   font-weight: 700;
   line-height: 1;

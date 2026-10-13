@@ -2,11 +2,12 @@
   margin: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: var(--surface);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
   color: var(--text);
   list-style: none;
 }
 
 .card[data-padded="true"] {
-  padding: 16px;
+  padding: 20px;
 }

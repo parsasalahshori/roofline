@@ -2,7 +2,8 @@ import { Sheet, UiLink } from '@roofline/ui';
 import { doors } from '../../copy/doors.ts';
 import { WINDOW_COPY } from '../../copy/dock.ts';
 import { shell } from '../../copy/shell.ts';
-import type { WindowKey } from '../apps.ts';
+import { DOCK_APPS, type WindowKey } from '../apps.ts';
+import { MoreIcon } from './phoneIcons.tsx';
 import styles from './MoreSheet.module.css';
 
 /** The apps the tab bar does not hold, in the order the sheet lists them. Each title is the window's own. */
@@ -26,6 +27,9 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
         {MORE_LINKS.map(({ key, href, label }) => (
           <li key={href}>
             <UiLink href={href} className={styles.link} onClick={onClose}>
+              <span className={styles.icon} data-app={key} aria-hidden="true">
+                {DOCK_APPS.find((app) => app.key === key)?.icon ?? <MoreIcon />}
+              </span>
               {label ?? WINDOW_COPY[key].title}
             </UiLink>
           </li>

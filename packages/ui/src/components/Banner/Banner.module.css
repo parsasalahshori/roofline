@@ -9,7 +9,7 @@
   background: var(--surface-2);
   color: var(--text);
   border-left: 4px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   font-family: var(--font);
   font-size: var(--font-size-body);
 }

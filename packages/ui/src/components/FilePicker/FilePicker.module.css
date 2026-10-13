@@ -17,7 +17,7 @@
   min-height: 40px;
   padding: 16px;
   border: 2px dashed var(--text-muted);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   color: var(--text);
   font-size: var(--font-size-body);
   text-align: center;

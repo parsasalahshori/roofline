@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { common } from '../copy/common.ts';
 import { WINDOW_COPY } from '../copy/dock.ts';
-import type { WindowKey } from './apps.ts';
+import { DOCK_APPS, type WindowKey } from './apps.ts';
+import styles from './Shell.module.css';
 import { useIsPhone } from './useIsPhone.ts';
 
 /**
@@ -14,11 +15,13 @@ export function AppWindow({ app, children, stats }: { app: WindowKey; children: 
   const navigate = useNavigate();
   const phone = useIsPhone();
   const copy = WINDOW_COPY[app];
+  const icon = DOCK_APPS.find((item) => item.key === app)?.icon;
 
   return (
     <Window
       key={app}
       title={copy.title}
+      titleIcon={icon ? <span className={styles.appIcon} data-app={app}>{icon}</span> : undefined}
       description={copy.description}
       stats={stats}
       variant={phone ? 'page' : 'floating'}

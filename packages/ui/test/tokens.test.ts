@@ -17,25 +17,25 @@ function readCssTokens(): Map<string, string> {
   return found;
 }
 
-// Spec 4.5 table, then the rulings and additions in the plan's Global Constraints.
+// Neutral reference palette and geometry; existing map and hail semantics are preserved.
 const EXPECTED: ReadonlyArray<readonly [string, string]> = [
-  ['--bg', '#efe9dc'],
-  ['--surface', '#fffdf8'],
-  ['--surface-2', '#f6f1e6'],
-  ['--text', '#2b2620'],
-  ['--accent', '#f5b324'],
-  ['--accent-ink', '#2b2620'],
+  ['--bg', '#e9edf0'],
+  ['--surface', '#f6f7f8'],
+  ['--surface-2', '#e9edf0'],
+  ['--text', '#151c22'],
+  ['--accent', '#ffc400'],
+  ['--accent-ink', '#151c22'],
   ['--success', '#2f9e44'],
-  ['--danger', '#e03131'],
+  ['--danger', '#c9343d'],
   // The danger button's text and hover fill: white on --danger-hover stays above 4.5:1 (--danger itself is left alone).
   ['--on-danger', '#ffffff'],
   ['--danger-hover', '#c92a2a'],
-  ['--line', '#eee5cf'],
-  ['--radius-card', '12px'],
-  ['--radius-window', '14px'],
-  ['--shadow-window', '0 12px 30px rgba(60,40,0,.15)'],
-  // 72%, not the spec's 60%: 60% is 4.0:1 on --surface, which fails the spec's own WCAG AA rule.
-  ['--text-muted', 'rgba(43, 38, 32, 0.72)'],
+  ['--line', '#d9dee2'],
+  ['--radius-card', '20px'],
+  ['--radius-window', '18px'],
+  ['--shadow-window', '0 20px 40px -18px rgba(21, 28, 34, 0.45), 0 0 0 1px rgba(21, 28, 34, 0.08)'],
+  // Opaque muted ink; contrast is covered by ironclad-full-ui.test.tsx.
+  ['--text-muted', '#53616b'],
   ['--font', 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'],
   ['--font-size-min', '12px'],
   ['--font-size-body', '14px'],
@@ -52,8 +52,8 @@ const EXPECTED: ReadonlyArray<readonly [string, string]> = [
   ['--stage-won', '#2f9e44'],
 ];
 
-describe('S1 tokens', () => {
-  it('has every S1 token with its exact value', () => {
+describe('Ironclad tokens', () => {
+  it('has every compatible token with its exact reference value', () => {
     const css = readCssTokens();
     for (const [name, value] of EXPECTED) {
       expect(css.get(name), name).toBe(value);

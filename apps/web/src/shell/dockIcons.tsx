@@ -15,7 +15,8 @@ export function StormIcon() {
 export function FrontDeskIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <path d="M4 5h16v11H9l-5 4V5z" />
+      <path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a15 15 0 0 1-7-7l2-2-2-5z" />
+      <path d="M14 3a7 7 0 0 1 7 7M14 7a3 3 0 0 1 3 3" />
     </svg>
   );
 }
@@ -23,8 +24,7 @@ export function FrontDeskIcon() {
 export function EstimatorIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <path d="M3 11l9-7 9 7" />
-      <path d="M5.5 10v9h13v-9" />
+      <path d="M3 7l4-4 14 14-4 4L3 7zM8 6l-2 2M11 9l-2 2M14 12l-2 2M17 15l-2 2" />
     </svg>
   );
 }
@@ -32,8 +32,7 @@ export function EstimatorIcon() {
 export function JobsIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <rect x="3" y="7" width="18" height="12" rx="2" />
-      <path d="M9 7V5h6v2" />
+      <path d="M5 4v10M12 4v16M19 4v7" />
     </svg>
   );
 }
@@ -50,8 +49,7 @@ export function CalendarIcon() {
 export function AgentsIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="9" r="3.5" />
-      <path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5" />
+      <path d="M2 13h5l3-10 4 18 3-10 2 2h3" />
     </svg>
   );
 }

@@ -29,7 +29,7 @@
   padding: 4px 4px 4px 16px;
   border: 1px solid var(--line);
   border-left-width: 4px;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-window);
@@ -61,7 +61,7 @@
   .viewport {
     top: auto;
     right: 16px;
-    bottom: 72px;
+    bottom: calc(88px + env(safe-area-inset-bottom, 0px));
     left: 16px;
     width: auto;
     transform: none;
