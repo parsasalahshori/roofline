@@ -42,17 +42,20 @@ async function makeItDaytime(): Promise<void> {
 export type SentProposal = { proposalId: string; taskId: string; link: string };
 
 /**
- * The page is already signed in as the owner. Types the address, fills the new customer, presses Make proposal
- * (counted), approves the text on the review screen (counted), and returns the proposal id, the task id and the
- * homeowner path (`/p/<token>`). Typing and reading never go through `click`.
+ * The page is already signed in as the owner. Types the address in the Measure window's search, presses "Measure a new
+ * roof at" and "Measure roof" (counted), fills the new customer, presses Make proposal (counted), approves the text on
+ * the review screen (counted), and returns the proposal id, the task id and the homeowner path (`/p/<token>`).
+ * Typing and reading never go through `click`.
  */
 export async function makeAndSendProposal(
   page: Page,
   click: (locator: Locator) => Promise<void>,
 ): Promise<SentProposal> {
   await page.goto('/estimator');
-  await page.getByLabel('Type an address to measure a roof', { exact: true }).fill(OMAHA_ADDRESS);
-  await page.getByLabel('Type an address to measure a roof', { exact: true }).press('Enter');
+  // /estimator opens the Measure window; the search takes any address, and one no request matches offers to measure it
+  await page.getByRole('searchbox', { name: 'Search name or address' }).fill(OMAHA_ADDRESS);
+  await click(page.getByRole('button', { name: 'Measure a new roof at ' + OMAHA_ADDRESS }));
+  await click(page.getByRole('button', { name: 'Measure roof' }));
 
   await page.getByLabel('Name', { exact: true }).fill('Dana Homeowner');
   await page.getByLabel('Phone', { exact: true }).fill('4025550142');

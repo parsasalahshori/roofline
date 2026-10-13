@@ -10,7 +10,7 @@ import { test, expect, seedDemoTask } from './fixtures.ts';
 const APPS: readonly (readonly [label: string, path: string])[] = [
   ['Storm', '/storm'],
   ['Front Desk', '/front-desk'],
-  ['Estimator', '/estimator'],
+  ['Measure', '/estimator'],
   ['Jobs', '/jobs'],
   ['Calendar', '/calendar'],
   ['Agents', '/agents'],
@@ -43,7 +43,8 @@ test('dock has six labeled apps that each open one window with its own URL', asy
       .getByRole('navigation', { name: 'Apps' })
       .getByRole('link', { name: label, exact: false })
       .click();
-    await expect(page).toHaveURL(new RegExp(path + '$'));
+    // Measure opens its first request, so its URL carries an id after the path
+    await expect(page).toHaveURL(new RegExp(path + (path === '/estimator' ? '(/measure/[^/]+)?' : '') + '$'));
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toHaveCount(1);

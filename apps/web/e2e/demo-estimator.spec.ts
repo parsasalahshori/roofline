@@ -22,6 +22,8 @@ async function signIn(page: Page): Promise<void> {
 /** Measure is showing a found outline (not draw mode) and a non-zero number of squares. */
 async function expectOutline(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/estimator\/measure\//, { timeout: 30_000 });
+  // A new roof is revealed by the scan first: Measure roof, then the numbers and the choices
+  await page.getByRole('button', { name: 'Measure roof' }).click();
   await expect(page.getByText('The numbers')).toBeVisible();
   await expect(page.getByText('Squares', { exact: true }).locator('xpath=following-sibling::dd')).not.toHaveText('0');
   await expect(page.getByText('Tap the corners of the roof.', { exact: false })).toHaveCount(0);
@@ -32,11 +34,10 @@ test('demo: a typed address measures a demo house and makes a proposal', async (
   await signIn(page);
 
   await page.goto('/estimator');
-  const address = page.getByLabel('Type an address to measure a roof', { exact: true });
-  await expect(address).toBeVisible();
-  await address.fill('1600 Pennsylvania Ave NW, Washington, DC 20500');
-  await address.press('Enter');
-  await page.getByRole('button', { name: 'Measure the roof' }).click();
+  const search = page.getByRole('searchbox', { name: 'Search name or address' });
+  await expect(search).toBeVisible();
+  await search.fill('1600 Pennsylvania Ave NW, Washington, DC 20500');
+  await page.getByRole('button', { name: 'Measure a new roof at 1600 Pennsylvania Ave NW, Washington, DC 20500' }).click();
 
   await expectOutline(page);
   await expect(page.getByRole('button', { name: /Free estimate/ })).toHaveAttribute('aria-pressed', 'true');

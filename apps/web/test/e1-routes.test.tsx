@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
-import { estimator } from '../src/copy/estimator.ts';
 import { homeowner } from '../src/copy/homeowner.ts';
 import { measure } from '../src/copy/measure.ts';
 import { prices } from '../src/copy/prices.ts';
@@ -95,11 +94,13 @@ function dockLink(dockNav: HTMLElement, label: string) {
 }
 
 describe('E1 windows', () => {
-  it('/estimator shows the address box', async () => {
+  it('/estimator opens the Measure window: the requests search, and the pick-a-request note when there are none', async () => {
     signedInApi(ACCOUNT, proposalListRoutes());
     renderApp('/estimator');
 
-    expect(await screen.findByLabelText(estimator.addressLabel)).toBeInTheDocument();
+    expect(await screen.findByRole('searchbox', { name: measure.requestsSearch })).toBeInTheDocument();
+    expect(await screen.findByText(measure.pickRequest)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Address')).toBeNull();
   });
 
   it('/estimator/measure/m1 opens the measure window', async () => {

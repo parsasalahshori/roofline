@@ -62,8 +62,8 @@ test('estimator has no serious accessibility violations', async ({ page, loginAs
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/estimator');
-  await expect(page.getByRole('dialog', { name: 'Estimator' })).toBeVisible();
-  await expect(page.getByLabel('Address')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Measure' })).toBeVisible();
+  await expect(page.getByRole('searchbox', { name: 'Search name or address' })).toBeVisible();
   await scan(page);
 });
 
