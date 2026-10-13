@@ -1,0 +1,100 @@
+/* Today's numbers: a row of tiles, two to a row at 375px, one row of six when there is room. */
+.root {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tile[data-highlight="true"] {
+  border-color: var(--accent);
+  background: var(--hail-1);
+}
+
+.tile[data-status="true"] {
+  grid-column: 1 / -1;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  min-width: 0;
+}
+
+.label,
+.hint {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+.value {
+  margin: 0;
+  font-size: var(--font-size-stat);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.answering {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+/* The one dark button of the window: the presenter's Simulate a call */
+.simulate {
+  align-self: stretch;
+  background: var(--text);
+  color: var(--surface);
+}
+
+@media (min-width: 640px) {
+  .root {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tile[data-status="true"] {
+    grid-column: auto;
+  }
+}
+
+@media (min-width: 1000px) {
+  .root {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}

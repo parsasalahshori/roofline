@@ -1,25 +1,91 @@
-/* The Front Desk window: this week's numbers, the filter chips, then the list. Flex children get min-width: 0. */
+/* The Front Desk window: header, today's tiles, then the call list beside the selected call. Flex and grid children get min-width: 0. */
 .root {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
   padding: 4px 0 8px;
   color: var(--text);
   font-size: var(--font-size-body);
 }
 
-.filters {
+.header {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.listPane,
+.detailPane {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+
+.listPane {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.listHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.listTitle {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 700;
+}
+
+.listHint {
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tab {
+  gap: 6px;
+  padding: 0 12px;
+}
+
+.count {
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -30,7 +96,36 @@
   align-self: center;
 }
 
-.note {
+.note,
+.pick {
   margin: 0;
   color: var(--text-muted);
+}
+
+.back {
+  display: none;
+  align-self: flex-start;
+}
+
+/* A phone shows the list or the call, never both: choosing a row opens the call, "All calls" returns to the list */
+@media (max-width: 767.98px) {
+  .root[data-detail="open"] .listPane,
+  .root[data-detail="open"] .header {
+    display: none;
+  }
+
+  .root[data-detail="closed"] .detailPane {
+    display: none;
+  }
+
+  .back {
+    display: inline-flex;
+  }
+}
+
+@media (min-width: 768px) {
+  .split {
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    align-items: start;
+  }
 }

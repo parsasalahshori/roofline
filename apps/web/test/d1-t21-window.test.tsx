@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ConversationListItem, ConversationPage, FrontDeskWeekStats } from '@roofline/shared';
+import type { ConversationListItem, ConversationPage, FrontDeskDayStats } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { frontDeskInbox } from '../src/copy/front-desk-inbox.ts';
@@ -19,17 +19,16 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
 
 const MAP_STUB = { 'GET /api/company': () => ({ body: { ...COMPANY, timezone: 'America/Los_Angeles' } }) };
 
-const ZERO_STATS: FrontDeskWeekStats = {
-  weekStart: '2026-10-05',
-  answered: 0,
+const DAY_STATS: FrontDeskDayStats = {
+  day: '2026-10-12',
+  callsToday: 0,
+  answeredPct: null,
   booked: 0,
-  transferred: 0,
-  messages: 0,
-  spam: 0,
-  firstReplyMsP50: null,
-  guardBlocks: 0,
-  aiMinutesUsed: 0,
-  aiMinutesIncluded: null,
+  escalated: 0,
+  avgAnswerMs: null,
+  inspectionsBooked: 0,
+  afterHours: 0,
+  tabCounts: { all: 0, booked: 0, messages: 0, spam: 0 },
 };
 
 function row(overrides: Partial<ConversationListItem> & { id: string }): ConversationListItem {
@@ -68,7 +67,7 @@ function signedInApi(routes: Routes) {
     ...SHELL_ROUTES,
     ...MAP_STUB,
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
-    'GET /api/front-desk/stats': () => ({ body: ZERO_STATS }),
+    'GET /api/front-desk/stats?day=today': () => ({ body: DAY_STATS }),
     ...routes,
   });
   return api;
@@ -88,7 +87,7 @@ function renderApp(path: string) {
 
 /** The filter chip group; the list sits beside it. */
 async function filterGroup() {
-  return screen.findByRole('group', { name: frontDeskInbox.filtersLabel });
+  return screen.findByRole('group', { name: frontDeskInbox.lift.tabsLabel });
 }
 
 const DANA = row({
@@ -111,11 +110,11 @@ describe('Front Desk window (Task 21)', () => {
     expect(screen.getByText('No calls yet. Once forwarding is on, every call shows up here.')).toBeInTheDocument();
   });
 
-  it('shows the week stats to the owner', async () => {
+  it("shows today's tiles to the owner", async () => {
     signedInApi({ 'GET /api/conversations?filter=all': () => ({ body: page([]) }) });
     renderApp('/front-desk');
-    expect(await screen.findByText(frontDeskInbox.stats.title)).toBeInTheDocument();
-    await waitFor(() => expect(api.count('GET /api/front-desk/stats')).toBe(1));
+    expect(await screen.findByRole('region', { name: frontDeskInbox.lift.kpisLabel })).toBeInTheDocument();
+    await waitFor(() => expect(api.count('GET /api/front-desk/stats?day=today')).toBe(1));
   });
 
   it('never asks a field rep for the week stats (owner and office only)', async () => {
@@ -126,9 +125,9 @@ describe('Front Desk window (Task 21)', () => {
     renderApp('/front-desk');
     expect(await screen.findByText(frontDeskInbox.empty)).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(api.count('GET /api/front-desk/stats')).toBe(0);
-    expect(screen.queryByText(frontDeskInbox.stats.title)).toBeNull();
-    expect(screen.queryByText(frontDeskInbox.stats.loadError)).toBeNull();
+    expect(api.count('GET /api/front-desk/stats?day=today')).toBe(0);
+    expect(screen.queryByRole('region', { name: frontDeskInbox.lift.kpisLabel })).toBeNull();
+    expect(screen.queryByText(frontDeskInbox.lift.kpisError)).toBeNull();
   });
 
   it('renders name, outcome, unread badge, the link to the conversation, and the unknown caller', async () => {
@@ -137,7 +136,7 @@ describe('Front Desk window (Task 21)', () => {
 
     const dana = await screen.findByRole('link', { name: /Dana Ruiz/ });
     expect(dana).toHaveAttribute('href', '/front-desk/c-1');
-    expect(within(dana).getByText(frontDeskInbox.outcomes.booked)).toBeInTheDocument();
+    expect(within(dana).getByText(frontDeskInbox.lift.chips.booked)).toBeInTheDocument();
     expect(within(dana).getByRole('img', { name: frontDeskInbox.unread(2) })).toHaveTextContent('2');
     expect(within(dana).getByText(frontDeskInbox.urgent)).toBeInTheDocument();
     expect(within(dana).getByText(frontDeskInbox.needsAttention)).toBeInTheDocument();
@@ -146,27 +145,27 @@ describe('Front Desk window (Task 21)', () => {
     const unknown = screen.getByRole('link', { name: new RegExp(frontDeskInbox.unknownCaller) });
     expect(unknown).toHaveAttribute('href', '/front-desk/c-2');
     expect(within(unknown).queryByRole('img')).toBeNull();
+    expect(within(unknown).getByText(frontDeskInbox.lift.chips.message)).toBeInTheDocument();
   });
 
-  it('shows the filter chips, selects All by default, and asks for the chosen filter', async () => {
+  it('shows the four tabs, selects All by default, and asks for the chosen filter', async () => {
     signedInApi({
       'GET /api/conversations?filter=all': () => ({ body: page([DANA]) }),
       'GET /api/conversations?filter=booked': () => ({ body: page([row({ id: 'b-1', name: 'Lee Park', outcome: 'booked' })]) }),
     });
     const { user } = renderApp('/front-desk');
 
-    const group = await filterGroup();
-    expect(within(group).getAllByRole('button').map((chip) => chip.textContent)).toEqual(
-      ['all', 'needs_attention', 'booked', 'messages', 'spam'].map((filter) => frontDeskInbox.filters[filter as keyof typeof frontDeskInbox.filters]),
-    );
-    expect(within(group).getByRole('button', { name: frontDeskInbox.filters.all })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(group).getByRole('button', { name: frontDeskInbox.filters.booked })).toHaveAttribute('aria-pressed', 'false');
+    const group = await screen.findByRole('group', { name: frontDeskInbox.lift.tabsLabel });
+    const tabs = frontDeskInbox.lift.tabs;
+    expect(within(group).getAllByRole('button').map((chip) => chip.textContent)).toEqual([tabs.all, tabs.booked, tabs.messages, tabs.spam]);
+    expect(within(group).getByRole('button', { name: tabs.all })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(group).getByRole('button', { name: tabs.booked })).toHaveAttribute('aria-pressed', 'false');
 
-    await user.click(within(group).getByRole('button', { name: frontDeskInbox.filters.booked }));
+    await user.click(within(group).getByRole('button', { name: tabs.booked }));
 
     expect(await screen.findByRole('link', { name: /Lee Park/ })).toHaveAttribute('href', '/front-desk/b-1');
     expect(api.count('GET /api/conversations?filter=booked')).toBe(1);
-    expect(within(group).getByRole('button', { name: frontDeskInbox.filters.booked })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(group).getByRole('button', { name: tabs.booked })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('link', { name: /Dana Ruiz/ })).toBeNull();
   });
 
@@ -177,7 +176,7 @@ describe('Front Desk window (Task 21)', () => {
     });
     const { user } = renderApp('/front-desk');
     const group = await filterGroup();
-    await user.click(within(group).getByRole('button', { name: frontDeskInbox.filters.spam }));
+    await user.click(within(group).getByRole('button', { name: frontDeskInbox.lift.tabs.spam }));
     expect(await screen.findByText(frontDeskInbox.filterEmpty)).toBeInTheDocument();
   });
 

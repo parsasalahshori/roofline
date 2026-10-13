@@ -8,6 +8,7 @@ import type {
   ConversationOutcome,
   ConversationPage,
   ConversationStatus,
+  FrontDeskTabCounts,
   HandledBy,
   RecordingStatus,
   ToolActionCard,
@@ -140,6 +141,11 @@ export async function listConversationInbox(
     ctx,
     page.map((r) => r.id),
   );
+  const latest = await latestCallFacts(
+    tx,
+    ctx,
+    page.map((r) => r.id),
+  );
   const items: ConversationListItem[] = page.map((r) => ({
     id: r.id,
     channel: r.channel as ConversationChannel,
@@ -155,10 +161,63 @@ export async function listConversationInbox(
     urgent: r.urgent === true,
     lastMessageAt: r.lastMessageAt.toISOString(),
     liveCall: live.get(r.id) ?? null,
+    ...(latest.get(r.id) ?? { durationSeconds: null, transferredToName: null, textBackSent: false }),
   }));
   const last = page[page.length - 1];
   const nextCursor = rows.length > limit && last !== undefined ? encodeInboxCursor(last.cursorAt, last.id) : null;
   return { items, nextCursor };
+}
+
+type LatestCallFacts = { durationSeconds: number | null; transferredToName: string | null; textBackSent: boolean };
+
+/** What each listed conversation's calls say for its row: the latest call's length and transfer target, and whether any call was texted back. */
+async function latestCallFacts(tx: Tx, ctx: TenantContext, conversationIds: string[]): Promise<Map<string, LatestCallFacts>> {
+  const out = new Map<string, LatestCallFacts>();
+  if (conversationIds.length === 0) return out;
+  const rows = await tx
+    .select({
+      conversationId: calls.conversationId,
+      startedAt: calls.startedAt,
+      endedAt: calls.endedAt,
+      transferUserId: calls.transferUserId,
+      textBackMessageId: calls.textBackMessageId,
+    })
+    .from(calls)
+    .where(and(eq(calls.companyId, ctx.companyId), inArray(calls.conversationId, conversationIds)))
+    .orderBy(desc(calls.startedAt), desc(calls.id));
+  const names = await memberNames(
+    tx,
+    rows.map((c) => c.transferUserId).filter((u): u is string => u !== null),
+  );
+  for (const r of rows) {
+    if (r.conversationId === null) continue;
+    const seen = out.get(r.conversationId);
+    if (seen) {
+      // Rows come newest first: the first call fixes length and transfer target, any call may carry the text-back.
+      seen.textBackSent ||= r.textBackMessageId !== null;
+      continue;
+    }
+    out.set(r.conversationId, {
+      durationSeconds: r.endedAt === null ? null : Math.max(0, Math.round((r.endedAt.getTime() - r.startedAt.getTime()) / 1000)),
+      transferredToName: r.transferUserId === null ? null : (names.get(r.transferUserId) ?? null),
+      textBackSent: r.textBackMessageId !== null,
+    });
+  }
+  return out;
+}
+
+/** How many conversations each tab holds, over everything the member may see (the same filters the list uses). */
+export async function conversationTabCounts(tx: Tx, ctx: TenantContext, scope: InboxScope): Promise<FrontDeskTabCounts> {
+  const counts: FrontDeskTabCounts = { all: 0, booked: 0, messages: 0, spam: 0 };
+  for (const filter of ['all', 'booked', 'messages', 'spam'] as const) {
+    const [row] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(conversations)
+      .leftJoin(customers, and(eq(customers.companyId, conversations.companyId), eq(customers.id, conversations.customerId)))
+      .where(and(eq(conversations.companyId, ctx.companyId), visibleTo(ctx, scope), filterCondition(filter)));
+    counts[filter] = row?.n ?? 0;
+  }
+  return counts;
 }
 
 async function liveCallsOf(

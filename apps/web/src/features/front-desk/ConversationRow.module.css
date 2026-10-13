@@ -1,4 +1,4 @@
-/* One row of the Front Desk list. Flex children get min-width: 0 so long text ellipsizes at 375px. */
+/* One row of "Latest calls". Flex children get min-width: 0 so long text ellipsizes at 375px. */
 .item {
   display: flex;
   min-width: 0;
@@ -9,20 +9,50 @@
 .link {
   display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
   min-height: 40px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: var(--radius-card);
-  background: var(--surface);
+  background: transparent;
   color: var(--text);
   text-decoration: none;
+}
+
+.link[data-selected="true"] {
+  background: var(--surface-2);
 }
 
 .link:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 2px;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+.avatar[data-unknown="true"] {
+  background: var(--line);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .titleRow {
@@ -55,15 +85,28 @@
 
 .meta {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 8px;
   min-width: 0;
   color: var(--text-muted);
   font-size: var(--font-size-min);
 }
 
-.tag {
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.duration {
+  flex-shrink: 0;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.chip {
   display: inline-flex;
   align-items: center;
   min-height: 20px;
@@ -75,7 +118,16 @@
   white-space: nowrap;
 }
 
-.tag[data-tone="urgent"] {
+.chip[data-tone="good"] {
+  border-color: var(--success);
+}
+
+.chip[data-tone="warn"] {
+  border-color: var(--accent);
+  background: var(--hail-1);
+}
+
+.chip[data-tone="urgent"] {
   border-color: var(--danger-hover);
   background: var(--danger-hover);
   color: var(--on-danger);
@@ -115,13 +167,4 @@
   .dot {
     animation: none;
   }
-}
-
-.summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
-  font-size: var(--font-size-body);
 }
