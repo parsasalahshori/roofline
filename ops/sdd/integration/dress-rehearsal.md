@@ -465,3 +465,81 @@ Evidence from the run:
 ### New bugs
 
 None.
+
+## Launch head run (ff772d5c)
+
+Base: `ops-rehearsal` 8c9c7fe7 = the final rehearsal + `launch-integration` ff772d5c, the launch head (CI 38328403131
+green). It adds the a11y storm-detail fix, the demo BUG-7 fix, E1's signed-pdf helper fix, A1's
+paused-mid-ring voicemail fix, G1's plan-expiry fix (Ruling BL) and C1's phone top-bar fix. `npm ci` was clean,
+`npm ls playwright-core` shows only 1.56.1, the web build succeeded, and Docker was restarted with the postgis image
+present.
+
+**Verdict: PASS.** Rehearsal 15/15; full e2e suite 124/124; all three spot checks pass; no new bugs.
+
+### Spec changes (no product change)
+
+- BUG-7 is removed from `KNOWN_CONSOLE`, which is now empty, so any console error fails a test.
+- Journey g's setup moved into `addG1Candidates()` and its run list into `G1_RUNS`, so spot check l can reuse them.
+- New helpers in `rehearsal-helpers.ts`: `makeItEvening()` (puts the company in a zone where it is 21:00-22:59 now)
+  and an exported `nextSid()`.
+- New tests j, k, l (the spot checks below).
+
+### Rehearsal: 15 passed (6.3 min)
+
+| Journey | Desktop | Phone |
+|---|---|---|
+| a. Sign up, Setup, six apps from the dock | pass | covered by phone.spec |
+| b. CRM: customer → job → links, board; no home-map banner | pass | pass |
+| c. Estimator: measure → send → homeowner signs → Won | pass | pass (to Sent) |
+| d. Storm: swath drawn → draft plan → approve → results | pass | pass (to the review) |
+| e1. Front Desk text, live update, reply | pass | pass |
+| e2. Front Desk call: linked, transcript, summary | pass | — |
+| f. Agents: tasks and minutes saved | pass | pass |
+| g. Claims, Scheduler, Follow-up fire once; labels; minutes | pass | pass (G1 pages) |
+| h. Front Desk follow-up once on Waiting = card count | pass | — |
+| i. Claims reply answered once, Front Desk still on | pass | — |
+| j. Spot check: Front Desk paused mid-ring → voicemail | pass | — |
+| k. Spot check: GET /api/demo with demo off | pass | — |
+| l. Spot check: G1 Run now after 18:00 local | pass | — |
+
+### Console, 5xx and "coming soon"
+
+No console errors at all, with an empty allowlist. No uncaught page errors and no 5xx responses. No "coming soon" on any
+visited screen, desktop or phone.
+
+### Full existing e2e suite: 124 passed, 0 failed (15.2 min)
+
+The 124 tests include the 15 rehearsal tests, so the existing specs are 109/109. Per spec: a11y 30 (storm detail now
+passes in the full run), agents-settings 4, agents 9, approvals 4, billing 2, calendar 2, crm 6, estimator 2,
+front-desk 11, homeowner 1, import 1, more-agents 3, public-forms 2, setup 3, shell 6, signup 1, storm 2, today 3;
+phone: doors 2, phone 15.
+
+### Spot checks
+
+**a. Paused mid-ring → voicemail: PASS (test j).**
+- Setup: Front Desk on with ring-first 15 s, and the owner on the on-call list with a transfer phone (DB).
+- A signed call to `/hooks/twilio/voice` answers `<Dial … mode=ring_first>` with no `<ConversationRelay>`.
+- The owner then pauses Front Desk on `/agents/front-desk` (UI switch, then the "Pause this agent?" sheet).
+- The signed `/hooks/twilio/voice-transfer/after-dial?mode=ring_first` arrives with `DialCallStatus=no-answer`.
+- It answers `<Response><Say>Please leave a message after the tone.</Say><Record maxLength="120"
+  playBeep="true"/><Hangup/></Response>`: no `<Connect>`, no relay.
+- Call row `{"conversation_id":null,"status":"ringing_team"}`; 0 conversations for the caller; 0 turns.
+- The fix is `isAgentPaused(tx, ctx, 'front_desk')` in `twilio-voice-transfer.ts` after-dial.
+
+**b. GET /api/demo with demo mode off: PASS (test k).**
+- Signed out, `GET /api/demo` → `200 {"demo":false}`.
+- During signed-in full page loads, both `/api/demo` responses were 200.
+- No console error on any page in the whole run, with the BUG-7 allowlist entry removed.
+
+**c. G1 Run now after 18:00 local: PASS (test l).**
+- The company was put in `America/Anguilla`, 21:19 local, which is after both expiry hours (18:00 for Claims and
+  Follow-up, 21:00 for Scheduler).
+- Each agent was turned on and run from its page.
+- Each plan was created `draft` with expiry 2026-10-13T04:00Z, the local midnight, about 2 h 40 min ahead
+  (planExpiresAt, Ruling BL as amended). That held for `claims_nudges` (created 01:19:29Z), `reminders` (01:19:41Z)
+  and `follow_ups` (01:19:51Z).
+- Each was approved from Waiting and every step reached Done.
+
+### New bugs
+
+None.

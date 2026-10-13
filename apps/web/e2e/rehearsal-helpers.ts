@@ -55,8 +55,7 @@ export function watchBrowser(context: BrowserContext): BrowserTrouble {
  */
 export const KNOWN_CONSOLE: { id: string; pattern: RegExp }[] = [
   // BUG-1 (S1 hail match labels) and BUG-2 (C1 calendar sync 404) are fixed in pass 16 and removed from here.
-  // demo-mode: the shell asks GET /api/demo once per session; with DEMO_MODE off it is an ordinary 404, logged as an error.
-  { id: 'BUG-7 (demo-mode) /api/demo 404 when demo mode is off', pattern: /404 \(Not Found\) @ .*\/api\/demo$/ },
+  // BUG-7 (demo-mode /api/demo 404) is fixed in the launch head (ff772d5c) and removed from here.
 ];
 
 /** Screens whose "coming soon" lines are a known gap (path pattern -> finding id). */
@@ -211,6 +210,18 @@ export async function setUpFrontDesk(db: pg.Client, companyId: string): Promise<
   return token;
 }
 
+/** Puts the company and its homes where it is 21:00 to 22:59 now (after every G1 plan's expiry hour: 18 and 21). */
+export async function makeItEvening(db: pg.Client): Promise<string> {
+  const hourIn = (zone: string) =>
+    Number(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
+  const zones = Intl.supportedValuesOf('timeZone').filter((z) => /^(America|Europe|Asia|Australia|Pacific|Africa|Atlantic)\//.test(z));
+  const zone = zones.find((z) => hourIn(z) >= 21 && hourIn(z) <= 22);
+  if (zone === undefined) throw new Error('No time zone is at 21:00-22:59 now.');
+  await db.query('update companies set timezone = $1', [zone]);
+  await db.query('update properties set timezone = $1', [zone]);
+  return zone;
+}
+
 /** Twilio's X-Twilio-Signature: HMAC-SHA1 of the URL followed by each sorted field name and value, base64. */
 export function twilioSignature(token: string, url: string, fields: Record<string, string>): string {
   const data = Object.keys(fields)
@@ -229,7 +240,8 @@ export async function postTwilio(request: APIRequestContext, token: string, path
 }
 
 let sidCounter = Date.now() % 1_000_000;
-function nextSid(prefix: 'SM' | 'CA'): string {
+/** A fresh Twilio-shaped id (SM or CA and 32 hex digits). */
+export function nextSid(prefix: 'SM' | 'CA'): string {
   sidCounter += 1;
   return prefix + sidCounter.toString(16).padStart(32, '0');
 }

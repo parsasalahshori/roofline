@@ -21,6 +21,10 @@ import {
   drawnShare,
   expectCleanBrowser,
   makeItDaytime,
+  makeItEvening,
+  nextSid,
+  postTwilio,
+  ACME_NUMBER,
   setUpFrontDesk,
   signInViaUi,
   simulateInboundCall,
@@ -421,23 +425,14 @@ async function approveFromWaiting(page: Page, taskId: string): Promise<void> {
   });
 }
 
-test('g. Claims, Scheduler and Follow-up each fire once and show their tasks', async ({ page, db, scenario }) => {
-  test.setTimeout(240_000);
-  const companyId = scenario.a.companyId;
-  await makeItDaytime(db);
-  await signInViaUi(page, OWNER);
+const G1_RUNS = [
+  { slug: 'claims', title: 'Claims', agent: 'claims', kind: 'claims_nudges', run: agentsCopy.runNowLabels.claims! },
+  { slug: 'scheduler', title: 'Scheduler', agent: 'scheduler', kind: 'reminders', run: agentsCopy.runNowLabels.scheduler! },
+  { slug: 'follow-up', title: 'Follow-up', agent: 'follow_up', kind: 'follow_ups', run: agentsCopy.runNowLabels.follow_up! },
+] as const;
 
-  // The three cards are real agents now: paused, with Turn on, and not "Coming soon"
-  await openFromDock(page, WINDOW_COPY.agents.title);
-  const grid = page.getByRole('region', { name: 'Your agents' });
-  await expect(grid).toBeVisible({ timeout: 15_000 });
-  const cardOf = (name: string) => grid.locator('a', { has: page.getByRole('heading', { name, exact: true }) });
-  for (const name of ['Claims', 'Scheduler', 'Follow-up']) {
-    await expect(cardOf(name)).toContainText(agentsWindow.status.paused, { timeout: 15_000 });
-    await expect(cardOf(name)).not.toContainText(agentsWindow.status.coming_soon);
-  }
-  await checkScreen(page, screens);
-
+/** The three G1 agents' work, made in the UI (time moved in the DB): a Filed claim, a visit tomorrow, an old lead. */
+async function addG1Candidates(page: Page, db: pg.Client, companyId: string): Promise<void> {
   // --- Claims: a job with a claim the owner marked Filed (UI); the claim was filed 6 days ago (DB: no UI for time) ---
   const claimJob = await addCustomerAndJob(page, { first: 'Cora', last: 'Claimant' }, '4025550161', { ...HOME, street: '400 Claim Ct' });
   await page.getByRole('button', { name: claimsCopy.addDetails, exact: true }).click();
@@ -476,13 +471,29 @@ test('g. Claims, Scheduler and Follow-up each fire once and show their tasks', a
     `update jobs set created_at = now() - interval '10 days', stage_changed_at = now() - interval '10 days', updated_at = now() - interval '10 days' where id = $1`,
     [leadJob.jobId],
   );
+}
+
+test('g. Claims, Scheduler and Follow-up each fire once and show their tasks', async ({ page, db, scenario }) => {
+  test.setTimeout(240_000);
+  const companyId = scenario.a.companyId;
+  await makeItDaytime(db);
+  await signInViaUi(page, OWNER);
+
+  // The three cards are real agents now: paused, with Turn on, and not "Coming soon"
+  await openFromDock(page, WINDOW_COPY.agents.title);
+  const grid = page.getByRole('region', { name: 'Your agents' });
+  await expect(grid).toBeVisible({ timeout: 15_000 });
+  const cardOf = (name: string) => grid.locator('a', { has: page.getByRole('heading', { name, exact: true }) });
+  for (const name of ['Claims', 'Scheduler', 'Follow-up']) {
+    await expect(cardOf(name)).toContainText(agentsWindow.status.paused, { timeout: 15_000 });
+    await expect(cardOf(name)).not.toContainText(agentsWindow.status.coming_soon);
+  }
+  await checkScreen(page, screens);
+
+  await addG1Candidates(page, db, companyId);
 
   // Each agent: Turn on, Run now, its plan appears in Waiting, the owner approves it, the texts go out
-  const runs = [
-    { slug: 'claims', title: 'Claims', agent: 'claims', kind: 'claims_nudges', run: agentsCopy.runNowLabels.claims! },
-    { slug: 'scheduler', title: 'Scheduler', agent: 'scheduler', kind: 'reminders', run: agentsCopy.runNowLabels.scheduler! },
-    { slug: 'follow-up', title: 'Follow-up', agent: 'follow_up', kind: 'follow_ups', run: agentsCopy.runNowLabels.follow_up! },
-  ] as const;
+  const runs = G1_RUNS;
   const tasks: Record<string, string> = {};
   for (const r of runs) {
     await turnOnAndRun(page, r.slug, r.title, r.run);
@@ -664,4 +675,110 @@ test('i. Claims reply: the homeowner answers a check-in and gets exactly one ans
       { timeout: 90_000, intervals: [2_000] },
     )
     .toBe(2);
+});
+
+// --- Launch head spot checks (ff772d5c) ---
+
+test('j. Front Desk paused while the team rings: the unanswered call goes to voicemail, no AI', async ({ page, db, scenario }) => {
+  test.setTimeout(120_000);
+  const companyId = scenario.a.companyId;
+  const token = await setUpFrontDesk(db, companyId);
+  // Ring my team first for 15 s; the owner is on the on-call list with a transfer phone (Settings needs a verified
+  // phone and the recording acknowledgement, so the list is set in the DB)
+  await db.query(`update company_settings set ring_team_first_seconds = 15 where company_id = $1`, [companyId]);
+  await db.query(
+    `update memberships set transfer_phone_e164 = '+14025550111', on_call_order = 1 where company_id = $1 and user_id = $2`,
+    [companyId, scenario.a.owner.userId],
+  );
+  await signInViaUi(page, OWNER);
+
+  // A call arrives: the team rings first, no relay yet
+  const caller = '+14025550179';
+  const callSid = nextSid('CA');
+  const voice = await postTwilio(page.request, token, '/hooks/twilio/voice', { CallSid: callSid, From: caller, To: ACME_NUMBER });
+  expect(voice.status()).toBe(200);
+  const first = await voice.text();
+  expect(first).toContain('mode=ring_first');
+  expect(first).not.toContain('<ConversationRelay');
+
+  // While it rings, the owner pauses Front Desk on its agent page (UI)
+  await page.goto('/agents/front-desk');
+  const pause = page.getByRole('switch', { name: 'Paused' });
+  await expect(pause).toBeVisible({ timeout: 15_000 });
+  await checkScreen(page, screens);
+  await pause.click();
+  const sheet = page.getByRole('dialog', { name: agentsCopy.pauseTitle });
+  await sheet.getByRole('button', { name: agentsCopy.pauseConfirm, exact: true }).click();
+  await expect(pause).toHaveAttribute('aria-checked', 'true', { timeout: 15_000 });
+
+  // Nobody picked up: Twilio posts the Dial result
+  const afterDial = await postTwilio(page.request, token, '/hooks/twilio/voice-transfer/after-dial?mode=ring_first', {
+    CallSid: callSid,
+    From: caller,
+    To: ACME_NUMBER,
+    DialCallStatus: 'no-answer',
+  });
+  expect(afterDial.status()).toBe(200);
+  const twiml = await afterDial.text();
+  test.info().annotations.push({ type: 'evidence', description: `after-dial TwiML: ${twiml}` });
+  expect(twiml).toContain('<Record');
+  expect(twiml).not.toContain('<ConversationRelay');
+  expect(twiml).not.toContain('<Connect');
+
+  // No AI conversation and no turns for the call
+  const call = await db.query<{ id: string; conversation_id: string | null; status: string }>(`select id, conversation_id, status from calls where call_sid = $1`, [callSid]);
+  const convs = await db.query(`select 1 from conversations where company_id = $1 and phone_e164 = $2`, [companyId, caller]);
+  const turns = await db.query(`select 1 from conversation_turns where call_id = $1`, [call.rows[0]!.id]);
+  test.info().annotations.push({ type: 'evidence', description: `call row: ${JSON.stringify(call.rows[0])}; conversations ${convs.rowCount}; turns ${turns.rowCount}` });
+  expect(call.rows[0]!.conversation_id).toBeNull();
+  expect(convs.rowCount).toBe(0);
+  expect(turns.rowCount).toBe(0);
+});
+
+test('k. GET /api/demo answers { demo: false } with demo mode off, with no 404 on a page load', async ({ page, playwright }) => {
+  const anon = await playwright.request.newContext({ baseURL: readStack().baseUrl });
+  try {
+    const res = await anon.get('/api/demo');
+    test.info().annotations.push({ type: 'evidence', description: `signed out GET /api/demo: ${res.status()} ${await res.text()}` });
+    expect(res.status()).toBe(200);
+    expect(await res.json()).toEqual({ demo: false });
+  } finally {
+    await anon.dispose();
+  }
+  const seen: number[] = [];
+  page.on('response', (r) => {
+    if (new URL(r.url()).pathname === '/api/demo') seen.push(r.status());
+  });
+  await signInViaUi(page, OWNER);
+  await page.goto('/agents');
+  await page.waitForLoadState('networkidle');
+  test.info().annotations.push({ type: 'evidence', description: `GET /api/demo during full page loads: ${JSON.stringify(seen)}` });
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen.every((s) => s === 200)).toBe(true);
+  // The afterEach check fails on any console error: BUG-7's allowlist entry is gone.
+});
+
+test('l. G1 Run now in the evening: plans are not born expired and approve to Done', async ({ page, db, scenario }) => {
+  test.setTimeout(240_000);
+  const companyId = scenario.a.companyId;
+  const zone = await makeItEvening(db);
+  await signInViaUi(page, OWNER);
+  await addG1Candidates(page, db, companyId);
+  for (const r of G1_RUNS) {
+    await turnOnAndRun(page, r.slug, r.title, r.run);
+    const taskId = await newestTask(db, companyId, r.agent, r.kind);
+    const row = await db.query<{ status: string; expires_at: Date; created_at: Date; local_now: string }>(
+      `select t.status, t.expires_at, t.created_at, to_char(now() at time zone c.timezone, 'HH24:MI') as local_now
+         from agent_tasks t join companies c on c.id = t.company_id where t.id = $1`,
+      [taskId],
+    );
+    const t = row.rows[0]!;
+    test.info().annotations.push({
+      type: 'evidence',
+      description: `${r.agent} in ${zone} at ${t.local_now}: status ${t.status}, created ${t.created_at.toISOString()}, expires ${t.expires_at.toISOString()}`,
+    });
+    expect(t.status).toBe('draft');
+    expect(t.expires_at.getTime()).toBeGreaterThan(Date.now() + 60 * 60_000);
+    await approveFromWaiting(page, taskId);
+  }
 });
