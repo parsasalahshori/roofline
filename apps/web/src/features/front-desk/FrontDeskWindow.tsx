@@ -5,6 +5,7 @@ import { Button, EmptyState, Skeleton } from '@roofline/ui';
 import { useMe } from '../../api/hooks.ts';
 import { frontDeskInbox } from '../../copy/front-desk-inbox.ts';
 import { ConversationRow } from './ConversationRow.tsx';
+import { useMarkReadOnOpen } from './conversation-api.ts';
 import { flattenItems, useConversations, useDayStats } from './inbox-api.ts';
 import { CallDetail } from './lift/CallDetail.tsx';
 import { KpiTiles } from './lift/KpiTiles.tsx';
@@ -21,6 +22,7 @@ const TABS = ['all', 'booked', 'messages', 'spam'] as const satisfies readonly C
  */
 export function FrontDeskWindow() {
   const { conversationId } = useParams();
+  useMarkReadOnOpen(conversationId ?? '');
   const [filter, setFilter] = useState<(typeof TABS)[number]>('all');
   const conversations = useConversations(filter);
   // Today's numbers are for the owner and the office (the server refuses a rep), so a rep never asks.

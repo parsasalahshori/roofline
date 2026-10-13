@@ -1,4 +1,5 @@
 import type { ConversationDetail, HandlingInput, ReplyInput, ReplyResult } from '@roofline/shared';
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api/client.ts';
 import { IDLE_POLL_MS, LIVE_POLL_MS } from './inbox-api.ts';
@@ -47,6 +48,17 @@ export function useMarkRead(id: string) {
     mutationFn: () => apiFetch<unknown>(`/api/conversations/${id}/read`, { method: 'POST', body: {} }),
     onSuccess: () => invalidateInbox(queryClient),
   });
+}
+
+/** Sends the read receipt once for each conversation that opens, even when the effect runs twice (StrictMode). */
+export function useMarkReadOnOpen(id: string) {
+  const { mutate } = useMarkRead(id);
+  const markedId = useRef<string | null>(null);
+  useEffect(() => {
+    if (id === '' || markedId.current === id) return;
+    markedId.current = id;
+    mutate();
+  }, [id, mutate]);
 }
 
 /**
