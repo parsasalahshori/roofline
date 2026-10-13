@@ -152,6 +152,24 @@ describe('buildRoofModel', () => {
     expect(count(m!, 'valley')).toBeGreaterThanOrEqual(1);
   });
 
+  it('roofs real Omaha footprints (L, T, turned 45 degrees) with valleys, covering each within 3%', () => {
+    // Building outlines (c) Microsoft Global ML Building Footprints, ODbL 1.0 (the demo's Omaha seed data).
+    const real: Ring[] = [
+      [[-95.9419521, 41.2753846], [-95.9419543, 41.2755055], [-95.942075, 41.2755043], [-95.9420739, 41.2754458], [-95.9421049, 41.2754455], [-95.9421037, 41.275383], [-95.9419521, 41.2753846]],
+      [[-95.9398981, 41.2748272], [-95.9401422, 41.2748292], [-95.9401434, 41.2747466], [-95.9400415, 41.2747457], [-95.9400422, 41.2747045], [-95.9399363, 41.2747036], [-95.9399357, 41.2747448], [-95.9398994, 41.2747445], [-95.9398981, 41.2748272]],
+      [[-96.0268323, 41.173195], [-96.026889, 41.1732416], [-96.0269585, 41.1731938], [-96.0267962, 41.1730603], [-96.0266794, 41.1731407], [-96.0267849, 41.1732276], [-96.0268323, 41.173195]],
+      [[-96.1258365, 41.3009413], [-96.1258378, 41.3008809], [-96.1257118, 41.3008794], [-96.1257089, 41.3010144], [-96.1259165, 41.3010168], [-96.1259181, 41.3009423], [-96.1258365, 41.3009413]],
+    ];
+    for (const r of real) {
+      const m = buildRoofModel(r, { pitchX12: 5 })!;
+      expect(m).not.toBeNull();
+      const area = polygonAreaSqFt(r);
+      expect(Math.abs(facetRingArea(m) - area) / area).toBeLessThan(0.03);
+      expect(count(m, 'valley')).toBeGreaterThanOrEqual(1);
+      for (const f of m.facets) expect(polygonAreaSqFt(f.ring)).toBeGreaterThan(5);
+    }
+  });
+
   it('falls back to one gable for a shape that is not rectilinear', () => {
     const oct = ring([[0, 0], [10, -4], [20, 0], [24, 10], [20, 20], [10, 24], [0, 20], [-4, 10]]);
     const m = buildRoofModel(oct, { pitchX12: 5 })!;
