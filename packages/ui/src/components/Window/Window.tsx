@@ -26,6 +26,8 @@ export type WindowProps = {
   iconColor?: string;
   /** The window's children draw their own header: the title stays for screen readers and only the close button shows, over the corner. */
   bare?: boolean;
+  /** Floating only: fills the screen between the top bar and the dock with a 20px margin, for a window with columns. */
+  wide?: boolean;
 };
 
 /**
@@ -49,6 +51,7 @@ export function Window({
   iconBackground,
   iconColor,
   bare = false,
+  wide = false,
 }: WindowProps) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -67,6 +70,7 @@ export function Window({
         className={styles.window}
         data-variant={variant}
         data-bare={bare ? 'true' : undefined}
+        data-wide={wide ? 'true' : undefined}
       >
         <div className={styles.titleBar}>
           {icon ? (

@@ -1,14 +1,13 @@
-/* The Measure window frame, matched to the reference app. Tokens fall back to its values. */
+/* The Measure window, matched to the reference app: a 50px header, then requests | roof | proposal. */
 .window {
   display: flex;
   flex-direction: column;
-  /* Fill the app window, so the header stays put and the columns below scroll on their own */
   height: 100%;
   min-height: 0;
   min-width: 0;
   max-width: 100%;
-  background: var(--ds-bg, #fdf9f3);
-  color: var(--ds-text-1, #2b2620);
+  background: var(--ds-bg, #f6f7f8);
+  color: var(--ds-text-1, #151c22);
   font-family: var(--ds-font, var(--font));
   font-size: 13px;
 }
@@ -18,114 +17,102 @@
   flex: none;
   align-items: center;
   gap: 12px;
-  padding: 14px 56px 14px 20px;
-  border-bottom: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+  height: 50px;
+  padding: 0 56px 0 16px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--line, #dde2e6);
+  background: rgba(255, 255, 255, 0.7);
 }
 
-/* The app's amber tile in front of the title */
+/* The app's yellow tile in front of the title */
 .appIcon {
-  display: inline-flex;
+  display: inline-grid;
   flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--ds-accent, #f5b324);
-  color: var(--ds-accent-ink, #2b2620);
-  box-shadow: var(--ds-shadow, 0 2px 6px rgba(43, 30, 0, 0.18));
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7.28px;
+  background: var(--lift-tile-estimator, linear-gradient(160deg, #ffd24d, #f0b000));
+  color: var(--ds-text-1, #151c22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(0, 0, 0, 0.18), 0 1px 2px rgba(21, 28, 34, 0.25);
 }
 
 .heading {
+  flex: none;
   margin: 0;
-  font-family: var(--ds-font-display, var(--ds-font, var(--font)));
-  font-size: 22px;
+  font-size: 16px;
+  font-stretch: 125%;
   font-weight: 700;
-  letter-spacing: -0.01em;
 }
 
-.heading {
-  flex: none;
-}
-
-/* Phone: no room for the subtitle beside the title and the list button */
 .subtitle {
-  display: none;
-  flex: 1;
   min-width: 0;
-  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
-  font-size: 14px;
-}
-
-.listToggle {
-  flex: 1 1 auto;
-  min-height: 40px;
-  min-width: 0;
-  align-self: center;
-  margin-left: auto;
+  overflow: hidden;
+  color: var(--ds-text-label, #505b64);
   font-size: 13px;
-  line-height: 1.2;
-  white-space: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .body {
   position: relative;
   display: flex;
   flex: 1 1 auto;
-  flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
 
-/* Phone: the requests list is a drawer over the content */
 .list {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: min(320px, 85%);
-  transform: translateX(-100%);
-  visibility: hidden;
-  transition: transform 0.2s ease, visibility 0.2s;
-  border-right: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
-  box-shadow: var(--ds-shadow, var(--shadow-window));
-}
-
-.list[data-open="true"] {
-  transform: none;
-  visibility: visible;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 280px;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--line, #dde2e6);
+  background: var(--ds-surface, #fff);
 }
 
 .main {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 12px;
   min-width: 0;
   min-height: 0;
-  padding: 12px;
+  padding: 0 12px 12px;
   box-sizing: border-box;
-  overflow-y: auto;
 }
 
-.stage {
+.proposal {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
+  flex: none;
+  min-height: 0;
+  animation: slideIn 0.25s ease-out;
 }
 
-.stats {
-  min-width: 0;
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .loading {
   margin: 16px;
-  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
+  color: var(--ds-text-label, #505b64);
 }
 
-/* The controls that change the estimate. They live inside the stats card, so they are flat. */
+/* The phone's numbered steps; hidden on a desktop, where all three columns show */
+.steps {
+  display: none;
+}
+
+/* The controls that change the estimate. They live inside the measure card under Adjust, so they are flat. */
 .panel {
   display: flex;
   flex-direction: column;
@@ -135,7 +122,7 @@
 
 .title {
   margin: 0;
-  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
+  color: var(--ds-text-label, #505b64);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -156,16 +143,16 @@
   justify-content: center;
   gap: 4px;
   padding: 0 6px;
-  border: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
-  border-radius: var(--ds-r-ctl, 10px);
-  background: var(--ds-surface, #fffdf8);
+  border: 1px solid var(--line, #dde2e6);
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-surface, #fff);
   font-size: 12px;
 }
 
 .pitch[data-state="on"] {
-  background: var(--ds-accent, #f5b324);
-  color: var(--ds-accent-ink, #2b2620);
-  border-color: var(--ds-accent, #f5b324);
+  background: var(--ds-accent, #ffc21a);
+  color: var(--ds-text-1, #151c22);
+  border-color: var(--ds-accent, #ffc21a);
 }
 
 .diagram {
@@ -185,12 +172,12 @@
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+  border-bottom: 1px solid var(--line, #dde2e6);
   padding-bottom: 6px;
 }
 
 .row dt {
-  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
+  color: var(--ds-text-label, #505b64);
 }
 
 .row dd {
@@ -210,76 +197,130 @@
   min-height: 40px;
 }
 
+/* The big yellow Send proposal (and Request report) button */
+.send {
+  width: 100%;
+  min-height: 44px;
+  gap: 8px;
+  border-radius: var(--ds-r-ctl, 9px);
+  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.55);
+  font-size: 15px;
+}
+
 .waiting {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border-radius: var(--ds-r-ctl, 10px);
-  background: var(--ds-surface-2, #f6f1e6);
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-surface-2, #eceff1);
 }
 
-@media (min-width: 900px) {
-  .listToggle {
-    display: none;
+/* Nothing open: one quiet card in the middle */
+.pick {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+}
+
+/* Phone and narrow windows: one step at a time, chosen with the numbered steps under the header */
+@media (max-width: 899.98px) {
+  .header {
+    height: 56px;
+    padding-left: 16px;
+  }
+
+  .appIcon {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+  }
+
+  .heading {
+    font-size: 20px;
   }
 
   .subtitle {
-    display: block;
+    display: none;
+  }
+
+  .steps {
+    display: grid;
+    flex: none;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    margin: 10px 12px;
+    padding: 4px;
+    border-radius: 14px;
+    background: var(--ds-surface-2, #eceff1);
+  }
+
+  .step {
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 11px;
+    color: var(--ds-text-label, #505b64);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .step[data-selected="true"] {
+    background: var(--ds-surface, #fff);
+    color: var(--ds-text-1, #151c22);
+    box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 2px 6px rgba(21, 28, 34, 0.1);
+  }
+
+  .stepNumber {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--ds-surface, #fff);
+    box-shadow: inset 0 0 0 1.5px var(--ds-fill, #c3cbd1);
+    color: var(--ds-text-2, #3a444d);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .step[data-selected="true"] .stepNumber {
+    background: var(--ds-info, #2f6fde);
+    box-shadow: none;
+    color: #fff;
   }
 
   .body {
-    flex-direction: row;
-    align-items: stretch;
+    border-top: 1px solid var(--line, #dde2e6);
+  }
+
+  .list,
+  .main,
+  .proposal {
+    display: none;
+    width: 100%;
+  }
+
+  .window[data-step="requests"] .list,
+  .window[data-step="roof"] .main,
+  .window[data-step="proposal"] .proposal {
+    display: flex;
   }
 
   .list {
-    position: static;
-    flex: none;
-    min-height: 0;
-    overflow: hidden;
-    width: 280px;
-    transform: none;
-    visibility: visible;
-    transition: none;
-    box-shadow: none;
+    border-right: 0;
   }
 
-  /* The roof stage keeps its own height (the map fills it); the list on the left scrolls separately */
   .main {
-    overflow-y: auto;
-  }
-
-  .stage {
-    position: relative;
-    flex: 1 1 auto;
-    min-height: 0;
-  }
-
-  /* The numbers card floats over the bottom-left corner of the roof view */
-  .stats {
-    position: absolute;
-    left: 16px;
-    bottom: 16px;
-    width: 420px;
-    max-width: calc(100% - 32px);
-    /* Leaves the strip, the tools and the imagery chip at the top of the stage clear */
-    max-height: calc(100% - 190px);
-    overflow-y: auto;
-    border-radius: var(--ds-r-card, 14px);
+    padding: 0 8px 8px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .list {
-    transition: none;
+  .proposal {
+    animation: none;
   }
-}
-
-/* Nothing open: one quiet card in the middle of the right side */
-.pick {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 320px;
 }

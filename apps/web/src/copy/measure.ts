@@ -30,7 +30,7 @@ export const measure = {
   customerName: 'Name',
   customerPhone: 'Phone',
   customerAskedByText: 'They asked for this proposal by text',
-  makeProposal: 'Make proposal',
+  makeProposal: 'Send proposal',
   waitingForOk: 'Waiting for your OK',
   exactFailed: 'We could not ask for the report.',
   saveFailed: 'We could not save that change.',
@@ -81,5 +81,6 @@ export const measure = {
   },
   ownerLabel: 'Owner',
   roofAge: (years: number) => `${years} year old roof`,
-  hailSize: (inches: number) => `${inches} in. hail size`,
+  hailSize: (inches: number) => `${inches} in. hail on record`,
+  whoAndTown: (name: string | null, town: string) => (name === null ? town : `${name}, ${town}`),
 } as const;

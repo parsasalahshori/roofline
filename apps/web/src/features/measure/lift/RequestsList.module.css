@@ -1,18 +1,32 @@
-/* The requests column of the Measure window, matched to the reference app. Tokens fall back to its values. */
+/* The requests column of the Measure window, matched to the reference app (280px, white). */
 .root {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  width: 100%;
   min-width: 0;
-  min-height: 0;
-  padding: 16px 12px 12px 16px;
-  box-sizing: border-box;
   height: 100%;
-  overflow-y: auto;
-  background: var(--ds-surface, #fffdf8);
-  color: var(--ds-text-1, #2b2620);
+  min-height: 0;
+  box-sizing: border-box;
+  background: var(--ds-surface, #fff);
+  color: var(--ds-text-1, #151c22);
   font-family: var(--ds-font, var(--font));
   font-size: 13px;
+}
+
+.top {
+  flex: none;
+  padding: 16px 16px 12px;
+}
+
+.scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 8px 12px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 .head {
@@ -25,22 +39,25 @@
 .title {
   margin: 0;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.3;
 }
 
 .subtitle {
-  margin: -8px 0 0;
-  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
-  font-size: 12px;
-  line-height: 1.35;
+  margin: 2px 0 0;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12.5px;
+  line-height: 1.4;
 }
 
 .count {
-  padding: 1px 8px;
-  border-radius: var(--ds-r-chip, 999px);
-  background: var(--ds-surface-2, #f6f1e6);
-  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--ds-surface-2, #eceff1);
+  color: var(--ds-text-2, #3a444d);
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -49,40 +66,48 @@
 /* The search field: a soft box with a magnifier in front of the text */
 .search {
   position: relative;
+  margin-top: 12px;
 }
 
 .search input {
   box-sizing: border-box;
   width: 100%;
-  min-height: 40px;
-  padding-left: 36px;
-  border: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
-  border-radius: var(--ds-r-ctl, 10px);
-  background: var(--ds-surface-2, #f6f1e6);
-  color: var(--ds-text-1, #2b2620);
+  height: 36px;
+  min-height: 36px;
+  padding-left: 32px;
+  border: 0;
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-bg, #f6f7f8);
+  box-shadow: inset 0 0 0 1px var(--ds-fill, #c3cbd1);
+  color: var(--ds-text-1, #151c22);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
+}
+
+.search input:focus {
+  box-shadow: inset 0 0 0 1.5px var(--ds-info, #2f6fde);
 }
 
 .search input::placeholder {
-  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
+  color: var(--ds-text-label, #505b64);
 }
 
 .glass {
   position: absolute;
   z-index: 1;
-  left: 12px;
+  left: 10px;
   top: 50%;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   transform: translateY(-50%);
-  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
+  color: var(--ds-text-label, #505b64);
   pointer-events: none;
 }
 
 .note {
   margin: 0;
-  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
+  padding: 0 8px;
+  color: var(--ds-text-label, #505b64);
 }
 
 .list {
@@ -98,13 +123,13 @@
   position: relative;
 }
 
-/* A small link to the proposal's own page, over the row's bottom edge between the material and the squares */
+/* A small link to the proposal's own page, between the material and the squares */
 .proposal {
   position: absolute;
   z-index: 1;
-  right: 68px;
-  bottom: 9px;
-  color: var(--ds-info, #2563eb);
+  right: 64px;
+  bottom: 10px;
+  color: var(--ds-info-ink, #1f55b3);
   font-size: 12px;
   font-weight: 500;
   text-decoration: underline;
@@ -121,20 +146,20 @@
     "material squares";
   align-items: center;
   column-gap: 8px;
-  row-gap: 3px;
-  min-height: 40px;
-  padding: 10px 12px;
-  border-radius: var(--ds-r-ctl, 10px);
+  row-gap: 2px;
+  padding: 10px 12px 10px 14px;
+  border-radius: 12px;
   color: inherit;
   text-decoration: none;
 }
 
 .row:hover {
-  background: var(--ds-surface-2, #f6f1e6);
+  background: var(--ds-bg, #f6f7f8);
 }
 
 .row[data-selected="true"] {
-  background: var(--ds-info-tint, #e8f0fc);
+  background: var(--ds-info-tint, #e3ecfb);
+  box-shadow: inset 0 0 0 1px rgba(47, 111, 222, 0.4);
 }
 
 .row[data-selected="true"]::before {
@@ -144,27 +169,25 @@
   top: 10px;
   bottom: 10px;
   width: 3px;
-  border-radius: 3px;
-  background: var(--ds-info, #2563eb);
+  border-radius: 999px;
+  background: var(--ds-info, #2f6fde);
 }
 
 .name {
   grid-area: name;
-  font-size: 13px;
-  font-weight: 700;
   overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .row[data-selected="true"] .name {
-  color: var(--ds-info, #2563eb);
+  color: var(--ds-info-ink, #1f55b3);
 }
 
 .address,
 .material {
-  color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
-  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -172,38 +195,41 @@
 
 .address {
   grid-area: address;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12.5px;
 }
 
 .material {
   grid-area: material;
-  color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
+  margin-top: 2px;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
 }
 
 /* The status chip is quiet in the reference: a soft grey pill whatever the status */
 .chip {
   grid-area: chip;
   justify-self: end;
-  padding: 1px 8px;
-  border: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
-  border-radius: var(--ds-r-chip, 999px);
-  background: var(--ds-surface-2, #f6f1e6);
-  color: var(--ds-text-1, #2b2620);
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ds-surface-2, #eceff1);
+  color: var(--ds-text-2, #3a444d);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
-}
-
-.row[data-selected="true"] .chip {
-  background: var(--ds-surface, #fffdf8);
 }
 
 .squares {
   grid-area: squares;
   justify-self: end;
+  margin-top: 2px;
+  color: var(--ds-text-2, #3a444d);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--ds-text-1, #2b2620);
 }
 
 /* "Measure a new roof at <address>": shown when a typed address matches no request */
@@ -211,7 +237,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 4px 2px;
+  padding: 4px 8px;
 }
 
 .newRoofButton {
@@ -219,4 +245,24 @@
   min-height: 40px;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 899.98px) {
+  .row {
+    padding: 12px 14px;
+  }
+
+  .name {
+    font-size: 15px;
+  }
+
+  .address {
+    font-size: 14px;
+  }
+
+  .material,
+  .squares,
+  .chip {
+    font-size: 13px;
+  }
 }

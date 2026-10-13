@@ -1,40 +1,38 @@
 import { measure } from '../../../copy/measure.ts';
+import type { MeasurementPreview } from '../types.ts';
 import { useRequestRows } from './requests.ts';
 import styles from './PropertyStrip.module.css';
 
-/** What the strip can show. Anything not known is left out. */
-export type PropertyFacts = {
-  address: string;
-  owner: string;
-  material: string | null;
-  roofAgeYears: number;
-  hailSizeIn: number;
-};
+const RECOMMENDED_TIER = 'better';
 
-/** The header strip over the roof: address, owner and chips, for the open measurement when a request knows it. */
-export function PropertyStrip({ measurementId, facts }: { measurementId: string; facts?: Partial<PropertyFacts> }) {
+/**
+ * The strip over the roof: the address, the proposal number when the home has one, the customer and town, and
+ * chips for the roof material and the largest hail on record. What nothing stores (roof age) is left out.
+ */
+export function PropertyStrip({ measurementId, preview }: { measurementId: string; preview?: MeasurementPreview | undefined }) {
   const { rows } = useRequestRows('');
   const row = rows.find((r) => r.measurementId === measurementId);
-  const address = facts?.address ?? row?.address;
+  const address = preview?.addressLine ?? row?.address;
   if (address === undefined) return null;
-  const owner = facts?.owner ?? row?.name;
-  const material = facts?.material ?? row?.material ?? null;
+  const name = preview?.customerName ?? row?.name ?? null;
+  const town = preview?.city ?? '';
+  const better = preview?.options?.find((o) => o.tier === RECOMMENDED_TIER) ?? preview?.options?.[0];
+  const material = row?.material ?? (better ? measure.materials[better.material] : null);
+  const hail = preview?.hailIn ?? null;
   return (
-    <div className={styles.strip}>
+    <div className={styles.strip} data-measure-strip="">
       <div className={styles.who}>
-        <strong className={styles.address}>{address}</strong>
-        {owner !== undefined ? (
-          <span className={styles.owner}>
-            {measure.ownerLabel}: {owner}
-          </span>
-        ) : null}
+        <div className={styles.addressRow}>
+          <h3 className={styles.address}>{address}</h3>
+          {row?.number !== undefined ? <span className={styles.number}>{row.number}</span> : null}
+        </div>
+        {name !== null || town !== '' ? <p className={styles.owner}>{measure.whoAndTown(name, town)}</p> : null}
       </div>
       <div className={styles.chips}>
         {material !== null ? <span className={styles.chip}>{material}</span> : null}
-        {facts?.roofAgeYears !== undefined ? <span className={styles.chip}>{measure.roofAge(facts.roofAgeYears)}</span> : null}
-        {facts?.hailSizeIn !== undefined ? (
+        {hail !== null && hail > 0 ? (
           <span className={styles.chip} data-tone="hail">
-            {measure.hailSize(facts.hailSizeIn)}
+            {measure.hailSize(hail)}
           </span>
         ) : null}
       </div>

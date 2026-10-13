@@ -204,7 +204,13 @@ export const APPROVALS_JSON_BODY_LIMIT = '1mb';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /** Where the map's tiles, glyphs and sprites come from (MapTiler, or OpenStreetMap's own tile server). */
-const MAP_HOSTS = ['https://api.maptiler.com', 'https://tile.openstreetmap.org'] as const;
+// The aerial photo (Measure) and its capture-date lookup come from the two arcgisonline hosts
+const MAP_HOSTS = [
+  'https://api.maptiler.com',
+  'https://tile.openstreetmap.org',
+  'https://server.arcgisonline.com',
+  'https://services.arcgisonline.com',
+] as const;
 
 /**
  * The Content-Security-Policy for the web app, which the API serves (web.ts) and whose JSON

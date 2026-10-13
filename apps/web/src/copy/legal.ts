@@ -4,6 +4,8 @@ export const legal = {
   mapAttribution: '© OpenStreetMap contributors',
   /** On the map, wherever building outlines are drawn. */
   footprintAttribution: 'Building outlines © Microsoft, ODbL',
+  /** On the map, wherever the aerial photo is drawn. */
+  imageryAttribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
   terms: 'Terms',
   privacy: 'Privacy',
 } as const;

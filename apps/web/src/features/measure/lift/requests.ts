@@ -11,6 +11,8 @@ export type RequestRow = {
   measurementId: string;
   /** The proposal behind the row; its own page stays reachable from the list once it is out or signed. */
   proposalId: string;
+  /** The proposal number (P-0004), shown beside the address. */
+  number: string;
   name: string;
   address: string;
   /** Roof material, when the proposal's first option says. */
@@ -32,6 +34,7 @@ export function toRow(p: ProposalView): RequestRow {
   return {
     measurementId: p.measurementId,
     proposalId: p.id,
+    number: p.number,
     name: p.customer.name,
     address: p.address,
     material: option ? measure.materials[option.scope.material] : null,

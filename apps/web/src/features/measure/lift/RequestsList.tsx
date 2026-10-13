@@ -32,6 +32,7 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
 
   return (
     <section className={styles.root} aria-labelledby="measure-requests-title">
+      <div className={styles.top}>
       <header className={styles.head}>
         <h2 id="measure-requests-title" className={styles.title}>
           {measure.requestsTitle}
@@ -59,6 +60,8 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
           onChange={(event) => setText(event.currentTarget.value)}
         />
       </div>
+      </div>
+      <div className={styles.scroll}>
       {list.isError && rows.length === 0 ? (
         <p className={styles.note} role="alert">
           {measure.requestsFailed}
@@ -118,6 +121,7 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
           {measure.requestsShowMore}
         </Button>
       ) : null}
+      </div>
     </section>
   );
 }

@@ -23,6 +23,14 @@
   box-shadow: var(--shadow-window);
 }
 
+/* Wide: between the top bar and the dock, 20px from each side (the Measure window's three columns) */
+.window[data-variant="floating"][data-wide="true"] {
+  inset: calc(var(--lift-bar-h, 34px) + 8px) 20px 92px;
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
 .window[data-variant="page"] {
   /* The phone shell sets --shell-bottom-inset to the height of its bottom tab bar, so the window stops above it */
   bottom: var(--shell-bottom-inset, 0px);
