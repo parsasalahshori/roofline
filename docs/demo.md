@@ -33,6 +33,17 @@ about a minute. It installs only what is missing: Homebrew, Docker Desktop, git,
 `fnm`, from the repository's `.nvmrc`). It does not use `sudo` itself and does not change your shell
 profile. The code goes into `~/roofline-demo`.
 
+### A frozen demo build
+
+For a specific, frozen demo branch (for example `demo-oct13`), name it twice in the one line:
+
+```sh
+ROOFLINE_DEMO_BRANCH=demo-oct13 bash -c "$(curl -fsSL https://raw.githubusercontent.com/parsasalahshori/roofline/demo-oct13/scripts/demo-mac.sh)"
+```
+
+If `~/roofline-demo` already exists on another branch, the script switches it to the frozen branch and starts
+from fresh demo data (`npm run demo:reset`). From a clone: `git checkout demo-oct13 && npm ci && npm run demo:reset`.
+
 ## Step by step (if you prefer)
 
 1. Install **Docker Desktop**: https://www.docker.com/products/docker-desktop/ (pick Apple Silicon or

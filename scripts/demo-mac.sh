@@ -5,6 +5,8 @@
 #   bash scripts/demo-mac.sh            (from a clone of the repository)
 #   bash -c "$(curl -fsSL https://raw.githubusercontent.com/parsasalahshori/roofline/demo-mode/scripts/demo-mac.sh)"
 #                                       (from nothing: clones into ~/roofline-demo first)
+#   ROOFLINE_DEMO_BRANCH=demo-oct13 bash -c "$(curl -fsSL https://raw.githubusercontent.com/parsasalahshori/roofline/demo-oct13/scripts/demo-mac.sh)"
+#                                       (a frozen demo branch; switching branches reseeds fresh demo data)
 #
 # What it may install: Homebrew (the official installer), Docker Desktop (brew cask), git, and
 # fnm (a Node version manager) with the Node version pinned in .nvmrc. It never uses sudo itself;
@@ -23,6 +25,7 @@ REPO_URL="https://github.com/parsasalahshori/roofline.git"
 BRANCH="${ROOFLINE_DEMO_BRANCH:-demo-mode}"
 CLONE_DIR="${ROOFLINE_DEMO_DIR:-$HOME/roofline-demo}"
 REPO_ROOT=""
+DEMO_SCRIPT="demo"
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "$(dirname "${BASH_SOURCE[0]}")/../docker-compose.demo.yml" ]]; then
   REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
@@ -53,6 +56,8 @@ fi
 if [[ -z "$REPO_ROOT" ]]; then
   if [[ -d "$CLONE_DIR/.git" ]]; then
     say "Updating the code in $CLONE_DIR"
+    # Switching to another demo branch (ROOFLINE_DEMO_BRANCH) starts from fresh demo data, seeded by that branch.
+    if [[ "$(git -C "$CLONE_DIR" rev-parse --abbrev-ref HEAD)" != "$BRANCH" ]]; then DEMO_SCRIPT="demo:reset"; fi
     git -C "$CLONE_DIR" fetch origin "$BRANCH"
     git -C "$CLONE_DIR" checkout "$BRANCH"
     git -C "$CLONE_DIR" merge --ff-only "origin/$BRANCH" || echo "(Local changes in $CLONE_DIR: keeping them.)"
@@ -99,4 +104,4 @@ say "Installing the app's packages (npm ci, from the lockfile)"
 npm ci --no-audit --no-fund
 
 say "Starting the demo. Your browser opens when it is ready; press Ctrl+C here to stop it."
-DEMO_OPEN=1 npm run demo
+DEMO_OPEN=1 npm run "$DEMO_SCRIPT"
