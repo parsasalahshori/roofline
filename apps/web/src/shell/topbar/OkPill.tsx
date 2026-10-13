@@ -16,7 +16,7 @@ export function OkPill() {
   return (
     <UiLink href={href} className={styles.pill}>
       <span className={styles.dot} aria-hidden="true" />
-      {shell.needYourOk(drafts.length)}
+      <span className={styles.label}>{shell.needYourOk(drafts.length)}</span>
     </UiLink>
   );
 }
