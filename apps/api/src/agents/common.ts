@@ -1,4 +1,4 @@
-import { type TenantContext, zoneDayStart } from '@roofline/db';
+import { type TenantContext, zoneDayAfter, zoneDayStart } from '@roofline/db';
 import { claimsGuard, guardSentence } from '@roofline/shared';
 import { localParts } from './schedule.ts';
 
@@ -17,6 +17,20 @@ export function localTimeToday(today: string, hour: number, timeZone: string): D
   const seen = localParts(new Date(t), timeZone).hour;
   t += (hour - seen) * 3_600_000;
   return new Date(t);
+}
+
+/** The least time a plan made after its expiry hour stays open (Ruling BL as amended). */
+const LATE_PLAN_MIN_MS = 2 * 3_600_000;
+
+/**
+ * When a plan made at `now` on company-local day `today` expires (Ruling BL as amended): `hour`:00 that day
+ * while it is still ahead; at or after it (a Run now in the evening), the end of the local day or two hours
+ * from now, whichever is later, so a plan is never born expired.
+ */
+export function planExpiresAt(today: string, hour: number, timeZone: string, now: Date): Date {
+  const at = localTimeToday(today, hour, timeZone);
+  if (at.getTime() > now.getTime()) return at;
+  return new Date(Math.max(zoneDayStart(zoneDayAfter(today), timeZone).getTime(), now.getTime() + LATE_PLAN_MIN_MS));
 }
 
 /** Trimmed, non-empty, at most maxChars, every sentence clean under guardSentence, and claimsGuard ok. */

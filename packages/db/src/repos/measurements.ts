@@ -1,8 +1,8 @@
-import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { instantEstimate, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type Ring } from '@roofline/shared';
 import { jobs, measurements, properties, proposals } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
-import { getProperty } from './properties.ts';
+import { getProperty, type PropertyRow } from './properties.ts';
 import { jobScope, propertyScope } from './scope.ts';
 
 /** The centre of the United States: the map opens here when a measurement has no address point and no outline. */
@@ -154,6 +154,32 @@ export async function footprintsNear(
   });
 }
 
+/** One footprint of the global table by id (the bigserial written as a string), or null. Open ring, like footprintsNear. */
+export async function footprintById(tx: Tx, id: string): Promise<{ id: string; ring: Ring; areaSqFt: number } | null> {
+  if (!/^\d{1,19}$/.test(id)) return null;
+  const result = await tx.execute(sql`
+    select id::text as id, ST_AsGeoJSON(geom) as geojson, area_sq_ft::float8 as area_sq_ft
+      from building_footprints
+     where id = ${id}::bigint`);
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const geojson = JSON.parse(String(row.geojson)) as { coordinates: [number, number][][] };
+  return { id: String(row.id), ring: openRing(geojson.coordinates[0] as Ring), areaSqFt: Number(row.area_sq_ft) };
+}
+
+/** The company's saved, not archived home on this footprint that the caller may see (the oldest), or null. */
+export async function propertyOnFootprint(tx: Tx, ctx: TenantContext, footprintId: string): Promise<PropertyRow | null> {
+  const [row] = await tx
+    .select()
+    .from(properties)
+    .where(
+      and(eq(properties.companyId, ctx.companyId), eq(properties.footprintId, footprintId), isNull(properties.archivedAt), propertyScope(ctx)),
+    )
+    .orderBy(asc(properties.createdAt), asc(properties.id))
+    .limit(1);
+  return row ?? null;
+}
+
 /** Whether a proposal for this measurement has been sent (spec §7): a locked measurement cannot change. A draft or ready proposal does not lock it. */
 export async function isMeasurementLocked(tx: Tx, ctx: TenantContext, id: string): Promise<boolean> {
   const [found] = await tx
@@ -220,6 +246,7 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
       row: measurements,
       outlineGeoJson: sql<string | null>`ST_AsGeoJSON(${measurements.outline})`,
       propertyGeom: properties.geom,
+      propertyCustomerId: properties.customerId,
     })
     .from(measurements)
     .innerJoin(
@@ -259,6 +286,7 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
     notes: row.notes ?? null,
     createdAt: row.createdAt.toISOString(),
     drawMode: outline === null,
+    hasCustomer: row.jobId !== null || found.propertyCustomerId !== null,
   };
 }
 

@@ -1,5 +1,5 @@
 import type { Config } from '../config.ts';
-import { FakeGeocoder } from './fakes/geocoder.ts';
+import { DemoGeocoder, FakeGeocoder } from './fakes/geocoder.ts';
 import { geocodioFor } from './geocodio.ts';
 
 export type GeocodeResult = { lng: number; lat: number; street: string | null; city: string | null; state: string | null; zip: string | null;
@@ -28,8 +28,9 @@ export class UnconfiguredGeocoder implements Geocoder {
   }
 }
 
-/** The geocoder the app uses: the fake under FAKE_PROVIDERS, else the real one when configured. */
+/** The geocoder the app uses: the demo one in DEMO_MODE, the fake under FAKE_PROVIDERS, else the real one when configured. */
 export function createGeocoder(config: Config): Geocoder {
+  if (config.DEMO_MODE) return new DemoGeocoder();
   if (config.FAKE_PROVIDERS) return new FakeGeocoder();
   return geocodioFor(config) ?? new UnconfiguredGeocoder();
 }

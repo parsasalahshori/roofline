@@ -121,6 +121,18 @@ describe('lead follow-ups', () => {
     expect(tasks[0]!.expiresAt?.toISOString()).toBe('2026-10-13T23:00:00.000Z');
   });
 
+  test('a Run now after 6 PM local makes a plan that is still open (it expires at the end of the local day)', async () => {
+    t.clock.set(new Date('2026-10-13T23:30:00.000Z')); // 6:30 PM Chicago
+    const lead = await seedJob({ createdDaysAgo: 2 });
+    scriptGood([lead.jobId]);
+    await run();
+
+    const tasks = await tasksOf('follow_ups');
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.expiresAt?.toISOString()).toBe('2026-10-14T05:00:00.000Z');
+    expect(tasks[0]!.expiresAt!.getTime()).toBeGreaterThan(t.clock.now().getTime());
+  });
+
   test('a lead with an assigned rep is offered times when the rep is free', async () => {
     const lead = await seedJob({ createdDaysAgo: 2, assigned: true });
     const repId = t.seed.a.owner.userId;

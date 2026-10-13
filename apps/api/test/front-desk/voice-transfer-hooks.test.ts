@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { calls, companyPhoneNumbers, companySettings, conversations, conversationTurns, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
+import { agentSettings, calls, companyPhoneNumbers, companySettings, conversations, conversationTurns, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
 
 /*
@@ -374,5 +374,19 @@ describe('POST /hooks/twilio/voice-transfer/after-dial', () => {
     expect(res.text).toContain('<ConversationRelay');
     expect(res.text).toContain('welcomeGreetingInterruptible="none"');
     expect(res.text).not.toContain('message_only');
+  });
+  test('after-dial ring-first no answer while Front Desk is paused goes to voicemail, never the AI (A1)', async () => {
+    await seedCall();
+    await withTenant(t.deps.pools, ctxOf('a'), async (tx) => {
+      await tx.update(companySettings).set({ frontDeskEnabled: true }).where(eq(companySettings.companyId, idOf('a')));
+      // Paused while the team was ringing.
+      await tx.insert(agentSettings).values({ companyId: idOf('a'), agent: 'front_desk', pausedAt: new Date() });
+    });
+    const res = await post(`${PREFIX}/after-dial?mode=ring_first`, dialFields('no-answer'));
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<Record maxLength="120" playBeep="true"/>');
+    expect(res.text).not.toContain('<ConversationRelay');
+    // Not made relay-bound: no relay slot is held for it.
+    expect((await callRow()).status).not.toBe('ringing');
   });
 });

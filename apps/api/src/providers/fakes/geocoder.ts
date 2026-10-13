@@ -103,3 +103,32 @@ export class FakeGeocoder implements Geocoder {
     );
   }
 }
+
+/** Fictional street names for the demo's Omaha neighbourhoods (no real address is ever produced on purpose). */
+const DEMO_STREETS: readonly string[] = [
+  'Ridgeview Dr', 'Prairie Wind Ln', 'Summit Oak Ct', 'Hailstone Ave', 'Copper Ridge Rd', 'Bluestem Cir',
+  'Meadowlark Way', 'Cottonwood Pl', 'Harvest Hill Dr', 'Shingle Creek Rd', 'Gable Point Ln', 'Windbreak St',
+];
+
+const DEMO_ZIPS: readonly string[] = ['68114', '68124', '68130', '68144', '68154', '68164'];
+
+/**
+ * The demo's geocoder (DEMO_MODE): the fake geocoder, except that a reverse lookup answers a plausible, fictional
+ * Omaha address for the point (`4217 Prairie Wind Ln, Omaha, NE 68144`), the same one every time for the same
+ * spot (rounded to about a metre), so clicking a roof on the demo map reads like a real house. No network.
+ */
+export class DemoGeocoder extends FakeGeocoder {
+  override async reverseMany(
+    points: { lat: number; lng: number }[],
+  ): Promise<({ street: string; city: string; state: string; zip: string } | null)[]> {
+    this.calls.push({ method: 'reverseMany', args: [points] });
+    return points.map((p) => {
+      if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng) || p.lat < 0) return null;
+      const h = fnv1a(`${p.lat.toFixed(5)},${p.lng.toFixed(5)}`);
+      const number = 1000 + (h % 8900);
+      const street = DEMO_STREETS[Math.floor(h / 8900) % DEMO_STREETS.length]!;
+      const zip = DEMO_ZIPS[Math.floor(h / 97) % DEMO_ZIPS.length]!;
+      return { street: `${number} ${street}`, city: 'Omaha', state: 'NE', zip };
+    });
+  }
+}

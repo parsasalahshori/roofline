@@ -1944,3 +1944,116 @@ for (let attempt = 1; ; attempt++) {
 ```
 Not applied in the
 probe: a third fix run is over this pass's limit. The controller decides whether the probe takes it in the D1 delta pass.
+
+## Pass 16 (final)
+
+Base: pass 15 head e00bb6d2. `git fetch origin` 21:16Z: every head matched the request. c1-crm 0dee2b99, s1-storm 5983bdd9,
+launch-g1fix and g1-d1fix were already in the probe. The pass became the launch candidate mid-way (controller): RC-1 was a
+hard blocker, launch-normalize had to run in write mode, and every job had to be green. Merged in order with `git merge --no-ff`:
+
+| Track | Head merged | Merge commit | Conflicts |
+|---|---|---|---|
+| e1-estimator | aefd56e5f14904aafc079ae80acf8a75afa6e161 | 3d14715d | - (ledger only) |
+| d1-front-desk | b2c4a971bafeea39d519f5614d6fa41393081682 | 7d462843 | 3 files (RC-4, rev-l, rev-m) |
+| a1-agents | 49454e262ca4f766ceae0b4beb4ebb6bac958501 | a917e2f9 | - (ledger only) |
+| g1-agents | ba3bb1fe9330e8496abb431749e8f6ef4a4acd6c | f8f6911f | - (ledger only) |
+| launch-a1fix | b40a411fe5b19fc804f4e39417ade8b324799f35 | 147b2cd3 | 1 file (CI 38302297789 green) |
+| demo-mode | d657b2edce70a349f2d7f156ef1aad911fa2777b | b89373ff | 1 file (CI 38303233078 green) |
+| d1-front-desk (RC-1) | f2c0e8b8d86e929144ac7d790648747e3bd0e69e | c60967a4 | 6 files (RC-1/RC-1b, problems 9 and 11) |
+| c1-crm | 64d4f08b (32d6dea8 truncateWithRetry; CI 38311917024 green) | bb23b03e | 1 file |
+
+Probe-only commits: 497a4a89 (resetDb 40P01 retry, problem 14; superseded by C1's file in bb23b03e) and e93267b9 (unused
+`countLiveAiCalls` deleted, problem 8). launch-normalize in write mode found nothing to change, so it made no commit.
+
+### Conflict resolutions
+
+d1-front-desk b2c4a971:
+- `hooks/twilio-voice.ts`: D1's `ringFirst` (only when there are numbers to ring) with A1's paused check kept:
+  `!aiAllowed || paused || overCompanyCap || ringFirst`.
+- `hooks/twilio-voice-transfer.ts`: D1's `decided` transaction (the urgency comes from `hasUrgentNoticeFor` too) with A1's
+  model_failure marker kept after it (`decided.callId`); imports are the union.
+- `voice-transfer-hooks.test.ts`: D1's import line (it adds `companySettings`).
+
+launch-a1fix: `repos-conversations-turns.test.ts` imports are the union (the probe's `listIdleSmsConversationIds` plus A1's
+`recordModelFailureHandoff`). A1's turns.ts lock merged clean.
+
+demo-mode d657b2ed: `demo/simulate.ts` is demo-mode's (it carries the status 'ended' fix itself, which closes problem 13).
+
+d1-front-desk f2c0e8b8 (RC-1/RC-1b):
+- `repos/turns.ts`: kept A1's `recordModelFailureHandoff` with its conversation lock. It no longer passes `position`
+  (RC-1's `insertTurn` allocates it under the same lock), so the `max` import is gone.
+- `repos/fd-texts.ts`: D1's person-only filter (`fd-reply:` counts; any `fd-*` and claims acks do not), using G1's exported
+  `CLAIMS_ACK_PREFIX`, which stays exported (G1's `claims/replies.ts` imports it).
+- `front-desk/texts.ts`: D1's RC-1b handoff object, `setConversationHandling`, unknown-texter customer and activity, with
+  A1's `isAgentPaused`, `recordTextTask` and a `modelFailure` flag. `recordModelFailureHandoff` runs inside D1's transaction
+  right after `setConversationHandling`. Imports are the union, minus an unused `TenantContext` (lint).
+- `providers/llm.ts`: the import union (G1 `ClaimStatus`, D1 `RouterIntent`). `texts.test.ts`: both imports.
+- `eval-front-desk.test.ts`: D1's (it now carries the four R2 settings; probe 1884f179 is gone). `billing/read-only.ts`
+  auto-merged: D1's single `turnsFrontDeskOff` with the probe's `/public/` early pass kept.
+
+c1-crm 64d4f08b: `packages/db/src/testing/reset.ts` is C1's (`truncateWithRetry`, the same 5-attempt 100 ms x attempt
+policy, with its own test `packages/db/test/reset-retry.test.ts`). There is one helper; the probe copy is gone.
+
+g1-agents: per G1, the probe's rule-facts.ts, run-now.ts, metrics.ts, AgentsTab.tsx, AgentPage.tsx and more-agents.spec.ts
+stay. The ba3bb1fe merge touched only G1's ledger, so all six are unchanged from pass 15.
+
+### Invariants
+
+- Ruling BD (final): `allowFinished: true` only in `routes/approvals.ts` (rerun) and `routes/storms.ts` (POST /plan).
+  `fresh: !previousWasDraft`. One REDRAFTABLE pair in `packages/db/src/repos/storm-plans.ts`. StormDetail keeps
+  "Draft a new plan".
+- Rulings AP/AW/BF: 25 journal entries in order with `when` increasing; 25 snapshots chained; `drizzle-kit generate`: no
+  changes. Migration SQL equals each owner's head (0017/0018 s1-storm, 0019/0020 d1-front-desk f2c0e8b8, 0021/0022
+  a1-agents, 0023/0024 g1-agents). One `GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers`.
+  `ops/bin/launch-normalize` (write) and `--check`: PASSED, nothing to change.
+- Ruling BJ: app_system on calls is `GRANT SELECT (id, company_id, call_sid, status)` only (0020).
+- Ruling AV: STOP/HELP/START, S1 `onStormFormYes`/`onStormReply`, G1 `onClaimsReply`, then D1 `queueFrontDeskText`.
+
+### Items: status
+
+Closed this pass:
+- Problem 7 (A1 duplicate 0020 grant): a1-agents' 0020 now has one copy and the probe has D1's file.
+- Problem 8: the paused fold-in is in the probe's twilio-voice.ts (kept through D1's `ringFirst` rewrite).
+  `countLiveAiCalls` was deleted in the probe (e93267b9).
+- Problem 9 (D1 read-only duplicate check): closed by D1 da597734.
+- Problem 11 (eval-front-desk R2 env): closed by D1 da597734.
+- Problem 13 (demo simulateCall 'ended'): closed by demo-mode d657b2ed.
+- Problem 14 (resetDb 40P01): closed by C1 32d6dea8 (`truncateWithRetry`), taken in bb23b03e.
+- RC-1 and RC-1b (launch blocker): in d1-front-desk f2c0e8b8, merged. A1's model-failure lock composes with insertTurn's.
+
+Still open (probe-only, follow-ups after launch, owners named):
+- Problems 2, 3, 10 and pass-14 problem 6 (G1 x A1): run-now.ts, metrics.ts, rule-facts.ts, AgentsTab.tsx, AgentPage.tsx,
+  e2e agents.spec.ts and more-agents.spec.ts remain probe-only (a1-agents 8-24 lines off, g1-agents 3-168 lines off).
+  Owner G1 (A1 for agents.spec.ts).
+- Problem 8 remainder (A1): a1-agents' twilio-voice.ts must take D1's hook with `paused` re-added as the probe has it, now
+  including D1's `ringFirst`. `countLiveAiCalls` is still defined on d1-front-desk (D1 deletes it).
+- Item 1 (D1): d1-front-desk still has 17 journal entries, its 0019/0020 are chained from 0014, and its snapshots lack S1's tables.
+- Item 2 (Ruling BA): the a1-dock, a1-settings, a1-routes and g1-turn-on tests still differ from both heads.
+- Probe resolutions that each owner takes at its next merge: twilio-voice-transfer.ts (A1 marker after D1's `decided`),
+  texts.ts (A1 `modelFailure` inside D1's handoff transaction), turns.ts (A1's function without `position`) and fd-texts.ts
+  (`CLAIMS_ACK_PREFIX` stays exported). Owners A1 and D1.
+- s1-storm 4e5954ee (a11y heading wait) and demo-mode 4f6ab800 (BUG-7) were not merged: their CI had not finished when
+  bb23b03e was pushed.
+
+### New problems
+
+15. **CI Platform pace (owner: platform / C1 lead).** Platform on c60967a4 (job 115018483090) was cancelled at 47.5 min.
+   It had not hung: its longest log gap was 86 s and api files kept finishing. 183 of 270 api files had run; db had not
+   started. DB-bound api files took a median 1.98x their pass-15 time (2.85x d1 f2c0e8b's). web, shared and ui took the
+   same time as before. Nothing changed since pass 15 that touches generic suites (team.test, customers.test). Most
+   likely a slow runner, but this is not confirmed. If it repeats, the 60-minute Platform timeout will fail the launch head.
+   Fix if it recurs: raise the Platform `timeout-minutes`, or split the api and db test steps.
+
+### Checks
+
+`npm ci` clean (no lockfile change); `npm ls playwright-core` only 1.56.1. Through `ops/bin/slot` on c60967a4: typecheck
+pass, lint pass, lint:css pass. Vitest: @roofline/web 1370 pass (146 files), @roofline/ui 172 (7), @roofline/shared 1407
+(43), @roofline/send-gate 532 (5).
+
+### CI (pass 16)
+
+- Run 38310296935 on e93267b9 (pre-RC-1): v1, Hail and Demo DB success. Cancelled by the next push, and its Platform and
+  E2E did not finish.
+- Run 38311516567 on c60967a4: E2E success (the resetDb retry held; no 40P01), v1, Hail and Demo DB success. Platform
+  was cancelled at 47.5 min by the c1 push after the controller judged it hung (new problem 15).
+- Run 38316317374 on bb23b03e: v1 and Demo DB success; Platform, E2E and Hail were in progress at hand-back (22:27Z).

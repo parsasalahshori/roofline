@@ -1,5 +1,5 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Button } from '@roofline/ui';
+import { Button, useToast } from '@roofline/ui';
 import { Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { UNSAFE_LocationContext } from 'react-router';
@@ -7,6 +7,7 @@ import { useMapArea, useMapPins } from '../../api/hooks.ts';
 import type { PinsResult } from '../../api/types.ts';
 import { mapCopy } from '../../copy/map.ts';
 import { storm as stormCopy } from '../../copy/storm.ts';
+import { type BuildingAt, useBuildingAt, useEstimateFromFootprint } from '../../features/estimator/api.ts';
 import { useStormLayer } from '../../features/storm/layerApi.ts';
 import type { StormLayerResponse } from '../../features/storm/layerTypes.ts';
 import { HailLegend } from './HailLegend.tsx';
@@ -14,13 +15,26 @@ import { bindMapInteractions } from './interactions.ts';
 import { emptyMapData, installMapLayers, updateMapData, type MapData } from './layers.ts';
 import { mapStyle, satelliteAvailable } from './mapStyle.ts';
 import { PinCard } from './PinCard.tsx';
+import { setRoofHighlight } from './roofLayer.ts';
+import { RoofCard } from './RoofCard.tsx';
 import { applyStormData, setStormVisible } from './stormLayer.ts';
 import { needsClientClustering, normalizeBbox, toFeatureCollections } from './pins.ts';
 import type { Bbox } from '../../api/types.ts';
+import type { Geometry } from 'geojson';
 import type { MapEnv, MapMode, PickedPin, PinTarget } from './types.ts';
 import styles from './MapView.module.css';
 
-export type MapViewProps = { onOpen: (target: PinTarget) => void };
+export type MapViewProps = {
+  onOpen: (target: PinTarget) => void;
+  /**
+   * Opens the measure window for a measurement started from a roof. Given only for owner and office (the shell
+   * decides); without it, a click on the map never looks for a roof.
+   */
+  onEstimate?: (measurementId: string) => void;
+};
+
+/** A roof picked on the map: the building under the click, and where the click was. */
+type PickedRoof = BuildingAt & { lat: number; lng: number };
 
 const US_CENTER: [number, number] = [-96.5, 39.5];
 const US_ZOOM = 3.5;
@@ -58,7 +72,7 @@ function summarize(result: PinsResult | undefined): string {
  * The map home: a full-screen MapLibre map at the bottom layer, with customer and job pins. The
  * instance lives in a ref, not in state, so moving the map never re-renders the page.
  */
-export function MapView({ onOpen }: MapViewProps) {
+export function MapView({ onOpen, onEstimate }: MapViewProps) {
   const mapRef = useRef<MapLibreMap | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   // False from the moment a style is swapped until its style.load arrives: the sources are gone until then.
@@ -75,6 +89,14 @@ export function MapView({ onOpen }: MapViewProps) {
   const stormRef = useRef<StormLayerResponse | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [picked, setPicked] = useState<PickedPin | null>(null);
+  const [roof, setRoof] = useState<PickedRoof | null>(null);
+  const roofRef = useRef<PickedRoof | null>(null);
+  const toast = useToast();
+  const buildingAt = useBuildingAt();
+  const fromFootprint = useEstimateFromFootprint();
+  const canEstimate = onEstimate !== undefined;
+  // The map's click listener is bound once; it reads the latest of these through refs.
+  const roofClickRef = useRef<(lngLat: { lng: number; lat: number }) => void>(() => undefined);
   const area = useMapArea();
   const pins = useMapPins(bbox);
   const focus = useFocusParam();
@@ -122,12 +144,22 @@ export function MapView({ onOpen }: MapViewProps) {
       installMapLayers(instance, dataRef.current);
       applyStormData(instance, stormRef.current);
       if (!hailOnRef.current) setStormVisible(instance, false);
+      if (roofRef.current) setRoofHighlight(instance, roofRef.current.polygon as Geometry);
     });
     instance.on('load', scheduleBbox);
     instance.on('moveend', scheduleBbox);
     // Any map error shows the banner. It never throws: the work on the page does not depend on the map.
     instance.on('error', () => setFailed(true));
-    const unbind = bindMapInteractions(instance, setPicked);
+    const unbind = bindMapInteractions(
+      instance,
+      (pin) => {
+        roofRef.current = null;
+        setRoof(null);
+        setRoofHighlight(instance, null);
+        setPicked(pin);
+      },
+      (lngLat) => roofClickRef.current(lngLat),
+    );
 
     return () => {
       clearTimeout(timer);
@@ -224,6 +256,52 @@ export function MapView({ onOpen }: MapViewProps) {
     instance.setStyle(mapStyle(readMapEnv(), mode), { diff: false });
   }, [mode]);
 
+  // An empty-map click (owner and office): look up the building under it, highlight it and open its card.
+  useEffect(() => {
+    roofClickRef.current = (lngLat) => {
+      if (!canEstimate) return;
+      buildingAt.mutate(lngLat, {
+        onSuccess: (building) => {
+          const instance = mapRef.current;
+          if (building === null) {
+            roofRef.current = null;
+            setRoof(null);
+            if (instance && styleReady.current) setRoofHighlight(instance, null);
+            toast.show(mapCopy.noBuilding);
+            return;
+          }
+          const next: PickedRoof = { ...building, lat: lngLat.lat, lng: lngLat.lng };
+          roofRef.current = next;
+          setPicked(null);
+          setRoof(next);
+          if (instance && styleReady.current) setRoofHighlight(instance, building.polygon as Geometry);
+        },
+        onError: () => toast.show(mapCopy.roofFailed, 'error'),
+      });
+    };
+  });
+
+  const closeRoof = () => {
+    roofRef.current = null;
+    setRoof(null);
+    const instance = mapRef.current;
+    if (instance && styleReady.current) setRoofHighlight(instance, null);
+  };
+
+  const estimateRoof = () => {
+    if (!roof || !onEstimate) return;
+    fromFootprint.mutate(
+      { footprintId: roof.footprintId, lat: roof.lat, lng: roof.lng },
+      {
+        onSuccess: ({ measurementId }) => {
+          closeRoof();
+          onEstimate(measurementId);
+        },
+        onError: () => toast.show(mapCopy.roofFailed, 'error'),
+      },
+    );
+  };
+
   const satellite = satelliteAvailable(readMapEnv());
   // A map error, or a pins request that failed (the last good pins stay on the map meanwhile).
   const showBanner = failed || pins.isError;
@@ -255,6 +333,14 @@ export function MapView({ onOpen }: MapViewProps) {
         </Button>
       </div>
       <HailLegend visible={hailOn && swathCount > 0} />
+      <p className="visually-hidden" aria-live="polite">
+        {roof ? mapCopy.roofPicked : ''}
+      </p>
+      {roof && canEstimate ? (
+        <div className={styles.card}>
+          <RoofCard onEstimate={estimateRoof} busy={fromFootprint.isPending} onClose={closeRoof} />
+        </div>
+      ) : null}
       {picked ? (
         <div className={styles.card}>
           <PinCard

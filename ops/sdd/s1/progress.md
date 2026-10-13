@@ -346,3 +346,4 @@ Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema c
 - Base map: MapTiler style `streets-v2` becomes `dataviz-light` (satellite `hybrid` unchanged); the OSM raster fallback is desaturated and lowered in contrast.
 - Map legend (`HailLegend`) is a compact horizontal chip row titled "Last night's hail" (Penny, Quarter, Ping-pong, Golf ball, Tennis ball = levels 1-5; the inch size is the chip tooltip). New copy keys `hailLegendTitle` and `hailSizeNames`; `hailLegend` stays the accessible name and the storm detail legend is untouched.
 - Not done: scored-home squares. The web app has no scored-homes data source yet (spotter reports are the only points), so nothing was invented.
+- 4e5954ee: the storm-detail a11y spec waits for the storm's own heading (a flake found by the pass 16 dry run). CI run 38315317645 is green on Platform, Hail and E2E.

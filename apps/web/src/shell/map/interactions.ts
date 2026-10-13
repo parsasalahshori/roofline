@@ -8,6 +8,9 @@ const SERVER_CLUSTER_ZOOM_STEP = 2;
 /** The single-pin hit layers: a click on either opens the nearest pin under it. */
 const PIN_HIT_LAYERS: readonly string[] = [LAYER.customersHit, LAYER.jobsHit];
 
+/** The cluster layers: a click on one zooms in, so it is never an empty-map click. */
+const CLUSTER_LAYERS: readonly string[] = [LAYER.clusters, LAYER.customerClusters, LAYER.jobClusters];
+
 /** The layers that show a pointer cursor: the pin hit layers and both kinds of cluster. */
 const CURSOR_LAYERS: readonly string[] = [
   LAYER.customersHit,
@@ -78,15 +81,25 @@ export function nearestFeature(
  * A click anywhere on the map opens the nearest single pin under it. The hit layers overlap, so one
  * click can reach a customer and a job; this reads both and calls `onPick` once, for the nearer.
  */
-function pinClickHandler(map: MapLibreMap, onPick: (pin: PickedPin) => void): (event: MapMouseEvent) => void {
+function pinClickHandler(
+  map: MapLibreMap,
+  onPick: (pin: PickedPin) => void,
+  onEmpty?: (lngLat: { lng: number; lat: number }) => void,
+): (event: MapMouseEvent) => void {
   return (event) => {
     const layers = PIN_HIT_LAYERS.filter((id) => map.getLayer(id));
-    if (layers.length === 0) return;
-    const features = map.queryRenderedFeatures(event.point, { layers });
+    const features = layers.length > 0 ? map.queryRenderedFeatures(event.point, { layers }) : [];
     const feature = nearestFeature(features, event.point, (lngLat) => map.project(lngLat));
-    if (!feature) return;
-    const pin = pickedPin(feature);
-    if (pin) onPick(pin);
+    const pin = feature ? pickedPin(feature) : null;
+    if (pin) {
+      onPick(pin);
+      return;
+    }
+    // Nothing of ours under the click (no pin, no cluster, which zooms on its own): report the spot.
+    if (!onEmpty || !event.lngLat) return;
+    const clusters = CLUSTER_LAYERS.filter((id) => map.getLayer(id));
+    if (clusters.length > 0 && map.queryRenderedFeatures(event.point, { layers: clusters }).length > 0) return;
+    onEmpty({ lng: event.lngLat.lng, lat: event.lngLat.lat });
   };
 }
 
@@ -128,11 +141,16 @@ function setCursor(map: MapLibreMap, cursor: string): void {
 
 /**
  * Wires clicks and pointer cursors on the pin hit layers and the cluster layers. The pin click is one
- * listener on the map (not on a layer), which reads the hit layers and picks the nearest pin. Returns a
+ * listener on the map (not on a layer), which reads the hit layers and picks the nearest pin; a click on
+ * neither a pin nor a cluster goes to `onEmpty` with its [lng, lat] (the roof lookup). Returns a
  * function that removes every listener it added.
  */
-export function bindMapInteractions(map: MapLibreMap, onPick: (pin: PickedPin) => void): () => void {
-  const onPinClick = pinClickHandler(map, onPick);
+export function bindMapInteractions(
+  map: MapLibreMap,
+  onPick: (pin: PickedPin) => void,
+  onEmpty?: (lngLat: { lng: number; lat: number }) => void,
+): () => void {
+  const onPinClick = pinClickHandler(map, onPick, onEmpty);
   const bindings: Binding[] = [
     {
       type: 'click',

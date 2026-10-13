@@ -60,6 +60,7 @@ import { customerRoutes } from './routes/customers.ts';
 import { exportRoutes } from './routes/export.ts';
 import { importRoutes } from './routes/imports.ts';
 import { jobRoutes } from './routes/jobs.ts';
+import { estimatorMapRoutes } from './routes/estimator-map.ts';
 import { mapRoutes } from './routes/map.ts';
 import { noteRoutes } from './routes/notes.ts';
 import { pricebookRoutes } from './routes/pricebook.ts';
@@ -365,6 +366,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/measurements', measurementRoutes(deps));
   app.use('/api/tier-templates', tierTemplateRoutes(deps));
   app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
+  app.use('/api/estimator', estimatorMapRoutes(deps));
   app.use('/api/proposals', proposalRoutes(deps));
   // Storm Scout: storms and their plans, door-knock routes, per-company storm settings, and ads.
   app.use('/api/storms', stormRoutes(deps));
