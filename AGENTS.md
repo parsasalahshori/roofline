@@ -40,6 +40,13 @@ Unfinished work left on task branches (check `ops/README.md` and the F3/C1 ledge
 - C1: `c1-t2`, `c1-t3`, `c1-t4` (built on a scratch commit; merge rules are in `ops/sdd/c1/progress.md`),
   then the rest of C1 per the plan's "Parallel lanes" table.
 
+## Demo data
+
+- The demo (`npm run demo`) places every house on a real Omaha, NE building. The outlines in
+  `apps/api/src/demo/data/omaha-footprints.json` are a small subset of Microsoft Global ML Building Footprints,
+  licensed ODbL (attribution inside the file; keep it when you touch the file). Names and addresses are fictional.
+  Branch `demo-realroofs` (from `demo-oct13` plus `demo-imagery`) holds it.
+
 ## How to do a task
 
 1. Read the brief `ops/sdd/<milestone>/task-<N>-brief.md`, the milestone's `global-constraints.md`, and the

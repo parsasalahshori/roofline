@@ -59,12 +59,26 @@ test('demo: a typed address measures a demo house and makes a proposal', async (
 test('demo: Estimate this roof from the map opens Measure on that building', async ({ page }) => {
   test.setTimeout(3 * 60_000);
   await signIn(page);
-  const res = await page.request.get('/api/properties?limit=5');
-  const { properties } = (await res.json()) as { properties: { id: string; customerId: string | null }[] };
-  const home = properties.find((p) => p.customerId !== null);
+  const res = await page.request.get('/api/properties?limit=50');
+  const { properties } = (await res.json()) as { properties: { id: string; addressLine: string; customerId: string | null; lat: number | null; lng: number | null }[] };
+  // A seeded home (the address the first test just typed has a customer but no job, so it has no pin to fly to).
+  const home = properties.find((p) => p.customerId !== null && p.lat !== null && p.lng !== null && !p.addressLine.includes('Pennsylvania'));
   expect(home).toBeDefined();
+  const homeLng = home!.lng!;
+  const homeLat = home!.lat!;
+  // The home's own roof, from the same lookup the map click makes: a spot on it well clear of the pin (the pin sits on the
+  // roof's middle, and the real houses are a lot apart, so a spot beside the pin may be nearer the next house).
+  const found = await page.request.get(`/api/map/building-at?lat=${homeLat}&lng=${homeLng}`);
+  expect(found.status()).toBe(200);
+  const ring = ((await found.json()) as { polygon: { coordinates: [number, number][][] } }).polygon.coordinates[0]!;
+  const metres = ([lng, lat]: [number, number]): [number, number] => [(lng - homeLng) * 111_320 * Math.cos((homeLat * Math.PI) / 180), (lat - homeLat) * 111_320];
+  const corner = ring.map(metres).sort((a, b) => Math.hypot(...b) - Math.hypot(...a))[0]!;
+  const pull = Math.max(0, 1 - 1.5 / Math.hypot(...corner));
+  // MapLibre's world is 512 px wide at zoom 0; the map is at zoom 18 after the two zoom-ins from the pin's zoom 16.
+  const metresPerPx = (78_271.517 * Math.cos((homeLat * Math.PI) / 180)) / 2 ** 18;
+  const spot = { dx: (corner[0] * pull) / metresPerPx, dy: -(corner[1] * pull) / metresPerPx };
 
-  // Fly to the home's pin, close its card, zoom in twice, then click just beside the pin: an empty-map click.
+  // Fly to the home's pin, close its card, zoom in twice, then click the roof away from the pin: an empty-map click.
   await page.goto(`/?focus=${home!.id}`);
   await page.getByRole('button', { name: 'Close', exact: true }).click({ timeout: 30_000, force: true });
   await page.waitForTimeout(1500);
@@ -73,10 +87,8 @@ test('demo: Estimate this roof from the map opens Measure on that building', asy
   await page.getByRole('button', { name: /zoom in/i }).click();
   await page.waitForTimeout(1500);
   const box = await page.getByRole('region', { name: /map/i }).first().boundingBox();
-  // The homes are real houses now, a lot apart: 30 px at this zoom is about 7 m, still on the home's own roof (a bigger
-  // step can land nearer the next house), and clear of its pin.
   const estimate = page.getByRole('button', { name: 'Estimate this roof' });
-  await page.mouse.click(box!.x + box!.width / 2 + 30, box!.y + box!.height / 2);
+  await page.mouse.click(box!.x + box!.width / 2 + spot.dx, box!.y + box!.height / 2 + spot.dy);
   await estimate.click({ timeout: 30_000, force: true });
   await expectOutline(page);
   // That home already has its customer, so no customer step; Make proposal is ready.
