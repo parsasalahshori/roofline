@@ -268,3 +268,4 @@ Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.reco
   - Known minor still open: E1 review 11 (a duplicate first text in history after a silent turn; rare).
   - Also merged: integration sentinel problems 9 (one Front Desk-off check in read-only.ts) and 11 (the eval test env sets E1's R2 settings).
 - 2026-10-12: **Final D1 head f2c0e8b green** (integration CI 38311041750, Platform and E2E). Every D1 follow-up has landed (RC-4, rev-l, rev-m, RC-1/1b).
+- 2026-10-13: ported the only D1-owned probe-only fix from sentinel passes 15/16: e93267b9 (drop the unused countLiveAiCalls). Problems 9 and 11 were already on f2c0e8b. The probe's read-only `/public/` pass belongs to E1/S1 (taken at the e1/s1 merge); A1's paused check and demo-mode's simulateCall belong to A1 and demo-mode.
