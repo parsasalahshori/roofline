@@ -194,6 +194,15 @@ Ruling AX-N (track lead): Front Desk steps fold booking minutes into the call/te
 - Also done as a D1 helper: d1-rev-h (Ruling BI, retention blanks only the AI text exchange), green run 38290914284, merged by the D1 lead into d1-front-desk.
 - a1-agents 81d1a601 (BUG-6 merged) green: run 38294171379 Platform+E2E. A1 complete; track lead now a D1 helper (controller).
 
+## a1-d1sync merged (d1-front-desk b2c4a971 + s1-storm 5983bdd9; sentinel pass-15 problems 7 and 8)
+- a1-d1sync 71ec47e2 (CI run 38315277107: Platform, E2E, v1, Hail green) merged --no-ff into a1-agents; tree identical to 71ec47e2; typecheck+lint clean; playwright-core only 1.56.1.
+- Problem 7: 0019/0020 SQL exactly D1's; A1's duplicate `GRANT UPDATE (capabilities, updated_at) ON company_phone_numbers` hunk (03585510) dropped.
+- Problem 8: hooks/twilio-voice.ts keeps D1's aiAllowed/ringing_team structure; `paused = isAgentPaused(tx, ctx, 'front_desk')` inside the transaction, in both the ringing_team and the team-then-voicemail conditions; countLiveAiCalls removed (no callers). Also D1's ring_first after-dial path (twilio-voice-transfer.ts) sends voicemail when Front Desk is paused (paused behaves like off).
+- A1 hooks re-applied on D1's new code: after-call live tasks and the T22 gate, texts.ts model-failure hand-off, voice-transfer recordModelFailureHandoff after D1's urgency transaction.
+- S1: 0018 is S1's (R1, R3, R8, grant trims). Snapshots 0019-0022 rebuilt on A1's chain with D1's four new indexes and S1's ad_accounts_platform_external_live_uq; ids/prevIds and journal unchanged; A1 0021/0022 SQL byte-identical; drizzle-kit "No schema changes".
+- Test fixes (71ec47e2): rls.test app_tenant no longer expects line_lookups (D1's 0020 is app_system only); eval-front-desk production config gets R2 values.
+- Also done: launch-a1fix b40a411f (recordModelFailureHandoff takes the conversation row lock, G1's finding), green run 38302297789, handed to the sentinel for pass 16.
+
 ## design-d2: Agents dashboard to match the reference app (2026-10-13)
 - Branch `design-d2` off `demo-lift`. Agents overview rebuilt as the dashboard: KPI tiles, roof diagram (own SVG) with real handoff tags, six agent cards with a running switch, and a side panel (Run now, permissions, rules, recent activity).
 - New endpoint `GET /api/agents/dashboard` (tenant-scoped, rep-scoped like the overview): tasks today, week minutes, hourly rate (null without money access), 12-hour finished-per-hour series, handoffs today (one job worked by two agents in turn today) with address tags, latest action per agent. Test: `apps/api/test/agents-dashboard.test.ts`.

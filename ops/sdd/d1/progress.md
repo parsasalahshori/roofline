@@ -267,3 +267,4 @@ Ruling (Task RA, note 42): the Twilio recording SID is stored only in calls.reco
   - The router intents are the shared ROUTER_INTENTS (from rev-m); ASK_PERSON_INTENTS is re-added.
   - Known minor still open: E1 review 11 (a duplicate first text in history after a silent turn; rare).
   - Also merged: integration sentinel problems 9 (one Front Desk-off check in read-only.ts) and 11 (the eval test env sets E1's R2 settings).
+- 2026-10-12: **Final D1 head f2c0e8b green** (integration CI 38311041750, Platform and E2E). Every D1 follow-up has landed (RC-4, rev-l, rev-m, RC-1/1b).
