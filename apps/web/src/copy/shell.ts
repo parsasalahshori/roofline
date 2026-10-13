@@ -11,6 +11,9 @@ export const shell = {
   /** The temperature on the weather chip: 71.6 reads 72°. */
   degrees: (tempF: number) => `${Math.round(tempF)}°`,
 
+  /** The bell in the top bar: it opens the plans waiting for a yes. */
+  notificationsLabel: "Notifications",
+
   // The user menu
   menuLabel: 'Account menu',
   myDay: 'My day',

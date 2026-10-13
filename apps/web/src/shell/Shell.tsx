@@ -5,6 +5,7 @@ import { useApprovals, useAttentionCount, useMe } from '../api/hooks.ts';
 import { dock, WINDOW_COPY } from '../copy/dock.ts';
 import { useFrontDeskUnread } from '../features/front-desk/api.ts';
 import { ShellBanners } from '../features/billing/ShellBanners.tsx';
+import { Home } from '../features/today/Home.tsx';
 import { useTodayAutoOpen } from '../features/today/useTodayAutoOpen.ts';
 import { type AppKey, DOCK_APPS } from './apps.ts';
 import { countedDrafts } from './countedDrafts.ts';
@@ -107,6 +108,7 @@ export function Shell() {
           </Suspense>
         </MapErrorBoundary>
       </div>
+      {pathname === '/' ? <Home /> : null}
       <div className={styles.windows}>
         <Outlet />
       </div>

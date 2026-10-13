@@ -1,9 +1,12 @@
-/* lift-01: quiet and tabular; gone below 1024px where the bar needs the room */
+/* The reference's date and time: 13px medium ink in a 26px slot; gone below 1024px where the bar needs the room */
 .clock {
   flex: none;
-  color: var(--lift-bar-muted);
-  font-size: var(--font-size-body);
+  padding: 0 8px;
+  color: var(--lift-bar-ink);
+  font-size: 13px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
+  line-height: 26px;
   white-space: nowrap;
 }
 

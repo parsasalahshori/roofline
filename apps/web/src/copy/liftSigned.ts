@@ -20,6 +20,8 @@ export const liftSigned = {
   /** The chip: 96 reads "96% of goal". */
   percentOfGoal: (percent: number) => `${percent}% of goal`,
   goal: (goalCents: number) => `Goal ${signedMoney(goalCents)}`,
+  /** The right end of the goal line: 10180000 cents reads '$101,800 to go'. */
+  toGo: (cents: number) => `${signedMoney(cents)} to go`,
   chartLabel: 'Signed each week, last 12 weeks',
   chartWeek: 'Week of',
   chartTotal: 'Signed',

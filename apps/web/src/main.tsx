@@ -1,3 +1,4 @@
+import '@fontsource-variable/archivo/wdth.css';
 import '@roofline/ui/tokens.css';
 import '@roofline/ui/base.css';
 import { StrictMode } from 'react';

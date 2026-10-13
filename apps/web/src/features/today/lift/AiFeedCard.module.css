@@ -1,45 +1,41 @@
-/* What your AI just did: a title with a working chip, then a list with a colored dot per agent. */
+/* What your AI just did, as the reference draws it: a green "working" label, then rows with a colored dot and a hairline between. */
 .card {
+  composes: card from './glass.module.css';
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  color: var(--text);
-  font-size: var(--font-size-body);
+  min-height: 0;
 }
 
 .head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
+  composes: head from './glass.module.css';
 }
 
 .title {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
-  font-weight: 600;
+  composes: title from './glass.module.css';
 }
 
 .chip {
+  display: inline-flex;
   flex: none;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--success);
-  border: 1px solid var(--success);
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-success-ink, #0a6e1d);
   font-size: var(--font-size-min);
   font-weight: 600;
   white-space: nowrap;
 }
 
+.live {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ds-success, #0ca30c);
+}
+
 .list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 0;
+  margin: 8px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -47,40 +43,46 @@
 .row {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
-  --agent-color: var(--text-muted);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ds-fill, #d8dee2);
+  --agent-color: var(--ds-text-3, #6b7680);
+}
+
+.row:last-child {
+  border-bottom: 0;
 }
 
 .row[data-agent="storm_scout"] {
-  --agent-color: var(--hail-3);
+  --agent-color: #6b3fa0;
 }
 
 .row[data-agent="estimator"] {
-  --agent-color: var(--stage-proposal);
+  --agent-color: #d99e00;
 }
 
 .row[data-agent="front_desk"] {
-  --agent-color: var(--stage-inspection);
+  --agent-color: #1f8a8a;
 }
 
 .row[data-agent="claims"] {
-  --agent-color: var(--pin-customer);
+  --agent-color: #2e7d5b;
 }
 
 .row[data-agent="scheduler"] {
-  --agent-color: var(--stage-lead);
+  --agent-color: #b8662f;
 }
 
 .row[data-agent="follow_up"] {
-  --agent-color: var(--stage-won);
+  --agent-color: #2f6fde;
 }
 
 .dot {
   flex: none;
   width: 8px;
   height: 8px;
-  margin-top: 6px;
+  margin-top: 5px;
   border-radius: 50%;
   background: var(--agent-color);
 }
@@ -93,15 +95,18 @@
 }
 
 .text {
+  color: var(--ds-text-1, #151c22);
+  font-size: 13.5px;
+  line-height: 1.375;
   overflow-wrap: anywhere;
 }
 
 .byline {
-  color: var(--text-muted);
+  color: var(--ds-text-3, #6b7680);
   font-size: var(--font-size-min);
 }
 
 .empty {
-  margin: 0;
-  color: var(--text-muted);
+  margin: 8px 0 0;
+  color: var(--ds-text-3, #6b7680);
 }

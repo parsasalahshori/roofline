@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Skeleton } from '@roofline/ui';
+import { Skeleton } from '@roofline/ui';
 import { useTasksSummary } from '../../../api/hooks.ts';
 import { liftFeed } from '../../../copy/liftFeed.ts';
 import { AGENT_LABEL } from '../../../copy/status.ts';
@@ -25,12 +25,17 @@ export function AiFeedCard() {
   const working = summary.data?.working ?? 0;
 
   return (
-    <Card as="section" className={styles.card} aria-labelledby="lift-ai-feed">
+    <section className={styles.card} aria-labelledby="lift-ai-feed">
       <div className={styles.head}>
         <h2 id="lift-ai-feed" className={styles.title}>
           {liftFeed.feedTitle}
         </h2>
-        {working > 0 ? <span className={styles.chip}>{liftFeed.working(working)}</span> : null}
+        {working > 0 ? (
+          <span className={styles.chip}>
+            <span className={styles.live} aria-hidden="true" />
+            {liftFeed.working(working)}
+          </span>
+        ) : null}
       </div>
       {feed.isPending ? (
         <div role="status" aria-label={liftFeed.feedLoading}>
@@ -53,6 +58,6 @@ export function AiFeedCard() {
           ))}
         </ul>
       )}
-    </Card>
+    </section>
   );
 }

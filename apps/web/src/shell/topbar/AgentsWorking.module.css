@@ -1,22 +1,21 @@
-/* lift-01: "N agents working" as a small pill with a green dot; the quiet state is a neutral pill */
+/* The reference's "N agents working": a quiet 26px button with a green dot (pulsing while work is going on) */
 .agents {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  min-height: 28px;
-  padding: 0 11px;
-  border-radius: 14px;
-  background: var(--lift-hover);
-  color: var(--lift-bar-muted);
-  font-size: var(--font-size-min);
-  font-weight: 600;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--lift-bar-ink);
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
   text-decoration: none;
 }
 
 .agents:hover {
-  color: var(--lift-bar-ink);
+  background: var(--lift-hover);
 }
 
 .agents:focus-visible {
@@ -24,20 +23,43 @@
   outline-offset: 2px;
 }
 
-/* Green marks that work is going on; the text keeps its own dark-green ink on the tinted fill */
 .dot {
+  position: relative;
   flex: none;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--line);
-}
-
-.agents[data-state="working"] {
-  background: var(--lift-agents-bg);
-  color: var(--lift-agents-ink);
+  background: var(--ds-fill, #c3cbd1);
 }
 
 .agents[data-state="working"] .dot {
-  background: var(--success);
+  background: var(--ds-success, #0ca30c);
+}
+
+.agents[data-state="working"] .dot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: var(--ds-success, #0ca30c);
+  opacity: 0;
+  animation: pulse 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agents[data-state="working"] .dot::after {
+    animation: none;
+  }
 }

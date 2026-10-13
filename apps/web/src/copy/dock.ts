@@ -4,6 +4,8 @@ import type { WindowKey } from '../shell/apps.ts';
 export const dock = {
   label: 'Apps',
   comingSoon: 'Coming soon',
+  /** The launcher tile at the start of the dock: it goes back to the map. */
+  launcherLabel: 'Home',
   /** The dock's search button. Not "Search": that is the top bar button's name. */
   searchLabel: 'Quick search',
   stormBadge: (count: number) => (count === 1 ? '1 new storm plan' : `${count} new storm plans`),

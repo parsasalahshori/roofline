@@ -1,0 +1,39 @@
+/* The reference's bell: a 30 by 26 quiet button, radius 7, with a small red dot when something waits */
+.bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--lift-bar-muted);
+  text-decoration: none;
+}
+
+.bell:hover {
+  background: var(--lift-hover);
+  color: var(--lift-bar-ink);
+}
+
+.bell:focus-visible {
+  outline: 2px solid var(--lift-bar-ink);
+  outline-offset: 2px;
+}
+
+.dot {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ds-danger, #d03b3b);
+  box-shadow: 0 0 0 1.5px var(--lift-bar-bg);
+}
+
+@media (max-width: 767.98px) {
+  .bell {
+    width: 36px;
+    height: 40px;
+  }
+}

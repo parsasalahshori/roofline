@@ -1,0 +1,43 @@
+/* The reference's floating card: a near-opaque glass panel, radius 20, padding 20, a hairline ring and a long soft shadow. */
+.card {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 20px;
+  border-radius: var(--ds-r-widget, 20px);
+  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
+  box-shadow: var(--ds-shadow, 0 0 0 1px rgba(21, 28, 34, 0.08), 0 14px 34px -16px rgba(21, 28, 34, 0.35));
+  color: var(--ds-text-1, #151c22);
+  font-family: var(--ds-font, var(--font));
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  color: var(--ds-text-label, #505b64);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+/* A status pill: 22px tall, fully round, 11.5px semibold. The tint says what kind. */
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  white-space: nowrap;
+}

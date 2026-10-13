@@ -6,24 +6,23 @@ import type { CurrentWeather } from '../../api/types.ts';
  * read them get the words from the copy beside them.
  */
 
-/** The roof mark at the start of the top bar. Decorative: the company's name beside it says who this is. */
+/** The mark at the start of the top bar: a dark rounded tile with a yellow roof line. Decorative: the company name beside it says who this is. */
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-      className={className}
-    >
-      <path d="M3 12l9-8 9 8" />
-      <path d="M6 10.5V20h12v-9.5" />
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false" className={className}>
+      <rect width="20" height="20" rx="6" fill="currentColor" />
+      <path d="M4.5 11.5L10 6l5.5 5.5" stroke="#ffc21a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6.5 14.5h7" stroke="#ffc21a" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** The bell on the notifications button. Decorative: the button carries the label. */
+export function BellIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z" />
+      <path d="M10 21h4" />
     </svg>
   );
 }
@@ -64,8 +63,8 @@ const WEATHER_SHAPES: Record<CurrentWeather['icon'], ReactNode> = {
 export function WeatherIcon({ icon }: { icon: CurrentWeather['icon'] }) {
   return (
     <svg
-      width="20"
-      height="20"
+      width="16"
+      height="16"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

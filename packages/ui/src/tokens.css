@@ -49,73 +49,93 @@
 }
 
 /*
- * lift-01: the dock tiles, the dock tray and the quiet top bar. A second :root block on purpose:
- * tokens.test.ts and tokens.ts mirror only the first one.
+ * Design tokens from the reference app's computed styles (roofing-os-demo.vercel.app): Archivo, cool
+ * graphite ink on a pale steel ground, a tape-yellow accent. Other windows read the --ds-* names (with a
+ * fallback). A later :root block on purpose: tokens.test.ts and tokens.ts mirror only the first one, so the
+ * legacy names are re-pointed at the end of this block and the whole app takes the reference look. Light
+ * only, like the reference.
  */
 :root {
-  /* lift-01 */
-  --lift-tile-launcher: #3a3733;
-  --lift-tile-storm: #1e3a8a;
-  --lift-tile-jobs: #2563eb;
-  --lift-tile-estimator: #d99100;
-  --lift-tile-claims: #2f9e44;
-  --lift-tile-calendar: #ea6a1a;
-  --lift-tile-front-desk: #0d9488;
-  --lift-tile-agents: #17171a;
-  --lift-tile-ink: #ffffff;
-  --lift-tile-search: rgba(43, 38, 32, 0.08);
-  --lift-tray-bg: rgba(255, 253, 248, 0.78);
-  --lift-tray-line: rgba(43, 38, 32, 0.08);
-  --lift-tray-shadow: 0 10px 30px rgba(43, 30, 0, 0.18), 0 1px 3px rgba(43, 30, 0, 0.1);
-  --lift-tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
-  --lift-bar-bg: rgba(255, 253, 248, 0.82);
-  --lift-bar-line: rgba(43, 38, 32, 0.07);
-  --lift-bar-ink: #2b2620;
-  --lift-bar-muted: rgba(43, 38, 32, 0.72);
-  --lift-hover: rgba(43, 38, 32, 0.07);
-  --lift-badge-bg: #c92a2a;
-  --lift-badge-ink: #ffffff;
-  --lift-tooltip-bg: #2b2620;
-  --lift-tooltip-ink: #fffdf8;
-  --lift-ok-bg: #fde7b0;
-  --lift-ok-ink: #5c3b00;
-  --lift-ok-line: #f5b324;
-  --lift-agents-bg: rgba(47, 158, 68, 0.12);
-  --lift-agents-ink: #1f6b30;
-  --lift-avatar-bg: #2b2620;
-  --lift-avatar-ink: #fffdf8;
+  color-scheme: light;
+  --ds-font: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-text-1: #151c22;
+  --ds-text-2: #3a444d;
+  --ds-text-label: #505b64;
+  --ds-text-3: #6b7680;
+  --ds-bg: #f6f7f8;
+  --ds-surface: #ffffff;
+  --ds-surface-2: #eceff1;
+  --ds-fill: #c3cbd1;
+  --ds-hairline: rgba(21, 28, 34, 0.08);
+  --ds-hairline-strong: #c3cbd1;
+  --ds-accent: #ffc21a;
+  --ds-accent-line: rgba(217, 158, 0, 0.55);
+  --ds-accent-tint: #fff1d1;
+  --ds-accent-ink: #8a5a00;
+  --ds-success: #0ca30c;
+  --ds-success-tint: #e2f4e2;
+  --ds-success-ink: #0a6e1d;
+  --ds-danger: #d03b3b;
+  --ds-danger-tint: #fbe3e3;
+  --ds-danger-ink: #a32424;
+  --ds-info: #2f6fde;
+  --ds-info-tint: #e3ecfb;
+  --ds-info-ink: #1f55b3;
+  --ds-r-card: 12px;
+  --ds-r-ctl: 9px;
+  --ds-r-chip: 999px;
+  --ds-r-tag: 6px;
+  --ds-r-widget: 20px;
+  --ds-r-window: 18px;
+  --ds-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 14px 34px -16px rgba(21, 28, 34, 0.35);
+  --ds-glass: rgba(246, 247, 248, 0.82);
+  --ds-glass-strong: rgba(246, 247, 248, 0.97);
+
+  /* The legacy names, re-pointed */
+  --bg: var(--ds-bg);
+  --surface: var(--ds-surface);
+  --surface-2: var(--ds-surface-2);
+  --text: var(--ds-text-1);
+  --text-muted: var(--ds-text-label);
+  --accent: var(--ds-accent);
+  --accent-ink: var(--ds-text-1);
+  --line: #dde2e6;
+  --font: var(--ds-font);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* lift-01 */
-    --lift-tile-launcher: #54504a;
-    --lift-tile-storm: #2c4fb8;
-    --lift-tile-jobs: #3b7bf0;
-    --lift-tile-estimator: #e0a000;
-    --lift-tile-claims: #38b255;
-    --lift-tile-calendar: #f27a2a;
-    --lift-tile-front-desk: #14b3a4;
-    --lift-tile-agents: #000000;
-    --lift-tile-search: rgba(255, 255, 255, 0.1);
-    --lift-tray-bg: rgba(38, 35, 31, 0.78);
-    --lift-tray-line: rgba(255, 255, 255, 0.1);
-    --lift-tray-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
-    --lift-tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    --lift-bar-bg: rgba(38, 35, 31, 0.82);
-    --lift-bar-line: rgba(255, 255, 255, 0.09);
-    --lift-bar-ink: #fffdf8;
-    --lift-bar-muted: rgba(255, 253, 248, 0.78);
-    --lift-hover: rgba(255, 255, 255, 0.1);
-    --lift-badge-bg: #e03131;
-    --lift-tooltip-bg: #fffdf8;
-    --lift-tooltip-ink: #2b2620;
-    --lift-ok-bg: #4a3608;
-    --lift-ok-ink: #ffd987;
-    --lift-ok-line: #8a6410;
-    --lift-agents-bg: rgba(56, 178, 85, 0.18);
-    --lift-agents-ink: #7fdc98;
-    --lift-avatar-bg: #fffdf8;
-    --lift-avatar-ink: #2b2620;
-  }
+/* The dock tiles, the dock tray and the quiet top bar (lift-01), in the reference's colours. */
+:root {
+  --lift-tile-launcher: linear-gradient(160deg, #3a444d, #151c22);
+  --lift-tile-storm: linear-gradient(160deg, #3a3f7a, #23264d);
+  --lift-tile-jobs: linear-gradient(160deg, #4a86ec, #2358bd);
+  --lift-tile-estimator: linear-gradient(160deg, #ffd24d, #f0b000);
+  --lift-tile-claims: linear-gradient(160deg, #3b9870, #246a4b);
+  --lift-tile-calendar: linear-gradient(160deg, #cf7a3f, #9c5222);
+  --lift-tile-front-desk: linear-gradient(160deg, #2aa2a2, #176f6f);
+  --lift-tile-agents: linear-gradient(160deg, #3a444d, #151c22);
+  --lift-tile-ink: #ffffff;
+  --lift-tile-ink-accent: #ffc21a;
+  --lift-tile-ink-dark: #151c22;
+  --lift-tile-search: #ffffff;
+  --lift-tray-bg: rgba(246, 247, 248, 0.82);
+  --lift-tray-line: rgba(21, 28, 34, 0.1);
+  --lift-tray-shadow: 0 0 0 1px rgba(21, 28, 34, 0.1), 0 20px 40px -18px rgba(21, 28, 34, 0.45);
+  --lift-tile-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 0 rgba(0, 0, 0, 0.16), 0 6px 14px -6px rgba(21, 28, 34, 0.5);
+  --lift-bar-bg: rgba(246, 247, 248, 0.82);
+  --lift-bar-line: rgba(21, 28, 34, 0.08);
+  --lift-bar-ink: #151c22;
+  --lift-bar-muted: #3a444d;
+  --lift-hover: rgba(21, 28, 34, 0.07);
+  --lift-badge-bg: #d03b3b;
+  --lift-badge-ink: #ffffff;
+  --lift-tooltip-bg: #151c22;
+  --lift-tooltip-ink: #ffffff;
+  --lift-ok-bg: #fff1d1;
+  --lift-ok-ink: #8a5a00;
+  --lift-ok-line: #fab219;
+  --lift-agents-bg: transparent;
+  --lift-agents-ink: #151c22;
+  --lift-avatar-bg: #151c22;
+  --lift-avatar-ink: #ffffff;
 }

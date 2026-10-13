@@ -1,18 +1,32 @@
 import { Badge, IconButton, UiLink, type DockItem } from '@roofline/ui';
 import { dock } from '../copy/dock.ts';
+import { LauncherIcon } from './dockIcons.tsx';
 import styles from './ShellDock.module.css';
 import { requestSearch } from './topbar/openSearch.ts';
 import { SearchIcon } from './topbar/searchIcon.tsx';
 
 /**
- * The desktop dock: a floating tray of solid-coloured app tiles with a white line glyph, red count
- * badges, and a search button at the end. An app's name is its tooltip (shown on hover and focus) and
- * stays in the link's accessible name. The shell places the tray; this sets no position of its own.
+ * The desktop dock, as the reference draws it: a floating tray with a dark launcher tile, the apps as
+ * coloured tiles with a line glyph, a rule, and a white search tile. The open app's tile is bigger and
+ * raised with a dot under it; red count badges sit on the tiles' corners. An app's name is its tooltip (shown
+ * on hover and focus) and stays in the link's accessible name. The shell places the tray; this sets no
+ * position of its own.
  */
 export function ShellDock({ label, items }: { label: string; items: DockItem[] }) {
   return (
     <nav aria-label={label} className={styles.tray}>
       <ul className={styles.list}>
+        <li className={styles.item}>
+          <UiLink href="/" className={styles.tile} data-app="launcher" data-tip={dock.launcherLabel}>
+            <span className={styles.glyph} aria-hidden="true">
+              <LauncherIcon />
+            </span>
+            <span className="visually-hidden">{dock.launcherLabel}</span>
+          </UiLink>
+        </li>
+        <li className={styles.item}>
+          <span className={styles.rule} aria-hidden="true" />
+        </li>
         {items.map((item) => (
           <li key={item.key} className={styles.item}>
             <UiLink

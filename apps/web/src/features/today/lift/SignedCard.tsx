@@ -1,34 +1,37 @@
-import { Card } from '@roofline/ui';
 import { liftSigned, signedMoney, signedWeekLabel } from '../../../copy/liftSigned.ts';
 import styles from './SignedCard.module.css';
 import { useSignedSummary, type SignedSummary } from './signedApi.ts';
 
-const WIDTH = 240;
-const HEIGHT = 48;
+/** The chart is drawn at the card's inner width (332) and 54 tall; the reference leaves a floor under every bar. */
+const WIDTH = 332;
+const HEIGHT = 54;
 const GAP = 4;
+const FLOOR = 0.5;
+const RADIUS = 4;
 
 /** Twelve bars, one per week; the last (this week) is dark and the rest light. A hidden table carries the numbers. */
 function WeeklyChart({ weekly }: { weekly: SignedSummary['weekly'] }) {
   const max = Math.max(1, ...weekly.map((w) => w.totalCents));
-  const slot = weekly.length > 0 ? WIDTH / weekly.length : WIDTH;
-  const barWidth = Math.max(1, slot - GAP);
+  const n = Math.max(1, weekly.length);
+  const barWidth = (WIDTH - GAP * (n - 1)) / n;
+  const slot = barWidth + GAP;
   const last = weekly.length - 1;
   return (
     <div className={styles.chart}>
       <svg className={styles.svg} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" width="100%" aria-hidden="true" focusable="false">
         {weekly.map((w, i) => {
-          const h = w.totalCents > 0 ? Math.max(2, (w.totalCents / max) * HEIGHT) : 2;
+          const h = HEIGHT * (FLOOR + (1 - FLOOR) * (w.totalCents / max));
           return (
             <rect
               key={w.weekStart}
               className={i === last ? styles.barNow : styles.bar}
               data-current={i === last}
               data-cents={w.totalCents}
-              x={i * slot + GAP / 2}
+              x={i * slot}
               y={HEIGHT - h}
               width={barWidth}
-              height={h}
-              rx={1.5}
+              height={h + RADIUS}
+              rx={RADIUS}
             />
           );
         })}
@@ -65,8 +68,8 @@ export function SignedCard() {
   const percent = data?.goalCents ? Math.round((data.monthTotalCents / data.goalCents) * 100) : null;
 
   return (
-    <Card as="section" aria-labelledby="signed-card-title">
-      <div className={styles.card} aria-busy={query.isPending}>
+    <section className={styles.card} aria-labelledby="signed-card-title" aria-busy={query.isPending}>
+      <div className={styles.inner}>
         <div className={styles.head}>
           <h3 className={styles.title} id="signed-card-title">{liftSigned.title}</h3>
           {percent === null ? null : <span className={styles.chip}>{liftSigned.percentOfGoal(percent)}</span>}
@@ -78,7 +81,17 @@ export function SignedCard() {
         ) : (
           <>
             <p className={styles.total}>{signedMoney(data.monthTotalCents)}</p>
-            {data.goalCents ? <p className={styles.goal}>{liftSigned.goal(data.goalCents)}</p> : null}
+            {data.goalCents ? (
+              <>
+                <div className={styles.track} aria-hidden="true">
+                  <div className={styles.fill} style={{ width: Math.min(100, Math.max(0, percent ?? 0)) + '%' }} />
+                </div>
+                <p className={styles.goal}>
+                  <span>{liftSigned.goal(data.goalCents)}</span>
+                  {data.monthTotalCents < data.goalCents ? <span>{liftSigned.toGo(data.goalCents - data.monthTotalCents)}</span> : null}
+                </p>
+              </>
+            ) : null}
             {nothingYet ? (
               <p className={styles.hint}>{liftSigned.empty}</p>
             ) : (
@@ -97,6 +110,6 @@ export function SignedCard() {
           </>
         )}
       </div>
-    </Card>
+    </section>
   );
 }

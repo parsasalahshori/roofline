@@ -1,44 +1,27 @@
-/* Crew weather: six day tiles in a row; the risky ones are amber. Tiles shrink with the card, never scroll the page. */
+/* Crew weather, as the reference draws it: six day tiles, the risky day lit amber, and the Scheduler's offer under them. */
 .card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  color: var(--text);
-  font-size: var(--font-size-body);
+  composes: card from './glass.module.css';
 }
 
 .head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
+  composes: head from './glass.module.css';
 }
 
 .title {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
-  font-weight: 600;
+  composes: title from './glass.module.css';
 }
 
 .chip {
-  flex: none;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: var(--font-size-min);
-  font-weight: 600;
-  white-space: nowrap;
+  composes: chip from './glass.module.css';
+  background: var(--ds-accent-tint, #fff1d1);
+  color: var(--ds-accent-ink, #8a5a00);
 }
 
 .days {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
-  margin: 0;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -47,46 +30,84 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   min-width: 0;
-  padding: 6px 2px;
-  border-radius: 8px;
+  padding: 8px 0;
+  border-radius: 12px;
+  color: var(--ds-text-label, #505b64);
   font-size: var(--font-size-min);
 }
 
 .day[data-risky="true"] {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--ds-accent-tint, #fff1d1);
+  box-shadow: inset 0 0 0 1px rgba(250, 178, 25, 0.5);
+  color: var(--ds-accent-ink, #8a5a00);
 }
 
 .name {
+  color: var(--ds-text-label, #505b64);
   font-weight: 600;
 }
 
 .icon {
   display: inline-flex;
+  color: var(--ds-text-label, #505b64);
+}
+
+.icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.day[data-icon="sun"] .icon {
+  color: #b8662f;
+}
+
+.day[data-risky="true"] .icon {
+  color: var(--ds-info-ink, #1f55b3);
 }
 
 .high {
-  font-size: var(--font-size-body);
+  color: var(--ds-text-1, #151c22);
+  font-size: 14px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .rain {
-  color: var(--text-muted);
+  color: var(--ds-text-3, #6b7680);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 .day[data-risky="true"] .rain {
-  color: var(--accent-ink);
+  color: var(--ds-accent-ink, #8a5a00);
+  font-weight: 600;
 }
 
+/* What the Scheduler can move: an amber note with a yellow mark */
 .move {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--surface-2);
-  border: 1px solid var(--accent);
-  font-size: var(--font-size-min);
-  font-weight: 600;
-  overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff3cf;
+  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.35);
+  color: var(--ds-text-1, #151c22);
+  font-size: 13px;
+  line-height: 1.375;
+}
+
+.moveMark {
+  display: inline-grid;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--ds-accent, #ffc21a);
+  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.6);
+  color: var(--ds-text-1, #151c22);
 }

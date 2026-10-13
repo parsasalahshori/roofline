@@ -8,8 +8,8 @@
 /* lift-01: the trigger is just the initials in a dark circle; the name is kept for assistive technology.
    0,2,0 so these beat the kit's Button rules without a !important. */
 .root .trigger {
-  min-width: 32px;
-  min-height: 32px;
+  min-width: 30px;
+  min-height: 26px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -25,11 +25,12 @@
 }
 
 .root .trigger [data-size] {
-  width: 30px;
-  height: 30px;
+  width: 22px;
+  height: 22px;
   background: var(--lift-avatar-bg);
   color: var(--lift-avatar-ink);
   font-size: var(--font-size-min);
+  font-weight: 600;
 }
 
 /* Phone: a 40px target around the 30px circle */

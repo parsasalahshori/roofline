@@ -1,4 +1,4 @@
-import { Card, Skeleton } from '@roofline/ui';
+import { Skeleton } from '@roofline/ui';
 import { liftFeed } from '../../../copy/liftFeed.ts';
 import { WeatherIcon } from '../../../shell/topbar/topbarIcons.tsx';
 import { useWeatherOutlook } from './liftApi.ts';
@@ -14,9 +14,9 @@ export function CrewWeatherCard() {
 
   if (isPending) {
     return (
-      <Card as="section" className={styles.card} aria-busy="true" aria-label={liftFeed.weatherLoading}>
+      <section className={styles.card} aria-busy="true" aria-label={liftFeed.weatherLoading}>
         <Skeleton lines={3} height="2.5rem" />
-      </Card>
+      </section>
     );
   }
   const outlook = data?.outlook;
@@ -25,7 +25,7 @@ export function CrewWeatherCard() {
   const worst = outlook.worstDate === null ? undefined : outlook.days.find((day) => day.date === outlook.worstDate);
 
   return (
-    <Card as="section" className={styles.card} aria-labelledby="lift-crew-weather">
+    <section className={styles.card} aria-labelledby="lift-crew-weather">
       <div className={styles.head}>
         <h2 id="lift-crew-weather" className={styles.title}>
           {liftFeed.weatherTitle}
@@ -38,6 +38,7 @@ export function CrewWeatherCard() {
             key={day.date}
             className={styles.day}
             data-risky={day.risky}
+            data-icon={day.icon}
             aria-label={liftFeed.dayLabel(day.date, day.highF, day.precipChancePercent)}
           >
             <span className={styles.name}>{day.date === outlook.today ? liftFeed.today : liftFeed.dayShort(day.date)}</span>
@@ -50,8 +51,15 @@ export function CrewWeatherCard() {
         ))}
       </ul>
       {worst && worst.installs > 0 ? (
-        <p className={styles.move}>{liftFeed.schedulerCanMove(worst.installs, liftFeed.dayLong(worst.date))}</p>
+        <p className={styles.move}>
+          <span className={styles.moveMark} aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+              <path d="M2.5 7.5L6 4l3.5 3.5" />
+            </svg>
+          </span>
+          <span>{liftFeed.schedulerCanMove(worst.installs, liftFeed.dayLong(worst.date))}</span>
+        </p>
       ) : null}
-    </Card>
+    </section>
   );
 }

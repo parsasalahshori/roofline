@@ -3,8 +3,10 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
+  height: 26px;
+  padding: 0 8px;
   color: var(--lift-bar-muted);
-  font-size: var(--font-size-body);
+  font-size: 13px;
 }
 
 .chip > svg {
@@ -13,32 +15,21 @@
 
 .temp {
   flex: none;
-  font-weight: 600;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .summary {
-  min-width: 0;
-  max-width: 16ch;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
-  color: var(--lift-bar-muted);
-  text-overflow: ellipsis;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
-/* Below 1280px (the bar is busier now) the summary leaves the screen but stays in the accessibility tree (the same recipe as the kit's .visually-hidden) */
-@media (max-width: 1279.98px) {
-  .summary {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    border: 0;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
