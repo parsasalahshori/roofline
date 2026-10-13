@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router';
 import type { ConversationFilter } from '@roofline/shared';
 import { Button, EmptyState, Skeleton } from '@roofline/ui';
@@ -16,7 +16,7 @@ const copy = frontDeskInbox.lift;
 const TABS = ['all', 'booked', 'messages', 'spam'] as const satisfies readonly ConversationFilter[];
 
 /**
- * Front Desk: today's numbers (owner and office) over "Latest calls" on the left and the selected call on the right.
+ * Front Desk: today's numbers (owner and office) under the window's own title bar, over "Latest calls" on the left and the selected call on the right.
  * `/front-desk/:conversationId` selects a call; on a phone the list and the call take turns (the CSS keys off `data-detail`).
  */
 export function FrontDeskWindow() {
@@ -27,7 +27,12 @@ export function FrontDeskWindow() {
   const role = useMe().data?.role;
   const showStats = role === 'owner' || role === 'office';
   const items = flattenItems(conversations.data?.pages);
-  const now = Date.now();
+  // "14 min ago" counts from a clock that ticks once a minute, so the rows age without a refetch.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   let list;
   if (conversations.isPending) {
@@ -60,12 +65,11 @@ export function FrontDeskWindow() {
 
   return (
     <div className={styles.root} data-detail={conversationId === undefined ? 'closed' : 'open'}>
-      <header className={styles.header}>
-        <h2 className={styles.title}>
-          {copy.title} <span className={styles.subtitle}>{copy.subtitle}</span>
-        </h2>
-      </header>
-      {showStats ? <KpiTiles /> : null}
+      {showStats ? (
+        <div className={styles.tiles}>
+          <KpiTiles />
+        </div>
+      ) : null}
       <div className={styles.split}>
         <section className={styles.listPane} aria-label={copy.listTitle}>
           <div className={styles.listHeader}>
@@ -101,14 +105,7 @@ function Tabs({ filter, onChange }: { filter: (typeof TABS)[number]; onChange: (
         const selected = tab === filter;
         const count = counts?.[tab];
         return (
-          <Button
-            key={tab}
-            variant={selected ? 'primary' : 'ghost'}
-            size="md"
-            className={styles.tab}
-            aria-pressed={selected}
-            onClick={() => onChange(tab)}
-          >
+          <Button key={tab} variant="ghost" size="md" className={styles.tab} aria-pressed={selected} onClick={() => onChange(tab)}>
             {copy.tabs[tab]}
             {count === undefined ? null : <span className={styles.count}>{count}</span>}
           </Button>

@@ -1,27 +1,17 @@
-/* The Front Desk window: header, today's tiles, then the call list beside the selected call. Flex and grid children get min-width: 0. */
+/* The Front Desk window: today's tiles, then the call list beside the selected call. Flex and grid children get min-width: 0. */
 .root {
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  padding: 4px 0 8px;
-  color: var(--text);
-  font-size: var(--font-size-body);
+  padding: 2px 0 8px;
+  color: var(--ds-text-1, #1d1b17);
+  font-family: var(--ds-font, inherit);
+  font-size: 14px;
 }
 
-.header {
+.tiles {
   min-width: 0;
-}
-
-.title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.subtitle {
-  color: var(--text-muted);
-  font-weight: 400;
 }
 
 .split {
@@ -37,13 +27,17 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  border: 1px solid var(--ds-hairline, #e9e3d8);
+  border-radius: var(--ds-r-card, 14px);
+  background: var(--ds-surface, #fffdf9);
 }
 
 .listPane {
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
+  padding: 12px 8px 8px;
+}
+
+.detailPane {
+  padding: 16px;
 }
 
 .listHeader {
@@ -52,34 +46,68 @@
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
+  padding: 0 4px;
 }
 
 .listTitle {
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .listHint {
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
+  color: var(--ds-text-3, #8d877d);
+  font-size: 12px;
 }
 
+/* One row, never two: the four tabs share the width and shrink before they would wrap */
 .tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-wrap: nowrap;
+  gap: 2px;
   min-width: 0;
+  padding: 2px;
+  border-radius: var(--ds-r-ctl, 10px);
+  background: var(--ds-surface-2, #f4f0e8);
 }
 
-.tab {
-  gap: 6px;
-  padding: 0 12px;
+.tabs .tab[data-variant] {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--ds-r-ctl, 10px) - 2px);
+  background: transparent;
+  color: var(--ds-text-2, #5f5a52);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tabs .tab[data-variant]:hover {
+  color: var(--ds-text-1, #1d1b17);
+}
+
+.tabs .tab[data-variant][aria-pressed="true"] {
+  border-color: var(--ds-hairline, #e9e3d8);
+  background: var(--ds-surface, #fffdf9);
+  color: var(--ds-text-1, #1d1b17);
+  box-shadow: var(--ds-shadow, 0 1px 2px rgb(40 30 10 / 8%));
+}
+
+.tabs .tab[data-variant]:focus-visible {
+  outline: 2px solid var(--ds-text-1, #1d1b17);
+  outline-offset: 1px;
 }
 
 .count {
-  color: var(--text-muted);
-  font-weight: 400;
+  color: var(--ds-text-3, #8d877d);
+  font-weight: 500;
 }
 
 .list {
@@ -99,7 +127,7 @@
 .note,
 .pick {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ds-text-3, #8d877d);
 }
 
 .back {
@@ -110,12 +138,19 @@
 /* A phone shows the list or the call, never both: choosing a row opens the call, "All calls" returns to the list */
 @media (max-width: 767.98px) {
   .root[data-detail="open"] .listPane,
-  .root[data-detail="open"] .header {
+  .root[data-detail="open"] .tiles {
     display: none;
   }
 
   .root[data-detail="closed"] .detailPane {
     display: none;
+  }
+
+  /* On a phone the call fills the window: no second card inside the window */
+  .detailPane {
+    padding: 0;
+    border: 0;
+    background: transparent;
   }
 
   .back {
@@ -125,7 +160,7 @@
 
 @media (min-width: 768px) {
   .split {
-    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    grid-template-columns: clamp(300px, 26%, 360px) minmax(0, 1fr);
     align-items: start;
   }
 }

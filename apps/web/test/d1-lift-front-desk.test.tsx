@@ -101,7 +101,7 @@ describe('Front Desk tiles (piece 8)', () => {
     signedInApi();
     renderApp('/front-desk');
 
-    expect(await screen.findByRole('heading', { name: `${copy.title} ${copy.subtitle}` })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: `${copy.title} ${copy.subtitle}` })).toBeNull(); // the window's own title bar carries the title
     expect(within(await tile(copy.callsToday)).getByText('39')).toBeInTheDocument();
     expect(within(await tile(copy.callsToday)).getByText(copy.callsTodayHint)).toBeInTheDocument();
     expect(within(await tile(copy.answered)).getByText('100%')).toBeInTheDocument();

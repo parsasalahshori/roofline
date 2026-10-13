@@ -57,6 +57,7 @@ export const frontDeskInbox = {
     answerTime: 'Average answer time',
     answerTimeHint: 'Day, night or holiday',
     answerTimeNone: 'No calls yet',
+    answerTimeInstant: 'Instant',
     seconds: (value: string) => `${value} seconds`,
     inspections: 'Inspections booked today',
     inspectionsHint: 'Straight into the calendar',

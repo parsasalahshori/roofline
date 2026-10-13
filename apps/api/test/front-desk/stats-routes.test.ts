@@ -73,8 +73,10 @@ async function call(
   } = {},
 ) {
   const companyId = o.company === 'b' ? t.seed.b.companyId : idA();
-  await inCompany(t, companyId, (tx) =>
-    tx.insert(calls).values({
+  const [row] = await inCompany(t, companyId, (tx) =>
+    tx
+      .insert(calls)
+      .values({
       companyId,
       conversationId: o.conversationId ?? null,
       callSid: `CA${String(++sid).padStart(32, '0')}`,
@@ -86,8 +88,10 @@ async function call(
       aiSeconds: o.aiSeconds ?? 0,
       transferResult: o.transferResult ?? 'none',
       spamReason: o.spamReason ?? null,
-    }),
+      })
+      .returning({ id: calls.id }),
   );
+  return row!.id;
 }
 
 async function text(conversationId: string, direction: 'in' | 'out', createdAt: Date, company: 'a' | 'b' = 'a') {
@@ -273,6 +277,24 @@ describe('GET /api/front-desk/stats?day=today', () => {
       // "All" leaves the spam out, the way the list does
       tabCounts: { all: 2, booked: 1, messages: 1, spam: 1 },
     });
+  });
+
+  test('answer time falls back to the first assistant turn when the call has no ai_started_at', async () => {
+    const id = await conv();
+    const callId = await call({ conversationId: id, startedAt: wed(15), aiStartedAt: null });
+    await inCompany(t, idA(), (tx) =>
+      tx.insert(conversationTurns).values({
+        companyId: idA(),
+        conversationId: id,
+        callId,
+        position: 0,
+        speaker: 'assistant',
+        text: 'Hello',
+        at: new Date(wed(15).getTime() + 800),
+      }),
+    );
+    await call({ startedAt: wed(16), aiStartedAt: null }); // no timestamp at all: left out, never counted as zero
+    expect(((await getToday()).body as FrontDeskDayStats).avgAnswerMs).toBe(800);
   });
 
   test('no calls: a null rate and speed, never a made-up number', async () => {
