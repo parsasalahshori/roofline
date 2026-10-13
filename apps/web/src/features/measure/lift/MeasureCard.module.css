@@ -232,6 +232,10 @@
 }
 
 @media (max-width: 640px) {
+  .seconds {
+    display: none;
+  }
+
   .body {
     flex-direction: column;
     gap: 10px;

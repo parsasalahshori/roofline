@@ -211,7 +211,17 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     }
     instance.on('error', () => setMapFailed(true));
     instance.on('zoom', () => setZoom(instance.getZoom()));
-    instance.on('load', () => {
+    // Set up as soon as the style is ready: 'load' also waits for every first tile, and a slow photo tile must not
+    // hold back the roof, its labels and its numbers
+    let started = false;
+    const setup = () => {
+      if (started) return;
+      try {
+        if (!instance.isStyleLoaded()) return;
+      } catch {
+        return;
+      }
+      started = true;
       // The buildings tint and the facets go in first, so the editable outline draws on top of them
       addStructureLayers(instance, structuresRef.current);
       addRoofLayers(instance, startRef.current.model);
@@ -223,7 +233,9 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
       });
       fitRoof(instance, startRef.current.ring, container);
       setMapInstance(instance);
-    });
+    };
+    instance.on('styledata', setup);
+    instance.on('load', setup);
     // The proposal column opens beside the roof once it is measured: the photo follows its box
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => (instance as unknown as FitMap).resize?.()) : null;
     observer?.observe(container);

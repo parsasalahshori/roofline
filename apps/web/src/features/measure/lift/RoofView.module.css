@@ -353,6 +353,10 @@
     right: auto;
     flex-wrap: wrap;
   }
+
+  .credits {
+    top: 96px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

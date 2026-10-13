@@ -294,7 +294,6 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
         <p className={styles.credits}>
           <span>{legal.imageryAttribution}</span>
           <span>{legal.footprintAttribution}</span>
-          <span>{measure.attribution}</span>
         </p>
         {scan.phase === 'idle' ? (
           <ScanBar scan={scan} />
