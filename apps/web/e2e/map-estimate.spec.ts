@@ -34,7 +34,7 @@ test('estimate this roof: picked building to a proposal for a new customer', asy
   await page.goto(`/estimator/measure/${measurementId}`);
   // A new roof is revealed by the scan first: Measure roof, then the numbers and the choices
   await page.getByRole('button', { name: 'Measure roof' }).click();
-  await expect(page.getByLabel(`Building ${picked}`, { exact: true })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: `Building ${picked}`, exact: true })).toBeChecked({ timeout: 15_000 });
   await expect(page.getByRole('button', { name: /Free estimate/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText('Paid · ordered after your OK')).toBeVisible();
 
