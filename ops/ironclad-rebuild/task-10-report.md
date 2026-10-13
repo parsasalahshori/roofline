@@ -50,7 +50,7 @@ CI run for implementation SHA: https://github.com/parsasalahshori/roofline/actio
 | --- | --- | --- |
 | Platform (lint, typecheck, tests) | In progress | https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859625 |
 | E2E (desktop/phone, then demo) | In progress | https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859878 |
-| Demo DB (arm64) | In progress | https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859777 |
+| Demo DB (arm64) | Success | https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859777 |
 | v1 (node:test) | Queued | https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859927 |
 | Hail service (ruff, pytest) | Queued | https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859960 |
 

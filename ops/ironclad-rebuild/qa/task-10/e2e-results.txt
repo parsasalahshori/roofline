@@ -51,7 +51,7 @@ Running 46 tests using 1 worker
   ✓  46 [phone] › apps/web/e2e/phone.spec.ts:400:1 › Agents window with the G1 cards does not scroll sideways (1.7s)
 
 
-  1) [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 1440x900 › switching company from a detail removes old data and old URLs cannot expose it 
+  1) [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 1440x900 › switching company from a detail removes old data and old URLs cannot expose it
 
     Error: old-company details must unmount before query reset
 
@@ -88,7 +88,7 @@ Running 46 tests using 1 worker
 
     ────────────────────────────────────────────────────────────────────────────────────────────────
 
-  2) [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 390x844 › switching company from a detail removes old data and old URLs cannot expose it 
+  2) [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 390x844 › switching company from a detail removes old data and old URLs cannot expose it
 
     Error: old-company details must unmount before query reset
 
@@ -159,7 +159,7 @@ Running 46 tests using 1 worker
     ────────────────────────────────────────────────────────────────────────────────────────────────
 
   3 failed
-    [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 1440x900 › switching company from a detail removes old data and old URLs cannot expose it 
-    [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 390x844 › switching company from a detail removes old data and old URLs cannot expose it 
+    [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 1440x900 › switching company from a detail removes old data and old URLs cannot expose it
+    [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 390x844 › switching company from a detail removes old data and old URLs cannot expose it
     [phone] › apps/web/e2e/phone.spec.ts:296:1 › S1 pages do not scroll sideways ───────────────────
   43 passed (4.0m)
