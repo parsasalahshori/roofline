@@ -512,7 +512,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
       }}
     >
       <main className={styles.main}>
-        <PropertyStrip measurementId={m.id} preview={preview.data} />
+        <PropertyStrip measurementId={m.id} propertyId={m.propertyId} preview={preview.data} />
         <RoofView measurementId={m.id} captured={captured} />
       </main>
       {done ? (

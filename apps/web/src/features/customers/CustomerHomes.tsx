@@ -3,6 +3,7 @@ import { Button, Pill, useToast } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { customers } from '../../copy/customers.ts';
 import { jobs } from '../../copy/jobs.ts';
+import { OwnerRecord } from '../property-data/OwnerRecord.tsx';
 import { useLocateProperty } from './api.ts';
 import styles from './CustomerWindow.module.css';
 
@@ -63,6 +64,7 @@ function HomeRow({ home }: { home: HomeSummary }) {
           </Button>
         </div>
       )}
+      <OwnerRecord propertyId={home.id} />
     </div>
   );
 }

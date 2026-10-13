@@ -1,0 +1,56 @@
+{
+  "parcels": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "id": 101,
+        "geometry": {
+          "type": "MultiPolygon",
+          "coordinates": [
+            [
+              [
+                [-92.30010, 34.75010],
+                [-92.29970, 34.75010],
+                [-92.29970, 34.74980],
+                [-92.30010, 34.74980],
+                [-92.30010, 34.75010]
+              ]
+            ]
+          ]
+        },
+        "properties": {
+          "headline": "123 Example Ln",
+          "path": "/us/ar/example/example-township/101",
+          "ll_uuid": "00000000-0000-4000-8000-000000000101",
+          "fields": {
+            "ogc_fid": 101,
+            "geoid": "05999",
+            "parcelnumb": "99-00000-001",
+            "owner": "SAMPLE JORDAN Q",
+            "owner2": "SAMPLE RILEY",
+            "owner3": "",
+            "mailadd": "123 EXAMPLE LANE",
+            "mail_address2": null,
+            "mail_city": "FAKETOWN",
+            "mail_state2": "AR",
+            "mail_zip": "72999-0001",
+            "address": "123 EXAMPLE LN",
+            "scity": "FAKETOWN",
+            "state2": "AR",
+            "szip": "72999-0001",
+            "szip5": "72999",
+            "county": "Example",
+            "yearbuilt": 1987,
+            "area_building": 1864,
+            "saledate": "2019-06-14",
+            "saleprice": 184500,
+            "parval": 201300,
+            "homestead_exemption": null,
+            "ll_last_refresh": "2026-08-20"
+          }
+        }
+      }
+    ]
+  }
+}

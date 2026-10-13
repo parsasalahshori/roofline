@@ -15,10 +15,11 @@ import {
   updateProperty,
   withTenant,
 } from '@roofline/db';
-import { isTimeZone } from '@roofline/shared';
+import { isTimeZone, type PropertyRecordResponse, type PropertyRecordView, type StreetImageView } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
+import { PropertyDataUnavailableError } from '../providers/property-data.ts';
 import {
   assertKnownFields,
   limitParam,
@@ -42,6 +43,7 @@ const HAS_JOBS_MESSAGE = 'This address already has jobs for a different customer
 const NEEDS_CUSTOMER_MESSAGE = 'This address has jobs, so it needs a customer.';
 const NOT_LOCATED_MESSAGE = "We couldn't find that address. Check the street, city and state.";
 const MAP_UNAVAILABLE_MESSAGE = "We couldn't reach the map service. Try again in a minute.";
+const RECORDS_UNAVAILABLE_MESSAGE = "We couldn't reach the property records service. Try again in a minute.";
 
 const FIRST_YEAR = 1800;
 
@@ -218,6 +220,8 @@ function refused(err: unknown): never {
  *   lose its customer while it has any job (400): an address with a job always has a customer
  *   (a new job claims an address nobody owns yet).
  * - Every edit is audited (before and after) and added to the address's timeline.
+ * - `GET /:id/record` answers the home's public owner and parcel record and a street photo, live from the
+ *   providers (nothing stored). Owner names are for the roofer to read: nothing texts or calls from them.
  * - An address saved without a time zone has none (`timezone: null`); the send gate then uses the
  *   company's zone as it is when the text goes out, so fixing the company's zone later applies to it.
  */
@@ -276,6 +280,45 @@ export function propertyRoutes(deps: AppDeps): Router {
     const row = await withTenant(pools, ctx, (tx) => getProperty(tx, ctx, id));
     if (!row) throw new AppError(404, MESSAGES.notFound);
     res.json(propertyBody(row));
+  });
+
+  /*
+   * The home's public owner and parcel record (providers/property-data.ts) and the nearest street photo
+   * (providers/street-imagery.ts), fetched live each time: nothing is stored, and paid providers bill per
+   * record, so the web asks only when a person opens the record. Anyone who can see the home may read it.
+   * Provider calls run after the transaction. Not set up: `configured: false` and no record. A provider
+   * outage is a 503; a missing street photo never fails the record.
+   */
+  router.get('/:id/record', async (req, res) => {
+    const { ctx } = req;
+    const id = propertyId(req.params.id);
+    const row = await withTenant(pools, ctx, (tx) => getProperty(tx, ctx, id));
+    if (!row) throw new AppError(404, MESSAGES.notFound);
+    const point = row.geom ? { lng: row.geom[0], lat: row.geom[1] } : null;
+
+    let record: PropertyRecordView | null = null;
+    if (deps.propertyData.configured) {
+      try {
+        record = await deps.propertyData.lookup({
+          point,
+          address: { line: row.addressLine, city: row.city, state: row.state, zip: row.zip },
+        });
+      } catch (err) {
+        if (err instanceof PropertyDataUnavailableError) throw new AppError(503, RECORDS_UNAVAILABLE_MESSAGE);
+        throw err;
+      }
+    }
+
+    let streetImage: StreetImageView | null = null;
+    if (point !== null && deps.streetImagery.configured) {
+      streetImage = await deps.streetImagery.nearest(point).catch((err: unknown) => {
+        if (err instanceof PropertyDataUnavailableError) return null;
+        throw err;
+      });
+    }
+
+    const body: PropertyRecordResponse = { configured: deps.propertyData.configured, record, streetImage };
+    res.json(body);
   });
 
   // Tries the geocoder again for an address that has no point. Anyone who may edit the address may do this.

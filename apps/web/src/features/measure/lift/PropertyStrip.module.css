@@ -79,6 +79,12 @@
   color: var(--ds-accent-ink, #8a5a00);
 }
 
+/* The Owner records button and panel, under the strip */
+.record {
+  flex: none;
+  padding: 0 4px 8px;
+}
+
 @media (max-width: 640px) {
   .strip {
     flex-wrap: wrap;

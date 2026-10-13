@@ -142,6 +142,15 @@ const ConfigSchema = z
     GEOCODIO_API_KEY: z.string().optional(),
     /** G1 agents: MapTiler server-side key for the static map in claim packets. Optional; unset: claim packets have no map image. */
     MAPTILER_SERVER_KEY: z.string().optional(),
+    /** Regrid Parcel API token (owner and parcel records, docs/property-data.md). Unset: Regrid is off. */
+    REGRID_API_TOKEN: z.string().min(1).optional(),
+    /**
+     * Which property data provider answers owner records: `regrid` (needs REGRID_API_TOKEN) or `arkansas-gis`
+     * (the free Arkansas GIS Office parcel layer, no key). Unset: Regrid when REGRID_API_TOKEN is set, else off.
+     */
+    PROPERTY_DATA_PROVIDER: z.enum(['regrid', 'arkansas-gis'], { error: 'must be regrid or arkansas-gis' }).optional(),
+    /** Mapillary client access token (`MLY|...`) for street-level photos of a house. Unset: no street photos. */
+    MAPILLARY_TOKEN: z.string().min(1).optional(),
     /** Twilio account SID (`AC` + 32 hex digits). When set, TWILIO_AUTH_TOKEN is required. */
     TWILIO_ACCOUNT_SID: z
       .string()
@@ -383,6 +392,9 @@ const ConfigSchema = z
         path: ['EAGLEVIEW_CLIENT_ID'],
         message: 'is required when EAGLEVIEW_CLIENT_SECRET is set',
       });
+    }
+    if (cfg.PROPERTY_DATA_PROVIDER === 'regrid' && !cfg.REGRID_API_TOKEN) {
+      ctx.addIssue({ code: 'custom', path: ['REGRID_API_TOKEN'], message: 'is required when PROPERTY_DATA_PROVIDER is regrid' });
     }
     const r2 = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'] as const;
     if (r2.some((name) => cfg[name])) {
