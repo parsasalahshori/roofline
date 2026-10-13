@@ -27,3 +27,4 @@ Branch `demo-mode`, off `launch-integration` 2a3cbe5. The owner runs the demo li
 - **Launch merge**: bb23b03e (green) merged at 402b272a. Local checks all pass, smoke 2.5 min. One-liner (Linux path): the raw URL serves the branch script, and fresh clone + npm ci + npm run demo seeds and logs in. The Mac steps need an owner dry run.
 - **Final launch head** ff772d5c merged (G1 Ruling BL expiry, C1 phone top bar, S1 a11y, A1 paused-mid-ring). Locally all checks pass, smoke 2.5 min. `map-est-demo` 86615b29 handed to the controller (demo-lift comes separately).
 - **CI green** on 963b9d5d (run 38331973311), which carries launch ff772d5c plus the ROOFLINE_DEMO_BRANCH switch with reseed. The typed-address mapping is owned by E1 (e1-map-estimate 6658167e).
+- **demo-oct13 777e5517 FINAL CHECK PASS** (2026-10-13 ~02:50 UTC): fresh clone, npm ci, `npm run demo -- --reset` seeds and logs in; demo-walkthrough plus 2 demo-estimator specs, 3/3 in 4.9 min.
