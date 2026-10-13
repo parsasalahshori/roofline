@@ -1,0 +1,14 @@
+/* lift-01: quiet and tabular; gone below 1024px where the bar needs the room */
+.clock {
+  flex: none;
+  color: var(--lift-bar-muted);
+  font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 1023.98px) {
+  .clock {
+    display: none;
+  }
+}

@@ -1,0 +1,189 @@
+/* lift-01: the dock. Colours are the --lift-* tokens (packages/ui/src/tokens.css). */
+.tray {
+  display: inline-block;
+  max-width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--lift-tray-line);
+  border-radius: 22px;
+  background: var(--lift-tray-bg);
+  box-shadow: var(--lift-tray-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+
+.list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  position: relative;
+  display: flex;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--lift-tile-launcher);
+  color: var(--lift-tile-ink);
+  box-shadow: var(--lift-tile-shadow);
+  text-decoration: none;
+  transition: transform 120ms ease;
+}
+
+.tile[data-app="storm"] {
+  background: var(--lift-tile-storm);
+}
+
+.tile[data-app="jobs"] {
+  background: var(--lift-tile-jobs);
+}
+
+.tile[data-app="estimator"] {
+  background: var(--lift-tile-estimator);
+}
+
+.tile[data-app="claims"] {
+  background: var(--lift-tile-claims);
+}
+
+.tile[data-app="calendar"] {
+  background: var(--lift-tile-calendar);
+}
+
+.tile[data-app="front-desk"] {
+  background: var(--lift-tile-front-desk);
+}
+
+.tile[data-app="agents"] {
+  background: var(--lift-tile-agents);
+}
+
+.tile:hover {
+  transform: translateY(-2px);
+}
+
+/* The open app has a small dot under its tile */
+.tile[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.tile:focus-visible,
+.search:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+.glyph {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+}
+
+.glyph > svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* The count: a small red bubble on the tile's top-right corner */
+.badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.badge [role="img"] {
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border: 2px solid var(--lift-tray-bg);
+  box-sizing: content-box;
+  background: var(--lift-badge-bg);
+  color: var(--lift-badge-ink);
+  line-height: 14px;
+}
+
+.rule {
+  width: 1px;
+  height: 24px;
+  background: var(--lift-tray-line);
+}
+
+.search {
+  position: relative;
+}
+
+button.search {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--lift-tile-search);
+  color: var(--text);
+}
+
+button.search:hover {
+  background: var(--lift-hover);
+}
+
+/* The app's name, as a tooltip over the tile on hover and keyboard focus */
+.tile::before,
+.search::before {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: var(--lift-tooltip-bg);
+  color: var(--lift-tooltip-ink);
+  font-family: var(--font);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.tile:hover::before,
+.tile:focus-visible::before,
+.search:hover::before,
+.search:focus-visible::before {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile,
+  .tile::before,
+  .search::before {
+    transition: none;
+  }
+
+  .tile:hover {
+    transform: none;
+  }
+}

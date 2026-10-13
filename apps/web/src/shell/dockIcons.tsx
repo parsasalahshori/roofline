@@ -1,5 +1,5 @@
 /*
- * The six dock icons: line drawings on a 24 by 24 grid, in the current text colour. They are hidden from
+ * The dock icons (white line glyphs on the dock's coloured tiles): line drawings on a 24 by 24 grid, in the current text colour. They are hidden from
  * assistive technology; the dock link's label is what a person hears.
  */
 
@@ -15,7 +15,7 @@ export function StormIcon() {
 export function FrontDeskIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <path d="M4 5h16v11H9l-5 4V5z" />
+      <path d="M6.5 4h3l1.5 4-2 1.3a10 10 0 0 0 5.7 5.7L16 13l4 1.5v3a2 2 0 0 1-2 2A14 14 0 0 1 4.5 6a2 2 0 0 1 2-2z" />
     </svg>
   );
 }
@@ -23,8 +23,8 @@ export function FrontDeskIcon() {
 export function EstimatorIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <path d="M3 11l9-7 9 7" />
-      <path d="M5.5 10v9h13v-9" />
+      <path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19l-4 1z" />
+      <path d="M14.5 6.5l3 3" />
     </svg>
   );
 }
@@ -32,8 +32,8 @@ export function EstimatorIcon() {
 export function JobsIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <rect x="3" y="7" width="18" height="12" rx="2" />
-      <path d="M9 7V5h6v2" />
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+      <path d="M9.2 8v8M14.8 8v5" />
     </svg>
   );
 }
@@ -50,8 +50,7 @@ export function CalendarIcon() {
 export function AgentsIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="9" r="3.5" />
-      <path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5" />
+      <path d="M3 12h4l2.5-6.5 4 13L16 12h5" />
     </svg>
   );
 }

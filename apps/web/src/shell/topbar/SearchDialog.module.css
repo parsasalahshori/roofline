@@ -102,3 +102,23 @@
   color: var(--text-muted);
   font-size: var(--font-size-body);
 }
+
+/* lift-01: the top bar's search button is a quiet round button; 40px on a phone for the thumb */
+button.trigger {
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+button.trigger:hover {
+  background: var(--lift-hover);
+  color: var(--text);
+}
+
+@media (min-width: 768px) {
+  button.trigger {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+}

@@ -1,13 +1,15 @@
 .logo {
   flex: none;
-  width: 24px;
-  height: 24px;
-  color: var(--text);
+  width: 22px;
+  height: 22px;
+  color: var(--lift-bar-ink);
 }
 
 .company {
   min-width: 0;
   overflow: hidden;
+  color: var(--lift-bar-ink);
+  font-size: var(--font-size-body);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;

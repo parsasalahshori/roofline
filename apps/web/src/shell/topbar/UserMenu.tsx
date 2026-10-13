@@ -8,7 +8,7 @@ import { SetupRing } from '../../features/setup/SetupRing.tsx';
 import { useIsPhone } from '../useIsPhone.ts';
 import styles from './UserMenu.module.css';
 
-/** The person's name in the top bar. Opens the account menu: a popover on desktop, a sheet on phone. */
+/** The person's initials in the top bar (the name stays for screen readers). Opens the account menu: a popover on desktop, a sheet on phone. */
 export function UserMenu() {
   const me = useMe();
   const phone = useIsPhone();
@@ -43,7 +43,7 @@ export function UserMenu() {
         onClick={() => setOpen((current) => !current)}
         className={styles.trigger}
       >
-        <Avatar name={account.user.name} size={24} />
+        <Avatar name={account.user.name} size={32} />
         <span className={styles.name}>{account.user.name}</span>
       </Button>
       <SetupRing />

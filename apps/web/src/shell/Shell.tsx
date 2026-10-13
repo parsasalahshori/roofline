@@ -1,4 +1,4 @@
-import { Dock, type DockItem } from '@roofline/ui';
+import type { DockItem } from '@roofline/ui';
 import { type CSSProperties, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useApprovals, useAttentionCount, useMe } from '../api/hooks.ts';
@@ -12,6 +12,7 @@ import { MapErrorBoundary } from './map/MapErrorBoundary.tsx';
 import { BottomTabs } from './phone/BottomTabs.tsx';
 import { MoreSheet } from './phone/MoreSheet.tsx';
 import styles from './Shell.module.css';
+import { ShellDock } from './ShellDock.tsx';
 import { ShellTopBar } from './topbar/ShellTopBar.tsx';
 import { useIsPhone } from './useIsPhone.ts';
 
@@ -110,7 +111,7 @@ export function Shell() {
         </>
       ) : (
         <div className={styles.dock}>
-          <Dock label={dock.label} items={items} />
+          <ShellDock label={dock.label} items={items} />
         </div>
       )}
     </div>

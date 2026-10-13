@@ -4,6 +4,8 @@ import type { WindowKey } from '../shell/apps.ts';
 export const dock = {
   label: 'Apps',
   comingSoon: 'Coming soon',
+  /** The dock's search button. Not "Search": that is the top bar button's name. */
+  searchLabel: 'Quick search',
   stormBadge: (count: number) => (count === 1 ? '1 new storm plan' : `${count} new storm plans`),
   estimatorBadge: (count: number) => (count === 1 ? '1 proposal waiting' : `${count} proposals waiting`),
   frontDeskBadge: (count: number) => (count === 1 ? '1 conversation waiting' : `${count} conversations waiting`),

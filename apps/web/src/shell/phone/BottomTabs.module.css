@@ -1,12 +1,12 @@
 /*
- * The phone's bottom tab bar. The shell's fixed wrapper places it at the bottom of the screen and
- * pads it for the home indicator; this file only lays out the five tabs.
+ * The phone's bottom tab bar, in the dock's tile style (lift-01): a solid-coloured rounded tile with a
+ * white glyph over its label. The shell's fixed wrapper places it at the bottom of the screen, gives it
+ * the translucent tray look and pads it for the home indicator; this file only lays out the five tabs.
  */
 .nav {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  background: var(--surface);
-  border-top: 1px solid var(--line);
+  padding: 6px 4px;
   color: var(--text);
   font-family: var(--font);
 }
@@ -17,25 +17,24 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
-  min-height: 48px;
-  padding: 6px 2px;
+  min-height: 52px;
+  padding: 0 2px;
   border: 0;
-  border-radius: 0;
+  border-radius: 12px;
   background: transparent;
   color: var(--text-muted);
   font-weight: 600;
 }
 
 .nav .tab:hover {
-  background: var(--surface-2);
+  background: var(--lift-hover);
 }
 
-/* The current tab is marked by data-current, set from the route */
 .nav .tab[data-current="true"] {
   color: var(--text);
-  box-shadow: inset 0 3px 0 var(--accent);
+  font-weight: 700;
 }
 
 .nav .tab:focus-visible {
@@ -43,22 +42,62 @@
   outline-offset: 2px;
 }
 
+/* The tile: 34px, the dock's 40px scaled down for a row of five */
+.tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--lift-tile-launcher);
+  color: var(--lift-tile-ink);
+  box-shadow: var(--lift-tile-shadow);
+}
+
+.tab[data-tab="today"] .tile {
+  background: var(--lift-tile-estimator);
+}
+
+.tab[data-tab="map"] .tile {
+  background: var(--lift-tile-storm);
+}
+
+.tab[data-tab="jobs"] .tile {
+  background: var(--lift-tile-jobs);
+}
+
+.tab[data-tab="calendar"] .tile {
+  background: var(--lift-tile-calendar);
+}
+
+.tab[data-tab="more"] .tile {
+  background: var(--lift-tile-launcher);
+}
+
+/* The open tab gets a ring around its tile */
+.tab[data-current="true"] .tile {
+  box-shadow:
+    0 0 0 2px var(--lift-tray-bg),
+    0 0 0 4px var(--text);
+}
+
 .icon {
   display: flex;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 .icon > svg {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 .label {
+  max-width: 100%;
+  overflow: hidden;
   font-size: var(--font-size-min);
   line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  white-space: nowrap;
 }

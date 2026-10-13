@@ -5,23 +5,49 @@
   align-items: center;
 }
 
-.trigger {
-  max-width: 100%;
+/* lift-01: the trigger is just the initials in a dark circle; the name is kept for assistive technology.
+   0,2,0 so these beat the kit's Button rules without a !important. */
+.root .trigger {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
 }
 
-/* A long name ends in an ellipsis rather than pushing the top bar apart */
-.name {
-  min-width: 0;
-  max-width: 16ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.root .trigger:hover {
+  background: var(--lift-hover);
 }
 
-@media (max-width: 1023.98px) {
-  .name {
-    max-width: 12ch;
+.root .trigger:focus-visible {
+  outline: 2px solid var(--lift-bar-ink);
+  outline-offset: 2px;
+}
+
+.root .trigger [data-size] {
+  width: 30px;
+  height: 30px;
+  background: var(--lift-avatar-bg);
+  color: var(--lift-avatar-ink);
+  font-size: var(--font-size-min);
+}
+
+/* Phone: a 40px target around the 30px circle */
+@media (max-width: 767.98px) {
+  .root .trigger {
+    min-width: 40px;
+    min-height: 40px;
   }
+}
+
+.name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .popover {

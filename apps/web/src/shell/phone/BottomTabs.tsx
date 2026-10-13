@@ -23,7 +23,7 @@ function isCurrent(href: string, pathname: string): boolean {
 }
 
 /**
- * The phone's bottom tab bar: My day, Map, Jobs, Calendar and More. The shell wraps it in a fixed
+ * The phone's bottom tab bar in the dock's tile style: My day, Map, Jobs, Calendar and More. The shell wraps it in a fixed
  * bar at the bottom of the screen, so this nav sets no position and no z-index of its own.
  */
 export function BottomTabs({ onMore, moreOpen }: { onMore: () => void; moreOpen?: boolean }) {
@@ -40,8 +40,11 @@ export function BottomTabs({ onMore, moreOpen }: { onMore: () => void; moreOpen?
             className={styles.tab}
             aria-current={current ? 'page' : undefined}
             data-current={current ? 'true' : undefined}
+            data-tab={tab.key}
           >
-            <span className={styles.icon}>{tab.icon}</span>
+            <span className={styles.tile}>
+              <span className={styles.icon}>{tab.icon}</span>
+            </span>
             <span className={styles.label}>{tab.label}</span>
           </Button>
         );
@@ -52,9 +55,12 @@ export function BottomTabs({ onMore, moreOpen }: { onMore: () => void; moreOpen?
         aria-haspopup="dialog"
         aria-expanded={moreOpen ?? false}
         onClick={onMore}
+        data-tab="more"
       >
-        <span className={styles.icon}>
-          <MoreIcon />
+        <span className={styles.tile}>
+          <span className={styles.icon}>
+            <MoreIcon />
+          </span>
         </span>
         <span className={styles.label}>{shell.tabMore}</span>
       </Button>

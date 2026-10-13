@@ -1,25 +1,41 @@
+/* lift-01: "N agents working" as a small pill with a green dot; the quiet state is a neutral pill */
 .agents {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-body);
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 14px;
+  background: var(--lift-hover);
+  color: var(--lift-bar-muted);
+  font-size: var(--font-size-min);
+  font-weight: 600;
   white-space: nowrap;
   text-decoration: none;
 }
 
 .agents:hover {
-  color: var(--text);
+  color: var(--lift-bar-ink);
 }
 
-/* Green marks that work is going on; the text itself never turns green (white text on it fails contrast) */
+.agents:focus-visible {
+  outline: 2px solid var(--lift-bar-ink);
+  outline-offset: 2px;
+}
+
+/* Green marks that work is going on; the text keeps its own dark-green ink on the tinted fill */
 .dot {
   flex: none;
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--line);
+}
+
+.agents[data-state="working"] {
+  background: var(--lift-agents-bg);
+  color: var(--lift-agents-ink);
 }
 
 .agents[data-state="working"] .dot {

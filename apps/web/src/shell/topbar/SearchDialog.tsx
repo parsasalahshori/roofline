@@ -7,6 +7,7 @@ import { search } from '../../copy/search.ts';
 import styles from './SearchDialog.module.css';
 import { SearchIcon } from './searchIcon.tsx';
 import { readRecents } from '../recents.ts';
+import { OPEN_SEARCH_EVENT } from './openSearch.ts';
 import { actionOptions, recentOptions, toOptions, type SearchOption } from './searchOptions.ts';
 
 /** The groups in the order the dialog shows them. Each key is also the name of its heading in `search`. */
@@ -33,13 +34,24 @@ export function SearchDialog() {
         setOpen(true);
       }
     }
+    const onRequest = () => setOpen(true);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener(OPEN_SEARCH_EVENT, onRequest);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener(OPEN_SEARCH_EVENT, onRequest);
+    };
   }, []);
 
   return (
     <>
-      <IconButton label={search.open} icon={<SearchIcon />} onClick={() => setOpen(true)} aria-haspopup="dialog" />
+      <IconButton
+        label={search.open}
+        icon={<SearchIcon />}
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        className={styles.trigger}
+      />
       {open ? <SearchPanel onClose={() => setOpen(false)} /> : null}
     </>
   );

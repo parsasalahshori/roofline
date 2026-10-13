@@ -47,3 +47,75 @@
   --stage-proposal: #e67700;
   --stage-won: #2f9e44;
 }
+
+/*
+ * lift-01: the dock tiles, the dock tray and the quiet top bar. A second :root block on purpose:
+ * tokens.test.ts and tokens.ts mirror only the first one.
+ */
+:root {
+  /* lift-01 */
+  --lift-tile-launcher: #3a3733;
+  --lift-tile-storm: #1e3a8a;
+  --lift-tile-jobs: #2563eb;
+  --lift-tile-estimator: #d99100;
+  --lift-tile-claims: #2f9e44;
+  --lift-tile-calendar: #ea6a1a;
+  --lift-tile-front-desk: #0d9488;
+  --lift-tile-agents: #17171a;
+  --lift-tile-ink: #ffffff;
+  --lift-tile-search: rgba(43, 38, 32, 0.08);
+  --lift-tray-bg: rgba(255, 253, 248, 0.78);
+  --lift-tray-line: rgba(43, 38, 32, 0.08);
+  --lift-tray-shadow: 0 10px 30px rgba(43, 30, 0, 0.18), 0 1px 3px rgba(43, 30, 0, 0.1);
+  --lift-tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --lift-bar-bg: rgba(255, 253, 248, 0.82);
+  --lift-bar-line: rgba(43, 38, 32, 0.07);
+  --lift-bar-ink: #2b2620;
+  --lift-bar-muted: rgba(43, 38, 32, 0.72);
+  --lift-hover: rgba(43, 38, 32, 0.07);
+  --lift-badge-bg: #c92a2a;
+  --lift-badge-ink: #ffffff;
+  --lift-tooltip-bg: #2b2620;
+  --lift-tooltip-ink: #fffdf8;
+  --lift-ok-bg: #fde7b0;
+  --lift-ok-ink: #5c3b00;
+  --lift-ok-line: #f5b324;
+  --lift-agents-bg: rgba(47, 158, 68, 0.12);
+  --lift-agents-ink: #1f6b30;
+  --lift-avatar-bg: #2b2620;
+  --lift-avatar-ink: #fffdf8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* lift-01 */
+    --lift-tile-launcher: #54504a;
+    --lift-tile-storm: #2c4fb8;
+    --lift-tile-jobs: #3b7bf0;
+    --lift-tile-estimator: #e0a000;
+    --lift-tile-claims: #38b255;
+    --lift-tile-calendar: #f27a2a;
+    --lift-tile-front-desk: #14b3a4;
+    --lift-tile-agents: #000000;
+    --lift-tile-search: rgba(255, 255, 255, 0.1);
+    --lift-tray-bg: rgba(38, 35, 31, 0.78);
+    --lift-tray-line: rgba(255, 255, 255, 0.1);
+    --lift-tray-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --lift-tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --lift-bar-bg: rgba(38, 35, 31, 0.82);
+    --lift-bar-line: rgba(255, 255, 255, 0.09);
+    --lift-bar-ink: #fffdf8;
+    --lift-bar-muted: rgba(255, 253, 248, 0.78);
+    --lift-hover: rgba(255, 255, 255, 0.1);
+    --lift-badge-bg: #e03131;
+    --lift-tooltip-bg: #fffdf8;
+    --lift-tooltip-ink: #2b2620;
+    --lift-ok-bg: #4a3608;
+    --lift-ok-ink: #ffd987;
+    --lift-ok-line: #8a6410;
+    --lift-agents-bg: rgba(56, 178, 85, 0.18);
+    --lift-agents-ink: #7fdc98;
+    --lift-avatar-bg: #fffdf8;
+    --lift-avatar-ink: #2b2620;
+  }
+}

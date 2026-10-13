@@ -3,6 +3,11 @@ export const shell = {
   needYourOk: (count: number) => `${count} need your OK`,
   agentsWorking: (working: number) =>
     working === 0 ? 'All quiet' : working === 1 ? '1 agent working' : `${working} agents working`,
+  /** The date and time on the top bar: Fri, Sep 25, 1:31 PM. */
+  dateTime: (date: Date) =>
+    new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(
+      date,
+    ),
   /** The temperature on the weather chip: 71.6 reads 72°. */
   degrees: (tempF: number) => `${Math.round(tempF)}°`,
 
