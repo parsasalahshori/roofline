@@ -7,6 +7,8 @@ import { completeParkedStep, refreshTask } from '../../tasks/service.ts';
 import { reportJobError } from './report.ts';
 
 const POLL_GAP_MS = 10 * 60_000;
+/** Demo mode (DEMO_MODE) asks again after 30 seconds, so an ordered report finishes while the audience watches. */
+const DEMO_POLL_GAP_MS = 30_000;
 /** Our own sentence; the provider's reason is never stored or shown. */
 const FAILED_PLAIN = 'The report could not be completed. Check with the report provider.';
 
@@ -44,7 +46,7 @@ export function billedCostCents(reportedCents: number | null, priceMaxCents: num
  */
 export async function pollExactReports(deps: AppDeps, now: Date): Promise<void> {
   if (!deps.exactReports.configured) return;
-  const cutoff = new Date(now.getTime() - POLL_GAP_MS);
+  const cutoff = new Date(now.getTime() - (deps.config.DEMO_MODE ? DEMO_POLL_GAP_MS : POLL_GAP_MS));
   for (const companyId of await companiesWithWaitingExactOrders(deps.pools.system, cutoff)) {
     const ctx = systemContext(companyId);
     try {

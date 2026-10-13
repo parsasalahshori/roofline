@@ -27,7 +27,7 @@ import {
   type ToolCallRecord,
   type Tx,
 } from '@roofline/db';
-import { findCompanyBySlug } from '@roofline/db/system';
+import { findCompanyBySlug, insertFootprints, type FootprintInput } from '@roofline/db/system';
 import { type Query, seedCompany } from '@roofline/db/testing';
 import { CONSENT_TEXT_V1, canonicalJson, instantEstimate, signedDocument, type JobStage, type Outline } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
@@ -550,6 +550,63 @@ export async function demoWorldCounts(q: Query, companyId: string): Promise<Reco
  * `created: false` with the existing company's counts. `ownerUrl` connects as the table owner (the
  * company, its users, and the global storm and footprint rows are written with it).
  */
+/** Metres to degrees around Omaha (latitude 41.25). */
+const M_LAT = 1 / 111_320;
+const M_LNG = 1 / 83_700;
+
+/** A house-sized rectangle (about 11-19 m by 8-13 m) centred on a point, its size from `seed` (0..1). */
+function houseRing(lng: number, lat: number, seed: number): [number, number][] {
+  const w = (11 + 8 * seed) / 2;
+  const d = (8 + 5 * ((seed * 7) % 1)) / 2;
+  const [x0, x1, y0, y1] = [lng - w * M_LNG, lng + w * M_LNG, lat - d * M_LAT, lat + d * M_LAT];
+  return [
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+    [x0, y0],
+  ];
+}
+
+/**
+ * Building outlines for "Estimate this roof" on the demo map, with no network: one around every Summit Ridge home,
+ * and empty neighbouring houses (no customer) 30 m east and west and 40 m across the street, skipped where they
+ * would sit on another home. Written to the same building-footprint table the measurement code reads (NE).
+ */
+export async function seedDemoFootprints(pools: Pools, q: Query, companyId: string): Promise<number> {
+  const homes = (await q(`select ST_X(geom) as lng, ST_Y(geom) as lat from properties where company_id = $1 and geom is not null`, [
+    companyId,
+  ])) as { lng: number; lat: number }[];
+  const near = (lng: number, lat: number, metres: number) =>
+    homes.some((h) => Math.hypot((h.lng - lng) / M_LNG, (h.lat - lat) / M_LAT) < metres);
+  const centre = (f: FootprintInput) => [(f.ring[0]![0] + f.ring[2]![0]) / 2, (f.ring[0]![1] + f.ring[2]![1]) / 2] as const;
+  const apart = (a: FootprintInput, b: FootprintInput) => {
+    const [ax, ay] = centre(a);
+    const [bx, by] = centre(b);
+    return Math.hypot((ax - bx) / M_LNG, (ay - by) / M_LAT);
+  };
+  // Every home keeps its own outline; a neighbour is added only clear of every home and of the neighbours kept so far.
+  const kept: FootprintInput[] = homes.map((h, i) => ({
+    sourceRef: `demo-home-${i}`,
+    ring: houseRing(h.lng, h.lat, ((i * 0.6180339887) % 1 + 1) % 1),
+  }));
+  homes.forEach((h, i) => {
+    const seed = ((i * 0.6180339887) % 1 + 1) % 1;
+    const neighbours: [number, number][] = [
+      [h.lng + 30 * M_LNG, h.lat],
+      [h.lng - 30 * M_LNG, h.lat],
+      [h.lng, h.lat + 40 * M_LAT],
+    ];
+    neighbours.forEach(([lng, lat], j) => {
+      if (near(lng, lat, 22)) return;
+      const next = { sourceRef: `demo-next-${i}-${j}`, ring: houseRing(lng, lat, (seed + 0.37 * (j + 1)) % 1) };
+      if (kept.some((k) => apart(k, next) < 20)) return;
+      kept.push(next);
+    });
+  });
+  return insertFootprints(pools.system, 'NE', kept);
+}
+
 export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, opts: DemoWorldOptions = {}): Promise<DemoWorld> {
   const owner = new pg.Pool({ connectionString: ownerUrl, max: 2 });
   const q: Query = async (text, values) => (await owner.query(text, values)).rows as Record<string, unknown>[];
@@ -824,6 +881,8 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
       );
     });
 
+    // Last, so the homes every later step added have outlines too ("Estimate this roof" on the map).
+    await seedDemoFootprints(pools, q, companyId);
     return { created: true, companyId, counts: await demoWorldCounts(q, companyId) };
   } finally {
     await owner.end();

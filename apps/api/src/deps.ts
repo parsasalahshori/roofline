@@ -13,6 +13,7 @@ import { eagleViewOrdersFor } from './providers/eagleview/orders.ts';
 import { eagleViewPropertyDataFor } from './providers/eagleview/property-data.ts';
 import { type ExactReports, ExactReportsUnavailableError } from './providers/exact-reports.ts';
 import { FakeAerialMeasure } from './providers/fakes/aerial.ts';
+import { DemoExactReports } from './providers/fakes/demo-exact-reports.ts';
 import { FakeExactReports } from './providers/fakes/exact-reports.ts';
 import type { AdsGoogle } from './providers/ads-google.ts';
 import type { AdsMeta } from './providers/ads-meta.ts';
@@ -173,6 +174,7 @@ function aerialFor(config: Config): AerialMeasure {
 }
 
 function exactReportsFor(config: Config): ExactReports {
+  if (config.DEMO_MODE) return new DemoExactReports();
   if (config.FAKE_PROVIDERS) return new FakeExactReports();
   return eagleViewOrdersFor(config) ?? new UnconfiguredExactReports();
 }
