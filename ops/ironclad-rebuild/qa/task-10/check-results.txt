@@ -1,0 +1,78 @@
+npm-ci
+added 858 packages in 10s
+
+baseline-web
+ Test Files  5 passed (5)
+      Tests  49 passed (49)
+   Duration  5.37s (tests 32%, transform 28%, environment 25%, import 11%, setup 4%)
+
+baseline-all-browser
+ Test Files  201 passed (201)
+      Tests  3482 passed (3482)
+   Duration  161.72s (tests 45%, environment 29%, import 14%, transform 7%, setup 5%)
+
+api
+ Test Files  8 passed (8)
+      Tests  250 passed (250)
+   Duration  197.40s (tests 89%, import 9%, transform 2%)
+
+new-web-final
+RUN  v5.0.3 /workspace/roofline
+
+ ❯ |@roofline/web| test/ironclad-full-10.test.tsx (11 tests | 1 failed) 365ms
+   ❯ Ironclad cross-product contracts (11)
+     × unmounts the old company detail before resetting queries and discards its cached plan 156ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |@roofline/web| test/ironclad-full-10.test.tsx > Ironclad cross-product contracts > unmounts the old company detail before resetting queries and discards its cached plan
+AssertionError: expected [ 'old-plan' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "old-plan",
++ ]
+
+ ❯ test/ironclad-full-10.test.tsx:94:30
+     92|     expect(client.getQueryData(keys.me)).toMatchObject({ company: { id…
+     93|     expect(api.sent('POST /api/auth/switch-company')).toEqual([{ compa…
+     94|     expect(readsAfterSwitch).toEqual([]);
+       |                              ^
+     95|   });
+     96|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 10 passed (11)
+   Start at  01:51:40
+   Duration  1.81s (transform 32%, environment 27%, tests 21%, import 15%, setup 4%)
+
+typecheck-final
+> roofline-platform@0.0.0 typecheck
+> tsc -b && tsc -p scripts
+
+lint-final
+> roofline-platform@0.0.0 lint
+> eslint .
+
+lint-css
+> roofline-platform@0.0.0 lint:css
+> stylelint "packages/ui/src/**/*.css" "apps/web/src/**/*.css" --allow-empty-input
+
+build-final
+(!) Some chunks are larger than 500 kB after minification. Consider:
+✓ built in 903ms
+
+Isolated demo walkthrough (afterward ordinary E2E was rebuilt and rerun serially)
+  ✓  1 [desktop] › e2e/demo-walkthrough.spec.ts:67:1 › Roofline demo walkthrough (2.5m)
+  1 passed (3.3m)
+
+Final ordinary E2E: 43 passed / 3 failed; see e2e-results.txt.
+Existing E2E subset: 38 passed, 1 blocked by Domain forbidden on company test host.
+New E2E: 5 passed, 2 failed (company-switch ordering).
+New unit: 10 passed, 1 failed (same ordering defect).

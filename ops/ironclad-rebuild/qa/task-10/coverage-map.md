@@ -28,7 +28,7 @@ Baseline: `81b9251490cfa05eac4baecc68f6952b549a1460`, descended from complete la
 
 Inspected all ten committed JPEGs: desktop home, Front Desk, Pipeline, Measure, Schedule, Storm, Agents, Claims at 1440×900, and home/Front Desk at 390×844. Read both measured-style JSON files and reference README. The compact 34px desktop header, map-backed widgets, 1400×766 Front Desk panel, graphite/neutral surfaces, colored app dock and phone stacking are the design authority. These synthetic figures are not Roofline data.
 
-Task 10 changes no UI. Runtime screenshots from this branch therefore show the pre-redesign baseline. A blank map in the fake test stack is expected: its no-key map style deliberately makes no remote tile calls. No exact visual-fidelity pass is claimed. Shared shell geometry and integrated screens must be recaptured after the controller assembles all owners' changes.
+Task 10 changes no UI. Runtime screenshots from this branch therefore show the pre-redesign baseline. The ordinary E2E stack uses a no-key map style with no remote tiles. The separate demo build enables OpenStreetMap tiles; its captured home shows the map-loading warning and no basemap, so demo-map visual fidelity remains unverified in this environment. No exact visual-fidelity pass is claimed. Shared shell geometry and integrated screens must be recaptured after the controller assembles all owners' changes.
 
 ## Integration requests
 
@@ -36,7 +36,7 @@ Task 10 changes no UI. Runtime screenshots from this branch therefore show the p
 2. Re-run the new regression spec in the normal desktop project: it contains both exact reference viewport groups. The existing phone project only discovers `phone.spec` and `doors.spec`; controller may change discovery, but should avoid running both explicit groups twice.
 3. Existing `shell.spec.ts` asserts the old 1280px maximum window width. Controller must adapt intentional geometry assertions against measured reference values, preserving navigation/focus/one-window checks. Task 10 does not edit existing tests.
 4. The separate demo walkthrough has optional `clickFirst` visits: passing it alone cannot prove every detail opens. Keep the specific workflow suites alongside it.
-5. A new company-switch test detects an old-ID refetch after the switch response despite `await navigate('/')`. Reproduced in Chromium at both 1440×900 and 390×844, as well as the hook/router test. Keep its assertion; controller owns shared hooks/integration and must review React commit timing. Server tenant rejection and actual-browser behavior are checked separately. This finding alone is not evidence of cross-company data disclosure.
+5. A new company-switch test detects an old-ID refetch after the switch response despite `await navigate('/')`. Reproduced in Chromium at both 1440×900 and 390×844, as well as the hook/router test. Keep its assertion; controller must coordinate a separately reviewed fix at the frozen hook/navigation boundary and review React commit timing. Server tenant rejection and actual-browser behavior are checked separately. This finding alone is not evidence of cross-company data disclosure.
 
 ## Available sibling change audit
 

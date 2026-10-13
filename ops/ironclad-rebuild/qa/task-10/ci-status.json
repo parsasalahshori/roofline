@@ -1,0 +1,43 @@
+{
+  "observedAt": "2026-10-13T02:01:04.137Z",
+  "commit": "280a105d90c248ab3ba1fc60e9183fc733267d7d",
+  "runId": 38334312930,
+  "runUrl": "https://github.com/parsasalahshori/roofline/actions/runs/38334312930",
+  "jobs": [
+    {
+      "id": 115090859625,
+      "name": "Platform (lint, typecheck, tests)",
+      "status": "in_progress",
+      "conclusion": null,
+      "url": "https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859625"
+    },
+    {
+      "id": 115090859777,
+      "name": "Demo DB (arm64)",
+      "status": "in_progress",
+      "conclusion": null,
+      "url": "https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859777"
+    },
+    {
+      "id": 115090859878,
+      "name": "E2E (Playwright)",
+      "status": "in_progress",
+      "conclusion": null,
+      "url": "https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859878"
+    },
+    {
+      "id": 115090859927,
+      "name": "v1 (node:test)",
+      "status": "queued",
+      "conclusion": null,
+      "url": "https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859927"
+    },
+    {
+      "id": 115090859960,
+      "name": "Hail service (ruff, pytest)",
+      "status": "queued",
+      "conclusion": null,
+      "url": "https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859960"
+    }
+  ]
+}
