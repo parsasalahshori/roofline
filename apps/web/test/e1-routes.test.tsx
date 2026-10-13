@@ -107,7 +107,8 @@ describe('E1 windows', () => {
     signedInApi(ACCOUNT, { ...proposalListRoutes(), 'GET /api/measurements/m1': () => ({ body: MEASUREMENT }) });
     renderApp('/estimator/measure/m1');
 
-    expect(await screen.findByText(measure.numbersTitle)).toBeInTheDocument();
+    // The compact result card: the price choice shows at once; the numbers sit under its Adjust fold
+    expect(await screen.findByRole('heading', { name: measure.choiceTitle })).toBeInTheDocument();
   });
 
   it('/estimator/proposals/p1 shows the proposal', async () => {
