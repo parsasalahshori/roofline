@@ -3,6 +3,7 @@ import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
 import { decrypt } from '@roofline/db';
 import { JOB_STAGES } from '@roofline/shared';
+import { DEMO_BUILDINGS } from '../src/demo/places.ts';
 import { DEMO_LOOKUP_LOTS } from '../src/providers/fakes/geocoder.ts';
 import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
 import { DEMO_COMPANY_NAME, DEMO_COMPANY_SLUG, DEMO_LOGIN, seedDemoWorld } from '../src/scripts/demo-world.ts';
@@ -102,6 +103,32 @@ describe('the demo world', () => {
       )
     ).rows[0] as { n: number };
     expect(empty.n).toBeGreaterThan(50);
+    // The counts the demo promises.
+    expect(c.customers).toBe(66);
+    expect(c.properties).toBe(76);
+    expect(c.stormHits).toBe(37);
+    expect(c.measurements).toBe(4);
+    const total = (prefix: string) => Object.entries(c).filter(([k]) => k.startsWith(prefix)).reduce((n, [, v]) => n + v, 0);
+    expect(total('jobs.')).toBe(30);
+    expect(total('proposals.')).toBe(4);
+    // Real outlines (Microsoft's, with L-shapes and other corners), not drawn rectangles, and the seeded measurements were
+    // traced on them.
+    const shapes = (
+      await owner.query(
+        `select count(*)::int as total, count(*) filter (where ST_NPoints(geom) > 5)::int as shaped
+           from building_footprints where state = 'NE' and source = 'microsoft'`,
+      )
+    ).rows[0] as { total: number; shaped: number };
+    expect(shapes.total).toBe(DEMO_BUILDINGS.length);
+    expect(shapes.shaped).toBeGreaterThan(shapes.total / 2);
+    const traced = (
+      await owner.query(
+        `select count(*)::int as n from measurements m join properties p on p.id = m.property_id
+          where m.company_id = $1 and p.footprint_id is not null and ST_NPoints(m.outline) > 5`,
+        [first.companyId],
+      )
+    ).rows[0] as { n: number };
+    expect(traced.n).toBe(4);
     // Every lot the demo geocoder sends a typed address to has its roof (else that address would open draw mode).
     for (const [lng, lat] of DEMO_LOOKUP_LOTS) {
       const lot = (

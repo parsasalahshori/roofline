@@ -1,3 +1,4 @@
+import { DEMO_LOOKUP_LOTS } from '../../demo/places.ts';
 import { type GeocodeResult, type Geocoder, GeocoderUnavailableError } from '../geocoder.ts';
 
 const STATE_TIMEZONES: Record<string, string> = {
@@ -112,21 +113,12 @@ const DEMO_STREETS: readonly string[] = [
 
 const DEMO_ZIPS: readonly string[] = ['68114', '68124', '68130', '68144', '68154', '68164'];
 
-const LOT_COLUMNS = 8;
-const LOT_ROWS = 6;
-/** Where the lookup lots start (south-west corner), and how far apart they sit, in metres. */
-const LOT_ORIGIN: readonly [number, number] = [-96.03, 41.3];
-const LOT_STEP_M = { east: 45, north: 55 } as const;
-
 /**
- * The demo's empty lots: a fixed grid of points that the demo world seeds a house-sized footprint on (nobody lives
- * there), so any address typed into Measure finds a roof with no network. The demo geocoder maps every address
- * to one of these, always the same one for the same text.
+ * The demo's lookup lots: 48 real Omaha, NE houses (a point well inside each outline, see demo/places.ts) that the demo
+ * world loads footprints for and where nobody lives, so any address typed into Measure finds a real roof with no
+ * network. The demo geocoder maps every address to one of these, always the same one for the same text.
  */
-export const DEMO_LOOKUP_LOTS: readonly (readonly [number, number])[] = Array.from({ length: LOT_COLUMNS * LOT_ROWS }, (_, i) => [
-  round6(LOT_ORIGIN[0] + ((i % LOT_COLUMNS) * LOT_STEP_M.east) / 83_700),
-  round6(LOT_ORIGIN[1] + (Math.floor(i / LOT_COLUMNS) * LOT_STEP_M.north) / 111_320),
-]);
+export { DEMO_LOOKUP_LOTS };
 
 /**
  * The demo's geocoder (DEMO_MODE): the fake geocoder, except that a reverse lookup answers a plausible, fictional
