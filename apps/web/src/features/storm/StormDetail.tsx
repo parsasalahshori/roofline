@@ -2,7 +2,9 @@ import { Button, Card, EmptyState, Skeleton, StatCard, useToast } from '@rooflin
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
+import type { TaskStatus } from '@roofline/shared';
 import { useMe } from '../../api/hooks.ts';
+import { doors } from '../../copy/doors.ts';
 import { errors } from '../../copy/errors.ts';
 import { storm } from '../../copy/storm.ts';
 import { useDismissStorm, useRedraftStorm, useStorm } from './api.ts';
@@ -39,71 +41,88 @@ export function StormDetail() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>{item.placeName ?? item.day}</h1>
-      <p className={styles.size}>{storm.upTo(item.maxIn.toFixed(2))}</p>
-      <div className={styles.stats}>
-        <StatCard label={storm.customersHitLabel} value={item.customersHit} />
-        <StatCard label={storm.homesHitLabel} value={item.homesHit} />
-      </div>
-      <StormSwathMap swath={data.swath} />
-      <Card as="section" aria-label={storm.planHeadingDetail} className={styles.plan}>
-        {data.plan && !plansReplaced ? (
-          <Button href={'/storm/plans/' + encodeURIComponent(data.plan.taskId)}>{storm.openPlan}</Button>
-        ) : null}
-        {canAct && canRedraft ? (
-          <Button
-            variant="primary"
-            disabled={redraft.isPending}
-            onClick={() => {
-              redraft.mutate(id, { onError: showError });
-            }}
-          >
-            {redraft.isPending ? storm.redrafting : storm.redraft}
-          </Button>
-        ) : null}
-      </Card>
-      <StormResults results={data.results} running={data.plan?.status === 'running'} />
-      {canAct && !confirming ? (
-        <div className={styles.actions}>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setConfirming(true);
-            }}
-          >
-            {storm.dismiss}
-          </Button>
+      <nav className={styles.nav} aria-label={storm.detailHeading}>
+        <Button variant="ghost" href="/storm">{storm.backToStorms}</Button>
+        <Button variant="ghost" href="/storm/routes">{doors.myRoutesLink}</Button>
+      </nav>
+      <div className={styles.map}><StormSwathMap swath={data.swath} /></div>
+      <div className={styles.sidebar}>
+        <header className={styles.header}>
+          <h1 className={styles.title}>{item.placeName ?? item.day}</h1>
+          {item.placeName ? <p className={styles.day}>{item.day}</p> : null}
+          <p className={styles.size}>{storm.upTo(item.maxIn.toFixed(2))}</p>
+        </header>
+        <div className={styles.stats}>
+          <StatCard label={storm.customersHitLabel} value={item.customersHit} />
+          <StatCard label={storm.homesHitLabel} value={item.homesHit} />
         </div>
-      ) : null}
-      {canAct && confirming ? (
-        <div role="alertdialog" aria-label={storm.dismissConfirmTitle} className={styles.confirm}>
-          <h2>{storm.dismissConfirmTitle}</h2>
-          <p>{storm.dismissConfirmBody}</p>
-          <div className={styles.actions}>
+        <Card as="section" aria-label={storm.planHeadingDetail} className={styles.plan}>
+          <h2 className={styles.planTitle}>{storm.responseHeading}</h2>
+          <p className={styles.status} data-status={planStatus}>
+            {(planStatus === undefined ? undefined : storm.planStatus[planStatus as TaskStatus]) ?? storm.noPlan}
+          </p>
+          <p className={styles.help}>
+            {!data.plan || plansReplaced ? storm.draftHelp
+              : planStatus === 'draft' || planStatus === 'awaiting_owner' ? storm.responseHelp : storm.progressHelp}
+          </p>
+          {data.plan && !plansReplaced ? (
+            <Button variant="primary" href={'/storm/plans/' + encodeURIComponent(data.plan.taskId)}>{storm.openPlan}</Button>
+          ) : null}
+          {canAct && canRedraft ? (
             <Button
-              disabled={dismiss.isPending}
+              variant={data.plan && !plansReplaced ? 'ghost' : 'primary'}
+              disabled={redraft.isPending}
               onClick={() => {
-                dismiss.mutate(id, {
-                  onSuccess: () => {
-                    void navigate('/storm');
-                  },
-                  onError: showError,
-                });
+                redraft.mutate(id, { onError: showError });
               }}
             >
-              {storm.dismissConfirm}
+              {redraft.isPending ? storm.redrafting : storm.redraft}
             </Button>
+          ) : null}
+        </Card>
+        <StormResults results={data.results} running={data.plan?.status === 'running'} />
+        {canAct && !confirming ? (
+          <div className={styles.actions}>
             <Button
               variant="ghost"
               onClick={() => {
-                setConfirming(false);
+                setConfirming(true);
               }}
             >
-              {storm.dismissCancel}
+              {storm.dismiss}
             </Button>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+        {canAct && confirming ? (
+          <div role="alertdialog" aria-label={storm.dismissConfirmTitle} className={styles.confirm}>
+            <h2>{storm.dismissConfirmTitle}</h2>
+            <p>{storm.dismissConfirmBody}</p>
+            <div className={styles.actions}>
+              <Button
+                disabled={dismiss.isPending}
+                onClick={() => {
+                  dismiss.mutate(id, {
+                    onSuccess: () => {
+                      void navigate('/storm');
+                    },
+                    onError: showError,
+                  });
+                }}
+              >
+                {storm.dismissConfirm}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setConfirming(false);
+                }}
+              >
+                {storm.dismissCancel}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

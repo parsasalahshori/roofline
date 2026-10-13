@@ -8,4 +8,6 @@ export const approvals = {
   expired: 'Expired',
   /** The accessible name of the list of plans. */
   listLabel: 'Plans waiting for your OK',
+  listHelp: 'Review each plan’s messages, work and spending before it runs.',
+  reviewPlan: 'Review plan',
 } as const;

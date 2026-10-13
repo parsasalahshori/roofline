@@ -194,7 +194,7 @@ function SettingsForm({ settings }: FormProps) {
         />
       </Card>
 
-      <Card as="section" aria-labelledby={budgetId}>
+      <Card as="section" aria-labelledby={budgetId} className={styles.budget}>
         <h2 id={budgetId} className={styles.heading}>
           {storm.settings.budgetHeading}
         </h2>

@@ -3,6 +3,7 @@ import { Banner, Button, Card, EmptyState, Skeleton } from '@roofline/ui';
 import { useApprovals, useMapArea } from '../../api/hooks.ts';
 import type { TaskView } from '../../api/types.ts';
 import { doors } from '../../copy/doors.ts';
+import { errors } from '../../copy/errors.ts';
 import { storm } from '../../copy/storm.ts';
 import { countedDrafts } from '../../shell/countedDrafts.ts';
 import { useStorms } from './api.ts';
@@ -28,12 +29,18 @@ function StormRow({ item }: { item: StormSummary }) {
   const seePlan = item.planTaskId !== null && (item.planStatus === 'draft' || item.planStatus === 'awaiting_owner');
   return (
     <Card as="div" className={styles.row}>
-      <h3 className={styles.place}>{item.placeName ?? item.day}</h3>
-      {item.placeName ? <p className={styles.day}>{item.day}</p> : null}
+      <div className={styles.identity}>
+        <h3 className={styles.place}>{item.placeName ?? item.day}</h3>
+        {item.placeName ? <p className={styles.day}>{item.day}</p> : null}
+      </div>
       <p className={styles.size}>{storm.upTo(item.maxIn.toFixed(2))}</p>
-      <p>{storm.customersHit(item.customersHit)}</p>
-      <p>{storm.homesHit(item.homesHit)}</p>
-      <p>{(item.planStatus === null ? undefined : storm.planStatus[item.planStatus as TaskStatus]) ?? storm.noPlan}</p>
+      <div className={styles.impact}>
+        <p>{storm.customersHit(item.customersHit)}</p>
+        <p>{storm.homesHit(item.homesHit)}</p>
+      </div>
+      <p className={styles.status} data-status={item.planStatus}>
+        {(item.planStatus === null ? undefined : storm.planStatus[item.planStatus as TaskStatus]) ?? storm.noPlan}
+      </p>
       <div className={styles.actions}>
         <Button variant="ghost" href={'/storm/' + encodeURIComponent(item.id)}>
           {storm.viewStorm}
@@ -59,14 +66,19 @@ export function StormWindow() {
   const rows = storms.data ? visibleStorms(storms.data.storms) : [];
 
   return (
-    <>
-      <div className={styles.routes}>
+    <div className={styles.page}>
+      <header className={styles.routes}>
+        <div>
+          <h2 className={styles.heading}>{storm.listHeading}</h2>
+          <p className={styles.help}>{storm.listHelp}</p>
+        </div>
         <Button variant="ghost" href="/storm/routes">
           {doors.myRoutesLink}
         </Button>
-      </div>
+      </header>
       {plan ? (
         <Card as="section" aria-label={storm.planHeading} className={styles.plan}>
+          <span className={styles.eyebrow}>{storm.responseHeading}</span>
           <h2>{plan.title}</h2>
           {plan.summary ? <p>{plan.summary}</p> : null}
           <Button variant="primary" href={'/storm/plans/' + encodeURIComponent(plan.id)}>
@@ -80,7 +92,12 @@ export function StormWindow() {
           <Skeleton lines={3} />
         </div>
       ) : null}
-      {storms.isError ? <p role="alert">{storm.loadFailed}</p> : null}
+      {storms.isError ? (
+        <div className={styles.failure}>
+          <p role="alert">{storm.loadFailed}</p>
+          <Button onClick={() => void storms.refetch()}>{errors.tryAgain}</Button>
+        </div>
+      ) : null}
       {storms.data ? (
         <section aria-label={storm.listHeading} className={styles.list}>
           {rows.map((item) => (
@@ -89,6 +106,6 @@ export function StormWindow() {
           {rows.length === 0 ? <EmptyState title={storm.empty} /> : null}
         </section>
       ) : null}
-    </>
+    </div>
   );
 }

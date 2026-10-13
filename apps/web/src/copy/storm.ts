@@ -9,6 +9,13 @@ export const storm = {
   /** Storm window. */
   loading: 'Loading your storms',
   listHeading: 'Storms in your area',
+  listHelp: 'Review the hail, choose a response, and follow your team’s progress.',
+  backToStorms: 'All storms',
+  responseHeading: 'Storm response',
+  responseHelp: 'Review the messages, routes and spending before approving your plan.',
+  progressHelp: 'Open the plan to see each step’s progress and any work that needs attention.',
+  draftHelp: 'Drafting prepares a plan for review. It does not send messages or start ads.',
+  resultsHelp: 'Reported activity from this storm’s plan.',
   empty: 'No hail in your area in the last 30 days. We check every 30 minutes.',
   loadFailed: 'We could not load your storms. Try again in a minute.',
   staleBanner: 'Hail data is a little behind',

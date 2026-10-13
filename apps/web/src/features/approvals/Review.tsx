@@ -245,6 +245,11 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
     const ordered = [...data.steps].sort((a, b) => a.position - b.position);
     body = (
       <section className={styles.plan} data-mode={mode}>
+        <div className={styles.nav}>
+          <Button variant="ghost" href={app === 'storm' ? '/storm' : '/approvals'}>
+            {app === 'storm' ? review.backToStorms : review.backToApprovals}
+          </Button>
+        </div>
         <h2 className={styles.title}>{data.title}</h2>
         {data.summary ? <p className={styles.summary}>{data.summary}</p> : null}
         <ReviewSteps
@@ -259,11 +264,12 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
           onApprove={onApprove}
           onNotNow={openNotNow}
         />
-        {ordered.map((item) => {
+        {ordered.map((item, index) => {
           const itemKit = kitFor(item);
           if (itemKit === undefined) return null;
           return (
-            <div className={styles.detail} key={item.id}>
+            <section className={styles.detail} key={item.id} aria-label={review.detailHeading(index + 1)}>
+              <h3 className={styles.detailTitle}>{review.detailHeading(index + 1)}</h3>
               <itemKit.Preview
                 step={item}
                 canApprove={item.canApprove}
@@ -274,7 +280,7 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
                   },
                 })}
               />
-            </div>
+            </section>
           );
         })}
       </section>

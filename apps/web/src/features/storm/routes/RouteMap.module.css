@@ -2,10 +2,10 @@
 .map {
   width: 100%;
   min-width: 0;
-  height: 240px;
-  border-radius: var(--radius-card);
+  height: 260px;
+  border-radius: 16px;
   overflow: hidden;
-  background: var(--surface-2);
+  background: #e8edf0;
 }
 
 /* A numbered door. The number is text, so it stays legible on the map tiles: dark ink on a light disc. */
@@ -27,7 +27,7 @@
 }
 
 .marker[data-state='done'] {
-  background: var(--surface-2);
+  background: #e8edf0;
   color: var(--text-muted);
 }
 
@@ -48,4 +48,11 @@
   border-radius: 50%;
   background: var(--stage-lead);
   box-shadow: var(--shadow-marker-ring);
+}
+
+@media (min-width: 901px) {
+  .map {
+    height: clamp(400px, 58vh, 560px);
+  }
+
 }

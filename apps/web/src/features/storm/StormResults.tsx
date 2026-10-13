@@ -27,6 +27,7 @@ export function StormResults({ results, running }: StormResultsProps) {
   return (
     <section className={styles.results} aria-label={storm.resultsHeading} aria-live={running ? 'polite' : undefined}>
       <h2 className={styles.heading}>{storm.resultsHeading}</h2>
+      {!empty ? <p className={styles.empty}>{storm.resultsHelp}</p> : null}
       {empty ? (
         <p className={styles.empty}>{storm.resultsEmpty}</p>
       ) : (

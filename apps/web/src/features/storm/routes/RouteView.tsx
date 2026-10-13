@@ -1,4 +1,4 @@
-import { Button, EmptyState, Skeleton } from '@roofline/ui';
+import { Button, EmptyState, ProgressBar, Skeleton } from '@roofline/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { doors } from '../../../copy/doors.ts';
 import { DoorOutcome } from './DoorOutcome.tsx';
@@ -56,12 +56,20 @@ export function RouteView({ routeId }: { routeId: string }) {
 
   return (
     <div className={styles.view}>
-      <h2 className={styles.heading}>{route.name}</h2>
-      <RouteMap stops={stops} currentStopId={currentStop?.id ?? null} position={position} />
+      <header className={styles.header}>
+        {currentStop ? <Button variant="ghost" href="/storm/routes">{doors.backToRoutes}</Button> : null}
+        <h2 className={styles.heading}>{route.name}</h2>
+        <p className={styles.help}>{doors.progress(route.doneStops, route.stops)}</p>
+        <ProgressBar value={route.doneStops} max={route.stops} label={doors.progress(route.doneStops, route.stops)} />
+      </header>
+      <div className={styles.map}>
+        <RouteMap stops={stops} currentStopId={currentStop?.id ?? null} position={position} />
+      </div>
 
       {currentStop ? (
         <section className={styles.current} aria-label={doors.doorOf(currentIndex + 1, stops.length)}>
           <p className={styles.doorLabel}>{doors.doorOf(currentIndex + 1, stops.length)}</p>
+          <p className={styles.help}>{doors.routeHelp}</p>
           <p className={styles.address}>{currentStop.address ?? doors.noAddress}</p>
           {currentStop.hailIn !== null ? <p className={styles.hail}>{doors.hailLine(currentStop.hailIn)}</p> : null}
           <Button variant="ghost" className={styles.navigate} href={navigateUrl(currentStop, ios)} {...NEW_TAB}>
@@ -89,10 +97,12 @@ export function RouteView({ routeId }: { routeId: string }) {
               key={stop.id}
               className={styles.item}
               data-current={isCurrent ? '' : undefined}
+              aria-current={isCurrent ? 'step' : undefined}
               data-done={stop.outcome !== null ? '' : undefined}
             >
               <span className={styles.number}>{index + 1}</span>
               <span className={styles.stopAddress}>{stop.address ?? doors.noAddress}</span>
+              {stop.outcome !== null ? <span className={styles.savedOutcome}>{doors.outcomes[stop.outcome]}</span> : null}
               {stop.outcome !== null ? <span className={styles.doneMark}>{doors.doneMark}</span> : null}
             </li>
           );

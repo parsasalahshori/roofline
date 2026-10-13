@@ -2,6 +2,8 @@
 export const doors = {
   /** The link to the routes list, in the Storm window and the More sheet. */
   myRoutesLink: 'My routes',
+  routesHelp: 'Follow your assigned route and record what happened at each door.',
+  routeHelp: 'Save an outcome to move to the next door.',
 
   // My routes
   myRoutesEmpty: 'No routes yet. When a storm plan builds routes for you, they show up here.',

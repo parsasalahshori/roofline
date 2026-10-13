@@ -50,10 +50,13 @@ export function MyRoutes() {
   }
 
   return (
-    <ul className={styles.list}>
-      {routes.map((route) => (
-        <RouteCard key={route.id} route={route} />
-      ))}
-    </ul>
+    <div className={styles.page}>
+      <p className={styles.help}>{doors.routesHelp}</p>
+      <ul className={styles.list}>
+        {routes.map((route) => (
+          <RouteCard key={route.id} route={route} />
+        ))}
+      </ul>
+    </div>
   );
 }

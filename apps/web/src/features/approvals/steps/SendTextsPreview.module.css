@@ -14,8 +14,8 @@
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface-2);
+  border-radius: 12px;
+  background: #f2f5f7;
 }
 
 .text {
@@ -27,14 +27,14 @@
 
 .label {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
+  color: #59636c;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .body {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 14px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -42,7 +42,27 @@
 .hint,
 .warning {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
+  color: #59636c;
+  font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.label {
+  font-weight: 600;
+  color: #151c22;
+}
+
+.warning {
+  color: #815800;
+}
+
+.row > button {
+  flex: none;
+}
+
+@media (max-width: 420px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
 }
