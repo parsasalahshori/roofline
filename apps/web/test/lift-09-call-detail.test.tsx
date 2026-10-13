@@ -85,7 +85,7 @@ describe('CallDetail', () => {
     renderDetail(makeConversation());
 
     expect(await screen.findByRole('heading', { name: 'Mei Blakely' })).toBeInTheDocument();
-    expect(screen.getByText('Job question')).toBeInTheDocument();
+    expect(screen.getByText('Answered question')).toBeInTheDocument();
     expect(screen.getByText('(555) 011-0758')).toBeInTheDocument();
     expect(screen.getByText(liftCall.duration('1:38', liftCall.callWord))).toBeInTheDocument();
     expect(screen.getByText(liftCall.summaryHeading)).toBeInTheDocument();

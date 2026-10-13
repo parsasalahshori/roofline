@@ -3,30 +3,54 @@ import { frontDeskInbox } from '../../../copy/front-desk-inbox.ts';
 
 const copy = frontDeskInbox.lift;
 
-/** The chip a call row wears, from what the call came to. `tone` picks its color in the row's CSS. */
-export type OutcomeChip = { label: string; tone: 'good' | 'warn' | 'plain' };
+/** The chip a call row wears, from what the call came to. `tone` picks its color in the row's CSS; `icon` its small glyph. */
+export type OutcomeChip = {
+  label: string;
+  tone: 'good' | 'warn' | 'info' | 'plain';
+  icon: 'check' | 'shield' | 'file' | 'text' | 'person' | 'phone' | 'chat';
+};
 
-export function outcomeChip(item: ConversationListItem): OutcomeChip {
+/** What a chip is worked out from. A list row and the open conversation both fit it. */
+export type ChipSource = Pick<ConversationListItem, 'outcome' | 'channel'> &
+  Partial<Pick<ConversationListItem, 'textBackSent' | 'transferredToName'>>;
+
+export function outcomeChip(item: ChipSource): OutcomeChip {
   const textBack = item.textBackSent === true || item.channel === 'sms';
   switch (item.outcome) {
     case 'spam':
-      return { label: copy.chips.spam, tone: 'warn' };
+      return { label: copy.chips.spam, tone: 'warn', icon: 'shield' };
     case 'booked':
     case 'confirmed':
     case 'moved':
-      return { label: copy.chips.booked, tone: 'good' };
+      return { label: copy.chips.booked, tone: 'good', icon: 'check' };
     case 'claim':
-      return { label: copy.chips.claim, tone: 'plain' };
+      return { label: copy.chips.claim, tone: 'info', icon: 'file' };
     case 'transferred':
-      return { label: item.transferredToName ? copy.chips.sentTo(item.transferredToName) : copy.chips.sentToTeam, tone: 'plain' };
+      return {
+        label: item.transferredToName ? copy.chips.sentTo(item.transferredToName) : copy.chips.sentToTeam,
+        tone: 'plain',
+        icon: 'person',
+      };
     case 'canceled':
-      return { label: copy.chips.canceled, tone: 'plain' };
+      return { label: copy.chips.canceled, tone: 'plain', icon: 'phone' };
     case 'abandoned':
-      return { label: item.textBackSent === true ? copy.chips.textBack : copy.chips.hungUp, tone: 'plain' };
+      return {
+        label: item.textBackSent === true ? copy.chips.textBack : copy.chips.hungUp,
+        tone: 'plain',
+        icon: item.textBackSent === true ? 'text' : 'phone',
+      };
     case 'message':
-      return { label: textBack ? copy.chips.textBack : copy.chips.message, tone: 'plain' };
+      return {
+        label: textBack ? copy.chips.textBack : copy.chips.message,
+        tone: 'plain',
+        icon: textBack ? 'text' : 'chat',
+      };
     default:
-      return { label: textBack ? copy.chips.textBack : copy.chips.question, tone: 'plain' };
+      return {
+        label: textBack ? copy.chips.textBack : copy.chips.question,
+        tone: 'plain',
+        icon: textBack ? 'text' : 'chat',
+      };
   }
 }
 

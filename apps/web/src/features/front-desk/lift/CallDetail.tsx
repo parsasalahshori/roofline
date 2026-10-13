@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CallView, ConversationDetail, TurnView } from '@roofline/shared';
 import { Avatar, Button, EmptyState, Skeleton } from '@roofline/ui';
-import { frontDeskInbox } from '../../../copy/front-desk-inbox.ts';
 import { liftCall } from '../../../copy/liftCall.ts';
 import { formatPhone } from '../../../lib/phone.ts';
 import { useConversation } from '../conversation-api.ts';
+import { outcomeChip } from './format.ts';
+import { OutcomeChipView } from './OutcomeChipView.tsx';
 import styles from './CallDetail.module.css';
 
 const BAR_COUNT = 64;
@@ -72,7 +73,10 @@ function whenLabel(iso: string, now: Date): string {
   const at = new Date(iso);
   const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((dayStart(now) - dayStart(at)) / 86_400_000);
-  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(at);
+  const time = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(at);
   if (days === 0) return liftCall.today(time);
   if (days === 1) return liftCall.yesterday(time);
   return liftCall.onDate(new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(at), time);
@@ -119,7 +123,10 @@ function AudioRow({ call, seedId }: { call: CallView | null; seedId: string }) {
   const [current, setCurrent] = useState(0);
   const [length, setLength] = useState(call === null ? 0 : (callSeconds(call) ?? 0));
   const [rate, setRate] = useState<(typeof RATES)[number]>(1);
-  const [decoded, setDecoded] = useState<{ url: string; bars: number[] } | null>(null);
+  const [decoded, setDecoded] = useState<{
+    url: string;
+    bars: number[];
+  } | null>(null);
 
   // The bars are drawn from the recording once it was asked for; until then (or when it cannot be read) they are the seeded ones.
   useEffect(() => {
@@ -280,7 +287,12 @@ function Detail({ conversation }: { conversation: ConversationDetail }) {
           <div className={styles.nameRow}>
             <h2 className={styles.name}>{name ?? liftCall.unknownCaller}</h2>
             {conversation.outcome !== null ? (
-              <span className={styles.outcome}>{frontDeskInbox.outcomes[conversation.outcome]}</span>
+              <OutcomeChipView
+                chip={outcomeChip({
+                  outcome: conversation.outcome,
+                  channel: conversation.channel,
+                })}
+              />
             ) : null}
           </div>
           <p className={styles.meta}>
@@ -308,10 +320,17 @@ function Detail({ conversation }: { conversation: ConversationDetail }) {
 
       {conversation.summary ? (
         <section className={styles.summary} aria-labelledby={`summary-${conversation.id}`}>
-          <h3 id={`summary-${conversation.id}`} className={styles.summaryHeading}>
-            {liftCall.summaryHeading}
-          </h3>
-          <p className={styles.summaryText}>{conversation.summary}</p>
+          <span className={styles.summaryMark} aria-hidden="true">
+            <svg viewBox="0 0 16 16" focusable="false">
+              <path d="M8 1.5l1.6 4.4 4.4 1.6-4.4 1.6L8 13.5 6.4 9.1 2 7.5l4.4-1.6z" />
+            </svg>
+          </span>
+          <div className={styles.summaryBody}>
+            <h3 id={`summary-${conversation.id}`} className={styles.summaryHeading}>
+              {liftCall.summaryHeading}
+            </h3>
+            <p className={styles.summaryText}>{conversation.summary}</p>
+          </div>
         </section>
       ) : null}
 

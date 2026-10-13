@@ -35,17 +35,21 @@ function AnsweringTile() {
         {number === null ? copy.answeringNoNumber : copy.answering(number)}
       </p>
       {isDemo ? (
-        <Button
-          className={styles.simulate}
-          data-testid="simulate-call"
-          busy={simulate.isPending}
-          onClick={() => simulate.mutate('call')}
-        >
+        <Button className={styles.simulate} data-testid="simulate-call" busy={simulate.isPending} onClick={() => simulate.mutate('call')}>
+          <svg className={styles.simulateIcon} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path d="M4 2.5h2.2l1 3-1.5 1a8 8 0 003.8 3.8l1-1.5 3 1v1.7a1.5 1.5 0 01-1.5 1.5A10 10 0 012.5 4 1.5 1.5 0 014 2.5zM10.5 2.5a3 3 0 013 3M10.5 5a.5.5 0 01.5.5" />
+          </svg>
           {copy.simulateCall}
         </Button>
       ) : null}
     </div>
   );
+}
+
+/** "0.8 seconds"; a pick-up under a tenth of a second reads "Instant"; no timed call reads "No calls yet". */
+function answerTimeText(ms: number | null): string {
+  if (ms === null) return copy.answerTimeNone;
+  return ms < 100 ? copy.answerTimeInstant : copy.seconds(secondsText(ms));
 }
 
 /**
@@ -78,12 +82,7 @@ export function KpiTiles() {
           value={data.answeredPct === null ? copy.answeredNone : `${data.answeredPct}%`}
           hint={copy.answeredHint(data.booked, data.escalated)}
         />
-        <Tile
-          label={copy.answerTime}
-          value={data.avgAnswerMs === null ? copy.answerTimeNone : copy.seconds(secondsText(data.avgAnswerMs))}
-          hint={copy.answerTimeHint}
-          highlight
-        />
+        <Tile label={copy.answerTime} value={answerTimeText(data.avgAnswerMs)} hint={copy.answerTimeHint} highlight />
         <Tile label={copy.inspections} value={data.inspectionsBooked} hint={copy.inspectionsHint} />
         <Tile label={copy.afterHours} value={data.afterHours} hint={copy.afterHoursHint} />
       </>

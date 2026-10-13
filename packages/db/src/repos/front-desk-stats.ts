@@ -121,7 +121,9 @@ type DayRow = {
 /**
  * Today's numbers, from the calls and conversations tables, for the company's local calendar day `day` (YYYY-MM-DD).
  * `answeredPct` is the share of the day's calls that were not rejected, failed or still ringing; spam counts as
- * picked up (the assistant answers it, then blocks it). Forwarding-test calls count nowhere. `tabCounts` is filled by the caller.
+ * picked up (the assistant answers it, then blocks it). Forwarding-test calls count nowhere.
+ * The answer time is each call's start to when the assistant came on the line: the call's own `ai_started_at`, else the
+ * time of its first assistant turn, so a call recorded without the first still counts. `tabCounts` is filled by the caller.
  */
 export async function frontDeskDayStats(
   tx: Tx,
@@ -149,7 +151,13 @@ export async function frontDeskDayStats(
       (select count(*)::int from day_calls where status not in ('rejected', 'failed', 'ringing')) as picked_up,
       (select count(*)::int from day_convs where outcome = 'booked') as booked,
       (select count(*)::int from day_calls where transfer_result in ('answered', 'no_answer') or status = 'transferred') as escalated,
-      (select round(avg(extract(epoch from (ai_started_at - started_at)) * 1000))::int from day_calls where ai_started_at is not null) as avg_answer_ms,
+      (select round(avg(g.ms))::int from (
+          select greatest(0, extract(epoch from (
+            coalesce(k.ai_started_at, (select min(t.at) from conversation_turns t
+              where t.company_id = ${company} and t.call_id = k.id and t.speaker = 'assistant')) - k.started_at
+          )) * 1000) as ms
+          from day_calls k
+        ) g where g.ms is not null) as avg_answer_ms,
       (select count(*)::int from day_calls k
         where extract(isodow from (k.started_at at time zone ${timeZone})) > 5
            or extract(hour from (k.started_at at time zone ${timeZone})) < ${OFFICE_OPENS_HOUR}

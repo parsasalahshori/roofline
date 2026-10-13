@@ -2,6 +2,7 @@ import type { ConversationListItem } from '@roofline/shared';
 import { Badge, UiLink } from '@roofline/ui';
 import { frontDeskInbox } from '../../copy/front-desk-inbox.ts';
 import { durationLabel, initialsOf, outcomeChip, relativeTime } from './lift/format.ts';
+import { OutcomeChipView } from './lift/OutcomeChipView.tsx';
 import styles from './ConversationRow.module.css';
 
 export type ConversationRowProps = {
@@ -47,12 +48,11 @@ export function ConversationRow({ item, selected = false, now }: ConversationRow
                   {frontDeskInbox.live}
                 </span>
               ) : null}
-              <span className={styles.chip} data-tone={chip.tone}>
-                {chip.label}
-              </span>
-              {item.urgent ? <span className={styles.chip} data-tone="urgent">{frontDeskInbox.urgent}</span> : null}
-              {item.needsAttention ? <span className={styles.chip}>{frontDeskInbox.needsAttention}</span> : null}
-              {item.handledBy === 'team' ? <span className={styles.chip}>{frontDeskInbox.handledByTeam}</span> : null}
+              <OutcomeChipView chip={chip} />
+              {item.urgent ? <span className={styles.urgent}>{frontDeskInbox.urgent}</span> : null}
+              {/* Needs-attention and team-handled are read out, not drawn: the unread count already marks the row */}
+              {item.needsAttention ? <span className={styles.sr}>{frontDeskInbox.needsAttention}</span> : null}
+              {item.handledBy === 'team' ? <span className={styles.sr}>{frontDeskInbox.handledByTeam}</span> : null}
             </span>
             <span className={styles.duration}>{durationLabel(item)}</span>
           </span>
