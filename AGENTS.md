@@ -22,7 +22,14 @@ lives anywhere else.
 - Push task branches and integration branches freely. Integration branches: `f2-shell` (done), `f3-setup`,
   `c1-crm`, later `e1-estimator`, `s1-storm`, `d1-front-desk`, `a1-agents`, `g1-agents`.
 
-## Where things stand (2026-10-12)
+## Where things stand (2026-10-13)
+
+**main is the platform** (owner-approved merge after the Oct 13 demo): the demo-oct13 build (redesign, Measure rebuild,
+roof facet engine `packages/shared/src/roof-model.ts`, Esri aerial demo imagery, demo homes on real Omaha footprints)
++ all launch ports (port-g1/c1/d1/a1, demo-mode, launch-integration) + the Global ML footprint loader (main-footprints).
+CI 38457480368 green on all 5 jobs (tree identical to main). main's old v1 history is joined with `-s ours`; the v1 app
+lives under `v1/`. `demo-oct13` stays frozen at 5d0b5bef. Production still needs: MapTiler keys at deploy
+(`VITE_MAPTILER_KEY`, `MAPTILER_SERVER_KEY`); Platform CI sometimes hits its 60-minute timeout on a passing run.
 
 | Milestone | Plan | State |
 |---|---|---|
