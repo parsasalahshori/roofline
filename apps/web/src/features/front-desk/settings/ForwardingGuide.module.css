@@ -1,4 +1,5 @@
 /* The forwarding guide: a card under the Front Desk form. Codes are large, wrap at 375px, and every button is 40px tall. */
+
 .guide {
   scroll-margin-top: 16px;
 }
@@ -11,7 +12,7 @@
 
 .title {
   margin: 0;
-  font-size: var(--font-size-stat);
+  font-size: 20px;
   font-weight: 600;
   color: var(--text);
 }
@@ -86,9 +87,10 @@
 }
 
 /* Codes are the thing to read and dial: large, monospace, and free to wrap on a narrow screen */
+
 .code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: var(--font-size-stat);
+  font-size: 20px;
   font-weight: 600;
   color: var(--text);
   overflow-wrap: anywhere;
@@ -109,5 +111,38 @@
 @media (max-width: 767.98px) {
   .codeRow > button {
     width: 100%;
+  }
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 2px 5px #151c2208;
+  padding: 20px;
+}
+
+.number {
+  padding: 12px;
+  border-radius: 10px;
+  background: #edf0f2;
+}
+
+.codeRow {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fafbfc;
+}
+
+.codeRow > button {
+  margin-left: auto;
+}
+
+@media (max-width: 767.98px) {
+  .numbers, .pickers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card {
+    padding: 16px;
   }
 }

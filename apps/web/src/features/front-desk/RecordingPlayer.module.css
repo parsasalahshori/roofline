@@ -1,5 +1,11 @@
 .player {
-  display: grid;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fafbfc;
   gap: 8px;
   min-width: 0;
   color: var(--text);
@@ -21,4 +27,11 @@
   margin: 0;
   color: var(--text-muted);
   font-size: var(--font-size-min);
+}
+
+.player > button {
+  margin-left: auto;
+  background: #151c22;
+  color: #fff;
+  border-radius: 22px;
 }

@@ -4,17 +4,28 @@
   min-width: 0;
   color: var(--text);
   font-family: var(--font);
-  font-size: var(--font-size-body);
+  font-size: 14px;
 }
 
 .header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.identity {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .name {
   margin: 0;
-  font-size: var(--font-size-stat);
+  font-size: 20px;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -32,7 +43,7 @@
 
 .heading {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -52,9 +63,9 @@
 .turn {
   display: grid;
   gap: 4px;
-  max-width: 85%;
+  max-width: 90%;
   padding: 10px 12px;
-  border-radius: var(--radius-card);
+  border-radius: 16px 16px 16px 4px;
   min-width: 0;
 }
 
@@ -66,15 +77,17 @@
 
 .assistant {
   justify-self: end;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: #fff3cd;
+  border: 1px solid #ecdda6;
+  border-radius: 16px 16px 4px;
   color: var(--text);
 }
 
 .team {
   justify-self: end;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: #e2efef;
+  color: #164e4b;
+  border-radius: 16px 16px 4px;
 }
 
 .system {
@@ -88,7 +101,8 @@
 }
 
 .speaker {
-  font-size: var(--font-size-min);
+  font-size: 12px;
+  color: #586168;
   font-weight: 600;
 }
 

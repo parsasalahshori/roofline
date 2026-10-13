@@ -1,5 +1,12 @@
 /** Front Desk window words (Task 21): the list, its filters, the live row and this week's numbers. */
 export const frontDeskInbox = {
+  inboxTitle: 'Latest calls',
+  inboxDescription: 'Calls and texts',
+  conversationLabel: 'Conversation',
+  selectTitle: 'Choose a call or text',
+  selectHelp: 'Read the summary, listen to a recording, and see what needs a follow-up.',
+  selectReadNote: 'A conversation is marked read when you open it.',
+  refreshError: 'The list could not refresh. Your last loaded calls are still here.',
   empty: 'No calls yet. Once forwarding is on, every call shows up here.',
   filterEmpty: 'Nothing here right now.',
   loadError: 'We could not load your calls. Try again in a moment.',
