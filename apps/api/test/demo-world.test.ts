@@ -3,6 +3,7 @@ import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
 import { decrypt } from '@roofline/db';
 import { JOB_STAGES } from '@roofline/shared';
+import { DEMO_LOOKUP_LOTS } from '../src/providers/fakes/geocoder.ts';
 import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
 import { DEMO_COMPANY_NAME, DEMO_COMPANY_SLUG, DEMO_LOGIN, seedDemoWorld } from '../src/scripts/demo-world.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from './helpers.ts';
@@ -101,6 +102,16 @@ describe('the demo world', () => {
       )
     ).rows[0] as { n: number };
     expect(empty.n).toBeGreaterThan(50);
+    // Every lot the demo geocoder sends a typed address to has its roof (else that address would open draw mode).
+    for (const [lng, lat] of DEMO_LOOKUP_LOTS) {
+      const lot = (
+        await owner.query(
+          `select count(*)::int as n from building_footprints b where b.state = 'NE' and ST_Covers(b.geom, ST_SetSRID(ST_MakePoint($1::float8, $2::float8), 4326))`,
+          [lng, lat],
+        )
+      ).rows[0] as { n: number };
+      expect(lot.n, `lot ${lng},${lat}`).toBeGreaterThan(0);
+    }
 
     const second = await seedDemoWorld(t.deps.pools, ownerUrl, now, { encryptionKey: TEST_ENCRYPTION_KEY });
     expect(second).toEqual({ created: false, companyId: first.companyId, counts: first.counts });

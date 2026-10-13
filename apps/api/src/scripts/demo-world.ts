@@ -605,10 +605,10 @@ export async function seedDemoFootprints(pools: Pools, q: Query, companyId: stri
       kept.push(next);
     });
   });
-  // The empty lots the demo geocoder sends every typed address to: a roof is always there to measure.
+  // The empty lots the demo geocoder sends every typed address to: every one gets its roof (never skipped, or an
+  // address sent there would open draw mode). They sit in open ground west of the demo homes.
   DEMO_LOOKUP_LOTS.forEach(([lng, lat], i) => {
-    const lot = { sourceRef: `demo-lot-${i}`, ring: houseRing(lng, lat, ((i * 0.6180339887 + 0.2) % 1 + 1) % 1) };
-    if (!near(lng, lat, 22) && !kept.some((k) => apart(k, lot) < 20)) kept.push(lot);
+    kept.push({ sourceRef: `demo-lot-${i}`, ring: houseRing(lng, lat, ((i * 0.6180339887 + 0.2) % 1 + 1) % 1) });
   });
   return insertFootprints(pools.system, 'NE', kept);
 }
