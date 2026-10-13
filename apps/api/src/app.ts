@@ -309,9 +309,9 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // anyone who is not signed in. The public auth routes are the only exceptions (middleware.ts).
   // /health and /hooks/* are not under /api, so they are never limited.
   const logError = options.logError ?? logErrorToConsole;
-  // Demo mode only (demo/routes.ts): GET /api/demo answers signed out, so the shell can show its Demo badge.
-  // With DEMO_MODE off nothing is mounted and every /api/demo path is the ordinary 404.
-  if (config.DEMO_MODE) app.get('/api/demo', demoStatusRoute());
+  // GET /api/demo (demo/routes.ts) answers signed out, always: { demo: false } with DEMO_MODE off, so the shell's
+  // probe never logs an error for real users. Only the simulate routes depend on DEMO_MODE.
+  app.get('/api/demo', demoStatusRoute(config.DEMO_MODE === true));
   app.use('/api', attachSession(deps), apiRateLimit(config), requireSession);
   // Refuses writes from a company whose billing has lapsed (billing/read-only.ts).
   app.use('/api', readOnlyGuard);

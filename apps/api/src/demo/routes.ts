@@ -5,18 +5,20 @@ import { requireCapability } from '../permissions.ts';
 import { simulateCall, simulateSign, simulateStorm, simulateText, type SimulateResult } from './simulate.ts';
 
 /*
- * Demo mode's routes (app.ts mounts them only when DEMO_MODE is on; otherwise every path here is an ordinary 404).
- * - GET /api/demo           { demo: true }, signed out too, so the shell can show its Demo badge.
+ * Demo mode's routes.
+ * - GET /api/demo           always mounted, signed out too: { demo: true } in demo mode, { demo: false } otherwise,
+ *                           so the shell can show its Demo badge and a real user's page load never sees a 404.
  * - POST /api/demo/simulate/{text,call,storm,sign}
  *                           the presenter's buttons: owners and office members only (approve_internal), behind the
  *                           sign-in gate, the read-only guard and the cross-site Origin check like every mutation.
  *                           Each answers { ok: true, ...ids, message }, or a plain 409 when there is nothing to act on.
+ *                           Mounted only when DEMO_MODE is on; otherwise they are the ordinary 404.
  */
 
-/** GET /api/demo: mounted ahead of the sign-in gate. */
-export function demoStatusRoute(): RequestHandler {
+/** GET /api/demo: mounted ahead of the sign-in gate, whether demo mode is on or off. */
+export function demoStatusRoute(demo: boolean): RequestHandler {
   return (_req, res) => {
-    res.json({ demo: true });
+    res.json({ demo });
   };
 }
 

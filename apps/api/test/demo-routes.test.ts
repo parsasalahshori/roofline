@@ -62,10 +62,16 @@ async function customerWithPhone(name: string, phone: string): Promise<string> {
 }
 
 describe('GET /api/demo', () => {
-  test('is an ordinary 404 when DEMO_MODE is off', async () => {
+  test('answers { demo: false } when DEMO_MODE is off, signed out too, and the simulate routes are an ordinary 404', async () => {
     t = await makeTestApp();
+    // A real user's page load asks this every time: it must never be an error (BUG-7).
+    const signedOut = await request(t.app).get('/api/demo');
+    expect(signedOut.status).toBe(200);
+    expect(signedOut.body).toEqual({ demo: false });
     const agent = await loginAs(t.app, t.seed.a.owner);
-    expect((await agent.get('/api/demo')).status).toBe(404);
+    const signedIn = await agent.get('/api/demo');
+    expect(signedIn.status).toBe(200);
+    expect(signedIn.body).toEqual({ demo: false });
     expect((await agent.post('/api/demo/simulate/text').set('Origin', origin()).send({})).status).toBe(404);
   });
 

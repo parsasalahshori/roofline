@@ -12,7 +12,15 @@ afterEach(() => {
   expect(api?.unexpected ?? []).toEqual([]);
 });
 
-it('shows no badge when GET /api/demo answers 404 (demo mode off)', async () => {
+it('shows no badge when GET /api/demo answers { demo: false } (demo mode off)', async () => {
+  api = stubApi({ 'GET /api/demo': () => ({ body: { demo: false } }) });
+  renderAt(<DemoBadge />);
+  await waitFor(() => expect(api.count('GET /api/demo')).toBe(1));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(screen.queryByTestId('demo-badge')).toBeNull();
+});
+
+it('shows no badge when GET /api/demo answers 404 (an older API)', async () => {
   api = stubApi({ 'GET /api/demo': () => ({ status: 404, body: { error: "We couldn't find that." } }) });
   renderAt(<DemoBadge />);
   await waitFor(() => expect(api.count('GET /api/demo')).toBe(1));

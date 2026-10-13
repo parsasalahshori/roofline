@@ -26,3 +26,13 @@
 .middle {
   justify-content: center;
 }
+
+/* Compact (phone): the ends keep their width; the middle takes the rest and its contents shrink */
+.topBar[data-compact="true"] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.topBar[data-compact="true"] .start,
+.topBar[data-compact="true"] .end {
+  flex: none;
+}

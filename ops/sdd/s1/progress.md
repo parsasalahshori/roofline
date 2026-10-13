@@ -339,3 +339,4 @@ Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema c
 - Test: `apps/web/test/storm-layer-expression.test.ts` compiles the expression with `@maplibre/maplibre-gl-style-spec`, a transitive dependency of maplibre-gl, and checks each level's colour.
 - Source: `ops/sdd/integration/dress-rehearsal.md` on ops-rehearsal.
 - s1-storm@85a68e7 (the BUG-1 fix plus its test update): CI run 38288147079 is green on Platform, Hail and E2E.
+- 4e5954ee: the storm-detail a11y spec waits for the storm's own heading (a flake found by the pass 16 dry run). CI run 38315317645 is green on Platform, Hail and E2E.

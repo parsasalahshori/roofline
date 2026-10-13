@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { crc32, inflateSync } from 'node:zlib';
+import { crc32 } from 'node:zlib';
 import type { ProposalView, PublicProposalView, SignatureRecord } from '@roofline/shared';
 import { calculateQuote, canonicalJson, defaultPricebook, defaultScope, ESTIMATE_CLAUSE_V1 } from '@roofline/shared';
 import { and, eq } from 'drizzle-orm';
@@ -12,6 +12,7 @@ import { SIGNED_PDF_GRACE_MS, sweepSignedPdfs } from '../src/jobs/scheduler/sign
 import { pdfToBuffer, renderProposalPdf } from '../src/proposals/pdf.ts';
 import { addressFor, Actors, inCompany, mustCreate } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
+import { pdfText } from './pdf-text.ts';
 import { DAYTIME } from './sms-helpers.ts';
 import { dbSteps, seenOf } from './task-helpers.ts';
 
@@ -41,29 +42,6 @@ const TINY_PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const USER_AGENT = 'TestAgent/1.0';
 
-/**
- * The text of a PDF: PDFKit writes Helvetica text as hex strings inside TJ arrays, split by kerning, and
- * compresses page streams with Flate. Inflates every stream it can, joins each array's pieces, then joins
- * all arrays with single spaces, so a sentence that wraps across lines still reads as one string.
- */
-function pdfText(bytes: Uint8Array): string {
-  const raw = Buffer.from(bytes).toString('latin1');
-  const bodies = [raw];
-  for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
-    try {
-      bodies.push(inflateSync(Buffer.from(m[1]!, 'latin1')).toString('latin1'));
-    } catch {
-      // Not a Flate stream (an image's raw data, say).
-    }
-  }
-  const pieces: string[] = [];
-  for (const body of bodies) {
-    for (const m of body.matchAll(/\[([^\]]*)\] TJ/g)) {
-      pieces.push(Buffer.from([...m[1]!.matchAll(/<([0-9a-f]*)>/g)].map((h) => h[1]).join(''), 'hex').toString('latin1'));
-    }
-  }
-  return pieces.join(' ').replace(/\s+/g, ' ');
-}
 const hasImage = (bytes: Uint8Array): boolean => Buffer.from(bytes).toString('latin1').includes('/Subtype /Image');
 
 beforeEach(async () => {
