@@ -3,6 +3,7 @@ import type { AppointmentView } from '@roofline/shared';
 import { calendar } from '../../copy/calendar.ts';
 import { formatDayLabel, formatTime, startOfZonedDay, zonedDateKey, zonedParts } from './time.ts';
 import type { GridViewProps } from './types.ts';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
 import styles from './TimeGrid.module.css';
 
 /** The visible window in minutes since midnight: 06:00 to 21:00. */
@@ -107,13 +108,15 @@ const pad = (value: number): string => String(value).padStart(2, '0');
 
 /** The shared time grid for the Week and Day views: a day header, an all-day row and 06:00 to 21:00 in 30-minute rows. */
 export function TimeGrid({ zone, days, appointments, busy, people, showCanceled, now, onSlot, onOpen }: GridViewProps) {
+  const isPhone = useIsPhone();
+  const rowHeight = isPhone ? 44 : ROW_PX;
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const element = scrollRef.current;
-    if (element) element.scrollTop = SCROLL_TO_ROW * ROW_PX;
-  }, []);
+    if (element) element.scrollTop = SCROLL_TO_ROW * rowHeight;
+  }, [rowHeight]);
 
   const dayStarts = days.map((day) => startOfZonedDay(day, zone));
   const dayKeys = days.map((day) => zonedDateKey(day, zone));
@@ -272,7 +275,7 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
         ref={gridRef}
         className={styles.grid}
         style={{
-          '--row-h': `${ROW_PX}px`,
+          '--row-h': `${rowHeight}px`,
           gridTemplateColumns: `${GUTTER_PX}px repeat(${days.length}, minmax(${COLUMN_MIN_PX}px, 1fr))`,
         } as CSSProperties}
       >

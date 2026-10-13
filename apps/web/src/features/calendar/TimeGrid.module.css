@@ -183,6 +183,9 @@
   .scroll {
     max-height: 62vh;
   }
+  .allDayItem {
+    min-height: 40px;
+  }
 }
 
 .dayHead[data-today="true"] {
