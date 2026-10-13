@@ -2133,3 +2133,33 @@ dcfcead8 is reverted by 3bf442e2).
 5. **ops/bin/launch-normalize** is on no track. It arrives through demo-mode.
 6. **demo-lift:** not part of this probe. The C1 lead reports it red on its own (typecheck, lint, phone.spec D1 page, 14
    web unit tests). Its top-bar fix is on demo-lift-topbar2 fd890afb. It needs its own green run before any main merge.
+
+## main-merge: ports merged onto demo-oct13 (2026-10-13)
+
+`main-merge` started at demo-oct13 5d0b5bef (which already contains launch head ff772d5c). The ports were merged with
+real `--no-ff` merge commits, in the planned order. demo-oct13, demo-preview and main were not touched.
+
+| Merge | Commit | Conflicts and resolution |
+|---|---|---|
+| port-g1 ab566269 | 94ab3516 | 10 files. app.ts, config.ts, a11y.spec.ts, agents.spec.ts, more-agents.spec.ts, copy/agents.ts, AgentCard.tsx, RunNowButton.tsx and shared/index.ts take main-merge. port-g1's side equals the launch head, or an older version without demo mode or S1, and main-merge adds the demo redesign on top. ops/sdd/a1/progress.md keeps both entries (a1-d1sync first, then design-d2). |
+| port-c1 1d3f5af0 | ec5bc8c9 | 2 files. ShellTopBar.tsx and UserMenu.tsx take main-merge. port-c1's ShellTopBar is the launch head's without the Demo badge. The redesign's UserMenu shows initials on every screen, with the name as the button's label, which extends c15e3c7d's phone fix. The TopBar and Pill CSS are the same on both sides. |
+| port-d1 8e47f6e1 | 711b865b | none; the tree did not change (countLiveAiCalls was already gone) |
+| port-a1 53a5450f | (none) | already an ancestor through port-g1 (aa21eb34), so git had nothing to merge; it is recorded in the history |
+| demo-mode 1ca27c28 | 15eca48d | 2 files. scripts/demo.ts takes main-merge: it has the same reseed and rebuild logic plus the aerial imagery build, which demo-mode lacks. ops/sdd/demo/progress.md keeps both. |
+| launch-integration 651411e4 | d98717ed | none (ledger only) |
+
+- Every port fix was already in demo-oct13 through ff772d5c, byte for byte. These files are equal to port-g1: the one-writer
+  rule, "Thanks, got it.", Ruling BL, the locked hand-off, paused mid-ring, and all of packages/db/migrations (SQL,
+  snapshots, journal). The net change of d98717ed over 5d0b5bef is ledger lines only. demo-oct13 added no migrations, so
+  the chain is port-g1's: 25 entries, 0000–0024. `ops/bin/launch-normalize --check` PASSED (journal, 25 chained
+  snapshots, drizzle-kit no changes, grants).
+- The controller then merged main-footprints ea1daa2a as 02aebb7d. It was a clean merge.
+- Local checks on d98717ed: npm ci (playwright-core only 1.56.1); typecheck, lint and lint:css pass. Vitest: web, ui,
+  shared, send-gate and scripts 3610/3610 (211 files); db 671/671 (33 files); api and worker 4736/4736 (278 files).
+  e2e desktop+phone: 109 passed and 1 failed. The failure was crm.spec "a new job from the map home". The map count did not
+  refresh within 20 s on the loaded shared machine. crm.spec passed 6/6 on a rerun, and CI E2E is green on the same tree,
+  so the failure was load-related. The demo config was not run locally, because the controller stopped new work; CI's
+  E2E job runs it.
+- CI run 38433406751 (workflow_dispatch, because ledger-only pushes are skipped by paths-ignore) on d98717ed. In attempt 1,
+  Platform hit its 60-min timeout while still passing tests: this is problem 15 again, since the same code took 39 min in run
+  38368434398. Attempt 2 is green on all five jobs.
