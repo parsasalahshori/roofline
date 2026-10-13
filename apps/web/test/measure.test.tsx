@@ -114,6 +114,7 @@ function view(over: Partial<MeasurementView> = {}): MeasurementView {
     kind: 'estimate',
     method: 'outline',
     drawMode: false,
+    hasCustomer: true,
     outline: [ring],
     structures: [{ footprintId: 's1', ring, areaSqFt: 1200, included: true }],
     overhangFt: 1,
@@ -133,6 +134,7 @@ let calls: Call[];
 let current: MeasurementView;
 let patchStatus: number;
 let buildStatus: number;
+let buildField: string | undefined;
 let role: string;
 let patchDelay: number;
 const sent = (key: string) => calls.filter((c) => c.key === key).map((c) => c.body as Record<string, unknown>);
@@ -183,6 +185,7 @@ beforeEach(() => {
   calls = [];
   patchStatus = 200;
   buildStatus = 201;
+  buildField = undefined;
   role = 'owner';
   patchDelay = 0;
   fake.FakeMap.instances.length = 0;
@@ -203,7 +206,7 @@ beforeEach(() => {
         return json(current);
       }
       if (key === 'POST /api/measurements/m1/exact-report') return json({ taskId: 't1' }, 201);
-      if (key === 'POST /api/proposals') return buildStatus === 201 ? json({ id: 'pr1' }, 201) : json({ error: 'boom' }, buildStatus);
+      if (key === 'POST /api/proposals') return buildStatus === 201 ? json({ id: 'pr1' }, 201) : json({ error: 'boom', ...(buildField !== undefined && { field: buildField }) }, buildStatus);
       if (key === 'POST /api/proposals/pr1/send') return json({ taskId: 't9' });
       return json({ error: `Unexpected ${key}` }, 500);
     }),
@@ -451,6 +454,7 @@ describe('measure window', () => {
 
   it('Get exact report posts and shows Waiting for your OK', async () => {
     await open();
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(measure.choiceExact.replace(/[()]/g, '\\$&')) }));
     fireEvent.click(await screen.findByRole('button', { name: measure.getExactReport }));
     await waitFor(() => expect(sent('POST /api/measurements/m1/exact-report')).toHaveLength(1));
     await waitFor(() => expect(screen.getAllByText('Waiting for your OK').length).toBeGreaterThan(0));
@@ -536,6 +540,61 @@ describe('measure window', () => {
     fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
     expect(await screen.findByText(estimator.makeFailed)).toBeTruthy();
     expect(router.state.location.pathname).toBe('/estimator/measure/m1');
+  });
+
+  it('the free estimate is the default; the exact report swaps Make proposal for Get exact report', async () => {
+    await open();
+    const free = screen.getByRole('button', { name: new RegExp(measure.choiceFree) });
+    const exact = screen.getByRole('button', { name: new RegExp(measure.choiceExact.replace(/[()]/g, '\\$&')) });
+    expect(free.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(measure.choiceExactNote)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: measure.getExactReport })).toBeNull();
+    fireEvent.click(exact);
+    expect(exact.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: measure.getExactReport })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: measure.makeProposal })).toBeNull();
+    fireEvent.click(free);
+    expect(screen.getByRole('button', { name: measure.makeProposal })).toBeTruthy();
+  });
+
+  it('a rep sees no price choice and keeps Make proposal', async () => {
+    role = 'rep';
+    await open();
+    await wait(100);
+    expect(screen.queryByText(measure.choiceTitle)).toBeNull();
+    expect(screen.getByRole('button', { name: measure.makeProposal })).toBeTruthy();
+  });
+
+  it('a home with no customer asks for one, and Make proposal sends it', async () => {
+    const router = await open({ hasCustomer: false });
+    const make = screen.getByRole('button', { name: measure.makeProposal }) as HTMLButtonElement;
+    expect(screen.getByText(measure.customerTitle)).toBeTruthy();
+    expect(make.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(measure.customerName), { target: { value: ' Dana Fox ' } });
+    expect(make.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(measure.customerPhone), { target: { value: '4025550142' } });
+    fireEvent.click(screen.getByLabelText(measure.customerAskedByText));
+    expect(make.disabled).toBe(false);
+    fireEvent.click(make);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/approvals/t9'));
+    expect(sent('POST /api/proposals')).toEqual([{ measurementId: 'm1', customer: { name: 'Dana Fox', phone: '4025550142', askedByText: true } }]);
+  });
+
+  it('a customer or job handed over skips the customer step', async () => {
+    await open({ hasCustomer: false }, { jobId: 'j1' });
+    expect(screen.queryByText(measure.customerTitle)).toBeNull();
+    cleanup();
+    await open({ hasCustomer: false }, { customer: { name: 'Dana Fox', phone: '4025550142', askedByText: false } });
+    expect(screen.queryByText(measure.customerTitle)).toBeNull();
+  });
+
+  it('a build refused for want of a customer opens the customer step', async () => {
+    buildStatus = 400;
+    buildField = 'customer';
+    await open();
+    expect(screen.queryByText(measure.customerTitle)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
+    expect(await screen.findByText(measure.customerTitle)).toBeTruthy();
   });
 
   it('shows the server message when Make proposal is refused', async () => {

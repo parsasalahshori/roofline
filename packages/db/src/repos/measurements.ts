@@ -246,6 +246,7 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
       row: measurements,
       outlineGeoJson: sql<string | null>`ST_AsGeoJSON(${measurements.outline})`,
       propertyGeom: properties.geom,
+      propertyCustomerId: properties.customerId,
     })
     .from(measurements)
     .innerJoin(
@@ -285,6 +286,7 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
     notes: row.notes ?? null,
     createdAt: row.createdAt.toISOString(),
     drawMode: outline === null,
+    hasCustomer: row.jobId !== null || found.propertyCustomerId !== null,
   };
 }
 

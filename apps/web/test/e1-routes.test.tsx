@@ -50,6 +50,7 @@ const MEASUREMENT: MeasurementView = {
   kind: 'estimate',
   method: 'outline',
   drawMode: false,
+  hasCustomer: true,
   outline: null,
   structures: [],
   overhangFt: 1,

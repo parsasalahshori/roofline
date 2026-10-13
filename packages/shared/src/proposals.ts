@@ -51,6 +51,7 @@ export type MeasurementView = {
   outline: Outline | null; structures: { footprintId: string; included: boolean; areaSqFt: number; ring: Ring }[]; estimate: InstantEstimate; facets: number | null;
   overhangFt: number; /** The map centre, [lng, lat]. */ center: LngLat;
   locked: boolean; providerRef: string | null; notes: string | null; createdAt: string; drawMode: boolean;
+  /** Whether a proposal from it already has a customer: its job's, or its home's. When false, Make proposal needs one. */ hasCustomer: boolean;
 };
 export type ProposalOptionView = {
   id: string; tier: Tier; name: string; highlights: string[]; scope: Scope; addOns: AddOn[]; calculation: Calculation;

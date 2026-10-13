@@ -11,7 +11,10 @@ import { measure } from '../../copy/measure.ts';
 import { makeFailureMessage, useBuildProposal, useSendProposal } from '../estimator/api.ts';
 import { mapStyle, satelliteAvailable } from '../../shell/map/mapStyle.ts';
 import type { MapEnv } from '../../shell/map/types.ts';
+import type { NewCustomerInput } from '../estimator/types.ts';
 import { useExactReport, useMeasurement, usePatchMeasurement } from './api.ts';
+import { CustomerStep, customerReady } from './CustomerStep.tsx';
+import { EstimateChoice, type PriceChoice } from './EstimateChoice.tsx';
 import { readHandoff } from './handoff.ts';
 import styles from './MeasureWindow.module.css';
 import { createOutlineEditor, type EditResult, type OutlineEditor } from './OutlineEditor.ts';
@@ -82,6 +85,11 @@ function Loaded({ m }: { m: MeasurementView }) {
   const [makeFailed, setMakeFailed] = useState<string | null>(null);
   const makingRef = useRef(false);
   const builtRef = useRef<ProposalView | null>(null);
+  const [choice, setChoice] = useState<PriceChoice>('free');
+  const [customer, setCustomer] = useState<NewCustomerInput>({ name: '', phone: '', askedByText: false });
+  // The server also asks for a customer when the home lost its own since this screen loaded
+  const [customerAsked, setCustomerAsked] = useState(false);
+  const needsCustomer = handoff.jobId === undefined && handoff.customer === undefined && (!m.hasCustomer || customerAsked);
 
   const [ring, setRing] = useState<Ring>(m.outline?.[0] ?? []);
   const [problem, setProblem] = useState<OutlineProblem | null>(null);
@@ -232,11 +240,13 @@ function Loaded({ m }: { m: MeasurementView }) {
           measurementId: m.id,
           ...(handoff.jobId !== undefined && { jobId: handoff.jobId }),
           ...(handoff.customer !== undefined && { customer: handoff.customer }),
+          ...(needsCustomer && { customer: { name: customer.name.trim(), phone: customer.phone.trim(), askedByText: customer.askedByText } }),
         }));
       builtRef.current = built;
       const sent = await send.mutateAsync(built.id);
       void navigate(`/approvals/${sent.taskId}`);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 400 && error.field === 'customer') setCustomerAsked(true);
       setMakeFailed(makeFailureMessage(error));
     } finally {
       makingRef.current = false;
@@ -245,7 +255,8 @@ function Loaded({ m }: { m: MeasurementView }) {
   };
 
   const noOutline = drawMode && ring.length < 3;
-  const proposalBlocked = making || problem !== null || noOutline || locked || patch.isPending;
+  const proposalBlocked = making || problem !== null || noOutline || locked || patch.isPending || (needsCustomer && !customerReady(customer));
+  const ordering = canOrderReport && (choice === 'exact' || exact.isSuccess);
   const rows: [string, string][] = [
     [measure.area, format(estimate.surfaceSqFt)],
     [measure.squares, format(estimate.squares)],
@@ -369,14 +380,17 @@ function Loaded({ m }: { m: MeasurementView }) {
           </dl>
         </section>
 
+        {canOrderReport ? <EstimateChoice choice={choice} onChoose={setChoice} disabled={exact.isPending || exact.isSuccess} /> : null}
+        {needsCustomer && !ordering ? <CustomerStep value={customer} onChange={setCustomer} disabled={making} /> : null}
+
         <div className={styles.actions}>
-          {exact.isSuccess ? (
+          {!ordering ? null : exact.isSuccess ? (
             <div className={styles.waiting} role="status">
               <Button variant="ghost" className={styles.wide} href={`/approvals/${exact.data.taskId}`}>
                 {measure.waitingForOk}
               </Button>
             </div>
-          ) : canOrderReport ? (
+          ) : (
             <Button
               variant="ghost"
               className={styles.wide}
@@ -386,16 +400,18 @@ function Loaded({ m }: { m: MeasurementView }) {
             >
               {measure.getExactReport}
             </Button>
-          ) : null}
+          )}
           {exact.isError ? <Banner tone="danger">{measure.exactFailed}</Banner> : null}
-          <Button
-            className={styles.wide}
-            busy={making}
-            disabled={proposalBlocked}
-            onClick={() => void makeProposal()}
-          >
-            {measure.makeProposal}
-          </Button>
+          {ordering ? null : (
+            <Button
+              className={styles.wide}
+              busy={making}
+              disabled={proposalBlocked}
+              onClick={() => void makeProposal()}
+            >
+              {measure.makeProposal}
+            </Button>
+          )}
           {makeFailed !== null ? (
             <div role="alert">
               <Banner tone="danger">{makeFailed}</Banner>
