@@ -518,6 +518,105 @@ async function seedAgentsHistory(q: Query, companyId: string, ownerId: string, n
 }
 
 /* ------------------------------------------------------------------------------------------------ */
+/* Agents dashboard activity: finished work for all six agents (tiles, hourly trend, handoffs)      */
+
+type DashSpec = {
+  kind: string;
+  stepType: string;
+  baseline: string;
+  units: number;
+  perUnit: number;
+  title: (where: string) => string;
+};
+
+/** What each agent finishes in the demo: a plain-sentence title (the feed shows it), one done step and its snapshot. */
+const DASH_SPECS: Record<string, DashSpec> = {
+  storm_scout: { kind: 'storm_plan', stepType: 'send_sms_batch', baseline: 'text_sent', units: 24, perUnit: 1.5, title: (w) => `Scored ${w} in last night's hail path` },
+  front_desk: { kind: 'call', stepType: 'send_sms_batch', baseline: 'booking', units: 1, perUnit: 3, title: (w) => `Booked an inspection at ${w}` },
+  estimator: { kind: 'send_proposal', stepType: 'send_proposal', baseline: 'proposal_sent', units: 1, perUnit: 20, title: (w) => `Sent a proposal for ${w}` },
+  claims: { kind: 'claim_packet', stepType: 'send_email_batch', baseline: 'claim_packet', units: 1, perUnit: 30, title: (w) => `Built a claim packet for ${w}` },
+  scheduler: { kind: 'weather_moves', stepType: 'send_sms_batch', baseline: 'install_moved', units: 1, perUnit: 10, title: (w) => `Flagged ${w} for a rain day` },
+  follow_up: { kind: 'follow_ups', stepType: 'send_sms_batch', baseline: 'follow_up_sent', units: 6, perUnit: 2, title: (w) => `Sent follow-up texts near ${w}` },
+};
+const DASH_AGENTS = ['front_desk', 'storm_scout', 'estimator', 'follow_up', 'claims', 'scheduler'] as const;
+/** Finished tasks per hour for the last 12 hours, oldest first: a quiet night, a busy morning. */
+const DASH_HOURLY = [1, 1, 2, 3, 5, 6, 5, 4, 3, 4, 5, 6] as const;
+
+async function seedAgentsDashboardActivity(q: Query, companyId: string, now: Date): Promise<void> {
+  const where = await q(
+    `select j.id, p.address_line from jobs j join properties p on p.company_id = j.company_id and p.id = j.property_id
+      where j.company_id = $1 and j.archived_at is null order by j.created_at, j.id limit 12`,
+    [companyId],
+  );
+  const places = where.map((r) => ({ id: r.id as string, address: String(r.address_line) }));
+  if (places.length === 0) return;
+  const tag = `dash-${randomUUID()}`;
+  let seq = 0;
+
+  const finishedTask = async (agent: string, at: Date, place: { id: string; address: string }, subject: boolean, created = at): Promise<void> => {
+    const spec = DASH_SPECS[agent]!;
+    const minutes = spec.units * spec.perUnit;
+    const task = await q(
+      `insert into agent_tasks (company_id, agent, kind, title, mode, status, minutes_saved, subject_type, subject_id, created_at, updated_at)
+       values ($1,$2,$3,$4,'live','done',$5,$6,$7,$8,$9) returning id`,
+      [companyId, agent, spec.kind, spec.title(place.address), minutes, subject ? 'job' : null, subject ? place.id : null, created, at],
+    );
+    const taskId = task[0]!.id as string;
+    seq += 1;
+    await q(
+      `insert into agent_task_steps (company_id, task_id, position, type, approval_class, status, payload, preview, idempotency_key,
+                                     baseline_key, units, minutes_per_unit, minutes_saved, result, created_at, updated_at)
+       values ($1,$2,1,$3,'internal','done','{}'::jsonb,'{}'::jsonb,$4,$5,$6,$7,$8,'{}'::jsonb,$9,$9)`,
+      [companyId, taskId, spec.stepType, `${tag}-${seq}`, spec.baseline, spec.units, spec.perUnit, minutes, at],
+    );
+    await q(
+      `insert into agent_task_events (company_id, task_id, step_id, kind, actor_type, actor_user_id, data, at)
+       values ($1,$2,null,'finished','agent',null,'{"steps":1}'::jsonb,$3)`,
+      [companyId, taskId, at],
+    );
+  };
+
+  // The last 12 hours, spread over the six agents.
+  let n = 0;
+  for (let ago = DASH_HOURLY.length - 1; ago >= 0; ago -= 1) {
+    const count = DASH_HOURLY[DASH_HOURLY.length - 1 - ago]!;
+    for (let k = 0; k < count; k += 1) {
+      const minutesBack = ago * 60 + 3 + ((k * 11 + n * 7) % 50);
+      const place = places[n % places.length]!;
+      await finishedTask(DASH_AGENTS[n % DASH_AGENTS.length]!, new Date(now.getTime() - minutesBack * MINUTE), place, false);
+      n += 1;
+    }
+  }
+
+  // Real handoffs: four jobs passed from one agent to the next today (each task starts after the last one).
+  const chains: string[][] = [
+    ['storm_scout', 'front_desk', 'estimator'],
+    ['front_desk', 'estimator', 'claims'],
+    ['storm_scout', 'front_desk', 'scheduler'],
+    ['estimator', 'follow_up'],
+  ];
+  for (const [c, chain] of chains.entries()) {
+    const place = places[c % places.length]!;
+    for (const [i, agent] of chain.entries()) {
+      const startedBack = (chain.length - i) * 55 + c * 20;
+      const created = new Date(now.getTime() - startedBack * MINUTE);
+      await finishedTask(agent, new Date(created.getTime() + 20 * MINUTE), place, true, created);
+    }
+  }
+
+  // The 13 days before today, so every card's 14-day trend and the week's hours have a shape.
+  for (let day = 1; day <= 13; day += 1) {
+    for (const [i, agent] of DASH_AGENTS.entries()) {
+      const count = 1 + ((day + i) % 3);
+      for (let k = 0; k < count; k += 1) {
+        const at = new Date(now.getTime() - day * DAY - (k * 95 + i * 17) * MINUTE);
+        await finishedTask(agent, at, places[(day + i + k) % places.length]!, false);
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------------------------------------------ */
 
 /** Counts of what the world holds, for the summary and the tests. */
 export async function demoWorldCounts(q: Query, companyId: string): Promise<Record<string, number>> {
@@ -880,6 +979,9 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
         { now: ago(25 * MINUTE), ip: null, allowInternalStepTypes: true },
       );
     });
+
+    // 9. The Agents dashboard: finished work for all six agents (hourly trend, handoffs, week hours).
+    await seedAgentsDashboardActivity(q, companyId, now);
 
     // Last, so the homes every later step added have outlines too ("Estimate this roof" on the map).
     await seedDemoFootprints(pools, q, companyId);

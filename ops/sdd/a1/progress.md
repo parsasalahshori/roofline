@@ -193,3 +193,11 @@ Ruling AX-N (track lead): Front Desk steps fold booking minutes into the call/te
 - TimeBaselines section is labelled by its heading; agents-settings e2e scopes Save/Saved. to that region (sentinel pass-14 item: G1 adds another Save on the tab).
 - Also done as a D1 helper: d1-rev-h (Ruling BI, retention blanks only the AI text exchange), green run 38290914284, merged by the D1 lead into d1-front-desk.
 - a1-agents 81d1a601 (BUG-6 merged) green: run 38294171379 Platform+E2E. A1 complete; track lead now a D1 helper (controller).
+
+## design-d2: Agents dashboard to match the reference app (2026-10-13)
+- Branch `design-d2` off `demo-lift`. Agents overview rebuilt as the dashboard: KPI tiles, roof diagram (own SVG) with real handoff tags, six agent cards with a running switch, and a side panel (Run now, permissions, rules, recent activity).
+- New endpoint `GET /api/agents/dashboard` (tenant-scoped, rep-scoped like the overview): tasks today, week minutes, hourly rate (null without money access), 12-hour finished-per-hour series, handoffs today (one job worked by two agents in turn today) with address tags, latest action per agent. Test: `apps/api/test/agents-dashboard.test.ts`.
+- Demo seed (`demo-world.ts`) adds finished work for all six agents (last 12 hours, four job handoff chains, 13 earlier days).
+- The panel permission chips are a static list per agent in `copy/agents.ts` (`agentsDash.permissionList`); there is no permissions data model yet.
+- Money stays marked "(estimate)" on the Office time tile; the card hours are week hours.
+- Tests rewritten for the new window and card (agents-window, agents-card, agents-money, agents-window-copy); a1-routes and g1-turn-on stub the dashboard routes via `AGENTS_DASH_ROUTES` in test/helpers.tsx.

@@ -1,40 +1,120 @@
-/* The Agents overview: a totals line, then a grid of agent cards that is one column on a phone. */
+/*
+ * The Agents dashboard layout. The window can be any width, so the layout answers to the width of this
+ * container, not the screen: wide = cards under the roof with the panel beside them; middle = panel below;
+ * narrow = a vertical rail of cards (the phone).
+ */
 .body,
 .loading {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
-.totals {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.body {
+  container-type: inline-size;
+  font-family: var(--ds-font, inherit);
+  color: var(--ds-text-1, #151c22);
 }
 
-.totalsText {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-}
-
-.totalsLine {
-  margin: 0;
-  color: var(--text);
-  font-weight: 600;
-}
-
-.grid {
+.skeletons {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
   gap: 12px;
 }
 
-@media (max-width: 34rem) {
-  .grid {
-    grid-template-columns: 1fr;
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.handoffs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 4px 4px 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 12px 5px 8px;
+  border-radius: 999px;
+  background: var(--ds-surface, #fff);
+  box-shadow: var(--ds-shadow, 0 0 0 1px rgb(21 28 34 / 8%), 0 2px 6px -2px rgb(21 28 34 / 20%));
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ds-accent, #ffc21a);
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  margin: 0;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 14px;
+}
+
+.roof {
+  display: none;
+  margin-top: -6px;
+}
+
+.cards {
+  min-width: 0;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin-top: 8px;
+}
+
+/* Middle and wide: the roof shows and the six cards sit in a row beneath their nodes. */
+@container (min-width: 50rem) {
+  .roof {
+    display: block;
+  }
+
+  .list {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+/* Wide: the panel moves beside the roof and cards. */
+@container (min-width: 74rem) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) 23rem;
   }
 }

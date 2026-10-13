@@ -23,6 +23,7 @@ export const agentsKeys = {
   feed: ['agents', 'feed'] as const,
   waiting: ['agents', 'waiting'] as const,
   overview: ['agents', 'overview'] as const,
+  dashboard: ['agents', 'dashboard'] as const,
   detail: (agent: ScreenAgent, period: TimePeriod) => ['agents', 'detail', agent, period] as const,
 };
 
@@ -32,6 +33,31 @@ export function useAgentsOverview() {
   return useQuery({
     queryKey: agentsKeys.overview,
     queryFn: ({ signal }) => apiFetch<AgentsOverview>('/api/agents', { signal }),
+  });
+}
+
+/** GET /api/agents/dashboard. Matches `AgentsDashboard` in apps/api/src/agents/dashboard.ts. */
+export type AgentsDashboardData = {
+  tasksToday: number;
+  minutesThisWeek: number;
+  hourlyRateCents: number | null;
+  /** 12 entries, oldest first; the last is the hour ending now. */
+  tasksPerHour: number[];
+  handoffsToday: number;
+  /** Newest first. */
+  handoffs: { from: ScreenAgent; to: ScreenAgent; label: string; at: string }[];
+  agents: {
+    agent: ScreenAgent;
+    minutesThisWeek: number;
+    latest: { text: string; at: string; href: string | null } | null;
+  }[];
+};
+
+/** The dashboard numbers: tiles, hourly sparkline, handoff tags and each agent's latest action. */
+export function useAgentsDashboard() {
+  return useQuery({
+    queryKey: agentsKeys.dashboard,
+    queryFn: ({ signal }) => apiFetch<AgentsDashboardData>('/api/agents/dashboard', { signal }),
   });
 }
 

@@ -81,7 +81,7 @@ type Snapshot = {
   frontDeskRate: { finished: number; succeeded: number };
 };
 
-async function companyFacts(tx: Tx, ctx: TenantContext): Promise<{ zone: string; hourlyRateCents: number }> {
+export async function companyFacts(tx: Tx, ctx: TenantContext): Promise<{ zone: string; hourlyRateCents: number }> {
   const companyRows = await tx
     .select({ timezone: companies.timezone })
     .from(companies)

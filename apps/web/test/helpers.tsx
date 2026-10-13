@@ -140,6 +140,51 @@ export function renderAt(ui: ReactElement, path = '/') {
   return { router, queryClient, user: userEvent.setup() };
 }
 
+/** What the Agents dashboard reads besides the overview: the numbers, the first selected agent's detail and its feed. */
+export const DASH_BODY = {
+  tasksToday: 779,
+  minutesThisWeek: 6600,
+  hourlyRateCents: 2800,
+  tasksPerHour: [1, 1, 2, 3, 5, 6, 5, 4, 3, 4, 5, 25],
+  handoffsToday: 3,
+  handoffs: [
+    { from: 'storm_scout', to: 'front_desk', label: '504 Transom Ct', at: '2026-10-13T06:00:00.000Z' },
+    { from: 'front_desk', to: 'estimator', label: '603 Cornice Dr', at: '2026-10-13T05:00:00.000Z' },
+  ],
+  agents: [
+    { agent: 'storm_scout', minutesThisWeek: 1080, latest: { text: 'Finished: Storm plan', at: '2026-10-13T05:00:00.000Z', href: null } },
+    { agent: 'estimator', minutesThisWeek: 1320, latest: null },
+    { agent: 'front_desk', minutesThisWeek: 1860, latest: { text: 'Booked an inspection', at: '2026-10-13T06:30:00.000Z', href: null } },
+    { agent: 'claims', minutesThisWeek: 840, latest: null },
+    { agent: 'scheduler', minutesThisWeek: 540, latest: null },
+    { agent: 'follow_up', minutesThisWeek: 960, latest: null },
+  ],
+};
+
+export function dashDetail(agent: string) {
+  return {
+    card: { agent, status: 'on', finishedToday: 0, successRate: null, notApproved30d: 0, minutesThisMonth: 0, last14Days: [], waitingCount: 0 },
+    period: 'week',
+    minutesInPeriod: 0,
+    breakdown: [],
+    rules: [{ text: 'It answers every call.', links: [] }],
+    paused: null,
+    runNow: { kind: 'answers_calls' },
+    recentTasks: [],
+    hourlyRateCents: 2800,
+  };
+}
+
+/** Routes the Agents dashboard calls next to GET /api/agents. Spread under a test's own routes. */
+export const AGENTS_DASH_ROUTES: Routes = {
+  'GET /api/company': () => ({ body: COMPANY }),
+  'GET /api/agents/dashboard': () => ({ body: DASH_BODY }),
+  'GET /api/agents/front_desk?period=week': () => ({ body: dashDetail('front_desk') }),
+  'GET /api/agents/feed?agent=front_desk': () => ({
+    body: { items: [{ id: 'e1', agent: 'front_desk', kind: 'finished', text: 'Booked an inspection', at: '2026-10-13T06:30:00.000Z', href: null }], nextCursor: null },
+  }),
+};
+
 /** Where the router is: path and query string. */
 export const where = (router: { state: { location: { pathname: string; search: string } } }): string =>
   router.state.location.pathname + router.state.location.search;

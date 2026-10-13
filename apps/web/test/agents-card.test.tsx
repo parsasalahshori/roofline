@@ -1,15 +1,20 @@
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { afterEach, describe, expect, it } from 'vitest';
-import { hoursLabel, moneyLabel, type AgentCard as AgentCardData } from '@roofline/shared';
-import { agentsCommon } from '../src/copy/agents.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AgentCard as AgentCardData } from '@roofline/shared';
+import { Providers, createQueryClient } from '../src/app/providers.tsx';
+import { agentsDash } from '../src/copy/agents.ts';
 import { AgentCard } from '../src/features/agents/AgentCard.tsx';
+import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
+
+const NOW = Date.parse('2026-10-13T06:41:00.000Z');
 
 function fixture(over: Partial<AgentCardData> = {}): AgentCardData {
   return {
     agent: 'storm_scout',
     status: 'on',
-    finishedToday: 4,
+    finishedToday: 636,
     successRate: 0.92,
     notApproved30d: 3,
     minutesThisMonth: 1860,
@@ -19,85 +24,86 @@ function fixture(over: Partial<AgentCardData> = {}): AgentCardData {
   };
 }
 
-function show(card: AgentCardData, rate: number | null = 2800) {
-  const router = createMemoryRouter([{ path: '/', element: <AgentCard card={card} hourlyRateCents={rate} /> }]);
-  return render(<RouterProvider router={router} />);
+function show(card: AgentCardData, over: { isOwner?: boolean; selected?: boolean; onSelect?: () => void; minutes?: number | null; latest?: { text: string; at: string } | null } = {}) {
+  stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
+  const router = createMemoryRouter([
+    {
+      path: '/',
+      element: (
+        <ul>
+          <AgentCard
+            card={card}
+            minutesThisWeek={over.minutes === undefined ? 1080 : over.minutes}
+            latest={over.latest === undefined ? { text: 'Scored 636 roofs in last night’s hail path', at: '2026-10-13T03:41:00.000Z' } : over.latest}
+            selected={over.selected ?? false}
+            onSelect={over.onSelect ?? (() => undefined)}
+            isOwner={over.isOwner ?? true}
+            now={NOW}
+          />
+        </ul>
+      ),
+    },
+  ]);
+  return render(
+    <Providers client={createQueryClient()}>
+      <RouterProvider router={router} />
+    </Providers>,
+  );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe('AgentCard', () => {
-  it('shows honest estimates for an on card', () => {
+  it('shows the big number, success, hours saved and the latest action with its age', () => {
     show(fixture());
-    expect(screen.getByText(/about 31 hours/)).toBeTruthy();
-    expect(screen.getAllByText(/\(estimate\)/).length).toBeGreaterThan(0);
-    expect(screen.getByText(`${moneyLabel(1860, 2800)} ${agentsCommon.estimate}`)).toBeTruthy();
+    expect(screen.getByText('636')).toBeTruthy();
+    expect(screen.getByText(agentsDash.tasksTodayLine)).toBeTruthy();
     expect(screen.getByText('92%')).toBeTruthy();
-    expect(screen.getByText('Not approved: 3')).toBeTruthy();
+    expect(screen.getByText(`18 ${agentsDash.hoursUnit}`)).toBeTruthy();
+    expect(screen.getByText('Scored 636 roofs in last night’s hail path')).toBeTruthy();
+    expect(screen.getByText('3 hr ago')).toBeTruthy();
+    expect(screen.getByText(agentsDash.running)).toBeTruthy();
+    expect(screen.getByRole('img', { name: new RegExp(agentsDash.cardSparkLabel) })).toBeTruthy();
   });
 
-  it('link name includes the status chip, also for coming soon', () => {
-    const { unmount } = show(fixture());
-    expect(screen.getByRole('link', { name: /Storm Scout.*On/ })).toBeTruthy();
-    unmount();
-    show(fixture({ status: 'coming_soon', agent: 'claims', minutesThisMonth: 0, successRate: null, notApproved30d: 0, finishedToday: 0 }));
-    expect(screen.getByRole('link', { name: /Claims.*Coming soon/ })).toBeTruthy();
-  });
-
-  it('says less than half an hour for a few minutes', () => {
-    show(fixture({ minutesThisMonth: 5 }));
-    expect(screen.getByText(/less than half an hour/)).toBeTruthy();
-    expect(document.body.textContent).not.toContain('about 0');
-  });
-
-  it('hides money when the rate is null', () => {
-    show(fixture(), null);
-    expect(screen.getByText(/about 31 hours/)).toBeTruthy();
-    expect(document.body.textContent).not.toContain('$');
-  });
-
-  it('says there are not enough runs when the rate is null', () => {
+  it('says no runs yet when the success rate is not known', () => {
     show(fixture({ successRate: null }));
-    expect(screen.getByText('Not enough runs yet')).toBeTruthy();
+    expect(screen.getByText(agentsDash.noSuccess)).toBeTruthy();
     expect(screen.queryByText(/%/)).toBeNull();
   });
 
-  it('shows no numbers on a coming soon card', () => {
-    show(fixture({ status: 'coming_soon', agent: 'claims', minutesThisMonth: 0, successRate: null, notApproved30d: 0, finishedToday: 0 }));
-    expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0);
-    expect(screen.queryByText(/\(estimate\)/)).toBeNull();
-    expect(screen.queryByText(/≈/)).toBeNull();
+  it('says nothing yet when there is no latest action', () => {
+    show(fixture(), { latest: null });
+    expect(screen.getByText(agentsDash.latestNone)).toBeTruthy();
   });
 
-  it('links to the agent page with the agent name', () => {
-    show(fixture());
-    const link = screen.getByRole('link', { name: /^Storm Scout/ });
-    expect(link.getAttribute('href')).toBe('/agents/storm-scout');
+  it('marks the selected card and picks on a click', async () => {
+    const onSelect = vi.fn();
+    show(fixture(), { selected: true, onSelect });
+    expect(screen.getByRole('article').getAttribute('data-selected')).toBe('true');
+    const pick = screen.getByRole('button', { name: /Storm Scout/ });
+    expect(pick.getAttribute('aria-pressed')).toBe('true');
+    await userEvent.setup().click(pick);
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
-  it('labels the status chip', () => {
-    const { unmount } = show(fixture({ status: 'paused' }));
-    expect(screen.getByText('Paused')).toBeTruthy();
-    unmount();
-    show(fixture({ status: 'waiting', waitingCount: 2 }));
-    expect(screen.getAllByText('Waiting on you').length).toBeGreaterThan(0);
+  it('shows Paused with the switch off', () => {
+    show(fixture({ status: 'paused' }));
+    expect(screen.getByText(agentsDash.paused)).toBeTruthy();
+    expect(screen.getByRole('switch', { name: `Storm Scout ${agentsDash.running}` }).getAttribute('aria-checked')).toBe('false');
   });
 
-  it('link accessible name includes the name, the time figure and (estimate)', () => {
-    show(fixture({ minutesThisMonth: 90 }));
-    const link = screen.getByRole('link');
-    const name = link.getAttribute('aria-labelledby')?.split(' ').map((id) => document.getElementById(id)?.textContent ?? '').join(' ') ?? '';
-    expect(name).toMatch(/Storm Scout/);
-    expect(name).toMatch(/Time saved this month/);
-    expect(name).toContain(hoursLabel(90));
-    expect(name).toContain(agentsCommon.estimate);
-    expect(name).toContain(moneyLabel(90, 2800));
-    expect(screen.getByRole('link', { name: /Time saved this month/ })).toBe(link);
+  it('shows no switch to someone who cannot change it', () => {
+    show(fixture(), { isOwner: false });
+    expect(screen.queryByRole('switch')).toBeNull();
   });
 
-  it('coming soon link name is the agent name and its chip', () => {
-    show(fixture({ status: 'coming_soon', agent: 'claims', minutesThisMonth: 0, successRate: null, notApproved30d: 0, finishedToday: 0 }));
-    expect(screen.getByRole('link').getAttribute('aria-labelledby')?.split(' ')).toHaveLength(2);
-    expect(screen.getByRole('link', { name: 'Claims Coming soon' })).toBeTruthy();
+  it('a coming soon card has no switch and no numbers beyond zero', () => {
+    show(fixture({ status: 'coming_soon', agent: 'claims', finishedToday: 0, successRate: null }));
+    expect(screen.getByText(agentsDash.comingSoon)).toBeTruthy();
+    expect(screen.queryByRole('switch')).toBeNull();
   });
 });
