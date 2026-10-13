@@ -6,6 +6,7 @@ import type { AppDeps } from '../app.ts';
 import { aerialMeasure } from '../estimator/aerial.ts';
 import { requestExactReport } from '../estimator/exact-report.ts';
 import { measureProperty } from '../estimator/measure.ts';
+import { measurementPreview } from '../estimator/preview.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
 
@@ -146,6 +147,12 @@ export function measurementRoutes(deps: AppDeps): Router {
     const view = await withTenant(pools, ctx, (tx) => getMeasurement(tx, ctx, id));
     if (view === null) throw new AppError(404, MESSAGES.notFound);
     res.json(view);
+  });
+
+  // The home and the three options as Make proposal would price them now (prices only for those who see money)
+  router.get('/:id/preview', async (req, res) => {
+    const { ctx } = req;
+    res.json(await measurementPreview(deps, ctx, idParam(req.params.id)));
   });
 
   router.patch('/:id', async (req, res) => {

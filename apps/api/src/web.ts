@@ -60,7 +60,8 @@ export function serveWeb(app: Express, distDir: string): void {
     } else {
       res.setHeader('Cache-Control', NO_CACHE);
     }
-    res.sendFile(indexPath, (err) => {
+    // The path is our own; `dotfiles: 'allow'` keeps a checkout under a dot-directory (a git worktree in .claude/) serving pages
+    res.sendFile(indexPath, { dotfiles: 'allow' }, (err) => {
       // A browser that went away mid-download is not worth an error; anything else (index.html
       // deleted under a running server) goes to the error handler and is logged.
       if (err && !res.headersSent) next(err);
