@@ -154,6 +154,7 @@ test('Roofline demo walkthrough', async ({ page }) => {
     expect(proposal.status()).toBe(200);
     const { measurementId } = (await proposal.json()) as { measurementId: string };
     await page.goto(`/estimator/measure/${measurementId}`);
+    await page.getByRole('button', { name: /Exact report \(EagleView\)/ }).click();
     await page.getByRole('button', { name: 'Get exact report' }).click();
     await page.getByRole('link', { name: 'Waiting for your OK' }).click();
     await expect(page).toHaveURL(/\/approvals\//);
