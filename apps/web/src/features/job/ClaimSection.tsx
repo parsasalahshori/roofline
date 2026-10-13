@@ -104,10 +104,10 @@ function textOrNull(text: string): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
-type ClaimSheetProps = { jobId: string; data: JobClaimResponse; onClose: () => void };
+type ClaimSheetProps = { jobId: string; data: JobClaimResponse; onClose: () => void; onSaved?: () => void };
 
 /** The claim form. Only the fields that changed are sent (a first save sends everything filled in). */
-function ClaimSheet({ jobId, data, onClose }: ClaimSheetProps) {
+function ClaimSheet({ jobId, data, onClose, onSaved }: ClaimSheetProps) {
   const save = useSaveClaim(jobId);
   const toast = useToast();
   // Initial values are the baseline for the diff; with no claim yet the baseline is empty.
@@ -155,6 +155,7 @@ function ClaimSheet({ jobId, data, onClose }: ClaimSheetProps) {
       return;
     }
     toast.show(claims.saved, 'success');
+    onSaved?.();
     onClose();
   }
 
@@ -234,7 +235,7 @@ function PacketActions({ jobId, packet, dayFormat }: { jobId: string; packet: Jo
 }
 
 /** The job's insurance claim: its status, details and history, with a form to add or edit them. */
-export function ClaimSection({ jobId }: { jobId: string }) {
+export function ClaimSection({ jobId, onSaved }: { jobId: string; onSaved?: () => void }) {
   const headingId = useId();
   const zone = useCompanyZone();
   const query = useJobClaim(jobId);
@@ -261,7 +262,7 @@ export function ClaimSection({ jobId }: { jobId: string }) {
     }
     if (query.isError) return <Banner tone="danger">{claims.loadError}</Banner>;
     const { claim, intake } = query.data;
-    const sheet = editing ? <ClaimSheet jobId={jobId} data={query.data} onClose={() => setEditing(false)} /> : null;
+    const sheet = editing ? <ClaimSheet jobId={jobId} data={query.data} onClose={() => setEditing(false)} onSaved={onSaved} /> : null;
 
     if (claim === null) {
       return (
@@ -288,7 +289,7 @@ export function ClaimSection({ jobId }: { jobId: string }) {
 
     return (
       <>
-        <span className={styles.chip}>{claims.status[claim.status]}</span>
+        <span className={styles.chip} data-status={claim.status}>{claims.status[claim.status]}</span>
         {rows.length > 0 ? (
           <dl className={styles.fields}>
             {rows.map((row) => (
@@ -307,6 +308,7 @@ export function ClaimSection({ jobId }: { jobId: string }) {
           {/* G1 Task 7 */}
           <PacketActions jobId={jobId} packet={query.data.packet} dayFormat={dayFormat} />
         </div>
+        <p className={styles.text}>{claims.packetHelp}</p>
         {claim.events.length > 0 ? (
           <>
             <h3 className={styles.subheading}>{claims.historyTitle}</h3>

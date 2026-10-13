@@ -1,3 +1,6 @@
+import { UiLink } from '@roofline/ui';
+import { agents } from '../../copy/agents.ts';
+import styles from './AgentRules.module.css';
 import { TimeBaselines } from '../agents/TimeBaselines.tsx';
 import { AgentRules } from './AgentRules.tsx';
 
@@ -5,8 +8,12 @@ import { AgentRules } from './AgentRules.tsx';
 export function AgentsTab() {
   return (
     <>
-      <TimeBaselines />
-      <AgentRules />
+      <nav className={styles.navigation} aria-label={agents.settingsNav}>
+        <UiLink href="#agent-rules">{agents.rulesJump}</UiLink>
+        <UiLink href="#agent-time-baselines">{agents.baselinesJump}</UiLink>
+      </nav>
+      <div id="agent-rules" className={styles.anchor}><AgentRules /></div>
+      <div id="agent-time-baselines" className={styles.anchor}><TimeBaselines /></div>
     </>
   );
 }

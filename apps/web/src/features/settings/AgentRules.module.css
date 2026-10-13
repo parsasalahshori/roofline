@@ -3,8 +3,10 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 720px;
-  margin-top: 24px;
+  max-width: 100%;
+  color: #151c22;
+  font-size: 14px;
+  margin: 0 0 20px;
   min-width: 0;
 }
 
@@ -17,7 +19,7 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
 }
 
 /* A group is a fieldset, drawn without its border so the title and fields sit as plain blocks */
@@ -26,8 +28,10 @@
   flex-direction: column;
   gap: 12px;
   margin: 0;
-  padding: 0;
-  border: 0;
+  padding: 16px;
+  border: 1px solid #dfe3e6;
+  border-radius: 14px;
+  background: #fff;
   min-width: 0;
 }
 
@@ -40,7 +44,7 @@
 
 .help {
   margin: 0;
-  color: var(--text-muted);
+  color: #59636b;
   font-size: var(--font-size-min);
 }
 
@@ -92,3 +96,12 @@
     flex-basis: 100%;
   }
 }
+
+.navigation { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.navigation a { display: inline-flex; align-items: center; min-height: 40px; padding: 6px 12px; border: 1px solid #dfe3e6; border-radius: 8px; color: #151c22; background: #fff; text-decoration: none; font-size: 13px; }
+.navigation a:focus-visible { outline: 2px solid #356bc1; outline-offset: 2px; }
+.anchor { scroll-margin-top: 16px; }
+.groupTitle { padding: 0 6px; }
+.title { font-size: 18px; font-weight: 700; }
+.save { align-self: flex-start; background: #ffce32; color: #151c22; border-color: #e4b927; }
+@media (max-width: 600px) { .navigation a, .field input, .save { min-height: 44px; } }

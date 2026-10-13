@@ -1,16 +1,36 @@
-/* The row of tab links under the window title. It scrolls sideways on a phone rather than wrapping. */
 .tabs {
   display: flex;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: 4px;
   overflow-x: auto;
-  margin: -4px -4px 16px;
+  margin: 0 0 14px;
   padding: 4px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid #dfe3e6;
 }
 
-/* A tab is a whole target on a phone: at least 40px tall, and never squeezed to fit the row */
 .tab {
   flex: none;
-  min-height: 40px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: #535e67;
+  font-size: 13px;
+}
+
+.tab[aria-current='page'] {
+  background: #151c22;
+  color: #fff;
+}
+
+.tab:focus-visible {
+  outline: 2px solid #356bc1;
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .tab {
+    min-height: 44px;
+  }
 }

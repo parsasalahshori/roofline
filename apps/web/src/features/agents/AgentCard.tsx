@@ -17,7 +17,7 @@ export function AgentCard({ card, hourlyRateCents }: { card: AgentCardData; hour
   const turnOn = card.status === 'paused' && (G1_AGENTS as readonly string[]).includes(card.agent);
   const soon = card.status === 'coming_soon';
   return (
-    <Card as="div">
+    <Card as="div" padded={false} className={styles.surface} data-agent={card.agent}>
       <UiLink href={`/agents/${agentSlug(card.agent)}`} aria-labelledby={soon ? `${nameId} ${chipId}` : `${nameId} ${chipId} ${timeId}`} className={styles.link}>
         <div className={styles.card}>
           <div className={styles.head}>
@@ -30,7 +30,7 @@ export function AgentCard({ card, hourlyRateCents }: { card: AgentCardData; hour
             <p className={styles.line}>{agentsCommon.comingSoon}</p>
           ) : (
             <>
-              <p className={styles.line}>
+              <p className={`${styles.line} ${styles.finished}`}>
                 <span>{agentsWindow.finishedToday}</span>
                 <span>{card.finishedToday}</span>
               </p>
