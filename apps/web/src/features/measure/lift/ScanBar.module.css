@@ -1,0 +1,128 @@
+/* The "Measure roof" bar and the scan sweep over the aerial, matched to the reference app. */
+.bar {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 10px 12px 10px 14px;
+  box-sizing: border-box;
+  border-radius: var(--ds-r-card, 14px);
+  background: var(--ds-surface, #fffdf8);
+  color: var(--ds-text-1, #2b2620);
+  font-family: var(--ds-font, var(--font));
+  box-shadow: var(--ds-shadow, 0 10px 30px rgba(43, 30, 0, 0.18));
+}
+
+.mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--ds-accent, #f5b324);
+  color: var(--ds-accent-ink, #2b2620);
+}
+
+.text {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.text strong {
+  font-weight: 700;
+}
+
+.measure {
+  flex: none;
+  min-height: 40px;
+  gap: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.buttonIcon {
+  flex: none;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.track {
+  display: block;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--ds-surface-2, #f6f1e6);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--ds-accent, #f5b324);
+  transition: width 0.1s linear;
+}
+
+.sweep {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 18%;
+  background: linear-gradient(90deg, transparent, rgba(245, 179, 36, 0.38), transparent);
+  border-right: 2px solid var(--ds-accent, #f5b324);
+  pointer-events: none;
+  animation: sweep 1.3s ease-in-out infinite alternate;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(450%);
+  }
+}
+
+@media (max-width: 640px) {
+  .bar[data-scan="idle"] {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: calc(100% - 24px);
+  }
+
+  .bar[data-scan="idle"] .text {
+    flex: 1 1 60%;
+  }
+
+  .bar[data-scan="idle"] .measure {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sweep {
+    animation: none;
+    left: 40%;
+  }
+
+  .fill {
+    transition: none;
+  }
+}

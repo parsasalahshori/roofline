@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 import { createGeocoder } from '../src/providers/geocoder.ts';
 import { DEMO_EXACT_REPORT_MS, DemoExactReports } from '../src/providers/fakes/demo-exact-reports.ts';
-import { DemoGeocoder, FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
+import { DEMO_LOOKUP_LOTS, DemoGeocoder, FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
 
 const ADDRESS = { street: '4217 Prairie Wind Ln', city: 'Omaha', state: 'NE', zip: '68144' };
 
@@ -20,6 +20,25 @@ describe('the demo geocoder', () => {
     expect(a?.zip).toMatch(/^681\d\d$/);
     expect(a?.street).not.toContain('Fake');
     expect(none).toBeNull();
+  });
+
+  test('sends any typed address to one of the seeded empty lots, whole and the same every time', async () => {
+    const geocoder = new DemoGeocoder();
+    const lots = DEMO_LOOKUP_LOTS.map((l) => l.join(','));
+    const typed = ['12 Elm St', '410 Truss Ave', '9 Birch Ln, Omaha, NE 68114', 'anything at all 77'];
+    const found = await Promise.all(typed.map((a) => geocoder.geocode(a)));
+    for (const f of found) {
+      expect(f).not.toBeNull();
+      expect(lots).toContain(`${f!.lng},${f!.lat}`);
+      expect(f).toMatchObject({ state: expect.stringMatching(/^[A-Z]{2}$/), city: expect.any(String), zip: expect.stringMatching(/^\d{5}$/) });
+    }
+    expect(await geocoder.geocode('12 Elm St')).toEqual(found[0]);
+    expect(found[2]).toMatchObject({ city: 'Omaha', state: 'NE', zip: '68114' });
+    const [many] = await geocoder.geocodeMany(['12 Elm St']);
+    expect(many).toEqual(found[0]);
+    expect(await geocoder.geocode('nowhere at all')).toBeNull();
+    // plain fake keeps its own hash points
+    expect(lots).not.toContain(`${(await new FakeGeocoder().geocode('12 Elm St'))!.lng},${(await new FakeGeocoder().geocode('12 Elm St'))!.lat}`);
   });
 
   test('is the geocoder in DEMO_MODE; plain FAKE_PROVIDERS keeps the test fake', () => {

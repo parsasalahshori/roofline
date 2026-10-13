@@ -22,4 +22,12 @@ export const liftMeasure = {
   valleys: 'Valleys',
   edges: 'Edges',
   feet: (ft: number) => `${ft.toLocaleString()} ft`,
+  imagery: (date: string) => `Aerial imagery \u00b7 measured ${date}`,
+  scanIntroName: 'Estimator',
+  scanIntroRest: ' measures every facet, pitch, and line on this roof from the aerial image.',
+  scanButton: 'Measure roof',
+  scanning: (facets: number | null, seconds: number) =>
+    `${facets === null ? 'Tracing the roof' : `Tracing ${facets} ${facets === 1 ? 'facet' : 'facets'}`} and reading pitch\u2026 ${seconds.toFixed(1)} s`,
+  scanDone: 'Roof measured',
+  appIcon: 'Measure app icon',
 } as const;

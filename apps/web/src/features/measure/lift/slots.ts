@@ -2,6 +2,7 @@ import type { instantEstimate, Ring } from '@roofline/shared';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { createContext, type ReactNode, type RefObject } from 'react';
 import type { OutlineProblem } from '../types.ts';
+import type { ScanSession } from './scan.ts';
 
 /**
  * The one roof editor, owned by MeasureWindow (it has the saves, the draw mode and the lock), handed down so
@@ -36,6 +37,8 @@ export type MeasureSlots = {
   roof: RoofSession | null;
   panels: ReactNode;
   estimate: ReturnType<typeof instantEstimate> | null;
+  /** The measure-roof reveal; null (the standalone views) means the roof is simply shown. */
+  scan: ScanSession | null;
 };
 
-export const MeasureSlotsContext = createContext<MeasureSlots>({ roof: null, panels: null, estimate: null });
+export const MeasureSlotsContext = createContext<MeasureSlots>({ roof: null, panels: null, estimate: null, scan: null });

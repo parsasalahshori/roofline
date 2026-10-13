@@ -18,14 +18,15 @@
 }
 
 .address {
-  font-size: 18px;
+  font-family: var(--ds-font-display, var(--ds-font, var(--font)));
+  font-size: 24px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 
 .owner {
   color: var(--ds-text-2, rgba(43, 38, 32, 0.66));
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .chips {
