@@ -202,3 +202,8 @@ Ruling AX-N (track lead): Front Desk steps fold booking minutes into the call/te
 - S1: 0018 is S1's (R1, R3, R8, grant trims). Snapshots 0019-0022 rebuilt on A1's chain with D1's four new indexes and S1's ad_accounts_platform_external_live_uq; ids/prevIds and journal unchanged; A1 0021/0022 SQL byte-identical; drizzle-kit "No schema changes".
 - Test fixes (71ec47e2): rls.test app_tenant no longer expects line_lookups (D1's 0020 is app_system only); eval-front-desk production config gets R2 values.
 - Also done: launch-a1fix b40a411f (recordModelFailureHandoff takes the conversation row lock, G1's finding), green run 38302297789, handed to the sentinel for pass 16.
+
+## a1-port merged (launch fixes ported back)
+- a1-port b505e2c6 (CI run 38332100433 Platform+E2E green; tree identical to the merge) merged --no-ff into a1-agents.
+- edd99c92 = launch-a1fix b40a411f: recordModelFailureHandoff locks the conversation row (the lock D1's RC-1 insertTurn takes) before its existence check and position read; another company's conversation id is a no-op. 3 db tests incl. 6 concurrent calls.
+- b505e2c6 = launch-a1fix2 657a8414 test only (ring_first no answer + paused Front Desk -> voicemail); the code was already on a1-agents from a1-d1sync.
