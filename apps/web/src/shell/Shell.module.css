@@ -101,4 +101,12 @@
   .topBar > header {
     padding: 2px 12px;
   }
+
+  /* Demo and setup supply their own compact styles; keep every phone chrome target reachable. */
+  .topBar > header > [data-slot] > button,
+  .topBar > header > [data-slot] > a,
+  .topBar > header > [data-slot] > div > button,
+  .topBar > header > [data-slot] > div > a {
+    min-height: 40px;
+  }
 }
