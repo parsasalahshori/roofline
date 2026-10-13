@@ -25,6 +25,8 @@ async function expectOutline(page: Page): Promise<void> {
   // A new roof is revealed by the scan first (Measure roof), then the numbers
   const scan = page.getByRole('button', { name: 'Measure roof' });
   if (await scan.isVisible().catch(() => false)) await scan.click();
+  // The numbers sit under the result card's Adjust row
+  await page.getByRole('button', { name: 'Adjust' }).click({ timeout: 15_000 });
   await expect(page.getByText('The numbers', { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('Squares', { exact: true }).locator('xpath=following-sibling::dd')).not.toHaveText('0');
   await expect(page.getByText('Tap the corners of the roof.', { exact: false })).toHaveCount(0);

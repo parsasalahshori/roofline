@@ -171,9 +171,18 @@ async function open(over: Partial<MeasurementView> = {}, state?: unknown) {
   await waitFor(() => expect(fake.FakeMap.instances.length).toBeGreaterThan(0));
   mapEmit('load');
   // An editable roof is revealed by the scan first; the numbers come after it
-  await waitFor(() => expect(screen.queryByText(measure.numbersTitle) ?? screen.queryByRole('button', { name: liftMeasure.scanButton })).toBeTruthy());
+  await waitFor(() =>
+    expect(
+      screen.queryByText(measure.numbersTitle) ??
+        screen.queryByRole('button', { name: liftMeasure.adjust }) ??
+        screen.queryByRole('button', { name: liftMeasure.scanButton }),
+    ).toBeTruthy(),
+  );
   const scanButton = screen.queryByRole('button', { name: liftMeasure.scanButton });
   if (scanButton) fireEvent.click(scanButton);
+  // The controls that change the estimate sit under the card's Adjust row, folded away until it is opened
+  const adjust = await screen.findByRole('button', { name: liftMeasure.adjust });
+  if (adjust.getAttribute('aria-expanded') !== 'true') fireEvent.click(adjust);
   await screen.findByText(measure.numbersTitle);
   return router;
 }
@@ -640,7 +649,7 @@ describe('the Measure roof scan', () => {
     fireEvent.click(button);
     expect(await screen.findByText(/Tracing 7 facets and reading pitch/)).toBeTruthy();
     expect(document.querySelector('[data-structure-label]')).toBeNull();
-    expect(await screen.findByText(measure.numbersTitle, undefined, { timeout: 2000 })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: liftMeasure.adjust }, { timeout: 2000 })).toBeTruthy();
     expect(screen.queryByRole('button', { name: liftMeasure.scanButton })).toBeNull();
     expect(document.querySelector('[data-structure-label]')?.textContent).toBe(liftMeasure.structureLabel(2400));
     expect(screen.getByRole('button', { name: measure.makeProposal })).toBeTruthy();
@@ -656,8 +665,19 @@ describe('the Measure roof scan', () => {
   it('skips the scan for a sent (locked) measurement', async () => {
     current = view({ locked: true });
     renderWindow();
-    expect(await screen.findByText(measure.numbersTitle)).toBeTruthy();
+    expect(await screen.findByRole('button', { name: liftMeasure.adjust })).toBeTruthy();
     expect(screen.queryByRole('button', { name: liftMeasure.scanButton })).toBeNull();
+  });
+
+  it('folds the pitch, overhang and numbers under Adjust, closed until it is pressed', async () => {
+    current = view({ locked: true });
+    renderWindow();
+    const adjust = await screen.findByRole('button', { name: liftMeasure.adjust });
+    expect(adjust.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText(measure.numbersTitle)).toBeNull();
+    fireEvent.click(adjust);
+    expect(adjust.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(measure.numbersTitle)).toBeTruthy();
   });
 });
 

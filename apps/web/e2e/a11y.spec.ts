@@ -75,6 +75,8 @@ test('measure view has no serious accessibility violations', async ({ page, logi
   const response = await page.request.get('/api/proposals/' + sent.proposalId);
   const { measurementId } = (await response.json()) as { measurementId: string };
   await page.goto('/estimator/measure/' + measurementId);
+  // The controls and the numbers sit under the card's Adjust row
+  await page.getByRole('button', { name: 'Adjust' }).click({ timeout: 20_000 });
   await expect(page.getByText('The numbers')).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });

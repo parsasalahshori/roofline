@@ -63,18 +63,19 @@
 }
 
 /* The name is the button: it fills the card so a click anywhere selects the agent. */
-.pick {
+.card .pick {
   min-height: 0;
   padding: 0;
   border-radius: var(--ds-r-ctl, 9px);
   color: var(--ds-text-1, #151c22);
   font-size: inherit;
   font-weight: inherit;
+  background: transparent;
   text-align: left;
   white-space: normal;
 }
 
-.pick:hover {
+.card .pick:hover {
   background: transparent;
 }
 
@@ -242,9 +243,8 @@
   }
 
   .stats {
-    justify-content: flex-end;
-    flex-direction: column;
-    align-items: flex-end;
+    justify-content: flex-start;
+    gap: 20px;
   }
 
   .stat dd {
