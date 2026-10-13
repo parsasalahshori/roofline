@@ -1,0 +1,86 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  max-width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--font-size-body);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.kind {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+.big {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.squares {
+  font-size: var(--font-size-stat);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.unit,
+.sqft {
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 12px 8px;
+  margin: 0;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cell dt {
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+.cell dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
