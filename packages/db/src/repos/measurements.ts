@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { instantEstimate, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type Ring } from '@roofline/shared';
+import { measureRoof, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type Ring } from '@roofline/shared';
 import { jobs, measurements, properties, proposals } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getProperty, type PropertyRow } from './properties.ts';
@@ -18,6 +18,8 @@ export type NewMeasurement = {
   /** All footprints near the home, in order; the main structure is `included: true`. */
   structures: { footprintId: string; included: boolean; areaSqFt: number; ring: Ring }[];
   estimate: InstantEstimate;
+  /** Roof facets counted for the measurement (null: none worked out). */
+  facets?: number | null;
   overhangFt: number;
   /** Map centre, [lng, lat] (not stored in its own column; derived on read: see Package 1). */
   center: LngLat;
@@ -238,7 +240,7 @@ export async function createMeasurement(tx: Tx, ctx: TenantContext, m: NewMeasur
       edgeFt: m.estimate.edgeFt,
       ridgeFt: m.estimate.ridgeFt,
       valleyFt: m.estimate.valleyFt,
-      facets: null,
+      facets: m.facets ?? null,
       createdByUserId: ctx.userId,
       createdAt: now,
       updatedAt: now,
@@ -272,7 +274,10 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
   const pitchX12 = row.pitchX12 ?? 0;
   const overhangFt = row.overhangFt ?? 0;
   const valleyFt = row.valleyFt ?? 0;
-  const fromOutline: InstantEstimate = instantEstimate({ outline: outline ?? [], pitchX12, overhangFt, valleyFt });
+  // The roof drawn over the outline is worked out on read (deterministic), and its lines give the ridge, valley
+  // and edge lengths, so what is drawn and what is priced agree.
+  const measured = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt });
+  const fromOutline: InstantEstimate = measured.estimate;
   // An exact report's or an aerial measure's numbers are the measurement itself: shown as stored, never
   // worked out again from the outline (B5). Proposals are priced from the same stored columns.
   const estimate: InstantEstimate = keepsStoredNumbers(row) ? storedEstimate(row, fromOutline) : fromOutline;
@@ -288,7 +293,7 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
     outline,
     structures: storedStructures(row.structures),
     estimate,
-    facets: row.facets ?? null,
+    facets: keepsStoredNumbers(row) ? (row.facets ?? null) : (measured.roof?.totals.facetCount ?? row.facets ?? null),
     overhangFt,
     center,
     locked: await isMeasurementLocked(tx, ctx, row.id),
@@ -297,6 +302,7 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
     createdAt: row.createdAt.toISOString(),
     drawMode: outline === null,
     hasCustomer: row.jobId !== null || found.propertyCustomerId !== null,
+    roof: measured.roof,
   };
 }
 
@@ -369,8 +375,11 @@ export async function updateMeasurement(
 
   const pitchX12 = p.pitchX12 ?? current.pitchX12 ?? 0;
   const overhangFt = p.overhangFt ?? current.overhangFt ?? 0;
-  const valleyFt = p.valleyFt ?? current.valleyFt ?? 0;
-  const estimate = instantEstimate({ outline: outline ?? [], pitchX12, overhangFt, valleyFt });
+  // A new outline or pitch gets the valleys its roof has (0 means "the roof's"), unless a length is sent with it.
+  const roofChanged = p.outline !== undefined || p.includedStructures !== undefined || p.pitchX12 !== undefined;
+  const valleyIn = p.valleyFt ?? (roofChanged ? 0 : (current.valleyFt ?? 0));
+  const { estimate, roof } = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn });
+  const valleyFt = p.valleyFt ?? estimate.valleyFt;
 
   await tx
     .update(measurements)
@@ -384,6 +393,7 @@ export async function updateMeasurement(
       surfaceSqFt: estimate.surfaceSqFt,
       edgeFt: estimate.edgeFt,
       ridgeFt: estimate.ridgeFt,
+      facets: roof?.totals.facetCount ?? null,
       updatedAt: now,
     })
     .where(and(eq(measurements.id, id), eq(measurements.companyId, ctx.companyId)));

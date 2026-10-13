@@ -52,6 +52,7 @@ function measurement(id: string, drawMode: boolean): MeasurementView {
     method: 'outline',
     drawMode,
     hasCustomer: true,
+    roof: null,
     outline: null,
     structures: [],
     overhangFt: 1,
