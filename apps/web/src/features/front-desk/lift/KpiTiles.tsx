@@ -47,7 +47,7 @@ function AnsweringTile() {
         </span>
       </p>
       {isDemo ? (
-        <Button className={styles.simulate} data-testid="simulate-call" busy={simulate.isPending} onClick={() => simulate.mutate('call')}>
+        <Button className={styles.simulate} data-testid="kpi-simulate-call" busy={simulate.isPending} onClick={() => simulate.mutate('call')}>
           <svg className={styles.simulateIcon} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
             <path d="M4 2.5h2.2l1 3-1.5 1a8 8 0 003.8 3.8l1-1.5 3 1v1.7a1.5 1.5 0 01-1.5 1.5A10 10 0 012.5 4 1.5 1.5 0 014 2.5zM9.5 6.5l3-3M9.5 4v2.5H12" />
           </svg>
