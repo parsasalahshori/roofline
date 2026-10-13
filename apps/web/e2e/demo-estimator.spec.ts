@@ -2,7 +2,7 @@ import { expect, type Page, test } from '@playwright/test';
 
 /*
  * The Estimator in the demo (DEMO_MODE, Summit Ridge Roofing seed): any typed address, a real-looking one too,
- * lands on a seeded demo lot (DemoGeocoder, design-c2), so Measure shows its outline and squares, and Make proposal goes through to the
+ * lands on a seeded demo lot (DemoGeocoder, design-c2), so Measure shows its outline and squares, and Send proposal goes through to the
  * owner's OK. And on the map, a click beside a customer's home picks its roof and "Estimate this roof" opens Measure. Run with the demo config, which starts the demo itself:
  *
  *   npx playwright test -c apps/web/playwright.demo.config.ts demo-estimator
@@ -48,7 +48,7 @@ test('demo: a typed address measures a demo house and makes a proposal', async (
   await page.getByLabel('Name', { exact: true }).fill('Dana Homeowner');
   await page.getByLabel('Phone', { exact: true }).fill('4025550142');
   await page.getByLabel('They asked for this proposal by text').check();
-  await page.getByRole('button', { name: 'Make proposal' }).click();
+  await page.getByRole('button', { name: 'Send proposal' }).click();
   await expect(page).toHaveURL(/\/approvals\//, { timeout: 30_000 });
   await expect(page.getByText(/Good \$[\d,]+ · Better \$[\d,]+ · Best \$[\d,]+/)).toBeVisible();
 });
@@ -74,7 +74,7 @@ test('demo: Estimate this roof from the map opens Measure on that building', asy
 
   await page.getByRole('button', { name: 'Estimate this roof' }).click({ timeout: 15_000 });
   await expectOutline(page);
-  // That home already has its customer, so no customer step; Make proposal is ready.
+  // That home already has its customer, so no customer step; Send proposal is ready.
   await expect(page.getByText('Who is this for?')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Make proposal' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Send proposal' })).toBeEnabled();
 });

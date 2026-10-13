@@ -620,16 +620,17 @@ export function MeasureWindow() {
           <main className={styles.main}>
             <NothingOpen />
           </main>
+        ) : query.data ? (
+          // A failed refetch keeps the roof on screen: only a measurement that never loaded shows the failure
+          <Loaded key={query.data.id} m={query.data} onProposalReady={setProposalReady} />
         ) : query.isError ? (
           <main className={styles.main}>
             <EmptyState title={measure.loadFailed} />
           </main>
-        ) : !query.data ? (
+        ) : (
           <main className={styles.main}>
             <p className={styles.loading}>{measure.loading}</p>
           </main>
-        ) : (
-          <Loaded key={query.data.id} m={query.data} onProposalReady={setProposalReady} />
         )}
       </div>
     </div>

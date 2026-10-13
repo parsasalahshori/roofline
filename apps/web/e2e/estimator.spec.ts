@@ -11,7 +11,7 @@ test('typed address to sent in 4 clicks', async ({ page, loginAs, markTodaySeen,
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
 
-  // Measure a new roof, Measure roof, Make proposal, then Approve on the review screen (which shows the three tier totals and ends in Done).
+  // Measure a new roof, Measure roof, Send proposal, then Approve on the review screen (which shows the three tier totals and ends in Done).
   const sent = await makeAndSendProposal(page, click);
   expect(clicks.count).toBeLessThanOrEqual(4);
   expect(sent.link.startsWith('/p/')).toBe(true);

@@ -7,9 +7,13 @@ const TICK_MS = 80;
 /** Roofs already revealed in this browser session: coming back to one does not play the scan again. */
 const revealed = new Set<string>();
 
+/** Scans playing now, by roof, with when they began: a window that remounts mid-scan picks it up where it was. */
+const playing = new Map<string, number>();
+
 /** Forgets which roofs were revealed, so each test starts with the scan waiting. */
 export function forgetRevealed(): void {
   revealed.clear();
+  playing.clear();
 }
 
 /** How long the scan plays. Read at use time so a test can shorten it with VITE_MEASURE_SCAN_MS. */
@@ -64,25 +68,28 @@ export function needsScan(m: MeasurementView): boolean {
 }
 
 export function useRoofScan(m: MeasurementView, facets: number | null = m.facets): ScanSession {
-  const [phase, setPhase] = useState<ScanPhase>(() => (needsScan(m) ? 'idle' : 'done'));
+  const id = m.id;
+  const [phase, setPhase] = useState<ScanPhase>(() => (playing.has(id) ? 'scanning' : needsScan(m) ? 'idle' : 'done'));
   const [elapsedMs, setElapsedMs] = useState(0);
   const [run, setRun] = useState(0);
-  const id = m.id;
   const total = readScanMs();
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     if (phase !== 'scanning') return;
-    const began = Date.now();
-    timer.current = setInterval(() => {
+    if (!playing.has(id)) playing.set(id, Date.now());
+    const tick = () => {
+      const began = playing.get(id) ?? Date.now();
       const elapsed = Math.min(Date.now() - began, total);
       setElapsedMs(elapsed);
       if (elapsed >= total) {
         clearInterval(timer.current);
+        playing.delete(id);
         revealed.add(id);
         setPhase('done');
       }
-    }, TICK_MS);
+    };
+    timer.current = setInterval(tick, TICK_MS);
     return () => clearInterval(timer.current);
   }, [phase, id, total, run]);
 
@@ -93,13 +100,14 @@ export function useRoofScan(m: MeasurementView, facets: number | null = m.facets
     totalMs: total,
     progress,
     facets,
-    start: () =>
-      setPhase((p) => {
-        if (p !== 'idle') return p;
-        setElapsedMs(0);
-        return 'scanning';
-      }),
+    start: () => {
+      if (phase !== 'idle') return;
+      playing.set(id, Date.now());
+      setElapsedMs(0);
+      setPhase('scanning');
+    },
     restart: () => {
+      playing.set(id, Date.now());
       setElapsedMs(0);
       setRun((n) => n + 1);
       setPhase('scanning');

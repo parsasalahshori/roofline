@@ -5,7 +5,7 @@ import { expect, readStack, test } from './fixtures.ts';
  * The map click itself (card, highlight, button) is proven by map-roof.test.tsx; a canvas click here would
  * need the live map's projection. Here the same two calls the card makes run against the real stack, then the
  * measuring screen is driven by hand: the picked building is preselected, the free estimate is the default,
- * and a home with no customer asks for one before Make proposal. The browser clock starts at a fixed time.
+ * and a home with no customer asks for one before Send proposal. The browser clock starts at a fixed time.
  */
 
 /** Inside fake-ne-1 of the NE footprint fixture (apps/api/test/fixtures/footprints-ne.json). */
@@ -40,7 +40,7 @@ test('estimate this roof: picked building to a proposal for a new customer', asy
   await expect(page.getByRole('button', { name: /Free estimate/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText('Paid · ordered after your OK')).toBeVisible();
 
-  const make = page.getByRole('button', { name: 'Make proposal' });
+  const make = page.getByRole('button', { name: 'Send proposal' });
   await expect(make).toBeDisabled();
   await page.getByLabel('Name', { exact: true }).fill('Dana Homeowner');
   await page.getByLabel('Phone', { exact: true }).fill('4025550142');
