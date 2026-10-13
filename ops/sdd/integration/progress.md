@@ -2057,3 +2057,79 @@ pass, lint pass, lint:css pass. Vitest: @roofline/web 1370 pass (146 files), @ro
 - Run 38311516567 on c60967a4: E2E success (the resetDb retry held; no 40P01), v1, Hail and Demo DB success. Platform
   was cancelled at 47.5 min by the c1 push after the controller judged it hung (new problem 15).
 - Run 38316317374 on bb23b03e: v1 and Demo DB success; Platform, E2E and Hail were in progress at hand-back (22:27Z).
+
+### Pass 16 result (sentinel, after the agent's hand-back)
+
+- **bb23b03e:** run 38316317374 went green on all five jobs; Platform took 35 min. It was the fallback head, and the S1
+  rehearsal started on it. It turned out to carry the 18:00 plan-expiry time bomb (below).
+- **launch-rc2:** 2ed12be0 = bb23b03e + the following. Run 38324826309 is green on all five jobs, and its E2E ran after
+  18:00 Chicago.
+  - s1-storm 4e5954ee (a11y heading wait), as merge bbb4d6dc.
+  - demo-mode 4f6ab800 (BUG-7: GET /api/demo is always mounted), cherry-picked as 3e095aec. DEMO MODE's dcfcead8 pdfText
+    variant was skipped in favour of E1's.
+  - e1-estimator 420f022a, E1's signed-pdf helper fix: streams are cut by /Length, so a page whose Flate bytes end in 0x0D
+    is no longer dropped. Merge 9649253a.
+  - launch-a1fix2 657a8414: ring_first with no answer goes to voicemail while Front Desk is paused. Merge 64ec1bf4.
+  - g1-expiry 5bd5edcc (amended Ruling BL). Merge 2ed12be0.
+- **launch-rc3:** ff772d5c = 2ed12be0 + launch-f2topbar c15e3c7d (C1: on a phone, the top bar's name no longer runs
+  under the OK pill). Run 38328403131 is green on all five jobs.
+- **LAUNCH HEAD: ff772d5cbf87eac051759e9049fb29930845a45f.** launch-integration was fast-forwarded to it at 01:15Z and
+  reported to the controller, the S1 lead and DEMO MODE. The owner says main is merged only after their demo; this
+  branch does not touch main.
+- `launch-normalize --check` passes on every rc head.
+
+### Problems found after the hand-back
+
+16. **The 18:00 plan-expiry time bomb (owner G1; fixed in 5bd5edcc).**
+    - Cause: followup/daily.ts set `expiresAt: localTimeToday(today, 18, tz)`, so a plan made after 18:00 company-local
+      was born expired. The same pattern was in scheduler/reminders.ts (21:00) and claims/nudges.ts.
+    - Symptom: more-agents.spec failed in CI at 23:10 and 23:21 UTC (18:10 CDT and later), and passed at 22:25 UTC.
+      A1's 657a8414 was suspected first and then cleared; A1 reproduced the failure on bb23b03e at 23:48Z.
+    - Amended Ruling BL: before the hour, a plan expires at today's hour; at or after it, at max(local midnight, now + 2 h).
+    - Fix: G1's planExpiresAt helper, now used by all three agents, with tests at 17:59, 18:00, 18:30 and 23:50 and on
+      the fall-back day.
+17. **The signed-pdf.test flake (owner E1; fixed in 420f022).** pdfText's `\r?\nendstream` regex swallowed a final 0x0D
+    of the Flate bytes. About 1 PDF page in 256 failed to inflate. The bug was test-only; the product's PDFs are sound.
+18. **Paused mid-ring (owner A1; fixed in 657a8414).** On the after-dial ring_first path, a Front Desk paused while the team
+    was ringing went to the AI relay instead of voicemail.
+19. **Phone top bar overlap (owner C1; fixed in c15e3c7d).** At 390 px, the user's name ran under the "N need your OK" pill.
+
+Problem 15 (the CI Platform pace) did not recur in a way that failed a run: rc2 and rc3 Platform runs finished in about
+35 min.
+
+## Ports after launch (for the main merge after the owner's demo)
+
+The owner says main is merged only after their demo. launch-integration stays at launch head ff772d5c, plus ledger
+commits. Probe-only fixes are now on `port-<track>` branches. Each was cut from the current track head and is green on
+every job.
+
+| Port branch | Base | Head | CI | Carries |
+|---|---|---|---|---|
+| port-a1 | a1-agents 4ae6495e | 53a5450f | 38332788428 green | b40a411f (locked hand-off), 657a8414 (paused mid-ring), d1 6f411622 merged with conflicts resolved to the probe (texts.ts, texts.test, turns.ts), a1-dock test, 0019–0022 snapshots and journal byte-equal to the probe |
+| port-g1 | g1-agents f1e148be | ab566269 | 38333324280 green | 5bd5edcc (Ruling BL); port-a1 merged with 51 conflicts resolved to the probe; 309ccfd2 (one-writer) and 9564ebee (CLAIMS_ACK_PREFIX), neither of which was on g1-agents; agents/more-agents specs; Ruling BA tests; 0023/0024 snapshots |
+| port-d1 | d1-front-desk 6f411622 | 8e47f6e1 | 38333650602 green | e93267b9 (drop countLiveAiCalls) |
+| port-c1 | c1-crm 042c95bd | 1d3f5af0 | 38333856297 green | c15e3c7d (phone top bar) |
+
+Nothing to port: E1 (420f022 is on e1), S1 (4e5954ee is on s1), demo-mode (BUG-7 and simulateCall are on it, and
+dcfcead8 is reverted by 3bf442e2).
+
+### Open for the main merge
+
+1. **Tracks take their ports:** port-a1 → a1-agents, port-g1 → g1-agents (which includes port-a1), port-d1 → d1-front-desk,
+   port-c1 → c1-crm. If a1 or d1 move afterwards, port-g1 must be re-merged.
+2. **Merge order (simulated with merge-tree):** main ← port-g1 ← port-c1 ← e1 ← s1 ← port-d1 ← port-a1 ← demo-mode merges
+   cleanly except for:
+   - .github/workflows/ci.yml, against main's own 46c6e1f6: take the probe's file.
+   - app.ts, config.ts and ShellTopBar.tsx when demo-mode goes in. These are adjacent add/add conflicts; take the
+     probe's versions.
+
+   The result equals ff772d5c plus demo-mode's two newer files (docs/demo.md, scripts/demo-mac.sh).
+
+   The probe's own order (c1, e1, s1, d1, a1, g1) conflicts at d1 in 43 files, because d1 never merged S1. So merge port-g1
+   first, or skip d1 as a separate merge: it is an ancestor of port-a1 and port-g1.
+3. **Migrations:** d1-front-desk (17 entries, 0019 chained from 0014) can't be fixed on d1 alone. Its rebuilt chain is in
+   port-a1 and port-g1. port-g1 equals the probe in full (25 entries and 25 snapshots, launch-normalize --check passes).
+4. **Ruling BA and G1 × A1:** problems 2, 3, 10 and pass-14 problem 6 close only once g1-agents takes port-g1.
+5. **ops/bin/launch-normalize** is on no track. It arrives through demo-mode.
+6. **demo-lift:** not part of this probe. The C1 lead reports it red on its own (typecheck, lint, phone.spec D1 page, 14
+   web unit tests). Its top-bar fix is on demo-lift-topbar2 fd890afb. It needs its own green run before any main merge.
