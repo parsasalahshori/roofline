@@ -4,10 +4,10 @@ import { type StepType, stepTypes } from '@roofline/shared';
 import { expireDrafts } from '../src/jobs/scheduler/expire-drafts.ts';
 import { AppError } from '../src/errors.ts';
 import { registerStepHandler, runStep, type StepHandler, type StepOutcome } from '../src/tasks/runner.ts';
-import { createTask } from '../src/tasks/service.ts';
+import { createTask, supersedeDraft } from '../src/tasks/service.ts';
 import { Actors, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
-import { agentCtx, dbSteps, dbTask, newCustomers, newTask, seenOf, smsStep } from './task-helpers.ts';
+import { agentCtx, dbSteps, dbTask, newCustomers, newTask, seenOf, setStep, setTask, smsStep } from './task-helpers.ts';
 
 const NOW = new Date('2026-10-12T15:00:00.000Z');
 const MINUTE = 60 * 1000;
@@ -82,7 +82,7 @@ describe('task events', () => {
     expect(approved[0]).toMatchObject({
       actorType: 'user',
       actorUserId: t.seed.a.owner.userId,
-      data: { approvedSteps: 3, totalSteps: 3 },
+      data: { approvedSteps: 3, totalSteps: 3, forwardedSteps: 0 },
     });
     expect((await kinds(taskId)).filter((k) => k === 'finished')).toEqual([]);
   });
@@ -96,7 +96,7 @@ describe('task events', () => {
       kind: 'partly_approved',
       actorType: 'user',
       actorUserId: t.seed.a.office.userId,
-      data: { approvedSteps: 2, totalSteps: 3 },
+      data: { approvedSteps: 2, totalSteps: 3, forwardedSteps: 1 },
     });
   });
 
@@ -282,6 +282,52 @@ describe('finished events (Ruling AX-I)', () => {
   });
 });
 
+describe('finished events, review fixes', () => {
+  test('failed -> partly_done -> retry -> done gives exactly one finished event', async () => {
+    let calls = 0;
+    const { taskId, step } = await oneDemoStep(async () => {
+      calls += 1;
+      return calls === 1 ? { status: 'failed', result: {}, errorPlain: 'No luck.' } : { status: 'done', result: {} };
+    });
+    expect((await dbTask(t, 'a', taskId)).status).toBe('partly_done');
+    const retry = await (await actors.as('owner')).post(`/api/approvals/${taskId}/steps/${step.id}/retry`).send();
+    expect(retry.status).toBe(200);
+    await t.queue.drain(t.deps);
+    expect((await dbTask(t, 'a', taskId)).status).toBe('done');
+    expect((await events(taskId)).filter((e) => e.kind === 'finished')).toHaveLength(1);
+  });
+
+  test("approving with every step switched off writes no finished event from approveTask beyond refreshTask's single one", async () => {
+    const { taskId } = await newTask(t, 'a');
+    const owner = await actors.as('owner');
+    for (const s of await dbSteps(t, 'a', taskId)) {
+      const off = await owner.patch(`/api/approvals/${taskId}/steps/${s.id}`).send({ version: s.version, enabled: false });
+      expect(off.status).toBe(200);
+    }
+    await approveAs('owner', taskId);
+    const task = await dbTask(t, 'a', taskId);
+    const finished = (await events(taskId)).filter((e) => e.kind === 'finished');
+    expect(finished).toHaveLength(1);
+    expect(finished[0]).toMatchObject({ actorType: 'system', data: { status: task.status } });
+  });
+
+  test('declining one step writes a declined event by the user with data { skippedSteps: 1 } and that step id', async () => {
+    const { taskId } = await newTask(t, 'a');
+    await approveAs('office', taskId);
+    const waiting = (await dbSteps(t, 'a', taskId)).find((s) => s.status === 'awaiting_owner')!;
+    const res = await (await actors.as('owner')).post(`/api/approvals/${taskId}/steps/${waiting.id}/decline`).send();
+    expect(res.status).toBe(200);
+    const declined = (await events(taskId)).filter((e) => e.kind === 'declined');
+    expect(declined).toHaveLength(1);
+    expect(declined[0]).toMatchObject({
+      actorType: 'user',
+      actorUserId: t.seed.a.owner.userId,
+      stepId: waiting.id,
+      data: { skippedSteps: 1 },
+    });
+  });
+});
+
 describe('rerun of internal step types (Ruling AX-I)', () => {
   test('rerunTask copies an expired plan whose steps are built-in front_desk_* types', async () => {
     const internal = (Object.values(stepTypes) as { type: StepType; userCreatable: boolean }[])
@@ -334,5 +380,88 @@ describe('rerun of internal step types (Ruling AX-I)', () => {
     );
     await expect(attempt).rejects.toBeInstanceOf(AppError);
     await expect(attempt).rejects.toMatchObject({ status: 400, field: 'steps.0.type' });
+  });
+});
+
+describe('rerun keeps switched-off steps (Task 20, Ruling AX-P)', () => {
+  const expiredWithOffStep = async (reason: string | null) => {
+    const { taskId } = await newTask(t, 'a', {
+      agent: 'storm_scout',
+      kind: 'demo_kind',
+      expiresAt: new Date(NOW.getTime() + HOUR),
+      steps: [
+        { type: 'demo_noop', payload: { label: 'One' } },
+        { ...smsStep([]), off: 'There are no customers to text.' },
+        { type: 'demo_message', payload: { label: 'Three' } },
+      ],
+    });
+    if (reason === null) {
+      const off = (await dbSteps(t, 'a', taskId))[1]!;
+      await setStep(t, 'a', off.id, { errorPlain: null });
+    }
+    t.clock.set(new Date(NOW.getTime() + 2 * HOUR));
+    await expireDrafts(t.deps, t.clock.now());
+    expect((await dbTask(t, 'a', taskId)).status).toBe('expired');
+    return taskId;
+  };
+
+  test('an expired draft with a switched-off step reruns into a draft whose copy is still off with the same reason', async () => {
+    const taskId = await expiredWithOffStep('There are no customers to text.');
+    const res = await (await actors.as('owner')).post(`/api/approvals/${taskId}/rerun`).send();
+    expect(res.status).toBe(201);
+    const copied = await dbSteps(t, 'a', res.body.id);
+    expect(copied.map((s) => s.type)).toEqual(['demo_noop', 'send_sms_batch', 'demo_message']);
+    expect(copied.map((s) => s.enabled)).toEqual([true, false, true]);
+    expect(copied[1]!.errorPlain).toBe('There are no customers to text.');
+    const original = await dbSteps(t, 'a', taskId);
+    const onCopied = copied.filter((s) => s.enabled);
+    expect(onCopied).toHaveLength(2);
+    expect(onCopied.map((s) => [s.type, s.payload])).toEqual(original.filter((s) => s.enabled).map((s) => [s.type, s.payload]));
+    const created = (await events(res.body.id)).filter((e) => e.kind === 'created');
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ actorType: 'user', actorUserId: t.seed.a.owner.userId });
+  });
+
+  test('a switched-off step without a reason gets the generic reason', async () => {
+    const taskId = await expiredWithOffStep(null);
+    const res = await (await actors.as('owner')).post(`/api/approvals/${taskId}/rerun`).send();
+    expect(res.status).toBe(201);
+    const copied = await dbSteps(t, 'a', res.body.id);
+    expect(copied.map((s) => s.enabled)).toEqual([true, false, true]);
+    expect(copied[1]!.errorPlain).toBe('This step was switched off.');
+  });
+});
+
+describe('supersedeDraft (Ruling AX-H)', () => {
+  const supersede = (oldId: string, newId: string) =>
+    withTenant(t.deps.pools, agentCtx(idOf()), (tx) => supersedeDraft(tx, agentCtx(idOf()), oldId, newId, t.clock.now()));
+
+  test('declines a draft as the system, skips its steps and writes one declined event', async () => {
+    const { taskId } = await newTask(t, 'a');
+    const { taskId: newId } = await newTask(t, 'a');
+    const stepCount = (await dbSteps(t, 'a', taskId)).length;
+
+    expect(await supersede(taskId, newId)).toBe(true);
+
+    expect(await dbTask(t, 'a', taskId)).toMatchObject({
+      status: 'declined',
+      declineReason: 'Replaced by a newer plan.',
+      declinedByUserId: null,
+    });
+    for (const step of await dbSteps(t, 'a', taskId)) expect(step.status).toBe('skipped');
+    const declined = (await events(taskId)).filter((e) => e.kind === 'declined');
+    expect(declined).toHaveLength(1);
+    expect(declined[0]).toMatchObject({ actorType: 'system', data: { skippedSteps: stepCount, replacedByTaskId: newId } });
+  });
+
+  test('leaves a task that is not a draft alone', async () => {
+    const { taskId } = await newTask(t, 'a');
+    const { taskId: newId } = await newTask(t, 'a');
+    await setTask(t, 'a', taskId, { status: 'awaiting_owner' });
+
+    expect(await supersede(taskId, newId)).toBe(false);
+
+    expect((await dbTask(t, 'a', taskId)).status).toBe('awaiting_owner');
+    expect((await kinds(taskId)).includes('declined')).toBe(false);
   });
 });

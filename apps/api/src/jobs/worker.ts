@@ -49,7 +49,7 @@ export type ScheduledJob = {
  * The worker's recurring jobs: draft expiry, the queued-step sweeper, the import sweeper (imports
  * stranded queued or processing), the scheduled-text
  * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
- * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll, and Storm Scout's Spotter sync, storm matching, ad-spend sync, hail-feed health check and the signed-PDF sweep, then Front Desk's retention and health checks. The G1 agents' schedules come last. A schedule dropped
+ * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll, the signed-PDF sweep, Storm Scout's Spotter sync, storm matching, ad-spend sync and hail-feed health check, and Front Desk's retention and health checks. The G1 agents' schedules come last. A schedule dropped
  * from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [

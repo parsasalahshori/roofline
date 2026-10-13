@@ -106,13 +106,16 @@ const SAVE = 'PUT /api/front-desk/settings';
 const saveButton = () => screen.findByRole('button', { name: frontDeskSettings.save });
 
 describe('Settings -> Front Desk form', () => {
-  it('turns the switch off with the blocked sentence when forwarding is not verified', async () => {
+  it('shows the blocked sentence when forwarding is not verified; the owner may still turn it on after a confirm', async () => {
     signIn(makeSettings({ blockedReason: 'forwarding_not_verified' }));
-    renderTab();
+    const { user } = renderTab();
 
     const toggle = await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
-    expect(toggle).toBeDisabled();
     expect(screen.getByText(frontDeskSettings.onOff.blocked.forwarding_not_verified)).toBeInTheDocument();
+    await waitFor(() => expect(toggle).toBeEnabled());
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(frontDeskSettings.onOff.overrideConfirm)).toBeInTheDocument();
   });
 
   it('enables the switch when nothing blocks it', async () => {
@@ -142,6 +145,16 @@ describe('Settings -> Front Desk form', () => {
 
     await user.click(await saveButton());
     expect(api.count(SAVE)).toBe(0);
+  });
+
+  it('says what each retention setting clears and keeps (Ruling BI)', async () => {
+    signIn(makeSettings());
+    renderTab();
+    await screen.findByLabelText(frontDeskSettings.transcriptDays.label);
+    expect(screen.getByText(frontDeskSettings.transcriptDays.help)).toBeInTheDocument();
+    expect(screen.getByText(frontDeskSettings.recordingDays.help)).toBeInTheDocument();
+    expect(frontDeskSettings.transcriptDays.help).toMatch(/STOP, START and HELP/);
+    expect(frontDeskSettings.recordingDays.help).toMatch(/deletes the ones already saved/);
   });
 
   it('shows range errors on the number fields and sends nothing', async () => {

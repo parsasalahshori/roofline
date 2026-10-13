@@ -7,14 +7,18 @@ import {
   emailCompanyFacts,
   expireOverdueDrafts,
   findRerunOf,
+  findStormByPlanTask,
   finishClaimedStep,
   finishParkedStep,
+  findStepByIdempotencyKey,
   getCompanyName,
   getStep,
   getTask,
+  hasTaskEvent,
   insertAgentEvent,
   insertTask,
   isUniqueViolation,
+  listLiveTasksBySubject,
   listSteps,
   listTasks,
   listTasksByStatus,
@@ -22,6 +26,7 @@ import {
   type ListTasksOptions,
   moveStep,
   requeueForRetry,
+  setStepResult,
   setStepSnapshot,
   type StepFinish,
   type NewStepRow,
@@ -69,9 +74,10 @@ const NO_CUSTOMERS = "Some of these customers don't exist.";
 const ALREADY_HANDLED = 'This was already handled.';
 const EXPIRED_PLAN = 'This plan expired before it was approved. You can run it again.';
 const RERUN_ONLY_EXPIRED = 'Only expired plans can be run again.';
-const ALREADY_RERUN = 'This plan was already run again.';
+const RERUN_OFF_REASON = 'This step was switched off.';
+export const ALREADY_RERUN = 'This plan was already run again.';
 /** The database's own guard on "one copy per plan" (migration 0006). */
-const RERUN_UNIQUE = 'agent_tasks_company_rerun_of_uniq';
+export const RERUN_UNIQUE = 'agent_tasks_company_rerun_of_uniq';
 
 /** A step a person still has to say yes or no to. */
 const OPEN: readonly StepStatus[] = ['pending', 'awaiting_owner'];
@@ -101,13 +107,14 @@ async function event(
   data: Record<string, unknown>,
   at: Date,
   stepId?: string,
+  actorUserId?: string,
 ): Promise<void> {
   await insertAgentEvent(tx, ctx, {
     taskId,
     ...(stepId !== undefined && { stepId }),
     kind,
     actorType,
-    ...(actorType === 'user' && { actorUserId: ctx.userId }),
+    ...(actorType === 'user' && { actorUserId: actorUserId ?? ctx.userId }),
     data,
     at,
   });
@@ -306,13 +313,13 @@ const OFF_STEP_TITLES: Record<StepType, string> = {
   demo_message: 'Demo message',
   demo_spend: 'Demo spend',
   send_sms_batch: 'Text your customers',
+  front_desk_call: 'Answer a call',
+  front_desk_texts: 'Answer texts',
   send_email_batch: 'Email your customers',
   build_routes: 'Plan door-knocking routes',
   create_ad_campaign: 'Run an ad campaign',
   send_proposal: 'Send a proposal',
   order_exact_report: 'Order a roof report',
-  front_desk_call: 'Answer a call',
-  front_desk_texts: 'Answer texts',
   // G1 (Ruling BC)
   send_personal_texts: 'Send personal texts',
   build_claim_packet: 'Build the claim packet',
@@ -333,6 +340,8 @@ export type NewTask = {
   rerunOfTaskId?: string;
   /** Who made the plan, for its `created` event. Default `agent`. */
   createdBy?: 'agent' | 'system' | 'user';
+  /** Acting member for a `user` created event when ctx.userId is null (system context). */
+  createdByUserId?: string;
   /** `off`: the step is saved switched off (enabled=false) with this plain reason; its payload may then be incomplete (for example no customers). */
   steps: { type: StepType; payload: unknown; off?: string }[];
 };
@@ -404,8 +413,8 @@ export async function createTask(
     },
     opts.now,
   );
-  await event(tx, ctx, taskId, 'created', input.createdBy ?? 'agent', { stepCount: steps.length }, opts.now);
-  await audit(tx, ctx, {
+  await event(tx, ctx, taskId, 'created', input.createdBy ?? 'agent', { stepCount: steps.length }, opts.now, undefined, input.createdByUserId);
+  await audit(tx, input.createdByUserId !== undefined ? { ...ctx, userId: input.createdByUserId } : ctx, {
     action: 'task.create',
     targetType: 'agent_task',
     targetId: taskId,
@@ -661,7 +670,7 @@ export async function approveTask(
     tx,
     ctx,
     taskId,
-    { status, ...(firstApproval && { approvedByUserId: ctx.userId, approvedAt: opts.now }) },
+    { status: status === 'done' ? 'running' : status, ...(firstApproval && { approvedByUserId: ctx.userId, approvedAt: opts.now }) },
     opts.now,
   );
   await event(
@@ -670,15 +679,12 @@ export async function approveTask(
     taskId,
     awaitingOwner.length > 0 ? 'partly_approved' : 'approved',
     'user',
-    { approvedSteps: toEnqueue.length, totalSteps: steps.length },
+    { approvedSteps: toEnqueue.length, totalSteps: steps.length, forwardedSteps: awaitingOwner.length },
     opts.now,
   );
-  // A plan with nothing left to run is finished now; this records its minutes. The task is already
-  // `done` here, so refreshTask sees no change and writes no event: the finish is recorded here.
-  const refreshed = await refreshTask(tx, ctx, taskId, opts.now);
-  if (status === 'done') {
-    await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved: refreshed?.minutesSaved ?? 0 }, opts.now);
-  }
+  // A plan with nothing left to run was written as `running` above, so refreshTask moves it to `done`,
+  // records its minutes and writes the one `finished` event. It is the only writer of that event.
+  await refreshTask(tx, ctx, taskId, opts.now);
 
   await audit(tx, ctx, {
     action: 'task.approve',
@@ -748,6 +754,34 @@ export async function declineTask(
 }
 
 /**
+ * Ruling AX-H: a newer storm plan supersedes an old draft. Locks the old task first, skips its open
+ * steps and declines it as the system, with one `declined` event that names the replacement. Returns
+ * true when it superseded, false when the task is gone or no longer a draft. No audit row.
+ */
+export async function supersedeDraft(tx: Tx, ctx: TenantContext, oldTaskId: string, newTaskId: string, now: Date): Promise<boolean> {
+  const task = await getTask(tx, ctx, oldTaskId, { forUpdate: true });
+  if (!task || task.status !== 'draft') return false;
+
+  let skipped = 0;
+  for (const step of await listSteps(tx, ctx, [oldTaskId])) {
+    if (!OPEN.includes(step.status)) continue;
+    if (!(await moveStep(tx, ctx, step.id, OPEN, { status: 'skipped' }, now))) {
+      throw new Error(`Step ${step.id} moved while its task was locked.`);
+    }
+    skipped += 1;
+  }
+  await updateTask(
+    tx,
+    ctx,
+    oldTaskId,
+    { status: 'declined', declinedByUserId: null, declinedAt: now, declineReason: 'Replaced by a newer plan.' },
+    now,
+  );
+  await event(tx, ctx, oldTaskId, 'declined', 'system', { skippedSteps: skipped, replacedByTaskId: newTaskId }, now);
+  return true;
+}
+
+/**
  * Declines one step that waits on the owner, leaving the rest of the plan as it is. Needs the
  * spend approval (403 otherwise); a step that is not `awaiting_owner` is a 409 "This was already
  * handled.". The step is `skipped`, the task's status follows (`refreshTask`), and `step.decline` is
@@ -770,6 +804,7 @@ export async function declineStep(
   if (!(await moveStep(tx, ctx, step.id, ['awaiting_owner'], { status: 'skipped' }, opts.now))) {
     throw new Error(`Step ${step.id} moved while its task was locked.`);
   }
+  await event(tx, ctx, taskId, 'declined', 'user', { skippedSteps: 1 }, opts.now, step.id);
   await refreshTask(tx, ctx, taskId, opts.now);
   await audit(tx, ctx, {
     action: 'step.decline',
@@ -851,7 +886,8 @@ export async function retryStep(
  *   `(company_id, rerun_of_task_id)` backs that up, and its violation is the same 409.
  * - The new draft is made with `createTask`, exactly as an agent makes one: the same agent, kind,
  *   title, summary, subject and mode, and the same steps in the same order (type and payload; each
- *   step on, pending, at version 1, with new ids and new idempotency keys). Each payload is checked
+ *   step keeps its on/off state, pending, at version 1, with new ids and new idempotency keys; a
+ *   switched-off step keeps its reason and its payload as given). Each payload is checked
  *   again, so a step that no longer passes (a text naming the company's old name) is a 400 on
  *   `steps.N.payload` and nothing is made.
  * - Its window is as long as the old one's: `expires_at = now + (old expires_at - old created_at)`,
@@ -890,7 +926,11 @@ export async function rerunTask(tx: Tx, ctx: TenantContext, taskId: string, opts
         createdBy: 'user',
         // Rerun passes allowInternalStepTypes so built-in steps (front_desk_*) copy over; a type this
         // build does not know is still a 400 on steps.N.type.
-        steps: steps.map((step) => ({ type: step.type as StepType, payload: step.payload })),
+        steps: steps.map((step) => ({
+          type: step.type as StepType,
+          payload: step.payload,
+          ...(step.enabled ? {} : { off: step.errorPlain ?? RERUN_OFF_REASON }),
+        })),
       },
       { ...opts, allowInternalStepTypes: true },
     ));
@@ -1019,7 +1059,9 @@ export async function refreshTask(tx: Tx, ctx: TenantContext, taskId: string, no
   // One `finished` event per real move into a final status; a declined plan's status does not move.
   // Only a final status is finished: needs_attention is not, and a status already written is not written twice.
   const final = status !== 'needs_attention';
-  if (!declined && final && task.status !== status) await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved }, now);
+  if (!declined && final && task.status !== status && !(await hasTaskEvent(tx, ctx, taskId, 'finished'))) {
+    await event(tx, ctx, taskId, 'finished', 'system', { status, minutesSaved }, now);
+  }
   return updated;
 }
 
@@ -1043,4 +1085,239 @@ export async function listTaskFeed(tx: Tx, ctx: TenantContext, query: TaskFeedQu
  */
 export async function workingCount(tx: Tx, ctx: TenantContext): Promise<number> {
   return canReview(ctx) ? countWorkingTasks(tx, ctx) : 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Live tasks (A1 Task 4).
+
+export type NewLiveTask = {
+  agent: Agent;
+  kind: string;
+  title: string;
+  subjectType?: string;
+  subjectId?: string;
+  step: { type: 'front_desk_call' | 'front_desk_texts'; result: Record<string, number> };
+  /** `done`, or `needs_attention` while a follow-up is open. */
+  status: 'done' | 'needs_attention';
+  /** Unique per finished call / per text conversation per day. A repeat call returns the existing task. */
+  idempotencyKey: string;
+};
+
+/** Creates one live task with its one already-finished step. Idempotent on `idempotencyKey`. */
+export async function createLiveTask(
+  tx: Tx,
+  ctx: TenantContext,
+  input: NewLiveTask,
+  now: Date,
+): Promise<{ taskId: string; created: boolean }> {
+  const existing = await findStepByIdempotencyKey(tx, ctx, input.idempotencyKey);
+  if (existing) return { taskId: existing.taskId, created: false };
+
+  let taskId: string;
+  try {
+    // A savepoint, so losing a race on the unique key does not abort the caller's transaction.
+    taskId = await tx.transaction(async (sp) => {
+      const inserted = await insertTask(
+        sp,
+        ctx,
+        {
+          agent: input.agent,
+          kind: input.kind,
+          title: input.title,
+          subjectType: input.subjectType ?? null,
+          subjectId: input.subjectId ?? null,
+          mode: 'live',
+          status: input.status,
+          steps: [
+            {
+              type: input.step.type,
+              approvalClass: stepTypes[input.step.type].approvalClass,
+              payload: { label: input.title },
+              preview: { title: input.title, lines: [] },
+              status: 'done',
+              result: input.step.result,
+              idempotencyKey: input.idempotencyKey,
+            },
+          ],
+        },
+        now,
+      );
+      return inserted.taskId;
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    const raced = await findStepByIdempotencyKey(tx, ctx, input.idempotencyKey);
+    if (!raced) throw error;
+    return { taskId: raced.taskId, created: false };
+  }
+
+  await event(tx, ctx, taskId, 'created', 'agent', { stepCount: 1 }, now);
+  const [step] = await listSteps(tx, ctx, [taskId], { payload: true });
+  // One millisecond apart, so the events read back in the order they happened (the list sorts by time, then id).
+  const stepAt = new Date(now.getTime() + 1);
+  const endAt = new Date(now.getTime() + 2);
+  await recordOutcome(tx, ctx, step!, stepAt);
+  const minutesSaved = await minutesSavedOf(tx, ctx, taskId);
+  await updateTask(tx, ctx, taskId, { minutesSaved }, now);
+  if (input.status === 'done') {
+    await event(tx, ctx, taskId, 'finished', 'system', { status: 'done', minutesSaved }, endAt);
+  } else {
+    await event(tx, ctx, taskId, 'step_attention', 'agent', { attempts: 0 }, endAt, step!.id);
+  }
+  await audit(tx, ctx, {
+    action: 'task.create',
+    targetType: 'agent_task',
+    targetId: taskId,
+    after: { agent: input.agent, kind: input.kind, title: input.title, steps: [input.step.type] },
+    ip: null,
+    at: now,
+  });
+  return { taskId, created: true };
+}
+
+/** Closes each live `needs_attention` task about this job to `done` (one `finished` event each). Returns the count closed. */
+export async function closeLiveTasksForSubject(
+  tx: Tx,
+  ctx: TenantContext,
+  subjectType: string,
+  subjectId: string,
+  now: Date,
+): Promise<number> {
+  const rows = await listLiveTasksBySubject(tx, ctx, { agent: 'front_desk', subjectType, subjectId, status: 'needs_attention' });
+  for (const row of rows) {
+    const minutesSaved = await minutesSavedOf(tx, ctx, row.id);
+    await updateTask(tx, ctx, row.id, { status: 'done', minutesSaved }, now);
+    if (!(await hasTaskEvent(tx, ctx, row.id, 'finished'))) {
+      await event(tx, ctx, row.id, 'finished', 'system', { status: 'done', minutesSaved }, now);
+    }
+  }
+  return rows.length;
+}
+
+/**
+ * Adds counts to a finished live task's step result (a repeat on the same key), then refreshes its minutes.
+ * Writes no events. `titleOf`, when given, renames the task from the new totals.
+ */
+export async function addToLiveTask(
+  tx: Tx,
+  ctx: TenantContext,
+  idempotencyKey: string,
+  add: Record<string, number>,
+  now: Date,
+  titleOf?: (result: Record<string, number>) => string,
+): Promise<string | null> {
+  const found = await findStepByIdempotencyKey(tx, ctx, idempotencyKey);
+  if (!found) return null;
+  // The step row is locked, so two repeats on one key add up instead of overwriting each other.
+  const row = await getStep(tx, ctx, found.taskId, found.id, { forUpdate: true });
+  if (!row || row.status !== 'done' || !isStepType(row.type)) return found.taskId;
+  const prev = (row.result ?? {}) as Record<string, number>;
+  const next: Record<string, number> = { ...prev };
+  for (const [k, v] of Object.entries(add)) next[k] = (Number(prev[k]) || 0) + v;
+  await setStepResult(tx, ctx, row.id, next, now);
+  // Incremental snapshot: past replies keep the value they were counted at; only the added ones use today's baselines.
+  const overrides = await loadBaselineOverrides(tx, ctx);
+  const def = stepTypes[row.type] as never;
+  const added = stepMinutes(def, row.payload as never, add as StepResult, overrides);
+  const total = stepMinutes(def, row.payload as never, next as StepResult, overrides);
+  const minutes = (Number(row.minutesSaved) || 0) + added.minutes;
+  const units = total.units;
+  await setStepSnapshot(
+    tx,
+    ctx,
+    row.id,
+    { baselineKey: total.baseline, units, minutesPerUnit: units > 0 ? minutes / units : total.minutesPerUnit, minutesSaved: minutes },
+    now,
+  );
+  await updateTask(
+    tx,
+    ctx,
+    found.taskId,
+    { minutesSaved: await minutesSavedOf(tx, ctx, found.taskId), ...(titleOf !== undefined && { title: titleOf(next) }) },
+    now,
+  );
+  return found.taskId;
+}
+
+// ---------------------------------------------------------------------------------------------
+// G1 live tasks (Ruling GX-R): an agent's own one-step task that waits for nobody's yes.
+
+/** A live task with exactly one step (any type, internal ones too). */
+export type NewOneStepTask = Omit<NewTask, 'mode' | 'steps'> & { step: NewTask['steps'][number] };
+
+/**
+ * Creates a live task whose one step starts at once: the task is `running` and the step `queued`
+ * (approved now, by nobody). The caller runs or enqueues the step after this transaction commits.
+ */
+export async function startLiveTask(
+  tx: Tx,
+  ctx: TenantContext,
+  input: NewOneStepTask,
+  now: Date,
+): Promise<{ taskId: string; stepId: string }> {
+  const { step, ...task } = input;
+  const { taskId } = await createTask(tx, ctx, { ...task, mode: 'live', steps: [step] }, { now, ip: null, allowInternalStepTypes: true });
+  const [row] = await listSteps(tx, ctx, [taskId]);
+  if (!row) throw new Error('The task step was not saved.');
+  if (!(await moveStep(tx, ctx, row.id, ['pending'], { status: 'queued', approvedAt: now }, now))) {
+    throw new Error(`Step ${row.id} moved while its task was being made.`);
+  }
+  await updateTask(tx, ctx, taskId, { status: 'running' }, now);
+  return { taskId, stepId: row.id };
+}
+
+/**
+ * Writes a finished live note (Ruling GX-R): a record of something an agent did that needs no
+ * approval and sends nothing. Its one internal no-op step is `done` with a `step_done` event (0 minutes:
+ * a note saves no time), and `refreshTask` finishes the task with its `finished` event. Returns the task id.
+ */
+export async function writeLiveNote(
+  tx: Tx,
+  ctx: TenantContext,
+  input: Omit<NewOneStepTask, 'step'> & { label: string },
+  now: Date,
+): Promise<string> {
+  const { label, ...task } = input;
+  const { taskId } = await createTask(
+    tx,
+    ctx,
+    { ...task, mode: 'live', steps: [{ type: 'demo_noop', payload: { label } }] },
+    { now, ip: null, allowInternalStepTypes: true },
+  );
+  await updateTask(tx, ctx, taskId, { status: 'running' }, now);
+  const [row] = await listSteps(tx, ctx, [taskId]);
+  const done = row ? await moveStep(tx, ctx, row.id, ['pending'], { status: 'done' }, now) : null;
+  if (!done) throw new Error('The note step was not saved.');
+  // A note saves nobody any time: no snapshot (the no-op's demo baseline would count 5 minutes), and its event says 0.
+  // One millisecond apart, so the events read back in the order they happened (as createLiveTask).
+  await event(tx, ctx, taskId, 'step_done', 'agent', { units: 0, minutes: 0 }, new Date(now.getTime() + 1), done.id);
+  await refreshTask(tx, ctx, taskId, new Date(now.getTime() + 2));
+  return taskId;
+}
+
+/** What the rerun route does next: re-draft a storm plan through Storm Scout, or copy the plan. */
+export type StormRerunTarget = { kind: 'storm'; companyStormId: string } | { kind: 'copy' };
+
+/**
+ * Pre-flight for the rerun route. Null when the task is not there for this member. Only an expired
+ * plan (409 otherwise). Anything but a storm plan is `copy` (nothing changed; `rerunTask` follows).
+ * A storm plan that already has a rerun is a 409 ALREADY_RERUN; one a company storm points at
+ * (`plan_task_id`) is re-drafted through Storm Scout; otherwise it is copied (a legacy plan with no
+ * company storm). A stale draft is marked `expired` here, as `rerunTask` does, before the route
+ * re-drafts in its own transaction.
+ */
+export async function prepareRerun(tx: Tx, ctx: TenantContext, taskId: string, opts: WriteOptions): Promise<StormRerunTarget | null> {
+  if (!canReview(ctx)) return null;
+  const task = await getTask(tx, ctx, taskId, { forUpdate: true });
+  if (!task) return null;
+  if (!isExpired(task, opts.now)) throw new AppError(409, RERUN_ONLY_EXPIRED);
+  if (task.kind !== 'storm_plan') return { kind: 'copy' };
+  if ((await findRerunOf(tx, ctx, taskId)) !== null) throw new AppError(409, ALREADY_RERUN);
+  const companyStormId = await findStormByPlanTask(tx, ctx, taskId);
+  if (companyStormId === null) return { kind: 'copy' };
+  if (task.status === 'draft') {
+    await updateTask(tx, ctx, taskId, { status: 'expired' }, opts.now);
+    await event(tx, ctx, taskId, 'expired', 'system', {}, opts.now);
+  }
+  return { kind: 'storm', companyStormId };
 }

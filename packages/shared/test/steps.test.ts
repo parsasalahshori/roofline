@@ -47,15 +47,15 @@ describe('the registry', () => {
       front_desk_call: ['front_desk_call', 'internal'],
       front_desk_texts: ['front_desk_texts', 'internal'],
       send_sms_batch: ['send_sms_batch', 'message'],
-      send_personal_texts: ['send_personal_texts', 'message'],
-      build_claim_packet: ['build_claim_packet', 'internal'],
-      create_appointment: ['create_appointment', 'internal'],
-      move_appointment: ['move_appointment', 'internal'],
       send_email_batch: ['send_email_batch', 'message'],
       build_routes: ['build_routes', 'internal'],
       create_ad_campaign: ['create_ad_campaign', 'spend'],
       send_proposal: ['send_proposal', 'message'],
       order_exact_report: ['order_exact_report', 'spend'],
+      send_personal_texts: ['send_personal_texts', 'message'],
+      build_claim_packet: ['build_claim_packet', 'internal'],
+      create_appointment: ['create_appointment', 'internal'],
+      move_appointment: ['move_appointment', 'internal'],
     });
   });
 });

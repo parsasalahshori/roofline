@@ -1,10 +1,10 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ClaimStatus, ConversationOutcome, FrontDeskToolName } from '@roofline/shared';
+import type { ClaimStatus, ConversationOutcome, FrontDeskToolName, RouterIntent } from '@roofline/shared';
 import type { EngineStateSummary } from '../front-desk/engine-state.ts';
 
 // The Llm seam (D1 Task 4). The only real implementation is providers/anthropic/ (Ruling DA).
 export type RouteInput = { companyBlock: string; state: EngineStateSummary; callerText: string; channel: 'voice' | 'sms' };
-export type RouteDecision = { intent: string; urgent: boolean; mood: 'calm' | 'upset' | 'angry'; route: 'fast' | 'opus' | 'transfer' | 'end'; fastReply: string | null };
+export type RouteDecision = { intent: RouterIntent; urgent: boolean; mood: 'calm' | 'upset' | 'angry'; route: 'fast' | 'opus' | 'transfer' | 'end'; fastReply: string | null };
 export type AnswerInput = { companyId: string; companyBlock: string; history: Anthropic.MessageParam[]; tools: FrontDeskToolName[]; signal: AbortSignal };
 export type TurnUsage = { model: string; inputTokens: number; cachedTokens: number; outputTokens: number; firstTokenMs: number | null; totalMs: number };
 export type LlmEvent = { type: 'text'; text: string } | { type: 'tool_use'; id: string; name: FrontDeskToolName; input: unknown }

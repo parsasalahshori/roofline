@@ -66,12 +66,12 @@ describe('A1 dock', () => {
     expect(link.getAttribute('href')).toBe('/agents');
   });
 
-  it('has no Coming soon note on Front Desk now that D1 ships it', async () => {
+  it('has no Coming soon note on Storm or Front Desk now that S1 and D1 ship them', async () => {
     signedInApi();
     renderApp('/');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });
 
-    for (const key of ['front-desk'] as const) {
+    for (const key of ['storm', 'front-desk'] as const) {
       expect(dockLink(dockNav, WINDOW_COPY[key].title).textContent ?? '').not.toContain(dock.comingSoon);
     }
   });

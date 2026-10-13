@@ -153,6 +153,7 @@ describe('S1 Storm windows', () => {
   });
 
   it('the dock Storm opens /storm', async () => {
+    // It starts on the Estimator, which lists proposals by status (E1's per-status groups).
     signedInApi(ACCOUNT, proposalListRoutes());
     const { router, user } = renderApp('/estimator');
     const dockNav = await screen.findByRole('navigation', { name: dock.label });

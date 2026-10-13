@@ -1,9 +1,11 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 import { SmokeRefused, assertConfirmed } from '../src/scripts/smoke/guards.ts';
 import { USAGE, main, parseArgs, preflightChecks, scrubIds, type SmokeIo } from '../src/scripts/smoke/front-desk.ts';
+import { USAGE as EVAL_USAGE, main as evalMain, parseArgs as evalParseArgs } from '../src/scripts/eval-front-desk.ts';
 
 /*
  * The Front Desk smoke talks to the real Claude service and costs money, so it is run by hand
@@ -21,6 +23,7 @@ const BASE_ENV = {
   DATABASE_URL_TENANT: 'postgres://app_tenant:pw@localhost:5432/roofline',
   DATABASE_URL_SYSTEM: 'postgres://app_system:pw@localhost:5432/roofline',
   ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64'),
+  // Required in production (security fix, Ruling BF).
   TRUST_PROXY: '1',
   // Required in production since E1 (signed proposals are stored in R2).
   R2_ACCOUNT_ID: 'acct',
@@ -172,5 +175,133 @@ describe('the smoke never runs by itself', () => {
       const text = readFileSync(workflows + file, 'utf8');
       expect(text, file).not.toMatch(/smoke:|eval:front-desk|confirm-real-providers/);
     }
+  });
+});
+
+describe('assertConfirmed for the scripted call eval', () => {
+  test('refuses without --confirm-spend and says so in plain words', () => {
+    expect(() => assertConfirmed([], '--confirm-spend')).toThrow(SmokeRefused);
+    expect(() => assertConfirmed(['--runs', '3'], '--confirm-spend')).toThrow(/Pass --confirm-spend if you mean it/);
+  });
+
+  test('the smoke flags do not stand in for it', () => {
+    expect(() => assertConfirmed([CONFIRM, '--confirm-real-registration'], '--confirm-spend')).toThrow(SmokeRefused);
+  });
+
+  test('accepts argv that includes the flag', () => {
+    expect(() => assertConfirmed(['--confirm-spend'], '--confirm-spend')).not.toThrow();
+  });
+});
+
+describe('eval:front-desk refuses before it touches a provider', () => {
+  test('without --confirm-spend it prints the refusal, reads no setting and exits 1', async () => {
+    const io = recorder();
+    // An empty environment: a run that read the settings first would complain about them instead.
+    expect(await evalMain([], {}, io)).toBe(1);
+    expect(io.out).toEqual([]);
+    expect(io.err).toEqual([
+      'This plays scripted calls against the real Claude models and costs money (about three dollars for one full run). Pass --confirm-spend if you mean it.',
+    ]);
+    const other = recorder();
+    expect(await evalMain(['--runs', '3', '--scenario', 'booking'], {}, other)).toBe(1);
+    expect(other.err[0]).toContain('Pass --confirm-spend');
+  });
+
+  test('the other confirm flags are not accepted', async () => {
+    const io = recorder();
+    expect(await evalMain([CONFIRM], {}, io)).toBe(1);
+    expect(io.err).toEqual([EVAL_USAGE]);
+  });
+
+  test('with the flag but no valid settings it stops with a plain sentence', async () => {
+    const io = recorder();
+    expect(await evalMain(['--confirm-spend'], {}, io)).toBe(1);
+    expect(io.err).toHaveLength(1);
+    expect(io.err[0]).toContain('settings are not valid');
+  });
+
+  test('without ANTHROPIC_API_KEY it stops before any request', async () => {
+    const io = recorder();
+    expect(await evalMain(['--confirm-spend'], { ...BASE_ENV }, io)).toBe(1);
+    expect(io.err).toEqual(['Set ANTHROPIC_API_KEY first.']);
+    expect(io.out).toEqual([]);
+  });
+
+  test('an unknown scenario is refused before the key is used', async () => {
+    const io = recorder();
+    expect(await evalMain(['--confirm-spend', '--scenario', 'nope'], { ...BASE_ENV, ANTHROPIC_API_KEY: 'sk-ant-test-placeholder' }, io)).toBe(1);
+    expect(io.err).toHaveLength(1);
+    expect(io.err[0]).toMatch(/^Unknown scenario: nope\. Choose from: booking,/);
+  });
+});
+
+describe('eval:front-desk arguments', () => {
+  test('takes the flag, a scenario list, a run count and an output path', () => {
+    expect(evalParseArgs(['--confirm-spend'])).toMatchObject({ scenarios: null, runs: 1, out: null });
+    expect(evalParseArgs(['--confirm-spend', '--scenario', 'booking,price', '--runs', '3', '--out', 'x/y.json'])).toMatchObject({
+      scenarios: ['booking', 'price'],
+      runs: 3,
+      out: 'x/y.json',
+    });
+  });
+
+  test('refuses an unknown or repeated flag, and a bad run count', () => {
+    expect(evalParseArgs(['--confirm-spend', '--surprise'])).toBeNull();
+    expect(evalParseArgs(['--confirm-spend', '--confirm-spend'])).toBeNull();
+    expect(evalParseArgs(['--runs'])).toBeNull();
+    expect(evalParseArgs(['--runs', '0'])).toBeNull();
+    expect(evalParseArgs(['--runs', '11'])).toBeNull();
+    expect(evalParseArgs(['--runs', '2x'])).toBeNull();
+    expect(evalParseArgs(['--scenario', 'a', '--scenario', 'b'])).toBeNull();
+  });
+});
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    return statSync(path).isDirectory() ? sourceFiles(path) : path.endsWith('.ts') ? [path] : [];
+  });
+}
+
+describe('the eval never runs by itself', () => {
+  test('apps/api/package.json has the script, and no workflow runs it', () => {
+    const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['eval:front-desk']).toBe('tsx src/scripts/eval-front-desk.ts');
+
+    const workflows = fileURLToPath(new URL('../../../.github/workflows/', import.meta.url));
+    const files = readdirSync(workflows);
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const text = readFileSync(workflows + file, 'utf8');
+      expect(text, file).not.toMatch(/eval:front-desk|eval-front-desk|confirm-spend/);
+    }
+  });
+
+  test('ANTHROPIC_API_KEY is not set in any workflow', () => {
+    const workflows = fileURLToPath(new URL('../../../.github/workflows/', import.meta.url));
+    for (const file of readdirSync(workflows)) expect(readFileSync(workflows + file, 'utf8'), file).not.toMatch(/ANTHROPIC_API_KEY/);
+  });
+});
+
+describe('Ruling DA: the only Claude client is inside providers/anthropic', () => {
+  test('no other source file builds a client or imports the SDK as a value', () => {
+    const src = fileURLToPath(new URL('../src/', import.meta.url));
+    const allowed = join(src, 'providers', 'anthropic');
+    for (const file of sourceFiles(src)) {
+      if (file.startsWith(allowed)) continue;
+      const text = readFileSync(file, 'utf8');
+      expect(text, file).not.toMatch(/new Anthropic\(/);
+      expect(text, file).not.toMatch(/^import (?!type\b)[^;]*from '@anthropic-ai\/sdk[^']*'/m);
+    }
+  });
+
+  test('the eval model calls live in providers/anthropic/eval.ts and the script imports them from there', () => {
+    const script = readFileSync(fileURLToPath(new URL('../src/scripts/eval-front-desk.ts', import.meta.url)), 'utf8');
+    expect(script).toMatch(/evalModelsFor/);
+    expect(script).toMatch(/from '\.\.\/providers\/anthropic\/index\.ts'/);
+    const evalFile = readFileSync(fileURLToPath(new URL('../src/providers/anthropic/eval.ts', import.meta.url)), 'utf8');
+    expect(evalFile).toMatch(/c\.client\.messages\.create/);
   });
 });

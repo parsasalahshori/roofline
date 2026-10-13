@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, gt, isNull, like, not, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, like, not, or, sql } from 'drizzle-orm';
 import { companySettings, conversations, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { companyReadOnly } from './front-desk-settings.ts';
 import { insertConversation } from './conversations.ts';
-import type { TextState } from './messages.ts';
+import { FD_DEDUPE_PREFIX, FD_DEDUPE_WHERE, type TextState } from './messages.ts';
 
 /*
  * D1 Task 14: the rows behind Front Desk texting. Every query names ctx.companyId. Imported by
@@ -14,6 +15,8 @@ export const SMS_CONVERSATION_GAP_MS = 24 * 60 * 60 * 1000;
 
 /** The dedupe_key prefix that marks a text the assistant sent. */
 const ASSISTANT_PREFIX = 'fd-text:';
+/** The dedupe key prefix of a reply a team member sends from the conversation (routes/conversations.ts). */
+const STAFF_REPLY_PREFIX = 'fd-reply:';
 
 export type TextConversationRef = { id: string; created: boolean; customerId: string | null };
 
@@ -23,8 +26,9 @@ export type InboundTextRow = { id: string; body: string; createdAt: Date };
 /** One earlier text of a conversation (either direction), oldest first, for rebuilding history. */
 export type ConversationTextRow = { id: string; direction: 'in' | 'out'; body: string; createdAt: Date; assistant: boolean };
 
-/** True only when the company has Front Desk on and its texts on; false with no settings row. */
+/** True only when the company has Front Desk on and its texts on and is not read-only (trial ended or canceled, Ruling BG); false with no settings row. */
 export async function frontDeskTextsOn(tx: Tx, ctx: TenantContext): Promise<boolean> {
+  if (await companyReadOnly(tx, ctx)) return false;
   const [row] = await tx
     .select({ on: companySettings.frontDeskEnabled, texts: companySettings.frontDeskTexts })
     .from(companySettings)
@@ -35,6 +39,12 @@ export async function frontDeskTextsOn(tx: Tx, ctx: TenantContext): Promise<bool
 /**
  * Files an inbound text under the sender's active SMS conversation (reused within 24 h of its last
  * message), else under a new one; the old one, when stale, is ended. Counts it as unread.
+ *
+ * Two texts from one number can arrive together when it has no active conversation (its first text,
+ * or the first after a 24 h gap). FOR UPDATE locks no row then, so both would insert and the second
+ * would fail on conversations_active_sms_uniq, rolling back its whole webhook. A transaction-scoped
+ * advisory lock per company and number comes first: the second waits for the first's transaction and
+ * then finds, and reuses, the conversation it made.
  */
 export async function attachInboundToConversation(
   tx: Tx,
@@ -42,6 +52,7 @@ export async function attachInboundToConversation(
   i: { messageId: string; phoneE164: string; companyNumberE164: string; customerId: string | null },
   now: Date,
 ): Promise<TextConversationRef> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${ctx.companyId}::text || ':fd-sms:' || ${i.phoneE164}::text, 0))`);
   const [open] = await tx
     .select({ id: conversations.id, customerId: conversations.customerId, lastMessageAt: conversations.lastMessageAt })
     .from(conversations)
@@ -75,6 +86,7 @@ export async function attachInboundToConversation(
       phoneE164: i.phoneE164,
       companyNumberE164: i.companyNumberE164,
       customerId: i.customerId,
+      now,
     });
     id = made.id;
     created = true;
@@ -129,7 +141,15 @@ export async function lastTeamReplyAt(tx: Tx, ctx: TenantContext, conversationId
         eq(messages.companyId, ctx.companyId),
         eq(messages.conversationId, conversationId),
         eq(messages.direction, 'out'),
-        or(isNull(messages.dedupeKey), not(like(messages.dedupeKey, `${ASSISTANT_PREFIX}%`))),
+        // Only a reply that went out (or will) quiets the assistant: a failed or blocked one reached nobody.
+        inArray(messages.status, ['scheduled', 'queued', 'sent', 'delivered']),
+        // Only a person replying counts: staff replies (fd-reply:) and texts with no system key. Every Front Desk system
+        // text (fd-text:, fd-book:, fd-textback:, any fd-*) and claims acknowledgements are not a person (G1 review a).
+        or(
+          isNull(messages.dedupeKey),
+          like(messages.dedupeKey, `${STAFF_REPLY_PREFIX}%`),
+          and(not(like(messages.dedupeKey, 'fd-%')), not(like(messages.dedupeKey, 'claims-ack:%'))),
+        ),
       ),
     )
     .orderBy(desc(messages.createdAt), desc(messages.id))
@@ -187,28 +207,26 @@ export async function insertAssistantText(
   state: TextState,
   now: Date,
 ): Promise<string | null> {
-  const [existing] = await tx
-    .select({ id: messages.id })
-    .from(messages)
-    .where(and(eq(messages.companyId, ctx.companyId), eq(messages.dedupeKey, i.dedupeKey), eq(messages.direction, 'out')))
-    .limit(1);
-  if (existing) return null;
-  const [row] = await tx
-    .insert(messages)
-    .values({
-      companyId: ctx.companyId,
-      customerId: i.customerId,
-      conversationId: i.conversationId,
-      channel: 'sms',
-      direction: 'out',
-      purpose: 'informational',
-      body: i.body,
-      toE164: i.toE164,
-      dedupeKey: i.dedupeKey,
-      ...stateColumns(state),
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning({ id: messages.id });
+  const values = {
+    companyId: ctx.companyId,
+    customerId: i.customerId,
+    conversationId: i.conversationId,
+    channel: 'sms',
+    direction: 'out',
+    purpose: 'informational',
+    body: i.body,
+    toE164: i.toE164,
+    dedupeKey: i.dedupeKey,
+    ...stateColumns(state),
+    createdAt: now,
+    updatedAt: now,
+  } satisfies typeof messages.$inferInsert;
+  // An fd- key is covered by the partial unique index messages_fd_dedupe_uniq, which decides a race: the loser inserts nothing.
+  const insert = tx.insert(messages).values(values);
+  const [row] = await (
+    i.dedupeKey.startsWith(FD_DEDUPE_PREFIX)
+      ? insert.onConflictDoNothing({ target: [messages.companyId, messages.dedupeKey], where: FD_DEDUPE_WHERE })
+      : insert
+  ).returning({ id: messages.id });
   return row?.id ?? null;
 }

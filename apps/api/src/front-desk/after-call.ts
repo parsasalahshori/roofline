@@ -8,13 +8,15 @@ import {
   loadBookingActions,
   loadCallForAfterCall,
   loadCompanyFacts,
-  recordUsage,
+  lockConversation,
+  recordCallMinutes,
   type TenantContext,
-  updateCall,
+  type Tx,
   updateConversation,
   withTenant,
 } from '@roofline/db';
 import type { AppDeps } from '../app.ts';
+import { recordCallTask } from '../agents/front-desk-tasks.ts';
 import { buildCompanyBlock } from './prompt.ts';
 import { maybeTextBack } from './text-back.ts';
 
@@ -57,6 +59,9 @@ const PLAIN: Record<string, string> = {
   message: 'The caller left a message for the team.',
 };
 
+/** A call is finished once it is in one of these; mid-call (ringing, ai, ringing_team) the job does nothing. */
+const FINISHED = new Set<string>(['ended', 'transferred', 'failed', 'rejected']);
+
 function plainSummary(outcome: ConversationOutcome): string {
   return PLAIN[outcome] ?? 'The caller spoke with the assistant.';
 }
@@ -67,10 +72,114 @@ function firstSentence(text: string): string {
   return (s === '' ? text.trim() : s).slice(0, 200);
 }
 
-export async function runAfterCall(deps: AppDeps, data: { companyId: string; callSid?: string; conversationId?: string }): Promise<void> {
+/** One live Front Desk task per call. A failure here never breaks the rest of the after-call work. */
+async function recordLiveTask(deps: AppDeps, ctx: TenantContext, input: Parameters<typeof recordCallTask>[2], now: Date): Promise<void> {
+  try {
+    await withTenant(deps.pools, ctx, (tx) => recordCallTask(tx, ctx, input, now));
+  } catch {
+    console.error(`fd live task failed call=${input.callId}`);
+  }
+}
+
+/** The company block the summary prompt carries (the same for voice and SMS). */
+async function loadCompanyBlock(tx: Tx, ctx: TenantContext): Promise<string> {
+  const facts = await loadCompanyFacts(tx, ctx);
+  return buildCompanyBlock({
+    name: facts.name,
+    timezone: facts.timezone,
+    city: facts.city,
+    state: facts.state,
+    workHours: facts.workHours,
+    facts: facts.facts,
+    services: ['Roof inspections', 'Storm damage repair'],
+    towns: facts.city ? [facts.city] : [],
+    repName: null,
+    canMove: facts.canMove,
+    canCancel: facts.canCancel,
+  });
+}
+
+/** The model's summary, or '' when it fails (the caller falls back to the plain sentence). */
+async function summarizeOrEmpty(
+  deps: AppDeps,
+  input: { companyBlock: string; transcript: string; actions: string[] },
+  logRef: string,
+): Promise<{ summary: string; modelOutcome: ConversationOutcome; followUps: string[] }> {
+  try {
+    const out = await deps.llm.summarize(input);
+    const summary = out.summary.trim();
+    if (summary === '') throw new Error('empty summary');
+    return { summary, modelOutcome: out.outcome, followUps: out.followUps };
+  } catch {
+    console.error(`after-call summary fell back ${logRef}`);
+    return { summary: '', modelOutcome: 'other', followUps: [] };
+  }
+}
+
+/** Outcomes that leave the conversation unread so the inbox shows it as needing attention. */
+const ATTENTION_OUTCOMES = new Set<ConversationOutcome>(['booked', 'message', 'claim']);
+
+/** An SMS conversation with no message for this long gets its after-call summary (fd-health lists by it too). */
+export const IDLE_SMS_HOURS = 24;
+
+/** True while the thread still needs its summary: no summary, not spam-ended, and no message for IDLE_SMS_HOURS. */
+function stillIdleSms(conversation: { channel: string; summary: string | null; outcome: string | null; lastMessageAt: Date }, now: Date): boolean {
+  return (
+    conversation.channel === 'sms' &&
+    conversation.summary === null &&
+    conversation.outcome !== 'spam' &&
+    conversation.lastMessageAt.getTime() <= now.getTime() - IDLE_SMS_HOURS * 3600_000
+  );
+}
+
+/**
+ * SMS threads have no call: summarize the idle conversation once, end it, log one activity. No usage, no
+ * text-back. A thread the 24 h gap already ended is only summarised (RC-2 #5). The final write locks the
+ * conversation and changes nothing unless it is still idle, so a team reply sent while the summary ran
+ * keeps the thread active (RC-2 #4).
+ */
+async function runSmsAfterCall(deps: AppDeps, ctx: TenantContext, conversationId: string): Promise<void> {
+  const now = deps.clock.now();
+  const prep = await withTenant(deps.pools, ctx, async (tx) => {
+    const conversation = await getConversation(tx, ctx, conversationId);
+    if (!conversation || !stillIdleSms(conversation, now)) return null;
+    const turns = await listTurns(tx, ctx, conversationId);
+    const transcript = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
+    const actions = await loadBookingActions(tx, ctx, conversationId);
+    return { transcript, actions, companyBlock: await loadCompanyBlock(tx, ctx) };
+  });
+  if (!prep) return;
+  const out = await summarizeOrEmpty(deps, prep, `conversation=${conversationId} company=${ctx.companyId}`);
+  const outcome = pickOutcome(prep.actions, false, out.modelOutcome);
+  const summary = out.summary === '' ? plainSummary(outcome) : out.summary;
+  await withTenant(deps.pools, ctx, async (tx) => {
+    const fresh = await lockConversation(tx, ctx, conversationId);
+    if (!fresh || !stillIdleSms(fresh, deps.clock.now())) return;
+    await updateConversation(tx, ctx, conversationId, { ...(fresh.status === 'ended' ? {} : { status: 'ended' as const }), outcome, summary });
+    if (fresh.customerId !== null) {
+      await addActivity(tx, ctx, {
+        subjectType: 'customer',
+        subjectId: fresh.customerId,
+        kind: 'text_conversation',
+        summary: firstSentence(summary),
+        data: { summary, outcome, conversationId, followUps: out.followUps },
+        at: now,
+        actorAgent: 'front_desk',
+      });
+    }
+  });
+}
+
+export async function runAfterCall(
+  deps: AppDeps,
+  data: { companyId: string; callSid?: string; conversationId?: string; swept?: boolean },
+): Promise<void> {
   const callSid = data.callSid;
-  if (callSid === undefined) return;
   const ctx: TenantContext = { companyId: data.companyId, userId: null, role: 'system', canApproveSpend: false };
+  if (callSid === undefined) {
+    if (data.conversationId !== undefined) await runSmsAfterCall(deps, ctx, data.conversationId);
+    return;
+  }
   const now = deps.clock.now();
 
   const prep = await withTenant(deps.pools, ctx, async (tx) => {
@@ -78,19 +187,12 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
     if (!call) return null;
     const testCaller = deps.config.TWILIO_TEST_CALLER_NUMBER;
     if (call.conversationId === null && testCaller !== undefined && call.fromE164 === testCaller) return null;
+    if (!FINISHED.has(call.status)) return null;
 
     if (call.aiSeconds > 0) {
       const minutes = Math.ceil(call.aiSeconds / 60);
-      await recordUsage(tx, ctx, {
-        kind: 'ai_call_minute',
-        quantity: minutes,
-        unitCostCents: null,
-        refType: 'call',
-        refId: call.id,
-        description: 'AI call minutes',
-        at: now,
-      });
-      await closeCallAfterCall(tx, ctx, callSid, { billedMinutes: minutes });
+      const billed = await recordCallMinutes(tx, ctx, { callId: call.id, minutes, description: 'AI call minutes', at: now });
+      await closeCallAfterCall(tx, ctx, callSid, { billedMinutes: billed });
     }
     if (call.spamReason !== null) return { call, spam: true as const };
 
@@ -108,56 +210,50 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
           const turns = await listTurns(tx, ctx, call.conversationId);
           transcript = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
         }
-        const facts = await loadCompanyFacts(tx, ctx);
-        companyBlock = buildCompanyBlock({
-          name: facts.name,
-          timezone: facts.timezone,
-          city: facts.city,
-          state: facts.state,
-          workHours: facts.workHours,
-          facts: facts.facts,
-          services: ['Roof inspections', 'Storm damage repair'],
-          towns: facts.city ? [facts.city] : [],
-          repName: null,
-          canMove: facts.canMove,
-          canCancel: facts.canCancel,
-        });
+        companyBlock = await loadCompanyBlock(tx, ctx);
       }
     }
     return { call, spam: false as const, conversation, transcript, actions, callerTurns, companyBlock };
   });
   if (!prep) return;
   const { call } = prep;
-  if (prep.spam) return;
+  const secondsInCall =
+    call.aiSeconds > 0
+      ? call.aiSeconds
+      : Math.max(0, Math.round(((call.endedAt ?? now).getTime() - call.startedAt.getTime()) / 1000));
+  if (prep.spam) {
+    // Screening rejected the call before Front Desk ran: no task. A spam call the AI had started still gets one.
+    if (call.status === 'rejected' && call.aiStartedAt === null) return;
+    await recordLiveTask(deps, ctx, { callId: call.id, conversationId: call.conversationId, customerId: null, seconds: secondsInCall, bookings: 0, spam: true, outcome: null }, now);
+    return;
+  }
 
   const transferred = call.status === 'transferred' || call.transferResult === 'answered';
   const { conversation, actions } = prep;
+  let pickedOutcome: ConversationOutcome | null = conversation?.outcome ?? null;
 
   if (conversation && conversation.summary === null && call.conversationId !== null) {
     const conversationId = call.conversationId;
-    let summary: string;
-    let modelOutcome: ConversationOutcome = 'other';
-    let followUps: string[] = [];
-    try {
-      const out = await deps.llm.summarize({ companyBlock: prep.companyBlock, transcript: prep.transcript, actions });
-      summary = out.summary.trim();
-      modelOutcome = out.outcome;
-      followUps = out.followUps;
-      if (summary === '') throw new Error('empty summary');
-    } catch {
-      console.error(`after-call summary fell back call=${call.id} company=${data.companyId}`);
-      summary = '';
-    }
+    const out = await summarizeOrEmpty(deps, { companyBlock: prep.companyBlock, transcript: prep.transcript, actions }, `call=${call.id} company=${data.companyId}`);
+    const followUps = out.followUps;
+    let summary = out.summary;
+    const modelOutcome = out.modelOutcome;
     const outcome = pickOutcome(actions, transferred, modelOutcome);
+    pickedOutcome = outcome;
     if (summary === '') summary = plainSummary(outcome);
 
     await withTenant(deps.pools, ctx, async (tx) => {
       const fresh = await getConversation(tx, ctx, conversationId);
       if (!fresh || fresh.summary !== null) return;
-      await updateConversation(tx, ctx, conversationId, { status: 'ended', outcome, summary });
-      if (call.status === 'ringing' || call.status === 'ai') {
-        await updateCall(tx, ctx, callSid, { status: 'ended', ...(call.endedAt === null && { endedAt: now }) });
-      }
+      // A transfer nobody picked up needs a person, even when the router (not a tool call) started it (RC-2 #2).
+      const unansweredTransfer = (outcome === 'transferred' && !transferred) || call.transferResult === 'no_answer';
+      const needsAttention = ATTENTION_OUTCOMES.has(outcome) || unansweredTransfer;
+      await updateConversation(tx, ctx, conversationId, {
+        status: 'ended',
+        outcome,
+        summary,
+        ...(needsAttention ? { unreadAtLeast: 1 } : {}),
+      });
       if (fresh.customerId !== null) {
         await addActivity(tx, ctx, {
           subjectType: 'customer',
@@ -170,17 +266,28 @@ export async function runAfterCall(deps: AppDeps, data: { companyId: string; cal
         });
       }
     });
-  } else if (call.status === 'ringing' || call.status === 'ai') {
-    await withTenant(deps.pools, ctx, (tx) =>
-      updateCall(tx, ctx, callSid, { status: 'ended', ...(call.endedAt === null && { endedAt: now }) }),
+  }
+
+  // A paused or voicemail call the AI never answered makes no task; a call screening rejected as spam before Front Desk ran makes none either.
+  if (call.conversationId !== null || call.aiStartedAt !== null || call.aiSeconds > 0) {
+    await recordLiveTask(
+      deps,
+      ctx,
+      {
+        callId: call.id,
+        conversationId: call.conversationId,
+        customerId: conversation?.customerId ?? null,
+        seconds: secondsInCall,
+        bookings: actions.filter((a) => a === 'book_inspection' || a === 'move_inspection').length,
+        spam: false,
+        outcome: pickedOutcome,
+      },
+      now,
     );
   }
 
-  if (transferred || call.status === 'rejected') return;
-  const secondsInCall =
-    call.aiSeconds > 0
-      ? call.aiSeconds
-      : Math.max(0, Math.round(((call.endedAt ?? now).getTime() - call.startedAt.getTime()) / 1000));
+  // A call the fd-health sweep ended (data.swept) is never texted back: its caller may still be on the line (CV#3).
+  if (transferred || call.status === 'rejected' || data.swept === true) return;
   await maybeTextBack(deps, ctx, {
     callId: call.id,
     callSid,

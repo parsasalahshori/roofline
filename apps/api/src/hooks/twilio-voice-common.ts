@@ -50,7 +50,8 @@ export function relayConnectXml(
 ): string {
   const voice = escapeXml(voiceIdFor(route.frontDeskVoice));
   const token = mintRelayToken(deps.config.RELAY_TOKEN_SECRET, { callId, companyId: route.companyId }, deps.clock.now());
-  const url = `${deps.config.RELAY_PUBLIC_URL}?t=${encodeURIComponent(token)}`;
+  // The company rides in the URL so the relay can check the token's MAC before any database read.
+  const url = `${deps.config.RELAY_PUBLIC_URL}?t=${encodeURIComponent(token)}&c=${encodeURIComponent(callId)}&o=${encodeURIComponent(route.companyId)}`;
   const mode = o.messageOnly ? '<Parameter name="mode" value="message_only"/>' : '';
   return (
     `<Response><Connect action="${escapeXml(o.action)}"><ConversationRelay url="${escapeXml(url)}" ` +
@@ -81,6 +82,19 @@ export async function routeVoice(deps: AppDeps, req: Request, res: Response): Pr
   const ctx = systemCtx(route.companyId);
   const settings = await withTenant(deps.pools, ctx, (tx) => frontDeskCallSettings(tx, ctx));
   return { ...route, ...settings };
+}
+
+/**
+ * Whether a call may go to the AI at all, before the per-company cap (no database needed): Front Desk on, not
+ * read-only (Ruling BG), under the process-wide relay cap, and the model healthy.
+ */
+export function aiAllowedNow(deps: AppDeps, route: VoiceRoute, now: Date): boolean {
+  return (
+    route.frontDeskEnabled &&
+    !route.readOnly &&
+    deps.relaySessions.size < deps.config.FRONT_DESK_MAX_CALLS &&
+    deps.relaySessions.isLlmHealthy(now)
+  );
 }
 
 /** TwiML out: 200 text/xml with the XML declaration. */

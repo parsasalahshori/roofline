@@ -10,6 +10,7 @@ import {
   TIME_BASELINES,
   VISIBLE_BASELINE_KEYS,
   type BaselineKey,
+  type PauseResult,
   type TimeBaselineRow,
   type TimeBaselines,
 } from '@roofline/shared';
@@ -18,6 +19,7 @@ import { recountMinutes } from '../agents/recount.ts';
 import { runAgentNow } from '../agents/run-now.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can, requireCapability } from '../permissions.ts';
+import { assertKnownFields } from '../validate.ts';
 
 const MINUTES_MESSAGE = 'Please enter minutes from 0 to 600, in steps of half a minute.';
 const CHOOSE_MESSAGE = 'Please choose yes or no.';
@@ -60,7 +62,9 @@ export function agentSettingsRoutes(deps: AppDeps): Router {
   router.put('/time-baselines', requireCapability('company_admin'), async (req, res) => {
     const { ctx } = req;
     const body: unknown = req.body;
-    if (!isPlainObject(body) || !isPlainObject(body.minutes)) throw new AppError(400, MESSAGES.checkField, 'minutes');
+    if (!isPlainObject(body)) throw new AppError(400, MESSAGES.checkField, 'minutes');
+    assertKnownFields(body, ['minutes']);
+    if (!isPlainObject(body.minutes)) throw new AppError(400, MESSAGES.checkField, 'minutes');
     const changes: Partial<Record<BaselineKey, number | null>> = {};
     for (const [key, value] of Object.entries(body.minutes)) {
       if (!isEditableBaselineKey(key)) throw new AppError(400, `We don't have a time setting called "${key}".`, key);
@@ -96,8 +100,10 @@ export function agentSettingsRoutes(deps: AppDeps): Router {
   });
 
   router.post('/time-baselines/recount', requireCapability('company_admin'), async (req, res) => {
+    const q = req.query.dryRun;
+    if (q !== undefined && q !== '1') throw new AppError(400, MESSAGES.checkField, 'dryRun');
     const result = await recountMinutes(pools, req.ctx, {
-      dryRun: req.query.dryRun === '1',
+      dryRun: q === '1',
       now: clock.now(),
       ip: req.ip ?? null,
     });
@@ -110,7 +116,9 @@ export function agentSettingsRoutes(deps: AppDeps): Router {
     if (!isScreenAgent(agent)) throw new AppError(404, MESSAGES.notFound);
     if (!(LAUNCH_AGENTS as readonly string[]).includes(agent) && !G1_AGENTS_SHIPPED) throw new AppError(409, 'This agent is coming soon.');
     const body: unknown = req.body;
-    if (!isPlainObject(body) || typeof body.paused !== 'boolean') throw new AppError(400, CHOOSE_MESSAGE, 'paused');
+    if (!isPlainObject(body)) throw new AppError(400, CHOOSE_MESSAGE, 'paused');
+    assertKnownFields(body, ['paused']);
+    if (typeof body.paused !== 'boolean') throw new AppError(400, CHOOSE_MESSAGE, 'paused');
     const paused = body.paused;
     const now = clock.now();
     const row = await withTenant(pools, ctx, async (tx) => {
@@ -125,7 +133,8 @@ export function agentSettingsRoutes(deps: AppDeps): Router {
       });
       return saved;
     });
-    res.json({ paused: row.pausedAt !== null, pausedAt: row.pausedAt ? row.pausedAt.toISOString() : null });
+    const out: PauseResult = { paused: row.pausedAt !== null, pausedAt: row.pausedAt ? row.pausedAt.toISOString() : null };
+    res.json(out);
   });
 
   router.post('/:agent/run', requireCapability('approve_internal'), async (req, res) => {
@@ -133,7 +142,8 @@ export function agentSettingsRoutes(deps: AppDeps): Router {
     const agent = req.params.agent;
     if (!isScreenAgent(agent)) throw new AppError(404, MESSAGES.notFound);
     const now = clock.now();
-    const result = await withTenant(pools, ctx, (tx) => runAgentNow(tx, ctx, agent, now, jobs));
+    const { result, send } = await withTenant(pools, ctx, (tx) => runAgentNow(tx, ctx, agent, now, { jobs }));
+    await send();
     res.status(202).json(result);
   });
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { agentSettings, agentTasks, agentTaskSteps } from '@roofline/db';
+import { agentSettings, agentTasks, agentTaskSteps, conversations, conversationTurns, countFrontDeskFollowUps } from '@roofline/db';
 import type { Agent, AgentCard, AgentsOverview, TaskStatus } from '@roofline/shared';
 import { Actors, addressFor, type CompanyKey, inCompany, mustCreate } from './crm-helpers.ts';
 import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
@@ -86,6 +86,21 @@ async function seedTask(s: TaskSeed, company: Company = 'a'): Promise<string> {
       })
       .returning({ id: agentTasks.id });
     const taskId = row!.id;
+    // A finished task always has at least one done step (the cards count only real work), with no snapshot.
+    const finishedWithoutSteps = steps.length === 0 && ['done', 'partly_done'].includes(s.status ?? 'done');
+    if (finishedWithoutSteps) {
+      await tx.insert(agentTaskSteps).values({
+        companyId,
+        taskId,
+        position: 1,
+        type: 'send_sms_batch',
+        approvalClass: 'message' as const,
+        status: 'done' as const,
+        idempotencyKey: randomUUID(),
+        createdAt: new Date(s.at),
+        updatedAt: new Date(s.at),
+      });
+    }
     if (steps.length > 0) {
       await tx.insert(agentTaskSteps).values(
         steps.map((step, i) => ({
@@ -301,10 +316,13 @@ describe('GET /api/agents/:agent (detail)', () => {
     expect(after.body.runNow).toEqual({ kind: 'available', nextAllowedAt: '2026-10-12T17:05:00.000Z' });
   });
 
-  test('detail rules: estimator has its sentence; storm and front desk have none on this base (AX-K)', async () => {
+  test('detail rules: estimator and storm scout have sentences; front desk has none on this base (AX-K)', async () => {
     const owner = await who.as('owner');
     expect((await owner.get('/api/agents/estimator')).body.rules).toEqual([{ text: ESTIMATOR_RULE, links: [] }]);
-    expect((await owner.get('/api/agents/storm_scout')).body.rules).toEqual([]);
+    const stormRules = (await owner.get('/api/agents/storm_scout')).body.rules;
+    expect(stormRules).toHaveLength(1);
+    expect(stormRules[0].links).toHaveLength(3);
+    expect(stormRules[0].links.every((l: { href: string }) => l.href === '/settings/storm')).toBe(true);
     expect((await owner.get('/api/agents/front_desk')).body.rules).toEqual([]);
   });
 
@@ -332,6 +350,7 @@ describe('GET /api/agents/:agent (detail)', () => {
         createdAt: '2026-10-12T15:00:00.000Z',
         finishedAt: '2026-10-12T15:00:00.000Z',
         minutesSaved: 12,
+        href: null,
       },
     ]);
   });
@@ -442,5 +461,118 @@ describe('role scope and company isolation', () => {
 
     expect((await ownerA.get('/api/agents/nope')).status).toBe(404);
     expect((await ownerB.get('/api/agents/nope')).status).toBe(404);
+  });
+});
+
+describe('money and links by role (A1 review S-M4, S-M6)', () => {
+  test('rep gets hourlyRateCents null on overview and detail; owner and office get the number', async () => {
+    const rep = await who.as('rep');
+    expect((await overview(rep)).hourlyRateCents).toBeNull();
+    expect((await rep.get('/api/agents/storm_scout')).body.hourlyRateCents).toBeNull();
+    expect((await rep.get('/api/agents/claims')).body.hourlyRateCents).toBeNull();
+    for (const role of ['owner', 'office'] as const) {
+      const agent = await who.as(role);
+      expect((await overview(agent)).hourlyRateCents).toBe(2800);
+      expect((await agent.get('/api/agents/storm_scout')).body.hourlyRateCents).toBe(2800);
+    }
+  });
+
+  test('recent task hrefs: reviewers open drafts in approvals, others the job, a rep never approvals', async () => {
+    const owner = await who.as('owner');
+    const rep = await who.as('rep');
+    const repId = who.user('rep').userId;
+    const customer = await mustCreate(owner, '/api/customers', { displayName: 'Href Customer' });
+    const property = await mustCreate(owner, '/api/properties', { customerId: customer.id, ...addressFor(1) });
+    const job = await mustCreate(owner, '/api/jobs', {
+      customerId: customer.id,
+      propertyId: property.id,
+      stage: 'inspection',
+      assignedUserId: repId,
+    });
+    const at = '2026-10-12T15:00:00.000Z';
+    const draft = await seedTask({ status: 'draft', subject: { type: 'job', id: job.id }, at });
+    const done = await finished({ at, subject: { type: 'job', id: job.id }, steps: [{ minutes: 5, baseline: 'text_sent', units: 1 }] });
+    const bare = await finished({ at, subject: { type: 'job', id: job.id } });
+
+    const hrefOf = (body: { recentTasks: { id: string; href: string | null }[] }, id: string) =>
+      body.recentTasks.find((r) => r.id === id)?.href;
+    const ownerBody = (await owner.get('/api/agents/storm_scout')).body;
+    expect(hrefOf(ownerBody, draft)).toBe(`/approvals/${draft}`);
+    expect(hrefOf(ownerBody, done)).toBe(`/jobs/${job.id}`);
+    expect(hrefOf(ownerBody, bare)).toBe(`/jobs/${job.id}`);
+
+    const repBody = (await rep.get('/api/agents/storm_scout')).body;
+    for (const task of repBody.recentTasks as { id: string; href: string | null }[]) {
+      expect(task.href === null || task.href === `/jobs/${job.id}`).toBe(true);
+      expect(task.href ?? '').not.toContain('/approvals/');
+    }
+    expect(hrefOf(repBody, draft)).toBe(`/jobs/${job.id}`);
+  });
+});
+
+describe('Front Desk card (A1 Task 21: AX-D success rate, follow-ups in waiting)', () => {
+  async function conv(o: { outcome?: string | null; marker?: boolean; at?: string; status?: 'active' | 'ended'; customerId?: string }) {
+    const companyId = t.seed.a.companyId;
+    await inCompany(t, companyId, async (tx) => {
+      const at = new Date(o.at ?? '2026-10-12T15:00:00.000Z');
+      const [row] = await tx
+        .insert(conversations)
+        .values({
+          companyId,
+          channel: 'voice',
+          customerId: o.customerId ?? null,
+          phoneE164: `+1402555${String(Math.floor(Math.random() * 9000) + 1000)}`,
+          companyNumberE164: '+14025550000',
+          status: o.status ?? 'ended',
+          outcome: (o.outcome === undefined ? 'booked' : o.outcome) as 'booked' | null,
+          createdAt: at,
+          updatedAt: at,
+        })
+        .returning({ id: conversations.id });
+      if (o.marker) {
+        await tx.insert(conversationTurns).values({
+          companyId,
+          conversationId: row!.id,
+          position: 1,
+          speaker: 'system',
+          text: 'Handed off',
+          route: 'transfer',
+          guardHits: ['model_failure'],
+        });
+      }
+    });
+  }
+
+  test('success rate is null below 5 finished conversations, then succeeded over finished', async () => {
+    const owner = await who.as('owner');
+    await conv({});
+    await conv({ outcome: 'abandoned' });
+    await conv({ marker: true, outcome: 'transferred' });
+    await conv({ at: '2026-08-01T12:00:00.000Z' });
+    await conv({ status: 'active', outcome: null });
+    await conv({});
+    expect(cardOf(await overview(owner), 'front_desk').successRate).toBeNull();
+    await conv({});
+    expect(cardOf(await overview(owner), 'front_desk').successRate).toBe(0.6);
+  });
+
+  test('waitingCount adds the open follow-ups and only for Front Desk', async () => {
+    const owner = await who.as('owner');
+    await seedTask({ agent: 'front_desk', status: 'draft', at: '2026-10-12T12:00:00.000Z' });
+    const customer = await mustCreate(owner, '/api/customers', { displayName: 'Caller' });
+    const property = await mustCreate(owner, '/api/properties', { customerId: customer.id, ...addressFor(1) });
+    await mustCreate(owner, '/api/jobs', {
+      customerId: customer.id,
+      propertyId: property.id,
+      stage: 'inspection',
+      nextStep: 'Call back about the leak',
+    });
+    await conv({ outcome: 'message', customerId: customer.id });
+    const followUps = await inCompany(t, t.seed.a.companyId, (tx) =>
+      countFrontDeskFollowUps(tx, { companyId: t.seed.a.companyId, userId: t.seed.a.owner.userId, role: 'owner', canApproveSpend: true }, new Date(NOW)),
+    );
+    const body = await overview(owner);
+    expect(cardOf(body, 'front_desk').waitingCount).toBe(1 + followUps);
+    expect(cardOf(body, 'storm_scout').waitingCount).toBe(0);
   });
 });

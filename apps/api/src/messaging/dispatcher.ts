@@ -1,6 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
 import {
-  finishParkedStep,
   getStep,
   getTask,
   listParkedSteps,
@@ -39,8 +38,8 @@ export const NOT_TAKEN_LATER = "The texting service didn't take this message. Yo
 /** A batch step whose waiting texts are all dealt with, but some the provider refused. */
 export const STEP_FAILED = "Some texts didn't go out. You can retry them.";
 
-/** The step types that wait on their messages: a text batch, a proposal's single text, and a storm email batch. */
-const PARKED_TEXT_STEP_TYPES = ['send_sms_batch', 'send_proposal', 'send_email_batch'] as const;
+/** The step types that wait on messages: a batch's texts or emails, and a proposal's single text. */
+const PARKED_TEXT_STEP_TYPES = ['send_sms_batch', 'send_email_batch', 'send_proposal'] as const;
 
 /** A text with no customer has no consent on file. */
 const NO_CUSTOMER: TextState = { status: 'blocked', blockRule: 'consent', blockReason: 'No texting consent on file.' };
@@ -71,7 +70,7 @@ export const emptySummary = (): DispatchSummary => ({ sent: 0, scheduled: 0, blo
  *    - schedule → the row waits again, with its new `scheduled_for` and reason;
  *    - block → `blocked`, with the rule and reason.
  *    A text that throws is logged (its id only) and left for the next pass; the others go on.
- * 2. **Parked text steps.** For every parked `send_sms_batch` or `send_proposal` step of the company
+ * 2. **Parked text steps.** For every parked `send_sms_batch`, `send_email_batch` or `send_proposal` step of the company
  *    (`running`, no lease). A proposal's step is settled the same way, and when its one text went
  *    out here, the proposal is marked sent in the same transaction (`settleSentProposal`).
  *    Each: its texts left `queued` for longer than `QUEUED_TOO_LONG_MS` become unconfirmed (never
@@ -171,6 +170,9 @@ async function decideAgain(
       bodyRendered: true,
       dedupeKey: row.dedupeKey,
       replyToInboundAt: null,
+      // Keep the number the text was meant for (a text-back to the line that called); the gate keeps it
+      // only while it is still one of the customer's numbers.
+      toE164: row.toE164,
     },
     at,
   );
@@ -204,7 +206,7 @@ async function settleParkedStep(
 
     const someRefused = counts.retryableFailed > 0;
     await getTask(tx, ctx, step.taskId, { forUpdate: true });
-    let finish: Parameters<typeof finishParkedStep>[3] = { status: someRefused ? 'failed' : 'done', result, errorPlain: someRefused ? STEP_FAILED : null };
+    let finish: Parameters<typeof completeParkedStep>[3] = { status: someRefused ? 'failed' : 'done', result, errorPlain: someRefused ? STEP_FAILED : null };
     if (step.type === 'send_proposal') {
       const row = await getStep(tx, ctx, step.taskId, step.id);
       const payload = row?.payload as { proposalId?: unknown; customerId?: unknown } | undefined;
@@ -222,6 +224,7 @@ async function settleParkedStep(
         finish = { status: 'needs_attention', result, errorPlain };
       }
     }
+    // Every parked step ends through completeParkedStep (A1 records the outcome there; Ruling AX-H).
     const saved = await completeParkedStep(tx, ctx, step.id, finish, now);
     if (!saved) return false;
     await refreshTask(tx, ctx, saved.taskId, now);

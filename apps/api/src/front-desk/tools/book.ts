@@ -36,11 +36,11 @@ import {
   NOT_THEIR_HOME,
   openInspectionSlots,
   queueCalendarPush,
-  systemCtx,
   whenShort,
   whenWords,
   zoneOf,
 } from './times.ts';
+import { systemCtx } from './system-ctx.ts';
 
 /*
  * D1 Task 8: book_inspection. One transaction makes the customer (consent 'express', source 'call'),
@@ -58,8 +58,9 @@ export const NEEDS_ADDRESS = 'Ask for the home address (street, city, state and 
 export const NEEDS_FULL_ADDRESS = 'The address needs a street, city, state and ZIP. Ask for the missing part, then try again.';
 export const NOT_INSPECTOR = 'That time is not one I offered. Look up the times again.';
 export const NUMBER_SHARED = 'More than one person uses this number, so I cannot book it here. Offer to take a message so someone calls them back.';
-export const HOME_TAKEN = 'That home is on file for someone else. Offer to take a message so someone calls them back.';
 export const BOOK_FAILED = 'I could not book that. Offer to take a message so someone calls them back.';
+/** A typed address that is another customer's home: the same neutral sentence, so the tool never says whose a home is (pre-review #30). */
+export const HOME_TAKEN = BOOK_FAILED;
 
 /** Always in the tool list. */
 export const isAvailable = timesAvailable;
@@ -130,6 +131,7 @@ export async function sendConfirmationText(
   conversationId: string,
   s: Summary,
   now: Date,
+  toE164?: string | null,
 ): Promise<ConfirmationResult> {
   try {
     const body = confirmationBody(s);
@@ -140,7 +142,7 @@ export async function sendConfirmationText(
       const built = await buildGateRequest(
         tx,
         tctx,
-        { customerId: s.customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null },
+        { customerId: s.customerId, purpose: 'informational', body, bodyRendered: true, dedupeKey, replyToInboundAt: null, toE164: toE164 ?? undefined },
         now,
       );
       if (!built) return { result: 'failed' as const };
@@ -327,7 +329,7 @@ export const bookInspection: ToolHandler<'book_inspection'> = async (ctx, input)
 
   const { summary } = outcome;
   await queueCalendarPush(deps, companyId, summary.appointmentId);
-  const text = await sendConfirmationText(deps, tctx, conversation.conversationId, summary, deps.clock.now());
+  const text = await sendConfirmationText(deps, tctx, conversation.conversationId, summary, deps.clock.now(), conversation.phone);
   return {
     ok: true,
     forModel: `Booked for ${whenWords(summary.startsAt, summary.zone)}${withWho(summary.inspectorName)} at ${summary.addressLine}. ${confirmationNote(text)}`,

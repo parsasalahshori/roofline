@@ -20,8 +20,8 @@ import { matchCompanyStorms } from '../storm/match.ts';
 import { draftStormPlan } from '../storm/plan.ts';
 import { PLAN_DISMISSED, PLAN_NOT_FOUND } from '../storm/plan-errors.ts';
 import { UUID } from '../validate.ts';
-import { storeRecording } from './recording-store.ts';
 import { reportJobError } from './scheduler/report.ts';
+import { storeRecording } from './recording-store.ts';
 import type { JobName, JobData, JobMeta } from './queue.ts';
 
 function checkStormJob(data: JobData): void {

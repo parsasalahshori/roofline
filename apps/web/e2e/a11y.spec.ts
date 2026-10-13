@@ -2,8 +2,8 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { test, expect, readStack, companyHostUrl, stormPageCode, draftAndApproveStormPlan, waitForStormSteps } from './fixtures.ts';
 import { makeAndSendProposal, BETTER_NAME } from './estimator-helpers.ts';
-import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 import { seedFrontDesk, seedRooflineNumber } from './front-desk-seed.ts';
+import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 
 /*
  * Accessibility: each page is scanned with axe for WCAG 2.0 and 2.1 A and AA rules, and any
@@ -143,42 +143,44 @@ test('calendar week has no serious accessibility violations', async ({ page, log
   await scan(page);
 });
 
-test('agents window with the G1 cards has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
-  await loginAs(page, 'owner');
-  await markTodaySeen('owner@a.test');
-  await page.goto('/agents');
-  await expect(page.getByLabel('Your agents').first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText('Follow-up', { exact: true }).first()).toBeVisible();
-  await scan(page);
-});
+const agentsScreens: { name: string; path: string; ready: (page: Page) => Promise<void> }[] = [
+  {
+    name: 'agents window',
+    path: '/agents',
+    ready: (page) => expect(page.getByRole('heading', { name: 'Your agents' })).toBeAttached(),
+  },
+  {
+    name: 'agent page',
+    path: '/agents/storm-scout',
+    ready: (page) => expect(page.getByText('What it does').first()).toBeVisible(),
+  },
+  {
+    name: 'agents feed',
+    path: '/agents/feed',
+    ready: (page) => expect(page.getByRole('list', { name: 'What your agents did' })).toBeVisible(),
+  },
+  {
+    name: 'agents waiting list',
+    path: '/agents/waiting',
+    ready: (page) => expect(page.getByLabel('Waiting', { exact: true })).toBeVisible(),
+  },
+  {
+    name: 'settings agents tab',
+    path: '/settings/agents',
+    ready: (page) => expect(page.getByText('How we count time saved').first()).toBeVisible(),
+  },
+];
 
-test('job window claim section has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, db, scenario }) => {
-  await loginAs(page, 'owner');
-  await markTodaySeen('owner@a.test');
-  const job = await db.query<{ id: string }>(`select id from jobs where company_id = $1 order by id limit 1`, [
-    scenario.a.companyId,
-  ]);
-  await page.goto(`/jobs/${job.rows[0]?.id}`);
-  await expect(page.getByRole('heading', { name: 'Insurance claim' })).toBeVisible({ timeout: 20_000 });
-  await scan(page);
-});
-
-test('follow-up review with personal texts has no serious accessibility violations', async ({
-  page,
-  loginAs,
-  markTodaySeen,
-  db,
-  pools,
-  scenario,
-}) => {
-  await loginAs(page, 'owner');
-  await markTodaySeen('owner@a.test');
-  const lead = await seedOldLead(db, scenario.a.companyId);
-  const { taskId } = await seedTextsPlan(pools, scenario.a.companyId, lead.customerId);
-  await page.goto('/approvals/' + taskId);
-  await expect(page.getByText('Send 1 personal text')).toBeVisible({ timeout: 20_000 });
-  await scan(page);
-});
+for (const screen of agentsScreens) {
+  test(`${screen.name} has no serious accessibility violations`, async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+    void agentsSeed;
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto(screen.path);
+    await screen.ready(page);
+    await scan(page);
+  });
+}
 
 test('storm window has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
   await loginAs(page, 'owner');
@@ -222,6 +224,7 @@ test('storm landing page has no serious accessibility violations', async ({ page
   const code = await stormPageCode(db, scenario.companyStormId);
   await page.goto(companyHostUrl('/storm/' + code));
   await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
+  await scan(page);
 });
 
 test('Front Desk inbox has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, pools, scenario }) => {
@@ -266,5 +269,42 @@ test('Settings Your profile has no serious accessibility violations', async ({ p
   await markTodaySeen('owner@a.test');
   await page.goto('/settings/profile');
   await expect(page.getByLabel('Your phone number')).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('agents window with the G1 cards has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/agents');
+  await expect(page.getByLabel('Your agents').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Follow-up', { exact: true }).first()).toBeVisible();
+  await scan(page);
+});
+
+test('job window claim section has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, db, scenario }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const job = await db.query<{ id: string }>(`select id from jobs where company_id = $1 order by id limit 1`, [
+    scenario.a.companyId,
+  ]);
+  await page.goto(`/jobs/${job.rows[0]?.id}`);
+  await expect(page.getByRole('heading', { name: 'Insurance claim' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('follow-up review with personal texts has no serious accessibility violations', async ({
+  page,
+  loginAs,
+  markTodaySeen,
+  db,
+  pools,
+  scenario,
+}) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const lead = await seedOldLead(db, scenario.a.companyId);
+  const { taskId } = await seedTextsPlan(pools, scenario.a.companyId, lead.customerId);
+  await page.goto('/approvals/' + taskId);
+  await expect(page.getByText('Send 1 personal text')).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });

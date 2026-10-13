@@ -14,6 +14,10 @@ export * from './scheduler.ts';
 export * from './routing.ts';
 // C1 skeleton (Task 1).
 export * from './calendar-sync.ts';
+// E1 skeleton (Task 1).
+export * from './footprints.ts';
+export * from './proposal-links.ts';
+export * from './exact-report-fanout.ts';
 // D1 skeleton (Task 1).
 export * from './voice-routing.ts';
 export * from './relay-tokens.ts';
@@ -23,10 +27,6 @@ export * from './recording.ts';
 export * from './transfer-phone.ts';
 // G1 skeleton (Task 3).
 export * from './agents.ts';
-// E1 skeleton (Task 1).
-export * from './footprints.ts';
-export * from './proposal-links.ts';
-export * from './exact-report-fanout.ts';
 // S1 skeleton (Task 1).
 export * from './spotter.ts';
 export * from './storm-match-fanout.ts';
@@ -34,4 +34,7 @@ export * from './ad-sync-fanout.ts';
 export * from './storm-page-lookup.ts';
 export * from './unsubscribe-lookup.ts';
 export * from './hail-health.ts';
+// E1 signed-PDF sweep.
 export * from './signed-pdf-fanout.ts';
+export * from './stuck-calls.ts';
+export * from './on-call.ts';

@@ -13,6 +13,7 @@ export {
   type ActorType,
   type AgentEventKind,
   type AgentEventRow,
+  hasTaskEvent,
   insertAgentEvent,
   listRecentEvents,
   listTaskEvents,
@@ -30,9 +31,16 @@ export {
   type RecentTaskRow,
   recentTasks,
   taskSubjectScope,
+  frontDeskConversationCounts,
 } from './repos/agent-metrics.ts';
-export { type FeedCursor, type FeedRow, listFeedPage } from './repos/agent-feed.ts';
-export { listWaitingTasks, type WaitingTaskRow } from './repos/agent-waiting.ts';
+export { type FeedCursor, type FeedRow, feedRank, listFeedPage } from './repos/agent-feed.ts';
+export {
+  countFrontDeskFollowUps,
+  listFrontDeskFollowUps,
+  listWaitingTasks,
+  type FrontDeskFollowUpRow,
+  type WaitingTaskRow,
+} from './repos/agent-waiting.ts';
 export { audit, type AuditEntry } from './repos/audit.ts';
 export {
   insertTimeRecount,
@@ -42,6 +50,7 @@ export {
   type RecountStep,
   rewriteStepSnapshot,
   setBaselineOverrides,
+  tryLockRecount,
 } from './repos/time-baselines.ts';
 export * from './repos/agent-settings.ts';
 export * from './repos/agent-common.ts'; // G1 Task 19
@@ -57,6 +66,7 @@ export {
   getCustomer,
   listCustomers,
   type ListCustomersOptions,
+  lockCustomerPhone,
   setArchived,
   updateCustomer,
   type WriteOptions,
@@ -167,6 +177,9 @@ export {
   listTasks,
   listTasksByStatus,
   type ListTasksOptions,
+  findStepByIdempotencyKey,
+  setStepResult,
+  listLiveTasksBySubject,
   moveStep,
   type NewStepRow,
   type NewTaskRow,
@@ -212,9 +225,17 @@ export * from './repos/calendar-busy.ts';
 export * from './repos/quotes.ts';
 export * from './repos/pricebook.ts';
 export * from './repos/export.ts';
+// E1 skeleton (Task 1): one line per new repo file; later E1 tasks fill the files in.
+export * from './repos/measurements.ts';
+export * from './repos/tier-templates.ts';
+export * from './repos/proposals.ts';
+export * from './repos/proposal-public.ts';
+export * from './repos/exact-reports.ts';
+export * from './repos/stored-files.ts';
 // D1 skeleton (Task 1): one line per new repo file; later D1 tasks fill the files in.
 export * from './repos/conversations.ts';
 export * from './repos/turns.ts';
+export * from './repos/conversation-identity.ts';
 export * from './repos/calls.ts';
 export * from './repos/call-recording.ts';
 export * from './repos/fd-retention.ts';
@@ -244,13 +265,6 @@ export * from './repos/scheduler-no-show.ts'; // G1 Task 12
 export * from './repos/claims-agent.ts';
 // G1 Task 13a
 export { findLeadCandidates, findProposalCandidates, findReviewCandidates, findStuckCandidates, followUpSettings, type LeadCandidate, PROPOSAL_CALL_KIND, PROPOSAL_CALL_SUBJECT, type ProposalCandidate, type ReviewCandidate, recordStuckNudge, STUCK_NUDGE_ACTIVITY, STUCK_NUDGE_GAP_DAYS, type StuckCandidate } from './repos/follow-up-finder.ts';
-// E1 skeleton (Task 1): one line per new repo file; later E1 tasks fill the files in.
-export * from './repos/measurements.ts';
-export * from './repos/tier-templates.ts';
-export * from './repos/proposals.ts';
-export * from './repos/proposal-public.ts';
-export * from './repos/exact-reports.ts';
-export * from './repos/stored-files.ts';
 // S1 skeleton (Task 1): one line per new repo file; later S1 tasks fill the files in.
 export * from './repos/storm-layer.ts';
 export * from './repos/company-storms.ts';

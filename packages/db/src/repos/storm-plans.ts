@@ -1,7 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { hailLabel, type CampaignStatus, type TaskStatus } from '@roofline/shared';
 import type { TenantContext, Tx } from '../tenant.ts';
-import { moveStep, listSteps, updateTask } from './tasks.ts';
 
 /*
  * Data access for drafting a storm plan (S1 Task 11). The types below are the contract with
@@ -202,18 +201,29 @@ export async function listStormPlanRecipients(tx: Tx, ctx: TenantContext, compan
   return { smsIds, emailIds, fields };
 }
 
+export type StormPlanLock = { ok: false } | { ok: true; oldDraftId: string | null };
+
+/** Plan statuses the automatic path may replace (Amended Ruling BD). */
+export const REDRAFTABLE_PLAN_STATUSES = ['draft'] as const;
+/** Finished plan statuses replaced only by an explicit person action (the caller passes allowFinished). */
+export const FINISHED_REDRAFTABLE_PLAN_STATUSES = ['expired', 'declined'] as const;
+
 /**
- * Points company_storms.plan_task_id at `newTaskId`, sets status 'planned', and, when the previous
- * plan is a DRAFT task, declines it (its open steps become 'skipped'). Never touches a plan that is
- * not a draft. Returns false (and changes nothing) when the current plan is not a draft.
+ * Locks the company_storms row (for update of cs) and checks it. ok:false when the storm is missing or
+ * its plan is not replaceable (S1 CHANGED path). Amended Ruling BD: the automatic path (storm-draft job,
+ * storm-match, any default draftStormPlan call) replaces only a 'draft' plan; an 'expired' or 'declined'
+ * plan is replaced only when the caller passes allowFinished (the rerun route; S1's later 'Draft a new
+ * plan' route); running, awaiting_owner, approved, partly_done, done and needs_attention never are.
+ * oldDraftId is the existing DRAFT plan task id (superseded through the task service's supersedeDraft),
+ * or null when there was no plan or the old plan is expired/declined (nothing to supersede; linkStormPlan
+ * just repoints to the new plan).
  */
-export async function replaceDraftPlan(
+export async function lockStormPlan(
   tx: Tx,
   ctx: TenantContext,
   companyStormId: string,
-  newTaskId: string,
-  now: Date,
-): Promise<boolean> {
+  opts: { allowFinished?: boolean } = {},
+): Promise<StormPlanLock> {
   const locked = await tx.execute(sql`
     select cs.plan_task_id, t.status as plan_status
     from company_storms cs
@@ -222,25 +232,25 @@ export async function replaceDraftPlan(
     for update of cs
   `);
   const row = locked.rows[0] as { plan_task_id: string | null; plan_status: TaskStatus | null } | undefined;
-  if (!row) return false;
+  if (!row) return { ok: false };
   const oldId = row.plan_task_id;
-  if (oldId !== null && row.plan_status !== null && row.plan_status !== 'draft') return false;
-
-  if (oldId !== null && row.plan_status === 'draft') {
-    const steps = await listSteps(tx, ctx, [oldId]);
-    for (const step of steps) {
-      if (step.status !== 'pending' && step.status !== 'awaiting_owner') continue;
-      await moveStep(tx, ctx, step.id, ['pending', 'awaiting_owner'], { status: 'skipped' }, now);
-    }
-    await updateTask(
-      tx,
-      ctx,
-      oldId,
-      { status: 'declined', declinedByUserId: null, declinedAt: now, declineReason: 'Replaced by a newer plan.' },
-      now,
-    );
+  if (oldId !== null && row.plan_status !== null) {
+    const replaceable =
+      (REDRAFTABLE_PLAN_STATUSES as readonly string[]).includes(row.plan_status) ||
+      (opts.allowFinished === true && (FINISHED_REDRAFTABLE_PLAN_STATUSES as readonly string[]).includes(row.plan_status));
+    if (!replaceable) return { ok: false };
   }
+  return { ok: true, oldDraftId: oldId !== null && row.plan_status === 'draft' ? oldId : null };
+}
 
+/** Points the storm at the new plan task and flips status 'new' to 'planned'. */
+export async function linkStormPlan(
+  tx: Tx,
+  ctx: TenantContext,
+  companyStormId: string,
+  newTaskId: string,
+  now: Date,
+): Promise<void> {
   await tx.execute(sql`
     update company_storms
     set plan_task_id = ${newTaskId}::uuid,
@@ -248,5 +258,15 @@ export async function replaceDraftPlan(
         updated_at = ${now}
     where id = ${companyStormId}::uuid and company_id = ${ctx.companyId}::uuid
   `);
-  return true;
+}
+
+/** The company_storms id whose plan_task_id is this task, or null. */
+export async function findStormByPlanTask(tx: Tx, ctx: TenantContext, taskId: string): Promise<string | null> {
+  const result = await tx.execute(sql`
+    select id from company_storms
+    where plan_task_id = ${taskId}::uuid and company_id = ${ctx.companyId}::uuid
+    limit 1
+  `);
+  const row = result.rows[0] as { id: string } | undefined;
+  return row ? row.id : null;
 }

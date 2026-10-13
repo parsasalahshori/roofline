@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import {
   type FeedCursor,
   type FeedRow,
+  feedRank,
   insertAgentEvent,
   listFeedPage,
   type NewAgentEvent,
@@ -13,6 +14,7 @@ import type { Agent } from '@roofline/shared';
 import { registerStepHandler } from '../src/tasks/runner.ts';
 import { Actors, addressFor, type CompanyKey, inCompany, mustCreate } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
+import { createLiveTask } from '../src/tasks/service.ts';
 import { agentCtx, dbSteps, newCustomers, newTask, seenOf, smsStep, STOP_BODY } from './task-helpers.ts';
 
 /*
@@ -101,6 +103,27 @@ describe('agents feed repo', () => {
     expect(rows[3]!.kind).toBe('created');
   });
 
+  test('events at the same time rank approved, then finished, then step events, and paging visits each once', async () => {
+    t.clock.set(at(0));
+    const { taskId } = await newTask(t, 'a');
+    await addEvent(taskId, 'step_done', at(9), { data: { units: 1 } });
+    await addEvent(taskId, 'finished', at(9), { data: { status: 'done' } });
+    await addEvent(taskId, 'approved', at(9), { actorType: 'user', actorUserId: t.seed.a.owner.userId });
+
+    const top = (await ownerFeed()).slice(0, 3).map((r) => r.kind);
+    expect(top).toEqual(['approved', 'finished', 'step_done']);
+
+    const paged: string[] = [];
+    let cursor: FeedCursor | null = null;
+    for (let i = 0; i < 3; i += 1) {
+      const page: FeedRow[] = await ownerFeed({ limit: 1, cursor });
+      expect(page).toHaveLength(1);
+      paged.push(page[0]!.kind);
+      cursor = { at: page[0]!.at, rank: feedRank(page[0]!.kind), id: page[0]!.id };
+    }
+    expect(paged).toEqual(['approved', 'finished', 'step_done']);
+  });
+
   test('cursor pages without gaps or repeats (limit 2 over 5 events)', async () => {
     t.clock.set(at(0));
     const { taskId } = await newTask(t, 'a');
@@ -119,7 +142,7 @@ describe('agents feed repo', () => {
       pages += 1;
       paged.push(...page.map((r) => r.id));
       const last = page[page.length - 1]!;
-      cursor = { at: last.at, id: last.id };
+      cursor = { at: last.at, rank: feedRank(last.kind), id: last.id };
       expect(pages).toBeLessThan(10);
     }
 
@@ -213,6 +236,64 @@ describe('agents feed repo', () => {
     }
     expect(repRows.find((r) => r.taskId === w.taskJob.taskId && r.kind === 'approved')).toMatchObject({ actorName: ownerName });
     expect(repRows.some((r) => r.taskId === w.taskJobHidden.taskId)).toBe(false);
+  });
+});
+
+describe('agents feed repo: live tasks', () => {
+  const liveTask = (key: string, title: string, when: Date, status: 'done' | 'needs_attention' = 'done') =>
+    inCompany(t, t.seed.a.companyId, (tx) =>
+      createLiveTask(
+        tx,
+        agentCtx(t.seed.a.companyId),
+        {
+          agent: 'front_desk',
+          kind: 'call',
+          title,
+          step: { type: 'front_desk_call', result: { seconds: 30, bookings: 0, spam: 0 } },
+          status,
+          idempotencyKey: key,
+        },
+        when,
+      ),
+    );
+
+  test('a live task shows only its finished row, with taskMode live', async () => {
+    const live = await liveTask('fd-call:feed-1', 'Answered a call', at(1));
+    const rows = (await ownerFeed()).filter((r) => r.taskId === live.taskId);
+    expect(rows.map((r) => r.kind)).toEqual(['finished']);
+    expect(rows[0]!.taskMode).toBe('live');
+    expect(rows[0]!.closedLater).toBe(false);
+  });
+
+  test('a live task needing attention shows its step_attention row only', async () => {
+    const live = await liveTask('fd-call:feed-2', 'Took a message', at(1), 'needs_attention');
+    const rows = (await ownerFeed()).filter((r) => r.taskId === live.taskId);
+    expect(rows.map((r) => r.kind)).toEqual(['step_attention']);
+  });
+
+  test('paging with limit 2 over live and draft tasks has no short page and no repeats', async () => {
+    t.clock.set(at(0));
+    const draft = await newTask(t, 'a');
+    await addEvent(draft.taskId, 'step_done', at(2));
+    await liveTask('fd-call:feed-3', 'Answered a call', at(3));
+    await liveTask('fd-call:feed-4', 'Spam call blocked', at(4));
+    await liveTask('fd-call:feed-5', 'Took a message', at(5));
+
+    const all = await ownerFeed();
+    expect(all.some((r) => r.taskMode === 'live' && (r.kind === 'created' || r.kind === 'step_done'))).toBe(false);
+    expect(all.find((r) => r.taskId === draft.taskId)!.taskMode).not.toBe('live');
+
+    const seen: string[] = [];
+    let cursor: FeedCursor | null = null;
+    for (let i = 0; i < all.length; i += 2) {
+      const page: FeedRow[] = await ownerFeed({ limit: 2, cursor });
+      expect(page).toHaveLength(Math.min(2, all.length - i));
+      seen.push(...page.map((r) => r.id));
+      const last = page[page.length - 1]!;
+      cursor = { at: last.at, rank: feedRank(last.kind), id: last.id };
+    }
+    expect(seen).toEqual(all.map((r) => r.id));
+    expect(new Set(seen).size).toBe(seen.length);
   });
 });
 

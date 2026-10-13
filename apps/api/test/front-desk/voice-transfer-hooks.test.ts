@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import twilio from 'twilio';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { calls, companyPhoneNumbers, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
+import { agentSettings, calls, companyPhoneNumbers, companySettings, conversations, conversationTurns, encrypt, memberships, textingRegistrations, withTenant, type TenantContext } from '@roofline/db';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
 
 /*
@@ -98,6 +98,58 @@ const relayFields = (data: string | null, to = A_NUMBER): Record<string, string>
 });
 
 describe('POST /hooks/twilio/voice-transfer/after-relay', () => {
+  async function callWithConversation() {
+    const call = await seedCall();
+    const conversationId = await withTenant(t.deps.pools, ctxOf('a'), async (tx) => {
+      const [conv] = await tx
+        .insert(conversations)
+        .values({ companyId: idOf('a'), channel: 'voice', phoneE164: CALLER, companyNumberE164: A_NUMBER })
+        .returning({ id: conversations.id });
+      await tx.update(calls).set({ conversationId: conv!.id }).where(eq(calls.id, call.id));
+      return conv!.id;
+    });
+    return conversationId;
+  }
+  const turnsOf = (conversationId: string) =>
+    withTenant(t.deps.pools, ctxOf('a'), (tx) => tx.select().from(conversationTurns).where(eq(conversationTurns.conversationId, conversationId)));
+
+  test('a model_failure hand-off writes the marker turn; reason asked writes none', async () => {
+    await seedTeam();
+    const conversationId = await callWithConversation();
+    await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'asked')));
+    expect(await turnsOf(conversationId)).toHaveLength(0);
+    await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'model_failure')));
+    const turns = await turnsOf(conversationId);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ speaker: 'system', route: 'transfer' });
+    expect(turns[0]!.guardHits).toContain('model_failure');
+  });
+
+  test('a repeated model_failure after-relay keeps one marker turn and still dials the team', async () => {
+    await seedTeam();
+    const conversationId = await callWithConversation();
+    const first = await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'model_failure')));
+    const second = await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'model_failure')));
+    expect(first.status).toBe(200);
+    expect(first.text).toContain('<Dial');
+    expect(second.status).toBe(200);
+    expect(second.text).toContain('<Dial');
+    expect((await turnsOf(conversationId)).filter((t) => t.guardHits?.includes('model_failure'))).toHaveLength(1);
+  });
+
+  test('a model_failure marker lands after an existing turn at position 0', async () => {
+    await seedTeam();
+    const conversationId = await callWithConversation();
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.insert(conversationTurns).values({ companyId: idOf('a'), conversationId, position: 0, speaker: 'caller', text: 'Hello' }),
+    );
+    const res = await post(`${PREFIX}/after-relay`, relayFields(handoff('transfer', 'model_failure')));
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<Dial');
+    const marker = (await turnsOf(conversationId)).find((x) => x.guardHits?.includes('model_failure'));
+    expect(marker?.position).toBe(1);
+  });
+
   test('after-relay with a transfer in work hours dials every on-call member with a whisper URL', async () => {
     await seedTeam();
     const call = await seedCall();
@@ -120,6 +172,63 @@ describe('POST /hooks/twilio/voice-transfer/after-relay', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain(`>${TEAM_1}</Number>`);
     expect(res.text).not.toContain(TEAM_2);
+    expect(res.text).toContain(`rest=${t.seed.a.office.userId}`);
+    expect((await callRow()).status).toBe('ringing_team');
+  });
+
+  test('after-relay out of hours: an urgent person-ask rings on-call staff, a non-urgent one takes a message', async () => {
+    t.clock.set(AFTER_HOURS);
+    await seedTeam();
+    await seedCall();
+    const urgent = await post(`${PREFIX}/after-relay`, relayFields(JSON.stringify({ kind: 'transfer', reason: 'asked', urgent: true })));
+    expect(urgent.status).toBe(200);
+    expect(urgent.text).toContain('<Dial');
+    expect(urgent.text).toContain(`>${TEAM_1}</Number>`);
+    const calm = await post(`${PREFIX}/after-relay`, relayFields(JSON.stringify({ kind: 'transfer', reason: 'asked', urgent: false })));
+    expect(calm.text).not.toContain('<Dial');
+    expect(calm.text).toContain('name="mode" value="message_only"');
+    const missing = await post(`${PREFIX}/after-relay`, relayFields(JSON.stringify({ kind: 'transfer', reason: 'asked' })));
+    expect(missing.text).toContain('name="mode" value="message_only"');
+    const stringy = await post(`${PREFIX}/after-relay`, relayFields(JSON.stringify({ kind: 'transfer', reason: 'asked', urgent: 'true' })));
+    expect(stringy.text).toContain('name="mode" value="message_only"');
+  });
+
+  test("after-relay out of hours: a non-urgent hand-off rings on-call when the call's conversation already has an urgent message (final review RC-3)", async () => {
+    t.clock.set(AFTER_HOURS);
+    await seedTeam();
+    const call = await seedCall();
+    const calm = relayFields(JSON.stringify({ kind: 'transfer', reason: 'asked', urgent: false }));
+    const conversationId = await withTenant(t.deps.pools, ctxOf('a'), async (tx) => {
+      const [conv] = await tx
+        .insert(conversations)
+        .values({ companyId: idOf('a'), channel: 'voice', customerId: null, phoneE164: CALLER, companyNumberE164: A_NUMBER, status: 'active' })
+        .returning({ id: conversations.id });
+      await tx.update(calls).set({ conversationId: conv!.id }).where(eq(calls.id, call.id));
+      return conv!.id;
+    });
+    // No urgent message yet: a message, as before.
+    expect((await post(`${PREFIX}/after-relay`, calm)).text).toContain('name="mode" value="message_only"');
+
+    // A failed urgent take_message is not a notice either.
+    const turn = (position: number, ok: boolean) =>
+      withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+        tx.insert(conversationTurns).values({
+          companyId: idOf('a'),
+          conversationId,
+          position,
+          speaker: 'assistant',
+          text: '',
+          toolCalls: [{ name: 'take_message', input: { reason: 'Leak', urgent: true }, result: ok ? 'ok' : 'failed', ok }],
+        }),
+      );
+    await turn(0, false);
+    expect((await post(`${PREFIX}/after-relay`, calm)).text).toContain('name="mode" value="message_only"');
+
+    // The urgent message was taken (the caller pressed 0 while it was in flight): on-call staff are rung.
+    await turn(1, true);
+    const res = await post(`${PREFIX}/after-relay`, calm);
+    expect(res.text).toContain('<Dial');
+    expect(res.text).toContain(`>${TEAM_1}</Number>`);
     expect(res.text).toContain(`rest=${t.seed.a.office.userId}`);
     expect((await callRow()).status).toBe('ringing_team');
   });
@@ -213,6 +322,15 @@ describe('POST /hooks/twilio/voice-transfer/after-dial', () => {
     expect(row.transferResult).toBe('answered');
   });
 
+  test('after-dial answered queues fd-after-call once', async () => {
+    await seedCall();
+    t.jobs.sent.length = 0;
+    await post(`${PREFIX}/after-dial?mode=transfer`, dialFields('completed'));
+    const queued = t.jobs.sent.filter((j) => j.name === 'fd-after-call');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({ data: { companyId: idOf('a'), callSid: CALL_SID }, singletonKey: `fd-after-call:${CALL_SID}`, startAfter: 5 });
+  });
+
   test('after-dial no answer returns to the relay in message_only mode', async () => {
     const call = await seedCall();
     const res = await post(`${PREFIX}/after-dial?mode=transfer`, dialFields('no-answer'));
@@ -249,9 +367,26 @@ describe('POST /hooks/twilio/voice-transfer/after-dial', () => {
 
   test('after-dial ring-first no answer hands the call to the Front Desk with the disclosure', async () => {
     await seedCall();
+    await withTenant(t.deps.pools, ctxOf('a'), (tx) =>
+      tx.update(companySettings).set({ frontDeskEnabled: true }).where(eq(companySettings.companyId, idOf('a'))),
+    );
     const res = await post(`${PREFIX}/after-dial?mode=ring_first`, dialFields('busy'));
     expect(res.text).toContain('<ConversationRelay');
     expect(res.text).toContain('welcomeGreetingInterruptible="none"');
     expect(res.text).not.toContain('message_only');
+  });
+  test('after-dial ring-first no answer while Front Desk is paused goes to voicemail, never the AI (A1)', async () => {
+    await seedCall();
+    await withTenant(t.deps.pools, ctxOf('a'), async (tx) => {
+      await tx.update(companySettings).set({ frontDeskEnabled: true }).where(eq(companySettings.companyId, idOf('a')));
+      // Paused while the team was ringing.
+      await tx.insert(agentSettings).values({ companyId: idOf('a'), agent: 'front_desk', pausedAt: new Date() });
+    });
+    const res = await post(`${PREFIX}/after-dial?mode=ring_first`, dialFields('no-answer'));
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<Record maxLength="120" playBeep="true"/>');
+    expect(res.text).not.toContain('<ConversationRelay');
+    // Not made relay-bound: no relay slot is held for it.
+    expect((await callRow()).status).not.toBe('ringing');
   });
 });

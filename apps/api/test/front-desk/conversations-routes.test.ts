@@ -16,7 +16,7 @@ import {
 import type { ConversationDetail, ConversationPage } from '@roofline/shared';
 import { Actors, inCompany, NO_UUID, NOT_FOUND } from '../crm-helpers.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from '../helpers.ts';
-import { DAYTIME, HOUR, OPTED_OUT } from '../sms-helpers.ts';
+import { DAYTIME, HOUR, NO_MOBILE, OPTED_OUT } from '../sms-helpers.ts';
 
 /*
  * D1 Task 18, conversations: the inbox list, detail, reply (through the send gate), handling and read.
@@ -28,7 +28,10 @@ const TOKEN = 'test-subaccount-token-a';
 const TEXTABLE = '+14025550101';
 const OPTED_OUT_NUMBER = '+14025550103';
 const UNKNOWN_NUMBER = '+14025550777';
+const SECOND_NUMBER = '+14025550104';
 const BASE = '/api/conversations';
+/** 02:00 on a Wednesday in Chicago: inside quiet hours everywhere. */
+const NIGHT = new Date('2026-10-14T07:00:00.000Z');
 
 let t: TestApp;
 let who: Actors;
@@ -254,6 +257,202 @@ describe('GET /api/conversations/:id', () => {
     expect(detail.calls).toHaveLength(2);
   });
 
+  test('the list marks a conversation urgent only for a successful urgent take_message (final review RC-3)', async () => {
+    const owner = await who.as('owner');
+    const failed = await seedConversation({ channel: 'voice' });
+    await seedTurn(failed, 0, { toolCalls: [{ name: 'take_message', input: { reason: 'Leak', urgent: true }, result: 'failed', ok: false }] });
+    await seedTurn(failed, 2, { toolCalls: [{ name: 'take_message', ok: false, input: { urgent: true } } as ToolCallRecord] });
+    const taken = await seedConversation({ channel: 'voice' });
+    await seedTurn(taken, 0, { toolCalls: [{ name: 'take_message', ok: true, input: { urgent: true } } as ToolCallRecord] });
+    const page = (await owner.get(BASE)).body as ConversationPage;
+    expect(page.items.find((i) => i.id === failed)!.urgent).toBe(false);
+    expect(page.items.find((i) => i.id === taken)!.urgent).toBe(true);
+  });
+
+  test("a message the caller left shows its words on the card, also with no customer; a redacted one keeps the plain label", async () => {
+    const owner = await who.as('owner');
+    const convo = await seedConversation({ channel: 'voice' });
+    const call = await seedCall(convo, { transcriptStored: true });
+    await seedTurn(convo, 1, {
+      text: 'I will pass that on.',
+      callId: call,
+      toolCalls: [{ name: 'take_message', input: { reason: 'Gutter fell off the north side', urgent: false }, result: 'ok', ok: true }],
+    });
+    await seedTurn(convo, 2, { text: '', callId: call, toolCalls: [{ name: 'take_message', ok: true, input: { urgent: true } } as ToolCallRecord] });
+    const detail = (await owner.get(`${BASE}/${convo}`)).body as ConversationDetail;
+    expect(detail.turns[0]!.actions[0]!.label).toBe('Took a message for the team: Gutter fell off the north side');
+    expect(detail.turns[1]!.actions[0]!.label).toBe('Took a message for the team');
+  });
+
+  test('a text conversation merges its texts with the turns in time order, without repeating what a turn shows (review note 20)', async () => {
+    const owner = await who.as('owner');
+    const customerId = await seedCustomer('a', { name: 'Pat Texter', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId });
+    const at = (m: number) => new Date(Date.UTC(2026, 9, 12, 15, m));
+    const text = (direction: 'in' | 'out', body: string, m: number, o: { dedupeKey?: string; status?: 'received' | 'sent' | 'blocked' } = {}) =>
+      inCompany(t, idA(), (tx) =>
+        tx.insert(messages).values({
+          companyId: idA(),
+          customerId,
+          conversationId: convo,
+          channel: 'sms',
+          direction,
+          purpose: direction === 'out' ? 'informational' : null,
+          body,
+          status: o.status ?? (direction === 'in' ? 'received' : 'sent'),
+          dedupeKey: o.dedupeKey ?? null,
+          createdAt: at(m),
+        }),
+      );
+    const turn = (position: number, speaker: 'caller' | 'assistant', body: string, m: number) =>
+      inCompany(t, idA(), (tx) =>
+        tx.insert(conversationTurns).values({ companyId: idA(), conversationId: convo, position, speaker, text: body, at: at(m) }),
+      );
+    // The assistant took a turn for the first text and answered it; both also sit in messages.
+    await text('in', 'Can you come Thursday?', 0);
+    await turn(1, 'caller', 'Can you come Thursday?', 1);
+    await text('out', 'Yes, Thursday works.', 2, { dedupeKey: 'fd-text:x' });
+    await turn(2, 'assistant', 'Yes, Thursday works.', 2);
+    // Then the team took over: a staff reply, a text the assistant never saw, and a reply that was blocked.
+    await text('out', 'This is Sam, I will bring a ladder.', 10, { dedupeKey: 'fd-reply:y' });
+    await text('in', 'Great, thanks', 11);
+    await text('out', 'Never sent', 12, { status: 'blocked', dedupeKey: 'fd-reply:z' });
+
+    const res = await owner.get(`${BASE}/${convo}`);
+    expect(res.status).toBe(200);
+    const detail = res.body as ConversationDetail;
+    expect(detail.turns.map((x) => [x.speaker, x.text])).toEqual([
+      ['caller', 'Can you come Thursday?'],
+      ['assistant', 'Yes, Thursday works.'],
+      ['team', 'This is Sam, I will bring a ladder.'],
+      ['caller', 'Great, thanks'],
+    ]);
+    expect(detail.turns.map((x) => x.position)).toEqual([1, 2, 0, 0]);
+  });
+
+  /** A text thread: `text` writes a messages row, `turn` a text turn (callId null), both at minute `m` (seconds `s`). */
+  async function smsThread() {
+    const customerId = await seedCustomer('a', { name: 'Pat Texter', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId });
+    const at = (m: number, s = 0, ms = 0) => new Date(Date.UTC(2026, 9, 12, 15, m, s, ms));
+    const text = (direction: 'in' | 'out', body: string, m: number, o: { dedupeKey?: string; s?: number; ms?: number } = {}) =>
+      inCompany(t, idA(), (tx) =>
+        tx.insert(messages).values({
+          companyId: idA(),
+          customerId,
+          conversationId: convo,
+          channel: 'sms',
+          direction,
+          purpose: direction === 'out' ? 'informational' : null,
+          body,
+          status: direction === 'in' ? 'received' : 'sent',
+          dedupeKey: o.dedupeKey ?? null,
+          createdAt: at(m, o.s ?? 0, o.ms ?? 0),
+        }),
+      );
+    let position = 0;
+    const turn = (speaker: 'caller' | 'assistant', body: string, m: number) =>
+      inCompany(t, idA(), (tx) =>
+        tx.insert(conversationTurns).values({ companyId: idA(), conversationId: convo, position: ++position, speaker, text: body, at: at(m) }),
+      );
+    const detail = async () => {
+      const res = await (await who.as('owner')).get(`${BASE}/${convo}`);
+      expect(res.status).toBe(200);
+      return res.body as ConversationDetail;
+    };
+    const lines = async () => (await detail()).turns.map((x) => [x.speaker, x.text]);
+    return { text, turn, lines, detail };
+  }
+
+  test('a repeated text sent while the team is handling (no turn for it) is still shown (final review)', async () => {
+    const { text, turn, lines } = await smsThread();
+    await text('in', 'Yes', 0);
+    await turn('caller', 'Yes', 1);
+    await text('out', 'Great, see you Thursday.', 2, { dedupeKey: 'fd-text:a' });
+    await turn('assistant', 'Great, see you Thursday.', 2);
+    await text('in', 'Yes', 10);
+    expect(await lines()).toEqual([
+      ['caller', 'Yes'],
+      ['assistant', 'Great, see you Thursday.'],
+      ['caller', 'Yes'],
+    ]);
+  });
+
+  test('a short text is not hidden inside the words of a longer caller turn ("ok" in "look", "C" in "Can") (final review)', async () => {
+    const { text, turn, lines } = await smsThread();
+    await text('in', 'Can you look at my roof?', 0);
+    await turn('caller', 'Can you look at my roof?', 1);
+    await text('in', 'ok', 5);
+    await text('in', 'C', 6);
+    expect(await lines()).toEqual([
+      ['caller', 'Can you look at my roof?'],
+      ['caller', 'ok'],
+      ['caller', 'C'],
+    ]);
+  });
+
+  test('a photo-only text inside retention reads as a text with no words, not as removed by retention (final review)', async () => {
+    const { text, detail } = await smsThread();
+    await text('in', '', 0);
+    const shown = (await detail()).turns;
+    expect(shown.map((x) => [x.speaker, x.text, x.noWords])).toEqual([['caller', null, true]]);
+  });
+
+  test('an empty text past the retention period reads as removed by retention (final review)', async () => {
+    const { text, detail } = await smsThread();
+    await text('in', '', 0);
+    t.clock.set(new Date(DAYTIME.getTime() + 400 * 24 * HOUR));
+    const shown = (await detail()).turns;
+    expect(shown.map((x) => [x.speaker, x.text, x.noWords])).toEqual([['caller', null, undefined]]);
+  });
+
+  test('a turn answering several texts, and a reply cut short to fit, show each text once (final review)', async () => {
+    const { text, turn, lines } = await smsThread();
+    await text('in', 'Hi', 0);
+    await text('in', 'My  roof leaks', 0, { s: 30 });
+    await turn('caller', 'Hi\nMy roof leaks', 1);
+    await turn('assistant', 'Sorry to hear that. We can come Friday. Here is a lot more detail.', 2);
+    await text('out', 'Sorry to hear that. We can come Friday.', 2, { dedupeKey: 'fd-text:b' });
+    await text('in', 'Hi', 3);
+    expect(await lines()).toEqual([
+      ['caller', 'Hi\nMy roof leaks'],
+      ['assistant', 'Sorry to hear that. We can come Friday. Here is a lot more detail.'],
+      ['caller', 'Hi'],
+    ]);
+  });
+
+  test('a reply backdated to just after the text it answers (a newer text was pending) shows once (final review RC-1 #7)', async () => {
+    const { text, turn, lines } = await smsThread();
+    await text('in', 'Do you fix hail damage?', 0);
+    await turn('caller', 'Do you fix hail damage?', 1);
+    await text('in', 'Also gutters', 1, { s: 30 });
+    await turn('assistant', 'Yes, we repair hail damage.', 2);
+    // texts.ts stamps the reply lastUnanswered.createdAt + 1 ms, before its own assistant turn.
+    await text('out', 'Yes, we repair hail damage.', 0, { ms: 1, dedupeKey: 'fd-text:c' });
+    expect(await lines()).toEqual([
+      ['caller', 'Do you fix hail damage?'],
+      ['caller', 'Also gutters'],
+      ['assistant', 'Yes, we repair hail damage.'],
+    ]);
+  });
+
+  test('a voice conversation never pulls in texts', async () => {
+    const owner = await who.as('owner');
+    const convo = await seedConversation({ channel: 'voice' });
+    await inCompany(t, idA(), (tx) =>
+      tx.insert(messages).values({
+        companyId: idA(),
+        conversationId: convo,
+        channel: 'sms',
+        direction: 'in',
+        body: 'stray',
+        status: 'received',
+      }),
+    );
+    const detail = (await owner.get(`${BASE}/${convo}`)).body as ConversationDetail;
+    expect(detail.turns).toEqual([]);
+  });
+
   test('canPlayRecording per role (owner true, rep own-customer true, rep transferred call false)', async () => {
     const rep = await who.as('rep');
     const owner = await who.as('owner');
@@ -286,13 +485,13 @@ describe('GET /api/conversations/:id after retention', () => {
 });
 
 describe('POST /api/conversations/:id/reply', () => {
-  test('reply goes through the gate as informational, sets handledBy team and teamUntil = now+2h, message row queued', async () => {
+  test('reply goes through the gate as informational and is sent; it does not change who is handling', async () => {
     const owner = await who.as('owner');
     const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
     const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: TEXTABLE, unread: 1 });
     const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: '  We can come Friday.  ' });
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('queued');
+    expect(res.body).toEqual({ id: expect.any(String), status: 'sent', scheduledFor: null });
     const rows = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.conversationId, convo)));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -301,13 +500,42 @@ describe('POST /api/conversations/:id/reply', () => {
       purpose: 'informational',
       body: 'We can come Friday.',
       toE164: TEXTABLE,
+      status: 'sent',
     });
     expect(rows[0]!.dedupeKey).toMatch(/^fd-reply:/);
     expect(t.sms.sent).toHaveLength(1);
     expect(t.sms.sent[0]).toMatchObject({ to: TEXTABLE, body: 'We can come Friday.' });
     const [row] = await inCompany(t, idA(), (tx) => tx.select().from(conversations).where(eq(conversations.id, convo)));
-    expect(row!.handledBy).toBe('team');
-    expect(row!.teamUntil?.toISOString()).toBe(new Date(DAYTIME.getTime() + 2 * HOUR).toISOString());
+    // The 2-hour quiet after a team text comes from the message itself (texts.ts), not from a handover.
+    expect(row!.handledBy).toBe('assistant');
+    expect(row!.teamUntil).toBeNull();
+  });
+
+  test('reply goes to the number that texted when it is one of the customer\'s numbers', async () => {
+    const owner = await who.as('owner');
+    const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
+    await inCompany(t, idA(), (tx) =>
+      tx
+        .update(customers)
+        .set({ phones: [{ e164: TEXTABLE, label: 'mobile', primary: true }, { e164: SECOND_NUMBER, label: 'mobile', primary: false }] })
+        .where(eq(customers.id, customer)),
+    );
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: SECOND_NUMBER });
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'We can come Friday.' });
+    expect(res.status).toBe(200);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.sms.sent[0]).toMatchObject({ to: SECOND_NUMBER });
+    const [msg] = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.id, res.body.id)));
+    expect(msg!.toE164).toBe(SECOND_NUMBER);
+  });
+
+  test('reply from a number that is not the customer\'s goes to their primary number', async () => {
+    const owner = await who.as('owner');
+    const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: SECOND_NUMBER });
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'We can come Friday.' });
+    expect(res.status).toBe(200);
+    expect(t.sms.sent[0]).toMatchObject({ to: TEXTABLE });
   });
 
   test('reply validates the body and only works on texts', async () => {
@@ -324,7 +552,7 @@ describe('POST /api/conversations/:id/reply', () => {
     expect(t.sms.sent).toHaveLength(0);
   });
 
-  test('reply to a blocked/unsubscribed customer is not sent', async () => {
+  test('reply to a blocked/unsubscribed customer is a 422 with the reason; nothing is kept or handed over', async () => {
     const owner = await who.as('owner');
     const customer = await seedCustomer('a', { name: 'Pia Customer', phone: OPTED_OUT_NUMBER });
     await inCompany(t, idA(), async (tx) => {
@@ -332,12 +560,54 @@ describe('POST /api/conversations/:id/reply', () => {
     });
     const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: OPTED_OUT_NUMBER });
     const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'Hello again' });
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('blocked');
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: OPTED_OUT });
     expect(t.sms.sent).toHaveLength(0);
-    const [row] = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.id, res.body.id)));
-    expect(row).toMatchObject({ status: 'blocked' });
-    expect(row!.blockReason).toBe(OPTED_OUT);
+    const rows = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.conversationId, convo)));
+    expect(rows).toHaveLength(0);
+    const [row] = await inCompany(t, idA(), (tx) => tx.select().from(conversations).where(eq(conversations.id, convo)));
+    expect(row).toMatchObject({ handledBy: 'assistant', teamUntil: null });
+  });
+
+  test('reply to a customer with no mobile number is a 422 saying so', async () => {
+    const owner = await who.as('owner');
+    const customer = await seedCustomer('a', { name: 'Lin Customer' });
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: TEXTABLE });
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'Hello' });
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: NO_MOBILE });
+    expect(t.sms.sent).toHaveLength(0);
+  });
+
+  test('reply in quiet hours is scheduled: 200 with scheduledFor', async () => {
+    const owner = await who.as('owner');
+    t.clock.set(NIGHT);
+    const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: TEXTABLE });
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'We can come Friday.' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: expect.any(String), status: 'scheduled' });
+    expect(new Date(res.body.scheduledFor as string).getTime()).toBeGreaterThan(NIGHT.getTime());
+    expect(t.sms.sent).toHaveLength(0);
+    const [msg] = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.id, res.body.id)));
+    expect(msg).toMatchObject({ status: 'scheduled' });
+    expect(msg!.scheduledFor?.toISOString()).toBe(res.body.scheduledFor);
+    const [row] = await inCompany(t, idA(), (tx) => tx.select().from(conversations).where(eq(conversations.id, convo)));
+    expect(row).toMatchObject({ handledBy: 'assistant', teamUntil: null });
+  });
+
+  test('reply the texting service refuses is a 422, not a success', async () => {
+    const owner = await who.as('owner');
+    const customer = await seedCustomer('a', { name: 'Nina Customer', phone: TEXTABLE });
+    const convo = await seedConversation({ channel: 'sms', customerId: customer, phone: TEXTABLE });
+    t.sms.failNext(1);
+    const res = await owner.post(`${BASE}/${convo}/reply`).send({ body: 'We can come Friday.' });
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: 'We could not send this text.' });
+    const [msg] = await inCompany(t, idA(), (tx) => tx.select().from(messages).where(eq(messages.conversationId, convo)));
+    expect(msg).toMatchObject({ status: 'failed' });
+    const [row] = await inCompany(t, idA(), (tx) => tx.select().from(conversations).where(eq(conversations.id, convo)));
+    expect(row).toMatchObject({ handledBy: 'assistant', teamUntil: null });
   });
 });
 

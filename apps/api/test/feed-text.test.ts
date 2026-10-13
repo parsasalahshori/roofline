@@ -14,6 +14,7 @@ function row(over: Partial<FeedRow>): FeedRow {
     taskKind: 'storm_plan',
     taskTitle: 'a storm plan',
     taskStatus: 'draft',
+    taskMode: 'needs_approval',
     subjectType: 'job',
     subjectId: '00000000-0000-4000-8000-000000000003',
     stepType: null,
@@ -71,14 +72,64 @@ describe('feedSentence', () => {
     );
   });
 
-  test('partly approved shows the count of the plan', () => {
+  test('partly approved reads as steps sent to the owner', () => {
     expect(feedSentence(row({ kind: 'partly_approved', actorName: 'Pat', data: { approvedSteps: 2, totalSteps: 3 } }))).toBe(
-      'Pat approved 2 of 3 steps',
+      'Pat sent 1 step to the owner',
     );
+    expect(feedSentence(row({ kind: 'partly_approved', actorName: 'Pat', data: { approvedSteps: 0, totalSteps: 3 } }))).toBe(
+      'Pat sent 3 steps to the owner',
+    );
+    expect(
+      feedSentence(row({ kind: 'partly_approved', actorName: 'Pat', data: { approvedSteps: 1, totalSteps: 3, forwardedSteps: 1 } })),
+    ).toBe('Pat sent 1 step to the owner');
+    expect(
+      feedSentence(row({ kind: 'partly_approved', actorName: 'Pat', data: { approvedSteps: 0, totalSteps: 3, forwardedSteps: 2 } })),
+    ).toBe('Pat sent 2 steps to the owner');
+  });
+
+  test('approving with every step switched off never says 0 steps', () => {
+    expect(feedSentence(row({ kind: 'approved', actorName: 'Pat', data: { approvedSteps: 0, totalSteps: 2 } }))).toBe(
+      'Pat approved the plan with every step switched off',
+    );
+  });
+
+  test('a declined step reads as a step, not the plan', () => {
+    expect(feedSentence(row({ kind: 'declined', actorName: 'Lee', stepType: 'send_sms_batch', data: { skippedSteps: 1 } }))).toBe(
+      'Lee declined a step',
+    );
+  });
+
+  test('a task created by a person reads as a re-run', () => {
+    expect(feedSentence(row({ kind: 'created', actorName: 'Pat', taskTitle: 'Storm plan: Elm' }))).toBe('Pat re-ran Storm plan: Elm');
+  });
+
+  test('finished steps show their unit count with the unit word', () => {
+    const done = (stepType: string, units: number) => feedSentence(row({ kind: 'step_done', stepType, data: { units } }));
+    expect(done('send_email_batch', 212)).toBe('Emails: 212 sent');
+    expect(done('build_routes', 3)).toBe('Routes: 3 built');
+    expect(done('create_ad_campaign', 1)).toBe('Campaigns: 1 created');
+    expect(done('send_proposal', 1)).toBe('Proposals: 1 sent');
   });
 
   test('declined names who declined the plan', () => {
     expect(feedSentence(row({ kind: 'declined', actorName: 'Lee', data: { skippedSteps: 2 } }))).toBe('Lee declined the plan');
+  });
+
+  test('a superseded draft reads as a replacement', () => {
+    expect(
+      feedSentence(
+        row({
+          kind: 'declined',
+          actorName: null,
+          taskTitle: 'Hail up to 1.75" near Plano',
+          data: { skippedSteps: 5, replacedByTaskId: '00000000-0000-4000-8000-000000000009' },
+        }),
+      ),
+    ).toBe('Storm Scout replaced Hail up to 1.75" near Plano with a newer plan');
+  });
+
+  test('a declined row without a replacement id still reads as a decline', () => {
+    expect(feedSentence(row({ kind: 'declined', actorName: null, data: { skippedSteps: 2 } }))).toBe('Someone declined the plan');
   });
 
   test('a send_sms_batch step reads its sent count from the stored result', () => {
@@ -129,6 +180,51 @@ describe('feedSentence', () => {
         expect(sentence.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe('Front Desk live rows', () => {
+  const live = (over: Partial<FeedRow>) =>
+    row({ agent: 'front_desk', taskMode: 'live', kind: 'finished', taskStatus: 'done', data: { status: 'done' }, ...over });
+
+  test('a call reads as one sentence with the first name', () => {
+    expect(feedSentence(live({ taskTitle: 'Answered a call', customerFirstName: 'Maria' }))).toBe('Front Desk answered a call for Maria');
+  });
+
+  test('a message and a transfer', () => {
+    expect(feedSentence(live({ taskTitle: 'Took a message', customerFirstName: 'Maria' }))).toBe('Front Desk took a message for Maria');
+    expect(feedSentence(live({ taskTitle: 'Transferred a call', customerFirstName: 'Maria' }))).toBe('Front Desk transferred a call for Maria');
+  });
+
+  test('texts use "from" and the count when the title has one', () => {
+    expect(feedSentence(live({ taskTitle: 'Answered 3 texts', customerFirstName: 'Maria' }))).toBe('Front Desk answered 3 texts from Maria');
+    expect(feedSentence(live({ taskTitle: 'Answered 1 text', customerFirstName: 'Maria' }))).toBe('Front Desk answered 1 text from Maria');
+    expect(feedSentence(live({ taskTitle: 'Answered 1 text' }))).toBe('Front Desk answered 1 text');
+    expect(feedSentence(live({ taskTitle: 'Answered texts', customerFirstName: 'Maria' }))).toBe('Front Desk answered texts from Maria');
+  });
+
+  test('a spam call names no one', () => {
+    expect(feedSentence(live({ taskTitle: 'Spam call blocked', customerFirstName: 'Maria' }))).toBe('Front Desk blocked a spam call');
+  });
+
+  test('no first name drops the for-clause', () => {
+    expect(feedSentence(live({ taskTitle: 'Answered a call', customerFirstName: null }))).toBe('Front Desk answered a call');
+  });
+
+  test('a needs-attention row reads the same way', () => {
+    expect(feedSentence(live({ kind: 'step_attention', taskTitle: 'Took a message', customerFirstName: 'Maria' }))).toBe(
+      'Front Desk took a message for Maria',
+    );
+  });
+
+  test('a later close reads as done', () => {
+    expect(feedSentence(live({ taskTitle: 'Took a message', closedLater: true }))).toBe('Front Desk: Took a message is done');
+  });
+
+  test('a draft row is unchanged', () => {
+    expect(feedSentence(row({ agent: 'front_desk', kind: 'finished', taskTitle: 'Answered a call', data: { status: 'done' } }))).toBe(
+      'Finished: Answered a call',
+    );
   });
 });
 

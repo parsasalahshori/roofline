@@ -28,6 +28,12 @@ export const FEED_COPY = {
   approved: '{actor} approved {count} {steps}',
   partlyApproved: '{actor} approved {count} of {total} {steps}',
   declined: '{actor} declined the plan',
+  replaced: '{agent} replaced {title} with a newer plan',
+  declinedStep: '{actor} declined a step',
+  approvedNone: '{actor} approved the plan with every step switched off',
+  sentToOwner: '{actor} sent {count} {steps} to the owner',
+  reran: '{actor} re-ran {title}',
+  stepCount: '{label}: {count} {verb}',
   textsSent: 'Texts: {count} sent',
   textsSentPlain: 'Texts sent',
   stepDone: '{agent}: a step finished',
@@ -42,10 +48,43 @@ export const FEED_COPY = {
   waitingAttention: '{agent} needs help: {title}',
   waitingReason: '{sentence}. {reason}',
   fallback: '{agent} has an update: {title}',
+  frontDeskCall: 'Front Desk answered a call',
+  frontDeskTransfer: 'Front Desk transferred a call',
+  frontDeskMessage: 'Front Desk took a message',
+  frontDeskTexts: 'Front Desk answered {count} {texts}',
+  frontDeskTextsPlain: 'Front Desk answered texts',
+  frontDeskSpam: 'Front Desk blocked a spam call',
+  frontDeskFor: ' for {firstName}',
+  frontDeskFrom: ' from {firstName}',
+  liveDone: '{agent}: {title} is done',
 } as const;
 
 /** Words for the step count: "1 step", "3 steps". */
 export const STEP_WORDS = { one: 'step', many: 'steps' } as const;
+
+/** Plural-label and verb per step type for a finished step's unit count (E-M6). */
+const STEP_UNIT_WORDS: Record<string, { label: string; verb: string }> = {
+  send_email_batch: { label: 'Emails', verb: 'sent' },
+  build_routes: { label: 'Routes', verb: 'built' },
+  create_ad_campaign: { label: 'Campaigns', verb: 'created' },
+  send_proposal: { label: 'Proposals', verb: 'sent' },
+};
+
+/** Unit words for Front Desk text counts: "1 text", "3 texts". */
+export const FRONT_DESK_UNIT_WORDS = {
+  front_desk_call: { one: 'call', many: 'calls' },
+  front_desk_texts: { one: 'text', many: 'texts' },
+} as const;
+
+/** The task titles Front Desk live tasks are written with (apps/api/src/agents/front-desk-tasks.ts). */
+const FD_TITLES = {
+  call: 'Answered a call',
+  transfer: 'Transferred a call',
+  message: 'Took a message',
+  spam: 'Spam call blocked',
+  texts: 'Answered texts',
+} as const;
+const FD_TEXTS_COUNTED = /^Answered (\d+) texts?$/;
 
 /** Prefix for a created plan whose title does not already read as "a/an ...". */
 const PLAN_PREFIX = 'a plan: ';
@@ -85,16 +124,51 @@ function finishedSentence(row: FeedRow): string {
   }
 }
 
+/** The one-row sentence for a Front Desk live task, from its title and the customer's first name; null for an unknown title. */
+function frontDeskSentence(row: FeedRow): string | null {
+  const forName = row.customerFirstName ? fill(FEED_COPY.frontDeskFor, { firstName: row.customerFirstName }) : '';
+  const fromName = row.customerFirstName ? fill(FEED_COPY.frontDeskFrom, { firstName: row.customerFirstName }) : '';
+  switch (row.taskTitle) {
+    case FD_TITLES.call:
+      return FEED_COPY.frontDeskCall + forName;
+    case FD_TITLES.transfer:
+      return FEED_COPY.frontDeskTransfer + forName;
+    case FD_TITLES.message:
+      return FEED_COPY.frontDeskMessage + forName;
+    case FD_TITLES.spam:
+      return FEED_COPY.frontDeskSpam;
+    case FD_TITLES.texts:
+      return FEED_COPY.frontDeskTextsPlain + fromName;
+  }
+  const counted = FD_TEXTS_COUNTED.exec(row.taskTitle);
+  if (counted) {
+    const count = Number(counted[1]);
+    const words = FRONT_DESK_UNIT_WORDS.front_desk_texts;
+    return fill(FEED_COPY.frontDeskTexts, { count, texts: count === 1 ? words.one : words.many }) + fromName;
+  }
+  return null;
+}
+
 /** Plain sentence for one feed row. Never includes message text. */
 export function feedSentence(row: FeedRow): string {
   const agent = AGENT_NAMES[row.agent];
+  if (row.taskMode === 'live' && row.agent === 'front_desk') {
+    if (row.kind === 'finished' && row.closedLater === true) return fill(FEED_COPY.liveDone, { agent, title: row.taskTitle });
+    if (row.kind === 'finished' || row.kind === 'step_attention') {
+      const sentence = frontDeskSentence(row);
+      if (sentence !== null) return sentence;
+    }
+  }
   switch (row.kind) {
     case 'created': {
+      // A person (not an agent) creates a task only by re-running an expired plan.
+      if (row.actorName !== null) return fill(FEED_COPY.reran, { actor: row.actorName, title: row.taskTitle });
       const base = fill(FEED_COPY.created, { agent, plan: planPhrase(row.taskTitle) });
       return row.customerFirstName ? base + fill(FEED_COPY.createdFor, { firstName: row.customerFirstName }) : base;
     }
     case 'approved': {
       const count = countOf(row.data.approvedSteps);
+      if (count === 0) return fill(FEED_COPY.approvedNone, { actor: row.actorName ?? SOMEONE });
       return fill(FEED_COPY.approved, {
         actor: row.actorName ?? SOMEONE,
         count,
@@ -104,17 +178,28 @@ export function feedSentence(row: FeedRow): string {
     case 'partly_approved': {
       const count = countOf(row.data.approvedSteps);
       const total = countOf(row.data.totalSteps);
-      return fill(FEED_COPY.partlyApproved, {
+      // forwardedSteps is the count of steps moved to awaiting_owner; total - approved is kept only as a
+      // fallback for events written before it existed.
+      const forwarded =
+        row.data.forwardedSteps !== undefined ? Math.max(1, countOf(row.data.forwardedSteps)) : Math.max(1, total - count);
+      return fill(FEED_COPY.sentToOwner, {
         actor: row.actorName ?? SOMEONE,
-        count,
-        total,
-        steps: total === 1 ? STEP_WORDS.one : STEP_WORDS.many,
+        count: forwarded,
+        steps: forwarded === 1 ? STEP_WORDS.one : STEP_WORDS.many,
       });
     }
     case 'declined':
+      if (row.stepType !== null) return fill(FEED_COPY.declinedStep, { actor: row.actorName ?? SOMEONE });
+      if (row.actorName === null && typeof row.data.replacedByTaskId === 'string') return fill(FEED_COPY.replaced, { agent, title: row.taskTitle });
       return fill(FEED_COPY.declined, { actor: row.actorName ?? SOMEONE });
-    case 'step_done':
-      return row.stepType === 'send_sms_batch' ? textsSentSentence(row) : fill(FEED_COPY.stepDone, { agent });
+    case 'step_done': {
+      if (row.stepType === 'send_sms_batch') return textsSentSentence(row);
+      const words = row.stepType !== null ? STEP_UNIT_WORDS[row.stepType] : undefined;
+      if (words && row.data.units !== undefined) {
+        return fill(FEED_COPY.stepCount, { ...words, count: countOf(row.data.units) });
+      }
+      return fill(FEED_COPY.stepDone, { agent });
+    }
     case 'step_failed':
       return fill(FEED_COPY.stepFailed, { agent });
     case 'step_attention':

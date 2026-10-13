@@ -54,6 +54,52 @@ export async function recordUsage(tx: Tx, ctx: TenantContext, input: NewUsage): 
   return rows.length > 0;
 }
 
+/**
+ * Final review CV#5: the call's `ai_call_minute` row. Unlike `recordUsage`, a later run with more
+ * minutes (a slow relay segment's seconds landed after the first after-call) raises the quantity to
+ * greatest(existing, new), but only while the row is not yet in a meter batch or reported to Stripe;
+ * a batched row never changes. Returns the quantity the row now holds (what was billed).
+ */
+export async function recordCallMinutes(
+  tx: Tx,
+  ctx: TenantContext,
+  i: { callId: string; minutes: number; description: string; at: Date },
+): Promise<number> {
+  await tx
+    .insert(usageEvents)
+    .values({
+      companyId: ctx.companyId,
+      kind: 'ai_call_minute',
+      quantity: i.minutes,
+      unitCostCents: null,
+      refType: 'call',
+      refId: i.callId,
+      description: i.description,
+      at: i.at,
+      createdAt: i.at,
+      updatedAt: i.at,
+    })
+    .onConflictDoUpdate({
+      target: [usageEvents.companyId, usageEvents.kind, usageEvents.refType, usageEvents.refId],
+      targetWhere: sql`${usageEvents.refId} is not null`,
+      set: { quantity: sql`greatest(${usageEvents.quantity}, excluded.quantity)`, updatedAt: i.at },
+      setWhere: and(isNull(usageEvents.meterBatchId), isNull(usageEvents.reportedToStripeAt)),
+    });
+  const [row] = await tx
+    .select({ quantity: usageEvents.quantity })
+    .from(usageEvents)
+    .where(
+      and(
+        eq(usageEvents.companyId, ctx.companyId),
+        eq(usageEvents.kind, 'ai_call_minute'),
+        eq(usageEvents.refType, 'call'),
+        eq(usageEvents.refId, i.callId),
+      ),
+    )
+    .limit(1);
+  return row?.quantity ?? i.minutes;
+}
+
 /** The kinds that feed a Stripe Billing Meter (spec 5.2). Other kinds are invoiced per item instead. */
 const METERED_KINDS = ['sms_segment', 'mms', 'ai_call_minute'] as const;
 

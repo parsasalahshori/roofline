@@ -1,11 +1,14 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   agentCounts,
+  agentTasks,
   agentSettingsInfo,
   breakdownByBaseline,
   companies,
   companySettings,
+  countFrontDeskFollowUps,
   dailyFinished,
+  frontDeskConversationCounts,
   minutesByAgent,
   recentTasks,
   type AgentCounts,
@@ -37,6 +40,8 @@ import {
   type ScreenAgent,
   type TimePeriod,
 } from '@roofline/shared';
+import { can } from '../permissions.ts';
+import { canReview } from '../tasks/service.ts';
 import { gatherRuleFacts } from './rule-facts.ts';
 
 /*
@@ -73,6 +78,7 @@ type Snapshot = {
   counts: Record<string, AgentCounts>;
   settings: Map<string, AgentSettingsInfo>;
   monthMinutes: Record<string, number>;
+  frontDeskRate: { finished: number; succeeded: number };
 };
 
 async function companyFacts(tx: Tx, ctx: TenantContext): Promise<{ zone: string; hourlyRateCents: number }> {
@@ -96,10 +102,11 @@ async function companyFacts(tx: Tx, ctx: TenantContext): Promise<{ zone: string;
 
 async function gather(tx: Tx, ctx: TenantContext, now: Date): Promise<Snapshot> {
   const { zone, hourlyRateCents } = await companyFacts(tx, ctx);
-  const window = metricsWindow(now, zone);
+  const window: MetricsWindow = { ...metricsWindow(now, zone), now };
   const counts = await agentCounts(tx, ctx, window);
   const settingRows = await agentSettingsInfo(tx, ctx);
   const monthMinutes = await minutesByAgent(tx, ctx, periodRange(now, zone, 'month'));
+  const frontDeskRate = await frontDeskConversationCounts(tx, ctx, window);
   return {
     now,
     zone,
@@ -108,6 +115,7 @@ async function gather(tx: Tx, ctx: TenantContext, now: Date): Promise<Snapshot> 
     counts,
     settings: new Map(settingRows.map((row) => [row.agent, row])),
     monthMinutes,
+    frontDeskRate,
   };
 }
 
@@ -137,8 +145,9 @@ function statusOf(agent: ScreenAgent, settings: AgentSettingsInfo | undefined, w
 }
 
 /**
- * One agent's card. `successRate` uses the task model for every agent. Front Desk's rate is meant to
- * read conversations.outcome instead (Ruling AX-D); that lands with D1, so it is not done here yet.
+ * One agent's card. `successRate` uses the task model, except Front Desk (Ruling AX-D): finished conversations
+ * in the last 30 days that were not abandoned and had no model-failure hand-off, null below 5 conversations.
+ * Front Desk's waitingCount also counts open follow-ups (customers it handed a message or a transfer for).
  */
 async function buildCard(tx: Tx, ctx: TenantContext, snap: Snapshot, agent: ScreenAgent): Promise<AgentCard> {
   if (isComingSoon(agent)) return emptyCard(agent);
@@ -149,15 +158,22 @@ async function buildCard(tx: Tx, ctx: TenantContext, snap: Snapshot, agent: Scre
     date,
     finished: finishedByDate.get(date) ?? 0,
   }));
+  const waitingCount =
+    agent === 'front_desk' ? counts.waitingCount + (await countFrontDeskFollowUps(tx, ctx, snap.now)) : counts.waitingCount;
+  let rate = successRate({ done: counts.done30d, partlyDone: counts.partlyDone30d, ran: counts.ran30d });
+  if (agent === 'front_desk') {
+    const { finished, succeeded } = snap.frontDeskRate;
+    rate = finished < 5 ? null : Math.round((succeeded / finished) * 100) / 100;
+  }
   return {
     agent,
-    status: statusOf(agent, snap.settings.get(agent), counts.waitingCount),
+    status: statusOf(agent, snap.settings.get(agent), waitingCount),
     finishedToday: counts.finishedToday,
-    successRate: successRate({ done: counts.done30d, partlyDone: counts.partlyDone30d, ran: counts.ran30d }),
+    successRate: rate,
     notApproved30d: counts.notApproved30d,
     minutesThisMonth: snap.monthMinutes[agent] ?? 0,
     last14Days,
-    waitingCount: counts.waitingCount,
+    waitingCount,
   };
 }
 
@@ -169,7 +185,7 @@ export async function buildOverview(tx: Tx, ctx: TenantContext, now: Date): Prom
   return {
     cards,
     minutesThisMonth: cards.reduce((sum, card) => sum + card.minutesThisMonth, 0),
-    hourlyRateCents: snap.hourlyRateCents,
+    hourlyRateCents: rateFor(ctx, snap),
   };
 }
 
@@ -193,8 +209,38 @@ function runNowOf(agent: ScreenAgent, lastRunNowAt: Date | null): RunNow {
   }
 }
 
-function recentTaskOf(row: RecentTaskRow): RecentTask {
+/** Money figures (S-M4): only readers with view_money_totals get the hourly rate; everyone else gets null. */
+function rateFor(ctx: TenantContext, snap: Snapshot): number | null {
+  return can(ctx, 'view_money_totals') ? snap.hourlyRateCents : null;
+}
+
+/** Where a recent task opens: reviewers open drafts in approvals, anyone else the job, else nowhere. */
+async function recentHrefs(tx: Tx, ctx: TenantContext, rows: RecentTaskRow[]): Promise<Map<string, string | null>> {
+  const hrefs = new Map<string, string | null>();
+  if (rows.length === 0) return hrefs;
+  const subjects = await tx
+    .select({ id: agentTasks.id, subjectType: agentTasks.subjectType, subjectId: agentTasks.subjectId })
+    .from(agentTasks)
+    .where(and(eq(agentTasks.companyId, ctx.companyId), inArray(agentTasks.id, rows.map((row) => row.id))));
+  const subjectOf = new Map(subjects.map((row) => [row.id, row]));
+  for (const row of rows) {
+    const subject = subjectOf.get(row.id);
+    const waiting = row.status === 'draft' || row.status === 'awaiting_owner';
+    hrefs.set(
+      row.id,
+      canReview(ctx) && waiting
+        ? `/approvals/${row.id}`
+        : subject?.subjectType === 'job' && subject.subjectId
+          ? `/jobs/${subject.subjectId}`
+          : null,
+    );
+  }
+  return hrefs;
+}
+
+function recentTaskOf(row: RecentTaskRow, href: string | null): RecentTask {
   return {
+    href,
     id: row.id,
     kind: row.kind,
     status: row.status,
@@ -212,6 +258,7 @@ export async function buildDetail(
   now: Date,
   agent: ScreenAgent,
   period: TimePeriod,
+  transferNames: string[] = [],
 ): Promise<AgentDetail> {
   const snap = await gather(tx, ctx, now);
   const card = await buildCard(tx, ctx, snap, agent);
@@ -228,7 +275,7 @@ export async function buildDetail(
       paused: null,
       runNow: { kind: 'coming_soon' },
       recentTasks: [],
-      hourlyRateCents: snap.hourlyRateCents,
+      hourlyRateCents: rateFor(ctx, snap),
     };
   }
 
@@ -239,8 +286,9 @@ export async function buildDetail(
     units: row.units,
     minutes: row.minutes,
   }));
-  const rules = rulesFor(agent, await gatherRuleFacts(tx, ctx));
+  const rules = rulesFor(agent, await gatherRuleFacts(tx, ctx, transferNames));
   const tasks = await recentTasks(tx, ctx, agent, RECENT_LIMIT);
+  const hrefs = await recentHrefs(tx, ctx, tasks);
 
   return {
     card,
@@ -250,7 +298,7 @@ export async function buildDetail(
     rules,
     paused: !paused ? null : { at: (settings?.pausedAt ?? now).toISOString(), byName: settings?.pausedByName ?? null },
     runNow: runNowOf(agent, settings?.lastRunNowAt ?? null),
-    recentTasks: tasks.map(recentTaskOf),
-    hourlyRateCents: snap.hourlyRateCents,
+    recentTasks: tasks.map((row) => recentTaskOf(row, hrefs.get(row.id) ?? null)),
+    hourlyRateCents: rateFor(ctx, snap),
   };
 }

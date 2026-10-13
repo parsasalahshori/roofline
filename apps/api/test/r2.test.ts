@@ -76,6 +76,31 @@ describe('R2 object store', () => {
     expect((get as Error).message).not.toContain('SECRET');
   });
 
+  it('signedGetUrl presigns a GET in the query string that expires after the given seconds, without a request', async () => {
+    const { seen, store } = setup(() => new Response(null, { status: 200 }));
+    const url = new URL(await store.signedGetUrl(KEY, 300));
+    expect(seen).toHaveLength(0);
+    expect(url.host).toBe('acct123.r2.cloudflarestorage.com');
+    expect(url.pathname).toBe(`/bucket1/${KEY}`);
+    expect(url.searchParams.get('X-Amz-Expires')).toBe('300');
+    expect(url.searchParams.get('X-Amz-Algorithm')).toBe('AWS4-HMAC-SHA256');
+    expect(url.searchParams.get('X-Amz-Credential')?.startsWith('AKIDEXAMPLE/')).toBe(true);
+    expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('delete signs a DELETE; a missing key is fine and a 500 throws a plain message', async () => {
+    const ok = setup(() => new Response(null, { status: 204 }));
+    await ok.store.delete(KEY);
+    expect(ok.seen[0]!.method).toBe('DELETE');
+    expect(new URL(ok.seen[0]!.url).pathname).toBe(`/bucket1/${KEY}`);
+    await setup(() => new Response('nope', { status: 404 })).store.delete(KEY);
+    const failed = await setup(() => new Response('SECRET-PROVIDER-TEXT', { status: 500 }))
+      .store.delete(KEY)
+      .catch((e: Error) => e);
+    expect((failed as Error).message).toContain('500');
+    expect((failed as Error).message).not.toContain('SECRET');
+  });
+
   it('r2For returns null unless all four settings are present, and an R2ObjectStore when they are', () => {
     const full = {
       R2_ACCOUNT_ID: 'acct123',

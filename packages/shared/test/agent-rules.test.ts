@@ -9,6 +9,7 @@ const FRONT_DESK: AgentRuleFacts = {
     canBook: true,
     canConfirm: true,
     canMove: true,
+    canCancel: false,
   },
 };
 const STORM: AgentRuleFacts = {
@@ -23,9 +24,9 @@ describe("storm_scout", () => {
       "When hail of 1 inch or more hits your service area, I draft a storm plan: texts, emails, door-knock routes and ads up to $270 over 7 days.",
     );
     expect(rules[0]!.links).toEqual([
-      { label: "1 inch", href: "/settings/storm-scout" },
-      { label: "$270", href: "/settings/storm-scout" },
-      { label: "7 days", href: "/settings/storm-scout" },
+      { label: "1 inch", href: "/settings/storm" },
+      { label: "$270", href: "/settings/storm" },
+      { label: "7 days", href: "/settings/storm" },
     ]);
   });
   test("fractional threshold is plural", () => {
@@ -89,6 +90,7 @@ describe("front_desk", () => {
         canBook: true,
         canConfirm: false,
         canMove: false,
+        canCancel: false,
       },
     });
     expect(rules[1]!.text).toBe("I can book inspections; I never give prices.");
@@ -101,6 +103,7 @@ describe("front_desk", () => {
         canBook: true,
         canConfirm: true,
         canMove: false,
+        canCancel: false,
       },
     });
     expect(rules[1]!.text).toBe(
@@ -115,6 +118,7 @@ describe("front_desk", () => {
         canBook: true,
         canConfirm: true,
         canMove: true,
+        canCancel: false,
       },
     });
     expect(rules).toHaveLength(2);
@@ -127,6 +131,7 @@ describe("front_desk", () => {
         canBook: false,
         canConfirm: false,
         canMove: false,
+        canCancel: false,
       },
     });
     expect(rules.map((r) => r.text)).toEqual([
@@ -143,11 +148,30 @@ describe("front_desk", () => {
         canBook: false,
         canConfirm: false,
         canMove: false,
+        canCancel: false,
       },
     });
     expect(rules[2]!.text).toBe(
       "I transfer urgent calls to Sam, then Pat, then Lee.",
     );
+  });
+  test("canCancel adds the cancel sentence before the transfer sentence", () => {
+    const rules = rulesFor("front_desk", {
+      frontDesk: {
+        phoneNumber: "(402) 555-0100",
+        transferNames: ["Sam"],
+        canBook: true,
+        canConfirm: true,
+        canMove: true,
+        canCancel: true,
+      },
+    });
+    expect(rules.map((r) => r.text)).toEqual([
+      "I answer every call to (402) 555-0100.",
+      "I can book, confirm and move inspections; I never give prices.",
+      "I can cancel appointments when a customer asks.",
+      "I transfer urgent calls to Sam.",
+    ]);
   });
   test("no front desk facts gives no sentences", () => {
     expect(rulesFor("front_desk", {})).toEqual([]);
@@ -287,6 +311,28 @@ describe("link integrity", () => {
           expect(link.href.startsWith("/settings/")).toBe(true);
         }
       }
+    }
+  });
+});
+
+describe("rep variant (S-M5)", () => {
+  test("rep variant has no budget clause", () => {
+    const rules = rulesFor("storm_scout", {
+      stormScout: { thresholdInches: 1, budgetCents: null, days: 7 },
+    });
+    expect(rules[0]!.text).toBe(
+      "When hail of 1 inch or more hits your service area, I draft a storm plan: texts, emails, door-knock routes and ads over 7 days.",
+    );
+    expect(rules[0]!.text).not.toContain("$");
+    expect(rules[0]!.text).not.toContain("up to");
+    expect(rules[0]!.links.map((l) => l.label)).toEqual(["1 inch", "7 days"]);
+  });
+  test("noLinks gives links [] for every rule", () => {
+    const facts = { ...STORM, ...FRONT_DESK, noLinks: true };
+    for (const agent of ["storm_scout", "estimator", "front_desk"] as const) {
+      const rules = rulesFor(agent, facts);
+      expect(rules.length).toBeGreaterThan(0);
+      expect(rules.every((r) => r.links.length === 0)).toBe(true);
     }
   });
 });

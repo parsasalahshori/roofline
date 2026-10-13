@@ -229,15 +229,6 @@ export const webhookEvents = pgTable(
   (t) => [uniqueIndex('webhook_events_provider_event_uniq').on(t.provider, t.eventId)],
 );
 
-/**
- * Cache of Twilio Lookup line types (global: a number's line type does not depend on the company).
- * Read and written by the system role only.
- */
-export const lineLookups = pgTable('line_lookups', {
-  e164: text('e164').primaryKey(),
-  lineType: text('line_type').notNull(),
-  lookedUpAt: tstz('looked_up_at').notNull().defaultNow(),
-});
 /*
  * Building footprints (spec 3.1, 8): public outlines loaded by the footprint loader job. No company
  * and no RLS: `app_tenant` may read them, only `app_system` writes (migration 0016).
@@ -273,6 +264,15 @@ export const buildingFootprintStates = pgTable(
   (t) => [enumCheck('building_footprint_states', 'status', t.status, FOOTPRINT_STATE_STATUSES)],
 );
 
+/**
+ * Cache of Twilio Lookup line types (global: a number's line type does not depend on the company).
+ * Read and written by the system role only.
+ */
+export const lineLookups = pgTable('line_lookups', {
+  e164: text('e164').primaryKey(),
+  lineType: text('line_type').notNull(),
+  lookedUpAt: tstz('looked_up_at').notNull().defaultNow(),
+});
 /*
  * Storm Scout (spec 3.3, 4.1): hail runs, storms, contours and spotter reports. Public weather
  * data, no company and no RLS: the hail worker (`app_hail`) writes, `app_tenant` reads.

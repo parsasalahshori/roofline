@@ -1,5 +1,5 @@
 import { DEFAULT_FRONT_DESK_VOICE, DEFAULT_WORK_HOURS, type ConsentRegime, type TransferResult, type WorkHours } from '@roofline/shared';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 import { blockedNumbers, calls, companySettings } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { customersWithPhone } from './inbound.ts';
@@ -84,15 +84,6 @@ export async function screeningFacts(
   return { blocked: blocked !== undefined, callsLastHour: recent?.n ?? 0, knownCustomer };
 }
 
-/** Calls of the company with status 'ai' (the company concurrent cap). */
-export async function countLiveAiCalls(tx: Tx, ctx: TenantContext): Promise<number> {
-  const [row] = await tx
-    .select({ n: sql<number>`count(*)::int` })
-    .from(calls)
-    .where(and(eq(calls.companyId, ctx.companyId), eq(calls.status, 'ai')));
-  return row?.n ?? 0;
-}
-
 /** Changes only the keys present in `patch` (updated_at moves with it). */
 export async function updateCall(
   tx: Tx,
@@ -128,7 +119,10 @@ export async function addAiSeconds(tx: Tx, ctx: TenantContext, callSid: string, 
     .where(bySid(ctx, callSid));
 }
 
-/** Twilio's CallStatus on /voice/status -> row: completed/canceled -> ended, busy/no-answer/failed -> failed, in-progress/ringing -> unchanged. Never moves an 'ended'/'rejected' row back. Sets endedAt = now for terminal ones. Returns false when the call is unknown. */
+/** Statuses a Twilio status callback never rewrites: a 'failed' row does not become 'ended' or move its endedAt (CV#8). */
+const FINAL_STATUSES = ['ended', 'rejected', 'failed'] as const;
+
+/** Twilio's CallStatus on /voice/status -> row: completed/canceled -> ended, busy/no-answer/failed -> failed, in-progress/ringing -> unchanged. Never moves an 'ended'/'rejected'/'failed' row (final review CV#8). Sets endedAt = now for terminal ones. Returns false when the call is unknown. */
 export async function applyCallStatus(
   tx: Tx,
   ctx: TenantContext,
@@ -138,13 +132,21 @@ export async function applyCallStatus(
 ): Promise<boolean> {
   const row = await findCallBySid(tx, ctx, callSid);
   if (!row) return false;
-  if (row.status === 'ended' || row.status === 'rejected') return true;
+  if ((FINAL_STATUSES as readonly string[]).includes(row.status)) return true;
   if (twilioStatus === 'completed' || twilioStatus === 'canceled') {
-    await updateCall(tx, ctx, callSid, { status: 'ended', endedAt: now });
+    await finishCall(tx, ctx, callSid, 'ended', now);
   } else if (twilioStatus === 'busy' || twilioStatus === 'no-answer' || twilioStatus === 'failed') {
-    await updateCall(tx, ctx, callSid, { status: 'failed', endedAt: now });
+    await finishCall(tx, ctx, callSid, 'failed', now);
   }
   return true;
+}
+
+/** Terminal status write that never moves an 'ended'/'rejected'/'failed' row (a racing callback cannot reopen or rewrite it). */
+async function finishCall(tx: Tx, ctx: TenantContext, callSid: string, status: 'ended' | 'failed', now: Date): Promise<void> {
+  await tx
+    .update(calls)
+    .set({ status, endedAt: now })
+    .where(and(bySid(ctx, callSid), notInArray(calls.status, [...FINAL_STATUSES])));
 }
 
 export type FrontDeskCallSettings = {
@@ -175,4 +177,98 @@ export async function frontDeskCallSettings(tx: Tx, ctx: TenantContext): Promise
     frontDeskVoice: row?.frontDeskVoice ?? DEFAULT_FRONT_DESK_VOICE,
     maxConcurrentAiCalls: row?.maxConcurrentAiCalls ?? 4,
   };
+}
+
+/* Task CV: call/conversation link, live-call cap, read-only check. */
+
+/** A call counts as live for the concurrent cap only for this long after it started (35 minutes). */
+export const LIVE_CALL_WINDOW_MS = 35 * 60 * 1000;
+
+/** The live statuses the fd-health stuck-call sweep looks at. */
+export const STUCK_CALL_STATUSES = ['ringing', 'ai', 'ringing_team'] as const;
+
+/**
+ * How long a 'ringing' or 'ringing_team' call may stay live before the sweep ends it: 4 hours, Twilio's
+ * longest <Dial> (timeLimit 14400 s). A ring_first call answered by staff stays 'ringing_team' for the whole
+ * bridged call, so the 35-minute bound applies to 'ai' calls only (the relay ends itself at 30 minutes).
+ */
+export const DIAL_CALL_LIMIT_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Ruling BJ, final review CV#3: ends the company's calls stuck in 'ai' for over 35 minutes
+ * (LIVE_CALL_WINDOW_MS) or in 'ringing'/'ringing_team' for over 4 hours (DIAL_CALL_LIMIT_MS):
+ * status 'ended', endedAt = now. At most `limit`, oldest first. Returns the ended CallSids.
+ */
+export async function endStuckCallsForCompany(tx: Tx, ctx: TenantContext, now: Date, limit: number): Promise<string[]> {
+  const aiCutoff = new Date(now.getTime() - LIVE_CALL_WINDOW_MS);
+  const dialCutoff = new Date(now.getTime() - DIAL_CALL_LIMIT_MS);
+  const stuck = and(
+    eq(calls.companyId, ctx.companyId),
+    or(
+      and(eq(calls.status, 'ai'), lt(calls.startedAt, aiCutoff)),
+      and(inArray(calls.status, ['ringing', 'ringing_team']), lt(calls.startedAt, dialCutoff)),
+    ),
+  );
+  const ids = await tx.select({ id: calls.id }).from(calls).where(stuck).orderBy(asc(calls.startedAt)).limit(limit);
+  if (ids.length === 0) return [];
+  const rows = await tx
+    .update(calls)
+    .set({ status: 'ended', endedAt: now })
+    .where(
+      and(
+        stuck,
+        inArray(
+          calls.id,
+          ids.map((r) => r.id),
+        ),
+      ),
+    )
+    .returning({ callSid: calls.callSid });
+  return rows.map((r) => r.callSid);
+}
+
+/** Sets calls.conversation_id where it is still null (company-scoped, by calls.id). Returns true when a row changed. */
+export async function linkCallConversation(tx: Tx, ctx: TenantContext, callId: string, conversationId: string): Promise<boolean> {
+  const rows = await tx
+    .update(calls)
+    .set({ conversationId })
+    .where(and(eq(calls.companyId, ctx.companyId), eq(calls.id, callId), isNull(calls.conversationId)))
+    .returning({ id: calls.id });
+  return rows.length > 0;
+}
+
+/** calls.conversation_id of the call (by calls.id), or null when unlinked or unknown. */
+export async function findCallConversationId(tx: Tx, ctx: TenantContext, callId: string): Promise<string | null> {
+  const [row] = await tx
+    .select({ conversationId: calls.conversationId })
+    .from(calls)
+    .where(and(eq(calls.companyId, ctx.companyId), eq(calls.id, callId)))
+    .limit(1);
+  return row?.conversationId ?? null;
+}
+
+/** Takes pg_advisory_xact_lock(hashtext('fd-ai-cap:' || company_id)) for the transaction. */
+export async function lockAiCap(tx: Tx, ctx: TenantContext): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'fd-ai-cap:' + ctx.companyId}))`);
+}
+
+/**
+ * Calls bound for the AI: status 'ai', or 'ringing' (relay TwiML sent, relay not yet set up), with started_at > now - 35
+ * minutes (the live count for the concurrent cap). The /voice hook marks every non-AI path 'ringing_team', so those never
+ * count. The call being decided on is excluded when its id is passed.
+ */
+export async function countLiveCallsInWindow(tx: Tx, ctx: TenantContext, now: Date, excludeCallId?: string): Promise<number> {
+  const since = new Date(now.getTime() - LIVE_CALL_WINDOW_MS);
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(calls)
+    .where(
+      and(
+        eq(calls.companyId, ctx.companyId),
+        inArray(calls.status, ['ringing', 'ai']),
+        gt(calls.startedAt, since),
+        excludeCallId === undefined ? undefined : ne(calls.id, excludeCallId),
+      ),
+    );
+  return row?.n ?? 0;
 }

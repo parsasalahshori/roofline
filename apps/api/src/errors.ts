@@ -8,6 +8,7 @@ import { findPgError, ForbiddenError } from '@roofline/db';
  */
 export const MESSAGES = {
   notFound: "We couldn't find that.",
+  stormScoutPaused: 'Storm Scout is paused. Turn it back on in Agents to draft a plan.',
   crossSite: 'This request came from another site and was blocked.',
   tooLarge: 'That request was too large.',
   unreadable: "We couldn't read that request. Please check it and try again.",

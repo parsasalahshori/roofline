@@ -1,5 +1,5 @@
-import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
-import { calls, companySettings, conversations, conversationTurns } from '../schema/index.ts';
+import { and, asc, eq, inArray, isNotNull, isNull, like, lt, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { calls, companySettings, conversations, conversationTurns, messages } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
 /* Front Desk retention (D1 Task 16). All run inside withTenant. */
@@ -30,7 +30,8 @@ function daysAgo(now: Date, days: number): Date {
 /**
  * Calls with recording_key not null and recording_status <> 'deleted' that are past retention:
  * started_at < now - days, where days = SPAM_RETENTION_DAYS for a spam call and recordingDays otherwise.
- * recordingDays = 0 means nothing is recorded, so non-spam calls are skipped. Forwarding-test calls
+ * recordingDays = 0 means calls are no longer recorded and existing recordings expire now: every
+ * recording of a call that started before `now` is returned, spam or not. Forwarding-test calls
  * (conversation_id null and from_e164 = testCaller, when testCaller is not null) are never returned. Oldest first.
  */
 export async function findExpiredRecordings(
@@ -38,15 +39,15 @@ export async function findExpiredRecordings(
   ctx: TenantContext,
   opts: { now: Date; recordingDays: number; testCaller: string | null; limit: number },
 ): Promise<ExpiredRecording[]> {
-  const spamDays = opts.recordingDays > 0 ? Math.min(SPAM_RETENTION_DAYS, opts.recordingDays) : SPAM_RETENTION_DAYS;
+  const recordingDays = Math.max(0, opts.recordingDays);
+  const spamDays = Math.min(SPAM_RETENTION_DAYS, recordingDays);
   const spamExpired = and(isNotNull(calls.spamReason), lt(calls.startedAt, daysAgo(opts.now, spamDays)));
-  const normalExpired =
-    opts.recordingDays > 0 ? and(isNull(calls.spamReason), lt(calls.startedAt, daysAgo(opts.now, opts.recordingDays))) : undefined;
+  const normalExpired = and(isNull(calls.spamReason), lt(calls.startedAt, daysAgo(opts.now, recordingDays)));
   const conds: (SQL | undefined)[] = [
     eq(calls.companyId, ctx.companyId),
     isNotNull(calls.recordingKey),
     ne(calls.recordingStatus, 'deleted'),
-    normalExpired ? or(spamExpired, normalExpired) : spamExpired,
+    or(spamExpired, normalExpired),
   ];
   if (opts.testCaller !== null) {
     conds.push(sql`NOT (${calls.conversationId} IS NULL AND ${calls.fromE164} = ${opts.testCaller})`);
@@ -83,20 +84,28 @@ const blankSet = {
     (SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('name', e->'name', 'ok', e->'ok'))) FROM jsonb_array_elements(${conversationTurns.toolCalls}) AS e), '[]'::jsonb) END`,
 };
 
+/** How many rows one blanking statement changes. The sweep repeats until a statement changes fewer. */
+export const BLANK_BATCH = 1000;
+
 /**
- * Blanks the turns of this company that are past retention: text = '' and tool_calls reduced to names
- * (each element becomes {"name": <name>}), metadata kept. A turn is past retention when at < now - transcriptDays,
- * or at < now - SPAM_RETENTION_DAYS when its conversation has outcome 'spam'. Rows already blanked are not touched,
- * so a second run returns 0. Returns the number of turns changed.
+ * Blanks up to `limit` (default BLANK_BATCH) turns of this company that are past retention: text = '' and tool_calls
+ * reduced to names (each element becomes {"name": <name>}), metadata kept. A turn is past retention when
+ * at < now - transcriptDays, or at < now - SPAM_RETENTION_DAYS when its conversation has outcome 'spam'. Oldest first.
+ * Rows already blanked are not touched, so a second run returns 0. Returns the number of turns changed; a result equal
+ * to `limit` means there may be more, so the caller runs it again (each call in its own transaction).
  */
-export async function blankExpiredTurns(tx: Tx, ctx: TenantContext, opts: { now: Date; transcriptDays: number }): Promise<number> {
+export async function blankExpiredTurns(
+  tx: Tx,
+  ctx: TenantContext,
+  opts: { now: Date; transcriptDays: number; limit?: number },
+): Promise<number> {
   const spamConversations = tx
     .select({ id: conversations.id })
     .from(conversations)
     .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.outcome, 'spam')));
-  const rows = await tx
-    .update(conversationTurns)
-    .set(blankSet)
+  const due = tx
+    .select({ id: conversationTurns.id })
+    .from(conversationTurns)
     .where(
       and(
         eq(conversationTurns.companyId, ctx.companyId),
@@ -107,8 +116,78 @@ export async function blankExpiredTurns(tx: Tx, ctx: TenantContext, opts: { now:
         ),
       ),
     )
+    .orderBy(asc(conversationTurns.at), asc(conversationTurns.id))
+    .limit(opts.limit ?? BLANK_BATCH);
+  const rows = await tx
+    .update(conversationTurns)
+    .set(blankSet)
+    .where(and(eq(conversationTurns.companyId, ctx.companyId), inArray(conversationTurns.id, due)))
     .returning({ id: conversationTurns.id });
   return rows.length;
+}
+
+/** The dedupe-key prefix of the assistant's own text replies (front-desk/texts.ts). */
+export const ASSISTANT_REPLY_KEY_PREFIX = 'fd-text:';
+
+/** Where a blanking pass over texts stopped: the last row it looked at, oldest-first order. */
+export type TextCursor = { at: Date; id: string };
+
+export type BlankTextsResult = { blanked: number; scanned: number; next: TextCursor | null };
+
+/**
+ * Blanks Front Desk texts of this company that are past retention, the AI exchange only (Ruling BI): body = '',
+ * everything else kept (who, when, status, the gate's reasons). A text is in the AI exchange when it belongs to a
+ * conversation (messages.conversation_id not null) and is either an inbound text the assistant handled or the
+ * assistant's own reply (dedupe key `fd-text:…`). Staff replies (`fd-reply:`), booking confirmations (`fd-book:`),
+ * missed-call text-backs and every other outbound text keep their body whatever their age, and so does a text still
+ * waiting to go out (queued or scheduled). `keep(body)` is asked about each inbound candidate: the caller passes the
+ * shared STOP/START/HELP matcher so keyword texts stay. The age rule is the turns' rule: created_at < now -
+ * transcriptDays, or < now - SPAM_RETENTION_DAYS in a conversation with outcome 'spam'.
+ *
+ * Looks at up to `limit` (default BLANK_BATCH) candidates after `after`, oldest first. Kept rows stay candidates, so
+ * the caller passes `next` back as `after` and repeats while `scanned` equals `limit` (each call in its own transaction).
+ */
+export async function blankExpiredTexts(
+  tx: Tx,
+  ctx: TenantContext,
+  opts: { now: Date; transcriptDays: number; limit?: number; after?: TextCursor | null; keep?: (body: string) => boolean },
+): Promise<BlankTextsResult> {
+  const spamConversations = tx
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(and(eq(conversations.companyId, ctx.companyId), eq(conversations.outcome, 'spam')));
+  const conds: (SQL | undefined)[] = [
+    eq(messages.companyId, ctx.companyId),
+    isNotNull(messages.conversationId),
+    ne(messages.body, ''),
+    notInArray(messages.status, ['queued', 'scheduled']),
+    or(eq(messages.direction, 'in'), and(eq(messages.direction, 'out'), like(messages.dedupeKey, `${ASSISTANT_REPLY_KEY_PREFIX}%`))),
+    or(
+      lt(messages.createdAt, daysAgo(opts.now, opts.transcriptDays)),
+      and(lt(messages.createdAt, daysAgo(opts.now, SPAM_RETENTION_DAYS)), inArray(messages.conversationId, spamConversations)),
+    ),
+  ];
+  if (opts.after) {
+    conds.push(sql`(${messages.createdAt}, ${messages.id}) > (${opts.after.at.toISOString()}::timestamptz, ${opts.after.id}::uuid)`);
+  }
+  const limit = opts.limit ?? BLANK_BATCH;
+  const candidates = await tx
+    .select({ id: messages.id, at: messages.createdAt, direction: messages.direction, body: messages.body })
+    .from(messages)
+    .where(and(...conds))
+    .orderBy(asc(messages.createdAt), asc(messages.id))
+    .limit(limit);
+  const last = candidates.at(-1);
+  const next = last ? { at: last.at, id: last.id } : null;
+  const keep = opts.keep;
+  const ids = candidates.filter((c) => !(c.direction === 'in' && keep !== undefined && keep(c.body))).map((c) => c.id);
+  if (ids.length === 0) return { blanked: 0, scanned: candidates.length, next };
+  const rows = await tx
+    .update(messages)
+    .set({ body: '', updatedAt: sql`now()` as unknown as Date })
+    .where(and(eq(messages.companyId, ctx.companyId), inArray(messages.id, ids)))
+    .returning({ id: messages.id });
+  return { blanked: rows.length, scanned: candidates.length, next };
 }
 
 /** The recording keys (not deleted) of every call in this customer's conversations. */

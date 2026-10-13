@@ -66,4 +66,19 @@ describe('errors after the headers are sent', () => {
     expect(printed).not.toContain('owner@a.test');
     expect(consoleError).not.toHaveBeenCalled();
   });
+
+  test("a homeowner link's token is scrubbed from the logged path (a proposal PDF that fails mid-stream)", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logged: string[] = [];
+    const app = express();
+    app.get('/public/proposals/:token/pdf', (_req, res, next) => {
+      res.status(200);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.write('%PDF-1.3\n');
+      setTimeout(() => next(new Error('render failed')), 5);
+    });
+    app.use(errorHandler((_err, path) => logged.push(path)));
+    await request(app).get('/public/proposals/secret-link-token/pdf').then(() => undefined, () => undefined);
+    expect(logged).toEqual(['/public/proposals/:token/pdf']);
+  });
 });

@@ -1,34 +1,43 @@
-import { claimRunNow, isAgentPaused, type TenantContext, type Tx } from '@roofline/db';
+import { agentSettingsInfo, claimRunNow, isAgentPaused, type TenantContext, type Tx } from '@roofline/db';
 import { G1_AGENTS, G1_AGENTS_SHIPPED, LAUNCH_AGENTS, type RunNowResult, type ScreenAgent } from '@roofline/shared';
 import { AppError } from '../errors.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 
+export type RunNowDeps = { jobs: JobQueue };
+
 /**
- * Per-agent "start now" handlers. storm_scout stays unregistered until S1's storm-match job exists on this branch.
- * The G1 agents send their daily job for this company; each job still plans at most once a day.
+ * Per-agent "start now" handlers, called AFTER the request transaction commits (the job must not be queued for a claim that rolls back). storm_scout queues the
+ * company's storm-match job (the same one the 10-minute scheduler queues). The G1 agents send their daily job for this
+ * company; each job still plans at most once a day.
  */
-export const RUN_NOW: Partial<Record<ScreenAgent, (tx: Tx, ctx: TenantContext, jobs: JobQueue) => Promise<void>>> = {
-  claims: async (_tx, ctx, jobs) => {
-    await jobs.send('claims-daily', { companyId: ctx.companyId }, { singletonKey: `run-now:claims:${ctx.companyId}` });
+export const RUN_NOW: Partial<Record<ScreenAgent, (ctx: TenantContext, deps: RunNowDeps) => Promise<void>>> = {
+  storm_scout: async (ctx, deps) => {
+    await deps.jobs.send('storm-match-company', { companyId: ctx.companyId }, { singletonKey: ctx.companyId });
   },
-  scheduler: async (_tx, ctx, jobs) => {
-    await jobs.send('scheduler-reminders', { companyId: ctx.companyId }, { singletonKey: `run-now:scheduler:${ctx.companyId}` });
+  claims: async (ctx, deps) => {
+    await deps.jobs.send('claims-daily', { companyId: ctx.companyId }, { singletonKey: `run-now:claims:${ctx.companyId}` });
   },
-  follow_up: async (_tx, ctx, jobs) => {
-    await jobs.send('followup-daily', { companyId: ctx.companyId }, { singletonKey: `run-now:follow_up:${ctx.companyId}` });
+  scheduler: async (ctx, deps) => {
+    await deps.jobs.send('scheduler-reminders', { companyId: ctx.companyId }, { singletonKey: `run-now:scheduler:${ctx.companyId}` });
+  },
+  follow_up: async (ctx, deps) => {
+    await deps.jobs.send('followup-daily', { companyId: ctx.companyId }, { singletonKey: `run-now:follow_up:${ctx.companyId}` });
   },
 };
 
 const MINUTE_MS = 60_000;
 
-/** Throws AppError(409, plain sentence) for non-runnable agents; otherwise claims the 5-minute slot and runs the handler. */
+/**
+ * Throws AppError(409, plain sentence) for non-runnable agents, a paused Storm Scout and a paused G1 agent; otherwise
+ * claims the 5-minute slot. Returns the result and `send`, which the caller runs once the transaction has committed.
+ */
 export async function runAgentNow(
   tx: Tx,
   ctx: TenantContext,
   agent: ScreenAgent,
   now: Date,
-  jobs: JobQueue,
-): Promise<RunNowResult> {
+  deps: RunNowDeps,
+): Promise<{ result: RunNowResult; send: () => Promise<void> }> {
   if (agent === 'estimator') throw new AppError(409, 'This agent works when you ask.');
   if (agent === 'front_desk') throw new AppError(409, 'Front Desk answers calls as they come in.');
   const isG1 = (G1_AGENTS as readonly string[]).includes(agent);
@@ -37,11 +46,18 @@ export async function runAgentNow(
   const handler = RUN_NOW[agent];
   if (!handler) throw new AppError(409, 'Storm Scout can check for hail once storm alerts are set up.');
 
+  if (agent === 'storm_scout') {
+    const rows = await agentSettingsInfo(tx, ctx);
+    if (rows.some((r) => r.agent === 'storm_scout' && r.pausedAt !== null)) throw new AppError(409, 'Storm Scout is paused.');
+  }
+
   const claim = await claimRunNow(tx, ctx, agent, now);
   if (!claim.claimed) {
     const minutes = Math.max(1, Math.ceil((claim.nextAllowedAt.getTime() - now.getTime()) / MINUTE_MS));
     throw new AppError(409, `You just ran this. You can run it again in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`);
   }
-  await handler(tx, ctx, jobs);
-  return { started: true, nextAllowedAt: claim.nextAllowedAt.toISOString() };
+  return {
+    result: { started: true, nextAllowedAt: claim.nextAllowedAt.toISOString() },
+    send: () => handler(ctx, deps),
+  };
 }

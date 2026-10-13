@@ -36,6 +36,8 @@ const DB_SYSTEM_ALLOWED = [
   'apps/api/src/estimator/footprints-load.ts',
   // measureProperty reads whether a state's footprints are loaded (global table state, E1 Task 7).
   'apps/api/src/estimator/measure.ts',
+  // The Agents detail route reads the on-call first names for the Front Desk rule sentence (A1 Task 23).
+  'apps/api/src/routes/agents.ts',
   'apps/api/src/account/**',
   'apps/api/src/public/**',
   'apps/api/src/scripts/**',
@@ -43,6 +45,37 @@ const DB_SYSTEM_ALLOWED = [
   'packages/db/**',
   '**/test/**',
 ];
+
+/*
+ * One-writer boundary (A1 review): every agent_task_events insert and step snapshot goes through
+ * apps/api/src/tasks/service.ts, and only apps/api/src/agents/recount.ts rewrites snapshots or
+ * refreshes task minutes. The names below may be imported from @roofline/db (or straight from its
+ * source) only in those files. Tests and packages/db are not restricted.
+ */
+// The raw step finishers and the draft expiry write a step's or task's outcome without its snapshot
+// and event, so they too belong to the task service (completeClaimedStep, completeParkedStep, expireOverdueTasks).
+// moveStep and updateTask change a step's or task's status, so they pair with an event there as well
+// (declineTask, supersedeDraft).
+// setStepResult and insertTask write step and task rows, so they belong to the task service too
+// (addToLiveTask, createLiveTask).
+const EVENT_WRITERS = ['insertAgentEvent', 'setStepSnapshot', 'finishClaimedStep', 'finishParkedStep', 'expireOverdueDrafts', 'moveStep', 'updateTask', 'setStepResult', 'insertTask'];
+const RECOUNT_WRITERS = ['rewriteStepSnapshot', 'refreshTaskMinutes'];
+// A regex, not a group: the group '@roofline/db' would also match '@roofline/db/system'.
+const DB_MODULE_REGEX = '^@roofline/db$|/packages/db/src/(?!system(/|$))';
+
+const writerPattern = (importNames, owner) => ({
+  regex: DB_MODULE_REGEX,
+  importNames,
+  message: `${importNames.join(', ')} may be imported only in ${owner}.`,
+});
+const EVENTS_PATTERN = writerPattern(EVENT_WRITERS, 'apps/api/src/tasks/service.ts');
+const RECOUNT_PATTERN = writerPattern(RECOUNT_WRITERS, 'apps/api/src/agents/recount.ts');
+
+// Each block replaces the rule's options, so every block lists all the patterns that apply to its files.
+const restriction = (...patterns) => ({ patterns });
+
+const API_DB_SYSTEM_ALLOWED = DB_SYSTEM_ALLOWED.filter((p) => p.startsWith('apps/api/src/'));
+const API_SRC = ['apps/api/src/**/*.ts'];
 
 /*
  * Web boundary (F2): the web app and the design kit run in the browser, so they import only
@@ -127,6 +160,25 @@ export default defineConfig(
     // repeated for these places if it should apply to them.
     files: DB_SYSTEM_ALLOWED,
     rules: { 'no-restricted-imports': 'off' },
+  },
+  {
+    ignores: ['apps/api/src/tasks/service.ts', 'apps/api/src/agents/recount.ts', '**/test/**', ...API_DB_SYSTEM_ALLOWED],
+    files: API_SRC,
+    rules: { 'no-restricted-imports': ['error', restriction(DB_SYSTEM_PATTERN, EVENTS_PATTERN, RECOUNT_PATTERN)] },
+  },
+  {
+    files: ['apps/api/src/tasks/service.ts'],
+    rules: { 'no-restricted-imports': ['error', restriction(DB_SYSTEM_PATTERN, RECOUNT_PATTERN)] },
+  },
+  {
+    files: ['apps/api/src/agents/recount.ts'],
+    rules: { 'no-restricted-imports': ['error', restriction(DB_SYSTEM_PATTERN, EVENTS_PATTERN)] },
+  },
+  {
+    // These places may import @roofline/db/system, so only the two writer restrictions apply.
+    files: API_DB_SYSTEM_ALLOWED,
+    ignores: ['**/test/**'],
+    rules: { 'no-restricted-imports': ['error', restriction(EVENTS_PATTERN, RECOUNT_PATTERN)] },
   },
   {
     // After the block above on purpose: `**/test/**` there must not switch the web boundary off

@@ -1,22 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Banner, Button } from '@roofline/ui';
 import { G1_AGENTS, type RunNow, type ScreenAgent } from '@roofline/shared';
-import { agentPage } from '../../copy/agents.ts';
+import { agentPage, agentsCommon } from '../../copy/agents.ts';
+import { useMe } from '../../api/hooks.ts';
+import { useCompany } from '../settings/api.ts';
+import { agentClockLabel } from './time.ts';
 import { useRunNow } from './api.ts';
 import styles from './AgentControls.module.css';
 
 export type RunNowButtonProps = {
   agent: ScreenAgent;
   runNow: RunNow;
+  /** The agent is paused: the server would refuse a run, so the button gives way to a note. */
+  paused?: boolean;
 };
 
 function isFuture(value: string | null): value is string {
   return value !== null && new Date(value).getTime() > Date.now();
-}
-
-function clock(value: string): string {
-  return new Date(value).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-    .replace(/[\u202f\u00a0]/g, ' ');
 }
 
 function later(a: string | null, b: string | null): string | null {
@@ -26,13 +26,17 @@ function later(a: string | null, b: string | null): string | null {
 }
 
 /** What "run now" looks like for this agent: a button, a cooldown line, or a plain statement. */
-export function RunNowButton({ agent, runNow }: RunNowButtonProps) {
+export function RunNowButton({ agent, runNow, paused = false }: RunNowButtonProps) {
   const propNext = runNow.kind === 'available' ? runNow.nextAllowedAt : null;
   const [startedUntil, setStartedUntil] = useState<string | null>(null);
   const [, setTick] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; at: string | null } | null>(null);
   const mutation = useRunNow(agent);
+  const me = useMe();
+  const zone = useCompany().data?.timezone;
+  const canRun = me.data?.role === 'owner' || me.data?.role === 'office';
   const until = later(startedUntil, propNext);
+  const shownError = error !== null && error.at === propNext ? error.message : null;
 
   useEffect(() => {
     if (until === null) return;
@@ -48,7 +52,7 @@ export function RunNowButton({ agent, runNow }: RunNowButtonProps) {
         ? agentPage.worksWhenAsked
         : runNow.kind === 'answers_calls'
           ? agentPage.answersCalls
-          : agentPage.comingSoon;
+          : agentsCommon.comingSoon;
     return (
       <div className={styles.controls}>
         <p className={styles.status} aria-live="polite">
@@ -58,14 +62,30 @@ export function RunNowButton({ agent, runNow }: RunNowButtonProps) {
     );
   }
 
+  if (!canRun) return null;
+
+  if (paused) {
+    return (
+      <div className={styles.controls}>
+        <p className={styles.status} aria-live="polite">
+          {agentPage.pausedNote}
+        </p>
+      </div>
+    );
+  }
+
   const label = agentPage.runNowLabels[agent];
   if (label === undefined) return null;
 
   const run = () => {
+    const at = propNext;
     setError(null);
     mutation.mutate(undefined, {
-      onSuccess: (result) => setStartedUntil(result.nextAllowedAt),
-      onError: (e) => setError(e.message || agentPage.runError),
+      onSuccess: (result) => {
+        setError(null);
+        setStartedUntil(result.nextAllowedAt);
+      },
+      onError: (e) => setError({ message: e.message || agentPage.runError, at }),
     });
   };
 
@@ -74,7 +94,7 @@ export function RunNowButton({ agent, runNow }: RunNowButtonProps) {
       <div aria-live="polite">
         {isFuture(until) ? (
           <>
-            <p className={styles.status}>{`${agentPage.runNowAgain} ${clock(until)}`}</p>
+            <p className={styles.status}>{`${agentPage.runNowAgain} ${agentClockLabel(until, zone)}`}</p>
             {startedUntil !== null && (G1_AGENTS as readonly string[]).includes(agent) ? (
               <p className={styles.status}>{agentPage.runStartedOncePerDay}</p>
             ) : null}
@@ -87,7 +107,7 @@ export function RunNowButton({ agent, runNow }: RunNowButtonProps) {
           </div>
         )}
       </div>
-      {error !== null ? <Banner tone="danger">{error}</Banner> : null}
+      {shownError !== null ? <Banner tone="danger">{shownError}</Banner> : null}
     </div>
   );
 }

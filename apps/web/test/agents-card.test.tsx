@@ -1,7 +1,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
-import { moneyLabel, type AgentCard as AgentCardData } from '@roofline/shared';
+import { hoursLabel, moneyLabel, type AgentCard as AgentCardData } from '@roofline/shared';
+import { agentsCommon } from '../src/copy/agents.ts';
 import { AgentCard } from '../src/features/agents/AgentCard.tsx';
 
 function fixture(over: Partial<AgentCardData> = {}): AgentCardData {
@@ -18,8 +19,8 @@ function fixture(over: Partial<AgentCardData> = {}): AgentCardData {
   };
 }
 
-function show(card: AgentCardData) {
-  const router = createMemoryRouter([{ path: '/', element: <AgentCard card={card} hourlyRateCents={2800} /> }]);
+function show(card: AgentCardData, rate: number | null = 2800) {
+  const router = createMemoryRouter([{ path: '/', element: <AgentCard card={card} hourlyRateCents={rate} /> }]);
   return render(<RouterProvider router={router} />);
 }
 
@@ -30,9 +31,29 @@ describe('AgentCard', () => {
     show(fixture());
     expect(screen.getByText(/about 31 hours/)).toBeTruthy();
     expect(screen.getAllByText(/\(estimate\)/).length).toBeGreaterThan(0);
-    expect(screen.getByText(moneyLabel(1860, 2800))).toBeTruthy();
+    expect(screen.getByText(`${moneyLabel(1860, 2800)} ${agentsCommon.estimate}`)).toBeTruthy();
     expect(screen.getByText('92%')).toBeTruthy();
     expect(screen.getByText('Not approved: 3')).toBeTruthy();
+  });
+
+  it('link name includes the status chip, also for coming soon', () => {
+    const { unmount } = show(fixture());
+    expect(screen.getByRole('link', { name: /Storm Scout.*On/ })).toBeTruthy();
+    unmount();
+    show(fixture({ status: 'coming_soon', agent: 'claims', minutesThisMonth: 0, successRate: null, notApproved30d: 0, finishedToday: 0 }));
+    expect(screen.getByRole('link', { name: /Claims.*Coming soon/ })).toBeTruthy();
+  });
+
+  it('says less than half an hour for a few minutes', () => {
+    show(fixture({ minutesThisMonth: 5 }));
+    expect(screen.getByText(/less than half an hour/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('about 0');
+  });
+
+  it('hides money when the rate is null', () => {
+    show(fixture(), null);
+    expect(screen.getByText(/about 31 hours/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('$');
   });
 
   it('says there are not enough runs when the rate is null', () => {
@@ -50,7 +71,7 @@ describe('AgentCard', () => {
 
   it('links to the agent page with the agent name', () => {
     show(fixture());
-    const link = screen.getByRole('link', { name: 'Storm Scout' });
+    const link = screen.getByRole('link', { name: /^Storm Scout/ });
     expect(link.getAttribute('href')).toBe('/agents/storm-scout');
   });
 
@@ -60,5 +81,23 @@ describe('AgentCard', () => {
     unmount();
     show(fixture({ status: 'waiting', waitingCount: 2 }));
     expect(screen.getAllByText('Waiting on you').length).toBeGreaterThan(0);
+  });
+
+  it('link accessible name includes the name, the time figure and (estimate)', () => {
+    show(fixture({ minutesThisMonth: 90 }));
+    const link = screen.getByRole('link');
+    const name = link.getAttribute('aria-labelledby')?.split(' ').map((id) => document.getElementById(id)?.textContent ?? '').join(' ') ?? '';
+    expect(name).toMatch(/Storm Scout/);
+    expect(name).toMatch(/Time saved this month/);
+    expect(name).toContain(hoursLabel(90));
+    expect(name).toContain(agentsCommon.estimate);
+    expect(name).toContain(moneyLabel(90, 2800));
+    expect(screen.getByRole('link', { name: /Time saved this month/ })).toBe(link);
+  });
+
+  it('coming soon link name is the agent name and its chip', () => {
+    show(fixture({ status: 'coming_soon', agent: 'claims', minutesThisMonth: 0, successRate: null, notApproved30d: 0, finishedToday: 0 }));
+    expect(screen.getByRole('link').getAttribute('aria-labelledby')?.split(' ')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'Claims Coming soon' })).toBeTruthy();
   });
 });

@@ -10,7 +10,6 @@ export const JOB_NAMES = [
   'calendar-push',
   'footprints-load',
   'signed-pdf',
-  // S1 Storm Scout
   'storm-match-company',
   'storm-draft',
   'storm-alert',
@@ -34,19 +33,21 @@ export const JOB_NAMES = [
 export type JobName = (typeof JOB_NAMES)[number];
 // 'footprints-load' is global work, but the worker requires a company id on every job: its data is
 // `{ companyId: <the requesting company>, state }` with singletonKey = state.
+// Storm Scout: 'storm-match-company' is `{ companyId }`, sent with singletonKey companyId; 'storm-draft' is
+// `{ companyId, companyStormId }`; 'storm-alert' is `{ companyId, companyStormId, kind }`; 'ad-sync-company' is `{ companyId }`.
 export type JobData = {
   companyId: string;
   importId?: string;
   appointmentId?: string;
   state?: string;
   proposalId?: string;
-  // S1: 'storm-match-company' is `{ companyId }` (singletonKey companyId); 'storm-draft' is `{ companyId, companyStormId }`;
-  // 'storm-alert' is `{ companyId, companyStormId, kind }`; 'ad-sync-company' is `{ companyId }`.
   companyStormId?: string;
   kind?: 'now' | 'plan';
   callId?: string;
   /** fd-after-call: the Twilio CallSid (callId stays the calls row id everywhere else). */
   callSid?: string;
+  /** fd-after-call: set by the fd-health stuck-call sweep; such a call never gets a text-back. */
+  swept?: boolean;
   recordingSid?: string;
   conversationId?: string;
   testId?: string;

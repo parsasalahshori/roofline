@@ -1,37 +1,17 @@
-import { randomUUID } from 'node:crypto';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
-import {
-  activities,
-  appointments,
-  calls,
-  claimIntakes,
-  companyPhoneNumbers,
-  companySettings,
-  conversationTurns,
-  createJob,
-  customers,
-  encrypt,
-  getConversation,
-  insertCall,
-  jobs,
-  properties,
-  textingRegistrations,
-  withTenant,
-  type TenantContext,
-} from '@roofline/db';
-import { DEFAULT_WORK_HOURS, normalizeAddressKey } from '@roofline/shared';
-import { createEngine, SAY_SPAM_ENDING } from '../../src/front-desk/engine.ts';
-import type { ConversationState, Engine } from '../../src/front-desk/engine-types.ts';
+import { activities, appointments, calls, claimIntakes, customers, jobs } from '@roofline/db';
+import { runAfterCall } from '../../src/front-desk/after-call.ts';
+import { SAY_SPAM_ENDING } from '../../src/front-desk/engine.ts';
+import { createEngine } from '../../src/front-desk/engine.ts';
 import { createRecording } from '../../src/front-desk/recording.ts';
-import { type RelayCall, runRelayLoop } from '../../src/front-desk/relay-session-loop.ts';
+import { runRelayLoop } from '../../src/front-desk/relay-session-loop.ts';
+import { identifyCaller } from '../../src/front-desk/tools/caller.ts';
 import { FRONT_DESK_HANDLERS } from '../../src/front-desk/tools/index.ts';
 import { FakeVoiceSession } from '../../src/providers/fakes/voice-session.ts';
-import { type Script, ScriptedLlm } from '../../src/providers/fakes/scripted-llm.ts';
-import type { RouteDecision } from '../../src/providers/llm.ts';
+import { ONLY_INSPECTIONS } from '../../src/front-desk/tools/move.ts';
 import { inCompany } from '../crm-helpers.ts';
-import { makeTestApp, TEST_ENCRYPTION_KEY } from '../helpers.ts';
-import { DAYTIME } from '../sms-helpers.ts';
+import { ADDRESS, expectOpusTiming, OPUS, rig, seedCaller, SLOT, VERIFY, type Rig } from './call-rig.ts';
 
 /*
  * NEEDS-FIX (for the lead; none blocks these tests):
@@ -45,123 +25,30 @@ import { DAYTIME } from '../sms-helpers.ts';
  * Database-backed: CI runs it.
  */
 
-const OPUS: RouteDecision = { intent: 'other', urgent: false, mood: 'calm', route: 'opus', fastReply: null };
 
-const FROM = '+14025550177';
-const TO = '+14025550100';
-const TOKEN = 'test-subaccount-token-a';
-const ADDRESS = '123 Elm St, Omaha, NE 68102';
-const HOME_STREET = '412 Oak St';
-const SLOT = /slotStart (\S+), slotUserId ([0-9a-f-]{36})/;
 
-type Rig = Awaited<ReturnType<typeof rig>>;
-
-async function rig(script: Script, o: { recording?: boolean } = {}) {
-  const t = await makeTestApp();
-  t.clock.set(DAYTIME);
-  const companyId = t.seed.a.companyId;
-  const ctx: TenantContext = { companyId, userId: null, role: 'system', canApproveSpend: false };
-
-  await t.deps.pools.system
-    .insert(companyPhoneNumbers)
-    .values({ companyId, e164: TO, capabilities: ['sms', 'voice'], providerSid: 'PN_A' });
-  await t.deps.pools.system
-    .insert(textingRegistrations)
-    .values({ companyId, subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt(TOKEN, TEST_ENCRYPTION_KEY) })
-    .onConflictDoUpdate({
-      target: textingRegistrations.companyId,
-      set: { subaccountSid: 'AC_test_sub', subaccountAuthTokenEncrypted: encrypt(TOKEN, TEST_ENCRYPTION_KEY) },
-    });
-  const settings = {
-    frontDeskEnabled: true,
-    frontDeskTexts: true,
-    frontDeskCanMove: true,
-    frontDeskCanCancel: true,
-    workHours: DEFAULT_WORK_HOURS,
-  };
-  await inCompany(t, companyId, (tx) =>
-    tx.insert(companySettings).values({ companyId, ...settings }).onConflictDoUpdate({ target: companySettings.companyId, set: settings }),
-  );
-
-  const llm = new ScriptedLlm(script);
-  const deps = { ...t.deps, llm };
-  const inner = createEngine(deps, FRONT_DESK_HANDLERS);
-  let state: ConversationState | null = null;
-  const engine: Engine = {
-    ...inner,
-    start: async (i) => {
-      state = await inner.start(i);
-      return state;
-    },
-  };
-
-  const callSid = `CA${randomUUID().replace(/-/g, '')}`;
-  const row = await withTenant(t.deps.pools, ctx, (tx) =>
-    insertCall(tx, ctx, { callSid, fromE164: FROM, toE164: TO, forwardedFrom: null, stirVerstat: null, now: t.clock.now() }),
-  );
-  const call: RelayCall = { callId: row.id, companyId, callSid, from: FROM, to: TO, messageOnly: false };
-  const recording = o.recording ? createRecording(deps, call) : undefined;
-  if (recording) await recording.start();
-
-  const session = new FakeVoiceSession();
-  const loop = runRelayLoop(session, { deps, engine, call, recording });
-  session.caller.setup({ customParameters: { callId: call.callId } });
-
-  const turns = () => inCompany(t, companyId, (tx) =>
-    tx.select().from(conversationTurns).where(eq(conversationTurns.conversationId, state!.conversationId)).orderBy(asc(conversationTurns.position)),
-  );
-  const say = async (text: string) => {
-    session.caller.say(text);
-    await loop.settled();
-  };
-  const conversation = () => inCompany(t, companyId, (tx) => getConversation(tx, ctx, state!.conversationId));
-  const callRow = () => inCompany(t, companyId, async (tx) => (await tx.select().from(calls).where(eq(calls.id, call.callId)))[0]!);
-  const assistantTurns = async () => (await turns()).filter((x) => x.speaker === 'assistant');
-  const toolResults = async () => (await assistantTurns()).flatMap((x) => x.toolCalls ?? []);
-
-  return { t, llm, ctx, companyId, session, loop, call, say, turns, assistantTurns, toolResults, conversation, callRow, state: () => state! };
-}
-
-/** An Opus turn: the router and the first token were timed, and the whole turn was timed. */
-function expectOpusTiming(rows: Awaited<ReturnType<Rig['assistantTurns']>>) {
-  expect(rows.length).toBeGreaterThan(0);
-  for (const r of rows) {
-    expect(r.route).toBe('opus');
-    expect(r.model).toBe('scripted');
-    expect(r.routerMs).not.toBeNull();
-    expect(r.firstTokenMs).not.toBeNull();
-    expect(r.totalMs).not.toBeNull();
-    expect(r.inputTokens).not.toBeNull();
-    expect(r.outputTokens).not.toBeNull();
-  }
-}
-
-/** A customer with the caller's phone, a home and an open job (stage inspection). */
-async function seedCaller(r: Rig) {
-  const now = r.t.clock.now();
-  return inCompany(r.t, r.companyId, async (tx) => {
-    const [c] = await tx
-      .insert(customers)
-      .values({ companyId: r.companyId, displayName: 'Nina Park', firstName: 'Nina', lastName: 'Park', phones: [{ e164: FROM, primary: true }] })
-      .returning({ id: customers.id });
-    const [p] = await tx
-      .insert(properties)
+/** An upcoming inspection on Thursday (DAYTIME is Tuesday) for the seeded caller's job and home. */
+async function seedInspection(r: Rig, seeded: Awaited<ReturnType<typeof seedCaller>>) {
+  const [a] = await inCompany(r.t, r.companyId, (tx) =>
+    tx
+      .insert(appointments)
       .values({
         companyId: r.companyId,
-        customerId: c!.id,
-        addressLine: HOME_STREET,
-        city: 'Omaha',
-        state: 'NE',
-        zip: '68102',
-        addressKey: normalizeAddressKey(HOME_STREET, '68102'),
+        kind: 'inspection',
+        jobId: seeded.jobId,
+        customerId: seeded.customerId,
+        propertyId: seeded.propertyId,
+        assignedUserId: r.t.seed.a.owner.userId,
+        startsAt: new Date('2026-10-15T15:00:00.000Z'),
+        endsAt: new Date('2026-10-15T16:00:00.000Z'),
+        source: 'manual',
       })
-      .returning({ id: properties.id });
-    const job = await createJob(tx, r.ctx, { customerId: c!.id, propertyId: p!.id, stage: 'inspection' }, { now });
-    return { customerId: c!.id, propertyId: p!.id, jobId: job.id };
-  });
+      .returning({ id: appointments.id }),
+  );
+  return a!.id;
 }
 
-const VERIFY = { kind: 'tool' as const, name: 'verify_caller' as const, input: { name: 'Nina Park', street: HOME_STREET } };
+const APPOINTMENT = /Appointment ([0-9a-f-]{36}): inspection on /;
 
 describe('front desk call paths (real relay loop, real engine, real tools)', () => {
   test('booking: find times, book the offered slot, then goodbye', async () => {
@@ -218,6 +105,21 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     // (d) the end message
     expect(r.loop.ended).toBe(true);
     expect(JSON.parse(r.session.endedWith!)).toEqual({ kind: 'end', reason: 'goodbye' });
+
+    // (e) the call is linked to the conversation, and after-call finishes it
+    await inCompany(r.t, r.companyId, (tx) => tx.update(calls).set({ status: 'ended', endedAt: r.t.clock.now() }).where(eq(calls.id, r.call.callId)));
+    await runAfterCall({ ...r.t.deps, llm: r.llm }, { companyId: r.companyId, callSid: r.call.callSid });
+    expect((await r.callRow()).conversationId).toBe(r.state().conversationId);
+    const conv = await r.conversation();
+    expect(conv?.status).toBe('ended');
+    expect(conv?.outcome).toBe('booked');
+    expect(conv?.summary).not.toBeNull();
+    expect(await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments))).toHaveLength(1);
+    const callActs = await inCompany(r.t, r.companyId, (tx) =>
+      tx.select().from(activities).where(and(eq(activities.subjectId, customer!.id), eq(activities.kind, 'call'))),
+    );
+    expect(callActs).toHaveLength(1);
+    expect(callActs[0]).toMatchObject({ actorAgent: 'front_desk' });
   });
 
   test('job question (verified): verify_caller then lookup_my_jobs shows the job', async () => {
@@ -250,6 +152,99 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     expectOpusTiming(await r.assistantTurns());
     expect(r.loop.ended).toBe(false);
     expect(r.session.endedWith).toBeNull();
+  });
+
+  test('existing appointment (verified): lookup_my_jobs shows it, then confirm and move act on it', async () => {
+    const r = await rig([
+      {
+        when: /my Thursday inspection/,
+        route: { ...OPUS, intent: 'job_status' },
+        answer: [VERIFY, { kind: 'tool', name: 'lookup_my_jobs', input: {} }],
+      },
+    ]);
+    const seeded = await seedCaller(r);
+    const appointmentId = await seedInspection(r, seeded);
+    await r.say('about my Thursday inspection');
+
+    const lookup = (await r.toolResults()).find((c) => c.name === 'lookup_my_jobs');
+    expect(lookup?.ok).toBe(true);
+    const m = APPOINTMENT.exec(lookup!.result);
+    expect(m?.[1]).toBe(appointmentId);
+    expect(lookup!.result).toContain('Thursday, October 15');
+    expect(r.state().shownIds.has(appointmentId)).toBe(true);
+    // The id is for the model only: nothing spoken carries it.
+    expect(r.session.assistantText()).not.toContain(appointmentId);
+
+    r.llm.script.push({ when: /please confirm it/, route: OPUS, answer: [{ kind: 'tool', name: 'confirm_appointment', input: { appointmentId } }] });
+    await r.say('please confirm it');
+    const confirmed = (await r.toolResults()).find((c) => c.name === 'confirm_appointment');
+    expect(confirmed).toMatchObject({ ok: true });
+    expect(confirmed!.result).toMatch(/^Confirmed the inspection on /);
+    const [afterConfirm] = await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments).where(eq(appointments.id, appointmentId)));
+    expect(afterConfirm!.confirmedAt).not.toBeNull();
+
+    r.llm.script.push({
+      when: /move it to another day/,
+      route: OPUS,
+      answer: [{ kind: 'tool', name: 'find_inspection_times', input: { propertyId: seeded.propertyId, address: null, fromDate: '2026-10-19', partOfDay: 'any' } }],
+    });
+    await r.say('actually, can you move it to another day');
+    const found = (await r.toolResults()).find((c) => c.name === 'find_inspection_times');
+    expect(found?.ok).toBe(true);
+    const slot = SLOT.exec(found!.result);
+    expect(slot).not.toBeNull();
+    const [, slotStart, slotUserId] = slot!;
+
+    r.llm.script.push({
+      when: /first one works/,
+      route: OPUS,
+      answer: [{ kind: 'tool', name: 'move_inspection', input: { appointmentId, slotStart: slotStart!, slotUserId: slotUserId! } }],
+    });
+    await r.say('the first one works');
+    const moved = (await r.toolResults()).find((c) => c.name === 'move_inspection');
+    expect(moved).toMatchObject({ ok: true });
+    expect(moved!.result).toMatch(/^Moved the inspection to /);
+    const [afterMove] = await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments).where(eq(appointments.id, appointmentId)));
+    expect(afterMove!.startsAt.toISOString()).toBe(new Date(slotStart!).toISOString());
+    expect(afterMove!.assignedUserId).toBe(slotUserId);
+    expect((await r.conversation())?.outcome).toBe('moved');
+    expect(r.session.assistantText()).not.toContain(appointmentId);
+  });
+
+  test('existing appointment (phone-matched, not verified): no id is shown, and confirm and move are refused', async () => {
+    const r = await rig([
+      {
+        when: /my Thursday inspection/,
+        route: { ...OPUS, intent: 'job_status' },
+        answer: [{ kind: 'tool', name: 'lookup_my_jobs', input: {} }],
+      },
+    ]);
+    const seeded = await seedCaller(r);
+    const appointmentId = await seedInspection(r, seeded);
+    await r.loop.settled();
+    await identifyCaller({ deps: r.t.deps, companyId: r.companyId, conversation: r.state(), now: r.t.clock.now() });
+    expect(r.state().identity).toBe('matched');
+    await r.say('about my Thursday inspection');
+
+    const lookup = (await r.toolResults()).find((c) => c.name === 'lookup_my_jobs');
+    expect(lookup).toMatchObject({ ok: true, result: 'You have an appointment on Thursday.' });
+    expect(r.state().shownIds.has(appointmentId)).toBe(false);
+
+    // Even a model that somehow has the id cannot act on it.
+    r.llm.script.push({
+      when: /please confirm it/,
+      route: OPUS,
+      answer: [
+        { kind: 'tool', name: 'confirm_appointment', input: { appointmentId } },
+        { kind: 'tool', name: 'move_inspection', input: { appointmentId, slotStart: '2026-10-19T15:00:00.000Z', slotUserId: r.t.seed.a.owner.userId } },
+      ],
+    });
+    await r.say('please confirm it');
+    const results = await r.toolResults();
+    expect(results.find((c) => c.name === 'confirm_appointment')).toMatchObject({ ok: false, result: "That isn't one of this caller's records." });
+    expect(results.find((c) => c.name === 'move_inspection')).toMatchObject({ ok: false, result: "That isn't one of this caller's records." });
+    const [row] = await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments).where(eq(appointments.id, appointmentId)));
+    expect(row).toMatchObject({ confirmedAt: null, startsAt: new Date('2026-10-15T15:00:00.000Z') });
   });
 
   test('claim: take_claim_details links the intake to the verified caller job', async () => {
@@ -316,6 +311,63 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     expect(JSON.parse(r.session.endedWith!)).toEqual({ kind: 'end', reason: 'goodbye' });
   });
 
+  test('install move: a verified caller asking to move an install is refused and offered a message (criterion 8)', async () => {
+    const r = await rig([]);
+    const seeded = await seedCaller(r);
+    const start = new Date(r.t.clock.now().getTime() + 3 * 24 * 60 * 60 * 1000);
+    const [install] = await inCompany(r.t, r.companyId, (tx) =>
+      tx
+        .insert(appointments)
+        .values({
+          companyId: r.companyId,
+          kind: 'install',
+          customerId: seeded.customerId,
+          propertyId: seeded.propertyId,
+          jobId: seeded.jobId,
+          assignedUserId: r.t.seed.a.owner.userId,
+          startsAt: start,
+          endsAt: new Date(start.getTime() + 8 * 60 * 60 * 1000),
+          allDay: false,
+          status: 'scheduled',
+          source: 'manual',
+        })
+        .returning(),
+    );
+    const newStart = new Date(start.getTime() + 24 * 60 * 60 * 1000).toISOString();
+    r.llm.script.push(
+      {
+        when: /move my install/,
+        route: { ...OPUS, intent: 'reschedule' },
+        answer: [
+          VERIFY,
+          { kind: 'tool', name: 'lookup_my_jobs', input: {} },
+          { kind: 'tool', name: 'move_inspection', input: { appointmentId: install!.id, slotStart: newStart, slotUserId: r.t.seed.a.owner.userId } },
+          { kind: 'text', text: 'I cannot move an install myself. I will take a message for the office.' },
+          { kind: 'tool', name: 'take_message', input: { reason: 'Wants to move the install to another day', urgent: false, callbackWhen: null, name: null } },
+        ],
+      },
+      { when: /bye/, route: OPUS, answer: [{ kind: 'tool', name: 'end_call', input: { reason: 'goodbye' } }] },
+    );
+
+    await r.say('I need to move my install');
+    await r.say('ok, bye');
+
+    const results = await r.toolResults();
+    expect(results.map((c) => c.name)).toEqual(['verify_caller', 'lookup_my_jobs', 'move_inspection', 'take_message', 'end_call']);
+    // The verified caller's lookup names the install, so the model may use its id.
+    expect(results[1]!.result).toContain(`Appointment ${install!.id}: install`);
+    // The move reaches the tool (not the shown-ids guard) and is refused there, pointing at a message.
+    expect(results[2]).toMatchObject({ ok: false });
+    expect(results[2]!.result).toBe(ONLY_INSPECTIONS);
+    expect(results[3]).toMatchObject({ ok: true });
+    // The install is untouched.
+    const [after] = await inCompany(r.t, r.companyId, (tx) => tx.select().from(appointments).where(eq(appointments.id, install!.id)));
+    expect(after).toMatchObject({ kind: 'install', status: 'scheduled' });
+    expect(after!.startsAt.toISOString()).toBe(start.toISOString());
+    expect((await r.conversation())?.outcome).toBe('message');
+    expect(JSON.parse(r.session.endedWith!)).toEqual({ kind: 'end', reason: 'goodbye' });
+  });
+
   test('transfer on a leak: transfer_to_person ends the call with a transfer handoff', async () => {
     const r = await rig([
       {
@@ -330,7 +382,7 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     const q = r.t.deps.pools.system.$client;
     await q.query(
       'update memberships set transfer_phone_e164 = $1, on_call_order = $2 where company_id = $3 and user_id = $4',
-      ['+14025550200', 0, r.companyId, r.t.seed.a.owner.userId],
+      ['+14025550166', 0, r.companyId, r.t.seed.a.owner.userId],
     );
     await r.say('my roof is leaking into the kitchen');
 
@@ -382,6 +434,44 @@ describe('front desk call paths (real relay loop, real engine, real tools)', () 
     expect(assistant.firstTokenMs).not.toBeNull();
     expect(assistant.totalMs).not.toBeNull();
     expect(r.loop.ended).toBe(false);
+  });
+
+  test('two relay segments on one call: turn positions run 0..n in order in the one linked conversation', async () => {
+    const r = await rig(
+      [
+        { when: /leaks/, route: OPUS, answer: [{ kind: 'text', text: 'Sorry to hear that.' }] },
+        { when: /garage/, route: OPUS, answer: [{ kind: 'text', text: 'Got it, above the garage.' }] },
+        { when: /stop recording/, route: OPUS, answer: [{ kind: 'text', text: 'Of course, I stopped the recording.' }] },
+        { when: /Friday/, route: OPUS, answer: [{ kind: 'text', text: 'Friday works.' }] },
+      ],
+      { recording: true },
+    );
+    // Segment 1: two exchanges, then the socket drops (a transfer that came back, or a reconnect).
+    await r.say('my roof leaks');
+    await r.say('it is above the garage');
+    const conversationId = r.state().conversationId;
+    r.session.caller.hangUp();
+    await r.loop.settled();
+
+    // Segment 2: a new relay session for the same callId through the real loop and engine.
+    const deps = { ...r.t.deps, llm: r.llm };
+    const engine = createEngine(deps, FRONT_DESK_HANDLERS);
+    const recording = createRecording(deps, { ...r.call, alreadyRecording: true });
+    await recording.start();
+    const session = new FakeVoiceSession();
+    const loop = runRelayLoop(session, { deps, engine, call: r.call, recording });
+    session.caller.setup({ customParameters: { callId: r.call.callId } });
+    for (const line of ['please stop recording', 'can you come Friday']) {
+      session.caller.say(line);
+      await loop.settled();
+    }
+
+    const rows = await r.turns();
+    expect(rows.every((x) => x.conversationId === conversationId)).toBe(true);
+    expect(rows.map((x) => x.position)).toEqual(rows.map((_, i) => i));
+    expect(rows.map((x) => x.speaker)).toEqual(['caller', 'assistant', 'caller', 'assistant', 'system', 'caller', 'assistant', 'caller', 'assistant']);
+    expect(rows.filter((x) => x.speaker === 'system')).toHaveLength(1);
+    expect((await r.callRow()).conversationId).toBe(conversationId);
   });
 
   test('spam: a sales pitch is answered with the polite ending and marked spam on the conversation and the call', async () => {

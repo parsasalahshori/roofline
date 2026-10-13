@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, or, type SQL, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, type SQL, sql } from 'drizzle-orm';
 import type { Agent } from '@roofline/shared';
 import { agentTaskEvents, agentTasks, agentTaskSteps, customers, jobs } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -11,7 +11,20 @@ import { customerScope, jobScope } from './scope.ts';
  * ids only (`data`, `stepResult`); no payload, preview or message body is ever selected here.
  */
 
-export type FeedCursor = { at: Date; id: string };
+export type FeedCursor = { at: Date; rank: number; id: string };
+
+/*
+ * Events of one transaction share an `at`, so the order within it is a kind rank: approved is the
+ * newest, then finished, then everything else (step events and the rest), then id.
+ * Follow-up: a `seq bigint generated always as identity` column on agent_task_events (migration)
+ * replaces this rank; the feed then orders by (at desc, seq desc).
+ */
+const RANK_SQL = sql`(case ${agentTaskEvents.kind} when 'approved' then 3 when 'finished' then 2 else 1 end)`;
+
+/** The rank of an event kind, the same mapping as the SQL ordering. */
+export function feedRank(kind: string): number {
+  return kind === 'approved' ? 3 : kind === 'finished' ? 2 : 1;
+}
 
 /** One event row for the feed. Names are joined at read time and are null when the reader may not see them. */
 export type FeedRow = {
@@ -25,6 +38,10 @@ export type FeedRow = {
   taskKind: string;
   taskTitle: string;
   taskStatus: string;
+  /** The task mode: 'live' for work already done (Front Desk), else a draft mode. */
+  taskMode: string;
+  /** True for a finished event written after the task was created (a later close), not at creation. Optional. */
+  closedLater?: boolean;
   subjectType: string | null;
   subjectId: string | null;
   /** The step this event is about (step_* events), else null. */
@@ -62,7 +79,7 @@ function repScope(ctx: TenantContext): SQL | undefined {
 }
 
 /**
- * Newest first by (at desc, id desc); returns at most `limit` rows after `cursor` (exclusive).
+ * Newest first by (at desc, kind rank desc, id desc); returns at most `limit` rows after `cursor` (exclusive).
  * `agent` filters on the task's agent. Reps only see subject_type 'job' inside jobScope(ctx) or
  * 'customer' inside customerScope(ctx). Company B never appears.
  */
@@ -86,6 +103,9 @@ export async function listFeedPage(
       taskKind: agentTasks.kind,
       taskTitle: agentTasks.title,
       taskStatus: agentTasks.status,
+      taskMode: agentTasks.mode,
+      // A live task writes its created event at T and its creation-time finished/attention event at T + 2 ms.
+      closedLater: sql<boolean>`(${agentTaskEvents.kind} = 'finished' and exists (select 1 from agent_task_events c where c.company_id = ${agentTaskEvents.companyId} and c.task_id = ${agentTaskEvents.taskId} and c.kind = 'created' and c.at + interval '2 milliseconds' < ${agentTaskEvents.at}))`,
       subjectType: agentTasks.subjectType,
       subjectId: agentTasks.subjectId,
       stepType: agentTaskSteps.type,
@@ -106,17 +126,16 @@ export async function listFeedPage(
       and(
         eq(agentTaskEvents.companyId, ctx.companyId),
         eq(agentTasks.companyId, ctx.companyId),
+        // A live task reads as one row: its created and step_done events are hidden (in SQL, so paging stays exact).
+        sql`not (${agentTasks.mode} = 'live' and ${agentTaskEvents.kind} in ('created', 'step_done'))`,
         options.agent ? eq(agentTasks.agent, options.agent) : undefined,
         cursor
-          ? or(
-              lt(agentTaskEvents.at, cursor.at),
-              and(eq(agentTaskEvents.at, cursor.at), lt(agentTaskEvents.id, cursor.id)),
-            )
+          ? sql`(${agentTaskEvents.at}, ${RANK_SQL}, ${agentTaskEvents.id}) < (${cursor.at}, ${cursor.rank}::int, ${cursor.id}::uuid)`
           : undefined,
         repScope(ctx),
       ),
     )
-    .orderBy(desc(agentTaskEvents.at), desc(agentTaskEvents.id))
+    .orderBy(desc(agentTaskEvents.at), desc(RANK_SQL), desc(agentTaskEvents.id))
     .limit(limit);
 
   // The customer each row is about: the subject customer, or the customer of the subject job.
@@ -160,6 +179,8 @@ export async function listFeedPage(
       taskKind: r.taskKind,
       taskTitle: r.taskTitle,
       taskStatus: r.taskStatus,
+      taskMode: r.taskMode,
+      closedLater: r.closedLater,
       subjectType: r.subjectType,
       subjectId: r.subjectId,
       stepType: r.stepType,
