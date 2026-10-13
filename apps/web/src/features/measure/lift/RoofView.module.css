@@ -171,13 +171,13 @@
 }
 
 
-/* A facet's label card: the letter in a blue disc, the area and the pitch */
+/* A facet's label card: the letter in a blue disc, the area and the pitch; a small or crowded facet shows only its letter */
 .facetLabel {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 9px 4px 6px;
-  border-radius: 9px;
+  gap: 5px;
+  padding: 3px 7px 3px 4px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.12), 0 2px 0 rgba(21, 28, 34, 0.22);
   color: var(--ds-text-1, #151c22);
@@ -188,17 +188,26 @@
 
 .facetLabel[data-layout="tall"] {
   flex-direction: column;
-  gap: 2px;
-  padding: 5px 8px;
+  gap: 1px;
+  padding: 4px 6px;
   text-align: center;
+}
+
+.facetLabel[data-layout="mini"] {
+  padding: 2px;
+  border-radius: 50%;
+}
+
+.facetLabel[data-layout="mini"] .facetText {
+  display: none;
 }
 
 .facetLetter {
   display: grid;
   flex: none;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--ds-info, #2f6fde);
   color: #fff;
@@ -206,15 +215,10 @@
   font-weight: 700;
 }
 
-.facetLabel[data-layout="tall"] .facetLetter {
-  width: 18px;
-  height: 18px;
-}
-
 .facetText {
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .facetText strong {

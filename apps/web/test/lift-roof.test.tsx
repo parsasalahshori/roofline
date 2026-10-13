@@ -7,7 +7,7 @@ import { cardCells, cardNumbers, MeasureCard } from '../src/features/measure/lif
 import { panelLines, squaresFor, wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
 import { ProposalPanel } from '../src/features/measure/lift/ProposalPanel.tsx';
 import { facetLetter, facetsData, lineKinds, linesData, readRoof } from '../src/features/measure/lift/roofModel.ts';
-import { ringCenter, scaleBarFor } from '../src/features/measure/lift/RoofView.tsx';
+import { labelLayouts, ringCenter, scaleBarFor } from '../src/features/measure/lift/RoofView.tsx';
 import { shownShare, stageAt, type ScanSession } from '../src/features/measure/lift/scan.ts';
 import type { MeasurementPreview, MeasurementView, PreviewOption } from '../src/features/measure/types.ts';
 import { gableRoof } from './roof-model-fixture.ts';
@@ -241,6 +241,18 @@ describe('map helpers', () => {
     expect(widthPx).toBeGreaterThan(0);
     expect(widthPx).toBeLessThanOrEqual(110);
     expect(scaleBarFor(LAT, 18).feet).toBeGreaterThan(feet);
+  });
+
+  it('gives the largest facets their cards, and a small or crowded facet only its letter', () => {
+    expect(
+      labelLayouts([
+        { planSqFt: 900, at: { x: 100, y: 100 } },
+        { planSqFt: 500, at: { x: 300, y: 100 } },
+        { planSqFt: 400, at: { x: 110, y: 105 } },
+        { planSqFt: 120, at: { x: 500, y: 500 } },
+        { planSqFt: 800, at: null },
+      ]),
+    ).toEqual(['wide', 'tall', 'mini', 'mini', 'mini']);
   });
 
   it('puts a label at the average of the corners', () => {

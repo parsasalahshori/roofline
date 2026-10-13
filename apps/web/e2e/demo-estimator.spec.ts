@@ -45,7 +45,11 @@ test('demo: a typed address measures a demo house and makes a proposal', async (
   const search = page.getByRole('searchbox', { name: 'Search name or address' });
   await expect(search).toBeVisible();
   await search.fill('1600 Pennsylvania Ave NW, Washington, DC 20500');
+  // /estimator opens the first request; wait for the new roof's own page before pressing its Measure roof
+  const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/measurements' && r.request().method() === 'POST');
   await page.getByRole('button', { name: 'Measure a new roof at 1600 Pennsylvania Ave NW, Washington, DC 20500' }).click();
+  const { id } = (await (await created).json()) as { id: string };
+  await expect(page).toHaveURL(new RegExp(`/estimator/measure/${id}$`), { timeout: 30_000 });
 
   await expectOutline(page);
   await expect(page.getByRole('button', { name: /Free estimate/ })).toHaveAttribute('aria-pressed', 'true');

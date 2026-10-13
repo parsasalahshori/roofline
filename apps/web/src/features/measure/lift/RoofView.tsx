@@ -89,15 +89,61 @@ function facetLabel(letter: string, sqFt: number, pitch: string, wide: boolean):
   return el;
 }
 
+/** Facets smaller than this show only their letter. */
+const LETTER_ONLY_SQFT = 150;
+/** The label cards' sizes in pixels (about, with a little room), for the overlap check. */
+const LABEL_SIZE = { wide: [90, 34], tall: [66, 46] } as const;
+
+type Rect = { x0: number; y0: number; x1: number; y1: number };
+const overlaps = (a: Rect, b: Rect) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+/**
+ * Which label each facet gets, largest facet first: its full card where there is room, else (a small facet, or a card
+ * that would cover another) just its letter.
+ */
+export function labelLayouts(facets: { planSqFt: number; at: { x: number; y: number } | null }[]): ('wide' | 'tall' | 'mini')[] {
+  const order = facets.map((_, i) => i).sort((a, b) => facets[b]!.planSqFt - facets[a]!.planSqFt);
+  const placed: Rect[] = [];
+  const out: ('wide' | 'tall' | 'mini')[] = facets.map(() => 'mini');
+  for (const i of order) {
+    const f = facets[i]!;
+    if (f.at === null || f.planSqFt < LETTER_ONLY_SQFT) continue;
+    const layout = f.planSqFt >= WIDE_LABEL_SQFT ? 'wide' : 'tall';
+    const [w, h] = LABEL_SIZE[layout];
+    const rect = { x0: f.at.x - w / 2, y0: f.at.y - h / 2, x1: f.at.x + w / 2, y1: f.at.y + h / 2 };
+    if (placed.some((r) => overlaps(r, rect))) continue;
+    placed.push(rect);
+    out[i] = layout;
+  }
+  return out;
+}
+
 function useFacetLabels(instance: MapLibreMap | null, model: RoofModel | null, visible: boolean) {
   useEffect(() => {
     if (!instance || !model || !visible) return;
-    const markers = model.facets.map((f, i) =>
-      new Marker({ element: facetLabel(facetName(f.id, i), f.areaSqFt, f.pitch, f.planSqFt >= WIDE_LABEL_SQFT), draggable: false })
-        .setLngLat(f.labelAt)
-        .addTo(instance),
-    );
+    const elements = model.facets.map((f, i) => facetLabel(facetName(f.id, i), f.areaSqFt, f.pitch, f.planSqFt >= WIDE_LABEL_SQFT));
+    const markers = model.facets.map((f, i) => new Marker({ element: elements[i]!, draggable: false }).setLngLat(f.labelAt).addTo(instance));
+    const loose = instance as unknown as Loose;
+    const layout = () => {
+      const at = model.facets.map((f) => {
+        try {
+          return loose.project?.(f.labelAt) ?? null;
+        } catch {
+          return null;
+        }
+      });
+      const layouts = labelLayouts(model.facets.map((f, i) => ({ planSqFt: f.planSqFt, at: at[i] ?? null })));
+      layouts.forEach((l, i) => {
+        const el = elements[i];
+        if (el) el.dataset.layout = l;
+      });
+    };
+    layout();
+    loose.on?.('zoomend', layout);
+    loose.on?.('resize', layout);
     return () => {
+      loose.off?.('zoomend', layout);
+      loose.off?.('resize', layout);
       for (const marker of markers) marker.remove();
     };
   }, [instance, model, visible]);
