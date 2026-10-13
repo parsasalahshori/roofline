@@ -163,6 +163,7 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
           role="link"
           tabIndex={0}
           className={styles.allDayItem}
+          aria-label={[appt.title, appt.customerName, calendar.allDay, appt.addressLine].filter(Boolean).join(' · ')}
           data-testid={`allday-${appt.id}`}
           data-appt={appt.id}
           data-status={appt.status}
@@ -189,6 +190,7 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
           role="link"
           tabIndex={0}
           className={styles.appt}
+          aria-label={[appt.title, appt.customerName, range, appt.addressLine].filter(Boolean).join(' · ')}
           data-testid={`appt-${appt.id}`}
           data-appt={appt.id}
           data-status={appt.status}
@@ -276,7 +278,7 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
       >
         <div className={styles.corner} />
         {dayKeys.map((dayKey, col) => (
-          <div key={dayKey} className={styles.dayHead} data-day={dayKey}>
+          <div key={dayKey} className={styles.dayHead} data-day={dayKey} data-today={dayKey === nowKey ? 'true' : undefined}>
             {formatDayLabel(days[col], zone)}
           </div>
         ))}

@@ -1,6 +1,7 @@
 import type { AppointmentView } from '@roofline/shared';
 import { Button, EmptyState } from '@roofline/ui';
 import { calendar } from '../../copy/calendar.ts';
+import { appointments as appointmentCopy } from '../../copy/appointments.ts';
 import { addZonedDays, formatDayLabel, formatTime, zonedDateKey } from './time.ts';
 import type { AgendaViewProps, CalendarPerson } from './types.ts';
 import styles from './AgendaView.module.css';
@@ -79,7 +80,10 @@ export function AgendaView(props: AgendaViewProps) {
                       {appointment.customerName !== null ? (
                         <span className={styles.customer}>{appointment.customerName}</span>
                       ) : null}
+                      {appointment.addressLine ? <span className={styles.customer}>{appointment.addressLine}</span> : null}
+                      {appointment.assigned ? <span className={styles.customer}>{appointment.assigned.name}</span> : null}
                     </span>
+                    <span className={styles.status} data-status={appointment.status}>{appointmentCopy.status[appointment.status]}</span>
                   </Button>
                 </li>
               );

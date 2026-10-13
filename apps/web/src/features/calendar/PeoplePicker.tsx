@@ -1,6 +1,7 @@
 import { Checkbox } from '@roofline/ui';
 import { calendar } from '../../copy/calendar.ts';
 import type { CalendarPerson } from './types.ts';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
 import styles from './PeoplePicker.module.css';
 
 /** The colour of each person, in team order. Stage and hail tokens only: they are the palette the app already uses. */
@@ -29,7 +30,8 @@ type PeoplePickerProps = {
 
 /** Which people's appointments and busy times the calendar shows. Each row is a checkbox with the person's colour. */
 export function PeoplePicker({ people, selected, onChange }: PeoplePickerProps) {
-  return (
+  const isPhone = useIsPhone();
+  const picker = (
     <fieldset className={styles.picker}>
       <legend className={styles.legend}>{calendar.people}</legend>
       <ul className={styles.list}>
@@ -58,4 +60,10 @@ export function PeoplePicker({ people, selected, onChange }: PeoplePickerProps) 
       </ul>
     </fieldset>
   );
+  return isPhone ? (
+    <details className={styles.disclosure}>
+      <summary>{calendar.selectedPeople(people.filter((person) => selected.includes(person.userId)).length)}</summary>
+      {picker}
+    </details>
+  ) : picker;
 }

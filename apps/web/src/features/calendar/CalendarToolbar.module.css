@@ -1,9 +1,14 @@
 /* The calendar toolbar wraps onto as many lines as the width needs, so nothing scrolls sideways at 375px. */
+
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
 }
 
 .row {
@@ -11,7 +16,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -26,16 +31,18 @@
 }
 
 .label {
-  font-size: var(--font-size-body);
   font-weight: 600;
   color: var(--text);
   overflow-wrap: anywhere;
+  font-size: 14px;
 }
 
 .zoneNote {
   margin: 0;
   font-size: var(--font-size-min);
   color: var(--text-muted);
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
 }
 
 @media (max-width: 767.98px) {
@@ -44,5 +51,64 @@
   .end > * {
     min-height: 40px;
     min-width: 40px;
+  }
+}
+
+.views {
+  padding: 3px;
+  gap: 2px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.views > button {
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-size: 13px;
+}
+
+.views > button[data-selected="true"] {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--line);
+  box-shadow: 0 2px 5px rgb(21 28 34 / 8%);
+}
+
+.nav > button {
+  min-height: 34px;
+}
+
+@media (max-width: 767.98px) {
+  .toolbar {
+    padding: 12px;
+  }
+  .nav {
+    width: 100%;
+  }
+  .label {
+    order: -1;
+    width: 100%;
+  }
+  .views {
+    width: 100%;
+  }
+  .views > button {
+    flex: 1;
+    min-height: 40px;
+  }
+  .end {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .nav > button {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .nav > .label {
+    min-height: 0;
   }
 }

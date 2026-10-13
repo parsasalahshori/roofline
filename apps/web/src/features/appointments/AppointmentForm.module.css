@@ -1,17 +1,36 @@
 /* One column, gaps from the spacing scale; controls are 40px tall on a phone. Nothing scrolls sideways at 375px. */
+
 .form {
+  --surface: #fff;
+  --surface-2: #f0f2f4;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dcdfe2;
+  --accent: #ffcc32;
+  --accent-ink: #151c22;
+  --radius-card: 14px;
+  --font-size-body: 13px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px;
+  background: #f6f7f8;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 18px;
 }
 
 .title {
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
   color: var(--text);
   overflow-wrap: anywhere;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .dates {
@@ -84,6 +103,7 @@
   font-size: var(--font-size-min);
   color: var(--text-muted);
   overflow-wrap: anywhere;
+  margin: 0;
 }
 
 .actions {
@@ -92,6 +112,9 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  justify-content: flex-end;
 }
 
 @media (min-width: 768px) {
@@ -106,4 +129,17 @@
   .picked > * {
     min-height: 40px;
   }
+}
+
+@media (max-width: 767.98px) {
+  .form {
+    padding: 14px;
+  }
+}
+
+.intro {
+  margin: -8px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
 }

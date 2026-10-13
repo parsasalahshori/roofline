@@ -1,13 +1,15 @@
 /* The shared week and day grid. Rows are 24px (--row-h, set inline); the page never scrolls sideways, the grid does. */
+
 .scroll {
   position: relative;
   max-height: 70vh;
   overflow: auto;
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: 18px;
   background: var(--surface);
   -webkit-overflow-scrolling: touch;
+  box-shadow: 0 2px 5px rgb(21 28 34 / 6%);
 }
 
 .grid {
@@ -21,7 +23,7 @@
   position: sticky;
   top: 0;
   z-index: 4;
-  background: var(--surface-2);
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
 
@@ -29,8 +31,8 @@
   position: sticky;
   top: 0;
   z-index: 3;
-  padding: 6px 8px;
-  background: var(--surface-2);
+  padding: 14px 10px;
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
   border-left: 1px solid var(--line);
   font-size: var(--font-size-body);
@@ -51,7 +53,7 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  min-height: 32px;
+  min-height: 44px;
   padding: 4px;
   border-bottom: 1px solid var(--line);
   border-left: 1px solid var(--line);
@@ -64,15 +66,15 @@
   min-height: 24px;
   padding: 2px 6px;
   border-left: 4px solid var(--person);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--person) 16%, var(--surface));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--person) 8%, var(--surface));
   cursor: pointer;
   overflow: hidden;
 }
 
 .allDayBusy {
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: 9px;
   color: var(--text-muted);
   background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 12px);
 }
@@ -109,7 +111,8 @@
 }
 
 .slot[data-half="true"] {
-  border-top-style: dashed;
+  border-top-color: #eff1f3;
+  border-top-style: solid;
 }
 
 .slot:focus-visible,
@@ -128,8 +131,8 @@
   gap: 1px;
   padding: 2px 6px;
   border-left: 4px solid var(--person);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--person) 16%, var(--surface));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--person) 8%, var(--surface));
   cursor: pointer;
   overflow: hidden;
   line-height: 1.25;
@@ -159,7 +162,7 @@
   z-index: 0;
   box-sizing: border-box;
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: 9px;
   color: var(--text-muted);
   background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 12px);
   overflow: hidden;
@@ -180,4 +183,21 @@
   .scroll {
     max-height: 62vh;
   }
+}
+
+.dayHead[data-today="true"] {
+  background: #fff4d6;
+  box-shadow: inset 0 3px #b3622d;
+}
+
+.slot:hover {
+  background: #f5f7fa;
+}
+
+.appt:hover, .allDayItem:hover {
+  box-shadow: inset 0 0 0 1px var(--person);
+}
+
+.allDayItem[data-status="canceled"] {
+  text-decoration: line-through;
 }

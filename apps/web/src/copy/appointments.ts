@@ -5,6 +5,8 @@ export const appointments = {
   comingSoon: 'Appointments are coming soon.',
   newTitle: 'New appointment',
   rescheduleTitle: 'Reschedule',
+  formHint: 'Choose who is going and when. Suggested times account for availability and travel time.',
+  timeZone: (zone: string) => `Appointment times use ${zone}.`,
   kindLabel: 'Kind',
   kind: { inspection: 'Inspection', install: 'Install', adjuster: 'Adjuster visit', other: 'Other' },
   customerLabel: 'Customer or job',

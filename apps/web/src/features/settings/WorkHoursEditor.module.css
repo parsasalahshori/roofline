@@ -1,8 +1,9 @@
 /* One row per weekday, stacked; the ranges of a day sit under its switch */
+
 .days {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -11,13 +12,17 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f6f7f8;
 }
 
 .header {
   display: flex;
   align-items: center;
-  gap: 12px;
   min-height: 40px;
+  gap: 10px;
 }
 
 .name {
@@ -29,6 +34,10 @@
 .state {
   color: var(--text-muted);
   font-size: var(--font-size-min);
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: #e9edef;
 }
 
 .ranges {
@@ -38,6 +47,7 @@
 }
 
 /* Start, end and Remove on one line; the line wraps on a phone */
+
 .range {
   display: flex;
   flex-wrap: wrap;
@@ -54,4 +64,84 @@
   margin: 0;
   color: var(--danger-hover);
   font-size: var(--font-size-min);
+}
+
+.day[data-open="true"] {
+  background: var(--surface);
+}
+
+.ranges > button {
+  align-self: flex-start;
+}
+
+@media (min-width: 1100px) {
+  .day {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    align-items: start;
+  }
+  .error {
+    grid-column: 2;
+  }
+  .range > button {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .range {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .time {
+    width: 100%;
+  }
+  .range > button {
+    grid-column: 1 / -1;
+    justify-self: start;
+    min-height: 40px;
+  }
+}
+
+@media (min-width: 1100px) {
+  .ranges {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+  .range {
+    grid-column: 1;
+  }
+  .ranges > button {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+  }
+  .time {
+    flex-basis: 80px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .ranges {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+  .range {
+    display: contents;
+  }
+  .range > .time:first-child {
+    grid-column: 1;
+  }
+  .range > .time:nth-child(2) {
+    grid-column: 2;
+  }
+  .range > button {
+    grid-column: 1;
+  }
+  .ranges > button {
+    grid-column: 2;
+    min-height: 40px;
+  }
 }
