@@ -5,7 +5,7 @@ import { Actors, addressFor, dbProperty, inCompany, mustCreate, NO_UUID, NOT_FOU
 import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 import { createMeasurement, proposals, type TenantContext } from '@roofline/db';
 import { claimFootprintState, finishFootprintState, insertFootprints, type FootprintInput } from '@roofline/db/system';
-import { instantEstimate, type LngLat, type MeasurementView, type Ring } from '@roofline/shared';
+import { measureRoof, seededPitchX12, type LngLat, type MeasurementView, type Ring } from '@roofline/shared';
 
 /*
  * The measurements API: POST /api/measurements measures a home from the building outline under its
@@ -135,12 +135,12 @@ async function getView(id: string): Promise<MeasurementView> {
   return res.body as MeasurementView;
 }
 
-/** The fixture's estimate for an outline with the company's default pitch and overhang. */
+/** The estimate for an outline (the roof model's lines give ridge, valley and edges) with the company's overhang. */
 const estimateOf = (outline: Ring[], pitchX12 = PITCH, overhangFt = OVERHANG) =>
-  instantEstimate({ outline, pitchX12, overhangFt, valleyFt: 0 });
+  measureRoof({ outline, pitchX12, overhangFt }).estimate;
 
 describe('POST /api/measurements: outlines from footprints', () => {
-  it('a home inside a fixture footprint measures to instantEstimate on that ring', async () => {
+  it("a home inside a fixture footprint measures to that ring's roof, at the home's own pitch", async () => {
     await loadNE({ sourceRef: 'house', ring: HOUSE });
     const houseId = (await footprintIds()).house!;
     const propertyId = await homeAt(1, INSIDE);
@@ -155,7 +155,11 @@ describe('POST /api/measurements: outlines from footprints', () => {
     expect(view.kind).toBe('estimate');
     expect(view.drawMode).toBe(false);
     expect(view.outline).toEqual([open(HOUSE)]);
-    expect(view.estimate).toEqual(instantEstimate({ outline: [HOUSE], pitchX12: PITCH, overhangFt: OVERHANG }));
+    expect(view.estimate).toEqual(estimateOf([HOUSE], seededPitchX12(propertyId)));
+    expect(view.roof).not.toBeNull();
+    expect(view.roof!.totals.slopedSqFt).toBe(view.estimate.surfaceSqFt);
+    expect(view.roof!.totals.ridgeFt).toBe(view.estimate.ridgeFt);
+    expect(view.facets).toBe(view.roof!.facets.length);
     expect(view.structures).toHaveLength(1);
     expect(view.structures[0]).toMatchObject({ footprintId: houseId, included: true });
     expect((await dbProperty(t, A(), propertyId)).footprintId).toBe(houseId);
@@ -291,7 +295,7 @@ describe('PATCH /api/measurements/:id: recomputes', () => {
     const outlined = await owner.patch(path).send({ outline: [WIDER] });
     expect(outlined.status).toBe(200);
     expect(outlined.body.outline).toEqual([open(WIDER)]);
-    expect(outlined.body.estimate).toEqual(estimateOf([WIDER]));
+    expect(outlined.body.estimate).toEqual(estimateOf([WIDER], created.estimate.pitchX12));
 
     // A new pitch: the pitch and the surface change, and both equal instantEstimate.
     const pitched = await owner.patch(path).send({ pitchX12: 8 });
@@ -378,7 +382,7 @@ describe('PATCH /api/measurements/:id: bad input', () => {
     // Nothing changed.
     const after = await getView(created.id);
     expect(after.outline).toEqual([open(HOUSE)]);
-    expect(after.estimate).toEqual(estimateOf([HOUSE]));
+    expect(after.estimate).toEqual(estimateOf([HOUSE], created.estimate.pitchX12));
   });
 
   it('unknown structure ids are a 400 and a drawn outline survives a structures change', async () => {
@@ -450,7 +454,7 @@ describe('locking', () => {
     expect(locked.body.error).toBe('Make a new measurement to change a sent proposal.');
     const read = await owner.get(`/api/measurements/${sentMeasurement.id}`);
     expect(read.body.locked).toBe(true);
-    expect(read.body.estimate.pitchX12).toBe(PITCH);
+    expect(read.body.estimate.pitchX12).toBe(sentMeasurement.estimate.pitchX12);
 
     const draftPatch = await owner.patch(`/api/measurements/${draftMeasurement.id}`).send({ pitchX12: 9 });
     expect(draftPatch.status).toBe(200);
@@ -524,7 +528,7 @@ describe('company isolation', () => {
     expect(foreign.body).toEqual({ error: NOT_FOUND });
 
     // Company A's view is unchanged by those attempts.
-    expect((await getView(view.id)).estimate).toEqual(estimateOf([HOUSE]));
+    expect((await getView(view.id)).estimate).toEqual(estimateOf([HOUSE], view.estimate.pitchX12));
     expect((await ownerB.get(`/api/measurements/${NO_UUID}`)).status).toBe(404);
   });
 });

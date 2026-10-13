@@ -43,6 +43,7 @@ export type StoredFileKind = (typeof STORED_FILE_KINDS)[number];
 // T4: proposal views, the signature record, canonical JSON.
 import { z } from 'zod';
 import type { Outline, InstantEstimate, LngLat, Ring } from './roof.ts';
+import type { RoofModel } from './roof-model.ts';
 import type { AddOn } from './tiers.ts';
 import type { Scope, Calculation, QuoteLine } from './pricing.ts';
 
@@ -52,6 +53,7 @@ export type MeasurementView = {
   overhangFt: number; /** The map centre, [lng, lat]. */ center: LngLat;
   locked: boolean; providerRef: string | null; notes: string | null; createdAt: string; drawMode: boolean;
   /** Whether a proposal from it already has a customer: its job's, or its home's. When false, Make proposal needs one. */ hasCustomer: boolean;
+  /** The roof drawn over the outline (facets and lines), worked out on read; null with no outline. */ roof: RoofModel | null;
 };
 export type ProposalOptionView = {
   id: string; tier: Tier; name: string; highlights: string[]; scope: Scope; addOns: AddOn[]; calculation: Calculation;

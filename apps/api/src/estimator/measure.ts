@@ -21,7 +21,7 @@ import {
   withTenant,
 } from '@roofline/db';
 import { footprintStateStatus } from '@roofline/db/system';
-import { instantEstimate, isTimeZone, isUsStateCode, type MeasurementView, normalizeAddressKey, type Outline, type Ring } from '@roofline/shared';
+import { instantEstimate, isTimeZone, isUsStateCode, measureRoof, type MeasurementView, normalizeAddressKey, type Outline, type Ring, seededPitchX12 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
@@ -167,6 +167,9 @@ function outlineInput(
   jobId: string | null,
 ): NewMeasurement {
   const outline: Outline = [main.ring];
+  // The roof's pitch is chosen per home (4/12 to 7/12, the same every time), so the roof drawn and the
+  // estimate priced from it agree; the rep can still change it.
+  const { estimate, roof } = measureRoof({ outline, pitchX12: seededPitchX12(property.id), overhangFt: settings.overhangFt });
   return {
     propertyId: property.id,
     jobId,
@@ -174,7 +177,8 @@ function outlineInput(
     method: 'outline',
     outline,
     structures: rows.map((r) => ({ footprintId: r.id, included: r.id === main.id, areaSqFt: r.areaSqFt, ring: r.ring })),
-    estimate: instantEstimate({ outline, pitchX12: settings.pitchX12, overhangFt: settings.overhangFt }),
+    estimate,
+    facets: roof?.totals.facetCount ?? null,
     overhangFt: settings.overhangFt,
     center: point,
   };

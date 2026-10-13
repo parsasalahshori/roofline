@@ -50,6 +50,7 @@ const MEASUREMENT: MeasurementView = {
   method: 'outline',
   drawMode: false,
   hasCustomer: true,
+  roof: null,
   outline: null,
   structures: [],
   overhangFt: 1,

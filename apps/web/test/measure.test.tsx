@@ -118,6 +118,7 @@ function view(over: Partial<MeasurementView> = {}): MeasurementView {
     method: 'outline',
     drawMode: false,
     hasCustomer: true,
+    roof: null,
     outline: [ring],
     structures: [{ footprintId: 's1', ring, areaSqFt: 1200, included: true }],
     overhangFt: 1,
