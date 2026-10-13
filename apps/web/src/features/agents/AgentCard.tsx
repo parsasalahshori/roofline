@@ -48,8 +48,8 @@ export function AgentCard({ card, minutesThisWeek, latest, selected, onSelect, i
         <div className={styles.head}>
           <h3 className={styles.name} id={`${id}-name`}>
             <Button variant="ghost" className={styles.pick} aria-pressed={selected} onClick={onSelect}>
+              <span className="visually-hidden">{`${agentsDash.selectHint} `}</span>
               <span>{name}</span>
-              <span className="visually-hidden">{agentsDash.selectHint}</span>
             </Button>
           </h3>
         </div>

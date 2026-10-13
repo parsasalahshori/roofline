@@ -67,7 +67,7 @@ describe('Agents window', () => {
 
     const grid = within(dialog).getByRole('region', { name: agentsWindow.gridLabel });
     const names = within(grid).getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
-    expect(names).toEqual(['Storm ScoutShow details for', 'Front DeskShow details for', 'EstimatorShow details for', 'ClaimsShow details for', 'SchedulerShow details for', 'Follow-upShow details for']);
+    expect(names).toEqual(['Storm Scout', 'Front Desk', 'Estimator', 'Claims', 'Scheduler', 'Follow-up'].map((n) => `${agentsDash.selectHint} ${n}`));
     expect(within(dialog).getByText(agentsDash.handoffsSuffix).parentElement?.textContent).toBe(`3${agentsDash.handoffsSuffix}`);
   });
 
