@@ -23,10 +23,13 @@ async function signIn(page: Page): Promise<void> {
 async function expectOutline(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/estimator\/measure\//, { timeout: 30_000 });
   // A new roof is revealed by the scan first (Measure roof), then the numbers
+  // (Wait for either: over the aerial photos the scan bar can take a moment to show, and an instant check would miss it.)
   const scan = page.getByRole('button', { name: 'Measure roof' });
+  const adjust = page.getByRole('button', { name: 'Adjust' });
+  await expect(scan.or(adjust)).toBeVisible({ timeout: 60_000 });
   if (await scan.isVisible().catch(() => false)) await scan.click();
   // The numbers sit under the result card's Adjust row
-  await page.getByRole('button', { name: 'Adjust' }).click({ timeout: 15_000 });
+  await adjust.click({ timeout: 30_000, force: true });
   await expect(page.getByText('The numbers', { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('Squares', { exact: true }).locator('xpath=following-sibling::dd')).not.toHaveText('0');
   await expect(page.getByText('Tap the corners of the roof.', { exact: false })).toHaveCount(0);
@@ -63,16 +66,18 @@ test('demo: Estimate this roof from the map opens Measure on that building', asy
 
   // Fly to the home's pin, close its card, zoom in twice, then click just beside the pin: an empty-map click.
   await page.goto(`/?focus=${home!.id}`);
-  await page.getByRole('button', { name: 'Close', exact: true }).click({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Close', exact: true }).click({ timeout: 30_000, force: true });
   await page.waitForTimeout(1500);
   await page.getByRole('button', { name: /zoom in/i }).click();
   await page.waitForTimeout(800);
   await page.getByRole('button', { name: /zoom in/i }).click();
   await page.waitForTimeout(1500);
   const box = await page.getByRole('region', { name: /map/i }).first().boundingBox();
-  await page.mouse.click(box!.x + box!.width / 2 + 50, box!.y + box!.height / 2);
-
-  await page.getByRole('button', { name: 'Estimate this roof' }).click({ timeout: 15_000 });
+  // The homes are real houses now, a lot apart: 30 px at this zoom is about 7 m, still on the home's own roof (a bigger
+  // step can land nearer the next house), and clear of its pin.
+  const estimate = page.getByRole('button', { name: 'Estimate this roof' });
+  await page.mouse.click(box!.x + box!.width / 2 + 30, box!.y + box!.height / 2);
+  await estimate.click({ timeout: 30_000, force: true });
   await expectOutline(page);
   // That home already has its customer, so no customer step; Make proposal is ready.
   await expect(page.getByText('Who is this for?')).toHaveCount(0);
