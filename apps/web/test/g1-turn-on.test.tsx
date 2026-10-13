@@ -54,6 +54,8 @@ function setup(path: string, overrides: Routes = {}) {
     'GET /api/company': () => ({ body: COMPANY }),
     'GET /api/claims': () => ({ body: { claims: [] } }),
     'GET /api/agent-values': () => ({ body: {} }),
+    // A1's time-saved table sits on the Settings Agents tab too (probe pass 14).
+    'GET /api/agents/time-baselines': () => ({ body: { rows: [], canEdit: true, hourlyRateCents: 2800 } }),
     ...Object.fromEntries(G1.map((a) => [`GET /api/agents/${a}?period=month`, () => ({ body: detail(a) })])),
     ...overrides,
   });

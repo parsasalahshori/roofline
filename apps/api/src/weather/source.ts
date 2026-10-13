@@ -20,7 +20,6 @@ export type CurrentWeather = {
 /** One hour of forecast, shared with the weather-risk rule in @roofline/shared (G1). */
 export type { HourlyForecast } from '@roofline/shared';
 import type { HourlyForecast } from '@roofline/shared';
-
 export type DailyForecast = {
   /** YYYY-MM-DD, the place's local date. */
   date: string;

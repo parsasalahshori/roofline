@@ -28,8 +28,7 @@ export function weatherIcon(shortForecast: string, isDaytime: boolean): WeatherI
 // anything these do not accept makes the whole answer "no weather".
 const PointsAnswer = z.object({ properties: z.object({ forecastHourly: z.string() }) });
 // The periods are checked one at a time: `current` reads only the first, so a bad later one does not
-// matter; `hourly` reads the first `hours` and a bad one among them makes the whole answer "no weather";
-// `daily` skips a bad period.
+// matter; `hourly` reads the first `hours` and a bad one among them makes the whole answer "no weather".
 const PointsForecastAnswer = z.object({ properties: z.object({ forecast: z.string() }) });
 const ForecastAnswer = z.object({ properties: z.object({ periods: z.array(z.unknown()).min(1) }) });
 const DailyPeriod = z.object({

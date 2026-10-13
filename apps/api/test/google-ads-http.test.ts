@@ -420,11 +420,11 @@ describe("googleAdsFor", () => {
     DATABASE_URL_SYSTEM: "postgres://app_system:pw@localhost:5432/roofline",
     ENCRYPTION_KEY: Buffer.alloc(32, 9).toString("base64"),
     PUBLIC_BASE_URL: "https://app.roofline.test",
-    TRUST_PROXY: "1",
     R2_ACCOUNT_ID: "acct",
     R2_ACCESS_KEY_ID: "key-id",
     R2_SECRET_ACCESS_KEY: "key-secret",
     R2_BUCKET: "proposals",
+    TRUST_PROXY: "1",
   } satisfies Record<string, string>;
 
   const GOOGLE_ADS = {
