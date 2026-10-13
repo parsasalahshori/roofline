@@ -135,8 +135,8 @@ export const DEMO_LOOKUP_LOTS: readonly (readonly [number, number])[] = Array.fr
  */
 export class DemoGeocoder extends FakeGeocoder {
   /**
-   * Any address (except the fake's `nowhere` and `outage` words) lands on one of the demo's empty lots, with the
-   * missing city, state and ZIP filled in as Omaha, NE, so a bare `410 Truss Ave` is still a whole address.
+   * Any address (except the fake's `nowhere` and `outage` words) lands on one of the demo's empty lots as an Omaha, NE
+   * address: the typed street is kept, the city and state are always Omaha, NE, and a ZIP outside 68xxx is replaced.
    */
   protected override resolve(address: string): GeocodeResult | null {
     const found = super.resolve(address);
@@ -147,10 +147,11 @@ export class DemoGeocoder extends FakeGeocoder {
       ...found,
       lng,
       lat,
-      city: found.city ?? 'Omaha',
-      state: found.state ?? 'NE',
-      zip: found.zip ?? DEMO_ZIPS[Math.floor(h / 97) % DEMO_ZIPS.length]!,
-      timezone: found.timezone ?? 'America/Chicago',
+      // Always Omaha, NE: the lots are there, and only NE has footprints loaded (another state would open draw mode)
+      city: 'Omaha',
+      state: 'NE',
+      zip: found.zip !== null && /^68\d{3}$/.test(found.zip) ? found.zip : DEMO_ZIPS[Math.floor(h / 97) % DEMO_ZIPS.length]!,
+      timezone: 'America/Chicago',
     };
   }
 

@@ -34,6 +34,11 @@ describe('the demo geocoder', () => {
     }
     expect(await geocoder.geocode('12 Elm St')).toEqual(found[0]);
     expect(found[2]).toMatchObject({ city: 'Omaha', state: 'NE', zip: '68114' });
+    // A real-looking address in another state still lands on a lot as an Omaha, NE home (only NE has footprints)
+    const elsewhere = await geocoder.geocode('1600 Pennsylvania Ave NW, Washington, DC 20500');
+    expect(lots).toContain(`${elsewhere!.lng},${elsewhere!.lat}`);
+    expect(elsewhere).toMatchObject({ street: '1600 Pennsylvania Ave NW', city: 'Omaha', state: 'NE', timezone: 'America/Chicago' });
+    expect(elsewhere!.zip).toMatch(/^68\d{3}$/);
     const [many] = await geocoder.geocodeMany(['12 Elm St']);
     expect(many).toEqual(found[0]);
     expect(await geocoder.geocode('nowhere at all')).toBeNull();
