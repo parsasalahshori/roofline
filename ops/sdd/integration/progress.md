@@ -2096,3 +2096,40 @@ pass, lint pass, lint:css pass. Vitest: @roofline/web 1370 pass (146 files), @ro
 
 Problem 15 (the CI Platform pace) did not recur in a way that failed a run: rc2 and rc3 Platform runs finished in about
 35 min.
+
+## Ports after launch (for the main merge after the owner's demo)
+
+The owner says main is merged only after their demo. launch-integration stays at launch head ff772d5c, plus ledger
+commits. Probe-only fixes are now on `port-<track>` branches. Each was cut from the current track head and is green on
+every job.
+
+| Port branch | Base | Head | CI | Carries |
+|---|---|---|---|---|
+| port-a1 | a1-agents 4ae6495e | 53a5450f | 38332788428 green | b40a411f (locked hand-off), 657a8414 (paused mid-ring), d1 6f411622 merged with conflicts resolved to the probe (texts.ts, texts.test, turns.ts), a1-dock test, 0019–0022 snapshots and journal byte-equal to the probe |
+| port-g1 | g1-agents f1e148be | ab566269 | 38333324280 green | 5bd5edcc (Ruling BL); port-a1 merged with 51 conflicts resolved to the probe; 309ccfd2 (one-writer) and 9564ebee (CLAIMS_ACK_PREFIX), neither of which was on g1-agents; agents/more-agents specs; Ruling BA tests; 0023/0024 snapshots |
+| port-d1 | d1-front-desk 6f411622 | 8e47f6e1 | 38333650602 green | e93267b9 (drop countLiveAiCalls) |
+| port-c1 | c1-crm 042c95bd | 1d3f5af0 | 38333856297 green | c15e3c7d (phone top bar) |
+
+Nothing to port: E1 (420f022 is on e1), S1 (4e5954ee is on s1), demo-mode (BUG-7 and simulateCall are on it, and
+dcfcead8 is reverted by 3bf442e2).
+
+### Open for the main merge
+
+1. **Tracks take their ports:** port-a1 → a1-agents, port-g1 → g1-agents (which includes port-a1), port-d1 → d1-front-desk,
+   port-c1 → c1-crm. If a1 or d1 move afterwards, port-g1 must be re-merged.
+2. **Merge order (simulated with merge-tree):** main ← port-g1 ← port-c1 ← e1 ← s1 ← port-d1 ← port-a1 ← demo-mode merges
+   cleanly except for:
+   - .github/workflows/ci.yml, against main's own 46c6e1f6: take the probe's file.
+   - app.ts, config.ts and ShellTopBar.tsx when demo-mode goes in. These are adjacent add/add conflicts; take the
+     probe's versions.
+
+   The result equals ff772d5c plus demo-mode's two newer files (docs/demo.md, scripts/demo-mac.sh).
+
+   The probe's own order (c1, e1, s1, d1, a1, g1) conflicts at d1 in 43 files, because d1 never merged S1. So merge port-g1
+   first, or skip d1 as a separate merge: it is an ancestor of port-a1 and port-g1.
+3. **Migrations:** d1-front-desk (17 entries, 0019 chained from 0014) can't be fixed on d1 alone. Its rebuilt chain is in
+   port-a1 and port-g1. port-g1 equals the probe in full (25 entries and 25 snapshots, launch-normalize --check passes).
+4. **Ruling BA and G1 × A1:** problems 2, 3, 10 and pass-14 problem 6 close only once g1-agents takes port-g1.
+5. **ops/bin/launch-normalize** is on no track. It arrives through demo-mode.
+6. **demo-lift:** not part of this probe. The C1 lead reports it red on its own (typecheck, lint, phone.spec D1 page, 14
+   web unit tests). Its top-bar fix is on demo-lift-topbar2 fd890afb. It needs its own green run before any main merge.
