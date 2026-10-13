@@ -86,7 +86,6 @@ export function twilioVoiceHooks(deps: AppDeps): Router {
       // ring times out takes the cap again at /voice-transfer/after-dial.
       await lockAiCap(tx, ctx);
       const liveAi = await countLiveCallsInWindow(tx, ctx, now, call.id);
-      // A paused Front Desk (A1) is handled like Front Desk off: the team, then voicemail.
       const paused = await isAgentPaused(tx, ctx, 'front_desk');
       const overCompanyCap = liveAi >= route.maxConcurrentAiCalls;
       if (!aiAllowed || paused || overCompanyCap || ringFirst) {
