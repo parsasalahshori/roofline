@@ -28,7 +28,7 @@ const METRES_PER_PIXEL_ZOOM0 = 78271.517;
 const NICE_FEET = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000] as const;
 
 function readMapEnv(): MapEnv {
-  return { maptilerKey: import.meta.env.VITE_MAPTILER_KEY, tiles: import.meta.env.VITE_MAP_TILES };
+  return { maptilerKey: import.meta.env.VITE_MAPTILER_KEY, tiles: import.meta.env.VITE_MAP_TILES, imagery: import.meta.env.VITE_MAP_IMAGERY };
 }
 
 /** Creates the map, or answers null when it cannot start (MapLibre throws when the browser has no WebGL). */

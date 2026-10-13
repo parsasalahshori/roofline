@@ -129,7 +129,7 @@ function demoBuildStamp(): string | null {
   try {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    return /^[0-9a-f]{40}$/.test(head) && dirty === '' ? `commit=${head}\nVITE_MAP_TILES=osm\n` : null;
+    return /^[0-9a-f]{40}$/.test(head) && dirty === '' ? `commit=${head}\nVITE_MAP_TILES=osm\nVITE_MAP_IMAGERY=aerial\n` : null;
   } catch {
     return null;
   }
@@ -181,7 +181,7 @@ try {
     log('Database ready (--db-only).');
     process.exit(0);
   }
-  // The demo's own build (OpenStreetMap tiles under the map, no key needed). The marker records the commit it was
+  // The demo's own build (OpenStreetMap streets and Esri aerial photos for satellite and the roof view, no key needed). The marker records the commit it was
   // built from, so switching branches or pulling new code rebuilds; so do uncommitted changes, an unreadable
   // git, a build made for anything else (vite empties dist/ on every build, marker included) and DEMO_BUILD=1.
   const marker = `${REPO_ROOT}apps/web/dist/.demo-build`;
@@ -189,7 +189,7 @@ try {
   const built = existsSync(marker) ? readFileSync(marker, 'utf8') : '';
   if (process.env.DEMO_BUILD === '1' || wanted === null || built !== wanted) {
     log('Building the web app (about 1 minute).');
-    execFileSync('npm', ['run', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit', env: { ...process.env, VITE_MAP_TILES: 'osm' } });
+    execFileSync('npm', ['run', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit', env: { ...process.env, VITE_MAP_TILES: 'osm', VITE_MAP_IMAGERY: 'aerial' } });
     if (wanted !== null) writeFileSync(marker, wanted);
   }
 } catch (err) {
