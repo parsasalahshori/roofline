@@ -105,6 +105,7 @@ export function MeasureCard({
   numbers,
   scan,
   outlineOnly,
+  locked = false,
   editing,
   onEdit,
   panels,
@@ -113,6 +114,8 @@ export function MeasureCard({
   numbers: CardNumbers;
   scan: ScanSession;
   outlineOnly: boolean;
+  /** Sent (or refused as sent): the card says the roof can no longer change. */
+  locked?: boolean;
   editing: boolean;
   onEdit: (next: boolean) => void;
   panels: ReactNode;
@@ -142,24 +145,7 @@ export function MeasureCard({
         ) : (
           <>
             {m.kind !== 'exact' && scan.totalMs > 0 && !m.locked ? <span className={styles.seconds}>{liftMeasure.measuredIn(scan.totalMs / 1000)}</span> : null}
-            <span className={styles.kind} data-kind={m.kind}>
-              {m.kind === 'exact' ? measure.exactLabel : measure.estimateLabel}
-            </span>
             <span className={styles.spacer} />
-            {panels !== null ? (
-              <Button
-                variant="ghost"
-                className={styles.headButton}
-                aria-expanded={editing}
-                aria-controls={adjustId}
-                onClick={() => onEdit(!editing)}
-              >
-                {liftMeasure.adjust}
-                <svg className={styles.chevron} viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-                  <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </Button>
-            ) : null}
             {!m.locked && m.kind !== 'exact' ? (
               <Button variant="ghost" className={styles.headButton} onClick={scan.restart}>
                 <RotateIcon />
@@ -190,7 +176,33 @@ export function MeasureCard({
           ))}
         </dl>
       </div>
+      {locked && !scanning ? (
+        <p className={styles.note} data-tone="locked">
+          {measure.locked}
+        </p>
+      ) : null}
       {outlineOnly && !scanning ? <p className={styles.note}>{liftMeasure.outlineOnly}</p> : null}
+      {!scanning ? (
+        <div className={styles.foot}>
+          {panels !== null ? (
+            <Button
+              variant="ghost"
+              className={styles.footButton}
+              aria-expanded={editing}
+              aria-controls={adjustId}
+              onClick={() => onEdit(!editing)}
+            >
+              {liftMeasure.adjust}
+              <svg className={styles.chevron} viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+                <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </Button>
+          ) : null}
+          <span className={styles.kind} data-kind={m.kind}>
+            {m.kind === 'exact' ? measure.exactLabel : measure.estimateLabel}
+          </span>
+        </div>
+      ) : null}
       {editing && panels !== null ? (
         <div id={adjustId} className={styles.adjust}>
           {panels}

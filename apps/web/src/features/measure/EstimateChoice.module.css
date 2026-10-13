@@ -2,10 +2,10 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px;
-  border: 1px solid var(--line);
+  padding: 12px;
   border-radius: var(--radius-card);
   background: var(--surface);
+  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08);
 }
 
 .title {
@@ -16,7 +16,8 @@
 
 .options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  /* Stacked: the proposal column is narrow, and each choice's note must wrap, never collide */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -31,6 +32,8 @@
   border: 1px solid var(--line);
   background: var(--surface);
   text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .option[data-state="on"] {
@@ -44,5 +47,6 @@
 
 .note {
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  font-weight: 400;
+  color: var(--ds-text-label, #505b64);
 }

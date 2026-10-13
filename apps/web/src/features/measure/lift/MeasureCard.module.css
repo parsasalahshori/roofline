@@ -78,11 +78,33 @@
   color: var(--ds-text-1, #151c22);
 }
 
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.footButton {
+  gap: 4px;
+  min-height: 28px;
+  margin-left: -8px;
+  padding: 0 8px;
+  border-radius: var(--ds-r-ctl, 9px);
+  color: var(--ds-info-ink, #1f55b3);
+  font-size: 12.5px;
+}
+
+.footButton:hover {
+  background: var(--ds-surface-2, #eceff1);
+}
+
 .chevron {
   transition: transform 0.15s ease;
 }
 
-.headButton[aria-expanded="true"] .chevron {
+.footButton[aria-expanded="true"] .chevron {
   transform: rotate(180deg);
 }
 
@@ -187,6 +209,11 @@
   margin: 10px 0 0;
   color: var(--ds-text-label, #505b64);
   font-size: 12px;
+}
+
+.note[data-tone="locked"] {
+  color: var(--ds-accent-ink, #8a5a00);
+  font-weight: 600;
 }
 
 .adjust {

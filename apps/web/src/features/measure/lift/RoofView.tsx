@@ -244,12 +244,12 @@ function Legend({ model }: { model: RoofModel }) {
 type NoticeState = Pick<RoofSession, 'mapFailed' | 'locked' | 'problem' | 'saveFailed' | 'drawMode' | 'finishDrawing' | 'clearDrawing'>;
 
 function Notices({ roof }: { roof: NoticeState }) {
-  const any = roof.mapFailed || roof.locked || roof.problem !== null || roof.saveFailed || roof.drawMode;
+  // A sent (locked) roof says so in the measure card, off the photo
+  const any = roof.mapFailed || roof.problem !== null || roof.saveFailed || roof.drawMode;
   if (!any) return null;
   return (
     <div className={styles.notices}>
       {roof.mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
-      {roof.locked ? <Banner tone="warning">{measure.locked}</Banner> : null}
       {roof.problem !== null ? (
         <div role="alert">
           <Banner tone="danger">{measure.problems[roof.problem]}</Banner>
@@ -293,9 +293,7 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
         <ScaleAndNorth latitude={m.center[1]} zoom={zoom} />
         <p className={styles.credits}>
           <span>{legal.imageryAttribution}</span>
-          {' · '}
           <span>{legal.footprintAttribution}</span>
-          {' · '}
           <span>{measure.attribution}</span>
         </p>
         {scan.phase === 'idle' ? (
@@ -306,6 +304,7 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
             numbers={numbers}
             scan={scan}
             outlineOnly={model === null}
+            locked={locked}
             editing={editing}
             onEdit={slots.setEditing}
             panels={slots.panels}

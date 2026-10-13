@@ -152,21 +152,24 @@
 }
 
 .credits {
+  /* Top right, under the legend: the measure card holds the bottom left and the scale the bottom right */
   position: absolute;
   z-index: 1;
-  right: 8px;
-  bottom: 6px;
-  max-width: calc(100% - 16px);
+  top: 58px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: min(260px, calc(100% - 28px));
   margin: 0;
-  overflow: hidden;
   color: #fff;
   font-size: 12px;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  line-height: 1.3;
+  text-align: right;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
   pointer-events: none;
 }
+
 
 /* A facet's label card: the letter in a blue disc, the area and the pitch */
 .facetLabel {

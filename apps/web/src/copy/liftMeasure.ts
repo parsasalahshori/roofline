@@ -75,6 +75,7 @@ export const liftProposal = {
   loading: 'Pricing the roof',
   failed: 'We could not price this roof.',
   sendProposal: 'Send proposal',
+  sentView: (signed: boolean) => (signed ? 'Proposal signed \u00b7 View' : 'Proposal sent \u00b7 View'),
   unit: {
     bundle: (n: number) => `${n} ${n === 1 ? 'bundle' : 'bundles'}`,
     sq: (n: number) => `${n.toFixed(1)} sq`,

@@ -2,8 +2,9 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px;
-  border: 1px solid var(--line);
+  padding: 12px;
+  border: 0;
+  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08);
   border-radius: var(--radius-card);
   background: var(--surface);
 }
@@ -16,5 +17,5 @@
 
 .hint {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ds-text-label, #505b64);
 }

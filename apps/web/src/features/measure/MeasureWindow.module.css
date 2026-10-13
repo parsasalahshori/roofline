@@ -207,6 +207,15 @@
   font-size: 15px;
 }
 
+.sent {
+  width: 100%;
+  min-height: 44px;
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-success-tint, #e2f4e2);
+  color: var(--ds-success-ink, #0a6e1d);
+  font-size: 15px;
+}
+
 .waiting {
   display: flex;
   flex-direction: column;

@@ -7,7 +7,7 @@ import { useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { paidReports } from '../../copy/billing.ts';
-import { liftMeasureSteps } from '../../copy/liftMeasure.ts';
+import { liftMeasureSteps, liftProposal } from '../../copy/liftMeasure.ts';
 import { measure } from '../../copy/measure.ts';
 import { makeFailureMessage, useBuildProposal, useSendProposal } from '../estimator/api.ts';
 import type { MapEnv } from '../../shell/map/types.ts';
@@ -119,6 +119,9 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   const build = useBuildProposal();
   const send = useSendProposal();
   const model = readRoof(m);
+  // A roof whose proposal is already out links to it instead of offering to send again
+  const { rows: requestRows } = useRequestRows('');
+  const sentRow = requestRows.find((r) => r.measurementId === m.id && (r.status === 'estimate_sent' || r.status === 'signed'));
   const scan = useRoofScan(m, model?.totals.facetCount ?? m.facets);
   const e = m.estimate;
   const preview = useMeasurementPreview(m.id, [e.surfaceSqFt, e.pitchX12, e.edgeFt, e.ridgeFt, e.valleyFt].join(':'));
@@ -458,7 +461,11 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
         </Button>
       )}
       {exact.isError ? <Banner tone="danger">{measure.exactFailed}</Banner> : null}
-      {ordering ? null : (
+      {ordering ? null : locked && sentRow !== undefined ? (
+        <Button variant="ghost" className={styles.sent} href={`/estimator/proposals/${sentRow.proposalId}`}>
+          {liftProposal.sentView(sentRow.status === 'signed')}
+        </Button>
+      ) : (
         <Button className={styles.send} busy={making} disabled={proposalBlocked} onClick={() => void makeProposal()}>
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
             <path d="m22 2-7 20-4-9-9-4Z" />
