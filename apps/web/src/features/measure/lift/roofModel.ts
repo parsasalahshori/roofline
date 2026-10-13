@@ -1,47 +1,14 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { MeasurementView } from '../types.ts';
+import type { RoofLineKind, RoofModel } from '@roofline/shared';
 
-/*
- * The measured roof: facets, the lines between them and the totals. A local copy of the shape the measurement
- * API adds as `roof` (branch demo-roofmodel); `readRoof` is the one place that reads it off a measurement.
- */
-export type RoofLineKind = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake';
-export interface RoofFacet {
-  id: string;
-  ring: [number, number][];
-  planSqFt: number;
-  areaSqFt: number;
-  pitch: string;
-  labelAt: [number, number];
-}
-export interface RoofLine {
-  kind: RoofLineKind;
-  coords: [[number, number], [number, number]];
-  lengthFt: number;
-}
-export interface RoofModel {
-  facets: RoofFacet[];
-  lines: RoofLine[];
-  outline: [number, number][];
-  pitch: string;
-  totals: {
-    squares: number;
-    slopedSqFt: number;
-    planSqFt: number;
-    facetCount: number;
-    wastePct: number;
-    ridgeFt: number;
-    hipFt: number;
-    valleyFt: number;
-    eaveFt: number;
-    rakeFt: number;
-  };
-}
+/** The measured roof (facets, the lines between them, the totals) as the measurement API worked it out. */
+export type { RoofFacet, RoofLine, RoofLineKind, RoofModel } from '@roofline/shared';
 
 /** The roof the measurement carries, or null when it has none (an older API, or a roof it could not split). */
 export function readRoof(m: MeasurementView): RoofModel | null {
-  const roof = (m as MeasurementView & { roof?: RoofModel | null }).roof;
-  return roof !== undefined && roof !== null && Array.isArray(roof.facets) && roof.facets.length > 0 ? roof : null;
+  const roof = m.roof;
+  return roof !== null && roof !== undefined && Array.isArray(roof.facets) && roof.facets.length > 0 ? roof : null;
 }
 
 /** Line colours, as the reference draws them. Hip only shows when the roof has hips. */
@@ -55,6 +22,11 @@ export const LINE_COLORS: Record<RoofLineKind, string> = {
 export const LINE_ORDER: readonly RoofLineKind[] = ['ridge', 'hip', 'valley', 'eave', 'rake'];
 const FACET_COLOR = '#2f6fde';
 const CASING_COLOR = '#151c22';
+
+/** The facet's own letter (the API names them A, B… largest first), else A, B, C… by position. */
+export function facetName(id: string, index: number): string {
+  return /^[A-Z]{1,2}$/.test(id) ? id : facetLetter(index);
+}
 
 /** A, B, C… then AA, AB for a roof with more than 26 facets. */
 export function facetLetter(index: number): string {

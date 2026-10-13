@@ -10,7 +10,7 @@ import { useMeasurement } from '../api.ts';
 import type { MeasurementView } from '../types.ts';
 import { AiMark } from './AiMark.tsx';
 import { cardNumbers, MeasureCard } from './MeasureCard.tsx';
-import { facetLetter, LINE_COLORS, lineKinds, setRoofLayers, type RoofModel } from './roofModel.ts';
+import { facetName, LINE_COLORS, lineKinds, setRoofLayers, type RoofModel } from './roofModel.ts';
 import styles from './RoofView.module.css';
 import { ScanBar } from './ScanBar.tsx';
 import type { ScanSession } from './scan.ts';
@@ -93,7 +93,7 @@ function useFacetLabels(instance: MapLibreMap | null, model: RoofModel | null, v
   useEffect(() => {
     if (!instance || !model || !visible) return;
     const markers = model.facets.map((f, i) =>
-      new Marker({ element: facetLabel(facetLetter(i), f.areaSqFt, f.pitch, f.planSqFt >= WIDE_LABEL_SQFT), draggable: false })
+      new Marker({ element: facetLabel(facetName(f.id, i), f.areaSqFt, f.pitch, f.planSqFt >= WIDE_LABEL_SQFT), draggable: false })
         .setLngLat(f.labelAt)
         .addTo(instance),
     );
