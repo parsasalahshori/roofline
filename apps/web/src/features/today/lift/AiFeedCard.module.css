@@ -1,0 +1,107 @@
+/* What your AI just did: a title with a working chip, then a list with a colored dot per agent. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--font-size-body);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+.chip {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--success);
+  border: 1px solid var(--success);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  --agent-color: var(--text-muted);
+}
+
+.row[data-agent="storm_scout"] {
+  --agent-color: var(--hail-3);
+}
+
+.row[data-agent="estimator"] {
+  --agent-color: var(--stage-proposal);
+}
+
+.row[data-agent="front_desk"] {
+  --agent-color: var(--stage-inspection);
+}
+
+.row[data-agent="claims"] {
+  --agent-color: var(--pin-customer);
+}
+
+.row[data-agent="scheduler"] {
+  --agent-color: var(--stage-lead);
+}
+
+.row[data-agent="follow_up"] {
+  --agent-color: var(--stage-won);
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--agent-color);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.text {
+  overflow-wrap: anywhere;
+}
+
+.byline {
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-muted);
+}

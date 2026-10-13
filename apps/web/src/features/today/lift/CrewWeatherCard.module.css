@@ -1,0 +1,92 @@
+/* Crew weather: six day tiles in a row; the risky ones are amber. Tiles shrink with the card, never scroll the page. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--font-size-body);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+.chip {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.days {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 2px;
+  border-radius: 8px;
+  font-size: var(--font-size-min);
+}
+
+.day[data-risky="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.name {
+  font-weight: 600;
+}
+
+.icon {
+  display: inline-flex;
+}
+
+.high {
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.rain {
+  color: var(--text-muted);
+}
+
+.day[data-risky="true"] .rain {
+  color: var(--accent-ink);
+}
+
+.move {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
