@@ -69,6 +69,7 @@ import { searchRoutes } from './routes/search.ts';
 import { taskRoutes } from './routes/tasks.ts';
 import { teamRoutes } from './routes/team.ts';
 import { timelineRoutes } from './routes/timeline.ts';
+import { homeSignedRoutes } from './routes/home-signed.ts';
 import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
 import { measurementRoutes } from './routes/measurements.ts';
@@ -345,6 +346,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/weather', weatherRoutes(deps));
   app.use('/api/appointments', appointmentRoutes(deps));
   app.use('/api/today', todayRoutes(deps));
+  app.use('/api/home/signed', homeSignedRoutes(deps));
   app.use('/api/calendar', calendarRoutes(deps));
   app.use('/api/calendar', calendarConnectRoutes(deps));
   app.use('/api/timeline', timelineRoutes(deps));
