@@ -7,7 +7,11 @@ const TICK_MS = 80;
 /** Roofs already revealed in this browser session: coming back to one does not play the scan again. */
 const revealed = new Set<string>();
 
-/** Scans playing now, by roof, with when they began: a window that remounts mid-scan picks it up where it was. */
+/**
+ * Scans playing now, by roof, with how far each has played: a window that remounts mid-scan picks it up where it
+ * was. Progress is counted in ticks rather than read off the clock, so a page whose clock is faked (the e2e specs
+ * fix the date) still plays the scan through.
+ */
 const playing = new Map<string, number>();
 
 /** Forgets which roofs were revealed, so each test starts with the scan waiting. */
@@ -70,17 +74,17 @@ export function needsScan(m: MeasurementView): boolean {
 export function useRoofScan(m: MeasurementView, facets: number | null = m.facets): ScanSession {
   const id = m.id;
   const [phase, setPhase] = useState<ScanPhase>(() => (playing.has(id) ? 'scanning' : needsScan(m) ? 'idle' : 'done'));
-  const [elapsedMs, setElapsedMs] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(() => playing.get(id) ?? 0);
   const [run, setRun] = useState(0);
   const total = readScanMs();
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     if (phase !== 'scanning') return;
-    if (!playing.has(id)) playing.set(id, Date.now());
+    if (!playing.has(id)) playing.set(id, 0);
     const tick = () => {
-      const began = playing.get(id) ?? Date.now();
-      const elapsed = Math.min(Date.now() - began, total);
+      const elapsed = Math.min((playing.get(id) ?? 0) + TICK_MS, total);
+      playing.set(id, elapsed);
       setElapsedMs(elapsed);
       if (elapsed >= total) {
         clearInterval(timer.current);
@@ -102,12 +106,12 @@ export function useRoofScan(m: MeasurementView, facets: number | null = m.facets
     facets,
     start: () => {
       if (phase !== 'idle') return;
-      playing.set(id, Date.now());
+      playing.set(id, 0);
       setElapsedMs(0);
       setPhase('scanning');
     },
     restart: () => {
-      playing.set(id, Date.now());
+      playing.set(id, 0);
       setElapsedMs(0);
       setRun((n) => n + 1);
       setPhase('scanning');

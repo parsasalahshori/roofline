@@ -12,8 +12,11 @@ import { expect, readStack, test } from './fixtures.ts';
 const POINT = { lat: 41.2565, lng: -95.9345 };
 
 test('estimate this roof: picked building to a proposal for a new customer', async ({ page, loginAs, markTodaySeen }) => {
-  test.setTimeout(60_000);
-  await page.clock.install({ time: new Date('2026-10-13T16:00:00.000Z') });
+  // The scan plays about five seconds before the numbers and the proposal show
+  test.setTimeout(120_000);
+  // A fixed date with real timers: the fake timers of clock.install stall under the map's animation frames, and the
+  // Measure roof scan (and the search debounce) never finish
+  await page.clock.setFixedTime(new Date('2026-10-13T16:00:00.000Z'));
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   const headers = { Origin: readStack().baseUrl };
