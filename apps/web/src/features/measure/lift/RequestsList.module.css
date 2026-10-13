@@ -1,0 +1,141 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px;
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--font-size-body);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 700;
+}
+
+.count {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: var(--font-size-min);
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* name and chip on the first line, address and squares on the second, material last */
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name chip"
+    "address squares"
+    "material squares";
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  min-height: 40px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-bottom-color: var(--line);
+  border-radius: var(--radius-card);
+  color: inherit;
+  text-decoration: none;
+}
+
+.row:hover {
+  background: var(--surface-2);
+}
+
+.row[data-selected="true"] {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+
+.name {
+  grid-area: name;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address,
+.material {
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address {
+  grid-area: address;
+}
+
+.material {
+  grid-area: material;
+}
+
+.chip {
+  grid-area: chip;
+  justify-self: end;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: var(--font-size-min);
+  white-space: nowrap;
+}
+
+.chip[data-status="new_lead"] {
+  border-color: var(--stage-lead);
+}
+
+.chip[data-status="estimate_sent"] {
+  border-color: var(--stage-proposal);
+}
+
+.chip[data-status="inspection"] {
+  border-color: var(--stage-inspection);
+}
+
+.chip[data-status="signed"] {
+  border-color: var(--stage-won);
+}
+
+.squares {
+  grid-area: squares;
+  justify-self: end;
+  align-self: end;
+  font-size: var(--font-size-min);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}

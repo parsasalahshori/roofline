@@ -1,13 +1,93 @@
-.root {
+.window {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  min-width: 0;
   max-width: 100%;
-  box-sizing: border-box;
   color: var(--text);
   font-family: var(--font);
   font-size: var(--font-size-body);
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.heading {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.subtitle {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-min);
+}
+
+.subtitle::before {
+  content: "\2014\00a0";
+}
+
+.listToggle {
+  min-height: 40px;
+  align-self: center;
+}
+
+.body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Phone: the requests list is a drawer over the content */
+.list {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(320px, 85%);
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition: transform 0.2s ease, visibility 0.2s;
+  border-right: 1px solid var(--line);
+  box-shadow: var(--shadow-window);
+}
+
+.list[data-open="true"] {
+  transform: none;
+  visibility: visible;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.stats {
+  min-width: 0;
+}
+
+.stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .loading {
@@ -46,13 +126,6 @@
 /* Vertex handles are DOM markers: 40px hit areas, set by the editor; keep them clear of MapLibre's clip. */
 .map :global(.maplibregl-canvas-container) {
   touch-action: none;
-}
-
-.panels {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
 }
 
 .kind {
@@ -162,22 +235,57 @@
 }
 
 @media (min-width: 900px) {
-  .root {
-    flex-direction: row;
-    align-items: flex-start;
+  .listToggle {
+    display: none;
   }
 
-  .mapColumn {
-    flex: 1 1 55%;
-    position: sticky;
-    top: 16px;
+  .body {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .list {
+    position: static;
+    flex: none;
+    width: 300px;
+    transform: none;
+    visibility: visible;
+    transition: none;
+    box-shadow: none;
+  }
+
+  .main {
+    flex: 1;
+  }
+
+  .stage {
+    position: relative;
   }
 
   .map {
     height: 70vh;
   }
 
-  .panels {
-    flex: 1 1 45%;
+  /* The numbers float over the bottom-left corner of the roof view */
+  .stats {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    width: 340px;
+    max-width: calc(100% - 32px);
+    max-height: calc(100% - 32px);
+    overflow-y: auto;
+    padding: 12px;
+    box-sizing: border-box;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-window);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list {
+    transition: none;
   }
 }
