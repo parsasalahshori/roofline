@@ -10,23 +10,26 @@
   inset: 0;
 }
 
-/* Top left, under the page's top bar. The status region is always on the page and empty (zero size, so it blocks no map clicks); a screen reader announces the banner when it is inserted. */
+/* Bottom center, a small pill above the dock and the hail legend, so it never hides behind the home cards. The status region is always on the page and empty (zero size, so it blocks no map clicks); a screen reader announces the banner when it is inserted. */
 .status {
   position: absolute;
-  top: 72px;
-  left: 16px;
+  bottom: 150px;
+  left: 50%;
+  transform: translateX(-50%);
   max-width: calc(100% - 32px);
+  pointer-events: none;
 }
 
 .banner {
   margin: 0;
-  padding: 8px 16px;
+  padding: 4px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: 999px;
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-muted);
   box-shadow: var(--shadow-window);
-  font-size: var(--font-size-body);
+  font-size: var(--font-size-min);
+  text-align: center;
 }
 
 /* Top right. The satellite switch is a ghost Button, so it gets a surface of its own to read over the map. */
@@ -60,9 +63,9 @@
     bottom: 72px;
   }
 
-  /* Below the satellite switch (72px + its 40px + a 16px gap), so the switch never covers the text. */
+  /* Above the tab bar */
   .status {
-    top: 128px;
+    bottom: calc(var(--shell-bottom-inset, 64px) + 16px);
   }
 
   /* Clears the zoom control and the attribution button (the right 50px of the map) with a 16px gap: 16px left + 50px + 16px = 82px. */

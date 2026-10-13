@@ -1,8 +1,9 @@
 import { UiLink } from '@roofline/ui';
 import { useState } from 'react';
-import { useMe } from '../../api/hooks.ts';
+import { useApprovals, useMe } from '../../api/hooks.ts';
 import { home } from '../../copy/home.ts';
 import { liftFeed } from '../../copy/liftFeed.ts';
+import { countedDrafts } from '../../shell/countedDrafts.ts';
 import { zonedDateKey } from '../calendar/time.ts';
 import { useCompany } from '../settings/api.ts';
 import { useStorm, useStorms } from '../storm/api.ts';
@@ -23,7 +24,7 @@ function latestStorm(storms: StormSummary[] | undefined): StormSummary | undefin
 /**
  * The map home page's floating cards, as the reference lays them out: the greeting with a briefing built from
  * the company's own data, and Signed this month, down the left; Crew weather and What your AI just did down the
- * right; the storm toast over the corner. The map stays clickable between the cards. On a phone the cards
+ * right; the storm toast at the top of the right column, so nothing overlaps. The map stays clickable between the cards. On a phone the cards
  * stack in one scrolling column over the map.
  */
 export function Home() {
@@ -31,6 +32,7 @@ export function Home() {
   const company = useCompany();
   const stormsQuery = useStorms();
   const outlook = useWeatherOutlook();
+  const waiting = countedDrafts(useApprovals().data).length;
   const zone = company.data?.timezone;
   const storm = latestStorm(stormsQuery.data?.storms);
   const detail = useStorm(storm?.id ?? '');
@@ -80,15 +82,20 @@ export function Home() {
                 {home.fixRainDay}
               </UiLink>
             ) : null}
+            {waiting > 0 ? (
+              <UiLink href="/approvals" className={storm ? styles.secondary : styles.primary}>
+                {home.reviewApprovals(waiting)}
+              </UiLink>
+            ) : null}
           </div>
         </section>
         <SignedCard />
       </div>
       <div className={styles.right}>
+        {storm && recent && toastShown ? <StormToast storm={storm} when={when} onDismiss={() => setToastShown(false)} /> : null}
         <CrewWeatherCard />
         <AiFeedCard />
       </div>
-      {storm && recent && toastShown ? <StormToast storm={storm} when={when} onDismiss={() => setToastShown(false)} /> : null}
     </div>
   );
 }

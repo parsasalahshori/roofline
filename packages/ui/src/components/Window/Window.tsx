@@ -19,6 +19,11 @@ export type WindowProps = {
   variant?: WindowVariant;
   /** Pinned to the bottom edge while the body scrolls. */
   footer?: ReactNode;
+  /** A glyph for the app's icon tile at the left of the title (decorative; the title names the window). */
+  icon?: ReactNode;
+  /** The tile's CSS background (a colour or gradient) and glyph colour. */
+  iconBackground?: string;
+  iconColor?: string;
 };
 
 /**
@@ -38,6 +43,9 @@ export function Window({
   children,
   variant = 'floating',
   footer,
+  icon,
+  iconBackground,
+  iconColor,
 }: WindowProps) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -57,6 +65,11 @@ export function Window({
         data-variant={variant}
       >
         <div className={styles.titleBar}>
+          {icon ? (
+            <span className={styles.tile} aria-hidden="true" style={{ background: iconBackground, color: iconColor }}>
+              {icon}
+            </span>
+          ) : null}
           <div className={styles.heading}>
             <h1 id={titleId} className={styles.title}>
               {title}
@@ -67,7 +80,7 @@ export function Window({
               </p>
             ) : null}
           </div>
-          <IconButton label={closeLabel} icon={<CloseIcon />} onClick={onClose} />
+          <IconButton label={closeLabel} icon={<CloseIcon />} className={styles.close} onClick={onClose} />
         </div>
         {stats ? <div className={styles.stats}>{stats}</div> : null}
         <div className={styles.body}>{children}</div>

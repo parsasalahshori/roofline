@@ -34,6 +34,12 @@
 .right {
   right: 20px;
   width: 360px;
+  gap: 16px;
+}
+
+/* Everything but the feed keeps its natural height; the feed takes what is left */
+.right > :not(:last-child) {
+  flex: none;
 }
 
 .left > *,
@@ -151,6 +157,7 @@
 
   .right {
     margin-top: 12px;
+    gap: 12px;
   }
 
   .right > :last-child {

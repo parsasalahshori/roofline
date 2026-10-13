@@ -356,7 +356,7 @@ function Detail({ conversation }: { conversation: ConversationDetail }) {
   const name = conversation.customer?.name ?? null;
   const isCall = conversation.channel === "voice";
   const lastCall = conversation.calls.at(-1) ?? null;
-  const jobId = conversation.links.jobIds[0] ?? null;
+  const jobId = conversation.links?.jobIds[0] ?? null;
   const turns = [...conversation.turns].sort(
     (a, b) => Date.parse(a.at) - Date.parse(b.at) || a.position - b.position,
   );

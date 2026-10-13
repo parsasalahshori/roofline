@@ -42,29 +42,64 @@
 .titleBar {
   display: flex;
   flex: none;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   gap: 12px;
-  padding: 12px 12px 12px 20px;
+  min-height: 50px;
+  padding: 8px 12px 8px 20px;
   border-bottom: 1px solid var(--line);
 }
 
+/* The app's icon tile, as the dock draws it but smaller */
+.tile {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  box-shadow: var(--lift-tile-shadow, none);
+}
+
+.tile > svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Title and subtitle share one row; the subtitle gives way first when the window is narrow. */
 .heading {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 12px;
   min-width: 0;
-  padding-top: 6px;
 }
 
 .title {
+  flex: none;
   margin: 0;
   font-size: 1.25rem;
+  font-stretch: 125%;
   font-weight: 700;
+  letter-spacing: -0.01em;
   line-height: 1.3;
 }
 
 .description {
-  margin: 2px 0 0;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-muted);
   font-size: var(--font-size-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  flex: none;
+  border-radius: 50%;
+  color: var(--text-muted);
 }
 
 .stats {
@@ -93,6 +128,12 @@
 @media (max-width: 767.98px) {
   .titleBar {
     padding-left: 16px;
+  }
+
+  /* On a phone the subtitle drops under the title */
+  .heading {
+    flex-direction: column;
+    gap: 0;
   }
 
   .stats,

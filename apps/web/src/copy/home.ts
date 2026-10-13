@@ -11,6 +11,7 @@ export const home = {
     firstName ? `Good ${part}, ${firstName}.` : `Good ${part}.`,
   openStormReport: 'Open storm report',
   fixRainDay: 'Fix the rain day',
+  reviewApprovals: (count: number) => `Review ${count} ${plural(count, 'approval', 'approvals')}`,
   allQuiet: 'Nothing needs you right now. Your agents are keeping watch.',
   loading: 'Loading your briefing',
 
