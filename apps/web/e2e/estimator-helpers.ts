@@ -52,9 +52,18 @@ export async function makeAndSendProposal(
   click: (locator: Locator) => Promise<void>,
 ): Promise<SentProposal> {
   await page.goto('/estimator');
-  // /estimator opens the Measure window; the search takes any address, and one no request matches offers to measure it
-  await page.getByRole('searchbox', { name: 'Search name or address' }).fill(OMAHA_ADDRESS);
+  // /estimator opens the Measure window; the search takes any address, and one no request matches offers to measure it.
+  // On a phone /estimator opens the first request's roof: the search is on the Requests step.
+  const search = page.getByRole('searchbox', { name: 'Search name or address' });
+  const requestsStep = page.getByRole('tab', { name: /Requests/ });
+  await expect(search.or(requestsStep).first()).toBeVisible({ timeout: 20_000 });
+  if (!(await search.isVisible())) await requestsStep.click();
+  await search.fill(OMAHA_ADDRESS);
+  // /estimator may already show a first request; wait for the new roof's own page before pressing its Measure roof
+  const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/measurements' && r.request().method() === 'POST');
   await click(page.getByRole('button', { name: 'Measure a new roof at ' + OMAHA_ADDRESS }));
+  const { id } = (await (await created).json()) as { id: string };
+  await expect(page).toHaveURL(new RegExp(`/estimator/measure/${id}$`), { timeout: 30_000 });
   await click(page.getByRole('button', { name: 'Measure roof' }));
   // On a phone the proposal is its own step: open it once the roof is measured (not counted: a desktop shows it beside the roof)
   const proposalStep = page.getByRole('tab', { name: /Proposal/ });

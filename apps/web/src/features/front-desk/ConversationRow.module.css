@@ -106,7 +106,8 @@
 .time {
   flex-shrink: 0;
   margin-left: auto;
-  color: var(--ds-text-3, #6b7680);
+  /* The label shade: text-3 falls under 4.5:1 on the selected row's tint. */
+  color: var(--ds-text-label, #505b64);
   font-size: 13px;
   white-space: nowrap;
 }

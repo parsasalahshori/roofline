@@ -42,14 +42,15 @@ test('the inbox lists calls and texts, newest first, with live, unread and urgen
   await page.goto('/front-desk');
 
   const dialog = page.getByRole('dialog', { name: FRONT_DESK });
-  await expect(dialog.getByRole('heading', { name: 'This week' })).toBeVisible({ timeout: 20_000 });
-  // The AI minutes tile is this week's minutes alone, never set against the monthly allowance.
-  for (const tile of ['Answered', 'Booked', 'Transferred', 'Messages', 'Spam', 'AI minutes this week']) {
-    await expect(dialog.getByText(tile, { exact: true }).first()).toBeVisible();
+  // Today's numbers (design B): calls, answered, answer time, bookings and after-hours calls.
+  const numbers = dialog.getByRole('region', { name: "Today's numbers" });
+  await expect(numbers).toBeVisible({ timeout: 20_000 });
+  for (const tile of ['Calls today', 'Answered', 'Average answer time', 'Inspections booked', 'After-hours calls']) {
+    await expect(numbers.getByText(tile, { exact: true })).toBeVisible();
   }
 
   // Newest first; the spam pitch is not in "All".
-  const rows = dialog.getByRole('link');
+  const rows = dialog.getByRole('region', { name: 'Latest calls' }).getByRole('link');
   await expect(rows).toHaveCount(4, { timeout: 20_000 });
   await expect(rows.nth(0)).toContainText('Live now');
   await expect(rows.nth(1)).toContainText(TOM.name);
@@ -59,24 +60,21 @@ test('the inbox lists calls and texts, newest first, with live, unread and urgen
   await expect(rows.nth(3)).toContainText('Urgent');
   await expect(rows.nth(3)).toContainText('Message');
 
-  const filter = (name: string) => dialog.getByRole('group', { name: 'Filter calls and texts' }).getByRole('button', { name, exact: true });
-
-  await filter('Needs attention').click();
-  await expect(filter('Needs attention')).toHaveAttribute('aria-pressed', 'true');
-  await expect(rows).toHaveCount(3);
-  await expect(dialog.getByText('Live now')).toHaveCount(0);
+  const filter = (name: string) =>
+    dialog.getByRole('group', { name: 'Filter calls and texts' }).getByRole('button', { name: new RegExp(`^${name}( \\d+)?$`) });
 
   await filter('Booked').click();
+  await expect(filter('Booked')).toHaveAttribute('aria-pressed', 'true');
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(MARIA.name);
 
-  await filter('Messages').click();
+  await filter('Text-backs').click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(TOM.name);
 
-  await filter('Spam').click();
+  await filter('Blocked').click();
   await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText('Spam');
+  await expect(dialog.getByText('Live now')).toHaveCount(0);
 
   await filter('All').click();
   await expect(rows).toHaveCount(4);
@@ -100,7 +98,7 @@ test('a call opens with its disclosure, transcript, action cards and summary, an
   await expect(page).toHaveURL(new RegExp(`/front-desk/${ids.maria}$`));
 
   await expect(dialog.getByRole('heading', { name: MARIA.name })).toBeVisible({ timeout: 20_000 });
-  await expect(dialog.getByRole('heading', { name: 'What was said' })).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Transcript' })).toBeVisible();
   // The call opens with the recording disclosure, then the caller and the assistant take turns.
   await expect(dialog.getByText('this call is recorded', { exact: false })).toBeVisible();
   await expect(dialog.getByText('I found shingles in my yard', { exact: false })).toBeVisible();
@@ -256,9 +254,10 @@ test('Mark as spam blocks the number and moves the call to the Spam filter', asy
 
   await page.goto('/front-desk');
   const filters = dialog.getByRole('group', { name: 'Filter calls and texts' });
-  await expect(dialog.getByRole('link')).toHaveCount(3, { timeout: 20_000 });
-  await filters.getByRole('button', { name: 'Spam', exact: true }).click();
-  await expect(dialog.getByRole('link')).toHaveCount(2);
+  const rows = dialog.getByRole('region', { name: 'Latest calls' }).getByRole('link');
+  await expect(rows).toHaveCount(3, { timeout: 20_000 });
+  await filters.getByRole('button', { name: /^Blocked( \d+)?$/ }).click();
+  await expect(rows).toHaveCount(2);
 });
 
 test('a field rep sees none of the owner conversations and has no Front Desk settings', async ({
@@ -279,7 +278,7 @@ test('a field rep sees none of the owner conversations and has no Front Desk set
   });
 
   await page.goto(`/front-desk/${ids.maria}`);
-  await expect(page.getByText('We could not load this conversation.')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('We could not load this call.')).toBeVisible({ timeout: 20_000 });
 
   await page.goto('/settings/front-desk');
   await expect(page).toHaveURL(/\/settings\/company$/);

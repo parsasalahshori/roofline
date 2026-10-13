@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CallDetail } from '../src/features/front-desk/lift/CallDetail.tsx';
 import { liftCall } from '../src/copy/liftCall.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
-import { stubApi } from './helpers.tsx';
+import { ACCOUNT, stubApi } from './helpers.tsx';
 
 let api: ReturnType<typeof stubApi> | undefined;
 
@@ -66,7 +66,8 @@ function makeConversation(overrides: Partial<ConversationDetail> = {}): Conversa
 }
 
 function renderDetail(conversation: ConversationDetail) {
-  api = stubApi({ [`GET /api/conversations/${conversation.id}`]: () => ({ body: conversation }) });
+  // CallActions reads the signed-in role (Mark as spam is for the owner and office).
+  api = stubApi({ [`GET /api/conversations/${conversation.id}`]: () => ({ body: conversation }), 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
   const router = createMemoryRouter([{ path: '*', element: <CallDetail conversationId={conversation.id} /> }], { initialEntries: ['/'] });
@@ -81,6 +82,14 @@ function renderDetail(conversation: ConversationDetail) {
 const heights = () => screen.getAllByTestId('waveform')[0]!.querySelectorAll('span');
 
 describe('CallDetail', () => {
+  it('offers the staff actions: Team is handling, Mark as spam for a call (owner), and Call back', async () => {
+    const conversation = makeConversation();
+    renderDetail(conversation);
+    expect(await screen.findByRole('switch', { name: 'Team is handling' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Mark as spam' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Call back' })).toHaveAttribute('href', `tel:${conversation.phoneE164}`);
+  });
+
   it('shows the caller, outcome, summary, audio row and the transcript in time order', async () => {
     renderDetail(makeConversation());
 

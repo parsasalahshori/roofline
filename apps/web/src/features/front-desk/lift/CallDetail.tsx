@@ -5,6 +5,7 @@ import { liftCall } from "../../../copy/liftCall.ts";
 import { formatPhone } from "../../../lib/phone.ts";
 import { useConversation } from "../conversation-api.ts";
 import { ReplyBox } from "../ReplyBox.tsx";
+import { CallActions } from "./CallActions.tsx";
 import { initialsOf, outcomeChip } from "./format.ts";
 import { OutcomeChipView } from "./OutcomeChipView.tsx";
 import styles from "./CallDetail.module.css";
@@ -433,6 +434,7 @@ function Detail({ conversation }: { conversation: ConversationDetail }) {
       </header>
 
       <div className={styles.scroll}>
+        <CallActions conversation={conversation} />
         {conversation.summary ? (
           <section
             className={styles.summary}

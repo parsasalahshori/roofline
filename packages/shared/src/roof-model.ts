@@ -99,9 +99,9 @@ const TINY_EDGE_M = 1.0;
 const CUT_CORNER_M = 2.5;
 const AXIS_TOLERANCE_DEG = 20;
 /** A snapped side shorter than this is a jog: removed. */
-const MIN_RUN_M = 0.8;
+const MIN_RUN_M = 1.5;
 /** The snapped footprint may differ from the simplified one by this share of its area. */
-const MAX_SNAP_AREA_CHANGE = 0.06;
+const MAX_SNAP_AREA_CHANGE = 0.03;
 const GABLE_RATIO = 1.3;
 const MAX_CORNERS = 64;
 const MAX_RECTS = 40;
