@@ -758,6 +758,16 @@ describe('the Measure roof scan', () => {
     expect(screen.getByText(liftMeasure.sectionsHint)).toBeTruthy();
   });
 
+  it('while Adjust is open, the buttons still pick facets but taps on the photo do not', async () => {
+    const roof = gableRoof(view().outline![0] as [number, number][]);
+    await open({ roof } as Partial<MeasurementView>);
+    mapEmit('click', { features: [{ properties: { id: 'f2' } }] }, 'roof-facets-fill');
+    await wait(50);
+    expect(sent('PATCH /api/measurements/m1')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: liftMeasure.facetToggle('B') }));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ selectedFacets: ['f2'] }]));
+  });
+
   it('opens on the section it was saved with, and a sent roof cannot change it', async () => {
     const roof = gableRoof(view().outline![0] as [number, number][]);
     const section = { facets: ['f1'], totals: { ...roof.totals, squares: 6.7, slopedSqFt: 671, facetCount: 1 } };

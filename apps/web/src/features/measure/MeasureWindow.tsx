@@ -297,7 +297,10 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     void flushPending().catch(() => {});
   };
 
-  const pickable = !locked && !editing && !drawMode && done && model !== null;
+  // The section can change from the card's buttons any time the roof can; taps on the photo wait while Adjust is
+  // open (the photo is then for moving the outline's corners)
+  const pickable = !locked && !drawMode && done && model !== null;
+  const tappable = pickable && !editing;
   const pickFacet = (id: string) => {
     if (!pickable) return;
     const next = nextSection(model, section, id);
@@ -313,7 +316,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   // Tapping a facet on the photo adds it to (or takes it out of) the part of the roof being priced
   useEffect(() => {
     const loose = mapInstance as unknown as FacetTaps | null;
-    if (!pickable || !loose?.on) return;
+    if (!tappable || !loose?.on) return;
     const tap = (e: FacetTap) => {
       const id = e.features?.[0]?.properties?.id;
       if (typeof id === 'string') onFacetTap(id);
@@ -329,7 +332,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
       loose.off?.('mouseleave', ROOF_FACETS_FILL, plain);
       plain();
     };
-  }, [mapInstance, pickable]);
+  }, [mapInstance, tappable]);
 
   const toggleStructure = (id: string, next: boolean) => {
     const map = { ...included, [id]: next };
