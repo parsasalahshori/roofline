@@ -168,19 +168,6 @@ export async function footprintById(tx: Tx, id: string): Promise<{ id: string; r
 }
 
 /**
- * DEMO_MODE only: the seeded demo houses nobody lives in (source_ref `demo-next-*`, written by the demo seed), in a
- * fixed order, each with its id and a point inside it. Empty outside a demo database.
- */
-export async function demoHouses(tx: Tx): Promise<{ id: string; point: LngLat }[]> {
-  const result = await tx.execute(sql`
-    select id::text as id, ST_X(ST_PointOnSurface(geom))::float8 as lng, ST_Y(ST_PointOnSurface(geom))::float8 as lat
-      from building_footprints
-     where state = 'NE' and source_ref like 'demo-next-%'
-     order by source_ref`);
-  return result.rows.map((row) => ({ id: String(row.id), point: [Number(row.lng), Number(row.lat)] as LngLat }));
-}
-
-/**
  * The company's saved, not archived home on this footprint that the caller may see, or null: one already linked to
  * it first, else one with no footprint yet whose point lies inside it (homes saved before any measure); the oldest wins.
  */

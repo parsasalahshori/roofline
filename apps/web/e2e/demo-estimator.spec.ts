@@ -2,7 +2,7 @@ import { expect, type Page, test } from '@playwright/test';
 
 /*
  * The Estimator in the demo (DEMO_MODE, Summit Ridge Roofing seed): any typed address, a real-looking one too,
- * lands on a seeded demo house, so Measure shows its outline and squares, and Make proposal goes through to the
+ * lands on a seeded demo lot (DemoGeocoder, design-c2), so Measure shows its outline and squares, and Make proposal goes through to the
  * owner's OK. And on the map, a click beside a customer's home picks its roof and "Estimate this roof" opens Measure. Run with the demo config, which starts the demo itself:
  *
  *   npx playwright test -c apps/web/playwright.demo.config.ts demo-estimator

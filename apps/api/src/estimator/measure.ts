@@ -4,14 +4,12 @@ import {
   createMeasurement,
   createProperty,
   CustomerRequiredError,
-  demoHouses,
   DuplicateAddressError,
   footprintsNear,
   getProperty,
   listProperties,
   type LngLat,
   MeasurementPropertyNotFoundError,
-  propertyOnFootprint,
   type NewMeasurement,
   type PropertyInput,
   type PropertyRow,
@@ -41,8 +39,6 @@ const FALLBACK_OVERHANG_FT = 1;
 /** A footprint that contains the home point wins; otherwise the nearest one within this distance. */
 const FOOTPRINT_SEARCH_M = 40;
 const FOOTPRINT_SNAP_M = 30;
-/** The demo houses are all in Omaha. */
-const DEMO_TIMEZONE = 'America/Chicago';
 
 type NearFootprint = Awaited<ReturnType<typeof footprintsNear>>[number];
 /** A building the user picked on the map: its footprint and a point on it. */
@@ -75,10 +71,6 @@ async function findSaved(deps: AppDeps, ctx: TenantContext, addressLine: string,
 
 /** Free text in, a saved address out: geocode first (no transaction open), then save it or reuse the one already saved. */
 async function homeFromAddress(deps: AppDeps, ctx: TenantContext, address: string, now: Date): Promise<PropertyRow> {
-  if (deps.config.DEMO_MODE) {
-    const demo = await demoHomeFor(deps, ctx, address, now);
-    if (demo !== null) return demo;
-  }
   const found = await lookUp(deps, address);
   if (found === 'unavailable') throw new AppError(503, UNAVAILABLE_MESSAGE);
   if (found === null) throw new AppError(400, NOT_FOUND_MESSAGE, 'address');
@@ -86,32 +78,6 @@ async function homeFromAddress(deps: AppDeps, ctx: TenantContext, address: strin
   if (street === null || city === null || state === null || zip === null) throw new AppError(400, NOT_FOUND_MESSAGE, 'address');
   const timezone = found.timezone !== null && isTimeZone(found.timezone) ? found.timezone : null;
   return saveHome(deps, ctx, { street, city, state, zip }, [found.lng, found.lat], timezone, now);
-}
-
-/** FNV-1a over the text: the same address picks the same demo house every time. */
-function seedHash(text: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
-  return h;
-}
-
-/**
- * DEMO_MODE: whatever address is typed (a real-looking one too) lands on one of the seeded empty demo houses, picked
- * by a hash of the text, so the measure screen always has an outline. The home is saved at a point inside that house
- * with the house's fictional demo address (the one a map click on it reads), or the home already on it is reused.
- * Null when the database has no demo houses (then the normal lookup runs).
- */
-async function demoHomeFor(deps: AppDeps, ctx: TenantContext, address: string, now: Date): Promise<PropertyRow | null> {
-  const houses = await withTenant(deps.pools, ctx, (tx) => demoHouses(tx));
-  if (houses.length === 0) return null;
-  const house = houses[seedHash(address.trim().toLowerCase().replace(/\s+/g, ' ')) % houses.length]!;
-  const onIt = await withTenant(deps.pools, ctx, (tx) => propertyOnFootprint(tx, ctx, house.id));
-  if (onIt !== null) return onIt;
-  const [found = null] = await deps.geocoder.reverseMany([{ lng: house.point[0], lat: house.point[1] }]);
-  if (found === null) throw new AppError(400, NOT_FOUND_MESSAGE, 'address');
-  const home = await saveHome(deps, ctx, found, house.point, DEMO_TIMEZONE, now);
-  await withTenant(deps.pools, ctx, (tx) => setPropertyFootprint(tx, ctx, home.id, house.id));
-  return home;
 }
 
 /**
