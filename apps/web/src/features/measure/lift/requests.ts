@@ -9,6 +9,8 @@ export const REQUEST_STATUSES: readonly ProposalStatus[] = ['draft', 'ready', 's
 
 export type RequestRow = {
   measurementId: string;
+  /** The proposal behind the row; its own page stays reachable from the list once it is out or signed. */
+  proposalId: string;
   name: string;
   address: string;
   /** Roof material, when the proposal's first option says. */
@@ -29,6 +31,7 @@ export function toRow(p: ProposalView): RequestRow {
   const squares = option ? option.calculation.roofSquares : null;
   return {
     measurementId: p.measurementId,
+    proposalId: p.id,
     name: p.customer.name,
     address: p.address,
     material: option ? measure.materials[option.scope.material] : null,

@@ -2,18 +2,18 @@ import { test, expect } from './fixtures.ts';
 import { makeAndSendProposal } from './estimator-helpers.ts';
 
 /*
- * The Estimator end to end: a typed address to a sent proposal in three clicks, and the owner approving the
+ * Measure (the Estimator app) end to end: a typed address to a sent proposal in four clicks, and the owner approving the
  * spend for an exact roof report. EagleView completion and re-pricing are proven by integration tests (Ruling 8).
  */
 
-test('typed address to sent in 3 clicks', async ({ page, loginAs, markTodaySeen, click, clicks }) => {
+test('typed address to sent in 4 clicks', async ({ page, loginAs, markTodaySeen, click, clicks }) => {
   test.setTimeout(60_000);
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
 
-  // Make proposal, then Approve on the review screen (which shows the three tier totals and ends in Done).
+  // Measure a new roof, Measure roof, Make proposal, then Approve on the review screen (which shows the three tier totals and ends in Done).
   const sent = await makeAndSendProposal(page, click);
-  expect(clicks.count).toBeLessThanOrEqual(3);
+  expect(clicks.count).toBeLessThanOrEqual(4);
   expect(sent.link.startsWith('/p/')).toBe(true);
 
   // The fake text adapter took the text: the proposal now reads Sent.

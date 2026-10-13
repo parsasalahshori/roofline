@@ -17,7 +17,7 @@ const TILE_INK: Partial<Record<WindowKey, string>> = {
  * A window on the map: its title and line come from WINDOW_COPY, and closing it goes back to the map.
  * It is keyed by app, so opening another app replaces this one. On a phone it fills the screen.
  */
-export function AppWindow({ app, children, stats }: { app: WindowKey; children: ReactNode; stats?: ReactNode }) {
+export function AppWindow({ app, children, stats, bare }: { app: WindowKey; children: ReactNode; stats?: ReactNode; bare?: boolean }) {
   const navigate = useNavigate();
   const phone = useIsPhone();
   const copy = WINDOW_COPY[app];
@@ -32,6 +32,7 @@ export function AppWindow({ app, children, stats }: { app: WindowKey; children: 
       icon={dockApp?.icon}
       iconBackground={dockApp ? `var(--lift-tile-${app})` : undefined}
       iconColor={dockApp ? (TILE_INK[app] ?? 'var(--lift-tile-ink)') : undefined}
+      bare={bare}
       variant={phone ? 'page' : 'floating'}
       onClose={() => {
         void navigate('/');

@@ -24,6 +24,8 @@ export type WindowProps = {
   /** The tile's CSS background (a colour or gradient) and glyph colour. */
   iconBackground?: string;
   iconColor?: string;
+  /** The window's children draw their own header: the title stays for screen readers and only the close button shows, over the corner. */
+  bare?: boolean;
 };
 
 /**
@@ -46,6 +48,7 @@ export function Window({
   icon,
   iconBackground,
   iconColor,
+  bare = false,
 }: WindowProps) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -63,6 +66,7 @@ export function Window({
         tabIndex={-1}
         className={styles.window}
         data-variant={variant}
+        data-bare={bare ? 'true' : undefined}
       >
         <div className={styles.titleBar}>
           {icon ? (

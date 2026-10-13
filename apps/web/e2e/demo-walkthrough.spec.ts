@@ -83,7 +83,8 @@ test('Roofline demo walkthrough', async ({ page }) => {
 
   await test.step('Estimator and proposals', async () => {
     await visit(page, '/estimator');
-    await clickFirst(page, 'main a[href^="/estimator/proposals/"]');
+    // Measure opens the first request; a sent or signed one keeps a Proposal link in the list
+    await clickFirst(page, 'a[href^="/estimator/proposals/"]');
   });
 
   await test.step('Storm Scout', async () => {

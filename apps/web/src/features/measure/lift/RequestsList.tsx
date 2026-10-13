@@ -70,7 +70,7 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
       ) : (
         <ul className={styles.list}>
           {rows.map((row) => (
-            <li key={row.measurementId}>
+            <li key={row.measurementId} className={styles.item}>
               <UiLink
                 href={`/estimator/measure/${row.measurementId}`}
                 className={styles.row}
@@ -86,6 +86,16 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
                 </span>
                 {row.squares !== null ? <span className={styles.squares}>{measure.squaresShort(row.squares)}</span> : null}
               </UiLink>
+              {row.status === 'estimate_sent' || row.status === 'signed' ? (
+                <UiLink
+                  href={`/estimator/proposals/${row.proposalId}`}
+                  className={styles.proposal}
+                  aria-label={measure.proposalLinkLabel(row.name)}
+                  onClick={onPick}
+                >
+                  {measure.proposalLink}
+                </UiLink>
+              ) : null}
             </li>
           ))}
         </ul>

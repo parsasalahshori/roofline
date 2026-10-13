@@ -119,6 +119,14 @@ describe('RequestsList', () => {
     expect(screen.getByLabelText(measure.requestsCount(3))).toHaveTextContent('3');
   });
 
+  it('links a sent or signed request to its proposal page, and a draft to none', async () => {
+    renderList();
+    await screen.findByText('Mei Abernathy');
+    expect(screen.getByRole('link', { name: measure.proposalLinkLabel('Carmen Castellano') })).toHaveAttribute('href', '/estimator/proposals/2');
+    expect(screen.getByRole('link', { name: measure.proposalLinkLabel('Graham Mendel') })).toHaveAttribute('href', '/estimator/proposals/3');
+    expect(screen.queryByRole('link', { name: measure.proposalLinkLabel('Mei Abernathy') })).toBeNull();
+  });
+
   it('highlights the open request', async () => {
     renderList('m2');
     await screen.findByText('Mei Abernathy');

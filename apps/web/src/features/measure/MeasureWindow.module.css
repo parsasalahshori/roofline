@@ -14,7 +14,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 20px;
+  padding: 14px 56px 14px 20px;
   border-bottom: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
 }
 
@@ -243,4 +243,12 @@
   .list {
     transition: none;
   }
+}
+
+/* Nothing open: one quiet card in the middle of the right side */
+.pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
 }
