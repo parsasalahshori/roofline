@@ -84,15 +84,6 @@ export async function screeningFacts(
   return { blocked: blocked !== undefined, callsLastHour: recent?.n ?? 0, knownCustomer };
 }
 
-/** Calls of the company with status 'ai' (the company concurrent cap). */
-export async function countLiveAiCalls(tx: Tx, ctx: TenantContext): Promise<number> {
-  const [row] = await tx
-    .select({ n: sql<number>`count(*)::int` })
-    .from(calls)
-    .where(and(eq(calls.companyId, ctx.companyId), eq(calls.status, 'ai')));
-  return row?.n ?? 0;
-}
-
 /** Changes only the keys present in `patch` (updated_at moves with it). */
 export async function updateCall(
   tx: Tx,
