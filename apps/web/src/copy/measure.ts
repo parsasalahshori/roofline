@@ -24,7 +24,6 @@ export const measure = {
   choiceTitle: 'How to price it',
   choiceFree: 'Free estimate',
   choiceFreeNote: 'From this outline, ready now',
-  choiceExact: 'Order EagleView report',
   choiceExactNote: 'Paid \u00b7 ordered after your OK',
   customerTitle: 'Who is this for?',
   customerHint: 'This home has no customer yet. Add one to make the proposal.',

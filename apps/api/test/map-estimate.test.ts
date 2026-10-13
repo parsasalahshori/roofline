@@ -143,6 +143,24 @@ describe('POST /api/estimator/from-footprint', () => {
     expect(reverseCalls()).toBe(1);
   });
 
+  it("reuses a saved home whose point is inside the building though it was never linked to it (the customer's own house)", async () => {
+    const ids = await loadNE({ sourceRef: 'house', ring: HOUSE });
+    const owner = await who.as('owner');
+    const customer = await owner.post('/api/customers').send({ displayName: 'Paula Pin' });
+    expect(customer.status).toBe(201);
+    const home = await owner.post('/api/properties').send({ addressLine: '77 Elm St', city: 'Omaha', state: 'NE', zip: '68102', customerId: customer.body.id });
+    expect(home.status, JSON.stringify(home.body)).toBe(201);
+    await inCompany(t, t.seed.a.companyId, (tx) =>
+      tx.execute(sql`update properties set geom = ST_SetSRID(ST_MakePoint(${INSIDE_HOUSE.lng}, ${INSIDE_HOUSE.lat}), 4326), footprint_id = null where id = ${home.body.id}`),
+    );
+    const res = await owner.post('/api/estimator/from-footprint').send({ footprintId: ids['house'], ...INSIDE_HOUSE });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const m = await view('owner', res.body.measurementId);
+    expect(m.propertyId).toBe(home.body.id);
+    expect(m.hasCustomer).toBe(true);
+    expect(reverseCalls()).toBe(0);
+  });
+
   it('keeps companies apart: each gets its own home and cannot read the other measurement', async () => {
     const ids = await loadNE({ sourceRef: 'house', ring: HOUSE });
     const body = { footprintId: ids['house'], ...INSIDE_HOUSE };

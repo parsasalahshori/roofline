@@ -36,3 +36,8 @@ export const billing = {
     askOwner: 'Ask your owner to update the card.',
   },
 } as const;
+
+/** Paid one-off reports, named by who supplies them (spend: each goes through an approval). */
+export const paidReports = {
+  exactChoice: 'Order EagleView report',
+} as const;

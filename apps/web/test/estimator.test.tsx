@@ -309,6 +309,24 @@ describe('Estimator window', () => {
     ]);
   });
 
+  it('Measure the roof opens the measuring screen for a typed address, with no customer needed first', async () => {
+    signedInApi(
+      flowRoutes({
+        [ADDRESS_SEARCH]: () => ({ body: { properties: [], total: 0 } }),
+        'POST /api/measurements': () => ({ body: measurement('m3', false) }),
+        'GET /api/measurements/m3': () => ({ body: measurement('m3', false) }),
+      }),
+    );
+    const { router, user } = renderApp();
+    await user.type(await screen.findByLabelText(estimator.addressLabel), '99 Elm Rd, Austin TX{Enter}');
+    await user.click(await screen.findByRole('button', { name: estimator.measureRoof }));
+
+    await waitFor(() => expect(where(router)).toBe('/estimator/measure/m3'));
+    expect(api.sent('POST /api/measurements')).toEqual([{ address: '99 Elm Rd, Austin TX' }]);
+    expect(api.sent('POST /api/proposals')).toEqual([]);
+    expect(router.state.location.state).toEqual({});
+  });
+
   it('sends askedByText false when the box is not ticked', async () => {
     signedInApi(
       flowRoutes({
