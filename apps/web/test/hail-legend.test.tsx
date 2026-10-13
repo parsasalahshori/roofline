@@ -223,11 +223,11 @@ describe('HailLegend', () => {
 
     rerender(<HailLegend visible />);
     const legend = screen.getByTestId('hail-legend');
-    expect(legend).toHaveTextContent('Radar-estimated hail');
+    expect(legend).toHaveTextContent(mapCopy.hailLegendTitle);
     expect(legend).toHaveAccessibleName(mapCopy.hailLegend);
     const swatches = Array.from(legend.querySelectorAll('[data-level]'));
     expect(swatches.map((node) => node.getAttribute('data-level'))).toEqual(['1', '2', '3', '4', '5']);
-    for (const size of mapCopy.hailSizeLevels) expect(within(legend).getByText(size)).toBeInTheDocument();
+    for (const size of mapCopy.hailSizeNames) expect(within(legend).getByText(size)).toBeInTheDocument();
   });
 });
 

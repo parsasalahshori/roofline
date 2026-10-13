@@ -14,7 +14,7 @@ const OSM_TILES = ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'];
 
 describe('mapStyle', () => {
   it('asks MapTiler for the streets style with the key', () => {
-    expect(mapStyle({ maptilerKey: 'abc' }, 'streets')).toBe('https://api.maptiler.com/maps/streets-v2/style.json?key=abc');
+    expect(mapStyle({ maptilerKey: 'abc' }, 'streets')).toBe('https://api.maptiler.com/maps/dataviz-light/style.json?key=abc');
   });
 
   it('asks MapTiler for the hybrid style with the key in satellite mode', () => {
@@ -22,7 +22,7 @@ describe('mapStyle', () => {
   });
 
   it('encodes the key in the URL', () => {
-    expect(mapStyle({ maptilerKey: 'a b' }, 'streets')).toBe('https://api.maptiler.com/maps/streets-v2/style.json?key=a%20b');
+    expect(mapStyle({ maptilerKey: 'a b' }, 'streets')).toBe('https://api.maptiler.com/maps/dataviz-light/style.json?key=a%20b');
   });
 
   it('draws the free OpenStreetMap tiles when asked, in both modes, with the attribution', () => {
@@ -65,7 +65,7 @@ describe('mapStyle', () => {
 
   it('prefers the key over the OpenStreetMap tiles', () => {
     expect(mapStyle({ maptilerKey: 'abc', tiles: 'osm' }, 'streets')).toBe(
-      'https://api.maptiler.com/maps/streets-v2/style.json?key=abc',
+      'https://api.maptiler.com/maps/dataviz-light/style.json?key=abc',
     );
   });
 });

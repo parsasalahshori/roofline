@@ -339,3 +339,10 @@ Merged locally: typecheck, lint, shared tests (668) and drizzle-kit "No schema c
 - Test: `apps/web/test/storm-layer-expression.test.ts` compiles the expression with `@maplibre/maplibre-gl-style-spec`, a transitive dependency of maplibre-gl, and checks each level's colour.
 - Source: `ops/sdd/integration/dress-rehearsal.md` on ops-rehearsal.
 - s1-storm@85a68e7 (the BUG-1 fix plus its test update): CI run 38288147079 is green on Platform, Hail and E2E.
+
+## Demo UI lift 05: hail heat map look (branch `lift-05-hail`, from `demo-mode`)
+
+- Swath fill opacity 0.45 to 0.7 (`HAIL_FILL_OPACITY`, also used by the storm detail map); the swath "outline" layer is now a wide, blurred line in each contour's own hail colour, which feathers the band edges into a heat gradient.
+- Base map: MapTiler style `streets-v2` becomes `dataviz-light` (satellite `hybrid` unchanged); the OSM raster fallback is desaturated and lowered in contrast.
+- Map legend (`HailLegend`) is a compact horizontal chip row titled "Last night's hail" (Penny, Quarter, Ping-pong, Golf ball, Tennis ball = levels 1-5; the inch size is the chip tooltip). New copy keys `hailLegendTitle` and `hailSizeNames`; `hailLegend` stays the accessible name and the storm detail legend is untouched.
+- Not done: scored-home squares. The web app has no scored-homes data source yet (spotter reports are the only points), so nothing was invented.

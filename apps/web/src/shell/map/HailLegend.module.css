@@ -1,12 +1,17 @@
-/* Bottom left, above the map controls and attribution. */
+/* Bottom left, above the map controls and attribution: one compact horizontal row of chips. */
 .legend {
   position: absolute;
   left: 16px;
   bottom: 32px;
   z-index: 3;
-  padding: 8px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  max-width: calc(100% - 32px);
+  padding: 4px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: 999px;
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-window);
@@ -14,34 +19,36 @@
 }
 
 .title {
-  margin: 0 0 8px;
+  margin: 0;
   font-weight: 600;
 }
 
 .list {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.row {
+.chip {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .swatch {
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
 }
 
 /* Clears the bottom tab bar on phone. */
 @media (max-width: 767.98px) {
   .legend {
     bottom: 88px;
+    border-radius: var(--radius-card);
   }
 }

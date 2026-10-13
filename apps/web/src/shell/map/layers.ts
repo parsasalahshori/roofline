@@ -45,7 +45,7 @@ export const LAYER = {
 } as const;
 
 /** Opacity of the hail swath fill. */
-export const HAIL_FILL_OPACITY = 0.45;
+export const HAIL_FILL_OPACITY = 0.7;
 
 /** Everything the layers draw. */
 export type MapData = {
@@ -202,7 +202,9 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void
       id: LAYER.stormSwathOutline,
       type: 'line',
       source: SOURCE.stormSwath,
-      paint: { 'line-color': tokens.text, 'line-width': 1.5, 'line-opacity': 0.8 },
+      // Not an outline: a wide, blurred line in the contour's own colour feathers the edge of each band.
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': hailFillExpression(), 'line-width': 22, 'line-blur': 20, 'line-opacity': 0.55 },
     }),
   );
 
