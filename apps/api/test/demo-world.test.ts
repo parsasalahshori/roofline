@@ -81,6 +81,27 @@ describe('the demo world', () => {
     expect(page.status).toBe(200);
     expect(page.body.status).toBe('open');
 
+    // "Estimate this roof": every home sits inside a building outline, and there are empty neighbouring houses too.
+    const outlines = (
+      await owner.query(
+        `select count(*)::int as homes,
+                count(*) filter (where exists (select 1 from building_footprints b where ST_Contains(b.geom, p.geom)))::int as covered
+           from properties p where p.company_id = $1 and p.geom is not null`,
+        [first.companyId],
+      )
+    ).rows[0] as { homes: number; covered: number };
+    expect(outlines.homes).toBeGreaterThan(50);
+    expect(outlines.covered).toBe(outlines.homes);
+    const empty = (
+      await owner.query(
+        `select count(*)::int as n from building_footprints b
+          where b.source_ref like 'demo-next-%'
+            and not exists (select 1 from properties p where p.company_id = $1 and ST_Contains(b.geom, p.geom))`,
+        [first.companyId],
+      )
+    ).rows[0] as { n: number };
+    expect(empty.n).toBeGreaterThan(50);
+
     const second = await seedDemoWorld(t.deps.pools, ownerUrl, now, { encryptionKey: TEST_ENCRYPTION_KEY });
     expect(second).toEqual({ created: false, companyId: first.companyId, counts: first.counts });
   });

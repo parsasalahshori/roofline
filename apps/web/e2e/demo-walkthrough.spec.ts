@@ -127,9 +127,10 @@ test('Roofline demo walkthrough', async ({ page }) => {
     await visit(page, '/storm');
   });
 
+  let signed: Record<string, unknown> = {};
   await test.step('Simulate: a homeowner signs', async () => {
     await visit(page, '/estimator');
-    const signed = await simulate(page, 'sign');
+    signed = await simulate(page, 'sign');
     await visit(page, '/estimator');
     await visit(page, '/agents/feed');
 
@@ -146,5 +147,19 @@ test('Roofline demo walkthrough', async ({ page }) => {
     await page.goto(homeownerUrl);
     await expect(page.getByRole('link', { name: 'Download your signed copy' })).toBeVisible({ timeout: 30_000 });
     await linger(page);
+  });
+
+  await test.step('Exact roof report: approve the spend, the fake EagleView report comes back', async () => {
+    const proposal = await page.request.get(`/api/proposals/${String(signed['proposalId'])}`);
+    expect(proposal.status()).toBe(200);
+    const { measurementId } = (await proposal.json()) as { measurementId: string };
+    await page.goto(`/estimator/measure/${measurementId}`);
+    await page.getByRole('button', { name: 'Get exact report' }).click();
+    await page.getByRole('link', { name: 'Waiting for your OK' }).click();
+    await expect(page).toHaveURL(/\/approvals\//);
+    await page.getByRole('button', { name: /^Approve 1 step · up to \$[\d,]+$/ }).click();
+    // Demo mode: the report completes about 20 s after the order and the worker asks every 30 s.
+    await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, { timeout: 150_000 });
+    expect(serverErrors).toEqual([]);
   });
 });

@@ -190,6 +190,8 @@ export async function startWorker(boss: PgBoss, deps: AppDeps, options: WorkerOp
         throw new JobFailed(err);
       }
     });
-    await boss.schedule(job.name, job.cron);
+    // Demo mode polls exact reports every minute, so an ordered report comes back while the audience watches.
+    const cron = deps.config.DEMO_MODE && job.name === 'exact-report-poll' ? '* * * * *' : job.cron;
+    await boss.schedule(job.name, cron);
   }
 }
