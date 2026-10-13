@@ -1,0 +1,221 @@
+{
+  "background": "rgb(246, 247, 248) none repeat scroll 0% 0% / auto padding-box border-box",
+  "borderRadius": "18px",
+  "controls": [
+    {
+      "fontSize": "14px",
+      "rect": {
+        "bottom": 82.5,
+        "height": 32,
+        "left": 1336,
+        "right": 1368,
+        "top": 50.5,
+        "width": 32,
+        "x": 1336,
+        "y": 50.5
+      },
+      "text": ""
+    },
+    {
+      "fontSize": "14px",
+      "rect": {
+        "bottom": 82.5,
+        "height": 32,
+        "left": 1372,
+        "right": 1404,
+        "top": 50.5,
+        "width": 32,
+        "x": 1372,
+        "y": 50.5
+      },
+      "text": ""
+    },
+    {
+      "fontSize": "13.5px",
+      "rect": {
+        "bottom": 189.515625,
+        "height": 36,
+        "left": 1219.28125,
+        "right": 1359.515625,
+        "top": 153.515625,
+        "width": 140.234375,
+        "x": 1219.28125,
+        "y": 153.515625
+      },
+      "text": "Simulate a call"
+    },
+    {
+      "fontSize": "12.5px",
+      "rect": {
+        "bottom": 289.8125,
+        "height": 28,
+        "left": 56,
+        "right": 138,
+        "top": 261.8125,
+        "width": 82,
+        "x": 56,
+        "y": 261.8125
+      },
+      "text": "All8"
+    },
+    {
+      "fontSize": "12.5px",
+      "rect": {
+        "bottom": 289.8125,
+        "height": 28,
+        "left": 142,
+        "right": 224,
+        "top": 261.8125,
+        "width": 82,
+        "x": 142,
+        "y": 261.8125
+      },
+      "text": "Booked2"
+    },
+    {
+      "fontSize": "12.5px",
+      "rect": {
+        "bottom": 289.8125,
+        "height": 28,
+        "left": 228,
+        "right": 310,
+        "top": 261.8125,
+        "width": 82,
+        "x": 228,
+        "y": 261.8125
+      },
+      "text": "Text-backs1"
+    },
+    {
+      "fontSize": "12.5px",
+      "rect": {
+        "bottom": 289.8125,
+        "height": 28,
+        "left": 314,
+        "right": 396,
+        "top": 261.8125,
+        "width": 82,
+        "x": 314,
+        "y": 261.8125
+      },
+      "text": "Blocked1"
+    },
+    {
+      "fontSize": "14px",
+      "rect": {
+        "bottom": 377.375,
+        "height": 70.5625,
+        "left": 36,
+        "right": 405,
+        "top": 306.8125,
+        "width": 369,
+        "x": 36,
+        "y": 306.8125
+      },
+      "text": "MLMolly Lindgren31 min agoBooked inspection3:04"
+    },
+    {
+      "fontSize": "14px",
+      "rect": {
+        "bottom": 447.9375,
+        "height": 70.5625,
+        "left": 36,
+        "right": 405,
+        "top": 377.375,
+        "width": 369,
+        "x": 36,
+        "y": 377.375
+      },
+      "text": "Unknown caller46 min agoSpam blocked0:09"
+    },
+    {
+      "fontSize": "14px",
+      "rect": {
+        "bottom": 518.5,
+        "height": 70.5625,
+        "left": 36,
+        "right": 405,
+        "top": 447.9375,
+        "width": 369,
+        "x": 36,
+        "y": 447.9375
+      },
+      "text": "RBRico Brandt58 min agoClaim help4:01"
+    }
+  ],
+  "font": "\"Archivo Variable\", ui-sans-serif, system-ui, sans-serif",
+  "fontSize": "14px",
+  "header": [
+    {
+      "fontFamily": "\"Archivo Variable\", ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "16px",
+      "rect": {
+        "bottom": 78.09375,
+        "height": 23.1875,
+        "left": 74,
+        "right": 177.828125,
+        "top": 54.90625,
+        "width": 103.828125,
+        "x": 74,
+        "y": 54.90625
+      },
+      "text": "Front Desk"
+    },
+    {
+      "fontFamily": "\"Archivo Variable\", ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "14px",
+      "rect": {
+        "bottom": 247.8125,
+        "height": 20.296875,
+        "left": 52,
+        "right": 124.859375,
+        "top": 227.515625,
+        "width": 72.859375,
+        "x": 52,
+        "y": 227.515625
+      },
+      "text": "Latest calls"
+    },
+    {
+      "fontFamily": "\"Archivo Variable\", ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "20px",
+      "rect": {
+        "bottom": 254.59375,
+        "height": 25,
+        "left": 508,
+        "right": 677.90625,
+        "top": 229.59375,
+        "width": 169.90625,
+        "x": 508,
+        "y": 229.59375
+      },
+      "text": "Molly Lindgren"
+    },
+    {
+      "fontFamily": "\"Archivo Variable\", ui-sans-serif, system-ui, sans-serif",
+      "fontSize": "13px",
+      "rect": {
+        "bottom": 482,
+        "height": 18.84375,
+        "left": 448,
+        "right": 508.4375,
+        "top": 463.15625,
+        "width": 60.4375,
+        "x": 448,
+        "y": 463.15625
+      },
+      "text": "Transcript"
+    }
+  ],
+  "padding": "0px",
+  "rect": {
+    "bottom": 808,
+    "height": 766,
+    "left": 20,
+    "right": 1420,
+    "top": 42,
+    "width": 1400,
+    "x": 20,
+    "y": 42
+  }
+}
