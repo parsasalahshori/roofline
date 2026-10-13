@@ -2,7 +2,7 @@
 
 Branch: `codex/ironclad-full-ui-09`.
 Preparation: `81b9251490cfa05eac4baecc68f6952b549a1460`; verified ancestry from complete-app base `ff772d5cbf87eac051759e9049fb29930845a45f`.
-Implementation SHA: recorded in the follow-up evidence commit below.
+Implementation SHA: `7da7855ef3950ed0cfb0f2ef26449a0b77b6e677` (pushed). The subsequent report-only commit records this immutable implementation SHA and does not change tested code.
 
 ## Result and boundaries
 
@@ -54,7 +54,7 @@ Own regression file: `apps/web/test/ironclad-full-09.test.tsx`. It covers signup
 1. Task 01/controller: integrate shared Ironclad font, tokens, window geometry and shell chrome, then repeat these captures. Keep shared component APIs and 40px+ phone targets. The local palette uses the existing token names and can be reconciled with the final shared palette by the controller.
 2. Controller: obtain reference captures for auth/settings if exact page-level matching is required; none were supplied for this scope. Map imagery is outside this task's evidence; visual fixtures use empty map data and do not establish map fidelity.
 3. Controller: preserve and verify shared company-switch query clearing/remount behavior, routing and error recovery in the assembled product. This branch makes no shared changes.
-4. GitHub CLI CI reads initially returned `Forbidden` for `api.github.com` under the restricted policy. Final report will include actual available GitHub run URLs/status; absence of an API response is not a passing CI result.
+4. GitHub CLI CI reads return `Forbidden` for `api.github.com` under the restricted policy. The permitted public GitHub HTML pages exposed the actual run and queued state. Controller must confirm all five jobs complete successfully before integration; no CI success is claimed here.
 
 ## Changed files
 
@@ -95,3 +95,15 @@ Own regression file: `apps/web/test/ironclad-full-09.test.tsx`. It covers signup
 - `apps/web/src/features/texting/TextingStatus.module.css`
 - `apps/web/test/ironclad-full-09.test.tsx`
 - `ops/ironclad-rebuild/task-09-report.md`
+
+## Final evidence and CI
+
+- Pushed implementation: `7da7855ef3950ed0cfb0f2ef26449a0b77b6e677`, only `codex/ironclad-full-ui-09`.
+- Actual GitHub CI: [run 38334855757 / CI #1004](https://github.com/parsasalahshori/roofline/actions/runs/38334855757), triggered by the implementation push. **Queued** when checked from GitHub's public run page; no completed job results yet for Platform, v1, E2E, Demo DB (arm64), or Hail service. API access is forbidden, but this run URL/status was read from GitHub HTML rather than inferred.
+- Final frontend suite: 150/150; scoped API: 228/228; scoped desktop E2E: 7/7; expanded desktop/phone E2E: 21 passed and the public storm-host test failed on `Domain forbidden`; separate demo walkthrough: 1/1.
+- Final typecheck, lint, CSS lint and build exit successfully. Dependency/lockfiles unchanged. Allowlist and whitespace checks pass.
+- Final 22 fixture-based captures/axe scans are complete: zero document overflow, zero uncaught page errors, zero scoped WCAG A/AA violations. The final capture server disables map tile configuration for this test process only, as repository test guidance prescribes; no network restrictions were changed. Empty map fixtures have the existing response shape. Geometry inspection also confirmed the texting screen's heading, form and scroll ancestors fit the 390px viewport.
+- Visual results SHA-256: `68ee1950a478ac6bfd1455d29d75c53aadd5e54606ee9079c676384ba2638c6a` (`/workspace/work/task09/evidence/visual-checks.json`).
+- Evidence check time: 2026-10-12 19:03 PDT.
+
+Task 09 implementation is ready for controller review with the CI queue and public test-host restriction outstanding. This report does not declare exact account-screen fidelity, integrated product readiness, or live-provider readiness.
