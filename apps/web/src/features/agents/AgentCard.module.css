@@ -105,7 +105,8 @@
 .status {
   font-size: 13px;
   font-weight: 600;
-  color: var(--ds-success, #107a2c);
+  /* The ink shade: the plain success green is under 4.5:1 on white at this size. */
+  color: var(--ds-success-ink, #0a6e1d);
 }
 
 .status[data-status='waiting'] {
