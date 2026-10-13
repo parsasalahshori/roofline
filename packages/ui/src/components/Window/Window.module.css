@@ -105,3 +105,27 @@
     padding: 16px;
   }
 }
+
+/* Bare: the content draws its own header. The title bar's words are read out but not shown, and the close button floats over the corner. */
+.window[data-bare="true"] .titleBar {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  right: 10px;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.window[data-bare="true"] .heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.window[data-bare="true"] .body {
+  padding: 0;
+}

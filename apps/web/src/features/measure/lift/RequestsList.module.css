@@ -94,6 +94,22 @@
   list-style: none;
 }
 
+.item {
+  position: relative;
+}
+
+/* A small link to the proposal's own page, over the row's bottom edge between the material and the squares */
+.proposal {
+  position: absolute;
+  z-index: 1;
+  right: 68px;
+  bottom: 9px;
+  color: var(--ds-info, #2563eb);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: underline;
+}
+
 /* name and chip on the first line, address on the second, material and squares on the third */
 .row {
   position: relative;

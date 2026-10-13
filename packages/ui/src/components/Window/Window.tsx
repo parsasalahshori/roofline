@@ -19,6 +19,8 @@ export type WindowProps = {
   variant?: WindowVariant;
   /** Pinned to the bottom edge while the body scrolls. */
   footer?: ReactNode;
+  /** The window's children draw their own header: the title stays for screen readers and only the close button shows, over the corner. */
+  bare?: boolean;
 };
 
 /**
@@ -38,6 +40,7 @@ export function Window({
   children,
   variant = 'floating',
   footer,
+  bare = false,
 }: WindowProps) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -55,6 +58,7 @@ export function Window({
         tabIndex={-1}
         className={styles.window}
         data-variant={variant}
+        data-bare={bare ? 'true' : undefined}
       >
         <div className={styles.titleBar}>
           <div className={styles.heading}>

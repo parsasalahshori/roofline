@@ -18,6 +18,7 @@ import { readHandoff } from './handoff.ts';
 import styles from './MeasureWindow.module.css';
 import { PropertyStrip } from './lift/PropertyStrip.tsx';
 import { RequestsList } from './lift/RequestsList.tsx';
+import { useRequestRows } from './lift/requests.ts';
 import { RoofView } from './lift/RoofView.tsx';
 import { useRoofScan } from './lift/scan.ts';
 import { MeasureSlotsContext, type RoofSession } from './lift/slots.ts';
@@ -433,6 +434,22 @@ function Loaded({ m }: { m: MeasurementView }) {
   );
 }
 
+/** /estimator with no request open: the first request opens (replacing this address), or the right side says what to do. */
+function NothingOpen() {
+  const navigate = useNavigate();
+  const { list, rows } = useRequestRows('');
+  const first = rows[0]?.measurementId;
+  useEffect(() => {
+    if (first !== undefined) void navigate(`/estimator/measure/${encodeURIComponent(first)}`, { replace: true });
+  }, [first, navigate]);
+  if (list.isPending || first !== undefined) return <p className={styles.loading}>{measure.loading}</p>;
+  return (
+    <div className={styles.pick}>
+      <EmptyState title={measure.pickRequest} />
+    </div>
+  );
+}
+
 /** The measuring screen: the requests list on the left, then the roof with its numbers over it. */
 export function MeasureWindow() {
   const { measurementId = '' } = useParams();
@@ -454,7 +471,7 @@ export function MeasureWindow() {
             />
           </svg>
         </span>
-        <h1 className={styles.heading}>{measure.title}</h1>
+        <h2 className={styles.heading}>{measure.title}</h2>
         <span className={styles.subtitle}>{measure.subtitle}</span>
         <Button
           variant="ghost"
@@ -470,7 +487,9 @@ export function MeasureWindow() {
           <RequestsList selectedId={measurementId} onPick={() => setListOpen(false)} />
         </aside>
         <main className={styles.main}>
-          {query.isError ? (
+          {measurementId === '' ? (
+            <NothingOpen />
+          ) : query.isError ? (
             <EmptyState title={measure.loadFailed} />
           ) : !query.data ? (
             <p className={styles.loading}>{measure.loading}</p>

@@ -18,7 +18,7 @@ export const dock = {
 export const WINDOW_COPY: Record<WindowKey, { title: string; description: string }> = {
   storm: { title: 'Storm', description: 'Hail maps and storm plans' },
   'front-desk': { title: 'Front Desk', description: 'Answers every call and text' },
-  estimator: { title: 'Estimator', description: 'Roof estimates and proposals' },
+  estimator: { title: 'Measure', description: 'Roof measurements and proposals in seconds' },
   jobs: { title: 'Jobs', description: 'Every job from lead to paid' },
   calendar: { title: 'Calendar', description: 'Inspections and installs' },
   agents: { title: 'Agents', description: 'What your agents did today' },
