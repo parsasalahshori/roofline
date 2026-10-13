@@ -34,6 +34,9 @@ lives anywhere else.
 | S1 Storm Scout (hail map, alerts, storm plans, ads) | `docs/superpowers/plans/2026-10-12-roofline-storm-scout.md` + briefs `ops/sdd/s1/` | **done** on `s1-storm` 7ad99c9: Tasks 1-29 + whole-branch review fixes R1-R7 + security fixes R8-R10 (Ruling BF), with c1-crm 7758e82 and e1-estimator 414b97b merged; CI green on Platform, Hail and E2E (run 38277874294). Carries for the a1-agents, d1 and g1 merges are listed in `ops/sdd/s1/progress.md`. Owner to-do: Google and Meta Ads test accounts, a Postmark broadcast stream and webhook secret, a Render worker for `services/hail` (HAIL_DB_PASSWORD, POSTMARK_TOKEN, OPS_ALERT_EMAIL as a verified sender), POLICY_PAGES_DOMAIN, TRUST_PROXY=1 on the API and the worker, and the manual smoke run (`docs/superpowers/s1-manual-smoke.md`) |
 | D1, A1, G1 | `docs/superpowers/plans/2026-10-12-roofline-*.md` + briefs `ops/sdd/{d1,a1,g1}/` | in progress on their tracks |
 
+Building footprints: branch `main-footprints` (from `main-merge`) moves the production loader to Microsoft Global ML
+Building Footprints (the old US Building Footprints host returns 409); see the last entry of `ops/sdd/e1/progress.md`.
+
 Unfinished work left on task branches (check `ops/README.md` and the F3/C1 ledgers for each head):
 - F3: `f3-t26`, `f3-t31`, `f3-t35`, `f3-t32`, `f3-t33`, `f3-t34` (some may be WIP commits titled
   `wip(...)`), then `f3-t28`, `f3-t37` and finally `f3-t36` (not started; briefs in `ops/sdd/f3/`).

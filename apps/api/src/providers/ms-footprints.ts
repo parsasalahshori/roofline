@@ -15,6 +15,12 @@ import type { Config } from '../config.ts';
 import { FootprintsUnavailableError } from './footprints.ts';
 import type { FootprintFeature, FootprintSource } from './footprints.ts';
 
+/*
+ * Legacy source: the per-state zips of Microsoft US Building Footprints, read from FOOTPRINTS_BASE_URL.
+ * Microsoft's public host for these files (usbuildingdata.blob.core.windows.net) now refuses downloads,
+ * so this runs only when FOOTPRINTS_BASE_URL points at a mirror. The default is global-footprints.ts.
+ */
+
 /** USPS code -> Microsoft file stem (full state name with spaces removed). */
 export const STATE_FILE_NAMES: Record<string, string> = {
   AL: 'Alabama',
@@ -173,6 +179,7 @@ export class MicrosoftFootprints implements FootprintSource {
   }
 }
 
+/** The legacy source when FOOTPRINTS_BASE_URL is set, else null. */
 export function msFootprintsFor(config: Config): FootprintSource | null {
   if (!config.FOOTPRINTS_BASE_URL) return null;
   return new MicrosoftFootprints({ baseUrl: config.FOOTPRINTS_BASE_URL });

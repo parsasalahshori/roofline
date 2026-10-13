@@ -64,7 +64,7 @@ describe('loadConfig', () => {
       EAGLEVIEW_ENV: 'sandbox',
       EAGLEVIEW_PRODUCT_ID: 0,
       PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
-      FOOTPRINTS_BASE_URL: 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/',
+      FOOTPRINTS_INDEX_URL: 'https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv',
       GOOGLE_ADS_API_VERSION: 'v21',
       META_GRAPH_VERSION: 'v24.0',
       POSTMARK_BROADCAST_STREAM: 'broadcast',
@@ -607,9 +607,13 @@ describe('E1 settings', () => {
     expect(problem({ ...VALID, PROPOSAL_LINK_BASE_URL: 'ftp://app.roofline.test' })).toContain('PROPOSAL_LINK_BASE_URL');
   });
 
-  test('FOOTPRINTS_BASE_URL defaults to the Microsoft set and always ends in a slash', () => {
-    const fallback = 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/';
-    expect(loadConfig(VALID).FOOTPRINTS_BASE_URL).toBe(fallback);
+  test('FOOTPRINTS_INDEX_URL defaults to the Global ML index; FOOTPRINTS_BASE_URL is legacy, unset by default, and ends in a slash', () => {
+    expect(loadConfig(VALID).FOOTPRINTS_INDEX_URL).toBe('https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv');
+    expect(loadConfig({ ...VALID, FOOTPRINTS_INDEX_URL: 'https://files.test/links.csv' }).FOOTPRINTS_INDEX_URL).toBe('https://files.test/links.csv');
+    expect(problem({ ...VALID, FOOTPRINTS_INDEX_URL: 'file:///etc' })).toContain('FOOTPRINTS_INDEX_URL');
+
+    expect(loadConfig(VALID).FOOTPRINTS_BASE_URL).toBeUndefined();
+    expect(loadConfig({ ...VALID, FOOTPRINTS_BASE_URL: '' }).FOOTPRINTS_BASE_URL).toBeUndefined();
     expect(loadConfig({ ...VALID, FOOTPRINTS_BASE_URL: 'https://files.test/fp' }).FOOTPRINTS_BASE_URL).toBe(
       'https://files.test/fp/',
     );

@@ -231,7 +231,7 @@ export function testConfig(
     EAGLEVIEW_ENV: 'sandbox',
     EAGLEVIEW_PRODUCT_ID: 0,
     PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
-    FOOTPRINTS_BASE_URL: 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/',
+    FOOTPRINTS_INDEX_URL: 'https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv',
     GOOGLE_ADS_API_VERSION: 'v21',
     META_GRAPH_VERSION: 'v24.0',
     POSTMARK_BROADCAST_STREAM: 'broadcast',
