@@ -167,15 +167,38 @@ export async function footprintById(tx: Tx, id: string): Promise<{ id: string; r
   return { id: String(row.id), ring: openRing(geojson.coordinates[0] as Ring), areaSqFt: Number(row.area_sq_ft) };
 }
 
-/** The company's saved, not archived home on this footprint that the caller may see (the oldest), or null. */
+/**
+ * DEMO_MODE only: the seeded demo houses nobody lives in (source_ref `demo-next-*`, written by the demo seed), in a
+ * fixed order, each with its id and a point inside it. Empty outside a demo database.
+ */
+export async function demoHouses(tx: Tx): Promise<{ id: string; point: LngLat }[]> {
+  const result = await tx.execute(sql`
+    select id::text as id, ST_X(ST_PointOnSurface(geom))::float8 as lng, ST_Y(ST_PointOnSurface(geom))::float8 as lat
+      from building_footprints
+     where state = 'NE' and source_ref like 'demo-next-%'
+     order by source_ref`);
+  return result.rows.map((row) => ({ id: String(row.id), point: [Number(row.lng), Number(row.lat)] as LngLat }));
+}
+
+/**
+ * The company's saved, not archived home on this footprint that the caller may see, or null: one already linked to
+ * it first, else one with no footprint yet whose point lies inside it (homes saved before any measure); the oldest wins.
+ */
 export async function propertyOnFootprint(tx: Tx, ctx: TenantContext, footprintId: string): Promise<PropertyRow | null> {
+  if (!/^\d{1,19}$/.test(footprintId)) return null;
+  const inside = sql`(${properties.footprintId} is null and ${properties.geom} is not null and ST_Covers((select f.geom from building_footprints f where f.id = ${footprintId}::bigint), ${properties.geom}))`;
   const [row] = await tx
     .select()
     .from(properties)
     .where(
-      and(eq(properties.companyId, ctx.companyId), eq(properties.footprintId, footprintId), isNull(properties.archivedAt), propertyScope(ctx)),
+      and(
+        eq(properties.companyId, ctx.companyId),
+        or(eq(properties.footprintId, footprintId), inside),
+        isNull(properties.archivedAt),
+        propertyScope(ctx),
+      ),
     )
-    .orderBy(asc(properties.createdAt), asc(properties.id))
+    .orderBy(sql`(${properties.footprintId} is null)`, asc(properties.createdAt), asc(properties.id))
     .limit(1);
   return row ?? null;
 }

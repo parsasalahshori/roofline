@@ -25,6 +25,27 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
   const needsCustomer = target.kind === 'address' || !target.hasCustomer;
   const blocked = needsCustomer && (name.trim() === '' || phone.trim() === '');
 
+  /** Measure only, then the measuring screen; the customer is passed on when the form has one, else asked there. */
+  async function openMeasure() {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setRunning(true);
+    setFailed(null);
+    try {
+      const measurement =
+        measurementRef.current ??
+        (await measure.mutateAsync(target.kind === 'home' ? { propertyId: target.propertyId } : { address: target.address }));
+      measurementRef.current = measurement;
+      const customer: NewCustomerInput = { name: name.trim(), phone: phone.trim(), askedByText };
+      navigate(`/estimator/measure/${measurement.id}`, { state: needsCustomer && !blocked ? { customer } : {} });
+    } catch (error) {
+      setFailed(makeFailureMessage(error));
+    } finally {
+      busyRef.current = false;
+      setRunning(false);
+    }
+  }
+
   async function run() {
     if (busyRef.current || blocked) return;
     busyRef.current = true;
@@ -80,9 +101,14 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
           <Checkbox label={estimator.askedByText} checked={askedByText} onChange={setAskedByText} />
         </div>
       ) : null}
-      <Button variant="primary" disabled={running || blocked} onClick={() => void run()}>
-        {running ? estimator.makingProposal : estimator.makeProposal}
-      </Button>
+      <div className={styles.buttons}>
+        <Button variant="primary" disabled={running || blocked} onClick={() => void run()}>
+          {running ? estimator.makingProposal : estimator.makeProposal}
+        </Button>
+        <Button variant="ghost" disabled={running} onClick={() => void openMeasure()}>
+          {estimator.measureRoof}
+        </Button>
+      </div>
       {failed !== null ? (
         <p role="alert" className={styles.error}>
           {failed}
