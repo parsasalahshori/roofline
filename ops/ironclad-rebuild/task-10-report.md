@@ -44,7 +44,7 @@ Controller also owns adaptation of the old 1280px shell geometry assertion and a
 
 ## Final evidence and CI
 
-CI run for implementation SHA: https://github.com/parsasalahshori/roofline/actions/runs/38334312930 (push-triggered run 992). Actual observation is saved in `qa/task-10/ci-status.json`; no job conclusion was available at that snapshot. Documentation/artifact-only follow-up pushes do not create a new CI run.
+CI run for implementation SHA: https://github.com/parsasalahshori/roofline/actions/runs/38334312930 (push-triggered run 992). Actual observation is saved in `qa/task-10/ci-status.json`; Demo DB (arm64) had completed successfully; the other four jobs had no conclusion at that snapshot. Documentation/artifact-only follow-up pushes do not create a new CI run.
 
 | Required CI area | Observed status | Actual job |
 | --- | --- | --- |
@@ -54,7 +54,7 @@ CI run for implementation SHA: https://github.com/parsasalahshori/roofline/actio
 | v1 (node:test) | Queued | https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859927 |
 | Hail service (ruff, pytest) | Queued | https://github.com/parsasalahshori/roofline/actions/runs/38334312930/job/115090859960 |
 
-These are pending checks, not successes. The retained company-switch assertions are expected to block a green Platform/E2E result until the controller resolves T10-01. If ordinary E2E fails, the later demo step in that CI job will not execute; the successful **local** isolated demo run is separate evidence.
+Demo DB (arm64) passed. The remaining jobs are pending checks, not successes. The retained company-switch assertions are expected to block a green Platform/E2E result until the controller resolves T10-01. If ordinary E2E fails, the later demo step in that CI job will not execute; the successful **local** isolated demo run is separate evidence.
 
 ### Executed commands and evidence
 
