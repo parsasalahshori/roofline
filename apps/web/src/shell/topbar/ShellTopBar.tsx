@@ -38,6 +38,7 @@ export function ShellTopBar() {
   if (phone) {
     return (
       <TopBar
+        compact
         start={
           <>
             <LogoMark className={styles.logo} />
