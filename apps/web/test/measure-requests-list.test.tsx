@@ -40,6 +40,7 @@ const ROWS = {
 };
 
 let urls: string[];
+let posts: { address?: string }[];
 
 function Where() {
   return <p data-testid="where">{useLocation().pathname}</p>;
@@ -71,10 +72,17 @@ function renderList(selectedId = 'm1') {
 
 beforeEach(() => {
   urls = [];
+  posts = [];
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (init?.method === 'POST' && url === '/api/measurements') {
+        posts.push(JSON.parse(String(init.body)) as { address?: string });
+        const address = posts[posts.length - 1]?.address ?? '';
+        if (address.includes('nowhere')) return new Response(JSON.stringify({ error: 'We could not find that address.' }), { status: 400, headers: { 'content-type': 'application/json' } });
+        return new Response(JSON.stringify({ id: 'mnew' }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
       urls.push(url);
       const params = new URL(url, 'http://x').searchParams;
       const status = params.get('status') as keyof typeof ROWS;
@@ -134,6 +142,34 @@ describe('RequestsList', () => {
     expect(screen.getByText('Mei Abernathy')).toBeInTheDocument();
     fireEvent.change(box, { target: { value: 'zzzz' } });
     expect(await screen.findByText(measure.requestsNoMatches)).toBeInTheDocument();
+  });
+
+  it('offers to measure a typed address that matches no request, and opens the new measurement', async () => {
+    renderList();
+    await screen.findByText('Mei Abernathy');
+    expect(screen.queryByRole('button', { name: /Measure a new roof/ })).toBeNull();
+    fireEvent.change(screen.getByRole('searchbox', { name: measure.requestsSearch }), { target: { value: '12 Elm St' } });
+    const offer = await screen.findByRole('button', { name: measure.measureNew('12 Elm St') });
+    fireEvent.click(offer);
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/estimator/measure/mnew'));
+    expect(posts).toEqual([{ address: '12 Elm St' }]);
+  });
+
+  it('does not offer a new measurement when a request matches', async () => {
+    renderList();
+    await screen.findByText('Mei Abernathy');
+    fireEvent.change(screen.getByRole('searchbox', { name: measure.requestsSearch }), { target: { value: 'Catalpa' } });
+    await waitFor(() => expect(screen.queryByText('Carmen Castellano')).toBeNull());
+    expect(screen.queryByRole('button', { name: /Measure a new roof/ })).toBeNull();
+  });
+
+  it('says plainly when the address cannot be found', async () => {
+    renderList();
+    await screen.findByText('Mei Abernathy');
+    fireEvent.change(screen.getByRole('searchbox', { name: measure.requestsSearch }), { target: { value: '1 nowhere rd' } });
+    fireEvent.click(await screen.findByRole('button', { name: measure.measureNew('1 nowhere rd') }));
+    expect(await screen.findByText('We could not find that address.')).toBeInTheDocument();
+    expect(screen.getByTestId('where')).toHaveTextContent('/estimator/measure/m1');
   });
 
   it('says so when the list cannot load', async () => {

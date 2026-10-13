@@ -32,9 +32,11 @@ test('estimate this roof: picked building to a proposal for a new customer', asy
   const picked = m.structures.findIndex((s) => s.footprintId === footprintId) + 1;
 
   await page.goto(`/estimator/measure/${measurementId}`);
+  // A new roof is revealed by the scan first: Measure roof, then the numbers and the choices
+  await page.getByRole('button', { name: 'Measure roof' }).click();
   await expect(page.getByLabel(`Building ${picked}`, { exact: true })).toBeChecked();
   await expect(page.getByRole('button', { name: /Free estimate/ })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByText('Paid report, needs your OK')).toBeVisible();
+  await expect(page.getByText('Paid · ordered after your OK')).toBeVisible();
 
   const make = page.getByRole('button', { name: 'Make proposal' });
   await expect(make).toBeDisabled();

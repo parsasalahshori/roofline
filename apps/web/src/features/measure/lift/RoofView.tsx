@@ -13,6 +13,8 @@ import { useMeasurement, usePatchMeasurement } from '../api.ts';
 import { createOutlineEditor, type EditResult, type OutlineEditor } from '../OutlineEditor.ts';
 import type { MeasurementPatch, MeasurementView, OutlineProblem } from '../types.ts';
 import styles from './RoofView.module.css';
+import { ScanBar, ScanSweep } from './ScanBar.tsx';
+import type { ScanSession } from './scan.ts';
 import { MeasureSlotsContext, type RoofSession } from './slots.ts';
 import { addStructureLayers, STRUCTURES_SOURCE, structuresData } from './structures.ts';
 
@@ -307,10 +309,41 @@ function Loaded({ m }: { m: MeasurementView }) {
   );
 }
 
+const OUTLINE_LAYERS = ['outline-fill', 'outline-line', 'lift-structures-fill', 'lift-structures-line'] as const;
+const NO_STRUCTURES: MeasurementView['structures'] = [];
+
+/** Until the scan has played, the aerial shows bare: no outline, tint or label. */
+function useRevealed(instance: MapLibreMap | null, revealed: boolean) {
+  useEffect(() => {
+    if (!instance) return;
+    const loose = instance as unknown as { setLayoutProperty?: (id: string, name: string, value: string) => void; getLayer?: (id: string) => unknown };
+    for (const id of OUTLINE_LAYERS) {
+      try {
+        if (loose.getLayer?.(id) !== undefined) loose.setLayoutProperty?.(id, 'visibility', revealed ? 'visible' : 'none');
+      } catch {
+        // Ignored: the map is going away.
+      }
+    }
+  }, [instance, revealed]);
+}
+
+function ImageryChip({ createdAt }: { createdAt: string }) {
+  const when = new Date(createdAt);
+  if (Number.isNaN(when.getTime())) return null;
+  return (
+    <span className={styles.imagery}>
+      <span className={styles.imageryDot} aria-hidden="true" />
+      {liftMeasure.imagery(when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}
+    </span>
+  );
+}
+
 /** The roof as MeasureWindow's one editor draws it: this view only places the map's container and what goes over it. */
-function Slotted({ m, roof }: { m: MeasurementView; roof: RoofSession }) {
+function Slotted({ m, roof, scan }: { m: MeasurementView; roof: RoofSession; scan: ScanSession | null }) {
   const { containerRef, zoom, saving, map } = roof;
-  useStructureLabels(map, m.structures);
+  const revealed = scan === null || scan.phase === 'done';
+  useStructureLabels(map, revealed ? m.structures : NO_STRUCTURES);
+  useRevealed(map, revealed);
   return (
     <div className={styles.frame}>
       <NoticeList
@@ -338,9 +371,12 @@ function Slotted({ m, roof }: { m: MeasurementView; roof: RoofSession }) {
           )}
         </div>
       ) : null}
-      <div className={styles.mapBox}>
+      <div className={styles.mapBox} data-revealed={revealed ? 'true' : 'false'}>
         <div ref={containerRef} className={styles.map} role="region" aria-label={liftMeasure.mapLabel} />
+        <ImageryChip createdAt={m.createdAt} />
         <Overlays latitude={m.center[1]} zoom={zoom} saving={saving} />
+        {scan !== null ? <ScanSweep scan={scan} /> : null}
+        {scan !== null ? <ScanBar scan={scan} /> : null}
         <Attribution />
       </div>
     </div>
@@ -349,8 +385,8 @@ function Slotted({ m, roof }: { m: MeasurementView; roof: RoofSession }) {
 
 export function RoofView({ measurementId }: { measurementId: string }) {
   const query = useMeasurement(measurementId);
-  const { roof } = useContext(MeasureSlotsContext);
-  if (query.data !== undefined) return roof ? <Slotted m={query.data} roof={roof} /> : <Loaded m={query.data} />;
+  const { roof, scan } = useContext(MeasureSlotsContext);
+  if (query.data !== undefined) return roof ? <Slotted m={query.data} roof={roof} scan={scan} /> : <Loaded m={query.data} />;
   if (query.isError) {
     return (
       <div className={styles.frame} role="alert">

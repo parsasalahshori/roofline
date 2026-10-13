@@ -39,6 +39,7 @@ import { settleSentProposal } from '../estimator/proposal-sent.ts';
 import { systemContext } from '../permissions.ts';
 import { draftStormPlan } from '../storm/plan.ts';
 import { createTask } from '../tasks/service.ts';
+import { DEMO_LOOKUP_LOTS } from '../providers/fakes/geocoder.ts';
 import { seedFootprintFixture } from './footprint-fixture.ts';
 import { seedShowcase } from './showcase.ts';
 import { seedStormFixture } from './storm-fixture.ts';
@@ -603,6 +604,11 @@ export async function seedDemoFootprints(pools: Pools, q: Query, companyId: stri
       if (kept.some((k) => apart(k, next) < 20)) return;
       kept.push(next);
     });
+  });
+  // The empty lots the demo geocoder sends every typed address to: a roof is always there to measure.
+  DEMO_LOOKUP_LOTS.forEach(([lng, lat], i) => {
+    const lot = { sourceRef: `demo-lot-${i}`, ring: houseRing(lng, lat, ((i * 0.6180339887 + 0.2) % 1 + 1) % 1) };
+    if (!near(lng, lat, 22) && !kept.some((k) => apart(k, lot) < 20)) kept.push(lot);
   });
   return insertFootprints(pools.system, 'NE', kept);
 }

@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { estimator } from '../src/copy/estimator.ts';
 import { legal } from '../src/copy/legal.ts';
+import { liftMeasure } from '../src/copy/liftMeasure.ts';
 import { measure } from '../src/copy/measure.ts';
+import { forgetRevealed } from '../src/features/measure/lift/scan.ts';
 import { closeDrawing, deleteCorner, insertCorner, moveCorner, nudgeCorner } from '../src/features/measure/OutlineEditor.ts';
 import { MeasureWindow } from '../src/features/measure/MeasureWindow.tsx';
 import type { MeasurementView } from '../src/features/measure/types.ts';
@@ -165,9 +167,13 @@ function renderWindow(state?: unknown) {
 async function open(over: Partial<MeasurementView> = {}, state?: unknown) {
   current = view(over);
   const router = renderWindow(state);
-  await screen.findByText(measure.numbersTitle);
   await waitFor(() => expect(fake.FakeMap.instances.length).toBeGreaterThan(0));
   mapEmit('load');
+  // An editable roof is revealed by the scan first; the numbers come after it
+  await waitFor(() => expect(screen.queryByText(measure.numbersTitle) ?? screen.queryByRole('button', { name: liftMeasure.scanButton })).toBeTruthy());
+  const scanButton = screen.queryByRole('button', { name: liftMeasure.scanButton });
+  if (scanButton) fireEvent.click(scanButton);
+  await screen.findByText(measure.numbersTitle);
   return router;
 }
 const lastMap = () => fake.FakeMap.instances[fake.FakeMap.instances.length - 1] as InstanceType<typeof fake.FakeMap>;
@@ -182,6 +188,7 @@ function mouse(target: EventTarget, type: string, x: number, y: number) {
 }
 
 beforeEach(() => {
+  forgetRevealed();
   calls = [];
   patchStatus = 200;
   buildStatus = 201;
@@ -191,6 +198,7 @@ beforeEach(() => {
   fake.FakeMap.instances.length = 0;
   vi.stubEnv('VITE_MAPTILER_KEY', '');
   vi.stubEnv('VITE_MAP_TILES', '');
+  vi.stubEnv('VITE_MEASURE_SCAN_MS', '0');
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -602,5 +610,67 @@ describe('measure window', () => {
     await open();
     fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
     expect(await screen.findByText('boom')).toBeTruthy();
+  });
+});
+
+describe('the Measure roof scan', () => {
+  const structure = { footprintId: 'f1', included: true, areaSqFt: 2400, ring: [p(0, 0), p(1, 0), p(1, 1), p(0, 1)] as Ring };
+
+  async function openUnscanned(over: Partial<MeasurementView> = {}) {
+    current = view(over);
+    renderWindow();
+    await waitFor(() => expect(fake.FakeMap.instances.length).toBeGreaterThan(0));
+    mapEmit('load');
+    return screen.findByRole('button', { name: liftMeasure.scanButton });
+  }
+
+  it('shows the Measure roof bar first, with no numbers, and the imagery chip', async () => {
+    await openUnscanned();
+    expect(screen.getByText(liftMeasure.scanIntroName)).toBeTruthy();
+    expect(screen.getByText(/measures every facet, pitch, and line/)).toBeTruthy();
+    expect(screen.queryByText(measure.numbersTitle)).toBeNull();
+    expect(screen.queryByRole('button', { name: measure.makeProposal })).toBeNull();
+    expect(screen.getByText(/^Aerial imagery/)).toBeTruthy();
+  });
+
+  it('plays the scan with the real facet count, then shows the measured roof and its numbers', async () => {
+    vi.stubEnv('VITE_MEASURE_SCAN_MS', '400');
+    const button = await openUnscanned({ facets: 7, structures: [structure] });
+    fireEvent.click(button);
+    expect(await screen.findByText(/Tracing 7 facets and reading pitch/)).toBeTruthy();
+    expect(document.querySelector('[data-structure-label]')).toBeNull();
+    expect(await screen.findByText(measure.numbersTitle, undefined, { timeout: 2000 })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: liftMeasure.scanButton })).toBeNull();
+    expect(document.querySelector('[data-structure-label]')?.textContent).toBe(liftMeasure.structureLabel(2400));
+    expect(screen.getByRole('button', { name: measure.makeProposal })).toBeTruthy();
+  });
+
+  it('does not invent a facet count the measurement lacks', async () => {
+    vi.stubEnv('VITE_MEASURE_SCAN_MS', '400');
+    fireEvent.click(await openUnscanned({ facets: null }));
+    expect(await screen.findByText(/Tracing the roof and reading pitch/)).toBeTruthy();
+    expect(screen.queryByText(/Tracing \d/)).toBeNull();
+  });
+
+  it('skips the scan for a sent (locked) measurement', async () => {
+    current = view({ locked: true });
+    renderWindow();
+    expect(await screen.findByText(measure.numbersTitle)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: liftMeasure.scanButton })).toBeNull();
+  });
+});
+
+describe('the EagleView option after measuring', () => {
+  it('is a secondary choice marked paid and ordered after the owner OK, and links to the approval once asked', async () => {
+    await open();
+    const order = screen.getByRole('button', { name: new RegExp(measure.choiceExact) });
+    expect(order.textContent).toContain('Paid');
+    expect(order.textContent).toContain(measure.choiceExactNote);
+    expect(screen.getByRole('button', { name: measure.makeProposal })).toBeTruthy();
+    fireEvent.click(order);
+    fireEvent.click(await screen.findByRole('button', { name: measure.getExactReport }));
+    const waiting = await screen.findByRole('link', { name: measure.waitingForOk });
+    expect(waiting.getAttribute('href')).toBe('/approvals/t1');
+    expect(sent('POST /api/measurements/m1/exact-report')).toHaveLength(1);
   });
 });

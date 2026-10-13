@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Button, Field, Skeleton, UiLink } from '@roofline/ui';
+import { useNavigate } from 'react-router';
+import { Banner, Button, Field, Skeleton, UiLink } from '@roofline/ui';
+import { ApiError } from '../../../api/client.ts';
 import { measure } from '../../../copy/measure.ts';
+import { useMeasure } from '../../estimator/api.ts';
 import { useRequestRows } from './requests.ts';
 import styles from './RequestsList.module.css';
 
@@ -16,6 +19,16 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
     return () => clearTimeout(timer);
   }, [text]);
   const { list, rows, total } = useRequestRows(q);
+  const navigate = useNavigate();
+  const create = useMeasure();
+  // Nothing in the list matches what was typed: offer to look the address up and measure it
+  const offerNew = q !== '' && q === text.trim() && list.isSuccess && rows.length === 0 && !list.hasNextPage;
+  const measureNew = () =>
+    create.mutate(
+      { address: q },
+      { onSuccess: (created) => void navigate(`/estimator/measure/${created.id}`) },
+    );
+  const newFailed = create.error instanceof ApiError && create.error.message !== '' ? create.error.message : measure.measureNewFailed;
 
   return (
     <section className={styles.root} aria-labelledby="measure-requests-title">
@@ -77,6 +90,19 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
           ))}
         </ul>
       )}
+      {offerNew ? (
+        <div className={styles.newRoof}>
+          <p className={styles.note}>{measure.measureNewHint}</p>
+          <Button className={styles.newRoofButton} busy={create.isPending} disabled={create.isPending} onClick={measureNew}>
+            {create.isPending ? measure.measureNewBusy : measure.measureNew(q)}
+          </Button>
+          {create.isError ? (
+            <div role="alert">
+              <Banner tone="danger">{newFailed}</Banner>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {list.hasNextPage ? (
         <Button variant="ghost" busy={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>
           {measure.requestsShowMore}

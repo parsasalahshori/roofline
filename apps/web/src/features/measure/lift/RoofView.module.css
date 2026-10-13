@@ -29,10 +29,41 @@
   touch-action: none;
 }
 
-/* "Estimator is measuring": a warm pill, top left */
+/* "Aerial imagery ...": a white chip with a green dot, top left */
+.imagery {
+  position: absolute;
+  z-index: 1;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: var(--ds-r-chip, 999px);
+  background: var(--ds-surface, #fffdf8);
+  color: var(--ds-text-1, #2b2620);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--ds-shadow, var(--shadow-marker));
+  pointer-events: none;
+}
+
+.imageryDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ds-success, #22a05a);
+}
+
+/* The editable outline's handles stay out of sight until the roof has been measured */
+.mapBox[data-revealed="false"] :global([data-handle]) {
+  visibility: hidden;
+}
+
+/* "Estimator is measuring": a warm pill, below the imagery chip */
 .pill {
   position: absolute;
-  top: 12px;
+  top: 52px;
   left: 12px;
   display: inline-flex;
   align-items: center;

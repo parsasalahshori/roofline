@@ -108,6 +108,7 @@ function view(over: Partial<MeasurementView> = {}): MeasurementView {
     notes: null,
     createdAt: '2026-10-12T12:00:00.000Z',
     locked: false,
+    hasCustomer: true,
     ...over,
   };
 }

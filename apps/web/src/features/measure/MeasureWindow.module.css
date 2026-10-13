@@ -12,23 +12,39 @@
 
 .header {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 12px 16px;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--ds-hairline, rgba(43, 38, 32, 0.08));
+}
+
+/* The app's amber tile in front of the title */
+.appIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--ds-accent, #f5b324);
+  color: var(--ds-accent-ink, #2b2620);
+  box-shadow: var(--ds-shadow, 0 2px 6px rgba(43, 30, 0, 0.18));
 }
 
 .heading {
   margin: 0;
-  font-size: 18px;
+  font-family: var(--ds-font-display, var(--ds-font, var(--font)));
+  font-size: 22px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .subtitle {
   flex: 1;
   min-width: 0;
   color: var(--ds-text-3, rgba(43, 38, 32, 0.5));
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .listToggle {

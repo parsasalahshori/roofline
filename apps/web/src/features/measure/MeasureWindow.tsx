@@ -19,6 +19,7 @@ import styles from './MeasureWindow.module.css';
 import { PropertyStrip } from './lift/PropertyStrip.tsx';
 import { RequestsList } from './lift/RequestsList.tsx';
 import { RoofView } from './lift/RoofView.tsx';
+import { useRoofScan } from './lift/scan.ts';
 import { MeasureSlotsContext, type RoofSession } from './lift/slots.ts';
 import { addStructureLayers } from './lift/structures.ts';
 import { StatsPanel } from './lift/StatsPanel.tsx';
@@ -86,6 +87,7 @@ function Loaded({ m }: { m: MeasurementView }) {
   const handoff = readHandoff(useLocation().state);
   const build = useBuildProposal();
   const send = useSendProposal();
+  const scan = useRoofScan(m);
   const [making, setMaking] = useState(false);
   const [makeFailed, setMakeFailed] = useState<string | null>(null);
   const makingRef = useRef(false);
@@ -417,13 +419,15 @@ function Loaded({ m }: { m: MeasurementView }) {
   );
 
   return (
-    <MeasureSlotsContext value={{ roof, panels: panelsNode, estimate }}>
+    <MeasureSlotsContext value={{ roof, panels: panelsNode, estimate, scan }}>
       <PropertyStrip measurementId={m.id} />
       <div className={styles.stage}>
         <RoofView measurementId={m.id} />
-        <div className={styles.stats}>
-          <StatsPanel measurementId={m.id} actions={actions} />
-        </div>
+        {scan.phase === 'done' ? (
+          <div className={styles.stats}>
+            <StatsPanel measurementId={m.id} actions={actions} />
+          </div>
+        ) : null}
       </div>
     </MeasureSlotsContext>
   );
@@ -438,6 +442,18 @@ export function MeasureWindow() {
   return (
     <div className={styles.window}>
       <header className={styles.header}>
+        <span className={styles.appIcon} aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" focusable="false">
+            <path
+              d="M4 16.5 15.5 5l3.5 3.5L7.5 20H4zM12 8.5l3.5 3.5M9.5 11l2 2M7 13.5l2 2"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
         <h1 className={styles.heading}>{measure.title}</h1>
         <span className={styles.subtitle}>{measure.subtitle}</span>
         <Button

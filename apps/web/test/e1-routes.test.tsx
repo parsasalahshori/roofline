@@ -103,7 +103,7 @@ describe('E1 windows', () => {
   });
 
   it('/estimator/measure/m1 opens the measure window', async () => {
-    signedInApi(ACCOUNT, { 'GET /api/measurements/m1': () => ({ body: MEASUREMENT }) });
+    signedInApi(ACCOUNT, { ...proposalListRoutes(), 'GET /api/measurements/m1': () => ({ body: MEASUREMENT }) });
     renderApp('/estimator/measure/m1');
 
     expect(await screen.findByText(measure.numbersTitle)).toBeInTheDocument();

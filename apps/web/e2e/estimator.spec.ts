@@ -33,8 +33,8 @@ test('exact report: owner approves the spend', async ({ page, loginAs, markToday
   expect(proposal.status()).toBe(200);
   const { measurementId } = (await proposal.json()) as { measurementId: string };
   await page.goto('/estimator/measure/' + measurementId);
-  await page.getByRole('button', { name: /Exact report \(EagleView\)/ }).click();
-  await page.getByRole('button', { name: 'Get exact report' }).click();
+  await page.getByRole('button', { name: /Order EagleView report/ }).click();
+  await page.getByRole('button', { name: 'Request EagleView report' }).click();
   await page.getByRole('link', { name: 'Waiting for your OK' }).click();
 
   // The owner sees the most it can cost and approves it.
