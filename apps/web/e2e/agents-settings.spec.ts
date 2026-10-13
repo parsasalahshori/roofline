@@ -12,11 +12,11 @@ import { test, expect } from './fixtures.ts';
 const INPUT = 'Minutes saved for Texts sent';
 
 /**
- * The "Office time saved" tile on the Agents dashboard: this week's minutes at the hourly rate, in dollars. The
+ * The "Office time saved this week" tile ("about $514") on the Agents dashboard: this week's minutes at the hourly rate, in dollars. The
  * recount's 30 minutes land on today's Storm Scout step, so it always moves ($14 at the default $28 an hour).
  */
 function totalsLine(page: Page) {
-  return page.getByRole('region', { name: 'Totals for your agents' }).getByText(/^\$[\d,]+$/);
+  return page.getByRole('region', { name: 'Totals for your agents' }).getByText(/^about \$[\d,]+$/);
 }
 
 async function readTotals(page: Page): Promise<string> {

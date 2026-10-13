@@ -36,7 +36,14 @@ export function KpiTiles({ cards, dashboard }: KpiTilesProps) {
         <article className={styles.tile}>
           <h3 className={styles.label}>{agentsDash.hoursWeek}</h3>
           <p className={styles.value}>
-            {hours === null ? '-' : groupDigits(hours)}
+            {hours === null ? (
+              '-'
+            ) : (
+              <>
+                <span className={styles.about}>{`${agentsDash.about} `}</span>
+                {groupDigits(hours)}
+              </>
+            )}
             <span className={styles.unit}>{agentsDash.hoursUnit}</span>
           </p>
           <p className={styles.sub}>{agentsDash.hoursSub}</p>
@@ -44,7 +51,14 @@ export function KpiTiles({ cards, dashboard }: KpiTilesProps) {
         <article className={styles.tile}>
           <h3 className={styles.label}>{agentsDash.fullTimeLead}</h3>
           <p className={styles.value}>
-            {minutes === null ? '-' : (minutes / 60 / FULL_TIME_HOURS).toFixed(1)}
+            {minutes === null ? (
+              '-'
+            ) : (
+              <>
+                <span className={styles.about}>{`${agentsDash.about} `}</span>
+                {(minutes / 60 / FULL_TIME_HOURS).toFixed(1)}
+              </>
+            )}
             <span className={styles.unit}>{agentsDash.fullTimeUnit}</span>
           </p>
           <p className={styles.sub}>
@@ -54,7 +68,10 @@ export function KpiTiles({ cards, dashboard }: KpiTilesProps) {
         {rate === null || minutes === null ? null : (
           <article className={styles.tile}>
             <h3 className={styles.label}>{agentsDash.officeSaved}</h3>
-            <p className={styles.value}>{`$${groupDigits(staffDollars(minutes, rate))}`}</p>
+            <p className={styles.value}>
+              <span className={styles.about}>{`${agentsDash.about} `}</span>
+              {`$${groupDigits(staffDollars(minutes, rate))}`}
+            </p>
             <p className={styles.sub}>{`${agentsDash.officeSub} ${rateLabel(rate)} ${agentsDash.officeSubSuffix}`}</p>
           </article>
         )}

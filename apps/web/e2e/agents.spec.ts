@@ -37,15 +37,18 @@ test('agents window: cards show the numbers from the seeded tasks', async ({ pag
   await expect(storm).toBeVisible({ timeout: 15_000 });
   await expect(estimator).toBeVisible();
 
-  // Storm Scout finished one task today, the Estimator none; both are running.
+  // Storm Scout finished one task today, the Estimator none; both are on.
   await expect(storm.getByText('tasks today', { exact: true })).toBeVisible();
   await expect(storm.locator('p').first()).toHaveText('1');
   await expect(estimator.locator('p').first()).toHaveText('0');
-  await expect(storm.getByText('Running', { exact: true })).toBeVisible();
   await expect(running(page, 'Storm Scout')).toHaveAttribute('aria-checked', 'true');
-  // Storm minutes this week include today's 90-minute task: at least 1 whole hour.
+  // Both have work waiting on a person (the showcase storm draft, the needs-attention task): Waiting, with the count.
+  await expect(storm.getByText('Waiting', { exact: true })).toBeVisible();
+  await expect(storm.getByText(/^Waiting on you: [2-9]\d*$/)).toBeVisible();
+  await expect(estimator.getByText('Waiting on you: 1', { exact: true })).toBeVisible();
+  // Storm minutes this week include today's 90-minute task: at least 1 whole hour, marked as an estimate.
   expect(AGENTS_SEED_MINUTES.stormToday).toBe(90);
-  await expect(storm.getByText(/^[1-9]\d* hrs$/)).toBeVisible();
+  await expect(storm.getByText(/^about [1-9]\d* hrs$/)).toBeVisible();
 
   // Picking a card opens its panel, which links to the agent's own page.
   await page.getByRole('button', { name: 'Show details for Storm Scout' }).click();
@@ -53,7 +56,7 @@ test('agents window: cards show the numbers from the seeded tasks', async ({ pag
   await expect(open).toHaveAttribute('href', '/agents/storm-scout');
 });
 
-test('agents window: totals tiles show tasks, hours and office time', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+test('agents window: totals tiles show tasks, hours and office time, marked as estimates', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
   void agentsSeed;
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
@@ -62,8 +65,10 @@ test('agents window: totals tiles show tasks, hours and office time', async ({ p
   await expect(tiles).toBeVisible({ timeout: 15_000 });
   await expect(tiles.getByRole('heading', { name: 'Tasks today' })).toBeVisible();
   await expect(tiles.getByRole('heading', { name: 'Hours saved this week' })).toBeVisible();
-  await expect(tiles.getByRole('heading', { name: 'Office time saved' })).toBeVisible();
-  await expect(tiles).toContainText('$');
+  await expect(tiles.getByRole('heading', { name: 'Office time saved this week' })).toBeVisible();
+  // Estimated money and time say so.
+  await expect(tiles.getByText(/^about \$[\d,]+$/)).toBeVisible();
+  await expect(tiles).toContainText('(estimate)');
 });
 
 // G1 ships its three agents (G1_AGENTS_SHIPPED): they start paused with a Turn on hint, not Coming soon (probe pass 14).

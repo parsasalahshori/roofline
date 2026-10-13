@@ -26,7 +26,7 @@ export type AgentCardProps = {
 
 const STATUS_WORD = {
   on: agentsDash.running,
-  waiting: agentsDash.running,
+  waiting: agentsDash.waiting,
   paused: agentsDash.paused,
   coming_soon: agentsDash.comingSoon,
 } as const;
@@ -37,6 +37,9 @@ export function AgentCard({ card, minutesThisWeek, latest, selected, onSelect, i
   const name = AGENT_LABEL[card.agent];
   const soon = card.status === 'coming_soon';
   const paused = card.status === 'paused';
+  // Something waits on a person: the card says so, with the count, instead of "Running".
+  const waiting = !paused && !soon && card.waitingCount > 0;
+  const statusKey = waiting ? 'waiting' : card.status;
   const series = card.last14Days.map((d) => d.finished);
   return (
     <li className={styles.item} style={{ '--agent': AGENT_COLOR[card.agent] } as CSSProperties}>
@@ -54,8 +57,8 @@ export function AgentCard({ card, minutesThisWeek, latest, selected, onSelect, i
           </h3>
         </div>
         <div className={styles.statusRow}>
-          <span className={styles.status} data-status={card.status}>
-            {STATUS_WORD[card.status]}
+          <span className={styles.status} data-status={statusKey}>
+            {STATUS_WORD[statusKey]}
           </span>
           {soon ? null : (
             // Touching the switch also picks the card, so the panel (and the turn-on rules) are this agent's.
@@ -72,6 +75,7 @@ export function AgentCard({ card, minutesThisWeek, latest, selected, onSelect, i
         </div>
         <p className={styles.big}>{card.finishedToday}</p>
         <p className={styles.bigLabel}>{agentsDash.tasksTodayLine}</p>
+        {card.waitingCount > 0 ? <p className={styles.waiting}>{agentsDash.waitingCount(card.waitingCount)}</p> : null}
         <dl className={styles.stats}>
           <div className={styles.stat}>
             <dt className="visually-hidden">{agentsDash.successLine}</dt>
@@ -91,7 +95,7 @@ export function AgentCard({ card, minutesThisWeek, latest, selected, onSelect, i
             <dd>
               {minutesThisWeek === null ? null : (
                 <>
-                  <span>{`${wholeHours(minutesThisWeek)} ${agentsDash.hoursUnit}`}</span>
+                  <span>{`${agentsDash.about} ${wholeHours(minutesThisWeek)} ${agentsDash.hoursUnit}`}</span>
                   <span className={styles.muted}>{agentsDash.savedLine}</span>
                 </>
               )}

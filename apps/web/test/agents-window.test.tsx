@@ -62,6 +62,9 @@ describe('Agents window', () => {
     expect(within(tiles).getByText('110')).toBeInTheDocument();
     expect(within(tiles).getByText('2.8')).toBeInTheDocument();
     expect(within(tiles).getByText('$3,080')).toBeInTheDocument();
+    // Every estimated figure carries the estimate mark (hours, staff, dollars).
+    expect(within(tiles).getAllByText(agentsDash.about)).toHaveLength(3);
+    expect(within(tiles).getByRole('heading', { name: agentsDash.officeSaved })).toBeInTheDocument();
     expect(within(tiles).getByText(`6 ${agentsDash.agentsOf} 6 ${agentsDash.agentsRunning}`)).toBeInTheDocument();
     expect(within(tiles).getByRole('img', { name: new RegExp(agentsDash.perHourChart) })).toBeInTheDocument();
 
@@ -86,7 +89,7 @@ describe('Agents window', () => {
     expect(await within(card).findByText('Booked an inspection')).toBeInTheDocument();
     expect(within(card).getByText('64')).toBeInTheDocument();
     expect(within(card).getByText('90%')).toBeInTheDocument();
-    expect(within(card).getByText(`31 ${agentsDash.hoursUnit}`)).toBeInTheDocument();
+    expect(within(card).getByText(`${agentsDash.about} 31 ${agentsDash.hoursUnit}`)).toBeInTheDocument();
     expect(within(card).getByText(agentsDash.running)).toBeInTheDocument();
   });
 
