@@ -97,3 +97,35 @@ export function useSendProposal(): UseMutationResult<{ taskId: string }, Error, 
     },
   });
 }
+
+/** GET /api/map/building-at: the building outline under a map point. */
+export type BuildingAt = {
+  footprintId: string;
+  /** GeoJSON Polygon or MultiPolygon of the roof outline. */
+  polygon: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown };
+  centroid: unknown;
+};
+
+/** The building under a point, or null when the server answers 404 (no building there). */
+export async function fetchBuildingAt(point: { lat: number; lng: number }, signal?: AbortSignal): Promise<BuildingAt | null> {
+  const query = new URLSearchParams({ lat: String(point.lat), lng: String(point.lng) });
+  try {
+    return await apiFetch<BuildingAt>(`/api/map/building-at?${query.toString()}`, { signal });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/** Looks up the building under a map click (owner and office; the map decides when to ask). */
+export function useBuildingAt(): UseMutationResult<BuildingAt | null, Error, { lat: number; lng: number }> {
+  return useMutation({ mutationFn: (point: { lat: number; lng: number }) => fetchBuildingAt(point) });
+}
+
+/** POST /api/estimator/from-footprint { footprintId, lat, lng } -> { measurementId }: a measurement started from the outline. */
+export function useEstimateFromFootprint(): UseMutationResult<{ measurementId: string }, Error, { footprintId: string; lat: number; lng: number }> {
+  return useMutation({
+    mutationFn: (input: { footprintId: string; lat: number; lng: number }) =>
+      apiFetch<{ measurementId: string }>('/api/estimator/from-footprint', { method: 'POST', body: input }),
+  });
+}
