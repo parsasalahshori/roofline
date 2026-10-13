@@ -21,7 +21,7 @@ import {
   withTenant,
 } from '@roofline/db';
 import { footprintStateStatus } from '@roofline/db/system';
-import { instantEstimate, isTimeZone, isUsStateCode, type MeasurementView, normalizeAddressKey, type Outline } from '@roofline/shared';
+import { instantEstimate, isTimeZone, isUsStateCode, type MeasurementView, normalizeAddressKey, type Outline, type Ring } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
@@ -41,6 +41,8 @@ const FOOTPRINT_SEARCH_M = 40;
 const FOOTPRINT_SNAP_M = 30;
 
 type NearFootprint = Awaited<ReturnType<typeof footprintsNear>>[number];
+/** A building the user picked on the map: its footprint and a point on it. */
+export type SelectedFootprint = { id: string; ring: Ring; areaSqFt: number; point: LngLat };
 type Settings = { pitchX12: number; overhangFt: number };
 
 /** The geocoder, with its outage turned into a plain value (provider calls never run inside a transaction). */
@@ -74,12 +76,26 @@ async function homeFromAddress(deps: AppDeps, ctx: TenantContext, address: strin
   if (found === null) throw new AppError(400, NOT_FOUND_MESSAGE, 'address');
   const { street, city, state, zip } = found;
   if (street === null || city === null || state === null || zip === null) throw new AppError(400, NOT_FOUND_MESSAGE, 'address');
+  const timezone = found.timezone !== null && isTimeZone(found.timezone) ? found.timezone : null;
+  return saveHome(deps, ctx, { street, city, state, zip }, [found.lng, found.lat], timezone, now);
+}
 
+/**
+ * A looked-up address in, a saved address out: the company's address with the same street and ZIP when there is
+ * one, else a new one at `location`. Shared by the typed-address path and the map's "Estimate this roof".
+ */
+export async function saveHome(
+  deps: AppDeps,
+  ctx: TenantContext,
+  address: { street: string; city: string; state: string; zip: string },
+  location: LngLat,
+  timezone: string | null,
+  now: Date,
+): Promise<PropertyRow> {
+  const { street, city, state, zip } = address;
   const saved = await findSaved(deps, ctx, street, zip);
   if (saved !== null) return saved;
 
-  const timezone = found.timezone !== null && isTimeZone(found.timezone) ? found.timezone : null;
-  const location: LngLat = [found.lng, found.lat];
   const input: PropertyInput = {
     addressLine: street,
     city,
@@ -192,7 +208,7 @@ function drawInput(property: PropertyRow, center: LngLat, settings: Settings, jo
 export async function measureProperty(
   deps: AppDeps,
   ctx: TenantContext,
-  i: { propertyId?: string; address?: string; jobId?: string | null },
+  i: { propertyId?: string; address?: string; jobId?: string | null; footprint?: SelectedFootprint },
 ): Promise<MeasurementView> {
   const now = deps.clock.now();
   const jobId = i.jobId ?? null;
@@ -208,6 +224,8 @@ export async function measureProperty(
   } else {
     throw new AppError(400, PICK_ADDRESS_MESSAGE, 'address');
   }
+
+  if (i.footprint !== undefined) return measureOnFootprint(deps, ctx, property, i.footprint, jobId, now);
 
   const point = await pointOf(deps, ctx, property, now);
   if (point === null) {
@@ -240,6 +258,31 @@ export async function measureProperty(
       }
       const view = await createMeasurement(tx, ctx, outlineInput(property, point, main, rows, settings, jobId), now);
       await setPropertyFootprint(tx, ctx, property.id, main.id);
+      return view;
+    }),
+  );
+}
+
+/**
+ * The map's "Estimate this roof": the picked building is the main structure, whatever the home's saved point
+ * says; every footprint near it is listed (only the picked one included), as for a typed address.
+ */
+async function measureOnFootprint(
+  deps: AppDeps,
+  ctx: TenantContext,
+  property: PropertyRow,
+  picked: SelectedFootprint,
+  jobId: string | null,
+  now: Date,
+): Promise<MeasurementView> {
+  return asNotFound(() =>
+    withTenant(deps.pools, ctx, async (tx) => {
+      const settings = await settingsFor(tx, ctx);
+      const near = await footprintsNear(tx, picked.point, FOOTPRINT_SEARCH_M);
+      const main: NearFootprint = near.find((r) => r.id === picked.id) ?? { id: picked.id, ring: picked.ring, areaSqFt: picked.areaSqFt, contains: true, distanceM: 0 };
+      const rows = near.some((r) => r.id === picked.id) ? near : [main, ...near];
+      const view = await createMeasurement(tx, ctx, outlineInput(property, picked.point, main, rows, settings, jobId), now);
+      await setPropertyFootprint(tx, ctx, property.id, picked.id);
       return view;
     }),
   );

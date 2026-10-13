@@ -421,3 +421,34 @@ export function acceptInviteRateLimit(): RequestHandler[] {
     }),
   ];
 }
+
+/** Building lookups from the map ("Estimate this roof"), per session a minute: a click each, never a sweep. */
+const MAP_BUILDING_PER_MIN = 60;
+/** Estimates started from a map building, per session a minute: each may make one paid reverse lookup. */
+const MAP_ESTIMATE_PER_MIN = 10;
+
+function perSessionPerMinute(limit: number): RequestHandler {
+  return rateLimit({
+    windowMs: MINUTE_MS,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req, res) => {
+      const { sessionKey } = res.locals;
+      return sessionKey === undefined ? `ip:${ipKeyGenerator(req.ip ?? 'unknown')}` : `session:${sessionKey}`;
+    },
+    handler: (_req, _res, next) => {
+      next(new AppError(429, MESSAGES.tooFast));
+    },
+  });
+}
+
+/** `GET /api/map/building-at`. */
+export function mapBuildingRateLimit(): RequestHandler {
+  return perSessionPerMinute(MAP_BUILDING_PER_MIN);
+}
+
+/** `POST /api/estimator/from-footprint`. */
+export function mapEstimateRateLimit(): RequestHandler {
+  return perSessionPerMinute(MAP_ESTIMATE_PER_MIN);
+}
