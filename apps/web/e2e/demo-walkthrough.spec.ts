@@ -51,7 +51,7 @@ async function simulate(page: Page, which: 'text' | 'call' | 'storm' | 'sign'): 
   if (!(await panel.isVisible().catch(() => false))) await page.getByTestId('demo-badge').click();
   await expect(panel).toBeVisible();
   const responded = page.waitForResponse((r) => r.url().includes(`/api/demo/simulate/${which}`), { timeout: 60_000 });
-  await page.getByTestId(`simulate-${which}`).click();
+  await panel.getByTestId(`simulate-${which}`).click();
   const response = await responded;
   expect(response.status(), `simulate ${which}`).toBeLessThan(300);
   await linger(page, 2000);

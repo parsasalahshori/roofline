@@ -11,7 +11,7 @@ import { expect, type Page, test } from '@playwright/test';
 const LOGIN = { email: 'owner@summitridge.test', password: 'summit-ridge-demo' };
 
 async function signIn(page: Page): Promise<void> {
-  await page.clock.setFixedTime(new Date('2026-10-13T16:00:00.000Z'));
+  await page.clock.install({ time: new Date('2026-10-13T16:00:00.000Z') });
   await page.goto('/sign-in');
   await page.getByLabel('Email').fill(LOGIN.email);
   await page.getByLabel('Password').fill(LOGIN.password);
@@ -22,7 +22,10 @@ async function signIn(page: Page): Promise<void> {
 /** Measure is showing a found outline (not draw mode) and a non-zero number of squares. */
 async function expectOutline(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/estimator\/measure\//, { timeout: 30_000 });
-  await expect(page.getByText('The numbers')).toBeVisible();
+  // A new roof is revealed by the scan first (Measure roof), then the numbers
+  const scan = page.getByRole('button', { name: 'Measure roof' });
+  if (await scan.isVisible().catch(() => false)) await scan.click();
+  await expect(page.getByText('The numbers', { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('Squares', { exact: true }).locator('xpath=following-sibling::dd')).not.toHaveText('0');
   await expect(page.getByText('Tap the corners of the roof.', { exact: false })).toHaveCount(0);
 }
