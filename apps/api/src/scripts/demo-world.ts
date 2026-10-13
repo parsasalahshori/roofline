@@ -573,8 +573,9 @@ async function seedAgentsDashboardActivity(q: Query, companyId: string, now: Dat
     await q(
       `insert into agent_task_steps (company_id, task_id, position, type, approval_class, status, payload, preview, idempotency_key,
                                      baseline_key, units, minutes_per_unit, minutes_saved, result, created_at, updated_at)
-       values ($1,$2,1,$3,'internal','done','{}'::jsonb,'{}'::jsonb,$4,$5,$6,$7,$8,'{}'::jsonb,$9,$9)`,
-      [companyId, taskId, spec.stepType, `${tag}-${seq}`, spec.baseline, spec.units, spec.perUnit, minutes, at],
+       values ($1,$2,1,$3,'internal','done','{}'::jsonb,jsonb_build_object('title', $10::text, 'lines', '[]'::jsonb),$4,$5,$6,$7,$8,'{}'::jsonb,$9,$9)`,
+      // A review shows the step's preview ({ title, lines }); an empty object would break it.
+      [companyId, taskId, spec.stepType, `${tag}-${seq}`, spec.baseline, spec.units, spec.perUnit, minutes, at, spec.title(place.address)],
     );
     await q(
       `insert into agent_task_events (company_id, task_id, step_id, kind, actor_type, actor_user_id, data, at)
