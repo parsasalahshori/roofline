@@ -3,9 +3,9 @@
   flex-direction: column;
   gap: 4px;
   padding: 12px;
-  border: 1px solid var(--line);
+  border: 1px solid #d8e4f4;
   border-radius: var(--radius-card);
-  background: var(--surface-2);
+  background: #eef4fd;
 }
 
 .head {
@@ -38,4 +38,9 @@
   align-items: center;
   min-height: 40px;
   align-self: flex-start;
+}
+
+.summary {
+  font-size: 13px;
+  line-height: 1.5;
 }

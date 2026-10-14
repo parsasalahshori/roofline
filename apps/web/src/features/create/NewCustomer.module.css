@@ -1,11 +1,21 @@
 /* The whole form: names, then the phones and emails, then the first home, then texting consent and Save */
 .form {
+  --surface: #fff;
+  --surface-2: #eaf0f4;
+  --text: #151c22;
+  --text-muted: #505b64;
+  --line: #d8dfe4;
+  --accent: #dceaff;
+  --accent-ink: #204f98;
+  --radius-card: 12px;
+
   display: grid;
-  gap: 24px;
+  gap: 16px;
   max-width: 720px;
 }
 
-/* First and last name on one row; the display name takes the whole row below them */
+/* First and last name on one row;
+the display name takes the whole row below them */
 .names {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -61,4 +71,11 @@
   .contacts {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.names, .contacts, .home {
+  padding: 16px;
+  border: 1px solid #d8dfe4;
+  border-radius: 14px;
+  background: #fff;
 }

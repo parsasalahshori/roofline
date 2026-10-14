@@ -78,20 +78,21 @@ export function JobHeader({ view, onEdit }: JobHeaderProps) {
 
       <StageStepper job={current} canEdit={can.edit} />
 
-      {can.edit ? <MoveJobMenu job={current} /> : null}
+      <div className={styles.controls}>
+        {can.edit ? <MoveJobMenu job={current} /> : null}
 
-      <div className={styles.row}>
-        <Select
-          label={job.repLabel}
-          value={current.assigned?.userId ?? ''}
-          options={repOptions}
-          disabled={!can.edit || update.isPending}
-          onChange={(value) => {
-            if (value !== (current.assigned?.userId ?? '')) void changeRep(value);
-          }}
-        />
+        <div className={styles.row}>
+          <Select
+            label={job.repLabel}
+            value={current.assigned?.userId ?? ''}
+            options={repOptions}
+            disabled={!can.edit || update.isPending}
+            onChange={(value) => {
+              if (value !== (current.assigned?.userId ?? '')) void changeRep(value);
+            }}
+          />
+        </div>
       </div>
-
       <div className={styles.row}>
         <p className={styles.next}>
           <span className={styles.nextLabel}>{job.nextStepLabel}</span> <span>{nextLine}</span>

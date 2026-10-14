@@ -225,29 +225,26 @@ export function CustomersWindow() {
   } else if (rows.length === 0) {
     body = <EmptyState title={customers.list.noMatches} />;
   } else {
-    body = (
-      <>
-        <CustomerRows rows={rows} phone={phone} />
-        {total > PAGE_SIZE ? (
-          <div className={styles.paging}>
-            <Button variant="ghost" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
-              {customers.list.previous}
-            </Button>
-            <span className={styles.range}>{customers.list.range(from, to, total)}</span>
-            <Button variant="ghost" disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>
-              {customers.list.next}
-            </Button>
-          </div>
-        ) : null}
-      </>
-    );
+    body = <CustomerRows rows={rows} phone={phone} />;
   }
 
   return (
-    <>
+    <div className={styles.workspace}>
       <JobsTabs />
       {toolbar}
+      {tag !== '' || texting !== '' ? <p className={styles.range}>{customers.list.pageFiltersHelp}</p> : null}
       {body}
-    </>
+      {!list.isPending && !list.isError && total > PAGE_SIZE ? (
+        <div className={styles.paging}>
+          <Button variant="ghost" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
+            {customers.list.previous}
+          </Button>
+          <span className={styles.range}>{customers.list.range(from, to, total)}</span>
+          <Button variant="ghost" disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>
+            {customers.list.next}
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }

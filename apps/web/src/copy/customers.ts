@@ -17,6 +17,7 @@ export const customers = {
     searchLabel: 'Search customers',
     searchPlaceholder: 'Name or phone number',
     filtersLabel: 'Customer filters',
+    pageFiltersHelp: 'Tag and texting filters apply to the customers on this page.',
     tagLabel: 'Tag',
     allTags: 'All tags',
     textingLabel: 'Texting',

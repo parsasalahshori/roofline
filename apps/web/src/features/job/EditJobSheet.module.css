@@ -1,4 +1,13 @@
 .body {
+  --surface: #fff;
+  --surface-2: #eaf0f4;
+  --text: #151c22;
+  --text-muted: #505b64;
+  --line: #d8dfe4;
+  --accent: #dceaff;
+  --accent-ink: #204f98;
+  --radius-card: 12px;
+
   display: flex;
   flex-direction: column;
   gap: 16px;

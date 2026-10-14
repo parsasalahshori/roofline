@@ -1,16 +1,66 @@
-/* The row of tab links under the window title. It scrolls sideways on a phone rather than wrapping. */
+/* Compact navigation and view controls, shared by CRM lists. */
+.workspace {
+  --surface: #fff;
+  --surface-2: #eaf0f4;
+  --text: #151c22;
+  --text-muted: #505b64;
+  --line: #d8dfe4;
+  --accent: #dceaff;
+  --accent-ink: #204f98;
+  min-width: 0;
+  color: var(--text);
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
 .tabs {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  overflow-x: auto;
-  margin: -4px -4px 16px;
-  padding: 4px;
-  border-bottom: 1px solid var(--line);
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: 12px;
+  padding: 3px;
+  border-bottom: 1px solid #d8dfe4;
 }
-
-/* A tab is a whole target on a phone: at least 40px tall, and never squeezed to fit the row */
+.toolbar .tabs {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
 .tab {
   flex: none;
-  min-height: 40px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
 }
+.tab[aria-current='page'] {
+  background: #e3edfc;
+  color: #204f98;
+  box-shadow: inset 0 0 0 1px #8bacdc;
+}
+.views {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #d8dfe4;
+  border-radius: 10px;
+  background: #eaf0f4;
+}
+.views > * {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.views > [aria-pressed='true'] {
+  background: #fff;
+  box-shadow: 0 1px 3px #151c221a;
+}
+@media (max-width: 767.98px) {
+  .tab {
+    min-height: 44px;
+  } }

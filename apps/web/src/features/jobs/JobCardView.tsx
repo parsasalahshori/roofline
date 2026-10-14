@@ -44,20 +44,24 @@ export function JobCardView({ job, onDragStart }: JobCardViewProps) {
           onDragStart?.(job);
         }}
       >
-        <strong className={styles.name}>{job.customerName}</strong>
-        <span className={styles.address}>{job.addressLine}</span>
-        {job.valueCents !== null ? <span className={styles.value}>{jobs.value(formatDollars(job.valueCents))}</span> : null}
-        <span className={styles.rep}>
-          {job.assigned !== null ? (
-            <>
-              <Avatar name={job.assigned.name} size={24} />
-              <span>{job.assigned.name}</span>
-            </>
-          ) : (
-            <span className={styles.unassigned}>{jobs.unassigned}</span>
-          )}
+        <span className={styles.top}>
+          <strong className={styles.name}>{job.customerName}</strong>
+          {job.valueCents !== null ? <span className={styles.value}>{jobs.value(formatDollars(job.valueCents))}</span> : null}
         </span>
-        <span className={styles.meta}>{jobs.daysInStage(job.daysInStage)}</span>
+        <span className={styles.address}>{job.addressLine}</span>
+        <span className={styles.details}>
+          <span className={styles.rep}>
+            {job.assigned !== null ? (
+              <>
+                <Avatar name={job.assigned.name} size={24} />
+                <span>{job.assigned.name}</span>
+              </>
+            ) : (
+              <span className={styles.unassigned}>{jobs.unassigned}</span>
+            )}
+          </span>
+          <span className={styles.meta}>{jobs.daysInStage(job.daysInStage)}</span>
+        </span>
         {job.stuck ? <span className={styles.stuck}>{jobs.stuck(job.daysInStage)}</span> : null}
         {job.nextStep !== null ? <span className={styles.next}>{jobs.nextStep(job.nextStep, nextDay)}</span> : null}
       </UiLink>

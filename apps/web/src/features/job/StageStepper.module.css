@@ -8,7 +8,7 @@
 .steps {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 /* Every stage button is a 40px touch target */
@@ -20,7 +20,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .reason {
@@ -41,4 +41,14 @@
   color: var(--text);
   font-size: 0.875rem;
   font-weight: 600;
+}
+
+.step {
+  border-radius: 8px;
+  font-size: 13px;
+}
+.step[data-current='true'] {
+  background: #e3edfc;
+  color: #204f98;
+  box-shadow: inset 0 0 0 1px #8bacdc;
 }

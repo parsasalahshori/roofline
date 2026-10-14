@@ -1,14 +1,27 @@
 /* The New job form: three steps stacked on one screen, each a section with its own heading */
 .page {
+  --surface: #fff;
+  --surface-2: #eaf0f4;
+  --text: #151c22;
+  --text-muted: #505b64;
+  --line: #d8dfe4;
+  --accent: #dceaff;
+  --accent-ink: #204f98;
+  --radius-card: 12px;
+
   max-width: 720px;
 }
 
 .form {
   display: grid;
-  gap: 24px;
+  gap: 12px;
 }
 
 .step {
+  padding: 16px;
+  border: 1px solid #d8dfe4;
+  border-radius: 14px;
+  background: #fff;
   display: grid;
   gap: 12px;
 }
@@ -41,7 +54,8 @@
   font-size: var(--font-size-body);
 }
 
-/* Touch targets on a phone are 40px tall; the submit button is only as wide as its words */
+/* Touch targets on a phone are 40px tall;
+the submit button is only as wide as its words */
 .submit {
   justify-self: start;
   min-height: 40px;

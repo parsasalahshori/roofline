@@ -1,5 +1,14 @@
 /* The edit panel: the fields in one column, each list of phones or emails in its own section */
 .form {
+  --surface: #fff;
+  --surface-2: #eaf0f4;
+  --text: #151c22;
+  --text-muted: #505b64;
+  --line: #d8dfe4;
+  --accent: #dceaff;
+  --accent-ink: #204f98;
+  --radius-card: 12px;
+
   display: grid;
   gap: 24px;
   min-width: 0;

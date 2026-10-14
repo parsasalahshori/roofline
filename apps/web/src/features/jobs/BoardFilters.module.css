@@ -1,45 +1,85 @@
-/* The filter bar: the controls wrap onto as many rows as the window needs, never past its width. */
 .bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
-
 .control {
-  flex: 1 1 180px;
+  flex: 1 1 150px;
   min-width: 0;
   max-width: 100%;
 }
-
+.control label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #505b64;
+}
+.control input, .control select {
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+}
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
+  gap: 6px;
   margin-left: auto;
 }
-
-/* The CSV download: a plain link drawn like a ghost button, with the same 40px target */
+.actions > * {
+  min-height: 36px;
+  font-size: 13px;
+  border-radius: 9px;
+}
 .download {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
-  padding: 0 16px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  color: var(--text);
-  background: transparent;
-  font-size: 0.875rem;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #77838d;
+  color: #151c22;
+  background: #fff;
+  font-size: 13px;
   text-decoration: none;
 }
-
 .download:hover {
-  background: var(--surface-2);
+  background: #eaf0f4;
+}
+.download:focus-visible {
+  outline: 2px solid #285fac;
+  outline-offset: 2px;
+}
+@media (max-width: 767.98px) {
+  .bar {
+    align-items: flex-end;
+    gap: 12px;
+  }
+  .control {
+    flex-basis: calc(50% - 6px);
+  }
+  .control:has(input) {
+    flex-basis: 100%;
+  }
+  .control input, .control select, .actions > * {
+    min-height: 44px;
+  }
+  .actions {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 
-.download:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
+@media (min-width: 768px) {
+  .control { position: relative; }
+  .control label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .control:has(input) { flex-grow: 2; }
 }
