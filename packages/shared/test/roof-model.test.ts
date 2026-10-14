@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRoofModel, measureRoof, seededPitchX12, type RoofLineKind, type RoofModel } from '../src/roof-model.ts';
+import { buildRoofModel, measureRoof, roofSection, seededPitchX12, type RoofLineKind, type RoofModel } from '../src/roof-model.ts';
 import { instantEstimate, polygonAreaSqFt, type Ring } from '../src/roof.ts';
 
 // Omaha origin; metres to degrees with the same sphere the engine uses.
@@ -238,5 +238,66 @@ describe('measureRoof', () => {
     const { estimate, roof } = measureRoof({ outline: [], pitchX12: 6, overhangFt: 1 });
     expect(roof).toBeNull();
     expect(estimate).toEqual(instantEstimate({ outline: [], pitchX12: 6, overhangFt: 1 }));
+  });
+});
+
+describe('roof lines name their facets', () => {
+  it('gives an outline edge one facet and a ridge, hip or valley two, all real facet ids', () => {
+    const m = buildRoofModel(ring(L_SHAPE), { pitchX12: 6 })!;
+    const ids = new Set(m.facets.map((f) => f.id));
+    for (const l of m.lines) {
+      expect(l.facets.length).toBe(l.kind === 'eave' || l.kind === 'rake' ? 1 : 2);
+      for (const id of l.facets) expect(ids.has(id)).toBe(true);
+    }
+  });
+});
+
+describe('roofSection', () => {
+  const m = buildRoofModel(ring(RECT), { pitchX12: 6, overhangFt: 1 })!;
+
+  it('is null for no ids, unknown ids only, or every facet (the whole roof)', () => {
+    expect(roofSection(m, null)).toBeNull();
+    expect(roofSection(m, [])).toBeNull();
+    expect(roofSection(m, ['ZZ'])).toBeNull();
+    expect(roofSection(m, m.facets.map((f) => f.id))).toBeNull();
+  });
+
+  it('prices one side of a gable: half the area, the shared ridge, its own eave and rakes', () => {
+    const s = roofSection(m, ['A', 'nope'])!;
+    expect(s.facets).toEqual(['A']);
+    expect(s.totals.facetCount).toBe(1);
+    expect(s.totals.slopedSqFt).toBeCloseTo(m.totals.slopedSqFt / 2, -1);
+    expect(s.totals.ridgeFt).toBeCloseTo(m.totals.ridgeFt, 1);
+    expect(s.totals.eaveFt).toBeCloseTo(m.totals.eaveFt / 2, 0);
+    expect(s.totals.rakeFt).toBeCloseTo(m.totals.rakeFt / 2, 0);
+  });
+});
+
+describe('measureRoof with a section', () => {
+  it('prices only the chosen facets, and the whole roof without any', () => {
+    const outline = [ring(L_SHAPE)];
+    const whole = measureRoof({ outline, pitchX12: 6, overhangFt: 1 });
+    expect(whole.section).toBeNull();
+    const pick = whole.roof!.facets.slice(0, 2).map((f) => f.id);
+    const part = measureRoof({ outline, pitchX12: 6, overhangFt: 1, facets: pick });
+    expect(part.section?.facets).toEqual(pick);
+    expect(part.estimate.surfaceSqFt).toBeLessThan(whole.estimate.surfaceSqFt);
+    expect(part.estimate.surfaceSqFt).toBeGreaterThan(0);
+    expect(part.estimate.squares).toBeCloseTo(part.estimate.surfaceSqFt / 100, 1);
+    expect(part.estimate.edgeFt).toBeLessThan(whole.estimate.edgeFt);
+    expect(part.estimate.pitchX12).toBe(6);
+    // The roof drawn is still the whole roof; only the numbers are the section's
+    expect(part.roof!.facets.length).toBe(whole.roof!.facets.length);
+    const sum = whole.roof!.facets.reduce((s, f) => s + f.planSqFt, 0);
+    const chosen = whole.roof!.facets.filter((f) => pick.includes(f.id)).reduce((s, f) => s + f.planSqFt, 0);
+    expect(part.estimate.surfaceSqFt).toBeCloseTo((whole.estimate.surfaceSqFt * chosen) / sum, -1);
+  });
+
+  it('scales an entered valley length to the section', () => {
+    const outline = [ring(L_SHAPE)];
+    const whole = measureRoof({ outline, pitchX12: 6, overhangFt: 0, valleyFt: 40 });
+    const part = measureRoof({ outline, pitchX12: 6, overhangFt: 0, valleyFt: 40, facets: ['A'] });
+    expect(part.estimate.valleyFt).toBeLessThan(40);
+    expect(whole.estimate.valleyFt).toBe(40);
   });
 });

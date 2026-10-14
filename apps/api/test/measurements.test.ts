@@ -326,6 +326,64 @@ describe('PATCH /api/measurements/:id: recomputes', () => {
   });
 });
 
+describe('PATCH /api/measurements/:id: a section of the roof', () => {
+  it('prices only the picked facets, keeps them through a pitch change, and starts over with a new outline', async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    const owner = await who.as('owner');
+    const created = await measure(owner, { propertyId: await homeAt(7, INSIDE) });
+    const path = `/api/measurements/${created.id}`;
+    expect(created.section).toBeNull();
+    const letters = created.roof!.facets.map((f) => f.id);
+    expect(letters.length).toBeGreaterThan(1);
+
+    const part = await owner.patch(path).send({ selectedFacets: ['A', 'A'] });
+    expect(part.status).toBe(200);
+    expect(part.body.section.facets).toEqual(['A']);
+    expect(part.body.estimate.surfaceSqFt).toBeLessThan(created.estimate.surfaceSqFt);
+    expect(part.body.estimate.surfaceSqFt).toBeGreaterThan(0);
+    // The roof drawn is still the whole roof
+    expect(part.body.roof.facets.map((f: { id: string }) => f.id)).toEqual(letters);
+    const expected = measureRoof({ outline: [HOUSE], pitchX12: created.estimate.pitchX12, overhangFt: created.overhangFt, valleyFt: created.estimate.valleyFt, facets: ['A'] });
+    expect(part.body.estimate.surfaceSqFt).toBeCloseTo(expected.estimate.surfaceSqFt, 0);
+    expect((await owner.get(path)).body).toEqual(part.body);
+
+    // The proposal's prices follow the section
+    const preview = await owner.get(`${path}/preview`);
+    expect(preview.status).toBe(200);
+    const better = preview.body.options.find((o: { tier: string }) => o.tier === 'better');
+    expect(better.calculation.roofSquares).toBeCloseTo(part.body.estimate.surfaceSqFt / 100, 1);
+
+    const pitched = await owner.patch(path).send({ pitchX12: 9 });
+    expect(pitched.body.section.facets).toEqual(['A']);
+    expect(pitched.body.estimate.surfaceSqFt).toBeGreaterThan(part.body.estimate.surfaceSqFt);
+
+    const whole = await owner.patch(path).send({ selectedFacets: null });
+    expect(whole.body.section).toBeNull();
+    expect(whole.body.estimate.surfaceSqFt).toBeGreaterThan(pitched.body.estimate.surfaceSqFt);
+
+    // Every facet is the whole roof
+    const every = await owner.patch(path).send({ selectedFacets: letters });
+    expect(every.body.section).toBeNull();
+
+    await owner.patch(path).send({ selectedFacets: ['A'] });
+    const redrawn = await owner.patch(path).send({ outline: [WIDER] });
+    expect(redrawn.body.section).toBeNull();
+  });
+
+  it('unknown or badly written facets are a 400 naming selectedFacets, and nothing is saved', async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    const owner = await who.as('owner');
+    const created = await measure(owner, { propertyId: await homeAt(7, INSIDE) });
+    const path = `/api/measurements/${created.id}`;
+    for (const selectedFacets of [['Q'], ['a'], 'A', [1]]) {
+      const res = await owner.patch(path).send({ selectedFacets });
+      expect(res.status).toBe(400);
+      expect(res.body.field).toMatch(/^selectedFacets/);
+    }
+    expect((await owner.get(path)).body.section).toBeNull();
+  });
+});
+
 describe('PATCH /api/measurements/:id: bad input', () => {
   it('rejects bad outlines with plain messages, and out-of-range numbers name their field', async () => {
     await loadNE({ sourceRef: 'house', ring: HOUSE });

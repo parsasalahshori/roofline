@@ -43,6 +43,12 @@ export type MeasureSlots = {
   wastePct: number | null;
   editing: boolean;
   setEditing: (next: boolean) => void;
+  /** The facets being priced (part of the roof), or null for the whole roof. */
+  section: string[] | null;
+  /** Adds a facet to the section or takes it out; null while the roof cannot change (scanning, editing, sent). */
+  pickFacet: ((id: string) => void) | null;
+  /** Prices the whole roof again. */
+  wholeRoof: () => void;
 };
 
 export const MeasureSlotsContext = createContext<MeasureSlots>({
@@ -54,4 +60,7 @@ export const MeasureSlotsContext = createContext<MeasureSlots>({
   wastePct: null,
   editing: false,
   setEditing: () => undefined,
+  section: null,
+  pickFacet: null,
+  wholeRoof: () => undefined,
 });

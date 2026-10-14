@@ -1,11 +1,11 @@
 import { Button } from '@roofline/ui';
-import type { InstantEstimate } from '@roofline/shared';
+import type { InstantEstimate, RoofSection } from '@roofline/shared';
 import { useId, type ReactNode } from 'react';
 import { liftMeasure } from '../../../copy/liftMeasure.ts';
 import { measure } from '../../../copy/measure.ts';
 import type { MeasurementView } from '../types.ts';
 import { AiMark } from './AiMark.tsx';
-import { LINE_COLORS, type RoofLineKind, type RoofModel } from './roofModel.ts';
+import { facetName, LINE_COLORS, sectionLetters, type RoofLineKind, type RoofModel } from './roofModel.ts';
 import { shownShare, stageAt, type ScanSession } from './scan.ts';
 import styles from './MeasureCard.module.css';
 
@@ -24,9 +24,10 @@ export type CardNumbers = {
   edgeFt: number;
 };
 
-export function cardNumbers(m: MeasurementView, estimate: InstantEstimate, model: RoofModel | null, wastePct: number | null): CardNumbers {
+/** With a section (part of the roof), the numbers are the section's own. */
+export function cardNumbers(m: MeasurementView, estimate: InstantEstimate, model: RoofModel | null, wastePct: number | null, section: RoofSection | null = null): CardNumbers {
   if (model !== null) {
-    const t = model.totals;
+    const t = section?.totals ?? model.totals;
     return {
       squares: t.squares,
       slopedSqFt: t.slopedSqFt,
@@ -86,6 +87,64 @@ export function cardCells(n: CardNumbers, share: number, pitchKnown: boolean): C
   return cells;
 }
 
+/**
+ * Which part of the roof is priced: a toggle per facet (the same as tapping it on the photo) and Whole roof. A
+ * sent roof only says which part it was.
+ */
+function SectionPicker({
+  model,
+  section,
+  onPick,
+  onWholeRoof,
+}: {
+  model: RoofModel;
+  section: RoofSection | null;
+  onPick: ((id: string) => void) | null;
+  onWholeRoof: () => void;
+}) {
+  const titleId = useId();
+  const picked = new Set(section?.facets ?? []);
+  return (
+    <div className={styles.sections} role="group" aria-labelledby={titleId}>
+      <div className={styles.sectionsHead}>
+        <span id={titleId} className={styles.cellLabel}>
+          {liftMeasure.sectionsTitle}
+        </span>
+        <Button
+          variant="ghost"
+          className={styles.sectionChip}
+          aria-pressed={section === null}
+          data-on={section === null ? 'true' : undefined}
+          disabled={onPick === null}
+          onClick={onWholeRoof}
+        >
+          {liftMeasure.wholeRoof}
+        </Button>
+        {model.facets.map((f, i) => {
+          const letter = facetName(f.id, i);
+          return (
+            <Button
+              key={f.id}
+              variant="ghost"
+              className={styles.sectionChip}
+              aria-label={liftMeasure.facetToggle(letter)}
+              aria-pressed={picked.has(f.id)}
+              data-on={picked.has(f.id) ? 'true' : undefined}
+              disabled={onPick === null}
+              onClick={() => onPick?.(f.id)}
+            >
+              {letter}
+            </Button>
+          );
+        })}
+      </div>
+      <p className={styles.sectionsNote} {...(section !== null ? { role: 'status' } : {})}>
+        {section !== null ? liftMeasure.sectionOf(sectionLetters(model, section.facets), section.totals.squares, model.totals.squares) : liftMeasure.sectionsHint}
+      </p>
+    </div>
+  );
+}
+
 function RotateIcon() {
   return (
     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
@@ -109,6 +168,10 @@ export function MeasureCard({
   editing,
   onEdit,
   panels,
+  model = null,
+  section = null,
+  onPick = null,
+  onWholeRoof = () => undefined,
 }: {
   m: MeasurementView;
   numbers: CardNumbers;
@@ -119,6 +182,11 @@ export function MeasureCard({
   editing: boolean;
   onEdit: (next: boolean) => void;
   panels: ReactNode;
+  /** The measured roof, for picking the part to price; null with no facets. */
+  model?: RoofModel | null;
+  section?: RoofSection | null;
+  onPick?: ((id: string) => void) | null;
+  onWholeRoof?: () => void;
 }) {
   const adjustId = useId();
   const scanning = scan.phase === 'scanning';
@@ -157,7 +225,7 @@ export function MeasureCard({
       </div>
       <div className={styles.body}>
         <div className={styles.big}>
-          <span className={styles.label}>{liftMeasure.totalArea}</span>
+          <span className={styles.label}>{section !== null ? liftMeasure.sectionArea : liftMeasure.totalArea}</span>
           <span className={styles.squaresRow}>
             <span className={styles.squares}>{(numbers.squares * share).toFixed(1)}</span>
             <span className={styles.unit}>{liftMeasure.squaresUnit}</span>
@@ -176,6 +244,9 @@ export function MeasureCard({
           ))}
         </dl>
       </div>
+      {!scanning && model !== null && model.facets.length > 1 && m.kind !== 'exact' && (!locked || section !== null) ? (
+        <SectionPicker model={model} section={section} onPick={locked ? null : onPick} onWholeRoof={onWholeRoof} />
+      ) : null}
       {locked && !scanning ? (
         <p className={styles.note} data-tone="locked">
           {measure.locked}

@@ -36,6 +36,8 @@ export interface RoofLine {
   coords: [[number, number], [number, number]];
   /** True (sloped) length in feet. */
   lengthFt: number;
+  /** The ids of the facets on either side (one for an outline edge, two for a ridge, hip or valley). */
+  facets: string[];
 }
 export interface RoofModel {
   facets: RoofFacet[];
@@ -1014,8 +1016,9 @@ export function buildRoofModel(outline: Outline | Ring, opts: { pitchX12: number
     const overhang = Number.isFinite(opts.overhangFt) && (opts.overhangFt ?? 0) > 0 ? opts.overhangFt! : 0;
     const factor = pitchFactor(pitch);
     const label = pitchLabel(pitch);
-    const facets: (Omit<RoofFacet, 'id'> & { sort: number })[] = [];
-    const lines: RoofLine[] = [];
+    const facets: (Omit<RoofFacet, 'id'> & { sort: number; index: number })[] = [];
+    // Lines name their facets by position in `facets` until the facets are sorted and lettered
+    const local: (Omit<RoofLine, 'facets'> & { at: number[] })[] = [];
     let bestOutline: [number, number][] = [];
     let bestArea = -1;
     for (const ring of rings) {
@@ -1031,11 +1034,13 @@ export function buildRoofModel(outline: Outline | Ring, opts: { pitchX12: number
         edgeOf[l.facets[0]!]! += plan;
         edgeTotal += plan;
       }
+      const offset = facets.length;
       roof.facets.forEach((f, i) => {
         const foot = facetArea > 0 ? (f.areaM2 / facetArea) * built.footSqFt : 0;
         const edge = edgeTotal > 0 ? (edgeOf[i]! / edgeTotal) * built.perimFt : 0;
         const plan = foot + edge * overhang;
         facets.push({
+          index: offset + i,
           sort: plan,
           ring: closedRing(frame, tidy(f.ring, 1e-6)),
           planSqFt: round1(plan),
@@ -1045,7 +1050,7 @@ export function buildRoofModel(outline: Outline | Ring, opts: { pitchX12: number
         });
       });
       for (const l of roof.lines) {
-        lines.push({ kind: l.kind, coords: [toLngLat(frame, l.a), toLngLat(frame, l.b)], lengthFt: round1(l.lengthM * FT_PER_M) });
+        local.push({ kind: l.kind, coords: [toLngLat(frame, l.a), toLngLat(frame, l.b)], lengthFt: round1(l.lengthM * FT_PER_M), at: l.facets.map((k) => offset + k) });
       }
       if (built.footSqFt > bestArea) {
         bestArea = built.footSqFt;
@@ -1054,6 +1059,8 @@ export function buildRoofModel(outline: Outline | Ring, opts: { pitchX12: number
     }
     if (facets.length === 0) return null;
     facets.sort((a, b) => b.sort - a.sort);
+    const idAt = new Map(facets.map((f, i) => [f.index, facetId(i)]));
+    const lines: RoofLine[] = local.map(({ at, ...l }) => ({ ...l, facets: at.map((k) => idAt.get(k)).filter((id): id is string => id !== undefined) }));
     const sum = (k: RoofLineKind) => round1(lines.filter((l) => l.kind === k).reduce((s, l) => s + l.lengthFt, 0));
     const planSqFt = facets.reduce((s, f) => s + f.sort, 0);
     const slopedSqFt = planSqFt * factor;
@@ -1097,19 +1104,79 @@ function isSingleRing(x: Outline | Ring): x is Ring {
   return Array.isArray(first) && typeof first[0] === 'number';
 }
 
+/** Part of a roof: the facets chosen (A, B…, in the roof's order) and their own totals. */
+export interface RoofSection {
+  facets: string[];
+  totals: RoofModel['totals'];
+}
+
+/**
+ * The facets named in `ids` that the roof has, as a section with their own totals: their sloped and plan areas, the
+ * ridge, hip and valley lines that touch one of them (the cap or flashing they need), and their own eaves and rakes.
+ * Null when nothing known is named, or when every facet is (that is the whole roof). Unknown ids are ignored.
+ */
+export function roofSection(roof: RoofModel, ids: readonly string[] | null | undefined): RoofSection | null {
+  if (ids === null || ids === undefined || ids.length === 0) return null;
+  const wanted = new Set(ids);
+  const chosen = roof.facets.filter((f) => wanted.has(f.id));
+  if (chosen.length === 0 || chosen.length === roof.facets.length) return null;
+  const inside = new Set(chosen.map((f) => f.id));
+  const touching = roof.lines.filter((l) => l.facets.some((id) => inside.has(id)));
+  const sum = (k: RoofLineKind) => round1(touching.filter((l) => l.kind === k).reduce((s, l) => s + l.lengthFt, 0));
+  const facetPlan = roof.facets.reduce((s, f) => s + f.planSqFt, 0);
+  const share = facetPlan > 0 ? chosen.reduce((s, f) => s + f.planSqFt, 0) / facetPlan : 0;
+  const slopedSqFt = roof.totals.slopedSqFt * share;
+  const totals = {
+    squares: round1(slopedSqFt / 100),
+    slopedSqFt: round1(slopedSqFt),
+    planSqFt: round1(roof.totals.planSqFt * share),
+    facetCount: chosen.length,
+    wastePct: 10,
+    ridgeFt: sum('ridge'),
+    hipFt: sum('hip'),
+    valleyFt: sum('valley'),
+    eaveFt: sum('eave'),
+    rakeFt: sum('rake'),
+  };
+  totals.wastePct = wasteFor(totals.hipFt, totals.rakeFt, totals.valleyFt, chosen.length);
+  return { facets: chosen.map((f) => f.id), totals };
+}
+
 /**
  * The instant estimate and the roof drawn for it, consistent with each other: areas are the estimate's (footprint
  * plus overhang, times the pitch factor); ridge, valley and edges (eaves plus rakes) are the roof's lines. A valley
  * length given in the input (above 0) is kept as entered.
+ *
+ * With `facets` (a section of the roof, e.g. only the storm-damaged side), the estimate is that section's: its
+ * share of the areas, and the lines that bound or touch it. `section` is null for the whole roof.
  */
-export function measureRoof(i: InstantInput): { estimate: InstantEstimate; roof: RoofModel | null } {
+export function measureRoof(i: InstantInput & { facets?: readonly string[] | null }): { estimate: InstantEstimate; roof: RoofModel | null; section: RoofSection | null } {
   const base = instantEstimate(i);
   const roof = buildRoofModel(i.outline ?? [], { pitchX12: base.pitchX12, overhangFt: i.overhangFt });
-  if (roof === null) return { estimate: base, roof: null };
+  if (roof === null) return { estimate: base, roof: null, section: null };
   roof.totals.planSqFt = base.planSqFt;
   roof.totals.slopedSqFt = base.surfaceSqFt;
   roof.totals.squares = base.squares;
   const given = typeof i.valleyFt === 'number' && Number.isFinite(i.valleyFt) && i.valleyFt > 0;
+  const section = roofSection(roof, i.facets);
+  if (section !== null) {
+    const t = section.totals;
+    const share = roof.totals.slopedSqFt > 0 ? t.slopedSqFt / roof.totals.slopedSqFt : 0;
+    return {
+      estimate: {
+        ...base,
+        footprintSqFt: round1(base.footprintSqFt * share),
+        planSqFt: t.planSqFt,
+        surfaceSqFt: t.slopedSqFt,
+        squares: t.squares,
+        ridgeFt: t.ridgeFt,
+        valleyFt: given ? round1(base.valleyFt * share) : t.valleyFt,
+        edgeFt: round1(t.eaveFt + t.rakeFt),
+      },
+      roof,
+      section,
+    };
+  }
   return {
     estimate: {
       ...base,
@@ -1118,5 +1185,6 @@ export function measureRoof(i: InstantInput): { estimate: InstantEstimate; roof:
       edgeFt: round1(roof.totals.eaveFt + roof.totals.rakeFt),
     },
     roof,
+    section: null,
   };
 }

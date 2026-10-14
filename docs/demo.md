@@ -106,7 +106,9 @@ pipeline stages."
 address, the timeline of every text, call and stage change.
 
 **1:45 — Estimator (45 s).** Open Estimator. "The roof was measured from aerial imagery, no ladder."
-Open a proposal: the line items and the homeowner link. Point at the signed one.
+Open a proposal: the line items and the homeowner link. Point at the signed one. "Only one side
+took hail?" On a measured roof, tap its facets on the photo (or the A, B, C buttons under **What to price**):
+the squares and all three prices drop to just that part. **Whole roof** puts it back.
 
 **2:30 — Storm Scout (45 s).** Open Storm. "Last night's hail, drawn from radar. These are our
 customers inside the swath." Open the storm: matched properties and the drafted plan (texts, door

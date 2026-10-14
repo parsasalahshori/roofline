@@ -41,6 +41,7 @@ function view(over: Partial<MeasurementView> = {}): MeasurementView {
     locked: false,
     hasCustomer: true,
     roof: null,
+    section: null,
     ...over,
   };
 }
@@ -124,7 +125,7 @@ describe('the roof model', () => {
     expect([0, 1, 25, 26].map(facetLetter)).toEqual(['A', 'B', 'Z', 'AA']);
     const roof = gableRoof(ring as [number, number][]);
     expect(lineKinds(roof)).toEqual(['ridge', 'valley', 'eave', 'rake']);
-    roof.lines.push({ kind: 'hip', coords: [ring[0] as [number, number], ring[2] as [number, number]], lengthFt: 12 });
+    roof.lines.push({ kind: 'hip', coords: [ring[0] as [number, number], ring[2] as [number, number]], lengthFt: 12, facets: ['f1', 'f2'] });
     expect(lineKinds(roof)).toEqual(['ridge', 'hip', 'valley', 'eave', 'rake']);
   });
 });

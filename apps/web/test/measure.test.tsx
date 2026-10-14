@@ -22,7 +22,7 @@ const fake = vi.hoisted(() => {
     readonly options: Record<string, unknown>;
     private sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
     private layers = new Map<string, unknown>();
-    private listeners: { type: string; fn: Handler }[] = [];
+    private listeners: { type: string; layer?: string; fn: Handler }[] = [];
     private canvas = Object.assign(document.createElement('canvas'), {
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }),
     });
@@ -47,17 +47,21 @@ const fake = vi.hoisted(() => {
     addControl = vi.fn();
     remove = vi.fn();
     getBounds = () => ({ getWest: () => -97, getSouth: () => 32, getEast: () => -96, getNorth: () => 33 });
-    on(type: string, fn: Handler) {
-      this.listeners.push({ type, fn });
+    // Like MapLibre: on(type, fn) for the map, on(type, layerId, fn) for one layer's features
+    on(type: string, a: Handler | string, b?: Handler) {
+      if (typeof a === 'string') this.listeners.push({ type, layer: a, fn: b! });
+      else this.listeners.push({ type, fn: a });
     }
     once(type: string, fn: Handler) {
       this.on(type, fn);
     }
-    off(type: string, fn: Handler) {
-      this.listeners = this.listeners.filter((l) => !(l.type === type && l.fn === fn));
+    off(type: string, a: Handler | string, b?: Handler) {
+      const layer = typeof a === 'string' ? a : undefined;
+      const fn = typeof a === 'string' ? b : a;
+      this.listeners = this.listeners.filter((l) => !(l.type === type && l.layer === layer && l.fn === fn));
     }
-    emit(type: string, payload?: unknown) {
-      for (const l of [...this.listeners]) if (l.type === type) l.fn(payload);
+    emit(type: string, payload?: unknown, layer?: string) {
+      for (const l of [...this.listeners]) if (l.type === type && l.layer === layer) l.fn(payload);
     }
   }
   class FakeMarker {
@@ -151,6 +155,7 @@ function view(over: Partial<MeasurementView> = {}): MeasurementView {
     drawMode: false,
     hasCustomer: true,
     roof: null,
+    section: null,
     outline: [ring],
     structures: [{ footprintId: 's1', ring, areaSqFt: 1200, included: true }],
     overhangFt: 1,
@@ -220,7 +225,7 @@ async function open(over: Partial<MeasurementView> = {}, state?: unknown) {
   return router;
 }
 const lastMap = () => fake.FakeMap.instances[fake.FakeMap.instances.length - 1] as InstanceType<typeof fake.FakeMap>;
-const mapEmit = (type: string, payload?: unknown) => lastMap().emit(type, payload);
+const mapEmit = (type: string, payload?: unknown, layer?: string) => lastMap().emit(type, payload, layer);
 const area = () => screen.getByText(measure.area).nextElementSibling?.textContent ?? '';
 const handles = () => document.querySelectorAll('[data-handle="corner"]');
 const corner = (i: number) => document.querySelector(`[data-handle="corner"][data-corner-index="${i}"]`) as HTMLElement;
@@ -711,6 +716,68 @@ describe('the Measure roof scan', () => {
     expect(screen.getByText('13.4')).toBeTruthy();
     expect(screen.getByText(liftMeasure.feet(90))).toBeTruthy();
     expect(lastMap().setLayoutProperty).toHaveBeenCalledWith('roof-lines', 'visibility', 'visible');
+  });
+
+  it('tapping a facet on the photo prices only that part of the roof', async () => {
+    const roof = gableRoof(view().outline![0] as [number, number][]);
+    fireEvent.click(await openUnscanned({ roof } as Partial<MeasurementView>));
+    expect(await screen.findByText(liftMeasure.sectionsHint)).toBeTruthy();
+    expect(screen.getByRole('button', { name: liftMeasure.wholeRoof }).getAttribute('aria-pressed')).toBe('true');
+    mapEmit('click', { features: [{ properties: { id: 'f2' } }] }, 'roof-facets-fill');
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ selectedFacets: ['f2'] }]));
+    expect(screen.getByText(liftMeasure.sectionOf('B', 6.7, 13.4))).toBeTruthy();
+    expect(screen.getByText(liftMeasure.sectionArea)).toBeTruthy();
+    expect(screen.getByText('6.7')).toBeTruthy();
+    expect(screen.getByRole('button', { name: liftMeasure.facetToggle('B') }).getAttribute('aria-pressed')).toBe('true');
+    // The photo shows which facets are priced
+    const fills = lastMap().getSource('roof-facets-src')!.setData.mock.calls.at(-1)![0] as { features: { properties: { id: string; picked: boolean; dimmed: boolean } }[] };
+    expect(fills.features.map((f) => [f.properties.id, f.properties.picked, f.properties.dimmed])).toEqual([
+      ['f1', false, true],
+      ['f2', true, false],
+    ]);
+    expect(document.querySelector('[data-facet-label="B"]')?.getAttribute('data-section')).toBe('in');
+    expect(document.querySelector('[data-facet-label="A"]')?.getAttribute('data-section')).toBe('out');
+    // The proposal says it is for part of the roof
+    const panel = await screen.findByRole('complementary', { name: liftProposal.label });
+    expect(within(panel).getByText(liftProposal.sectionLine('B'))).toBeTruthy();
+  });
+
+  it('the facet buttons pick a section too, and Whole roof (or every facet) prices the whole roof again', async () => {
+    const roof = gableRoof(view().outline![0] as [number, number][]);
+    fireEvent.click(await openUnscanned({ roof } as Partial<MeasurementView>));
+    fireEvent.click(await screen.findByRole('button', { name: liftMeasure.facetToggle('A') }));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ selectedFacets: ['f1'] }]));
+    fireEvent.click(screen.getByRole('button', { name: liftMeasure.facetToggle('B') }));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(2));
+    expect(sent('PATCH /api/measurements/m1')[1]).toEqual({ selectedFacets: null });
+    fireEvent.click(screen.getByRole('button', { name: liftMeasure.facetToggle('B') }));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(3));
+    fireEvent.click(screen.getByRole('button', { name: liftMeasure.wholeRoof }));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(4));
+    expect(sent('PATCH /api/measurements/m1')[3]).toEqual({ selectedFacets: null });
+    expect(screen.getByText(liftMeasure.sectionsHint)).toBeTruthy();
+  });
+
+  it('while Adjust is open, the buttons still pick facets but taps on the photo do not', async () => {
+    const roof = gableRoof(view().outline![0] as [number, number][]);
+    await open({ roof } as Partial<MeasurementView>);
+    mapEmit('click', { features: [{ properties: { id: 'f2' } }] }, 'roof-facets-fill');
+    await wait(50);
+    expect(sent('PATCH /api/measurements/m1')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: liftMeasure.facetToggle('B') }));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ selectedFacets: ['f2'] }]));
+  });
+
+  it('opens on the section it was saved with, and a sent roof cannot change it', async () => {
+    const roof = gableRoof(view().outline![0] as [number, number][]);
+    const section = { facets: ['f1'], totals: { ...roof.totals, squares: 6.7, slopedSqFt: 671, facetCount: 1 } };
+    current = view({ roof, section, locked: true } as Partial<MeasurementView>);
+    renderWindow();
+    expect(await screen.findByText(liftMeasure.sectionOf('A', 6.7, 13.4))).toBeTruthy();
+    expect(screen.getByRole('button', { name: liftMeasure.facetToggle('A') })).toHaveProperty('disabled', true);
+    mapEmit('click', { features: [{ properties: { id: 'f2' } }] }, 'roof-facets-fill');
+    await wait(50);
+    expect(sent('PATCH /api/measurements/m1')).toHaveLength(0);
   });
 
   it('a roof with no facets shows the outline only, and says so', async () => {

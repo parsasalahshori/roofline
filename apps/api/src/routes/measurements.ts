@@ -21,18 +21,23 @@ const STRUCTURES_MESSAGE = 'Please pick the structures to include.';
 const PITCH_MESSAGE = 'Please enter a pitch from 0 to 24.';
 const OVERHANG_MESSAGE = 'Please enter an overhang from 0 to 3 feet.';
 const VALLEY_MESSAGE = 'Please enter a valley length of 0 feet or more.';
+const FACETS_MESSAGE = 'Please pick the roof sections to price.';
 const LOCKED_MESSAGE = 'Make a new measurement to change a sent proposal.';
 /** B5: an exact report's numbers are what was measured; they are never edited. */
 export const EXACT_LOCKED_MESSAGE = 'An exact report cannot be changed. Make a new measurement to change it.';
 const EXACT_NOT_SET_UP_MESSAGE = "Exact reports aren't set up yet.";
 
 const CREATE_FIELDS = ['propertyId', 'address', 'jobId'] as const;
-const PATCH_FIELDS = ['outline', 'includedStructures', 'pitchX12', 'overhangFt', 'valleyFt'] as const;
+const PATCH_FIELDS = ['outline', 'includedStructures', 'pitchX12', 'overhangFt', 'valleyFt', 'selectedFacets'] as const;
 
 /** Vertices a ring may have: a house has a few dozen corners; more is a bad or hostile outline. */
 const MAX_RING_POINTS = 500;
 const MAX_STRUCTURES = 50;
 const MAX_VALLEY_FT = 10000;
+const MAX_FACETS = 200;
+
+/** Roof facets are lettered A, B… then A2, B2… by the roof model. */
+const FACET_ID = /^[A-Z]\d{0,3}$/;
 
 /** Footprint ids are the global table's bigserial numbers, written as strings. */
 const FOOTPRINT_ID = /^\d{1,19}$/;
@@ -72,6 +77,12 @@ const PatchBody = z
       .finite(VALLEY_MESSAGE)
       .min(0, VALLEY_MESSAGE)
       .max(MAX_VALLEY_FT, VALLEY_MESSAGE)
+      .optional(),
+    /** The facets to price (e.g. only the damaged side); null prices the whole roof. */
+    selectedFacets: z
+      .array(z.string({ error: FACETS_MESSAGE }).regex(FACET_ID, FACETS_MESSAGE), { error: FACETS_MESSAGE })
+      .max(MAX_FACETS, FACETS_MESSAGE)
+      .nullable()
       .optional(),
   })
   .strict();
@@ -166,12 +177,14 @@ export function measurementRoutes(deps: AppDeps): Router {
     if (body.pitchX12 !== undefined) patch.pitchX12 = body.pitchX12;
     if (body.overhangFt !== undefined) patch.overhangFt = body.overhangFt;
     if (body.valleyFt !== undefined) patch.valleyFt = body.valleyFt;
+    if (body.selectedFacets !== undefined) patch.selectedFacets = body.selectedFacets === null ? null : [...new Set(body.selectedFacets)];
 
     const result = await withTenant(pools, ctx, (tx) => updateMeasurement(tx, ctx, id, patch, clock.now()));
     if (result === null) throw new AppError(404, MESSAGES.notFound);
     if (result === 'exact') throw new AppError(409, EXACT_LOCKED_MESSAGE);
     if (result === 'locked') throw new AppError(409, LOCKED_MESSAGE);
     if (result === 'unknown_structure') throw new AppError(400, STRUCTURES_MESSAGE, 'includedStructures');
+    if (result === 'unknown_facet') throw new AppError(400, FACETS_MESSAGE, 'selectedFacets');
     res.json(result);
   });
 

@@ -8,6 +8,8 @@ export type MeasurementPatch = {
   pitchX12?: number;
   overhangFt?: number;
   valleyFt?: number;
+  /** The facets to price (part of the roof); null prices the whole roof. */
+  selectedFacets?: string[] | null;
 };
 
 export type OutlineProblem = 'too_few_corners' | 'self_intersecting' | 'too_large';

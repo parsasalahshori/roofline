@@ -369,3 +369,17 @@
     animation: none;
   }
 }
+
+/* A section is being priced: its facets' labels stand out, the rest fade. */
+.facetLabel[data-section="in"] {
+  box-shadow: 0 0 0 2px var(--ds-accent, #ffc21a), 0 2px 0 rgba(21, 28, 34, 0.22);
+}
+
+.facetLabel[data-section="in"] .facetLetter {
+  background: var(--ds-accent, #ffc21a);
+  color: var(--ds-text-1, #151c22);
+}
+
+.facetLabel[data-section="out"] {
+  opacity: 0.55;
+}

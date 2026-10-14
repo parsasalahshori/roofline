@@ -101,3 +101,36 @@ test('demo: Estimate this roof from the map opens Measure on that building', asy
   await expect(page.getByText('Who is this for?')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Send proposal' })).toBeEnabled();
 });
+
+test('demo: only part of the roof damaged prices just the facets picked', async ({ page }) => {
+  test.setTimeout(3 * 60_000);
+  await signIn(page);
+
+  await page.goto('/estimator');
+  const search = page.getByRole('searchbox', { name: 'Search name or address' });
+  await search.fill('42 Hailstone Ct, Omaha, NE 68104');
+  const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/measurements' && r.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Measure a new roof at 42 Hailstone Ct, Omaha, NE 68104' }).click();
+  const { id } = (await (await created).json()) as { id: string };
+  await expect(page).toHaveURL(new RegExp(`/estimator/measure/${id}$`), { timeout: 30_000 });
+  await expectOutline(page);
+
+  const panel = page.getByRole('complementary', { name: 'Proposal' });
+  const total = panel.getByText(/^Total, /).locator('xpath=following-sibling::*[1]');
+  await expect(total).toHaveText(/\$[\d,]+/, { timeout: 30_000 });
+  const wholePrice = await total.textContent();
+  await expect(page.getByRole('button', { name: 'Whole roof' })).toHaveAttribute('aria-pressed', 'true');
+
+  // Pick facet B only (the same as tapping it on the photo)
+  const saved = page.waitForResponse((r) => r.url().endsWith(`/api/measurements/${id}`) && r.request().method() === 'PATCH');
+  await page.getByRole('button', { name: 'Facet B' }).click();
+  const view = (await (await saved).json()) as { section: { facets: string[] } | null; estimate: { squares: number } };
+  expect(view.section?.facets).toEqual(['B']);
+  await expect(page.getByText(/^Pricing facet B only: /)).toBeVisible();
+  await expect(panel.getByText('Part of the roof: facet B')).toBeVisible();
+  await expect(total).not.toHaveText(wholePrice!, { timeout: 30_000 });
+
+  // Whole roof again: the price comes back
+  await page.getByRole('button', { name: 'Whole roof' }).click();
+  await expect(total).toHaveText(wholePrice!, { timeout: 30_000 });
+});

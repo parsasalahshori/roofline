@@ -263,3 +263,44 @@
     margin-top: 0;
   }
 }
+
+/* What to price: the whole roof, or the facets picked (the damaged part). */
+.sections {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ds-hairline, rgba(21, 28, 34, 0.1));
+}
+
+.sectionsHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+}
+
+.sectionsHead > .cellLabel {
+  margin-right: 2px;
+}
+
+.sectionChip {
+  min-width: 30px;
+  min-height: 28px;
+  padding: 2px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sectionChip[data-on="true"] {
+  background: var(--ds-accent, #ffc21a);
+  color: var(--ds-text-1, #151c22);
+}
+
+.sectionsNote {
+  margin: 6px 0 0;
+  color: var(--ds-text-2, #3a444d);
+  font-size: 12px;
+  line-height: 1.35;
+}
