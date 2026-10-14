@@ -190,6 +190,13 @@ function resultOf(target: string, point: LngLat, roof: Roof3d, check: ReturnType
       linesFt: byKind,
     },
     quality: roof.quality ?? null,
+    structures: (roof.structures ?? []).map((st) => ({
+      outline: st.outline,
+      gapFt: st.gapFt,
+      faces: st.faces.length,
+      slopedSqFt: Math.round(st.faces.reduce((t, f) => t + f.slopedAreaSqFt, 0) * 10) / 10,
+      reasons: st.quality?.reasons ?? [],
+    })),
     check: { mainOk: check.mainOk, mainChecked: check.mainChecked, junkFaces: check.junkFaces, steepFaces: check.steepFaces, outlineOk: check.outlineOk, passed: check.passed },
   };
 }

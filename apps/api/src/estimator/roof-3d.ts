@@ -7,10 +7,11 @@ import {
   type Roof3d,
   type Roof3dPhoto,
   type Roof3dSnapshot,
+  type Roof3dStructure,
   roof3dSnapshotFresh,
   type SolarBuilding,
 } from '@roofline/shared';
-import { lngLatToUtm, reconstructRoof, toRoof3d, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
+import { lngLatToUtm, otherRoofParts, reconstructRoof, toRoof3d, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
 import type { AppDeps } from '../app.ts';
 import { type RoofLayers, SolarLayersUnavailableError } from '../providers/solar-layers.ts';
 import { encodeRgbPng } from './png.ts';
@@ -130,7 +131,8 @@ export function greenOf(layers: RoofLayers): Uint8Array | null {
  * The roof at `point` reconstructed on these layers, in [lng, lat]; null when no roof part comes near the point, it is
  * too small, no plane is found, or it runs off the layers' edge. `steep`: Google's segments show a plane steeper than
  * 18/12 (steepRoof). `building`: Google Solar's building for the point; when it is this home's, its box cuts the roof
- * out of a mask part it shares with the buildings it touches (a terrace).
+ * out of a mask part it shares with the buildings it touches (a terrace). Other roofs near it on the layers (a
+ * detached garage, a shed) come with it as `structures` (otherRoofParts), outside its own faces and totals.
  */
 export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boolean; building?: SolarBuilding | null } = {}): Roof3d | null {
   const zone = utmZoneOfEpsg(layers.epsg);
@@ -149,10 +151,19 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boo
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
   });
   if (local === null || local.clipped) return null;
-  return toRoof3d(local, (x, y) => utmToLngLat(zone, layers.originX + x, layers.originY + y), {
-    imageryQuality: layers.imageryQuality,
-    imageryDate: layers.imageryDate,
-  });
+  const toLngLat = (x: number, y: number) => utmToLngLat(zone, layers.originX + x, layers.originY + y);
+  const meta = { imageryQuality: layers.imageryQuality, imageryDate: layers.imageryDate };
+  const roof = toRoof3d(local, toLngLat, meta);
+  // Detached garages, sheds and carports on the same layers: offered beside the main roof, not added to it.
+  const structures: Roof3dStructure[] = [];
+  for (const other of otherRoofParts(raster, local)) {
+    const found = reconstructRoof(raster, other.at, { imageryQuality: layers.imageryQuality, maxPointDistM: 1 });
+    if (found === null || found.clipped || found.faces.length === 0) continue;
+    const r = toRoof3d(found, toLngLat, meta);
+    if (r.quality !== undefined && (r.quality.outlineIoU < 0.6 || r.quality.faceCoverage < 0.6)) continue;
+    structures.push({ outline: r.outline, faces: r.faces, lines: r.lines, ...(r.quality !== undefined ? { quality: r.quality } : {}), gapFt: Math.round(other.gapM * 3.280839895 * 10) / 10 });
+  }
+  return structures.length > 0 ? { ...roof, structures } : roof;
 }
 
 /**

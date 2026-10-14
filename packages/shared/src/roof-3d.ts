@@ -47,6 +47,22 @@ export type Roof3d = {
   imageryDate: string | null;
   /** How far to trust it (absent on reconstructions stored before it existed). */
   quality?: RoofQuality;
+  /**
+   * Other roofs on the same height map close to this one (a detached garage, a shed, a carport), reconstructed the
+   * same way, nearest first. Not in this roof's faces, lines or totals: offered so they can be added (a measurer such
+   * as EagleView counts them as further structures). Absent when there are none, or on older reconstructions.
+   */
+  structures?: Roof3dStructure[];
+};
+
+/** Another roof near the main one (see Roof3d.structures). */
+export type Roof3dStructure = {
+  outline: LngLat[];
+  faces: Roof3dFace[];
+  lines: Roof3dLine[];
+  quality?: RoofQuality;
+  /** Gap from the main roof's outline, feet. */
+  gapFt: number;
 };
 
 /** Why a reconstruction needs a person's review. */
@@ -58,6 +74,8 @@ export const ROOF_QUALITY_REASONS = [
   'trees',
   'differs-from-google',
   'joined-buildings',
+  'roof-hidden',
+  'low-attachment',
 ] as const;
 export type RoofQualityReason = (typeof ROOF_QUALITY_REASONS)[number];
 
@@ -66,7 +84,10 @@ export type RoofQualityReason = (typeof ROOF_QUALITY_REASONS)[number];
  * roof mask (intersection over union) and the share of its length within 0.5 m of the mask's edge; the share of the
  * mask its faces cover; the mean distance of the heights from their faces' planes, metres; the share of the roof under
  * tree crowns; faces drawn from their pixels because their polygon could not be built; a roof cut out of a mask part it
- * shares with the buildings it touches (a terrace, a semi-detached pair); and (added by the server, which has Google's
+ * shares with the buildings it touches (a terrace, a semi-detached pair); roof the height map's mask may have missed
+ * (tree crowns along the outline as high as its edge, or raised smooth ground next to it in Google's box for the
+ * building: 'roof-hidden'); a flat part at the outline no higher than the eaves it adjoins (a porch roof, a patio cover
+ * or a deck, which a measurer may leave out: 'low-attachment'); and (added by the server, which has Google's
  * own roof segments) main faces whose pitch or facing differ from the segment under them. Any reason: review it.
  */
 export type RoofQuality = {
