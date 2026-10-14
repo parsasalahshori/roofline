@@ -267,6 +267,21 @@
   font-weight: 600;
 }
 
+.note[data-tone="review"] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--ds-accent-line, rgba(217, 158, 0, 0.55));
+  border-radius: 8px;
+  background: var(--ds-accent-tint, #fff1d1);
+  color: var(--ds-accent-ink, #8a5a00);
+}
+
+.reason {
+  font-weight: 400;
+}
+
 .note[data-tone="reset"] {
   flex: none;
   color: var(--ds-info-ink, #1f55b3);

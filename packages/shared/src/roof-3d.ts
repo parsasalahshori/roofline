@@ -45,14 +45,58 @@ export type Roof3d = {
   imageryQuality: string | null;
   /** YYYY-MM-DD. */
   imageryDate: string | null;
+  /** How far to trust it (absent on reconstructions stored before it existed). */
+  quality?: RoofQuality;
 };
+
+/** Why a reconstruction needs a person's review. */
+export const ROOF_QUALITY_REASONS = ['coarse-imagery', 'outline-off', 'faces-patchy', 'rough-heights', 'trees'] as const;
+export type RoofQualityReason = (typeof ROOF_QUALITY_REASONS)[number];
+
+/**
+ * How far a reconstruction can be trusted: the imagery's quality (HIGH, MEDIUM); the outline's overlap with Google's
+ * roof mask (intersection over union) and the share of its length within 0.5 m of the mask's edge; the share of the
+ * mask its faces cover; the mean distance of the heights from their faces' planes, metres; the share of the roof under
+ * tree crowns; faces drawn from their pixels because their polygon could not be built. Any reason: review it.
+ */
+export type RoofQuality = {
+  imagery: string | null;
+  outlineIoU: number;
+  edgeFit: number;
+  faceCoverage: number;
+  meanResidualM: number;
+  treeShare: number;
+  fallbackFaces: number;
+  reasons: RoofQualityReason[];
+};
+
+/** Whether a reconstruction should be checked by a person before it is priced (any quality reason). */
+export function needsReview(roof: Roof3d | null | undefined): boolean {
+  return (roof?.quality?.reasons.length ?? 0) > 0;
+}
 
 /**
  * What a measurement keeps of one Google Solar Data Layers lookup (paid), so measuring the home again does not buy it
  * again: the roof reconstructed at `at`, or why there is none (`none`): Google has no HIGH or MEDIUM imagery there,
  * or no roof near the point.
  */
-export type Roof3dSnapshot = { fetchedAt: string; at: LngLat; roof: Roof3d | null; none?: 'no-imagery' | 'no-roof' };
+export type Roof3dSnapshot = { fetchedAt: string; at: LngLat; roof: Roof3d | null; none?: 'no-imagery' | 'no-roof'; photo?: Roof3dPhoto | null };
+
+/**
+ * Google's own aerial photo of the roof (the Data Layers photo the height map was made from: true ortho, so the 3D
+ * roof sits exactly on it), stored as a PNG under `key` in the file store. `corners` are [lng, lat] of its top-left,
+ * top-right, bottom-right and bottom-left corners (a UTM grid is slightly turned against north).
+ */
+export type Roof3dPhoto = { key: string; corners: [LngLat, LngLat, LngLat, LngLat]; width: number; height: number };
+
+/** How long Google's Solar data (and the photo) may be kept and shown: the Solar API terms allow 30 days of caching. */
+export const SOLAR_DATA_DAYS = 30;
+
+/** Whether a snapshot is within the days its Solar data may be kept (at `now`). */
+export function solarDataCurrent(snapshot: { fetchedAt: string } | null | undefined, now: Date): boolean {
+  const at = Date.parse(snapshot?.fetchedAt ?? '');
+  return Number.isFinite(at) && now.getTime() - at <= SOLAR_DATA_DAYS * 86_400_000;
+}
 
 /** How long a home's reconstructed roof is reused. */
 export const ROOF_3D_CACHE_DAYS = 30;

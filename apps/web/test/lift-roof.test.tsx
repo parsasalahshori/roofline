@@ -8,7 +8,8 @@ import { cardCells, cardNumbers, MeasureCard } from '../src/features/measure/lif
 import { panelLines, squaresFor, wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
 import { ProposalPanel } from '../src/features/measure/lift/ProposalPanel.tsx';
 import { facetLetter, facetsData, lineKinds, linesData, readRoof } from '../src/features/measure/lift/roofModel.ts';
-import { ringCenter, scaleBarFor } from '../src/features/measure/lift/RoofView.tsx';
+import { footprintsShown, ringCenter, scaleBarFor } from '../src/features/measure/lift/RoofView.tsx';
+import { roofPhotoFor } from '../src/features/measure/lift/roofPhoto.ts';
 import { shownShare, stageAt, type ScanSession } from '../src/features/measure/lift/scan.ts';
 import type { MeasurementPreview, MeasurementView, PreviewOption } from '../src/features/measure/types.ts';
 import { gableRoof } from './roof-model-fixture.ts';
@@ -193,6 +194,36 @@ describe('the measure card', () => {
     const manual = view({ pitchSource: 'manual' });
     rerender(<MeasureCard m={manual} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />);
     expect(screen.queryByText(legal.solarPitchAttribution)).toBeNull();
+  });
+
+  it('a roof measured in 3D says so, and says plainly when it needs review', () => {
+    const roof3d = { version: 1 as const, outline: ring, faces: [], lines: [], pixelSizeM: 0.1, imageryQuality: 'HIGH', imageryDate: null };
+    const good = view({ pitchSource: 'solar-3d', roof3d, needsReview: null });
+    const numbers = cardNumbers(good, good.estimate, gableRoof(ring as [number, number][]), null);
+    const { rerender } = render(
+      <MeasureCard m={good} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />,
+    );
+    expect(screen.getByText(legal.solar3dAttribution)).toBeTruthy();
+    expect(screen.queryByText(liftMeasure.needsReview)).toBeNull();
+    const shaky = view({ pitchSource: 'solar-3d', roof3d, needsReview: { reasons: ['trees', 'outline-off'] } });
+    rerender(<MeasureCard m={shaky} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />);
+    expect(screen.getByText(liftMeasure.needsReview)).toBeTruthy();
+    expect(screen.getByText(liftMeasure.reviewReason.trees)).toBeTruthy();
+    expect(screen.getByText(liftMeasure.reviewReason['outline-off'])).toBeTruthy();
+  });
+
+  it("shows Google's roof photo only over Google's tiles, and credits Microsoft only while its outlines show", () => {
+    const corners: [[number, number], [number, number], [number, number], [number, number]] = [ring[3]!, ring[2]!, ring[1]!, ring[0]!];
+    const m = view({ roofPhoto: { url: '/api/measurements/m1/roof-photo', corners } });
+    expect(roofPhotoFor(m, true)).toEqual({ url: '/api/measurements/m1/roof-photo', corners });
+    expect(roofPhotoFor(m, false)).toBeNull();
+    expect(roofPhotoFor(view(), true)).toBeNull();
+    const roof3d = { version: 1 as const, outline: ring, faces: [], lines: [], pixelSizeM: 0.1, imageryQuality: 'HIGH', imageryDate: null };
+    const shed = { footprintId: '2', included: false, areaSqFt: 120, ring };
+    expect(footprintsShown(view(), false)).toBe(true);
+    expect(footprintsShown(view({ roof3d }), false)).toBe(false);
+    expect(footprintsShown(view({ roof3d, structures: [{ ...shed, footprintId: '1', included: true, main: true }] }), true)).toBe(false);
+    expect(footprintsShown(view({ roof3d, structures: [{ ...shed, footprintId: '1', included: true, main: true }, shed] }), true)).toBe(true);
   });
 
   it('Adjust opens the controls', () => {

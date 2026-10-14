@@ -45,7 +45,7 @@ import { z } from 'zod';
 import type { Outline, InstantEstimate, LngLat, Ring } from './roof.ts';
 import type { RoofModel, RoofPlane } from './roof-model.ts';
 import type { PitchSource } from './solar.ts';
-import type { Roof3d } from './roof-3d.ts';
+import type { Roof3d, RoofQualityReason } from './roof-3d.ts';
 import type { AddOn } from './tiers.ts';
 import type { Scope, Calculation, QuoteLine } from './pricing.ts';
 
@@ -71,6 +71,16 @@ export type MeasurementView = {
    * then its faces and lines while the outline is still the reconstruction's own (see measureRoof).
    */
   roof3d?: Roof3d | null;
+  /**
+   * Google's true-ortho photo the 3D roof was measured on, for the roof view (owner and office only): `url` serves the
+   * PNG, `corners` are its top-left, top-right, bottom-right and bottom-left [lng, lat]. Null or absent otherwise.
+   */
+  roofPhoto?: { url: string; corners: [LngLat, LngLat, LngLat, LngLat] } | null;
+  /**
+   * The 3D roof falls short of the quality targets (see RoofQuality): a person should check it before pricing it.
+   * Null or absent when it does not (or the roof is not a 3D one).
+   */
+  needsReview?: { reasons: RoofQualityReason[] } | null;
 };
 export type ProposalOptionView = {
   id: string; tier: Tier; name: string; highlights: string[]; scope: Scope; addOns: AddOn[]; calculation: Calculation;

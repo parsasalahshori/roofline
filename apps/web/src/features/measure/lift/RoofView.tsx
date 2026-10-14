@@ -441,6 +441,15 @@ function Notices({ roof }: { roof: NoticeState }) {
   );
 }
 
+/**
+ * Whether Microsoft's building outlines are on the photo: always for a roof measured from them; for a roof measured in
+ * 3D (its outline is Google's) only while Adjust shows the other buildings' outlines.
+ */
+export function footprintsShown(m: MeasurementView, editing: boolean): boolean {
+  if (m.roof3d == null) return true;
+  return editing && m.structures.some((s) => s.main !== true);
+}
+
 /** The roof as MeasureWindow's one editor draws it: this view places the map's container and what goes over it. */
 function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: MeasureSlots; roof: RoofSession; scan: ScanSession; captured: Date | null }) {
   const { model, editing, quote } = slots;
@@ -471,7 +480,7 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
         <ScaleAndNorth latitude={m.center[1]} zoom={zoom} />
         <p className={styles.credits}>
           <span>{usesGoogleImagery() ? legal.googleImageryAttribution : usesFreeAerial({ maptilerKey: import.meta.env.VITE_MAPTILER_KEY }) ? legal.imageryAttribution : legal.maptilerImageryAttribution}</span>
-          <span>{legal.footprintAttribution}</span>
+          {footprintsShown(m, editing) ? <span>{legal.footprintAttribution}</span> : null}
         </p>
         {/* The notices at the top and the card at the bottom share one column, so they can never overlap */}
         <div className={styles.overlay}>

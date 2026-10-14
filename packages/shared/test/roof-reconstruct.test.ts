@@ -62,6 +62,31 @@ describe('reconstructRoof on synthetic height maps', () => {
     });
   }
 
+  it('a tree crown overhanging the roof: no steep sliver, the faces and lines as they are, the tree share reported', () => {
+    // A broad crown 3 m above the hip roof, over its north eave (house frame 2, 4: 1 m in from the eave).
+    for (const turnDeg of [17, 45]) {
+      const syn = synthesize(HIP, { turnDeg, seed: 3, trees: 0, overhangAt: { x: 2, y: 4 } });
+      checkAgainstTruth(syn);
+      const roof = reconstructRoof(syn.raster, syn.point, { imageryQuality: 'HIGH' })!;
+      expect(roof.quality.treeShare).toBeGreaterThan(0.02);
+      expect(roof.faces.every((f) => f.pitchX12 < 8)).toBe(true);
+    }
+    // Without the photo (no green), the crown is still not a face.
+    const bare = synthesize(HIP, { turnDeg: 17, seed: 3, trees: 0, overhangAt: { x: 2, y: 4 } });
+    checkAgainstTruth({ ...bare, raster: { ...bare.raster, green: null } });
+  });
+
+  it('reports its quality: a clean roof needs no review, coarse imagery does', () => {
+    const syn = synthesize(GABLE, { turnDeg: 17 });
+    const clean = reconstructRoof(syn.raster, syn.point, { imageryQuality: 'HIGH' })!.quality;
+    expect(clean.reasons).toEqual([]);
+    expect(clean.outlineIoU).toBeGreaterThan(0.97);
+    expect(clean.edgeFit).toBe(1);
+    expect(clean.faceCoverage).toBeGreaterThan(0.97);
+    expect(clean.meanResidualM).toBeLessThan(0.1);
+    expect(reconstructRoof(syn.raster, syn.point, { imageryQuality: 'MEDIUM' })!.quality.reasons).toEqual(['coarse-imagery']);
+  });
+
   it('classifies the gable: two eaves along the ridge, four rakes up the ends', () => {
     const roof = reconstructRoof(...args(synthesize(GABLE, { turnDeg: 30 })))!;
     const eaves = roof.lines.filter((l) => l.kind === 'eave');

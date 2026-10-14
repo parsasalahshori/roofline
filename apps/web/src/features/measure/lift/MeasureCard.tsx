@@ -243,6 +243,16 @@ export function MeasureCard({
             {legal.solarPitchAttribution}
           </p>
         ) : null}
+        {m.needsReview != null && m.kind !== 'exact' && !scanning ? (
+          <div className={styles.note} data-tone="review" role="status">
+            <strong>{liftMeasure.needsReview}</strong>
+            {m.needsReview.reasons.map((r) => (
+              <span key={r} className={styles.reason}>
+                {liftMeasure.reviewReason[r]}
+              </span>
+            ))}
+          </div>
+        ) : null}
         {m.roof3d != null && m.kind !== 'exact' && !scanning ? (
           <p className={styles.note} data-source="solar-3d">
             {legal.solar3dAttribution}

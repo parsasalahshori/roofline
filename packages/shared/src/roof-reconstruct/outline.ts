@@ -18,9 +18,12 @@ export type OutlineParams = {
   minEdgeM: number;
   /** A slanted edge shorter than this between two square edges is a clipped corner, metres. */
   chamferM: number;
+  /** Slanted edges shorter than this in a row, all within zigzagOffM of one line, are that one line, metres. */
+  zigzagM: number;
+  zigzagOffM: number;
 };
 
-export const DEFAULT_OUTLINE_PARAMS: OutlineParams = { simplifyM: 0.3, snapDeg: 12, mergeOffsetM: 0.3, minEdgeM: 0.25, chamferM: 1.5 };
+export const DEFAULT_OUTLINE_PARAMS: OutlineParams = { simplifyM: 0.3, snapDeg: 12, mergeOffsetM: 0.3, minEdgeM: 0.25, chamferM: 1.5, zigzagM: 3, zigzagOffM: 0.7 };
 
 /** The outer pixel boundary of a mask (one region), as a counter-clockwise ring of lattice corners in metres. */
 export function maskBoundary(g: Grid, m: Mask, s: number): XY[] {
@@ -150,6 +153,40 @@ export function squareOutline(boundary: readonly XY[], prm: OutlineParams = DEFA
         changed = true;
         break;
       }
+    }
+  }
+  // A zig-zag (two or more short slanted edges in a row, from trees or a ragged mask) that stays close to one straight
+  // line is that line: one edge, squared when it runs near a main direction.
+  for (let changed = true, guard = 0; changed && guard < 50 && edges.length > 3; guard++) {
+    changed = false;
+    const short = (e: Edge) => !e.snapped && dist(e.pts[0]!, e.pts.at(-1)!) < prm.zigzagM;
+    for (let k = 0; k < edges.length && !changed; k++) {
+      if (!short(edges[k]!) || short(edges[(k + edges.length - 1) % edges.length]!)) continue;
+      let end = k;
+      while (end - k + 1 < edges.length - 2 && short(edges[(end + 1) % edges.length]!)) end++;
+      if (end === k) continue;
+      const run = Array.from({ length: end - k + 1 }, (_, j) => edges[(k + j) % edges.length]!);
+      const pts = run.flatMap((e) => e.pts);
+      const line = fitLine(pts);
+      if (line === null) continue;
+      const far = Math.max(...pts.map((p) => Math.abs((p.x - line.p.x) * line.d.y - (p.y - line.p.y) * line.d.x)));
+      if (far > prm.zigzagOffM) continue;
+      const a = pts[0]!;
+      const b = pts.at(-1)!;
+      const phi = Math.atan2(b.y - a.y, b.x - a.x);
+      let rel = (phi - axis) % (Math.PI / 2);
+      if (rel < 0) rel += Math.PI / 2;
+      if (rel > Math.PI / 4) rel -= Math.PI / 2;
+      const snapped = Math.abs(rel) <= snap;
+      const ang = snapped ? phi - rel : phi;
+      const merged: Edge = { line: refit(pts, { x: Math.cos(ang), y: Math.sin(ang) }, snapped), pts, snapped };
+      const count = run.length;
+      if (k + count <= edges.length) edges.splice(k, count, merged);
+      else {
+        const wrap = k + count - edges.length;
+        edges = [merged, ...edges.slice(wrap, k)];
+      }
+      changed = true;
     }
   }
   // A short slanted edge between two square edges is a rounded or clipped corner in the mask (a tree, a gutter):

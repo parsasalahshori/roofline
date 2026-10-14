@@ -243,6 +243,55 @@ describe('Measure with the roof in 3D', () => {
     expect(t.solarLayers.calls).toHaveLength(1);
   });
 
+  it("Google's true-ortho photo is kept with the 3D roof and served to the owner and office only", async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    t.solar.set(INSIDE, SOLAR_HOUSE);
+    withHouseLayers();
+    const owner = await who.as('owner');
+    const propertyId = await homeAt(67, INSIDE);
+    const view = await measure(owner, { propertyId });
+
+    expect(view.needsReview).toBeNull();
+    expect(view.roofPhoto?.url).toBe(`/api/measurements/${view.id}/roof-photo`);
+    // Its corners frame the roof: every outline corner lies inside them.
+    const [tl, tr, br, bl] = view.roofPhoto!.corners;
+    for (const [lng, lat] of view.outline![0]!) {
+      expect(lng).toBeGreaterThan(Math.min(tl[0], bl[0]));
+      expect(lng).toBeLessThan(Math.max(tr[0], br[0]));
+      expect(lat).toBeGreaterThan(Math.min(bl[1], br[1]));
+      expect(lat).toBeLessThan(Math.max(tl[1], tr[1]));
+    }
+    const photo = await owner.get(view.roofPhoto!.url);
+    expect(photo.status).toBe(200);
+    expect(photo.headers['content-type']).toBe('image/png');
+    expect((photo.body as Buffer).subarray(1, 4).toString('ascii')).toBe('PNG');
+    // Measuring again reuses it: no new request, the same photo.
+    const again = await measure(owner, { propertyId });
+    expect(t.solarLayers.calls).toHaveLength(1);
+    expect(again.roofPhoto?.corners).toEqual(view.roofPhoto!.corners);
+    // A rep may open the measurement, without the photo.
+    const rep = await who.as('rep');
+    expect((await rep.get(view.roofPhoto!.url)).status).toBe(403);
+    // After the 30 days the Solar API terms allow, it is no longer shown or served.
+    t.clock.set(new Date(NOW.getTime() + 31 * 86_400_000));
+    const later = await new Actors(t).as('owner');
+    const read = await later.get(`/api/measurements/${view.id}`);
+    expect(read.status).toBe(200);
+    expect(read.body.roofPhoto).toBeNull();
+    expect((await later.get(view.roofPhoto!.url)).status).toBe(404);
+  });
+
+  it('a 3D roof that misses a quality target is marked for review', async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    t.solar.set(INSIDE, SOLAR_HOUSE);
+    const layers = hipLayers(HOUSE, { quality: 'MEDIUM' });
+    t.solarLayers.set(layersCover(layers), layers);
+    const owner = await who.as('owner');
+    const view = await measure(owner, { propertyId: await homeAt(68, INSIDE) });
+    expect(view.pitchSource).toBe('solar-3d');
+    expect(view.needsReview).toEqual({ reasons: ['coarse-imagery'] });
+  });
+
   it('plan areas add up: the sloped total is the faces\' measured areas', async () => {
     await loadNE({ sourceRef: 'house', ring: HOUSE });
     t.solar.set(INSIDE, SOLAR_HOUSE);

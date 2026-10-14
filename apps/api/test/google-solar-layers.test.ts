@@ -51,7 +51,27 @@ const LAYERS_ANSWER = {
   imageryQuality: 'HIGH',
 };
 
-function googleAnswering(o: { status?: number; body?: unknown; coarseMask?: boolean; fileStatus?: number } = {}, seen: string[] = []): typeof fetch {
+/** A 3-band byte photo on the height map's grid: red 200, green 100 + column, blue 50. */
+function rgbTiff(): ArrayBuffer {
+  const data = new Uint8Array(W * H * 3);
+  for (let i = 0; i < W * H; i++) {
+    data[i * 3] = 200;
+    data[i * 3 + 1] = 100 + (i % W);
+    data[i * 3 + 2] = 50;
+  }
+  return writeArrayBuffer(data, {
+    width: W,
+    height: H,
+    SamplesPerPixel: 3,
+    BitsPerSample: [8, 8, 8],
+    PhotometricInterpretation: 2,
+    ModelPixelScale: [0.1, 0.1, 0],
+    ModelTiepoint: [0, 0, 0, ORIGIN[0], ORIGIN[1], 0],
+    ProjectedCSTypeGeoKey: 32615,
+  } as Parameters<typeof writeArrayBuffer>[1]);
+}
+
+function googleAnswering(o: { status?: number; body?: unknown; coarseMask?: boolean; fileStatus?: number; rgbStatus?: number } = {}, seen: string[] = []): typeof fetch {
   return (async (input: string | URL | Request) => {
     const url = String(input);
     seen.push(url);
@@ -59,17 +79,18 @@ function googleAnswering(o: { status?: number; body?: unknown; coarseMask?: bool
       return new Response(JSON.stringify(o.body ?? LAYERS_ANSWER), { status: o.status ?? 200, headers: { 'content-type': 'application/json' } });
     }
     if (o.fileStatus !== undefined) return new Response('nope', { status: o.fileStatus });
-    const bytes = url.includes('dsm123') ? dsmTiff() : maskTiff(o.coarseMask);
+    if (url.includes('rgb123') && o.rgbStatus !== undefined) return new Response('nope', { status: o.rgbStatus });
+    const bytes = url.includes('dsm123') ? dsmTiff() : url.includes('rgb123') ? rgbTiff() : maskTiff(o.coarseMask);
     return new Response(bytes, { status: 200, headers: { 'content-type': 'image/tiff' } });
   }) as typeof fetch;
 }
 
 describe('Google Solar Data Layers', () => {
-  test('asks once (MEDIUM floor: HIGH where Google has it), downloads only the height map and the mask, and reads them', async () => {
+  test('asks once (MEDIUM floor: HIGH where Google has it), downloads the height map, mask and photo, and reads them', async () => {
     const seen: string[] = [];
     const layers = await new GoogleSolarLayers({ apiKey: KEY, fetch: googleAnswering({}, seen) }).roofLayers([-92.311074, 34.753229], 22.4);
 
-    expect(seen).toHaveLength(3);
+    expect(seen).toHaveLength(4);
     const ask = new URL(seen[0]!);
     expect(ask.origin + ask.pathname).toBe('https://solar.googleapis.com/v1/dataLayers:get');
     expect(ask.searchParams.get('location.latitude')).toBe('34.7532290');
@@ -79,9 +100,9 @@ describe('Google Solar Data Layers', () => {
     expect(ask.searchParams.get('requiredQuality')).toBe('MEDIUM');
     expect(ask.searchParams.get('pixelSizeMeters')).toBe('0.1');
     expect(ask.searchParams.get('key')).toBe(KEY);
-    // The files need the key too; the photo is never downloaded.
+    // The files need the key too.
     const files = seen.slice(1).map((u) => new URL(u));
-    expect(files.map((u) => u.searchParams.get('id')).sort()).toEqual(['dsm123', 'mask123']);
+    expect(files.map((u) => u.searchParams.get('id')).sort()).toEqual(['dsm123', 'mask123', 'rgb123']);
     for (const u of files) expect(u.searchParams.get('key')).toBe(KEY);
 
     expect(layers).not.toBeNull();
@@ -95,6 +116,15 @@ describe('Google Solar Data Layers', () => {
     expect(Array.from(layers!.raster.mask.slice(0, W))).toEqual([0, 0, 0, 1, 1, 1]);
     expect(layers!.imageryQuality).toBe('HIGH');
     expect(layers!.imageryDate).toBe('2023-10-16');
+    // The photo, 3 bytes a pixel on its grid.
+    expect(layers!.photo).toMatchObject({ width: W, height: H, originX: ORIGIN[0], originY: ORIGIN[1] });
+    expect(Array.from(layers!.photo!.rgb.slice(0, 6))).toEqual([200, 100, 50, 200, 101, 50]);
+  });
+
+  test('a photo that does not come costs nothing else: the layers come without it', async () => {
+    const layers = await new GoogleSolarLayers({ apiKey: KEY, fetch: googleAnswering({ rgbStatus: 500 }) }).roofLayers([-92.3, 34.75], 20);
+    expect(layers).not.toBeNull();
+    expect(layers!.photo).toBeNull();
   });
 
   test('a mask on another grid is resampled onto the height map', async () => {

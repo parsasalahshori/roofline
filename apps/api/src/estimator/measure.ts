@@ -285,11 +285,15 @@ function sameBuilding(roof: Roof3d, ring: Ring): boolean {
  * The 3D roof to measure from: the snapshot's roof when it is the main footprint's building (or there is no footprint);
  * else the roof under the footprint's middle on layers already bought, when there is one. `snapshot` is what to keep.
  */
-function roof3dFor(deps: AppDeps, snapshot: Roof3dSnapshot | null, main: { ring: Ring } | undefined): { roof: Roof3d | null; snapshot: Roof3dSnapshot | null } {
+async function roof3dFor(
+  deps: AppDeps,
+  snapshot: Roof3dSnapshot | null,
+  main: { ring: Ring } | undefined,
+): Promise<{ roof: Roof3d | null; snapshot: Roof3dSnapshot | null }> {
   const roof = snapshot?.roof ?? null;
   if (roof === null || main === undefined || sameBuilding(roof, main.ring)) return { roof, snapshot };
   // The address point was on another roof than the footprint picked: that building, if the layers bought hold it.
-  const again = roof3dOnBoughtLayers(deps, cornerMean(main.ring));
+  const again = await roof3dOnBoughtLayers(deps, cornerMean(main.ring));
   if (again?.roof != null && sameBuilding(again.roof, main.ring)) return { roof: again.roof, snapshot: again };
   return { roof: null, snapshot };
 }
@@ -523,7 +527,7 @@ export async function measureProperty(
   // Solar answers for the building nearest the address point, which can be the neighbour of the outline picked here.
   const solar = picked === undefined ? askedSolar : await solarCovering(deps, askedSolar, picked.ring);
   // The roof in 3D, when Google has it for this building: its real outline, faces and lines.
-  const r3 = roof3dFor(deps, await roof3dAsked, picked);
+  const r3 = await roof3dFor(deps, await roof3dAsked, picked);
 
   return asNotFound(() =>
     withTenant(deps.pools, ctx, async (tx) => {
@@ -565,7 +569,7 @@ async function measureOnFootprint(
     null,
   );
   const solar = await solarCovering(deps, await solarAsked, picked.ring);
-  const r3 = roof3dFor(deps, await roof3dAsked, picked);
+  const r3 = await roof3dFor(deps, await roof3dAsked, picked);
   return asNotFound(() =>
     withTenant(deps.pools, ctx, async (tx) => {
       const settings = await settingsFor(tx, ctx);

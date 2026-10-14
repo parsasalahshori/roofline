@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { carryExcluded, cleanExcluded, isRoof3d, measureRoof, sameOutline, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type Roof3dInput, type Roof3dSnapshot, type RoofModel, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
+import { carryExcluded, cleanExcluded, isRoof3d, measureRoof, sameOutline, solarDataCurrent, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type Roof3dInput, type Roof3dSnapshot, type RoofModel, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
 import { jobs, measurements, properties, proposals } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getProperty, type PropertyRow } from './properties.ts';
@@ -276,8 +276,11 @@ export async function createMeasurement(tx: Tx, ctx: TenantContext, m: NewMeasur
   return view!;
 }
 
-/** One measurement the member may see (through its property), as the API answers it; null otherwise. */
-export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Promise<MeasurementView | null> {
+/**
+ * One measurement the member may see (through its property), as the API answers it; null otherwise. `now` decides
+ * whether Google's photo of a 3D roof may still be shown (30 days).
+ */
+export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string, now: Date = new Date()): Promise<MeasurementView | null> {
   const [found] = await tx
     .select({
       row: measurements,
@@ -311,6 +314,7 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
   const estimate: InstantEstimate = keepsStoredNumbers(row) ? storedEstimate(row, fromOutline) : fromOutline;
 
   const center: LngLat = found.propertyGeom ?? (outline?.[0] ? ringCentroid(outline[0]) : US_MAP_CENTER);
+  const in3d = roof3d !== null && (outline ?? []).some((ring) => sameOutline(ring, roof3d.roof));
 
   return {
     id: row.id,
@@ -335,7 +339,13 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
     pitchPlanes: planes,
     excludedFacets: measured.roof?.excluded ?? [],
     // Only while the roof drawn is the reconstruction (an outline moved by hand gets the outline's roof instead).
-    roof3d: roof3d !== null && (outline ?? []).some((ring) => sameOutline(ring, roof3d.roof)) ? roof3d.roof : null,
+    roof3d: in3d ? roof3d.roof : null,
+    // Google's photo of it, while the roof is the reconstruction and the photo may still be kept (Solar API terms).
+    roofPhoto:
+      in3d && row.roof3d?.photo != null && solarDataCurrent(row.roof3d, now)
+        ? { url: `/api/measurements/${row.id}/roof-photo`, corners: row.roof3d.photo.corners }
+        : null,
+    needsReview: in3d && (roof3d.roof.quality?.reasons.length ?? 0) > 0 ? { reasons: [...roof3d.roof.quality!.reasons] } : null,
   };
 }
 
@@ -351,6 +361,17 @@ function measuredPitch(source: PitchSource | null): boolean {
 function roof3dOf(row: { pitchSource: PitchSource | null; roof3d: Roof3dSnapshot | null }): Roof3dInput | null {
   const roof = row.roof3d?.roof;
   return isRoof3d(roof) ? { roof, ownPitch: row.pitchSource === 'solar-3d' } : null;
+}
+
+/** The 3D roof snapshot kept on a measurement the member may see: undefined when they may not see it (or it does not exist). */
+export async function measurementRoof3d(tx: Tx, ctx: TenantContext, id: string): Promise<Roof3dSnapshot | null | undefined> {
+  const [row] = await tx
+    .select({ roof3d: measurements.roof3d })
+    .from(measurements)
+    .innerJoin(properties, and(eq(properties.id, measurements.propertyId), eq(properties.companyId, measurements.companyId)))
+    .where(and(eq(measurements.id, id), eq(measurements.companyId, ctx.companyId), propertyScope(ctx)))
+    .limit(1);
+  return row === undefined ? undefined : (row.roof3d ?? null);
 }
 
 /**

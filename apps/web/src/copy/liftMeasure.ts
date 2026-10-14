@@ -49,6 +49,15 @@ export const liftMeasure = {
   measuredIn: (s: number) => `in ${s.toFixed(1)} seconds`,
   remeasure: 'Re-measure',
   outlineOnly: 'Facets are not split for this roof yet. The numbers come from its outline.',
+  /** A roof measured in 3D that missed a quality target. */
+  needsReview: 'Needs review: check this roof against the photo before you price it.',
+  reviewReason: {
+    'coarse-imagery': 'Google only has lower-resolution imagery here.',
+    'outline-off': "The outline doesn't follow Google's roof outline closely.",
+    'faces-patchy': "Some sections couldn't be traced cleanly.",
+    'rough-heights': "The roof's surface is uneven in Google's height map.",
+    trees: 'Trees cover part of the roof.',
+  },
   facetLabel: (letter: string, sqFt: number, pitch: string) => `Facet ${letter}, ${sqFt.toLocaleString()} sq ft, ${pitch} pitch`,
   /** A facet label is a button: pressed means the section is in the quote. */
   facetToggle: (letter: string, sqFt: number, pitch: string) => `Section ${letter} in the quote, ${sqFt.toLocaleString()} sq ft, ${pitch} pitch`,

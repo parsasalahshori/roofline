@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getMeasurement, updateMeasurement, withTenant, type MeasurementPatch } from '@roofline/db';
-import { MAX_EXCLUDED_FACETS, outlineProblem, type LngLat, type Outline, type Ring } from '@roofline/shared';
+import { getMeasurement, measurementRoof3d, updateMeasurement, withTenant, type MeasurementPatch, type TenantContext } from '@roofline/db';
+import { MAX_EXCLUDED_FACETS, type MeasurementView, outlineProblem, solarDataCurrent, type LngLat, type Outline, type Ring } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { aerialMeasure } from '../estimator/aerial.ts';
 import { requestExactReport } from '../estimator/exact-report.ts';
@@ -165,6 +165,16 @@ function checkExcludedFacets(raw: unknown): string[] {
  * Rep visibility and company isolation are enforced by the repository, so a measurement the caller
  * may not see is a 404.
  */
+/** Google's roof photo is for the owner and office (as ordering reports is); others see the map's own photos. */
+function seesRoofPhoto(ctx: TenantContext): boolean {
+  return ctx.role === 'owner' || ctx.role === 'office';
+}
+
+/** The view as this member may have it: without the roof photo unless they may see it. */
+function forViewer(view: MeasurementView, ctx: TenantContext): MeasurementView {
+  return seesRoofPhoto(ctx) || view.roofPhoto == null ? view : { ...view, roofPhoto: null };
+}
+
 export function measurementRoutes(deps: AppDeps): Router {
   const { pools, clock } = deps;
   const router = Router();
@@ -177,7 +187,7 @@ export function measurementRoutes(deps: AppDeps): Router {
       ...(body.address !== undefined ? { address: body.address } : {}),
       jobId: body.jobId ?? null,
     });
-    res.status(201).json(view);
+    res.status(201).json(forViewer(view, ctx));
   });
 
   // The Measure search's head start: the address is looked up and the area's outlines and Google Solar start
@@ -195,9 +205,25 @@ export function measurementRoutes(deps: AppDeps): Router {
   router.get('/:id', async (req, res) => {
     const { ctx } = req;
     const id = idParam(req.params.id);
-    const view = await withTenant(pools, ctx, (tx) => getMeasurement(tx, ctx, id));
+    const view = await withTenant(pools, ctx, (tx) => getMeasurement(tx, ctx, id, clock.now()));
     if (view === null) throw new AppError(404, MESSAGES.notFound);
-    res.json(view);
+    res.json(forViewer(view, ctx));
+  });
+
+  // Google's true-ortho photo of a roof measured in 3D (owner and office), a PNG kept with the measurement's 3D roof
+  // for the 30 days the Solar API terms allow; 404 when there is none (or no longer).
+  router.get('/:id/roof-photo', async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(req.params.id);
+    if (!seesRoofPhoto(ctx)) throw new AppError(403, MESSAGES.roleCannot);
+    const snapshot = await withTenant(pools, ctx, (tx) => measurementRoof3d(tx, ctx, id));
+    const photo = snapshot?.photo ?? null;
+    if (photo === null || !solarDataCurrent(snapshot, clock.now())) throw new AppError(404, MESSAGES.notFound);
+    const bytes = await deps.objectStore.get(photo.key);
+    if (bytes === null) throw new AppError(404, MESSAGES.notFound);
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(Buffer.from(bytes));
   });
 
   // The home and the three options as Make proposal would price them now (prices only for those who see money)
@@ -227,7 +253,7 @@ export function measurementRoutes(deps: AppDeps): Router {
     if (result === 'no_structure') throw new AppError(400, NO_STRUCTURE_MESSAGE, 'includedStructures');
     if (result === 'unknown_facet') throw new AppError(400, FACETS_MESSAGE, 'excludedFacets');
     if (result === 'no_facets') throw new AppError(400, NO_FACETS_MESSAGE, 'excludedFacets');
-    res.json(result);
+    res.json(forViewer(result, ctx));
   });
 
   router.post('/:id/exact-report', async (req, res) => {

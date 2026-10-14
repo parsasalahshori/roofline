@@ -28,3 +28,6 @@ scripts/eval-results/
 # The demo smoke's output (DEMO_VIDEO=1 records into it)
 demo-artifacts/
 .demo-files/
+
+# Google Solar files kept by the roof-3d-check script (Solar API terms: delete after 30 days)
+.roof-3d-cache/

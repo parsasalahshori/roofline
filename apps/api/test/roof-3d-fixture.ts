@@ -14,7 +14,7 @@ function zoneOf(lng: number, lat: number): UtmZone {
 }
 
 /** A hip roof at `pitchX12` over the rectangle `ring` (its sides along the meridians and parallels), 4 m eaves. */
-export function hipLayers(ring: Ring, o: { pitchX12?: number; marginM?: number; quality?: string } = {}): RoofLayers {
+export function hipLayers(ring: Ring, o: { pitchX12?: number; marginM?: number; quality?: string; photo?: boolean } = {}): RoofLayers {
   const lngs = ring.map((p) => p[0]);
   const lats = ring.map((p) => p[1]);
   const lng0 = Math.min(...lngs);
@@ -71,8 +71,12 @@ export function hipLayers(ring: Ring, o: { pitchX12?: number; marginM?: number; 
       dsm[r * width + c] = sum / n + (rnd() - 0.5) * 0.04;
     }
   }
+  // Google's photo: a grey roof on green grass.
+  const rgb = new Uint8Array(width * height * 3);
+  for (let i = 0; i < width * height; i++) rgb.set(mask[i] === 1 ? [150, 140, 135] : [70, 120, 60], i * 3);
   return {
     raster: { width, height, pixelSizeM: s, dsm, mask },
+    photo: o.photo === false ? null : { width, height, pixelSizeM: s, originX, originY, rgb },
     epsg: (zone.south ? 32700 : 32600) + zone.zone,
     originX,
     originY,

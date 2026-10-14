@@ -1,6 +1,6 @@
 // Roof planes from a height map: sequential RANSAC with local candidates, every roof pixel given to a plane by a
 // residual-ordered flood, near-coplanar neighbours merged, small interior pieces dissolved into their neighbours.
-import { components, countSet, erode, type Grid, type Mask, MinHeap, open } from './raster.ts';
+import { components, countSet, dilate, erode, type Grid, type Mask, MinHeap, open } from './raster.ts';
 
 /** z = a * x + b * y + c, in metres; x east, y north. */
 export type Plane = { a: number; b: number; c: number };
@@ -10,7 +10,7 @@ export type PlaneParams = {
   tolM: number;
   /** A plane needs at least this much area of points on it, square metres. */
   minPlaneM2: number;
-  /** Steeper (x/12) is a wall or a tree, not a roof plane. */
+  /** Steeper (x/12) is a wall or a tree, not a roof plane (18/12 unless Google's own segments show a steeper roof). */
   maxPitchX12: number;
   maxPlanes: number;
   /** RANSAC candidates per plane, and how many of the best are checked for their connected patch. */
@@ -28,7 +28,7 @@ export type PlaneParams = {
   mergeFitM: number;
   /** A face smaller than this (square metres) that is mostly inside the roof is merged into its neighbours. */
   smallFaceM2: number;
-  /** Any face smaller than this is merged into its neighbours. */
+  /** Any face smaller than this (about 25 sq ft) is merged into its neighbours. */
   tinyFaceM2: number;
   /** A face whose heights its neighbours' planes explain within this (metres, over 80% of it) is dissolved... */
   explainedM: number;
@@ -38,12 +38,19 @@ export type PlaneParams = {
   /** Faces under explainedSmallM2 (square metres) are explained within explainedSmallM (metres). */
   explainedSmallM: number;
   explainedSmallM2: number;
+  /** A face narrower than this on average (2 area / perimeter, metres) and under sliverM2 is a sliver. */
+  sliverWidthM: number;
+  sliverM2: number;
+  /** A face under steepM2, at least steepX12 and steeper than its main neighbour by steeperX12, by the edge or trees. */
+  steepM2: number;
+  steepX12: number;
+  steeperX12: number;
 };
 
 export const DEFAULT_PLANE_PARAMS: PlaneParams = {
   tolM: 0.1,
   minPlaneM2: 2,
-  maxPitchX12: 24,
+  maxPitchX12: 18,
   maxPlanes: 40,
   candidates: 320,
   topK: 12,
@@ -54,12 +61,17 @@ export const DEFAULT_PLANE_PARAMS: PlaneParams = {
   mergeLooseDeg: 12,
   mergeFitM: 0.22,
   smallFaceM2: 4,
-  tinyFaceM2: 1.5,
+  tinyFaceM2: 2.35,
   explainedM: 0.3,
   explainedSmallM: 0.45,
   explainedSmallM2: 8,
   explainedMaxM2: 30,
   explainedShare: 0.6,
+  sliverWidthM: 0.8,
+  sliverM2: 8,
+  steepM2: 15,
+  steepX12: 8,
+  steeperX12: 3,
 };
 
 /** Pixel centre coordinates in metres: x east from the grid's left edge, y north from its top edge (so y <= 0). */
@@ -200,10 +212,11 @@ export type FoundPlane = { plane: Plane; patch: Mask };
  * separate faces never share a plane), is refitted on it, and its patch (and a pixel round it) stops being free.
  * Stops when what is left has no patch of minPlaneM2: trees, edges, clutter.
  */
-export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rng: () => number, prm: PlaneParams): FoundPlane[] {
+export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rng: () => number, prm: PlaneParams, tree: Mask | null = null): FoundPlane[] {
   const { w, h } = g;
   const free = erode(g, roof, Math.max(1, Math.round(0.2 / s)));
-  for (let i = 0; i < free.length; i++) if (!Number.isFinite(dsm[i]!)) free[i] = 0;
+  // No plane is fitted on missing heights or on tree crowns.
+  for (let i = 0; i < free.length; i++) if (!Number.isFinite(dsm[i]!) || tree?.[i] === 1) free[i] = 0;
   const minPx = prm.minPlaneM2 / (s * s);
   const maxSlope = prm.maxPitchX12 / 12;
   const R = Math.max(2, Math.round(prm.windowM / s));
@@ -289,13 +302,15 @@ export function floodAssign(
   planes: readonly Plane[],
   seeds: Int32Array,
   fill: Mask | null = null,
+  tree: Mask | null = null,
 ): Int32Array {
   const { w, h } = g;
   const labels = seeds.slice();
   const heap = new MinHeap(4096);
-  // A pixel no plane explains (a tree crown, a chimney, no data) costs the same for every plane: such pixels are
+  // A pixel no plane explains (a tree crown, a chimney, no data), or under a tree, costs the same for every plane: such pixels are
   // shared out by distance from the faces round them, not by whichever plane happens to rise towards them.
   const cost = (i: number, k: number) => {
+    if (tree?.[i] === 1) return UNEXPLAINED_M;
     const r = residual(g, s, dsm, planes[k]!, i);
     return Number.isFinite(r) ? Math.min(r, UNEXPLAINED_M) : UNEXPLAINED_M;
   };
@@ -461,7 +476,15 @@ export function refitFaces(g: Grid, s: number, dsm: Float32Array, f: Faces, tol:
  * tinyFaceM2, and faces under smallFaceM2 that touch the roof's edge for less than a quarter of their boundary, are
  * dissolved (their pixels flood from the faces round them). Every face ends up one 4-connected piece.
  */
-export function buildFaces(g: Grid, s: number, dsm: Float32Array, roof: Mask, found: readonly FoundPlane[], prm: PlaneParams): Faces {
+export function buildFaces(
+  g: Grid,
+  s: number,
+  dsm: Float32Array,
+  roof: Mask,
+  found: readonly FoundPlane[],
+  prm: PlaneParams,
+  tree: Mask | null = null,
+): Faces {
   const n0 = found.length;
   let planes = found.map((f) => f.plane);
   // Seeds: each patch eroded a little, away from the contested creases.
@@ -472,7 +495,7 @@ export function buildFaces(g: Grid, s: number, dsm: Float32Array, roof: Mask, fo
     const use = countSet(core) >= 20 ? core : found[k]!.patch;
     for (let i = 0; i < use.length; i++) if (use[i] === 1 && seeds[i]! < 0) seeds[i] = k;
   }
-  let faces = splitParts(g, compact(floodAssign(g, s, dsm, roof, planes, seeds), planes));
+  let faces = splitParts(g, compact(floodAssign(g, s, dsm, roof, planes, seeds, null, tree), planes));
   const px2 = s * s;
   for (let round = 0; round < 12; round++) {
     // 0. A face in two parts joined by a narrow neck becomes two faces (each then checked like any other).
@@ -538,7 +561,7 @@ export function buildFaces(g: Grid, s: number, dsm: Float32Array, roof: Mask, fo
       gone.add(k);
     }
     if (gone.size > 0) {
-      faces = dissolve(g, s, dsm, roof, faces, gone);
+      faces = dissolve(g, s, dsm, roof, faces, gone, tree);
       continue;
     }
     // 3. Dissolve a face its neighbours already explain: a rounded hip, ridge or apex, or a terrace in the height
@@ -546,15 +569,22 @@ export function buildFaces(g: Grid, s: number, dsm: Float32Array, roof: Mask, fo
     //    heights over most of the face. One at a time, the best explained first.
     const worst = explainedFace(g, s, dsm, faces, adj, prm);
     if (worst >= 0) {
-      faces = dissolve(g, s, dsm, roof, faces, new Set([worst]));
+      faces = dissolve(g, s, dsm, roof, faces, new Set([worst]), tree);
       continue;
     }
     // 4. Dissolve a chamfer: a shallower face between two neighbours that meet in a convex crease (a hip or ridge the
     //    height map has rounded off), facing between them; or a riser: a small strip far steeper than a neighbour
     //    facing the same way (a terrace in the height map). Flat faces stay (a deck on a hip roof is real).
     const chamfer = chamferFace(g, s, faces, adj, prm);
-    if (chamfer < 0) break;
-    faces = dissolve(g, s, dsm, roof, faces, new Set([chamfer]));
+    if (chamfer >= 0) {
+      faces = dissolve(g, s, dsm, roof, faces, new Set([chamfer]), tree);
+      continue;
+    }
+    // 5. Dissolve a sliver: a thin strip, or a small face much steeper than its main neighbour on the roof's edge, by
+    //    trees or on rough heights (a gutter, a wall, a crown leaning over the eave).
+    const sliver = sliverFace(g, s, dsm, faces, adj, prm, tree);
+    if (sliver < 0) break;
+    faces = dissolve(g, s, dsm, roof, faces, new Set([sliver]), tree);
   }
   return faces;
 }
@@ -637,7 +667,7 @@ function splitNecks(g: Grid, s: number, dsm: Float32Array, faces: Faces, prm: Pl
 }
 
 /** The faces in `gone` dissolved: their pixels flood from the faces round them. */
-function dissolve(g: Grid, s: number, dsm: Float32Array, roof: Mask, faces: Faces, gone: ReadonlySet<number>): Faces {
+function dissolve(g: Grid, s: number, dsm: Float32Array, roof: Mask, faces: Faces, gone: ReadonlySet<number>, tree: Mask | null): Faces {
   const seeds = faces.labels.slice();
   const fill = new Uint8Array(roof.length);
   for (let i = 0; i < seeds.length; i++) {
@@ -646,7 +676,7 @@ function dissolve(g: Grid, s: number, dsm: Float32Array, roof: Mask, faces: Face
       fill[i] = 1;
     }
   }
-  return splitParts(g, compact(floodAssign(g, s, dsm, roof, faces.planes, seeds, fill), faces.planes));
+  return splitParts(g, compact(floodAssign(g, s, dsm, roof, faces.planes, seeds, fill, tree), faces.planes));
 }
 
 /** The face its neighbours explain best (see buildFaces, step 3), or -1 when none qualifies. */
@@ -760,6 +790,65 @@ function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof ad
       }
     }
     if (found) pick = f;
+  }
+  return pick;
+}
+
+/**
+ * The smallest sliver (see buildFaces, step 5), or -1: a face thinner on average than sliverWidthM and under sliverM2;
+ * or a face under steepM2, at least steepX12, steeper by steeperX12 than the neighbour it shares most boundary with,
+ * that lies along the roof's edge (15% of its boundary), next to tree crowns (a fifth of it within a metre of one),
+ * or on rough heights (a fifth of its pixels more than 12 cm off its own plane).
+ */
+function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, tree: Mask | null): number {
+  const n = faces.planes.length;
+  if (n < 2) return -1;
+  const shared: Map<number, number>[] = Array.from({ length: n }, () => new Map());
+  const boundary = adj.edge.slice();
+  for (const [key, cracks] of adj.shared) {
+    const a = Math.floor(key / 100000);
+    const b = key % 100000;
+    shared[a]!.set(b, cracks);
+    shared[b]!.set(a, cracks);
+    boundary[a]! += cracks;
+    boundary[b]! += cracks;
+  }
+  const nearTree = tree === null ? null : dilate(g, tree, Math.max(1, Math.round(1 / s)));
+  const treeCount = new Array<number>(n).fill(0);
+  const rough = new Array<number>(n).fill(0);
+  for (let i = 0; i < faces.labels.length; i++) {
+    const k = faces.labels[i]!;
+    if (k < 0) continue;
+    if (nearTree?.[i] === 1) treeCount[k]!++;
+    if (residual(g, s, dsm, faces.planes[k]!, i) > 0.12) rough[k]!++;
+  }
+  const px2 = s * s;
+  let pick = -1;
+  for (let f = 0; f < n; f++) {
+    const area = adj.area[f]!;
+    if (area === 0 || shared[f]!.size === 0) continue;
+    if (pick >= 0 && area >= adj.area[pick]!) continue;
+    const m2 = area * px2;
+    const width = (2 * area * s) / Math.max(1, boundary[f]!);
+    // Steeper than any roof plane may be (a wall or a crown that merged into a face).
+    if (Math.hypot(faces.planes[f]!.a, faces.planes[f]!.b) * 12 > prm.maxPitchX12 + 0.5) {
+      pick = f;
+      continue;
+    }
+    if (width < prm.sliverWidthM && m2 < prm.sliverM2) {
+      pick = f;
+      continue;
+    }
+    const slope = Math.hypot(faces.planes[f]!.a, faces.planes[f]!.b) * 12;
+    if (m2 >= prm.steepM2 || slope < prm.steepX12) continue;
+    let main = -1;
+    for (const [m, cracks] of shared[f]!) if (main < 0 || cracks > shared[f]!.get(main)! || (cracks === shared[f]!.get(main)! && m < main)) main = m;
+    const mainSlope = Math.hypot(faces.planes[main]!.a, faces.planes[main]!.b) * 12;
+    if (slope - mainSlope < prm.steeperX12) continue;
+    const onEdge = adj.edge[f]! / Math.max(1, boundary[f]!) >= 0.15;
+    const byTrees = treeCount[f]! >= 0.2 * area;
+    const isRough = rough[f]! >= 0.2 * area;
+    if (onEdge || byTrees || isRough) pick = f;
   }
   return pick;
 }

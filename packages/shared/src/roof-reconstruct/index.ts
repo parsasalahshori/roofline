@@ -9,7 +9,7 @@
 // 4. Topology: corners where faces meet, creases as straight plane intersections between corners, steps where the
 //    planes are far apart in height, eaves and rakes along the outline (topology.ts).
 import type { LngLat } from '../roof.ts';
-import type { Roof3d, Roof3dLineKind } from '../roof-3d.ts';
+import type { Roof3d, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../roof-3d.ts';
 import { dist, pointInRing, signedArea, type XY } from './geom.ts';
 import { DEFAULT_OUTLINE_PARAMS, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
 import { buildFaces, DEFAULT_PLANE_PARAMS, findPlanes, type Plane, type PlaneParams, refitFaces } from './planes.ts';
@@ -29,6 +29,11 @@ export type RoofRaster = {
   dsm: Float32Array;
   /** Non-zero where Google sees roof. */
   mask: Uint8Array;
+  /**
+   * Optional: 1 where the aerial photo is green (vegetation), on the same grid. Green pixels on rough heights are tree
+   * crowns: no plane is fitted on them, and small steep faces by them are dropped.
+   */
+  green?: Uint8Array | null;
 };
 
 export type ReconstructOptions = {
@@ -42,6 +47,8 @@ export type ReconstructOptions = {
   topology?: Partial<TopologyParams>;
   /** Development only: told what the topology decided. */
   debug?: (msg: string) => void;
+  /** The imagery's quality (HIGH, MEDIUM), for the quality result. */
+  imageryQuality?: string | null;
 };
 
 /** Raster-local metres: x east from the raster's left edge, y north from its top edge (so y <= 0). */
@@ -57,7 +64,15 @@ export type LocalFace = {
 };
 export type LocalLine = { kind: Roof3dLineKind; a: XY; b: XY; faces: number[]; lengthM: number; riseM: number };
 /** `clipped`: the roof runs off the height map's edge, so part of it is missing. */
-export type LocalRoof = { outline: XY[]; faces: LocalFace[]; lines: LocalLine[]; pixelSizeM: number; maskAreaM2: number; clipped: boolean };
+export type LocalRoof = {
+  outline: XY[];
+  faces: LocalFace[];
+  lines: LocalLine[];
+  pixelSizeM: number;
+  maskAreaM2: number;
+  clipped: boolean;
+  quality: RoofQuality;
+};
 
 const FLAT_X12 = 2;
 const SQ_FT_PER_SQ_M = 10.7639104167;
@@ -132,14 +147,35 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       roof[r * g.w + c] = labels[src] === part ? 1 : 0;
     }
   }
+  // Google's own mask of this roof, as it came: what the outline is checked against.
+  const googleMask = roof.slice();
   roof = fillHoles(g, largestComponent(g, open3(g, fillHoles(g, close(g, roof, closeR)))));
   const roofPx = countSet(roof);
   if (roofPx * s * s < (opts.minRoofM2 ?? 15)) return null;
 
+  // Tree crowns: green in the photo and rough in the heights (a green roof is smooth).
+  let tree: Uint8Array | null = null;
+  if (raster.green != null && raster.green.length === W * H) {
+    tree = new Uint8Array(g.w * g.h);
+    for (let r = 1; r < g.h - 1; r++) {
+      for (let c = 1; c < g.w - 1; c++) {
+        const i = r * g.w + c;
+        if (raster.green[(r + r0) * W + c + c0] !== 1) continue;
+        // Height roughness: the largest second difference round the pixel.
+        const z = dsm[i]!;
+        const lap = Math.abs(4 * z - dsm[i - 1]! - dsm[i + 1]! - dsm[i - g.w]! - dsm[i + g.w]!);
+        if (!(lap < 0.12)) tree[i] = 1;
+      }
+    }
+    // A crown is more than its rough pixels: close the gaps between them.
+    tree = close(g, tree, Math.max(1, Math.round(0.3 / s)));
+    for (let i = 0; i < tree.length; i++) if (roof[i] !== 1) tree[i] = 0;
+  }
+
   // 2. Planes and faces.
-  const found = findPlanes(g, s, dsm, roof, rng, planePrm);
+  const found = findPlanes(g, s, dsm, roof, rng, planePrm, tree);
   if (found.length === 0) return null;
-  const faces = buildFaces(g, s, dsm, roof, found, planePrm);
+  const faces = buildFaces(g, s, dsm, roof, found, planePrm, tree);
   if (faces.planes.length === 0) return null;
   const planes = refitFaces(g, s, dsm, faces, planePrm.tolM);
 
@@ -158,6 +194,8 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   const raw = topo.faces.map((f, k) => (f.areaM2 > 0 ? f.areaM2 : pixelCount[k]! * s * s));
   const rawSum = raw.reduce((t, a) => t + a, 0);
   const scale = rawSum > 0 ? outlineArea / rawSum : 1;
+
+  const quality = qualityOf(g, s, dsm, googleMask, roof, tree, faces.labels, planes, outline, topo.faces, opts.imageryQuality ?? null);
 
   // Shift from the crop back to the whole raster.
   const ox = c0 * s;
@@ -194,6 +232,158 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     pixelSizeM: s,
     maskAreaM2: roofPx * s * s,
     clipped,
+    quality,
+  };
+}
+
+/** Pixels whose centres lie inside a ring (crop-local metres). */
+function rasterize(g: { w: number; h: number }, s: number, ring: readonly XY[], into: Uint8Array): void {
+  if (ring.length < 3) return;
+  const ys = ring.map((p) => p.y);
+  const rTop = Math.max(0, Math.floor(-Math.max(...ys) / s - 0.5));
+  const rBottom = Math.min(g.h - 1, Math.ceil(-Math.min(...ys) / s - 0.5));
+  for (let r = rTop; r <= rBottom; r++) {
+    const y = -(r + 0.5) * s;
+    const xs: number[] = [];
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i]!;
+      const b = ring[j]!;
+      if (a.y > y !== b.y > y) xs.push(a.x + ((y - a.y) * (b.x - a.x)) / (b.y - a.y));
+    }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const cFrom = Math.max(0, Math.ceil(xs[k]! / s - 0.5));
+      const cTo = Math.min(g.w - 1, Math.floor(xs[k + 1]! / s - 0.5));
+      for (let c = cFrom; c <= cTo; c++) into[r * g.w + c] = 1;
+    }
+  }
+}
+
+/** Thresholds below which a reconstruction needs a person's review (see RoofQuality). */
+export const QUALITY_LIMITS = {
+  outlineIoU: 0.85,
+  edgeFit: 0.75,
+  faceCoverage: 0.9,
+  meanResidualM: 0.12,
+  treeShare: 0.2,
+} as const;
+
+/**
+ * How far to trust a reconstruction: the imagery's quality; the outline against Google's mask (overlap, and the share
+ * of its length within 0.5 m of the mask's edge); the share of the mask the faces cover; how far the heights sit from
+ * their faces' planes on average; the share of the roof under tree crowns; faces whose polygon had to fall back to
+ * their pixels. `reasons` lists what fell short; any reason means the roof needs a person's review.
+ */
+function qualityOf(
+  g: { w: number; h: number },
+  s: number,
+  dsm: Float32Array,
+  googleMask: Uint8Array,
+  roof: Uint8Array,
+  tree: Uint8Array | null,
+  labels: Int32Array,
+  planes: readonly Plane[],
+  outline: readonly XY[],
+  topoFaces: readonly { ring: XY[]; fromPixels: boolean }[],
+  imagery: string | null,
+): RoofQuality {
+  const n = g.w * g.h;
+  const inOutline = new Uint8Array(n);
+  rasterize(g, s, outline, inOutline);
+  let both = 0;
+  let either = 0;
+  let maskPx = 0;
+  for (let i = 0; i < n; i++) {
+    if (googleMask[i] === 1) maskPx++;
+    if (googleMask[i] === 1 && inOutline[i] === 1) both++;
+    if (googleMask[i] === 1 || inOutline[i] === 1) either++;
+  }
+  const outlineIoU = either > 0 ? both / either : 0;
+  // The mask's edge, and each outline edge's median distance from it.
+  const edgeD = squaredDistance(g, (i) => {
+    if (googleMask[i] !== 1) return false;
+    const c = i % g.w;
+    return c === 0 || c === g.w - 1 || i < g.w || i >= n - g.w || googleMask[i - 1] !== 1 || googleMask[i + 1] !== 1 || googleMask[i - g.w] !== 1 || googleMask[i + g.w] !== 1;
+  });
+  let fitLen = 0;
+  let allLen = 0;
+  for (let k = 0; k < outline.length; k++) {
+    const a = outline[k]!;
+    const b = outline[(k + 1) % outline.length]!;
+    const len = dist(a, b);
+    if (len < 1e-6) continue;
+    const ds: number[] = [];
+    for (let t = 0; t <= len; t += s) {
+      const x = a.x + ((b.x - a.x) * t) / len;
+      const y = a.y + ((b.y - a.y) * t) / len;
+      const c = Math.min(g.w - 1, Math.max(0, Math.floor(x / s)));
+      const r = Math.min(g.h - 1, Math.max(0, Math.floor(-y / s)));
+      ds.push(Math.sqrt(edgeD[r * g.w + c]!) * s);
+    }
+    ds.sort((p, q) => p - q);
+    allLen += len;
+    if (ds[Math.floor(ds.length / 2)]! <= 0.5) fitLen += len;
+  }
+  const edgeFit = allLen > 0 ? fitLen / allLen : 0;
+  const inFaces = new Uint8Array(n);
+  for (const f of topoFaces) rasterize(g, s, f.ring, inFaces);
+  let covered = 0;
+  for (let i = 0; i < n; i++) if (googleMask[i] === 1 && inFaces[i] === 1) covered++;
+  const faceCoverage = maskPx > 0 ? covered / maskPx : 0;
+  // The heights' distance from their face's plane, inside the faces (0.3 m from any face's edge: creases are rounded
+  // and eaves meet walls in a height map) and off the tree crowns, capped at half a metre.
+  const nearEdge = squaredDistance(g, (i) => {
+    const k = labels[i]!;
+    if (k < 0) return true;
+    const c = i % g.w;
+    return (c > 0 && labels[i - 1] !== k) || (c < g.w - 1 && labels[i + 1] !== k) || (i >= g.w && labels[i - g.w] !== k) || (i + g.w < n && labels[i + g.w] !== k);
+  });
+  const inner2 = (0.3 / s) ** 2;
+  let resSum = 0;
+  let resN = 0;
+  let treePx = 0;
+  let roofPx = 0;
+  for (let i = 0; i < n; i++) {
+    if (roof[i] !== 1) continue;
+    roofPx++;
+    if (tree?.[i] === 1) {
+      treePx++;
+      continue;
+    }
+    const k = labels[i]!;
+    const z = dsm[i]!;
+    if (k < 0 || !Number.isFinite(z) || nearEdge[i]! <= inner2) continue;
+    const p = planes[k]!;
+    resSum += Math.min(0.5, Math.abs(z - (p.a * ((i % g.w) + 0.5) * s + p.b * -(Math.floor(i / g.w) + 0.5) * s + p.c)));
+    resN++;
+  }
+  const meanResidualM = resN > 0 ? resSum / resN : 0.5;
+  const treeShare = roofPx > 0 ? treePx / roofPx : 0;
+  const fallbackFaces = topoFaces.filter((f) => f.fromPixels).length;
+  // Faces drawn from their pixels matter when they are a real part of the roof (5% or more of it).
+  let fallbackArea = 0;
+  let allArea = 0;
+  for (const f of topoFaces) {
+    const a = Math.abs(signedArea(f.ring));
+    allArea += a;
+    if (f.fromPixels) fallbackArea += a;
+  }
+  const reasons: RoofQualityReason[] = [];
+  if (imagery !== null && imagery !== 'HIGH') reasons.push('coarse-imagery');
+  if (outlineIoU < QUALITY_LIMITS.outlineIoU || edgeFit < QUALITY_LIMITS.edgeFit) reasons.push('outline-off');
+  if (faceCoverage < QUALITY_LIMITS.faceCoverage || fallbackArea > 0.05 * allArea) reasons.push('faces-patchy');
+  if (meanResidualM > QUALITY_LIMITS.meanResidualM) reasons.push('rough-heights');
+  if (treeShare > QUALITY_LIMITS.treeShare) reasons.push('trees');
+  const round = (x: number) => Math.round(x * 1000) / 1000;
+  return {
+    imagery,
+    outlineIoU: round(outlineIoU),
+    edgeFit: round(edgeFit),
+    faceCoverage: round(faceCoverage),
+    meanResidualM: round(meanResidualM),
+    treeShare: round(treeShare),
+    fallbackFaces,
+    reasons,
   };
 }
 
@@ -276,5 +466,6 @@ export function toRoof3d(
     pixelSizeM: local.pixelSizeM,
     imageryQuality: meta.imageryQuality,
     imageryDate: meta.imageryDate,
+    quality: { ...local.quality, imagery: meta.imageryQuality, reasons: local.quality.reasons },
   };
 }

@@ -171,7 +171,10 @@ function rngOf(seed: number): () => number {
  * Gaussian noise, a 5 x 5 box blur (rounded creases), and `trees` crowns (4 to 6 m above the ground, 1.5 m radius)
  * leaning over the edge.
  */
-export function synthesize(shape: Shape, o: { turnDeg?: number; pixelM?: number; noiseM?: number; trees?: number; seed?: number } = {}): SyntheticRoof {
+export function synthesize(
+  shape: Shape,
+  o: { turnDeg?: number; pixelM?: number; noiseM?: number; trees?: number; seed?: number; overhangAt?: XY } = {},
+): SyntheticRoof {
   const s = o.pixelM ?? 0.1;
   const turn = ((o.turnDeg ?? 17) * Math.PI) / 180;
   const rng = rngOf(o.seed ?? 11);
@@ -253,10 +256,31 @@ export function synthesize(shape: Shape, o: { turnDeg?: number; pixelM?: number;
       }
     }
   }
+  // An overhanging tree: a broad crown standing over the roof at `overhangAt` (house frame), 3 m above the roof there,
+  // with the photo green wherever the crown is above the roof (the mask still says roof: Google's mask often does).
+  let green: Uint8Array | null = null;
+  if (o.overhangAt !== undefined) {
+    green = new Uint8Array(W * H);
+    const at = toLocal(o.overhangAt);
+    const top = (shape.height(o.overhangAt) ?? EAVE) + 3;
+    const rad = 2.6;
+    for (let r = 0; r < H; r++) {
+      for (let c = 0; c < W; c++) {
+        const d = Math.hypot((c + 0.5) * s - at.x, -(r + 0.5) * s - at.y);
+        if (d > rad) continue;
+        const z = top - (d * d) / (rad * 0.9) + gauss(rng) * 0.25;
+        const i = r * W + c;
+        if (z > blurred[i]!) {
+          blurred[i] = z;
+          green[i] = 1;
+        }
+      }
+    }
+  }
   const centre = toLocal({ x: 0.3, y: 0.2 });
   return {
     name: shape.name,
-    raster: { width: W, height: H, pixelSizeM: s, dsm: blurred, mask },
+    raster: { width: W, height: H, pixelSizeM: s, dsm: blurred, mask, green },
     point: { col: centre.x / s, row: -centre.y / s },
     faces: shape.faces,
     lines: shape.lines,

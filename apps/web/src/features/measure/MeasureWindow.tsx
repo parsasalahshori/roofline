@@ -24,6 +24,7 @@ import { ProposalPanel } from './lift/ProposalPanel.tsx';
 import { RequestsList } from './lift/RequestsList.tsx';
 import { useRequestRows } from './lift/requests.ts';
 import { addRoofLayers, facetName, readRoof, usableRoof } from './lift/roofModel.ts';
+import { addRoofPhoto, roofPhotoFor } from './lift/roofPhoto.ts';
 import { RoofView } from './lift/RoofView.tsx';
 import { useRoofScan } from './lift/scan.ts';
 import { MeasureSlotsContext, type QuoteSession, type RoofSession } from './lift/slots.ts';
@@ -216,7 +217,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     inflight.current = saved.catch(() => undefined);
     return saved;
   }).current;
-  const startRef = useRef({ ring: m.outline?.[0] ?? [], drawMode: m.drawMode || !m.outline?.[0]?.length, locked: m.locked, model });
+  const startRef = useRef({ ring: m.outline?.[0] ?? [], drawMode: m.drawMode || !m.outline?.[0]?.length, locked: m.locked, model, m });
   const [mapFailed, setMapFailed] = useState(false);
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
   const [zoom, setZoom] = useState(START_ZOOM);
@@ -272,6 +273,8 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
         return;
       }
       started = true;
+      // Google's true-ortho photo of a roof measured in 3D goes over the map's photo, under everything else
+      addRoofPhoto(instance, roofPhotoFor(startRef.current.m));
       // The buildings tint and the facets go in first, so the editable outline draws on top of them
       addStructureLayers(instance, structuresRef.current);
       addRoofLayers(instance, startRef.current.model);

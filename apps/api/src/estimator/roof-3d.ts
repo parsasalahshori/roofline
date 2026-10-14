@@ -1,8 +1,19 @@
+import { randomUUID } from 'node:crypto';
 import { latestRoof3dSnapshot, type TenantContext, withTenant } from '@roofline/db';
-import { type LngLat, metresApart, metresToBuilding, type Roof3d, type Roof3dSnapshot, roof3dSnapshotFresh, type SolarBuilding } from '@roofline/shared';
+import {
+  type LngLat,
+  metresApart,
+  metresToBuilding,
+  type Roof3d,
+  type Roof3dPhoto,
+  type Roof3dSnapshot,
+  roof3dSnapshotFresh,
+  type SolarBuilding,
+} from '@roofline/shared';
 import { lngLatToUtm, reconstructRoof, toRoof3d, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
 import type { AppDeps } from '../app.ts';
 import { type RoofLayers, SolarLayersUnavailableError } from '../providers/solar-layers.ts';
+import { encodeRgbPng } from './png.ts';
 import { SOLAR_BUILDING_SNAP_M } from './solar.ts';
 
 /*
@@ -85,21 +96,111 @@ function layersFor(deps: AppDeps, point: LngLat, building: SolarBuilding | null)
   return entry.value;
 }
 
+/** Room round the roof kept in its photo, metres. */
+const PHOTO_MARGIN_M = 10;
+
+/**
+ * Where the layers' photo is green (vegetation), on the height map's grid: green above red and blue, with an excess
+ * green (2G - R - B) of at least 20. Null without a photo.
+ */
+export function greenOf(layers: RoofLayers): Uint8Array | null {
+  const photo = layers.photo ?? null;
+  if (photo === null) return null;
+  const { width, height, pixelSizeM } = layers.raster;
+  const out = new Uint8Array(width * height);
+  for (let r = 0; r < height; r++) {
+    for (let c = 0; c < width; c++) {
+      const x = layers.originX + (c + 0.5) * pixelSizeM;
+      const y = layers.originY - (r + 0.5) * pixelSizeM;
+      const pc = Math.floor((x - photo.originX) / photo.pixelSizeM);
+      const pr = Math.floor((photo.originY - y) / photo.pixelSizeM);
+      if (pc < 0 || pr < 0 || pc >= photo.width || pr >= photo.height) continue;
+      const at = (pr * photo.width + pc) * 3;
+      const red = photo.rgb[at]!;
+      const green = photo.rgb[at + 1]!;
+      const blue = photo.rgb[at + 2]!;
+      if (green >= red && green >= blue && 2 * green - red - blue >= 20) out[r * width + c] = 1;
+    }
+  }
+  return out;
+}
+
 /**
  * The roof at `point` reconstructed on these layers, in [lng, lat]; null when no roof part comes near the point, it is
  * too small, no plane is found, or it runs off the layers' edge.
  */
-export function roofOnLayers(layers: RoofLayers, point: LngLat): Roof3d | null {
+export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boolean } = {}): Roof3d | null {
   const zone = utmZoneOfEpsg(layers.epsg);
   if (zone === null) return null;
   const { easting, northing } = lngLatToUtm(zone, point[0], point[1]);
   const s = layers.raster.pixelSizeM;
-  const local = reconstructRoof(layers.raster, { col: (easting - layers.originX) / s, row: (layers.originY - northing) / s });
+  const raster = { ...layers.raster, green: layers.raster.green ?? greenOf(layers) };
+  const local = reconstructRoof(
+    raster,
+    { col: (easting - layers.originX) / s, row: (layers.originY - northing) / s },
+    { imageryQuality: layers.imageryQuality, ...(o.steep === true ? { planes: { maxPitchX12: 24 } } : {}) },
+  );
   if (local === null || local.clipped) return null;
   return toRoof3d(local, (x, y) => utmToLngLat(zone, layers.originX + x, layers.originY + y), {
     imageryQuality: layers.imageryQuality,
     imageryDate: layers.imageryDate,
   });
+}
+
+/**
+ * Google's photo round a reconstructed roof (its box plus PHOTO_MARGIN_M), stored once as a PNG in the file store; the
+ * roof view shows it under the 3D roof (true ortho, so they match). Null without a photo or a file store.
+ */
+export async function storeRoofPhoto(deps: AppDeps, layers: RoofLayers, roof: Roof3d): Promise<Roof3dPhoto | null> {
+  const photo = layers.photo ?? null;
+  const zone = utmZoneOfEpsg(layers.epsg);
+  if (photo === null || zone === null || !deps.objectStore.configured) return null;
+  const utm = roof.outline.map(([lng, lat]) => lngLatToUtm(zone, lng, lat));
+  const px = photo.pixelSizeM;
+  const c0 = Math.max(0, Math.floor((Math.min(...utm.map((p) => p.easting)) - PHOTO_MARGIN_M - photo.originX) / px));
+  const c1 = Math.min(photo.width, Math.ceil((Math.max(...utm.map((p) => p.easting)) + PHOTO_MARGIN_M - photo.originX) / px));
+  const r0 = Math.max(0, Math.floor((photo.originY - Math.max(...utm.map((p) => p.northing)) - PHOTO_MARGIN_M) / px));
+  const r1 = Math.min(photo.height, Math.ceil((photo.originY - Math.min(...utm.map((p) => p.northing)) + PHOTO_MARGIN_M) / px));
+  const width = c1 - c0;
+  const height = r1 - r0;
+  if (width < 2 || height < 2) return null;
+  const rgb = new Uint8Array(width * height * 3);
+  for (let r = 0; r < height; r++) rgb.set(photo.rgb.subarray(((r + r0) * photo.width + c0) * 3, ((r + r0) * photo.width + c1) * 3), r * width * 3);
+  const corner = (c: number, r: number): LngLat => {
+    const [lng, lat] = utmToLngLat(zone, photo.originX + c * px, photo.originY - r * px);
+    return [Math.round(lng * 1e8) / 1e8, Math.round(lat * 1e8) / 1e8];
+  };
+  const key = `roof-photos/${randomUUID()}.png`;
+  await deps.objectStore.put(key, encodeRgbPng(width, height, rgb), 'image/png');
+  return { key, corners: [corner(c0, r0), corner(c1, r0), corner(c1, r1), corner(c0, r1)], width, height };
+}
+
+/**
+ * A reconstruction too far off to show at all (the roof is then measured from its outline as before): its outline
+ * overlaps Google's mask by less than 0.6, or its faces cover less than 60% of it. Milder shortfalls are shown,
+ * marked for review (RoofQuality).
+ */
+export function unusable(roof: Roof3d): boolean {
+  const q = roof.quality;
+  return q !== undefined && (q.outlineIoU < 0.6 || q.faceCoverage < 0.6);
+}
+
+/** Steeper than 18/12 in degrees: Google's own segments must show such a roof before a face may be that steep. */
+const STEEP_DEG = (Math.atan(18 / 12) * 180) / Math.PI;
+
+/** Whether Google Solar's segments for the building include a roof plane steeper than 18/12. */
+export function steepRoof(building: SolarBuilding | null): boolean {
+  return (building?.segments ?? []).some((seg) => seg.pitchDeg > STEEP_DEG && seg.pitchDeg < 75 && seg.groundAreaM2 >= 2);
+}
+
+/** storeRoofPhoto that never fails the measurement: a photo that cannot be stored is left out. */
+async function photoOrNull(deps: AppDeps, layers: RoofLayers, roof: Roof3d): Promise<Roof3dPhoto | null> {
+  try {
+    return await storeRoofPhoto(deps, layers, roof);
+  } catch (err) {
+    deps.logError?.(err, 'roof-photo');
+    return null;
+  }
 }
 
 /**
@@ -121,11 +222,12 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
   const entries = map;
   const at: LngLat = [point[0], point[1]];
   const value = layersFor(deps, point, building).then(
-    (layers): Roof3dSnapshot => {
+    async (layers): Promise<Roof3dSnapshot> => {
       const fetchedAt = deps.clock.now().toISOString();
       if (layers === null) return { fetchedAt, at, roof: null, none: 'no-imagery' };
-      const roof = roofOnLayers(layers, point);
-      return roof === null ? { fetchedAt, at, roof: null, none: 'no-roof' } : { fetchedAt, at, roof };
+      const roof = roofOnLayers(layers, point, { steep: steepRoof(building) });
+      if (roof === null || unusable(roof)) return { fetchedAt, at, roof: null, none: 'no-roof' };
+      return { fetchedAt, at, roof, photo: await photoOrNull(deps, layers, roof) };
     },
     (err: unknown) => {
       if (!(err instanceof SolarLayersUnavailableError)) deps.logError?.(err, 'google-solar-layers');
@@ -143,11 +245,12 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
 }
 
 /** The roof at `point` on layers this process already bought (no new request), or null when none cover it. */
-export function roof3dOnBoughtLayers(deps: AppDeps, point: LngLat): Roof3dSnapshot | null {
+export async function roof3dOnBoughtLayers(deps: AppDeps, point: LngLat): Promise<Roof3dSnapshot | null> {
   const layers = cachedLayers(deps, point);
   if (layers === null) return null;
   const roof = roofOnLayers(layers, point);
-  return roof === null ? null : { fetchedAt: deps.clock.now().toISOString(), at: [point[0], point[1]], roof };
+  if (roof === null || unusable(roof)) return null;
+  return { fetchedAt: deps.clock.now().toISOString(), at: [point[0], point[1]], roof, photo: await photoOrNull(deps, layers, roof) };
 }
 
 /**

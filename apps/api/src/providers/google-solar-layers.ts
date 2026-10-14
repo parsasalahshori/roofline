@@ -2,7 +2,7 @@ import { fromArrayBuffer } from 'geotiff';
 import type { LngLat } from '@roofline/shared';
 import { utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
 import type { Config } from '../config.ts';
-import { type RoofLayers, type SolarLayersApi, SolarLayersUnavailableError } from './solar-layers.ts';
+import { type RoofLayers, type RoofPhoto, type SolarLayersApi, SolarLayersUnavailableError } from './solar-layers.ts';
 
 const BASE_URL = 'https://solar.googleapis.com/v1';
 const DEFAULT_TIMEOUT_MS = 12_000;
@@ -47,6 +47,24 @@ export async function readGeoTiff(bytes: ArrayBuffer): Promise<Grid> {
     const noData = image.getGDALNoData();
     if (!(Number.isFinite(originX) && Number.isFinite(originY) && pixelX! > 0 && Math.abs(pixelY!) > 0)) throw new Error('no grid');
     return { width: image.getWidth(), height: image.getHeight(), originX: originX!, originY: originY!, pixelX: pixelX!, pixelY: Math.abs(pixelY!), epsg, data, noData };
+  } catch {
+    throw new SolarLayersUnavailableError(UNAVAILABLE_MESSAGE);
+  }
+}
+
+/** An RGB GeoTIFF (Google's aerial photo) as 3 bytes a pixel on its UTM grid. Throws SolarLayersUnavailableError. */
+export async function readRgbGeoTiff(bytes: ArrayBuffer): Promise<RoofPhoto> {
+  try {
+    const tiff = await fromArrayBuffer(bytes);
+    const image = await tiff.getImage();
+    const [originX, originY] = image.getOrigin();
+    const [pixelX] = image.getResolution();
+    if (image.getSamplesPerPixel() < 3) throw new Error('not RGB');
+    const data = (await image.readRasters({ samples: [0, 1, 2], interleave: true })) as unknown as ArrayLike<number>;
+    const rgb = new Uint8Array(image.getWidth() * image.getHeight() * 3);
+    for (let i = 0; i < rgb.length; i++) rgb[i] = Math.max(0, Math.min(255, Math.round(Number(data[i]))));
+    if (!(Number.isFinite(originX) && Number.isFinite(originY) && pixelX! > 0)) throw new Error('no grid');
+    return { width: image.getWidth(), height: image.getHeight(), pixelSizeM: pixelX!, originX: originX!, originY: originY!, rgb };
   } catch {
     throw new SolarLayersUnavailableError(UNAVAILABLE_MESSAGE);
   }
@@ -140,8 +158,8 @@ export class GoogleSolarLayers implements SolarLayersApi {
   }
 
   /**
-   * dataLayers:get (view IMAGERY_LAYERS: height map, photo and mask; only the height map and mask are downloaded),
-   * then the two GeoTIFFs. Null when Google has no HIGH or MEDIUM imagery for the point (its NOT_FOUND).
+   * dataLayers:get (view IMAGERY_LAYERS: height map, photo and mask), then the three GeoTIFFs (the files come with
+   * the one billed request). Null when Google has no HIGH or MEDIUM imagery for the point (its NOT_FOUND).
    */
   async roofLayers(center: LngLat, radiusM: number, opts?: { timeoutMs?: number }): Promise<RoofLayers | null> {
     const [lng, lat] = center;
@@ -164,12 +182,16 @@ export class GoogleSolarLayers implements SolarLayersApi {
     const dsmUrl = typeof root.dsmUrl === 'string' ? root.dsmUrl : null;
     const maskUrl = typeof root.maskUrl === 'string' ? root.maskUrl : null;
     if (dsmUrl === null || maskUrl === null) return null;
+    const rgbUrl = typeof root.rgbUrl === 'string' ? root.rgbUrl : null;
+    // The photo is a bonus (the roof view's true-ortho photo, and where the trees are): its failure costs nothing else.
+    const photo = rgbUrl === null ? Promise.resolve(null) : this.file(rgbUrl, timeoutMs * 2).then(readRgbGeoTiff).catch(() => null);
     const [dsmBytes, maskBytes] = await Promise.all([this.file(dsmUrl, timeoutMs * 2), this.file(maskUrl, timeoutMs * 2)]);
     const [dsm, mask] = await Promise.all([readGeoTiff(dsmBytes), readGeoTiff(maskBytes)]);
-    return layersFrom(dsm, mask, {
+    const layers = layersFrom(dsm, mask, {
       imageryQuality: typeof root.imageryQuality === 'string' ? root.imageryQuality : null,
       imageryDate: dateText(root.imageryDate),
     });
+    return { ...layers, photo: await photo };
   }
 }
 

@@ -4,14 +4,19 @@ import type { Config } from '../config.ts';
 import { FakeSolarLayers } from './fakes/solar-layers.ts';
 import { googleSolarLayersFor } from './google-solar-layers.ts';
 
+/** Google's own aerial photo of the layers (the one the height map was made from): RGB, 3 bytes a pixel, UTM grid. */
+export type RoofPhoto = { width: number; height: number; pixelSizeM: number; originX: number; originY: number; rgb: Uint8Array };
+
 /**
- * Google Solar Data Layers around a point: the roofs' height map (DSM) and roof mask, 0.1 m a pixel where Google has
- * HIGH imagery and 0.25 m where it has MEDIUM, on a UTM grid. The estimator reconstructs the roof in 3D from them
- * (estimator/roof-3d.ts). Null: Google has no HIGH or MEDIUM imagery there (not an error). A paid call (an Enterprise
- * SKU: about 7.5 cents past the free monthly allowance): callers keep what they make of it.
+ * Google Solar Data Layers around a point: the roofs' height map (DSM), roof mask and aerial photo, 0.1 m a pixel
+ * where Google has HIGH imagery and 0.25 m where it has MEDIUM, on a UTM grid. The estimator reconstructs the roof in
+ * 3D from them (estimator/roof-3d.ts). Null: Google has no HIGH or MEDIUM imagery there (not an error). A paid call
+ * (an Enterprise SKU: about 7.5 cents past the free monthly allowance): callers keep what they make of it.
  */
 export type RoofLayers = {
   raster: RoofRaster;
+  /** The photo, when it came (it is optional: the roof is reconstructed without it). */
+  photo?: RoofPhoto | null;
   /** EPSG code of the grid's UTM zone (326zz north, 327zz south). */
   epsg: number;
   /** UTM easting and northing of the grid's top-left corner. */
