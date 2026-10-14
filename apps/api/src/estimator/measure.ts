@@ -66,6 +66,8 @@ const FOOTPRINT_TILE_MARGIN_M = 100;
  * search's prefetch) before it carries on with the outline's roof instead.
  */
 const ROOF_3D_WAIT_MS = 25_000;
+/** With the roof in 3D, how long Measure still waits for the area's building outlines (they only name other buildings). */
+const TILES_GRACE_MS = 1_500;
 /** Another footprint at least this share inside the 3D roof's outline is part of that roof (a garage under the same roof). */
 const PART_OF_ROOF_SHARE = 0.5;
 
@@ -470,7 +472,8 @@ function tilesFor(property: PropertyRow, point: LngLat): { tiles: string[]; stat
  *   and kept on the measurement) are reconstructed into the roof's real outline, faces (each with its own pitch)
  *   and lines. When that roof is the main footprint's building (or there is no footprint), the measurement is made
  *   from it (pitch source 'solar-3d'); otherwise (no imagery, no roof found, another building, or not ready within
- *   ROOF_3D_WAIT_MS) it is made as above, and what was bought is still kept.
+ *   ROOF_3D_WAIT_MS) it is made as above, and what was bought is still kept. With the 3D roof, Measure does not wait
+ *   for the area's footprint tiles (TILES_GRACE_MS at most): they load on in the background for the map.
  * Never throws for missing or bad geometry: that is draw mode.
  */
 export async function measureProperty(
@@ -514,12 +517,26 @@ export async function measureProperty(
     null,
   );
   const { tiles, state } = tilesFor(property, point);
-  const tilesOutcome = await ensureFootprintTiles(deps, tiles, { state, waitMs: deps.config.FOOTPRINT_WAIT_MS });
-  if (tilesOutcome !== 'ready') {
+  const tilesLoaded = ensureFootprintTiles(deps, tiles, { state, waitMs: deps.config.FOOTPRINT_WAIT_MS });
+  const queueIfNotReady = async (outcome: Awaited<typeof tilesLoaded>) => {
+    if (outcome === 'ready') return;
     // Not loaded in time (it carries on here), or a load failed: the worker tries again too.
     for (const quadkey of tiles) {
       await deps.jobs.send('footprints-load', { companyId: ctx.companyId, quadkey, state }, { singletonKey: quadkey });
     }
+  };
+  // With the roof in 3D, the footprints only name the other buildings near it: whatever is loaded within a moment is
+  // used, and the area's outlines go on loading for the map (a first measurement in an area no longer waits for them).
+  // Without it, the outline comes from the footprints, so their load is waited for as before.
+  const early = await roof3dAsked;
+  if (early?.roof != null) {
+    const outcome = await Promise.race([tilesLoaded, new Promise<'later'>((resolve) => setTimeout(() => resolve('later'), TILES_GRACE_MS))]);
+    if (outcome === 'later') {
+      const later = tilesLoaded.then(queueIfNotReady).catch((err: unknown) => deps.logError?.(err, 'footprints-load'));
+      deps.onBackgroundTask?.(later);
+    } else await queueIfNotReady(outcome);
+  } else {
+    await queueIfNotReady(await tilesLoaded);
   }
   const askedSolar = await solarAsked;
   const rows = await withTenant(deps.pools, ctx, (tx) => footprintsNear(tx, point, FOOTPRINT_SEARCH_M));

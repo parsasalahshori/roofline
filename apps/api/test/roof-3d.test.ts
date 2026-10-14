@@ -292,6 +292,22 @@ describe('Measure with the roof in 3D', () => {
     expect(view.needsReview).toEqual({ reasons: ['coarse-imagery'] });
   });
 
+  it("with the 3D roof, Measure does not wait for the area's building outlines (they load on for the map)", async () => {
+    // Nothing loaded yet in this area, and the outlines' download is slow: Measure answers from the 3D roof.
+    t.solar.set(INSIDE, SOLAR_HOUSE);
+    withHouseLayers();
+    const release = t.footprints.hold();
+    const owner = await who.as('owner');
+    const propertyId = await homeAt(69, INSIDE);
+    const started = Date.now();
+    const view = await measure(owner, { propertyId });
+    expect(Date.now() - started).toBeLessThan(15_000);
+    expect(view.pitchSource).toBe('solar-3d');
+    expect(view.roof!.facets).toHaveLength(4);
+    release();
+    await t.settle();
+  });
+
   it('plan areas add up: the sloped total is the faces\' measured areas', async () => {
     await loadNE({ sourceRef: 'house', ring: HOUSE });
     t.solar.set(INSIDE, SOLAR_HOUSE);

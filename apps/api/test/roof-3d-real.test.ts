@@ -26,14 +26,14 @@ const HOUSES: { name: string; dir: string; point: LngLat; insights: string }[] =
 
 /**
  * Where Google's segment and the height map disagree, checked by hand (face letter on that house):
- * - Papillion D, the south hip end: Google says 8.6/12. The height map down the middle of the face drops 2.23 m over
+ * - Papillion C, the south hip end: Google says 8.6/12. The height map down the middle of the face drops 2.23 m over
  *   3.5 m (7.6/12); a plain least-squares plane through the face gives 7.8/12, the reconstruction 7.5/12.
  * - Papillion F, the low east roof (2.9/12): Google splits it into three segments (2.9/12 facing 81, 3.5/12 facing 51,
  *   2.1/12 facing 124); the one under the face's middle faces 51, the face as one plane faces 70. At 3/12 the facing of
  *   a plane is poorly defined.
  */
 const KNOWN: Record<string, Record<string, 'pitch' | 'facing'>> = {
-  dlund: { D: 'pitch', F: 'facing' },
+  dlund: { C: 'pitch', F: 'facing' },
 };
 
 async function readTiff(file: string): Promise<ArrayBuffer> {

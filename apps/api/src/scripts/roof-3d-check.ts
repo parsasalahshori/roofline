@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LngLat, Roof3d, SolarBuilding } from '@roofline/shared';
 import { lngLatToUtm, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
-import { checkRoof, formatCheck } from '../estimator/roof-3d-compare.ts';
+import { checkRoof, formatCheck, withGoogleCheck } from '../estimator/roof-3d-compare.ts';
 import { layersRequest, roofOnLayers, steepRoof } from '../estimator/roof-3d.ts';
 import { encodeRgbPng } from '../estimator/png.ts';
 import { parseBuildingInsights } from '../providers/google-solar.ts';
@@ -14,7 +14,7 @@ import type { RoofLayers } from '../providers/solar-layers.ts';
  * The 3D roof on real Google data, house by house: the faces against Google Solar's own roof segments, the outline
  * against Google's roof mask, the quality result, and the acceptance targets (estimator/roof-3d-compare.ts).
  *
- *   npm run roof3d:check -w @roofline/api -- [--cache DIR] [--svg DIR] TARGET...
+ *   npm run roof3d:check -w @roofline/api -- [--cache DIR] [--svg DIR] [--json DIR] TARGET...
  *
  * TARGET is one of:
  *   "lat,lng"                     a point on the roof
@@ -28,7 +28,9 @@ import type { RoofLayers } from '../providers/solar-layers.ts';
  * .roof-3d-cache at the repository root, git-ignored), so running the same house again never buys again. The Solar API
  * terms allow keeping it 30 days: empty the folder after that. Keys: GOOGLE_SOLAR_API_KEY (else GOOGLE_MAPS_API_KEY)
  * and GEOCODIO_API_KEY from the environment, else from the repository's .env.keys. They are never printed.
- * --svg DIR writes a picture of each roof over Google's photo. Exit code 1 when any house misses a target.
+ * --svg DIR writes a picture of each roof over Google's photo; --json DIR writes each house's whole result (outline,
+ * faces, lines in [lng, lat] with feet and square feet, totals, the quality result and the check) to DIR/<house>.json.
+ * A summary table of the targets per house ends the run. Exit code 1 when any house misses a target.
  */
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -150,6 +152,48 @@ function svgOf(layers: RoofLayers, roof: Roof3d): string | null {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${photo.width} ${photo.height}" width="${photo.width * 2}" height="${photo.height * 2}"><image href="data:image/png;base64,${png}" width="${photo.width}" height="${photo.height}"/>${faces}${lines}</svg>`;
 }
 
+/** A file name for a target: a folder's own name, else the target's words. */
+function slugOf(target: string): string {
+  const local = /^(.+?)@/.exec(target);
+  const base = local !== null && existsSync(local[1]!) ? path.basename(local[1]!) : target;
+  return base.replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'roof';
+}
+
+/** Everything about one house, for scoring elsewhere (--json): [lng, lat], feet and square feet. */
+function resultOf(target: string, point: LngLat, roof: Roof3d, check: ReturnType<typeof checkRoof>) {
+  const byKind: Record<string, number> = {};
+  for (const l of roof.lines) byKind[l.kind] = Math.round(((byKind[l.kind] ?? 0) + l.lengthFt) * 10) / 10;
+  const plan = roof.faces.reduce((t, f) => t + f.planAreaSqFt, 0);
+  const sloped = roof.faces.reduce((t, f) => t + f.slopedAreaSqFt, 0);
+  return {
+    target,
+    point,
+    imageryQuality: roof.imageryQuality,
+    imageryDate: roof.imageryDate,
+    pixelSizeM: roof.pixelSizeM,
+    outline: roof.outline,
+    faces: roof.faces.map((f, k) => ({
+      id: check.rows[k]?.face ?? String(k),
+      ring: f.ring,
+      pitchX12: f.pitchX12,
+      azimuthDeg: f.azimuthDeg,
+      flat: f.flat,
+      planSqFt: f.planAreaSqFt,
+      slopedSqFt: f.slopedAreaSqFt,
+    })),
+    lines: roof.lines.map((l) => ({ kind: l.kind, coords: l.coords, lengthFt: l.lengthFt, faces: l.faces })),
+    totals: {
+      faces: roof.faces.length,
+      planSqFt: Math.round(plan * 10) / 10,
+      slopedSqFt: Math.round(sloped * 10) / 10,
+      squares: Math.round(sloped / 10) / 10,
+      linesFt: byKind,
+    },
+    quality: roof.quality ?? null,
+    check: { mainOk: check.mainOk, mainChecked: check.mainChecked, junkFaces: check.junkFaces, steepFaces: check.steepFaces, outlineOk: check.outlineOk, passed: check.passed },
+  };
+}
+
 async function targetsOf(args: string[]): Promise<string[]> {
   const out: string[] = [];
   for (const a of args) {
@@ -171,12 +215,14 @@ async function main(): Promise<number> {
   };
   const cache = opt('--cache') ?? path.join(REPO_ROOT, '.roof-3d-cache');
   const svgDir = opt('--svg');
+  const jsonDir = opt('--json');
   const targets = await targetsOf(argv);
   if (targets.length === 0) {
     process.stderr.write('Usage: roof-3d-check [--cache DIR] [--svg DIR] TARGET... (see the file header)\n');
     return 2;
   }
   let failed = 0;
+  const summary: string[] = [];
   for (const target of targets) {
     try {
       let dir: string;
@@ -197,28 +243,53 @@ async function main(): Promise<number> {
       const layers = await layersIn(dir);
       const building = insightsIn(insights);
       const started = performance.now();
-      const roof = roofOnLayers(layers, point, { steep: steepRoof(building) });
+      const found = roofOnLayers(layers, point, { steep: steepRoof(building) });
       const ms = performance.now() - started;
+      // As the server keeps it: Google's segments checked against the faces too.
+      const roof = found === null ? null : withGoogleCheck(found, building);
       if (roof === null) {
         process.stdout.write(`${target}: no roof reconstructed at the point\n\n`);
+        summary.push(`${slugOf(target).padEnd(34)} | no roof`);
         failed++;
         continue;
       }
       const check = checkRoof(roof, building);
       process.stdout.write(`${formatCheck(target, roof, check, ms)}\n\n`);
       if (!check.passed) failed++;
+      const q = roof.quality;
+      summary.push(
+        [
+          slugOf(target).padEnd(34),
+          String(roof.faces.length).padStart(5),
+          `${check.mainOk}/${check.mainChecked}`.padStart(5),
+          String(check.junkFaces).padStart(4),
+          String(check.steepFaces).padStart(5),
+          (q?.outlineIoU.toFixed(3) ?? '-').padStart(5),
+          (q === undefined ? '-' : `${Math.round(q.edgeFit * 100)}%`).padStart(5),
+          (q === undefined ? '-' : q.reasons.join(',') || 'ok').padEnd(28),
+          check.passed ? 'PASS' : 'FAIL',
+        ].join(' | '),
+      );
+      if (jsonDir !== undefined) {
+        mkdirSync(jsonDir, { recursive: true });
+        writeFileSync(path.join(jsonDir, `${slugOf(target)}.json`), JSON.stringify(resultOf(target, point, roof, check), null, 1));
+      }
       if (svgDir !== undefined) {
         const svg = svgOf(layers, roof);
         if (svg !== null) {
           mkdirSync(svgDir, { recursive: true });
-          writeFileSync(path.join(svgDir, `${target.replace(/[^\w.-]+/g, '_').slice(0, 80)}.svg`), svg);
+          writeFileSync(path.join(svgDir, `${slugOf(target)}.svg`), svg);
         }
       }
     } catch (err) {
       process.stdout.write(`${target}: ${(err as Error).message}\n\n`);
+      summary.push(`${slugOf(target).padEnd(34)} | error: ${(err as Error).message}`);
       failed++;
     }
   }
+  process.stdout.write(
+    `${'house'.padEnd(34)} | faces | main | junk | steep |   IoU | edges | review${' '.repeat(22)} | targets\n${summary.join('\n')}\n\n`,
+  );
   process.stdout.write(`${targets.length - failed} of ${targets.length} houses met every target.\n`);
   return failed > 0 ? 1 : 0;
 }

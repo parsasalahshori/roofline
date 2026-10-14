@@ -97,3 +97,17 @@ export function formatCheck(name: string, roof: Roof3d, a: Acceptance, ms?: numb
   );
   return lines.join('\n');
 }
+
+/**
+ * Whether any main face (150 sq ft or more) misses Google's own segment under it by more than the targets (1/12 of
+ * pitch, 15 degrees of facing): such a roof is never shown as if it were sure.
+ */
+export function differsFromGoogle(roof: Roof3d, building: SolarBuilding | null): boolean {
+  return checkRoof(roof, building).rows.some((r) => r.main && (!r.pitchOk || !r.facingOk));
+}
+
+/** The roof with 'differs-from-google' among its review reasons when it does. */
+export function withGoogleCheck(roof: Roof3d, building: SolarBuilding | null): Roof3d {
+  if (roof.quality === undefined || roof.quality.reasons.includes('differs-from-google') || !differsFromGoogle(roof, building)) return roof;
+  return { ...roof, quality: { ...roof.quality, reasons: [...roof.quality.reasons, 'differs-from-google'] } };
+}

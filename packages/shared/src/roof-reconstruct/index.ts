@@ -12,7 +12,7 @@ import type { LngLat } from '../roof.ts';
 import type { Roof3d, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../roof-3d.ts';
 import { dist, pointInRing, signedArea, type XY } from './geom.ts';
 import { DEFAULT_OUTLINE_PARAMS, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
-import { buildFaces, DEFAULT_PLANE_PARAMS, findPlanes, type Plane, type PlaneParams, refitFaces } from './planes.ts';
+import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type Plane, type PlaneParams, refitFaces } from './planes.ts';
 import { close, components, countSet, fillHoles, largestComponent, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
 
@@ -175,17 +175,25 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // 2. Planes and faces.
   const found = findPlanes(g, s, dsm, roof, rng, planePrm, tree);
   if (found.length === 0) return null;
-  const faces = buildFaces(g, s, dsm, roof, found, planePrm, tree);
+  let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree);
   if (faces.planes.length === 0) return null;
-  const planes = refitFaces(g, s, dsm, faces, planePrm.tolM);
+  let planes = refitFaces(g, s, dsm, faces, planePrm.tolM);
 
   // 3. The outline, squared.
   const boundary = maskBoundary(g, roof, s);
   const outline = squareOutline(boundary, outlinePrm);
   if (outline.length < 3) return null;
 
-  // 4. Topology.
-  const topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
+  // 4. Topology. A face whose polygon comes out under the smallest face size (its corners pulled in by its
+  //    neighbours' creases) is dissolved and the topology built again.
+  let topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
+  for (let pass = 0; pass < 3 && faces.planes.length > 1; pass++) {
+    const tiny = new Set(topo.faces.map((f, k) => (Math.abs(signedArea(f.ring)) < planePrm.tinyFaceM2 ? k : -1)).filter((k) => k >= 0));
+    if (tiny.size === 0 || tiny.size >= faces.planes.length) break;
+    faces = dissolve(g, s, dsm, roof, faces, tiny, tree);
+    planes = refitFaces(g, s, dsm, faces, planePrm.tolM);
+    topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
+  }
 
   // Face areas: the polygons' (they tile the outline), shared out so they add up to the outline's area.
   const outlineArea = signedArea(outline);
@@ -266,6 +274,8 @@ export const QUALITY_LIMITS = {
   faceCoverage: 0.9,
   meanResidualM: 0.12,
   treeShare: 0.2,
+  /** Faces drawn from their pixels (their polygon could not be built) may be at most this share of the roof. */
+  fallbackShare: 0.12,
 } as const;
 
 /**
@@ -371,7 +381,7 @@ function qualityOf(
   const reasons: RoofQualityReason[] = [];
   if (imagery !== null && imagery !== 'HIGH') reasons.push('coarse-imagery');
   if (outlineIoU < QUALITY_LIMITS.outlineIoU || edgeFit < QUALITY_LIMITS.edgeFit) reasons.push('outline-off');
-  if (faceCoverage < QUALITY_LIMITS.faceCoverage || fallbackArea > 0.05 * allArea) reasons.push('faces-patchy');
+  if (faceCoverage < QUALITY_LIMITS.faceCoverage || fallbackArea > QUALITY_LIMITS.fallbackShare * allArea) reasons.push('faces-patchy');
   if (meanResidualM > QUALITY_LIMITS.meanResidualM) reasons.push('rough-heights');
   if (treeShare > QUALITY_LIMITS.treeShare) reasons.push('trees');
   const round = (x: number) => Math.round(x * 1000) / 1000;

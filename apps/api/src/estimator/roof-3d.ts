@@ -14,6 +14,7 @@ import { lngLatToUtm, reconstructRoof, toRoof3d, utmToLngLat, utmZoneOfEpsg } fr
 import type { AppDeps } from '../app.ts';
 import { type RoofLayers, SolarLayersUnavailableError } from '../providers/solar-layers.ts';
 import { encodeRgbPng } from './png.ts';
+import { withGoogleCheck } from './roof-3d-compare.ts';
 import { SOLAR_BUILDING_SNAP_M } from './solar.ts';
 
 /*
@@ -225,8 +226,9 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
     async (layers): Promise<Roof3dSnapshot> => {
       const fetchedAt = deps.clock.now().toISOString();
       if (layers === null) return { fetchedAt, at, roof: null, none: 'no-imagery' };
-      const roof = roofOnLayers(layers, point, { steep: steepRoof(building) });
-      if (roof === null || unusable(roof)) return { fetchedAt, at, roof: null, none: 'no-roof' };
+      const found = roofOnLayers(layers, point, { steep: steepRoof(building) });
+      if (found === null || unusable(found)) return { fetchedAt, at, roof: null, none: 'no-roof' };
+      const roof = withGoogleCheck(found, building);
       return { fetchedAt, at, roof, photo: await photoOrNull(deps, layers, roof) };
     },
     (err: unknown) => {

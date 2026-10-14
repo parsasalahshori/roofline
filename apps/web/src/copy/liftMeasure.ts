@@ -52,11 +52,12 @@ export const liftMeasure = {
   /** A roof measured in 3D that missed a quality target. */
   needsReview: 'Needs review: check this roof against the photo before you price it.',
   reviewReason: {
-    'coarse-imagery': 'Google only has lower-resolution imagery here.',
-    'outline-off': "The outline doesn't follow Google's roof outline closely.",
+    'coarse-imagery': 'Only lower-resolution aerial imagery covers this address.',
+    'outline-off': "The outline doesn't closely follow the roof's measured edge.",
     'faces-patchy': "Some sections couldn't be traced cleanly.",
-    'rough-heights': "The roof's surface is uneven in Google's height map.",
+    'rough-heights': "The roof's surface is uneven in the height map.",
     trees: 'Trees cover part of the roof.',
+    'differs-from-google': "Some sections' pitch or facing differ from a second measurement of this roof.",
   },
   facetLabel: (letter: string, sqFt: number, pitch: string) => `Facet ${letter}, ${sqFt.toLocaleString()} sq ft, ${pitch} pitch`,
   /** A facet label is a button: pressed means the section is in the quote. */

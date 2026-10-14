@@ -22,8 +22,20 @@ export class FakeFootprintSource implements FootprintSource {
   readonly configured = true;
   readonly calls: FootprintCall[] = [];
   private failures = 0;
+  private held: Promise<void> | null = null;
   failNext(n = 1): void {
     this.failures = n;
+  }
+  /** Holds every tile's features back until the returned release is called (a slow load). */
+  hold(): () => void {
+    let release = () => {};
+    this.held = new Promise<void>((resolve) => {
+      release = () => {
+        this.held = null;
+        resolve();
+      };
+    });
+    return release;
   }
   private record(call: FootprintCall): void {
     this.calls.push(call);
@@ -42,6 +54,7 @@ export class FakeFootprintSource implements FootprintSource {
   }
   async *features(quadkey: string): AsyncGenerator<FootprintFeature> {
     this.record({ method: 'features', args: { quadkey } });
+    if (this.held !== null) await this.held;
     yield* inTile(quadkey);
   }
 }

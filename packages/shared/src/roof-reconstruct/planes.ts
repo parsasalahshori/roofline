@@ -23,7 +23,10 @@ export type PlaneParams = {
   /** Touching planes whose normals are within this angle and whose heights agree within mergeStepM are one face. */
   mergeAngleDeg: number;
   mergeStepM: number;
-  /** Touching faces within this angle (degrees) whose joint plane fits within mergeFitM (80% of pixels) are one face. */
+  /**
+   * Touching faces within this angle (degrees) whose joint plane fits within mergeFitM (80% of pixels) are one face.
+   * Off (0) by default: on 54 real roofs it merged more real faces than terraces.
+   */
   mergeLooseDeg: number;
   mergeFitM: number;
   /** A face smaller than this (square metres) that is mostly inside the roof is merged into its neighbours. */
@@ -35,6 +38,8 @@ export type PlaneParams = {
   /** ...when smaller than this (square metres) and than explainedShare of its largest neighbour. */
   explainedMaxM2: number;
   explainedShare: number;
+  /** A chamfer or riser (buildFaces, step 4) is at most this big, square metres. */
+  chamferMaxM2: number;
   /** Faces under explainedSmallM2 (square metres) are explained within explainedSmallM (metres). */
   explainedSmallM: number;
   explainedSmallM2: number;
@@ -58,15 +63,16 @@ export const DEFAULT_PLANE_PARAMS: PlaneParams = {
   windowM: 0.6,
   mergeAngleDeg: 4,
   mergeStepM: 0.35,
-  mergeLooseDeg: 12,
+  mergeLooseDeg: 0,
   mergeFitM: 0.22,
   smallFaceM2: 4,
   tinyFaceM2: 2.35,
   explainedM: 0.3,
   explainedSmallM: 0.45,
   explainedSmallM2: 8,
-  explainedMaxM2: 30,
+  explainedMaxM2: 12,
   explainedShare: 0.6,
+  chamferMaxM2: 12,
   sliverWidthM: 0.8,
   sliverM2: 8,
   steepM2: 15,
@@ -667,7 +673,7 @@ function splitNecks(g: Grid, s: number, dsm: Float32Array, faces: Faces, prm: Pl
 }
 
 /** The faces in `gone` dissolved: their pixels flood from the faces round them. */
-function dissolve(g: Grid, s: number, dsm: Float32Array, roof: Mask, faces: Faces, gone: ReadonlySet<number>, tree: Mask | null): Faces {
+export function dissolve(g: Grid, s: number, dsm: Float32Array, roof: Mask, faces: Faces, gone: ReadonlySet<number>, tree: Mask | null): Faces {
   const seeds = faces.labels.slice();
   const fill = new Uint8Array(roof.length);
   for (let i = 0; i < seeds.length; i++) {
@@ -767,7 +773,7 @@ function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof ad
     planeZ(P[a]!, cx[a]!, cy[a]!) < planeZ(P[b]!, cx[a]!, cy[a]!) && planeZ(P[b]!, cx[b]!, cy[b]!) < planeZ(P[a]!, cx[b]!, cy[b]!);
   let pick = -1;
   for (let f = 0; f < n; f++) {
-    if (slope(f) * 12 < 2 || adj.area[f]! * s * s > prm.explainedMaxM2) continue;
+    if (slope(f) * 12 < 2 || adj.area[f]! * s * s > prm.chamferMaxM2) continue;
     if (pick >= 0 && adj.area[f]! >= adj.area[pick]!) continue;
     const nb = near[f]!;
     // A riser: a small strip much steeper than a neighbour facing the same way (a terrace in the height map).
