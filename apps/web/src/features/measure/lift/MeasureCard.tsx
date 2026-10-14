@@ -42,8 +42,9 @@ export function cardNumbers(m: MeasurementView, estimate: InstantEstimate, model
         { kind: 'valley', ft: t.valleyFt },
         { kind: 'eave', ft: t.eaveFt },
         { kind: 'rake', ft: t.rakeFt },
-        // A roof measured in 3D: its steps and flat edges, when it has any.
-        ...((t.stepFt ?? 0) > 0 ? [{ kind: 'step' as const, ft: t.stepFt ?? 0 }] : []),
+        // A roof measured in 3D: its flashing and flat edges, when it has any.
+        ...((t.flashingFt ?? 0) > 0 ? [{ kind: 'flashing' as const, ft: t.flashingFt ?? 0 }] : []),
+        ...((t.stepFt ?? 0) > 0 ? [{ kind: 'step-flashing' as const, ft: t.stepFt ?? 0 }] : []),
         ...((t.flatEdgeFt ?? 0) > 0 ? [{ kind: 'flat-edge' as const, ft: t.flatEdgeFt ?? 0 }] : []),
       ],
       ridgeFt: t.ridgeFt,
@@ -70,7 +71,8 @@ const LINE_LABEL: Record<RoofLineKind, string> = {
   valley: liftMeasure.valleys,
   eave: liftMeasure.eaves,
   rake: liftMeasure.rakes,
-  step: liftMeasure.steps,
+  flashing: liftMeasure.flashing,
+  'step-flashing': liftMeasure.stepFlashing,
   'flat-edge': liftMeasure.flatEdges,
 };
 

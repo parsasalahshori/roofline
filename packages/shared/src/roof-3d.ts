@@ -4,8 +4,17 @@
 import type { LngLat, Ring } from './roof.ts';
 import type { RoofPlane } from './roof-model.ts';
 
-export const ROOF_3D_LINE_KINDS = ['ridge', 'hip', 'valley', 'eave', 'rake', 'step', 'flat-edge'] as const;
-export type Roof3dLineKind = (typeof ROOF_3D_LINE_KINDS)[number];
+/**
+ * Ridge, hip and valley: creases between two faces. Eave and rake: a face's edge where the roof ends, on the outline or
+ * over a lower roof. Flashing (the wall runs level along the face below it) and step flashing (the wall climbs along
+ * it): where a lower roof meets a wall rising above it. Flat edge: where two flat faces meet.
+ */
+export const ROOF_3D_LINE_KINDS = ['ridge', 'hip', 'valley', 'eave', 'rake', 'flashing', 'step-flashing', 'flat-edge'] as const;
+/**
+ * A line's kind. 'step' is what reconstructions stored before October 2026 called the line between a higher and a lower
+ * roof (one line for the higher roof's edge and the lower roof's wall); it is read as step flashing.
+ */
+export type Roof3dLineKind = (typeof ROOF_3D_LINE_KINDS)[number] | 'step';
 
 export type Roof3dFace = {
   /** [lng, lat], open ring, counter-clockwise. */
@@ -29,7 +38,7 @@ export type Roof3dLine = {
   lengthFt: number;
   /** How much the line climbs end to end, feet. */
   riseFt: number;
-  /** Indexes into `faces`: one for an outline edge, two for a line between faces. */
+  /** Indexes into `faces`: the face whose edge it is (eave, rake, flashing, flat edge), or the two a crease is between. */
   faces: number[];
 };
 

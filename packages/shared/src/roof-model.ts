@@ -19,10 +19,11 @@ import { instantEstimate, perimeterFt, pitchFactor, polygonAreaSqFt, type Instan
 import { isRoof3d, type Roof3d, sameOutline } from './roof-3d.ts';
 
 /**
- * 'step' (a wall rising out of a lower roof: step flashing) and 'flat-edge' (an edge of a flat or low-slope face) come
- * only from roofs reconstructed in 3D (roof-3d.ts).
+ * 'flashing' and 'step-flashing' (where a lower roof meets a wall rising above it: the wall level along the lower roof,
+ * or climbing along it) and 'flat-edge' (an edge of a flat or low-slope face) come only from roofs reconstructed in 3D
+ * (roof-3d.ts).
  */
-export type RoofLineKind = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'step' | 'flat-edge';
+export type RoofLineKind = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'flashing' | 'step-flashing' | 'flat-edge';
 export interface RoofFacet {
   /** 'A', 'B', ... largest first. */
   id: string;
@@ -72,8 +73,10 @@ export interface RoofTotals {
   valleyFt: number;
   eaveFt: number;
   rakeFt: number;
-  /** Step flashing (walls rising out of the roof); only on roofs reconstructed in 3D. */
+  /** Step flashing (a wall climbing along a lower roof); only on roofs reconstructed in 3D. */
   stepFt?: number;
+  /** Flashing where a wall runs level along a lower roof (headwall); only on roofs reconstructed in 3D. */
+  flashingFt?: number;
   /** Edges of flat or low-slope faces; only on roofs reconstructed in 3D. */
   flatEdgeFt?: number;
 }
@@ -1311,7 +1314,8 @@ export function quoteFacets(roof: RoofModel, excluded: readonly string[] | null 
     valleyFt: sum('valley'),
     eaveFt: sum('eave'),
     rakeFt: sum('rake'),
-    ...(roof.totals.stepFt !== undefined ? { stepFt: sum('step') } : {}),
+    ...(roof.totals.stepFt !== undefined ? { stepFt: sum('step-flashing') } : {}),
+    ...(roof.totals.flashingFt !== undefined ? { flashingFt: sum('flashing') } : {}),
     ...(roof.totals.flatEdgeFt !== undefined ? { flatEdgeFt: sum('flat-edge') } : {}),
   };
   quoted.wastePct = wasteFor(quoted.hipFt, quoted.rakeFt, quoted.valleyFt, kept.length);
@@ -1452,7 +1456,8 @@ export function roofModelFrom3d(roof: Roof3d, o: { pitchX12: number; ownPitch: b
       }
     }
     return {
-      kind: l.kind,
+      // 'step' (stored before flashing and step flashing were told apart) is read as step flashing.
+      kind: l.kind === 'step' ? 'step-flashing' : l.kind,
       coords: [
         [l.coords[0][0], l.coords[0][1]],
         [l.coords[1][0], l.coords[1][1]],
@@ -1475,7 +1480,8 @@ export function roofModelFrom3d(roof: Roof3d, o: { pitchX12: number; ownPitch: b
     valleyFt: sum('valley'),
     eaveFt: sum('eave'),
     rakeFt: sum('rake'),
-    stepFt: sum('step'),
+    stepFt: sum('step-flashing'),
+    flashingFt: sum('flashing'),
     flatEdgeFt: sum('flat-edge'),
   };
   totals.wastePct = wasteFor(totals.hipFt, totals.rakeFt, totals.valleyFt, facets.length);
@@ -1503,6 +1509,7 @@ function combineRoofs(main: RoofModel, other: RoofModel): RoofModel {
     eaveFt: t('eaveFt'),
     rakeFt: t('rakeFt'),
     stepFt: t('stepFt'),
+    flashingFt: t('flashingFt'),
     flatEdgeFt: t('flatEdgeFt'),
   };
   totals.wastePct = wasteFor(totals.hipFt, totals.rakeFt, totals.valleyFt, facets.length);

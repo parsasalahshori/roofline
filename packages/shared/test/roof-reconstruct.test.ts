@@ -9,11 +9,13 @@ import {
   type LocalRoof,
 } from '../src/roof-reconstruct/index.ts';
 import { squareOutline } from '../src/roof-reconstruct/outline.ts';
+import { joinCollinear, jogsFollow, type TopoLine } from '../src/roof-reconstruct/topology.ts';
 import {
   GABLE,
   HIP,
   HIP_FLAT,
   L_CROSS,
+  PORCH,
   SHAPES,
   synthesize,
   TERRACE,
@@ -149,22 +151,65 @@ describe('reconstructRoof on synthetic height maps', () => {
     }
   });
 
-  it('draws valleys where the L wing meets the main roof, and steps only at the upper storey', () => {
+  it('draws valleys where the L wing meets the main roof, and flashing only at the upper storey', () => {
     const l = reconstructRoof(...args(synthesize(L_CROSS, { turnDeg: 17 })))!;
     expect(l.lines.filter((x) => x.kind === 'valley')).toHaveLength(2);
-    expect(l.lines.some((x) => x.kind === 'step')).toBe(false);
-    const two = reconstructRoof(...args(synthesize(TWO_STOREY, { turnDeg: 17 })))!;
-    const steps = two.lines.filter((x) => x.kind === 'step');
-    expect(steps.length).toBeGreaterThanOrEqual(2);
-    for (const s of steps) expect(s.faces).toHaveLength(2);
+    expect(l.lines.some((x) => x.kind === 'flashing' || x.kind === 'step-flashing')).toBe(false);
+    const syn = synthesize(TWO_STOREY, { turnDeg: 17 });
+    const two = reconstructRoof(...args(syn))!;
+    const faceAt = (p: XY) => two.faces.findIndex((f) => inside(syn.toLocal(p), f.ring));
+    const upper = [faceAt({ x: -5.5, y: 2.5 }), faceAt({ x: -5.5, y: -2.5 })];
+    const lower = [faceAt({ x: 4.5, y: 2.5 }), faceAt({ x: 4.5, y: -2.5 })];
+    // The wall: step flashing on each lower face up its slope, one face each; the upper faces' edges over it are rakes.
+    const flashing = two.lines.filter((x) => x.kind === 'step-flashing');
+    expect(flashing.length).toBeGreaterThanOrEqual(2);
+    for (const s of flashing) expect(s.faces.length === 1 && lower.includes(s.faces[0]!)).toBe(true);
+    const w0 = syn.toLocal({ x: -1, y: -5 });
+    const w1 = syn.toLocal({ x: -1, y: 5 });
+    const offWall = (p: XY) => Math.abs((w1.x - w0.x) * (p.y - w0.y) - (w1.y - w0.y) * (p.x - w0.x)) / Math.hypot(w1.x - w0.x, w1.y - w0.y);
+    const nearWall = (x: { a: XY; b: XY }) => offWall(x.a) < 0.3 && offWall(x.b) < 0.3;
+    const upperRakes = two.lines.filter((x) => x.kind === 'rake' && nearWall(x));
+    expect(upperRakes.length).toBeGreaterThanOrEqual(2);
+    for (const r of upperRakes) expect(upper).toContain(r.faces[0]);
   });
 
-  it('marks the flat deck of a hip roof flat, with flat edges round it', () => {
+  it('counts an upper eave over a porch roof as an eave, and flashes the porch roof along the wall', () => {
+    // Turns and trees where the porch's corners land true (where a tree sits on the wall's end the corner can be placed
+    // off it, which moves areas and lines alike).
+    for (const [turnDeg, seed] of [[17, 11], [30, 7], [30, 11]] as const) checkAgainstTruth(synthesize(PORCH, { turnDeg, seed }));
+  });
+
+  it('counts a jog in an eave as eave, and a short piece between two kinds as itself', () => {
+    const line = (kind: TopoLine['kind'], a: XY, b: XY, face = 0): TopoLine => ({ kind, a, b, faces: [face], lengthM: Math.hypot(b.x - a.x, b.y - a.y), riseM: 0 });
+    const eaveJog = [line('eave', { x: 0, y: 0 }, { x: 6, y: 0 }), line('rake', { x: 6, y: 0 }, { x: 6, y: -0.8 }), line('eave', { x: 6, y: -0.8 }, { x: 12, y: -0.8 })];
+    expect(jogsFollow(eaveJog, 1.5).map((l) => l.kind)).toEqual(['eave', 'eave', 'eave']);
+    // A gable: eave, rake up, rake down, eave: nothing between two of one kind.
+    const gable = [line('eave', { x: 0, y: 0 }, { x: 6, y: 0 }), line('rake', { x: 6, y: 0 }, { x: 6, y: 1 }), line('eave', { x: 6, y: 1 }, { x: 0, y: 1 }, 1)];
+    expect(jogsFollow(gable, 1.5).map((l) => l.kind)).toEqual(['eave', 'rake', 'eave']);
+    // A long piece is its own kind, however it sits.
+    const long = [eaveJog[0]!, line('rake', { x: 6, y: 0 }, { x: 6, y: -3 }), line('eave', { x: 6, y: -3 }, { x: 12, y: -3 })];
+    expect(jogsFollow(long, 1.5).map((l) => l.kind)).toEqual(['eave', 'rake', 'eave']);
+  });
+
+  it('joins pieces of one line running on in a straight line, and only those', () => {
+    const ridge = (a: XY, b: XY, faces = [0, 1]): TopoLine => ({ kind: 'ridge', a, b, faces, lengthM: Math.hypot(b.x - a.x, b.y - a.y), riseM: 0 });
+    const joined = joinCollinear([ridge({ x: 0, y: 0 }, { x: 4, y: 0 }), ridge({ x: 7, y: 0 }, { x: 4, y: 0 }), ridge({ x: 7, y: 0 }, { x: 9, y: 2 })]);
+    expect(joined).toHaveLength(2);
+    expect(joined[0]!.lengthM).toBeCloseTo(7, 9);
+    // Other faces: not the same line.
+    expect(joinCollinear([ridge({ x: 0, y: 0 }, { x: 4, y: 0 }), ridge({ x: 4, y: 0 }, { x: 7, y: 0 }, [1, 2])])).toHaveLength(2);
+  });
+
+  it('marks the flat deck of a hip roof flat, with ridges round it where the hip faces meet it', () => {
     const roof = reconstructRoof(...args(synthesize(HIP_FLAT, { turnDeg: 17 })))!;
     const flat = roof.faces.filter((f) => f.flat);
     expect(flat).toHaveLength(1);
     expect(flat[0]!.pitchX12).toBeLessThan(0.5);
-    expect(roof.lines.filter((x) => x.kind === 'flat-edge')).toHaveLength(4);
+    const deck = roof.faces.indexOf(flat[0]!);
+    const ridges = roof.lines.filter((x) => x.kind === 'ridge');
+    expect(ridges).toHaveLength(4);
+    for (const r of ridges) expect(r.faces).toContain(deck);
+    expect(roof.lines.some((x) => x.kind === 'flat-edge')).toBe(false);
   });
 
   it('is deterministic: the same height map gives the same roof', () => {

@@ -14,7 +14,11 @@ import { type Cycle, lattice, type Lattice, traceCycles } from './lattice.ts';
 import { planeZ, type Plane } from './planes.ts';
 import type { Grid } from './raster.ts';
 
-export type RoofLineKind3d = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'step' | 'flat-edge';
+/**
+ * Ridge, hip and valley: creases between two faces. Eave and rake: a face's edge, on the outline or over a lower roof.
+ * Flashing and step flashing: where a lower roof meets a wall rising above it. Flat edge: where two flat faces meet.
+ */
+export type RoofLineKind3d = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'flashing' | 'step-flashing' | 'flat-edge';
 
 export type TopologyParams = {
   /** Two faces sharing less boundary than this (metres) only touch at a corner. */
@@ -25,12 +29,24 @@ export type TopologyParams = {
   stepM: number;
   /** A crease climbing less than this (degrees) is level: a ridge rather than a hip. */
   levelDeg: number;
-  /** An outline edge within this angle (degrees) of its face's level direction is an eave; steeper, a rake. */
+  /**
+   * A face's edge within this angle (degrees) of its level direction is an eave (or, along a wall, flashing); steeper,
+   * a rake (step flashing). 45: whichever it is nearer, so a cut-off corner of a hip roof's eave stays an eave.
+   */
   eaveDeg: number;
+  /**
+   * A wall runs within this angle (degrees) of a face's level or slope direction; a height break on the diagonal across
+   * both faces' slopes is a hip or valley the height map holds apart.
+   */
+  wallDeg: number;
   /** Below this slope (x/12) a face is flat (low slope). */
   flatX12: number;
+  /** Below this slope (x/12) a face is dead level: every edge of it is an eave. */
+  levelX12: number;
   /** A corner within this of an outline corner is moved onto it, metres. */
   cornerSnapM: number;
+  /** A piece of a face's edge shorter than this between two longer pieces of one kind is a jog in it, metres. */
+  jogM: number;
 };
 
 export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
@@ -38,9 +54,12 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   minEdgeM: 1.0,
   stepM: 0.4,
   levelDeg: 6,
-  eaveDeg: 30,
+  eaveDeg: 45,
+  wallDeg: 30,
   flatX12: 2,
+  levelX12: 0.5,
   cornerSnapM: 0.6,
+  jogM: 1.5,
 };
 
 export type TopoFace = { ring: XY[]; areaM2: number; fromPixels: boolean };
@@ -589,30 +608,69 @@ export function buildTopology(
   const lines: TopoLine[] = [];
   const levelTan = Math.tan((prm.levelDeg * Math.PI) / 180);
   const eaveCos = Math.cos((prm.eaveDeg * Math.PI) / 180);
+  // How far a direction (unit dx, dy) is from a face's level direction (across its slope), as |cos|: 1 level, 0 straight
+  // up the slope; 1 on a dead-level face.
+  const levelSlope = prm.levelX12 / 12;
+  const levelCos = (f: number, dx: number, dy: number): number => {
+    const pl = planes[f]!;
+    const slope = Math.hypot(pl.a, pl.b);
+    return slope < levelSlope ? 1 : Math.abs((dx * -pl.b + dy * pl.a) / slope);
+  };
+  // A face's own edge from a to b: an edge of the roof (`edge`: eave where it runs level along the face, rake where it
+  // climbs; a low-slope face's edges too, as a report counts them), or where the face meets a wall rising above it (`wall`: flashing where the wall
+  // runs level along the face, step flashing where it climbs). Its true length is along the face's plane.
+  const faceEdge = (f: number, a: XY, b: XY, role: 'edge' | 'wall'): TopoLine | null => {
+    const len = dist(a, b);
+    if (len < 0.05) return null;
+    const pl = planes[f]!;
+    const rise = Math.abs(planeZ(pl, b.x, b.y) - planeZ(pl, a.x, a.y));
+    const level = levelCos(f, (b.x - a.x) / len, (b.y - a.y) / len) >= eaveCos;
+    const kind: RoofLineKind3d = role === 'wall' ? (level ? 'flashing' : 'step-flashing') : level ? 'eave' : 'rake';
+    return { kind, a, b, faces: [f], lengthM: Math.hypot(len, rise), riseM: rise };
+  };
+  // A crease from a to b between face i (on its left) and face j: a ridge or hip where they meet convex (level or
+  // climbing), a valley where concave (by the steeper face's climb, so a low-slope face beside a steep one still meets
+  // it in a hip or valley); a flat edge between two flat faces. Its rise is the planes' (the mean of the two on
+  // a crease the planes do not quite meet along).
+  const creaseLine = (i: number, j: number, a: XY, b: XY): TopoLine => {
+    const pi = planes[i]!;
+    const pj = planes[j]!;
+    const len = dist(a, b);
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const rise = (Math.abs(planeZ(pi, b.x, b.y) - planeZ(pi, a.x, a.y)) + Math.abs(planeZ(pj, b.x, b.y) - planeZ(pj, a.x, a.y))) / 2;
+    let lk: RoofLineKind3d;
+    if (flat[i] && flat[j]) lk = 'flat-edge';
+    else {
+      // Into the left face: the chain's left, so (-uy, ux) from its forward direction.
+      const convex = (pj.a - pi.a) * -uy + (pj.b - pi.b) * ux > 0;
+      // How steeply it climbs on the steeper face (a low-slope face beside it hardly climbs anywhere).
+      const climb = Math.max(Math.abs(pi.a * ux + pi.b * uy), Math.abs(pj.a * ux + pj.b * uy));
+      lk = convex ? (climb < levelTan ? 'ridge' : 'hip') : 'valley';
+    }
+    return { kind: lk, a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
+  };
+  // A wall stands along a house's walls, so it runs level along a face beside it or straight up its slope; a boundary
+  // running across both faces' slopes on the diagonal is where they meet (a hip or a valley), not a wall, even where
+  // the height map holds them apart.
+  const wallCos = Math.cos((prm.wallDeg * Math.PI) / 180);
+  const diagonalCos = Math.cos(((90 - prm.wallDeg) * Math.PI) / 180);
+  const diagonal = (f: number, dx: number, dy: number): boolean => {
+    const cos = levelCos(f, dx, dy);
+    return !flat[f] && cos < wallCos && cos > diagonalCos;
+  };
   chains.forEach((c, k) => {
     if (contracted[k]) return;
     const kind = kinds[k]!;
     const path = paths[k]!;
     if (kind.type === 'outline') {
       const f = c.left >= 0 ? c.left : c.right;
-      const pl = planes[f]!;
-      const slope = Math.hypot(pl.a, pl.b);
-      for (let i = 1; i < path.length; i++) {
-        const a = path[i - 1]!;
-        const b = path[i]!;
-        const len = dist(a, b);
-        if (len < 0.05) continue;
-        const rise = Math.abs(planeZ(pl, b.x, b.y) - planeZ(pl, a.x, a.y));
-        let lk: RoofLineKind3d = 'flat-edge';
-        if (!flat[f]) {
-          // Level direction of the face: across its slope.
-          const lx = -pl.b / slope;
-          const ly = pl.a / slope;
-          const cos = Math.abs(((b.x - a.x) * lx + (b.y - a.y) * ly) / len);
-          lk = cos >= eaveCos ? 'eave' : 'rake';
-        }
-        lines.push({ kind: lk, a, b, faces: [f], lengthM: Math.hypot(len, rise), riseM: rise });
+      const pieces: TopoLine[] = [];
+      for (let n = 1; n < path.length; n++) {
+        const l = faceEdge(f, path[n - 1]!, path[n]!, 'edge');
+        if (l !== null) pieces.push(l);
       }
+      lines.push(...jogsFollow(pieces, prm.jogM));
       return;
     }
     if (kind.type === 'seam') return;
@@ -621,38 +679,106 @@ export function buildTopology(
     const pi = planes[i]!;
     const pj = planes[j]!;
     if (kind.type === 'step') {
-      for (let n = 1; n < path.length; n++) {
-        const a = path[n - 1]!;
-        const b = path[n]!;
-        const len = dist(a, b);
-        if (len < 0.05) continue;
+      // A wall between a higher and a lower roof: the higher roof's edge over the lower one is its eave or rake (as an
+      // edge on the outline would be), and where the lower roof meets the wall it is flashed.
+      // Faces that only touch at a point have no line between them.
+      if (pathLength(path) < 0.3) return;
+      // A piece across both faces' slopes on the diagonal is their crease, unless it is a short end or jog of the wall
+      // (a corner placed a little off).
+      const pieces = path.slice(1).map((b, n) => ({ a: path[n]!, b, len: dist(path[n]!, b) })).filter((q) => q.len >= 0.05);
+      const diag = pieces.map(({ a, b, len }) => {
+        const dx = (b.x - a.x) / len;
+        const dy = (b.y - a.y) / len;
+        return diagonal(i, dx, dy) && diagonal(j, dx, dy);
+      });
+      const edges: TopoLine[] = [];
+      const walls: TopoLine[] = [];
+      pieces.forEach(({ a, b, len }, n) => {
+        if (diag[n] && (len >= prm.jogM || diag[n - 1] === true || diag[n + 1] === true)) {
+          lines.push(creaseLine(i, j, a, b));
+          return;
+        }
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-        const lower = planeZ(pi, mid.x, mid.y) <= planeZ(pj, mid.x, mid.y) ? pi : pj;
-        const rise = Math.abs(planeZ(lower, b.x, b.y) - planeZ(lower, a.x, a.y));
-        lines.push({ kind: 'step', a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise });
-      }
+        const [upper, lower] = planeZ(pi, mid.x, mid.y) >= planeZ(pj, mid.x, mid.y) ? [i, j] : [j, i];
+        const e = faceEdge(upper, a, b, 'edge');
+        const w = faceEdge(lower, a, b, 'wall');
+        if (e !== null) edges.push(e);
+        if (w !== null) walls.push(w);
+      });
+      lines.push(...jogsFollow(edges, prm.jogM), ...jogsFollow(walls, prm.jogM));
       return;
     }
     const a = path[0]!;
     const b = path.at(-1)!;
-    const len = dist(a, b);
-    if (len < 0.3) return;
-    const ux = (b.x - a.x) / len;
-    const uy = (b.y - a.y) / len;
-    const rise = Math.abs(planeZ(pi, b.x, b.y) - planeZ(pi, a.x, a.y));
-    let lk: RoofLineKind3d;
-    if (flat[i] || flat[j]) lk = 'flat-edge';
-    else {
-      // Into the left face: the chain's left, so (-uy, ux) from its forward direction.
-      const nx = -uy;
-      const ny = ux;
-      const convex = (pj.a - pi.a) * nx + (pj.b - pi.b) * ny > 0;
-      const climb = Math.abs(pi.a * ux + pi.b * uy);
-      lk = convex ? (climb < levelTan ? 'ridge' : 'hip') : 'valley';
+    if (dist(a, b) < 0.3) return;
+    if (faces[i]!.fromPixels || faces[j]!.fromPixels) {
+      // A face drawn from its own pixels: its corners were not where the creases put them, so the crease is the
+      // boundary the two faces' pixels share, not the line between its corners.
+      const pts = c.verts.map(at);
+      const keep = simplifyIdx(pts, 0.25).map((q) => pts[q]!);
+      if (pathLength(keep) < 0.3) return;
+      for (let n = 1; n < keep.length; n++) if (dist(keep[n - 1]!, keep[n]!) >= 0.05) lines.push(creaseLine(i, j, keep[n - 1]!, keep[n]!));
+      return;
     }
-    lines.push({ kind: lk, a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise });
+    lines.push(creaseLine(i, j, a, b));
   });
-  return { faces, lines };
+  return { faces, lines: joinCollinear(lines) };
+}
+
+/**
+ * A face's edge (or a wall along it), piece by piece in order: a short piece between two longer ones of one kind on the
+ * same face is a jog in that edge (a step in the eave where the wall below steps out, a notch the outline cut), and is
+ * counted as that kind.
+ */
+export function jogsFollow(pieces: readonly TopoLine[], jogM: number): TopoLine[] {
+  const plan = (l: TopoLine) => dist(l.a, l.b);
+  return pieces.map((l, n) => {
+    const before = pieces[n - 1];
+    const after = pieces[n + 1];
+    if (before === undefined || after === undefined || before.kind !== after.kind || l.kind === before.kind) return l;
+    if (!(before.faces[0] === l.faces[0] && after.faces[0] === l.faces[0])) return l;
+    const len = plan(l);
+    return len < jogM && len < plan(before) && len < plan(after) ? { ...l, kind: before.kind } : l;
+  });
+}
+
+/**
+ * Pieces of one line joined: lines of the same kind along the same faces that meet end to end in a straight line (a
+ * ridge a small face touches at a point, a wall's straight run) become one line, its length and rise their sums.
+ */
+export function joinCollinear(lines: readonly TopoLine[], maxTurnDeg = 4): TopoLine[] {
+  const sinMax = Math.sin((maxTurnDeg * Math.PI) / 180);
+  const out = lines.map((l) => ({ ...l, faces: [...l.faces] }));
+  const alive = out.map(() => true);
+  const sameFaces = (x: TopoLine, y: TopoLine) => x.faces.length === y.faces.length && x.faces.every((f) => y.faces.includes(f));
+  const unit = (a: XY, b: XY): XY => {
+    const d = dist(a, b);
+    return { x: (b.x - a.x) / d, y: (b.y - a.y) / d };
+  };
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let p = 0; p < out.length; p++) {
+      if (!alive[p]) continue;
+      for (let q = 0; q < out.length; q++) {
+        if (q === p || !alive[q]) continue;
+        const y = out[q]!;
+        if (out[p]!.kind !== y.kind || !sameFaces(out[p]!, y)) continue;
+        // x turned to end where y touches it, if it touches it at its start.
+        const x0 = out[p]!;
+        const x = dist(x0.b, y.a) < 1e-6 || dist(x0.b, y.b) < 1e-6 ? x0 : { ...x0, a: x0.b, b: x0.a };
+        // y turned to run on from x's end, if it touches it at all.
+        const [ya, yb] = dist(y.a, x.b) < 1e-6 ? [y.a, y.b] : dist(y.b, x.b) < 1e-6 ? [y.b, y.a] : [null, null];
+        if (ya === null || yb === null) continue;
+        const u = unit(x.a, x.b);
+        const v = unit(ya, yb);
+        if (u.x * v.x + u.y * v.y <= 0 || Math.abs(u.x * v.y - u.y * v.x) > sinMax) continue;
+        out[p] = { ...x, b: yb, lengthM: x.lengthM + y.lengthM, riseM: x.riseM + y.riseM };
+        alive[q] = false;
+        changed = true;
+      }
+    }
+  }
+  return out.filter((_, k) => alive[k]);
 }
 
 /** A ring with a hole joined in through a zero-width cut from the hole's corner nearest the ring. */

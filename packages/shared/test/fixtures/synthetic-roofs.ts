@@ -15,7 +15,7 @@ export type TruthFace = {
   planAreaM2: number;
   flat?: boolean;
 };
-export type TruthLines = Partial<Record<'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'step' | 'flat-edge', number>>;
+export type TruthLines = Partial<Record<'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'flashing' | 'step-flashing' | 'flat-edge', number>>;
 export type SyntheticRoof = {
   name: string;
   raster: RoofRaster;
@@ -102,7 +102,10 @@ export const L_CROSS: Shape = {
   planAreaM2: 208,
 };
 
-/** A hip roof 18 x 12 m at 6/12 whose top is a flat deck 2 m above the eaves (10 x 4 m). */
+/**
+ * A hip roof 18 x 12 m at 6/12 whose top is a flat deck 2 m above the eaves (10 x 4 m). The deck's edges are where it
+ * meets the hip faces convex and level: ridges, as a report counts them.
+ */
 export const HIP_FLAT: Shape = {
   name: 'hip-with-flat',
   extent: 12,
@@ -115,13 +118,15 @@ export const HIP_FLAT: Shape = {
     { name: 'west', probe: { x: -7.5, y: 0 }, pitchX12: 6, downDeg: 180, planAreaM2: 32 },
     { name: 'flat deck', probe: { x: 0, y: 0 }, pitchX12: 0, downDeg: 0, planAreaM2: 40, flat: true },
   ],
-  lines: { hip: 4 * SQRT(32 + 4), 'flat-edge': 28, eave: 60 },
+  lines: { hip: 4 * SQRT(32 + 4), ridge: 28, eave: 60 },
   planAreaM2: 216,
 };
 
 /**
  * A two-storey house 20 x 10 m: the west part (X -10..-1) has its own gable at 8/12 with eaves 3 m above the
- * east part's (X -1..10, gable at 5/12). Where they meet, the upper storey's wall rises out of the lower roof: steps.
+ * east part's (X -1..10, gable at 5/12). Where they meet, the upper storey's wall rises out of the lower roof: the upper
+ * roof's edge over it is a rake (it climbs, like the gable's), and the lower roof meets the wall up its slope: step
+ * flashing.
  */
 export const TWO_STOREY: Shape = {
   name: 'two-storey',
@@ -140,10 +145,37 @@ export const TWO_STOREY: Shape = {
   lines: {
     ridge: 9 + 11,
     eave: 18 + 22,
-    rake: 2 * SQRT(25 + (5 * (8 / 12)) ** 2) + 2 * SQRT(25 + (5 * (5 / 12)) ** 2),
-    step: 2 * SQRT(25 + (5 * (5 / 12)) ** 2),
+    rake: 4 * SQRT(25 + (5 * (8 / 12)) ** 2) + 2 * SQRT(25 + (5 * (5 / 12)) ** 2),
+    'step-flashing': 2 * SQRT(25 + (5 * (5 / 12)) ** 2),
   },
   planAreaM2: 200,
+};
+
+/**
+ * A two-storey gable 10 x 8 m at 6/12 (ridge along X, eaves 3 m up) with a porch 10 x 3 m along its south wall under a
+ * shed roof at 3/12 falling away from it. The upper roof's south eave runs level over the porch roof: an eave, as a
+ * report counts it; the porch roof meets the wall level along it: flashing.
+ */
+export const PORCH: Shape = {
+  name: 'porch',
+  extent: 10,
+  height: ({ x, y }) => {
+    if (Math.abs(x) > 5 || y > 4 || y < -7) return null;
+    if (y >= -4) return EAVE + 3 + (4 - Math.abs(y)) * 0.5;
+    return EAVE + (y + 7) * (3 / 12);
+  },
+  faces: [
+    { name: 'north', probe: { x: 0, y: 2 }, pitchX12: 6, downDeg: 90, planAreaM2: 40 },
+    { name: 'south', probe: { x: 0, y: -2 }, pitchX12: 6, downDeg: -90, planAreaM2: 40 },
+    { name: 'porch', probe: { x: 0, y: -5.5 }, pitchX12: 3, downDeg: -90, planAreaM2: 30 },
+  ],
+  lines: {
+    ridge: 10,
+    eave: 10 + 10 + 10,
+    rake: 4 * SQRT(16 + 4) + 2 * SQRT(9 + 0.75 ** 2),
+    flashing: 10,
+  },
+  planAreaM2: 110,
 };
 
 export const SHAPES: readonly Shape[] = [GABLE, HIP, L_CROSS, HIP_FLAT, TWO_STOREY];
