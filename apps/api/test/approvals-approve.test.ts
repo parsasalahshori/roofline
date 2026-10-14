@@ -1,4 +1,6 @@
 import request from 'supertest';
+import { once } from 'node:events';
+import { createServer, request as httpRequest } from 'node:http';
 import { afterAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { createPools, type Pools, type TenantContext, type Tx, withTenant } from '@roofline/db';
 import { createApp } from '../src/app.ts';
@@ -878,15 +880,48 @@ describe('what F2 added to the approvals API', () => {
 
   test('a signed-out request is refused before its body is read', async () => {
     const zero = '00000000-0000-0000-0000-000000000000';
-    // Over 1 MB: if the 1 MB parser ran before the sign-in gate this would be a 413.
-    const big = await request(t.app)
-      .patch(`/api/approvals/${zero}/steps/${zero}`)
-      .send({ version: 1, payload: { label: 'x'.repeat(1100 * 1024) } });
-    expect(big.status).toBe(401);
-    expect(big.body).toEqual({ error: 'Please sign in.' });
+    const server = createServer(t.app);
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('Expected a TCP test server');
 
-    // Over 256 KB, under 1 MB: still a 401, not a 413.
-    const mid = await request(t.app).post(rerunUrl(zero)).send({ note: 'x'.repeat(300 * 1024) });
-    expect(mid.status).toBe(401);
+    // Send the JSON upload headers but withhold every body byte. Authentication must answer
+    // without waiting for an upload. Sending a full oversized body with Supertest races the
+    // server's early connection close and can produce EPIPE/ECONNRESET instead of its 401.
+    const beforeBody = (method: string, path: string, length: number) =>
+      new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
+        const req = httpRequest({
+          hostname: '127.0.0.1', port: address.port, method, path, agent: false,
+          headers: { 'Content-Type': 'application/json', 'Content-Length': length },
+        }, (res) => {
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => { body += chunk; });
+          res.on('error', reject);
+          res.on('end', () => {
+            resolve({ status: res.statusCode, body });
+            req.destroy();
+          });
+        });
+        req.on('error', reject);
+        req.setTimeout(3000, () => req.destroy(new Error('Authentication waited for the request body')));
+        req.flushHeaders();
+      });
+    try {
+      // Over 1 MB: a parser ahead of authentication would reject or wait, not answer 401.
+      const big = await beforeBody('PATCH', `/api/approvals/${zero}/steps/${zero}`, 1100 * 1024);
+      expect(big.status).toBe(401);
+      expect(JSON.parse(big.body)).toEqual({ error: 'Please sign in.' });
+
+      // Over 256 KB, under 1 MB: also answered before any body arrives.
+      const mid = await beforeBody('POST', rerunUrl(zero), 300 * 1024);
+      expect(mid.status).toBe(401);
+      expect(JSON.parse(mid.body)).toEqual({ error: 'Please sign in.' });
+    } finally {
+      const closed = new Promise<void>((resolve) => { server.close(() => resolve()); });
+      server.closeAllConnections();
+      await closed;
+    }
   });
 });

@@ -78,6 +78,7 @@
 }
 
 .actions > a[data-variant="primary"] {
+  color: var(--today-text);
   background: #ffc515;
   border: 1px solid #e5af06;
 }
