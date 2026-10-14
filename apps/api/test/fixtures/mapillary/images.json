@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "id": "1000000000000001",
+      "thumb_1024_url": "https://scontent.example.fbcdn.net/m1/v/t6/far-away.jpg",
+      "captured_at": 1561000000000,
+      "computed_geometry": { "type": "Point", "coordinates": [-92.29960, 34.75030] },
+      "geometry": { "type": "Point", "coordinates": [-92.29960, 34.75030] }
+    },
+    {
+      "id": "1000000000000002",
+      "thumb_1024_url": "https://scontent.example.fbcdn.net/m1/v/t6/nearest.jpg",
+      "captured_at": 1717200000000,
+      "computed_geometry": { "type": "Point", "coordinates": [-92.29992, 34.74998] },
+      "geometry": { "type": "Point", "coordinates": [-92.29991, 34.74997] }
+    },
+    {
+      "id": "not-a-number",
+      "thumb_1024_url": "https://scontent.example.fbcdn.net/m1/v/t6/bad-id.jpg",
+      "captured_at": 1717200000000,
+      "computed_geometry": { "type": "Point", "coordinates": [-92.2999, 34.7500] }
+    }
+  ]
+}

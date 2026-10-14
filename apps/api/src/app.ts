@@ -33,6 +33,8 @@ import type { RelaySessions } from './front-desk/relay-sessions.ts';
 import type { ObjectStore } from './providers/object-store.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
 import type { FootprintSource } from './providers/footprints.ts';
+import type { PropertyData } from './providers/property-data.ts';
+import type { StreetImagery } from './providers/street-imagery.ts';
 import type { AerialMeasure } from './providers/aerial.ts';
 import type { ExactReports } from './providers/exact-reports.ts';
 import type { AdImageRenderer } from './providers/ad-image.ts';
@@ -175,6 +177,10 @@ export type AppDeps = {
   relaySessions: RelaySessions;
   /** G1 Task 7: the map picture on the claim packet (providers/static-map.ts); tests pass `FakeStaticMap`. */
   staticMap: StaticMap;
+  /** Owner and parcel records (providers/property-data.ts: Regrid or the Arkansas GIS parcels); tests pass `FakePropertyData`. */
+  propertyData: PropertyData;
+  /** Street-level photos of a house (providers/street-imagery.ts: Mapillary); tests pass `FakeStreetImagery`. */
+  streetImagery: StreetImagery;
 };
 
 export type AppOptions = {
@@ -211,6 +217,9 @@ const MAP_HOSTS = [
   'https://services.arcgisonline.com',
 ] as const;
 
+/** Where Mapillary serves its street-level photo thumbnails (the owner record panel shows one). */
+const STREET_PHOTO_HOSTS = ['https://*.fbcdn.net', 'https://*.mapillary.com'] as const;
+
 /**
  * The Content-Security-Policy for the web app, which the API serves (web.ts) and whose JSON
  * answers carry it too, harmlessly. Everything is the app's own origin except the map: its tiles
@@ -225,7 +234,7 @@ function contentSecurityPolicy(nodeEnv: Config['NODE_ENV']) {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", 'https://accounts.google.com/gsi/client'],
       styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com/gsi/style'],
-      imgSrc: ["'self'", 'data:', 'blob:', ...MAP_HOSTS],
+      imgSrc: ["'self'", 'data:', 'blob:', ...MAP_HOSTS, ...STREET_PHOTO_HOSTS],
       connectSrc: ["'self'", ...MAP_HOSTS, 'https://accounts.google.com/gsi/'],
       fontSrc: ["'self'", 'data:'],
       mediaSrc: ["'self'"],

@@ -1,0 +1,41 @@
+{
+  "objectIdFieldName": "objectid",
+  "globalIdFieldName": "globalid",
+  "geometryType": "esriGeometryPolygon",
+  "spatialReference": { "wkid": 4326, "latestWkid": 4326 },
+  "fields": [
+    { "name": "parcelid", "type": "esriFieldTypeString" },
+    { "name": "ownername", "type": "esriFieldTypeString" },
+    { "name": "adrlabel", "type": "esriFieldTypeString" },
+    { "name": "adrcity", "type": "esriFieldTypeString" },
+    { "name": "adrzip5", "type": "esriFieldTypeInteger" },
+    { "name": "county", "type": "esriFieldTypeString" },
+    { "name": "totalvalue", "type": "esriFieldTypeDouble" },
+    { "name": "camadate", "type": "esriFieldTypeDate" }
+  ],
+  "features": [
+    {
+      "attributes": {
+        "parcelid": "999-00001-000",
+        "ownername": "EXAMPLE CASEY & AVERY",
+        "adrlabel": "45 PLACEHOLDER RD",
+        "adrcity": "FAKEVILLE",
+        "adrzip5": 72998,
+        "county": "Example",
+        "totalvalue": 156000,
+        "camadate": 1789603200000
+      },
+      "geometry": {
+        "rings": [
+          [
+            [-92.4001, 34.8001],
+            [-92.3997, 34.8001],
+            [-92.3997, 34.7998],
+            [-92.4001, 34.7998],
+            [-92.4001, 34.8001]
+          ]
+        ]
+      }
+    }
+  ]
+}

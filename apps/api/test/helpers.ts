@@ -23,6 +23,8 @@ import { FakeCalendarApi } from '../src/providers/fakes/calendar.ts';
 import { FakeExactReports } from '../src/providers/fakes/exact-reports.ts';
 import { FakeFootprintSource } from '../src/providers/fakes/footprints.ts';
 import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
+import { FakePropertyData } from '../src/providers/fakes/property-data.ts';
+import { FakeStreetImagery } from '../src/providers/fakes/street-imagery.ts';
 import { FakeCallControl } from '../src/providers/fakes/call-control.ts';
 import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
 import { FakeLineLookup } from '../src/providers/fakes/line-lookup.ts';
@@ -176,6 +178,10 @@ export type TestApp = {
   adImage: FakeAdImageRenderer;
   /** G1 Task 7: the claim packet's map picture: a tiny PNG, `absent = true` answers null. */
   staticMap: FakeStaticMap;
+  /** Owner and parcel records: a fictional record for any house; `failNext` makes a lookup fail. */
+  propertyData: FakePropertyData;
+  /** Street photos: none unless a test sets `streetImagery.image`. */
+  streetImagery: FakeStreetImagery;
   /** Billing: it records each customer, checkout, and meter event. */
   billing: FakeBillingProvider;
   /** Texting registration: `failNext` makes the next registrar call fail. */
@@ -298,6 +304,8 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const broadcast = new FakeBroadcastMailer();
   const adImage = new FakeAdImageRenderer();
   const staticMap = new FakeStaticMap();
+  const propertyData = new FakePropertyData(() => clock.now());
+  const streetImagery = new FakeStreetImagery();
   const billing = new FakeBillingProvider();
   const registrar = new FakeTextingRegistrar();
   const jobs = new InlineJobs();
@@ -327,6 +335,8 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     broadcast,
     adImage,
     staticMap,
+    propertyData,
+    streetImagery,
     billing,
     registrar,
     jobs,
@@ -363,6 +373,8 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     broadcast,
     adImage,
     staticMap,
+    propertyData,
+    streetImagery,
     billing,
     registrar,
     jobs,

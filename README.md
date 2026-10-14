@@ -54,6 +54,9 @@
 | `STRIPE_WEBHOOK_SECRET` | when `STRIPE_SECRET_KEY` is set | Stripe webhook signing secret (`whsec_`). |
 | `BILLING_PLANS_FILE` | no | The billing plans JSON file. Defaults to `config/billing-plans.example.json` outside production; required in production when `STRIPE_SECRET_KEY` is set. |
 | `GEOCODIO_API_KEY` | no | Geocodio key for address lookup. Unset: addresses are not looked up. |
+| `REGRID_API_TOKEN` | no | Regrid Parcel API token: owner names, mailing address, year built, last sale and parcel boundary under Owner records (see `docs/property-data.md`). Unset: Regrid is off. |
+| `PROPERTY_DATA_PROVIDER` | no | `regrid` (needs `REGRID_API_TOKEN`) or `arkansas-gis` (the free Arkansas GIS Office parcel layer, no key). Unset: `regrid` when its token is set, else owner records are off. |
+| `MAPILLARY_TOKEN` | no | Mapillary client access token (`MLY\|...`): a street-level photo of the home in Owner records. Unset: no photo. |
 | `EAGLEVIEW_CLIENT_ID` | no | EagleView client id. Both or neither with `EAGLEVIEW_CLIENT_SECRET`. Unset: aerial measurement and exact reports are off. |
 | `EAGLEVIEW_CLIENT_SECRET` | no | EagleView client secret. Both or neither with `EAGLEVIEW_CLIENT_ID`. |
 | `EAGLEVIEW_ENV` | no (`sandbox`) | `sandbox` or `production`. |

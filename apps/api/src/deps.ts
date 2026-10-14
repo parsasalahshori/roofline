@@ -30,6 +30,8 @@ import { createStaticMap } from './providers/static-map.ts'; // G1 Task 7
 import { createFootprintSource } from './providers/footprints.ts';
 import { createObjectStore } from './providers/object-store.ts';
 import { createGeocoder } from './providers/geocoder.ts';
+import { createPropertyData } from './providers/property-data.ts';
+import { createStreetImagery } from './providers/street-imagery.ts';
 import type { CallControl } from './providers/call-control.ts';
 import type { LineLookup } from './providers/line-lookup.ts';
 import { type Llm, LlmUnavailableError } from './providers/llm.ts';
@@ -310,6 +312,8 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     broadcast: broadcastFor(config),
     adImage: config.FAKE_PROVIDERS ? new FakeAdImageRenderer() : resvgCardFor(config),
     staticMap: createStaticMap(config), // G1 Task 7
+    propertyData: createPropertyData(config),
+    streetImagery: createStreetImagery(config),
     jobs,
     // D1 Front Desk
     llm: createLlm(config),
