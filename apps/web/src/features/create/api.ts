@@ -39,8 +39,15 @@ export function useCreateProperty() {
 }
 
 export function useCreateJob() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: JobInput) => apiFetch<JobRecord>('/api/jobs', { method: 'POST', body: input }),
+    onSuccess: () => {
+      // The shell map remains mounted while creating a job; refresh it and cached lists/search.
+      for (const key of ['pins', 'jobs-board', 'customers', 'search']) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
+    },
   });
 }
 
