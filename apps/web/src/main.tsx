@@ -1,5 +1,6 @@
 import '@roofline/ui/tokens.css';
 import '@roofline/ui/base.css';
+import './fonts.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router/dom';

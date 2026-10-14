@@ -14,7 +14,7 @@ import { Review } from '../src/features/approvals/Review.tsx';
 import { useSendReply, useSetHandling } from '../src/features/front-desk/conversation-api.ts';
 import { publicProposalKey, useSignProposal } from '../src/features/homeowner/api.ts';
 import { useSimulate } from '../src/features/demo/api.ts';
-import { ACCOUNT_TWO, makeTask, renderAt, stubApi } from './helpers.tsx';
+import { ACCOUNT_TWO, flushRouterUpdates, makeTask, renderAt, stubApi } from './helpers.tsx';
 
 // Exercise the production hooks and UI against a recording HTTP boundary, not mocked mutations.
 let api: ReturnType<typeof stubApi> | undefined;
@@ -82,7 +82,7 @@ describe('Ironclad cross-product contracts', () => {
       { path: '/approvals/old-plan', element: <Detail /> },
       { path: '/', element: <p>New company home</p> },
     ], { initialEntries: ['/approvals/old-plan'] });
-    render(<Providers client={client}><RouterProvider router={router} /></Providers>);
+    render(<Providers client={client}><RouterProvider router={router} flushSync={flushRouterUpdates} /></Providers>);
     await screen.findByText('Only company A may see this');
     await user.click(screen.getByRole('button', { name: 'Switch company' }));
     await screen.findByText('New company home');

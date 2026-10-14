@@ -2,6 +2,7 @@ import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
+import { flushSync } from 'react-dom';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { vi } from 'vitest';
 import type { Account, TaskView } from '../src/api/types.ts';
@@ -76,6 +77,9 @@ const STORM_LAYER_BODY = {
 
 /** The reads every signed-in screen makes, each answered with "nothing": spread it under a test's own routes. */
 export const SHELL_ROUTES: Record<string, () => Reply> = {
+  ...signedTodayRoute(),
+  'GET /api/company': () => ({ body: { ...COMPANY, timezone: 'America/Chicago' } }),
+  'GET /api/today': () => ({ body: { appointments: [], followUps: [] } }),
   'GET /api/approvals': () => ({ body: { count: 0, tasks: [] } }),
   'GET /api/tasks/summary': () => ({ body: { working: 0 } }),
   'GET /api/tasks?status=needs_attention&limit=200': () => ({ body: { tasks: [] } }),
@@ -124,6 +128,12 @@ export function makeTask(overrides: Partial<TaskView> & { id: string }): TaskVie
   };
 }
 
+/** Match RouterProvider's undefined return contract while executing the real React DOM flush. */
+export function flushRouterUpdates(callback: () => unknown): undefined {
+  flushSync(callback);
+  return undefined;
+}
+
 /**
  * Renders `ui` under Providers (query cache without retries, toasts, links) and a memory router
  * that shows it for every path, starting at `path`.
@@ -134,7 +144,7 @@ export function renderAt(ui: ReactElement, path = '/') {
   const router = createMemoryRouter([{ path: '*', element: ui }], { initialEntries: [path] });
   render(
     <Providers client={queryClient}>
-      <RouterProvider router={router} />
+      <RouterProvider router={router} flushSync={flushRouterUpdates} />
     </Providers>,
   );
   return { router, queryClient, user: userEvent.setup() };

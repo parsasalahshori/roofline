@@ -16,8 +16,8 @@ import { dockerProblem, nodeProblem, portIsFree, portProblem } from './demo-pref
  *     its own port and volume) and runs every migration.
  *  3. Seeds Summit Ridge Roofing (apps/api/src/scripts/demo-world.ts) unless it is already there.
  *  4. Builds the web app when apps/web/dist is missing (DEMO_BUILD=1 forces it).
- *  5. Runs the API (which serves the web app) and the worker with DEMO_MODE=1, so every outside
- *     service is a fake: no text, email, call or charge leaves the machine.
+ *  5. Runs the API (which serves the web app) and the worker with DEMO_MODE=1: no text, email, call
+ *     or charge leaves the machine. Public address reads require the separate Census opt-in below.
  *
  * `--db-only` stops after the seed, leaving the database running.
  * Ctrl+C stops the app and the database container; the data stays for the next run.
@@ -27,6 +27,8 @@ import { dockerProblem, nodeProblem, portIsFree, portProblem } from './demo-pref
  *   DEMO_DB_PORT  the database's port (default 54339)
  *   DEMO_COMPOSE_PROJECT  the compose project (default roofline-demo; the CI smoke uses its own)
  *   DEMO_OPEN=1   opens the browser once the app answers (scripts/demo-mac.sh sets it)
+ *   DEMO_MAP_TILES=usgs enables historical public aerial imagery (default osm)
+ *   DEMO_GEOCODER=census enables public approximate address lookup only; paid/outbound providers stay fake
  */
 
 const PORT = Number(process.env.DEMO_PORT?.trim() || 4500);
@@ -34,6 +36,10 @@ const DB_PORT = Number(process.env.DEMO_DB_PORT?.trim() || 54339);
 const BASE_URL = `http://localhost:${PORT}`;
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const COMPOSE_PROJECT = process.env.DEMO_COMPOSE_PROJECT?.trim() || 'roofline-demo';
+const MAP_TILES = process.env.DEMO_MAP_TILES?.trim() || 'osm';
+if (MAP_TILES !== 'osm' && MAP_TILES !== 'usgs') throw new Error('DEMO_MAP_TILES must be osm or usgs.');
+const DEMO_GEOCODER = process.env.DEMO_GEOCODER?.trim() || 'fake';
+if (DEMO_GEOCODER !== 'fake' && DEMO_GEOCODER !== 'census') throw new Error('DEMO_GEOCODER must be fake or census.');
 const COMPOSE = ['compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_ROOT}docker-compose.demo.yml`];
 const OWNER_URL = `postgres://roofline:roofline@127.0.0.1:${DB_PORT}/roofline`;
 /** Local-only role passwords for the demo database (it listens on 127.0.0.1 only). */
@@ -167,13 +173,14 @@ try {
     log('Database ready (--db-only).');
     process.exit(0);
   }
-  // The demo's own build (OpenStreetMap tiles under the map, no key needed), marked so a build made
+  // The demo's own build (explicit streets or historical imagery), marked so a build made
   // for anything else is rebuilt (vite empties dist/ on every build, marker included).
   const marker = `${REPO_ROOT}apps/web/dist/.demo-build`;
-  if (process.env.DEMO_BUILD === '1' || !existsSync(marker)) {
+  const markerValue = `VITE_MAP_TILES=${MAP_TILES}\nVITE_DEMO_GEOCODER=${DEMO_GEOCODER}\n`;
+  if (process.env.DEMO_BUILD === '1' || !existsSync(marker) || readFileSync(marker, 'utf8') !== markerValue) {
     log('Building the web app (about 1 minute).');
-    execFileSync('npm', ['run', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit', env: { ...process.env, VITE_MAP_TILES: 'osm' } });
-    writeFileSync(marker, 'VITE_MAP_TILES=osm\n');
+    execFileSync('npm', ['run', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit', env: { ...process.env, VITE_MAP_TILES: MAP_TILES, VITE_DEMO_GEOCODER: DEMO_GEOCODER } });
+    writeFileSync(marker, markerValue);
   }
 } catch (err) {
   console.error(err);
@@ -185,6 +192,7 @@ const env: NodeJS.ProcessEnv = {
   ...process.env,
   NODE_ENV: 'development',
   DEMO_MODE: '1',
+  DEMO_GEOCODER,
   PORT: String(PORT),
   HOST: '127.0.0.1',
   APP_ORIGIN: BASE_URL,

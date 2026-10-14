@@ -32,6 +32,40 @@
   min-width: 0;
 }
 
+.sourceRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.sourceChip {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.about {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: var(--font-size-min);
+  color: var(--text-muted);
+}
+
+.about summary {
+  cursor: pointer;
+  color: var(--text);
+}
+
+.about p {
+  margin: 8px 0 0;
+}
+
 .map {
   position: relative;
   height: 45vh;

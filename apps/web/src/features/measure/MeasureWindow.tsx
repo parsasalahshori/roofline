@@ -8,8 +8,10 @@ import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { legal } from '../../copy/legal.ts';
 import { measure } from '../../copy/measure.ts';
+import { estimator } from '../../copy/estimator.ts';
 import { makeFailureMessage, useBuildProposal, useSendProposal } from '../estimator/api.ts';
-import { mapStyle, satelliteAvailable } from '../../shell/map/mapStyle.ts';
+import { useDemoMode } from '../demo/api.ts';
+import { imagerySource, mapStyle, satelliteAvailable } from '../../shell/map/mapStyle.ts';
 import type { MapEnv } from '../../shell/map/types.ts';
 import { useExactReport, useMeasurement, usePatchMeasurement } from './api.ts';
 import { readHandoff } from './handoff.ts';
@@ -30,14 +32,15 @@ function readMapEnv(): MapEnv {
 }
 
 /** Creates the map, or answers null when it cannot start (MapLibre throws when the browser has no WebGL). */
-function createMap(container: HTMLElement, center: [number, number]): MapLibreMap | null {
+function createMap(container: HTMLElement, center: [number, number], needsTrace: boolean): MapLibreMap | null {
   try {
     const env = readMapEnv();
     return new MapLibreMap({
       container,
       style: mapStyle(env, satelliteAvailable(env) ? 'satellite' : 'streets'),
       center,
-      zoom: START_ZOOM,
+      // Street-interpolated address points can be more than a roof-width away. Start wider for confirmation.
+      zoom: needsTrace ? 17 : START_ZOOM,
       maxZoom: MAX_ZOOM,
     });
   } catch {
@@ -69,6 +72,8 @@ function format(value: number): string {
 }
 
 function Loaded({ m }: { m: MeasurementView }) {
+  const demo = useDemoMode();
+  const imagery = imagerySource(readMapEnv());
   const navigate = useNavigate();
   const [lng, lat] = m.center;
   const patch = usePatchMeasurement(m.id);
@@ -76,9 +81,15 @@ function Loaded({ m }: { m: MeasurementView }) {
   const me = useMe();
   const canOrderReport = (me.data?.role === 'owner' || me.data?.role === 'office') && m.kind !== 'exact';
   const handoff = readHandoff(useLocation().state);
+  const [customerName, setCustomerName] = useState(handoff.customer?.name ?? '');
+  const [customerPhone, setCustomerPhone] = useState(handoff.customer?.phone ?? '');
+  const [askedByText, setAskedByText] = useState(handoff.customer?.askedByText ?? false);
+  const needsCustomer = handoff.needsCustomer === true;
+  const contactMissing = needsCustomer && (customerName.trim() === '' || customerPhone.trim() === '');
   const build = useBuildProposal();
   const send = useSendProposal();
   const [making, setMaking] = useState(false);
+  const [customerLocked, setCustomerLocked] = useState(false);
   const [makeFailed, setMakeFailed] = useState<string | null>(null);
   const makingRef = useRef(false);
   const builtRef = useRef<ProposalView | null>(null);
@@ -145,7 +156,7 @@ function Loaded({ m }: { m: MeasurementView }) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const instance = createMap(container, [lng, lat]);
+    const instance = createMap(container, [lng, lat], startRef.current.drawMode);
     if (!instance) {
       queueMicrotask(() => setMapFailed(true));
       return;
@@ -220,7 +231,7 @@ function Loaded({ m }: { m: MeasurementView }) {
   };
 
   const makeProposal = async () => {
-    if (makingRef.current) return;
+    if (makingRef.current || contactMissing) return;
     makingRef.current = true;
     setMaking(true);
     setMakeFailed(null);
@@ -231,9 +242,12 @@ function Loaded({ m }: { m: MeasurementView }) {
         (await build.mutateAsync({
           measurementId: m.id,
           ...(handoff.jobId !== undefined && { jobId: handoff.jobId }),
-          ...(handoff.customer !== undefined && { customer: handoff.customer }),
+          ...(needsCustomer
+            ? { customer: { ...handoff.customer, name: customerName.trim(), phone: customerPhone.trim(), askedByText } }
+            : handoff.customer !== undefined ? { customer: handoff.customer } : {}),
         }));
       builtRef.current = built;
+      setCustomerLocked(true);
       const sent = await send.mutateAsync(built.id);
       void navigate(`/approvals/${sent.taskId}`);
     } catch (error) {
@@ -245,7 +259,7 @@ function Loaded({ m }: { m: MeasurementView }) {
   };
 
   const noOutline = drawMode && ring.length < 3;
-  const proposalBlocked = making || problem !== null || noOutline || locked || patch.isPending;
+  const proposalBlocked = making || contactMissing || problem !== null || noOutline || locked || patch.isPending;
   const rows: [string, string][] = [
     [measure.area, format(estimate.surfaceSqFt)],
     [measure.squares, format(estimate.squares)],
@@ -262,6 +276,11 @@ function Loaded({ m }: { m: MeasurementView }) {
         <p className={styles.hint}>{measure.help}</p>
       </header>
       <section className={styles.mapColumn}>
+        <div className={styles.sourceRow}>
+          <span className={styles.sourceChip}>{measure.imagery[imagery]}</span>
+          {demo ? <span className={styles.sourceChip}>{measure.demoShort}</span> : null}
+        </div>
+        <p className={styles.hint}>{measure.traceGuidance}</p>
         <div ref={containerRef} className={styles.map} role="region" aria-label={measure.mapLabel} />
         {mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
         {drawMode ? <p className={styles.hint}>{measure.drawHint}</p> : null}
@@ -293,8 +312,15 @@ function Loaded({ m }: { m: MeasurementView }) {
             </Button>
           </>
         ) : null}
-        <p className={styles.attribution}>{legal.footprintAttribution}</p>
-        <p className={styles.attribution}>{measure.attribution}</p>
+        {m.structures.length > 0 ? <p className={styles.attribution}>{legal.footprintAttribution}</p> : null}
+        <details className={styles.about}>
+          <summary>{measure.aboutEstimate}</summary>
+          {demo && import.meta.env.VITE_DEMO_GEOCODER === 'census' ? <p>{measure.censusLocation}</p> : null}
+          {imagery === 'usgs' ? <p>{measure.usgsLimits}</p> : null}
+          <p>{measure.confirmRoof}</p>
+          {demo ? <p>{measure.demoNotice}</p> : null}
+          <p>{measure.attribution}</p>
+        </details>
       </section>
       <div className={styles.panels}>
         <span className={styles.kind} data-kind={m.kind}>
@@ -373,6 +399,17 @@ function Loaded({ m }: { m: MeasurementView }) {
           </dl>
         </section>
 
+        {needsCustomer ? (
+          <section className={styles.panel} aria-labelledby="measure-customer">
+            <h2 id="measure-customer" className={styles.title}>{estimator.newCustomerTitle}</h2>
+            <Field label={estimator.customerName} value={customerName} required disabled={making || customerLocked}
+              onChange={(event) => setCustomerName(event.target.value)} />
+            <Field label={estimator.customerPhone} type="tel" value={customerPhone} required disabled={making || customerLocked}
+              onChange={(event) => setCustomerPhone(event.target.value)} />
+            <Checkbox label={estimator.askedByText} checked={askedByText} disabled={making || customerLocked}
+              onChange={setAskedByText} />
+          </section>
+        ) : null}
         <div className={styles.actions}>
           <p className={styles.hint}>{measure.reviewHelp}</p>
           {patch.isPending ? <p className={styles.hint} role="status">{measure.saving}</p> : null}

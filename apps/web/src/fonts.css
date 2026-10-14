@@ -1,0 +1,11 @@
+/* Archivo by Omnibus-Type, SIL Open Font License 1.1; license ships beside the font.
+ * Source: https://github.com/google/fonts/tree/main/ofl/archivo
+ */
+@font-face {
+  font-family: Archivo;
+  src: url('/fonts/Archivo-Variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+}

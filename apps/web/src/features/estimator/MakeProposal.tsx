@@ -25,8 +25,8 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
   const needsCustomer = target.kind === 'address' || !target.hasCustomer;
   const blocked = needsCustomer && (name.trim() === '' || phone.trim() === '');
 
-  async function run() {
-    if (busyRef.current || blocked) return;
+  async function run(preview = false) {
+    if (busyRef.current || (!preview && blocked)) return;
     busyRef.current = true;
     setRunning(true);
     setFailed(null);
@@ -37,9 +37,11 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
           target.kind === 'home' ? { propertyId: target.propertyId } : { address: target.address },
         ));
       measurementRef.current = measurement;
-      if (measurement.drawMode) {
+      if (preview || measurement.drawMode) {
         const customer: NewCustomerInput = { name: name.trim(), phone: phone.trim(), askedByText };
-        navigate(`/estimator/measure/${measurement.id}`, { state: needsCustomer ? { customer } : {} });
+        navigate(`/estimator/measure/${measurement.id}`, {
+          state: needsCustomer ? { needsCustomer: true, ...(!blocked && { customer }) } : {},
+        });
         return;
       }
       const proposal =
@@ -67,6 +69,11 @@ export function MakeProposal({ target }: { target: MakeTarget }) {
         <p className={styles.targetText}>{target.kind === 'home' ? target.label : target.address}</p>
         <span className={styles.estimate}>{estimator.estimateNote}</span>
       </div>
+      <Button variant="primary" busy={running} disabled={running} onClick={() => void run(true)}>
+        {estimator.viewRoofEstimate}
+      </Button>
+      <p className={styles.help}>{estimator.previewHelp}</p>
+      {import.meta.env.VITE_DEMO_GEOCODER === 'census' ? <p className={styles.help}>{estimator.censusLookup}</p> : null}
       {needsCustomer ? (
         <div className={styles.form}>
           <h3 className={styles.heading}>{estimator.newCustomerTitle}</h3>

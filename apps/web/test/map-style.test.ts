@@ -2,7 +2,7 @@ import type { StyleSpecification } from 'maplibre-gl';
 import { tokens } from '@roofline/ui';
 import { describe, expect, it } from 'vitest';
 import { legal } from '../src/copy/legal.ts';
-import { mapStyle, satelliteAvailable } from '../src/shell/map/mapStyle.ts';
+import { imagerySource, mapStyle, satelliteAvailable } from '../src/shell/map/mapStyle.ts';
 
 /** The style as an object; fails the test when it came back as a URL. */
 function asObject(style: StyleSpecification | string): StyleSpecification {
@@ -71,6 +71,19 @@ describe('mapStyle', () => {
 });
 
 describe('satelliteAvailable', () => {
+  it('enables historical aerial tiles only by explicit opt-in and retains MapTiler priority', () => {
+    expect(satelliteAvailable({ tiles: 'usgs' })).toBe(true);
+    expect(imagerySource({ tiles: 'usgs' })).toBe('usgs');
+    const style = asObject(mapStyle({ tiles: 'usgs' }, 'satellite'));
+    expect(style.sources.usgs).toMatchObject({
+      type: 'raster', tileSize: 256, maxzoom: 16, attribution: legal.usgsAttribution,
+      tiles: ['https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}'],
+    });
+    expect(asObject(mapStyle({ tiles: 'usgs' }, 'streets')).sources.osm).toBeDefined();
+    expect(mapStyle({ tiles: 'usgs', maptilerKey: 'abc' }, 'satellite')).toContain('/hybrid/');
+    expect(imagerySource({ tiles: 'usgs', maptilerKey: 'abc' })).toBe('maptiler');
+    expect(imagerySource({})).toBe('none');
+  });
   it('is true only when there is a key', () => {
     expect(satelliteAvailable({})).toBe(false);
     expect(satelliteAvailable({ tiles: 'osm' })).toBe(false);

@@ -1,7 +1,7 @@
 import type { NewCustomerInput } from '../estimator/types.ts';
 
 /** What the window that opened the measure window passes in router state: the job to keep, or the new customer to create. */
-export type MeasureHandoff = { jobId?: string; customer?: NewCustomerInput };
+export type MeasureHandoff = { jobId?: string; customer?: NewCustomerInput; needsCustomer?: boolean };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
@@ -9,6 +9,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 export function readHandoff(state: unknown): MeasureHandoff {
   if (!isRecord(state)) return {};
   const out: MeasureHandoff = {};
+  if (state.needsCustomer === true) out.needsCustomer = true;
   if (typeof state.jobId === 'string' && state.jobId !== '') out.jobId = state.jobId;
   const c = state.customer;
   if (isRecord(c) && typeof c.name === 'string' && typeof c.phone === 'string' && typeof c.askedByText === 'boolean') {

@@ -21,7 +21,7 @@ export const tokens = {
   'shadow-window': '0 20px 40px -18px rgba(21, 28, 34, 0.45), 0 0 0 1px rgba(21, 28, 34, 0.08)',
   'shadow-marker': '0 1px 3px rgb(0 0 0 / 0.35)',
   'shadow-marker-ring': '0 0 0 1px rgb(0 0 0 / 0.35)',
-  font: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  font: '"Archivo", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   'font-size-min': '12px',
   'font-size-body': '14px',
   'font-size-stat': '24px',

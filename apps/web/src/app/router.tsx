@@ -1,4 +1,5 @@
-import { createBrowserRouter, createMemoryRouter, Navigate, type RouteObject } from 'react-router';
+import { createBrowserRouter, createMemoryRouter, Navigate, useSearchParams, type RouteObject } from 'react-router';
+import { useMe } from '../api/hooks.ts';
 import { setUnauthorizedHandler } from '../api/client.ts';
 import { AgentRoute } from '../features/agents/AgentPage.tsx';
 import { AgentsWindow } from '../features/agents/AgentsWindow.tsx';
@@ -40,6 +41,14 @@ import { Shell } from '../shell/Shell.tsx';
 import { RouteError } from './RouteError.tsx';
 import { redirectToSignIn, RequireSession, resetSignInRedirect } from './RequireSession.tsx';
 
+/** Focus links leave the map and its selected property unobstructed, including on phones. */
+function HomeToday() {
+  const companyId = useMe().data?.company.id;
+  const [params] = useSearchParams();
+  if (params.has('focus')) return null;
+  return <Today key={companyId} layout="home" />;
+}
+
 const routes: RouteObject[] = [
   // Open to everyone: signing in, and the pages that links in emails open
   { path: '/sign-in', element: <SignIn /> },
@@ -63,8 +72,8 @@ const routes: RouteObject[] = [
             // top bar stay (a pathless layout, so the error renders in the shell's outlet)
             errorElement: <RouteError variant="window" />,
             children: [
-          // The map is the home page: no window
-          { index: true },
+          // The map home carries read-only day widgets, without a dialog.
+          { index: true, element: <HomeToday /> },
           { path: 'approvals', element: <AppWindow app="approvals"><ApprovalsList /></AppWindow> },
           // The review screen draws its own window: the approvals one, or the Storm one for a storm plan
           { path: 'approvals/:taskId', element: <ReviewRoute app="approvals" /> },

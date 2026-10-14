@@ -154,3 +154,30 @@ it('a failed switch with the menu closed still shows the error toast', async () 
   await screen.findByText('That company is not available to you.');
   expect(api.count('POST /api/auth/switch-company')).toBe(1);
 });
+
+it('aborts an outstanding old-company read before replacing the account', async () => {
+  api = stubApi({ 'POST /api/auth/switch-company': () => ({ body: RIDGE_ACCOUNT }) });
+  const client = createQueryClient();
+  client.setQueryData(keys.me, ACCOUNT);
+  let oldSignal: AbortSignal | undefined;
+  let accountAtAbort: unknown;
+  const pending = client.fetchQuery({
+    queryKey: ['old-company-detail'],
+    queryFn: ({ signal }) => {
+      oldSignal = signal;
+      signal.addEventListener('abort', () => { accountAtAbort = client.getQueryData(keys.me); });
+      return new Promise(() => {});
+    },
+  }).catch(() => undefined);
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <Providers client={client}><MemoryRouter>{children}</MemoryRouter></Providers>
+  );
+  const { result } = renderHook(() => useSwitchCompany(), { wrapper });
+  result.current.mutate('c2');
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  await pending;
+  expect(oldSignal?.aborted).toBe(true);
+  expect(accountAtAbort).toEqual(ACCOUNT);
+  expect(client.getQueryData(keys.me)).toEqual(RIDGE_ACCOUNT);
+  expect(client.getQueryData(['old-company-detail'])).toBeUndefined();
+});

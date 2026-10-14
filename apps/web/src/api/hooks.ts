@@ -81,11 +81,14 @@ export function useSwitchCompany() {
     mutationFn: (companyId: string) =>
       apiFetch<Account>('/api/auth/switch-company', { method: 'POST', body: { companyId } }),
     onSuccess: async (account) => {
+      const companyQueries = { predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[0] !== keys.me[0] };
+      // Abort outstanding old-company reads before publishing the replacement account.
+      await queryClient.cancelQueries(companyQueries);
       queryClient.setQueryData(keys.me, account);
       // Home first, and wait for it: the old company's id-based pages unmount before the reset, so it
       // does not refetch them under the new company
-      await navigate('/');
-      return queryClient.resetQueries({ predicate: (query) => query.queryKey[0] !== keys.me[0] });
+      await navigate('/', { flushSync: true });
+      return queryClient.resetQueries(companyQueries);
     },
     onError: (error) => toast.show(error.message, 'error'),
   });

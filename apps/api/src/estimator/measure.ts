@@ -24,7 +24,7 @@ import { footprintStateStatus } from '@roofline/db/system';
 import { instantEstimate, isTimeZone, isUsStateCode, type MeasurementView, normalizeAddressKey, type Outline } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
-import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
+import { censusDemoEnabled, type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
 
 const PICK_ADDRESS_MESSAGE = 'Pick an address.';
 const NOT_FOUND_MESSAGE = 'We could not find that address.';
@@ -103,8 +103,12 @@ async function homeFromAddress(deps: AppDeps, ctx: TenantContext, address: strin
 
 /** The home's point: its saved one, or a fresh lookup that is saved for next time. Null when there is none. */
 async function pointOf(deps: AppDeps, ctx: TenantContext, property: PropertyRow, now: Date): Promise<LngLat | null> {
-  if (property.geom != null) return property.geom;
+  const manualDemo = censusDemoEnabled(deps.config);
+  // A seeded property's stored coordinate may be synthetic. Never reuse it as a real Census location.
+  if (property.geom != null && !manualDemo) return property.geom;
   const found = await lookUp(deps, lineOf(property));
+  if (manualDemo && found === 'unavailable') throw new AppError(503, UNAVAILABLE_MESSAGE);
+  if (manualDemo && found === null) throw new AppError(400, NOT_FOUND_MESSAGE, 'address');
   if (found === null || found === 'unavailable') return null;
   const location: LngLat = [found.lng, found.lat];
   await withTenant(deps.pools, ctx, (tx) => updateProperty(tx, ctx, property.id, { location }, { now }));
@@ -210,6 +214,15 @@ export async function measureProperty(
   }
 
   const point = await pointOf(deps, ctx, property, now);
+  // Street-range interpolation is not a rooftop. Never snap to nearby synthetic/demo footprints,
+  // even when a state's fixture data is ready. A person must locate and trace the correct roof.
+  if (point !== null && censusDemoEnabled(deps.config)) {
+    return asNotFound(() =>
+      withTenant(deps.pools, ctx, async (tx) =>
+        createMeasurement(tx, ctx, drawInput(property, point, await settingsFor(tx, ctx), jobId), now),
+      ),
+    );
+  }
   if (point === null) {
     return asNotFound(() =>
       withTenant(deps.pools, ctx, async (tx) =>

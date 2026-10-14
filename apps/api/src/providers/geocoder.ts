@@ -1,9 +1,10 @@
 import type { Config } from '../config.ts';
 import { FakeGeocoder } from './fakes/geocoder.ts';
 import { geocodioFor } from './geocodio.ts';
+import { CensusDemoGeocoder } from './census.ts';
 
 export type GeocodeResult = { lng: number; lat: number; street: string | null; city: string | null; state: string | null; zip: string | null;
-  timezone: string | null; accuracy: number; accuracyType: string; source: 'geocodio' | 'fake' };
+  timezone: string | null; accuracy: number; accuracyType: string; source: 'geocodio' | 'fake' | 'census' };
 export interface Geocoder { readonly configured: boolean;
   geocode(address: string, opts?: { timeoutMs?: number }): Promise<GeocodeResult | null>;
   geocodeMany(addresses: readonly string[]): Promise<(GeocodeResult | null)[]>;
@@ -29,7 +30,12 @@ export class UnconfiguredGeocoder implements Geocoder {
 }
 
 /** The geocoder the app uses: the fake under FAKE_PROVIDERS, else the real one when configured. */
+export function censusDemoEnabled(config: Config): boolean {
+  return config.DEMO_GEOCODER === 'census' && config.DEMO_MODE === true && config.FAKE_PROVIDERS === true && config.NODE_ENV !== 'production';
+}
+
 export function createGeocoder(config: Config): Geocoder {
+  if (censusDemoEnabled(config)) return new CensusDemoGeocoder();
   if (config.FAKE_PROVIDERS) return new FakeGeocoder();
   return geocodioFor(config) ?? new UnconfiguredGeocoder();
 }

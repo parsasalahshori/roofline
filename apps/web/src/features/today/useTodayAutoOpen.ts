@@ -11,14 +11,14 @@ import { useTodayShown } from './api.ts';
  * disturb the page.
  */
 export function useTodayAutoOpen(): void {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   // The page the person arrived on. Later navigation does not change it.
-  const firstPath = useRef(pathname);
+  const firstPath = useRef(new URLSearchParams(search).has('focus') ? null : pathname);
   // The current page, read when the answer arrives (the callback would otherwise see the old one)
   const pathnameRef = useRef(pathname);
   useLayoutEffect(() => {
-    pathnameRef.current = pathname;
-  }, [pathname]);
+    pathnameRef.current = new URLSearchParams(search).has('focus') ? '' : pathname;
+  }, [pathname, search]);
   // Guards React StrictMode's second run of the effect: the question is asked once
   const asked = useRef(false);
   const navigate = useNavigate();

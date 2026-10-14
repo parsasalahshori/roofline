@@ -1,5 +1,8 @@
 /** The Estimator window (E1 Task 15). */
 export const estimator = {
+  viewRoofEstimate: 'View roof estimate',
+  previewHelp: 'Look up the address and inspect the roof before making a proposal. No message is sent.',
+  censusLookup: 'Public address preview: the entered address is sent to the U.S. Census Bureau. Its street location is approximate; confirm the correct roof in the aerial photo.',
   title: 'Estimator',
   subtitle: 'Roof measurements and proposals, together.',
   startTitle: 'Start with a home',

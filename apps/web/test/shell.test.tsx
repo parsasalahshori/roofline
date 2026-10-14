@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
@@ -284,4 +284,24 @@ it('opens the window as a full page on a phone', async () => {
   renderApp('/jobs');
 
   expect(await screen.findByRole('dialog', { name: WINDOW_COPY.jobs.title })).toHaveAttribute('data-variant', 'page');
+});
+
+it('mounts home widgets without a window and resets Explore map on company change', async () => {
+  signedInApi();
+  const { user, queryClient } = renderApp('/');
+  const explore = await screen.findByRole('button', { name: 'Explore map' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await user.click(explore);
+  expect(screen.getByRole('button', { name: 'Show my day' })).toHaveAttribute('aria-expanded', 'false');
+  act(() => queryClient.setQueryData(keys.me, { ...ACCOUNT, company: { ...ACCOUNT.company, id: 'c2' } }));
+  expect(await screen.findByRole('button', { name: 'Explore map' })).toHaveAttribute('aria-expanded', 'true');
+});
+
+it('keeps focused property links clear of home widgets and Today auto-open', async () => {
+  signedInApi({ 'POST /api/me/today-shown': () => ({ body: { show: true } }) });
+  const { router } = renderApp('/?focus=job:j9');
+  await screen.findByRole('navigation', { name: dock.label });
+  expect(screen.queryByRole('button', { name: 'Explore map' })).toBeNull();
+  expect(api.count('POST /api/me/today-shown')).toBe(0);
+  expect(where(router)).toBe('/?focus=job:j9');
 });

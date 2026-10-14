@@ -36,7 +36,7 @@ const EXPECTED: ReadonlyArray<readonly [string, string]> = [
   ['--shadow-window', '0 20px 40px -18px rgba(21, 28, 34, 0.45), 0 0 0 1px rgba(21, 28, 34, 0.08)'],
   // Opaque muted ink; contrast is covered by ironclad-full-ui.test.tsx.
   ['--text-muted', '#53616b'],
-  ['--font', 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'],
+  ['--font', '"Archivo", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'],
   ['--font-size-min', '12px'],
   ['--font-size-body', '14px'],
   ['--font-size-stat', '24px'],

@@ -276,7 +276,7 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
   }
 
   if (config.DEMO_MODE) {
-    console.warn('DEMO_MODE is on: every outside service is a fake; no text, email, call or charge leaves this process.');
+    console.warn('DEMO_MODE is on: no text, email, call or charge leaves this process. Address lookup uses the explicit demo geocoder setting.');
   } else if (config.NODE_ENV === 'production' && !config.ANTHROPIC_API_KEY) {
     console.warn('ANTHROPIC_API_KEY is not set: Front Desk is off.');
   }

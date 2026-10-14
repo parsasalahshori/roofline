@@ -7,7 +7,7 @@ export type PinTarget = { kind: 'customer' | 'job'; id: string };
 
 export type { Bbox } from '../../api/types.ts';
 
-/** `streets` is the plain map; `satellite` needs a map key. */
+/** `satellite` needs a map key or the explicitly enabled public imagery source. */
 export type MapMode = 'streets' | 'satellite';
 
 /** The two build-time map settings, read from the environment in one place (`MapView`) and handed to `mapStyle`. */

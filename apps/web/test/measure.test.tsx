@@ -7,6 +7,7 @@ import { estimator } from '../src/copy/estimator.ts';
 import { legal } from '../src/copy/legal.ts';
 import { measure } from '../src/copy/measure.ts';
 import { closeDrawing, deleteCorner, insertCorner, moveCorner, nudgeCorner } from '../src/features/measure/OutlineEditor.ts';
+import { MakeProposal } from '../src/features/estimator/MakeProposal.tsx';
 import { MeasureWindow } from '../src/features/measure/MeasureWindow.tsx';
 import type { MeasurementView } from '../src/features/measure/types.ts';
 
@@ -141,15 +142,16 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function renderWindow(state?: unknown) {
+function renderWindow(state?: unknown, preview = false) {
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
   const router = createMemoryRouter(
     [
+      { path: 'estimator', element: <MakeProposal target={{ kind: 'address', address: '1600 Pennsylvania Ave NW, Washington, DC 20500' }} /> },
       { path: 'estimator/measure/:measurementId', element: <MeasureWindow /> },
       { path: 'approvals/:id', element: <p>Approval page</p> },
     ],
-    { initialEntries: [{ pathname: '/estimator/measure/m1', state }] },
+    { initialEntries: [{ pathname: preview ? '/estimator' : '/estimator/measure/m1', state }] },
   );
   render(
     <Providers client={queryClient}>
@@ -194,7 +196,9 @@ beforeEach(() => {
       const key = `${init?.method ?? 'GET'} ${String(input)}`;
       const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
       calls.push({ key, body });
+      if (key === 'GET /api/demo') return json({ demo: true });
       if (key === 'GET /api/auth/me') return json({ user: { id: 'u1', email: 'a@b.c', name: 'A', emailVerified: true }, company: { id: 'c1', name: 'C', slug: 'c', status: 'active' }, role, companies: [] });
+      if (key === 'POST /api/measurements') return json(current, 201);
       if (key === 'GET /api/measurements/m1') return json(current);
       if (key === 'PATCH /api/measurements/m1') {
         if (patchStatus !== 200) return json({ error: 'This measurement was already sent.' }, patchStatus);
@@ -277,6 +281,46 @@ describe('outline reducers (pure)', () => {
 });
 
 describe('measure window', () => {
+  it('labels the historical photo and approximate demo lookup, starts wide, and requires a trace before proposal', async () => {
+    vi.stubEnv('VITE_MAP_TILES', 'usgs');
+    vi.stubEnv('VITE_DEMO_GEOCODER', 'census');
+    await open({ drawMode: true, outline: null, structures: [] });
+    expect(screen.getByText(measure.imagery.usgs)).toBeInTheDocument();
+    expect(await screen.findByText(measure.censusLocation)).toBeInTheDocument();
+    expect(screen.getByText(measure.usgsLimits)).toBeInTheDocument();
+    expect(screen.getByText(measure.demoNotice)).toBeInTheDocument();
+    expect(screen.getByText(measure.aboutEstimate).closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByText(measure.usgsLimits)).not.toBeVisible();
+    expect(screen.queryByText(legal.footprintAttribution)).not.toBeInTheDocument();
+    expect(lastMap().options.zoom).toBe(17);
+    expect(lastMap().options.style).toMatchObject({ sources: { usgs: { maxzoom: 16 } } });
+    expect(screen.getByRole('button', { name: measure.makeProposal })).toBeDisabled();
+    expect(sent('POST /api/proposals')).toEqual([]);
+  });
+  it('continues a new-address preview through manual trace and required fictional contact to explicit proposal approval', async () => {
+    current = view({ drawMode: true, outline: null, structures: [] });
+    const router = renderWindow(undefined, true);
+    fireEvent.click(screen.getByRole('button', { name: estimator.viewRoofEstimate }));
+    await screen.findByText(measure.numbersTitle);
+    await waitFor(() => expect(fake.FakeMap.instances.length).toBeGreaterThan(0));
+    mapEmit('load');
+    expect(router.state.location.state).toEqual({ needsCustomer: true });
+    expect(screen.getByRole('button', { name: measure.makeProposal })).toBeDisabled();
+    for (const [x, y] of [p(0, 0), p(1, 0), p(0, 1)] as [number, number][]) mapEmit('click', { lngLat: { lng: x, lat: y } });
+    fireEvent.click(screen.getByRole('button', { name: measure.finishDrawing }));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(1), { timeout: 2000 });
+    fireEvent.change(screen.getByLabelText(estimator.customerName), { target: { value: 'Alex Demo' } });
+    expect(screen.getByRole('button', { name: measure.makeProposal })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(estimator.customerPhone), { target: { value: '+14025550123' } });
+    expect(screen.getByLabelText(estimator.askedByText)).not.toBeChecked();
+    expect(sent('POST /api/proposals')).toEqual([]);
+    expect(sent('POST /api/proposals/pr1/send')).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: measure.makeProposal }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/approvals/t9'));
+    expect(sent('POST /api/proposals')).toEqual([{ measurementId: 'm1', customer: { name: 'Alex Demo', phone: '+14025550123', askedByText: false } }]);
+    expect(sent('POST /api/proposals/pr1/send')).toHaveLength(1);
+    expect(sent('POST /api/measurements/m1/exact-report')).toEqual([]);
+  });
   it('shows the Estimate label and the attribution line', async () => {
     await open();
     expect(screen.getByText('Estimate')).toBeTruthy();

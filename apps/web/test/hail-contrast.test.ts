@@ -22,15 +22,15 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 describe('hail colour contrast', () => {
   it('outlines meet 3:1 against the base map', () => {
-    // The swath outline is drawn in tokens.text (#2b2620) over the base map background tokens.bg
-    // (#efe9dc, used by mapStyle.ts): the ratio is about 11.9:1, far above the 3:1 minimum.
+    // The swath outline is drawn in tokens.text (#151c22) over the base map background tokens.bg
+    // (#e9edf0, used by mapStyle.ts), far above the 3:1 minimum.
     expect(contrast(tokens.text, tokens.bg)).toBeGreaterThanOrEqual(3);
   });
 
   it('documents each hail colour contrast', () => {
     // The fills are only part of the signal (the dark outline and the legend carry it), so the
     // yellow fills are not held to 3:1. These are the measured ratios against tokens.bg.
-    const expected = [1.1, 1.5, 2.1, 2.8, 3.9];
+    const expected = [1.1, 1.5, 2.2, 2.9, 4.0];
     expect(HAIL_LEVEL_COLORS.map((color) => round1(contrast(color, tokens.bg)))).toEqual(expected);
   });
 

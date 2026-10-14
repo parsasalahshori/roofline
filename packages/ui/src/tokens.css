@@ -40,7 +40,7 @@
   --shadow-marker-ring: 0 0 0 1px rgb(0 0 0 / 0.35);
 
   /* Type: nothing on screen is smaller than --font-size-min (the stylelint rule enforces it) */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-size-min: 12px;
   --font-size-body: 14px;
   --font-size-stat: 24px;
