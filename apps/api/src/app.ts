@@ -203,9 +203,10 @@ export const APPROVALS_JSON_BODY_LIMIT = '1mb';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** Where the map's tiles, glyphs and sprites come from (MapTiler, OpenStreetMap's own tile server, and Esri's aerial tiles and their date lookup, which only the demo build uses). */
+/** Where the map's tiles, glyphs and sprites come from (MapTiler, Google's satellite tiles for the roof view, OpenStreetMap's own tile server, and Esri's aerial tiles and their date lookup, which only the demo build uses). */
 const MAP_HOSTS = [
   'https://api.maptiler.com',
+  'https://tile.googleapis.com',
   'https://tile.openstreetmap.org',
   'https://server.arcgisonline.com',
   'https://services.arcgisonline.com',
