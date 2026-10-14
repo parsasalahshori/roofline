@@ -1,0 +1,222 @@
+{
+  "baseline": "81b9251490cfa05eac4baecc68f6952b549a1460",
+  "note": "Runtime baseline evidence, not integrated redesign. Demo enables OSM; ordinary E2E uses no remote tiles. New 390px cases use desktop Chromium with a phone-sized viewport; existing phone tests use Pixel 7 emulation.",
+  "screenshots": [
+    {
+      "path": "demo-screenshots/01-.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 89579,
+      "sha256": "e506154a3a83e65034c9d7ff8f6f7992c383e0b2e2fd1e475dc05e30119e5efa",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/02-customers.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 111494,
+      "sha256": "008e3a01ce08830ac43e9cb5b260847209ce2e2eb5d378cc341ef654cfa1b20c",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/03-jobs.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 146492,
+      "sha256": "3ede71ee940d124de3f07a02f08ad5208e4dfd7ced1c7e25ae1e8b8d9810e012",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/04-estimator.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 98760,
+      "sha256": "d3913dabfbc9941b5437b12db469671b55660764d198dde51403c0b1332d9683",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/05-storm.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 89902,
+      "sha256": "0a22defcd1dcc36e14d44e8170247c2d63205ac9c8367c131c9b85264d48fed9",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/06-front-desk.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128481,
+      "sha256": "05c7c7b179496a8825c90305e40a3df03cf91dfecefb528a19cc0b9924942bdb",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/07-calendar.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 131616,
+      "sha256": "5c10fd6edf88f0b77602956d70444b066ad3f531caa18d7ffc76a8e307791602",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/08-agents.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 149023,
+      "sha256": "d5aed14c1c81febaa0e844568e0ee9f20a1d769e41aa2543bf2aba23ead00eca",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/09-agents-feed.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 120688,
+      "sha256": "9f05178e6114716cb919d510e33a3ea440df3cb5dd269c51e88c0637ecdd9a84",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/10-agents-claims.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 119824,
+      "sha256": "1a2343fa022b6ec9a26c2e07ad63369442e0c08153367f87e0f68a261306c8f9",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/11-agents-scheduler.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 113031,
+      "sha256": "2e7f69670a13b20050c51d08df997c5e8b338a7569255a40c3212f8263ceb50d",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/12-agents-follow-up.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 113634,
+      "sha256": "09f5d36b5461cdbb2fece429fcf68661e66e0235dc216dcdc16d7c8704a8751d",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/13-approvals.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 110805,
+      "sha256": "d0053b24514d2b958ab075c0ebac6d28979ee862a2aa2db0f060928c0a2b25fa",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/14-front-desk.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128481,
+      "sha256": "05c7c7b179496a8825c90305e40a3df03cf91dfecefb528a19cc0b9924942bdb",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/15-front-desk.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128481,
+      "sha256": "05c7c7b179496a8825c90305e40a3df03cf91dfecefb528a19cc0b9924942bdb",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/16-front-desk.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 137354,
+      "sha256": "088a0714a0e8f032e69ad1ee712386ce102111fe090f14cf1c1423de510373ee",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/17-storm.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 89924,
+      "sha256": "8ab2534e7379c6feb1c4167efb3ad255a91688b20204ffbf483fb606ae7d2098",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/18-storm.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 101140,
+      "sha256": "cef22184d83e0f4acdb1de342515d5083067baf9d27c3b9ae437e1d648d1d307",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/19-estimator.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 99361,
+      "sha256": "200c090ca4d58aeca2ff0c2f5b3cae8bce5817a970e8aad393678e2b4d10e0a0",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/20-estimator.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 99359,
+      "sha256": "1ef33e7b85c7bd90856ab1000ecb1e6d2b8f534e9db59060b5aa83e960b91383",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "demo-screenshots/21-agents-feed.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 126054,
+      "sha256": "79582ecdf558c0ad5faa9ff333269323d1858541f2b273c722b8299a4c2025ea",
+      "source": "isolated synthetic demo"
+    },
+    {
+      "path": "screenshots/canceled-billing-1440.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 82317,
+      "sha256": "e419be4742cf6c3c988a685ddf6cf582849ea3e8ab0c6777abfca0bfb3e26bd9",
+      "source": "isolated fake-provider E2E"
+    },
+    {
+      "path": "screenshots/canceled-billing-390.png",
+      "width": 390,
+      "height": 844,
+      "bytes": 45570,
+      "sha256": "1c9dd5ace7dfbb536931dc2abe36c7281d363f4c07f2e5d58c8f6ac3af1ff6c1",
+      "source": "isolated fake-provider E2E"
+    },
+    {
+      "path": "screenshots/company-isolation-1440.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 42197,
+      "sha256": "50020b3a65b5f532b5c9aba1132a87eebc0d60178a5d50bff7fa49c8844c5815",
+      "source": "isolated fake-provider E2E"
+    },
+    {
+      "path": "screenshots/company-isolation-390.png",
+      "width": 390,
+      "height": 844,
+      "bytes": 20190,
+      "sha256": "fa7b5df4220b291394d4782cf951f114c48f205cff0b7395ef54f92a636f2419",
+      "source": "isolated fake-provider E2E"
+    },
+    {
+      "path": "screenshots/office-approval-1440.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 117783,
+      "sha256": "94a68e84beea2be66f1ab02bc548fdd5d71024acdc1e0aec1682c2fb6ec0daee",
+      "source": "isolated fake-provider E2E"
+    },
+    {
+      "path": "screenshots/office-approval-390.png",
+      "width": 390,
+      "height": 844,
+      "bytes": 59365,
+      "sha256": "0c4b60ff3a5cb042bf15c5c5e182fba26615b18b56633ed9ea7872a63ff30f41",
+      "source": "isolated fake-provider E2E"
+    }
+  ]
+}

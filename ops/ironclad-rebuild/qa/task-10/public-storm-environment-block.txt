@@ -1,0 +1,6 @@
+Existing phone.spec.ts: S1 pages do not scroll sideways
+Destination: http://acme-roofing.roofline.test:4410/storm/<synthetic-code>
+Browser snapshot: Domain forbidden
+The test reached the public host and could not find Request a free inspection.
+No proxy, Chrome, DNS or policy settings were changed to bypass this refusal.
+This local result does not establish whether the public page passes in GitHub CI.

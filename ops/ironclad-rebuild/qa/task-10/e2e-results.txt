@@ -1,0 +1,165 @@
+Command: fresh npm run build:web, then PW_CHROMIUM_EXECUTABLE=/usr/bin/chromium npx playwright test -c apps/web/playwright.config.ts ironclad-full-regression crm.spec calendar.spec estimator.spec homeowner.spec front-desk.spec storm.spec phone.spec --project desktop --project phone
+Exit: 1
+
+Running 46 tests using 1 worker
+
+  ✓   1 [desktop] › apps/web/e2e/calendar.spec.ts:8:1 › book an inspection from a lead in 3 clicks and the job moves (5.0s)
+  ✓   2 [desktop] › apps/web/e2e/calendar.spec.ts:56:1 › connect a calendar, and appointments sync both ways (9.6s)
+  ✓   3 [desktop] › apps/web/e2e/crm.spec.ts:23:1 › the board shows the showcase pipeline (2.2s)
+  ✓   4 [desktop] › apps/web/e2e/crm.spec.ts:51:1 › drag a lead to Inspection, then Lost asks why (3.7s)
+  ✓   5 [desktop] › apps/web/e2e/crm.spec.ts:107:1 › a new job from the map home in 2 clicks to its form (5.7s)
+  ✓   6 [desktop] › apps/web/e2e/crm.spec.ts:173:1 › the timeline shows a note, a stage move and a quote (4.3s)
+  ✓   7 [desktop] › apps/web/e2e/crm.spec.ts:223:1 › a quote prices, goes final and downloads a PDF (3.2s)
+  ✓   8 [desktop] › apps/web/e2e/crm.spec.ts:278:1 › a rep sees only their jobs (2.1s)
+  ✓   9 [desktop] › apps/web/e2e/estimator.spec.ts:9:1 › typed address to sent in 3 clicks (7.4s)
+  ✓  10 [desktop] › apps/web/e2e/estimator.spec.ts:36:1 › exact report: owner approves the spend (11.2s)
+  ✓  11 [desktop] › apps/web/e2e/front-desk.spec.ts:13:1 › an empty inbox says calls will show up once forwarding is on (2.0s)
+  ✓  12 [desktop] › apps/web/e2e/front-desk.spec.ts:28:1 › the inbox lists calls and texts, newest first, with live, unread and urgent states (4.3s)
+  ✓  13 [desktop] › apps/web/e2e/front-desk.spec.ts:90:1 › a call opens with its disclosure, transcript, action cards and summary, and is marked read (2.6s)
+  ✓  14 [desktop] › apps/web/e2e/front-desk.spec.ts:151:1 › the dock badge counts conversations that need attention and drops when one is opened (2.7s)
+  ✓  15 [desktop] › apps/web/e2e/front-desk.spec.ts:192:1 › a staff reply to a text goes out through the gate and leaves the assistant in charge; the switch hands it to the team and back (5.5s)
+  ✓  16 [desktop] › apps/web/e2e/front-desk.spec.ts:290:1 › Mark as spam blocks the number and moves the call to the Spam filter (4.2s)
+  ✓  17 [desktop] › apps/web/e2e/front-desk.spec.ts:338:1 › a field rep sees none of the owner conversations and has no Front Desk settings (5.2s)
+  ✓  18 [desktop] › apps/web/e2e/front-desk.spec.ts:373:1 › Settings: the switch is blocked without a number, the owner must confirm before forwarding is verified, facts save, and bad numbers are refused (5.6s)
+  ✓  19 [desktop] › apps/web/e2e/front-desk.spec.ts:450:1 › Settings: your profile saves the transfer phone only with the recording acknowledgement (3.0s)
+  ✓  20 [desktop] › apps/web/e2e/front-desk.spec.ts:493:1 › Settings: the forwarding guide shows codes per carrier, and the test verifies, then Front Desk can be turned on (5.6s)
+  ✓  21 [desktop] › apps/web/e2e/front-desk.spec.ts:611:1 › Settings: the office cannot turn Front Desk on before forwarding is verified; the owner can, with a confirm (4.6s)
+  ✓  22 [desktop] › apps/web/e2e/homeowner.spec.ts:21:1 › the homeowner signs with the keyboard only (7.0s)
+  ✓  23 [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:35:5 › contract continuity at 1440x900 › canceled company keeps billing recovery and can stop Front Desk without saving other settings (3.9s)
+  ✓  24 [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:118:5 › contract continuity at 1440x900 › stale approval shows conflict, then uses current versions and retains owner-only spend (3.2s)
+  ✘  25 [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 1440x900 › switching company from a detail removes old data and old URLs cannot expose it (3.6s)
+  ✓  26 [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:35:5 › contract continuity at 390x844 › canceled company keeps billing recovery and can stop Front Desk without saving other settings (3.4s)
+  ✓  27 [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:118:5 › contract continuity at 390x844 › stale approval shows conflict, then uses current versions and retains owner-only spend (7.8s)
+  ✘  28 [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 390x844 › switching company from a detail removes old data and old URLs cannot expose it (2.5s)
+  ✓  29 [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:233:1 › the non-demo stack has no simulation controls or simulation mutation routes (2.0s)
+  ✓  30 [desktop] › apps/web/e2e/storm.spec.ts:27:1 › storm plan in 2 clicks (8.4s)
+  ✓  31 [desktop] › apps/web/e2e/storm.spec.ts:73:1 › office approves messages, owner approves spend (9.5s)
+  ✓  32 [phone] › apps/web/e2e/phone.spec.ts:27:1 › bottom tabs work (3.4s)
+  ✓  33 [phone] › apps/web/e2e/phone.spec.ts:106:3 › top bar at 360px: a long name shows initials and nothing overlaps the OK pill (1.8s)
+  ✓  34 [phone] › apps/web/e2e/phone.spec.ts:106:3 › top bar at 390px: a long name shows initials and nothing overlaps the OK pill (1.7s)
+  ✓  35 [phone] › apps/web/e2e/phone.spec.ts:151:1 › no horizontal scroll (3.2s)
+  ✓  36 [phone] › apps/web/e2e/phone.spec.ts:171:1 › Approve stays pinned (2.2s)
+  ✓  37 [phone] › apps/web/e2e/phone.spec.ts:190:1 › long text does not widen the page (1.4s)
+  ✓  38 [phone] › apps/web/e2e/phone.spec.ts:206:1 › sign-up does not scroll sideways (1.0s)
+  ✓  39 [phone] › apps/web/e2e/phone.spec.ts:213:1 › F3 pages do not scroll sideways (2.2s)
+  ✓  40 [phone] › apps/web/e2e/phone.spec.ts:226:1 › the proposal view fits the phone (7.0s)
+  ✓  41 [phone] › apps/web/e2e/phone.spec.ts:242:1 › C1 pages do not scroll sideways (3.5s)
+  ✓  42 [phone] › apps/web/e2e/phone.spec.ts:271:1 › agents screens fit the phone (4.1s)
+  ✘  43 [phone] › apps/web/e2e/phone.spec.ts:296:1 › S1 pages do not scroll sideways (13.5s)
+  ✓  44 [phone] › apps/web/e2e/phone.spec.ts:346:1 › D1 Front Desk pages do not scroll sideways (3.9s)
+  ✓  45 [phone] › apps/web/e2e/phone.spec.ts:375:1 › follow-up texts review fits the phone (1.7s)
+  ✓  46 [phone] › apps/web/e2e/phone.spec.ts:400:1 › Agents window with the G1 cards does not scroll sideways (1.7s)
+
+
+  1) [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 1440x900 › switching company from a detail removes old data and old URLs cannot expose it
+
+    Error: old-company details must unmount before query reset
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "GET",
+    + ]
+
+      133 |       await expect(page.getByRole('button', { name: /^Approve/ })).toHaveCount(0);
+      134 |       await capture(page, info, 'company-isolation');
+    > 135 |       expect(lateReadsAtSwitch, 'old-company details must unmount before query reset').toEqual([]);
+          |                                                                                        ^
+      136 |     });
+      137 |   });
+      138 | }
+        at /workspace/roofline/apps/web/e2e/ironclad-full-regression.spec.ts:135:88
+
+    attachment #1: company-isolation (image/png) ───────────────────────────────────────────────────
+    apps/web/test-results/ironclad-full-regression-c-d792e-d-old-URLs-cannot-expose-it-desktop/attachments/company-isolation-114800506cdfb1cad441590878341fa1093cc2ff.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: apps/web/test-results/ironclad-full-regression-c-d792e-d-old-URLs-cannot-expose-it-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    apps/web/test-results/ironclad-full-regression-c-d792e-d-old-URLs-cannot-expose-it-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace apps/web/test-results/ironclad-full-regression-c-d792e-d-old-URLs-cannot-expose-it-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 390x844 › switching company from a detail removes old data and old URLs cannot expose it
+
+    Error: old-company details must unmount before query reset
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "GET",
+    + ]
+
+      133 |       await expect(page.getByRole('button', { name: /^Approve/ })).toHaveCount(0);
+      134 |       await capture(page, info, 'company-isolation');
+    > 135 |       expect(lateReadsAtSwitch, 'old-company details must unmount before query reset').toEqual([]);
+          |                                                                                        ^
+      136 |     });
+      137 |   });
+      138 | }
+        at /workspace/roofline/apps/web/e2e/ironclad-full-regression.spec.ts:135:88
+
+    attachment #1: company-isolation (image/png) ───────────────────────────────────────────────────
+    apps/web/test-results/ironclad-full-regression-c-325e1-d-old-URLs-cannot-expose-it-desktop/attachments/company-isolation-9483c83d100315a7e34078727e4bcfe61c896b7e.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: apps/web/test-results/ironclad-full-regression-c-325e1-d-old-URLs-cannot-expose-it-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    apps/web/test-results/ironclad-full-regression-c-325e1-d-old-URLs-cannot-expose-it-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace apps/web/test-results/ironclad-full-regression-c-325e1-d-old-URLs-cannot-expose-it-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [phone] › apps/web/e2e/phone.spec.ts:296:1 › S1 pages do not scroll sideways ──────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('button', { name: 'Request a free inspection' })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for getByRole('button', { name: 'Request a free inspection' })
+
+
+      245 |   const code = await stormPageCode(db, scenario.companyStormId);
+      246 |   await page.goto(companyHostUrl('/storm/' + code));
+    > 247 |   await expect(page.getByRole('button', { name: 'Request a free inspection' })).toBeVisible();
+          |                                                                                 ^
+      248 |   await noSideScroll(page);
+      249 | });
+      250 |
+        at /workspace/roofline/apps/web/e2e/phone.spec.ts:247:81
+
+    Error Context: apps/web/test-results/phone-S1-pages-do-not-scroll-sideways-phone/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    apps/web/test-results/phone-S1-pages-do-not-scroll-sideways-phone/trace.zip
+    Usage:
+
+        npx playwright show-trace apps/web/test-results/phone-S1-pages-do-not-scroll-sideways-phone/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 1440x900 › switching company from a detail removes old data and old URLs cannot expose it
+    [desktop] › apps/web/e2e/ironclad-full-regression.spec.ts:176:5 › contract continuity at 390x844 › switching company from a detail removes old data and old URLs cannot expose it
+    [phone] › apps/web/e2e/phone.spec.ts:296:1 › S1 pages do not scroll sideways ───────────────────
+  43 passed (4.0m)
