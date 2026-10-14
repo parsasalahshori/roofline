@@ -1,108 +1,272 @@
-/* My day: one column, a greeting, then the sections. Flex children get min-width: 0 so long text can ellipsize. */
+/* Reference: 372px / 360px widgets, 20px padding/radius and a clear map between them. */
 .root {
+  --today-surface: rgba(246, 247, 248, 0.97);
+  --today-text: #151c22;
+  --today-muted: #505b64;
+  --today-line: rgba(21, 28, 34, 0.12);
+  min-width: 0;
+  color: var(--today-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.widgets {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.widgets[hidden] {
+  display: none;
+}
+
+.column {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
   min-width: 0;
-  padding: 4px 0 8px;
-  color: var(--text);
-  font-size: 0.875rem;
+}
+
+.header,
+.section {
+  min-width: 0;
+  padding: 20px;
+  border-radius: 20px;
+  background: var(--today-surface);
+  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 14px 34px -16px rgba(21, 28, 34, 0.35);
 }
 
 .header {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  gap: 8px;
 }
 
 .heading {
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 27px;
+  font-weight: 750;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 
 .date {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--today-muted);
+  font-size: 13px;
+}
+
+.intro {
+  margin: 4px 0 8px;
+  color: var(--today-muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.actions > a,
+.mapToggle > button[data-variant="ghost"] {
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--today-text);
+}
+
+.actions > a[data-variant="primary"] {
+  background: #ffc515;
+  border: 1px solid #e5af06;
+}
+
+.actions > a[data-variant="ghost"],
+.mapToggle > button[data-variant="ghost"] {
+  background: #fff;
+  border: 1px solid #c5cbd0;
 }
 
 .section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-width: 0;
+  gap: 12px;
 }
 
 .sectionTitle {
   margin: 0;
-  font-size: 1rem;
+  color: var(--today-muted);
+  font-size: 13px;
   font-weight: 600;
 }
 
 .note {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--today-muted);
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
 }
 
-/* The whole card is the link: a 40px touch target with a visible focus ring */
+.list > li + li {
+  border-top: 1px solid var(--today-line);
+}
+
 .link {
   display: block;
   min-width: 0;
-  min-height: 40px;
-  border-radius: var(--radius-card);
+  min-height: 44px;
+  border-radius: 8px;
   color: inherit;
   text-decoration: none;
 }
 
+.link:hover {
+  background: #e9eef2;
+}
+
 .link:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--today-text);
   outline-offset: 2px;
 }
 
-.card {
+/* Flat rows preserve full customer names and next steps instead of truncating useful work. */
+.card[data-padded="true"] {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  padding: 12px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
 }
 
 .agent {
   display: block;
-  font-size: 0.75rem;
-  color: var(--text-muted);
+  font-size: 12px;
+  color: var(--today-muted);
+  overflow-wrap: anywhere;
 }
 
-/* One line, then an ellipsis */
 .title {
   display: block;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+  font-size: 14px;
   font-weight: 600;
 }
 
-.seeAll {
+.seeAll,
+.error {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
-/* A small label on a follow-up that came from the Front Desk */
+.seeAll > a,
+.error > button {
+  color: var(--today-text);
+  font-size: 13px;
+}
+
 .fromFrontDesk {
-  color: var(--text-muted);
-  font-size: 0.75rem;
+  align-self: flex-start;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #e4f1f0;
+  color: #215d5b;
+  font-size: 12px;
   font-weight: 600;
+}
+
+.fromFrontDesk[data-urgent="true"] {
+  background: #fff1cd;
+  color: #755000;
+}
+
+/* The home variant is opt-in: the router owner mounts it only on the map index. */
+.root[data-layout="home"] {
+  position: fixed;
+  top: calc(var(--shell-top-inset, 34px) + 16px);
+  right: 20px;
+  bottom: calc(var(--shell-bottom-inset, 94px) + 64px);
+  left: 20px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.root[data-layout="home"] .widgets {
+  height: 100%;
+  grid-template-columns: minmax(0, 372px) minmax(0, 360px);
+  justify-content: space-between;
+  gap: 40px;
+}
+
+.root[data-layout="home"] .column {
+  max-height: calc(100% + 40px);
+  margin: -20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  scrollbar-width: thin;
+  pointer-events: auto;
+}
+
+.mapToggle {
+  position: fixed;
+  left: 20px;
+  bottom: calc(var(--shell-bottom-inset, 94px) + 12px);
+  pointer-events: auto;
+}
+
+@media (max-width: 767.98px) {
+  .widgets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .root[data-layout="home"] {
+    top: calc(var(--shell-top-inset, 44px) + 12px);
+    right: 12px;
+    left: 12px;
+    bottom: calc(var(--shell-bottom-inset, 70px) + 64px);
+  }
+
+  .root[data-layout="home"] .widgets {
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 0 20px;
+    pointer-events: auto;
+  }
+
+  .root[data-layout="home"] .widgets[hidden] {
+    display: none;
+  }
+
+  .root[data-layout="home"] .column {
+    overflow: visible;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .root[data-layout="home"] .column + .column {
+    margin-top: 12px;
+  }
+
+  .mapToggle {
+    left: 12px;
+    bottom: calc(var(--shell-bottom-inset, 70px) + 12px);
+  }
 }

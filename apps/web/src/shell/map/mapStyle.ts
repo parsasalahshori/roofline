@@ -33,7 +33,13 @@ function osmStyle(): StyleSpecification {
         attribution: legal.mapAttribution,
       },
     },
-    layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+    layers: [{
+      id: 'osm',
+      type: 'raster',
+      source: 'osm',
+      // Muted geographic context lets real job pins and hail remain legible.
+      paint: { 'raster-saturation': -0.7, 'raster-contrast': -0.15, 'raster-brightness-min': 0.12 },
+    }],
   };
 }
 

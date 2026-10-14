@@ -1,5 +1,5 @@
-import { type ReactNode, useId } from 'react';
-import { Button, Card, EmptyState, Skeleton, UiLink } from '@roofline/ui';
+import { type ReactNode, useId, useState } from 'react';
+import { Button, Card, Skeleton, UiLink } from '@roofline/ui';
 import { useApprovals, useMe } from '../../api/hooks.ts';
 import type { TaskView } from '../../api/types.ts';
 import { errors } from '../../copy/errors.ts';
@@ -26,8 +26,10 @@ function newestFirst(tasks: TaskView[]): TaskView[] {
   return [...tasks].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-/** My day: a greeting, today's date, the plans waiting for a yes, and today's appointments. */
-export function Today() {
+/** Read-only day widgets. The controller can mount `layout="home"` over the map without a dialog. */
+export function Today({ layout = 'window' }: { layout?: 'window' | 'home' } = {}) {
+  const [expanded, setExpanded] = useState(true);
+  const widgetsId = useId();
   // Read per render, not at module load, so the clock is always the current one
   const now = new Date();
   const me = useMe();
@@ -59,7 +61,7 @@ export function Today() {
   let okContent: ReactNode;
   if (approvalsQuery.data === undefined) {
     // While the plans load, a skeleton: "Nothing needs your OK" must not flash first
-    okContent = approvalsQuery.isPending ? <Skeleton lines={2} /> : <p className={styles.note}>{errors.generic}</p>;
+    okContent = approvalsQuery.isPending ? <Skeleton lines={2} /> : <RetryNotice onRetry={() => void approvalsQuery.refetch()} pending={approvalsQuery.isFetching} />;
   } else if (drafts.length === 0) {
     okContent = <p className={styles.note}>{today.nothingNeedsYou}</p>;
   } else {
@@ -99,11 +101,11 @@ export function Today() {
   let appointmentsContent: ReactNode;
   const view = todayQuery.data;
   if (view === undefined) {
-    appointmentsContent = todayQuery.isPending ? <Skeleton lines={2} /> : <p className={styles.note}>{errors.generic}</p>;
+    appointmentsContent = todayQuery.isPending ? <Skeleton lines={2} /> : <RetryNotice onRetry={() => void todayQuery.refetch()} pending={todayQuery.isFetching} />;
   } else if (view.appointments.length === 0) {
     appointmentsContent = (
       <>
-        <EmptyState title={today.noAppointments} />
+        <p className={styles.note}>{today.noAppointments}</p>
         {seeEveryone}
       </>
     );
@@ -130,77 +132,106 @@ export function Today() {
   }
 
   return (
-    <div className={styles.root}>
-      <header className={styles.header}>
-        <h2 className={styles.heading}>{today.greeting(part, first)}</h2>
-        <p className={styles.date}>{dateLine}</p>
-      </header>
-
-      <section aria-labelledby={okId} className={styles.section}>
-        <h3 id={okId} className={styles.sectionTitle}>
-          {today.needYourOk}
-        </h3>
-        {okContent}
-      </section>
-
-      <section aria-labelledby={appointmentsId} className={styles.section}>
-        <h3 id={appointmentsId} className={styles.sectionTitle}>
-          {today.appointments}
-        </h3>
-        {appointmentsContent}
-      </section>
-
-      {view !== undefined && view.followUps.length > 0 ? (
-        <section aria-labelledby={followUpsId} className={styles.section}>
-          <h3 id={followUpsId} className={styles.sectionTitle}>
-            {today.followUps}
-          </h3>
-          <ul aria-label={today.followUpsLabel} className={styles.list}>
-            {view.followUps.map((job) => (
-              <li key={job.id}>
-                <UiLink href={'/jobs/' + encodeURIComponent(job.id)} className={styles.link}>
-                  <Card className={styles.card}>
-                    {job.frontDesk === 'urgent' || job.frontDesk === 'message' ? (
-                      <span className={styles.fromFrontDesk}>
-                        {job.frontDesk === 'urgent' ? today.fromFrontDeskUrgent : today.fromFrontDesk}
-                      </span>
-                    ) : null}
-                    <strong className={styles.title}>{job.customerName}</strong>
-                    <span className={styles.agent}>{today.nextStep(job.nextStep)}</span>
-                  </Card>
-                </UiLink>
-              </li>
-            ))}
-          </ul>
-        </section>
+    <div className={styles.root} data-layout={layout}>
+      {layout === 'home' ? (
+        <div className={styles.mapToggle}>
+          <Button variant="ghost" aria-expanded={expanded} aria-controls={widgetsId} onClick={() => setExpanded((value) => !value)}>
+            {expanded ? today.exploreMap : today.showDay}
+          </Button>
+        </div>
       ) : null}
-      {signedQuery.data !== undefined ? (
-        <section aria-labelledby={signedId} className={styles.section}>
-          <h3 id={signedId} className={styles.sectionTitle}>
-            {today.signedToday}
-          </h3>
-          {signedQuery.data.proposals.length === 0 ? (
-            <p className={styles.note}>{today.signedNone}</p>
-          ) : (
-            <ul aria-label={today.signedLabel} className={styles.list}>
-              {signedQuery.data.proposals.map((p) => {
-                const option = p.options.find((o) => o.id === p.signed?.optionId);
-                return (
-                  <li key={p.id}>
-                    <UiLink href={'/estimator/proposals/' + encodeURIComponent(p.id)} className={styles.link}>
+      <div id={widgetsId} className={styles.widgets} hidden={layout === 'home' && !expanded}>
+        <div className={styles.column}>
+          <header className={styles.header}>
+            <p className={styles.date}>{dateLine}</p>
+            <h2 className={styles.heading}>{today.greeting(part, first)}</h2>
+            <p className={styles.intro}>{today.intro}</p>
+            <div className={styles.actions}>
+              <Button href="/approvals">{today.reviewPlans}</Button>
+              <Button variant="ghost" href={'/calendar?view=day&date=' + zonedDateKey(now, zone)}>{today.openCalendar}</Button>
+            </div>
+          </header>
+
+          <section aria-labelledby={okId} className={styles.section} data-section="approvals">
+            <h3 id={okId} className={styles.sectionTitle}>
+              {today.needYourOk}
+            </h3>
+            {okContent}
+          </section>
+
+          <section aria-labelledby={signedId} className={styles.section} data-section="signed">
+            <h3 id={signedId} className={styles.sectionTitle}>
+              {today.signedToday}
+            </h3>
+            {signedQuery.data === undefined ? (
+              signedQuery.isPending ? <Skeleton lines={2} /> : <RetryNotice onRetry={() => void signedQuery.refetch()} pending={signedQuery.isFetching} />
+            ) : signedQuery.data.proposals.length === 0 ? (
+              <p className={styles.note}>{today.signedNone}</p>
+            ) : (
+              <ul aria-label={today.signedLabel} className={styles.list}>
+                {signedQuery.data.proposals.map((p) => {
+                  const option = p.options.find((o) => o.id === p.signed?.optionId);
+                  return (
+                    <li key={p.id}>
+                      <UiLink href={'/estimator/proposals/' + encodeURIComponent(p.id)} className={styles.link}>
+                        <Card className={styles.card}>
+                          <strong className={styles.title}>{p.customer.name}</strong>
+                          <span className={styles.agent}>{p.address}</span>
+                          {option !== undefined ? <span className={styles.agent}>{p.basis === 'exact' ? proposals.money(option.totalCents) : today.signedEstimate(proposals.money(option.totalCents))}</span> : null}
+                        </Card>
+                      </UiLink>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+        </div>
+        <div className={styles.column}>
+          <section aria-labelledby={appointmentsId} className={styles.section} data-section="appointments">
+            <h3 id={appointmentsId} className={styles.sectionTitle}>
+              {today.appointments}
+            </h3>
+            {appointmentsContent}
+          </section>
+
+          {view !== undefined && view.followUps.length > 0 ? (
+            <section aria-labelledby={followUpsId} className={styles.section} data-section="follow-ups">
+              <h3 id={followUpsId} className={styles.sectionTitle}>
+                {today.followUps}
+              </h3>
+              <ul aria-label={today.followUpsLabel} className={styles.list}>
+                {view.followUps.map((job) => (
+                  <li key={job.id}>
+                    <UiLink href={'/jobs/' + encodeURIComponent(job.id)} className={styles.link}>
                       <Card className={styles.card}>
-                        <strong className={styles.title}>{p.customer.name}</strong>
-                        <span className={styles.agent}>{p.address}</span>
-                        {option !== undefined ? <span className={styles.agent}>{p.basis === 'exact' ? proposals.money(option.totalCents) : today.signedEstimate(proposals.money(option.totalCents))}</span> : null}
+                        {job.frontDesk === 'urgent' || job.frontDesk === 'message' ? (
+                          <span className={styles.fromFrontDesk} data-urgent={job.frontDesk === 'urgent'}>
+                            {job.frontDesk === 'urgent' ? today.fromFrontDeskUrgent : today.fromFrontDesk}
+                          </span>
+                        ) : null}
+                        <strong className={styles.title}>{job.customerName}</strong>
+                        <span className={styles.agent}>{today.nextStep(job.nextStep)}</span>
                       </Card>
                     </UiLink>
                   </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ) : null}
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RetryNotice({ onRetry, pending }: { onRetry: () => void; pending: boolean }) {
+  return (
+    <div className={styles.error} role="status">
+      <p className={styles.note}>{errors.generic}</p>
+      <Button variant="ghost" onClick={onRetry} disabled={pending}>{today.tryAgain}</Button>
     </div>
   );
 }
