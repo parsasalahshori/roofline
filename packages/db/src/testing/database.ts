@@ -15,15 +15,28 @@ export const TEST_ROLE_PASSWORDS = { tenant: 'tenant-test-pw', system: 'system-t
  * the owner, app_tenant and app_system URLs. The caller stops the container with `stop()`. The
  * vitest global setup uses this, and so can any other test that needs its own database.
  *
- * The postgis/postgis:16-3.4 image is amd64-only, so on Apple Silicon it runs under emulation and
- * takes a while to start. The platform is pinned so Docker never picks a different variant.
+ * The postgis/postgis:16-3.4 image is amd64-only, so on arm64 (Apple Silicon) the tests use the
+ * multi-arch imresamu/postgis:16-3.4 instead: the same PG16 and PostGIS 3.4 the demo runs on, native
+ * rather than emulated (Ruling DM1). TEST_POSTGIS_IMAGE overrides the choice. The platform is pinned
+ * so Docker never picks a different variant.
  */
+const AMD64_IMAGE = 'postgis/postgis:16-3.4';
+const MULTI_ARCH_IMAGE = 'imresamu/postgis:16-3.4';
+
+function testImage(): { image: string; platform: string } {
+  const platform = process.arch === 'arm64' ? 'linux/arm64' : 'linux/amd64';
+  const chosen = process.env.TEST_POSTGIS_IMAGE?.trim();
+  if (chosen) return { image: chosen, platform };
+  return process.arch === 'arm64' ? { image: MULTI_ARCH_IMAGE, platform } : { image: AMD64_IMAGE, platform };
+}
+
 export async function startTestDatabase(): Promise<TestDatabase> {
   // Loaded lazily: this file is re-exported by `@roofline/db/testing`, which the seed script and the
   // API test helpers import at runtime, and that must never load Testcontainers.
   const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
-  const container = await new PostgreSqlContainer('postgis/postgis:16-3.4')
-    .withPlatform('linux/amd64')
+  const { image, platform } = testImage();
+  const container = await new PostgreSqlContainer(image)
+    .withPlatform(platform)
     .withDatabase('roofline')
     .withUsername('roofline')
     .withPassword('roofline')
