@@ -199,6 +199,26 @@ async function asNotFound<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/** The middle of an outline (the mean of its corners), where Solar is asked about that building. */
+function ringMiddle(ring: Ring): LngLat {
+  const corners = ring.length > 1 && ring[0]![0] === ring.at(-1)![0] && ring[0]![1] === ring.at(-1)![1] ? ring.slice(0, -1) : ring;
+  return [corners.reduce((t, p) => t + p[0], 0) / corners.length, corners.reduce((t, p) => t + p[1], 0) / corners.length];
+}
+
+/**
+ * The Solar answer whose roof planes lie over `ring`: the one already asked when it does, else Solar asked again at
+ * the outline's middle (its building can differ from the one nearest the address point). The first answer when
+ * neither covers the outline, so the pitch falls back as before.
+ */
+async function solarCovering(deps: AppDeps, solar: SolarSnapshot | null, ring: Ring): Promise<SolarSnapshot | null> {
+  // No answer at all (not set up, or Solar failed) is not retried here: the next measurement asks again.
+  if (!deps.solar.configured || solar === null) return solar;
+  const middle = ringMiddle(ring);
+  if (pitchFromSolar(solar, ring, middle, 0).source === 'solar') return solar;
+  const again = await solarAt(deps, middle);
+  return again !== null && pitchFromSolar(again, ring, middle, 0).source === 'solar' ? again : solar;
+}
+
 /** What a measurement keeps of its pitch: the pitch, where it came from, Solar's planes and the Solar answer. */
 function pitchFields(pick: PitchPick, solar: SolarSnapshot | null): Pick<NewMeasurement, 'pitchSource' | 'pitchPlanes' | 'solar'> {
   return { pitchSource: pick.source, pitchPlanes: pick.planes, solar };
@@ -349,13 +369,16 @@ export async function measureProperty(
       await deps.jobs.send('footprints-load', { companyId: ctx.companyId, quadkey, state }, { singletonKey: quadkey });
     }
   }
-  const solar = await solarAsked;
+  const askedSolar = await solarAsked;
+  const rows = await withTenant(deps.pools, ctx, (tx) => footprintsNear(tx, point, FOOTPRINT_SEARCH_M));
+  const picked = mainOf(rows);
+  // Solar answers for the building nearest the address point, which can be the neighbour of the outline picked here.
+  const solar = picked === undefined ? askedSolar : await solarCovering(deps, askedSolar, picked.ring);
 
   return asNotFound(() =>
     withTenant(deps.pools, ctx, async (tx) => {
       const settings = await settingsFor(tx, ctx);
-      const rows = await footprintsNear(tx, point, FOOTPRINT_SEARCH_M);
-      const main = mainOf(rows);
+      const main = picked;
       if (main === undefined) {
         const outline = solarOutline(solar, point);
         if (outline !== null) return createMeasurement(tx, ctx, solarOutlineInput(property, point, outline, settings, jobId, solar!), now);
@@ -380,7 +403,7 @@ async function measureOnFootprint(
   jobId: string | null,
   now: Date,
 ): Promise<MeasurementView> {
-  const solar = await solarForHome(deps, ctx, property.id, picked.point);
+  const solar = await solarCovering(deps, await solarForHome(deps, ctx, property.id, picked.point), picked.ring);
   return asNotFound(() =>
     withTenant(deps.pools, ctx, async (tx) => {
       const settings = await settingsFor(tx, ctx);

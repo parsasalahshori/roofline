@@ -811,6 +811,22 @@ describe('pitch from Google Solar', () => {
     expect(t.solar.calls).toHaveLength(2);
   });
 
+  it("Solar's building at the address point is the neighbour's: it is asked again at the outline's middle", async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    // The address point sits beside the house; Solar's nearest building there is a neighbour about 33 m west.
+    t.solar.set(NEAR_15M, solarOverHouse(36.87, -0.0004, 0));
+    t.solar.set(INSIDE, solarOverHouse());
+    const owner = await who.as('owner');
+
+    const view = await measure(owner, { propertyId: await homeAt(90, NEAR_15M) });
+
+    expect(t.solar.calls).toHaveLength(2);
+    expect(t.solar.calls[1]![0]).toBeCloseTo(INSIDE[0], 6);
+    expect(t.solar.calls[1]![1]).toBeCloseTo(INSIDE[1], 6);
+    expect(view.pitchSource).toBe('solar');
+    expect(view.estimate.pitchX12).toBe(9);
+  });
+
   it('measuring the same home again reuses the answer kept on its measurement (no second paid call)', async () => {
     await loadNE({ sourceRef: 'house', ring: HOUSE });
     t.solar.set(INSIDE, solarOverHouse());
