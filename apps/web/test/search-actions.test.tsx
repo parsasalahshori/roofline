@@ -151,3 +151,16 @@ describe('Measure roof from the search', () => {
     await waitFor(() => expect(where(router)).toBe('/estimator?measure=12%20Elm%20St'));
   });
 });
+
+describe('address checks', () => {
+  it('a whole address has its town, ZIP or state; a bare street is not looked up early', async () => {
+    const { looksCompleteAddress, looksLikeAddress } = await import('../src/features/measure/address.ts');
+    expect(looksLikeAddress('12 Elm St')).toBe(true);
+    expect(looksCompleteAddress('12 Elm St')).toBe(false);
+    expect(looksCompleteAddress('12 Elm St, Omaha')).toBe(true);
+    expect(looksCompleteAddress('12 Elm St 68102')).toBe(true);
+    expect(looksCompleteAddress('3518 Lowell St NW, Washington, DC')).toBe(true);
+    expect(looksCompleteAddress('12 Elm St NE')).toBe(true);
+    expect(looksCompleteAddress('Maria Lopez, Omaha')).toBe(false);
+  });
+});

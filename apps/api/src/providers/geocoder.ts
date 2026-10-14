@@ -9,9 +9,15 @@ export interface Geocoder { readonly configured: boolean;
   geocodeMany(addresses: readonly string[]): Promise<(GeocodeResult | null)[]>;
   /**
    * Batch reverse geocode (Geocodio POST /v1.7/reverse, at most 1000 points per call, chunked by the adapter).
-   * The output has the same length and order as the input; a point with no usable address is null.
+   * The output has the same length and order as the input; a point with no usable address is null. Bulk work
+   * (the storm door routes); in the demo it stays the fictional demo answer even with a Geocodio key.
    */
-  reverseMany(points: { lat: number; lng: number }[]): Promise<({ street: string; city: string; state: string; zip: string } | null)[]> }
+  reverseMany(points: { lat: number; lng: number }[]): Promise<({ street: string; city: string; state: string; zip: string } | null)[]>;
+  /**
+   * One point's street address (Geocodio GET /v1.7/reverse): the building a person clicked on the map. Null when
+   * the point has no usable address. In the demo with a Geocodio key this one is real.
+   */
+  reverse(point: { lat: number; lng: number }): Promise<{ street: string; city: string; state: string; zip: string } | null> }
 export class GeocoderUnavailableError extends Error {}
 
 /** Used when no real geocoder is configured: every lookup fails with a setup message. */
@@ -26,12 +32,16 @@ export class UnconfiguredGeocoder implements Geocoder {
   async reverseMany(): Promise<({ street: string; city: string; state: string; zip: string } | null)[]> {
     throw new GeocoderUnavailableError("Address lookup isn't set up.");
   }
+  async reverse(): Promise<{ street: string; city: string; state: string; zip: string } | null> {
+    throw new GeocoderUnavailableError("Address lookup isn't set up.");
+  }
 }
 
 /** The geocoder the app uses: the demo one in DEMO_MODE, the fake under FAKE_PROVIDERS, else the real one when configured. */
 export function createGeocoder(config: Config): Geocoder {
   if (config.DEMO_MODE) {
-    // With a Geocodio key the demo looks typed addresses up for real; reverse lookups stay demo ones (free, fictional).
+    // With a Geocodio key the demo looks typed addresses and a clicked roof's address up for real; bulk reverse
+    // lookups (a storm's door routes, thousands of points) stay demo ones (free, fictional).
     const real = geocodioFor(config);
     if (!real) return new DemoGeocoder();
     const demo = new DemoGeocoder();
@@ -40,6 +50,7 @@ export function createGeocoder(config: Config): Geocoder {
       geocode: (address, opts) => real.geocode(address, opts),
       geocodeMany: (addresses) => real.geocodeMany(addresses),
       reverseMany: (points) => demo.reverseMany(points),
+      reverse: (point) => real.reverse(point),
     };
   }
   if (config.FAKE_PROVIDERS) return new FakeGeocoder();

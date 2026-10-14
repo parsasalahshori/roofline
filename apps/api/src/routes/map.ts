@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { type Bbox, mapArea, mapPins, type PinLayer, withTenant } from '@roofline/db';
+import { footprintTilesInBox } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
+import { ensureFootprintTiles } from '../estimator/footprint-tiles.ts';
 import { buildingAt, NO_BUILDING } from '../estimator/from-footprint.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { mapBuildingRateLimit } from '../rate-limit.ts';
@@ -62,6 +64,8 @@ function parseLayers(value: unknown): ReadonlySet<PinLayer> {
  *   customers, jobs }`, or above 2,000 pins in all `{ mode: 'clusters', clusters, total }`.
  * - `GET /area` `{ serviceArea, bounds }`: the company's service area (GeoJSON or null) and where
  *   the map should start (`[west, south, east, north]` or null).
+ * - `GET /building-at` and `POST /load-buildings` (owner and office): the roof under a click, and the outlines of
+ *   the area in view loaded ahead of a click.
  */
 export function mapRoutes(deps: AppDeps): Router {
   const { pools } = deps;
@@ -81,7 +85,9 @@ export function mapRoutes(deps: AppDeps): Router {
 
   /**
    * `GET /building-at?lat=&lng=` (owner and office): the building outline under a point, from the footprint table the
-   * measurement code uses. 200 `{ footprintId, polygon, centroid }`, or 404 `{ error: 'no_building' }`. No geocoding.
+   * measurement code uses. 200 `{ footprintId, source, polygon, centroid }`, or 404 `{ error: 'no_building' }`. A click
+   * in an area whose outlines are not loaded yet loads them first (about 30 seconds, once per area); where Microsoft
+   * has no outline, Google Solar's roof under the click answers (`footprintId` null, `source` 'solar'). No geocoding.
    */
   router.get('/building-at', mapBuildingRateLimit(), async (req, res) => {
     const { ctx } = req;
@@ -91,6 +97,24 @@ export function mapRoutes(deps: AppDeps): Router {
     const building = await buildingAt(deps, ctx, [lng, lat]);
     if (building === null) throw new AppError(404, NO_BUILDING);
     res.json(building);
+  });
+
+  /**
+   * `POST /api/map/load-buildings?bbox=w,s,e,n` (owner and office): the map is zoomed in to building level here, so the
+   * area's building outlines start loading now (in the background; a tile already loading or loaded is left alone),
+   * and a roof clicked in a moment is found at once. 202 `{ tiles }`: how many tiles the view covers, 0 when it is
+   * zoomed out past building level (more than four tiles).
+   */
+  router.post('/load-buildings', mapBuildingRateLimit(), async (req, res) => {
+    const { ctx } = req;
+    if (ctx.role !== 'owner' && ctx.role !== 'office') throw new AppError(403, MESSAGES.roleCannot);
+    const { west, south, east, north } = parseBbox(req.query['bbox']);
+    const tiles = footprintTilesInBox(west, south, east, north) ?? [];
+    if (tiles.length > 0) {
+      const work = ensureFootprintTiles(deps, tiles, { waitMs: 0 }).then(() => undefined);
+      deps.onBackgroundTask?.(work);
+    }
+    res.status(202).json({ tiles: tiles.length });
   });
 
   return router;

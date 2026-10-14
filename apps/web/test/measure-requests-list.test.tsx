@@ -196,6 +196,11 @@ describe('RequestsList', () => {
     await screen.findByText(measure.requestsNoMatches);
     await new Promise((resolve) => setTimeout(resolve, 700));
     expect(prefetches).toEqual([]);
+    // A street without its town could be anywhere: not yet
+    fireEvent.change(box, { target: { value: '3518 Lowell St' } });
+    await screen.findByRole('button', { name: measure.measureNew('3518 Lowell St') });
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(prefetches).toEqual([]);
 
     fireEvent.change(box, { target: { value: '3518 Lowell St NW, Washington, DC' } });
     await screen.findByRole('button', { name: measure.measureNew('3518 Lowell St NW, Washington, DC') });

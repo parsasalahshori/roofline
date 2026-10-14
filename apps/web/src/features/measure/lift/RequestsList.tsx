@@ -4,7 +4,7 @@ import { Banner, Button, Field, Skeleton, UiLink } from '@roofline/ui';
 import { ApiError } from '../../../api/client.ts';
 import { measure } from '../../../copy/measure.ts';
 import { useMeasure, usePrefetchMeasure } from '../../estimator/api.ts';
-import { looksLikeAddress } from '../address.ts';
+import { looksCompleteAddress } from '../address.ts';
 import type { MeasureHandoff } from '../handoff.ts';
 import { useRequestRows } from './requests.ts';
 import styles from './RequestsList.module.css';
@@ -70,8 +70,8 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the address the window opened with
   }, [asked]);
 
-  // An address typed and left alone starts loading its area and pitch before Measure is pressed
-  const prefetchAddress = offerNew && !create.isPending && looksLikeAddress(q) ? q : '';
+  // A whole address typed and left alone starts loading its area and pitch before Measure is pressed
+  const prefetchAddress = offerNew && !create.isPending && looksCompleteAddress(q) ? q : '';
   const prefetchRef = useRef(prefetch.mutate);
   useEffect(() => {
     prefetchRef.current = prefetch.mutate;

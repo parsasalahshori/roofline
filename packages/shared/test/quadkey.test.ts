@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { footprintTilesNear, isFootprintQuadkey, quadkeyOf } from '../src/quadkey.ts';
+import { footprintTilesInBox, footprintTilesNear, isFootprintQuadkey, quadkeyOf } from '../src/quadkey.ts';
 
 describe('quadkeyOf', () => {
   it('matches the Bing tile system for known points', () => {
@@ -36,5 +36,21 @@ describe('footprintTilesNear', () => {
     expect(footprintTilesNear(edge + 0.01, 38.9296)).toHaveLength(1);
     // The equator and the prime meridian meet at a corner of four tiles.
     expect(new Set(footprintTilesNear(0.0001, 0.0001)).size).toBe(4);
+  });
+});
+
+describe('footprintTilesInBox', () => {
+  it('lists the zoom-9 tiles a building-level view covers: one inside a tile, more across an edge', () => {
+    // A few hundred metres around a point in Omaha: one tile, the point's own.
+    expect(footprintTilesInBox(-96.005, 41.247, -95.995, 41.253)).toEqual([quadkeyOf(-96, 41.25)]);
+    // Across a tile edge (zoom-9 tiles are 0.703125 degrees wide; -95.625 is an edge): two tiles, left to right.
+    const across = footprintTilesInBox(-95.63, 41.25, -95.62, 41.26)!;
+    expect(across).toEqual([quadkeyOf(-95.63, 41.255), quadkeyOf(-95.62, 41.255)]);
+  });
+
+  it('is null for a view zoomed out past building level, or a box that is not one', () => {
+    expect(footprintTilesInBox(-100, 38, -90, 44)).toBeNull();
+    expect(footprintTilesInBox(-95, 41, -96, 42)).toBeNull();
+    expect(footprintTilesInBox(Number.NaN, 41, -96, 42)).toBeNull();
   });
 });

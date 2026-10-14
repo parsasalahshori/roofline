@@ -293,7 +293,8 @@ function tilesFor(property: PropertyRow, point: LngLat): { tiles: string[]; stat
  * Measures a home from its building outline, or opens draw mode when no source has the roof.
  * - `propertyId` names a saved address the caller may see (404 otherwise); `address` is looked up
  *   with the geocoder and saved (or reused) first. Neither is a 400.
- * - A home with no point is looked up once more; still none means draw mode centred on the US.
+ * - A home with no point is looked up once more; still none means draw mode centred on the US. `at` (a roof
+ *   clicked on the map) is measured instead of the home's saved point.
  * - The footprints are loaded per zoom-9 tile: the point's own tile, plus the tile next door when the
  *   point is within FOOTPRINT_TILE_MARGIN_M of its edge. A tile that is not ready is loaded during this
  *   request (or waited for, when another process is loading it), for up to FOOTPRINT_WAIT_MS: the first
@@ -309,7 +310,7 @@ function tilesFor(property: PropertyRow, point: LngLat): { tiles: string[]; stat
 export async function measureProperty(
   deps: AppDeps,
   ctx: TenantContext,
-  i: { propertyId?: string; address?: string; jobId?: string | null; footprint?: SelectedFootprint },
+  i: { propertyId?: string; address?: string; jobId?: string | null; footprint?: SelectedFootprint; at?: LngLat },
 ): Promise<MeasurementView> {
   const now = deps.clock.now();
   const jobId = i.jobId ?? null;
@@ -328,7 +329,8 @@ export async function measureProperty(
 
   if (i.footprint !== undefined) return measureOnFootprint(deps, ctx, property, i.footprint, jobId, now);
 
-  const point = await pointOf(deps, ctx, property, now);
+  // `at`: the roof a person clicked on the map, which may not be where the home's saved point is
+  const point = i.at ?? (await pointOf(deps, ctx, property, now));
   if (point === null) {
     return asNotFound(() =>
       withTenant(deps.pools, ctx, async (tx) =>

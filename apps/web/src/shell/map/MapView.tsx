@@ -7,7 +7,8 @@ import { useMapArea, useMapPins } from '../../api/hooks.ts';
 import type { PinsResult } from '../../api/types.ts';
 import { mapCopy } from '../../copy/map.ts';
 import { storm as stormCopy } from '../../copy/storm.ts';
-import { type BuildingAt, useBuildingAt, useEstimateFromFootprint } from '../../features/estimator/api.ts';
+import { footprintTilesInBox } from '@roofline/shared';
+import { type BuildingAt, useBuildingAt, useEstimateFromFootprint, useEstimateFromPoint, useLoadBuildings } from '../../features/estimator/api.ts';
 import { useStormLayer } from '../../features/storm/layerApi.ts';
 import type { StormLayerResponse } from '../../features/storm/layerTypes.ts';
 import { HailLegend } from './HailLegend.tsx';
@@ -35,6 +36,11 @@ export type MapViewProps = {
 
 /** A roof picked on the map: the building under the click, and where the click was. */
 type PickedRoof = BuildingAt & { lat: number; lng: number };
+
+/** From this zoom the map is at building level: the outlines of the area in view start loading. */
+const BUILDINGS_ZOOM = 15;
+/** A roof lookup taking longer than this is loading a new area's outlines: say so. */
+const SLOW_ROOF_MS = 1500;
 
 const US_CENTER: [number, number] = [-96.5, 39.5];
 const US_ZOOM = 3.5;
@@ -94,7 +100,12 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
   const toast = useToast();
   const buildingAt = useBuildingAt();
   const fromFootprint = useEstimateFromFootprint();
+  const fromPoint = useEstimateFromPoint();
+  const loadBuildings = useLoadBuildings();
   const canEstimate = onEstimate !== undefined;
+  // Footprint tiles already asked to load in this session
+  const askedTiles = useRef(new Set<string>());
+  const [roofSlow, setRoofSlow] = useState<number | null>(null);
   // The map's click listener is bound once; it reads the latest of these through refs.
   const roofClickRef = useRef<(lngLat: { lng: number; lat: number }) => void>(() => undefined);
   const area = useMapArea();
@@ -256,6 +267,28 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
     instance.setStyle(mapStyle(readMapEnv(), mode), { diff: false });
   }, [mode]);
 
+  // Zoomed in to building level (owner and office): the area's outlines start loading, so a roof click is quick
+  const loadBuildingsRef = useRef(loadBuildings.mutate);
+  useEffect(() => {
+    loadBuildingsRef.current = loadBuildings.mutate;
+  });
+  useEffect(() => {
+    if (!canEstimate || bbox === null || zoom === null || zoom < BUILDINGS_ZOOM) return;
+    const tiles = footprintTilesInBox(bbox[0], bbox[1], bbox[2], bbox[3]);
+    if (tiles === null || tiles.every((t) => askedTiles.current.has(t))) return;
+    for (const t of tiles) askedTiles.current.add(t);
+    loadBuildingsRef.current(bbox);
+  }, [bbox, zoom, canEstimate]);
+
+  // A roof lookup that takes a while is loading a new area: say so over the map
+  const roofSince = buildingAt.isPending ? buildingAt.submittedAt : null;
+  useEffect(() => {
+    if (roofSince === null) return;
+    const timer = setTimeout(() => setRoofSlow(roofSince), SLOW_ROOF_MS);
+    return () => clearTimeout(timer);
+  }, [roofSince]);
+  const findingRoof = roofSince !== null && roofSlow === roofSince;
+
   // An empty-map click (owner and office): look up the building under it, highlight it and open its card.
   useEffect(() => {
     roofClickRef.current = (lngLat) => {
@@ -290,16 +323,16 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
 
   const estimateRoof = () => {
     if (!roof || !onEstimate) return;
-    fromFootprint.mutate(
-      { footprintId: roof.footprintId, lat: roof.lat, lng: roof.lng },
-      {
-        onSuccess: ({ measurementId }) => {
-          closeRoof();
-          onEstimate(measurementId);
-        },
-        onError: () => toast.show(mapCopy.roofFailed, 'error'),
+    const done = {
+      onSuccess: ({ measurementId }: { measurementId: string }) => {
+        closeRoof();
+        onEstimate(measurementId);
       },
-    );
+      onError: () => toast.show(mapCopy.roofFailed, 'error'),
+    };
+    // Google Solar's roof has no footprint: the estimate starts from the clicked point
+    if (roof.footprintId === null) fromPoint.mutate({ lat: roof.lat, lng: roof.lng }, done);
+    else fromFootprint.mutate({ footprintId: roof.footprintId, lat: roof.lat, lng: roof.lng }, done);
   };
 
   const satellite = satelliteAvailable(readMapEnv());
@@ -316,6 +349,7 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
       <div role="status" className={styles.status} data-state={showBanner ? 'error' : 'idle'}>
         {showBanner ? <p className={styles.banner}>{mapCopy.error}</p> : null}
         {hailOn && storm.data?.stale === true ? <p className={styles.banner}>{stormCopy.staleBanner}</p> : null}
+        {findingRoof ? <p className={styles.banner}>{mapCopy.findingRoof}</p> : null}
       </div>
       <div className={styles.controls}>
         {satellite ? (
@@ -338,7 +372,12 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
       </p>
       {roof && canEstimate ? (
         <div className={styles.card}>
-          <RoofCard onEstimate={estimateRoof} busy={fromFootprint.isPending} onClose={closeRoof} />
+          <RoofCard
+            onEstimate={estimateRoof}
+            busy={fromFootprint.isPending || fromPoint.isPending}
+            onClose={closeRoof}
+            fromSolar={roof.footprintId === null}
+          />
         </div>
       ) : null}
       {picked ? (

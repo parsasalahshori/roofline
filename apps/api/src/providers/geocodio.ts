@@ -165,6 +165,16 @@ export class GeocodioGeocoder implements Geocoder {
     return out;
   }
 
+  async reverse(point: { lat: number; lng: number }): Promise<{ street: string; city: string; state: string; zip: string } | null> {
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return null;
+    const url = `${this.baseUrl}/reverse?q=${point.lat},${point.lng}&limit=1&api_key=${encodeURIComponent(this.apiKey)}`;
+    const { status, body } = await this.request(url, { method: 'GET' }, this.timeoutMs);
+    if (status === 422) return null;
+    const results = listOf(isRecord(body) ? body.results : undefined);
+    if (results === null) throw unavailable();
+    return reverseAddress(results[0]);
+  }
+
   private async reverseChunk(
     chunk: { lat: number; lng: number }[],
   ): Promise<({ street: string; city: string; state: string; zip: string } | null)[]> {

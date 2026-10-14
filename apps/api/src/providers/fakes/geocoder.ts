@@ -103,6 +103,13 @@ export class FakeGeocoder implements Geocoder {
       p.lat < 0 ? null : { street: `${i + 1} Fake St`, city: 'Omaha', state: 'NE', zip: '68102' },
     );
   }
+
+  /** One point: `1 Fake St` (null south of the equator), recorded as its own call. */
+  async reverse(point: { lat: number; lng: number }): Promise<{ street: string; city: string; state: string; zip: string } | null> {
+    this.calls.push({ method: 'reverse', args: [point] });
+    this.takeFailure();
+    return point.lat < 0 ? null : { street: '1 Fake St', city: 'Omaha', state: 'NE', zip: '68102' };
+  }
 }
 
 /** Fictional street names for the demo's Omaha neighbourhoods (no real address is ever produced on purpose). */
@@ -159,5 +166,11 @@ export class DemoGeocoder extends FakeGeocoder {
       const zip = DEMO_ZIPS[Math.floor(h / 97) % DEMO_ZIPS.length]!;
       return { street: `${number} ${street}`, city: 'Omaha', state: 'NE', zip };
     });
+  }
+
+  /** One point: the same fictional address reverseMany gives it. */
+  override async reverse(point: { lat: number; lng: number }): Promise<{ street: string; city: string; state: string; zip: string } | null> {
+    const [found = null] = await this.reverseMany([point]);
+    return found;
   }
 }

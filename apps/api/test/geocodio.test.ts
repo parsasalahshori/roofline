@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 import { GeocodioGeocoder, geocodioFor } from '../src/providers/geocodio.ts';
-import { GeocoderUnavailableError } from '../src/providers/geocoder.ts';
+import { createGeocoder, GeocoderUnavailableError } from '../src/providers/geocoder.ts';
+import { DemoGeocoder } from '../src/providers/fakes/geocoder.ts';
 
 /*
  * The Geocodio adapter, against canned responses. Nothing here reaches the network: every test hands
@@ -208,6 +209,66 @@ describe('GeocodioGeocoder.geocodeMany', () => {
 
     expect(await geocoder.geocodeMany([])).toEqual([]);
     expect(fake.calls).toHaveLength(0);
+  });
+});
+
+/** One reverse answer: Geocodio's GET /reverse shape (results, nearest first). */
+const REVERSE = JSON.stringify({
+  results: [
+    {
+      address_components: { number: '3518', formatted_street: 'Lowell St NW', city: 'Washington', state: 'DC', zip: '20016' },
+      location: { lat: 38.9346, lng: -77.0717 },
+      accuracy: 1,
+      accuracy_type: 'rooftop',
+    },
+  ],
+});
+
+describe('GeocodioGeocoder.reverse (one clicked point)', () => {
+  test('asks GET /reverse for the one point and answers its street address', async () => {
+    const fake = fakeFetch(() => json(REVERSE));
+    const geocoder = new GeocodioGeocoder({ apiKey: API_KEY, fetch: fake.fetch, baseUrl: BASE });
+
+    const found = await geocoder.reverse({ lat: 38.9346, lng: -77.0717 });
+
+    expect(found).toEqual({ street: '3518 Lowell St NW', city: 'Washington', state: 'DC', zip: '20016' });
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]!.init?.method).toBe('GET');
+    const url = new URL(fake.calls[0]!.url);
+    expect(url.pathname).toBe('/v1/reverse');
+    expect(url.searchParams.get('q')).toBe('38.9346,-77.0717');
+    expect(url.searchParams.get('limit')).toBe('1');
+  });
+
+  test('no result, a 422 or a result without a street is null; an outage is unavailable without the key', async () => {
+    expect(await new GeocodioGeocoder({ apiKey: API_KEY, fetch: fakeFetch(() => json('{"results":[]}')).fetch, baseUrl: BASE }).reverse({ lat: 1, lng: 2 })).toBeNull();
+    expect(await new GeocodioGeocoder({ apiKey: API_KEY, fetch: fakeFetch(() => json('{}', 422)).fetch, baseUrl: BASE }).reverse({ lat: 1, lng: 2 })).toBeNull();
+    const noStreet = JSON.stringify({ results: [{ address_components: { city: 'Omaha', state: 'NE', zip: '68102' } }] });
+    expect(await new GeocodioGeocoder({ apiKey: API_KEY, fetch: fakeFetch(() => json(noStreet)).fetch, baseUrl: BASE }).reverse({ lat: 1, lng: 2 })).toBeNull();
+    const err = await new GeocodioGeocoder({ apiKey: API_KEY, fetch: fakeFetch(() => json('{}', 500)).fetch, baseUrl: BASE })
+      .reverse({ lat: 1, lng: 2 })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GeocoderUnavailableError);
+    expect(String((err as Error).message)).not.toContain(API_KEY);
+  });
+
+  test('in DEMO_MODE with a key, one clicked point is looked up for real; bulk reverse stays the fictional demo one', async () => {
+    const real = fakeFetch(() => json(REVERSE));
+    const original = globalThis.fetch;
+    globalThis.fetch = real.fetch;
+    try {
+      const geocoder = createGeocoder(loadConfig({ ...VALID, NODE_ENV: 'development', DEMO_MODE: '1', GEOCODIO_API_KEY: 'geo-key' }));
+      expect(await geocoder.reverse({ lat: 38.9346, lng: -77.0717 })).toMatchObject({ street: '3518 Lowell St NW', state: 'DC' });
+      expect(real.calls).toHaveLength(1);
+      const [bulk] = await geocoder.reverseMany([{ lat: 41.26, lng: -96.06 }]);
+      expect(real.calls).toHaveLength(1);
+      expect(bulk).toEqual((await new DemoGeocoder().reverseMany([{ lat: 41.26, lng: -96.06 }]))[0]);
+    } finally {
+      globalThis.fetch = original;
+    }
+    // Without a key the demo's single lookup is the fictional one too (no network).
+    const demo = createGeocoder(loadConfig({ ...VALID, NODE_ENV: 'development', DEMO_MODE: '1' }));
+    expect(await demo.reverse({ lat: 41.26, lng: -96.06 })).toEqual((await new DemoGeocoder().reverseMany([{ lat: 41.26, lng: -96.06 }]))[0]);
   });
 });
 

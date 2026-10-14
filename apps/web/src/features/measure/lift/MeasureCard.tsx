@@ -1,6 +1,7 @@
 import { Button } from '@roofline/ui';
 import type { InstantEstimate } from '@roofline/shared';
 import { useId, type ReactNode } from 'react';
+import { legal } from '../../../copy/legal.ts';
 import { liftMeasure } from '../../../copy/liftMeasure.ts';
 import { measure } from '../../../copy/measure.ts';
 import type { MeasurementView } from '../types.ts';
@@ -184,7 +185,7 @@ export function MeasureCard({
       {outlineOnly && !scanning ? <p className={styles.note}>{liftMeasure.outlineOnly}</p> : null}
       {m.pitchSource === 'solar' && m.kind !== 'exact' && !scanning ? (
         <p className={styles.note} data-source="solar">
-          {liftMeasure.pitchFromSolar}
+          {legal.solarPitchAttribution}
         </p>
       ) : null}
       {!scanning ? (

@@ -1,13 +1,17 @@
 import { footprintById, footprintsNear, type LngLat, propertyOnFootprint, type TenantContext, withTenant } from '@roofline/db';
-import type { Ring } from '@roofline/shared';
+import { footprintTilesNear, metresToBuilding, outlineFromSolar, type Ring } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError } from '../errors.ts';
 import { GeocoderUnavailableError } from '../providers/geocoder.ts';
+import { ensureFootprintTiles } from './footprint-tiles.ts';
 import { measureProperty, saveHome } from './measure.ts';
+import { solarAt } from './solar.ts';
 
 /*
  * The map's "Estimate this roof": the building under a click, and an estimate started from it. Building outlines
- * are the global footprint table the measurement code uses; no geocoding happens until an estimate is started.
+ * are the global footprint table the measurement code uses: a click in an area whose outlines are not loaded yet
+ * loads them first (or waits for the load). Where Microsoft has no outline, Google Solar's roof under the click is
+ * the building. No address lookup happens until an estimate is started; then it is one single-point reverse lookup.
  */
 
 export const NO_BUILDING = 'no_building';
@@ -17,12 +21,25 @@ const PICK_AGAIN_MESSAGE = 'Please pick the building on the map again.';
 
 /** A click this close to a building outline (but outside it) still picks it: a finger or cursor near the edge. */
 const PICK_SNAP_M = 8;
+/** A click this close to Google Solar's building box picks that roof (where Microsoft has no outline). */
+const SOLAR_PICK_M = 2;
+/** The footprint tiles a click needs: its own, and the one next door within this of the edge. */
+const TILE_MARGIN_M = 100;
 /** The click sent with an estimate must be on or near the building it names. */
 const CLICK_MAX_M = 150;
 /** Reverse lookups kept per process; a building's street address does not change. */
 const ADDRESS_CACHE_SIZE = 5000;
 
-export type Building = { footprintId: string; polygon: { type: 'Polygon'; coordinates: LngLat[][] }; centroid: { lat: number; lng: number } };
+/**
+ * A building picked on the map: a Microsoft footprint (`footprintId`), or, where there is none, Google Solar's roof
+ * under the click (`footprintId` null, `source` 'solar': the estimate starts from the click's point instead).
+ */
+export type Building = {
+  footprintId: string | null;
+  source: 'footprint' | 'solar';
+  polygon: { type: 'Polygon'; coordinates: LngLat[][] };
+  centroid: { lat: number; lng: number };
+};
 type Address = { street: string; city: string; state: string; zip: string };
 
 /** The area centroid of an open ring of [lng, lat] corners (planar; buildings are small); the corner mean for a degenerate ring. */
@@ -66,13 +83,34 @@ function closed(ring: Ring): LngLat[] {
   return first === undefined ? [] : [...ring, first];
 }
 
-/** The building under a point: the outline containing it, else the nearest within a few metres. Null when none. */
+function buildingOf(footprintId: string | null, ring: Ring): Building {
+  const [lng, lat] = ringCentroid(ring);
+  return {
+    footprintId,
+    source: footprintId === null ? 'solar' : 'footprint',
+    polygon: { type: 'Polygon', coordinates: [closed(ring)] },
+    centroid: { lat, lng },
+  };
+}
+
+/**
+ * The building under a point: the outline containing it, else the nearest within a few metres. When there is none,
+ * the area's outlines are loaded (or waited for, up to FOOTPRINT_WAIT_MS) and it looks again; still none, Google
+ * Solar's roof under the click (its outline made from Solar's roof planes). Null when no source has a roof there.
+ */
 export async function buildingAt(deps: AppDeps, ctx: TenantContext, point: LngLat): Promise<Building | null> {
-  const rows = await withTenant(deps.pools, ctx, (tx) => footprintsNear(tx, point, PICK_SNAP_M));
-  const hit = rows[0];
-  if (hit === undefined) return null;
-  const [lng, lat] = ringCentroid(hit.ring);
-  return { footprintId: hit.id, polygon: { type: 'Polygon', coordinates: [closed(hit.ring)] }, centroid: { lat, lng } };
+  const near = () => withTenant(deps.pools, ctx, (tx) => footprintsNear(tx, point, PICK_SNAP_M));
+  let hit = (await near())[0];
+  if (hit === undefined) {
+    const tiles = footprintTilesNear(point[0], point[1], TILE_MARGIN_M);
+    if ((await ensureFootprintTiles(deps, tiles, { waitMs: deps.config.FOOTPRINT_WAIT_MS })) === 'ready') hit = (await near())[0];
+  }
+  if (hit !== undefined) return buildingOf(hit.id, hit.ring);
+  const solar = await solarAt(deps, point);
+  const building = solar?.building ?? null;
+  if (building === null || metresToBuilding(building, point) > SOLAR_PICK_M) return null;
+  const ring = outlineFromSolar(building);
+  return ring === null ? null : buildingOf(null, ring);
 }
 
 /** Street addresses of footprints, by footprint id: one reverse lookup per building per process. Bounded, oldest out first. */
@@ -96,17 +134,20 @@ export class FootprintAddressCache {
   }
 }
 
-/** The building's street address: from the cache, else one reverse lookup (cached, a "no address" answer too). */
-async function addressOf(deps: AppDeps, cache: FootprintAddressCache, footprintId: string, at: LngLat): Promise<Address | null> {
-  if (cache.has(footprintId)) return cache.get(footprintId) ?? null;
+/**
+ * The building's street address: from the cache (by footprint id, or by the point to about a metre), else one
+ * single-point reverse lookup (cached, a "no address" answer too). Real in the demo when a Geocodio key is set.
+ */
+async function addressOf(deps: AppDeps, cache: FootprintAddressCache, key: string, at: LngLat): Promise<Address | null> {
+  if (cache.has(key)) return cache.get(key) ?? null;
   let found: Address | null;
   try {
-    [found = null] = await deps.geocoder.reverseMany([{ lat: at[1], lng: at[0] }]);
+    found = await deps.geocoder.reverse({ lat: at[1], lng: at[0] });
   } catch (err) {
     if (err instanceof GeocoderUnavailableError) throw new AppError(503, UNAVAILABLE_MESSAGE);
     throw err;
   }
-  cache.set(footprintId, found);
+  cache.set(key, found);
   return found;
 }
 
@@ -134,5 +175,25 @@ export async function estimateFromFootprint(
     property = await saveHome(deps, ctx, address, point, null, deps.clock.now());
   }
   const view = await measureProperty(deps, ctx, { propertyId: property.id, footprint: { ...footprint, point } });
+  return { measurementId: view.id };
+}
+
+/**
+ * Starts an estimate for a roof picked on the map where no footprint is known (Google Solar's roof, or any spot):
+ * the point's address comes from one reverse lookup (cached per point) and is saved like a typed address (an existing
+ * home with that street and ZIP is reused); the roof is then measured at the clicked point the way Measure does it
+ * (outlines loaded if need be, Google Solar's outline where Microsoft has none, draw mode only when neither has it).
+ */
+export async function estimateFromPoint(
+  deps: AppDeps,
+  ctx: TenantContext,
+  cache: FootprintAddressCache,
+  i: { click: LngLat },
+): Promise<{ measurementId: string }> {
+  const key = `point:${i.click[0].toFixed(5)},${i.click[1].toFixed(5)}`;
+  const address = await addressOf(deps, cache, key, i.click);
+  if (address === null) throw new AppError(404, NO_ADDRESS_MESSAGE);
+  const property = await saveHome(deps, ctx, address, i.click, null, deps.clock.now());
+  const view = await measureProperty(deps, ctx, { propertyId: property.id, at: i.click });
   return { measurementId: view.id };
 }

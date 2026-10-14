@@ -47,8 +47,6 @@ export const liftMeasure = {
   measuredIn: (s: number) => `in ${s.toFixed(1)} seconds`,
   remeasure: 'Re-measure',
   outlineOnly: 'Facets are not split for this roof yet. The numbers come from its outline.',
-  /** Google's attribution rule for Solar API data: "Includes solar data from Google". */
-  pitchFromSolar: 'Pitch from Google Solar (includes solar data from Google)',
   facetLabel: (letter: string, sqFt: number, pitch: string) => `Facet ${letter}, ${sqFt.toLocaleString()} sq ft, ${pitch} pitch`,
   facetArea: (sqFt: number) => `${Math.round(sqFt).toLocaleString()} sq ft`,
   facetPitch: (pitch: string) => `${pitch} pitch`,

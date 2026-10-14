@@ -110,9 +110,13 @@ export function useSendProposal(): UseMutationResult<{ taskId: string }, Error, 
   });
 }
 
-/** GET /api/map/building-at: the building outline under a map point. */
+/**
+ * GET /api/map/building-at: the building outline under a map point. A Microsoft footprint has its id; Google Solar's
+ * roof (where Microsoft has none) has `footprintId` null and `source` 'solar', and is estimated from the point.
+ */
 export type BuildingAt = {
-  footprintId: string;
+  footprintId: string | null;
+  source?: 'footprint' | 'solar';
   /** GeoJSON Polygon or MultiPolygon of the roof outline. */
   polygon: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown };
   centroid: unknown;
@@ -132,6 +136,25 @@ export async function fetchBuildingAt(point: { lat: number; lng: number }, signa
 /** Looks up the building under a map click (owner and office; the map decides when to ask). */
 export function useBuildingAt(): UseMutationResult<BuildingAt | null, Error, { lat: number; lng: number }> {
   return useMutation({ mutationFn: (point: { lat: number; lng: number }) => fetchBuildingAt(point) });
+}
+
+/** POST /api/estimator/from-point { lat, lng } -> { measurementId }: a measurement started from a roof with no footprint. */
+export function useEstimateFromPoint(): UseMutationResult<{ measurementId: string }, Error, { lat: number; lng: number }> {
+  return useMutation({
+    mutationFn: (input: { lat: number; lng: number }) =>
+      apiFetch<{ measurementId: string }>('/api/estimator/from-point', { method: 'POST', body: input }),
+  });
+}
+
+/**
+ * POST /api/map/load-buildings?bbox=w,s,e,n -> 202 { tiles }: the map is zoomed in to building level here, so the
+ * area's building outlines start loading before a roof is clicked. Fire and forget.
+ */
+export function useLoadBuildings(): UseMutationResult<{ tiles: number }, Error, [number, number, number, number]> {
+  return useMutation({
+    mutationFn: (bbox: [number, number, number, number]) =>
+      apiFetch<{ tiles: number }>(`/api/map/load-buildings?bbox=${bbox.join(',')}`, { method: 'POST' }),
+  });
 }
 
 /** POST /api/estimator/from-footprint { footprintId, lat, lng } -> { measurementId }: a measurement started from the outline. */

@@ -102,7 +102,10 @@ export function Shell() {
             <MapView
               onOpen={open}
               onEstimate={
-                canEstimateRoof ? (measurementId) => void navigate(`/estimator/measure/${encodeURIComponent(measurementId)}`) : undefined
+                canEstimateRoof
+                  ? // Estimate this roof was the press: the scan plays as soon as the roof opens
+                    (measurementId) => void navigate(`/estimator/measure/${encodeURIComponent(measurementId)}`, { state: { autoScan: true } })
+                  : undefined
               }
             />
           </Suspense>

@@ -26,6 +26,8 @@ export const mapCopy = {
   estimateRoof: 'Estimate this roof',
   /** A quiet toast when a click lands where there is no building outline. */
   noBuilding: 'No building here.',
+  /** Over the map while a click looks for its roof in an area whose outlines are still loading. */
+  findingRoof: 'Finding the roof outline for this area (first time only, about 30 seconds)',
   /** A toast when finding the building or starting the estimate fails. */
   roofFailed: 'Could not start an estimate for this roof. Try again.',
   /** Read aloud when a roof is picked. */

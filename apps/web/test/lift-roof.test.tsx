@@ -1,6 +1,7 @@
 import { instantEstimate, type Calculation, type Ring } from '@roofline/shared';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { legal } from '../src/copy/legal.ts';
 import { liftMeasure, liftProposal } from '../src/copy/liftMeasure.ts';
 import { parseCaptureDate } from '../src/features/measure/lift/aerial.ts';
 import { cardCells, cardNumbers, MeasureCard } from '../src/features/measure/lift/MeasureCard.tsx';
@@ -186,12 +187,12 @@ describe('the measure card', () => {
     const { rerender } = render(
       <MeasureCard m={solar} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />,
     );
-    expect(screen.getByText(liftMeasure.pitchFromSolar)).toBeTruthy();
+    expect(screen.getByText(legal.solarPitchAttribution)).toBeTruthy();
     rerender(<MeasureCard m={solar} numbers={numbers} scan={scanAt('scanning', 0.2)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />);
-    expect(screen.queryByText(liftMeasure.pitchFromSolar)).toBeNull();
+    expect(screen.queryByText(legal.solarPitchAttribution)).toBeNull();
     const manual = view({ pitchSource: 'manual' });
     rerender(<MeasureCard m={manual} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />);
-    expect(screen.queryByText(liftMeasure.pitchFromSolar)).toBeNull();
+    expect(screen.queryByText(legal.solarPitchAttribution)).toBeNull();
   });
 
   it('Adjust opens the controls', () => {

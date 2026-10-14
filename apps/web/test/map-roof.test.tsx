@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
+import { legal } from '../src/copy/legal.ts';
 import { mapCopy } from '../src/copy/map.ts';
 import { MapView } from '../src/shell/map/MapView.tsx';
 import { ROOF } from '../src/shell/map/roofLayer.ts';
@@ -27,6 +28,8 @@ const fake = vi.hoisted(() => {
     static failToCreate = false;
     /** The box getBounds() answers with. A test changes it to make the next moveend ask for a new box. */
     static bounds = { west: -97.123456, south: 32.5, east: -96.4, north: 33.1 };
+    /** What getZoom() answers. */
+    static zoom = 10;
     readonly options: Record<string, unknown>;
     private sources = new Map<string, FakeSource>();
     private layers = new Map<string, FakeLayer>();
@@ -88,7 +91,7 @@ const fake = vi.hoisted(() => {
     remove = vi.fn();
 
     getZoom(): number {
-      return 10;
+      return FakeMap.zoom;
     }
 
     getBounds() {
@@ -151,6 +154,8 @@ let requests: { url: string; method: string; body: unknown }[];
 let unexpected: string[];
 /** What /api/map/building-at answers: a building, or null for the 404. */
 let building: Record<string, unknown> | null;
+/** When set, /api/map/building-at answers only once this resolves (an area whose outlines are loading). */
+let buildingGate: Promise<void> | null;
 
 const POLYGON = {
   type: 'Polygon',
@@ -185,6 +190,9 @@ beforeEach(() => {
   requests = [];
   unexpected = [];
   building = { footprintId: 'fp-1', polygon: POLYGON, centroid: [-96.79995, 32.90005] };
+  buildingGate = null;
+  fake.FakeMap.zoom = 10;
+  fake.FakeMap.bounds = { west: -97.123456, south: 32.5, east: -96.4, north: 33.1 };
   vi.stubEnv('VITE_MAPTILER_KEY', '');
   vi.stubEnv('VITE_MAP_TILES', '');
   fake.FakeMap.instances.length = 0;
@@ -198,8 +206,13 @@ beforeEach(() => {
       if (url === '/api/map/area') return json({ serviceArea: null, bounds: null });
       if (url.startsWith('/api/map/pins?')) return json({ mode: 'points', customers: [], jobs: [] });
       if (url.startsWith('/api/map/storm-layer?')) return json({ swaths: { type: 'FeatureCollection', features: [] }, spots: { type: 'FeatureCollection', features: [] }, newestRunAt: null, stale: false });
-      if (url.startsWith('/api/map/building-at?')) return building ? json(building) : json({ error: 'no_building' }, 404);
+      if (url.startsWith('/api/map/building-at?')) {
+        if (buildingGate !== null) await buildingGate;
+        return building ? json(building) : json({ error: 'no_building' }, 404);
+      }
       if (url === '/api/estimator/from-footprint' && method === 'POST') return json({ measurementId: 'm-42' });
+      if (url === '/api/estimator/from-point' && method === 'POST') return json({ measurementId: 'm-77' });
+      if (url.startsWith('/api/map/load-buildings?') && method === 'POST') return json({ tiles: 1 }, 202);
       unexpected.push(url);
       return json({ error: 'Unexpected request' }, 500);
     }),
@@ -296,5 +309,78 @@ describe('Estimate this roof (map)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Nina Park' })).toBeVisible();
     expect(buildingRequests()).toEqual([]);
+  });
+});
+
+describe('roofs anywhere on the map', () => {
+  it("Google Solar's roof (no footprint) says so, and Estimate this roof starts from the clicked point", async () => {
+    building = { footprintId: null, source: 'solar', polygon: POLYGON, centroid: { lat: 32.90005, lng: -96.79995 } };
+    const onEstimate = vi.fn();
+    renderMap(onEstimate);
+    const map = lastMap();
+    map.emit('style.load');
+    clickEmpty(map);
+
+    expect(await screen.findByText(legal.solarOutlineAttribution)).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: mapCopy.estimateRoof }));
+
+    await waitFor(() => expect(onEstimate).toHaveBeenCalledWith('m-77'));
+    expect(requests.find((r) => r.url === '/api/estimator/from-point')).toMatchObject({ method: 'POST', body: { lat: 32.90005, lng: -96.79995 } });
+    expect(requests.find((r) => r.url === '/api/estimator/from-footprint')).toBeUndefined();
+  });
+
+  it('a click that waits on a new area says it is finding the outline, then opens the roof', async () => {
+    let open: () => void = () => undefined;
+    buildingGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    renderMap(vi.fn());
+    const map = lastMap();
+    map.emit('style.load');
+    clickEmpty(map);
+
+    expect(await screen.findByText(mapCopy.findingRoof, {}, { timeout: 4000 })).toBeVisible();
+    open();
+    expect(await screen.findByRole('heading', { name: mapCopy.roofTitle })).toBeVisible();
+    expect(screen.queryByText(mapCopy.findingRoof)).toBeNull();
+  });
+
+  it('zoomed in to building level, the outlines of the area in view start loading, once per area', async () => {
+    fake.FakeMap.zoom = 16;
+    fake.FakeMap.bounds = { west: -96.802, south: 32.899, east: -96.798, north: 32.901 };
+    renderMap(vi.fn());
+    const map = lastMap();
+    map.emit('style.load');
+    map.emit('load');
+
+    await waitFor(() => expect(requests.filter((r) => r.url.startsWith('/api/map/load-buildings?'))).toHaveLength(1));
+    expect(requests.find((r) => r.url.startsWith('/api/map/load-buildings?'))).toMatchObject({
+      method: 'POST',
+      url: '/api/map/load-buildings?bbox=-96.802,32.899,-96.798,32.901',
+    });
+    // A small pan inside the same area asks for nothing more.
+    fake.FakeMap.bounds = { west: -96.803, south: 32.899, east: -96.799, north: 32.901 };
+    map.emit('moveend');
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(requests.filter((r) => r.url.startsWith('/api/map/load-buildings?'))).toHaveLength(1);
+  });
+
+  it('zoomed out, or for a rep, nothing is loaded', async () => {
+    renderMap(vi.fn());
+    const map = lastMap();
+    map.emit('style.load');
+    map.emit('load');
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(requests.filter((r) => r.url.startsWith('/api/map/load-buildings?'))).toEqual([]);
+    cleanup();
+
+    fake.FakeMap.zoom = 16;
+    fake.FakeMap.bounds = { west: -96.802, south: 32.899, east: -96.798, north: 32.901 };
+    renderMap(undefined);
+    const rep = lastMap();
+    rep.emit('style.load');
+    rep.emit('load');
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(requests.filter((r) => r.url.startsWith('/api/map/load-buildings?'))).toEqual([]);
   });
 });

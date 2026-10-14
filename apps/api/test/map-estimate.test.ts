@@ -2,8 +2,10 @@ import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Actors, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
+import { footprintTileStatus } from '@roofline/db/system';
+import { FakeFootprintSource } from '../src/providers/fakes/footprints.ts';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
-import type { MeasurementView, Ring } from '@roofline/shared';
+import { polygonAreaSqFt, quadkeyOf, type LngLat, type MeasurementView, type Ring, type SolarBuilding } from '@roofline/shared';
 
 /*
  * "Estimate this roof" from the map: GET /api/map/building-at finds the outline under a click (no geocoding), and
@@ -50,7 +52,43 @@ async function loadNE(...footprints: { sourceRef: string; ring: Ring }[]): Promi
   return Object.fromEntries(rows.map((r) => [r.source_ref, r.id]));
 }
 
-const reverseCalls = () => t.geocoder.calls.filter((c) => c.method === 'reverseMany').length;
+/** Single-point reverse lookups (a clicked roof's address). The bulk reverseMany is for storm routes only. */
+const reverseCalls = () => {
+  expect(t.geocoder.calls.filter((c) => c.method === 'reverseMany')).toEqual([]);
+  return t.geocoder.calls.filter((c) => c.method === 'reverse').length;
+};
+
+/** The first building of the fake source's Omaha tile (not loaded yet), and a point inside it. */
+async function fixtureBuilding(): Promise<{ ring: Ring; inside: { lat: number; lng: number }; quadkey: string }> {
+  const quadkey = quadkeyOf(INSIDE_HOUSE.lng, INSIDE_HOUSE.lat);
+  const rings: Ring[] = [];
+  for await (const f of new FakeFootprintSource().features(quadkey)) rings.push(f.ring);
+  const ring = rings[0]!;
+  return { ring, inside: { lng: (ring[0]![0] + ring[2]![0]) / 2, lat: (ring[0]![1] + ring[2]![1]) / 2 }, quadkey };
+}
+
+/** Google Solar's roof over a 25 m by 22 m box whose south-west corner is `sw`: two halves at 9/12. */
+function solarRoof(sw: LngLat): SolarBuilding {
+  const [x0, y0] = sw;
+  const x1 = x0 + 0.0003;
+  const y1 = y0 + 0.0002;
+  const ym = (y0 + y1) / 2;
+  const half = (lat0: number, lat1: number, azimuthDeg: number) => ({
+    pitchDeg: 36.87,
+    azimuthDeg,
+    groundAreaM2: 275,
+    areaM2: 344,
+    center: [(x0 + x1) / 2, (lat0 + lat1) / 2] as LngLat,
+    box: { sw: [x0, lat0] as LngLat, ne: [x1, lat1] as LngLat },
+  });
+  return {
+    center: [(x0 + x1) / 2, ym],
+    box: { sw: [x0, y0], ne: [x1, y1] },
+    imageryQuality: 'HIGH',
+    imageryDate: '2024-05-01',
+    segments: [half(y0, ym, 180), half(ym, y1, 0)],
+  };
+}
 
 describe('GET /api/map/building-at', () => {
   it('answers the outline under the point, closed, with its centroid', async () => {
@@ -69,6 +107,38 @@ describe('GET /api/map/building-at', () => {
     const next = await owner.get('/api/map/building-at').query(INSIDE_NEIGHBOR);
     expect(next.body.footprintId).toBe(ids['neighbor']);
     expect(reverseCalls()).toBe(0);
+  });
+
+  it('a click in an area whose outlines are not loaded loads them and finds the roof', async () => {
+    const b = await fixtureBuilding();
+    const owner = await who.as('owner');
+    expect(await footprintTileStatus(t.deps.pools.system, b.quadkey)).toBeNull();
+
+    const res = await owner.get('/api/map/building-at').query(b.inside);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.source).toBe('footprint');
+    expect(res.body.footprintId).toMatch(/^\d+$/);
+    expect(await footprintTileStatus(t.deps.pools.system, b.quadkey)).toBe('ready');
+    expect(t.solar.calls).toEqual([]);
+  });
+
+  it("where Microsoft has no outline, Google Solar's roof under the click is the building", async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    const sw: LngLat = [NOWHERE.lng - 0.00015, NOWHERE.lat - 0.0001];
+    t.solar.set([NOWHERE.lng, NOWHERE.lat], solarRoof(sw));
+    const owner = await who.as('owner');
+
+    const res = await owner.get('/api/map/building-at').query(NOWHERE);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toMatchObject({ footprintId: null, source: 'solar' });
+    const ring = res.body.polygon.coordinates[0] as LngLat[];
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+    expect(polygonAreaSqFt(ring)).toBeGreaterThan(550 * 10.7639 * 0.9);
+    // A click beside Solar's roof (but within Google's 50 m search) is no building.
+    const beside = await owner.get('/api/map/building-at').query({ lat: NOWHERE.lat + 0.0003, lng: NOWHERE.lng });
+    expect(beside.status).toBe(404);
   });
 
   it('is a 404 no_building where there is no outline', async () => {
@@ -196,5 +266,79 @@ describe('POST /api/estimator/from-footprint', () => {
     // A click nowhere near the named building.
     expect((await owner.post('/api/estimator/from-footprint').send({ footprintId: ids['house'], ...NOWHERE })).status).toBe(400);
     expect(reverseCalls()).toBe(0);
+  });
+});
+
+describe('POST /api/estimator/from-point', () => {
+  it("measures Google Solar's roof at the click, the address from one single-point reverse lookup", async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    const sw: LngLat = [NOWHERE.lng - 0.00015, NOWHERE.lat - 0.0001];
+    t.solar.set([NOWHERE.lng, NOWHERE.lat], solarRoof(sw));
+    const owner = await who.as('owner');
+
+    const res = await owner.post('/api/estimator/from-point').send(NOWHERE);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(Object.keys(res.body)).toEqual(['measurementId']);
+    expect(reverseCalls()).toBe(1);
+    const m = (await owner.get(`/api/measurements/${res.body.measurementId}`)).body as MeasurementView;
+    expect(m.drawMode).toBe(false);
+    expect(m.structures).toEqual([]);
+    expect(m.pitchSource).toBe('solar');
+    expect(m.estimate.pitchX12).toBe(9);
+    const home = await owner.get(`/api/properties/${m.propertyId}`);
+    expect(home.body.addressLine).toBe('1 Fake St');
+    // The same spot again: the address is cached, and Solar is not asked again.
+    const again = await owner.post('/api/estimator/from-point').send(NOWHERE);
+    expect(again.status).toBe(201);
+    expect(reverseCalls()).toBe(1);
+    expect(t.solar.calls).toHaveLength(1);
+  });
+
+  it('measures a footprint under the point when there is one (loading the area first)', async () => {
+    const b = await fixtureBuilding();
+    const owner = await who.as('owner');
+    const res = await owner.post('/api/estimator/from-point').send(b.inside);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const m = (await owner.get(`/api/measurements/${res.body.measurementId}`)).body as MeasurementView;
+    expect(m.drawMode).toBe(false);
+    expect(m.structures.filter((s) => s.included)).toHaveLength(1);
+  });
+
+  it('a point with no address is a 404; owner and office only; checks its body', async () => {
+    const owner = await who.as('owner');
+    const south = await owner.post('/api/estimator/from-point').send({ lat: -33.9, lng: 18.4 });
+    expect(south.status).toBe(404);
+    const rep = await who.as('rep');
+    expect((await rep.post('/api/estimator/from-point').send(NOWHERE)).status).toBe(403);
+    expect((await owner.post('/api/estimator/from-point').send({ lat: 41.25 })).status).toBe(400);
+    expect((await owner.post('/api/estimator/from-point').send({ ...NOWHERE, footprintId: '1' })).status).toBe(400);
+  });
+});
+
+describe('POST /api/map/load-buildings', () => {
+  it("starts loading the outlines of the area in view at building level, and not when zoomed out", async () => {
+    const b = await fixtureBuilding();
+    const owner = await who.as('owner');
+    const bbox = [b.inside.lng - 0.005, b.inside.lat - 0.003, b.inside.lng + 0.005, b.inside.lat + 0.003].join(',');
+
+    const res = await owner.post(`/api/map/load-buildings?bbox=${bbox}`);
+
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({ tiles: 1 });
+    await t.settle();
+    expect(await footprintTileStatus(t.deps.pools.system, b.quadkey)).toBe('ready');
+
+    const wide = await owner.post('/api/map/load-buildings?bbox=-100,38,-90,44');
+    expect(wide.status).toBe(202);
+    expect(wide.body).toEqual({ tiles: 0 });
+  });
+
+  it('is for owner and office, and checks the box', async () => {
+    const rep = await who.as('rep');
+    expect((await rep.post('/api/map/load-buildings?bbox=-96.01,41.24,-95.99,41.26')).status).toBe(403);
+    const office = await who.as('office');
+    expect((await office.post('/api/map/load-buildings?bbox=nope')).status).toBe(400);
+    expect((await office.post('/api/map/load-buildings')).status).toBe(400);
   });
 });

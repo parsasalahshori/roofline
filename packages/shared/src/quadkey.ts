@@ -71,3 +71,31 @@ export function footprintTilesNear(lng: number, lat: number, marginM = 100, zoom
   }
   return out;
 }
+
+/**
+ * The footprint tiles a map view covers (west, south, east, north in degrees), or null when it covers more than
+ * `max` of them (the view is zoomed out past building level). Tiles are listed row by row from the top left.
+ */
+export function footprintTilesInBox(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  max = 4,
+  zoom: number = FOOTPRINT_TILE_ZOOM,
+): string[] | null {
+  if (![west, south, east, north].every(Number.isFinite) || west > east || south > north) return null;
+  const n = 2 ** zoom;
+  const a = worldXY(west, north);
+  const b = worldXY(east, south);
+  const x0 = clamp(Math.floor(a.x * n), 0, n - 1);
+  const x1 = clamp(Math.floor(b.x * n), 0, n - 1);
+  const y0 = clamp(Math.floor(a.y * n), 0, n - 1);
+  const y1 = clamp(Math.floor(b.y * n), 0, n - 1);
+  if ((x1 - x0 + 1) * (y1 - y0 + 1) > max) return null;
+  const out: string[] = [];
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) out.push(tileQuadkey(tx, ty, zoom));
+  }
+  return out;
+}
