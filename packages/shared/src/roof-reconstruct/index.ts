@@ -219,7 +219,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   if (found.length === 0) return null;
   let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree);
   if (faces.planes.length === 0) return null;
-  let planes = refitFaces(g, s, dsm, faces, planePrm.tolM);
+  let planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
 
   // 3. The outline, squared.
   const boundary = maskBoundary(g, roof, s);
@@ -233,7 +233,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     const tiny = new Set(topo.faces.map((f, k) => (Math.abs(signedArea(f.ring)) < planePrm.tinyFaceM2 ? k : -1)).filter((k) => k >= 0));
     if (tiny.size === 0 || tiny.size >= faces.planes.length) break;
     faces = dissolve(g, s, dsm, roof, faces, tiny, tree);
-    planes = refitFaces(g, s, dsm, faces, planePrm.tolM);
+    planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
     topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
   }
 

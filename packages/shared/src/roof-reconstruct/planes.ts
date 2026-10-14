@@ -50,6 +50,28 @@ export type PlaneParams = {
   steepM2: number;
   steepX12: number;
   steeperX12: number;
+  /**
+   * When no plane of minPlaneM2 is left at tolM, the search goes on with this many times tolM, measured square to
+   * the plane: on a steep roof a height map's error grows with the slope (a 10 cm shift sideways is 10 cm of height
+   * on a 12/12 face), so steep faces fall apart into scraps at tolM and are taken over by shallower neighbours.
+   */
+  rescueTolX: number;
+  /**
+   * A small face (under smallFaceM2, at least tinyFaceM2) that is a real plane of its own stays: its pixels away from
+   * its boundary on one plane (smallKeepShare of them, see interiorFit) whose normal is more than smallKeepDeg from
+   * every neighbour's (a dormer, a bay, a porch roof).
+   */
+  smallKeepDeg: number;
+  smallKeepShare: number;
+  /** Such a real plane is explained away (buildFaces, step 3) only within this, metres. */
+  explainedRealM: number;
+  /** ...and is no sliver (buildFaces, step 5) when at least this wide on average, metres. */
+  sliverKeepWidthM: number;
+  /** A steep face by the edge (buildFaces, step 5) stays when steepKeepShare of its interior lies on one plane. */
+  steepKeepShare: number;
+  /** interiorFit: pixels this far in from a face's boundary, on its plane within this (square to the plane), metres. */
+  interiorEdgeM: number;
+  interiorTolM: number;
 };
 
 export const DEFAULT_PLANE_PARAMS: PlaneParams = {
@@ -78,6 +100,14 @@ export const DEFAULT_PLANE_PARAMS: PlaneParams = {
   steepM2: 15,
   steepX12: 8,
   steeperX12: 3,
+  rescueTolX: 2,
+  smallKeepDeg: 8,
+  smallKeepShare: 0.8,
+  explainedRealM: 0.15,
+  sliverKeepWidthM: 0.5,
+  steepKeepShare: 0.88,
+  interiorEdgeM: 0.3,
+  interiorTolM: 0.1,
 };
 
 /** Pixel centre coordinates in metres: x east from the grid's left edge, y north from its top edge (so y <= 0). */
@@ -155,13 +185,19 @@ function residual(g: Grid, s: number, dsm: Float32Array, p: Plane, i: number): n
   return Number.isFinite(z) ? Math.abs(z - planeZ(p, pixelX(g, s, i), pixelY(g, s, i))) : Infinity;
 }
 
+/** A height tolerance for plane p: `tol`, or (square) `tol` measured square to the plane, so more on steeper planes. */
+function tolFor(p: Plane, tol: number, square: boolean): number {
+  return square ? tol * Math.sqrt(1 + p.a * p.a + p.b * p.b) : tol;
+}
+
 /**
  * The plane's connected patch of free pixels round `starts`: a breadth-first walk through the pixels within `tol` of
  * the plane whose four neighbours are within it too (so a one-pixel thread along a crease does not join two faces),
  * grown back by a pixel. Only the patch is visited, never the whole grid.
  */
-function patchFrom(g: Grid, s: number, dsm: Float32Array, free: Mask, p: Plane, tol: number, starts: ArrayLike<number>): { patch: Mask; size: number } {
+function patchFrom(g: Grid, s: number, dsm: Float32Array, free: Mask, p: Plane, tol0: number, square: boolean, starts: ArrayLike<number>): { patch: Mask; size: number } {
   const { w } = g;
+  const tol = tolFor(p, tol0, square);
   const n = free.length;
   const state = new Int8Array(n);
   const on = (i: number): boolean => {
@@ -216,7 +252,8 @@ export type FoundPlane = { plane: Plane; patch: Mask };
  * a small window round a random free pixel (so small faces are found too), scored on a sample of the free pixels; the
  * best few are checked for their largest connected patch, and the biggest wins. A plane keeps only that patch (so two
  * separate faces never share a plane), is refitted on it, and its patch (and a pixel round it) stops being free.
- * Stops when what is left has no patch of minPlaneM2: trees, edges, clutter.
+ * When what is left has no patch of minPlaneM2, the search goes on once more with rescueTolX times the tolerance,
+ * measured square to the plane (steep faces in a height map are rougher), then stops: trees, edges, clutter.
  */
 export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rng: () => number, prm: PlaneParams, tree: Mask | null = null): FoundPlane[] {
   const { w, h } = g;
@@ -228,6 +265,15 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
   const R = Math.max(2, Math.round(prm.windowM / s));
   const out: FoundPlane[] = [];
   const win = new Int32Array((2 * R + 1) * (2 * R + 1));
+  let tol = prm.tolM;
+  let square = false;
+  // After the first pass, the rescue pass (once).
+  const rescue = (): boolean => {
+    if (square || !(prm.rescueTolX > 0)) return false;
+    tol = prm.tolM * prm.rescueTolX;
+    square = true;
+    return true;
+  };
   while (out.length < prm.maxPlanes) {
     const list = indicesOf(free);
     if (list.length < minPx) break;
@@ -252,29 +298,36 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
       // A window across a crease fits badly: skip it.
       let rss = 0;
       for (let k = 0; k < n; k++) rss += residual(g, s, dsm, plane, win[k]!) ** 2;
-      if (Math.sqrt(rss / n) > prm.tolM * 0.6) continue;
+      const tolP = tolFor(plane, tol, square);
+      if (Math.sqrt(rss / n) > tolP * 0.6) continue;
       let score = 0;
-      for (let k = 0; k < sample.length; k++) if (residual(g, s, dsm, plane, sample[k]!) < prm.tolM) score++;
+      for (let k = 0; k < sample.length; k++) if (residual(g, s, dsm, plane, sample[k]!) < tolP) score++;
       if (top.length < prm.topK || score > top[top.length - 1]!.score) {
         top.push({ plane, score, seed });
         top.sort((x, y) => y.score - x.score);
         if (top.length > prm.topK) top.pop();
       }
     }
-    if (top.length === 0) break;
+    if (top.length === 0) {
+      if (rescue()) continue;
+      break;
+    }
     let best: { plane: Plane; patch: Mask; size: number } | null = null;
     for (const cand of top) {
-      const { patch, size } = patchFrom(g, s, dsm, free, cand.plane, prm.tolM, [cand.seed]);
+      const { patch, size } = patchFrom(g, s, dsm, free, cand.plane, tol, square, [cand.seed]);
       if (best === null || size > best.size) best = { plane: cand.plane, patch, size };
     }
-    if (best === null || best.size < minPx) break;
+    if (best === null || best.size < minPx) {
+      if (rescue()) continue;
+      break;
+    }
     // Refit on the patch, then take the patch again with the better plane.
     let plane = best.plane;
     let patch = best.patch;
     for (let it = 0; it < 3; it++) {
       const refit = fitPlane(g, s, dsm, indicesOf(patch));
       if (refit === null || slopeOf(refit) > maxSlope) break;
-      const again = patchFrom(g, s, dsm, free, refit, prm.tolM, indicesOf(patch));
+      const again = patchFrom(g, s, dsm, free, refit, tol, square, indicesOf(patch));
       if (again.size < minPx) break;
       plane = refit;
       patch = again.patch;
@@ -456,7 +509,7 @@ function boundaryGap(g: Grid, s: number, labels: Int32Array, a: number, b: numbe
  * Refits each face's plane on its own pixels that sit on it (within tol, away from its boundary), twice: the plane
  * a face reports is fitted on that face only.
  */
-export function refitFaces(g: Grid, s: number, dsm: Float32Array, f: Faces, tol: number): Plane[] {
+export function refitFaces(g: Grid, s: number, dsm: Float32Array, f: Faces, tol: number, maxPitchX12 = Infinity): Plane[] {
   const inner = Math.max(1, Math.round(0.2 / s));
   return f.planes.map((p0, k) => {
     const mine = new Uint8Array(f.labels.length);
@@ -469,7 +522,7 @@ export function refitFaces(g: Grid, s: number, dsm: Float32Array, f: Faces, tol:
       for (let i = 0; i < src.length; i++) if (src[i] === 1 && residual(g, s, dsm, p, i) < tol) idx.push(i);
       if (idx.length < 30) break;
       const q = fitPlane(g, s, dsm, idx);
-      if (q === null) break;
+      if (q === null || slopeOf(q) * 12 > maxPitchX12) break;
       p = q;
     }
     return p;
@@ -564,6 +617,7 @@ export function buildFaces(
       const onEdge = boundary > 0 ? adj.edge[k]! / boundary : 0;
       const small = m2 < prm.tinyFaceM2 || (m2 < prm.smallFaceM2 && onEdge < 0.25);
       if (!small || gone.size >= n - 1) continue;
+      if (m2 >= prm.tinyFaceM2 && prm.smallKeepDeg > 0 && realPlane(g, s, dsm, faces, k, neighbours(adj, s, k), prm)) continue;
       gone.add(k);
     }
     if (gone.size > 0) {
@@ -672,6 +726,80 @@ function splitNecks(g: Grid, s: number, dsm: Float32Array, faces: Faces, prm: Pl
   return changed ? splitParts(g, compact(labels, planes)) : faces;
 }
 
+/** The faces sharing at least half a metre of boundary with face k. */
+function neighbours(adj: ReturnType<typeof adjacency>, s: number, k: number): number[] {
+  const out: number[] = [];
+  for (const [key, cracks] of adj.shared) {
+    if (cracks * s < 0.5) continue;
+    const a = Math.floor(key / 100000);
+    const b = key % 100000;
+    if (a === k) out.push(b);
+    else if (b === k) out.push(a);
+  }
+  return out;
+}
+
+/**
+ * How well face k's pixels away from its boundary (interiorEdgeM in: creases are rounded and eaves meet walls in a
+ * height map) lie on one plane: that plane (refitted on its own inliers from p0), and the share of the pixels within
+ * interiorTolM of it, measured square to it. Null when the face has too few such pixels.
+ */
+export function interiorFit(g: Grid, s: number, dsm: Float32Array, labels: Int32Array, k: number, p0: Plane, prm: PlaneParams): { plane: Plane; share: number } | null {
+  let c0 = g.w;
+  let r0 = g.h;
+  let c1 = -1;
+  let r1 = -1;
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i] !== k) continue;
+    const c = i % g.w;
+    const r = (i - c) / g.w;
+    if (c < c0) c0 = c;
+    if (c > c1) c1 = c;
+    if (r < r0) r0 = r;
+    if (r > r1) r1 = r;
+  }
+  if (c1 < 0) return null;
+  const sub = { w: c1 - c0 + 1, h: r1 - r0 + 1 };
+  const full = (j: number) => (r0 + Math.floor(j / sub.w)) * g.w + c0 + (j % sub.w);
+  const mine = new Uint8Array(sub.w * sub.h);
+  let total = 0;
+  for (let j = 0; j < mine.length; j++) {
+    if (labels[full(j)] === k) {
+      mine[j] = 1;
+      total++;
+    }
+  }
+  // A narrow face keeps a core with half the margin.
+  let idx: number[] = [];
+  for (const edgeM of [prm.interiorEdgeM, prm.interiorEdgeM / 2]) {
+    const core = erode(sub, mine, Math.max(1, Math.round(edgeM / s)));
+    idx = [];
+    for (let j = 0; j < core.length; j++) if (core[j] === 1 && Number.isFinite(dsm[full(j)]!)) idx.push(full(j));
+    if (idx.length >= Math.max(30, 0.2 * total)) break;
+  }
+  if (idx.length < 30) return null;
+  let p = p0;
+  for (let it = 0; it < 3; it++) {
+    const t = tolFor(p, prm.interiorTolM, true) * (it === 0 ? 2 : 1);
+    const on = idx.filter((i) => residual(g, s, dsm, p, i) < t);
+    if (on.length < 20) break;
+    const q = fitPlane(g, s, dsm, on);
+    if (q === null) break;
+    p = q;
+  }
+  const t = tolFor(p, prm.interiorTolM, true);
+  let inliers = 0;
+  for (const i of idx) if (residual(g, s, dsm, p, i) < t) inliers++;
+  return { plane: p, share: inliers / idx.length };
+}
+
+/** Whether face k is a real plane of its own (see PlaneParams.smallKeepDeg) next to the faces `near`. */
+function realPlane(g: Grid, s: number, dsm: Float32Array, faces: Faces, k: number, near: readonly number[], prm: PlaneParams): boolean {
+  if (near.length === 0) return false;
+  const fit = interiorFit(g, s, dsm, faces.labels, k, faces.planes[k]!, prm);
+  return fit !== null && fit.share >= prm.smallKeepShare && near.every((m) => planeAngleDeg(fit.plane, faces.planes[m]!) > prm.smallKeepDeg);
+}
+
 /** The faces in `gone` dissolved: their pixels flood from the faces round them. */
 export function dissolve(g: Grid, s: number, dsm: Float32Array, roof: Mask, faces: Faces, gone: ReadonlySet<number>, tree: Mask | null): Faces {
   const seeds = faces.labels.slice();
@@ -728,6 +856,8 @@ function explainedFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj:
     // Small faces get more room: terraces in the height map are a few tens of centimetres tall.
     const limit = m2 < prm.explainedSmallM2 ? prm.explainedSmallM : prm.explainedM;
     if (d < limit && d - limit < pickDev) {
+      // A real plane of its own (a dormer's face) is explained only when its neighbours' planes are really on it.
+      if (prm.smallKeepDeg > 0 && d >= prm.explainedRealM && realPlane(g, s, dsm, faces, k, near[k]!, prm)) continue;
       pickDev = d - limit;
       pick = k;
     }
@@ -842,8 +972,12 @@ function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: Re
       continue;
     }
     if (width < prm.sliverWidthM && m2 < prm.sliverM2) {
-      pick = f;
-      continue;
+      // A narrow face that is a real plane of its own (a dormer's face) is not a sliver.
+      const real = width >= prm.sliverKeepWidthM && prm.smallKeepDeg > 0 && realPlane(g, s, dsm, faces, f, [...shared[f]!.keys()], prm);
+      if (!real) {
+        pick = f;
+        continue;
+      }
     }
     const slope = Math.hypot(faces.planes[f]!.a, faces.planes[f]!.b) * 12;
     if (m2 >= prm.steepM2 || slope < prm.steepX12) continue;
@@ -854,7 +988,13 @@ function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: Re
     const onEdge = adj.edge[f]! / Math.max(1, boundary[f]!) >= 0.15;
     const byTrees = treeCount[f]! >= 0.2 * area;
     const isRough = rough[f]! >= 0.2 * area;
-    if (onEdge || byTrees || isRough) pick = f;
+    if (!(onEdge || byTrees || isRough)) continue;
+    // ...unless (away from trees) it is a clean plane of its own: a steep dormer or gable face by the eave.
+    if (!byTrees && prm.steepKeepShare > 0 && width >= prm.sliverWidthM) {
+      const fit = interiorFit(g, s, dsm, faces.labels, f, faces.planes[f]!, prm);
+      if (fit !== null && fit.share >= prm.steepKeepShare) continue;
+    }
+    pick = f;
   }
   return pick;
 }
