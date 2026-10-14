@@ -2,6 +2,7 @@ import type { StyleSpecification } from 'maplibre-gl';
 import { useEffect, useState } from 'react';
 import { mapStyle } from '../../../shell/map/mapStyle.ts';
 import type { MapEnv } from '../../../shell/map/types.ts';
+import { googleSatelliteStyle } from './googleTiles.ts';
 
 const IMAGERY_IDENTIFY = 'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/identify';
 
@@ -10,6 +11,9 @@ const IMAGERY_IDENTIFY = 'https://services.arcgisonline.com/arcgis/rest/services
  * build names no imagery (a MapTiler key still wins and gives its hybrid style).
  */
 export function measureStyle(env: MapEnv): StyleSpecification | string {
+  // Google's photos are the sharpest we have; they win whenever a Google key and a tile session are ready.
+  const google = googleSatelliteStyle();
+  if (google !== null) return google;
   return mapStyle({ ...env, imagery: 'aerial' }, 'satellite');
 }
 
