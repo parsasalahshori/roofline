@@ -1,16 +1,19 @@
 .dock {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   max-width: 100%;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-window);
-  background: var(--surface);
+  height: 70px;
+  padding: 10px 12px;
+  border-radius: 22px;
+  background: var(--surface-glass);
   box-shadow: var(--shadow-window);
+  backdrop-filter: blur(22px) saturate(1.4);
 }
 
 .list {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -23,36 +26,45 @@
 .link {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  min-width: 72px;
-  min-height: 56px;
-  padding: 6px 8px;
-  border-radius: var(--radius-card);
-  color: var(--text);
+  width: 50px;
+  height: 50px;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 14px;
+  background: var(--text);
+  color: var(--surface-raised);
   text-decoration: none;
+  box-shadow: 0 3px 7px rgb(21 28 34 / 0.2), inset 0 1px 0 rgb(255 255 255 / 0.16);
+  transition: transform 140ms ease;
 }
 
-.link:hover {
-  background: var(--surface-2);
+.link[data-app="storm"] { background: var(--app-storm); color: var(--accent); }
+.link[data-app="front-desk"] { background: var(--app-front-desk); }
+.link[data-app="estimator"] { background: var(--app-estimator); color: var(--text); }
+.link[data-app="jobs"] { background: var(--app-jobs); }
+.link[data-app="calendar"] { background: var(--app-calendar); }
+.link[data-app="agents"] { background: var(--app-agents); color: var(--accent); }
+
+.link:hover,
+.link:focus-visible {
+  transform: translateY(-4px);
 }
 
-.link[aria-current="page"] {
-  background: var(--line);
-  font-weight: 700;
-}
-
-/* Not built yet: muted, but still a link that goes somewhere */
-.link[data-state="soon"] {
-  color: var(--text-muted);
+.link[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  bottom: -7px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text);
 }
 
 .icon {
   display: inline-flex;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
 }
 
 .icon > svg {
@@ -60,16 +72,39 @@
   height: 100%;
 }
 
-/* The label is the point of the dock: 12px is the floor, and it never truncates away */
+/* Names remain in the accessibility tree; hover/focus exposes a full, unclipped label. */
 .label {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-card);
   font-size: var(--font-size-min);
-  line-height: 1.2;
-  text-align: center;
+  line-height: 1.4;
   white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.link:hover .label,
+.link:focus-visible .label {
+  opacity: 1;
 }
 
 .badge {
   position: absolute;
-  top: 2px;
-  right: 6px;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .link { transition: none; }
 }

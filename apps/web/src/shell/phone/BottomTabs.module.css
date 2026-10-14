@@ -1,17 +1,17 @@
-/*
- * The phone's bottom tab bar. The shell's fixed wrapper places it at the bottom of the screen and
- * pads it for the home indicator; this file only lays out the five tabs.
- */
+/* Keep the familiar five named destinations in a floating glass phone dock. */
 .nav {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  background: var(--surface);
-  border-top: 1px solid var(--line);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  height: 56px;
+  padding: 4px;
+  border-radius: 18px;
+  background: var(--surface-glass);
+  box-shadow: var(--shadow-window);
+  backdrop-filter: blur(22px) saturate(1.4);
   color: var(--text);
   font-family: var(--font);
 }
 
-/* 0,2,0 so these beat the kit's Button rules (0,1,0) without a !important */
 .nav .tab {
   display: flex;
   flex-direction: column;
@@ -20,39 +20,29 @@
   gap: 2px;
   min-width: 0;
   min-height: 48px;
-  padding: 6px 2px;
+  padding: 2px;
   border: 0;
-  border-radius: 0;
+  border-radius: 12px;
   background: transparent;
   color: var(--text-muted);
   font-weight: 600;
 }
 
-.nav .tab:hover {
-  background: var(--surface-2);
-}
+.nav .tab:hover { background: var(--surface-2); }
 
-/* The current tab is marked by data-current, set from the route */
-.nav .tab[data-current="true"] {
-  color: var(--text);
-  box-shadow: inset 0 3px 0 var(--accent);
-}
-
-.nav .tab:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
+.nav .tab[data-current="true"],
+.nav .tab[aria-expanded="true"] {
+  background: var(--text);
+  color: var(--surface-raised);
 }
 
 .icon {
   display: flex;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
 }
 
-.icon > svg {
-  width: 24px;
-  height: 24px;
-}
+.icon > svg { width: 100%; height: 100%; }
 
 .label {
   font-size: var(--font-size-min);

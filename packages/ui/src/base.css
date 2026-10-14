@@ -1,4 +1,4 @@
-/* S1 base styles. Import after tokens.css. */
+/* Shared base styles. Import after tokens.css. */
 
 *,
 *::before,
@@ -40,4 +40,9 @@ body {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Tabular figures remain legible across the system fallback fonts. */
+button, input, select, textarea {
+  font-family: var(--font);
 }

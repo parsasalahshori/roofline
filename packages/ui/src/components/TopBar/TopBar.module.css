@@ -1,13 +1,15 @@
 .topBar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  gap: 16px;
+  min-height: 34px;
+  padding: 0 12px;
+  background: var(--surface-glass);
   color: var(--text);
+  box-shadow: 0 1px 0 rgb(21 28 34 / 0.08);
+  backdrop-filter: blur(22px) saturate(1.4);
+  font-size: 13px;
 }
 
 .start,
@@ -27,9 +29,10 @@
   justify-content: center;
 }
 
-/* Compact (phone): the ends keep their width; the middle takes the rest and its contents shrink */
 .topBar[data-compact="true"] {
   grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 44px;
+  gap: 6px;
 }
 
 .topBar[data-compact="true"] .start,

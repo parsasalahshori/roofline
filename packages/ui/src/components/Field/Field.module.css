@@ -16,7 +16,7 @@
   min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--text-muted);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
   font-family: var(--font);
@@ -57,4 +57,11 @@ textarea.control {
   color: var(--text);
   font-size: var(--font-size-min);
   font-weight: 600;
+}
+
+/* Prevent input focus zoom from hiding phone actions. */
+@media (max-width: 767.98px) {
+  .control {
+    font-size: 16px;
+  }
 }

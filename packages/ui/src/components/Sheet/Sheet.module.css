@@ -61,7 +61,8 @@
     top: auto;
     left: 0;
     width: auto;
-    max-height: 85vh;
+    max-height: 85dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     border-left: 0;
     border-top: 1px solid var(--line);
     border-radius: var(--radius-window) var(--radius-window) 0 0;

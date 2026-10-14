@@ -1,29 +1,41 @@
 /*
- * S1 design tokens (spec 4.5). tokens.ts mirrors this file for code that cannot read CSS
+ * Ironclad reference tokens (ops/ironclad-rebuild/reference). tokens.ts mirrors this file for code that cannot read CSS
  * variables (the map style needs literal colours); test/tokens.test.ts keeps the two in step.
  */
 :root {
   /* Surfaces and ink */
-  --bg: #efe9dc;
-  --surface: #fffdf8;
-  --surface-2: #f6f1e6;
-  --text: #2b2620;
-  /* 72% of --text, not the spec's 60%: 60% is 4.0:1 on --surface and fails WCAG AA. */
-  --text-muted: rgba(43, 38, 32, 0.72);
-  --accent: #f5b324;
-  --accent-ink: #2b2620;
+  --bg: #e9edf0;
+  --surface: #f6f7f8;
+  --surface-2: #e9edf0;
+  --text: #151c22;
+  /* Opaque muted ink keeps AA contrast across the neutral surfaces. */
+  --text-muted: #53616b;
+  --accent: #ffc400;
+  --accent-ink: #151c22;
   /* Never a text colour or under white text (3.4:1). Use it for dots, icons and bars. */
   --success: #2f9e44;
-  --danger: #e03131;
+  --danger: #c9343d;
   /* The danger button's text and hover fill. White on --danger-hover is above 4.5:1, which a brightness filter on --danger is not. */
   --on-danger: #ffffff;
   --danger-hover: #c92a2a;
-  --line: #eee5cf;
+  --line: #d9dee2;
+
+  /* Shared surfaces, controls and app identity. */
+  --surface-raised: #ffffff;
+  --surface-glass: rgba(246, 247, 248, 0.82);
+  --radius-control: 8px;
+  --shadow-card: 0 2px 5px rgba(21, 28, 34, 0.06);
+  --app-storm: #343268;
+  --app-front-desk: #147e80;
+  --app-estimator: #ffc400;
+  --app-jobs: #3269cb;
+  --app-calendar: #a85724;
+  --app-agents: #151c22;
 
   /* Shape */
-  --radius-card: 12px;
-  --radius-window: 14px;
-  --shadow-window: 0 12px 30px rgba(60,40,0,.15);
+  --radius-card: 20px;
+  --radius-window: 18px;
+  --shadow-window: 0 20px 40px -18px rgba(21, 28, 34, 0.45), 0 0 0 1px rgba(21, 28, 34, 0.08);
   --shadow-marker: 0 1px 3px rgb(0 0 0 / 0.35);
   --shadow-marker-ring: 0 0 0 1px rgb(0 0 0 / 0.35);
 

@@ -3,14 +3,14 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 36px;
   padding: 0 16px;
   border: 1px solid transparent;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text);
   font-family: var(--font);
-  font-size: var(--font-size-body);
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
   text-align: center;
@@ -26,8 +26,8 @@
 }
 
 .button[data-variant="primary"] {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--text);
+  color: var(--surface-raised);
 }
 
 .button[data-variant="ghost"] {
@@ -35,7 +35,7 @@
   color: var(--text);
 }
 
-/* White on --danger is 4.5:1 only at full white and bold, so this is the one place for it. */
+/* The danger fill maintains AA contrast with white text at the normal text size. */
 .button[data-variant="danger"] {
   background: var(--danger);
   color: var(--on-danger);
@@ -78,4 +78,10 @@
 
 .button[aria-busy="true"] {
   cursor: progress;
+}
+
+@media (max-width: 767.98px) {
+  .button {
+    min-height: 40px;
+  }
 }

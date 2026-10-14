@@ -8,6 +8,8 @@ export type WindowVariant = 'floating' | 'page';
 
 export type WindowProps = {
   title: string;
+  /** Optional decorative app mark. The title remains the dialog's accessible name. */
+  titleIcon?: ReactNode;
   description?: string;
   /** A strip of numbers under the title bar. */
   stats?: ReactNode;
@@ -15,7 +17,7 @@ export type WindowProps = {
   /** The close button's accessible name. */
   closeLabel: string;
   children: ReactNode;
-  /** floating: about 90% of the viewport, centered, with the map around it. page: the whole screen, for phones. */
+  /** floating: inset desktop window. page: available phone space above navigation. */
   variant?: WindowVariant;
   /** Pinned to the bottom edge while the body scrolls. */
   footer?: ReactNode;
@@ -31,6 +33,7 @@ export type WindowProps = {
  */
 export function Window({
   title,
+  titleIcon,
   description,
   stats,
   onClose,
@@ -58,6 +61,7 @@ export function Window({
       >
         <div className={styles.titleBar}>
           <div className={styles.heading}>
+            {titleIcon ? <span className={styles.titleIcon} aria-hidden="true">{titleIcon}</span> : null}
             <h1 id={titleId} className={styles.title}>
               {title}
             </h1>

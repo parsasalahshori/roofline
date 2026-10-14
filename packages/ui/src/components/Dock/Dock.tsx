@@ -5,7 +5,7 @@ import styles from './Dock.module.css';
 
 export type DockItem = {
   key: string;
-  /** Always shown under the icon. */
+  /** Accessible app name, also shown on hover or keyboard focus. */
   label: string;
   href: string;
   icon: ReactNode;
@@ -23,7 +23,7 @@ export type DockProps = {
 };
 
 /**
- * The row of apps on desktop. Every item shows its label under its icon, at all times. The dock sets
+ * The row of apps on desktop. Labels appear above tiles on hover/focus. The dock sets
  * no position of its own: the shell places it, and keeps it clickable above an open window at the
  * dock's layer, z-index 30. Layers: Window 20, dock 30, Sheet 40, toasts 50.
  */
@@ -38,7 +38,8 @@ export function Dock({ label, items }: DockProps) {
               className={styles.link}
               aria-current={item.current ? 'page' : undefined}
               data-state={item.comingSoon ? 'soon' : undefined}
-              title={item.comingSoon}
+              data-app={item.key}
+              title={item.comingSoon ?? item.label}
             >
               <span className={styles.icon} aria-hidden="true">
                 {item.icon}

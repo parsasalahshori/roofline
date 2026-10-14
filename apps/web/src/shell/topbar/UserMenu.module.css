@@ -29,7 +29,9 @@
   top: calc(100% + 8px);
   right: 0;
   z-index: 1;
-  min-width: 220px;
+  width: min(300px, calc(100vw - 24px));
+  box-shadow: var(--shadow-window);
+  border-radius: var(--radius-card);
 }
 
 /* The popover takes focus only to hold it; the entries carry the ring */
@@ -52,4 +54,6 @@
   width: 100%;
   min-height: 40px;
   text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

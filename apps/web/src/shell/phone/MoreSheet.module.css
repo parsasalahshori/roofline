@@ -1,7 +1,6 @@
-/* The sheet's body: one full-width row per app, each at least 48px tall */
 .list {
   display: grid;
-  gap: 4px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -10,20 +9,33 @@
 .link {
   display: flex;
   align-items: center;
-  min-height: 48px;
-  padding: 0 16px;
-  border-radius: var(--radius-card);
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
   color: var(--text);
   font-size: var(--font-size-body);
   font-weight: 600;
   text-decoration: none;
 }
 
-.link:hover {
-  background: var(--line);
+.link:hover { background: var(--surface-2); }
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--text);
+  color: var(--surface-raised);
 }
 
-.link:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
-}
+.icon > svg { width: 20px; height: 20px; }
+.icon[data-app="storm"] { background: var(--app-storm); color: var(--accent); }
+.icon[data-app="front-desk"] { background: var(--app-front-desk); }
+.icon[data-app="estimator"] { background: var(--app-estimator); color: var(--text); }
+.icon[data-app="agents"] { color: var(--accent); }

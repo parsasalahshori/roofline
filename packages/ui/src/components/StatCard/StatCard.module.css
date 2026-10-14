@@ -7,7 +7,7 @@
 
 .label {
   color: var(--text-muted);
-  font-size: var(--font-size-body);
+  font-size: 13px;
 }
 
 .value {

@@ -10,14 +10,14 @@
   justify-content: center;
   align-items: flex-start;
   padding-top: 12vh;
-  background: rgba(43, 38, 32, 0.35);
+  background: rgba(21, 28, 34, 0.25);
 }
 
 .dialog {
   display: flex;
   flex-direction: column;
   width: min(560px, calc(100vw - 32px));
-  max-height: 70vh;
+  max-height: 70dvh;
   overflow: hidden;
   border-radius: var(--radius-window);
   background: var(--surface);
@@ -82,7 +82,8 @@
 }
 
 .option[data-active='true'] {
-  background: var(--line);
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 var(--app-jobs);
 }
 
 .primary {
@@ -101,4 +102,9 @@
   padding: 16px;
   color: var(--text-muted);
   font-size: var(--font-size-body);
+}
+
+@media (max-width: 767.98px) {
+  .backdrop { padding-top: 52px; }
+  .dialog { max-height: calc(100dvh - 132px); }
 }
