@@ -3,7 +3,7 @@ import { isRoof3d, type Roof3d, roof3dSnapshotFresh, roofPlanesFrom3d, sameOutli
 import { measureRoof, roofModelFrom3d } from '../src/roof-model.ts';
 import { polygonAreaSqFt, type Ring } from '../src/roof.ts';
 import { reconstructRoof, toRoof3d } from '../src/roof-reconstruct/index.ts';
-import { HIP, HIP_FLAT, synthesize } from './fixtures/synthetic-roofs.ts';
+import { HIP, HIP_FLAT, synthesize, TWO_STOREY } from './fixtures/synthetic-roofs.ts';
 
 // Omaha; raster-local metres to [lng, lat] with the same sphere the engine uses.
 const LNG0 = -96.0;
@@ -58,7 +58,22 @@ describe('roofModelFrom3d', () => {
     const flat = roof.faces.findIndex((f) => f.flat);
     expect(m.facets[flat]!.pitch).toBe('0/12');
     expect(m.facets[flat]!.areaSqFt).toBeCloseTo(roof.faces[flat]!.planAreaSqFt, 0);
-    expect(m.totals.flatEdgeFt).toBeCloseTo(28 * 3.28084, -1);
+    // The deck's edges, where the hip faces meet it level, are ridges.
+    expect(m.totals.ridgeFt).toBeCloseTo(28 * 3.28084, -1);
+    expect(m.totals.flatEdgeFt).toBe(0);
+  });
+
+  it('counts the flashing where a lower roof meets an upper storey, and reads an older step as step flashing', () => {
+    const roof = roofOf(TWO_STOREY);
+    const m = roofModelFrom3d(roof, { pitchX12: 5, ownPitch: true });
+    // Up the lower roof's 5/12 slope on both sides of the wall; none level along it.
+    expect(m.totals.stepFt).toBeCloseTo(2 * Math.hypot(5, 5 * (5 / 12)) * 3.28084, -1);
+    expect(m.totals.flashingFt).toBe(0);
+    // The upper roof's edges over the lower one are rakes, counted with its gable's.
+    expect(m.totals.rakeFt).toBeCloseTo((4 * Math.hypot(5, 5 * (8 / 12)) + 2 * Math.hypot(5, 5 * (5 / 12))) * 3.28084, -1);
+    const old: Roof3d = { ...roof, lines: roof.lines.map((l) => (l.kind === 'step-flashing' ? { ...l, kind: 'step' as const } : l)) };
+    expect(isRoof3d(old)).toBe(true);
+    expect(roofModelFrom3d(old, { pitchX12: 5, ownPitch: true }).totals.stepFt).toBe(m.totals.stepFt);
   });
 });
 

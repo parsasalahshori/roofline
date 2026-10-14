@@ -127,7 +127,8 @@ const LINE_COLOURS: Record<string, string> = {
   valley: '#00c8ff',
   eave: '#9678ff',
   rake: '#28dc78',
-  step: '#ffffff',
+  flashing: '#ffffff',
+  'step-flashing': '#ffd23f',
   'flat-edge': '#c8c8c8',
 };
 

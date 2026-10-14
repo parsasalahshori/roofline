@@ -16,19 +16,25 @@ export function usableRoof(roof: RoofModel | null | undefined): RoofModel | null
   return roof !== null && roof !== undefined && Array.isArray(roof.facets) && roof.facets.length > 0 ? roof : null;
 }
 
-/** Line colours, as the reference draws them. Hips, steps and flat edges only show when the roof has them. */
+/** Line colours, as the reference draws them. Hips, flashing and flat edges only show when the roof has them. */
 export const LINE_COLORS: Record<RoofLineKind, string> = {
   ridge: '#ff5c50',
   hip: '#ff9a3d',
   valley: '#37d3cf',
   eave: '#b294ff',
   rake: '#62dc8a',
-  step: '#f4f1e8',
+  flashing: '#f4f1e8',
+  'step-flashing': '#ffd23f',
   'flat-edge': '#9aa7b4',
 };
-export const LINE_ORDER: readonly RoofLineKind[] = ['ridge', 'hip', 'valley', 'eave', 'rake', 'step', 'flat-edge'];
+export const LINE_ORDER: readonly RoofLineKind[] = ['ridge', 'hip', 'valley', 'eave', 'rake', 'flashing', 'step-flashing', 'flat-edge'];
 /** Kinds only some roofs have (a roof measured in 3D): shown only when the roof has them, like hips. */
-const WHEN_PRESENT: ReadonlySet<RoofLineKind> = new Set(['hip', 'step', 'flat-edge']);
+const WHEN_PRESENT: ReadonlySet<RoofLineKind> = new Set(['hip', 'flashing', 'step-flashing', 'flat-edge']);
+/**
+ * Flashing runs where a higher roof's eave or rake hangs over a lower roof, so the two lines share their place: the
+ * flashing is drawn after the others and thinner, a stripe down the middle of the eave or rake.
+ */
+const UNDER_EDGE: ReadonlySet<RoofLineKind> = new Set(['flashing', 'step-flashing']);
 const FACET_COLOR = '#2f6fde';
 const CASING_COLOR = '#151c22';
 /** A facet left out of the quote is shaded over, and its lines that no longer count fade. */
@@ -45,7 +51,7 @@ export function facetLetter(index: number): string {
   return index < 26 ? letters[index]! : letters[Math.floor(index / 26) - 1]! + letters[index % 26]!;
 }
 
-/** The kinds the roof really has lines of, in legend order (hips, steps and flat edges only when it has them). */
+/** The kinds the roof really has lines of, in legend order (hips, flashing and flat edges only when it has them). */
 export function lineKinds(roof: RoofModel): RoofLineKind[] {
   return LINE_ORDER.filter((kind) => !WHEN_PRESENT.has(kind) || roof.lines.some((l) => l.kind === kind && l.lengthFt > 0));
 }
@@ -76,9 +82,9 @@ export function linesData(roof: RoofModel | null) {
   const quoted = new Set((roof?.facets ?? []).filter((f) => !out.has(f.id)).map((f) => f.id));
   return {
     type: 'FeatureCollection' as const,
-    features: (roof?.lines ?? []).map((l) => ({
+    features: [...(roof?.lines ?? [])].sort((a, b) => Number(UNDER_EDGE.has(a.kind)) - Number(UNDER_EDGE.has(b.kind))).map((l) => ({
       type: 'Feature' as const,
-      properties: { kind: l.kind, color: LINE_COLORS[l.kind], quoted: out.size === 0 || lineQuoted(l, quoted) },
+      properties: { kind: l.kind, color: LINE_COLORS[l.kind], width: UNDER_EDGE.has(l.kind) ? 1.2 : 2.6, quoted: out.size === 0 || lineQuoted(l, quoted) },
       geometry: { type: 'LineString' as const, coordinates: l.coords },
     })),
   };
@@ -137,7 +143,7 @@ export function addRoofLayers(instance: MapLibreMap, roof: RoofModel | null): vo
       type: 'line',
       source: ROOF_LINES_SOURCE,
       layout: { ...hidden, 'line-cap': 'round' },
-      paint: { 'line-color': ['get', 'color'], 'line-width': 2.6, 'line-opacity': ['case', ['get', 'quoted'], 1, 0.3] },
+      paint: { 'line-color': ['get', 'color'], 'line-width': ['get', 'width'], 'line-opacity': ['case', ['get', 'quoted'], 1, 0.3] },
     });
   } catch {
     // The map may be going away; the numbers still show without the drawing.
