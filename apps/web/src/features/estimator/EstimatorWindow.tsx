@@ -45,7 +45,7 @@ function ProposalGroup({ group, q }: { group: (typeof GROUPS)[number]; q: string
             <li key={p.id}>
               <UiLink href={`/estimator/proposals/${p.id}`} className={styles.row}>
                 <span className={styles.number}>{p.number}</span>
-                <span>{p.customer.name}</span>
+                <span className={styles.customer}>{p.customer.name}</span>
                 <span className={styles.address}>{p.address}</span>
               </UiLink>
             </li>
@@ -74,7 +74,8 @@ function ProposalGroups() {
     return () => clearTimeout(timer);
   }, [text]);
   return (
-    <div className={styles.groups}>
+    <aside className={styles.groups} aria-label={estimator.proposalsTitle}>
+      <h2 className={styles.heading}>{estimator.proposalsTitle}</h2>
       <Field
         label={estimator.findLabel}
         help={estimator.findHint}
@@ -87,7 +88,7 @@ function ProposalGroups() {
       {GROUPS.map((group) => (
         <ProposalGroup key={group.key} group={group} q={q} />
       ))}
-    </div>
+    </aside>
   );
 }
 
@@ -115,46 +116,73 @@ export function EstimatorWindow() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>{estimator.title}</h1>
-      <form className={styles.form} onSubmit={onSubmit}>
-        <Field
-          label={estimator.addressLabel}
-          help={estimator.addressHint}
-          type="search"
-          autoComplete="off"
-          value={text}
-          onChange={(event) => {
-            setText(event.currentTarget.value);
-            setTarget(null);
-          }}
-        />
-        {matches.length > 0 ? (
-          <section className={styles.homes}>
-            <h2 className={styles.heading}>{estimator.homesTitle}</h2>
-            <ul className={styles.list}>
-              {matches.map((p) => (
-                <li key={p.id}>
-                  <Button
-                    variant="ghost"
-                    className={styles.result}
-                    onClick={() => setTarget({ kind: 'home', propertyId: p.id, label: homeLabel(p), hasCustomer: p.customerId !== null })}
-                  >
-                    {homeLabel(p)}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-        {noMatches ? <p className={styles.note}>{estimator.noHomes}</p> : null}
-      </form>
-      {target !== null ? (
-        <MakeProposal
-          key={target.kind === 'home' ? `home:${target.propertyId}` : `address:${target.address}`}
-          target={target}
-        />
-      ) : null}
-      <ProposalGroups />
+      <header className="visually-hidden">
+        <h1 className={styles.title}>{estimator.title}</h1>
+        <p className={styles.note}>{estimator.subtitle}</p>
+      </header>
+      <div className={styles.layout}>
+        <div className={styles.workspace}>
+          <h2 className={styles.workspaceTitle}>{estimator.startTitle}</h2>
+          <p className={styles.note}>{estimator.startHelp}</p>
+          <form className={styles.form} onSubmit={onSubmit}>
+            <Field
+              label={estimator.addressLabel}
+              help={estimator.addressHint}
+              type="search"
+              autoComplete="off"
+              value={text}
+              onChange={(event) => {
+                setText(event.currentTarget.value);
+                setTarget(null);
+              }}
+            />
+            <Button type="submit" className={styles.useAddress} disabled={text.trim() === '' || target !== null}>
+              {estimator.useAddress}
+            </Button>
+            {search.isFetching && query !== '' ? <p className={styles.note} role="status">{estimator.searching}</p> : null}
+            {search.isError ? (
+              <div className={styles.searchError} role="alert">
+                <p className={styles.note}>{estimator.searchFailed}</p>
+                <Button variant="ghost" onClick={() => void search.refetch()}>{estimator.retrySearch}</Button>
+              </div>
+            ) : null}
+            {matches.length > 0 ? (
+              <section className={styles.homes}>
+                <h2 className={styles.heading}>{estimator.homesTitle}</h2>
+                <ul className={styles.list}>
+                  {matches.map((p) => (
+                    <li key={p.id}>
+                      <Button
+                        variant="ghost"
+                        className={styles.result}
+                        aria-pressed={target?.kind === 'home' && target.propertyId === p.id}
+                        onClick={() => setTarget({ kind: 'home', propertyId: p.id, label: homeLabel(p), hasCustomer: p.customerId !== null })}
+                      >
+                        {homeLabel(p)}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {noMatches ? <p className={styles.note}>{estimator.noHomes}</p> : null}
+          </form>
+          {target !== null ? (
+            <MakeProposal
+              key={target.kind === 'home' ? `home:${target.propertyId}` : `address:${target.address}`}
+              target={target}
+            />
+          ) : null}
+          {target === null ? (
+            <section className={styles.guide} aria-label={estimator.workflowTitle}>
+              <h2 className={styles.heading}>{estimator.workflowTitle}</h2>
+              <ol className={styles.steps}>{estimator.workflow.map((step) => <li key={step}>{step}</li>)}</ol>
+              <p className={styles.note}>{estimator.workflowHelp}</p>
+            </section>
+          ) : null}
+        </div>
+        <ProposalGroups />
+      </div>
     </div>
   );
 }

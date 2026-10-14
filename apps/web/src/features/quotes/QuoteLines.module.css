@@ -1,9 +1,11 @@
 /* A table that fits the window: the item column takes the room, the numbers keep their width */
+
 .table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--font-size-body);
   table-layout: auto;
+  background: var(--surface);
 }
 
 .table th,
@@ -16,16 +18,19 @@
 
 .table th {
   color: var(--text-muted);
+  background: var(--surface-2);
   font-weight: 600;
 }
 
 /* Long item names wrap inside their cell instead of pushing the table wider than the phone */
+
 .name {
   overflow-wrap: anywhere;
   min-width: 8ch;
 }
 
 /* Numbers sit flush right, with tabular digits so the amounts line up down the column */
+
 .table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -33,6 +38,7 @@
 }
 
 /* Phone: the quantity text may wrap onto two lines, so the numbers never run off the edge */
+
 @media (max-width: 480px) {
   .table th,
   .table td {

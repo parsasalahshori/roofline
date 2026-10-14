@@ -1,8 +1,18 @@
 .root {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --surface-2: #edf0f2;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dce0e4;
+  --accent: #ffcc24;
+  --accent-ink: #151c22;
+  --radius-card: 16px;
+  line-height: 1.45;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg);
   max-width: 100%;
   box-sizing: border-box;
   color: var(--text);
@@ -44,6 +54,7 @@
 }
 
 /* Vertex handles are DOM markers: 40px hit areas, set by the editor; keep them clear of MapLibre's clip. */
+
 .map :global(.maplibregl-canvas-container) {
   touch-action: none;
 }
@@ -51,16 +62,16 @@
 .panels {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
 }
 
 .kind {
   align-self: flex-start;
-  padding: 8px 16px;
+  padding: 4px 10px;
   border-radius: var(--radius-card);
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: #fff2c7;
+  color: #715400;
   font-size: var(--font-size-min);
   font-weight: 600;
 }
@@ -74,7 +85,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);
@@ -88,7 +99,7 @@
 
 .pitches {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -155,29 +166,59 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface-2);
 }
 
+.header {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 16px;
+}
+
 @media (min-width: 900px) {
   .root {
-    flex-direction: row;
-    align-items: flex-start;
+    grid-template-columns: 280px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .header {
+    grid-column: 1 / -1;
+    padding: 0 4px 8px;
+    border-bottom: 1px solid var(--line);
   }
 
   .mapColumn {
-    flex: 1 1 55%;
+    grid-column: 2;
+    grid-row: 2;
     position: sticky;
-    top: 16px;
+    top: 12px;
   }
 
   .map {
-    height: 70vh;
+    height: min(65vh, 650px);
+    min-height: 400px;
   }
 
   .panels {
-    flex: 1 1 45%;
+    grid-column: 1;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 599px) {
+  .root input {
+    font-size: 16px;
+  }
+
+  .pitch, .wide {
+    min-height: 44px;
   }
 }

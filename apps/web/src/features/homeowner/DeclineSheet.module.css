@@ -1,5 +1,19 @@
 /* The decline sheet's body: the intro, the optional reason, and the two buttons in the footer. */
+
 .body {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --surface-2: #edf0f2;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dce0e4;
+  --accent: #ffcc24;
+  --accent-ink: #151c22;
+  --radius-card: 16px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -12,6 +26,7 @@
 }
 
 /* Inputs are 16px so iOS does not zoom the page when a person taps them. */
+
 .reason textarea {
   font-size: 16px;
 }

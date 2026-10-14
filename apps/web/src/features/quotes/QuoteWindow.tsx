@@ -169,6 +169,7 @@ function QuoteBody({ quote: loaded }: { quote: QuoteView }) {
         </UiLink>
       </div>
 
+      {dirty && editable ? <p className={styles.draftNote} role="status">{quotes.unsaved}</p> : null}
       {isFinal ? <p className={styles.note}>{quotes.readOnlyNote}</p> : null}
       {finalizedOn !== null ? <p className={styles.note}>{quotes.finalizedOn(finalizedOn)}</p> : null}
       {shown === null ? <Banner tone="danger">{quotes.fixInputs}</Banner> : null}

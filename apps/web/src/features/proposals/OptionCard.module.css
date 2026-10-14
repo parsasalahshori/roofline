@@ -4,6 +4,11 @@
   gap: 12px;
   min-width: 0;
   max-width: 100%;
+  border-color: var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  padding: 16px;
+  box-shadow: 0 2px 4px rgb(21 28 34 / 4%);
 }
 
 .header {
@@ -16,7 +21,7 @@
 
 .title {
   margin: 0;
-  font-size: var(--font-size-stat);
+  font-size: 16px;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -149,4 +154,40 @@
   justify-content: space-between;
   gap: 12px;
   min-height: 40px;
+}
+
+.totalRow {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.total {
+  font-variant-numeric: tabular-nums;
+}
+
+.line {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.line > :last-child {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 599px) {
+  .card input, .card select {
+    font-size: 16px;
+  }
+}
+
+.fields > :nth-child(-n + 2) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 599px) {
+  .fields,
+  .addOn {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

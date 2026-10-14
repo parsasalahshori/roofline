@@ -1,11 +1,21 @@
-/* The public proposal page: one column, phone first, centred and capped at 640px on a wide screen. */
+/* Public, session-free proposal: a readable comparison on desktop and one column on phones. */
+
 .page {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --surface-2: #edf0f2;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dce0e4;
+  --accent: #ffcc24;
+  --accent-ink: #151c22;
+  --radius-card: 16px;
   min-height: 100dvh;
   padding: 24px 16px 48px;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 1rem;
+  font-size: 14px;
   line-height: 1.5;
   box-sizing: border-box;
 }
@@ -15,7 +25,7 @@
   flex-direction: column;
   gap: 16px;
   width: 100%;
-  max-width: 640px;
+  max-width: 1120px;
   margin: 0 auto;
   box-sizing: border-box;
 }
@@ -28,10 +38,10 @@
 
 .company {
   margin: 0;
-  color: var(--text-muted);
-  font-size: 1rem;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: normal;
+  color: var(--text);
 }
 
 .title {
@@ -44,13 +54,13 @@
 .text {
   margin: 0;
   color: var(--text-muted);
-  font-size: 1rem;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 
 .options {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 16px;
   margin: 0;
   padding: 0;
@@ -58,6 +68,11 @@
 }
 
 .option {
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 2px 5px rgb(21 28 34 / 5%);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -74,12 +89,13 @@
 
 .optionName {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 18px;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 /* A label, not a control: it is a span so no screen reader or tap target promises an action. */
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -101,7 +117,7 @@
 
 .sectionHeading {
   margin: 8px 0 0;
-  font-size: 1rem;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -123,7 +139,7 @@
 
 .totalLabel {
   color: var(--text-muted);
-  font-size: 1rem;
+  font-size: 14px;
 }
 
 .totalValue {
@@ -134,10 +150,11 @@
 .monthly {
   margin: 0;
   color: var(--text-muted);
-  font-size: 1rem;
+  font-size: 14px;
 }
 
 .choose {
+  margin-top: auto;
   width: 100%;
 }
 
@@ -179,10 +196,54 @@
   padding-top: 32px;
 }
 
-
 .loading {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding-top: 8px;
+}
+
+.header:first-child {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.options > li {
+  min-width: 0;
+}
+
+.total {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.totalValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.badgeMuted {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.footer {
+  align-items: center;
+  margin-top: 8px;
+}
+
+.footer > * {
+  width: auto;
+  min-height: 44px;
+}
+
+.end {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+@media (min-width: 900px) {
+  .page {
+    padding: 32px 24px 48px;
+  }
 }
