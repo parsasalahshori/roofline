@@ -14,7 +14,8 @@ import type { Roof3d, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../
 import { dist, nearestOnSegment, pointInRing, signedArea, simplifyClosedIdx, type XY } from './geom.ts';
 import { DEFAULT_OUTLINE_PARAMS, mainAxis, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
 import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type Plane, type PlaneParams, refitFaces } from './planes.ts';
-import { close, components, countSet, fillHoles, largestComponent, open3, seededRandom, squaredDistance } from './raster.ts';
+import { groundPlane, heightAboveGround, planeInCrop } from './ground.ts';
+import { close, components, countSet, dilate, fillHoles, largestComponent, open, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
@@ -88,6 +89,25 @@ const JOINED_NEAR_M = 1;
 /** How far a terrace home's own face may reach past the party wall worked out from the box, metres. */
 const TERRACE_SNAP_M = 0.7;
 const TERRACE_ON_PLANE_M = 0.25;
+/** Mask parts lower than this above the ground (metres) and at least GROUND_PART_M2 big lie on it: not roof. */
+const GROUND_M = 1.5;
+const GROUND_PART_M2 = 2;
+const GROUND_PART_WIDE_M = 0.6;
+const GROUND_MAX_SHARE = 0.4;
+/** Roof hidden from the mask (see crownEdgeShare, hiddenRoofShare). */
+const CROWN_PROBE_M = [0.6, 1, 1.5];
+const HIDDEN_MIN_HAG_M = 2.2;
+const HIDDEN_WIDE_M = 0.8;
+const HIDDEN_STEP_M = 0.2;
+const HIDDEN_ROOM_M = 3;
+const HIDDEN_NEAR_M = 1;
+const HIDDEN_PART_M2 = 5;
+/** A low attachment (see lowAttachment). */
+const LOW_FLAT_X12 = 2.5;
+const LOW_SHARE = 0.03;
+const LOW_MAX_SHARE = 0.25;
+const LOW_ABOVE_M = 0.2;
+const LOW_OVER_LOWEST_M = 0.5;
 const SQ_FT_PER_SQ_M = 10.7639104167;
 const FT_PER_M = 3.280839895;
 
@@ -185,11 +205,31 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     for (let i = 0; i < tree.length; i++) if (roof[i] !== 1) tree[i] = 0;
   }
 
+  // 1a. The ground round the roof (a plane under the pixels next to it on no roof). Parts of the mask lying on it (a
+  //     patio, a drive, a parked car: under GROUND_M above it) are not roof.
+  const groundFull = groundPlane(full, s, raster.dsm, (i) => labels[i] === part, raster.mask, raster.green ?? null, { c0, r0, c1, r1 });
+  const hag = groundFull === null ? null : heightAboveGround(g, s, dsm, planeInCrop(groundFull, s, c0, r0));
+  if (hag !== null) {
+    const gone = groundParts(g, s, roof, hag);
+    if (gone !== null) {
+      for (let i = 0; i < roof.length; i++) {
+        if (gone[i] !== 1) continue;
+        roof[i] = 0;
+        googleMask[i] = 0;
+      }
+      roof = fillHoles(g, largestComponent(g, open3(g, fillHoles(g, close(g, roof, closeR)))));
+      roofPx = countSet(roof);
+      if (roofPx * s * s < (opts.minRoofM2 ?? 15)) return null;
+      if (tree !== null) for (let i = 0; i < tree.length; i++) if (roof[i] !== 1) tree[i] = 0;
+    }
+  }
+
   // 1b. A part running on well past Google's box for the building at the point (a terrace, a semi-detached pair):
   //     this home is cut out of it (homeInTerrace).
   let joined = false;
-  if (opts.building !== undefined && opts.building.length >= 3) {
-    const box = opts.building.map((p) => ({ x: (p.col - c0) * s, y: -(p.row - r0) * s }));
+  const box0 = opts.building !== undefined && opts.building.length >= 3 ? opts.building.map((p) => ({ x: (p.col - c0) * s, y: -(p.row - r0) * s })) : null;
+  if (box0 !== null) {
+    const box = box0;
     const near = nearRing(g, s, box, JOINED_NEAR_M);
     let outside = 0;
     for (let i = 0; i < roof.length; i++) if (roof[i] === 1 && near[i] !== 1) outside++;
@@ -247,6 +287,24 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
 
   const quality = qualityOf(g, s, dsm, googleMask, roof, tree, faces.labels, planes, outline, topo.faces, opts.imageryQuality ?? null);
   if (joined) quality.reasons.push('joined-buildings');
+  // Roof the height map's mask may have missed: crowns along the outline as high as its edge, or (inside Google's box
+  // for the building) smooth raised ground off every mask next to the roof, a wing in a crown's shadow. Looked for on
+  // a window holding the roof with room round it, and the box (which can reach past the mask's part).
+  const hiddenWin = windowRound(raster, { c0, r0, c1, r1 }, opts.building);
+  const toWin = (p: XY): XY => ({ x: p.x + (c0 - hiddenWin.c0) * s, y: p.y - (r0 - hiddenWin.r0) * s });
+  const roofW = new Uint8Array(hiddenWin.g.w * hiddenWin.g.h);
+  for (let r = 0; r < g.h; r++) for (let c = 0; c < g.w; c++) roofW[(r + r0 - hiddenWin.r0) * hiddenWin.g.w + c + c0 - hiddenWin.c0] = roof[r * g.w + c]!;
+  const crownEdge = crownEdgeShare(hiddenWin.g, s, hiddenWin.dsm, outline.map(toWin), hiddenWin.mask, hiddenWin.green);
+  let hidden = 0;
+  if (groundFull !== null && opts.building !== undefined && opts.building.length >= 3 && !joined) {
+    const hagW = heightAboveGround(hiddenWin.g, s, hiddenWin.dsm, planeInCrop(groundFull, s, hiddenWin.c0, hiddenWin.r0));
+    const boxW = opts.building.map((p) => ({ x: (p.col - hiddenWin.c0) * s, y: -(p.row - hiddenWin.r0) * s }));
+    hidden = hiddenRoofShare(hiddenWin.g, s, hiddenWin.dsm, roofW, hiddenWin.mask, hiddenWin.green, hagW, boxW);
+  }
+  opts.debug?.(`crowns along ${(crownEdge * 100).toFixed(0)}% of the outline; raised smooth ground in the box ${(hidden * 100).toFixed(0)}% of the roof`);
+  if (crownEdge >= QUALITY_LIMITS.crownEdgeShare || hidden >= QUALITY_LIMITS.hiddenShare) quality.reasons.push('roof-hidden');
+  // A flat part at the outline no higher than the eaves of the roof it adjoins: a porch roof, a patio cover or a deck.
+  if (lowAttachment(g, s, dsm, roof, faces.labels, planes, outlineArea)) quality.reasons.push('low-attachment');
 
   // Shift from the crop back to the whole raster.
   const ox = c0 * s;
@@ -285,6 +343,316 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     clipped,
     quality,
   };
+}
+
+/**
+ * The roof's pixels lying on the ground (a patio, a drive, a parked car the mask took for roof): parts under GROUND_M
+ * above the ground at least GROUND_PART_M2 in size and GROUND_PART_WIDE_M across, with the low pixels along their
+ * edges. Null when there are none, or when they would be GROUND_MAX_SHARE of the roof or more (then the ground is
+ * not what was found: a home on a slope, a roof at the ground's height).
+ */
+function groundParts(g: { w: number; h: number }, s: number, roof: Uint8Array, hag: Float32Array): Uint8Array | null {
+  const low = new Uint8Array(roof.length);
+  let roofPx = 0;
+  for (let i = 0; i < roof.length; i++) {
+    if (roof[i] !== 1) continue;
+    roofPx++;
+    if (hag[i]! < GROUND_M) low[i] = 1;
+  }
+  // Thin rims (an eave's heights blurred down towards the ground) are not parts.
+  const wide = Math.max(1, Math.round(GROUND_PART_WIDE_M / 2 / s));
+  const parts = open(g, low, wide);
+  const { labels, sizes } = components(g, (i) => parts[i] === 1);
+  const big = new Uint8Array(roof.length);
+  let n = 0;
+  for (let i = 0; i < roof.length; i++) {
+    if (labels[i]! > 0 && sizes[labels[i]!]! * s * s >= GROUND_PART_M2) {
+      big[i] = 1;
+      n++;
+    }
+  }
+  if (n === 0 || n >= GROUND_MAX_SHARE * roofPx) return null;
+  const near = dilate(g, big, wide + 1);
+  const out = new Uint8Array(roof.length);
+  for (let i = 0; i < roof.length; i++) if (low[i] === 1 && near[i] === 1) out[i] = 1;
+  return out;
+}
+
+/**
+ * The raster round a crop (`crop`, pixel columns and rows, inclusive) with HIDDEN_ROOM_M more all round, and round
+ * Google's box (pixel corners) when given: its grid, origin, heights (NaN where missing), any-roof mask and photo green.
+ */
+function windowRound(
+  raster: RoofRaster,
+  crop: { c0: number; r0: number; c1: number; r1: number },
+  box: readonly { col: number; row: number }[] | undefined,
+): { g: { w: number; h: number }; c0: number; r0: number; dsm: Float32Array; mask: Uint8Array; green: Uint8Array | null } {
+  const { width: W, height: H, pixelSizeM: s } = raster;
+  const room = Math.ceil(HIDDEN_ROOM_M / s);
+  const cols = [crop.c0 - room, crop.c1 + room, ...(box ?? []).map((p) => p.col - room), ...(box ?? []).map((p) => p.col + room)];
+  const rows = [crop.r0 - room, crop.r1 + room, ...(box ?? []).map((p) => p.row - room), ...(box ?? []).map((p) => p.row + room)];
+  const c0 = Math.max(0, Math.floor(Math.min(...cols)));
+  const r0 = Math.max(0, Math.floor(Math.min(...rows)));
+  const c1 = Math.min(W - 1, Math.ceil(Math.max(...cols)));
+  const r1 = Math.min(H - 1, Math.ceil(Math.max(...rows)));
+  const g = { w: c1 - c0 + 1, h: r1 - r0 + 1 };
+  const dsm = new Float32Array(g.w * g.h);
+  const mask = new Uint8Array(g.w * g.h);
+  const green = raster.green != null && raster.green.length === W * H ? new Uint8Array(g.w * g.h) : null;
+  for (let r = 0; r < g.h; r++) {
+    for (let c = 0; c < g.w; c++) {
+      const src = (r + r0) * W + c + c0;
+      const k = r * g.w + c;
+      const z = raster.dsm[src]!;
+      dsm[k] = Number.isFinite(z) && z > -1000 && z < 10000 ? z : Number.NaN;
+      mask[k] = raster.mask[src] !== 0 ? 1 : 0;
+      if (green !== null) green[k] = raster.green![src] === 1 ? 1 : 0;
+    }
+  }
+  return { g, c0, r0, dsm, mask, green };
+}
+
+/** Height roughness at a pixel: the absolute second difference of its four neighbours `k` pixels off (Infinity off the grid). */
+function lapAt(g: { w: number; h: number }, dsm: Float32Array, i: number, k = 1): number {
+  const c = i % g.w;
+  const r = Math.floor(i / g.w);
+  if (c < k || c >= g.w - k || r < k || r >= g.h - k) return Infinity;
+  const v = Math.abs(4 * dsm[i]! - dsm[i - k]! - dsm[i + k]! - dsm[i - k * g.w]! - dsm[i + k * g.w]!);
+  return Number.isNaN(v) ? Infinity : v;
+}
+
+/** Heights averaged over each pixel's (2r+1)^2 window (missing heights left out; NaN where all are). */
+function boxMean(g: { w: number; h: number }, dsm: Float32Array, r: number): Float32Array {
+  const out = new Float32Array(g.w * g.h);
+  for (let y = 0; y < g.h; y++) {
+    for (let x = 0; x < g.w; x++) {
+      let sum = 0;
+      let n = 0;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const yy = y + dy;
+          const xx = x + dx;
+          if (yy < 0 || xx < 0 || yy >= g.h || xx >= g.w) continue;
+          const z = dsm[yy * g.w + xx]!;
+          if (!Number.isFinite(z)) continue;
+          sum += z;
+          n++;
+        }
+      }
+      out[y * g.w + x] = n > 0 ? sum / n : Number.NaN;
+    }
+  }
+  return out;
+}
+
+/** Share of each pixel's (2r+1)^2 window that is set, on a grid. */
+function windowShare(g: { w: number; h: number }, m: Uint8Array, r: number): Float32Array {
+  const { w, h } = g;
+  const sum = new Float64Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) sum[(y + 1) * (w + 1) + x + 1] = m[y * w + x]! + sum[y * (w + 1) + x + 1]! + sum[(y + 1) * (w + 1) + x]! - sum[y * (w + 1) + x]!;
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - r);
+      const x1 = Math.min(w, x + r + 1);
+      const y0 = Math.max(0, y - r);
+      const y1 = Math.min(h, y + r + 1);
+      const n = sum[y1 * (w + 1) + x1]! - sum[y0 * (w + 1) + x1]! - sum[y1 * (w + 1) + x0]! + sum[y0 * (w + 1) + x0]!;
+      out[y * w + x] = n / ((x1 - x0) * (y1 - y0));
+    }
+  }
+  return out;
+}
+
+/**
+ * Share of the outline's length along which tree crowns stand next to it as high as its edge: at two of the points
+ * CROWN_PROBE_M outside it, a pixel on no roof, green in the photo, no lower than the roof 0.4 m inside less 0.3 m.
+ * Such crowns hide whatever roof runs on under them (a wing, a garage). 0 without a photo.
+ */
+function crownEdgeShare(g: { w: number; h: number }, s: number, dsm: Float32Array, outline: readonly XY[], anyMask: Uint8Array, green: Uint8Array | null): number {
+  if (green === null) return 0;
+  const at = (p: XY) => {
+    const c = Math.floor(p.x / s);
+    const r = Math.floor(-p.y / s);
+    return c < 0 || r < 0 || c >= g.w || r >= g.h ? -1 : r * g.w + c;
+  };
+  const ccw = signedArea(outline) > 0;
+  let all = 0;
+  let hit = 0;
+  for (let k = 0; k < outline.length; k++) {
+    const a = outline[k]!;
+    const b = outline[(k + 1) % outline.length]!;
+    const len = dist(a, b);
+    if (len < 0.1) continue;
+    const d = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+    // Outward normal: to the right of a counter-clockwise ring.
+    const out = ccw ? { x: d.y, y: -d.x } : { x: -d.y, y: d.x };
+    for (let t = 0.1; t < len; t += 0.2) {
+      all++;
+      const p = { x: a.x + d.x * t, y: a.y + d.y * t };
+      const inside = at({ x: p.x - out.x * 0.4, y: p.y - out.y * 0.4 });
+      const zin = inside >= 0 ? dsm[inside]! : Number.NaN;
+      if (!Number.isFinite(zin)) continue;
+      let crowns = 0;
+      for (const m of CROWN_PROBE_M) {
+        const j = at({ x: p.x + out.x * m, y: p.y + out.y * m });
+        if (j < 0 || anyMask[j] === 1 || !(dsm[j]! > zin - 0.3)) continue;
+        if (green[j] === 1) crowns++;
+      }
+      if (crowns >= 2) hit++;
+    }
+  }
+  return all > 0 ? hit / all : 0;
+}
+
+/**
+ * Raised smooth ground off every mask next to the roof inside Google's box for the building (plus JOINED_NEAR_M), as a
+ * share of the roof: at least HIDDEN_MIN_HAG_M above the ground, not green, hardly rough, in parts HIDDEN_WIDE_M
+ * across and HIDDEN_PART_M2 big that come within HIDDEN_NEAR_M of the roof. Roof the mask left out, most often in a crown's
+ * shadow (the photo is dark there, so not green).
+ */
+function hiddenRoofShare(
+  g: { w: number; h: number },
+  s: number,
+  dsm: Float32Array,
+  roof: Uint8Array,
+  anyMask: Uint8Array,
+  green: Uint8Array | null,
+  hag: Float32Array,
+  box: readonly XY[],
+): number {
+  const n = g.w * g.h;
+  const inBox = nearRing(g, s, box, JOINED_NEAR_M);
+  // Rough: the second difference over HIDDEN_STEP_M of the heights averaged over 5 x 5 pixels (so a height map's
+  // pixel noise is not), over 0.08 m.
+  const smooth = boxMean(g, dsm, 2);
+  const step = Math.max(1, Math.round(HIDDEN_STEP_M / s));
+  const roughPx = new Uint8Array(n);
+  for (let i = 0; i < n; i++) if (lapAt(g, smooth, i, step) > 0.08) roughPx[i] = 1;
+  const rough = windowShare(g, roughPx, Math.max(1, Math.round(0.2 / s)));
+  const cand = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (inBox[i] === 1 && anyMask[i] === 0 && roof[i] === 0 && hag[i]! >= HIDDEN_MIN_HAG_M && green?.[i] !== 1 && rough[i]! < 0.1) cand[i] = 1;
+  }
+  const wide = open(g, cand, Math.max(1, Math.round(HIDDEN_WIDE_M / 2 / s)));
+  const near = dilate(g, roof, Math.max(1, Math.round(HIDDEN_NEAR_M / s)));
+  const { labels, sizes } = components(g, (i) => wide[i] === 1);
+  const touching = new Set<number>();
+  for (let i = 0; i < n; i++) if (labels[i]! > 0 && near[i] === 1) touching.add(labels[i]!);
+  let px = 0;
+  let roofPx = 0;
+  for (let i = 0; i < n; i++) {
+    if (roof[i] === 1) roofPx++;
+    const l = labels[i]!;
+    if (l > 0 && touching.has(l) && sizes[l]! * s * s >= HIDDEN_PART_M2) px++;
+  }
+  return roofPx > 0 ? px / roofPx : 0;
+}
+
+/**
+ * Whether a flat face (under LOW_FLAT_X12) of LOW_SHARE to LOW_MAX_SHARE of the roof lies along the outline with its
+ * top (the 90th percentile of its heights) no more than LOW_ABOVE_M over the eaves (5th percentile of the heights) of
+ * the sloped faces within 1.5 m of it, nor LOW_OVER_LOWEST_M over the lowest eaves of the whole roof: a porch roof, a patio cover or a
+ * deck against the house, which a measurer may or may not count. (A flat roof between taller roofs is not one.)
+ */
+function lowAttachment(
+  g: { w: number; h: number },
+  s: number,
+  dsm: Float32Array,
+  roof: Uint8Array,
+  labels: Int32Array,
+  planes: readonly Plane[],
+  roofAreaM2: number,
+): boolean {
+  const n = g.w * g.h;
+  const pct = (v: number[], q: number) => {
+    v.sort((a, b) => a - b);
+    return v[Math.min(v.length - 1, Math.floor(q * v.length))]!;
+  };
+  const sloped = planes.map((p) => Math.hypot(p.a, p.b) * 12 >= 3);
+  const all: number[] = [];
+  for (let i = 0; i < n; i++) if (labels[i]! >= 0 && sloped[labels[i]!] && Number.isFinite(dsm[i]!)) all.push(dsm[i]!);
+  if (all.length < 20) return false;
+  const lowest = pct(all, 0.05);
+  const edge2 = (0.3 / s) ** 2;
+  const offRoof = squaredDistance(g, (i) => roof[i] !== 1);
+  for (let k = 0; k < planes.length; k++) {
+    if (Math.hypot(planes[k]!.a, planes[k]!.b) * 12 >= LOW_FLAT_X12) continue;
+    const zs: number[] = [];
+    let onEdge = false;
+    for (let i = 0; i < n; i++) {
+      if (labels[i] !== k) continue;
+      if (Number.isFinite(dsm[i]!)) zs.push(dsm[i]!);
+      if (offRoof[i]! <= edge2) onEdge = true;
+    }
+    const share = (zs.length * s * s) / roofAreaM2;
+    if (!onEdge || share < LOW_SHARE || share > LOW_MAX_SHARE) continue;
+    const near = squaredDistance(g, (i) => labels[i] === k);
+    const adj: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const j = labels[i]!;
+      if (j < 0 || j === k || !sloped[j] || near[i]! > (1.5 / s) ** 2 || !Number.isFinite(dsm[i]!)) continue;
+      adj.push(dsm[i]!);
+    }
+    if (adj.length < 20) continue;
+    const top = pct(zs, 0.9);
+    if (top <= pct(adj, 0.05) + LOW_ABOVE_M && top <= lowest + LOW_OVER_LOWEST_M) return true;
+  }
+  return false;
+}
+
+/** Other roofs offered with the main one (see otherRoofParts). */
+export const OTHER_ROOFS = { minM2: 15, maxM2: 75, maxGapM: 12, maxShareOfMain: 0.5, max: 3 } as const;
+
+/**
+ * Other parts of the mask near a reconstructed roof (raster-local metres, as reconstructRoof gives it): detached
+ * garages, sheds and carports. Each part that does not overlap the roof's outline, is at least OTHER_ROOFS.minM2, at
+ * most OTHER_ROOFS.maxM2 (a two-car garage) and OTHER_ROOFS.maxShareOfMain of the roof's mask area (bigger is most
+ * likely a neighbour's house) and
+ * within OTHER_ROOFS.maxGapM of the outline, and nearer it than any such bigger part (a neighbour's outbuilding is
+ * nearer the neighbour's house); nearest first, at most OTHER_ROOFS.max. `at` is a pixel inside the part
+ * (column and row, for reconstructRoof), `gapM` its gap from the outline.
+ */
+export function otherRoofParts(raster: RoofRaster, main: LocalRoof): { at: { col: number; row: number }; areaM2: number; gapM: number }[] {
+  const { width: W, height: H, pixelSizeM: s } = raster;
+  const full = { w: W, h: H };
+  const inMain = new Uint8Array(W * H);
+  rasterize(full, s, main.outline, inMain);
+  const { labels, sizes } = components(full, (i) => raster.mask[i] !== 0);
+  const overlapping = new Set<number>();
+  for (let i = 0; i < labels.length; i++) if (inMain[i] === 1 && labels[i]! > 0) overlapping.add(labels[i]!);
+  const maxM2 = Math.min(OTHER_ROOFS.maxM2, OTHER_ROOFS.maxShareOfMain * main.maskAreaM2);
+  const d2 = squaredDistance(full, (i) => inMain[i] === 1);
+  // The other houses: parts too big to be an outbuilding.
+  const houses = squaredDistance(full, (i) => labels[i]! > 0 && !overlapping.has(labels[i]!) && sizes[labels[i]!]! * s * s > maxM2);
+  const best = new Map<number, { i: number; d2: number; house2: number }>();
+  for (let i = 0; i < labels.length; i++) {
+    const l = labels[i]!;
+    if (l === 0 || overlapping.has(l)) continue;
+    const area = sizes[l]! * s * s;
+    if (area < OTHER_ROOFS.minM2 || area > maxM2) continue;
+    const b = best.get(l);
+    if (b === undefined) best.set(l, { i, d2: d2[i]!, house2: houses[i]! });
+    else {
+      if (d2[i]! < b.d2) {
+        b.i = i;
+        b.d2 = d2[i]!;
+      }
+      b.house2 = Math.min(b.house2, houses[i]!);
+    }
+  }
+  const out: { at: { col: number; row: number }; areaM2: number; gapM: number }[] = [];
+  for (const [l, b] of best) {
+    const gapM = Math.sqrt(b.d2) * s;
+    // Too far, or nearer another house (whose outbuilding it most likely is).
+    if (gapM > OTHER_ROOFS.maxGapM || b.house2 <= b.d2) continue;
+    // A pixel well inside the part: the one farthest from its edge.
+    const inside = squaredDistance(full, (i) => labels[i] !== l);
+    let at = b.i;
+    for (let i = 0; i < labels.length; i++) if (labels[i] === l && inside[i]! > inside[at]!) at = i;
+    out.push({ at: { col: (at % W) + 0.5, row: Math.floor(at / W) + 0.5 }, areaM2: sizes[l]! * s * s, gapM });
+  }
+  return out.sort((a, b) => a.gapM - b.gapM).slice(0, OTHER_ROOFS.max);
 }
 
 /** Pixels whose centres lie inside a ring (crop-local metres). */
@@ -427,6 +795,10 @@ export const QUALITY_LIMITS = {
   treeShare: 0.2,
   /** Faces drawn from their pixels (their polygon could not be built) may be at most this share of the roof. */
   fallbackShare: 0.12,
+  /** Tree crowns as high as the roof's edge along at most this share of its outline (crownEdgeShare). */
+  crownEdgeShare: 0.15,
+  /** Raised smooth ground next to the roof in Google's box, at most this share of the roof (hiddenRoofShare). */
+  hiddenShare: 0.12,
 } as const;
 
 /**

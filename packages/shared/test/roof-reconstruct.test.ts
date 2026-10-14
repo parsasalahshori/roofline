@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   lngLatToUtm,
+  otherRoofParts,
   reconstructRoof,
   type ReconstructOptions,
   toRoof3d,
@@ -258,6 +259,125 @@ describe('reconstructRoof on a terrace (the mask joins the homes)', () => {
     const boxed = checkAgainstTruth(syn, { building: boxOf(syn, footprint) });
     expect(boxed.faces.map((f) => f.planAreaM2)).toEqual(plain.faces.map((f) => f.planAreaM2));
     expect(boxed.quality.reasons).not.toContain('joined-buildings');
+  });
+});
+
+type ShapeArg = Parameters<typeof synthesize>[0];
+
+/** GABLE (14 x 9 m at 6/12, eaves 3 m up) with something more at house-frame points where `more` gives a height. */
+function gableWith(name: string, extent: number, more: (p: XY) => number | null): ShapeArg {
+  return { ...GABLE, name, extent, height: (p) => GABLE.height(p) ?? more(p) };
+}
+
+/** Raster pixels whose centres lie in a house-frame box. */
+function pixelsIn(syn: SyntheticRoof, x0: number, x1: number, y0: number, y1: number): number[] {
+  const { width: W, height: H, pixelSizeM: s } = syn.raster;
+  const out: number[] = [];
+  const turn = syn.toLocal({ x: 1, y: 0 });
+  const o = syn.toLocal({ x: 0, y: 0 });
+  const cos = turn.x - o.x;
+  const sin = turn.y - o.y;
+  for (let i = 0; i < W * H; i++) {
+    const dx = ((i % W) + 0.5) * s - o.x;
+    const dy = -(Math.floor(i / W) + 0.5) * s - o.y;
+    const x = dx * cos + dy * sin;
+    const y = -dx * sin + dy * cos;
+    if (x >= x0 && x <= x1 && y >= y0 && y <= y1) out.push(i);
+  }
+  return out;
+}
+
+describe('reconstructRoof: what the mask takes for roof, and what it misses', () => {
+  it('a patio slab on the ground in the mask is not roof: the gable alone, exactly', () => {
+    // A 4 x 3 m slab 0.3 m up against the south eave, in the mask.
+    const shape = gableWith('gable-with-patio', 12, ({ x, y }) => (Math.abs(x) <= 2 && y < -4.5 && y >= -7.5 ? 0.3 : null));
+    for (const turnDeg of [17, 45]) {
+      const syn = synthesize(shape, { turnDeg, seed: 11, trees: 0 });
+      const r = checkAgainstTruth(syn, {}, 0.02);
+      expect(r.quality.reasons).not.toContain('low-attachment');
+    }
+  });
+
+  it('a flat porch roof below the eaves is kept and marked for review (a measurer may leave it out)', () => {
+    // A 6 x 2.5 m flat porch roof 2.7 m up against the south eave.
+    const shape = gableWith('gable-with-porch', 12, ({ x, y }) => (Math.abs(x) <= 3 && y < -4.5 && y >= -7 ? 2.7 : null));
+    const syn = synthesize(shape, { turnDeg: 17, seed: 11, trees: 0 });
+    const r = reconstructRoof(syn.raster, syn.point, { imageryQuality: 'HIGH' })!;
+    const porch = r.faces.find((f) => inside(syn.toLocal({ x: 0, y: -5.8 }), f.ring));
+    expect(porch?.flat).toBe(true);
+    expect(Math.abs(r.faces.reduce((t, f) => t + f.planAreaM2, 0) / (126 + 15) - 1)).toBeLessThan(0.02);
+    expect(r.quality.reasons).toContain('low-attachment');
+    // A flat deck on top of a hip roof and a two-storey house's lower roof are not attachments.
+    for (const shape2 of [HIP_FLAT, TWO_STOREY]) {
+      const other = synthesize(shape2, { turnDeg: 17, seed: 11 });
+      expect(reconstructRoof(other.raster, other.point)!.quality.reasons, shape2.name).not.toContain('low-attachment');
+    }
+  });
+
+  it('crowns green in the photo along a third of the outline: the roof may run on under them', () => {
+    const syn = synthesize(GABLE, { turnDeg: 17, seed: 11, trees: 0 });
+    const dsm = syn.raster.dsm.slice();
+    const green = new Uint8Array(dsm.length);
+    // A row of crowns 7 m up standing 0.4 to 2.5 m out from the whole north eave.
+    for (const i of pixelsIn(syn, -7, 7, 4.9, 7)) {
+      dsm[i] = 7;
+      green[i] = 1;
+    }
+    const r = reconstructRoof({ ...syn.raster, dsm, green }, syn.point, { imageryQuality: 'HIGH' })!;
+    expect(r.quality.reasons).toContain('roof-hidden');
+    // The same crowns without the photo: nothing says they are crowns.
+    expect(reconstructRoof({ ...syn.raster, dsm, green: null }, syn.point, { imageryQuality: 'HIGH' })!.quality.reasons).not.toContain('roof-hidden');
+  });
+
+  it("a wing in Google's box that the mask left out: marked, the box's other ground is not", () => {
+    // The gable plus an 8 x 5 m wing to the south at 4 m, in the heights but not in the mask.
+    const shape = gableWith('gable-with-wing', 12, ({ x, y }) => (Math.abs(x) <= 4 && y < -4.5 && y >= -9.5 ? 4 : null));
+    const syn = synthesize(shape, { turnDeg: 17, seed: 11, trees: 0 });
+    const mask = syn.raster.mask.slice();
+    for (const i of pixelsIn(syn, -4.2, 4.2, -9.7, -4.6)) mask[i] = 0;
+    const box = boxOf(syn, [
+      { x: -7, y: -9.5 },
+      { x: 7, y: -9.5 },
+      { x: 7, y: 4.5 },
+      { x: -7, y: 4.5 },
+    ]);
+    const r = reconstructRoof({ ...syn.raster, mask }, syn.point, { building: box })!;
+    expect(Math.abs(r.faces.reduce((t, f) => t + f.planAreaM2, 0) / 126 - 1)).toBeLessThan(0.03);
+    expect(r.quality.reasons).toContain('roof-hidden');
+    // The plain gable in the same box: nothing hidden.
+    const plain = synthesize(GABLE, { turnDeg: 17, seed: 11, trees: 0 });
+    expect(reconstructRoof(plain.raster, plain.point, { building: box })!.quality.reasons).not.toContain('roof-hidden');
+  });
+});
+
+describe('otherRoofParts', () => {
+  // A 5 x 4 m shed under a 4/12 mono-pitch 5 m east of the gable.
+  const shed = ({ x, y }: XY) => (x >= 12 && x <= 17 && Math.abs(y) <= 2 ? 2.2 + (2 - y) * (4 / 12) : null);
+
+  it('offers a shed near the house as another roof, not part of it', () => {
+    const syn = synthesize(gableWith('gable-and-shed', 18, shed), { turnDeg: 17, seed: 11, trees: 0 });
+    const main = checkAgainstTruth(syn);
+    const parts = otherRoofParts(syn.raster, main);
+    expect(parts).toHaveLength(1);
+    expect(parts[0]!.areaM2).toBeGreaterThan(18);
+    expect(parts[0]!.areaM2).toBeLessThan(22);
+    expect(Math.abs(parts[0]!.gapM - 5)).toBeLessThan(0.4);
+    const other = reconstructRoof(syn.raster, parts[0]!.at, { maxPointDistM: 1 })!;
+    expect(other.faces).toHaveLength(1);
+    expect(Math.abs(other.faces[0]!.pitchX12 - 4)).toBeLessThan(0.5);
+    expect(Math.abs(other.faces[0]!.planAreaM2 / 20 - 1)).toBeLessThan(0.05);
+  });
+
+  it("does not offer a neighbour's house, nor a shed standing nearer the neighbour's", () => {
+    // The neighbour: a 12 x 9 m flat-topped house 10 m north; a 4 x 4 m shed 1 m from it, 5 m from ours.
+    const shape = gableWith('gable-and-neighbour', 22, ({ x, y }) => {
+      if (Math.abs(x) <= 6 && y >= 14.5 && y <= 23.5) return 4;
+      if (x >= -2 && x <= 2 && y >= 9.5 && y <= 13.5) return 2.5;
+      return null;
+    });
+    const syn = synthesize(shape, { turnDeg: 17, seed: 11, trees: 0 });
+    const main = reconstructRoof(syn.raster, syn.point)!;
+    expect(otherRoofParts(syn.raster, main)).toEqual([]);
   });
 });
 

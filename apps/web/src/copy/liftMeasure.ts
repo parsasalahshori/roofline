@@ -60,6 +60,8 @@ export const liftMeasure = {
     trees: 'Trees cover part of the roof.',
     'differs-from-google': "Some sections' pitch or facing differ from a second measurement of this roof.",
     'joined-buildings': 'This roof joins the building next door. Only this home was measured: check where it was cut.',
+    'roof-hidden': 'Trees or shade may hide part of this roof, or a building next to it. Check the outline against the photo.',
+    'low-attachment': 'A flat porch roof, patio cover or deck sits at the eaves. Check whether it belongs in the quote.',
   },
   facetLabel: (letter: string, sqFt: number, pitch: string) => `Facet ${letter}, ${sqFt.toLocaleString()} sq ft, ${pitch} pitch`,
   /** A facet label is a button: pressed means the section is in the quote. */
