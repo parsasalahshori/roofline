@@ -136,6 +136,9 @@ describe('/estimator is the Measure window', () => {
       ...proposalListRoutes([], '99 Elm Rd'),
       'POST /api/measurements': () => ({ body: measurement('m3', false) }),
       'GET /api/measurements/m3': () => ({ body: measurement('m3', false) }),
+      'GET /api/measurements/m3/preview': () => ({
+        body: { addressLine: '99 Elm Rd', city: 'Omaha', state: 'NE', customerName: null, hailIn: null, options: null, financing: null },
+      }),
     });
     const { router, user } = renderApp();
     await user.type(await screen.findByRole('searchbox', { name: measure.requestsSearch }), '99 Elm Rd');

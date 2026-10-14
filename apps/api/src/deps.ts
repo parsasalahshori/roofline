@@ -30,6 +30,7 @@ import { createStaticMap } from './providers/static-map.ts'; // G1 Task 7
 import { createFootprintSource } from './providers/footprints.ts';
 import { createObjectStore } from './providers/object-store.ts';
 import { createGeocoder } from './providers/geocoder.ts';
+import { createSolarApi } from './providers/solar.ts';
 import type { CallControl } from './providers/call-control.ts';
 import type { LineLookup } from './providers/line-lookup.ts';
 import { type Llm, LlmUnavailableError } from './providers/llm.ts';
@@ -302,6 +303,7 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     registrar: createRegistrar(config),
     calendars: createCalendarApis(config),
     footprints: createFootprintSource(config),
+    solar: createSolarApi(config),
     aerial: aerialFor(config),
     exactReports: exactReportsFor(config),
     objectStore: createObjectStore(config, pools),

@@ -5,12 +5,14 @@ import pg from 'pg';
 import { beforeEach, describe, expect, inject, test } from 'vitest';
 import { footprintBoxDegrees, footprintsNear, footprintsNearQuery, withTenant } from '@roofline/db';
 import {
+  beatFootprintTile,
   claimFootprintTile,
   failFootprintTile,
   finishFootprintTile,
   footprintTileStatus,
   footprintTileStatuses,
   insertFootprints,
+  LOAD_HEARTBEAT_STALE_MS,
   STALE_LOADING_MS,
   tilesNeedingRetry,
   type FootprintInput,
@@ -204,7 +206,7 @@ describe('loadFootprintTile', () => {
   test('a key that is not a zoom-9 quadkey returns quietly: nothing claimed, nothing thrown', async () => {
     const source = squaresSource(3);
     for (const key of ['NE', '01233', '0213323334', '021332339']) {
-      await expect(loadFootprintTile(depsWith(source), key, FIRST_ATTEMPT)).resolves.toBeUndefined();
+      await expect(loadFootprintTile(depsWith(source), key, FIRST_ATTEMPT)).resolves.toBe('skipped');
       expect(await tileRow(key)).toBeUndefined();
     }
   });
@@ -245,6 +247,31 @@ describe('loadFootprintTile', () => {
     expect(await footprintTileStatus(system(), OMAHA)).toBe('loading');
     expect(await countFor(OMAHA)).toBe(0);
     expect(fake.calls).toEqual([]);
+  });
+
+  test('a load takes over a claim whose heartbeat stopped (a process restarted mid-load), never a live one', async () => {
+    const now = t.clock.now().getTime();
+    // A claim that beat 50 seconds ago is alive: the load leaves it alone.
+    expect(await claimFootprintTile(system(), OMAHA, new Date(now - LOAD_HEARTBEAT_STALE_MS + 10_000))).toBe(true);
+    expect(await loadFootprintTile(depsWith(new FakeFootprintSource()), OMAHA, FIRST_ATTEMPT)).toBe('busy');
+    // Its heartbeat stopped over a minute ago: the next load takes it over and finishes the tile.
+    await beatFootprintTile(system(), OMAHA, new Date(now - LOAD_HEARTBEAT_STALE_MS - 10_000));
+    expect(await loadFootprintTile(depsWith(new FakeFootprintSource()), OMAHA, FIRST_ATTEMPT)).toBe('loaded');
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('ready');
+    expect(await countFor(OMAHA)).toBeGreaterThan(0);
+  });
+
+  test('a heartbeat moves only a loading claim forward', async () => {
+    const start = new Date('2026-10-12T10:00:00.000Z');
+    const later = new Date('2026-10-12T10:00:30.000Z');
+    expect(await claimFootprintTile(system(), OMAHA, start)).toBe(true);
+    await beatFootprintTile(system(), OMAHA, later);
+    const [row] = await owner<{ started_at: Date }>(`select started_at from building_footprint_tiles where quadkey = $1`, [OMAHA]);
+    expect(row!.started_at.toISOString()).toBe(later.toISOString());
+    await finishFootprintTile(system(), OMAHA, 0, null, later);
+    await beatFootprintTile(system(), OMAHA, new Date('2026-10-12T11:00:00.000Z'));
+    const [after] = await owner<{ started_at: Date }>(`select started_at from building_footprint_tiles where quadkey = $1`, [OMAHA]);
+    expect(after!.started_at.toISOString()).toBe(later.toISOString());
   });
 
   test('batches of 2,000', async () => {

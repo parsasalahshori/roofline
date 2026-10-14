@@ -39,7 +39,10 @@ import {
   SMS_CONSENT_SOURCES,
   STEP_STATUSES,
   TASK_STATUSES,
+  PITCH_SOURCES,
   type AddOnUnit,
+  type RoofPlane,
+  type SolarSnapshot,
   type WorkHours,
 } from '@roofline/shared';
 import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
@@ -1032,6 +1035,12 @@ export const measurements = pgTable(
     facets: integer('facets'),
     providerRef: text('provider_ref'),
     notes: text('notes'),
+    /** Where pitch_x12 came from: Google Solar, the estimator's default, or a person. Null on older rows. */
+    pitchSource: text('pitch_source', { enum: PITCH_SOURCES }),
+    /** Google Solar's roof planes the facets take their own pitch from (while pitch_source is 'solar'). */
+    pitchPlanes: jsonb('pitch_planes').$type<RoofPlane[]>(),
+    /** The Google Solar answer this measurement used (the building, or none there), reused when the home is measured again. */
+    solar: jsonb('solar').$type<SolarSnapshot>(),
     createdByUserId: userRef('created_by_user_id'),
     ...timestamps(),
   },
@@ -1050,6 +1059,7 @@ export const measurements = pgTable(
     index('measurements_property_idx').on(t.propertyId),
     enumCheck('measurements', 'kind', t.kind, MEASUREMENT_KINDS),
     enumCheck('measurements', 'method', t.method, MEASUREMENT_METHODS),
+    enumCheck('measurements', 'pitch_source', t.pitchSource, PITCH_SOURCES),
   ],
 );
 

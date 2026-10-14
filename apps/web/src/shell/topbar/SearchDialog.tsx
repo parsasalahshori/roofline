@@ -8,7 +8,7 @@ import styles from './SearchDialog.module.css';
 import { SearchIcon } from './searchIcon.tsx';
 import { readRecents } from '../recents.ts';
 import { OPEN_SEARCH_EVENT } from './openSearch.ts';
-import { actionOptions, recentOptions, toOptions, type SearchOption } from './searchOptions.ts';
+import { actionOptions, measureOptions, recentOptions, toOptions, type SearchOption } from './searchOptions.ts';
 
 /** The groups in the order the dialog shows them. Each key is also the name of its heading in `search`. */
 const GROUPS = ['actions', 'recent', 'customers', 'jobs', 'addresses'] as const;
@@ -94,7 +94,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
   // or loads, the old results are off the screen, so the arrow keys and Enter must not reach them.
   const current = value.trim().length >= 2 && debounced === value && query.isSuccess;
   const typing = value.trim() !== '';
-  const actions = useMemo(() => actionOptions(value, canDownload), [value, canDownload]);
+  const actions = useMemo(() => [...measureOptions(value), ...actionOptions(value, canDownload)], [value, canDownload]);
   const found = current && query.data ? toOptions(query.data) : [];
   const options = typing ? [...actions, ...found] : recents;
   // Looked up by key, so an option that is no longer in the results is no longer active

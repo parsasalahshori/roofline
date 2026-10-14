@@ -20,11 +20,25 @@ import {
   updateProperty,
   withTenant,
 } from '@roofline/db';
-import { footprintTileStatuses } from '@roofline/db/system';
-import { footprintTilesNear, instantEstimate, isTimeZone, measureRoof, type MeasurementView, normalizeAddressKey, type Outline, type Ring, seededPitchX12 } from '@roofline/shared';
+import {
+  footprintTilesNear,
+  instantEstimate,
+  isTimeZone,
+  measureRoof,
+  type MeasurementView,
+  normalizeAddressKey,
+  metresToBuilding,
+  type Outline,
+  outlineFromSolar,
+  type Ring,
+  seededPitchX12,
+  type SolarSnapshot,
+} from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
+import { ensureFootprintTiles } from './footprint-tiles.ts';
+import { type PitchPick, pitchFromSolar, SOLAR_BUILDING_SNAP_M, solarAt, solarForHome } from './solar.ts';
 
 const PICK_ADDRESS_MESSAGE = 'Pick an address.';
 const NOT_FOUND_MESSAGE = 'We could not find that address.';
@@ -47,10 +61,35 @@ type NearFootprint = Awaited<ReturnType<typeof footprintsNear>>[number];
 export type SelectedFootprint = { id: string; ring: Ring; areaSqFt: number; point: LngLat };
 type Settings = { pitchX12: number; overhangFt: number };
 
+/** Typed addresses looked up lately, per process: the Measure search's prefetch and the Measure after it ask once. */
+const looked = new WeakMap<AppDeps, Map<string, { at: number; value: GeocodeResult | null }>>();
+const LOOKED_TTL_MS = 10 * 60 * 1000;
+const LOOKED_MAX = 500;
+
+function lookedFor(deps: AppDeps): Map<string, { at: number; value: GeocodeResult | null }> {
+  let map = looked.get(deps);
+  if (map === undefined) {
+    map = new Map();
+    looked.set(deps, map);
+  }
+  return map;
+}
+
 /** The geocoder, with its outage turned into a plain value (provider calls never run inside a transaction). */
 async function lookUp(deps: AppDeps, text: string): Promise<GeocodeResult | null | 'unavailable'> {
+  const map = lookedFor(deps);
+  const k = text.trim().toLowerCase().replace(/\s+/g, ' ');
+  const hit = map.get(k);
+  if (hit !== undefined && Date.now() - hit.at < LOOKED_TTL_MS) return hit.value;
   try {
-    return await deps.geocoder.geocode(text);
+    const value = await deps.geocoder.geocode(text);
+    map.set(k, { at: Date.now(), value });
+    while (map.size > LOOKED_MAX) {
+      const oldest = map.keys().next().value;
+      if (oldest === undefined) break;
+      map.delete(oldest);
+    }
+    return value;
   } catch (err) {
     if (err instanceof GeocoderUnavailableError) return 'unavailable';
     throw err;
@@ -160,6 +199,11 @@ async function asNotFound<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/** What a measurement keeps of its pitch: the pitch, where it came from, Solar's planes and the Solar answer. */
+function pitchFields(pick: PitchPick, solar: SolarSnapshot | null): Pick<NewMeasurement, 'pitchSource' | 'pitchPlanes' | 'solar'> {
+  return { pitchSource: pick.source, pitchPlanes: pick.planes, solar };
+}
+
 function outlineInput(
   property: PropertyRow,
   point: LngLat,
@@ -167,11 +211,13 @@ function outlineInput(
   rows: NearFootprint[],
   settings: Settings,
   jobId: string | null,
+  solar: SolarSnapshot | null,
 ): NewMeasurement {
   const outline: Outline = [main.ring];
-  // The roof's pitch is chosen per home (4/12 to 7/12, the same every time), so the roof drawn and the
-  // estimate priced from it agree; the rep can still change it.
-  const { estimate, roof } = measureRoof({ outline, pitchX12: seededPitchX12(property.id), overhangFt: settings.overhangFt });
+  // The pitch is Google Solar's for this roof when it has one; otherwise it is chosen per home (4/12 to 7/12, the
+  // same every time), so the roof drawn and the estimate priced from it agree. The rep can still change it.
+  const pick = pitchFromSolar(solar, main.ring, point, seededPitchX12(property.id));
+  const { estimate, roof } = measureRoof({ outline, pitchX12: pick.pitchX12, overhangFt: settings.overhangFt, planes: pick.planes });
   return {
     propertyId: property.id,
     jobId,
@@ -183,10 +229,39 @@ function outlineInput(
     facets: roof?.totals.facetCount ?? null,
     overhangFt: settings.overhangFt,
     center: point,
+    ...pitchFields(pick, solar),
   };
 }
 
-function drawInput(property: PropertyRow, center: LngLat, settings: Settings, jobId: string | null): NewMeasurement {
+/** No footprint near the home, but Google Solar has its roof: the outline is made from Solar's roof planes. */
+function solarOutlineInput(
+  property: PropertyRow,
+  point: LngLat,
+  outline: Outline,
+  settings: Settings,
+  jobId: string | null,
+  solar: SolarSnapshot,
+): NewMeasurement {
+  const pick = pitchFromSolar(solar, outline[0] ?? null, point, seededPitchX12(property.id));
+  const { estimate, roof } = measureRoof({ outline, pitchX12: pick.pitchX12, overhangFt: settings.overhangFt, planes: pick.planes });
+  return {
+    propertyId: property.id,
+    jobId,
+    kind: 'estimate',
+    method: 'outline',
+    outline,
+    structures: [],
+    estimate,
+    facets: roof?.totals.facetCount ?? null,
+    overhangFt: settings.overhangFt,
+    center: point,
+    ...pitchFields(pick, solar),
+  };
+}
+
+function drawInput(property: PropertyRow, center: LngLat, settings: Settings, jobId: string | null, solar: SolarSnapshot | null = null): NewMeasurement {
+  // Draw mode still knows the roof's pitch when Google Solar has the building at the home.
+  const pick = pitchFromSolar(solar, null, center, settings.pitchX12);
   return {
     propertyId: property.id,
     jobId,
@@ -194,23 +269,41 @@ function drawInput(property: PropertyRow, center: LngLat, settings: Settings, jo
     method: 'outline',
     outline: null,
     structures: [],
-    estimate: instantEstimate({ outline: [], pitchX12: settings.pitchX12, overhangFt: settings.overhangFt }),
+    estimate: instantEstimate({ outline: [], pitchX12: pick.pitchX12, overhangFt: settings.overhangFt }),
     overhangFt: settings.overhangFt,
     center,
+    ...pitchFields(pick, solar),
   };
 }
 
+/** The Solar outline for a home with no footprint: only for Google's building at (or within 30 m of) the home. */
+function solarOutline(solar: SolarSnapshot | null, point: LngLat): Outline | null {
+  const building = solar?.building ?? null;
+  if (building === null || metresToBuilding(building, point) > SOLAR_BUILDING_SNAP_M) return null;
+  const ring = outlineFromSolar(building);
+  return ring === null ? null : [ring];
+}
+
+/** The zoom-9 footprint tiles a home at `point` needs, and the state they are queued under. */
+function tilesFor(property: PropertyRow, point: LngLat): { tiles: string[]; state: string } {
+  return { tiles: footprintTilesNear(point[0], point[1], FOOTPRINT_TILE_MARGIN_M), state: property.state.trim().toUpperCase() };
+}
+
 /**
- * Measures a home from its building outline, or opens draw mode when there is no outline to use.
+ * Measures a home from its building outline, or opens draw mode when no source has the roof.
  * - `propertyId` names a saved address the caller may see (404 otherwise); `address` is looked up
  *   with the geocoder and saved (or reused) first. Neither is a 400.
  * - A home with no point is looked up once more; still none means draw mode centred on the US.
  * - The footprints are loaded per zoom-9 tile: the point's own tile, plus the tile next door when the
- *   point is within FOOTPRINT_TILE_MARGIN_M of its edge. When any of them is not ready yet, one
- *   `footprints-load` job is queued for each (singleton per quadkey) and the answer is draw mode; once
- *   they are loaded, measuring again finds the outline.
- * - Otherwise the footprints near the point decide: the one containing it, or the nearest within
- *   30 m, is the main structure; every nearby footprint is listed, only the main one included.
+ *   point is within FOOTPRINT_TILE_MARGIN_M of its edge. A tile that is not ready is loaded during this
+ *   request (or waited for, when another process is loading it), for up to FOOTPRINT_WAIT_MS: the first
+ *   measurement in an area takes about 30 seconds, later ones are instant. Meanwhile Google Solar is asked
+ *   about the point (once per home: the answer is kept on the measurement).
+ * - The footprints near the point decide: the one containing it, or the nearest within 30 m, is the main
+ *   structure; every nearby footprint is listed, only the main one included. Its pitch is Google Solar's
+ *   (per facet where a Solar plane fits, else the roof's dominant pitch), or the per-home default.
+ * - No footprint (none there, or the tiles did not load in time): Google Solar's building at the home gives
+ *   the outline. Only when neither has the roof is it draw mode.
  * Never throws for missing or bad geometry: that is draw mode.
  */
 export async function measureProperty(
@@ -244,20 +337,17 @@ export async function measureProperty(
     );
   }
 
-  const state = property.state.trim().toUpperCase();
-  const tiles = footprintTilesNear(point[0], point[1], FOOTPRINT_TILE_MARGIN_M);
-  const statuses = await footprintTileStatuses(deps.pools.system, tiles);
-  const notReady = tiles.filter((q) => statuses.get(q) !== 'ready');
-  if (notReady.length > 0) {
-    for (const quadkey of notReady) {
+  // Google Solar and the footprint tiles at once: both are network work, neither in a transaction.
+  const solarAsked = solarForHome(deps, ctx, property.id, point);
+  const { tiles, state } = tilesFor(property, point);
+  const tilesOutcome = await ensureFootprintTiles(deps, tiles, { state, waitMs: deps.config.FOOTPRINT_WAIT_MS });
+  if (tilesOutcome !== 'ready') {
+    // Not loaded in time (it carries on here), or a load failed: the worker tries again too.
+    for (const quadkey of tiles) {
       await deps.jobs.send('footprints-load', { companyId: ctx.companyId, quadkey, state }, { singletonKey: quadkey });
     }
-    return asNotFound(() =>
-      withTenant(deps.pools, ctx, async (tx) =>
-        createMeasurement(tx, ctx, drawInput(property, point, await settingsFor(tx, ctx), jobId), now),
-      ),
-    );
   }
+  const solar = await solarAsked;
 
   return asNotFound(() =>
     withTenant(deps.pools, ctx, async (tx) => {
@@ -265,9 +355,11 @@ export async function measureProperty(
       const rows = await footprintsNear(tx, point, FOOTPRINT_SEARCH_M);
       const main = mainOf(rows);
       if (main === undefined) {
-        return createMeasurement(tx, ctx, drawInput(property, point, settings, jobId), now);
+        const outline = solarOutline(solar, point);
+        if (outline !== null) return createMeasurement(tx, ctx, solarOutlineInput(property, point, outline, settings, jobId, solar!), now);
+        return createMeasurement(tx, ctx, drawInput(property, point, settings, jobId, solar), now);
       }
-      const view = await createMeasurement(tx, ctx, outlineInput(property, point, main, rows, settings, jobId), now);
+      const view = await createMeasurement(tx, ctx, outlineInput(property, point, main, rows, settings, jobId, solar), now);
       await setPropertyFootprint(tx, ctx, property.id, main.id);
       return view;
     }),
@@ -286,15 +378,53 @@ async function measureOnFootprint(
   jobId: string | null,
   now: Date,
 ): Promise<MeasurementView> {
+  const solar = await solarForHome(deps, ctx, property.id, picked.point);
   return asNotFound(() =>
     withTenant(deps.pools, ctx, async (tx) => {
       const settings = await settingsFor(tx, ctx);
       const near = await footprintsNear(tx, picked.point, FOOTPRINT_SEARCH_M);
       const main: NearFootprint = near.find((r) => r.id === picked.id) ?? { id: picked.id, ring: picked.ring, areaSqFt: picked.areaSqFt, contains: true, distanceM: 0 };
       const rows = near.some((r) => r.id === picked.id) ? near : [main, ...near];
-      const view = await createMeasurement(tx, ctx, outlineInput(property, picked.point, main, rows, settings, jobId), now);
+      const view = await createMeasurement(tx, ctx, outlineInput(property, picked.point, main, rows, settings, jobId, solar), now);
       await setPropertyFootprint(tx, ctx, property.id, picked.id);
       return view;
     }),
   );
+}
+
+/**
+ * The Measure search's head start: as soon as an address is typed (before Measure is pressed), it is looked up and
+ * the area's footprint tiles start loading (nobody waits for them here), and Google Solar is asked about the point
+ * (kept in this process for the Measure that follows). Nothing is saved. `found` is false when the address is not
+ * found; an unreachable geocoder is a 503 like Measure's.
+ */
+export async function prefetchMeasure(
+  deps: AppDeps,
+  ctx: TenantContext,
+  i: { propertyId?: string; address?: string },
+): Promise<{ found: boolean }> {
+  let point: LngLat | null = null;
+  let state: string | undefined;
+  if (i.propertyId !== undefined) {
+    const propertyId = i.propertyId;
+    const found = await withTenant(deps.pools, ctx, (tx) => getProperty(tx, ctx, propertyId));
+    if (found === null) throw new AppError(404, MESSAGES.notFound);
+    point = found.geom ?? null;
+    state = found.state.trim().toUpperCase();
+  } else if (i.address !== undefined) {
+    const found = await lookUp(deps, i.address);
+    if (found === 'unavailable') throw new AppError(503, UNAVAILABLE_MESSAGE);
+    if (found !== null) {
+      point = [found.lng, found.lat];
+      state = found.state?.trim().toUpperCase();
+    }
+  }
+  if (point === null) return { found: false };
+  const tiles = footprintTilesNear(point[0], point[1], FOOTPRINT_TILE_MARGIN_M);
+  const work = Promise.allSettled([
+    ensureFootprintTiles(deps, tiles, { ...(state !== undefined ? { state } : {}), waitMs: 0 }),
+    solarAt(deps, point),
+  ]).then(() => undefined);
+  deps.onBackgroundTask?.(work);
+  return { found: true };
 }

@@ -67,7 +67,8 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   // G1 Task 12
   'scheduler-no-show': (deps, data) => runNoShow(deps, data.companyId, data.appointmentId!),
   // A job queued before tiles (`{ state }` only) has no quadkey: it does nothing, and the next Measure queues the tile.
-  'footprints-load': (deps, data, meta) => (data.quadkey === undefined ? Promise.resolve() : loadFootprintTile(deps, data.quadkey, meta, data.state)),
+  'footprints-load': (deps, data, meta) =>
+    data.quadkey === undefined ? Promise.resolve() : loadFootprintTile(deps, data.quadkey, meta, data.state).then(() => undefined),
   'signed-pdf': (deps, data, meta) => makeSignedPdf(deps, data.companyId, data.proposalId!, meta),
   'storm-match-company': (deps, data) => matchCompanyStorms(deps, data.companyId),
   'storm-draft': (deps, data) => {

@@ -19,6 +19,13 @@ export type FootprintTileStatus = FootprintStateStatus;
 
 /** A "loading" claim older than this is a crashed worker's, and another job may take it over. */
 export const STALE_LOADING_MS = 6 * 60 * 60 * 1000;
+/**
+ * A load in progress moves its claim's started_at forward this often (a heartbeat), so a claim whose started_at
+ * is older than LOAD_HEARTBEAT_STALE_MS belongs to a process that stopped (a restart mid-load): a loader may take
+ * it over then instead of after STALE_LOADING_MS.
+ */
+export const LOAD_HEARTBEAT_MS = 10_000;
+export const LOAD_HEARTBEAT_STALE_MS = 60_000;
 
 const SQ_FT_PER_SQ_M = 10.7639104167;
 
@@ -36,13 +43,36 @@ export async function footprintTileStatus(system: Db, quadkey: string): Promise<
   return (await footprintTileStatuses(system, [quadkey])).get(quadkey) ?? null;
 }
 
+/** Each named tile's status and when its claim last beat (started_at); a tile with no row is missing. */
+export async function footprintTileStates(
+  system: Db,
+  quadkeys: readonly string[],
+): Promise<Map<string, { status: FootprintTileStatus; startedAt: Date | null }>> {
+  const out = new Map<string, { status: FootprintTileStatus; startedAt: Date | null }>();
+  if (quadkeys.length === 0) return out;
+  const keys = sql.join(quadkeys.map((q) => sql`${q}`), sql`, `);
+  const result = await system.execute(sql`select quadkey, status, started_at from building_footprint_tiles where quadkey in (${keys})`);
+  for (const row of result.rows as { quadkey: string; status: FootprintTileStatus; started_at: Date | string | null }[]) {
+    const startedAt = row.started_at === null ? null : new Date(row.started_at);
+    out.set(row.quadkey, { status: row.status, startedAt });
+  }
+  return out;
+}
+
+/** A load in progress says it is still alive: its claim's started_at becomes `now` (only while it is loading). */
+export async function beatFootprintTile(system: Db, quadkey: string, now: Date): Promise<void> {
+  await system.execute(sql`
+    update building_footprint_tiles set started_at = ${now}
+    where quadkey = ${quadkey} and status = 'loading'`);
+}
+
 /**
  * Takes the tile's load: true when this caller should load it (no row yet, a failed one, or a loading
- * claim older than STALE_LOADING_MS). The tile's old building rows are deleted in the same
- * transaction, so a retry never duplicates. False when it is ready or freshly loading.
+ * claim older than `staleMs`, STALE_LOADING_MS unless given). The tile's old building rows are deleted in
+ * the same transaction, so a retry never duplicates. False when it is ready or freshly loading.
  */
-export async function claimFootprintTile(system: Db, quadkey: string, now: Date): Promise<boolean> {
-  const cutoff = new Date(now.getTime() - STALE_LOADING_MS);
+export async function claimFootprintTile(system: Db, quadkey: string, now: Date, staleMs: number = STALE_LOADING_MS): Promise<boolean> {
+  const cutoff = new Date(now.getTime() - staleMs);
   return system.transaction(async (tx) => {
     const claimed = await tx.execute(sql`
       insert into building_footprint_tiles (quadkey, status, source_url, started_at, buildings, loaded_at, error_plain)

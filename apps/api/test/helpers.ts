@@ -23,6 +23,7 @@ import { FakeCalendarApi } from '../src/providers/fakes/calendar.ts';
 import { FakeExactReports } from '../src/providers/fakes/exact-reports.ts';
 import { FakeFootprintSource } from '../src/providers/fakes/footprints.ts';
 import { FakeGeocoder } from '../src/providers/fakes/geocoder.ts';
+import { FakeSolar } from '../src/providers/fakes/solar.ts';
 import { FakeCallControl } from '../src/providers/fakes/call-control.ts';
 import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
 import { FakeLineLookup } from '../src/providers/fakes/line-lookup.ts';
@@ -160,6 +161,8 @@ export type TestApp = {
   calendars: { google: FakeCalendarApi; microsoft: FakeCalendarApi };
   /** Building footprints: it records each lookup and answers from a fixed table. */
   footprints: FakeFootprintSource;
+  /** Google Solar: it records each lookup and answers the buildings a test set (none by default). */
+  solar: FakeSolar;
   /** Aerial measurement: it records each request and answers what it was given. */
   aerial: FakeAerialMeasure;
   /** Exact reports: it records each price and order; `orderUncertainNext()` makes the next order uncertain. */
@@ -232,6 +235,7 @@ export function testConfig(
     EAGLEVIEW_PRODUCT_ID: 0,
     PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
     FOOTPRINTS_BASE_URL: 'https://minedbuildings.z5.web.core.windows.net/global-buildings/',
+    FOOTPRINT_WAIT_MS: 120_000,
     GOOGLE_ADS_API_VERSION: 'v21',
     META_GRAPH_VERSION: 'v24.0',
     POSTMARK_BROADCAST_STREAM: 'broadcast',
@@ -290,6 +294,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const geocoder = new FakeGeocoder();
   const calendars = { google: new FakeCalendarApi('google'), microsoft: new FakeCalendarApi('microsoft') };
   const footprints = new FakeFootprintSource();
+  const solar = new FakeSolar();
   const aerial = new FakeAerialMeasure();
   const exactReports = new FakeExactReports(() => clock.now());
   const objectStore = new MemoryObjectStore();
@@ -319,6 +324,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     geocoder,
     calendars,
     footprints,
+    solar,
     aerial,
     exactReports,
     objectStore,
@@ -355,6 +361,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     geocoder,
     calendars,
     footprints,
+    solar,
     aerial,
     exactReports,
     objectStore,

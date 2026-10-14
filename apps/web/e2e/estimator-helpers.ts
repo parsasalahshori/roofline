@@ -43,8 +43,8 @@ export type SentProposal = { proposalId: string; taskId: string; link: string };
 
 /**
  * The page is already signed in as the owner. Types the address in the Measure window's search, presses "Measure a new
- * roof at" and "Measure roof" (counted), fills the new customer, presses Send proposal (counted), approves the text on
- * the review screen (counted), and returns the proposal id, the task id and the homeowner path (`/p/<token>`).
+ * roof at" (counted: the scan then plays by itself), fills the new customer, presses Send proposal (counted), approves
+ * the text on the review screen (counted), and returns the proposal id, the task id and the homeowner path (`/p/<token>`).
  * Typing and reading never go through `click`.
  */
 export async function makeAndSendProposal(
@@ -55,7 +55,8 @@ export async function makeAndSendProposal(
   // /estimator opens the Measure window; the search takes any address, and one no request matches offers to measure it
   await page.getByRole('searchbox', { name: 'Search name or address' }).fill(OMAHA_ADDRESS);
   await click(page.getByRole('button', { name: 'Measure a new roof at ' + OMAHA_ADDRESS }));
-  await click(page.getByRole('button', { name: 'Measure roof' }));
+  // No second press: the scan plays as soon as the roof opens, and the roof is measured once its Adjust row shows
+  await expect(page.getByRole('button', { name: 'Adjust' })).toBeVisible({ timeout: 45_000 });
   // On a phone the proposal is its own step: open it once the roof is measured (not counted: a desktop shows it beside the roof)
   const proposalStep = page.getByRole('tab', { name: /Proposal/ });
   if (await proposalStep.isVisible().catch(() => false)) {

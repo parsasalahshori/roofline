@@ -33,6 +33,7 @@ import type { RelaySessions } from './front-desk/relay-sessions.ts';
 import type { ObjectStore } from './providers/object-store.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
 import type { FootprintSource } from './providers/footprints.ts';
+import type { SolarApi } from './providers/solar.ts';
 import type { AerialMeasure } from './providers/aerial.ts';
 import type { ExactReports } from './providers/exact-reports.ts';
 import type { AdImageRenderer } from './providers/ad-image.ts';
@@ -154,6 +155,8 @@ export type AppDeps = {
   jobs: JobQueue;
   /** Where building footprints come from (providers/footprints.ts); tests pass `FakeFootprintSource`. */
   footprints: FootprintSource;
+  /** Google Solar building insights: roof pitch, and an outline where no footprint is found (providers/solar.ts); tests pass `FakeSolar`. */
+  solar: SolarApi;
   /** Where aerial roof measurements come from (providers/aerial.ts); tests pass `FakeAerialMeasure`. */
   aerial: AerialMeasure;
   /** Where exact roof reports are ordered and fetched (providers/exact-reports.ts); tests pass `FakeExactReports`. */

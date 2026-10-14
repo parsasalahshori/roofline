@@ -41,12 +41,21 @@ const ROWS = {
 
 let urls: string[];
 let posts: { address?: string }[];
+let prefetches: { address?: string }[];
+/** When set, POST /api/measurements answers only once this resolves (a first measurement in a new area). */
+let measureGate: Promise<void> | null;
 
 function Where() {
-  return <p data-testid="where">{useLocation().pathname}</p>;
+  const location = useLocation();
+  return (
+    <>
+      <p data-testid="where">{location.pathname + location.search}</p>
+      <p data-testid="state">{JSON.stringify(location.state ?? null)}</p>
+    </>
+  );
 }
 
-function renderList(selectedId = 'm1') {
+function renderList(selectedId = 'm1', at = '/estimator/measure/m1') {
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
   const router = createMemoryRouter(
@@ -61,7 +70,7 @@ function renderList(selectedId = 'm1') {
         ),
       },
     ],
-    { initialEntries: ['/estimator/measure/m1'] },
+    { initialEntries: [at] },
   );
   render(
     <Providers client={queryClient}>
@@ -73,12 +82,19 @@ function renderList(selectedId = 'm1') {
 beforeEach(() => {
   urls = [];
   posts = [];
+  prefetches = [];
+  measureGate = null;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (init?.method === 'POST' && url === '/api/measurements/prefetch') {
+        prefetches.push(JSON.parse(String(init.body)) as { address?: string });
+        return new Response(JSON.stringify({ found: true }), { status: 202, headers: { 'content-type': 'application/json' } });
+      }
       if (init?.method === 'POST' && url === '/api/measurements') {
         posts.push(JSON.parse(String(init.body)) as { address?: string });
+        if (measureGate !== null) await measureGate;
         const address = posts[posts.length - 1]?.address ?? '';
         if (address.includes('nowhere')) return new Response(JSON.stringify({ error: 'We could not find that address.' }), { status: 400, headers: { 'content-type': 'application/json' } });
         return new Response(JSON.stringify({ id: 'mnew' }), { status: 201, headers: { 'content-type': 'application/json' } });
@@ -161,6 +177,63 @@ describe('RequestsList', () => {
     fireEvent.click(offer);
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/estimator/measure/mnew'));
     expect(posts).toEqual([{ address: '12 Elm St' }]);
+  });
+
+  it('opens the new measurement with the scan asked for, so it plays without a second press', async () => {
+    renderList();
+    await screen.findByText('Mei Abernathy');
+    fireEvent.change(screen.getByRole('searchbox', { name: measure.requestsSearch }), { target: { value: '12 Elm St' } });
+    fireEvent.click(await screen.findByRole('button', { name: measure.measureNew('12 Elm St') }));
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/estimator/measure/mnew'));
+    expect(JSON.parse(screen.getByTestId('state').textContent ?? 'null')).toEqual({ autoScan: true });
+  });
+
+  it('starts loading a typed address before Measure is pressed, once per address, and not for a name', async () => {
+    renderList();
+    await screen.findByText('Mei Abernathy');
+    const box = screen.getByRole('searchbox', { name: measure.requestsSearch });
+    fireEvent.change(box, { target: { value: 'zzzz' } });
+    await screen.findByText(measure.requestsNoMatches);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(prefetches).toEqual([]);
+
+    fireEvent.change(box, { target: { value: '3518 Lowell St NW, Washington, DC' } });
+    await screen.findByRole('button', { name: measure.measureNew('3518 Lowell St NW, Washington, DC') });
+    await waitFor(() => expect(prefetches).toEqual([{ address: '3518 Lowell St NW, Washington, DC' }]));
+    fireEvent.change(box, { target: { value: '3518 Lowell St NW, Washington, DC ' } });
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(prefetches).toHaveLength(1);
+  });
+
+  it('says it is finding the outline for a new area when Measure takes a while', { timeout: 15_000 }, async () => {
+    let open: () => void = () => undefined;
+    measureGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    renderList();
+    await screen.findByText('Mei Abernathy');
+    fireEvent.change(screen.getByRole('searchbox', { name: measure.requestsSearch }), { target: { value: '12 Elm St' } });
+    fireEvent.click(await screen.findByRole('button', { name: measure.measureNew('12 Elm St') }));
+    expect(await screen.findByRole('button', { name: measure.measureNewBusy })).toBeInTheDocument();
+    expect(screen.queryByText(measure.measureNewSlow)).toBeNull();
+    expect(await screen.findByText(measure.measureNewSlow, {}, { timeout: 5000 })).toHaveAttribute('role', 'status');
+    open();
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/estimator/measure/mnew'));
+    expect(screen.queryByText(measure.measureNewSlow)).toBeNull();
+  });
+
+  it('measures the address in ?measure= straight away (the shell search\'s Measure roof)', async () => {
+    renderList('', '/estimator?measure=12%20Elm%20St');
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/estimator/measure/mnew'));
+    expect(posts).toEqual([{ address: '12 Elm St' }]);
+    expect(JSON.parse(screen.getByTestId('state').textContent ?? 'null')).toEqual({ autoScan: true });
+  });
+
+  it('a ?measure= address that cannot be found says so and leaves the URL', async () => {
+    renderList('', '/estimator?measure=1%20nowhere%20rd');
+    expect(await screen.findByText('We could not find that address.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(/^\/estimator$/));
+    expect(posts).toEqual([{ address: '1 nowhere rd' }]);
   });
 
   it('does not offer a new measurement when a request matches', async () => {

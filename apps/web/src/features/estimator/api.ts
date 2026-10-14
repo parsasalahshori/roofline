@@ -76,6 +76,18 @@ export function useMeasure(): UseMutationResult<MeasurementView, Error, { proper
   });
 }
 
+/**
+ * POST /api/measurements/prefetch { address | propertyId } -> 202 { found }: while an address is typed, the server
+ * looks it up and starts loading that area's building outlines and the roof's pitch, so Measure answers sooner.
+ * Fire and forget: a failure here changes nothing (Measure does the same work itself).
+ */
+export function usePrefetchMeasure(): UseMutationResult<{ found: boolean }, Error, { propertyId?: string; address?: string }> {
+  return useMutation({
+    mutationFn: (input: { propertyId?: string; address?: string }) =>
+      apiFetch<{ found: boolean }>('/api/measurements/prefetch', { method: 'POST', body: input }),
+  });
+}
+
 /** POST /api/proposals { measurementId, jobId?, customer? } -> ProposalView */
 export function useBuildProposal(): UseMutationResult<ProposalView, Error, BuildProposalInput> {
   const queryClient = useQueryClient();

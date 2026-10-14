@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Account } from '../src/api/types.ts';
 import { search } from '../src/copy/search.ts';
 import { SearchDialog } from '../src/shell/topbar/SearchDialog.tsx';
+import { measureOptions } from '../src/shell/topbar/searchOptions.ts';
 import { ACCOUNT, renderAt, stubApi, where } from './helpers.tsx';
 
 const EMPTY = { customers: [], jobs: [], addresses: [] };
@@ -115,5 +116,38 @@ describe('search recents', () => {
 
     expect(await screen.findByText(search.hint)).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: search.recent })).not.toBeInTheDocument();
+  });
+});
+
+describe('Measure roof from the search', () => {
+  it('offers "Measure roof at" for a typed street address, leading to the measure window with it', () => {
+    expect(measureOptions('3518  Lowell St NW, Washington, DC')).toEqual([
+      {
+        key: 'action:measureRoof',
+        href: '/estimator?measure=3518%20Lowell%20St%20NW%2C%20Washington%2C%20DC',
+        group: 'actions',
+        primary: search.measureRoof('3518 Lowell St NW, Washington, DC'),
+        secondary: search.measureRoofHint,
+      },
+    ]);
+  });
+
+  it('offers nothing for a name, a phone number or a bare number', () => {
+    expect(measureOptions('Maria Lopez')).toEqual([]);
+    expect(measureOptions('402 555 0100')).toEqual([]);
+    expect(measureOptions('12')).toEqual([]);
+  });
+
+  it('opens the measure window from the dialog', async () => {
+    api = stubApi({
+      'GET /api/auth/me': () => ({ body: ACCOUNT }),
+      'GET /api/search?q=12 Elm St': () => ({ body: EMPTY }),
+      'GET /api/search?q=12%20Elm%20St': () => ({ body: EMPTY }),
+    });
+    const { user, router } = renderAt(<SearchDialog />);
+    const combobox = await open(user);
+    await user.type(combobox, '12 Elm St');
+    await user.click(await screen.findByRole('option', { name: new RegExp(search.measureRoof('12 Elm St')) }));
+    await waitFor(() => expect(where(router)).toBe('/estimator?measure=12%20Elm%20St'));
   });
 });

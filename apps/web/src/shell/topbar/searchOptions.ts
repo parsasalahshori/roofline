@@ -1,5 +1,6 @@
 import type { SearchResult } from '../../api/types.ts';
 import { search } from '../../copy/search.ts';
+import { looksLikeAddress, measureAddressHref } from '../../features/measure/address.ts';
 import type { Recent } from '../recents.ts';
 
 /** One line in the search results: where it leads, and the two lines of text that say what it is. */
@@ -80,6 +81,21 @@ export function actionOptions(query: string, canDownload: boolean): SearchOption
         ...(name === 'downloadCustomers' ? { external: true } : {}),
       }),
     );
+}
+
+/** "Measure roof at <address>" when what is typed looks like a street address: the Estimator finds its roof. */
+export function measureOptions(query: string): SearchOption[] {
+  const address = query.trim().replace(/\s+/g, ' ');
+  if (!looksLikeAddress(address)) return [];
+  return [
+    {
+      key: 'action:measureRoof',
+      href: measureAddressHref(address),
+      group: 'actions',
+      primary: search.measureRoof(address),
+      secondary: search.measureRoofHint,
+    },
+  ];
 }
 
 /** The recent jobs and customers as options, in the order given. */

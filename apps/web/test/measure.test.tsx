@@ -690,6 +690,15 @@ describe('the Measure roof scan', () => {
     expect(screen.getByRole('button', { name: measure.makeProposal })).toBeTruthy();
   });
 
+  it('plays the scan without a second press when the window was opened by Measure (autoScan)', async () => {
+    vi.stubEnv('VITE_MEASURE_SCAN_MS', '1200');
+    current = view({ facets: 4, structures: [structure] });
+    renderWindow({ autoScan: true });
+    expect(await screen.findByText(liftMeasure.stage.finding)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: liftMeasure.scanButton })).toBeNull();
+    expect(await screen.findByRole('button', { name: liftMeasure.adjust }, { timeout: 3000 })).toBeTruthy();
+  });
+
   it('does not invent a facet count the measurement lacks', async () => {
     vi.stubEnv('VITE_MEASURE_SCAN_MS', '1200');
     fireEvent.click(await openUnscanned({ facets: null }));

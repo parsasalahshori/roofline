@@ -145,6 +145,11 @@ const ConfigSchema = z
     GEOCODIO_API_KEY: z.string().optional(),
     /** G1 agents: MapTiler server-side key for the static map in claim packets. Optional; unset: claim packets have no map image. */
     MAPTILER_SERVER_KEY: z.string().optional(),
+    /**
+     * Google Solar API key (buildingInsights): roof pitch from Google's measured roof planes, and an outline when no
+     * building footprint is found. Unset: the estimator's default pitch, and draw mode where no footprint is found.
+     */
+    GOOGLE_SOLAR_API_KEY: z.string().optional(),
     /** Twilio account SID (`AC` + 32 hex digits). When set, TWILIO_AUTH_TOKEN is required. */
     TWILIO_ACCOUNT_SID: z
       .string()
@@ -278,6 +283,11 @@ const ConfigSchema = z
     PROPOSAL_LINK_BASE_URL: httpUrl.transform((v) => v.replace(/\/+$/, '')).optional(),
     /** The base of the building footprint dataset (its index is `<base>dataset-links.csv`). Always ends in a slash. Default: Microsoft Global ML Building Footprints. */
     FOOTPRINTS_BASE_URL: httpUrl.transform((v) => (v.endsWith('/') ? v : `${v}/`)).default(DEFAULT_FOOTPRINTS_BASE_URL),
+    /**
+     * How long Measure waits (ms) for the building outlines of an area that is not loaded yet (the first measurement
+     * there loads them, about 30 seconds) before it carries on without them. Default 2 minutes.
+     */
+    FOOTPRINT_WAIT_MS: integer(120_000, 0, 600_000),
 
     /** Google Ads developer token. All five GOOGLE_ADS settings come together, or none. Unset: Google ads are off. */
     GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),

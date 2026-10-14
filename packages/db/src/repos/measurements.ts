@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { measureRoof, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type Ring } from '@roofline/shared';
+import { measureRoof, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
 import { jobs, measurements, properties, proposals } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getProperty, type PropertyRow } from './properties.ts';
@@ -23,6 +23,12 @@ export type NewMeasurement = {
   overhangFt: number;
   /** Map centre, [lng, lat] (not stored in its own column; derived on read: see Package 1). */
   center: LngLat;
+  /** Where the estimate's pitch came from (null: not recorded). */
+  pitchSource?: PitchSource | null;
+  /** Google Solar's roof planes, for facets to take their own pitch from (only with pitchSource 'solar'). */
+  pitchPlanes?: RoofPlane[] | null;
+  /** The Google Solar answer used, kept so measuring the home again does not ask again. */
+  solar?: SolarSnapshot | null;
 };
 
 export type MeasurementPatch = {
@@ -241,6 +247,9 @@ export async function createMeasurement(tx: Tx, ctx: TenantContext, m: NewMeasur
       ridgeFt: m.estimate.ridgeFt,
       valleyFt: m.estimate.valleyFt,
       facets: m.facets ?? null,
+      pitchSource: m.pitchSource ?? null,
+      pitchPlanes: m.pitchSource === 'solar' && m.pitchPlanes != null && m.pitchPlanes.length > 0 ? m.pitchPlanes : null,
+      solar: m.solar ?? null,
       createdByUserId: ctx.userId,
       createdAt: now,
       updatedAt: now,
@@ -276,7 +285,8 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
   const valleyFt = row.valleyFt ?? 0;
   // The roof drawn over the outline is worked out on read (deterministic), and its lines give the ridge, valley
   // and edge lengths, so what is drawn and what is priced agree.
-  const measured = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt });
+  const planes = planesOf(row);
+  const measured = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt, planes });
   const fromOutline: InstantEstimate = measured.estimate;
   // An exact report's or an aerial measure's numbers are the measurement itself: shown as stored, never
   // worked out again from the outline (B5). Proposals are priced from the same stored columns.
@@ -303,7 +313,36 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
     drawMode: outline === null,
     hasCustomer: row.jobId !== null || found.propertyCustomerId !== null,
     roof: measured.roof,
+    pitchSource: row.pitchSource ?? null,
+    pitchPlanes: planes,
   };
+}
+
+/** The roof planes the facets take their pitch from: Google Solar's, while the pitch is still Solar's. */
+function planesOf(row: { pitchSource: PitchSource | null; pitchPlanes: RoofPlane[] | null }): RoofPlane[] | null {
+  return row.pitchSource === 'solar' && Array.isArray(row.pitchPlanes) && row.pitchPlanes.length > 0 ? row.pitchPlanes : null;
+}
+
+/**
+ * The newest Google Solar answer kept on a measurement of this home (any the caller may see), or null. The caller
+ * decides whether it is still fresh and for the same point (solarSnapshotFresh).
+ */
+export async function latestSolarSnapshot(tx: Tx, ctx: TenantContext, propertyId: string): Promise<SolarSnapshot | null> {
+  const [row] = await tx
+    .select({ solar: measurements.solar })
+    .from(measurements)
+    .innerJoin(properties, and(eq(properties.id, measurements.propertyId), eq(properties.companyId, measurements.companyId)))
+    .where(
+      and(
+        eq(measurements.companyId, ctx.companyId),
+        eq(measurements.propertyId, propertyId),
+        isNotNull(measurements.solar),
+        propertyScope(ctx),
+      ),
+    )
+    .orderBy(sql`${measurements.createdAt} desc`)
+    .limit(1);
+  return row?.solar ?? null;
 }
 
 /** Whether a measurement's stored numbers come from a report or aerial imagery rather than from its outline. */
@@ -375,10 +414,14 @@ export async function updateMeasurement(
 
   const pitchX12 = p.pitchX12 ?? current.pitchX12 ?? 0;
   const overhangFt = p.overhangFt ?? current.overhangFt ?? 0;
+  // A pitch a person picks is the whole roof's: the facets stop taking their own from Google Solar's planes.
+  const pitchSource: PitchSource | null = p.pitchX12 !== undefined ? 'manual' : current.pitchSource;
+  const pitchPlanes = p.pitchX12 !== undefined ? null : current.pitchPlanes;
   // A new outline or pitch gets the valleys its roof has (0 means "the roof's"), unless a length is sent with it.
   const roofChanged = p.outline !== undefined || p.includedStructures !== undefined || p.pitchX12 !== undefined;
   const valleyIn = p.valleyFt ?? (roofChanged ? 0 : (current.valleyFt ?? 0));
-  const { estimate, roof } = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn });
+  const planes = planesOf({ pitchSource, pitchPlanes });
+  const { estimate, roof } = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn, planes });
   const valleyFt = p.valleyFt ?? estimate.valleyFt;
 
   await tx
@@ -394,6 +437,8 @@ export async function updateMeasurement(
       edgeFt: estimate.edgeFt,
       ridgeFt: estimate.ridgeFt,
       facets: roof?.totals.facetCount ?? null,
+      pitchSource,
+      pitchPlanes,
       updatedAt: now,
     })
     .where(and(eq(measurements.id, id), eq(measurements.companyId, ctx.companyId)));

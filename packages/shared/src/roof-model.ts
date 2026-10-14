@@ -30,6 +30,20 @@ export interface RoofFacet {
   pitch: string;
   /** [lng, lat], a point inside the facet. */
   labelAt: [number, number];
+  /** Compass direction the facet faces (downslope), degrees: 0 north, 90 east. Absent from older APIs. */
+  azimuthDeg?: number;
+}
+/**
+ * A measured roof plane (Google Solar's roof segments): its pitch (whole x/12), the compass direction it faces,
+ * a point near its middle and its plan area. A facet that faces the same way as a plane over it takes its pitch.
+ */
+export interface RoofPlane {
+  pitchX12: number;
+  azimuthDeg: number;
+  /** [lng, lat]. */
+  center: [number, number];
+  /** Plan (ground) area. */
+  areaSqFt: number;
 }
 export interface RoofLine {
   kind: RoofLineKind;
@@ -993,6 +1007,94 @@ function roofForRing(ring: Ring, pitch: number): RingRoof | null {
   return { frame, roof, footSqFt: polygonAreaSqFt(ring), perimFt: perimeterFt(ring) };
 }
 
+/** A facet takes a plane's pitch when the plane faces within this many degrees of it... */
+const PLANE_AZIMUTH_DEG = 40;
+/** ...and its centre is inside the facet, or (failing that) within this many metres of it. */
+const PLANE_NEAR_M = 3;
+/** Planes flatter than this (x/12) have no direction to speak of; they never give a facet its pitch. */
+const PLANE_MIN_PITCH_X12 = 2;
+/** Planes steeper than this (x/12) are walls or noise. */
+const PLANE_MAX_PITCH_X12 = 24;
+/** The share of a facet's area the planes facing its way must cover for the facet to take their pitch. */
+const PLANE_COVER = 0.5;
+const SQ_FT_PER_SQ_M = 10.7639104167;
+
+function usablePlanes(planes: readonly RoofPlane[] | null | undefined): RoofPlane[] {
+  if (!Array.isArray(planes)) return [];
+  return planes.filter(
+    (p) =>
+      p !== null &&
+      typeof p === 'object' &&
+      Number.isFinite(p.pitchX12) &&
+      p.pitchX12 >= PLANE_MIN_PITCH_X12 &&
+      p.pitchX12 <= PLANE_MAX_PITCH_X12 &&
+      Number.isFinite(p.azimuthDeg) &&
+      Number.isFinite(p.areaSqFt) &&
+      Array.isArray(p.center) &&
+      Number.isFinite(p.center[0]) &&
+      Number.isFinite(p.center[1]),
+  );
+}
+
+/** A [lng, lat] point in a ring's turned local frame (metres), the frame its facets are in. */
+function toLocal(f: Frame, p: [number, number]): V {
+  const x = (p[0] - f.lng0) * K * f.cos;
+  const y = (p[1] - f.lat0) * K;
+  const c = Math.cos(f.theta);
+  const s = Math.sin(f.theta);
+  return { x: x * c + y * s, y: -x * s + y * c };
+}
+
+/** The compass direction (degrees, 0 north, 90 east) a facet faces: down its plane's slope, turned back to the map. */
+function facetAzimuth(f: Frame, plane: Plane): number {
+  const c = Math.cos(f.theta);
+  const s = Math.sin(f.theta);
+  // The plane's up-slope direction on the map (east, north); the facet faces the other way.
+  const east = plane.dx * c - plane.dy * s;
+  const north = plane.dx * s + plane.dy * c;
+  const deg = (Math.atan2(-east, -north) * 180) / Math.PI;
+  return (deg + 360) % 360;
+}
+
+function angleApart(a: number, b: number): number {
+  const d = Math.abs((((a - b) % 360) + 360) % 360);
+  return d > 180 ? 360 - d : d;
+}
+
+function distanceToPolygon(p: V, poly: Poly): number {
+  if (pointInPolygon(p, poly)) return 0;
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]!;
+    const b = poly[(i + 1) % poly.length]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+    best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)));
+  }
+  return best;
+}
+
+/**
+ * The pitch a facet takes from the measured planes, or null when they do not describe it: the planes facing its
+ * way and centred inside it (or within PLANE_NEAR_M of it) must cover at least PLANE_COVER of its area, and then
+ * the facet takes the pitch that slopes their plan area to their sloped area (whole x/12). A facet the planes barely
+ * cover (the roof drawn does not match the real one there) keeps the roof's pitch.
+ */
+function facetPitch(ring: Poly, azimuthDeg: number, planes: (RoofPlane & { at: V })[]): number | null {
+  const facetM2 = Math.abs(signedArea(ring));
+  if (!(facetM2 > 0)) return null;
+  const fits = planes.filter((p) => angleApart(p.azimuthDeg, azimuthDeg) <= PLANE_AZIMUTH_DEG && distanceToPolygon(p.at, ring) <= PLANE_NEAR_M);
+  const coveredM2 = fits.reduce((s, p) => s + p.areaSqFt / SQ_FT_PER_SQ_M, 0);
+  if (coveredM2 < facetM2 * PLANE_COVER) return null;
+  // The pitch that slopes the planes' plan area to their sloped area, so the facet's area adds up the same.
+  const plan = fits.reduce((s, p) => s + p.areaSqFt, 0);
+  const sloped = fits.reduce((s, p) => s + p.areaSqFt * pitchFactor(p.pitchX12), 0);
+  const factor = sloped / plan;
+  return Math.round(12 * Math.sqrt(Math.max(0, factor * factor - 1)));
+}
+
 function round1(x: number): number {
   return Math.round(x * 10) / 10;
 }
@@ -1007,14 +1109,17 @@ function facetId(i: number): string {
  * perimeter times overhang, shared out by each facet's outline edges) so the totals match `instantEstimate`.
  * Null when no ring has an area. Never throws.
  */
-export function buildRoofModel(outline: Outline | Ring, opts: { pitchX12: number; overhangFt?: number }): RoofModel | null {
+export function buildRoofModel(
+  outline: Outline | Ring,
+  opts: { pitchX12: number; overhangFt?: number; planes?: readonly RoofPlane[] | null },
+): RoofModel | null {
   try {
     const rings: Ring[] = isSingleRing(outline) ? [outline] : (outline as Outline);
     const pitch = Number.isFinite(opts.pitchX12) && opts.pitchX12 > 0 ? opts.pitchX12 : 0;
     const overhang = Number.isFinite(opts.overhangFt) && (opts.overhangFt ?? 0) > 0 ? opts.overhangFt! : 0;
-    const factor = pitchFactor(pitch);
     const label = pitchLabel(pitch);
-    const facets: (Omit<RoofFacet, 'id'> & { sort: number })[] = [];
+    const planes = usablePlanes(opts.planes);
+    const facets: (Omit<RoofFacet, 'id'> & { sort: number; sloped: number })[] = [];
     const lines: RoofLine[] = [];
     let bestOutline: [number, number][] = [];
     let bestArea = -1;
@@ -1031,17 +1136,23 @@ export function buildRoofModel(outline: Outline | Ring, opts: { pitchX12: number
         edgeOf[l.facets[0]!]! += plan;
         edgeTotal += plan;
       }
+      const local = planes.map((pl) => ({ ...pl, at: toLocal(frame, pl.center) }));
       roof.facets.forEach((f, i) => {
         const foot = facetArea > 0 ? (f.areaM2 / facetArea) * built.footSqFt : 0;
         const edge = edgeTotal > 0 ? (edgeOf[i]! / edgeTotal) * built.perimFt : 0;
         const plan = foot + edge * overhang;
+        const azimuthDeg = facetAzimuth(frame, f.plane);
+        const own = facetPitch(f.ring, azimuthDeg, local) ?? pitch;
+        const sloped = plan * pitchFactor(own);
         facets.push({
           sort: plan,
+          sloped,
           ring: closedRing(frame, tidy(f.ring, 1e-6)),
           planSqFt: round1(plan),
-          areaSqFt: round1(plan * factor),
-          pitch: label,
+          areaSqFt: round1(sloped),
+          pitch: pitchLabel(own),
           labelAt: toLngLat(frame, f.label),
+          azimuthDeg: Math.round(azimuthDeg * 10) / 10,
         });
       });
       for (const l of roof.lines) {
@@ -1056,7 +1167,7 @@ export function buildRoofModel(outline: Outline | Ring, opts: { pitchX12: number
     facets.sort((a, b) => b.sort - a.sort);
     const sum = (k: RoofLineKind) => round1(lines.filter((l) => l.kind === k).reduce((s, l) => s + l.lengthFt, 0));
     const planSqFt = facets.reduce((s, f) => s + f.sort, 0);
-    const slopedSqFt = planSqFt * factor;
+    const slopedSqFt = facets.reduce((s, f) => s + f.sloped, 0);
     const totals = {
       squares: round1(slopedSqFt / 100),
       slopedSqFt: round1(slopedSqFt),
@@ -1071,7 +1182,15 @@ export function buildRoofModel(outline: Outline | Ring, opts: { pitchX12: number
     };
     totals.wastePct = wasteFor(totals.hipFt, totals.rakeFt, totals.valleyFt, facets.length);
     return {
-      facets: facets.map((f, i) => ({ id: facetId(i), ring: f.ring, planSqFt: f.planSqFt, areaSqFt: f.areaSqFt, pitch: f.pitch, labelAt: f.labelAt })),
+      facets: facets.map((f, i) => ({
+        id: facetId(i),
+        ring: f.ring,
+        planSqFt: f.planSqFt,
+        areaSqFt: f.areaSqFt,
+        pitch: f.pitch,
+        labelAt: f.labelAt,
+        ...(f.azimuthDeg !== undefined ? { azimuthDeg: f.azimuthDeg } : {}),
+      })),
       lines,
       outline: bestOutline,
       pitch: label,
@@ -1102,17 +1221,26 @@ function isSingleRing(x: Outline | Ring): x is Ring {
  * plus overhang, times the pitch factor); ridge, valley and edges (eaves plus rakes) are the roof's lines. A valley
  * length given in the input (above 0) is kept as entered.
  */
-export function measureRoof(i: InstantInput): { estimate: InstantEstimate; roof: RoofModel | null } {
+export function measureRoof(i: InstantInput & { planes?: readonly RoofPlane[] | null }): { estimate: InstantEstimate; roof: RoofModel | null } {
   const base = instantEstimate(i);
-  const roof = buildRoofModel(i.outline ?? [], { pitchX12: base.pitchX12, overhangFt: i.overhangFt });
+  const roof = buildRoofModel(i.outline ?? [], { pitchX12: base.pitchX12, overhangFt: i.overhangFt, planes: i.planes ?? null });
   if (roof === null) return { estimate: base, roof: null };
+  // Facets with their own pitch (from measured planes) change the sloped area: the plan area stays the estimate's,
+  // sloped by the facets' area-weighted slope factor.
+  let surfaceSqFt = base.surfaceSqFt;
+  if (roof.facets.some((f) => f.pitch !== roof.pitch) && roof.totals.planSqFt > 0) {
+    surfaceSqFt = round1(base.planSqFt * (roof.totals.slopedSqFt / roof.totals.planSqFt));
+  }
+  const squares = surfaceSqFt === base.surfaceSqFt ? base.squares : round1(surfaceSqFt / 100);
   roof.totals.planSqFt = base.planSqFt;
-  roof.totals.slopedSqFt = base.surfaceSqFt;
-  roof.totals.squares = base.squares;
+  roof.totals.slopedSqFt = surfaceSqFt;
+  roof.totals.squares = squares;
   const given = typeof i.valleyFt === 'number' && Number.isFinite(i.valleyFt) && i.valleyFt > 0;
   return {
     estimate: {
       ...base,
+      surfaceSqFt,
+      squares,
       ridgeFt: roof.totals.ridgeFt,
       valleyFt: given ? base.valleyFt : roof.totals.valleyFt,
       edgeFt: round1(roof.totals.eaveFt + roof.totals.rakeFt),

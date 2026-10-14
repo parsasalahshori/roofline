@@ -180,6 +180,20 @@ describe('the measure card', () => {
     expect(screen.getByText('12%')).toBeTruthy();
   });
 
+  it('says when the pitch is from Google Solar, and not otherwise', () => {
+    const solar = view({ pitchSource: 'solar' });
+    const numbers = cardNumbers(solar, solar.estimate, gableRoof(ring as [number, number][]), null);
+    const { rerender } = render(
+      <MeasureCard m={solar} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />,
+    );
+    expect(screen.getByText(liftMeasure.pitchFromSolar)).toBeTruthy();
+    rerender(<MeasureCard m={solar} numbers={numbers} scan={scanAt('scanning', 0.2)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />);
+    expect(screen.queryByText(liftMeasure.pitchFromSolar)).toBeNull();
+    const manual = view({ pitchSource: 'manual' });
+    rerender(<MeasureCard m={manual} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />);
+    expect(screen.queryByText(liftMeasure.pitchFromSolar)).toBeNull();
+  });
+
   it('Adjust opens the controls', () => {
     const m = view();
     let editing = false;

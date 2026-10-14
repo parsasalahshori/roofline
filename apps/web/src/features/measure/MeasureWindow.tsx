@@ -1,9 +1,9 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Banner, Button, Checkbox, EmptyState, Field } from '@roofline/ui';
-import { instantEstimate, type ProposalView, type Ring } from '@roofline/shared';
+import { instantEstimate, measureRoof, type ProposalView, type Ring } from '@roofline/shared';
 import { Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { paidReports } from '../../copy/billing.ts';
@@ -123,6 +123,15 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   const { rows: requestRows } = useRequestRows('');
   const sentRow = requestRows.find((r) => r.measurementId === m.id && (r.status === 'estimate_sent' || r.status === 'signed'));
   const scan = useRoofScan(m, model?.totals.facetCount ?? m.facets);
+  // Opened by a Measure press: the scan plays straight away
+  const autoScan = handoff.autoScan === true;
+  const startScan = useRef(scan.start);
+  useEffect(() => {
+    startScan.current = scan.start;
+  });
+  useEffect(() => {
+    if (autoScan) startScan.current();
+  }, [autoScan]);
   const e = m.estimate;
   const preview = useMeasurementPreview(m.id, [e.surfaceSqFt, e.pitchX12, e.edgeFt, e.ridgeFt, e.valleyFt].join(':'));
   const [editing, setEditing] = useState(false);
@@ -266,16 +275,15 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     onProposalReady(done);
   }, [done, onProposalReady]);
 
-  const estimate = useMemo(
-    () =>
-      instantEstimate({
-        outline: ring.length > 0 ? [ring] : [],
-        pitchX12: pitch,
-        overhangFt: overhang,
-        valleyFt: m.estimate.valleyFt,
-      }),
-    [ring, pitch, overhang, m.estimate.valleyFt],
-  );
+  // While the pitch is still Google Solar's, each facet keeps its own (as the server works it out)
+  const planes = m.pitchSource === 'solar' && pitch === m.estimate.pitchX12 ? (m.pitchPlanes ?? null) : null;
+  const estimate = useMemo(() => {
+    const input = { outline: ring.length > 0 ? [ring] : [], pitchX12: pitch, overhangFt: overhang, valleyFt: m.estimate.valleyFt };
+    const base = instantEstimate(input);
+    if (planes === null || planes.length === 0) return base;
+    const sloped = measureRoof({ ...input, planes }).estimate;
+    return { ...base, surfaceSqFt: sloped.surfaceSqFt, squares: sloped.squares };
+  }, [ring, pitch, overhang, m.estimate.valleyFt, planes]);
 
   // Price-changing edits go out at once through the same path as the outline, so Send proposal can wait for them
   const save = (body: MeasurementPatch) => {
@@ -534,11 +542,21 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
 /** /estimator with no request open: the first request opens (replacing this address), or the right side says what to do. */
 function NothingOpen() {
   const navigate = useNavigate();
+  // Opened to measure a typed address (`?measure=`): that measurement opens when it is ready, not the first request
+  const [params] = useSearchParams();
+  const measuring = params.has('measure');
   const { list, rows } = useRequestRows('');
   const first = rows[0]?.measurementId;
   useEffect(() => {
-    if (first !== undefined) void navigate(`/estimator/measure/${encodeURIComponent(first)}`, { replace: true });
-  }, [first, navigate]);
+    if (first !== undefined && !measuring) void navigate(`/estimator/measure/${encodeURIComponent(first)}`, { replace: true });
+  }, [first, measuring, navigate]);
+  if (measuring) {
+    return (
+      <p className={styles.loading} role="status">
+        {measure.measureNewBusy}
+      </p>
+    );
+  }
   if (list.isPending || first !== undefined) return <p className={styles.loading}>{measure.loading}</p>;
   return (
     <div className={styles.pick}>

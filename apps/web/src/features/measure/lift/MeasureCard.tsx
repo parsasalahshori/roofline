@@ -182,6 +182,11 @@ export function MeasureCard({
         </p>
       ) : null}
       {outlineOnly && !scanning ? <p className={styles.note}>{liftMeasure.outlineOnly}</p> : null}
+      {m.pitchSource === 'solar' && m.kind !== 'exact' && !scanning ? (
+        <p className={styles.note} data-source="solar">
+          {liftMeasure.pitchFromSolar}
+        </p>
+      ) : null}
       {!scanning ? (
         <div className={styles.foot}>
           {panels !== null ? (

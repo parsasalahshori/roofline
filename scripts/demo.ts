@@ -150,8 +150,10 @@ function demoEncryptionKey(): string {
 const ENCRYPTION_KEY = demoEncryptionKey();
 
 /**
- * The real lookup keys, from .env.keys (git-ignored): GEOCODIO_API_KEY turns on real address lookups and
- * MAPTILER_KEY real map and satellite tiles. Every other outside service stays a fake. No file, no keys: the plain demo.
+ * The real lookup keys, from .env.keys (git-ignored): GEOCODIO_API_KEY turns on real address lookups,
+ * MAPTILER_KEY real map and satellite tiles, and GOOGLE_MAPS_API_KEY Google satellite photos in the roof view and
+ * Google Solar roof pitch (and outlines where no footprint is found). Every other outside service stays a fake.
+ * No file, no keys: the plain demo.
  */
 function realKeys(): { geocodio?: string; maptiler?: string; google?: string } {
   const file = `${REPO_ROOT}.env.keys`;
@@ -237,16 +239,17 @@ const env: NodeJS.ProcessEnv = {
 };
 // Never let a real key from the shell reach a demo process.
 for (const name of Object.keys(env)) {
-  if (/^(STRIPE|TWILIO|POSTMARK|ANTHROPIC|GEOCODIO|EAGLEVIEW|GOOGLE_ADS|META|R2|MAPTILER|GOOGLE_CLIENT|MICROSOFT)_/.test(name)) {
+  if (/^(STRIPE|TWILIO|POSTMARK|ANTHROPIC|GEOCODIO|EAGLEVIEW|GOOGLE_ADS|GOOGLE_SOLAR|META|R2|MAPTILER|GOOGLE_CLIENT|MICROSOFT)_/.test(name)) {
     delete env[name];
   }
 }
-// The keys from .env.keys go back in on purpose: real address lookups and the server's MapTiler tiles.
+// The keys from .env.keys go back in on purpose: real address lookups, the server's MapTiler tiles and Google Solar.
 if (KEYS.geocodio) env.GEOCODIO_API_KEY = KEYS.geocodio;
 if (KEYS.maptiler) env.MAPTILER_SERVER_KEY = KEYS.maptiler;
+if (KEYS.google) env.GOOGLE_SOLAR_API_KEY = KEYS.google;
 // Real lookups need real roof outlines: the free Microsoft footprints, loaded per map tile on first use.
 if (KEYS.geocodio) env.DEMO_REAL_FOOTPRINTS = '1';
-if (KEYS.geocodio || KEYS.maptiler || KEYS.google) log(`Real lookups on: ${[KEYS.geocodio && 'Geocodio addresses', KEYS.maptiler && 'MapTiler maps', KEYS.google && 'Google satellite'].filter(Boolean).join(', ')}.`);
+if (KEYS.geocodio || KEYS.maptiler || KEYS.google) log(`Real lookups on: ${[KEYS.geocodio && 'Geocodio addresses', KEYS.maptiler && 'MapTiler maps', KEYS.google && 'Google satellite and Solar roof pitch'].filter(Boolean).join(', ')}.`);
 
 function start(name: string, script: string): ChildProcess {
   const child = spawn('npx', ['tsx', script], { cwd: REPO_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });

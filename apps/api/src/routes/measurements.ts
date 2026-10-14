@@ -5,7 +5,7 @@ import { outlineProblem, type LngLat, type Outline, type Ring } from '@roofline/
 import type { AppDeps } from '../app.ts';
 import { aerialMeasure } from '../estimator/aerial.ts';
 import { requestExactReport } from '../estimator/exact-report.ts';
-import { measureProperty } from '../estimator/measure.ts';
+import { measureProperty, prefetchMeasure } from '../estimator/measure.ts';
 import { measurementPreview } from '../estimator/preview.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
@@ -27,6 +27,7 @@ export const EXACT_LOCKED_MESSAGE = 'An exact report cannot be changed. Make a n
 const EXACT_NOT_SET_UP_MESSAGE = "Exact reports aren't set up yet.";
 
 const CREATE_FIELDS = ['propertyId', 'address', 'jobId'] as const;
+const PREFETCH_FIELDS = ['propertyId', 'address'] as const;
 const PATCH_FIELDS = ['outline', 'includedStructures', 'pitchX12', 'overhangFt', 'valleyFt'] as const;
 
 /** Vertices a ring may have: a house has a few dozen corners; more is a bad or hostile outline. */
@@ -53,6 +54,20 @@ const CreateBody = z
       .refine(noNul, CHECK_MESSAGE)
       .optional(),
     jobId: uuidField.nullish(),
+  })
+  .strict()
+  .refine((b) => b.propertyId !== undefined || b.address !== undefined, { message: PICK_ADDRESS_MESSAGE, path: ['address'] });
+
+const PrefetchBody = z
+  .object({
+    propertyId: uuidField.optional(),
+    address: z
+      .string({ error: ADDRESS_MESSAGE })
+      .trim()
+      .min(1, PICK_ADDRESS_MESSAGE)
+      .max(300, ADDRESS_MESSAGE)
+      .refine(noNul, CHECK_MESSAGE)
+      .optional(),
   })
   .strict()
   .refine((b) => b.propertyId !== undefined || b.address !== undefined, { message: PICK_ADDRESS_MESSAGE, path: ['address'] });
@@ -121,6 +136,8 @@ function checkOutline(raw: unknown): Outline {
 /**
  * `/api/measurements`: measure a home from its building outline, read a measurement, and change it.
  * - POST takes a saved address (`propertyId`) or free text (`address`), and an optional job. 201 with the view.
+ *   The first measurement in an area can take about 30 seconds (its building outlines load during the request).
+ * - POST /prefetch takes the same address before Measure is pressed and starts that loading early (202).
  * - GET and PATCH answer the measurement view. PATCH changes the outline, the included structures,
  *   pitch, overhang and valley; a measurement with a sent proposal is locked (409).
  * Rep visibility and company isolation are enforced by the repository, so a measurement the caller
@@ -139,6 +156,18 @@ export function measurementRoutes(deps: AppDeps): Router {
       jobId: body.jobId ?? null,
     });
     res.status(201).json(view);
+  });
+
+  // The Measure search's head start: the address is looked up and the area's outlines and Google Solar start
+  // loading before Measure is pressed. 202 { found }; nothing is saved.
+  router.post('/prefetch', async (req, res) => {
+    const { ctx } = req;
+    const body = parse(PrefetchBody, assertKnownFields(req.body, PREFETCH_FIELDS));
+    const result = await prefetchMeasure(deps, ctx, {
+      ...(body.propertyId !== undefined ? { propertyId: body.propertyId } : {}),
+      ...(body.address !== undefined ? { address: body.address } : {}),
+    });
+    res.status(202).json(result);
   });
 
   router.get('/:id', async (req, res) => {

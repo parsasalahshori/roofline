@@ -34,8 +34,8 @@ const DB_SYSTEM_ALLOWED = [
   'apps/api/src/jobs/scheduler/**',
   // The footprint loader is global work as app_system (E1 Task 6).
   'apps/api/src/estimator/footprints-load.ts',
-  // measureProperty reads whether a state's footprints are loaded (global table state, E1 Task 7).
-  'apps/api/src/estimator/measure.ts',
+  // Measure gets the footprint tiles it needs ready: reads their load state and waits on loads (global table state).
+  'apps/api/src/estimator/footprint-tiles.ts',
   // The Agents detail route reads the on-call first names for the Front Desk rule sentence (A1 Task 23).
   'apps/api/src/routes/agents.ts',
   'apps/api/src/account/**',

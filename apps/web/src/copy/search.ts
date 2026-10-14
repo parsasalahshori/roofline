@@ -20,6 +20,9 @@ export const search = {
     openCalendar: { label: 'Open calendar', words: ['open', 'calendar', 'schedule'] },
     downloadCustomers: { label: 'Download customers', words: ['download', 'customers', 'export', 'csv'] },
   },
+  /** The action offered when the search looks like a street address. */
+  measureRoof: (address: string) => `Measure roof at ${address}`,
+  measureRoofHint: 'Find the roof outline and pitch',
   listLabel: 'Search results',
   noMatches: (query: string) => `No matches for “${query}”`,
   /** Joins the pieces of a result's second line: stage, address, phone. Pieces that are missing are left out. */
