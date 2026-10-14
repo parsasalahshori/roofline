@@ -1,5 +1,9 @@
 /** Importing customers. Named importCopy because import is a keyword. */
 export const importCopy = {
+  stepsLabel: 'Import steps',
+  steps: ['Upload', 'Match columns', 'Preview', 'Permission', 'Import'],
+  uploadTitle: 'Bring your customers into Roofline',
+  uploadIntro: 'Choose your spreadsheet. You can review the rows and texting permission before importing.',
   uploadLabel: 'Customer spreadsheet',
   uploadButton: 'Choose a file',
   uploadDrop: 'or drop it here',

@@ -4,10 +4,10 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
-  padding: 16px;
+  padding: 20px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
+  border-radius: 16px;
+  background: #fff;
   color: var(--text);
 }
 
@@ -21,7 +21,7 @@
 
 .title {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 13px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -36,7 +36,7 @@
   border-radius: 12px;
   background: var(--surface-2);
   color: var(--text);
-  font-size: var(--font-size-body);
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.3;
   white-space: normal;
@@ -44,8 +44,8 @@
 
 .chip[data-status="done"] {
   border-color: transparent;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: #e2f3e6;
+  color: #25603a;
 }
 
 .description,
@@ -63,6 +63,8 @@
 
 /* The actions wrap on a phone; the kit Button is already 40px tall, so each one is a full touch target */
 .actions {
+  margin-top: auto;
+  padding-top: 8px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

@@ -1,65 +1,66 @@
-/* The plans: a card each, one column on a phone and as many as fit beside each other on a wider screen */
 .section {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-
 .heading {
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
 }
-
 .list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-  gap: 16px;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-
-.plan {
+.plan.plan {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
+  padding: 20px;
+  border: 1px solid #dce0e3;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 2px 5px rgb(21 28 34 / 4%);
 }
-
+.plan[data-current='true'] {
+  border-color: #758d7d;
+  background: #f2f8f4;
+}
 .name {
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
 }
-
 .price {
   margin: 0;
-  font-size: var(--font-size-stat);
-  font-weight: 600;
+  font-size: 27px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
 }
-
 .includes {
   margin: 0;
   color: var(--text-muted);
-  font-size: var(--font-size-body);
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
-
 .current {
   margin: auto 0 0;
-  padding-top: 8px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  padding: 10px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #25603a;
 }
-
 .plan > button {
   margin-top: auto;
   width: 100%;
 }
-
 .note {
   margin: 0;
   color: var(--text-muted);
-  font-size: var(--font-size-min);
+  font-size: 12px;
 }

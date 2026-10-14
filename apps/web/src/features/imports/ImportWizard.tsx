@@ -14,7 +14,24 @@ import styles from './ImportWizard.module.css';
 /** The customer import wizard: upload, then mapping, preview and consent, then progress and the summary. */
 export function ImportWizard() {
   const { importId } = useParams();
-  return <div className={styles.wizard}>{importId ? <ImportDetail importId={importId} /> : <UploadStep />}</div>;
+  return (
+    <div className={styles.container}>
+      {importId ? <ImportDetail key={importId} importId={importId} /> : <><ImportSteps current={0} /><UploadStep /></>}
+    </div>
+  );
+}
+
+/** The current screen, not a claim that an asynchronous import has finished. */
+function ImportSteps({ current }: { current: number }) {
+  return (
+    <ol className={styles.steps} aria-label={importCopy.stepsLabel}>
+      {importCopy.steps.map((label, index) => (
+        <li key={label} aria-current={current === index ? 'step' : undefined}>
+          <span className={styles.stepNumber} aria-hidden="true">{index + 1}</span>{label}
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 type ImportDetailProps = { importId: string };
@@ -35,12 +52,15 @@ function ImportDetail({ importId }: ImportDetailProps) {
   }
 
   if (view.status === 'uploaded') {
-    if (step === 'mapping') return <MappingStep view={view} onNext={() => setStep('preview')} />;
-    if (step === 'preview') {
-      return <PreviewStep view={view} onBack={() => setStep('mapping')} onNext={() => setStep('consent')} />;
-    }
-    return <ConsentStep importId={importId} onBack={() => setStep('preview')} />;
+    return (
+      <>
+        <ImportSteps current={step === 'mapping' ? 1 : step === 'preview' ? 2 : 3} />
+        {step === 'mapping' ? <MappingStep view={view} onNext={() => setStep('preview')} /> :
+          step === 'preview' ? <PreviewStep view={view} onBack={() => setStep('mapping')} onNext={() => setStep('consent')} /> :
+            <ConsentStep importId={importId} onBack={() => setStep('preview')} />}
+      </>
+    );
   }
 
-  return <ProgressStep view={view} />;
+  return <><ImportSteps current={4} /><ProgressStep view={view} /></>;
 }

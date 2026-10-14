@@ -1,5 +1,8 @@
 /** Settings, Billing: the plan and the payments; and the banners under the top bar. Card payments run through Stripe. */
 export const billing = {
+  loading: 'Loading billing…',
+  currentPlan: 'Current plan',
+  usageNote: 'Usage charges still apply during your free trial. Review the plan before continuing.',
   noPlan: 'No plan yet',
   trialUntil: (date: string) => `Free trial until ${date}`,
   statusLabel: {
@@ -10,6 +13,7 @@ export const billing = {
     canceled: 'Canceled',
   },
   usageHeading: 'Usage this period',
+  noUsage: 'No usage has been recorded for this period.',
   plansHeading: 'Plans',
   meterLabel: { smsSegment: 'Text segments', aiCallMinute: 'AI call minutes' },
   usedOf: (used: number, included: number, meter: 'smsSegment' | 'aiCallMinute') =>

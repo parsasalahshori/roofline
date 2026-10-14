@@ -16,6 +16,7 @@ export function UsageMeters({ usage }: { usage: BillingView['usage'] }) {
   return (
     <section className={styles.section}>
       <h3 className={styles.heading}>{billing.usageHeading}</h3>
+      {usage.length === 0 ? <p className={styles.line}>{billing.noUsage}</p> : null}
       <ul className={styles.list}>
         {usage.map((entry) => {
           const key = METER_KEY[entry.meter];

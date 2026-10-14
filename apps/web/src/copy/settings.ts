@@ -9,6 +9,13 @@ import type { SettingsTab } from '../features/settings/tabs.ts';
 export const settings = {
   // The row of links under the window title
   tabsLabel: 'Settings sections',
+  descriptions: {
+    company: 'Keep your contact details, business address and time zone up to date.',
+    team: 'Manage your teammates and what each person can do.',
+    connections: 'Connect the calendars and accounts your business uses.',
+    billing: 'Review your plan, usage and payment details.',
+    setup: 'Get your company ready, one step at a time.',
+  },
   tabs: {
     company: 'Company',
     team: 'Team',

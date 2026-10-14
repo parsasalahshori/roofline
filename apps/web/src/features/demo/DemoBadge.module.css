@@ -9,9 +9,10 @@
 .badge {
   min-height: 0;
   padding: 2px 10px;
-  border: 1px solid var(--accent);
+  border: 1px solid #bf9c25;
+  background: #fff3c4;
   border-radius: 999px;
-  color: var(--accent-ink);
+  color: #151c22;
   font-size: var(--font-size-min);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -73,5 +74,17 @@
 }
 
 .message[data-tone='error'] {
-  color: var(--danger);
+  color: #a12622;
+}
+
+@media (max-width: 767.98px) {
+  .badge {
+    min-height: 40px;
+  }
+  .popover {
+    position: fixed;
+    top: 60px;
+    left: 16px;
+    width: calc(100vw - 32px);
+  }
 }

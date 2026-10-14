@@ -19,7 +19,7 @@ export function PlanPicker({ view }: { view: BillingView }) {
         {view.plans.map((plan) => {
           const current = view.hasPaymentMethod && plan.key === view.planKey;
           return (
-            <Card as="li" key={plan.key} className={styles.plan}>
+            <Card as="li" key={plan.key} className={styles.plan} data-current={current}>
               <h4 className={styles.name}>{plan.name}</h4>
               <p className={styles.price}>{billing.perMonth(plan.monthlyPriceCents)}</p>
               <p className={styles.includes}>
@@ -29,6 +29,8 @@ export function PlanPicker({ view }: { view: BillingView }) {
                 <p className={styles.current}>{billing.yourPlan}</p>
               ) : view.hasPaymentMethod ? (
                 <Button
+                  variant="primary"
+                  disabled={changePlan.isPending || checkout.isPending}
                   onClick={() => changePlan.mutate(plan.key, { onError })}
                   busy={changePlan.isPending && changePlan.variables === plan.key}
                 >
@@ -36,6 +38,8 @@ export function PlanPicker({ view }: { view: BillingView }) {
                 </Button>
               ) : (
                 <Button
+                  variant="primary"
+                  disabled={changePlan.isPending || checkout.isPending}
                   onClick={() => checkout.mutate(plan.key, { onError })}
                   busy={checkout.isPending && checkout.variables === plan.key}
                 >
@@ -46,6 +50,7 @@ export function PlanPicker({ view }: { view: BillingView }) {
           );
         })}
       </ul>
+      {view.status === 'trial' ? <p className={styles.note}>{billing.usageNote}</p> : null}
       <p className={styles.note}>{billing.cardNote}</p>
     </section>
   );

@@ -48,6 +48,7 @@ export const comingWith: Record<ComingWith, string> = {
 };
 
 export const setup = {
+  atYourPace: 'You can use Roofline while you finish setup. Come back to these steps anytime.',
   listLabel: 'Setup steps',
   progress: (done: number, total: number) => `${done} of ${total} setup steps done`,
   ringLabel: (done: number, total: number) => `${done} of ${total} setup steps done`,

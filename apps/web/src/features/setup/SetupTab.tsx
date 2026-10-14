@@ -1,4 +1,4 @@
-import { Banner, Skeleton } from '@roofline/ui';
+import { Banner, ProgressBar, Skeleton } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { setup } from '../../copy/setup.ts';
@@ -31,7 +31,11 @@ export function SetupTab() {
 
   return (
     <div className={styles.page}>
-      <p className={styles.progress}>{setup.progress(view.progress.done, view.progress.total)}</p>
+      <div className={styles.summary}>
+        <p className={styles.progress}>{setup.progress(view.progress.done, view.progress.total)}</p>
+        <p className={styles.note}>{setup.atYourPace}</p>
+        <ProgressBar value={view.progress.done} max={view.progress.total} label={setup.listLabel} />
+      </div>
       {isOwner ? null : <p className={styles.note}>{setup.ownerNote}</p>}
       <ol aria-label={setup.listLabel} className={styles.list}>
         {view.items.map((item) => (

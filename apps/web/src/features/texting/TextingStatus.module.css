@@ -1,5 +1,9 @@
 /* The status card: one line of news, with the sent date under it while the carriers review */
-.card {
+.card.card {
+  padding: 20px;
+  border-radius: 16px;
+  border-color: #dce0e3;
+  background: #fff;
   display: grid;
   gap: 8px;
   max-width: 720px;
