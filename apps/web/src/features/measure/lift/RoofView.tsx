@@ -4,6 +4,7 @@ import type { Ring } from '@roofline/shared';
 import { Marker, type Map as MapLibreMap } from 'maplibre-gl';
 import { useContext, useEffect, useReducer } from 'react';
 import { legal } from '../../../copy/legal.ts';
+import { usesFreeAerial } from './aerial.ts';
 import { liftMeasure } from '../../../copy/liftMeasure.ts';
 import { measure } from '../../../copy/measure.ts';
 import { useMeasurement } from '../api.ts';
@@ -292,7 +293,7 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
         {scan.phase === 'scanning' ? <ScanOverlay instance={map} ring={ring} scan={scan} /> : null}
         <ScaleAndNorth latitude={m.center[1]} zoom={zoom} />
         <p className={styles.credits}>
-          <span>{legal.imageryAttribution}</span>
+          <span>{usesFreeAerial({ maptilerKey: import.meta.env.VITE_MAPTILER_KEY }) ? legal.imageryAttribution : legal.maptilerImageryAttribution}</span>
           <span>{legal.footprintAttribution}</span>
         </p>
         {scan.phase === 'idle' ? (
