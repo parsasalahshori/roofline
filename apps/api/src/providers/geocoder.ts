@@ -30,7 +30,18 @@ export class UnconfiguredGeocoder implements Geocoder {
 
 /** The geocoder the app uses: the demo one in DEMO_MODE, the fake under FAKE_PROVIDERS, else the real one when configured. */
 export function createGeocoder(config: Config): Geocoder {
-  if (config.DEMO_MODE) return new DemoGeocoder();
+  if (config.DEMO_MODE) {
+    // With a Geocodio key the demo looks typed addresses up for real; reverse lookups stay demo ones (free, fictional).
+    const real = geocodioFor(config);
+    if (!real) return new DemoGeocoder();
+    const demo = new DemoGeocoder();
+    return {
+      configured: true,
+      geocode: (address, opts) => real.geocode(address, opts),
+      geocodeMany: (addresses) => real.geocodeMany(addresses),
+      reverseMany: (points) => demo.reverseMany(points),
+    };
+  }
   if (config.FAKE_PROVIDERS) return new FakeGeocoder();
   return geocodioFor(config) ?? new UnconfiguredGeocoder();
 }

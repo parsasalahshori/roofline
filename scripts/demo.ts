@@ -129,7 +129,7 @@ function demoBuildStamp(): string | null {
   try {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    return /^[0-9a-f]{40}$/.test(head) && dirty === '' ? `commit=${head}\nVITE_MAP_TILES=osm\nVITE_MAP_IMAGERY=aerial\n` : null;
+    return /^[0-9a-f]{40}$/.test(head) && dirty === '' ? `commit=${head}\n${Object.entries(WEB_BUILD_ENV).map(([k, v]) => `${k}=${v}\n`).join('')}` : null;
   } catch {
     return null;
   }
@@ -148,6 +148,21 @@ function demoEncryptionKey(): string {
   return key;
 }
 const ENCRYPTION_KEY = demoEncryptionKey();
+
+/**
+ * The real lookup keys, from .env.keys (git-ignored): GEOCODIO_API_KEY turns on real address lookups and
+ * MAPTILER_KEY real map and satellite tiles. Every other outside service stays a fake. No file, no keys: the plain demo.
+ */
+function realKeys(): { geocodio?: string; maptiler?: string } {
+  const file = `${REPO_ROOT}.env.keys`;
+  if (!existsSync(file)) return {};
+  const text = readFileSync(file, 'utf8');
+  const read = (name: string) => new RegExp(`^${name}=(\\S+)$`, 'm').exec(text)?.[1];
+  return { geocodio: read('GEOCODIO_API_KEY'), maptiler: read('MAPTILER_KEY') };
+}
+const KEYS = realKeys();
+/** The web build's map settings: MapTiler with a key, else free OSM tiles and aerial imagery. */
+const WEB_BUILD_ENV: Record<string, string> = KEYS.maptiler ? { VITE_MAPTILER_KEY: KEYS.maptiler } : { VITE_MAP_TILES: 'osm', VITE_MAP_IMAGERY: 'aerial' };
 
 const tenantUrl = roleUrl(OWNER_URL, APP_ROLES.tenant, ROLE_PASSWORDS.tenant);
 const systemUrl = roleUrl(OWNER_URL, APP_ROLES.system, ROLE_PASSWORDS.system);
@@ -189,7 +204,7 @@ try {
   const built = existsSync(marker) ? readFileSync(marker, 'utf8') : '';
   if (process.env.DEMO_BUILD === '1' || wanted === null || built !== wanted) {
     log('Building the web app (about 1 minute).');
-    execFileSync('npm', ['run', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit', env: { ...process.env, VITE_MAP_TILES: 'osm', VITE_MAP_IMAGERY: 'aerial' } });
+    execFileSync('npm', ['run', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit', env: { ...process.env, ...WEB_BUILD_ENV } });
     if (wanted !== null) writeFileSync(marker, wanted);
   }
 } catch (err) {
@@ -222,6 +237,10 @@ for (const name of Object.keys(env)) {
     delete env[name];
   }
 }
+// The keys from .env.keys go back in on purpose: real address lookups and the server's MapTiler tiles.
+if (KEYS.geocodio) env.GEOCODIO_API_KEY = KEYS.geocodio;
+if (KEYS.maptiler) env.MAPTILER_SERVER_KEY = KEYS.maptiler;
+if (KEYS.geocodio || KEYS.maptiler) log(`Real lookups on: ${[KEYS.geocodio && 'Geocodio addresses', KEYS.maptiler && 'MapTiler maps'].filter(Boolean).join(', ')}.`);
 
 function start(name: string, script: string): ChildProcess {
   const child = spawn('npx', ['tsx', script], { cwd: REPO_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
