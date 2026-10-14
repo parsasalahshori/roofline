@@ -37,8 +37,11 @@ export type SolarBuilding = {
  */
 export type SolarSnapshot = { fetchedAt: string; at: LngLat; building: SolarBuilding | null };
 
-/** Where a measurement's pitch came from: Google Solar, the estimator's default, or the person who changed it. */
-export const PITCH_SOURCES = ['solar', 'default', 'manual'] as const;
+/**
+ * Where a measurement's pitch came from: Google Solar's roof segments, the estimator's default, the person who changed
+ * it, or the roof reconstructed in 3D from Google Solar's height map ('solar-3d': each face its own measured pitch).
+ */
+export const PITCH_SOURCES = ['solar', 'default', 'manual', 'solar-3d'] as const;
 export type PitchSource = (typeof PITCH_SOURCES)[number];
 
 /** How long a home's Solar answer is reused. */

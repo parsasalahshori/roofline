@@ -42,6 +42,7 @@ import {
   PITCH_SOURCES,
   type AddOnUnit,
   type RoofPlane,
+  type Roof3dSnapshot,
   type SolarSnapshot,
   type WorkHours,
 } from '@roofline/shared';
@@ -1046,6 +1047,12 @@ export const measurements = pgTable(
      * edge, ridge, valley and footprint are then the other facets' only (`facets` stays the whole roof's count).
      */
     excludedFacets: jsonb('excluded_facets').$type<string[]>().notNull().default([]),
+    /**
+     * The roof reconstructed in 3D from Google Solar's height map (Data Layers, a paid lookup), or why there is none,
+     * kept so measuring the home again within 30 days does not buy it again. With a reconstruction, the outline is
+     * its real outline and the roof drawn is its faces and lines.
+     */
+    roof3d: jsonb('roof_3d').$type<Roof3dSnapshot>(),
     createdByUserId: userRef('created_by_user_id'),
     ...timestamps(),
   },

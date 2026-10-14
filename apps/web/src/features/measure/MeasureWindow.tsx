@@ -330,18 +330,22 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   }, [done, onProposalReady]);
 
   // While the pitch is still Google Solar's, each facet keeps its own (as the server works it out)
-  const planes = m.pitchSource === 'solar' && pitch === m.estimate.pitchX12 ? (m.pitchPlanes ?? null) : null;
+  const ownPitch = (m.pitchSource === 'solar' || m.pitchSource === 'solar-3d') && pitch === m.estimate.pitchX12;
+  const planes = ownPitch ? (m.pitchPlanes ?? null) : null;
+  // A roof measured in 3D: its faces and lines, while the outline is still its own (as the server works it out)
+  const roof3d = m.roof3d ?? null;
   const excludedKey = excluded.join(' ');
   const estimate = useMemo(() => {
     const input = { outline: ring.length > 0 ? [ring] : [], pitchX12: pitch, overhangFt: overhang, valleyFt: m.estimate.valleyFt };
     const out = excludedKey === '' ? [] : excludedKey.split(' ');
     const base = instantEstimate(input);
-    // Only some sections quoted: the numbers are those sections' (as the server prices them)
-    if (out.length > 0) return measureRoof({ ...input, planes, excludedFacets: out }).estimate;
+    const measured = roof3d !== null ? { roof: roof3d, ownPitch } : null;
+    // Only some sections quoted, or a roof measured in 3D: the numbers are the roof's (as the server prices them)
+    if (out.length > 0 || measured !== null) return measureRoof({ ...input, planes, excludedFacets: out, roof3d: measured }).estimate;
     if (planes === null || planes.length === 0) return base;
     const sloped = measureRoof({ ...input, planes }).estimate;
     return { ...base, surfaceSqFt: sloped.surfaceSqFt, squares: sloped.squares };
-  }, [ring, pitch, overhang, m.estimate.valleyFt, planes, excludedKey]);
+  }, [ring, pitch, overhang, m.estimate.valleyFt, planes, excludedKey, roof3d, ownPitch]);
   // The measured roof with the sections left out shaded (and its totals the quoted sections')
   const savedRoofData = m.roof;
   const quotedModel = useMemo(() => {

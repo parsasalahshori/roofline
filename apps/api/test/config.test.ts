@@ -66,6 +66,7 @@ describe('loadConfig', () => {
       PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
       FOOTPRINTS_BASE_URL: 'https://minedbuildings.z5.web.core.windows.net/global-buildings/',
       FOOTPRINT_WAIT_MS: 120_000,
+      GOOGLE_SOLAR_DATA_LAYERS: true,
       GOOGLE_ADS_API_VERSION: 'v21',
       META_GRAPH_VERSION: 'v24.0',
       POSTMARK_BROADCAST_STREAM: 'broadcast',

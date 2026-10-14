@@ -21,6 +21,7 @@ import {
   withTenant,
 } from '@roofline/db';
 import {
+  dominantPitchX12,
   footprintTilesNear,
   instantEstimate,
   isTimeZone,
@@ -30,7 +31,11 @@ import {
   metresToBuilding,
   type Outline,
   outlineFromSolar,
+  polygonAreaSqFt,
   type Ring,
+  type Roof3d,
+  type Roof3dSnapshot,
+  roofPlanesFrom3d,
   seededPitchX12,
   type SolarSnapshot,
 } from '@roofline/shared';
@@ -38,6 +43,7 @@ import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
 import { ensureFootprintTiles } from './footprint-tiles.ts';
+import { roof3dAt, roof3dForHome, roof3dOnBoughtLayers } from './roof-3d.ts';
 import { type PitchPick, pitchFromSolar, SOLAR_BUILDING_SNAP_M, solarAt, solarForHome } from './solar.ts';
 
 const PICK_ADDRESS_MESSAGE = 'Pick an address.';
@@ -55,6 +61,13 @@ const FOOTPRINT_SEARCH_M = 40;
 const FOOTPRINT_SNAP_M = 30;
 /** A point this close to its footprint tile's edge also needs the tile next door (a building may be filed there). */
 const FOOTPRINT_TILE_MARGIN_M = 100;
+/**
+ * How long Measure waits for the roof in 3D (Google's height map bought and the roof worked out, started by the Measure
+ * search's prefetch) before it carries on with the outline's roof instead.
+ */
+const ROOF_3D_WAIT_MS = 25_000;
+/** Another footprint at least this share inside the 3D roof's outline is part of that roof (a garage under the same roof). */
+const PART_OF_ROOF_SHARE = 0.5;
 
 type NearFootprint = Awaited<ReturnType<typeof footprintsNear>>[number];
 /** A building the user picked on the map: its footprint and a point on it. */
@@ -219,6 +232,111 @@ async function solarCovering(deps: AppDeps, solar: SolarSnapshot | null, ring: R
   return again !== null && pitchFromSolar(again, ring, middle, 0).source === 'solar' ? again : solar;
 }
 
+/** The promise's value, or `fallback` when it takes longer than `ms` (it carries on in the background). */
+function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([p.catch(() => fallback), late]).finally(() => clearTimeout(timer));
+}
+
+/** The centre of a ring's corners. */
+function cornerMean(ring: Ring): LngLat {
+  return ringMiddle(ring);
+}
+
+/** Whether a point lies inside a ring (ray casting; fine at a building's size). */
+function insideRing(point: LngLat, ring: Ring): boolean {
+  let hit = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]!;
+    const [xj, yj] = ring[j]!;
+    if (yi > point[1] !== yj > point[1] && point[0] < ((xj - xi) * (point[1] - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+
+/** The share of a footprint inside a ring, by a grid of points over the footprint's box. */
+function shareInside(footprint: Ring, ring: Ring): number {
+  const lngs = footprint.map((p) => p[0]);
+  const lats = footprint.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...lngs), Math.max(...lngs), Math.min(...lats), Math.max(...lats)];
+  let inFoot = 0;
+  let inBoth = 0;
+  const n = 16;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const p: LngLat = [x0 + ((i + 0.5) / n) * (x1 - x0), y0 + ((j + 0.5) / n) * (y1 - y0)];
+      if (!insideRing(p, footprint)) continue;
+      inFoot++;
+      if (insideRing(p, ring)) inBoth++;
+    }
+  }
+  return inFoot > 0 ? inBoth / inFoot : 0;
+}
+
+/** Whether a 3D roof is the building a footprint outlines: either one's middle lies inside the other. */
+function sameBuilding(roof: Roof3d, ring: Ring): boolean {
+  return insideRing(cornerMean(ring), roof.outline) || insideRing(cornerMean(roof.outline), ring);
+}
+
+/**
+ * The 3D roof to measure from: the snapshot's roof when it is the main footprint's building (or there is no footprint);
+ * else the roof under the footprint's middle on layers already bought, when there is one. `snapshot` is what to keep.
+ */
+function roof3dFor(deps: AppDeps, snapshot: Roof3dSnapshot | null, main: { ring: Ring } | undefined): { roof: Roof3d | null; snapshot: Roof3dSnapshot | null } {
+  const roof = snapshot?.roof ?? null;
+  if (roof === null || main === undefined || sameBuilding(roof, main.ring)) return { roof, snapshot };
+  // The address point was on another roof than the footprint picked: that building, if the layers bought hold it.
+  const again = roof3dOnBoughtLayers(deps, cornerMean(main.ring));
+  if (again?.roof != null && sameBuilding(again.roof, main.ring)) return { roof: again.roof, snapshot: again };
+  return { roof: null, snapshot };
+}
+
+/**
+ * A measurement made from the roof in 3D: its real outline, its faces (each with its own pitch) and lines. The
+ * measurement's pitch is the faces' dominant one; footprints near the home are listed as before, the main one with
+ * the 3D roof's outline, and any footprint mostly inside that outline (part of the same roof) left out.
+ */
+function roof3dInput(
+  property: PropertyRow,
+  point: LngLat,
+  roof: Roof3d,
+  snapshot: Roof3dSnapshot | null,
+  rows: NearFootprint[],
+  main: NearFootprint | undefined,
+  settings: Settings,
+  jobId: string | null,
+  solar: SolarSnapshot | null,
+): NewMeasurement {
+  const outline: Outline = [roof.outline];
+  const planes = roofPlanesFrom3d(roof);
+  const pitchX12 = dominantPitchX12(planes) ?? seededPitchX12(property.id);
+  const { estimate, roof: model } = measureRoof({ outline, pitchX12, overhangFt: settings.overhangFt, planes, roof3d: { roof, ownPitch: true } });
+  const listed = main === undefined ? [] : rows.filter((r) => r.id === main.id || shareInside(r.ring, roof.outline) < PART_OF_ROOF_SHARE);
+  return {
+    propertyId: property.id,
+    jobId,
+    kind: 'estimate',
+    method: 'outline',
+    outline,
+    structures: listed.map((r) =>
+      r.id === main?.id
+        ? { footprintId: r.id, included: true, areaSqFt: Math.round(polygonAreaSqFt(roof.outline) * 10) / 10, ring: roof.outline, main: true }
+        : { footprintId: r.id, included: false, areaSqFt: r.areaSqFt, ring: r.ring },
+    ),
+    estimate,
+    facets: model?.totals.facetCount ?? null,
+    overhangFt: settings.overhangFt,
+    center: point,
+    pitchSource: 'solar-3d',
+    pitchPlanes: planes,
+    solar,
+    roof3d: snapshot,
+  };
+}
+
 /** What a measurement keeps of its pitch: the pitch, where it came from, Solar's planes and the Solar answer. */
 function pitchFields(pick: PitchPick, solar: SolarSnapshot | null): Pick<NewMeasurement, 'pitchSource' | 'pitchPlanes' | 'solar'> {
   return { pitchSource: pick.source, pitchPlanes: pick.planes, solar };
@@ -232,6 +350,7 @@ function outlineInput(
   settings: Settings,
   jobId: string | null,
   solar: SolarSnapshot | null,
+  roof3d: Roof3dSnapshot | null = null,
 ): NewMeasurement {
   const outline: Outline = [main.ring];
   // The pitch is Google Solar's for this roof when it has one; otherwise it is chosen per home (4/12 to 7/12, the
@@ -257,6 +376,7 @@ function outlineInput(
     overhangFt: settings.overhangFt,
     center: point,
     ...pitchFields(pick, solar),
+    roof3d,
   };
 }
 
@@ -268,6 +388,7 @@ function solarOutlineInput(
   settings: Settings,
   jobId: string | null,
   solar: SolarSnapshot,
+  roof3d: Roof3dSnapshot | null = null,
 ): NewMeasurement {
   const pick = pitchFromSolar(solar, outline[0] ?? null, point, seededPitchX12(property.id));
   const { estimate, roof } = measureRoof({ outline, pitchX12: pick.pitchX12, overhangFt: settings.overhangFt, planes: pick.planes });
@@ -283,10 +404,18 @@ function solarOutlineInput(
     overhangFt: settings.overhangFt,
     center: point,
     ...pitchFields(pick, solar),
+    roof3d,
   };
 }
 
-function drawInput(property: PropertyRow, center: LngLat, settings: Settings, jobId: string | null, solar: SolarSnapshot | null = null): NewMeasurement {
+function drawInput(
+  property: PropertyRow,
+  center: LngLat,
+  settings: Settings,
+  jobId: string | null,
+  solar: SolarSnapshot | null = null,
+  roof3d: Roof3dSnapshot | null = null,
+): NewMeasurement {
   // Draw mode still knows the roof's pitch when Google Solar has the building at the home.
   const pick = pitchFromSolar(solar, null, center, settings.pitchX12);
   return {
@@ -300,6 +429,7 @@ function drawInput(property: PropertyRow, center: LngLat, settings: Settings, jo
     overhangFt: settings.overhangFt,
     center,
     ...pitchFields(pick, solar),
+    roof3d,
   };
 }
 
@@ -332,6 +462,11 @@ function tilesFor(property: PropertyRow, point: LngLat): { tiles: string[]; stat
  *   (per facet where a Solar plane fits, else the roof's dominant pitch), or the per-home default.
  * - No footprint (none there, or the tiles did not load in time): Google Solar's building at the home gives
  *   the outline. Only when neither has the roof is it draw mode.
+ * - Before all of that: the roof in 3D. Google Solar's height map and roof mask (Data Layers, bought once per roof
+ *   and kept on the measurement) are reconstructed into the roof's real outline, faces (each with its own pitch)
+ *   and lines. When that roof is the main footprint's building (or there is no footprint), the measurement is made
+ *   from it (pitch source 'solar-3d'); otherwise (no imagery, no roof found, another building, or not ready within
+ *   ROOF_3D_WAIT_MS) it is made as above, and what was bought is still kept.
  * Never throws for missing or bad geometry: that is draw mode.
  */
 export async function measureProperty(
@@ -366,8 +501,14 @@ export async function measureProperty(
     );
   }
 
-  // Google Solar and the footprint tiles at once: both are network work, neither in a transaction.
+  // Google Solar, its height map (the roof in 3D) and the footprint tiles at once: all network work, none in a
+  // transaction.
   const solarAsked = solarForHome(deps, ctx, property.id, point);
+  const roof3dAsked = within(
+    roof3dForHome(deps, ctx, property.id, point, solarAsked.then((sol) => sol?.building ?? null)),
+    ROOF_3D_WAIT_MS,
+    null,
+  );
   const { tiles, state } = tilesFor(property, point);
   const tilesOutcome = await ensureFootprintTiles(deps, tiles, { state, waitMs: deps.config.FOOTPRINT_WAIT_MS });
   if (tilesOutcome !== 'ready') {
@@ -381,17 +522,24 @@ export async function measureProperty(
   const picked = mainOf(rows);
   // Solar answers for the building nearest the address point, which can be the neighbour of the outline picked here.
   const solar = picked === undefined ? askedSolar : await solarCovering(deps, askedSolar, picked.ring);
+  // The roof in 3D, when Google has it for this building: its real outline, faces and lines.
+  const r3 = roof3dFor(deps, await roof3dAsked, picked);
 
   return asNotFound(() =>
     withTenant(deps.pools, ctx, async (tx) => {
       const settings = await settingsFor(tx, ctx);
       const main = picked;
+      if (r3.roof !== null) {
+        const view = await createMeasurement(tx, ctx, roof3dInput(property, point, r3.roof, r3.snapshot, rows, main, settings, jobId, solar), now);
+        if (main !== undefined) await setPropertyFootprint(tx, ctx, property.id, main.id);
+        return view;
+      }
       if (main === undefined) {
         const outline = solarOutline(solar, point);
-        if (outline !== null) return createMeasurement(tx, ctx, solarOutlineInput(property, point, outline, settings, jobId, solar!), now);
-        return createMeasurement(tx, ctx, drawInput(property, point, settings, jobId, solar), now);
+        if (outline !== null) return createMeasurement(tx, ctx, solarOutlineInput(property, point, outline, settings, jobId, solar!, r3.snapshot), now);
+        return createMeasurement(tx, ctx, drawInput(property, point, settings, jobId, solar, r3.snapshot), now);
       }
-      const view = await createMeasurement(tx, ctx, outlineInput(property, point, main, rows, settings, jobId, solar), now);
+      const view = await createMeasurement(tx, ctx, outlineInput(property, point, main, rows, settings, jobId, solar, r3.snapshot), now);
       await setPropertyFootprint(tx, ctx, property.id, main.id);
       return view;
     }),
@@ -410,14 +558,25 @@ async function measureOnFootprint(
   jobId: string | null,
   now: Date,
 ): Promise<MeasurementView> {
-  const solar = await solarCovering(deps, await solarForHome(deps, ctx, property.id, picked.point), picked.ring);
+  const solarAsked = solarForHome(deps, ctx, property.id, picked.point);
+  const roof3dAsked = within(
+    roof3dForHome(deps, ctx, property.id, picked.point, solarAsked.then((sol) => sol?.building ?? null)),
+    ROOF_3D_WAIT_MS,
+    null,
+  );
+  const solar = await solarCovering(deps, await solarAsked, picked.ring);
+  const r3 = roof3dFor(deps, await roof3dAsked, picked);
   return asNotFound(() =>
     withTenant(deps.pools, ctx, async (tx) => {
       const settings = await settingsFor(tx, ctx);
       const near = await footprintsNear(tx, picked.point, FOOTPRINT_SEARCH_M);
       const main: NearFootprint = near.find((r) => r.id === picked.id) ?? { id: picked.id, ring: picked.ring, areaSqFt: picked.areaSqFt, contains: true, distanceM: 0 };
       const rows = near.some((r) => r.id === picked.id) ? near : [main, ...near];
-      const view = await createMeasurement(tx, ctx, outlineInput(property, picked.point, main, rows, settings, jobId, solar), now);
+      const input =
+        r3.roof !== null
+          ? roof3dInput(property, picked.point, r3.roof, r3.snapshot, rows, main, settings, jobId, solar)
+          : outlineInput(property, picked.point, main, rows, settings, jobId, solar, r3.snapshot);
+      const view = await createMeasurement(tx, ctx, input, now);
       await setPropertyFootprint(tx, ctx, property.id, picked.id);
       return view;
     }),
@@ -426,9 +585,10 @@ async function measureOnFootprint(
 
 /**
  * The Measure search's head start: as soon as an address is typed (before Measure is pressed), it is looked up and
- * the area's footprint tiles start loading (nobody waits for them here), and Google Solar is asked about the point
- * (kept in this process for the Measure that follows). Nothing is saved. `found` is false when the address is not
- * found; an unreachable geocoder is a 503 like Measure's.
+ * the area's footprint tiles start loading (nobody waits for them here), Google Solar is asked about the point, and
+ * the roof is reconstructed in 3D from Google's height map (both kept in this process for the Measure that follows;
+ * a saved home with a fresh 3D roof on its measurements buys nothing). Nothing is saved. `found` is false when the
+ * address is not found; an unreachable geocoder is a 503 like Measure's.
  */
 export async function prefetchMeasure(
   deps: AppDeps,
@@ -437,8 +597,9 @@ export async function prefetchMeasure(
 ): Promise<{ found: boolean }> {
   let point: LngLat | null = null;
   let state: string | undefined;
-  if (i.propertyId !== undefined) {
-    const propertyId = i.propertyId;
+  const propertyId = i.propertyId;
+  let savedHome: PropertyRow | null = null;
+  if (propertyId !== undefined) {
     const found = await withTenant(deps.pools, ctx, (tx) => getProperty(tx, ctx, propertyId));
     if (found === null) throw new AppError(404, MESSAGES.notFound);
     point = found.geom ?? null;
@@ -449,13 +610,25 @@ export async function prefetchMeasure(
     if (found !== null) {
       point = [found.lng, found.lat];
       state = found.state?.trim().toUpperCase();
+      // An address already saved keeps its 3D roof on its measurements: no need to buy it again.
+      if (found.street !== null && found.zip !== null) savedHome = await findSaved(deps, ctx, found.street, found.zip);
     }
   }
   if (point === null) return { found: false };
+  // A saved home is measured at its saved point: the 3D roof is asked for there, so Measure finds it.
+  const at = savedHome?.geom ?? point;
   const tiles = footprintTilesNear(point[0], point[1], FOOTPRINT_TILE_MARGIN_M);
+  const asked = solarAt(deps, at);
+  // The roof in 3D (Google's height map, a paid request) starts now too, unless the home already has a fresh one kept.
+  const roof3d = (async () => {
+    const homeId = propertyId ?? (savedHome !== null ? savedHome.id : undefined);
+    if (homeId !== undefined) await roof3dForHome(deps, ctx, homeId, at, asked.then((sol) => sol?.building ?? null));
+    else await roof3dAt(deps, at, (await asked)?.building ?? null);
+  })();
   const work = Promise.allSettled([
     ensureFootprintTiles(deps, tiles, { ...(state !== undefined ? { state } : {}), waitMs: 0 }),
-    solarAt(deps, point),
+    asked,
+    roof3d,
   ]).then(() => undefined);
   deps.onBackgroundTask?.(work);
   return { found: true };

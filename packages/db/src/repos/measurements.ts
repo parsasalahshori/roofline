@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { carryExcluded, cleanExcluded, measureRoof, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type RoofModel, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
+import { carryExcluded, cleanExcluded, isRoof3d, measureRoof, sameOutline, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type Roof3dInput, type Roof3dSnapshot, type RoofModel, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
 import { jobs, measurements, properties, proposals } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getProperty, type PropertyRow } from './properties.ts';
@@ -32,6 +32,11 @@ export type NewMeasurement = {
   pitchPlanes?: RoofPlane[] | null;
   /** The Google Solar answer used, kept so measuring the home again does not ask again. */
   solar?: SolarSnapshot | null;
+  /**
+   * The roof reconstructed in 3D from Google Solar's height map (or why there is none), kept so measuring the home
+   * again does not buy it again. The roof is drawn from it while an outline ring is its outline.
+   */
+  roof3d?: Roof3dSnapshot | null;
 };
 
 export type MeasurementPatch = {
@@ -258,8 +263,9 @@ export async function createMeasurement(tx: Tx, ctx: TenantContext, m: NewMeasur
       valleyFt: m.estimate.valleyFt,
       facets: m.facets ?? null,
       pitchSource: m.pitchSource ?? null,
-      pitchPlanes: m.pitchSource === 'solar' && m.pitchPlanes != null && m.pitchPlanes.length > 0 ? m.pitchPlanes : null,
+      pitchPlanes: measuredPitch(m.pitchSource ?? null) && m.pitchPlanes != null && m.pitchPlanes.length > 0 ? m.pitchPlanes : null,
       solar: m.solar ?? null,
+      roof3d: m.roof3d ?? null,
       createdByUserId: ctx.userId,
       createdAt: now,
       updatedAt: now,
@@ -297,7 +303,8 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
   // and edge lengths, so what is drawn and what is priced agree. With facets left out, the estimate is the quoted
   // facets' (the numbers updateMeasurement stored).
   const planes = planesOf(row);
-  const measured = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt, planes, excludedFacets: row.excludedFacets });
+  const roof3d = roof3dOf(row);
+  const measured = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt, planes, excludedFacets: row.excludedFacets, roof3d });
   const fromOutline: InstantEstimate = measured.estimate;
   // An exact report's or an aerial measure's numbers are the measurement itself: shown as stored, never
   // worked out again from the outline (B5). Proposals are priced from the same stored columns.
@@ -327,12 +334,50 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
     pitchSource: row.pitchSource ?? null,
     pitchPlanes: planes,
     excludedFacets: measured.roof?.excluded ?? [],
+    // Only while the roof drawn is the reconstruction (an outline moved by hand gets the outline's roof instead).
+    roof3d: roof3d !== null && (outline ?? []).some((ring) => sameOutline(ring, roof3d.roof)) ? roof3d.roof : null,
   };
 }
 
-/** The roof planes the facets take their pitch from: Google Solar's, while the pitch is still Solar's. */
+/** Whether the pitch is a measured one whose planes the facets keep: Google Solar's segments, or its 3D roof. */
+function measuredPitch(source: PitchSource | null): boolean {
+  return source === 'solar' || source === 'solar-3d';
+}
+
+/**
+ * The reconstructed roof kept on a measurement, for measureRoof: its faces keep their own pitch while the pitch is
+ * still the reconstruction's; a pitch a person picked is every sloped face's.
+ */
+function roof3dOf(row: { pitchSource: PitchSource | null; roof3d: Roof3dSnapshot | null }): Roof3dInput | null {
+  const roof = row.roof3d?.roof;
+  return isRoof3d(roof) ? { roof, ownPitch: row.pitchSource === 'solar-3d' } : null;
+}
+
+/**
+ * The newest reconstructed roof (or "none there") kept on a measurement of this home that the caller may see, or null.
+ * The caller decides whether it is still fresh and for this roof (roof3dSnapshotFresh).
+ */
+export async function latestRoof3dSnapshot(tx: Tx, ctx: TenantContext, propertyId: string): Promise<Roof3dSnapshot | null> {
+  const [row] = await tx
+    .select({ roof3d: measurements.roof3d })
+    .from(measurements)
+    .innerJoin(properties, and(eq(properties.id, measurements.propertyId), eq(properties.companyId, measurements.companyId)))
+    .where(
+      and(
+        eq(measurements.companyId, ctx.companyId),
+        eq(measurements.propertyId, propertyId),
+        isNotNull(measurements.roof3d),
+        propertyScope(ctx),
+      ),
+    )
+    .orderBy(sql`${measurements.createdAt} desc`)
+    .limit(1);
+  return row?.roof3d ?? null;
+}
+
+/** The roof planes the facets take their pitch from: Google Solar's (or its 3D roof's), while the pitch is still Solar's. */
 function planesOf(row: { pitchSource: PitchSource | null; pitchPlanes: RoofPlane[] | null }): RoofPlane[] | null {
-  return row.pitchSource === 'solar' && Array.isArray(row.pitchPlanes) && row.pitchPlanes.length > 0 ? row.pitchPlanes : null;
+  return measuredPitch(row.pitchSource) && Array.isArray(row.pitchPlanes) && row.pitchPlanes.length > 0 ? row.pitchPlanes : null;
 }
 
 /**
@@ -448,10 +493,11 @@ export async function updateMeasurement(
   const pitchSource: PitchSource | null = p.pitchX12 !== undefined ? 'manual' : current.pitchSource;
   const pitchPlanes = p.pitchX12 !== undefined ? null : current.pitchPlanes;
   const planes = planesOf({ pitchSource, pitchPlanes });
+  const roof3d = roof3dOf({ pitchSource, roof3d: current.roof3d });
 
   // The facets left out of the quote, checked against (or carried over to) the roof as it is after this change.
   const excludedBefore = storedExcluded(current.excludedFacets);
-  const roofAfter = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, planes }).roof;
+  const roofAfter = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, planes, roof3d }).roof;
   const reshaped = p.outline !== undefined || p.includedStructures !== undefined || p.pitchX12 !== undefined || p.overhangFt !== undefined;
   let excludedFacets: string[];
   // Whether other facets are quoted than before (the same facets under new letters are not a change).
@@ -468,6 +514,7 @@ export async function updateMeasurement(
       pitchX12: current.pitchX12 ?? 0,
       overhangFt: current.overhangFt ?? 0,
       planes: planesOf(current),
+      roof3d: roof3dOf(current),
     }).roof;
     excludedFacets = carryExcluded(roofBefore, roofAfter, excludedBefore);
     // Carried over means the very same facets (by shape) stay out; none carried quotes the whole roof again.
@@ -481,7 +528,7 @@ export async function updateMeasurement(
   // length is sent with it.
   const roofChanged = p.outline !== undefined || p.includedStructures !== undefined || p.pitchX12 !== undefined || facetsChanged;
   const valleyIn = p.valleyFt ?? (roofChanged ? 0 : (current.valleyFt ?? 0));
-  const { estimate, roof } = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn, planes, excludedFacets });
+  const { estimate, roof } = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn, planes, excludedFacets, roof3d });
   const valleyFt = p.valleyFt ?? estimate.valleyFt;
 
   await tx

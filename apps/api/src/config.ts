@@ -150,6 +150,12 @@ const ConfigSchema = z
      * building footprint is found. Unset: the estimator's default pitch, and draw mode where no footprint is found.
      */
     GOOGLE_SOLAR_API_KEY: z.string().optional(),
+    /**
+     * Whether Measure buys Google Solar's Data Layers (the height map and roof mask) to reconstruct each roof in 3D
+     * (real outline, faces and lines) when GOOGLE_SOLAR_API_KEY is set. Default on; 0 turns it off (the roof is then
+     * guessed from its outline, as before). An Enterprise SKU: 1,000 free a month, then about $75 per 1,000.
+     */
+    GOOGLE_SOLAR_DATA_LAYERS: flagDefault(true),
     /** Twilio account SID (`AC` + 32 hex digits). When set, TWILIO_AUTH_TOKEN is required. */
     TWILIO_ACCOUNT_SID: z
       .string()

@@ -1,0 +1,149 @@
+// A roof reconstructed in 3D from Google Solar's height map (roof-reconstruct/): its real outline, faces (each with
+// its own pitch and area) and lines, as a measurement stores it. Here: the stored shape, and the roof model (facets
+// and lines, the drawing and its totals) made from it. Pure; never throws.
+import type { LngLat, Ring } from './roof.ts';
+import type { RoofPlane } from './roof-model.ts';
+
+export const ROOF_3D_LINE_KINDS = ['ridge', 'hip', 'valley', 'eave', 'rake', 'step', 'flat-edge'] as const;
+export type Roof3dLineKind = (typeof ROOF_3D_LINE_KINDS)[number];
+
+export type Roof3dFace = {
+  /** [lng, lat], open ring, counter-clockwise. */
+  ring: LngLat[];
+  /** Measured pitch, x/12 (two decimals). */
+  pitchX12: number;
+  /** Compass direction the face slopes down towards, degrees (0 north, 90 east). */
+  azimuthDeg: number;
+  planAreaSqFt: number;
+  slopedAreaSqFt: number;
+  /** Below 2/12: a flat or low-slope face. */
+  flat: boolean;
+  /** [lng, lat], well inside the face. */
+  labelAt: LngLat;
+};
+
+export type Roof3dLine = {
+  kind: Roof3dLineKind;
+  coords: [LngLat, LngLat];
+  /** True (3D) length, feet. */
+  lengthFt: number;
+  /** How much the line climbs end to end, feet. */
+  riseFt: number;
+  /** Indexes into `faces`: one for an outline edge, two for a line between faces. */
+  faces: number[];
+};
+
+export type Roof3d = {
+  version: 1;
+  /** [lng, lat], open ring, counter-clockwise: the roof's real outline (overhangs included). */
+  outline: LngLat[];
+  /** Largest plan area first. */
+  faces: Roof3dFace[];
+  lines: Roof3dLine[];
+  /** The height map's resolution, metres a pixel (0.1 for Google's HIGH imagery, 0.25 for MEDIUM). */
+  pixelSizeM: number;
+  imageryQuality: string | null;
+  /** YYYY-MM-DD. */
+  imageryDate: string | null;
+};
+
+/**
+ * What a measurement keeps of one Google Solar Data Layers lookup (paid), so measuring the home again does not buy it
+ * again: the roof reconstructed at `at`, or why there is none (`none`): Google has no HIGH or MEDIUM imagery there,
+ * or no roof near the point.
+ */
+export type Roof3dSnapshot = { fetchedAt: string; at: LngLat; roof: Roof3d | null; none?: 'no-imagery' | 'no-roof' };
+
+/** How long a home's reconstructed roof is reused. */
+export const ROOF_3D_CACHE_DAYS = 30;
+
+const EARTH_RADIUS_M = 6371008.8;
+const K = (Math.PI / 180) * EARTH_RADIUS_M;
+
+function finite(p: unknown): p is LngLat {
+  return Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]);
+}
+
+function metresApart(a: LngLat, b: LngLat): number {
+  const cos = Math.cos((((a[1] + b[1]) / 2) * Math.PI) / 180);
+  return Math.hypot((b[0] - a[0]) * K * cos, (b[1] - a[1]) * K);
+}
+
+function inside(point: LngLat, ring: readonly LngLat[]): boolean {
+  let hit = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]!;
+    const [xj, yj] = ring[j]!;
+    if (yi > point[1] !== yj > point[1] && point[0] < ((xj - xi) * (point[1] - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+
+/** Whether a stored value is a usable reconstruction (an outline and at least one face with a ring). */
+export function isRoof3d(value: unknown): value is Roof3d {
+  if (typeof value !== 'object' || value === null) return false;
+  const r = value as Partial<Roof3d>;
+  return (
+    r.version === 1 &&
+    Array.isArray(r.outline) &&
+    r.outline.length >= 3 &&
+    r.outline.every(finite) &&
+    Array.isArray(r.faces) &&
+    r.faces.length > 0 &&
+    r.faces.every((f) => Array.isArray(f.ring) && f.ring.length >= 3 && f.ring.every(finite) && Number.isFinite(f.pitchX12) && Number.isFinite(f.planAreaSqFt)) &&
+    Array.isArray(r.lines)
+  );
+}
+
+/**
+ * A kept reconstruction still good for a home at `point` at `now`: fetched within ROOF_3D_CACHE_DAYS, and for this
+ * roof: its outline contains the point, or it was asked about a point within 3 m of it. A kept "no imagery here"
+ * covers anything within 50 m (Google's imagery is per area, not per house).
+ */
+export function roof3dSnapshotFresh(snapshot: Roof3dSnapshot | null | undefined, point: LngLat, now: Date): boolean {
+  if (snapshot === null || snapshot === undefined || !finite(snapshot.at) || !finite(point)) return false;
+  const at = Date.parse(snapshot.fetchedAt);
+  if (!Number.isFinite(at) || now.getTime() - at > ROOF_3D_CACHE_DAYS * 86_400_000 || at > now.getTime() + 60_000) return false;
+  const d = metresApart(snapshot.at, point);
+  if (snapshot.roof === null) return snapshot.none === 'no-imagery' ? d <= 50 : d <= 3;
+  if (!isRoof3d(snapshot.roof)) return false;
+  return d <= 3 || inside(point, snapshot.roof.outline);
+}
+
+/** Whether a measurement's outline ring is the reconstruction's own outline (to about a centimetre). */
+export function sameOutline(ring: Ring, roof: Roof3d): boolean {
+  const a = openRing(ring);
+  const b = openRing(roof.outline);
+  if (a.length !== b.length || a.length < 3) return false;
+  // The same corners in the same order, starting anywhere.
+  const tol = 2e-7;
+  for (let start = 0; start < b.length; start++) {
+    let ok = true;
+    for (let k = 0; k < a.length && ok; k++) {
+      const p = a[k]!;
+      const q = b[(start + k) % b.length]!;
+      ok = Math.abs(p[0] - q[0]) <= tol && Math.abs(p[1] - q[1]) <= tol;
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+function openRing(ring: readonly LngLat[]): LngLat[] {
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  return ring.length > 1 && first && last && first[0] === last[0] && first[1] === last[1] ? ring.slice(0, -1) : [...ring];
+}
+
+/**
+ * The reconstruction's faces as measured roof planes (whole x/12): what an outline drawn by hand over this roof takes
+ * its facets' pitch from, as it would from Google Solar's segments.
+ */
+export function roofPlanesFrom3d(roof: Roof3d): RoofPlane[] {
+  return roof.faces.map((f) => ({
+    pitchX12: Math.max(0, Math.min(24, Math.round(f.pitchX12))),
+    azimuthDeg: Math.round(f.azimuthDeg * 10) / 10,
+    center: [f.labelAt[0], f.labelAt[1]],
+    areaSqFt: f.planAreaSqFt,
+  }));
+}

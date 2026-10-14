@@ -10,6 +10,8 @@ export const legal = {
   googleImageryAttribution: 'Imagery © Google',
   /** On a measured roof whose pitch is Google Solar's (Google's attribution rule: "Includes solar data from Google"). */
   solarPitchAttribution: 'Pitch from Google Solar (includes solar data from Google)',
+  /** On a roof measured in 3D from Google Solar's height map. */
+  solar3dAttribution: 'Roof measured in 3D from Google Solar (includes solar data from Google)',
   /** On a map roof whose outline is Google Solar's (no building footprint there). */
   solarOutlineAttribution: 'Outline from Google Solar (includes solar data from Google)',
   /** On the map, wherever building outlines are drawn. */

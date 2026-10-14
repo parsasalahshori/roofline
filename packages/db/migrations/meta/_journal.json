@@ -204,6 +204,13 @@
       "when": 1791988093401,
       "tag": "0028_measurement_excluded_facets",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791994730103,
+      "tag": "0029_measurement_roof_3d",
+      "breakpoints": true
     }
   ]
 }

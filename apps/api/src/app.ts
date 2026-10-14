@@ -34,6 +34,7 @@ import type { ObjectStore } from './providers/object-store.ts';
 import type { TextingRegistrar } from './providers/registrar.ts';
 import type { FootprintSource } from './providers/footprints.ts';
 import type { SolarApi } from './providers/solar.ts';
+import type { SolarLayersApi } from './providers/solar-layers.ts';
 import type { AerialMeasure } from './providers/aerial.ts';
 import type { ExactReports } from './providers/exact-reports.ts';
 import type { AdImageRenderer } from './providers/ad-image.ts';
@@ -157,6 +158,11 @@ export type AppDeps = {
   footprints: FootprintSource;
   /** Google Solar building insights: roof pitch, and an outline where no footprint is found (providers/solar.ts); tests pass `FakeSolar`. */
   solar: SolarApi;
+  /**
+   * Google Solar Data Layers: the height map and roof mask Measure reconstructs each roof from in 3D
+   * (providers/solar-layers.ts); tests pass `FakeSolarLayers`.
+   */
+  solarLayers: SolarLayersApi;
   /** Where aerial roof measurements come from (providers/aerial.ts); tests pass `FakeAerialMeasure`. */
   aerial: AerialMeasure;
   /** Where exact roof reports are ordered and fetched (providers/exact-reports.ts); tests pass `FakeExactReports`. */

@@ -45,6 +45,7 @@ import { z } from 'zod';
 import type { Outline, InstantEstimate, LngLat, Ring } from './roof.ts';
 import type { RoofModel, RoofPlane } from './roof-model.ts';
 import type { PitchSource } from './solar.ts';
+import type { Roof3d } from './roof-3d.ts';
 import type { AddOn } from './tiers.ts';
 import type { Scope, Calculation, QuoteLine } from './pricing.ts';
 
@@ -65,6 +66,11 @@ export type MeasurementView = {
    * from it) is then the other facets' only, and `roof` carries `excluded` and `quoted` (see quoteFacets).
    */
   excludedFacets?: string[];
+  /**
+   * The roof reconstructed in 3D from Google Solar's height map, when this measurement was made from one: `roof` is
+   * then its faces and lines while the outline is still the reconstruction's own (see measureRoof).
+   */
+  roof3d?: Roof3d | null;
 };
 export type ProposalOptionView = {
   id: string; tier: Tier; name: string; highlights: string[]; scope: Scope; addOns: AddOn[]; calculation: Calculation;

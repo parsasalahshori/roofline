@@ -16,8 +16,13 @@
 // 4. Anything else (a footprint that is not nearly rectilinear, or a result that does not cover it) is one
 //    gable on the bounding rectangle, clipped to the footprint.
 import { instantEstimate, perimeterFt, pitchFactor, polygonAreaSqFt, type InstantEstimate, type InstantInput, type LngLat, type Outline, type Ring } from './roof.ts';
+import { isRoof3d, type Roof3d, sameOutline } from './roof-3d.ts';
 
-export type RoofLineKind = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake';
+/**
+ * 'step' (a wall rising out of a lower roof: step flashing) and 'flat-edge' (an edge of a flat or low-slope face) come
+ * only from roofs reconstructed in 3D (roof-3d.ts).
+ */
+export type RoofLineKind = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'step' | 'flat-edge';
 export interface RoofFacet {
   /** 'A', 'B', ... largest first. */
   id: string;
@@ -67,6 +72,10 @@ export interface RoofTotals {
   valleyFt: number;
   eaveFt: number;
   rakeFt: number;
+  /** Step flashing (walls rising out of the roof); only on roofs reconstructed in 3D. */
+  stepFt?: number;
+  /** Edges of flat or low-slope faces; only on roofs reconstructed in 3D. */
+  flatEdgeFt?: number;
 }
 export interface RoofModel {
   facets: RoofFacet[];
@@ -1302,6 +1311,8 @@ export function quoteFacets(roof: RoofModel, excluded: readonly string[] | null 
     valleyFt: sum('valley'),
     eaveFt: sum('eave'),
     rakeFt: sum('rake'),
+    ...(roof.totals.stepFt !== undefined ? { stepFt: sum('step') } : {}),
+    ...(roof.totals.flatEdgeFt !== undefined ? { flatEdgeFt: sum('flat-edge') } : {}),
   };
   quoted.wastePct = wasteFor(quoted.hipFt, quoted.rakeFt, quoted.valleyFt, kept.length);
   return { ...whole, excluded: ids, quoted };
@@ -1337,8 +1348,15 @@ export function carryExcluded(before: RoofModel | null, after: RoofModel | null,
  * estimate is then the quoted facets' (quoteFacets) and the roof carries `excluded` and `quoted`.
  */
 export function measureRoof(
-  i: InstantInput & { planes?: readonly RoofPlane[] | null; excludedFacets?: readonly string[] | null },
+  i: InstantInput & { planes?: readonly RoofPlane[] | null; excludedFacets?: readonly string[] | null; roof3d?: Roof3dInput | null },
 ): { estimate: InstantEstimate; roof: RoofModel | null } {
+  // A roof reconstructed in 3D stands for the outline ring that is its own outline (a ring drawn or moved by hand
+  // is not: that ring gets the roof worked out from it, below).
+  const r3 = i.roof3d;
+  if (r3 != null && isRoof3d(r3.roof)) {
+    const at = (i.outline ?? []).findIndex((ring) => sameOutline(ring, r3.roof));
+    if (at >= 0) return measureWith3d(i, r3, at);
+  }
   const base = instantEstimate(i);
   const built = buildRoofModel(i.outline ?? [], { pitchX12: base.pitchX12, overhangFt: i.overhangFt, planes: i.planes ?? null });
   if (built === null) return { estimate: base, roof: null };
@@ -1379,6 +1397,173 @@ export function measureRoof(
       ridgeFt: q.ridgeFt,
       valleyFt: given ? base.valleyFt : q.valleyFt,
       edgeFt: round1(q.eaveFt + q.rakeFt),
+    },
+    roof,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Roofs reconstructed in 3D (roof-3d.ts): the real faces and lines, as a roof model.
+
+/** A reconstructed roof for measureRoof, and whether its faces keep their own pitch (false: a person picked one). */
+export type Roof3dInput = { roof: Roof3d; ownPitch: boolean };
+
+function closedRing3d(ring: readonly LngLat[]): [number, number][] {
+  const out = ring.map((p): [number, number] => [p[0], p[1]]);
+  const first = out[0];
+  const last = out[out.length - 1];
+  if (first && last && (first[0] !== last[0] || first[1] !== last[1])) out.push([first[0], first[1]]);
+  return out;
+}
+
+/**
+ * The roof model of a reconstructed roof: its faces (largest first, lettered A, B, ...; each with its own measured pitch,
+ * shown as whole x/12) and lines, with their totals. With `ownPitch` false every sloped face takes `pitchX12` (flat
+ * faces stay flat): areas and the sloped lines' lengths follow. Plan areas are the measured ones (overhangs included),
+ * so no overhang is added.
+ */
+export function roofModelFrom3d(roof: Roof3d, o: { pitchX12: number; ownPitch: boolean }): RoofModel {
+  const manual = Number.isFinite(o.pitchX12) && o.pitchX12 > 0 ? o.pitchX12 : 0;
+  const pitchOf = (k: number): number => {
+    const f = roof.faces[k]!;
+    return o.ownPitch || f.flat ? f.pitchX12 : manual;
+  };
+  const facets: RoofFacet[] = roof.faces.map((f, k) => {
+    const own = pitchOf(k);
+    const sloped = o.ownPitch || f.flat ? f.slopedAreaSqFt : f.planAreaSqFt * pitchFactor(own);
+    return {
+      id: facetId(k),
+      ring: closedRing3d(f.ring),
+      planSqFt: round1(f.planAreaSqFt),
+      areaSqFt: round1(sloped),
+      pitch: pitchLabel(Math.round(own)),
+      labelAt: [f.labelAt[0], f.labelAt[1]],
+      azimuthDeg: round1(f.azimuthDeg),
+    };
+  });
+  const lines: RoofLine[] = roof.lines.map((l) => {
+    let lengthFt = l.lengthFt;
+    if (!o.ownPitch) {
+      // The rise of a sloped line scales with the pitch of the steepest sloped face it borders.
+      const steepest = Math.max(0, ...l.faces.filter((k) => roof.faces[k] !== undefined && !roof.faces[k]!.flat).map((k) => roof.faces[k]!.pitchX12));
+      if (steepest > 0) {
+        const plan = Math.sqrt(Math.max(0, l.lengthFt * l.lengthFt - l.riseFt * l.riseFt));
+        lengthFt = Math.hypot(plan, (l.riseFt * manual) / steepest);
+      }
+    }
+    return {
+      kind: l.kind,
+      coords: [
+        [l.coords[0][0], l.coords[0][1]],
+        [l.coords[1][0], l.coords[1][1]],
+      ],
+      lengthFt: round1(lengthFt),
+      facets: l.faces.filter((k) => k >= 0 && k < roof.faces.length).map((k) => facetId(k)),
+    };
+  });
+  const sum = (k: RoofLineKind) => round1(lines.filter((l) => l.kind === k).reduce((t, l) => t + l.lengthFt, 0));
+  const planSqFt = round1(facets.reduce((t, f) => t + f.planSqFt, 0));
+  const slopedSqFt = round1(facets.reduce((t, f) => t + f.areaSqFt, 0));
+  const totals: RoofTotals = {
+    squares: round1(slopedSqFt / 100),
+    slopedSqFt,
+    planSqFt,
+    facetCount: facets.length,
+    wastePct: 10,
+    ridgeFt: sum('ridge'),
+    hipFt: sum('hip'),
+    valleyFt: sum('valley'),
+    eaveFt: sum('eave'),
+    rakeFt: sum('rake'),
+    stepFt: sum('step'),
+    flatEdgeFt: sum('flat-edge'),
+  };
+  totals.wastePct = wasteFor(totals.hipFt, totals.rakeFt, totals.valleyFt, facets.length);
+  return { facets, lines, outline: closedRing3d(roof.outline), pitch: pitchLabel(Math.round(manual)), totals };
+}
+
+/** Two roof models as one (a reconstructed roof and other buildings' roofs): facets lettered again, largest first. */
+function combineRoofs(main: RoofModel, other: RoofModel): RoofModel {
+  const all = [...main.facets.map((f) => ({ f, from: 'm' })), ...other.facets.map((f) => ({ f, from: 'o' }))];
+  const order = all.map((x, k) => ({ ...x, k })).sort((a, b) => b.f.planSqFt - a.f.planSqFt || a.k - b.k);
+  const newId = new Map<string, string>(order.map((x, i) => [`${x.from}:${x.f.id}`, facetId(i)]));
+  const relabel = (from: string) => (l: RoofLine): RoofLine => ({ ...l, facets: (l.facets ?? []).map((id) => newId.get(`${from}:${id}`) ?? id) });
+  const facets = order.map((x, i) => ({ ...x.f, id: facetId(i) }));
+  const lines = [...main.lines.map(relabel('m')), ...other.lines.map(relabel('o'))];
+  const t = (k: keyof RoofTotals) => round1((main.totals[k] ?? 0) + (other.totals[k] ?? 0));
+  const totals: RoofTotals = {
+    squares: t('squares'),
+    slopedSqFt: t('slopedSqFt'),
+    planSqFt: t('planSqFt'),
+    facetCount: facets.length,
+    wastePct: 10,
+    ridgeFt: t('ridgeFt'),
+    hipFt: t('hipFt'),
+    valleyFt: t('valleyFt'),
+    eaveFt: t('eaveFt'),
+    rakeFt: t('rakeFt'),
+    stepFt: t('stepFt'),
+    flatEdgeFt: t('flatEdgeFt'),
+  };
+  totals.wastePct = wasteFor(totals.hipFt, totals.rakeFt, totals.valleyFt, facets.length);
+  return { facets, lines, outline: main.outline, pitch: main.pitch, totals };
+}
+
+/** Edges for the estimate (drip edge): eaves, rakes and the edges of flat faces. */
+function edgeOf(t: RoofTotals): number {
+  return round1(t.eaveFt + t.rakeFt + (t.flatEdgeFt ?? 0));
+}
+
+/**
+ * measureRoof for an outline whose ring `at` is a reconstructed roof's outline: that ring's faces, lines and areas are
+ * the reconstruction's (overhangs measured, not added); any other rings (other buildings) are worked out as usual.
+ */
+function measureWith3d(
+  i: InstantInput & { planes?: readonly RoofPlane[] | null; excludedFacets?: readonly string[] | null },
+  r3: Roof3dInput,
+  at: number,
+): { estimate: InstantEstimate; roof: RoofModel | null } {
+  const rings = i.outline ?? [];
+  const base = instantEstimate({ ...i, outline: [] });
+  const recon = roofModelFrom3d(r3.roof, { pitchX12: base.pitchX12, ownPitch: r3.ownPitch });
+  const others = rings.filter((_, k) => k !== at);
+  const rest = others.length > 0 ? measureRoof({ ...i, outline: others, valleyFt: 0, excludedFacets: null, roof3d: null }) : null;
+  const built = rest?.roof != null ? combineRoofs(recon, rest.roof) : recon;
+  const planSqFt = round1(recon.totals.planSqFt + (rest?.estimate.planSqFt ?? 0));
+  const slopedSqFt = round1(recon.totals.slopedSqFt + (rest?.estimate.surfaceSqFt ?? 0));
+  built.totals.planSqFt = planSqFt;
+  built.totals.slopedSqFt = slopedSqFt;
+  built.totals.squares = round1(slopedSqFt / 100);
+  const footprintSqFt = round1(polygonAreaSqFt(rings[at]!) + (rest?.estimate.footprintSqFt ?? 0));
+  const given = typeof i.valleyFt === 'number' && Number.isFinite(i.valleyFt) && i.valleyFt > 0;
+  const roof = quoteFacets(built, i.excludedFacets);
+  const q = roof.quoted;
+  if (q === undefined) {
+    return {
+      estimate: {
+        ...base,
+        footprintSqFt,
+        planSqFt,
+        surfaceSqFt: slopedSqFt,
+        squares: built.totals.squares,
+        ridgeFt: roof.totals.ridgeFt,
+        valleyFt: given ? base.valleyFt : roof.totals.valleyFt,
+        edgeFt: edgeOf(roof.totals),
+      },
+      roof,
+    };
+  }
+  const planShare = roof.totals.planSqFt > 0 ? q.planSqFt / roof.totals.planSqFt : 0;
+  return {
+    estimate: {
+      ...base,
+      footprintSqFt: round1(footprintSqFt * planShare),
+      planSqFt: q.planSqFt,
+      surfaceSqFt: q.slopedSqFt,
+      squares: q.squares,
+      ridgeFt: q.ridgeFt,
+      valleyFt: given ? base.valleyFt : q.valleyFt,
+      edgeFt: edgeOf(q),
     },
     roof,
   };

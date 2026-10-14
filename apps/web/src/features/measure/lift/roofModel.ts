@@ -16,15 +16,19 @@ export function usableRoof(roof: RoofModel | null | undefined): RoofModel | null
   return roof !== null && roof !== undefined && Array.isArray(roof.facets) && roof.facets.length > 0 ? roof : null;
 }
 
-/** Line colours, as the reference draws them. Hip only shows when the roof has hips. */
+/** Line colours, as the reference draws them. Hips, steps and flat edges only show when the roof has them. */
 export const LINE_COLORS: Record<RoofLineKind, string> = {
   ridge: '#ff5c50',
   hip: '#ff9a3d',
   valley: '#37d3cf',
   eave: '#b294ff',
   rake: '#62dc8a',
+  step: '#f4f1e8',
+  'flat-edge': '#9aa7b4',
 };
-export const LINE_ORDER: readonly RoofLineKind[] = ['ridge', 'hip', 'valley', 'eave', 'rake'];
+export const LINE_ORDER: readonly RoofLineKind[] = ['ridge', 'hip', 'valley', 'eave', 'rake', 'step', 'flat-edge'];
+/** Kinds only some roofs have (a roof measured in 3D): shown only when the roof has them, like hips. */
+const WHEN_PRESENT: ReadonlySet<RoofLineKind> = new Set(['hip', 'step', 'flat-edge']);
 const FACET_COLOR = '#2f6fde';
 const CASING_COLOR = '#151c22';
 /** A facet left out of the quote is shaded over, and its lines that no longer count fade. */
@@ -41,9 +45,9 @@ export function facetLetter(index: number): string {
   return index < 26 ? letters[index]! : letters[Math.floor(index / 26) - 1]! + letters[index % 26]!;
 }
 
-/** The kinds the roof really has lines of, in legend order. */
+/** The kinds the roof really has lines of, in legend order (hips, steps and flat edges only when it has them). */
 export function lineKinds(roof: RoofModel): RoofLineKind[] {
-  return LINE_ORDER.filter((kind) => kind !== 'hip' || roof.lines.some((l) => l.kind === 'hip' && l.lengthFt > 0));
+  return LINE_ORDER.filter((kind) => !WHEN_PRESENT.has(kind) || roof.lines.some((l) => l.kind === kind && l.lengthFt > 0));
 }
 
 const closed = (ring: [number, number][]): [number, number][] =>

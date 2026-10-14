@@ -42,10 +42,13 @@ export function cardNumbers(m: MeasurementView, estimate: InstantEstimate, model
         { kind: 'valley', ft: t.valleyFt },
         { kind: 'eave', ft: t.eaveFt },
         { kind: 'rake', ft: t.rakeFt },
+        // A roof measured in 3D: its steps and flat edges, when it has any.
+        ...((t.stepFt ?? 0) > 0 ? [{ kind: 'step' as const, ft: t.stepFt ?? 0 }] : []),
+        ...((t.flatEdgeFt ?? 0) > 0 ? [{ kind: 'flat-edge' as const, ft: t.flatEdgeFt ?? 0 }] : []),
       ],
       ridgeFt: t.ridgeFt,
       valleyFt: t.valleyFt,
-      edgeFt: t.eaveFt + t.rakeFt,
+      edgeFt: t.eaveFt + t.rakeFt + (t.flatEdgeFt ?? 0),
     };
   }
   return {
@@ -67,6 +70,8 @@ const LINE_LABEL: Record<RoofLineKind, string> = {
   valley: liftMeasure.valleys,
   eave: liftMeasure.eaves,
   rake: liftMeasure.rakes,
+  step: liftMeasure.steps,
+  'flat-edge': liftMeasure.flatEdges,
 };
 
 /** The grid under the big number. `share` (0 to 1) is how much of each number shows while the scan plays. */
@@ -236,6 +241,11 @@ export function MeasureCard({
         {m.pitchSource === 'solar' && m.kind !== 'exact' && !scanning ? (
           <p className={styles.note} data-source="solar">
             {legal.solarPitchAttribution}
+          </p>
+        ) : null}
+        {m.roof3d != null && m.kind !== 'exact' && !scanning ? (
+          <p className={styles.note} data-source="solar-3d">
+            {legal.solar3dAttribution}
           </p>
         ) : null}
         {open ? (

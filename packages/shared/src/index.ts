@@ -18,6 +18,7 @@ export * from './csv.ts';
 // E1 skeleton (Task 1): one line per new shared file; later E1 tasks fill the files in.
 export * from './roof.ts';
 export * from './roof-model.ts';
+export * from './roof-3d.ts';
 export * from './solar.ts';
 export * from './tiers.ts';
 export * from './proposals.ts';

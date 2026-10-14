@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./roof-reconstruct": "./src/roof-reconstruct/index.ts"
   },
   "dependencies": {
     "libphonenumber-js": "^1.13.15",
