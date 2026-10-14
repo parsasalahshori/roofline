@@ -24,6 +24,9 @@ export const agents = {
   agentComingSoon: 'This agent’s page is coming soon.',
   // The Agents tab in Settings
   settingsTab: 'Agents',
+  settingsNav: 'Agent settings sections',
+  rulesJump: 'Edit agent rules',
+  baselinesJump: 'Time estimates',
 
   // --- Task 11: feed and waiting ---
   feedFiltersLabel: 'Show work by',
@@ -46,6 +49,27 @@ export const agents = {
 // --- Task 9: Agents window ---
 export const agentsWindow = {
   totalsSaved: 'saved this month',
+  tasksToday: 'Tasks finished today',
+  activeAgents: 'Agents on',
+  needsReview: 'Waiting for review',
+  snapshot: 'Agent summary',
+  inspectLabel: 'Inspect an agent',
+  inspect: (name: string): string => `Inspect ${name}`,
+  openAgent: (name: string): string => `Open ${name}`,
+  teamIntro: 'Your team, working together',
+  teamHelp: 'Select an agent to see its role. Open its page for rules, controls and recent work.',
+  reviewWork: 'Review waiting work',
+  settings: 'Agent settings',
+  approvalNote: 'Claims, Scheduler and Follow-up draft customer texts for your approval.',
+  descriptions: {
+    storm_scout: 'Finds hail events and prepares storm outreach plans for review.',
+    front_desk: 'Handles incoming calls and texts, and helps book inspections.',
+    estimator: 'Helps prepare roof measurements, estimates and proposals.',
+    claims: 'Tracks claim progress, drafts homeowner follow-ups and builds claim packets.',
+    scheduler: 'Prepares reminders and suggests schedule changes when weather gets in the way.',
+    follow_up: 'Drafts follow-ups for leads, proposals and customer reviews.',
+    custom: 'See this agent’s rules and recent work on its page.',
+  } as Record<string, string>,
   separator: '·',
   successRate: 'Success rate',
   successRateNone: 'Not enough runs yet',

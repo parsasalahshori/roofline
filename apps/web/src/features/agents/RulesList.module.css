@@ -1,6 +1,6 @@
 .list {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   margin: 0;
   padding-left: 20px;
 }
@@ -10,11 +10,14 @@
 }
 
 .link {
-  color: var(--text);
+  color: #36547a;
   text-decoration: underline;
 }
 
 .empty {
   margin: 0;
-  color: var(--text-muted);
+  color: #59636b;
 }
+
+.item { font-size: 13px; line-height: 1.55; }
+.item::marker { color: #2e785f; }

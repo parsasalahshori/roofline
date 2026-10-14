@@ -1,42 +1,138 @@
 .page {
   display: grid;
-  gap: 20px;
+  gap: 16px;
+  color: #151c22;
+  font-size: 14px;
+  line-height: 1.45;
+  container-type: inline-size;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .title {
   margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 750;
 }
 
 .periods {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #e9edf0;
+}
+
+.periods button {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #535e67;
+  font-size: 12px;
+}
+
+.periods button[aria-pressed='true'] {
+  background: #fff;
+  color: #151c22;
+  box-shadow: 0 2px 5px #151c2212;
 }
 
 .saved {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 0;
+  padding: 16px;
+  border: 1px solid #dfe3e6;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.saved > span:first-child {
+  font-weight: 650;
 }
 
 .money {
-  color: var(--text-muted);
-}
-
-.section {
-  display: grid;
-  gap: 8px;
-}
-
-.heading {
-  margin: 0;
+  color: #59636b;
+  font-size: 13px;
 }
 
 .content {
   display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 32%);
+  align-items: start;
+  gap: 14px;
+}
+
+.work {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.sidebar {
+  display: grid;
   gap: 20px;
+  padding: 20px;
+  border: 1px solid #dfe3e6;
+  border-radius: 18px;
+  background: #fff;
+  min-width: 0;
+}
+
+.section {
+  display: grid;
+  gap: 12px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .dim {
   opacity: 0.6;
+}
+
+@container (max-width: 720px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    grid-row: 1;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 600px) {
+  .periods button {
+    min-height: 44px;
+  }
+}
+
+.layout[data-agent='claims'] {
+  grid-template-columns: 1fr;
+}
+
+.layout[data-agent='claims'] .sidebar {
+  grid-row: auto;
 }

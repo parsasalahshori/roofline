@@ -49,8 +49,7 @@ function ScreenAgentPage({ agent }: { agent: ScreenAgent }) {
   return (
     <div className={styles.page}>
       <AgentsTabs current="agent" />
-      <h2 className={styles.title}>{AGENT_LABEL[agent]}</h2>
-      <PeriodPicker value={period} onChange={setPeriod} />
+      <div className={styles.header}><h2 className={styles.title}>{AGENT_LABEL[agent]}</h2><PeriodPicker value={period} onChange={setPeriod} /></div>
       {detail.isPending ? (
         <div role="status" aria-label={agentPage.loading}>
           <Skeleton lines={4} />
@@ -85,16 +84,22 @@ function ScreenAgentPage({ agent }: { agent: ScreenAgent }) {
               </span>
             )}
           </p>
-          <TimeBreakdown rows={d.breakdown} />
-          <section className={styles.section}>
-            <h3 className={styles.heading}>{agentPage.rulesTitle}</h3>
-            <RulesList rules={d.rules} />
-          </section>
-          {agent === 'claims' && <ClaimsBoard />}
-          <PauseSwitch agent={agent} paused={d.paused} rules={d.rules} isOwner={me.data?.role === 'owner'} />
-          {/* A paused Claims, Scheduler or Follow-up agent cannot run (the server answers 409), so it offers no Run now. */}
-          {G1_SCREEN_AGENTS.includes(agent) && d.paused !== null ? null : <RunNowButton agent={agent} runNow={d.runNow} paused={d.paused !== null} />}
-          <RecentTasks tasks={d.recentTasks} />
+          <div className={styles.layout} data-agent={agent}>
+            <div className={styles.work}>
+              {agent === 'claims' && <ClaimsBoard />}
+              <TimeBreakdown rows={d.breakdown} />
+              <RecentTasks tasks={d.recentTasks} />
+            </div>
+            <aside className={styles.sidebar}>
+              <section className={styles.section}>
+                <h3 className={styles.heading}>{agentPage.rulesTitle}</h3>
+                <RulesList rules={d.rules} />
+              </section>
+              <PauseSwitch agent={agent} paused={d.paused} rules={d.rules} isOwner={me.data?.role === 'owner'} />
+              {/* A paused Claims, Scheduler or Follow-up agent cannot run (the server answers 409), so it offers no Run now. */}
+              {G1_SCREEN_AGENTS.includes(agent) && d.paused !== null ? null : <RunNowButton agent={agent} runNow={d.runNow} paused={d.paused !== null} />}
+            </aside>
+          </div>
         </div>
       )}
     </div>

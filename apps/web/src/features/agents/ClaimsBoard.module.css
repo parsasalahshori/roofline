@@ -1,44 +1,99 @@
-/* The claims board: a column per status side by side on wide screens, stacked on a phone. */
 .section {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
+  padding: 16px;
+  border: 1px solid #dfe3e6;
+  border-radius: 18px;
+  background: #fff;
+  color: #151c22;
+  container-type: inline-size;
+}
+
+.header {
+  display: grid;
+  gap: 4px;
 }
 
 .heading {
   margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--text-muted);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.header p {
+  margin: 0;
+  font-size: 13px;
+  color: #59636b;
+}
+
+.filters {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  margin: -4px;
+  overflow-x: auto;
+}
+
+.filter[data-variant] {
+  flex: none;
+  min-height: 36px;
+  border: 1px solid transparent;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #edf0f2;
+  color: #4a555e;
+  font-size: 12px;
+}
+
+.filter[aria-pressed='true'] {
+  background: #151c22;
+  color: #fff;
+}
+
+.filter:focus-visible {
+  outline: 2px solid #356bc1;
+  outline-offset: 2px;
+}
+
+.resultCount {
+  margin: 0;
+  font-size: 12px;
+  color: #59636b;
 }
 
 .columns {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
-  align-items: start;
-}
-
-@media (max-width: 600px) {
-  .columns {
-    grid-template-columns: 1fr;
-  }
+  min-width: 0;
 }
 
 .column {
-  display: grid;
-  gap: 8px;
   min-width: 0;
 }
 
 .columnHeading {
   margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--text);
+  padding: 8px 12px;
+  background: #f4f6f8;
+  color: #43515c;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.column[data-status='approved'] .columnHeading {
+  background: #e8f5eb;
+  color: #246343;
+}
+
+.column[data-status='denied'] .columnHeading {
+  background: #fceeee;
+  color: #943333;
 }
 
 .cards {
   display: grid;
-  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -46,35 +101,137 @@
 
 .empty {
   margin: 0;
-  font-size: var(--font-size-min);
-  color: var(--text-muted);
+  padding: 8px 12px;
+  color: #69737b;
+  font-size: 12px;
+}
+
+.row {
+  border-bottom: 1px solid #e1e5e8;
 }
 
 .card {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-height: 40px;
-  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  color: var(--text);
+  color: #151c22;
   text-decoration: none;
-  font-size: 0.875rem;
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 
+.card:hover {
+  background: #eef3fb;
+}
+
 .card:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
+  outline: 2px solid #356bc1;
+  outline-offset: -2px;
+  background: #e4edfc;
+}
+
+.customer, .carrier {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .name {
-  font-weight: 600;
+  font-weight: 650;
 }
 
 .meta {
-  color: var(--text-muted);
+  color: #59636b;
+  font-size: 12px;
+}
+
+.error {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+@container (max-width: 480px) {
+  .card {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .filter[data-variant] {
+    min-height: 44px;
+  }
+}
+
+.workspace {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.row[data-selected='true'] {
+  background: #e4edfc;
+  box-shadow: inset 3px 0 #356bc1;
+}
+
+.inspect {
+  min-height: 40px;
+  margin-right: 8px;
+  padding: 6px 8px;
+  border: 1px solid #dfe3e6;
+  border-radius: 8px;
+  background: #fff;
+  color: #36547a;
+  font-size: 12px;
+}
+
+.detailPanel {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 16px;
+}
+
+.detailHeader a {
+  flex: none;
+  font-size: 12px;
+  min-height: 40px;
+  border: 1px solid #dfe3e6;
+  border-radius: 8px;
+  background: #fff;
+  color: #151c22;
+}
+
+@container (min-width: 1000px) {
+  .workspace[data-inspecting='true'] {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+@container (max-width: 480px) {
+  .inspect, .detailHeader a {
+    min-height: 44px;
+  }
+}
+
+.detailPanel:focus-visible {
+  outline: 2px solid #356bc1;
+  outline-offset: 4px;
+  border-radius: 12px;
 }
