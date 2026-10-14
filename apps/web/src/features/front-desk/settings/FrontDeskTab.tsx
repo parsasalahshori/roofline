@@ -185,6 +185,7 @@ function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave }: 
       {bannerMessage ? <Banner tone="danger">{bannerMessage}</Banner> : null}
 
       <Card as="section" className={styles.section}>
+        <h2 className={styles.heading}>{frontDeskSettings.sections.answering}</h2>
         <div className={styles.switches}>
           <Toggle
             label={frontDeskSettings.onOff.label}
@@ -224,6 +225,7 @@ function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave }: 
       </Card>
 
       <Card as="section" className={styles.section}>
+        <h2 className={styles.heading}>{frontDeskSettings.sections.company}</h2>
         <Select
           label={frontDeskSettings.voice.label}
           value={draft.voice}
@@ -263,6 +265,7 @@ function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave }: 
       </Card>
 
       <Card as="section" className={styles.section}>
+        <h2 className={styles.heading}>{frontDeskSettings.sections.permissions}</h2>
         <div className={styles.switches}>
           <Toggle
             label={frontDeskSettings.mayMove.label}
@@ -284,6 +287,7 @@ function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave }: 
           />
         </div>
 
+        <h3 className={styles.heading}>{frontDeskSettings.sections.limits}</h3>
         <div className={styles.numbers}>
           <Field
             label={frontDeskSettings.ringTeam.label}
@@ -397,6 +401,7 @@ export function FrontDeskTab() {
 
   return (
     <div className={styles.page}>
+      <p className={styles.intro}>{frontDeskSettings.description}</p>
       <FrontDeskForm
         key={revision}
         saved={query.data}

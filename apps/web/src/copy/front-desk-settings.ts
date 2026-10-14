@@ -2,6 +2,13 @@
 export const frontDeskSettings = {
   loadFailed: 'We could not load the Front Desk settings.',
   title: 'Front Desk',
+  description: 'Choose how calls and texts are answered, and when your team takes over.',
+  sections: {
+    answering: 'Answering calls and texts',
+    company: 'Your assistant',
+    permissions: 'What the assistant can do',
+    limits: 'Call limits and privacy',
+  },
   onOff: {
     label: 'Front Desk answers my calls',
     blocked: {

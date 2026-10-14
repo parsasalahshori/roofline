@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { useParams } from 'react-router';
-import { EmptyState, Skeleton } from '@roofline/ui';
+import { useLocation, useParams } from 'react-router';
+import { Button, EmptyState, Skeleton } from '@roofline/ui';
+import { CONVERSATION_FILTERS, type ConversationFilter } from '@roofline/shared';
+import { FrontDeskLayout } from './FrontDeskWindow.tsx';
 import { conversationCopy } from '../../copy/front-desk-conversation.ts';
 import { ConversationView } from './ConversationView.tsx';
 import { ReplyBox } from './ReplyBox.tsx';
@@ -11,6 +13,20 @@ import styles from './ConversationWindow.module.css';
 /** One conversation: the transcript, the summary and calls, and the reply box for text threads. */
 export function ConversationWindow() {
   const { conversationId = '' } = useParams();
+  const location = useLocation();
+  // Only list navigation supplies context. Direct links do not fetch unrelated conversations.
+  const state = location.state as { frontDeskFilter?: unknown } | null;
+  const filter = state?.frontDeskFilter;
+  const fromInbox = typeof filter === 'string' && (CONVERSATION_FILTERS as readonly string[]).includes(filter);
+  const panel = <ConversationPanel key={conversationId} conversationId={conversationId} />;
+  return fromInbox ? (
+    <FrontDeskLayout selectedId={conversationId} initialFilter={filter as ConversationFilter}>
+      {panel}
+    </FrontDeskLayout>
+  ) : panel;
+}
+
+function ConversationPanel({ conversationId }: { conversationId: string }) {
   const conversation = useConversation(conversationId);
   const markRead = useMarkRead(conversationId);
   const { mutate: markReadNow } = markRead;
@@ -32,15 +48,22 @@ export function ConversationWindow() {
   }
 
   if (conversation.isError || !conversation.data) {
-    return <EmptyState title={conversationCopy.loadFailed} />;
+    return (
+      <EmptyState
+        title={conversationCopy.loadFailed}
+        action={<Button href="/front-desk" variant="ghost">{conversationCopy.backToInbox}</Button>}
+      />
+    );
   }
 
   const data = conversation.data;
   return (
     <div className={styles.window}>
-      <ConversationView conversation={data} />
-      <SummaryPanel conversation={data} />
-      {data.canReply ? <ReplyBox conversationId={data.id} /> : null}
+      <div className={styles.navigation}>
+        <Button href="/front-desk" variant="ghost">{conversationCopy.backToInbox}</Button>
+      </div>
+      <ConversationView conversation={data} overview={<SummaryPanel conversation={data} />} />
+      {data.canReply ? <ReplyBox key={data.id} conversationId={data.id} /> : null}
     </div>
   );
 }

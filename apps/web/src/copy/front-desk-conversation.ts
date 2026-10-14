@@ -1,5 +1,6 @@
 /** Words for the Front Desk conversation view (Task 22). Plain words, no technical terms, no vendor names. */
 export const conversationCopy = {
+  backToInbox: 'Back to inbox',
   loading: 'Loading the conversation',
   loadFailed: 'We could not load this conversation.',
   unknownCaller: 'Unknown caller',

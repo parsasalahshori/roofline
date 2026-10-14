@@ -1,6 +1,10 @@
 .panel {
   display: grid;
-  gap: 16px;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
   min-width: 0;
   color: var(--text);
   font-family: var(--font);
@@ -42,4 +46,33 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.summary {
+  padding: 12px 16px;
+  border: 1px solid #ecdda6;
+  border-radius: 12px;
+  background: #fff3cd;
+}
+
+.summary .heading {
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.block {
+  padding: 0 4px;
+}
+
+.actions {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.panel [role="switch"] {
+  --accent: #a8d9d5;
+}
+
+.actions > .block {
+  margin-right: auto;
 }

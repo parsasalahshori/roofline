@@ -58,7 +58,7 @@ function TransferPhoneForm({ view }: FormProps) {
   }
 
   return (
-    <Card as="section" aria-labelledby={headingId}>
+    <Card as="section" className={styles.card} aria-labelledby={headingId}>
       <h2 id={headingId} className={styles.heading}>
         {copy.heading}
       </h2>

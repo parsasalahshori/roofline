@@ -1,4 +1,5 @@
-/* This week: a heading over a grid of stat tiles. Two columns at 375px, wider tiles when there is room. */
+/* Six real weekly totals. Narrow screens can scroll the strip without losing any metric. */
+
 .root {
   display: flex;
   flex-direction: column;
@@ -9,7 +10,7 @@
 
 .title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -21,8 +22,8 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  gap: 10px;
   min-width: 0;
 }
 
@@ -36,6 +37,37 @@
 
 @media (min-width: 640px) {
   .grid {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.grid > div {
+  padding: 14px 16px;
+  border: 1px solid #e0e3e6;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 2px 4px #151c2208;
+}
+
+.grid dt {
+  font-size: 12px;
+  color: #505b64;
+}
+
+.grid dd {
+  font-size: 26px;
+  line-height: 1.2;
+  margin-top: 3px;
+}
+
+@media (max-width: 1023.98px) {
+  .grid {
+    grid-template-columns: repeat(6, minmax(200px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scroll-snap-type: x proximity;
+  }
+  .grid > div {
+    scroll-snap-align: start;
   }
 }

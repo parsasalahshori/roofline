@@ -1,25 +1,102 @@
-/* The Front Desk window: this week's numbers, the filter chips, then the list. Flex children get min-width: 0. */
+/* Feature-local palette; shared window geometry and typography remain owned by task 01. */
+
 .root {
+  --text: #151c22;
+  --text-muted: #586168;
+  --surface: #fff;
+  --surface-2: #edf0f2;
+  --line: #dce0e3;
+  --accent: #151c22;
+  --accent-ink: #fff;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
-  padding: 4px 0 8px;
+  min-height: 100%;
   color: var(--text);
-  font-size: var(--font-size-body);
+  background: #f6f7f8;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 369px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 480px;
+  flex: 1;
+}
+
+.inbox, .detail {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 2px 5px #151c2208;
+}
+
+.inbox {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.inboxHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px 10px;
+}
+
+.inboxHeader h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.inboxHeader span {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px;
+  margin: 0 12px 12px;
+  padding: 4px;
+  background: #edf0f2;
+  border-radius: 10px;
+}
+
+.filters > button {
+  flex: 1 1 auto;
+  padding: 4px 8px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 12px;
+  color: #505b64;
+  background: transparent;
+  box-shadow: none;
+}
+
+.filters > button[aria-pressed="true"] {
+  background: #fff;
+  color: #151c22;
+  border-color: #dce0e3;
+  box-shadow: 0 2px 4px #151c2214;
+}
+
+.rows {
   min-width: 0;
+  flex: 1;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -27,10 +104,84 @@
 }
 
 .more {
-  align-self: center;
+  display: flex;
+  margin: 8px auto;
 }
 
 .note {
-  margin: 0;
+  margin: 16px;
   color: var(--text-muted);
+}
+
+.detail {
+  overflow: hidden;
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: 32px;
+  text-align: center;
+}
+
+.welcomeIcon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: #e7f3f2;
+  color: #216c69;
+  font-size: 26px;
+}
+
+.welcome h2 {
+  font-size: 20px;
+  margin: 20px 0 8px;
+}
+
+.welcome p {
+  max-width: 340px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.welcome .selectionNote {
+  margin-top: 20px;
+  font-size: 12px;
+}
+
+@media (min-width: 1024px) {
+  .workspace {
+    height: max(440px, calc(100dvh - 320px));
+    flex: auto;
+  }
+  .rows, .detail {
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #c5cbcf transparent;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .workspace {
+    display: block;
+    min-height: 0;
+  }
+  .root:not([data-conversation]) .detail {
+    display: none;
+  }
+  .root[data-conversation] > section, .root[data-conversation] .inbox {
+    display: none;
+  }
+  .filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .filters > button {
+    min-height: 40px;
+  }
 }

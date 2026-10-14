@@ -1,4 +1,5 @@
 /* Your phone for transfers: a card with the heading, the help line, the number field, the ack box and Save */
+
 .heading {
   margin: 0 0 4px;
   font-size: var(--font-size-body);
@@ -18,6 +19,7 @@
 }
 
 /* The field takes the full width of a phone screen and a fixed width beside it on a desktop */
+
 .phone {
   width: 100%;
   max-width: 320px;
@@ -26,4 +28,38 @@
 .actions {
   display: flex;
   justify-content: flex-start;
+}
+
+.card {
+  --text: #151c22;
+  --text-muted: #586168;
+  --surface: #fff;
+  --line: #dce0e3;
+  --accent: #151c22;
+  --accent-ink: #fff;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 2px 5px #151c2208;
+}
+
+.heading {
+  font-size: 16px;
+}
+
+.help {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+@media (max-width: 767.98px) {
+  .card {
+    padding: 16px;
+  }
+  .phone {
+    max-width: none;
+  }
+  .actions > button {
+    width: 100%;
+  }
 }

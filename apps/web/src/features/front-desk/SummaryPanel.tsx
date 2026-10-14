@@ -20,9 +20,11 @@ export function SummaryPanel({ conversation }: { conversation: ConversationDetai
   const showSpam = conversation.channel === 'voice' && lastCall !== null;
 
   return (
-    <Card as="section" className={styles.panel}>
-      <h2 className={styles.heading}>{conversationCopy.summaryHeading}</h2>
-      <p className={styles.text}>{conversation.summary ? conversation.summary : conversationCopy.summaryNone}</p>
+    <Card as="section" padded={false} className={styles.panel}>
+      <div className={styles.summary}>
+        <h2 className={styles.heading}>{conversationCopy.summaryHeading}</h2>
+        <p className={styles.text}>{conversation.summary ? conversation.summary : conversationCopy.summaryNone}</p>
+      </div>
 
       {conversation.followUps.length > 0 ? (
         <div className={styles.block}>
@@ -37,7 +39,12 @@ export function SummaryPanel({ conversation }: { conversation: ConversationDetai
         </div>
       ) : null}
 
-      <div className={styles.block}>
+      {conversation.calls.map((call) => (
+        <RecordingPlayer key={call.id} call={call} />
+      ))}
+
+      <div className={styles.actions}>
+        <div className={styles.block}>
         <Toggle
           checked={conversation.handledBy === 'team'}
           label={conversationCopy.handling}
@@ -47,11 +54,6 @@ export function SummaryPanel({ conversation }: { conversation: ConversationDetai
         {setHandling.isError ? <Banner tone="danger">{conversationCopy.handlingFailed}</Banner> : null}
       </div>
 
-      {conversation.calls.map((call) => (
-        <RecordingPlayer key={call.id} call={call} />
-      ))}
-
-      <div className={styles.actions}>
         {showSpam && lastCall !== null && lastCall.spamReason !== null ? (
           <Pill tone="neutral">{conversationCopy.spamMarked}</Pill>
         ) : null}

@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import { Button, Card } from '@roofline/ui';
 import type { CallView, ConversationDetail, ToolActionCard, TurnView } from '@roofline/shared';
 import { conversationCopy } from '../../copy/front-desk-conversation.ts';
@@ -55,7 +55,7 @@ function turnTranscriptStored(turn: TurnView, calls: CallView[]): boolean {
   return call ? call.transcriptStored : true;
 }
 
-export function ConversationView({ conversation }: { conversation: ConversationDetail }) {
+export function ConversationView({ conversation, overview }: { conversation: ConversationDetail; overview?: ReactNode }) {
   const headingId = useId();
   // Time order; turns spoken at one instant keep their position order. A text's own line has position 0.
   const turns = [...conversation.turns].sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.position - b.position);
@@ -63,9 +63,13 @@ export function ConversationView({ conversation }: { conversation: ConversationD
   return (
     <article className={styles.view}>
       <header className={styles.header}>
-        <h2 className={styles.name}>{conversation.customer?.name ?? conversationCopy.unknownCaller}</h2>
-        <p className={styles.phone}>{formatPhone(conversation.phoneE164)}</p>
+        <div className={styles.identity}>
+          <h2 className={styles.name}>{conversation.customer?.name ?? conversationCopy.unknownCaller}</h2>
+          <p className={styles.phone}>{formatPhone(conversation.phoneE164)}</p>
+        </div>
+        {conversation.links.jobIds.length === 1 ? <Button href={`/jobs/${conversation.links.jobIds[0]}`} variant="primary">{conversationCopy.linkJob}</Button> : null}
       </header>
+      {overview}
 
       <section className={styles.transcript} aria-labelledby={headingId}>
         <h3 id={headingId} className={styles.heading}>

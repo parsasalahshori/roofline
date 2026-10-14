@@ -1,4 +1,5 @@
 /* One row of the Front Desk list. Flex children get min-width: 0 so long text ellipsizes at 375px. */
+
 .item {
   display: flex;
   min-width: 0;
@@ -6,15 +7,20 @@
 }
 
 /* The whole row is the link: at least a 40px touch target with a visible focus ring */
+
 .link {
   display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
   min-width: 0;
-  min-height: 40px;
-  padding: 10px 12px;
-  border-radius: var(--radius-card);
+  min-height: 70px;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  position: relative;
   background: var(--surface);
   color: var(--text);
   text-decoration: none;
@@ -37,8 +43,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--font-size-body);
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .name[data-unread="true"] {
@@ -48,9 +54,11 @@
 .time {
   flex-shrink: 0;
   margin-left: auto;
+  max-width: 105px;
+  white-space: normal;
+  text-align: right;
   color: var(--text-muted);
   font-size: var(--font-size-min);
-  white-space: nowrap;
 }
 
 .meta {
@@ -90,6 +98,7 @@
 }
 
 /* A dot that pulses while a call is live; still for people who ask for less motion */
+
 .dot {
   width: 8px;
   height: 8px;
@@ -123,5 +132,67 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
-  font-size: var(--font-size-body);
+  font-size: 13px;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.avatar {
+  flex: 0 0 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #e1e5e8;
+  color: #46535d;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.link:hover {
+  background: #f4f7fa;
+}
+
+.link[aria-current="page"] {
+  background: #e4edfc;
+}
+
+.link[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background: #3475ce;
+}
+
+.tag {
+  border: 0;
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tag[data-outcome="booked"], .tag[data-outcome="confirmed"] {
+  background: #e1f3e4;
+  color: #226731;
+}
+
+.tag[data-outcome="spam"] {
+  background: #fbe4e6;
+  color: #a52a37;
+}
+
+.summary {
+  font-size: 12px;
+  color: var(--text-muted);
 }
