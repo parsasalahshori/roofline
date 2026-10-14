@@ -7,7 +7,7 @@ import { ApiError, apiFetch } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import type { Account } from '../../api/types.ts';
 import { appointments } from '../../copy/appointments.ts';
-import { addZonedDays, dateKeyToInstant, zonedDateKey, zonedParts } from '../calendar/time.ts';
+import { addZonedDays, dateKeyToInstant, zonedDateKey, zonedParts, zoneName } from '../calendar/time.ts';
 import { useCompany, useTeam } from '../settings/api.ts';
 import { ConflictWarnings } from './ConflictWarnings.tsx';
 import { SuggestedTimes } from './SuggestedTimes.tsx';
@@ -277,6 +277,7 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
   return (
     <div className={styles.form}>
       <h2 className={styles.title}>{existing ? appointments.rescheduleTitle : appointments.newTitle}</h2>
+      <p className={styles.intro}>{appointments.formHint}</p>
 
       <Select
         label={appointments.kindLabel}
@@ -347,6 +348,7 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
           </>
         )}
       </div>
+      <p className={styles.muted}>{appointments.timeZone(zoneName(zone))}</p>
 
       {SUGGESTED_KINDS.includes(kind) ? (
         <SuggestedTimes

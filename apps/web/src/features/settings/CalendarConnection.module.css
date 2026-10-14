@@ -1,9 +1,26 @@
 /* One section of the Connections tab: its title, then what the person can do with it */
+
 .section {
+  --surface: #fff;
+  --surface-2: #f0f2f4;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dcdfe2;
+  --accent: #ffcc32;
+  --accent-ink: #151c22;
+  --radius-card: 14px;
+  --font-size-body: 13px;
   display: grid;
   gap: 12px;
   max-width: 720px;
   margin-bottom: 24px;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 2px 5px rgb(21 28 34 / 5%);
 }
 
 .title {
@@ -55,4 +72,10 @@
   margin: 0;
   color: var(--text);
   font-size: var(--font-size-body);
+}
+
+@media (max-width: 767.98px) {
+  .section {
+    padding: 14px;
+  }
 }

@@ -154,6 +154,7 @@ function CompanySection({ settings, canEdit }: { settings: ScheduleSettings; can
       <h2 id={headingId} className={styles.heading}>
         {schedule.companyTitle}
       </h2>
+      <p className={styles.note}>{schedule.companyHint}</p>
       {canEdit ? null : <p className={styles.note}>{schedule.ownerOnlyNote}</p>}
       <form className={styles.form} onSubmit={submit} noValidate>
         <WorkHoursEditor
@@ -249,6 +250,7 @@ function YourHours({ mine }: { mine: MyHours }) {
       <h2 id={headingId} className={styles.heading}>
         {schedule.yourTitle}
       </h2>
+      <p className={styles.note}>{schedule.yourHint}</p>
       <div className={styles.switchRow}>
         <Toggle
           checked={!editing}

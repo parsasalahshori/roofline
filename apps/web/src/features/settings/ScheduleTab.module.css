@@ -1,40 +1,62 @@
 /* One section per block: company hours first, then the person's own hours */
+
 .section {
+  --surface: #fff;
+  --surface-2: #f0f2f4;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dcdfe2;
+  --accent: #ffcc32;
+  --accent-ink: #151c22;
+  --radius-card: 14px;
+  --font-size-body: 13px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
-  max-width: 720px;
-  margin-bottom: 32px;
+  margin-bottom: 16px;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 2px 5px rgb(21 28 34 / 5%);
+  max-width: 960px;
 }
 
 .heading {
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .note {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--font-size-body);
+  line-height: 1.5;
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   min-width: 0;
 }
 
 /* The three numbers, side by side on a desktop and one under another on a phone */
+
 .numbers {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
 
 /* A switch as tall as a touch target, on a row of its own */
+
 .switchRow {
   display: flex;
   align-items: center;
@@ -42,12 +64,20 @@
 }
 
 /* Only as wide as its word */
+
 .save {
   justify-self: start;
+  align-self: flex-start;
 }
 
 @media (max-width: 767.98px) {
   .numbers {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .section {
+    padding: 14px;
   }
 }

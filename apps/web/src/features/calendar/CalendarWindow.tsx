@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { EmptyState, Skeleton } from '@roofline/ui';
+import { Button, EmptyState, Skeleton } from '@roofline/ui';
 import { apiFetch } from '../../api/client.ts';
 import type { TeamBody } from '../../api/types.ts';
 import { useMe } from '../../api/hooks.ts';
@@ -19,6 +19,7 @@ import {
   dateKeyToInstant,
   formatDayLabel,
   formatRangeLabel,
+  formatTime,
   startOfZonedDay,
   weekStart,
   zoneName,
@@ -163,6 +164,9 @@ export function CalendarWindow() {
   const label = view === 'day' ? formatDayLabel(dateInstant, zone) : formatRangeLabel(from, to, zone);
 
   const zoneNote = browserZone() !== zone ? calendar.zoneNote(zoneName(zone)) : null;
+  const visibleAppointments = (data?.appointments ?? [])
+    .filter((appointment) => showCanceled || appointment.status !== 'canceled')
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
 
   let body;
   if (!noOne && appointments.isError) {
@@ -232,7 +236,41 @@ export function CalendarWindow() {
         onShowCanceled={setShowCanceled}
         zoneNote={zoneNote}
       />
-      <div className={styles.body}>{body}</div>
+      {view !== 'list' ? <p className={styles.hint}>{calendar.gridHint}</p> : null}
+      <div className={styles.layout} data-sidebar={view !== 'list' && !isPhone ? 'true' : undefined}>
+        <div className={styles.body}>{body}</div>
+        {view !== 'list' && !isPhone ? (
+          <aside className={styles.summary} aria-label={calendar.inView}>
+            <div className={styles.summaryHead}>
+              <h2>{calendar.inView}</h2>
+              {data !== undefined && !appointments.isError ? <span>{calendar.viewCount(visibleAppointments.length)}</span> : null}
+            </div>
+            <p className={styles.summaryHint}>{calendar.viewHint}</p>
+            {!noOne && appointments.isError ? <p className={styles.summaryHint}>{calendar.loadError}</p> : data === undefined ? (
+              <Skeleton lines={3} />
+            ) : visibleAppointments.length === 0 ? (
+              <p className={styles.summaryHint}>{noOne ? calendar.noPeople : calendar.empty}</p>
+            ) : (
+              <ul className={styles.summaryList}>
+                {visibleAppointments.slice(0, 5).map((appointment) => (
+                  <li key={appointment.id}>
+                    <Button variant="ghost" className={styles.summaryItem} onClick={() => onOpen(appointment.id)} data-status={appointment.status}>
+                      <span className={styles.summaryWhen}>
+                        {formatDayLabel(new Date(appointment.startsAt), zone)}
+                        {' · '}
+                        {appointment.allDay ? calendar.allDay : formatTime(new Date(appointment.startsAt), zone)}
+                      </span>
+                      <strong>{appointment.customerName ?? appointment.title}</strong>
+                      <span>{appointment.customerName ? appointment.title : appointment.assigned?.name}</span>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Button variant="ghost" className={styles.summaryMore} onClick={() => changeView('list')}>{calendar.moreInView}</Button>
+          </aside>
+        ) : null}
+      </div>
     </div>
   );
 }

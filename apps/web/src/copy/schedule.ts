@@ -8,6 +8,8 @@ export const schedule = {
 
   companyTitle: 'Company hours',
   yourTitle: 'Your hours',
+  companyHint: 'Set the hours used to suggest appointment times for your team.',
+  yourHint: 'Follow the company schedule or set the hours you are available.',
   useCompanyHours: 'Use the company hours',
   // Who may change the company hours, shown to everyone else
   ownerOnlyNote: 'Only the owner can change the company hours and these settings.',

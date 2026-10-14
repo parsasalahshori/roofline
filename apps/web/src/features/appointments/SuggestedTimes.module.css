@@ -1,9 +1,14 @@
 /* The suggested times: a heading, then one touch-sized button per open slot. The list wraps and never scrolls the page sideways. */
+
 .box {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
+  padding: 14px;
+  border: 1px solid #e8d9b3;
+  border-radius: 14px;
+  background: #fff8e6;
 }
 
 .heading {
@@ -39,11 +44,12 @@
   justify-content: flex-start;
   text-align: left;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
   background: var(--surface);
   color: var(--text);
-  font-size: var(--font-size-body);
   overflow-wrap: anywhere;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
 }
 
 @media (min-width: 768px) {
@@ -51,12 +57,14 @@
     flex-direction: row;
     flex-wrap: wrap;
   }
-
   .item {
     flex: 0 1 auto;
   }
-
   .slot {
     width: auto;
   }
+}
+
+.slot:hover {
+  border-color: #a86b20;
 }

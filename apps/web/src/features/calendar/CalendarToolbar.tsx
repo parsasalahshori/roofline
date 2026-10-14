@@ -53,7 +53,7 @@ export function CalendarToolbar(props: CalendarToolbarProps) {
           <IconButton label={calendar.next} icon={<Chevron direction="right" />} onClick={onNext} />
           <span className={styles.label}>{label}</span>
         </div>
-        <div className={styles.views}>
+        <div className={styles.views} role="group" aria-label={calendar.viewOptions}>
           {VIEWS.map((option) => {
             const selectedView = option.view === view;
             return (

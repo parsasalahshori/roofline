@@ -1,18 +1,135 @@
-/* The calendar window: the toolbar above the active view. The page never scrolls sideways; the grid does. */
+/* Neutral schedule workspace; the shared owner supplies the outer window. */
+
 .window {
+  --surface: #fff;
+  --surface-2: #f0f2f4;
+  --text: #151c22;
+  --text-muted: #59636c;
+  --line: #dcdfe2;
+  --accent: #ffcc32;
+  --accent-ink: #151c22;
+  --radius-card: 14px;
+  --font-size-body: 13px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
   padding: 16px;
+  color: var(--text);
+  background: #f6f7f8;
+}
+
+.layout {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.layout[data-sidebar="true"] {
+  grid-template-columns: minmax(0, 1fr) 280px;
+  align-items: start;
 }
 
 .body {
   min-width: 0;
 }
 
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  min-height: 440px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 2px 5px rgb(21 28 34 / 6%);
+}
+
+.summaryHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.summaryHead h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.summaryHead > span {
+  border-radius: 20px;
+  background: var(--surface-2);
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.summaryHint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.summaryList {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.summaryItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-left: 3px solid #ad602e;
+  border-radius: 12px;
+  background: #f6f7f8;
+  font-size: 13px;
+}
+
+.summaryItem > span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.summaryItem[data-status="canceled"] strong {
+  text-decoration: line-through;
+}
+
+.summaryWhen {
+  font-variant-numeric: tabular-nums;
+}
+
+.summaryMore {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
 @media (max-width: 767.98px) {
   .window {
-    padding: 16px;
+    padding: 12px;
+  }
+  .layout[data-sidebar="true"] {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
