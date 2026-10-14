@@ -1,66 +1,153 @@
-/* The storm plan card under the coming-soon line: a column of its heading, its summary and its button. */
-.plan {
+.page {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 16px;
+  min-width: 0;
+  color: #151c22;
+}
+
+.routes {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+}
+
+.help {
+  margin: 4px 0 0;
+  color: #59636c;
+  font-size: 13px;
+}
+
+.plan {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 20px;
+  border: 1px solid #ead58c;
+  border-radius: 16px;
+  background: #fff5cf;
 }
 
 .plan h2 {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 18px;
+  overflow-wrap: anywhere;
 }
 
 .plan p {
   margin: 0;
+  grid-column: 1;
 }
 
-/* The storms list: a column of cards that never needs a sideways scroll. */
+.plan > a {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+}
+
+.eyebrow {
+  color: #655119;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 16px;
+  gap: 10px;
   min-width: 0;
 }
 
 .row {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 16px;
+  padding: 16px 20px;
   min-width: 0;
+  border: 1px solid #dce1e5;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 4px #151c2208;
 }
 
 .row p {
   margin: 0;
 }
 
+.identity {
+  min-width: 0;
+}
+
 .place {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 16px;
   overflow-wrap: anywhere;
 }
 
 .day {
-  color: var(--text-muted);
+  color: #59636c;
+  font-size: 12px;
 }
 
 .size {
+  align-self: start;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #f0edf8;
+  color: #55417b;
+  font-size: 12px;
   font-weight: 600;
 }
 
+.impact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 13px;
+}
+
+.status {
+  justify-self: end;
+  color: #59636c;
+  font-size: 12px;
+}
+
 .actions {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
+  border-top: 1px solid #e8ebee;
+  padding-top: 10px;
 }
 
-/* The My routes link sits above everything else in the window. */
-.routes {
+.failure {
   display: flex;
-  justify-content: flex-start;
-  margin-bottom: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .plan, .row {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+  }
+
+  .plan > a {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .size, .status {
+    justify-self: start;
+  }
+
 }

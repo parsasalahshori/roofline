@@ -51,6 +51,7 @@ function DoorOutcomeForStop({ routeId, stop }: { routeId: string; stop: DoorStop
           <Button
             key={outcome}
             size="lg"
+            variant={outcome === 'wants_check' ? 'primary' : 'ghost'}
             className={styles.outcome}
             disabled={record.isPending}
             busy={pendingOutcome === outcome}

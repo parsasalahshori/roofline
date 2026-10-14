@@ -7,26 +7,26 @@
 }
 
 .card {
-  border-radius: 12px;
+  border-radius: 16px;
   min-width: 0;
 }
 
 .heading {
   margin: 0 0 8px;
-  font-size: var(--font-size-body);
+  font-size: 13px;
   font-weight: 600;
 }
 
 .stepsLabel {
   margin: 0 0 4px;
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: #59636c;
 }
 
 .steps {
   margin: 0 0 12px;
   padding-left: 20px;
-  font-size: var(--font-size-body);
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 
@@ -54,7 +54,7 @@
 
 .accountId {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 13px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -69,7 +69,7 @@
 
 .statusLabel {
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: #59636c;
 }
 
 /* The status is a chip: green when connected, the accent while it waits, the danger colour when it needs attention */
@@ -99,8 +99,8 @@
 
 .reason {
   margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--text-muted);
+  font-size: 13px;
+  color: #59636c;
   overflow-wrap: anywhere;
 }
 
@@ -112,10 +112,57 @@
 
 .note {
   margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--text-muted);
+  font-size: 13px;
+  color: #59636c;
 }
 
 .loading {
   margin-top: 16px;
+}
+
+.card {
+  padding: 20px;
+  border: 1px solid #dce1e5;
+  background: #fff;
+}
+
+.heading {
+  font-size: 16px;
+}
+
+.steps {
+  line-height: 1.55;
+}
+
+.account {
+  padding-top: 12px;
+  border-top: 1px solid #e8ebee;
+}
+
+.status[data-status='active'] {
+  background: #e4f2e8;
+  color: #27613c;
+  border-color: #bdd8c6;
+}
+
+.status[data-status='pending'] {
+  background: #fff5cf;
+  color: #655119;
+  border-color: #ead58c;
+}
+
+@media (min-width: 901px) {
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+}
+
+@media (max-width: 600px) {
+  .card {
+    padding: 16px;
+  }
+
 }

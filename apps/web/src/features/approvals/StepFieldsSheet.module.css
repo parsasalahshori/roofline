@@ -2,13 +2,13 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   min-width: 0;
@@ -25,13 +25,13 @@
 .hint {
   margin: 0;
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: #59636c;
 }
 
 .warning {
   margin: 0;
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: #59636c;
 }
 
 .error {
@@ -43,4 +43,18 @@
 .sheetError {
   margin: 0;
   color: var(--danger);
+}
+
+.group {
+  padding: 12px;
+  border: 1px solid #dce1e5;
+  border-radius: 12px;
+  background: #f6f8fa;
+}
+
+.warning {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff5cf;
+  color: #655119;
 }

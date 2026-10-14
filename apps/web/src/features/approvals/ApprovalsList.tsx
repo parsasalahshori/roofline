@@ -39,21 +39,25 @@ export function ApprovalsList() {
   if (tasks.length === 0) return <EmptyState title={approvals.emptyTitle} />;
 
   return (
-    <ul aria-label={approvals.listLabel} className={styles.list}>
-      {tasks.map((task) => (
-        <li key={task.id}>
-          <UiLink href={'/approvals/' + encodeURIComponent(task.id)} className={styles.link}>
-            <Card className={styles.card}>
-              <span className={styles.agent}>{AGENT_LABEL[task.agent]}</span>
-              <strong className={styles.title}>{task.title}</strong>
-              {task.summary !== null ? <span className={styles.summary}>{task.summary}</span> : null}
-              <span className={styles.status} data-status={task.status}>
-                {task.expired ? approvals.expired : taskStatusLabel(task)}
-              </span>
-            </Card>
-          </UiLink>
-        </li>
-      ))}
-    </ul>
+    <div className={styles.page}>
+      <p className={styles.help}>{approvals.listHelp}</p>
+      <ul aria-label={approvals.listLabel} className={styles.list}>
+        {tasks.map((task) => (
+          <li key={task.id}>
+            <UiLink href={'/approvals/' + encodeURIComponent(task.id)} className={styles.link}>
+              <Card className={styles.card}>
+                <span className={styles.agent}>{AGENT_LABEL[task.agent]}</span>
+                <strong className={styles.title}>{task.title}</strong>
+                {task.summary !== null ? <span className={styles.summary}>{task.summary}</span> : null}
+                <span className={styles.status} data-status={task.status}>
+                  {task.expired ? approvals.expired : taskStatusLabel(task)}
+                </span>
+                <span className={styles.open}>{approvals.reviewPlan}<span aria-hidden="true">→</span></span>
+              </Card>
+            </UiLink>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

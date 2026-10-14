@@ -8,21 +8,21 @@
 
 .kind {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 
 .when,
 .who {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
+  color: #59636c;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .note {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 14px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }

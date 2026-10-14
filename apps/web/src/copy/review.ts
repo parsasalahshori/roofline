@@ -62,6 +62,9 @@ export const review = {
   loading: 'Loading this plan…',
   expiredTitle: 'This plan expired',
   runAgain: 'Run it again',
+  backToApprovals: 'All approvals',
+  backToStorms: 'All storms',
+  detailHeading: (position: number): string => `Step ${position} details`,
   /** The window's stat strip: the names above the agent, the status and the time. */
   statAgent: 'Agent',
   statStatus: 'Status',

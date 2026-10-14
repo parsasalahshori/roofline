@@ -15,8 +15,8 @@
 }
 
 .buttons {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
   min-width: 0;
@@ -39,4 +39,18 @@
   background: var(--surface-2);
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+.outcome[data-variant="primary"] {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.outcome[data-variant="ghost"] {
+  border: 1px solid #dce1e5;
+  background: #f6f8fa;
+}
+
+.outcome[data-variant="ghost"]:hover:not(:disabled) {
+  background: #e8edf2;
 }

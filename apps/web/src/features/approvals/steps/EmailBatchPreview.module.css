@@ -8,22 +8,22 @@
 
 .subject {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 
 .count {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
+  color: #59636c;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .lines {
   margin: 0;
   padding-left: 20px;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
+  color: #59636c;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -35,21 +35,21 @@
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface-2);
+  border-radius: 12px;
+  background: #f2f5f7;
 }
 
 .sampleLabel,
 .caption {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
+  color: #59636c;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .sampleBody {
   margin: 0;
-  font-size: var(--font-size-body);
+  font-size: 14px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }

@@ -29,10 +29,10 @@
   width: 100%;
   min-width: 0;
   min-height: 56px;
-  padding: 12px;
+  padding: 16px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
+  border-radius: 14px;
+  background: #fff;
   color: var(--text);
   font-family: var(--font);
   font-size: var(--font-size-body);
@@ -59,7 +59,8 @@
   font-weight: 600;
 }
 
-/* A status label; a span rather than a Pill, which would be a button inside this link */
+/* A status label;
+a span rather than a Pill, which would be a button inside this link */
 .status {
   display: inline-flex;
   align-items: center;
@@ -90,4 +91,27 @@
   color: var(--text-muted);
   font-size: var(--font-size-body);
   overflow-wrap: anywhere;
+}
+
+.page {
+  min-width: 0;
+}
+
+.help {
+  margin: 0 0 16px;
+  color: #59636c;
+  font-size: 13px;
+}
+
+.card:hover {
+  border-color: #b8c2cb;
+  background: #f6f8fa;
+}
+
+@media (width >= 901px) {
+  .list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
 }

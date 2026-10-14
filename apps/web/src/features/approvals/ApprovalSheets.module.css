@@ -1,13 +1,22 @@
-/* The body and the footer of the two sheets: the field, then the buttons. */
 .body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+  min-width: 0;
 }
 
 .footer {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+@media (max-width: 600px) {
+  .footer > * {
+    flex: 1;
+    min-height: 44px;
+  }
+
 }

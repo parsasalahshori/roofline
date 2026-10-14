@@ -1,42 +1,95 @@
-/* The window's stat strip: the agent, the status and the drafted time, side by side and wrapping on a narrow window. */
 .stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .stats > * {
-  flex: 1 1 160px;
+  min-width: 0;
 }
 
-/* The plan: its title, its summary and the steps, one column. */
+.stats > [data-padded] {
+  padding: 10px 12px;
+  border-color: #dce1e5;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.stats dt {
+  font-size: 12px;
+  color: #59636c;
+}
+
+.stats dd {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
 .plan {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+  min-width: 0;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.nav {
+  display: flex;
 }
 
 .title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 20px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .summary {
-  margin: 0;
-  color: var(--text-muted);
+  margin: -8px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #59636c;
 }
 
-/* Shown while the plan loads: the words, then the placeholder bars. */
 .loading {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* A step's own detail under the list (its kit's preview): a card with its border, its corners and its padding. */
 .detail {
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #dce1e5;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.detailTitle {
+  margin: 0 0 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e8ebee;
+  font-size: 12px;
+  font-weight: 600;
+  color: #59636c;
+}
+
+@media (max-width: 600px) {
+  .stats {
+    gap: 6px;
+  }
+
+  .stats > [data-padded] {
+    padding: 8px;
+  }
+
+  .stats dd {
+    font-size: 14px;
+  }
+
+  .detail {
+    padding: 12px;
+  }
+
 }

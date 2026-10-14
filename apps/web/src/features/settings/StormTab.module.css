@@ -1,38 +1,40 @@
-/* The Storm tab: one column on a phone; the settings sections sit two to a row on a desktop, the messages across both */
+/* The Storm tab: one column on a phone;
+the settings sections sit two to a row on a desktop, the messages across both */
 .page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
 }
 
 .form {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
 }
 
 .heading {
   margin: 0 0 12px;
-  font-size: var(--font-size-body);
+  font-size: 13px;
   font-weight: 600;
 }
 
 .help {
   margin: 0 0 8px;
-  color: var(--text-muted);
-  font-size: var(--font-size-body);
+  color: #59636c;
+  font-size: 13px;
 }
 
 /* The budget and the days, side by side on a desktop */
 .pair {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: 12px;
 }
 
-/* The Google share slider is full width; the two live values sit under it */
+/* The Google share slider is full width;
+the two live values sit under it */
 .share {
   display: flex;
   flex-direction: column;
@@ -49,8 +51,8 @@
 
 .shareLine {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-body);
+  color: #59636c;
+  font-size: 13px;
 }
 
 .shareLine span {
@@ -87,7 +89,7 @@
 .photos {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 16px;
+  gap: 12px;
   margin: 0 0 16px;
   padding: 0;
   list-style: none;
@@ -119,7 +121,41 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .budget {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
   .pair {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+}
+
+.form > section, .page > section {
+  padding: 20px;
+  border: 1px solid #dce1e5;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.heading {
+  font-size: 14px;
+  color: #151c22;
+}
+
+.saveRow {
+  padding: 12px 0;
+}
+
+@media (max-width: 600px) {
+  .form > section, .page > section {
+    padding: 16px;
+  }
+
+  .saveRow > button {
+    width: 100%;
+    min-height: 44px;
+  }
+
 }
