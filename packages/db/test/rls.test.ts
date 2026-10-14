@@ -38,7 +38,7 @@ const APP_SYSTEM_RLS_TABLES = [
   'email_opt_outs',
 ] as const;
 /** Global estimator tables: no tenant data, no RLS. app_system writes them from the loader job. */
-const FOOTPRINT_TABLES = ['building_footprints', 'building_footprint_states'] as const;
+const FOOTPRINT_TABLES = ['building_footprints', 'building_footprint_states', 'building_footprint_tiles'] as const;
 /** The E1 tenant tables app_tenant reads and writes through its own company's transaction. */
 const E1_TENANT_TABLES = [
   'measurements',
@@ -719,10 +719,11 @@ describe('grants', () => {
     expect(updatable).toEqual(['pdf_file_id', 'pdf_sha256', 'updated_at']);
   });
 
-  test('app_tenant: SELECT only on building_footprints, and no privilege on building_footprint_states', async () => {
+  test('app_tenant: SELECT only on building_footprints, and no privilege on building_footprint_states or building_footprint_tiles', async () => {
     expect(await tablePrivileges('app_tenant', FOOTPRINT_TABLES)).toEqual([
       privs('building_footprints', true, false, false, false),
       privs('building_footprint_states', false, false, false, false),
+      privs('building_footprint_tiles', false, false, false, false),
     ]);
   });
 
@@ -730,6 +731,7 @@ describe('grants', () => {
     expect(await tablePrivileges('app_system', FOOTPRINT_TABLES)).toEqual([
       privs('building_footprints', true, true, false, true),
       privs('building_footprint_states', true, true, true, false),
+      privs('building_footprint_tiles', true, true, true, false),
     ]);
     const rows = await ownerQuery<{ table: string; references: boolean; trigger: boolean }>(
       `select t as table,

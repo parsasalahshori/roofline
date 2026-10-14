@@ -244,7 +244,7 @@ for (const name of Object.keys(env)) {
 // The keys from .env.keys go back in on purpose: real address lookups and the server's MapTiler tiles.
 if (KEYS.geocodio) env.GEOCODIO_API_KEY = KEYS.geocodio;
 if (KEYS.maptiler) env.MAPTILER_SERVER_KEY = KEYS.maptiler;
-// Real lookups need real roof outlines: the free Microsoft footprints, loaded per state on first use.
+// Real lookups need real roof outlines: the free Microsoft footprints, loaded per map tile on first use.
 if (KEYS.geocodio) env.DEMO_REAL_FOOTPRINTS = '1';
 if (KEYS.geocodio || KEYS.maptiler || KEYS.google) log(`Real lookups on: ${[KEYS.geocodio && 'Geocodio addresses', KEYS.maptiler && 'MapTiler maps', KEYS.google && 'Google satellite'].filter(Boolean).join(', ')}.`);
 

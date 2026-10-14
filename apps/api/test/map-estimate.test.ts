@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Actors, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
-import { claimFootprintState, finishFootprintState, insertFootprints } from '@roofline/db/system';
+import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
 import type { MeasurementView, Ring } from '@roofline/shared';
 
 /*
@@ -42,10 +42,7 @@ beforeEach(async () => {
 });
 
 async function loadNE(...footprints: { sourceRef: string; ring: Ring }[]): Promise<Record<string, string>> {
-  const now = t.clock.now();
-  expect(await claimFootprintState(t.deps.pools.system, 'NE', 'https://fixtures.test/NE.zip', now)).toBe(true);
-  const count = await insertFootprints(t.deps.pools.system, 'NE', footprints);
-  await finishFootprintState(t.deps.pools.system, 'NE', count, now);
+  await seedFootprintFixture(t.deps.pools, footprints);
   const rows = await inCompany(t, t.seed.a.companyId, async (tx) => {
     const result = await tx.execute(sql`select id::text as id, source_ref from building_footprints`);
     return result.rows as { id: string; source_ref: string }[];

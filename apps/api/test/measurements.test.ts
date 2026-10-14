@@ -4,8 +4,9 @@ import { beforeEach, describe, expect, inject, it } from 'vitest';
 import { Actors, addressFor, dbProperty, inCompany, mustCreate, NO_UUID, NOT_FOUND } from './crm-helpers.ts';
 import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 import { createMeasurement, proposals, type TenantContext } from '@roofline/db';
-import { claimFootprintState, finishFootprintState, insertFootprints, type FootprintInput } from '@roofline/db/system';
-import { measureRoof, seededPitchX12, type LngLat, type MeasurementView, type Ring } from '@roofline/shared';
+import type { FootprintInput } from '@roofline/db/system';
+import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
+import { measureRoof, quadkeyOf, seededPitchX12, type LngLat, type MeasurementView, type Ring } from '@roofline/shared';
 
 /*
  * The measurements API: POST /api/measurements measures a home from the building outline under its
@@ -102,13 +103,10 @@ async function homeAt(n: number, at: LngLat): Promise<string> {
   return property.id;
 }
 
-/** Loads footprints into state NE and marks it ready (the loader's job, run by hand). */
+/** Loads footprints into their (Omaha) footprint tile and marks it ready (the loader's job, run by hand). */
 async function loadNE(...footprints: { sourceRef: string; ring: Ring }[]): Promise<void> {
-  const now = t.clock.now();
   const input: FootprintInput[] = footprints.map((f) => ({ sourceRef: f.sourceRef, ring: f.ring }));
-  expect(await claimFootprintState(t.deps.pools.system, 'NE', 'https://fixtures.test/NE.zip', now)).toBe(true);
-  const count = await insertFootprints(t.deps.pools.system, 'NE', input);
-  await finishFootprintState(t.deps.pools.system, 'NE', count, now);
+  await seedFootprintFixture(t.deps.pools, input);
 }
 
 /** The ids of the footprints the tests loaded, by their source ref. */
@@ -213,7 +211,7 @@ describe('POST /api/measurements: outlines from footprints', () => {
     expect(view.method).toBe('outline');
   });
 
-  it('a state that is not loaded gives draw mode and queues one footprints-load', async () => {
+  it('a footprint tile that is not loaded gives draw mode and queues one footprints-load for it', async () => {
     const owner = await who.as('owner');
     const propertyId = await homeAt(6, INSIDE);
 
@@ -222,9 +220,30 @@ describe('POST /api/measurements: outlines from footprints', () => {
     expect(view.drawMode).toBe(true);
     expect(view.outline).toBeNull();
     const loads = t.jobs.sent.filter((s) => s.name === 'footprints-load');
+    const quadkey = quadkeyOf(INSIDE[0], INSIDE[1]);
+    expect(quadkey).toMatch(/^[0-3]{9}$/);
     expect(loads).toHaveLength(1);
-    expect(loads[0]!.singletonKey).toBe('NE');
-    expect(loads[0]!.data).toMatchObject({ state: 'NE' });
+    expect(loads[0]!.singletonKey).toBe(quadkey);
+    expect(loads[0]!.data).toMatchObject({ quadkey, state: 'NE' });
+  });
+
+  it('once the queued tile load has run, measuring again finds the outline', async () => {
+    const owner = await who.as('owner');
+    const first: Ring[] = [];
+    for await (const f of t.footprints.features(quadkeyOf(INSIDE[0], INSIDE[1]))) first.push(f.ring);
+    expect(first.length).toBeGreaterThan(0);
+    // A point inside the first fixture building (the fake source's Omaha tile).
+    const ring = first[0]!;
+    const centre: LngLat = [(ring[0]![0] + ring[2]![0]) / 2, (ring[0]![1] + ring[2]![1]) / 2];
+    const propertyId = await homeAt(7, centre);
+
+    expect((await measure(owner, { propertyId })).drawMode).toBe(true);
+    await t.jobs.drain(t.deps);
+    expect(t.jobs.errors).toEqual([]);
+
+    const view = await measure(owner, { propertyId });
+    expect(view.drawMode).toBe(false);
+    expect(view.outline).not.toBeNull();
   });
 
   it('a home with no point opens draw mode on the centre of the US', async () => {
@@ -582,8 +601,8 @@ describe('exact and aerial measurements keep their numbers (B5)', () => {
   });
 });
 
-describe('footprint loads only for US states (C-M4)', () => {
-  it('a home in a territory opens draw mode and queues no footprint load', async () => {
+describe('footprint loads follow the point, not the state (C-M4)', () => {
+  it('a home whose state is a territory still queues the tile under its point, and opens draw mode', async () => {
     const owner = await who.as('owner');
     const propertyId = await homeAt(31, INSIDE);
     await ownerSql(`update properties set state = 'PR' where id = $1`, [propertyId]);
@@ -591,6 +610,7 @@ describe('footprint loads only for US states (C-M4)', () => {
     const view = await measure(owner, { propertyId });
 
     expect(view.drawMode).toBe(true);
-    expect(t.jobs.sent.filter((s) => s.name === 'footprints-load')).toEqual([]);
+    const loads = t.jobs.sent.filter((s) => s.name === 'footprints-load');
+    expect(loads.map((l) => l.singletonKey)).toEqual([quadkeyOf(INSIDE[0], INSIDE[1])]);
   });
 });

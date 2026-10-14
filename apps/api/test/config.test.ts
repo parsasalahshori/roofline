@@ -64,7 +64,7 @@ describe('loadConfig', () => {
       EAGLEVIEW_ENV: 'sandbox',
       EAGLEVIEW_PRODUCT_ID: 0,
       PROPOSAL_LINK_BASE_URL: 'https://app.roofline.test',
-      FOOTPRINTS_BASE_URL: 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/',
+      FOOTPRINTS_BASE_URL: 'https://minedbuildings.z5.web.core.windows.net/global-buildings/',
       GOOGLE_ADS_API_VERSION: 'v21',
       META_GRAPH_VERSION: 'v24.0',
       POSTMARK_BROADCAST_STREAM: 'broadcast',
@@ -608,7 +608,7 @@ describe('E1 settings', () => {
   });
 
   test('FOOTPRINTS_BASE_URL defaults to the Microsoft set and always ends in a slash', () => {
-    const fallback = 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/';
+    const fallback = 'https://minedbuildings.z5.web.core.windows.net/global-buildings/';
     expect(loadConfig(VALID).FOOTPRINTS_BASE_URL).toBe(fallback);
     expect(loadConfig({ ...VALID, FOOTPRINTS_BASE_URL: 'https://files.test/fp' }).FOOTPRINTS_BASE_URL).toBe(
       'https://files.test/fp/',

@@ -79,8 +79,11 @@ const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2
 /** The example plans file, shipped with the repository; the default outside production. */
 const EXAMPLE_BILLING_PLANS = 'config/billing-plans.example.json';
 
-/** The footprint files published by Microsoft (US Building Footprints); the default FOOTPRINTS_BASE_URL. */
-const DEFAULT_FOOTPRINTS_BASE_URL = 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/';
+/**
+ * Microsoft Global ML Building Footprints (tiled by zoom-9 quadkey; its index is `dataset-links.csv` here);
+ * the default FOOTPRINTS_BASE_URL. The older per-state US Building Footprints host no longer serves files.
+ */
+const DEFAULT_FOOTPRINTS_BASE_URL = 'https://minedbuildings.z5.web.core.windows.net/global-buildings/';
 
 /**
  * The domain storm email comes from by default: the domain part of MAIL_FROM (after the last `@`,
@@ -273,7 +276,7 @@ const ConfigSchema = z
     R2_BUCKET: z.string().optional(),
     /** The base URL of customer proposal links. No trailing slash. Must be on APP_ORIGIN's origin. Unset: APP_ORIGIN (applied in the final transform). */
     PROPOSAL_LINK_BASE_URL: httpUrl.transform((v) => v.replace(/\/+$/, '')).optional(),
-    /** Where the building footprint files are read from. Always ends in a slash. Default: the Microsoft US buildings set. */
+    /** The base of the building footprint dataset (its index is `<base>dataset-links.csv`). Always ends in a slash. Default: Microsoft Global ML Building Footprints. */
     FOOTPRINTS_BASE_URL: httpUrl.transform((v) => (v.endsWith('/') ? v : `${v}/`)).default(DEFAULT_FOOTPRINTS_BASE_URL),
 
     /** Google Ads developer token. All five GOOGLE_ADS settings come together, or none. Unset: Google ads are off. */

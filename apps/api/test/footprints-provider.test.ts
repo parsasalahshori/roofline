@@ -1,58 +1,115 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { FootprintsUnavailableError } from '../src/providers/footprints.ts';
-import { MicrosoftFootprints, TMP_PREFIX } from '../src/providers/ms-footprints.ts';
+import { INDEX_TTL_MS, MicrosoftFootprints, parseDatasetLinks, ringOfLine } from '../src/providers/ms-footprints.ts';
 
-const ZIP = new URL('./fixtures/footprints/NE.geojson.zip', import.meta.url);
-const BASE = 'https://x.test/b/';
+const BASE = 'https://x.test/g/';
+const Q = '021332333';
+const RING = [
+  [-95.93456, 41.256455],
+  [-95.93444, 41.256455],
+  [-95.93444, 41.256545],
+  [-95.93456, 41.256545],
+  [-95.93456, 41.256455],
+];
+const line = (geometry: unknown) => JSON.stringify({ type: 'Feature', properties: { height: 3.4, confidence: -1 }, geometry });
+const polygon = (ring: unknown) => line({ type: 'Polygon', coordinates: [ring] });
 
-function source(body: () => Response): { src: MicrosoftFootprints; urls: string[] } {
+const INDEX = [
+  'Location,QuadKey,Url,Size,UploadDate',
+  `Mexico,${Q},https://x.test/g/mx.csv.gz,1KB,2026-02-23`,
+  `UnitedStates,${Q},https://x.test/g/a.csv.gz,1KB,2026-02-23`,
+  `UnitedStates,${Q},https://x.test/g/b.csv.gz,1KB,2026-02-23`,
+  'UnitedStates,021332332,https://x.test/g/c.csv.gz,1KB,2026-02-23',
+].join('\r\n');
+
+function source(files: Record<string, () => Response>, now?: () => number): { src: MicrosoftFootprints; urls: string[] } {
   const urls: string[] = [];
   const f = (async (input: unknown) => {
-    urls.push(String(input));
-    return body();
+    const url = String(input);
+    urls.push(url);
+    if (url === `${BASE}dataset-links.csv`) return new Response(INDEX);
+    const make = files[url];
+    return make ? make() : new Response('missing', { status: 404 });
   }) as unknown as typeof fetch;
-  return { src: new MicrosoftFootprints({ baseUrl: BASE, fetch: f }), urls };
+  return { src: new MicrosoftFootprints({ baseUrl: BASE, fetch: f, ...(now ? { now } : {}) }), urls };
 }
-const okZip = () => new Response(readFileSync(ZIP));
-const mine = () => readdirSync(tmpdir()).filter((n) => n.startsWith(TMP_PREFIX));
+const gz = (text: string) => () => new Response(new Uint8Array(gzipSync(text)));
 
-async function collect(it: AsyncIterable<unknown>): Promise<unknown[]> {
-  const out: unknown[] = [];
+async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
+  const out: T[] = [];
   for await (const x of it) out.push(x);
   return out;
 }
 
+describe('parseDatasetLinks', () => {
+  it('keeps only UnitedStates rows, grouped by quadkey, every row of a quadkey', () => {
+    const index = parseDatasetLinks(INDEX);
+    expect(index.get(Q)).toEqual(['https://x.test/g/a.csv.gz', 'https://x.test/g/b.csv.gz']);
+    expect(index.get('021332332')).toEqual(['https://x.test/g/c.csv.gz']);
+    expect(index.size).toBe(2);
+  });
+});
+
+describe('ringOfLine', () => {
+  it('reads the outer ring of a Polygon line', () => {
+    expect(ringOfLine(polygon(RING))).toEqual(RING);
+  });
+  it('skips blank lines, bad JSON, other geometry and unclosed rings', () => {
+    expect(ringOfLine('')).toBeNull();
+    expect(ringOfLine('{not json')).toBeNull();
+    expect(ringOfLine(line({ type: 'Point', coordinates: [-96, 41] }))).toBeNull();
+    expect(ringOfLine(line({ type: 'MultiPolygon', coordinates: [[RING]] }))).toBeNull();
+    expect(ringOfLine(polygon(RING.slice(0, 4)))).toBeNull();
+  });
+});
+
 describe('MicrosoftFootprints', () => {
-  const { src } = source(okZip);
-  it('stateFileUrl maps NE to Nebraska.geojson.zip', () => {
-    expect(src.stateFileUrl('NE')).toBe('https://x.test/b/Nebraska.geojson.zip');
-  });
-  it('DC maps to DistrictofColumbia', () => {
-    expect(src.stateFileUrl('dc')).toBe('https://x.test/b/DistrictofColumbia.geojson.zip');
-  });
-  it('NY maps to NewYork', () => {
-    expect(src.stateFileUrl('NY')).toBe('https://x.test/b/NewYork.geojson.zip');
-  });
-  it('unknown state throws', () => {
-    expect(() => src.stateFileUrl('ZZ')).toThrow(FootprintsUnavailableError);
+  it('tileUrls reads the index once and answers every file of the tile; an unknown tile has none', async () => {
+    const { src, urls } = source({});
+    expect(await src.tileUrls(Q)).toEqual(['https://x.test/g/a.csv.gz', 'https://x.test/g/b.csv.gz']);
+    expect(await src.tileUrls('000000000')).toEqual([]);
+    expect(urls).toEqual([`${BASE}dataset-links.csv`]);
   });
 
-  it('features streams the 6 polygons of the NE fixture, skipping the multipolygon, the point and the unclosed ring', async () => {
-    const { src: s, urls } = source(okZip);
-    const got = (await collect(s.features('NE'))) as { sourceRef: string; ring: number[][] }[];
-    expect(urls).toEqual(['https://x.test/b/Nebraska.geojson.zip']);
-    expect(got.map((g) => g.sourceRef)).toEqual([1, 2, 3, 4, 5, 6].map((i) => `fake-ne-${i}`));
-    for (const g of got) {
-      expect(g.ring.length).toBeGreaterThanOrEqual(4);
-      expect(g.ring[0]).toEqual(g.ring[g.ring.length - 1]);
-    }
+  it('reads the index again after a day', async () => {
+    let now = 0;
+    const { src, urls } = source({}, () => now);
+    await src.tileUrls(Q);
+    now = INDEX_TTL_MS + 1;
+    await src.tileUrls(Q);
+    expect(urls).toEqual([`${BASE}dataset-links.csv`, `${BASE}dataset-links.csv`]);
   });
 
-  it('a non-ok response throws an error whose message has no response text', async () => {
-    const { src: s } = source(() => new Response('SECRET PROVIDER TEXT', { status: 503 }));
-    const err = await collect(s.features('NE')).then(
+  it('features streams the polygons of every file of the tile, skipping what is not one', async () => {
+    const { src, urls } = source({
+      'https://x.test/g/a.csv.gz': gz([polygon(RING), line({ type: 'Point', coordinates: [-96, 41] }), ''].join('\n')),
+      'https://x.test/g/b.csv.gz': gz([polygon(RING), polygon(RING.slice(0, 4)), polygon(RING)].join('\n')),
+    });
+    const got = await collect(src.features(Q));
+    expect(urls).toEqual([`${BASE}dataset-links.csv`, 'https://x.test/g/a.csv.gz', 'https://x.test/g/b.csv.gz']);
+    expect(got.map((g) => g.sourceRef)).toEqual([`${Q}-0-1`, `${Q}-1-1`, `${Q}-1-3`]);
+    for (const g of got) expect(g.ring).toEqual(RING);
+  });
+
+  it('a failed index download throws with the status and no response text, and is tried again next time', async () => {
+    let calls = 0;
+    const f = (async () => {
+      calls++;
+      return calls === 1 ? new Response('SECRET PROVIDER TEXT', { status: 409 }) : new Response(INDEX);
+    }) as unknown as typeof fetch;
+    const src = new MicrosoftFootprints({ baseUrl: BASE, fetch: f });
+    const err = await src.tileUrls(Q).then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+    expect(err?.message).toContain('409');
+    expect(err?.message).not.toContain('SECRET');
+    expect(await src.tileUrls(Q)).toHaveLength(2);
+  });
+
+  it('a non-ok file response throws an error whose message has no response text', async () => {
+    const { src } = source({ 'https://x.test/g/a.csv.gz': () => new Response('SECRET PROVIDER TEXT', { status: 503 }) });
+    const err = await collect(src.features(Q)).then(
       () => null,
       (e: unknown) => e as Error,
     );
@@ -61,25 +118,23 @@ describe('MicrosoftFootprints', () => {
     expect(err?.message).toContain('503');
   });
 
-  it('no temp files are left', async () => {
-    const before = mine();
-    const { src: s } = source(okZip);
-    await collect(s.features('NE'));
-    // early stop by the consumer
-    const it = s.features('NE');
-    await it.next();
-    await it.return(undefined);
-    expect(mine()).toEqual(before);
-  });
-
-  it('a corrupt zip throws and cleans up', async () => {
-    const before = mine();
-    const { src: s } = source(() => new Response(Buffer.from('this is not a zip file at all')));
-    const err = await collect(s.features('NE')).then(
+  it('a corrupt file throws a plain error', async () => {
+    const { src } = source({ 'https://x.test/g/a.csv.gz': () => new Response('this is not gzip at all') });
+    const err = await collect(src.features(Q)).then(
       () => null,
       (e: unknown) => e as Error,
     );
     expect(err).toBeInstanceOf(Error);
-    expect(mine()).toEqual(before);
+    expect(err?.message).toBe('The footprint file could not be read.');
+  });
+
+  it('a consumer may stop early', async () => {
+    const { src } = source({
+      'https://x.test/g/a.csv.gz': gz([polygon(RING), polygon(RING)].join('\n')),
+      'https://x.test/g/b.csv.gz': gz(polygon(RING)),
+    });
+    const it = src.features(Q)[Symbol.asyncIterator]();
+    expect((await it.next()).done).toBe(false);
+    await it.return?.(undefined);
   });
 });

@@ -8,7 +8,7 @@ import { runNoShow } from '../agents/scheduler/no-show.ts'; // G1 Task 12
 import { runReminders } from '../agents/scheduler/reminders.ts';
 import { runWeatherWatch } from '../agents/scheduler/weather.ts';
 import { pushAppointment } from '../calendar/push.ts';
-import { loadFootprintState } from '../estimator/footprints-load.ts';
+import { loadFootprintTile } from '../estimator/footprints-load.ts';
 import { makeSignedPdf } from '../estimator/signed-pdf.ts';
 import { runAfterCall } from '../front-desk/after-call.ts';
 import { expireForwardingTest } from '../front-desk/forwarding-test.ts';
@@ -66,7 +66,8 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   'claims-reply': (deps, data) => runClaimsReply(deps, data.companyId, data.messageId!),
   // G1 Task 12
   'scheduler-no-show': (deps, data) => runNoShow(deps, data.companyId, data.appointmentId!),
-  'footprints-load': (deps, data, meta) => loadFootprintState(deps, data.state!, meta),
+  // A job queued before tiles (`{ state }` only) has no quadkey: it does nothing, and the next Measure queues the tile.
+  'footprints-load': (deps, data, meta) => (data.quadkey === undefined ? Promise.resolve() : loadFootprintTile(deps, data.quadkey, meta, data.state)),
   'signed-pdf': (deps, data, meta) => makeSignedPdf(deps, data.companyId, data.proposalId!, meta),
   'storm-match-company': (deps, data) => matchCompanyStorms(deps, data.companyId),
   'storm-draft': (deps, data) => {

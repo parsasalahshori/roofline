@@ -1,19 +1,19 @@
-import { statesNeedingFootprintsFor } from '@roofline/db/system';
+import { tilesNeedingRetry } from '@roofline/db/system';
 import type { AppDeps } from '../../app.ts';
 import { reportJobError } from './report.ts';
 
 /**
- * Every 15 minutes: queues a footprints-load job for each state the companies need and that is not
- * ready or already loading. The singleton key (the state) keeps a slow load from being queued twice.
- * One state failing to queue does not stop the others.
+ * Every 15 minutes: queues another footprints-load job for each footprint tile that failed (after
+ * pg-boss's own retries) or whose loading claim went stale (a crashed worker). Tiles are first loaded on
+ * demand, when a home in them is measured (measureProperty); this only retries. The singleton key (the
+ * quadkey) keeps a tile from being queued twice. One tile failing to queue does not stop the others.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- the scheduler passes the time; this job does not need it
-export async function ensureFootprints(deps: AppDeps, _now: Date): Promise<void> {
-  for (const { state, companyId } of await statesNeedingFootprintsFor(deps.pools.system)) {
+export async function ensureFootprints(deps: AppDeps, now: Date): Promise<void> {
+  for (const { quadkey, companyId } of await tilesNeedingRetry(deps.pools.system, now)) {
     try {
-      await deps.jobs.send('footprints-load', { companyId, state }, { singletonKey: state });
+      await deps.jobs.send('footprints-load', { companyId, quadkey }, { singletonKey: quadkey });
     } catch (err) {
-      reportJobError(deps, err, `footprints-ensure ${state}`);
+      reportJobError(deps, err, `footprints-ensure ${quadkey}`);
     }
   }
 }

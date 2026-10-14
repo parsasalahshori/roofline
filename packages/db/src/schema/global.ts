@@ -238,15 +238,24 @@ export const buildingFootprints = pgTable(
   'building_footprints',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    /** Two-letter USPS state code. */
-    state: char('state', { length: 2 }).notNull(),
+    /**
+     * Two-letter USPS state code, when known. Rows loaded per state (and the seeded fixtures) have it; rows
+     * loaded per tile do not, because one tile spans state lines (migration 0025).
+     */
+    state: char('state', { length: 2 }),
+    /** The zoom-9 quadkey of the footprint tile the row was loaded from (null: loaded per state or seeded). */
+    tile: text('tile'),
     geom: polygon4326('geom').notNull(),
     areaSqFt: numeric('area_sq_ft', { precision: 12, scale: 1, mode: 'number' }).notNull(),
     source: text('source').notNull(),
     /** The provider's own id for the building, when it has one. */
     sourceRef: text('source_ref'),
   },
-  (t) => [index('building_footprints_geom_gist').using('gist', t.geom), index('building_footprints_state_idx').on(t.state)],
+  (t) => [
+    index('building_footprints_geom_gist').using('gist', t.geom),
+    index('building_footprints_state_idx').on(t.state),
+    index('building_footprints_tile_idx').on(t.tile),
+  ],
 );
 
 /** Load state per state (one row per state): what the loader is doing and why it failed, in plain words. */
@@ -262,6 +271,25 @@ export const buildingFootprintStates = pgTable(
     errorPlain: text('error_plain'),
   },
   (t) => [enumCheck('building_footprint_states', 'status', t.status, FOOTPRINT_STATE_STATUSES)],
+);
+
+/**
+ * Load state per footprint tile (one row per zoom-9 quadkey of Microsoft's Global ML Building Footprints):
+ * what the loader is doing and why it failed, in plain words. Replaces the per-state rows above, whose source
+ * no longer serves files; those rows are left as history. app_system only (migration 0026).
+ */
+export const buildingFootprintTiles = pgTable(
+  'building_footprint_tiles',
+  {
+    quadkey: text('quadkey').primaryKey(),
+    status: text('status').notNull(),
+    buildings: integer('buildings'),
+    sourceUrl: text('source_url'),
+    startedAt: tstz('started_at'),
+    loadedAt: tstz('loaded_at'),
+    errorPlain: text('error_plain'),
+  },
+  (t) => [enumCheck('building_footprint_tiles', 'status', t.status, FOOTPRINT_STATE_STATUSES)],
 );
 
 /**

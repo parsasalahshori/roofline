@@ -38,6 +38,8 @@ export * from './claims.ts';
 export * from './agent-values.ts';
 // S1 skeleton (Task 1): one line per new shared file; later S1 tasks fill the files in.
 export * from './storm.ts';
+// Footprint tiles (Microsoft Global ML Building Footprints, zoom-9 quadkeys)
+export * from './quadkey.ts';
 export * from './door-routes.ts';
 export * from './agent-periods.ts';
 export * from './agents-api.ts';

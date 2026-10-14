@@ -1,49 +1,54 @@
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { beforeEach, describe, expect, inject, test } from 'vitest';
 import { footprintBoxDegrees, footprintsNear, footprintsNearQuery, withTenant } from '@roofline/db';
 import {
-  claimFootprintState,
-  failFootprintState,
-  finishFootprintState,
-  footprintStateStatus,
+  claimFootprintTile,
+  failFootprintTile,
+  finishFootprintTile,
+  footprintTileStatus,
+  footprintTileStatuses,
   insertFootprints,
   STALE_LOADING_MS,
-  statesNeedingFootprints,
-  statesNeedingFootprintsFor,
+  tilesNeedingRetry,
   type FootprintInput,
 } from '@roofline/db/system';
-import { SEED_PASSWORD, seedCompany } from '@roofline/db/testing';
+import { quadkeyOf } from '@roofline/shared';
 import type { AppDeps } from '../src/app.ts';
-import { FOOTPRINT_BATCH_SIZE, FOOTPRINT_LOAD_FAILED_PLAIN, loadFootprintState } from '../src/estimator/footprints-load.ts';
+import { FOOTPRINT_BATCH_SIZE, FOOTPRINT_LOAD_FAILED_PLAIN, loadFootprintTile } from '../src/estimator/footprints-load.ts';
 import type { PgBoss } from 'pg-boss';
 import { ensureJobQueues, InlineJobs, jobQueueOptions, PgBossJobs } from '../src/jobs/queue.ts';
 import { ensureFootprints } from '../src/jobs/scheduler/footprints-ensure.ts';
 import { FakeFootprintSource } from '../src/providers/fakes/footprints.ts';
 import type { FootprintFeature, FootprintSource } from '../src/providers/footprints.ts';
 import { MicrosoftFootprints } from '../src/providers/ms-footprints.ts';
+import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 
 /*
- * The footprint loader and its lookups. The footprint tables are global (no company id), and
- * makeTestApp empties the whole database before every test, so nothing leaks between tests.
- * Raw counts are read through the owner connection, which sees every table.
+ * The footprint loader (one zoom-9 quadkey tile at a time) and its lookups. The footprint tables are
+ * global (no company id), and makeTestApp empties the whole database before every test, so nothing
+ * leaks between tests. Raw counts are read through the owner connection, which sees every table.
  */
 
 const NOW = new Date('2026-10-12T15:00:00.000Z');
 const FIRST_ATTEMPT = { attempt: 1, lastAttempt: false } as const;
 const LAST_ATTEMPT = { attempt: 5, lastAttempt: true } as const;
-const NE_ZIP = fileURLToPath(new URL('./fixtures/footprints/NE.geojson.zip', import.meta.url));
+const NE_FIXTURE = JSON.parse(
+  readFileSync(new URL('./fixtures/footprints-ne.json', import.meta.url), 'utf8'),
+) as FootprintFeature[];
+/** The tile the six Omaha fixture buildings fall in. */
+const OMAHA = quadkeyOf(NE_FIXTURE[0]!.ring[0]![0], NE_FIXTURE[0]!.ring[0]![1]);
+/** Another tile (Iowa, east of Omaha), for loads of made-up buildings. */
+const IOWA = quadkeyOf(-93.6, 41.6);
 
 let t: TestApp;
 
 beforeEach(async () => {
   t = await makeTestApp();
   t.clock.set(NOW);
-  // The seeded companies have no state unless a test gives them one.
-  await owner(`update companies set address_state = null`);
 });
 
 /** One statement through the owner connection (it sees every table). */
@@ -57,11 +62,11 @@ async function owner<T = Record<string, unknown>>(text: string, params: unknown[
   }
 }
 
-const countFor = async (state: string) =>
-  Number((await owner<{ n: string }>(`select count(*) as n from building_footprints where state = $1`, [state]))[0]!.n);
+const countFor = async (tile: string) =>
+  Number((await owner<{ n: string }>(`select count(*) as n from building_footprints where tile = $1`, [tile]))[0]!.n);
 
-const stateRow = async (state: string) =>
-  (await owner<Record<string, unknown>>(`select * from building_footprint_states where state = $1`, [state]))[0];
+const tileRow = async (tile: string) =>
+  (await owner<Record<string, unknown>>(`select * from building_footprint_tiles where quadkey = $1`, [tile]))[0];
 
 const system = () => t.deps.pools.system;
 
@@ -83,13 +88,13 @@ function square(lng: number, lat: number): FootprintFeature['ring'] {
   ];
 }
 
-/** A source that yields `count` squares (each a little east of the last) for any state. */
+/** A source that yields `count` squares (each a little east of the last) for any tile. */
 function squaresSource(count: number): FootprintSource {
   return {
     configured: true,
-    stateFileUrl: (state) => `https://custom.test/${state}.zip`,
+    tileUrls: async (q) => [`https://custom.test/${q}.csv.gz`],
     async *features() {
-      for (let i = 0; i < count; i++) yield { sourceRef: `sq-${i}`, ring: square(-96 + i * 0.0001, 41) };
+      for (let i = 0; i < count; i++) yield { sourceRef: `sq-${i}`, ring: square(-93.6 + i * 0.0001, 41.6) };
     },
   };
 }
@@ -98,7 +103,7 @@ function squaresSource(count: number): FootprintSource {
 function breakingSource(): FootprintSource {
   return {
     configured: true,
-    stateFileUrl: (state) => `https://custom.test/${state}.zip`,
+    tileUrls: async (q) => [`https://custom.test/${q}.csv.gz`],
     async *features() {
       for (let i = 0; i < 3; i++) yield { sourceRef: `ok-${i}`, ring: square(-96 + i * 0.001, 41) };
       throw new Error('PROVIDER SECRET TEXT');
@@ -106,148 +111,184 @@ function breakingSource(): FootprintSource {
   };
 }
 
-const depsWith = (footprints: FootprintSource): AppDeps => ({ ...t.deps, footprints });
+/** The dataset's line format: one GeoJSON Feature per line, no id. */
+const asLine = (ring: FootprintFeature['ring']) =>
+  JSON.stringify({ type: 'Feature', properties: { height: -1, confidence: -1 }, geometry: { type: 'Polygon', coordinates: [ring] } });
 
-let companySeq = 0;
-/** A company with the given state (null: none), made through the owner connection. */
-async function companyIn(state: string | null): Promise<string> {
-  companySeq++;
-  const made = await seedCompany(inject('dbUrls').owner, {
-    name: `Footprint Co ${companySeq}`,
-    slug: `footprint-co-${companySeq}-${Date.now()}`,
-    ...(state === null ? {} : { state }),
-    users: [],
-    password: SEED_PASSWORD,
-  });
-  return made.companyId;
+/** A Microsoft source over a fake fetch: the index lists OMAHA (two files) and serves the fixture in them. */
+function microsoftOverFixture(): { src: MicrosoftFootprints; urls: string[] } {
+  const urls: string[] = [];
+  const half = Math.ceil(NE_FIXTURE.length / 2);
+  const files: Record<string, Buffer> = {
+    'https://x.test/g/a.csv.gz': gzipSync(NE_FIXTURE.slice(0, half).map((f) => asLine(f.ring)).join('\n') + '\n'),
+    'https://x.test/g/b.csv.gz': gzipSync(NE_FIXTURE.slice(half).map((f) => asLine(f.ring)).join('\n')),
+  };
+  const index = [
+    'Location,QuadKey,Url,Size,UploadDate',
+    `Canada,${OMAHA},https://x.test/g/not-us.csv.gz,1KB,2026-02-23`,
+    `UnitedStates,${OMAHA},https://x.test/g/a.csv.gz,1KB,2026-02-23`,
+    `UnitedStates,${OMAHA},https://x.test/g/b.csv.gz,1KB,2026-02-23`,
+  ].join('\n');
+  const f = (async (input: unknown) => {
+    const url = String(input);
+    urls.push(url);
+    if (url === 'https://x.test/g/dataset-links.csv') return new Response(index);
+    const body = files[url];
+    return body === undefined ? new Response('missing', { status: 404 }) : new Response(new Uint8Array(body));
+  }) as unknown as typeof fetch;
+  return { src: new MicrosoftFootprints({ baseUrl: 'https://x.test/g/', fetch: f }), urls };
 }
 
-describe('loadFootprintState', () => {
-  test('the fixture zip loads', async () => {
-    const zip = new Uint8Array(readFileSync(NE_ZIP));
-    const footprints = new MicrosoftFootprints({ baseUrl: 'https://x.test/', fetch: async () => new Response(zip) });
+const depsWith = (footprints: FootprintSource): AppDeps => ({ ...t.deps, footprints });
 
-    await loadFootprintState(depsWith(footprints), 'NE', FIRST_ATTEMPT);
+describe('loadFootprintTile', () => {
+  test('the Microsoft source over the fixture files loads the tile', async () => {
+    const { src, urls } = microsoftOverFixture();
 
-    expect(await footprintStateStatus(system(), 'NE')).toBe('ready');
-    const row = await stateRow('NE');
-    expect(row).toMatchObject({ status: 'ready', buildings: 6, error_plain: null, source_url: 'https://x.test/Nebraska.geojson.zip' });
+    await loadFootprintTile(depsWith(src), OMAHA, FIRST_ATTEMPT);
+
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('ready');
+    const row = await tileRow(OMAHA);
+    expect(row).toMatchObject({
+      status: 'ready',
+      buildings: 6,
+      error_plain: null,
+      source_url: 'https://x.test/g/a.csv.gz https://x.test/g/b.csv.gz',
+    });
     expect(row!.loaded_at).toBeInstanceOf(Date);
-    expect(await countFor('NE')).toBe(6);
-    const rows = await owner<{ area: string; valid: boolean }>(
-      `select area_sq_ft::text as area, ST_IsValid(geom) as valid from building_footprints where state = 'NE'`,
+    expect(urls.filter((u) => u.endsWith('dataset-links.csv'))).toHaveLength(1);
+    expect(urls).not.toContain('https://x.test/g/not-us.csv.gz');
+    expect(await countFor(OMAHA)).toBe(6);
+    const rows = await owner<{ area: string; valid: boolean; state: string | null }>(
+      `select area_sq_ft::text as area, ST_IsValid(geom) as valid, state from building_footprints where tile = $1`,
+      [OMAHA],
     );
     expect(rows).toHaveLength(6);
     for (const r of rows) {
       expect(Number(r.area)).toBeGreaterThan(100);
       expect(Number(r.area)).toBeLessThan(100000);
       expect(r.valid).toBe(true);
+      // A tile spans state lines, so tile rows carry no state.
+      expect(r.state).toBeNull();
     }
   });
 
-  test('the fake source also loads NE', async () => {
-    await loadFootprintState(depsWith(new FakeFootprintSource()), 'NE', FIRST_ATTEMPT);
-    expect(await footprintStateStatus(system(), 'NE')).toBe('ready');
-    expect(await countFor('NE')).toBe(6);
-    expect(await stateRow('NE')).toMatchObject({ buildings: 6 });
+  test('the fake source also loads the Omaha tile', async () => {
+    await loadFootprintTile(depsWith(new FakeFootprintSource()), OMAHA, FIRST_ATTEMPT);
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('ready');
+    expect(await countFor(OMAHA)).toBe(6);
+    expect(await tileRow(OMAHA)).toMatchObject({ buildings: 6, source_url: `https://fake.test/footprints/${OMAHA}.csv.gz` });
+  });
+
+  test('a tile with no files is ready with no buildings', async () => {
+    await loadFootprintTile(depsWith(new FakeFootprintSource()), IOWA, FIRST_ATTEMPT);
+    expect(await tileRow(IOWA)).toMatchObject({ status: 'ready', buildings: 0, source_url: null });
   });
 
   test('a failing stream marks failed and leaves no rows', async () => {
-    await expect(loadFootprintState(depsWith(breakingSource()), 'NE', LAST_ATTEMPT)).rejects.toThrow();
+    await expect(loadFootprintTile(depsWith(breakingSource()), OMAHA, LAST_ATTEMPT)).rejects.toThrow();
 
-    expect(await footprintStateStatus(system(), 'NE')).toBe('failed');
-    expect(await countFor('NE')).toBe(0);
-    const row = await stateRow('NE');
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('failed');
+    expect(await countFor(OMAHA)).toBe(0);
+    const row = await tileRow(OMAHA);
     expect(row!.error_plain).toBe(FOOTPRINT_LOAD_FAILED_PLAIN);
-    expect(String(row!.error_plain)).not.toContain('SECRET');
     expect(JSON.stringify(row)).not.toContain('SECRET');
   });
 
-  test('a code that is not a US state (or DC) returns quietly: nothing claimed, nothing thrown (C-M4)', async () => {
+  test('a failing index download marks the tile failed', async () => {
+    const src = new MicrosoftFootprints({ baseUrl: 'https://x.test/g/', fetch: (async () => new Response('SECRET', { status: 409 })) as unknown as typeof fetch });
+    await expect(loadFootprintTile(depsWith(src), OMAHA, FIRST_ATTEMPT)).rejects.toThrow('409');
+    expect(await tileRow(OMAHA)).toMatchObject({ status: 'failed', error_plain: FOOTPRINT_LOAD_FAILED_PLAIN });
+  });
+
+  test('a key that is not a zoom-9 quadkey returns quietly: nothing claimed, nothing thrown', async () => {
     const source = squaresSource(3);
-    for (const code of ['PR', 'GU', 'Nebraska']) {
-      await expect(loadFootprintState(depsWith(source), code, FIRST_ATTEMPT)).resolves.toBeUndefined();
-      expect(await stateRow(code.toUpperCase())).toBeUndefined();
+    for (const key of ['NE', '01233', '0213323334', '021332339']) {
+      await expect(loadFootprintTile(depsWith(source), key, FIRST_ATTEMPT)).resolves.toBeUndefined();
+      expect(await tileRow(key)).toBeUndefined();
     }
-    expect(await countFor('PR')).toBe(0);
   });
 
   test('a retry after a failure loads cleanly', async () => {
-    await expect(loadFootprintState(depsWith(breakingSource()), 'NE', FIRST_ATTEMPT)).rejects.toThrow();
-    expect(await footprintStateStatus(system(), 'NE')).toBe('failed');
+    await expect(loadFootprintTile(depsWith(breakingSource()), OMAHA, FIRST_ATTEMPT)).rejects.toThrow();
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('failed');
 
-    await loadFootprintState(depsWith(new FakeFootprintSource()), 'NE', { attempt: 2, lastAttempt: false });
+    await loadFootprintTile(depsWith(new FakeFootprintSource()), OMAHA, { attempt: 2, lastAttempt: false });
 
-    expect(await footprintStateStatus(system(), 'NE')).toBe('ready');
-    expect(await countFor('NE')).toBe(6);
-    expect(await stateRow('NE')).toMatchObject({ buildings: 6, error_plain: null });
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('ready');
+    expect(await countFor(OMAHA)).toBe(6);
+    expect(await tileRow(OMAHA)).toMatchObject({ buildings: 6, error_plain: null });
   });
 
-  test('loading over rows left by a crash replaces them', async () => {
+  test('loading over rows left by a crash replaces them, and leaves other tiles alone', async () => {
     const start = t.clock.now();
-    expect(await claimFootprintState(system(), 'NE', 'https://old.test/NE.zip', start)).toBe(true);
-    expect(await insertFootprints(system(), 'NE', [{ sourceRef: 'left-over', ring: square(-96, 41) }])).toBe(1);
-    expect(await countFor('NE')).toBe(1);
+    expect(await claimFootprintTile(system(), OMAHA, start)).toBe(true);
+    expect(await insertFootprints(system(), { tile: OMAHA, state: null }, [{ sourceRef: 'left-over', ring: square(-96, 41) }])).toBe(1);
+    expect(await insertFootprints(system(), { tile: IOWA, state: null }, [{ sourceRef: 'other-tile', ring: square(-93.6, 41.6) }])).toBe(1);
+    expect(await countFor(OMAHA)).toBe(1);
 
     // The crashed worker's claim is stale: a new job takes it over and replaces the rows.
     t.clock.set(new Date(start.getTime() + STALE_LOADING_MS + 1000));
-    await loadFootprintState(depsWith(new FakeFootprintSource()), 'NE', FIRST_ATTEMPT);
+    await loadFootprintTile(depsWith(new FakeFootprintSource()), OMAHA, FIRST_ATTEMPT);
 
-    expect(await footprintStateStatus(system(), 'NE')).toBe('ready');
-    expect(await countFor('NE')).toBe(6);
-    const refs = await owner<{ source_ref: string }>(`select source_ref from building_footprints where state = 'NE'`);
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('ready');
+    expect(await countFor(OMAHA)).toBe(6);
+    const refs = await owner<{ source_ref: string }>(`select source_ref from building_footprints where tile = $1`, [OMAHA]);
     expect(refs.map((r) => r.source_ref)).not.toContain('left-over');
+    expect(await countFor(IOWA)).toBe(1);
   });
 
-  test('a load for a state that is already loading does nothing', async () => {
-    expect(await claimFootprintState(system(), 'NE', 'https://other.test/NE.zip', t.clock.now())).toBe(true);
+  test('a load for a tile that is already loading does nothing', async () => {
+    expect(await claimFootprintTile(system(), OMAHA, t.clock.now())).toBe(true);
     const fake = new FakeFootprintSource();
-    await loadFootprintState(depsWith(fake), 'NE', FIRST_ATTEMPT);
-    expect(await footprintStateStatus(system(), 'NE')).toBe('loading');
-    expect(await countFor('NE')).toBe(0);
+    await loadFootprintTile(depsWith(fake), OMAHA, FIRST_ATTEMPT);
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('loading');
+    expect(await countFor(OMAHA)).toBe(0);
+    expect(fake.calls).toEqual([]);
   });
 
   test('batches of 2,000', async () => {
     const count = FOOTPRINT_BATCH_SIZE * 2 + 1;
     expect(count).toBe(4001);
-    await loadFootprintState(depsWith(squaresSource(count)), 'IA', FIRST_ATTEMPT);
-    expect(await footprintStateStatus(system(), 'IA')).toBe('ready');
-    expect(await stateRow('IA')).toMatchObject({ buildings: 4001 });
-    expect(await countFor('IA')).toBe(4001);
+    await loadFootprintTile(depsWith(squaresSource(count)), IOWA, FIRST_ATTEMPT);
+    expect(await footprintTileStatus(system(), IOWA)).toBe('ready');
+    expect(await tileRow(IOWA)).toMatchObject({ buildings: 4001 });
+    expect(await countFor(IOWA)).toBe(4001);
   });
 });
 
-describe('claimFootprintState', () => {
-  test('a second claim while loading is refused; a ready state cannot be claimed; a stale claim can', async () => {
+describe('claimFootprintTile', () => {
+  test('a second claim while loading is refused; a ready tile cannot be claimed; a stale claim can', async () => {
     const start = t.clock.now();
-    expect(await claimFootprintState(system(), 'NE', 'https://x.test/NE.zip', start)).toBe(true);
-    expect(await footprintStateStatus(system(), 'NE')).toBe('loading');
-    expect(await claimFootprintState(system(), 'NE', 'https://x.test/NE.zip', start)).toBe(false);
+    expect(await claimFootprintTile(system(), OMAHA, start)).toBe(true);
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('loading');
+    expect(await claimFootprintTile(system(), OMAHA, start)).toBe(false);
 
     // Just inside the limit it is still someone's.
-    expect(await claimFootprintState(system(), 'NE', 'https://x.test/NE.zip', new Date(start.getTime() + STALE_LOADING_MS - 1000))).toBe(false);
+    expect(await claimFootprintTile(system(), OMAHA, new Date(start.getTime() + STALE_LOADING_MS - 1000))).toBe(false);
 
     // Past the limit it is a crashed worker's, and can be taken again.
-    expect(await claimFootprintState(system(), 'NE', 'https://x.test/NE.zip', new Date(start.getTime() + STALE_LOADING_MS + 1000))).toBe(true);
+    expect(await claimFootprintTile(system(), OMAHA, new Date(start.getTime() + STALE_LOADING_MS + 1000))).toBe(true);
 
-    await finishFootprintState(system(), 'NE', 0, start);
-    expect(await footprintStateStatus(system(), 'NE')).toBe('ready');
-    expect(await claimFootprintState(system(), 'NE', 'https://x.test/NE.zip', new Date(start.getTime() + STALE_LOADING_MS * 10))).toBe(false);
+    await finishFootprintTile(system(), OMAHA, 0, null, start);
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('ready');
+    expect(await claimFootprintTile(system(), OMAHA, new Date(start.getTime() + STALE_LOADING_MS * 10))).toBe(false);
   });
 
-  test('a failed state can be claimed again, and an unknown state has no status', async () => {
-    expect(await footprintStateStatus(system(), 'NE')).toBeNull();
-    expect(await claimFootprintState(system(), 'NE', 'https://x.test/NE.zip', NOW)).toBe(true);
-    await failFootprintState(system(), 'NE', FOOTPRINT_LOAD_FAILED_PLAIN, NOW);
-    expect(await footprintStateStatus(system(), 'NE')).toBe('failed');
-    expect(await claimFootprintState(system(), 'NE', 'https://x.test/NE.zip', NOW)).toBe(true);
-    expect(await footprintStateStatus(system(), 'NE')).toBe('loading');
+  test('a failed tile can be claimed again, and an unknown tile has no status', async () => {
+    expect(await footprintTileStatus(system(), OMAHA)).toBeNull();
+    expect(await claimFootprintTile(system(), OMAHA, NOW)).toBe(true);
+    await failFootprintTile(system(), OMAHA, FOOTPRINT_LOAD_FAILED_PLAIN, NOW);
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('failed');
+    expect(await claimFootprintTile(system(), OMAHA, NOW)).toBe(true);
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('loading');
+    expect(await footprintTileStatuses(system(), [OMAHA, IOWA])).toEqual(new Map([[OMAHA, 'loading']]));
   });
 });
 
 describe('insertFootprints', () => {
   test('keeps only valid polygons and returns the count', async () => {
-    await claimFootprintState(system(), 'NE', 'https://x.test/NE.zip', NOW);
+    const target = { tile: OMAHA, state: null };
     const normal: FootprintInput = { sourceRef: 'normal', ring: square(-96, 41) };
     const threePoints: FootprintInput = {
       sourceRef: 'three',
@@ -269,78 +310,72 @@ describe('insertFootprints', () => {
       ],
     };
 
-    expect(await insertFootprints(system(), 'NE', [normal])).toBe(1);
-    expect(await insertFootprints(system(), 'NE', [threePoints])).toBe(0);
-    expect(await insertFootprints(system(), 'NE', [])).toBe(0);
-    const bowtieCount = await insertFootprints(system(), 'NE', [bowtie]);
+    expect(await insertFootprints(system(), target, [normal])).toBe(1);
+    expect(await insertFootprints(system(), target, [threePoints])).toBe(0);
+    expect(await insertFootprints(system(), target, [])).toBe(0);
+    const bowtieCount = await insertFootprints(system(), target, [bowtie]);
     expect(bowtieCount).toBeGreaterThanOrEqual(0);
     expect(bowtieCount).toBeLessThanOrEqual(1);
 
-    expect(await countFor('NE')).toBe(1 + bowtieCount);
+    expect(await countFor(OMAHA)).toBe(1 + bowtieCount);
     const invalid = await owner<{ n: string }>(`select count(*) as n from building_footprints where not ST_IsValid(geom)`);
     expect(Number(invalid[0]!.n)).toBe(0);
   });
-});
 
-describe('statesNeedingFootprints', () => {
-  test('a company in NE needs NE; a ready state is gone; a failed one is listed again', async () => {
-    const neCompany = await companyIn('NE');
-    await companyIn(null);
-    await companyIn('ZZ');
-
-    const needed = await statesNeedingFootprints(system());
-    expect(needed).toContain('NE');
-    expect(needed).not.toContain('ZZ');
-    expect(await statesNeedingFootprintsFor(system())).toEqual([{ state: 'NE', companyId: neCompany }]);
-
-    await loadFootprintState(depsWith(new FakeFootprintSource()), 'NE', FIRST_ATTEMPT);
-    expect(await statesNeedingFootprints(system())).not.toContain('NE');
-
-    // A failed state is needed again.
-    await owner(`update building_footprint_states set status = 'failed' where state = 'NE'`);
-    expect(await statesNeedingFootprints(system())).toContain('NE');
-    expect(await statesNeedingFootprintsFor(system())).toEqual([{ state: 'NE', companyId: neCompany }]);
-  });
-
-  test('a state that is loading right now is not listed', async () => {
-    await companyIn('NE');
-    await claimFootprintState(system(), 'NE', 'https://x.test/NE.zip', new Date());
-    expect(await statesNeedingFootprints(system())).not.toContain('NE');
+  test('a seeded row keeps its state', async () => {
+    expect(await insertFootprints(system(), { tile: null, state: 'ne' }, [{ sourceRef: 's', ring: square(-96, 41) }])).toBe(1);
+    expect(await owner(`select state, tile from building_footprints`)).toEqual([{ state: 'NE', tile: null }]);
   });
 });
 
-describe('ensureFootprints', () => {
-  test('the schedule queues one job per state (singleton)', async () => {
-    const ne1 = await companyIn('NE');
-    const ne2 = await companyIn('NE');
-    const ia = await companyIn('IA');
+describe('seedFootprintFixture', () => {
+  test('files the fixture in its tile, marks it ready, and is idempotent', async () => {
+    await seedFootprintFixture(t.deps.pools);
+    await seedFootprintFixture(t.deps.pools);
+    expect(await tileRow(OMAHA)).toMatchObject({ status: 'ready', buildings: 6 });
+    expect(await countFor(OMAHA)).toBe(6);
+  });
+});
+
+describe('ensureFootprints (retries)', () => {
+  test('re-queues failed and stale tiles (singleton per quadkey), not ready or fresh ones', async () => {
     const jobs = new InlineJobs();
     const deps: AppDeps = { ...t.deps, jobs };
+    const stale = quadkeyOf(-77.05, 38.93);
+    const fresh = quadkeyOf(-118.25, 34.05);
+    await claimFootprintTile(system(), OMAHA, NOW);
+    await failFootprintTile(system(), OMAHA, FOOTPRINT_LOAD_FAILED_PLAIN, NOW);
+    await claimFootprintTile(system(), stale, new Date(NOW.getTime() - STALE_LOADING_MS - 1000));
+    await claimFootprintTile(system(), fresh, NOW);
+    await loadFootprintTile(depsWith(new FakeFootprintSource()), IOWA, FIRST_ATTEMPT);
+
+    expect((await tilesNeedingRetry(system(), NOW)).map((r) => r.quadkey)).toEqual([OMAHA, stale].sort());
 
     await ensureFootprints(deps, NOW);
 
-    expect(jobs.sent).toHaveLength(2);
     expect(jobs.sent.map((s) => s.name)).toEqual(['footprints-load', 'footprints-load']);
-    const byState = [...jobs.sent].sort((a, b) => String(a.data.state).localeCompare(String(b.data.state)));
-    expect(byState.map((s) => s.data.state)).toEqual(['IA', 'NE']);
-    for (const s of byState) expect(s.singletonKey).toBe(s.data.state);
-    expect(byState[0]!.data.companyId).toBe(ia);
-    expect([ne1, ne2]).toContain(byState[1]!.data.companyId);
-
-    // Run again with the first two still waiting: both sends are recorded, neither is queued twice.
-    await ensureFootprints(deps, NOW);
-    expect(jobs.sent).toHaveLength(4);
+    expect(jobs.sent.map((s) => s.data.quadkey).sort()).toEqual([OMAHA, stale].sort());
+    for (const s of jobs.sent) {
+      expect(s.singletonKey).toBe(s.data.quadkey);
+      expect([t.seed.a.companyId, t.seed.b.companyId]).toContain(s.data.companyId);
+    }
   });
 
   test('the footprints-load job runs through InlineJobs with the default handlers', async () => {
-    const companyId = await companyIn('NE');
-    await t.jobs.send('footprints-load', { companyId, state: 'NE' }, { singletonKey: 'NE' });
+    await t.jobs.send('footprints-load', { companyId: t.seed.a.companyId, quadkey: OMAHA, state: 'NE' }, { singletonKey: OMAHA });
     await t.jobs.drain(t.deps);
 
     expect(t.jobs.errors).toEqual([]);
-    expect(await footprintStateStatus(system(), 'NE')).toBe('ready');
-    expect(await countFor('NE')).toBe(6);
-    expect(await collectAll(t.footprints.features('NE'))).toHaveLength(6);
+    expect(await footprintTileStatus(system(), OMAHA)).toBe('ready');
+    expect(await countFor(OMAHA)).toBe(6);
+    expect(await collectAll(t.footprints.features(OMAHA))).toHaveLength(6);
+  });
+
+  test('a job queued before tiles (state only) does nothing', async () => {
+    await t.jobs.send('footprints-load', { companyId: t.seed.a.companyId, state: 'NE' }, { singletonKey: 'NE' });
+    await t.jobs.drain(t.deps);
+    expect(t.jobs.errors).toEqual([]);
+    expect(await owner(`select * from building_footprint_tiles`)).toEqual([]);
   });
 });
 
@@ -357,7 +392,7 @@ describe('footprintsNear (C-C1)', () => {
   });
 
   test('finds the buildings near a point through the GIST index on geom', async () => {
-    await insertFootprints(system(), 'NE', [
+    await insertFootprints(system(), { tile: OMAHA, state: null }, [
       { sourceRef: 'here', ring: square(-96, 41.25) },
       { sourceRef: 'far', ring: square(-95.9, 41.3) },
     ]);
@@ -393,9 +428,9 @@ describe('the footprints-load queue expiry (C-M3)', () => {
       getQueue: async () => ({ policy: 'stately' }),
     } as unknown as PgBoss;
     const jobs = new PgBossJobs(boss);
-    await jobs.send('footprints-load', { companyId: t.seed.a.companyId, state: 'NE' }, { singletonKey: 'NE' });
+    await jobs.send('footprints-load', { companyId: t.seed.a.companyId, quadkey: OMAHA }, { singletonKey: OMAHA });
     await jobs.send('signed-pdf', { companyId: t.seed.a.companyId, proposalId: 'p' });
-    expect(sends[0]).toEqual({ name: 'footprints-load', opts: { singletonKey: 'NE', expireInSeconds: 21600 } });
+    expect(sends[0]).toEqual({ name: 'footprints-load', opts: { singletonKey: OMAHA, expireInSeconds: 21600 } });
     expect(sends[1]).toEqual({ name: 'signed-pdf', opts: {} });
 
     await ensureJobQueues(boss);
@@ -406,7 +441,7 @@ describe('the footprints-load queue expiry (C-M3)', () => {
 
 describe('footprint table access', () => {
   test('app_tenant can read building_footprints but not write', async () => {
-    await loadFootprintState(depsWith(new FakeFootprintSource()), 'NE', FIRST_ATTEMPT);
+    await loadFootprintTile(depsWith(new FakeFootprintSource()), OMAHA, FIRST_ATTEMPT);
     const ctx = { companyId: t.seed.a.companyId, userId: null, role: 'system', canApproveSpend: false } as const;
 
     const read = await withTenant(t.deps.pools, ctx, async (tx) => {
@@ -423,6 +458,11 @@ describe('footprint table access', () => {
         );
       }),
     ).rejects.toThrow();
-    expect(await countFor('NE')).toBe(6);
+    await expect(
+      withTenant(t.deps.pools, ctx, async (tx) => {
+        await tx.execute(sql`select * from building_footprint_tiles`);
+      }),
+    ).rejects.toThrow();
+    expect(await countFor(OMAHA)).toBe(6);
   });
 });

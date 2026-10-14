@@ -32,7 +32,7 @@ export const JOB_NAMES = [
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 // 'footprints-load' is global work, but the worker requires a company id on every job: its data is
-// `{ companyId: <the requesting company>, state }` with singletonKey = state.
+// `{ companyId: <the requesting company>, quadkey, state? }` with singletonKey = quadkey (a zoom-9 footprint tile).
 // Storm Scout: 'storm-match-company' is `{ companyId }`, sent with singletonKey companyId; 'storm-draft' is
 // `{ companyId, companyStormId }`; 'storm-alert' is `{ companyId, companyStormId, kind }`; 'ad-sync-company' is `{ companyId }`.
 export type JobData = {
@@ -40,6 +40,8 @@ export type JobData = {
   importId?: string;
   appointmentId?: string;
   state?: string;
+  /** footprints-load: the zoom-9 quadkey of the footprint tile to load. */
+  quadkey?: string;
   proposalId?: string;
   companyStormId?: string;
   kind?: 'now' | 'plan';
@@ -60,8 +62,8 @@ export type JobMeta = { attempt: number; lastAttempt: boolean };
 export interface JobQueue { send(name: JobName, data: JobData, opts?: SendOptions): Promise<void> }
 export const JOB_QUEUE_OPTIONS = { policy: 'stately', retryLimit: 4, retryBackoff: true, retryDelay: 30 } as const;   // 5 attempts
 /**
- * Queues whose jobs may run longer than pg-boss's default 15 minutes. A state's footprint load (a large
- * download and millions of rows) gets about the time a loading claim stays fresh (STALE_LOADING_MS, 6 h),
+ * Queues whose jobs may run longer than pg-boss's default 15 minutes. A footprint tile load (a download of
+ * up to a few hundred MB and up to a million or so rows) gets about the time a loading claim stays fresh (STALE_LOADING_MS, 6 h),
  * so pg-boss never times it out and retries it while the first run is still going.
  */
 export const JOB_EXPIRE_SECONDS: Partial<Record<JobName, number>> = { 'footprints-load': 6 * 60 * 60 };

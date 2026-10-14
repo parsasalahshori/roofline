@@ -21,26 +21,30 @@ async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
 }
 
 describe('FakeFootprintSource', () => {
-  test('NE yields the fixture rings', async () => {
-    const f = await collect(new FakeFootprintSource().features('ne'));
+  /** The tile the six Omaha fixture buildings fall in. */
+  const OMAHA = '021332333';
+  test('the Omaha tile yields the fixture rings', async () => {
+    const f = await collect(new FakeFootprintSource().features(OMAHA));
     expect(f).toHaveLength(6);
     expect(f[0]?.sourceRef).toBe('fake-ne-1');
     for (const x of f) expect(new Set(x.ring.map((p) => p.join(','))).size).toBeGreaterThanOrEqual(3);
   });
-  test('another state yields nothing', async () => {
-    expect(await collect(new FakeFootprintSource().features('IA'))).toEqual([]);
-  });
-  test('stateFileUrl is stable', () => {
+  test('another tile yields nothing and has no files', async () => {
     const s = new FakeFootprintSource();
-    expect(s.stateFileUrl('NE')).toBe('https://fake.test/footprints/NE.zip');
-    expect(s.stateFileUrl('NE')).toBe(s.stateFileUrl('NE'));
+    expect(await collect(s.features('021332332'))).toEqual([]);
+    expect(await s.tileUrls('021332332')).toEqual([]);
+  });
+  test('tileUrls is stable', async () => {
+    const s = new FakeFootprintSource();
+    expect(await s.tileUrls(OMAHA)).toEqual([`https://fake.test/footprints/${OMAHA}.csv.gz`]);
+    expect(await s.tileUrls(OMAHA)).toEqual(await s.tileUrls(OMAHA));
   });
   test('failNext(2) makes the next two iterations throw, then it works', async () => {
     const s = new FakeFootprintSource();
     s.failNext(2);
-    await expect(collect(s.features('NE'))).rejects.toThrow('Fake footprints failure');
-    await expect(collect(s.features('NE'))).rejects.toThrow('Fake footprints failure');
-    expect(await collect(s.features('NE'))).toHaveLength(6);
+    await expect(collect(s.features(OMAHA))).rejects.toThrow('Fake footprints failure');
+    await expect(collect(s.features(OMAHA))).rejects.toThrow('Fake footprints failure');
+    expect(await collect(s.features(OMAHA))).toHaveLength(6);
     expect(s.calls).toHaveLength(3);
   });
 });
@@ -157,9 +161,9 @@ describe('factories', () => {
     await expect(store.put('k', new Uint8Array(), 'a/b')).rejects.toBeInstanceOf(ObjectStoreUnavailableError);
     await expect(store.get('k')).rejects.toBeInstanceOf(ObjectStoreUnavailableError);
   });
-  test('footprints without FAKE_PROVIDERS is unconfigured', () => {
+  test('footprints without FAKE_PROVIDERS is unconfigured', async () => {
     const src = createFootprintSource(cfg({ FAKE_PROVIDERS: false }));
     expect(src.configured).toBe(false);
-    expect(() => src.stateFileUrl('NE')).toThrow("Building footprints aren't set up.");
+    await expect(src.tileUrls('021332333')).rejects.toThrow("Building footprints aren't set up.");
   });
 });

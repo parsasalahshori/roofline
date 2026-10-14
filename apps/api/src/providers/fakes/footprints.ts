@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { quadkeyOf } from '@roofline/shared';
 import type { FootprintFeature, FootprintSource } from '../footprints.ts';
 
-export type FootprintCall = { method: 'stateFileUrl' | 'features'; args: { state: string } };
+export type FootprintCall = { method: 'tileUrls' | 'features'; args: { quadkey: string } };
 
 let NE: FootprintFeature[] | null = null;
 function loadNE(): FootprintFeature[] {
@@ -11,6 +12,12 @@ function loadNE(): FootprintFeature[] {
   return NE;
 }
 
+/** The fixture buildings filed in the tile (by their first corner): the six Omaha ones are all in one tile. */
+function inTile(quadkey: string): FootprintFeature[] {
+  return loadNE().filter((f) => quadkeyOf(f.ring[0]![0], f.ring[0]![1], quadkey.length) === quadkey);
+}
+
+/** The NE fixture (six Omaha buildings), served from the tile they fall in; every other tile is empty. */
 export class FakeFootprintSource implements FootprintSource {
   readonly configured = true;
   readonly calls: FootprintCall[] = [];
@@ -25,12 +32,16 @@ export class FakeFootprintSource implements FootprintSource {
       throw new Error('Fake footprints failure');
     }
   }
-  stateFileUrl(state: string): string {
-    this.record({ method: 'stateFileUrl', args: { state } });
-    return `https://fake.test/footprints/${state}.zip`;
+  tileUrls(quadkey: string): Promise<string[]> {
+    try {
+      this.record({ method: 'tileUrls', args: { quadkey } });
+    } catch (err) {
+      return Promise.reject(err as Error);
+    }
+    return Promise.resolve(inTile(quadkey).length > 0 ? [`https://fake.test/footprints/${quadkey}.csv.gz`] : []);
   }
-  async *features(state: string): AsyncGenerator<FootprintFeature> {
-    this.record({ method: 'features', args: { state } });
-    if (state.toUpperCase() === 'NE') yield* loadNE();
+  async *features(quadkey: string): AsyncGenerator<FootprintFeature> {
+    this.record({ method: 'features', args: { quadkey } });
+    yield* inTile(quadkey);
   }
 }

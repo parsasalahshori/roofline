@@ -176,6 +176,20 @@
       "when": 1791780003000,
       "tag": "0024_more_agents_grants_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791955802770,
+      "tag": "0025_footprint_tiles_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791955806919,
+      "tag": "0026_footprint_tiles_grants",
+      "breakpoints": true
     }
   ]
 }

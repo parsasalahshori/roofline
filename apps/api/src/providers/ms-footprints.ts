@@ -1,101 +1,37 @@
-import { createWriteStream } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import { pipeline as pipelineCb } from 'node:stream';
-import { promisify } from 'node:util';
-import yauzl from 'yauzl';
-import parser from 'stream-json/parser.js';
-import pick from 'stream-json/filters/pick.js';
-import streamArray from 'stream-json/streamers/stream-array.js';
+import { createGunzip } from 'node:zlib';
 import type { Ring } from '@roofline/shared';
 import type { Config } from '../config.ts';
-import { FootprintsUnavailableError } from './footprints.ts';
 import type { FootprintFeature, FootprintSource } from './footprints.ts';
 
-/** USPS code -> Microsoft file stem (full state name with spaces removed). */
-export const STATE_FILE_NAMES: Record<string, string> = {
-  AL: 'Alabama',
-  AK: 'Alaska',
-  AZ: 'Arizona',
-  AR: 'Arkansas',
-  CA: 'California',
-  CO: 'Colorado',
-  CT: 'Connecticut',
-  DE: 'Delaware',
-  DC: 'DistrictofColumbia',
-  FL: 'Florida',
-  GA: 'Georgia',
-  HI: 'Hawaii',
-  ID: 'Idaho',
-  IL: 'Illinois',
-  IN: 'Indiana',
-  IA: 'Iowa',
-  KS: 'Kansas',
-  KY: 'Kentucky',
-  LA: 'Louisiana',
-  ME: 'Maine',
-  MD: 'Maryland',
-  MA: 'Massachusetts',
-  MI: 'Michigan',
-  MN: 'Minnesota',
-  MS: 'Mississippi',
-  MO: 'Missouri',
-  MT: 'Montana',
-  NE: 'Nebraska',
-  NV: 'Nevada',
-  NH: 'NewHampshire',
-  NJ: 'NewJersey',
-  NM: 'NewMexico',
-  NY: 'NewYork',
-  NC: 'NorthCarolina',
-  ND: 'NorthDakota',
-  OH: 'Ohio',
-  OK: 'Oklahoma',
-  OR: 'Oregon',
-  PA: 'Pennsylvania',
-  RI: 'RhodeIsland',
-  SC: 'SouthCarolina',
-  SD: 'SouthDakota',
-  TN: 'Tennessee',
-  TX: 'Texas',
-  UT: 'Utah',
-  VT: 'Vermont',
-  VA: 'Virginia',
-  WA: 'Washington',
-  WV: 'WestVirginia',
-  WI: 'Wisconsin',
-  WY: 'Wyoming',
-};
+/*
+ * Microsoft Global ML Building Footprints (ODbL), tiled by zoom-9 Bing quadkey. The dataset's index,
+ * `<base>dataset-links.csv` (Location,QuadKey,Url,Size,UploadDate), names each tile's files; a quadkey
+ * may have several rows. Each file is a gzipped text file with one GeoJSON Feature per line
+ * (a Polygon in lng/lat, no id). Only Location=UnitedStates rows are used.
+ */
 
-export const TMP_PREFIX = 'roofline-footprints-';
+/** The index's Location for US tiles. */
+export const US_LOCATION = 'UnitedStates';
+/** The index is read again after this long, so a long-running worker sees newly published tiles. */
+export const INDEX_TTL_MS = 24 * 60 * 60 * 1000;
+const INDEX_TIMEOUT_MS = 60_000;
 
-const yauzlOpen = promisify(yauzl.open.bind(yauzl)) as (
-  path: string,
-  options: yauzl.Options,
-) => Promise<yauzl.ZipFile>;
+type TileIndex = Map<string, string[]>;
 
-/** Opens the first .geojson/.json entry of the zip as a readable stream. */
-async function openFirstEntry(zipPath: string): Promise<{ zip: yauzl.ZipFile; stream: Readable }> {
-  const zip = await yauzlOpen(zipPath, { lazyEntries: true, autoClose: false });
-  try {
-    const entry = await new Promise<yauzl.Entry>((resolve, reject) => {
-      zip.on('entry', (e: yauzl.Entry) => {
-        if (/\.(geojson|json)$/i.test(e.fileName) && !e.fileName.endsWith('/')) resolve(e);
-        else zip.readEntry();
-      });
-      zip.once('end', () => reject(new Error('The footprint file has no data in it.')));
-      zip.once('error', () => reject(new Error('The footprint file could not be read.')));
-      zip.readEntry();
-    });
-    const open = promisify(zip.openReadStream.bind(zip)) as (e: yauzl.Entry) => Promise<Readable>;
-    return { zip, stream: await open(entry) };
-  } catch (err) {
-    zip.close();
-    throw err;
+/** The US rows of the index text, grouped by quadkey (in file order). */
+export function parseDatasetLinks(text: string): TileIndex {
+  const index: TileIndex = new Map();
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith(`${US_LOCATION},`)) continue;
+    const [, quadkey, url] = line.split(',');
+    if (!quadkey || !url || !/^https?:\/\//.test(url)) continue;
+    const urls = index.get(quadkey) ?? [];
+    urls.push(url);
+    index.set(quadkey, urls);
   }
+  return index;
 }
 
 function isRing(v: unknown): v is Ring {
@@ -115,60 +51,86 @@ function isRing(v: unknown): v is Ring {
   return a[0] === b[0] && a[1] === b[1];
 }
 
+/** The outer ring of one line's Polygon feature, or null for anything else (blank, bad JSON, other geometry). */
+export function ringOfLine(line: string): Ring | null {
+  const text = line.trim();
+  if (text === '') return null;
+  let f: { geometry?: { type?: string; coordinates?: unknown[] } | null } | null;
+  try {
+    f = JSON.parse(text) as typeof f;
+  } catch {
+    return null;
+  }
+  if (f?.geometry?.type !== 'Polygon') return null;
+  const ring = f.geometry.coordinates?.[0];
+  if (!isRing(ring)) return null;
+  return ring.map((p) => [p[0], p[1]] as [number, number]);
+}
+
 export class MicrosoftFootprints implements FootprintSource {
   readonly configured = true;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly now: () => number;
+  private index: { at: number; value: Promise<TileIndex> } | null = null;
 
-  constructor(o: { baseUrl: string; fetch?: typeof fetch }) {
-    this.baseUrl = o.baseUrl;
+  constructor(o: { baseUrl: string; fetch?: typeof fetch; now?: () => number }) {
+    this.baseUrl = o.baseUrl.endsWith('/') ? o.baseUrl : `${o.baseUrl}/`;
     this.fetchImpl = o.fetch ?? ((...a) => fetch(...a));
+    this.now = o.now ?? (() => Date.now());
   }
 
-  stateFileUrl(state: string): string {
-    const stem = STATE_FILE_NAMES[state.toUpperCase()];
-    if (!stem) throw new FootprintsUnavailableError("Building footprints aren't available for that state.");
-    return `${this.baseUrl}${stem}.geojson.zip`;
+  get indexUrl(): string {
+    return `${this.baseUrl}dataset-links.csv`;
   }
 
-  async *features(state: string): AsyncGenerator<FootprintFeature> {
-    const url = this.stateFileUrl(state);
-    const res = await this.fetchImpl(url);
-    if (!res.ok) throw new Error(`The footprint download failed with status ${res.status}.`);
-    if (!res.body) throw new Error('The footprint download came back empty.');
+  /** The tile index, downloaded once per process (and again after INDEX_TTL_MS). A failed download is not kept. */
+  private tileIndex(): Promise<TileIndex> {
+    const now = this.now();
+    if (this.index !== null && now - this.index.at < INDEX_TTL_MS) return this.index.value;
+    const value = (async () => {
+      const res = await this.fetchImpl(this.indexUrl, { signal: AbortSignal.timeout(INDEX_TIMEOUT_MS) });
+      if (!res.ok) throw new Error(`The footprint index download failed with status ${res.status}.`);
+      return parseDatasetLinks(await res.text());
+    })();
+    const entry = { at: now, value };
+    this.index = entry;
+    value.catch(() => {
+      if (this.index === entry) this.index = null;
+    });
+    return value;
+  }
 
-    const dir = await mkdtemp(join(tmpdir(), TMP_PREFIX));
-    let zip: yauzl.ZipFile | null = null;
-    let chain: Readable | null = null;
-    try {
-      const zipPath = join(dir, 'state.zip');
-      await pipeline(Readable.fromWeb(res.body as never), createWriteStream(zipPath));
-      const opened = await openFirstEntry(zipPath);
-      zip = opened.zip;
-      chain = pipelineCb(
-        opened.stream,
-        parser.asStream(),
-        pick.asStream({ filter: 'features' }),
-        streamArray.asStream(),
-        () => {},
-      ) as unknown as Readable;
-      let index = -1;
-      for await (const item of chain as AsyncIterable<{ key: number; value: unknown }>) {
-        index++;
-        const f = item.value as {
-          properties?: { id?: unknown; ID?: unknown } | null;
-          geometry?: { type?: string; coordinates?: unknown[] } | null;
-        } | null;
-        if (f?.geometry?.type !== 'Polygon') continue;
-        const ring = f.geometry.coordinates?.[0];
-        if (!isRing(ring)) continue;
-        const id = f.properties?.id ?? f.properties?.ID ?? index;
-        yield { sourceRef: String(id), ring };
+  async tileUrls(quadkey: string): Promise<string[]> {
+    return [...((await this.tileIndex()).get(quadkey) ?? [])];
+  }
+
+  async *features(quadkey: string): AsyncGenerator<FootprintFeature> {
+    const urls = await this.tileUrls(quadkey);
+    for (const [fileNo, url] of urls.entries()) {
+      const res = await this.fetchImpl(url);
+      if (!res.ok) throw new Error(`The footprint download failed with status ${res.status}.`);
+      if (!res.body) throw new Error('The footprint download came back empty.');
+      const body = Readable.fromWeb(res.body as never);
+      const gunzip = createGunzip();
+      // A gunzip error (a corrupt file) must reach the reader below, not crash the process.
+      body.on('error', (err) => gunzip.destroy(err));
+      const lines = createInterface({ input: body.pipe(gunzip), crlfDelay: Infinity });
+      try {
+        let lineNo = 0;
+        for await (const line of lines) {
+          lineNo++;
+          const ring = ringOfLine(line);
+          if (ring === null) continue;
+          yield { sourceRef: `${quadkey}-${fileNo}-${lineNo}`, ring };
+        }
+      } catch (err) {
+        throw new Error('The footprint file could not be read.', { cause: err });
+      } finally {
+        lines.close();
+        gunzip.destroy();
+        body.destroy();
       }
-    } finally {
-      chain?.destroy();
-      zip?.close();
-      await rm(dir, { recursive: true, force: true });
     }
   }
 }

@@ -1,0 +1,15 @@
+-- Custom migration (drizzle-kit generate --custom): grants for building_footprint_tiles, which
+-- 0025_footprint_tiles_schema.sql added. Run by the migration owner.
+--
+-- A table or column a later migration adds gets no grants by default (see 0002): every grant below is
+-- deliberate, and test/rls.test.ts lists them.
+--
+-- building_footprint_tiles is the per-tile twin of building_footprint_states (0016 section 3): a global
+-- table with no company_id and no RLS, holding only the loader's progress. It is app_system's alone, with
+-- exactly what packages/db/src/system/footprints.ts uses: it reads, upserts (INSERT ... ON CONFLICT DO
+-- UPDATE) and updates. app_tenant gets nothing. Never ALL: TRUNCATE, TRIGGER or REFERENCES would let
+-- app_system SQL skip the loader's paths or attach code or keys.
+--
+-- The new building_footprints.tile column needs no grant of its own: 0016's table-level SELECT and
+-- INSERT (app_system) and SELECT (app_tenant) cover every column, the new one included.
+GRANT SELECT, INSERT, UPDATE ON building_footprint_tiles TO app_system;

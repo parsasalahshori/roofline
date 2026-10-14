@@ -20,8 +20,8 @@ import {
   updateProperty,
   withTenant,
 } from '@roofline/db';
-import { footprintStateStatus } from '@roofline/db/system';
-import { instantEstimate, isTimeZone, isUsStateCode, measureRoof, type MeasurementView, normalizeAddressKey, type Outline, type Ring, seededPitchX12 } from '@roofline/shared';
+import { footprintTileStatuses } from '@roofline/db/system';
+import { footprintTilesNear, instantEstimate, isTimeZone, measureRoof, type MeasurementView, normalizeAddressKey, type Outline, type Ring, seededPitchX12 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
@@ -39,6 +39,8 @@ const FALLBACK_OVERHANG_FT = 1;
 /** A footprint that contains the home point wins; otherwise the nearest one within this distance. */
 const FOOTPRINT_SEARCH_M = 40;
 const FOOTPRINT_SNAP_M = 30;
+/** A point this close to its footprint tile's edge also needs the tile next door (a building may be filed there). */
+const FOOTPRINT_TILE_MARGIN_M = 100;
 
 type NearFootprint = Awaited<ReturnType<typeof footprintsNear>>[number];
 /** A building the user picked on the map: its footprint and a point on it. */
@@ -203,8 +205,10 @@ function drawInput(property: PropertyRow, center: LngLat, settings: Settings, jo
  * - `propertyId` names a saved address the caller may see (404 otherwise); `address` is looked up
  *   with the geocoder and saved (or reused) first. Neither is a 400.
  * - A home with no point is looked up once more; still none means draw mode centred on the US.
- * - When the state's footprints are not loaded yet, one `footprints-load` job is queued (singleton
- *   per state) and the answer is draw mode.
+ * - The footprints are loaded per zoom-9 tile: the point's own tile, plus the tile next door when the
+ *   point is within FOOTPRINT_TILE_MARGIN_M of its edge. When any of them is not ready yet, one
+ *   `footprints-load` job is queued for each (singleton per quadkey) and the answer is draw mode; once
+ *   they are loaded, measuring again finds the outline.
  * - Otherwise the footprints near the point decide: the one containing it, or the nearest within
  *   30 m, is the main structure; every nearby footprint is listed, only the main one included.
  * Never throws for missing or bad geometry: that is draw mode.
@@ -241,10 +245,13 @@ export async function measureProperty(
   }
 
   const state = property.state.trim().toUpperCase();
-  // Only a state with a footprint file is ever loaded: a territory or a free-text state opens draw mode.
-  const status = isUsStateCode(state) ? await footprintStateStatus(deps.pools.system, state) : null;
-  if (status !== 'ready') {
-    if (isUsStateCode(state)) await deps.jobs.send('footprints-load', { companyId: ctx.companyId, state }, { singletonKey: state });
+  const tiles = footprintTilesNear(point[0], point[1], FOOTPRINT_TILE_MARGIN_M);
+  const statuses = await footprintTileStatuses(deps.pools.system, tiles);
+  const notReady = tiles.filter((q) => statuses.get(q) !== 'ready');
+  if (notReady.length > 0) {
+    for (const quadkey of notReady) {
+      await deps.jobs.send('footprints-load', { companyId: ctx.companyId, quadkey, state }, { singletonKey: quadkey });
+    }
     return asNotFound(() =>
       withTenant(deps.pools, ctx, async (tx) =>
         createMeasurement(tx, ctx, drawInput(property, point, await settingsFor(tx, ctx), jobId), now),

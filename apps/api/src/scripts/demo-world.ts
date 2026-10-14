@@ -709,7 +709,7 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
     );
 
     // 2. Yesterday's hail storm over the book, the homes it hit, and a drafted storm plan.
-    // The building outlines are the real ones from the asset (state NE, ready), not the e2e fixture's rectangles.
+    // The building outlines are the real ones from the asset (filed in their Omaha footprint tile, marked ready), not the e2e fixture's rectangles.
     await seedFootprintFixture(pools, placer.footprints());
     const { companyStormId } = await seedStormFixture(pools, companyId, { now, query: q, footprints: false });
     await q(`update storms set place_name = 'West Omaha, NE' where id = (select storm_id from company_storms where id = $1)`, [companyStormId]);
