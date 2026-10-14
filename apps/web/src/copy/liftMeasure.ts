@@ -58,6 +58,7 @@ export const liftMeasure = {
     'rough-heights': "The roof's surface is uneven in the height map.",
     trees: 'Trees cover part of the roof.',
     'differs-from-google': "Some sections' pitch or facing differ from a second measurement of this roof.",
+    'joined-buildings': 'This roof joins the building next door. Only this home was measured: check where it was cut.',
   },
   facetLabel: (letter: string, sqFt: number, pitch: string) => `Facet ${letter}, ${sqFt.toLocaleString()} sq ft, ${pitch} pitch`,
   /** A facet label is a button: pressed means the section is in the quote. */

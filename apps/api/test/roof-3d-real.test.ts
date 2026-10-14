@@ -59,7 +59,7 @@ describe.skipIf(DATA === undefined || !existsSync(DATA))('the 3D roof on real Go
       };
       const building = insightsOf(path.join(DATA!, house.insights));
       const started = performance.now();
-      const roof: Roof3d | null = roofOnLayers(layers, house.point, { steep: steepRoof(building) });
+      const roof: Roof3d | null = roofOnLayers(layers, house.point, { steep: steepRoof(building), building });
       const ms = performance.now() - started;
       expect(roof).not.toBeNull();
       const check = checkRoof(roof!, building);

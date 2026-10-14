@@ -292,6 +292,26 @@ describe('Measure with the roof in 3D', () => {
     expect(view.needsReview).toEqual({ reasons: ['coarse-imagery'] });
   });
 
+  it('a home whose roof the height map joins to the next home (a terrace): only this home, marked for review', async () => {
+    // One hip roof over this home and the one east of it; Google's building box is this home's.
+    const TERRACE: Ring = [
+      [-96.0, 41.25],
+      [-95.9994, 41.25],
+      [-95.9994, 41.2502],
+      [-96.0, 41.2502],
+      [-96.0, 41.25],
+    ];
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    t.solar.set(INSIDE, SOLAR_HOUSE);
+    const layers = hipLayers(TERRACE);
+    t.solarLayers.set(layersCover(layers), layers);
+    const owner = await who.as('owner');
+    const view = await measure(owner, { propertyId: await homeAt(70, INSIDE) });
+    expect(view.pitchSource).toBe('solar-3d');
+    expect(view.needsReview).toEqual({ reasons: ['joined-buildings'] });
+    expect(Math.abs(polygonAreaSqFt(view.outline![0]!) / polygonAreaSqFt(HOUSE) - 1)).toBeLessThan(0.08);
+  });
+
   it("with the 3D roof, Measure does not wait for the area's building outlines (they load on for the map)", async () => {
     // Nothing loaded yet in this area, and the outlines' download is slow: Measure answers from the 3D roof.
     t.solar.set(INSIDE, SOLAR_HOUSE);

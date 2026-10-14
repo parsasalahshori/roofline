@@ -1,7 +1,8 @@
 // Real roof geometry from a height map (Google Solar's Data Layers: a digital surface model and a roof mask, 0.1 m or
 // 0.25 m a pixel). Pure and deterministic (a seeded random number generator); the server runs it, the web never does.
 //
-// 1. The roof: the mask's part under (or nearest) the point, small gaps closed and holes filled.
+// 1. The roof: the mask's part under (or nearest) the point, small gaps closed and holes filled; cut down to this
+//    home when it runs on into the buildings it touches (a terrace) past Google's box for the building.
 // 2. Planes: sequential RANSAC with local candidates (10 cm tolerance, at most 24/12, at least 2 m2), every roof
 //    pixel then given to the plane it fits best by a flood from the planes' own pixels; touching faces whose planes
 //    agree are merged, small pieces in the roof's middle are dissolved into their neighbours (planes.ts).
@@ -10,8 +11,8 @@
 //    planes are far apart in height, eaves and rakes along the outline (topology.ts).
 import type { LngLat } from '../roof.ts';
 import type { Roof3d, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../roof-3d.ts';
-import { dist, pointInRing, signedArea, type XY } from './geom.ts';
-import { DEFAULT_OUTLINE_PARAMS, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
+import { dist, nearestOnSegment, pointInRing, signedArea, simplifyClosedIdx, type XY } from './geom.ts';
+import { DEFAULT_OUTLINE_PARAMS, mainAxis, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
 import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type Plane, type PlaneParams, refitFaces } from './planes.ts';
 import { close, components, countSet, fillHoles, largestComponent, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
@@ -49,6 +50,12 @@ export type ReconstructOptions = {
   debug?: (msg: string) => void;
   /** The imagery's quality (HIGH, MEDIUM), for the quality result. */
   imageryQuality?: string | null;
+  /**
+   * Google's box round the building at the point, its corners in pixel columns and rows (fractional), when known. A
+   * mask part running well past it (a terrace or a semi-detached pair: the mask does not split buildings that touch)
+   * is cut down to this home, and the roof marked for review ('joined-buildings').
+   */
+  building?: readonly { col: number; row: number }[];
 };
 
 /** Raster-local metres: x east from the raster's left edge, y north from its top edge (so y <= 0). */
@@ -75,6 +82,12 @@ export type LocalRoof = {
 };
 
 const FLAT_X12 = 2;
+/** A mask part with more than this share of its pixels over JOINED_NEAR_M outside the building's box is joined. */
+const JOINED_SHARE = 0.15;
+const JOINED_NEAR_M = 1;
+/** How far a terrace home's own face may reach past the party wall worked out from the box, metres. */
+const TERRACE_SNAP_M = 0.7;
+const TERRACE_ON_PLANE_M = 0.25;
 const SQ_FT_PER_SQ_M = 10.7639104167;
 const FT_PER_M = 3.280839895;
 
@@ -129,7 +142,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     r0 = Math.min(r0, r);
     r1 = Math.max(r1, r);
   }
-  const clipped = c0 <= 1 || r0 <= 1 || c1 >= W - 2 || r1 >= H - 2;
+  let clipped = c0 <= 1 || r0 <= 1 || c1 >= W - 2 || r1 >= H - 2;
   const closeR = Math.max(1, Math.round(0.3 / s));
   const pad = closeR + 3;
   c0 = Math.max(0, c0 - pad);
@@ -150,7 +163,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // Google's own mask of this roof, as it came: what the outline is checked against.
   const googleMask = roof.slice();
   roof = fillHoles(g, largestComponent(g, open3(g, fillHoles(g, close(g, roof, closeR)))));
-  const roofPx = countSet(roof);
+  let roofPx = countSet(roof);
   if (roofPx * s * s < (opts.minRoofM2 ?? 15)) return null;
 
   // Tree crowns: green in the photo and rough in the heights (a green roof is smooth).
@@ -170,6 +183,35 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     // A crown is more than its rough pixels: close the gaps between them.
     tree = close(g, tree, Math.max(1, Math.round(0.3 / s)));
     for (let i = 0; i < tree.length; i++) if (roof[i] !== 1) tree[i] = 0;
+  }
+
+  // 1b. A part running on well past Google's box for the building at the point (a terrace, a semi-detached pair):
+  //     this home is cut out of it (homeInTerrace).
+  let joined = false;
+  if (opts.building !== undefined && opts.building.length >= 3) {
+    const box = opts.building.map((p) => ({ x: (p.col - c0) * s, y: -(p.row - r0) * s }));
+    const near = nearRing(g, s, box, JOINED_NEAR_M);
+    let outside = 0;
+    for (let i = 0; i < roof.length; i++) if (roof[i] === 1 && near[i] !== 1) outside++;
+    if (outside > JOINED_SHARE * roofPx) {
+      joined = true;
+      const found0 = findPlanes(g, s, dsm, roof, rng, planePrm, tree);
+      const faces0 = found0.length > 0 ? buildFaces(g, s, dsm, roof, found0, planePrm, tree) : null;
+      const mine = homeInTerrace(g, s, dsm, roof, box, faces0);
+      for (let i = 0; i < roof.length; i++) if (mine[i] !== 1) googleMask[i] = 0;
+      roof = fillHoles(g, largestComponent(g, open3(g, fillHoles(g, close(g, mine, closeR)))));
+      roofPx = countSet(roof);
+      if (roofPx * s * s < (opts.minRoofM2 ?? 15)) return null;
+      if (tree !== null) for (let i = 0; i < tree.length; i++) if (roof[i] !== 1) tree[i] = 0;
+      // Running off the height map's edge is now a question of what was kept.
+      clipped = false;
+      for (let i = 0; i < roof.length && !clipped; i++) {
+        if (roof[i] !== 1) continue;
+        const c = (i % g.w) + c0;
+        const r = Math.floor(i / g.w) + r0;
+        clipped = c <= 1 || r <= 1 || c >= W - 2 || r >= H - 2;
+      }
+    }
   }
 
   // 2. Planes and faces.
@@ -204,6 +246,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   const scale = rawSum > 0 ? outlineArea / rawSum : 1;
 
   const quality = qualityOf(g, s, dsm, googleMask, roof, tree, faces.labels, planes, outline, topo.faces, opts.imageryQuality ?? null);
+  if (joined) quality.reasons.push('joined-buildings');
 
   // Shift from the crop back to the whole raster.
   const ox = c0 * s;
@@ -265,6 +308,114 @@ function rasterize(g: { w: number; h: number }, s: number, ring: readonly XY[], 
       for (let c = cFrom; c <= cTo; c++) into[r * g.w + c] = 1;
     }
   }
+}
+
+/**
+ * This home's pixels in a mask part it shares with the homes it touches, from Google's box round it (crop-local
+ * metres; north-up, so for a home turned on the map it holds corners of its neighbours too). The homes stand in a
+ * row along one of the part's two main directions: the one the part runs furthest past the box along. The home's
+ * depth across the row is the part's inside the box; its width along the row follows from the box's size, and its
+ * middle is the box's: a slab across the row. Faces found on the whole part (`labels`) that lie mostly in the slab are
+ * kept whole (their own pixels, up to TERRACE_SNAP_M past the slab) and those mostly out of it dropped, so the cut
+ * follows the roofs where the homes' roofs differ; a face running on across the party walls is cut at the slab's
+ * sides. All within the box plus JOINED_NEAR_M.
+ */
+function homeInTerrace(
+  g: { w: number; h: number },
+  s: number,
+  dsm: Float32Array,
+  part: Uint8Array,
+  box: readonly XY[],
+  faces: { labels: Int32Array; planes: readonly Plane[] } | null,
+): Uint8Array {
+  const n = g.w * g.h;
+  const labels = faces?.labels ?? null;
+  const boundary = maskBoundary(g, part, s);
+  const phi = mainAxis(simplifyClosedIdx(boundary, 0.3).map((k) => boundary[k]!));
+  const axes: XY[] = [
+    { x: Math.cos(phi), y: Math.sin(phi) },
+    { x: -Math.sin(phi), y: Math.cos(phi) },
+  ];
+  const at = (i: number): XY => ({ x: ((i % g.w) + 0.5) * s, y: -(Math.floor(i / g.w) + 0.5) * s });
+  const along = (p: XY, w: XY) => p.x * w.x + p.y * w.y;
+  const inBox = nearRing(g, s, box, 0);
+  const span = (w: XY, only: Uint8Array | null): [number, number] => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let i = 0; i < n; i++) {
+      if (part[i] !== 1 || (only !== null && only[i] !== 1)) continue;
+      const t = along(at(i), w);
+      lo = Math.min(lo, t);
+      hi = Math.max(hi, t);
+    }
+    return [lo, hi];
+  };
+  const reach = axes.map((w) => {
+    const [lo, hi] = span(w, null);
+    const ts = box.map((p) => along(p, w));
+    return (hi - lo) / Math.max(s, Math.max(...ts) - Math.min(...ts));
+  });
+  const w = axes[reach[0]! >= reach[1]! ? 0 : 1]!;
+  const across = axes[reach[0]! >= reach[1]! ? 1 : 0]!;
+  const [dLo, dHi] = span(across, inBox);
+  const depth = Math.max(0, dHi - dLo);
+  const bw = Math.max(...box.map((p) => p.x)) - Math.min(...box.map((p) => p.x));
+  const bh = Math.max(...box.map((p) => p.y)) - Math.min(...box.map((p) => p.y));
+  const c = Math.abs(w.x);
+  const sn = Math.abs(w.y);
+  // The box of a width x depth rectangle turned to w is (width c + depth sn) by (width sn + depth c): width by least
+  // squares from both sides.
+  const half = Math.max(s, c * (bw - depth * sn) + sn * (bh - depth * c)) / 2;
+  const mid = along({ x: box.reduce((t, p) => t + p.x, 0) / box.length, y: box.reduce((t, p) => t + p.y, 0) / box.length }, w);
+  const inSlab = (i: number, slack = 0) => Math.abs(along(at(i), w) - mid) <= half + slack;
+  const total = new Map<number, number>();
+  const inside = new Map<number, number>();
+  for (let i = 0; i < n; i++) {
+    const k = labels?.[i] ?? -1;
+    if (part[i] !== 1 || k < 0) continue;
+    total.set(k, (total.get(k) ?? 0) + 1);
+    if (inSlab(i)) inside.set(k, (inside.get(k) ?? 0) + 1);
+  }
+  const onPlane = (i: number, k: number) => {
+    const p = faces!.planes[k]!;
+    const q = at(i);
+    return Math.abs(dsm[i]! - (p.a * q.x + p.b * q.y + p.c)) <= TERRACE_ON_PLANE_M;
+  };
+  const near = nearRing(g, s, box, JOINED_NEAR_M);
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (part[i] !== 1 || near[i] !== 1) continue;
+    const k = labels?.[i] ?? -1;
+    const share = k >= 0 ? (inside.get(k) ?? 0) / total.get(k)! : -1;
+    if (inSlab(i) ? share < 0 || share > 0.25 : share >= 0.75 && inSlab(i, TERRACE_SNAP_M) && onPlane(i, k)) out[i] = 1;
+  }
+  return out;
+}
+
+/** Pixels whose centres lie inside a ring or within `marginM` of its edges (crop-local metres). */
+function nearRing(g: { w: number; h: number }, s: number, ring: readonly XY[], marginM: number): Uint8Array {
+  const out = new Uint8Array(g.w * g.h);
+  rasterize(g, s, ring, out);
+  if (marginM <= 0 || ring.length < 2) return out;
+  const xs = ring.map((p) => p.x);
+  const ys = ring.map((p) => p.y);
+  const cFrom = Math.max(0, Math.floor((Math.min(...xs) - marginM) / s));
+  const cTo = Math.min(g.w - 1, Math.ceil((Math.max(...xs) + marginM) / s));
+  const rFrom = Math.max(0, Math.floor(-(Math.max(...ys) + marginM) / s));
+  const rTo = Math.min(g.h - 1, Math.ceil(-(Math.min(...ys) - marginM) / s));
+  for (let r = rFrom; r <= rTo; r++) {
+    for (let c = cFrom; c <= cTo; c++) {
+      if (out[r * g.w + c] === 1) continue;
+      const p = { x: (c + 0.5) * s, y: -(r + 0.5) * s };
+      for (let k = 0; k < ring.length; k++) {
+        if (nearestOnSegment(p, ring[k]!, ring[(k + 1) % ring.length]!).d <= marginM) {
+          out[r * g.w + c] = 1;
+          break;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /** Thresholds below which a reconstruction needs a person's review (see RoofQuality). */

@@ -148,6 +148,32 @@ export const TWO_STOREY: Shape = {
 
 export const SHAPES: readonly Shape[] = [GABLE, HIP, L_CROSS, HIP_FLAT, TWO_STOREY];
 
+/**
+ * A terrace of three homes, each 7 x 10 m under a gable at 6/12 with the ridges in line along X; the middle home
+ * stands 0.8 m higher than its neighbours, the way terraces step. The mask joins all three. The faces, lines and area
+ * are the middle home's (TERRACE_HOME is its footprint, house frame): the home at the point.
+ */
+export const TERRACE: Shape = {
+  name: 'terrace',
+  extent: 12,
+  height: ({ x, y }) => {
+    if (Math.abs(x) > 10.5 || Math.abs(y) > 5) return null;
+    return EAVE + (Math.abs(x) <= 3.5 ? 0.8 : 0) + (5 - Math.abs(y)) * 0.5;
+  },
+  faces: [
+    { name: 'north', probe: { x: 0, y: 2.5 }, pitchX12: 6, downDeg: 90, planAreaM2: 35 },
+    { name: 'south', probe: { x: 0, y: -2.5 }, pitchX12: 6, downDeg: -90, planAreaM2: 35 },
+  ],
+  lines: { ridge: 7, eave: 14, rake: 4 * SQRT(25 + 6.25) },
+  planAreaM2: 70,
+};
+export const TERRACE_HOME: readonly XY[] = [
+  { x: -3.5, y: -5 },
+  { x: 3.5, y: -5 },
+  { x: 3.5, y: 5 },
+  { x: -3.5, y: 5 },
+];
+
 /** A normal deviate (Box-Muller) from a seeded generator. */
 function gauss(rng: () => number): number {
   const u = Math.max(1e-12, rng());

@@ -128,19 +128,26 @@ export function greenOf(layers: RoofLayers): Uint8Array | null {
 
 /**
  * The roof at `point` reconstructed on these layers, in [lng, lat]; null when no roof part comes near the point, it is
- * too small, no plane is found, or it runs off the layers' edge.
+ * too small, no plane is found, or it runs off the layers' edge. `steep`: Google's segments show a plane steeper than
+ * 18/12 (steepRoof). `building`: Google Solar's building for the point; when it is this home's, its box cuts the roof
+ * out of a mask part it shares with the buildings it touches (a terrace).
  */
-export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boolean } = {}): Roof3d | null {
+export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boolean; building?: SolarBuilding | null } = {}): Roof3d | null {
   const zone = utmZoneOfEpsg(layers.epsg);
   if (zone === null) return null;
-  const { easting, northing } = lngLatToUtm(zone, point[0], point[1]);
   const s = layers.raster.pixelSizeM;
+  const toPixel = ([lng, lat]: LngLat) => {
+    const { easting, northing } = lngLatToUtm(zone, lng, lat);
+    return { col: (easting - layers.originX) / s, row: (layers.originY - northing) / s };
+  };
+  const box = o.building?.box ?? null;
+  const ownBox = box !== null && metresToBuilding(o.building!, point) <= SOLAR_BUILDING_SNAP_M;
   const raster = { ...layers.raster, green: layers.raster.green ?? greenOf(layers) };
-  const local = reconstructRoof(
-    raster,
-    { col: (easting - layers.originX) / s, row: (layers.originY - northing) / s },
-    { imageryQuality: layers.imageryQuality, ...(o.steep === true ? { planes: { maxPitchX12: 24 } } : {}) },
-  );
+  const local = reconstructRoof(raster, toPixel(point), {
+    imageryQuality: layers.imageryQuality,
+    ...(o.steep === true ? { planes: { maxPitchX12: 24 } } : {}),
+    ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
+  });
   if (local === null || local.clipped) return null;
   return toRoof3d(local, (x, y) => utmToLngLat(zone, layers.originX + x, layers.originY + y), {
     imageryQuality: layers.imageryQuality,
@@ -226,7 +233,7 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
     async (layers): Promise<Roof3dSnapshot> => {
       const fetchedAt = deps.clock.now().toISOString();
       if (layers === null) return { fetchedAt, at, roof: null, none: 'no-imagery' };
-      const found = roofOnLayers(layers, point, { steep: steepRoof(building) });
+      const found = roofOnLayers(layers, point, { steep: steepRoof(building), building });
       if (found === null || unusable(found)) return { fetchedAt, at, roof: null, none: 'no-roof' };
       const roof = withGoogleCheck(found, building);
       return { fetchedAt, at, roof, photo: await photoOrNull(deps, layers, roof) };

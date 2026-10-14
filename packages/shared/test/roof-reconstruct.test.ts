@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { lngLatToUtm, reconstructRoof, toRoof3d, utmToLngLat, utmZoneOfEpsg, type LocalRoof } from '../src/roof-reconstruct/index.ts';
+import {
+  lngLatToUtm,
+  reconstructRoof,
+  type ReconstructOptions,
+  toRoof3d,
+  utmToLngLat,
+  utmZoneOfEpsg,
+  type LocalRoof,
+} from '../src/roof-reconstruct/index.ts';
 import { squareOutline } from '../src/roof-reconstruct/outline.ts';
-import { GABLE, HIP, HIP_FLAT, L_CROSS, SHAPES, synthesize, TWO_STOREY, type SyntheticRoof, type XY } from './fixtures/synthetic-roofs.ts';
+import {
+  GABLE,
+  HIP,
+  HIP_FLAT,
+  L_CROSS,
+  SHAPES,
+  synthesize,
+  TERRACE,
+  TERRACE_HOME,
+  TWO_STOREY,
+  type SyntheticRoof,
+  type XY,
+} from './fixtures/synthetic-roofs.ts';
 
 function inside(p: XY, ring: readonly XY[]): boolean {
   let hit = false;
@@ -25,8 +45,8 @@ function arc(a: number, b: number): number {
 }
 
 /** Every check the reconstruction must pass against a synthetic roof's ground truth. */
-function checkAgainstTruth(syn: SyntheticRoof): void {
-  const roof = reconstructRoof(syn.raster, syn.point);
+function checkAgainstTruth(syn: SyntheticRoof, opts: ReconstructOptions = {}, areaTol = 0.01): LocalRoof {
+  const roof = reconstructRoof(syn.raster, syn.point, opts);
   expect(roof, syn.name).not.toBeNull();
   const r = roof!;
   // The faces: one per true face, each with its pitch (within 0.5/12), facing and plan area (within 5%).
@@ -41,7 +61,7 @@ function checkAgainstTruth(syn: SyntheticRoof): void {
   }
   // No face under the minimum plane size.
   for (const f of r.faces) expect(f.planAreaM2).toBeGreaterThanOrEqual(2);
-  expect(Math.abs(r.faces.reduce((t, f) => t + f.planAreaM2, 0) / syn.planAreaM2 - 1)).toBeLessThan(0.01);
+  expect(Math.abs(r.faces.reduce((t, f) => t + f.planAreaM2, 0) / syn.planAreaM2 - 1)).toBeLessThan(areaTol);
   // The lines: each kind's true length within 5%, and no kind the roof does not have (eaves stay eaves, rakes rakes).
   const got = lengths(r);
   for (const [kind, want] of Object.entries(syn.lines)) {
@@ -50,6 +70,23 @@ function checkAgainstTruth(syn: SyntheticRoof): void {
   for (const [kind, len] of Object.entries(got)) {
     if (!(kind in syn.lines)) expect(len, `${syn.name}: no ${kind}`).toBeLessThan(0.5);
   }
+  return r;
+}
+
+/** Google's box round a footprint (house frame) as it comes: north-up in the raster, 0.3 m round it, in pixels. */
+function boxOf(syn: SyntheticRoof, footprint: readonly XY[]): { col: number; row: number }[] {
+  const s = syn.raster.pixelSizeM;
+  const pts = footprint.map((p) => syn.toLocal(p));
+  const c0 = (Math.min(...pts.map((p) => p.x)) - 0.3) / s;
+  const c1 = (Math.max(...pts.map((p) => p.x)) + 0.3) / s;
+  const r0 = -(Math.max(...pts.map((p) => p.y)) + 0.3) / s;
+  const r1 = -(Math.min(...pts.map((p) => p.y)) - 0.3) / s;
+  return [
+    { col: c0, row: r0 },
+    { col: c1, row: r0 },
+    { col: c1, row: r1 },
+    { col: c0, row: r1 },
+  ];
 }
 
 describe('reconstructRoof on synthetic height maps', () => {
@@ -147,6 +184,37 @@ describe('reconstructRoof on synthetic height maps', () => {
 function args(syn: SyntheticRoof): [SyntheticRoof['raster'], SyntheticRoof['point']] {
   return [syn.raster, syn.point];
 }
+
+describe('reconstructRoof on a terrace (the mask joins the homes)', () => {
+  it("with Google's box for the home at the point: that home alone, marked for review", () => {
+    for (const turnDeg of [0, 17, 45]) {
+      const syn = synthesize(TERRACE, { turnDeg, seed: 11 });
+      // Within 5% of the home's area: the step at each party wall is blurred over a few pixels in the heights.
+      const r = checkAgainstTruth(syn, { building: boxOf(syn, TERRACE_HOME) }, 0.05);
+      expect(r.quality.reasons, `turned ${turnDeg}`).toContain('joined-buildings');
+      expect(r.clipped).toBe(false);
+    }
+  });
+  it('without the box: the whole terrace, not marked joined', () => {
+    const syn = synthesize(TERRACE, { turnDeg: 17, seed: 11 });
+    const r = reconstructRoof(syn.raster, syn.point)!;
+    expect(Math.abs(r.faces.reduce((t, f) => t + f.planAreaM2, 0) / 210 - 1)).toBeLessThan(0.02);
+    expect(r.quality.reasons).not.toContain('joined-buildings');
+  });
+  it("a detached house inside its box is not touched by it", () => {
+    const syn = synthesize(HIP, { turnDeg: 17, seed: 11 });
+    const footprint = [
+      { x: -8, y: -5 },
+      { x: 8, y: -5 },
+      { x: 8, y: 5 },
+      { x: -8, y: 5 },
+    ];
+    const plain = reconstructRoof(syn.raster, syn.point)!;
+    const boxed = checkAgainstTruth(syn, { building: boxOf(syn, footprint) });
+    expect(boxed.faces.map((f) => f.planAreaM2)).toEqual(plain.faces.map((f) => f.planAreaM2));
+    expect(boxed.quality.reasons).not.toContain('joined-buildings');
+  });
+});
 
 describe('squareOutline', () => {
   it('squares a noisy, clipped rectangle to its four corners', () => {

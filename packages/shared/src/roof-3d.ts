@@ -50,16 +50,24 @@ export type Roof3d = {
 };
 
 /** Why a reconstruction needs a person's review. */
-export const ROOF_QUALITY_REASONS = ['coarse-imagery', 'outline-off', 'faces-patchy', 'rough-heights', 'trees', 'differs-from-google'] as const;
+export const ROOF_QUALITY_REASONS = [
+  'coarse-imagery',
+  'outline-off',
+  'faces-patchy',
+  'rough-heights',
+  'trees',
+  'differs-from-google',
+  'joined-buildings',
+] as const;
 export type RoofQualityReason = (typeof ROOF_QUALITY_REASONS)[number];
 
 /**
  * How far a reconstruction can be trusted: the imagery's quality (HIGH, MEDIUM); the outline's overlap with Google's
  * roof mask (intersection over union) and the share of its length within 0.5 m of the mask's edge; the share of the
  * mask its faces cover; the mean distance of the heights from their faces' planes, metres; the share of the roof under
- * tree crowns; faces drawn from their pixels because their polygon could not be built; and (added by the server, which
- * has Google's own roof segments) main faces whose pitch or facing differ from the segment under them. Any reason:
- * review it.
+ * tree crowns; faces drawn from their pixels because their polygon could not be built; a roof cut out of a mask part it
+ * shares with the buildings it touches (a terrace, a semi-detached pair); and (added by the server, which has Google's
+ * own roof segments) main faces whose pitch or facing differ from the segment under them. Any reason: review it.
  */
 export type RoofQuality = {
   imagery: string | null;

@@ -243,7 +243,7 @@ async function main(): Promise<number> {
       const layers = await layersIn(dir);
       const building = insightsIn(insights);
       const started = performance.now();
-      const found = roofOnLayers(layers, point, { steep: steepRoof(building) });
+      const found = roofOnLayers(layers, point, { steep: steepRoof(building), building });
       const ms = performance.now() - started;
       // As the server keeps it: Google's segments checked against the faces too.
       const roof = found === null ? null : withGoogleCheck(found, building);
