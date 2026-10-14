@@ -160,6 +160,8 @@ const ConfigSchema = z
       .optional(),
     /** Development and tests only: use the fake providers for every outside service. Refused in production. */
     FAKE_PROVIDERS: flag,
+    /** Demo only: load the real Microsoft building footprints even though the other providers are fakes. */
+    DEMO_REAL_FOOTPRINTS: flag,
     /**
      * Demo mode: every outside service is its fake (FAKE_PROVIDERS), weather is off, email is only
      * logged, the shell shows a Demo badge and the presenter's simulate routes are mounted. Refused in

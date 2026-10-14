@@ -24,6 +24,6 @@ export class UnconfiguredFootprintSource implements FootprintSource {
 }
 
 export function createFootprintSource(config: Config): FootprintSource {
-  if (config.FAKE_PROVIDERS) return new FakeFootprintSource();
+  if (config.FAKE_PROVIDERS && !config.DEMO_REAL_FOOTPRINTS) return new FakeFootprintSource();
   return msFootprintsFor(config) ?? new UnconfiguredFootprintSource();
 }
