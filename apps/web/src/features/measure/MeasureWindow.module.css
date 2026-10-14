@@ -113,6 +113,52 @@
 }
 
 /* The controls that change the estimate. They live inside the measure card under Adjust, so they are flat. */
+.hint {
+  margin: 0;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* The buildings near the home: one row each, outlined on the photo while the row is hovered or focused */
+.buildings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.building {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -8px;
+  padding: 2px 8px;
+  border-radius: var(--ds-r-ctl, 9px);
+}
+
+.building > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.building[data-hovered="true"] {
+  background: var(--ds-accent-tint, #fff1d1);
+  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.45);
+}
+
+.measureOther {
+  flex: none;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line, #dde2e6);
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-surface, #fff);
+  font-size: 12.5px;
+}
+
 .panel {
   display: flex;
   flex-direction: column;

@@ -50,7 +50,9 @@ import type { Scope, Calculation, QuoteLine } from './pricing.ts';
 
 export type MeasurementView = {
   id: string; propertyId: string; jobId: string | null; kind: MeasurementKind; method: MeasurementMethod;
-  outline: Outline | null; structures: { footprintId: string; included: boolean; areaSqFt: number; ring: Ring }[]; estimate: InstantEstimate; facets: number | null;
+  outline: Outline | null;
+  /** Every footprint near the home, in order. `main` marks the building the home was measured on (absent on older rows: the first). */
+  structures: { footprintId: string; included: boolean; areaSqFt: number; ring: Ring; main?: boolean }[]; estimate: InstantEstimate; facets: number | null;
   overhangFt: number; /** The map centre, [lng, lat]. */ center: LngLat;
   locked: boolean; providerRef: string | null; notes: string | null; createdAt: string; drawMode: boolean;
   /** Whether a proposal from it already has a customer: its job's, or its home's. When false, Make proposal needs one. */ hasCustomer: boolean;
@@ -58,6 +60,11 @@ export type MeasurementView = {
   /** Where the pitch came from: Google Solar, the default, or a person (null or absent: not recorded). */ pitchSource?: PitchSource | null;
   /** Measured roof planes (Google Solar) the facets take their own pitch from; null when the pitch is one for the whole roof. */
   pitchPlanes?: RoofPlane[] | null;
+  /**
+   * Roof facets (by id) left out of the quote; empty when the whole roof is quoted. The estimate (and every price made
+   * from it) is then the other facets' only, and `roof` carries `excluded` and `quoted` (see quoteFacets).
+   */
+  excludedFacets?: string[];
 };
 export type ProposalOptionView = {
   id: string; tier: Tier; name: string; highlights: string[]; scope: Scope; addOns: AddOn[]; calculation: Calculation;

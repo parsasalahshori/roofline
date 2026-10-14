@@ -4,6 +4,7 @@ import { createContext, type ReactNode, type RefObject } from 'react';
 import type { OutlineProblem } from '../types.ts';
 import type { RoofModel } from './roofModel.ts';
 import type { ScanSession } from './scan.ts';
+import type { BuildingRow } from './structures.ts';
 
 /**
  * The one roof editor, owned by MeasureWindow (it has the saves, the draw mode and the lock), handed down so
@@ -29,6 +30,30 @@ export type RoofSession = {
 };
 
 /**
+ * Which parts of the roof the quote covers, and the buildings around it. The roof view's clicks and labels act on it.
+ * - Sections: a facet left out is in `excluded` (shown at once; saved and priced by the server).
+ * - Buildings: `buildings` are the home's nearby buildings described for people (main house, detached, neighbour's);
+ *   `onlyIncluded` is the one that cannot be left out, so the quote never ends up with no roof.
+ * - Another roof: `measureOther` starts a new measurement for a clicked building (owner and office only).
+ */
+export type QuoteSession = {
+  excluded: readonly string[];
+  toggleFacet: (id: string) => void;
+  includeAll: () => void;
+  /** The last save put every section back in the quote because the roof's sections changed. */
+  sectionsReset: boolean;
+  buildings: BuildingRow[];
+  onlyIncluded: string | null;
+  toggleBuilding: (id: string) => void;
+  hovered: string | null;
+  setHovered: (id: string | null) => void;
+  canMeasureOther: boolean;
+  /** Measures the clicked building as its own estimate and opens it; resolves false when that failed. */
+  measureOther: (target: { lng: number; lat: number; footprintId: string | null }) => Promise<boolean>;
+  measuringOther: boolean;
+};
+
+/**
  * What MeasureWindow hands down. `roof` is the editor; `panels` are the controls that change the estimate
  * (buildings, pitch, overhang, the numbers) shown under Adjust; `estimate` is the live number set, ahead of what
  * is saved; `model` the measured facets and lines; `editing` whether Adjust is open (the outline's handles show).
@@ -43,6 +68,7 @@ export type MeasureSlots = {
   wastePct: number | null;
   editing: boolean;
   setEditing: (next: boolean) => void;
+  quote: QuoteSession | null;
 };
 
 export const MeasureSlotsContext = createContext<MeasureSlots>({
@@ -54,4 +80,5 @@ export const MeasureSlotsContext = createContext<MeasureSlots>({
   wastePct: null,
   editing: false,
   setEditing: () => undefined,
+  quote: null,
 });

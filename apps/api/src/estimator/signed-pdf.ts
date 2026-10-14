@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { attachSignedPdf, decrypt, signedPdfSource, storeFile, withTenant } from '@roofline/db';
+import { attachSignedPdf, decrypt, getMeasurement, signedPdfSource, storeFile, withTenant } from '@roofline/db';
 import { ESTIMATE_CLAUSE_V1, isTimeZone, type ProposalView, type SignedDocument } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import type { JobMeta } from '../jobs/queue.ts';
 import { systemContext } from '../permissions.ts';
-import { pdfToBuffer, renderProposalPdf, type ProposalPdfInput } from '../proposals/pdf.ts';
+import { pdfToBuffer, renderProposalPdf, roofSectionsOf, type ProposalPdfInput } from '../proposals/pdf.ts';
 import { BadSignaturePng, flattenSignaturePng } from './signature-png.ts';
 
 const FALLBACK_TIME_ZONE = 'America/Chicago';
@@ -61,8 +61,15 @@ export type SignedPdfDeps = Pick<AppDeps, 'pools' | 'objectStore' | 'clock' | 'm
 export async function makeSignedPdf(deps: SignedPdfDeps, companyId: string, proposalId: string, meta: JobMeta): Promise<void> {
   void meta;
   const ctx = systemContext(companyId);
-  const src = await withTenant(deps.pools, ctx, (tx) => signedPdfSource(tx, ctx, proposalId));
-  if (src === null || src.pdfFileId !== null) return;
+  const loaded = await withTenant(deps.pools, ctx, async (tx) => {
+    const source = await signedPdfSource(tx, ctx, proposalId);
+    if (source === null || source.pdfFileId !== null) return null;
+    // The roof sections the quote covers when some were left out of it. A signed proposal was sent, so its
+    // measurement is locked: the sections are the ones priced and signed.
+    return { src: source, roofSections: roofSectionsOf(await getMeasurement(tx, ctx, source.proposal.measurementId)) };
+  });
+  if (loaded === null) return;
+  const { src, roofSections } = loaded;
 
   // A drawn signature must be in the PDF: a missing or altered image fails the job (pg-boss retries), never a PDF without it.
   let image: Buffer | null = null;
@@ -92,6 +99,7 @@ export async function makeSignedPdf(deps: SignedPdfDeps, companyId: string, prop
     estimateClause: doc ? doc.clause : src.estimateClause ? ESTIMATE_CLAUSE_V1 : null,
     signature: { record: src.signature, image, timeZone: isTimeZone(src.timeZone) ? src.timeZone : FALLBACK_TIME_ZONE },
     optionFinancing: doc ? { ...src.optionFinancing, [doc.option.id]: doc.option.financingTerms } : src.optionFinancing,
+    roofSections,
   });
   const sha = sha256Hex(bytes);
   const objectKey = `companies/${companyId}/proposals/${proposalId}/signed-${sha}.pdf`;

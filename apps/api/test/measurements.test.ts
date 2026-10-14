@@ -1,4 +1,6 @@
 import pg from 'pg';
+import type { Stream } from 'node:stream';
+import { inflateSync } from 'node:zlib';
 import { sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, inject, it } from 'vitest';
 import { Actors, addressFor, dbProperty, inCompany, mustCreate, NO_UUID, NOT_FOUND } from './crm-helpers.ts';
@@ -146,9 +148,12 @@ async function getView(id: string): Promise<MeasurementView> {
   return res.body as MeasurementView;
 }
 
-/** The estimate for an outline (the roof model's lines give ridge, valley and edges) with the company's overhang. */
-const estimateOf = (outline: Ring[], pitchX12 = PITCH, overhangFt = OVERHANG) =>
-  measureRoof({ outline, pitchX12, overhangFt }).estimate;
+/**
+ * The estimate for an outline (the roof model's lines give ridge, valley and edges) with the company's overhang;
+ * with `excludedFacets`, the quoted facets' estimate.
+ */
+const estimateOf = (outline: Ring[], pitchX12 = PITCH, overhangFt = OVERHANG, excludedFacets: string[] = []) =>
+  measureRoof({ outline, pitchX12, overhangFt, excludedFacets }).estimate;
 
 /** The first building of the fake source's Omaha tile (none of it loaded yet), a point inside it, and its tile. */
 async function fixtureHome(): Promise<{ ring: Ring; centre: LngLat; quadkey: string }> {
@@ -265,6 +270,10 @@ describe('POST /api/measurements: outlines from footprints', () => {
     const byId = Object.fromEntries(view.structures.map((s) => [s.footprintId, s]));
     expect(byId[ids.house!]).toMatchObject({ included: true, ring: open(HOUSE) });
     expect(byId[ids.neighbor!]).toMatchObject({ included: false, ring: open(NEIGHBOR) });
+    // Only the building measured is marked main; the others carry no key at all.
+    expect(byId[ids.house!]!.main).toBe(true);
+    expect('main' in byId[ids.neighbor!]!).toBe(false);
+    expect((await getView(view.id)).structures).toEqual(view.structures);
   });
 
   it('no footprint near the point gives draw mode', async () => {
@@ -457,6 +466,201 @@ describe('PATCH /api/measurements/:id: bad input', () => {
     expect(none.body.outline).toEqual([open(HOUSE)]);
     expect(none.body.drawMode).toBe(false);
   });
+
+  it('a home with buildings keeps at least one in the quote: no included structure is a 400 and nothing changes', async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE }, { sourceRef: 'neighbor', ring: NEIGHBOR });
+    const owner = await who.as('owner');
+    const created = await measure(owner, { propertyId: await homeAt(24, INSIDE) });
+    expect(created.structures).toHaveLength(2);
+
+    const none = await owner.patch(`/api/measurements/${created.id}`).send({ includedStructures: [] });
+    expect(none.status).toBe(400);
+    expect(none.body).toEqual({ error: 'Keep at least one building in the quote.', field: 'includedStructures' });
+    expect(await getView(created.id)).toEqual(created);
+  });
+});
+
+/** Every piece of text in a PDF: its content streams inflated, and the hex strings of each TJ array joined. */
+function pdfText(pdf: Buffer): string {
+  const raw = pdf.toString('latin1');
+  const out: string[] = [];
+  for (const m of raw.matchAll(/stream\r?\n/g)) {
+    const start = m.index + m[0].length;
+    const end = raw.indexOf('endstream', start);
+    if (end < 0) continue;
+    let body: string;
+    try {
+      body = inflateSync(pdf.subarray(start, end)).toString('latin1');
+    } catch {
+      continue;
+    }
+    for (const tj of body.matchAll(/\[([^\]]*)\] TJ/g)) {
+      out.push(Buffer.from([...tj[1]!.matchAll(/<([0-9a-f]*)>/g)].map((h) => h[1]).join(''), 'hex').toString('latin1'));
+    }
+  }
+  return out.join('\n');
+}
+
+const binaryParser = (res: Stream, callback: (err: Error | null, body: Buffer) => void): void => {
+  const chunks: Buffer[] = [];
+  res.on('data', (chunk: Buffer) => chunks.push(chunk));
+  res.on('error', (err: Error) => callback(err, Buffer.alloc(0)));
+  res.on('end', () => callback(null, Buffer.concat(chunks)));
+};
+
+describe('PATCH excludedFacets: quoting only some sections of the roof', () => {
+  /** The stored numbers proposals are priced from. */
+  async function storedNumbers(id: string) {
+    const rows = await inCompany(t, A(), async (tx) => {
+      const result = await tx.execute(sql`
+        select surface_sq_ft::float8 as surface, edge_ft::float8 as edge, ridge_ft::float8 as ridge,
+               valley_ft::float8 as valley, footprint_sq_ft::float8 as footprint, facets, excluded_facets
+          from measurements where id = ${id}`);
+      return result.rows as { surface: number; edge: number; ridge: number; valley: number; footprint: number; facets: number; excluded_facets: string[] }[];
+    });
+    return rows[0]!;
+  }
+
+  it('stores the quoted numbers; the response, a later GET and measureRoof agree', async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    const owner = await who.as('owner');
+    const created = await measure(owner, { propertyId: await homeAt(40, INSIDE) });
+    expect(created.excludedFacets).toEqual([]);
+    const ids = created.roof!.facets.map((f) => f.id);
+    expect(ids.length).toBeGreaterThan(2);
+    const left = ids.at(-1)!;
+    const path = `/api/measurements/${created.id}`;
+
+    const res = await owner.patch(path).send({ excludedFacets: [left] });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const view = res.body as MeasurementView;
+    expect(view.excludedFacets).toEqual([left]);
+    expect(view.roof!.excluded).toEqual([left]);
+    expect(view.roof!.quoted!.facetCount).toBe(ids.length - 1);
+    expect(view.estimate).toEqual(estimateOf([HOUSE], created.estimate.pitchX12, OVERHANG, [left]));
+    expect(view.estimate.surfaceSqFt).toBeLessThan(created.estimate.surfaceSqFt);
+    // The facet count stays the whole roof's.
+    expect(view.facets).toBe(ids.length);
+    expect((await owner.get(path)).body).toEqual(view);
+
+    const stored = await storedNumbers(created.id);
+    expect(stored).toMatchObject({
+      surface: view.estimate.surfaceSqFt,
+      edge: view.estimate.edgeFt,
+      ridge: view.estimate.ridgeFt,
+      valley: view.estimate.valleyFt,
+      footprint: view.estimate.footprintSqFt,
+      facets: ids.length,
+      excluded_facets: [left],
+    });
+
+    // [] quotes the whole roof again.
+    const whole = await owner.patch(path).send({ excludedFacets: [] });
+    expect(whole.status).toBe(200);
+    expect(whole.body.excludedFacets).toEqual([]);
+    expect(whole.body.roof.excluded).toBeUndefined();
+    expect(whole.body.estimate).toEqual(created.estimate);
+  });
+
+  it('refuses sections that are not on this roof, all of them, bad shapes and too many; nothing changes', async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    const owner = await who.as('owner');
+    const created = await measure(owner, { propertyId: await homeAt(41, INSIDE) });
+    const ids = created.roof!.facets.map((f) => f.id);
+    const path = `/api/measurements/${created.id}`;
+    const pick = { error: 'Pick sections of this roof.', field: 'excludedFacets' };
+
+    for (const bad of [['Z'], [ids[0], 'Q7'], 'A', null, [1], ['a'], ['AAA'], ['A1234'], Array.from({ length: 201 }, () => 'A')]) {
+      const res = await owner.patch(path).send({ excludedFacets: bad });
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(res.body).toEqual(pick);
+    }
+    const all = await owner.patch(path).send({ excludedFacets: ids });
+    expect(all.status).toBe(400);
+    expect(all.body).toEqual({ error: 'Keep at least one section in the quote.', field: 'excludedFacets' });
+    // Named twice is still every section.
+    expect((await owner.patch(path).send({ excludedFacets: [...ids, ids[0]] })).status).toBe(400);
+
+    expect(await getView(created.id)).toEqual(created);
+  });
+
+  it('a pitch change keeps the same sections out; a new outline or other buildings quote the whole roof again', async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE }, { sourceRef: 'neighbor', ring: NEIGHBOR });
+    const fids = await footprintIds();
+    const owner = await who.as('owner');
+    const created = await measure(owner, { propertyId: await homeAt(42, INSIDE) });
+    const path = `/api/measurements/${created.id}`;
+    const left = created.roof!.facets.at(-1)!.id;
+
+    expect((await owner.patch(path).send({ excludedFacets: [left] })).status).toBe(200);
+    // The same facets at another pitch: still left out, and the estimate is the quoted one at that pitch.
+    const pitched = await owner.patch(path).send({ pitchX12: 8 });
+    expect(pitched.status).toBe(200);
+    expect(pitched.body.excludedFacets).toEqual([left]);
+    expect(pitched.body.estimate).toEqual(estimateOf([HOUSE], 8, OVERHANG, [left]));
+    // A valley-only change keeps them too.
+    const valley = await owner.patch(path).send({ valleyFt: 12 });
+    expect(valley.status).toBe(200);
+    expect(valley.body.excludedFacets).toEqual([left]);
+    expect(valley.body.estimate.valleyFt).toBe(12);
+
+    // Another building included: the roof's facets changed, so the whole roof is quoted again.
+    const both = await owner.patch(path).send({ includedStructures: [fids.house!, fids.neighbor!] });
+    expect(both.status).toBe(200);
+    expect(both.body.excludedFacets).toEqual([]);
+    expect(both.body.roof.excluded).toBeUndefined();
+    expect(both.body.estimate).toEqual(estimateOf([HOUSE, NEIGHBOR], 8));
+    // The building measured stays the main one.
+    const main = (both.body as MeasurementView).structures.filter((s) => s.main === true).map((s) => s.footprintId);
+    expect(main).toEqual([fids.house]);
+    expect((await storedNumbers(created.id)).excluded_facets).toEqual([]);
+
+    // A new outline: the same.
+    const second = (await getView(created.id)).roof!.facets.at(-1)!.id;
+    expect((await owner.patch(path).send({ excludedFacets: [second] })).body.excludedFacets).toEqual([second]);
+    const outlined = await owner.patch(path).send({ outline: [WIDER] });
+    expect(outlined.status).toBe(200);
+    expect(outlined.body.excludedFacets).toEqual([]);
+    expect(outlined.body.estimate).toEqual(estimateOf([WIDER], 8));
+
+    // Sent with the outline, the sections are checked against the new roof.
+    const withOutline = await owner.patch(path).send({ outline: [HOUSE], excludedFacets: [left] });
+    expect(withOutline.status).toBe(200);
+    expect(withOutline.body.excludedFacets).toEqual([left]);
+    expect(withOutline.body.estimate).toEqual(estimateOf([HOUSE], 8, OVERHANG, [left]));
+  });
+
+  it("the preview's Good, Better and Best drop when a section is left out; a proposal and its PDF follow", async () => {
+    await loadNE({ sourceRef: 'house', ring: HOUSE });
+    const owner = await who.as('owner');
+    const customer = await mustCreate(owner, '/api/customers', { displayName: 'Sections Customer' });
+    const propertyId = await homeAt(43, INSIDE);
+    const job = await mustCreate(owner, '/api/jobs', { customerId: customer.id, propertyId });
+    const created = await measure(owner, { propertyId, jobId: job.id });
+    const path = `/api/measurements/${created.id}`;
+    const totals = async () => {
+      const res = await owner.get(`${path}/preview`);
+      expect(res.status).toBe(200);
+      return (res.body.options as { tier: string; totalCents: number }[]).map((o) => o.totalCents);
+    };
+
+    const before = await totals();
+    expect(before).toHaveLength(3);
+    const ids = created.roof!.facets.map((f) => f.id);
+    expect((await owner.patch(path).send({ excludedFacets: [ids[0]] })).status).toBe(200);
+    const after = await totals();
+    after.forEach((cents, i) => expect(cents).toBeLessThan(before[i]!));
+
+    // Make proposal prices the same quoted roof, and its PDF says which sections it covers.
+    const made = await owner.post('/api/proposals').send({ measurementId: created.id });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect((made.body as { options: { totalCents: number }[] }).options.map((o) => o.totalCents)).toEqual(after);
+    const pdf = await owner.get(`/api/proposals/${made.body.id}/pdf`).buffer(true).parse(binaryParser);
+    expect(pdf.status).toBe(200);
+    const quoted = ids.slice(1);
+    const list = `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1)}`;
+    expect(pdfText(pdf.body as Buffer)).toContain(`Covers roof sections ${list} only (${quoted.length} of ${ids.length}).`);
+  });
 });
 
 describe('locking', () => {
@@ -505,6 +709,9 @@ describe('locking', () => {
     const locked = await owner.patch(`/api/measurements/${sentMeasurement.id}`).send({ pitchX12: 9 });
     expect(locked.status).toBe(409);
     expect(locked.body.error).toBe('Make a new measurement to change a sent proposal.');
+    const sections = await owner.patch(`/api/measurements/${sentMeasurement.id}`).send({ excludedFacets: [sentMeasurement.roof!.facets[0]!.id] });
+    expect(sections.status).toBe(409);
+    expect(sections.body.error).toBe('Make a new measurement to change a sent proposal.');
     const read = await owner.get(`/api/measurements/${sentMeasurement.id}`);
     expect(read.body.locked).toBe(true);
     expect(read.body.estimate.pitchX12).toBe(sentMeasurement.estimate.pitchX12);

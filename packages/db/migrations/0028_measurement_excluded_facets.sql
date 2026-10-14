@@ -1,0 +1,1 @@
+ALTER TABLE "measurements" ADD COLUMN "excluded_facets" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -1,13 +1,18 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { MeasurementView } from '../types.ts';
-import type { RoofLineKind, RoofModel } from '@roofline/shared';
+import { lineQuoted, type LngLat, type RoofLineKind, type RoofModel } from '@roofline/shared';
+import { insideRing } from './structures.ts';
 
 /** The measured roof (facets, the lines between them, the totals) as the measurement API worked it out. */
 export type { RoofFacet, RoofLine, RoofLineKind, RoofModel } from '@roofline/shared';
 
 /** The roof the measurement carries, or null when it has none (an older API, or a roof it could not split). */
 export function readRoof(m: MeasurementView): RoofModel | null {
-  const roof = m.roof;
+  return usableRoof(m.roof);
+}
+
+/** A roof with facets, or null. */
+export function usableRoof(roof: RoofModel | null | undefined): RoofModel | null {
   return roof !== null && roof !== undefined && Array.isArray(roof.facets) && roof.facets.length > 0 ? roof : null;
 }
 
@@ -22,6 +27,8 @@ export const LINE_COLORS: Record<RoofLineKind, string> = {
 export const LINE_ORDER: readonly RoofLineKind[] = ['ridge', 'hip', 'valley', 'eave', 'rake'];
 const FACET_COLOR = '#2f6fde';
 const CASING_COLOR = '#151c22';
+/** A facet left out of the quote is shaded over, and its lines that no longer count fade. */
+const LEFT_OUT_FILL = '#151c22';
 
 /** The facet's own letter (the API names them A, B… largest first), else A, B, C… by position. */
 export function facetName(id: string, index: number): string {
@@ -47,27 +54,35 @@ export const ROOF_LINES_SOURCE = 'roof-lines-src';
 export const ROOF_LAYERS = ['roof-facets-fill', 'roof-facets-casing', 'roof-facets-edge', 'roof-lines-casing', 'roof-lines'] as const;
 
 export function facetsData(roof: RoofModel | null) {
+  const out = new Set(roof?.excluded ?? []);
   return {
     type: 'FeatureCollection' as const,
     features: (roof?.facets ?? [])
       .filter((f) => f.ring.length >= 3)
       .map((f) => ({
         type: 'Feature' as const,
-        properties: { id: f.id },
+        properties: { id: f.id, excluded: out.has(f.id) },
         geometry: { type: 'Polygon' as const, coordinates: [closed(f.ring)] },
       })),
   };
 }
 
 export function linesData(roof: RoofModel | null) {
+  const out = new Set(roof?.excluded ?? []);
+  const quoted = new Set((roof?.facets ?? []).filter((f) => !out.has(f.id)).map((f) => f.id));
   return {
     type: 'FeatureCollection' as const,
     features: (roof?.lines ?? []).map((l) => ({
       type: 'Feature' as const,
-      properties: { kind: l.kind, color: LINE_COLORS[l.kind] },
+      properties: { kind: l.kind, color: LINE_COLORS[l.kind], quoted: out.size === 0 || lineQuoted(l, quoted) },
       geometry: { type: 'LineString' as const, coordinates: l.coords },
     })),
   };
+}
+
+/** The facet a point falls in, or null. */
+export function facetAt(roof: RoofModel | null, point: LngLat): string | null {
+  return roof?.facets.find((f) => f.ring.length >= 3 && insideRing(point, f.ring))?.id ?? null;
 }
 
 type LooseMap = {
@@ -82,7 +97,16 @@ export function addRoofLayers(instance: MapLibreMap, roof: RoofModel | null): vo
     instance.addSource(ROOF_FACETS_SOURCE, { type: 'geojson', data: facetsData(roof) });
     instance.addSource(ROOF_LINES_SOURCE, { type: 'geojson', data: linesData(roof) });
     const hidden = { visibility: 'none' as const };
-    instance.addLayer({ id: 'roof-facets-fill', type: 'fill', source: ROOF_FACETS_SOURCE, layout: hidden, paint: { 'fill-color': FACET_COLOR, 'fill-opacity': 0.17 } });
+    instance.addLayer({
+      id: 'roof-facets-fill',
+      type: 'fill',
+      source: ROOF_FACETS_SOURCE,
+      layout: hidden,
+      paint: {
+        'fill-color': ['case', ['get', 'excluded'], LEFT_OUT_FILL, FACET_COLOR],
+        'fill-opacity': ['case', ['get', 'excluded'], 0.55, 0.17],
+      },
+    });
     instance.addLayer({
       id: 'roof-facets-casing',
       type: 'line',
@@ -95,21 +119,21 @@ export function addRoofLayers(instance: MapLibreMap, roof: RoofModel | null): vo
       type: 'line',
       source: ROOF_FACETS_SOURCE,
       layout: { ...hidden, 'line-join': 'round' },
-      paint: { 'line-color': FACET_COLOR, 'line-opacity': 0.65, 'line-width': 2 },
+      paint: { 'line-color': ['case', ['get', 'excluded'], '#94a3b8', FACET_COLOR], 'line-opacity': 0.65, 'line-width': 2 },
     });
     instance.addLayer({
       id: 'roof-lines-casing',
       type: 'line',
       source: ROOF_LINES_SOURCE,
       layout: { ...hidden, 'line-cap': 'round' },
-      paint: { 'line-color': CASING_COLOR, 'line-opacity': 0.55, 'line-width': 5.6 },
+      paint: { 'line-color': CASING_COLOR, 'line-opacity': ['case', ['get', 'quoted'], 0.55, 0.2], 'line-width': 5.6 },
     });
     instance.addLayer({
       id: 'roof-lines',
       type: 'line',
       source: ROOF_LINES_SOURCE,
       layout: { ...hidden, 'line-cap': 'round' },
-      paint: { 'line-color': ['get', 'color'], 'line-width': 2.6 },
+      paint: { 'line-color': ['get', 'color'], 'line-width': 2.6, 'line-opacity': ['case', ['get', 'quoted'], 1, 0.3] },
     });
   } catch {
     // The map may be going away; the numbers still show without the drawing.

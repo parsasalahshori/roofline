@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { buildRoofModel, measureRoof, seededPitchX12, type RoofLineKind, type RoofModel } from '../src/roof-model.ts';
+import {
+  buildRoofModel,
+  carryExcluded,
+  cleanExcluded,
+  lineQuoted,
+  measureRoof,
+  quotedTotals,
+  quoteFacets,
+  seededPitchX12,
+  type RoofLineKind,
+  type RoofModel,
+} from '../src/roof-model.ts';
 import { instantEstimate, polygonAreaSqFt, type Ring } from '../src/roof.ts';
 
 // Omaha origin; metres to degrees with the same sphere the engine uses.
@@ -220,5 +231,109 @@ describe('measureRoof', () => {
     const { estimate, roof } = measureRoof({ outline: [], pitchX12: 6, overhangFt: 1 });
     expect(roof).toBeNull();
     expect(estimate).toEqual(instantEstimate({ outline: [], pitchX12: 6, overhangFt: 1 }));
+  });
+});
+
+describe('quoting only some facets', () => {
+  const L = { outline: [ring(L_SHAPE)], pitchX12: 5, overhangFt: 1 };
+  const whole = () => measureRoof(L).roof!;
+  const lengthOf = (m: RoofModel, kind: RoofLineKind, keep: (l: RoofModel['lines'][number]) => boolean) =>
+    Math.round(m.lines.filter((l) => l.kind === kind && keep(l)).reduce((s, l) => s + l.lengthFt, 0) * 10) / 10;
+
+  it('names the facets each line borders: one for an eave or rake, two for a ridge, hip or valley', () => {
+    for (const shape of [RECT, L_SHAPE, T_SHAPE]) {
+      const m = buildRoofModel(ring(shape, 0.3), { pitchX12: 6 })!;
+      const ids = new Set(m.facets.map((f) => f.id));
+      for (const l of m.lines) {
+        expect(l.facets?.every((id) => ids.has(id))).toBe(true);
+        expect(l.facets).toHaveLength(l.kind === 'eave' || l.kind === 'rake' ? 1 : 2);
+      }
+    }
+    const gable = buildRoofModel(ring(RECT), { pitchX12: 6 })!;
+    expect(gable.lines.find((l) => l.kind === 'ridge')?.facets?.sort()).toEqual(['A', 'B']);
+  });
+
+  it('a line counts when it borders a quoted facet; an older line with no facets always counts', () => {
+    const line = { kind: 'ridge' as const, coords: [[0, 0], [1, 1]] as [[number, number], [number, number]], lengthFt: 10 };
+    expect(lineQuoted({ ...line, facets: ['A', 'B'] }, new Set(['B']))).toBe(true);
+    expect(lineQuoted({ ...line, facets: ['A', 'B'] }, new Set(['C']))).toBe(false);
+    expect(lineQuoted({ ...line, kind: 'eave', facets: ['A'] }, new Set(['B']))).toBe(false);
+    expect(lineQuoted(line, new Set())).toBe(true);
+  });
+
+  it('totals only the quoted facets: shared-out areas, the lines that border them, their count and waste', () => {
+    const roof = whole();
+    expect(roof.facets.length).toBeGreaterThanOrEqual(4);
+    const out = [roof.facets[0]!.id, roof.facets[2]!.id];
+    const q = quoteFacets(roof, out);
+    expect(q.excluded).toEqual(out);
+    expect(q.totals).toEqual(roof.totals);
+    const t = q.quoted!;
+    const kept = new Set(roof.facets.filter((f) => !out.includes(f.id)).map((f) => f.id));
+    expect(t.facetCount).toBe(roof.facets.length - 2);
+    const keptArea = roof.facets.filter((f) => kept.has(f.id)).reduce((s, f) => s + f.areaSqFt, 0);
+    const allArea = roof.facets.reduce((s, f) => s + f.areaSqFt, 0);
+    expect(t.slopedSqFt).toBeCloseTo((roof.totals.slopedSqFt * keptArea) / allArea, 0);
+    expect(t.squares).toBe(Math.round(t.slopedSqFt / 10) / 10);
+    expect(t.slopedSqFt).toBeLessThan(roof.totals.slopedSqFt);
+    expect(t.planSqFt).toBeLessThan(roof.totals.planSqFt);
+    // An eave or rake only with its own facet; a ridge or valley when either side is quoted
+    const borders = (l: RoofModel['lines'][number]) => (l.facets ?? []).some((id) => kept.has(id));
+    for (const kind of ['ridge', 'hip', 'valley', 'eave', 'rake'] as const) {
+      expect(t[`${kind}Ft`]).toBe(lengthOf(roof, kind, borders));
+    }
+    // A line between two left-out facets does not count, and every eave of a left-out facet is dropped
+    expect(t.eaveFt).toBeLessThan(roof.totals.eaveFt);
+    expect(quotedTotals(q)).toBe(t);
+    expect(quotedTotals(roof)).toBe(roof.totals);
+  });
+
+  it('quoting every facet, none, or only unknown ids is the whole roof', () => {
+    const roof = whole();
+    expect(quoteFacets(roof, []).quoted).toBeUndefined();
+    expect(quoteFacets(roof, ['ZZ']).quoted).toBeUndefined();
+    expect(quoteFacets(roof, roof.facets.map((f) => f.id)).quoted).toBeUndefined();
+    expect(cleanExcluded(roof, roof.facets.map((f) => f.id))).toEqual([]);
+    expect(cleanExcluded(roof, ['B', 'ZZ', 'B', 'A'])).toEqual(['A', 'B']);
+    // Quoting again from a partly quoted roof starts from the whole roof
+    const once = quoteFacets(roof, ['A']);
+    expect(quoteFacets(once, ['B']).quoted).toEqual(quoteFacets(roof, ['B']).quoted);
+    expect(quoteFacets(once, []).quoted).toBeUndefined();
+  });
+
+  it('measureRoof prices the quoted facets: the estimate matches the quoted totals', () => {
+    const roof = whole();
+    const { estimate, roof: partial } = measureRoof({ ...L, excludedFacets: ['A'] });
+    const q = partial!.quoted!;
+    expect(partial!.excluded).toEqual(['A']);
+    expect(partial!.totals).toEqual(roof.totals);
+    expect(estimate.surfaceSqFt).toBe(q.slopedSqFt);
+    expect(estimate.squares).toBe(q.squares);
+    expect(estimate.planSqFt).toBe(q.planSqFt);
+    expect(estimate.ridgeFt).toBe(q.ridgeFt);
+    expect(estimate.valleyFt).toBe(q.valleyFt);
+    expect(estimate.edgeFt).toBeCloseTo(q.eaveFt + q.rakeFt, 1);
+    expect(estimate.footprintSqFt).toBeLessThan(measureRoof(L).estimate.footprintSqFt);
+    // A valley length that was entered is still kept as entered
+    expect(measureRoof({ ...L, valleyFt: 42, excludedFacets: ['A'] }).estimate.valleyFt).toBe(42);
+    // Every facet left out quotes the whole roof
+    expect(measureRoof({ ...L, excludedFacets: roof.facets.map((f) => f.id) }).estimate).toEqual(measureRoof(L).estimate);
+  });
+
+  it('keeps the left-out facets across a pitch or overhang change, and quotes the whole roof again when the facets change', () => {
+    const before = measureRoof({ ...L, excludedFacets: ['B'] }).roof;
+    const shapeOf = (m: RoofModel | null, id: string) => JSON.stringify(m?.facets.find((f) => f.id === id)?.ring);
+    const pitched = measureRoof({ ...L, pitchX12: 9 }).roof;
+    const carried = carryExcluded(before, pitched, ['B']);
+    expect(carried).toHaveLength(1);
+    expect(shapeOf(pitched, carried[0]!)).toBe(shapeOf(before, 'B'));
+    const overhung = measureRoof({ ...L, overhangFt: 2.5 }).roof;
+    const carriedToo = carryExcluded(before, overhung, ['B']);
+    expect(shapeOf(overhung, carriedToo[0]!)).toBe(shapeOf(before, 'B'));
+    // Another outline: the facets changed, so none stay out
+    const moved = measureRoof({ ...L, outline: [ring(T_SHAPE)] }).roof;
+    expect(carryExcluded(before, moved, ['B'])).toEqual([]);
+    expect(carryExcluded(before, null, ['B'])).toEqual([]);
+    expect(carryExcluded(before, pitched, [])).toEqual([]);
   });
 });

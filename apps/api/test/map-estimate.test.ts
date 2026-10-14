@@ -181,6 +181,9 @@ describe('POST /api/estimator/from-footprint', () => {
     const included = m.structures.filter((s) => s.included).map((s) => s.footprintId);
     expect(included).toEqual([ids['neighbor']]);
     expect(m.structures.map((s) => s.footprintId).sort()).toEqual([ids['house'], ids['neighbor']].sort());
+    // The picked building is the main one (only it carries the flag).
+    expect(m.structures.filter((s) => s.main === true).map((s) => s.footprintId)).toEqual([ids['neighbor']]);
+    expect(m.structures.find((s) => s.footprintId === ids['house'])).not.toHaveProperty('main');
 
     const property = await owner.get(`/api/properties/${m.propertyId}`);
     expect(property.status).toBe(200);

@@ -244,7 +244,14 @@ function outlineInput(
     kind: 'estimate',
     method: 'outline',
     outline,
-    structures: rows.map((r) => ({ footprintId: r.id, included: r.id === main.id, areaSqFt: r.areaSqFt, ring: r.ring })),
+    // The building measured is marked `main` (only that entry carries the key): the rep can include others later.
+    structures: rows.map((r) => ({
+      footprintId: r.id,
+      included: r.id === main.id,
+      areaSqFt: r.areaSqFt,
+      ring: r.ring,
+      ...(r.id === main.id ? { main: true } : {}),
+    })),
     estimate,
     facets: roof?.totals.facetCount ?? null,
     overhangFt: settings.overhangFt,

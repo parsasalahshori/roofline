@@ -26,17 +26,20 @@ test('estimate this roof: picked building to a proposal for a new customer', asy
   const { measurementId } = (await made.json()) as { measurementId: string };
 
   const view = await page.request.get(`/api/measurements/${measurementId}`);
-  const m = (await view.json()) as { hasCustomer: boolean; structures: { footprintId: string; included: boolean }[] };
+  const m = (await view.json()) as { hasCustomer: boolean; structures: { footprintId: string; included: boolean; main?: boolean }[] };
   expect(m.hasCustomer).toBe(false);
   expect(m.structures.filter((s) => s.included).map((s) => s.footprintId)).toEqual([footprintId]);
-  const picked = m.structures.findIndex((s) => s.footprintId === footprintId) + 1;
+  expect(m.structures.find((s) => s.main === true)?.footprintId).toBe(footprintId);
 
   await page.goto(`/estimator/measure/${measurementId}`);
   // A new roof is revealed by the scan first: Measure roof, then the numbers and the choices
   await page.getByRole('button', { name: 'Measure roof' }).click();
   // The building choices sit under the result card's Adjust row
   await page.getByRole('button', { name: 'Adjust' }).click();
-  await expect(page.getByLabel(`Building ${picked}`, { exact: true })).toBeChecked();
+  // The picked building is the main house, in the quote (and, as the only one, it cannot be left out)
+  const main = page.getByLabel(/^Main house · [\d,]+ sq ft$/);
+  await expect(main).toBeChecked();
+  await expect(main).toBeDisabled();
   await expect(page.getByRole('button', { name: /Free estimate/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText('Paid · ordered after your OK')).toBeVisible();
 

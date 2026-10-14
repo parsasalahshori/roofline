@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit';
-import { money, TIERS, type FinancingTerms, type ProposalOptionView, type ProposalView, type SignatureRecord } from '@roofline/shared';
+import { money, TIERS, type FinancingTerms, type MeasurementView, type ProposalOptionView, type ProposalView, type SignatureRecord } from '@roofline/shared';
 import { PDF_COLORS } from '../quotes/pdf.ts';
 
 export type ProposalPdfInput = {
@@ -19,7 +19,26 @@ export type ProposalPdfInput = {
   financing?: FinancingTerms | null;
   /** Per-option financing terms by option id (frozen with each option's price); an option listed here ignores `financing`. */
   optionFinancing?: Record<string, FinancingTerms | null>;
+  /**
+   * When only some sections (facets) of the roof are quoted: their ids in order, and how many sections the whole roof
+   * has. Prints "Covers roof sections A, C and D only (3 of 7)." under the basis line; null/absent: the whole roof.
+   */
+  roofSections?: { quoted: string[]; total: number } | null;
 };
+
+/** The roof sections a quote covers, when some are left out of it (else null): for `roofSections`. */
+export function roofSectionsOf(view: MeasurementView | null): { quoted: string[]; total: number } | null {
+  const roof = view?.roof;
+  if (!roof?.excluded?.length) return null;
+  const out = new Set(roof.excluded);
+  return { quoted: roof.facets.filter((f) => !out.has(f.id)).map((f) => f.id), total: roof.facets.length };
+}
+
+/** "Covers roof sections A, C and D only (3 of 7)."; one section: "Covers roof section C only (1 of 7)." */
+export function roofSectionsLine(s: { quoted: string[]; total: number }): string {
+  const ids = s.quoted.length > 1 ? `${s.quoted.slice(0, -1).join(', ')} and ${s.quoted.at(-1)}` : (s.quoted[0] ?? '');
+  return `Covers roof ${s.quoted.length === 1 ? 'section' : 'sections'} ${ids} only (${s.quoted.length} of ${s.total}).`;
+}
 
 function financingFor(i: ProposalPdfInput, option: ProposalOptionView): FinancingTerms | null {
   if (i.optionFinancing && Object.hasOwn(i.optionFinancing, option.id)) return i.optionFinancing[option.id] ?? null;
@@ -229,6 +248,7 @@ export function renderProposalPdf(i: ProposalPdfInput, o?: { compress?: boolean 
   }
   doc.moveDown(0.3);
   line(doc, isEstimate ? 'Estimate based on the roof outline.' : 'Based on an exact roof report.', { muted: true, size: 9 });
+  if (i.roofSections && i.roofSections.quoted.length > 0) line(doc, roofSectionsLine(i.roofSections), { muted: true, size: 9 });
 
   // One section per enabled option.
   for (const opt of enabled) {

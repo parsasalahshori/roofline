@@ -1,6 +1,6 @@
 import { Button } from '@roofline/ui';
-import type { InstantEstimate } from '@roofline/shared';
-import { useId, type ReactNode } from 'react';
+import { quotedTotals, type InstantEstimate } from '@roofline/shared';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { legal } from '../../../copy/legal.ts';
 import { liftMeasure } from '../../../copy/liftMeasure.ts';
 import { measure } from '../../../copy/measure.ts';
@@ -8,6 +8,7 @@ import type { MeasurementView } from '../types.ts';
 import { AiMark } from './AiMark.tsx';
 import { LINE_COLORS, type RoofLineKind, type RoofModel } from './roofModel.ts';
 import { shownShare, stageAt, type ScanSession } from './scan.ts';
+import type { QuoteSession } from './slots.ts';
 import styles from './MeasureCard.module.css';
 
 type Cell = { key: string; label: string; value: string; line?: RoofLineKind; muted?: boolean };
@@ -25,9 +26,10 @@ export type CardNumbers = {
   edgeFt: number;
 };
 
+/** The card's numbers: the quoted sections' totals (the whole roof's when every section is in the quote). */
 export function cardNumbers(m: MeasurementView, estimate: InstantEstimate, model: RoofModel | null, wastePct: number | null): CardNumbers {
   if (model !== null) {
-    const t = model.totals;
+    const t = quotedTotals(model);
     return {
       squares: t.squares,
       slopedSqFt: t.slopedSqFt,
@@ -96,10 +98,38 @@ function RotateIcon() {
   );
 }
 
+/** "3 of 7 sections in the quote · Include all", or how to leave one out, under the numbers of a roof with sections. */
+function Sections({ model, quote, locked, editing }: { model: RoofModel; quote: QuoteSession; locked: boolean; editing: boolean }) {
+  const total = model.facets.length;
+  const out = quote.excluded.length;
+  if (out === 0) {
+    // Adjust open: the room is the controls'; the line comes back with the labels when it closes
+    if (locked || total < 2 || editing) return null;
+    return (
+      <p className={styles.sections} data-sections="all">
+        <span>{liftMeasure.allSectionsInQuote(total)}</span>
+        <span className={styles.sectionsHint}>{liftMeasure.sectionsHint}</span>
+      </p>
+    );
+  }
+  return (
+    <p className={styles.sections} data-sections="some" role="status">
+      <strong>{liftMeasure.sectionsInQuote(total - out, total)}</strong>
+      {!locked ? (
+        <Button variant="ghost" className={styles.includeAll} onClick={quote.includeAll}>
+          {liftMeasure.includeAll}
+        </Button>
+      ) : null}
+    </p>
+  );
+}
+
 /**
  * The card over the bottom left of the photo: what the scan is doing and its seconds while it plays, then
  * "Measured by Estimator in N seconds" with Re-measure, the total in squares and every measured line.
- * Adjust opens the controls that change the estimate (and the outline's handles) below the numbers.
+ * Adjust opens the controls that change the estimate (and the outline's handles). The card never covers the roof:
+ * open, it is at most 45% of the photo's height and scrolls inside, its numbers fold to one line, and the Adjust
+ * toggle keeps its place at the bottom (the card grows upwards), with Done at the end of the controls.
  */
 export function MeasureCard({
   m,
@@ -110,6 +140,8 @@ export function MeasureCard({
   editing,
   onEdit,
   panels,
+  model = null,
+  quote = null,
 }: {
   m: MeasurementView;
   numbers: CardNumbers;
@@ -120,12 +152,18 @@ export function MeasureCard({
   editing: boolean;
   onEdit: (next: boolean) => void;
   panels: ReactNode;
+  /** The measured roof, for the sections line. */
+  model?: RoofModel | null;
+  quote?: QuoteSession | null;
 }) {
   const adjustId = useId();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement | HTMLAnchorElement>(null);
   const scanning = scan.phase === 'scanning';
   const share = scanning ? shownShare(scan.progress) : 1;
   const stage = stageAt(scan.progress);
   const pitchKnown = !scanning || scan.progress >= 0.55;
+  const open = editing && panels !== null && !scanning;
   const title = scanning
     ? stage === 'tracing'
       ? liftMeasure.stage.tracing(scan.facets)
@@ -134,8 +172,19 @@ export function MeasureCard({
       ? measure.exactLabel
       : liftMeasure.measuredBy;
 
+  // Opening Adjust shows the controls from their top
+  useEffect(() => {
+    if (open) scrollRef.current?.scrollTo?.({ top: 0 });
+  }, [open]);
+
+  const done = () => {
+    onEdit(false);
+    // Done sits at the end of the controls, which go away: focus goes back to the Adjust toggle
+    queueMicrotask(() => toggleRef.current?.focus());
+  };
+
   return (
-    <section className={styles.card} aria-label={liftMeasure.statsLabel} data-phase={scan.phase}>
+    <section className={styles.card} aria-label={liftMeasure.statsLabel} data-measure-card="" data-phase={scan.phase} data-editing={open ? 'true' : 'false'}>
       <div className={styles.head}>
         <AiMark labelled />
         <h2 className={styles.title} {...(scanning ? { role: 'status' } : {})}>
@@ -156,46 +205,63 @@ export function MeasureCard({
           </>
         )}
       </div>
-      <div className={styles.body}>
-        <div className={styles.big}>
-          <span className={styles.label}>{liftMeasure.totalArea}</span>
-          <span className={styles.squaresRow}>
-            <span className={styles.squares}>{(numbers.squares * share).toFixed(1)}</span>
-            <span className={styles.unit}>{liftMeasure.squaresUnit}</span>
-          </span>
-          <span className={styles.sqft}>{liftMeasure.sloped(numbers.slopedSqFt * share)}</span>
+      <div ref={scrollRef} className={styles.scroll} data-card-scroll="">
+        <div className={styles.body} data-compact={open ? 'true' : 'false'}>
+          <div className={styles.big}>
+            <span className={styles.label}>{liftMeasure.totalArea}</span>
+            <span className={styles.squaresRow}>
+              <span className={styles.squares}>{(numbers.squares * share).toFixed(1)}</span>
+              <span className={styles.unit}>{liftMeasure.squaresUnit}</span>
+            </span>
+            <span className={styles.sqft}>{liftMeasure.sloped(numbers.slopedSqFt * share)}</span>
+          </div>
+          <dl className={styles.grid} data-cells={numbers.lines !== null ? 'roof' : 'outline'}>
+            {cardCells(numbers, share, pitchKnown).map((cell) => (
+              <div key={cell.key} className={styles.cell} data-stat={cell.key}>
+                <dt>
+                  {cell.line !== undefined ? <span className={styles.dash} style={{ background: LINE_COLORS[cell.line] }} aria-hidden="true" /> : null}
+                  <span className={styles.cellLabel}>{cell.label}</span>
+                </dt>
+                <dd data-muted={cell.muted === true ? 'true' : undefined}>{cell.value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
-        <dl className={styles.grid} data-cells={numbers.lines !== null ? 'roof' : 'outline'}>
-          {cardCells(numbers, share, pitchKnown).map((cell) => (
-            <div key={cell.key} className={styles.cell} data-stat={cell.key}>
-              <dt>
-                {cell.line !== undefined ? <span className={styles.dash} style={{ background: LINE_COLORS[cell.line] }} aria-hidden="true" /> : null}
-                <span className={styles.cellLabel}>{cell.label}</span>
-              </dt>
-              <dd data-muted={cell.muted === true ? 'true' : undefined}>{cell.value}</dd>
-            </div>
-          ))}
-        </dl>
+        {locked && !scanning ? (
+          <p className={styles.note} data-tone="locked">
+            {measure.locked}
+          </p>
+        ) : null}
+        {outlineOnly && !scanning ? <p className={styles.note}>{liftMeasure.outlineOnly}</p> : null}
+        {m.pitchSource === 'solar' && m.kind !== 'exact' && !scanning ? (
+          <p className={styles.note} data-source="solar">
+            {legal.solarPitchAttribution}
+          </p>
+        ) : null}
+        {open ? (
+          <div id={adjustId} className={styles.adjust}>
+            {panels}
+            <Button variant="ghost" className={styles.done} onClick={done}>
+              {liftMeasure.done}
+            </Button>
+          </div>
+        ) : null}
       </div>
-      {locked && !scanning ? (
-        <p className={styles.note} data-tone="locked">
-          {measure.locked}
-        </p>
-      ) : null}
-      {outlineOnly && !scanning ? <p className={styles.note}>{liftMeasure.outlineOnly}</p> : null}
-      {m.pitchSource === 'solar' && m.kind !== 'exact' && !scanning ? (
-        <p className={styles.note} data-source="solar">
-          {legal.solarPitchAttribution}
+      {!scanning && model !== null && quote !== null ? <Sections model={model} quote={quote} locked={locked} editing={open} /> : null}
+      {!scanning && quote?.sectionsReset ? (
+        <p className={styles.note} data-tone="reset" role="status">
+          {liftMeasure.sectionsReset}
         </p>
       ) : null}
       {!scanning ? (
         <div className={styles.foot}>
           {panels !== null ? (
             <Button
+              ref={toggleRef}
               variant="ghost"
               className={styles.footButton}
-              aria-expanded={editing}
-              aria-controls={adjustId}
+              aria-expanded={open}
+              aria-controls={open ? adjustId : undefined}
               onClick={() => onEdit(!editing)}
             >
               {liftMeasure.adjust}
@@ -207,11 +273,6 @@ export function MeasureCard({
           <span className={styles.kind} data-kind={m.kind}>
             {m.kind === 'exact' ? measure.exactLabel : measure.estimateLabel}
           </span>
-        </div>
-      ) : null}
-      {editing && panels !== null ? (
-        <div id={adjustId} className={styles.adjust}>
-          {panels}
         </div>
       ) : null}
     </section>

@@ -48,8 +48,37 @@ export const liftMeasure = {
   remeasure: 'Re-measure',
   outlineOnly: 'Facets are not split for this roof yet. The numbers come from its outline.',
   facetLabel: (letter: string, sqFt: number, pitch: string) => `Facet ${letter}, ${sqFt.toLocaleString()} sq ft, ${pitch} pitch`,
+  /** A facet label is a button: pressed means the section is in the quote. */
+  facetToggle: (letter: string, sqFt: number, pitch: string) => `Section ${letter} in the quote, ${sqFt.toLocaleString()} sq ft, ${pitch} pitch`,
+  facetTitle: (letter: string, sqFt: number, pitch: string) => `Section ${letter} \u00b7 ${sqFt.toLocaleString()} sq ft \u00b7 ${pitch} pitch`,
   facetArea: (sqFt: number) => `${Math.round(sqFt).toLocaleString()} sq ft`,
   facetPitch: (pitch: string) => `${pitch} pitch`,
+  facetLeftOut: 'Left out',
+  // Quoting only some sections of the roof
+  sectionsInQuote: (quoted: number, total: number) => `${quoted} of ${total} ${total === 1 ? 'section' : 'sections'} in the quote`,
+  allSectionsInQuote: (total: number) => (total === 1 ? 'The whole roof is in the quote' : `All ${total} sections in the quote`),
+  includeAll: 'Include all',
+  sectionsHint: 'Tap a section on the photo to leave it out of the quote.',
+  sectionsReset: 'The roof\u2019s sections changed, so every section is back in the quote.',
+  sectionsRule: 'Changing the outline, the buildings or the pitch can change the sections. When it does, every section goes back in the quote.',
+  done: 'Done',
+  // The buildings near the home (Adjust), and the popover a click on one opens
+  buildingRole: { main: 'Main house', detached: 'Detached building', neighbour: 'Another house' },
+  buildingSize: (sqFt: number) => `${Math.round(sqFt).toLocaleString()} sq ft`,
+  buildingAway: (ft: number) => (ft < 3 ? 'touching the house' : `${Math.round(ft).toLocaleString()} ft away`),
+  probablyNeighbours: 'probably a neighbour\u2019s',
+  buildingsHint:
+    'Buildings within about 80 ft of the house. One about the size of the house, farther from the address, is probably a neighbour\u2019s. Tap one on the photo to add it or measure it.',
+  lastBuilding: 'The quote needs at least one building.',
+  otherRoof: 'Another roof',
+  otherRoofDetail: 'No building outline here for this home.',
+  addToQuote: 'Add to this quote',
+  leaveOutOfQuote: 'Leave out of this quote',
+  measureThisHouse: 'Measure this house',
+  measureRow: 'Measure',
+  measureRowLabel: (building: string) => `Measure this house: ${building}`,
+  measureFailed: 'We could not measure that building. Try again.',
+  popoverLabel: 'Building on the photo',
   appIcon: 'Measure app icon',
 } as const;
 
@@ -60,6 +89,11 @@ export const liftProposal = {
   builtBy: 'Built by Estimator',
   squaresLine: (ordered: number, measured: number, wastePct: number) =>
     `${ordered.toFixed(1)} squares, ${measured.toFixed(1)} measured plus ${Math.round(wastePct)}% waste`,
+  /** Under the squares line when only some sections of the roof are quoted. */
+  sectionsOnly: (letters: readonly string[], total: number) => {
+    const list = letters.length <= 1 ? (letters[0] ?? '') : `${letters.slice(0, -1).join(', ')} and ${letters.at(-1)}`;
+    return `${letters.length === 1 ? 'Section' : 'Sections'} ${list} only (${letters.length} of ${total})`;
+  },
   tiersLabel: 'Proposal tier',
   tier: { good: 'Good', better: 'Better', best: 'Best' },
   recommended: 'Recommended',

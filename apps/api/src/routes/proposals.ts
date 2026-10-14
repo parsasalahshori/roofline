@@ -5,6 +5,7 @@ import {
   addProposalEvent,
   companies,
   decrypt,
+  getMeasurement,
   getProposal,
   getProposalLinkToken,
   listProposals,
@@ -22,7 +23,7 @@ import { draftProposalSend, linkFor } from '../estimator/send-proposal.ts';
 import { repriceFromMeasurement } from '../estimator/reprice.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can } from '../permissions.ts';
-import { pdfToBuffer, renderProposalPdf } from '../proposals/pdf.ts';
+import { pdfToBuffer, renderProposalPdf, roofSectionsOf } from '../proposals/pdf.ts';
 import { assertKnownFields, emailField, noNul, offsetParam, parse, UUID } from '../validate.ts';
 
 /** The 409 for a change to a proposal that has been sent. */
@@ -168,16 +169,19 @@ export function proposalRoutes(deps: AppDeps): Router {
       const [company] = await tx.select({ name: companies.name, phone: companies.phoneE164 }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
       // Each option's financing as frozen with its price (Ruling ER), never today's settings beside an old monthly amount.
       const terms = await proposalOptionTerms(tx, ctx, id);
-      return { view, company, terms };
+      // The roof sections its measurement quotes, when some are left out (a sent proposal's measurement cannot change).
+      const roofSections = roofSectionsOf(await getMeasurement(tx, ctx, view.measurementId));
+      return { view, company, terms, roofSections };
     });
     if (!loaded) throw new AppError(404, MESSAGES.notFound);
-    const { view, company, terms } = loaded;
+    const { view, company, terms, roofSections } = loaded;
     const doc = renderProposalPdf({
       audience: can(ctx, 'view_money_totals') ? 'internal' : 'homeowner',
       company: { name: company?.name ?? '', phone: company?.phone ?? null },
       proposal: view,
       estimateClause: null,
       optionFinancing: Object.fromEntries(Object.entries(terms).map(([optionId, t]) => [optionId, t.financing])),
+      roofSections,
     });
     // Rendered in full before any header goes out, so a failure is a plain 500, never a cut-off download.
     const pdf = await pdfToBuffer(doc);

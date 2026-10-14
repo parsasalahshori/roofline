@@ -1,32 +1,33 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Banner, Button, Checkbox, EmptyState, Field } from '@roofline/ui';
-import { instantEstimate, measureRoof, type ProposalView, type Ring } from '@roofline/shared';
+import { instantEstimate, measureRoof, quoteFacets, type ProposalView, type Ring } from '@roofline/shared';
 import { Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { paidReports } from '../../copy/billing.ts';
-import { liftMeasureSteps, liftProposal } from '../../copy/liftMeasure.ts';
+import { liftMeasure, liftMeasureSteps, liftProposal } from '../../copy/liftMeasure.ts';
 import { measure } from '../../copy/measure.ts';
-import { makeFailureMessage, useBuildProposal, useSendProposal } from '../estimator/api.ts';
+import { makeFailureMessage, useBuildProposal, useEstimateFromFootprint, useEstimateFromPoint, useSendProposal } from '../estimator/api.ts';
 import type { MapEnv } from '../../shell/map/types.ts';
 import type { NewCustomerInput } from '../estimator/types.ts';
 import { useExactReport, useMeasurement, useMeasurementPreview, usePatchMeasurement } from './api.ts';
 import { CustomerStep, customerReady } from './CustomerStep.tsx';
 import { EstimateChoice, type PriceChoice } from './EstimateChoice.tsx';
-import { readHandoff } from './handoff.ts';
+import { readHandoff, type MeasureHandoff } from './handoff.ts';
 import styles from './MeasureWindow.module.css';
 import { measureStyle, useImageryDate, usesFreeAerial } from './lift/aerial.ts';
+import { buildingDetail } from './lift/BuildingPopover.tsx';
 import { PropertyStrip } from './lift/PropertyStrip.tsx';
 import { ProposalPanel } from './lift/ProposalPanel.tsx';
 import { RequestsList } from './lift/RequestsList.tsx';
 import { useRequestRows } from './lift/requests.ts';
-import { addRoofLayers, readRoof } from './lift/roofModel.ts';
+import { addRoofLayers, facetName, readRoof, usableRoof } from './lift/roofModel.ts';
 import { RoofView } from './lift/RoofView.tsx';
 import { useRoofScan } from './lift/scan.ts';
-import { MeasureSlotsContext, type RoofSession } from './lift/slots.ts';
-import { addStructureLayers } from './lift/structures.ts';
+import { MeasureSlotsContext, type QuoteSession, type RoofSession } from './lift/slots.ts';
+import { addStructureLayers, describeBuildings, onlyIncluded } from './lift/structures.ts';
 import { createOutlineEditor, type EditResult, type OutlineEditor } from './OutlineEditor.ts';
 import type { MeasurementPatch, MeasurementView, OutlineProblem } from './types.ts';
 
@@ -64,21 +65,40 @@ function createMap(container: HTMLElement, center: [number, number]): MapLibreMa
 
 type FitMap = { fitBounds?: (b: [[number, number], [number, number]], o: Record<string, unknown>) => void; resize?: () => void };
 
-/** Frames the roof: centred, about 55% of the photo, with a little more room at the bottom for the card. */
-function fitRoof(instance: MapLibreMap, ring: Ring, box: HTMLElement): void {
+/** The roof's room at the top of the photo, at least, whatever the card takes. */
+const MIN_ROOF_PX = 120;
+/** The card's distance from the photo's bottom edge, and the gap kept above it. */
+const CARD_INSET_PX = 14;
+const CARD_GAP_PX = 18;
+
+/** The free room for the roof, as fitBounds padding: what the measure card covers stays out of it. */
+export function roofPadding(w: number, h: number, cardPx: number, editing: boolean): { top: number; bottom: number; left: number; right: number } {
+  const top = editing ? Math.round(h * 0.1) + 12 : Math.round(h * 0.18);
+  const wanted = Math.max(Math.round(h * 0.27), cardPx > 0 ? cardPx + CARD_INSET_PX + CARD_GAP_PX : 0);
+  const bottom = Math.max(0, Math.min(wanted, h - top - MIN_ROOF_PX));
+  return { top, bottom, left: Math.round(w * 0.22), right: Math.round(w * 0.22) };
+}
+
+/**
+ * Frames the roof: centred, in the room above the measure card (a little more room at the bottom when the card is
+ * not drawn yet). With Adjust open the card is taller, so the roof is framed higher and smaller, still in sight.
+ */
+function fitRoof(instance: MapLibreMap, ring: Ring, box: HTMLElement, editing = false, animate = false): void {
   if (ring.length < 3) return;
   const w = box.clientWidth;
   const h = box.clientHeight;
   if (w < 50 || h < 50) return;
+  const card = box.parentElement?.querySelector<HTMLElement>('[data-measure-card]');
   const lngs = ring.map((p) => p[0]);
   const lats = ring.map((p) => p[1]);
+  const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   try {
     (instance as unknown as FitMap).fitBounds?.(
       [
         [Math.min(...lngs), Math.min(...lats)],
         [Math.max(...lngs), Math.max(...lats)],
       ],
-      { padding: { top: Math.round(h * 0.18), bottom: Math.round(h * 0.27), left: Math.round(w * 0.22), right: Math.round(w * 0.22) }, maxZoom: FIT_MAX_ZOOM, duration: 0 },
+      { padding: roofPadding(w, h, card?.offsetHeight ?? 0, editing), maxZoom: FIT_MAX_ZOOM, duration: animate && !still ? 250 : 0 },
     );
   } catch {
     // A map too small to fit into keeps its start view.
@@ -154,6 +174,15 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   const [included, setIncluded] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(m.structures.map((s) => [s.footprintId, s.included])),
   );
+  // Sections left out of the quote: the server's, or the list just chosen while it is being saved
+  const [choosingExcluded, setChoosingExcluded] = useState<string[] | null>(null);
+  const excluded = choosingExcluded ?? m.excludedFacets ?? m.roof?.excluded ?? [];
+  const [sectionsReset, setSectionsReset] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const facetSaves = useRef(0);
+  const seenExcluded = useRef<readonly string[]>(m.excludedFacets ?? m.roof?.excluded ?? []);
+  const fromFootprint = useEstimateFromFootprint();
+  const fromPoint = useEstimateFromPoint();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<OutlineEditor | null>(null);
@@ -174,7 +203,16 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     const body = pending.current;
     pending.current = {};
     if (Object.keys(body).length === 0) return inflight.current;
-    const saved = inflight.current.then(() => patchAsyncRef.current(body)).then(() => undefined);
+    const saved = inflight.current
+      .then(() => patchAsyncRef.current(body))
+      .then((result) => {
+        // A new outline, other buildings or another pitch that changed the sections put them all back in the quote
+        const before = seenExcluded.current;
+        const after = result.excludedFacets ?? [];
+        seenExcluded.current = after;
+        if (body.excludedFacets !== undefined) setSectionsReset(false);
+        else if (before.length > 0 && after.length === 0) setSectionsReset(true);
+      });
     inflight.current = saved.catch(() => undefined);
     return saved;
   }).current;
@@ -205,6 +243,9 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     }
     setDrawMode((current) => (current && result.ring.length >= 3 ? false : current));
     pending.current.outline = [result.ring];
+    // A new outline makes new sections: the server says which (if any) stay out
+    delete pending.current.excludedFacets;
+    setChoosingExcluded(null);
     saveTimer.current = setTimeout(() => {
       void flushPending().catch(() => {});
     }, SAVE_DEBOUNCE_MS);
@@ -268,6 +309,19 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     editorRef.current?.setReadOnly(locked);
   }, [locked]);
 
+  // Opening or closing Adjust frames the roof again above the card (open, the card is taller)
+  const ringRef = useRef(ring);
+  useEffect(() => {
+    ringRef.current = ring;
+  });
+  const framedFor = useRef(editing);
+  useEffect(() => {
+    if (framedFor.current === editing) return;
+    framedFor.current = editing;
+    const container = containerRef.current;
+    if (mapInstance && container) fitRoof(mapInstance, ringRef.current, container, editing, true);
+  }, [editing, mapInstance]);
+
   // The photo's date is asked for once the map has started (a map that cannot start shows no photo)
   const captured = useImageryDate(lng, lat, mapInstance !== null && usesFreeAerial(readMapEnv()));
   const done = scan.phase === 'done';
@@ -277,29 +331,102 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
 
   // While the pitch is still Google Solar's, each facet keeps its own (as the server works it out)
   const planes = m.pitchSource === 'solar' && pitch === m.estimate.pitchX12 ? (m.pitchPlanes ?? null) : null;
+  const excludedKey = excluded.join(' ');
   const estimate = useMemo(() => {
     const input = { outline: ring.length > 0 ? [ring] : [], pitchX12: pitch, overhangFt: overhang, valleyFt: m.estimate.valleyFt };
+    const out = excludedKey === '' ? [] : excludedKey.split(' ');
     const base = instantEstimate(input);
+    // Only some sections quoted: the numbers are those sections' (as the server prices them)
+    if (out.length > 0) return measureRoof({ ...input, planes, excludedFacets: out }).estimate;
     if (planes === null || planes.length === 0) return base;
     const sloped = measureRoof({ ...input, planes }).estimate;
     return { ...base, surfaceSqFt: sloped.surfaceSqFt, squares: sloped.squares };
-  }, [ring, pitch, overhang, m.estimate.valleyFt, planes]);
+  }, [ring, pitch, overhang, m.estimate.valleyFt, planes, excludedKey]);
+  // The measured roof with the sections left out shaded (and its totals the quoted sections')
+  const savedRoofData = m.roof;
+  const quotedModel = useMemo(() => {
+    const whole = usableRoof(savedRoofData);
+    return whole === null ? null : quoteFacets(whole, excludedKey === '' ? [] : excludedKey.split(' '));
+  }, [savedRoofData, excludedKey]);
 
   // Price-changing edits go out at once through the same path as the outline, so Send proposal can wait for them
-  const save = (body: MeasurementPatch) => {
+  const save = (body: MeasurementPatch): Promise<void> => {
     Object.assign(pending.current, body);
-    void flushPending().catch(() => {});
+    return flushPending().catch(() => {});
   };
 
+  const buildings = describeBuildings(
+    m.structures.map((s) => ({ ...s, included: included[s.footprintId] ?? s.included })),
+    m.center,
+  );
+  const lastBuilding = onlyIncluded(buildings);
+
   const toggleStructure = (id: string, next: boolean) => {
+    // The quote always keeps one building: the last one cannot be left out (so there is never no roof to price)
+    if (!next && lastBuilding === id) return;
     const map = { ...included, [id]: next };
     setIncluded(map);
-    save({ includedStructures: m.structures.filter((s) => map[s.footprintId]).map((s) => s.footprintId) });
+    delete pending.current.excludedFacets;
+    setChoosingExcluded(null);
+    void save({ includedStructures: m.structures.filter((s) => map[s.footprintId]).map((s) => s.footprintId) });
+  };
+
+  /** Saves which sections are left out; shown at once, the server's answer (and its prices) follows. */
+  const chooseExcluded = (next: string[]) => {
+    // An outline or buildings change still on its way makes new sections: a click on the old ones waits for it
+    if (pending.current.outline !== undefined || pending.current.includedStructures !== undefined) return;
+    const n = ++facetSaves.current;
+    setChoosingExcluded(next);
+    setSectionsReset(false);
+    void save({ excludedFacets: next }).then(() => {
+      if (facetSaves.current === n) setChoosingExcluded(null);
+    });
+  };
+
+  const toggleFacet = (id: string) => {
+    if (locked || model === null || model.facets.length < 2) return;
+    const out = new Set(excluded);
+    if (out.has(id)) out.delete(id);
+    else out.add(id);
+    // At least one section stays in the quote
+    if (out.size >= model.facets.length) return;
+    chooseExcluded(model.facets.filter((f) => out.has(f.id)).map((f) => f.id));
+  };
+
+  const canMeasureOther = me.data?.role === 'owner' || me.data?.role === 'office';
+  const measureOther: QuoteSession['measureOther'] = async ({ lng, lat, footprintId }) => {
+    try {
+      const { measurementId } =
+        footprintId !== null ? await fromFootprint.mutateAsync({ footprintId, lat, lng }) : await fromPoint.mutateAsync({ lat, lng });
+      // The new roof opens with its scan playing, as a roof clicked on the main map does
+      void navigate(`/estimator/measure/${encodeURIComponent(measurementId)}`, { state: { autoScan: true } satisfies MeasureHandoff });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const quote: QuoteSession = {
+    excluded,
+    toggleFacet,
+    includeAll: () => chooseExcluded([]),
+    sectionsReset,
+    buildings,
+    onlyIncluded: lastBuilding,
+    toggleBuilding: (id) => {
+      const b = buildings.find((x) => x.footprintId === id);
+      if (b && !locked) toggleStructure(id, !b.included);
+    },
+    hovered,
+    setHovered,
+    canMeasureOther,
+    measureOther,
+    measuringOther: fromFootprint.isPending || fromPoint.isPending,
   };
 
   const choosePitch = (x: number) => {
     setPitch(x);
-    save({ pitchX12: x });
+    void save({ pitchX12: x });
   };
 
   const changeOverhang = (text: string) => {
@@ -382,20 +509,58 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
 
   const panelsNode = (
     <>
-      {m.structures.length > 0 ? (
+      {buildings.length > 0 ? (
         <section className={styles.panel} aria-labelledby="measure-structures">
           <h3 id="measure-structures" className={styles.title}>
             {measure.structuresTitle}
           </h3>
-          {m.structures.map((s, i) => (
-            <Checkbox
-              key={s.footprintId}
-              label={measure.structure(i + 1)}
-              checked={included[s.footprintId] ?? false}
-              disabled={locked}
-              onChange={(next) => toggleStructure(s.footprintId, next)}
-            />
-          ))}
+          <ul className={styles.buildings}>
+            {buildings
+              .filter((b) => b.listed)
+              .map((b) => {
+                const name = `${liftMeasure.buildingRole[b.role]} \u00b7 ${buildingDetail(b)}`;
+                const last = lastBuilding === b.footprintId;
+                return (
+                  <li
+                    key={b.footprintId}
+                    className={styles.building}
+                    data-role={b.role}
+                    data-hovered={hovered === b.footprintId ? 'true' : undefined}
+                    onMouseEnter={() => setHovered(b.footprintId)}
+                    onMouseLeave={() => setHovered(null)}
+                    onFocus={() => setHovered(b.footprintId)}
+                    onBlur={() => setHovered(null)}
+                  >
+                    <Checkbox
+                      label={name}
+                      {...(last ? { description: liftMeasure.lastBuilding } : {})}
+                      checked={b.included}
+                      disabled={locked || last}
+                      onChange={(next) => toggleStructure(b.footprintId, next)}
+                    />
+                    {canMeasureOther && b.role !== 'main' ? (
+                      <Button
+                        variant="ghost"
+                        className={styles.measureOther}
+                        aria-label={liftMeasure.measureRowLabel(name)}
+                        busy={quote.measuringOther}
+                        onClick={() => {
+                          const n = Math.max(b.ring.length, 1);
+                          void measureOther({
+                            lng: b.ring.reduce((t, p) => t + p[0], 0) / n,
+                            lat: b.ring.reduce((t, p) => t + p[1], 0) / n,
+                            footprintId: b.footprintId,
+                          });
+                        }}
+                      >
+                        {liftMeasure.measureRow}
+                      </Button>
+                    ) : null}
+                  </li>
+                );
+              })}
+          </ul>
+          <p className={styles.hint}>{liftMeasure.buildingsHint}</p>
         </section>
       ) : null}
 
@@ -437,6 +602,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
         <h3 id="measure-numbers" className={styles.title}>
           {measure.numbersTitle}
         </h3>
+        {model !== null && model.facets.length > 1 ? <p className={styles.hint}>{liftMeasure.sectionsRule}</p> : null}
         <dl className={styles.numbers}>
           {rows.map(([label, value]) => (
             <div key={label} className={styles.row}>
@@ -503,6 +669,16 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   );
 
   const recommended = preview.data?.options?.find((o) => o.tier === RECOMMENDED_TIER) ?? preview.data?.options?.[0];
+  // The sections the prices cover, when not the whole roof (as the server saved them)
+  const savedRoof = readRoof(m);
+  const savedOut = new Set(savedRoof?.excluded ?? []);
+  const sectionsLine =
+    savedRoof !== null && savedOut.size > 0
+      ? liftProposal.sectionsOnly(
+          savedRoof.facets.flatMap((f, i) => (savedOut.has(f.id) ? [] : [facetName(f.id, i)])),
+          savedRoof.facets.length,
+        )
+      : null;
   const typedName = needsCustomer && customer.name.trim() !== '' ? customer.name : null;
   const customerName = handoff.customer?.name ?? typedName ?? preview.data?.customerName ?? null;
 
@@ -513,10 +689,11 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
         panels: panelsNode,
         estimate,
         scan,
-        model,
+        model: quotedModel,
         wastePct: recommended?.wastePercent ?? null,
         editing,
         setEditing,
+        quote,
       }}
     >
       <main className={styles.main}>
@@ -530,6 +707,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
             pending={preview.isPending}
             failed={preview.isError}
             customerName={customerName}
+            sections={sectionsLine}
             controls={controls}
             footer={footer}
           />

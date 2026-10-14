@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { getMeasurement, updateMeasurement, withTenant, type MeasurementPatch } from '@roofline/db';
-import { outlineProblem, type LngLat, type Outline, type Ring } from '@roofline/shared';
+import { MAX_EXCLUDED_FACETS, outlineProblem, type LngLat, type Outline, type Ring } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { aerialMeasure } from '../estimator/aerial.ts';
 import { requestExactReport } from '../estimator/exact-report.ts';
@@ -18,6 +18,9 @@ const ONE_OUTLINE_MESSAGE = 'Please draw one outline for the house.';
 const CROSSING_MESSAGE = 'Corners must form a closed shape without crossing lines.';
 const TOO_LARGE_MESSAGE = 'That outline is too large for a house.';
 const STRUCTURES_MESSAGE = 'Please pick the structures to include.';
+const NO_STRUCTURE_MESSAGE = 'Keep at least one building in the quote.';
+const FACETS_MESSAGE = 'Pick sections of this roof.';
+const NO_FACETS_MESSAGE = 'Keep at least one section in the quote.';
 const PITCH_MESSAGE = 'Please enter a pitch from 0 to 24.';
 const OVERHANG_MESSAGE = 'Please enter an overhang from 0 to 3 feet.';
 const VALLEY_MESSAGE = 'Please enter a valley length of 0 feet or more.';
@@ -28,7 +31,7 @@ const EXACT_NOT_SET_UP_MESSAGE = "Exact reports aren't set up yet.";
 
 const CREATE_FIELDS = ['propertyId', 'address', 'jobId'] as const;
 const PREFETCH_FIELDS = ['propertyId', 'address'] as const;
-const PATCH_FIELDS = ['outline', 'includedStructures', 'pitchX12', 'overhangFt', 'valleyFt'] as const;
+const PATCH_FIELDS = ['outline', 'includedStructures', 'pitchX12', 'overhangFt', 'valleyFt', 'excludedFacets'] as const;
 
 /** Vertices a ring may have: a house has a few dozen corners; more is a bad or hostile outline. */
 const MAX_RING_POINTS = 500;
@@ -37,6 +40,8 @@ const MAX_VALLEY_FT = 10000;
 
 /** Footprint ids are the global table's bigserial numbers, written as strings. */
 const FOOTPRINT_ID = /^\d{1,19}$/;
+/** Roof facet ids: 'A' to 'Z', then 'A2', 'B2', ... (see buildRoofModel). */
+const FACET_ID = /^[A-Z]{1,2}\d{0,3}$/;
 
 const uuidField = z
   .string({ error: CHECK_MESSAGE })
@@ -88,8 +93,13 @@ const PatchBody = z
       .min(0, VALLEY_MESSAGE)
       .max(MAX_VALLEY_FT, VALLEY_MESSAGE)
       .optional(),
+    /** Shape checked by checkExcludedFacets from `raw.excludedFacets` (so every problem names the list itself). */
+    excludedFacets: z.unknown().optional(),
   })
   .strict();
+
+/** Roof sections to leave out of the quote: up to MAX_EXCLUDED_FACETS facet ids. */
+const ExcludedFacets = z.array(z.string().regex(FACET_ID)).max(MAX_EXCLUDED_FACETS);
 
 /** `:id` as a lowercase UUID; anything else cannot be a measurement, so it is a 404 like a missing one. */
 function idParam(raw: unknown): string {
@@ -133,13 +143,25 @@ function checkOutline(raw: unknown): Outline {
   return [ring];
 }
 
+/** The roof sections sent on PATCH; anything else (not a list, a bad id, too many) is "pick sections", on the list. */
+function checkExcludedFacets(raw: unknown): string[] {
+  const parsed = ExcludedFacets.safeParse(raw);
+  if (!parsed.success) throw new AppError(400, FACETS_MESSAGE, 'excludedFacets');
+  return parsed.data;
+}
+
 /**
  * `/api/measurements`: measure a home from its building outline, read a measurement, and change it.
  * - POST takes a saved address (`propertyId`) or free text (`address`), and an optional job. 201 with the view.
  *   The first measurement in an area can take about 30 seconds (its building outlines load during the request).
  * - POST /prefetch takes the same address before Measure is pressed and starts that loading early (202).
- * - GET and PATCH answer the measurement view. PATCH changes the outline, the included structures,
- *   pitch, overhang and valley; a measurement with a sent proposal is locked (409).
+ * - GET and PATCH answer the measurement view. PATCH changes the outline, the included structures (at least one
+ *   when the home has any), pitch, overhang and valley, and `excludedFacets`: the roof sections (facet ids 'A',
+ *   'B', ...) left out of the quote, replacing the list ([] quotes the whole roof). Each must be a section of the roof
+ *   after the change and at least one must stay quoted; the estimate, and every price made from the measurement, is
+ *   then the quoted sections' only. Without `excludedFacets`, a change of outline, structures, pitch or overhang keeps
+ *   the same sections out only when the roof's sections are unchanged, else the whole roof is quoted again. A
+ *   measurement with a sent proposal is locked (409).
  * Rep visibility and company isolation are enforced by the repository, so a measurement the caller
  * may not see is a 404.
  */
@@ -195,12 +217,16 @@ export function measurementRoutes(deps: AppDeps): Router {
     if (body.pitchX12 !== undefined) patch.pitchX12 = body.pitchX12;
     if (body.overhangFt !== undefined) patch.overhangFt = body.overhangFt;
     if (body.valleyFt !== undefined) patch.valleyFt = body.valleyFt;
+    if ('excludedFacets' in raw) patch.excludedFacets = checkExcludedFacets(raw.excludedFacets);
 
     const result = await withTenant(pools, ctx, (tx) => updateMeasurement(tx, ctx, id, patch, clock.now()));
     if (result === null) throw new AppError(404, MESSAGES.notFound);
     if (result === 'exact') throw new AppError(409, EXACT_LOCKED_MESSAGE);
     if (result === 'locked') throw new AppError(409, LOCKED_MESSAGE);
     if (result === 'unknown_structure') throw new AppError(400, STRUCTURES_MESSAGE, 'includedStructures');
+    if (result === 'no_structure') throw new AppError(400, NO_STRUCTURE_MESSAGE, 'includedStructures');
+    if (result === 'unknown_facet') throw new AppError(400, FACETS_MESSAGE, 'excludedFacets');
+    if (result === 'no_facets') throw new AppError(400, NO_FACETS_MESSAGE, 'excludedFacets');
     res.json(result);
   });
 

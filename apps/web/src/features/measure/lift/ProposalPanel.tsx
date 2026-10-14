@@ -80,6 +80,7 @@ export function ProposalPanel({
   pending,
   failed,
   customerName,
+  sections = null,
   controls,
   footer,
 }: {
@@ -87,6 +88,8 @@ export function ProposalPanel({
   pending: boolean;
   failed: boolean;
   customerName: string | null;
+  /** "Sections A, C and D only (3 of 7)" when the quote covers only part of the roof. */
+  sections?: string | null;
   controls: ReactNode;
   footer: ReactNode;
 }) {
@@ -109,6 +112,11 @@ export function ProposalPanel({
           </span>
         </div>
         {squares !== null ? <p className={styles.squares}>{liftProposal.squaresLine(squares.ordered, squares.measured, squares.wastePct)}</p> : null}
+        {sections !== null ? (
+          <p className={styles.squares} data-sections="">
+            {sections}
+          </p>
+        ) : null}
       </div>
       <div className={styles.scroll}>
         {options.length > 0 ? (

@@ -8,6 +8,8 @@ export type MeasurementPatch = {
   pitchX12?: number;
   overhangFt?: number;
   valleyFt?: number;
+  /** Roof facets (by id) left out of the quote; [] quotes the whole roof. */
+  excludedFacets?: string[];
 };
 
 export type OutlineProblem = 'too_few_corners' | 'self_intersecting' | 'too_large';

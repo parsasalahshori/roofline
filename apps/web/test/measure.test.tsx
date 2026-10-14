@@ -1,5 +1,6 @@
-import { instantEstimate, type Ring } from '@roofline/shared';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { instantEstimate, measureRoof, quotedTotals, type Ring } from '@roofline/shared';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
@@ -8,9 +9,11 @@ import { legal } from '../src/copy/legal.ts';
 import { paidReports } from '../src/copy/billing.ts';
 import { liftMeasure, liftProposal } from '../src/copy/liftMeasure.ts';
 import { measure } from '../src/copy/measure.ts';
+import { common } from '../src/copy/common.ts';
+import { wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
 import { forgetRevealed } from '../src/features/measure/lift/scan.ts';
 import { closeDrawing, deleteCorner, insertCorner, moveCorner, nudgeCorner } from '../src/features/measure/OutlineEditor.ts';
-import { MeasureWindow } from '../src/features/measure/MeasureWindow.tsx';
+import { MeasureWindow, roofPadding } from '../src/features/measure/MeasureWindow.tsx';
 import type { MeasurementPreview, MeasurementView } from '../src/features/measure/types.ts';
 import { gableRoof } from './roof-model-fixture.ts';
 
@@ -42,6 +45,7 @@ const fake = vi.hoisted(() => {
     unproject = ([x, y]: [number, number]) => ({ lng: -96.8002 + x * 1e-5, lat: 32.7998 + y * 1e-5 });
     project = ([lng, lat]: [number, number]) => ({ x: lng, y: lat });
     getCanvas = () => this.canvas;
+    fitBounds = vi.fn();
     isStyleLoaded = () => true;
     setStyle = vi.fn();
     addControl = vi.fn();
@@ -173,10 +177,32 @@ let buildStatus: number;
 let buildField: string | undefined;
 let role: string;
 let patchDelay: number;
+/** Set: the preview prices the saved roof at this many cents per sloped sq ft (else the fixed PREVIEW). */
+let pricePerSqFtCents: number | null;
 const sent = (key: string) => calls.filter((c) => c.key === key).map((c) => c.body as Record<string, unknown>);
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+}
+
+/**
+ * What the server does with a PATCH, for the parts these tests look at: the body is kept; a roof with facets is
+ * worked out again with the sections left out (as the API's measureRoof does), and a new outline or other buildings
+ * put every section back in the quote.
+ */
+function serverPatch(before: MeasurementView, body: Record<string, unknown>): MeasurementView {
+  const next = { ...before, ...body } as MeasurementView;
+  if (before.roof === null || before.roof === undefined) return next;
+  const roofChanged = 'outline' in body || 'includedStructures' in body;
+  const out = roofChanged ? [] : ((body.excludedFacets as string[] | undefined) ?? before.excludedFacets ?? []);
+  const measured = measureRoof({ outline: next.outline ?? [], pitchX12: next.estimate.pitchX12, overhangFt: next.overhangFt, excludedFacets: out });
+  return { ...next, roof: measured.roof, estimate: measured.estimate, excludedFacets: measured.roof?.excluded ?? [] };
+}
+
+/** The three options priced from the saved roof's sloped area. */
+function pricedBy(m: MeasurementView, centsPerSqFt: number): MeasurementPreview {
+  const total = Math.round(m.estimate.surfaceSqFt * centsPerSqFt);
+  return { ...PREVIEW, options: [previewOption('good', total), previewOption('better', Math.round(total * 1.2)), previewOption('best', Math.round(total * 1.9))] };
 }
 
 function renderWindow(state?: unknown) {
@@ -238,6 +264,7 @@ beforeEach(() => {
   buildField = undefined;
   role = 'owner';
   patchDelay = 0;
+  pricePerSqFtCents = null;
   fake.FakeMap.instances.length = 0;
   vi.stubEnv('VITE_MAPTILER_KEY', '');
   vi.stubEnv('VITE_MAP_TILES', '');
@@ -250,13 +277,15 @@ beforeEach(() => {
       calls.push({ key, body });
       if (key === 'GET /api/auth/me') return json({ user: { id: 'u1', email: 'a@b.c', name: 'A', emailVerified: true }, company: { id: 'c1', name: 'C', slug: 'c', status: 'active' }, role, companies: [] });
       if (key === 'GET /api/measurements/m1') return json(current);
-      if (key.startsWith('GET /api/measurements/m1/preview')) return json(PREVIEW);
+      if (key.startsWith('GET /api/measurements/m1/preview')) return json(pricePerSqFtCents === null ? PREVIEW : pricedBy(current, pricePerSqFtCents));
       if (key === 'PATCH /api/measurements/m1') {
         if (patchStatus !== 200) return json({ error: 'This measurement was already sent.' }, patchStatus);
         if (patchDelay > 0) await wait(patchDelay);
-        current = { ...current, ...(body as object) } as MeasurementView;
+        current = serverPatch(current, body as Record<string, unknown>);
         return json(current);
       }
+      if (key === 'POST /api/estimator/from-footprint') return json({ measurementId: 'm2' }, 201);
+      if (key === 'POST /api/estimator/from-point') return json({ measurementId: 'm3' }, 201);
       if (key === 'POST /api/measurements/m1/exact-report') return json({ taskId: 't1' }, 201);
       if (key === 'POST /api/proposals') return buildStatus === 201 ? json({ id: 'pr1' }, 201) : json({ error: 'boom', ...(buildField !== undefined && { field: buildField }) }, buildStatus);
       if (key === 'POST /api/proposals/pr1/send') return json({ taskId: 't9' });
@@ -437,9 +466,10 @@ describe('measure window', () => {
   });
 
   it('a building toggle saves at once', async () => {
-    await open();
-    fireEvent.click(screen.getByLabelText(measure.structure(1)));
-    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ includedStructures: [] }]));
+    const shed = { footprintId: 's2', ring: rect(14, 16).map(([lng, lat]) => [lng + 0.00012, lat] as [number, number]), areaSqFt: 224, included: false };
+    await open({ structures: [{ footprintId: 's1', ring: rect(30, 40), areaSqFt: 1200, included: true, main: true }, shed] });
+    fireEvent.click(screen.getByLabelText(/^Detached building/));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ includedStructures: ['s1', 's2'] }]));
   });
 
   it('Get exact report is not offered to a rep', async () => {
@@ -713,8 +743,9 @@ describe('the Measure roof scan', () => {
     expect(lastMap().getLayer('roof-lines')).toBeTruthy();
     expect(document.querySelector('[data-facet-label]')).toBeNull();
     fireEvent.click(button);
-    expect(await screen.findByRole('img', { name: liftMeasure.facetLabel('A', 671, '6/12') })).toBeTruthy();
-    expect(screen.getByRole('img', { name: liftMeasure.facetLabel('B', 671, '6/12') })).toBeTruthy();
+    const a = await screen.findByRole('button', { name: liftMeasure.facetToggle('A', 671, '6/12') });
+    expect(a.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: liftMeasure.facetToggle('B', 671, '6/12') })).toBeTruthy();
     const legend = screen.getByRole('list', { name: liftMeasure.legendLabel });
     expect(legend.textContent).toBe('RidgeValleyEaveRake');
     expect(screen.getByText('13.4')).toBeTruthy();
@@ -769,5 +800,366 @@ describe('the EagleView option after measuring', () => {
     const waiting = await screen.findByRole('link', { name: measure.waitingForOk });
     expect(waiting.getAttribute('href')).toBe('/approvals/t1');
     expect(sent('POST /api/measurements/m1/exact-report')).toHaveLength(1);
+  });
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Sections, buildings and the card's room: an L-shaped house (four sections A to D) with buildings around it.
+ */
+
+const CARD_CSS_DIR = `${process.cwd().endsWith('web') ? '' : 'apps/web/'}src/features/measure/lift/`;
+
+/** A spot `x` feet east and `y` feet north of the test origin. */
+const at = (x: number, y: number): [number, number] => [LNG + (x * FT) / (M_PER_DEG * Math.cos((LAT * Math.PI) / 180)), LAT + (y * FT) / M_PER_DEG];
+const box = (x: number, y: number, w: number, h: number): Ring => [at(x, y), at(x + w, y), at(x + w, y + h), at(x, y + h)];
+const L_RING: Ring = [at(0, 0), at(60, 0), at(60, 25), at(25, 25), at(25, 55), at(0, 55)];
+const SHED = { footprintId: 'shed', ring: box(80, 5, 14, 16), areaSqFt: 224, included: false };
+const NEIGHBOUR = { footprintId: 'next', ring: box(95, 30, 45, 45), areaSqFt: 2025, included: false };
+const FAR = { footprintId: 'far', ring: box(400, 0, 15, 20), areaSqFt: 300, included: false };
+const MAIN = { footprintId: 'home', ring: L_RING, areaSqFt: 2475, included: true, main: true };
+const middle = (ring: Ring): { lng: number; lat: number } => ({
+  lng: ring.reduce((t, q) => t + q[0], 0) / ring.length,
+  lat: ring.reduce((t, q) => t + q[1], 0) / ring.length,
+});
+
+/** The L-shaped house measured by the server, with `out` left out of the quote. */
+function lHouse(out: string[] = [], over: Partial<MeasurementView> = {}): Partial<MeasurementView> {
+  const measured = measureRoof({ outline: [L_RING], pitchX12: 6, overhangFt: 1, excludedFacets: out });
+  return {
+    outline: [L_RING],
+    center: at(10, 10),
+    roof: measured.roof,
+    estimate: measured.estimate,
+    facets: measured.roof?.facets.length ?? null,
+    excludedFacets: measured.roof?.excluded ?? [],
+    structures: [MAIN, SHED, NEIGHBOUR, FAR],
+    ...over,
+  };
+}
+
+/** Opens the measured house with Adjust closed (the facet labels show only then). */
+async function openRoof(over: Partial<MeasurementView>) {
+  const router = await open(over);
+  fireEvent.click(screen.getByRole('button', { name: liftMeasure.adjust }));
+  await waitFor(() => expect(document.querySelector('[data-facet-label]')).not.toBeNull());
+  return router;
+}
+const label = (letter: string) => document.querySelector(`[data-facet-label="${letter}"]`) as HTMLButtonElement;
+const facetOf = (over: Partial<MeasurementView>, id: string) => over.roof!.facets.find((f) => f.id === id)!;
+/** A click on the photo, inside act so what it opens is set up (listeners too) before the test goes on. */
+const clickMap = (lngLat: { lng: number; lat: number }) => act(() => mapEmit('click', { lngLat, originalEvent: { target: lastMap().getCanvas() } }));
+const lastData = (source: string) => {
+  const calls = (lastMap().getSource(source) as { setData: { mock: { calls: unknown[][] } } }).setData.mock.calls;
+  return calls[calls.length - 1]?.[0] as { features: { properties: Record<string, unknown> }[] };
+};
+const betterTotal = (panel: HTMLElement) => within(panel).getByText(liftProposal.totalFor('Better')).nextElementSibling?.textContent;
+
+describe('quoting only some sections of the roof', () => {
+  it('a facet label is a button that leaves its section out: pressed state, "Left out", shaded on the photo, saved', async () => {
+    await openRoof(lHouse());
+    const a = label('A');
+    expect(a.tagName).toBe('BUTTON');
+    expect(a.getAttribute('aria-label')).toMatch(/^Section A in the quote, [\d,]+ sq ft, 6\/12 pitch$/);
+    expect(a.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(liftMeasure.allSectionsInQuote(4))).toBeTruthy();
+    expect(screen.getByText(liftMeasure.sectionsHint)).toBeTruthy();
+    fireEvent.click(a);
+    expect(a.getAttribute('aria-pressed')).toBe('false');
+    expect(a.textContent).toContain(liftMeasure.facetLeftOut);
+    expect(screen.getByText(liftMeasure.sectionsInQuote(3, 4))).toBeTruthy();
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ excludedFacets: ['A'] }]));
+    const shaded = lastData('roof-facets-src').features.map((f) => [f.properties.id, f.properties.excluded]);
+    expect(shaded).toEqual([['A', true], ['B', false], ['C', false], ['D', false]]);
+    // Focus stays on the pressed label: the labels are not made again
+    expect(label('A')).toBe(a);
+  });
+
+  it('two sections left out: the card, the lines and Good/Better/Best are the other sections\' (a click on the photo toggles too)', async () => {
+    pricePerSqFtCents = 1000;
+    const house = lHouse();
+    await openRoof(house);
+    const panel = await screen.findByRole('complementary', { name: liftProposal.label });
+    await waitFor(() => expect(betterTotal(panel)).toBe(wholeDollars(Math.round(house.estimate!.surfaceSqFt * 1000 * 1.2))));
+    fireEvent.click(label('B'));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(1));
+    // Section D by a click on the photo
+    clickMap({ lng: facetOf(house, 'D').labelAt[0], lat: facetOf(house, 'D').labelAt[1] });
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ excludedFacets: ['B'] }, { excludedFacets: ['B', 'D'] }]));
+    const expected = measureRoof({ outline: [L_RING], pitchX12: 6, overhangFt: 1, excludedFacets: ['B', 'D'] });
+    const t = quotedTotals(expected.roof!);
+    expect(screen.getByText(liftMeasure.sectionsInQuote(2, 4))).toBeTruthy();
+    const card = document.querySelector('[data-measure-card]') as HTMLElement;
+    expect(within(card).getByText(t.squares.toFixed(1))).toBeTruthy();
+    expect(within(card).getByText(liftMeasure.sloped(t.slopedSqFt))).toBeTruthy();
+    // The ridge between B and D (both out) no longer counts; the one between A and C does
+    expect(card.querySelector('[data-stat="ridges"] dd')?.textContent).toBe(liftMeasure.feet(t.ridgeFt));
+    expect(card.querySelector('[data-stat="eaves"] dd')?.textContent).toBe(liftMeasure.feet(t.eaveFt));
+    expect(card.querySelector('[data-stat="facets"] dd')?.textContent).toBe('2');
+    // The prices are asked for again and are the two sections' (the server prices what it saved)
+    await waitFor(() => expect(betterTotal(panel)).toBe(wholeDollars(Math.round(t.slopedSqFt * 1000 * 1.2))));
+    expect(within(panel).getByText(liftProposal.sectionsOnly(['A', 'C'], 4))).toBeTruthy();
+    // The lines of the left-out sections fade on the photo
+    const faded = lastData('roof-lines-src').features.filter((f) => f.properties.quoted === false);
+    expect(faded.length).toBeGreaterThan(0);
+  });
+
+  it('Include all puts every section back in the quote', async () => {
+    await openRoof(lHouse(['A', 'C']));
+    expect(label('A').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByText(liftMeasure.sectionsInQuote(2, 4))).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: liftMeasure.includeAll }));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ excludedFacets: [] }]));
+    expect(label('A').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(liftMeasure.allSectionsInQuote(4))).toBeTruthy();
+  });
+
+  it('the last section in the quote cannot be left out', async () => {
+    await openRoof(lHouse(['A', 'B', 'C']));
+    fireEvent.click(label('D'));
+    await wait(50);
+    expect(sent('PATCH /api/measurements/m1')).toEqual([]);
+    expect(label('D').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('a sent (locked) roof keeps its sections: the labels are disabled and photo clicks change nothing', async () => {
+    const house = lHouse(['B'], { locked: true });
+    current = view(house);
+    renderWindow();
+    await waitFor(() => expect(fake.FakeMap.instances.length).toBeGreaterThan(0));
+    mapEmit('load');
+    await waitFor(() => expect(document.querySelector('[data-facet-label]')).not.toBeNull());
+    expect(label('A').disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: liftMeasure.includeAll })).toBeNull();
+    clickMap({ lng: facetOf(house, 'A').labelAt[0], lat: facetOf(house, 'A').labelAt[1] });
+    await wait(50);
+    expect(sent('PATCH /api/measurements/m1')).toEqual([]);
+  });
+
+  it('a new outline that changes the sections puts them all back in the quote, and says so', async () => {
+    await open(lHouse(['A']));
+    expect(screen.getByText(liftMeasure.sectionsRule)).toBeTruthy();
+    fireEvent.keyDown(corner(0), { key: 'ArrowRight' });
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(1), { timeout: 2000 });
+    expect(Object.keys(sent('PATCH /api/measurements/m1')[0]!)).toEqual(['outline']);
+    expect(await screen.findByText(liftMeasure.sectionsReset)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: liftMeasure.adjust }));
+    expect(screen.getByText(liftMeasure.allSectionsInQuote(4))).toBeTruthy();
+  });
+});
+
+describe('the buildings around the home', () => {
+  const row = (name: RegExp) => screen.getByLabelText(name).closest('li') as HTMLElement;
+
+  it('names each building: the main house, a detached building, a probable neighbour\'s house; far ones are not listed', async () => {
+    await open(lHouse());
+    expect(screen.getByLabelText(/^Main house · 2,475 sq ft$/)).toBeTruthy();
+    expect(screen.getByLabelText(/^Detached building · 224 sq ft · \d+ ft away$/)).toBeTruthy();
+    expect(screen.getByLabelText(new RegExp(`^Another house · 2,025 sq ft · \\d+ ft away · ${liftMeasure.probablyNeighbours}$`))).toBeTruthy();
+    expect(screen.queryByLabelText(/300 sq ft/)).toBeNull();
+    expect(screen.getByText(liftMeasure.buildingsHint)).toBeTruthy();
+  });
+
+  it('the last building in the quote cannot be left out, so the roof never empties into draw mode', async () => {
+    await open(lHouse());
+    const main = screen.getByLabelText(/^Main house/) as HTMLInputElement;
+    expect(main.disabled).toBe(true);
+    expect(within(row(/^Main house/)).getByText(liftMeasure.lastBuilding)).toBeTruthy();
+    fireEvent.click(main);
+    await wait(50);
+    expect(sent('PATCH /api/measurements/m1')).toEqual([]);
+    expect(screen.queryByText(measure.drawHint)).toBeNull();
+    // With the shed in too, either one may go
+    fireEvent.click(screen.getByLabelText(/^Detached building/));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ includedStructures: ['home', 'shed'] }]));
+    expect((screen.getByLabelText(/^Main house/) as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(screen.getByLabelText(/^Main house/));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(2));
+    expect(sent('PATCH /api/measurements/m1')[1]).toEqual({ includedStructures: ['shed'] });
+    expect((screen.getByLabelText(/^Detached building/) as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('hovering or focusing a building\'s row outlines that building on the photo', async () => {
+    await open(lHouse());
+    const shed = row(/^Detached building/);
+    fireEvent.mouseEnter(shed);
+    expect(shed.getAttribute('data-hovered')).toBe('true');
+    await waitFor(() => expect(lastData('lift-structures-src').features.find((f) => f.properties.hovered)?.properties.id).toBe('shed'));
+    expect(lastMap().getLayer('lift-structures-hover')).toBeTruthy();
+    fireEvent.mouseLeave(shed);
+    await waitFor(() => expect(lastData('lift-structures-src').features.some((f) => f.properties.hovered)).toBe(false));
+  });
+});
+
+describe('clicking another building on the photo', () => {
+  const dialog = () => screen.queryByRole('dialog', { name: liftMeasure.popoverLabel });
+
+  it('a detached building offers Add to this quote first; adding it saves at once and closes the popover', async () => {
+    await openRoof(lHouse());
+    clickMap(middle(SHED.ring));
+    const pop = await screen.findByRole('dialog', { name: liftMeasure.popoverLabel });
+    expect(within(pop).getByText(liftMeasure.buildingRole.detached)).toBeTruthy();
+    const actions = within(pop).getAllByRole('button').map((b) => b.textContent);
+    expect(actions.slice(0, 2)).toEqual([liftMeasure.addToQuote, liftMeasure.measureThisHouse]);
+    fireEvent.click(within(pop).getByRole('button', { name: liftMeasure.addToQuote }));
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toEqual([{ includedStructures: ['home', 'shed'] }]));
+    expect(dialog()).toBeNull();
+    // Now in the quote, its popover offers to leave it out
+    clickMap(middle(SHED.ring));
+    expect(within(await screen.findByRole('dialog')).getByRole('button', { name: liftMeasure.leaveOutOfQuote })).toBeTruthy();
+  });
+
+  it('a probable neighbour\'s house offers Measure this house first: it measures that building and opens it with the scan playing', async () => {
+    const router = await openRoof(lHouse());
+    const spot = middle(NEIGHBOUR.ring);
+    clickMap(spot);
+    const pop = await screen.findByRole('dialog', { name: liftMeasure.popoverLabel });
+    expect(within(pop).getByText(new RegExp(liftMeasure.probablyNeighbours))).toBeTruthy();
+    const actions = within(pop).getAllByRole('button').map((b) => b.textContent);
+    expect(actions.slice(0, 2)).toEqual([liftMeasure.measureThisHouse, liftMeasure.addToQuote]);
+    fireEvent.click(within(pop).getByRole('button', { name: liftMeasure.measureThisHouse }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/estimator/measure/m2'));
+    expect(sent('POST /api/estimator/from-footprint')).toEqual([{ footprintId: 'next', lat: spot.lat, lng: spot.lng }]);
+    expect(router.state.location.state).toEqual({ autoScan: true });
+    expect(sent('PATCH /api/measurements/m1')).toEqual([]);
+  });
+
+  it('a spot with no building outline offers to measure the roof there, from the point', async () => {
+    const router = await openRoof(lHouse());
+    const spot = { lng: at(-200, -200)[0], lat: at(-200, -200)[1] };
+    clickMap(spot);
+    const pop = await screen.findByRole('dialog', { name: liftMeasure.popoverLabel });
+    expect(within(pop).getByText(liftMeasure.otherRoof)).toBeTruthy();
+    expect(within(pop).queryByRole('button', { name: liftMeasure.addToQuote })).toBeNull();
+    fireEvent.click(within(pop).getByRole('button', { name: liftMeasure.measureThisHouse }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/estimator/measure/m3'));
+    expect(sent('POST /api/estimator/from-point')).toEqual([{ lat: spot.lat, lng: spot.lng }]);
+  });
+
+  it('Escape, Close and a click elsewhere close the popover (that click toggles nothing)', async () => {
+    const house = lHouse();
+    await openRoof(house);
+    clickMap(middle(SHED.ring));
+    await screen.findByRole('dialog');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(dialog()).toBeNull();
+    clickMap(middle(SHED.ring));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: common.close }));
+    expect(dialog()).toBeNull();
+    clickMap(middle(SHED.ring));
+    await screen.findByRole('dialog');
+    clickMap({ lng: facetOf(house, 'A').labelAt[0], lat: facetOf(house, 'A').labelAt[1] });
+    await waitFor(() => expect(dialog()).toBeNull());
+    clickMap(middle(SHED.ring));
+    await screen.findByRole('dialog');
+    fireEvent.pointerDown(document.querySelector('[data-measure-card]') as HTMLElement);
+    expect(dialog()).toBeNull();
+    await wait(50);
+    expect(sent('PATCH /api/measurements/m1')).toEqual([]);
+  });
+
+  it('a rep may add a building but not measure another house, and an empty spot opens nothing', async () => {
+    role = 'rep';
+    await openRoof(lHouse());
+    await wait(50);
+    clickMap(middle(NEIGHBOUR.ring));
+    const pop = await screen.findByRole('dialog');
+    expect(within(pop).queryByRole('button', { name: liftMeasure.measureThisHouse })).toBeNull();
+    expect(within(pop).getByRole('button', { name: liftMeasure.addToQuote })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    clickMap({ lng: at(-200, -200)[0], lat: at(-200, -200)[1] });
+    await wait(20);
+    expect(dialog()).toBeNull();
+  });
+
+  it('hovering another building outlines it with a pointer; the main house\'s sections show a pointer too', async () => {
+    const house = lHouse();
+    await openRoof(house);
+    const canvas = lastMap().getCanvas();
+    act(() => mapEmit('mousemove', { lngLat: middle(SHED.ring) }));
+    expect(canvas.style.cursor).toBe('pointer');
+    await waitFor(() => expect(lastData('lift-structures-src').features.find((f) => f.properties.hovered)?.properties.id).toBe('shed'));
+    act(() => mapEmit('mousemove', { lngLat: { lng: facetOf(house, 'C').labelAt[0], lat: facetOf(house, 'C').labelAt[1] } }));
+    expect(canvas.style.cursor).toBe('pointer');
+    await waitFor(() => expect(lastData('lift-structures-src').features.some((f) => f.properties.hovered)).toBe(false));
+    act(() => mapEmit('mousemove', { lngLat: { lng: at(-200, -200)[0], lat: at(-200, -200)[1] } }));
+    expect(canvas.style.cursor).toBe('');
+  });
+
+  it('draw mode keeps every click for the outline: no popover, no section toggled', async () => {
+    await open({ drawMode: true, outline: null, structures: [MAIN, SHED] });
+    clickMap(middle(SHED.ring));
+    await wait(20);
+    expect(dialog()).toBeNull();
+  });
+});
+
+describe('the measure card never hides the roof', () => {
+  it('Adjust opens a card capped at 45% of the photo that scrolls inside; the toggle stays outside the scroll, and Done closes it', async () => {
+    await open(lHouse());
+    const card = document.querySelector('[data-measure-card]') as HTMLElement;
+    const toggle = screen.getByRole('button', { name: liftMeasure.adjust });
+    expect(card.getAttribute('data-editing')).toBe('true');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const scroller = card.querySelector('[data-card-scroll]') as HTMLElement;
+    expect(scroller.contains(screen.getByText(measure.numbersTitle))).toBe(true);
+    expect(scroller.contains(toggle)).toBe(false);
+    // Open, the numbers fold to one line (the controls list them)
+    expect(card.querySelector('[data-compact="true"]')).not.toBeNull();
+    const css = readFileSync(`${CARD_CSS_DIR}MeasureCard.module.css`, 'utf8');
+    expect(css).toMatch(/\.card\[data-editing="true"\] \{\s*max-height: 45%;/);
+    expect(css).toMatch(/\.scroll \{[^}]*overflow-y: auto;/);
+    const done = within(scroller).getByRole('button', { name: liftMeasure.done });
+    fireEvent.click(done);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(card.getAttribute('data-editing')).toBe('false');
+    expect(screen.queryByText(measure.numbersTitle)).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(toggle));
+    // The toggle opens and closes it again from the same place
+    fireEvent.click(toggle);
+    expect(card.getAttribute('data-editing')).toBe('true');
+    fireEvent.click(toggle);
+    expect(card.getAttribute('data-editing')).toBe('false');
+  });
+
+  it('the draw-mode notice and the card share one column (notices first), so they cannot overlap', async () => {
+    await open({ drawMode: true, outline: null, structures: [] });
+    const hint = screen.getByText(measure.drawHint);
+    const notices = hint.closest('[data-notices]') as HTMLElement;
+    const card = document.querySelector('[data-measure-card]') as HTMLElement;
+    expect(notices.parentElement).toBe(card.parentElement);
+    expect(notices.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('opening Adjust frames the roof again above the taller card, and closing it frames it back', async () => {
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 800 });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 700 });
+    try {
+      await openRoof(lHouse());
+      const fit = lastMap().fitBounds;
+      const before = fit.mock.calls.length;
+      fireEvent.click(screen.getByRole('button', { name: liftMeasure.adjust }));
+      await waitFor(() => expect(fit.mock.calls.length).toBe(before + 1));
+      const opened = (fit.mock.calls.at(-1)![1] as { padding: { top: number; bottom: number } }).padding;
+      expect(opened).toEqual(roofPadding(800, 700, 0, true));
+      fireEvent.click(screen.getByRole('button', { name: liftMeasure.adjust }));
+      await waitFor(() => expect(fit.mock.calls.length).toBe(before + 2));
+      expect((fit.mock.calls.at(-1)![1] as { padding: unknown }).padding).toEqual(roofPadding(800, 700, 0, false));
+    } finally {
+      if (width) Object.defineProperty(HTMLElement.prototype, 'clientWidth', width);
+      if (height) Object.defineProperty(HTMLElement.prototype, 'clientHeight', height);
+    }
+  });
+
+  it('roofPadding keeps the roof above the card: open, the card (up to 45%) is left out of the roof\'s room', () => {
+    const open45 = roofPadding(800, 700, Math.round(700 * 0.45), true);
+    expect(open45.bottom).toBeGreaterThanOrEqual(Math.round(700 * 0.45) + 14);
+    expect(700 - open45.top - open45.bottom).toBeGreaterThanOrEqual(120);
+    // A short photo still leaves the roof its room; the card then scrolls inside
+    const short = roofPadding(800, 420, 300, true);
+    expect(420 - short.top - short.bottom).toBeGreaterThanOrEqual(120);
+    // Closed, with no card measured yet, the usual framing
+    expect(roofPadding(800, 700, 0, false)).toEqual({ top: 126, bottom: 189, left: 176, right: 176 });
   });
 });

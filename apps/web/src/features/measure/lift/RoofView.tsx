@@ -1,8 +1,8 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Banner, Button, Skeleton } from '@roofline/ui';
-import type { Ring } from '@roofline/shared';
+import type { LngLat, Ring } from '@roofline/shared';
 import { Marker, type Map as MapLibreMap } from 'maplibre-gl';
-import { useContext, useEffect, useReducer } from 'react';
+import { useContext, useEffect, useReducer, useRef, useState } from 'react';
 import { legal } from '../../../copy/legal.ts';
 import { usesFreeAerial } from './aerial.ts';
 import { usesGoogleImagery } from './googleTiles.ts';
@@ -12,12 +12,13 @@ import { useMeasurement } from '../api.ts';
 import type { MeasurementView } from '../types.ts';
 import { AiMark } from './AiMark.tsx';
 import { cardNumbers, MeasureCard } from './MeasureCard.tsx';
-import { facetName, LINE_COLORS, lineKinds, setRoofLayers, type RoofModel } from './roofModel.ts';
+import { BuildingPopover, type PopoverAt } from './BuildingPopover.tsx';
+import { facetAt, facetName, LINE_COLORS, lineKinds, setRoofLayers, type RoofModel } from './roofModel.ts';
 import styles from './RoofView.module.css';
 import { ScanBar } from './ScanBar.tsx';
 import type { ScanSession } from './scan.ts';
-import { MeasureSlotsContext, type MeasureSlots, type RoofSession } from './slots.ts';
-import { STRUCTURES_SOURCE, structuresData } from './structures.ts';
+import { MeasureSlotsContext, type MeasureSlots, type QuoteSession, type RoofSession } from './slots.ts';
+import { buildingAt, STRUCTURE_LAYERS, STRUCTURES_SOURCE, structuresData, type BuildingRow } from './structures.ts';
 
 const FT_PER_METRE = 3.28084;
 const SCALE_MAX_PX = 110;
@@ -45,18 +46,19 @@ export function ringCenter(ring: Ring): [number, number] {
   return [ring.reduce((sum, p) => sum + p[0], 0) / n, ring.reduce((sum, p) => sum + p[1], 0) / n];
 }
 
+type MapPointerEvent = { lngLat?: { lng: number; lat: number }; originalEvent?: { target?: EventTarget | null } };
 type Loose = {
   getLayer?: (id: string) => unknown;
   getSource?: (id: string) => unknown;
   setLayoutProperty?: (id: string, name: string, value: string) => void;
   project?: (p: [number, number]) => { x: number; y: number };
-  on?: (type: string, fn: () => void) => void;
-  off?: (type: string, fn: () => void) => void;
+  on?: (type: string, fn: (e?: MapPointerEvent) => void) => void;
+  off?: (type: string, fn: (e?: MapPointerEvent) => void) => void;
+  getCanvas?: () => HTMLCanvasElement;
   resize?: () => void;
 };
 
 const OUTLINE_LAYERS = ['outline-fill', 'outline-line'] as const;
-const STRUCTURE_LAYERS = ['lift-structures-fill', 'lift-structures-line'] as const;
 
 function setVisible(instance: MapLibreMap, ids: readonly string[], visible: boolean): void {
   const loose = instance as unknown as Loose;
@@ -69,14 +71,18 @@ function setVisible(instance: MapLibreMap, ids: readonly string[], visible: bool
   }
 }
 
-/** A white label card on each facet: its letter, area and pitch, at the facet's label point. */
-function facetLabel(letter: string, sqFt: number, pitch: string, wide: boolean): HTMLDivElement {
-  const el = document.createElement('div');
+/**
+ * The white label card on each facet: its letter, area and pitch. It is a button that puts the section in or out of the
+ * quote (pressed: in the quote); a section left out says so instead of its pitch.
+ */
+function facetLabel(letter: string, sqFt: number, pitch: string, wide: boolean): HTMLButtonElement {
+  const el = document.createElement('button');
+  el.type = 'button';
   el.className = styles.facetLabel ?? '';
   el.dataset.layout = wide ? 'wide' : 'tall';
   el.setAttribute('data-facet-label', letter);
-  el.setAttribute('role', 'img');
-  el.setAttribute('aria-label', liftMeasure.facetLabel(letter, Math.round(sqFt), pitch));
+  el.setAttribute('aria-label', liftMeasure.facetToggle(letter, Math.round(sqFt), pitch));
+  el.title = liftMeasure.facetTitle(letter, Math.round(sqFt), pitch);
   const badge = document.createElement('span');
   badge.className = styles.facetLetter ?? '';
   badge.textContent = letter;
@@ -85,35 +91,103 @@ function facetLabel(letter: string, sqFt: number, pitch: string, wide: boolean):
   const area = document.createElement('strong');
   area.textContent = liftMeasure.facetArea(sqFt);
   const slope = document.createElement('span');
+  slope.dataset.slope = pitch;
   slope.textContent = liftMeasure.facetPitch(pitch);
   text.append(area, slope);
   el.append(badge, text);
   return el;
 }
 
-function useFacetLabels(instance: MapLibreMap | null, model: RoofModel | null, visible: boolean) {
+/** Shows a label as in or out of the quote. */
+function setFacetState(el: HTMLButtonElement, excluded: boolean, disabled: boolean): void {
+  el.setAttribute('aria-pressed', excluded ? 'false' : 'true');
+  el.dataset.excluded = excluded ? 'true' : 'false';
+  el.disabled = disabled;
+  const slope = el.querySelector<HTMLElement>('[data-slope]');
+  if (slope) slope.textContent = excluded ? liftMeasure.facetLeftOut : liftMeasure.facetPitch(slope.dataset.slope ?? '');
+}
+
+/** Label cards closer than this on screen would cover each other (and the roof): they shrink to their letter. */
+const CROWDED_DX_PX = 96;
+const CROWDED_DY_PX = 44;
+
+/** Whether any two label points are too close on screen for full labels at this zoom. */
+function crowded(instance: MapLibreMap, points: readonly [number, number][]): boolean {
+  const at = project(instance, points as Ring);
+  for (let i = 0; i < at.length; i++) {
+    for (let j = i + 1; j < at.length; j++) {
+      if (Math.abs(at[i]!.x - at[j]!.x) < CROWDED_DX_PX && Math.abs(at[i]!.y - at[j]!.y) < CROWDED_DY_PX) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The facet labels. They are made once per roof (so a pressed label keeps the keyboard focus) and only their state
+ * follows the sections left out. A press toggles the section (not while the roof is locked). When the labels would
+ * cover each other (a small roof, or zoomed out), each shows only its letter; the rest stays in its name and tooltip.
+ */
+function useFacetLabels(instance: MapLibreMap | null, model: RoofModel | null, visible: boolean, quote: QuoteSession | null, locked: boolean) {
+  const elements = useRef(new Map<string, HTMLButtonElement>());
+  const toggle = useRef<((id: string) => void) | null>(null);
   useEffect(() => {
-    if (!instance || !model || !visible) return;
-    const markers = model.facets.map((f, i) =>
-      new Marker({ element: facetLabel(facetName(f.id, i), f.areaSqFt, f.pitch, f.planSqFt >= WIDE_LABEL_SQFT), draggable: false })
-        .setLngLat(f.labelAt)
-        .addTo(instance),
-    );
-    return () => {
-      for (const marker of markers) marker.remove();
+    toggle.current = quote?.toggleFacet ?? null;
+  });
+  const facets = model?.facets ?? null;
+  useEffect(() => {
+    if (!instance || !facets || !visible) return;
+    const made = elements.current;
+    const markers = facets.map((f, i) => {
+      const el = facetLabel(facetName(f.id, i), f.areaSqFt, f.pitch, f.planSqFt >= WIDE_LABEL_SQFT);
+      el.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggle.current?.(f.id);
+      });
+      made.set(f.id, el);
+      return new Marker({ element: el, draggable: false }).setLngLat(f.labelAt).addTo(instance);
+    });
+    const points = facets.map((f) => f.labelAt);
+    const fit = () => {
+      const compact = crowded(instance, points) ? 'true' : 'false';
+      for (const el of made.values()) el.dataset.compact = compact;
     };
-  }, [instance, model, visible]);
+    fit();
+    const loose = instance as unknown as Loose;
+    loose.on?.('zoomend', fit);
+    loose.on?.('resize', fit);
+    return () => {
+      loose.off?.('zoomend', fit);
+      loose.off?.('resize', fit);
+      for (const marker of markers) marker.remove();
+      made.clear();
+    };
+  }, [instance, facets, visible]);
+  const excludedKey = (model?.excluded ?? []).join(' ');
+  const canToggle = quote !== null && !locked && (facets?.length ?? 0) > 1;
+  useEffect(() => {
+    const out = new Set(excludedKey === '' ? [] : excludedKey.split(' '));
+    for (const [id, el] of elements.current) setFacetState(el, out.has(id), !canToggle);
+  }, [excludedKey, canToggle, instance, facets, visible]);
 }
 
 /**
  * What shows on the photo when: nothing before the scan; the facets and lines once traced; the outline and the
  * buildings' tint while Adjust is open, or when the roof has no facets.
  */
-function useLayerVisibility(instance: MapLibreMap | null, m: MeasurementView, model: RoofModel | null, roofDrawn: boolean, done: boolean, editing: boolean, drawMode: boolean) {
+function useLayerVisibility(
+  instance: MapLibreMap | null,
+  m: MeasurementView,
+  model: RoofModel | null,
+  roofDrawn: boolean,
+  done: boolean,
+  editing: boolean,
+  drawMode: boolean,
+  hovered: string | null,
+) {
   useEffect(() => {
     if (!instance) return;
     try {
-      (instance.getSource(STRUCTURES_SOURCE) as { setData?: (data: unknown) => void } | undefined)?.setData?.(structuresData(m.structures));
+      (instance.getSource(STRUCTURES_SOURCE) as { setData?: (data: unknown) => void } | undefined)?.setData?.(structuresData(m.structures, hovered));
     } catch {
       // Ignored: the map is going away.
     }
@@ -121,7 +195,103 @@ function useLayerVisibility(instance: MapLibreMap | null, m: MeasurementView, mo
     setVisible(instance, OUTLINE_LAYERS, outlineShown);
     setVisible(instance, STRUCTURE_LAYERS, done && (editing || model === null));
     setRoofLayers(instance, model, roofDrawn && !(editing && drawMode));
-  }, [instance, m.structures, model, roofDrawn, done, editing, drawMode]);
+  }, [instance, m.structures, model, roofDrawn, done, editing, drawMode, hovered]);
+}
+
+/** Whether a click on this building opens its popover: any building but the main house while it is in the quote. */
+function opensPopover(b: BuildingRow): boolean {
+  return !(b.role === 'main' && b.included);
+}
+
+/**
+ * Clicks and hovers on the measured photo, once the roof is measured (not while an outline is drawn):
+ * - a building other than the main house (in the quote) opens its popover: add it to this quote or leave it out,
+ *   or measure it as its own estimate; hovering it outlines it and shows a pointer;
+ * - a facet of the roof puts that section in or out of the quote;
+ * - a spot with no building outline opens the popover to measure the roof there (owner and office);
+ * - with a popover open, a click elsewhere closes it (another building's click opens that one instead).
+ * Clicks on a facet label or an outline handle are theirs, not the map's.
+ */
+function useRoofPointer(
+  instance: MapLibreMap | null,
+  o: { active: boolean; model: RoofModel | null; quote: QuoteSession | null; locked: boolean; popover: PopoverAt | null; setPopover: (next: PopoverAt | null) => void },
+) {
+  const latest = useRef(o);
+  const cursorSet = useRef(false);
+  useEffect(() => {
+    latest.current = o;
+  });
+  useEffect(() => {
+    const loose = instance as unknown as Loose | null;
+    if (!loose?.on) return;
+    const canvas = () => {
+      try {
+        return loose.getCanvas?.() ?? null;
+      } catch {
+        return null;
+      }
+    };
+    const setCursor = (pointer: boolean) => {
+      const c = canvas();
+      if (!c || pointer === cursorSet.current) return;
+      cursorSet.current = pointer;
+      c.style.cursor = pointer ? 'pointer' : '';
+    };
+    const pointAt = (e?: MapPointerEvent): LngLat | null => (e?.lngLat ? [e.lngLat.lng, e.lngLat.lat] : null);
+    const usable = (b: BuildingRow | null, s: typeof o): b is BuildingRow =>
+      b !== null && s.quote !== null && opensPopover(b) && (!s.locked || (s.quote.canMeasureOther && b.role !== 'main'));
+    const onClick = (e?: MapPointerEvent) => {
+      const s = latest.current;
+      const at = pointAt(e);
+      if (!s.active || s.quote === null || at === null) return;
+      const target = e?.originalEvent?.target;
+      const c = canvas();
+      if (target != null && c !== null && target !== c) return;
+      const b = buildingAt(s.quote.buildings, at);
+      if (s.popover !== null) {
+        const other = usable(b, s) && b.footprintId !== s.popover.building?.footprintId;
+        s.setPopover(other ? { lng: at[0], lat: at[1], building: b } : null);
+        return;
+      }
+      if (usable(b, s)) {
+        s.setPopover({ lng: at[0], lat: at[1], building: b });
+        return;
+      }
+      const facet = facetAt(s.model, at);
+      if (facet !== null) {
+        if (!s.locked && (s.model?.facets.length ?? 0) > 1) s.quote.toggleFacet(facet);
+        return;
+      }
+      if (b === null && s.quote.canMeasureOther) s.setPopover({ lng: at[0], lat: at[1], building: null });
+    };
+    const onMove = (e?: MapPointerEvent) => {
+      const s = latest.current;
+      const at = pointAt(e);
+      if (!s.active || s.quote === null || at === null) {
+        if (cursorSet.current) setCursor(false);
+        if (s.quote?.hovered != null) s.quote.setHovered(null);
+        return;
+      }
+      const b = buildingAt(s.quote.buildings, at);
+      const hit = usable(b, s) ? b : null;
+      if ((s.quote.hovered ?? null) !== (hit?.footprintId ?? null)) s.quote.setHovered(hit?.footprintId ?? null);
+      const onFacet = hit === null && !s.locked && (s.model?.facets.length ?? 0) > 1 && facetAt(s.model, at) !== null;
+      setCursor(hit !== null || onFacet);
+    };
+    const onOut = () => {
+      const s = latest.current;
+      if (cursorSet.current) setCursor(false);
+      if (s.quote?.hovered != null) s.quote.setHovered(null);
+    };
+    loose.on('click', onClick);
+    loose.on('mousemove', onMove);
+    loose.on('mouseout', onOut);
+    return () => {
+      loose.off?.('click', onClick);
+      loose.off?.('mousemove', onMove);
+      loose.off?.('mouseout', onOut);
+    };
+  }, [instance]);
 }
 
 /** Re-renders when the map moves or resizes, so overlays drawn in screen space follow the photo. */
@@ -250,7 +420,7 @@ function Notices({ roof }: { roof: NoticeState }) {
   const any = roof.mapFailed || roof.problem !== null || roof.saveFailed || roof.drawMode;
   if (!any) return null;
   return (
-    <div className={styles.notices}>
+    <div className={styles.notices} data-notices="">
       {roof.mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
       {roof.problem !== null ? (
         <div role="alert">
@@ -273,44 +443,68 @@ function Notices({ roof }: { roof: NoticeState }) {
 
 /** The roof as MeasureWindow's one editor draws it: this view places the map's container and what goes over it. */
 function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: MeasureSlots; roof: RoofSession; scan: ScanSession; captured: Date | null }) {
-  const { model, editing } = slots;
+  const { model, editing, quote } = slots;
   const { containerRef, drawMode, saving, map, ring, zoom, mapFailed, locked, problem, saveFailed, finishDrawing, clearDrawing } = roof;
   const done = scan.phase === 'done';
   const roofDrawn = done || (scan.phase === 'scanning' && scan.progress >= ROOF_DRAWN_AT);
-  useLayerVisibility(map, m, model, roofDrawn, done, editing, drawMode);
-  useFacetLabels(map, model, roofDrawn && !editing);
+  const [popover, setPopover] = useState<PopoverAt | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const active = done && !drawMode && !mapFailed;
+  // The building a popover is about, as it stands now (its row changes when it is added or left out)
+  const shown = popover === null || !active ? null : { ...popover, building: popover.building === null ? null : (quote?.buildings.find((b) => b.footprintId === popover.building?.footprintId) ?? popover.building) };
+  // Outlined: the building under the pointer (or its row), else the one the popover is about
+  useLayerVisibility(map, m, model, roofDrawn, done, editing, drawMode, quote?.hovered ?? shown?.building?.footprintId ?? null);
+  useFacetLabels(map, model, roofDrawn && !editing, quote, locked);
+  useRoofPointer(map, { active, model, quote, locked, popover, setPopover });
   const estimate = slots.estimate ?? m.estimate;
   const numbers = cardNumbers(m, estimate, model, slots.wastePct);
 
   return (
     <div className={styles.frame}>
-      <div className={styles.mapBox} data-phase={scan.phase} data-editing={editing || drawMode ? 'true' : 'false'}>
+      <div ref={boxRef} className={styles.mapBox} data-phase={scan.phase} data-editing={editing || drawMode ? 'true' : 'false'}>
         <div ref={containerRef} className={styles.map} role="region" aria-label={liftMeasure.mapLabel} />
         <div className={styles.topLeft}>
           <ImageryChip scanning={scan.phase === 'scanning' || saving} captured={captured} />
         </div>
         {roofDrawn && model !== null ? <Legend model={model} /> : null}
-        <Notices roof={{ mapFailed, locked, problem, saveFailed, drawMode, finishDrawing, clearDrawing }} />
         {scan.phase === 'scanning' ? <ScanOverlay instance={map} ring={ring} scan={scan} /> : null}
         <ScaleAndNorth latitude={m.center[1]} zoom={zoom} />
         <p className={styles.credits}>
           <span>{usesGoogleImagery() ? legal.googleImageryAttribution : usesFreeAerial({ maptilerKey: import.meta.env.VITE_MAPTILER_KEY }) ? legal.imageryAttribution : legal.maptilerImageryAttribution}</span>
           <span>{legal.footprintAttribution}</span>
         </p>
-        {scan.phase === 'idle' ? (
-          <ScanBar scan={scan} />
-        ) : (
-          <MeasureCard
-            m={m}
-            numbers={numbers}
-            scan={scan}
-            outlineOnly={model === null}
+        {/* The notices at the top and the card at the bottom share one column, so they can never overlap */}
+        <div className={styles.overlay}>
+          <Notices roof={{ mapFailed, locked, problem, saveFailed, drawMode, finishDrawing, clearDrawing }} />
+          <div className={styles.overlaySpacer} />
+          {scan.phase === 'idle' ? null : (
+            <MeasureCard
+              m={m}
+              numbers={numbers}
+              scan={scan}
+              outlineOnly={model === null}
+              locked={locked}
+              editing={editing}
+              onEdit={slots.setEditing}
+              panels={slots.panels}
+              model={model}
+              quote={quote}
+            />
+          )}
+        </div>
+        {scan.phase === 'idle' ? <ScanBar scan={scan} /> : null}
+        {shown !== null && quote !== null ? (
+          <BuildingPopover
+            key={`${shown.lng},${shown.lat}`}
+            instance={map}
+            box={boxRef}
+            at={shown}
+            avoid={ring}
+            quote={quote}
             locked={locked}
-            editing={editing}
-            onEdit={slots.setEditing}
-            panels={slots.panels}
+            onClose={() => setPopover(null)}
           />
-        )}
+        ) : null}
       </div>
     </div>
   );

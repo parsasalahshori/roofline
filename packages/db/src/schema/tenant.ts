@@ -1041,6 +1041,11 @@ export const measurements = pgTable(
     pitchPlanes: jsonb('pitch_planes').$type<RoofPlane[]>(),
     /** The Google Solar answer this measurement used (the building, or none there), reused when the home is measured again. */
     solar: jsonb('solar').$type<SolarSnapshot>(),
+    /**
+     * Roof facet ids ('A', 'B', ...) left out of the quote; empty when the whole roof is quoted. The stored surface,
+     * edge, ridge, valley and footprint are then the other facets' only (`facets` stays the whole roof's count).
+     */
+    excludedFacets: jsonb('excluded_facets').$type<string[]>().notNull().default([]),
     createdByUserId: userRef('created_by_user_id'),
     ...timestamps(),
   },

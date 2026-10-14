@@ -171,19 +171,67 @@
 }
 
 
-/* A facet's label card: the letter in a blue disc, the area and the pitch */
+/* A facet's label card: the letter in a blue disc, the area and the pitch. It is a button (in or out of the quote). */
 .facetLabel {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin: 0;
   padding: 4px 9px 4px 6px;
+  border: 0;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.12), 0 2px 0 rgba(21, 28, 34, 0.22);
   color: var(--ds-text-1, #151c22);
+  font: inherit;
   font-family: var(--ds-font, var(--font));
+  text-align: left;
   white-space: nowrap;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.facetLabel:hover:not(:disabled) {
+  box-shadow: 0 0 0 2px var(--ds-info, #2f6fde), 0 2px 0 rgba(21, 28, 34, 0.22);
+}
+
+.facetLabel:focus-visible {
+  outline: 3px solid var(--ds-accent, #ffc21a);
+  outline-offset: 2px;
+}
+
+.facetLabel:disabled {
+  cursor: default;
+}
+
+/* Left out of the quote: greyed, the letter's disc hollow, "Left out" for the pitch */
+.facetLabel[data-excluded="true"] {
+  background: rgba(226, 230, 234, 0.9);
+  color: var(--ds-text-label, #505b64);
+}
+
+.facetLabel[data-excluded="true"] .facetLetter {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ds-text-label, #505b64);
+  color: var(--ds-text-label, #505b64);
+}
+
+.facetLabel[data-excluded="true"] strong {
+  text-decoration: line-through;
+}
+
+/* Crowded: only the letter, so the roof under the labels stays visible and each one can be pressed */
+.facetLabel[data-compact="true"] {
+  padding: 3px;
+  border-radius: 50%;
+}
+
+.facetLabel[data-compact="true"] .facetText {
+  display: none;
+}
+
+.facetLabel[data-compact="true"][data-excluded="true"] .facetLetter {
+  text-decoration: line-through;
 }
 
 .facetLabel[data-layout="tall"] {
@@ -312,16 +360,38 @@
   box-shadow: 0 0 0 1.5px rgba(21, 28, 34, 0.55);
 }
 
-.notices {
+/*
+ * The notices (top, centred) and the measure card (bottom left) in one column over the photo: the card can only take
+ * the room the notices leave, so the two never overlap. Only the boxes in it take clicks; the gap is the photo's.
+ */
+.overlay {
   position: absolute;
   z-index: 3;
-  top: 56px;
-  left: 50%;
+  inset: 56px 14px 14px;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
-  width: min(520px, calc(100% - 28px));
-  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.overlay > * {
+  pointer-events: auto;
+}
+
+.overlaySpacer {
+  flex: 1 1 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.notices {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-self: center;
+  gap: 8px;
+  width: min(520px, 100%);
 }
 
 .drawTools {

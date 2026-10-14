@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { measureRoof, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
+import { carryExcluded, cleanExcluded, measureRoof, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type RoofModel, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
 import { jobs, measurements, properties, proposals } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getProperty, type PropertyRow } from './properties.ts';
@@ -15,8 +15,11 @@ export type NewMeasurement = {
   method: MeasurementMethod;
   /** Null: draw mode / manual. */
   outline: Outline | null;
-  /** All footprints near the home, in order; the main structure is `included: true`. */
-  structures: { footprintId: string; included: boolean; areaSqFt: number; ring: Ring }[];
+  /**
+   * All footprints near the home, in order; the main structure is `included: true` and marked `main: true` (only
+   * that entry carries the key).
+   */
+  structures: { footprintId: string; included: boolean; areaSqFt: number; ring: Ring; main?: boolean }[];
   estimate: InstantEstimate;
   /** Roof facets counted for the measurement (null: none worked out). */
   facets?: number | null;
@@ -38,6 +41,11 @@ export type MeasurementPatch = {
   pitchX12?: number;
   overhangFt?: number;
   valleyFt?: number;
+  /**
+   * Roof facet ids ('A', 'B', ...) to leave out of the quote, replacing the list ([] quotes the whole roof). Each must
+   * be a facet of the roof as it is after this change.
+   */
+  excludedFacets?: string[];
 };
 
 /** The property (or the job) a measurement is for is not one the member can see, or the job is not at that property. */
@@ -100,6 +108,8 @@ function storedStructures(value: unknown): StoredStructure[] {
     included: s.included === true,
     areaSqFt: Number(s.areaSqFt),
     ring: openRing(s.ring as Ring),
+    // Only the main building carries the key, so structures stored before it existed read back the same.
+    ...(s.main === true ? { main: true } : {}),
   }));
 }
 
@@ -284,9 +294,10 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
   const overhangFt = row.overhangFt ?? 0;
   const valleyFt = row.valleyFt ?? 0;
   // The roof drawn over the outline is worked out on read (deterministic), and its lines give the ridge, valley
-  // and edge lengths, so what is drawn and what is priced agree.
+  // and edge lengths, so what is drawn and what is priced agree. With facets left out, the estimate is the quoted
+  // facets' (the numbers updateMeasurement stored).
   const planes = planesOf(row);
-  const measured = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt, planes });
+  const measured = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt, planes, excludedFacets: row.excludedFacets });
   const fromOutline: InstantEstimate = measured.estimate;
   // An exact report's or an aerial measure's numbers are the measurement itself: shown as stored, never
   // worked out again from the outline (B5). Proposals are priced from the same stored columns.
@@ -315,6 +326,7 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string): Pr
     roof: measured.roof,
     pitchSource: row.pitchSource ?? null,
     pitchPlanes: planes,
+    excludedFacets: measured.roof?.excluded ?? [],
   };
 }
 
@@ -365,14 +377,30 @@ function storedEstimate(row: typeof measurements.$inferSelect, fromOutline: Inst
   };
 }
 
+/** Whether two facet id lists are the same, in the same order. */
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+/** The facet ids stored on a row (the column is jsonb: anything that is not a list of strings counts as none). */
+function storedExcluded(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+}
+
 /**
  * Changes a measurement the member may see. Null when they may not (or it does not exist); 'exact' for an
- * exact report's measurement, which is never changed (B5); 'locked'
- * when a proposal has been sent from it; 'unknown_structure' when an included id is not one of its
- * structures (nothing is written). A hand-drawn outline replaces the outline and keeps the
- * structures; included structures rebuild the outline from their rings unless an outline is given.
- * A measurement with no structures keeps its outline when included structures are sent.
- * The stored totals are recomputed from the outline, pitch, overhang and valley.
+ * exact report's measurement, which is never changed (B5); 'locked' when a proposal has been sent from it;
+ * 'unknown_structure' when an included id is not one of its structures; 'no_structure' when no structure would be
+ * included (a measurement with structures); 'unknown_facet' when a facet id to leave out is not a facet of the roof
+ * after the change; 'no_facets' when every facet would be left out. Nothing is written in those cases.
+ * A hand-drawn outline replaces the outline and keeps the structures; included structures rebuild the outline from
+ * their rings unless an outline is given. A measurement with no structures keeps its outline when included
+ * structures are sent.
+ * Facets left out of the quote: `excludedFacets` replaces the list. Without it, a new outline, other structures, a
+ * pitch or an overhang keep the same facets out only when the roof's facets are unchanged (carryExcluded); otherwise
+ * the whole roof is quoted again.
+ * The stored totals (surface, edges, ridge, valley, footprint) are recomputed from the outline, pitch, overhang,
+ * valley and the facets quoted, so proposals price only those; `facets` stays the whole roof's count.
  */
 export async function updateMeasurement(
   tx: Tx,
@@ -380,7 +408,7 @@ export async function updateMeasurement(
   id: string,
   p: MeasurementPatch,
   now: Date,
-): Promise<MeasurementView | 'exact' | 'locked' | 'unknown_structure' | null> {
+): Promise<MeasurementView | 'exact' | 'locked' | 'unknown_structure' | 'no_structure' | 'unknown_facet' | 'no_facets' | null> {
   const [found] = await tx
     .select({ row: measurements, outlineGeoJson: sql<string | null>`ST_AsGeoJSON(${measurements.outline})` })
     .from(measurements)
@@ -397,9 +425,11 @@ export async function updateMeasurement(
 
   const current = found.row;
   let structures = storedStructures(current.structures);
-  let outline: Outline | null = outlineFromGeoJson(found.outlineGeoJson);
+  const outlineBefore: Outline | null = outlineFromGeoJson(found.outlineGeoJson);
+  let outline: Outline | null = outlineBefore;
 
   if (p.includedStructures !== undefined) {
+    if (p.includedStructures.length === 0 && structures.length > 0) return 'no_structure';
     const known = new Set(structures.map((s) => s.footprintId));
     if (p.includedStructures.some((fid) => !known.has(fid))) return 'unknown_structure';
     const included = new Set(p.includedStructures);
@@ -417,11 +447,41 @@ export async function updateMeasurement(
   // A pitch a person picks is the whole roof's: the facets stop taking their own from Google Solar's planes.
   const pitchSource: PitchSource | null = p.pitchX12 !== undefined ? 'manual' : current.pitchSource;
   const pitchPlanes = p.pitchX12 !== undefined ? null : current.pitchPlanes;
-  // A new outline or pitch gets the valleys its roof has (0 means "the roof's"), unless a length is sent with it.
-  const roofChanged = p.outline !== undefined || p.includedStructures !== undefined || p.pitchX12 !== undefined;
-  const valleyIn = p.valleyFt ?? (roofChanged ? 0 : (current.valleyFt ?? 0));
   const planes = planesOf({ pitchSource, pitchPlanes });
-  const { estimate, roof } = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn, planes });
+
+  // The facets left out of the quote, checked against (or carried over to) the roof as it is after this change.
+  const excludedBefore = storedExcluded(current.excludedFacets);
+  const roofAfter = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, planes }).roof;
+  const reshaped = p.outline !== undefined || p.includedStructures !== undefined || p.pitchX12 !== undefined || p.overhangFt !== undefined;
+  let excludedFacets: string[];
+  // Whether other facets are quoted than before (the same facets under new letters are not a change).
+  let facetsChanged: boolean;
+  if (p.excludedFacets !== undefined) {
+    const facetIds = new Set((roofAfter?.facets ?? []).map((f) => f.id));
+    if (p.excludedFacets.some((fid) => !facetIds.has(fid))) return 'unknown_facet';
+    if (facetIds.size > 0 && new Set(p.excludedFacets).size >= facetIds.size) return 'no_facets';
+    excludedFacets = cleanExcluded(roofAfter, p.excludedFacets);
+    facetsChanged = !sameIds(excludedFacets, cleanExcluded(roofAfter, excludedBefore));
+  } else if (reshaped && excludedBefore.length > 0) {
+    const roofBefore: RoofModel | null = measureRoof({
+      outline: outlineBefore ?? [],
+      pitchX12: current.pitchX12 ?? 0,
+      overhangFt: current.overhangFt ?? 0,
+      planes: planesOf(current),
+    }).roof;
+    excludedFacets = carryExcluded(roofBefore, roofAfter, excludedBefore);
+    // Carried over means the very same facets (by shape) stay out; none carried quotes the whole roof again.
+    facetsChanged = excludedFacets.length === 0;
+  } else {
+    excludedFacets = cleanExcluded(roofAfter, excludedBefore);
+    facetsChanged = !sameIds(excludedFacets, excludedBefore);
+  }
+
+  // A new outline or pitch, or other facets quoted, gets the valleys its roof has (0 means "the roof's"), unless a
+  // length is sent with it.
+  const roofChanged = p.outline !== undefined || p.includedStructures !== undefined || p.pitchX12 !== undefined || facetsChanged;
+  const valleyIn = p.valleyFt ?? (roofChanged ? 0 : (current.valleyFt ?? 0));
+  const { estimate, roof } = measureRoof({ outline: outline ?? [], pitchX12, overhangFt, valleyFt: valleyIn, planes, excludedFacets });
   const valleyFt = p.valleyFt ?? estimate.valleyFt;
 
   await tx
@@ -432,11 +492,13 @@ export async function updateMeasurement(
       pitchX12,
       overhangFt,
       valleyFt,
+      // The quoted facets' numbers (the whole roof's when none is left out): what proposals are priced from.
       footprintSqFt: estimate.footprintSqFt,
       surfaceSqFt: estimate.surfaceSqFt,
       edgeFt: estimate.edgeFt,
       ridgeFt: estimate.ridgeFt,
       facets: roof?.totals.facetCount ?? null,
+      excludedFacets,
       pitchSource,
       pitchPlanes,
       updatedAt: now,

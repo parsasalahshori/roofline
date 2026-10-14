@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import type { ProposalOptionView, ProposalView, SignatureRecord } from '@roofline/shared';
+import type { MeasurementView, ProposalOptionView, ProposalView, RoofModel, SignatureRecord } from '@roofline/shared';
 import { calculateQuote, defaultPricebook, defaultScope, money } from '@roofline/shared';
-import { pdfToBuffer, renderProposalPdf, type ProposalPdfInput } from '../src/proposals/pdf.ts';
+import { pdfToBuffer, renderProposalPdf, roofSectionsLine, roofSectionsOf, type ProposalPdfInput } from '../src/proposals/pdf.ts';
 
 const calculation = calculateQuote({ ...defaultScope, areaSqFt: 2400, areaType: 'surface', pitch: 6 }, defaultPricebook);
 
@@ -152,6 +152,38 @@ describe('proposal pdf', () => {
     const exactInternal = await render(base({ audience: 'internal', proposal: proposal('exact'), signature }));
     expect(exactInternal).not.toContain('Estimate total');
     expect(exactInternal).toContain(`Total: ${money(signature.record.totalCents)}`);
+  });
+});
+
+describe('roof sections (only some of the roof quoted)', () => {
+  test('the line follows the basis line when given, and is absent otherwise', async () => {
+    const s = await render(base({ roofSections: { quoted: ['A', 'C', 'D'], total: 7 } }));
+    expect(s).toContain('Covers roof sections A, C and D only (3 of 7).');
+    expect(s.indexOf('Covers roof sections')).toBeGreaterThan(s.indexOf('Estimate based on the roof outline.'));
+    for (const none of [base(), base({ roofSections: null }), base({ roofSections: { quoted: [], total: 4 } })]) {
+      expect(await render(none)).not.toContain('Covers roof section');
+    }
+  });
+
+  test('one section and two sections', () => {
+    expect(roofSectionsLine({ quoted: ['C'], total: 7 })).toBe('Covers roof section C only (1 of 7).');
+    expect(roofSectionsLine({ quoted: ['A', 'C'], total: 4 })).toBe('Covers roof sections A and C only (2 of 4).');
+    expect(roofSectionsLine({ quoted: ['A', 'B2', 'C', 'D'], total: 30 })).toBe('Covers roof sections A, B2, C and D only (4 of 30).');
+  });
+
+  test('roofSectionsOf: the quoted facets in order, only when some are left out', () => {
+    const facet = (id: string) => ({ id, ring: [], planSqFt: 1, areaSqFt: 1, pitch: '5/12', labelAt: [0, 0] as [number, number] });
+    const roof = (excluded?: string[]): RoofModel => ({
+      facets: ['A', 'B', 'C', 'D'].map(facet), lines: [], outline: [], pitch: '5/12',
+      totals: { squares: 1, slopedSqFt: 1, planSqFt: 1, facetCount: 4, wastePct: 10, ridgeFt: 0, hipFt: 0, valleyFt: 0, eaveFt: 0, rakeFt: 0 },
+      ...(excluded ? { excluded } : {}),
+    });
+    const view = (r: RoofModel | null) => ({ roof: r }) as MeasurementView;
+    expect(roofSectionsOf(view(roof(['B'])))).toEqual({ quoted: ['A', 'C', 'D'], total: 4 });
+    expect(roofSectionsOf(view(roof([])))).toBeNull();
+    expect(roofSectionsOf(view(roof()))).toBeNull();
+    expect(roofSectionsOf(view(null))).toBeNull();
+    expect(roofSectionsOf(null)).toBeNull();
   });
 });
 
