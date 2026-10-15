@@ -92,7 +92,18 @@ export async function runLidarAreaJob(deps: AppDeps, box: unknown): Promise<void
   await deps.usgsLidar!.prefetchArea([w, s], [e, n], { maxPoints: 16, maxTiles: 4 });
 }
 
-/** A kept snapshot made while the lidar was still being fetched: worth making again once lidar is on. */
+/** A snapshot made while the lidar was still being fetched (USGS_LIDAR_MODE on): not shared from the roof cache. */
 export function lidarWasPending(deps: AppDeps, snapshot: { lidar?: Roof3dLidarNote }): boolean {
-  return lidarOn(deps) && snapshot.lidar?.status === 'none' && snapshot.lidar.reason === 'lidar-pending';
+  return lidarModeOf(deps) === 'on' && lidarOn(deps) && snapshot.lidar?.status === 'none' && snapshot.lidar.reason === 'lidar-pending';
+}
+
+/**
+ * Whether a kept snapshot should be made again because the lidar it waited for is now ready (mode on only; a quick
+ * read of the kept product, no USGS call). While the lidar is still pending the kept roof is reused: making it again
+ * would buy Google's layers again for nothing.
+ */
+export async function lidarNowReady(deps: AppDeps, snapshot: { lidar?: Roof3dLidarNote }, point: LngLat): Promise<boolean> {
+  if (!lidarWasPending(deps, snapshot)) return false;
+  const known = await deps.usgsLidar!.known(point).catch(() => null);
+  return known !== null && 'crop' in known;
 }

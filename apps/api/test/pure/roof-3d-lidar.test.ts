@@ -108,9 +108,14 @@ describe('roof-3d with USGS lidar', () => {
     const first = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
     expect(first?.roof).not.toBeNull();
     expect(first?.lidar).toEqual({ status: 'none', reason: 'lidar-pending' });
+    // Still pending: the kept roof is reused (making it again would buy Google's layers for nothing).
+    const { deps: d2, layers: l2 } = depsWith('on', { waitMs: 0 });
+    (d2 as { usgsLidar: unknown }).usgsLidar = deps.usgsLidar;
+    expect(await roof3dFromKept(d2, first, INSIDE, Promise.resolve(buildingOf(HOUSE)))).toBe(first);
+    expect(l2.calls).toHaveLength(0);
     open();
     await deps.usgsLidar!.prefetch(INSIDE);
-    // The kept snapshot from the first Measure is not reused: it was made before the lidar was there.
+    // Ready now: the kept snapshot from the first Measure is made again, with the lidar.
     const again = await roof3dFromKept(deps, first, INSIDE, Promise.resolve(buildingOf(HOUSE)));
     expect(again?.lidar?.status).toBe('used');
   });
@@ -127,6 +132,16 @@ describe('roof-3d with USGS lidar', () => {
     expect(a?.roof?.lidarEdges).toBeDefined();
     const b = await run();
     expect(JSON.stringify(b)).toBe(JSON.stringify(a));
+  });
+
+  it('a snapshot stored before lidar existed (no lidar field) still reads and is reused with lidar on, asking USGS nothing', async () => {
+    const { deps: off } = depsWith(undefined);
+    const old = await roof3dAt(off, INSIDE, buildingOf(HOUSE));
+    expect(old).not.toHaveProperty('lidar');
+    const { deps, api, layers } = depsWith('on');
+    expect(await roof3dFromKept(deps, old, INSIDE, Promise.resolve(buildingOf(HOUSE)))).toBe(old);
+    expect(api.calls).toHaveLength(0);
+    expect(layers.calls).toHaveLength(0);
   });
 
   it('no coverage: typed, and the roof is Google-only', async () => {

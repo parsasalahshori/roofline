@@ -33,7 +33,7 @@ import {
 import { crownFromGreen, eaveSupport } from '@roofline/shared/roof-reconstruct/eave-support';
 import type { AppDeps } from '../app.ts';
 import { type RoofLayers, SolarLayersUnavailableError } from '../providers/solar-layers.ts';
-import { lidarForRoof, lidarWasPending } from '../providers/usgs-lidar-roof.ts';
+import { lidarForRoof, lidarNowReady, lidarWasPending } from '../providers/usgs-lidar-roof.ts';
 import { encodeRgbPng } from './png.ts';
 import { countRoof3d } from './roof-3d-events.ts';
 import { tierReasons, withGoogleCheck } from './roof-3d-compare.ts';
@@ -714,7 +714,7 @@ export async function roof3dFromKept(
   }
   const usable = kept === null ? null : fromShadow(kept);
   let snapshot: Roof3dSnapshot | null;
-  if (usable !== null && roof3dSnapshotFresh(usable, point, deps.clock.now()) && !lidarWasPending(deps, usable)) {
+  if (usable !== null && roof3dSnapshotFresh(usable, point, deps.clock.now()) && !(await lidarNowReady(deps, usable, point))) {
     countRoof3d(deps, 'reused', { version: roof3dSnapshotVersion(usable).algorithm ?? 0 });
     snapshot = usable;
   } else {
