@@ -23,6 +23,8 @@ export const search = {
   /** The action offered when the search looks like a street address. */
   measureRoof: (address: string) => `Measure roof at ${address}`,
   measureRoofHint: 'Find the roof outline and pitch',
+  measureWindows: (address: string) => `Measure windows at ${address}`,
+  measureWindowsHint: 'Count the windows and price their replacement',
   listLabel: 'Search results',
   noMatches: (query: string) => `No matches for “${query}”`,
   /** Joins the pieces of a result's second line: stage, address, phone. Pieces that are missing are left out. */

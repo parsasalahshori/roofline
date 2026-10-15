@@ -17,6 +17,7 @@ import { CustomerStep, customerReady } from './CustomerStep.tsx';
 import { EstimateChoice, type PriceChoice } from './EstimateChoice.tsx';
 import { readHandoff, type MeasureHandoff } from './handoff.ts';
 import styles from './MeasureWindow.module.css';
+import { MeasureSwitch } from './windows/MeasureSwitch.tsx';
 import { measureStyle, useImageryDate, usesFreeAerial } from './lift/aerial.ts';
 import { buildingDetail } from './lift/BuildingPopover.tsx';
 import { PropertyStrip } from './lift/PropertyStrip.tsx';
@@ -823,6 +824,11 @@ export function MeasureWindow() {
           </svg>
         </span>
         <h2 className={styles.heading}>{measure.title}</h2>
+        <MeasureSwitch
+          current="roof"
+          roofHref="/estimator"
+          windowsHref={query.data !== undefined ? `/estimator/windows?property=${encodeURIComponent(query.data.propertyId)}` : '/estimator/windows'}
+        />
         <span className={styles.subtitle}>{measure.subtitle}</span>
       </header>
       <Steps step={activeStep} onStep={setStep} roofReady={measurementId !== ''} proposalReady={proposalReady} />

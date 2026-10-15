@@ -28,15 +28,23 @@ export type ScanPhase = 'idle' | 'scanning' | 'done';
 
 /** What the scan is doing, in order, by how far it has played. */
 export type ScanStage = 'finding' | 'tracing' | 'reading' | 'pricing';
-const STAGE_ENDS: [ScanStage, number][] = [
+/** Where each stage ends, as a share of the scan, in order. Every scan (roof or windows) plays these four. */
+export type ScanStages = readonly (readonly [ScanStage, number])[];
+export const SCAN_STAGES: ScanStages = [
   ['finding', 0.3],
   ['tracing', 0.55],
   ['reading', 0.8],
   ['pricing', 1],
 ];
 
+/** The stage at `progress` in a scan of these stages. */
+export function stageIn(progress: number, stages: ScanStages): ScanStage {
+  return (stages.find(([, end]) => progress < end) ?? stages[stages.length - 1]!)[0];
+}
+
+/** The stage at `progress` in the usual scan. One argument only, so it can be handed to `map`. */
 export function stageAt(progress: number): ScanStage {
-  return (STAGE_ENDS.find(([, end]) => progress < end) ?? STAGE_ENDS[STAGE_ENDS.length - 1]!)[0];
+  return stageIn(progress, SCAN_STAGES);
 }
 
 /** How much of a measured number shows while the scan plays: none while it finds the roof, all of it once done. */
@@ -45,17 +53,21 @@ export function shownShare(progress: number): number {
   return 1 - (1 - p) ** 3;
 }
 
-export type ScanSession = {
+/** The scan's clock, whatever it reveals: a roof on the map, or windows on a photo of the house. */
+export type ScanTimer = {
   phase: ScanPhase;
   elapsedMs: number;
   totalMs: number;
   /** 0 to 1 while scanning; 1 once done. */
   progress: number;
+  start: () => void;
+  /** Re-measure: plays the scan again over the same saved measurement. */
+  restart: () => void;
+};
+
+export type ScanSession = ScanTimer & {
   /** The facet count the measurement really has, or null when it has none. */
   facets: number | null;
-  start: () => void;
-  /** Re-measure: plays the scan again over the same saved roof. */
-  restart: () => void;
 };
 
 /**
@@ -68,8 +80,17 @@ export function needsScan(m: MeasurementView): boolean {
 }
 
 export function useRoofScan(m: MeasurementView, facets: number | null = m.facets): ScanSession {
-  const id = m.id;
-  const [phase, setPhase] = useState<ScanPhase>(() => (playing.has(id) ? 'scanning' : needsScan(m) ? 'idle' : 'done'));
+  return { ...useScan(m.id, needsScan(m)), facets };
+}
+
+/**
+ * The scan's clock for one measurement. `id` keys what was revealed and what is playing (give each kind of
+ * measurement its own prefix); `wanted` is whether a measurement that has not played yet waits for its scan
+ * (else it shows done). Read once, when the measurement first shows. What it is doing at a moment is
+ * `stageAt(progress)`.
+ */
+export function useScan(id: string, wanted: boolean): ScanTimer {
+  const [phase, setPhase] = useState<ScanPhase>(() => (playing.has(id) ? 'scanning' : wanted && !revealed.has(id) ? 'idle' : 'done'));
   const [elapsedMs, setElapsedMs] = useState(0);
   const [run, setRun] = useState(0);
   const total = readScanMs();
@@ -99,7 +120,6 @@ export function useRoofScan(m: MeasurementView, facets: number | null = m.facets
     elapsedMs,
     totalMs: total,
     progress,
-    facets,
     start: () => {
       if (phase !== 'idle') return;
       playing.set(id, Date.now());
