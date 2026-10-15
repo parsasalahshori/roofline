@@ -37,7 +37,8 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *     --base SHA                record which commit's reconstruction this run claims to measure, with the reconstruction
  *                               files that differ from it (for a baseline made on a later harness commit)
  *   Environment: ROOF3D_HIDDEN_EDGE=planes|photo runs with that hidden-edge method on; ROOF3D_BENCH_SUPPORT=dense
- *   scores the hidden-edge sets in 0.2 m pieces (see lidar.ts supportAlong).
+ *   scores the hidden-edge sets in 0.2 m pieces (see lidar.ts supportAlong); ROOF3D_BENCH_RESAMPLE_M=0.25 runs on
+ *   MEDIUM-like layers (heights, mask and photo resampled; data.ts resampleFromEnv).
  * Exit code: 0 ok, 1 a gate failed, 2 bad usage, 3 a data problem (missing files, expired data, a manifest that
  * breaks its frozen split).
  */

@@ -11,8 +11,8 @@ export const SEEDS: readonly number[] = [7, 8, 9];
 /**
  * The hidden-edge method under test (ReconstructOptions.hiddenEdge), from the environment so a run of the same commit
  * can compare methods: ROOF3D_HIDDEN_EDGE=off, planes, photo, photo+planes or planes+photo, with ROOF3D_HIDDEN_EDGE_PARAMS
- * a JSON object of parameter overrides (sensitivity runs). Unset: the server's default (DEFAULT_HIDDEN_EDGE, photo+planes
- * since ROOF_3D_ALGORITHM_VERSION 4); off is the reconstruction before it.
+ * a JSON object of parameter overrides (sensitivity runs; '{"minDeepSeenShare":0}' is hypothesis mode). Unset: the
+ * server's default (DEFAULT_HIDDEN_EDGE: off since ROOF_3D_ALGORITHM_VERSION 5; version 4 ran photo+planes).
  */
 export function hiddenEdgeFromEnv(env: NodeJS.ProcessEnv = process.env): RoofOnLayersOptions['hiddenEdge'] {
   const method = env.ROOF3D_HIDDEN_EDGE;
