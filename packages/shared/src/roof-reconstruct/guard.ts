@@ -52,7 +52,10 @@ export function rasterProblem(raster: RoofRaster | null | undefined, point: { co
  * The largest roof (Google's mask part under the point) the reconstruction is run on, square metres. The work grows
  * with the part: a 200 m square roof took 15 s and 570 MB in one synchronous run, which would stall every other
  * request. The benchmark buys houses of 900 to 6,000 sq ft (84 to 557 m2); 3,000 m2 is over five times the largest,
- * room for a big house joined to its neighbours, and still well under a second.
+ * room for a big house joined to its neighbours. It is NOT fast: a roof near this limit took 1.25-1.8 s of synchronous
+ * CPU (plus a reconstruction per nearby structure) on an Apple-silicon Mac, which the request's time budget cannot
+ * interrupt; running reconstruction in a worker with a hard deadline is an open issue (docs/roof-3d/remediate.md).
+ * The guard measures the mask part as Google gave it, before any completion grows it.
  */
 export const MAX_ROOF_PART_M2 = 3000;
 

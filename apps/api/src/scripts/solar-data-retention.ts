@@ -14,6 +14,11 @@ import { benchDir, FALLBACK_DATA_DIR } from '../bench/roof3d/paths.ts';
  * A folder's date: the benchmark manifest's deleteBy when it lists the folder, else info.json's downloadedAt plus 30
  * days, else the oldest Google file's modification time plus 30 days (a copy's time is at or after the download, so
  * that date may be late: the manifest's date is preferred).
+ *
+ * Derived copies are Google's data too: the checker's SVGs embed Google's photo (data:image/...), and overlay PNGs are
+ * crops of it. Every *.svg that embeds an image and every *.png under the roots, outside the house folders, is listed
+ * with the EARLIEST date of any house folder found (which house a copy came from is not recorded, so the strictest
+ * date applies), and removed with --delete like the rest.
  */
 
 export const GOOGLE_FILES = ['dsm.tif', 'mask.tif', 'rgb.tif', 'bi.json'] as const;
@@ -50,6 +55,31 @@ function dateOf(dir: string, files: readonly string[], manifest: ReadonlyMap<str
   }
   const oldest = Math.min(...files.map((f) => statSync(path.join(dir, f)).mtimeMs));
   return { deleteBy: new Date(oldest + SOLAR_DATA_DAYS * DAY_MS).toISOString().slice(0, 10), source: 'mtime' };
+}
+
+export type Derived = { file: string; deleteBy: string };
+
+/**
+ * Derived copies of Google's photo under the roots (outside the house folders): *.svg files embedding an image and
+ * *.png files, dated by the earliest deleteBy of `folders` (none when there are no folders to date them by).
+ */
+export function derivedCopies(roots: readonly string[], folders: readonly Folder[]): Derived[] {
+  if (folders.length === 0) return [];
+  const deleteBy = [...folders].map((f) => f.deleteBy).sort()[0]!;
+  const houses = new Set(folders.map((f) => path.resolve(f.dir)));
+  const out: Derived[] = [];
+  const visit = (dir: string, depth: number) => {
+    if (depth > 6 || houses.has(path.resolve(dir)) || !existsSync(dir) || !statSync(dir).isDirectory()) return;
+    for (const name of readdirSync(dir).sort()) {
+      const full = path.join(dir, name);
+      const st = statSync(full);
+      if (st.isDirectory()) visit(full, depth + 1);
+      else if (name.endsWith('.png')) out.push({ file: full, deleteBy });
+      else if (name.endsWith('.svg') && st.size < 64 * 1024 * 1024 && readFileSync(full, 'utf8').includes('data:image/')) out.push({ file: full, deleteBy });
+    }
+  };
+  for (const root of roots) visit(path.resolve(root), 0);
+  return out;
 }
 
 /** The folders whose Google files are past their date at `today` (YYYY-MM-DD): deleteBy before today. */
@@ -100,7 +130,12 @@ function main(argv: string[]): number {
     console.log(`${remove ? 'deleting' : 'would delete'} ${f.files.join(', ')} in ${f.dir} (delete by ${f.deleteBy}, from ${f.source})`);
     if (remove) for (const file of f.files) rmSync(path.join(f.dir, file), { force: true });
   }
-  if (!remove && old.length > 0) console.log('dry run: pass --delete to remove them');
+  const copies = derivedCopies(roots.length > 0 ? roots : [bench, FALLBACK_DATA_DIR], folders).filter((d) => d.deleteBy < now);
+  for (const d of copies) {
+    console.log(`${remove ? 'deleting' : 'would delete'} derived copy ${d.file} (delete by ${d.deleteBy}, the earliest house date)`);
+    if (remove) rmSync(d.file, { force: true });
+  }
+  if (!remove && (old.length > 0 || copies.length > 0)) console.log('dry run: pass --delete to remove them');
   return 0;
 }
 

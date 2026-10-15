@@ -5,7 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Ring } from '@roofline/shared';
 import { roofOnLayersResult } from '../../src/estimator/roof-3d.ts';
-import { expired, solarFolders } from '../../src/scripts/solar-data-retention.ts';
+import { derivedCopies, expired, solarFolders } from '../../src/scripts/solar-data-retention.ts';
 import { hipLayers } from '../roof-3d-fixture.ts';
 
 const K = (Math.PI / 180) * 6371008.8;
@@ -33,6 +33,24 @@ describe('Solar data retention (30 days)', () => {
     expect(by.c).toMatchObject({ deleteBy: '2026-08-31', source: 'mtime' });
     expect(by.a!.files).toEqual(['dsm.tif', 'mask.tif', 'bi.json']);
     expect(expired(folders, '2026-10-14').map((f) => path.basename(f.dir)).sort()).toEqual(['b', 'c']);
+  });
+
+  it('derived copies (an SVG embedding the photo, overlay PNGs) carry the earliest house date; plain SVGs and house files are not copies', () => {
+    const root = path.join(tmp, 'derived');
+    const house = path.join(root, 'set', 'h');
+    mkdirSync(house, { recursive: true });
+    writeFileSync(path.join(house, 'dsm.tif'), 'x');
+    writeFileSync(path.join(house, 'info.json'), JSON.stringify({ downloadedAt: '2026-09-01' }));
+    writeFileSync(path.join(house, 'note.png'), 'x');
+    mkdirSync(path.join(root, 'run', 'svg'), { recursive: true });
+    writeFileSync(path.join(root, 'run', 'svg', 'a.svg'), '<svg><image href="data:image/png;base64,AAAA"/></svg>');
+    writeFileSync(path.join(root, 'run', 'svg', 'b.svg'), '<svg><path d="M0 0"/></svg>');
+    writeFileSync(path.join(root, 'run', 'overlay.png'), 'x');
+    const folders = solarFolders([root], new Map());
+    const copies = derivedCopies([root], folders);
+    expect(copies.map((c) => path.relative(root, c.file)).sort()).toEqual([path.join('run', 'overlay.png'), path.join('run', 'svg', 'a.svg')]);
+    expect(copies.every((c) => c.deleteBy === '2026-10-01')).toBe(true);
+    expect(derivedCopies([root], [])).toEqual([]);
   });
 });
 
