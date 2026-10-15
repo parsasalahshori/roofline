@@ -51,6 +51,19 @@ export const GatesSchema = z.object({
   determinism: z.object({ mustHold: z.boolean() }),
   /** Runtime p95 (after dividing by the machine's calibration time) may not exceed this multiple of the baseline's. */
   runtimeP95: z.object({ maxRatio: z.number().min(1) }),
+  /**
+   * Review-flag recall (bad roofs, against an answer key, that carry a review reason) may not fall by more than this,
+   * cohort by cohort. Optional so older gates files still parse; absent means not gated.
+   */
+  flagRecall: z.object({ maxDrop: z.number().nonnegative() }).optional(),
+  /** Median aligned outline IoU against EagleView may not fall by more than this. Optional, as flagRecall. */
+  medianAlignedIoU: z.object({ maxDrop: z.number().nonnegative() }).optional(),
+  /**
+   * Held-out against dev (split all only, cohort 'all'): the held-out change in median |area error| may not be worse
+   * than the dev change by more than maxAreaPoints, nor its median outline IoU change by more than maxIoU. A change
+   * that helps dev and hurts held-out is overfit. Optional, as flagRecall.
+   */
+  splitGap: z.object({ maxAreaPoints: z.number().nonnegative(), maxIoU: z.number().nonnegative() }).optional(),
 });
 export type Gates = z.infer<typeof GatesSchema>;
 
@@ -69,6 +82,9 @@ export const DEFAULT_GATES: Gates = {
   failures: { maxRise: 0 },
   determinism: { mustHold: true },
   runtimeP95: { maxRatio: 1.5 },
+  flagRecall: { maxDrop: 0 },
+  medianAlignedIoU: { maxDrop: 0.005 },
+  splitGap: { maxAreaPoints: 0.5, maxIoU: 0.005 },
 };
 
 export type GateRow = {
@@ -138,6 +154,8 @@ export function compareSplits(base: SplitReport, cur: SplitReport, gates: Gates,
     higher('slivers', b.stats.slivers, c.stats.slivers, gates.slivers.maxRise, false);
     if (gates.thinFaces.cohorts.includes(cohort)) higher('thin faces (simple and canopy cohorts)', b.stats.thinFaces, c.stats.thinFaces, gates.thinFaces.maxRise, false);
     higher('steep junk faces', b.stats.steepJunk, c.stats.steepJunk, gates.steepJunk.maxRise, false);
+    if (gates.medianAlignedIoU !== undefined) lower('median aligned outline IoU', b.stats.truth.medianAlignedIoU, c.stats.truth.medianAlignedIoU, gates.medianAlignedIoU.maxDrop, true);
+    if (gates.flagRecall !== undefined) lower('review flag recall', b.stats.flags.recall, c.stats.flags.recall, gates.flagRecall.maxDrop, true);
     // Failures and no-roof houses are added over the seeds' means; the range is not tracked for the sum.
     {
       const bv = (mean(b.stats.failures) ?? 0) + (mean(b.stats.noRoof) ?? 0);
@@ -160,6 +178,32 @@ export function compareSplits(base: SplitReport, cur: SplitReport, gates: Gates,
       status: small ? 'skip' : cn > bn * gates.runtimeP95.maxRatio + EPS ? 'fail' : 'pass',
     });
   }
+  return rows;
+}
+
+/**
+ * The held-out split's change against the dev split's (both against the baseline), cohort 'all': see Gates.splitGap.
+ * Empty when the gate is off or either split is missing.
+ */
+export function compareSplitGap(base: { dev?: SplitReport; heldout?: SplitReport }, cur: { dev?: SplitReport; heldout?: SplitReport }, gates: Gates): GateRow[] {
+  const g = gates.splitGap;
+  const bd = base.dev?.cohorts.all;
+  const bh = base.heldout?.cohorts.all;
+  const cd = cur.dev?.cohorts.all;
+  const ch = cur.heldout?.cohorts.all;
+  if (g === undefined || bd === undefined || bh === undefined || cd === undefined || ch === undefined) return [];
+  const rows: GateRow[] = [];
+  const delta = (b: { mean: number } | null | undefined, c: { mean: number } | null | undefined): number | null => (b && c ? c.mean - b.mean : null);
+  const pair = (rule: string, dev: number | null, held: number | null, worse: (dev: number, held: number) => number, limit: number): void => {
+    if (dev === null || held === null) {
+      rows.push({ cohort: 'all', rule, baseline: dev, current: held, limit: `<= ${limit}`, status: 'skip', note: 'no value' });
+      return;
+    }
+    rows.push({ cohort: 'all', rule, baseline: dev, current: held, limit: `held-out worse than dev by <= ${limit}`, status: worse(dev, held) > limit + EPS ? 'fail' : 'pass' });
+  };
+  // Area error: a rise is worse. IoU: a fall is worse. baseline = the dev change, current = the held-out change.
+  pair('held-out vs dev: change in median |area error| pts', delta(bd.stats.truth.medianAreaErrAbsPct, cd.stats.truth.medianAreaErrAbsPct), delta(bh.stats.truth.medianAreaErrAbsPct, ch.stats.truth.medianAreaErrAbsPct), (d, h) => h - d, g.maxAreaPoints);
+  pair('held-out vs dev: change in median outline IoU', delta(bd.stats.truth.medianIoU, cd.stats.truth.medianIoU), delta(bh.stats.truth.medianIoU, ch.stats.truth.medianIoU), (d, h) => d - h, g.maxIoU);
   return rows;
 }
 

@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import type { CohortReport, Stat } from '../../src/bench/roof3d/aggregate.ts';
-import { DEFAULT_GATES, GatesSchema, compareSplits, gatesFailed, formatGates } from '../../src/bench/roof3d/gates.ts';
+import { DEFAULT_GATES, GatesSchema, compareSplitGap, compareSplits, gatesFailed, formatGates } from '../../src/bench/roof3d/gates.ts';
 import type { SplitReport } from '../../src/bench/roof3d/report.ts';
 
 const st = (v: number): Stat => ({ mean: v, min: v, max: v });
 
-type Knobs = { thin: number; iou: number; bnd: number; area: number; pass: number; slivers: number; steep: number; failed: number; noRoof: number; comparable: number; nondet: number; p95: number };
-const BASE: Knobs = { thin: 2, iou: 0.8, bnd: 1.0, area: 4, pass: 20, slivers: 3, steep: 2, failed: 0, noRoof: 0, comparable: 12, nondet: 0, p95: 700 };
+type Knobs = { recall: number; aligned: number; thin: number; iou: number; bnd: number; area: number; pass: number; slivers: number; steep: number; failed: number; noRoof: number; comparable: number; nondet: number; p95: number };
+const BASE: Knobs = { recall: 0.5, aligned: 0.9, thin: 2, iou: 0.8, bnd: 1.0, area: 4, pass: 20, slivers: 3, steep: 2, failed: 0, noRoof: 0, comparable: 12, nondet: 0, p95: 700 };
 
 function cohort(k: Partial<Knobs> = {}): CohortReport {
   const v = { ...BASE, ...k };
@@ -38,7 +38,7 @@ function cohort(k: Partial<Knobs> = {}): CohortReport {
         medianIoU: st(v.iou),
         medianBoundaryM: st(v.bnd),
         medianHd95M: st(2),
-        medianAlignedIoU: st(0.9),
+        medianAlignedIoU: st(v.aligned),
         medianAlignedBoundaryM: st(0.5),
         medianAlignedHd95M: st(1.5),
         medianShiftM: st(1.4),
@@ -51,11 +51,12 @@ function cohort(k: Partial<Knobs> = {}): CohortReport {
         mainPitchWithin1: st(10),
         mainPitchScored: st(12),
         medianFacePitchMAE: st(0.7),
+        medianFaceCountErrPct: st(20),
         medianWithin1Pct: st(85),
         lineErrPct: { ridge: none, hip: none, valley: none, eave: none, rake: none },
       },
       reasons: { 'coarse-imagery': st(0), 'outline-off': st(0), 'faces-patchy': st(0), 'rough-heights': st(0), trees: st(0), 'differs-from-google': st(0), 'joined-buildings': st(0), 'roof-hidden': st(0), 'low-attachment': st(0), 'edges-unverified': st(0) },
-      flags: { rate: st(0.5), precision: st(0.5), recall: st(0.5), tp: st(1), fp: st(1), fn: st(1), tn: st(1) },
+      flags: { rate: st(0.5), precision: st(0.5), recall: st(v.recall), tp: st(1), fp: st(1), fn: st(1), tn: st(1) },
       proxy: { medianMaskIoU: st(0.97), medianBoxIoU: st(0.97), medianGoogleAreaAbsPct: st(8), medianSegmentFaceRatio: st(1), medianOsmIoU: none, osmHouses: st(0) },
     },
   };
@@ -77,6 +78,31 @@ describe('the gates are the contract', () => {
     expect(DEFAULT_GATES.seedNoise).toBe('baseline-range');
     expect(DEFAULT_GATES.runtimeP95.maxRatio).toBe(1.5);
     expect(() => GatesSchema.parse(DEFAULT_GATES)).not.toThrow();
+  });
+
+  test('review-flag recall and aligned outline IoU are gated (a bad roof that loses its flag fails)', () => {
+    expect(failedRules(run({ recall: 0.4 }))).toEqual(['review flag recall']);
+    expect(failedRules(run({ recall: 0.6 }))).toEqual([]);
+    expect(failedRules(run({ aligned: 0.894 }))).toEqual(['median aligned outline IoU']);
+    expect(failedRules(run({ aligned: 0.896 }))).toEqual([]);
+    // An older gates file without these rules still parses and does not gate them.
+    const old = { ...DEFAULT_GATES } as Record<string, unknown>;
+    delete old.flagRecall;
+    delete old.medianAlignedIoU;
+    delete old.splitGap;
+    const parsed = GatesSchema.parse(old);
+    expect(gatesFailed(compareSplits(split(cohort()), split(cohort({ recall: 0 })), parsed, { base: 1, cur: 1 }))).toEqual([]);
+  });
+
+  test('held-out vs dev: a change that helps dev and hurts held-out fails', () => {
+    const both = (dev: Partial<Knobs>, held: Partial<Knobs>) => compareSplitGap({ dev: split(cohort()), heldout: split(cohort()) }, { dev: split(cohort(dev)), heldout: split(cohort(held)) }, DEFAULT_GATES);
+    // Both a point better: fine. Dev 0.5 better, held-out 0.5 worse: one point apart, fails.
+    expect(gatesFailed(both({ area: 3 }, { area: 3 }))).toEqual([]);
+    expect(gatesFailed(both({ area: 3.5 }, { area: 4.5 })).map((r) => r.rule)).toEqual(['held-out vs dev: change in median |area error| pts']);
+    expect(gatesFailed(both({ area: 4 }, { area: 4.5 }))).toEqual([]);
+    expect(gatesFailed(both({ iou: 0.81 }, { iou: 0.8 })).map((r) => r.rule)).toEqual(['held-out vs dev: change in median outline IoU']);
+    // Dev only (no held-out split): nothing to compare.
+    expect(compareSplitGap({ dev: split(cohort()) }, { dev: split(cohort()) }, DEFAULT_GATES)).toEqual([]);
   });
 
   test('an unchanged result passes everything', () => {

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { BenchDataError, cohortCounts, runBench } from '../bench/roof3d/bench.ts';
-import { DEFAULT_GATES, formatGates, GatesSchema, compareSplits, gatesFailed, type GateRow } from '../bench/roof3d/gates.ts';
+import { DEFAULT_GATES, formatGates, GatesSchema, compareSplitGap, compareSplits, gatesFailed, type GateRow } from '../bench/roof3d/gates.ts';
 import { manifestHash, manifestProblems, parseManifest, SPLITS, type Manifest } from '../bench/roof3d/manifest.ts';
 import { benchDir, FALLBACK_DATA_DIR } from '../bench/roof3d/paths.ts';
 import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/report.ts';
@@ -182,6 +182,8 @@ async function main(): Promise<number> {
       }
       all.push({ name, rows: compareSplits(base, cur, gates, { base: baseline.calibrationMs, cur: report.calibrationMs }) });
     }
+    const gap = compareSplitGap(baseline.splits, report.splits, gates);
+    if (gap.length > 0) all.push({ name: 'held-out vs dev', rows: gap });
     for (const g of all) {
       process.stdout.write(`${formatGates(g.name, g.rows)}\n`);
       failed += gatesFailed(g.rows).length;

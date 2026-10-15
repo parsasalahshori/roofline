@@ -62,6 +62,7 @@ export type CohortAgg = {
     mainPitchWithin1: number;
     mainPitchScored: number;
     medianFacePitchMAE: number | null;
+    medianFaceCountErrPct: number | null;
     medianWithin1Pct: number | null;
     /** Our line total against EagleView's over comparable EagleView houses, percent; null without EagleView houses. */
     lineErrPct: Record<(typeof LINE_KINDS)[number], number | null>;
@@ -148,6 +149,9 @@ export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
       mainPitchWithin1: pitch.filter((p) => p <= 1).length,
       mainPitchScored: pitch.length,
       medianFacePitchMAE: med(comp.map((m) => m.truth!.facePitchMAE)),
+      // Face count against EagleView's, |ours - theirs| / theirs, percent: a junk-face measure that is not any cleanup
+      // rule's own threshold (the thin-face count is the weak-face cleanup's width limit, so it moves by construction).
+      medianFaceCountErrPct: med(comp.map((m) => (m.truth!.truthFaces !== null && m.truth!.truthFaces > 0 ? (100 * Math.abs(m.faces - m.truth!.truthFaces)) / m.truth!.truthFaces : null))),
       medianWithin1Pct: med(comp.map((m) => m.truth!.within1Pct)),
       lineErrPct: lineErr,
     },

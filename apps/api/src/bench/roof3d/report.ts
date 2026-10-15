@@ -111,8 +111,8 @@ export function formatSplit(name: string, s: SplitReport): string {
     '',
     'Against the answer key (EagleView or hand-drawn outline; houses that are the same single building):',
     table(
-      ['cohort', 'n', 'key', 'IoU', 'bnd m', 'HD95 m', '|area| %', 'area<=5', 'pitch =', 'pitch +-1', 'face pitch', '<=1/12 %'],
-      [L, 3, 8, 9, 9, 9, 13, 8, 12, 12, 16, 9],
+      ['cohort', 'n', 'key', 'IoU', 'bnd m', 'HD95 m', '|area| %', 'area<=5', 'pitch =', 'pitch +-1', 'face pitch', '<=1/12 %', 'faces vs key %'],
+      [L, 3, 8, 9, 9, 9, 13, 8, 12, 12, 16, 9, 14],
       names.map((n) => {
         const c = s.cohorts[n]!.stats;
         const t = c.truth;
@@ -129,6 +129,7 @@ export function formatSplit(name: string, s: SplitReport): string {
           `${fmtN(t.mainPitchWithin1)}/${fmtN(t.mainPitchScored)}`,
           fmt(t.medianFacePitchMAE, 2),
           fmt(t.medianWithin1Pct, 0),
+          fmt(t.medianFaceCountErrPct, 0),
         ];
       }),
     ),
