@@ -16,6 +16,7 @@ import {
   type SolarBuilding,
 } from '@roofline/shared';
 import {
+  type HiddenEdgeOption,
   lngLatToUtm,
   MAX_ROOF_PART_M2,
   otherRoofParts,
@@ -207,6 +208,26 @@ export function greenOf(layers: RoofLayers): Uint8Array | null {
   return out;
 }
 
+/** The layers' photo on the height map's grid (nearest pixel), 3 bytes a pixel; black where it has none. Null without a photo. */
+export function rgbOf(layers: RoofLayers): Uint8Array | null {
+  const photo = layers.photo ?? null;
+  if (photo === null) return null;
+  const { width, height, pixelSizeM } = layers.raster;
+  const out = new Uint8Array(width * height * 3);
+  for (let r = 0; r < height; r++) {
+    for (let c = 0; c < width; c++) {
+      const x = layers.originX + (c + 0.5) * pixelSizeM;
+      const y = layers.originY - (r + 0.5) * pixelSizeM;
+      const pc = Math.floor((x - photo.originX) / photo.pixelSizeM);
+      const pr = Math.floor((photo.originY - y) / photo.pixelSizeM);
+      if (pc < 0 || pr < 0 || pc >= photo.width || pr >= photo.height) continue;
+      const at = (pr * photo.width + pc) * 3;
+      out.set(photo.rgb.subarray(at, at + 3), (r * width + c) * 3);
+    }
+  }
+  return out;
+}
+
 /**
  * The roof at `point` reconstructed on these layers, in [lng, lat]; null when no roof part comes near the point, it is
  * too small, no plane is found, or it runs off the layers' edge. `steep`: Google's segments show a plane steeper than
@@ -219,7 +240,13 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   return 'roof' in found ? found.roof : null;
 }
 
-export type RoofOnLayersOptions = { steep?: boolean; building?: SolarBuilding | null; seed?: number };
+export type RoofOnLayersOptions = {
+  steep?: boolean;
+  building?: SolarBuilding | null;
+  seed?: number;
+  /** Hidden edges re-estimated (reconstructRoof's hiddenEdge; off by default). 'photo' reads the layers' photo. */
+  hiddenEdge?: HiddenEdgeOption;
+};
 /**
  * Why roofOnLayersResult found no roof: 'clipped' (it runs off the layers' edge), 'not-found' (no roof part near the
  * point, too small, or no plane), or the input guard's reason (rasterProblem: a garbled, empty or oversized grid; a
@@ -250,8 +277,13 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   if (problem !== null) return { miss: problem };
   // A roof too big to reconstruct within the request's time and memory (MAX_ROOF_PART_M2): not a home's roof.
   if (roofPartAreaM2(layers.raster, toPixel(point)) > MAX_ROOF_PART_M2) return { miss: 'too-large' };
-  const raster = { ...layers.raster, green: layers.raster.green ?? greenOf(layers) };
+  const raster = {
+    ...layers.raster,
+    green: layers.raster.green ?? greenOf(layers),
+    ...(o.hiddenEdge?.method === 'photo' ? { rgb: rgbOf(layers) } : {}),
+  };
   const local = reconstructRoof(raster, toPixel(point), {
+    ...(o.hiddenEdge !== undefined ? { hiddenEdge: o.hiddenEdge } : {}),
     imageryQuality: layers.imageryQuality,
     // The benchmark (roof3d:bench) runs seeds 7, 8 and 9 to show the result does not hang on the random sample; the
     // server never sets it (the reconstruction's own default seed, 7, applies).

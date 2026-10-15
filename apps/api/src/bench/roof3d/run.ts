@@ -5,6 +5,12 @@ import { withGoogleCheck } from '../../estimator/roof-3d-compare.ts';
 import type { LoadedHouse } from './data.ts';
 import { DEFAULT_METRICS, type HouseMetrics, type MetricParams, emptyMetrics, hashOf, houseMetrics } from './metrics.ts';
 
+/**
+ * A hidden-edge method to run the reconstruction with (ROOF3D_HIDDEN_EDGE=photo), so a method that is off by default can
+ * be measured on the same houses and scorer. Unset: the server's default (off).
+ */
+const HIDDEN_EDGE = process.env.ROOF3D_HIDDEN_EDGE === 'photo' ? ({ method: 'photo' } as const) : undefined;
+
 /** The seeds of the random sampling in the plane search; results are reported as the mean over them with the range. */
 export const SEEDS: readonly number[] = [7, 8, 9];
 
@@ -18,7 +24,7 @@ export function reconstructOnce(h: LoadedHouse, seed: number, p: MetricParams = 
   const started = performance.now();
   let roof: Roof3d | null;
   try {
-    const found = roofOnLayers(h.layers, h.entry.point, { steep: steepRoof(h.building), building: h.building, seed });
+    const found = roofOnLayers(h.layers, h.entry.point, { steep: steepRoof(h.building), building: h.building, seed, ...(HIDDEN_EDGE !== undefined ? { hiddenEdge: HIDDEN_EDGE } : {}) });
     roof = found === null ? null : withGoogleCheck(found, h.building);
   } catch {
     return { metrics: emptyMetrics('failed'), json: 'failed', ms: performance.now() - started };
