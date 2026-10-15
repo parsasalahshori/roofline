@@ -114,7 +114,8 @@ describe('reconstructRoof with the cleanup', () => {
         }
       }
     }
-  });
+    // 21 full reconstructions: about 4 s alone, about 8 s on a loaded machine, past vitest's 5 s default.
+  }, 30_000);
 });
 
 /**
