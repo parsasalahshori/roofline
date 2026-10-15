@@ -129,6 +129,9 @@ class EdgePointsHeights(unittest.TestCase):
         subprocess.run([sys.executable, '-I', f'{HERE}/edge_points.py', root, '--pick', 'xf'], check=True, capture_output=True)
         self.assertEqual(json.load(open(f'{root}/lidar-edges/h.json'))['workunit'], 'NEW')
         self.assertEqual(json.load(open(f'{root}/lidar-edges-xf/h.json'))['workunit'], 'OLD')
+        # xf-any also takes coarse truth: by metadata order NEW (latest), scored on OLD's coarse truth
+        subprocess.run([sys.executable, '-I', f'{HERE}/edge_points.py', root, '--pick', 'xf-any'], check=True, capture_output=True)
+        self.assertEqual(json.load(open(f'{root}/lidar-edges-xf-any/h.json'))['workunit'], 'NEW')
 
 
 if __name__ == '__main__':

@@ -16,6 +16,9 @@ Usage: python -I scripts/roof-bench-lidar/edge_points.py [ROOF_BENCH_DIR] [--pic
               a truth built from a DIFFERENT flight), in the same metadata order; houses with none are skipped. The
               crops then go to ROOF_BENCH_DIR/lidar-edges-xf (or --out NAME). This uses the registry only to decide
               which houses and flights CAN be scored without circularity; the method still reads only the points.
+  --pick xf-any  the same with 'coarse' cross-flight truth allowed too (crops to lidar-edges-xf-any): mostly the
+              2024-25 QL1 flight scored on the 2015-17 QL2 truth; score those runs with --xf-coarse and read only IoU
+              and area (a coarse truth's edges are +-0.5 m: the hidden-edge numbers mean little)
   --out NAME  output folder name under ROOF_BENCH_DIR (default lidar-edges, or lidar-edges-xf with --pick xf)
 
 points.npz z is already metres (fetch.py converts with zUnitsToM before saving): it is not scaled again here.
@@ -39,7 +42,9 @@ def _opt(name):
 
 
 PICK = _opt('--pick')
-OUT_NAME = _opt('--out') or ('lidar-edges-xf' if PICK == 'xf' else 'lidar-edges')
+if PICK not in (None, 'xf', 'xf-any'):
+    sys.exit('--pick takes xf or xf-any')
+OUT_NAME = _opt('--out') or {None: 'lidar-edges', 'xf': 'lidar-edges-xf', 'xf-any': 'lidar-edges-xf-any'}[PICK]
 BENCH = ARGS[0] if ARGS else os.environ.get('ROOF_BENCH_DIR', '/Users/parsasalahshori-a/RooflineWork/roof-bench')
 LIDAR = os.path.join(BENCH, 'lidar')
 OUT = os.path.join(BENCH, OUT_NAME)
@@ -65,10 +70,11 @@ def main():
             pz = os.path.join(units, wu, 'points.npz')
             if os.path.exists(fj) and os.path.exists(pz):
                 cands.append((json.load(open(fj)), pz))
-        if PICK == 'xf':
+        if PICK in ('xf', 'xf-any'):
             xp = os.path.join(LIDAR, slug, 'crossflight.json')
             reg = json.load(open(xp))['registry'] if os.path.exists(xp) else {}
-            cands = [c for c in cands if (reg.get(c[0]['workunit']) or {}).get('tier') == 'fine']
+            tiers = ('fine',) if PICK == 'xf' else ('fine', 'coarse')
+            cands = [c for c in cands if (reg.get(c[0]['workunit']) or {}).get('tier') in tiers]
         if not cands:
             continue
         meta, pz = max(cands, key=lambda c: unit_key(c[0]))

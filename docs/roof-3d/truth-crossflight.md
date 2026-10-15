@@ -88,6 +88,40 @@ against `baseline-v2.json` passes every quality gate; 6 runtime p95 gates failed
 loaded by other tracks' benchmark runs (2x calibration-relative time), not because of a code change (no reconstruction
 file differs).
 
+## Fusing the dense flight (`--pick xf-any`, `--xf-coarse`)
+
+Production will read the newest leaf-off flight (in Arkansas the 2024-25 QL1). Its cross-flight truth is usually the
+2015-17 QL2 flight, which is `coarse`. `edge_points.py --pick xf-any` writes crops (to `lidar-edges-xf-any`) for the
+flight the metadata rule prefers among those with fine OR coarse cross-flight truth (22 houses; 6 of them now fuse the newer flight instead, 5 of those
+the Arkansas 2025 QL1). Score with `--lidar-edges-dir lidar-edges-xf-any --xf-coarse` against
+`ROOF_BENCH_DIR/baseline-xf-coarse.json`, and read only IoU, boundary and area there: a coarse truth's edges are
++-0.5 m, as coarse as the hidden-edge test itself.
+Baseline (released reconstruction, hash `xf+coarse:015d00a38fce`, 22 houses): DEV 16/17 comparable, IoU 0.841,
+boundary 0.57 m, |plan| 9.6 %, signed plan -23.0 % against the (coarse, under-sized) QL2 truths where they apply.
+
+## New houses (part 2): `ROOF_BENCH_DIR/xf-extra`
+
+Ten tree-covered Arkansas houses outside the 84, chosen from the existing free pre-screen (OSM outlines + NAIP crown
+share, `trees-candidates/`) where BOTH 3DEP flights are already on disk or in EPT (AR_Western_B24 tiles already
+downloaded; Ouachita B6 2016 and Washington Co 2015 by EPT): Little Rock (Heights, Pleasant Valley), North Little
+Rock (Indian Hills), Fayetteville (Wilson Park). Bought with `roof3d:bench-fetch --ids ... --out-set testset-xf`:
+11 Data Layers requests this round (budget 15; ledger 30 -> 41), 19 buildingInsights; one bought house
+(`tr-fayetteville-466556266`) is set aside in `testset-xf-spare/` unused to keep to the ten-house scope. Google's
+canopy measure calls only 4 of the 10 heavy (NAIP's growing-season crown share over-reads canopy for Google's
+captures).
+
+They are NOT in the frozen `manifest.json` (adding them would move its hash and void every baseline this round).
+`xf-extra/` is a bench folder of its own (`ROOF_BENCH_DIR=<...>/roof-bench/xf-extra`: its own manifest with the split
+rule's DEV/HELD-OUT assignment, lidar index, cross-flight registry and crops; tiles and sources are links to the main
+lidar folder). Graded exactly like the others (lidar_truth, choose, validate, crossflight): 6 primary `lidar`, 4
+rejected (A1-frame: registration MAD 0.20-0.63 m; two also A4); 6 have fine cross-flight truth (DEV 4, HELD-OUT 2).
+Between flights: median IoU 0.91 (heavy 0.89 over 4 pairs), no roof change found. DEV against cross-flight truth on the
+released reconstruction: 4/4 comparable, IoU 0.910, |plan| 2.3 %, hidden <= 0.5 m 51 %, truth-hidden <= 0.5 m 42 %
+(`xf-extra/xf-base-all.json`; held-out aggregates only).
+
+To merge them into the main benchmark (an integrator decision, needs a new baseline): move the folders into
+`testset-trees/`, run `roof3d:bench-manifest`, and rerun the lidar pipeline for them in the main bench.
+
 ## How independent is it
 
 - **Independent**: different flight, year (0-11 years apart, median 6.5 over the registered fine truths; 0 is NE 2020 vs SD 2020, two projects of one season), contractor and sensor; separately classified
@@ -136,6 +170,13 @@ metres: the crops of the two houses whose chosen flight is in US survey feet (`e
 `ev-51882178` VA_HamptonRoads_1_B23) had every height scaled by 0.3048. Fixed and tested; the shared
 `ROOF_BENCH_DIR/lidar-edges` folder was NOT regenerated (other tracks read it during this round): rerun
 `python -I scripts/roof-bench-lidar/edge_points.py` to refresh it. `lidar-edges-xf` was written with the fix.
+
+## Not done
+
+- No new lidar flight was fetched beyond the houses' existing tiles (rockyweb at ~0.3 MB/s): houses with a second flight
+  only on undownloaded tiles were not considered.
+- The QL2 unit truths were not rebuilt with any QL2-specific tuning; they are graded as built.
+- No change to how the benchmark nulls hidden-edge metrics on coarse truth (documented instead).
 
 ## Rollback
 
