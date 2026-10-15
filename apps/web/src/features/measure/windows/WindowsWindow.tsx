@@ -3,6 +3,7 @@ import {
   priceWindows,
   WINDOW_SIZE_CLASSES,
   type MarkedBox,
+  type PhotoWindowInput,
   type WindowMeasurementPatch,
   type WindowMeasurementView,
   type WindowQuote,
@@ -12,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError } from '../../../api/client.ts';
 import { liftProposal } from '../../../copy/liftMeasure.ts';
-import { measureWindows as copy } from '../../../copy/measureWindows.ts';
+import { measureWindows as copy, windowPhotos } from '../../../copy/measureWindows.ts';
 import { measureAddressHref } from '../address.ts';
 import { readHandoff, type MeasureHandoff } from '../handoff.ts';
 import frame from '../MeasureWindow.module.css';
@@ -25,6 +26,8 @@ import panelStyles from '../lift/ProposalPanel.module.css';
 import { photoSrc, useCreateWindowMeasurement, usePatchWindowMeasurement, useWindowMeasurement, useWindowPreview } from './api.ts';
 import { liveCounts, newMarkId, readAdjustments, shownWindows, tiersFromQuotes, totalOf, type Box, type Corners } from './model.ts';
 import { PhotoStage, wallDrawn, type StageEdit } from './PhotoStage.tsx';
+import { livePhotoWindows } from './photoModel.ts';
+import { PhotoWindowsFlow, PhotoWindowsList, useWindowUploads, type FlowAt } from './PhotoWindows.tsx';
 import { WallsPlan, WindowsCard } from './WindowsCard.tsx';
 import { MeasureSwitch } from './MeasureSwitch.tsx';
 import styles from './WindowsWindow.module.css';
@@ -144,7 +147,11 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
   const photos = v.photos;
   const photo = photos[Math.min(photoIndex, photos.length - 1)] ?? null;
   const shown = useMemo(() => shownWindows(v, adj.marked), [v, adj.marked]);
-  const counts = useMemo(() => liveCounts(v, shown, adj), [v, shown, adj]);
+  const uploads = useWindowUploads(v.id, v.uploads);
+  const [flowAt, setFlowAt] = useState<FlowAt | null>(null);
+  const uploadList = uploads.uploads;
+  const photoLive = useMemo(() => livePhotoWindows(adj.photoWindows, v.photoWindows, uploadList), [adj.photoWindows, v.photoWindows, uploadList]);
+  const counts = useMemo(() => liveCounts(v, shown, adj, photoLive), [v, shown, adj, photoLive]);
   const excluded = useMemo(() => new Set(adj.excludedWindowIds), [adj.excludedWindowIds]);
   const numbers = useMemo(() => new Map(shown.map((w, i) => [w.id, i + 1])), [shown]);
   const corners: Corners | null =
@@ -166,6 +173,23 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     const next = { ...adj.manualCounts, [cls]: Math.max(0, value) };
     setAdj((a) => ({ ...a, manualCounts: next }));
     save({ manualCounts: next });
+  };
+  /** A photographed window saved (new or edited): shown at once, saved after the pause; the server's size follows. */
+  const savePhoto = (input: PhotoWindowInput) => {
+    const next = adj.photoWindows.some((w) => w.id === input.id) ? adj.photoWindows.map((w) => (w.id === input.id ? input : w)) : [...adj.photoWindows, input];
+    setAdj((a) => ({ ...a, photoWindows: next }));
+    save({ photoWindows: next });
+  };
+  const deletePhoto = (id: string) => {
+    const next = adj.photoWindows.filter((w) => w.id !== id);
+    const body: WindowMeasurementPatch = { photoWindows: next };
+    if (excluded.has(id)) body.excludedWindowIds = adj.excludedWindowIds.filter((x) => x !== id);
+    setAdj((a) => ({ ...a, photoWindows: next, excludedWindowIds: body.excludedWindowIds ?? a.excludedWindowIds }));
+    save(body);
+  };
+  const coverAll = (next: boolean) => {
+    setAdj((a) => ({ ...a, photosCoverAllWindows: next }));
+    save({ photosCoverAllWindows: next });
   };
   const resetCounts = () => {
     setAdj((a) => ({ ...a, manualCounts: {} }));
@@ -232,6 +256,11 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
 
   const panels = (
     <>
+      <section className={frame.panel}>
+        <Button variant="ghost" className={frame.wide} onClick={() => setFlowAt({ step: 'capture' })}>
+          {windowPhotos.add}
+        </Button>
+      </section>
       {corners !== null && photo !== null ? (
         <section className={frame.panel} aria-labelledby={`wall-${v.id}`}>
           <h3 id={`wall-${v.id}`} className={frame.title}>
@@ -406,10 +435,37 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
               panels={panels}
               notes={notes}
               captured={captured}
+              fromPhotos={adj.photosCoverAllWindows}
+              onAddPhotos={() => setFlowAt({ step: 'capture' })}
+              photos={
+                <PhotoWindowsList
+                  windows={photoLive}
+                  inputs={adj.photoWindows}
+                  excluded={excluded}
+                  coverAll={adj.photosCoverAllWindows}
+                  srcFor={uploads.srcFor}
+                  onOpen={(w) => setFlowAt({ step: 'measure', uploadId: w.uploadId, windowId: w.id })}
+                  onToggle={toggle}
+                  onDelete={deletePhoto}
+                  onCoverAll={coverAll}
+                />
+              }
             />
           )}
         </div>
       </main>
+      {flowAt !== null ? (
+        <PhotoWindowsFlow
+          at={flowAt}
+          go={setFlowAt}
+          uploads={uploads}
+          inputs={adj.photoWindows}
+          saved={v.photoWindows ?? []}
+          onSave={savePhoto}
+          onDelete={deletePhoto}
+          onClose={() => setFlowAt(null)}
+        />
+      ) : null}
       {done ? (
         <div className={frame.proposal}>
           <TierPanel

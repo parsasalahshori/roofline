@@ -652,6 +652,13 @@
   color: #fff;
 }
 
+/* "Add windows from photos" in the card's foot, between Adjust and the kind tag */
+.addPhotos {
+  gap: 6px;
+  margin-right: auto;
+  margin-left: 4px;
+}
+
 /* Adjust */
 .markRow {
   display: flex;

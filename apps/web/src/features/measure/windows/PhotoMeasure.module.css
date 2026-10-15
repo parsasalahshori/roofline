@@ -1,0 +1,241 @@
+/* Sizing a photographed window: phone-first, the photo as large as the screen allows, the controls under it. */
+.measure {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+}
+
+.methods {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--ds-surface-2, #eceff1);
+}
+
+.method {
+  flex-direction: column;
+  gap: 0;
+  min-height: 44px;
+  padding: 4px 6px;
+  border-radius: 9px;
+  color: var(--ds-text-label, #505b64);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.method[data-selected="true"] {
+  background: var(--ds-surface, #fff);
+  color: var(--ds-text-1, #151c22);
+  box-shadow: 0 1px 3px rgba(21, 28, 34, 0.15);
+}
+
+.recommended {
+  color: var(--ds-accent-ink, #8a5a00);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hint {
+  flex: none;
+  margin: 0;
+  color: var(--ds-text-2, #3a444d);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.area {
+  position: relative;
+  display: grid;
+  flex: 1 1 auto;
+  place-items: center;
+  min-height: 220px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #1d2329;
+  container-type: size;
+}
+
+.frame {
+  --ratio: 1;
+  position: relative;
+  width: min(100cqw, 100cqh * var(--ratio));
+  user-select: none;
+  touch-action: none;
+}
+
+.photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  -webkit-user-drag: none;
+}
+
+.quads {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.window {
+  fill: rgba(255, 194, 26, 0.14);
+  stroke: var(--ds-accent, #ffc21a);
+  stroke-width: 2.5;
+}
+
+.paper {
+  fill: rgba(47, 111, 222, 0.18);
+  stroke: var(--ds-info, #2f6fde);
+  stroke-width: 2.5;
+}
+
+/* Corners: 44px hit areas, never panning the page */
+.handle {
+  position: absolute;
+  z-index: 2;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: -22px 0 0 -22px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.handle:hover,
+.handle:active {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.dot {
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--ds-accent, #ffc21a);
+  border-radius: 50%;
+  background: var(--ds-text-1, #151c22);
+  box-shadow: 0 0 0 1.5px #fff;
+}
+
+.handle[data-which="paper"] {
+  z-index: 3;
+}
+
+.handle[data-which="paper"] .dot {
+  border-color: var(--ds-info, #2f6fde);
+}
+
+.handle:focus-visible .dot {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+/* The loupe: the corner under the finger, three times larger, in the opposite top corner of the photo */
+.loupe {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  width: 112px;
+  height: 112px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background-color: #000;
+  background-repeat: no-repeat;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.loupe[data-side="right"] {
+  right: 8px;
+}
+
+.loupe[data-side="left"] {
+  left: 8px;
+}
+
+.cross {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 2px solid var(--ds-accent, #ffc21a);
+  border-radius: 50%;
+}
+
+.cross[data-which="paper"] {
+  border-color: var(--ds-info, #2f6fde);
+}
+
+.controls {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.knownSide {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.size {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ds-accent-tint, #fff1d1);
+  font-size: 14px;
+}
+
+.sizeLabel {
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+}
+
+.sizeValue {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sizeSource {
+  margin-left: auto;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.save {
+  flex: 1 1 auto;
+  min-height: 44px;
+}
+
+.delete {
+  color: var(--ds-danger-ink, #a3201f);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .method,
+  .handle {
+    transition: none;
+  }
+}
