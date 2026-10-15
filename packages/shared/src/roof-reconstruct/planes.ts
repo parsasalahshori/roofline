@@ -272,6 +272,18 @@ function indicesOf(m: Mask): Int32Array {
 
 export type FoundPlane = { plane: Plane; patch: Mask };
 
+/** Two candidates within this angle (degrees) and within the height tolerance at the newer one's seed are one plane. */
+const TOP_SAME_DEG = 1;
+
+/**
+ * Candidate order (negative: x first): more sample points on the plane; then, on a tie (common on a clean face, where
+ * every candidate fits every point), a fuller window (a seed inside the face, not on its edge), a closer window fit,
+ * and last the lower pixel index, so the order never depends on how the candidates were visited.
+ */
+function rankTop(x: { score: number; fill: number; rms: number; seed: number }, y: { score: number; fill: number; rms: number; seed: number }): number {
+  return y.score - x.score || y.fill - x.fill || x.rms - y.rms || x.seed - y.seed;
+}
+
 /**
  * Planes one at a time (sequential RANSAC) over the free roof pixels. Each candidate is a least-squares plane fitted on
  * a small window round a random free pixel (so small faces are found too), scored on a sample of the free pixels; the
@@ -310,7 +322,8 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
     } else {
       for (let k = 0; k < sample.length; k++) sample[k] = list[Math.floor(rng() * list.length)]!;
     }
-    const top: { plane: Plane; score: number; seed: number }[] = [];
+    // The best few candidates, each with the window it was fitted on (`support`), its fill and its fit.
+    const top: { plane: Plane; score: number; seed: number; fill: number; rms: number; support: Int32Array }[] = [];
     const nCand = seeds !== null ? seeds.length : prm.candidates;
     for (let t = 0; t < nCand; t++) {
       const seed = seeds !== null ? seeds[t]! : list[Math.floor(rng() * list.length)]!;
@@ -331,13 +344,23 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
       let rss = 0;
       for (let k = 0; k < n; k++) rss += residual(g, s, dsm, plane, win[k]!) ** 2;
       const tolP = tolFor(plane, tol, square);
-      if (Math.sqrt(rss / n) > tolP * 0.6) continue;
+      const rms = Math.sqrt(rss / n);
+      if (rms > tolP * 0.6) continue;
       let score = 0;
       for (let k = 0; k < sample.length; k++) if (residual(g, s, dsm, plane, sample[k]!) < tolP) score++;
-      if (top.length < prm.topK || score > top[top.length - 1]!.score) {
-        top.push({ plane, score, seed });
-        // Ties go to the lower pixel index: the order never depends on how the candidates were visited.
-        top.sort((x, y) => y.score - x.score || x.seed - y.seed);
+      const cand = { plane, score, seed, fill: n, rms, support: win.slice(0, n) };
+      // The top few are distinct planes: a candidate on (nearly) the same plane as one already kept replaces it only
+      // when it ranks higher. Without this, on a clean face every lattice candidate scores the same and the top few
+      // were all one plane seeded side by side, so one bad spot (a seed on the face's edge) lost the whole face.
+      const same = top.findIndex((o) => planeAngleDeg(o.plane, plane) < TOP_SAME_DEG && Math.abs(planeZ(o.plane, pixelX(g, s, seed), pixelY(g, s, seed)) - planeZ(plane, pixelX(g, s, seed), pixelY(g, s, seed))) < tolP);
+      if (same >= 0) {
+        if (rankTop(cand, top[same]!) < 0) {
+          top[same] = cand;
+          top.sort(rankTop);
+        }
+      } else if (top.length < prm.topK || rankTop(cand, top[top.length - 1]!) < 0) {
+        top.push(cand);
+        top.sort(rankTop);
         if (top.length > prm.topK) top.pop();
       }
     }
@@ -347,7 +370,9 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
     }
     let best: { plane: Plane; patch: Mask; size: number } | null = null;
     for (const cand of top) {
-      const { patch, size } = patchFrom(g, s, dsm, free, cand.plane, tol, square, [cand.seed]);
+      // Grown from the whole window the candidate was fitted on, not its one seed pixel: a seed on the free region's
+      // edge (its neighbours not free) cannot start a patch on its own, and that lost whole faces.
+      const { patch, size } = patchFrom(g, s, dsm, free, cand.plane, tol, square, cand.support);
       if (best === null || size > best.size) best = { plane: cand.plane, patch, size };
     }
     if (best === null || best.size < minPx) {

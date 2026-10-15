@@ -267,9 +267,11 @@ export const ROOF_3D_SNAPSHOT_SCHEMA = 2;
  * version is stale and is reconstructed again (roof3dSnapshotFresh), so an improved algorithm shows on homes measured
  * before it instead of the old roof being served for ROOF_3D_CACHE_DAYS. BUMP IT with any change that changes what a
  * reconstruction returns (faces, lines, outline, quality); a pure refactor leaves it. Snapshots without the field are 1.
- * 2: the October 2026 edge-case round (first versioned snapshots).
+ * 2: the October 2026 edge-case round (first versioned snapshots). 3: its remediation (the plane search no longer loses
+ * a face when candidates tie, foliage faces along crown-backed eaves dissolve, a Google difference with 5% of the area at
+ * stake is a review, edge confidence calibrated on DEV only).
  */
-export const ROOF_3D_ALGORITHM_VERSION = 2;
+export const ROOF_3D_ALGORITHM_VERSION = 3;
 
 function versionField(value: unknown): number | null {
   if (value === undefined) return 1;

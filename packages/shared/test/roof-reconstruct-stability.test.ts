@@ -1,4 +1,10 @@
 // A measurement must not change because a random seed did: the plane search is deterministic in outcome.
+//
+// These are DETERMINISM properties, not robustness: the lattice search never reads the random stream, so "the same
+// roof for seeds 7, 8, 9" holds by construction and says nothing about how stable a roof is. That signal now comes from
+// roof-reconstruct-perturb.test.ts (mask jitter, height noise, turns, MEDIUM-like resampling) and the golden roofs at
+// 0.1, 0.25 and 0.3 m in roof-reconstruct-resolution.test.ts, which caught a plane lost to tied candidates that these
+// tests could not see.
 import { describe, expect, it } from 'vitest';
 import { reconstructRoof } from '../src/roof-reconstruct/index.ts';
 import { DEFAULT_PLANE_PARAMS, findPlanes, latticeSeeds } from '../src/roof-reconstruct/planes.ts';

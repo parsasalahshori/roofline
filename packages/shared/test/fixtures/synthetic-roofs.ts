@@ -31,7 +31,7 @@ export type SyntheticRoof = {
   azimuth: (downDeg: number) => number;
 };
 
-type Shape = {
+export type Shape = {
   name: string;
   /** Roof height above the ground at a house-frame point, or null off the roof. */
   height: (p: XY) => number | null;
@@ -44,6 +44,39 @@ type Shape = {
 
 const EAVE = 3;
 const SQRT = Math.sqrt;
+
+/** A gable L x W metres at pitch p/12, ridge along X. */
+export function gableShape(L: number, W: number, p: number): Shape {
+  const run = W / 2;
+  const rise = run * (p / 12);
+  return {
+    name: `gable ${L}x${W} @${p}`,
+    extent: Math.max(L, W) / 2 + 3,
+    height: ({ x, y }: XY) => (Math.abs(x) <= L / 2 && Math.abs(y) <= W / 2 ? 3 + (W / 2 - Math.abs(y)) * (p / 12) : null),
+    faces: [1, -1].map((k): TruthFace => ({ name: k > 0 ? 'north' : 'south', probe: { x: 0, y: (k * W) / 4 }, pitchX12: p, downDeg: k * 90, planAreaM2: (L * W) / 2 })),
+    lines: { ridge: L, eave: 2 * L, rake: 4 * Math.hypot(run, rise) },
+    planAreaM2: L * W,
+  };
+}
+
+/** A hip roof L x W metres (L > W) at pitch p/12: two trapezoids, two triangles, a ridge of L - W. */
+export function hipShape(L: number, W: number, p: number): Shape {
+  const run = W / 2;
+  const hipLen = Math.hypot(run * Math.SQRT2, run * (p / 12));
+  return {
+    name: `hip ${L}x${W} @${p}`,
+    extent: Math.max(L, W) / 2 + 3,
+    height: ({ x, y }: XY) => (Math.abs(x) <= L / 2 && Math.abs(y) <= W / 2 ? 3 + Math.min(W / 2 - Math.abs(y), L / 2 - Math.abs(x)) * (p / 12) : null),
+    faces: [
+      { name: 'north', probe: { x: 0, y: W / 3 }, pitchX12: p, downDeg: 90, planAreaM2: ((L + (L - W)) / 2) * run },
+      { name: 'south', probe: { x: 0, y: -W / 3 }, pitchX12: p, downDeg: -90, planAreaM2: ((L + (L - W)) / 2) * run },
+      { name: 'east', probe: { x: L / 2 - run / 3, y: 0 }, pitchX12: p, downDeg: 0, planAreaM2: run * run },
+      { name: 'west', probe: { x: -L / 2 + run / 3, y: 0 }, pitchX12: p, downDeg: 180, planAreaM2: run * run },
+    ],
+    lines: { ridge: L - W, hip: 4 * hipLen, eave: 2 * (L + W) },
+    planAreaM2: L * W,
+  };
+}
 
 /** A gable 14 x 9 m at 6/12, ridge along X. */
 export const GABLE: Shape = {
