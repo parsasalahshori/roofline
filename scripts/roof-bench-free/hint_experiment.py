@@ -6,7 +6,7 @@ import json, statistics, sys
 from shapely import affinity
 from houses import houses, FREE
 from geo import utm_for, to_xy, compare, best_shift, iou
-from compare import pick_any
+from compare import pick_any, OSM_IMPORTED_COUNTY, OSM_DERIVED
 import truths
 
 src = sys.argv[1]
@@ -33,6 +33,7 @@ for h in houses():
         k = fn(h, tr)
         if k is None: continue
         if kname == "lidar" and ld: continue  # the footprint was traced from lidar: circular
+        if kname == "county" and src in OSM_DERIVED and truths.county_meta(h["slug"]).get("source") in OSM_IMPORTED_COUNTY: continue
         a, b = compare(ours, k), compare(hint, k)
         res.setdefault(kname, []).append((h["canopy"], a, b, hint is not ours))
 print(f"{src} GROW={GROW} SAME={SAME} split={SPLIT}: acted on {acted} houses")

@@ -33,6 +33,16 @@ SOURCES = {
         "box": (-79.77, 40.49, -71.85, 45.02),  # New York
         "license": "NYS ITS Geospatial Services public service (per-feature SOURCE: county planimetrics or Microsoft)",
     },
+    "rlis": {
+        "url": "https://www.portlandmaps.com/od/rest/services/COP_OpenData_Property/MapServer/48",
+        "box": (-123.25, 45.20, -122.20, 45.80),  # Portland metro (Metro RLIS regional footprints)
+        "license": "Oregon Metro RLIS via City of Portland open data (per-feature SOURCE: aerial photos / 3Di)",
+    },
+    "ocgis": {
+        "url": "https://www.ocgis.com/arcpub/rest/services/Map_Layers/Building_Footprints/FeatureServer/0",
+        "box": (-118.13, 33.38, -117.40, 33.95),  # Orange County, CA
+        "license": "OC Public Works OCGIS public service (carries lidar heights; method unstated, treated as lidar-derived)",
+    },
     "indiana": {
         "url": "https://gisdata.in.gov/server/rest/services/Hosted/Building_Footprints/FeatureServer/0",
         "box": (-88.10, 37.77, -84.78, 41.77),  # Indiana

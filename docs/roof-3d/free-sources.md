@@ -52,6 +52,8 @@ The full ranking tables and the owner's verdict are in `<ROOF_BENCH_DIR>/free/co
 | AR GIS Office GeoStor `BLDG_FOOTPRINTS_COMPOSITE` | `gis.arkansas.gov/arcgis/rest/services/FEATURESERVICES/Structure/FeatureServer/54` | Microsoft ML plus FEMA/ORNL USA Structures (ML). Per-feature capture dates, some leaf-off (Dec 2019 to Jan 2020). | none | public (credits Microsoft, FEMA, ORNL, USGS, AGIO) | 19 (all AR). ML, so a provider and never truth. |
 | NYS ITS building footprints | `gisservices.its.ny.gov/arcgis/rest/services/BuildingFootprints/FeatureServer/2` | county planimetrics where available, else Microsoft (per-feature `SOURCE`) | per county | public | Elma: only Microsoft rows near the point, so refused |
 | IndianaMap Building Footprints 2016-2020 | `gisdata.in.gov/server/rest/services/Hosted/Building_Footprints/FeatureServer/0` | **lidar-derived** (`lidaryear`) | none | public | 1 EagleView house (Pendleton). `lidarDerived: true`. |
+| Oregon Metro RLIS (via City of Portland open data) | `portlandmaps.com/od/rest/services/COP_OpenData_Property/MapServer/48` | photogrammetric (per-feature `SOURCE`, e.g. "2008 Aerial Photos", 3Di 1999). Lidar-sourced rows refused. | none on the layer | public open data | 1 EagleView house (Beaverton, heavy canopy). The other Beaverton house had no footprint at the point. |
+| OCGIS Building Footprints (Orange Co., CA) | `ocgis.com/arcpub/rest/services/Map_Layers/Building_Footprints/FeatureServer/0` | method unstated. It carries lidar heights, so it is treated as **lidar-derived**. | none | public | 3 (Irvine x2, EagleView Laguna Hills) |
 | NJ DEP Structures | `mapsdep.nj.gov/arcgis/rest/services/Features/Structures/MapServer/8` | mostly lidar-derived (per-feature `project`), some Microsoft | none | public | none at the 2 NJ houses (no footprints there) |
 
 Searched without finding an open service:
@@ -75,16 +77,20 @@ Google calls: **0**. `buildingInsights` came from the cached `bi.json` of every 
 
 | key | houses | aligned IoU (median) | plan error, county vs key (median) | boundary distance (median) |
 |---|---|---|---|---|
-| lidar (USGS 3DEP; PAgis is photogrammetric, so independent) | 6 | 0.898 | -6.7% | 0.38 m |
-| EagleView | 1 (IndianaMap, lidar-derived) | 0.768 | +30.1% | 0.90 m |
+| lidar (USGS 3DEP). Only photogrammetric sources count: 6 PAgis + 1 RLIS. | 7 | 0.869 | -7.6% | 0.38 m |
+| EagleView: IndianaMap and OCGIS (lidar-derived), RLIS (photogrammetric) | 3 | 0.836 | +0.2% (abs 12.1%) | 0.69 m |
 
-- **EagleView coverage is thin.** No EagleView house falls in a county with photogrammetric footprints. One house is
-  not a validation, and that limit is stated.
+- **EagleView coverage is thin.** Three EagleView houses are covered, and only one of them by a photogrammetric source
+  (RLIS, Beaverton: -12% in plan against EagleView, aligned IoU 0.84).
+- **The grade is a coarse key.** Against EagleView, the county footprints (0.836) are a worse outline than our own
+  (0.932 on the same 3 houses). Use the county grade for **extent**: is a wing missing, and is the area 15-20% low? It
+  is not a key for boundary precision.
 - **Known bias.** The PAgis grade is about 7% small in plan. The report header says so: a shortfall measured against
   it understates the real one.
-- **Refusals.** Three houses got `no-footprint` and one got `no-footprint-at-point`. No footprint was refused for size.
+- **Refusals.** Accepted: 14 houses (9 PAgis, 3 OCGIS, 1 RLIS, 1 IndianaMap). Refused: 3 got `no-footprint`
+  (NY/NJ/CT, Microsoft-only rows) and 3 got `no-footprint-at-point`. No footprint was refused for size.
 - **Sensitivity (+/-20%).**
-  - `AREA_RATIO [0.4, 2.4]` accepts the same 10 houses.
+  - `AREA_RATIO [0.4, 2.4]` accepts the same 14 houses.
   - `[0.6, 1.6]` drops 2 (nlr-park-hill 1.86, lr-305-ridgeway 1.60), which are the heavy-canopy houses the grade is for.
   - `PICK_RADIUS_M` 4.8 or 7.2 m picks the same footprints, because every pick contained the point.
 
@@ -104,8 +110,8 @@ Google calls: **0**. `buildingInsights` came from the cached `bi.json` of every 
 
 - PAgis footprints are mostly from 2004. Additions built after 2004 are missing unless PAgis edited them in later. The
   area check catches only gross mismatches.
-- The county grade covers 10 houses, 9 of them in one county (Pulaski, AR). Conclusions about counties in general rest
-  on one county.
+- The county grade covers 14 houses, 9 of them in one county (Pulaski, AR), and 4 of the 14 are lidar-derived.
+  Conclusions about photogrammetric county footprints rest mostly on one county.
 - Free sources change over time (Overture releases, OSM edits). The fetched files are frozen under `free/` with the
   release recorded.
 
@@ -119,7 +125,7 @@ returns null and reports omit the table. No product code changed and `ROOF_3D_AL
 ```
 V=/Users/parsasalahshori-a/RooflineWork/venv/bin/python; cd scripts/roof-bench-free
 $V fetch_ms.py; $V fetch_overture.py; $V fetch_osm.py; $V split_overture.py
-for s in pagis geostor-composite ny-its indiana nj-dep; do $V fetch_arcgis.py $s; done
+for s in pagis geostor-composite ny-its indiana nj-dep rlis ocgis; do $V fetch_arcgis.py $s; done
 (cd ../../apps/api && npx tsx src/scripts/roof-3d-free-dump.ts)
 $V county_truth.py; $V validate_county.py; $V compare.py; $V summarize.py
 $V hint_experiment.py overture 0.10 0.6 dev

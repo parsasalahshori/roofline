@@ -72,7 +72,7 @@ describe('county truth metrics', () => {
     const far = CountyTruthSchema.parse({ ...truth(), outline: [{ outer: closed(rect(40, 40, 50, 50)), holes: [] }] });
     const m = countyMetrics(roof(21), far);
     expect(m.comparable).toBe(false);
-    const a = countyAgg([{ ...emptyMetrics('ok'), county: m } as HouseMetrics, { ...emptyMetrics('ok'), county: countyMetrics(roof(21), truth()) } as HouseMetrics]);
+    const a = countyAgg([{ ...emptyMetrics('failed'), county: m } as HouseMetrics, { ...emptyMetrics('failed'), county: countyMetrics(roof(21), truth()) } as HouseMetrics]);
     expect(a.houses).toBe(2);
     expect(a.comparable).toBe(1);
     expect(a.medianAlignedIoU).toBeCloseTo(1, 3);

@@ -24,6 +24,11 @@ import truths
 from county_truth import PICK_RADIUS_M, TOUCH_M
 
 SQFT = 10.7639104167
+# County sources that OpenStreetMap imported wholesale: Orange County CA buildings (OSM source tag
+# 'esri/Orange_County_CA_Buildings_v3') and Oregon Metro RLIS (the Portland building import). OSM, and Overture's
+# OSM-derived features, are copies of these keys there, so they are never scored on them.
+OSM_IMPORTED_COUNTY = {"ocgis", "rlis"}
+OSM_DERIVED = {"osm", "osm-ov", "overture"}
 FOOTPRINTS = ["ms", "osm", "osm-ov", "overture", "geostor-composite"]
 
 
@@ -102,6 +107,7 @@ def main():
             for cname, c in cands.items():
                 if cname == kname: continue  # never score a source on itself
                 if kname == "lidar" and c.get("lidarDerived"): continue  # circular: traced from lidar
+                if kname == "county" and cname in OSM_DERIVED and cmeta.get("source") in OSM_IMPORTED_COUNTY: continue
                 row = {"slug": h["slug"], "split": h["split"], "canopy": h["canopy"] or "unknown", "key": kname, "source": cname}
                 if c.get("geom") is not None:
                     row.update(compare(c["geom"], k["geom"]))

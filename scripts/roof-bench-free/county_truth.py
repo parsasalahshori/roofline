@@ -31,6 +31,13 @@ SOURCES = {
     "ny-its": {"method": "county planimetrics compiled by NYS ITS (per-feature SOURCE); Microsoft ML rows refused",
                "lidarDerived": False, "credit": "NYS ITS Geospatial Services",
                "date": lambda p: p.get("SOURCEDATE"), "accept": lambda p: "microsoft" not in str(p.get("SOURCE", "")).lower()},
+    "rlis": {"method": "photogrammetric (Metro RLIS regional footprints; per-feature SOURCE e.g. '2008 Aerial Photos', 3Di 1999); lidar-sourced rows refused",
+             "lidarDerived": False, "credit": "Oregon Metro RLIS (via City of Portland open data)",
+             "date": lambda p: p.get("SOURCE_REF") or p.get("SOURCE"),
+             "accept": lambda p: "lidar" not in (str(p.get("SOURCE", "")) + str(p.get("SOURCE_REF", ""))).lower()},
+    "ocgis": {"method": "OC Public Works footprints with lidar heights; method unstated, so treated as lidar-derived",
+              "lidarDerived": True, "credit": "County of Orange, OC Public Works (OCGIS)",
+              "date": lambda p: None, "accept": lambda p: True},
     "indiana": {"method": "lidar-derived (IndianaMap Building Footprints 2016-2020, per-feature lidaryear)",
                 "lidarDerived": True, "credit": "IndianaMap / Indiana Geographic Information Office",
                 "date": lambda p: p.get("lidaryear"), "accept": lambda p: True},
@@ -81,7 +88,7 @@ def main():
             gm2 = google_ground_m2(h)
             ratio = geom.area / gm2 if gm2 else None
             entry.update({"planAreaM2": round(geom.area, 2), "googleGroundM2": gm2, "areaRatio": round(ratio, 3) if ratio else None,
-                          "dates": sorted({str(SOURCES[src]["date"](f["props"])) for f, _ in parts})})
+                          "dates": sorted({str(SOURCES[src]["date"](f["props"])) for f, _ in parts if SOURCES[src]["date"](f["props"]) is not None})})
             if ratio is None or not (AREA_RATIO[0] <= ratio <= AREA_RATIO[1]):
                 entry["grade"] = "rejected"; entry["reasons"].append("different-structure-or-outdated")
             else:

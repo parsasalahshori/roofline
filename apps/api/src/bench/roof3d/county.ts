@@ -13,9 +13,10 @@ import { alignedOutline, outlineXY } from './truth.ts';
  * Footprints sit in their publisher's frame, so, like EagleView, the outline is also scored after the best translation
  * within ALIGN_MAX_SHIFT_M. A footprint is a plan outline only: no faces, pitch or sloped area.
  *
- * Known bias (validation.json): the Pulaski County (PAgis) footprints are about 7% smaller in plan than lidar roof
- * outlines (aligned IoU 0.90 median on 6 houses): they trace walls or a tight roof line, not the drip edge. Read
- * signed plan error against this grade with that offset in mind; IoU and boundary distance are the primary numbers.
+ * Known bias (validation.json): the photogrammetric footprints are about 7% smaller in plan than lidar roof outlines
+ * (aligned IoU 0.87 median on 7 houses): they trace walls or a tight roof line, not the drip edge. Against EagleView
+ * they are a coarser outline than our own reconstruction. Use this grade for extent (a missing wing, an area 15-20%
+ * low), not for boundary precision.
  * A source digitized from lidar is marked lidarDerived: a method that reads lidar must not be scored on it.
  */
 
