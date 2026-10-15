@@ -50,16 +50,20 @@ export function owlv2Present(dir: string | undefined): boolean {
 }
 
 /**
- * The text queries and the score threshold. Tuned by eye on the three test houses' Street View fronts only (Centerton
- * and Jonesboro, AR): treat them as a starting point, not a validated setting.
+ * The text queries and the score threshold. The first query is the window; the others are what a window is mistaken
+ * for on a house front (a door, a garage door's glass lites, shutters): a window box that a higher-scoring box of one
+ * of those overlaps is dropped. Tuned by eye on the Street View fronts of three houses only (214 Shane Dr, Centerton
+ * and 5437 Summer Pl, Jonesboro, AR; the third, 5107 Cayman Pl, is blurred): a starting point, not a validated setting.
  */
-export const OWLV2_LABELS = ['a window', 'a house window', 'a window with shutters'] as const;
-export const OWLV2_THRESHOLD = 0.12;
+export const OWLV2_LABELS = ['a house window with glass panes', 'a front door', 'a garage door', 'a shutter'] as const;
+export const OWLV2_THRESHOLD = 0.2;
 /** Boxes larger than this share of the photo are a whole wall or a garage door, not a window. */
 const MAX_BOX_W = 0.3;
 const MAX_BOX_H = 0.4;
-/** Overlapping boxes (any label) above this IoU are one window: the higher score is kept. */
-const NMS_IOU = 0.3;
+/** A window box overlapping a higher-scoring door / garage door / shutter box by this IoU is that, not a window. */
+const OTHER_IOU = 0.5;
+/** A window box this much inside a kept one (its lower sash, a pane) is the same window. */
+const CONTAINED = 0.6;
 const TIMEOUT_MS = 60_000;
 
 /** The transformers.js pipeline's shape that is used: image bytes in, scored boxes out (percentages of the image). */
@@ -80,29 +84,44 @@ export const loadOwlV2: PipelineLoader = async (modelDir) => {
   return { run, toImage: (jpeg) => tf.RawImage.fromBlob(new Blob([new Uint8Array(jpeg)], { type: 'image/jpeg' })) };
 };
 
-function iou(a: DetectedBox, b: DetectedBox): number {
+function overlap(a: DetectedBox, b: DetectedBox): number {
   const x0 = Math.max(a.x, b.x);
   const y0 = Math.max(a.y, b.y);
   const x1 = Math.min(a.x + a.w, b.x + b.w);
   const y1 = Math.min(a.y + a.h, b.y + b.h);
-  const inter = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+  return Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+}
+
+function iou(a: DetectedBox, b: DetectedBox): number {
+  const inter = overlap(a, b);
   const union = a.w * a.h + b.w * b.h - inter;
   return union > 0 ? inter / union : 0;
 }
 
-/** Keeps the window-shaped boxes on the front: centre in the wall's region, not wall-sized, one box per window. */
-export function keepWindows(raw: DetectedBox[], region: DetectHints['region']): DetectedBox[] {
+/** A pipeline box with its label: `window` when it is the window query's. */
+export type LabelledBox = DetectedBox & { window: boolean };
+
+/**
+ * Keeps the window-shaped boxes on the front: a window label, centre in the wall's region, not wall-sized, not taken
+ * for a door, garage door or shutter that scored higher, and one box per window (the best; boxes inside it go).
+ */
+export function keepWindows(raw: LabelledBox[], region: DetectHints['region']): DetectedBox[] {
+  const others = raw.filter((b) => !b.window);
   const sorted = raw
-    .filter((b) => b.w > 0 && b.h > 0 && b.w <= MAX_BOX_W && b.h <= MAX_BOX_H)
+    .filter((b) => b.window && b.w > 0 && b.h > 0 && b.w <= MAX_BOX_W && b.h <= MAX_BOX_H)
     .filter((b) => {
       if (region === null) return true;
       const cx = b.x + b.w / 2;
       const cy = b.y + b.h / 2;
       return cx >= region.x && cx <= region.x + region.w && cy >= region.y && cy <= region.y + region.h;
     })
+    .filter((b) => !others.some((o) => o.confidence > b.confidence && iou(o, b) >= OTHER_IOU))
     .sort((a, b) => b.confidence - a.confidence);
   const kept: DetectedBox[] = [];
-  for (const b of sorted) if (kept.every((k) => iou(k, b) <= NMS_IOU)) kept.push(b);
+  for (const b of sorted) {
+    if (kept.some((k) => iou(k, b) > 0.3 || overlap(k, b) / (b.w * b.h) > CONTAINED)) continue;
+    kept.push({ x: b.x, y: b.y, w: b.w, h: b.h, confidence: b.confidence });
+  }
   return kept;
 }
 
@@ -146,7 +165,7 @@ export class OwlV2Detector implements WindowDetector {
       .map((d) => {
         const x0 = clamp(d.box.xmin);
         const y0 = clamp(d.box.ymin);
-        return { x: x0, y: y0, w: clamp(d.box.xmax) - x0, h: clamp(d.box.ymax) - y0, confidence: clamp(d.score) };
+        return { x: x0, y: y0, w: clamp(d.box.xmax) - x0, h: clamp(d.box.ymax) - y0, confidence: clamp(d.score), window: d.label === OWLV2_LABELS[0] };
       });
     return keepWindows(raw, hints.region);
   }

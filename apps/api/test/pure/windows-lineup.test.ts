@@ -63,9 +63,9 @@ function houseJpeg(): Uint8Array {
   const n = noise(7);
   return render((x, y) => {
     const p: Vec = [x + 0.5, y + 0.5];
-    if (inside(p, wall)) return 200 + 6 * n();
-    if (inside(p, roofBand)) return 55 + 6 * n();
-    return (y > H * 0.6 ? 120 : 150) + 6 * n();
+    if (inside(p, wall)) return 190 + 30 * n(); // brick or siding: textured
+    if (inside(p, roofBand)) return 55 + 20 * n();
+    return (y > H * 0.6 ? 120 : 150) + 20 * n();
   });
 }
 

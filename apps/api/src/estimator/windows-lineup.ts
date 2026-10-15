@@ -37,11 +37,13 @@ const MIN_SAMPLES_PER_LINE = 6;
 export const FIT_GOOD_SCORE = 0.5;
 /**
  * Blurred or blank: the wall's region in the photo has little edge energy. Google blurs a house on request with a
- * heavy blur; its region's mean gradient then falls far below the rest of the photo's. Below this ratio of the region's
- * mean gradient to the whole photo's, or below MIN_REGION_ENERGY absolutely, the line-up is 'unknown'.
+ * heavy blur; its region's (median cell) gradient then falls far below the rest of the photo's. Below this ratio of the
+ * region's energy to the whole photo's mean gradient, or below MIN_REGION_ENERGY absolutely, the line-up is 'unknown'
+ * and the photo is flagged blurred. Tuned on three Street View fronts (5107 Cayman Pl, Jonesboro, AR is blurred:
+ * about 0.2; two sharp brick and siding fronts: about 1).
  */
 export const BLUR_ENERGY_RATIO = 0.35;
-const MIN_REGION_ENERGY = 8;
+const MIN_REGION_ENERGY = 12;
 /** Below this share of the drawn wall inside the photo, nothing can be told. */
 const MIN_INSIDE_SHARE = 0.4;
 
@@ -169,20 +171,34 @@ export function quadScore(e: Edges, quad: Quad): { score: number | null; insideS
   return { score: scores.length >= 2 ? scores.reduce((t, v) => t + v, 0) / scores.length : null, insideShare: total > 0 ? inside / total : 0 };
 }
 
-/** The mean gradient inside a quad's bounding box (clipped to the photo); 0 when it is outside. */
+/** Cells the wall's region is cut into for its edge energy, pixels. */
+const ENERGY_CELL_PX = 16;
+
+/**
+ * The wall region's edge energy: the median, over ENERGY_CELL_PX cells of the quad's bounding box (clipped to the
+ * photo), of each cell's mean gradient. A median, not a mean: a blurred house next to a sharp shrub or tree still reads
+ * as blurred. 0 when the region is outside the photo.
+ */
 function regionEnergy(e: Edges, quad: Quad): number {
   const x0 = Math.max(1, Math.floor(Math.min(...quad.map((p) => p[0]))));
   const x1 = Math.min(e.w - 2, Math.ceil(Math.max(...quad.map((p) => p[0]))));
   const y0 = Math.max(1, Math.floor(Math.min(...quad.map((p) => p[1]))));
   const y1 = Math.min(e.h - 2, Math.ceil(Math.max(...quad.map((p) => p[1]))));
-  if (x1 <= x0 || y1 <= y0) return 0;
-  let sum = 0;
-  let n = 0;
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-    sum += e.mag[y * e.w + x]!;
-    n++;
+  if (x1 - x0 < 2 || y1 - y0 < 2) return 0;
+  const cells: number[] = [];
+  for (let cy = y0; cy < y1; cy += ENERGY_CELL_PX) {
+    for (let cx = x0; cx < x1; cx += ENERGY_CELL_PX) {
+      let sum = 0;
+      let n = 0;
+      for (let y = cy; y < Math.min(y1, cy + ENERGY_CELL_PX); y++) for (let x = cx; x < Math.min(x1, cx + ENERGY_CELL_PX); x++) {
+        sum += e.mag[y * e.w + x]!;
+        n++;
+      }
+      if (n > 0) cells.push(sum / n);
+    }
   }
-  return sum / n;
+  cells.sort((a, b) => a - b);
+  return cells[Math.floor(cells.length / 2)] ?? 0;
 }
 
 export type LineUp = {

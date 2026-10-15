@@ -8,6 +8,7 @@ import {
   DetectorUnconfiguredError,
   keepWindows,
   NoDetector,
+  OWLV2_LABELS,
   OWLV2_MODEL_ID,
   OwlV2Detector,
   owlv2Present,
@@ -18,7 +19,7 @@ import type { Config } from '../../src/config.ts';
 
 /* The optional OWLv2 detector with a mocked transformers.js pipeline: no model, no network. */
 
-const box = (xmin: number, ymin: number, xmax: number, ymax: number, score: number, label = 'a window') => ({ score, label, box: { xmin, ymin, xmax, ymax } });
+const box = (xmin: number, ymin: number, xmax: number, ymax: number, score: number, label: string = OWLV2_LABELS[0]) => ({ score, label, box: { xmin, ymin, xmax, ymax } });
 
 function loader(out: ReturnType<typeof box>[]): { load: PipelineLoader; calls: { labels: string[]; threshold: number }[]; loads: number } {
   const state = { calls: [] as { labels: string[]; threshold: number }[], loads: 0 };
@@ -39,8 +40,10 @@ describe('OWLv2 detector', () => {
   it('turns pipeline boxes into 0..1 boxes, keeps the front windows, one per window', async () => {
     const l = loader([
       box(0.3, 0.5, 0.36, 0.6, 0.4),
-      box(0.305, 0.505, 0.36, 0.6, 0.3, 'a house window'), // the same window, another label
+      box(0.305, 0.53, 0.36, 0.6, 0.3), // its lower sash: inside it
       box(0.6, 0.5, 0.66, 0.6, 0.2),
+      box(0.45, 0.5, 0.48, 0.6, 0.25), // a shutter, which scored higher as a shutter
+      box(0.45, 0.5, 0.48, 0.6, 0.35, 'a shutter'),
       box(0.05, 0.5, 0.1, 0.6, 0.5), // off the front
       box(0.3, 0.3, 0.8, 0.9, 0.6), // wall-sized (a garage door)
     ]);
@@ -50,7 +53,7 @@ describe('OWLv2 detector', () => {
     expect(got[0]).toMatchObject({ confidence: 0.4 });
     expect(got[0]!.x).toBeCloseTo(0.3);
     expect(got[0]!.w).toBeCloseTo(0.06);
-    expect(l.calls[0]!.labels).toContain('a window');
+    expect(l.calls[0]!.labels).toEqual([...OWLV2_LABELS]);
     // The model loads once.
     await d.detect(new Uint8Array([0xff, 0xd8]), { photoId: 'p', region: null });
     expect(l.loads).toBe(1);
@@ -71,7 +74,8 @@ describe('OWLv2 detector', () => {
   });
 
   it('non-maximum suppression and size limits', () => {
-    expect(keepWindows([{ x: 0, y: 0, w: 0.5, h: 0.1, confidence: 0.9 }], null)).toEqual([]);
+    expect(keepWindows([{ x: 0, y: 0, w: 0.5, h: 0.1, confidence: 0.9, window: true }], null)).toEqual([]);
+    expect(keepWindows([{ x: 0, y: 0, w: 0.1, h: 0.1, confidence: 0.9, window: false }], null)).toEqual([]);
   });
 });
 

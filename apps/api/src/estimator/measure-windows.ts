@@ -100,10 +100,10 @@ async function panoOf(deps: AppDeps, centre: LngLat): Promise<StreetViewPano | '
   }
 }
 
-type TakenPhoto = { stored: StoredFacadePhoto; bytes: Uint8Array; blurred: boolean };
+export type TakenPhoto = { stored: StoredFacadePhoto; bytes: Uint8Array; blurred: boolean };
 
 /** One photo: fetched, kept in the object store (30 days), and the front wall drawn and lined up on it. */
-async function takePhoto(
+export async function takePhoto(
   deps: AppDeps,
   pano: StreetViewPano,
   shot: Shot,
