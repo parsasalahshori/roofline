@@ -30,6 +30,8 @@ export type BenchOptions = {
   onHouse?: (slug: string, k: number, n: number) => void;
   /** Fingerprint of the lidar truth merged into the manifest (lidar.ts lidarIndexHash), recorded in the report. */
   lidarHash?: string | null;
+  /** Fingerprint of the county truth merged into the manifest (county.ts countyIndexHash), recorded in the report. */
+  countyHash?: string | null;
 };
 
 function spreadOf(run: HouseRun, pick: (m: HouseMetrics) => number | null | undefined): SeedSpread {
@@ -167,6 +169,7 @@ export async function runBench(o: BenchOptions): Promise<BenchReport> {
     seeds: [...seeds],
     manifestHash: manifestHash(o.manifest),
     lidarHash: o.lidarHash ?? null,
+    countyHash: o.countyHash ?? null,
     data: dataVersion(o.manifest),
     thresholds: o.manifest.thresholds,
     cohortFilter: only,

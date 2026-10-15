@@ -7,6 +7,7 @@ import type { RoofLayers, RoofPhoto } from '../../providers/solar-layers.ts';
 import { type EagleViewTruth, EagleViewTruthSchema, type VisualTruth, VisualTruthSchema } from './truth.ts';
 import type { HouseEntry } from './manifest.ts';
 import { type LidarTruth, readLidarTruth } from './lidar.ts';
+import { type CountyTruth, readCountyTruth } from './county.ts';
 import { benchDir, houseDir } from './paths.ts';
 import type { LidarPointsUtm } from '../../estimator/roof-3d.ts';
 
@@ -33,6 +34,8 @@ export type LoadedHouse = {
   /** The house's accepted lidar truth (lidar.ts) when its lidar grade is 'lidar', and the file's short sha1. */
   lidar?: LidarTruth | null;
   lidarSha1?: string | null;
+  /** The house's accepted county footprint (county.ts) when its county grade is 'county'. */
+  county?: CountyTruth | null;
   /** The lidar crop the hidden-edge step reads (lidar-edges.ts), only on runs with --lidar-edges. Input, never truth. */
   lidarPoints?: LidarPointsUtm | null;
 };
@@ -188,6 +191,8 @@ export async function loadHouse(entry: HouseEntry, bench?: string, fallback?: st
   const vis = path.join(dir, 'visual.json');
   const osm = path.join(dir, 'osm.json');
   const lidar = entry.lidar?.grade === 'lidar' || entry.truth === 'lidar' ? readLidarTruth(bench ?? benchDir(), entry.slug) : null;
+  const county = entry.county?.grade === 'county' ? readCountyTruth(bench ?? benchDir(), entry.slug) : null;
+  if (entry.county?.grade === 'county' && county === null) throw new Error(`no county truth for ${entry.slug} (graded 'county' in free/county/index.json)`);
   if ((entry.lidar?.grade === 'lidar' || entry.truth === 'lidar') && lidar === null) throw new Error(`no lidar truth for ${entry.slug} (graded 'lidar' in lidar/index.json)`);
   return {
     entry,
@@ -200,5 +205,6 @@ export async function loadHouse(entry: HouseEntry, bench?: string, fallback?: st
     osm: existsSync(osm) ? ((JSON.parse(readFileSync(osm, 'utf8')) as { ring: LngLat[] }).ring ?? null) : null,
     lidar: lidar?.truth ?? null,
     lidarSha1: lidar?.sha1 ?? null,
+    county: county?.truth ?? null,
   };
 }

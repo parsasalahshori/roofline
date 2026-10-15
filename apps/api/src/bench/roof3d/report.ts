@@ -1,5 +1,5 @@
 import { ROOF_QUALITY_REASONS } from '@roofline/shared';
-import type { CohortReport, LidarAgg, Stat, Stats } from './aggregate.ts';
+import type { CohortReport, CountyAgg, LidarAgg, Stat, Stats } from './aggregate.ts';
 import type { HouseMetrics } from './metrics.ts';
 import type { Thresholds } from './manifest.ts';
 
@@ -64,6 +64,8 @@ export type BenchReport = {
   manifestHash: string;
   /** Fingerprint of the lidar truth the run scored against (lidar.ts lidarIndexHash); absent or null: none. */
   lidarHash?: string | null;
+  /** Fingerprint of the county truth the run scored against (county.ts countyIndexHash); absent or null: none. */
+  countyHash?: string | null;
   /** What data the run was made on (the whole manifest, whichever houses were run). */
   data: DataVersion;
   thresholds: Thresholds;
@@ -186,6 +188,18 @@ export function formatSplit(name: string, s: SplitReport): string {
           fmt(l.truthHidden.meanM, 2),
           `${pct(l.truthHidden.withinShare)} (${fmtN(l.truthHidden.samples)})`,
         ];
+      }),
+    ),
+    '',
+    'Against county footprints (county.ts: county/state GIS digitizing, not ML; outline only, aligned like EagleView;',
+    'Pulaski County footprints run ~7% smaller in plan than lidar roof outlines: a shortfall against them understates the real one):',
+    table(
+      ['cohort', 'county', 'IoU', 'aligned IoU', 'aligned bnd m', 'plan %', '|plan| %'],
+      [L, 8, 9, 11, 13, 9, 9],
+      names.map((n) => {
+        const c = s.cohorts[n]!.stats.county as Stats<CountyAgg> | undefined;
+        if (c === undefined || c === null || (c.houses?.mean ?? 0) === 0) return [n, '-', '-', '-', '-', '-', '-'];
+        return [n, `${fmtN(c.comparable)}/${fmtN(c.houses)}`, fmt(c.medianIoU), fmt(c.medianAlignedIoU), fmt(c.medianAlignedBoundaryM, 2), fmt(c.medianPlanErrSignedPct, 1), fmt(c.medianPlanErrAbsPct, 1)];
       }),
     ),
     '',

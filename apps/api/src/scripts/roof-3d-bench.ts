@@ -8,8 +8,9 @@ import { DEFAULT_GATES, formatGates, GatesSchema, compareSplitGap, compareSplits
 import { loadHouse } from '../bench/roof3d/data.ts';
 import { type CrossFlightPick, crossFlightHash, fusedFlightOf, selectCrossFlightTruth } from '../bench/roof3d/crossflight.ts';
 import { lidarIndexHash, readLidarIndex, readLidarTruth, SUPPORT_SCORER } from '../bench/roof3d/lidar.ts';
+import { countyIndexHash, readCountyIndex, readCountyTruth } from '../bench/roof3d/county.ts';
 import { readLidarEdgePoints } from '../bench/roof3d/lidar-edges.ts';
-import { type HouseEntry, manifestHash, manifestProblems, parseManifest, SPLITS, withLidar, type Manifest } from '../bench/roof3d/manifest.ts';
+import { type HouseEntry, manifestHash, manifestProblems, parseManifest, SPLITS, withCounty, withLidar, type Manifest } from '../bench/roof3d/manifest.ts';
 import { benchDir, FALLBACK_DATA_DIR } from '../bench/roof3d/paths.ts';
 import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/report.ts';
 
@@ -150,6 +151,23 @@ async function main(): Promise<number> {
   } else if (fusion === 'none' && flag('--lidar-edges')) {
     process.stderr.write('--fusion-flight none: lidar numbers are scored on the SAME flight the method read (circular); judge them on EagleView.\n');
   }
+  // County truth (free/county/index.json, county.ts): an outline-only key, merged in like lidar. It does not gate.
+  let countyHash: string | null;
+  try {
+    const index = readCountyIndex(bench);
+    manifest = withCounty(manifest, index);
+    const shas = new Map<string, string>();
+    for (const h of manifest.houses) {
+      if (h.county?.grade !== 'county') continue;
+      const t = readCountyTruth(bench, h.slug);
+      if (t === null) throw new Error(`${h.slug} is graded 'county' but has no free/county/${h.slug}/truth.json`);
+      shas.set(h.slug, t.sha1);
+    }
+    countyHash = countyIndexHash(index, shas);
+  } catch (err) {
+    process.stderr.write(`county truth is not valid: ${(err as Error).message.slice(0, 400)}\n`);
+    return 3;
+  }
   const problems = manifestProblems(manifest);
   if (problems.length > 0) {
     process.stderr.write(`manifest.json breaks its rules:\n${problems.join('\n')}\n`);
@@ -186,6 +204,7 @@ async function main(): Promise<number> {
       allowExpired: flag('--allow-expired'),
       bench,
       lidarHash,
+      countyHash,
       ...(flag('--lidar-edges') || xfPicks !== null
         ? {
             loader: async (e: HouseEntry) => {
@@ -217,6 +236,10 @@ async function main(): Promise<number> {
     const n = xfPicks !== null ? [...xfPicks.values()].filter((p) => p.truth !== null).length : manifest.houses.filter((h) => h.lidar?.grade === 'lidar').length;
     if (xfPicks !== null) process.stdout.write(`Cross-flight lidar truth (fusion flight ${fusion}, crops ${edgesDirName}${allowCoarse ? ', coarse allowed' : ''}): the truth never comes from the fused flight.\n`);
     process.stdout.write(`Lidar truth ${report.lidarHash}: ${n} houses (USGS 3D Elevation Program lidar, public domain).\n`);
+  }
+  if (report.countyHash !== null && report.countyHash !== undefined) {
+    const n = manifest.houses.filter((h) => h.county?.grade === 'county').length;
+    process.stdout.write(`County truth ${report.countyHash}: ${n} houses (county/state GIS building footprints; free/county).\n`);
   }
   process.stdout.write(`roof3d bench at ${report.commit.sha.slice(0, 8)}${report.commit.dirty ? '+dirty' : ''}${report.base ? ` (reconstruction as ${report.base.sha.slice(0, 8)}${report.base.changedFiles.length > 0 ? ` plus changes to ${report.base.changedFiles.join(', ')}` : ''})` : ''}, ${report.date.slice(0, 10)}, seeds ${report.seeds.join(',')}, manifest ${report.manifestHash}, calibration ${report.calibrationMs.toFixed(0)} ms${report.cohortFilter ? `, cohort ${report.cohortFilter}` : ''}\n\n`);
   for (const name of ['dev', 'heldout'] as const) {

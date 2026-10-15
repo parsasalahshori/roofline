@@ -6,6 +6,7 @@ import type { LoadedHouse } from './data.ts';
 import { type MultiPoly, iou, rasterize, rectilinearity, ringArea, ringToXY, zoneOfLngLat } from './geometry.ts';
 import { maskPartAt } from './canopy.ts';
 import { type LidarMetrics, lidarMetrics } from './lidar.ts';
+import { type CountyMetrics, countyMetrics } from './county.ts';
 import { DEFAULT_TRUTH, type TruthMetrics, type TruthParams, eagleViewMetrics, isBad, outlineXY, visualMetrics } from './truth.ts';
 
 /*
@@ -81,6 +82,8 @@ export type HouseMetrics = {
   lidar?: LidarMetrics | null;
   /** Why the lidar scoring failed (it never fails the run): null when it did not. */
   lidarError?: string | null;
+  /** Against the house's county footprint (county.ts) when it has one; null otherwise. Absent in older reports. */
+  county?: CountyMetrics | null;
   /** With truth: a flagged roof is right to be when this is true (area off over 10 percent or main pitch over 1/12). */
   bad: boolean | null;
   /** sha1 of the whole reconstruction, to see which houses an edit changed. */
@@ -123,6 +126,7 @@ export function emptyMetrics(status: 'no-roof' | 'failed', hash = ''): HouseMetr
     truth: null,
     lidar: null,
     lidarError: null,
+    county: null,
     bad: null,
     hash,
   };
@@ -212,6 +216,14 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
       lidarError = 'scoring-failed';
     }
   }
+  let county: CountyMetrics | null = null;
+  if (h.county !== undefined && h.county !== null) {
+    try {
+      county = countyMetrics(roof, h.county);
+    } catch {
+      county = null;
+    }
+  }
   return {
     status: 'ok',
     unusable,
@@ -238,6 +250,7 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
     truth,
     lidar,
     lidarError,
+    county,
     bad: truth !== null && truth.comparable ? isBad(truth) : null,
     hash: hashOf(json),
   };
