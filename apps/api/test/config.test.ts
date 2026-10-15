@@ -68,6 +68,7 @@ describe('loadConfig', () => {
       FOOTPRINT_WAIT_MS: 120_000,
       GOOGLE_SOLAR_DATA_LAYERS: true,
       ROOF_3D_MODE: 'on',
+      WINDOW_DETECTOR: 'off',
       GOOGLE_ADS_API_VERSION: 'v21',
       META_GRAPH_VERSION: 'v24.0',
       POSTMARK_BROADCAST_STREAM: 'broadcast',
