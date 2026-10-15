@@ -111,7 +111,8 @@ describe('the reconstruction entry under bad grids', () => {
     for (const [name, mask] of Object.entries(variants)) {
       const found = roofOnLayersResult({ ...base, raster: { ...base.raster, mask } }, inside);
       expect(found, name).toBeDefined();
-      if (name === 'edge') expect(found).toEqual({ miss: 'clipped' });
+      // A mask over the whole 60 m grid is bigger than any home (MAX_ROOF_PART_M2) and runs off the edge.
+      if (name === 'edge') expect(['clipped', 'too-large']).toContain('miss' in found ? found.miss : 'roof');
     }
     const spiky = base.raster.dsm.map((z, i) => (i % 13 === 0 ? Number.NaN : i % 17 === 0 ? 1e30 : z));
     expect(roofOnLayersResult({ ...base, raster: { ...base.raster, dsm: spiky } }, inside)).toBeDefined();

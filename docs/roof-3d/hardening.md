@@ -149,3 +149,40 @@ The benchmark's metrics are identical on all 54 dev houses (only the result hash
   baseline does not have them, and adding a gate changes `gates.json`, which belongs to the integrator with a new
   baseline.
 - Bench runtime with the alignment: the dev split runs in about 2 minutes 12 s (gate on p95 passes).
+
+## 7. Size and time budgets, latency, retention
+
+- **Roof size budget.** `MAX_ROOF_PART_M2 = 3000` (`roof-reconstruct/guard.ts`): the mask part under the point is
+  measured by a bounded flood fill before reconstructing; bigger is a typed `too-large` (`none: 'unusable'`). A 200 m
+  square roof used to take 15 s and 570 MB of one synchronous run (stalling every other request); it is now refused
+  in 25 ms. The largest roof allowed (a 54 m square, about 2,900 m2) on the largest grid takes 1.7 s; the perf budget
+  test (`apps/api/test/pure/retention-perf.test.ts`) holds it under 6 s. The grid itself is capped at 2,400 x 2,400.
+- **Time budget.** Fetching: 40 s overall (`LAYERS_BUDGET_MS`), on top of the client's per-request timeouts which now
+  cover the body. Reconstruction: bounded by the two size caps (it is synchronous and cannot be pre-empted without a
+  worker thread; see open issues).
+- **Latency and memory** (`npm run roof3d:perf -w @roofline/api`, dev houses only, aggregates): decode p50 46 ms,
+  p95 59 ms; reconstruct p50 286 ms, p95 811 ms, max 894 ms; total p50 333 ms, p95 857 ms; peak RSS 324 MB, peak heap
+  64 MB (shared machine with four other agents running).
+- **Retention** (`npm run solar:retention -w @roofline/api [-- --root DIR] [--now DATE] [--delete]`): lists the
+  development folders holding Google's files (`dsm.tif`, `mask.tif`, `rgb.tif`, `bi.json`) past their 30 days, by the
+  benchmark manifest's `deleteBy`, else `info.json`'s `downloadedAt`, else the files' times; deletes only those
+  files, only with `--delete`. Today: 138 folders, none past their date (earliest 2026-11-10). Stored measurements
+  are out of its reach (see open issues): the server already stops showing a kept photo after 30 days
+  (`solarDataCurrent`), but the rows and photo objects stay.
+
+## Sensitivity (+-20% on each constant this track adds; dev split)
+
+| constant (value) | -20% | +20% | what moves |
+| --- | --- | --- | --- |
+| `OUTLINE_CHECK_IOU` (0.85) | 0.68: 52 of 54 outlines pass | 1.02 is impossible; 0.90: 48, 0.95: 32 | the independent outline check; 0.85 sits on a plateau (50) between 0.80 and 0.90 |
+| `ALIGN_MAX_SHIFT_M` (3 m) | 2.4 m: one key house's 2.5 m shift is cut short | 3.6 m: no change (largest shift 2.5 m on an axis, 2.88 m overall) | aligned IoU medians |
+| `ROOF_MASK_CUT_SHARE` (0.10) | 0.08: 1 of 54 houses gets a reason (a 9.0% ground cut) | 0.12: 0 | maskCut.reason |
+| `MAX_ROOF_PART_M2` (3,000) | 2,400: 0 dev houses refused | 3,600: 0 | largest dev mask part is 651 m2; only the worst-case time moves (about 1.4 s to 2.0 s) |
+| `NO_BUILDING_REACH_M` (20 m) | 16 m: a reused grid can still cut a house over 32 m across | 24 m: more purchases for houses near another grid's edge | purchases vs clipping; the property test passes at both (its houses are 25 by 22 m) |
+| `RETRY_GROWTH` (1.5) | 1.2 | 1.8 | the retry's radius; the retry test passes at both; the cap is Google's 100 m |
+| `LAYERS_BUDGET_MS` (40 s) | 32 s | 48 s | only how long a Measure can wait; Measure's own `ROOF_3D_WAIT_MS` stops waiting first |
+
+The reconstruction's output is unchanged by this track (bench metrics identical on all 54 dev houses at every commit),
+so there is no seed variance of this track's own: the dev numbers at seeds 7/8/9 are the baseline's (area median
+error 4.0 [3.9-4.1] %, checker 33.7 [33-35] of 54, independent checker 31 [30-32] of 54, main pitch exact
+12 [11-13] of 18).

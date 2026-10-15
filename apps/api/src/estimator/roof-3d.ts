@@ -14,7 +14,18 @@ import {
   roof3dSnapshotVersion,
   type SolarBuilding,
 } from '@roofline/shared';
-import { lngLatToUtm, otherRoofParts, type RasterProblem, rasterProblem, reconstructRoof, toRoof3d, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
+import {
+  lngLatToUtm,
+  MAX_ROOF_PART_M2,
+  otherRoofParts,
+  type RasterProblem,
+  rasterProblem,
+  reconstructRoof,
+  roofPartAreaM2,
+  toRoof3d,
+  utmToLngLat,
+  utmZoneOfEpsg,
+} from '@roofline/shared/roof-reconstruct';
 import type { AppDeps } from '../app.ts';
 import { type RoofLayers, SolarLayersUnavailableError } from '../providers/solar-layers.ts';
 import { encodeRgbPng } from './png.ts';
@@ -235,6 +246,8 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   const ownBox = box !== null && metresToBuilding(o.building!, point) <= SOLAR_BUILDING_SNAP_M;
   const problem = rasterProblem(layers.raster, toPixel(point));
   if (problem !== null) return { miss: problem };
+  // A roof too big to reconstruct within the request's time and memory (MAX_ROOF_PART_M2): not a home's roof.
+  if (roofPartAreaM2(layers.raster, toPixel(point)) > MAX_ROOF_PART_M2) return { miss: 'too-large' };
   const raster = { ...layers.raster, green: layers.raster.green ?? greenOf(layers) };
   const local = reconstructRoof(raster, toPixel(point), {
     imageryQuality: layers.imageryQuality,

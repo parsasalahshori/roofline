@@ -47,3 +47,51 @@ export function rasterProblem(raster: RoofRaster | null | undefined, point: { co
     return 'bad-size';
   }
 }
+
+/**
+ * The largest roof (Google's mask part under the point) the reconstruction is run on, square metres. The work grows
+ * with the part: a 200 m square roof took 15 s and 570 MB in one synchronous run, which would stall every other
+ * request. The benchmark buys houses of 900 to 6,000 sq ft (84 to 557 m2); 3,000 m2 is over five times the largest,
+ * room for a big house joined to its neighbours, and still well under a second.
+ */
+export const MAX_ROOF_PART_M2 = 3000;
+
+/**
+ * The area of the mask part under `point` (or the nearest one within reachM, as the reconstruction looks for it),
+ * square metres; 0 when there is none. Stops counting past stopM2. Assumes rasterProblem found nothing wrong.
+ */
+export function roofPartAreaM2(raster: RoofRaster, point: { col: number; row: number }, reachM = 12, stopM2 = MAX_ROOF_PART_M2 * 2): number {
+  const { width: W, height: H, pixelSizeM: s } = raster;
+  const reach = Math.ceil(reachM / s);
+  const pc = Math.min(W - 1, Math.max(0, Math.floor(point.col)));
+  const pr = Math.min(H - 1, Math.max(0, Math.floor(point.row)));
+  let start = -1;
+  let best = Infinity;
+  for (let r = Math.max(0, pr - reach); r <= Math.min(H - 1, pr + reach); r++) {
+    for (let c = Math.max(0, pc - reach); c <= Math.min(W - 1, pc + reach); c++) {
+      if (raster.mask[r * W + c] === 0) continue;
+      const d = Math.hypot(c + 0.5 - point.col, r + 0.5 - point.row);
+      if (d < best) {
+        best = d;
+        start = r * W + c;
+      }
+    }
+  }
+  if (start < 0 || best > reach) return 0;
+  const stopPx = stopM2 / (s * s);
+  const seen = new Uint8Array(W * H);
+  const stack = [start];
+  seen[start] = 1;
+  let count = 0;
+  while (stack.length > 0 && count < stopPx) {
+    const i = stack.pop()!;
+    count++;
+    const c = i % W;
+    const r = (i - c) / W;
+    if (c > 0 && !seen[i - 1] && raster.mask[i - 1] !== 0) (seen[i - 1] = 1), stack.push(i - 1);
+    if (c < W - 1 && !seen[i + 1] && raster.mask[i + 1] !== 0) (seen[i + 1] = 1), stack.push(i + 1);
+    if (r > 0 && !seen[i - W] && raster.mask[i - W] !== 0) (seen[i - W] = 1), stack.push(i - W);
+    if (r < H - 1 && !seen[i + W] && raster.mask[i + W] !== 0) (seen[i + W] = 1), stack.push(i + W);
+  }
+  return count * s * s;
+}

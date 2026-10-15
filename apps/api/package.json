@@ -25,7 +25,9 @@
     "roof3d:bench-fetch": "tsx src/scripts/roof-3d-bench-fetch.ts",
     "test:bench": "vitest run -c vitest.bench.config.ts",
     "test:pure": "vitest run -c vitest.pure.config.ts",
-    "roof3d:bench-sensitivity": "tsx src/scripts/roof-3d-bench-sensitivity.ts"
+    "roof3d:bench-sensitivity": "tsx src/scripts/roof-3d-bench-sensitivity.ts",
+    "roof3d:perf": "tsx src/scripts/roof-3d-perf.ts",
+    "solar:retention": "tsx src/scripts/solar-data-retention.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
