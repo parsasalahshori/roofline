@@ -85,3 +85,30 @@ point margin alone (still fails for long houses, and buys more for small ones th
   lengths, all no-data, empty mask, non-finite point. `roofOnLayersResult` checks it before reconstructing and catches
   anything thrown inside, so a Measure never sees an exception from the reconstruction.
 - The benchmark's output is byte-identical on all 54 dev houses (every house's result hash equal to the run before).
+
+## 4. GeoTIFF decoding, the Data Layers client, secrets
+
+- `readGeoTiff` reads the grid size first and refuses more than 2,400 x 2,400 pixels before decoding (a small
+  compressed file can declare a huge grid), checks the decoded length, and every failure is
+  `SolarLayersUnavailableError` with a reason (`decode`, `too-large`). `layersFrom` refuses a mask in another UTM
+  zone or skewed pixels (`mismatch`) and a grid in no UTM zone (`bad-crs`).
+- The client's timeout now covers the body as well as the headers (a body that trickles in used to be waited for
+  forever), timeouts are typed `timeout`, the JSON answer is capped at 64 KB, coordinates off the globe are refused
+  before any request, and **file URLs from Google's answer are only fetched (with the key) when they are https on the
+  API's own host**; anything else is `bad-answer` and never sent the key.
+- Tests (`apps/api/test/pure/geotiff-fuzz.test.ts`, seeded): 60 truncations, 30 random byte strings, 30 corrupted
+  files, empty, 1-pixel, 4000 x 4000, NaN/Infinity heights, mismatched zones, a non-RGB photo; at the reconstruction
+  entry: holes, a mask touching every edge, two roofs, a checkerboard, NaN and 1e30 spikes, 1-pixel and 3 x 3 grids,
+  the southern hemisphere and both sides of three UTM zone boundaries (the same 4-face hip roof is found).
+- Secrets (`apps/api/test/pure/secrets.test.ts`): the real client against a fake Google in six modes (ok, HTTP 500
+  with the URL in the body, fetch throwing with the URL in its message, a bad file, no imagery, a hang); every console
+  channel, the app's error log, the outcome counters, the snapshot and the thrown error are captured and grepped for
+  the key, its URL-encoding and `googleapis.com`. A static check fails if the provider or estimator code passes a URL
+  or key to a console call or an error, or sets a `cause`.
+- Dependency audit (`npm audit --omit=dev`, 2026-10-14): `geotiff@3.0.5` (MIT) and its runtime dependencies
+  (`@petamoriken/float16` MIT, `lerc` Apache-2.0, `pako` MIT AND Zlib, `parse-headers` MIT, `quick-lru` MIT, `web-worker`
+  Apache-2.0, `xml-utils` CC0-1.0, `zstddec` MIT AND BSD-3-Clause) have no advisories and no copyleft licence. The audit
+  does report `maplibre-gl` (critical, XSS in DOM.sanitize) and `uuid` via `exceljs` (moderate), both outside this
+  track.
+- Not changed: redirects. A redirect from Google would be followed with the key in the URL; refusing redirects might
+  break the live app if Google's file endpoint ever redirects, and that cannot be checked without a paid call.

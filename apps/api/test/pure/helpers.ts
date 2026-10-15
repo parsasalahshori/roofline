@@ -21,17 +21,17 @@ export class ScriptedLayers implements SolarLayersApi {
   }
 }
 
-export function pureDeps(solarLayers: SolarLayersApi, o: { mode?: 'off' | 'shadow' | 'on' } = {}): { deps: AppDeps; events: Roof3dEvent[]; errors: unknown[] } {
+export function pureDeps(solarLayers: SolarLayersApi, o: { mode?: 'off' | 'shadow' | 'on'; nodeEnv?: string; collect?: boolean } = {}): { deps: AppDeps; events: Roof3dEvent[]; errors: unknown[] } {
   const events: Roof3dEvent[] = [];
   const errors: unknown[] = [];
   const deps = {
     solarLayers,
     clock: { now: () => NOW },
     objectStore: { configured: false },
-    config: { ROOF_3D_MODE: o.mode ?? 'on', NODE_ENV: 'test' },
+    config: { ROOF_3D_MODE: o.mode ?? 'on', NODE_ENV: o.nodeEnv ?? 'test' },
     logError: (err: unknown) => errors.push(err),
   } as unknown as AppDeps;
-  onRoof3dEvent(deps, (e) => events.push(e));
+  if (o.collect !== false) onRoof3dEvent(deps, (e) => events.push(e));
   return { deps, events, errors };
 }
 

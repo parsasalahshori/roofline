@@ -341,7 +341,10 @@ async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | n
   const stamp = (s: Roof3dSnapshot) => roof3dSnapshotStamp(s);
   let { layers, reused } = await layersFor(deps, point, building);
   const fetchedAt = () => deps.clock.now().toISOString();
-  if (layers === null) return stamp({ fetchedAt: fetchedAt(), at, roof: null, none: 'no-imagery' });
+  if (layers === null) {
+    countRoof3d(deps, 'no-imagery', { reused });
+    return stamp({ fetchedAt: fetchedAt(), at, roof: null, none: 'no-imagery' });
+  }
   const steep = steepRoof(building);
   let found = roofOnLayersResult(layers, point, { steep, building });
   if ('miss' in found && found.miss === 'clipped') {
