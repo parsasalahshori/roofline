@@ -136,6 +136,17 @@ export function tierReasons(q: RoofQuality): RoofQuality {
  */
 export const DIFFERS_AREA_SHARE = 1 / 3;
 
+/**
+ * ...or when the area at stake is at least this share of the roof's plan area: the plan area by which the differing
+ * faces and Google's segments under them disagree (sum of |ours - Google's| over those faces). 5%: the benchmark's
+ * "area within 5%" line, half the 10% at which a roof counts as badly measured, so a disagreement that alone could take
+ * an otherwise right roof out of that band is never only a note. A pitch difference changes a face's area by a few
+ * percent; an area difference this big means the two do not agree on what the face is (a porch, a crown, a wing).
+ * Calibrated on DEV only (docs/roof-3d/remediate.md): it restores the review on the one bad DEV roof (+13.8%) the
+ * third-of-area rule had demoted, at the cost of two more flags on houses without an answer key.
+ */
+export const DIFFERS_STAKE_SHARE = 0.05;
+
 /** The share of the main faces' area (150 sq ft or more, with a segment) whose pitch or facing differ from Google's. */
 export function differingShare(roof: Roof3d, building: SolarBuilding | null): number {
   const main = checkRoof(roof, building).rows.filter((r) => r.main);
@@ -144,8 +155,21 @@ export function differingShare(roof: Roof3d, building: SolarBuilding | null): nu
   return all > 0 ? off / all : 0;
 }
 
+/** The plan area at stake in the main faces that differ from Google's segments, as a share of the roof's plan area. */
+export function differingStake(roof: Roof3d, building: SolarBuilding | null): number {
+  const rows = checkRoof(roof, building).rows;
+  const total = roof.faces.reduce((t, f) => t + f.planAreaSqFt, 0);
+  const gap = rows.filter((r) => r.main && (!r.pitchOk || !r.facingOk)).reduce((t, r) => t + Math.abs(r.planSqFt - r.segment!.planSqFt), 0);
+  return total > 0 ? gap / total : 0;
+}
+
+/** Whether a Google difference needs a review (not only a note): DIFFERS_AREA_SHARE of the main area or DIFFERS_STAKE_SHARE at stake. */
+export function differsNeedsReview(roof: Roof3d, building: SolarBuilding | null): boolean {
+  return differingShare(roof, building) >= DIFFERS_AREA_SHARE || differingStake(roof, building) >= DIFFERS_STAKE_SHARE;
+}
+
 /** Confidence of a face whose own edges are all creases (no outline edge to check): a verified edge's. */
-const INTERIOR_FACE_CONFIDENCE = 0.865;
+const INTERIOR_FACE_CONFIDENCE = 0.771;
 /**
  * A face whose pitch or facing differ from Google's segment under it keeps this share of its confidence: when they
  * differ by more than 1/12 ours is the closer to EagleView 16 times in 27 (failure taxonomy, mode 12), so a
@@ -204,7 +228,8 @@ export function withFaceConfidence(roof: Roof3d, building: SolarBuilding | null)
 
 /**
  * The roof as the server keeps it: 'differs-from-google' when a main face misses Google's segment, among its review
- * reasons when the faces that do carry DIFFERS_AREA_SHARE of the main area or more, else among its notes; and each
+ * reasons when the faces that do carry DIFFERS_AREA_SHARE of the main area or more or put DIFFERS_STAKE_SHARE of the
+ * roof's area at stake (differsNeedsReview), else among its notes; and each
  * face's confidence (withFaceConfidence).
  */
 export function withGoogleCheck(roof: Roof3d, building: SolarBuilding | null): Roof3d {
@@ -213,6 +238,6 @@ export function withGoogleCheck(roof: Roof3d, building: SolarBuilding | null): R
   const has = roof.quality.reasons.includes('differs-from-google') || (roof.quality.notes ?? []).includes('differs-from-google');
   if (has || !differsFromGoogle(roof, building)) return checked;
   const q = roof.quality;
-  const quality = differingShare(roof, building) >= DIFFERS_AREA_SHARE ? { ...q, reasons: [...q.reasons, 'differs-from-google' as const] } : { ...q, notes: [...(q.notes ?? []), 'differs-from-google' as const] };
+  const quality = differsNeedsReview(roof, building) ? { ...q, reasons: [...q.reasons, 'differs-from-google' as const] } : { ...q, notes: [...(q.notes ?? []), 'differs-from-google' as const] };
   return { ...checked, quality: tierReasons(quality) };
 }

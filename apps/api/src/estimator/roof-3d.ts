@@ -278,11 +278,14 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
 }
 
 /**
- * Chance an outline edge lies within 0.5 m of where EagleView puts it, by its eave support: 86.5% where the height map
- * shows the eave drop, 58.2% where it does not (failure taxonomy section 2.3: pooled samples of the 54 saved houses
- * against translation-aligned EagleView outlines; the support classes themselves are not tuned on these houses).
+ * Chance an outline edge lies within 0.5 m of where EagleView puts it, by its eave support: 77.1% where the height map
+ * shows the eave drop (strong or weak), 48.9% where it does not. Measured on the benchmark's DEV split only (18
+ * EagleView houses, 7,212 and 877 outline samples every 0.2 m, against translation-aligned EagleView outlines;
+ * roof-3d-confidence-calib.ts, docs/roof-3d/remediate.md). The earlier 86.5% / 58.2% pooled all 54 saved houses,
+ * held-out ones included. Samples along one house are correlated, so treat the third digit as noise; the gap between
+ * the two (about 28 points) holds for weakM 0.4-0.6 (unverified 47.4-51.0%, verified 77.1-77.3%).
  */
-export const EDGE_AGREEMENT = { verified: 0.865, unverified: 0.582 } as const;
+export const EDGE_AGREEMENT = { verified: 0.771, unverified: 0.489 } as const;
 /**
  * An outline needs a review ('edges-unverified') when at least this share of its length is unverified AND that is at
  * least EDGES_UNVERIFIED_MIN_FT. Chosen on the benchmark's DEV split (docs/roof-3d/confidence.md, "Calibration").
@@ -336,11 +339,13 @@ export function withEdgeEvidence(roof: Roof3d, layers: RoofLayers, green: Uint8A
     return { ...roof, quality: { ...roof.quality, edgeSupportFailure: 'error' } };
   }
   if (!support.ok) return { ...roof, quality: { ...roof.quality, edgeSupportFailure: support.reason } };
-  // eaveSupport drops repeated corners; map its edges back onto the stored outline's corners.
+  // eaveSupport drops repeated corners; map its edges back onto the stored outline's corners. An edge starts at the
+  // last copy of a repeated corner (the one whose next corner differs), so outline[from] -> outline[from + 1] is the
+  // edge itself, never the zero-length step between two copies.
   const from: number[] = [];
   roof.outline.forEach((p, i) => {
-    const prev = roof.outline[(i + roof.outline.length - 1) % roof.outline.length]!;
-    if (prev[0] !== p[0] || prev[1] !== p[1]) from.push(i);
+    const next = roof.outline[(i + 1) % roof.outline.length]!;
+    if (next[0] !== p[0] || next[1] !== p[1]) from.push(i);
   });
   const edges: Roof3dEdge[] = support.edges.map((e) => ({
     from: from[e.edge] ?? e.edge,

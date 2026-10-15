@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { isRoof3d, type LngLat, needsReview, ROOF_QUALITY_REASONS, ROOF_QUALITY_SEVERITY, type Roof3d, type Roof3dSnapshot, type RoofQuality, roof3dSnapshotFresh, roof3dSnapshotStamp, roof3dSnapshotVersion } from '@roofline/shared';
 import { lngLatToUtm, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
-import { EDGES_UNVERIFIED_SHARE, roofOnLayers, withEdgeEvidence } from '../../src/estimator/roof-3d.ts';
-import { checkRoof, DIFFERS_AREA_SHARE, differingShare, formatCheck, tierReasons, withFaceConfidence, withGoogleCheck } from '../../src/estimator/roof-3d-compare.ts';
+import { EDGE_AGREEMENT, EDGES_UNVERIFIED_SHARE, roofOnLayers, withEdgeEvidence } from '../../src/estimator/roof-3d.ts';
+import { checkRoof, DIFFERS_AREA_SHARE, DIFFERS_STAKE_SHARE, differingShare, differingStake, formatCheck, tierReasons, withFaceConfidence, withGoogleCheck } from '../../src/estimator/roof-3d-compare.ts';
 import type { RoofLayers } from '../../src/providers/solar-layers.ts';
 import { hipLayers } from '../roof-3d-fixture.ts';
 
@@ -46,6 +46,73 @@ function treeOnEast(layers: RoofLayers): RoofLayers {
   return { ...layers, raster: { ...layers.raster, dsm }, photo: { ...layers.photo!, rgb } };
 }
 
+/** A long house, about 40 m east-west by 14 m north-south. */
+const LONG: LngLat[] = [
+  [-96.0, 41.25],
+  [-95.99952, 41.25],
+  [-95.99952, 41.250126],
+  [-96.0, 41.250126],
+  [-96.0, 41.25],
+];
+const LONG_INSIDE: LngLat = [-95.99976, 41.250063];
+
+/** A rough, green tree crown 7 m tall from one side's eave to 4 m out, along that whole side (mask untouched). */
+function crownOn(layers: RoofLayers, ring: readonly LngLat[], side: 'south' | 'east'): RoofLayers {
+  const zone = utmZoneOfEpsg(layers.epsg)!;
+  const lng1 = Math.max(...ring.map((p) => p[0]));
+  const lng0 = Math.min(...ring.map((p) => p[0]));
+  const lat0 = Math.min(...ring.map((p) => p[1]));
+  const lat1 = Math.max(...ring.map((p) => p[1]));
+  const sw = lngLatToUtm(zone, lng0, lat0);
+  const ne = lngLatToUtm(zone, lng1, lat1);
+  const { width, height, pixelSizeM: s } = layers.raster;
+  const dsm = Float32Array.from(layers.raster.dsm);
+  const rgb = Uint8Array.from(layers.photo!.rgb);
+  for (let r = 0; r < height; r++) {
+    for (let c = 0; c < width; c++) {
+      const e = layers.originX + (c + 0.5) * s;
+      const n = layers.originY - (r + 0.5) * s;
+      const hit =
+        side === 'east'
+          ? e > ne.easting + 0.05 && e < ne.easting + 4 && n > sw.northing - 1 && n < ne.northing + 1
+          : n < sw.northing - 0.05 && n > sw.northing - 4 && e > sw.easting - 1 && e < ne.easting + 1;
+      if (!hit) continue;
+      dsm[r * width + c] = 7 + (((r * 7 + c * 13) % 7) - 3) * 0.1;
+      rgb.set([60, 130, 50], (r * width + c) * 3);
+    }
+  }
+  return { ...layers, raster: { ...layers.raster, dsm }, photo: { ...layers.photo!, rgb } };
+}
+
+describe('edges-unverified at fixed shares (not the rule restated)', () => {
+  it('a crown along a long side (about 0.37 of the outline) needs a review', () => {
+    const roof = roofOnLayers(crownOn(hipLayers(LONG), LONG, 'south'), LONG_INSIDE)!;
+    const share = roof.quality!.edgeSupport!.unverifiedShare;
+    expect(share).toBeGreaterThan(0.3);
+    expect(share).toBeLessThan(0.45);
+    expect(roof.quality!.reasons).toContain('edges-unverified');
+  });
+
+  it('a crown along a short side (about 0.13 of the outline) does not', () => {
+    const roof = roofOnLayers(crownOn(hipLayers(LONG), LONG, 'east'), LONG_INSIDE)!;
+    const share = roof.quality!.edgeSupport!.unverifiedShare;
+    expect(share).toBeGreaterThan(0.08);
+    expect(share).toBeLessThan(0.2);
+    expect(roof.quality!.reasons).not.toContain('edges-unverified');
+  });
+
+  it('an outline with a repeated corner: each edge keeps the index of its own first corner in the stored outline', () => {
+    const layers = hipLayers(HOUSE);
+    const roof = roofOnLayers(layers, INSIDE)!;
+    // Repeat corner 1: eave support drops the zero-length edge, so its edges must map back past the repeat.
+    const outline = [roof.outline[0]!, roof.outline[1]!, roof.outline[1]!, ...roof.outline.slice(2)];
+    const again = withEdgeEvidence({ ...roof, outline, edges: undefined }, layers, null);
+    expect(again.edges!.length).toBe(roof.outline.length);
+    expect(again.edges!.map((e) => e.from)).toEqual([0, ...roof.outline.slice(1).map((_, k) => k + 2)]);
+    for (const e of again.edges!) expect(outline[e.from]).not.toEqual(outline[(e.from + 1) % outline.length]);
+  });
+});
+
 describe('eave evidence on the stored roof', () => {
   it('a clean hip roof: every edge strongly supported, no review for its edges', () => {
     const roof = roofOnLayers(hipLayers(HOUSE), INSIDE)!;
@@ -54,7 +121,7 @@ describe('eave evidence on the stored roof', () => {
     expect(roof.edges!.every((e) => e.support === 'strong' && e.unverifiedShare === 0 && e.reason === null && !e.canopy)).toBe(true);
     expect(roof.quality!.edgeSupport!.unverifiedShare).toBe(0);
     expect(roof.quality!.reasons).not.toContain('edges-unverified');
-    expect(roof.edges!.every((e) => e.confidence === 0.865)).toBe(true);
+    expect(roof.edges!.every((e) => e.confidence === EDGE_AGREEMENT.verified)).toBe(true);
     // The edges' lengths add up to the outline's perimeter (about 2 x (25 + 22) m).
     const perimeterFt = roof.edges!.reduce((t, e) => t + e.lengthFt, 0);
     expect(perimeterFt).toBeGreaterThan(290);
@@ -139,10 +206,12 @@ describe('review reasons by severity (golden decisions)', () => {
   it('the Google check: a minor difference is a note, a difference over a third of the main roof a review, once', () => {
     const roof = roofOnLayers(hipLayers(HOUSE), INSIDE)!;
     // Google's segments under every face agree, except at 12/12 under the largest (ours is 6/12): one face of four.
-    const seg = (f: Roof3d['faces'][number], pitchDeg: number) => ({ center: f.labelAt, pitchDeg, azimuthDeg: f.azimuthDeg, groundAreaM2: 100 });
+    // Each segment as big as our face over it: only the pitch differs, so nothing is at stake in area.
+    const seg = (f: Roof3d['faces'][number], pitchDeg: number) => ({ center: f.labelAt, pitchDeg, azimuthDeg: f.azimuthDeg, groundAreaM2: f.planAreaSqFt / 10.7639104167 });
     const agree = (Math.atan(0.5) * 180) / Math.PI;
     const building = { center: INSIDE, box: null, segments: roof.faces.map((f, k) => seg(f, k === 0 ? 45 : agree)) } as never;
     expect(differingShare(roof, building)).toBeLessThan(DIFFERS_AREA_SHARE);
+    expect(differingStake(roof, building)).toBeLessThan(DIFFERS_STAKE_SHARE);
     const once = withGoogleCheck(roof, building);
     expect(once.quality!.notes).toEqual(['differs-from-google']);
     expect(once.quality!.reasons).not.toContain('differs-from-google');
@@ -153,11 +222,35 @@ describe('review reasons by severity (golden decisions)', () => {
     expect(withGoogleCheck(roof, half).quality!.reasons).toContain('differs-from-google');
     expect(withGoogleCheck(roof, half).quality!.notes).toBeUndefined();
     // The disagreeing face loses confidence; the others keep their edges'.
-    expect(once.faces[0]!.confidence).toBeCloseTo(0.865 * 0.8, 3);
-    expect(once.faces.slice(1).every((f) => f.confidence === 0.865)).toBe(true);
+    expect(once.faces[0]!.confidence).toBeCloseTo(EDGE_AGREEMENT.verified * 0.8, 3);
+    expect(once.faces.slice(1).every((f) => f.confidence === EDGE_AGREEMENT.verified)).toBe(true);
     expect(formatCheck('hip', once, checkRoof(once, building))).toMatch(/unverified 0% \(0 ft\).*notes: differs-from-google/);
     // No segments at all: nothing to differ from.
     expect(withGoogleCheck(roof, null).quality).toEqual(roof.quality);
+  });
+
+  it('a small differing face with much more area than Google sees under it is a review, not a note (ev-51881820-like)', () => {
+    // The over-measured attachment: one face of four disagrees (under a third of the main roof), but Google's segment
+    // under it is a third of our face's area. That gap alone moves the roof's area by more than DIFFERS_STAKE_SHARE.
+    const roof = roofOnLayers(hipLayers(HOUSE), INSIDE)!;
+    const smallest = roof.faces.reduce((m, f, k) => (f.planAreaSqFt < roof.faces[m]!.planAreaSqFt ? k : m), 0);
+    const agree = (Math.atan(0.5) * 180) / Math.PI;
+    const segments = roof.faces.map((f, k) => ({
+      center: f.labelAt,
+      pitchDeg: k === smallest ? 10 : agree,
+      azimuthDeg: f.azimuthDeg,
+      groundAreaM2: (k === smallest ? f.planAreaSqFt / 3 : f.planAreaSqFt) / 10.7639104167,
+    }));
+    const building = { center: INSIDE, box: null, segments } as never;
+    expect(differingShare(roof, building)).toBeLessThan(DIFFERS_AREA_SHARE);
+    expect(differingStake(roof, building)).toBeGreaterThanOrEqual(DIFFERS_STAKE_SHARE);
+    const out = withGoogleCheck(roof, building);
+    expect(out.quality!.reasons).toContain('differs-from-google');
+    expect(needsReview(out)).toBe(true);
+    // The same disagreement in pitch only (Google's segment as big as ours): a note.
+    const pitchOnly = { center: INSIDE, box: null, segments: segments.map((g, k) => ({ ...g, groundAreaM2: roof.faces[k]!.planAreaSqFt / 10.7639104167 })) } as never;
+    expect(withGoogleCheck(roof, pitchOnly).quality!.reasons).not.toContain('differs-from-google');
+    expect(withGoogleCheck(roof, pitchOnly).quality!.notes).toEqual(['differs-from-google']);
   });
 
   it('face confidence follows the edges a face ends on', () => {
