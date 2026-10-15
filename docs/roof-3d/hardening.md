@@ -112,3 +112,19 @@ point margin alone (still fails for long houses, and buys more for small ones th
   track.
 - Not changed: redirects. A redirect from Google would be followed with the key in the URL; refusing redirects might
   break the live app if Google's file endpoint ever redirects, and that cannot be checked without a paid call.
+
+## 5. The mask cut, typed and visible (FM11)
+
+**Problem.** Before fitting, the reconstruction removes mask parts lying on the ground (`groundParts`) and, for a
+terrace home, the neighbours' part, and clears both from the mask the outline is then checked against, so
+`outlineIoU` cannot see the loss (one ablation lost 42% of a roof with a clean quality block).
+
+**Approach (additive only).** `reconstructRoof` counts what each cut removed from Google's mask part (`LocalRoof.cuts`,
+three counters added in `roof-reconstruct/index.ts`, no decision changed) and the server attaches
+`Roof3d.maskCut = { maskSqFt, groundSqFt, terraceSqFt, removedShare, reason }`, with reason `ground-cut` or
+`terrace-cut` when more than 10% (`ROOF_MASK_CUT_SHARE`, the benchmark's "bad" area line) was removed. It is not a
+review reason here: turning it into one (and choosing its tier) belongs to the confidence track, which can read it.
+The benchmark's metrics are identical on all 54 dev houses (only the result hashes change, by the new field).
+
+**Not done.** Falling back to the uncut roof when the ground fit has too few band pixels (an algorithm change in
+`ground.ts`, owned elsewhere).

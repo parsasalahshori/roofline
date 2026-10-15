@@ -81,6 +81,13 @@ export type LocalRoof = {
   maskAreaM2: number;
   clipped: boolean;
   quality: RoofQuality;
+  /**
+   * How much of Google's mask part the reconstruction cut away before fitting, square metres: the part as it came
+   * (maskM2), what lay on the ground (groundM2: a patio, a drive) and what belonged to the buildings it touches
+   * (terraceM2). Absent on results made before it existed. (Hardening, FM11: the cuts are cleared from the mask the
+   * outline is checked against, so quality cannot see them; this records them.)
+   */
+  cuts?: { maskM2: number; groundM2: number; terraceM2: number };
 };
 
 const FLAT_X12 = 2;
@@ -183,6 +190,9 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   }
   // Google's own mask of this roof, as it came: what the outline is checked against.
   const googleMask = roof.slice();
+  const maskPx0 = countSet(googleMask);
+  let groundPx = 0;
+  let terracePx = 0;
   roof = fillHoles(g, largestComponent(g, open3(g, fillHoles(g, close(g, roof, closeR)))));
   let roofPx = countSet(roof);
   if (roofPx * s * s < (opts.minRoofM2 ?? 15)) return null;
@@ -215,6 +225,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     if (gone !== null) {
       for (let i = 0; i < roof.length; i++) {
         if (gone[i] !== 1) continue;
+        if (googleMask[i] === 1) groundPx++;
         roof[i] = 0;
         googleMask[i] = 0;
       }
@@ -239,7 +250,11 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       const found0 = findPlanes(g, s, dsm, roof, rng, planePrm, tree);
       const faces0 = found0.length > 0 ? buildFaces(g, s, dsm, roof, found0, planePrm, tree) : null;
       const mine = homeInTerrace(g, s, dsm, roof, box, faces0);
-      for (let i = 0; i < roof.length; i++) if (mine[i] !== 1) googleMask[i] = 0;
+      for (let i = 0; i < roof.length; i++) {
+        if (mine[i] === 1) continue;
+        if (googleMask[i] === 1) terracePx++;
+        googleMask[i] = 0;
+      }
       roof = fillHoles(g, largestComponent(g, open3(g, fillHoles(g, close(g, mine, closeR)))));
       roofPx = countSet(roof);
       if (roofPx * s * s < (opts.minRoofM2 ?? 15)) return null;
@@ -343,6 +358,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     maskAreaM2: roofPx * s * s,
     clipped,
     quality,
+    cuts: { maskM2: maskPx0 * s * s, groundM2: groundPx * s * s, terraceM2: terracePx * s * s },
   };
 }
 

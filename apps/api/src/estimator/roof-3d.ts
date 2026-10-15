@@ -10,6 +10,7 @@ import {
   type Roof3dStructure,
   roof3dSnapshotFresh,
   roof3dSnapshotStamp,
+  roofMaskCut,
   roof3dSnapshotVersion,
   type SolarBuilding,
 } from '@roofline/shared';
@@ -247,7 +248,8 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   if (local.clipped) return { miss: 'clipped' };
   const toLngLat = (x: number, y: number) => utmToLngLat(zone, layers.originX + x, layers.originY + y);
   const meta = { imageryQuality: layers.imageryQuality, imageryDate: layers.imageryDate };
-  const roof = toRoof3d(local, toLngLat, meta);
+  const cut = roofMaskCut(local.cuts);
+  const roof: Roof3d = { ...toRoof3d(local, toLngLat, meta), ...(cut !== null ? { maskCut: cut } : {}) };
   // Detached garages, sheds and carports on the same layers: offered beside the main roof, not added to it.
   const structures: Roof3dStructure[] = [];
   for (const other of otherRoofParts(raster, local)) {

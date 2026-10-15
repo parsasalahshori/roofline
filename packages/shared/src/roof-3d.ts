@@ -62,7 +62,39 @@ export type Roof3d = {
    * as EagleView counts them as further structures). Absent when there are none, or on older reconstructions.
    */
   structures?: Roof3dStructure[];
+  /**
+   * What the reconstruction cut out of Google's mask part before fitting (absent on older reconstructions): see
+   * RoofMaskCut. Recorded so a large cut is visible to review; the outline's own quality cannot see it.
+   */
+  maskCut?: RoofMaskCut;
 };
+
+/** Why a reconstruction cut part of Google's mask away: parts lying on the ground, or the buildings a terrace home touches. */
+export const ROOF_MASK_CUT_REASONS = ['ground-cut', 'terrace-cut'] as const;
+export type RoofMaskCutReason = (typeof ROOF_MASK_CUT_REASONS)[number];
+/**
+ * A cut of more than this share of Google's mask part is significant: reported with a reason so it can be reviewed
+ * (FM11: one ablation lost 42% of a roof to the ground cut with a clean quality block). 10% is the benchmark's "bad"
+ * line for area: a cut that size moves the price as much as a wrong measurement.
+ */
+export const ROOF_MASK_CUT_SHARE = 0.1;
+/**
+ * The mask part as it came (maskSqFt), what was cut as lying on the ground (groundSqFt) and as other buildings of a
+ * terrace (terraceSqFt), plan square feet; removedShare = (ground + terrace) / mask; reason: the larger cut's kind
+ * when removedShare exceeds ROOF_MASK_CUT_SHARE, else null.
+ */
+export type RoofMaskCut = { maskSqFt: number; groundSqFt: number; terraceSqFt: number; removedShare: number; reason: RoofMaskCutReason | null };
+
+const SQ_FT_PER_M2 = 10.7639104167;
+
+/** The RoofMaskCut for the areas cut (square metres), or null when they are not finite. */
+export function roofMaskCut(cuts: { maskM2: number; groundM2: number; terraceM2: number } | null | undefined): RoofMaskCut | null {
+  if (cuts == null || ![cuts.maskM2, cuts.groundM2, cuts.terraceM2].every((v) => Number.isFinite(v) && v >= 0) || !(cuts.maskM2 > 0)) return null;
+  const removedShare = Math.min(1, (cuts.groundM2 + cuts.terraceM2) / cuts.maskM2);
+  const reason = removedShare > ROOF_MASK_CUT_SHARE ? (cuts.groundM2 >= cuts.terraceM2 ? 'ground-cut' : 'terrace-cut') : null;
+  const ft = (m2: number) => Math.round(m2 * SQ_FT_PER_M2 * 10) / 10;
+  return { maskSqFt: ft(cuts.maskM2), groundSqFt: ft(cuts.groundM2), terraceSqFt: ft(cuts.terraceM2), removedShare: Math.round(removedShare * 1000) / 1000, reason };
+}
 
 /** Another roof near the main one (see Roof3d.structures). */
 export type Roof3dStructure = {
