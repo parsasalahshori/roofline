@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { BenchDataError, cohortCounts, runBench } from '../bench/roof3d/bench.ts';
 import { DEFAULT_GATES, formatGates, GatesSchema, compareSplits, gatesFailed, type GateRow } from '../bench/roof3d/gates.ts';
@@ -43,9 +44,12 @@ function value(name: string): string | undefined {
 /** The files whose change can change a reconstruction (everything the estimator's roof depends on). */
 const RECONSTRUCTION_PATHS = ['packages/shared/src/roof-reconstruct', 'packages/shared/src/roof-3d.ts', 'apps/api/src/estimator/roof-3d.ts', 'apps/api/src/estimator/roof-3d-compare.ts', 'apps/api/src/providers/google-solar-layers.ts', 'apps/api/src/providers/google-solar.ts'];
 
+/** The repository root: npm runs a workspace script from the workspace's folder, but the paths above are the root's. */
+const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+
 function git(args: string[]): string {
   try {
-    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
     return '';
   }
