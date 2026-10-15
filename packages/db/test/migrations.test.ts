@@ -171,6 +171,10 @@ describe('schema', () => {
       `select conname from pg_constraint where conrelid = 'public.window_measurements'::regclass and contype = 'f'`,
     );
     expect(fks.map((f) => f.conname)).toContain('window_measurements_company_property_fk');
+    const cols = await ownerQuery<{ column_name: string }>(
+      `select column_name from information_schema.columns where table_schema = 'public' and table_name = 'window_measurements'`,
+    );
+    expect(cols.map((c) => c.column_name)).toEqual(expect.arrayContaining(['photos', 'adjustments', 'uploads', 'photos_delete_by']));
   });
 
   test('D1 tables are tenant tables with RLS forced', async () => {

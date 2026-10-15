@@ -6,6 +6,7 @@ import type { LngLat, Ring, WindowMeasurementView } from '@roofline/shared';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
 import jpeg from 'jpeg-js';
 import { DetectorError, type WindowDetector } from '../src/providers/window-detector.ts';
+import { windowPhoto } from './window-photo-fixture.ts';
 
 /*
  * Measure windows through the API, with fakes for every outside service: the house's outline comes from a footprint
@@ -272,5 +273,106 @@ describe('GET /:id/preview', () => {
     expect(res.body.quotes[0].totalCents).toBeGreaterThan(0);
     const office = await who.as('office');
     expect((await office.get(`/api/window-measurements/${view.id}/preview`)).body.quotes).toHaveLength(3);
+  });
+});
+
+describe('on-site window photos', () => {
+  async function upload(agent: SuperAgent, id: string, bytes: Uint8Array) {
+    return agent.post(`/api/window-measurements/${id}/uploads`).attach('photo', Buffer.from(bytes), 'window.jpg');
+  }
+
+  it('uploads a photo (multipart or raw), serves it privately, and sizes a window on it from a letter sheet', async () => {
+    const { owner, view } = await measuredHouse();
+    const photo = windowPhoto({ focal35mm: 26 });
+    const res = await upload(owner, view.id, photo.bytes);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body).toEqual({ id: expect.any(String), widthPx: 900, heightPx: 1200, focal35mm: 26, takenAt: '2026-10-15T10:30:00' });
+    const raw = await owner.post(`/api/window-measurements/${view.id}/uploads`).set('Content-Type', 'image/jpeg').send(Buffer.from(windowPhoto({ exif: false, widthPx: 200, heightPx: 300 }).bytes));
+    expect(raw.status).toBe(201);
+    expect(raw.body).toMatchObject({ widthPx: 200, heightPx: 300, focal35mm: null, takenAt: null });
+
+    const got = await owner.get(`/api/window-measurements/${view.id}/uploads/${res.body.id}`).buffer(true);
+    expect(got.status).toBe(200);
+    expect(got.headers['content-type']).toBe('image/jpeg');
+    expect(got.headers['cache-control']).toBe('private, max-age=86400');
+    expect(Buffer.compare(got.body as Buffer, Buffer.from(photo.bytes))).toBe(0);
+
+    const patched = await owner.patch(`/api/window-measurements/${view.id}`).send({
+      photoWindows: [{ id: 'p1', uploadId: res.body.id, label: 'Kitchen', corners: photo.window, scale: { kind: 'reference', reference: 'letter', corners: photo.paper } }],
+    });
+    expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+    const after = patched.body as WindowMeasurementView;
+    expect(after.uploads).toHaveLength(2);
+    const w = after.photoWindows![0]!;
+    expect(Math.abs(w.widthIn - 36) / 36).toBeLessThan(0.02);
+    expect(Math.abs(w.heightIn - 60) / 60).toBeLessThan(0.02);
+    expect(w).toMatchObject({ id: 'p1', label: 'Kitchen', sizeClass: 'standard', quality: 'good' });
+
+    // Priced as measured; with every window photographed the estimate counts nothing.
+    const before = (await owner.get(`/api/window-measurements/${view.id}/preview`)).body.quotes[0].windows;
+    expect(before).toBe(total(view) + 1);
+    await owner.patch(`/api/window-measurements/${view.id}`).send({ photosCoverAllWindows: true });
+    const all = (await owner.get(`/api/window-measurements/${view.id}/preview`)).body.quotes[0];
+    expect(all.windows).toBe(1);
+    expect(all.lines).toEqual([expect.objectContaining({ sizeClass: 'standard', count: 1 })]);
+  });
+
+  it('a phone photo turned by EXIF (orientation 6): corners as displayed size it the same', async () => {
+    const { owner, view } = await measuredHouse();
+    const photo = windowPhoto({ orientation: 6 });
+    const res = await upload(owner, view.id, photo.bytes);
+    expect(res.body).toMatchObject({ widthPx: 900, heightPx: 1200 });
+    const patched = await owner.patch(`/api/window-measurements/${view.id}`).send({
+      photoWindows: [{ id: 'p1', uploadId: res.body.id, corners: photo.window, scale: { kind: 'known-side', side: 'width', inches: 36 } }],
+    });
+    expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+    expect(Math.abs(patched.body.photoWindows[0].heightIn - 60) / 60).toBeLessThan(0.02);
+  });
+
+  it('refuses other files, HEIC, a photo over 12 MB, and a 41st photo', async () => {
+    const { owner, view } = await measuredHouse();
+    const text = await upload(owner, view.id, Buffer.from('<html>hello</html>'));
+    expect(text.status).toBe(415);
+    expect(text.body.error).toBe('Upload a JPEG or PNG photo.');
+    const heic = await upload(owner, view.id, Uint8Array.from([0, 0, 0, 24, ...Buffer.from('ftypheic'), 0, 0, 0, 0, 1, 2, 3, 4]));
+    expect(heic.status).toBe(415);
+    expect(heic.body.error).toBe('Take the photo as JPEG, or set the camera to Most Compatible.');
+    const big = new Uint8Array(12 * 1024 * 1024 + 10);
+    big.set([0xff, 0xd8, 0xff]);
+    expect((await upload(owner, view.id, big)).status).toBe(413);
+    expect((await owner.post(`/api/window-measurements/${view.id}/uploads`).field('note', 'x')).status).toBe(400);
+    const dummy = { id: NO_UUID, widthPx: 10, heightPx: 10, focal35mm: null, takenAt: null, key: 'k', kind: 'jpeg', orientation: 1, bytes: 1, uploadedAt: NOW.toISOString() };
+    await ownerSql(`update window_measurements set uploads = $1::jsonb where id = $2`, [JSON.stringify(Array.from({ length: 40 }, () => dummy)), view.id]);
+    expect((await upload(owner, view.id, windowPhoto({ widthPx: 100, heightPx: 100 }).bytes)).status).toBe(409);
+  });
+
+  it('validates photographed windows; one the math cannot size is a 422 naming it', async () => {
+    const { owner, view } = await measuredHouse();
+    const photo = windowPhoto();
+    const id = (await upload(owner, view.id, photo.bytes)).body.id as string;
+    const url = `/api/window-measurements/${view.id}`;
+    const ok = { id: 'p1', uploadId: id, corners: photo.window, scale: { kind: 'known-side', side: 'width', inches: 36 } };
+    expect((await owner.patch(url).send({ photoWindows: [{ ...ok, uploadId: NO_UUID }] })).status).toBe(400);
+    expect((await owner.patch(url).send({ photoWindows: [{ ...ok, corners: [[0, 0], [5000, 0], [5000, 10], [0, 10]] }] })).status).toBe(400);
+    expect((await owner.patch(url).send({ photoWindows: [{ ...ok, scale: { kind: 'known-side', side: 'width', inches: 201 } }] })).status).toBe(400);
+    expect((await owner.patch(url).send({ photoWindows: [{ ...ok, scale: { kind: 'reference', reference: 'napkin', corners: photo.paper } }] })).status).toBe(400);
+    expect((await owner.patch(url).send({ photoWindows: [{ ...ok, corners: [[0, 0], [1, 'x'], [2, 2], [3, 3]] }] })).status).toBe(400);
+    expect((await owner.patch(url).send({ photoWindows: Array.from({ length: 61 }, (_, i) => ({ ...ok, id: `p${i}` })) })).status).toBe(400);
+    expect((await owner.patch(url).send({ photosCoverAllWindows: 'yes' })).status).toBe(400);
+    const line = [[100, 100], [200, 200], [300, 300], [400, 400]];
+    const bad = await owner.patch(url).send({ photoWindows: [{ ...ok, label: 'Den', scale: { kind: 'reference', reference: 'letter', corners: line } }] });
+    expect(bad.status).toBe(422);
+    expect(bad.body.error).toContain('"Den"');
+    expect((await owner.get(url)).body.adjustments.photoWindows).toBeUndefined();
+  });
+
+  it('another company cannot see, fetch or add photos', async () => {
+    const { owner, view } = await measuredHouse();
+    const id = (await upload(owner, view.id, windowPhoto({ widthPx: 100, heightPx: 100 }).bytes)).body.id as string;
+    const other = await who.as('owner', 'b');
+    expect((await other.get(`/api/window-measurements/${view.id}/uploads/${id}`)).status).toBe(404);
+    expect((await upload(other, view.id, windowPhoto({ widthPx: 100, heightPx: 100 }).bytes)).status).toBe(404);
+    const rep = await who.as('rep');
+    expect((await rep.get(`/api/window-measurements/${view.id}/uploads/${id}`)).status).toBe(404);
   });
 });

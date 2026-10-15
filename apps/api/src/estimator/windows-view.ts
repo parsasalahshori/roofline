@@ -3,6 +3,7 @@ import {
   type FacadePhoto,
   type MarkedBox,
   type MeasuredWindow,
+  type PhotoWindow,
   type WindowMeasurementView,
   type WindowsReviewReason,
   WINDOWS_REVIEW_REASONS,
@@ -11,6 +12,7 @@ import {
 import { estimateAllSides, estimateSidesAndBack, type HouseWalls, houseWalls } from './windows-estimate.ts';
 import { type Box, CAMERA_HEIGHT_M, type Camera, frontWalls, inRange, localFrame, sizeBox, type Vec, type Wall, wallsOf } from './windows-geometry.ts';
 import { correctedCamera, mainWall, type Quad, wallQuad } from './windows-lineup.ts';
+import { sizePhotoWindow } from './window-uploads.ts';
 
 /*
  * A stored window measurement as the API answers it (pure): marked windows are sized here from the stored camera and
@@ -169,9 +171,19 @@ export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasur
   const walls = wallsFor(geometry, photos);
   const estimated = walls === null ? (row.estimated ?? null) : windows.length > 0 ? estimateSidesAndBack(walls, windows) : estimateAllSides(walls);
 
+  // Windows photographed on site, sized with the shared math from each upload's displayed size and focal length.
+  const uploads = row.uploads ?? [];
+  const photoWindows = (row.adjustments.photoWindows ?? [])
+    .map((input) => {
+      const u = uploads.find((x) => x.id === input.uploadId);
+      return u === undefined ? null : sizePhotoWindow(input, u);
+    })
+    .filter((w): w is PhotoWindow => w !== null);
+  const allPhotographed = row.adjustments.photosCoverAllWindows === true && photoWindows.length > 0;
+
   const reasons = new Set<WindowsReviewReason>();
   for (const r of row.reviewReasons) if ((WINDOWS_REVIEW_REASONS as readonly string[]).includes(r)) reasons.add(r as WindowsReviewReason);
-  if (windows.length === 0 && estimated !== null) reasons.add('estimated-from-size');
+  if (windows.length === 0 && !allPhotographed && estimated !== null) reasons.add('estimated-from-size');
   if (windows.length > 0 && estimated !== null) reasons.add('front-only');
   if (row.windows.some((w) => w.confidence < LOW_CONFIDENCE)) reasons.add('low-confidence');
   if (photos.some((p) => p.capturedOn !== null && yearsBetween(p.capturedOn, now) > OLD_IMAGERY_YEARS)) reasons.add('old-imagery');
@@ -201,7 +213,11 @@ export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasur
       manualCounts: { ...row.adjustments.manualCounts },
       ...(row.adjustments.marked !== undefined ? { marked: row.adjustments.marked } : {}),
       ...(row.adjustments.wallCorners != null ? { wallCorners: row.adjustments.wallCorners } : {}),
+      ...(row.adjustments.photoWindows !== undefined ? { photoWindows: row.adjustments.photoWindows } : {}),
+      ...(row.adjustments.photosCoverAllWindows !== undefined ? { photosCoverAllWindows: row.adjustments.photosCoverAllWindows } : {}),
     },
     tookMs: row.tookMs,
+    photoWindows,
+    uploads: uploads.map((u) => ({ id: u.id, widthPx: u.widthPx, heightPx: u.heightPx, focal35mm: u.focal35mm, takenAt: u.takenAt })),
   };
 }

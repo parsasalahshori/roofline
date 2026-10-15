@@ -1,7 +1,11 @@
+import { randomUUID } from 'node:crypto';
+import type { Request } from 'express';
 import { Router } from 'express';
+import busboy from 'busboy';
 import { z } from 'zod';
-import { getWindowMeasurement, type StoredFacadePhoto, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
-import { priceWindows, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
+import { appendWindowUpload, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
+import { type PhotoWindowInput, priceWindows, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
+import { readImageInfo, sizePhotoWindow } from '../estimator/window-uploads.ts';
 import type { AppDeps } from '../app.ts';
 import { measureWindows } from '../estimator/measure-windows.ts';
 import { fitCorners, mainWall, type Quad } from '../estimator/windows-lineup.ts';
@@ -19,7 +23,19 @@ const MARKED_MESSAGE = 'Mark windows inside a photo of this measurement (60 at m
 const CORNERS_MESSAGE = 'Drag the four corners onto the house in a photo of this measurement.';
 
 const CREATE_FIELDS = ['propertyId', 'address'] as const;
-const PATCH_FIELDS = ['excludedWindowIds', 'manualCounts', 'marked', 'wallCorners'] as const;
+const PATCH_FIELDS = ['excludedWindowIds', 'manualCounts', 'marked', 'wallCorners', 'photoWindows', 'photosCoverAllWindows'] as const;
+const PHOTO_WINDOWS_MESSAGE = 'Mark each window inside its photo, with a paper on the glass or one side measured (6 to 200 in; 60 windows at most).';
+const COVER_MESSAGE = 'Please check this field.';
+const UPLOAD_TOO_BIG_MESSAGE = 'That photo is over 12 MB.';
+const UPLOAD_TYPE_MESSAGE = 'Upload a JPEG or PNG photo.';
+/** HEIC is refused for now (no converter on the server): the phone can save JPEG instead. */
+export const HEIC_MESSAGE = 'Take the photo as JPEG, or set the camera to Most Compatible.';
+const UPLOAD_MISSING_MESSAGE = 'Add a photo (form field "photo").';
+const UPLOADS_FULL_MESSAGE = 'This measurement has 40 photos already.';
+const STORAGE_DOWN_MESSAGE = "Photo storage isn't available right now.";
+export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+export const MAX_UPLOADS = 40;
+export const MAX_PHOTO_WINDOWS = 60;
 export const MAX_MARKED = 60;
 const MAX_COUNT = 200;
 /** Window ids: the server's UUIDs, or the ids the web app gives the boxes a person marks. */
@@ -52,6 +68,91 @@ const CornersSchema = z
   .object({ photoId: z.string().regex(UUID), corners: z.tuple([point01, point01, point01, point01]) })
   .strict()
   .nullable();
+
+const finite = z.number().finite();
+const QuadSchema = z.tuple([z.tuple([finite, finite]), z.tuple([finite, finite]), z.tuple([finite, finite]), z.tuple([finite, finite])]);
+const ScaleSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('reference'), reference: z.enum(Object.keys(WINDOW_PHOTO_REFERENCES) as [keyof typeof WINDOW_PHOTO_REFERENCES]), corners: QuadSchema }).strict(),
+  z.object({ kind: z.literal('known-side'), side: z.enum(['width', 'height']), inches: z.number().finite().min(6).max(200) }).strict(),
+]);
+const PhotoWindowsSchema = z
+  .array(
+    z
+      .object({
+        id: z.string().regex(WINDOW_ID),
+        uploadId: z.string().regex(UUID),
+        label: z.string().max(80).refine(noNul).optional(),
+        corners: QuadSchema,
+        scale: ScaleSchema,
+      })
+      .strict(),
+  )
+  .max(MAX_PHOTO_WINDOWS)
+  .refine((list) => new Set(list.map((w) => w.id)).size === list.length);
+
+/**
+ * The photo in an upload request: multipart/form-data with the file in the field "photo" (other fields ignored), or
+ * the raw image bytes as the body. At most MAX_UPLOAD_BYTES; a larger one is a 413 before more is read.
+ */
+function readUpload(req: Request): Promise<Uint8Array> {
+  const type = (req.headers['content-type'] ?? '').toLowerCase();
+  const tooBig = () => new AppError(413, UPLOAD_TOO_BIG_MESSAGE, 'photo');
+  if (type.startsWith('multipart/form-data')) {
+    return new Promise((resolve, reject) => {
+      let parser: busboy.Busboy;
+      try {
+        parser = busboy({ headers: req.headers, limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 10, parts: 11 } });
+      } catch {
+        reject(new AppError(400, UPLOAD_MISSING_MESSAGE, 'photo'));
+        return;
+      }
+      let found: Uint8Array | null = null;
+      let failed: AppError | null = null;
+      parser.on('file', (name, stream) => {
+        if (name !== 'photo') {
+          stream.resume();
+          return;
+        }
+        const parts: Buffer[] = [];
+        stream.on('data', (d: Buffer) => parts.push(d));
+        stream.on('limit', () => {
+          failed = tooBig();
+        });
+        stream.on('end', () => {
+          if (failed === null) found = new Uint8Array(Buffer.concat(parts));
+        });
+      });
+      parser.on('error', () => reject(new AppError(400, UPLOAD_MISSING_MESSAGE, 'photo')));
+      parser.on('close', () => {
+        if (failed !== null) reject(failed);
+        else if (found === null || found.length === 0) reject(new AppError(400, UPLOAD_MISSING_MESSAGE, 'photo'));
+        else resolve(found);
+      });
+      req.pipe(parser);
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const declared = Number(req.headers['content-length'] ?? '0');
+    if (declared > MAX_UPLOAD_BYTES) {
+      req.resume();
+      reject(tooBig());
+      return;
+    }
+    const parts: Buffer[] = [];
+    let total = 0;
+    req.on('data', (d: Buffer) => {
+      total += d.length;
+      if (total > MAX_UPLOAD_BYTES) {
+        req.destroy();
+        reject(tooBig());
+        return;
+      }
+      parts.push(d);
+    });
+    req.on('end', () => (total === 0 ? reject(new AppError(400, UPLOAD_MISSING_MESSAGE, 'photo')) : resolve(new Uint8Array(Buffer.concat(parts)))));
+    req.on('error', () => reject(new AppError(400, UPLOAD_MISSING_MESSAGE, 'photo')));
+  });
+}
 
 /** `:id` as a lowercase UUID; anything else cannot be a measurement, so it is a 404 like a missing one. */
 function idParam(raw: unknown): string {
@@ -111,6 +212,8 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const counts = 'manualCounts' in raw ? parseOr(CountsSchema, raw.manualCounts, COUNT_MESSAGE, 'manualCounts') : undefined;
     const marked = 'marked' in raw ? parseOr(MarkedSchema, raw.marked, MARKED_MESSAGE, 'marked') : undefined;
     const corners = 'wallCorners' in raw ? parseOr(CornersSchema, raw.wallCorners, CORNERS_MESSAGE, 'wallCorners') : undefined;
+    const photoWindows = 'photoWindows' in raw ? parseOr(PhotoWindowsSchema, raw.photoWindows, PHOTO_WINDOWS_MESSAGE, 'photoWindows') : undefined;
+    const coverAll = 'photosCoverAllWindows' in raw ? parseOr(z.boolean(), raw.photosCoverAllWindows, COVER_MESSAGE, 'photosCoverAllWindows') : undefined;
 
     const row = await withTenant(pools, ctx, async (tx) => {
       const found = await getWindowMeasurement(tx, ctx, id);
@@ -122,8 +225,26 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
         if (marked.some((m) => !photoIds.has(m.photoId.toLowerCase()))) throw new AppError(400, MARKED_MESSAGE, 'marked');
         next.marked = marked.map((m) => ({ id: m.id, photoId: m.photoId.toLowerCase(), box: m.box }));
       }
+      if (photoWindows !== undefined) {
+        const list: PhotoWindowInput[] = [];
+        for (const w of photoWindows) {
+          const input: PhotoWindowInput = { ...w, uploadId: w.uploadId.toLowerCase() } as PhotoWindowInput;
+          const upload = found.uploads.find((u) => u.id === input.uploadId);
+          if (upload === undefined) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, 'photoWindows');
+          // Corners are in the photo's displayed pixels (EXIF orientation applied), inside the photo.
+          const quads = input.scale.kind === 'reference' ? [input.corners, input.scale.corners] : [input.corners];
+          const inside = quads.every((q) => q.every(([x, y]) => x >= 0 && y >= 0 && x <= upload.widthPx && y <= upload.heightPx));
+          if (!inside) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, 'photoWindows');
+          if (sizePhotoWindow(input, upload) === null) {
+            throw new AppError(422, `Window "${input.label ?? input.id}" could not be sized from its corners. Mark its four corners (and the paper's) again.`, 'photoWindows');
+          }
+          list.push(input);
+        }
+        next.photoWindows = list;
+      }
+      if (coverAll !== undefined) next.photosCoverAllWindows = coverAll;
       if (excluded !== undefined) {
-        const known = new Set([...found.windows.map((w) => w.id), ...(next.marked ?? []).map((m) => m.id)]);
+        const known = new Set([...found.windows.map((w) => w.id), ...(next.marked ?? []).map((m) => m.id), ...(next.photoWindows ?? []).map((w) => w.id)]);
         if (excluded.some((w) => !known.has(w))) throw new AppError(400, WINDOWS_MESSAGE, 'excludedWindowIds');
         next.excludedWindowIds = [...new Set(excluded)];
       }
@@ -144,7 +265,7 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
         }
       }
       // Excluded ids that no longer exist (a marked window taken away) drop out.
-      const ids = new Set([...found.windows.map((w) => w.id), ...(next.marked ?? []).map((m) => m.id)]);
+      const ids = new Set([...found.windows.map((w) => w.id), ...(next.marked ?? []).map((m) => m.id), ...(next.photoWindows ?? []).map((w) => w.id)]);
       next.excludedWindowIds = next.excludedWindowIds.filter((w) => ids.has(w));
       change.adjustments = next;
       return updateWindowMeasurement(tx, ctx, id, change, clock.now());
@@ -169,6 +290,59 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const bytes = await deps.objectStore.get(photo.key);
     if (bytes === null) throw new AppError(404, MESSAGES.notFound);
     res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(Buffer.from(bytes));
+  });
+
+  // A photo of one window taken on site: multipart field "photo" (or the raw bytes). JPEG or PNG, at most 12 MB; the
+  // bytes are checked, not the declared type. Kept as uploaded (EXIF orientation recorded, sizes reported as displayed).
+  router.post('/:id/uploads', async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(req.params.id);
+    const visible = await withTenant(pools, ctx, (tx) => getWindowMeasurement(tx, ctx, id));
+    if (visible === null) throw new AppError(404, MESSAGES.notFound);
+    if (visible.uploads.length >= MAX_UPLOADS) throw new AppError(409, UPLOADS_FULL_MESSAGE, 'photo');
+    const bytes = await readUpload(req);
+    const info = await readImageInfo(bytes);
+    if (info === 'heic') throw new AppError(415, HEIC_MESSAGE, 'photo');
+    if (info === null) throw new AppError(415, UPLOAD_TYPE_MESSAGE, 'photo');
+    if (!deps.objectStore.configured) throw new AppError(503, STORAGE_DOWN_MESSAGE);
+    const uploadId = randomUUID();
+    const key = `${ctx.companyId}/window-uploads/${uploadId}.${info.kind === 'jpeg' ? 'jpg' : 'png'}`;
+    // The bytes are stored before the row that points at them; a refused upload removes them again.
+    await deps.objectStore.put(key, bytes, `image/${info.kind}`);
+    const now = clock.now();
+    const upload: StoredWindowUpload = {
+      id: uploadId,
+      widthPx: info.widthPx,
+      heightPx: info.heightPx,
+      focal35mm: info.focal35mm,
+      takenAt: info.takenAt,
+      key,
+      kind: info.kind,
+      orientation: info.orientation,
+      bytes: bytes.length,
+      uploadedAt: now.toISOString(),
+    };
+    const result = await withTenant(pools, ctx, (tx) => appendWindowUpload(tx, ctx, id, upload, MAX_UPLOADS, now));
+    if (result === null || result === 'full') {
+      await deps.objectStore.delete(key).catch((err: unknown) => deps.logError?.(err, 'window-upload-delete'));
+      if (result === null) throw new AppError(404, MESSAGES.notFound);
+      throw new AppError(409, UPLOADS_FULL_MESSAGE, 'photo');
+    }
+    res.status(201).json({ id: upload.id, widthPx: upload.widthPx, heightPx: upload.heightPx, focal35mm: upload.focal35mm, takenAt: upload.takenAt });
+  });
+
+  router.get('/:id/uploads/:uploadId', async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(req.params.id);
+    const uploadId = idParam(req.params.uploadId);
+    const row = await withTenant(pools, ctx, (tx) => getWindowMeasurement(tx, ctx, id));
+    const upload = row?.uploads.find((u) => u.id === uploadId);
+    if (upload === undefined) throw new AppError(404, MESSAGES.notFound);
+    const bytes = await deps.objectStore.get(upload.key);
+    if (bytes === null) throw new AppError(404, MESSAGES.notFound);
+    res.set('Content-Type', `image/${upload.kind}`);
     res.set('Cache-Control', 'private, max-age=86400');
     res.send(Buffer.from(bytes));
   });

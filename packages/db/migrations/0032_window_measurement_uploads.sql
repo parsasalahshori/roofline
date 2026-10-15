@@ -1,0 +1,1 @@
+ALTER TABLE "window_measurements" ADD COLUMN "uploads" jsonb DEFAULT '[]'::jsonb NOT NULL;

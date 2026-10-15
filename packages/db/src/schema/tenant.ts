@@ -52,6 +52,7 @@ import {
   type LngLat,
   type MeasuredWindow,
   type WindowAdjustments,
+  type WindowPhotoUpload,
 } from '@roofline/shared';
 import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
@@ -2086,6 +2087,13 @@ export type WindowGeometry = {
   outlineSource: 'footprint' | 'solar-box';
 };
 
+/**
+ * A window photo a person uploaded (server side): the view's WindowPhotoUpload (displayed size) plus where its bytes
+ * are, its kind, its EXIF orientation (the bytes are kept as uploaded) and its byte size. The company's own photo: kept
+ * with the measurement (no 30-day rule).
+ */
+export type StoredWindowUpload = WindowPhotoUpload & { key: string; kind: 'jpeg' | 'png'; orientation: number; bytes: number; uploadedAt: string };
+
 /** Measure windows (spec: windows feature): the walls estimate, the front photos and the windows marked on them. */
 export const windowMeasurements = pgTable(
   'window_measurements',
@@ -2108,6 +2116,8 @@ export const windowMeasurements = pgTable(
     reviewReasons: jsonb('review_reasons').$type<string[]>().notNull().default([]),
     adjustments: jsonb('adjustments').$type<WindowAdjustments>().notNull().default({ excludedWindowIds: [], manualCounts: {} }),
     tookMs: integer('took_ms').notNull(),
+    /** Photos of single windows taken on site (at most 40). */
+    uploads: jsonb('uploads').$type<StoredWindowUpload[]>().notNull().default([]),
     /** Google's Street View terms: the photos' bytes are deleted by then (30 days after download). */
     photosDeleteBy: tstz('photos_delete_by'),
     createdByUserId: userRef('created_by_user_id'),

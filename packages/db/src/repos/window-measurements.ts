@@ -1,6 +1,6 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { EstimatedWindows, LngLat, MeasuredWindow, WindowAdjustments, WindowDetectorName, WindowsMissReason } from '@roofline/shared';
-import { properties, type StoredFacadePhoto, type WindowGeometry, windowMeasurements } from '../schema/index.ts';
+import { properties, type StoredFacadePhoto, type StoredWindowUpload, type WindowGeometry, windowMeasurements } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getProperty } from './properties.ts';
 import { propertyScope } from './scope.ts';
@@ -96,4 +96,26 @@ export async function updateWindowMeasurement(
     .where(and(eq(windowMeasurements.id, id), eq(windowMeasurements.companyId, ctx.companyId)))
     .returning();
   return row ?? null;
+}
+
+/**
+ * Adds one uploaded photo to a window measurement the member may see, atomically (two uploads at once both land), unless
+ * it already holds `max`: then 'full'. Null when the member may not see it (or it does not exist).
+ */
+export async function appendWindowUpload(
+  tx: Tx,
+  ctx: TenantContext,
+  id: string,
+  upload: StoredWindowUpload,
+  max: number,
+  now: Date,
+): Promise<WindowMeasurementRow | 'full' | null> {
+  const visible = await getWindowMeasurement(tx, ctx, id);
+  if (visible === null) return null;
+  const [row] = await tx
+    .update(windowMeasurements)
+    .set({ uploads: sql`${windowMeasurements.uploads} || ${JSON.stringify([upload])}::jsonb`, updatedAt: now })
+    .where(and(eq(windowMeasurements.id, id), eq(windowMeasurements.companyId, ctx.companyId), sql`jsonb_array_length(${windowMeasurements.uploads}) < ${max}`))
+    .returning();
+  return row ?? 'full';
 }
