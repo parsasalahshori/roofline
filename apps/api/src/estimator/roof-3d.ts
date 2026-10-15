@@ -176,6 +176,21 @@ function layersFor(deps: AppDeps, point: LngLat, building: SolarBuilding | null)
   return buyLayers(deps, center, radiusM).then((layers) => ({ layers, reused: false }));
 }
 
+/**
+ * Measure windows: Google's height map round a house (for its walls' height), the layers already bought in this
+ * process for the roof when they cover it, else one request, as Measure roof would make. Null when Data Layers is not
+ * set up, ROOF_3D_MODE is off, or the layers did not come within the budget. Never rejects.
+ */
+export async function heightLayersFor(deps: AppDeps, point: LngLat, building: SolarBuilding | null, budgetMs = LAYERS_BUDGET_MS): Promise<RoofLayers | null> {
+  if (!deps.solarLayers.configured || modeOf(deps) === 'off') return null;
+  try {
+    return (await withBudget(layersFor(deps, point, building), budgetMs)).layers;
+  } catch (err) {
+    if (!(err instanceof SolarLayersUnavailableError)) deps.logError?.(err, 'window-heights');
+    return null;
+  }
+}
+
 /** `p` or, past `ms`, a SolarLayersUnavailableError with reason 'timeout'. */
 function withBudget<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

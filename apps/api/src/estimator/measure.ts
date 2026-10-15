@@ -58,7 +58,7 @@ const FALLBACK_PITCH_X12 = 6;
 const FALLBACK_OVERHANG_FT = 1;
 
 /** A footprint that contains the home point wins; otherwise the nearest one within this distance. */
-const FOOTPRINT_SEARCH_M = 40;
+export const FOOTPRINT_SEARCH_M = 40;
 const FOOTPRINT_SNAP_M = 30;
 /** A point this close to its footprint tile's edge also needs the tile next door (a building may be filed there). */
 const FOOTPRINT_TILE_MARGIN_M = 100;
@@ -127,7 +127,7 @@ async function findSaved(deps: AppDeps, ctx: TenantContext, addressLine: string,
 }
 
 /** Free text in, a saved address out: geocode first (no transaction open), then save it or reuse the one already saved. */
-async function homeFromAddress(deps: AppDeps, ctx: TenantContext, address: string, now: Date): Promise<PropertyRow> {
+export async function homeFromAddress(deps: AppDeps, ctx: TenantContext, address: string, now: Date): Promise<PropertyRow> {
   const found = await lookUp(deps, address);
   if (found === 'unavailable') throw new AppError(503, UNAVAILABLE_MESSAGE);
   if (found === null) throw new AppError(400, NOT_FOUND_MESSAGE, 'address');
@@ -175,7 +175,7 @@ export async function saveHome(
 }
 
 /** The home's point: its saved one, or a fresh lookup that is saved for next time. Null when there is none. */
-async function pointOf(deps: AppDeps, ctx: TenantContext, property: PropertyRow, now: Date): Promise<LngLat | null> {
+export async function pointOf(deps: AppDeps, ctx: TenantContext, property: PropertyRow, now: Date): Promise<LngLat | null> {
   if (property.geom != null) return property.geom;
   const found = await lookUp(deps, lineOf(property));
   if (found === null || found === 'unavailable') return null;
@@ -195,7 +195,7 @@ async function settingsFor(tx: Tx, ctx: TenantContext): Promise<Settings> {
 }
 
 /** The structure the home sits on: the one that contains the point, else the nearest within the snap distance. */
-function mainOf(rows: NearFootprint[]): NearFootprint | undefined {
+export function mainOf(rows: NearFootprint[]): NearFootprint | undefined {
   const inside = rows.find((r) => r.contains);
   if (inside !== undefined) return inside;
   let best: NearFootprint | undefined;
@@ -454,7 +454,7 @@ function solarOutline(solar: SolarSnapshot | null, point: LngLat): Outline | nul
 }
 
 /** The zoom-9 footprint tiles a home at `point` needs, and the state they are queued under. */
-function tilesFor(property: PropertyRow, point: LngLat): { tiles: string[]; state: string } {
+export function tilesFor(property: PropertyRow, point: LngLat): { tiles: string[]; state: string } {
   return { tiles: footprintTilesNear(point[0], point[1], FOOTPRINT_TILE_MARGIN_M), state: property.state.trim().toUpperCase() };
 }
 

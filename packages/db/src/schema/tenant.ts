@@ -45,6 +45,13 @@ import {
   type Roof3dSnapshot,
   type SolarSnapshot,
   type WorkHours,
+  WINDOW_DETECTORS,
+  WINDOWS_MISS_REASONS,
+  type EstimatedWindows,
+  type FacadePhoto,
+  type LngLat,
+  type MeasuredWindow,
+  type WindowAdjustments,
 } from '@roofline/shared';
 import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
@@ -159,6 +166,7 @@ export const TENANT_TABLES = [
   'storm_requests',
   'email_opt_outs',
   'storm_photos',
+  'window_measurements',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -2043,5 +2051,78 @@ export const stormPhotos = pgTable(
       columns: [t.companyId, t.storedFileId],
       foreignColumns: [storedFiles.companyId, storedFiles.id],
     }),
+  ],
+);
+
+/**
+ * A facade photo as kept (server side): the view's FacadePhoto plus where its bytes are (object-store key; null when
+ * they could not be stored), the date Google's terms say it must be gone by (30 days after download), and the camera
+ * it was taken with, so marked windows can be sized again later.
+ */
+export type StoredFacadePhoto = FacadePhoto & {
+  key: string | null;
+  fetchedAt: string;
+  deleteBy: string;
+  pitch: number;
+  /** Windows are counted on this photo (a whole-front shot of a wide front is shown, not counted on). */
+  measure: boolean;
+  /** Compass bearings [from, to] of the front this photo counts windows on. */
+  range: [number, number];
+  /** The automatic line-up's result: heading correction (degrees) and best eave height (metres), when it was good. */
+  lineup: { headingCorrectionDeg: number; eaveM: number | null } | null;
+  /** A person's corner fit (wins over the line-up). */
+  personFit: { headingCorrectionDeg: number; distanceScale: number; eaveM: number; errorPx: number } | null;
+};
+
+/** What the window measurement was worked out from (server side): the outline, the camera spot and the heights. */
+export type WindowGeometry = {
+  /** The outline used ([lng, lat], open ring). */
+  ring: LngLat[];
+  /** Where the Street View camera stood, [lng, lat] (null without imagery). */
+  camera: LngLat | null;
+  /** The eave's height above the ground from Google's height map, metres (null when unknown). */
+  eaveHeightM: number | null;
+  /** Where the outline came from. */
+  outlineSource: 'footprint' | 'solar-box';
+};
+
+/** Measure windows (spec: windows feature): the walls estimate, the front photos and the windows marked on them. */
+export const windowMeasurements = pgTable(
+  'window_measurements',
+  {
+    id: pk(),
+    companyId: companyId(),
+    propertyId: uuid('property_id').notNull(),
+    address: text('address').notNull(),
+    /** [lng, lat] of the home. */
+    center: jsonb('center').$type<LngLat>().notNull(),
+    photos: jsonb('photos').$type<StoredFacadePhoto[]>().notNull().default([]),
+    /** Windows found by the optional detector (marked ones are in adjustments.marked and sized on read). */
+    windows: jsonb('windows').$type<MeasuredWindow[]>().notNull().default([]),
+    /** The walls-only estimate (covers 'all-sides'), kept as worked out at measure time. */
+    estimated: jsonb('estimated').$type<EstimatedWindows>(),
+    stories: integer('stories'),
+    geometry: jsonb('geometry').$type<WindowGeometry>(),
+    detector: text('detector', { enum: WINDOW_DETECTORS }),
+    missingReason: text('missing_reason', { enum: WINDOWS_MISS_REASONS }),
+    reviewReasons: jsonb('review_reasons').$type<string[]>().notNull().default([]),
+    adjustments: jsonb('adjustments').$type<WindowAdjustments>().notNull().default({ excludedWindowIds: [], manualCounts: {} }),
+    tookMs: integer('took_ms').notNull(),
+    /** Google's Street View terms: the photos' bytes are deleted by then (30 days after download). */
+    photosDeleteBy: tstz('photos_delete_by'),
+    createdByUserId: userRef('created_by_user_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('window_measurements_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'window_measurements_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    index('window_measurements_property_idx').on(t.propertyId),
+    index('window_measurements_photos_delete_by_idx').on(t.photosDeleteBy),
+    enumCheck('window_measurements', 'detector', t.detector, WINDOW_DETECTORS),
+    enumCheck('window_measurements', 'missing_reason', t.missingReason, WINDOWS_MISS_REASONS),
   ],
 );

@@ -77,6 +77,9 @@ import { homeSignedRoutes } from './routes/home-signed.ts';
 import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
 import { measurementRoutes } from './routes/measurements.ts';
+import { windowMeasurementRoutes } from './routes/window-measurements.ts';
+import type { StreetView } from './providers/street-view.ts';
+import type { WindowDetector } from './providers/window-detector.ts';
 import { tierTemplateRoutes } from './routes/tier-templates.ts';
 import { estimatorSettingsRoutes } from './routes/estimator-settings.ts';
 import { stormLayerRoutes, stormRoutes } from './routes/storms.ts';
@@ -190,6 +193,10 @@ export type AppDeps = {
   relaySessions: RelaySessions;
   /** G1 Task 7: the map picture on the claim packet (providers/static-map.ts); tests pass `FakeStaticMap`. */
   staticMap: StaticMap;
+  /** Measure windows: Street View photos of a house's front (providers/street-view.ts); tests pass `FakeStreetView`. */
+  streetView: StreetView;
+  /** Measure windows' optional window detector (providers/window-detector.ts): none by default. */
+  windowDetector: WindowDetector;
 };
 
 export type AppOptions = {
@@ -385,6 +392,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/claims', claimBoardRoutes(deps));
   app.use('/api/agent-values', agentValueRoutes(deps));
   app.use('/api/measurements', measurementRoutes(deps));
+  app.use('/api/window-measurements', windowMeasurementRoutes(deps));
   app.use('/api/tier-templates', tierTemplateRoutes(deps));
   app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
   app.use('/api/estimator', estimatorMapRoutes(deps));

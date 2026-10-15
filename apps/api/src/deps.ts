@@ -27,6 +27,8 @@ import { metaAdsFor } from './providers/meta/index.ts';
 import { postmarkBroadcastFor } from './providers/postmark-broadcast.ts';
 import { resvgCardFor } from './providers/resvg-card.ts';
 import { createStaticMap } from './providers/static-map.ts'; // G1 Task 7
+import { createStreetView } from './providers/street-view.ts';
+import { createWindowDetector } from './providers/window-detector.ts';
 import { createFootprintSource } from './providers/footprints.ts';
 import { createObjectStore } from './providers/object-store.ts';
 import { createGeocoder } from './providers/geocoder.ts';
@@ -317,6 +319,8 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     broadcast: broadcastFor(config),
     adImage: config.FAKE_PROVIDERS ? new FakeAdImageRenderer() : resvgCardFor(config),
     staticMap: createStaticMap(config), // G1 Task 7
+    streetView: createStreetView(config),
+    windowDetector: createWindowDetector(config),
     jobs,
     // D1 Front Desk
     llm: createLlm(config),

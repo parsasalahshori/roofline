@@ -157,6 +157,22 @@ describe('schema', () => {
     }
   });
 
+  test('the Measure windows table is a tenant table with RLS forced and one company per property', async () => {
+    expect([...TENANT_TABLES]).toContain('window_measurements');
+    const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+      `select relrowsecurity, relforcerowsecurity from pg_class where oid = 'public.window_measurements'::regclass`,
+    );
+    expect(cls).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+    const policies = await ownerQuery<{ policyname: string }>(
+      `select policyname from pg_policies where schemaname = 'public' and tablename = 'window_measurements'`,
+    );
+    expect(policies.map((p) => p.policyname)).toContain('tenant_isolation');
+    const fks = await ownerQuery<{ conname: string }>(
+      `select conname from pg_constraint where conrelid = 'public.window_measurements'::regclass and contype = 'f'`,
+    );
+    expect(fks.map((f) => f.conname)).toContain('window_measurements_company_property_fk');
+  });
+
   test('D1 tables are tenant tables with RLS forced', async () => {
     const d1Tables = ['conversations', 'calls', 'conversation_turns', 'claim_intakes', 'blocked_numbers'] as const;
     expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...d1Tables]));

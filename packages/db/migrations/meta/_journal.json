@@ -211,6 +211,20 @@
       "when": 1791994730103,
       "tag": "0029_measurement_roof_3d",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792103584518,
+      "tag": "0030_window_measurements_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792103595948,
+      "tag": "0031_window_measurements_grants_rls",
+      "breakpoints": true
     }
   ]
 }

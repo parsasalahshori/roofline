@@ -240,7 +240,7 @@ const env: NodeJS.ProcessEnv = {
 };
 // Never let a real key from the shell reach a demo process.
 for (const name of Object.keys(env)) {
-  if (/^(STRIPE|TWILIO|POSTMARK|ANTHROPIC|GEOCODIO|EAGLEVIEW|GOOGLE_ADS|GOOGLE_SOLAR|META|R2|MAPTILER|GOOGLE_CLIENT|MICROSOFT)_/.test(name)) {
+  if (/^(STRIPE|TWILIO|POSTMARK|ANTHROPIC|GEOCODIO|EAGLEVIEW|GOOGLE_ADS|GOOGLE_SOLAR|GOOGLE_MAPS|META|R2|MAPTILER|GOOGLE_CLIENT|MICROSOFT)_/.test(name)) {
     delete env[name];
   }
 }
@@ -248,9 +248,17 @@ for (const name of Object.keys(env)) {
 if (KEYS.geocodio) env.GEOCODIO_API_KEY = KEYS.geocodio;
 if (KEYS.maptiler) env.MAPTILER_SERVER_KEY = KEYS.maptiler;
 if (KEYS.google) env.GOOGLE_SOLAR_API_KEY = KEYS.google;
+// Measure windows: the same Google key for Street View photos of the house's front (Static images and metadata).
+if (KEYS.google) env.GOOGLE_MAPS_API_KEY = KEYS.google;
+// Measure windows' optional detector model (OWLv2, read from disk only): passed when it is there. The detector itself
+// stays off unless WINDOW_DETECTOR=owlv2 is set in the shell.
+{
+  const modelDir = process.env.WINDOW_MODEL_DIR ?? `${REPO_ROOT}models`;
+  if (existsSync(`${modelDir}/Xenova/owlv2-base-patch16-ensemble/onnx/model_quantized.onnx`)) env.WINDOW_MODEL_DIR = modelDir;
+}
 // Real lookups need real roof outlines: the free Microsoft footprints, loaded per map tile on first use.
 if (KEYS.geocodio) env.DEMO_REAL_FOOTPRINTS = '1';
-if (KEYS.geocodio || KEYS.maptiler || KEYS.google) log(`Real lookups on: ${[KEYS.geocodio && 'Geocodio addresses', KEYS.maptiler && 'MapTiler maps', KEYS.google && 'Google satellite, Solar roof pitch and 3D roofs from Solar Data Layers'].filter(Boolean).join(', ')}.`);
+if (KEYS.geocodio || KEYS.maptiler || KEYS.google) log(`Real lookups on: ${[KEYS.geocodio && 'Geocodio addresses', KEYS.maptiler && 'MapTiler maps', KEYS.google && 'Google satellite, Solar roof pitch, 3D roofs from Solar Data Layers and Street View photos for Measure windows'].filter(Boolean).join(', ')}.`);
 
 function start(name: string, script: string): ChildProcess {
   const child = spawn('npx', ['tsx', script], { cwd: REPO_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });

@@ -638,6 +638,11 @@ describe('grants', () => {
     );
   });
 
+  test('app_tenant has SELECT, INSERT and UPDATE on window_measurements, no DELETE; app_system nothing', async () => {
+    expect(await tablePrivileges('app_tenant', ['window_measurements'])).toEqual([privs('window_measurements', true, true, true, false)]);
+    expect(await tablePrivileges('app_system', ['window_measurements'])).toEqual([privs('window_measurements', false, false, false, false)]);
+  });
+
   test('app_tenant has SELECT, INSERT and UPDATE on each S1 tenant table, and DELETE only on door_exclusions and storm_photos', async () => {
     expect(await tablePrivileges('app_tenant', S1_TENANT_TABLES)).toEqual(
       S1_TENANT_TABLES.map((t) => privs(t, true, true, true, t === 'door_exclusions' || t === 'storm_photos')),

@@ -151,6 +151,23 @@ const ConfigSchema = z
      */
     GOOGLE_SOLAR_API_KEY: z.string().optional(),
     /**
+     * Google Maps Platform key for Street View (Static images and metadata): the front-of-house photos Measure windows
+     * draws the wall on and a person marks windows on. Server-side only, never logged. Unset: no photos (the windows are
+     * still worked out from the walls).
+     */
+    GOOGLE_MAPS_API_KEY: z.string().optional(),
+    /**
+     * Measure windows' optional "auto-find front windows". off (default): no detector; windows come from the walls and
+     * from what a person marks. owlv2: the open-source OWLv2 zero-shot detector, loaded only from WINDOW_MODEL_DIR (no
+     * download); without the model there it is reported as 'detector-unconfigured'.
+     */
+    WINDOW_DETECTOR: z.enum(['off', 'owlv2'], { error: 'must be off or owlv2' }).default('off'),
+    /** transformers.js local model directory holding Xenova/owlv2-base-patch16-ensemble (onnx/model_quantized.onnx). Resolved from the repository root. */
+    WINDOW_MODEL_DIR: z
+      .string()
+      .transform((v) => path.resolve(REPO_ROOT, v))
+      .optional(),
+    /**
      * Whether Measure buys Google Solar's Data Layers (the height map and roof mask) to reconstruct each roof in 3D
      * (real outline, faces and lines) when GOOGLE_SOLAR_API_KEY is set. Default on; 0 turns it off (the roof is then
      * guessed from its outline, as before). An Enterprise SKU: 1,000 free a month, then about $75 per 1,000.
