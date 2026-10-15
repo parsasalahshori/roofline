@@ -61,6 +61,12 @@ export function fmt(s: Stat | null | undefined, digits = 3, unit = ''): string {
   return s.max - s.min > 1e-9 ? `${m}[${f(s.min, digits)}-${f(s.max, digits)}]` : m;
 }
 
+/** A count: whole when it is whole (the mean of three equal seeds), else one decimal. */
+export function fmtN(s: Stat | null | undefined): string {
+  if (s === null || s === undefined) return '-';
+  return fmt(s, Number.isInteger(s.mean) && Number.isInteger(s.min) && Number.isInteger(s.max) ? 0 : 1);
+}
+
 const pad = (v: string, n: number) => (v.length >= n ? v : v.padStart(n));
 const padR = (v: string, n: number) => (v.length >= n ? v : v.padEnd(n));
 
@@ -87,21 +93,21 @@ export function formatSplit(name: string, s: SplitReport): string {
     'Against the answer key (EagleView or hand-drawn outline; houses that are the same single building):',
     table(
       ['cohort', 'n', 'key', 'IoU', 'bnd m', 'HD95 m', '|area| %', 'area<=5', 'pitch =', 'pitch +-1', 'face pitch', '<=1/12 %'],
-      [L, 3, 3, 9, 9, 9, 9, 7, 7, 9, 10, 8],
+      [L, 3, 8, 9, 9, 9, 13, 8, 12, 12, 16, 9],
       names.map((n) => {
         const c = s.cohorts[n]!.stats;
         const t = c.truth;
         return [
           n,
           String(s.cohorts[n]!.n),
-          fmt(c.comparable, 1),
+          fmtN(c.comparable),
           fmt(t.medianIoU),
           fmt(t.medianBoundaryM, 2),
           fmt(t.medianHd95M, 2),
           fmt(t.medianAreaErrAbsPct, 1),
-          `${fmt(t.areaWithin5, 1)}/${fmt(t.areaScored, 1)}`,
-          `${fmt(t.mainPitchExact, 1)}/${fmt(t.mainPitchScored, 1)}`,
-          `${fmt(t.mainPitchWithin1, 1)}/${fmt(t.mainPitchScored, 1)}`,
+          `${fmtN(t.areaWithin5)}/${fmtN(t.areaScored)}`,
+          `${fmtN(t.mainPitchExact)}/${fmtN(t.mainPitchScored)}`,
+          `${fmtN(t.mainPitchWithin1)}/${fmtN(t.mainPitchScored)}`,
           fmt(t.medianFacePitchMAE, 2),
           fmt(t.medianWithin1Pct, 0),
         ];
@@ -126,17 +132,17 @@ export function formatSplit(name: string, s: SplitReport): string {
         const c = s.cohorts[n]!.stats;
         return [
           n,
-          fmt(c.faces.median, 1),
-          fmt(c.slivers, 1),
-          fmt(c.thinFaces, 1),
-          fmt(c.steepJunk, 1),
-          fmt(c.steepAny, 1),
-          fmt(c.vertices.median, 1),
+          fmtN(c.faces.median),
+          fmtN(c.slivers),
+          fmtN(c.thinFaces),
+          fmtN(c.steepJunk),
+          fmtN(c.steepAny),
+          fmtN(c.vertices.median),
           fmt(c.rectilinearity.median),
-          `${fmt(c.checkerPass, 1)}/${s.cohorts[n]!.n}`,
-          fmt(c.noRoof, 1),
-          fmt(c.failures, 1),
-          fmt(c.unusable, 1),
+          `${fmtN(c.checkerPass)}/${s.cohorts[n]!.n}`,
+          fmtN(c.noRoof),
+          fmtN(c.failures),
+          fmtN(c.unusable),
           fmt(c.flags.rate, 2),
           fmt(c.flags.precision, 2),
           fmt(c.flags.recall, 2),
@@ -150,7 +156,7 @@ export function formatSplit(name: string, s: SplitReport): string {
       [L, 8, 8, 15, 14, 8, 6],
       names.map((n) => {
         const p = s.cohorts[n]!.stats.proxy;
-        return [n, fmt(p.medianMaskIoU), fmt(p.medianBoxIoU), fmt(p.medianGoogleAreaAbsPct, 1), fmt(p.medianSegmentFaceRatio, 2), fmt(p.medianOsmIoU), fmt(p.osmHouses, 0)];
+        return [n, fmt(p.medianMaskIoU), fmt(p.medianBoxIoU), fmt(p.medianGoogleAreaAbsPct, 1), fmt(p.medianSegmentFaceRatio, 2), fmt(p.medianOsmIoU), fmtN(p.osmHouses)];
       }),
     ),
     '',

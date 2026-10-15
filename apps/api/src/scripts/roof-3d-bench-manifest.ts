@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadHouse, type LoadedHouse } from '../bench/roof3d/data.ts';
-import { HouseSchema, type HouseEntry, type Manifest, manifestHash, manifestProblems, parseManifest, SETS, SPLIT_RULE, splitOf } from '../bench/roof3d/manifest.ts';
+import { HouseSchema, type HouseEntry, type Manifest, manifestHash, manifestProblems, parseManifest, regionOf, SETS, SPLIT_RULE, splitOf } from '../bench/roof3d/manifest.ts';
 import { benchDir } from '../bench/roof3d/paths.ts';
 import { DEFAULT_THRESHOLDS, tagsOf } from '../bench/roof3d/tags.ts';
 
@@ -44,12 +44,6 @@ function dateOf(v: unknown): string | null {
 
 function json(file: string): Record<string, unknown> {
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>) : {};
-}
-
-/** "street, City, ST 12345" to state and metro. */
-export function regionOf(address: string): { state: string; metro: string } {
-  const m = /,\s*([^,]+),\s*([A-Z]{2})\b/.exec(address);
-  return m ? { state: m[2]!, metro: m[1]!.trim() } : { state: '??', metro: '??' };
 }
 
 function evPoints(file: string | undefined): Map<string, [number, number]> {

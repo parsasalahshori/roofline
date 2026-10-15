@@ -7,11 +7,11 @@ import {
   manifestHash,
   manifestProblems,
   parseManifest,
+  regionOf,
   splitOf,
 } from '../../src/bench/roof3d/manifest.ts';
 import { DEFAULT_THRESHOLDS, canopyClass } from '../../src/bench/roof3d/tags.ts';
 import { cohortCounts } from '../../src/bench/roof3d/bench.ts';
-import { regionOf } from '../../src/scripts/roof-3d-bench-manifest.ts';
 import { house } from './helpers.ts';
 
 describe('the frozen split', () => {

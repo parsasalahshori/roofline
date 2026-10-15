@@ -127,3 +127,9 @@ export function cohortsOf(h: HouseEntry): string[] {
   if (h.truth !== 'proxy') out.push('has-truth');
   return out;
 }
+
+/** "street, City, ST 12345" to state and metro. */
+export function regionOf(address: string): { state: string; metro: string } {
+  const m = /,\s*([^,]+),\s*([A-Z]{2})\b/.exec(address);
+  return m ? { state: m[2]!, metro: m[1]!.trim() } : { state: '??', metro: '??' };
+}
