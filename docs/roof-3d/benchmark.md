@@ -24,6 +24,7 @@ repository, because Google's files must never be committed or published):
 | `fetch-ledger.json` | what has been bought from Google, ever (the budget guard) |
 | `lidar/` | lidar truth (USGS 3DEP, public domain): `index.json` (each house's grade and why), `<slug>/truth.json` and `truth.png` (the truth in use), `<slug>/units/<work unit>/` (each project's crop and truth), `tiles/` (downloaded LAZ tiles), `ledger.json`, `coverage.json`. Built by `scripts/roof-bench-lidar/` (see "Lidar truth") |
 | `baseline-v2.json`, `gates-v3.json` | the baseline at c606b7a4 with lidar metrics, and the gates with the lidar block |
+| `baseline-v3.json`, `baseline-v3-dense.json` | the baseline with hidden edges on (version 4), midpoint and dense eave-support scorers |
 | `trees-candidates/` | the free-source pre-screen: one file per neighbourhood of house-sized OpenStreetMap outlines with their NAIP crown scores |
 
 A house is looked up in the bench folder first, then in `/Users/parsasalahshori-a/RooflineWork/saved-testdata` (the
@@ -42,8 +43,16 @@ frozen split, Google data past its 30 days, a baseline made from another manifes
 - Before merging, the integrator and verifiers run `--split all --reveal --compare` and judge the held-out aggregates
   too. Nobody tunes on held-out houses: if a change helps dev and hurts held-out, it is overfit.
 - A change that moves a cohort threshold or adds houses needs a new manifest and a new baseline; say so in the commit.
-- A method that is off by default is measured by turning it on for the run: `ROOF3D_HIDDEN_EDGE=photo` runs every
-  reconstruction with `hiddenEdge: { method: 'photo' }` (hidden edges from the photo, [photo.md](photo.md)).
+- Hidden-edge methods are chosen per run with `ROOF3D_HIDDEN_EDGE`: unset is the server's default
+  (`photo+planes` since `ROOF_3D_ALGORITHM_VERSION` 4, [outline-release-notes.md](outline-release-notes.md)); `off` is
+  the reconstruction before it; `planes`, `photo`, `photo+planes`, `planes+photo` run that method
+  ([planes.md](planes.md), [photo.md](photo.md)); `ROOF3D_HIDDEN_EDGE_PARAMS` takes JSON parameter overrides. The lidar
+  step runs with `--lidar-edges` and is judged on EagleView only (`src/scripts/roof-3d-lidar-eval.ts --method`, which
+  scores any of the methods the same way), never on lidar truth.
+- `ROOF3D_BENCH_SUPPORT=dense` scores the hidden-edge sets in 0.2 m pieces. The product's `eaveSupport` clamps every
+  sample past an edge's midpoint to the midpoint, so the default (`midpoint`) scorer never measures the second half of
+  an edge and over-counts its midpoint. Dense runs carry `+dense` in their lidar fingerprint and compare only against a
+  dense baseline (`baseline-v3-dense.json`).
 - The benchmark's own tests: `npm run test:bench -w @roofline/api` (or `npx vitest run --project roof-bench` from the
   root). No database, no network, about 8 seconds.
 
@@ -269,7 +278,12 @@ anywhere; reports hold derived numbers only.
 
 ## The baseline
 
-`baseline-v2.json` (this round) is frozen at the reconstruction of `c606b7a4` with lidar truth `8dec0f5758c3`; its
+`baseline-v3.json` (outline round) is frozen with the hidden-edge default on (`ROOF_3D_ALGORITHM_VERSION` 4, commit
+`13268915`, lidar truth `8dec0f5758c3`); use it with `gates-v3.json`. `baseline-v3-dense.json` is the same
+reconstruction scored with `ROOF3D_BENCH_SUPPORT=dense`. Its numbers and every change against v2 are in
+[outline-release-notes.md](outline-release-notes.md).
+
+`baseline-v2.json` (lidar-truth round) is frozen at the reconstruction of `c606b7a4` with lidar truth `8dec0f5758c3`; its
 lidar and hidden-edge numbers are in [truth.md](truth.md). Compare with `--compare
 /Users/parsasalahshori-a/RooflineWork/roof-bench/baseline-v2.json --gates
 /Users/parsasalahshori-a/RooflineWork/roof-bench/gates-v3.json`. The older baseline below is kept for its history.
