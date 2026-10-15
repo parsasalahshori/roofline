@@ -10,13 +10,17 @@ export const SEEDS: readonly number[] = [7, 8, 9];
 
 /**
  * The hidden-edge method under test (ReconstructOptions.hiddenEdge), from the environment so a run of the same commit
- * can compare methods: ROOF3D_HIDDEN_EDGE=planes, with ROOF3D_HIDDEN_EDGE_PARAMS a JSON object of parameter overrides
+ * can compare methods: ROOF3D_HIDDEN_EDGE=planes or photo, with ROOF3D_HIDDEN_EDGE_PARAMS a JSON object of parameter overrides
  * (sensitivity runs). Unset: off, as the server runs.
  */
 export function hiddenEdgeFromEnv(env: NodeJS.ProcessEnv = process.env): RoofOnLayersOptions['hiddenEdge'] {
-  if (env.ROOF3D_HIDDEN_EDGE !== 'planes') return undefined;
+  const method = env.ROOF3D_HIDDEN_EDGE;
+  if (method === undefined || method === '') return undefined;
   const raw = env.ROOF3D_HIDDEN_EDGE_PARAMS;
-  return { method: 'planes', ...(raw !== undefined && raw !== '' ? { planes: JSON.parse(raw) as Record<string, number> } : {}) };
+  const params = raw !== undefined && raw !== '' ? (JSON.parse(raw) as Record<string, number>) : undefined;
+  if (method === 'planes') return { method, ...(params !== undefined ? { planes: params } : {}) };
+  if (method === 'photo') return { method, ...(params !== undefined ? { photo: params } : {}) };
+  throw new Error(`ROOF3D_HIDDEN_EDGE: unknown method ${JSON.stringify(method)} (planes, photo)`);
 }
 const HIDDEN_EDGE = hiddenEdgeFromEnv();
 

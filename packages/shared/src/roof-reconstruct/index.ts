@@ -18,6 +18,7 @@ import { type CanopyParams, completeRoof, crownMap, crownRmsK, DEFAULT_CANOPY_PA
 import { groundPlane, heightAboveGround, planeInCrop } from './ground.ts';
 import { close, components, countSet, dilate, fillHoles, largestComponent, open, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
+import { DEFAULT_PHOTO_EDGE, type PhotoEdge, type PhotoEdgeParams, photoEdges } from './outline-photo.ts';
 import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
@@ -25,6 +26,7 @@ import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from '
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
 export type { XY } from './geom.ts';
+export { DEFAULT_PHOTO_EDGE, PHOTO_EDGE_REASONS, type PhotoEdge, type PhotoEdgeParams, type PhotoEdgeReason } from './outline-photo.ts';
 export type { Plane } from './planes.ts';
 
 /** A height map and roof mask on one grid: row-major, row 0 at the top (north), `pixelSizeM` metres a pixel. */
@@ -41,7 +43,17 @@ export type RoofRaster = {
    * crowns: no plane is fitted on them, and small steep faces by them are dropped.
    */
   green?: Uint8Array | null;
+  /**
+   * Optional: the aerial photo resampled onto the same grid, 3 bytes a pixel (R, G, B). Read only by the photo method
+   * for hidden edges (ReconstructOptions.hiddenEdge); absent, that step declines with reason 'no-photo'.
+   */
+  rgb?: Uint8Array | null;
 };
+
+/** How outline edges the height map cannot verify (eave support 'none') are re-estimated. Off by default. */
+export type HiddenEdgeOption =
+  | { method: 'planes'; planes?: Partial<OutlinePlanesParams> }
+  | { method: 'photo'; photo?: Partial<PhotoEdgeParams> };
 
 export type ReconstructOptions = {
   seed?: number;
@@ -61,13 +73,6 @@ export type ReconstructOptions = {
    * `{ complete: true }` turns it on.
    */
   canopy?: Partial<CanopyParams> & { complete?: boolean };
-  /**
-   * Outline edges the heights cannot vouch for (eave support 'none', mostly under tree crowns), inferred from evidence
-   * other than the mask. Off by default. `{ method: 'planes' }` moves hidden eaves onto the line where their face's plane
-   * comes down to the eave height its visible eaves show, and drops hidden hip-corner chamfers (outline-planes.ts,
-   * docs/roof-3d/planes.md). Turning it on by default changes reconstruction output: bump ROOF_3D_ALGORITHM_VERSION.
-   */
-  hiddenEdge?: { method: 'planes'; planes?: Partial<OutlinePlanesParams> };
   /** Development only: told what the topology decided. */
   debug?: (msg: string) => void;
   /** The imagery's quality (HIGH, MEDIUM), for the quality result. */
@@ -78,6 +83,16 @@ export type ReconstructOptions = {
    * is cut down to this home, and the roof marked for review ('joined-buildings').
    */
   building?: readonly { col: number; row: number }[];
+  /**
+   * Hidden edges (step 3b, after the outline is squared and before topology): outline edges the heights cannot vouch
+   * for (eave support 'none', mostly under tree crowns), re-estimated from evidence other than the mask. Off by default.
+   * - `{ method: 'planes' }` moves hidden eaves onto the line where their face's plane comes down to the eave height its
+   *   visible eaves show, and drops hidden hip-corner chamfers (outline-planes.ts, docs/roof-3d/planes.md).
+   * - `{ method: 'photo' }` moves them to where Google's photo shows the roof ending, when it shows that clearly
+   *   (outline-photo.ts, docs/roof-3d/photo.md); needs RoofRaster.rgb.
+   * Turning any of them on by default changes reconstruction output: bump ROOF_3D_ALGORITHM_VERSION.
+   */
+  hiddenEdge?: HiddenEdgeOption;
 };
 
 /** Raster-local metres: x east from the raster's left edge, y north from its top edge (so y <= 0). */
@@ -122,6 +137,12 @@ export type LocalRoof = {
    * or why the step did not run at all.
    */
   hiddenEdge?: { method: 'planes'; pieces: number; inferredM: number; declined: Partial<Record<PlanesDecline, number>>; skipped?: 'joined' | 'bad-input' | 'eave-support' | 'error' };
+  /**
+   * The hidden-edge step's record, when it ran (ReconstructOptions.hiddenEdge): what happened to each squared outline
+   * edge, and the moved stretches of the final outline (raster-local metres): inferred from the photo, not seen in the
+   * heights. `declined` is set when the step could not run at all.
+   */
+  hiddenEdges?: { method: 'photo'; edges: PhotoEdge[]; moved: { a: XY; b: XY; offsetM: number }[]; declined?: 'no-photo' | 'bad-raster' | 'bad-outline' };
 };
 
 const FLAT_X12 = 2;
@@ -353,6 +374,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   let dissolved: Partial<Record<WeakReason, number>>;
   let hiddenOut: ReturnType<typeof hiddenEdgeStep> | undefined;
   const cleanupPrm: FaceCleanupParams = { ...DEFAULT_FACE_CLEANUP, ...opts.faces };
+  let photoOut: LocalRoof['hiddenEdges'];
   // Steps 3 and 4 run once, or twice when the completed roof is undone (its state restored, completion off).
   for (;;) {
     // 3. The outline, squared.
@@ -361,10 +383,30 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     if (outline.length < 3) return null;
 
     // 3b. Hidden eaves from the planes (outline-planes.ts): only edges the heights cannot vouch for move.
-    if (opts.hiddenEdge !== undefined) {
+    if (opts.hiddenEdge?.method === 'planes') {
       hiddenOut = hiddenEdgeStep(raster, labels, part, { c0, r0, c1, r1, g }, s, faces.labels, planes, outline, joined, opts.hiddenEdge.planes, opts.debug);
       outline = hiddenOut.outline;
       opts.debug?.(`hidden edges (planes): ${hiddenOut.summary.pieces} pieces, ${hiddenOut.summary.inferredM.toFixed(1)} m inferred; declined ${JSON.stringify(hiddenOut.summary.declined)}${hiddenOut.summary.skipped !== undefined ? `; skipped: ${hiddenOut.summary.skipped}` : ''}`);
+    }
+    // 3b. Hidden edges from the photo (off by default). Only the outline polygon changes; when it reaches past the
+    //     crop, the crop is padded (the new pixels belong to no face) so topology can draw it.
+    if (opts.hiddenEdge?.method === 'photo') {
+      const done = hiddenEdgesFromPhoto(raster, { c0, r0, g }, roof, outline, { ...DEFAULT_PHOTO_EDGE, ...opts.hiddenEdge.photo });
+      photoOut = done.record;
+      if (done.outline !== null) {
+        outline = done.outline;
+        const padded = padCropTo(raster, { c0, r0, g }, outline, { dsm, roof, googleMask, tree, labels: faces.labels, planes });
+        if (padded !== null) {
+          for (const m of photoOut.moved) {
+            m.a = { x: m.a.x + padded.dc * s, y: m.a.y - padded.dr * s };
+            m.b = { x: m.b.x + padded.dc * s, y: m.b.y - padded.dr * s };
+          }
+          ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, planes } = padded);
+          faces = { labels: padded.labels, planes };
+          outline = padded.outline;
+          clipped = clipped || c0 <= 0 || r0 <= 0 || c1 >= W - 1 || r1 >= H - 1;
+        }
+      }
     }
 
     // 4. Topology. A face whose polygon comes out under the smallest face size (its corners pulled in by its
@@ -486,6 +528,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     ...(Object.keys(dissolved).length > 0 ? { dissolved } : {}),
     ...(canopyOut !== undefined ? { canopy: { ...canopyOut, occluded: canopyOut.occluded.map(shift) } } : {}),
     ...(hiddenOut !== undefined ? { hiddenEdge: hiddenOut.summary } : {}),
+    ...(photoOut !== undefined ? { hiddenEdges: { ...photoOut, moved: photoOut.moved.map((m) => ({ a: shift(m.a), b: shift(m.b), offsetM: m.offsetM })) } } : {}),
   };
 }
 
@@ -548,6 +591,103 @@ function hiddenEdgeStep(
   } catch {
     return none('error');
   }
+}
+
+/** Room round the crop the photo step reads (its search reaches 2.5 m out plus a 0.6 m strip; eave support 1 m more, the crown window 1.5 m), metres. */
+const PHOTO_ROOM_M = 5;
+
+/**
+ * Step 3b: the photo method on a window round the crop. `outline` is in the crop's metres and so is the result; null
+ * outline when nothing moved (or the step could not run: then `record.declined` says why).
+ */
+function hiddenEdgesFromPhoto(
+  raster: RoofRaster,
+  crop: { c0: number; r0: number; g: { w: number; h: number } },
+  roof: Uint8Array,
+  outline: readonly XY[],
+  prm: PhotoEdgeParams,
+): { outline: XY[] | null; record: NonNullable<LocalRoof['hiddenEdges']> } {
+  const { width: W, height: H, pixelSizeM: s } = raster;
+  if (raster.rgb == null || raster.rgb.length !== 3 * W * H) return { outline: null, record: { method: 'photo', edges: [], moved: [], declined: 'no-photo' } };
+  const win = windowRound(raster, { c0: crop.c0, r0: crop.r0, c1: crop.c0 + crop.g.w - 1, r1: crop.r0 + crop.g.h - 1 }, undefined, PHOTO_ROOM_M);
+  const dc = crop.c0 - win.c0;
+  const dr = crop.r0 - win.r0;
+  const rgb = new Uint8Array(3 * win.g.w * win.g.h);
+  for (let r = 0; r < win.g.h; r++) rgb.set(raster.rgb.subarray(3 * ((r + win.r0) * W + win.c0), 3 * ((r + win.r0) * W + win.c0 + win.g.w)), 3 * r * win.g.w);
+  const roofW = new Uint8Array(win.g.w * win.g.h);
+  for (let r = 0; r < crop.g.h; r++) for (let c = 0; c < crop.g.w; c++) roofW[(r + dr) * win.g.w + c + dc] = roof[r * crop.g.w + c]!;
+  const toWin = (p: XY): XY => ({ x: p.x + dc * s, y: p.y - dr * s });
+  const fromWin = (p: XY): XY => ({ x: p.x - dc * s, y: p.y + dr * s });
+  const res = photoEdges(outline.map(toWin), { width: win.g.w, height: win.g.h, pixelSizeM: s, dsm: win.dsm, rgb, mask: win.mask, roof: roofW, green: win.green }, prm);
+  if (!res.ok) return { outline: null, record: { method: 'photo', edges: [], moved: [], declined: res.reason } };
+  const moved: { a: XY; b: XY; offsetM: number }[] = [];
+  const out = res.outline.map(fromWin);
+  for (let i = 0; i < out.length; i++) {
+    const k = res.movedEdges[i]!;
+    const kNext = res.movedEdges[(i + 1) % out.length]!;
+    // A stretch of the new outline lies on a moved line when both its corners name the same moved edge.
+    if (k >= 0 && k === kNext) moved.push({ a: out[i]!, b: out[(i + 1) % out.length]!, offsetM: res.edges[k]!.offsetM });
+  }
+  const anyMoved = res.edges.some((e) => e.status === 'moved');
+  return { outline: anyMoved ? out : null, record: { method: 'photo', edges: res.edges, moved } };
+}
+
+/**
+ * The crop grown to hold `outline` (crop metres) with PAD_PX to spare, everything on it moved along; null when it
+ * already does. New pixels: heights from the raster, no roof, no face.
+ */
+function padCropTo(
+  raster: RoofRaster,
+  crop: { c0: number; r0: number; g: { w: number; h: number } },
+  outline: readonly XY[],
+  st: { dsm: Float32Array; roof: Uint8Array; googleMask: Uint8Array; tree: Uint8Array | null; labels: Int32Array; planes: Plane[] },
+) {
+  const PAD_PX = 3;
+  const { width: W, height: H, pixelSizeM: s } = raster;
+  let minC = Infinity;
+  let maxC = -Infinity;
+  let minR = Infinity;
+  let maxR = -Infinity;
+  for (const p of outline) {
+    minC = Math.min(minC, Math.floor(p.x / s));
+    maxC = Math.max(maxC, Math.ceil(p.x / s));
+    minR = Math.min(minR, Math.floor(-p.y / s));
+    maxR = Math.max(maxR, Math.ceil(-p.y / s));
+  }
+  const need = { c0: crop.c0 + minC - PAD_PX, r0: crop.r0 + minR - PAD_PX, c1: crop.c0 + maxC + PAD_PX, r1: crop.r0 + maxR + PAD_PX };
+  const c0 = Math.max(0, Math.min(crop.c0, need.c0));
+  const r0 = Math.max(0, Math.min(crop.r0, need.r0));
+  const c1 = Math.min(W - 1, Math.max(crop.c0 + crop.g.w - 1, need.c1));
+  const r1 = Math.min(H - 1, Math.max(crop.r0 + crop.g.h - 1, need.r1));
+  if (c0 === crop.c0 && r0 === crop.r0 && c1 === crop.c0 + crop.g.w - 1 && r1 === crop.r0 + crop.g.h - 1) return null;
+  const g = { w: c1 - c0 + 1, h: r1 - r0 + 1 };
+  const dc = crop.c0 - c0;
+  const dr = crop.r0 - r0;
+  const dsm = new Float32Array(g.w * g.h);
+  for (let r = 0; r < g.h; r++) {
+    for (let c = 0; c < g.w; c++) {
+      const z = raster.dsm[(r + r0) * W + c + c0]!;
+      dsm[r * g.w + c] = Number.isFinite(z) && z > -1000 && z < 10000 ? z : Number.NaN;
+    }
+  }
+  const roof = new Uint8Array(g.w * g.h);
+  const googleMask = new Uint8Array(g.w * g.h);
+  const tree = st.tree === null ? null : new Uint8Array(g.w * g.h);
+  const labels = new Int32Array(g.w * g.h).fill(-1);
+  for (let r = 0; r < crop.g.h; r++) {
+    for (let c = 0; c < crop.g.w; c++) {
+      const j = r * crop.g.w + c;
+      const k = (r + dr) * g.w + c + dc;
+      roof[k] = st.roof[j]!;
+      googleMask[k] = st.googleMask[j]!;
+      if (tree !== null) tree[k] = st.tree![j]!;
+      labels[k] = st.labels[j]!;
+    }
+  }
+  // z = a x + b y + c in the crop's metres; the new crop's x is dc pixels more, its y dr pixels less.
+  const planes = st.planes.map((p) => ({ ...p, c: p.c - p.a * dc * s + p.b * dr * s }));
+  const out = outline.map((p) => ({ x: p.x + dc * s, y: p.y - dr * s }));
+  return { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, labels, planes, outline: out, dc, dr };
 }
 
 /** At most this many occluded points are reported (LocalRoof.canopy). */

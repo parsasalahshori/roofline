@@ -42,6 +42,8 @@ frozen split, Google data past its 30 days, a baseline made from another manifes
 - Before merging, the integrator and verifiers run `--split all --reveal --compare` and judge the held-out aggregates
   too. Nobody tunes on held-out houses: if a change helps dev and hurts held-out, it is overfit.
 - A change that moves a cohort threshold or adds houses needs a new manifest and a new baseline; say so in the commit.
+- A method that is off by default is measured by turning it on for the run: `ROOF3D_HIDDEN_EDGE=photo` runs every
+  reconstruction with `hiddenEdge: { method: 'photo' }` (hidden edges from the photo, [photo.md](photo.md)).
 - The benchmark's own tests: `npm run test:bench -w @roofline/api` (or `npx vitest run --project roof-bench` from the
   root). No database, no network, about 8 seconds.
 
