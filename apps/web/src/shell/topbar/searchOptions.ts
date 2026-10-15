@@ -1,6 +1,6 @@
 import type { SearchResult } from '../../api/types.ts';
 import { search } from '../../copy/search.ts';
-import { looksLikeAddress, measureAddressHref } from '../../features/measure/address.ts';
+import { looksLikeAddress, measureAddressHref, measureWindowsHref } from '../../features/measure/address.ts';
 import type { Recent } from '../recents.ts';
 
 /** One line in the search results: where it leads, and the two lines of text that say what it is. */
@@ -83,7 +83,7 @@ export function actionOptions(query: string, canDownload: boolean): SearchOption
     );
 }
 
-/** "Measure roof at <address>" when what is typed looks like a street address: the Estimator finds its roof. */
+/** "Measure roof at <address>" and "Measure windows at <address>" when what is typed looks like a street address: the Estimator finds its roof. */
 export function measureOptions(query: string): SearchOption[] {
   const address = query.trim().replace(/\s+/g, ' ');
   if (!looksLikeAddress(address)) return [];
@@ -94,6 +94,13 @@ export function measureOptions(query: string): SearchOption[] {
       group: 'actions',
       primary: search.measureRoof(address),
       secondary: search.measureRoofHint,
+    },
+    {
+      key: 'action:measureWindows',
+      href: measureWindowsHref(address),
+      group: 'actions',
+      primary: search.measureWindows(address),
+      secondary: search.measureWindowsHint,
     },
   ];
 }

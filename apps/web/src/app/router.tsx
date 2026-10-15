@@ -20,6 +20,7 @@ import { FrontDeskWindow } from '../features/front-desk/FrontDeskWindow.tsx';
 import { ImportWizard } from '../features/imports/ImportWizard.tsx';
 import { HomeownerPage } from '../features/homeowner/HomeownerPage.tsx';
 import { MeasureWindow } from '../features/measure/MeasureWindow.tsx';
+import { WindowsWindow } from '../features/measure/windows/WindowsWindow.tsx';
 import { ProposalWindow } from '../features/proposals/ProposalWindow.tsx';
 import { JobWindow } from '../features/job/JobWindow.tsx';
 import { JobsWindow } from '../features/jobs/JobsWindow.tsx';
@@ -74,6 +75,8 @@ const routes: RouteObject[] = [
           { path: 'front-desk/:conversationId?', element: <AppWindow app="front-desk"><FrontDeskWindow /></AppWindow> },
           { path: 'estimator', element: <AppWindow app="estimator" bare wide><MeasureWindow /></AppWindow> },
           { path: 'estimator/measure/:measurementId', element: <AppWindow app="estimator" bare wide><MeasureWindow /></AppWindow> },
+          { path: 'estimator/windows', element: <AppWindow app="estimator" bare wide><WindowsWindow /></AppWindow> },
+          { path: 'estimator/windows/:windowMeasurementId', element: <AppWindow app="estimator" bare wide><WindowsWindow /></AppWindow> },
           { path: 'estimator/proposals/:proposalId', element: <AppWindow app="estimator"><ProposalWindow /></AppWindow> },
           { path: 'agents', element: <AppWindow app="agents"><AgentsWindow /></AppWindow> },
           { path: 'agents/feed', element: <AppWindow app="agents"><FeedWindow /></AppWindow> },

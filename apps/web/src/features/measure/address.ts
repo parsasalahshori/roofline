@@ -18,3 +18,8 @@ export function looksCompleteAddress(text: string): boolean {
 export function measureAddressHref(address: string): string {
   return `/estimator?measure=${encodeURIComponent(address.trim())}`;
 }
+
+/** Where the windows screen opens to measure a typed address straight away (the shell search's "Measure windows"). */
+export function measureWindowsHref(address: string): string {
+  return `/estimator/windows?measure=${encodeURIComponent(address.trim())}`;
+}
