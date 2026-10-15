@@ -10,6 +10,9 @@
 // (ours - truth) / truth, and the fusion's report. Held-out houses only with --reveal (the integrator and verifiers).
 //
 //   npx tsx src/scripts/roof-3d-fusion-eval.ts [--split dev|heldout|all] [--reveal] [--house a,b] [--json OUT] [--param name=value ...]
+//                                              [--edges-dir lidar-edges|lidar-edges-xf] [--registry [--xf-coarse]]
+// --registry scores only on the truth track's cross-flight registry (truth-crossflight.md); lidar-edges-xf holds the
+// crops of the flights that have such a truth (mostly the older QL2 flight, scored on the newer QL1 one).
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Roof3d } from '@roofline/shared';
@@ -45,7 +48,30 @@ function args() {
     const [k, v] = a[i + 1]!.split('=');
     params[k!] = v === 'true' ? true : v === 'false' ? false : Number(v);
   });
-  return { split: get('--split') ?? 'dev', reveal: a.includes('--reveal'), houses: get('--house')?.split(',') ?? null, json: get('--json'), params };
+  return {
+    split: get('--split') ?? 'dev',
+    reveal: a.includes('--reveal'),
+    houses: get('--house')?.split(',') ?? null,
+    json: get('--json'),
+    params,
+    edgesDir: get('--edges-dir') ?? 'lidar-edges',
+    registry: a.includes('--registry'),
+    coarse: a.includes('--xf-coarse'),
+  };
+}
+
+/**
+ * With --registry: only the truth the cross-flight registry (lidar/<slug>/crossflight.json, scripts/roof-bench-lidar/
+ * crossflight.py) names for the fused flight: never the same project, never a pair whose roof changed between flights,
+ * never the smaller of two disagreeing outlines; 'fine' only unless --xf-coarse.
+ */
+function registryUnit(bench: string, slug: string, fusedUnit: string | null, coarse: boolean): string | null {
+  const f = path.join(bench, 'lidar', slug, 'crossflight.json');
+  if (fusedUnit === null || !existsSync(f)) return null;
+  const r = (JSON.parse(readFileSync(f, 'utf8')) as { registry?: Record<string, { truthUnit?: string | null; tier?: string; truthProject?: string }> }).registry?.[fusedUnit];
+  if (r?.truthUnit == null || r.truthUnit === fusedUnit) return null;
+  if (r.tier !== 'fine' && !(coarse && r.tier === 'coarse')) return null;
+  return r.truthUnit;
 }
 
 /** The other flights' lidar outlines of a house (truth.json per work unit, ok only), lng/lat polygons. */
@@ -79,7 +105,7 @@ async function main() {
     if (o.houses !== null && !o.houses.includes(e.slug)) continue;
     if (o.split !== 'all' && e.split !== o.split) continue;
     if (e.split === 'heldout' && !o.reveal) continue;
-    const lp = readLidarEdgePoints(bench, e.slug, e.data?.imageryDate ?? null);
+    const lp = readLidarEdgePoints(bench, e.slug, e.data?.imageryDate ?? null, o.edgesDir);
     if (lp === null) continue;
     const h = await loadHouse(e, bench);
     const base = { steep: steepRoof(h.building), building: h.building, seed: 7, hiddenEdge: null };
@@ -97,7 +123,10 @@ async function main() {
       }
     }
     const xflight: Row['xflight'] = [];
+    const only = o.registry ? registryUnit(bench, e.slug, lp.info.workunit, o.coarse) : undefined;
     for (const f of otherFlights(bench, e.slug, lp.info.workunit)) {
+      if (only !== undefined && f.unit !== only) continue;
+      if (f.unit === lp.info.workunit) throw new Error(`${e.slug}: cross-flight truth is the fused flight`);
       const tp: MultiPoly = f.outline.map((p) => [ringToXY(zone, p.outer), ...p.holes.map((hh) => ringToXY(zone, hh))]);
       if ((iou(pOff, tp) ?? 0) < 0.5) continue;
       const sh = alignedOutline(pOff, tp, 0.2).shiftM;

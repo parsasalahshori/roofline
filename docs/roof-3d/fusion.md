@@ -96,6 +96,18 @@ the fused 2025 flight outlines 171.6 m2, and ours is between them, 20 % over the
 leaf-off in March; whether it under-sees the wing or the wing changed after 2017 cannot be told from these data. Read the
 cross-flight result on this house as "the wing exists in both flights' direction" (IoU up), not as a size check.
 
+**Registry cross-flight truth (the truth track's `crossflight.py`, truth-crossflight.md)** — the stricter scorer: only
+the truth its registry names for the fused flight (never the same project, never a changed pair, never the smaller of
+two disagreeing outlines), with the crops of the flights that have one (`--edges-dir lidar-edges-xf --registry`,
+dev-xf-v1.txt). 17 DEV houses; fusion applies on 1 (9 decline sparse: those are the 2015-2019 QL2 flights; 5 leaf-on;
+2 nothing hidden); no house got worse.
+
+- **305 Ridgeway, fusing the 2017 QL2 flight (4.75 points/m2), scored on the 2025 QL1 truth (fine): IoU 0.609 -> 0.794,
+  plan error -38.5 % -> -17.5 %; the east wing comes back from the sparse winter flight too.** The registry refuses the
+  reverse (fusing 2025, scored on 2017) because the 2017 outline is the smaller of two disagreeing ones: the truth track
+  found ground-free returns under the wing in 2017, so the wing stood then and QL2 under trees simply under-resolves it.
+  That makes the "+20.1 % against the 2017 truth" above an artefact of the weaker truth, not an over-estimate.
+
 Canopy-heavy DEV houses: lr-305-ridgeway applied; omaha-roland applied (no second flight); seattle-wallingford declined
 misaligned (roof residual 0.19 m over the 0.15 m limit); kc-brookside, ev-52191985, ev-52192220 declined not-leaf-off;
 tr-atlanta-1289767665, tr-atlanta-51300274, tr-fayetteville-466556470, tr-fayetteville-467353063 declined sparse (QL2
