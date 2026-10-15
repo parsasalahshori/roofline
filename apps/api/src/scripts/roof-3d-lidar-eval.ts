@@ -2,7 +2,11 @@
 // is built from the same returns the method reads: scoring on it would be circular). docs/roof-3d/lidar.md.
 //
 //   npx tsx src/scripts/roof-3d-lidar-eval.ts [--split dev|heldout|all] [--reveal] [--seeds 7,8,9] [--json OUT]
-//                                             [--param name=value ...] [--house a,b]
+//                                             [--param name=value ...] [--house a,b] [--method lidar|planes|photo]
+//
+// --method (default lidar) picks the hidden-edge method that is "on": the lidar step, or the hiddenEdge option's
+// planes or photo method. The same frozen-shift scorer then compares all three on EagleView, the one truth none of
+// them reads.
 //
 // Per EagleView house (comparable: one structure, IoU >= 0.5), the roof is reconstructed with the option off and on at
 // the same seeds. EagleView sits about a metre off Google's frame; the shift is frozen per house from the OFF outline's
@@ -65,6 +69,7 @@ function args() {
     json: get('--json'),
     houses: get('--house')?.split(',') ?? null,
     params,
+    method: (get('--method') ?? 'lidar') as 'lidar' | 'planes' | 'photo',
   };
 }
 
@@ -171,7 +176,12 @@ async function main() {
       const off = roofOnLayers(h.layers, e.point, base);
       const msOff = performance.now() - t;
       t = performance.now();
-      const on = points === null ? off : roofOnLayers(h.layers, e.point, { ...base, lidar: points, lidarParams: o.params });
+      const on =
+        o.method === 'lidar'
+          ? points === null
+            ? off
+            : roofOnLayers(h.layers, e.point, { ...base, lidar: points, lidarParams: o.params })
+          : roofOnLayers(h.layers, e.point, { ...base, hiddenEdge: o.method === 'planes' ? { method: 'planes', planes: o.params as Record<string, number> } : { method: 'photo', photo: o.params as Record<string, number> } });
       const msOn = performance.now() - t;
       if (off === null || on === null) continue;
       const { zone, poly: oursOff } = outlineXY(off);
@@ -193,7 +203,7 @@ async function main() {
         split: e.split,
         canopy: e.tags.canopy?.class ?? 'none',
         set: e.set,
-        lidar: points === null ? 'no-crop' : (b.lidar?.applied ? 'applied' : (b.lidar?.reason ?? 'none')),
+        lidar: o.method !== 'lidar' ? (JSON.stringify(on.outline) === JSON.stringify(off.outline) ? 'unchanged' : 'applied') : points === null ? 'no-crop' : b.lidar?.applied ? 'applied' : (b.lidar?.reason ?? 'none'),
         shift,
         off: a,
         on: b,
@@ -215,7 +225,7 @@ async function main() {
   for (const sp of splits) {
     const rs = out.filter((r) => r.split === sp);
     const nH = new Set(rs.map((r) => r.slug)).size;
-    lines.push(`\n== ${sp}: ${nH} comparable EagleView houses (${withLidarFile} EagleView houses with a lidar crop in the run), seeds ${o.seeds.join(',')}`);
+    lines.push(`\n== ${sp} (method ${o.method}): ${nH} comparable EagleView houses (${withLidarFile} EagleView houses with a lidar crop in the run), seeds ${o.seeds.join(',')}`);
     const reasons: Record<string, number> = {};
     for (const r of rs) reasons[r.lidar] = (reasons[r.lidar] ?? 0) + 1;
     lines.push(`lidar outcome (house-seeds): ${Object.entries(reasons).map(([k, v]) => `${k} ${v}`).join(', ')}`);
