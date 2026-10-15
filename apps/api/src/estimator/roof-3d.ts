@@ -5,6 +5,7 @@ import {
   metresApart,
   metresToBuilding,
   type Roof3d,
+  type Roof3dEdge,
   type Roof3dPhoto,
   type Roof3dSnapshot,
   type Roof3dStructure,
@@ -12,10 +13,11 @@ import {
   type SolarBuilding,
 } from '@roofline/shared';
 import { lngLatToUtm, otherRoofParts, reconstructRoof, toRoof3d, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
+import { crownFromGreen, eaveSupport } from '@roofline/shared/roof-reconstruct/eave-support';
 import type { AppDeps } from '../app.ts';
 import { type RoofLayers, SolarLayersUnavailableError } from '../providers/solar-layers.ts';
 import { encodeRgbPng } from './png.ts';
-import { withGoogleCheck } from './roof-3d-compare.ts';
+import { tierReasons, withGoogleCheck } from './roof-3d-compare.ts';
 import { SOLAR_BUILDING_SNAP_M } from './solar.ts';
 
 /*
@@ -156,7 +158,7 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boo
   if (local === null || local.clipped) return null;
   const toLngLat = (x: number, y: number) => utmToLngLat(zone, layers.originX + x, layers.originY + y);
   const meta = { imageryQuality: layers.imageryQuality, imageryDate: layers.imageryDate };
-  const roof = toRoof3d(local, toLngLat, meta);
+  const roof = withEdgeEvidence(toRoof3d(local, toLngLat, meta), layers, raster.green);
   // Detached garages, sheds and carports on the same layers: offered beside the main roof, not added to it.
   const structures: Roof3dStructure[] = [];
   for (const other of otherRoofParts(raster, local)) {
@@ -167,6 +169,92 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boo
     structures.push({ outline: r.outline, faces: r.faces, lines: r.lines, ...(r.quality !== undefined ? { quality: r.quality } : {}), gapFt: Math.round(other.gapM * 3.280839895 * 10) / 10 });
   }
   return structures.length > 0 ? { ...roof, structures } : roof;
+}
+
+/**
+ * Chance an outline edge lies within 0.5 m of where EagleView puts it, by its eave support: 86.5% where the height map
+ * shows the eave drop, 58.2% where it does not (failure taxonomy section 2.3: pooled samples of the 54 saved houses
+ * against translation-aligned EagleView outlines; the support classes themselves are not tuned on these houses).
+ */
+export const EDGE_AGREEMENT = { verified: 0.865, unverified: 0.582 } as const;
+/**
+ * An outline needs a review ('edges-unverified') when at least this share of its length is unverified AND that is at
+ * least EDGES_UNVERIFIED_MIN_FT. Chosen on the benchmark's DEV split (docs/roof-3d/confidence.md, "Calibration").
+ */
+export const EDGES_UNVERIFIED_SHARE = 0.25;
+export const EDGES_UNVERIFIED_MIN_FT = 20;
+/** Room read round the outline's box, metres: the outside window (1 m) plus the crown window (3 m) with a margin. */
+const EDGE_WINDOW_M = 4;
+/** An edge counts as beside the canopy when at least this share of it is. */
+const EDGE_CANOPY_SHARE = 0.5;
+const FT_PER_M = 3.280839895;
+
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+/**
+ * The roof with its outline's evidence (eave-support.ts): per edge (Roof3d.edges) and in total
+ * (quality.edgeSupport), and 'edges-unverified' among its reasons when too much of the outline cannot be checked from
+ * the heights. Never throws: when the height map cannot be read along the outline the roof comes back with
+ * quality.edgeSupportFailure set and no edges.
+ */
+export function withEdgeEvidence(roof: Roof3d, layers: RoofLayers, green: Uint8Array | null | undefined): Roof3d {
+  if (roof.quality === undefined) return roof;
+  const zone = utmZoneOfEpsg(layers.epsg);
+  if (zone === null) return { ...roof, quality: { ...roof.quality, edgeSupportFailure: 'no-zone' } };
+  let support: ReturnType<typeof eaveSupport>;
+  try {
+    const s = layers.raster.pixelSizeM;
+    const local = roof.outline.map(([lng, lat]) => {
+      const u = lngLatToUtm(zone, lng, lat);
+      return { x: u.easting - layers.originX, y: u.northing - layers.originY };
+    });
+    // Only the window round the outline is read (the crown map is the costly part): its box plus EDGE_WINDOW_M.
+    const { width: W, height: H } = layers.raster;
+    const c0 = Math.max(0, Math.floor(Math.min(...local.map((p) => p.x)) / s - EDGE_WINDOW_M / s));
+    const c1 = Math.min(W, Math.ceil(Math.max(...local.map((p) => p.x)) / s + EDGE_WINDOW_M / s));
+    const r0 = Math.max(0, Math.floor(-Math.max(...local.map((p) => p.y)) / s - EDGE_WINDOW_M / s));
+    const r1 = Math.min(H, Math.ceil(-Math.min(...local.map((p) => p.y)) / s + EDGE_WINDOW_M / s));
+    if (!(c1 > c0 && r1 > r0)) return { ...roof, quality: { ...roof.quality, edgeSupportFailure: 'off-raster' } };
+    const w = c1 - c0;
+    const h = r1 - r0;
+    const dsm = new Float32Array(w * h);
+    const greenW = green === null || green === undefined ? null : new Uint8Array(w * h);
+    for (let r = 0; r < h; r++) {
+      dsm.set(layers.raster.dsm.subarray((r + r0) * W + c0, (r + r0) * W + c1), r * w);
+      greenW?.set(green!.subarray((r + r0) * W + c0, (r + r0) * W + c1), r * w);
+    }
+    const raster = { width: w, height: h, pixelSizeM: s, dsm };
+    const shifted = local.map((p) => ({ x: p.x - c0 * s, y: p.y + r0 * s }));
+    support = eaveSupport(shifted, raster, crownFromGreen(raster, greenW));
+  } catch {
+    return { ...roof, quality: { ...roof.quality, edgeSupportFailure: 'error' } };
+  }
+  if (!support.ok) return { ...roof, quality: { ...roof.quality, edgeSupportFailure: support.reason } };
+  // eaveSupport drops repeated corners; map its edges back onto the stored outline's corners.
+  const from: number[] = [];
+  roof.outline.forEach((p, i) => {
+    const prev = roof.outline[(i + roof.outline.length - 1) % roof.outline.length]!;
+    if (prev[0] !== p[0] || prev[1] !== p[1]) from.push(i);
+  });
+  const edges: Roof3dEdge[] = support.edges.map((e) => ({
+    from: from[e.edge] ?? e.edge,
+    lengthFt: Math.round(e.lengthM * FT_PER_M * 10) / 10,
+    support: e.support,
+    unverifiedShare: round3(e.noneShare),
+    reason: e.reason,
+    canopy: e.canopyShare >= EDGE_CANOPY_SHARE,
+    confidence: round3(EDGE_AGREEMENT.verified * (1 - e.noneShare) + EDGE_AGREEMENT.unverified * e.noneShare),
+  }));
+  const edgeSupport = {
+    strongShare: round3(support.strongShare),
+    weakShare: round3(support.weakShare),
+    unverifiedShare: round3(support.unverifiedShare),
+    unverifiedFt: Math.round(support.unverifiedLengthM * FT_PER_M * 10) / 10,
+    canopyShare: round3(support.canopyExposure),
+  };
+  const flag = edgeSupport.unverifiedShare >= EDGES_UNVERIFIED_SHARE && edgeSupport.unverifiedFt >= EDGES_UNVERIFIED_MIN_FT;
+  const reasons = flag && !roof.quality.reasons.includes('edges-unverified') ? [...roof.quality.reasons, 'edges-unverified' as const] : roof.quality.reasons;
+  return { ...roof, edges, quality: tierReasons({ ...roof.quality, reasons, edgeSupport }) };
 }
 
 /**

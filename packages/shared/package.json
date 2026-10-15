@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./roof-reconstruct": "./src/roof-reconstruct/index.ts"
+    "./roof-reconstruct": "./src/roof-reconstruct/index.ts",
+    "./roof-reconstruct/eave-support": "./src/roof-reconstruct/eave-support.ts"
   },
   "dependencies": {
     "libphonenumber-js": "^1.13.15",

@@ -1,4 +1,4 @@
-import type { LngLat, Roof3d, SolarBuilding } from '@roofline/shared';
+import { type LngLat, ROOF_QUALITY_SEVERITY, type Roof3d, type RoofQuality, type RoofQualityReason, type SolarBuilding } from '@roofline/shared';
 
 /*
  * A reconstructed roof checked against Google Solar's own roof segments (buildingInsights) and the acceptance targets:
@@ -83,6 +83,9 @@ export function formatCheck(name: string, roof: Roof3d, a: Acceptance, ms?: numb
     q === undefined
       ? '  quality: -'
       : `  outline IoU ${q.outlineIoU.toFixed(3)} (>= ${TARGETS.outlineIoU}), edges within 0.5 m ${(q.edgeFit * 100).toFixed(0)}% (>= ${TARGETS.edgeFit * 100}%), faces cover ${(q.faceCoverage * 100).toFixed(0)}% of the mask, mean residual ${(q.meanResidualM * 100).toFixed(1)} cm, under trees ${(q.treeShare * 100).toFixed(0)}%${q.reasons.length > 0 ? ` -> NEEDS REVIEW (${q.reasons.join(', ')})` : ' -> ok'}`,
+    q?.edgeSupport === undefined
+      ? '  edges: -'
+      : `  edges: eave drop strong ${(q.edgeSupport.strongShare * 100).toFixed(0)}%, weak ${(q.edgeSupport.weakShare * 100).toFixed(0)}%, unverified ${(q.edgeSupport.unverifiedShare * 100).toFixed(0)}% (${q.edgeSupport.unverifiedFt.toFixed(0)} ft), beside trees ${(q.edgeSupport.canopyShare * 100).toFixed(0)}%${(q.notes ?? []).length > 0 ? `; notes: ${q.notes!.join(', ')}` : ''}`,
     '  face | plan sq ft | pitch ours / Google | facing ours / Google | Google segment sq ft | check',
   ];
   for (const r of a.rows) {
@@ -106,8 +109,110 @@ export function differsFromGoogle(roof: Roof3d, building: SolarBuilding | null):
   return checkRoof(roof, building).rows.some((r) => r.main && (!r.pitchOk || !r.facingOk));
 }
 
-/** The roof with 'differs-from-google' among its review reasons when it does. */
+/**
+ * The quality with its reasons sorted by severity (ROOF_QUALITY_SEVERITY): 'block' and 'check' reasons stay in
+ * `reasons` (a person reviews the roof), 'info' ones move to `notes` (shown, counted, no review). Idempotent.
+ */
+export function tierReasons(q: RoofQuality): RoofQuality {
+  const reasons: RoofQualityReason[] = [];
+  const notes: RoofQualityReason[] = [];
+  for (const r of q.reasons) {
+    const into = ROOF_QUALITY_SEVERITY[r] === 'info' ? notes : reasons;
+    if (!into.includes(r)) into.push(r);
+  }
+  // A note stays a note (withGoogleCheck files a minor Google difference there): tiering only ever demotes.
+  for (const r of q.notes ?? []) if (!reasons.includes(r) && !notes.includes(r)) notes.push(r);
+  const out: RoofQuality = { ...q, reasons };
+  if (notes.length > 0) out.notes = notes;
+  else delete out.notes;
+  return out;
+}
+
+/**
+ * Main faces that differ from Google's segment under them carry at least this share of the main faces' area: then
+ * 'differs-from-google' needs a review; below it, it is a note. A third: enough area for the roof's dominant pitch (the
+ * one carrying the most area) to be in question. On the DEV houses a smaller difference was right as often as Google
+ * (ours is closer to EagleView in 16 of 27 conflicts), so it is not worth a review on its own.
+ */
+export const DIFFERS_AREA_SHARE = 1 / 3;
+
+/** The share of the main faces' area (150 sq ft or more, with a segment) whose pitch or facing differ from Google's. */
+export function differingShare(roof: Roof3d, building: SolarBuilding | null): number {
+  const main = checkRoof(roof, building).rows.filter((r) => r.main);
+  const all = main.reduce((t, r) => t + r.planSqFt, 0);
+  const off = main.filter((r) => !r.pitchOk || !r.facingOk).reduce((t, r) => t + r.planSqFt, 0);
+  return all > 0 ? off / all : 0;
+}
+
+/** Confidence of a face whose own edges are all creases (no outline edge to check): a verified edge's. */
+const INTERIOR_FACE_CONFIDENCE = 0.865;
+/**
+ * A face whose pitch or facing differ from Google's segment under it keeps this share of its confidence: when they
+ * differ by more than 1/12 ours is the closer to EagleView 16 times in 27 (failure taxonomy, mode 12), so a
+ * disagreement is weak evidence either way.
+ */
+const SEGMENT_DISAGREES = 0.8;
+/** An outline edge is a face's when its middle is this close to the face's boundary, metres. */
+const EDGE_ON_FACE_M = 0.3;
+
+function metresBetween(a: LngLat, b: LngLat): [number, number] {
+  const k = 111_320;
+  return [(b[0] - a[0]) * k * Math.cos((a[1] * Math.PI) / 180), (b[1] - a[1]) * k];
+}
+
+function nearRing(p: LngLat, ring: readonly LngLat[], tolM: number): boolean {
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!;
+    const [bx, by] = metresBetween(a, ring[(i + 1) % ring.length]!);
+    const [px, py] = metresBetween(a, p);
+    const l2 = bx * bx + by * by;
+    const t = l2 > 0 ? Math.max(0, Math.min(1, (px * bx + py * by) / l2)) : 0;
+    if (Math.hypot(px - t * bx, py - t * by) <= tolM) return true;
+  }
+  return false;
+}
+
+/**
+ * Each face's confidence (Roof3dFace.confidence): the length-weighted confidence of the outline edges it ends on
+ * (INTERIOR_FACE_CONFIDENCE when it ends on none), times SEGMENT_DISAGREES when Google's segment under it disagrees.
+ * Needs the roof's edges (withEdgeEvidence); without them the roof comes back unchanged.
+ */
+export function withFaceConfidence(roof: Roof3d, building: SolarBuilding | null): Roof3d {
+  const edges = roof.edges;
+  if (edges === undefined || edges.length === 0) return roof;
+  const rows = checkRoof(roof, building).rows;
+  const mids = edges.map((e) => {
+    const a = roof.outline[e.from]!;
+    const b = roof.outline[(e.from + 1) % roof.outline.length]!;
+    return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as LngLat;
+  });
+  const faces = roof.faces.map((f, k) => {
+    let len = 0;
+    let sum = 0;
+    edges.forEach((e, i) => {
+      if (!nearRing(mids[i]!, f.ring, EDGE_ON_FACE_M)) return;
+      len += e.lengthFt;
+      sum += e.lengthFt * e.confidence;
+    });
+    const fromEdges = len > 0 ? sum / len : INTERIOR_FACE_CONFIDENCE;
+    const row = rows[k];
+    const agrees = row === undefined || row.segment === null || (row.pitchOk && row.facingOk);
+    return { ...f, confidence: Math.round(fromEdges * (agrees ? 1 : SEGMENT_DISAGREES) * 1000) / 1000 };
+  });
+  return { ...roof, faces };
+}
+
+/**
+ * The roof as the server keeps it: 'differs-from-google' when a main face misses Google's segment, among its review
+ * reasons when the faces that do carry DIFFERS_AREA_SHARE of the main area or more, else among its notes; and each
+ * face's confidence (withFaceConfidence).
+ */
 export function withGoogleCheck(roof: Roof3d, building: SolarBuilding | null): Roof3d {
-  if (roof.quality === undefined || roof.quality.reasons.includes('differs-from-google') || !differsFromGoogle(roof, building)) return roof;
-  return { ...roof, quality: { ...roof.quality, reasons: [...roof.quality.reasons, 'differs-from-google'] } };
+  if (roof.quality === undefined) return roof;
+  const checked = withFaceConfidence(roof, building);
+  const has = roof.quality.reasons.includes('differs-from-google') || (roof.quality.notes ?? []).includes('differs-from-google');
+  if (has || !differsFromGoogle(roof, building)) return checked;
+  const q = roof.quality;
+  const quality = differingShare(roof, building) >= DIFFERS_AREA_SHARE ? { ...q, reasons: [...q.reasons, 'differs-from-google' as const] } : { ...q, notes: [...(q.notes ?? []), 'differs-from-google' as const] };
+  return { ...checked, quality: tierReasons(quality) };
 }
