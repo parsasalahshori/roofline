@@ -69,10 +69,12 @@ function southAtMiddle(layers: RoofLayers, outline: readonly [number, number][])
   return best - sw.northing;
 }
 
-describe('the server does not run the hidden-edge step by default (ROOF_3D_ALGORITHM_VERSION 5)', () => {
+describe('the server does not run the hidden-edge step by default (since ROOF_3D_ALGORITHM_VERSION 5)', () => {
   it('the default is off, and the version moved on from 4 (its roofs are stale)', () => {
     expect(DEFAULT_HIDDEN_EDGE).toBeNull();
-    expect(ROOF_3D_ALGORITHM_VERSION).toBe(5);
+    // 6: whole-edge eave support (docs/roof-3d/support.md); the step is still off.
+    expect(ROOF_3D_ALGORITHM_VERSION).toBeGreaterThanOrEqual(5);
+    expect(ROOF_3D_ALGORITHM_VERSION).not.toBe(4);
   });
 
   it('a crown over the south eave: the default output is byte-identical to the step turned off, with no inferred record', () => {

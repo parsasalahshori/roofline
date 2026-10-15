@@ -133,7 +133,7 @@ export type Roof3dEdge = {
   reason: Roof3dEdgeReason | null;
   /** Half or more of it runs beside a tree crown. */
   canopy: boolean;
-  /** Chance the edge is where the height map says (within half a metre), 0-1, from its support. */
+  /** Chance the edge is within half a metre of an independent outline (EagleView or lidar), 0-1, from its support. */
   confidence: number;
 };
 
@@ -307,9 +307,12 @@ export const ROOF_3D_SNAPSHOT_SCHEMA = 2;
  * outline-release-notes.md): outline edges under tree crowns are checked against the photo and hidden eaves put on their
  * face's plane at the eave height (roofOnLayers' DEFAULT_HIDDEN_EDGE, photo+planes). 5: that default turned off again
  * (docs/roof-3d/outline-remediate.md): a roof is made as by version 3; 5 and not 3 so that roofs version 4 stored (with
- * inferred roof priced as measured) read as stale, and no number ever means two reconstructions.
+ * inferred roof priced as measured) read as stale, and no number ever means two reconstructions. 6: eave support reads
+ * the whole of every outline edge (docs/roof-3d/support.md; before, the second half of each edge was read at its
+ * midpoint), so edge support, the edges-unverified review and the edge confidences change; edge confidence now weighs
+ * strong, weak and unverified stretches separately, calibrated on DEV against EagleView and lidar truth.
  */
-export const ROOF_3D_ALGORITHM_VERSION = 5;
+export const ROOF_3D_ALGORITHM_VERSION = 6;
 
 function versionField(value: unknown): number | null {
   if (value === undefined) return 1;

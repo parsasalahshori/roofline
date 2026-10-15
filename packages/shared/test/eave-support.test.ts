@@ -200,3 +200,74 @@ describe('crownFromGreen', () => {
     expect(EAVE_SUPPORT.weakM).toBe(0.5);
   });
 });
+
+// The second half of every edge used to be read at its midpoint (`tt = min(t, L / 2)`), so a stretch with no eave drop
+// past the midpoint went unseen and the midpoint was counted once per missing sample.
+describe('eave support samples the whole edge', () => {
+  // A deck at eave height beside the north half of the east edge (y from the edge's middle to its north end).
+  const YM = (Y0 + Y1) / 2;
+  const deckNorth = raster((x, y) => (inRoof(x, y) || (x >= X1 && x < X1 + 3 && y >= YM && y < Y1) ? EAVE_Z : 0));
+  const deckSouth = raster((x, y) => (inRoof(x, y) || (x >= X1 && x < X1 + 3 && y >= Y0 && y < YM) ? EAVE_Z : 0));
+
+  it('reports an edge whose second half has no eave drop', () => {
+    // RECT is counter-clockwise; the east edge runs south to north, so its second half is the north half.
+    const r = ok(eaveSupport(RECT, deckNorth));
+    const east = r.edges[EAST]!;
+    expect(east.noneShare).toBeCloseTo(0.5, 1);
+    expect(east.reason).toBe('level');
+    expect(r.unverifiedLengthM).toBeCloseTo(4, 0);
+  });
+
+  it('the first half and the second half weigh the same', () => {
+    const north = ok(eaveSupport(RECT, deckNorth)).edges[EAST]!;
+    const south = ok(eaveSupport(RECT, deckSouth)).edges[EAST]!;
+    expect(south.noneShare).toBeCloseTo(north.noneShare, 9);
+    // Reversing the ring reverses each edge: the same stretch is still found.
+    const rev = ok(eaveSupport([...RECT].reverse(), deckNorth));
+    expect(rev.unverifiedLengthM).toBeCloseTo(ok(eaveSupport(RECT, deckNorth)).unverifiedLengthM, 9);
+  });
+
+  it('samples are spread evenly from end to end of each edge, none repeated', () => {
+    const r = ok(eaveSupport(RECT, clean));
+    for (const e of r.edges) {
+      const pts = r.samples.filter((q) => q.edge === e.edge);
+      const a = RECT[e.edge]!;
+      const ts = pts.map((q) => Math.hypot(q.x - a.x, q.y - a.y));
+      expect(new Set(ts.map((t) => t.toFixed(3))).size).toBe(ts.length);
+      expect(Math.min(...ts)).toBeLessThanOrEqual(EAVE_SUPPORT.stepM);
+      expect(Math.max(...ts)).toBeGreaterThanOrEqual(e.lengthM - EAVE_SUPPORT.stepM);
+    }
+  });
+
+  it('a short edge gets one sample at its middle', () => {
+    const tiny: EaveXY[] = [
+      { x: X0, y: Y0 },
+      { x: X1, y: Y0 },
+      { x: X1, y: Y0 + 0.1 },
+      { x: X1 - 0.05, y: Y1 },
+      { x: X0, y: Y1 },
+    ];
+    const r = ok(eaveSupport(tiny, clean));
+    const e = r.edges[1]!;
+    expect(e.samples).toBe(1);
+    const q = r.samples.find((s) => s.edge === 1)!;
+    expect(q.y).toBeCloseTo(Y0 + 0.05, 3);
+  });
+
+  it('works on a 0.25 m (Google MEDIUM) height map', () => {
+    const s = 0.25;
+    const w = 120;
+    const dsm = new Float32Array(w * w);
+    for (let r = 0; r < w; r++) {
+      for (let c = 0; c < w; c++) {
+        const x = (c + 0.5) * s;
+        const y = -(r + 0.5) * s;
+        dsm[r * w + c] = inRoof(x, y) || (x >= X1 && x < X1 + 3 && y >= YM && y < Y1) ? EAVE_Z : 0;
+      }
+    }
+    const r = ok(eaveSupport(RECT, { width: w, height: w, pixelSizeM: s, dsm }));
+    expect(r.edges[EAST]!.noneShare).toBeGreaterThan(0.4);
+    expect(r.edges[EAST]!.noneShare).toBeLessThan(0.6);
+    expect(r.edges[0]!.noneShare).toBe(0);
+  });
+});

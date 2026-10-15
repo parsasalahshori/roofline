@@ -199,7 +199,10 @@ describe('photo step guards: each refuses its own scene', () => {
         photoRefused({ roof: ROOF, crown: sparse(20, 0.5) }, SHORT, s, 'no-consensus', { minConsensus: 1.01 });
       });
       it('ground: the photo says roof (a roof-coloured patio) but the heights between the leaves say ground', () => {
-        photoRefused({ roof: { ...ROOF, x1: 19 }, crown: sparse(19.5, 0.6), patioM: 1 }, SHORT, s, 'ground');
+        // The gaps that show the ground also let eave-support verify the eave there: since algorithm 6 reads the whole edge
+        // (not its midpoint for the second half) only about 40 % of it is unverified, so the hidden-share gate alone
+        // would already refuse it. The gate is opened here so this scene tests the ground guard by itself.
+        photoRefused({ roof: { ...ROOF, x1: 19 }, crown: sparse(19.5, 0.6), patioM: 1 }, SHORT, s, 'ground', { minHiddenShare: 0.3 });
       });
       it("neighbour-roof: the swept strip is another mask part's roof", () => {
         const sc: Scene = {

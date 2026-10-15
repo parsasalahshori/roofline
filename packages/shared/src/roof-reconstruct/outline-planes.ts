@@ -504,7 +504,12 @@ export function inferHiddenEaves(input: PlanesInput, params: Partial<OutlinePlan
       no('offset');
       continue;
     }
-    const seen = pc.edges.flatMap((k) => edges[k]!.samples.filter((x) => x.support !== 'none'));
+    // Only strong samples are eave evidence: between eave-support's inside and outside windows (medians 0.35 m inside and
+    // 0.8 m outside: a 1.15 m run) a roof plane's own slope drops 0.5 m (weak) from about 5/12 and 1 m (strong) only
+    // from about 10/12, so a 'weak' sample seen through a gap in a crown is as likely the roof carrying on downhill past
+    // a notch as an eave. Since algorithm 6 eave-support reads the whole edge, such samples reach this check; before,
+    // the second half of every edge was read at its midpoint, where the crown hid them.
+    const seen = pc.edges.flatMap((k) => edges[k]!.samples.filter((x) => x.support === 'strong'));
     if (seen.length >= 5 && median(seen.map((q) => Math.abs((planeZ(pl, q.x, q.y) - h) / slope))) > p.visibleAgreeM) {
       no('disagrees-visible');
       continue;
