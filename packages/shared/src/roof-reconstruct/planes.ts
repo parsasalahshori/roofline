@@ -16,8 +16,13 @@ export type PlaneParams = {
   /** RANSAC candidates per plane, and how many of the best are checked for their connected patch. */
   candidates: number;
   topK: number;
-  /** Points each candidate is scored on (a random sample of the free points). */
+  /** Points each candidate is scored on (a sample of the free points). */
   sampleSize: number;
+  /**
+   * Candidates on a lattice over the free pixels and scored on an evenly spread sample (true), instead of random draws
+   * (false, the earlier behaviour): the planes, and so the measurement, then do not depend on the random seed.
+   */
+  lattice: boolean;
   /** Half-size of the window a local candidate plane is fitted on, metres. */
   windowM: number;
   /** Touching planes whose normals are within this angle and whose heights agree within mergeStepM are one face. */
@@ -82,6 +87,7 @@ export const DEFAULT_PLANE_PARAMS: PlaneParams = {
   candidates: 320,
   topK: 12,
   sampleSize: 6000,
+  lattice: true,
   windowM: 0.6,
   mergeAngleDeg: 4,
   mergeStepM: 0.35,
@@ -238,6 +244,25 @@ function patchFrom(g: Grid, s: number, dsm: Float32Array, free: Mask, p: Plane, 
   return { patch, size };
 }
 
+/**
+ * Candidate seeds on a square lattice over the free pixels (`list`, raster order): the lattice step is chosen so about
+ * `want` free pixels fall on it, so the search is as dense as `want` random draws but the same every run and for any
+ * seed. The step shrinks as the free pixels run out, so the small faces left at the end are still visited. Lattice
+ * points sit in the middle of each step (a step-k lattice offset by k/2), away from the raster's edge.
+ */
+export function latticeSeeds(g: Grid, list: Int32Array, want: number): Int32Array {
+  const step = Math.max(1, Math.floor(Math.sqrt(list.length / Math.max(1, want))));
+  const off = Math.floor(step / 2);
+  const out: number[] = [];
+  for (let k = 0; k < list.length; k++) {
+    const i = list[k]!;
+    const c = i % g.w;
+    const r = (i - c) / g.w;
+    if (c % step === off && r % step === off) out.push(i);
+  }
+  return Int32Array.from(out);
+}
+
 function indicesOf(m: Mask): Int32Array {
   const out = new Int32Array(countSet(m));
   let k = 0;
@@ -278,10 +303,17 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
     const list = indicesOf(free);
     if (list.length < minPx) break;
     const sample = new Int32Array(Math.min(prm.sampleSize, list.length));
-    for (let k = 0; k < sample.length; k++) sample[k] = list[Math.floor(rng() * list.length)]!;
+    const seeds = prm.lattice ? latticeSeeds(g, list, prm.candidates) : null;
+    if (prm.lattice) {
+      // Evenly spread over the free pixels (in raster order), not drawn: the score does not hang on a random draw.
+      for (let k = 0; k < sample.length; k++) sample[k] = list[Math.floor(((k + 0.5) * list.length) / sample.length)]!;
+    } else {
+      for (let k = 0; k < sample.length; k++) sample[k] = list[Math.floor(rng() * list.length)]!;
+    }
     const top: { plane: Plane; score: number; seed: number }[] = [];
-    for (let t = 0; t < prm.candidates; t++) {
-      const seed = list[Math.floor(rng() * list.length)]!;
+    const nCand = seeds !== null ? seeds.length : prm.candidates;
+    for (let t = 0; t < nCand; t++) {
+      const seed = seeds !== null ? seeds[t]! : list[Math.floor(rng() * list.length)]!;
       const c0 = seed % w;
       const r0 = (seed - c0) / w;
       let n = 0;
@@ -304,7 +336,8 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
       for (let k = 0; k < sample.length; k++) if (residual(g, s, dsm, plane, sample[k]!) < tolP) score++;
       if (top.length < prm.topK || score > top[top.length - 1]!.score) {
         top.push({ plane, score, seed });
-        top.sort((x, y) => y.score - x.score);
+        // Ties go to the lower pixel index: the order never depends on how the candidates were visited.
+        top.sort((x, y) => y.score - x.score || x.seed - y.seed);
         if (top.length > prm.topK) top.pop();
       }
     }
