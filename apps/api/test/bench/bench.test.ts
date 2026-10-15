@@ -163,6 +163,18 @@ describe('the harness on a synthetic hip roof', () => {
     await expect(runBench({ ...base, manifest: m, split: 'all', loader: () => Promise.reject(new Error('missing dsm.tif')) })).rejects.toThrow(/cannot read/);
   });
 
+  test('a house with no roof under the point is counted as no-roof, not skipped', async () => {
+    const m = manifest(entries(slugs.slice(0, 1)));
+    const bare = async (entry: HouseEntry): Promise<LoadedHouse> => {
+      const h = await loader(entry);
+      return { ...h, layers: { ...h.layers, raster: { ...h.layers.raster, mask: new Uint8Array(h.layers.raster.mask.length) } } };
+    };
+    const report = await runBench({ ...base, manifest: m, split: 'all', loader: bare, reveal: true });
+    const all = [...(report.splits.dev ? [report.splits.dev] : []), ...(report.splits.heldout ? [report.splits.heldout] : [])][0]!.cohorts.all!;
+    expect(all.stats.noRoof!.mean).toBe(1);
+    expect(all.stats.failures!.mean).toBe(0);
+  }, 60_000);
+
   test('a reconstruction that throws is counted as a failure and the run goes on', async () => {
     const m = manifest(entries(slugs.slice(0, 2)));
     let n = 0;

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { LngLat, SolarBuilding } from '@roofline/shared';
 import { parseBuildingInsights } from '../../providers/google-solar.ts';
@@ -30,7 +30,11 @@ export type LoadedHouse = {
   osm: LngLat[] | null;
 };
 
+/** Google's files are a few hundred kilobytes each; the server refuses anything near 40 MB, and so does the benchmark. */
+export const MAX_FILE_BYTES = 40 * 1024 * 1024;
+
 function bytes(file: string): ArrayBuffer {
+  if (statSync(file).size > MAX_FILE_BYTES) throw new Error(`${path.basename(file)} is over ${MAX_FILE_BYTES} bytes`);
   const b = readFileSync(file);
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 }

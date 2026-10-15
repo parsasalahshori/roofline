@@ -9,7 +9,8 @@ import { fromArrayBuffer } from 'geotiff';
  *
  * For each leafy neighbourhood in NEIGHBOURHOODS: the house-sized building outlines OpenStreetMap has there (Overpass,
  * ODbL), and the USGS National Agriculture Imagery Program photo of the same square (public domain, 4 bands, about
- * 0.6 m, taken in the growing season). A pixel is "crown" when it is vegetated (NDVI >= 0.30) and dark (mean of red,
+ * 0.6 m, taken in the growing season). A pixel is "crown" when it is vegetated (NDVI >= 0.30, or the tile's 65th
+ * percentile when the tile is mostly below that: imagery out of leaf) and dark (mean of red,
  * green and blue <= 95 of 255): lawn is vegetated but bright. Per outline we keep the crown share over the outline
  * (trees hiding the roof, `over`) and in the 6 m round it (trees beside the roof, `ring`). The output
  * (candidates.json) ranks them per region for roof-3d-bench-fetch.ts, which buys Google's layers for the best ones.
@@ -161,16 +162,16 @@ type Way = { id: number; tags?: Record<string, string>; geometry?: { lat: number
 async function overpass(hood: Hood): Promise<Way[]> {
   const q = `[out:json][timeout:60];way["building"~"^(house|detached|residential|semidetached_house|bungalow|yes)$"](around:${RADIUS_M},${hood.lat},${hood.lng});out geom tags;`;
   let lastErr = '';
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     const url = OVERPASS[attempt % OVERPASS.length]!;
     try {
-      const res = await fetch(url, { method: 'POST', headers: { 'user-agent': UA, 'content-type': 'application/x-www-form-urlencoded' }, body: `data=${encodeURIComponent(q)}`, signal: AbortSignal.timeout(90_000) });
+      const res = await fetch(url, { method: 'POST', headers: { 'user-agent': UA, 'content-type': 'application/x-www-form-urlencoded' }, body: `data=${encodeURIComponent(q)}`, signal: AbortSignal.timeout(40_000) });
       if (res.ok) return ((await res.json()) as { elements: Way[] }).elements;
       lastErr = `HTTP ${res.status}`;
     } catch (err) {
       lastErr = (err as Error).message;
     }
-    await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)));
+    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
   }
   throw new Error(`Overpass for ${hood.name}: ${lastErr}`);
 }
@@ -204,13 +205,14 @@ async function crownsAround(hood: Hood): Promise<Crowns> {
   if (image.getSamplesPerPixel() < 4) throw new Error('NAIP without its infrared band');
   const r = (await image.readRasters()) as unknown as ArrayLike<number>[];
   const tree = new Uint8Array(w * h);
+  const ndviOf = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) ndviOf[i] = (r[3]![i]! - r[0]![i]!) / (r[3]![i]! + r[0]![i]! + 1e-6);
+  // Imagery taken out of leaf (or of evergreens) has lower NDVI everywhere: when fewer than a third of the tile reaches
+  // NDVI_MIN, the limit drops to the tile's 65th percentile (never under 0.10), so a leaf-off tile still shows crowns.
+  const sorted = Float32Array.from(ndviOf).sort();
+  const ndviLimit = Math.min(NDVI_MIN, Math.max(0.1, sorted[Math.floor(sorted.length * 0.65)]!));
   for (let i = 0; i < w * h; i++) {
-    const red = r[0]![i]!;
-    const green = r[1]![i]!;
-    const blue = r[2]![i]!;
-    const nir = r[3]![i]!;
-    const ndvi = (nir - red) / (nir + red + 1e-6);
-    if (ndvi >= NDVI_MIN && (red + green + blue) / 3 <= DARK_MAX) tree[i] = 1;
+    if (ndviOf[i]! >= ndviLimit && (r[0]![i]! + r[1]![i]! + r[2]![i]!) / 3 <= DARK_MAX) tree[i] = 1;
   }
   return { w, h, tree, west, north, pxLng: (east - west) / w, pxLat: (north - south) / h };
 }
