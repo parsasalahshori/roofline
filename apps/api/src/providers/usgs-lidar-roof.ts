@@ -49,10 +49,19 @@ function pointsOf(c: LidarCropUtm, imageryDate: string | null): LidarPointsUtm {
   return { epsg: c.epsg, originE: c.originE, originN: c.originN, dx: c.dx, dy: c.dy, z: c.z, flags: c.flags, leafOff: c.source.leafOff, ageYears: ageYears(c.source.collectEnd, imageryDate) };
 }
 
-/** The lidar for the roof at `point`: null when lidar is off; else the note and, with mode on and a crop, the points. */
-export async function lidarForRoof(deps: AppDeps, point: LngLat, imageryDate: string | null): Promise<{ points: LidarPointsUtm | null; note: Roof3dLidarNote } | null> {
+/**
+ * Starts reading the lidar for the roof at `point` (null when lidar is off). Started before Google's layers are
+ * fetched so its budget runs alongside them rather than after.
+ */
+export function startLidar(deps: AppDeps, point: LngLat): Promise<LidarEvidence> | null {
   if (!lidarOn(deps)) return null;
-  const evidence = await deps.usgsLidar!.forMeasure(point);
+  return deps.usgsLidar!.forMeasure(point);
+}
+
+/** What the reconstruction gets (points, only with mode on and a crop) and what the snapshot records. */
+export async function lidarForRoof(started: Promise<LidarEvidence> | null, deps: AppDeps, imageryDate: string | null): Promise<{ points: LidarPointsUtm | null; note: Roof3dLidarNote } | null> {
+  if (started === null) return null;
+  const evidence = await started;
   const use = lidarModeOf(deps) === 'on' && 'crop' in evidence;
   return { points: use && 'crop' in evidence ? pointsOf(evidence.crop, imageryDate) : null, note: noteOf(evidence, use, imageryDate) };
 }

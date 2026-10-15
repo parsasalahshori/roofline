@@ -33,7 +33,7 @@ import {
 import { crownFromGreen, eaveSupport } from '@roofline/shared/roof-reconstruct/eave-support';
 import type { AppDeps } from '../app.ts';
 import { type RoofLayers, SolarLayersUnavailableError } from '../providers/solar-layers.ts';
-import { lidarForRoof, lidarNowReady, lidarWasPending } from '../providers/usgs-lidar-roof.ts';
+import { lidarForRoof, lidarNowReady, lidarWasPending, startLidar } from '../providers/usgs-lidar-roof.ts';
 import { encodeRgbPng } from './png.ts';
 import { countRoof3d } from './roof-3d-events.ts';
 import { tierReasons, withGoogleCheck } from './roof-3d-compare.ts';
@@ -548,6 +548,8 @@ const SQ_FT_PER_M2 = 10.7639104167;
 async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | null, buildingKnown: boolean): Promise<Roof3dSnapshot> {
   const at: LngLat = [point[0], point[1]];
   const stamp = (s: Roof3dSnapshot) => roof3dSnapshotStamp(s);
+  // Leaf-off USGS lidar (USGS_LIDAR_MODE; null when off): its Measure budget runs while Google's layers come.
+  const lidarStarted = startLidar(deps, point);
   let { layers, reused } = await layersFor(deps, point, building);
   const fetchedAt = () => deps.clock.now().toISOString();
   if (layers === null) {
@@ -555,8 +557,8 @@ async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | n
     return stamp({ fetchedAt: fetchedAt(), at, roof: null, none: 'no-imagery' });
   }
   const steep = steepRoof(building);
-  // Leaf-off USGS lidar (USGS_LIDAR_MODE): null when off; else what is ready within its budget, and why not when not.
-  const lidar = await lidarForRoof(deps, point, layers.imageryDate);
+  // What of the lidar is ready (within its budget), and why not when not.
+  const lidar = await lidarForRoof(lidarStarted, deps, layers.imageryDate);
   const withLidar = lidar?.points != null ? { lidar: lidar.points } : {};
   const noted = <T extends Roof3dSnapshot>(s: T): T => (lidar === null ? s : { ...s, lidar: lidar.note });
   let found = roofOnLayersResult(layers, point, { steep, building, ...withLidar });

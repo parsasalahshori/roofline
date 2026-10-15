@@ -49,14 +49,14 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-function depsWith(mode: 'off' | 'prefetch' | 'on' | undefined, o: { waitMs?: number; layers?: RoofLayers } = {}) {
+function depsWith(mode: 'off' | 'prefetch' | 'on' | undefined, o: { waitMs?: number; layers?: RoofLayers; answer?: () => Promise<RoofLayers> } = {}) {
   const api = new FakeUsgsLidarApi();
   api.files.set(TILE_URL, fixtureBytes('house-14-fmt6.laz'));
   api.coverageAt = () => [unit()];
   const dir = mkdtempSync(path.join(tmpdir(), 'roof-lidar-'));
   dirs.push(dir);
   const svc = new UsgsLidarService(api, { configured: false } as never, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { measureWaitMs: o.waitMs ?? 60_000 });
-  const layers = new ScriptedLayers(() => o.layers ?? LAYERS);
+  const layers = new ScriptedLayers(o.answer ?? (() => o.layers ?? LAYERS));
   const sent: { name: string; data: unknown; opts: unknown }[] = [];
   const deps = {
     solarLayers: layers,
@@ -143,6 +143,21 @@ describe('roof-3d with USGS lidar', () => {
     expect(api.calls).toHaveLength(0);
     expect(layers.calls).toHaveLength(0);
   });
+
+  it("the lidar's budget runs while Google's layers come, not after them", async () => {
+    let asked!: () => void;
+    const lidarAsked = new Promise<void>((r) => {
+      asked = r;
+    });
+    // The layers answer only once the lidar has been asked for: were the lidar started after them, this would hang.
+    const { deps, api } = depsWith('on', { answer: async () => (await lidarAsked, LAYERS) });
+    api.coverageAt = () => {
+      asked();
+      return [unit()];
+    };
+    const snap = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
+    expect(snap?.lidar?.status).toBe('used');
+  }, 20_000);
 
   it('no coverage: typed, and the roof is Google-only', async () => {
     const { deps, api } = depsWith('on');
