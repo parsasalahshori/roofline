@@ -267,6 +267,11 @@ export function MeasureCard({
             {legal.solar3dAttribution}
           </p>
         ) : null}
+        {m.roof3d?.lidarEdges?.applied === true && m.kind !== 'exact' && !scanning ? (
+          <p className={styles.note} data-source="usgs-lidar">
+            {legal.usgsLidarAttribution}
+          </p>
+        ) : null}
         {open ? (
           <div id={adjustId} className={styles.adjust}>
             {panels}

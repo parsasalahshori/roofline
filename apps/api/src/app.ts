@@ -4,6 +4,7 @@ import type { Pools } from '@roofline/db';
 import type { SmsAdapter } from '@roofline/send-gate';
 import type { Clock } from './clock.ts';
 import type { Config } from './config.ts';
+import type { UsgsLidarService } from './providers/usgs-lidar-service.ts';
 import type { GoogleVerifier } from './auth/google.ts';
 import { attachSession, requireSession } from './auth/middleware.ts';
 import { meRoutes } from './auth/me.ts';
@@ -163,6 +164,11 @@ export type AppDeps = {
    * (providers/solar-layers.ts); tests pass `FakeSolarLayers`.
    */
   solarLayers: SolarLayersApi;
+  /**
+   * Leaf-off USGS 3DEP lidar round a house (providers/usgs-lidar-service.ts): fetched when an address is searched, read
+   * within a strict budget at Measure. Absent or not configured: Google's heights alone (USGS_LIDAR_MODE=off).
+   */
+  usgsLidar?: UsgsLidarService | null;
   /** Where aerial roof measurements come from (providers/aerial.ts); tests pass `FakeAerialMeasure`. */
   aerial: AerialMeasure;
   /** Where exact roof reports are ordered and fetched (providers/exact-reports.ts); tests pass `FakeExactReports`. */

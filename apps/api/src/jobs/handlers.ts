@@ -19,6 +19,7 @@ import { sendStormAlert } from '../storm/alerts.ts';
 import { matchCompanyStorms } from '../storm/match.ts';
 import { draftStormPlan } from '../storm/plan.ts';
 import { PLAN_DISMISSED, PLAN_NOT_FOUND } from '../storm/plan-errors.ts';
+import { runLidarAreaJob } from '../providers/usgs-lidar-roof.ts';
 import { UUID } from '../validate.ts';
 import { reportJobError } from './scheduler/report.ts';
 import { storeRecording } from './recording-store.ts';
@@ -67,6 +68,7 @@ export const JOB_HANDLERS: Record<JobName, (deps: AppDeps, data: JobData, meta: 
   // G1 Task 12
   'scheduler-no-show': (deps, data) => runNoShow(deps, data.companyId, data.appointmentId!),
   // A job queued before tiles (`{ state }` only) has no quadkey: it does nothing, and the next Measure queues the tile.
+  'lidar-area': (deps, data) => runLidarAreaJob(deps, data.lidarBox),
   'footprints-load': (deps, data, meta) =>
     data.quadkey === undefined ? Promise.resolve() : loadFootprintTile(deps, data.quadkey, meta, data.state).then(() => undefined),
   'signed-pdf': (deps, data, meta) => makeSignedPdf(deps, data.companyId, data.proposalId!, meta),

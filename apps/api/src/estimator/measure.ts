@@ -43,6 +43,7 @@ import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { type GeocodeResult, GeocoderUnavailableError } from '../providers/geocoder.ts';
 import { ensureFootprintTiles } from './footprint-tiles.ts';
+import { prefetchLidar } from '../providers/usgs-lidar-roof.ts';
 import { roof3dAt, roof3dForHome, roof3dOnBoughtLayers } from './roof-3d.ts';
 import { type PitchPick, pitchFromSolar, SOLAR_BUILDING_SNAP_M, solarAt, solarForHome } from './solar.ts';
 
@@ -656,6 +657,8 @@ export async function prefetchMeasure(
     ensureFootprintTiles(deps, tiles, { ...(state !== undefined ? { state } : {}), waitMs: 0 }),
     asked,
     roof3d,
+    // Leaf-off USGS lidar round the house (USGS_LIDAR_MODE): fetched now so Measure finds it ready.
+    prefetchLidar(deps, at, ctx.companyId),
   ]).then(() => undefined);
   deps.onBackgroundTask?.(work);
   return { found: true };

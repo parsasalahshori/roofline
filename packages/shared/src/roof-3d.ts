@@ -363,10 +363,42 @@ export type Roof3dSnapshot = {
    * Kept so the comparison can be made later, and so turning the mode on reuses it instead of buying the layers again.
    */
   shadowRoof?: Roof3d | null;
+  /**
+   * Leaf-off USGS lidar for this roof (USGS_LIDAR_MODE): whether it was used, kept for later, or why not. Absent when
+   * lidar is off (and on every snapshot stored before it existed). What the reconstruction did with it is the roof's
+   * lidarEdges; edges it moved are lidar-derived, never Google-measured.
+   */
+  lidar?: Roof3dLidarNote;
   /** The snapshot's own layout (ROOF_3D_SNAPSHOT_SCHEMA). Absent on snapshots stored before it existed: 1. */
   schemaVersion?: number;
   /** The reconstruction that made it (ROOF_3D_ALGORITHM_VERSION). Absent on snapshots stored before it existed: 1. */
   algorithmVersion?: number;
+};
+
+/**
+ * Why leaf-off lidar was not there for a roof: 'lidar-pending' (being fetched when Measure ran; the next Measure uses
+ * it), 'no-coverage' (no USGS 3DEP point cloud of QL2 or better there), 'leaf-on-only' (only lidar flown with leaves
+ * on, which the crowns block as they block Google), 'too-sparse' (too few returns to place an edge), 'error'.
+ */
+export const ROOF_3D_LIDAR_NONE = ['lidar-pending', 'no-coverage', 'leaf-on-only', 'too-sparse', 'error'] as const;
+export type Roof3dLidarNone = (typeof ROOF_3D_LIDAR_NONE)[number];
+
+/** Provenance of the lidar behind a roof (Roof3dSnapshot.lidar). */
+export type Roof3dLidarNote = {
+  /** 'used': handed to the reconstruction. 'kept': fetched, not used (USGS_LIDAR_MODE=prefetch). 'none': see reason. */
+  status: 'used' | 'kept' | 'none';
+  reason?: Roof3dLidarNone;
+  /** The 3DEP work unit and project, quality level and first/last flight day (YYYY-MM-DD). */
+  workunit?: string;
+  project?: string;
+  ql?: number | null;
+  flown?: [string | null, string | null];
+  leafOff?: boolean | null;
+  /** Whole years between the flight and Google's imagery. */
+  ageYears?: number | null;
+  points?: number;
+  /** Shown wherever the lidar is used: 'Lidar: USGS 3D Elevation Program (3DEP), public domain'. */
+  credit?: string;
 };
 
 /**

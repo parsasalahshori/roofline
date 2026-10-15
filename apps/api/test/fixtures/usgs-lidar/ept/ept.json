@@ -1,0 +1,20 @@
+{
+ "bounds": [
+  -10279810.0,
+  4129262.0,
+  -28.0,
+  -10279554.0,
+  4129518.0,
+  228.0
+ ],
+ "dataType": "laszip",
+ "hierarchyType": "json",
+ "points": 40000,
+ "span": 128,
+ "srs": {
+  "authority": "EPSG",
+  "horizontal": "3857",
+  "vertical": "5703"
+ },
+ "version": "1.0.0"
+}

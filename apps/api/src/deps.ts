@@ -32,6 +32,7 @@ import { createObjectStore } from './providers/object-store.ts';
 import { createGeocoder } from './providers/geocoder.ts';
 import { createSolarApi } from './providers/solar.ts';
 import { createSolarLayersApi } from './providers/solar-layers.ts';
+import { createUsgsLidarService } from './providers/usgs-lidar-service.ts';
 import type { CallControl } from './providers/call-control.ts';
 import type { LineLookup } from './providers/line-lookup.ts';
 import { type Llm, LlmUnavailableError } from './providers/llm.ts';
@@ -289,6 +290,7 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
   const weather = config.WEATHER_DISABLED
     ? new NullWeatherSource()
     : new NwsWeatherSource({ userAgent: config.NWS_USER_AGENT ?? `Roofline (${config.PUBLIC_BASE_URL})` });
+  const objectStore = createObjectStore(config, pools);
   return {
     pools,
     config,
@@ -308,7 +310,8 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     solarLayers: createSolarLayersApi(config),
     aerial: aerialFor(config),
     exactReports: exactReportsFor(config),
-    objectStore: createObjectStore(config, pools),
+    objectStore,
+    usgsLidar: createUsgsLidarService(config, objectStore, systemClock),
     adsGoogle: adsGoogleFor(config),
     adsMeta: adsMetaFor(config),
     broadcast: broadcastFor(config),

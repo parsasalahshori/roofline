@@ -213,6 +213,20 @@ describe('the measure card', () => {
     expect(screen.getByText(liftMeasure.reviewReason['outline-off'])).toBeTruthy();
   });
 
+  it('credits USGS 3DEP only when leaf-off lidar placed an edge', () => {
+    const roof3d = { version: 1 as const, outline: ring, faces: [], lines: [], pixelSizeM: 0.1, imageryQuality: 'HIGH', imageryDate: null };
+    const card = (r: object) => {
+      const m = view({ pitchSource: 'solar-3d', roof3d: r as typeof roof3d, needsReview: null });
+      return <MeasureCard m={m} numbers={cardNumbers(m, m.estimate, gableRoof(ring as [number, number][]), null)} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />;
+    };
+    const { rerender } = render(card(roof3d));
+    expect(screen.queryByText(legal.usgsLidarAttribution)).toBeNull();
+    rerender(card({ ...roof3d, lidarEdges: { applied: false, reason: 'too-old', moved: [], areaChangeSqFt: 0 } }));
+    expect(screen.queryByText(legal.usgsLidarAttribution)).toBeNull();
+    rerender(card({ ...roof3d, lidarEdges: { applied: true, moved: [{ offsetFt: 6.5, lengthFt: 24 }], areaChangeSqFt: 150 } }));
+    expect(screen.getByText(legal.usgsLidarAttribution)).toBeTruthy();
+  });
+
   it("shows Google's roof photo only over Google's tiles, and credits Microsoft only while its outlines show", () => {
     const corners: [[number, number], [number, number], [number, number], [number, number]] = [ring[3]!, ring[2]!, ring[1]!, ring[0]!];
     const m = view({ roofPhoto: { url: '/api/measurements/m1/roof-photo', corners } });
