@@ -41,8 +41,8 @@ export function yearsBetween(a: string | null | undefined, b: string | null | un
 }
 
 /** The house's lidar crop as the reconstruction takes it, with its metadata; null when it has none. Throws on a malformed file. */
-export function readLidarEdgePoints(bench: string, slug: string, imageryDate: string | null): { points: LidarPointsUtm; info: LidarEdgeInfo } | null {
-  const base = path.join(lidarEdgesDir(bench), slug);
+export function readLidarEdgePoints(bench: string, slug: string, imageryDate: string | null, dirName = 'lidar-edges'): { points: LidarPointsUtm; info: LidarEdgeInfo } | null {
+  const base = path.join(bench, dirName, slug);
   if (!existsSync(`${base}.json`) || !existsSync(`${base}.bin`)) return null;
   const info = LidarEdgeInfoSchema.parse(JSON.parse(readFileSync(`${base}.json`, 'utf8')));
   const size = statSync(`${base}.bin`).size;

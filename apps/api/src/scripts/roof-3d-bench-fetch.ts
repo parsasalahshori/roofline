@@ -8,7 +8,7 @@ import { REGION_QUOTA } from './roof-3d-bench-candidates.ts';
 /*
  * Buys Google Solar Data Layers for tree-heavy houses and files them as benchmark houses:
  *
- *   npm run roof3d:bench-fetch -w @roofline/api -- [--go] [--regions a,b] [--metro NAME] [--more N] [--spill] [--max-houses 30] [--max-layers 40] [--max-insights 90]
+ *   npm run roof3d:bench-fetch -w @roofline/api -- [--go] [--regions a,b] [--metro NAME] [--ids a,b] [--out-set testset-NAME] [--more N] [--spill] [--max-houses 30] [--max-layers 40] [--max-insights 90]
  *
  * Without --go it only prints the houses it would try (no request, no cost). Candidates are the neighbourhood files
  * roof-3d-bench-candidates.ts wrote. For each region, in the order of trees.ts: buildingInsights (HIGH imagery required);
@@ -93,7 +93,14 @@ async function main(): Promise<number> {
   const maxLayers = arg('--max-layers', 40);
   const maxInsights = arg('--max-insights', 90);
   const bench = benchDir();
-  const outRoot = path.join(bench, 'testset-trees');
+  // --out-set NAME: file the houses in another set folder (e.g. testset-xf: houses outside the frozen manifest).
+  const osi = process.argv.indexOf('--out-set');
+  const outSet = osi >= 0 ? process.argv[osi + 1]! : 'testset-trees';
+  if (!/^testset-[a-z0-9-]+$/.test(outSet)) {
+    process.stderr.write('--out-set takes a folder name testset-<name>\n');
+    return 2;
+  }
+  const outRoot = path.join(bench, outSet);
   const candDir = path.join(bench, 'trees-candidates');
   const hoodFiles = existsSync(candDir) ? readdirSync(candDir).filter((f) => f.startsWith('hood-') && f.endsWith('.json')).sort() : [];
   if (hoodFiles.length === 0) {
@@ -102,18 +109,22 @@ async function main(): Promise<number> {
   }
   const ri = process.argv.indexOf('--regions');
   const onlyRegions = ri >= 0 ? new Set(process.argv[ri + 1]!.split(',')) : null;
+  const ii = process.argv.indexOf('--ids');
+  const onlyIds = ii >= 0 ? new Set(process.argv[ii + 1]!.split(',')) : null;
   const mi = process.argv.indexOf('--metro');
   const onlyMetro = mi >= 0 ? process.argv[mi + 1]! : null;
   const candidates = hoodFiles
     .flatMap((f) => JSON.parse(readFileSync(path.join(candDir, f), 'utf8')) as TreeCandidate[])
-    .filter((c) => (onlyRegions === null || onlyRegions.has(c.region)) && (onlyMetro === null || c.metro === onlyMetro));
+    .filter((c) => (onlyRegions === null || onlyRegions.has(c.region)) && (onlyMetro === null || c.metro === onlyMetro))
+    // --ids a,b: only these candidates (picked beforehand, e.g. for lidar coverage), still in the ranking's order
+    .filter((c) => onlyIds === null || onlyIds.has(c.id));
   const ledgerFile = path.join(bench, 'fetch-ledger.json');
   const ledger: Ledger = existsSync(ledgerFile) ? Ledger.parse(JSON.parse(readFileSync(ledgerFile, 'utf8'))) : { insights: 0, layers: 0, geocodes: 0, tried: {} };
   const save = () => writeFileSync(ledgerFile, `${JSON.stringify(ledger, null, 1)}\n`);
 
   // Houses already in the benchmark (any set): never buy the same one twice.
   const have: { lat: number; lng: number }[] = [];
-  for (const set of ['testset', 'testset-ev', 'testset-trees']) {
+  for (const set of [...new Set(['testset', 'testset-ev', 'testset-trees', outSet])]) {
     const root = path.join(bench, set);
     if (!existsSync(root)) continue;
     for (const slug of readdirSync(root)) {

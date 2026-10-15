@@ -31,6 +31,15 @@ describe('the roof3d:bench command', () => {
     expect(r.stderr).toMatch(/--split must be/);
   });
 
+  test('--fusion-flight and --lidar-edges-dir take plain names (2 otherwise)', () => {
+    const a = run(['--fusion-flight', '../x'], folder());
+    expect(a.status).toBe(2);
+    expect(a.stderr).toMatch(/--fusion-flight takes/);
+    const b = run(['--lidar-edges-dir', '../elsewhere'], folder());
+    expect(b.status).toBe(2);
+    expect(b.stderr).toMatch(/--lidar-edges-dir takes/);
+  });
+
   test('no manifest is a data problem (3) that says how to make one', () => {
     const r = run([], mkdtempSync(path.join(tmpdir(), 'roof-bench-empty-')));
     expect(r.status).toBe(3);
