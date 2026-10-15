@@ -121,6 +121,10 @@ lidar)** — wall lines, so a correct roof is larger by its overhang (about +5-1
 
 Every changed house with a county footprint is closer to it; none is further.
 
+**MEDIUM (0.25 m) layers** (`ROOF3D_BENCH_RESAMPLE_M=0.25`, 9 DEV houses where fusion acts or nearly does): applies on
+6 (hs-summer's 2 % part no longer passes), cross-flight 3 better / 0 worse; county: 305 Ridgeway 0.729 -> 0.834, lr-tyler
+0.649 -> 0.897, the two Little Rock houses +0.04 / +0.01.
+
 Canopy-heavy DEV houses: lr-305-ridgeway applied; omaha-roland applied (no second flight); seattle-wallingford declined
 misaligned (roof residual 0.19 m over the 0.15 m limit); kc-brookside, ev-52191985, ev-52192220 declined not-leaf-off;
 tr-atlanta-1289767665, tr-atlanta-51300274, tr-fayetteville-466556470, tr-fayetteville-467353063 declined sparse (QL2
