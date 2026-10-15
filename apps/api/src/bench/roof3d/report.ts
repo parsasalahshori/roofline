@@ -10,13 +10,19 @@ import type { Thresholds } from './manifest.ts';
 
 export const HELDOUT_MIN_COHORT = 5;
 
+/** A house's headline numbers over the seeds: [mean, min, max]; null when no seed has one. */
+export type SeedSpread = [number, number, number] | null;
+
 export type HouseRow = {
   slug: string;
   set: string;
   truth: string;
   canopy: string | null;
   complexity: string;
+  /** The full metrics at the first seed. */
   metrics: HouseMetrics;
+  /** The headline numbers as [mean, min, max] over the seeds. */
+  spread: { faces: SeedSpread; slopedSqFt: SeedSpread; thinFaces: SeedSpread; iou: SeedSpread; meanBoundaryM: SeedSpread; areaErrPct: SeedSpread };
   deterministic: boolean;
   seedStable: boolean;
   seedIdentical: boolean;
@@ -181,18 +187,20 @@ export function formatHouses(rows: readonly HouseRow[]): string {
     rows.map((r) => {
       const m = r.metrics;
       const t = m.truth;
+      const sp = r.spread;
+      const mean = (v: SeedSpread, d: number) => (v === null ? '-' : f(v[0], d));
       return [
         r.slug + (r.seedStable ? '' : '*'),
         r.canopy ?? '-',
         r.complexity.slice(0, 4),
         r.truth.slice(0, 4),
-        t === null ? '-' : f(t.iou, 3),
-        t === null ? '-' : f(t.meanBoundaryM, 2),
-        t === null || t.areaErrPct === null ? '-' : f(t.areaErrPct, 1),
+        t === null ? '-' : mean(sp.iou, 3),
+        t === null ? '-' : mean(sp.meanBoundaryM, 2),
+        t === null || t.areaErrPct === null ? '-' : mean(sp.areaErrPct, 1),
         t === null || t.mainPitchOurs === null ? '-' : `${t.mainPitchOurs}/${t.mainPitchTruth}`,
-        m.status === 'ok' ? String(m.faces) : m.status,
+        m.status === 'ok' ? mean(sp.faces, 0) : m.status,
         String(m.slivers),
-        String(m.thinFaces),
+        mean(sp.thinFaces, 0),
         String(m.steepJunk),
         f(m.rectilinearity, 2),
         m.flagged ? 'Y' : '-',

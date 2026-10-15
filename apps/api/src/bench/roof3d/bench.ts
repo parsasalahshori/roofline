@@ -1,7 +1,8 @@
 import { type CohortReport, cohortReport } from './aggregate.ts';
 import { type LoadedHouse, loadHouse } from './data.ts';
 import { type HouseEntry, type Manifest, cohortsOf, expiredHouses, manifestHash, type Split } from './manifest.ts';
-import { HELDOUT_MIN_COHORT, type BenchReport, type HouseRow, type SplitReport } from './report.ts';
+import type { HouseMetrics } from './metrics.ts';
+import { HELDOUT_MIN_COHORT, type BenchReport, type HouseRow, type SeedSpread, type SplitReport } from './report.ts';
 import { SEEDS, calibrationMs, type HouseRun, runHouse } from './run.ts';
 
 export class BenchDataError extends Error {}
@@ -28,6 +29,11 @@ export type BenchOptions = {
   loader?: (entry: HouseEntry) => Promise<LoadedHouse>;
   onHouse?: (slug: string, k: number, n: number) => void;
 };
+
+function spreadOf(run: HouseRun, pick: (m: HouseMetrics) => number | null | undefined): SeedSpread {
+  const v = run.seeds.filter((m) => m.status === 'ok').map(pick).filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
+  return v.length === 0 ? null : [v.reduce((t, x) => t + x, 0) / v.length, Math.min(...v), Math.max(...v)];
+}
 
 function groupBy(entries: readonly HouseEntry[], runs: ReadonlyMap<string, HouseRun>): Map<string, HouseRun[]> {
   const groups = new Map<string, HouseRun[]>();
@@ -65,6 +71,14 @@ function splitReport(split: Split, entries: readonly HouseEntry[], runs: Readonl
           canopy: e.tags.canopy?.class ?? null,
           complexity: e.tags.complexity.class,
           metrics: r.seeds[0]!,
+          spread: {
+            faces: spreadOf(r, (m) => m.faces),
+            slopedSqFt: spreadOf(r, (m) => m.slopedSqFt),
+            thinFaces: spreadOf(r, (m) => m.thinFaces),
+            iou: spreadOf(r, (m) => m.truth?.iou),
+            meanBoundaryM: spreadOf(r, (m) => m.truth?.meanBoundaryM),
+            areaErrPct: spreadOf(r, (m) => m.truth?.areaErrPct),
+          },
           deterministic: r.deterministic,
           seedStable: r.seedStable,
           seedIdentical: r.seedIdentical,
