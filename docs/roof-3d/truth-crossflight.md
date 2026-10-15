@@ -76,6 +76,18 @@ QL1 outline 171.6 m2 (IoU 0.75); the 2017 returns hold no ground where the east 
 the QL2 flight simply did not resolve it under the trees. Fusing the 2017 flight is scored on the 2025 truth (fine);
 fusing the 2025 flight has no cross-flight truth (the 2017 one is the smaller and coarse: refused).
 
+## Cross-flight baseline (`ROOF_BENCH_DIR/baseline-xf.json`)
+
+Frozen from this branch's harness on the released reconstruction (fb0b63db; no reconstruction file changed), split
+`all`, `--fusion-flight auto --lidar-edges-dir lidar-edges-xf`, lidar hash `xf:f0ec2667ffd0` (22 houses). DEV, against
+cross-flight truth: 16/17 comparable, IoU 0.863, mean boundary 0.52 m, |plan| 11.8 %, hidden <= 0.5 m 33 % (1208
+samples), truth-hidden <= 0.5 m 33 % (1859); canopy-heavy 3/3, IoU 0.722, |plan| 23.2 %. HELD-OUT: 5/5 comparable,
+IoU 0.870 (aggregates only). A rerun on DEV with `--compare baseline-xf.json --gates gates-v3.json`: all 324 gates
+pass (327 skipped, 7 of them for fewer than 3 houses with lidar truth). The primary-truth DEV run on the same tree
+against `baseline-v2.json` passes every quality gate; 6 runtime p95 gates failed there because the shared machine was
+loaded by other tracks' benchmark runs (2x calibration-relative time), not because of a code change (no reconstruction
+file differs).
+
 ## How independent is it
 
 - **Independent**: different flight, year (0-11 years apart, median 6.5 over the registered fine truths; 0 is NE 2020 vs SD 2020, two projects of one season), contractor and sensor; separately classified
