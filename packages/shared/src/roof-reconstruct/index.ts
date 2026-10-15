@@ -375,17 +375,26 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // 1b. A part running on well past Google's box for the building at the point (a terrace, a semi-detached pair):
   //     this home is cut out of it (homeInTerrace).
   let joined = false;
+  let lidarPastBox = false;
   const box0 = opts.building !== undefined && opts.building.length >= 3 ? opts.building.map((p) => ({ x: (p.col - c0) * s, y: -(p.row - r0) * s })) : null;
   if (box0 !== null) {
     const box = box0;
     const near = nearRing(g, s, box, JOINED_NEAR_M);
     let outside = 0;
+    let lidarOutside = 0;
     const lp = opts.lidarPixels != null && opts.lidarPixels.length === W * H ? opts.lidarPixels : null;
     for (let i = 0; i < roof.length; i++) {
       if (roof[i] !== 1 || near[i] === 1) continue;
-      if (lp !== null && lp[(Math.floor(i / g.w) + r0) * W + (i % g.w) + c0] === 1) continue;
+      if (lp !== null && lp[(Math.floor(i / g.w) + r0) * W + (i % g.w) + c0] === 1) {
+        lidarOutside++;
+        continue;
+      }
       outside++;
     }
+    // Lidar roof is exempt from the cut (Google's box is drawn from the same leaf-on view that missed it), but past the
+    // same share the box cannot tell a wing under a crown from the attached unit next door (a duplex or a townhouse
+    // under one crown): the roof is marked for a person ('lidar-past-building', a 'block') instead of being cut.
+    lidarPastBox = lidarOutside > JOINED_SHARE * roofPx;
     if (outside > JOINED_SHARE * roofPx) {
       joined = true;
       const found0 = findPlanes(g, s, dsm, roof, rng, planePrm, tree);
@@ -602,6 +611,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
 
   const quality = qualityOf(g, s, dsm, googleMask, roof, tree, faces.labels, planes, outline, topo.faces, opts.imageryQuality ?? null);
   if (joined) quality.reasons.push('joined-buildings');
+  if (lidarPastBox) quality.reasons.push('lidar-past-building');
   // Roof the height map's mask may have missed: crowns along the outline as high as its edge, or (inside Google's box
   // for the building) smooth raised ground off every mask next to the roof, a wing in a crown's shadow. Looked for on
   // a window holding the roof with room round it, and the box (which can reach past the mask's part).

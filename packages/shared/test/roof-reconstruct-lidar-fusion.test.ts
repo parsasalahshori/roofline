@@ -3,6 +3,7 @@
 // canopy), and a leaf-off lidar cloud of the true roof in another frame. Hermetic: seeded randomness only, no files.
 import { describe, expect, it } from 'vitest';
 import { reconstructRoof, toRoof3d } from '../src/roof-reconstruct/index.ts';
+import { ROOF_QUALITY_SEVERITY } from '../src/roof-3d.ts';
 import { DEFAULT_LIDAR_FUSION, fuseLidar } from '../src/roof-reconstruct/lidar-fusion.ts';
 import { signedArea } from '../src/roof-reconstruct/geom.ts';
 import { type Scene, scene, type XY } from './fixtures/lidar-scene.ts';
@@ -200,5 +201,52 @@ describe('lidar fusion', () => {
     const sc = scene({ seed: 61, turnDeg: 0, hideM: 5 });
     const f = fuseLidar(sc.raster, sc.point, sc.cloud(), { ...DEFAULT_LIDAR_FUSION, maxAddShare: 0.2 });
     expect(f.report).toMatchObject({ applied: false, reason: 'large-change' });
+  });
+
+  it('an attached unit next door under one crown (a duplex) is never priced silently: past the box it is a block', () => {
+    // Google sees one 7 x 6 m unit (its box +-3.5 m); the twin unit east of it (x 3..8.9) is under a crown in Google's
+    // heights, and the leaf-off lidar sees it as roof touching the house. Box and lidar cannot tell it from a wing.
+    const sc = scene({ seed: 70, turnDeg: 0, hx: 3, hy: 3, hideM: -10 });
+    const s = sc.raster.pixelSizeM;
+    const W = sc.raster.width;
+    const inUnit = (p: XY) => p.x > 3 && p.x < 8.9 && Math.abs(p.y) < 3;
+    const dsm = sc.raster.dsm.slice();
+    for (let i = 0; i < dsm.length; i++) {
+      const c = i % W;
+      const p = sc.toHouse({ x: (c + 0.5) * s, y: -((i - c) / W + 0.5) * s });
+      if (p.x > 3 && p.x < 9.5 && Math.abs(p.y) < 3.5) dsm[i] = 8 + 0.3 * Math.sin(c * 1.3);
+    }
+    const base = sc.cloud();
+    const xs = Array.from(base.x);
+    const ys = Array.from(base.y);
+    const zs = Array.from(base.z);
+    const fs = Array.from(base.flags);
+    for (let k = 0; k < xs.length; k++) {
+      const p = sc.toHouse({ x: xs[k]! + 0.7, y: ys[k]! - 0.4 });
+      if (inUnit(p) && (fs[k]! & 2) === 2) {
+        zs[k] = 3 + (3 - Math.abs(p.y)) * 0.5 - 31.2;
+        fs[k] = 1;
+      }
+    }
+    const cloud = { ...base, x: Float64Array.from(xs), y: Float64Array.from(ys), z: Float64Array.from(zs), flags: Uint8Array.from(fs) };
+    const raster = { ...sc.raster, dsm };
+    const building = [
+      { x: -3.5, y: -3.5 },
+      { x: 3.5, y: -3.5 },
+      { x: 3.5, y: 3.5 },
+      { x: -3.5, y: 3.5 },
+    ]
+      .map((p) => sc.toLocal(p))
+      .map((p) => ({ col: p.x / s, row: -p.y / s }));
+    const off = reconstructRoof(raster, sc.point, { building })!;
+    const on = reconstructRoof(raster, sc.point, { building, lidarFusion: { cloud } })!;
+    expect(off.quality.reasons).not.toContain('lidar-past-building');
+    expect(on.lidarFusion?.applied).toBe(true);
+    expect(on.quality.reasons).toContain('lidar-past-building');
+    expect(on.quality.reasons).toContain('roof-from-lidar');
+    // Provenance: the twin's faces are the lidar's alone, and say so.
+    expect(on.faces.some((f) => f.source === 'lidar' && (f.lidarShare ?? 0) >= 0.5)).toBe(true);
+    expect(ROOF_QUALITY_SEVERITY['lidar-past-building']).toBe('block');
+    expect(ROOF_QUALITY_SEVERITY['roof-from-lidar']).toBe('block');
   });
 });

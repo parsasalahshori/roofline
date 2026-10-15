@@ -275,6 +275,7 @@ export const ROOF_QUALITY_REASONS = [
   'edges-unverified',
   'roof-inferred',
   'roof-from-lidar',
+  'lidar-past-building',
 ] as const;
 export type RoofQualityReason = (typeof ROOF_QUALITY_REASONS)[number];
 
@@ -299,8 +300,12 @@ export const ROOF_QUALITY_SEVERITY: Record<RoofQualityReason, RoofQualitySeverit
   // Roof added (or taken off) under trees from the roof's planes or the photo, not seen in the heights: the area may be wrong.
   'roof-inferred': 'block',
   // Roof added from leaf-off lidar where Google's heights could not see it (a wing under trees): measured, but by another
-  // sensor on another date, so a person checks it against the photo before it is priced.
-  'roof-from-lidar': 'check',
+  // sensor on another date, so a person checks it against the photo before it is priced (the quote waits for that).
+  // A 'block' (was a 'check'): the lidar can change the measured AREA, by up to the whole of Google's part, so like
+  // 'roof-inferred' the area itself is in question until a person has looked.
+  'roof-from-lidar': 'block',
+  // Lidar roof running well past Google's box for the building: a wing, or the attached unit next door (a duplex).
+  'lidar-past-building': 'block',
 };
 
 /** The outline's evidence in total (see Roof3dEdge): shares of its length, and its unverified length in feet. */
