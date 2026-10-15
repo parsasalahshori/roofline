@@ -71,6 +71,18 @@ one half of an eave counts the same whichever way the outline runs" (forward rin
     the ground guard by itself.
   - Not recalibrated on real houses: these steps are off and a DEV run with them on did not fit the clock.
 
+## Benchmark (DEV only)
+
+- Default scorer, `--compare baseline-v2.json --gates gates-v3.json`: 327 pass, 4 fail, all on the lidar hidden-edge
+  set, whose membership is eave support itself: lowslope hidden within 0.5 m 0.672 -> 0.606, simple 0.614 -> 0.559 (mean
+  0.94 -> 1.07 m), steep 0.332 -> 0.234. The scorer now reads the second halves it skipped; no outline moved.
+- Same scorer on both sides (ROOF3D_BENCH_SUPPORT=dense, unchanged by the fix), base fb0b63db vs the fix, house by house:
+  faces, plan and sloped area, review reasons, flags, lidar IoU, hidden, visible and truth-hidden sets all identical
+  (0 differences on 54 houses). The reconstruction's geometry and quotes do not change; only edge evidence does.
+- baseline-v3-dense.json was made at 9aee1992 (another reconstruction): comparing against it fails 62 gates on base
+  and fix alike, so it is not a baseline for this track.
+- Guard mutations (`npm run roof3d:mutate-guards`): all 23 killed.
+
 ## Alternatives rejected
 
 - Keep the clamp and densify the outline before calling eaveSupport (what outline-lidar.ts and the bench's dense
