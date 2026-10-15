@@ -22,12 +22,14 @@ import { DEFAULT_PHOTO_EDGE, type PhotoEdge, type PhotoEdgeParams, photoEdges } 
 import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
+import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
 export type { XY } from './geom.ts';
 export { DEFAULT_PHOTO_EDGE, PHOTO_EDGE_REASONS, type PhotoEdge, type PhotoEdgeParams, type PhotoEdgeReason } from './outline-photo.ts';
 export type { Plane } from './planes.ts';
+export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
 /** A height map and roof mask on one grid: row-major, row 0 at the top (north), `pixelSizeM` metres a pixel. */
 export type RoofRaster = {
@@ -93,6 +95,12 @@ export type ReconstructOptions = {
    * Turning any of them on by default changes reconstruction output: bump ROOF_3D_ALGORITHM_VERSION.
    */
   hiddenEdge?: HiddenEdgeOption;
+  /**
+   * Hidden eaves from leaf-off lidar (outline-lidar.ts): outline edges the height map cannot see (eave support 'none')
+   * moved to where the lidar's roof returns end. Off unless a point cloud is given (in this raster's metres); `params`
+   * overrides DEFAULT_LIDAR_EDGE. The result says what it did or why it declined (LocalRoof.lidarEdges).
+   */
+  lidar?: { cloud: LidarCloud; params?: Partial<LidarEdgeParams> } | null;
 };
 
 /** Raster-local metres: x east from the raster's left edge, y north from its top edge (so y <= 0). */
@@ -143,6 +151,8 @@ export type LocalRoof = {
    * heights. `declined` is set when the step could not run at all.
    */
   hiddenEdges?: { method: 'photo'; edges: PhotoEdge[]; moved: { a: XY; b: XY; offsetM: number }[]; declined?: 'no-photo' | 'bad-raster' | 'bad-outline' };
+  /** What the lidar hidden-edge step did (ReconstructOptions.lidar), absent when it was not asked for. */
+  lidarEdges?: LidarEdgeReport;
 };
 
 const FLAT_X12 = 2;
@@ -373,6 +383,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   let topo: ReturnType<typeof buildTopology>;
   let dissolved: Partial<Record<WeakReason, number>>;
   let hiddenOut: ReturnType<typeof hiddenEdgeStep> | undefined;
+  let lidarEdges: LidarEdgeReport | undefined;
   const cleanupPrm: FaceCleanupParams = { ...DEFAULT_FACE_CLEANUP, ...opts.faces };
   let photoOut: LocalRoof['hiddenEdges'];
   // Steps 3 and 4 run once, or twice when the completed roof is undone (its state restored, completion off).
@@ -381,6 +392,16 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     const boundary = maskBoundary(g, roof, s);
     outline = squareOutline(boundary, outlinePrm);
     if (outline.length < 3) return null;
+    // 3b. Hidden eaves from leaf-off lidar (outline-lidar.ts): only edges the heights cannot see, only when asked.
+    if (opts.lidar != null) {
+      const done = lidarHiddenEdges(
+        { g, s, c0, r0, raster: { width: W, height: H, dsm: raster.dsm }, labels: faces.labels, planes, outline, cloud: opts.lidar.cloud, ...(opts.debug !== undefined ? { debug: opts.debug } : {}) },
+        { ...DEFAULT_LIDAR_EDGE, ...opts.lidar.params },
+      );
+      outline = done.outline;
+      lidarEdges = done.report;
+      opts.debug?.(`lidar edges: ${done.report.applied ? `moved ${done.report.moved?.length ?? 0}` : `declined (${done.report.reason})`}`);
+    }
 
     // 3b. Hidden eaves from the planes (outline-planes.ts): only edges the heights cannot vouch for move.
     if (opts.hiddenEdge?.method === 'planes') {
@@ -526,6 +547,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     quality,
     cuts: { maskM2: maskPx0 * s * s, groundM2: groundPx * s * s, terraceM2: terracePx * s * s },
     ...(Object.keys(dissolved).length > 0 ? { dissolved } : {}),
+    ...(lidarEdges !== undefined ? { lidarEdges } : {}),
     ...(canopyOut !== undefined ? { canopy: { ...canopyOut, occluded: canopyOut.occluded.map(shift) } } : {}),
     ...(hiddenOut !== undefined ? { hiddenEdge: hiddenOut.summary } : {}),
     ...(photoOut !== undefined ? { hiddenEdges: { ...photoOut, moved: photoOut.moved.map((m) => ({ a: shift(m.a), b: shift(m.b), offsetM: m.offsetM })) } } : {}),
@@ -1546,5 +1568,15 @@ export function toRoof3d(
     imageryQuality: meta.imageryQuality,
     imageryDate: meta.imageryDate,
     quality: { ...local.quality, imagery: meta.imageryQuality, reasons: local.quality.reasons },
+    ...(local.lidarEdges !== undefined
+      ? {
+          lidarEdges: {
+            applied: local.lidarEdges.applied,
+            ...(local.lidarEdges.reason !== undefined ? { reason: local.lidarEdges.reason } : {}),
+            moved: (local.lidarEdges.applied ? (local.lidarEdges.moved ?? []) : []).map((m) => ({ offsetFt: round(m.offsetM * FT_PER_M, 2), lengthFt: round(m.lengthM * FT_PER_M, 1) })),
+            areaChangeSqFt: round((local.lidarEdges.areaChangeM2 ?? 0) * SQ_FT_PER_SQ_M, 1),
+          },
+        }
+      : {}),
   };
 }

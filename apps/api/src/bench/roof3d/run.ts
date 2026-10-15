@@ -34,7 +34,13 @@ export function reconstructOnce(h: LoadedHouse, seed: number, p: MetricParams = 
   const started = performance.now();
   let roof: Roof3d | null;
   try {
-    const found = roofOnLayers(h.layers, h.entry.point, { steep: steepRoof(h.building), building: h.building, seed, ...(HIDDEN_EDGE !== undefined ? { hiddenEdge: HIDDEN_EDGE } : {}) });
+    const found = roofOnLayers(h.layers, h.entry.point, {
+      steep: steepRoof(h.building),
+      building: h.building,
+      seed,
+      ...(HIDDEN_EDGE !== undefined ? { hiddenEdge: HIDDEN_EDGE } : {}),
+      ...(h.lidarPoints != null ? { lidar: h.lidarPoints } : {}),
+    });
     roof = found === null ? null : withGoogleCheck(found, h.building);
   } catch {
     return { metrics: emptyMetrics('failed'), json: 'failed', ms: performance.now() - started };

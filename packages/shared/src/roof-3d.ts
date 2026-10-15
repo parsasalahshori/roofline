@@ -78,7 +78,18 @@ export type Roof3d = {
    * reconstructions stored before it existed, or when the height map could not be read along the outline.
    */
   edges?: Roof3dEdge[];
+  /**
+   * What the leaf-off lidar hidden-edge step did (roof-reconstruct/outline-lidar.ts): present only when it was asked to
+   * run. Moved edges stay unverified in `edges` (the height map still cannot see them); this says lidar placed them.
+   */
+  lidarEdges?: Roof3dLidarEdges;
 };
+
+/**
+ * applied: some hidden edges were moved onto the lidar's eaves (`moved`: their outline edge before the move, offset in
+ * feet, positive outward); otherwise `reason` (LIDAR_EDGE_REASONS) says why the outline was left as the heights drew it.
+ */
+export type Roof3dLidarEdges = { applied: boolean; reason?: string; moved: { offsetFt: number; lengthFt: number }[]; areaChangeSqFt: number };
 
 /**
  * What the height map says about one outline edge (eave-support.ts): 'strong' when the heights drop 1 m or more across
