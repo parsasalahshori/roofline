@@ -152,6 +152,19 @@ describe('eave evidence on the stored roof', () => {
     expect(again.edges!.some((e) => e.support === 'none' && e.reason === 'taller-neighbour')).toBe(true);
   });
 
+  it("lidar provenance reaches the stored edges: an edge on the fusion's lidar pixels carries source 'lidar', the others none", () => {
+    const layers = treeOnEast(hipLayers(HOUSE));
+    const roof = roofOnLayers(layers, INSIDE)!;
+    const { width: W, height: H } = layers.raster;
+    const all = withEdgeEvidence({ ...roof, edges: undefined }, layers, null, new Uint8Array(W * H).fill(1));
+    expect(all.edges!.length).toBeGreaterThan(0);
+    expect(all.edges!.every((e) => e.source === 'lidar')).toBe(true);
+    // Support stays Google's: the same classes as without the lidar pixels (judged on Google's heights only).
+    const plain = withEdgeEvidence({ ...roof, edges: undefined }, layers, null);
+    expect(all.edges!.map((e) => e.support)).toEqual(plain.edges!.map((e) => e.support));
+    expect(plain.edges!.some((e) => e.source !== undefined)).toBe(false);
+  });
+
   it('never throws: an outline it cannot read comes back with a typed failure and no edges', () => {
     const layers = hipLayers(HOUSE);
     const roof = roofOnLayers(layers, INSIDE)!;

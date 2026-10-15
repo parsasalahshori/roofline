@@ -10,7 +10,7 @@ import { ProposalPanel } from '../src/features/measure/lift/ProposalPanel.tsx';
 import { facetLetter, facetsData, lineKinds, linesData, readRoof } from '../src/features/measure/lift/roofModel.ts';
 import { footprintsShown, ringCenter, scaleBarFor } from '../src/features/measure/lift/RoofView.tsx';
 import { roofPhotoFor } from '../src/features/measure/lift/roofPhoto.ts';
-import { EDGE_CUE_LAYERS, EDGE_CUE_SOURCE, edgeCueText, hiddenEdges, setEdgeCue } from '../src/features/measure/lift/edgeCue.ts';
+import { EDGE_CUE_LAYERS, EDGE_CUE_SOURCE, edgeCueText, hiddenEdges, LIDAR_FACE_LAYER, LIDAR_FACE_SOURCE, lidarFaces, setEdgeCue, setLidarFaces } from '../src/features/measure/lift/edgeCue.ts';
 import { shownShare, stageAt, type ScanSession } from '../src/features/measure/lift/scan.ts';
 import type { MeasurementPreview, MeasurementView, PreviewOption } from '../src/features/measure/types.ts';
 import { gableRoof } from './roof-model-fixture.ts';
@@ -394,6 +394,46 @@ describe('unverified outline edges (dashed, with a one-line cue)', () => {
     expect(screen.getByText(liftMeasure.reviewReason['edges-unverified'])).toBeTruthy();
     rerender(card(view({ pitchSource: 'solar-3d', roof3d: treed, needsReview: { reasons: ['roof-inferred'] } })));
     expect(screen.getByText(liftMeasure.reviewReason['roof-inferred'])).toBeTruthy();
+  });
+
+  it('lidar provenance reaches the roof view: lidar edges in their own colour whatever their support, lidar faces shaded, the added area on the card', () => {
+    // Edge 1 was placed by the lidar; Google's heights call it strong: it is drawn all the same, as lidar.
+    const face = (k: number, extra: Record<string, unknown>) => ({ id: k, ring: ring as [number, number][], pitchX12: 6, azimuthDeg: 90, areaSqFt: 400, planSqFt: 360, ...extra });
+    const fused = {
+      ...base,
+      edges: [edge(0, 'strong'), { ...edge(1, 'strong'), source: 'lidar' as const }, edge(2, 'strong'), edge(3, 'strong')],
+      faces: [face(0, {}), face(1, { source: 'lidar', lidarShare: 0.9 }), face(2, { lidarShare: 0.25 })],
+      lidarFusion: { applied: true, addedPlanSqFt: 516.6, addedSlopedSqFt: 560, addedShare: 0.31 },
+    } as never;
+    const hidden = hiddenEdges(fused, ring);
+    expect(hidden).toEqual([{ coords: [ring[1], ring[2]], lengthFt: 72, reason: null, lidar: true }]);
+    expect(edgeCueText(hidden, fused)).toBe(liftMeasure.edgeHidden.lidar);
+    expect(lidarFaces(fused, ring).map((f) => f.share)).toEqual([0.9, 0.25]);
+    // Moved outline: about another outline.
+    expect(lidarFaces(fused, [ring[0]!, ring[1]!, [LNG + 0.0002, LAT + 0.0001], ring[3]!])).toEqual([]);
+    const sources = new Map<string, { data: unknown; setData: (d: unknown) => void }>();
+    const layers = new Map<string, { paint: Record<string, unknown> }>();
+    const visibility = new Map<string, string>();
+    const map = {
+      getSource: (id: string) => sources.get(id),
+      getLayer: (id: string) => layers.get(id),
+      addSource: (id: string, src0: { data: unknown }) => {
+        const src = { data: src0.data, setData: (d: unknown) => (src.data = d) };
+        sources.set(id, src);
+      },
+      addLayer: (l: { id: string; paint: Record<string, unknown> }) => layers.set(l.id, l),
+      setLayoutProperty: (id: string, _k: string, v: string) => visibility.set(id, v),
+    };
+    setEdgeCue(map as never, hidden, true);
+    expect((sources.get(EDGE_CUE_SOURCE)!.data as { features: { properties: { lidar: number } }[] }).features[0]!.properties.lidar).toBe(1);
+    expect(JSON.stringify(layers.get(EDGE_CUE_LAYERS[1])!.paint['line-color'])).toContain('lidar');
+    setLidarFaces(map as never, lidarFaces(fused, ring), true);
+    expect((sources.get(LIDAR_FACE_SOURCE)!.data as { features: unknown[] }).features).toHaveLength(2);
+    expect(visibility.get(LIDAR_FACE_LAYER)).toBe('visible');
+    const numbers = cardNumbers(view(), view().estimate, gableRoof(ring as [number, number][]), null);
+    render(<MeasureCard m={view({ pitchSource: 'solar-3d', roof3d: fused })} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />);
+    expect(screen.getByText(liftMeasure.lidarAdded(516.6))).toBeTruthy();
+    expect(screen.getByText(liftMeasure.edgeHidden.lidar)).toBeTruthy();
   });
 
   it('draws the dashed layer on the map, updates it, and hides it', () => {

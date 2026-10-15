@@ -387,18 +387,17 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   const meta = { imageryQuality: layers.imageryQuality, imageryDate: layers.imageryDate };
   const cut = roofMaskCut(local.cuts);
   const fusedPx = local.lidarFusion?.pixels ?? null;
-  const fusedDsm = local.lidarFusion?.dsm ?? null;
   const base3d = toRoof3d(local, toLngLat, meta);
   const flight = o.lidarFusion?.flight ?? null;
   const withFlight =
     base3d.lidarFusion !== undefined && flight !== null
       ? { ...base3d, lidarFusion: { ...base3d.lidarFusion, flight: { project: flight.project, workUnit: flight.workUnit, collectEnd: flight.collectEnd, leafOff: flight.leafOff, ql: flight.ql, credit: flight.credit } } }
       : base3d;
-  // Edge evidence on the heights the reconstruction used: on lidar pixels the lidar's surface, and no crown there.
-  const evidenceLayers = fusedPx !== null && fusedDsm !== null ? { ...layers, raster: { ...layers.raster, dsm: fusedDsm } } : layers;
-  const fusedGround = local.lidarFusion?.groundPx ?? null;
-  const evidenceGreen = fusedPx !== null && raster.green != null ? raster.green.map((v, i) => (fusedPx[i] === 1 || fusedGround?.[i] === 1 ? 0 : v)) : raster.green;
-  const roof = withEdgeEvidence({ ...withFlight, ...(cut !== null ? { maskCut: cut } : {}) }, evidenceLayers, evidenceGreen, fusedPx);
+  // Edge evidence on GOOGLE's heights and crowns only, never the fused ones: support and confidence are calibrated on
+  // Google's eave drops (support.md), and judging a lidar-placed edge on the lidar's own ground made it 'strong' with a
+  // Google-calibrated 0.87 and hid the unverified cue. A lidar edge under a crown is therefore unverified by Google
+  // (dashed, 'edges-unverified' as before) and carries source 'lidar' so the roof view draws it as lidar.
+  const roof = withEdgeEvidence({ ...withFlight, ...(cut !== null ? { maskCut: cut } : {}) }, layers, raster.green, fusedPx);
   // Detached garages, sheds and carports on the same layers: offered beside the main roof, not added to it.
   const structures: Roof3dStructure[] = [];
   for (const other of otherRoofParts(raster, local)) {

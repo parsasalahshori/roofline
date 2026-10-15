@@ -22,8 +22,14 @@ const MIN_UNVERIFIED_SHARE = 0.5;
  */
 const CUE_MIN_SHARE = 0.1;
 const CUE_COLOR = '#ffb020';
+/**
+ * Lidar provenance (Roof3dEdge.source / Roof3dFace.lidarShare 'lidar'): roof measured by leaf-off USGS lidar, not by
+ * Google's heights, drawn in its own colour so the person checking it before pricing can see which part it is.
+ */
+const LIDAR_COLOR = '#3aa0ff';
 
-export type HiddenEdge = { coords: [LngLat, LngLat]; lengthFt: number; reason: string | null };
+/** `lidar`: placed by leaf-off lidar (Roof3dEdge.source 'lidar'), drawn in the lidar colour whatever its support. */
+export type HiddenEdge = { coords: [LngLat, LngLat]; lengthFt: number; reason: string | null; lidar?: true };
 
 /** The unverified edges of the 3D roof whose outline `ring` still is; [] for an older roof without edges. */
 export function hiddenEdges(roof3d: Roof3d | null | undefined, ring: Ring | null | undefined): HiddenEdge[] {
@@ -33,8 +39,8 @@ export function hiddenEdges(roof3d: Roof3d | null | undefined, ring: Ring | null
   // Edges the hidden-edge step inferred are drawn dashed whatever the heights say about them (they were not measured).
   const inferred = new Set((roof3d.inferredEdges?.edges ?? []).filter((e) => e.lengthFt >= MIN_EDGE_FT).map((e) => e.from));
   return edges
-    .filter((e) => (inferred.has(e.from) || (e.support === 'none' && e.unverifiedShare >= MIN_UNVERIFIED_SHARE && e.lengthFt >= MIN_EDGE_FT)) && e.from >= 0 && e.from < n)
-    .map((e) => ({ coords: [roof3d.outline[e.from]!, roof3d.outline[(e.from + 1) % n]!], lengthFt: e.lengthFt, reason: e.reason }));
+    .filter((e) => (inferred.has(e.from) || (e.source === 'lidar' && e.lengthFt >= MIN_EDGE_FT) || (e.support === 'none' && e.unverifiedShare >= MIN_UNVERIFIED_SHARE && e.lengthFt >= MIN_EDGE_FT)) && e.from >= 0 && e.from < n)
+    .map((e) => ({ coords: [roof3d.outline[e.from]!, roof3d.outline[(e.from + 1) % n]!], lengthFt: e.lengthFt, reason: e.reason, ...(e.source === 'lidar' ? { lidar: true as const } : {}) }));
 }
 
 /**
@@ -43,6 +49,8 @@ export function hiddenEdges(roof3d: Roof3d | null | undefined, ring: Ring | null
  */
 export function edgeCueText(edges: readonly HiddenEdge[], roof3d?: Roof3d | null): string | null {
   if (edges.length === 0) return null;
+  // Lidar edges are always explained: they were measured by another sensor, and the quote waits for a check.
+  if (edges.some((e) => e.lidar === true)) return liftMeasure.edgeHidden.lidar;
   const total = edges.reduce((t, e) => t + e.lengthFt, 0);
   if (roof3d != null) {
     const perimeter = (roof3d.edges ?? []).reduce((t, e) => t + e.lengthFt, 0);
@@ -56,7 +64,7 @@ export function edgeCueText(edges: readonly HiddenEdge[], roof3d?: Roof3d | null
 export function edgeCueData(edges: readonly HiddenEdge[]): { type: 'FeatureCollection'; features: unknown[] } {
   return {
     type: 'FeatureCollection',
-    features: edges.map((e) => ({ type: 'Feature', properties: { reason: e.reason ?? '' }, geometry: { type: 'LineString', coordinates: e.coords } })),
+    features: edges.map((e) => ({ type: 'Feature', properties: { reason: e.reason ?? '', lidar: e.lidar === true ? 1 : 0 }, geometry: { type: 'LineString', coordinates: e.coords } })),
   };
 }
 
@@ -89,7 +97,7 @@ export function setEdgeCue(instance: MapLibreMap | null, edges: readonly HiddenE
         type: 'line',
         source: EDGE_CUE_SOURCE,
         layout: { 'line-cap': 'butt' },
-        paint: { 'line-color': CUE_COLOR, 'line-width': 3, 'line-dasharray': [2, 1.5] },
+        paint: { 'line-color': ['case', ['==', ['get', 'lidar'], 1], LIDAR_COLOR, CUE_COLOR], 'line-width': 3, 'line-dasharray': [2, 1.5] },
       });
     } else {
       source.setData?.(edgeCueData(edges));
@@ -99,5 +107,51 @@ export function setEdgeCue(instance: MapLibreMap | null, edges: readonly HiddenE
     }
   } catch {
     // Ignored: the map is going away; the cue line under the photo still says it.
+  }
+}
+
+export const LIDAR_FACE_SOURCE = 'roof-lidar-faces';
+export const LIDAR_FACE_LAYER = 'roof-lidar-faces';
+
+/**
+ * Faces holding roof measured by the lidar (Roof3dFace.lidarShare, set from 5 % of a face up), with their share: the
+ * added roof is often spread over faces Google also sees, so the share (not only source 'lidar') decides. [] when the
+ * outline was moved (the faces are about another outline) or the roof has none.
+ */
+export function lidarFaces(roof3d: Roof3d | null | undefined, ring: Ring | null | undefined): { ring: LngLat[]; share: number }[] {
+  if (roof3d == null || ring == null || ring.length < 3 || !sameOutline(ring, roof3d)) return [];
+  return roof3d.faces
+    .filter((f) => f.source === 'lidar' || (f.lidarShare ?? 0) > 0)
+    .map((f) => ({ ring: f.ring, share: f.source === 'lidar' ? Math.max(f.lidarShare ?? 1, 0.5) : f.lidarShare! }));
+}
+
+export function lidarFaceData(faces: readonly { ring: LngLat[]; share: number }[]): { type: 'FeatureCollection'; features: unknown[] } {
+  return {
+    type: 'FeatureCollection',
+    features: faces.map((f) => ({ type: 'Feature', properties: { share: f.share }, geometry: { type: 'Polygon', coordinates: [[...f.ring, f.ring[0]!]] } })),
+  };
+}
+
+/** Shades the lidar faces in the lidar colour, stronger the more of the face the lidar measured. */
+export function setLidarFaces(instance: MapLibreMap | null, faces: readonly { ring: LngLat[]; share: number }[], visible: boolean): void {
+  if (instance === null) return;
+  const loose = instance as unknown as Loose;
+  try {
+    const source = loose.getSource?.(LIDAR_FACE_SOURCE) as { setData?: (d: unknown) => void } | undefined;
+    if (source === undefined) {
+      if (faces.length === 0) return;
+      loose.addSource?.(LIDAR_FACE_SOURCE, { type: 'geojson', data: lidarFaceData(faces) });
+      loose.addLayer?.({
+        id: LIDAR_FACE_LAYER,
+        type: 'fill',
+        source: LIDAR_FACE_SOURCE,
+        paint: { 'fill-color': LIDAR_COLOR, 'fill-opacity': ['+', 0.12, ['*', 0.3, ['get', 'share']]], 'fill-outline-color': LIDAR_COLOR },
+      });
+    } else {
+      source.setData?.(lidarFaceData(faces));
+    }
+    if (loose.getLayer?.(LIDAR_FACE_LAYER) !== undefined) loose.setLayoutProperty?.(LIDAR_FACE_LAYER, 'visibility', visible && faces.length > 0 ? 'visible' : 'none');
+  } catch {
+    // Ignored: the map is going away; the card still lists the lidar's added area.
   }
 }

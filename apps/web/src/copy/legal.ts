@@ -13,7 +13,7 @@ export const legal = {
   /** On a roof measured in 3D from Google Solar's height map. */
   solar3dAttribution: 'Roof measured in 3D from Google Solar (includes solar data from Google)',
   /** Shown when edges hidden by trees were placed from leaf-off lidar (roof3d.lidarEdges.applied). USGS data is public domain; credit is asked. */
-  usgsLidarAttribution: 'Edges under trees placed from leaf-off lidar: USGS 3D Elevation Program (3DEP)',
+  usgsLidarAttribution: 'Roof under trees measured from leaf-off lidar: USGS 3D Elevation Program (3DEP), public domain',
   /** On a map roof whose outline is Google Solar's (no building footprint there). */
   solarOutlineAttribution: 'Outline from Google Solar (includes solar data from Google)',
   /** On the map, wherever building outlines are drawn. */

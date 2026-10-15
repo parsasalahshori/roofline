@@ -272,6 +272,11 @@ export function MeasureCard({
             {legal.usgsLidarAttribution}
           </p>
         ) : null}
+        {m.roof3d?.lidarFusion?.applied === true && m.roof3d.lidarFusion.addedPlanSqFt > 0 && m.kind !== 'exact' && !scanning ? (
+          <p className={styles.note} data-tone="lidar-added">
+            {liftMeasure.lidarAdded(m.roof3d.lidarFusion.addedPlanSqFt)}
+          </p>
+        ) : null}
         {open ? (
           <div id={adjustId} className={styles.adjust}>
             {panels}
