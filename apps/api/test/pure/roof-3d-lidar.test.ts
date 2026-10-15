@@ -108,6 +108,8 @@ describe('roof-3d with USGS lidar', () => {
     const first = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
     expect(first?.roof).not.toBeNull();
     expect(first?.lidar).toEqual({ status: 'none', reason: 'lidar-pending' });
+    // Asked again in this process while still pending: the same answer, nothing bought again.
+    expect(await roof3dAt(deps, INSIDE, buildingOf(HOUSE))).toBe(first);
     // Still pending: the kept roof is reused (making it again would buy Google's layers for nothing).
     const { deps: d2, layers: l2 } = depsWith('on', { waitMs: 0 });
     (d2 as { usgsLidar: unknown }).usgsLidar = deps.usgsLidar;
@@ -118,6 +120,10 @@ describe('roof-3d with USGS lidar', () => {
     // Ready now: the kept snapshot from the first Measure is made again, with the lidar.
     const again = await roof3dFromKept(deps, first, INSIDE, Promise.resolve(buildingOf(HOUSE)));
     expect(again?.lidar?.status).toBe('used');
+    // And in this process too: the cached answer is made again once, then shared.
+    const third = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
+    expect(third?.lidar?.status).toBe('used');
+    expect(await roof3dAt(deps, INSIDE, buildingOf(HOUSE))).toBe(third);
   });
 
   it('Google MEDIUM (0.25 m) layers: the lidar goes in the same way, and the answer is identical run to run', async () => {

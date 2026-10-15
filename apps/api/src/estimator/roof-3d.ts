@@ -62,7 +62,7 @@ const NO_BUILDING_RADIUS_M = 30;
 type Need = { sw: LngLat; ne: LngLat; marginM: number };
 type LayersEntry = { at: number; value: Promise<RoofLayers | null>; settled: RoofLayers | null };
 const layersCache = new WeakMap<AppDeps, LayersEntry[]>();
-const roofCache = new WeakMap<AppDeps, Map<string, { at: number; value: Promise<Roof3dSnapshot | null> }>>();
+const roofCache = new WeakMap<AppDeps, Map<string, { at: number; value: Promise<Roof3dSnapshot | null>; lidarPending?: boolean }>>();
 
 /**
  * Without a building box, what reused layers must hold round the point, metres. A new request round a point with no
@@ -614,7 +614,17 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
   }
   const k = `${key(point, building)}${buildingKnown ? '' : '|unknown'}`;
   const hit = map.get(k);
-  if (hit !== undefined && Date.now() - hit.at < ROOF_TTL_MS) return hit.value;
+  if (hit !== undefined && Date.now() - hit.at < ROOF_TTL_MS) {
+    if (hit.lidarPending !== true) return hit.value;
+    // Made while its lidar was still coming: shared until the lidar is ready (a quick read; making it again sooner
+    // would only buy Google's layers again), then made again with it.
+    const entries = map;
+    return hit.value.then(async (snapshot) => {
+      if (snapshot === null || !(await lidarNowReady(deps, snapshot, point))) return snapshot;
+      if (entries.get(k) === hit) entries.delete(k);
+      return roof3dAt(deps, point, building, o);
+    });
+  }
   const entries = map;
   const forget = () => {
     if (entries.get(k)?.value === value) entries.delete(k);
@@ -622,8 +632,7 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
   const value: Promise<Roof3dSnapshot | null> = withBudget(attempt(deps, point, building, buildingKnown), LAYERS_BUDGET_MS).then(
     (snapshot) => {
       if (snapshot.roof === null && snapshot.none !== 'no-imagery' && snapshot.none !== 'no-building') forget();
-      // Made before the lidar was ready: not shared, so the next Measure makes it again with the lidar.
-      if (lidarWasPending(deps, snapshot)) forget();
+      if (lidarWasPending(deps, snapshot)) entry.lidarPending = true;
       return snapshot;
     },
     (err: unknown) => {
@@ -637,7 +646,8 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
       return null;
     },
   );
-  map.set(k, { at: Date.now(), value });
+  const entry: { at: number; value: Promise<Roof3dSnapshot | null>; lidarPending?: boolean } = { at: Date.now(), value };
+  map.set(k, entry);
   while (map.size > ROOF_MAX) {
     const oldest = map.keys().next().value;
     if (oldest === undefined) break;
