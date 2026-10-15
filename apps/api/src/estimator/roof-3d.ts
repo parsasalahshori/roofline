@@ -21,6 +21,7 @@ import {
   otherRoofParts,
   type RasterProblem,
   rasterProblem,
+  type ReconstructOptions,
   reconstructRoof,
   roofPartAreaM2,
   toRoof3d,
@@ -219,7 +220,13 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   return 'roof' in found ? found.roof : null;
 }
 
-export type RoofOnLayersOptions = { steep?: boolean; building?: SolarBuilding | null; seed?: number };
+export type RoofOnLayersOptions = {
+  steep?: boolean;
+  building?: SolarBuilding | null;
+  seed?: number;
+  /** The hidden-edge step (ReconstructOptions.hiddenEdge); off unless set. The benchmark sets it to compare methods. */
+  hiddenEdge?: ReconstructOptions['hiddenEdge'];
+};
 /**
  * Why roofOnLayersResult found no roof: 'clipped' (it runs off the layers' edge), 'not-found' (no roof part near the
  * point, too small, or no plane), or the input guard's reason (rasterProblem: a garbled, empty or oversized grid; a
@@ -257,6 +264,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     // server never sets it (the reconstruction's own default seed, 7, applies).
     ...(o.seed !== undefined ? { seed: o.seed } : {}),
     ...(o.steep === true ? { planes: { maxPitchX12: 24 } } : {}),
+    ...(o.hiddenEdge !== undefined ? { hiddenEdge: o.hiddenEdge } : {}),
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
   });
   if (local === null) return { miss: 'not-found' };

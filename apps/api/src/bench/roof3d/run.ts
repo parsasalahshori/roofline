@@ -1,12 +1,24 @@
 import type { Roof3d } from '@roofline/shared';
 import { checkRoof } from '../../estimator/roof-3d-compare.ts';
-import { roofOnLayers, steepRoof, unusable } from '../../estimator/roof-3d.ts';
+import { roofOnLayers, type RoofOnLayersOptions, steepRoof, unusable } from '../../estimator/roof-3d.ts';
 import { withGoogleCheck } from '../../estimator/roof-3d-compare.ts';
 import type { LoadedHouse } from './data.ts';
 import { DEFAULT_METRICS, type HouseMetrics, type MetricParams, emptyMetrics, hashOf, houseMetrics } from './metrics.ts';
 
 /** The seeds of the random sampling in the plane search; results are reported as the mean over them with the range. */
 export const SEEDS: readonly number[] = [7, 8, 9];
+
+/**
+ * The hidden-edge method under test (ReconstructOptions.hiddenEdge), from the environment so a run of the same commit
+ * can compare methods: ROOF3D_HIDDEN_EDGE=planes, with ROOF3D_HIDDEN_EDGE_PARAMS a JSON object of parameter overrides
+ * (sensitivity runs). Unset: off, as the server runs.
+ */
+export function hiddenEdgeFromEnv(env: NodeJS.ProcessEnv = process.env): RoofOnLayersOptions['hiddenEdge'] {
+  if (env.ROOF3D_HIDDEN_EDGE !== 'planes') return undefined;
+  const raw = env.ROOF3D_HIDDEN_EDGE_PARAMS;
+  return { method: 'planes', ...(raw !== undefined && raw !== '' ? { planes: JSON.parse(raw) as Record<string, number> } : {}) };
+}
+const HIDDEN_EDGE = hiddenEdgeFromEnv();
 
 export type Once = { metrics: HouseMetrics; json: string; ms: number };
 
@@ -18,7 +30,7 @@ export function reconstructOnce(h: LoadedHouse, seed: number, p: MetricParams = 
   const started = performance.now();
   let roof: Roof3d | null;
   try {
-    const found = roofOnLayers(h.layers, h.entry.point, { steep: steepRoof(h.building), building: h.building, seed });
+    const found = roofOnLayers(h.layers, h.entry.point, { steep: steepRoof(h.building), building: h.building, seed, ...(HIDDEN_EDGE !== undefined ? { hiddenEdge: HIDDEN_EDGE } : {}) });
     roof = found === null ? null : withGoogleCheck(found, h.building);
   } catch {
     return { metrics: emptyMetrics('failed'), json: 'failed', ms: performance.now() - started };
