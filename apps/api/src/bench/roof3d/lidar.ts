@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { LngLat, Roof3d } from '@roofline/shared';
-import { lngLatToUtm, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
+import { densify, lngLatToUtm, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
 import { eaveSupport } from '@roofline/shared/roof-reconstruct/eave-support';
 import type { RoofLayers } from '../../providers/solar-layers.ts';
 import { type MultiPoly, type Pt, area, bestTranslation, boundaryDistance, distancesToBoundary, iou, ringToXY, roundHalfEven, translate } from './geometry.ts';
@@ -125,8 +125,14 @@ export type LidarMetrics = {
   edgeError: string | null;
 };
 
-export type LidarParams = { boundaryStepM: number; withinM: number };
-export const DEFAULT_LIDAR: LidarParams = { boundaryStepM: 0.2, withinM: HIDDEN_WITHIN_M };
+/** The eave-support scorer of the hidden-edge sets: 'midpoint' (eaveSupport as the product calls it) or 'dense'. */
+export const SUPPORT_SCORER: 'midpoint' | 'dense' = process.env.ROOF3D_BENCH_SUPPORT === 'dense' ? 'dense' : 'midpoint';
+/** The dense scorer's piece length, metres: eaveSupport's own sample step. */
+const SUPPORT_STEP_M = 0.2;
+
+/** supportScorer: how the hidden-edge sets read eave support (SUPPORT_SCORER; supportAlong). */
+export type LidarParams = { boundaryStepM: number; withinM: number; supportScorer: 'midpoint' | 'dense' };
+export const DEFAULT_LIDAR: LidarParams = { boundaryStepM: 0.2, withinM: HIDDEN_WITHIN_M, supportScorer: SUPPORT_SCORER };
 
 /** The lidar outline in metres (the bench's zone for the house). */
 export function lidarXY(zone: ReturnType<typeof outlineXY>['zone'], t: LidarTruth): MultiPoly {
@@ -137,7 +143,12 @@ export function lidarXY(zone: ReturnType<typeof outlineXY>['zone'], t: LidarTrut
  * Eave support of every sample along a lng/lat ring, on Google's height map, as points in the bench's metres.
  * Null with a reason when it cannot be measured (no UTM zone, a ring off the raster, eaveSupport's own refusal).
  */
-export function supportAlong(ring: readonly LngLat[], layers: RoofLayers, zone: ReturnType<typeof outlineXY>['zone']): { samples: { p: Pt; none: boolean }[] } | { error: string } {
+export function supportAlong(
+  ring: readonly LngLat[],
+  layers: RoofLayers,
+  zone: ReturnType<typeof outlineXY>['zone'],
+  scorer: 'midpoint' | 'dense' = SUPPORT_SCORER,
+): { samples: { p: Pt; none: boolean }[] } | { error: string } {
   const lz = utmZoneOfEpsg(layers.epsg);
   if (lz === null) return { error: 'no-zone' };
   const local = ring.map(([lng, lat]) => {
@@ -145,7 +156,12 @@ export function supportAlong(ring: readonly LngLat[], layers: RoofLayers, zone: 
     return { x: u.easting - layers.originX, y: u.northing - layers.originY };
   });
   const r = layers.raster;
-  const s = eaveSupport(local, { width: r.width, height: r.height, pixelSizeM: r.pixelSizeM, dsm: r.dsm }, null);
+  // eaveSupport (since c606b7a4) clamps each sample to its edge's midpoint (`Math.min(t, L / 2)`), so the second half of
+  // every edge is never measured and the midpoint is counted once per missing sample. The dense scorer measures the ring
+  // in 0.2 m pieces (one sample each) so every stretch counts once. Opt-in (ROOF3D_BENCH_SUPPORT=dense) so baselines
+  // made before it stay comparable; a baseline records which one it used.
+  const pts = scorer === 'dense' ? densify(local, SUPPORT_STEP_M).pts : local;
+  const s = eaveSupport(pts, { width: r.width, height: r.height, pixelSizeM: r.pixelSizeM, dsm: r.dsm }, null, scorer === 'dense' ? { stepM: SUPPORT_STEP_M } : undefined);
   if (!s.ok) return { error: s.reason };
   return {
     samples: s.samples.map((q) => {
@@ -190,7 +206,7 @@ export function lidarMetrics(roof: Roof3d, t: LidarTruth, layers: RoofLayers, p:
   let hidden = EMPTY_EDGES;
   let visible = EMPTY_EDGES;
   let edgeError: string | null = null;
-  const mine = supportAlong(roof.outline, layers, zone);
+  const mine = supportAlong(roof.outline, layers, zone, p.supportScorer);
   if ('error' in mine) edgeError = `ours: ${mine.error}`;
   else {
     hidden = edgeSet(mine.samples.filter((q) => q.none).map((q) => q.p), theirs, p.withinM);
@@ -198,7 +214,7 @@ export function lidarMetrics(roof: Roof3d, t: LidarTruth, layers: RoofLayers, p:
   }
   const truthPts: Pt[] = [];
   for (const part of t.outline) {
-    const s = supportAlong(part.outer as LngLat[], layers, zone);
+    const s = supportAlong(part.outer as LngLat[], layers, zone, p.supportScorer);
     if ('error' in s) {
       edgeError ??= `truth: ${s.error}`;
       continue;

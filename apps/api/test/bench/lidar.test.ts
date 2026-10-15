@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from 'vitest';
 import type { LngLat, Roof3d, Roof3dFace } from '@roofline/shared';
 import { lngLatToUtm, utmToLngLat } from '@roofline/shared/roof-reconstruct';
 import { lidarAgg } from '../../src/bench/roof3d/aggregate.ts';
-import { type LidarTruth, LidarTruthSchema, lidarIndexHash, lidarMetrics, readLidarIndex, readLidarTruth } from '../../src/bench/roof3d/lidar.ts';
+import { DEFAULT_LIDAR, type LidarTruth, LidarTruthSchema, lidarIndexHash, lidarMetrics, readLidarIndex, readLidarTruth } from '../../src/bench/roof3d/lidar.ts';
 import { cohortsOf, withLidar, type Manifest } from '../../src/bench/roof3d/manifest.ts';
 import { emptyMetrics, type HouseMetrics } from '../../src/bench/roof3d/metrics.ts';
 import type { RoofLayers } from '../../src/providers/solar-layers.ts';
@@ -126,6 +126,37 @@ describe('lidar truth: outline and hidden-edge metrics', () => {
     const b = JSON.stringify(lidarMetrics(roof(20), truth(), layers(0.25)));
     expect(a).toBe(b);
   });
+
+  /** The layers with the crown only over the north end of the east eave (y 16..21): the eave is hidden on its last 3 m. */
+  function northCrown(s: number): RoofLayers {
+    const L = layers(s, false);
+    const W = L.raster.width;
+    for (let r = 0; r < W; r++) {
+      for (let c = 0; c < W; c++) {
+        const x = (c + 0.5) * s;
+        const y = 30 - (r + 0.5) * s;
+        if (x > 21 && x <= 25 && y >= 16 && y <= 21) L.raster.dsm[r * W + c] = 7;
+      }
+    }
+    return L;
+  }
+
+  for (const s of [0.1, 0.25]) {
+    test(`the dense scorer sees a hidden stretch on the second half of an edge; the midpoint scorer does not (${s} m pixels)`, () => {
+      // The east edge runs south to north (y 11 -> 19); eaveSupport clamps every sample past its midpoint (y 15) to the
+      // midpoint, so the crown over y 16-19 is never read there.
+      const mid = lidarMetrics(roof(21), truth(), northCrown(s), { ...DEFAULT_LIDAR, supportScorer: 'midpoint' });
+      const dense = lidarMetrics(roof(21), truth(), northCrown(s), { ...DEFAULT_LIDAR, supportScorer: 'dense' });
+      expect(mid.hidden.samples).toBe(0);
+      // About 3 m of hidden eave at 0.2 m a sample (the crown's edge blurs a sample or two either way).
+      expect(dense.hidden.samples).toBeGreaterThanOrEqual(12);
+      expect(dense.hidden.samples).toBeLessThanOrEqual(20);
+      expect(dense.truthHidden.samples).toBeGreaterThanOrEqual(12);
+      // Outline geometry numbers do not depend on the scorer.
+      expect(dense.iou).toBe(mid.iou);
+      expect(dense.meanBoundaryM).toBe(mid.meanBoundaryM);
+    });
+  }
 
   test('a layer grid with no UTM zone is a typed edge error, not a throw', () => {
     const m = lidarMetrics(roof(20), truth(), { ...layers(0.1), epsg: 4326 });

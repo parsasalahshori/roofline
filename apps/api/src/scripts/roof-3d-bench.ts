@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { BenchDataError, cohortCounts, runBench } from '../bench/roof3d/bench.ts';
 import { DEFAULT_GATES, formatGates, GatesSchema, compareSplitGap, compareSplits, gatesFailed, type GateRow } from '../bench/roof3d/gates.ts';
 import { loadHouse } from '../bench/roof3d/data.ts';
-import { lidarIndexHash, readLidarIndex, readLidarTruth } from '../bench/roof3d/lidar.ts';
+import { lidarIndexHash, readLidarIndex, readLidarTruth, SUPPORT_SCORER } from '../bench/roof3d/lidar.ts';
 import { readLidarEdgePoints } from '../bench/roof3d/lidar-edges.ts';
 import { type HouseEntry, manifestHash, manifestProblems, parseManifest, SPLITS, withLidar, type Manifest } from '../bench/roof3d/manifest.ts';
 import { benchDir, FALLBACK_DATA_DIR } from '../bench/roof3d/paths.ts';
@@ -36,6 +36,8 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *                               (same returns): judge it on EagleView (roof-3d-lidar-eval.ts); use this run for the gates
  *     --base SHA                record which commit's reconstruction this run claims to measure, with the reconstruction
  *                               files that differ from it (for a baseline made on a later harness commit)
+ *   Environment: ROOF3D_HIDDEN_EDGE=planes|photo runs with that hidden-edge method on; ROOF3D_BENCH_SUPPORT=dense
+ *   scores the hidden-edge sets in 0.2 m pieces (see lidar.ts supportAlong).
  * Exit code: 0 ok, 1 a gate failed, 2 bad usage, 3 a data problem (missing files, expired data, a manifest that
  * breaks its frozen split).
  */
@@ -102,6 +104,9 @@ async function main(): Promise<number> {
       shas.set(h.slug, t.sha1);
     }
     lidarHash = lidarIndexHash(index, shas);
+    // The dense eave-support scorer (lidar.ts SUPPORT_SCORER) measures the hidden-edge sets differently: its runs carry
+    // a suffix so a compare against a baseline scored the other way is refused like a change of truth.
+    if (lidarHash !== null && SUPPORT_SCORER === 'dense') lidarHash = `${lidarHash}+dense`;
   } catch (err) {
     process.stderr.write(`lidar truth is not valid: ${(err as Error).message.slice(0, 400)}\n`);
     return 3;
