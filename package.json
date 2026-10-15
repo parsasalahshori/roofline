@@ -25,6 +25,7 @@
     "build:web": "npm run build -w @roofline/web",
     "e2e": "npm run e2e -w @roofline/web --",
     "eval:agent-texts": "tsx scripts/eval-agent-texts.ts",
+    "roof3d:mutate-guards": "tsx scripts/roof3d-guard-mutations.ts",
     "demo": "tsx scripts/demo.ts",
     "demo:reset": "tsx scripts/demo.ts --reset"
   },
