@@ -2,7 +2,7 @@
 // is built from the same returns the method reads: scoring on it would be circular). docs/roof-3d/lidar.md.
 //
 //   npx tsx src/scripts/roof-3d-lidar-eval.ts [--split dev|heldout|all] [--reveal] [--seeds 7,8,9] [--json OUT]
-//                                             [--param name=value ...] [--house a,b] [--method lidar|planes|photo]
+//                                             [--param name=value ...] [--house a,b] [--method lidar|planes|photo|photo+planes|planes+photo]
 //
 // --method (default lidar) picks the hidden-edge method that is "on": the lidar step, or the hiddenEdge option's
 // planes or photo method. The same frozen-shift scorer then compares all three on EagleView, the one truth none of
@@ -69,7 +69,7 @@ function args() {
     json: get('--json'),
     houses: get('--house')?.split(',') ?? null,
     params,
-    method: (get('--method') ?? 'lidar') as 'lidar' | 'planes' | 'photo',
+    method: (get('--method') ?? 'lidar') as 'lidar' | 'planes' | 'photo' | 'photo+planes' | 'planes+photo',
   };
 }
 
@@ -181,7 +181,7 @@ async function main() {
           ? points === null
             ? off
             : roofOnLayers(h.layers, e.point, { ...base, lidar: points, lidarParams: o.params })
-          : roofOnLayers(h.layers, e.point, { ...base, hiddenEdge: o.method === 'planes' ? { method: 'planes', planes: o.params as Record<string, number> } : { method: 'photo', photo: o.params as Record<string, number> } });
+          : roofOnLayers(h.layers, e.point, { ...base, hiddenEdge: { method: o.method, planes: o.params as Record<string, number>, photo: o.params as Record<string, number> } });
       const msOn = performance.now() - t;
       if (off === null || on === null) continue;
       const { zone, poly: oursOff } = outlineXY(off);
