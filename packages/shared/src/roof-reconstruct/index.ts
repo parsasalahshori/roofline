@@ -14,7 +14,7 @@ import type { Roof3d, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../
 import { dist, nearestOnSegment, pointInRing, signedArea, simplifyClosedIdx, type XY } from './geom.ts';
 import { DEFAULT_OUTLINE_PARAMS, mainAxis, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
 import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type FoundPlane, type Plane, type PlaneParams, refitFaces } from './planes.ts';
-import { type CanopyParams, completeRoof, crownMap, DEFAULT_CANOPY_PARAMS } from './canopy.ts';
+import { type CanopyParams, completeRoof, crownMap, crownRmsK, DEFAULT_CANOPY_PARAMS, localPlaneRms } from './canopy.ts';
 import { groundPlane, heightAboveGround, planeInCrop } from './ground.ts';
 import { close, components, countSet, dilate, fillHoles, largestComponent, open, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
@@ -300,6 +300,11 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   //     completed roof and the faces rebuilt from the same planes, so a roof with nothing to complete is unchanged.
   let canopyOut: LocalRoof['canopy'];
   const canopyPrm: CanopyParams = { ...DEFAULT_CANOPY_PARAMS, ...opts.canopy };
+  // The state before completion, restored when completion is undone below (steps 3 and 4 then run again on it). This
+  // gives the same roof as reconstructing again with completion off (every step before this one is deterministic and
+  // nothing after it draws on rng) without paying for steps 1 and 2 twice (merge note: the undone roof used to be a
+  // whole second reconstruction, which failed the benchmark's runtime gate).
+  const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes };
   if (opts.canopy?.complete !== false && groundFull !== null && box0 !== null && !joined) {
     const done = completeOnWindow(raster, { c0, r0, c1, r1 }, g, s, roof, faces.labels, planes, groundFull, opts.building!, canopyPrm);
     if (done !== null) {
@@ -324,55 +329,63 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     }
   }
 
-  // 3. The outline, squared.
-  const boundary = maskBoundary(g, roof, s);
-  const outline = squareOutline(boundary, outlinePrm);
-  if (outline.length < 3) return null;
-
-  // 4. Topology. A face whose polygon comes out under the smallest face size (its corners pulled in by its
-  //    neighbours' creases) is dissolved and the topology built again.
-  //    Then (faces-cleanup.ts) faces too weak to stand on the polygons topology drew: thin strips with no plane of
-  //    their own or cut from a neighbour's plane, and faces steeper than a roof plane without strong support.
-  let topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
+  let outline: XY[];
+  let topo: ReturnType<typeof buildTopology>;
+  let dissolved: Partial<Record<WeakReason, number>>;
   const cleanupPrm: FaceCleanupParams = { ...DEFAULT_FACE_CLEANUP, ...opts.faces };
-  const dissolved: Partial<Record<WeakReason, number>> = {};
-  for (let pass = 0; pass < 4 && faces.planes.length > 1; pass++) {
-    const tiny = new Set(topo.faces.map((f, k) => (Math.abs(signedArea(f.ring)) < planePrm.tinyFaceM2 ? k : -1)).filter((k) => k >= 0));
-    if (cleanupPrm.enabled) {
-      const support = faceSupport(g, s, dsm, faces.labels, planes, topo.faces.map((f) => f.ring), planePrm, (f) => weakCandidate(f, cleanupPrm));
-      if (opts.debug !== undefined) {
-        support.forEach((f, k) => {
-          if (weakCandidate(f, cleanupPrm)) {
-            opts.debug!(`face ${k} candidate: ${f.widthM.toFixed(2)} m wide, ${f.areaM2.toFixed(1)} m2, ${f.pitchX12.toFixed(1)}/12, on plane ${f.planeShare?.toFixed(2) ?? '-'}, neighbour ${f.minNeighbourDeg.toFixed(0)} deg, edge ${f.edgeShare.toFixed(2)}, thick ${f.thicknessM?.toFixed(2) ?? '-'}`);
-          }
-        });
-      }
-      const weak = weakFaces(support, cleanupPrm);
-      for (const [k, why] of weak) {
-        if (tiny.has(k)) continue;
-        tiny.add(k);
-        dissolved[why] = (dissolved[why] ?? 0) + 1;
-        opts.debug?.(`face ${k} dissolved: ${why}`);
-      }
-    }
-    if (tiny.size === 0 || tiny.size >= faces.planes.length) break;
-    faces = dissolve(g, s, dsm, roof, faces, tiny, tree);
-    planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
-    topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
-  }
+  // Steps 3 and 4 run once, or twice when the completed roof is undone (its state restored, completion off).
+  for (;;) {
+    // 3. The outline, squared.
+    const boundary = maskBoundary(g, roof, s);
+    outline = squareOutline(boundary, outlinePrm);
+    if (outline.length < 3) return null;
 
-  // 2a, checked: a completed roof whose topology came out worse (a face drawn from its pixels, or edge lines longer
-  // than the outline: a face whose ring is the whole outline) is not kept; the roof is reconstructed without completion.
-  if (canopyOut !== undefined) {
-    let edgeLen = 0;
-    for (const l of topo.lines) if (l.kind === 'eave' || l.kind === 'rake') edgeLen += dist(l.a, l.b);
-    let perim = 0;
-    for (let k = 0; k < outline.length; k++) perim += dist(outline[k]!, outline[(k + 1) % outline.length]!);
-    if (topo.faces.some((f) => f.fromPixels) || edgeLen > CANOPY_EDGE_SLACK * perim) {
-      opts.debug?.(`canopy: completion undone (its topology came out worse: ${topo.faces.filter((f) => f.fromPixels).length} pixel faces, edges ${edgeLen.toFixed(1)} m on a ${perim.toFixed(1)} m outline)`);
-      const plain = reconstructRoof(raster, point, { ...opts, canopy: { ...opts.canopy, complete: false } });
-      return plain === null ? null : { ...plain, canopy: { grownM2: 0, bridgedM2: 0, occluded: [], undone: 'topology' } };
+    // 4. Topology. A face whose polygon comes out under the smallest face size (its corners pulled in by its
+    //    neighbours' creases) is dissolved and the topology built again.
+    //    Then (faces-cleanup.ts) faces too weak to stand on the polygons topology drew: thin strips with no plane of
+    //    their own or cut from a neighbour's plane, and faces steeper than a roof plane without strong support.
+    topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
+    dissolved = {};
+    for (let pass = 0; pass < 4 && faces.planes.length > 1; pass++) {
+      const tiny = new Set(topo.faces.map((f, k) => (Math.abs(signedArea(f.ring)) < planePrm.tinyFaceM2 ? k : -1)).filter((k) => k >= 0));
+      if (cleanupPrm.enabled) {
+        const support = faceSupport(g, s, dsm, faces.labels, planes, topo.faces.map((f) => f.ring), planePrm, (f) => weakCandidate(f, cleanupPrm));
+        if (opts.debug !== undefined) {
+          support.forEach((f, k) => {
+            if (weakCandidate(f, cleanupPrm)) {
+              opts.debug!(`face ${k} candidate: ${f.widthM.toFixed(2)} m wide, ${f.areaM2.toFixed(1)} m2, ${f.pitchX12.toFixed(1)}/12, on plane ${f.planeShare?.toFixed(2) ?? '-'}, neighbour ${f.minNeighbourDeg.toFixed(0)} deg, edge ${f.edgeShare.toFixed(2)}, thick ${f.thicknessM?.toFixed(2) ?? '-'}`);
+            }
+          });
+        }
+        const weak = weakFaces(support, cleanupPrm);
+        for (const [k, why] of weak) {
+          if (tiny.has(k)) continue;
+          tiny.add(k);
+          dissolved[why] = (dissolved[why] ?? 0) + 1;
+          opts.debug?.(`face ${k} dissolved: ${why}`);
+        }
+      }
+      if (tiny.size === 0 || tiny.size >= faces.planes.length) break;
+      faces = dissolve(g, s, dsm, roof, faces, tiny, tree);
+      planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
+      topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
     }
+
+    // 2a, checked: a completed roof whose topology came out worse (a face drawn from its pixels, or edge lines longer
+    // than the outline: a face whose ring is the whole outline) is not kept; the roof is reconstructed without completion.
+    if (canopyOut !== undefined && canopyOut.undone === undefined) {
+      let edgeLen = 0;
+      for (const l of topo.lines) if (l.kind === 'eave' || l.kind === 'rake') edgeLen += dist(l.a, l.b);
+      let perim = 0;
+      for (let k = 0; k < outline.length; k++) perim += dist(outline[k]!, outline[(k + 1) % outline.length]!);
+      if (topo.faces.some((f) => f.fromPixels) || edgeLen > canopyPrm.topologyEdgeSlack * perim) {
+        opts.debug?.(`canopy: completion undone (its topology came out worse: ${topo.faces.filter((f) => f.fromPixels).length} pixel faces, edges ${edgeLen.toFixed(1)} m on a ${perim.toFixed(1)} m outline)`);
+        ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes } = beforeCompletion);
+        canopyOut = { grownM2: 0, bridgedM2: 0, occluded: [], undone: 'topology' };
+        continue;
+      }
+    }
+    break;
   }
 
   // Face areas: the polygons' (they tile the outline), shared out so they add up to the outline's area.
@@ -446,11 +459,6 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   };
 }
 
-/**
- * Eave and rake lines (plan length) may exceed the outline's perimeter by this factor before a completed roof's
- * topology is judged broken (they run along the outline, so they add up to its perimeter; 5% covers rounding).
- */
-const CANOPY_EDGE_SLACK = 1.05;
 /** At most this many occluded points are reported (LocalRoof.canopy). */
 const OCCLUDED_MAX = 2000;
 
@@ -494,12 +502,15 @@ function completeOnWindow(
   // z = a x + b y + c in the crop's metres; the window's x is dc pixels more, its y dr pixels less.
   const planesW = planes.map((p) => ({ a: p.a, b: p.b, c: p.c - p.a * dc * s + p.b * dr * s }));
   const hagW = heightAboveGround(win.g, s, win.dsm, planeInCrop(ground, s, win.c0, win.r0));
-  const crown = crownMap(win.g, s, win.dsm, win.mask, win.green, hagW, prm);
+  // One plane-RMS map for both the crown map and the completion (the same window and size: computing it once is half the
+  // completion's cost; merge note).
+  const rms = localPlaneRms(win.g, win.dsm, crownRmsK(s, prm));
+  const crown = crownMap(win.g, s, win.dsm, win.mask, win.green, hagW, prm, rms);
   const boxW = building.map((p) => ({ x: (p.col - win.c0) * s, y: -(p.row - win.r0) * s }));
   const boundary = maskBoundary(win.g, roofW, s);
   if (boundary.length < 3) return null;
   const axis = mainAxis(simplifyClosedIdx(boundary, 0.3).map((k) => boundary[k]!));
-  const done = completeRoof(win.g, s, win.dsm, roofW, labelsW, planesW, win.mask, crown, boxW, axis, prm);
+  const done = completeRoof(win.g, s, win.dsm, roofW, labelsW, planesW, win.mask, crown, boxW, axis, prm, rms);
   if (done === null) return null;
   const inferredZ = new Float32Array(done.added.length).fill(Number.NaN);
   for (let i = 0; i < done.added.length; i++) {

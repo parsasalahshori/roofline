@@ -286,6 +286,18 @@ describe('reconstructRoof with completion', () => {
     expect(Math.abs(area(on) - 126)).toBeLessThan(Math.abs(area(off) - 126));
     expect(Math.abs(area(on) - 126) / 126).toBeLessThan(0.1);
   });
+  it.each([7, 8, 9])('an undone completion gives exactly the roof without completion, faces cleanup included (seed %i)', (seed) => {
+    // Merge composition (canopy x faces): the undone roof is no longer a second reconstruction but the state before
+    // completion restored and steps 3-4 (outline, topology, weak-face cleanup) run again on it. A slack of 0 forces the
+    // guard to undo any completion.
+    const sc = scene({ seed, turnDeg: 17, size: 34, inMask: (q) => q.x < 4 });
+    const raster = { width: sc.W, height: sc.W, pixelSizeM: sc.s, dsm: sc.dsm, mask: sc.mask };
+    const pt = { col: sc.W / 2 - 15, row: sc.W / 2 };
+    const undone = reconstructRoof(raster, pt, { seed, building: toPx(sc), canopy: { topologyEdgeSlack: 0 } });
+    const off = reconstructRoof(raster, pt, { seed, building: toPx(sc), canopy: { complete: false } });
+    expect(undone?.canopy).toEqual({ grownM2: 0, bridgedM2: 0, occluded: [], undone: 'topology' });
+    expect(JSON.stringify({ ...undone, canopy: undefined })).toBe(JSON.stringify(off));
+  });
   it('nothing to complete: byte-identical to completion off, and deterministic', () => {
     const sc = scene({ seed: 7, turnDeg: 17, size: 34 });
     const raster = { width: sc.W, height: sc.W, pixelSizeM: sc.s, dsm: sc.dsm, mask: sc.mask };

@@ -50,6 +50,12 @@ export type CanopyParams = {
   bridgeMinM2: number;
   /** Google's box (when given) plus this, metres: no roof is completed outside it. */
   boxMarginM: number;
+  /**
+   * A completed roof is undone when its eave and rake lines (plan length) exceed the outline's perimeter by this factor
+   * (they run along the outline, so they add up to its perimeter; 5% covers rounding), or when a face had to be drawn
+   * from its pixels (index.ts, step 2a checked).
+   */
+  topologyEdgeSlack: number;
 };
 
 export const DEFAULT_CANOPY_PARAMS: CanopyParams = {
@@ -81,6 +87,7 @@ export const DEFAULT_CANOPY_PARAMS: CanopyParams = {
   bridgeDropM: 0.5,
   bridgeMinM2: 0.5,
   boxMarginM: 1,
+  topologyEdgeSlack: 1.05,
 };
 
 /**
@@ -88,6 +95,11 @@ export const DEFAULT_CANOPY_PARAMS: CanopyParams = {
  * leaves the grid or holds a missing height). O(pixels) with summed-area tables: over a full, centred window the
  * plane's slopes decouple (sum of dx z / sum of dx^2, the same in y).
  */
+/** The half-width, pixels, of the window localPlaneRms uses for crowns and for grown roof (crownHalfM). */
+export function crownRmsK(s: number, prm: Pick<CanopyParams, 'crownHalfM'> = DEFAULT_CANOPY_PARAMS): number {
+  return Math.max(1, Math.round(prm.crownHalfM / s));
+}
+
 export function localPlaneRms(g: Grid, dsm: Float32Array, k: number): Float32Array {
   const { w, h } = g;
   const W = w + 1;
@@ -149,11 +161,21 @@ export function localPlaneRms(g: Grid, dsm: Float32Array, k: number): Float32Arr
  * ground, non-planar (localPlaneRms at least crownRmsM) and off every roof mask, opened by crownOpenM, in parts of
  * crownMinM2 or more. `hag` is each pixel's height above the ground (NaN unknown); without it there is no crown map.
  */
-export function crownMap(g: Grid, s: number, dsm: Float32Array, anyMask: Mask, green: Mask | null, hag: Float32Array | null, prm: CanopyParams = DEFAULT_CANOPY_PARAMS): Mask {
+export function crownMap(
+  g: Grid,
+  s: number,
+  dsm: Float32Array,
+  anyMask: Mask,
+  green: Mask | null,
+  hag: Float32Array | null,
+  prm: CanopyParams = DEFAULT_CANOPY_PARAMS,
+  /** localPlaneRms(g, dsm, crownHalfM / s) when the caller already has it (completeRoof needs the same map). */
+  rmsIn?: Float32Array,
+): Mask {
   const n = g.w * g.h;
   const out = new Uint8Array(n);
   if (hag === null || hag.length !== n) return out;
-  const rms = localPlaneRms(g, dsm, Math.max(1, Math.round(prm.crownHalfM / s)));
+  const rms = rmsIn !== undefined && rmsIn.length === n ? rmsIn : localPlaneRms(g, dsm, crownRmsK(s, prm));
   const geo = new Uint8Array(n);
   for (let i = 0; i < n; i++) if (anyMask[i] !== 1 && hag[i]! > prm.crownAboveM && rms[i]! >= prm.crownRmsM) geo[i] = 1;
   const opened = open(g, geo, Math.max(1, Math.round(prm.crownOpenM / s)));
@@ -193,15 +215,17 @@ export function completeRoof(
   box: readonly XY[] | null,
   axis: number,
   prm: CanopyParams = DEFAULT_CANOPY_PARAMS,
+  /** localPlaneRms(g, dsm, crownHalfM / s) when the caller already has it (the crown map computed the same one). */
+  rmsIn?: Float32Array,
 ): Completion | null {
   if (box === null || box.length < 3) return null;
   const { w, h } = g;
   const n = w * h;
   const at = (i: number) => ({ x: ((i % w) + 0.5) * s, y: -(Math.floor(i / w) + 0.5) * s });
+  // resid and inBox run on every pixel of the window: the same arithmetic as at(), without an object per call.
   const resid = (i: number, k: number) => {
     const p = planes[k]!;
-    const q = at(i);
-    return dsm[i]! - (p.a * q.x + p.b * q.y + p.c);
+    return dsm[i]! - (p.a * (((i % w) + 0.5) * s) + p.b * (-(Math.floor(i / w) + 0.5) * s) + p.c);
   };
   // Inside the box plus its margin (the box is north-up: its x and y bounds).
   const xs = box.map((p) => p.x);
@@ -211,8 +235,9 @@ export function completeRoof(
   const by0 = Math.min(...ys) - prm.boxMarginM;
   const by1 = Math.max(...ys) + prm.boxMarginM;
   const inBox = (i: number) => {
-    const q = at(i);
-    return q.x >= bx0 && q.x <= bx1 && q.y >= by0 && q.y <= by1;
+    const x = ((i % w) + 0.5) * s;
+    const y = -(Math.floor(i / w) + 0.5) * s;
+    return x >= bx0 && x <= bx1 && y >= by0 && y <= by1;
   };
   const free = (i: number) => roof[i] !== 1 && anyMask[i] !== 1 && Number.isFinite(dsm[i]!) && inBox(i);
 
@@ -243,7 +268,7 @@ export function completeRoof(
   }
 
   // 1. Grown: smooth heights on the nearest face's plane, connected to the roof through such pixels.
-  const rms = localPlaneRms(g, dsm, Math.max(1, Math.round(prm.crownHalfM / s)));
+  const rms = rmsIn !== undefined && rmsIn.length === n ? rmsIn : localPlaneRms(g, dsm, crownRmsK(s, prm));
   const growMax = Math.ceil(prm.growMaxM / s);
   const onPlane = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
