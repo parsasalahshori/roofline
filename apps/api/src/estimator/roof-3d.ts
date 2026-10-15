@@ -444,7 +444,9 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
 /** The roof at `point` on layers this process already bought (no new request), or null when none cover it. */
 export async function roof3dOnBoughtLayers(deps: AppDeps, point: LngLat): Promise<Roof3dSnapshot | null> {
   if (modeOf(deps) !== 'on') return null;
-  const layers = cachedLayers(deps, needFor(point, null));
+  // Nothing is bought or kept here: a roof the layers cut off is simply not found (roofOnLayers returns null on a
+  // clipped roof), so the point only needs the old 6 m of room.
+  const layers = cachedLayers(deps, { sw: point, ne: point, marginM: MARGIN_M });
   if (layers === null) return null;
   const roof = roofOnLayers(layers, point);
   if (roof === null || unusable(roof)) return null;
