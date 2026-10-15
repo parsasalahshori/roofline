@@ -1,7 +1,9 @@
 // Measure windows: the shared contract between the API and the web app.
-// A window measurement reads the front of the house from a street-level photo: each window the detector finds there is
-// sized from the photo's geometry ('measured'); the sides and back cannot be seen from the street, so their windows are
-// worked out from the house's size and floors ('estimated') and never shown or priced as measured.
+// Like the roof, the default needs no AI: the house's outline and Google's heights give its walls (length, height,
+// floors), and the windows are worked out from the wall area ('estimated'). A street-level photo of the front lets a
+// person mark each window; a marked window is sized from the photo's geometry ('measured', source 'marked'). An
+// optional detector can find the front windows instead (source 'detector'); it is off by default.
+// Estimated windows are never shown or priced as measured.
 import type { Tier } from './proposals.ts';
 
 type LngLat = [number, number];
@@ -44,10 +46,12 @@ export type FacadePhoto = {
   distanceM: number;
 };
 
-/** A window found in a photo and sized from it. The box is in 0..1 of the photo's width and height. */
+/** A window marked by a person (or found by the optional detector) in a photo and sized from it. Box: 0..1 of the photo. */
 export type MeasuredWindow = {
   id: string;
   photoId: string;
+  /** 'marked' = a person drew it; 'detector' = the optional detector found it. Absent means 'detector' (older rows). */
+  source?: 'marked' | 'detector';
   box: { x: number; y: number; w: number; h: number };
   widthIn: number;
   heightIn: number;
@@ -58,8 +62,10 @@ export type MeasuredWindow = {
   confidence: number;
 };
 
-/** Windows on the sides and back, worked out (not seen): counts per size class and how they were worked out. */
+/** Windows worked out (not seen): counts per size class and how they were worked out. */
 export type EstimatedWindows = {
+  /** 'all-sides' when nothing on the front is measured; 'sides-and-back' once front windows are marked or found. */
+  covers?: 'all-sides' | 'sides-and-back';
   bySizeClass: Record<WindowSizeClass, number>;
   /** Plain-English basis, shown to the user, e.g. "2 floors, 186 ft of side and back wall, front spacing". */
   basis: string;
@@ -83,12 +89,18 @@ export const WINDOWS_REVIEW_REASONS = [
   'low-confidence', // some windows were found with low confidence
   'old-imagery', // the street-level photo is more than 5 years old
   'partly-hidden', // part of the front is hidden
+  'estimated-from-size', // no window was marked or found: every window is worked out from the house's walls
 ] as const;
 export type WindowsReviewReason = (typeof WINDOWS_REVIEW_REASONS)[number];
+
+/** A box a person drew on a photo; the server sizes it into a MeasuredWindow with source 'marked' (same id). */
+export type MarkedBox = { id: string; photoId: string; box: { x: number; y: number; w: number; h: number } };
 
 /** The person's changes: windows left out of the quote, and counts typed in per size class (replacing the estimate). */
 export type WindowAdjustments = {
   excludedWindowIds: string[];
+  /** Windows the person marked on the photos (absent = none). */
+  marked?: MarkedBox[];
   /** Added to the measured windows, per size class (replaces `estimated` for that class when set). */
   manualCounts: Partial<Record<WindowSizeClass, number>>;
 };
@@ -105,6 +117,8 @@ export type WindowMeasurementView = {
   estimated: EstimatedWindows | null;
   /** Floors above ground, when known (from the house's height). */
   stories: number | null;
+  /** The walls the estimate is worked out from (from the outline and Google's heights). Absent/null when unknown. */
+  walls?: { perimeterFt: number; wallHeightFt: number | null; wallAreaSqFt: number | null; frontWallFt: number | null } | null;
   detector: WindowDetectorName | null;
   missing: { reason: WindowsMissReason } | null;
   needsReview: { reasons: WindowsReviewReason[] } | null;
