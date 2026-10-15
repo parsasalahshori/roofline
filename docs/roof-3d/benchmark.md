@@ -22,6 +22,8 @@ repository, because Google's files must never be committed or published):
 | `baseline.json` | the frozen baseline `--compare` judges against |
 | `testset/`, `testset-ev/`, `testset-trees/` | one folder per house: `dsm.tif mask.tif rgb.tif bi.json info.json meta.json`, plus `eagleview.json`, `visual.json` or `osm.json` when it has them |
 | `fetch-ledger.json` | what has been bought from Google, ever (the budget guard) |
+| `lidar/` | lidar truth (USGS 3DEP, public domain): `index.json` (each house's grade and why), `<slug>/truth.json` and `truth.png` (the truth in use), `<slug>/units/<work unit>/` (each project's crop and truth), `tiles/` (downloaded LAZ tiles), `ledger.json`, `coverage.json`. Built by `scripts/roof-bench-lidar/` (see "Lidar truth") |
+| `baseline-v2.json`, `gates-v3.json` | the baseline at c606b7a4 with lidar metrics, and the gates with the lidar block |
 | `trees-candidates/` | the free-source pre-screen: one file per neighbourhood of house-sized OpenStreetMap outlines with their NAIP crown scores |
 
 A house is looked up in the bench folder first, then in `/Users/parsasalahshori-a/RooflineWork/saved-testdata` (the
@@ -56,8 +58,11 @@ is the **mean over seeds 7, 8, 9**; when the seeds disagree it is followed by `[
    than 18/12 of any kind, median outline vertices, median rectilinearity, houses meeting every checker target,
    no-roof and failed houses, houses the estimator would not show (`unusable`), review-flag rate, precision, recall.
 4. *Review reasons*: how many houses carry each reason (`trees`, `roof-hidden`, ...), by cohort.
-5. *Proxy cross-checks*: independent sources that should roughly agree (see "Truth grades").
-6. *Runtime and determinism*: p50 and p95 milliseconds per house, houses whose rerun was not byte-identical,
+5. *Against lidar truth*: lidar houses that are the same building (IoU >= 0.5) of those with lidar truth, IoU, boundary
+   distance, HD95 and aligned IoU against the lidar outline, plan and sloped area error, main pitch within 1/12, and
+   the hidden-edge sets (see "Lidar truth").
+6. *Proxy cross-checks*: independent sources that should roughly agree (see "Truth grades").
+7. *Runtime and determinism*: p50 and p95 milliseconds per house, houses whose rerun was not byte-identical,
    houses whose seeds gave materially different results.
 
 Then the dev houses one per line (`*` after a name: its result differs between seeds). Held-out houses are never
@@ -110,6 +115,7 @@ averaged.
 | `steep` | the area-dominant pitch is 10/12 or more |
 | `state-XX` | the state in the address |
 | `truth-eagleview`, `truth-visual`, `truth-proxy`, `has-truth` | the truth grade |
+| `truth-lidar` | the house has accepted lidar truth (`lidar/index.json`; an EagleView house can have it too) |
 | `set-testset`, `set-testset-ev`, `set-testset-trees` | where the house came from |
 | `split-dev`, `split-heldout` | the split |
 
@@ -136,6 +142,10 @@ of the class counts to each constant is in "Sensitivity" below.
   total sloped area, line lengths. Full metrics.
 - **visual**: an outline drawn by hand on a leaf-off orthophoto (`visual.json`: `{outline: [[lng,lat]...], toleranceM,
   source}`), outline metrics only. The harness supports it; **no house has one yet** (see "What is not done").
+- **lidar**: an outline, plane pitches and areas from USGS 3DEP lidar, built outside the product and accepted per house
+  by its own checks (see "Lidar truth"). A second answer key: it is merged in from `lidar/index.json` when the bench
+  loads, so it sits beside a house's EagleView key, and `manifest.json` (and its hash) does not change. The manifest
+  schema accepts `lidar` as a house's main grade too, for a future manifest.
 - **proxy**: no truth exists and none is invented. Only proxies, always labelled as such:
   `maskIoU` (our outline against Google's roof mask part under the house, on the mask's own grid), `boxIoU` (our
   outline's bounding box against Google's building box), `googleAreaPct` (our plan area against Google's whole-roof
@@ -167,6 +177,7 @@ integrator and verifiers: do not tune on it. `--house` of a held-out house is re
 | determinism | every house byte-identical on a rerun (absolute) |
 | runtime p95 | at most 1.5 × the baseline's, after the calibration |
 | thin faces (added by the bench) | may not rise, in `simple`, `canopy-heavy` and `canopy-light` only |
+| lidar (gates-v3) | median IoU and boundary distance against lidar truth, median sloped area error, and the hidden-edge shares within 0.5 m and mean distances (see "Lidar truth"); skipped under 3 lidar houses or 50 edge samples |
 
 Two rules the owner's list did not have, both from an A/A test (the same code at other seeds against the baseline):
 
@@ -190,6 +201,46 @@ made from a different manifest, or at other seeds, is refused. Freeze a new base
 cohort threshold changes on purpose: `npm run roof3d:bench -w @roofline/api -- --split all --base <sha> --json
 /Users/parsasalahshori-a/RooflineWork/roof-bench/baseline.json`. `--base` records which commit's reconstruction the
 run claims to measure and which reconstruction files differ from it.
+
+## Lidar truth
+
+Design note, validation against EagleView, sensitivity and the baseline numbers: [truth.md](truth.md).
+
+Where the canopy hides the eave, Google's height map cannot say where the roof ends, and neither EagleView (8 of the 21
+canopy-heavy houses) nor anything else could, so last round's finding (54 % of the canopy-exposed outline unverified,
+3.1 times the disagreement there) could not be turned into a number to improve. Leaf-off airborne lidar sees the roof
+between bare branches. The tools in `scripts/roof-bench-lidar/` (Python 3 with `laspy[lazrs]`, numpy, scipy, shapely,
+pyproj, scikit-image, tifffile; the venv is `/Users/parsasalahshori-a/RooflineWork/venv`) build it, in order:
+
+```
+python -I scripts/roof-bench-lidar/coverage.py         # 3DEP index + TNM + EPT: which projects cover each house
+python -I scripts/roof-bench-lidar/fetch.py            # EPT nodes or LAZ tiles, cropped to 70 m (lidar/ledger.json)
+python -I scripts/roof-bench-lidar/lidar_truth.py      # an outline and planes per house and project
+python -I scripts/roof-bench-lidar/choose.py           # one project per house, by the truth's own checks
+python -I scripts/roof-bench-lidar/validate.py [dev]   # against EagleView, grades -> lidar/index.json
+python -I scripts/roof-bench-lidar/validation_table.py # the validation table in truth.md
+python -I scripts/roof-bench-lidar/sensitivity.py DIR  # the +-20 % table in truth.md (dev houses)
+```
+
+They read Google's height map and building box for two things only (a rigid frame shift onto Google's frame, and a
+check that the house did not change between the captures) and never import the product's reconstruction. 40 of the
+84 houses have accepted lidar truth (dev 26, held-out 14; canopy-heavy 11, tree houses 16).
+
+Against it the bench scores, per house, in Google's frame:
+
+| metric | definition |
+| --- | --- |
+| lidar IoU, boundary, HD95 | as for EagleView, against the lidar outline (registered once to Google's frame, so no per-reconstruction shift) |
+| lidar aligned IoU | after the best translation within 3 m, as EagleView's aligned metric (for comparison; should be close to the raw) |
+| plan, sloped area error | (ours - lidar) / lidar, percent: our outline's plan area, our faces' sloped area against the lidar planes' |
+| main pitch | the area-dominant whole x/12 of the lidar planes. Weaker than the outline on complex roofs (truth.md) |
+| hidden edges | our outline sampled every 0.2 m; the samples whose eave support (`eave-support.ts`, Google's height map) is `none`; each one's distance to the lidar outline. Pooled per cohort: samples, mean metres, share within 0.5 m |
+| visible edges | the other samples of our outline, the same way |
+| truth-hidden edges | the lidar outline's samples whose eave support on Google's height map is `none`, each one's distance to our outline: the stretches the canopy hides, fixed by the truth, so a change cannot move samples out of the set |
+
+The run prints the lidar truth's fingerprint; `--compare` refuses a baseline scored against different lidar truth
+(like a different manifest). Without `lidar/index.json` nothing changes: no house has lidar truth and the lidar gates
+skip.
 
 ## Adding a house
 
@@ -215,6 +266,11 @@ earliest plausible date (2026-10-11 plus 30 days). Nothing in this folder may be
 anywhere; reports hold derived numbers only.
 
 ## The baseline
+
+`baseline-v2.json` (this round) is frozen at the reconstruction of `c606b7a4` with lidar truth `8dec0f5758c3`; its
+lidar and hidden-edge numbers are in [truth.md](truth.md). Compare with `--compare
+/Users/parsasalahshori-a/RooflineWork/roof-bench/baseline-v2.json --gates
+/Users/parsasalahshori-a/RooflineWork/roof-bench/gates-v3.json`. The older baseline below is kept for its history.
 
 Frozen at the reconstruction of `5cabb413` (the harness commit differs from it only by the optional `seed` on
 `roofOnLayers`; `baseline.json` records both). 84 houses: 54 dev, 30 held-out. Cohort counts (dev / held-out / total):
@@ -329,9 +385,9 @@ totals do not either: those are the numbers to hold a change to.
   shadow, the photo is not true ortho (up to about 0.8 m of lean), and my corner placement from a rendered grid in the
   dark parts is not good to the 0.6 m tolerance the grade promises. A wrong truth is worse than none. A person drawing
   the outline of eight of the Little Rock and North Little Rock houses would settle it.
-- **Tree houses have no truth.** The 30 tree houses, and 13 of the 21 canopy-heavy houses, can only be judged by
-  proxies (mask, box, Google area, segment ratio, OSM outline) and by counts. Only 2 canopy-heavy dev houses and 6
-  held-out ones have an EagleView key.
+- **Tree houses have little truth.** Lidar truth now covers 16 of the 30 tree houses and 11 of the 21 canopy-heavy
+  houses (truth.md); the rest are still judged by proxies (mask, box, Google area, segment ratio, OSM outline) and by
+  counts. Only 2 canopy-heavy dev houses and 6 held-out ones have an EagleView key.
 - **The NAIP pre-screen over-predicts canopy.** Of the 30 houses bought with it, 10 came out canopy-none by Google's
   own photo and 7 canopy-heavy (13 light); of the 54 older houses 14 are heavy. NAIP is summer imagery on another
   date and registration than Google's, and its own crown rule is only an NDVI-and-darkness guess.
