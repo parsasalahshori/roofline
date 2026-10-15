@@ -124,13 +124,31 @@ export type Roof3dSnapshot = {
   fetchedAt: string;
   at: LngLat;
   roof: Roof3d | null;
-  none?: 'no-imagery' | 'no-roof';
+  /** Why there is no roof (see ROOF_3D_NONE_REASONS). Only 'no-imagery' and 'no-building' are ever reused. */
+  none?: Roof3dNoneReason;
   photo?: Roof3dPhoto | null;
+  /**
+   * ROOF_3D_MODE=shadow: the roof that was reconstructed but not measured from (roof is then null and none 'shadow').
+   * Kept so the comparison can be made later, and so turning the mode on reuses it instead of buying the layers again.
+   */
+  shadowRoof?: Roof3d | null;
   /** The snapshot's own layout (ROOF_3D_SNAPSHOT_SCHEMA). Absent on snapshots stored before it existed: 1. */
   schemaVersion?: number;
   /** The reconstruction that made it (ROOF_3D_ALGORITHM_VERSION). Absent on snapshots stored before it existed: 1. */
   algorithmVersion?: number;
 };
+
+/**
+ * Why a snapshot has no roof. 'no-imagery': Google has no HIGH or MEDIUM imagery there. 'no-building': no roof near
+ * the point and Google has no building there either (a vacant lot, a point in the street). 'no-roof': Google has a
+ * building but no roof part was found near the point (written before November 2026 for every case without a roof).
+ * 'clipped': the roof runs off the layers' edge even after one fresh, larger request. 'unusable': a roof was found but
+ * is too far off to show, or the layers could not be read. 'timeout': the layers did not come in time. 'shadow':
+ * ROOF_3D_MODE=shadow, the roof is in shadowRoof. Only 'no-imagery' and 'no-building' are about the place itself; every
+ * other reason is about this attempt and is never reused (roof3dSnapshotFresh), so a later Measure tries again.
+ */
+export const ROOF_3D_NONE_REASONS = ['no-imagery', 'no-building', 'no-roof', 'clipped', 'unusable', 'timeout', 'shadow'] as const;
+export type Roof3dNoneReason = (typeof ROOF_3D_NONE_REASONS)[number];
 
 /**
  * The layout of a stored Roof3dSnapshot. 1: before October 2026 (no version fields). 2: adds schemaVersion and
@@ -238,7 +256,9 @@ export function roof3dSnapshotFresh(snapshot: Roof3dSnapshot | null | undefined,
   if (snapshot.roof === null && snapshot.none === 'no-imagery') return d <= 50;
   // Anything the reconstruction decided (a roof, or "no roof here") is only as good as the algorithm that decided it.
   if (!roof3dSnapshotCurrent(snapshot)) return false;
-  if (snapshot.roof === null) return d <= 3;
+  // Of the other answers without a roof, only "no building here" is about the place; the rest (clipped, unusable,
+  // timeout, shadow, and the old catch-all no-roof) are about one attempt and are asked again.
+  if (snapshot.roof === null) return snapshot.none === 'no-building' && d <= 3;
   if (!isRoof3d(snapshot.roof)) return false;
   return d <= 3 || inside(point, snapshot.roof.outline);
 }

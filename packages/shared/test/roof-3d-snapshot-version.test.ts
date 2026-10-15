@@ -65,10 +65,10 @@ describe('3D snapshot versions', () => {
     expect(roof3dSnapshotFresh(none, AT, NOW)).toBe(true);
   });
 
-  it('a kept "no roof" from an older algorithm is stale (the algorithm may now find the roof)', () => {
+  it('a kept "no roof" is never reused, from an older algorithm or this one (FM05: it is about one attempt)', () => {
     const none: Roof3dSnapshot = { fetchedAt: '2026-10-11T18:07:00Z', at: AT, roof: null, none: 'no-roof' };
     expect(roof3dSnapshotFresh(none, AT, NOW)).toBe(false);
-    expect(roof3dSnapshotFresh(roof3dSnapshotStamp(none), AT, NOW)).toBe(true);
+    expect(roof3dSnapshotFresh(roof3dSnapshotStamp(none), AT, NOW)).toBe(false);
   });
 
   it('unknown extra fields from a newer schema do not break reading', () => {

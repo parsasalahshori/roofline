@@ -156,6 +156,12 @@ const ConfigSchema = z
      * guessed from its outline, as before). An Enterprise SKU: 1,000 free a month, then about $75 per 1,000.
      */
     GOOGLE_SOLAR_DATA_LAYERS: flagDefault(true),
+    /**
+     * The roof in 3D's kill switch. on (default): Measure uses the reconstruction. shadow: it is still reconstructed
+     * and kept on the measurement (shadowRoof), but the home is measured the old way (outline and Solar pitch), so a
+     * new algorithm can be watched before it prices anything. off: no Data Layers request at all.
+     */
+    ROOF_3D_MODE: z.enum(['off', 'shadow', 'on'], { error: 'must be off, shadow or on' }).default('on'),
     /** Twilio account SID (`AC` + 32 hex digits). When set, TWILIO_AUTH_TOKEN is required. */
     TWILIO_ACCOUNT_SID: z
       .string()

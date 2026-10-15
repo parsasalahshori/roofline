@@ -33,14 +33,33 @@ export interface SolarLayersApi {
   roofLayers(center: LngLat, radiusM: number, opts?: { timeoutMs?: number }): Promise<RoofLayers | null>;
 }
 
-/** Google's Data Layers did not answer (network, timeout, quota, a bad key, a file it could not read). */
-export class SolarLayersUnavailableError extends Error {}
+/**
+ * Why Data Layers gave nothing usable: 'timeout' (no answer in time), 'http' (network, quota, a bad key: any failed
+ * request), 'bad-answer' (an answer that is not JSON, or file URLs off Google's host, which are never sent the key),
+ * 'decode' (a file that is not a GeoTIFF, or truncated), 'too-large' (a file or grid bigger than asked for), 'bad-crs'
+ * (not a UTM grid), 'mismatch' (the height map and mask in different zones or with skewed pixels), 'unconfigured'.
+ */
+export const SOLAR_LAYERS_FAILURES = ['timeout', 'http', 'bad-answer', 'decode', 'too-large', 'bad-crs', 'mismatch', 'unconfigured'] as const;
+export type SolarLayersFailure = (typeof SOLAR_LAYERS_FAILURES)[number];
+
+/**
+ * Google's Data Layers did not answer (network, timeout, quota, a bad key, a file it could not read). The message is
+ * fixed text and the error never carries a cause: the request URLs hold the API key.
+ */
+export class SolarLayersUnavailableError extends Error {
+  readonly reason: SolarLayersFailure;
+  constructor(message: string, reason: SolarLayersFailure = 'http') {
+    super(message);
+    this.name = 'SolarLayersUnavailableError';
+    this.reason = reason;
+  }
+}
 
 /** Used when no Solar key is configured. */
 export class UnconfiguredSolarLayers implements SolarLayersApi {
   readonly configured = false;
   roofLayers(): Promise<RoofLayers | null> {
-    return Promise.reject(new SolarLayersUnavailableError("Google Solar isn't set up."));
+    return Promise.reject(new SolarLayersUnavailableError("Google Solar isn't set up.", 'unconfigured'));
   }
 }
 

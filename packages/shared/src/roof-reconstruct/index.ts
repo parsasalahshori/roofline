@@ -19,6 +19,7 @@ import { close, components, countSet, dilate, fillHoles, largestComponent, open,
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
+export { MAX_RASTER_PIXELS, RASTER_PROBLEMS, type RasterProblem, rasterProblem } from './guard.ts';
 export type { XY } from './geom.ts';
 export type { Plane } from './planes.ts';
 
