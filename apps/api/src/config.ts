@@ -162,6 +162,23 @@ const ConfigSchema = z
      * new algorithm can be watched before it prices anything. off: no Data Layers request at all.
      */
     ROOF_3D_MODE: z.enum(['off', 'shadow', 'on'], { error: 'must be off, shadow or on' }).default('on'),
+    /**
+     * Leaf-off USGS 3DEP lidar for roofs under trees (providers/usgs-lidar*.ts, public domain, no key). off (default):
+     * nothing is asked of USGS. prefetch: an address search fetches and keeps the lidar round the house (and Measure
+     * records whether it was there) but the roof is made from Google's heights alone. on: Measure also hands the lidar
+     * to the reconstruction (outline edges hidden under trees); turning it on is the owner's call and bumps
+     * ROOF_3D_ALGORITHM_VERSION.
+     */
+    USGS_LIDAR_MODE: z.enum(['off', 'prefetch', 'on'], { error: 'must be off, prefetch or on' }).optional(),
+    /** Disk cache of raw USGS LAZ tiles (bounded, with a download ledger). Unset: tiles are not kept between houses. Resolved from the repository root. */
+    USGS_LIDAR_TILE_DIR: z
+      .string()
+      .transform((v) => path.resolve(REPO_ROOT, v))
+      .optional(),
+    /** The longest a Measure waits for lidar that is not ready yet, ms (then it goes on with Google alone: 'lidar-pending'). Default 1500. */
+    USGS_LIDAR_MEASURE_WAIT_MS: z.coerce.number().int().min(0).max(10_000).optional(),
+    /** The tile cache's size limit, GB. Default 20. */
+    USGS_LIDAR_TILE_CACHE_GB: z.coerce.number().min(0.1).max(2000).optional(),
     /** Twilio account SID (`AC` + 32 hex digits). When set, TWILIO_AUTH_TOKEN is required. */
     TWILIO_ACCOUNT_SID: z
       .string()

@@ -33,6 +33,7 @@ import {
 import { crownFromGreen, eaveSupport } from '@roofline/shared/roof-reconstruct/eave-support';
 import type { AppDeps } from '../app.ts';
 import { type RoofLayers, SolarLayersUnavailableError } from '../providers/solar-layers.ts';
+import { lidarForRoof, lidarWasPending } from '../providers/usgs-lidar-roof.ts';
 import { encodeRgbPng } from './png.ts';
 import { countRoof3d } from './roof-3d-events.ts';
 import { tierReasons, withGoogleCheck } from './roof-3d-compare.ts';
@@ -554,7 +555,11 @@ async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | n
     return stamp({ fetchedAt: fetchedAt(), at, roof: null, none: 'no-imagery' });
   }
   const steep = steepRoof(building);
-  let found = roofOnLayersResult(layers, point, { steep, building });
+  // Leaf-off USGS lidar (USGS_LIDAR_MODE): null when off; else what is ready within its budget, and why not when not.
+  const lidar = await lidarForRoof(deps, point, layers.imageryDate);
+  const withLidar = lidar?.points != null ? { lidar: lidar.points } : {};
+  const noted = <T extends Roof3dSnapshot>(s: T): T => (lidar === null ? s : { ...s, lidar: lidar.note });
+  let found = roofOnLayersResult(layers, point, { steep, building, ...withLidar });
   if ('miss' in found && found.miss === 'clipped') {
     // The roof runs past these layers' edge: layers bought for a neighbour, or a roof bigger than Google's box. Buy
     // fresh layers once, centred as a new request would be and wider, instead of keeping a "no roof" for 30 days.
@@ -565,7 +570,7 @@ async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | n
     if (again !== null) {
       layers = again;
       reused = false;
-      found = roofOnLayersResult(layers, point, { steep, building });
+      found = roofOnLayersResult(layers, point, { steep, building, ...withLidar });
     }
   }
   if ('miss' in found) {
@@ -573,15 +578,15 @@ async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | n
     // is unknown (the lookup failed) a miss is 'no-roof', which is never reused, so one outage does not block the home.
     const none = found.miss === 'clipped' ? 'clipped' : found.miss === 'not-found' ? (buildingKnown && ownBox(point, building) === null && building === null ? 'no-building' : 'no-roof') : 'unusable';
     countRoof3d(deps, none, { miss: found.miss, reused });
-    return stamp({ fetchedAt: fetchedAt(), at, roof: null, none });
+    return stamp(noted({ fetchedAt: fetchedAt(), at, roof: null, none }));
   }
   if (unusable(found.roof)) {
     countRoof3d(deps, 'unusable', { reused });
-    return stamp({ fetchedAt: fetchedAt(), at, roof: null, none: 'unusable' });
+    return stamp(noted({ fetchedAt: fetchedAt(), at, roof: null, none: 'unusable' }));
   }
   const roof = withGoogleCheck(found.roof, building);
   countRoof3d(deps, 'built', { reused, faces: roof.faces.length, review: (roof.quality?.reasons.length ?? 0) > 0 });
-  return stamp({ fetchedAt: fetchedAt(), at, roof, photo: await photoOrNull(deps, layers, roof) });
+  return stamp(noted({ fetchedAt: fetchedAt(), at, roof, photo: await photoOrNull(deps, layers, roof) }));
 }
 
 /**
@@ -615,6 +620,8 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
   const value: Promise<Roof3dSnapshot | null> = withBudget(attempt(deps, point, building, buildingKnown), LAYERS_BUDGET_MS).then(
     (snapshot) => {
       if (snapshot.roof === null && snapshot.none !== 'no-imagery' && snapshot.none !== 'no-building') forget();
+      // Made before the lidar was ready: not shared, so the next Measure makes it again with the lidar.
+      if (lidarWasPending(deps, snapshot)) forget();
       return snapshot;
     },
     (err: unknown) => {
@@ -707,7 +714,7 @@ export async function roof3dFromKept(
   }
   const usable = kept === null ? null : fromShadow(kept);
   let snapshot: Roof3dSnapshot | null;
-  if (usable !== null && roof3dSnapshotFresh(usable, point, deps.clock.now())) {
+  if (usable !== null && roof3dSnapshotFresh(usable, point, deps.clock.now()) && !lidarWasPending(deps, usable)) {
     countRoof3d(deps, 'reused', { version: roof3dSnapshotVersion(usable).algorithm ?? 0 });
     snapshot = usable;
   } else {
