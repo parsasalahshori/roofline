@@ -254,7 +254,8 @@ export function PhotoStage({
         {shownCorners !== null && p > 0.3 ? <WallOverlay corners={shownCorners} drawn={scan.phase === 'done' ? 1 : wallDrawn(p)} /> : null}
         {scanning ? <ScanOverlay box={bracketBox} sweeping={p < 0.55} /> : null}
         {windows.map((w, i) => {
-          if (scanning && p < windowShownAt(i, n)) return null;
+          // Before the scan nothing is measured yet; during it the windows come in one by one
+          if (scan.phase === 'idle' || (scanning && p < windowShownAt(i, n))) return null;
           const box = drag?.kind === 'box' && drag.id === w.id ? drag.box : w.box;
           const number = numberOf(w.id);
           const out = excluded.has(w.id);

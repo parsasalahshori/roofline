@@ -1,5 +1,5 @@
 import { instantEstimate } from '@roofline/shared';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
@@ -11,6 +11,7 @@ import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
 import { homeowner } from '../src/copy/homeowner.ts';
 import { liftMeasure } from '../src/copy/liftMeasure.ts';
 import { measure } from '../src/copy/measure.ts';
+import { measureWindows } from '../src/copy/measureWindows.ts';
 import { prices } from '../src/copy/prices.ts';
 import { proposals } from '../src/copy/proposals.ts';
 import type { MeasurementView } from '../src/features/measure/types.ts';
@@ -66,6 +67,8 @@ const MEASUREMENT: MeasurementView = {
 
 let api: ReturnType<typeof stubApi>;
 
+const waitForHref = (read: () => string | null, href: string) => waitFor(() => expect(read()).toBe(href));
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -118,6 +121,45 @@ describe('E1 windows', () => {
     // A roof with no outline opens measured (nothing to scan); its numbers sit under the card's Adjust
     await user.click(await screen.findByRole('button', { name: liftMeasure.adjust }));
     expect(await screen.findByText(measure.numbersTitle)).toBeInTheDocument();
+  });
+
+  it('/estimator/windows/w1 opens Measure windows in the same window, with the Roof | Windows switch', async () => {
+    const windowsView = {
+      id: 'w1', propertyId: 'pr1', address: '1 Main St, Austin, TX', center: [-97.7, 30.3], createdAt: '2026-10-12T12:00:00.000Z',
+      photos: [], windows: [], estimated: { covers: 'all-sides', bySizeClass: { small: 1, standard: 4, large: 0, picture: 0 }, basis: 'b' },
+      stories: 1, walls: null, detector: null, missing: { reason: 'no-street-view' }, needsReview: null,
+      adjustments: { excludedWindowIds: [], manualCounts: {} }, tookMs: 0,
+    };
+    signedInApi(ACCOUNT, {
+      'GET /api/window-measurements/w1': () => ({ body: windowsView }),
+      'GET /api/window-measurements/w1/preview': () => ({ body: { quotes: [] } }),
+    });
+    renderApp('/estimator/windows/w1');
+    expect(await screen.findByRole('button', { name: measureWindows.scanButton })).toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: measureWindows.switchLabel });
+    expect(within(nav).getByRole('link', { name: measureWindows.switchRoof }).getAttribute('href')).toBe('/estimator?measure=1%20Main%20St%2C%20Austin%2C%20TX');
+  });
+
+  it('/estimator/windows opens the address step', async () => {
+    signedInApi(ACCOUNT);
+    renderApp('/estimator/windows');
+    expect(await screen.findByRole('heading', { name: measureWindows.startTitle })).toBeInTheDocument();
+    expect(screen.getByText(measureWindows.pickAddress)).toBeInTheDocument();
+  });
+
+  it('the roof screen\u2019s Windows switch measures the same property\u2019s windows', async () => {
+    signedInApi(ACCOUNT, {
+      ...proposalListRoutes(),
+      'GET /api/measurements/m1': () => ({ body: MEASUREMENT }),
+      'GET /api/measurements/m1/preview': () => ({
+        body: { addressLine: '1 Main St', city: 'Austin', state: 'TX', customerName: null, hailIn: null, options: null, financing: null },
+      }),
+    });
+    renderApp('/estimator/measure/m1');
+    const nav = await screen.findByRole('navigation', { name: measureWindows.switchLabel });
+    await within(nav).findByRole('link', { name: measureWindows.switchWindows });
+    await waitForHref(() => within(nav).getByRole('link', { name: measureWindows.switchWindows }).getAttribute('href'), '/estimator/windows?property=pr1');
+    expect(within(nav).getByRole('link', { name: measureWindows.switchRoof }).getAttribute('aria-current')).toBe('page');
   });
 
   it('/estimator/proposals/p1 shows the proposal', async () => {

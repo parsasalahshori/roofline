@@ -95,7 +95,8 @@ export function shownWindows(view: Pick<WindowMeasurementView, 'windows'>, marke
     .filter((w) => (w.source ?? 'detector') === 'detector' && !markIds.has(w.id))
     .map((w) => ({ id: w.id, photoId: w.photoId, box: w.box, source: 'detector', sized: w }));
   const marks: ShownWindow[] = marked.map((m) => ({ id: m.id, photoId: m.photoId, box: m.box, source: 'marked', sized: byId.get(m.id) ?? null }));
-  return [...found, ...marks];
+  // Numbered left to right on each photo, the way a person counts them
+  return [...found, ...marks].sort((a, b) => (a.photoId === b.photoId ? a.box.x - b.box.x : a.photoId < b.photoId ? -1 : 1));
 }
 
 /** The counts the card and quote show now: the sized windows on screen, the estimate, the person's changes. */

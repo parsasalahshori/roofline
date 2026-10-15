@@ -120,7 +120,7 @@ describe('search recents', () => {
 });
 
 describe('Measure roof from the search', () => {
-  it('offers "Measure roof at" for a typed street address, leading to the measure window with it', () => {
+  it('offers "Measure roof at", then "Measure windows at", for a typed street address', () => {
     expect(measureOptions('3518  Lowell St NW, Washington, DC')).toEqual([
       {
         key: 'action:measureRoof',
@@ -128,6 +128,13 @@ describe('Measure roof from the search', () => {
         group: 'actions',
         primary: search.measureRoof('3518 Lowell St NW, Washington, DC'),
         secondary: search.measureRoofHint,
+      },
+      {
+        key: 'action:measureWindows',
+        href: '/estimator/windows?measure=3518%20Lowell%20St%20NW%2C%20Washington%2C%20DC',
+        group: 'actions',
+        primary: search.measureWindows('3518 Lowell St NW, Washington, DC'),
+        secondary: search.measureWindowsHint,
       },
     ]);
   });
@@ -149,6 +156,22 @@ describe('Measure roof from the search', () => {
     await user.type(combobox, '12 Elm St');
     await user.click(await screen.findByRole('option', { name: new RegExp(search.measureRoof('12 Elm St')) }));
     await waitFor(() => expect(where(router)).toBe('/estimator?measure=12%20Elm%20St'));
+  });
+
+  it('opens the windows screen from the dialog, right after Measure roof', async () => {
+    api = stubApi({
+      'GET /api/auth/me': () => ({ body: ACCOUNT }),
+      'GET /api/search?q=12 Elm St': () => ({ body: EMPTY }),
+      'GET /api/search?q=12%20Elm%20St': () => ({ body: EMPTY }),
+    });
+    const { user, router } = renderAt(<SearchDialog />);
+    const combobox = await open(user);
+    await user.type(combobox, '12 Elm St');
+    const roof = await screen.findByRole('option', { name: new RegExp(search.measureRoof('12 Elm St')) });
+    const windows = screen.getByRole('option', { name: new RegExp(search.measureWindows('12 Elm St')) });
+    expect(roof.compareDocumentPosition(windows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.click(windows);
+    await waitFor(() => expect(where(router)).toBe('/estimator/windows?measure=12%20Elm%20St'));
   });
 });
 

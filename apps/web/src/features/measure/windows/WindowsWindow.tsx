@@ -138,7 +138,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     setHistory((h) => h.slice(0, -1));
     setAdj((a) => ({ ...a, ...last }));
     setSelected(null);
-    save({ marked: last.marked, wallCorners: last.wallCorners });
+    save({ ...(last.marked !== adj.marked && { marked: last.marked }), ...(last.wallCorners !== adj.wallCorners && { wallCorners: last.wallCorners }) });
   };
 
   const photos = v.photos;
