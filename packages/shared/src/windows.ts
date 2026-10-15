@@ -5,6 +5,7 @@
 // optional detector can find the front windows instead (source 'detector'); it is off by default.
 // Estimated windows are never shown or priced as measured.
 import type { Tier } from './proposals.ts';
+import type { Quad } from './window-photo-math.ts';
 
 type LngLat = [number, number];
 
@@ -113,11 +114,43 @@ export type WindowsReviewReason = (typeof WINDOWS_REVIEW_REASONS)[number];
 /** A box a person drew on a photo; the server sizes it into a MeasuredWindow with source 'marked' (same id). */
 export type MarkedBox = { id: string; photoId: string; box: { x: number; y: number; w: number; h: number } };
 
+/** Known-size things a person can tape to the glass (inches, width x height when held upright). */
+export const WINDOW_PHOTO_REFERENCES = {
+  letter: { widthIn: 8.5, heightIn: 11 },
+  legal: { widthIn: 8.5, heightIn: 14 },
+  a4: { widthIn: 8.27, heightIn: 11.69 },
+} as const;
+export type WindowPhotoReference = keyof typeof WINDOW_PHOTO_REFERENCES;
+
+/** A photo a person took of one window on site (stored by the API, served at .../uploads/:uploadId). */
+export type WindowPhotoUpload = { id: string; widthPx: number; heightPx: number; /** 35 mm-equivalent focal length from the photo, when it says. */ focal35mm: number | null; takenAt: string | null };
+
+/** How a window photo is scaled: a reference of known size on the glass, or one side measured by hand. */
+export type WindowPhotoScale =
+  | { kind: 'reference'; reference: WindowPhotoReference; corners: Quad }
+  | { kind: 'known-side'; side: 'width' | 'height'; inches: number };
+
+/** What the person enters for one photographed window: corners in photo pixels (TL, TR, BR, BL). */
+export type PhotoWindowInput = { id: string; uploadId: string; label?: string; corners: Quad; scale: WindowPhotoScale };
+
+/** A photographed window sized by window-photo-math (server recomputes; the browser may preview with the same code). */
+export type PhotoWindow = PhotoWindowInput & {
+  widthIn: number;
+  heightIn: number;
+  sizeClass: WindowSizeClass;
+  /** 'check' when the corners are nearly degenerate or the photo was steeply angled (> 50 deg). */
+  quality: 'good' | 'check';
+};
+
 /** The person's changes: windows left out of the quote, and counts typed in per size class (replacing the estimate). */
 export type WindowAdjustments = {
   excludedWindowIds: string[];
   /** Windows the person marked on the photos (absent = none). */
   marked?: MarkedBox[];
+  /** Windows photographed on site (absent = none). Each counts as measured. */
+  photoWindows?: PhotoWindowInput[];
+  /** True once the person has photographed every window: the estimate then counts nothing (typed counts still do). */
+  photosCoverAllWindows?: boolean;
   /** The person dragged the drawn wall's corners onto the house in a photo; the server re-fits camera and wall from it. */
   wallCorners?: { photoId: string; corners: [[number, number], [number, number], [number, number], [number, number]] } | null;
   /** Added to the measured windows, per size class (replaces `estimated` for that class when set). */
@@ -144,6 +177,10 @@ export type WindowMeasurementView = {
   adjustments: WindowAdjustments;
   /** How long the server took to measure, ms (the scan shows "in N seconds"). */
   tookMs: number;
+  /** Windows photographed on site, sized (absent = none). */
+  photoWindows?: PhotoWindow[];
+  /** Photos uploaded for this measurement (absent = none). */
+  uploads?: WindowPhotoUpload[];
 };
 
 /** PATCH /api/window-measurements/:id. */
@@ -185,13 +222,15 @@ export const DEFAULT_WINDOW_TIERS: readonly WindowTier[] = [
 /** Windows counted for the quote, per size class and per source. */
 export type WindowCounts = Record<WindowSizeClass, { measured: number; estimated: number }>;
 
-export function windowCounts(view: Pick<WindowMeasurementView, 'windows' | 'estimated' | 'adjustments'>): WindowCounts {
+export function windowCounts(view: Pick<WindowMeasurementView, 'windows' | 'estimated' | 'adjustments'> & Pick<Partial<WindowMeasurementView>, 'photoWindows'>): WindowCounts {
   const out = Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, { measured: 0, estimated: 0 }])) as WindowCounts;
   const excluded = new Set(view.adjustments.excludedWindowIds);
   for (const w of view.windows) if (!excluded.has(w.id)) out[w.sizeClass].measured += 1;
+  for (const w of view.photoWindows ?? []) if (!excluded.has(w.id)) out[w.sizeClass].measured += 1;
+  const allPhotographed = view.adjustments.photosCoverAllWindows === true;
   for (const c of WINDOW_SIZE_CLASSES) {
     const manual = view.adjustments.manualCounts[c];
-    out[c].estimated = manual !== undefined ? Math.max(0, Math.round(manual)) : (view.estimated?.bySizeClass[c] ?? 0);
+    out[c].estimated = manual !== undefined ? Math.max(0, Math.round(manual)) : allPhotographed ? 0 : (view.estimated?.bySizeClass[c] ?? 0);
   }
   return out;
 }

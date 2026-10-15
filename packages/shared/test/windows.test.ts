@@ -27,6 +27,15 @@ describe('windows', () => {
     expect(c.small).toEqual({ measured: 0, estimated: 0 });
   });
 
+  it('photographed windows count as measured, and once they cover every window the estimate counts nothing', () => {
+    const photo = { id: 'ph1', uploadId: 'u1', corners: [[0, 0], [1, 0], [1, 1], [0, 1]] as [[number, number], [number, number], [number, number], [number, number]], scale: { kind: 'known-side' as const, side: 'width' as const, inches: 30 }, widthIn: 30, heightIn: 54, sizeClass: 'standard' as const, quality: 'good' as const };
+    const c = windowCounts({ ...view(), photoWindows: [photo] });
+    expect(c.standard).toEqual({ measured: 3, estimated: 6 });
+    const all = windowCounts({ ...view({ adjustments: { excludedWindowIds: [], manualCounts: {}, photosCoverAllWindows: true } }), photoWindows: [photo] });
+    expect(all.standard).toEqual({ measured: 3, estimated: 0 });
+    expect(all.small).toEqual({ measured: 0, estimated: 0 });
+  });
+
   it('prices every counted window at each tier', () => {
     const q = priceWindows(windowCounts(view()));
     expect(q.map((t) => t.tier)).toEqual(['good', 'better', 'best']);
