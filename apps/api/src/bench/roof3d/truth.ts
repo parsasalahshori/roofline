@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Roof3d } from '@roofline/shared';
-import { type MultiPoly, boundaryDistance, geoJsonToXY, iou, mean, overlapArea, ringToXY, roundHalfEven, zoneOfLngLat } from './geometry.ts';
+import { type MultiPoly, bestTranslation, boundaryDistance, geoJsonToXY, iou, mean, overlapArea, ringToXY, roundHalfEven, translate, zoneOfLngLat } from './geometry.ts';
 
 /*
  * Scoring a reconstruction against an answer key. The key is an EagleView report (truth grade 'eagleview': faces with
@@ -78,6 +78,12 @@ export type TruthMetrics = {
   iou: number;
   meanBoundaryM: number;
   hd95M: number;
+  /**
+   * The outline scored after moving the key by the translation (within ALIGN_MAX_SHIFT_M) that overlaps ours best:
+   * EagleView sits about 1 m east and 0.5 m south of Google's frame, which the raw numbers count as outline error.
+   * Null for a hand-drawn key (drawn on its own photo) and on results scored before it existed.
+   */
+  aligned?: { iou: number; meanBoundaryM: number; hd95M: number; shiftM: [number, number] } | null;
   /** Outline-only grades end here. */
   areaErrPct: number | null;
   slopedSqFt: number | null;
@@ -105,6 +111,15 @@ export type TruthParams = {
   boundaryStepM: number;
 };
 export const DEFAULT_TRUTH: TruthParams = { matchMinSqFt: 100, matchMinOverlap: 0.3, boundaryStepM: 0.2 };
+/** The largest frame offset searched, metres on each axis: twice the median offset found (1.46 m). */
+export const ALIGN_MAX_SHIFT_M = 3;
+
+/** Our outline against the key's after the best translation of the key (see TruthMetrics.aligned). */
+export function alignedOutline(ours: MultiPoly, theirs: MultiPoly, stepM: number): NonNullable<TruthMetrics['aligned']> {
+  const t = bestTranslation(ours, theirs, ALIGN_MAX_SHIFT_M);
+  const bd = boundaryDistance(ours, translate(theirs, t.dx, t.dy), stepM);
+  return { iou: t.iou, meanBoundaryM: bd.mean, hd95M: bd.hd95, shiftM: [t.dx, t.dy] };
+}
 
 export function eagleViewMetrics(roof: Roof3d, truth: EagleViewTruth, p: TruthParams = DEFAULT_TRUTH): TruthMetrics {
   const { zone, poly: ours } = outlineXY(roof);
@@ -159,6 +174,7 @@ export function eagleViewMetrics(roof: Roof3d, truth: EagleViewTruth, p: TruthPa
     iou: overlap,
     meanBoundaryM: bd.mean,
     hd95M: bd.hd95,
+    aligned: alignedOutline(ours, evOutline, p.boundaryStepM),
     areaErrPct,
     slopedSqFt: rounded,
     truthSlopedSqFt: truth.total_sloped_sqft,
@@ -198,6 +214,7 @@ export function visualMetrics(roof: Roof3d, truth: VisualTruth, p: TruthParams =
     iou: overlap,
     meanBoundaryM: bd.mean,
     hd95M: bd.hd95,
+    aligned: null,
     areaErrPct: null,
     slopedSqFt: null,
     truthSlopedSqFt: null,

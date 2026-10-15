@@ -128,3 +128,24 @@ The benchmark's metrics are identical on all 54 dev houses (only the result hash
 
 **Not done.** Falling back to the uncut roof when the ground fit has too few band pixels (an algorithm change in
 `ground.ts`, owned elsewhere).
+
+## 6. Benchmark blind spots (FM13), bench code only
+
+- **Alignment-aware EagleView scoring.** `bestTranslation` (geometry.ts) finds the translation of the key, within
+  3 m on each axis (twice the analysis's 1.46 m median offset), that maximises IoU: a 0.5 m grid, then 0.1 m round the
+  best cell; deterministic. `TruthMetrics.aligned` holds IoU, mean boundary distance and HD95 after it, and the shift.
+  The raw numbers stay as they were. Dev split, mean over seeds 7/8/9: raw IoU 0.782 becomes 0.927 aligned, boundary
+  0.91 m becomes 0.31 m, HD95 1.92 m becomes 1.22 m, median shift 1.33 m (the analysis found 0.784 to 0.918 and
+  1.46 m on all 54 original houses).
+- **An independent outline check.** The checker's outline target compares the outline with the mask it was traced
+  from, after the reconstruction's own cuts (IoU >= 0.939 and edge fit 100% on every house). `outlineCheck` uses the
+  aligned EagleView outline where the house has a comparable key, else Google's raw mask part as downloaded (before the
+  ground and terrace cuts, so FM11 losses show; still Google's mask, so labelled a proxy), ok at IoU >= 0.85 (the
+  analysis's aligned-IoU "bad" line). `checkerIndependentPassed` is the checker with that target in place of the
+  circular one. Dev: 50 of 54 outlines pass the independent check; the checker passes 33.7 of 54 (old) and 31 of 54
+  (independent), mean over seeds.
+- **Seeds.** The gates already compare the mean over seeds 7, 8 and 9 with the baseline's seed range as tolerance
+  (commit b7c97f76, before this round); nothing to change. The new numbers are reported but not gated: the frozen
+  baseline does not have them, and adding a gate changes `gates.json`, which belongs to the integrator with a new
+  baseline.
+- Bench runtime with the alignment: the dev split runs in about 2 minutes 12 s (gate on p95 passes).

@@ -312,3 +312,33 @@ export function convexHull(points: readonly Pt[]): Pt[] {
   upper.pop();
   return [...lower, ...upper];
 }
+
+/** The multipolygon moved by (dx, dy) metres. */
+export function translate(mp: MultiPoly, dx: number, dy: number): MultiPoly {
+  return mp.map((poly) => poly.map((ring) => ring.map(([x, y]) => [x + dx, y + dy] as Pt)));
+}
+
+/**
+ * The translation of `b` (within maxShiftM on each axis) that overlaps `a` best, by intersection over union: a 0.5 m
+ * grid over the whole square, then a 0.1 m grid round the best cell. Deterministic (ties: the first found, scanning
+ * x then y from the most negative). EagleView reports sit about 1 m east and 0.5 m south of Google's imagery (median
+ * shift 1.46 m over 54 houses), a frame offset, not an outline error: scoring after this translation measures shape.
+ */
+export function bestTranslation(a: MultiPoly, b: MultiPoly, maxShiftM = 3): { dx: number; dy: number; iou: number } {
+  let best = { dx: 0, dy: 0, iou: iou(a, b) ?? 0 };
+  const scan = (cx: number, cy: number, half: number, step: number) => {
+    const n = Math.round(half / step);
+    for (let i = -n; i <= n; i++) {
+      for (let j = -n; j <= n; j++) {
+        const dx = Math.round((cx + i * step) * 100) / 100;
+        const dy = Math.round((cy + j * step) * 100) / 100;
+        if (Math.abs(dx) > maxShiftM || Math.abs(dy) > maxShiftM) continue;
+        const v = iou(a, translate(b, dx, dy)) ?? 0;
+        if (v > best.iou + 1e-12) best = { dx, dy, iou: v };
+      }
+    }
+  };
+  scan(0, 0, maxShiftM, 0.5);
+  scan(best.dx, best.dy, 0.4, 0.1);
+  return best;
+}
