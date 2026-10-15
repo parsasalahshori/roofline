@@ -112,6 +112,9 @@ Google calls: **0**. `buildingInsights` came from the cached `bi.json` of every 
   area check catches only gross mismatches.
 - The county grade covers 14 houses, 9 of them in one county (Pulaski, AR), and 4 of the 14 are lidar-derived.
   Conclusions about photogrammetric county footprints rest mostly on one county.
+- OSM mappers in Pulaski County may trace PAgis orthophotos: PAgis approved its imagery for OSM (OSM wiki
+  "Arkansas/PAgis"). OSM and the PAgis footprints are then two tracings of the same photos, not two independent
+  surveys. The OSM rows on the Pulaski county key should be read with that in mind (`osm-ov`: 5 houses).
 - Free sources change over time (Overture releases, OSM edits). The fetched files are frozen under `free/` with the
   release recorded.
 
