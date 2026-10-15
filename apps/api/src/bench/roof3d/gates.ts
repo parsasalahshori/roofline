@@ -13,6 +13,20 @@ export const GatesSchema = z.object({
   version: z.literal(1),
   /** Cohorts with fewer houses that have an answer key skip the truth gates. */
   minTruthHouses: z.number().int().min(1),
+  /**
+   * Cohorts with fewer houses than this (in the baseline or the run) are reported but not gated, except determinism and
+   * failures: the median or count of a handful of houses moves by a house's worth when only the random seeds change
+   * (A/A runs at seeds 20-22 failed gates in cohorts of 4, 8 and 9 houses).
+   */
+  minCohortHouses: z.number().int().min(1),
+  /**
+   * How the gates treat the seed-to-seed spread of the baseline. 'baseline-range': a number may move by the larger of
+   * its limit below and the baseline's own range over seeds 7, 8, 9 (max - min of that number) before it counts as
+   * worse: the same code at other seeds moves a number by about that much (a strict A/A run at seeds 10-12 failed 17
+   * gates, all on checker-pass and thin-face counts), so a smaller move cannot be told from noise. 'none': exactly the
+   * limits. A number with no spread (0 slivers at every seed, an IoU median the seed does not touch) keeps its limit.
+   */
+  seedNoise: z.enum(['baseline-range', 'none']),
   /** Median outline IoU may not fall by more than this. */
   medianOutlineIoU: z.object({ maxDrop: z.number().nonnegative() }),
   /** Median mean boundary distance (metres) may not rise by more than this. */
@@ -43,6 +57,8 @@ export type Gates = z.infer<typeof GatesSchema>;
 export const DEFAULT_GATES: Gates = {
   version: 1,
   minTruthHouses: 3,
+  minCohortHouses: 10,
+  seedNoise: 'baseline-range',
   medianOutlineIoU: { maxDrop: 0.005 },
   medianBoundaryDistM: { maxRise: 0.05 },
   medianAreaErrPct: { maxRisePoints: 0.5 },
@@ -60,6 +76,9 @@ export type GateRow = {
   rule: string;
   baseline: number | null;
   current: number | null;
+  /** Each side's [min, max] over the seeds (when the number has one), to judge a failure against the seed noise. */
+  baselineRange?: [number, number] | null;
+  currentRange?: [number, number] | null;
   limit: string;
   status: 'pass' | 'fail' | 'skip';
   note?: string;
@@ -68,6 +87,7 @@ export type GateRow = {
 const EPS = 1e-9;
 
 const mean = (s: { mean: number } | null | undefined): number | null => (s ? s.mean : null);
+const range = (s: { min: number; max: number } | null | undefined): [number, number] | null => (s ? [s.min, s.max] : null);
 
 /** Runtime p95 divided by the calibration time: a machine-independent figure (cost in units of one fixed workload). */
 function normalised(c: CohortReport, calibrationMs: number): number {
@@ -84,29 +104,46 @@ export function compareSplits(base: SplitReport, cur: SplitReport, gates: Gates,
       rows.push({ cohort, rule: 'baseline', baseline: null, current: null, limit: '-', status: 'skip', note: 'cohort not in the baseline' });
       continue;
     }
+    const small = Math.min(b.n, c.n) < gates.minCohortHouses;
     const truthOk = Math.min(mean(b.stats.comparable) ?? 0, mean(c.stats.comparable) ?? 0) >= gates.minTruthHouses;
-    const lower = (rule: string, bv: number | null, cv: number | null, drop: number, needsTruth: boolean): void => {
-      if ((needsTruth && !truthOk) || bv === null || cv === null) {
-        rows.push({ cohort, rule, baseline: bv, current: cv, limit: `drop <= ${drop}`, status: 'skip', note: needsTruth && !truthOk ? `fewer than ${gates.minTruthHouses} houses with an answer key` : 'no value' });
+    type S = { mean: number; min: number; max: number } | null | undefined;
+    const row = (rule: string, bs: S, cs: S, limit: string, fail: (bv: number, cv: number) => boolean, needsTruth: boolean): void => {
+      const bv = mean(bs);
+      const cv = mean(cs);
+      if (small || (needsTruth && !truthOk) || bv === null || cv === null) {
+        const note = small ? `cohort under ${gates.minCohortHouses} houses` : needsTruth && !truthOk ? `fewer than ${gates.minTruthHouses} houses with an answer key` : 'no value';
+        rows.push({ cohort, rule, baseline: bv, current: cv, limit, status: 'skip', note });
         return;
       }
-      rows.push({ cohort, rule, baseline: bv, current: cv, limit: `drop <= ${drop}`, status: cv < bv - drop - EPS ? 'fail' : 'pass' });
+      rows.push({ cohort, rule, baseline: bv, current: cv, baselineRange: range(bs), currentRange: range(cs), limit, status: fail(bv, cv) ? 'fail' : 'pass' });
     };
-    const higher = (rule: string, bv: number | null, cv: number | null, rise: number, needsTruth: boolean): void => {
-      if ((needsTruth && !truthOk) || bv === null || cv === null) {
-        rows.push({ cohort, rule, baseline: bv, current: cv, limit: `rise <= ${rise}`, status: 'skip', note: needsTruth && !truthOk ? `fewer than ${gates.minTruthHouses} houses with an answer key` : 'no value' });
-        return;
-      }
-      rows.push({ cohort, rule, baseline: bv, current: cv, limit: `rise <= ${rise}`, status: cv > bv + rise + EPS ? 'fail' : 'pass' });
+    /** The room the baseline's own seed spread gives a number: the larger of the contract's limit and that spread (see Gates.seedNoise). */
+    const room = (bs: S, limit: number): number => (gates.seedNoise === 'baseline-range' && bs ? Math.max(limit, bs.max - bs.min) : limit);
+    const describe = (bs: S, limit: number): string => {
+      const r = room(bs, limit);
+      return r > limit + EPS ? `${r} (the baseline's seed range, over ${limit})` : String(limit);
     };
-    lower('median outline IoU', mean(b.stats.truth.medianIoU), mean(c.stats.truth.medianIoU), gates.medianOutlineIoU.maxDrop, true);
-    higher('median boundary distance m', mean(b.stats.truth.medianBoundaryM), mean(c.stats.truth.medianBoundaryM), gates.medianBoundaryDistM.maxRise, true);
-    higher('median |area error| pts', mean(b.stats.truth.medianAreaErrAbsPct), mean(c.stats.truth.medianAreaErrAbsPct), gates.medianAreaErrPct.maxRisePoints, true);
-    lower('houses passing all targets', mean(b.stats.checkerPass), mean(c.stats.checkerPass), gates.checkerPass.maxDrop, false);
-    higher('slivers', mean(b.stats.slivers), mean(c.stats.slivers), gates.slivers.maxRise, false);
-    if (gates.thinFaces.cohorts.includes(cohort)) higher('thin faces (simple and canopy cohorts)', mean(b.stats.thinFaces), mean(c.stats.thinFaces), gates.thinFaces.maxRise, false);
-    higher('steep junk faces', mean(b.stats.steepJunk), mean(c.stats.steepJunk), gates.steepJunk.maxRise, false);
-    higher('failed or no-roof houses', (mean(b.stats.failures) ?? 0) + (mean(b.stats.noRoof) ?? 0), (mean(c.stats.failures) ?? 0) + (mean(c.stats.noRoof) ?? 0), gates.failures.maxRise, false);
+    const lower = (rule: string, bs: S, cs: S, drop: number, needsTruth: boolean): void => {
+      const allow = room(bs, drop);
+      row(rule, bs, cs, `drop <= ${describe(bs, drop)}`, (bv, cv) => cv < bv - allow - EPS, needsTruth);
+    };
+    const higher = (rule: string, bs: S, cs: S, rise: number, needsTruth: boolean): void => {
+      const allow = room(bs, rise);
+      row(rule, bs, cs, `rise <= ${describe(bs, rise)}`, (bv, cv) => cv > bv + allow + EPS, needsTruth);
+    };
+    lower('median outline IoU', b.stats.truth.medianIoU, c.stats.truth.medianIoU, gates.medianOutlineIoU.maxDrop, true);
+    higher('median boundary distance m', b.stats.truth.medianBoundaryM, c.stats.truth.medianBoundaryM, gates.medianBoundaryDistM.maxRise, true);
+    higher('median |area error| pts', b.stats.truth.medianAreaErrAbsPct, c.stats.truth.medianAreaErrAbsPct, gates.medianAreaErrPct.maxRisePoints, true);
+    lower('houses passing all targets', b.stats.checkerPass, c.stats.checkerPass, gates.checkerPass.maxDrop, false);
+    higher('slivers', b.stats.slivers, c.stats.slivers, gates.slivers.maxRise, false);
+    if (gates.thinFaces.cohorts.includes(cohort)) higher('thin faces (simple and canopy cohorts)', b.stats.thinFaces, c.stats.thinFaces, gates.thinFaces.maxRise, false);
+    higher('steep junk faces', b.stats.steepJunk, c.stats.steepJunk, gates.steepJunk.maxRise, false);
+    // Failures and no-roof houses are added over the seeds' means; the range is not tracked for the sum.
+    {
+      const bv = (mean(b.stats.failures) ?? 0) + (mean(b.stats.noRoof) ?? 0);
+      const cv = (mean(c.stats.failures) ?? 0) + (mean(c.stats.noRoof) ?? 0);
+      rows.push({ cohort, rule: 'failed or no-roof houses', baseline: bv, current: cv, limit: `rise <= ${gates.failures.maxRise}`, status: cv > bv + gates.failures.maxRise + EPS ? 'fail' : 'pass' });
+    }
     if (gates.determinism.mustHold) {
       rows.push({ cohort, rule: 'determinism (houses not byte-identical)', baseline: b.nondeterministic, current: c.nondeterministic, limit: '0', status: c.nondeterministic === 0 ? 'pass' : 'fail' });
     }
@@ -118,7 +155,9 @@ export function compareSplits(base: SplitReport, cur: SplitReport, gates: Gates,
       baseline: bn,
       current: cn,
       limit: `ratio <= ${gates.runtimeP95.maxRatio}`,
-      status: cn > bn * gates.runtimeP95.maxRatio + EPS ? 'fail' : 'pass',
+      // The p95 of a handful of houses is its slowest one.
+      ...(small ? { note: `cohort under ${gates.minCohortHouses} houses` } : {}),
+      status: small ? 'skip' : cn > bn * gates.runtimeP95.maxRatio + EPS ? 'fail' : 'pass',
     });
   }
   return rows;
@@ -132,8 +171,13 @@ export function formatGates(name: string, rows: readonly GateRow[]): string {
   const failed = gatesFailed(rows);
   const skipped = rows.filter((r) => r.status === 'skip').length;
   const lines = [`GATES (${name}): ${rows.length - failed.length - skipped} pass, ${failed.length} fail, ${skipped} skipped`];
+  const rg = (v: [number, number] | null | undefined) => (v === null || v === undefined || v[0] === v[1] ? '' : ` [${v[0].toFixed(2)}-${v[1].toFixed(2)}]`);
   for (const r of rows.filter((x) => x.status === 'fail')) {
-    lines.push(`  FAIL ${r.cohort}: ${r.rule}: baseline ${r.baseline === null ? '-' : r.baseline.toFixed(4)} -> ${r.current === null ? '-' : r.current.toFixed(4)} (limit ${r.limit})`);
+    // Seeds differ in a house or two: a failure whose two ranges overlap may be that noise, and says so (it still fails).
+    const overlap = r.baselineRange && r.currentRange && r.baselineRange[0] <= r.currentRange[1] && r.currentRange[0] <= r.baselineRange[1];
+    lines.push(
+      `  FAIL ${r.cohort}: ${r.rule}: baseline ${r.baseline === null ? '-' : r.baseline.toFixed(4)}${rg(r.baselineRange)} -> ${r.current === null ? '-' : r.current.toFixed(4)}${rg(r.currentRange)} (limit ${r.limit})${overlap ? ' - the seed ranges overlap: check it is not seed noise' : ''}`,
+    );
   }
   const skips = rows.filter((x) => x.status === 'skip' && x.note !== undefined);
   if (skips.length > 0) {

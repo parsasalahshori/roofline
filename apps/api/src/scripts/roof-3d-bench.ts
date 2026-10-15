@@ -27,7 +27,7 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *     --reveal                  per-house held-out output (integrator and verifiers only)
  *     --allow-expired           run on Google data past its 30-day date (a one-off; delete the data instead)
  *     --seeds 7,8,9             the seeds (default 7,8,9)
- *     --allow-manifest-change   compare against a baseline made from a different manifest (gates then mean little)
+ *     --allow-manifest-change   compare against a baseline made from a different manifest or other seeds (gates then mean little)
  *     --base SHA                record which commit's reconstruction this run claims to measure, with the reconstruction
  *                               files that differ from it (for a baseline made on a later harness commit)
  * Exit code: 0 ok, 1 a gate failed, 2 bad usage, 3 a data problem (missing files, expired data, a manifest that
@@ -153,13 +153,17 @@ async function main(): Promise<number> {
     let baseline: BenchReport;
     try {
       baseline = JSON.parse(readFileSync(against, 'utf8')) as BenchReport;
-      z.object({ version: z.literal(1), manifestHash: z.string(), calibrationMs: z.number(), splits: z.object({}).passthrough() }).parse(baseline);
+      z.object({ version: z.literal(1), manifestHash: z.string(), calibrationMs: z.number(), seeds: z.array(z.number()), splits: z.object({}).passthrough() }).parse(baseline);
     } catch (err) {
       process.stderr.write(`cannot read the baseline ${against}: ${(err as Error).message.slice(0, 300)}\n`);
       return 3;
     }
     if (baseline.manifestHash !== report.manifestHash && !flag('--allow-manifest-change')) {
       process.stderr.write(`The baseline was made from manifest ${baseline.manifestHash} and this run uses ${report.manifestHash}: freeze a new baseline (--json) before comparing.\n`);
+      return 3;
+    }
+    if (JSON.stringify(baseline.seeds) !== JSON.stringify(report.seeds) && !flag('--allow-manifest-change')) {
+      process.stderr.write(`The baseline was made at seeds ${baseline.seeds.join(',')} and this run used ${report.seeds.join(',')}: gates compare means over the same seeds (drop --seeds, or freeze a new baseline).\n`);
       return 3;
     }
     if (!existsSync(gatesFile)) {

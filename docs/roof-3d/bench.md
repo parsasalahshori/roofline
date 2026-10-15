@@ -33,7 +33,9 @@ sets). See [benchmark.md](benchmark.md) for the metrics and how to use it. Decis
 - **Truth is never invented.** EagleView houses are `eagleview`; every other house gets labelled proxies, and the
   report keeps them apart. A `visual` grade (hand-drawn outline) is supported but unused (see below).
 - **Gates are data** (`gates.json`), judged cohort by cohort on the mean over seeds 7, 8 and 9. Runtime is compared
-  after dividing by a calibration loop timed in the same run, so a loaded machine does not fail a gate.
+  after dividing by a calibration loop timed in the same run, so a loaded machine does not fail a gate. Calibrated
+  with an A/A test: the strict gates failed 17 times on the same code at other seeds, so a number may move by the
+  larger of its limit and the baseline's own seed range, and cohorts under 10 houses are reported, not gated.
 - **Tree houses without spending more than budgeted.** Candidates are found from free public sources (OpenStreetMap
   outlines, USGS NAIP imagery), so the paid requests go to houses that probably have trees. A ledger that survives
   runs caps Data Layers at 40 requests; nothing is bought without `--go`.

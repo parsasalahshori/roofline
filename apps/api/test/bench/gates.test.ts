@@ -67,6 +67,7 @@ describe('the gates are the contract', () => {
     expect(DEFAULT_GATES.slivers.maxRise).toBe(0);
     expect(DEFAULT_GATES.steepJunk.maxRise).toBe(0);
     expect(DEFAULT_GATES.determinism.mustHold).toBe(true);
+    expect(DEFAULT_GATES.seedNoise).toBe('baseline-range');
     expect(DEFAULT_GATES.runtimeP95.maxRatio).toBe(1.5);
     expect(() => GatesSchema.parse(DEFAULT_GATES)).not.toThrow();
   });
@@ -141,6 +142,43 @@ describe('the gates are the contract', () => {
     const cur: SplitReport = { houses: 30, cohorts: { all: cohort(), 'canopy-heavy': cohort() } };
     const rows = compareSplits(split(cohort()), cur, DEFAULT_GATES, { base: 1, cur: 1 });
     expect(rows.find((r) => r.cohort === 'canopy-heavy')?.status).toBe('skip');
+  });
+
+  test('a cohort under minCohortHouses is reported, not gated; determinism and failures still are', () => {
+    const tiny = (k: Partial<Knobs>): CohortReport => ({ ...cohort(k), n: 4 });
+    const rows = compareSplits({ houses: 4, cohorts: { 'state-TX': tiny({}) } }, { houses: 4, cohorts: { 'state-TX': tiny({ pass: 1, iou: 0.1, nondet: 1, failed: 1 }) } }, DEFAULT_GATES, { base: 1, cur: 1 });
+    expect(gatesFailed(rows).map((r) => r.rule).sort()).toEqual(['determinism (houses not byte-identical)', 'failed or no-roof houses']);
+    expect(rows.filter((r) => r.status === 'skip').length).toBeGreaterThan(5);
+  });
+
+  test('continuous gates also give the baseline its seed range when that is wider than the limit', () => {
+    const wide = (iou: number, min: number, max: number): CohortReport => {
+      const c = cohort();
+      return { ...c, stats: { ...c.stats, truth: { ...c.stats.truth, medianIoU: { mean: iou, min, max } } } };
+    };
+    const judge = (base: CohortReport, cur: CohortReport) => gatesFailed(compareSplits({ houses: 30, cohorts: { all: base } }, { houses: 30, cohorts: { all: cur } }, DEFAULT_GATES, { base: 1, cur: 1 })).map((r) => r.rule);
+    // No spread: the contract's 0.005. A spread of 0.04: that much.
+    expect(judge(wide(0.8, 0.8, 0.8), wide(0.794, 0.794, 0.794))).toEqual(['median outline IoU']);
+    expect(judge(wide(0.75, 0.74, 0.78), wide(0.71, 0.71, 0.71))).toEqual([]);
+    expect(judge(wide(0.75, 0.74, 0.78), wide(0.70, 0.70, 0.70))).toEqual(['median outline IoU']);
+  });
+
+  test('count gates allow the baseline\'s own seed range, and strict mode does not', () => {
+    const noisy = (mean: number, min: number, max: number): CohortReport => {
+      const c = cohort();
+      return { ...c, stats: { ...c.stats, checkerPass: { mean, min, max }, thinFaces: { mean, min, max } } };
+    };
+    const judge = (base: CohortReport, cur: CohortReport, seedNoise: 'baseline-range' | 'none') =>
+      gatesFailed(compareSplits({ houses: 30, cohorts: { simple: base } }, { houses: 30, cohorts: { simple: cur } }, { ...DEFAULT_GATES, seedNoise }, { base: 1, cur: 1 })).map((r) => r.rule);
+    // The baseline's passes ranged 33 to 35 over seeds (range 2): a mean of 31.7 is within it, 31.6 is not.
+    expect(judge(noisy(34, 33, 35), noisy(32, 31, 33), 'baseline-range')).toEqual([]);
+    expect(judge(noisy(34, 33, 35), noisy(31.9, 31, 33), 'baseline-range')).toEqual(['houses passing all targets']);
+    expect(judge(noisy(34, 33, 35), noisy(33.9, 33, 35), 'none')).toEqual(['houses passing all targets']);
+    // Thin faces rise by the range too.
+    expect(judge(noisy(34, 33, 35), noisy(36.2, 35, 37), 'baseline-range')).toEqual(['thin faces (simple and canopy cohorts)']);
+    expect(judge(noisy(34, 33, 35), noisy(36, 35, 37), 'baseline-range')).toEqual([]);
+    // No spread, no allowance: a baseline of 0 slivers at every seed is strict.
+    expect(failedRules(run({ slivers: 4 }))).toEqual(['slivers']);
   });
 
   test('every cohort is judged on its own', () => {

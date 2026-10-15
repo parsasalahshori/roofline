@@ -168,9 +168,25 @@ integrator and verifiers: do not tune on it. `--house` of a held-out house is re
 | runtime p95 | at most 1.5 × the baseline's, after the calibration |
 | thin faces (added by the bench) | may not rise, in `simple`, `canopy-heavy` and `canopy-light` only |
 
+Two rules the owner's list did not have, both from an A/A test (the same code at other seeds against the baseline):
+
+- **Seed noise.** The same code at seeds 10, 11, 12 instead of 7, 8, 9 failed 17 of the strict gates (all of them
+  checker-pass and thin-face counts, in cohorts where one house is a point), and at seeds 20, 21, 22 three more. A
+  change that merely reshuffles the random stream would fail them the same way. So each number may move by the
+  larger of its limit and **the baseline's own range over seeds 7, 8, 9** (`"seedNoise": "baseline-range"`); a number
+  with no seed spread (zero slivers at every seed, an IoU the seed does not touch) keeps its limit exactly.
+  `"seedNoise": "none"` restores the strict limits.
+- **Small cohorts.** A cohort under 10 houses (in the baseline or the run) is reported but not gated, except for
+  determinism and failures (`"minCohortHouses": 10`).
+
+With both, the same code at seeds 10-12, 20-22 and 30-32 passes every gate (dev 174 pass, held-out 109, none fail).
+The price is power: a real regression smaller than the baseline's seed range goes unnoticed. Over all dev houses
+that is about 2 houses of checker passes and 0.2 points of area error; in the canopy-heavy cohort 2 houses of
+checker passes and 5 thin faces. A failure is printed with both seed ranges, and says when they overlap.
+
 Truth gates are skipped (and the report says how many) in a cohort with fewer than 3 comparable houses. A baseline
-made from a different manifest is refused. Freeze a new baseline whenever the house set or a cohort threshold
-changes on purpose: `npm run roof3d:bench -w @roofline/api -- --split all --base <sha> --json
+made from a different manifest, or at other seeds, is refused. Freeze a new baseline whenever the house set or a
+cohort threshold changes on purpose: `npm run roof3d:bench -w @roofline/api -- --split all --base <sha> --json
 /Users/parsasalahshori-a/RooflineWork/roof-bench/baseline.json`. `--base` records which commit's reconstruction the
 run claims to measure and which reconstruction files differ from it.
 
