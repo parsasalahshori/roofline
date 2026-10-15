@@ -134,7 +134,7 @@ export function greenOf(layers: RoofLayers): Uint8Array | null {
  * out of a mask part it shares with the buildings it touches (a terrace). Other roofs near it on the layers (a
  * detached garage, a shed) come with it as `structures` (otherRoofParts), outside its own faces and totals.
  */
-export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boolean; building?: SolarBuilding | null } = {}): Roof3d | null {
+export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boolean; building?: SolarBuilding | null; seed?: number } = {}): Roof3d | null {
   const zone = utmZoneOfEpsg(layers.epsg);
   if (zone === null) return null;
   const s = layers.raster.pixelSizeM;
@@ -147,6 +147,9 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boo
   const raster = { ...layers.raster, green: layers.raster.green ?? greenOf(layers) };
   const local = reconstructRoof(raster, toPixel(point), {
     imageryQuality: layers.imageryQuality,
+    // The benchmark (roof3d:bench) runs seeds 7, 8 and 9 to show the result does not hang on the random sample; the
+    // server never sets it (the reconstruction's own default seed, 7, applies).
+    ...(o.seed !== undefined ? { seed: o.seed } : {}),
     ...(o.steep === true ? { planes: { maxPitchX12: 24 } } : {}),
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
   });
@@ -157,7 +160,7 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: { steep?: boo
   // Detached garages, sheds and carports on the same layers: offered beside the main roof, not added to it.
   const structures: Roof3dStructure[] = [];
   for (const other of otherRoofParts(raster, local)) {
-    const found = reconstructRoof(raster, other.at, { imageryQuality: layers.imageryQuality, maxPointDistM: 1 });
+    const found = reconstructRoof(raster, other.at, { imageryQuality: layers.imageryQuality, maxPointDistM: 1, ...(o.seed !== undefined ? { seed: o.seed } : {}) });
     if (found === null || found.clipped || found.faces.length === 0) continue;
     const r = toRoof3d(found, toLngLat, meta);
     if (r.quality !== undefined && (r.quality.outlineIoU < 0.6 || r.quality.faceCoverage < 0.6)) continue;

@@ -18,7 +18,10 @@
     "smoke:texting": "tsx src/scripts/smoke/texting-real-brand.ts",
     "smoke:estimator": "tsx src/scripts/smoke/estimator.ts",
     "smoke:storm": "tsx src/scripts/smoke/storm.ts",
-    "roof3d:check": "tsx src/scripts/roof-3d-check.ts"
+    "roof3d:check": "tsx src/scripts/roof-3d-check.ts",
+    "roof3d:bench-manifest": "tsx src/scripts/roof-3d-bench-manifest.ts",
+    "roof3d:bench": "tsx src/scripts/roof-3d-bench.ts",
+    "test:bench": "vitest run -c vitest.bench.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
@@ -51,6 +54,7 @@
     "@types/supertest": "^7.2.1",
     "@types/ws": "^8.18.2",
     "@types/yauzl": "^3.4.0",
+    "polygon-clipping": "^0.15.7",
     "supertest": "^7.3.1"
   }
 }

@@ -1,0 +1,191 @@
+import type { CohortReport, Stat } from './aggregate.ts';
+import type { HouseMetrics } from './metrics.ts';
+import type { Thresholds } from './manifest.ts';
+
+/*
+ * The benchmark's report (what --json writes and what --compare reads), and its text form. The held-out split is
+ * sealed: its cohorts appear only as aggregates (and only when a cohort has HELDOUT_MIN_COHORT houses, so an aggregate
+ * is never one house's numbers in disguise), and its houses only with --reveal.
+ */
+
+export const HELDOUT_MIN_COHORT = 5;
+
+export type HouseRow = {
+  slug: string;
+  set: string;
+  truth: string;
+  canopy: string | null;
+  complexity: string;
+  metrics: HouseMetrics;
+  deterministic: boolean;
+  seedStable: boolean;
+  seedIdentical: boolean;
+  runtimeMs: number;
+};
+
+export type SplitReport = {
+  houses: number;
+  cohorts: Record<string, CohortReport>;
+  /** Cohorts left out of the held-out aggregates because they are too small. */
+  suppressed?: string[];
+  /** Per-house rows: always for dev; for held-out only with --reveal. */
+  perHouse?: HouseRow[];
+};
+
+export type BenchReport = {
+  version: 1;
+  commit: { sha: string; dirty: boolean };
+  date: string;
+  node: string;
+  calibrationMs: number;
+  seeds: number[];
+  manifestHash: string;
+  thresholds: Thresholds;
+  cohortFilter: string | null;
+  splits: { dev?: SplitReport; heldout?: SplitReport };
+  /** Houses whose data was past its delete-by date when this ran (the run refuses unless told to continue). */
+  expired: string[];
+};
+
+const f = (x: number, d: number) => x.toFixed(d);
+
+/** mean, with the range over seeds in brackets when the seeds disagree. */
+export function fmt(s: Stat | null | undefined, digits = 3, unit = ''): string {
+  if (s === null || s === undefined) return '-';
+  const m = `${f(s.mean, digits)}${unit}`;
+  return s.max - s.min > 1e-9 ? `${m}[${f(s.min, digits)}-${f(s.max, digits)}]` : m;
+}
+
+const pad = (v: string, n: number) => (v.length >= n ? v : v.padStart(n));
+const padR = (v: string, n: number) => (v.length >= n ? v : v.padEnd(n));
+
+function table(head: string[], widths: number[], rows: string[][]): string {
+  const line = (cells: string[]) => cells.map((c, i) => (i === 0 ? padR(c, widths[i]!) : pad(c, widths[i]!))).join(' | ');
+  return [line(head), widths.map((w) => '-'.repeat(w)).join('-+-'), ...rows.map(line)].join('\n');
+}
+
+/** Cohort names in a fixed, readable order: all first, then the rest alphabetically. */
+export function cohortNames(cohorts: Record<string, CohortReport>): string[] {
+  return Object.keys(cohorts).sort((a, b) => (a === 'all' ? -1 : b === 'all' ? 1 : a.localeCompare(b)));
+}
+
+/** Cohorts under this many houses are in the JSON but left out of the text tables (their medians are one or two houses). */
+export const PRINT_MIN_COHORT = 3;
+
+export function formatSplit(name: string, s: SplitReport): string {
+  const names = cohortNames(s.cohorts).filter((n) => n === 'all' || s.cohorts[n]!.n >= PRINT_MIN_COHORT);
+  const hidden = Object.keys(s.cohorts).length - names.length;
+  const out: string[] = [`${name.toUpperCase()}: ${s.houses} houses${hidden > 0 ? ` (${hidden} cohorts under ${PRINT_MIN_COHORT} houses are in the JSON only)` : ''}${s.suppressed && s.suppressed.length > 0 ? ` (cohorts under ${HELDOUT_MIN_COHORT} houses not shown: ${s.suppressed.join(', ')})` : ''}`];
+  const L = Math.max(14, ...names.map((n) => n.length));
+  out.push(
+    '',
+    'Against the answer key (EagleView or hand-drawn outline; houses that are the same single building):',
+    table(
+      ['cohort', 'n', 'key', 'IoU', 'bnd m', 'HD95 m', '|area| %', 'area<=5', 'pitch =', 'pitch +-1', 'face pitch', '<=1/12 %'],
+      [L, 3, 3, 9, 9, 9, 9, 7, 7, 9, 10, 8],
+      names.map((n) => {
+        const c = s.cohorts[n]!.stats;
+        const t = c.truth;
+        return [
+          n,
+          String(s.cohorts[n]!.n),
+          fmt(c.comparable, 1),
+          fmt(t.medianIoU),
+          fmt(t.medianBoundaryM, 2),
+          fmt(t.medianHd95M, 2),
+          fmt(t.medianAreaErrAbsPct, 1),
+          `${fmt(t.areaWithin5, 1)}/${fmt(t.areaScored, 1)}`,
+          `${fmt(t.mainPitchExact, 1)}/${fmt(t.mainPitchScored, 1)}`,
+          `${fmt(t.mainPitchWithin1, 1)}/${fmt(t.mainPitchScored, 1)}`,
+          fmt(t.medianFacePitchMAE, 2),
+          fmt(t.medianWithin1Pct, 0),
+        ];
+      }),
+    ),
+    '',
+    'Line totals against EagleView, percent (ours - EagleView) / EagleView, over EagleView houses that are the same building:',
+    table(
+      ['cohort', 'ridge', 'hip', 'valley', 'eave', 'rake'],
+      [L, 9, 9, 9, 9, 9],
+      names.map((n) => {
+        const l = s.cohorts[n]!.stats.truth.lineErrPct;
+        return [n, fmt(l.ridge, 1), fmt(l.hip, 1), fmt(l.valley, 1), fmt(l.eave, 1), fmt(l.rake, 1)];
+      }),
+    ),
+    '',
+    'Shape and sanity (every house):',
+    table(
+      ['cohort', 'faces med', 'slivers', 'thin', 'steep junk', 'verts med', 'rectilin', 'checker', 'no roof', 'failed', 'unusable', 'flag rate', 'flag prec', 'flag recall'],
+      [L, 9, 7, 5, 10, 9, 8, 7, 7, 6, 8, 9, 9, 11],
+      names.map((n) => {
+        const c = s.cohorts[n]!.stats;
+        return [
+          n,
+          fmt(c.faces.median, 1),
+          fmt(c.slivers, 1),
+          fmt(c.thinFaces, 1),
+          fmt(c.steepJunk, 1),
+          fmt(c.vertices.median, 1),
+          fmt(c.rectilinearity.median),
+          `${fmt(c.checkerPass, 1)}/${s.cohorts[n]!.n}`,
+          fmt(c.noRoof, 1),
+          fmt(c.failures, 1),
+          fmt(c.unusable, 1),
+          fmt(c.flags.rate, 2),
+          fmt(c.flags.precision, 2),
+          fmt(c.flags.recall, 2),
+        ];
+      }),
+    ),
+    '',
+    'Proxy cross-checks (not truth: independent sources that should roughly agree):',
+    table(
+      ['cohort', 'mask IoU', 'box IoU', '|Google area| %', 'faces/segments', 'OSM IoU', 'OSM n'],
+      [L, 8, 8, 15, 14, 8, 6],
+      names.map((n) => {
+        const p = s.cohorts[n]!.stats.proxy;
+        return [n, fmt(p.medianMaskIoU), fmt(p.medianBoxIoU), fmt(p.medianGoogleAreaAbsPct, 1), fmt(p.medianSegmentFaceRatio, 2), fmt(p.medianOsmIoU), fmt(p.osmHouses, 0)];
+      }),
+    ),
+    '',
+    'Runtime and determinism:',
+    table(
+      ['cohort', 'p50 ms', 'p95 ms', 'not byte-identical', 'seeds differ'],
+      [L, 7, 7, 18, 14],
+      names.map((n) => {
+        const c = s.cohorts[n]!;
+        return [n, f(c.runtime.p50Ms, 0), f(c.runtime.p95Ms, 0), `${c.nondeterministic}/${c.n}`, `${c.seedSensitive}/${c.n}`];
+      }),
+    ),
+  );
+  return out.join('\n');
+}
+
+export function formatHouses(rows: readonly HouseRow[]): string {
+  const L = Math.max(10, ...rows.map((r) => r.slug.length));
+  return table(
+    ['house', 'canopy', 'cplx', 'key', 'IoU', 'bnd m', 'area %', 'pitch', 'faces', 'slv', 'stp', 'rect', 'flag', 'chk', 'ms'],
+    [L, 6, 4, 4, 5, 5, 7, 7, 5, 3, 3, 5, 4, 3, 5],
+    rows.map((r) => {
+      const m = r.metrics;
+      const t = m.truth;
+      return [
+        r.slug + (r.seedStable ? '' : '*'),
+        r.canopy ?? '-',
+        r.complexity.slice(0, 4),
+        r.truth.slice(0, 4),
+        t === null ? '-' : f(t.iou, 3),
+        t === null ? '-' : f(t.meanBoundaryM, 2),
+        t === null || t.areaErrPct === null ? '-' : f(t.areaErrPct, 1),
+        t === null || t.mainPitchOurs === null ? '-' : `${t.mainPitchOurs}/${t.mainPitchTruth}`,
+        m.status === 'ok' ? String(m.faces) : m.status,
+        String(m.slivers),
+        String(m.steepJunk),
+        f(m.rectilinearity, 2),
+        m.flagged ? 'Y' : '-',
+        m.checkerPassed ? 'ok' : 'x',
+        f(r.runtimeMs, 0),
+      ];
+    }),
+  );
+}
