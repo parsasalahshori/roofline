@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Ring, ROOF_MASK_CUT_SHARE, roofMaskCut } from '@roofline/shared';
+import { isRoof3d, type Ring, ROOF_MASK_CUT_SHARE, roofMaskCut } from '@roofline/shared';
 import { lngLatToUtm } from '@roofline/shared/roof-reconstruct';
 import { roofOnLayersResult } from '../../src/estimator/roof-3d.ts';
 import type { RoofLayers } from '../../src/providers/solar-layers.ts';
@@ -65,6 +65,17 @@ describe('the mask cut is recorded and typed', () => {
       const cut = found.roof.maskCut!;
       expect(cut.removedShare > ROOF_MASK_CUT_SHARE, `case ${k}`).toBe(cut.reason !== null);
     }
+  });
+
+  it('merge composition (hardening x confidence): the cut roof also carries its edge evidence, and still reads as a roof', () => {
+    const found = roofOnLayersResult(withPatio(hipLayers(RING), 8), INSIDE);
+    expect('roof' in found).toBe(true);
+    const roof = 'roof' in found ? found.roof : null;
+    expect(roof!.maskCut!.reason).toBe('ground-cut');
+    expect(roof!.edges!.length).toBeGreaterThanOrEqual(4);
+    expect(roof!.quality!.edgeSupport).toBeDefined();
+    expect(roof!.quality!.edgeSupportFailure).toBeUndefined();
+    expect(isRoof3d(JSON.parse(JSON.stringify(roof)))).toBe(true);
   });
 
   it('roofMaskCut is total: garbage in, null out', () => {

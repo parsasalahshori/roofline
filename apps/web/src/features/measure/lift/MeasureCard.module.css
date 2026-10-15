@@ -278,6 +278,20 @@
   color: var(--ds-accent-ink, #8a5a00);
 }
 
+.note[data-tone="edge-cue"] {
+  color: var(--ds-accent-ink, #8a5a00);
+  font-weight: 600;
+}
+
+.note[data-tone="edge-cue"]::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 3px dashed var(--ds-accent, #ffb020);
+}
+
 .reason {
   font-weight: 400;
 }

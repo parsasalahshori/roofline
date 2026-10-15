@@ -2,7 +2,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { Banner, Button, Skeleton } from '@roofline/ui';
 import type { LngLat, Ring } from '@roofline/shared';
 import { Marker, type Map as MapLibreMap } from 'maplibre-gl';
-import { useContext, useEffect, useReducer, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { legal } from '../../../copy/legal.ts';
 import { usesFreeAerial } from './aerial.ts';
 import { usesGoogleImagery } from './googleTiles.ts';
@@ -12,6 +12,7 @@ import { useMeasurement } from '../api.ts';
 import type { MeasurementView } from '../types.ts';
 import { AiMark } from './AiMark.tsx';
 import { cardNumbers, MeasureCard } from './MeasureCard.tsx';
+import { hiddenEdges, setEdgeCue } from './edgeCue.ts';
 import { BuildingPopover, type PopoverAt } from './BuildingPopover.tsx';
 import { facetAt, facetName, LINE_COLORS, lineKinds, setRoofLayers, type RoofModel } from './roofModel.ts';
 import styles from './RoofView.module.css';
@@ -464,6 +465,9 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
   // Outlined: the building under the pointer (or its row), else the one the popover is about
   useLayerVisibility(map, m, model, roofDrawn, done, editing, drawMode, quote?.hovered ?? shown?.building?.footprintId ?? null);
   useFacetLabels(map, model, roofDrawn && !editing, quote, locked);
+  // Outline edges the height map cannot verify, dashed (while the outline is the 3D roof's own)
+  const hidden = useMemo(() => hiddenEdges(m.roof3d, ring), [m.roof3d, ring]);
+  useEffect(() => setEdgeCue(map, hidden, roofDrawn && !drawMode), [map, hidden, roofDrawn, drawMode]);
   useRoofPointer(map, { active, model, quote, locked, popover, setPopover });
   const estimate = slots.estimate ?? m.estimate;
   const numbers = cardNumbers(m, estimate, model, slots.wastePct);

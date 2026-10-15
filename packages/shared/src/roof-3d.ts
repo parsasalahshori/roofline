@@ -29,6 +29,12 @@ export type Roof3dFace = {
   flat: boolean;
   /** [lng, lat], well inside the face. */
   labelAt: LngLat;
+  /**
+   * How far to trust the face, 0-1 (absent on reconstructions stored before it existed): the confidence of the outline
+   * edges it ends on (Roof3dEdge.confidence) and whether Google's own roof segment under it agrees with its pitch and
+   * facing. Informational: it never changes the face's area or the quote.
+   */
+  confidence?: number;
 };
 
 export type Roof3dLine = {
@@ -67,6 +73,37 @@ export type Roof3d = {
    * RoofMaskCut. Recorded so a large cut is visible to review; the outline's own quality cannot see it.
    */
   maskCut?: RoofMaskCut;
+  /**
+   * The evidence for each outline edge (edge i runs from outline[from] to the next corner), in outline order. Absent on
+   * reconstructions stored before it existed, or when the height map could not be read along the outline.
+   */
+  edges?: Roof3dEdge[];
+};
+
+/**
+ * What the height map says about one outline edge (eave-support.ts): 'strong' when the heights drop 1 m or more across
+ * it (a real eave), 'weak' for 0.5-1 m, 'none' when they do not drop (a tree crown, a taller wall or a deck stands
+ * beside it, so the edge cannot be checked from the heights: unverified).
+ */
+export type Roof3dEdgeSupport = 'strong' | 'weak' | 'none';
+/** Why an edge is unverified: a crown beside it, a taller neighbour or wall, no height data, or level ground (a deck). */
+export const ROOF_3D_EDGE_REASONS = ['crown', 'taller-neighbour', 'data-gap', 'level'] as const;
+export type Roof3dEdgeReason = (typeof ROOF_3D_EDGE_REASONS)[number];
+
+export type Roof3dEdge = {
+  /** Index into `outline` of the corner the edge starts at; it ends at the next corner. */
+  from: number;
+  lengthFt: number;
+  /** The class of the edge's median eave drop. */
+  support: Roof3dEdgeSupport;
+  /** Share of the edge's length with no eave drop (0-1). */
+  unverifiedShare: number;
+  /** The most common reason along its unverified stretch; null when it has none. */
+  reason: Roof3dEdgeReason | null;
+  /** Half or more of it runs beside a tree crown. */
+  canopy: boolean;
+  /** Chance the edge is where the height map says (within half a metre), 0-1, from its support. */
+  confidence: number;
 };
 
 /** Why a reconstruction cut part of Google's mask away: parts lying on the ground, or the buildings a terrace home touches. */
@@ -117,8 +154,39 @@ export const ROOF_QUALITY_REASONS = [
   'joined-buildings',
   'roof-hidden',
   'low-attachment',
+  'edges-unverified',
 ] as const;
 export type RoofQualityReason = (typeof ROOF_QUALITY_REASONS)[number];
+
+/**
+ * How much a reason matters. 'block': the measured area itself may be wrong (check before pricing); 'check': a part
+ * of the roof may be drawn wrong; 'info': worth knowing, not a reason to doubt the numbers. Only 'block' and 'check'
+ * reasons are in RoofQuality.reasons (and so make needsReview true); 'info' ones go to RoofQuality.notes.
+ */
+export type RoofQualitySeverity = 'block' | 'check' | 'info';
+export const ROOF_QUALITY_SEVERITY: Record<RoofQualityReason, RoofQualitySeverity> = {
+  'coarse-imagery': 'check',
+  'outline-off': 'block',
+  'faces-patchy': 'check',
+  'rough-heights': 'check',
+  trees: 'check',
+  // A review when the differing faces carry a third of the main roof or more; a note below that (withGoogleCheck).
+  'differs-from-google': 'check',
+  'joined-buildings': 'block',
+  'roof-hidden': 'block',
+  'low-attachment': 'check',
+  'edges-unverified': 'block',
+};
+
+/** The outline's evidence in total (see Roof3dEdge): shares of its length, and its unverified length in feet. */
+export type RoofEdgeSupport = {
+  strongShare: number;
+  weakShare: number;
+  unverifiedShare: number;
+  unverifiedFt: number;
+  /** Share of the outline's length beside a tree crown. */
+  canopyShare: number;
+};
 
 /**
  * How far a reconstruction can be trusted: the imagery's quality (HIGH, MEDIUM); the outline's overlap with Google's
@@ -140,6 +208,12 @@ export type RoofQuality = {
   treeShare: number;
   fallbackFaces: number;
   reasons: RoofQualityReason[];
+  /** Reasons worth knowing that do not need a review ('info' severity). Absent on older reconstructions. */
+  notes?: RoofQualityReason[];
+  /** The outline's eave support (absent on older reconstructions, or when it could not be measured: see edgeSupportFailure). */
+  edgeSupport?: RoofEdgeSupport;
+  /** Why the eave support could not be measured (a machine-readable code), when it could not. */
+  edgeSupportFailure?: string;
 };
 
 /** Whether a reconstruction should be checked by a person before it is priced (any quality reason). */
