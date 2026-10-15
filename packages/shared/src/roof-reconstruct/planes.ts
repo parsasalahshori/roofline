@@ -251,7 +251,7 @@ function patchFrom(g: Grid, s: number, dsm: Float32Array, free: Mask, p: Plane, 
  * points sit in the middle of each step (a step-k lattice offset by k/2), away from the raster's edge.
  */
 export function latticeSeeds(g: Grid, list: Int32Array, want: number): Int32Array {
-  const step = Math.max(1, Math.floor(Math.sqrt(list.length / Math.max(1, want))));
+  const step = Math.max(1, Math.round(Math.sqrt(list.length / Math.max(1, want))));
   const off = Math.floor(step / 2);
   const out: number[] = [];
   for (let k = 0; k < list.length; k++) {
