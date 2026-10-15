@@ -186,3 +186,12 @@ The reconstruction's output is unchanged by this track (bench metrics identical 
 so there is no seed variance of this track's own: the dev numbers at seeds 7/8/9 are the baseline's (area median
 error 4.0 [3.9-4.1] %, checker 33.7 [33-35] of 54, independent checker 31 [30-32] of 54, main pitch exact
 12 [11-13] of 18).
+
+## 8. What the screen can say
+
+`MeasurementView` gains two optional fields (`packages/db/src/repos/measurements.ts`, `roof3dStatus`; additive):
+`roof3dMissing`, the typed reason a measurement has no 3D roof (so "no 3D roof: the roof runs off Google's map" can be
+shown instead of a silent rectangle), and `roof3dOutdated`, true when the 3D roof shown was made by an older
+reconstruction (every row stored before this round, such as the six 305 Ridgeway Dr rows), so the screen can offer to
+measure again. Unknown stored values are left out, never thrown on. The web copy and display are left to the
+confidence track, which owns the review banner (see open issues).

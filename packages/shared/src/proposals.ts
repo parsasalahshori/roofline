@@ -45,7 +45,7 @@ import { z } from 'zod';
 import type { Outline, InstantEstimate, LngLat, Ring } from './roof.ts';
 import type { RoofModel, RoofPlane } from './roof-model.ts';
 import type { PitchSource } from './solar.ts';
-import type { Roof3d, RoofQualityReason } from './roof-3d.ts';
+import type { Roof3d, Roof3dNoneReason, RoofQualityReason } from './roof-3d.ts';
 import type { AddOn } from './tiers.ts';
 import type { Scope, Calculation, QuoteLine } from './pricing.ts';
 
@@ -81,6 +81,17 @@ export type MeasurementView = {
    * Null or absent when it does not (or the roof is not a 3D one).
    */
   needsReview?: { reasons: RoofQualityReason[] } | null;
+  /**
+   * Why this measurement has no 3D roof when Google's height map was asked about it (Roof3dSnapshot.none: no imagery,
+   * no building, clipped, unusable, timeout, shadow, or an older row's no-roof), so the screen can say why the roof is
+   * the outline's instead of falling back silently. Null or absent otherwise.
+   */
+  roof3dMissing?: Roof3dNoneReason | null;
+  /**
+   * The 3D roof shown was made by an older reconstruction than the server's (ROOF_3D_ALGORITHM_VERSION; rows without a
+   * version are older): it is what was priced, but measuring again may draw it differently. Absent when current.
+   */
+  roof3dOutdated?: boolean;
 };
 export type ProposalOptionView = {
   id: string; tier: Tier; name: string; highlights: string[]; scope: Scope; addOns: AddOn[]; calculation: Calculation;

@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { carryExcluded, cleanExcluded, isRoof3d, measureRoof, sameOutline, solarDataCurrent, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type Roof3dInput, type Roof3dSnapshot, type RoofModel, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
+import { carryExcluded, cleanExcluded, isRoof3d, measureRoof, ROOF_3D_NONE_REASONS, roof3dSnapshotCurrent, sameOutline, solarDataCurrent, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type Roof3dInput, type Roof3dSnapshot, type RoofModel, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
 import { jobs, measurements, properties, proposals } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getProperty, type PropertyRow } from './properties.ts';
@@ -346,7 +346,20 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string, now
         ? { url: `/api/measurements/${row.id}/roof-photo`, corners: row.roof3d.photo.corners }
         : null,
     needsReview: in3d && (roof3d.roof.quality?.reasons.length ?? 0) > 0 ? { reasons: [...roof3d.roof.quality!.reasons] } : null,
+    ...roof3dStatus(row.roof3d ?? null, in3d),
   };
+}
+
+/**
+ * Why a measurement has no 3D roof (the kept snapshot's typed reason), and whether the 3D roof shown is an older
+ * reconstruction's (MeasurementView.roof3dMissing, roof3dOutdated). Tolerant of any stored shape: an unknown reason is
+ * left out, never thrown on.
+ */
+export function roof3dStatus(snapshot: Roof3dSnapshot | null, in3d: boolean): Pick<MeasurementView, 'roof3dMissing' | 'roof3dOutdated'> {
+  if (snapshot === null || typeof snapshot !== 'object') return { roof3dMissing: null };
+  if (in3d) return { roof3dMissing: null, ...(roof3dSnapshotCurrent(snapshot) ? {} : { roof3dOutdated: true }) };
+  const none = snapshot.roof == null ? snapshot.none : undefined;
+  return { roof3dMissing: none !== undefined && (ROOF_3D_NONE_REASONS as readonly string[]).includes(none) ? none : null };
 }
 
 /** Whether the pitch is a measured one whose planes the facets keep: Google Solar's segments, or its 3D roof. */
