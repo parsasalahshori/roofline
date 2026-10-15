@@ -517,7 +517,7 @@ export async function measureProperty(
   // transaction.
   const solarAsked = solarForHome(deps, ctx, property.id, point);
   const roof3dAsked = within(
-    roof3dForHome(deps, ctx, property.id, point, solarAsked.then((sol) => sol?.building ?? null)),
+    roof3dForHome(deps, ctx, property.id, point, solarAsked.then((sol) => (sol === null ? undefined : sol.building))),
     ROOF_3D_WAIT_MS,
     null,
   );
@@ -587,7 +587,7 @@ async function measureOnFootprint(
 ): Promise<MeasurementView> {
   const solarAsked = solarForHome(deps, ctx, property.id, picked.point);
   const roof3dAsked = within(
-    roof3dForHome(deps, ctx, property.id, picked.point, solarAsked.then((sol) => sol?.building ?? null)),
+    roof3dForHome(deps, ctx, property.id, picked.point, solarAsked.then((sol) => (sol === null ? undefined : sol.building))),
     ROOF_3D_WAIT_MS,
     null,
   );
@@ -649,7 +649,7 @@ export async function prefetchMeasure(
   // The roof in 3D (Google's height map, a paid request) starts now too, unless the home already has a fresh one kept.
   const roof3d = (async () => {
     const homeId = propertyId ?? (savedHome !== null ? savedHome.id : undefined);
-    if (homeId !== undefined) await roof3dForHome(deps, ctx, homeId, at, asked.then((sol) => sol?.building ?? null));
+    if (homeId !== undefined) await roof3dForHome(deps, ctx, homeId, at, asked.then((sol) => (sol === null ? undefined : sol.building)));
     else await roof3dAt(deps, at, (await asked)?.building ?? null);
   })();
   const work = Promise.allSettled([

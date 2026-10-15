@@ -444,7 +444,7 @@ const SHADOW_DIFF_SHARE = 0.1;
 const SQ_FT_PER_M2 = 10.7639104167;
 
 /** One reconstruction attempt on the layers for `point`; a clipped roof on any layers buys wider layers once. */
-async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | null): Promise<Roof3dSnapshot> {
+async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | null, buildingKnown: boolean): Promise<Roof3dSnapshot> {
   const at: LngLat = [point[0], point[1]];
   const stamp = (s: Roof3dSnapshot) => roof3dSnapshotStamp(s);
   let { layers, reused } = await layersFor(deps, point, building);
@@ -469,7 +469,9 @@ async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | n
     }
   }
   if ('miss' in found) {
-    const none = found.miss === 'clipped' ? 'clipped' : found.miss === 'not-found' ? (ownBox(point, building) === null && building === null ? 'no-building' : 'no-roof') : 'unusable';
+    // 'no-building' (kept and reused for 30 days) only when Google answered that there is no building; when its answer
+    // is unknown (the lookup failed) a miss is 'no-roof', which is never reused, so one outage does not block the home.
+    const none = found.miss === 'clipped' ? 'clipped' : found.miss === 'not-found' ? (buildingKnown && ownBox(point, building) === null && building === null ? 'no-building' : 'no-roof') : 'unusable';
     countRoof3d(deps, none, { miss: found.miss, reused });
     return stamp({ fetchedAt: fetchedAt(), at, roof: null, none });
   }
@@ -490,7 +492,8 @@ async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | n
  * reused layers. The same point and building within ROOF_TTL_MS share the first answer; an answer about one attempt
  * (clipped, unusable, timeout) is not shared. Never rejects.
  */
-export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding | null): Promise<Roof3dSnapshot | null> {
+export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding | null, o: { buildingKnown?: boolean } = {}): Promise<Roof3dSnapshot | null> {
+  const buildingKnown = o.buildingKnown !== false;
   if (!deps.solarLayers.configured) return Promise.resolve(null);
   if (modeOf(deps) === 'off') {
     countRoof3d(deps, 'off');
@@ -502,14 +505,14 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
     map = new Map();
     roofCache.set(deps, map);
   }
-  const k = key(point, building);
+  const k = `${key(point, building)}${buildingKnown ? '' : '|unknown'}`;
   const hit = map.get(k);
   if (hit !== undefined && Date.now() - hit.at < ROOF_TTL_MS) return hit.value;
   const entries = map;
   const forget = () => {
     if (entries.get(k)?.value === value) entries.delete(k);
   };
-  const value: Promise<Roof3dSnapshot | null> = withBudget(attempt(deps, point, building), LAYERS_BUDGET_MS).then(
+  const value: Promise<Roof3dSnapshot | null> = withBudget(attempt(deps, point, building, buildingKnown), LAYERS_BUDGET_MS).then(
     (snapshot) => {
       if (snapshot.roof === null && snapshot.none !== 'no-imagery' && snapshot.none !== 'no-building') forget();
       return snapshot;
@@ -577,7 +580,7 @@ export async function roof3dForHome(
   ctx: TenantContext,
   propertyId: string,
   point: LngLat,
-  building: Promise<SolarBuilding | null>,
+  building: Promise<SolarBuilding | null | undefined>,
 ): Promise<Roof3dSnapshot | null> {
   if (!deps.solarLayers.configured) return null;
   // Off: nothing read, nothing bought.
@@ -594,7 +597,7 @@ export async function roof3dFromKept(
   deps: AppDeps,
   kept: Roof3dSnapshot | null,
   point: LngLat,
-  building: Promise<SolarBuilding | null>,
+  building: Promise<SolarBuilding | null | undefined>,
 ): Promise<Roof3dSnapshot | null> {
   if (!deps.solarLayers.configured) return null;
   const mode = modeOf(deps);
@@ -609,8 +612,10 @@ export async function roof3dFromKept(
     snapshot = usable;
   } else {
     if (usable !== null) countRoof3d(deps, 'stale-snapshot', { version: roof3dSnapshotVersion(usable).algorithm ?? 0, none: usable.none ?? 'roof' });
-    const found = await building.catch(() => null);
-    snapshot = await roof3dAt(deps, point, found);
+    // undefined (or a rejection): Google's building is unknown (its lookup failed), not known to be absent.
+    const answer = await building.catch(() => undefined);
+    const found = answer ?? null;
+    snapshot = await roof3dAt(deps, point, found, { buildingKnown: answer !== undefined });
     if (mode === 'shadow') snapshot = toShadow(deps, snapshot, found);
   }
   if (mode === 'shadow' && snapshot?.roof != null) snapshot = toShadow(deps, snapshot, null);

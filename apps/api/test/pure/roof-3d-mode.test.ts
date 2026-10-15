@@ -108,6 +108,17 @@ describe('failures are typed, never thrown', () => {
     expect(errors).toHaveLength(0);
   });
 
+  it('a miss with Google\'s building unknown (its lookup failed) is no-roof, never the 30-day no-building', async () => {
+    // A point on the ground about 14 m off the house's north-east corner: the reconstruction finds no roof there.
+    const off: LngLat = [-95.999587, 41.250298];
+    const known = pureDeps(new ScriptedLayers(() => LAYERS));
+    expect(await roof3dFromKept(known.deps, null, off, Promise.resolve(null))).toMatchObject({ roof: null, none: 'no-building' });
+    const failed = pureDeps(new ScriptedLayers(() => LAYERS));
+    expect(await roof3dFromKept(failed.deps, null, off, Promise.reject(new Error('solar down')))).toMatchObject({ roof: null, none: 'no-roof' });
+    const unknown = pureDeps(new ScriptedLayers(() => LAYERS));
+    expect(await roof3dFromKept(unknown.deps, null, off, Promise.resolve(undefined))).toMatchObject({ roof: null, none: 'no-roof' });
+  });
+
   it('a point that is not finite: null, nothing bought', async () => {
     const layers = new ScriptedLayers(() => LAYERS);
     const { deps } = pureDeps(layers);
