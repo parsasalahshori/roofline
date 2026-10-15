@@ -88,10 +88,15 @@ export function roofPartAreaM2(raster: RoofRaster, point: { col: number; row: nu
     count++;
     const c = i % W;
     const r = (i - c) / W;
-    if (c > 0 && !seen[i - 1] && raster.mask[i - 1] !== 0) (seen[i - 1] = 1), stack.push(i - 1);
-    if (c < W - 1 && !seen[i + 1] && raster.mask[i + 1] !== 0) (seen[i + 1] = 1), stack.push(i + 1);
-    if (r > 0 && !seen[i - W] && raster.mask[i - W] !== 0) (seen[i - W] = 1), stack.push(i - W);
-    if (r < H - 1 && !seen[i + W] && raster.mask[i + W] !== 0) (seen[i + W] = 1), stack.push(i + W);
+    const visit = (j: number) => {
+      if (seen[j] || raster.mask[j] === 0) return;
+      seen[j] = 1;
+      stack.push(j);
+    };
+    if (c > 0) visit(i - 1);
+    if (c < W - 1) visit(i + 1);
+    if (r > 0) visit(i - W);
+    if (r < H - 1) visit(i + W);
   }
   return count * s * s;
 }

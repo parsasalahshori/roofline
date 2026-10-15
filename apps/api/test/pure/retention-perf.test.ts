@@ -22,7 +22,7 @@ describe('Solar data retention (30 days)', () => {
       return dir;
     };
     const a = mk('a');
-    const b = mk('b', { downloadedAt: '2026-09-01' });
+    mk('b', { downloadedAt: '2026-09-01' });
     const c = mk('c');
     const old = new Date('2026-08-01T00:00:00Z');
     utimesSync(path.join(c, 'dsm.tif'), old, old);
