@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRoof3d, type Roof3d, roof3dSnapshotFresh, roofPlanesFrom3d, sameOutline } from '../src/roof-3d.ts';
+import { isRoof3d, type Roof3d, roof3dSnapshotFresh, roof3dSnapshotStamp, roofPlanesFrom3d, sameOutline } from '../src/roof-3d.ts';
 import { measureRoof, roofModelFrom3d } from '../src/roof-model.ts';
 import { polygonAreaSqFt, type Ring } from '../src/roof.ts';
 import { reconstructRoof, toRoof3d } from '../src/roof-reconstruct/index.ts';
@@ -140,7 +140,7 @@ describe('the stored 3D roof', () => {
   it('is fresh for 30 days, for a point on the roof or within 3 m of where it was asked; "no imagery" covers 50 m', () => {
     const now = new Date('2026-10-12T12:00:00Z');
     const at = HIP_ROOF.faces[0]!.labelAt;
-    const kept = { fetchedAt: '2026-10-01T12:00:00Z', at, roof: HIP_ROOF };
+    const kept = roof3dSnapshotStamp({ fetchedAt: '2026-10-01T12:00:00Z', at, roof: HIP_ROOF });
     expect(roof3dSnapshotFresh(kept, at, now)).toBe(true);
     expect(roof3dSnapshotFresh(kept, HIP_ROOF.faces[1]!.labelAt, now)).toBe(true);
     expect(roof3dSnapshotFresh(kept, [at[0] + 0.001, at[1]], now)).toBe(false);

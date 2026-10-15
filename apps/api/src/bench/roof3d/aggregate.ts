@@ -33,6 +33,10 @@ export type CohortAgg = {
   noRoof: number;
   unusable: number;
   checkerPass: number;
+  /** The checker with its circular outline target replaced by an independent one (metrics.ts outlineCheck). */
+  checkerIndependentPass: number;
+  outlineCheckOk: number;
+  outlineChecked: number;
   faces: { median: number | null; total: number };
   slivers: number;
   thinFaces: number;
@@ -44,6 +48,11 @@ export type CohortAgg = {
     medianIoU: number | null;
     medianBoundaryM: number | null;
     medianHd95M: number | null;
+    /** The same after the best translation of the key (EagleView's frame offset removed); median shift in metres. */
+    medianAlignedIoU: number | null;
+    medianAlignedBoundaryM: number | null;
+    medianAlignedHd95M: number | null;
+    medianShiftM: number | null;
     medianAreaErrAbsPct: number | null;
     medianAreaErrSignedPct: number | null;
     areaWithin5: number;
@@ -112,6 +121,9 @@ export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
     noRoof: ms.filter((m) => m.status === 'no-roof').length,
     unusable: ok.filter((m) => m.unusable).length,
     checkerPass: ok.filter((m) => m.checkerPassed).length,
+    checkerIndependentPass: ok.filter((m) => m.checkerIndependentPassed === true).length,
+    outlineCheckOk: ok.filter((m) => m.outlineCheck?.ok === true).length,
+    outlineChecked: ok.filter((m) => m.outlineCheck?.ok != null).length,
     faces: { median: med(ok.map((m) => m.faces)), total: ok.reduce((t, m) => t + m.faces, 0) },
     slivers: ok.reduce((t, m) => t + m.slivers, 0),
     thinFaces: ok.reduce((t, m) => t + m.thinFaces, 0),
@@ -123,6 +135,10 @@ export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
       medianIoU: med(comp.map((m) => m.truth!.iou)),
       medianBoundaryM: med(comp.map((m) => m.truth!.meanBoundaryM)),
       medianHd95M: med(comp.map((m) => m.truth!.hd95M)),
+      medianAlignedIoU: med(comp.map((m) => m.truth!.aligned?.iou)),
+      medianAlignedBoundaryM: med(comp.map((m) => m.truth!.aligned?.meanBoundaryM)),
+      medianAlignedHd95M: med(comp.map((m) => m.truth!.aligned?.hd95M)),
+      medianShiftM: med(comp.map((m) => (m.truth!.aligned ? Math.hypot(m.truth!.aligned.shiftM[0], m.truth!.aligned.shiftM[1]) : null))),
       medianAreaErrAbsPct: area.length === 0 ? null : median(area.map(Math.abs)),
       medianAreaErrSignedPct: area.length === 0 ? null : median(area),
       areaWithin5: area.filter((a) => Math.abs(a) <= 5).length,

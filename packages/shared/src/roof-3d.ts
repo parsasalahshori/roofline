@@ -62,7 +62,39 @@ export type Roof3d = {
    * as EagleView counts them as further structures). Absent when there are none, or on older reconstructions.
    */
   structures?: Roof3dStructure[];
+  /**
+   * What the reconstruction cut out of Google's mask part before fitting (absent on older reconstructions): see
+   * RoofMaskCut. Recorded so a large cut is visible to review; the outline's own quality cannot see it.
+   */
+  maskCut?: RoofMaskCut;
 };
+
+/** Why a reconstruction cut part of Google's mask away: parts lying on the ground, or the buildings a terrace home touches. */
+export const ROOF_MASK_CUT_REASONS = ['ground-cut', 'terrace-cut'] as const;
+export type RoofMaskCutReason = (typeof ROOF_MASK_CUT_REASONS)[number];
+/**
+ * A cut of more than this share of Google's mask part is significant: reported with a reason so it can be reviewed
+ * (FM11: one ablation lost 42% of a roof to the ground cut with a clean quality block). 10% is the benchmark's "bad"
+ * line for area: a cut that size moves the price as much as a wrong measurement.
+ */
+export const ROOF_MASK_CUT_SHARE = 0.1;
+/**
+ * The mask part as it came (maskSqFt), what was cut as lying on the ground (groundSqFt) and as other buildings of a
+ * terrace (terraceSqFt), plan square feet; removedShare = (ground + terrace) / mask; reason: the larger cut's kind
+ * when removedShare exceeds ROOF_MASK_CUT_SHARE, else null.
+ */
+export type RoofMaskCut = { maskSqFt: number; groundSqFt: number; terraceSqFt: number; removedShare: number; reason: RoofMaskCutReason | null };
+
+const SQ_FT_PER_M2 = 10.7639104167;
+
+/** The RoofMaskCut for the areas cut (square metres), or null when they are not finite. */
+export function roofMaskCut(cuts: { maskM2: number; groundM2: number; terraceM2: number } | null | undefined): RoofMaskCut | null {
+  if (cuts == null || ![cuts.maskM2, cuts.groundM2, cuts.terraceM2].every((v) => Number.isFinite(v) && v >= 0) || !(cuts.maskM2 > 0)) return null;
+  const removedShare = Math.min(1, (cuts.groundM2 + cuts.terraceM2) / cuts.maskM2);
+  const reason = removedShare > ROOF_MASK_CUT_SHARE ? (cuts.groundM2 >= cuts.terraceM2 ? 'ground-cut' : 'terrace-cut') : null;
+  const ft = (m2: number) => Math.round(m2 * SQ_FT_PER_M2 * 10) / 10;
+  return { maskSqFt: ft(cuts.maskM2), groundSqFt: ft(cuts.groundM2), terraceSqFt: ft(cuts.terraceM2), removedShare: Math.round(removedShare * 1000) / 1000, reason };
+}
 
 /** Another roof near the main one (see Roof3d.structures). */
 export type Roof3dStructure = {
@@ -120,7 +152,70 @@ export function needsReview(roof: Roof3d | null | undefined): boolean {
  * again: the roof reconstructed at `at`, or why there is none (`none`): Google has no HIGH or MEDIUM imagery there,
  * or no roof near the point.
  */
-export type Roof3dSnapshot = { fetchedAt: string; at: LngLat; roof: Roof3d | null; none?: 'no-imagery' | 'no-roof'; photo?: Roof3dPhoto | null };
+export type Roof3dSnapshot = {
+  fetchedAt: string;
+  at: LngLat;
+  roof: Roof3d | null;
+  /** Why there is no roof (see ROOF_3D_NONE_REASONS). Only 'no-imagery' and 'no-building' are ever reused. */
+  none?: Roof3dNoneReason;
+  photo?: Roof3dPhoto | null;
+  /**
+   * ROOF_3D_MODE=shadow: the roof that was reconstructed but not measured from (roof is then null and none 'shadow').
+   * Kept so the comparison can be made later, and so turning the mode on reuses it instead of buying the layers again.
+   */
+  shadowRoof?: Roof3d | null;
+  /** The snapshot's own layout (ROOF_3D_SNAPSHOT_SCHEMA). Absent on snapshots stored before it existed: 1. */
+  schemaVersion?: number;
+  /** The reconstruction that made it (ROOF_3D_ALGORITHM_VERSION). Absent on snapshots stored before it existed: 1. */
+  algorithmVersion?: number;
+};
+
+/**
+ * Why a snapshot has no roof. 'no-imagery': Google has no HIGH or MEDIUM imagery there. 'no-building': no roof near
+ * the point and Google has no building there either (a vacant lot, a point in the street). 'no-roof': Google has a
+ * building but no roof part was found near the point (written before November 2026 for every case without a roof).
+ * 'clipped': the roof runs off the layers' edge even after one fresh, larger request. 'unusable': a roof was found but
+ * is too far off to show, or the layers could not be read. 'timeout': the layers did not come in time. 'shadow':
+ * ROOF_3D_MODE=shadow, the roof is in shadowRoof. Only 'no-imagery' and 'no-building' are about the place itself; every
+ * other reason is about this attempt and is never reused (roof3dSnapshotFresh), so a later Measure tries again.
+ */
+export const ROOF_3D_NONE_REASONS = ['no-imagery', 'no-building', 'no-roof', 'clipped', 'unusable', 'timeout', 'shadow'] as const;
+export type Roof3dNoneReason = (typeof ROOF_3D_NONE_REASONS)[number];
+
+/**
+ * The layout of a stored Roof3dSnapshot. 1: before October 2026 (no version fields). 2: adds schemaVersion and
+ * algorithmVersion. Readers accept every schema up to this one and ignore fields they do not know.
+ */
+export const ROOF_3D_SNAPSHOT_SCHEMA = 2;
+
+/**
+ * Which reconstruction (roof-reconstruct/ plus the server's checks on it) made a snapshot. A kept roof made by another
+ * version is stale and is reconstructed again (roof3dSnapshotFresh), so an improved algorithm shows on homes measured
+ * before it instead of the old roof being served for ROOF_3D_CACHE_DAYS. BUMP IT with any change that changes what a
+ * reconstruction returns (faces, lines, outline, quality); a pure refactor leaves it. Snapshots without the field are 1.
+ * 2: the October 2026 edge-case round (first versioned snapshots).
+ */
+export const ROOF_3D_ALGORITHM_VERSION = 2;
+
+function versionField(value: unknown): number | null {
+  if (value === undefined) return 1;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : null;
+}
+
+/** A snapshot's schema and algorithm versions (1 for a snapshot stored before they existed); null for a garbled field. */
+export function roof3dSnapshotVersion(snapshot: Pick<Roof3dSnapshot, 'schemaVersion' | 'algorithmVersion'>): { schema: number | null; algorithm: number | null } {
+  return { schema: versionField(snapshot.schemaVersion), algorithm: versionField(snapshot.algorithmVersion) };
+}
+
+/** Whether a snapshot was made by this reconstruction (an older or newer one, or a garbled version, is not). */
+export function roof3dSnapshotCurrent(snapshot: Pick<Roof3dSnapshot, 'schemaVersion' | 'algorithmVersion'>): boolean {
+  return roof3dSnapshotVersion(snapshot).algorithm === ROOF_3D_ALGORITHM_VERSION;
+}
+
+/** The snapshot stamped with this commit's schema and algorithm versions: every snapshot is stamped before it is kept. */
+export function roof3dSnapshotStamp<T extends Roof3dSnapshot>(snapshot: T): T & { schemaVersion: number; algorithmVersion: number } {
+  return { ...snapshot, schemaVersion: ROOF_3D_SNAPSHOT_SCHEMA, algorithmVersion: ROOF_3D_ALGORITHM_VERSION };
+}
 
 /**
  * Google's own aerial photo of the roof (the Data Layers photo the height map was made from: true ortho, so the 3D
@@ -180,8 +275,8 @@ export function isRoof3d(value: unknown): value is Roof3d {
 }
 
 /**
- * A kept reconstruction still good for a home at `point` at `now`: fetched within ROOF_3D_CACHE_DAYS, and for this
- * roof: its outline contains the point, or it was asked about a point within 3 m of it. A kept "no imagery here"
+ * A kept reconstruction still good for a home at `point` at `now`: fetched within ROOF_3D_CACHE_DAYS, made by this
+ * reconstruction (ROOF_3D_ALGORITHM_VERSION; a kept "no imagery" excepted), and for this roof: its outline contains the point, or it was asked about a point within 3 m of it. A kept "no imagery here"
  * covers anything within 50 m (Google's imagery is per area, not per house).
  */
 export function roof3dSnapshotFresh(snapshot: Roof3dSnapshot | null | undefined, point: LngLat, now: Date): boolean {
@@ -189,7 +284,13 @@ export function roof3dSnapshotFresh(snapshot: Roof3dSnapshot | null | undefined,
   const at = Date.parse(snapshot.fetchedAt);
   if (!Number.isFinite(at) || now.getTime() - at > ROOF_3D_CACHE_DAYS * 86_400_000 || at > now.getTime() + 60_000) return false;
   const d = metresApart(snapshot.at, point);
-  if (snapshot.roof === null) return snapshot.none === 'no-imagery' ? d <= 50 : d <= 3;
+  // "No imagery here" is Google's answer, not the reconstruction's: it holds whichever algorithm kept it.
+  if (snapshot.roof === null && snapshot.none === 'no-imagery') return d <= 50;
+  // Anything the reconstruction decided (a roof, or "no roof here") is only as good as the algorithm that decided it.
+  if (!roof3dSnapshotCurrent(snapshot)) return false;
+  // Of the other answers without a roof, only "no building here" is about the place; the rest (clipped, unusable,
+  // timeout, shadow, and the old catch-all no-roof) are about one attempt and are asked again.
+  if (snapshot.roof === null) return snapshot.none === 'no-building' && d <= 3;
   if (!isRoof3d(snapshot.roof)) return false;
   return d <= 3 || inside(point, snapshot.roof.outline);
 }

@@ -133,6 +133,30 @@ export function formatSplit(name: string, s: SplitReport): string {
       }),
     ),
     '',
+    'Outline against EagleView after the best translation (its frame sits about 1 m east, 0.5 m south of Google\'s), and',
+    'the checker with its circular outline target (outline vs the mask it was traced from) replaced by an independent one',
+    '(aligned EagleView where there is a comparable key, else Google\'s raw mask before the reconstruction\'s cuts: a proxy):',
+    table(
+      ['cohort', 'raw IoU', 'aligned IoU', 'aligned bnd m', 'aligned HD95', 'shift m', 'outline check', 'checker (old)', 'checker (indep.)'],
+      [L, 8, 11, 13, 12, 8, 13, 13, 16],
+      names.map((n) => {
+        const c = s.cohorts[n]!.stats;
+        const t = c.truth;
+        const of = `/${s.cohorts[n]!.n}`;
+        return [
+          n,
+          fmt(t.medianIoU),
+          fmt(t.medianAlignedIoU ?? null),
+          fmt(t.medianAlignedBoundaryM ?? null, 2),
+          fmt(t.medianAlignedHd95M ?? null, 2),
+          fmt(t.medianShiftM ?? null, 2),
+          `${fmtN(c.outlineCheckOk ?? null)}/${fmtN(c.outlineChecked ?? null)}`,
+          `${fmtN(c.checkerPass)}${of}`,
+          `${fmtN(c.checkerIndependentPass ?? null)}${of}`,
+        ];
+      }),
+    ),
+    '',
     'Line totals against EagleView, percent (ours - EagleView) / EagleView, over EagleView houses that are the same building:',
     table(
       ['cohort', 'ridge', 'hip', 'valley', 'eave', 'rake'],

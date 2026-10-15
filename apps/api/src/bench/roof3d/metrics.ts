@@ -61,6 +61,15 @@ export type HouseMetrics = {
   checkerPassed: boolean;
   mainOk: number;
   mainChecked: number;
+  /**
+   * The outline checked against something it was not traced from (the checker's outline target compares it with the
+   * mask it was traced from, after the reconstruction's own cuts, so it always passes): EagleView's outline after the
+   * frame alignment when the house has a comparable key, else Google's raw mask part as downloaded (before the ground
+   * and terrace cuts; a proxy, labelled so). ok: IoU at least OUTLINE_CHECK_IOU.
+   */
+  outlineCheck: { source: 'eagleview-aligned' | 'google-mask-raw' | null; iou: number | null; ok: boolean | null };
+  /** checkerPassed with the circular outline target replaced by outlineCheck (null when the outline could not be checked). */
+  checkerIndependentPassed: boolean | null;
   /** The reconstruction's own outline quality numbers (what the estimator tells the user). */
   selfIoU: number | null;
   selfEdgeFit: number | null;
@@ -72,6 +81,12 @@ export type HouseMetrics = {
   /** sha1 of the whole reconstruction, to see which houses an edit changed. */
   hash: string;
 };
+
+/**
+ * An outline that overlaps its independent check by less than this is off: the line the failure analysis drew between
+ * good and bad houses on the aligned EagleView set (aligned IoU under 0.85 was one of its two "bad" tests).
+ */
+export const OUTLINE_CHECK_IOU = 0.85;
 
 export const EMPTY_PROXY: Proxy = { maskIoU: null, boxIoU: null, googleAreaPct: null, segmentFaceRatio: null, osmIoU: null };
 
@@ -94,6 +109,8 @@ export function emptyMetrics(status: 'no-roof' | 'failed', hash = ''): HouseMetr
     checkerPassed: false,
     mainOk: 0,
     mainChecked: 0,
+    outlineCheck: { source: null, iou: null, ok: null },
+    checkerIndependentPassed: null,
     selfIoU: null,
     selfEdgeFit: null,
     selfTreeShare: null,
@@ -175,6 +192,7 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
   const plan = roof.faces.reduce((t, f) => t + f.planAreaSqFt, 0);
   const sloped = roof.faces.reduce((t, f) => t + f.slopedAreaSqFt, 0);
   const reasons = roof.quality?.reasons ?? [];
+  const proxy = proxyOf(h, roof, plan);
   let truth: TruthMetrics | null = null;
   if (h.entry.truth === 'eagleview' && h.eagleview !== null) truth = eagleViewMetrics(roof, h.eagleview, p.truth);
   else if (h.entry.truth === 'visual' && h.visual !== null) truth = visualMetrics(roof, h.visual, p.truth);
@@ -196,14 +214,28 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
     checkerPassed: check.passed,
     mainOk: check.mainOk,
     mainChecked: check.mainChecked,
+    ...independentChecks(check, truth, proxy),
     selfIoU: roof.quality?.outlineIoU ?? null,
     selfEdgeFit: roof.quality?.edgeFit ?? null,
     selfTreeShare: roof.quality?.treeShare ?? null,
-    proxy: proxyOf(h, roof, plan),
+    proxy,
     truth,
     bad: truth !== null && truth.comparable ? isBad(truth) : null,
     hash: hashOf(json),
   };
+}
+
+/** The outline check against an independent source and the checker verdict with it (see HouseMetrics.outlineCheck). */
+function independentChecks(check: Acceptance, truth: TruthMetrics | null, proxy: Proxy): Pick<HouseMetrics, 'outlineCheck' | 'checkerIndependentPassed'> {
+  const aligned = truth !== null && truth.comparable && truth.grade === 'eagleview' ? (truth.aligned ?? null) : null;
+  const outlineCheck: HouseMetrics['outlineCheck'] =
+    aligned !== null
+      ? { source: 'eagleview-aligned', iou: aligned.iou, ok: aligned.iou >= OUTLINE_CHECK_IOU }
+      : proxy.maskIoU !== null
+        ? { source: 'google-mask-raw', iou: proxy.maskIoU, ok: proxy.maskIoU >= OUTLINE_CHECK_IOU }
+        : { source: null, iou: null, ok: null };
+  const rest = check.mainOk === check.mainChecked && check.junkFaces === 0 && check.steepFaces === 0;
+  return { outlineCheck, checkerIndependentPassed: outlineCheck.ok === null ? null : rest && outlineCheck.ok };
 }
 
 export { checkRoof };
