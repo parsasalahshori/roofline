@@ -55,7 +55,7 @@ function cohort(k: Partial<Knobs> = {}): CohortReport {
         medianWithin1Pct: st(85),
         lineErrPct: { ridge: none, hip: none, valley: none, eave: none, rake: none },
       },
-      reasons: { 'coarse-imagery': st(0), 'outline-off': st(0), 'faces-patchy': st(0), 'rough-heights': st(0), trees: st(0), 'differs-from-google': st(0), 'joined-buildings': st(0), 'roof-hidden': st(0), 'low-attachment': st(0), 'edges-unverified': st(0) },
+      reasons: { 'coarse-imagery': st(0), 'outline-off': st(0), 'faces-patchy': st(0), 'rough-heights': st(0), trees: st(0), 'differs-from-google': st(0), 'joined-buildings': st(0), 'roof-hidden': st(0), 'low-attachment': st(0), 'edges-unverified': st(0), 'roof-inferred': st(0) },
       flags: { rate: st(0.5), precision: st(0.5), recall: st(v.recall), tp: st(1), fp: st(1), fn: st(1), tn: st(1) },
       proxy: { medianMaskIoU: st(0.97), medianBoxIoU: st(0.97), medianGoogleAreaAbsPct: st(8), medianSegmentFaceRatio: st(1), medianOsmIoU: none, osmHouses: st(0) },
       lidar: {

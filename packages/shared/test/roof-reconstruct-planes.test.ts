@@ -4,11 +4,15 @@
 // turned and not; the true outline is the shape's rectangle.
 import { describe, expect, it } from 'vitest';
 import { type LocalRoof, reconstructRoof, type RoofRaster } from '../src/roof-reconstruct/index.ts';
-import { DEFAULT_OUTLINE_PLANES, inferHiddenEaves } from '../src/roof-reconstruct/outline-planes.ts';
+import { DEFAULT_OUTLINE_PLANES, inferHiddenEaves, type OutlinePlanesParams } from '../src/roof-reconstruct/outline-planes.ts';
 import { gableShape, hipShape, L_CROSS, synthesize, type SyntheticRoof, type XY } from './fixtures/synthetic-roofs.ts';
 
-/** A crown of radius `rad` centred at `at` (house frame), its top `aboveM` over the eave: it hides what is under it. */
-function withCrown(roof: SyntheticRoof, at: XY, rad: number, aboveM = 4): RoofRaster {
+/**
+ * A crown of radius `rad` centred at `at` (house frame), its top `aboveM` over the eave. Google's mask leaves the whole
+ * crown out. `gaps` is the share of the crown's pixels (a fixed pattern) where the leaves are sparse enough for the
+ * photogrammetry to see what is under them (the roof, or the yard); 0 is a dense crown that hides everything.
+ */
+function withCrown(roof: SyntheticRoof, at: XY, rad: number, aboveM = 4, gaps = 0): RoofRaster {
   const { width: W, height: H, pixelSizeM: s } = roof.raster;
   const dsm = Float32Array.from(roof.raster.dsm);
   const mask = Uint8Array.from(roof.raster.mask);
@@ -23,19 +27,33 @@ function withCrown(roof: SyntheticRoof, at: XY, rad: number, aboveM = 4): RoofRa
       if (d > rad) continue;
       const z = 3 + aboveM - (d * d) / (rad * 1.5) + 0.25 * Math.sin(x * 7.3) * Math.cos(y * 6.1);
       const i = r * W + col;
+      // Google's mask leaves the crown out, gaps and all (its segmentation is coarser than the leaves).
+      if (z > dsm[i]!) mask[i] = 0;
+      if (cellHash(col, r) < gaps) continue;
       if (z > dsm[i]!) {
         dsm[i] = z;
         green[i] = 1;
-        // Google's mask leaves the crown out.
-        mask[i] = 0;
       }
     }
   }
   return { width: W, height: H, pixelSizeM: s, dsm, mask, green };
 }
 
-const run = (raster: RoofRaster, roof: SyntheticRoof, on: boolean): LocalRoof => {
-  const out = reconstructRoof(raster, roof.point, on ? { hiddenEdge: { method: 'planes' } } : {});
+/** A fixed pseudo-random number in [0, 1) per cell (no seeded generator needed; the same on every run). */
+function cellHash(cx: number, cy: number): number {
+  let h = (Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/**
+ * Hypothesis mode: every plane line taken (minDeepSeenShare 0), as if the roof under a dense crown were known to be
+ * there. It tests the eave-line geometry itself; the default refuses such moves ('unconfirmed', below).
+ */
+const HYPOTHESIS: Partial<OutlinePlanesParams> = { minDeepSeenShare: 0 };
+
+const run = (raster: RoofRaster, roof: SyntheticRoof, on: boolean | Partial<OutlinePlanesParams>): LocalRoof => {
+  const out = reconstructRoof(raster, roof.point, on === false ? {} : { hiddenEdge: { method: 'planes', ...(on === true ? {} : { planes: on }) } });
   expect(out).not.toBeNull();
   return out!;
 };
@@ -99,11 +117,15 @@ describe('hidden eaves from the planes (synthetic crowns over eaves)', () => {
   for (const px of [0.1, 0.25]) {
     for (const turnDeg of [0, 23]) {
       for (const c of crowns) {
-        it(`hip, crown over the ${c.name}, ${px} m pixels, turned ${turnDeg} deg: the hidden eave is put back`, () => {
+        it(`hip, dense crown over the ${c.name}, ${px} m pixels, turned ${turnDeg} deg: refused by default; as a hypothesis the eave line is right`, () => {
           const roof = synthesize(hipShape(L, W, 6), { pixelM: px, turnDeg, trees: 0, noiseM: 0.02, seed: 5 });
           const raster = withCrown(roof, c.at, c.rad);
           const off = run(raster, roof, false);
-          const on = run(raster, roof, true);
+          // A dense crown hides whether roof or a notch is under it: by default the move is refused and said so.
+          const safe = run(raster, roof, true);
+          expect(safe.hiddenEdge?.declined.unconfirmed ?? 0).toBeGreaterThan(0);
+          expect(safe.outline).toEqual(off.outline);
+          const on = run(raster, roof, HYPOTHESIS);
           const truth = hiddenTruth(roof, L, W, c.at, c.rad - 0.3);
           // Reproduces the problem: without the step the outline stops short where the crown stands.
           expect(worst(truth, off.outline)).toBeGreaterThan(0.8);
@@ -118,12 +140,26 @@ describe('hidden eaves from the planes (synthetic crowns over eaves)', () => {
     }
   }
 
+  for (const turnDeg of [0, 23]) {
+    it(`hip, sparse crown over the long eave (roof seen through 40 % of it), 0.1 m pixels, turned ${turnDeg} deg: put back by default`, () => {
+      const roof = synthesize(hipShape(L, W, 6), { pixelM: 0.1, turnDeg, trees: 0, noiseM: 0.02, seed: 5 });
+      const raster = withCrown(roof, crowns[0]!.at, crowns[0]!.rad, 4, 0.4);
+      const off = run(raster, roof, false);
+      const on = run(raster, roof, true);
+      const truth = hiddenTruth(roof, L, W, crowns[0]!.at, crowns[0]!.rad - 0.3);
+      expect(worst(truth, off.outline)).toBeGreaterThan(0.8);
+      expect(on.hiddenEdge?.pieces ?? 0).toBeGreaterThan(0);
+      expect(worst(truth, on.outline)).toBeLessThan(0.5);
+      expect(Math.abs(area(on.outline) - L * W) / (L * W)).toBeLessThan(0.03);
+    });
+  }
+
   it('gable, crown over an eave: put back; the rake is not touched', () => {
     const roof = synthesize(gableShape(14, 9, 7), { pixelM: 0.1, turnDeg: 11, trees: 0, noiseM: 0.02, seed: 3 });
     const at = { x: -2, y: 9 / 2 + 0.4 };
     const raster = withCrown(roof, at, 2.5);
     const off = run(raster, roof, false);
-    const on = run(raster, roof, true);
+    const on = run(raster, roof, HYPOTHESIS);
     const truth = hiddenTruth(roof, 14, 9, at, 2.2);
     expect(worst(truth, off.outline)).toBeGreaterThan(0.8);
     expect(worst(truth, on.outline)).toBeLessThan(0.5);
@@ -144,13 +180,15 @@ describe('hidden eaves from the planes (synthetic crowns over eaves)', () => {
       const off = reconstructRoof(roof.raster, roof.point, {})!;
       const on = reconstructRoof(roof.raster, roof.point, { hiddenEdge: { method: 'planes' } })!;
       expect(on.hiddenEdge?.pieces).toBe(0);
-      expect(JSON.stringify({ ...on, hiddenEdge: undefined })).toBe(JSON.stringify(off));
+      expect(on.inferred).toEqual({ methods: ['planes'], edges: [], addedM2: 0, removedM2: 0 });
+      expect(JSON.stringify({ ...on, hiddenEdge: undefined, inferred: undefined })).toBe(JSON.stringify(off));
     }
   });
 
   it('is deterministic: the same input gives byte-identical output', () => {
     const roof = synthesize(hipShape(L, W, 6), { pixelM: 0.1, turnDeg: 23, trees: 0, noiseM: 0.02, seed: 5 });
     const raster = withCrown(roof, crowns[2]!.at, 2.6);
+    expect(JSON.stringify(run(raster, roof, HYPOTHESIS))).toBe(JSON.stringify(run(raster, roof, HYPOTHESIS)));
     expect(JSON.stringify(run(raster, roof, true))).toBe(JSON.stringify(run(raster, roof, true)));
   });
 
@@ -163,7 +201,7 @@ describe('hidden eaves from the planes (synthetic crowns over eaves)', () => {
       [0.25, 37],
     ] as const) {
       const roof = synthesize(hipShape(L, W, 6), { pixelM: px, turnDeg, trees: 0, noiseM: 0.02, seed: 5 });
-      areas.push(area(run(withCrown(roof, crowns[0]!.at, 2.6), roof, true).outline));
+      areas.push(area(run(withCrown(roof, crowns[0]!.at, 2.6), roof, HYPOTHESIS).outline));
     }
     for (const a of areas) expect(Math.abs(a - areas[0]!) / areas[0]!).toBeLessThan(0.03);
   });
@@ -215,9 +253,9 @@ describe('hidden-edge combinations (photo+planes, planes+photo)', () => {
       // The hip of the tests above (16 x 10 m at 6/12) with a crown over the middle of a long eave.
       const roof = synthesize(hipShape(16, 10, 6), { pixelM: px, trees: 0, noiseM: 0.02, seed: 5 });
       const raster = withCrown(roof, { x: 1, y: -5.5 }, 2.6);
-      const planes = reconstructRoof(raster, roof.point, { hiddenEdge: { method: 'planes' } })!;
+      const planes = reconstructRoof(raster, roof.point, { hiddenEdge: { method: 'planes', planes: HYPOTHESIS } })!;
       for (const method of ['photo+planes', 'planes+photo'] as const) {
-        const both = reconstructRoof(raster, roof.point, { hiddenEdge: { method } })!;
+        const both = reconstructRoof(raster, roof.point, { hiddenEdge: { method, planes: HYPOTHESIS } })!;
         expect(both.hiddenEdges?.declined).toBe('no-photo');
         expect(planes.hiddenEdge?.pieces ?? 0).toBeGreaterThan(0);
         expect(both.outline).toEqual(planes.outline);

@@ -30,8 +30,10 @@ export function hiddenEdges(roof3d: Roof3d | null | undefined, ring: Ring | null
   const edges = roof3d?.edges;
   if (roof3d == null || edges === undefined || ring == null || ring.length < 3 || !sameOutline(ring, roof3d)) return [];
   const n = roof3d.outline.length;
+  // Edges the hidden-edge step inferred are drawn dashed whatever the heights say about them (they were not measured).
+  const inferred = new Set((roof3d.inferredEdges?.edges ?? []).filter((e) => e.lengthFt >= MIN_EDGE_FT).map((e) => e.from));
   return edges
-    .filter((e) => e.support === 'none' && e.unverifiedShare >= MIN_UNVERIFIED_SHARE && e.lengthFt >= MIN_EDGE_FT && e.from >= 0 && e.from < n)
+    .filter((e) => (inferred.has(e.from) || (e.support === 'none' && e.unverifiedShare >= MIN_UNVERIFIED_SHARE && e.lengthFt >= MIN_EDGE_FT)) && e.from >= 0 && e.from < n)
     .map((e) => ({ coords: [roof3d.outline[e.from]!, roof3d.outline[(e.from + 1) % n]!], lengthFt: e.lengthFt, reason: e.reason }));
 }
 
@@ -44,7 +46,7 @@ export function edgeCueText(edges: readonly HiddenEdge[], roof3d?: Roof3d | null
   const total = edges.reduce((t, e) => t + e.lengthFt, 0);
   if (roof3d != null) {
     const perimeter = (roof3d.edges ?? []).reduce((t, e) => t + e.lengthFt, 0);
-    const flagged = roof3d.quality?.reasons.includes('edges-unverified') === true;
+    const flagged = roof3d.quality?.reasons.some((r) => r === 'edges-unverified' || r === 'roof-inferred') === true;
     if (!flagged && !(perimeter > 0 && total >= CUE_MIN_SHARE * perimeter)) return null;
   }
   const trees = edges.filter((e) => e.reason === 'crown').reduce((t, e) => t + e.lengthFt, 0);

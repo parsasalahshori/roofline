@@ -349,6 +349,23 @@ describe('unverified outline edges (dashed, with a one-line cue)', () => {
     expect(edgeCueText(hiddenEdges(treed, ring), treed)).toBe(liftMeasure.edgeHidden.crown);
   });
 
+  it("edges the hidden-edge step inferred are dashed whatever the heights say, and its review reason reads on the card", () => {
+    // Edge 2 reads 'strong' in the heights but was put there by inference: it is drawn dashed all the same.
+    const inferred = {
+      ...base,
+      edges: [edge(0, 'strong', null, 100), edge(1, 'strong', null, 100), edge(2, 'strong', null, 100), edge(3, 'strong', null, 100)],
+      inferredEdges: { methods: ['planes' as const], edges: [{ from: 2, method: 'planes' as const, lengthFt: 40, offsetFt: 5 }], addedSqFt: 120, removedSqFt: 0 },
+      quality: { imagery: 'HIGH', outlineIoU: 1, edgeFit: 1, faceCoverage: 1, meanResidualM: 0, treeShare: 0, fallbackFaces: 0, reasons: ['roof-inferred' as const] },
+    };
+    expect(hiddenEdges(inferred, ring)).toEqual([{ coords: [ring[2], ring[3]], lengthFt: 100, reason: null }]);
+    // Reviewed for inferred roof: the card line shows even though one dash is a small share of the outline.
+    expect(edgeCueText(hiddenEdges(inferred, ring), inferred)).toBe(liftMeasure.edgeHidden.other);
+    // An inferred stretch under 2 m is not drawn on its own; a roof without the record is as before.
+    const tiny = { ...inferred, inferredEdges: { ...inferred.inferredEdges, edges: [{ from: 2, method: 'planes' as const, lengthFt: 3, offsetFt: 1 }] } };
+    expect(hiddenEdges(tiny, ring)).toEqual([]);
+    expect(liftMeasure.reviewReason['roof-inferred']).toMatch(/filled in/);
+  });
+
   it('the card says it in one line; a clean roof and an older roof say nothing', () => {
     const numbers = cardNumbers(view(), view().estimate, gableRoof(ring as [number, number][]), null);
     const card = (m: MeasurementView) => <MeasureCard m={m} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />;
@@ -361,6 +378,8 @@ describe('unverified outline edges (dashed, with a one-line cue)', () => {
     expect(screen.getByText(liftMeasure.reviewReason['differs-from-google'])).toBeTruthy();
     rerender(card(view({ pitchSource: 'solar-3d', roof3d: treed, needsReview: { reasons: ['edges-unverified'] } })));
     expect(screen.getByText(liftMeasure.reviewReason['edges-unverified'])).toBeTruthy();
+    rerender(card(view({ pitchSource: 'solar-3d', roof3d: treed, needsReview: { reasons: ['roof-inferred'] } })));
+    expect(screen.getByText(liftMeasure.reviewReason['roof-inferred'])).toBeTruthy();
   });
 
   it('draws the dashed layer on the map, updates it, and hides it', () => {

@@ -20,7 +20,7 @@
 // Coordinates: raster-local metres (x east from the grid's left edge, y north from its top edge, so y <= 0); pixel
 // (col, row) has its centre at ((col + 0.5) s, -(row + 0.5) s).
 import { eaveSupport, type EaveSample } from './eave-support.ts';
-import { dist, intersectLines, type Line, pointInRing, selfIntersects, signedArea, type XY } from './geom.ts';
+import { dist, intersectLines, type Line, nearestOnSegment, pointInRing, selfIntersects, signedArea, type XY } from './geom.ts';
 import type { Plane } from './planes.ts';
 
 export type OutlinePlanesParams = {
@@ -64,6 +64,16 @@ export type OutlinePlanesParams = {
   creaseTolM: number;
   /** Hidden pieces that are no face's eave, at most this long in all, may be dropped for a corner (a chamfer), metres. */
   chamferMaxM: number;
+  /**
+   * Roof added farther than overhangM outside the old outline is a hypothesis, not a measurement: from the heights a
+   * dense crown over a real eave and a dense crown standing in a notch of the eave are the same scene (the notch's inner
+   * eave lies on the same plane, higher up). A move adding at least maxUnconfirmedM2 out there is refused ('unconfirmed')
+   * unless at least minDeepSeenShare of that area shows the face's plane through the leaves (heights within onPlaneM of
+   * it). minDeepSeenShare 0 turns the check off (development: every plane line is taken as a hypothesis).
+   */
+  overhangM: number;
+  maxUnconfirmedM2: number;
+  minDeepSeenShare: number;
   /** The outline's area may change by at most this share. */
   maxAreaChange: number;
   /** A rebuilt corner may lie at most this far from the nearest old corner, metres. */
@@ -96,6 +106,9 @@ export const DEFAULT_OUTLINE_PLANES: OutlinePlanesParams = {
   onPlaneM: 0.15,
   creaseTolM: 0.3,
   chamferMaxM: 4,
+  overhangM: 1,
+  maxUnconfirmedM2: 0.5,
+  minDeepSeenShare: 0.25,
   maxAreaChange: 0.25,
   maxCornerMoveM: 4,
 };
@@ -113,6 +126,7 @@ export type PlanesDecline =
   | 'yard-visible'
   | 'other-building'
   | 'roof-visible'
+  | 'unconfirmed'
   | 'no-corner'
   | 'self-intersects'
   | 'large-change';
@@ -129,6 +143,7 @@ export const PLANES_DECLINES = [
   'yard-visible',
   'other-building',
   'roof-visible',
+  'unconfirmed',
   'no-corner',
   'self-intersects',
   'large-change',
@@ -165,6 +180,9 @@ export type PlanesPiece = {
   normalDeg?: number;
   minOffsetM?: number;
   maxOffsetM?: number;
+  /** Area the move adds farther than overhangM outside the old outline (m2), and the share of it whose heights lie on the face's plane. */
+  deepM2?: number;
+  deepSeenShare?: number;
   outcome: PlanesDecline | 'replaced';
 };
 
@@ -376,6 +394,14 @@ export function inferHiddenEaves(input: PlanesInput, params: Partial<OutlinePlan
     let other = 0;
     let removed = 0;
     let onPlane = 0;
+    // Added pixels farther than overhangM outside the old outline, and those of them whose height lies on the plane.
+    let deep = 0;
+    let deepSeen = 0;
+    const fromOld = (q: XY) => {
+      let d = Infinity;
+      for (let k = 0; k + 1 < old.length; k++) d = Math.min(d, nearestOnSegment(q, old[k]!, old[k + 1]!).d);
+      return d;
+    };
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
         const q = { x: (c + 0.5) * s, y: -(r + 0.5) * s };
@@ -391,13 +417,17 @@ export function inferHiddenEaves(input: PlanesInput, params: Partial<OutlinePlan
           added++;
           if (input.other !== null && input.other[i] === 1) other++;
           if (Number.isFinite(z) && z < zp - p.yardDropM) ground++;
+          if (fromOld(q) > p.overhangM) {
+            deep++;
+            if (Number.isFinite(z) && Math.abs(z - zp) <= p.onPlaneM) deepSeen++;
+          }
         } else {
           removed++;
           if (Number.isFinite(z) && Math.abs(z - zp) <= p.onPlaneM) onPlane++;
         }
       }
     }
-    return { added, ground: added > 0 ? ground / added : 0, other, removed, onPlane: removed > 0 ? onPlane / removed : 0 };
+    return { added, ground: added > 0 ? ground / added : 0, other, removed, onPlane: removed > 0 ? onPlane / removed : 0, deep, deepSeen: deep > 0 ? deepSeen / deep : 0 };
   };
 
   // 3. Each piece: its face's eave line, if it passes every gate.
@@ -481,6 +511,8 @@ export function inferHiddenEaves(input: PlanesInput, params: Partial<OutlinePlan
     }
     const us = corners.map((q) => (q.x - line.p.x) * line.d.x + (q.y - line.p.y) * line.d.y);
     const sw = sweep(line, down, Math.min(...us), Math.max(...us), pl, corners);
+    rep.deepM2 = r3(sw.deep * s * s);
+    rep.deepSeenShare = r3(sw.deepSeen);
     if (sw.other > 0) {
       no('other-building');
       continue;
@@ -491,6 +523,10 @@ export function inferHiddenEaves(input: PlanesInput, params: Partial<OutlinePlan
     }
     if (sw.removed * s * s >= 0.5 && sw.onPlane > p.onPlaneShare) {
       no('roof-visible');
+      continue;
+    }
+    if (p.minDeepSeenShare > 0 && sw.deep * s * s >= p.maxUnconfirmedM2 && sw.deepSeen < p.minDeepSeenShare) {
+      no('unconfirmed');
       continue;
     }
     proposals.push({ piece: pc, line, report: rep });
@@ -614,6 +650,8 @@ export function inferHiddenEaves(input: PlanesInput, params: Partial<OutlinePlan
       const ys = poly.map((q) => q.y);
       let added = 0;
       let ground = 0;
+      let deep = 0;
+      let deepSeen = 0;
       for (let r = Math.max(0, Math.floor(-Math.max(...ys) / s)); r <= Math.min(g.h - 1, Math.floor(-Math.min(...ys) / s)); r++) {
         for (let c = Math.max(0, Math.floor(Math.min(...xs) / s)); c <= Math.min(g.w - 1, Math.floor(Math.max(...xs) / s)); c++) {
           const q = { x: (c + 0.5) * s, y: -(r + 0.5) * s };
@@ -623,9 +661,17 @@ export function inferHiddenEaves(input: PlanesInput, params: Partial<OutlinePlan
           added++;
           const z = dsm[i]!;
           if (Number.isFinite(z) && z < planeZ(lower, q.x, q.y) - p.yardDropM) ground++;
+          let near = Infinity;
+          for (let k = 0; k + 1 < d.chain.length; k++) near = Math.min(near, nearestOnSegment(q, d.chain[k]!, d.chain[k + 1]!).d);
+          if (near > p.overhangM) {
+            deep++;
+            // Either face's plane seen through the leaves (the corner is on their crease).
+            if (Number.isFinite(z) && Math.min(Math.abs(z - planeZ(planes[d.a]!, q.x, q.y)), Math.abs(z - planeZ(planes[d.b]!, q.x, q.y))) <= p.onPlaneM) deepSeen++;
+          }
         }
       }
       if (added > 0 && ground / added > p.yardShare) return 'yard-visible';
+      if (p.minDeepSeenShare > 0 && deep * s * s >= p.maxUnconfirmedM2 && deepSeen < p.minDeepSeenShare * deep) return 'unconfirmed';
     }
     return null;
   };
@@ -636,9 +682,10 @@ export function inferHiddenEaves(input: PlanesInput, params: Partial<OutlinePlan
   for (const c of order) {
     const why = sound(build([...accepted, c]));
     if (why !== null) {
-      // A chamfer that cannot be dropped stays declined as not-eave (counted already; its own report says why).
+      // A chamfer that cannot be dropped stays declined as not-eave (counted already; its own report says why), except
+      // that a refusal for want of evidence is counted too: it is the one a reviewer needs to see.
       c.report.outcome = why;
-      if (c.members === undefined) declined[why] = (declined[why] ?? 0) + 1;
+      if (c.members === undefined || why === 'unconfirmed') declined[why] = (declined[why] ?? 0) + 1;
       continue;
     }
     accepted.push(c);

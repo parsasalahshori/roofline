@@ -243,21 +243,22 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
 }
 
 /**
- * The hidden-edge step the server runs (ROOF_3D_ALGORITHM_VERSION 4, docs/roof-3d/outline-release-notes.md): edges the
- * heights cannot vouch for are first checked against the photo (moved only where it shows the roof's end clearly), then
- * hidden eaves are put on their face's plane at the eave height its visible eaves show. Chosen on the held-out split
- * against lidar and EagleView truth; `hiddenEdge: null` turns it off.
+ * The hidden-edge step the server runs by default: none (ROOF_3D_ALGORITHM_VERSION 5, docs/roof-3d/outline-remediate.md).
+ * Version 4 ran photo+planes by default; review found its held-out gain rests on one or two houses, DEV (where it was
+ * tuned) did not improve, and roof it adds under a dense crown cannot be told from a notch filled in. The methods stay
+ * available through RoofOnLayersOptions.hiddenEdge (the benchmark's ROOF3D_HIDDEN_EDGE) for development; turning one on
+ * by default is the owner's decision on fresh verification houses, and bumps ROOF_3D_ALGORITHM_VERSION.
  */
-export const DEFAULT_HIDDEN_EDGE: HiddenEdgeOption = { method: 'photo+planes' };
+export const DEFAULT_HIDDEN_EDGE: Readonly<HiddenEdgeOption> | null = null;
 
 export type RoofOnLayersOptions = {
   steep?: boolean;
   building?: SolarBuilding | null;
   seed?: number;
   /**
-   * Hidden edges re-estimated (reconstructRoof's hiddenEdge). Absent: the server's default, DEFAULT_HIDDEN_EDGE; null:
-   * off (the reconstruction before ROOF_3D_ALGORITHM_VERSION 4). A method with 'photo' reads the layers' photo. The
-   * benchmark sets it to compare methods.
+   * Hidden edges re-estimated (reconstructRoof's hiddenEdge). Absent: the server's default, DEFAULT_HIDDEN_EDGE (off);
+   * null: off. A method with 'photo' reads the layers' photo. The benchmark sets it to compare methods. Detached
+   * structures on the same layers get the same option, so every roof of one answer is made the same way.
    */
   hiddenEdge?: HiddenEdgeOption | null;
   /** Leaf-off lidar for the hidden-edge step (outline-lidar.ts); off when absent. Development only for now. */
@@ -344,7 +345,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   };
   const lidarCloud = o.lidar != null ? lidarOnLayers(layers, o.lidar) : null;
   const local = reconstructRoof(raster, toPixel(point), {
-    ...(hiddenEdge !== null ? { hiddenEdge } : {}),
+    ...(hiddenEdge !== null ? { hiddenEdge: { ...hiddenEdge } as HiddenEdgeOption } : {}),
     imageryQuality: layers.imageryQuality,
     // The benchmark (roof3d:bench) runs seeds 7, 8 and 9 to show the result does not hang on the random sample; the
     // server never sets it (the reconstruction's own default seed, 7, applies).
@@ -362,7 +363,12 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   // Detached garages, sheds and carports on the same layers: offered beside the main roof, not added to it.
   const structures: Roof3dStructure[] = [];
   for (const other of otherRoofParts(raster, local)) {
-    const found = reconstructRoof(raster, other.at, { imageryQuality: layers.imageryQuality, maxPointDistM: 1, ...(o.seed !== undefined ? { seed: o.seed } : {}) });
+    const found = reconstructRoof(raster, other.at, {
+      imageryQuality: layers.imageryQuality,
+      maxPointDistM: 1,
+      ...(o.seed !== undefined ? { seed: o.seed } : {}),
+      ...(hiddenEdge !== null ? { hiddenEdge: { ...hiddenEdge } as HiddenEdgeOption } : {}),
+    });
     if (found === null || found.clipped || found.faces.length === 0) continue;
     const r = toRoof3d(found, toLngLat, meta);
     if (r.quality !== undefined && (r.quality.outlineIoU < 0.6 || r.quality.faceCoverage < 0.6)) continue;

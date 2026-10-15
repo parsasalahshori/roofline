@@ -52,12 +52,16 @@ export type RoofRaster = {
   rgb?: Uint8Array | null;
 };
 
-/** How outline edges the height map cannot verify (eave support 'none') are re-estimated. Off by default. */
-export type HiddenEdgeOption =
+/**
+ * How outline edges the height map cannot verify (eave support 'none') are re-estimated. Off by default. `limits`
+ * overrides HIDDEN_EDGE_LIMITS (the steps' combined change).
+ */
+export type HiddenEdgeOption = { limits?: Partial<HiddenEdgeLimits> } & (
   | { method: 'planes'; planes?: Partial<OutlinePlanesParams> }
   | { method: 'photo'; photo?: Partial<PhotoEdgeParams> }
   /** Both, in this order: the second step reads the outline the first one left (development: combinations). */
-  | { method: 'photo+planes' | 'planes+photo'; planes?: Partial<OutlinePlanesParams>; photo?: Partial<PhotoEdgeParams> };
+  | { method: 'photo+planes' | 'planes+photo'; planes?: Partial<OutlinePlanesParams>; photo?: Partial<PhotoEdgeParams> }
+);
 
 /** The hidden-edge steps an option runs, in order. */
 function hiddenEdgeSteps(o: HiddenEdgeOption | undefined): ('planes' | 'photo')[] {
@@ -160,10 +164,30 @@ export type LocalRoof = {
    * edge, and the moved stretches of the final outline (raster-local metres): inferred from the photo, not seen in the
    * heights. `declined` is set when the step could not run at all.
    */
-  hiddenEdges?: { method: 'photo'; edges: PhotoEdge[]; moved: { a: XY; b: XY; offsetM: number }[]; declined?: 'no-photo' | 'bad-raster' | 'bad-outline' };
+  hiddenEdges?: { method: 'photo'; edges: PhotoEdge[]; moved: { a: XY; b: XY; offsetM: number }[]; declined?: 'no-photo' | 'bad-raster' | 'bad-outline' | 'error' };
+  /**
+   * What the hidden-edge steps put into the outline that the heights did not show (only when ReconstructOptions.hiddenEdge
+   * is set): every final outline edge with a stretch off the outline the steps started from (`from` indexes `outline`;
+   * the step that put it there; its inferred length and how far it lies from the old outline, metres), and the plan area
+   * the steps added and removed (square metres). `undone`: the steps' combined change broke a limit (or a step threw)
+   * and the outline was put back as the heights drew it.
+   */
+  inferred?: { methods: ('photo' | 'planes')[]; edges: InferredEdge[]; addedM2: number; removedM2: number; undone?: 'large-change' };
   /** What the lidar hidden-edge step did (ReconstructOptions.lidar), absent when it was not asked for. */
   lidarEdges?: LidarEdgeReport;
 };
+
+/** An outline edge (`from`: its first corner's index) that a hidden-edge step put where the heights did not show it. */
+export type InferredEdge = { from: number; method: 'photo' | 'planes'; lengthM: number; offsetM: number };
+
+/**
+ * The hidden-edge steps together may change the outline by at most this: each step caps its own change (25 % of the
+ * area it is given, its corners 4-4.5 m), and two steps in a row could otherwise compound to 1.56x. 15 % of the area
+ * is half again the benchmark's "bad" area line (10 %): past it the roof's size rests on inference more than on the
+ * heights. 4.5 m is the farthest any one step may put an edge (outline-planes.ts maxEndOffsetM).
+ */
+export type HiddenEdgeLimits = { maxAreaChange: number; maxCornerMoveM: number };
+export const HIDDEN_EDGE_LIMITS: Readonly<HiddenEdgeLimits> = { maxAreaChange: 0.15, maxCornerMoveM: 4.5 };
 
 const FLAT_X12 = 2;
 /** A mask part with more than this share of its pixels over JOINED_NEAR_M outside the building's box is joined. */
@@ -396,6 +420,10 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   let lidarEdges: LidarEdgeReport | undefined;
   const cleanupPrm: FaceCleanupParams = { ...DEFAULT_FACE_CLEANUP, ...opts.faces };
   let photoOut: LocalRoof['hiddenEdges'];
+  const steps = hiddenEdgeSteps(opts.hiddenEdge);
+  // The outline before the hidden-edge steps and after each (set in step 3b on every pass), and whether they were undone.
+  let stepRings: XY[][];
+  let undone: 'large-change' | undefined;
   // Steps 3 and 4 run once, or twice when the completed roof is undone (its state restored, completion off).
   for (;;) {
     // 3. The outline, squared.
@@ -413,20 +441,41 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       opts.debug?.(`lidar edges: ${done.report.applied ? `moved ${done.report.moved?.length ?? 0}` : `declined (${done.report.reason})`}`);
     }
 
-    // 3b. Hidden edges, by the methods the option names, in order (hiddenEdgeSteps).
-    for (const step of hiddenEdgeSteps(opts.hiddenEdge)) {
+    // 3b. Hidden edges, by the methods the option names, in order (hiddenEdgeSteps). The outline before them and after
+    //     each one is kept in whole-raster metres (the photo step may pad the crop) for the record of what was inferred.
+    const toWhole = (q: XY): XY => ({ x: q.x + c0 * s, y: q.y - r0 * s });
+    stepRings = steps.length > 0 ? [outline.map(toWhole)] : [];
+    undone = undefined;
+    for (const step of steps) {
       // 3b. Hidden eaves from the planes (outline-planes.ts): only edges the heights cannot vouch for move.
       if (step === 'planes') {
         const prm = opts.hiddenEdge !== undefined && 'planes' in opts.hiddenEdge ? opts.hiddenEdge.planes : undefined;
         hiddenOut = hiddenEdgeStep(raster, labels, part, { c0, r0, c1, r1, g }, s, faces.labels, planes, outline, joined, prm, opts.debug);
-        outline = hiddenOut.outline;
+        if (hiddenOut.summary.pieces > 0) {
+          outline = hiddenOut.outline;
+          // A move can reach past the crop (3-4.5 m out against a pad of a few pixels): the crop is padded as for the
+          // photo step, and a roof that then reaches the layers' edge is clipped.
+          const padded = padCropTo(raster, { c0, r0, g }, outline, { dsm, roof, googleMask, tree, labels: faces.labels, planes });
+          if (padded !== null) {
+            ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, planes } = padded);
+            faces = { labels: padded.labels, planes };
+            outline = padded.outline;
+            clipped = clipped || c0 <= 0 || r0 <= 0 || c1 >= W - 1 || r1 >= H - 1;
+          }
+        }
         opts.debug?.(`hidden edges (planes): ${hiddenOut.summary.pieces} pieces, ${hiddenOut.summary.inferredM.toFixed(1)} m inferred; declined ${JSON.stringify(hiddenOut.summary.declined)}${hiddenOut.summary.skipped !== undefined ? `; skipped: ${hiddenOut.summary.skipped}` : ''}`);
       }
       // 3b. Hidden edges from the photo (off by default). Only the outline polygon changes; when it reaches past the
       //     crop, the crop is padded (the new pixels belong to no face) so topology can draw it.
       if (step === 'photo') {
         const prm = opts.hiddenEdge !== undefined && 'photo' in opts.hiddenEdge ? opts.hiddenEdge.photo : undefined;
-        const done = hiddenEdgesFromPhoto(raster, { c0, r0, g }, roof, outline, { ...DEFAULT_PHOTO_EDGE, ...prm });
+        // Never throws into the request: an exception keeps the outline as it was, with the reason (as the planes step).
+        let done: ReturnType<typeof hiddenEdgesFromPhoto>;
+        try {
+          done = hiddenEdgesFromPhoto(raster, { c0, r0, g }, roof, outline, { ...DEFAULT_PHOTO_EDGE, ...prm });
+        } catch {
+          done = { outline: null, record: { method: 'photo', edges: [], moved: [], declined: 'error' } };
+        }
         photoOut = done.record;
         if (done.outline !== null) {
           outline = done.outline;
@@ -443,6 +492,14 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
           }
         }
       }
+      stepRings.push(outline.map((q) => ({ x: q.x + c0 * s, y: q.y - r0 * s })));
+    }
+    // The steps together: a combined change past HIDDEN_EDGE_LIMITS puts the outline back as the heights drew it.
+    if (stepRings.length > 1 && !combinedChangeOk(stepRings[0]!, stepRings.at(-1)!, { ...HIDDEN_EDGE_LIMITS, ...opts.hiddenEdge?.limits })) {
+      outline = stepRings[0]!.map((q) => ({ x: q.x - c0 * s, y: q.y + r0 * s }));
+      stepRings.push(stepRings[0]!);
+      undone = 'large-change';
+      opts.debug?.('hidden edges: combined change too large, outline put back');
     }
 
     // 4. Topology. A face whose polygon comes out under the smallest face size (its corners pulled in by its
@@ -523,6 +580,12 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   if (crownEdge >= QUALITY_LIMITS.crownEdgeShare || hidden >= QUALITY_LIMITS.hiddenShare) quality.reasons.push('roof-hidden');
   // A flat part at the outline no higher than the eaves of the roof it adjoins: a porch roof, a patio cover or a deck.
   if (lowAttachment(g, s, dsm, roof, faces.labels, planes, outlineArea)) quality.reasons.push('low-attachment');
+  // Roof the hidden-edge steps put in or took out without the heights showing it: priced only after a person checks it.
+  const inferred = steps.length > 0 && stepRings.length > 0 ? inferredOf(stepRings, steps, s, undone) : undefined;
+  if (inferred !== undefined) {
+    const changed = inferred.addedM2 + inferred.removedM2;
+    if (changed >= QUALITY_LIMITS.inferredM2 || changed >= QUALITY_LIMITS.inferredShare * outlineArea) quality.reasons.push('roof-inferred');
+  }
 
   // Shift from the crop back to the whole raster.
   const ox = c0 * s;
@@ -566,7 +629,86 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     ...(canopyOut !== undefined ? { canopy: { ...canopyOut, occluded: canopyOut.occluded.map(shift) } } : {}),
     ...(hiddenOut !== undefined ? { hiddenEdge: hiddenOut.summary } : {}),
     ...(photoOut !== undefined ? { hiddenEdges: { ...photoOut, moved: photoOut.moved.map((m) => ({ a: shift(m.a), b: shift(m.b), offsetM: m.offsetM })) } } : {}),
+    ...(inferred !== undefined ? { inferred } : {}),
   };
+}
+
+/** Whether `fin` stays within `lim` of `pre` (both rings, the same metres): area change and every corner's distance to `pre`'s corners. */
+export function combinedChangeOk(pre: readonly XY[], fin: readonly XY[], lim: HiddenEdgeLimits): boolean {
+  const a0 = Math.abs(signedArea(pre));
+  if (!(a0 > 0) || fin.length < 3) return false;
+  if (Math.abs(Math.abs(signedArea(fin)) - a0) > lim.maxAreaChange * a0) return false;
+  for (const q of fin) {
+    let near = Infinity;
+    for (const o of pre) near = Math.min(near, dist(q, o));
+    if (!(near <= lim.maxCornerMoveM + 1e-9)) return false;
+  }
+  return true;
+}
+
+/** Cell of the grid the inferred area is counted on, metres. */
+const AREA_GRID_M = 0.05;
+
+function distToRing(q: XY, ring: readonly XY[]): number {
+  let d = Infinity;
+  for (let k = 0; k < ring.length; k++) d = Math.min(d, nearestOnSegment(q, ring[k]!, ring[(k + 1) % ring.length]!).d);
+  return d;
+}
+
+/**
+ * The record of what the hidden-edge steps inferred (LocalRoof.inferred). `rings`: the outline before the steps and
+ * after each one (whole-raster metres; the last is the final outline). A stretch of the final outline is inferred when
+ * it lies more than half a pixel (at least 5 cm) off the outline before the steps; it is put down to the step after
+ * which it first lay on the outline for good. Areas from the two outlines on a 5 cm grid (deterministic).
+ */
+export function inferredOf(rings: readonly (readonly XY[])[], steps: readonly ('photo' | 'planes')[], s: number, undone?: 'large-change'): NonNullable<LocalRoof['inferred']> {
+  const pre = rings[0]!;
+  const fin = rings.at(-1)!;
+  const tol = Math.max(0.05, s / 2);
+  const edges: InferredEdge[] = [];
+  for (let i = 0; i < fin.length; i++) {
+    const a = fin[i]!;
+    const b = fin[(i + 1) % fin.length]!;
+    const len = dist(a, b);
+    const n = Math.max(1, Math.ceil(len / s));
+    const by = { photo: 0, planes: 0 };
+    let off = 0;
+    for (let j = 0; j < n; j++) {
+      const t = (j + 0.5) / n;
+      const q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      const fromPre = distToRing(q, pre);
+      if (fromPre <= tol) continue;
+      let k = rings.length - 1;
+      while (k > 1 && distToRing(q, rings[k - 1]!) <= tol) k--;
+      by[steps[Math.min(k, steps.length) - 1]!]++;
+      off = Math.max(off, fromPre);
+    }
+    const count = by.photo + by.planes;
+    if (count === 0) continue;
+    edges.push({ from: i, method: by.planes >= by.photo ? 'planes' : 'photo', lengthM: round((len * count) / n, 2), offsetM: round(off, 2) });
+  }
+  let added = 0;
+  let removed = 0;
+  // A 5 cm grid (a pixel's grid miscounts the thin strips a move adds: 40 % off at 0.25 m in testing).
+  const g = AREA_GRID_M;
+  if (edges.length > 0) {
+    const xs = [...pre, ...fin].map((q) => q.x);
+    const ys = [...pre, ...fin].map((q) => q.y);
+    const x0 = Math.floor(Math.min(...xs) / g);
+    const x1 = Math.ceil(Math.max(...xs) / g);
+    const y0 = Math.floor(Math.min(...ys) / g);
+    const y1 = Math.ceil(Math.max(...ys) / g);
+    for (let yi = y0; yi < y1; yi++) {
+      for (let xi = x0; xi < x1; xi++) {
+        const q = { x: (xi + 0.5) * g, y: (yi + 0.5) * g };
+        const inFin = pointInRing(q, fin);
+        if (inFin === pointInRing(q, pre)) continue;
+        if (inFin) added++;
+        else removed++;
+      }
+    }
+  }
+  return { methods: [...steps], edges, addedM2: round(added * g * g, 2), removedM2: round(removed * g * g, 2), ...(undone !== undefined ? { undone } : {}) };
 }
 
 /**
@@ -1382,6 +1524,13 @@ export const QUALITY_LIMITS = {
   crownEdgeShare: 0.15,
   /** Raised smooth ground next to the roof in Google's box, at most this share of the roof (hiddenRoofShare). */
   hiddenShare: 0.12,
+  /**
+   * Plan area the hidden-edge steps added or removed without the heights showing it ('roof-inferred'): under 3 m2 (about
+   * a third of a roofing square) and under 2 % of the outline (the method's median area error against EagleView,
+   * outline-release-notes.md) it is within what the measurement can tell anyway; at either it is a review.
+   */
+  inferredM2: 3,
+  inferredShare: 0.02,
 } as const;
 
 /**
@@ -1590,6 +1739,17 @@ export function toRoof3d(
             ...(local.lidarEdges.reason !== undefined ? { reason: local.lidarEdges.reason } : {}),
             moved: (local.lidarEdges.applied ? (local.lidarEdges.moved ?? []) : []).map((m) => ({ offsetFt: round(m.offsetM * FT_PER_M, 2), lengthFt: round(m.lengthM * FT_PER_M, 1) })),
             areaChangeSqFt: round((local.lidarEdges.areaChangeM2 ?? 0) * SQ_FT_PER_SQ_M, 1),
+          },
+        }
+      : {}),
+    ...(local.inferred !== undefined
+      ? {
+          inferredEdges: {
+            methods: [...local.inferred.methods],
+            edges: local.inferred.edges.map((e) => ({ from: e.from, method: e.method, lengthFt: round(e.lengthM * FT_PER_M, 1), offsetFt: round(e.offsetM * FT_PER_M, 1) })),
+            addedSqFt: round(local.inferred.addedM2 * SQ_FT_PER_SQ_M, 1),
+            removedSqFt: round(local.inferred.removedM2 * SQ_FT_PER_SQ_M, 1),
+            ...(local.inferred.undone !== undefined ? { undone: local.inferred.undone } : {}),
           },
         }
       : {}),

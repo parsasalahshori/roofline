@@ -83,6 +83,26 @@ export type Roof3d = {
    * run. Moved edges stay unverified in `edges` (the height map still cannot see them); this says lidar placed them.
    */
   lidarEdges?: Roof3dLidarEdges;
+  /**
+   * What the hidden-edge step (roof-reconstruct's hiddenEdge option) put into the outline that the heights did not show:
+   * present only when the step ran (absent on every roof made with it off, and on older reconstructions). Inferred roof
+   * is a hypothesis; past a few square feet the roof carries the 'roof-inferred' review reason.
+   */
+  inferredEdges?: Roof3dInferredEdges;
+};
+
+/**
+ * The hidden-edge step's record on a stored roof: the methods that ran, each outline edge with an inferred stretch
+ * (`from` indexes `outline` as in Roof3dEdge; the method that put it there; the inferred length and its largest
+ * distance from the outline the heights drew, feet), and the plan area added and removed (square feet). `undone`: the
+ * steps' combined change was too large and the heights' outline was kept.
+ */
+export type Roof3dInferredEdges = {
+  methods: ('photo' | 'planes')[];
+  edges: { from: number; method: 'photo' | 'planes'; lengthFt: number; offsetFt: number }[];
+  addedSqFt: number;
+  removedSqFt: number;
+  undone?: 'large-change';
 };
 
 /**
@@ -166,6 +186,7 @@ export const ROOF_QUALITY_REASONS = [
   'roof-hidden',
   'low-attachment',
   'edges-unverified',
+  'roof-inferred',
 ] as const;
 export type RoofQualityReason = (typeof ROOF_QUALITY_REASONS)[number];
 
@@ -187,6 +208,8 @@ export const ROOF_QUALITY_SEVERITY: Record<RoofQualityReason, RoofQualitySeverit
   'roof-hidden': 'block',
   'low-attachment': 'check',
   'edges-unverified': 'block',
+  // Roof added (or taken off) under trees from the roof's planes or the photo, not seen in the heights: the area may be wrong.
+  'roof-inferred': 'block',
 };
 
 /** The outline's evidence in total (see Roof3dEdge): shares of its length, and its unverified length in feet. */
@@ -282,9 +305,11 @@ export const ROOF_3D_SNAPSHOT_SCHEMA = 2;
  * a face when candidates tie, foliage faces along crown-backed eaves dissolve, a Google difference with 5% of the area at
  * stake is a review, edge confidence calibrated on DEV only). 4: hidden edges (outline round, docs/roof-3d/
  * outline-release-notes.md): outline edges under tree crowns are checked against the photo and hidden eaves put on their
- * face's plane at the eave height (roofOnLayers' DEFAULT_HIDDEN_EDGE, photo+planes).
+ * face's plane at the eave height (roofOnLayers' DEFAULT_HIDDEN_EDGE, photo+planes). 5: that default turned off again
+ * (docs/roof-3d/outline-remediate.md): a roof is made as by version 3; 5 and not 3 so that roofs version 4 stored (with
+ * inferred roof priced as measured) read as stale, and no number ever means two reconstructions.
  */
-export const ROOF_3D_ALGORITHM_VERSION = 4;
+export const ROOF_3D_ALGORITHM_VERSION = 5;
 
 function versionField(value: unknown): number | null {
   if (value === undefined) return 1;
