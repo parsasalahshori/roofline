@@ -162,6 +162,12 @@ async function boundedGet(url: string, o: { timeoutMs: number; maxBytes: number;
     const res = await fetch(url, { method: o.method ?? 'GET', headers, signal: ctl.signal, redirect: 'error' });
     if (o.method === 'HEAD') return { ok: res.ok, headers: res.headers, body: new Uint8Array(0) };
     if (!res.ok) throw new UsgsLidarError('http', `USGS answered ${res.status}.`);
+    // A byte range must come back as that range (206 and a matching Content-Range): a 200 with the whole file, or the
+    // right number of bytes from another offset, would be stitched into a tile silently wrong.
+    if (o.range !== undefined) {
+      const cr = res.headers.get('content-range') ?? '';
+      if (res.status !== 206 || !cr.startsWith(`bytes ${o.range[0]}-${o.range[1]}/`)) throw new UsgsLidarError('bad-answer', 'USGS did not send the byte range asked for.');
+    }
     const declared = Number(res.headers.get('content-length') ?? NaN);
     if (Number.isFinite(declared) && declared > o.maxBytes) throw new UsgsLidarError('too-large', 'A lidar file is larger than allowed.');
     const reader = res.body?.getReader();
@@ -241,7 +247,9 @@ export class RealUsgsLidarApi implements UsgsLidarApi {
   async size(url: string, o: { timeoutMs: number }): Promise<number> {
     const res = await boundedGet(url, { timeoutMs: o.timeoutMs, maxBytes: 0, method: 'HEAD' });
     const n = Number(res.headers.get('content-length') ?? NaN);
-    if (!res.ok || !Number.isFinite(n) || n <= 0) throw new UsgsLidarError('bad-answer', 'USGS did not give the file size.');
+    // An HTML page (an error or maintenance page answered with 200) is not a point cloud, whatever its length.
+    const type = (res.headers.get('content-type') ?? '').toLowerCase();
+    if (!res.ok || !Number.isFinite(n) || n <= 0 || type.startsWith('text/')) throw new UsgsLidarError('bad-answer', 'USGS did not give the file size.');
     return n;
   }
 }
