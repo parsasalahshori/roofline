@@ -11,12 +11,12 @@ import { convexHull, rasterize } from './geometry.ts';
  * A pixel is TREE-LIKE when it is green in the photo (green at least as high as red and blue, and 2G - R - B >= 20, the
  * test the estimator uses for vegetation) AND rough in the height map (the second difference |4z - the four
  * neighbours| >= 0.12 m: a roof plane is smooth, a crown is not; a green roof is smooth). Foliage is a texture, not a
- * solid: only a few percent of a crown's pixels pass both tests. So a pixel is CROWN when at least CROWN_DENSITY of the
- * pixels within CROWN_RADIUS_M of it (a 1.5 m window) are tree-like. That also drops the odd noisy pixel, which a
+ * solid: only a few percent of a crown's pixels pass both tests. So a pixel is CROWN when at least DEFAULT_CANOPY.crownDensity of the
+ * pixels within crownRadiusM of it (a 1.5 m window) are tree-like. That also drops the odd noisy pixel, which a
  * plain closing would keep. Two numbers, both taken on Google's mask part under the house:
  *   roofShare  crown pixels inside the mask part / mask part pixels. Foliage that Google's mask took for roof, or
  *              branches over it.
- *   rimShare   mask-edge pixels with a crown pixel within RIM_M (1 m) of them, out or in / all mask-edge pixels. The
+ *   rimShare   mask-edge pixels with a crown pixel within rimM (1 m) of them, out or in / all mask-edge pixels. The
  *              part of the outline where trees reach the roof: the edge the reconstruction must find through them.
  * Why these two: the failures that started the canopy cohort are an outline pulled out or chamfered where branches
  * overhang the eaves (rim) and slivers on foliage Google's mask includes (roof). A roof entirely hidden by a crown
@@ -24,19 +24,26 @@ import { convexHull, rasterize } from './geometry.ts';
  * ('roof-hidden') and is why the cohort also counts houses by their EagleView/Google ratio, not here.
  */
 
-export const GREEN_MIN_EXCESS = 20;
-export const ROUGH_M = 0.12;
-/** A crown pixel has at least this share of tree-like pixels within CROWN_RADIUS_M of it. */
-export const CROWN_DENSITY = 0.1;
-export const CROWN_RADIUS_M = 0.7;
-export const RIM_M = 1;
+/** The constants of the canopy numbers; a run can swap them (the sensitivity run does), the manifest uses DEFAULT_CANOPY. */
+export type CanopyParams = {
+  /** Green: 2G - R - B at least this (G also at least R and B). The estimator's own vegetation test. */
+  greenMinExcess: number;
+  /** Rough: the second difference of the heights, metres, at least this (the estimator's tree test). */
+  roughM: number;
+  /** A crown pixel has at least this share of tree-like pixels within crownRadiusM of it. */
+  crownDensity: number;
+  crownRadiusM: number;
+  /** Rim: a crown pixel within this many metres of a mask-edge pixel counts the edge pixel as reached. */
+  rimM: number;
+};
+export const DEFAULT_CANOPY: CanopyParams = { greenMinExcess: 20, roughM: 0.12, crownDensity: 0.1, crownRadiusM: 0.7, rimM: 1 };
 /** The mask part is the one under the point, or the nearest one within this many metres. */
 export const NEAREST_PART_M = 12;
 
 export type CanopyStats = { roofShare: number; rimShare: number; biteShare: number; maskPixels: number; rimPixels: number; imageryDate: string | null };
 
 /** 1 where the photo is green, on the height map's grid (null without a photo). */
-export function greenGrid(layers: RoofLayers): Uint8Array | null {
+export function greenGrid(layers: RoofLayers, p: CanopyParams = DEFAULT_CANOPY): Uint8Array | null {
   const photo = layers.photo ?? null;
   if (photo === null) return null;
   const { width, height, pixelSizeM } = layers.raster;
@@ -52,7 +59,7 @@ export function greenGrid(layers: RoofLayers): Uint8Array | null {
       const red = photo.rgb[at]!;
       const green = photo.rgb[at + 1]!;
       const blue = photo.rgb[at + 2]!;
-      if (green >= red && green >= blue && 2 * green - red - blue >= GREEN_MIN_EXCESS) out[r * width + c] = 1;
+      if (green >= red && green >= blue && 2 * green - red - blue >= p.greenMinExcess) out[r * width + c] = 1;
     }
   }
   return out;
@@ -83,8 +90,8 @@ function density(src: Uint8Array, w: number, h: number, r: number): Float32Array
 }
 
 /** Crown pixels on the height map's grid (see the file header). Null without a photo. */
-export function crownGrid(layers: RoofLayers): Uint8Array | null {
-  const green = greenGrid(layers);
+export function crownGrid(layers: RoofLayers, p: CanopyParams = DEFAULT_CANOPY): Uint8Array | null {
+  const green = greenGrid(layers, p);
   if (green === null) return null;
   const { width: w, height: h, dsm, pixelSizeM } = layers.raster;
   const rough = new Uint8Array(w * h);
@@ -95,12 +102,12 @@ export function crownGrid(layers: RoofLayers): Uint8Array | null {
       const z = dsm[i]!;
       const lap = Math.abs(4 * z - dsm[i - 1]! - dsm[i + 1]! - dsm[i - w]! - dsm[i + w]!);
       // NaN (no data) compares false: not rough.
-      if (lap >= ROUGH_M) rough[i] = 1;
+      if (lap >= p.roughM) rough[i] = 1;
     }
   }
-  const dens = density(rough, w, h, Math.max(1, Math.round(CROWN_RADIUS_M / pixelSizeM)));
+  const dens = density(rough, w, h, Math.max(1, Math.round(p.crownRadiusM / pixelSizeM)));
   const crown = new Uint8Array(w * h);
-  for (let i = 0; i < crown.length; i++) if (dens[i]! >= CROWN_DENSITY) crown[i] = 1;
+  for (let i = 0; i < crown.length; i++) if (dens[i]! >= p.crownDensity) crown[i] = 1;
   return crown;
 }
 
@@ -158,15 +165,15 @@ export function maskPartAt(layers: RoofLayers, point: LngLat): Int32Array {
 }
 
 /** The canopy numbers for the house at `point` (see the file header); null without a photo or a mask part. */
-export function canopyStats(layers: RoofLayers, point: LngLat): CanopyStats | null {
-  const crown = crownGrid(layers);
+export function canopyStats(layers: RoofLayers, point: LngLat, p: CanopyParams = DEFAULT_CANOPY): CanopyStats | null {
+  const crown = crownGrid(layers, p);
   if (crown === null) return null;
   const part = maskPartAt(layers, point);
   if (part.length === 0) return null;
   const { width: w, height: h, pixelSizeM: s, mask } = layers.raster;
   let inCrown = 0;
   for (const i of part) if (crown[i] === 1) inCrown++;
-  const reach = Math.max(1, Math.round(RIM_M / s));
+  const reach = Math.max(1, Math.round(p.rimM / s));
   let rim = 0;
   let rimCrown = 0;
   for (const i of part) {

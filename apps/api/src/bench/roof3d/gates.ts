@@ -23,6 +23,12 @@ export const GatesSchema = z.object({
   checkerPass: z.object({ maxDrop: z.number().nonnegative() }),
   /** Sliver faces (under 25 sq ft) may not rise by more than this. */
   slivers: z.object({ maxRise: z.number().nonnegative() }),
+  /**
+   * Faces of 25 sq ft or more thinner than 0.9 m (slivers along an edge, the foliage faces the benchmark was built to
+   * catch) may not rise by more than this, in these cohorts only: on simple roofs and under trees a thin face is almost
+   * always junk, while a complex roof's narrow dormer cheeks are real.
+   */
+  thinFaces: z.object({ maxRise: z.number().nonnegative(), cohorts: z.array(z.string()) }),
   /** Faces steeper than 18/12 without a Google segment that steep may not rise by more than this. */
   steepJunk: z.object({ maxRise: z.number().nonnegative() }),
   /** Houses that fail to reconstruct (a throw, or no roof) may not rise by more than this. */
@@ -42,6 +48,7 @@ export const DEFAULT_GATES: Gates = {
   medianAreaErrPct: { maxRisePoints: 0.5 },
   checkerPass: { maxDrop: 0 },
   slivers: { maxRise: 0 },
+  thinFaces: { maxRise: 0, cohorts: ['simple', 'canopy-heavy', 'canopy-light'] },
   steepJunk: { maxRise: 0 },
   failures: { maxRise: 0 },
   determinism: { mustHold: true },
@@ -97,6 +104,7 @@ export function compareSplits(base: SplitReport, cur: SplitReport, gates: Gates,
     higher('median |area error| pts', mean(b.stats.truth.medianAreaErrAbsPct), mean(c.stats.truth.medianAreaErrAbsPct), gates.medianAreaErrPct.maxRisePoints, true);
     lower('houses passing all targets', mean(b.stats.checkerPass), mean(c.stats.checkerPass), gates.checkerPass.maxDrop, false);
     higher('slivers', mean(b.stats.slivers), mean(c.stats.slivers), gates.slivers.maxRise, false);
+    if (gates.thinFaces.cohorts.includes(cohort)) higher('thin faces (simple and canopy cohorts)', mean(b.stats.thinFaces), mean(c.stats.thinFaces), gates.thinFaces.maxRise, false);
     higher('steep junk faces', mean(b.stats.steepJunk), mean(c.stats.steepJunk), gates.steepJunk.maxRise, false);
     higher('failed or no-roof houses', (mean(b.stats.failures) ?? 0) + (mean(b.stats.noRoof) ?? 0), (mean(c.stats.failures) ?? 0) + (mean(c.stats.noRoof) ?? 0), gates.failures.maxRise, false);
     if (gates.determinism.mustHold) {

@@ -19,9 +19,12 @@
     "smoke:estimator": "tsx src/scripts/smoke/estimator.ts",
     "smoke:storm": "tsx src/scripts/smoke/storm.ts",
     "roof3d:check": "tsx src/scripts/roof-3d-check.ts",
+    "roof3d:bench-candidates": "tsx src/scripts/roof-3d-bench-candidates.ts",
     "roof3d:bench-manifest": "tsx src/scripts/roof-3d-bench-manifest.ts",
     "roof3d:bench": "tsx src/scripts/roof-3d-bench.ts",
-    "test:bench": "vitest run -c vitest.bench.config.ts"
+    "roof3d:bench-fetch": "tsx src/scripts/roof-3d-bench-fetch.ts",
+    "test:bench": "vitest run -c vitest.bench.config.ts",
+    "roof3d:bench-sensitivity": "tsx src/scripts/roof-3d-bench-sensitivity.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

@@ -96,16 +96,21 @@ export type TruthMetrics = {
   structures: number | null;
 };
 
-/** The EagleView faces of this size or more are matched to ours for the per-face pitch. */
-export const MATCH_MIN_SQFT = 100;
-/** An EagleView face is matched when one of our faces covers at least this share of it. */
-export const MATCH_MIN_OVERLAP = 0.3;
+export type TruthParams = {
+  /** The EagleView faces of this size or more (sloped sq ft) are matched to ours for the per-face pitch. */
+  matchMinSqFt: number;
+  /** An EagleView face is matched when one of our faces covers at least this share of it. */
+  matchMinOverlap: number;
+  /** Boundaries are sampled every this many metres for the boundary distances. */
+  boundaryStepM: number;
+};
+export const DEFAULT_TRUTH: TruthParams = { matchMinSqFt: 100, matchMinOverlap: 0.3, boundaryStepM: 0.2 };
 
-export function eagleViewMetrics(roof: Roof3d, truth: EagleViewTruth): TruthMetrics {
+export function eagleViewMetrics(roof: Roof3d, truth: EagleViewTruth, p: TruthParams = DEFAULT_TRUTH): TruthMetrics {
   const { zone, poly: ours } = outlineXY(roof);
   const evOutline = geoJsonToXY(zone, truth.outline);
   const overlap = iou(ours, evOutline) ?? 0;
-  const bd = boundaryDistance(ours, evOutline);
+  const bd = boundaryDistance(ours, evOutline, p.boundaryStepM);
   const slopedSqFt = roof.faces.reduce((t, f) => t + f.slopedAreaSqFt, 0);
   const rounded = Math.round(slopedSqFt * 10) / 10;
   const areaErrPct = truth.total_sloped_sqft > 0 ? (100 * (rounded - truth.total_sloped_sqft)) / truth.total_sloped_sqft : null;
@@ -121,7 +126,7 @@ export function eagleViewMetrics(roof: Roof3d, truth: EagleViewTruth): TruthMetr
   let allArea = 0;
   for (const ef of truth.faces) {
     const a = ef.sloped_sqft ?? 0;
-    if (a < MATCH_MIN_SQFT) continue;
+    if (a < p.matchMinSqFt) continue;
     allArea += a;
     const ep: MultiPoly = [[ringToXY(zone, ef.ring)]];
     const epArea = Math.abs(polyArea(ep));
@@ -134,7 +139,7 @@ export function eagleViewMetrics(roof: Roof3d, truth: EagleViewTruth): TruthMetr
         bestOverlap = ov;
       }
     }
-    if (best === null || bestOverlap < MATCH_MIN_OVERLAP * epArea) {
+    if (best === null || bestOverlap < p.matchMinOverlap * epArea) {
       unmatched += a;
       continue;
     }
@@ -182,10 +187,10 @@ function polyArea(mp: MultiPoly): number {
 }
 
 /** Outline-only scoring against a hand-drawn outline (truth grade 'visual'). */
-export function visualMetrics(roof: Roof3d, truth: VisualTruth): TruthMetrics {
+export function visualMetrics(roof: Roof3d, truth: VisualTruth, p: TruthParams = DEFAULT_TRUTH): TruthMetrics {
   const { zone, poly: ours } = outlineXY(roof);
   const theirs: MultiPoly = [[ringToXY(zone, truth.outline)]];
-  const bd = boundaryDistance(ours, theirs);
+  const bd = boundaryDistance(ours, theirs, p.boundaryStepM);
   const overlap = iou(ours, theirs) ?? 0;
   return {
     grade: 'visual',

@@ -137,6 +137,19 @@ describe('the harness on a synthetic hip roof', () => {
     await expect(runBench({ ...base, manifest: manifest(entries(slugs)), split: 'dev', cohort: 'no-such-cohort' })).rejects.toBeInstanceOf(BenchDataError);
   }, 60_000);
 
+  test('--house runs just those houses; a held-out house is refused without --reveal', async () => {
+    const m = manifest(entries(slugs, heavy));
+    const dev = slugs.find((s) => splitOf(s) === 'dev')!;
+    const held = slugs.find((s) => splitOf(s) === 'heldout')!;
+    const one = await runBench({ ...base, manifest: m, split: 'dev', houses: [dev] });
+    expect(one.splits.dev!.houses).toBe(1);
+    expect(one.splits.dev!.perHouse!.map((r) => r.slug)).toEqual([dev]);
+    await expect(runBench({ ...base, manifest: m, split: 'dev', houses: [held] })).rejects.toThrow(/held out/);
+    await expect(runBench({ ...base, manifest: m, split: 'dev', houses: ['nope'] })).rejects.toThrow(/no such house/);
+    const shown = await runBench({ ...base, manifest: m, split: 'all', houses: [held], reveal: true });
+    expect(shown.splits.heldout!.perHouse!.map((r) => r.slug)).toEqual([held]);
+  }, 60_000);
+
   test('refuses Google data past its 30 days, and runs when told to', async () => {
     const stale = entries(slugs.slice(0, 1)).map((h) => ({ ...h, data: { ...h.data, deleteBy: '2026-10-01' } }));
     const m = manifest(stale);

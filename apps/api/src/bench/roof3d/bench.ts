@@ -11,6 +11,8 @@ export type BenchOptions = {
   /** 'all' runs both splits. */
   split: Split | 'all';
   cohort?: string | null;
+  /** Only these houses (a quick look at one house while working on it). A held-out house needs `reveal`. */
+  houses?: readonly string[] | null;
   seeds?: readonly number[];
   /** Print and keep held-out houses one by one (the integrator and verifiers only). */
   reveal?: boolean;
@@ -20,6 +22,7 @@ export type BenchOptions = {
   bench?: string;
   fallback?: string;
   commit: { sha: string; dirty: boolean };
+  base?: { sha: string; changedFiles: string[] } | null;
   now?: () => Date;
   /** Where houses come from (default: the files under the bench folder); tests pass in-memory houses. */
   loader?: (entry: HouseEntry) => Promise<LoadedHouse>;
@@ -77,7 +80,17 @@ function splitReport(split: Split, entries: readonly HouseEntry[], runs: Readonl
 export async function runBench(o: BenchOptions): Promise<BenchReport> {
   const seeds = o.seeds ?? SEEDS;
   const only = o.cohort ?? null;
-  const selected = o.manifest.houses.filter((h) => (o.split === 'all' || h.split === o.split) && (only === null || cohortsOf(h).includes(only)));
+  const wanted = o.houses ?? null;
+  if (wanted !== null) {
+    const known = new Set(o.manifest.houses.map((h) => h.slug));
+    const unknown = wanted.filter((s) => !known.has(s));
+    if (unknown.length > 0) throw new BenchDataError(`no such house: ${unknown.join(', ')}`);
+    const sealed = o.manifest.houses.filter((h) => wanted.includes(h.slug) && h.split === 'heldout');
+    if (sealed.length > 0 && o.reveal !== true) throw new BenchDataError(`${sealed.length} of those houses are held out; they can only be shown with --reveal (integrator and verifiers)`);
+  }
+  const selected = o.manifest.houses.filter(
+    (h) => (wanted === null ? o.split === 'all' || h.split === o.split : wanted.includes(h.slug)) && (only === null || cohortsOf(h).includes(only)),
+  );
   if (only !== null && selected.length === 0) throw new BenchDataError(`no house in cohort "${only}"`);
   const stale = expiredHouses({ ...o.manifest, houses: selected }, o.today);
   if (stale.length > 0 && o.allowExpired !== true) {
@@ -113,6 +126,7 @@ export async function runBench(o: BenchOptions): Promise<BenchReport> {
   return {
     version: 1,
     commit: o.commit,
+    base: o.base ?? null,
     date: (o.now?.() ?? new Date()).toISOString(),
     node: process.version,
     calibrationMs: calibration,

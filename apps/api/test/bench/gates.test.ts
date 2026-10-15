@@ -5,8 +5,8 @@ import type { SplitReport } from '../../src/bench/roof3d/report.ts';
 
 const st = (v: number): Stat => ({ mean: v, min: v, max: v });
 
-type Knobs = { iou: number; bnd: number; area: number; pass: number; slivers: number; steep: number; failed: number; noRoof: number; comparable: number; nondet: number; p95: number };
-const BASE: Knobs = { iou: 0.8, bnd: 1.0, area: 4, pass: 20, slivers: 3, steep: 2, failed: 0, noRoof: 0, comparable: 12, nondet: 0, p95: 700 };
+type Knobs = { thin: number; iou: number; bnd: number; area: number; pass: number; slivers: number; steep: number; failed: number; noRoof: number; comparable: number; nondet: number; p95: number };
+const BASE: Knobs = { thin: 2, iou: 0.8, bnd: 1.0, area: 4, pass: 20, slivers: 3, steep: 2, failed: 0, noRoof: 0, comparable: 12, nondet: 0, p95: 700 };
 
 function cohort(k: Partial<Knobs> = {}): CohortReport {
   const v = { ...BASE, ...k };
@@ -26,8 +26,9 @@ function cohort(k: Partial<Knobs> = {}): CohortReport {
       checkerPass: st(v.pass),
       faces: { median: st(10), total: st(300) },
       slivers: st(v.slivers),
-      thinFaces: st(0),
+      thinFaces: st(v.thin),
       steepJunk: st(v.steep),
+      steepAny: st(v.steep),
       vertices: { median: st(12) },
       rectilinearity: { median: st(0.9) },
       truth: {
@@ -96,6 +97,15 @@ describe('the gates are the contract', () => {
     expect(failedRules(run({ slivers: 4 }))).toEqual(['slivers']);
     expect(failedRules(run({ slivers: 1 }))).toEqual([]);
     expect(failedRules(run({ steep: 3 }))).toEqual(['steep junk faces']);
+  });
+
+  test('thin faces may not rise in the cohorts that name them, and are not gated elsewhere', () => {
+    const gated = (name: string, thin: number) => compareSplits({ houses: 5, cohorts: { [name]: cohort() } }, { houses: 5, cohorts: { [name]: cohort({ thin }) } }, DEFAULT_GATES, { base: 1, cur: 1 });
+    expect(gatesFailed(gated('canopy-heavy', 3)).map((r) => r.rule)).toEqual(['thin faces (simple and canopy cohorts)']);
+    expect(gatesFailed(gated('simple', 3)).length).toBe(1);
+    expect(gatesFailed(gated('canopy-heavy', 1))).toEqual([]);
+    expect(gatesFailed(gated('complex', 30))).toEqual([]);
+    expect(gatesFailed(gated('all', 30))).toEqual([]);
   });
 
   test('a house that no longer reconstructs fails, by throwing or by finding no roof', () => {

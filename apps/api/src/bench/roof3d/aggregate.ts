@@ -36,6 +36,7 @@ export type CohortAgg = {
   slivers: number;
   thinFaces: number;
   steepJunk: number;
+  steepAny: number;
   vertices: { median: number | null };
   rectilinearity: { median: number | null };
   truth: {
@@ -92,7 +93,8 @@ export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
   let fp = 0;
   let fn = 0;
   let tn = 0;
-  for (const m of comp) {
+  // Only EagleView keys have an area and pitch to be wrong about; a hand-drawn outline has neither.
+  for (const m of ev) {
     if (m.bad === null) continue;
     if (m.flagged && m.bad) tp++;
     else if (m.flagged) fp++;
@@ -111,6 +113,7 @@ export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
     slivers: ok.reduce((t, m) => t + m.slivers, 0),
     thinFaces: ok.reduce((t, m) => t + m.thinFaces, 0),
     steepJunk: ok.reduce((t, m) => t + m.steepJunk, 0),
+    steepAny: ok.reduce((t, m) => t + m.steepAny, 0),
     vertices: { median: med(ok.map((m) => m.vertices)) },
     rectilinearity: { median: med(ok.map((m) => m.rectilinearity)) },
     truth: {

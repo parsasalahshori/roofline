@@ -5,7 +5,7 @@ import { type Acceptance, checkRoof, TARGETS } from '../../estimator/roof-3d-com
 import type { LoadedHouse } from './data.ts';
 import { type MultiPoly, iou, rasterize, rectilinearity, ringArea, ringToXY, zoneOfLngLat } from './geometry.ts';
 import { maskPartAt } from './canopy.ts';
-import { type TruthMetrics, eagleViewMetrics, isBad, outlineXY, visualMetrics } from './truth.ts';
+import { DEFAULT_TRUTH, type TruthMetrics, type TruthParams, eagleViewMetrics, isBad, outlineXY, visualMetrics } from './truth.ts';
 
 /*
  * Everything the benchmark measures about one reconstruction, in one plain object (HouseMetrics). The metrics with
@@ -14,8 +14,14 @@ import { type TruthMetrics, eagleViewMetrics, isBad, outlineXY, visualMetrics } 
  * that are labelled proxy because none of them is the roof's true outline.
  */
 
-/** A face this thin (2 x area / perimeter, metres) is a sliver along an edge, not a roof plane (3 ft). */
-export const THIN_M = 0.9;
+export type MetricParams = {
+  /** A face this thin (2 x area / perimeter, metres) is a sliver along an edge, not a roof plane (3 ft). */
+  thinM: number;
+  /** An outline edge within this many degrees of an axis of the best-fitting rectangular frame is rectilinear. */
+  rectToleranceDeg: number;
+  truth: TruthParams;
+};
+export const DEFAULT_METRICS: MetricParams = { thinM: 0.9, rectToleranceDeg: 5, truth: DEFAULT_TRUTH };
 
 export type Proxy = {
   /** Our outline against the Google roof mask part under the house (pixels, intersection over union). */
@@ -37,10 +43,12 @@ export type HouseMetrics = {
   faces: number;
   /** Faces under 25 sq ft of plan area (the checker's junk). */
   slivers: number;
-  /** Faces of 25 sq ft or more that are thinner than THIN_M: slivers along an edge. Informational. */
+  /** Faces of 25 sq ft or more that are thinner than thinM: slivers along an edge. Informational. */
   thinFaces: number;
   /** Faces steeper than 18/12 without a Google segment that steep (the checker's steep faces). */
   steepJunk: number;
+  /** Faces steeper than 18/12 whether or not Google has a steep segment (informational). */
+  steepAny: number;
   vertices: number;
   rectilinearity: number;
   planSqFt: number;
@@ -75,6 +83,7 @@ export function emptyMetrics(status: 'no-roof' | 'failed', hash = ''): HouseMetr
     slivers: 0,
     thinFaces: 0,
     steepJunk: 0,
+    steepAny: 0,
     vertices: 0,
     rectilinearity: 0,
     planSqFt: 0,
@@ -153,7 +162,7 @@ function proxyOf(h: LoadedHouse, roof: Roof3d, plan: number): Proxy {
 }
 
 /** The metrics of one reconstruction of one house. `unusable`: the estimator's own verdict (roof-3d.ts unusable()). */
-export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, json: string, unusable: boolean): HouseMetrics {
+export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, json: string, unusable: boolean, p: MetricParams = DEFAULT_METRICS): HouseMetrics {
   const zone = zoneOfLngLat(roof.outline[0]![0], roof.outline[0]![1]);
   const outline = ringToXY(zone, roof.outline);
   const thin = roof.faces.filter((f) => {
@@ -161,14 +170,14 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
     const ring = ringToXY(zone, f.ring);
     let perimeter = 0;
     for (let i = 0; i + 1 < ring.length; i++) perimeter += Math.hypot(ring[i + 1]![0] - ring[i]![0], ring[i + 1]![1] - ring[i]![1]);
-    return perimeter > 0 && (2 * Math.abs(ringArea(ring))) / perimeter < THIN_M;
+    return perimeter > 0 && (2 * Math.abs(ringArea(ring))) / perimeter < p.thinM;
   }).length;
   const plan = roof.faces.reduce((t, f) => t + f.planAreaSqFt, 0);
   const sloped = roof.faces.reduce((t, f) => t + f.slopedAreaSqFt, 0);
   const reasons = roof.quality?.reasons ?? [];
   let truth: TruthMetrics | null = null;
-  if (h.entry.truth === 'eagleview' && h.eagleview !== null) truth = eagleViewMetrics(roof, h.eagleview);
-  else if (h.entry.truth === 'visual' && h.visual !== null) truth = visualMetrics(roof, h.visual);
+  if (h.entry.truth === 'eagleview' && h.eagleview !== null) truth = eagleViewMetrics(roof, h.eagleview, p.truth);
+  else if (h.entry.truth === 'visual' && h.visual !== null) truth = visualMetrics(roof, h.visual, p.truth);
   return {
     status: 'ok',
     unusable,
@@ -176,8 +185,9 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
     slivers: check.junkFaces,
     thinFaces: thin,
     steepJunk: check.steepFaces,
+    steepAny: roof.faces.filter((f) => f.pitchX12 > TARGETS.steepX12).length,
     vertices: roof.outline.length,
-    rectilinearity: rectilinearity(outline.slice(0, -1)).share,
+    rectilinearity: rectilinearity(outline.slice(0, -1), p.rectToleranceDeg).share,
     planSqFt: Math.round(plan * 10) / 10,
     slopedSqFt: Math.round(sloped * 10) / 10,
     structures: roof.structures?.length ?? 0,

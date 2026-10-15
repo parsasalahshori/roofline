@@ -35,6 +35,11 @@ export type SplitReport = {
 export type BenchReport = {
   version: 1;
   commit: { sha: string; dirty: boolean };
+  /**
+   * The commit the reconstruction code is claimed to be at (--base) and the reconstruction files that differ from it
+   * (empty: the code is that commit's). Lets a baseline made on a harness commit say which reconstruction it measured.
+   */
+  base: { sha: string; changedFiles: string[] } | null;
   date: string;
   node: string;
   calibrationMs: number;
@@ -115,8 +120,8 @@ export function formatSplit(name: string, s: SplitReport): string {
     '',
     'Shape and sanity (every house):',
     table(
-      ['cohort', 'faces med', 'slivers', 'thin', 'steep junk', 'verts med', 'rectilin', 'checker', 'no roof', 'failed', 'unusable', 'flag rate', 'flag prec', 'flag recall'],
-      [L, 9, 7, 5, 10, 9, 8, 7, 7, 6, 8, 9, 9, 11],
+      ['cohort', 'faces med', 'slivers', 'thin', 'steep junk', '>18/12', 'verts med', 'rectilin', 'checker', 'no roof', 'failed', 'unusable', 'flag rate', 'flag prec', 'flag recall'],
+      [L, 9, 7, 5, 10, 6, 9, 8, 7, 7, 6, 8, 9, 9, 11],
       names.map((n) => {
         const c = s.cohorts[n]!.stats;
         return [
@@ -125,6 +130,7 @@ export function formatSplit(name: string, s: SplitReport): string {
           fmt(c.slivers, 1),
           fmt(c.thinFaces, 1),
           fmt(c.steepJunk, 1),
+          fmt(c.steepAny, 1),
           fmt(c.vertices.median, 1),
           fmt(c.rectilinearity.median),
           `${fmt(c.checkerPass, 1)}/${s.cohorts[n]!.n}`,
@@ -164,8 +170,8 @@ export function formatSplit(name: string, s: SplitReport): string {
 export function formatHouses(rows: readonly HouseRow[]): string {
   const L = Math.max(10, ...rows.map((r) => r.slug.length));
   return table(
-    ['house', 'canopy', 'cplx', 'key', 'IoU', 'bnd m', 'area %', 'pitch', 'faces', 'slv', 'stp', 'rect', 'flag', 'chk', 'ms'],
-    [L, 6, 4, 4, 5, 5, 7, 7, 5, 3, 3, 5, 4, 3, 5],
+    ['house', 'canopy', 'cplx', 'key', 'IoU', 'bnd m', 'area %', 'pitch', 'faces', 'slv', 'thn', 'stp', 'rect', 'flag', 'chk', 'ms'],
+    [L, 6, 4, 4, 5, 5, 7, 7, 5, 3, 3, 3, 5, 4, 3, 5],
     rows.map((r) => {
       const m = r.metrics;
       const t = m.truth;
@@ -180,6 +186,7 @@ export function formatHouses(rows: readonly HouseRow[]): string {
         t === null || t.mainPitchOurs === null ? '-' : `${t.mainPitchOurs}/${t.mainPitchTruth}`,
         m.status === 'ok' ? String(m.faces) : m.status,
         String(m.slivers),
+        String(m.thinFaces),
         String(m.steepJunk),
         f(m.rectilinearity, 2),
         m.flagged ? 'Y' : '-',

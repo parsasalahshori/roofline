@@ -3,7 +3,7 @@ import { checkRoof } from '../../estimator/roof-3d-compare.ts';
 import { roofOnLayers, steepRoof, unusable } from '../../estimator/roof-3d.ts';
 import { withGoogleCheck } from '../../estimator/roof-3d-compare.ts';
 import type { LoadedHouse } from './data.ts';
-import { type HouseMetrics, emptyMetrics, hashOf, houseMetrics } from './metrics.ts';
+import { DEFAULT_METRICS, type HouseMetrics, type MetricParams, emptyMetrics, hashOf, houseMetrics } from './metrics.ts';
 
 /** The seeds of the random sampling in the plane search; results are reported as the mean over them with the range. */
 export const SEEDS: readonly number[] = [7, 8, 9];
@@ -14,7 +14,7 @@ export type Once = { metrics: HouseMetrics; json: string; ms: number };
  * One reconstruction of one house, as the server makes it (roofOnLayers, then the Google check), scored. A throw
  * becomes status 'failed' (and a reconstruction with no roof 'no-roof'): the benchmark never stops on a house.
  */
-export function reconstructOnce(h: LoadedHouse, seed: number): Once {
+export function reconstructOnce(h: LoadedHouse, seed: number, p: MetricParams = DEFAULT_METRICS): Once {
   const started = performance.now();
   let roof: Roof3d | null;
   try {
@@ -27,7 +27,7 @@ export function reconstructOnce(h: LoadedHouse, seed: number): Once {
   if (roof === null) return { metrics: emptyMetrics('no-roof'), json: 'no-roof', ms };
   const json = JSON.stringify(roof);
   try {
-    return { metrics: houseMetrics(h, roof, checkRoof(roof, h.building), json, unusable(roof)), json, ms };
+    return { metrics: houseMetrics(h, roof, checkRoof(roof, h.building), json, unusable(roof), p), json, ms };
   } catch {
     // Scoring failed (not the reconstruction): the roof is kept as a failure so it shows up in the counts.
     return { metrics: { ...emptyMetrics('failed', hashOf(json)) }, json, ms };

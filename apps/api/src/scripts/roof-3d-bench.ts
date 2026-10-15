@@ -15,6 +15,7 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *
  *   npm run roof3d:bench -w @roofline/api -- [options]
  *     --split dev|heldout|all   default dev. Held-out results are aggregates only (add --reveal to see houses)
+ *     --house a,b               only these houses, for a quick look while working on one (held-out ones need --reveal)
  *     --cohort NAME             one cohort (all, canopy-heavy, canopy-light, canopy-none, canopy-any, simple, complex,
  *                               lowslope, steep, truth-eagleview, truth-proxy, has-truth, state-XX, set-testset...)
  *     --compare FILE            judge this run against a frozen baseline with the regression gates; exit 1 on failure
@@ -26,6 +27,8 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *     --allow-expired           run on Google data past its 30-day date (a one-off; delete the data instead)
  *     --seeds 7,8,9             the seeds (default 7,8,9)
  *     --allow-manifest-change   compare against a baseline made from a different manifest (gates then mean little)
+ *     --base SHA                record which commit's reconstruction this run claims to measure, with the reconstruction
+ *                               files that differ from it (for a baseline made on a later harness commit)
  * Exit code: 0 ok, 1 a gate failed, 2 bad usage, 3 a data problem (missing files, expired data, a manifest that
  * breaks its frozen split).
  */
@@ -36,6 +39,9 @@ function value(name: string): string | undefined {
   const i = argv.indexOf(name);
   return i >= 0 ? argv[i + 1] : undefined;
 }
+
+/** The files whose change can change a reconstruction (everything the estimator's roof depends on). */
+const RECONSTRUCTION_PATHS = ['packages/shared/src/roof-reconstruct', 'packages/shared/src/roof-3d.ts', 'apps/api/src/estimator/roof-3d.ts', 'apps/api/src/estimator/roof-3d-compare.ts', 'apps/api/src/providers/google-solar-layers.ts', 'apps/api/src/providers/google-solar.ts'];
 
 function git(args: string[]): string {
   try {
@@ -95,18 +101,21 @@ async function main(): Promise<number> {
     return 2;
   }
   const reveal = flag('--reveal');
+  const baseSha = value('--base');
   let report: BenchReport;
   try {
     report = await runBench({
       manifest,
       split: split as 'dev' | 'heldout' | 'all',
       cohort: value('--cohort') ?? null,
+      houses: value('--house')?.split(',') ?? null,
       ...(seeds !== undefined ? { seeds } : {}),
       reveal,
       today: new Date().toISOString().slice(0, 10),
       allowExpired: flag('--allow-expired'),
       bench,
       commit: { sha: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain', '--untracked-files=no']) !== '' },
+      base: baseSha === undefined ? null : { sha: git(['rev-parse', baseSha]), changedFiles: git(['diff', '--name-only', baseSha, '--', ...RECONSTRUCTION_PATHS]).split('\n').filter((l) => l !== '') },
       onHouse: (slug, k, n) => {
         if (process.stderr.isTTY) process.stderr.write(`\r[${k}/${n}] ${slug.padEnd(30)}`);
       },
@@ -119,7 +128,9 @@ async function main(): Promise<number> {
     throw err;
   }
   if (process.stderr.isTTY) process.stderr.write('\r'.padEnd(50));
-  process.stdout.write(`roof3d bench at ${report.commit.sha.slice(0, 8)}${report.commit.dirty ? '+dirty' : ''}, ${report.date.slice(0, 10)}, seeds ${report.seeds.join(',')}, manifest ${report.manifestHash}, calibration ${report.calibrationMs.toFixed(0)} ms${report.cohortFilter ? `, cohort ${report.cohortFilter}` : ''}\n\n`);
+  const dueSoon = manifest.houses.map((h) => h.data.deleteBy).sort()[0];
+  if (dueSoon !== undefined) process.stdout.write(`Google data: the earliest delete-by date in the manifest is ${dueSoon} (Solar API terms: keep 30 days).\n`);
+  process.stdout.write(`roof3d bench at ${report.commit.sha.slice(0, 8)}${report.commit.dirty ? '+dirty' : ''}${report.base ? ` (reconstruction as ${report.base.sha.slice(0, 8)}${report.base.changedFiles.length > 0 ? ` plus changes to ${report.base.changedFiles.join(', ')}` : ''})` : ''}, ${report.date.slice(0, 10)}, seeds ${report.seeds.join(',')}, manifest ${report.manifestHash}, calibration ${report.calibrationMs.toFixed(0)} ms${report.cohortFilter ? `, cohort ${report.cohortFilter}` : ''}\n\n`);
   for (const name of ['dev', 'heldout'] as const) {
     const s = report.splits[name];
     if (s === undefined) continue;

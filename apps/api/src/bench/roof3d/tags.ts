@@ -1,5 +1,5 @@
 import type { LoadedHouse } from './data.ts';
-import { canopyStats } from './canopy.ts';
+import { type CanopyParams, DEFAULT_CANOPY, canopyStats } from './canopy.ts';
 import { roundHalfEven } from './geometry.ts';
 import type { CanopyClass, HouseEntry, Thresholds } from './manifest.ts';
 import { dominantPitch } from './truth.ts';
@@ -32,8 +32,8 @@ export function canopyClass(roofShare: number, rimShare: number, biteShare: numb
   return 'none';
 }
 
-export function tagsOf(h: LoadedHouse, t: Thresholds): HouseEntry['tags'] {
-  const stats = canopyStats(h.layers, h.entry.point);
+export function tagsOf(h: LoadedHouse, t: Thresholds, canopy: CanopyParams = DEFAULT_CANOPY): HouseEntry['tags'] {
+  const stats = canopyStats(h.layers, h.entry.point, canopy);
   const segs = (h.building?.segments ?? []).filter((s) => s.groundAreaM2 >= 2);
   const ev = h.eagleview;
   const googleMain = dominantPitch(segs.map((s) => ({ pitch: x12(s.pitchDeg), area: s.areaM2 })));

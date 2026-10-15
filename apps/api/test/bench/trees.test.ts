@@ -26,11 +26,20 @@ describe('choosing tree houses', () => {
 
   test('takes turns between neighbourhoods, mixes over and beside, and is the same every time', () => {
     const order = rankRegion(pool).map((c) => c.id);
+    // over lane: the 0.45-0.65 band first (osm-1 in neighbourhood A, then osm-3 in B and osm-2 in A are 0.4 to 0.5).
     expect(order).toEqual(['osm-1', 'osm-7', 'osm-3', 'osm-4', 'osm-2']);
     expect(rankRegion(pool).map((c) => c.id)).toEqual(order);
     expect(rankRegion([...pool].reverse()).map((c) => c.id)).toEqual(order);
     const kinds = rankRegion(pool).map((c) => c.kind);
     expect(kinds.indexOf('beside')).toBeGreaterThan(0);
+  });
+
+  test('the over lane spans partly to mostly hidden roofs', () => {
+    const wide = [cand('osm-10', 'A', 0.3, 0.6, 34.7, -92.3), cand('osm-11', 'B', 0.5, 0.6, 34.71, -92.3), cand('osm-12', 'C', 0.8, 0.6, 34.72, -92.3), cand('osm-13', 'D', 0.31, 0.6, 34.73, -92.3)];
+    const first3 = rankRegion(wide).slice(0, 3).map((c) => c.over);
+    expect(first3.some((o) => o < 0.45)).toBe(true);
+    expect(first3.some((o) => o >= 0.45 && o < 0.65)).toBe(true);
+    expect(first3.some((o) => o >= 0.65)).toBe(true);
   });
 
   test('a house is only listed once', () => {

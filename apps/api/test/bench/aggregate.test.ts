@@ -34,6 +34,7 @@ function metrics(o: Partial<HouseMetrics> = {}): HouseMetrics {
     faces: 8,
     slivers: 0,
     steepJunk: 0,
+    steepAny: 0,
     vertices: 12,
     rectilinearity: 0.9,
     slopedSqFt: 2000,
