@@ -247,8 +247,9 @@ report that are the same single building:
 | steep | 15 | 10 | 0.797 | 0.88 | 1.70 | 3.5 | 9 | 6 / 8 | 0.90 | 5 of 15 | 35 |
 | set-testset-trees | 20 | 0 | - | - | - | - | - | - | - | 13 of 20 | 12 |
 
-Held-out aggregates (30 houses; 16 with a key): outline IoU 0.797, boundary 0.82 m, HD95 1.85 m, median
-\|area error\| 3.1 %, main pitch exact 9 of 16, 20 of 30 pass the checker. Cohorts under 5 houses are withheld.
+Held-out aggregates (30 houses; 16 have an EagleView report, 14 of them for the same single building): outline IoU
+0.797, boundary 0.82 m, HD95 1.85 m, median \|area error\| 3.1 %, main pitch exact 9 of 14, 20 of 30 pass the checker.
+Cohorts under 5 houses are withheld.
 
 Line totals against EagleView over the 18 dev key houses: ridge -23.9 %, hip -0.1 %, valley +24.6 %, eave -23.1 %,
 rake -2.7 %. (Over all 34 EagleView houses the earlier round quoted ridge -20 %, hip -7 %, valley +16 %, eave -25 %,
