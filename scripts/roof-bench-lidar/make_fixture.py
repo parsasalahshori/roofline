@@ -3,7 +3,7 @@
 A 100 m square of UTM 15N (NAD83(2011), EPSG 6344 + NAVD88 heights) holding flat ground (class 2) at 100 m and a
 12 x 20 m flat roof (class 6) at 106 m round (560050, 3845050), points on a seeded jitter grid, every pulse a single
 return, GPS times in February 2025 (adjusted standard GPS time). Written three ways: LAS 1.4 format 6 LAZ (what 3DEP
-QL1 delivers), the first 2000 points as LAS 1.4 format 6 uncompressed, and LAS 1.2 format 1 LAZ (older QL2 projects).
+QL1 delivers), every 4th point flown in June (house-14-fmt6-june.laz), the first 2000 points as LAS 1.4 format 6 uncompressed, and LAS 1.2 format 1 LAZ (older QL2 projects).
 Deterministic: same numpy seed, same bytes. Usage: python -I make_fixture.py <out_dir>
 """
 import sys, numpy as np, laspy
@@ -44,4 +44,8 @@ def write(path, version, fmt, compressed, k=slice(None)):
 write(f'{out}/house-14-fmt6.laz', '1.4', 6, True)
 write(f'{out}/house-14-fmt6-head.las', '1.4', 6, False, slice(0, 2000))   # the first 2000 points (one ground strip)
 write(f'{out}/house-12-fmt1.laz', '1.2', 1, True)
+# The same house flown in June (leaves on): every 4th point, GPS times in 2025-06-15.
+t_june = (np.datetime64('2025-06-15T12:00:00') - np.datetime64('1980-01-06T00:00:00')).astype('timedelta64[s]').astype(float) - 1e9 + np.arange(x.size) * 0.001
+t = t_june
+write(f'{out}/house-14-fmt6-june.laz', '1.4', 6, True, slice(0, None, 4))
 print(x.size, int(roof.sum()))

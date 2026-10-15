@@ -69,6 +69,12 @@ const MAX_INDEX_BYTES = 4 << 20;
 /** November..April: leaves are off across the lidar-covered US south and east (USGS's own leaf-off windows). */
 const LEAF_OFF_MONTHS = new Set([11, 12, 1, 2, 3, 4]);
 
+/** Whether a day (YYYY-MM-DD) is in a leaf-off month (November..April). */
+export function leafOffDay(day: string): boolean {
+  const m = Number(day.slice(5, 7));
+  return LEAF_OFF_MONTHS.has(m);
+}
+
 /** Whether every day from start to end (YYYY-MM-DD) falls in a leaf-off month; null when a date is missing. */
 export function leafOffSpan(start: string | null, end: string | null): boolean | null {
   if (start === null || end === null) return null;

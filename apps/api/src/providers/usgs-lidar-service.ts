@@ -8,7 +8,7 @@ import type { Config } from '../config.ts';
 import type { ObjectStore } from './object-store.ts';
 import { cropEpt, lngLatToMercator, mercatorToLngLat } from './usgs-lidar-ept.ts';
 import { cropLas, gpsDate, type LasCrop, LasError, lasCrs, parseLasHeader } from './usgs-lidar-las.ts';
-import { chooseUnit, createUsgsLidarApi, type LidarUnit, type UsgsLidarApi, UsgsLidarError } from './usgs-lidar.ts';
+import { chooseUnit, createUsgsLidarApi, leafOffDay, type LidarUnit, type UsgsLidarApi, UsgsLidarError } from './usgs-lidar.ts';
 
 /*
  * Leaf-off USGS 3DEP lidar round a house, ready at Measure time. The slow work (finding the project, downloading a
@@ -354,6 +354,12 @@ export class UsgsLidarService {
           return { none: choice.none };
         }
         const crop = await this.derive(cell, choice.unit);
+        // The unit's window says leaf-off; the points say which day this house was flown (their median GPS day).
+        const flown = crop.source.pointDates?.[1] ?? null;
+        if (flown !== null && !leafOffDay(flown)) {
+          await this.keepNone(cell, { reason: 'leaf-on-only', at: this.now().getTime(), workunit: choice.unit.workunit });
+          return { none: 'leaf-on-only' };
+        }
         if (crop.source.lastPerM2 < this.limits.minLastPerM2) {
           await this.keepNone(cell, { reason: 'too-sparse', at: this.now().getTime(), workunit: choice.unit.workunit });
           return { none: 'too-sparse' };

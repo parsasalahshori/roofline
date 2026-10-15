@@ -100,6 +100,10 @@ describe('UsgsLidarService', () => {
     const b = setup();
     b.api.coverageAt = () => [unit({ leafOff: false, collectStart: '2012-06-01', collectEnd: '2012-07-01' })];
     expect(await b.svc.prefetch(HOUSE_POINT)).toEqual({ none: 'leaf-on-only' });
+    // The unit's window is leaf-off but this house's points were flown in June.
+    const d = setup();
+    d.api.files.set(TILE_URL, fixtureBytes('house-14-fmt6-june.laz'));
+    expect(await d.svc.prefetch(HOUSE_POINT)).toEqual({ none: 'leaf-on-only' });
     const c = setup({ limits: { minLastPerM2: 100 } });
     expect(await c.svc.prefetch(HOUSE_POINT)).toEqual({ none: 'too-sparse' });
   });

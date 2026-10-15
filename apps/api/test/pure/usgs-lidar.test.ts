@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allowedLidarUrl, chooseUnit, leafOffSpan, unitsFromIndex } from '../../src/providers/usgs-lidar.ts';
+import { allowedLidarUrl, chooseUnit, leafOffDay, leafOffSpan, unitsFromIndex } from '../../src/providers/usgs-lidar.ts';
 import { TILE_URL, unit } from './usgs-lidar-fixture.ts';
 
 /* The 3DEP index answers (WESM work units, TNM tiles) into units, and which unit a house reads. */
@@ -28,6 +28,7 @@ describe('3DEP index', () => {
     expect(leafOffSpan('2012-06-01', '2012-07-20')).toBe(false);
     expect(leafOffSpan('2019-01-01', '2020-01-30')).toBe(false);
     expect(leafOffSpan(null, '2025-01-01')).toBeNull();
+    expect(['2025-03-26', '2025-04-30', '2024-11-01', '2025-05-01', '2025-10-31'].map(leafOffDay)).toEqual([true, true, true, false, false]);
   });
 
   it('turns WESM features and TNM items into units with their own tiles, refusing other hosts and odd names', () => {

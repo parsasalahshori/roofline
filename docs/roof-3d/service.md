@@ -128,8 +128,12 @@ last-return share 58.32% in both, mean offset equal to 0.1 mm; fs-hendricks (EPT
 
 - A worker thread (or process) for decoding: a 100 MB QL1 tile takes 8-15 s of CPU on the API process (cooperative,
   it yields every 100k points). The area job is the natural place to move it.
-- Leaf-off is judged from the work unit's collect window. The points themselves record their day (`pointDates`): the
-  Little Rock / Hot Springs houses were flown March 22-26 2025, when early leaf-out is possible. Not used as a gate yet.
+- Leaf-off is judged twice: the work unit's collect window picks the unit, and the house's own points (their median
+  GPS day) must fall in November..April too, else 'leaf-on-only'. The Little Rock / Hot Springs houses were flown March
+  22-26 2025 and pass; early leaf-out in late March is possible in Arkansas, and a stricter month rule is a constant away.
+- A newer unit whose window is not all leaf-off (fs-hendricks, rogers-pecan: AR_Western_1/3_B24, March 2024 to March
+  2025) is never read, even though this house may have been flown in winter: the 2015-2017 QL2 leaf-off unit is used.
+  Reading the newer one to check its point days would cost a tile download per house.
 - Turning `USGS_LIDAR_MODE=on`: needs the fusion/truth tracks' scoring (EagleView and cross-flight truth), a
   ROOF_3D_ALGORITHM_VERSION bump and the owner's decision.
 - The Postgres suites (jobs.test.ts gained the new queue name only) were not run here: integrator and verifiers.
