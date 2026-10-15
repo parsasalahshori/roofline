@@ -66,6 +66,65 @@ describe('lidar fusion', () => {
     expect(worst).toBeLessThan(0.3);
   });
 
+  it("keeps the added part when Google's building box (drawn from the same leaf-on view) stops at the crown", () => {
+    // The box round Google's visible part only: the hidden 5 m run past it. Without the fusion's exemption the
+    // joined-buildings test would cut the lidar part away as a terrace neighbour.
+    const sc = scene({ seed: 35, turnDeg: 0, hideM: 5 });
+    const s = sc.raster.pixelSizeM;
+    const corners = [
+      { x: -6, y: -4 },
+      { x: 1, y: -4 },
+      { x: 1, y: 4 },
+      { x: -6, y: 4 },
+    ].map((p) => sc.toLocal(p));
+    const building = corners.map((p) => ({ col: p.x / s, row: -p.y / s }));
+    const on = reconstructRoof(sc.raster, sc.point, { building, lidarFusion: { cloud: sc.cloud() } })!;
+    expect(on.lidarFusion?.applied).toBe(true);
+    expect(on.quality.reasons).not.toContain('joined-buildings');
+    expect(Math.abs(maxHouseX(sc, on.outline) - 6)).toBeLessThan(0.5);
+  });
+
+  it('never adds a roof that does not touch the house (a shed under a crown is another building)', () => {
+    const sc = scene({ seed: 66, turnDeg: 0, hideM: -10 });
+    const s = sc.raster.pixelSizeM;
+    const W = sc.raster.width;
+    // A flat-ish shed roof 2.5 m east of the house (house frame x 8.5-11.5, y -2..2, 3 m up), under a crown in Google's
+    // heights and out of its mask; the leaf-off lidar sees it.
+    const inShed = (p: XY) => p.x > 8.5 && p.x < 11.5 && Math.abs(p.y) < 2;
+    const dsm = sc.raster.dsm.slice();
+    for (let i = 0; i < dsm.length; i++) {
+      const c = i % W;
+      const p = sc.toHouse({ x: (c + 0.5) * s, y: -((i - c) / W + 0.5) * s });
+      if (p.x > 8 && p.x < 12 && Math.abs(p.y) < 2.5) dsm[i] = 8 + 0.3 * Math.sin(c * 1.3);
+    }
+    const base = sc.cloud();
+    const xs = Array.from(base.x);
+    const ys = Array.from(base.y);
+    const zs = Array.from(base.z);
+    const fs = Array.from(base.flags);
+    for (let k = 0; k < xs.length; k++) {
+      // The cloud is in its own frame: the scene shifts it by (0.7, -0.4) and 31.2 m down.
+      const p = sc.toHouse({ x: xs[k]! + 0.7, y: ys[k]! - 0.4 });
+      if (inShed(p) && (fs[k]! & 2) === 2) {
+        zs[k] = 3 + 0.05 * (p.y + 2) - 31.2;
+        fs[k] = 1;
+      }
+    }
+    const cloud = { ...base, x: Float64Array.from(xs), y: Float64Array.from(ys), z: Float64Array.from(zs), flags: Uint8Array.from(fs) };
+    const f = fuseLidar({ ...sc.raster, dsm }, sc.point, cloud);
+    expect(f.report.applied).toBe(false);
+    expect(f.report.reason).toBe('nothing-hidden');
+  });
+
+  it("declines when the lidar's roof does not sit on Google's roof (a rebuilt roof, or a frame the ground alone fits)", () => {
+    const sc = scene({ seed: 69, turnDeg: 0, hideM: 5 });
+    const base = sc.cloud();
+    // Every return more than 1.7 m up (the roof, branches) 0.4 m higher than the scene: the ground still registers.
+    const z = Float64Array.from(base.z, (v) => (v > -29.5 ? v + 0.4 : v));
+    const f = fuseLidar(sc.raster, sc.point, { ...base, z });
+    expect(f.report).toMatchObject({ applied: false, reason: 'misaligned' });
+  });
+
   it('is byte-identical on a rerun, and the option off (or null) is the reconstruction as before', () => {
     const sc = scene({ seed: 41, turnDeg: 17, hideM: 5 });
     const cloud = sc.cloud();

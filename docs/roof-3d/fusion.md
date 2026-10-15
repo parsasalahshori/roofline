@@ -134,6 +134,17 @@ small part); cross-flight results unchanged except plan error on lr-tyler (-2.0 
 - Lidar ground under crowns is written into the heights used for EDGE EVIDENCE only (within 1.5 m of an added part),
   so an eave the lidar placed is judged by the drop the lidar measured; it never enters the reconstruction.
 
+## Tests
+
+`packages/shared/test/roof-reconstruct-lidar-fusion.test.ts` (synthetic, seeded, 0.1 m and 0.25 m pixels, two turns):
+the hidden part comes back with the true pitch, provenance and the review reason; rerun byte-identical; option off or
+null is the old reconstruction; typed declines (leaf-on, unknown leaf state, sparse, empty, too old, too many points,
+another place); changed roofs refused both ways; a mask miss Google saw is not added; the cap; the building box
+exemption; a detached shed under a crown is not added; a roof off Google's roof by 0.4 m is declined. Mutation check by
+hand (each guard deleted in turn: occluded share, change, cap, leaf-off, touch, box exemption, on-roof residual): every
+deletion fails a test. `apps/api/test/pure/lidar-edge-shares.test.ts`: edge provenance and the service adapter;
+`apps/api/test/bench/confidence.test.ts`: the Google check skips lidar faces.
+
 ## Rollback
 
 Off by default; nothing to roll back in production. To remove: drop the `lidarFusion` option (index.ts, roof-3d.ts);
