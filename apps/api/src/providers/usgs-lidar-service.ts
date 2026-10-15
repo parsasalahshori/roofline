@@ -358,7 +358,8 @@ export class UsgsLidarService {
           await this.keepNone(cell, { reason: 'too-sparse', at: this.now().getTime(), workunit: choice.unit.workunit });
           return { none: 'too-sparse' };
         }
-        await this.putObject(this.cropKey(cell), encodeCrop(crop), 'application/octet-stream');
+        // A store outage loses only the keeping: this answer still has the lidar (the next one fetches again).
+        await this.putObject(this.cropKey(cell), encodeCrop(crop), 'application/octet-stream').catch((err: unknown) => this.tiles.log({ what: 'store-error', cell: cell.key, detail: detailOf(err) }).catch(() => undefined));
         return { crop };
       } catch (err) {
         // Not kept: an outage or a damaged download is tried again by the next search or Measure.

@@ -157,6 +157,18 @@ describe('UsgsLidarService', () => {
     await expect(svc.tile(other)).resolves.toHaveLength(size);
   });
 
+  it('an object store that fails to keep the product still answers with the lidar (and logs it)', async () => {
+    const api = new FakeUsgsLidarApi();
+    api.files.set(TILE_URL, fixtureBytes('house-14-fmt6.laz'));
+    api.coverageAt = () => [unit()];
+    const dir = mkdtempSync(path.join(tmpdir(), 'usgs-lidar-'));
+    dirs.push(dir);
+    const broken = { configured: true, get: async () => null, put: async () => Promise.reject(new Error('R2 down')) } as never;
+    const svc = new UsgsLidarService(api, broken, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { retryDelayMs: 0, cooldownMs: 0 });
+    expect('crop' in (await svc.prefetch(HOUSE_POINT))).toBe(true);
+    expect(readFileSync(path.join(dir, 'ledger.jsonl'), 'utf8')).toContain('store-error');
+  });
+
   it('a damaged tile, a tile over the size limit, and a tile off USGS hosts are typed errors', async () => {
     const a = setup({ dir: false });
     a.api.files.set(TILE_URL, fixtureBytes('house-14-fmt6.laz').subarray(0, 30_000));
