@@ -242,12 +242,24 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   return 'roof' in found ? found.roof : null;
 }
 
+/**
+ * The hidden-edge step the server runs (ROOF_3D_ALGORITHM_VERSION 4, docs/roof-3d/outline-release-notes.md): edges the
+ * heights cannot vouch for are first checked against the photo (moved only where it shows the roof's end clearly), then
+ * hidden eaves are put on their face's plane at the eave height its visible eaves show. Chosen on the held-out split
+ * against lidar and EagleView truth; `hiddenEdge: null` turns it off.
+ */
+export const DEFAULT_HIDDEN_EDGE: HiddenEdgeOption = { method: 'photo+planes' };
+
 export type RoofOnLayersOptions = {
   steep?: boolean;
   building?: SolarBuilding | null;
   seed?: number;
-  /** Hidden edges re-estimated (reconstructRoof's hiddenEdge; off by default). 'photo' reads the layers' photo; the benchmark sets it to compare methods. */
-  hiddenEdge?: HiddenEdgeOption;
+  /**
+   * Hidden edges re-estimated (reconstructRoof's hiddenEdge). Absent: the server's default, DEFAULT_HIDDEN_EDGE; null:
+   * off (the reconstruction before ROOF_3D_ALGORITHM_VERSION 4). A method with 'photo' reads the layers' photo. The
+   * benchmark sets it to compare methods.
+   */
+  hiddenEdge?: HiddenEdgeOption | null;
   /** Leaf-off lidar for the hidden-edge step (outline-lidar.ts); off when absent. Development only for now. */
   lidar?: LidarPointsUtm | null;
   lidarParams?: Partial<LidarEdgeParams>;
@@ -324,14 +336,15 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   if (problem !== null) return { miss: problem };
   // A roof too big to reconstruct within the request's time and memory (MAX_ROOF_PART_M2): not a home's roof.
   if (roofPartAreaM2(layers.raster, toPixel(point)) > MAX_ROOF_PART_M2) return { miss: 'too-large' };
+  const hiddenEdge = o.hiddenEdge === undefined ? DEFAULT_HIDDEN_EDGE : o.hiddenEdge;
   const raster = {
     ...layers.raster,
     green: layers.raster.green ?? greenOf(layers),
-    ...(o.hiddenEdge !== undefined && o.hiddenEdge.method !== 'planes' ? { rgb: rgbOf(layers) } : {}),
+    ...(hiddenEdge !== null && hiddenEdge.method !== 'planes' ? { rgb: rgbOf(layers) } : {}),
   };
   const lidarCloud = o.lidar != null ? lidarOnLayers(layers, o.lidar) : null;
   const local = reconstructRoof(raster, toPixel(point), {
-    ...(o.hiddenEdge !== undefined ? { hiddenEdge: o.hiddenEdge } : {}),
+    ...(hiddenEdge !== null ? { hiddenEdge } : {}),
     imageryQuality: layers.imageryQuality,
     // The benchmark (roof3d:bench) runs seeds 7, 8 and 9 to show the result does not hang on the random sample; the
     // server never sets it (the reconstruction's own default seed, 7, applies).

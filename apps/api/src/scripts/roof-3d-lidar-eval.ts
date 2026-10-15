@@ -173,14 +173,15 @@ async function main() {
     for (const seed of o.seeds) {
       const base = { steep: steepRoof(h.building), building: h.building, seed };
       let t = performance.now();
-      const off = roofOnLayers(h.layers, e.point, base);
+      // Off: no hidden-edge step at all (the server's default runs one since ROOF_3D_ALGORITHM_VERSION 4).
+      const off = roofOnLayers(h.layers, e.point, { ...base, hiddenEdge: null });
       const msOff = performance.now() - t;
       t = performance.now();
       const on =
         o.method === 'lidar'
           ? points === null
             ? off
-            : roofOnLayers(h.layers, e.point, { ...base, lidar: points, lidarParams: o.params })
+            : roofOnLayers(h.layers, e.point, { ...base, hiddenEdge: null, lidar: points, lidarParams: o.params })
           : roofOnLayers(h.layers, e.point, { ...base, hiddenEdge: { method: o.method, planes: o.params as Record<string, number>, photo: o.params as Record<string, number> } });
       const msOn = performance.now() - t;
       if (off === null || on === null) continue;

@@ -280,9 +280,11 @@ export const ROOF_3D_SNAPSHOT_SCHEMA = 2;
  * reconstruction returns (faces, lines, outline, quality); a pure refactor leaves it. Snapshots without the field are 1.
  * 2: the October 2026 edge-case round (first versioned snapshots). 3: its remediation (the plane search no longer loses
  * a face when candidates tie, foliage faces along crown-backed eaves dissolve, a Google difference with 5% of the area at
- * stake is a review, edge confidence calibrated on DEV only).
+ * stake is a review, edge confidence calibrated on DEV only). 4: hidden edges (outline round, docs/roof-3d/
+ * outline-release-notes.md): outline edges under tree crowns are checked against the photo and hidden eaves put on their
+ * face's plane at the eave height (roofOnLayers' DEFAULT_HIDDEN_EDGE, photo+planes).
  */
-export const ROOF_3D_ALGORITHM_VERSION = 3;
+export const ROOF_3D_ALGORITHM_VERSION = 4;
 
 function versionField(value: unknown): number | null {
   if (value === undefined) return 1;

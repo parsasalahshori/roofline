@@ -10,19 +10,21 @@ export const SEEDS: readonly number[] = [7, 8, 9];
 
 /**
  * The hidden-edge method under test (ReconstructOptions.hiddenEdge), from the environment so a run of the same commit
- * can compare methods: ROOF3D_HIDDEN_EDGE=planes or photo, with ROOF3D_HIDDEN_EDGE_PARAMS a JSON object of parameter overrides
- * (sensitivity runs). Unset: off, as the server runs.
+ * can compare methods: ROOF3D_HIDDEN_EDGE=off, planes, photo, photo+planes or planes+photo, with ROOF3D_HIDDEN_EDGE_PARAMS
+ * a JSON object of parameter overrides (sensitivity runs). Unset: the server's default (DEFAULT_HIDDEN_EDGE, photo+planes
+ * since ROOF_3D_ALGORITHM_VERSION 4); off is the reconstruction before it.
  */
 export function hiddenEdgeFromEnv(env: NodeJS.ProcessEnv = process.env): RoofOnLayersOptions['hiddenEdge'] {
   const method = env.ROOF3D_HIDDEN_EDGE;
   if (method === undefined || method === '') return undefined;
+  if (method === 'off') return null;
   const raw = env.ROOF3D_HIDDEN_EDGE_PARAMS;
   const params = raw !== undefined && raw !== '' ? (JSON.parse(raw) as Record<string, number>) : undefined;
   if (method === 'planes') return { method, ...(params !== undefined ? { planes: params } : {}) };
   if (method === 'photo') return { method, ...(params !== undefined ? { photo: params } : {}) };
   // Combinations: the parameter overrides (if any) go to both steps' records; each step reads only its own keys.
   if (method === 'photo+planes' || method === 'planes+photo') return { method, ...(params !== undefined ? { planes: params, photo: params } : {}) };
-  throw new Error(`ROOF3D_HIDDEN_EDGE: unknown method ${JSON.stringify(method)} (planes, photo, photo+planes, planes+photo)`);
+  throw new Error(`ROOF3D_HIDDEN_EDGE: unknown method ${JSON.stringify(method)} (off, planes, photo, photo+planes, planes+photo)`);
 }
 const HIDDEN_EDGE = hiddenEdgeFromEnv();
 
