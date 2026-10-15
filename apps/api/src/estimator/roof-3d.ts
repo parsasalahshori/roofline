@@ -652,7 +652,8 @@ async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | n
   const steep = steepRoof(building);
   // What of the lidar is ready (within its budget), and why not when not.
   const lidar = await lidarForRoof(lidarStarted, deps, layers.imageryDate);
-  const withLidar = lidar?.points != null ? { lidar: lidar.points } : {};
+  // USGS_LIDAR_MODE=on: the crop goes to the fusion step (roof the lidar sees under crowns, provenance 'lidar').
+  const withLidar = lidar?.fusion != null ? { lidarFusion: lidar.fusion } : {};
   const noted = <T extends Roof3dSnapshot>(s: T): T => (lidar === null ? s : { ...s, lidar: lidar.note });
   let found = roofOnLayersResult(layers, point, { steep, building, ...withLidar });
   if ('miss' in found && found.miss === 'clipped') {

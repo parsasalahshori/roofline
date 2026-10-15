@@ -90,12 +90,14 @@ describe('roof-3d with USGS lidar', () => {
     expect(snap?.roof).toEqual((await roof3dAt(off, INSIDE, buildingOf(HOUSE)))?.roof);
   });
 
-  it('on: the points go to the reconstruction (the roof reports what its lidar step did)', async () => {
+  it('on: the points go to the lidar fusion step (the roof reports what it did and which flight), not the hidden-edge prototype', async () => {
     const { deps } = depsWith('on');
     const snap = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
     expect(snap?.lidar).toMatchObject({ status: 'used', workunit: 'AR_Western_4_B24' });
     expect(snap?.lidar?.points).toBeGreaterThan(10_000);
-    expect(snap?.roof?.lidarEdges).toBeDefined();
+    expect(snap?.roof?.lidarFusion).toBeDefined();
+    expect(snap?.roof?.lidarFusion?.flight).toMatchObject({ workUnit: 'AR_Western_4_B24', ql: 'QL 1', leafOff: true, credit: expect.stringMatching(/USGS/) });
+    expect(snap?.roof?.lidarEdges).toBeUndefined();
   });
 
   it('not ready in time: Measure goes on with Google alone, records lidar-pending, and the next Measure makes the roof again with the lidar', async () => {
@@ -135,7 +137,7 @@ describe('roof-3d with USGS lidar', () => {
     const a = await run();
     expect(a?.roof?.pixelSizeM).toBe(0.25);
     expect(a?.lidar?.status).toBe('used');
-    expect(a?.roof?.lidarEdges).toBeDefined();
+    expect(a?.roof?.lidarFusion).toBeDefined();
     const b = await run();
     expect(JSON.stringify(b)).toBe(JSON.stringify(a));
   });
@@ -171,6 +173,7 @@ describe('roof-3d with USGS lidar', () => {
     const snap = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
     expect(snap?.lidar).toEqual({ status: 'none', reason: 'no-coverage' });
     expect(snap?.roof?.lidarEdges).toBeUndefined();
+    expect(snap?.roof?.lidarFusion).toBeUndefined();
   });
 
   it('a searched address fetches its lidar and queues one area job for its square; off queues nothing', async () => {

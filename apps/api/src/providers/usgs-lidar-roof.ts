@@ -1,6 +1,6 @@
-import type { LngLat, Roof3dLidarNote } from '@roofline/shared';
+import type { LidarFlight, LngLat, Roof3dLidarNote } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import type { LidarPointsUtm } from '../estimator/roof-3d.ts';
+import { lidarFusionFromEvidence, type LidarPointsUtm, type RoofOnLayersOptions } from '../estimator/roof-3d.ts';
 import type { LidarCropUtm, LidarEvidence } from './usgs-lidar-service.ts';
 
 /*
@@ -50,6 +50,30 @@ function pointsOf(c: LidarCropUtm, imageryDate: string | null): LidarPointsUtm {
 }
 
 /**
+ * The service's flight metadata as the fusion step records it (shared LidarFlight): the USGS credit, the flight's
+ * dates and quality level go on the fused roof (Roof3d.lidarFusion.flight).
+ */
+export function flightOf(c: LidarCropUtm): LidarFlight {
+  const s = c.source;
+  return {
+    project: s.project,
+    workUnit: s.workunit,
+    collectStart: s.collectStart,
+    collectEnd: s.collectEnd,
+    leafOff: s.leafOff,
+    ql: s.ql === null ? null : `QL ${s.ql}`,
+    pointsPerM2: Number.isFinite(s.lastPerM2) ? s.lastPerM2 : null,
+    source: s.kind === 'ept' ? 'ept' : 'laz-tile',
+    credit: s.credit,
+  };
+}
+
+/** The crop as the reconstruction's lidar fusion option (lidar-fusion.ts gates leaf-off, age and density itself). */
+export function fusionOf(c: LidarCropUtm, imageryDate: string | null): NonNullable<RoofOnLayersOptions['lidarFusion']> {
+  return lidarFusionFromEvidence({ epsg: c.epsg, originE: c.originE, originN: c.originN, dx: c.dx, dy: c.dy, z: c.z, flags: c.flags, flight: flightOf(c) }, imageryDate);
+}
+
+/**
  * Starts reading the lidar for the roof at `point` (null when lidar is off). Started before Google's layers are
  * fetched so its budget runs alongside them rather than after.
  */
@@ -58,12 +82,24 @@ export function startLidar(deps: AppDeps, point: LngLat): Promise<LidarEvidence>
   return deps.usgsLidar!.forMeasure(point);
 }
 
-/** What the reconstruction gets (points, only with mode on and a crop) and what the snapshot records. */
-export async function lidarForRoof(started: Promise<LidarEvidence> | null, deps: AppDeps, imageryDate: string | null): Promise<{ points: LidarPointsUtm | null; note: Roof3dLidarNote } | null> {
+/**
+ * What the reconstruction gets (only with mode on and a crop) and what the snapshot records. With mode on the crop
+ * goes to the lidar FUSION step (roof-reconstruct/lidar-fusion.ts: roof under crowns, with 'lidar' provenance), not
+ * to the older hidden-edge prototype (outline-lidar.ts), which stays a benchmark-only option (`points`, unused here).
+ */
+export async function lidarForRoof(
+  started: Promise<LidarEvidence> | null,
+  deps: AppDeps,
+  imageryDate: string | null,
+): Promise<{ points: LidarPointsUtm | null; fusion: NonNullable<RoofOnLayersOptions['lidarFusion']> | null; note: Roof3dLidarNote } | null> {
   if (started === null) return null;
   const evidence = await started;
   const use = lidarModeOf(deps) === 'on' && 'crop' in evidence;
-  return { points: use && 'crop' in evidence ? pointsOf(evidence.crop, imageryDate) : null, note: noteOf(evidence, use, imageryDate) };
+  return {
+    points: use && 'crop' in evidence ? pointsOf(evidence.crop, imageryDate) : null,
+    fusion: use && 'crop' in evidence ? fusionOf(evidence.crop, imageryDate) : null,
+    note: noteOf(evidence, use, imageryDate),
+  };
 }
 
 /**

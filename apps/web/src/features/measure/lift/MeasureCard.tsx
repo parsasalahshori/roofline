@@ -267,7 +267,7 @@ export function MeasureCard({
             {legal.solar3dAttribution}
           </p>
         ) : null}
-        {m.roof3d?.lidarEdges?.applied === true && m.kind !== 'exact' && !scanning ? (
+        {(m.roof3d?.lidarEdges?.applied === true || m.roof3d?.lidarFusion?.applied === true) && m.kind !== 'exact' && !scanning ? (
           <p className={styles.note} data-source="usgs-lidar">
             {legal.usgsLidarAttribution}
           </p>
