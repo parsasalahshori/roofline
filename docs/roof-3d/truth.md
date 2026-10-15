@@ -302,3 +302,8 @@ block skips the lidar gates); older gates files have no lidar section and do not
 `ROOF_3D_ALGORITHM_VERSION` is untouched.
 
 Data credit: USGS 3D Elevation Program (3DEP) lidar, public domain.
+
+## Cross-flight truth (lidar round)
+
+A method that reads lidar is scored on truth from ANOTHER flight: see [truth-crossflight.md](truth-crossflight.md)
+(`scripts/roof-bench-lidar/crossflight.py`, `--fusion-flight`).

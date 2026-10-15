@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { BenchDataError, cohortCounts, runBench } from '../bench/roof3d/bench.ts';
 import { DEFAULT_GATES, formatGates, GatesSchema, compareSplitGap, compareSplits, gatesFailed, type GateRow } from '../bench/roof3d/gates.ts';
 import { loadHouse } from '../bench/roof3d/data.ts';
+import { type CrossFlightPick, crossFlightHash, fusedFlightOf, selectCrossFlightTruth } from '../bench/roof3d/crossflight.ts';
 import { lidarIndexHash, readLidarIndex, readLidarTruth, SUPPORT_SCORER } from '../bench/roof3d/lidar.ts';
 import { readLidarEdgePoints } from '../bench/roof3d/lidar-edges.ts';
 import { type HouseEntry, manifestHash, manifestProblems, parseManifest, SPLITS, withLidar, type Manifest } from '../bench/roof3d/manifest.ts';
@@ -34,6 +35,14 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *     --lidar-edges             turn on the lidar hidden-edge step (outline-lidar.ts) with each house's crop from
  *                               <ROOF_BENCH_DIR>/lidar-edges (edge_points.py). Its lidar-truth numbers are then CIRCULAR
  *                               (same returns): judge it on EagleView (roof-3d-lidar-eval.ts); use this run for the gates
+ *     --lidar-edges-dir NAME    the crops' folder under ROOF_BENCH_DIR (default lidar-edges; lidar-edges-xf: edge_points.py
+ *                               --pick xf, the flights that have cross-flight truth)
+ *     --fusion-flight auto|UNIT score lidar against CROSS-FLIGHT truth (crossflight.py): truth built from another flight
+ *                               than the one fused. auto = each house's crop's workunit (<lidar-edges-dir>/<slug>.json);
+ *                               UNIT = that workunit for every house. Houses without cross-flight truth get no lidar
+ *                               score (never the primary truth). Implied (auto) by --lidar-edges; 'none' keeps the
+ *                               primary truth (then circular for --lidar-edges, as before)
+ *     --xf-coarse               also take 'coarse' cross-flight truth (QL2, fails only A2-density: IoU/area, not hidden edges)
  *     --base SHA                record which commit's reconstruction this run claims to measure, with the reconstruction
  *                               files that differ from it (for a baseline made on a later harness commit)
  *   Environment: ROOF3D_HIDDEN_EDGE=planes|photo runs with that hidden-edge method on; ROOF3D_BENCH_SUPPORT=dense
@@ -112,6 +121,35 @@ async function main(): Promise<number> {
     process.stderr.write(`lidar truth is not valid: ${(err as Error).message.slice(0, 400)}\n`);
     return 3;
   }
+  // Cross-flight truth (crossflight.ts): when a run fuses a lidar flight, its lidar score must come from another flight.
+  const edgesDirName = value('--lidar-edges-dir') ?? 'lidar-edges';
+  if (!/^[A-Za-z0-9._-]+$/.test(edgesDirName) || edgesDirName.startsWith('.')) {
+    process.stderr.write('--lidar-edges-dir takes a folder name under ROOF_BENCH_DIR\n');
+    return 2;
+  }
+  const fusion = value('--fusion-flight') ?? (flag('--lidar-edges') ? 'auto' : undefined);
+  if (fusion !== undefined && !/^[A-Za-z0-9._-]+$/.test(fusion)) {
+    process.stderr.write('--fusion-flight takes auto, none or a workunit name\n');
+    return 2;
+  }
+  const allowCoarse = flag('--xf-coarse');
+  let xfPicks: Map<string, CrossFlightPick> | null = null;
+  if (fusion !== undefined && fusion !== 'none') {
+    try {
+      xfPicks = new Map();
+      for (const h of manifest.houses) {
+        const fused = fusion === 'auto' ? fusedFlightOf(bench, edgesDirName, h.slug) : fusion;
+        xfPicks.set(h.slug, selectCrossFlightTruth(bench, h.slug, fused, { allowCoarse }));
+      }
+      lidarHash = crossFlightHash(xfPicks, allowCoarse);
+      if (SUPPORT_SCORER === 'dense') lidarHash = `${lidarHash}+dense`;
+    } catch (err) {
+      process.stderr.write(`cross-flight lidar truth is not valid: ${(err as Error).message.slice(0, 400)}\n`);
+      return 3;
+    }
+  } else if (fusion === 'none' && flag('--lidar-edges')) {
+    process.stderr.write('--fusion-flight none: lidar numbers are scored on the SAME flight the method read (circular); judge them on EagleView.\n');
+  }
   const problems = manifestProblems(manifest);
   if (problems.length > 0) {
     process.stderr.write(`manifest.json breaks its rules:\n${problems.join('\n')}\n`);
@@ -148,8 +186,16 @@ async function main(): Promise<number> {
       allowExpired: flag('--allow-expired'),
       bench,
       lidarHash,
-      ...(flag('--lidar-edges')
-        ? { loader: async (e: HouseEntry) => ({ ...(await loadHouse(e, bench)), lidarPoints: readLidarEdgePoints(bench, e.slug, e.data?.imageryDate ?? null)?.points ?? null }) }
+      ...(flag('--lidar-edges') || xfPicks !== null
+        ? {
+            loader: async (e: HouseEntry) => {
+              const h = await loadHouse(e, bench);
+              const pts = flag('--lidar-edges') ? { lidarPoints: readLidarEdgePoints(bench, e.slug, e.data?.imageryDate ?? null, edgesDirName)?.points ?? null } : {};
+              const p = xfPicks?.get(e.slug);
+              const xf = xfPicks === null ? {} : { lidar: p?.truth ?? null, lidarSha1: p !== undefined && p.truth !== null ? p.sha1 : null };
+              return { ...h, ...pts, ...xf };
+            },
+          }
         : {}),
       commit: { sha: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain', '--untracked-files=no']) !== '' },
       base: baseSha === undefined ? null : { sha: git(['rev-parse', baseSha]), changedFiles: git(['diff', '--name-only', baseSha, '--', ...RECONSTRUCTION_PATHS]).split('\n').filter((l) => l !== '') },
@@ -168,7 +214,8 @@ async function main(): Promise<number> {
   const dueSoon = manifest.houses.map((h) => h.data.deleteBy).sort()[0];
   if (dueSoon !== undefined) process.stdout.write(`Google data: the earliest delete-by date in the manifest is ${dueSoon} (Solar API terms: keep 30 days).\n`);
   if (report.lidarHash !== null && report.lidarHash !== undefined) {
-    const n = manifest.houses.filter((h) => h.lidar?.grade === 'lidar').length;
+    const n = xfPicks !== null ? [...xfPicks.values()].filter((p) => p.truth !== null).length : manifest.houses.filter((h) => h.lidar?.grade === 'lidar').length;
+    if (xfPicks !== null) process.stdout.write(`Cross-flight lidar truth (fusion flight ${fusion}, crops ${edgesDirName}${allowCoarse ? ', coarse allowed' : ''}): the truth never comes from the fused flight.\n`);
     process.stdout.write(`Lidar truth ${report.lidarHash}: ${n} houses (USGS 3D Elevation Program lidar, public domain).\n`);
   }
   process.stdout.write(`roof3d bench at ${report.commit.sha.slice(0, 8)}${report.commit.dirty ? '+dirty' : ''}${report.base ? ` (reconstruction as ${report.base.sha.slice(0, 8)}${report.base.changedFiles.length > 0 ? ` plus changes to ${report.base.changedFiles.join(', ')}` : ''})` : ''}, ${report.date.slice(0, 10)}, seeds ${report.seeds.join(',')}, manifest ${report.manifestHash}, calibration ${report.calibrationMs.toFixed(0)} ms${report.cohortFilter ? `, cohort ${report.cohortFilter}` : ''}\n\n`);
