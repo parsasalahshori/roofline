@@ -17,6 +17,7 @@ import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type Plane, typ
 import { groundPlane, heightAboveGround, planeInCrop } from './ground.ts';
 import { close, components, countSet, dilate, fillHoles, largestComponent, open, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
+import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
@@ -48,6 +49,8 @@ export type ReconstructOptions = {
   planes?: Partial<PlaneParams>;
   outline?: Partial<OutlineParams>;
   topology?: Partial<TopologyParams>;
+  /** The weak-face cleanup on the finished faces (faces-cleanup.ts). */
+  faces?: Partial<FaceCleanupParams>;
   /** Development only: told what the topology decided. */
   debug?: (msg: string) => void;
   /** The imagery's quality (HIGH, MEDIUM), for the quality result. */
@@ -88,6 +91,8 @@ export type LocalRoof = {
    * outline is checked against, so quality cannot see them; this records them.)
    */
   cuts?: { maskM2: number; groundM2: number; terraceM2: number };
+  /** Faces the weak-face cleanup dissolved, by reason (absent when none). */
+  dissolved?: Partial<Record<WeakReason, number>>;
 };
 
 const FLAT_X12 = 2;
@@ -284,9 +289,30 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
 
   // 4. Topology. A face whose polygon comes out under the smallest face size (its corners pulled in by its
   //    neighbours' creases) is dissolved and the topology built again.
+  //    Then (faces-cleanup.ts) faces too weak to stand on the polygons topology drew: thin strips with no plane of
+  //    their own or cut from a neighbour's plane, and faces steeper than a roof plane without strong support.
   let topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
-  for (let pass = 0; pass < 3 && faces.planes.length > 1; pass++) {
+  const cleanupPrm: FaceCleanupParams = { ...DEFAULT_FACE_CLEANUP, ...opts.faces };
+  const dissolved: Partial<Record<WeakReason, number>> = {};
+  for (let pass = 0; pass < 4 && faces.planes.length > 1; pass++) {
     const tiny = new Set(topo.faces.map((f, k) => (Math.abs(signedArea(f.ring)) < planePrm.tinyFaceM2 ? k : -1)).filter((k) => k >= 0));
+    if (cleanupPrm.enabled) {
+      const support = faceSupport(g, s, dsm, faces.labels, planes, topo.faces.map((f) => f.ring), planePrm, (f) => weakCandidate(f, cleanupPrm));
+      if (opts.debug !== undefined) {
+        support.forEach((f, k) => {
+          if (weakCandidate(f, cleanupPrm)) {
+            opts.debug!(`face ${k} candidate: ${f.widthM.toFixed(2)} m wide, ${f.areaM2.toFixed(1)} m2, ${f.pitchX12.toFixed(1)}/12, on plane ${f.planeShare?.toFixed(2) ?? '-'}, neighbour ${f.minNeighbourDeg.toFixed(0)} deg, edge ${f.edgeShare.toFixed(2)}, thick ${f.thicknessM?.toFixed(2) ?? '-'}`);
+          }
+        });
+      }
+      const weak = weakFaces(support, cleanupPrm);
+      for (const [k, why] of weak) {
+        if (tiny.has(k)) continue;
+        tiny.add(k);
+        dissolved[why] = (dissolved[why] ?? 0) + 1;
+        opts.debug?.(`face ${k} dissolved: ${why}`);
+      }
+    }
     if (tiny.size === 0 || tiny.size >= faces.planes.length) break;
     faces = dissolve(g, s, dsm, roof, faces, tiny, tree);
     planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
@@ -359,6 +385,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     clipped,
     quality,
     cuts: { maskM2: maskPx0 * s * s, groundM2: groundPx * s * s, terraceM2: terracePx * s * s },
+    ...(Object.keys(dissolved).length > 0 ? { dissolved } : {}),
   };
 }
 
