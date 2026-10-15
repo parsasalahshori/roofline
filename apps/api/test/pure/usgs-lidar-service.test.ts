@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cellOf, decodeCrop, encodeCrop, LidarTileCache, UsgsLidarService } from '../../src/providers/usgs-lidar-service.ts';
 import { utmToLngLat } from '@roofline/shared/roof-reconstruct';
-import { FakeUsgsLidarApi } from '../../src/providers/usgs-lidar.ts';
+import { createUsgsLidarApi, FakeUsgsLidarApi, RealUsgsLidarApi } from '../../src/providers/usgs-lidar.ts';
 import { fixtureBytes, HOUSE_POINT, TILE_URL, unit } from './usgs-lidar-fixture.ts';
 
 /*
@@ -223,5 +223,46 @@ describe('UsgsLidarService', () => {
     const r = await svc.prefetchArea([HOUSE_POINT[0] - 0.006, HOUSE_POINT[1] - 0.004], [HOUSE_POINT[0] + 0.006, HOUSE_POINT[1] + 0.004]);
     expect(r).toEqual({ tiles: 1, failed: 0, none: {} });
     expect(api.calls.filter((c) => c.kind === 'size')).toHaveLength(1);
+  });
+
+  it('a tile that can never be read (not LAS) is kept as unreadable: a second search downloads nothing', async () => {
+    const { api, svc } = setup({ dir: false });
+    const junk = fixtureBytes('house-14-fmt6.laz').slice();
+    junk[0] = 0x58; // 'XASF': not LAS, the same answer on every read
+    api.files.set(TILE_URL, junk);
+    expect(await svc.prefetch(HOUSE_POINT)).toEqual({ none: 'unreadable', detail: 'las:not-las' });
+    const gets = api.calls.filter((c) => c.kind === 'get').length;
+    const coverage = api.calls.filter((c) => c.kind === 'coverage').length;
+    expect(gets).toBeGreaterThan(0);
+    expect(await svc.prefetch(HOUSE_POINT)).toEqual({ none: 'unreadable' });
+    expect(await svc.forMeasure(HOUSE_POINT, 1000)).toEqual({ none: 'unreadable' });
+    expect(api.calls.filter((c) => c.kind === 'get')).toHaveLength(gets);
+    expect(api.calls.filter((c) => c.kind === 'coverage')).toHaveLength(coverage);
+  });
+
+  it('a tile that fails to decode leaves the disk cache and is not kept: the next search downloads it afresh', async () => {
+    const { api, svc, dir } = setup();
+    const good = fixtureBytes('house-14-fmt6.laz');
+    api.files.set(TILE_URL, good.subarray(0, 30_000));
+    expect(await svc.prefetch(HOUSE_POINT)).toMatchObject({ none: 'error', detail: expect.stringMatching(/^las:/) });
+    expect(readdirSync(dir!).filter((n) => n.endsWith('.laz'))).toEqual([]);
+    api.files.set(TILE_URL, good);
+    expect(await svc.prefetch(HOUSE_POINT)).toHaveProperty('crop');
+  });
+
+  it('the area job does nothing without a tile directory (the tiles would be thrown away)', async () => {
+    const { api, svc } = setup({ dir: false });
+    const r = await svc.prefetchArea([HOUSE_POINT[0] - 0.006, HOUSE_POINT[1] - 0.004], [HOUSE_POINT[0] + 0.006, HOUSE_POINT[1] + 0.004]);
+    expect(r).toEqual({ tiles: 0, failed: 0, none: {}, skipped: 'no-tile-dir' });
+    expect(api.calls).toHaveLength(0);
+  });
+});
+
+describe('createUsgsLidarApi', () => {
+  it('DEMO_MODE (which forces FAKE_PROVIDERS) honours the lidar mode with the real USGS; plain FAKE_PROVIDERS keeps the fake; off is off', () => {
+    expect(createUsgsLidarApi({ DEMO_MODE: true, FAKE_PROVIDERS: true, USGS_LIDAR_MODE: 'on' } as never)).toBeInstanceOf(RealUsgsLidarApi);
+    expect(createUsgsLidarApi({ DEMO_MODE: true, FAKE_PROVIDERS: true, USGS_LIDAR_MODE: 'prefetch' } as never)).toBeInstanceOf(RealUsgsLidarApi);
+    expect(createUsgsLidarApi({ DEMO_MODE: false, FAKE_PROVIDERS: true, USGS_LIDAR_MODE: 'on' } as never)).toBeInstanceOf(FakeUsgsLidarApi);
+    expect(createUsgsLidarApi({ DEMO_MODE: true, FAKE_PROVIDERS: true } as never).configured).toBe(false);
   });
 });

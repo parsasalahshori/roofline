@@ -82,9 +82,15 @@ describe('roof-3d with USGS lidar', () => {
     expect((await roof3dAt(bare, INSIDE, buildingOf(HOUSE)))?.roof).toEqual(snap?.roof);
   });
 
-  it('prefetch: the lidar is fetched and its provenance kept, the roof is unchanged', async () => {
-    const { deps } = depsWith('prefetch');
-    const snap = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
+  it('prefetch: Measure never waits for or downloads lidar (the search fetches it); once fetched its provenance is kept, the roof is unchanged', async () => {
+    const { deps, api } = depsWith('prefetch');
+    const cold = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
+    expect(cold?.lidar).toEqual({ status: 'none', reason: 'lidar-pending' });
+    expect(api.calls).toHaveLength(0);
+    await prefetchLidar(deps, INSIDE);
+    const { deps: warm } = depsWith('prefetch');
+    (warm as { usgsLidar: unknown }).usgsLidar = deps.usgsLidar;
+    const snap = await roof3dAt(warm, INSIDE, buildingOf(HOUSE));
     expect(snap?.lidar).toMatchObject({ status: 'kept', workunit: 'AR_Western_4_B24', ql: 1, flown: ['2025-01-02', '2025-03-26'], leafOff: true, credit: expect.stringMatching(/USGS/) });
     const { deps: off } = depsWith('off');
     expect(snap?.roof).toEqual((await roof3dAt(off, INSIDE, buildingOf(HOUSE)))?.roof);

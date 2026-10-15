@@ -79,6 +79,14 @@ export function fusionOf(c: LidarCropUtm, imageryDate: string | null): NonNullab
  */
 export function startLidar(deps: AppDeps, point: LngLat): Promise<LidarEvidence> | null {
   if (!lidarOn(deps)) return null;
+  // prefetch: the roof is Google's alone, so Measure only records what is already known (no wait, no download; the
+  // address search does the fetching).
+  if (lidarModeOf(deps) === 'prefetch') {
+    return deps.usgsLidar!.known(point).then(
+      (k): LidarEvidence => k ?? { none: 'lidar-pending' },
+      (): LidarEvidence => ({ none: 'error' }),
+    );
+  }
   return deps.usgsLidar!.forMeasure(point);
 }
 

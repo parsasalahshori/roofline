@@ -378,9 +378,9 @@ export type Roof3dSnapshot = {
 /**
  * Why leaf-off lidar was not there for a roof: 'lidar-pending' (being fetched when Measure ran; the next Measure uses
  * it), 'no-coverage' (no USGS 3DEP point cloud of QL2 or better there), 'leaf-on-only' (only lidar flown with leaves
- * on, which the crowns block as they block Google), 'too-sparse' (too few returns to place an edge), 'error'.
+ * on, which the crowns block as they block Google), 'too-sparse' (too few returns to place an edge), 'error', 'unreadable' (a tile the decoder can never read: kept, not downloaded again).
  */
-export const ROOF_3D_LIDAR_NONE = ['lidar-pending', 'no-coverage', 'leaf-on-only', 'too-sparse', 'error'] as const;
+export const ROOF_3D_LIDAR_NONE = ['lidar-pending', 'no-coverage', 'leaf-on-only', 'too-sparse', 'error', 'unreadable'] as const;
 export type Roof3dLidarNone = (typeof ROOF_3D_LIDAR_NONE)[number];
 
 /** Provenance of the lidar behind a roof (Roof3dSnapshot.lidar). */

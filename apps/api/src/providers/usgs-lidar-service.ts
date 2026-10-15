@@ -20,7 +20,15 @@ import { chooseUnit, createUsgsLidarApi, leafOffDay, type LidarUnit, type UsgsLi
  * database. Credit: USGS 3D Elevation Program, public domain.
  */
 
-export const LIDAR_NONE_REASONS = ['lidar-pending', 'no-coverage', 'leaf-on-only', 'too-sparse', 'error'] as const;
+export const LIDAR_NONE_REASONS = ['lidar-pending', 'no-coverage', 'leaf-on-only', 'too-sparse', 'error', 'unreadable'] as const;
+
+/**
+ * LAS failures that the same bytes will always give again (the file's format or coordinate system, read from its
+ * header, or its declared size): kept as 'unreadable' for noneTtlMs, so the cell's tile is not downloaded again on
+ * every search. A 'decode' failure is not among them: it can be a damaged download, so the cached tile is dropped and
+ * nothing is kept (the next search downloads it afresh).
+ */
+const PERMANENT_LAS_FAILURES: ReadonlySet<string> = new Set(['not-las', 'unsupported-format', 'no-crs', 'not-utm', 'too-large']);
 export type LidarNone = (typeof LIDAR_NONE_REASONS)[number];
 
 export const USGS_CREDIT = 'Lidar: USGS 3D Elevation Program (3DEP), public domain';
@@ -217,6 +225,18 @@ export class LidarTileCache {
     await this.log({ what: 'laz-tile', url, bytes: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex'), ms });
   }
 
+  /** Removes a cached tile (one that failed to decode). */
+  async drop(url: string): Promise<void> {
+    const f = this.fileOf(url);
+    if (f === null) return;
+    await unlink(f).catch(() => undefined);
+    await this.log({ what: 'drop', url });
+  }
+
+  get enabled(): boolean {
+    return this.dir !== null;
+  }
+
   /** One line in the download ledger (every download, its size and checksum: what was taken from USGS and when). */
   async log(entry: Record<string, unknown>): Promise<void> {
     if (this.dir === null) return;
@@ -368,8 +388,13 @@ export class UsgsLidarService {
         await this.putObject(this.cropKey(cell), encodeCrop(crop), 'application/octet-stream').catch((err: unknown) => this.tiles.log({ what: 'store-error', cell: cell.key, detail: detailOf(err) }).catch(() => undefined));
         return { crop };
       } catch (err) {
-        // Not kept: an outage or a damaged download is tried again by the next search or Measure.
         await this.tiles.log({ what: 'error', cell: cell.key, detail: detailOf(err) }).catch(() => undefined);
+        // A tile that can never be read is kept as 'unreadable' (no download on every search until the TTL).
+        if (err instanceof LasError && PERMANENT_LAS_FAILURES.has(err.reason)) {
+          await this.keepNone(cell, { reason: 'unreadable', at: this.now().getTime() });
+          return { none: 'unreadable', detail: detailOf(err) };
+        }
+        // Not kept: an outage or a damaged download is tried again by the next search or Measure.
         return { none: 'error', detail: detailOf(err) };
       }
     })().finally(() => {
@@ -532,7 +557,13 @@ export class UsgsLidarService {
     // decode), then decode one house at a time.
     const files: Uint8Array[] = [];
     for (const url of urls) files.push(await this.tile(url));
-    return this.serial(() => this.decodeTiles(cell, unit, urls, files));
+    try {
+      return await this.serial(() => this.decodeTiles(cell, unit, urls, files));
+    } catch (err) {
+      // A tile that did not decode may be a damaged download: it leaves the disk cache (the next try downloads it).
+      if (err instanceof LasError && !PERMANENT_LAS_FAILURES.has(err.reason)) for (const url of urls) await this.tiles.drop(url).catch(() => undefined);
+      throw err;
+    }
   }
 
   private async decodeTiles(cell: LidarCell, unit: LidarUnit, urls: string[], files: Uint8Array[]): Promise<LidarCropUtm> {
@@ -564,7 +595,9 @@ export class UsgsLidarService {
    * The area job: the tiles of every leaf-off unit over a box (sampled every 500 m, at most `maxPoints` samples and
    * `maxTiles` tiles) downloaded into the tile cache, so each house's crop there is derived without a download.
    */
-  async prefetchArea(sw: LngLat, ne: LngLat, o: { maxPoints?: number; maxTiles?: number } = {}): Promise<{ tiles: number; failed: number; none: Partial<Record<LidarNone, number>> }> {
+  async prefetchArea(sw: LngLat, ne: LngLat, o: { maxPoints?: number; maxTiles?: number } = {}): Promise<{ tiles: number; failed: number; none: Partial<Record<LidarNone, number>>; skipped?: 'no-tile-dir' }> {
+    // Without a tile cache the downloaded tiles would be thrown away: the job does nothing (USGS_LIDAR_TILE_DIR).
+    if (!this.tiles.enabled) return { tiles: 0, failed: 0, none: {}, skipped: 'no-tile-dir' };
     const maxPoints = o.maxPoints ?? 25;
     const maxTiles = o.maxTiles ?? 16;
     const midLat = (sw[1] + ne[1]) / 2;

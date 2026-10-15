@@ -353,6 +353,9 @@ export class FakeUsgsLidarApi implements UsgsLidarApi {
 export function createUsgsLidarApi(config: Config): UsgsLidarApi {
   const mode = (config as { USGS_LIDAR_MODE?: string }).USGS_LIDAR_MODE ?? 'off';
   if (mode === 'off') return new UnconfiguredUsgsLidarApi();
+  // DEMO_MODE forces FAKE_PROVIDERS but runs on real Google data (createSolarLayersApi): the lidar mode the owner set is
+  // honoured there too (USGS needs no key), else prefetch and on would silently find no coverage anywhere.
+  if (config.DEMO_MODE) return new RealUsgsLidarApi();
   if (config.FAKE_PROVIDERS) return new FakeUsgsLidarApi();
   return new RealUsgsLidarApi();
 }
