@@ -52,7 +52,30 @@ for (const entry of manifest.houses) {
       if (m.startsWith('hidden-edge planes') && argv.includes('--edges')) console.log('   ' + m);
     },
   });
-  const ms = performance.now() - t0;
+  let ms = performance.now() - t0;
+  if (argv.includes('--time')) {
+    // Median of 5 runs each way, interleaved, in this process: the step's own cost without machine-load drift.
+    const opts0 = {
+      imageryQuality: layers.imageryQuality,
+      ...(steepRoof(h.building) ? { planes: { maxPitchX12: 24 } } : {}),
+      ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
+    };
+    const on: number[] = [];
+    const off: number[] = [];
+    for (let k = 0; k < 5; k++) {
+      let t = performance.now();
+      reconstructRoof(raster, toPixel(entry.point), opts0);
+      off.push(performance.now() - t);
+      t = performance.now();
+      reconstructRoof(raster, toPixel(entry.point), { ...opts0, hiddenEdge: { method: 'planes' } });
+      on.push(performance.now() - t);
+    }
+    const med = (v: number[]) => [...v].sort((a, b) => a - b)[2]!;
+    ms = med(on);
+    totals.msOff = (totals.msOff ?? 0) + med(off);
+    totals.msOn = (totals.msOn ?? 0) + med(on);
+    console.log(`  time ${entry.slug}: off ${med(off).toFixed(1)} ms, on ${med(on).toFixed(1)} ms`);
+  }
   const dump = val('--dump');
   if (dump !== undefined && local !== null) {
     const off = reconstructRoof(raster, toPixel(entry.point), {
