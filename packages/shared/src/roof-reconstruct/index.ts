@@ -26,7 +26,7 @@ export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts'
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
 export type { XY } from './geom.ts';
 export type { Plane } from './planes.ts';
-export { DEFAULT_LIDAR_EDGE, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
+export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
 /** A height map and roof mask on one grid: row-major, row 0 at the top (north), `pixelSizeM` metres a pixel. */
 export type RoofRaster = {

@@ -1,29 +1,30 @@
 // Hidden eaves from leaf-off airborne lidar (USGS 3DEP): where a tree crown hides the roof's edge from Google's height
 // map, lidar pulses that passed between bare branches still hit the roof and the ground beside it. This step moves the
-// outline edges the height map cannot vouch for (eave support 'none', eave-support.ts) to where the lidar shows the roof
-// plane ends, and leaves everything else to Google: the faces, their planes and pitch, and every edge the heights see.
+// outline edges the height map cannot vouch for (eave support 'none', eave-support.ts) to where the lidar's roof ends,
+// and leaves everything else to Google: the faces, their planes and pitch, and every edge the heights see.
+// Design note, measurements and limits: docs/roof-3d/lidar.md.
 //
-// Pure and deterministic, no randomness; about 20-60 ms a house on 30 000 points. It runs between squareOutline and
-// buildTopology (index.ts, step 3b), replaces only edges (never mask pixels), and declines with a typed reason
-// (LidarEdgeReason) whenever the lidar cannot be trusted for this house: too few points, not flown leaf-off, a frame it
-// cannot register onto Google's, or a house that has changed since the flight.
+// Pure and deterministic (no randomness); tens of milliseconds a house (p95 about 0.3 s on a 2 MB QL1 crop). It runs
+// between squareOutline and buildTopology (index.ts, step 3b), replaces only edges (never mask pixels), and declines
+// with a typed reason (LidarEdgeReason) whenever the lidar cannot be trusted for this house.
 //
-// 1. Registration onto Google's frame (the datasets differ by about a metre horizontally and by an unknown vertical
-//    datum): the vertical offset from ground returns on smooth flat height-map pixels, then the horizontal shift by a
-//    coarse-to-fine grid search minimising the truncated height difference between last returns and the height map,
-//    smooth pixels only (crowns excluded), then the vertical offset again. Declined when the minimum sits at the search
-//    limit or is not pinned in both directions ('misaligned'), or roof returns do not lie on the faces' planes.
-// 2. Per outline sample (0.2 m), along the outward normal in a 0.6 m corridor: last returns within PLANE_TOL_M of the
-//    sample's own face plane (extended outward) are roof, returns more than LOW_M below it are ground (or a lower
-//    roof); anything above is a branch and ignored. The eave is the outermost roof return of the run that starts on the
-//    roof and ends at the first ground bin, plus half the point spacing. A sample without that ground bin has no
-//    evidence (the roof may go on where no pulse reached).
-// 3. On the samples the heights DO see (strong support), the same detector gives the lidar's bias against Google's
-//    edges (the eave lip, the registration's residual): subtracted from the hidden samples so both agree where both
-//    see. A large bias there means the house changed between the captures ('changed').
-// 4. Per edge whose samples are mostly hidden: the median offset of the samples with evidence, when enough agree, moves
-//    the edge parallel to itself; corners are rebuilt where neighbouring edges cross (a jog when they are parallel).
-//    The new outline is refused when it crosses itself or changes the area by more than MAX_AREA_CHANGE.
+// 1. Registration onto Google's frame (about a metre apart horizontally, an unknown vertical datum). Under a leaf-on
+//    crown Google's heights are the canopy and the lidar's last returns the ground, metres apart, so the fit counts
+//    inliers: dz from the mode of the residuals, (dx, dy) maximising last returns within 0.15 m of the height map on
+//    smooth pixels (coarse then fine grid), dz again. Declined ('misaligned') at the search limit, when not pinned in
+//    both directions, or when roof returns do not lie on Google's faces (median 0.15 m, smooth pixels only).
+// 2. Returns are classified: ground (class 2, or a last return within 0.5 m of the ground), roof (a last return 2 m or
+//    more up whose neighbourhood is one plane within 0.08 m and no steeper than 24/12: a face Google never fitted
+//    counts too), or neither (branches, walls).
+// 3. Per outline sample (0.2 m), along the outward normal in a 0.6 m corridor: the run of roof returns that starts
+//    inside the edge ends at the first ground bin; the eave is its last roof return plus half the point spacing. No
+//    ground bin within 1 m of it: no evidence (the roof may go on where no pulse reached).
+// 4. The same detector on the samples the heights DO see gives o = n . delta + b (edgeFrame): the registration's
+//    residual shift at the edges and the eave lip; both are taken out of the hidden samples. A large lip or a spread
+//    no shift explains means the house changed since the flight ('changed').
+// 5. Per edge whose samples are mostly hidden: the median corrected offset of the samples with evidence, when enough
+//    agree, moves the edge parallel to itself; corners are rebuilt where the moved lines cross (a jog when they are
+//    near parallel or the crossing runs away). Refused when it crosses itself or changes the area by over 30 %.
 import { dist, intersectLines, selfIntersects, signedArea, type XY } from './geom.ts';
 import { eaveSupport } from './eave-support.ts';
 import type { Plane } from './planes.ts';
@@ -53,10 +54,6 @@ export type LidarEdgeParams = {
   requireLeafOff: boolean;
   /** Horizontal registration search radius, metres (the truth harness measured a median shift of 1.17 m). */
   searchM: number;
-  /** A roof return lies within this of its face plane, metres (DSM plane-fit noise plus QL1/QL2 vertical accuracy). */
-  planeTolM: number;
-  /** A return this far below the face plane is ground or a lower roof, metres (well above plane tilt over a bin). */
-  lowM: number;
   /** Corridor half-width along the edge round a sample, metres. */
   corridorM: number;
   /** Profile range along the outward normal, metres (inside, outside). */
@@ -92,8 +89,6 @@ export const DEFAULT_LIDAR_EDGE: LidarEdgeParams = {
   maxAgeYears: 12,
   requireLeafOff: true,
   searchM: 3,
-  planeTolM: 0.2,
-  lowM: 0.8,
   corridorM: 0.3,
   insideM: 1.5,
   outsideM: 3.5,
@@ -165,8 +160,12 @@ export type LidarEdgeInput = {
   debug?: (msg: string) => void;
 };
 
-/** Room round the crop read for registration and eave support, metres (eave-support reads 1 m outside, the corridor 3.5 m). */
-const WINDOW_M = 4;
+/**
+ * Room round the crop read for registration and eave support, metres (eave-support reads 1 m outside, the corridor
+ * 3.5 m). Wide enough that a house in trees still has open ground and neighbours' roofs to register on: at 4 m, tree
+ * houses' windows were mostly canopy and 7 of 54 dev houses failed to register.
+ */
+const WINDOW_M = 10;
 /** Height-map roughness above which a pixel is not used for registration (foliage; the estimator's tree test). */
 const ROUGH_M = 0.12;
 /** A return within this of the height map is an inlier of the registration, metres (DSM noise plus QL1/QL2 vertical). */
@@ -284,6 +283,8 @@ function run(input: LidarEdgeInput, prm: LidarEdgeParams): { outline: XY[]; repo
     const k = labels[r * g.w + c]!;
     if (k < 0) continue;
     roofPts++;
+    // Only where the height map is smooth: under a crown Google's faces can be fitted to the canopy, not the roof.
+    if (smooth[(r + r0 - wr0) * win.w + c + c0 - wc0] !== 1) continue;
     const p = planes[k]!;
     resid.push(Math.abs(qz[i]! - (p.a * qx[i]! + p.b * qy[i]! + p.c)));
   }
@@ -295,7 +296,7 @@ function run(input: LidarEdgeInput, prm: LidarEdgeParams): { outline: XY[]; repo
   if (roofDensity < prm.minRoofDensity) return keep('sparse', base);
   if (!(madM <= REG_MAD_M)) return keep('misaligned', base);
   const halfSpacing = Math.min(0.15, 0.5 / Math.sqrt(roofDensity));
-  const cls = classify(qx, qy, qz, pf, grid, roofDensity, prm);
+  const cls = classify(qx, qy, qz, pf, grid, roofDensity);
 
   // 2. Eave support of the outline on the window (eave-support.ts needs the outside of the edge too).
   // eaveSupport (c606b7a4) places every sample past an edge's midpoint AT the midpoint (tt = min(t, L / 2)), so the
@@ -575,6 +576,8 @@ function solve3(A: readonly number[], v: readonly number[]): number[] | null {
 }
 /** Visible normals must spread at least this much (smaller eigenvalue; 0.25 for edges in two perpendicular directions in equal measure). */
 const EDGE_FRAME_MIN_EIG = 0.05;
+/** A rebuilt corner may move at most this many times the larger of its two edges' moves (else a jog). */
+const CORNER_RUN = 1.5;
 /** Outline samples every this many metres (eave-support.ts's step). */
 const SAMPLE_STEP_M = 0.2;
 
@@ -606,7 +609,7 @@ const GROUND = 2;
  * ground whose neighbours (last returns within a radius holding about ROOF_NEIGHBOURS at this density) lie on one plane
  * within ROOF_RMS_M and no steeper than MAX_ROOF_SLOPE: a roof is smooth, bare branches are not.
  */
-function classify(qx: Float64Array, qy: Float64Array, qz: Float64Array, pf: number[], grid: { cell: number; map: Map<number, number[]> }, density: number, prm: LidarEdgeParams): Uint8Array {
+function classify(qx: Float64Array, qy: Float64Array, qz: Float64Array, pf: number[], grid: { cell: number; map: Map<number, number[]> }, density: number): Uint8Array {
   const n = qx.length;
   const out = new Uint8Array(n);
   // The ground: median of ground returns per GROUND_CELL_M cell, looked up in the nearest cells that have any.
@@ -688,7 +691,6 @@ function classify(qx: Float64Array, qy: Float64Array, qz: Float64Array, pf: numb
     // Most of the neighbourhood must be in it: a branch with two roof returns under it is not the roof.
     if (Math.sqrt(ss / m) <= ROOF_RMS_M) out[i] = ROOF;
   }
-  void prm;
   return out;
 }
 /** Ground cell for the ground height, metres, and how many cells away a ground cell is looked for. */
@@ -789,7 +791,7 @@ function profiler(
 
 /**
  * The ring with edge k moved `move[k]` metres along its outward normal; corners rebuilt where neighbouring (moved)
- * edges cross, or a jog between them when they are near parallel. Null when a corner runs away.
+ * edges cross, or a jog between them when they are near parallel or the crossing would run away along an edge.
  */
 export function offsetEdges(ring: readonly XY[], move: readonly number[], ccw: boolean): XY[] | null {
   const E = ring.length;
@@ -811,10 +813,10 @@ export function offsetEdges(ring: readonly XY[], move: readonly number[], ccw: b
       continue;
     }
     const sin = Math.abs(prev.d.x * cur.d.y - prev.d.y * cur.d.x);
-    // 20 degrees: below it the crossing runs far along the edges; a jog keeps the corner local.
-    if (sin >= Math.sin((20 * Math.PI) / 180)) {
-      const x = intersectLines(prev, cur);
-      if (x === null || dist(x, v) > Math.abs(prev.o) / sin + Math.abs(cur.o) / sin + 0.5) return null;
+    // Where the moved lines cross, unless they are near parallel (20 degrees) or the crossing runs away along an edge
+    // (further than CORNER_RUN times the larger move): then a jog between the two moved edges keeps the change local.
+    const x = sin >= Math.sin((20 * Math.PI) / 180) ? intersectLines(prev, cur) : null;
+    if (x !== null && dist(x, v) <= CORNER_RUN * Math.max(Math.abs(prev.o), Math.abs(cur.o)) + 0.3) {
       out.push(x);
     } else {
       out.push({ x: v.x + prev.o * prev.nrm.x, y: v.y + prev.o * prev.nrm.y });

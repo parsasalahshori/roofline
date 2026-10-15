@@ -5,8 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { BenchDataError, cohortCounts, runBench } from '../bench/roof3d/bench.ts';
 import { DEFAULT_GATES, formatGates, GatesSchema, compareSplitGap, compareSplits, gatesFailed, type GateRow } from '../bench/roof3d/gates.ts';
+import { loadHouse } from '../bench/roof3d/data.ts';
 import { lidarIndexHash, readLidarIndex, readLidarTruth } from '../bench/roof3d/lidar.ts';
-import { manifestHash, manifestProblems, parseManifest, SPLITS, withLidar, type Manifest } from '../bench/roof3d/manifest.ts';
+import { readLidarEdgePoints } from '../bench/roof3d/lidar-edges.ts';
+import { type HouseEntry, manifestHash, manifestProblems, parseManifest, SPLITS, withLidar, type Manifest } from '../bench/roof3d/manifest.ts';
 import { benchDir, FALLBACK_DATA_DIR } from '../bench/roof3d/paths.ts';
 import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/report.ts';
 
@@ -29,6 +31,9 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *     --allow-expired           run on Google data past its 30-day date (a one-off; delete the data instead)
  *     --seeds 7,8,9             the seeds (default 7,8,9)
  *     --allow-manifest-change   compare against a baseline made from a different manifest or other seeds (gates then mean little)
+ *     --lidar-edges             turn on the lidar hidden-edge step (outline-lidar.ts) with each house's crop from
+ *                               <ROOF_BENCH_DIR>/lidar-edges (edge_points.py). Its lidar-truth numbers are then CIRCULAR
+ *                               (same returns): judge it on EagleView (roof-3d-lidar-eval.ts); use this run for the gates
  *     --base SHA                record which commit's reconstruction this run claims to measure, with the reconstruction
  *                               files that differ from it (for a baseline made on a later harness commit)
  * Exit code: 0 ok, 1 a gate failed, 2 bad usage, 3 a data problem (missing files, expired data, a manifest that
@@ -137,6 +142,9 @@ async function main(): Promise<number> {
       allowExpired: flag('--allow-expired'),
       bench,
       lidarHash,
+      ...(flag('--lidar-edges')
+        ? { loader: async (e: HouseEntry) => ({ ...(await loadHouse(e, bench)), lidarPoints: readLidarEdgePoints(bench, e.slug, e.data?.imageryDate ?? null)?.points ?? null }) }
+        : {}),
       commit: { sha: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain', '--untracked-files=no']) !== '' },
       base: baseSha === undefined ? null : { sha: git(['rev-parse', baseSha]), changedFiles: git(['diff', '--name-only', baseSha, '--', ...RECONSTRUCTION_PATHS]).split('\n').filter((l) => l !== '') },
       onHouse: (slug, k, n) => {

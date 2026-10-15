@@ -17,8 +17,9 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { LngLat, Roof3d } from '@roofline/shared';
-import { lngLatToUtm, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
+import { densify, lngLatToUtm, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
 import { eaveSupport } from '@roofline/shared/roof-reconstruct/eave-support';
+
 import { loadHouse, type LoadedHouse } from '../bench/roof3d/data.ts';
 import { boundaryDistance, distancesToBoundary, geoJsonToXY, iou, type MultiPoly, type Pt, sampleRings, boundaries, translate } from '../bench/roof3d/geometry.ts';
 import { readLidarEdgePoints } from '../bench/roof3d/lidar-edges.ts';
@@ -67,7 +68,7 @@ function args() {
   };
 }
 
-/** Google's eave support (strong/weak/none) of every 0.2 m sample along a lng/lat ring, as bench metres. */
+/** Google's eave support (strong/weak/none) of every 0.2 m sample (one per 0.2 m piece) along a lng/lat ring, as bench metres. */
 function supportOf(ring: readonly LngLat[], h: LoadedHouse, zone: ReturnType<typeof outlineXY>['zone']): { p: Pt; cls: string }[] | null {
   const L = h.layers;
   const lz = utmZoneOfEpsg(L.epsg);
@@ -77,7 +78,8 @@ function supportOf(ring: readonly LngLat[], h: LoadedHouse, zone: ReturnType<typ
     return { x: u.easting - L.originX, y: u.northing - L.originY };
   });
   const r = L.raster;
-  const s = eaveSupport(local, { width: r.width, height: r.height, pixelSizeM: r.pixelSizeM, dsm: r.dsm }, null);
+  // In 0.2 m pieces: eaveSupport (c606b7a4) puts every sample past an edge's midpoint at the midpoint.
+  const s = eaveSupport(densify(local, 0.2).pts, { width: r.width, height: r.height, pixelSizeM: r.pixelSizeM, dsm: r.dsm }, null, { stepM: 0.2 });
   if (!s.ok) return null;
   return s.samples.map((q) => {
     const [lng, lat] = utmToLngLat(lz, q.x + L.originX, q.y + L.originY);

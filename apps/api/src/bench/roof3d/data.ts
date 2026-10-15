@@ -8,6 +8,7 @@ import { type EagleViewTruth, EagleViewTruthSchema, type VisualTruth, VisualTrut
 import type { HouseEntry } from './manifest.ts';
 import { type LidarTruth, readLidarTruth } from './lidar.ts';
 import { benchDir, houseDir } from './paths.ts';
+import type { LidarPointsUtm } from '../../estimator/roof-3d.ts';
 
 /** Google's own whole-roof numbers for the building (buildingInsights), an independent source for the proxy checks. */
 export type GoogleFacts = {
@@ -32,6 +33,8 @@ export type LoadedHouse = {
   /** The house's accepted lidar truth (lidar.ts) when its lidar grade is 'lidar', and the file's short sha1. */
   lidar?: LidarTruth | null;
   lidarSha1?: string | null;
+  /** The lidar crop the hidden-edge step reads (lidar-edges.ts), only on runs with --lidar-edges. Input, never truth. */
+  lidarPoints?: LidarPointsUtm | null;
 };
 
 /** Google's files are a few hundred kilobytes each; the server refuses anything near 40 MB, and so does the benchmark. */
