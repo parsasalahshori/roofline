@@ -1,5 +1,58 @@
 # Roof 3D edge cases: release notes (branch `edge/merge`)
 
+> **Remediation (after the verifier and the adversarial review).** This is **not** the outline release: outlines are
+> unchanged on almost every house (aligned IoU against EagleView 0.927 dev, 0.910 held-out, as at base). The round
+> delivers foliage-face cleanup, honest marking of unverified edges, and a set of fixes, below. Details are in
+> [remediate.md](remediate.md). The tables further down are the pre-remediation merge (`ce6cc303`), kept for the
+> record.
+>
+> - **P0 fixed:** the lattice plane search lost whole planes when candidate scores tied (clean gables came out as one
+>   face). Golden roofs at 0.1, 0.25 and 0.3 m now pass.
+> - **Flag recall:** a 13.8% over-measured roof had lost its review. It is caught again (dev flag recall 1.00).
+> - **305 Ridgeway:** now the two gable faces plus the real 5.7/12 attachment. The foliage face is gone. Its outline
+>   is still jagged.
+> - **Canopy completion is off by default**, which brings runtime back to about base.
+> - **Edge confidence is calibrated on DEV only.**
+> - **Snapshots:** `ROOF_3D_ALGORITHM_VERSION = 3`.
+>
+> Same harness, seeds 7, 8, 9, manifest `91e97810c22b`. Columns: base `e3ae9615` -> merged `93d944c9` ->
+> remediated (this commit).
+>
+> | split | metric | base | merged | remediated |
+> | --- | --- | --- | --- | --- |
+> | dev (54, 18 keys) | median \|area error\| % | 4.0 | 4.1 | 4.0 |
+> | dev | main pitch exact / within 1 (of 18) | 12 / 15.3 | 14 / 15 | 14 / 16 |
+> | dev | face pitch MAE | 0.62 | 0.53 | 0.53 |
+> | dev | aligned IoU | 0.927 | 0.927 | 0.927 |
+> | dev | lines ridge / hip / valley / eave / rake % | -23.9 / -0.1 / +24.6 / -23.1 / -2.7 | -22.9 / +0.6 / +22.1 / -25.2 / +0.8 | -23.0 / -0.2 / +21.6 / -23.4 / -5.0 |
+> | dev | checker / independent checker | 33.7 / - | 34 / 31 | 33 / 30 |
+> | dev | faces vs EagleView count, median % | - | - | 42 |
+> | dev | thin faces / >18/12 | 62.3 / 3 | 32 / 2 | 34 / 1 |
+> | dev | flag rate / precision / recall | 0.69 / 0.28 / 1.00 | 0.78 / 0.31 / 0.80 | 0.78 / 0.29 / 1.00 |
+> | dev | runtime p50 / p95 ms | 208 / 664 | 291 / 840 | 213 / 740 |
+> | held-out (30, 14 keys) | median \|area error\| % | 3.1 | 3.6 | 2.3 |
+> | held-out | main pitch exact / within 1 | 9 / 12.7 | 8 / 13 | 8 / 13 |
+> | held-out | IoU / aligned IoU | 0.797 / 0.913 | 0.794 / 0.910 | 0.794 / 0.910 |
+> | held-out | lines hip / valley / eave / rake % | -27.1 / -7.4 / -27.1 / +10.4 | -31.7 / -10.2 / -28.7 / +12.8 | -31.1 / -10.8 / -29.7 / +14.7 |
+> | held-out | flag rate / precision / recall | 0.67 / 0.35 / 0.78 | 0.73 / 0.36 / 0.80 | 0.70 / 0.40 / 0.80 |
+> | held-out | runtime p50 / p95 ms | 171 / 524 | 235 / 731 | 172 / 542 |
+>
+> - **Gates:** all pass against `baseline.json` with `remediate/gates-v2.json`, which adds recall, aligned IoU and a
+>   held-out vs dev gap: dev 184 pass, held-out 119 pass, gap 2 pass.
+> - **Determinism:** 0 houses not byte-identical on either split.
+> - **Seed variance:** zero by construction (the lattice search reads no randomness). Robustness is now tested by
+>   perturbation instead.
+> - **Worse than merged:**
+>   - dev rake -5.0% (was +0.8);
+>   - dev thin faces 34 (was 32);
+>   - dev checker 33 (was 34; kc-brookside's two low-slope faces merged into one that differs from Google);
+>   - dev flag precision 0.29 (was 0.31);
+>   - held-out eave -29.7%, valley -10.8% and rake +14.7%;
+>   - at 0.3 m (dev houses block-averaged), median area error 4.1% against 3.5%.
+> - **Held-out was looked at once,** at the end, as aggregates only. Its flag metrics before this remediation are
+>   contaminated: their constants saw held-out houses.
+
+
 Base: `e3ae9615` (the benchmark commit on `edge/bench`, reconstruction as at `5cabb413`). Five tracks were merged in
 order, one `git merge --no-ff` each, with typecheck, the shared tests and the benchmark (dev and held-out aggregates,
 `--compare roof-bench/baseline.json`) after every merge: hardening, faces, canopy, outline, confidence. Every merge
@@ -151,6 +204,11 @@ Review reasons (houses carrying each, dev): differs-from-google 20.3 -> 3 (the r
 
 ## Rollback
 
+0. **Before reverting the hardening merge:** the base reader treats any snapshot with `roof: null` within 3 m as
+   fresh. That includes this release's `shadow`, `timeout`, `clipped` and `unusable` snapshots, so a plain revert
+   after running in shadow mode would leave those homes without a 3D roof for 30 days. First clear `roof_3d` where
+   `none` is one of those, or move `shadowRoof` back into `roof`. `ROOF_3D_MODE=off` does not change measurements
+   already saved with a 3D roof.
 1. Fastest: set `ROOF_3D_MODE=off` (or `shadow`) and restart the API. No data migration; stored snapshots stay.
 2. Per change: `git revert -m 1 <merge>` for one track (merge commits above: `6fce95f7` hardening, `50d2b626` faces,
    `51014ad1` + fix `f11135ac` canopy, `11328cb0` outline, `ce6cc303` confidence). Reverting faces or canopy changes
