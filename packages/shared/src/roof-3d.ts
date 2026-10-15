@@ -35,6 +35,8 @@ export type Roof3dFace = {
    * facing. Informational: it never changes the face's area or the quote.
    */
   confidence?: number;
+  /** Where the face came from (absent: Google's heights). 'lidar': a roof part only leaf-off lidar saw, pitch from its lidar plane. */
+  source?: Roof3dSource;
 };
 
 export type Roof3dLine = {
@@ -89,6 +91,11 @@ export type Roof3d = {
    * is a hypothesis; past a few square feet the roof carries the 'roof-inferred' review reason.
    */
   inferredEdges?: Roof3dInferredEdges;
+  /**
+   * What the leaf-off lidar fusion did (roof-reconstruct/lidar-fusion.ts): present only when lidar was given. Faces and
+   * edges it added carry source 'lidar'; past a small share of the area the roof carries 'roof-from-lidar'.
+   */
+  lidarFusion?: Roof3dLidarFusion;
 };
 
 /**
@@ -110,6 +117,81 @@ export type Roof3dInferredEdges = {
  * feet, positive outward); otherwise `reason` (LIDAR_EDGE_REASONS) says why the outline was left as the heights drew it.
  */
 export type Roof3dLidarEdges = { applied: boolean; reason?: string; moved: { offsetFt: number; lengthFt: number }[]; areaChangeSqFt: number };
+
+/**
+ * Leaf-off airborne lidar for one house, as the lidar service (apps/api, USGS 3DEP) hands it to the reconstruction's
+ * fusion step (roof-reconstruct/lidar-fusion.ts). Points are offsets from (originE, originN) in UTM metres of EPSG
+ * `epsg` (32601-32660 / 32701-32760 WGS84 or 26901-26923 NAD83: the fusion registers the cloud onto Google's frame
+ * itself, so a metre of datum difference is fine), z in the lidar's own vertical datum (the offset is fitted).
+ * flags: LIDAR_FLAG_LAST (last return of its pulse) and LIDAR_FLAG_GROUND (classified ground, ASPRS class 2).
+ * Arrays are in the order read (deterministic); at most LIDAR_EVIDENCE_MAX_POINTS points.
+ */
+export type LidarEvidence = {
+  epsg: number;
+  originE: number;
+  originN: number;
+  dx: Float32Array;
+  dy: Float32Array;
+  z: Float32Array;
+  flags: Uint8Array;
+  flight: LidarFlight;
+};
+export const LIDAR_FLAG_LAST = 1;
+export const LIDAR_FLAG_GROUND = 2;
+/** A 70 m QL1 square is about 150 000 points; the fusion declines ('too-many-points') above this. */
+export const LIDAR_EVIDENCE_MAX_POINTS = 400_000;
+
+/**
+ * Where a lidar crop came from (USGS work-unit metadata), so a fused roof says which flight measured it.
+ * collectStart/collectEnd: the work unit's collection window (YYYY-MM-DD; the point dates when known, else the unit's).
+ * leafOff: the work unit was flown leaf-off (null when the metadata does not say). ql: 'QL 0'..'QL 3' as USGS writes it.
+ * pointsPerM2: the nominal or measured pulse density, when known. credit: shown with the result (USGS is public domain).
+ */
+export type LidarFlight = {
+  project: string;
+  workUnit: string;
+  collectStart: string | null;
+  collectEnd: string | null;
+  leafOff: boolean | null;
+  ql: string | null;
+  pointsPerM2: number | null;
+  source: 'ept' | 'copc' | 'laz-tile' | 'cache';
+  credit: string;
+};
+
+/**
+ * Why the lidar service has no evidence for a house (it never throws into a Measure request): no 3DEP project covers
+ * it, none flown leaf-off, too old, too sparse (QL2-3), the read would exceed its size or time limit, a fetch failed,
+ * or the data read were malformed.
+ */
+export const LIDAR_EVIDENCE_MISSES = ['no-coverage', 'not-leaf-off', 'too-old', 'sparse', 'too-large', 'timeout', 'fetch-error', 'bad-data'] as const;
+export type LidarEvidenceMiss = (typeof LIDAR_EVIDENCE_MISSES)[number];
+export type LidarEvidenceResult = { ok: true; evidence: LidarEvidence } | { ok: false; miss: LidarEvidenceMiss };
+
+/**
+ * Where an outline edge or a face came from. Absent or 'google': measured by Google's height map. 'lidar': measured by
+ * leaf-off USGS lidar where Google's leaf-on heights could not see the roof (a wing or an eave under a tree crown):
+ * measured, but by another sensor on another date, so it is shown and flagged ('roof-from-lidar'), never silently
+ * priced as Google's.
+ */
+export type Roof3dSource = 'google' | 'lidar';
+
+/**
+ * What the lidar fusion step did (roof-reconstruct/lidar-fusion.ts): present only when lidar was given. applied: roof
+ * the lidar sees and the heights did not was added (addedPlanSqFt / addedSlopedSqFt, and addedShare of the final plan
+ * area); the faces and edges it added carry source 'lidar'. Otherwise `reason` (LIDAR_FUSION_REASONS in
+ * roof-reconstruct) says why the roof was left as the heights drew it. flight: which lidar, for the credit and the date.
+ */
+export type Roof3dLidarFusion = {
+  applied: boolean;
+  reason?: string;
+  flight: { project: string; workUnit: string; collectEnd: string | null; leafOff: boolean | null; ql: string | null; credit: string };
+  addedPlanSqFt: number;
+  addedSlopedSqFt: number;
+  addedShare: number;
+  /** Lidar-only parts added, each with its plan area and pitch (x/12) from its lidar plane. */
+  parts: { planSqFt: number; pitchX12: number }[];
+};
 
 /**
  * What the height map says about one outline edge (eave-support.ts): 'strong' when the heights drop 1 m or more across
@@ -135,6 +217,8 @@ export type Roof3dEdge = {
   canopy: boolean;
   /** Chance the edge is where the height map says (within half a metre), 0-1, from its support. */
   confidence: number;
+  /** Where the edge came from (absent: Google's heights). 'lidar': placed by leaf-off lidar where the heights could not see it. */
+  source?: Roof3dSource;
 };
 
 /** Why a reconstruction cut part of Google's mask away: parts lying on the ground, or the buildings a terrace home touches. */
@@ -187,6 +271,7 @@ export const ROOF_QUALITY_REASONS = [
   'low-attachment',
   'edges-unverified',
   'roof-inferred',
+  'roof-from-lidar',
 ] as const;
 export type RoofQualityReason = (typeof ROOF_QUALITY_REASONS)[number];
 
@@ -210,6 +295,9 @@ export const ROOF_QUALITY_SEVERITY: Record<RoofQualityReason, RoofQualitySeverit
   'edges-unverified': 'block',
   // Roof added (or taken off) under trees from the roof's planes or the photo, not seen in the heights: the area may be wrong.
   'roof-inferred': 'block',
+  // Roof added from leaf-off lidar where Google's heights could not see it (a wing under trees): measured, but by another
+  // sensor on another date, so a person checks it against the photo before it is priced.
+  'roof-from-lidar': 'check',
 };
 
 /** The outline's evidence in total (see Roof3dEdge): shares of its length, and its unverified length in feet. */

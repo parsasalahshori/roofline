@@ -64,6 +64,7 @@ export const liftMeasure = {
     'low-attachment': 'A flat porch roof, patio cover or deck sits at the eaves. Check whether it belongs in the quote.',
     'edges-unverified': "Part of the outline can't be checked in the height map (trees or a taller building beside it). The dashed edges are a best guess: check them against the photo.",
     'roof-inferred': 'Some roof under trees was filled in from the shape of the roof, not measured. The dashed edges are where it was added: check them against the photo before you price it.',
+    'roof-from-lidar': 'Part of this roof was measured from public USGS lidar flown with the leaves off, because trees hide it in the aerial heights. Check the added section against the photo before you price it.',
   },
   /** The one-line cue under the photo when some outline edges are drawn dashed (unverified). */
   edgeHidden: {
