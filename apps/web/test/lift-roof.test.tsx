@@ -10,6 +10,7 @@ import { ProposalPanel } from '../src/features/measure/lift/ProposalPanel.tsx';
 import { facetLetter, facetsData, lineKinds, linesData, readRoof } from '../src/features/measure/lift/roofModel.ts';
 import { footprintsShown, ringCenter, scaleBarFor } from '../src/features/measure/lift/RoofView.tsx';
 import { roofPhotoFor } from '../src/features/measure/lift/roofPhoto.ts';
+import { EDGE_CUE_LAYERS, EDGE_CUE_SOURCE, edgeCueText, hiddenEdges, setEdgeCue } from '../src/features/measure/lift/edgeCue.ts';
 import { shownShare, stageAt, type ScanSession } from '../src/features/measure/lift/scan.ts';
 import type { MeasurementPreview, MeasurementView, PreviewOption } from '../src/features/measure/types.ts';
 import { gableRoof } from './roof-model-fixture.ts';
@@ -297,5 +298,78 @@ describe('map helpers', () => {
     expect(parseCaptureDate('3/13/2025')?.toDateString()).toBe(new Date(2025, 2, 13).toDateString());
     expect(parseCaptureDate('20250313')?.getMonth()).toBe(2);
     expect(parseCaptureDate('Null')).toBeNull();
+  });
+});
+
+describe('unverified outline edges (dashed, with a one-line cue)', () => {
+  const edge = (from: number, support: 'strong' | 'weak' | 'none', reason: 'crown' | 'taller-neighbour' | null = null, lengthFt = 72) => ({
+    from,
+    lengthFt,
+    support,
+    unverifiedShare: support === 'none' ? 1 : 0,
+    reason,
+    canopy: reason === 'crown',
+    confidence: support === 'none' ? 0.582 : 0.865,
+  });
+  const base = { version: 1 as const, outline: ring, faces: [], lines: [], pixelSizeM: 0.1, imageryQuality: 'HIGH', imageryDate: null };
+  const treed = { ...base, edges: [edge(0, 'strong'), edge(1, 'none', 'crown'), edge(2, 'strong'), edge(3, 'none', 'crown', 2)] };
+
+  it('dashes only the unverified edges (a metre or more) while the outline is the 3D roof\'s own', () => {
+    const hidden = hiddenEdges(treed, ring);
+    expect(hidden).toEqual([{ coords: [ring[1], ring[2]], lengthFt: 72, reason: 'crown' }]);
+    expect(edgeCueText(hidden)).toBe(liftMeasure.edgeHidden.crown);
+    // Moved outline: the evidence is about another outline.
+    expect(hiddenEdges(treed, [ring[0]!, ring[1]!, [LNG + 0.0002, LAT + 0.0001], ring[3]!])).toEqual([]);
+    // A roof stored before edges existed, or none at all.
+    expect(hiddenEdges(base, ring)).toEqual([]);
+    expect(hiddenEdges(null, ring)).toEqual([]);
+    expect(edgeCueText([])).toBeNull();
+    const wall = { ...base, edges: [edge(0, 'none', 'taller-neighbour')] };
+    expect(edgeCueText(hiddenEdges(wall, ring))).toBe(liftMeasure.edgeHidden.other);
+  });
+
+  it('the card says it in one line; a clean roof and an older roof say nothing', () => {
+    const numbers = cardNumbers(view(), view().estimate, gableRoof(ring as [number, number][]), null);
+    const card = (m: MeasurementView) => <MeasureCard m={m} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />;
+    const { rerender } = render(card(view({ pitchSource: 'solar-3d', roof3d: treed })));
+    expect(screen.getByText(liftMeasure.edgeHidden.crown)).toBeTruthy();
+    rerender(card(view({ pitchSource: 'solar-3d', roof3d: { ...base, edges: [edge(0, 'strong')] } })));
+    expect(screen.queryByText(liftMeasure.edgeHidden.crown)).toBeNull();
+    rerender(card(view({ pitchSource: 'solar-3d', roof3d: base, needsReview: { reasons: ['faces-patchy', 'differs-from-google'] } })));
+    expect(screen.queryByText(liftMeasure.edgeHidden.crown)).toBeNull();
+    expect(screen.getByText(liftMeasure.reviewReason['differs-from-google'])).toBeTruthy();
+    rerender(card(view({ pitchSource: 'solar-3d', roof3d: treed, needsReview: { reasons: ['edges-unverified'] } })));
+    expect(screen.getByText(liftMeasure.reviewReason['edges-unverified'])).toBeTruthy();
+  });
+
+  it('draws the dashed layer on the map, updates it, and hides it', () => {
+    const sources = new Map<string, { data: unknown; setData: (d: unknown) => void }>();
+    const layers = new Map<string, { paint: Record<string, unknown> }>();
+    const visibility = new Map<string, string>();
+    const map = {
+      getSource: (id: string) => sources.get(id),
+      getLayer: (id: string) => layers.get(id),
+      addSource: (id: string, s: { data: unknown }) => {
+        const src = { data: s.data, setData: (d: unknown) => (src.data = d) };
+        sources.set(id, src);
+      },
+      addLayer: (l: { id: string; paint: Record<string, unknown> }) => layers.set(l.id, l),
+      setLayoutProperty: (id: string, _k: string, v: string) => visibility.set(id, v),
+    };
+    // Nothing to draw: nothing added.
+    setEdgeCue(map as never, [], true);
+    expect(sources.size).toBe(0);
+    const hidden = hiddenEdges(treed, ring);
+    setEdgeCue(map as never, hidden, true);
+    expect((sources.get(EDGE_CUE_SOURCE)!.data as { features: unknown[] }).features).toHaveLength(1);
+    expect(layers.get(EDGE_CUE_LAYERS[1])!.paint['line-dasharray']).toBeDefined();
+    expect(visibility.get(EDGE_CUE_LAYERS[1])).toBe('visible');
+    setEdgeCue(map as never, [], true);
+    expect((sources.get(EDGE_CUE_SOURCE)!.data as { features: unknown[] }).features).toHaveLength(0);
+    expect(visibility.get(EDGE_CUE_LAYERS[1])).toBe('none');
+    setEdgeCue(map as never, hidden, false);
+    expect(visibility.get(EDGE_CUE_LAYERS[1])).toBe('none');
+    // A map going away never throws.
+    expect(() => setEdgeCue({ getSource: () => { throw new Error('gone'); } } as never, hidden, true)).not.toThrow();
   });
 });

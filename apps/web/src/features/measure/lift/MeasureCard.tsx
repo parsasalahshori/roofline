@@ -6,6 +6,7 @@ import { liftMeasure } from '../../../copy/liftMeasure.ts';
 import { measure } from '../../../copy/measure.ts';
 import type { MeasurementView } from '../types.ts';
 import { AiMark } from './AiMark.tsx';
+import { edgeCueText, hiddenEdges } from './edgeCue.ts';
 import { LINE_COLORS, type RoofLineKind, type RoofModel } from './roofModel.ts';
 import { shownShare, stageAt, type ScanSession } from './scan.ts';
 import type { QuoteSession } from './slots.ts';
@@ -167,6 +168,7 @@ export function MeasureCard({
   const scrollRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement | HTMLAnchorElement>(null);
   const scanning = scan.phase === 'scanning';
+  const edgeCue = edgeCueText(hiddenEdges(m.roof3d, m.outline?.[0]));
   const share = scanning ? shownShare(scan.progress) : 1;
   const stage = stageAt(scan.progress);
   const pitchKnown = !scanning || scan.progress >= 0.55;
@@ -254,6 +256,11 @@ export function MeasureCard({
               </span>
             ))}
           </div>
+        ) : null}
+        {edgeCue !== null && m.kind !== 'exact' && !scanning ? (
+          <p className={styles.note} data-tone="edge-cue">
+            {edgeCue}
+          </p>
         ) : null}
         {m.roof3d != null && m.kind !== 'exact' && !scanning ? (
           <p className={styles.note} data-source="solar-3d">
