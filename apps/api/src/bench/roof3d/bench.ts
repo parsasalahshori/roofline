@@ -28,6 +28,8 @@ export type BenchOptions = {
   /** Where houses come from (default: the files under the bench folder); tests pass in-memory houses. */
   loader?: (entry: HouseEntry) => Promise<LoadedHouse>;
   onHouse?: (slug: string, k: number, n: number) => void;
+  /** Fingerprint of the lidar truth merged into the manifest (lidar.ts lidarIndexHash), recorded in the report. */
+  lidarHash?: string | null;
 };
 
 function spreadOf(run: HouseRun, pick: (m: HouseMetrics) => number | null | undefined): SeedSpread {
@@ -164,6 +166,7 @@ export async function runBench(o: BenchOptions): Promise<BenchReport> {
     calibrationMs: calibration,
     seeds: [...seeds],
     manifestHash: manifestHash(o.manifest),
+    lidarHash: o.lidarHash ?? null,
     data: dataVersion(o.manifest),
     thresholds: o.manifest.thresholds,
     cohortFilter: only,

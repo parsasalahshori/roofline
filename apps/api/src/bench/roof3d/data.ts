@@ -6,7 +6,8 @@ import { layersFrom, readGeoTiff, readRgbGeoTiff } from '../../providers/google-
 import type { RoofLayers } from '../../providers/solar-layers.ts';
 import { type EagleViewTruth, EagleViewTruthSchema, type VisualTruth, VisualTruthSchema } from './truth.ts';
 import type { HouseEntry } from './manifest.ts';
-import { houseDir } from './paths.ts';
+import { type LidarTruth, readLidarTruth } from './lidar.ts';
+import { benchDir, houseDir } from './paths.ts';
 
 /** Google's own whole-roof numbers for the building (buildingInsights), an independent source for the proxy checks. */
 export type GoogleFacts = {
@@ -28,6 +29,9 @@ export type LoadedHouse = {
   visual: VisualTruth | null;
   /** An independent building outline (OpenStreetMap, ODbL) when the house has one: a proxy, never truth. */
   osm: LngLat[] | null;
+  /** The house's accepted lidar truth (lidar.ts) when its lidar grade is 'lidar', and the file's short sha1. */
+  lidar?: LidarTruth | null;
+  lidarSha1?: string | null;
 };
 
 /** Google's files are a few hundred kilobytes each; the server refuses anything near 40 MB, and so does the benchmark. */
@@ -82,6 +86,8 @@ export async function loadHouse(entry: HouseEntry, bench?: string, fallback?: st
   const ev = path.join(dir, 'eagleview.json');
   const vis = path.join(dir, 'visual.json');
   const osm = path.join(dir, 'osm.json');
+  const lidar = entry.lidar?.grade === 'lidar' || entry.truth === 'lidar' ? readLidarTruth(bench ?? benchDir(), entry.slug) : null;
+  if ((entry.lidar?.grade === 'lidar' || entry.truth === 'lidar') && lidar === null) throw new Error(`no lidar truth for ${entry.slug} (graded 'lidar' in lidar/index.json)`);
   return {
     entry,
     dir,
@@ -91,5 +97,7 @@ export async function loadHouse(entry: HouseEntry, bench?: string, fallback?: st
     eagleview: existsSync(ev) ? EagleViewTruthSchema.parse(JSON.parse(readFileSync(ev, 'utf8'))) : null,
     visual: existsSync(vis) ? VisualTruthSchema.parse(JSON.parse(readFileSync(vis, 'utf8'))) : null,
     osm: existsSync(osm) ? ((JSON.parse(readFileSync(osm, 'utf8')) as { ring: LngLat[] }).ring ?? null) : null,
+    lidar: lidar?.truth ?? null,
+    lidarSha1: lidar?.sha1 ?? null,
   };
 }

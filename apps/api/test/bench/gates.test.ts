@@ -5,8 +5,8 @@ import type { SplitReport } from '../../src/bench/roof3d/report.ts';
 
 const st = (v: number): Stat => ({ mean: v, min: v, max: v });
 
-type Knobs = { recall: number; aligned: number; thin: number; iou: number; bnd: number; area: number; pass: number; slivers: number; steep: number; failed: number; noRoof: number; comparable: number; nondet: number; p95: number };
-const BASE: Knobs = { recall: 0.5, aligned: 0.9, thin: 2, iou: 0.8, bnd: 1.0, area: 4, pass: 20, slivers: 3, steep: 2, failed: 0, noRoof: 0, comparable: 12, nondet: 0, p95: 700 };
+type Knobs = { lidarHouses: number; lidarIoU: number; lidarBnd: number; lidarArea: number; hiddenSamples: number; hiddenMean: number; hiddenWithin: number; truthHiddenMean: number; truthHiddenWithin: number; recall: number; aligned: number; thin: number; iou: number; bnd: number; area: number; pass: number; slivers: number; steep: number; failed: number; noRoof: number; comparable: number; nondet: number; p95: number };
+const BASE: Knobs = { lidarHouses: 10, lidarIoU: 0.88, lidarBnd: 0.4, lidarArea: 5, hiddenSamples: 400, hiddenMean: 0.6, hiddenWithin: 0.55, truthHiddenMean: 0.7, truthHiddenWithin: 0.5, recall: 0.5, aligned: 0.9, thin: 2, iou: 0.8, bnd: 1.0, area: 4, pass: 20, slivers: 3, steep: 2, failed: 0, noRoof: 0, comparable: 12, nondet: 0, p95: 700 };
 
 function cohort(k: Partial<Knobs> = {}): CohortReport {
   const v = { ...BASE, ...k };
@@ -58,6 +58,24 @@ function cohort(k: Partial<Knobs> = {}): CohortReport {
       reasons: { 'coarse-imagery': st(0), 'outline-off': st(0), 'faces-patchy': st(0), 'rough-heights': st(0), trees: st(0), 'differs-from-google': st(0), 'joined-buildings': st(0), 'roof-hidden': st(0), 'low-attachment': st(0), 'edges-unverified': st(0) },
       flags: { rate: st(0.5), precision: st(0.5), recall: st(v.recall), tp: st(1), fp: st(1), fn: st(1), tn: st(1) },
       proxy: { medianMaskIoU: st(0.97), medianBoxIoU: st(0.97), medianGoogleAreaAbsPct: st(8), medianSegmentFaceRatio: st(1), medianOsmIoU: none, osmHouses: st(0) },
+      lidar: {
+        houses: st(v.lidarHouses),
+        comparable: st(v.lidarHouses),
+        medianIoU: st(v.lidarIoU),
+        medianBoundaryM: st(v.lidarBnd),
+        medianHd95M: st(1.2),
+        medianAlignedIoU: st(0.92),
+        medianAlignedBoundaryM: st(0.35),
+        medianPlanErrAbsPct: st(4),
+        medianSlopedErrAbsPct: st(v.lidarArea),
+        medianSlopedErrSignedPct: st(-2),
+        mainPitchWithin1: st(8),
+        mainPitchScored: st(10),
+        hidden: { houses: st(8), samples: st(v.hiddenSamples), meanM: st(v.hiddenMean), withinShare: st(v.hiddenWithin) },
+        visible: { houses: st(10), samples: st(2000), meanM: st(0.3), withinShare: st(0.85) },
+        truthHidden: { houses: st(8), samples: st(v.hiddenSamples), meanM: st(v.truthHiddenMean), withinShare: st(v.truthHiddenWithin) },
+        errors: st(0),
+      },
     },
   };
 }
@@ -219,5 +237,43 @@ describe('the gates are the contract', () => {
     const cur: SplitReport = { houses: 30, cohorts: { all: cohort(), 'canopy-heavy': cohort({ slivers: 5 }) } };
     const rows = compareSplits(base, cur, DEFAULT_GATES, { base: 1, cur: 1 });
     expect(gatesFailed(rows).map((r) => `${r.cohort}:${r.rule}`)).toEqual(['canopy-heavy:slivers']);
+  });
+});
+
+describe('lidar truth gates (hidden edges under canopy)', () => {
+  test('a fall in the share of hidden-edge samples within 0.5 m fails; within the limit passes', () => {
+    expect(failedRules(run({ hiddenWithin: 0.52 }))).toEqual(['lidar: hidden edges within 0.5 m (share)']);
+    expect(failedRules(run({ hiddenWithin: 0.54 }))).toEqual([]);
+    expect(failedRules(run({ hiddenMean: 0.7 }))).toEqual(['lidar: hidden edges mean distance m']);
+    expect(failedRules(run({ truthHiddenWithin: 0.4, truthHiddenMean: 0.9 }))).toEqual(['lidar: truth-hidden edges within 0.5 m (share)', 'lidar: truth-hidden edges mean distance m']);
+    expect(failedRules(run({ lidarIoU: 0.87, lidarBnd: 0.5, lidarArea: 6 }))).toEqual(['lidar: median outline IoU', 'lidar: median boundary distance m', 'lidar: median |sloped area error| pts']);
+  });
+
+  test('too few lidar houses or edge samples skip the gates and say why', () => {
+    const few = run({ lidarHouses: 2, hiddenWithin: 0.1 });
+    expect(gatesFailed(few)).toEqual([]);
+    expect(few.filter((r) => r.rule.startsWith('lidar:')).every((r) => r.status === 'skip' && r.note === 'fewer than 3 houses with lidar truth')).toBe(true);
+    const thin = run({ hiddenSamples: 20, hiddenWithin: 0.1 });
+    expect(gatesFailed(thin)).toEqual([]);
+    expect(thin.find((r) => r.rule === 'lidar: hidden edges within 0.5 m (share)')?.note).toBe('fewer than 50 edge samples');
+  });
+
+  test('gates files without the lidar section still parse and do not gate lidar', () => {
+    const old: Record<string, unknown> = { ...DEFAULT_GATES };
+    delete old.lidar;
+    const parsed = GatesSchema.parse(old);
+    expect(parsed.lidar).toBeUndefined();
+    const rows = compareSplits(split(cohort()), split(cohort({ hiddenWithin: 0.1 })), parsed, { base: 1, cur: 1 });
+    expect(rows.some((r) => r.rule.startsWith('lidar:'))).toBe(false);
+  });
+
+  test('a baseline made before lidar truth (no lidar block) skips the lidar gates instead of crashing', () => {
+    const b = cohort();
+    const stats: Record<string, unknown> = { ...b.stats };
+    delete stats.lidar;
+    const old = { ...b, stats: stats as typeof b.stats };
+    const rows = compareSplits(split(old), split(cohort()), DEFAULT_GATES, { base: 1, cur: 1 });
+    expect(gatesFailed(rows)).toEqual([]);
+    expect(rows.filter((r) => r.rule.startsWith('lidar:')).every((r) => r.status === 'skip')).toBe(true);
   });
 });

@@ -5,6 +5,7 @@ import { type Acceptance, checkRoof, TARGETS } from '../../estimator/roof-3d-com
 import type { LoadedHouse } from './data.ts';
 import { type MultiPoly, iou, rasterize, rectilinearity, ringArea, ringToXY, zoneOfLngLat } from './geometry.ts';
 import { maskPartAt } from './canopy.ts';
+import { type LidarMetrics, lidarMetrics } from './lidar.ts';
 import { DEFAULT_TRUTH, type TruthMetrics, type TruthParams, eagleViewMetrics, isBad, outlineXY, visualMetrics } from './truth.ts';
 
 /*
@@ -76,6 +77,10 @@ export type HouseMetrics = {
   selfTreeShare: number | null;
   proxy: Proxy;
   truth: TruthMetrics | null;
+  /** Against the house's lidar truth (lidar.ts) when it has accepted lidar truth; null otherwise. */
+  lidar?: LidarMetrics | null;
+  /** Why the lidar scoring failed (it never fails the run): null when it did not. */
+  lidarError?: string | null;
   /** With truth: a flagged roof is right to be when this is true (area off over 10 percent or main pitch over 1/12). */
   bad: boolean | null;
   /** sha1 of the whole reconstruction, to see which houses an edit changed. */
@@ -116,6 +121,8 @@ export function emptyMetrics(status: 'no-roof' | 'failed', hash = ''): HouseMetr
     selfTreeShare: null,
     proxy: EMPTY_PROXY,
     truth: null,
+    lidar: null,
+    lidarError: null,
     bad: null,
     hash,
   };
@@ -196,6 +203,15 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
   let truth: TruthMetrics | null = null;
   if (h.entry.truth === 'eagleview' && h.eagleview !== null) truth = eagleViewMetrics(roof, h.eagleview, p.truth);
   else if (h.entry.truth === 'visual' && h.visual !== null) truth = visualMetrics(roof, h.visual, p.truth);
+  let lidar: LidarMetrics | null = null;
+  let lidarError: string | null = null;
+  if (h.lidar !== undefined && h.lidar !== null) {
+    try {
+      lidar = lidarMetrics(roof, h.lidar, h.layers);
+    } catch {
+      lidarError = 'scoring-failed';
+    }
+  }
   return {
     status: 'ok',
     unusable,
@@ -220,6 +236,8 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
     selfTreeShare: roof.quality?.treeShare ?? null,
     proxy,
     truth,
+    lidar,
+    lidarError,
     bad: truth !== null && truth.comparable ? isBad(truth) : null,
     hash: hashOf(json),
   };

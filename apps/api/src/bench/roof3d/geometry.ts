@@ -189,6 +189,13 @@ export function boundaryDistances(from: MultiPoly, to: MultiPoly, step = 0.2): n
   return sampleRings(boundaries(from), step).map((p) => distToSegments(p, segs));
 }
 
+/** Distances (metres) from each point to the nearest boundary (outer rings and holes) of `to`; empty when `to` has none. */
+export function distancesToBoundary(points: readonly Pt[], to: MultiPoly): number[] {
+  const segs = segmentsOf(boundaries(to));
+  if (segs.length === 0) return [];
+  return points.map((p) => distToSegments(p, segs));
+}
+
 /** The p-th percentile (0..1) of values by linear interpolation; NaN for none. */
 export function percentile(values: readonly number[], p: number): number {
   if (values.length === 0) return Number.NaN;

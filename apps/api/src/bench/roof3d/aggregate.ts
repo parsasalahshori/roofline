@@ -1,6 +1,7 @@
 import { ROOF_QUALITY_REASONS, type RoofQualityReason } from '@roofline/shared';
 import { mean, median, percentile } from './geometry.ts';
 import type { HouseMetrics } from './metrics.ts';
+import { addEdges, type EdgeSet } from './lidar.ts';
 import { LINE_KINDS } from './truth.ts';
 import type { HouseRun } from './run.ts';
 
@@ -67,6 +68,11 @@ export type CohortAgg = {
     /** Our line total against EagleView's over comparable EagleView houses, percent; null without EagleView houses. */
     lineErrPct: Record<(typeof LINE_KINDS)[number], number | null>;
   };
+  /**
+   * Against lidar truth (houses with accepted lidar truth that are the same building, IoU >= 0.5). Missing in
+   * reports made before lidar truth existed (read them as undefined). Edge sets are pooled over the houses' samples.
+   */
+  lidar: LidarAgg;
   flags: FlagAgg;
   /** Houses carrying each review reason (a house can carry several). */
   reasons: Record<RoofQualityReason, number>;
@@ -86,6 +92,63 @@ const med = (xs: (number | null | undefined)[]): number | null => {
   return v.length === 0 ? null : median(v);
 };
 const ratio = (a: number, b: number): number | null => (b > 0 ? a / b : null);
+
+/** Pooled edge samples: how many, their mean distance (metres) and the share within HIDDEN_WITHIN_M; houses that had any. */
+export type EdgeAgg = { houses: number; samples: number; meanM: number | null; withinShare: number | null };
+
+export type LidarAgg = {
+  houses: number;
+  comparable: number;
+  medianIoU: number | null;
+  medianBoundaryM: number | null;
+  medianHd95M: number | null;
+  medianAlignedIoU: number | null;
+  medianAlignedBoundaryM: number | null;
+  medianPlanErrAbsPct: number | null;
+  medianSlopedErrAbsPct: number | null;
+  medianSlopedErrSignedPct: number | null;
+  mainPitchWithin1: number;
+  mainPitchScored: number;
+  /** Our outline's samples with eave support 'none' (the canopy-hidden stretches), against the lidar outline. */
+  hidden: EdgeAgg;
+  /** Our outline's supported samples, against the lidar outline (the contrast). */
+  visible: EdgeAgg;
+  /** The lidar outline's samples Google's heights cannot vouch for, against our outline (a fixed set of stretches). */
+  truthHidden: EdgeAgg;
+  /** Houses whose lidar scoring or eave support failed. */
+  errors: number;
+};
+
+function edgeAgg(sets: readonly EdgeSet[]): EdgeAgg {
+  const t = sets.reduce(addEdges, { samples: 0, sumM: 0, within: 0 });
+  return { houses: sets.filter((s) => s.samples > 0).length, samples: t.samples, meanM: t.samples > 0 ? t.sumM / t.samples : null, withinShare: t.samples > 0 ? t.within / t.samples : null };
+}
+
+export function lidarAgg(ms: readonly HouseMetrics[]): LidarAgg {
+  const withL = ms.filter((m) => m.lidar !== undefined && m.lidar !== null);
+  const comp = withL.filter((m) => m.lidar!.comparable).map((m) => m.lidar!);
+  const sloped = comp.map((l) => l.slopedErrPct).filter((x): x is number => x !== null);
+  const pitch = comp.map((l) => l.mainPitchErr).filter((x): x is number => x !== null);
+  return {
+    houses: withL.length,
+    comparable: comp.length,
+    medianIoU: med(comp.map((l) => l.iou)),
+    medianBoundaryM: med(comp.map((l) => l.meanBoundaryM)),
+    medianHd95M: med(comp.map((l) => l.hd95M)),
+    medianAlignedIoU: med(comp.map((l) => l.aligned.iou)),
+    medianAlignedBoundaryM: med(comp.map((l) => l.aligned.meanBoundaryM)),
+    medianPlanErrAbsPct: med(comp.map((l) => (l.planErrPct === null ? null : Math.abs(l.planErrPct)))),
+    medianSlopedErrAbsPct: sloped.length === 0 ? null : median(sloped.map(Math.abs)),
+    medianSlopedErrSignedPct: sloped.length === 0 ? null : median(sloped),
+    mainPitchWithin1: pitch.filter((p) => p <= 1).length,
+    mainPitchScored: pitch.length,
+    hidden: edgeAgg(comp.map((l) => l.hidden)),
+    visible: edgeAgg(comp.map((l) => l.visible)),
+    truthHidden: edgeAgg(comp.map((l) => l.truthHidden)),
+    errors: ms.filter((m) => (m.lidarError ?? null) !== null || (m.lidar?.edgeError ?? null) !== null).length,
+  };
+}
+
 
 /** One seed's summary of a set of houses. */
 export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
@@ -155,6 +218,7 @@ export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
       medianWithin1Pct: med(comp.map((m) => m.truth!.within1Pct)),
       lineErrPct: lineErr,
     },
+    lidar: lidarAgg(ms),
     flags: {
       rate: ratio(ms.filter((m) => m.flagged).length, ok.length),
       precision: ratio(tp, tp + fp),

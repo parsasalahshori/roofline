@@ -9,7 +9,8 @@ import { z } from 'zod';
 
 export const SETS = ['testset', 'testset-ev', 'testset-trees'] as const;
 export type BenchSet = (typeof SETS)[number];
-export const TRUTH_GRADES = ['eagleview', 'visual', 'proxy'] as const;
+/** 'lidar': an outline and planes from USGS 3DEP lidar (lidar.ts), accepted by its own validation. */
+export const TRUTH_GRADES = ['eagleview', 'visual', 'lidar', 'proxy'] as const;
 export type TruthGrade = (typeof TRUTH_GRADES)[number];
 export const SPLITS = ['dev', 'heldout'] as const;
 export type Split = (typeof SPLITS)[number];
@@ -77,6 +78,11 @@ export const HouseSchema = z.object({
   }),
   /** How a tree house was picked (candidate scores from free sources); absent on the earlier houses. */
   selection: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+  /**
+   * The house's lidar truth grade from <bench>/lidar/index.json, merged in when the benchmark loads (withLidar); never
+   * stored in manifest.json, so adding lidar truth does not change the manifest or its hash.
+   */
+  lidar: z.object({ grade: z.enum(['lidar', 'rejected', 'none']), leafOff: z.boolean().nullable() }).optional(),
 });
 export type HouseEntry = z.infer<typeof HouseSchema>;
 
@@ -125,7 +131,21 @@ export function cohortsOf(h: HouseEntry): string[] {
   if (h.tags.lowSlope) out.push('lowslope');
   if (h.tags.steep) out.push('steep');
   if (h.truth !== 'proxy') out.push('has-truth');
+  // Lidar truth is a second answer key: an EagleView house can have it too.
+  if (h.truth !== 'lidar' && h.lidar?.grade === 'lidar') out.push('truth-lidar');
   return out;
+}
+
+/** The manifest with each house's lidar grade from the lidar index merged in (houses the index lacks get none). */
+export function withLidar(m: Manifest, index: { houses: Record<string, { grade: 'lidar' | 'rejected' | 'none'; leafOff?: boolean | null }> } | null): Manifest {
+  if (index === null) return m;
+  return {
+    ...m,
+    houses: m.houses.map((h) => {
+      const e = index.houses[h.slug];
+      return { ...h, lidar: e === undefined ? { grade: 'none' as const, leafOff: null } : { grade: e.grade, leafOff: e.leafOff ?? null } };
+    }),
+  };
 }
 
 /** "street, City, ST 12345" to state and metro. */

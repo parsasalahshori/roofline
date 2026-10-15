@@ -1,5 +1,5 @@
 import { ROOF_QUALITY_REASONS } from '@roofline/shared';
-import type { CohortReport, Stat } from './aggregate.ts';
+import type { CohortReport, LidarAgg, Stat, Stats } from './aggregate.ts';
 import type { HouseMetrics } from './metrics.ts';
 import type { Thresholds } from './manifest.ts';
 
@@ -62,6 +62,8 @@ export type BenchReport = {
   calibrationMs: number;
   seeds: number[];
   manifestHash: string;
+  /** Fingerprint of the lidar truth the run scored against (lidar.ts lidarIndexHash); absent or null: none. */
+  lidarHash?: string | null;
   /** What data the run was made on (the whole manifest, whichever houses were run). */
   data: DataVersion;
   thresholds: Thresholds;
@@ -158,6 +160,35 @@ export function formatSplit(name: string, s: SplitReport): string {
       }),
     ),
     '',
+    'Against lidar truth (USGS 3DEP, accepted houses that are the same building; Google\'s frame, lidar registered once).',
+    'Hidden edges: our outline where the heights show no eave drop (eave support none), to the lidar outline; truth-hidden:',
+    'the lidar outline where Google\'s heights show no drop, to ours (a set that does not move with the reconstruction):',
+    table(
+      ['cohort', 'lidar', 'IoU', 'bnd m', 'HD95 m', 'aligned IoU', '|plan| %', '|sloped| %', 'pitch +-1', 'hidden m', 'hidden <=0.5', 'visible <=0.5', 'truth-hid m', 'truth-hid <=0.5'],
+      [L, 8, 9, 9, 9, 11, 9, 10, 9, 12, 14, 13, 11, 15],
+      names.map((n) => {
+        const l = s.cohorts[n]!.stats.lidar as Stats<LidarAgg> | undefined;
+        if (l === undefined || l === null) return [n, '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'];
+        const pct = (x: Stat | null) => (x === null ? '-' : fmt({ mean: 100 * x.mean, min: 100 * x.min, max: 100 * x.max }, 0, '%'));
+        return [
+          n,
+          `${fmtN(l.comparable)}/${fmtN(l.houses)}`,
+          fmt(l.medianIoU),
+          fmt(l.medianBoundaryM, 2),
+          fmt(l.medianHd95M, 2),
+          fmt(l.medianAlignedIoU),
+          fmt(l.medianPlanErrAbsPct, 1),
+          fmt(l.medianSlopedErrAbsPct, 1),
+          `${fmtN(l.mainPitchWithin1)}/${fmtN(l.mainPitchScored)}`,
+          fmt(l.hidden.meanM, 2),
+          `${pct(l.hidden.withinShare)} (${fmtN(l.hidden.samples)})`,
+          pct(l.visible.withinShare),
+          fmt(l.truthHidden.meanM, 2),
+          `${pct(l.truthHidden.withinShare)} (${fmtN(l.truthHidden.samples)})`,
+        ];
+      }),
+    ),
+    '',
     'Line totals against EagleView, percent (ours - EagleView) / EagleView, over EagleView houses that are the same building:',
     table(
       ['cohort', 'ridge', 'hip', 'valley', 'eave', 'rake'],
@@ -227,8 +258,8 @@ export function formatSplit(name: string, s: SplitReport): string {
 export function formatHouses(rows: readonly HouseRow[]): string {
   const L = Math.max(10, ...rows.map((r) => r.slug.length));
   return table(
-    ['house', 'canopy', 'cplx', 'key', 'IoU', 'bnd m', 'area %', 'pitch', 'faces', 'slv', 'thn', 'stp', 'rect', 'flag', 'chk', 'ms'],
-    [L, 6, 4, 4, 5, 5, 7, 7, 5, 3, 3, 3, 5, 4, 3, 5],
+    ['house', 'canopy', 'cplx', 'key', 'IoU', 'bnd m', 'area %', 'pitch', 'lidar IoU', 'hid m', 'hid<=.5', 'faces', 'slv', 'thn', 'stp', 'rect', 'flag', 'chk', 'ms'],
+    [L, 6, 4, 4, 5, 5, 7, 7, 9, 5, 7, 5, 3, 3, 3, 5, 4, 3, 5],
     rows.map((r) => {
       const m = r.metrics;
       const t = m.truth;
@@ -243,6 +274,9 @@ export function formatHouses(rows: readonly HouseRow[]): string {
         t === null ? '-' : mean(sp.meanBoundaryM, 2),
         t === null || t.areaErrPct === null ? '-' : mean(sp.areaErrPct, 1),
         t === null || t.mainPitchOurs === null ? '-' : `${t.mainPitchOurs}/${t.mainPitchTruth}`,
+        m.lidar ? f(m.lidar.iou, 3) : '-',
+        m.lidar && m.lidar.hidden.samples > 0 ? f(m.lidar.hidden.sumM / m.lidar.hidden.samples, 2) : '-',
+        m.lidar && m.lidar.hidden.samples > 0 ? `${f((100 * m.lidar.hidden.within) / m.lidar.hidden.samples, 0)}%` : '-',
         m.status === 'ok' ? mean(sp.faces, 0) : m.status,
         String(m.slivers),
         mean(sp.thinFaces, 0),

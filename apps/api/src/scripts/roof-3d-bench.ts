@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { BenchDataError, cohortCounts, runBench } from '../bench/roof3d/bench.ts';
 import { DEFAULT_GATES, formatGates, GatesSchema, compareSplitGap, compareSplits, gatesFailed, type GateRow } from '../bench/roof3d/gates.ts';
-import { manifestHash, manifestProblems, parseManifest, SPLITS, type Manifest } from '../bench/roof3d/manifest.ts';
+import { lidarIndexHash, readLidarIndex, readLidarTruth } from '../bench/roof3d/lidar.ts';
+import { manifestHash, manifestProblems, parseManifest, SPLITS, withLidar, type Manifest } from '../bench/roof3d/manifest.ts';
 import { benchDir, FALLBACK_DATA_DIR } from '../bench/roof3d/paths.ts';
 import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/report.ts';
 
@@ -18,7 +19,7 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *     --split dev|heldout|all   default dev. Held-out results are aggregates only (add --reveal to see houses)
  *     --house a,b               only these houses, for a quick look while working on one (held-out ones need --reveal)
  *     --cohort NAME             one cohort (all, canopy-heavy, canopy-light, canopy-none, canopy-any, simple, complex,
- *                               lowslope, steep, truth-eagleview, truth-proxy, has-truth, state-XX, set-testset...)
+ *                               lowslope, steep, truth-eagleview, truth-proxy, truth-lidar, has-truth, state-XX, ...)
  *     --compare FILE            judge this run against a frozen baseline with the regression gates; exit 1 on failure
  *     --json OUT                write the full report (aggregates; dev houses; held-out houses only with --reveal)
  *     --counts                  print how many houses are in each cohort and exit (no run)
@@ -83,6 +84,23 @@ async function main(): Promise<number> {
     process.stderr.write(`manifest.json is not valid: ${(err as Error).message.slice(0, 400)}\n`);
     return 3;
   }
+  // Lidar truth (lidar/index.json, outside manifest.json so adding it does not move the manifest): each house's grade.
+  let lidarHash: string | null;
+  try {
+    const index = readLidarIndex(bench);
+    manifest = withLidar(manifest, index);
+    const shas = new Map<string, string>();
+    for (const h of manifest.houses) {
+      if (h.lidar?.grade !== 'lidar') continue;
+      const t = readLidarTruth(bench, h.slug);
+      if (t === null) throw new Error(`${h.slug} is graded 'lidar' but has no lidar/${h.slug}/truth.json`);
+      shas.set(h.slug, t.sha1);
+    }
+    lidarHash = lidarIndexHash(index, shas);
+  } catch (err) {
+    process.stderr.write(`lidar truth is not valid: ${(err as Error).message.slice(0, 400)}\n`);
+    return 3;
+  }
   const problems = manifestProblems(manifest);
   if (problems.length > 0) {
     process.stderr.write(`manifest.json breaks its rules:\n${problems.join('\n')}\n`);
@@ -118,6 +136,7 @@ async function main(): Promise<number> {
       today: new Date().toISOString().slice(0, 10),
       allowExpired: flag('--allow-expired'),
       bench,
+      lidarHash,
       commit: { sha: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain', '--untracked-files=no']) !== '' },
       base: baseSha === undefined ? null : { sha: git(['rev-parse', baseSha]), changedFiles: git(['diff', '--name-only', baseSha, '--', ...RECONSTRUCTION_PATHS]).split('\n').filter((l) => l !== '') },
       onHouse: (slug, k, n) => {
@@ -134,6 +153,10 @@ async function main(): Promise<number> {
   if (process.stderr.isTTY) process.stderr.write('\r'.padEnd(50));
   const dueSoon = manifest.houses.map((h) => h.data.deleteBy).sort()[0];
   if (dueSoon !== undefined) process.stdout.write(`Google data: the earliest delete-by date in the manifest is ${dueSoon} (Solar API terms: keep 30 days).\n`);
+  if (report.lidarHash !== null && report.lidarHash !== undefined) {
+    const n = manifest.houses.filter((h) => h.lidar?.grade === 'lidar').length;
+    process.stdout.write(`Lidar truth ${report.lidarHash}: ${n} houses (USGS 3D Elevation Program lidar, public domain).\n`);
+  }
   process.stdout.write(`roof3d bench at ${report.commit.sha.slice(0, 8)}${report.commit.dirty ? '+dirty' : ''}${report.base ? ` (reconstruction as ${report.base.sha.slice(0, 8)}${report.base.changedFiles.length > 0 ? ` plus changes to ${report.base.changedFiles.join(', ')}` : ''})` : ''}, ${report.date.slice(0, 10)}, seeds ${report.seeds.join(',')}, manifest ${report.manifestHash}, calibration ${report.calibrationMs.toFixed(0)} ms${report.cohortFilter ? `, cohort ${report.cohortFilter}` : ''}\n\n`);
   for (const name of ['dev', 'heldout'] as const) {
     const s = report.splits[name];
@@ -160,6 +183,10 @@ async function main(): Promise<number> {
     }
     if (baseline.manifestHash !== report.manifestHash && !flag('--allow-manifest-change')) {
       process.stderr.write(`The baseline was made from manifest ${baseline.manifestHash} and this run uses ${report.manifestHash}: freeze a new baseline (--json) before comparing.\n`);
+      return 3;
+    }
+    if ((baseline.lidarHash ?? null) !== null && (baseline.lidarHash ?? null) !== (report.lidarHash ?? null) && !flag('--allow-manifest-change')) {
+      process.stderr.write(`The baseline was scored against lidar truth ${baseline.lidarHash} and this run against ${report.lidarHash ?? 'none'}: freeze a new baseline (--json) before comparing.\n`);
       return 3;
     }
     if (JSON.stringify(baseline.seeds) !== JSON.stringify(report.seeds) && !flag('--allow-manifest-change')) {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CohortReport } from './aggregate.ts';
+import type { CohortReport, LidarAgg, Stats } from './aggregate.ts';
 import type { SplitReport } from './report.ts';
 
 /*
@@ -64,6 +64,28 @@ export const GatesSchema = z.object({
    * that helps dev and hurts held-out is overfit. Optional, as flagRecall.
    */
   splitGap: z.object({ maxAreaPoints: z.number().nonnegative(), maxIoU: z.number().nonnegative() }).optional(),
+  /**
+   * Against lidar truth (lidar.ts), per cohort: skipped when either side has fewer than minHouses comparable lidar
+   * houses, and the edge gates when either side has fewer than minSamples edge samples (0.2 m each). Optional, as
+   * flagRecall; absent means not gated.
+   *   medianIoU / medianBoundaryM / medianSlopedErrPct: the outline and area against lidar truth;
+   *   hiddenWithin / hiddenMeanM: our outline's canopy-hidden samples (eave support none) within 0.5 m of the lidar
+   *     outline (share, may not fall by more than maxDrop) and their mean distance (may not rise by more than maxRise);
+   *   truthHiddenWithin / truthHiddenMeanM: the same for the lidar outline's hidden samples against ours (a fixed set).
+   */
+  lidar: z
+    .object({
+      minHouses: z.number().int().min(1),
+      minSamples: z.number().int().min(1),
+      medianIoU: z.object({ maxDrop: z.number().nonnegative() }),
+      medianBoundaryM: z.object({ maxRise: z.number().nonnegative() }),
+      medianSlopedErrPct: z.object({ maxRisePoints: z.number().nonnegative() }),
+      hiddenWithin: z.object({ maxDrop: z.number().nonnegative() }),
+      hiddenMeanM: z.object({ maxRise: z.number().nonnegative() }),
+      truthHiddenWithin: z.object({ maxDrop: z.number().nonnegative() }),
+      truthHiddenMeanM: z.object({ maxRise: z.number().nonnegative() }),
+    })
+    .optional(),
 });
 export type Gates = z.infer<typeof GatesSchema>;
 
@@ -85,6 +107,17 @@ export const DEFAULT_GATES: Gates = {
   flagRecall: { maxDrop: 0 },
   medianAlignedIoU: { maxDrop: 0.005 },
   splitGap: { maxAreaPoints: 0.5, maxIoU: 0.005 },
+  lidar: {
+    minHouses: 3,
+    minSamples: 50,
+    medianIoU: { maxDrop: 0.005 },
+    medianBoundaryM: { maxRise: 0.05 },
+    medianSlopedErrPct: { maxRisePoints: 0.5 },
+    hiddenWithin: { maxDrop: 0.02 },
+    hiddenMeanM: { maxRise: 0.05 },
+    truthHiddenWithin: { maxDrop: 0.02 },
+    truthHiddenMeanM: { maxRise: 0.05 },
+  },
 };
 
 export type GateRow = {
@@ -156,6 +189,32 @@ export function compareSplits(base: SplitReport, cur: SplitReport, gates: Gates,
     higher('steep junk faces', b.stats.steepJunk, c.stats.steepJunk, gates.steepJunk.maxRise, false);
     if (gates.medianAlignedIoU !== undefined) lower('median aligned outline IoU', b.stats.truth.medianAlignedIoU, c.stats.truth.medianAlignedIoU, gates.medianAlignedIoU.maxDrop, true);
     if (gates.flagRecall !== undefined) lower('review flag recall', b.stats.flags.recall, c.stats.flags.recall, gates.flagRecall.maxDrop, true);
+    const lg = gates.lidar;
+    const bl = b.stats.lidar as Stats<LidarAgg> | undefined;
+    const cl = c.stats.lidar as Stats<LidarAgg> | undefined;
+    if (lg !== undefined) {
+      const lidarOk = bl !== undefined && cl !== undefined && Math.min(mean(bl.comparable) ?? 0, mean(cl.comparable) ?? 0) >= lg.minHouses;
+      const lrow = (rule: string, bs: S, cs: S, limit: number, dir: 'drop' | 'rise', samples: [S, S] | null): void => {
+        const bv = mean(bs);
+        const cv = mean(cs);
+        const few = samples !== null && Math.min(mean(samples[0]) ?? 0, mean(samples[1]) ?? 0) < lg.minSamples;
+        if (small || !lidarOk || few || bv === null || cv === null) {
+          const note = small ? `cohort under ${gates.minCohortHouses} houses` : !lidarOk ? `fewer than ${lg.minHouses} houses with lidar truth` : few ? `fewer than ${lg.minSamples} edge samples` : 'no value';
+          rows.push({ cohort, rule, baseline: bv, current: cv, limit: `${dir} <= ${limit}`, status: 'skip', note });
+          return;
+        }
+        const allow = room(bs, limit);
+        const fail = dir === 'drop' ? cv < bv - allow - EPS : cv > bv + allow + EPS;
+        rows.push({ cohort, rule, baseline: bv, current: cv, baselineRange: range(bs), currentRange: range(cs), limit: `${dir} <= ${describe(bs, limit)}`, status: fail ? 'fail' : 'pass' });
+      };
+      lrow('lidar: median outline IoU', bl?.medianIoU, cl?.medianIoU, lg.medianIoU.maxDrop, 'drop', null);
+      lrow('lidar: median boundary distance m', bl?.medianBoundaryM, cl?.medianBoundaryM, lg.medianBoundaryM.maxRise, 'rise', null);
+      lrow('lidar: median |sloped area error| pts', bl?.medianSlopedErrAbsPct, cl?.medianSlopedErrAbsPct, lg.medianSlopedErrPct.maxRisePoints, 'rise', null);
+      lrow('lidar: hidden edges within 0.5 m (share)', bl?.hidden.withinShare, cl?.hidden.withinShare, lg.hiddenWithin.maxDrop, 'drop', [bl?.hidden.samples, cl?.hidden.samples]);
+      lrow('lidar: hidden edges mean distance m', bl?.hidden.meanM, cl?.hidden.meanM, lg.hiddenMeanM.maxRise, 'rise', [bl?.hidden.samples, cl?.hidden.samples]);
+      lrow('lidar: truth-hidden edges within 0.5 m (share)', bl?.truthHidden.withinShare, cl?.truthHidden.withinShare, lg.truthHiddenWithin.maxDrop, 'drop', [bl?.truthHidden.samples, cl?.truthHidden.samples]);
+      lrow('lidar: truth-hidden edges mean distance m', bl?.truthHidden.meanM, cl?.truthHidden.meanM, lg.truthHiddenMeanM.maxRise, 'rise', [bl?.truthHidden.samples, cl?.truthHidden.samples]);
+    }
     // Failures and no-roof houses are added over the seeds' means; the range is not tracked for the sum.
     {
       const bv = (mean(b.stats.failures) ?? 0) + (mean(b.stats.noRoof) ?? 0);
