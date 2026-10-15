@@ -1,3 +1,4 @@
+import { ROOF_QUALITY_REASONS, type RoofQualityReason } from '@roofline/shared';
 import { mean, median, percentile } from './geometry.ts';
 import type { HouseMetrics } from './metrics.ts';
 import { LINE_KINDS } from './truth.ts';
@@ -57,6 +58,8 @@ export type CohortAgg = {
     lineErrPct: Record<(typeof LINE_KINDS)[number], number | null>;
   };
   flags: FlagAgg;
+  /** Houses carrying each review reason (a house can carry several). */
+  reasons: Record<RoofQualityReason, number>;
   proxy: {
     medianMaskIoU: number | null;
     medianBoxIoU: number | null;
@@ -141,6 +144,7 @@ export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
       fn,
       tn,
     },
+    reasons: Object.fromEntries(ROOF_QUALITY_REASONS.map((r) => [r, ok.filter((m) => m.reasons.includes(r)).length])) as Record<RoofQualityReason, number>,
     proxy: {
       medianMaskIoU: med(ok.map((m) => m.proxy.maskIoU)),
       medianBoxIoU: med(ok.map((m) => m.proxy.boxIoU)),

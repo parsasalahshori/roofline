@@ -92,6 +92,13 @@ describe('one seed of a cohort', () => {
     expect(f.rate).toBeCloseTo(0.5, 12);
   });
 
+  test('review reasons are counted by house', () => {
+    const a = aggregateSeed([metrics({ reasons: ['trees', 'roof-hidden'] }), metrics({ reasons: ['trees'] }), metrics({ reasons: [] }), emptyMetrics('no-roof')]);
+    expect(a.reasons.trees).toBe(2);
+    expect(a.reasons['roof-hidden']).toBe(1);
+    expect(a.reasons['outline-off']).toBe(0);
+  });
+
   test('no houses with a key leaves the truth numbers empty, not zero', () => {
     const a = aggregateSeed([metrics({ truth: null, bad: null })]);
     expect(a.truth.medianIoU).toBeNull();

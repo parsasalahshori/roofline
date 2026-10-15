@@ -1,3 +1,4 @@
+import { ROOF_QUALITY_REASONS } from '@roofline/shared';
 import type { CohortReport, Stat } from './aggregate.ts';
 import type { HouseMetrics } from './metrics.ts';
 import type { Thresholds } from './manifest.ts';
@@ -166,6 +167,13 @@ export function formatSplit(name: string, s: SplitReport): string {
           fmt(c.flags.recall, 2),
         ];
       }),
+    ),
+    '',
+    'Review reasons (houses carrying each; a house can carry several):',
+    table(
+      ['cohort', ...ROOF_QUALITY_REASONS],
+      [L, ...ROOF_QUALITY_REASONS.map((r) => Math.max(r.length, 4))],
+      names.map((n) => [n, ...ROOF_QUALITY_REASONS.map((r) => fmtN(s.cohorts[n]!.stats.reasons[r]))]),
     ),
     '',
     'Proxy cross-checks (not truth: independent sources that should roughly agree):',
