@@ -39,7 +39,9 @@ dates, QL, leaf-off, USGS credit) and the Measure card shows the USGS credit whe
 - `USGS_LIDAR_MODE=off` (default): USGS is never contacted, no lidar field is written, the roof is algorithm 6
   without lidar. `prefetch`: lidar is fetched and its provenance recorded, the roof is unchanged (a lidar-specific
   kill switch that keeps the cache warm). `on`: the crop goes into the fusion step.
-- Turning `on` changes reconstruction output: bump `ROOF_3D_ALGORITHM_VERSION` to 7 in the same change.
+- Turning `on` changes reconstruction output for covered houses. Since the remediation (docs/roof-3d/lidar-remediate.md)
+  a kept roof the lidar went into is made again whenever the mode is no longer `on`, so switching lidar off withdraws
+  fused roofs already measured; fused and unfused roofs both carry algorithm 6, told apart by `lidar.status`.
 
 ## The decision: lidar fusion stays off by default
 
@@ -54,7 +56,8 @@ What the data says:
 
 - **Production-like crops (81 houses with a crop):** fusion applied on 13 (7 DEV, 6 HELD-OUT); the rest declined
   (33 leaf-on flights, 15 sparse, 13 nothing hidden, 5 misaligned, 2 roof changed).
-  - **Cross-flight truth:** 26 house pairs, 7 changed, **7 better, 0 worse**; median |plan error| over the 26 pairs
+  - **Cross-flight truth:** 26 house pairs, 7 changed, **7 better, 0 worse by IoU** (by |plan error| one is worse:
+    305 Ridgeway against the coarse 2017 truth, -17.9% -> +20.1%); median |plan error| over the 26 pairs
     17.9% -> 12.2%. But every one of those 7 truths is a 2016-2017 QL2 flight at 2.4-7 points/m2 (coarse), which the
     truth track found runs about 35% small itself under trees; so "better" is real direction, not a calibrated size.
   - **County footprints (PAgis, walls not eaves):** 9 houses, 7 changed, **7 better, 0 worse**: 305 Ridgeway
@@ -76,18 +79,24 @@ Why off:
   other improvement is measured on coarse old-flight truth or on wall-line county footprints, which cannot tell a
   right-sized added wing from an oversized one. Several large additions (about +20%) have no truth at all. The rule
   for this round was "clearly improves ... without regressions beyond noise": the direction is clear (14 of 14
-  scored changes better, none worse), the size is not.
+  scored changes better by IoU, none worse by IoU), the size is not. With fusion on, one held-out EagleView house
+  (ev-51881844) stops passing the product's own checker (EagleView cohort 'houses passing all targets' 10 -> 9), and
+  the canopy-heavy runtime p95 is 1.71x calibrated (gate 1.5x).
 - **Operations are not ready for every Measure.** A cold QL1 house takes about 2 minutes, so the first Measure is
   almost always Google-only ('lidar-pending'); the USGS file server refused this machine's connections twice today;
   decoding is 8-28 s of CPU on the API process (no worker thread yet); fusion pushes the canopy-heavy runtime p95 to
   1.70x calibrated (gate 1.5x).
-- **Provenance and flags do work**, so a supervised trial is safe: fused faces/edges carry `source: 'lidar'` and
-  `lidarShare`, every applied roof gets the `roof-from-lidar` check reason (13 of 13 above), and the flight and USGS
-  credit are on the roof.
+- **Provenance and flags** (after the remediation): fused faces/edges carry `source: 'lidar'` and `lidarShare`, and
+  the roof view now draws them in their own colour with the added plan area on the card; every applied roof gets
+  `roof-from-lidar`, now a 'block'; lidar roof past Google's building box adds `lidar-past-building` (a 'block': a
+  duplex unit and a wing look alike to the box); and a roof made while the lidar is still downloading carries
+  `lidar-pending` (a 'block'). Before the remediation lidar edges rendered as Google-'strong' and were invisible.
 
-Recommended next step for the owner: run `USGS_LIDAR_MODE=prefetch` in the Arkansas service area to warm the tile
-cache and collect lidar provenance on real jobs at no change to quotes; turn `on` (with version 7) once a handful of
-fused Arkansas jobs have been checked against a site measurement or a new fine cross-flight truth.
+Recommended next step for the owner: run `USGS_LIDAR_MODE=prefetch` with `USGS_LIDAR_TILE_DIR` set in the Arkansas
+service area to warm the tile cache and collect lidar provenance on real jobs at no change to quotes (before the
+remediation this silently did nothing in DEMO_MODE, the way the owner's app runs; fixed). Turn `on` only once a handful
+of fused Arkansas jobs have been checked against a site measurement or a new fine cross-flight truth, and expect
+`lidar-pending` blocks for 5-30 minutes on cold addresses (tiles download one at a time at about 0.5 MB/s).
 
 ## 305 Ridgeway Dr, Little Rock AR: before and after
 
@@ -113,7 +122,8 @@ Full report: [/Users/parsasalahshori-a/RooflineWork/roof-bench/free/comparison.m
   0.883; sloped area error 3.5% vs 6.2% for Google buildingInsights (which runs 5-10% low); pitch within 1/12 on
   38/40 vs 34/40 against lidar.
 - We lose on extent on tree-covered houses (mostly Little Rock), about 15-20% small, where free ML footprints are
-  2-9% small. No free source fixes 305 Ridgeway (Microsoft 45% small, Pulaski 20% small, ours 39% small).
+  2-9% small. Correction (verifier): on tree houses Overture also beats our outline SHAPE (lidar truth 0.909 vs
+  0.884 on 21 houses not traced from lidar; county 0.880 vs 0.783); only Microsoft is worse in shape there. No free source fixes 305 Ridgeway (Microsoft 45% small, Pulaski 20% small, ours 39% small).
 - No footprint provider was built. The DEV-only "grow to an aligned Overture footprint when >10% larger" experiment
   helped lidar/county but made 2 of 18 EagleView houses worse at 10% (0 at 12%): too sensitive to ship. The product
   already stores Microsoft footprints, so this can be retried off by default later.
@@ -143,6 +153,38 @@ HELD-OUT, against baseline-v2 and gates-v3) are in the "Benchmark" section below
   (ev-50264667, EagleView aligned IoU 0.70, heavy canopy: a fair catch; tr-hot-springs-1549200551, no outline truth).
 - New frozen baseline at algorithm 6 (no per-house held-out data): `roof-bench/baseline-v4-alg6.json`
   (made at 1f6456d0, clean tree). Use it instead of baseline-v2 from now on.
+
+## Remediation (after review and verification)
+
+Design note: docs/roof-3d/lidar-remediate.md. Commits adddf7b4..HEAD on `lidar/merge`. All reviewer P1s and both
+verifier P1s fixed at the root with tests that fail on 596ca8ab; cheap P2s fixed (kill switch, range/HEAD integrity,
+prefetch latency). Fusion stays OFF by default.
+
+- Default path unchanged: the benchmark at HEAD vs the verified 596ca8ab run gives 0 geometry, 0 reason, 0 truth
+  metric and 0 output-hash differences on all 84 houses, at 0.1 m and at 0.25 m; all deterministic and seed-identical.
+  So `ROOF_3D_ALGORITHM_VERSION` stays 6 and the gate results above stand (DEV 327/4, HELD-OUT 229/2 against
+  baseline-v2, the 6 known hidden-edge scorer gates).
+- Remediation tests: typecheck clean, eslint clean; shared 1810 pass; API pure 108 pass; API bench 158 pass; web 1500
+  pass (from the repo root); DB-backed measure suites (measurements, measurement-preview, roof-3d, roof-3d-real,
+  map-estimate, estimator-fakes, google-solar-layers; Testcontainers) 101 pass, 3 skipped (real-key tests). The full API
+  Postgres suite was not re-run. Secret scan of the diff from fb0b63db: 0 hits. Bench outputs:
+  `roof-bench/remediate-l/rem-all{,-025}.{txt,json}`.
+- 0.25 m effects of algorithm 6 not reported before (verifier): 2 held-out houses gain `edges-unverified`
+  (ev-50264667, tr-hot-springs-1549200551) and 2 DEV houses lose it (irvine-99-briar, lidar IoU 0.95, benign;
+  tr-portland-354678699); hidden-edge gates vs the base at 0.25 m: DEV 2 fail, HELD-OUT 2 fail (same scorer change).
+- Fusion eval re-run at HEAD (`roof-bench/remediate-l/fe-all.{txt,json}`, `--split all --reveal`): the scoring table is
+  identical to 596ca8ab (13 applied). On the 13 fused roofs `edges-unverified` is now present on all 13 (it had
+  dropped off 5 when lidar edges were judged on the lidar's own ground); `lidar-past-building` fires on 2 (305
+  Ridgeway and lr-tyler, both real wings past Google's box: the review costs a look, nothing is refused); every one
+  carries `roof-from-lidar`, now a block.
+- New review reasons (both 'block', both only with lidar on): `lidar-past-building`, `lidar-pending`.
+  `roof-from-lidar` moved from 'check' to 'block'. New lidar none reason `unreadable`.
+- Not fixed, listed: EPT reads bypass the daily budget/cooldown/decode queue; bench crops differ from the service's
+  crops (score fusion on service crops); thin false additions (spurs, ~1 m overshoot; `openM` 0.75 helps on DEV but
+  is in-sample); `Roof3dLidarNote.status` is 'used' when fusion declined; `gpsDate` ignores the LAS global-encoding
+  bit; ledger.jsonl and orphaned `.part` files grow unbounded; `maxPointsKept` 2,000,000 vs fusion `maxPoints`
+  400,000; unfused version-6 snapshots are reused when lidar is turned on (deliberate, an existing guard test);
+  lidar faces are shaded by share, not by the exact lidar pixels; no parcel/footprint bound on lidar parts.
 
 ## Tests
 

@@ -69,8 +69,9 @@ address into a Measure request fast, safely and with its provenance.
 
 - `USGS_LIDAR_MODE=on` changes reconstruction output (since the merge, the crop goes to the lidar FUSION step,
   lidar-fusion.ts, not to the outline-lidar.ts prototype; see lidar-release-notes.md): turning it on must bump
-  ROOF_3D_ALGORITHM_VERSION and be scored on EagleView and cross-flight lidar truth (never the flight it read). Default
-  off: output is byte-identical to version 5 (guard test `roof-3d-lidar.test.ts` 'off by default').
+  be scored on EagleView and cross-flight lidar truth (never the flight it read). Fused roofs are not reused once the
+  mode is no longer 'on' (lidar-remediate.md). Default off: output is byte-identical to algorithm 6 without lidar
+  (guard test `roof-3d-lidar.test.ts` 'off by default').
 - Memory: a tile is held whole (up to `maxTileBytes`, 400 MB) plus its copy in the wasm heap during a derivation; one
   derivation at a time bounds it.
 - CPU on the API process: decoding is cooperative (yields), but a busy server deriving many houses should move it to a
@@ -81,7 +82,8 @@ address into a Measure request fast, safely and with its provenance.
 
 ## Rollback
 
-`USGS_LIDAR_MODE=off` (the default): nothing is asked of USGS, nothing is recorded, the roof is exactly version 5's.
+`USGS_LIDAR_MODE=off` (the default): nothing is asked of USGS, nothing is recorded, the roof is algorithm 6's without
+lidar, and kept fused roofs are made again on their next read.
 Derived products under `lidar/v1/` can be deleted at any time; they are rebuilt on demand.
 
 ## Measured (Oct 15 2026, this Mac, real USGS servers, no Google call)
