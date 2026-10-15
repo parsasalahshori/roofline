@@ -13,7 +13,8 @@ import type { LngLat } from '../roof.ts';
 import type { Roof3d, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../roof-3d.ts';
 import { dist, nearestOnSegment, pointInRing, signedArea, simplifyClosedIdx, type XY } from './geom.ts';
 import { DEFAULT_OUTLINE_PARAMS, mainAxis, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
-import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type Plane, type PlaneParams, refitFaces } from './planes.ts';
+import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type FoundPlane, type Plane, type PlaneParams, refitFaces } from './planes.ts';
+import { type CanopyParams, completeRoof, crownMap, DEFAULT_CANOPY_PARAMS } from './canopy.ts';
 import { groundPlane, heightAboveGround, planeInCrop } from './ground.ts';
 import { close, components, countSet, dilate, fillHoles, largestComponent, open, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
@@ -47,6 +48,11 @@ export type ReconstructOptions = {
   planes?: Partial<PlaneParams>;
   outline?: Partial<OutlineParams>;
   topology?: Partial<TopologyParams>;
+  /**
+   * Roof the mask missed under canopy or in shade, completed from the roof's own planes (canopy.ts). On by default;
+   * `{ complete: false }` turns it off (the reconstruction is then the one before the canopy track).
+   */
+  canopy?: Partial<CanopyParams> & { complete?: boolean };
   /** Development only: told what the topology decided. */
   debug?: (msg: string) => void;
   /** The imagery's quality (HIGH, MEDIUM), for the quality result. */
@@ -74,6 +80,12 @@ export type LocalLine = { kind: Roof3dLineKind; a: XY; b: XY; faces: number[]; l
 /** `clipped`: the roof runs off the height map's edge, so part of it is missing. */
 export type LocalRoof = {
   outline: XY[];
+  /**
+   * Roof completed under canopy or shade (canopy.ts), absent when nothing was: square metres grown from the heights
+   * (measured: on the faces' own planes) and bridged under crowns (inferred, not seen), and the bridged pixels' centres
+   * on the roof's edge (raster-local metres, at most OCCLUDED_MAX): outline there is occluded, not verified.
+   */
+  canopy?: { grownM2: number; bridgedM2: number; occluded: XY[]; undone?: 'topology' };
   faces: LocalFace[];
   lines: LocalLine[];
   pixelSizeM: number;
@@ -169,8 +181,8 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   r0 = Math.max(0, r0 - pad);
   c1 = Math.min(W - 1, c1 + pad);
   r1 = Math.min(H - 1, r1 + pad);
-  const g = { w: c1 - c0 + 1, h: r1 - r0 + 1 };
-  const dsm = new Float32Array(g.w * g.h);
+  let g = { w: c1 - c0 + 1, h: r1 - r0 + 1 };
+  let dsm = new Float32Array(g.w * g.h);
   let roof: Uint8Array = new Uint8Array(g.w * g.h);
   for (let r = 0; r < g.h; r++) {
     for (let c = 0; c < g.w; c++) {
@@ -181,7 +193,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     }
   }
   // Google's own mask of this roof, as it came: what the outline is checked against.
-  const googleMask = roof.slice();
+  let googleMask = roof.slice();
   roof = fillHoles(g, largestComponent(g, open3(g, fillHoles(g, close(g, roof, closeR)))));
   let roofPx = countSet(roof);
   if (roofPx * s * s < (opts.minRoofM2 ?? 15)) return null;
@@ -261,6 +273,36 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   if (faces.planes.length === 0) return null;
   let planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
 
+  // 2a. Roof under canopy or in shade the mask missed: grown along the faces' own planes where the heights show it,
+  //     bridged across notches a crown bites out of one roof line (canopy.ts). Only with Google's box (the bound) and the
+  //     ground (crowns are told by their height above it), never on a terrace cut. The crop is re-cut round the
+  //     completed roof and the faces rebuilt from the same planes, so a roof with nothing to complete is unchanged.
+  let canopyOut: LocalRoof['canopy'];
+  const canopyPrm: CanopyParams = { ...DEFAULT_CANOPY_PARAMS, ...opts.canopy };
+  if (opts.canopy?.complete !== false && groundFull !== null && box0 !== null && !joined) {
+    const done = completeOnWindow(raster, { c0, r0, c1, r1 }, g, s, roof, faces.labels, planes, groundFull, opts.building!, canopyPrm);
+    if (done !== null) {
+      const re = recrop(raster, done, { c0, r0, g, roof, googleMask, tree }, found, pad);
+      g = re.g;
+      c0 = re.c0;
+      r0 = re.r0;
+      c1 = re.c1;
+      r1 = re.r1;
+      dsm = re.dsm;
+      // The completed roof cleaned as the mask was (gaps closed, specks opened, holes filled, one part).
+      roof = fillHoles(g, largestComponent(g, open3(g, fillHoles(g, close(g, re.roof, closeR)))));
+      googleMask = re.googleMask;
+      tree = re.tree;
+      roofPx = countSet(roof);
+      clipped = clipped || c0 <= 0 || r0 <= 0 || c1 >= W - 1 || r1 >= H - 1;
+      faces = buildFaces(g, s, dsm, roof, re.found, planePrm, tree);
+      if (faces.planes.length === 0) return null;
+      planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
+      canopyOut = { grownM2: round(done.grownM2, 2), bridgedM2: round(done.bridgedM2, 2), occluded: re.occluded };
+      opts.debug?.(`canopy: grew ${done.grownM2.toFixed(1)} m2 on the faces' planes, bridged ${done.bridgedM2.toFixed(1)} m2 under crowns`);
+    }
+  }
+
   // 3. The outline, squared.
   const boundary = maskBoundary(g, roof, s);
   const outline = squareOutline(boundary, outlinePrm);
@@ -275,6 +317,20 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     faces = dissolve(g, s, dsm, roof, faces, tiny, tree);
     planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
     topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
+  }
+
+  // 2a, checked: a completed roof whose topology came out worse (a face drawn from its pixels, or edge lines longer
+  // than the outline: a face whose ring is the whole outline) is not kept; the roof is reconstructed without completion.
+  if (canopyOut !== undefined) {
+    let edgeLen = 0;
+    for (const l of topo.lines) if (l.kind === 'eave' || l.kind === 'rake') edgeLen += dist(l.a, l.b);
+    let perim = 0;
+    for (let k = 0; k < outline.length; k++) perim += dist(outline[k]!, outline[(k + 1) % outline.length]!);
+    if (topo.faces.some((f) => f.fromPixels) || edgeLen > CANOPY_EDGE_SLACK * perim) {
+      opts.debug?.(`canopy: completion undone (its topology came out worse: ${topo.faces.filter((f) => f.fromPixels).length} pixel faces, edges ${edgeLen.toFixed(1)} m on a ${perim.toFixed(1)} m outline)`);
+      const plain = reconstructRoof(raster, point, { ...opts, canopy: { ...opts.canopy, complete: false } });
+      return plain === null ? null : { ...plain, canopy: { grownM2: 0, bridgedM2: 0, occluded: [], undone: 'topology' } };
+    }
   }
 
   // Face areas: the polygons' (they tile the outline), shared out so they add up to the outline's area.
@@ -342,7 +398,152 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     maskAreaM2: roofPx * s * s,
     clipped,
     quality,
+    ...(canopyOut !== undefined ? { canopy: { ...canopyOut, occluded: canopyOut.occluded.map(shift) } } : {}),
   };
+}
+
+/**
+ * Eave and rake lines (plan length) may exceed the outline's perimeter by this factor before a completed roof's
+ * topology is judged broken (they run along the outline, so they add up to its perimeter; 5% covers rounding).
+ */
+const CANOPY_EDGE_SLACK = 1.05;
+/** At most this many occluded points are reported (LocalRoof.canopy). */
+const OCCLUDED_MAX = 2000;
+
+type Completed = {
+  added: Uint8Array;
+  /** Bridged pixels' heights: their face's plane (the crown's heights there are not the roof's). NaN elsewhere. */
+  inferredZ: Float32Array;
+  grownM2: number;
+  bridgedM2: number;
+  win: { c0: number; r0: number; w: number; h: number };
+};
+
+/**
+ * Roof completion (canopy.ts) on the window round the crop (windowRound): the ground there, the crown map, the faces
+ * and their planes moved into the window. Null when nothing is added. `crop` and the faces are the crop's.
+ */
+function completeOnWindow(
+  raster: RoofRaster,
+  crop: { c0: number; r0: number; c1: number; r1: number },
+  g: { w: number; h: number },
+  s: number,
+  roof: Uint8Array,
+  labels: Int32Array,
+  planes: readonly Plane[],
+  ground: Plane,
+  building: readonly { col: number; row: number }[],
+  prm: CanopyParams,
+): Completed | null {
+  const win = windowRound(raster, crop, building, Math.max(HIDDEN_ROOM_M, prm.growMaxM));
+  const dc = crop.c0 - win.c0;
+  const dr = crop.r0 - win.r0;
+  const roofW = new Uint8Array(win.g.w * win.g.h);
+  const labelsW = new Int32Array(win.g.w * win.g.h).fill(-1);
+  for (let r = 0; r < g.h; r++) {
+    for (let c = 0; c < g.w; c++) {
+      const j = (r + dr) * win.g.w + c + dc;
+      roofW[j] = roof[r * g.w + c]!;
+      labelsW[j] = labels[r * g.w + c]!;
+    }
+  }
+  // z = a x + b y + c in the crop's metres; the window's x is dc pixels more, its y dr pixels less.
+  const planesW = planes.map((p) => ({ a: p.a, b: p.b, c: p.c - p.a * dc * s + p.b * dr * s }));
+  const hagW = heightAboveGround(win.g, s, win.dsm, planeInCrop(ground, s, win.c0, win.r0));
+  const crown = crownMap(win.g, s, win.dsm, win.mask, win.green, hagW, prm);
+  const boxW = building.map((p) => ({ x: (p.col - win.c0) * s, y: -(p.row - win.r0) * s }));
+  const boundary = maskBoundary(win.g, roofW, s);
+  if (boundary.length < 3) return null;
+  const axis = mainAxis(simplifyClosedIdx(boundary, 0.3).map((k) => boundary[k]!));
+  const done = completeRoof(win.g, s, win.dsm, roofW, labelsW, planesW, win.mask, crown, boxW, axis, prm);
+  if (done === null) return null;
+  const inferredZ = new Float32Array(done.added.length).fill(Number.NaN);
+  for (let i = 0; i < done.added.length; i++) {
+    if (done.added[i] !== 2 || done.face[i]! < 0) continue;
+    const p = planesW[done.face[i]!]!;
+    inferredZ[i] = p.a * ((i % win.g.w) + 0.5) * s - p.b * (Math.floor(i / win.g.w) + 0.5) * s + p.c;
+  }
+  return { added: done.added, inferredZ, grownM2: done.grownM2, bridgedM2: done.bridgedM2, win: { c0: win.c0, r0: win.r0, w: win.g.w, h: win.g.h } };
+}
+
+/**
+ * The crop cut again round the roof plus what completion added (raster pixels): heights, roof, Google's mask (as it
+ * came: what the outline is checked against, so completion shows there), tree crowns (bridged pixels count as crown:
+ * no plane is fitted on them and they go to the faces round them by distance), the found planes and their patches
+ * moved over, and the bridged pixels on the completed roof's edge (crop metres).
+ */
+function recrop(
+  raster: RoofRaster,
+  done: Completed,
+  old: { c0: number; r0: number; g: { w: number; h: number }; roof: Uint8Array; googleMask: Uint8Array; tree: Uint8Array | null },
+  found: readonly FoundPlane[],
+  pad: number,
+) {
+  const { width: W, height: H, pixelSizeM: s } = raster;
+  let c0 = old.c0;
+  let r0 = old.r0;
+  let c1 = old.c0 + old.g.w - 1;
+  let r1 = old.r0 + old.g.h - 1;
+  for (let i = 0; i < done.added.length; i++) {
+    if (done.added[i] === 0) continue;
+    const c = (i % done.win.w) + done.win.c0;
+    const r = Math.floor(i / done.win.w) + done.win.r0;
+    c0 = Math.min(c0, c - pad);
+    r0 = Math.min(r0, r - pad);
+    c1 = Math.max(c1, c + pad);
+    r1 = Math.max(r1, r + pad);
+  }
+  c0 = Math.max(0, c0);
+  r0 = Math.max(0, r0);
+  c1 = Math.min(W - 1, c1);
+  r1 = Math.min(H - 1, r1);
+  const g = { w: c1 - c0 + 1, h: r1 - r0 + 1 };
+  const n = g.w * g.h;
+  const dsm = new Float32Array(n);
+  const roof = new Uint8Array(n);
+  const googleMask = new Uint8Array(n);
+  const tree = new Uint8Array(n);
+  const dc = old.c0 - c0;
+  const dr = old.r0 - r0;
+  const moved = (j: number) => (Math.floor(j / old.g.w) + dr) * g.w + (j % old.g.w) + dc;
+  for (let r = 0; r < g.h; r++) {
+    for (let c = 0; c < g.w; c++) {
+      const z = raster.dsm[(r + r0) * W + c + c0]!;
+      dsm[r * g.w + c] = Number.isFinite(z) && z > -1000 && z < 10000 ? z : Number.NaN;
+    }
+  }
+  for (let j = 0; j < old.roof.length; j++) {
+    const k = moved(j);
+    roof[k] = old.roof[j]!;
+    googleMask[k] = old.googleMask[j]!;
+    if (old.tree?.[j] === 1) tree[k] = 1;
+  }
+  const bridged: number[] = [];
+  for (let i = 0; i < done.added.length; i++) {
+    if (done.added[i] === 0) continue;
+    const c = (i % done.win.w) + done.win.c0 - c0;
+    const r = Math.floor(i / done.win.w) + done.win.r0 - r0;
+    if (c < 0 || r < 0 || c >= g.w || r >= g.h) continue;
+    roof[r * g.w + c] = 1;
+    if (done.added[i] === 2) {
+      bridged.push(r * g.w + c);
+      if (Number.isFinite(done.inferredZ[i]!)) dsm[r * g.w + c] = done.inferredZ[i]!;
+    }
+  }
+  // The planes in the new crop's metres (x is dc pixels more, y dr pixels less) and their patches moved with them.
+  const movedFound = found.map((f) => {
+    const patch = new Uint8Array(n);
+    for (let j = 0; j < f.patch.length; j++) if (f.patch[j] === 1) patch[moved(j)] = 1;
+    return { plane: { a: f.plane.a, b: f.plane.b, c: f.plane.c - f.plane.a * dc * s + f.plane.b * dr * s }, patch };
+  });
+  // Bridged pixels on the completed roof's edge.
+  const occluded: XY[] = [];
+  for (const i of bridged) {
+    const c = i % g.w;
+    const edge = c === 0 || c === g.w - 1 || i < g.w || i >= n - g.w || roof[i - 1] !== 1 || roof[i + 1] !== 1 || roof[i - g.w] !== 1 || roof[i + g.w] !== 1;
+    if (edge && occluded.length < OCCLUDED_MAX) occluded.push({ x: (c + 0.5) * s, y: -(Math.floor(i / g.w) + 0.5) * s });
+  }
+  return { g, c0, r0, c1, r1, dsm, roof, googleMask, tree: old.tree === null && bridged.length === 0 ? null : tree, found: movedFound, occluded };
 }
 
 /**
@@ -386,9 +587,10 @@ function windowRound(
   raster: RoofRaster,
   crop: { c0: number; r0: number; c1: number; r1: number },
   box: readonly { col: number; row: number }[] | undefined,
+  roomM = HIDDEN_ROOM_M,
 ): { g: { w: number; h: number }; c0: number; r0: number; dsm: Float32Array; mask: Uint8Array; green: Uint8Array | null } {
   const { width: W, height: H, pixelSizeM: s } = raster;
-  const room = Math.ceil(HIDDEN_ROOM_M / s);
+  const room = Math.ceil(roomM / s);
   const cols = [crop.c0 - room, crop.c1 + room, ...(box ?? []).map((p) => p.col - room), ...(box ?? []).map((p) => p.col + room)];
   const rows = [crop.r0 - room, crop.r1 + room, ...(box ?? []).map((p) => p.row - room), ...(box ?? []).map((p) => p.row + room)];
   const c0 = Math.max(0, Math.floor(Math.min(...cols)));
