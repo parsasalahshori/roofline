@@ -83,6 +83,8 @@ export const HouseSchema = z.object({
    * stored in manifest.json, so adding lidar truth does not change the manifest or its hash.
    */
   lidar: z.object({ grade: z.enum(['lidar', 'rejected', 'none']), leafOff: z.boolean().nullable() }).optional(),
+  /** The house's county truth grade from <bench>/free/county/index.json (county.ts), merged in like lidar (withCounty). */
+  county: z.object({ grade: z.enum(['county', 'rejected', 'none']), lidarDerived: z.boolean() }).optional(),
 });
 export type HouseEntry = z.infer<typeof HouseSchema>;
 
@@ -133,6 +135,8 @@ export function cohortsOf(h: HouseEntry): string[] {
   if (h.truth !== 'proxy') out.push('has-truth');
   // Lidar truth is a second answer key: an EagleView house can have it too.
   if (h.truth !== 'lidar' && h.lidar?.grade === 'lidar') out.push('truth-lidar');
+  // County footprints (county.ts) are a third, outline-only key.
+  if (h.county?.grade === 'county') out.push('truth-county');
   return out;
 }
 
@@ -144,6 +148,18 @@ export function withLidar(m: Manifest, index: { houses: Record<string, { grade: 
     houses: m.houses.map((h) => {
       const e = index.houses[h.slug];
       return { ...h, lidar: e === undefined ? { grade: 'none' as const, leafOff: null } : { grade: e.grade, leafOff: e.leafOff ?? null } };
+    }),
+  };
+}
+
+/** The manifest with each house's county grade merged in (houses the index lacks get none). */
+export function withCounty(m: Manifest, index: { houses: Record<string, { grade: 'county' | 'rejected' | 'none'; lidarDerived: boolean }> } | null): Manifest {
+  if (index === null) return m;
+  return {
+    ...m,
+    houses: m.houses.map((h) => {
+      const e = index.houses[h.slug];
+      return { ...h, county: e === undefined ? { grade: 'none' as const, lidarDerived: false } : { grade: e.grade, lidarDerived: e.lidarDerived } };
     }),
   };
 }

@@ -73,6 +73,8 @@ export type CohortAgg = {
    * reports made before lidar truth existed (read them as undefined). Edge sets are pooled over the houses' samples.
    */
   lidar: LidarAgg;
+  /** Against county footprints (county.ts; houses whose footprint is the same building). Absent in older reports. */
+  county?: CountyAgg;
   flags: FlagAgg;
   /** Houses carrying each review reason (a house can carry several). */
   reasons: Record<RoofQualityReason, number>;
@@ -150,6 +152,30 @@ export function lidarAgg(ms: readonly HouseMetrics[]): LidarAgg {
 }
 
 
+export type CountyAgg = {
+  houses: number;
+  comparable: number;
+  medianIoU: number | null;
+  medianAlignedIoU: number | null;
+  medianAlignedBoundaryM: number | null;
+  medianPlanErrSignedPct: number | null;
+  medianPlanErrAbsPct: number | null;
+};
+
+export function countyAgg(ms: readonly HouseMetrics[]): CountyAgg {
+  const withC = ms.filter((m) => m.county !== undefined && m.county !== null);
+  const comp = withC.filter((m) => m.county!.comparable).map((m) => m.county!);
+  return {
+    houses: withC.length,
+    comparable: comp.length,
+    medianIoU: med(comp.map((c) => c.iou)),
+    medianAlignedIoU: med(comp.map((c) => c.aligned.iou)),
+    medianAlignedBoundaryM: med(comp.map((c) => c.aligned.meanBoundaryM)),
+    medianPlanErrSignedPct: med(comp.map((c) => c.planErrPct)),
+    medianPlanErrAbsPct: med(comp.map((c) => Math.abs(c.planErrPct))),
+  };
+}
+
 /** One seed's summary of a set of houses. */
 export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
   const ok = ms.filter((m) => m.status === 'ok');
@@ -219,6 +245,7 @@ export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
       lineErrPct: lineErr,
     },
     lidar: lidarAgg(ms),
+    county: countyAgg(ms),
     flags: {
       rate: ratio(ms.filter((m) => m.flagged).length, ok.length),
       precision: ratio(tp, tp + fp),
