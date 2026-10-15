@@ -25,7 +25,7 @@ function setup(o: { dir?: boolean; limits?: Record<string, number> } = {}) {
   const dir = o.dir === false ? null : mkdtempSync(path.join(tmpdir(), 'usgs-lidar-'));
   if (dir !== null) dirs.push(dir);
   const store = { configured: false } as never;
-  const svc = new UsgsLidarService(api, store, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { rangeBytes: 16 << 10, rangeParallel: 4, retryDelayMs: 0, ...o.limits });
+  const svc = new UsgsLidarService(api, store, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { rangeBytes: 16 << 10, rangeParallel: 4, retryDelayMs: 0, cooldownMs: 0, ...o.limits });
   return { api, svc, dir };
 }
 
@@ -114,6 +114,24 @@ describe('UsgsLidarService', () => {
     expect('crop' in (await b.svc.prefetch(HOUSE_POINT))).toBe(true);
   });
 
+  it('after a failed download no tile download starts until the cooldown has passed (fails fast, logged)', async () => {
+    let now = NOW.getTime();
+    const api = new FakeUsgsLidarApi();
+    api.files.set(TILE_URL, fixtureBytes('house-14-fmt6.laz'));
+    const dir = mkdtempSync(path.join(tmpdir(), 'usgs-lidar-'));
+    dirs.push(dir);
+    const clock = () => new Date(now);
+    const svc = new UsgsLidarService(api, { configured: false } as never, new LidarTileCache(dir, 1 << 30, clock), clock, { retryDelayMs: 0, rangeParallel: 1, cooldownMs: 300_000 });
+    api.failGets(3);
+    await expect(svc.tile(TILE_URL)).rejects.toMatchObject({ reason: 'http' });
+    const calls = api.calls.length;
+    await expect(svc.tile(TILE_URL)).rejects.toMatchObject({ reason: 'cooldown' });
+    expect(api.calls.length).toBe(calls);
+    expect(readFileSync(path.join(dir, 'ledger.jsonl'), 'utf8')).toContain('"what":"cooldown"');
+    now += 300_001;
+    await expect(svc.tile(TILE_URL)).resolves.toHaveLength(fixtureBytes('house-14-fmt6.laz').byteLength);
+  });
+
   it('the daily download budget refuses a tile past it (logged), and frees up after 24 hours', async () => {
     const size = fixtureBytes('house-14-fmt6.laz').byteLength;
     let now = NOW.getTime();
@@ -124,7 +142,7 @@ describe('UsgsLidarService', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'usgs-lidar-'));
     dirs.push(dir);
     const clock = () => new Date(now);
-    const svc = new UsgsLidarService(api, { configured: false } as never, new LidarTileCache(dir, 1 << 30, clock), clock, { retryDelayMs: 0, maxDownloadBytesPerDay: size + 10 });
+    const svc = new UsgsLidarService(api, { configured: false } as never, new LidarTileCache(dir, 1 << 30, clock), clock, { retryDelayMs: 0, cooldownMs: 0, maxDownloadBytesPerDay: size + 10 });
     await svc.tile(TILE_URL);
     await expect(svc.tile(other)).rejects.toMatchObject({ reason: 'budget' });
     expect(readFileSync(path.join(dir, 'ledger.jsonl'), 'utf8')).toContain('daily-budget');

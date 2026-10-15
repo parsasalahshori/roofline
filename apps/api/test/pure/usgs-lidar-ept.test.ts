@@ -30,7 +30,7 @@ function withEpt(api: FakeUsgsLidarApi): void {
 function service(api: FakeUsgsLidarApi) {
   const dir = mkdtempSync(path.join(tmpdir(), 'usgs-ept-'));
   dirs.push(dir);
-  return { svc: new UsgsLidarService(api, { configured: false } as never, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { rangeBytes: 16 << 10, retryDelayMs: 0 }), dir };
+  return { svc: new UsgsLidarService(api, { configured: false } as never, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { rangeBytes: 16 << 10, retryDelayMs: 0, cooldownMs: 0 }), dir };
 }
 
 describe('EPT', () => {

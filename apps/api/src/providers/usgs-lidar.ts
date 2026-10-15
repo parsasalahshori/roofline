@@ -10,7 +10,7 @@ import type { Config } from '../config.ts';
  * UnconfiguredUsgsLidarApi (USGS_LIDAR_MODE=off). Every failure is a UsgsLidarError with a typed reason.
  */
 
-export const USGS_LIDAR_FAILURES = ['timeout', 'http', 'bad-answer', 'too-large', 'host', 'budget', 'unconfigured'] as const;
+export const USGS_LIDAR_FAILURES = ['timeout', 'http', 'bad-answer', 'too-large', 'host', 'budget', 'cooldown', 'unconfigured'] as const;
 export type UsgsLidarFailure = (typeof USGS_LIDAR_FAILURES)[number];
 
 export class UsgsLidarError extends Error {

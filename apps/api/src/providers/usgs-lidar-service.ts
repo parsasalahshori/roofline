@@ -73,6 +73,11 @@ export type UsgsLidarLimits = {
   rangeParallel: number;
   /** A failed range is tried 3 times, waiting this long times the attempt number between tries, ms. */
   retryDelayMs: number;
+  /**
+   * After a tile download fails (the USGS file server stops accepting connections for a while after heavy use, seen
+   * on Oct 15 2026), no tile download is started for this long, ms: the fetch fails fast as 'usgs:cooldown'.
+   */
+  cooldownMs: number;
   /** The largest tile read, bytes (AR QL1 tiles are 60-70 MB; a dense QL0 tile a few hundred). */
   maxTileBytes: number;
   /** Most tiles one house reads (a house on a tile corner needs four). */
@@ -97,8 +102,10 @@ export const DEFAULT_USGS_LIDAR_LIMITS: UsgsLidarLimits = {
   // A 4 MB range at the 0.14 MB/s per connection measured on Oct 15 2026 takes about 30 s.
   rangeTimeoutMs: 120_000,
   rangeBytes: 4 << 20,
-  rangeParallel: 16,
+  // 8 connections: 16 got this machine's connections refused by rockyweb for minutes after ~230 MB (Oct 15 2026).
+  rangeParallel: 8,
   retryDelayMs: 2000,
+  cooldownMs: 5 * 60_000,
   maxTileBytes: 400 << 20,
   maxTilesPerHouse: 4,
   maxPointsScanned: 60_000_000,
@@ -245,6 +252,8 @@ export class UsgsLidarService {
   private readonly inFlight = new Map<string, Promise<LidarEvidence>>();
   private readonly tileFlight = new Map<string, Promise<Uint8Array>>();
   private readonly memory = new Map<string, Uint8Array>();
+  /** No tile download starts before this time (ms): set when one fails. */
+  private coolUntil = 0;
   /** Downloads in the last 24 hours (time ms, bytes): the daily budget. */
   private readonly downloads: { at: number; bytes: number }[] = [];
   /** Derivations run one at a time: each holds a whole tile in memory and decodes millions of points. */
@@ -378,47 +387,66 @@ export class UsgsLidarService {
     const p = (async () => {
       const cached = await this.tiles.get(url);
       if (cached !== null) return cached;
-      const t0 = Date.now();
-      const size = await this.api.size(url, { timeoutMs: this.limits.indexTimeoutMs });
-      if (size > this.limits.maxTileBytes) throw new UsgsLidarError('too-large', 'A lidar tile is larger than allowed.');
-      const now = this.now().getTime();
-      while (this.downloads.length > 0 && now - this.downloads[0]!.at > 86_400_000) this.downloads.shift();
-      const today = this.downloads.reduce((t, d) => t + d.bytes, 0);
-      if (today + size > this.limits.maxDownloadBytesPerDay) {
-        await this.tiles.log({ what: 'refused', url, bytes: size, reason: 'daily-budget', today });
-        throw new UsgsLidarError('budget', 'The daily lidar download budget is spent.');
-      }
-      this.downloads.push({ at: now, bytes: size });
-      const out = new Uint8Array(size);
-      const spans: [number, number][] = [];
-      for (let a = 0; a < size; a += this.limits.rangeBytes) spans.push([a, Math.min(size, a + this.limits.rangeBytes) - 1]);
-      let next = 0;
-      const worker = async () => {
-        while (next < spans.length) {
-          const span = spans[next++]!;
-          let last: unknown;
-          for (let k = 0; k < 3; k++) {
-            try {
-              out.set(await this.api.getBytes(url, { timeoutMs: this.limits.rangeTimeoutMs, maxBytes: span[1] - span[0] + 1, range: span }), span[0]);
-              last = null;
-              break;
-            } catch (err) {
-              last = err;
-              if (err instanceof UsgsLidarError && (err.reason === 'host' || err.reason === 'too-large')) break;
-              if (k < 2 && this.limits.retryDelayMs > 0) await new Promise((r) => setTimeout(r, this.limits.retryDelayMs * (k + 1)));
-            }
-          }
-          if (last !== null) throw last;
+      if (this.now().getTime() < this.coolUntil) throw new UsgsLidarError('cooldown', 'USGS downloads are paused after a failure.');
+      try {
+        return await this.download(url);
+      } catch (err) {
+        if (err instanceof UsgsLidarError && (err.reason === 'http' || err.reason === 'timeout')) {
+          this.coolUntil = this.now().getTime() + this.limits.cooldownMs;
+          await this.tiles.log({ what: 'cooldown', url, until: new Date(this.coolUntil).toISOString(), detail: detailOf(err) }).catch(() => undefined);
         }
-      };
-      await Promise.all(Array.from({ length: Math.min(this.limits.rangeParallel, spans.length) }, worker));
-      await this.tiles.put(url, out, Date.now() - t0);
-      return out;
+        throw err;
+      }
     })().finally(() => {
       this.tileFlight.delete(url);
     });
     this.tileFlight.set(url, p);
     return p;
+  }
+
+  /** One tile over parallel byte ranges, into the cache and the ledger. */
+  private async download(url: string): Promise<Uint8Array> {
+    const t0 = Date.now();
+    const size = await this.api.size(url, { timeoutMs: this.limits.indexTimeoutMs });
+    if (size > this.limits.maxTileBytes) throw new UsgsLidarError('too-large', 'A lidar tile is larger than allowed.');
+    const now = this.now().getTime();
+    while (this.downloads.length > 0 && now - this.downloads[0]!.at > 86_400_000) this.downloads.shift();
+    const today = this.downloads.reduce((t, d) => t + d.bytes, 0);
+    if (today + size > this.limits.maxDownloadBytesPerDay) {
+      await this.tiles.log({ what: 'refused', url, bytes: size, reason: 'daily-budget', today });
+      throw new UsgsLidarError('budget', 'The daily lidar download budget is spent.');
+    }
+    this.downloads.push({ at: now, bytes: size });
+    const out = new Uint8Array(size);
+    const spans: [number, number][] = [];
+    for (let a = 0; a < size; a += this.limits.rangeBytes) spans.push([a, Math.min(size, a + this.limits.rangeBytes) - 1]);
+    let next = 0;
+    // One range failing for good stops the others (no point downloading the rest of a tile that will not be kept).
+    let failed = false;
+    const worker = async () => {
+      while (!failed && next < spans.length) {
+        const span = spans[next++]!;
+        let last: unknown;
+        for (let k = 0; k < 3; k++) {
+          try {
+            out.set(await this.api.getBytes(url, { timeoutMs: this.limits.rangeTimeoutMs, maxBytes: span[1] - span[0] + 1, range: span }), span[0]);
+            last = null;
+            break;
+          } catch (err) {
+            last = err;
+            if (err instanceof UsgsLidarError && (err.reason === 'host' || err.reason === 'too-large')) break;
+            if (k < 2 && this.limits.retryDelayMs > 0) await new Promise((r) => setTimeout(r, this.limits.retryDelayMs * (k + 1)));
+          }
+        }
+        if (last !== null) {
+          failed = true;
+          throw last;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(this.limits.rangeParallel, spans.length) }, worker));
+    await this.tiles.put(url, out, Date.now() - t0);
+    return out;
   }
 
   /** The crop round the cell: from the unit's EPT nodes when the bucket has them, else (or when that fails) its tiles. */
