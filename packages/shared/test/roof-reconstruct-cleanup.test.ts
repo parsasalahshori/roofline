@@ -30,10 +30,25 @@ const face = (o: Partial<FaceSupport>): FaceSupport => ({
   minNeighbourDeg: 30,
   edgeShare: 0.1,
   thicknessM: 2,
+  crownShare: 0,
+  mainNeighbourX12: 6,
   ...o,
 });
 
 describe('weakFaces (pure rules)', () => {
+  it('crown-edge: a small odd-pitched face along a crown-backed eave goes; real faces beside crowns stay', () => {
+    const along = { areaM2: 10, pitchX12: 4.6, mainNeighbourX12: 8.5, edgeShare: 0.4, crownShare: 0.8 };
+    expect([...weakFaces([face({ areaM2: 60 }), face(along)])]).toEqual([[1, 'crown-edge']]);
+    // Each condition alone keeps it: no crown, too big, pitch close to its neighbour's, not on the edge, no neighbour.
+    expect(weakFaces([face({ areaM2: 60 }), face({ ...along, crownShare: 0.3 })]).size).toBe(0);
+    expect(weakFaces([face({ areaM2: 60 }), face({ ...along, areaM2: 16 })]).size).toBe(0);
+    expect(weakFaces([face({ areaM2: 60 }), face({ ...along, pitchX12: 6 })]).size).toBe(0);
+    expect(weakFaces([face({ areaM2: 60 }), face({ ...along, edgeShare: 0.1 })]).size).toBe(0);
+    expect(weakFaces([face({ areaM2: 60 }), face({ ...along, mainNeighbourX12: null })]).size).toBe(0);
+    // Off with the cleanup's parameters (crownShare above 1 never fires).
+    expect(weakFaces([face({ areaM2: 60 }), face(along)], { ...DEFAULT_FACE_CLEANUP, crownShare: 1.01 }).size).toBe(0);
+  });
+
   it('a thin strip on the outline goes, a thin face inside with its own plane stays', () => {
     const weak = weakFaces([face({}), face({ widthM: 0.7, areaM2: 3, edgeShare: 0.4 }), face({ widthM: 0.7, areaM2: 3, edgeShare: 0 })]);
     expect([...weak]).toEqual([[1, 'thin-edge']]);
@@ -99,5 +114,69 @@ describe('reconstructRoof with the cleanup', () => {
         }
       }
     }
+  });
+});
+
+/**
+ * A gable (6/12) with a tree crown leaning over 5 m of its south eave the way 305 Ridgeway Dr's does: Google's mask
+ * runs on 1.6 m over the crown's smooth top, which falls away at 2/12, and the crown goes on, rough, beyond the mask.
+ * The photo is green over the whole crown.
+ */
+function gableWithCrownSkirt(turnDeg: number) {
+  const syn = synthesize(GABLE, { turnDeg, seed: 11, trees: 0, noiseM: 0.02 });
+  const { width: W, height: H, pixelSizeM: s, dsm, mask } = syn.raster;
+  const o = syn.toLocal({ x: 0, y: 0 });
+  const ex = syn.toLocal({ x: 1, y: 0 });
+  const ey = syn.toLocal({ x: 0, y: 1 });
+  const ax = { x: ex.x - o.x, y: ex.y - o.y };
+  const ay = { x: ey.x - o.x, y: ey.y - o.y };
+  const green = new Uint8Array(W * H);
+  let k = 7;
+  const noise = () => {
+    k = (k * 1103515245 + 12345) % 2147483648;
+    return k / 2147483648 - 0.5;
+  };
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const lx = (c + 0.5) * s - o.x;
+      const ly = -(r + 0.5) * s - o.y;
+      const hx = lx * ax.x + ly * ax.y;
+      const hy = lx * ay.x + ly * ay.y;
+      if (Math.abs(hx) > 2.5 || hy > -4.5 || hy < -8.5) continue;
+      const i = r * W + c;
+      green[i] = 1;
+      if (hy >= -6.1) {
+        // The crown's smooth top Google took for roof: on from the eave (3 m) at 2/12.
+        mask[i] = 1;
+        dsm[i] = 3 - (-4.5 - hy) * (2 / 12) + noise() * 0.02;
+      } else {
+        // The rest of the crown, rough, off the mask.
+        dsm[i] = 2.8 + noise() * 0.5;
+      }
+    }
+  }
+  return { syn, raster: { ...syn.raster, dsm, mask, green } };
+}
+
+describe('crown-edge: no face drawn from foliage over the eave', () => {
+  for (const turnDeg of [0, 23]) {
+    it(`gable turned ${turnDeg} deg with a crown skirt on one eave keeps its two faces and pitches`, () => {
+      const { syn, raster } = gableWithCrownSkirt(turnDeg);
+      const on = reconstructRoof(raster, syn.point, { seed: 7 });
+      expect(on).not.toBeNull();
+      expect(on!.faces.length).toBe(2);
+      for (const f of on!.faces) expect(Math.abs(f.pitchX12 - 6)).toBeLessThan(0.5);
+      expect(on!.dissolved?.['crown-edge']).toBe(1);
+      // Without the rule, the skirt is a 2/12 face of its own (the failure on the owner's screenshot).
+      const off = reconstructRoof(raster, syn.point, { seed: 7, faces: { crownShare: 1.01 } });
+      expect(off!.faces.length).toBe(3);
+      expect(off!.faces.some((f) => f.pitchX12 < 3)).toBe(true);
+    });
+  }
+
+  it('a real small face beside a crown with its neighbour\'s pitch stays (porch, same pitch)', () => {
+    const syn = synthesize(PORCH, { turnDeg: 23, seed: 11, trees: 0 });
+    const r = reconstructRoof(syn.raster, syn.point, { seed: 7 });
+    expect(r!.dissolved?.['crown-edge'] ?? 0).toBe(0);
   });
 });

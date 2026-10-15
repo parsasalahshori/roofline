@@ -18,6 +18,7 @@ import { type CanopyParams, completeRoof, crownMap, crownRmsK, DEFAULT_CANOPY_PA
 import { groundPlane, heightAboveGround, planeInCrop } from './ground.ts';
 import { close, components, countSet, dilate, fillHoles, largestComponent, open, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
+import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
@@ -346,14 +347,16 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     //    their own or cut from a neighbour's plane, and faces steeper than a roof plane without strong support.
     topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
     dissolved = {};
+    // The crown test for the crown-edge rule, on this crop's heights (the same for every pass below).
+    const crownBeside = cleanupPrm.enabled && cleanupPrm.crownShare <= 1 ? crownBesideOf(raster, g, c0, r0, dsm) : null;
     for (let pass = 0; pass < 4 && faces.planes.length > 1; pass++) {
       const tiny = new Set(topo.faces.map((f, k) => (Math.abs(signedArea(f.ring)) < planePrm.tinyFaceM2 ? k : -1)).filter((k) => k >= 0));
       if (cleanupPrm.enabled) {
-        const support = faceSupport(g, s, dsm, faces.labels, planes, topo.faces.map((f) => f.ring), planePrm, (f) => weakCandidate(f, cleanupPrm));
+        const support = faceSupport(g, s, dsm, faces.labels, planes, topo.faces.map((f) => f.ring), planePrm, (f) => weakCandidate(f, cleanupPrm), crownBeside);
         if (opts.debug !== undefined) {
           support.forEach((f, k) => {
-            if (weakCandidate(f, cleanupPrm)) {
-              opts.debug!(`face ${k} candidate: ${f.widthM.toFixed(2)} m wide, ${f.areaM2.toFixed(1)} m2, ${f.pitchX12.toFixed(1)}/12, on plane ${f.planeShare?.toFixed(2) ?? '-'}, neighbour ${f.minNeighbourDeg.toFixed(0)} deg, edge ${f.edgeShare.toFixed(2)}, thick ${f.thicknessM?.toFixed(2) ?? '-'}`);
+            if (weakCandidate(f, cleanupPrm) || f.crownShare > 0) {
+              opts.debug!(`face ${k} candidate: ${f.widthM.toFixed(2)} m wide, ${f.areaM2.toFixed(1)} m2, ${f.pitchX12.toFixed(1)}/12, on plane ${f.planeShare?.toFixed(2) ?? '-'}, neighbour ${f.minNeighbourDeg.toFixed(0)} deg, edge ${f.edgeShare.toFixed(2)}, thick ${f.thicknessM?.toFixed(2) ?? '-'}, crown ${f.crownShare.toFixed(2)}, main neighbour ${f.mainNeighbourX12?.toFixed(1) ?? '-'}/12`);
             }
           });
         }
@@ -719,6 +722,64 @@ function windowShare(g: { w: number; h: number }, m: Uint8Array, r: number): Flo
     }
   }
   return out;
+}
+
+/**
+ * For the face cleanup's crown-edge rule: whether the crop's roof-edge pixel `i` (whose non-roof 4-neighbour is `j`)
+ * is an unverified eave beside a crown, by the same test eave-support.ts gives an outline sample its 'crown' reason: no
+ * eave drop (the median height EAVE_SUPPORT.outsideM out from i, looking through j, is not EAVE_SUPPORT.weakM below i,
+ * or there is no height there) and a crown (crownFromGreen) over EAVE_SUPPORT.crownExposedShare of the
+ * EAVE_SUPPORT.crownWindowM square round i. Null without a photo.
+ */
+function crownBesideOf(raster: RoofRaster, g: { w: number; h: number }, c0: number, r0: number, dsm: Float32Array): ((i: number, j: number) => boolean) | null {
+  const green = raster.green;
+  const { width: W, height: H, pixelSizeM: s } = raster;
+  if (green == null || green.length !== W * H) return null;
+  // The crown map on a window round the crop: room for the crown window and the outside probes.
+  const m = Math.ceil((EAVE_SUPPORT.crownWindowM / 2 + Math.max(...EAVE_SUPPORT.outsideM)) / s) + 2;
+  const wc0 = Math.max(0, c0 - m);
+  const wr0 = Math.max(0, r0 - m);
+  const wc1 = Math.min(W, c0 + g.w + m);
+  const wr1 = Math.min(H, r0 + g.h + m);
+  const ww = wc1 - wc0;
+  const wh = wr1 - wr0;
+  const wdsm = new Float32Array(ww * wh);
+  const wgreen = new Uint8Array(ww * wh);
+  for (let r = 0; r < wh; r++) {
+    for (let c = 0; c < ww; c++) {
+      const z = raster.dsm[(r + wr0) * W + c + wc0]!;
+      wdsm[r * ww + c] = Number.isFinite(z) && z > -1000 && z < 10000 ? z : Number.NaN;
+      wgreen[r * ww + c] = green[(r + wr0) * W + c + wc0]!;
+    }
+  }
+  const crown = crownFromGreen({ width: ww, height: wh, pixelSizeM: s, dsm: wdsm }, wgreen);
+  if (crown === null) return null;
+  const t = integral(ww, wh, crown);
+  const half = Math.max(1, Math.round(EAVE_SUPPORT.crownWindowM / 2 / s));
+  const probes = EAVE_SUPPORT.outsideM.map((d) => Math.max(1, Math.round(d / s)));
+  return (i, j) => {
+    const zi = dsm[i]!;
+    if (!Number.isFinite(zi)) return false;
+    const c = (i % g.w) + c0 - wc0;
+    const r = Math.floor(i / g.w) + r0 - wr0;
+    const crowned = boxShare(t, ww, wh, c, r, half) >= EAVE_SUPPORT.crownExposedShare;
+    const dc = (j % g.w) - (i % g.w);
+    const dr = Math.floor(j / g.w) - Math.floor(i / g.w);
+    const out: number[] = [];
+    for (const k of probes) {
+      const pc = c + dc * k;
+      const pr = r + dr * k;
+      if (pc < 0 || pr < 0 || pc >= ww || pr >= wh) continue;
+      const z = wdsm[pr * ww + pc]!;
+      if (Number.isFinite(z)) out.push(z);
+    }
+    if (out.length === 0) return crowned;
+    out.sort((a, b) => a - b);
+    const med = out.length % 2 === 1 ? out[(out.length - 1) / 2]! : (out[out.length / 2 - 1]! + out[out.length / 2]!) / 2;
+    // No drop beside a crown, or something standing taller than the eave beside it (a crown the colour test missed,
+    // shaded or not green). A level outside (a deck, a porch at eave height) is not enough: real faces end there.
+    return crowned ? zi - med < EAVE_SUPPORT.weakM : med - zi > EAVE_SUPPORT.tallerM;
+  };
 }
 
 /**

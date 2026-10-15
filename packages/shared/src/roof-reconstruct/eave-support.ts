@@ -150,7 +150,7 @@ function signedArea(ring: readonly EaveXY[]): number {
 }
 
 /** Summed-area table of a 0/1 map, (w+1) x (h+1). */
-function integral(w: number, h: number, m: Uint8Array): Float64Array {
+export function integral(w: number, h: number, m: Uint8Array): Float64Array {
   const t = new Float64Array((w + 1) * (h + 1));
   for (let r = 0; r < h; r++) {
     let row = 0;
@@ -163,7 +163,7 @@ function integral(w: number, h: number, m: Uint8Array): Float64Array {
 }
 
 /** Share of set pixels in the square of half-side `half` pixels round (c, r), clipped to the grid. */
-function boxShare(t: Float64Array, w: number, h: number, c: number, r: number, half: number): number {
+export function boxShare(t: Float64Array, w: number, h: number, c: number, r: number, half: number): number {
   const c0 = Math.max(0, c - half);
   const r0 = Math.max(0, r - half);
   const c1 = Math.min(w, c + half + 1);
