@@ -430,6 +430,34 @@ describe('measure window', () => {
     expect(reachedMap).not.toHaveBeenCalled();
   });
 
+  it('where corners crowd together, a press lands on the corner, not on the add-a-corner dot beside it', async () => {
+    await open();
+    const c = corner(0);
+    const mid = document.querySelector('[data-handle="mid"]') as HTMLElement;
+    expect(Number(c.style.zIndex)).toBeGreaterThan(Number(mid.style.zIndex));
+    expect(parseFloat(mid.style.width)).toBeLessThan(parseFloat(c.style.width));
+  });
+
+  it('dragging an add-a-corner dot adds a corner and moves it with the pointer', async () => {
+    await open();
+    const map = lastMap();
+    const before = document.querySelectorAll('[data-handle="corner"]').length;
+    const mid = document.querySelector('[data-handle="mid"][data-mid-index="0"]') as HTMLElement;
+    mid.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
+    // Pulled south of the south wall's middle, so the outline stays a simple shape.
+    mouse(window, 'pointermove', 15, -10);
+    mouse(window, 'pointermove', 20, -20);
+    expect(document.querySelectorAll('[data-handle="corner"]')).toHaveLength(before + 1);
+    mouse(window, 'pointerup', 20, -20);
+    expect(map.dragPan.enable).toHaveBeenCalled();
+    await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(1), { timeout: 2000 });
+    const body = sent('PATCH /api/measurements/m1')[0] as { outline: Ring[] };
+    expect(body.outline[0]).toHaveLength(before + 1);
+    // The new corner sits where the pointer let go (the fake map turns a pixel into 1e-5 degrees).
+    expect(body.outline[0]![1]![0]).toBeCloseTo(-96.8002 + 20 * 1e-5, 8);
+    expect(body.outline[0]![1]![1]).toBeCloseTo(32.7998 - 20 * 1e-5, 8);
+  });
+
   it('arrow keys nudge a corner by half a metre', async () => {
     await open();
     const start = (rect(30, 40)[0] as [number, number])[0];

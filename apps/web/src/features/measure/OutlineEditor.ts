@@ -139,10 +139,18 @@ function midpoint(a: LngLat, b: LngLat): LngLat {
   return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 }
 
-function handleBox(): HTMLDivElement {
+// Corners grab a 40 px area and sit above the add-a-corner dots, which grab only 22 px: where corners are close
+// together a dot's area would otherwise cover a corner, and grabbing that corner would grab the dot.
+const CORNER_BOX_PX = 40;
+const MID_BOX_PX = 22;
+const CORNER_LAYER = '2';
+const MID_LAYER = '1';
+
+function handleBox(sizePx: number, layer: string): HTMLDivElement {
   const el = document.createElement('div');
-  el.style.width = '40px';
-  el.style.height = '40px';
+  el.style.width = `${sizePx}px`;
+  el.style.height = `${sizePx}px`;
+  el.style.zIndex = layer;
   el.style.display = 'flex';
   el.style.alignItems = 'center';
   el.style.justifyContent = 'center';
@@ -304,8 +312,45 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
     for (const type of ['pointerdown', 'mousedown', 'touchstart']) listen(el, type, (e: Event) => e.stopPropagation());
   };
 
+  /** Drag corner `index` with the pointer from (x, y) until it is let go. A long press without moving deletes it. */
+  const startCornerDrag = (index: number, x: number, y: number, longPressDeletes: boolean) => {
+    endDrag();
+    holdPan();
+    dragIndex = index;
+    dragStart = { x, y };
+    if (longPressDeletes) {
+      dragTimer = setTimeout(() => {
+        dragTimer = null;
+        const i = dragIndex;
+        endDrag();
+        if (i >= 0) commit(deleteCorner(ring, i), i);
+      }, LONG_PRESS_MS);
+    }
+    const onMove = (ev: PointerEvent) => {
+      if (dragIndex < 0) return;
+      if (dragTimer && Math.hypot(ev.clientX - dragStart.x, ev.clientY - dragStart.y) > LONG_PRESS_SLOP_PX) {
+        clearTimeout(dragTimer);
+        dragTimer = null;
+      }
+      const res = moveCorner(ring, dragIndex, toLngLatFromPointer(ev.clientX, ev.clientY));
+      ring = res.ring;
+      renderSources();
+      positionHandles();
+      options.onChange(res);
+    };
+    const onUp = () => endDrag();
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    removeDragListeners = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  };
+
   const buildCorner = (index: number): Marker => {
-    const el = handleBox();
+    const el = handleBox(CORNER_BOX_PX, CORNER_LAYER);
     el.setAttribute('role', 'button');
     el.tabIndex = 0;
     el.setAttribute('aria-label', measure.corner(index + 1, ring.length));
@@ -315,42 +360,9 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
 
     listen(el, 'pointerdown', (e: PointerEvent) => {
       if (drawing) return;
-      endDrag();
       e.preventDefault();
-      holdPan();
-      dragIndex = index;
-      dragStart = { x: e.clientX, y: e.clientY };
       safe(() => el.setPointerCapture?.(e.pointerId));
-      dragTimer = setTimeout(() => {
-        dragTimer = null;
-        const i = dragIndex;
-        endDrag();
-        if (i >= 0) commit(deleteCorner(ring, i), i);
-      }, LONG_PRESS_MS);
-      const onMove = (ev: PointerEvent) => {
-        if (dragIndex < 0) return;
-        if (
-          dragTimer &&
-          Math.hypot(ev.clientX - dragStart.x, ev.clientY - dragStart.y) > LONG_PRESS_SLOP_PX
-        ) {
-          clearTimeout(dragTimer);
-          dragTimer = null;
-        }
-        const res = moveCorner(ring, dragIndex, toLngLatFromPointer(ev.clientX, ev.clientY));
-        ring = res.ring;
-        renderSources();
-        positionHandles();
-        options.onChange(res);
-      };
-      const onUp = () => endDrag();
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      window.addEventListener('pointercancel', onUp);
-      removeDragListeners = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onUp);
-      };
+      startCornerDrag(index, e.clientX, e.clientY, true);
     });
 
     listen(el, 'keydown', (e: KeyboardEvent) => {
@@ -384,7 +396,7 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
   };
 
   const buildMid = (index: number): Marker => {
-    const el = handleBox();
+    const el = handleBox(MID_BOX_PX, MID_LAYER);
     el.setAttribute('role', 'button');
     el.tabIndex = 0;
     el.setAttribute('aria-label', measure.addCorner);
@@ -403,7 +415,32 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
     };
     listen(el, 'click', activate);
     listen(el, 'pointerdown', (e: PointerEvent) => {
-      downAt = { x: e.clientX, y: e.clientY };
+      if (drawing) return;
+      e.preventDefault();
+      holdPan();
+      const start = { x: e.clientX, y: e.clientY };
+      downAt = start;
+      // Dragging the dot adds a corner and moves it with the pointer, the way the corners themselves move.
+      const onMove = (ev: PointerEvent) => {
+        if (used || destroyed || Math.hypot(ev.clientX - start.x, ev.clientY - start.y) <= LONG_PRESS_SLOP_PX) return;
+        stop();
+        activate();
+        startCornerDrag(index + 1, start.x, start.y, false);
+        const res = moveCorner(ring, index + 1, toLngLatFromPointer(ev.clientX, ev.clientY));
+        ring = res.ring;
+        renderSources();
+        positionHandles();
+        options.onChange(res);
+      };
+      const stop = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', stop);
+        window.removeEventListener('pointercancel', stop);
+        if (dragIndex < 0) releasePan();
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', stop);
+      window.addEventListener('pointercancel', stop);
     });
     keepFromMap(el);
     listen(el, 'pointerup', (e: PointerEvent) => {
