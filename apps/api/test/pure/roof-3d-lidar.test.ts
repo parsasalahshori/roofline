@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { LngLat, Ring } from '@roofline/shared';
 import { utmToLngLat } from '@roofline/shared/roof-reconstruct';
 import type { AppDeps } from '../../src/app.ts';
+import type { RoofLayers } from '../../src/providers/solar-layers.ts';
 import { roof3dAt, roof3dFromKept } from '../../src/estimator/roof-3d.ts';
 import { FakeUsgsLidarApi } from '../../src/providers/usgs-lidar.ts';
 import { lidarAreaOf, prefetchLidar, runLidarAreaJob } from '../../src/providers/usgs-lidar-roof.ts';
@@ -25,19 +26,37 @@ const HOUSE: Ring = [at(44, 40), at(56, 40), at(56, 60), at(44, 60), at(44, 40)]
 const INSIDE = at(50, 50);
 const LAYERS = hipLayers(HOUSE);
 
+/** The layers resampled (nearest) onto Google's MEDIUM 0.25 m grid. */
+function toMedium(l: RoofLayers): RoofLayers {
+  const { width: W, height: H, pixelSizeM: s, dsm, mask } = l.raster;
+  const t = 0.25;
+  const w = Math.floor((W * s) / t);
+  const h = Math.floor((H * s) / t);
+  const d2 = new Float32Array(w * h);
+  const m2 = new Uint8Array(w * h);
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      const src = Math.min(H - 1, Math.floor(((r + 0.5) * t) / s)) * W + Math.min(W - 1, Math.floor(((c + 0.5) * t) / s));
+      d2[r * w + c] = dsm[src]!;
+      m2[r * w + c] = mask[src]!;
+    }
+  }
+  return { ...l, raster: { width: w, height: h, pixelSizeM: t, dsm: d2, mask: m2 }, photo: null, imageryQuality: 'MEDIUM' };
+}
+
 const dirs: string[] = [];
 afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-function depsWith(mode: 'off' | 'prefetch' | 'on' | undefined, o: { waitMs?: number } = {}) {
+function depsWith(mode: 'off' | 'prefetch' | 'on' | undefined, o: { waitMs?: number; layers?: RoofLayers } = {}) {
   const api = new FakeUsgsLidarApi();
   api.files.set(TILE_URL, fixtureBytes('house-14-fmt6.laz'));
   api.coverageAt = () => [unit()];
   const dir = mkdtempSync(path.join(tmpdir(), 'roof-lidar-'));
   dirs.push(dir);
   const svc = new UsgsLidarService(api, { configured: false } as never, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { measureWaitMs: o.waitMs ?? 60_000 });
-  const layers = new ScriptedLayers(() => LAYERS);
+  const layers = new ScriptedLayers(() => o.layers ?? LAYERS);
   const sent: { name: string; data: unknown; opts: unknown }[] = [];
   const deps = {
     solarLayers: layers,
@@ -94,6 +113,20 @@ describe('roof-3d with USGS lidar', () => {
     // The kept snapshot from the first Measure is not reused: it was made before the lidar was there.
     const again = await roof3dFromKept(deps, first, INSIDE, Promise.resolve(buildingOf(HOUSE)));
     expect(again?.lidar?.status).toBe('used');
+  });
+
+  it('Google MEDIUM (0.25 m) layers: the lidar goes in the same way, and the answer is identical run to run', async () => {
+    const medium = toMedium(LAYERS);
+    const run = async () => {
+      const { deps } = depsWith('on', { layers: medium });
+      return roof3dAt(deps, INSIDE, buildingOf(HOUSE));
+    };
+    const a = await run();
+    expect(a?.roof?.pixelSizeM).toBe(0.25);
+    expect(a?.lidar?.status).toBe('used');
+    expect(a?.roof?.lidarEdges).toBeDefined();
+    const b = await run();
+    expect(JSON.stringify(b)).toBe(JSON.stringify(a));
   });
 
   it('no coverage: typed, and the roof is Google-only', async () => {

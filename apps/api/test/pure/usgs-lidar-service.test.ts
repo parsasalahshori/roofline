@@ -114,6 +114,24 @@ describe('UsgsLidarService', () => {
     expect('crop' in (await b.svc.prefetch(HOUSE_POINT))).toBe(true);
   });
 
+  it('the daily download budget refuses a tile past it (logged), and frees up after 24 hours', async () => {
+    const size = fixtureBytes('house-14-fmt6.laz').byteLength;
+    let now = NOW.getTime();
+    const api = new FakeUsgsLidarApi();
+    api.files.set(TILE_URL, fixtureBytes('house-14-fmt6.laz'));
+    const other = TILE_URL.replace('fixture.laz', 'other.laz');
+    api.files.set(other, fixtureBytes('house-14-fmt6.laz'));
+    const dir = mkdtempSync(path.join(tmpdir(), 'usgs-lidar-'));
+    dirs.push(dir);
+    const clock = () => new Date(now);
+    const svc = new UsgsLidarService(api, { configured: false } as never, new LidarTileCache(dir, 1 << 30, clock), clock, { retryDelayMs: 0, maxDownloadBytesPerDay: size + 10 });
+    await svc.tile(TILE_URL);
+    await expect(svc.tile(other)).rejects.toMatchObject({ reason: 'budget' });
+    expect(readFileSync(path.join(dir, 'ledger.jsonl'), 'utf8')).toContain('daily-budget');
+    now += 86_400_001;
+    await expect(svc.tile(other)).resolves.toHaveLength(size);
+  });
+
   it('a damaged tile, a tile over the size limit, and a tile off USGS hosts are typed errors', async () => {
     const a = setup({ dir: false });
     a.api.files.set(TILE_URL, fixtureBytes('house-14-fmt6.laz').subarray(0, 30_000));

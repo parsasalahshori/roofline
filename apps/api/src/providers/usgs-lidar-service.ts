@@ -81,6 +81,8 @@ export type UsgsLidarLimits = {
   maxPointsKept: number;
   /** The disk tile cache's size limit, bytes (oldest tiles are dropped first). */
   maxCacheBytes: number;
+  /** At most this many bytes downloaded from USGS in any 24 hours by this process (a runaway guard), bytes. */
+  maxDownloadBytesPerDay: number;
   /** Below this many last returns per m2 over the crop the lidar is 'too-sparse' (half the QL2 minimum of 2). */
   minLastPerM2: number;
   /** How long a 'no-coverage' / 'leaf-on-only' / 'too-sparse' answer is kept before asking USGS again, ms. */
@@ -101,6 +103,8 @@ export const DEFAULT_USGS_LIDAR_LIMITS: UsgsLidarLimits = {
   maxPointsScanned: 60_000_000,
   maxPointsKept: 2_000_000,
   maxCacheBytes: 20 * 1024 ** 3,
+  // About 150 QL1 tiles: far beyond a day of searches by an internal team, small next to what USGS serves.
+  maxDownloadBytesPerDay: 10 * 1024 ** 3,
   minLastPerM2: 1,
   noneTtlMs: 30 * 86_400_000,
 };
@@ -240,6 +244,8 @@ export class UsgsLidarService {
   private readonly inFlight = new Map<string, Promise<LidarEvidence>>();
   private readonly tileFlight = new Map<string, Promise<Uint8Array>>();
   private readonly memory = new Map<string, Uint8Array>();
+  /** Downloads in the last 24 hours (time ms, bytes): the daily budget. */
+  private readonly downloads: { at: number; bytes: number }[] = [];
   /** Derivations run one at a time: each holds a whole tile in memory and decodes millions of points. */
   private chain: Promise<unknown> = Promise.resolve();
   readonly limits: UsgsLidarLimits;
@@ -374,6 +380,14 @@ export class UsgsLidarService {
       const t0 = Date.now();
       const size = await this.api.size(url, { timeoutMs: this.limits.indexTimeoutMs });
       if (size > this.limits.maxTileBytes) throw new UsgsLidarError('too-large', 'A lidar tile is larger than allowed.');
+      const now = this.now().getTime();
+      while (this.downloads.length > 0 && now - this.downloads[0]!.at > 86_400_000) this.downloads.shift();
+      const today = this.downloads.reduce((t, d) => t + d.bytes, 0);
+      if (today + size > this.limits.maxDownloadBytesPerDay) {
+        await this.tiles.log({ what: 'refused', url, bytes: size, reason: 'daily-budget', today });
+        throw new UsgsLidarError('budget', 'The daily lidar download budget is spent.');
+      }
+      this.downloads.push({ at: now, bytes: size });
       const out = new Uint8Array(size);
       const spans: [number, number][] = [];
       for (let a = 0; a < size; a += this.limits.rangeBytes) spans.push([a, Math.min(size, a + this.limits.rangeBytes) - 1]);
