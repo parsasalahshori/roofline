@@ -57,10 +57,39 @@ export async function lidarForRoof(deps: AppDeps, point: LngLat, imageryDate: st
   return { points: use && 'crop' in evidence ? pointsOf(evidence.crop, imageryDate) : null, note: noteOf(evidence, use, imageryDate) };
 }
 
-/** Starts fetching the lidar round a searched address (Measure search prefetch). Nothing when lidar is off. */
-export function prefetchLidar(deps: AppDeps, point: LngLat): Promise<void> {
+/**
+ * Starts fetching the lidar round a searched address (Measure search prefetch), and queues the area job for the
+ * square round it (`companyId` is the job's owner; the work is global). Nothing when lidar is off.
+ */
+export function prefetchLidar(deps: AppDeps, point: LngLat, companyId?: string): Promise<void> {
   if (!lidarOn(deps)) return Promise.resolve();
-  return deps.usgsLidar!.prefetch(point).then(() => undefined);
+  const area = lidarAreaOf(point);
+  const queued =
+    companyId === undefined
+      ? Promise.resolve()
+      : deps.jobs.send('lidar-area', { companyId, lidarBox: area.box }, { singletonKey: area.key }).catch((err: unknown) => deps.logError?.(err, 'lidar-area'));
+  return Promise.all([deps.usgsLidar!.prefetch(point), queued]).then(() => undefined);
+}
+
+/** Area job squares: a 0.01 degree grid (about 1 km, one 3DEP tile), the square holding the point. */
+const AREA_DEG = 0.01;
+export function lidarAreaOf(point: LngLat): { box: [number, number, number, number]; key: string } {
+  const i = Math.floor(point[0] / AREA_DEG);
+  const j = Math.floor(point[1] / AREA_DEG);
+  const r = (v: number) => Math.round(v * 1e6) / 1e6;
+  return { box: [r(i * AREA_DEG), r(j * AREA_DEG), r((i + 1) * AREA_DEG), r((j + 1) * AREA_DEG)], key: `lidar-area:${i}:${j}` };
+}
+
+/** The largest box an area job takes, degrees a side (about 3 km): bounds the downloads one job can start. */
+const MAX_AREA_DEG = 0.03;
+
+/** The lidar-area job: the area's leaf-off tiles into the tile cache. A malformed box is dropped (never retried). */
+export async function runLidarAreaJob(deps: AppDeps, box: unknown): Promise<void> {
+  if (!lidarOn(deps)) return;
+  if (!Array.isArray(box) || box.length !== 4 || !box.every((v) => typeof v === 'number' && Number.isFinite(v))) return;
+  const [w, s, e, n] = box as [number, number, number, number];
+  if (!(e > w && n > s && e - w <= MAX_AREA_DEG && n - s <= MAX_AREA_DEG && Math.abs(s) <= 85 && Math.abs(n) <= 85)) return;
+  await deps.usgsLidar!.prefetchArea([w, s], [e, n], { maxPoints: 16, maxTiles: 4 });
 }
 
 /** A kept snapshot made while the lidar was still being fetched: worth making again once lidar is on. */

@@ -25,7 +25,7 @@ function setup(o: { dir?: boolean; limits?: Record<string, number> } = {}) {
   const dir = o.dir === false ? null : mkdtempSync(path.join(tmpdir(), 'usgs-lidar-'));
   if (dir !== null) dirs.push(dir);
   const store = { configured: false } as never;
-  const svc = new UsgsLidarService(api, store, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { rangeBytes: 16 << 10, rangeParallel: 4, ...o.limits });
+  const svc = new UsgsLidarService(api, store, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { rangeBytes: 16 << 10, rangeParallel: 4, retryDelayMs: 0, ...o.limits });
   return { api, svc, dir };
 }
 
@@ -102,6 +102,16 @@ describe('UsgsLidarService', () => {
     api.failNext(1);
     expect(await svc.prefetch(HOUSE_POINT)).toEqual({ none: 'error', detail: 'usgs:http' });
     expect('crop' in (await svc.prefetch(HOUSE_POINT))).toBe(true);
+  });
+
+  it('a dropped byte range is tried again (up to 3 times); a range failing 3 times fails the fetch, not kept', async () => {
+    const a = setup();
+    a.api.failGets(2);
+    expect('crop' in (await a.svc.prefetch(HOUSE_POINT))).toBe(true);
+    const b = setup({ limits: { rangeParallel: 1 } });
+    b.api.failGets(3);
+    expect(await b.svc.prefetch(HOUSE_POINT)).toEqual({ none: 'error', detail: 'usgs:http' });
+    expect('crop' in (await b.svc.prefetch(HOUSE_POINT))).toBe(true);
   });
 
   it('a damaged tile, a tile over the size limit, and a tile off USGS hosts are typed errors', async () => {

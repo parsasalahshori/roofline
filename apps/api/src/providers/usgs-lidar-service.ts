@@ -70,6 +70,8 @@ export type UsgsLidarLimits = {
   /** Byte-range size and how many at once (the USGS server gives about 0.3 MB/s per connection). */
   rangeBytes: number;
   rangeParallel: number;
+  /** A failed range is tried 3 times, waiting this long times the attempt number between tries, ms. */
+  retryDelayMs: number;
   /** The largest tile read, bytes (AR QL1 tiles are 60-70 MB; a dense QL0 tile a few hundred). */
   maxTileBytes: number;
   /** Most tiles one house reads (a house on a tile corner needs four). */
@@ -93,6 +95,7 @@ export const DEFAULT_USGS_LIDAR_LIMITS: UsgsLidarLimits = {
   rangeTimeoutMs: 120_000,
   rangeBytes: 4 << 20,
   rangeParallel: 16,
+  retryDelayMs: 2000,
   maxTileBytes: 400 << 20,
   maxTilesPerHouse: 4,
   maxPointsScanned: 60_000_000,
@@ -387,6 +390,7 @@ export class UsgsLidarService {
             } catch (err) {
               last = err;
               if (err instanceof UsgsLidarError && (err.reason === 'host' || err.reason === 'too-large')) break;
+              if (k < 2 && this.limits.retryDelayMs > 0) await new Promise((r) => setTimeout(r, this.limits.retryDelayMs * (k + 1)));
             }
           }
           if (last !== null) throw last;

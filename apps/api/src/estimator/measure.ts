@@ -658,7 +658,7 @@ export async function prefetchMeasure(
     asked,
     roof3d,
     // Leaf-off USGS lidar round the house (USGS_LIDAR_MODE): fetched now so Measure finds it ready.
-    prefetchLidar(deps, at),
+    prefetchLidar(deps, at, ctx.companyId),
   ]).then(() => undefined);
   deps.onBackgroundTask?.(work);
   return { found: true };

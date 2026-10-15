@@ -199,39 +199,40 @@ export async function cropLas(bytes: Uint8Array, box: { x0: number; x1: number; 
   const fl: number[] = [];
   const cl: number[] = [];
   const ts: number[] = [];
-  const keep = (rec: DataView): void => {
-    const X = rec.getInt32(0, true);
+  const keep = (rec: DataView, b0: number): void => {
+    const X = rec.getInt32(b0, true);
     if (X < ix0 || X > ix1) return;
-    const Y = rec.getInt32(4, true);
+    const Y = rec.getInt32(b0 + 4, true);
     if (Y < iy0 || Y > iy1) return;
     let rn: number, nr: number, c: number;
     if (extended) {
-      const b = rec.getUint8(14);
+      const b = rec.getUint8(b0 + 14);
       rn = b & 0x0f;
       nr = b >> 4;
-      c = rec.getUint8(16);
+      c = rec.getUint8(b0 + 16);
     } else {
-      const b = rec.getUint8(14);
+      const b = rec.getUint8(b0 + 14);
       rn = b & 0x07;
       nr = (b >> 3) & 0x07;
-      c = rec.getUint8(15) & 0x1f;
+      c = rec.getUint8(b0 + 15) & 0x1f;
     }
-    if (NOISE.has(c) || (extended && (rec.getUint8(15) & 0x08) !== 0)) return; // noise, or the withheld flag
+    if (NOISE.has(c) || (extended && (rec.getUint8(b0 + 15) & 0x08) !== 0)) return; // noise, or the withheld flag
     if (xs.length >= limits.maxPointsKept) throw new LasError('too-large', 'Too many points round the house.');
     xs.push(X * sx + ox);
     ys.push(Y * sy + oy);
-    zs.push((rec.getInt32(8, true) * sz + oz) * h.zUnitM);
+    zs.push((rec.getInt32(b0 + 8, true) * sz + oz) * h.zUnitM);
     fl.push((rn === nr && nr > 0 ? 1 : 0) | (c === 2 ? 2 : 0));
     cl.push(c);
-    if (gpsAt >= 0) ts.push(rec.getFloat64(gpsAt, true));
+    if (gpsAt >= 0) ts.push(rec.getFloat64(b0 + gpsAt, true));
   };
   if (!h.compressed) {
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (h.pointLength < (extended ? 30 : 20)) throw new LasError('decode', 'The point records are too short.');
     for (let i = 0; i < h.pointCount; i++) {
       if (i % YIELD_EVERY === YIELD_EVERY - 1) await new Promise<void>((r) => setImmediate(r));
       const o = h.pointOffset + i * h.pointLength;
       if (o + h.pointLength > bytes.byteLength) throw new LasError('decode', 'The point cloud is truncated.');
-      keep(new DataView(dv.buffer, dv.byteOffset + o, h.pointLength));
+      keep(dv, o);
     }
   } else {
     const L = await lazModule();
@@ -247,7 +248,8 @@ export async function cropLas(bytes: Uint8Array, box: { x0: number; x1: number; 
       }
       const n = zip.getCount();
       if (n > limits.maxPointsScanned) throw new LasError('too-large', 'The point cloud has too many points.');
-      const len = zip.getPointLength();
+      if (zip.getPointLength() < (extended ? 30 : 20)) throw new LasError('decode', 'The point records are too short.');
+      let view = new DataView(L.HEAPU8.buffer);
       for (let i = 0; i < n; i++) {
         // Hand the event loop back now and then: a 15 million point tile takes seconds, and the API keeps answering.
         if (i % YIELD_EVERY === YIELD_EVERY - 1) await new Promise<void>((r) => setImmediate(r));
@@ -256,8 +258,9 @@ export async function cropLas(bytes: Uint8Array, box: { x0: number; x1: number; 
         } catch {
           throw new LasError('decode', 'The compressed point cloud is damaged.');
         }
-        // HEAPU8 may be replaced when the heap grows: read it fresh each point.
-        keep(new DataView(L.HEAPU8.buffer, L.HEAPU8.byteOffset + pointPtr, len));
+        // The heap's buffer is replaced when it grows: take a new view only then.
+        if (view.buffer !== L.HEAPU8.buffer) view = new DataView(L.HEAPU8.buffer);
+        keep(view, pointPtr);
       }
     } finally {
       zip.delete();

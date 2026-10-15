@@ -29,6 +29,8 @@ export const JOB_NAMES = [
   'claims-reply',
   // G1 Task 12
   'scheduler-no-show',
+  // Leaf-off USGS lidar tiles of an area round a searched address (providers/usgs-lidar-roof.ts)
+  'lidar-area',
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 // 'footprints-load' is global work, but the worker requires a company id on every job: its data is
@@ -55,6 +57,8 @@ export type JobData = {
   testId?: string;
   // G1 Task 8
   messageId?: string;
+  /** lidar-area: [west, south, east, north] degrees; global work, sent with singletonKey = lidarAreaKey(box). */
+  lidarBox?: [number, number, number, number];
 };
 /** What a `send` may ask for: a dedupe key, and a delay in seconds before the job may run. */
 export type SendOptions = { singletonKey?: string; startAfter?: number };
@@ -66,7 +70,7 @@ export const JOB_QUEUE_OPTIONS = { policy: 'stately', retryLimit: 4, retryBackof
  * up to a few hundred MB and up to a million or so rows) gets about the time a loading claim stays fresh (STALE_LOADING_MS, 6 h),
  * so pg-boss never times it out and retries it while the first run is still going.
  */
-export const JOB_EXPIRE_SECONDS: Partial<Record<JobName, number>> = { 'footprints-load': 6 * 60 * 60 };
+export const JOB_EXPIRE_SECONDS: Partial<Record<JobName, number>> = { 'footprints-load': 6 * 60 * 60, 'lidar-area': 2 * 60 * 60 };
 
 /** The pg-boss options for one queue: the shared policy, plus its own expiry when it has one. */
 export function jobQueueOptions(name: JobName) {

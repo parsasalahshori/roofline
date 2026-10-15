@@ -266,9 +266,15 @@ export class FakeUsgsLidarApi implements UsgsLidarApi {
   /** Awaited before every answer (tests hold a read open with it). */
   gate: () => Promise<void> = async () => {};
   private failures = 0;
+  private getFailures = 0;
 
   failNext(n = 1): void {
     this.failures += n;
+  }
+
+  /** The next n file reads (getBytes) fail, whatever else is asked in between. */
+  failGets(n = 1): void {
+    this.getFailures += n;
   }
 
   private async step(): Promise<void> {
@@ -293,6 +299,10 @@ export class FakeUsgsLidarApi implements UsgsLidarApi {
   async getBytes(url: string, o: { timeoutMs: number; maxBytes: number; range?: [number, number] }): Promise<Uint8Array> {
     this.calls.push({ kind: 'get', url, ...(o.range !== undefined ? { range: o.range } : {}) });
     await this.step();
+    if (this.getFailures > 0) {
+      this.getFailures--;
+      throw new UsgsLidarError('http', 'Fake USGS dropped the connection.');
+    }
     if (!allowedLidarUrl(url)) throw new UsgsLidarError('host', 'A lidar URL is not on a USGS host.');
     const f = this.files.get(url);
     if (f === undefined) throw new UsgsLidarError('http', 'USGS answered 404.');

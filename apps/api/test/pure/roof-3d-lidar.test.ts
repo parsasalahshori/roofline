@@ -7,6 +7,7 @@ import { utmToLngLat } from '@roofline/shared/roof-reconstruct';
 import type { AppDeps } from '../../src/app.ts';
 import { roof3dAt, roof3dFromKept } from '../../src/estimator/roof-3d.ts';
 import { FakeUsgsLidarApi } from '../../src/providers/usgs-lidar.ts';
+import { lidarAreaOf, prefetchLidar, runLidarAreaJob } from '../../src/providers/usgs-lidar-roof.ts';
 import { LidarTileCache, UsgsLidarService } from '../../src/providers/usgs-lidar-service.ts';
 import { hipLayers } from '../roof-3d-fixture.ts';
 import { buildingOf, NOW, ScriptedLayers } from './helpers.ts';
@@ -37,6 +38,7 @@ function depsWith(mode: 'off' | 'prefetch' | 'on' | undefined, o: { waitMs?: num
   dirs.push(dir);
   const svc = new UsgsLidarService(api, { configured: false } as never, new LidarTileCache(dir, 1 << 30, () => NOW), () => NOW, { measureWaitMs: o.waitMs ?? 60_000 });
   const layers = new ScriptedLayers(() => LAYERS);
+  const sent: { name: string; data: unknown; opts: unknown }[] = [];
   const deps = {
     solarLayers: layers,
     clock: { now: () => NOW },
@@ -44,8 +46,9 @@ function depsWith(mode: 'off' | 'prefetch' | 'on' | undefined, o: { waitMs?: num
     config: { ROOF_3D_MODE: 'on', NODE_ENV: 'test', ...(mode !== undefined ? { USGS_LIDAR_MODE: mode } : {}) },
     logError: () => undefined,
     usgsLidar: svc,
+    jobs: { sent, send: async (name: string, data: unknown, opts: unknown) => void sent.push({ name, data, opts }) },
   } as unknown as AppDeps;
-  return { deps, api, layers };
+  return { deps, api, layers, sent };
 }
 
 describe('roof-3d with USGS lidar', () => {
@@ -99,5 +102,27 @@ describe('roof-3d with USGS lidar', () => {
     const snap = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
     expect(snap?.lidar).toEqual({ status: 'none', reason: 'no-coverage' });
     expect(snap?.roof?.lidarEdges).toBeUndefined();
+  });
+
+  it('a searched address fetches its lidar and queues one area job for its square; off queues nothing', async () => {
+    const { deps, api, sent } = depsWith('prefetch');
+    await prefetchLidar(deps, INSIDE, 'company-1');
+    const area = lidarAreaOf(INSIDE);
+    expect(sent).toEqual([{ name: 'lidar-area', data: { companyId: 'company-1', lidarBox: area.box }, opts: { singletonKey: area.key } }]);
+    expect(api.calls.some((c) => c.kind === 'get')).toBe(true);
+    const off = depsWith('off');
+    await prefetchLidar(off.deps, INSIDE, 'company-1');
+    expect(off.sent).toHaveLength(0);
+    expect(off.api.calls).toHaveLength(0);
+  });
+
+  it('the area job reads the square\'s tiles; a malformed or oversized box does nothing', async () => {
+    const { deps, api } = depsWith('prefetch');
+    await runLidarAreaJob(deps, [1, 2, 3]);
+    await runLidarAreaJob(deps, [-93, 34, -92, 35]);
+    await runLidarAreaJob(deps, ['a', 1, 2, 3]);
+    expect(api.calls).toHaveLength(0);
+    await runLidarAreaJob(deps, lidarAreaOf(INSIDE).box);
+    expect(api.calls.filter((c) => c.kind === 'size')).toHaveLength(1);
   });
 });
