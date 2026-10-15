@@ -59,6 +59,13 @@ describe('UsgsLidarService', () => {
     expect(readdirSync(dir!).filter((f) => f.endsWith('.laz'))).toHaveLength(1);
   });
 
+  it('without a tile directory a house still downloads its tile once', async () => {
+    const { api, svc } = setup({ dir: false });
+    expect('crop' in (await svc.prefetch(HOUSE_POINT))).toBe(true);
+    expect(api.calls.filter((c) => c.kind === 'size')).toHaveLength(1);
+    expect(api.calls.filter((c) => c.kind === 'get')).toHaveLength(Math.ceil(fixtureBytes('house-14-fmt6.laz').byteLength / (16 << 10)));
+  });
+
   it('a second house on the same tile reads the cached tile: no download', async () => {
     const { api, svc } = setup();
     await svc.prefetch(HOUSE_POINT);

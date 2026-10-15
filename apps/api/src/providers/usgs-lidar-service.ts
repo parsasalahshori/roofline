@@ -256,8 +256,10 @@ export class UsgsLidarService {
   private coolUntil = 0;
   /** Downloads in the last 24 hours (time ms, bytes): the daily budget. */
   private readonly downloads: { at: number; bytes: number }[] = [];
-  /** Derivations run one at a time: each holds a whole tile in memory and decodes millions of points. */
+  /** Decodes run one at a time: each holds a whole tile in memory and decodes millions of points. */
   private chain: Promise<unknown> = Promise.resolve();
+  /** Tile downloads run one at a time (each already uses rangeParallel connections; more trips the server's limit). */
+  private downloadChain: Promise<unknown> = Promise.resolve();
   readonly limits: UsgsLidarLimits;
 
   constructor(
@@ -351,7 +353,7 @@ export class UsgsLidarService {
           await this.keepNone(cell, { reason: choice.none, at: this.now().getTime() });
           return { none: choice.none };
         }
-        const crop = await this.serial(() => this.derive(cell, choice.unit));
+        const crop = await this.derive(cell, choice.unit);
         if (crop.source.lastPerM2 < this.limits.minLastPerM2) {
           await this.keepNone(cell, { reason: 'too-sparse', at: this.now().getTime(), workunit: choice.unit.workunit });
           return { none: 'too-sparse' };
@@ -380,6 +382,12 @@ export class UsgsLidarService {
     return next;
   }
 
+  private serialDownload<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.downloadChain.then(work, work);
+    this.downloadChain = next.catch(() => undefined);
+    return next;
+  }
+
   /** A tile's bytes: the disk cache, else downloaded once over parallel byte ranges (and cached, and logged). */
   tile(url: string): Promise<Uint8Array> {
     const running = this.tileFlight.get(url);
@@ -389,7 +397,11 @@ export class UsgsLidarService {
       if (cached !== null) return cached;
       if (this.now().getTime() < this.coolUntil) throw new UsgsLidarError('cooldown', 'USGS downloads are paused after a failure.');
       try {
-        return await this.download(url);
+        return await this.serialDownload(async () => {
+          // Another download may have failed while this one waited its turn.
+          if (this.now().getTime() < this.coolUntil) throw new UsgsLidarError('cooldown', 'USGS downloads are paused after a failure.');
+          return this.download(url);
+        });
       } catch (err) {
         if (err instanceof UsgsLidarError && (err.reason === 'http' || err.reason === 'timeout')) {
           this.coolUntil = this.now().getTime() + this.limits.cooldownMs;
@@ -509,10 +521,17 @@ export class UsgsLidarService {
   /** The crop of the unit's tiles round the cell. */
   private async deriveTiles(cell: LidarCell, unit: LidarUnit): Promise<LidarCropUtm> {
     const urls = unit.tiles.slice(0, this.limits.maxTilesPerHouse).map((t) => t.url);
+    // Download first (one tile at a time, outside the decode queue, so a slow download never holds up another house's
+    // decode), then decode one house at a time.
+    const files: Uint8Array[] = [];
+    for (const url of urls) files.push(await this.tile(url));
+    return this.serial(() => this.decodeTiles(cell, unit, urls, files));
+  }
+
+  private async decodeTiles(cell: LidarCell, unit: LidarUnit, urls: string[], files: Uint8Array[]): Promise<LidarCropUtm> {
     const parts: { crop: LasCrop; zone: number }[] = [];
     let kept = 0;
-    for (const url of urls) {
-      const bytes = await this.tile(url);
+    for (const bytes of files) {
       const crs = lasCrs(parseLasHeader(bytes.subarray(0, Math.min(bytes.byteLength, 1 << 16))));
       // The cell's square in the tile's own zone (the same zone nearly always; a zone edge converts the corners).
       const corners: [number, number][] = [
