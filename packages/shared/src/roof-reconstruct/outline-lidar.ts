@@ -188,7 +188,7 @@ const END_WITHIN_M = 1;
 /** Visible samples with evidence needed to measure the bias; fewer and it is taken as 0. */
 const MIN_BIAS_SAMPLES = 20;
 
-type Win = { c0: number; r0: number; w: number; h: number; dsm: Float32Array };
+export type Win = { c0: number; r0: number; w: number; h: number; dsm: Float32Array };
 
 /** Hidden edges moved onto the lidar's eaves, or the outline unchanged with the reason. Never throws. */
 export function lidarHiddenEdges(input: LidarEdgeInput, prm: LidarEdgeParams = DEFAULT_LIDAR_EDGE): { outline: XY[]; report: LidarEdgeReport } {
@@ -397,7 +397,7 @@ function run(input: LidarEdgeInput, prm: LidarEdgeParams): { outline: XY[]; repo
 }
 
 /** 1 where the height map is smooth (a plane or flat ground, not foliage) and has data, on the window. */
-function smoothMap(win: Win, s: number): Uint8Array {
+export function smoothMap(win: Win, s: number): Uint8Array {
   const out = new Uint8Array(win.w * win.h);
   const lim = ROUGH_M * Math.max(1, s / 0.1);
   for (let r = 1; r < win.h - 1; r++) {
@@ -418,7 +418,7 @@ function smoothMap(win: Win, s: number): Uint8Array {
  * coarse then a fine grid, then dz again from the inliers. Null when the best shift is at the search limit or the inlier
  * count does not fall away from it in x and in y (a frame the data do not pin).
  */
-function register(win: Win, s: number, smooth: Uint8Array, px: number[], py: number[], pz: number[], pf: number[], searchM: number, debug?: (msg: string) => void) {
+export function register(win: Win, s: number, smooth: Uint8Array, px: number[], py: number[], pz: number[], pf: number[], searchM: number, debug?: (msg: string) => void) {
   const at = (x: number, y: number): number => {
     const c = Math.floor(x / s);
     const r = Math.floor(-y / s);
@@ -505,7 +505,7 @@ function register(win: Win, s: number, smooth: Uint8Array, px: number[], py: num
 }
 
 /** Point indices on a square grid of `cell` metres (keys col,row). */
-function bucket(x: Float64Array, y: Float64Array, cell: number): { cell: number; map: Map<number, number[]> } {
+export function bucket(x: Float64Array, y: Float64Array, cell: number): { cell: number; map: Map<number, number[]> } {
   const map = new Map<number, number[]>();
   for (let i = 0; i < x.length; i++) {
     const key = cellKey(Math.floor(x[i]! / cell), Math.floor(y[i]! / cell));
@@ -600,8 +600,8 @@ const EDGE_FRAME_OUTLIER_M = 0.5;
 /** The residual shift the visible edges may correct, metres (the registration's error budget; more is a wrong frame). */
 const MAX_EDGE_SHIFT_M = 1;
 
-const ROOF = 1;
-const GROUND = 2;
+export const ROOF = 1;
+export const GROUND = 2;
 
 /**
  * Each registered return as roof (ROOF), ground (GROUND) or neither (0: a branch, a wall, a fence). Ground: classified
@@ -609,7 +609,7 @@ const GROUND = 2;
  * ground whose neighbours (last returns within a radius holding about ROOF_NEIGHBOURS at this density) lie on one plane
  * within ROOF_RMS_M and no steeper than MAX_ROOF_SLOPE: a roof is smooth, bare branches are not.
  */
-function classify(qx: Float64Array, qy: Float64Array, qz: Float64Array, pf: number[], grid: { cell: number; map: Map<number, number[]> }, density: number): Uint8Array {
+export function classify(qx: Float64Array, qy: Float64Array, qz: Float64Array, pf: number[], grid: { cell: number; map: Map<number, number[]> }, density: number): Uint8Array {
   const n = qx.length;
   const out = new Uint8Array(n);
   // The ground: median of ground returns per GROUND_CELL_M cell, looked up in the nearest cells that have any.
@@ -830,7 +830,7 @@ export function offsetEdges(ring: readonly XY[], move: readonly number[], ccw: b
   });
 }
 
-function median(v: readonly number[]): number {
+export function median(v: readonly number[]): number {
   if (v.length === 0) return Number.NaN;
   const a = Float64Array.from(v).sort();
   const m = a.length >> 1;

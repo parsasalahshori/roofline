@@ -5,6 +5,7 @@ import {
   metresApart,
   metresToBuilding,
   type Roof3d,
+  type LidarFlight,
   type Roof3dEdge,
   type Roof3dPhoto,
   type Roof3dSnapshot,
@@ -23,6 +24,7 @@ import {
   type RasterProblem,
   type LidarCloud,
   type LidarEdgeParams,
+  type LidarFusionParams,
   rasterProblem,
   reconstructRoof,
   roofPartAreaM2,
@@ -264,6 +266,12 @@ export type RoofOnLayersOptions = {
   /** Leaf-off lidar for the hidden-edge step (outline-lidar.ts); off when absent. Development only for now. */
   lidar?: LidarPointsUtm | null;
   lidarParams?: Partial<LidarEdgeParams>;
+  /**
+   * Leaf-off lidar fused into the reconstruction (roof-reconstruct/lidar-fusion.ts): roof the lidar sees where Google's
+   * heights are occluded is added, with source 'lidar' on its faces and edges and 'roof-from-lidar' past a small share.
+   * Off when absent (the default: the server does not fetch lidar yet). `flight` is recorded on the result.
+   */
+  lidarFusion?: { points: LidarPointsUtm; flight?: LidarFlight | null; params?: Partial<LidarFusionParams> } | null;
 };
 
 /**
@@ -344,6 +352,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(hiddenEdge !== null && hiddenEdge.method !== 'planes' ? { rgb: rgbOf(layers) } : {}),
   };
   const lidarCloud = o.lidar != null ? lidarOnLayers(layers, o.lidar) : null;
+  const fusionCloud = o.lidarFusion != null ? lidarOnLayers(layers, o.lidarFusion.points) : null;
   const local = reconstructRoof(raster, toPixel(point), {
     ...(hiddenEdge !== null ? { hiddenEdge: { ...hiddenEdge } as HiddenEdgeOption } : {}),
     imageryQuality: layers.imageryQuality,
@@ -353,13 +362,25 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.steep === true ? { planes: { maxPitchX12: 24 } } : {}),
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
     ...(lidarCloud !== null ? { lidar: { cloud: lidarCloud, ...(o.lidarParams !== undefined ? { params: o.lidarParams } : {}) } } : {}),
+    ...(fusionCloud !== null ? { lidarFusion: { cloud: fusionCloud, ...(o.lidarFusion?.params !== undefined ? { params: o.lidarFusion.params } : {}) } } : {}),
   });
   if (local === null) return { miss: 'not-found' };
   if (local.clipped) return { miss: 'clipped' };
   const toLngLat = (x: number, y: number) => utmToLngLat(zone, layers.originX + x, layers.originY + y);
   const meta = { imageryQuality: layers.imageryQuality, imageryDate: layers.imageryDate };
   const cut = roofMaskCut(local.cuts);
-  const roof = withEdgeEvidence({ ...toRoof3d(local, toLngLat, meta), ...(cut !== null ? { maskCut: cut } : {}) }, layers, raster.green);
+  const fusedPx = local.lidarFusion?.pixels ?? null;
+  const fusedDsm = local.lidarFusion?.dsm ?? null;
+  const base3d = toRoof3d(local, toLngLat, meta);
+  const flight = o.lidarFusion?.flight ?? null;
+  const withFlight =
+    base3d.lidarFusion !== undefined && flight !== null
+      ? { ...base3d, lidarFusion: { ...base3d.lidarFusion, flight: { project: flight.project, workUnit: flight.workUnit, collectEnd: flight.collectEnd, leafOff: flight.leafOff, ql: flight.ql, credit: flight.credit } } }
+      : base3d;
+  // Edge evidence on the heights the reconstruction used: on lidar pixels the lidar's surface, and no crown there.
+  const evidenceLayers = fusedPx !== null && fusedDsm !== null ? { ...layers, raster: { ...layers.raster, dsm: fusedDsm } } : layers;
+  const evidenceGreen = fusedPx !== null && raster.green != null ? raster.green.map((v, i) => (fusedPx[i] === 1 ? 0 : v)) : raster.green;
+  const roof = withEdgeEvidence({ ...withFlight, ...(cut !== null ? { maskCut: cut } : {}) }, evidenceLayers, evidenceGreen, fusedPx);
   // Detached garages, sheds and carports on the same layers: offered beside the main roof, not added to it.
   const structures: Roof3dStructure[] = [];
   for (const other of otherRoofParts(raster, local)) {
@@ -400,17 +421,60 @@ const FT_PER_M = 3.280839895;
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
+/** Inside an edge, this far in, a lidar pixel means the lidar drew that stretch of the outline, metres. */
+const LIDAR_EDGE_INSET_M = 0.3;
+
+/**
+ * Per edge of the outline with repeated corners dropped (eave-support.ts's numbering), the share of its length whose
+ * pixel LIDAR_EDGE_INSET_M inside came from the lidar fusion (1 in `px`, whole raster).
+ */
+export function lidarEdgeShares(ring: readonly { x: number; y: number }[], px: Uint8Array, W: number, H: number, s: number): number[] {
+  const pts = ring.filter((q, i) => {
+    const p = ring[(i + ring.length - 1) % ring.length]!;
+    return q.x !== p.x || q.y !== p.y;
+  });
+  let a2 = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!;
+    const q = pts[(i + 1) % pts.length]!;
+    a2 += p.x * q.y - q.x * p.y;
+  }
+  const ccw = a2 > 0;
+  return pts.map((a, i) => {
+    const b = pts[(i + 1) % pts.length]!;
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!(len > 0)) return 0;
+    const tx = (b.x - a.x) / len;
+    const ty = (b.y - a.y) / len;
+    // Inward normal: left of the direction of travel on a counter-clockwise ring.
+    const nx = ccw ? -ty : ty;
+    const ny = ccw ? tx : -tx;
+    const n = Math.max(1, Math.round(len / 0.25));
+    let on = 0;
+    for (let k = 0; k < n; k++) {
+      const t = ((k + 0.5) / n) * len;
+      const x = a.x + tx * t + nx * LIDAR_EDGE_INSET_M;
+      const y = a.y + ty * t + ny * LIDAR_EDGE_INSET_M;
+      const c = Math.floor(x / s);
+      const r = Math.floor(-y / s);
+      if (c >= 0 && r >= 0 && c < W && r < H && px[r * W + c] === 1) on++;
+    }
+    return on / n;
+  });
+}
+
 /**
  * The roof with its outline's evidence (eave-support.ts): per edge (Roof3d.edges) and in total
  * (quality.edgeSupport), and 'edges-unverified' among its reasons when too much of the outline cannot be checked from
  * the heights. Never throws: when the height map cannot be read along the outline the roof comes back with
  * quality.edgeSupportFailure set and no edges.
  */
-export function withEdgeEvidence(roof: Roof3d, layers: RoofLayers, green: Uint8Array | null | undefined): Roof3d {
+export function withEdgeEvidence(roof: Roof3d, layers: RoofLayers, green: Uint8Array | null | undefined, lidarPx: Uint8Array | null = null): Roof3d {
   if (roof.quality === undefined) return roof;
   const zone = utmZoneOfEpsg(layers.epsg);
   if (zone === null) return { ...roof, quality: { ...roof.quality, edgeSupportFailure: 'no-zone' } };
   let support: ReturnType<typeof eaveSupport>;
+  let lidarShare: number[] = [];
   try {
     const s = layers.raster.pixelSizeM;
     const local = roof.outline.map(([lng, lat]) => {
@@ -435,6 +499,7 @@ export function withEdgeEvidence(roof: Roof3d, layers: RoofLayers, green: Uint8A
     const raster = { width: w, height: h, pixelSizeM: s, dsm };
     const shifted = local.map((p) => ({ x: p.x - c0 * s, y: p.y + r0 * s }));
     support = eaveSupport(shifted, raster, crownFromGreen(raster, greenW));
+    if (lidarPx !== null) lidarShare = lidarEdgeShares(local, lidarPx, W, H, s);
   } catch {
     return { ...roof, quality: { ...roof.quality, edgeSupportFailure: 'error' } };
   }
@@ -455,6 +520,7 @@ export function withEdgeEvidence(roof: Roof3d, layers: RoofLayers, green: Uint8A
     reason: e.reason,
     canopy: e.canopyShare >= EDGE_CANOPY_SHARE,
     confidence: round3(EDGE_AGREEMENT.verified * (1 - e.noneShare) + EDGE_AGREEMENT.unverified * e.noneShare),
+    ...((lidarShare[e.edge] ?? 0) >= 0.5 ? { source: 'lidar' as const } : {}),
   }));
   const edgeSupport = {
     strongShare: round3(support.strongShare),

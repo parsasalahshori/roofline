@@ -31,6 +31,8 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *     --allow-expired           run on Google data past its 30-day date (a one-off; delete the data instead)
  *     --seeds 7,8,9             the seeds (default 7,8,9)
  *     --allow-manifest-change   compare against a baseline made from a different manifest or other seeds (gates then mean little)
+ *     --lidar-fusion            turn on lidar fusion (lidar-fusion.ts) with the same crop as --lidar-edges; score it on
+ *                               EagleView and cross-flight truth only (the lidar grade here is built from the same flight)
  *     --lidar-edges             turn on the lidar hidden-edge step (outline-lidar.ts) with each house's crop from
  *                               <ROOF_BENCH_DIR>/lidar-edges (edge_points.py). Its lidar-truth numbers are then CIRCULAR
  *                               (same returns): judge it on EagleView (roof-3d-lidar-eval.ts); use this run for the gates
@@ -148,8 +150,13 @@ async function main(): Promise<number> {
       allowExpired: flag('--allow-expired'),
       bench,
       lidarHash,
-      ...(flag('--lidar-edges')
-        ? { loader: async (e: HouseEntry) => ({ ...(await loadHouse(e, bench)), lidarPoints: readLidarEdgePoints(bench, e.slug, e.data?.imageryDate ?? null)?.points ?? null }) }
+      ...(flag('--lidar-edges') || flag('--lidar-fusion')
+        ? {
+            loader: async (e: HouseEntry) => {
+              const pts = readLidarEdgePoints(bench, e.slug, e.data?.imageryDate ?? null)?.points ?? null;
+              return { ...(await loadHouse(e, bench)), ...(flag('--lidar-edges') ? { lidarPoints: pts } : {}), ...(flag('--lidar-fusion') ? { lidarFusionPoints: pts } : {}) };
+            },
+          }
         : {}),
       commit: { sha: git(['rev-parse', 'HEAD']), dirty: git(['status', '--porcelain', '--untracked-files=no']) !== '' },
       base: baseSha === undefined ? null : { sha: git(['rev-parse', baseSha]), changedFiles: git(['diff', '--name-only', baseSha, '--', ...RECONSTRUCTION_PATHS]).split('\n').filter((l) => l !== '') },

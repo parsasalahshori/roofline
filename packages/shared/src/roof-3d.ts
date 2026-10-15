@@ -37,6 +37,8 @@ export type Roof3dFace = {
   confidence?: number;
   /** Where the face came from (absent: Google's heights). 'lidar': a roof part only leaf-off lidar saw, pitch from its lidar plane. */
   source?: Roof3dSource;
+  /** Share (0-1) of the face's plan area that only leaf-off lidar saw (lidar fusion), when any. */
+  lidarShare?: number;
 };
 
 export type Roof3dLine = {
@@ -185,11 +187,12 @@ export type Roof3dSource = 'google' | 'lidar';
 export type Roof3dLidarFusion = {
   applied: boolean;
   reason?: string;
-  flight: { project: string; workUnit: string; collectEnd: string | null; leafOff: boolean | null; ql: string | null; credit: string };
+  /** Which lidar (set by the server from LidarEvidence.flight; absent when the caller did not say). */
+  flight?: { project: string; workUnit: string; collectEnd: string | null; leafOff: boolean | null; ql: string | null; credit: string };
   addedPlanSqFt: number;
   addedSlopedSqFt: number;
   addedShare: number;
-  /** Lidar-only parts added, each with its plan area and pitch (x/12) from its lidar plane. */
+  /** Faces with lidar-only area: that area (plan sq ft) and the face's pitch (x/12), fitted on Google's and the lidar's heights. */
   parts: { planSqFt: number; pitchX12: number }[];
 };
 
