@@ -20,6 +20,7 @@ import { close, components, countSet, dilate, fillHoles, largestComponent, open,
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
 import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
+import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
@@ -60,6 +61,13 @@ export type ReconstructOptions = {
    * `{ complete: true }` turns it on.
    */
   canopy?: Partial<CanopyParams> & { complete?: boolean };
+  /**
+   * Outline edges the heights cannot vouch for (eave support 'none', mostly under tree crowns), inferred from evidence
+   * other than the mask. Off by default. `{ method: 'planes' }` moves hidden eaves onto the line where their face's plane
+   * comes down to the eave height its visible eaves show, and drops hidden hip-corner chamfers (outline-planes.ts,
+   * docs/roof-3d/planes.md). Turning it on by default changes reconstruction output: bump ROOF_3D_ALGORITHM_VERSION.
+   */
+  hiddenEdge?: { method: 'planes'; planes?: Partial<OutlinePlanesParams> };
   /** Development only: told what the topology decided. */
   debug?: (msg: string) => void;
   /** The imagery's quality (HIGH, MEDIUM), for the quality result. */
@@ -108,6 +116,12 @@ export type LocalRoof = {
   cuts?: { maskM2: number; groundM2: number; terraceM2: number };
   /** Faces the weak-face cleanup dissolved, by reason (absent when none). */
   dissolved?: Partial<Record<WeakReason, number>>;
+  /**
+   * What the hidden-edge step did (only when ReconstructOptions.hiddenEdge is set): edges moved onto a plane's eave line
+   * and chamfers turned into corners, their length (metres, inferred, not seen), candidate edges left alone by reason,
+   * or why the step did not run at all.
+   */
+  hiddenEdge?: { method: 'planes'; pieces: number; inferredM: number; declined: Partial<Record<PlanesDecline, number>>; skipped?: 'joined' | 'bad-input' | 'eave-support' | 'error' };
 };
 
 const FLAT_X12 = 2;
@@ -136,6 +150,8 @@ const LOW_SHARE = 0.03;
 const LOW_MAX_SHARE = 0.25;
 const LOW_ABOVE_M = 0.2;
 const LOW_OVER_LOWEST_M = 0.5;
+/** Room round the crop for the hidden-edge step, metres: its largest outward move (3 m) plus eave support's outside window (1 m). */
+const HIDDEN_EDGE_ROOM_M = 4;
 const SQ_FT_PER_SQ_M = 10.7639104167;
 const FT_PER_M = 3.280839895;
 
@@ -335,6 +351,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   let outline: XY[];
   let topo: ReturnType<typeof buildTopology>;
   let dissolved: Partial<Record<WeakReason, number>>;
+  let hiddenOut: ReturnType<typeof hiddenEdgeStep> | undefined;
   const cleanupPrm: FaceCleanupParams = { ...DEFAULT_FACE_CLEANUP, ...opts.faces };
   // Steps 3 and 4 run once, or twice when the completed roof is undone (its state restored, completion off).
   for (;;) {
@@ -342,6 +359,13 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     const boundary = maskBoundary(g, roof, s);
     outline = squareOutline(boundary, outlinePrm);
     if (outline.length < 3) return null;
+
+    // 3b. Hidden eaves from the planes (outline-planes.ts): only edges the heights cannot vouch for move.
+    if (opts.hiddenEdge !== undefined) {
+      hiddenOut = hiddenEdgeStep(raster, labels, part, { c0, r0, c1, r1, g }, s, faces.labels, planes, outline, joined, opts.hiddenEdge.planes, opts.debug);
+      outline = hiddenOut.outline;
+      opts.debug?.(`hidden edges (planes): ${hiddenOut.summary.pieces} pieces, ${hiddenOut.summary.inferredM.toFixed(1)} m inferred; declined ${JSON.stringify(hiddenOut.summary.declined)}${hiddenOut.summary.skipped !== undefined ? `; skipped: ${hiddenOut.summary.skipped}` : ''}`);
+    }
 
     // 4. Topology. A face whose polygon comes out under the smallest face size (its corners pulled in by its
     //    neighbours' creases) is dissolved and the topology built again.
@@ -461,7 +485,69 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     cuts: { maskM2: maskPx0 * s * s, groundM2: groundPx * s * s, terraceM2: terracePx * s * s },
     ...(Object.keys(dissolved).length > 0 ? { dissolved } : {}),
     ...(canopyOut !== undefined ? { canopy: { ...canopyOut, occluded: canopyOut.occluded.map(shift) } } : {}),
+    ...(hiddenOut !== undefined ? { hiddenEdge: hiddenOut.summary } : {}),
   };
+}
+
+/**
+ * Step 3b (outline-planes.ts) on the crop: the other buildings' mask parts and the crown map cut from the whole raster.
+ * Never throws: a refusal or an exception leaves the outline as it was, with the reason.
+ */
+function hiddenEdgeStep(
+  raster: RoofRaster,
+  parts: Int32Array,
+  part: number,
+  crop: { c0: number; r0: number; c1: number; r1: number; g: { w: number; h: number } },
+  s: number,
+  faceLabels: Int32Array,
+  planes: readonly Plane[],
+  outline: XY[],
+  joined: boolean,
+  prm: Partial<OutlinePlanesParams> | undefined,
+  debug: ((msg: string) => void) | undefined,
+): { outline: XY[]; summary: NonNullable<LocalRoof['hiddenEdge']> } {
+  const none = (skipped: 'joined' | 'bad-input' | 'eave-support' | 'error') => ({ outline, summary: { method: 'planes' as const, pieces: 0, inferredM: 0, declined: {}, skipped } });
+  // A terrace home's outline was cut by the box: its edges against the neighbours are party walls, not eaves.
+  if (joined) return none('joined');
+  try {
+    // A window round the crop with room for the step (the crop itself is left as it is, so the rest of the
+    // reconstruction is unchanged): heights, the other buildings' parts and the crown map from the whole raster, the
+    // faces' labels and planes moved into it, and the outline moved there and back.
+    const win = windowRound(raster, crop, undefined, HIDDEN_EDGE_ROOM_M);
+    const dc = crop.c0 - win.c0;
+    const dr = crop.r0 - win.r0;
+    const W = raster.width;
+    const other = new Uint8Array(win.g.w * win.g.h);
+    for (let r = 0; r < win.g.h; r++) {
+      for (let c = 0; c < win.g.w; c++) {
+        const l = parts[(r + win.r0) * W + c + win.c0]!;
+        other[r * win.g.w + c] = l !== 0 && l !== part ? 1 : 0;
+      }
+    }
+    const labelsW = new Int32Array(win.g.w * win.g.h).fill(-1);
+    for (let r = 0; r < crop.g.h; r++) for (let c = 0; c < crop.g.w; c++) labelsW[(r + dr) * win.g.w + c + dc] = faceLabels[r * crop.g.w + c]!;
+    // z = a x + b y + c in the crop's metres; the window's x is dc pixels more, its y dr pixels less.
+    const planesW = planes.map((q) => ({ a: q.a, b: q.b, c: q.c - q.a * dc * s + q.b * dr * s }));
+    const toW = (q: XY): XY => ({ x: q.x + dc * s, y: q.y - dr * s });
+    const crown = crownFromGreen({ width: win.g.w, height: win.g.h, pixelSizeM: s, dsm: win.dsm }, win.green);
+    const res = inferHiddenEaves({ g: win.g, s, dsm: win.dsm, labels: labelsW, planes: planesW, other, crown, outline: outline.map(toW) }, prm);
+    if (!res.ok) return none(res.reason);
+    if (debug !== undefined) {
+      debug(`hidden-edge planes: ${res.hiddenM.toFixed(1)} m unverified, ${res.eligibleM.toFixed(1)} m on steep faces with an eave height, ${res.replacedM.toFixed(1)} m replaced; eave heights ${JSON.stringify(res.eaveHeights)}; faces ${JSON.stringify(res.faceStats)}`);
+      for (const r of res.pieces) debug(`hidden-edge planes piece ${JSON.stringify(r)}`);
+    }
+    return {
+      outline: res.changes.length > 0 ? res.outline.map((q) => ({ x: q.x - dc * s, y: q.y + dr * s })) : outline,
+      summary: {
+        method: 'planes',
+        pieces: res.changes.length,
+        inferredM: round(res.replacedM, 2),
+        declined: res.declined,
+      },
+    };
+  } catch {
+    return none('error');
+  }
 }
 
 /** At most this many occluded points are reported (LocalRoof.canopy). */
