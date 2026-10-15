@@ -36,7 +36,7 @@ import {
 import { crownFromGreen, eaveSupport } from '@roofline/shared/roof-reconstruct/eave-support';
 import type { AppDeps } from '../app.ts';
 import { type RoofLayers, SolarLayersUnavailableError } from '../providers/solar-layers.ts';
-import { lidarForRoof, lidarNowReady, lidarWasPending, startLidar } from '../providers/usgs-lidar-roof.ts';
+import { lidarForRoof, lidarNowReady, lidarUsedButOff, lidarWasPending, startLidar } from '../providers/usgs-lidar-roof.ts';
 import { encodeRgbPng } from './png.ts';
 import { countRoof3d } from './roof-3d-events.ts';
 import { tierReasons, withGoogleCheck } from './roof-3d-compare.ts';
@@ -679,7 +679,13 @@ async function attempt(deps: AppDeps, point: LngLat, building: SolarBuilding | n
     countRoof3d(deps, 'unusable', { reused });
     return stamp(noted({ fetchedAt: fetchedAt(), at, roof: null, none: 'unusable' }));
   }
-  const roof = withGoogleCheck(found.roof, building);
+  const checked = withGoogleCheck(found.roof, building);
+  // USGS_LIDAR_MODE=on and the lidar still coming: this roof is Google's alone and the next Measure (with the lidar) can
+  // differ by much (+79% in the verifier's run), so it is a 'block' until the lidar has settled (lidarNowReady).
+  const roof =
+    lidar !== null && lidarWasPending(deps, { lidar: lidar.note }) && checked.quality !== undefined && !checked.quality.reasons.includes('lidar-pending')
+      ? { ...checked, quality: { ...checked.quality, reasons: [...checked.quality.reasons, 'lidar-pending' as const] } }
+      : checked;
   countRoof3d(deps, 'built', { reused, faces: roof.faces.length, review: (roof.quality?.reasons.length ?? 0) > 0 });
   return stamp(noted({ fetchedAt: fetchedAt(), at, roof, photo: await photoOrNull(deps, layers, roof) }));
 }
@@ -819,7 +825,7 @@ export async function roof3dFromKept(
   }
   const usable = kept === null ? null : fromShadow(kept);
   let snapshot: Roof3dSnapshot | null;
-  if (usable !== null && roof3dSnapshotFresh(usable, point, deps.clock.now()) && !(await lidarNowReady(deps, usable, point))) {
+  if (usable !== null && roof3dSnapshotFresh(usable, point, deps.clock.now()) && !lidarUsedButOff(deps, usable) && !(await lidarNowReady(deps, usable, point))) {
     countRoof3d(deps, 'reused', { version: roof3dSnapshotVersion(usable).algorithm ?? 0 });
     snapshot = usable;
   } else {

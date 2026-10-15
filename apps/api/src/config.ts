@@ -165,9 +165,10 @@ const ConfigSchema = z
     /**
      * Leaf-off USGS 3DEP lidar for roofs under trees (providers/usgs-lidar*.ts, public domain, no key). off (default):
      * nothing is asked of USGS. prefetch: an address search fetches and keeps the lidar round the house (and Measure
-     * records whether it was there) but the roof is made from Google's heights alone. on: Measure also hands the lidar
-     * to the reconstruction (outline edges hidden under trees); turning it on is the owner's call and bumps
-     * ROOF_3D_ALGORITHM_VERSION.
+     * records what is already known, without waiting or downloading) but the roof is made from Google's heights alone.
+     * on: Measure also hands the lidar to the fusion step (roof under crowns, provenance 'lidar', a 'block' review);
+     * while it is still downloading the roof carries 'lidar-pending'. Turning it on is the owner's call. Kept roofs the
+     * lidar went into are made again when the mode is no longer on (the kill switch reaches them).
      */
     USGS_LIDAR_MODE: z.enum(['off', 'prefetch', 'on'], { error: 'must be off, prefetch or on' }).optional(),
     /** Disk cache of raw USGS LAZ tiles (bounded, with a download ledger). Unset: tiles are not kept between houses. Resolved from the repository root. */

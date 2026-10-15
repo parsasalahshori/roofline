@@ -276,6 +276,7 @@ export const ROOF_QUALITY_REASONS = [
   'roof-inferred',
   'roof-from-lidar',
   'lidar-past-building',
+  'lidar-pending',
 ] as const;
 export type RoofQualityReason = (typeof ROOF_QUALITY_REASONS)[number];
 
@@ -306,6 +307,8 @@ export const ROOF_QUALITY_SEVERITY: Record<RoofQualityReason, RoofQualitySeverit
   'roof-from-lidar': 'block',
   // Lidar roof running well past Google's box for the building: a wing, or the attached unit next door (a duplex).
   'lidar-past-building': 'block',
+  // USGS_LIDAR_MODE=on and the leaf-off lidar still downloading: the next Measure may add roof under trees.
+  'lidar-pending': 'block',
 };
 
 /** The outline's evidence in total (see Roof3dEdge): shares of its length, and its unverified length in feet. */

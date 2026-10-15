@@ -65,6 +65,7 @@ export const liftMeasure = {
     'edges-unverified': "Part of the outline can't be checked in the height map (trees or a taller building beside it). The dashed edges are a best guess: check them against the photo.",
     'roof-inferred': 'Some roof under trees was filled in from the shape of the roof, not measured. The dashed edges are where it was added: check them against the photo before you price it.',
     'roof-from-lidar': 'Part of this roof was measured from public USGS lidar flown with the leaves off, because trees hide it in the aerial heights. The sections shaded blue were added from the lidar: check them against the photo before you price it.',
+    'lidar-pending': 'Leaf-off lidar for this address is still downloading, and it may show roof hidden under trees. Measure again in a few minutes before you price it.',
     'lidar-past-building': 'Roof measured from the lidar runs well past the building outlined in the aerial data. It may be a wing under trees, or the unit next door (a duplex or townhouse). Check the sections shaded blue against the photo before you price it.',
   },
   /** The one-line cue under the photo when some outline edges are drawn dashed (unverified). */

@@ -151,6 +151,14 @@ export function lidarWasPending(deps: AppDeps, snapshot: { lidar?: Roof3dLidarNo
 }
 
 /**
+ * The kill switch reaches kept roofs: a snapshot whose roof the lidar went into is not reused unless USGS_LIDAR_MODE is
+ * still 'on' (turning lidar off withdraws the lidar roofs already measured; both are algorithm version 6).
+ */
+export function lidarUsedButOff(deps: AppDeps, snapshot: { lidar?: Roof3dLidarNote }): boolean {
+  return snapshot.lidar?.status === 'used' && lidarModeOf(deps) !== 'on';
+}
+
+/**
  * Whether a kept snapshot should be made again because the lidar it waited for is now ready (mode on only; a quick
  * read of the kept product, no USGS call). While the lidar is still pending the kept roof is reused: making it again
  * would buy Google's layers again for nothing.
@@ -158,5 +166,6 @@ export function lidarWasPending(deps: AppDeps, snapshot: { lidar?: Roof3dLidarNo
 export async function lidarNowReady(deps: AppDeps, snapshot: { lidar?: Roof3dLidarNote }, point: LngLat): Promise<boolean> {
   if (!lidarWasPending(deps, snapshot)) return false;
   const known = await deps.usgsLidar!.known(point).catch(() => null);
-  return known !== null && 'crop' in known;
+  // Settled either way: a crop to fuse, or a kept answer that there is none (which also lifts 'lidar-pending').
+  return known !== null;
 }

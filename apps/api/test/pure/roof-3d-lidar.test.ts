@@ -116,6 +116,8 @@ describe('roof-3d with USGS lidar', () => {
     const first = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
     expect(first?.roof).not.toBeNull();
     expect(first?.lidar).toEqual({ status: 'none', reason: 'lidar-pending' });
+    // Priced from Google alone while the lidar comes, the roof is a block (the next Measure may add roof under trees).
+    expect(first?.roof?.quality?.reasons).toContain('lidar-pending');
     // Asked again in this process while still pending: the same answer, nothing bought again.
     expect(await roof3dAt(deps, INSIDE, buildingOf(HOUSE))).toBe(first);
     // Still pending: the kept roof is reused (making it again would buy Google's layers for nothing).
@@ -128,10 +130,45 @@ describe('roof-3d with USGS lidar', () => {
     // Ready now: the kept snapshot from the first Measure is made again, with the lidar.
     const again = await roof3dFromKept(deps, first, INSIDE, Promise.resolve(buildingOf(HOUSE)));
     expect(again?.lidar?.status).toBe('used');
+    expect(again?.roof?.quality?.reasons).not.toContain('lidar-pending');
     // And in this process too: the cached answer is made again once, then shared.
     const third = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
     expect(third?.lidar?.status).toBe('used');
     expect(await roof3dAt(deps, INSIDE, buildingOf(HOUSE))).toBe(third);
+  });
+
+  it('the kill switch reaches kept roofs: a roof the lidar went into is made again once lidar is off or prefetch', async () => {
+    const { deps } = depsWith('on');
+    const fused = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
+    expect(fused?.lidar?.status).toBe('used');
+    // Still on: reused.
+    const { deps: on2, layers: l1 } = depsWith('on');
+    expect(await roof3dFromKept(on2, fused, INSIDE, Promise.resolve(buildingOf(HOUSE)))).toBe(fused);
+    expect(l1.calls).toHaveLength(0);
+    for (const mode of ['off', 'prefetch'] as const) {
+      const { deps: d, layers } = depsWith(mode);
+      const again = await roof3dFromKept(d, fused, INSIDE, Promise.resolve(buildingOf(HOUSE)));
+      expect(again).not.toBe(fused);
+      expect(again?.lidar?.status).not.toBe('used');
+      expect(layers.calls.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('a pending roof whose lidar settles as none (no coverage) is made again without the block', async () => {
+    const { deps, api } = depsWith('on', { waitMs: 0 });
+    let open!: () => void;
+    const g = new Promise<void>((r) => {
+      open = r;
+    });
+    api.gate = () => g;
+    api.coverageAt = () => [];
+    const first = await roof3dAt(deps, INSIDE, buildingOf(HOUSE));
+    expect(first?.roof?.quality?.reasons).toContain('lidar-pending');
+    open();
+    await deps.usgsLidar!.prefetch(INSIDE);
+    const again = await roof3dFromKept(deps, first, INSIDE, Promise.resolve(buildingOf(HOUSE)));
+    expect(again?.lidar).toEqual({ status: 'none', reason: 'no-coverage' });
+    expect(again?.roof?.quality?.reasons).not.toContain('lidar-pending');
   });
 
   it('Google MEDIUM (0.25 m) layers: the lidar goes in the same way, and the answer is identical run to run', async () => {
