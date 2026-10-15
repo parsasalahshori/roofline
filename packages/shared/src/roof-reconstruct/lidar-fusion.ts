@@ -22,7 +22,7 @@
 //     least minPartM2, and is mostly occluded (a part Google saw in full is not hidden roof, it is something else).
 //  6. Added at most maxAddShare of Google's part ('large-change'), and nothing added at all: 'nothing-hidden'.
 import type { RoofRaster } from './index.ts';
-import { GROUND, bucket, classify, type LidarCloud, median, register, smoothMap, type Win } from './outline-lidar.ts';
+import { GROUND, ROOF, bucket, classify, type LidarCloud, median, register, smoothMap, type Win } from './outline-lidar.ts';
 import { close, components, dilate, type Grid, open } from './raster.ts';
 
 export type LidarFusionParams = {
@@ -119,6 +119,11 @@ export type LidarFusionResult = {
   raster: RoofRaster;
   /** 1 on whole-raster pixels whose height and roof membership came from the lidar; null when nothing was added. */
   lidarPx: Uint8Array | null;
+  /**
+   * For the outline's edge evidence only: the patched heights plus the lidar's bare ground under crowns within
+   * EVIDENCE_GROUND_M of the added parts (groundPx marks those pixels). Absent when nothing was added.
+   */
+  evidence?: { dsm: Float32Array; groundPx: Uint8Array };
   report: LidarFusionReport;
 };
 
@@ -206,9 +211,22 @@ function run(raster: RoofRaster, point: { col: number; row: number }, cloud: Lid
   }
   if (px.length < 50) return keep('no-points');
 
+  // 1b. Density before the registration (a shift of a metre or two barely changes a count over the whole roof): a
+  //     sparse cloud is declined without paying for the search.
+  {
+    let pre = 0;
+    for (let i = 0; i < px.length; i++) {
+      if ((pf[i]! & 1) === 0) continue;
+      const c = Math.floor(px[i]! / s);
+      const r = Math.floor(-py[i]! / s);
+      if (c >= 0 && r >= 0 && c < g.w && r < g.h && inPart[r * g.w + c] === 1) pre++;
+    }
+    if (pre / (partPx * s * s) < PRE_DENSITY_SHARE * prm.minRoofDensity) return keep('sparse', { roofDensity: round(pre / (partPx * s * s), 2) });
+  }
+
   // 2. Registration.
   const smooth = smoothMap(win, s);
-  const reg = register(win, s, smooth, px, py, pz, pf, prm.searchM, debug);
+  const reg = register(win, s, smooth, px, py, pz, pf, prm.searchM, debug, REG_BUDGET);
   if (reg === null) return keep('misaligned');
   const P = px.length;
   const qx = new Float64Array(P);
@@ -251,13 +269,25 @@ function run(raster: RoofRaster, point: { col: number; row: number }, cloud: Lid
   const reach = Math.ceil(radius / grid.cell);
   const lidarZ = new Float32Array(g.w * g.h).fill(Number.NaN);
   const groundOnly = new Uint8Array(g.w * g.h);
+  const groundZ = new Float32Array(g.w * g.h).fill(Number.NaN);
+  // Only pixels within SURFACE_NEAR_M of a roof return, or on Google's part (the change check), need a surface.
+  const roofCell = new Set<number>();
+  for (let i = 0; i < P; i++) if (cls[i] === ROOF) roofCell.add(cellKey(Math.floor(qx[i]! / grid.cell), Math.floor(qy[i]! / grid.cell)));
+  const nearReach = Math.ceil(SURFACE_NEAR_M / grid.cell);
+  const nearRoof = new Set<number>();
+  for (const key of roofCell) {
+    const cc0 = Math.floor(key / 100_000) - 50_000;
+    const rr0 = (key % 100_000) - 50_000;
+    for (let dr = -nearReach; dr <= nearReach; dr++) for (let dc = -nearReach; dc <= nearReach; dc++) nearRoof.add(cellKey(cc0 + dc, rr0 + dr));
+  }
   for (let r = 0; r < g.h; r++) {
     for (let c = 0; c < g.w; c++) {
+      if (inPart[r * g.w + c] !== 1 && !nearRoof.has(cellKey(Math.floor(((c + 0.5) * s) / grid.cell), Math.floor((-(r + 0.5) * s) / grid.cell)))) continue;
       const cx = (c + 0.5) * s;
       const cy = -(r + 0.5) * s;
       const gc = Math.floor(cx / grid.cell);
       const gr = Math.floor(cy / grid.cell);
-      let nr = 0, ng = 0, sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0;
+      let nr = 0, ng = 0, gz = 0, sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0;
       for (let rr = gr - reach; rr <= gr + reach; rr++) {
         for (let cc = gc - reach; cc <= gc + reach; cc++) {
           const l = grid.map.get(cellKey(cc, rr));
@@ -270,6 +300,7 @@ function run(raster: RoofRaster, point: { col: number; row: number }, cloud: Lid
             if (dx * dx + dy * dy > r2) continue;
             if (t === GROUND) {
               ng++;
+              gz += qz[j]!;
               continue;
             }
             const dz = qz[j]!;
@@ -278,7 +309,10 @@ function run(raster: RoofRaster, point: { col: number; row: number }, cloud: Lid
         }
       }
       const k = r * g.w + c;
-      if (nr === 0 && ng >= 2) groundOnly[k] = 1;
+      if (nr === 0 && ng >= 2) {
+        groundOnly[k] = 1;
+        groundZ[k] = gz / ng;
+      }
       if (nr < 2 || nr < ng) continue;
       // Least-squares plane through the roof returns, evaluated at the pixel centre (dx = dy = 0); their mean when the
       // returns do not pin a plane (two returns, or in a line).
@@ -426,14 +460,42 @@ function run(raster: RoofRaster, point: { col: number; row: number }, cloud: Lid
     if (green != null) green[src] = 0;
     lidarPx[src] = 1;
   }
-  return { raster: { ...raster, dsm, mask, green: green ?? null }, lidarPx, report: { ...report, applied: true } };
+  // For the edge evidence only (never the reconstruction): the lidar's bare ground under the crown just outside the
+  // added parts, so an eave the lidar placed is judged by the drop the lidar measured, not by the canopy beside it.
+  const evidenceDsm = dsm.slice();
+  const groundPx = new Uint8Array(W * H);
+  const addedW = new Uint8Array(g.w * g.h);
+  for (let k = 0; k < addedW.length; k++) if (take[lab.labels[k]!] === 1) addedW[k] = 1;
+  const besideAdded = dilate(g, addedW, Math.round(EVIDENCE_GROUND_M / s));
+  for (let k = 0; k < besideAdded.length; k++) {
+    if (besideAdded[k] !== 1 || addedW[k] === 1 || inPart[k] === 1 || groundOnly[k] !== 1) continue;
+    const zg = win.dsm[k]!;
+    if (Number.isFinite(zg) && zg - groundZ[k]! < prm.occludedM) continue;
+    const c = k % g.w;
+    const r = (k - c) / g.w;
+    const src = (r + wr0) * W + c + wc0;
+    evidenceDsm[src] = groundZ[k]!;
+    groundPx[src] = 1;
+  }
+  return { raster: { ...raster, dsm, mask, green: green ?? null }, lidarPx, evidence: { dsm: evidenceDsm, groundPx }, report: { ...report, applied: true } };
 }
 
+/**
+ * The density gate before registration is this share of minRoofDensity: the unregistered count can be short by the
+ * part of the roof a 1-2 m shift moves off it; the exact gate follows the registration.
+ */
+const PRE_DENSITY_SHARE = 0.8;
+/** Returns used by the registration search (coarse, fine): the prototype's coarse search, half its fine one (a house window has 15 000 last returns or more). */
+const REG_BUDGET = { coarse: 8000, fine: 15000 };
 /** The lidar's roof returns must lie on Google's smooth roof: median absolute distance at most this, metres. */
 const REG_MAD_M = 0.15;
 /** The lidar surface at a pixel is read from returns within this radius: at least MIN_RADIUS_M, else about RADIUS_SPACINGS point spacings. */
 const MIN_RADIUS_M = 0.35;
 const RADIUS_SPACINGS = 1.2;
+/** The lidar's ground is written into the edge-evidence heights this far round the added parts (eave support reads 1 m out), metres. */
+const EVIDENCE_GROUND_M = 1.5;
+/** A surface is worked out only this close to a roof return (the evidence ground reaches 1.5 m past the roof), metres. */
+const SURFACE_NEAR_M = 2;
 /** Crest strips up to this wide between lidar roof pixels are filled (classify's neighbourhood is about 1.2 m across), metres. */
 const GAP_FILL_M = 1;
 const cellKey = (c: number, r: number) => (c + 50_000) * 100_000 + (r + 50_000);

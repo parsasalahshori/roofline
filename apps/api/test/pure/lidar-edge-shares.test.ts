@@ -36,3 +36,17 @@ describe('lidarEdgeShares', () => {
     expect(lidarEdgeShares([{ x: -50, y: 10 }, { x: -40, y: 10 }, { x: -40, y: 0 }], px, W, H, s)).toEqual([0, 0, 0]);
   });
 });
+
+describe('lidarFusionFromEvidence', () => {
+  it('passes the arrays through, leaf-off from the flight, and the age in whole years', async () => {
+    const { lidarFusionFromEvidence } = await import('../../src/estimator/roof-3d.ts');
+    const flight = { project: 'AR_Western_B24', workUnit: 'AR_Western_4_B24', collectStart: '2025-01-02', collectEnd: '2025-03-26', leafOff: true, ql: 'QL 1', pointsPerM2: 17, source: 'cache' as const, credit: 'USGS 3D Elevation Program (3DEP), public domain' };
+    const ev = { epsg: 32615, originE: 1, originN: 2, dx: new Float32Array([1]), dy: new Float32Array([2]), z: new Float32Array([3]), flags: new Uint8Array([1]), flight };
+    const o = lidarFusionFromEvidence(ev, '2023-06-01');
+    expect(o.points.dx).toBe(ev.dx);
+    expect(o.points).toMatchObject({ epsg: 32615, leafOff: true, ageYears: 2 });
+    expect(o.flight).toBe(flight);
+    expect(lidarFusionFromEvidence(ev, null).points.ageYears).toBeNull();
+    expect(lidarFusionFromEvidence({ ...ev, flight: { ...flight, leafOff: null } }, '2025-01-01').points.leafOff).toBeNull();
+  });
+});

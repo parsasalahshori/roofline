@@ -5,6 +5,7 @@ import {
   metresApart,
   metresToBuilding,
   type Roof3d,
+  type LidarEvidence,
   type LidarFlight,
   type Roof3dEdge,
   type Roof3dPhoto,
@@ -291,6 +292,21 @@ export type LidarPointsUtm = {
   ageYears: number | null;
 };
 
+/**
+ * The lidar service's evidence (LidarEvidence, roof-3d.ts in shared) as the fusion option takes it: the same arrays,
+ * leaf-off from the flight, and the flight's age against Google's imagery date in whole years (null when either date
+ * is unknown). The flight goes on the result (Roof3d.lidarFusion.flight) for the USGS credit and the date.
+ */
+export function lidarFusionFromEvidence(ev: LidarEvidence, imageryDate: string | null): NonNullable<RoofOnLayersOptions['lidarFusion']> {
+  const ya = ev.flight.collectEnd === null ? Number.NaN : Number(ev.flight.collectEnd.slice(0, 4));
+  const yb = imageryDate === null ? Number.NaN : Number(imageryDate.slice(0, 4));
+  const ageYears = Number.isFinite(ya) && Number.isFinite(yb) ? Math.abs(ya - yb) : null;
+  return {
+    points: { epsg: ev.epsg, originE: ev.originE, originN: ev.originN, dx: ev.dx, dy: ev.dy, z: ev.z, flags: ev.flags, leafOff: ev.flight.leafOff, ageYears },
+    flight: ev.flight,
+  };
+}
+
 /** The lidar crop in the layers' raster metres (reprojected when it is in another UTM zone), or null when it is not in UTM. */
 export function lidarOnLayers(layers: RoofLayers, p: LidarPointsUtm): LidarCloud | null {
   const mine = utmZoneOfEpsg(layers.epsg);
@@ -379,7 +395,8 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
       : base3d;
   // Edge evidence on the heights the reconstruction used: on lidar pixels the lidar's surface, and no crown there.
   const evidenceLayers = fusedPx !== null && fusedDsm !== null ? { ...layers, raster: { ...layers.raster, dsm: fusedDsm } } : layers;
-  const evidenceGreen = fusedPx !== null && raster.green != null ? raster.green.map((v, i) => (fusedPx[i] === 1 ? 0 : v)) : raster.green;
+  const fusedGround = local.lidarFusion?.groundPx ?? null;
+  const evidenceGreen = fusedPx !== null && raster.green != null ? raster.green.map((v, i) => (fusedPx[i] === 1 || fusedGround?.[i] === 1 ? 0 : v)) : raster.green;
   const roof = withEdgeEvidence({ ...withFlight, ...(cut !== null ? { maskCut: cut } : {}) }, evidenceLayers, evidenceGreen, fusedPx);
   // Detached garages, sheds and carports on the same layers: offered beside the main roof, not added to it.
   const structures: Roof3dStructure[] = [];

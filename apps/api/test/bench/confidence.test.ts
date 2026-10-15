@@ -229,6 +229,18 @@ describe('review reasons by severity (golden decisions)', () => {
     expect(withGoogleCheck(roof, null).quality).toEqual(roof.quality);
   });
 
+  it("the Google check skips a face the lidar fusion measured (Google's segment there was fitted to the canopy)", () => {
+    const roof = roofOnLayers(hipLayers(HOUSE), INSIDE)!;
+    const seg = (f: Roof3d['faces'][number], pitchDeg: number) => ({ center: f.labelAt, pitchDeg, azimuthDeg: f.azimuthDeg, groundAreaM2: f.planAreaSqFt / 10.7639104167 });
+    const agree = (Math.atan(0.5) * 180) / Math.PI;
+    const building = { center: INSIDE, box: null, segments: roof.faces.map((f, k) => seg(f, k <= 1 ? 45 : agree)) } as never;
+    expect(withGoogleCheck(roof, building).quality!.reasons).toContain('differs-from-google');
+    const fused: Roof3d = { ...roof, faces: roof.faces.map((f, k) => (k <= 1 ? { ...f, source: 'lidar' as const, lidarShare: 0.9 } : f)) };
+    expect(checkRoof(fused, building).rows.slice(0, 2).every((r) => !r.main)).toBe(true);
+    expect(withGoogleCheck(fused, building).quality!.reasons).not.toContain('differs-from-google');
+    expect(withGoogleCheck(fused, building).quality!.notes ?? []).not.toContain('differs-from-google');
+  });
+
   it('a small differing face with much more area than Google sees under it is a review, not a note (ev-51881820-like)', () => {
     // The over-measured attachment: one face of four disagrees (under a third of the main roof), but Google's segment
     // under it is a third of our face's area. That gap alone moves the roof's area by more than DIFFERS_STAKE_SHARE.

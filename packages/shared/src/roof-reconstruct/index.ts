@@ -196,10 +196,10 @@ export type LocalRoof = {
   /**
    * What the lidar fusion did (ReconstructOptions.lidarFusion), absent when it was not asked for: the step's report, the
    * plan area of the final outline on lidar pixels (addedPlanM2), the sloped area on the lidar faces' planes, and their
-   * share of the outline. `pixels` (whole raster, 1 = from lidar) and `dsm` (the patched heights) are for the edge
-   * evidence; they are not stored.
+   * share of the outline. `pixels` (whole raster, 1 = roof from lidar), `dsm` (the patched heights plus the lidar's
+   * ground under the crowns beside the added roof, `groundPx`) are for the edge evidence; they are not stored.
    */
-  lidarFusion?: LidarFusionReport & { addedPlanM2: number; addedSlopedM2: number; addedShare: number; pixels?: Uint8Array; dsm?: Float32Array };
+  lidarFusion?: LidarFusionReport & { addedPlanM2: number; addedSlopedM2: number; addedShare: number; pixels?: Uint8Array; dsm?: Float32Array; groundPx?: Uint8Array };
 };
 
 /** An outline edge (`from`: its first corner's index) that a hidden-edge step put where the heights did not show it. */
@@ -264,7 +264,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     const rest: ReconstructOptions = { ...opts, lidarFusion: null, lidarPixels: fused.lidarPx };
     const local = reconstructRoof(fused.raster, point, rest);
     if (local === null) return null;
-    return withLidarProvenance(local, fused.report, fused.lidarPx, fused.lidarPx !== null ? fused.raster.dsm : null, raster.width, raster.height);
+    return withLidarProvenance(local, fused.report, fused.lidarPx, fused.evidence ?? null, raster.width, raster.height);
   }
   const { width: W, height: H, pixelSizeM: s } = raster;
   if (!(W > 2 && H > 2 && s > 0) || raster.dsm.length !== W * H || raster.mask.length !== W * H) return null;
@@ -681,7 +681,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
 /** A face with less than this share on lidar pixels is Google's (the seam's pixels, a crown's edge). */
 const LIDAR_FACE_MIN_SHARE = 0.05;
 
-function withLidarProvenance(local: LocalRoof, report: LidarFusionReport, px: Uint8Array | null, dsm: Float32Array | null, W: number, H: number): LocalRoof {
+function withLidarProvenance(local: LocalRoof, report: LidarFusionReport, px: Uint8Array | null, evidence: { dsm: Float32Array; groundPx: Uint8Array } | null, W: number, H: number): LocalRoof {
   const s = local.pixelSizeM;
   const outlineArea = Math.abs(signedArea(local.outline));
   if (px === null) return { ...local, lidarFusion: { ...report, addedPlanM2: 0, addedSlopedM2: 0, addedShare: 0 } };
@@ -716,7 +716,7 @@ function withLidarProvenance(local: LocalRoof, report: LidarFusionReport, px: Ui
     ...local,
     faces,
     quality: { ...local.quality, reasons },
-    lidarFusion: { ...report, addedPlanM2: round(addedPlan, 2), addedSlopedM2: round(addedSloped, 2), addedShare: round(addedShare, 4), pixels: px, ...(dsm !== null ? { dsm } : {}) },
+    lidarFusion: { ...report, addedPlanM2: round(addedPlan, 2), addedSlopedM2: round(addedSloped, 2), addedShare: round(addedShare, 4), pixels: px, ...(evidence !== null ? { dsm: evidence.dsm, groundPx: evidence.groundPx } : {}) },
   };
 }
 

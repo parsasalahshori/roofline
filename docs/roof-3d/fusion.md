@@ -52,6 +52,9 @@ joins Google's faces where the planes continue, and Google's own pixels (heights
 
 ## Provenance and review
 
+- The Google check (roof-3d-compare.ts `checkRoof`) skips faces with source 'lidar': Google's segment under them was
+  fitted to the canopy. Without this, two fused DEV houses failed "passing all targets" against the leaf-on segments.
+
 - `LocalFace.lidarShare` / `Roof3dFace.lidarShare`: the share of the face's plan on lidar pixels (from 5 %);
   `source: 'lidar'` when at least half. A gable continuing under a crown keeps one face per slope with a share.
 - `Roof3dEdge.source = 'lidar'` when at least half the edge's length has a lidar pixel 0.3 m inside it.
@@ -67,7 +70,49 @@ on cross-flight lidar truth (lidar/<slug>/units/<other unit>/truth.json, a diffe
 frozen from the OFF outline: `npx tsx apps/api/src/scripts/roof-3d-fusion-eval.ts --split dev`. The single-flight lidar
 grade in the benchmark is built from the fused flight on most houses and is used for debugging only.
 
-Results: see "Results" below (filled from the DEV runs in roof-bench/fusion/).
+## Results (DEV only; runs in ROOF_BENCH_DIR/fusion/)
+
+Fusion on vs off, same seed (7), same scorer (`roof-3d-fusion-eval.ts`, dev-v4.txt):
+
+- 52 DEV houses have a lidar crop. Applied on 7; declined: 21 not-leaf-off, 13 sparse (QL2), 4 misaligned, 7 nothing-hidden.
+- EagleView: no DEV EagleView house was changed (each declined: their fused flights are leaf-on, sparse, or nothing is
+  hidden). So EagleView shows no harm and no gain; it is not evidence of success.
+- Cross-flight truth (a different flight): 19 house-flight pairs, 4 changed, all 4 better in IoU, none worse; median
+  |plan error| over the 19 from 12.2 % to 10.5 %.
+
+| house | canopy | added (plan) | cross-flight truth (flight, density) | IoU off -> on | plan error off -> on |
+|---|---|---|---|---|---|
+| lr-305-ridgeway | heavy | 31.1 % (517 ft2) | AR_Ouachita_B6_2016 (2017-03, 4.75/m2) | 0.710 -> 0.772 | -17.9 % -> +20.1 % |
+| lr-tyler | light | 32.5 % (613 ft2) | AR_Ouachita_B6_2016 (2017-03, 7.07/m2) | 0.663 -> 0.682 | -31.6 % -> -2.0 % |
+| hs-summer | none | 2.4 % (50 ft2) | AR_Ouachita_B5_2016 (2017-03, 2.6/m2) | 0.835 -> 0.839 | -4.3 % -> -2.0 % |
+| tr-little-rock-981790186 | light | 2.4 % (137 ft2) | AR_Ouachita_B6_2016 (2017-03, 2.44/m2) | 0.854 -> 0.868 | -8.7 % -> -6.4 % |
+| tr-austin-381786736 | light | 18.9 % (506 ft2) | none | - | - |
+| omaha-roland | heavy | 3.9 % (128 ft2) | none | - | - |
+| tr-little-rock-951188237 | light | 5.1 % (72 ft2) | none | - | - |
+
+305 Ridgeway: the east wing comes back (a part of 65 m2 under the crowns, 88 % occluded; faces at 3.4/12, 7.8/12 and
+8.2/12 from the lidar). The cross-flight truth disagrees on size: the 2017 flight (4.75 points/m2) outlines 128.5 m2 where
+the fused 2025 flight outlines 171.6 m2, and ours is between them, 20 % over the 2017 one. The 2017 flight is sparse and
+leaf-off in March; whether it under-sees the wing or the wing changed after 2017 cannot be told from these data. Read the
+cross-flight result on this house as "the wing exists in both flights' direction" (IoU up), not as a size check.
+
+Canopy-heavy DEV houses: lr-305-ridgeway applied; omaha-roland applied (no second flight); seattle-wallingford declined
+misaligned (roof residual 0.19 m over the 0.15 m limit); kc-brookside, ev-52191985, ev-52192220 declined not-leaf-off;
+tr-atlanta-1289767665, tr-atlanta-51300274, tr-fayetteville-466556470, tr-fayetteville-467353063 declined sparse (QL2
+2015-2018 flights chosen; the 2025 QL1 flights of the Fayetteville houses are not marked leaf-off in the metadata).
+
+Debugging only (circular: the benchmark's lidar grade is built from the flight the fusion reads): canopy-heavy IoU
+0.821 -> 0.863, |plan| 15.2 % -> 8.7 %; 305 Ridgeway lidar IoU 0.587 -> 0.807.
+
+DEV gates (`--compare baseline-v2.json --gates gates-v3.json`): fusion off, all pass (output unchanged). Fusion on
+(`--lidar-fusion`): 330 pass, 1 fails: canopy-heavy runtime p95 1.70x the calibrated baseline (limit 1.5x): fusion adds
+about 0.3-0.8 s on a house where it registers (registration 0.15-0.5 s, classification 0.05 s, surface 0.1 s on a loaded
+machine). A tighter registration window was tried and reverted: it changed the shift found on seattle-wallingford by
+0.55 m (both pinned), which says the registration is less certain along a house's long axis than its checks admit.
+
+Sensitivity (+-20 % on occludedM, openM, minPartM2, minOccludedShare, touchM, maxConflictM2, maxGoneShare; 18 DEV
+houses where fusion acts or nearly does, sens/*.txt): the same 7 houses apply in every run but openM 0.32 m (8, one more
+small part); cross-flight results unchanged except plan error on lr-tyler (-2.0 % to +1.1 %) and two small parts.
 
 ## Alternatives rejected
 
@@ -83,8 +128,11 @@ Results: see "Results" below (filled from the DEV runs in roof-bench/fusion/).
 - A neighbour's roof joined through a crown: bounded by touch distance (1 m), the occlusion test and the 1x cap.
 - Cross-flight truth on Arkansas houses comes from the 2016-2017 Ouachita flights at 2-7 points/m2: sparse, and a house
   may have changed between 2017 and 2025. It is weak evidence either way.
-- Edges of a lidar part are judged on Google's heights outside them (still canopy), so they read `unverified`; they carry
-  source 'lidar' and the roof carries `roof-from-lidar`.
+- Registration ambiguity: on seattle-wallingford two windows gave shifts 0.55 m apart, both passing the pin test. The
+  on-roof residual check (0.15 m) is the guard; it declined that house. A residual check on the added part's edges
+  against a second flight would be stronger (not done).
+- Lidar ground under crowns is written into the heights used for EDGE EVIDENCE only (within 1.5 m of an added part),
+  so an eave the lidar placed is judged by the drop the lidar measured; it never enters the reconstruction.
 
 ## Rollback
 

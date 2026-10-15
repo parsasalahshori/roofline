@@ -418,7 +418,18 @@ export function smoothMap(win: Win, s: number): Uint8Array {
  * coarse then a fine grid, then dz again from the inliers. Null when the best shift is at the search limit or the inlier
  * count does not fall away from it in x and in y (a frame the data do not pin).
  */
-export function register(win: Win, s: number, smooth: Uint8Array, px: number[], py: number[], pz: number[], pf: number[], searchM: number, debug?: (msg: string) => void) {
+export function register(
+  win: Win,
+  s: number,
+  smooth: Uint8Array,
+  px: number[],
+  py: number[],
+  pz: number[],
+  pf: number[],
+  searchM: number,
+  debug?: (msg: string) => void,
+  budget: { coarse: number; fine: number } = { coarse: REG_COARSE_POINTS, fine: REG_FINE_POINTS },
+) {
   const at = (x: number, y: number): number => {
     const c = Math.floor(x / s);
     const r = Math.floor(-y / s);
@@ -436,8 +447,8 @@ export function register(win: Win, s: number, smooth: Uint8Array, px: number[], 
     for (let j = 0; j < idx.length; j += stride) out.push(idx[j]!);
     return out;
   };
-  const fine = sample(REG_FINE_POINTS);
-  const coarse = sample(REG_COARSE_POINTS);
+  const fine = sample(budget.fine);
+  const coarse = sample(budget.coarse);
   // dz: the mode of the residuals (a vertical datum can differ by tens of metres; the geoid alone is up to 50 m).
   const bins = new Int32Array(Math.round((2 * REG_DZ_RANGE_M) / REG_DZ_BIN_M));
   for (const i of fine) {

@@ -47,6 +47,25 @@ describe('lidar fusion', () => {
     }
   }
 
+  it("gives the edge evidence the lidar's ground under the crown beside the added roof, never the reconstruction", () => {
+    const sc = scene({ seed: 33, turnDeg: 0, hideM: 5 });
+    const f = fuseLidar(sc.raster, sc.point, sc.cloud());
+    expect(f.report.applied).toBe(true);
+    const ev = f.evidence!;
+    let n = 0;
+    let worst = 0;
+    for (let i = 0; i < ev.groundPx.length; i++) {
+      if (ev.groundPx[i] !== 1) continue;
+      n++;
+      // Ground is at 0 in the scene's frame; the canopy there is 6-9 m.
+      worst = Math.max(worst, Math.abs(ev.dsm[i]!));
+      expect(f.raster.dsm[i]).toBe(sc.raster.dsm[i]);
+      expect(f.raster.mask[i]).toBe(sc.raster.mask[i]);
+    }
+    expect(n * 0.01).toBeGreaterThan(5);
+    expect(worst).toBeLessThan(0.3);
+  });
+
   it('is byte-identical on a rerun, and the option off (or null) is the reconstruction as before', () => {
     const sc = scene({ seed: 41, turnDeg: 17, hideM: 5 });
     const cloud = sc.cloud();

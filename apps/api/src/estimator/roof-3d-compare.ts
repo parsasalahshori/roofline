@@ -59,7 +59,9 @@ export function checkRoof(roof: Roof3d, building: SolarBuilding | null): Accepta
   const rows: FaceRow[] = roof.faces.map((f, k) => {
     const under = segments.filter((seg) => inside(seg.center, f.ring)).sort((a, b) => b.groundAreaM2 - a.groundAreaM2)[0];
     const segment = under === undefined ? null : { pitchX12: x12(under.pitchDeg), azimuthDeg: under.azimuthDeg, planSqFt: under.groundAreaM2 * SQ_FT_PER_M2 };
-    const main = f.planAreaSqFt >= TARGETS.mainFaceSqFt && segment !== null;
+    // A face mostly measured by leaf-off lidar (source 'lidar') lies where Google's leaf-on view saw a crown: the segment
+    // under it was fitted to the canopy, so it is not checked against it (the roof carries 'roof-from-lidar' instead).
+    const main = f.planAreaSqFt >= TARGETS.mainFaceSqFt && segment !== null && f.source !== 'lidar';
     const pitchOk = segment === null || Math.abs(f.pitchX12 - segment.pitchX12) <= TARGETS.pitchX12;
     // Facing means nothing on a flat face (or a flat segment).
     const facingOk = segment === null || f.flat || segment.pitchX12 < 2 || arcDeg(f.azimuthDeg, segment.azimuthDeg) <= TARGETS.facingDeg;
