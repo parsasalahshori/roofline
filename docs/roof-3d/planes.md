@@ -156,6 +156,19 @@ minStrongM, onPlaneShare, yardDropM, maxCornerMoveM, maxAreaChange.
 - The checker's mask target and `quality.outlineIoU` (the outline over Google's mask) fall where the step moves an edge;
   that can add review reasons.
 
+## Remediation (after review; [outline-remediate.md](outline-remediate.md))
+
+- **A dense crown over an eave and a dense crown in a notch of the eave are the same scene to this step**: the notch's
+  inner eave lies on the same plane, higher up, so it reads as a 2 m crown bite and was filled (+5 % area, no review
+  reason; packages/shared/test/roof-reconstruct-notch.test.ts). Now a move that adds at least `maxUnconfirmedM2`
+  (0.5 m2) farther than `overhangM` (1 m) outside the old outline is refused (`unconfirmed`) unless at least
+  `minDeepSeenShare` (25 %) of that area shows the face's plane through the leaves. The same applies to a dropped
+  chamfer's corner. On DEV the evidence share of every deep move was 0-11 % (one, tr-raleigh-47735779, 20 %): leaf-on
+  photogrammetry does not see the roof under a crown, so the step keeps only overhang-sized moves. `minDeepSeenShare: 0`
+  is hypothesis mode (version 4's behaviour), for development.
+- Every guard now has a scene in which only it refuses (roof-reconstruct-guards.test.ts), checked by
+  `npm run roof3d:mutate-guards`.
+
 ## Rollback
 
 The option is off by default and nothing else changes when it is off. Turning it on in `roofOnLayers` must bump

@@ -43,12 +43,19 @@ frozen split, Google data past its 30 days, a baseline made from another manifes
 - Before merging, the integrator and verifiers run `--split all --reveal --compare` and judge the held-out aggregates
   too. Nobody tunes on held-out houses: if a change helps dev and hurts held-out, it is overfit.
 - A change that moves a cohort threshold or adds houses needs a new manifest and a new baseline; say so in the commit.
-- Hidden-edge methods are chosen per run with `ROOF3D_HIDDEN_EDGE`: unset is the server's default
-  (`photo+planes` since `ROOF_3D_ALGORITHM_VERSION` 4, [outline-release-notes.md](outline-release-notes.md)); `off` is
-  the reconstruction before it; `planes`, `photo`, `photo+planes`, `planes+photo` run that method
+- Hidden-edge methods are chosen per run with `ROOF3D_HIDDEN_EDGE`: unset is the server's default (off again since
+  `ROOF_3D_ALGORITHM_VERSION` 5, [outline-remediate.md](outline-remediate.md); version 4 ran `photo+planes`); `off` is
+  the reconstruction without any; `planes`, `photo`, `photo+planes`, `planes+photo` run that method
   ([planes.md](planes.md), [photo.md](photo.md)); `ROOF3D_HIDDEN_EDGE_PARAMS` takes JSON parameter overrides. The lidar
   step runs with `--lidar-edges` and is judged on EagleView only (`src/scripts/roof-3d-lidar-eval.ts --method`, which
   scores any of the methods the same way), never on lidar truth.
+- `ROOF3D_BENCH_RESAMPLE_M=0.25` runs on MEDIUM-like layers: the height map, the mask and the photo box-filtered to
+  0.25 m and the imagery marked MEDIUM (no benchmark house has MEDIUM imagery of its own). Its numbers are not
+  comparable with a 0.1 m baseline; compare a MEDIUM run with a MEDIUM run of the base commit.
+- With a hidden-edge method on, `ROOF3D_HIDDEN_EDGE_PARAMS='{"minDeepSeenShare":0}'` is hypothesis mode: the planes
+  step adds roof under a dense crown with no evidence that it is roof (what version 4 did by default).
+- `npm run roof3d:mutate-guards` (repository root) deletes each guard of the hidden-edge steps in turn and checks that a
+  test fails; run it after touching outline-planes.ts, outline-photo.ts or their orchestration.
 - `ROOF3D_BENCH_SUPPORT=dense` scores the hidden-edge sets in 0.2 m pieces. The product's `eaveSupport` clamps every
   sample past an edge's midpoint to the midpoint, so the default (`midpoint`) scorer never measures the second half of
   an edge and over-counts its midpoint. Dense runs carry `+dense` in their lidar fingerprint and compare only against a

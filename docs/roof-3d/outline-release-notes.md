@@ -1,4 +1,54 @@
-# Release notes: hidden roof edges under trees (outline round, ROOF_3D_ALGORITHM_VERSION 4)
+# Release notes: hidden roof edges under trees (outline round, ROOF_3D_ALGORITHM_VERSION 5)
+
+## Version 5 (remediation): what ships
+
+Version 4 (below, kept as the record of that decision) turned the hidden-edge step on by default. Verification and
+review withdrew that: **version 5 ships with the step off**, and a default Measure is byte-identical to `c606b7a4`
+(84/84 bench houses, every gate passes against baseline-v2 + gates-v3). Design note: [outline-remediate.md](outline-remediate.md).
+
+- **Off by default** (`DEFAULT_HIDDEN_EDGE = null`). Version 5, not 3, so roofs stored by version 4 are rebuilt.
+- **When the step is asked for** (`hiddenEdge` option, the bench's `ROOF3D_HIDDEN_EDGE`):
+  - roof added more than 1 m beyond the mask's outline needs the roof's plane seen through the leaves in a quarter of
+    that area, or the move is refused (`unconfirmed`): a dense crown over an eave cannot be told from a dense crown in a
+    notch, and version 4 filled such a notch (+5 %, no review);
+  - what it inferred is stored on the roof (`Roof3d.inferredEdges`: edges, method, offsets, area added and removed);
+  - 3 m2 or 2 % of inferred area makes the roof a review (`roof-inferred`, 'block'): inferred roof is never priced
+    without a person; inferred edges are drawn dashed;
+  - the steps together may change the area by at most 15 % (each step alone could do 25 %, and they compounded);
+  - the photo step can no longer lose a roof by throwing; the planes step pads the crop and reports `clipped`.
+- Every guard of both steps has a test in which only it refuses; `npm run roof3d:mutate-guards` checks all 23.
+- Bench: `ROOF3D_BENCH_RESAMPLE_M=0.25` (heights, mask and photo at MEDIUM).
+
+### Evidence, fixed sets first (same harness; seeds 7, 8, 9; LOO = leave one house out; CI = house bootstrap 95 %)
+
+| | DEV | held-out |
+| --- | --- | --- |
+| default (off) vs `c606b7a4` | identical | identical |
+| option, version 5 defaults: lidar IoU median | 0.870 -> 0.872 (CI 0..+0.006) | 0.908 -> 0.909 (CI 0..+0.003) |
+| option: lidar truth-hidden <= 0.5 m | 35.0 -> 35.9 % (CI 0..+1.9 pt) | 40.4 -> 42.2 % (CI 0..+4.1 pt) |
+| option: EagleView abs area median | 4.01 -> 4.01 % | 2.86 -> 2.86 % |
+| option: lidar houses worse | 0 of 26 | 0 of 14 |
+| hypothesis mode (= version 4): truth-hidden | 35.0 -> 38.8 % (CI -0.7..+9.4 pt) | 40.4 -> 47.1 % (CI -3.0..+23.7 pt; without ev-50264667 +0.3 pt) |
+| hypothesis mode: EagleView abs area median | 4.01 -> 4.36 % | 2.86 -> 4.78 % |
+
+The version 4 claim "clearly beats on held-out" does not survive: the held-out gain rests on ev-50264667 (leave it out
+and truth-hidden moves 41.7 -> 42.0 %), DEV did not improve, and the interval includes zero. The "hidden within 0.5 m"
+share (40.8 -> 55.9 %) that led the version 4 table is measured on samples chosen from our own outline, so it is not
+the same set before and after; it is a diagnostic, not a headline.
+
+### Regressions and open items carried from verification
+
+- Under the option (version 5 defaults) no lidar house gets worse. ev-51882459 (held-out) still moves the wrong way
+  against EagleView (aligned IoU 0.888 -> 0.885, area +7.4 -> +8.1 %) and is now flagged `roof-inferred`.
+- In hypothesis mode every version 4 regression remains (seattle-wallingford, ev-52191985, tr-charlotte-1176836651,
+  ev-50264667's area, tr-raleigh-47735779, tr-austin-381786736), each now flagged `roof-inferred`.
+- 305 Ridgeway Dr's tree-side chamfer is not fixed by version 5 (the move has no evidence). Missing wings are not
+  addressed. The product's `eaveSupport` midpoint bug is not fixed (it gates both methods; keep the default off until
+  it is). Lidar truth is not yet split by leaf-on/leaf-off or patio-at-eave-height houses.
+
+---
+
+# Version 4 record (superseded): hidden edges on by default
 
 Branch `outline/merge`, from the lidar-truth commit `ca305cb6` (itself on `c606b7a4`). Not pushed; `real-lookups` is
 untouched. Integrator and judge: this note is the decision record. Track notes: [truth.md](truth.md),
@@ -64,7 +114,7 @@ Why each lost or won:
   whole 100-235 MB tiles), runtime p95 fails its gate, and on EagleView it changed one held-out house (ev-47747994) and
   made it worse (hidden within 0.5 m 65 % -> 59 %, fixed set 53 % -> 47 %). It stays an option for development.
 
-**Verdict: turned on.** On held-out it clearly beats the version-3 outline on the hidden-edge measure (+6.7 points on
+**Verdict (version 4, withdrawn in version 5): turned on.** On held-out it clearly beats the version-3 outline on the hidden-edge measure (+6.7 points on
 the fixed lidar set, +15 points on our own hidden samples, IoU median +0.026, boundary median 0.34 -> 0.25 m) and on
 EagleView's outline (fixed set +10 points, aligned IoU median +0.014), and no edge the heights see is moved (the visible
 share moves 89.9 % -> 89.6 % because moved outlines bring new samples; the largest cohort drop is 1.1 points, held-out
