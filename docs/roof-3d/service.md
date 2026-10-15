@@ -34,8 +34,9 @@ address into a Measure request fast, safely and with its provenance.
   density and the USGS credit, about 1-2 MB) goes in the object store under `lidar/v1/crop/<zone>/<e>_<n>.rlc`; never raw
   LAZ, never the database. 'no-coverage' / 'leaf-on-only' / 'too-sparse' answers are kept for 30 days; errors are not.
   One fetch per cell at a time; one derivation at a time.
-- Measure (`usgs-lidar-roof.ts` + one hook in `roof-3d.ts`'s `attempt`): reads what is known; else joins or starts the
-  fetch and waits at most `USGS_LIDAR_MEASURE_WAIT_MS` (1.5 s). Not ready: Measure proceeds with Google alone and the
+- Measure (`usgs-lidar-roof.ts` + one hook in `roof-3d.ts`'s `attempt`): started before Google's layers are fetched
+  (the budget overlaps them), it reads what is known; else joins or starts the fetch and waits at most
+  `USGS_LIDAR_MEASURE_WAIT_MS` (1.5 s). Not ready: Measure proceeds with Google alone and the
   snapshot records `lidar: { status: 'none', reason: 'lidar-pending' }`. Such a snapshot is never shared from the roof
   cache nor reused from the measurement, so the next Measure is made with the lidar.
 - Prefetch: the Measure search's prefetch (`prefetchMeasure`) also starts the lidar fetch, and queues a `lidar-area`
