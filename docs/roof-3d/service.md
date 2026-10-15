@@ -95,7 +95,7 @@ a later Measure (product read from the object store).
 | lr-305-ridgeway | tile, AR_Western_4_B24 QL1, 99 MB | lidar-pending at 1.50 s | 105.6 s (an earlier run: index timeout at 20 s, then 95 s) | 8.2-18.4 s | 0.5-1.3 ms | 193,996, 17.6 |
 | lr-tyler | 2 tiles, AR_Western_4_B24 QL1, 232 MB | lidar-pending at 1.50 s | 159.6 s | 23.6 s | 1.0 ms | 226,637, 18.3 |
 | hs-summer | tile, AR_Western_5_B24 QL1, 96 MB | lidar-pending at 1.50 s | 121.0 s | 9.1-13.5 s | 0.6 ms | 211,853, 18.3 |
-| nlr-park-hill | 3 tiles, AR_Western_4_B24 QL1 | lidar-pending at 1.50 s | not measured: three tries 07:16-07:33 PDT failed typed (index timeout once; rockyweb refused connections, then was unreachable even at its root) | 25.3-28.5 s | 0.8 ms | 235,891, 17.9 |
+| nlr-park-hill | 3 tiles, AR_Western_4_B24 QL1 | lidar-pending at 1.50 s | not measured: four tries 07:16-07:49 PDT failed typed (index timeout once; rockyweb refused connections, then was unreachable even at its root; later tries got usgs:cooldown) | 25.3-28.5 s | 0.8 ms | 235,891, 17.9 |
 | fs-hendricks | EPT, AR_Ouachita_B7_2016 QL2, 22 nodes, 11.8 MB | lidar-pending at 1.51 s | 2.5 s | 2.0 s (re-read) | 0.2 ms | 45,723, 5.4 |
 | rogers-pecan | EPT, AR_Benton_Co_2015 QL2, 13 nodes, 7.1 MB | lidar-pending at 1.59 s | 1.9 s | 1.7 s (re-read) | 0.2 ms | 18,034, 2.4 |
 | springdale-horseshoe (extra) | EPT, AR_R6_WashingtonCO_2015 QL2, 16 nodes, 7.7 MB | lidar-pending at 1.63 s | 2.1 s | 1.8 s (re-read) | 0.1 ms | 21,239, 2.8 |
