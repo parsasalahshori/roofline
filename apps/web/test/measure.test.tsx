@@ -1152,6 +1152,51 @@ describe('the measure card never hides the roof', () => {
     }
   });
 
+  it('the roof is framed again whenever the card changes size (the results card fills in after the first framing)', async () => {
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    const offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    const realObserver = globalThis.ResizeObserver;
+    const watchers: { cb: () => void; target: Element | null }[] = [];
+    globalThis.ResizeObserver = class {
+      private readonly w: { cb: () => void; target: Element | null };
+      constructor(cb: () => void) {
+        this.w = { cb, target: null };
+        watchers.push(this.w);
+      }
+      observe(target: Element) {
+        this.w.target = target;
+      }
+      unobserve() {}
+      disconnect() {
+        this.w.target = null;
+      }
+    } as unknown as typeof ResizeObserver;
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 800 });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 700 });
+    let cardHeight = 90;
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => cardHeight });
+    try {
+      await openRoof(lHouse());
+      const fit = lastMap().fitBounds;
+      const cardWatcher = watchers.find((w) => w.target !== null && (w.target as HTMLElement).hasAttribute('data-measure-card'));
+      expect(cardWatcher, 'the card is watched for size changes').toBeDefined();
+      const before = fit.mock.calls.length;
+      // The review note and the cue make the card taller: the roof is framed above the taller card
+      cardHeight = 360;
+      cardWatcher!.cb();
+      await waitFor(() => expect(fit.mock.calls.length).toBe(before + 1));
+      const padding = (fit.mock.calls.at(-1)![1] as { padding: { bottom: number } }).padding;
+      expect(padding).toEqual(roofPadding(800, 700, 360, false));
+      expect(padding.bottom).toBeGreaterThanOrEqual(360 + 14);
+    } finally {
+      globalThis.ResizeObserver = realObserver;
+      if (width) Object.defineProperty(HTMLElement.prototype, 'clientWidth', width);
+      if (height) Object.defineProperty(HTMLElement.prototype, 'clientHeight', height);
+      if (offset) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offset);
+    }
+  });
+
   it('roofPadding keeps the roof above the card: open, the card (up to 45%) is left out of the roof\'s room', () => {
     const open45 = roofPadding(800, 700, Math.round(700 * 0.45), true);
     expect(open45.bottom).toBeGreaterThanOrEqual(Math.round(700 * 0.45) + 14);

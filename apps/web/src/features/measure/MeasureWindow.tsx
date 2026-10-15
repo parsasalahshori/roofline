@@ -325,6 +325,17 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     if (mapInstance && container) fitRoof(mapInstance, ringRef.current, container, editing, true);
   }, [editing, mapInstance]);
 
+  // The card grows as it fills in (the scan finishing, a review note, the hidden-edge cue): frame the roof above it
+  // again each time, so the card never ends up on top of the roof it is about.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!mapInstance || !container || typeof ResizeObserver !== 'function') return;
+    const observer = new ResizeObserver(() => fitRoof(mapInstance, ringRef.current, container, framedFor.current, true));
+    const card = container.parentElement?.querySelector<HTMLElement>('[data-measure-card]') ?? null;
+    if (card !== null) observer.observe(card);
+    return () => observer.disconnect();
+  }, [mapInstance, scan.phase]);
+
   // The photo's date is asked for once the map has started (a map that cannot start shows no photo)
   const captured = useImageryDate(lng, lat, mapInstance !== null && usesFreeAerial(readMapEnv()));
   const done = scan.phase === 'done';
