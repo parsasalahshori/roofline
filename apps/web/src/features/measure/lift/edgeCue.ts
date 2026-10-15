@@ -11,8 +11,16 @@ import { liftMeasure } from '../../../copy/liftMeasure.ts';
 
 export const EDGE_CUE_SOURCE = 'roof-edge-cue';
 export const EDGE_CUE_LAYERS = ['roof-edge-cue-casing', 'roof-edge-cue'] as const;
-/** Shorter unverified edges than this are not drawn (a corner's chamfer): about one metre. */
-const MIN_EDGE_FT = 3.3;
+/** Shorter unverified edges than this are not drawn (a corner's chamfer, a jog): two metres. */
+const MIN_EDGE_FT = 6.6;
+/** An edge is drawn dashed only when at least this share of its length is unverified (its median says 'none'). */
+const MIN_UNVERIFIED_SHARE = 0.5;
+/**
+ * The card's one line shows only when the roof is reviewed for its edges ('edges-unverified') or the dashed edges are at
+ * least this share of the outline: a few short dashes on a roof that is otherwise checked do not need words too, and a
+ * cue on almost every roof trains people to skip it.
+ */
+const CUE_MIN_SHARE = 0.1;
 const CUE_COLOR = '#ffb020';
 
 export type HiddenEdge = { coords: [LngLat, LngLat]; lengthFt: number; reason: string | null };
@@ -23,14 +31,22 @@ export function hiddenEdges(roof3d: Roof3d | null | undefined, ring: Ring | null
   if (roof3d == null || edges === undefined || ring == null || ring.length < 3 || !sameOutline(ring, roof3d)) return [];
   const n = roof3d.outline.length;
   return edges
-    .filter((e) => e.support === 'none' && e.lengthFt >= MIN_EDGE_FT && e.from >= 0 && e.from < n)
+    .filter((e) => e.support === 'none' && e.unverifiedShare >= MIN_UNVERIFIED_SHARE && e.lengthFt >= MIN_EDGE_FT && e.from >= 0 && e.from < n)
     .map((e) => ({ coords: [roof3d.outline[e.from]!, roof3d.outline[(e.from + 1) % n]!], lengthFt: e.lengthFt, reason: e.reason }));
 }
 
-/** The cue under the photo: trees when trees hide most of the dashed length, else the general one; null with none. */
-export function edgeCueText(edges: readonly HiddenEdge[]): string | null {
+/**
+ * The cue under the photo: trees when trees hide most of the dashed length, else the general one; null with none, and
+ * (given the roof) null unless the roof is reviewed for its edges or the dashes are CUE_MIN_SHARE of its outline.
+ */
+export function edgeCueText(edges: readonly HiddenEdge[], roof3d?: Roof3d | null): string | null {
   if (edges.length === 0) return null;
   const total = edges.reduce((t, e) => t + e.lengthFt, 0);
+  if (roof3d != null) {
+    const perimeter = (roof3d.edges ?? []).reduce((t, e) => t + e.lengthFt, 0);
+    const flagged = roof3d.quality?.reasons.includes('edges-unverified') === true;
+    if (!flagged && !(perimeter > 0 && total >= CUE_MIN_SHARE * perimeter)) return null;
+  }
   const trees = edges.filter((e) => e.reason === 'crown').reduce((t, e) => t + e.lengthFt, 0);
   return trees >= total / 2 ? liftMeasure.edgeHidden.crown : liftMeasure.edgeHidden.other;
 }

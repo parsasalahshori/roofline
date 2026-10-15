@@ -328,6 +328,27 @@ describe('unverified outline edges (dashed, with a one-line cue)', () => {
     expect(edgeCueText(hiddenEdges(wall, ring))).toBe(liftMeasure.edgeHidden.other);
   });
 
+  it('no dashes for short or mostly verified edges; no card line for a few dashes on a checked roof', () => {
+    // Under 2 m, or under half unverified: not drawn.
+    const short = { ...base, edges: [edge(0, 'strong'), edge(1, 'none', 'crown', 5), edge(2, 'strong'), edge(3, 'strong')] };
+    expect(hiddenEdges(short, ring)).toEqual([]);
+    const mostly = { ...base, edges: [edge(0, 'strong'), { ...edge(1, 'none', 'crown'), unverifiedShare: 0.4 }, edge(2, 'strong'), edge(3, 'strong')] };
+    expect(hiddenEdges(mostly, ring)).toEqual([]);
+    // A fully supported roof: nothing at all.
+    const clean = { ...base, edges: [0, 1, 2, 3].map((k) => edge(k, 'strong')) };
+    expect(hiddenEdges(clean, ring)).toEqual([]);
+    expect(edgeCueText(hiddenEdges(clean, ring), clean)).toBeNull();
+    // One 8 ft dash on a 300 ft outline, roof not reviewed for it: drawn, but no card line.
+    const few = { ...base, edges: [edge(0, 'strong', null, 100), edge(1, 'none', 'crown', 8), edge(2, 'strong', null, 100), edge(3, 'strong', null, 92)] };
+    expect(hiddenEdges(few, ring)).toHaveLength(1);
+    expect(edgeCueText(hiddenEdges(few, ring), few)).toBeNull();
+    // The same roof reviewed for its edges: the line shows.
+    const reviewed = { ...few, quality: { imagery: 'HIGH', outlineIoU: 1, edgeFit: 1, faceCoverage: 1, meanResidualM: 0, treeShare: 0, fallbackFaces: 0, reasons: ['edges-unverified' as const] } };
+    expect(edgeCueText(hiddenEdges(reviewed, ring), reviewed)).toBe(liftMeasure.edgeHidden.crown);
+    // A third of the outline dashed: the line shows without the review.
+    expect(edgeCueText(hiddenEdges(treed, ring), treed)).toBe(liftMeasure.edgeHidden.crown);
+  });
+
   it('the card says it in one line; a clean roof and an older roof say nothing', () => {
     const numbers = cardNumbers(view(), view().estimate, gableRoof(ring as [number, number][]), null);
     const card = (m: MeasurementView) => <MeasureCard m={m} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />;

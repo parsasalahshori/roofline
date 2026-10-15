@@ -168,7 +168,7 @@ export function MeasureCard({
   const scrollRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement | HTMLAnchorElement>(null);
   const scanning = scan.phase === 'scanning';
-  const edgeCue = edgeCueText(hiddenEdges(m.roof3d, m.outline?.[0]));
+  const edgeCue = edgeCueText(hiddenEdges(m.roof3d, m.outline?.[0]), m.roof3d);
   const share = scanning ? shownShare(scan.progress) : 1;
   const stage = stageAt(scan.progress);
   const pitchKnown = !scanning || scan.progress >= 0.55;
