@@ -20,6 +20,8 @@ import {
   MAX_ROOF_PART_M2,
   otherRoofParts,
   type RasterProblem,
+  type LidarCloud,
+  type LidarEdgeParams,
   rasterProblem,
   reconstructRoof,
   roofPartAreaM2,
@@ -219,7 +221,56 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   return 'roof' in found ? found.roof : null;
 }
 
-export type RoofOnLayersOptions = { steep?: boolean; building?: SolarBuilding | null; seed?: number };
+export type RoofOnLayersOptions = {
+  steep?: boolean;
+  building?: SolarBuilding | null;
+  seed?: number;
+  /** Leaf-off lidar for the hidden-edge step (outline-lidar.ts); off when absent. Development only for now. */
+  lidar?: LidarPointsUtm | null;
+  lidarParams?: Partial<LidarEdgeParams>;
+};
+
+/**
+ * A lidar crop round a house: points as offsets from (originE, originN) in UTM metres of EPSG `epsg` (any datum
+ * realisation of that zone: the reconstruction registers the cloud onto Google's frame itself), z in the lidar's
+ * vertical datum, flags bit 0 last return and bit 1 ground.
+ */
+export type LidarPointsUtm = {
+  epsg: number;
+  originE: number;
+  originN: number;
+  dx: Float32Array;
+  dy: Float32Array;
+  z: Float32Array;
+  flags: Uint8Array;
+  leafOff: boolean | null;
+  ageYears: number | null;
+};
+
+/** The lidar crop in the layers' raster metres (reprojected when it is in another UTM zone), or null when it is not in UTM. */
+export function lidarOnLayers(layers: RoofLayers, p: LidarPointsUtm): LidarCloud | null {
+  const mine = utmZoneOfEpsg(layers.epsg);
+  // NAD83 UTM (EPSG 269zz) shares the zone's projection with WGS84 UTM to about a metre (the registration takes it out).
+  const zz = p.epsg >= 26901 && p.epsg <= 26923 ? { zone: p.epsg - 26900, south: false } : utmZoneOfEpsg(p.epsg);
+  if (mine === null || zz === null) return null;
+  const same = zz.zone === mine.zone && zz.south === mine.south;
+  const n = p.dx.length;
+  const x = new Float64Array(n);
+  const y = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let e = p.dx[i]! + p.originE;
+    let nn = p.dy[i]! + p.originN;
+    if (!same) {
+      const [lng, lat] = utmToLngLat(zz, e, nn);
+      const u = lngLatToUtm(mine, lng, lat);
+      e = u.easting;
+      nn = u.northing;
+    }
+    x[i] = e - layers.originX;
+    y[i] = nn - layers.originY;
+  }
+  return { x, y, z: p.z, flags: p.flags, leafOff: p.leafOff, ageYears: p.ageYears };
+}
 /**
  * Why roofOnLayersResult found no roof: 'clipped' (it runs off the layers' edge), 'not-found' (no roof part near the
  * point, too small, or no plane), or the input guard's reason (rasterProblem: a garbled, empty or oversized grid; a
@@ -251,6 +302,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   // A roof too big to reconstruct within the request's time and memory (MAX_ROOF_PART_M2): not a home's roof.
   if (roofPartAreaM2(layers.raster, toPixel(point)) > MAX_ROOF_PART_M2) return { miss: 'too-large' };
   const raster = { ...layers.raster, green: layers.raster.green ?? greenOf(layers) };
+  const lidarCloud = o.lidar != null ? lidarOnLayers(layers, o.lidar) : null;
   const local = reconstructRoof(raster, toPixel(point), {
     imageryQuality: layers.imageryQuality,
     // The benchmark (roof3d:bench) runs seeds 7, 8 and 9 to show the result does not hang on the random sample; the
@@ -258,6 +310,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.seed !== undefined ? { seed: o.seed } : {}),
     ...(o.steep === true ? { planes: { maxPitchX12: 24 } } : {}),
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
+    ...(lidarCloud !== null ? { lidar: { cloud: lidarCloud, ...(o.lidarParams !== undefined ? { params: o.lidarParams } : {}) } } : {}),
   });
   if (local === null) return { miss: 'not-found' };
   if (local.clipped) return { miss: 'clipped' };
