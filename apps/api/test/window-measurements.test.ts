@@ -4,6 +4,8 @@ import { Actors, addressFor, mustCreate, NO_UUID, NOT_FOUND } from './crm-helper
 import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 import type { LngLat, Ring, WindowMeasurementView } from '@roofline/shared';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
+import jpeg from 'jpeg-js';
+import { DetectorError, type WindowDetector } from '../src/providers/window-detector.ts';
 
 /*
  * Measure windows through the API, with fakes for every outside service: the house's outline comes from a footprint
@@ -111,6 +113,55 @@ describe('POST /api/window-measurements', () => {
     expect((await owner.post('/api/window-measurements').send({})).status).toBe(400);
     expect((await owner.post('/api/window-measurements').send({ propertyId: NO_UUID })).status).toBe(404);
     expect((await owner.post('/api/window-measurements').send({ propertyId: NO_UUID, extra: 1 })).status).toBe(400);
+  });
+});
+
+describe('the photo checks and the optional detector', () => {
+  it('a blurred house (no edges where the wall is) is house-blurred, with the walls estimate', async () => {
+    const data = new Uint8Array(640 * 640 * 4);
+    for (let y = 0; y < 640; y++) for (let x = 0; x < 640; x++) {
+      const i = (y * 640 + x) * 4;
+      // A sharp checkered strip at the very top, smooth everywhere else (where the house is drawn).
+      const v = y < 60 ? (((x >> 3) + (y >> 3)) % 2 === 0 ? 30 : 220) : 140;
+      data.fill(v, i, i + 3);
+      data[i + 3] = 255;
+    }
+    t.streetView.photo = new Uint8Array(jpeg.encode({ width: 640, height: 640, data }, 85).data);
+    const { view } = await measuredHouse();
+    expect(view.missing).toEqual({ reason: 'house-blurred' });
+    expect(view.estimated!.covers).toBe('all-sides');
+    expect(view.photos[0]!.wallOverlay?.fit).toBe('unknown');
+  });
+
+  it('WINDOW_DETECTOR=owlv2: its boxes on the front become detector windows; the estimate covers the rest', async () => {
+    const seen: { region: unknown }[] = [];
+    const fake: WindowDetector = {
+      name: 'owlv2',
+      configured: true,
+      detect: async (_jpeg, hints) => {
+        seen.push({ region: hints.region });
+        const r = hints.region!;
+        return [{ x: r.x + r.w * 0.45, y: r.y + r.h * 0.4, w: r.w * 0.08, h: r.h * 0.3, confidence: 0.42 }];
+      },
+    };
+    t.deps.windowDetector = fake;
+    const { view } = await measuredHouse();
+    expect(seen.length).toBeGreaterThan(0);
+    expect(view.detector).toBe('owlv2');
+    // The 25 m front is shot in two counted halves (and a whole shot, not counted on): one window found per half.
+    expect(view.windows.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(view.windows.map((w) => w.photoId)).size).toBe(view.windows.length);
+    expect(view.windows[0]).toMatchObject({ source: 'detector', confidence: 0.42, floor: 1 });
+    expect(view.estimated!.covers).toBe('sides-and-back');
+    expect(view.needsReview?.reasons).toEqual(expect.arrayContaining(['front-only', 'low-confidence']));
+  });
+
+  it('a detector that fails is detector-error; the estimate stays', async () => {
+    t.deps.windowDetector = { name: 'owlv2', configured: true, detect: async () => Promise.reject(new DetectorError('boom')) };
+    const { view } = await measuredHouse();
+    expect(view.missing).toEqual({ reason: 'detector-error' });
+    expect(view.detector).toBeNull();
+    expect(view.estimated!.covers).toBe('all-sides');
   });
 });
 
