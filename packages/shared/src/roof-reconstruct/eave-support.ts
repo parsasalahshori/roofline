@@ -236,13 +236,15 @@ export function eaveSupport(
     const drops: number[] = [];
     let n = 0;
     let exposed = 0;
-    for (let i = 0; ; i++) {
-      // Samples at step/2, 3 step/2, ... (0.1, 0.3, ... m), always at least one on an edge.
-      const t = step / 2 + i * step;
-      if (t >= L && i > 0) break;
-      const tt = Math.min(t, L / 2);
-      const x = a.x + dx * tt;
-      const y = a.y + dy * tt;
+    // The edge is cut into `count` equal pieces of about `step` and read once at the middle of each, so every stretch of
+    // the edge is measured once and both halves weigh the same; an edge shorter than 1.5 steps gets one sample at its
+    // middle. (Before algorithm 6 the samples were placed at step/2, 3 step/2, ... but clamped to the midpoint, so the
+    // second half of every edge was never measured and its midpoint was counted once per missing sample.)
+    const count = Math.max(1, Math.round(L / step));
+    for (let i = 0; i < count; i++) {
+      const t = ((i + 0.5) * L) / count;
+      const x = a.x + dx * t;
+      const y = a.y + dy * t;
       const ins: number[] = [];
       for (const m of p.insideM) {
         const z = height(x - nx * m, y - ny * m);

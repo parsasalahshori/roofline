@@ -156,10 +156,11 @@ export function supportAlong(
     return { x: u.easting - layers.originX, y: u.northing - layers.originY };
   });
   const r = layers.raster;
-  // eaveSupport (since c606b7a4) clamps each sample to its edge's midpoint (`Math.min(t, L / 2)`), so the second half of
-  // every edge is never measured and the midpoint is counted once per missing sample. The dense scorer measures the ring
-  // in 0.2 m pieces (one sample each) so every stretch counts once. Opt-in (ROOF3D_BENCH_SUPPORT=dense) so baselines
-  // made before it stay comparable; a baseline records which one it used.
+  // Before algorithm 6 eaveSupport clamped each sample to its edge's midpoint (`Math.min(t, L / 2)`), so the second half
+  // of every edge was never measured; the dense scorer measures the ring in 0.2 m pieces (one sample each) so every
+  // stretch counts once. Since algorithm 6 (docs/roof-3d/support.md) both read the whole ring, but the 'midpoint'
+  // scorer's numbers are not comparable with baselines made before it; the dense scorer's are unchanged. Opt-in
+  // (ROOF3D_BENCH_SUPPORT=dense); a baseline records which one it used.
   const pts = scorer === 'dense' ? densify(local, SUPPORT_STEP_M).pts : local;
   const s = eaveSupport(pts, { width: r.width, height: r.height, pixelSizeM: r.pixelSizeM, dsm: r.dsm }, null, scorer === 'dense' ? { stepM: SUPPORT_STEP_M } : undefined);
   if (!s.ok) return { error: s.reason };

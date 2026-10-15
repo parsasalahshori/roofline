@@ -83,7 +83,9 @@ describe('lidar truth: outline and hidden-edge metrics', () => {
       // Our east edge (8 m) has a roof outside it (no drop): every hidden sample is 1 m from the lidar outline.
       expect(m.hidden.samples).toBeGreaterThanOrEqual(30);
       expect(m.hidden.sumM / m.hidden.samples).toBeGreaterThan(0.85);
-      expect(m.hidden.within / m.hidden.samples).toBeLessThan(0.15);
+      // Since algorithm 6 the edge is read end to end: the last half metre at each end is within 0.5 m of the lidar
+      // outline's north and south edges (2 x 0.5 of 8 m, 12.5%, plus a sample of blur).
+      expect(m.hidden.within / m.hidden.samples).toBeLessThan(0.2);
       // The other three edges are on the lidar outline.
       expect(m.visible.samples).toBeGreaterThan(100);
       expect(m.visible.within / m.visible.samples).toBeGreaterThan(0.95);
@@ -142,12 +144,14 @@ describe('lidar truth: outline and hidden-edge metrics', () => {
   }
 
   for (const s of [0.1, 0.25]) {
-    test(`the dense scorer sees a hidden stretch on the second half of an edge; the midpoint scorer does not (${s} m pixels)`, () => {
-      // The east edge runs south to north (y 11 -> 19); eaveSupport clamps every sample past its midpoint (y 15) to the
-      // midpoint, so the crown over y 16-19 is never read there.
+    test(`both scorers see a hidden stretch on the second half of an edge (${s} m pixels)`, () => {
+      // The east edge runs south to north (y 11 -> 19) with a crown over y 16-19. Before algorithm 6 eaveSupport clamped
+      // every sample past the midpoint (y 15) to it, so the 'midpoint' scorer (the product's sampling) never read the
+      // crown there; it now reads the whole edge, like the dense scorer.
       const mid = lidarMetrics(roof(21), truth(), northCrown(s), { ...DEFAULT_LIDAR, supportScorer: 'midpoint' });
       const dense = lidarMetrics(roof(21), truth(), northCrown(s), { ...DEFAULT_LIDAR, supportScorer: 'dense' });
-      expect(mid.hidden.samples).toBe(0);
+      expect(mid.hidden.samples).toBeGreaterThanOrEqual(12);
+      expect(mid.hidden.samples).toBeLessThanOrEqual(20);
       // About 3 m of hidden eave at 0.2 m a sample (the crown's edge blurs a sample or two either way).
       expect(dense.hidden.samples).toBeGreaterThanOrEqual(12);
       expect(dense.hidden.samples).toBeLessThanOrEqual(20);

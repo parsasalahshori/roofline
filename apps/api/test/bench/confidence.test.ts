@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { isRoof3d, type LngLat, needsReview, ROOF_QUALITY_REASONS, ROOF_QUALITY_SEVERITY, type Roof3d, type Roof3dSnapshot, type RoofQuality, roof3dSnapshotFresh, roof3dSnapshotStamp, roof3dSnapshotVersion } from '@roofline/shared';
 import { lngLatToUtm, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
-import { EDGE_AGREEMENT, EDGES_UNVERIFIED_SHARE, roofOnLayers, withEdgeEvidence } from '../../src/estimator/roof-3d.ts';
+import { EDGE_AGREEMENT, edgeConfidence, EDGES_UNVERIFIED_SHARE, roofOnLayers, withEdgeEvidence } from '../../src/estimator/roof-3d.ts';
 import { checkRoof, DIFFERS_AREA_SHARE, DIFFERS_STAKE_SHARE, differingShare, differingStake, formatCheck, tierReasons, withFaceConfidence, withGoogleCheck } from '../../src/estimator/roof-3d-compare.ts';
 import type { RoofLayers } from '../../src/providers/solar-layers.ts';
 import { hipLayers } from '../roof-3d-fixture.ts';
@@ -24,7 +24,7 @@ const HOUSE: LngLat[] = [
 const INSIDE: LngLat = [-95.99985, 41.2501];
 
 /** The layers with a 7 m tall tree crown standing against the roof's east eave along its whole length. */
-function treeOnEast(layers: RoofLayers): RoofLayers {
+function treeOnEast(layers: RoofLayers, northHalfOnly = false): RoofLayers {
   const zone = utmZoneOfEpsg(layers.epsg)!;
   const east = lngLatToUtm(zone, -95.9997, 41.2501).easting - layers.originX;
   const { width, height, pixelSizeM: s } = layers.raster;
@@ -37,7 +37,7 @@ function treeOnEast(layers: RoofLayers): RoofLayers {
       const x = (c + 0.5) * s;
       const y = (r + 0.5) * s;
       // Outside the roof only (the mask is untouched): from the eave to 4 m east, the roof's length plus a metre.
-      if (x < east + 0.05 || x > east + 4 || y < north - 1 || y > south + 1) continue;
+      if (x < east + 0.05 || x > east + 4 || y < north - 1 || y > (northHalfOnly ? (north + south) / 2 : south + 1)) continue;
       // Rough foliage: 7 m with 30 cm of texture, and green in the photo.
       dsm[r * width + c] = 7 + (((r * 7 + c * 13) % 7) - 3) * 0.1;
       rgb.set([60, 130, 50], (r * width + c) * 3);
@@ -121,7 +121,7 @@ describe('eave evidence on the stored roof', () => {
     expect(roof.edges!.every((e) => e.support === 'strong' && e.unverifiedShare === 0 && e.reason === null && !e.canopy)).toBe(true);
     expect(roof.quality!.edgeSupport!.unverifiedShare).toBe(0);
     expect(roof.quality!.reasons).not.toContain('edges-unverified');
-    expect(roof.edges!.every((e) => e.confidence === EDGE_AGREEMENT.verified)).toBe(true);
+    expect(roof.edges!.every((e) => e.confidence === EDGE_AGREEMENT.strong)).toBe(true);
     // The edges' lengths add up to the outline's perimeter (about 2 x (25 + 22) m).
     const perimeterFt = roof.edges!.reduce((t, e) => t + e.lengthFt, 0);
     expect(perimeterFt).toBeGreaterThan(290);
@@ -222,8 +222,8 @@ describe('review reasons by severity (golden decisions)', () => {
     expect(withGoogleCheck(roof, half).quality!.reasons).toContain('differs-from-google');
     expect(withGoogleCheck(roof, half).quality!.notes).toBeUndefined();
     // The disagreeing face loses confidence; the others keep their edges'.
-    expect(once.faces[0]!.confidence).toBeCloseTo(EDGE_AGREEMENT.verified * 0.8, 3);
-    expect(once.faces.slice(1).every((f) => f.confidence === EDGE_AGREEMENT.verified)).toBe(true);
+    expect(once.faces[0]!.confidence).toBeCloseTo(EDGE_AGREEMENT.strong * 0.8, 3);
+    expect(once.faces.slice(1).every((f) => f.confidence === EDGE_AGREEMENT.strong)).toBe(true);
     expect(formatCheck('hip', once, checkRoof(once, building))).toMatch(/unverified 0% \(0 ft\).*notes: differs-from-google/);
     // No segments at all: nothing to differ from.
     expect(withGoogleCheck(roof, null).quality).toEqual(roof.quality);
@@ -288,5 +288,31 @@ describe('snapshots stored before this track still read', () => {
     expect(withFaceConfidence(roof, null)).toBe(roof);
     expect(() => formatCheck('old', roof, checkRoof(roof, null))).not.toThrow();
     expect(formatCheck('old', roof, checkRoof(roof, null))).toContain('edges: -');
+  });
+});
+
+describe('edge confidence (algorithm 6: strong, weak and unverified weighed apart)', () => {
+  it('orders the classes and mixes them by share', () => {
+    expect(EDGE_AGREEMENT.strong).toBeGreaterThan(EDGE_AGREEMENT.weak);
+    expect(EDGE_AGREEMENT.weak).toBeGreaterThan(EDGE_AGREEMENT.unverified);
+    expect(edgeConfidence({ strongShare: 1, weakShare: 0, noneShare: 0 })).toBe(EDGE_AGREEMENT.strong);
+    expect(edgeConfidence({ strongShare: 0, weakShare: 1, noneShare: 0 })).toBe(EDGE_AGREEMENT.weak);
+    expect(edgeConfidence({ strongShare: 0, weakShare: 0, noneShare: 1 })).toBe(EDGE_AGREEMENT.unverified);
+    expect(edgeConfidence({ strongShare: 0.5, weakShare: 0, noneShare: 0.5 })).toBeCloseTo((EDGE_AGREEMENT.strong + EDGE_AGREEMENT.unverified) / 2, 3);
+    // A weak edge is trusted less than a strong one and more than an unverified one.
+    const weakHalf = edgeConfidence({ strongShare: 0.5, weakShare: 0.5, noneShare: 0 });
+    expect(weakHalf).toBeLessThan(EDGE_AGREEMENT.strong);
+    expect(weakHalf).toBeGreaterThan(edgeConfidence({ strongShare: 0.5, weakShare: 0, noneShare: 0.5 }));
+  });
+
+  it('a tree crown beside one half of an eave counts the same whichever way the outline runs', () => {
+    // The crown stands beside the north half of the east eave only. Before algorithm 6 the second half of an edge was
+    // read at its midpoint, so the stretch was missed or not depending on the direction the ring ran.
+    const layers = treeOnEast(hipLayers(HOUSE), true);
+    const roof = roofOnLayers(layers, INSIDE)!;
+    const rev = withEdgeEvidence({ ...roof, outline: [...roof.outline].reverse(), edges: undefined }, layers, null);
+    const fwd = withEdgeEvidence({ ...roof, edges: undefined }, layers, null);
+    expect(fwd.quality!.edgeSupport!.unverifiedShare).toBeGreaterThan(0.05);
+    expect(rev.quality!.edgeSupport!.unverifiedShare).toBeCloseTo(fwd.quality!.edgeSupport!.unverifiedShare, 2);
   });
 });
