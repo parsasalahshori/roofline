@@ -23,12 +23,14 @@ import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
+import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
 export type { XY } from './geom.ts';
 export { DEFAULT_PHOTO_EDGE, PHOTO_EDGE_REASONS, type PhotoEdge, type PhotoEdgeParams, type PhotoEdgeReason } from './outline-photo.ts';
 export type { Plane } from './planes.ts';
+export { DEFAULT_LIDAR_FUSION, fuseLidar, LIDAR_FUSION_REASONS, type LidarFusionParams, type LidarFusionReason, type LidarFusionReport, type LidarFusionResult } from './lidar-fusion.ts';
 export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
 /** A height map and roof mask on one grid: row-major, row 0 at the top (north), `pixelSizeM` metres a pixel. */
@@ -115,6 +117,18 @@ export type ReconstructOptions = {
    * overrides DEFAULT_LIDAR_EDGE. The result says what it did or why it declined (LocalRoof.lidarEdges).
    */
   lidar?: { cloud: LidarCloud; params?: Partial<LidarEdgeParams> } | null;
+  /**
+   * Lidar fusion (lidar-fusion.ts): roof leaf-off lidar sees where Google's heights are occluded (a wing or an eave
+   * under a crown) is written into the layers before the reconstruction, which then fits faces on it as on any roof.
+   * Off unless a point cloud is given (in this raster's metres); `params` overrides DEFAULT_LIDAR_FUSION. Faces mostly
+   * on lidar pixels carry source 'lidar'; LocalRoof.lidarFusion says what was added or why nothing was.
+   */
+  lidarFusion?: { cloud: LidarCloud; params?: Partial<LidarFusionParams> } | null;
+  /**
+   * Set by the fusion step for the reconstruction it runs (whole raster, 1 = roof from the lidar): Google's building box
+   * is drawn from the same leaf-on view that missed those pixels, so they do not count as running past it (1b).
+   */
+  lidarPixels?: Uint8Array | null;
 };
 
 /** Raster-local metres: x east from the raster's left edge, y north from its top edge (so y <= 0). */
@@ -127,6 +141,10 @@ export type LocalFace = {
   slopedAreaM2: number;
   flat: boolean;
   label: XY;
+  /** 'lidar': most of the face's pixels came from the lidar fusion (its pitch is the lidar's); absent: Google's heights. */
+  source?: 'lidar';
+  /** Share of the face's plan area on lidar pixels (lidar fusion), when any: a face continuing onto a hidden part has some. */
+  lidarShare?: number;
 };
 export type LocalLine = { kind: Roof3dLineKind; a: XY; b: XY; faces: number[]; lengthM: number; riseM: number };
 /** `clipped`: the roof runs off the height map's edge, so part of it is missing. */
@@ -175,6 +193,13 @@ export type LocalRoof = {
   inferred?: { methods: ('photo' | 'planes')[]; edges: InferredEdge[]; addedM2: number; removedM2: number; undone?: 'large-change' };
   /** What the lidar hidden-edge step did (ReconstructOptions.lidar), absent when it was not asked for. */
   lidarEdges?: LidarEdgeReport;
+  /**
+   * What the lidar fusion did (ReconstructOptions.lidarFusion), absent when it was not asked for: the step's report, the
+   * plan area of the final outline on lidar pixels (addedPlanM2), the sloped area on the lidar faces' planes, and their
+   * share of the outline. `pixels` (whole raster, 1 = roof from lidar), `dsm` (the patched heights plus the lidar's
+   * ground under the crowns beside the added roof, `groundPx`) are for the edge evidence; they are not stored.
+   */
+  lidarFusion?: LidarFusionReport & { addedPlanM2: number; addedSlopedM2: number; addedShare: number; pixels?: Uint8Array; dsm?: Float32Array; groundPx?: Uint8Array };
 };
 
 /** An outline edge (`from`: its first corner's index) that a hidden-edge step put where the heights did not show it. */
@@ -231,6 +256,16 @@ export function azimuthOf(p: Plane): number {
  * within maxPointDistM of the point, the roof is too small, or no plane is found.
  */
 export function reconstructRoof(raster: RoofRaster, point: { col: number; row: number }, opts: ReconstructOptions = {}): LocalRoof | null {
+  if (opts.lidarFusion != null) {
+    // 0. Lidar fusion (lidar-fusion.ts): the lidar's roof written into the layers where Google's are occluded, then the
+    //    same reconstruction on them; faces on lidar pixels marked, the area they add reported and flagged.
+    const fused = fuseLidar(raster, point, opts.lidarFusion.cloud, { ...DEFAULT_LIDAR_FUSION, ...opts.lidarFusion.params }, opts.debug);
+    opts.debug?.(`lidar fusion: ${fused.report.applied ? `added ${fused.report.addedM2} m2 in ${fused.report.parts?.length ?? 0} parts` : `declined (${fused.report.reason})`}`);
+    const rest: ReconstructOptions = { ...opts, lidarFusion: null, lidarPixels: fused.lidarPx };
+    const local = reconstructRoof(fused.raster, point, rest);
+    if (local === null) return null;
+    return withLidarProvenance(local, fused.report, fused.lidarPx, fused.evidence ?? null, raster.width, raster.height);
+  }
   const { width: W, height: H, pixelSizeM: s } = raster;
   if (!(W > 2 && H > 2 && s > 0) || raster.dsm.length !== W * H || raster.mask.length !== W * H) return null;
   const planePrm: PlaneParams = { ...DEFAULT_PLANE_PARAMS, ...opts.planes };
@@ -345,7 +380,12 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     const box = box0;
     const near = nearRing(g, s, box, JOINED_NEAR_M);
     let outside = 0;
-    for (let i = 0; i < roof.length; i++) if (roof[i] === 1 && near[i] !== 1) outside++;
+    const lp = opts.lidarPixels != null && opts.lidarPixels.length === W * H ? opts.lidarPixels : null;
+    for (let i = 0; i < roof.length; i++) {
+      if (roof[i] !== 1 || near[i] === 1) continue;
+      if (lp !== null && lp[(Math.floor(i / g.w) + r0) * W + (i % g.w) + c0] === 1) continue;
+      outside++;
+    }
     if (outside > JOINED_SHARE * roofPx) {
       joined = true;
       const found0 = findPlanes(g, s, dsm, roof, rng, planePrm, tree);
@@ -630,6 +670,53 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     ...(hiddenOut !== undefined ? { hiddenEdge: hiddenOut.summary } : {}),
     ...(photoOut !== undefined ? { hiddenEdges: { ...photoOut, moved: photoOut.moved.map((m) => ({ a: shift(m.a), b: shift(m.b), offsetM: m.offsetM })) } } : {}),
     ...(inferred !== undefined ? { inferred } : {}),
+  };
+}
+
+/**
+ * Lidar provenance on a reconstruction run on fused layers: a face is 'lidar' when at least half of the pixels inside its
+ * polygon came from the lidar; the outline's plan area on lidar pixels, the lidar faces' sloped area pro rata, their
+ * share of the outline; 'roof-from-lidar' among the review reasons past the inferred-roof limits (QUALITY_LIMITS).
+ */
+/** A face with less than this share on lidar pixels is Google's (the seam's pixels, a crown's edge). */
+const LIDAR_FACE_MIN_SHARE = 0.05;
+
+function withLidarProvenance(local: LocalRoof, report: LidarFusionReport, px: Uint8Array | null, evidence: { dsm: Float32Array; groundPx: Uint8Array } | null, W: number, H: number): LocalRoof {
+  const s = local.pixelSizeM;
+  const outlineArea = Math.abs(signedArea(local.outline));
+  if (px === null) return { ...local, lidarFusion: { ...report, addedPlanM2: 0, addedSlopedM2: 0, addedShare: 0 } };
+  const shareIn = (ring: readonly XY[]): { on: number; all: number } => {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of ring) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+    const c0 = Math.max(0, Math.floor(x0 / s)), c1 = Math.min(W - 1, Math.ceil(x1 / s));
+    const r0 = Math.max(0, Math.floor(-y1 / s)), r1 = Math.min(H - 1, Math.ceil(-y0 / s));
+    let on = 0, all = 0;
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        if (!pointInRing({ x: (c + 0.5) * s, y: -(r + 0.5) * s }, ring)) continue;
+        all++;
+        if (px[r * W + c] === 1) on++;
+      }
+    }
+    return { on, all };
+  };
+  let addedSloped = 0;
+  const faces = local.faces.map((f) => {
+    const { on, all } = shareIn(f.ring);
+    const share = all > 0 ? on / all : 0;
+    addedSloped += share * f.slopedAreaM2;
+    if (!(share >= LIDAR_FACE_MIN_SHARE)) return f;
+    return { ...f, lidarShare: round(share, 3), ...(share >= 0.5 ? { source: 'lidar' as const } : {}) };
+  });
+  const addedPlan = shareIn(local.outline).on * s * s;
+  const addedShare = outlineArea > 0 ? addedPlan / outlineArea : 0;
+  const reasons = local.quality.reasons.slice();
+  if ((addedPlan >= QUALITY_LIMITS.inferredM2 || addedShare >= QUALITY_LIMITS.inferredShare) && !reasons.includes('roof-from-lidar')) reasons.push('roof-from-lidar');
+  return {
+    ...local,
+    faces,
+    quality: { ...local.quality, reasons },
+    lidarFusion: { ...report, addedPlanM2: round(addedPlan, 2), addedSlopedM2: round(addedSloped, 2), addedShare: round(addedShare, 4), pixels: px, ...(evidence !== null ? { dsm: evidence.dsm, groundPx: evidence.groundPx } : {}) },
   };
 }
 
@@ -1720,6 +1807,8 @@ export function toRoof3d(
       slopedAreaSqFt: round(f.slopedAreaM2 * SQ_FT_PER_SQ_M, 1),
       flat: f.flat,
       labelAt: ll(f.label),
+      ...(f.source !== undefined ? { source: f.source } : {}),
+      ...(f.lidarShare !== undefined ? { lidarShare: f.lidarShare } : {}),
     })),
     lines: local.lines.map((l) => ({
       kind: l.kind,
@@ -1739,6 +1828,18 @@ export function toRoof3d(
             ...(local.lidarEdges.reason !== undefined ? { reason: local.lidarEdges.reason } : {}),
             moved: (local.lidarEdges.applied ? (local.lidarEdges.moved ?? []) : []).map((m) => ({ offsetFt: round(m.offsetM * FT_PER_M, 2), lengthFt: round(m.lengthM * FT_PER_M, 1) })),
             areaChangeSqFt: round((local.lidarEdges.areaChangeM2 ?? 0) * SQ_FT_PER_SQ_M, 1),
+          },
+        }
+      : {}),
+    ...(local.lidarFusion !== undefined
+      ? {
+          lidarFusion: {
+            applied: local.lidarFusion.applied && local.lidarFusion.addedPlanM2 > 0,
+            ...(local.lidarFusion.reason !== undefined ? { reason: local.lidarFusion.reason } : {}),
+            addedPlanSqFt: round(local.lidarFusion.addedPlanM2 * SQ_FT_PER_SQ_M, 1),
+            addedSlopedSqFt: round(local.lidarFusion.addedSlopedM2 * SQ_FT_PER_SQ_M, 1),
+            addedShare: local.lidarFusion.addedShare,
+            parts: local.faces.filter((f) => f.lidarShare !== undefined).map((f) => ({ planSqFt: round(f.planAreaM2 * f.lidarShare! * SQ_FT_PER_SQ_M, 1), pitchX12: round(f.pitchX12, 2) })),
           },
         }
       : {}),

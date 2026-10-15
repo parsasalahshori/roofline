@@ -38,6 +38,12 @@ export type LoadedHouse = {
   county?: CountyTruth | null;
   /** The lidar crop the hidden-edge step reads (lidar-edges.ts), only on runs with --lidar-edges. Input, never truth. */
   lidarPoints?: LidarPointsUtm | null;
+  /**
+   * The lidar crop the fusion step reads (roof-reconstruct/lidar-fusion.ts), only on runs with --lidar-fusion: the same
+   * metadata-picked flight as --lidar-edges. Input, never truth: a run that reads it is scored on EagleView and on
+   * cross-flight lidar truth (a different flight), never on the lidar truth from this flight.
+   */
+  lidarFusionPoints?: LidarPointsUtm | null;
 };
 
 /** Google's files are a few hundred kilobytes each; the server refuses anything near 40 MB, and so does the benchmark. */

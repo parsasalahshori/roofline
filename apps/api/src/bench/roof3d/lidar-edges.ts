@@ -29,8 +29,8 @@ export const LidarEdgeInfoSchema = z.object({
 });
 export type LidarEdgeInfo = z.infer<typeof LidarEdgeInfoSchema>;
 
-export function lidarEdgesDir(bench: string): string {
-  return path.join(bench, 'lidar-edges');
+export function lidarEdgesDir(bench: string, name = 'lidar-edges'): string {
+  return path.join(bench, name);
 }
 
 /** Whole years between two ISO dates (absolute); null when either is missing. */
@@ -42,7 +42,7 @@ export function yearsBetween(a: string | null | undefined, b: string | null | un
 
 /** The house's lidar crop as the reconstruction takes it, with its metadata; null when it has none. Throws on a malformed file. */
 export function readLidarEdgePoints(bench: string, slug: string, imageryDate: string | null, dirName = 'lidar-edges'): { points: LidarPointsUtm; info: LidarEdgeInfo } | null {
-  const base = path.join(bench, dirName, slug);
+  const base = path.join(lidarEdgesDir(bench, dirName), slug);
   if (!existsSync(`${base}.json`) || !existsSync(`${base}.bin`)) return null;
   const info = LidarEdgeInfoSchema.parse(JSON.parse(readFileSync(`${base}.json`, 'utf8')));
   const size = statSync(`${base}.bin`).size;

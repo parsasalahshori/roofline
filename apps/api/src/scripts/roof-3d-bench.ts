@@ -33,6 +33,8 @@ import { formatHouses, formatSplit, type BenchReport } from '../bench/roof3d/rep
  *     --allow-expired           run on Google data past its 30-day date (a one-off; delete the data instead)
  *     --seeds 7,8,9             the seeds (default 7,8,9)
  *     --allow-manifest-change   compare against a baseline made from a different manifest or other seeds (gates then mean little)
+ *     --lidar-fusion            turn on lidar fusion (lidar-fusion.ts) with the same crop as --lidar-edges; score it on
+ *                               EagleView and cross-flight truth only (the lidar grade here is built from the same flight)
  *     --lidar-edges             turn on the lidar hidden-edge step (outline-lidar.ts) with each house's crop from
  *                               <ROOF_BENCH_DIR>/lidar-edges (edge_points.py). Its lidar-truth numbers are then CIRCULAR
  *                               (same returns): judge it on EagleView (roof-3d-lidar-eval.ts); use this run for the gates
@@ -128,7 +130,7 @@ async function main(): Promise<number> {
     process.stderr.write('--lidar-edges-dir takes a folder name under ROOF_BENCH_DIR\n');
     return 2;
   }
-  const fusion = value('--fusion-flight') ?? (flag('--lidar-edges') ? 'auto' : undefined);
+  const fusion = value('--fusion-flight') ?? (flag('--lidar-edges') || flag('--lidar-fusion') ? 'auto' : undefined);
   if (fusion !== undefined && !/^[A-Za-z0-9._-]+$/.test(fusion)) {
     process.stderr.write('--fusion-flight takes auto, none or a workunit name\n');
     return 2;
@@ -205,14 +207,16 @@ async function main(): Promise<number> {
       bench,
       lidarHash,
       countyHash,
-      ...(flag('--lidar-edges') || xfPicks !== null
+      ...(flag('--lidar-edges') || flag('--lidar-fusion') || xfPicks !== null
         ? {
             loader: async (e: HouseEntry) => {
               const h = await loadHouse(e, bench);
-              const pts = flag('--lidar-edges') ? { lidarPoints: readLidarEdgePoints(bench, e.slug, e.data?.imageryDate ?? null, edgesDirName)?.points ?? null } : {};
+              const crop = flag('--lidar-edges') || flag('--lidar-fusion') ? (readLidarEdgePoints(bench, e.slug, e.data?.imageryDate ?? null, edgesDirName)?.points ?? null) : null;
+              const pts = flag('--lidar-edges') ? { lidarPoints: crop } : {};
+              const fused = flag('--lidar-fusion') ? { lidarFusionPoints: crop } : {};
               const p = xfPicks?.get(e.slug);
               const xf = xfPicks === null ? {} : { lidar: p?.truth ?? null, lidarSha1: p !== undefined && p.truth !== null ? p.sha1 : null };
-              return { ...h, ...pts, ...xf };
+              return { ...h, ...pts, ...fused, ...xf };
             },
           }
         : {}),

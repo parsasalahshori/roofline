@@ -44,6 +44,7 @@ export function reconstructOnce(h: LoadedHouse, seed: number, p: MetricParams = 
       seed,
       ...(HIDDEN_EDGE !== undefined ? { hiddenEdge: HIDDEN_EDGE } : {}),
       ...(h.lidarPoints != null ? { lidar: h.lidarPoints } : {}),
+      ...(h.lidarFusionPoints != null ? { lidarFusion: { points: h.lidarFusionPoints } } : {}),
     });
     roof = found === null ? null : withGoogleCheck(found, h.building);
   } catch {
