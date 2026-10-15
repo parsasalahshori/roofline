@@ -67,7 +67,8 @@ address into a Measure request fast, safely and with its provenance.
 
 ## Risks
 
-- `USGS_LIDAR_MODE=on` changes reconstruction output (the lidar step moves hidden edges): turning it on must bump
+- `USGS_LIDAR_MODE=on` changes reconstruction output (since the merge, the crop goes to the lidar FUSION step,
+  lidar-fusion.ts, not to the outline-lidar.ts prototype; see lidar-release-notes.md): turning it on must bump
   ROOF_3D_ALGORITHM_VERSION and be scored on EagleView and cross-flight lidar truth (never the flight it read). Default
   off: output is byte-identical to version 5 (guard test `roof-3d-lidar.test.ts` 'off by default').
 - Memory: a tile is held whole (up to `maxTileBytes`, 400 MB) plus its copy in the wasm heap during a derivation; one
