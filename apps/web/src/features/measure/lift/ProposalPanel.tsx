@@ -2,7 +2,7 @@ import { Button, Skeleton } from '@roofline/ui';
 import type { Tier } from '@roofline/shared';
 import { useState, type ReactNode } from 'react';
 import { liftProposal } from '../../../copy/liftMeasure.ts';
-import type { MeasurementPreview, PreviewOption } from '../types.ts';
+import type { MeasurementPreview } from '../types.ts';
 import { AiMark } from './AiMark.tsx';
 import { panelLines, squaresFor, wholeDollars, type PanelLine } from './proposalLines.ts';
 import styles from './ProposalPanel.module.css';
@@ -32,9 +32,22 @@ function Lines({ title, lines }: { title: string; lines: PanelLine[] }) {
   );
 }
 
-function TierCard({ option, checked, onPick }: { option: PreviewOption; checked: boolean; onPick: () => void }) {
+/** One tier as the panel shows it, whatever it prices (a roof or windows). */
+export type TierOption = {
+  tier: Tier;
+  /** The material or product line under the tier's name. */
+  name: string;
+  note: string;
+  totalCents: number;
+  monthlyCents: number | null;
+  /** The chosen tier's breakdown, group by group (empty groups are left out). */
+  groups: { title: string; lines: PanelLine[] }[];
+  /** Under the total when this tier is chosen (the monthly line), or null. */
+  finance: ReactNode;
+};
+
+function TierCard({ option, checked, onPick }: { option: TierOption; checked: boolean; onPick: () => void }) {
   const tierName = liftProposal.tier[option.tier];
-  const note = option.highlights.slice(1, 3).join(', ');
   return (
     <Button
       variant="ghost"
@@ -58,15 +71,91 @@ function TierCard({ option, checked, onPick }: { option: PreviewOption; checked:
           ) : null}
         </span>
         <span className={styles.tierMaterial}>{option.name}</span>
-        {note !== '' ? <span className={styles.tierNote}>{note}</span> : null}
+        {option.note !== '' ? <span className={styles.tierNote}>{option.note}</span> : null}
       </span>
       <span className={styles.tierPrice}>
         <span className={styles.price}>{wholeDollars(option.totalCents)}</span>
-        {option.monthlyEstimateCents !== null ? (
-          <span className={styles.monthly}>{liftProposal.perMonth(wholeDollars(option.monthlyEstimateCents))}</span>
-        ) : null}
+        {option.monthlyCents !== null ? <span className={styles.monthly}>{liftProposal.perMonth(wholeDollars(option.monthlyCents))}</span> : null}
       </span>
     </Button>
+  );
+}
+
+/**
+ * The proposal column: a title, the lines under it (`subline`), Good, Better and Best to pick from (Better picked
+ * first), the controls the window hands in, the picked tier's breakdown, its total, and the window's footer (the send
+ * button). The roof's ProposalPanel and the windows' quote both draw through it, so they look the same.
+ */
+export function TierPanel({
+  title,
+  subline = null,
+  options,
+  pending,
+  emptyNote,
+  controls = null,
+  footer,
+}: {
+  title: string;
+  /** The lines under the title; may follow the tier picked. */
+  subline?: ReactNode | ((picked: Tier | undefined) => ReactNode);
+  options: TierOption[];
+  pending: boolean;
+  /** What shows when there are no tiers and nothing is loading. */
+  emptyNote: string;
+  controls?: ReactNode;
+  footer: ReactNode;
+}) {
+  const [picked, setPicked] = useState<Tier | null>(null);
+  const selected = options.find((o) => o.tier === picked) ?? options.find((o) => o.tier === RECOMMENDED) ?? options[0];
+  return (
+    <aside className={styles.panel} aria-label={liftProposal.label}>
+      <div className={styles.head}>
+        <div className={styles.titleRow}>
+          <h2 className={styles.title}>{title}</h2>
+          <span className={styles.built}>
+            <AiMark size={13} />
+            {liftProposal.builtBy}
+          </span>
+        </div>
+        {typeof subline === 'function' ? subline(selected?.tier) : subline}
+      </div>
+      <div className={styles.scroll}>
+        {options.length > 0 ? (
+          <div className={styles.tiers} role="radiogroup" aria-label={liftProposal.tiersLabel}>
+            {options.map((o) => (
+              <TierCard key={o.tier} option={o} checked={o.tier === selected?.tier} onPick={() => setPicked(o.tier)} />
+            ))}
+          </div>
+        ) : pending ? (
+          <div className={styles.note} aria-busy="true">
+            <Skeleton lines={3} />
+            <span className="visually-hidden">{liftProposal.loading}</span>
+          </div>
+        ) : (
+          <p className={styles.note}>{emptyNote}</p>
+        )}
+        {controls}
+        {selected ? (
+          <div className={styles.breakdown}>
+            {selected.groups.map((g) => (
+              <Lines key={g.title} title={g.title} lines={g.lines} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className={styles.foot}>
+        {selected ? (
+          <>
+            <div className={styles.totalRow}>
+              <span className={styles.totalLabel}>{liftProposal.totalFor(liftProposal.tier[selected.tier])}</span>
+              <span className={styles.total}>{wholeDollars(selected.totalCents)}</span>
+            </div>
+            {selected.finance}
+          </>
+        ) : null}
+        {footer}
+      </div>
+    </aside>
   );
 }
 
@@ -93,72 +182,54 @@ export function ProposalPanel({
   controls: ReactNode;
   footer: ReactNode;
 }) {
-  const options = (preview?.options ?? []).filter((o) => o.enabled);
-  const [picked, setPicked] = useState<Tier | null>(null);
-  const selected = options.find((o) => o.tier === picked) ?? options.find((o) => o.tier === RECOMMENDED) ?? options[0];
+  const previewOptions = (preview?.options ?? []).filter((o) => o.enabled);
   const name = firstName(customerName ?? preview?.customerName);
-  const lines = selected ? panelLines(selected) : null;
-  const squares = selected ? squaresFor(selected) : null;
   const financing = preview?.financing ?? null;
-
-  return (
-    <aside className={styles.panel} aria-label={liftProposal.label}>
-      <div className={styles.head}>
-        <div className={styles.titleRow}>
-          <h2 className={styles.title}>{liftProposal.title(name)}</h2>
-          <span className={styles.built}>
-            <AiMark size={13} />
-            {liftProposal.builtBy}
-          </span>
-        </div>
+  const options: TierOption[] = previewOptions.map((o) => {
+    const lines = panelLines(o);
+    return {
+      tier: o.tier,
+      name: o.name,
+      note: o.highlights.slice(1, 3).join(', '),
+      totalCents: o.totalCents,
+      monthlyCents: o.monthlyEstimateCents,
+      groups: [
+        { title: liftProposal.materialsFor(liftProposal.tier[o.tier]), lines: lines.materials },
+        { title: liftProposal.laborAndFees, lines: lines.labor },
+      ],
+      finance:
+        o.monthlyEstimateCents !== null && financing !== null ? (
+          <p className={styles.finance}>
+            {liftProposal.monthlyLead}
+            <b>{liftProposal.perMonth(wholeDollars(o.monthlyEstimateCents))}</b>
+            {liftProposal.monthlyRest((financing.aprBps / 100).toFixed(2), financing.months)}
+          </p>
+        ) : null,
+    };
+  });
+  const subline = (picked: Tier | undefined) => {
+    const chosen = previewOptions.find((o) => o.tier === picked);
+    const squares = chosen ? squaresFor(chosen) : null;
+    return (
+      <>
         {squares !== null ? <p className={styles.squares}>{liftProposal.squaresLine(squares.ordered, squares.measured, squares.wastePct)}</p> : null}
         {sections !== null ? (
           <p className={styles.squares} data-sections="">
             {sections}
           </p>
         ) : null}
-      </div>
-      <div className={styles.scroll}>
-        {options.length > 0 ? (
-          <div className={styles.tiers} role="radiogroup" aria-label={liftProposal.tiersLabel}>
-            {options.map((o) => (
-              <TierCard key={o.tier} option={o} checked={o.tier === selected?.tier} onPick={() => setPicked(o.tier)} />
-            ))}
-          </div>
-        ) : pending ? (
-          <div className={styles.note} aria-busy="true">
-            <Skeleton lines={3} />
-            <span className="visually-hidden">{liftProposal.loading}</span>
-          </div>
-        ) : (
-          <p className={styles.note}>{failed ? liftProposal.failed : preview?.options === null && preview !== undefined ? liftProposal.noPrices : liftProposal.noRoof}</p>
-        )}
-        {controls}
-        {selected && lines ? (
-          <div className={styles.breakdown}>
-            <Lines title={liftProposal.materialsFor(liftProposal.tier[selected.tier])} lines={lines.materials} />
-            <Lines title={liftProposal.laborAndFees} lines={lines.labor} />
-          </div>
-        ) : null}
-      </div>
-      <div className={styles.foot}>
-        {selected ? (
-          <>
-            <div className={styles.totalRow}>
-              <span className={styles.totalLabel}>{liftProposal.totalFor(liftProposal.tier[selected.tier])}</span>
-              <span className={styles.total}>{wholeDollars(selected.totalCents)}</span>
-            </div>
-            {selected.monthlyEstimateCents !== null && financing !== null ? (
-              <p className={styles.finance}>
-                {liftProposal.monthlyLead}
-                <b>{liftProposal.perMonth(wholeDollars(selected.monthlyEstimateCents))}</b>
-                {liftProposal.monthlyRest((financing.aprBps / 100).toFixed(2), financing.months)}
-              </p>
-            ) : null}
-          </>
-        ) : null}
-        {footer}
-      </div>
-    </aside>
+      </>
+    );
+  };
+  return (
+    <TierPanel
+      title={liftProposal.title(name)}
+      subline={subline}
+      options={options}
+      pending={pending}
+      emptyNote={failed ? liftProposal.failed : preview?.options === null && preview !== undefined ? liftProposal.noPrices : liftProposal.noRoof}
+      controls={controls}
+      footer={footer}
+    />
   );
 }

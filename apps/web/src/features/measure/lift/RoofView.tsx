@@ -18,6 +18,7 @@ import { facetAt, facetName, LINE_COLORS, lineKinds, setRoofLayers, type RoofMod
 import styles from './RoofView.module.css';
 import { ScanBar } from './ScanBar.tsx';
 import type { ScanSession } from './scan.ts';
+import { ScanOverlay } from './ScanOverlay.tsx';
 import { MeasureSlotsContext, type MeasureSlots, type QuoteSession, type RoofSession } from './slots.ts';
 import { buildingAt, STRUCTURE_LAYERS, STRUCTURES_SOURCE, structuresData, type BuildingRow } from './structures.ts';
 
@@ -327,7 +328,7 @@ function project(instance: MapLibreMap | null, ring: Ring): { x: number; y: numb
 }
 
 /** The scan over the roof: yellow corner brackets, white dots on the outline's corners and a sweep, while it traces. */
-function ScanOverlay({ instance, ring, scan }: { instance: MapLibreMap | null; ring: Ring; scan: ScanSession }) {
+function RoofScanOverlay({ instance, ring, scan }: { instance: MapLibreMap | null; ring: Ring; scan: ScanSession }) {
   useMapMoves(instance);
   const points = project(instance, ring);
   if (points.length < 3) return null;
@@ -339,24 +340,7 @@ function ScanOverlay({ instance, ring, scan }: { instance: MapLibreMap | null; r
   const box = { left, top, width: right - left, height: bottom - top };
   const tracing = scan.progress < ROOF_DRAWN_AT;
   const dots = Math.max(1, Math.ceil(points.length * Math.min(1, scan.progress / 0.3)));
-  return (
-    <div className={styles.scanLayer} aria-hidden="true">
-      <div className={styles.brackets} style={box}>
-        <span data-corner="tl" />
-        <span data-corner="tr" />
-        <span data-corner="bl" />
-        <span data-corner="br" />
-        {tracing ? (
-          <div className={styles.sweepBox}>
-            <div className={styles.sweep} />
-          </div>
-        ) : null}
-      </div>
-      {tracing
-        ? points.slice(0, dots).map((p, i) => <span key={i} className={styles.vertex} style={{ left: p.x, top: p.y }} />)
-        : null}
-    </div>
-  );
+  return <ScanOverlay box={box} sweeping={tracing} points={tracing ? points.slice(0, dots) : []} />;
 }
 
 function NorthArrow() {
@@ -482,7 +466,7 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
           <ImageryChip scanning={scan.phase === 'scanning' || saving} captured={captured} />
         </div>
         {roofDrawn && model !== null ? <Legend model={model} /> : null}
-        {scan.phase === 'scanning' ? <ScanOverlay instance={map} ring={ring} scan={scan} /> : null}
+        {scan.phase === 'scanning' ? <RoofScanOverlay instance={map} ring={ring} scan={scan} /> : null}
         <ScaleAndNorth latitude={m.center[1]} zoom={zoom} />
         <p className={styles.credits}>
           <span>{usesGoogleImagery() ? legal.googleImageryAttribution : usesFreeAerial({ maptilerKey: import.meta.env.VITE_MAPTILER_KEY }) ? legal.imageryAttribution : legal.maptilerImageryAttribution}</span>

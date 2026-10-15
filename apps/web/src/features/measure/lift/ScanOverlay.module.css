@@ -1,0 +1,89 @@
+/* The scan over a picture (the roof's map or the house's photo): brackets, dots and a sweep, in screen space. */
+.scanLayer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+}
+
+.brackets {
+  position: absolute;
+}
+
+.brackets > span {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 0 solid var(--ds-accent, #ffc21a);
+}
+
+.brackets > span[data-corner="tl"] {
+  top: 0;
+  left: 0;
+  border-top-width: 2.5px;
+  border-left-width: 2.5px;
+}
+
+.brackets > span[data-corner="tr"] {
+  top: 0;
+  right: 0;
+  border-top-width: 2.5px;
+  border-right-width: 2.5px;
+}
+
+.brackets > span[data-corner="bl"] {
+  bottom: 0;
+  left: 0;
+  border-bottom-width: 2.5px;
+  border-left-width: 2.5px;
+}
+
+.brackets > span[data-corner="br"] {
+  right: 0;
+  bottom: 0;
+  border-right-width: 2.5px;
+  border-bottom-width: 2.5px;
+}
+
+.sweepBox {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 40%;
+  border-bottom: 2.5px solid var(--ds-accent, #ffc21a);
+  background: linear-gradient(180deg, rgba(255, 194, 26, 0), rgba(255, 194, 26, 0.34));
+  animation: sweep 1.5s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  from {
+    top: -40%;
+  }
+
+  to {
+    top: 100%;
+  }
+}
+
+.vertex {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px rgba(21, 28, 34, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sweep {
+    top: 30%;
+    animation: none;
+  }
+}
