@@ -378,17 +378,28 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
 }
 
 /**
- * Chance an outline edge lies within 0.5 m of where EagleView puts it, by its eave support: 77.1% where the height map
- * shows the eave drop (strong or weak), 48.9% where it does not. Measured on the benchmark's DEV split only (18
- * EagleView houses, 7,212 and 877 outline samples every 0.2 m, against translation-aligned EagleView outlines;
- * roof-3d-confidence-calib.ts, docs/roof-3d/remediate.md). The earlier 86.5% / 58.2% pooled all 54 saved houses,
- * held-out ones included. Samples along one house are correlated, so treat the third digit as noise; the gap between
- * the two (about 28 points) holds for weakM 0.4-0.6 (unverified 47.4-51.0%, verified 77.1-77.3%).
+ * Chance a stretch of outline lies within 0.5 m of an independent outline, by its eave support: strong 0.87, weak 0.71,
+ * unverified 0.51. Measured on the benchmark's DEV split only (roof-3d-support-calib.ts, docs/roof-3d/support.md):
+ * every 0.2 m eave-support sample of seed 7's outline against the translation-aligned EagleView outline (18 houses:
+ * strong 0.870, weak 0.742, unverified 0.581) and the translation-aligned lidar-truth outline (26 houses: 0.862, 0.692,
+ * 0.477), pooled. Neither the flag nor these numbers read lidar, so scoring them on lidar truth is not circular.
+ * Samples along one house are correlated: the second digit is the precision. Before algorithm 6 the scale had two
+ * classes (0.771 / 0.489, EagleView only, a coarser alignment, and the midpoint-clamped sampling that never read the
+ * second half of an edge).
  */
-export const EDGE_AGREEMENT = { verified: 0.771, unverified: 0.489 } as const;
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+export const EDGE_AGREEMENT = { strong: 0.87, weak: 0.71, unverified: 0.51 } as const;
+/** An edge's confidence: its strong, weak and unverified shares weighted by EDGE_AGREEMENT. */
+export function edgeConfidence(e: { strongShare: number; weakShare: number; noneShare: number }): number {
+  return round3(EDGE_AGREEMENT.strong * e.strongShare + EDGE_AGREEMENT.weak * e.weakShare + EDGE_AGREEMENT.unverified * e.noneShare);
+}
 /**
  * An outline needs a review ('edges-unverified') when at least this share of its length is unverified AND that is at
- * least EDGES_UNVERIFIED_MIN_FT. Chosen on the benchmark's DEV split (docs/roof-3d/confidence.md, "Calibration").
+ * least EDGES_UNVERIFIED_MIN_FT. Chosen on the benchmark's DEV split (docs/roof-3d/confidence.md, "Calibration");
+ * re-checked for algorithm 6 against EagleView and lidar truth (docs/roof-3d/support.md): with whole-edge sampling the
+ * DEV houses it flags are the same 23 of 54, and no other share (0.15-0.35), run-length rule or minimum length flags
+ * fewer clean roofs without missing an under-measured one, so it is kept.
  */
 export const EDGES_UNVERIFIED_SHARE = 0.25;
 export const EDGES_UNVERIFIED_MIN_FT = 20;
@@ -398,7 +409,6 @@ const EDGE_WINDOW_M = 4;
 const EDGE_CANOPY_SHARE = 0.5;
 const FT_PER_M = 3.280839895;
 
-const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
 /**
  * The roof with its outline's evidence (eave-support.ts): per edge (Roof3d.edges) and in total
@@ -454,7 +464,7 @@ export function withEdgeEvidence(roof: Roof3d, layers: RoofLayers, green: Uint8A
     unverifiedShare: round3(e.noneShare),
     reason: e.reason,
     canopy: e.canopyShare >= EDGE_CANOPY_SHARE,
-    confidence: round3(EDGE_AGREEMENT.verified * (1 - e.noneShare) + EDGE_AGREEMENT.unverified * e.noneShare),
+    confidence: edgeConfidence(e),
   }));
   const edgeSupport = {
     strongShare: round3(support.strongShare),
