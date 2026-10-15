@@ -181,8 +181,9 @@ Two rules the owner's list did not have, both from an A/A test (the same code at
 
 With both, the same code at seeds 10-12, 20-22 and 30-32 passes every gate (dev 174 pass, held-out 109, none fail).
 The price is power: a real regression smaller than the baseline's seed range goes unnoticed. Over all dev houses
-that is about 2 houses of checker passes and 0.2 points of area error; in the canopy-heavy cohort 2 houses of
-checker passes and 5 thin faces. A failure is printed with both seed ranges, and says when they overlap.
+that is about 2 houses of checker passes (the area error keeps its 0.5-point limit: its seed range is only 0.2); in
+the canopy-heavy cohort 1 house of checker passes and 5 thin faces. A failure is printed with both seed ranges, and
+says when they overlap.
 
 Truth gates are skipped (and the report says how many) in a cohort with fewer than 3 comparable houses. A baseline
 made from a different manifest, or at other seeds, is refused. Freeze a new baseline whenever the house set or a
