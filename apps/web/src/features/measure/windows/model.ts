@@ -4,6 +4,7 @@ import {
   windowCounts,
   type MarkedBox,
   type MeasuredWindow,
+  type PhotoWindow,
   type WindowAdjustments,
   type WindowCounts,
   type WindowMeasurementView,
@@ -100,9 +101,14 @@ export function shownWindows(view: Pick<WindowMeasurementView, 'windows'>, marke
 }
 
 /** The counts the card and quote show now: the sized windows on screen, the estimate, the person's changes. */
-export function liveCounts(view: Pick<WindowMeasurementView, 'estimated'>, shown: readonly ShownWindow[], adjustments: WindowAdjustments): WindowCounts {
+export function liveCounts(
+  view: Pick<WindowMeasurementView, 'estimated'>,
+  shown: readonly ShownWindow[],
+  adjustments: WindowAdjustments,
+  photoWindows: readonly PhotoWindow[] = [],
+): WindowCounts {
   const windows = shown.flatMap((w) => (w.sized === null ? [] : [{ ...w.sized, box: w.box }]));
-  return windowCounts({ windows, estimated: view.estimated, adjustments });
+  return windowCounts({ windows, estimated: view.estimated, adjustments, photoWindows: [...photoWindows] });
 }
 
 export const totalOf = (counts: WindowCounts) =>
@@ -125,7 +131,14 @@ export function tiersFromQuotes(quotes: readonly WindowQuote[] | undefined): Win
 
 /** The adjustments as the server keeps them, with the marks always a list. */
 export function readAdjustments(a: WindowAdjustments): Required<Omit<WindowAdjustments, 'wallCorners'>> & Pick<WindowAdjustments, 'wallCorners'> {
-  return { excludedWindowIds: a.excludedWindowIds, marked: a.marked ?? [], manualCounts: a.manualCounts, wallCorners: a.wallCorners ?? null };
+  return {
+    excludedWindowIds: a.excludedWindowIds,
+    marked: a.marked ?? [],
+    manualCounts: a.manualCounts,
+    wallCorners: a.wallCorners ?? null,
+    photoWindows: a.photoWindows ?? [],
+    photosCoverAllWindows: a.photosCoverAllWindows ?? false,
+  };
 }
 
 /**

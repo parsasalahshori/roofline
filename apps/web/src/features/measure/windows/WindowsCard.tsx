@@ -1,7 +1,7 @@
 import { Banner, Button } from '@roofline/ui';
 import { WINDOW_SIZE_CLASSES, type WindowCounts, type WindowMeasurementView, type WindowSizeClass } from '@roofline/shared';
 import { useId, type ReactNode } from 'react';
-import { measureWindows as copy } from '../../../copy/measureWindows.ts';
+import { measureWindows as copy, windowPhotos } from '../../../copy/measureWindows.ts';
 import cardStyles from '../lift/MeasureCard.module.css';
 import { ScanCardHead } from '../lift/ScanCardHead.tsx';
 import { shownShare, stageAt, type ScanTimer } from '../lift/scan.ts';
@@ -49,6 +49,9 @@ export function WindowsCard({
   panels,
   notes,
   captured,
+  fromPhotos = false,
+  photos = null,
+  onAddPhotos,
 }: {
   v: WindowMeasurementView;
   counts: WindowCounts;
@@ -60,6 +63,12 @@ export function WindowsCard({
   /** The review and missing notes, under the numbers. */
   notes: ReactNode;
   captured: string | null;
+  /** "I photographed every window": the count is the photos'. */
+  fromPhotos?: boolean;
+  /** The photographed windows and the button that adds them. */
+  photos?: ReactNode;
+  /** Opens "Photograph windows". */
+  onAddPhotos?: (() => void) | undefined;
 }) {
   const adjustId = useId();
   const scanning = scan.phase === 'scanning';
@@ -91,9 +100,9 @@ export function WindowsCard({
         {open ? null : (
         <div className={styles.cardBody}>
           <div className={cardStyles.big}>
-            <span className={cardStyles.label}>{t.measured === 0 ? copy.fromWalls : t.estimated === 0 ? copy.measuredOnly(Math.round(t.measured * share)) : copy.toReplace}</span>
+            <span className={cardStyles.label}>{fromPhotos ? windowPhotos.fromPhotos : t.measured === 0 ? copy.fromWalls : t.estimated === 0 ? copy.measuredOnly(Math.round(t.measured * share)) : copy.toReplace}</span>
             <span className={cardStyles.squaresRow}>
-              {t.measured === 0 ? <span className={styles.about}>{copy.about}</span> : null}
+              {t.measured === 0 && !fromPhotos ? <span className={styles.about}>{copy.about}</span> : null}
               <span className={cardStyles.squares} data-stat="windows">
                 {shown}
               </span>
@@ -137,6 +146,7 @@ export function WindowsCard({
             </div>
           </dl>
         ) : null}
+        {!scanning && !open ? photos : null}
         {!scanning && !open ? notes : null}
         {v.estimated === null && !scanning && t.estimated === 0 ? <Banner tone="info">{copy.noEstimate}</Banner> : null}
         {open ? (
@@ -162,6 +172,15 @@ export function WindowsCard({
               <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </Button>
+          {onAddPhotos !== undefined ? (
+            <Button variant="ghost" className={`${cardStyles.footButton} ${styles.addPhotos}`} onClick={onAddPhotos}>
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                <path d="M2 5.5h2.5L6 3.5h4l1.5 2H14V13H2Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                <circle cx="8" cy="9" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+              {windowPhotos.add}
+            </Button>
+          ) : null}
           <span className={cardStyles.kind} data-kind={t.measured > 0 ? 'measured' : 'estimate'}>
             {copy.estimateTag}
           </span>

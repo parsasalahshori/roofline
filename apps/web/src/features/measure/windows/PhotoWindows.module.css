@@ -1,0 +1,246 @@
+/* "Photograph windows": a full-screen sheet on a phone, a large one on a desktop. */
+.overlay {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ds-bg, #f6f7f8);
+  color: var(--ds-text-1, #151c22);
+  font-family: var(--ds-font, var(--font));
+}
+
+@media (min-width: 900px) {
+  .overlay {
+    inset: 32px max(32px, calc(50% - 420px));
+    border-radius: 16px;
+    box-shadow: 0 0 0 100vmax rgba(21, 28, 34, 0.45), var(--ds-shadow, 0 20px 50px rgba(21, 28, 34, 0.35));
+  }
+}
+
+.head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--line, #dde2e6);
+}
+
+.title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headButton {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.capture {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.guidance {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--ds-accent-tint, #fff1d1);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.pick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.pickButton {
+  min-height: 48px;
+  font-size: 15px;
+}
+
+.empty {
+  margin: 0;
+  color: var(--ds-text-label, #505b64);
+  font-size: 14px;
+}
+
+.uploads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--ds-surface, #fff);
+  box-shadow: 0 0 0 1px var(--line, #dde2e6);
+}
+
+.thumb {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: var(--ds-surface-2, #eceff1);
+  object-fit: cover;
+}
+
+.uploadText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.uploadName {
+  font-weight: 600;
+}
+
+.uploadError {
+  font-size: 12px;
+}
+
+.uploadActions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.measured {
+  color: var(--ds-success-ink, #0a6e1d);
+  font-weight: 600;
+}
+
+/* In the card */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.listTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ds-text-label, #505b64);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line, #dde2e6);
+}
+
+/* Name and size on the first line; the quote checkbox and Remove under it, so nothing is squeezed on a phone */
+.row > :nth-child(2) {
+  flex: 1 1 auto;
+  padding-left: 54px;
+}
+
+.row[data-out="true"] .rowOpen {
+  opacity: 0.55;
+}
+
+.rowOpen {
+  flex: 1 1 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.rowThumb {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--ds-surface-2, #eceff1);
+}
+
+.rowText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rowName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rowSize {
+  color: var(--ds-text-2, #3a444d);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip {
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--ds-info-tint, #e3ecfb);
+  color: var(--ds-info-ink, #1f55b3);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rowDelete {
+  min-height: 44px;
+  color: var(--ds-danger-ink, #a3201f);
+}
+
