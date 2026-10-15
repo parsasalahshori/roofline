@@ -38,6 +38,16 @@ export type SplitReport = {
   perHouse?: HouseRow[];
 };
 
+export type DataVersion = {
+  houses: number;
+  bySet: Record<string, number>;
+  /** Google's imagery dates and the dates the files were downloaded (YYYY-MM-DD); houses with no recorded download date are counted. */
+  imageryDate: { min: string | null; max: string | null };
+  downloadedAt: { min: string | null; max: string | null; unknown: number };
+  earliestDeleteBy: string | null;
+  splitRule: string;
+};
+
 export type BenchReport = {
   version: 1;
   commit: { sha: string; dirty: boolean };
@@ -51,6 +61,8 @@ export type BenchReport = {
   calibrationMs: number;
   seeds: number[];
   manifestHash: string;
+  /** What data the run was made on (the whole manifest, whichever houses were run). */
+  data: DataVersion;
   thresholds: Thresholds;
   cohortFilter: string | null;
   splits: { dev?: SplitReport; heldout?: SplitReport };

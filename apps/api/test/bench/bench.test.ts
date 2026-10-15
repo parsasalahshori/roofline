@@ -104,6 +104,10 @@ describe('the harness on a synthetic hip roof', () => {
     expect(all.nondeterministic).toBe(0);
     expect(all.runtime.p95Ms).toBeGreaterThan(0);
     expect(report.seeds).toEqual([7, 8]);
+    expect(report.data.houses).toBe(9);
+    expect(report.data.bySet).toEqual({ testset: 9 });
+    expect(report.data.downloadedAt).toEqual({ min: '2026-10-14', max: '2026-10-14', unknown: 0 });
+    expect(report.data.earliestDeleteBy).toBe('2026-11-13');
     expect(report.splits.heldout).toBeUndefined();
   }, 60_000);
 

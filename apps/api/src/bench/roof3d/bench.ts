@@ -2,7 +2,7 @@ import { type CohortReport, cohortReport } from './aggregate.ts';
 import { type LoadedHouse, loadHouse } from './data.ts';
 import { type HouseEntry, type Manifest, cohortsOf, expiredHouses, manifestHash, type Split } from './manifest.ts';
 import type { HouseMetrics } from './metrics.ts';
-import { HELDOUT_MIN_COHORT, type BenchReport, type HouseRow, type SeedSpread, type SplitReport } from './report.ts';
+import { HELDOUT_MIN_COHORT, type BenchReport, type DataVersion, type HouseRow, type SeedSpread, type SplitReport } from './report.ts';
 import { SEEDS, calibrationMs, type HouseRun, runHouse } from './run.ts';
 
 export class BenchDataError extends Error {}
@@ -90,6 +90,24 @@ function splitReport(split: Split, entries: readonly HouseEntry[], runs: Readonl
   return report;
 }
 
+/** What the manifest's data is: counts, imagery and download dates, the earliest delete-by date. */
+export function dataVersion(m: Manifest): DataVersion {
+  const dates = (xs: (string | null)[]) => {
+    const v = xs.filter((x): x is string => x !== null).sort();
+    return { min: v[0] ?? null, max: v[v.length - 1] ?? null };
+  };
+  const bySet: Record<string, number> = {};
+  for (const h of m.houses) bySet[h.set] = (bySet[h.set] ?? 0) + 1;
+  return {
+    houses: m.houses.length,
+    bySet,
+    imageryDate: dates(m.houses.map((h) => h.data.imageryDate)),
+    downloadedAt: { ...dates(m.houses.map((h) => h.data.downloadedAt)), unknown: m.houses.filter((h) => h.data.downloadedAt === null).length },
+    earliestDeleteBy: dates(m.houses.map((h) => h.data.deleteBy)).min,
+    splitRule: m.splitRule,
+  };
+}
+
 /** Runs the benchmark on the houses the options select and returns its report. */
 export async function runBench(o: BenchOptions): Promise<BenchReport> {
   const seeds = o.seeds ?? SEEDS;
@@ -146,6 +164,7 @@ export async function runBench(o: BenchOptions): Promise<BenchReport> {
     calibrationMs: calibration,
     seeds: [...seeds],
     manifestHash: manifestHash(o.manifest),
+    data: dataVersion(o.manifest),
     thresholds: o.manifest.thresholds,
     cohortFilter: only,
     splits,
