@@ -202,14 +202,27 @@ export class RealUsgsLidarApi implements UsgsLidarApi {
     return unitsFromIndex(parseJson(w.body), parseJson(t.body));
   }
 
+  private readonly eptKnown = new Map<string, string | null>();
+
   async eptOf(unit: LidarUnit, o: { timeoutMs: number }): Promise<string | null> {
-    const url = `${EPT_BUCKET}/${encodeURIComponent(unit.workunit)}/ept.json`;
-    try {
-      const res = await boundedGet(url, { timeoutMs: o.timeoutMs, maxBytes: 0, method: 'HEAD' });
-      return res.ok ? url : null;
-    } catch {
-      return null;
+    const hit = this.eptKnown.get(unit.workunit);
+    if (hit !== undefined) return hit;
+    let found: string | null = null;
+    for (const name of eptNames(unit)) {
+      const url = `${EPT_BUCKET}/${encodeURIComponent(name)}/ept.json`;
+      try {
+        const res = await boundedGet(url, { timeoutMs: o.timeoutMs, maxBytes: 0, method: 'HEAD' });
+        if (res.ok) {
+          found = url;
+          break;
+        }
+      } catch {
+        // Not there (or S3 slow): try the next name; the tiles are the fallback.
+      }
     }
+    if (this.eptKnown.size > 1000) this.eptKnown.clear();
+    this.eptKnown.set(unit.workunit, found);
+    return found;
   }
 
   async getBytes(url: string, o: { timeoutMs: number; maxBytes: number; range?: [number, number] }): Promise<Uint8Array> {
@@ -225,6 +238,17 @@ export class RealUsgsLidarApi implements UsgsLidarApi {
     if (!res.ok || !Number.isFinite(n) || n <= 0) throw new UsgsLidarError('bad-answer', 'USGS did not give the file size.');
     return n;
   }
+}
+
+/**
+ * The names the usgs-lidar-public bucket may hold a work unit under: its own name, or USGS's LPC delivery name
+ * (USGS_LPC_<workunit>_LAS_<year>, the year the point cloud was published, usually 0-3 years after the flight).
+ */
+export function eptNames(unit: LidarUnit): string[] {
+  const names = [unit.workunit];
+  const year = unit.collectEnd === null ? null : Number(unit.collectEnd.slice(0, 4));
+  if (year !== null && Number.isInteger(year)) for (let y = year; y <= year + 3; y++) names.push(`USGS_LPC_${unit.workunit}_LAS_${y}`);
+  return names;
 }
 
 function parseJson(bytes: Uint8Array): unknown {

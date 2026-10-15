@@ -6,6 +6,7 @@ import { lngLatToUtm, utmToLngLat } from '@roofline/shared/roof-reconstruct';
 import type { Clock } from '../clock.ts';
 import type { Config } from '../config.ts';
 import type { ObjectStore } from './object-store.ts';
+import { cropEpt, lngLatToMercator, mercatorToLngLat } from './usgs-lidar-ept.ts';
 import { cropLas, gpsDate, type LasCrop, LasError, lasCrs, parseLasHeader } from './usgs-lidar-las.ts';
 import { chooseUnit, createUsgsLidarApi, type LidarUnit, type UsgsLidarApi, UsgsLidarError } from './usgs-lidar.ts';
 
@@ -420,8 +421,65 @@ export class UsgsLidarService {
     return p;
   }
 
-  /** The crop of the unit's tiles round the cell. */
+  /** The crop round the cell: from the unit's EPT nodes when the bucket has them, else (or when that fails) its tiles. */
   private async derive(cell: LidarCell, unit: LidarUnit): Promise<LidarCropUtm> {
+    const ept = await this.api.eptOf(unit, { timeoutMs: this.limits.indexTimeoutMs }).catch(() => null);
+    if (ept !== null) {
+      try {
+        return await this.deriveEpt(cell, unit, ept);
+      } catch (err) {
+        await this.tiles.log({ what: 'ept-fallback', cell: cell.key, detail: detailOf(err) }).catch(() => undefined);
+      }
+    }
+    return this.deriveTiles(cell, unit);
+  }
+
+  private async deriveEpt(cell: LidarCell, unit: LidarUnit, eptUrl: string): Promise<LidarCropUtm> {
+    const zone = { zone: cell.zone, south: false };
+    const corners = [
+      [cell.e - HALF_M, cell.n - HALF_M],
+      [cell.e + HALF_M, cell.n - HALF_M],
+      [cell.e - HALF_M, cell.n + HALF_M],
+      [cell.e + HALF_M, cell.n + HALF_M],
+    ].map(([e, n]) => lngLatToMercator(...utmToLngLat(zone, e!, n!)));
+    const box = { x0: Math.min(...corners.map((c) => c[0])), x1: Math.max(...corners.map((c) => c[0])), y0: Math.min(...corners.map((c) => c[1])), y1: Math.max(...corners.map((c) => c[1])) };
+    const t0 = Date.now();
+    const got = await cropEpt(this.api, eptUrl, box, { timeoutMs: this.limits.rangeTimeoutMs, maxNodes: 256, maxHierarchyFiles: 32, maxNodeBytes: 32 << 20, maxPointsKept: this.limits.maxPointsKept, parallel: 8 });
+    await this.tiles.log({ what: 'ept-nodes', url: eptUrl, nodes: got.nodes, bytes: got.bytes, ms: Date.now() - t0 });
+    // Web Mercator to the cell's UTM zone, so the crop is the same product whichever way it was read.
+    const c = got.crop;
+    for (let i = 0; i < c.x.length; i++) {
+      const [lng, lat] = mercatorToLngLat(c.x[i]!, c.y[i]!);
+      const u = lngLatToUtm(zone, lng, lat);
+      c.x[i] = u.easting;
+      c.y[i] = u.northing;
+    }
+    // The Mercator box is a little larger than the square: keep the square.
+    const keep: number[] = [];
+    for (let i = 0; i < c.x.length; i++) if (Math.abs(c.x[i]! - cell.e) <= HALF_M && Math.abs(c.y[i]! - cell.n) <= HALF_M) keep.push(i);
+    const pick = <T extends Float64Array | Float32Array | Uint8Array>(a: T, make: (n: number) => T): T => {
+      const out = make(keep.length);
+      keep.forEach((j, k) => {
+        out[k] = a[j]!;
+      });
+      return out;
+    };
+    const square: LasCrop = {
+      x: pick(c.x, (n) => new Float64Array(n)),
+      y: pick(c.y, (n) => new Float64Array(n)),
+      z: pick(c.z, (n) => new Float32Array(n)),
+      flags: pick(c.flags, (n) => new Uint8Array(n)),
+      cls: pick(c.cls, (n) => new Uint8Array(n)),
+      gpsTime: c.gpsTime,
+      scanned: c.scanned,
+    };
+    const name = eptUrl.slice(0, -'/ept.json'.length).slice(eptUrl.slice(0, -'/ept.json'.length).lastIndexOf('/') + 1);
+    // EPT is WGS84 Web Mercator: the crop is labelled WGS84 UTM.
+    return assemble(cell, unit, [`${name} (${got.nodes} EPT nodes)`], [{ crop: square, zone: cell.zone }], 'ept');
+  }
+
+  /** The crop of the unit's tiles round the cell. */
+  private async deriveTiles(cell: LidarCell, unit: LidarUnit): Promise<LidarCropUtm> {
     const urls = unit.tiles.slice(0, this.limits.maxTilesPerHouse).map((t) => t.url);
     const parts: { crop: LasCrop; zone: number }[] = [];
     let kept = 0;
@@ -445,7 +503,7 @@ export class UsgsLidarService {
       kept += crop.x.length;
       parts.push({ crop, zone: crs.zone });
     }
-    return assemble(cell, unit, urls, parts);
+    return assemble(cell, unit, urls.map((u) => u.slice(u.lastIndexOf('/') + 1)), parts, 'tile');
   }
 
   /**
@@ -487,7 +545,7 @@ export class UsgsLidarService {
   }
 }
 
-function assemble(cell: LidarCell, unit: LidarUnit, urls: string[], parts: { crop: LasCrop; zone: number }[]): LidarCropUtm {
+function assemble(cell: LidarCell, unit: LidarUnit, files: string[], parts: { crop: LasCrop; zone: number }[], kind: 'tile' | 'ept'): LidarCropUtm {
   const n = parts.reduce((t, p) => t + p.crop.x.length, 0);
   const dx = new Float32Array(n);
   const dy = new Float32Array(n);
@@ -520,8 +578,8 @@ function assemble(cell: LidarCell, unit: LidarUnit, urls: string[], parts: { cro
   times.sort((a, b) => a - b);
   const pointDates: LidarSource['pointDates'] = times.length === 0 ? null : [gpsDate(times[0]!), gpsDate(times[Math.floor(times.length / 2)]!), gpsDate(times[times.length - 1]!)];
   return {
-    // NAD83 UTM: 3DEP delivers NAD83(2011) UTM; the reconstruction registers the cloud onto Google's frame itself.
-    epsg: 26900 + cell.zone,
+    // Tiles: NAD83(2011) UTM as 3DEP delivers them; EPT: WGS84. The reconstruction registers the cloud onto Google's frame itself.
+    epsg: (kind === 'tile' ? 26900 : 32600) + cell.zone,
     originE: cell.e,
     originN: cell.n,
     dx,
@@ -537,8 +595,8 @@ function assemble(cell: LidarCell, unit: LidarUnit, urls: string[], parts: { cro
       collectEnd: unit.collectEnd,
       leafOff: unit.leafOff,
       pointDates,
-      kind: 'tile',
-      files: urls.map((u) => u.slice(u.lastIndexOf('/') + 1)),
+      kind,
+      files,
       points: n,
       lastPerM2: Math.round((last / (4 * HALF_M * HALF_M)) * 100) / 100,
       credit: USGS_CREDIT,
