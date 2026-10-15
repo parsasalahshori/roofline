@@ -216,6 +216,27 @@ describe('Measure with the roof in 3D', () => {
     expect(second.pitchSource).toBe('solar-3d');
   });
 
+  it("a neighbour's footprint loaded first (the house's is not yet): the home is still the 3D roof under the address", async () => {
+    // The area's outlines are loading: only a neighbour about 21 m east is in, inside the snap distance, so it is
+    // the nearest footprint. The address point is on the 3D roof, which is the home.
+    const NEIGHBOUR_NEAR: Ring = [[-95.9996, 41.25], [-95.9994, 41.25], [-95.9994, 41.2501], [-95.9996, 41.2501], [-95.9996, 41.25]];
+    await loadNE({ sourceRef: 'neighbour', ring: NEIGHBOUR_NEAR });
+    t.solar.set(INSIDE, SOLAR_HOUSE);
+    withHouseLayers();
+    const owner = await who.as('owner');
+
+    const view = await measure(owner, { propertyId: await homeAt(66, INSIDE) });
+
+    expect(view.pitchSource).toBe('solar-3d');
+    expect(view.roof3d).not.toBeNull();
+    expect(view.drawMode).toBe(false);
+    const area = polygonAreaSqFt(view.outline![0]!);
+    expect(Math.abs(area / polygonAreaSqFt(HOUSE) - 1)).toBeLessThan(0.03);
+    // The neighbour is not the home: it is not the main building and not in the quote.
+    expect(view.structures.some((s) => s.main === true && s.areaSqFt > polygonAreaSqFt(HOUSE) * 1.2)).toBe(false);
+    expect(view.roof!.facets).toHaveLength(4);
+  });
+
   it('no building footprint there: the 3D roof alone (no buildings listed)', async () => {
     t.solar.set(INSIDE, SOLAR_HOUSE);
     withHouseLayers();

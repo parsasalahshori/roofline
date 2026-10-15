@@ -287,17 +287,22 @@ function sameBuilding(roof: Roof3d, ring: Ring): boolean {
  * The 3D roof to measure from: the snapshot's roof when it is the main footprint's building (or there is no footprint);
  * else the roof under the footprint's middle on layers already bought, when there is one. `snapshot` is what to keep.
  */
-async function roof3dFor(
+async function roof3dFor<M extends { ring: Ring }>(
   deps: AppDeps,
   snapshot: Roof3dSnapshot | null,
-  main: { ring: Ring } | undefined,
-): Promise<{ roof: Roof3d | null; snapshot: Roof3dSnapshot | null }> {
+  main: M | undefined,
+  /** The home's own point (Measure by address): when it lies on the 3D roof, that roof is the home. */
+  home?: LngLat,
+): Promise<{ roof: Roof3d | null; snapshot: Roof3dSnapshot | null; main: M | undefined }> {
   const roof = snapshot?.roof ?? null;
-  if (roof === null || main === undefined || sameBuilding(roof, main.ring)) return { roof, snapshot };
+  if (roof === null || main === undefined || sameBuilding(roof, main.ring)) return { roof, snapshot, main };
+  // The address point is on the 3D roof itself, so the footprint picked is another building's: the area's outlines are
+  // still loading and the nearest one so far is a neighbour's. The home is the 3D roof; no footprint stands for it yet.
+  if (home !== undefined && insideRing(home, roof.outline)) return { roof, snapshot, main: undefined };
   // The address point was on another roof than the footprint picked: that building, if the layers bought hold it.
   const again = await roof3dOnBoughtLayers(deps, cornerMean(main.ring));
-  if (again?.roof != null && sameBuilding(again.roof, main.ring)) return { roof: again.roof, snapshot: again };
-  return { roof: null, snapshot };
+  if (again?.roof != null && sameBuilding(again.roof, main.ring)) return { roof: again.roof, snapshot: again, main };
+  return { roof: null, snapshot, main };
 }
 
 /**
@@ -544,12 +549,13 @@ export async function measureProperty(
   // Solar answers for the building nearest the address point, which can be the neighbour of the outline picked here.
   const solar = picked === undefined ? askedSolar : await solarCovering(deps, askedSolar, picked.ring);
   // The roof in 3D, when Google has it for this building: its real outline, faces and lines.
-  const r3 = await roof3dFor(deps, await roof3dAsked, picked);
+  const r3 = await roof3dFor(deps, await roof3dAsked, picked, point);
 
   return asNotFound(() =>
     withTenant(deps.pools, ctx, async (tx) => {
       const settings = await settingsFor(tx, ctx);
-      const main = picked;
+      // The footprint that stands for the home: the one picked, unless the 3D roof showed it is a neighbour's.
+      const main = r3.main;
       if (r3.roof !== null) {
         const view = await createMeasurement(tx, ctx, roof3dInput(property, point, r3.roof, r3.snapshot, rows, main, settings, jobId, solar), now);
         if (main !== undefined) await setPropertyFootprint(tx, ctx, property.id, main.id);
