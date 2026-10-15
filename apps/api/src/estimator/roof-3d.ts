@@ -327,7 +327,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   const raster = {
     ...layers.raster,
     green: layers.raster.green ?? greenOf(layers),
-    ...(o.hiddenEdge?.method === 'photo' ? { rgb: rgbOf(layers) } : {}),
+    ...(o.hiddenEdge !== undefined && o.hiddenEdge.method !== 'planes' ? { rgb: rgbOf(layers) } : {}),
   };
   const lidarCloud = o.lidar != null ? lidarOnLayers(layers, o.lidar) : null;
   const local = reconstructRoof(raster, toPixel(point), {

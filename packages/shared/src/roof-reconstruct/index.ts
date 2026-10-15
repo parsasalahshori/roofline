@@ -55,7 +55,17 @@ export type RoofRaster = {
 /** How outline edges the height map cannot verify (eave support 'none') are re-estimated. Off by default. */
 export type HiddenEdgeOption =
   | { method: 'planes'; planes?: Partial<OutlinePlanesParams> }
-  | { method: 'photo'; photo?: Partial<PhotoEdgeParams> };
+  | { method: 'photo'; photo?: Partial<PhotoEdgeParams> }
+  /** Both, in this order: the second step reads the outline the first one left (development: combinations). */
+  | { method: 'photo+planes' | 'planes+photo'; planes?: Partial<OutlinePlanesParams>; photo?: Partial<PhotoEdgeParams> };
+
+/** The hidden-edge steps an option runs, in order. */
+function hiddenEdgeSteps(o: HiddenEdgeOption | undefined): ('planes' | 'photo')[] {
+  if (o === undefined) return [];
+  if (o.method === 'photo+planes') return ['photo', 'planes'];
+  if (o.method === 'planes+photo') return ['planes', 'photo'];
+  return [o.method];
+}
 
 export type ReconstructOptions = {
   seed?: number;
@@ -403,29 +413,34 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       opts.debug?.(`lidar edges: ${done.report.applied ? `moved ${done.report.moved?.length ?? 0}` : `declined (${done.report.reason})`}`);
     }
 
-    // 3b. Hidden eaves from the planes (outline-planes.ts): only edges the heights cannot vouch for move.
-    if (opts.hiddenEdge?.method === 'planes') {
-      hiddenOut = hiddenEdgeStep(raster, labels, part, { c0, r0, c1, r1, g }, s, faces.labels, planes, outline, joined, opts.hiddenEdge.planes, opts.debug);
-      outline = hiddenOut.outline;
-      opts.debug?.(`hidden edges (planes): ${hiddenOut.summary.pieces} pieces, ${hiddenOut.summary.inferredM.toFixed(1)} m inferred; declined ${JSON.stringify(hiddenOut.summary.declined)}${hiddenOut.summary.skipped !== undefined ? `; skipped: ${hiddenOut.summary.skipped}` : ''}`);
-    }
-    // 3b. Hidden edges from the photo (off by default). Only the outline polygon changes; when it reaches past the
-    //     crop, the crop is padded (the new pixels belong to no face) so topology can draw it.
-    if (opts.hiddenEdge?.method === 'photo') {
-      const done = hiddenEdgesFromPhoto(raster, { c0, r0, g }, roof, outline, { ...DEFAULT_PHOTO_EDGE, ...opts.hiddenEdge.photo });
-      photoOut = done.record;
-      if (done.outline !== null) {
-        outline = done.outline;
-        const padded = padCropTo(raster, { c0, r0, g }, outline, { dsm, roof, googleMask, tree, labels: faces.labels, planes });
-        if (padded !== null) {
-          for (const m of photoOut.moved) {
-            m.a = { x: m.a.x + padded.dc * s, y: m.a.y - padded.dr * s };
-            m.b = { x: m.b.x + padded.dc * s, y: m.b.y - padded.dr * s };
+    // 3b. Hidden edges, by the methods the option names, in order (hiddenEdgeSteps).
+    for (const step of hiddenEdgeSteps(opts.hiddenEdge)) {
+      // 3b. Hidden eaves from the planes (outline-planes.ts): only edges the heights cannot vouch for move.
+      if (step === 'planes') {
+        const prm = opts.hiddenEdge !== undefined && 'planes' in opts.hiddenEdge ? opts.hiddenEdge.planes : undefined;
+        hiddenOut = hiddenEdgeStep(raster, labels, part, { c0, r0, c1, r1, g }, s, faces.labels, planes, outline, joined, prm, opts.debug);
+        outline = hiddenOut.outline;
+        opts.debug?.(`hidden edges (planes): ${hiddenOut.summary.pieces} pieces, ${hiddenOut.summary.inferredM.toFixed(1)} m inferred; declined ${JSON.stringify(hiddenOut.summary.declined)}${hiddenOut.summary.skipped !== undefined ? `; skipped: ${hiddenOut.summary.skipped}` : ''}`);
+      }
+      // 3b. Hidden edges from the photo (off by default). Only the outline polygon changes; when it reaches past the
+      //     crop, the crop is padded (the new pixels belong to no face) so topology can draw it.
+      if (step === 'photo') {
+        const prm = opts.hiddenEdge !== undefined && 'photo' in opts.hiddenEdge ? opts.hiddenEdge.photo : undefined;
+        const done = hiddenEdgesFromPhoto(raster, { c0, r0, g }, roof, outline, { ...DEFAULT_PHOTO_EDGE, ...prm });
+        photoOut = done.record;
+        if (done.outline !== null) {
+          outline = done.outline;
+          const padded = padCropTo(raster, { c0, r0, g }, outline, { dsm, roof, googleMask, tree, labels: faces.labels, planes });
+          if (padded !== null) {
+            for (const m of photoOut.moved) {
+              m.a = { x: m.a.x + padded.dc * s, y: m.a.y - padded.dr * s };
+              m.b = { x: m.b.x + padded.dc * s, y: m.b.y - padded.dr * s };
+            }
+            ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, planes } = padded);
+            faces = { labels: padded.labels, planes };
+            outline = padded.outline;
+            clipped = clipped || c0 <= 0 || r0 <= 0 || c1 >= W - 1 || r1 >= H - 1;
           }
-          ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, planes } = padded);
-          faces = { labels: padded.labels, planes };
-          outline = padded.outline;
-          clipped = clipped || c0 <= 0 || r0 <= 0 || c1 >= W - 1 || r1 >= H - 1;
         }
       }
     }

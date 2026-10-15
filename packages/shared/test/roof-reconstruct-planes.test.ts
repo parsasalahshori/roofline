@@ -208,3 +208,21 @@ describe('inferHiddenEaves: typed refusals and guards', () => {
     expect(DEFAULT_OUTLINE_PLANES.minOffsetM).toBe(-1);
   });
 });
+
+describe('hidden-edge combinations (photo+planes, planes+photo)', () => {
+  it('with no photo the photo step declines and each combination is exactly planes alone, at 0.1 and 0.25 m', () => {
+    for (const px of [0.1, 0.25]) {
+      // The hip of the tests above (16 x 10 m at 6/12) with a crown over the middle of a long eave.
+      const roof = synthesize(hipShape(16, 10, 6), { pixelM: px, trees: 0, noiseM: 0.02, seed: 5 });
+      const raster = withCrown(roof, { x: 1, y: -5.5 }, 2.6);
+      const planes = reconstructRoof(raster, roof.point, { hiddenEdge: { method: 'planes' } })!;
+      for (const method of ['photo+planes', 'planes+photo'] as const) {
+        const both = reconstructRoof(raster, roof.point, { hiddenEdge: { method } })!;
+        expect(both.hiddenEdges?.declined).toBe('no-photo');
+        expect(planes.hiddenEdge?.pieces ?? 0).toBeGreaterThan(0);
+        expect(both.outline).toEqual(planes.outline);
+        expect(both.hiddenEdge).toEqual(planes.hiddenEdge);
+      }
+    }
+  });
+});

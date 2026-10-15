@@ -20,7 +20,9 @@ export function hiddenEdgeFromEnv(env: NodeJS.ProcessEnv = process.env): RoofOnL
   const params = raw !== undefined && raw !== '' ? (JSON.parse(raw) as Record<string, number>) : undefined;
   if (method === 'planes') return { method, ...(params !== undefined ? { planes: params } : {}) };
   if (method === 'photo') return { method, ...(params !== undefined ? { photo: params } : {}) };
-  throw new Error(`ROOF3D_HIDDEN_EDGE: unknown method ${JSON.stringify(method)} (planes, photo)`);
+  // Combinations: the parameter overrides (if any) go to both steps' records; each step reads only its own keys.
+  if (method === 'photo+planes' || method === 'planes+photo') return { method, ...(params !== undefined ? { planes: params, photo: params } : {}) };
+  throw new Error(`ROOF3D_HIDDEN_EDGE: unknown method ${JSON.stringify(method)} (planes, photo, photo+planes, planes+photo)`);
 }
 const HIDDEN_EDGE = hiddenEdgeFromEnv();
 
