@@ -99,6 +99,7 @@ type LooseMap = {
   project: (point: [number, number]) => { x: number; y: number };
   getCanvas: () => HTMLCanvasElement;
   doubleClickZoom: { enable: () => void; disable: () => void };
+  dragPan?: { enable: () => void; disable: () => void; isEnabled?: () => boolean };
   isStyleLoaded: () => boolean;
 };
 
@@ -238,7 +239,25 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
     return [p.lng, p.lat];
   };
 
+  // The map pans on any press that reaches it, so a corner drag holds panning off until the corner is let go.
+  let panHeld = false;
+  const holdPan = () => {
+    if (panHeld) return;
+    safe(() => {
+      if (m.dragPan && m.dragPan.isEnabled?.() !== false) {
+        m.dragPan.disable();
+        panHeld = true;
+      }
+    });
+  };
+  const releasePan = () => {
+    if (!panHeld) return;
+    panHeld = false;
+    safe(() => m.dragPan?.enable());
+  };
+
   const endDrag = () => {
+    releasePan();
     if (dragTimer) clearTimeout(dragTimer);
     dragTimer = null;
     dragIndex = -1;
@@ -280,6 +299,11 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
     elementCleanups.push(() => el.removeEventListener(type, handler));
   };
 
+  // A press on a handle is the handle's, never the map's: without this the map pans along with the drag.
+  const keepFromMap = (el: HTMLElement) => {
+    for (const type of ['pointerdown', 'mousedown', 'touchstart']) listen(el, type, (e: Event) => e.stopPropagation());
+  };
+
   const buildCorner = (index: number): Marker => {
     const el = handleBox();
     el.setAttribute('role', 'button');
@@ -292,6 +316,8 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
     listen(el, 'pointerdown', (e: PointerEvent) => {
       if (drawing) return;
       endDrag();
+      e.preventDefault();
+      holdPan();
       dragIndex = index;
       dragStart = { x: e.clientX, y: e.clientY };
       safe(() => el.setPointerCapture?.(e.pointerId));
@@ -352,6 +378,7 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
       e.preventDefault();
       commit(res, index);
     });
+    keepFromMap(el);
 
     return new Marker({ element: el, draggable: false }).setLngLat(ring[index] as LngLat).addTo(map);
   };
@@ -378,6 +405,7 @@ export function createOutlineEditor(map: MapLibreMap, options: OutlineEditorOpti
     listen(el, 'pointerdown', (e: PointerEvent) => {
       downAt = { x: e.clientX, y: e.clientY };
     });
+    keepFromMap(el);
     listen(el, 'pointerup', (e: PointerEvent) => {
       const start = downAt;
       downAt = null;

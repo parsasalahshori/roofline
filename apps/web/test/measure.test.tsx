@@ -30,6 +30,7 @@ const fake = vi.hoisted(() => {
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }),
     });
     doubleClickZoom = { enable: vi.fn(), disable: vi.fn() };
+    dragPan = { enable: vi.fn(), disable: vi.fn(), isEnabled: vi.fn(() => true) };
     constructor(options: Record<string, unknown>) {
       this.options = options;
       FakeMap.instances.push(this);
@@ -395,6 +396,38 @@ describe('measure window', () => {
     await waitFor(() => expect(sent('PATCH /api/measurements/m1')).toHaveLength(1), { timeout: 2000 });
     const body = sent('PATCH /api/measurements/m1')[0] as { outline: Ring[] };
     expect(body.outline[0]).toHaveLength(4);
+  });
+
+  it('grabbing a corner holds the map still: the map does not pan until the corner is let go', async () => {
+    await open();
+    const map = lastMap();
+    const down = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 50, clientY: 50 });
+    const reachedMap = vi.fn();
+    const mapNode = corner(0).parentElement ?? document.body;
+    mapNode.addEventListener('pointerdown', reachedMap);
+    const mousedown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 50, clientY: 50 });
+    mapNode.addEventListener('mousedown', reachedMap);
+    corner(0).dispatchEvent(down);
+    corner(0).dispatchEvent(mousedown);
+    // The map's own pan handler never sees the press, and panning is off for the whole drag.
+    expect(reachedMap).not.toHaveBeenCalled();
+    expect(map.dragPan.disable).toHaveBeenCalledTimes(1);
+    mouse(window, 'pointermove', 0, 0);
+    expect(map.dragPan.enable).not.toHaveBeenCalled();
+    mouse(window, 'pointerup', 0, 0);
+    expect(map.dragPan.enable).toHaveBeenCalledTimes(1);
+  });
+
+  it('pressing the add-a-corner handle does not pan the map either', async () => {
+    await open();
+    const mid = document.querySelector('[data-handle="mid"]') as HTMLElement;
+    const reachedMap = vi.fn();
+    const mapNode = mid.parentElement ?? document.body;
+    mapNode.addEventListener('mousedown', reachedMap);
+    mapNode.addEventListener('pointerdown', reachedMap);
+    mid.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
+    mid.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
+    expect(reachedMap).not.toHaveBeenCalled();
   });
 
   it('arrow keys nudge a corner by half a metre', async () => {
