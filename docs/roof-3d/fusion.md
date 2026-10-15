@@ -108,6 +108,19 @@ dev-xf-v1.txt). 17 DEV houses; fusion applies on 1 (9 decline sparse: those are 
   found ground-free returns under the wing in 2017, so the wing stood then and QL2 under trees simply under-resolves it.
   That makes the "+20.1 % against the 2017 truth" above an artefact of the weaker truth, not an over-estimate.
 
+**County planimetric footprints (the free track's PAgis download, Pulaski County; independent of Google and of all
+lidar)** — wall lines, so a correct roof is larger by its overhang (about +5-12 % on these houses):
+
+| house | IoU off -> on | plan error off -> on |
+|---|---|---|
+| lr-305-ridgeway | 0.744 -> 0.822 | -23.2 % -> +12.4 % |
+| lr-tyler | 0.652 -> 0.903 | -29.9 % -> +0.4 % |
+| tr-little-rock-951188237 | 0.805 -> 0.841 | -15.0 % -> -10.0 % |
+| tr-little-rock-981790186 | 0.873 -> 0.889 | -3.1 % -> -0.7 % |
+| tr-little-rock-1232985555, tr-north-little-rock-1231176703 | unchanged (declined) | unchanged |
+
+Every changed house with a county footprint is closer to it; none is further.
+
 Canopy-heavy DEV houses: lr-305-ridgeway applied; omaha-roland applied (no second flight); seattle-wallingford declined
 misaligned (roof residual 0.19 m over the 0.15 m limit); kc-brookside, ev-52191985, ev-52192220 declined not-leaf-off;
 tr-atlanta-1289767665, tr-atlanta-51300274, tr-fayetteville-466556470, tr-fayetteville-467353063 declined sparse (QL2

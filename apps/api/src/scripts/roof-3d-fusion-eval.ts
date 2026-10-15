@@ -34,7 +34,24 @@ type Row = {
   reasonsOn: string[];
   ev: { off: Score; on: Score } | null;
   xflight: { unit: string; end: string | null; density: number | null; off: Score; on: Score }[];
+  /** County planimetric footprint (the free track's PAgis download; wall lines, so smaller than the roof by its eaves). */
+  county: { id: string; off: Score; on: Score } | null;
 };
+
+/** The county footprint (free/pagis/<slug>.json) overlapping our outline most, when one overlaps it by IoU 0.3 or more. */
+function countyFootprint(bench: string, slug: string, zone: ReturnType<typeof outlineXY>['zone'], ours: MultiPoly): { id: string; poly: MultiPoly } | null {
+  const f = path.join(bench, 'free', 'pagis', `${slug}.json`);
+  if (!existsSync(f)) return null;
+  const d = JSON.parse(readFileSync(f, 'utf8')) as { features?: { id: string; rings: number[][][] }[] };
+  let best: { id: string; poly: MultiPoly; iou: number } | null = null;
+  for (const ft of d.features ?? []) {
+    if (!Array.isArray(ft.rings) || ft.rings.length === 0) continue;
+    const poly: MultiPoly = [ft.rings.map((r) => ringToXY(zone, r))];
+    const v = iou(ours, poly) ?? 0;
+    if (v >= 0.3 && (best === null || v > best.iou)) best = { id: ft.id, poly, iou: v };
+  }
+  return best === null ? null : { id: best.id, poly: best.poly };
+}
 
 function args() {
   const a = process.argv.slice(2);
@@ -132,7 +149,13 @@ async function main() {
       const sh = alignedOutline(pOff, tp, 0.2).shiftM;
       xflight.push({ unit: f.unit, end: f.end, density: f.density, off: score(pOff, tp, sh), on: score(pOn, tp, sh) });
     }
-    rows.push({ slug: e.slug, split: e.split, canopy: e.tags.canopy?.class ?? '-', fused: lp.info.workunit, report: on.lidarFusion ?? null, reasonsOn: on.quality?.reasons ?? [], ev, xflight });
+    const cf = countyFootprint(bench, e.slug, zone, pOff);
+    let county: Row['county'] = null;
+    if (cf !== null) {
+      const sh = alignedOutline(pOff, cf.poly, 0.2).shiftM;
+      county = { id: cf.id, off: score(pOff, cf.poly, sh), on: score(pOn, cf.poly, sh) };
+    }
+    rows.push({ county, slug: e.slug, split: e.split, canopy: e.tags.canopy?.class ?? '-', fused: lp.info.workunit, report: on.lidarFusion ?? null, reasonsOn: on.quality?.reasons ?? [], ev, xflight });
   }
   const f1 = (x: number) => (Number.isFinite(x) ? x.toFixed(1) : '-');
   const f3 = (x: number) => (Number.isFinite(x) ? x.toFixed(3) : '-');
@@ -161,6 +184,11 @@ async function main() {
       `Cross-flight changed: IoU better ${xsChanged.filter(({ x }) => x.on.iou > x.off.iou).length}, worse ${xsChanged.filter(({ x }) => x.on.iou < x.off.iou).length}; median |plan err| off ${f1(medAbs(xs.map(({ x }) => x.off.planErrPct)))}% on ${f1(medAbs(xs.map(({ x }) => x.on.planErrPct)))}%.\n` +
       `Declines: ${JSON.stringify(rows.reduce<Record<string, number>>((t, r) => ((t[r.report?.applied ? 'applied' : (r.report?.reason ?? 'none')] = (t[r.report?.applied ? 'applied' : (r.report?.reason ?? 'none')] ?? 0) + 1), t), {}))}\n`,
   );
+  const cs = rows.filter((r) => r.county !== null);
+  if (cs.length > 0) {
+    process.stdout.write('\nCounty planimetric footprint (PAgis; walls, not eaves: a roof is larger by its overhang):\n');
+    for (const r of cs) process.stdout.write(`${r.slug.padEnd(31)} ${r.county!.id.padEnd(14)} IoU ${f3(r.county!.off.iou)}->${f3(r.county!.on.iou)}  plan ${f1(r.county!.off.planErrPct)}%->${f1(r.county!.on.planErrPct)}%\n`);
+  }
   if (o.json !== undefined) writeFileSync(o.json, JSON.stringify(rows, null, 1));
 }
 
