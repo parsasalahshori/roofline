@@ -9,6 +9,7 @@ import {
   type Roof3dSnapshot,
   type Roof3dStructure,
   roof3dSnapshotFresh,
+  roof3dSnapshotStamp,
   type SolarBuilding,
 } from '@roofline/shared';
 import { lngLatToUtm, otherRoofParts, reconstructRoof, toRoof3d, utmToLngLat, utmZoneOfEpsg } from '@roofline/shared/roof-reconstruct';
@@ -246,11 +247,11 @@ export function roof3dAt(deps: AppDeps, point: LngLat, building: SolarBuilding |
   const value = layersFor(deps, point, building).then(
     async (layers): Promise<Roof3dSnapshot> => {
       const fetchedAt = deps.clock.now().toISOString();
-      if (layers === null) return { fetchedAt, at, roof: null, none: 'no-imagery' };
+      if (layers === null) return roof3dSnapshotStamp({ fetchedAt, at, roof: null, none: 'no-imagery' });
       const found = roofOnLayers(layers, point, { steep: steepRoof(building), building });
-      if (found === null || unusable(found)) return { fetchedAt, at, roof: null, none: 'no-roof' };
+      if (found === null || unusable(found)) return roof3dSnapshotStamp({ fetchedAt, at, roof: null, none: 'no-roof' });
       const roof = withGoogleCheck(found, building);
-      return { fetchedAt, at, roof, photo: await photoOrNull(deps, layers, roof) };
+      return roof3dSnapshotStamp({ fetchedAt, at, roof, photo: await photoOrNull(deps, layers, roof) });
     },
     (err: unknown) => {
       if (!(err instanceof SolarLayersUnavailableError)) deps.logError?.(err, 'google-solar-layers');
@@ -273,12 +274,12 @@ export async function roof3dOnBoughtLayers(deps: AppDeps, point: LngLat): Promis
   if (layers === null) return null;
   const roof = roofOnLayers(layers, point);
   if (roof === null || unusable(roof)) return null;
-  return { fetchedAt: deps.clock.now().toISOString(), at: [point[0], point[1]], roof, photo: await photoOrNull(deps, layers, roof) };
+  return roof3dSnapshotStamp({ fetchedAt: deps.clock.now().toISOString(), at: [point[0], point[1]], roof, photo: await photoOrNull(deps, layers, roof) });
 }
 
 /**
- * The 3D roof for a saved home at `point`: the one kept on its newest measurement when still fresh for this roof,
- * else roof3dAt (sized by Google Solar's building, awaited from `building`).
+ * The 3D roof for a saved home at `point`: the one kept on its newest measurement when still fresh for this roof and
+ * made by this reconstruction (roof3dSnapshotFresh checks ROOF_3D_ALGORITHM_VERSION), else roof3dAt (sized by Google Solar's building, awaited from `building`).
  */
 export async function roof3dForHome(
   deps: AppDeps,
