@@ -44,6 +44,22 @@ export type FacadePhoto = {
   capturedOn: string | null;
   /** Camera to the front wall along the photo's centre line, metres. */
   distanceM: number;
+  /**
+   * The front wall from the outline and Google's heights, drawn into this photo: its four corners (bottom-left,
+   * bottom-right, top-right, top-left; 0..1 of the photo) at ground and eave level. If it lines up with the house in the
+   * photo, the camera, wall length and wall height are right. Absent when the wall is not in this photo.
+   */
+  wallOverlay?: {
+    corners: [[number, number], [number, number], [number, number], [number, number]];
+    /** How well the drawn wall lines up with the edges in the photo (no AI: image edges). 'unknown' when it cannot tell. */
+    fit: 'good' | 'off' | 'unknown';
+    /** 0..1 share of the drawn wall edges that sit on an edge in the photo. */
+    fitScore: number | null;
+    /** Heading correction the line-up found, degrees (Street View headings can be off by a few degrees). */
+    headingCorrectionDeg: number;
+    /** The wall height read from this photo (eave line), feet, to compare with the height from Google's heights. */
+    wallHeightFromPhotoFt: number | null;
+  };
 };
 
 /** A window marked by a person (or found by the optional detector) in a photo and sized from it. Box: 0..1 of the photo. */
@@ -90,6 +106,7 @@ export const WINDOWS_REVIEW_REASONS = [
   'old-imagery', // the street-level photo is more than 5 years old
   'partly-hidden', // part of the front is hidden
   'estimated-from-size', // no window was marked or found: every window is worked out from the house's walls
+  'walls-unconfirmed', // the outline's front wall does not line up with the house in the street-level photo
 ] as const;
 export type WindowsReviewReason = (typeof WINDOWS_REVIEW_REASONS)[number];
 
@@ -101,6 +118,8 @@ export type WindowAdjustments = {
   excludedWindowIds: string[];
   /** Windows the person marked on the photos (absent = none). */
   marked?: MarkedBox[];
+  /** The person dragged the drawn wall's corners onto the house in a photo; the server re-fits camera and wall from it. */
+  wallCorners?: { photoId: string; corners: [[number, number], [number, number], [number, number], [number, number]] } | null;
   /** Added to the measured windows, per size class (replaces `estimated` for that class when set). */
   manualCounts: Partial<Record<WindowSizeClass, number>>;
 };
