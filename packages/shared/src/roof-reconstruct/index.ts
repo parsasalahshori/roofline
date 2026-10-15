@@ -54,8 +54,10 @@ export type ReconstructOptions = {
   /** The weak-face cleanup on the finished faces (faces-cleanup.ts). */
   faces?: Partial<FaceCleanupParams>;
   /**
-   * Roof the mask missed under canopy or in shade, completed from the roof's own planes (canopy.ts). On by default;
-   * `{ complete: false }` turns it off (the reconstruction is then the one before the canopy track).
+   * Roof the mask missed under canopy or in shade, completed from the roof's own planes (canopy.ts). Off by default
+   * since the remediation (on the DEV split it changed 2 of 54 roofs by 1.25 m2 in all, undid itself on 6, and cost
+   * about 60 ms a house; the area it adds is inferred, not seen, and was not reported on the stored roof);
+   * `{ complete: true }` turns it on.
    */
   canopy?: Partial<CanopyParams> & { complete?: boolean };
   /** Development only: told what the topology decided. */
@@ -306,7 +308,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // nothing after it draws on rng) without paying for steps 1 and 2 twice (merge note: the undone roof used to be a
   // whole second reconstruction, which failed the benchmark's runtime gate).
   const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes };
-  if (opts.canopy?.complete !== false && groundFull !== null && box0 !== null && !joined) {
+  if (opts.canopy?.complete === true && groundFull !== null && box0 !== null && !joined) {
     const done = completeOnWindow(raster, { c0, r0, c1, r1 }, g, s, roof, faces.labels, planes, groundFull, opts.building!, canopyPrm);
     if (done !== null) {
       const re = recrop(raster, done, { c0, r0, g, roof, googleMask, tree }, found, pad);

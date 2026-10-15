@@ -274,12 +274,20 @@ describe('completeRoof', () => {
 });
 
 describe('reconstructRoof with completion', () => {
+  it('completion is off by default (it changed 2 of 54 DEV roofs by 1.25 m2 for about 60 ms a house)', () => {
+    const sc = scene({ seed: 7, turnDeg: 17, size: 34, inMask: (q) => q.x < 4 });
+    const raster = { width: sc.W, height: sc.W, pixelSizeM: sc.s, dsm: sc.dsm, mask: sc.mask };
+    const pt = { col: sc.W / 2 - 15, row: sc.W / 2 };
+    const byDefault = reconstructRoof(raster, pt, { seed: 7, building: toPx(sc) });
+    expect(byDefault?.canopy).toBeUndefined();
+    expect(JSON.stringify(byDefault)).toBe(JSON.stringify(reconstructRoof(raster, pt, { seed: 7, building: toPx(sc), canopy: { complete: false } })));
+  });
   const toPx = (sc: ReturnType<typeof scene>) => sc.box.map((q) => ({ col: q.x / sc.s, row: -q.y / sc.s }));
   it.each([7, 8, 9])('a wing left out of the mask comes back, with area nearer the truth (seed %i)', (seed) => {
     const sc = scene({ seed, turnDeg: 17, size: 34, inMask: (q) => q.x < 4 });
     const raster = { width: sc.W, height: sc.W, pixelSizeM: sc.s, dsm: sc.dsm, mask: sc.mask };
     const pt = { col: sc.W / 2 - 15, row: sc.W / 2 };
-    const on = reconstructRoof(raster, pt, { seed, building: toPx(sc) });
+    const on = reconstructRoof(raster, pt, { seed, building: toPx(sc), canopy: { complete: true } });
     const off = reconstructRoof(raster, pt, { seed, building: toPx(sc), canopy: { complete: false } });
     const area = (r: typeof on) => r!.faces.reduce((t, f) => t + f.planAreaM2, 0);
     expect(on?.canopy?.grownM2 ?? 0).toBeGreaterThan(10);
@@ -293,7 +301,7 @@ describe('reconstructRoof with completion', () => {
     const sc = scene({ seed, turnDeg: 17, size: 34, inMask: (q) => q.x < 4 });
     const raster = { width: sc.W, height: sc.W, pixelSizeM: sc.s, dsm: sc.dsm, mask: sc.mask };
     const pt = { col: sc.W / 2 - 15, row: sc.W / 2 };
-    const undone = reconstructRoof(raster, pt, { seed, building: toPx(sc), canopy: { topologyEdgeSlack: 0 } });
+    const undone = reconstructRoof(raster, pt, { seed, building: toPx(sc), canopy: { complete: true, topologyEdgeSlack: 0 } });
     const off = reconstructRoof(raster, pt, { seed, building: toPx(sc), canopy: { complete: false } });
     expect(undone?.canopy).toEqual({ grownM2: 0, bridgedM2: 0, occluded: [], undone: 'topology' });
     expect(JSON.stringify({ ...undone, canopy: undefined })).toBe(JSON.stringify(off));
