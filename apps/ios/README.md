@@ -94,8 +94,39 @@ width, height, ±, quality and corner order to 1e-6 in, and the constants (`ArLi
    destination, Run. AR needs a real phone: the simulator has no camera.
 5. On the phone: hold the title on the sign-in screen and enter the server address (see below).
 
-The first build may need small fixes: every API the author could not compile here is marked `// VERIFY:`
-(`grep -rn "VERIFY:" apps/ios`).
+The `// VERIFY:` spots were checked against the iOS 26.5 SDK (Xcode 26.6) on Oct 16 2026; what can only be judged
+on a phone is marked `// ON DEVICE:` (`grep -rn "ON DEVICE:" apps/ios`).
+
+## Run in the iOS Simulator
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # if xcode-select points at Command Line Tools
+cd apps/ios && xcodegen generate
+xcodebuild -project RooflineMeasure.xcodeproj -scheme RooflineMeasure \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath build/dd build CODE_SIGNING_ALLOWED=NO
+xcrun simctl boot 'iPhone 17 Pro'; open -a Simulator
+xcrun simctl install booted build/dd/Build/Products/Debug-iphonesimulator/RooflineMeasure.app
+xcrun simctl launch booted com.premjeetech.roofline.measure
+```
+
+Tests: `xcodebuild test` with the same destination (app tests incl. the server-parity fixture), and
+`xcodebuild test -scheme RooflineCore-Package` in `Core/`.
+
+The simulator has no camera: AR corners and Room scan are greyed out in the measure chooser with the reason, and their
+screens show a "needs an iPhone" page instead of starting a session. Sign in, jobs, search, the windows list and Sheet
+photo (the web app in a web view, same session) all work against `http://localhost:4500`.
+
+**DEBUG-only launch arguments** (`RooflineMeasure/App/DebugLaunch.swift`, compiled out of Release/TestFlight) drive the
+app without taps, e.g. for screenshots:
+
+```sh
+xcrun simctl launch booted com.premjeetech.roofline.measure -debugSignIn owner@summitridge.test:summit-ridge-demo \
+  -debugSearch Ridgeway -debugOpenFirst -debugMeasure add -debugMethod sheet
+```
+
+`-debugServer URL`, `-debugSignIn email:password`, `-debugSearch text`, `-debugOpenFirst`, `-debugMeasurement id` (open
+this measurement when the server has no `GET ?propertyId=` route), `-debugStart` (create one; prints its id),
+`-debugMeasure add|again`, `-debugMethod ar|roomplan|sheet`, `-debugSettings`.
 
 ## Reaching the server from testers' phones
 

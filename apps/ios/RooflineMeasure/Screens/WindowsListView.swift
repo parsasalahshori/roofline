@@ -103,6 +103,13 @@ struct WindowsListView: View {
         .task {
             await load()
             #if DEBUG
+            if measurement == nil, let id = DebugLaunch.measurementId, DebugLaunch.once("measurementId") {
+                measurement = try? await model.api.measurement(id: id)
+            }
+            if measurement == nil, DebugLaunch.start, DebugLaunch.once("start") {
+                await create()
+                print("[DebugLaunch] created measurement \(measurement?.id ?? "-") (pass -debugMeasurement <id> next time)")
+            }
             if let m = DebugLaunch.measure, DebugLaunch.once("measure") {
                 if m == "again", let g = groups.first { measureAgain(g) } else { addWindow() }
             }

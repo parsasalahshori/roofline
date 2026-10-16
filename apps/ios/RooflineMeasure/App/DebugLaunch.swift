@@ -12,6 +12,9 @@ import Foundation
 /// - `-debugSignIn email:password`: sign in at launch when not signed in.
 /// - `-debugSearch text`: type this into the Jobs search.
 /// - `-debugOpenFirst`: open the first address the search returns.
+/// - `-debugMeasurement id`: on the Windows screen, open this measurement when the server has no
+///   `GET ?propertyId=` route (the demo on main), instead of offering a new one.
+/// - `-debugStart`: tap "Start measuring windows" when the address has none (creates one on the server; prints its id).
 /// - `-debugMeasure add|again`: open the measure chooser on the Windows screen (new window / the first window again).
 /// - `-debugMethod ar|roomplan|sheet`: then open that method.
 /// - `-debugSettings`: open Settings on the Jobs screen.
@@ -34,6 +37,8 @@ enum DebugLaunch {
     static var openFirst: Bool { args.contains("-debugOpenFirst") }
     static var measure: String? { value("-debugMeasure") }
     static var method: String? { value("-debugMethod") }
+    static var measurementId: String? { value("-debugMeasurement") }
+    static var start: Bool { args.contains("-debugStart") }
     static var settings: Bool { args.contains("-debugSettings") }
 
     /// Each step runs once per launch (views re-appear when navigating back).
