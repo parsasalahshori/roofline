@@ -235,6 +235,8 @@ export const windowPhotos = {
   heicUnsupported:
     'This photo is in the HEIC (high efficiency) format, which this browser cannot open. Set the camera to save JPEG and take it again: on iPhone, Settings > Camera > Formats > Most Compatible; on Samsung, Camera settings > Advanced > High efficiency pictures off.',
   preparing: 'Getting the photo ready…',
+  waitingOffline: 'Waiting for a connection. It uploads by itself.',
+  photosWaiting: (n: number) => (n === 1 ? '1 photo waiting to upload' : `${n} photos waiting to upload`),
   retry: 'Try again',
   remove: 'Remove',
   measure: 'Measure',

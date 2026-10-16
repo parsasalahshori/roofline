@@ -34,6 +34,7 @@ import { liveCounts, newMarkId, readAdjustments, rulerSizeLabel, shownWindows, t
 import { PhotoStage, wallDrawn, type StageEdit } from './PhotoStage.tsx';
 import { livePhotoWindows, type LocalSheetSize } from './photoModel.ts';
 import { PhotoWindowsFlow, PhotoWindowsList, useWindowUploads, type FlowAt } from './PhotoWindows.tsx';
+import { usePhotoWindowDrafts } from './photoDrafts.ts';
 import { WallsPlan, WindowsCard } from './WindowsCard.tsx';
 import { MeasureSwitch } from './MeasureSwitch.tsx';
 import { OrderStatusChip } from './order/OrderChip.tsx';
@@ -298,6 +299,12 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
   const photo = photos[Math.min(photoIndex, photos.length - 1)] ?? null;
   const shown = useMemo(() => shownWindows(v, adj.marked), [v, adj.marked]);
   const uploads = useWindowUploads(v.id, v.uploads);
+  // Photographed windows not yet on the server are kept on this device, so a closed tab does not lose them
+  const serverPhotoInputs = useMemo(() => v.adjustments.photoWindows ?? [], [v.adjustments]);
+  const drafts = usePhotoWindowDrafts(v.id, serverPhotoInputs, (list) => {
+    setAdj((a) => ({ ...a, photoWindows: list }));
+    save({ photoWindows: list });
+  });
   const [flowAt, setFlowAt] = useState<FlowAt | null>(null);
   const uploadList = uploads.uploads;
   // Sheet-measured windows sized on this device, until the server's size for the same corners arrives
@@ -339,6 +346,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     const next = adj.photoWindows.some((w) => w.id === input.id) ? adj.photoWindows.map((w) => (w.id === input.id ? input : w)) : [...adj.photoWindows, input];
     setAdj((a) => ({ ...a, photoWindows: next }));
     save({ photoWindows: next });
+    drafts.keep(next);
   };
   const deletePhoto = (which: string | string[]) => {
     const ids = typeof which === 'string' ? [which] : which;
@@ -347,6 +355,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     if (ids.some((id) => excluded.has(id))) body.excludedWindowIds = adj.excludedWindowIds.filter((x) => !ids.includes(x));
     setAdj((a) => ({ ...a, photoWindows: next, excludedWindowIds: body.excludedWindowIds ?? a.excludedWindowIds }));
     save(body);
+    drafts.keep(next);
   };
   const coverAll = (next: boolean) => {
     setAdj((a) => ({ ...a, photosCoverAllWindows: next }));
@@ -654,6 +663,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
                   excluded={excluded}
                   coverAll={adj.photosCoverAllWindows}
                   srcFor={uploads.srcFor}
+                  waiting={uploads.waiting}
                   onOpen={(w) => setFlowAt({ step: 'measure', uploadId: w.uploadId, windowId: w.id })}
                   onToggle={toggleMany}
                   onDelete={deletePhoto}
