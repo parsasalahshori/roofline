@@ -192,7 +192,7 @@ describe('schema', () => {
     expect(cls).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
   });
 
-  test("measurements keep an exact report's eave length (0040), nullable", async () => {
+  test("measurements keep an exact report's eave length (0041), nullable", async () => {
     const [col] = await ownerQuery<{ data_type: string; is_nullable: string; numeric_precision: number; numeric_scale: number }>(
       `select data_type, is_nullable, numeric_precision, numeric_scale from information_schema.columns
         where table_schema = 'public' and table_name = 'measurements' and column_name = 'eave_ft'`,
