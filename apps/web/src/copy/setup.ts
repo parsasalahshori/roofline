@@ -72,6 +72,7 @@ export const setup = {
     skip: 'Skip for now',
     undoSkip: 'Undo skip',
     connectCalendar: 'Connect your calendar',
+    connectAds: 'Connect ad accounts',
   },
   sheet: {
     title: 'Your company on the map',

@@ -86,7 +86,7 @@ export const lookupMyJobs: ToolHandler<'lookup_my_jobs'> = async (ctx) => {
     const lines: string[] = [];
     for (const job of jobs) {
       const property = await getProperty(tx, tctx, job.propertyId);
-      const proposal = await proposalStatusForJob(tx, tctx, job.id);
+      const proposal = await proposalStatusForJob(tx, tctx, job.id, ctx.now);
       const parts = [stageWords(job.stage, proposal)];
       const pw = proposalWords(proposal);
       if (pw !== null) parts.push(pw);

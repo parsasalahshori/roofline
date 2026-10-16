@@ -52,13 +52,9 @@ describe('deriveSetup', () => {
       expect(item(view, key).comingWith).toBeNull();
     }
 
-    const later: [SetupItemKey, string][] = [
-      ['connect_ads', 'storm_scout'],
-    ];
-    for (const [key, comingWith] of later) {
-      expect(item(view, key).status).toBe('todo');
-      expect(item(view, key).comingWith).toBe(comingWith);
-    }
+    // Storm Scout shipped, so connecting ads is a real step now, not "coming with" anything
+    expect(item(view, 'connect_ads').status).toBe('todo');
+    expect(view.items.every((i) => i.comingWith === null)).toBe(true);
 
     expect(item(view, 'connect_calendar').status).toBe('todo');
     expect(item(view, 'connect_calendar').comingWith).toBeNull();

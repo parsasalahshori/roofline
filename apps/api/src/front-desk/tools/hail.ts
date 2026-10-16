@@ -34,7 +34,7 @@ export const hailAtMyHome: ToolHandler<'hail_at_my_home'> = async (ctx, input) =
     }
     if (used.length === 0) return { ok: false, forModel: NO_HOME };
     const ids = used.map((p) => p.id);
-    const hits = await hailHitsForProperties(tx, tctx, ids, DAYS);
+    const hits = await hailHitsForProperties(tx, tctx, ids, DAYS, ctx.now);
     if (hits.length === 0) return { ok: true, forModel: NO_RECORD, shownIds: ids };
     const lines = hits.map((h) => {
       const street = used.find((p) => p.id === h.propertyId)?.street ?? 'the home';
