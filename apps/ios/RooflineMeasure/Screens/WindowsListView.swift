@@ -100,7 +100,14 @@ struct WindowsListView: View {
         .navigationTitle(route.address)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
-        .task { await load() }
+        .task {
+            await load()
+            #if DEBUG
+            if let m = DebugLaunch.measure, DebugLaunch.once("measure") {
+                if m == "again", let g = groups.first { measureAgain(g) } else { addWindow() }
+            }
+            #endif
+        }
         // A window from this address finished sending: show the server's size
         .onChange(of: model.outboxItems.filter { $0.measurementId == measurement?.id && $0.state == .done }.count) { _, _ in
             Task { await load() }

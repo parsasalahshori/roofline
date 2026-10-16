@@ -3,7 +3,8 @@ import RoomPlan
 import RooflineCore
 import SwiftUI
 
-// VERIFY: if RoomPlan's RoomCaptureSession is main-actor isolated, this must stay @MainActor (all callers are views).
+// Checked (iOS 26.5 SDK RoomPlan.swiftinterface): RoomCaptureSession is not actor-isolated (RoomCaptureView is
+// @MainActor). @MainActor here is not required but harmless: every caller is a view.
 @MainActor
 enum RoomScanSupport {
     /// RoomPlan needs LiDAR.
@@ -19,8 +20,21 @@ struct RoomScanFlow: View {
     let context: MeasureContext
     let onDone: () -> Void
     @State private var scanner: RoomScanner?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        if !RoomScanSupport.isSupported {
+            UnsupportedDeviceView(
+                title: "Room scan needs a LiDAR iPhone",
+                detail: "RoomPlan runs only on iPhones with LiDAR (12 Pro or a later Pro). Use AR corners or Sheet photo here.",
+                onClose: { dismiss() }
+            )
+        } else {
+            scanBody
+        }
+    }
+
+    private var scanBody: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let s = scanner { RoomScanScreen(context: context, onDone: onDone, scanner: s) }
@@ -234,8 +248,9 @@ final class RoomScanner {
     }
 
     private func maybeKeyframe() {
-        // VERIFY: RoomCaptureSession.arSession is the ARSession the scan runs on, and CapturedRoom's surfaces are in
-        // that session's world coordinates (so its cameras can photograph them).
+        // Checked (SDK): RoomCaptureSession has `public var arSession: ARSession`, the session the scan runs on.
+        // ON DEVICE: that CapturedRoom surface transforms are in this session's world space (Apple's iOS 17 multi-room
+        // API relies on it); a wrong frame would show as corners drawn off the window in the saved photo.
         guard !encoding, keyframes.count < Self.maxKeyframes, let frame = captureView.captureSession.arSession.currentFrame,
               case .normal = frame.camera.trackingState else { return }
         let t = Mat4(frame.camera.transform)
@@ -245,7 +260,8 @@ final class RoomScanner {
             guard moved > 0.4 || turned > 20 else { return }
         }
         lastKey = t
-        let pixels = frame.capturedImage
+        // Read-only hand-off to the encoder queue (CVPixelBuffer is not Sendable; ARKit does not reuse it while held)
+        nonisolated(unsafe) let pixels = frame.capturedImage
         let k = CameraIntrinsics(frame.camera)
         encoding = true
         encodeQueue.async { [weak self] in
@@ -364,7 +380,13 @@ final class RoomCaptureDelegate: NSObject, RoomCaptureViewDelegate {
     }
 
     func captureView(didPresent processedResult: CapturedRoom, error: Error?) {
-        // VERIFY: RoomCaptureViewDelegate callbacks arrive on the main thread.
-        MainActor.assumeIsolated { owner?.presented(processedResult, error: error) }
+        // RoomCaptureViewDelegate is not annotated @MainActor in the SDK, so do not assume the main thread: hop if needed
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { owner?.presented(processedResult, error: error) }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.owner?.presented(processedResult, error: error) }
+            }
+        }
     }
 }

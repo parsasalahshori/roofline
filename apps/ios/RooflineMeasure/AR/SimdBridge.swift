@@ -36,7 +36,8 @@ extension CameraIntrinsics {
 
 extension Plane {
     /// The infinite plane of an ARPlaneAnchor: the anchor's local y axis is the plane's normal.
-    // VERIFY: ARPlaneAnchor's plane lies in its local x-z plane (normal = transform column 1) for vertical planes too.
+    // Checked (ARPlaneAnchor.h): "Planes are defined in the X and Z direction, where Y is the surface's normal",
+    // for every alignment, so the normal is transform column 1.
     init?(anchor: ARPlaneAnchor) {
         let t = anchor.transform
         self.init(point: Vec3(t.translation), normal: Vec3(simd_float3(t.columns.1.x, t.columns.1.y, t.columns.1.z)))

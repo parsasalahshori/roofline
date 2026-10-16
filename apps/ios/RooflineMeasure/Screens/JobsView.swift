@@ -13,6 +13,7 @@ struct JobsView: View {
     @State private var searching = false
     @State private var showOutbox = false
     @State private var showSettings = false
+    @State private var debugRoute: WindowsRoute?
 
     struct JobRow: Identifiable, Equatable {
         var job: Job
@@ -64,6 +65,18 @@ struct JobsView: View {
         }
         .navigationTitle("Jobs")
         .navigationDestination(for: WindowsRoute.self) { r in WindowsListView(route: r) }
+        #if DEBUG
+        .navigationDestination(item: $debugRoute) { r in WindowsListView(route: r) }
+        .onAppear {
+            if let q = DebugLaunch.search, DebugLaunch.once("search") { query = q }
+            if DebugLaunch.settings, DebugLaunch.once("settings") { showSettings = true }
+        }
+        .onChange(of: results) { _, list in
+            if DebugLaunch.openFirst, let p = list.first, DebugLaunch.once("openFirst") {
+                debugRoute = WindowsRoute(propertyId: p.id, address: p.oneLine)
+            }
+        }
+        #endif
         .searchable(text: $query, prompt: "Search an address")
         .task(id: query) { await search() }
         .refreshable { await load() }

@@ -26,7 +26,10 @@ final class AppModel {
     private static let serverKey = "serverURL"
 
     init() {
-        let saved = UserDefaults.standard.string(forKey: Self.serverKey).flatMap(ServerAddress.normalize) ?? ServerAddress.defaultURL
+        var saved = UserDefaults.standard.string(forKey: Self.serverKey).flatMap(ServerAddress.normalize) ?? ServerAddress.defaultURL
+        #if DEBUG
+        if let s = DebugLaunch.server.flatMap(ServerAddress.normalize) { saved = s }
+        #endif
         serverURL = saved
         let api = APIClient(baseURL: URL(string: saved)!)
         self.api = api
@@ -62,6 +65,9 @@ final class AppModel {
             phase = .signedIn(try await api.me())
             await sync()
         } catch {
+            #if DEBUG
+            if let creds = DebugLaunch.signIn, (try? await signIn(email: creds.email, password: creds.password)) != nil { return }
+            #endif
             // Not signed in, or offline at launch: sign in (the outbox keeps its windows for later)
             phase = .signedOut
         }

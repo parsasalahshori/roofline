@@ -147,8 +147,8 @@ final class ArMeasureController {
         let bounds = sceneView.bounds
         guard bounds.width > 0, bounds.height > 0 else { return }
         let viewCenter = CGPoint(x: bounds.midX, y: bounds.midY)
-        // VERIFY: displayTransform maps normalized image -> normalized view for .portrait; its inverse takes the view's
-        // centre back into the native image.
+        // Checked (ARFrame.h): displayTransform converts normalized captured-image points to normalized view points;
+        // its inverse takes the view's centre back into the native image.
         let imageCenter = CGPoint(x: 0.5, y: 0.5).applying(frame.displayTransform(for: .portrait, viewportSize: bounds.size).inverted())
 
         // The wall: lock the first vertical plane ARKit reports at the reticle, then use it as an infinite plane
@@ -345,7 +345,7 @@ final class ArMeasureController {
 
     /// The camera picture around the reticle, magnified (the corner under the crosshair).
     private func makeLoupe() -> UIImage? {
-        // VERIFY: ARSCNView.snapshot() is fast enough at ~10 Hz on the target phones (else drop the loupe rate).
+        // ON DEVICE: ARSCNView.snapshot() is fast enough at ~10 Hz on the target phones (else drop the loupe rate).
         let snap = sceneView.snapshot()
         guard let cg = snap.cgImage else { return nil }
         let side = CGFloat(min(cg.width, cg.height)) * 0.18

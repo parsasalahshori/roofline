@@ -9,8 +9,22 @@ struct ArMeasureView: View {
     let onDone: () -> Void
     /// Made once, on appear (a @State default would build a new ARSCNView every time SwiftUI re-creates this view).
     @State private var controller: ArMeasureController?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        if !DeviceCaps.arSupported {
+            UnsupportedDeviceView(
+                title: "AR needs an iPhone camera",
+                detail: "Corner measuring uses ARKit world tracking, which this device (or the simulator) does not have. "
+                    + "Use an iPhone; a LiDAR iPhone (12 Pro or a later Pro) gives order-grade candidates.",
+                onClose: { dismiss() }
+            )
+        } else {
+            arBody
+        }
+    }
+
+    private var arBody: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let c = controller { ArMeasureScreen(context: context, onDone: onDone, controller: c) }

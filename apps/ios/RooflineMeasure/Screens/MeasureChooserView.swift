@@ -33,22 +33,32 @@ struct MeasureChooserView: View {
                         )
                     }
                     .disabled(!DeviceCaps.arSupported)
-                    if DeviceCaps.roomPlanSupported && !context.again {
+                    if !context.again {
                         Button { mode = .roomplan } label: {
                             MethodRow(title: "Room scan", detail: "Walk the room; every window RoomPlan finds is listed with its size. Quote-grade (± 1 in).", systemImage: "cube.transparent")
                         }
+                        .disabled(!DeviceCaps.roomPlanSupported)
                     }
                     Button { mode = .sheet } label: {
                         MethodRow(title: "Sheet photo", detail: "The printed measuring sheet on the glass, in the web app's photo screen.", systemImage: "doc.viewfinder")
                     }
                 } header: {
                     Text("Measure with")
+                } footer: {
+                    if let why = DeviceCaps.unavailableReason(again: context.again) {
+                        Label(why, systemImage: "iphone.slash").font(.footnote)
+                    }
                 }
             }
             .navigationTitle(context.again ? "Measure again" : "Add window")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .onAppear { if label.isEmpty { label = context.label } }
+            .onAppear {
+                if label.isEmpty { label = context.label }
+                #if DEBUG
+                if let m = DebugLaunch.method.flatMap(Mode.init(rawValue:)), DebugLaunch.once("method") { mode = m }
+                #endif
+            }
             .fullScreenCover(item: $mode) { m in
                 switch m {
                 case .ar:
@@ -97,4 +107,36 @@ enum DeviceCaps {
     }
 
     static var roomPlanSupported: Bool { RoomScanSupport.isSupported }
+
+    /// Why AR corners or Room scan are greyed out on this device (the simulator has neither), or nil.
+    static func unavailableReason(again: Bool) -> String? {
+        if !arSupported {
+            return "AR corners and Room scan need an iPhone with a camera (Room scan: a LiDAR iPhone, 12 Pro or a later Pro). "
+                + "Not available on this device; Sheet photo still works."
+        }
+        if !roomPlanSupported && !again {
+            return "Room scan needs an iPhone with LiDAR (12 Pro or a later Pro)."
+        }
+        return nil
+    }
+}
+
+/// Shown instead of the AR / room-scan screen on a device that cannot run it (the simulator, an old phone), so the
+/// session is never started with an unsupported configuration.
+struct UnsupportedDeviceView: View {
+    let title: String
+    let detail: String
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "iphone.slash").font(.system(size: 48)).foregroundStyle(.secondary)
+            Text(title).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
+            Text(detail).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("Close", action: onClose).buttonStyle(.borderedProminent)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
+    }
 }

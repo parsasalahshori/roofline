@@ -23,7 +23,8 @@ enum FrameCapture {
     /// back camera held upright needs it turned 90° clockwise (`.right`).
     static func uprightJPEG(_ pixelBuffer: CVPixelBuffer, quality: CGFloat = 0.9) -> (Data, Int, Int)? {
         let image = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
-        // VERIFY: CIContext.jpegRepresentation writes no orientation tag for an image without properties (orientation 1).
+        // Checked: CIContext.jpegRepresentation of an `.oriented(.right)` CVPixelBuffer image writes rotated pixels and
+        // no Orientation tag (no EXIF/TIFF orientation; ImageIO reads it as 1), tried with a 640x480 buffer -> 480x640.
         let options: [CIImageRepresentationOption: Any] = [
             CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality,
         ]
@@ -43,7 +44,8 @@ enum FrameCapture {
         for p in points {
             // Primary: ARKit's own projection into a portrait viewport the size of the upright photo (same aspect as
             // the turned image, so no crop).
-            // VERIFY: projectPoint(_:orientation:.portrait,viewportSize:) maps into the image turned with `.right`.
+            // Checked (ARCamera.h): viewportSize is the "viewport (or image) size", origin top-left. With the same aspect
+            // as the turned image there is no crop. ON DEVICE: the pinhole cross-check below logs any disagreement.
             let cg = camera.projectPoint(p.simd, orientation: .portrait, viewportSize: portrait)
             var px = Vec2(Double(cg.x), Double(cg.y))
             // Cross-check with the pinhole model (RooflineCore, checked on the Mac); trust it when they disagree
@@ -90,10 +92,12 @@ enum DepthSampler {
         let w = CVPixelBufferGetWidth(map), h = CVPixelBufferGetHeight(map)
         guard let base = CVPixelBufferGetBaseAddress(map), w > 0, h > 0 else { return [] }
         let rowBytes = CVPixelBufferGetBytesPerRow(map)
-        // VERIFY: sceneDepth.depthMap is kCVPixelFormatType_DepthFloat32 (metres along the camera's view axis);
-        // confidenceMap is OneComponent8 with ARConfidenceLevel raw values (0 low, 1 medium, 2 high).
-        let confBase = conf.flatMap { CVPixelBufferGetBaseAddress($0) }
-        let confRow = conf.map { CVPixelBufferGetBytesPerRow($0) } ?? 0
+        // Checked (ARDepthData.h): depthMap is per-pixel depth in metres; ARConfidenceLevel is Low 0, Medium 1, High 2.
+        // The formats (DepthFloat32, OneComponent8) are checked at run time rather than assumed.
+        guard CVPixelBufferGetPixelFormatType(map) == kCVPixelFormatType_DepthFloat32 else { return [] }
+        let conf8 = conf.flatMap { CVPixelBufferGetPixelFormatType($0) == kCVPixelFormatType_OneComponent8 ? $0 : nil }
+        let confBase = conf8.flatMap { CVPixelBufferGetBaseAddress($0) }
+        let confRow = conf8.map { CVPixelBufferGetBytesPerRow($0) } ?? 0
         let k = CameraIntrinsics(frame.camera).scaled(toWidth: Double(w), height: Double(h))
         let camT = Mat4(frame.camera.transform)
         let cx = Int(center.x * CGFloat(w)), cy = Int(center.y * CGFloat(h))
