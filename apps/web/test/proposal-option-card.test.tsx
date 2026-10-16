@@ -142,6 +142,19 @@ describe('OptionCard', () => {
     expect(screen.queryByText(proposals.recommended)).toBeNull();
   });
 
+  it('the option the customer signed says so, and only that one', () => {
+    const { unmount } = render(
+      <Providers>
+        <OptionCard option={makeOption('good')} editable={false} basis="exact" prices={defaultPricebook} onChange={vi.fn()} signed />
+      </Providers>,
+    );
+    expect(within(screen.getByRole('region', { name: proposals.optionHeading('good') })).getByText(proposals.optionSigned)).toBeInTheDocument();
+    unmount();
+
+    setup();
+    expect(screen.queryByText(proposals.optionSigned)).toBeNull();
+  });
+
   it('under its name, one line: what it is made of and the waste it allows for', () => {
     const { option } = setup();
     expect(screen.getByText(proposals.specLine(materialNames[option.scope.material], option.scope.wastePercent))).toBeInTheDocument();

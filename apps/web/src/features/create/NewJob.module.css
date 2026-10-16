@@ -76,3 +76,11 @@
     flex: 1 1 auto;
   }
 }
+
+/* The rep is the person making the job and cannot be changed here: it reads as a fact, not as a box to fill in */
+.fixed input {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  cursor: default;
+}

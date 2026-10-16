@@ -26,6 +26,8 @@ export type OptionCardProps = {
   onSelect?: () => void;
   /** The name the three rows' radios share, so the arrow keys move between them. */
   radioName?: string;
+  /** True for the option the customer signed. */
+  signed?: boolean;
 };
 
 /** The measured quantities the add-ons are charged against, taken from a saved scope. */
@@ -81,7 +83,7 @@ function RemoveIcon() {
   );
 }
 
-export function OptionCard({ option, editable, basis, prices, onChange, open = true, onSelect, radioName }: OptionCardProps) {
+export function OptionCard({ option, editable, basis, prices, onChange, open = true, onSelect, radioName, signed = false }: OptionCardProps) {
   const signature = signatureOf(option);
   const [seen, setSeen] = useState(signature);
   const [draft, setDraft] = useState<Draft>(() => draftOf(option));
@@ -141,6 +143,11 @@ export function OptionCard({ option, editable, basis, prices, onChange, open = t
           {recommended ? (
             <Tag tone="brand" icon="star">
               {proposals.recommended}
+            </Tag>
+          ) : null}
+          {signed ? (
+            <Tag tone="ok" icon="check">
+              {proposals.optionSigned}
             </Tag>
           ) : null}
           {draft.enabled ? null : (
