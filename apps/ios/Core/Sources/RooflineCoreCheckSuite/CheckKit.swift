@@ -71,6 +71,6 @@ public enum CoreChecks {
     }
 
     public static func all(fixturePath: String?) -> [Check] {
-        geometryChecks + sizingChecks + samplingChecks + captureChecks + formatChecks + apiChecks + outboxChecks + miscChecks + [arFixtureCheck(path: fixturePath)]
+        geometryChecks + sizingChecks + samplingChecks + captureChecks + formatChecks + apiChecks + outboxChecks + miscChecks + cardChecks + homeownerChecks + [arFixtureCheck(path: fixturePath)]
     }
 }
