@@ -8,8 +8,10 @@ import styles from './Page.module.css';
 import { PageSlotsContext } from './slots.ts';
 
 export type PageProps = {
-  /** The page's h1, and the name of its main landmark. */
+  /** The page's name: it names the main landmark, and it is the h1 unless `heading` says otherwise. */
   title: string;
+  /** The visible h1 when it should read differently from the page's name ("Good morning, Dana." on Home). */
+  heading?: ReactNode;
   /** A mono caps line over the title: the date on My day and Home. */
   eyebrow?: ReactNode;
   /** Draws no title: the content has its own header. The h1 stays for screen readers. */
@@ -42,6 +44,7 @@ export type PageProps = {
  */
 export function Page({
   title,
+  heading,
   eyebrow,
   titleHidden = false,
   subtitle,
@@ -65,7 +68,13 @@ export function Page({
   const inlineBarActions = barActions && !slots.actions && !phone ? barActions : null;
 
   return (
-    <main aria-labelledby={titleId} className={cx(styles.page, className)} data-layout={layout} data-phone={phone ? 'true' : undefined}>
+    <main
+      aria-labelledby={heading === undefined ? titleId : undefined}
+      aria-label={heading === undefined ? undefined : title}
+      className={cx(styles.page, className)}
+      data-layout={layout}
+      data-phone={phone ? 'true' : undefined}
+    >
       {phone ? (
         parent || barActions ? (
           <div className={styles.phoneBar}>
@@ -90,7 +99,7 @@ export function Page({
         <div className={styles.titles}>
           {eyebrow && !titleHidden ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
           <h1 id={titleId} className={cx(styles.title, titleHidden && 'visually-hidden')}>
-            {title}
+            {heading ?? title}
           </h1>
           {subtitle && !titleHidden ? <p className={styles.subtitle}>{subtitle}</p> : null}
         </div>

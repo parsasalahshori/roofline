@@ -715,6 +715,19 @@ describe('Page', () => {
     expect(within(main).getByText('The board')).toBeInTheDocument();
   });
 
+  it('shows a heading that differs from the page name, and the landmark keeps the name', () => {
+    render(
+      <Page title="Home" heading="Good morning, Dana." eyebrow="Friday, October 16" crumbsLabel="Breadcrumb">
+        body
+      </Page>,
+    );
+    const main = screen.getByRole('main', { name: 'Home' });
+    expect(within(main).getByRole('heading', { level: 1, name: 'Good morning, Dana.' })).toBeInTheDocument();
+    expect(within(main).getByText('Friday, October 16')).toBeInTheDocument();
+    // The trail still says where the person is
+    expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByText('Home')).toHaveAttribute('aria-current', 'page');
+  });
+
   it('keeps the h1 for screen readers when the content draws its own header', () => {
     render(
       <Page title="Measure" titleHidden crumbsLabel="Breadcrumb" subtitle="never shown" actions={<button type="button">never shown</button>}>
