@@ -23,3 +23,10 @@ export function measureAddressHref(address: string): string {
 export function measureWindowsHref(address: string): string {
   return `/estimator/windows?measure=${encodeURIComponent(address.trim())}`;
 }
+
+/** "305 Ridgeway Dr, Little Rock, AR 72205" as the street ("305 Ridgeway Dr") and the rest ("Little Rock, AR 72205"). */
+export function splitAddress(address: string): { street: string; rest: string } {
+  const at = address.indexOf(',');
+  if (at < 0) return { street: address.trim(), rest: '' };
+  return { street: address.slice(0, at).trim(), rest: address.slice(at + 1).trim() };
+}
