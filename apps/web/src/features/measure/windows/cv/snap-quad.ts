@@ -183,7 +183,8 @@ export function snapQuadSync(img: RgbaImage, rough: Quad, opts: { bandFrac?: num
     for (const c of s.candidates) {
       if (c.sign !== sign || c.score < 0.3 * s.maxScore) continue;
       const d = (Math.abs(c.o0) + Math.abs(c.o1)) / 2 / s.band;
-      const cost = d + 0.35 * (1 - c.score / s.maxScore);
+      // Nearness decides (a strong glass edge further in must not beat the frame edge the person pointed at); strength only breaks near-ties.
+      const cost = d + 0.1 * (1 - c.score / s.maxScore);
       if (best === null || cost < best.cost) best = { c, cost };
     }
     return best;
