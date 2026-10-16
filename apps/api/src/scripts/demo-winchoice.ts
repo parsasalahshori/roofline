@@ -21,6 +21,7 @@ import { type Query, seedCompany } from '@roofline/db/testing';
 import type { JobStage } from '@roofline/shared';
 import { systemContext } from '../permissions.ts';
 import { createTask } from '../tasks/service.ts';
+import { seedRidgewayWindows } from './demo-winchoice-windows.ts';
 import { demoWorldCounts, seedAgentsDashboardActivity, type DemoWorld, type DemoWorldOptions } from './demo-world.ts';
 
 /*
@@ -119,7 +120,6 @@ type TurnSeed = { speaker: 'caller' | 'assistant' | 'team'; text: string; toolCa
  * `created: false`. `ownerUrl` connects as the table owner (the company and its users are written with it).
  */
 export async function seedWinChoiceWorld(pools: Pools, ownerUrl: string, now: Date, opts: DemoWorldOptions = {}): Promise<DemoWorld> {
-  void opts;
   const owner = new pg.Pool({ connectionString: ownerUrl, max: 2 });
   const q: Query = async (text, values) => (await owner.query(text, values)).rows as Record<string, unknown>[];
   try {
@@ -127,7 +127,7 @@ export async function seedWinChoiceWorld(pools: Pools, ownerUrl: string, now: Da
     await q(`update companies set address_city = 'Omaha' where slug = 'summit-ridge-roofing' and address_city is null`);
 
     const existing = await findCompanyBySlug(pools.system, DEMO_WINCHOICE_SLUG);
-    if (existing) return { created: false, companyId: existing.id, counts: await demoWorldCounts(q, existing.id) };
+    if (existing) return { created: false, companyId: existing.id, counts: await winChoiceCounts(q, existing.id) };
 
     const company = await seedCompany(ownerUrl, {
       name: DEMO_WINCHOICE_NAME,
@@ -276,10 +276,30 @@ export async function seedWinChoiceWorld(pools: Pools, ownerUrl: string, now: Da
     // 5. The Agents dashboard: finished work for all six agents.
     await seedAgentsDashboardActivity(q, companyId, now);
 
-    return { created: true, companyId, counts: await demoWorldCounts(q, companyId) };
+    // 6. Measure windows: 305 Ridgeway Dr, seven windows (four measured on site) and a draft factory order.
+    const ridgeway = WINCHOICE_JOBS[0]!;
+    await seedRidgewayWindows(
+      pools,
+      ctx,
+      now,
+      { propertyId: made[ridgeway.address]!.propertyId, address: `${ridgeway.address}, ${ridgeway.city}, AR ${ridgeway.zip}`, lngLat: [ridgeway.location[0], ridgeway.location[1]] },
+      opts.objectStore,
+    );
+
+    return { created: true, companyId, counts: await winChoiceCounts(q, companyId) };
   } finally {
     await owner.end();
   }
+}
+
+/** The world's counts, plus its window measurements and factory orders. */
+async function winChoiceCounts(q: Query, companyId: string): Promise<Record<string, number>> {
+  const one = async (sql: string): Promise<number> => Number((await q(sql, [companyId]))[0]?.n ?? 0);
+  return {
+    ...(await demoWorldCounts(q, companyId)),
+    windowMeasurements: await one(`select count(*) as n from window_measurements where company_id = $1`),
+    windowOrders: await one(`select count(*) as n from window_orders where company_id = $1`),
+  };
 }
 
 /** The Front Desk threads: two calls (a booked window visit, an urgent message) and two text threads. */

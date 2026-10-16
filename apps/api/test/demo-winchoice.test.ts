@@ -1,7 +1,6 @@
 import request from 'supertest';
 import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
-import { MemoryObjectStore } from '../src/providers/fakes/object-store.ts';
 import { DEMO_COMPANY_SLUG, DEMO_LOGIN, seedDemoWorld } from '../src/scripts/demo-world.ts';
 import {
   DEMO_WINCHOICE_BRAND_COLOR,
@@ -31,7 +30,7 @@ describe('the WinChoice demo company', () => {
   test('is a second, separate company with its own owner login and red brand, and a second run changes nothing', async () => {
     const ownerUrl = inject('dbUrls').owner;
     const now = t.clock.now();
-    const opts = { encryptionKey: TEST_ENCRYPTION_KEY, objectStore: new MemoryObjectStore() };
+    const opts = { encryptionKey: TEST_ENCRYPTION_KEY, objectStore: t.deps.objectStore };
     // An older demo database has only Summit Ridge: WinChoice is added next to it.
     const summit = await seedDemoWorld(t.deps.pools, ownerUrl, now, opts);
     const first = await seedWinChoiceWorld(t.deps.pools, ownerUrl, now, opts);
@@ -93,6 +92,35 @@ describe('the WinChoice demo company', () => {
     expect(page.status).toBe(200);
     expect(page.body).toMatchObject({ companyName: DEMO_WINCHOICE_NAME, accentColor: DEMO_WINCHOICE_BRAND_COLOR, logoUrl: null });
     expect(page.body.products).toEqual(['windows', 'roof']);
+
+    // Measure windows: 305 Ridgeway Dr has seven windows (four measured on site, three counted from the walls) and a draft order.
+    expect(c.windowMeasurements).toBe(1);
+    expect(c.windowOrders).toBe(1);
+    const measurementId = String((await owner.query(`select id from window_measurements where company_id = $1`, [first.companyId])).rows[0]?.id);
+    const view = (await winchoice.get(`/api/window-measurements/${measurementId}`)).body;
+    expect(view.address).toBe('305 Ridgeway Dr, Little Rock, AR 72205');
+    expect(view.walls).toMatchObject({ perimeterFt: expect.closeTo(128, 0), frontWallFt: expect.closeTo(31, 0) });
+    // Six readings of four windows: the living-room slider three times (LiDAR), the kitchen, bath and hall once each (measuring sheet).
+    expect(view.photoWindows.map((w: { id: string; widthIn: number; heightIn: number }) => [w.id, w.widthIn, w.heightIn])).toEqual([
+      ['w1-r1', 71.25, 59.38],
+      ['w1-r2', 71.38, 59.5],
+      ['w1-r3', 71.63, 59.75],
+      ['w2-r1', 35.62, 47.88],
+      ['w3-r1', 23.5, 35.75],
+      ['w7-r1', 29.87, 47.75],
+    ]);
+    const order = (await winchoice.get(`/api/window-measurements/${measurementId}/order`)).body;
+    expect(order.status).toBe('draft');
+    expect(order.checked.map((l: { id: string; status: string }) => [l.id, l.status])).toEqual([
+      ['w1', 'check'],
+      ['w2', 'ready'],
+      ['w3', 'ready'],
+      ['w7', 'ready'],
+    ]);
+    expect(order.checked[1].order).toEqual({ widthIn: 35.125, heightIn: 47.375 });
+    // The photos are stored, so the order sheet's thumbnails load.
+    const photo = await winchoice.get(`/api/window-measurements/${measurementId}/uploads/${order.lines[1].uploadId}`);
+    expect(photo.status).toBe(200);
 
     const second = await seedWinChoiceWorld(t.deps.pools, ownerUrl, now, opts);
     expect(second).toEqual({ created: false, companyId: first.companyId, counts: first.counts });
