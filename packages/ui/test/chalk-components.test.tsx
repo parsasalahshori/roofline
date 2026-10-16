@@ -425,6 +425,16 @@ describe('StageMenu', () => {
     return onPick;
   }
 
+  it('holds only options for assistive tech: the heading and the rule above the extras are hidden', async () => {
+    const user = userEvent.setup();
+    open();
+    await user.click(screen.getByRole('button', { name: 'Move to…' }));
+    const list = screen.getByRole('listbox', { name: 'Move to stage' });
+    const bare = [...list.children].filter((child) => child.getAttribute('role') !== 'option');
+    expect(bare.length).toBeGreaterThan(0);
+    for (const child of bare) expect(child).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('is a button named Move to… that opens a listbox of the stages, the current one checked', async () => {
     const user = userEvent.setup();
     open();
