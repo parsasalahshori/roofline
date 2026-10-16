@@ -45,10 +45,11 @@ export const approvals = {
   tagNeedsOk: 'Needs your OK',
   tagWaitingOwner: 'Waiting for owner',
   /**
-   * "Storm Scout drafted · 3 days ago". The age is one unit (non-breaking spaces), so on a narrow phone the line breaks
-   * before it and never inside it ("3 days" over "ago").
+   * "Storm Scout drafted · 3 days ago". Everything after the agent's name is one unit (non-breaking spaces), so on a narrow
+   * phone the line breaks after the name ("Storm Scout" over "drafted · 3 days ago"), never inside the age and never with the
+   * dot left alone at the end of a line.
    */
-  drafted: (agent: string, ago: string): string => `${agent} drafted · ${ago.replaceAll(' ', '\u00a0')}`,
+  drafted: (agent: string, ago: string): string => `${agent} drafted\u00a0·\u00a0${ago.replaceAll(' ', '\u00a0')}`,
   /** How long ago, in words: "just now", "12 min ago", "3 hr ago", "2 days ago". */
   ago: (iso: string, now: number): string => {
     const then = Date.parse(iso);
