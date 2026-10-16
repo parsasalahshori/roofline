@@ -31,10 +31,18 @@ final class HomeownerOutboxTests: XCTestCase {
         try? FileManager.default.removeItem(at: dir)
     }
 
-    private func outbox(session saved: HomeownerSession?) -> Outbox {
+    private func outbox(session saved: HomeownerSession?, now: @escaping @Sendable () -> Date = { Date() }) -> Outbox {
         let box = views!
         let transport = HomeownerOutboxTransport(api: api, session: { id in saved?.requestId == id ? saved : nil }, onView: { box.add($0) })
-        return Outbox(directory: dir, transport: transport)
+        return Outbox(directory: dir, transport: transport, now: now)
+    }
+
+    /// A clock the test moves by hand.
+    final class Clock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var date = Date(timeIntervalSince1970: 1_800_000_000)
+        var now: Date { lock.lock(); defer { lock.unlock() }; return date }
+        func advance(_ seconds: TimeInterval) { lock.lock(); date = date.addingTimeInterval(seconds); lock.unlock() }
     }
 
     /// The one item the outbox holds.
@@ -144,6 +152,35 @@ final class HomeownerOutboxTests: XCTestCase {
         await outbox.syncAll()
         item = try await only(outbox)
         XCTAssertEqual(item.state, .done)
+    }
+
+    func testARateLimitWaitsForRetryAfterAndThenGoesByItself() async throws {
+        let clock = Clock()
+        let outbox = outbox(session: session, now: { clock.now })
+        let w = window(style: "double-hung")
+        // Too many photos at once: the server says 429, Retry-After 3 (nothing was stored)
+        await fake.failNext(HomeownerAPIError(status: 429, message: "Too many photos are arriving at once. Please wait a moment.", code: "rate_limited", retryAfter: 3))
+        _ = try await outbox.enqueue(window: w, measurementId: session.requestId, address: nil, jpeg: jpeg(), imageWidthPx: 756, imageHeightPx: 1008)
+        await outbox.syncAll()
+        var item = try await only(outbox)
+        XCTAssertEqual(item.state, .waiting, "a 429 is not a refusal: no Retry button, it goes by itself")
+        XCTAssertEqual(item.retryNotBefore, clock.now.addingTimeInterval(3))
+        XCTAssertEqual(item.lastError, "Too many photos are arriving at once. Please wait a moment.")
+        let callsAfterRefusal = await fake.calls().count
+        // Before the wait is over nothing is sent
+        clock.advance(1)
+        await outbox.syncAll()
+        let callsTooEarly = await fake.calls().count
+        XCTAssertEqual(callsTooEarly, callsAfterRefusal, "the outbox does not knock while it is told to wait")
+        // After it: the photo, then the window
+        clock.advance(2.5)
+        await outbox.syncAll()
+        item = try await only(outbox)
+        XCTAssertEqual(item.state, .done)
+        XCTAssertNil(item.retryNotBefore)
+        let calls = await fake.calls()
+        XCTAssertEqual(calls.filter { $0 == "POST uploads" }.count, 2, "one refused, one taken")
+        XCTAssertEqual(calls.filter { $0.hasPrefix("POST windows") }.count, 1)
     }
 
     func testAnUnknownRequestIsAFailureNotAnEndlessRetry() async throws {

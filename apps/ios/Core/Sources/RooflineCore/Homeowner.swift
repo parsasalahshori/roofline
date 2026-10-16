@@ -986,5 +986,5 @@ public struct HomeownerAPIError: Error, LocalizedError, Equatable, Sendable {
     /// The window cannot be sized from what was sent: its `message` says what to redo.
     public var isWindowUnsizable: Bool { code == "window_unsizable" }
 
-    public var transport: TransportError { TransportError(status: status, message: message) }
+    public var transport: TransportError { TransportError(status: status, message: message, retryAfter: retryAfter) }
 }

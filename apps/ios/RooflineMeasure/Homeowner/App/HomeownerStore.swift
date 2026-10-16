@@ -194,7 +194,14 @@ final class HomeownerStore {
     var unstyledCount: Int { windowRows.filter { $0.style == nil }.count }
     var needsCheckCount: Int { windowRows.filter { $0.flagged }.count }
     var unsentCount: Int { outboxItems.filter { $0.measurementId == requestId && $0.state != .done }.count }
+    /// Windows actually on their way: not done, not refused, and not held back for a style the homeowner has yet to pick (those
+    /// wait on the person, not on the network).
+    var sendingCount: Int { outboxItems.filter { $0.measurementId == requestId && $0.state != .done && $0.state != .failed && !$0.isHeld }.count }
     var failedItems: [OutboxItem] { outboxItems.filter { $0.measurementId == requestId && $0.state == .failed } }
+    /// The server's own sentence when it told the phone to wait before sending again (429 with Retry-After), else nil.
+    var heldBackNote: String? {
+        outboxItems.first { $0.measurementId == requestId && $0.state == .waiting && ($0.retryNotBefore ?? .distantPast) > Date() }?.lastError
+    }
 
     /// The company's window styles as the screens list them (the company's own, else the nine known).
     var styles: [HomeownerStyleOption] {
@@ -488,10 +495,14 @@ final class HomeownerStore {
 
     private func scheduleRetryIfNeeded() {
         retryTask?.cancel()
-        let waiting = outboxItems.contains { $0.measurementId == requestId && ($0.state == .waiting && !$0.isHeld) }
-        guard waiting else { return }
+        let waiting = outboxItems.filter { $0.measurementId == requestId && $0.state == .waiting && !$0.isHeld }
+        guard !waiting.isEmpty else { return }
+        // Every 15 seconds; when the server said to wait longer (Retry-After) for all of them, not before then
+        let now = Date()
+        let earliest = waiting.map { $0.retryNotBefore ?? now }.min() ?? now
+        let delay = max(15, earliest.timeIntervalSince(now))
         retryTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled else { return }
             await self?.syncWindows()
         }
