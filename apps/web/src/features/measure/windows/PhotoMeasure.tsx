@@ -131,7 +131,7 @@ export function PhotoMeasure({
   const W = upload.widthPx;
   const H = upload.heightPx;
   const initialScale = initial?.scale;
-  const [method, setMethod] = useState<Method>(initialAr !== undefined ? 'ar' : initialScale === undefined || initialScale.kind === 'roomplan' ? 'sheet' : initialScale.kind);
+  const [method, setMethod] = useState<Method>(initialAr !== undefined ? 'ar' : initialScale === undefined || initialScale.kind === 'roomplan' || initialScale.kind === 'card' ? 'sheet' : initialScale.kind);
   const arSupport = useArSupport();
   const [ar, setAr] = useState<ArKept | null>(
     initialAr !== undefined

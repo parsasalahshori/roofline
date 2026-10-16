@@ -240,8 +240,16 @@ export type QuoteRequestInput = WebLeadInput & {
   measurementId: string | null;
   /** One line for the job's timeline, saying what the homeowner was shown (ranges only). */
   summary: string;
+  /**
+   * Where the request came from: the instant quote page (default 'web') or the homeowner's phone app ('app'). Sets the
+   * job's source, the first words of its timeline line and its call-back next step.
+   */
+  channel?: QuoteChannel;
   now: Date;
 };
+
+/** The two ways a homeowner's request reaches the company. */
+export type QuoteChannel = 'web' | 'app';
 
 export type QuoteRequestResult = {
   requestId: string;
@@ -255,7 +263,11 @@ export type QuoteRequestResult = {
 
 /** The follow-up put on the new job, so it shows on Today the day the request came in. */
 export const QUOTE_NEXT_STEP = 'Call the homeowner about their instant quote';
-const NEXT_STEP = QUOTE_NEXT_STEP;
+/** The same for a request from the homeowner's phone app. */
+export const APP_NEXT_STEP = 'Call the homeowner about their app request';
+const NEXT_STEPS: Record<QuoteChannel, string> = { web: QUOTE_NEXT_STEP, app: APP_NEXT_STEP };
+/** What the timeline calls the request. */
+const REQUEST_NAMES: Record<QuoteChannel, string> = { web: 'Instant quote request', app: 'Homeowner app request' };
 /** A repeat from the same phone within this long goes to the job already made, with no second job. */
 const REPEAT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -269,6 +281,7 @@ const REPEAT_WINDOW_MS = 24 * 60 * 60 * 1000;
  */
 export async function createQuoteRequest(tx: Tx, ctx: TenantContext, input: QuoteRequestInput): Promise<QuoteRequestResult> {
   const { now } = input;
+  const channel: QuoteChannel = input.channel ?? 'web';
   await lockWebLead(tx, ctx.companyId, `quote:${input.phoneE164}`);
   const phoneCustomer = await phoneCustomerFor(tx, ctx, input, now);
   const addressKey = normalizeAddressKey(input.property.addressLine, input.property.zip);
@@ -300,15 +313,16 @@ export async function createQuoteRequest(tx: Tx, ctx: TenantContext, input: Quot
   const job = await createJob(
     tx,
     ctx,
-    { customerId: jobCustomer.id, propertyId: property.id, stage: 'lead', source: 'web', nextStep: NEXT_STEP, nextStepOn: localDate(now, zone) },
+    { customerId: jobCustomer.id, propertyId: property.id, stage: 'lead', source: channel, nextStep: NEXT_STEPS[channel], nextStepOn: localDate(now, zone) },
     { now },
   );
   const attached = jobCustomer.id !== phoneCustomer.id;
+  const requestName = REQUEST_NAMES[channel];
   await addActivity(tx, ctx, {
     subjectType: 'job',
     subjectId: job.id,
     kind: 'job.created',
-    summary: attached ? `Instant quote request, sent for this home by ${input.name}. ${input.summary}` : `Instant quote request. ${input.summary}`,
+    summary: attached ? `${requestName}, sent for this home by ${input.name}. ${input.summary}` : `${requestName}. ${input.summary}`,
     data: { quoteEstimateId: input.quoteEstimateId, products: input.products, ...(attached && { requestedByCustomerId: phoneCustomer.id }) },
     at: now,
   });
@@ -375,7 +389,7 @@ export async function setQuoteRequestAppointment(
   if (job === null) return;
   const patch = {
     ...(job.assignedUserId === null && { assignedUserId: booked.inspectorId }),
-    ...(job.nextStep === NEXT_STEP && { nextStep: null, nextStepOn: null }),
+    ...(job.nextStep !== null && Object.values(NEXT_STEPS).includes(job.nextStep) && { nextStep: null, nextStepOn: null }),
   };
   if (Object.keys(patch).length > 0) await updateJob(tx, ctx, booked.jobId, patch, { now });
 }

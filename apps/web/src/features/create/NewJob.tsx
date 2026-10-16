@@ -46,7 +46,7 @@ function usePresetCustomer(id: string | null) {
 const CREATE_STAGES = ['lead', 'inspection', 'proposal'] as const satisfies readonly JobStage[];
 const stageOptions: SelectOption[] = CREATE_STAGES.map((stage) => ({ value: stage, label: create.stageNames[stage] }));
 // Front Desk jobs are made by the assistant, never picked by a person (C1 Ruling CG); the board filter keeps the source.
-const sourceOptions: SelectOption[] = JOB_SOURCES.filter((source) => source !== 'front_desk').map((source) => ({
+const sourceOptions: SelectOption[] = JOB_SOURCES.filter((source) => source !== 'front_desk' && source !== 'app').map((source) => ({
   value: source,
   label: create.sourceNames[source],
 }));

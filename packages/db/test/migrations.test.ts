@@ -220,6 +220,35 @@ describe('schema', () => {
     expect(cols).toHaveLength(1);
   });
 
+  test("homeowner_requests is a tenant table with RLS forced, a unique token hash, same-company links, and jobs may have source 'app'", async () => {
+    expect([...TENANT_TABLES]).toContain('homeowner_requests');
+    const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+      `select relrowsecurity, relforcerowsecurity from pg_class where oid = 'public.homeowner_requests'::regclass`,
+    );
+    expect(cls).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+    const policies = await ownerQuery<{ policyname: string }>(
+      `select policyname from pg_policies where schemaname = 'public' and tablename = 'homeowner_requests'`,
+    );
+    expect(policies.map((p) => p.policyname)).toContain('tenant_isolation');
+    const cons = await ownerQuery<{ conname: string }>(`select conname from pg_constraint where conrelid = 'public.homeowner_requests'::regclass`);
+    expect(cons.map((c) => c.conname)).toEqual(
+      expect.arrayContaining([
+        'homeowner_requests_token_hash_uniq',
+        'homeowner_requests_company_estimate_fk',
+        'homeowner_requests_company_property_fk',
+        'homeowner_requests_company_measurement_fk',
+        'homeowner_requests_company_quote_request_fk',
+        'homeowner_requests_status_check',
+        'homeowner_requests_callback_pair_check',
+        'homeowner_requests_services_check',
+        'homeowner_requests_window_count_check',
+      ]),
+    );
+    const [jobs] = await ownerQuery<{ def: string }>(`select pg_get_constraintdef(oid) as def from pg_constraint where conname = 'jobs_source_check'`);
+    expect(jobs!.def).toContain("'app'");
+    expect(jobs!.def).toContain("'front_desk'");
+  });
+
   test('D1 tables are tenant tables with RLS forced', async () => {
     const d1Tables = ['conversations', 'calls', 'conversation_turns', 'claim_intakes', 'blocked_numbers'] as const;
     expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...d1Tables]));

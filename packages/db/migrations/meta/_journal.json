@@ -295,6 +295,20 @@
       "when": 1792177303793,
       "tag": "0041_measurement_eave_ft",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792183185016,
+      "tag": "0042_homeowner_app",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792183191829,
+      "tag": "0043_homeowner_app_grants_rls",
+      "breakpoints": true
     }
   ]
 }

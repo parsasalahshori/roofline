@@ -55,6 +55,7 @@ export const jobs = {
     import: 'Import',
     manual: 'Added by hand',
     front_desk: 'Front Desk',
+    app: 'Homeowner app',
   },
   filterSearch: 'Search jobs',
   filterSearchHelp: 'Name, address or next step',

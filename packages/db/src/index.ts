@@ -288,3 +288,4 @@ export * from './repos/storm-results.ts';
 export * from './repos/storm-api.ts';
 export * from './repos/web-lead.ts';
 export * from './repos/instant-quote.ts';
+export * from './repos/homeowner.ts';
