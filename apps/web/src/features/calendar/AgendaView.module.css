@@ -1,4 +1,7 @@
-/* The list: a panel for each day, a table in it. Rows are as tall as a thumb on a phone. */
+/*
+ * The list: a panel for each day, a table in it. The tables share their column widths (fixed layout), so the days line up
+ * as you scroll down them. On a phone each visit is a row of its own, so nothing runs past the screen.
+ */
 .agenda {
   display: flex;
   flex-direction: column;
@@ -6,8 +9,31 @@
   min-width: 0;
 }
 
+.agenda .table {
+  table-layout: fixed;
+}
+
+.colTime {
+  width: 112px;
+}
+
+.colCustomer {
+  width: 19%;
+}
+
+.colAddress {
+  width: 22%;
+}
+
+.colPerson {
+  width: 17%;
+}
+
+.colStatus {
+  width: 128px;
+}
+
 .time {
-  width: 1%;
   color: var(--ink-2);
   font-family: var(--f-mono);
   font-size: 13px;
@@ -17,6 +43,13 @@
 
 .visit {
   min-width: 0;
+}
+
+/* Words that are too long for their column are cut, and the visit's title says them in full */
+.cut {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The visit's name is the row's button: text-weight, left-aligned, as wide as its words */
@@ -45,6 +78,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .dot {
@@ -59,23 +93,69 @@
 }
 
 .address {
-  max-width: 280px;
-  overflow: hidden;
   color: var(--ink-2);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Under the visit, for a phone: the customer. Wide screens have their own column for it. */
-.under {
-  display: none;
-  color: var(--ink-3);
-  font-size: var(--font-size-min);
 }
 
 .more {
   display: flex;
   justify-content: center;
+}
+
+/* A phone's day: one row for each visit, the time at the left in mono */
+.pList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pRow {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  column-gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.pRow:last-child {
+  border-bottom: 0;
+}
+
+.pTime {
+  padding-top: 6px;
+  color: var(--ink-2);
+  font: 500 13px/1.3 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pBody .open {
+  min-height: 32px;
+  white-space: normal;
+  text-align: left;
+}
+
+.pMeta {
+  padding-left: 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  overflow-wrap: anywhere;
+}
+
+.pFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 2px;
+  font-size: var(--font-size-min);
 }
 
 /* Nothing scheduled: the sentence, the next action and the shape of the rows that will be here */
@@ -121,18 +201,4 @@
   height: 12px;
   border-radius: var(--r-1);
   background: var(--sunken);
-}
-
-@media (max-width: 767.98px) {
-  .wide {
-    display: none;
-  }
-
-  .under {
-    display: block;
-  }
-
-  .open {
-    min-height: 40px;
-  }
 }

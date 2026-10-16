@@ -20,6 +20,7 @@
 }
 
 .grid {
+  --head-h: 48px;
   display: grid;
   min-width: 100%;
   font-size: var(--font-size-min);
@@ -31,7 +32,7 @@
   position: sticky;
   top: 0;
   left: 0;
-  z-index: 6;
+  z-index: 7;
   border-bottom: 1px solid var(--line-2);
   background: var(--surface);
 }
@@ -40,10 +41,12 @@
   position: sticky;
   top: 0;
   z-index: 5;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  height: var(--head-h);
+  padding: 0 12px;
   border-bottom: 1px solid var(--line-2);
   border-left: 1px solid var(--line);
   background: var(--surface);
@@ -77,8 +80,9 @@
 /* The all-day row: its label in the gutter, then a cell for each day */
 .gutterAllDay {
   position: sticky;
+  top: var(--head-h);
   left: 0;
-  z-index: 3;
+  z-index: 6;
   display: flex;
   align-items: center;
   padding: 4px 8px 4px 4px;
@@ -92,6 +96,9 @@
 }
 
 .allDayCell {
+  position: sticky;
+  top: var(--head-h);
+  z-index: 4;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -100,6 +107,7 @@
   padding: 4px;
   border-bottom: 1px solid var(--line-2);
   border-left: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .allDayItem {
@@ -136,7 +144,7 @@
 
 .gutterCell {
   height: var(--row-h);
-  padding: 5px 8px 0 0;
+  padding: 5px 10px 0 0;
   font: 500 var(--font-size-min)/1 var(--f-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -149,9 +157,13 @@
   border-left: 1px solid var(--line);
 }
 
-.column[data-today="true"],
-.allDayCell[data-today="true"] {
+.column[data-today="true"] {
   background: color-mix(in srgb, var(--brand) 4%, transparent);
+}
+
+/* The all-day row is opaque, so what scrolls under it does not show through */
+.allDayCell[data-today="true"] {
+  background: color-mix(in srgb, var(--brand) 4%, var(--surface));
 }
 
 .slots {
@@ -299,12 +311,31 @@
 }
 
 @media (max-width: 767.98px) {
+  /* On a phone the grid is as tall as the screen allows once the page is scrolled to it, and scrolls inside that */
   .scroll {
     flex: none;
-    max-height: 62vh;
+    min-height: 320px;
+    max-height: calc(100dvh - 160px);
   }
 
   .dayHead {
-    padding: 8px 10px;
+    padding: 0 10px;
+  }
+
+  /* One day has no sideways to scroll and is a column of the page: the page scrolls through it, not a box inside the page */
+  .scroll[data-single="true"] {
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* The strip above names the day, so the grid's own head is left out and the all-day row sits at the top */
+  .grid[data-single="true"] {
+    --head-h: 0px;
+  }
+
+  .grid[data-single="true"] .corner,
+  .grid[data-single="true"] .dayHead {
+    display: none;
   }
 }

@@ -33,6 +33,7 @@
 }
 
 .sep {
+  padding: 0 4px;
   color: var(--ink-3);
   white-space: pre;
 }

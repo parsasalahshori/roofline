@@ -12,7 +12,7 @@ const FALLBACK_ZONE = 'America/Chicago';
 
 /** How each status is told: a word, a glyph and a tone, never the tone alone. */
 const STATUS: Record<AppointmentStatus, { tone: TagTone; icon: IconName }> = {
-  scheduled: { tone: 'brand', icon: 'cal' },
+  scheduled: { tone: 'info', icon: 'cal' },
   completed: { tone: 'ok', icon: 'check' },
   canceled: { tone: 'neutral', icon: 'x' },
   no_show: { tone: 'warn', icon: 'alert' },
@@ -113,7 +113,7 @@ export function AppointmentDetail({ appointment, onReschedule }: AppointmentDeta
             <Button variant="ghost" disabled={action.isPending} onClick={() => void run('no-show')}>
               {appointments.noShow}
             </Button>
-            <Button variant="danger" disabled={action.isPending} onClick={() => setConfirmCancel(true)}>
+            <Button variant="ghost" disabled={action.isPending} onClick={() => setConfirmCancel(true)}>
               {appointments.cancel}
             </Button>
           </div>

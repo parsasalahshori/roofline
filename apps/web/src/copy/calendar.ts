@@ -32,6 +32,8 @@ export const calendar = {
   status: { scheduled: 'Scheduled', completed: 'Done', canceled: 'Canceled', no_show: 'No-show' },
   /** What a block says when the pointer rests on it: every part that was cut short on the grid. */
   eventTitle: (parts: ReadonlyArray<string>) => parts.join(' · '),
+  /** Between the customer and the address, on a phone's row. */
+  metaSeparator: ' · ',
   /** The time a block starts and ends, as "9:00 AM - 10:00 AM". */
   timeRange: (start: string, end: string) => `${start} - ${end}`,
 } as const;

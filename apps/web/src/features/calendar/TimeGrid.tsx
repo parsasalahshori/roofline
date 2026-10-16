@@ -16,7 +16,7 @@ const ROW_PX = 32;
 /** The grid opens at 07:00, two rows down, unless today is shown. */
 const SCROLL_TO_ROW = 2;
 const DAY_MINUTES = 1440;
-const GUTTER_PX = 64;
+const GUTTER_PX = 72;
 const COLUMN_MIN_PX = 120;
 
 /** Wall-clock minutes since midnight of `instant` in `zone`. */
@@ -301,11 +301,23 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
     return { dayKey, allDay, timed, busyTimed, slots, showNow, nowRow };
   });
 
+  // The row for all-day visits is drawn only when some day shown has one, so an empty row does not take room from the hours
+  const hasAllDay = columns.some((column) => column.allDay.length > 0);
+
   return (
-    <div ref={scrollRef} className={styles.scroll} data-testid="time-grid" role="region" aria-label={calendar.gridLabel} tabIndex={0}>
+    <div
+      ref={scrollRef}
+      className={styles.scroll}
+      data-single={days.length === 1 ? 'true' : undefined}
+      data-testid="time-grid"
+      role="region"
+      aria-label={calendar.gridLabel}
+      tabIndex={0}
+    >
       <div
         ref={gridRef}
         className={styles.grid}
+        data-single={days.length === 1 ? 'true' : undefined}
         style={{
           '--row-h': `${ROW_PX}px`,
           gridTemplateColumns: `${GUTTER_PX}px repeat(${days.length}, minmax(${COLUMN_MIN_PX}px, 1fr))`,
@@ -324,12 +336,16 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
           </div>
         ))}
 
-        <div className={styles.gutterAllDay}>{calendar.allDay}</div>
-        {columns.map((column) => (
-          <div key={column.dayKey} className={styles.allDayCell} data-day={column.dayKey} data-today={column.dayKey === nowKey ? 'true' : undefined}>
-            {column.allDay}
-          </div>
-        ))}
+        {hasAllDay ? (
+          <>
+            <div className={styles.gutterAllDay}>{calendar.allDay}</div>
+            {columns.map((column) => (
+              <div key={column.dayKey} className={styles.allDayCell} data-day={column.dayKey} data-today={column.dayKey === nowKey ? 'true' : undefined}>
+                {column.allDay}
+              </div>
+            ))}
+          </>
+        ) : null}
 
         <div className={styles.gutter}>
           {labels.map((label, row) => (

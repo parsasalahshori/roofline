@@ -1,7 +1,7 @@
 import { APPOINTMENT_KINDS, DEFAULT_DURATION_MINUTES, type AppointmentKind } from '@roofline/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar, Banner, Button, Field, Listbox, Panel, Skeleton, useToast } from '@roofline/ui';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { ApiError, apiFetch } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
@@ -298,6 +298,13 @@ function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) 
   const matches = results.data;
   const suggested = SUGGESTED_KINDS.includes(kind);
 
+  // A message about the save (a warning to decide on, or a failure) is brought into view: on a long form or a phone it is below the fold
+  const showingMessage = warned !== null || saveFailed;
+  const messageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (showingMessage) messageRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [showingMessage]);
+
   return (
     <div className={styles.form} data-side={suggested ? 'true' : 'false'}>
       <div className={styles.head}>
@@ -305,7 +312,7 @@ function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) 
         <p className={styles.sub}>{existing ? existing.title : appointments.newHint}</p>
       </div>
 
-      <div className={styles.main}>
+      <div className={styles.who}>
         <Panel title={appointments.groupWho} headingLevel={3}>
           <div className={styles.fields}>
             <Listbox<AppointmentKind>
@@ -368,9 +375,24 @@ function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) 
             </div>
           </div>
         </Panel>
+      </div>
 
+      {suggested ? (
+        <div className={styles.side}>
+          <SuggestedTimes
+            kind={kind}
+            userId={person}
+            propertyId={picked.propertyId ?? ''}
+            zone={zone}
+            onPick={pickSlot}
+            pickedStart={startInstant === null ? null : startInstant.toISOString()}
+          />
+        </div>
+      ) : null}
+
+      <div className={styles.rest}>
         <Panel title={appointments.groupWhen} headingLevel={3}>
-          <div className={styles.fields}>
+          <div className={styles.fields} data-cols={isInstall ? '2' : '3'}>
             {isInstall ? (
               <>
                 <Field type="date" label={appointments.startDateLabel} value={date} onChange={(event) => setDate(event.target.value)} />
@@ -397,21 +419,8 @@ function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) 
         </Panel>
       </div>
 
-      {suggested ? (
-        <div className={styles.side}>
-          <SuggestedTimes
-            kind={kind}
-            userId={person}
-            propertyId={picked.propertyId ?? ''}
-            zone={zone}
-            onPick={pickSlot}
-            pickedStart={startInstant === null ? null : startInstant.toISOString()}
-          />
-        </div>
-      ) : null}
-
-      {warned !== null || saveFailed ? (
-        <div className={styles.banner}>
+      {showingMessage ? (
+        <div ref={messageRef} className={styles.banner}>
           {warned !== null ? (
             <ConflictWarnings warnings={warned.warnings} onKeep={() => onDone(warned.appointment)} onChange={() => setWarned(null)} />
           ) : (

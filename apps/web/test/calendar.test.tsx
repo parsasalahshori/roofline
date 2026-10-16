@@ -526,14 +526,33 @@ describe('calendar window, as redesigned', () => {
     expect(screen.queryByTestId('now-line')).toBeNull();
   });
 
-  it('the grid has a row for all-day visits and the hours down its side', async () => {
+  it('the grid has the hours down its side, and a row for all-day visits only when a day shown has one', async () => {
     renderCalendar('/calendar?view=day&date=2026-11-02');
     const grid = await screen.findByTestId('time-grid');
-    expect(within(grid).getByText(calendar.allDay)).toBeInTheDocument();
     expect(within(grid).getByText('9:00 AM')).toBeInTheDocument();
     expect(within(grid).getByText('1:00 PM')).toBeInTheDocument();
-    expect(grid.querySelectorAll('[data-day]').length).toBeGreaterThan(0);
     expect(new Set(Array.from(grid.querySelectorAll('[data-day]')).map((cell) => cell.getAttribute('data-day')))).toEqual(new Set(['2026-11-02']));
+    // Nothing all-day: no row for it
+    expect(within(grid).queryByText(calendar.allDay)).toBeNull();
+  });
+
+  it('an all-day visit brings the all-day row, in the column of its day', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'a2', kind: 'install', title: 'Roof install', allDay: true, startsAt: '2026-11-02T06:00:00.000Z', endsAt: '2026-11-03T06:00:00.000Z' }),
+      ],
+    });
+    const grid = await screen.findByTestId('time-grid');
+    expect(await within(grid).findByText(calendar.allDay)).toBeInTheDocument();
+    expect(within(grid).getByTestId('allday-a2').closest('[data-day]')).toHaveAttribute('data-day', '2026-11-02');
+  });
+
+  it('a busy block that lasts all day brings the all-day row too', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      busy: [{ userId: 'u1', start: '2026-11-03T06:00:00.000Z', end: '2026-11-04T06:00:00.000Z', allDay: true }],
+    });
+    const grid = await screen.findByTestId('time-grid');
+    expect(await within(grid).findByText(calendar.allDay)).toBeInTheDocument();
   });
 
   it('asks for appointments only once the team is known, so no read goes out without people', async () => {
@@ -619,6 +638,41 @@ describe('calendar window, as redesigned', () => {
     // The row opens it, and so does its name; each once
     await user.click(within(first).getByText('9:00 AM'));
     await waitFor(() => expect(router.state.location.pathname).toBe('/calendar/appointments/a1'));
+  });
+
+  it('the list has a status column only when a visit shown is not simply scheduled, and then in every day', async () => {
+    renderCalendar('/calendar?view=list&date=2026-11-02', { appointments: [makeAppointment({ id: 'a1' })] });
+    const only = await screen.findByTestId('agenda-day-2026-11-02');
+    expect(within(only).queryByRole('columnheader', { name: calendar.columns.status })).toBeNull();
+    cleanup();
+
+    renderCalendar('/calendar?view=list&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'a1' }),
+        makeAppointment({ id: 'a2', status: 'no_show', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T16:00:00.000Z' }),
+      ],
+    });
+    for (const day of ['2026-11-02', '2026-11-03']) {
+      const panel = await screen.findByTestId(`agenda-day-${day}`);
+      expect(within(panel).getByRole('columnheader', { name: calendar.columns.status })).toBeInTheDocument();
+    }
+    expect(screen.getByText(calendar.status.no_show)).toBeInTheDocument();
+  });
+
+  it('on a phone the list is a row for each visit, with its time, where and who, and no table', async () => {
+    renderCalendar(
+      '/calendar?view=list&date=2026-11-02',
+      { appointments: [makeAppointment({ id: 'a1', title: 'Roof check', addressLine: '412 Maple Ridge Dr', status: 'completed' })] },
+      { phone: true },
+    );
+    const day = await screen.findByTestId('agenda-day-2026-11-02');
+    expect(within(day).queryByRole('table')).toBeNull();
+    const row = within(day).getByRole('listitem');
+    expect(row).toHaveTextContent('9:00 AM');
+    expect(row).toHaveTextContent('Maple Ridge · 412 Maple Ridge Dr');
+    expect(within(row).getByText('Sam Roofer')).toBeInTheDocument();
+    expect(within(row).getByText(calendar.status.completed)).toBeInTheDocument();
+    expect(within(row).getByTestId('agenda-item-a1')).toHaveTextContent('Roof check');
   });
 
   it('the list marks the panel of today', async () => {

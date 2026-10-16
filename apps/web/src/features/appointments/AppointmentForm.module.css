@@ -1,16 +1,19 @@
 /*
  * The form is a grid: the title on the left and the Cancel / Save buttons at the right of it, then a message if there is one, then
- * the panels with the suggested times in a column beside them. Two fields to a row inside a panel. On a phone it is one column and
- * the buttons are a bar that stays at the bottom edge, so Save is always under the thumb.
+ * who it is for, and when, with the suggested times in a column beside them. Two fields to a row inside a panel (three for a timed
+ * visit's day, time and length). On a phone it is one column with the suggested times right under who it is for, so the times that
+ * are open are seen before the time is typed, and the buttons are a bar that stays at the bottom edge, so Save is always under the thumb.
  * The rows are spaced by margins, not a gap, so an area with nothing in it (no message) takes no room.
  */
 .form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  grid-template-rows: auto auto auto 1fr;
   grid-template-areas:
     "head actions"
     "banner banner"
-    "main side";
+    "who side"
+    "rest side";
   align-items: start;
   column-gap: 24px;
   min-width: 0;
@@ -42,9 +45,15 @@
   overflow-wrap: anywhere;
 }
 
-.main {
+.who {
+  grid-area: who;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+
+.rest {
   display: flex;
-  grid-area: main;
+  grid-area: rest;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
@@ -58,6 +67,8 @@
 .banner {
   grid-area: banner;
   margin-bottom: 16px;
+  /* Room for the bars that stay on screen (the buttons, the tab bar) when it is scrolled to */
+  scroll-margin: 16px 0 144px;
 }
 
 .actions {
@@ -76,6 +87,12 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   min-width: 0;
+}
+
+/* A timed visit has three fields in its row: the day, the time and how long */
+.fields[data-cols="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
 }
 
 .wide {
@@ -98,6 +115,9 @@
   padding: 4px;
   list-style: none;
   min-width: 0;
+  max-height: 288px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line-2);
   border-radius: var(--r-3);
   background: var(--raised);
@@ -155,28 +175,32 @@
 }
 
 @media (max-width: 1099.98px) {
+  /* One column, the suggested times right after who the visit is for, so the times that are open are seen before one is typed */
   .form,
   .form[data-side="false"] {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
     grid-template-areas:
       "head"
       "actions"
       "banner"
-      "main"
-      "side";
+      "who"
+      "side"
+      "rest";
   }
 
   .actions {
     justify-content: flex-start;
   }
 
-  .main {
+  .side {
     margin-bottom: 16px;
   }
 }
 
 @media (max-width: 767.98px) {
-  .fields {
+  .fields,
+  .fields[data-cols="3"] {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -185,14 +209,11 @@
   .form[data-side="false"] {
     grid-template-areas:
       "head"
-      "main"
+      "who"
       "side"
+      "rest"
       "banner"
       "actions";
-  }
-
-  .side {
-    margin-top: 16px;
   }
 
   .banner {

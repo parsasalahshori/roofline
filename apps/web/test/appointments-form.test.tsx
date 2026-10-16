@@ -164,6 +164,38 @@ describe('Appointment form', () => {
     expect(await screen.findByText('That time is outside the work week.')).toBeInTheDocument();
   });
 
+  it('brings a failed save into view, since on a phone it is below the fold', async () => {
+    const scroll = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      setup({ 'POST /api/appointments': () => ({ status: 422, body: { error: 'That time is outside the work week.' } }) });
+      const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');
+      await screen.findByText('Dana Price');
+      fireEvent.change(screen.getByLabelText(appointments.timeLabel), { target: { value: '14:00' } });
+      expect(scroll).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: appointments.save }));
+      const message = (await screen.findByText('That time is outside the work week.')).closest('[role="alert"]');
+      expect(message).not.toBeNull();
+      await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+      expect(scroll.mock.contexts[0]).toBe(message?.parentElement);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('puts the suggested times after who the visit is for and before the time, in reading order', async () => {
+    setup({}, { slots: [{ start: '2026-10-13T19:00:00.000Z', end: '2026-10-13T19:30:00.000Z', userIds: ['u1'] }] });
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');
+    await screen.findByText('Dana Price');
+    const who = screen.getByRole('region', { name: appointments.groupWho });
+    const suggestions = await screen.findByRole('region', { name: appointments.suggestedTitle });
+    const when = screen.getByRole('region', { name: appointments.groupWhen });
+    // One column on a phone, in this order, and so the order Tab takes; on a desktop the grid areas set the suggestions beside them
+    expect(who.compareDocumentPosition(suggestions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(suggestions.compareDocumentPosition(when) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('picking a suggestion fills date, time and person', async () => {
     setup({}, { slots: [{ start: '2026-10-13T19:00:00.000Z', end: '2026-10-13T19:30:00.000Z', userIds: ['u1'] }] });
     const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');
