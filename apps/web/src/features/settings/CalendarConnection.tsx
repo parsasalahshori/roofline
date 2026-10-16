@@ -1,10 +1,12 @@
 import type { CalendarConnectionView } from '@roofline/shared';
-import { Banner, Button, Select, Skeleton, useToast, type SelectOption, type ToastTone } from '@roofline/ui';
+import { Banner, Button, Listbox, Panel, Skeleton, useToast, type ListboxOption, type ToastTone } from '@roofline/ui';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { connections } from '../../copy/connections.ts';
 import { useCompany } from './api.ts';
+import { ConnectionTag, type ConnectionState } from './ConnectionTag.tsx';
 import { useCalendarConnection, useCalendars, useChooseCalendar, useDisconnectCalendar } from './crm-api.ts';
+import form from './form.module.css';
 import styles from './CalendarConnection.module.css';
 
 type Provider = 'google' | 'microsoft';
@@ -32,16 +34,17 @@ function formatInZone(iso: string, zone: string): string {
 }
 
 /** The connect button: an anchor to the provider's sign-in, or a disabled button while the provider is not set up. */
-function ConnectButton({ provider, configured }: { provider: Provider; configured: boolean }) {
+function ConnectButton({ provider, configured, primary }: { provider: Provider; configured: boolean; primary: boolean }) {
+  const variant = primary ? 'primary' : 'default';
   if (!configured) {
     return (
-      <Button variant="primary" disabled>
+      <Button variant={variant} disabled>
         {connections.connect[provider]}
       </Button>
     );
   }
   return (
-    <Button variant="primary" href={`/api/calendar/connect/${provider}`}>
+    <Button variant={variant} href={`/api/calendar/connect/${provider}`}>
       {connections.connect[provider]}
     </Button>
   );
@@ -71,11 +74,10 @@ export function CalendarConnection() {
     setParams({}, { replace: true });
   }, [params, setParams, toast]);
 
-  const section = (body: ReactNode) => (
-    <section className={styles.section}>
-      <h2 className={styles.title}>{connections.calendarTitle}</h2>
+  const section = (body: ReactNode, state?: ConnectionState) => (
+    <Panel title={connections.calendarTitle} actions={state ? <ConnectionTag state={state} /> : undefined}>
       {body}
-    </section>
+    </Panel>
   );
 
   if (view === undefined) {
@@ -92,21 +94,22 @@ export function CalendarConnection() {
     const notSetUp = !view.configured.google || !view.configured.microsoft;
     return section(
       <div className={styles.stack}>
-        {notSetUp ? <p className={styles.muted}>{connections.notConfigured}</p> : null}
+        {notSetUp ? <p className={form.help}>{connections.notConfigured}</p> : null}
         <div className={styles.actions}>
-          <ConnectButton provider="google" configured={view.configured.google} />
-          <ConnectButton provider="microsoft" configured={view.configured.microsoft} />
+          <ConnectButton provider="google" configured={view.configured.google} primary={false} />
+          <ConnectButton provider="microsoft" configured={view.configured.microsoft} primary={false} />
         </div>
       </div>,
+      'off',
     );
   }
 
   if (view.status !== 'connected') {
-    return section(<ReconnectBody view={view} provider={view.provider} />);
+    return section(<ReconnectBody view={view} provider={view.provider} />, view.status === 'error' || view.status === 'revoked' ? 'attention' : 'off');
   }
 
   const zone = company.data?.timezone ?? FALLBACK_ZONE;
-  const calendarOptions: SelectOption[] = calendars.data
+  const calendarOptions: ListboxOption[] = calendars.data
     ? calendars.data.map((calendar) => ({ value: calendar.id, label: calendar.name }))
     : view.calendarId
       ? [{ value: view.calendarId, label: view.calendarName ?? view.calendarId }]
@@ -114,11 +117,20 @@ export function CalendarConnection() {
 
   return section(
     <div className={styles.stack}>
-      <p className={styles.account}>{view.accountEmail ?? ''}</p>
-      <p className={styles.muted}>
-        {view.lastSyncedAt ? connections.lastSynced(formatInZone(view.lastSyncedAt, zone)) : connections.neverSynced}
-      </p>
-      <Select
+      <dl className={form.facts}>
+        <div className={form.fact}>
+          <dt className={form.factLabel}>{connections.account}</dt>
+          <dd className={form.factValue}>{view.accountEmail ?? ''}</dd>
+        </div>
+        <div className={form.fact}>
+          <dt className={form.factLabel}>{connections.lastSyncedLabel}</dt>
+          <dd className={`${form.factValue} ${view.lastSyncedAt ? form.mono : ''}`}>
+            {view.lastSyncedAt ? formatInZone(view.lastSyncedAt, zone) : connections.neverSynced}
+          </dd>
+        </div>
+      </dl>
+      <Listbox
+        className={styles.field}
         label={connections.calendarLabel}
         value={view.calendarId ?? ''}
         options={calendarOptions}
@@ -148,19 +160,20 @@ export function CalendarConnection() {
             >
               {connections.confirmYes}
             </Button>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>
+            <Button variant="default" onClick={() => setConfirming(false)}>
               {connections.confirmNo}
             </Button>
           </div>
         </div>
       ) : (
         <div className={styles.actions}>
-          <Button variant="ghost" onClick={() => setConfirming(true)}>
+          <Button variant="default" onClick={() => setConfirming(true)}>
             {connections.disconnect}
           </Button>
         </div>
       )}
     </div>,
+    'connected',
   );
 }
 
@@ -171,7 +184,7 @@ function ReconnectBody({ view, provider }: { view: CalendarConnectionView; provi
     <div className={styles.stack}>
       {broken ? <Banner tone="danger">{connections.reconnectTitle}</Banner> : null}
       <div className={styles.actions}>
-        <ConnectButton provider={provider} configured={view.configured[provider]} />
+        <ConnectButton provider={provider} configured={view.configured[provider]} primary />
       </div>
     </div>
   );

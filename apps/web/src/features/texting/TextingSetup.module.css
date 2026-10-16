@@ -1,0 +1,8 @@
+/* The steps, then what the step in progress shows: the form, or the carriers' answer */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  max-width: 880px;
+}

@@ -1,10 +1,12 @@
 import { CARRIERS, forwardingSteps, type Carrier } from '@roofline/shared';
-import { Banner, Button, Icon, Listbox, Panel, Skeleton } from '@roofline/ui';
+import { Banner, Button, EmptyState, Listbox, Panel, Skeleton } from '@roofline/ui';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { errors } from '../../../copy/errors.ts';
 import { forwarding } from '../../../copy/forwarding.ts';
+import { formatPhone } from '../../../lib/phone.ts';
 import { useCompany } from '../../settings/api.ts';
+import form from '../../settings/form.module.css';
 import { useTexting } from '../../texting/api.ts';
 import { ForwardingTest } from './ForwardingTest.tsx';
 import styles from './ForwardingGuide.module.css';
@@ -31,7 +33,7 @@ function isCarrier(value: string): value is Carrier {
   return (CARRIERS as readonly string[]).includes(value);
 }
 
-/** One group of codes or steps: a heading, then each string as large code with a copy button, or as an ordered list. */
+/** One group of codes or steps: a heading, then each string as large mono code on a sunken box with a copy button, or as an ordered list. */
 function CodeGroup({
   label,
   kind,
@@ -54,7 +56,6 @@ function CodeGroup({
           <div key={code} className={styles.codeRow}>
             <code className={styles.code}>{code}</code>
             <Button variant="default" size="sm" onClick={() => onCopy(code)}>
-              {copiedCode === code ? <Icon name="check" size={16} /> : <Icon name="doc" size={16} />}
               {copiedCode === code ? forwarding.copied : forwarding.copy}
             </Button>
           </div>
@@ -99,16 +100,14 @@ export function ForwardingGuide() {
     body = <Skeleton lines={3} />;
   } else if (texting.isError) {
     body = (
-      <Banner
-        tone="danger"
+      <EmptyState
+        title={errors.generic}
         action={
-          <Button variant="default" size="sm" onClick={() => void texting.refetch()}>
+          <Button variant="primary" onClick={() => void texting.refetch()}>
             {errors.tryAgain}
           </Button>
         }
-      >
-        {errors.generic}
-      </Banner>
+      />
     );
   } else {
     const steps = rooflineNumber === null ? null : forwardingSteps(carrier, mode, rooflineNumber);
@@ -128,32 +127,30 @@ export function ForwardingGuide() {
     );
   }
 
+  const hasNumbers = businessNumber !== null || rooflineNumber !== null;
   return (
     <div id="forwarding" ref={sectionRef} className={styles.guide}>
-      <Panel as="section" title={forwarding.title}>
+      <Panel title={forwarding.title}>
         <div className={styles.card}>
-          <dl className={styles.numbers}>
-            {businessNumber !== null ? (
-              <div className={styles.number}>
-                <dt className={styles.numberLabel}>{forwarding.businessNumberLabel}</dt>
-                <dd className={styles.numberValue}>{businessNumber}</dd>
-              </div>
-            ) : null}
-            {rooflineNumber !== null ? (
-              <div className={styles.number}>
-                <dt className={styles.numberLabel}>{forwarding.rooflineNumberLabel}</dt>
-                <dd className={styles.numberValue}>{rooflineNumber}</dd>
-              </div>
-            ) : null}
-          </dl>
-          {company.isSuccess && businessNumber === null ? (
-            <p className={styles.hint}>
-              <Icon name="alert" size={16} />
-              {forwarding.noBusinessNumber}
-            </p>
+          {hasNumbers ? (
+            <dl className={form.facts}>
+              {businessNumber !== null ? (
+                <div className={form.fact}>
+                  <dt className={form.factLabel}>{forwarding.businessNumberLabel}</dt>
+                  <dd className={`${form.factValue} ${form.mono}`}>{formatPhone(businessNumber)}</dd>
+                </div>
+              ) : null}
+              {rooflineNumber !== null ? (
+                <div className={form.fact}>
+                  <dt className={form.factLabel}>{forwarding.rooflineNumberLabel}</dt>
+                  <dd className={`${form.factValue} ${form.mono}`}>{formatPhone(rooflineNumber)}</dd>
+                </div>
+              ) : null}
+            </dl>
           ) : null}
+          {company.isSuccess && businessNumber === null ? <p className={form.help}>{forwarding.noBusinessNumber}</p> : null}
 
-          <div className={styles.pickers}>
+          <div className={form.grid}>
             <Listbox
               label={forwarding.carrierLabel}
               value={carrier}

@@ -44,7 +44,8 @@ describe('Settings Prices: factory orders', () => {
     expect(width).toHaveValue(0.5);
     await user.clear(width);
     await user.type(width, '0.375');
-    await user.selectOptions(screen.getByLabelText(factoryOrders.style), 'casement');
+    await user.click(screen.getByLabelText(factoryOrders.style));
+    await user.click(screen.getByRole('option', { name: factoryOrders.styleOption('casement') }));
     const largest = screen.getByLabelText(factoryOrders.limit.maxWidthIn);
     expect(largest).toHaveValue(36);
     await user.clear(largest);
@@ -66,12 +67,14 @@ describe('Settings Prices: factory orders', () => {
     const smallest = screen.getByLabelText(factoryOrders.limit.minWidthIn);
     await user.clear(smallest);
     await user.type(smallest, '60');
-    await user.selectOptions(screen.getByLabelText(factoryOrders.style), 'picture');
+    await user.click(screen.getByLabelText(factoryOrders.style));
+    await user.click(screen.getByRole('option', { name: factoryOrders.styleOption('picture') }));
     await user.click(screen.getByRole('button', { name: tiers.save }));
 
     expect(await screen.findByText(factoryOrders.range(0, 3))).toBeInTheDocument();
     expect(screen.getByText(factoryOrders.otherStyleWrong('double-hung'))).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText(factoryOrders.style), 'double-hung');
+    await user.click(screen.getByLabelText(factoryOrders.style));
+    await user.click(screen.getByRole('option', { name: factoryOrders.styleOption('double-hung') }));
     expect(screen.getByText(factoryOrders.minOverMax)).toBeInTheDocument();
     expect(api.count(PUT)).toBe(0);
   });
@@ -81,12 +84,12 @@ describe('Settings Prices: factory orders', () => {
     const { user } = renderAt(<FactoryOrdersSection />, '/settings/prices');
 
     const rounding = await screen.findByLabelText(factoryOrders.rounding);
-    expect(rounding).toHaveValue('0.25');
+    expect(rounding).toHaveTextContent(factoryOrders.roundingOption(0.25));
     await user.click(screen.getByRole('button', { name: factoryOrders.useDefaults }));
 
     await waitFor(() => expect(api.count(PUT)).toBe(1));
     expect(sentBodies()[0]).toEqual({});
-    await waitFor(() => expect(screen.getByLabelText(factoryOrders.rounding)).toHaveValue('0.125'));
+    await waitFor(() => expect(screen.getByLabelText(factoryOrders.rounding)).toHaveTextContent(factoryOrders.roundingOption(0.125)));
   });
 
   it('is read-only for office', async () => {

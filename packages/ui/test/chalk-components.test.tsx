@@ -326,6 +326,8 @@ describe('Listbox', () => {
     // The list takes focus and points at the highlighted option
     expect(list).toHaveFocus();
     expect(list).toHaveAttribute('aria-activedescendant', options[0]!.id);
+    // It is a tab stop, so the popover around it can scroll on a short screen and still be reached by keyboard
+    expect(list).toHaveAttribute('tabindex', '0');
   });
 
   it('moves with the arrows, picks with Enter and gives focus back to the trigger', async () => {

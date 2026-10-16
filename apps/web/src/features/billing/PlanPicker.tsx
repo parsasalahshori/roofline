@@ -1,10 +1,10 @@
 import type { BillingView } from '@roofline/shared';
-import { Button, Card, useToast } from '@roofline/ui';
+import { Button, Panel, Tag, useToast } from '@roofline/ui';
 import { billing } from '../../copy/billing.ts';
 import { useChangePlan, useCheckout } from './api.ts';
 import styles from './PlanPicker.module.css';
 
-/** The plans as cards. The company's own plan says so while its subscription is live; the others offer a way to choose them. */
+/** The plans as tiles. The company's own plan says so while its subscription is live; the others offer a way to choose them. */
 export function PlanPicker({ view }: { view: BillingView }) {
   const toast = useToast();
   const checkout = useCheckout();
@@ -13,22 +13,26 @@ export function PlanPicker({ view }: { view: BillingView }) {
   const onError = (error: Error) => toast.show(error.message, 'error');
 
   return (
-    <section className={styles.section}>
-      <h3 className={styles.heading}>{billing.plansHeading}</h3>
+    <Panel title={billing.plansHeading}>
       <ul className={styles.list}>
         {view.plans.map((plan) => {
           const current = view.hasPaymentMethod && plan.key === view.planKey;
           return (
-            <Card as="li" key={plan.key} className={styles.plan}>
-              <h4 className={styles.name}>{plan.name}</h4>
+            <li key={plan.key} className={styles.plan} data-current={current ? 'true' : undefined}>
+              <h3 className={styles.name}>{plan.name}</h3>
               <p className={styles.price}>{billing.perMonth(plan.monthlyPriceCents)}</p>
               <p className={styles.includes}>
                 {billing.includes(plan.included.aiCallMinutes, plan.included.smsSegments)}
               </p>
               {current ? (
-                <p className={styles.current}>{billing.yourPlan}</p>
+                <p className={styles.current}>
+                  <Tag tone="brand" icon="check">
+                    {billing.yourPlan}
+                  </Tag>
+                </p>
               ) : view.hasPaymentMethod ? (
                 <Button
+                  variant="default"
                   onClick={() => changePlan.mutate(plan.key, { onError })}
                   busy={changePlan.isPending && changePlan.variables === plan.key}
                 >
@@ -36,17 +40,18 @@ export function PlanPicker({ view }: { view: BillingView }) {
                 </Button>
               ) : (
                 <Button
+                  variant="primary"
                   onClick={() => checkout.mutate(plan.key, { onError })}
                   busy={checkout.isPending && checkout.variables === plan.key}
                 >
                   {billing.pickPlan}
                 </Button>
               )}
-            </Card>
+            </li>
           );
         })}
       </ul>
       <p className={styles.note}>{billing.cardNote}</p>
-    </section>
+    </Panel>
   );
 }

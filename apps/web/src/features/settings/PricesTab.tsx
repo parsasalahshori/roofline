@@ -1,17 +1,20 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { Pricebook, PricebookView } from '@roofline/shared';
-import { Banner, Button, EmptyState, Field, Select, Skeleton, useToast, type SelectOption } from '@roofline/ui';
+import { Banner, Button, EmptyState, Field, Icon, Listbox, Panel, Skeleton, Table, Tag, Td, Th, Tr, useToast, type ListboxOption } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { errors } from '../../copy/errors.ts';
 import { prices } from '../../copy/prices.ts';
 import { formErrors } from '../auth/formErrors.ts';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
 import { usePricebook, useSavePricebook, type PricebookSave } from './crm-api.ts';
 import { EstimateSection } from './EstimateSection.tsx';
 import { FactoryOrdersSection } from './FactoryOrdersSection.tsx';
 import { InstantQuoteSection } from './InstantQuoteSection.tsx';
 import { FinancingSection } from './FinancingSection.tsx';
+import form from './form.module.css';
 import styles from './PricesTab.module.css';
+import { SaveBar } from './SaveBar.tsx';
 import { TiersSection } from './TiersSection.tsx';
 
 /** The 15 pricebook keys, each a dollar amount. */
@@ -84,7 +87,7 @@ const GROUPS: readonly { title: string; rows: readonly Row[] }[] = [
   },
 ];
 
-const MATERIAL_OPTIONS: readonly SelectOption[] = MATERIALS.map((material) => ({
+const MATERIAL_OPTIONS: readonly ListboxOption<Material>[] = MATERIALS.map((material) => ({
   value: material,
   label: prices.materialOptions[material],
 }));
@@ -166,121 +169,254 @@ function PricebookPart() {
       );
     }
     return (
-      <div role="status">
-        <Skeleton lines={6} />
-        <span className="visually-hidden">{prices.loading}</span>
-      </div>
+      <Panel>
+        <div role="status">
+          <Skeleton lines={6} />
+          <span className="visually-hidden">{prices.loading}</span>
+        </div>
+      </Panel>
     );
   }
 
   return <PricesForm view={pricebook.data} canEdit={me.data.role === 'owner'} />;
 }
 
+/** Dollars the way a price list shows them: $1,250.00, so the cents line up down a column. */
+const DOLLARS = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
+/** What the box holds, shown as the table shows it. Empty counts as zero, as it does when saved. */
+function shown(kind: 'money' | 'percent', text: string): string {
+  const amount = text.trim() === '' ? 0 : Number(text);
+  if (!Number.isFinite(amount)) return text;
+  return kind === 'money' ? DOLLARS.format(amount) : `${amount}%`;
+}
+
+/** The key a server message names, without its `prices.` or `defaults.` start: `prices.permit` is `permit`. */
+const rowOf = (path: string) => path.replace(/^(prices|defaults)\./, '');
+
+type RowProps = {
+  label: string;
+  unit: string;
+  /** A phone has no room for a column of units: each goes under its price's name. */
+  unitUnderName: boolean;
+  /** The amount as a box holds it, and as it was last saved. */
+  value: string;
+  saved: string;
+  kind: 'money' | 'percent';
+  open: boolean;
+  canEdit: boolean;
+  error: string | undefined;
+  onToggle: () => void;
+  onChange: (next: string) => void;
+};
+
+/** One price: its name, what it is per, and the amount in mono at the right. The owner opens a row to change its amount. */
+function PriceRow({ label, unit, unitUnderName, value, saved, kind, open, canEdit, error, onToggle, onChange }: RowProps) {
+  const edited = value !== saved;
+  return (
+    <Tr tone={edited ? 'brand' : undefined}>
+      <Td>
+        <span className={styles.label}>
+          {label}
+          {edited ? (
+            <Tag tone="brand" icon="pen">
+              {prices.edited}
+            </Tag>
+          ) : null}
+        </span>
+        {unitUnderName ? <span className={styles.unitUnder}>{unit}</span> : null}
+      </Td>
+      {unitUnderName ? null : <Td className={styles.unit}>{unit}</Td>}
+      <Td numeric>
+        {open ? (
+          <Field
+            className={styles.amount}
+            label={label}
+            labelHidden
+            name={label}
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            min="0"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            error={error}
+          />
+        ) : (
+          shown(kind, value)
+        )}
+      </Td>
+      <Td className={styles.action}>
+        {canEdit ? (
+          <Button variant="ghost" size="sm" aria-expanded={open} aria-label={open ? prices.doneFor(label) : prices.editFor(label)} onClick={onToggle}>
+            {open ? prices.done : prices.edit}
+          </Button>
+        ) : null}
+      </Td>
+    </Tr>
+  );
+}
+
 function PricesForm({ view, canEdit }: { view: PricebookView; canEdit: boolean }) {
-  const [form, setForm] = useState(() => toForm(view));
+  const [values, setValues] = useState(() => toForm(view));
   // The values the form was last loaded or saved with: only a difference from these makes Save work
   const [baseline, setBaseline] = useState(() => toForm(view));
   const [example, setExample] = useState(view.isExample);
+  // The rows whose amount is open for typing
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const phone = useIsPhone();
   const save = useSavePricebook();
   const toast = useToast();
   const problems = formErrors(save.error, FIELD_PATHS);
-  const changed = differs(form, baseline);
+  const changed = differs(values, baseline);
 
-  function setNumber(key: PriceKey | DefaultNumberKey) {
-    return (event: ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value;
-      setForm((current) => ({ ...current, [key]: value }));
-    };
+  function setNumber(key: PriceKey | DefaultNumberKey, value: string) {
+    setValues((current) => ({ ...current, [key]: value }));
   }
 
-  function setMaterial(value: string) {
-    const material = MATERIALS.find((option) => option === value);
-    if (material) setForm((current) => ({ ...current, material }));
+  function toggle(key: string) {
+    setOpen((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canEdit || !changed) return;
-    save.mutate(toBody(form), {
+    save.mutate(toBody(values), {
       onSuccess: (saved) => {
         // The server's answer is what is now saved: show it, and the example note goes away once it is not an example
         const next = toForm(saved);
         setBaseline(next);
-        setForm(next);
+        setValues(next);
         setExample(saved.isExample);
+        setOpen(new Set());
         toast.show(prices.saved, 'success');
       },
       onError: (error) => {
-        // A message about one of these fields sits under it; anything else is a toast
-        const general = formErrors(error, FIELD_PATHS).general;
-        if (general) toast.show(general, 'error');
+        // A message about one of these fields sits under it, in a row opened for the purpose; anything else is a toast
+        const found = formErrors(error, FIELD_PATHS);
+        const named = FIELD_PATHS.filter((path) => found.forField(path) !== undefined).map(rowOf);
+        if (named.length > 0) setOpen((current) => new Set([...current, ...named]));
+        if (found.general) toast.show(found.general, 'error');
       },
     });
   }
 
+  const tableHead = (
+    <thead>
+      <tr>
+        <Th>{prices.columns.item}</Th>
+        {phone ? null : <Th>{prices.columns.unit}</Th>}
+        <Th numeric>{prices.columns.price}</Th>
+        <Th>
+          <span className="visually-hidden">{prices.columns.actions}</span>
+        </Th>
+      </tr>
+    </thead>
+  );
+
+  const tableFor = (title: string, rows: readonly Row[]) => (
+    <Panel key={title} title={title} padded={false}>
+      <Table className={styles.prices} regionLabel={title}>
+        {tableHead}
+        <tbody>
+          {rows.map((row) => (
+            <PriceRow
+              key={row.key}
+              label={prices.fields[row.key]}
+              unit={row.help}
+              unitUnderName={phone}
+              value={values[row.key]}
+              saved={baseline[row.key]}
+              kind="money"
+              open={open.has(row.key)}
+              canEdit={canEdit}
+              error={problems.forField(`prices.${row.key}`)}
+              onToggle={() => toggle(row.key)}
+              onChange={(next) => setNumber(row.key, next)}
+            />
+          ))}
+        </tbody>
+      </Table>
+    </Panel>
+  );
+
   return (
-    <>
+    <form className={form.form} onSubmit={submit} noValidate>
       {example ? <Banner tone="info">{prices.exampleBanner}</Banner> : null}
-      {canEdit ? null : <p className={styles.note}>{prices.ownerOnly}</p>}
-      <form className={styles.form} onSubmit={submit} noValidate>
-        {GROUPS.map((group) => (
-          <fieldset key={group.title} className={styles.group}>
-            <legend className={styles.legend}>{group.title}</legend>
-            <div className={styles.fields}>
-              {group.rows.map((row) => (
-                <Field
-                  key={row.key}
-                  label={prices.fields[row.key]}
-                  name={row.key}
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  min="0"
-                  help={row.help}
-                  value={form[row.key]}
-                  onChange={setNumber(row.key)}
-                  readOnly={!canEdit}
-                  error={problems.forField(`prices.${row.key}`)}
-                />
-              ))}
-            </div>
-          </fieldset>
-        ))}
-        <fieldset className={styles.group}>
-          <legend className={styles.legend}>{prices.groups.defaults}</legend>
-          <div className={styles.fields}>
+      {canEdit ? null : (
+        <p className={form.note}>
+          <Icon name="lock" size={16} />
+          {prices.ownerOnly}
+        </p>
+      )}
+      {GROUPS.map((group) => tableFor(group.title, group.rows))}
+      <Panel title={prices.groups.defaults} padded={false}>
+        <Table className={styles.prices} regionLabel={prices.groups.defaults}>
+          {tableHead}
+          <tbody>
             {DEFAULT_NUMBER_KEYS.map((key) => (
-              <Field
+              <PriceRow
                 key={key}
                 label={prices.fields[key]}
-                name={key}
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min="0"
-                help={prices.units.percent}
-                value={form[key]}
-                onChange={setNumber(key)}
-                readOnly={!canEdit}
+                unit={prices.units.percent}
+                unitUnderName={phone}
+                value={values[key]}
+                saved={baseline[key]}
+                kind="percent"
+                open={open.has(key)}
+                canEdit={canEdit}
                 error={problems.forField(`defaults.${key}`)}
+                onToggle={() => toggle(key)}
+                onChange={(next) => setNumber(key, next)}
               />
             ))}
-            <Select
-              label={prices.fields.material}
-              value={form.material}
-              onChange={setMaterial}
-              options={MATERIAL_OPTIONS}
-              disabled={!canEdit}
-              error={problems.forField('defaults.material')}
-            />
-          </div>
-        </fieldset>
-        {canEdit ? (
-          <Button className={styles.save} type="submit" variant="primary" busy={save.isPending} disabled={!changed}>
-            {prices.save}
-          </Button>
-        ) : null}
-      </form>
-    </>
+            <Tr tone={values.material !== baseline.material ? 'brand' : undefined}>
+              <Td>
+                <span className={styles.label}>
+                  {prices.fields.material}
+                  {values.material !== baseline.material ? (
+                    <Tag tone="brand" icon="pen">
+                      {prices.edited}
+                    </Tag>
+                  ) : null}
+                </span>
+              </Td>
+              {phone ? null : <Td className={styles.unit} />}
+              <Td numeric className={styles.material}>
+                {canEdit ? (
+                  <Listbox
+                    className={styles.materialList}
+                    label={prices.fields.material}
+                    value={values.material}
+                    options={MATERIAL_OPTIONS}
+                    onChange={(material) => setValues((current) => ({ ...current, material }))}
+                    error={problems.forField('defaults.material')}
+                  />
+                ) : (
+                  prices.materialOptions[values.material]
+                )}
+              </Td>
+              <Td className={styles.action} />
+            </Tr>
+          </tbody>
+        </Table>
+      </Panel>
+      {canEdit ? (
+        <SaveBar
+          dirty={changed}
+          saving={save.isPending}
+          saveLabel={prices.save}
+          onDiscard={() => {
+            save.reset();
+            setValues(baseline);
+            setOpen(new Set());
+          }}
+        />
+      ) : null}
+    </form>
   );
 }

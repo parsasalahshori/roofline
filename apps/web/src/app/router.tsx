@@ -98,10 +98,11 @@ const routes: RouteObject[] = [
           { path: 'calendar/new', element: <AppointmentWindow /> },
           { path: 'calendar/appointments/:appointmentId', element: <AppointmentWindow /> },
           { path: 'settings', element: <Navigate to="/settings/company" replace /> },
-          { path: 'settings/setup/import', element: <AppPage app="settings"><Settings subpage={<ImportWizard />} /></AppPage> },
-          { path: 'settings/setup/import/:importId', element: <AppPage app="settings"><Settings subpage={<ImportWizard />} /></AppPage> },
-          { path: 'settings/setup/texting', element: <AppPage app="settings"><Settings subpage={<TextingSetup />} /></AppPage> },
-          { path: 'settings/:tab', element: <AppPage app="settings"><Settings /></AppPage> },
+          // Settings draws its own page (title, tabs, the way back from a screen under Setup)
+          { path: 'settings/setup/import', element: <Settings subpage={<ImportWizard />} subpageKey="import" /> },
+          { path: 'settings/setup/import/:importId', element: <Settings subpage={<ImportWizard />} subpageKey="import" /> },
+          { path: 'settings/setup/texting', element: <Settings subpage={<TextingSetup />} subpageKey="texting" /> },
+          { path: 'settings/:tab', element: <Settings /> },
           { path: 'today', element: <TodayPage /> },
           // Anything else
           { path: '*', element: <NotFoundWindow /> },

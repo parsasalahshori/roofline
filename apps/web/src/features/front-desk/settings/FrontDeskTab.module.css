@@ -1,69 +1,38 @@
-/*
- * The Front Desk tab: panels in two columns (the switches and the numbers at the left, what it says and who answers at the
- * right), then the save row, then the forwarding guide under a rule. One column under 1100px and on a phone, where the
- * save row stays at the bottom edge.
- */
+/* The Front Desk tab: the form's panels, then the forwarding guide, one under another */
 .page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  min-width: 0;
-  max-width: 1180px;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
   gap: 16px;
   min-width: 0;
 }
 
-.columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
-  min-width: 0;
-}
-
-.column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-
-/* Each switch has its own line */
-.stack {
+/* The on/off switches stack, each on its own line, with the reason under the first */
+.switches {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 16px;
-  min-width: 0;
+  gap: 12px;
 }
 
-.stack > * {
-  max-width: 100%;
-}
-
-.blocked {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0;
-  color: var(--ink-2);
-  font-size: var(--font-size-body);
-}
-
-.blocked > svg {
-  flex: none;
-  margin-top: 2px;
-  color: var(--warn-text);
-}
-
-.confirm {
+.switches > [role='status'],
+.switches > [role='alert'] {
   align-self: stretch;
-  min-width: 0;
+}
+
+/* The owner's "turn on anyway": asked on a raised box under the switch, with its two buttons */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: stretch;
+  padding: 16px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-3);
+  background: var(--surface-2);
+}
+
+.confirmText {
+  margin: 0;
 }
 
 .confirmActions {
@@ -72,11 +41,7 @@
   gap: 8px;
 }
 
-.voice {
-  width: 100%;
-  max-width: 320px;
-}
-
+/* The voice's sample: the browser's own player, the width of a field */
 .preview {
   display: block;
   width: 100%;
@@ -84,64 +49,18 @@
   min-height: 40px;
 }
 
+/* What the assistant should know: the text box, with how much of its room is used right-aligned under it */
 .facts {
-  align-self: stretch;
-  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .counter {
-  margin: 6px 0 0;
+  margin: 0;
   color: var(--ink-3);
-  font: 500 var(--font-size-min)/1.2 var(--f-mono);
+  font-family: var(--f-mono);
+  font-size: var(--font-size-min);
   font-variant-numeric: tabular-nums;
   text-align: right;
-}
-
-.counter[data-over="true"] {
-  color: var(--bad-text);
-  font-weight: 700;
-}
-
-/* Number fields sit two to a row where there is room, each at least as wide as a phone field */
-.numbers {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-/* Save stays at the bottom edge of the form while any of it is on screen */
-.saveRow {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  display: flex;
-  justify-content: flex-end;
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
-  background: var(--ground);
-}
-
-/* The space for the forwarding guide: set off from the form by a gap, with the guide's own panel in it */
-.forwardingSlot {
-  min-width: 0;
-}
-
-@media (max-width: 1099.98px) {
-  .columns {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 767.98px) {
-  .saveRow {
-    justify-content: stretch;
-  }
-
-  .saveRow > button {
-    flex: 1 1 auto;
-  }
-
-  .voice {
-    max-width: none;
-  }
 }

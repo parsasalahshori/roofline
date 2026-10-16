@@ -1,4 +1,4 @@
-import { test, expect, readStack } from './fixtures.ts';
+import { chooseOption, test, expect, readStack } from './fixtures.ts';
 import {
   LEAK_CALLER,
   MARIA,
@@ -408,9 +408,9 @@ test('Settings: the forwarding guide shows codes per carrier, and the test verif
   await expect(guide.getByText(`*72${tenDigits}`, { exact: true })).toBeVisible();
   await expect(guide.getByText('*73', { exact: true })).toBeVisible();
 
-  await guide.getByLabel('Your phone company').selectOption({ label: 'AT&T' });
+  await chooseOption(guide, 'Your phone company', 'AT&T');
   await expect(guide.getByText(`**21*${tenDigits}#`, { exact: true })).toBeVisible();
-  await guide.getByLabel('Which calls').selectOption({ label: 'Forward calls I miss' });
+  await chooseOption(guide, 'Which calls', 'Forward calls I miss');
   await expect(guide.getByText(`**61*${tenDigits}#`, { exact: true })).toBeVisible();
   await expect(guide.getByText('##61#', { exact: true })).toBeVisible();
 

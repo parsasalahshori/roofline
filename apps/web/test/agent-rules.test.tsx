@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentValues } from '@roofline/shared';
 import { agentRules } from '../src/copy/agents.ts';
 import { errors } from '../src/copy/errors.ts';
+import { settings } from '../src/copy/settings.ts';
 import { AgentRules } from '../src/features/settings/AgentRules.tsx';
 import { renderAt, stubApi } from './helpers.tsx';
 
@@ -84,6 +85,41 @@ describe('agent rules form', () => {
     expect(screen.getAllByText(message)).toHaveLength(1);
     expect(rain).toHaveAttribute('aria-invalid', 'true');
     expect(rain).toHaveAccessibleDescription(expect.stringContaining(message));
+  });
+
+  it('has three panels, and a save bar only while something differs, which Discard clears', async () => {
+    api = stubApi({
+      'GET /api/agent-values': () => ({ body: DEFAULTS }),
+    });
+    const { user } = renderAt(<AgentRules />);
+    const rain = await screen.findByLabelText(agentRules.rainLabel);
+    for (const name of Object.values(agentRules.groups)) {
+      expect(screen.getByRole('region', { name })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('group', { name: settings.saveBar.label })).toBeNull();
+
+    await user.clear(rain);
+    await user.type(rain, '45');
+    expect(screen.getByRole('group', { name: settings.saveBar.label })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: settings.saveBar.discard }));
+    expect(screen.queryByRole('group', { name: settings.saveBar.label })).toBeNull();
+    expect(screen.getByLabelText(agentRules.rainLabel)).toHaveValue(60);
+    expect(api.count('PATCH /api/agent-values')).toBe(0);
+  });
+
+  it('answers a number that is not whole under its field and sends nothing', async () => {
+    api = stubApi({
+      'GET /api/agent-values': () => ({ body: DEFAULTS }),
+    });
+    const { user } = renderAt(<AgentRules />);
+    const hour = await screen.findByLabelText(agentRules.hourLabel);
+    await user.clear(hour);
+    await user.type(hour, '1.5');
+    await user.click(screen.getByRole('button', { name: agentRules.save }));
+
+    expect(await screen.findByText(agentRules.notWholeNumber)).toBeInTheDocument();
+    expect(api.count('PATCH /api/agent-values')).toBe(0);
   });
 
   it('tells an office member only the owner can see the rules', async () => {

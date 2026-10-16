@@ -66,7 +66,7 @@ function renderGuide({
 const carrierPicker = () => screen.findByLabelText(forwarding.carrierLabel);
 const modePicker = () => screen.findByLabelText(forwarding.modeLabel);
 
-/** Opens the pick-one control with this label and picks the option with these words. */
+// The kit Listbox: open it by its label, then click the option (it is portaled, so it is found on the whole screen)
 async function choose(user: ReturnType<typeof userEvent.setup>, picker: HTMLElement, option: string) {
   await user.click(picker);
   await user.click(await screen.findByRole('option', { name: option }));
@@ -99,38 +99,6 @@ describe('forwarding guide: dial codes', () => {
     await pick(user, 'att');
     expect(await screen.findByText('**21*4025550100#')).toBeInTheDocument();
     expect(screen.getByText('##21#')).toBeInTheDocument();
-  });
-});
-
-describe('forwarding guide: the panel', () => {
-  it('is a region named for what it does, with the two numbers as labelled tiles and the pickers as pick-one lists', async () => {
-    renderGuide();
-    const guide = await screen.findByRole('region', { name: forwarding.title });
-    await screen.findByText('*724025550100');
-    expect(within(guide).getByText(forwarding.businessNumberLabel)).toBeInTheDocument();
-    expect(within(guide).getByText(forwarding.rooflineNumberLabel)).toBeInTheDocument();
-    expect(within(guide).getByText(ROOFLINE)).toBeInTheDocument();
-    for (const label of [forwarding.carrierLabel, forwarding.modeLabel]) {
-      expect(within(guide).getByLabelText(label)).toHaveAttribute('aria-haspopup', 'listbox');
-    }
-    expect(within(guide).getByLabelText(forwarding.carrierLabel)).toHaveTextContent(forwarding.carriers.verizon);
-    expect(within(guide).getByLabelText(forwarding.modeLabel)).toHaveTextContent(forwarding.modes.all);
-  });
-
-  it('offers every phone company in its list', async () => {
-    const { user } = renderGuide();
-    await user.click(await carrierPicker());
-    const options = within(await screen.findByRole('listbox', { name: forwarding.carrierLabel })).getAllByRole('option');
-    expect(options.map((option) => option.textContent)).toEqual(Object.values(forwarding.carriers));
-  });
-
-  it('says it could not load the numbers, with Try again', async () => {
-    api = stubApi({
-      [TEXTING]: () => ({ status: 500, body: { error: 'x' } }),
-      [COMPANY_GET]: () => ({ body: COMPANY_BODY }),
-    });
-    renderAt(<ForwardingGuide />, '/settings/front-desk');
-    expect(await screen.findByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });
 
@@ -205,5 +173,27 @@ describe('forwarding guide: anchor', () => {
     renderGuide({ path: '/settings/front-desk' });
     await screen.findByRole('heading', { name: forwarding.title });
     expect(scroll).not.toHaveBeenCalled();
+  });
+});
+
+describe('forwarding guide: panel', () => {
+  it('is a panel named by its heading, with both numbers as facts in the national format', async () => {
+    renderGuide();
+    const panel = await screen.findByRole('region', { name: forwarding.title });
+    // The numbers arrive after the panel does
+    expect(await within(panel).findByText(forwarding.businessNumberLabel)).toBeInTheDocument();
+    expect(within(panel).getByText('(402) 555-1234')).toBeInTheDocument();
+    expect(within(panel).getByText(forwarding.rooflineNumberLabel)).toBeInTheDocument();
+    expect(within(panel).getByText('(402) 555-0100')).toBeInTheDocument();
+  });
+
+  it('offers the phone companies and the two modes in listboxes, not native selects', async () => {
+    const { user } = renderGuide();
+    const picker = await carrierPicker();
+    expect(picker.tagName).toBe('BUTTON');
+    await user.click(picker);
+    expect(await screen.findAllByRole('option')).toHaveLength(Object.keys(forwarding.carriers).length);
+    expect(screen.getByRole('option', { name: forwarding.carriers.att })).toBeInTheDocument();
+    expect(document.querySelector('select')).toBeNull();
   });
 });

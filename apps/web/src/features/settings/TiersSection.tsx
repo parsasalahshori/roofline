@@ -1,6 +1,6 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { ADD_ON_UNITS, TIERS, materialNames, TierTemplateSchema, type AddOnUnit, type Tier, type TierTemplate } from '@roofline/shared';
-import { Banner, Button, Card, Checkbox, EmptyState, Field, Select, Skeleton, Toggle, useToast, type SelectOption } from '@roofline/ui';
+import { Banner, Button, Checkbox, EmptyState, Field, Icon, Listbox, Panel, Skeleton, Toggle, useToast, type ListboxOption } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { errors } from '../../copy/errors.ts';
@@ -9,6 +9,8 @@ import { tiers } from '../../copy/tiers.ts';
 import { proposals } from '../../copy/proposals.ts';
 import { tierEditor } from '../../copy/tiersEditor.ts';
 import { useSaveTierTemplates, useTierTemplates } from './estimator-api.ts';
+import form from './form.module.css';
+import { SaveBar } from './SaveBar.tsx';
 import styles from './TiersSection.module.css';
 
 /*
@@ -18,8 +20,8 @@ import styles from './TiersSection.module.css';
  */
 
 const MATERIALS: readonly TierTemplate['material'][] = ['architectural', 'premium', 'metal'];
-const MATERIAL_OPTIONS: SelectOption[] = MATERIALS.map((material) => ({ value: material, label: materialNames[material] }));
-const UNIT_OPTIONS: SelectOption[] = ADD_ON_UNITS.map((unit) => ({ value: unit, label: proposals.addOnUnitLabel[unit] }));
+const MATERIAL_OPTIONS: ListboxOption<TierTemplate['material']>[] = MATERIALS.map((material) => ({ value: material, label: materialNames[material] }));
+const UNIT_OPTIONS: ListboxOption<AddOnUnit>[] = ADD_ON_UNITS.map((unit) => ({ value: unit, label: proposals.addOnUnitLabel[unit] }));
 const MAX_ADD_ONS = 8;
 const MAX_HIGHLIGHTS = 4;
 
@@ -67,6 +69,18 @@ function toDraft(template: TierTemplate): TierDraft {
     highlights: template.highlights.map((text) => ({ id: nextId(), text })),
     enabled: template.enabled,
   };
+}
+
+/** The drafts as plain values, without the ids that only keep React's rows apart. */
+function withoutIds(drafts: Drafts): unknown {
+  return TIERS.map((tier) => {
+    const draft = drafts[tier];
+    return {
+      ...draft,
+      addOns: draft.addOns.map((addOn) => ({ name: addOn.name, unit: addOn.unit, rate: addOn.rate, taxable: addOn.taxable })),
+      highlights: draft.highlights.map((highlight) => highlight.text),
+    };
+  });
 }
 
 function toDrafts(templates: readonly TierTemplate[]): Drafts {
@@ -160,14 +174,17 @@ function serverKey(field: string): string | undefined {
   return TIERS.some((tier) => field.startsWith(`${tier}.`)) ? field : undefined;
 }
 
-/** The section: a heading, then the loading line, the failure, or the three editors. */
+/** The section: a heading and its line, then the loading line, the failure, or the three editors. */
 function Section({ children }: { children: ReactNode }) {
   const headingId = useId();
   return (
-    <section className={styles.section} aria-labelledby={headingId}>
-      <h2 id={headingId} className={styles.heading}>
-        {tierEditor.title}
-      </h2>
+    <section className={form.section} aria-labelledby={headingId}>
+      <div className={form.sectionHead}>
+        <h2 id={headingId} className={form.sectionTitle}>
+          {tierEditor.title}
+        </h2>
+        <p className={form.help}>{tierEditor.intro}</p>
+      </div>
       {children}
     </section>
   );
@@ -220,10 +237,15 @@ export function TiersSection() {
 
 function TiersForm({ templates, canEdit }: { templates: TierTemplate[]; canEdit: boolean }) {
   const [drafts, setDrafts] = useState<Drafts>(() => toDrafts(templates));
+  // What the templates were last loaded or saved as, in the draft's own shape: only a difference makes the form saveable
+  const [baseline, setBaseline] = useState<Drafts>(() => toDrafts(templates));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [general, setGeneral] = useState<string | undefined>(undefined);
   const save = useSaveTierTemplates();
   const toast = useToast();
+
+  // The row ids differ between two loads of the same templates, so they are left out of the comparison
+  const changed = JSON.stringify(withoutIds(drafts)) !== JSON.stringify(withoutIds(baseline));
 
   /** A change clears that tier's messages: they may be about rows that have moved or been fixed. */
   function edit(tier: Tier, change: Change) {
@@ -245,7 +267,10 @@ function TiersForm({ templates, canEdit }: { templates: TierTemplate[]; canEdit:
       onSuccess: (answer) => {
         // The server's answer is what is now saved: show it, in case it tidied a value
         const next = orderTemplates(answer.templates);
-        if (next !== undefined) setDrafts(toDrafts(next));
+        if (next !== undefined) {
+          setDrafts(toDrafts(next));
+          setBaseline(toDrafts(next));
+        }
         toast.show(tiers.saved, 'success');
       },
       onError: (error) => {
@@ -259,10 +284,14 @@ function TiersForm({ templates, canEdit }: { templates: TierTemplate[]; canEdit:
 
   return (
     <>
-      {canEdit ? null : <p className={styles.note}>{tiers.officeReadOnly}</p>}
+      {canEdit ? null : (
+        <p className={form.note}>
+          <Icon name="lock" size={16} />
+          {tiers.officeReadOnly}
+        </p>
+      )}
       {general !== undefined ? <Banner tone="danger">{general}</Banner> : null}
-      <form className={styles.form} onSubmit={submit} noValidate>
-        <p className={styles.intro}>{tierEditor.intro}</p>
+      <form className={form.form} onSubmit={submit} noValidate>
         {TIERS.map((tier) => (
           <TierEditor
             key={tier}
@@ -274,9 +303,17 @@ function TiersForm({ templates, canEdit }: { templates: TierTemplate[]; canEdit:
           />
         ))}
         {canEdit ? (
-          <Button className={styles.save} type="submit" variant="primary" busy={save.isPending}>
-            {tiers.save}
-          </Button>
+          <SaveBar
+            dirty={changed}
+            saving={save.isPending}
+            saveLabel={tiers.save}
+            onDiscard={() => {
+              save.reset();
+              setDrafts(baseline);
+              setFieldErrors({});
+              setGeneral(undefined);
+            }}
+          />
         ) : null}
       </form>
     </>
@@ -307,9 +344,13 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
     }));
 
   return (
-    <Card as="section" aria-label={tierEditor.regionLabels[tier]} className={styles.tier}>
-      <h3 className={styles.tierHeading}>{proposals.tierName[tier]}</h3>
-      <div className={styles.grid}>
+    <Panel
+      title={tierEditor.regionLabels[tier]}
+      actions={
+        <Toggle label={tierEditor.fields.enabled} checked={draft.enabled} disabled={!canEdit} onChange={(enabled) => set({ enabled })} />
+      }
+    >
+      <div className={form.grid}>
         <Field
           label={proposals.fieldName}
           value={draft.name}
@@ -317,13 +358,13 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
           error={error('name')}
           onChange={(event) => set({ name: event.target.value })}
         />
-        <Select
+        <Listbox
           label={proposals.fieldMaterial}
           value={draft.material}
           options={MATERIAL_OPTIONS}
           disabled={!canEdit}
           error={error('material')}
-          onChange={(value) => set({ material: value as TierTemplate['material'] })}
+          onChange={(material) => set({ material })}
         />
         <Field
           label={proposals.fieldWaste}
@@ -343,13 +384,10 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
           onChange={(event) => set({ markup: event.target.value })}
         />
       </div>
-      <div className={styles.toggle}>
-        <Toggle label={tierEditor.fields.enabled} checked={draft.enabled} disabled={!canEdit} onChange={(enabled) => set({ enabled })} />
-      </div>
 
       <h4 className={styles.subheading}>{proposals.addOnsHeading}</h4>
       {draft.addOns.map((addOn, index) => (
-        <div key={addOn.id} className={styles.row}>
+        <div key={addOn.id} className={styles.row} data-compact={index > 0 || undefined}>
           <Field
             label={proposals.addOnName}
             value={addOn.name}
@@ -357,15 +395,16 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
             error={error('addOns', index, 'name')}
             onChange={(event) => setAddOn(addOn.id, { name: event.target.value })}
           />
-          <Select
+          <Listbox
             label={proposals.addOnUnit}
             value={addOn.unit}
             options={UNIT_OPTIONS}
             disabled={!canEdit}
             error={error('addOns', index, 'unit')}
-            onChange={(value) => setAddOn(addOn.id, { unit: value as AddOnUnit })}
+            onChange={(unit) => setAddOn(addOn.id, { unit })}
           />
           <Field
+            className={styles.rate}
             label={proposals.addOnRate}
             inputMode="decimal"
             value={addOn.rate}
@@ -373,10 +412,10 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
             error={error('addOns', index, 'rateCents')}
             onChange={(event) => setAddOn(addOn.id, { rate: event.target.value })}
           />
-          <div className={styles.toggle}>
+          <div className={styles.check}>
             <Checkbox label={proposals.addOnTaxable} checked={addOn.taxable} disabled={!canEdit} onChange={(taxable) => setAddOn(addOn.id, { taxable })} />
           </div>
-          <div className={styles.rowAction}>
+          <div className={styles.remove}>
             <Button
               variant="ghost"
               disabled={!canEdit}
@@ -387,9 +426,10 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
           </div>
         </div>
       ))}
-      <div className={styles.rowAction}>
+      <div className={styles.add}>
         <Button
-          variant="ghost"
+          variant="default"
+          size="sm"
           disabled={!canEdit || draft.addOns.length >= MAX_ADD_ONS}
           onClick={() =>
             onChange((current) => ({
@@ -404,7 +444,7 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
 
       <h4 className={styles.subheading}>{tierEditor.fields.highlights}</h4>
       {draft.highlights.map((highlight, index) => (
-        <div key={highlight.id} className={styles.highlightRow}>
+        <div key={highlight.id} className={styles.highlightRow} data-compact={index > 0 || undefined}>
           <Field
             label={tierEditor.fields.highlight}
             value={highlight.text}
@@ -412,7 +452,7 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
             error={error('highlights', index)}
             onChange={(event) => setHighlight(highlight.id, event.target.value)}
           />
-          <div className={styles.rowAction}>
+          <div className={styles.remove}>
             <Button
               variant="ghost"
               disabled={!canEdit}
@@ -423,15 +463,16 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
           </div>
         </div>
       ))}
-      <div className={styles.rowAction}>
+      <div className={styles.add}>
         <Button
-          variant="ghost"
+          variant="default"
+          size="sm"
           disabled={!canEdit || draft.highlights.length >= MAX_HIGHLIGHTS}
           onClick={() => onChange((current) => ({ ...current, highlights: [...current.highlights, { id: nextId(), text: '' }] }))}
         >
           {tierEditor.addHighlight}
         </Button>
       </div>
-    </Card>
+    </Panel>
   );
 }

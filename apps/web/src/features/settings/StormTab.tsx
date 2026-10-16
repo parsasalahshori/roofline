@@ -1,12 +1,14 @@
 import { missingStormTokens } from '@roofline/shared';
-import { Button, Card, EmptyState, Field, FilePicker, Select, Skeleton, Toggle, useToast } from '@roofline/ui';
-import { useId, useState, type FormEvent } from 'react';
+import { Button, EmptyState, Field, FilePicker, Listbox, Panel, Skeleton, Toggle, useToast, type ListboxOption } from '@roofline/ui';
+import { useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client.ts';
 import type { StormSettingsBody, StormSettingsPatch } from '../../api/types.ts';
 import { connections } from '../../copy/connections.ts';
 import { errors } from '../../copy/errors.ts';
 import { storm } from '../../copy/storm.ts';
 import { useDeleteStormPhoto, useSaveStormSettings, useStormSettings, useUploadStormPhoto } from './stormApi.ts';
+import form from './form.module.css';
+import { SaveBar } from './SaveBar.tsx';
 import styles from './StormTab.module.css';
 
 /*
@@ -14,7 +16,7 @@ import styles from './StormTab.module.css';
  * how it is split, whether storm emails go out, the standard texts, and the ad photos.
  */
 
-const THRESHOLD_OPTIONS = ['0.75', '1', '1.25', '1.5', '1.75', '2'].map((value) => ({
+const THRESHOLD_OPTIONS: ListboxOption[] = ['0.75', '1', '1.25', '1.5', '1.75', '2'].map((value) => ({
   value,
   label: storm.settings.thresholdOption(Number(value)),
 }));
@@ -119,10 +121,12 @@ export function StormTab() {
       );
     }
     return (
-      <div role="status">
-        <Skeleton lines={4} />
-        <span className="visually-hidden">{storm.settings.loading}</span>
-      </div>
+      <Panel>
+        <div role="status">
+          <Skeleton lines={4} />
+          <span className="visually-hidden">{storm.settings.loading}</span>
+        </div>
+      </Panel>
     );
   }
   return (
@@ -135,16 +139,14 @@ export function StormTab() {
 
 type FormProps = { settings: StormSettingsBody };
 
-/** The settings form: four sections and one Save button, which sends only what changed. */
+/** The settings form: four panels and a save bar, which sends only what changed. */
 function SettingsForm({ settings }: FormProps) {
   const save = useSaveStormSettings();
   const toast = useToast();
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(settings));
+  // What the form was loaded with: the form starts again from the server's answer after a save (see formKey)
+  const [baseline] = useState<Draft>(() => draftFrom(settings));
+  const [draft, setDraft] = useState<Draft>(baseline);
   const [serverError, setServerError] = useState<{ field: string; message: string } | null>(null);
-  const thresholdId = useId();
-  const budgetId = useId();
-  const emailsId = useId();
-  const templatesId = useId();
 
   const update = (changes: Partial<Draft>) => {
     setServerError(null);
@@ -158,6 +160,8 @@ function SettingsForm({ settings }: FormProps) {
   const patch = buildPatch(settings, draft, budgetCents, days);
   const canSave =
     Object.keys(patch).length > 0 && budgetCents !== null && days !== null && missingSms.length === 0 && missingEmail.length === 0;
+  // Anything typed that differs from what was loaded: a wrong entry is a change too, and can be discarded
+  const changed = JSON.stringify(draft) !== JSON.stringify(baseline);
 
   /** A server message for this field, when the last save named it. */
   const at = (field: string) => (serverError?.field === field ? serverError.message : undefined);
@@ -177,28 +181,37 @@ function SettingsForm({ settings }: FormProps) {
     );
   }
 
+  /** A template's text box, with the button that puts the standard text back under it. */
+  const resetButton = (label: string, standard: Partial<Draft>) => (
+    <Button
+      type="button"
+      variant="default"
+      size="sm"
+      aria-label={storm.settings.useStandardTextFor(label)}
+      onClick={() => update(standard)}
+    >
+      {storm.settings.useStandardText}
+    </Button>
+  );
+
   return (
     // noValidate: the browser's own range check would stop a 40-day entry before the server can say why
-    <form className={styles.form} onSubmit={submit} noValidate>
-      <Card as="section" aria-labelledby={thresholdId}>
-        <h2 id={thresholdId} className={styles.heading}>
-          {storm.settings.thresholdHeading}
-        </h2>
-        <Select
-          label={storm.settings.thresholdLabel}
-          value={draft.threshold}
-          options={THRESHOLD_OPTIONS}
-          help={storm.settings.thresholdHelp}
-          error={at('thresholdIn')}
-          onChange={(value) => update({ threshold: value })}
-        />
-      </Card>
+    <form className={form.form} onSubmit={submit} noValidate>
+      <Panel title={storm.settings.thresholdHeading}>
+        <div className={form.grid}>
+          <Listbox
+            label={storm.settings.thresholdLabel}
+            value={draft.threshold}
+            options={THRESHOLD_OPTIONS}
+            help={storm.settings.thresholdHelp}
+            error={at('thresholdIn')}
+            onChange={(value) => update({ threshold: value })}
+          />
+        </div>
+      </Panel>
 
-      <Card as="section" aria-labelledby={budgetId}>
-        <h2 id={budgetId} className={styles.heading}>
-          {storm.settings.budgetHeading}
-        </h2>
-        <div className={styles.pair}>
+      <Panel title={storm.settings.budgetHeading}>
+        <div className={form.grid}>
           <Field
             label={storm.settings.budgetLabel}
             inputMode="decimal"
@@ -219,106 +232,88 @@ function SettingsForm({ settings }: FormProps) {
             error={days === null ? storm.settings.daysInvalid : at('adDays')}
             onChange={(event) => update({ days: event.target.value })}
           />
+          <div className={`${form.span} ${styles.share}`}>
+            <Field
+              label={connections.googleShareLabel}
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={String(draft.share)}
+              help={storm.settings.shareHelp}
+              error={at('adGoogleSharePct')}
+              onChange={(event) => update({ share: Number(event.target.value) })}
+            />
+            {/* The two ends of the slider: Google's share on the left, Meta's on the right */}
+            <p className={styles.split}>
+              <span className={styles.figure}>{`${draft.share}%`}</span>
+              <span>
+                {connections.metaShareLabel} <span className={styles.figure}>{`${100 - draft.share}%`}</span>
+              </span>
+            </p>
+          </div>
         </div>
-        <div className={styles.share}>
-          <Field
-            label={connections.googleShareLabel}
-            type="range"
-            min={0}
-            max={100}
-            step={5}
-            value={String(draft.share)}
-            help={storm.settings.shareHelp}
-            error={at('adGoogleSharePct')}
-            onChange={(event) => update({ share: Number(event.target.value) })}
-          />
-          <p className={styles.shareLine}>
-            <span>{`${draft.share}%`}</span>
-          </p>
-          <p className={styles.shareLine}>
-            {connections.metaShareLabel} <span>{`${100 - draft.share}%`}</span>
-          </p>
-        </div>
-      </Card>
+      </Panel>
 
-      <Card as="section" aria-labelledby={emailsId}>
-        <h2 id={emailsId} className={styles.heading}>
-          {storm.settings.emailsHeading}
-        </h2>
+      <Panel title={storm.settings.emailsHeading}>
         <Toggle label={storm.settings.emailsLabel} checked={draft.emailEnabled} onChange={(next) => update({ emailEnabled: next })} />
         <p className={styles.help}>{storm.settings.emailsHelp}</p>
-      </Card>
+      </Panel>
 
-      <Card as="section" aria-labelledby={templatesId} className={styles.wide}>
-        <h2 id={templatesId} className={styles.heading}>
-          {storm.settings.templatesHeading}
-        </h2>
-        <p className={styles.help}>{storm.settings.templatesHelp}</p>
-        <p className={styles.help}>{storm.settings.tokensHelp}</p>
+      <Panel title={storm.settings.templatesHeading}>
+        <p className={form.help}>{storm.settings.templatesHelp}</p>
+        <p className={form.help}>{storm.settings.tokensHelp}</p>
 
-        <div className={styles.template}>
-          <Field
-            label={storm.settings.smsLabel}
-            multiline
-            rows={4}
-            value={draft.sms}
-            help={storm.settings.smsHelp}
-            error={missingSms.length > 0 ? storm.settings.missingTokens(missingSms.join(', ')) : at('smsTemplate')}
-            onChange={(event) => update({ sms: event.target.value })}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            aria-label={storm.settings.useStandardTextFor(storm.settings.smsLabel)}
-            onClick={() => update({ sms: settings.defaults.smsTemplate })}
-          >
-            {storm.settings.useStandardText}
-          </Button>
+        <div className={styles.templates}>
+          <div className={styles.template}>
+            <Field
+              label={storm.settings.smsLabel}
+              multiline
+              rows={4}
+              value={draft.sms}
+              help={storm.settings.smsHelp}
+              error={missingSms.length > 0 ? storm.settings.missingTokens(missingSms.join(', ')) : at('smsTemplate')}
+              onChange={(event) => update({ sms: event.target.value })}
+            />
+            {resetButton(storm.settings.smsLabel, { sms: settings.defaults.smsTemplate })}
+          </div>
+
+          <div className={styles.template}>
+            <Field
+              label={storm.settings.emailSubjectLabel}
+              value={draft.emailSubject}
+              error={at('emailSubject')}
+              onChange={(event) => update({ emailSubject: event.target.value })}
+            />
+            {resetButton(storm.settings.emailSubjectLabel, { emailSubject: settings.defaults.emailSubject })}
+          </div>
+
+          <div className={styles.template}>
+            <Field
+              label={storm.settings.emailLabel}
+              multiline
+              rows={8}
+              value={draft.email}
+              help={storm.settings.emailHelp}
+              error={missingEmail.length > 0 ? storm.settings.missingTokens(missingEmail.join(', ')) : at('emailTemplate')}
+              onChange={(event) => update({ email: event.target.value })}
+            />
+            {resetButton(storm.settings.emailLabel, { email: settings.defaults.emailTemplate })}
+          </div>
         </div>
+      </Panel>
 
-        <div className={styles.template}>
-          <Field
-            label={storm.settings.emailSubjectLabel}
-            value={draft.emailSubject}
-            error={at('emailSubject')}
-            onChange={(event) => update({ emailSubject: event.target.value })}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            aria-label={storm.settings.useStandardTextFor(storm.settings.emailSubjectLabel)}
-            onClick={() => update({ emailSubject: settings.defaults.emailSubject })}
-          >
-            {storm.settings.useStandardText}
-          </Button>
-        </div>
-
-        <div className={styles.template}>
-          <Field
-            label={storm.settings.emailLabel}
-            multiline
-            rows={8}
-            value={draft.email}
-            help={storm.settings.emailHelp}
-            error={missingEmail.length > 0 ? storm.settings.missingTokens(missingEmail.join(', ')) : at('emailTemplate')}
-            onChange={(event) => update({ email: event.target.value })}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            aria-label={storm.settings.useStandardTextFor(storm.settings.emailLabel)}
-            onClick={() => update({ email: settings.defaults.emailTemplate })}
-          >
-            {storm.settings.useStandardText}
-          </Button>
-        </div>
-      </Card>
-
-      <div className={styles.saveRow}>
-        <Button type="submit" variant="primary" disabled={!canSave} busy={save.isPending}>
-          {storm.settings.save}
-        </Button>
-      </div>
+      <SaveBar
+        dirty={changed}
+        saving={save.isPending}
+        saveLabel={storm.settings.save}
+        saveDisabled={!canSave}
+        onDiscard={() => {
+          save.reset();
+          setServerError(null);
+          setDraft(baseline);
+        }}
+      />
     </form>
   );
 }
@@ -329,7 +324,6 @@ function PhotosSection({ settings }: FormProps) {
   const remove = useDeleteStormPhoto();
   const toast = useToast();
   const [photoError, setPhotoError] = useState<string | undefined>(undefined);
-  const headingId = useId();
   const full = settings.photos.length >= settings.maxPhotos;
 
   // Checked here before anything is sent; the server checks the same rules again
@@ -355,11 +349,8 @@ function PhotosSection({ settings }: FormProps) {
   }
 
   return (
-    <Card as="section" aria-labelledby={headingId}>
-      <h2 id={headingId} className={styles.heading}>
-        {storm.settings.photosHeading}
-      </h2>
-      <p className={styles.help}>{storm.settings.photosHelp}</p>
+    <Panel title={storm.settings.photosHeading}>
+      <p className={form.help}>{storm.settings.photosHelp}</p>
 
       {settings.photos.length === 0 ? <p className={styles.help}>{storm.settings.photosEmpty}</p> : null}
       {settings.photos.length > 0 ? (
@@ -369,7 +360,8 @@ function PhotosSection({ settings }: FormProps) {
               <img src={photo.url} alt={storm.settings.photoAlt(index + 1)} className={styles.thumb} />
               <Button
                 type="button"
-                variant="ghost"
+                variant="default"
+                size="sm"
                 aria-label={storm.settings.removePhoto(index + 1)}
                 busy={remove.isPending && remove.variables === photo.id}
                 onClick={() => removeOne(photo.id)}
@@ -384,16 +376,18 @@ function PhotosSection({ settings }: FormProps) {
       {full ? (
         <p className={styles.help}>{storm.settings.photosFull(settings.maxPhotos)}</p>
       ) : (
-        <FilePicker
-          label={storm.settings.photoPickLabel}
-          buttonLabel={storm.settings.photoChoose}
-          dropLabel={storm.settings.photoDrop}
-          accept="image/jpeg,image/png"
-          busy={upload.isPending}
-          error={photoError}
-          onFile={pick}
-        />
+        <div className={styles.picker}>
+          <FilePicker
+            label={storm.settings.photoPickLabel}
+            buttonLabel={storm.settings.photoChoose}
+            dropLabel={storm.settings.photoDrop}
+            accept="image/jpeg,image/png"
+            busy={upload.isPending}
+            error={photoError}
+            onFile={pick}
+          />
+        </div>
       )}
-    </Card>
+    </Panel>
   );
 }

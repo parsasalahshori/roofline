@@ -1,8 +1,10 @@
-import { Button } from '@roofline/ui';
+import type { BreadcrumbItem } from '@roofline/ui';
 import type { ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router';
 import { useMe } from '../../api/hooks.ts';
+import { WINDOW_COPY } from '../../copy/rail.ts';
 import { settings } from '../../copy/settings.ts';
+import { AppPage } from '../../shell/AppPage.tsx';
 import { BillingTab } from '../billing/BillingTab.tsx';
 import { FrontDeskTab } from '../front-desk/settings/FrontDeskTab.tsx';
 import { ProfileTab } from '../front-desk/settings/ProfileTab.tsx';
@@ -13,17 +15,27 @@ import { ConnectionsTab } from './ConnectionsTab.tsx';
 import { PricesTab } from './PricesTab.tsx';
 import { ScheduleTab } from './ScheduleTab.tsx';
 import styles from './Settings.module.css';
-import { isSettingsTab, type SettingsTab, visibleTabs } from './tabs.ts';
+import { SettingsTabs } from './SettingsTabs.tsx';
+import { isSettingsTab, type SettingsTab } from './tabs.ts';
 import { StormTab } from './StormTab.tsx';
 import { TeamTab } from './TeamTab.tsx';
 
+/** The screens that open under the Setup tab, by the name the router gives them. */
+export type SettingsSubpage = 'import' | 'texting';
+
+type SettingsProps = {
+  /** A screen under Setup (the import wizard, texting registration): it takes the Setup tab's place in the page. */
+  subpage?: ReactNode;
+  /** Which screen `subpage` is, for the way back above it. */
+  subpageKey?: SettingsSubpage;
+};
+
 /**
- * The Settings window: a row of tab links, and the one tab the address names. An unknown tab goes to
- * Company, and so do Prices and Storm for a field rep. A `subpage` (a screen under Setup, such as the import wizard)
- * takes the Setup tab's place in the panel.
- * The window itself (title, close button) is drawn by the router's AppWindow.
+ * The Settings page: its title and the row of tabs, and the one tab the address names. An unknown tab goes to
+ * Company, and so do Prices, Storm, Front Desk and Agents for a field rep. A `subpage` opens with its own way back:
+ * "Settings / Setup / Import customers" on a desktop, "Setup" above the title on a phone.
  */
-export function Settings({ subpage }: { subpage?: ReactNode } = {}) {
+export function Settings({ subpage, subpageKey }: SettingsProps = {}) {
   const { tab: routeTab } = useParams();
   const me = useMe();
   const role = me.data?.role;
@@ -33,31 +45,27 @@ export function Settings({ subpage }: { subpage?: ReactNode } = {}) {
   if (tab === 'front-desk' && role === 'rep') return <Navigate to="/settings/company" replace />;
   if (tab === 'agents' && role === 'rep') return <Navigate to="/settings/company" replace />;
 
+  const crumbs: BreadcrumbItem[] | undefined =
+    subpage && subpageKey
+      ? [
+          { label: WINDOW_COPY.settings.title, href: '/settings/company' },
+          { label: settings.tabs.setup, href: '/settings/setup' },
+          { label: settings.subpages[subpageKey] },
+        ]
+      : undefined;
+
   return (
-    <>
-      <nav aria-label={settings.tabsLabel} className={styles.tabs}>
-        {visibleTabs(role).map((key) => (
-          <Button
-            key={key}
-            href={'/settings/' + key}
-            variant={key === tab ? 'primary' : 'ghost'}
-            aria-current={key === tab ? 'page' : undefined}
-            className={styles.tab}
-          >
-            {settings.tabs[key]}
-          </Button>
-        ))}
-      </nav>
+    <AppPage app="settings" tabs={<SettingsTabs current={tab} role={role} />} crumbs={crumbs}>
       {/* The key resets a tab's own state (what was typed, what was saved) when another tab opens */}
       <div key={tab} className={styles.panel}>
         {renderPanel(tab, subpage, role !== undefined)}
       </div>
-    </>
+    </AppPage>
   );
 }
 
 /**
- * The panel for the tab: its screen, or the subpage in place of the Setup tab. The Prices panel waits
+ * The panels for the tab: its screens, or the subpage in place of the Setup tab. The Prices panel waits
  * until the role is known, so a field rep never sees it.
  */
 function renderPanel(tab: SettingsTab, subpage: ReactNode, roleKnown: boolean) {

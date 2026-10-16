@@ -153,7 +153,8 @@ function ListboxList({ id, label, options, selected, listRef, onPick, onEscape, 
       role="listbox"
       aria-label={label}
       aria-activedescendant={optionId(nav.active)}
-      tabIndex={-1}
+      // A tab stop, not -1: the popover around it scrolls on a short screen, and a scrolling region must be reachable by keyboard
+      tabIndex={0}
       className={styles.list}
       onKeyDown={(event) => {
         if (event.key === 'Tab') {

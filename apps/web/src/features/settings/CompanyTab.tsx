@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Button, EmptyState, Field, Select, Skeleton, useToast, type SelectOption } from '@roofline/ui';
+import { Button, EmptyState, Field, Icon, Listbox, Panel, Skeleton, useToast, type ListboxOption } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import type { CompanyBody } from '../../api/types.ts';
@@ -8,6 +8,8 @@ import { settings } from '../../copy/settings.ts';
 import { formErrors } from '../auth/formErrors.ts';
 import { useCompany, useCompanySettings, useUpdateCompany, useUpdateHourlyRate, type CompanyPatch } from './api.ts';
 import styles from './CompanyTab.module.css';
+import form from './form.module.css';
+import { SaveBar } from './SaveBar.tsx';
 
 /** The form's fields, and the key each one sends in the PATCH body. */
 type FieldKey = 'name' | 'phone' | 'email' | 'website' | 'street' | 'city' | 'state' | 'zip' | 'timezone';
@@ -70,10 +72,12 @@ export function CompanyTab() {
       );
     }
     return (
-      <div role="status">
-        <Skeleton lines={4} />
-        <span className="visually-hidden">{settings.loading}</span>
-      </div>
+      <Panel>
+        <div role="status">
+          <Skeleton lines={4} />
+          <span className="visually-hidden">{settings.loading}</span>
+        </div>
+      </Panel>
     );
   }
 
@@ -81,7 +85,7 @@ export function CompanyTab() {
 }
 
 function CompanyForm({ company, canEdit }: { company: CompanyBody; canEdit: boolean }) {
-  const [form, setForm] = useState(() => toForm(company));
+  const [values, setValues] = useState(() => toForm(company));
   // The values the form was last loaded or saved with. Only fields that differ from these are sent, so a
   // company refetched in the background does not make untouched fields look changed.
   const [baseline, setBaseline] = useState(() => toForm(company));
@@ -91,12 +95,12 @@ function CompanyForm({ company, canEdit }: { company: CompanyBody; canEdit: bool
 
   const changes: CompanyPatch = {};
   for (const key of FIELD_KEYS) {
-    if (form[key] !== baseline[key]) changes[API_KEY[key]] = form[key];
+    if (values[key] !== baseline[key]) changes[API_KEY[key]] = values[key];
   }
   const changed = Object.keys(changes).length > 0;
 
   // Only the zones on the list plus the company's own zone, which goes first when it is not on the list
-  const timeZoneOptions: SelectOption[] = settings.company.timeZones.map((zone) => ({ value: zone.value, label: zone.label }));
+  const timeZoneOptions: ListboxOption[] = settings.company.timeZones.map((zone) => ({ value: zone.value, label: zone.label }));
   if (!timeZoneOptions.some((zone) => zone.value === company.timezone)) {
     timeZoneOptions.unshift({ value: company.timezone, label: company.timezone });
   }
@@ -109,7 +113,7 @@ function CompanyForm({ company, canEdit }: { company: CompanyBody; canEdit: bool
         // The server may have tidied the values (a phone number with +1, a state in capitals): show those
         const next = toForm(saved);
         setBaseline(next);
-        setForm(next);
+        setValues(next);
         toast.show(settings.company.saved, 'success');
       },
       onError: (error) => {
@@ -122,94 +126,104 @@ function CompanyForm({ company, canEdit }: { company: CompanyBody; canEdit: bool
 
   return (
     <>
-      {canEdit ? null : <p className={styles.note}>{settings.company.ownerOnly}</p>}
-      <form className={styles.form} onSubmit={submit} noValidate>
-        <Field
-          label={settings.company.fields.name}
-          name="name"
-          value={form.name}
-          onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-          readOnly={!canEdit}
-          error={problems.forField(API_KEY.name)}
-        />
-        <Field
-          label={settings.company.fields.phone}
-          name="phone"
-          type="tel"
-          value={form.phone}
-          onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
-          readOnly={!canEdit}
-          error={problems.forField(API_KEY.phone)}
-        />
-        <Field
-          label={settings.company.fields.email}
-          name="email"
-          type="email"
-          value={form.email}
-          onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-          readOnly={!canEdit}
-          error={problems.forField(API_KEY.email)}
-        />
-        <Field
-          label={settings.company.fields.website}
-          name="website"
-          type="text"
-          inputMode="url"
-          value={form.website}
-          onChange={(event) => setForm((current) => ({ ...current, website: event.target.value }))}
-          readOnly={!canEdit}
-          error={problems.forField(API_KEY.website)}
-        />
-        <Field
-          label={settings.company.fields.street}
-          name="street"
-          value={form.street}
-          onChange={(event) => setForm((current) => ({ ...current, street: event.target.value }))}
-          readOnly={!canEdit}
-          error={problems.forField(API_KEY.street)}
-        />
-        <Field
-          label={settings.company.fields.city}
-          name="city"
-          value={form.city}
-          onChange={(event) => setForm((current) => ({ ...current, city: event.target.value }))}
-          readOnly={!canEdit}
-          error={problems.forField(API_KEY.city)}
-        />
-        <Field
-          label={settings.company.fields.state}
-          name="state"
-          value={form.state}
-          onChange={(event) => setForm((current) => ({ ...current, state: event.target.value }))}
-          readOnly={!canEdit}
-          error={problems.forField(API_KEY.state)}
-        />
-        <Field
-          label={settings.company.fields.zip}
-          name="zip"
-          value={form.zip}
-          onChange={(event) => setForm((current) => ({ ...current, zip: event.target.value }))}
-          readOnly={!canEdit}
-          error={problems.forField(API_KEY.zip)}
-        />
-        <Select
-          label={settings.company.fields.timezone}
-          value={form.timezone}
-          onChange={(value) => setForm((current) => ({ ...current, timezone: value }))}
-          disabled={!canEdit}
-          options={timeZoneOptions}
-          error={problems.forField(API_KEY.timezone)}
-        />
+      <form className={form.form} onSubmit={submit} noValidate>
+        <Panel title={settings.company.panels.details}>
+          {canEdit ? null : (
+            <p className={form.note}>
+              <Icon name="lock" size={16} />
+              {settings.company.ownerOnly}
+            </p>
+          )}
+          <div className={form.grid}>
+            <Field
+              label={settings.company.fields.name}
+              name="name"
+              value={values.name}
+              onChange={(event) => setValues((current) => ({ ...current, name: event.target.value }))}
+              readOnly={!canEdit}
+              error={problems.forField(API_KEY.name)}
+            />
+            <Field
+              label={settings.company.fields.phone}
+              name="phone"
+              type="tel"
+              value={values.phone}
+              onChange={(event) => setValues((current) => ({ ...current, phone: event.target.value }))}
+              readOnly={!canEdit}
+              error={problems.forField(API_KEY.phone)}
+            />
+            <Field
+              label={settings.company.fields.email}
+              name="email"
+              type="email"
+              value={values.email}
+              onChange={(event) => setValues((current) => ({ ...current, email: event.target.value }))}
+              readOnly={!canEdit}
+              error={problems.forField(API_KEY.email)}
+            />
+            <Field
+              label={settings.company.fields.website}
+              name="website"
+              type="text"
+              inputMode="url"
+              value={values.website}
+              onChange={(event) => setValues((current) => ({ ...current, website: event.target.value }))}
+              readOnly={!canEdit}
+              error={problems.forField(API_KEY.website)}
+            />
+            <Field
+              className={form.span}
+              label={settings.company.fields.street}
+              name="street"
+              value={values.street}
+              onChange={(event) => setValues((current) => ({ ...current, street: event.target.value }))}
+              readOnly={!canEdit}
+              error={problems.forField(API_KEY.street)}
+            />
+            <Field
+              label={settings.company.fields.city}
+              name="city"
+              value={values.city}
+              onChange={(event) => setValues((current) => ({ ...current, city: event.target.value }))}
+              readOnly={!canEdit}
+              error={problems.forField(API_KEY.city)}
+            />
+            <Field
+              label={settings.company.fields.state}
+              name="state"
+              value={values.state}
+              onChange={(event) => setValues((current) => ({ ...current, state: event.target.value }))}
+              readOnly={!canEdit}
+              error={problems.forField(API_KEY.state)}
+            />
+            <Field
+              label={settings.company.fields.zip}
+              name="zip"
+              value={values.zip}
+              onChange={(event) => setValues((current) => ({ ...current, zip: event.target.value }))}
+              readOnly={!canEdit}
+              error={problems.forField(API_KEY.zip)}
+            />
+            <Listbox
+              label={settings.company.fields.timezone}
+              value={values.timezone}
+              onChange={(value) => setValues((current) => ({ ...current, timezone: value }))}
+              disabled={!canEdit}
+              options={timeZoneOptions}
+              error={problems.forField(API_KEY.timezone)}
+            />
+          </div>
+        </Panel>
         {canEdit ? (
-          <Button
-            className={styles.save}
-            type="submit"
-            variant="primary"
-            busy={update.isPending}
-            disabled={!changed}
-          >
-            {settings.company.save}
-          </Button>
+          <SaveBar
+            dirty={changed}
+            saving={update.isPending}
+            saveLabel={settings.company.save}
+            onDiscard={() => {
+              update.reset();
+              setValues(baseline);
+            }}
+          />
         ) : null}
       </form>
       {canEdit ? <HourlyRateForm /> : null}
@@ -262,23 +276,31 @@ function HourlyRateForm() {
   }
 
   return (
-    <form className={styles.rate} onSubmit={submit} noValidate>
-      <Field
-        label={settings.company.hourlyRate.label}
-        name="hourlyRate"
-        type="text"
-        inputMode="decimal"
-        value={text}
-        onChange={(event) => {
-          update.reset();
-          setDraft(event.target.value);
-        }}
-        help={settings.company.hourlyRate.hint}
-        error={error}
-      />
-      <Button className={styles.save} type="submit" variant="primary" busy={update.isPending} disabled={invalid || unchanged}>
-        {settings.company.hourlyRate.save}
-      </Button>
+    <form onSubmit={submit} noValidate>
+      <Panel
+        title={settings.company.panels.rate}
+        actions={
+          <Button type="submit" variant="primary" size="sm" busy={update.isPending} disabled={invalid || unchanged}>
+            {settings.company.hourlyRate.save}
+          </Button>
+        }
+      >
+        <div className={form.grid}>
+          <Field
+            label={settings.company.hourlyRate.label}
+            name="hourlyRate"
+            type="text"
+            inputMode="decimal"
+            value={text}
+            onChange={(event) => {
+              update.reset();
+              setDraft(event.target.value);
+            }}
+            help={settings.company.hourlyRate.hint}
+            error={error}
+          />
+        </div>
+      </Panel>
     </form>
   );
 }

@@ -178,7 +178,7 @@ describe('settings tabs for the C1 screens', () => {
     signedInApi(ACCOUNT, { ...PRICES_ROUTES, 'GET /api/pricebook': () => ({ body: PRICEBOOK_VIEW }) });
     renderApp('/settings/prices');
 
-    expect(await screen.findByLabelText(prices.fields.permit)).toBeInTheDocument();
+    expect(await screen.findByText(prices.fields.permit)).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.prices })).toBeInTheDocument();
   });
 
@@ -186,7 +186,7 @@ describe('settings tabs for the C1 screens', () => {
     signedInApi({ ...ACCOUNT, role: 'office' }, { ...PRICES_ROUTES, 'GET /api/pricebook': () => ({ body: PRICEBOOK_VIEW }) });
     renderApp('/settings/prices');
 
-    expect(await screen.findByLabelText(prices.fields.permit)).toBeInTheDocument();
+    expect(await screen.findByText(prices.fields.permit)).toBeInTheDocument();
     expect(within(await settingsTabs()).getByRole('link', { name: settings.tabs.prices })).toBeInTheDocument();
   });
 
@@ -198,7 +198,7 @@ describe('settings tabs for the C1 screens', () => {
     const tabs = await settingsTabs();
     expect(within(tabs).getByRole('link', { name: settings.tabs.company })).toHaveAttribute('aria-current', 'page');
     expect(within(tabs).queryByRole('link', { name: settings.tabs.prices })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(prices.fields.permit)).not.toBeInTheDocument();
+    expect(screen.queryByText(prices.fields.permit)).not.toBeInTheDocument();
   });
 
   it('shows Schedule to a rep', async () => {

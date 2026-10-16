@@ -1,16 +1,4 @@
-/* The plans: a card each, one column on a phone and as many as fit beside each other on a wider screen */
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.heading {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-
+/* The plans: a tile each, one column on a phone and as many as fit beside each other on a wider screen */
 .list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
@@ -25,18 +13,32 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface);
+}
+
+/* The company's own plan: the brand's edge and tint, and its tag says so in words */
+.plan[data-current='true'] {
+  border-color: var(--brand);
+  background: var(--brand-tint);
 }
 
 .name {
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  font: 700 15px/1.2 var(--f-display);
+  font-stretch: 110%;
 }
 
+/* The price is the big number of the tile: mono, so the digits line up from one plan to the next */
 .price {
   margin: 0;
+  font-family: var(--f-mono);
   font-size: var(--font-size-stat);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
+  line-height: 1.1;
 }
 
 .includes {
@@ -47,19 +49,19 @@
 }
 
 .current {
+  display: flex;
   margin: auto 0 0;
   padding-top: 8px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
 }
 
-.plan > button {
+.plan > button,
+.plan > a {
   margin-top: auto;
   width: 100%;
 }
 
 .note {
-  margin: 0;
+  margin: 16px 0 0;
   color: var(--ink-3);
   font-size: var(--font-size-min);
 }

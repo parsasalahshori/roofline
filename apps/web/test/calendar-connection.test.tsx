@@ -101,9 +101,13 @@ describe('your calendar', () => {
     const { user } = renderAt(<CalendarConnection />, '/settings/connections');
 
     expect(await screen.findByText('sam@example.com')).toBeInTheDocument();
-    const select = await screen.findByRole('combobox', { name: connections.calendarLabel });
-    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(2));
-    await user.selectOptions(select, 'work');
+    // The calendar is a list that opens: it shows the one in use, and lists the others once they are read
+    const calendar = await screen.findByLabelText(connections.calendarLabel);
+    expect(calendar).toHaveTextContent('Main');
+    await waitFor(() => expect(api.count('GET /api/calendar/connection/calendars')).toBe(1));
+    await user.click(calendar);
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2));
+    await user.click(screen.getByRole('option', { name: 'Work' }));
 
     await waitFor(() => expect(api.sent('PATCH /api/calendar/connection')).toEqual([{ calendarId: 'work' }]));
   });
@@ -141,5 +145,38 @@ describe('your calendar', () => {
     expect(await screen.findByText(connections.toasts.connected)).toBeInTheDocument();
     await queryClient.refetchQueries();
     expect(screen.getAllByText(connections.toasts.connected)).toHaveLength(1);
+  });
+
+  it('the tag beside the title says how the connection stands, in an icon and a word', async () => {
+    stubConnection(NOT_CONNECTED);
+    renderAt(<CalendarConnection />, '/settings/connections');
+    const off = await screen.findByRole('region', { name: connections.calendarTitle });
+    expect(await within(off).findByText(connections.notConnected)).toBeInTheDocument();
+    cleanup();
+
+    stubConnection({ ...CONNECTED, status: 'error' });
+    renderAt(<CalendarConnection />, '/settings/connections');
+    const broken = await screen.findByRole('region', { name: connections.calendarTitle });
+    expect(await within(broken).findByText(connections.statuses.error)).toBeInTheDocument();
+    cleanup();
+
+    stubConnection(CONNECTED, { 'GET /api/calendar/connection/calendars': () => ({ body: CALENDARS }) });
+    renderAt(<CalendarConnection />, '/settings/connections');
+    const on = await screen.findByRole('region', { name: connections.calendarTitle });
+    expect(await within(on).findByText(connections.statuses.active)).toBeInTheDocument();
+  });
+
+  it('connected shows when it last synced, in the company zone, and says so when it never did', async () => {
+    stubConnection(CONNECTED, { 'GET /api/calendar/connection/calendars': () => ({ body: CALENDARS }) });
+    renderAt(<CalendarConnection />, '/settings/connections');
+
+    // 15:30 UTC is 10:30 in Chicago in October
+    expect(await screen.findByText('Oct 12, 2026, 10:30 AM')).toBeInTheDocument();
+    expect(screen.getByText(connections.lastSyncedLabel)).toBeInTheDocument();
+    cleanup();
+
+    stubConnection({ ...CONNECTED, lastSyncedAt: null }, { 'GET /api/calendar/connection/calendars': () => ({ body: CALENDARS }) });
+    renderAt(<CalendarConnection />, '/settings/connections');
+    expect(await screen.findByText(connections.neverSynced)).toBeInTheDocument();
   });
 });

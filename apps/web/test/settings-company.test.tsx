@@ -65,10 +65,11 @@ describe('company tab', () => {
     await screen.findByText(settings.company.saved);
     expect(api.sent('PATCH /api/company')).toEqual([{ phone: '4025559999' }]);
     expect(screen.getByLabelText(settings.company.fields.phone)).toHaveValue('+14025559999');
-    expect(screen.getByRole('button', { name: settings.company.save })).toBeDisabled();
+    // Saved: nothing is left to save, so the bar goes
+    expect(screen.queryByRole('button', { name: settings.company.save })).toBeNull();
   });
 
-  it('save is off until something changes', async () => {
+  it('the save bar waits for a change, and Discard puts the form back', async () => {
     api = stubApi({
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/company': () => ({ body: COMPANY }),
@@ -76,10 +77,17 @@ describe('company tab', () => {
     });
     const { user } = renderAt(<CompanyTab />);
     const city = await screen.findByLabelText(settings.company.fields.city);
-    expect(screen.getByRole('button', { name: settings.company.save })).toBeDisabled();
+    expect(screen.queryByRole('group', { name: settings.saveBar.label })).toBeNull();
+    expect(screen.queryByRole('button', { name: settings.company.save })).toBeNull();
 
     await user.type(city, ' West');
-    expect(screen.getByRole('button', { name: settings.company.save })).toBeEnabled();
+    const bar = screen.getByRole('group', { name: settings.saveBar.label });
+    expect(within(bar).getByRole('button', { name: settings.company.save })).toBeEnabled();
+
+    await user.click(within(bar).getByRole('button', { name: settings.saveBar.discard }));
+    expect(screen.getByLabelText(settings.company.fields.city)).toHaveValue('Omaha');
+    expect(screen.queryByRole('group', { name: settings.saveBar.label })).toBeNull();
+    expect(api.count('PATCH /api/company')).toBe(0);
   });
 
   it('a failed background refresh keeps what was typed', async () => {
@@ -130,7 +138,8 @@ describe('company tab', () => {
     });
     const { user } = renderAt(<CompanyTab />);
     await screen.findByLabelText(settings.company.fields.name);
-    await user.selectOptions(screen.getByLabelText(settings.company.fields.timezone), 'America/Denver');
+    await user.click(screen.getByLabelText(settings.company.fields.timezone));
+    await user.click(screen.getByRole('option', { name: 'Mountain Time (Denver)' }));
     await user.click(screen.getByRole('button', { name: settings.company.save }));
 
     await screen.findByText(settings.company.saved);
@@ -192,7 +201,7 @@ describe('company tab', () => {
     }
     const timezone = screen.getByLabelText(settings.company.fields.timezone);
     expect(timezone).toBeDisabled();
-    expect(timezone).toHaveValue('America/Chicago');
+    expect(timezone).toHaveTextContent('Central Time (Chicago)');
     expect(screen.getByText(settings.company.ownerOnly)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: settings.company.save })).toBeNull();
   });
@@ -203,14 +212,15 @@ describe('company tab', () => {
       'GET /api/company': () => ({ body: { ...COMPANY, timezone: 'Europe/Berlin' } }),
       'GET /api/company/settings': () => ({ body: { hourlyRateCents: 2800 } }),
     });
-    renderAt(<CompanyTab />);
+    const { user } = renderAt(<CompanyTab />);
     const timezone = await screen.findByLabelText(settings.company.fields.timezone);
+    expect(timezone).toHaveTextContent('Europe/Berlin');
 
-    const values = within(timezone)
+    await user.click(timezone);
+    const labels = within(screen.getByRole('listbox', { name: settings.company.fields.timezone }))
       .getAllByRole('option')
-      .map((option) => (option as HTMLOptionElement).value);
-    expect(values).toEqual(['Europe/Berlin', ...settings.company.timeZones.map((zone) => zone.value)]);
-    expect(timezone).toHaveValue('Europe/Berlin');
+      .map((option) => option.textContent);
+    expect(labels).toEqual(['Europe/Berlin', ...settings.company.timeZones.map((zone) => zone.label)]);
   });
 
   it('owner sees the details of the company', async () => {
@@ -227,7 +237,7 @@ describe('company tab', () => {
       expect(input).toHaveValue(DETAILS[key]);
       expect(input).not.toHaveAttribute('readonly');
     }
-    expect(screen.getByLabelText(settings.company.fields.timezone)).toHaveValue('America/Chicago');
+    expect(screen.getByLabelText(settings.company.fields.timezone)).toHaveTextContent('Central Time (Chicago)');
     expect(screen.getByLabelText(settings.company.fields.name)).toHaveValue('Summit Roofing');
     expect(screen.getByLabelText(settings.company.fields.phone)).toHaveValue('+14025551234');
     expect(screen.getByLabelText(settings.company.fields.zip)).toHaveValue('68102');

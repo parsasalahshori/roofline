@@ -1,21 +1,7 @@
-/* One section of the Connections tab: its title, then what the person can do with it */
-.section {
-  display: grid;
-  gap: 12px;
-  max-width: 720px;
-  margin-bottom: 24px;
-}
-
-.title {
-  margin: 0;
-  color: var(--ink);
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-
+/* The body of the calendar's panel: what is linked, the calendar to use, then what the person can do with it */
 .stack {
   display: grid;
-  gap: 12px;
+  gap: 16px;
   justify-items: start;
 }
 
@@ -29,24 +15,16 @@
   gap: 8px;
 }
 
-.account {
-  margin: 0;
-  color: var(--ink);
-  font-size: var(--font-size-body);
-  overflow-wrap: anywhere;
-}
-
-.muted {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: var(--font-size-body);
+/* The calendar list is a field of its own: wide enough for a calendar's name, no wider */
+.field {
+  width: 360px;
 }
 
 .confirm {
   display: grid;
   gap: 12px;
   padding: 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-2);
   border-radius: var(--r-3);
   background: var(--surface-2);
 }
@@ -55,4 +33,23 @@
   margin: 0;
   color: var(--ink);
   font-size: var(--font-size-body);
+}
+
+@media (max-width: 767.98px) {
+  .stack {
+    justify-items: stretch;
+  }
+
+  .field {
+    width: 100%;
+  }
+
+  /* Two providers, one under the other, each as wide as the panel: a thumb finds either */
+  .actions {
+    flex-direction: column;
+  }
+
+  .actions > * {
+    width: 100%;
+  }
 }

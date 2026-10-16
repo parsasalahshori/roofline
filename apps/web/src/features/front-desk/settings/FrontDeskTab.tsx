@@ -1,11 +1,13 @@
 import type { FrontDeskSettings, FrontDeskSettingsInput, FrontDeskVoice, FrontDeskVoiceId } from '@roofline/shared';
 import { FRONT_DESK_LIMITS } from '@roofline/shared';
-import { Banner, Button, Field, Icon, Listbox, Panel, Skeleton, Toggle, useToast } from '@roofline/ui';
+import { Banner, Button, EmptyState, Field, Listbox, Panel, Skeleton, Toggle, useToast, type ListboxOption } from '@roofline/ui';
 import { useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/client.ts';
 import { useMe } from '../../../api/hooks.ts';
 import { errors } from '../../../copy/errors.ts';
 import { frontDeskSettings } from '../../../copy/front-desk-settings.ts';
+import form from '../../settings/form.module.css';
+import { SaveBar } from '../../settings/SaveBar.tsx';
 import { ForwardingGuide } from './ForwardingGuide.tsx';
 import { OnCallList } from './OnCallList.tsx';
 import { useFrontDeskSettings, useFrontDeskVoices, useSaveFrontDeskSettings } from './settings-api.ts';
@@ -94,15 +96,20 @@ type FormProps = {
   saving: boolean;
   serverError: Error | null;
   onSave: (input: FrontDeskSettingsInput) => void;
+  /** Forgets the last save's answer (its banner and field messages): Discard puts the form back to what was saved. */
+  onReset: () => void;
 };
 
 /** The form itself. It is remounted with fresh state each time the settings are saved, so it always shows what the server kept. */
-function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave }: FormProps) {
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(saved));
+function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave, onReset }: FormProps) {
+  // What the form was loaded with: a difference from it is what the save bar is for
+  const [baseline] = useState(() => ({ draft: draftFrom(saved), order: orderFrom(saved) }));
+  const [draft, setDraft] = useState<Draft>(baseline.draft);
   // The owner's "turn on anyway": asking, then confirmed (sent as `override: true`)
   const [confirmingOverride, setConfirmingOverride] = useState(false);
   const [override, setOverride] = useState(false);
-  const [order, setOrder] = useState<string[]>(() => orderFrom(saved));
+  const [order, setOrder] = useState<string[]>(baseline.order);
+  const changed = JSON.stringify(draft) !== JSON.stringify(baseline.draft) || JSON.stringify(order) !== JSON.stringify(baseline.order);
 
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const setNumber = (key: NumberField, value: string) =>
@@ -174,204 +181,180 @@ function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave }: 
     onSave(input);
   }
 
-  const voiceOptions =
+  const voiceOptions: ListboxOption<FrontDeskVoiceId>[] =
     voices && voices.length > 0
       ? voices.map((voice) => ({ value: voice.id, label: voice.label }))
       : [{ value: draft.voice, label: draft.voice }];
   const selectedVoice = voices?.find((voice) => voice.id === draft.voice);
 
+  const fd = frontDeskSettings;
   return (
-    <form onSubmit={submit} noValidate className={styles.form}>
+    <form onSubmit={submit} noValidate className={form.form}>
       {bannerMessage ? <Banner tone="danger">{bannerMessage}</Banner> : null}
 
-      <div className={styles.columns}>
-        <div className={styles.column}>
-          <Panel as="section" title={frontDeskSettings.sections.answering}>
-            <div className={styles.stack}>
-              <Toggle
-                label={frontDeskSettings.onOff.label}
-                checked={draft.enabled}
-                disabled={saving || (turnOnBlocked && !canOverride && !draft.enabled)}
-                onChange={onEnabledChange}
-              />
-              {blocked ? (
-                <p className={styles.blocked}>
-                  <Icon name="alert" size={16} />
-                  {frontDeskSettings.onOff.blocked[saved.blockedReason ?? 'no_number']}
-                </p>
-              ) : null}
-              {confirmingOverride ? (
-                <section aria-label={frontDeskSettings.onOff.overrideYes} className={styles.confirm}>
-                  <Banner
-                    tone="warning"
-                    action={
-                      <div className={styles.confirmActions}>
-                        <Button
-                          variant="default"
-                          onClick={() => {
-                            setConfirmingOverride(false);
-                            setOverride(true);
-                            update('enabled', true);
-                          }}
-                        >
-                          {frontDeskSettings.onOff.overrideYes}
-                        </Button>
-                        <Button variant="ghost" onClick={() => setConfirmingOverride(false)}>
-                          {frontDeskSettings.onOff.overrideNo}
-                        </Button>
-                      </div>
-                    }
-                  >
-                    {frontDeskSettings.onOff.overrideConfirm}
-                  </Banner>
-                </section>
-              ) : null}
-              <Toggle
-                label={frontDeskSettings.texts.label}
-                checked={draft.texts}
-                disabled={saving}
-                onChange={(next) => update('texts', next)}
-              />
-            </div>
-          </Panel>
-
-          <Panel as="section" title={frontDeskSettings.sections.mayDo}>
-            <div className={styles.stack}>
-              <Toggle
-                label={frontDeskSettings.mayMove.label}
-                checked={draft.canMove}
-                disabled={saving}
-                onChange={(next) => update('canMove', next)}
-              />
-              <Toggle
-                label={frontDeskSettings.mayCancel.label}
-                checked={draft.canCancel}
-                disabled={saving}
-                onChange={(next) => update('canCancel', next)}
-              />
-              <Toggle
-                label={frontDeskSettings.textBack.label}
-                checked={draft.missedCallTextBack}
-                disabled={saving}
-                onChange={(next) => update('missedCallTextBack', next)}
-              />
-            </div>
-          </Panel>
-
-          <Panel as="section" title={frontDeskSettings.sections.timing}>
-            <div className={styles.numbers}>
-              <Field
-                label={frontDeskSettings.ringTeam.label}
-                help={frontDeskSettings.ringTeam.help}
-                name="ringTeamFirstSeconds"
-                type="number"
-                inputMode="numeric"
-                step={1}
-                min={LIMITS.ringTeamFirstSeconds.min}
-                max={LIMITS.ringTeamFirstSeconds.max}
-                value={draft.numbers.ringTeamFirstSeconds}
-                disabled={saving}
-                error={clientErrors.ringTeamFirstSeconds ?? serverFor('ringTeamFirstSeconds')}
-                onChange={(event) => setNumber('ringTeamFirstSeconds', event.target.value)}
-              />
-              <Field
-                label={frontDeskSettings.maxCalls.label}
-                name="maxConcurrentAiCalls"
-                type="number"
-                inputMode="numeric"
-                step={1}
-                min={LIMITS.maxConcurrentAiCalls.min}
-                max={LIMITS.maxConcurrentAiCalls.max}
-                value={draft.numbers.maxConcurrentAiCalls}
-                disabled={saving}
-                error={clientErrors.maxConcurrentAiCalls ?? serverFor('maxConcurrentAiCalls')}
-                onChange={(event) => setNumber('maxConcurrentAiCalls', event.target.value)}
-              />
-              <Field
-                label={frontDeskSettings.recordingDays.label}
-                help={frontDeskSettings.recordingDays.help}
-                name="recordingRetentionDays"
-                type="number"
-                inputMode="numeric"
-                step={1}
-                min={LIMITS.recordingRetentionDays.min}
-                max={LIMITS.recordingRetentionDays.max}
-                value={draft.numbers.recordingRetentionDays}
-                disabled={saving}
-                error={clientErrors.recordingRetentionDays ?? serverFor('recordingRetentionDays')}
-                onChange={(event) => setNumber('recordingRetentionDays', event.target.value)}
-              />
-              <Field
-                label={frontDeskSettings.transcriptDays.label}
-                help={frontDeskSettings.transcriptDays.help}
-                name="transcriptRetentionDays"
-                type="number"
-                inputMode="numeric"
-                step={1}
-                min={LIMITS.transcriptRetentionDays.min}
-                max={LIMITS.transcriptRetentionDays.max}
-                value={draft.numbers.transcriptRetentionDays}
-                disabled={saving}
-                error={clientErrors.transcriptRetentionDays ?? serverFor('transcriptRetentionDays')}
-                onChange={(event) => setNumber('transcriptRetentionDays', event.target.value)}
-              />
-            </div>
-          </Panel>
-        </div>
-
-        <div className={styles.column}>
-          <Panel as="section" title={frontDeskSettings.sections.voiceAndFacts}>
-            <div className={styles.stack}>
-              <Listbox
-                label={frontDeskSettings.voice.label}
-                value={draft.voice}
-                options={voiceOptions}
-                disabled={saving}
-                error={serverFor('voice')}
-                className={styles.voice}
-                onChange={(value) => {
-                  const picked = voices?.find((voice) => voice.id === value);
-                  if (picked) update('voice', picked.id);
-                }}
-              />
-              {selectedVoice?.previewUrl ? (
-                <audio
-                  controls
-                  preload="none"
-                  src={selectedVoice.previewUrl}
-                  aria-label={frontDeskSettings.voice.preview(selectedVoice.label)}
-                  className={styles.preview}
-                />
-              ) : null}
-
-              <div className={styles.facts}>
-                <Field
-                  label={frontDeskSettings.facts.label}
-                  help={frontDeskSettings.facts.help}
-                  name="facts"
-                  multiline
-                  rows={8}
-                  value={draft.facts}
-                  disabled={saving}
-                  error={clientErrors.facts ?? serverFor('facts')}
-                  onChange={(event) => update('facts', event.target.value)}
-                />
-                <p className={styles.counter} data-over={draft.facts.length > FACTS_MAX ? 'true' : undefined} aria-live="polite">
-                  {frontDeskSettings.facts.counter(draft.facts.length, FACTS_MAX)}
-                </p>
+      <Panel title={fd.panels.answering}>
+        <div className={styles.switches}>
+          <Toggle
+            label={fd.onOff.label}
+            checked={draft.enabled}
+            disabled={saving || (turnOnBlocked && !canOverride && !draft.enabled)}
+            onChange={onEnabledChange}
+          />
+          {blocked ? <Banner tone="warning">{fd.onOff.blocked[saved.blockedReason ?? 'no_number']}</Banner> : null}
+          {confirmingOverride ? (
+            <section aria-label={fd.onOff.overrideYes} className={styles.confirm}>
+              <p className={styles.confirmText}>{fd.onOff.overrideConfirm}</p>
+              <div className={styles.confirmActions}>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setConfirmingOverride(false);
+                    setOverride(true);
+                    update('enabled', true);
+                  }}
+                >
+                  {fd.onOff.overrideYes}
+                </Button>
+                <Button variant="default" onClick={() => setConfirmingOverride(false)}>
+                  {fd.onOff.overrideNo}
+                </Button>
               </div>
-            </div>
-          </Panel>
-
-          <OnCallList members={saved.onCall} order={order} onChange={setOrder} disabled={saving} />
+            </section>
+          ) : null}
+          <Toggle label={fd.texts.label} checked={draft.texts} disabled={saving} onChange={(next) => update('texts', next)} />
         </div>
-      </div>
+      </Panel>
 
-      <div className={styles.saveRow}>
-        <Button type="submit" variant="primary" busy={saving}>
-          {saving ? frontDeskSettings.saving : frontDeskSettings.save}
-        </Button>
-      </div>
+      <Panel title={fd.panels.assistant}>
+        <div className={form.grid}>
+          <Listbox
+            label={fd.voice.label}
+            value={draft.voice}
+            options={voiceOptions}
+            disabled={saving}
+            error={serverFor('voice')}
+            onChange={(value) => {
+              const picked = voices?.find((voice) => voice.id === value);
+              if (picked) update('voice', picked.id);
+            }}
+          />
+          {selectedVoice?.previewUrl ? (
+            <audio
+              controls
+              preload="none"
+              src={selectedVoice.previewUrl}
+              aria-label={fd.voice.preview(selectedVoice.label)}
+              className={styles.preview}
+            />
+          ) : null}
+
+          <div className={`${form.span} ${styles.facts}`}>
+            <Field
+              label={fd.facts.label}
+              help={fd.facts.help}
+              name="facts"
+              multiline
+              rows={6}
+              value={draft.facts}
+              disabled={saving}
+              error={clientErrors.facts ?? serverFor('facts')}
+              onChange={(event) => update('facts', event.target.value)}
+            />
+            <p className={styles.counter} aria-live="polite">
+              {fd.facts.counter(draft.facts.length, FACTS_MAX)}
+            </p>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title={fd.panels.rules}>
+        <div className={styles.switches}>
+          <Toggle label={fd.mayMove.label} checked={draft.canMove} disabled={saving} onChange={(next) => update('canMove', next)} />
+          <Toggle label={fd.mayCancel.label} checked={draft.canCancel} disabled={saving} onChange={(next) => update('canCancel', next)} />
+          <Toggle
+            label={fd.textBack.label}
+            checked={draft.missedCallTextBack}
+            disabled={saving}
+            onChange={(next) => update('missedCallTextBack', next)}
+          />
+        </div>
+      </Panel>
+
+      <Panel title={fd.panels.timing}>
+        <div className={form.grid}>
+          <Field
+            label={fd.ringTeam.label}
+            help={fd.ringTeam.help}
+            name="ringTeamFirstSeconds"
+            type="number"
+            inputMode="numeric"
+            step={1}
+            min={LIMITS.ringTeamFirstSeconds.min}
+            max={LIMITS.ringTeamFirstSeconds.max}
+            value={draft.numbers.ringTeamFirstSeconds}
+            disabled={saving}
+            error={clientErrors.ringTeamFirstSeconds ?? serverFor('ringTeamFirstSeconds')}
+            onChange={(event) => setNumber('ringTeamFirstSeconds', event.target.value)}
+          />
+          <Field
+            label={fd.maxCalls.label}
+            name="maxConcurrentAiCalls"
+            type="number"
+            inputMode="numeric"
+            step={1}
+            min={LIMITS.maxConcurrentAiCalls.min}
+            max={LIMITS.maxConcurrentAiCalls.max}
+            value={draft.numbers.maxConcurrentAiCalls}
+            disabled={saving}
+            error={clientErrors.maxConcurrentAiCalls ?? serverFor('maxConcurrentAiCalls')}
+            onChange={(event) => setNumber('maxConcurrentAiCalls', event.target.value)}
+          />
+          <Field
+            label={fd.recordingDays.label}
+            help={fd.recordingDays.help}
+            name="recordingRetentionDays"
+            type="number"
+            inputMode="numeric"
+            step={1}
+            min={LIMITS.recordingRetentionDays.min}
+            max={LIMITS.recordingRetentionDays.max}
+            value={draft.numbers.recordingRetentionDays}
+            disabled={saving}
+            error={clientErrors.recordingRetentionDays ?? serverFor('recordingRetentionDays')}
+            onChange={(event) => setNumber('recordingRetentionDays', event.target.value)}
+          />
+          <Field
+            label={fd.transcriptDays.label}
+            help={fd.transcriptDays.help}
+            name="transcriptRetentionDays"
+            type="number"
+            inputMode="numeric"
+            step={1}
+            min={LIMITS.transcriptRetentionDays.min}
+            max={LIMITS.transcriptRetentionDays.max}
+            value={draft.numbers.transcriptRetentionDays}
+            disabled={saving}
+            error={clientErrors.transcriptRetentionDays ?? serverFor('transcriptRetentionDays')}
+            onChange={(event) => setNumber('transcriptRetentionDays', event.target.value)}
+          />
+        </div>
+      </Panel>
+
+      <OnCallList members={saved.onCall} order={order} onChange={setOrder} disabled={saving} />
+
+      <SaveBar
+        dirty={changed}
+        saving={saving}
+        saveLabel={fd.save}
+        saveDisabled={hasClientErrors}
+        onDiscard={() => {
+          onReset();
+          setDraft(baseline.draft);
+          setOrder(baseline.order);
+          setConfirmingOverride(false);
+          setOverride(false);
+        }}
+      />
     </form>
   );
 }
@@ -389,32 +372,22 @@ export function FrontDeskTab() {
   if (!query.data) {
     if (query.error) {
       return (
-        <Banner
-          tone="danger"
+        <EmptyState
+          title={frontDeskSettings.loadFailed}
           action={
-            <Button variant="default" size="sm" onClick={() => void query.refetch()}>
+            <Button variant="primary" onClick={() => void query.refetch()}>
               {errors.tryAgain}
             </Button>
           }
-        >
-          {frontDeskSettings.loadFailed}
-        </Banner>
+        />
       );
     }
     return (
-      <div className={styles.page} aria-busy="true" role="status" aria-label={frontDeskSettings.loading}>
-        <div className={styles.columns}>
-          <div className={styles.column}>
-            <Skeleton height="132px" />
-            <Skeleton height="156px" />
-            <Skeleton height="260px" />
-          </div>
-          <div className={styles.column}>
-            <Skeleton height="360px" />
-            <Skeleton height="200px" />
-          </div>
+      <Panel>
+        <div aria-busy="true">
+          <Skeleton lines={5} />
         </div>
-      </div>
+      </Panel>
     );
   }
 
@@ -437,11 +410,12 @@ export function FrontDeskTab() {
         saving={save.isPending}
         serverError={save.error}
         onSave={onSave}
+        onReset={() => save.reset()}
       />
 
-      <section className={styles.forwardingSlot} data-forwarding-slot>
+      <div data-forwarding-slot>
         <ForwardingGuide />
-      </section>
+      </div>
     </div>
   );
 }

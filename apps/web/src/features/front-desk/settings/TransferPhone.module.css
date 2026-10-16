@@ -1,38 +1,8 @@
-/* Your phone for transfers: a panel with the help line, the number field, the ack box and Save. Readable width, never full-bleed. */
-.panel {
-  max-width: 560px;
-  min-width: 0;
-}
-
+/* Your phone for transfers: a panel with the help line, the number on the grid, and the recording acknowledgement under it */
 .help {
-  margin: 0 0 16px;
-  color: var(--ink-3);
-  font-size: var(--font-size-body);
+  margin-bottom: 16px;
 }
 
-.form {
+.ack {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* The field takes the full width of a phone screen and a fixed width beside it on a desktop */
-.phone {
-  width: 100%;
-  max-width: 320px;
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-start;
-}
-
-@media (max-width: 767.98px) {
-  .phone {
-    max-width: none;
-  }
-
-  .actions > button {
-    width: 100%;
-  }
 }

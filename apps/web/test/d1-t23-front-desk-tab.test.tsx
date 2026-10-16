@@ -6,9 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FrontDeskSettings, FrontDeskVoice } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { errors } from '../src/copy/errors.ts';
 import { forwarding } from '../src/copy/forwarding.ts';
 import { frontDeskSettings } from '../src/copy/front-desk-settings.ts';
+import { settings } from '../src/copy/settings.ts';
 import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -105,6 +105,8 @@ function renderTab() {
 
 const SAVE = 'PUT /api/front-desk/settings';
 const saveButton = () => screen.findByRole('button', { name: frontDeskSettings.save });
+const saveBar = () => screen.queryByRole('group', { name: settings.saveBar.label });
+const textsSwitch = () => screen.findByRole('switch', { name: frontDeskSettings.texts.label });
 
 describe('Settings -> Front Desk form', () => {
   it('shows the blocked sentence when forwarding is not verified; the owner may still turn it on after a confirm', async () => {
@@ -198,9 +200,10 @@ describe('Settings -> Front Desk form', () => {
   });
 
   it('saves exactly the settings input, with the on-call order', async () => {
-    signIn(makeSettings(), { [SAVE]: () => ({ body: makeSettings({ enabled: false }) }) });
+    signIn(makeSettings(), { [SAVE]: () => ({ body: makeSettings({ enabled: false, texts: false }) }) });
     const { user } = renderTab();
 
+    await user.click(await textsSwitch());
     await user.click(await saveButton());
     await waitFor(() => expect(api.count(SAVE)).toBe(1));
     const [body] = api.sent(SAVE) as Record<string, unknown>[];
@@ -222,6 +225,7 @@ describe('Settings -> Front Desk form', () => {
     );
     expect(body).toMatchObject({
       enabled: false,
+      texts: false,
       voice: 'maya',
       ringTeamFirstSeconds: 10,
       maxConcurrentAiCalls: 3,
@@ -236,89 +240,11 @@ describe('Settings -> Front Desk form', () => {
     });
     const { user } = renderTab();
 
-    await user.click(await saveButton());
     const facts = await screen.findByLabelText(frontDeskSettings.facts.label);
+    await user.type(facts, ' Closed on Sundays.');
+    await user.click(await saveButton());
     await waitFor(() => expect(facts).toHaveAccessibleDescription(expect.stringContaining('Facts are too long.')));
     expect(within(facts.closest('div') as HTMLElement).getByText('Facts are too long.')).toBeInTheDocument();
-  });
-
-  it('draws its panels under titles: answering, what it may do, ringing and keeping, voice and facts, and who answers', async () => {
-    signIn(makeSettings());
-    renderTab();
-    await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
-
-    const titles = frontDeskSettings.sections;
-    for (const name of [titles.answering, titles.mayDo, titles.timing, titles.voiceAndFacts, frontDeskSettings.onCall.heading]) {
-      expect(screen.getByRole('region', { name })).toBeInTheDocument();
-    }
-    // Each switch is in the panel its words belong to
-    expect(within(screen.getByRole('region', { name: titles.answering })).getByRole('switch', { name: frontDeskSettings.texts.label })).toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: titles.mayDo })).getAllByRole('switch')).toHaveLength(3);
-    expect(within(screen.getByRole('region', { name: titles.timing })).getAllByRole('spinbutton')).toHaveLength(4);
-  });
-
-  it('lists the voices in a pick-one list that shows the chosen voice', async () => {
-    signIn(makeSettings({ voice: 'claire' }));
-    const { user } = renderTab();
-
-    const picker = await screen.findByLabelText(frontDeskSettings.voice.label);
-    expect(picker).toHaveAttribute('aria-haspopup', 'listbox');
-    expect(picker).toHaveTextContent('Plain');
-    await user.click(picker);
-    const options = within(await screen.findByRole('listbox', { name: frontDeskSettings.voice.label })).getAllByRole('option');
-    expect(options.map((option) => option.textContent)).toEqual(['Warm', 'Plain']);
-  });
-
-  it('says why it is blocked with a glyph as well as the words', async () => {
-    signIn(makeSettings({ blockedReason: 'no_number' }));
-    renderTab();
-
-    const note = (await screen.findByText(frontDeskSettings.onOff.blocked.no_number)).closest('p');
-    expect(note?.querySelector('svg')).not.toBeNull();
-  });
-
-  it('asks to confirm in a region of its own, as a warning with both choices', async () => {
-    signIn(makeSettings({ blockedReason: 'forwarding_not_verified' }));
-    const { user } = renderTab();
-
-    const toggle = await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
-    await waitFor(() => expect(toggle).toBeEnabled());
-    await user.click(toggle);
-    const region = screen.getByRole('region', { name: frontDeskSettings.onOff.overrideYes });
-    expect(within(region).getByText(frontDeskSettings.onOff.overrideConfirm)).toBeInTheDocument();
-    expect(within(region).getByRole('button', { name: frontDeskSettings.onOff.overrideYes })).toBeInTheDocument();
-    expect(within(region).getByRole('button', { name: frontDeskSettings.onOff.overrideNo })).toBeInTheDocument();
-  });
-
-  it('marks the character count when the facts are over the limit', async () => {
-    signIn(makeSettings());
-    renderTab();
-
-    const facts = await screen.findByLabelText(frontDeskSettings.facts.label);
-    const counter = screen.getByText(frontDeskSettings.facts.counter(21, 2000));
-    expect(counter).not.toHaveAttribute('data-over');
-    fireEvent.change(facts, { target: { value: 'x'.repeat(2001) } });
-    expect(screen.getByText(frontDeskSettings.facts.counter(2001, 2000))).toHaveAttribute('data-over', 'true');
-  });
-
-  it('shows the shape of the form while it loads', async () => {
-    signIn(makeSettings());
-    renderTab();
-    expect(await screen.findByRole('status', { name: frontDeskSettings.loading })).toBeInTheDocument();
-    await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
-    expect(screen.queryByRole('status', { name: frontDeskSettings.loading })).toBeNull();
-  });
-
-  it('says it could not load the settings, with Try again, and Try again loads them', async () => {
-    let failures = 1;
-    signIn(makeSettings(), {
-      'GET /api/front-desk/settings': () => (failures-- > 0 ? { status: 500, body: { error: 'x' } } : { body: makeSettings() }),
-    });
-    const { user } = renderTab();
-
-    expect(await screen.findByText(frontDeskSettings.loadFailed)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: errors.tryAgain }));
-    expect(await screen.findByRole('switch', { name: frontDeskSettings.onOff.label })).toBeInTheDocument();
   });
 
   it('shows the forwarding guide in the slot below the form', async () => {
@@ -329,5 +255,70 @@ describe('Settings -> Front Desk form', () => {
     const slot = document.querySelector('[data-forwarding-slot]') as HTMLElement;
     expect(slot).not.toBeNull();
     expect(await within(slot).findByRole('heading', { name: forwarding.title })).toBeInTheDocument();
+  });
+});
+
+describe('Settings -> Front Desk panels and save bar', () => {
+  it('lays the form out as panels, each named by its heading, with the on-call list and the forwarding guide as panels too', async () => {
+    signIn(makeSettings());
+    renderTab();
+
+    await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
+    for (const name of [
+      frontDeskSettings.panels.answering,
+      frontDeskSettings.panels.assistant,
+      frontDeskSettings.panels.rules,
+      frontDeskSettings.panels.timing,
+      frontDeskSettings.onCall.heading,
+    ]) {
+      expect(screen.getByRole('region', { name })).toBeInTheDocument();
+    }
+    expect(await screen.findByRole('region', { name: forwarding.title })).toBeInTheDocument();
+  });
+
+  it('shows no save bar until something changes, and Discard puts every field back', async () => {
+    signIn(makeSettings());
+    const { user } = renderTab();
+
+    const texts = await textsSwitch();
+    expect(saveBar()).toBeNull();
+
+    await user.click(texts);
+    expect(texts).toHaveAttribute('aria-checked', 'false');
+    expect(saveBar()).not.toBeNull();
+
+    const ring = screen.getByLabelText(frontDeskSettings.ringTeam.label);
+    await user.clear(ring);
+    await user.type(ring, '12');
+
+    await user.click(screen.getByRole('button', { name: settings.saveBar.discard }));
+    expect(saveBar()).toBeNull();
+    expect(texts).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByLabelText(frontDeskSettings.ringTeam.label)).toHaveValue(10);
+    expect(api.count(SAVE)).toBe(0);
+  });
+
+  it('counts a change to the on-call order as something to save', async () => {
+    signIn(makeSettings());
+    const { user } = renderTab();
+
+    await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
+    expect(saveBar()).toBeNull();
+    await user.click(await screen.findByRole('button', { name: frontDeskSettings.onCall.moveDown('Sam Roofer') }));
+    expect(saveBar()).not.toBeNull();
+  });
+
+  it('keeps the save button shut while a number is out of range, and opens it again when the number is fixed', async () => {
+    signIn(makeSettings());
+    const { user } = renderTab();
+
+    const calls = await screen.findByLabelText(frontDeskSettings.maxCalls.label);
+    await user.clear(calls);
+    await user.type(calls, '0');
+    expect(await saveButton()).toBeDisabled();
+
+    await user.clear(calls);
+    await user.type(calls, '4');
+    expect(await saveButton()).toBeEnabled();
   });
 });

@@ -229,7 +229,54 @@ describe('settings: ad connections', () => {
     const meta = await metaCard();
 
     expect(await within(meta).findByText(connections.statuses.pending)).toBeInTheDocument();
-    expect(meta.querySelector('p[class*="reason"]')).toBeNull();
+    // No reason means no banner under the account, only the steps
+    expect(within(meta).queryByRole('status')).toBeNull();
+    expect(within(meta).queryByRole('alert')).toBeNull();
+  });
+
+  it('the tag beside each title says how the account stands, and no account is not connected', async () => {
+    renderConnections();
+    const google = await googleCard();
+    expect(await within(google).findByText(connections.notConnected)).toBeInTheDocument();
+    cleanup();
+
+    accounts = [
+      account({ id: 'g1', platform: 'google', externalAccountId: '1234567890', status: 'active' }),
+      account({ id: 'm1', platform: 'meta', externalAccountId: 'act_123456789', status: 'error', lastErrorPlain: PAYMENT }),
+    ];
+    renderConnections();
+    expect(await within(await googleCard()).findByText(connections.statuses.active)).toBeInTheDocument();
+    expect(await within(await metaCard()).findByText(connections.statuses.error)).toBeInTheDocument();
+  });
+
+  it('the steps stay while there is something left to do and go once the account is connected', async () => {
+    accounts = [account({ id: 'g1', platform: 'google', externalAccountId: '1234567890', status: 'pending' })];
+    renderConnections();
+    const google = await googleCard();
+    expect(await within(google).findByText(connections.googleStepAccept)).toBeInTheDocument();
+    expect(within(google).getByText(connections.stepsLabel)).toBeInTheDocument();
+    cleanup();
+
+    accounts = [account({ id: 'g1', platform: 'google', externalAccountId: '1234567890', status: 'active' })];
+    renderConnections();
+    const connected = await googleCard();
+    expect(await within(connected).findByText(connections.statuses.active)).toBeInTheDocument();
+    expect(within(connected).queryByText(connections.googleStepAccept)).toBeNull();
+    expect(within(connected).queryByText(connections.stepsLabel)).toBeNull();
+    // The account's ID stays, under its label
+    expect(within(connected).getByText(connections.accountIdLabel)).toBeInTheDocument();
+    expect(within(connected).getByText('1234567890')).toBeInTheDocument();
+  });
+
+  it('the reason is a banner: an alert when the account needs attention, a status while it waits', async () => {
+    accounts = [
+      account({ id: 'g1', platform: 'google', externalAccountId: '1234567890', status: 'error', lastErrorPlain: PAYMENT }),
+      account({ id: 'm1', platform: 'meta', externalAccountId: 'act_123456789', status: 'pending', lastErrorPlain: ACCESS }),
+    ];
+    renderConnections();
+
+    expect(await within(await googleCard()).findByRole('alert')).toHaveTextContent(PAYMENT);
+    expect(await within(await metaCard()).findByRole('status')).toHaveTextContent(ACCESS);
   });
 
   it('only one coming-soon line is shown', async () => {

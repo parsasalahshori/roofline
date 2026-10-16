@@ -1,16 +1,22 @@
-/* One row per weekday, stacked; the ranges of a day sit under its switch */
+/* One row per weekday, edge to edge in its panel: the day and its switch at the left, its hours at the right */
 .days {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   min-width: 0;
 }
 
 .day {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 16px;
   min-width: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.day:last-child {
+  border-bottom: 0;
 }
 
 .header {
@@ -21,9 +27,9 @@
 }
 
 .name {
+  min-width: 6.5em;
   font-size: var(--font-size-body);
   font-weight: 600;
-  min-width: 6.5em;
 }
 
 .state {
@@ -31,27 +37,56 @@
   font-size: var(--font-size-min);
 }
 
+/* A day's ranges, each on a line of its own, with the button that adds another under them */
 .ranges {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
 }
 
-/* Start, end and Remove on one line; the line wraps on a phone */
+/* Start, a dash, end and Remove on one line; the line wraps on a phone */
 .range {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
 }
 
 .time {
-  flex: 1 1 120px;
-  min-width: 0;
+  flex: none;
+  width: 132px;
+}
+
+/* Times are numbers: mono, so the digits line up from one day to the next */
+.time input {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.to {
+  color: var(--ink-3);
 }
 
 .error {
+  grid-column: 1 / -1;
   margin: 0;
-  color: var(--bad-text);
+  padding-left: 8px;
+  border-left: 3px solid var(--bad);
+  color: var(--ink);
   font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+@media (max-width: 767.98px) {
+  .day {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .time {
+    flex: 1 1 110px;
+    width: auto;
+  }
 }

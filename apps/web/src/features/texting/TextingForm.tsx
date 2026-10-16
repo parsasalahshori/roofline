@@ -4,11 +4,12 @@ import {
   Button,
   Checkbox,
   Field,
-  Select,
+  Listbox,
+  Panel,
   UiLink,
   useToast,
   type FieldProps,
-  type SelectOption,
+  type ListboxOption,
 } from '@roofline/ui';
 import {
   BRAND_FIELDS,
@@ -21,10 +22,11 @@ import {
 } from '@roofline/shared';
 import { texting } from '../../copy/texting.ts';
 import { formErrors } from '../auth/formErrors.ts';
+import form from '../settings/form.module.css';
 import { useSubmitRegistration } from './api.ts';
 import styles from './TextingForm.module.css';
 
-/** Every field as the form holds it: the business type is the Select's value, so it is text here. */
+/** Every field as the form holds it: the business type is the list's value, so it is text here. */
 type Values = Record<BrandField, string>;
 
 type TextField = Exclude<BrandField, 'businessType'>;
@@ -54,12 +56,19 @@ const BUSINESS_TYPE_LABEL: Record<BusinessType, keyof typeof texting.businessTyp
 };
 
 // The empty first option stands for "not picked yet", so an empty business type never shows as LLC
-const BUSINESS_OPTIONS: SelectOption[] = [
+const BUSINESS_OPTIONS: ListboxOption[] = [
   { value: '', label: '—' },
   ...BUSINESS_TYPES.map((type) => ({ value: type, label: texting.businessTypes[BUSINESS_TYPE_LABEL[type]] })),
 ];
 
 const FORM_FIELD_NAMES = BRAND_FIELDS.map((field) => `brand.${field}`);
+
+/** The two panels of fields, in the order they are asked. Together they are every field of a registration (a test holds that). */
+export const BUSINESS_FIELDS: readonly BrandField[] = ['legalName', 'ein', 'businessType', 'street', 'city', 'state', 'zip', 'website'];
+export const CONTACT_FIELDS: readonly BrandField[] = ['contactFirstName', 'contactLastName', 'contactEmail', 'contactPhone', 'contactTitle'];
+
+/** The fields that take a whole row of the two-column grid: a name and a street run long. */
+const WIDE: ReadonlySet<BrandField> = new Set<BrandField>(['legalName', 'street']);
 
 /** What the form shows. A missing value is an empty field. */
 function toValues(source: Partial<BrandInfo>): Values {
@@ -114,6 +123,30 @@ export function TextingForm({ view }: { view: TextingView }) {
     );
   }
 
+  /** One field: the list for the business type, a text box for the rest. */
+  const fieldFor = (field: BrandField) =>
+    field === 'businessType' ? (
+      <Listbox
+        key={field}
+        label={texting.fields[field]}
+        value={values[field]}
+        onChange={(value) => changeField(field, value)}
+        options={BUSINESS_OPTIONS}
+        error={fieldError(field)}
+      />
+    ) : (
+      <Field
+        key={field}
+        name={field}
+        className={WIDE.has(field) ? form.span : undefined}
+        label={texting.fields[field]}
+        value={values[field]}
+        onChange={(event) => changeField(field, event.target.value)}
+        error={fieldError(field)}
+        {...INPUT_PROPS[field]}
+      />
+    );
+
   return (
     <div className={styles.root}>
       {needsFix && view.reason !== null ? <Banner tone="danger">{view.reason}</Banner> : null}
@@ -124,59 +157,44 @@ export function TextingForm({ view }: { view: TextingView }) {
       ) : null}
       {view.needsVerifiedEmail ? <Banner tone="warning">{texting.needsEmail}</Banner> : null}
 
-      <form className={styles.form} onSubmit={submit} noValidate>
-        {BRAND_FIELDS.map((field) =>
-          field === 'businessType' ? (
-            <Select
-              key={field}
-              label={texting.fields[field]}
-              value={values[field]}
-              onChange={(value) => changeField(field, value)}
-              options={BUSINESS_OPTIONS}
-              error={fieldError(field)}
-            />
-          ) : (
-            <Field
-              key={field}
-              name={field}
-              label={texting.fields[field]}
-              value={values[field]}
-              onChange={(event) => changeField(field, event.target.value)}
-              error={fieldError(field)}
-              {...INPUT_PROPS[field]}
-            />
-          ),
-        )}
+      <form className={form.form} onSubmit={submit} noValidate>
+        <Panel title={texting.panels.business}>
+          <div className={form.grid}>{BUSINESS_FIELDS.map(fieldFor)}</div>
+        </Panel>
 
-        <p className={styles.useCase}>{texting.whatYouText(USE_CASE_LABEL)}</p>
+        <Panel title={texting.panels.contact}>
+          <div className={form.grid}>{CONTACT_FIELDS.map(fieldFor)}</div>
+        </Panel>
 
-        <div className={styles.wide}>
-          <div className={styles.choice}>
-            <Checkbox checked={useHostedPages} onChange={setUseHostedPages} label={texting.useHostedPages} />
-          </div>
-          {useHostedPages ? (
-            <div className={styles.links}>
-              <a className={styles.link} href={view.hostedPolicyUrls.privacy} target="_blank" rel="noreferrer">
-                {texting.hostedPrivacy}
-              </a>
-              <a className={styles.link} href={view.hostedPolicyUrls.terms} target="_blank" rel="noreferrer">
-                {texting.hostedTerms}
-              </a>
+        <Panel title={texting.panels.send}>
+          <div className={styles.send}>
+            <p className={form.help}>{texting.whatYouText(USE_CASE_LABEL)}</p>
+
+            <div className={styles.choice}>
+              <Checkbox checked={useHostedPages} onChange={setUseHostedPages} label={texting.useHostedPages} />
             </div>
-          ) : null}
-        </div>
+            {useHostedPages ? (
+              <div className={styles.links}>
+                <a className={styles.link} href={view.hostedPolicyUrls.privacy} target="_blank" rel="noreferrer">
+                  {texting.hostedPrivacy}
+                </a>
+                <a className={styles.link} href={view.hostedPolicyUrls.terms} target="_blank" rel="noreferrer">
+                  {texting.hostedTerms}
+                </a>
+              </div>
+            ) : null}
 
-        <div className={styles.wide}>
-          <Button
-            className={styles.submit}
-            type="submit"
-            variant="primary"
-            busy={registration.isPending}
-            disabled={blocked || registration.isPending}
-          >
-            {needsFix ? texting.fixAndResubmit : texting.send}
-          </Button>
-        </div>
+            <Button
+              className={styles.submit}
+              type="submit"
+              variant="primary"
+              busy={registration.isPending}
+              disabled={blocked || registration.isPending}
+            >
+              {needsFix ? texting.fixAndResubmit : texting.send}
+            </Button>
+          </div>
+        </Panel>
       </form>
     </div>
   );

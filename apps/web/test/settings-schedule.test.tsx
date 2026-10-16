@@ -2,6 +2,7 @@ import { cleanup, screen, within } from '@testing-library/react';
 import { DEFAULT_WORK_HOURS } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { schedule } from '../src/copy/schedule.ts';
+import { settings } from '../src/copy/settings.ts';
 import { ScheduleTab } from '../src/features/settings/ScheduleTab.tsx';
 import { ACCOUNT, renderAt, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
@@ -38,7 +39,8 @@ describe('schedule tab', () => {
     const travel = await screen.findByLabelText(schedule.travelBuffer);
     await user.clear(travel);
     await user.type(travel, '45');
-    await user.click(within(companyRegion()).getByRole('button', { name: schedule.save }));
+    // The Save waits in the bar at the foot of the form, not in the panel
+    await user.click(screen.getByRole('button', { name: schedule.save }));
 
     await screen.findByText(schedule.saved);
     expect(api.sent('PUT /api/calendar/settings')[0]).toEqual({
@@ -63,7 +65,7 @@ describe('schedule tab', () => {
 
     const monday = within(companyRegion()).getByRole('group', { name: DAY.mon });
     await user.click(within(monday).getByRole('button', { name: schedule.addRange }));
-    await user.click(within(companyRegion()).getByRole('button', { name: schedule.save }));
+    await user.click(screen.getByRole('button', { name: schedule.save }));
 
     await within(monday).findByText(message);
     expect(screen.getAllByText(message)).toHaveLength(1);
@@ -113,7 +115,7 @@ describe('schedule tab', () => {
     const mine = yourRegion();
     expect(within(mine).getByRole('group', { name: DAY.mon })).toBeInTheDocument();
     expect(api.count('PUT /api/calendar/my-hours')).toBe(0);
-    await user.click(within(mine).getByRole('button', { name: schedule.save }));
+    await user.click(screen.getByRole('button', { name: schedule.save }));
     await screen.findByText(schedule.saved);
     expect(api.sent('PUT /api/calendar/my-hours')[0]).toEqual({ workHours: DEFAULT_WORK_HOURS });
 
@@ -121,5 +123,67 @@ describe('schedule tab', () => {
     await user.click(within(yourRegion()).getByRole('switch', { name: schedule.useCompanyHours }));
     await vi.waitFor(() => expect(api.sent('PUT /api/calendar/my-hours')).toHaveLength(2));
     expect(api.sent('PUT /api/calendar/my-hours')[1]).toEqual({ workHours: null });
+  });
+
+  it('the save bar waits for a change, and Discard puts the hours back', async () => {
+    api = stubApi({
+      ...SHELL_ROUTES,
+      'GET /api/auth/me': () => ({ body: ACCOUNT }),
+      'GET /api/calendar/settings': () => ({ body: SETTINGS }),
+      'GET /api/calendar/my-hours': () => ({ body: MY_HOURS }),
+    });
+    const { user } = renderAt(<ScheduleTab />, '/settings/schedule');
+    const travel = await screen.findByLabelText(schedule.travelBuffer);
+    expect(screen.queryByRole('button', { name: schedule.save })).toBeNull();
+
+    // Switching Monday off is a change to the hours as well as to the numbers
+    const monday = within(companyRegion()).getByRole('group', { name: DAY.mon });
+    await user.click(within(monday).getByRole('switch', { name: DAY.mon }));
+    expect(within(monday).getByText(schedule.closed)).toBeInTheDocument();
+    await user.type(travel, '5');
+    await user.click(screen.getByRole('button', { name: settings.saveBar.discard }));
+
+    expect(within(monday).getByText(schedule.open)).toBeInTheDocument();
+    expect(screen.getByLabelText(schedule.travelBuffer)).toHaveValue(30);
+    expect(screen.queryByRole('button', { name: schedule.save })).toBeNull();
+    expect(api.count('PUT /api/calendar/settings')).toBe(0);
+  });
+
+  it('a day shows its hours as two mono time boxes, and a closed day shows none', async () => {
+    api = stubApi({
+      ...SHELL_ROUTES,
+      'GET /api/auth/me': () => ({ body: ACCOUNT }),
+      'GET /api/calendar/settings': () => ({ body: SETTINGS }),
+      'GET /api/calendar/my-hours': () => ({ body: MY_HOURS }),
+    });
+    renderAt(<ScheduleTab />, '/settings/schedule');
+    await screen.findByRole('region', { name: schedule.companyTitle });
+
+    const monday = within(companyRegion()).getByRole('group', { name: DAY.mon });
+    expect(within(monday).getByLabelText(`${DAY.mon} ${schedule.start}`)).toHaveAttribute('type', 'time');
+    expect(within(monday).getByLabelText(`${DAY.mon} ${schedule.end}`)).toHaveAttribute('type', 'time');
+    const sunday = within(companyRegion()).getByRole('group', { name: DAY.sun });
+    expect(within(sunday).getByText(schedule.closed)).toBeInTheDocument();
+    expect(within(sunday).queryByLabelText(`${DAY.sun} ${schedule.start}`)).toBeNull();
+  });
+
+  it('a day with one range has no Remove; with two it has one on each, and removing goes back to one', async () => {
+    api = stubApi({
+      ...SHELL_ROUTES,
+      'GET /api/auth/me': () => ({ body: ACCOUNT }),
+      'GET /api/calendar/settings': () => ({ body: SETTINGS }),
+      'GET /api/calendar/my-hours': () => ({ body: MY_HOURS }),
+    });
+    const { user } = renderAt(<ScheduleTab />, '/settings/schedule');
+    await screen.findByRole('region', { name: schedule.companyTitle });
+
+    // The last range of a day is not removed: the day's switch closes it
+    const monday = within(companyRegion()).getByRole('group', { name: DAY.mon });
+    expect(within(monday).queryByRole('button', { name: schedule.removeRange })).toBeNull();
+    await user.click(within(monday).getByRole('button', { name: schedule.addRange }));
+    const removes = within(monday).getAllByRole('button', { name: schedule.removeRange });
+    expect(removes).toHaveLength(2);
+    await user.click(removes[1]!);
+    expect(within(monday).queryByRole('button', { name: schedule.removeRange })).toBeNull();
   });
 });

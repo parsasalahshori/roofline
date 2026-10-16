@@ -1,9 +1,10 @@
 import { toE164, type TransferPhoneView } from '@roofline/shared';
-import { Banner, Button, Checkbox, Field, Panel, Skeleton, useToast } from '@roofline/ui';
+import { Checkbox, EmptyState, Field, Panel, Skeleton, useToast } from '@roofline/ui';
 import { useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/client.ts';
-import { errors } from '../../../copy/errors.ts';
 import { frontDeskSettings } from '../../../copy/front-desk-settings.ts';
+import form from '../../settings/form.module.css';
+import { SaveBar } from '../../settings/SaveBar.tsx';
 import { useSaveTransferPhone, useTransferPhone } from './settings-api.ts';
 import styles from './TransferPhone.module.css';
 
@@ -21,10 +22,12 @@ type FormProps = { view: TransferPhoneView };
 function TransferPhoneForm({ view }: FormProps) {
   const save = useSaveTransferPhone();
   const toast = useToast();
-  const initial = view.e164 ?? view.prefill ?? '';
-  const [value, setValue] = useState(initial);
+  // The number the field was loaded with, and (after a save) the number the server kept: a difference from it is what the save bar is for
+  const [baseline, setBaseline] = useState(view.e164 ?? view.prefill ?? '');
+  const [value, setValue] = useState(baseline);
   const [acknowledged, setAcknowledged] = useState(false);
   const [fieldError, setFieldError] = useState<string | undefined>(undefined);
+  const changed = value !== baseline || acknowledged;
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,6 +43,7 @@ function TransferPhoneForm({ view }: FormProps) {
       {
         onSuccess: () => {
           // The field shows the number as saved, and the person re-ticks the box for the next change
+          setBaseline(normalized);
           setValue(normalized);
           setAcknowledged(false);
           toast.show(copy.saved, 'success');
@@ -58,31 +62,41 @@ function TransferPhoneForm({ view }: FormProps) {
   }
 
   return (
-    <Panel as="section" title={copy.heading} className={styles.panel}>
-      <p className={styles.help}>{copy.help}</p>
-      <form onSubmit={submit} noValidate className={styles.form}>
-        <Field
-          label={copy.label}
-          name="transferPhone"
-          type="tel"
-          inputMode="tel"
-          autoComplete="tel"
-          className={styles.phone}
-          value={value}
-          onChange={(event) => {
-            setValue(event.target.value);
-            setFieldError(undefined);
-          }}
-          error={fieldError}
-        />
-        <Checkbox checked={acknowledged} onChange={setAcknowledged} label={copy.ack} />
-        <div className={styles.actions}>
-          <Button type="submit" variant="primary" disabled={!acknowledged} busy={save.isPending}>
-            {save.isPending ? copy.saving : copy.save}
-          </Button>
+    <form onSubmit={submit} noValidate className={form.form}>
+      <Panel title={copy.heading}>
+        <p className={`${form.help} ${styles.help}`}>{copy.help}</p>
+        <div className={form.grid}>
+          <Field
+            label={copy.label}
+            name="transferPhone"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={value}
+            onChange={(event) => {
+              setValue(event.target.value);
+              setFieldError(undefined);
+            }}
+            error={fieldError}
+          />
+          <div className={`${form.span} ${styles.ack}`}>
+            <Checkbox checked={acknowledged} onChange={setAcknowledged} label={copy.ack} />
+          </div>
         </div>
-      </form>
-    </Panel>
+      </Panel>
+
+      <SaveBar
+        dirty={changed}
+        saving={save.isPending}
+        saveLabel={copy.save}
+        saveDisabled={!acknowledged}
+        onDiscard={() => {
+          setValue(baseline);
+          setAcknowledged(false);
+          setFieldError(undefined);
+        }}
+      />
+    </form>
   );
 }
 
@@ -93,25 +107,14 @@ export function TransferPhone() {
   if (phone.data) return <TransferPhoneForm view={phone.data} />;
 
   if (phone.isError) {
-    return (
-      <div className={styles.panel}>
-        <Banner
-          tone="danger"
-          action={
-            <Button variant="default" size="sm" onClick={() => void phone.refetch()}>
-              {errors.tryAgain}
-            </Button>
-          }
-        >
-          {copy.loadFailed}
-        </Banner>
-      </div>
-    );
+    return <EmptyState title={copy.loadFailed} />;
   }
 
   return (
-    <div role="status" aria-label={copy.loading} className={styles.panel}>
-      <Skeleton height="220px" />
-    </div>
+    <Panel>
+      <div role="status">
+        <Skeleton lines={2} />
+      </div>
+    </Panel>
   );
 }

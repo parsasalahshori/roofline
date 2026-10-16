@@ -1,0 +1,41 @@
+/* The kit's tab row, with its scroll bar out of sight and a fade at an edge that has more tabs past it */
+.strip {
+  position: relative;
+  min-width: 0;
+}
+
+.strip > nav {
+  scrollbar-width: none;
+}
+
+.strip > nav::-webkit-scrollbar {
+  display: none;
+}
+
+.strip::before,
+.strip::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  z-index: 1;
+  width: 32px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast) var(--ease);
+}
+
+.strip::before {
+  left: 0;
+  background: linear-gradient(to right, var(--ground), transparent);
+}
+
+.strip::after {
+  right: 0;
+  background: linear-gradient(to left, var(--ground), transparent);
+}
+
+.strip[data-more-start="true"]::before,
+.strip[data-more-end="true"]::after {
+  opacity: 1;
+}

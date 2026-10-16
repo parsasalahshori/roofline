@@ -31,3 +31,25 @@
 .body > a {
   align-self: flex-start;
 }
+
+/* The area you work in: its caption, then the choices side by side (they wrap rather than run off a narrow sheet) */
+.radius {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.radiusLabel {
+  margin: 0;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.radius .track {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
