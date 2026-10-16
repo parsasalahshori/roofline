@@ -1,8 +1,10 @@
 import { useState, type KeyboardEvent } from 'react';
 import type { PublicProposalView } from '@roofline/shared';
 import { Banner, Button, Checkbox, Field, Sheet } from '@roofline/ui';
-import { homeowner } from '../../copy/homeowner.ts';
+import { homeowner, money } from '../../copy/homeowner.ts';
+import { CheckIcon, PenIcon } from '../public/icons.tsx';
 import { useSignProposal, type SignBody } from './api.ts';
+import { financingOf } from './facts.ts';
 import { SignaturePad } from './SignaturePad.tsx';
 import styles from './SignFlow.module.css';
 
@@ -17,6 +19,10 @@ export type SignFlowProps = {
   onSigned(): void;
 };
 
+/**
+ * Signing, in a sheet: what is being signed, how it would be paid, the name, the optional drawing, and the one consent.
+ * The consent's words are the versioned legal text; "financing is a separate approval" is said beside it, not in it.
+ */
 export function SignFlow({ token, proposal, optionId, open, onClose, onSigned }: SignFlowProps) {
   const option = proposal.options.find((candidate) => candidate.id === optionId);
   const sign = useSignProposal(token);
@@ -29,6 +35,7 @@ export function SignFlow({ token, proposal, optionId, open, onClose, onSigned }:
   const trimmedName = name.trim();
   const consentError = attempted && !consent ? homeowner.consentMissing : undefined;
   const nameError = attempted && trimmedName === '' ? homeowner.nameMissing : undefined;
+  const financing = option ? financingOf(option) : null;
 
   function submit() {
     if (sign.isPending) return;
@@ -47,7 +54,8 @@ export function SignFlow({ token, proposal, optionId, open, onClose, onSigned }:
   }
 
   const footer = option ? (
-    <Button type="button" className={styles.submit} busy={sign.isPending} onClick={submit}>
+    <Button type="button" size="lg" className={styles.submit} busy={sign.isPending} onClick={submit}>
+      <PenIcon size={18} />
       {homeowner.signAndAccept(option.totalCents)}
     </Button>
   ) : undefined;
@@ -55,15 +63,53 @@ export function SignFlow({ token, proposal, optionId, open, onClose, onSigned }:
   return (
     <Sheet open={open} title={homeowner.signTitle} onClose={onClose} closeLabel={homeowner.closeLabel} footer={footer}>
       <div className={styles.body}>
+        <ol className={styles.steps} aria-label={homeowner.stepsLabel}>
+          <li data-state="done">
+            <i aria-hidden="true">
+              <CheckIcon size={12} />
+            </i>
+            {homeowner.stepChoose}
+          </li>
+          <li data-state="now" aria-current="step">
+            <i aria-hidden="true">2</i>
+            {homeowner.stepSign}
+          </li>
+          <li>
+            <i aria-hidden="true">3</i>
+            {homeowner.stepDone}
+          </li>
+        </ol>
+
         {option ? (
           <>
-            <p className={styles.summary}>{homeowner.signSummary(option.name, option.totalCents)}</p>
+            <div className={styles.summary}>
+              <small>{homeowner.tierLabel[option.tier]}</small>
+              <small className={styles.right}>{proposal.address}</small>
+              <b>{option.name}</b>
+              <b className={styles.right}>{money(option.totalCents)}</b>
+            </div>
+            {financing !== null ? (
+              <section className={styles.pay}>
+                <h3 className={styles.label}>{homeowner.howYouPay}</h3>
+                <div className={styles.payGrid}>
+                  <div>
+                    <small>{homeowner.payTotal}</small>
+                    <b>{money(option.totalCents)}</b>
+                  </div>
+                  <div>
+                    <small>{homeowner.payMonthly}</small>
+                    <b>{homeowner.payMonthlyAmount(financing.monthly)}</b>
+                    <span>{homeowner.payMonthlyTerms(financing.apr, financing.months)}</span>
+                  </div>
+                </div>
+              </section>
+            ) : null}
             {proposal.estimateClause ? <p className={styles.clause}>{homeowner.estimateClause}</p> : null}
           </>
         ) : (
           <Banner tone="danger">{homeowner.optionMissing}</Banner>
         )}
-        <Checkbox checked={consent} onChange={setConsent} label={homeowner.consentText} error={consentError} />
+
         <div className={styles.nameField}>
           <Field
             label={homeowner.nameLabel}
@@ -76,10 +122,12 @@ export function SignFlow({ token, proposal, optionId, open, onClose, onSigned }:
             onKeyDown={onNameKeyDown}
           />
         </div>
-        <section className={styles.draw}>
-          <h3 className={styles.heading}>{homeowner.drawHeading}</h3>
-          <SignaturePad onChange={setDrawn} disabled={sign.isPending} />
-        </section>
+        <SignaturePad heading={homeowner.drawHeading} onChange={setDrawn} disabled={sign.isPending} />
+
+        <div className={styles.consent}>
+          <Checkbox checked={consent} onChange={setConsent} label={homeowner.consentText} error={consentError} />
+          {financing !== null ? <p className={styles.note}>{homeowner.financingSeparate}</p> : null}
+        </div>
         {sign.error ? <Banner tone="danger">{sign.error.message}</Banner> : null}
       </div>
     </Sheet>

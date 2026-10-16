@@ -100,7 +100,9 @@ test('homeowner page has no serious accessibility violations', async ({ page, br
   try {
     const home = await context.newPage();
     await home.goto(sent.link);
-    await expect(home.getByRole('button', { name: `Choose ${BETTER_NAME}`, exact: true })).toBeVisible();
+    // Better is the tile picked when the page opens: its panel is named for the option, and its button says the tier and the total
+    await expect(home.getByRole('region', { name: BETTER_NAME })).toBeVisible();
+    await expect(home.getByRole('button', { name: /^Choose Better \u00b7 \$[\d,]+$/ })).toBeVisible();
     await scan(home);
   } finally {
     await context.close();

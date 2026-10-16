@@ -1,40 +1,163 @@
-/* The signing sheet's body: the summary, the consent, the typed name, then the optional drawing. */
+/* The signing sheet's body: where you are, what you sign, how it is paid, the name, the drawing, the one consent. */
 .body {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.summary {
+/* Choose is done; Sign is where you are; Done is next. The words carry it; the marks are decoration. */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  padding: 0;
+  list-style: none;
+}
+
+.steps li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--ink-3);
+  font: 600 0.8125rem/1 var(--f-ui);
+}
+
+.steps i {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  font-style: normal;
+}
+
+.steps li[data-state="done"] i {
+  background: var(--ok);
+  box-shadow: none;
+  color: var(--ink-inv);
+}
+
+.steps li[data-state="now"] {
+  color: var(--ink);
+}
+
+.steps li[data-state="now"] i {
+  background: var(--ink);
+  box-shadow: none;
+  color: var(--ink-inv);
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-3);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.summary small {
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  overflow-wrap: anywhere;
+}
+
+.summary b {
+  font: 650 0.9375rem/1.2 var(--f-ui);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.right {
+  text-align: right;
+}
+
+/* How it would be paid: two facts side by side, no choice to make here */
+.pay {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.label {
+  margin: 0;
+  font: 600 0.8125rem/1.2 var(--f-ui);
+}
+
+.payGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.payGrid > div {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  padding: 10px 12px;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+.payGrid small {
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+}
+
+.payGrid b {
+  font: 650 0.9375rem/1.25 var(--f-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.payGrid span {
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  font-variant-numeric: tabular-nums;
 }
 
 .clause {
   margin: 0;
-  font-size: var(--font-size-body);
   color: var(--ink-3);
+  font-size: var(--font-size-min);
+  line-height: 1.4;
 }
 
 /* Inputs are 16px so iOS does not zoom the page when a person taps them. */
 .nameField input {
+  min-height: 46px;
   font-size: 16px;
 }
 
-.draw {
+.consent {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.heading {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+/* A ticked box is ink, not the company's colour */
+.consent input[type="checkbox"] {
+  accent-color: var(--ink);
 }
 
-.submit {
+.note {
+  margin: 0;
+  padding-left: 32px;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  line-height: 1.4;
+}
+
+/* The sheet's one main button: the company's colour, 52px */
+.submit[data-size] {
   width: 100%;
-  min-height: 40px;
+  min-height: 52px;
+  border-radius: var(--r-3);
+  font-size: 1rem;
+  font-weight: 700;
 }

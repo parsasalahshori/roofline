@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
@@ -7,6 +7,8 @@ import { CONSENT_TEXT_V1, ESTIMATE_CLAUSE_V1, type PublicProposalView } from '@r
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { homeowner, money } from '../src/copy/homeowner.ts';
+import { publicCopy } from '../src/copy/public.ts';
+import { quote } from '../src/copy/quote.ts';
 import { SIGNED_PDF_POLL_MS, signedPdfUrl } from '../src/features/homeowner/api.ts';
 import { type Reply, stubApi } from './helpers.tsx';
 
@@ -108,8 +110,9 @@ function renderPage(path = `/p/${TOKEN}`) {
   return { router, queryClient, user: userEvent.setup() };
 }
 
-/** The Choose button of an option, by the option's name. */
-const chooseButton = (name: string) => screen.getByRole('button', { name: homeowner.chooseOption(name) });
+/** The main button for a tier and its total: "Choose Better · $14,250". Better is the tile that is picked when the page opens. */
+const choose = (tier: 'Good' | 'Better' | 'Best' = 'Better', cents = 1425000) => homeowner.chooseOption(tier, money(cents));
+const chooseButton = (tier?: 'Good' | 'Better' | 'Best', cents?: number) => screen.getByRole('button', { name: choose(tier, cents) });
 
 /** Presses Tab until `target()` has focus. Keyboard only: no click and no focus() call. */
 async function tabTo(user: UserEvent, target: () => HTMLElement, limit = 40): Promise<void> {
@@ -120,26 +123,199 @@ async function tabTo(user: UserEvent, target: () => HTMLElement, limit = 40): Pr
   throw new Error('Could not tab to the wanted control.');
 }
 
-describe('the homeowner page', () => {
-  it('renders the three options', async () => {
-    proposalApi(() => ({ body: fixture() }));
-    renderPage();
+describe('the company on the proposal page', () => {
+  const brandStyle = () => document.getElementById('roofline-brand');
+  /** The proposal as the API may one day send it: the same view, plus the company's logo, colour and roof facts. */
+  const withExtras = (extra: Record<string, unknown>): PublicProposalView => ({ ...fixture(), ...extra }) as PublicProposalView;
 
-    const cards = await screen.findAllByTestId('option-card');
-    expect(cards).toHaveLength(3);
-    for (const option of fixture().options) {
-      expect(screen.getByText(option.name)).toBeInTheDocument();
-      expect(screen.getByText(money(option.totalCents))).toBeInTheDocument();
-    }
-    expect(screen.getAllByText(homeowner.mostPopular)).toHaveLength(1);
-    expect(document.body.textContent ?? '').not.toMatch(/per square|per sq|\/sq/i);
+  afterEach(() => {
+    brandStyle()?.remove();
   });
 
-  it('shows the financing line', async () => {
+  it("a colour in the payload goes in through applyBrand and leaves with the page; with none, the default stays", async () => {
+    proposalApi(() => ({ body: withExtras({ accentColor: '#ed3a2b' }) }));
+    const view = renderPage();
+    await screen.findAllByTestId('option-card');
+    await waitFor(() => expect(brandStyle()).not.toBeNull());
+    expect(brandStyle()!.textContent).toMatch(/--brand:\s*#[0-9a-f]{6}/i);
+    cleanup();
+    expect(brandStyle()).toBeNull();
+    view.queryClient.clear();
+
     proposalApi(() => ({ body: fixture() }));
     renderPage();
+    await screen.findAllByTestId('option-card');
+    expect(brandStyle()).toBeNull();
+  });
 
-    expect(await screen.findByText(homeowner.monthlyLine('$215', 120, '8.99'))).toBeInTheDocument();
+  it('the company name is the wordmark, a logo image replaces it, and the Call pill dials the company', async () => {
+    proposalApi(() => ({ body: fixture() }));
+    renderPage();
+    await screen.findAllByTestId('option-card');
+    expect(screen.getByText('Acme Roofing')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: publicCopy.callAria('(555) 555-0100') })).toHaveAttribute('href', 'tel:+15555550100');
+    cleanup();
+
+    proposalApi(() => ({ body: withExtras({ logoUrl: 'https://cdn.example.test/acme.png' }) }));
+    renderPage();
+    expect(await screen.findByRole('img', { name: 'Acme Roofing' })).toHaveAttribute('src', 'https://cdn.example.test/acme.png');
+    expect(screen.queryByText('Acme Roofing')).toBeNull();
+  });
+
+  it('the roof card shows the facts the company has, and nothing when it has none', async () => {
+    proposalApi(() => ({ body: withExtras({ roof: { squares: 33.1, pitchX12: 6, hailInches: 1.25, photoCount: 18 } }) }));
+    renderPage();
+    const card = await screen.findByRole('region', { name: homeowner.roofFacts });
+    expect(within(card).getByText(homeowner.squares(33.1))).toBeInTheDocument();
+    expect(within(card).getByText(homeowner.pitch(6))).toBeInTheDocument();
+    expect(within(card).getByText(homeowner.hail(1.25))).toBeInTheDocument();
+    expect(within(card).getByText(homeowner.photos(18))).toBeInTheDocument();
+    // No outline sent, so no picture of the home
+    expect(within(card).queryByRole('img')).toBeNull();
+    cleanup();
+
+    // One fact: just that one. No dashes or zeros stand in for the rest.
+    proposalApi(() => ({ body: withExtras({ roof: { squares: 28 } }) }));
+    renderPage();
+    const partial = await screen.findByRole('region', { name: homeowner.roofFacts });
+    expect(within(partial).getByText(homeowner.squares(28))).toBeInTheDocument();
+    expect(within(partial).queryByText(homeowner.pitchLabel)).toBeNull();
+    expect(within(partial).queryByText(homeowner.hailLabel)).toBeNull();
+    expect(partial.textContent ?? '').not.toMatch(/photo/);
+    cleanup();
+
+    // What the API sends today: no roof at all. No card.
+    proposalApi(() => ({ body: fixture() }));
+    renderPage();
+    await screen.findAllByTestId('option-card');
+    expect(screen.queryByRole('region', { name: homeowner.roofFacts })).toBeNull();
+    cleanup();
+
+    // Facts that are not usable numbers: no card either
+    proposalApi(() => ({ body: withExtras({ roof: { squares: 0, pitchX12: null, hailInches: -1, photoCount: 0 } }) }));
+    renderPage();
+    await screen.findAllByTestId('option-card');
+    expect(screen.queryByRole('region', { name: homeowner.roofFacts })).toBeNull();
+  });
+
+  it('the roof card shows the home from above when the company sent its outline', async () => {
+    const ring: [number, number][] = [
+      [-96.0002, 41.2499],
+      [-95.9998, 41.2499],
+      [-95.9998, 41.2501],
+      [-96.0002, 41.2501],
+    ];
+    proposalApi(() => ({ body: withExtras({ roof: { squares: 30, outline: { center: [-96, 41.25], ring } } }) }));
+    renderPage();
+    const card = await screen.findByRole('region', { name: homeowner.roofFacts });
+    expect(within(card).getByRole('img', { name: quote.outlineAlt })).toBeInTheDocument();
+  });
+
+  it('a signed proposal shows what was signed, a short timeline with only what is known, and the copy to keep', async () => {
+    proposalApi(() => ({
+      body: fixture({ status: 'signed', signed: { optionId: MIDDLE_ID, name: 'Maria Lopez', at: '2026-10-12T15:00:00.000Z', pdfReady: true } }),
+    }));
+    renderPage();
+    expect(await screen.findByRole('heading', { name: homeowner.signedTitle })).toBeInTheDocument();
+    expect(screen.getByText(/^Signed by Maria Lopez on Oct 12, 2026 for Better$/)).toBeInTheDocument();
+    // The record: the tier, the day, the address and the total
+    expect(screen.getByText('12 Oak Lane, Springfield')).toBeInTheDocument();
+    expect(screen.getByText(money(1425000))).toBeInTheDocument();
+    // The timeline has the two steps it knows, and invents no dates or crews
+    expect(screen.getByText(homeowner.signedStepDone)).toBeInTheDocument();
+    expect(screen.getByText(homeowner.signedStepCopy)).toBeInTheDocument();
+    expect(screen.getByText(homeowner.signedStepNextBody('Acme Roofing'))).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: homeowner.downloadPdf })).toBeInTheDocument();
+  });
+});
+
+describe('the homeowner page', () => {
+  it('renders the three tiles and the picked option as one all-in price', async () => {
+    proposalApi(() => ({ body: fixture() }));
+    const { user } = renderPage();
+
+    const tiles = await screen.findAllByRole('radio');
+    expect(tiles).toHaveLength(3);
+    // Each tile says its tier and its total; Better is picked when the page opens.
+    for (const [index, option] of fixture().options.entries()) {
+      expect(tiles[index]).toHaveAccessibleName(new RegExp(`^${homeowner.tierLabel[option.tier]} ${money(option.totalCents).replace('$', '\\$')}`));
+    }
+    expect(tiles[1]).toBeChecked();
+    expect(screen.getAllByText(homeowner.mostPopular)).toHaveLength(1);
+
+    // One panel, for the picked option, with its one price and its button; the other options' prices are only on their tiles.
+    const panels = screen.getAllByTestId('option-card');
+    expect(panels).toHaveLength(1);
+    expect(panels[0]).toHaveAccessibleName('Better');
+    expect(within(panels[0]!).getByText(money(1425000))).toBeInTheDocument();
+    expect(within(panels[0]!).getByText(homeowner.allIn)).toBeInTheDocument();
+    expect(within(panels[0]!).getByText('Upgraded underlayment')).toBeInTheDocument();
+    expect(within(panels[0]!).getByText('Ridge vent')).toBeInTheDocument();
+    expect(chooseButton()).toBeInTheDocument();
+    expect(document.body.textContent ?? '').not.toMatch(/per square|per sq|\/sq\b/i);
+
+    // Picking another tile swaps the panel and the button; nothing is chosen until the button is pressed.
+    await user.click(tiles[2]!);
+    expect(screen.getByTestId('option-card')).toHaveAccessibleName('Best');
+    expect(chooseButton('Best', 1890000)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: choose('Better') })).toBeNull();
+    expect(api.count(SIGN_KEY)).toBe(0);
+  });
+
+  it('a single option has no tiles, and a proposal with no tier called Better opens on the middle one', async () => {
+    const [first, , last] = fixture().options;
+    proposalApi(() => ({ body: fixture({ options: [first!] }) }));
+    renderPage();
+    expect(await screen.findByTestId('option-card')).toHaveAccessibleName('Good');
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+
+    cleanup();
+    proposalApi(() => ({ body: fixture({ options: [first!, { ...last!, tier: 'best' }] }) }));
+    renderPage();
+    // Two options and no Better: the page opens on the second (the middle of a list of two rounds up).
+    expect(await screen.findByTestId('option-card')).toHaveAccessibleName('Best');
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+  });
+
+  it('says the price is good until a plain date, with no countdown or pressure', async () => {
+    proposalApi(() => ({ body: fixture() }));
+    renderPage();
+    await screen.findByTestId('option-card');
+    const line = screen.getByText(/^Price good until /);
+    expect(line.textContent).toMatch(/^Price good until [A-Z][a-z]{2} \d{1,2}(, \d{4})?\.$/);
+    expect(document.body.textContent ?? '').not.toMatch(/offer ends|ends in|expires in|hurry|only \d+ left|countdown|limited time|act now/i);
+  });
+
+  it('shows the financing line only from what the option carries: monthly, APR, number of payments, total', async () => {
+    proposalApi(() => ({ body: fixture() }));
+    const { user } = renderPage();
+
+    // Better: $215 a month, 120 payments at 8.99% APR, so the payments total $25,800 (215 x 120)
+    expect(await screen.findByText(homeowner.financingMonthly('$215'))).toBeInTheDocument();
+    expect(screen.getByText(homeowner.financingApr('8.99'))).toBeInTheDocument();
+    expect(screen.getByText(homeowner.financingPayments(120))).toBeInTheDocument();
+    expect(screen.getByText(homeowner.financingTotal('$25,800'))).toBeInTheDocument();
+    expect(screen.getByText(homeowner.financingNote)).toBeInTheDocument();
+    // No payoff month is made up: the page does not know when payments would start.
+    expect(document.body.textContent ?? '').not.toMatch(/paid off/i);
+
+    // Good carries no terms: there is no financing line at all, not a guess.
+    await user.click(screen.getByRole('radio', { name: /^Good/ }));
+    expect(screen.queryByText(/\/month/)).toBeNull();
+    expect(screen.queryByText(/APR/)).toBeNull();
+    expect(screen.queryByText(homeowner.financingNote)).toBeNull();
+  });
+
+  it('a monthly estimate without its terms (or terms without an estimate) shows no financing', async () => {
+    const [good, better, best] = fixture().options;
+    proposalApi(() => ({
+      body: fixture({ options: [good!, { ...better!, financingTerms: null }, { ...best!, monthlyEstimateCents: null }] }),
+    }));
+    const { user } = renderPage();
+    await screen.findByTestId('option-card');
+    expect(screen.queryByText(/\/month/)).toBeNull();
+    await user.click(screen.getByRole('radio', { name: /^Best/ }));
+    expect(screen.queryByText(/\/month/)).toBeNull();
   });
 
   it('sign with keyboard only posts the exact body', async () => {
@@ -147,19 +323,20 @@ describe('the homeowner page', () => {
     const { user } = renderPage();
     await screen.findAllByTestId('option-card');
 
-    await tabTo(user, () => chooseButton('Better'));
+    await tabTo(user, () => chooseButton());
     await user.keyboard('{Enter}');
 
-    const checkbox = await screen.findByRole('checkbox', { name: homeowner.consentText });
-    await tabTo(user, () => checkbox);
-    await user.keyboard(' ');
-    expect(checkbox).toBeChecked();
-
-    const name = screen.getByRole('textbox', { name: homeowner.nameLabel });
+    // The sheet reads top to bottom: the name, the drawing's Clear, the one consent, then the main button.
+    const name = await screen.findByRole('textbox', { name: homeowner.nameLabel });
     await tabTo(user, () => name);
     await user.keyboard('Maria Lopez');
 
     await tabTo(user, () => screen.getByRole('button', { name: homeowner.clearDrawing }));
+    const checkbox = screen.getByRole('checkbox', { name: homeowner.consentText });
+    await tabTo(user, () => checkbox);
+    await user.keyboard(' ');
+    expect(checkbox).toBeChecked();
+
     const sign = await screen.findByRole('button', { name: homeowner.signAndAccept(1425000) });
     await tabTo(user, () => sign);
     await user.keyboard('{Enter}');
@@ -168,6 +345,52 @@ describe('the homeowner page', () => {
     expect(api.sent(SIGN_KEY)).toEqual([{ optionId: MIDDLE_ID, consent: true, signerName: 'Maria Lopez', typedSignature: 'Maria Lopez' }]);
     const [body] = api.sent(SIGN_KEY) as Record<string, unknown>[];
     expect(Object.keys(body ?? {})).not.toContain('drawnSignature');
+  });
+
+  it("the sheet's keyboard order, with nothing between: the name, Clear, the one consent, then the main button", async () => {
+    proposalApi(() => ({ body: fixture() }));
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: choose() }));
+    const name = await screen.findByRole('textbox', { name: homeowner.nameLabel });
+    name.focus();
+    await user.keyboard('{Tab}');
+    expect(screen.getByRole('button', { name: homeowner.clearDrawing })).toHaveFocus();
+    await user.keyboard('{Tab}');
+    expect(screen.getByRole('checkbox', { name: homeowner.consentText })).toHaveFocus();
+    await user.keyboard('{Tab}');
+    expect(screen.getByRole('button', { name: homeowner.signAndAccept(1425000) })).toHaveFocus();
+  });
+
+  it('the sign sheet says what is signed and how it would be paid, and that financing is a separate approval', async () => {
+    proposalApi(() => ({ body: fixture() }));
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: choose() }));
+
+    const sheet = await screen.findByRole('dialog', { name: homeowner.signTitle });
+    // Three steps, Sign the current one
+    const steps = within(sheet).getByRole('list', { name: homeowner.stepsLabel });
+    expect(within(steps).getAllByRole('listitem').map((item) => item.textContent)).toEqual([homeowner.stepChoose, `2${homeowner.stepSign}`, `3${homeowner.stepDone}`]);
+    expect(within(steps).getByText(homeowner.stepSign).closest('li')).toHaveAttribute('aria-current', 'step');
+    // The summary and the two ways to pay: only what the option carries
+    expect(within(sheet).getAllByText(money(1425000)).length).toBeGreaterThanOrEqual(1);
+    expect(within(sheet).getByText(homeowner.howYouPay)).toBeInTheDocument();
+    expect(within(sheet).getByText(homeowner.payMonthlyAmount('$215'))).toBeInTheDocument();
+    expect(within(sheet).getByText(homeowner.payMonthlyTerms('8.99', 120))).toBeInTheDocument();
+    expect(within(sheet).getByText(homeowner.financingSeparate)).toBeInTheDocument();
+    // The consent is the versioned legal text, unchanged
+    expect(within(sheet).getByRole('checkbox', { name: CONSENT_TEXT_V1 })).toBeInTheDocument();
+    expect(within(sheet).getByText(ESTIMATE_CLAUSE_V1)).toBeInTheDocument();
+  });
+
+  it('the sign sheet for an option with no financing has no payment block and no financing sentence', async () => {
+    proposalApi(() => ({ body: fixture() }));
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('radio', { name: /^Good/ }));
+    await user.click(screen.getByRole('button', { name: choose('Good', 990000) }));
+
+    const sheet = await screen.findByRole('dialog', { name: homeowner.signTitle });
+    expect(within(sheet).queryByText(homeowner.howYouPay)).toBeNull();
+    expect(within(sheet).queryByText(homeowner.financingSeparate)).toBeNull();
   });
 
   it('the drawn signature path posts a PNG', async () => {
@@ -186,7 +409,7 @@ describe('the homeowner page', () => {
 
     proposalApi(() => ({ body: fixture() }));
     const { user } = renderPage();
-    await user.click(await screen.findByRole('button', { name: homeowner.chooseOption('Better') }));
+    await user.click(await screen.findByRole('button', { name: choose() }));
 
     const pad = await screen.findByTestId('signature-pad');
     // jsdom has no pointer capture; the stand-in keeps the pad's calls to it working.
@@ -220,7 +443,7 @@ describe('the homeowner page', () => {
 
     proposalApi(() => ({ body: fixture() }));
     const { user } = renderPage();
-    await user.click(await screen.findByRole('button', { name: homeowner.chooseOption('Better') }));
+    await user.click(await screen.findByRole('button', { name: choose() }));
     const pad = await screen.findByTestId('signature-pad');
     Object.assign(pad, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() });
     fireEvent.pointerDown(pad, { pointerId: 1, clientX: 10, clientY: 10 });
@@ -230,7 +453,7 @@ describe('the homeowner page', () => {
     // Close the sheet with the drawing on it, then choose again: the pad is empty, so nothing is drawn.
     await user.click(screen.getByRole('button', { name: homeowner.closeLabel }));
     await waitFor(() => expect(screen.queryByTestId('signature-pad')).toBeNull());
-    await user.click(screen.getByRole('button', { name: homeowner.chooseOption('Better') }));
+    await user.click(screen.getByRole('button', { name: choose() }));
     await screen.findByTestId('signature-pad');
     await user.type(screen.getByRole('textbox', { name: homeowner.nameLabel }), 'Maria Lopez');
     await user.click(screen.getByRole('checkbox', { name: homeowner.consentText }));
@@ -253,7 +476,7 @@ describe('the homeowner page', () => {
       return { status: 409, body: { error: 'This proposal is already signed.' } };
     };
     const { user } = renderPage();
-    await user.click(await screen.findByRole('button', { name: homeowner.chooseOption('Better') }));
+    await user.click(await screen.findByRole('button', { name: choose() }));
     await user.type(screen.getByRole('textbox', { name: homeowner.nameLabel }), 'Maria Lopez');
     await user.click(screen.getByRole('checkbox', { name: homeowner.consentText }));
     await user.click(screen.getByRole('button', { name: homeowner.signAndAccept(1425000) }));
@@ -271,7 +494,7 @@ describe('the homeowner page', () => {
       return { status: 410, body: { error: 'This proposal link has expired.', companyPhone: null } };
     };
     const { user } = renderPage();
-    await user.click(await screen.findByRole('button', { name: homeowner.chooseOption('Better') }));
+    await user.click(await screen.findByRole('button', { name: choose() }));
     await user.type(screen.getByRole('textbox', { name: homeowner.nameLabel }), 'Maria Lopez');
     await user.click(screen.getByRole('checkbox', { name: homeowner.consentText }));
     await user.click(screen.getByRole('button', { name: homeowner.signAndAccept(1425000) }));
@@ -311,7 +534,7 @@ describe('the homeowner page', () => {
   it('sign shows validation errors before posting', async () => {
     proposalApi(() => ({ body: fixture() }));
     const { user } = renderPage();
-    await user.click(await screen.findByRole('button', { name: homeowner.chooseOption('Better') }));
+    await user.click(await screen.findByRole('button', { name: choose() }));
 
     await user.click(await screen.findByRole('button', { name: homeowner.signAndAccept(1425000) }));
 
@@ -426,7 +649,7 @@ describe('the homeowner page', () => {
     vi.stubGlobal('fetch', spy);
 
     const { user } = renderPage();
-    await user.click(await screen.findByRole('button', { name: homeowner.chooseOption('Better') }));
+    await user.click(await screen.findByRole('button', { name: choose() }));
     await user.click(screen.getByRole('checkbox', { name: homeowner.consentText }));
     await user.type(screen.getByRole('textbox', { name: homeowner.nameLabel }), 'Maria Lopez');
     await user.click(screen.getByRole('button', { name: homeowner.signAndAccept(1425000) }));
