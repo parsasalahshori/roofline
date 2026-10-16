@@ -148,7 +148,7 @@ export const measureWindows = {
         .filter((part): part is string => part !== null)
         .join(', '),
       b.lowWingFt > 0 ? `${Math.round(b.lowWingFt)} ft of a low one-storey wing (likely a garage or porch) left out` : null,
-      b.outlineFrom === 'google-roof' ? 'Outline from Google\u2019s roof, as no building footprint was found' : null,
+      b.outlineFrom === 'google-roof' ? 'Outline traced from the roof seen from above, as no building footprint was found' : null,
       b.windows !== null
         ? `${b.covers === 'sides-and-back' ? 'Sides and back: about' : 'About'} ${b.range !== null ? `${b.range.low} to ${b.range.high} windows, most likely ${b.windows}` : plural(b.windows, 'window', 'windows')}`
         : null,

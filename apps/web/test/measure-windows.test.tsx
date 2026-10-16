@@ -425,9 +425,9 @@ describe('Measure windows: floors and ranges', () => {
     expect(card().querySelector('[data-fact="floors"] dd')?.textContent).toBe('1.5 floors (from the height map)');
   });
 
-  it('an outline from Google’s roof says so', async () => {
+  it('an outline traced from the roof (no footprint) says so', async () => {
     await open({ walls: { perimeterFt: 196, wallHeightFt: 9.2, wallAreaSqFt: 1803, frontWallFt: 58, outlineFrom: 'google-roof', floorsFrom: 'height-map' } });
-    expect(card().querySelector('[data-fact="basis"] dd')?.textContent).toContain('Outline from Google’s roof');
+    expect(card().querySelector('[data-fact="basis"] dd')?.textContent).toContain('Outline traced from the roof seen from above');
   });
 });
 
