@@ -574,9 +574,6 @@ function GuttersCard({
             </dl>
             {!scanning ? (
               <div className={styles.facts}>
-                <p className={styles.reason} data-size-reason="">
-                  <strong>{copy.reasonLabel}</strong> {view.size.reason}
-                </p>
                 {view.check.reasons.includes('gutters-check') ? (
                   <div data-review="gutters-check" className={styles.check}>
                     <Banner tone="warning">{copy.checkLow}</Banner>
@@ -589,6 +586,9 @@ function GuttersCard({
                     {copy.draftNote}
                   </p>
                 ) : null}
+                <p className={styles.reason} data-size-reason="">
+                  <strong>{copy.reasonLabel}</strong> {view.size.reason}
+                </p>
                 {adjustedBy !== null ? (
                   <p className={styles.adjustedBy} data-adjusted-by="">
                     {copy.adjustedBy(adjustedBy.name, adjustedBy.at)}
