@@ -3,7 +3,7 @@ import { BOARD_STAGES, type BoardColumn, type BoardStage, type BoardView, type J
 import { ApiError, apiFetch } from '../../api/client.ts';
 import { jobs } from '../../copy/jobs.ts';
 import { useToast } from '@roofline/ui';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** Query params of GET /api/jobs/board (all optional). */
 export type BoardFilterParams = {
@@ -13,7 +13,14 @@ export type BoardFilterParams = {
   archived?: boolean;
 };
 
-export type MoveJobInput = { jobId: string; to: JobStage; valueCents?: number; lostReason?: string };
+export type MoveJobInput = {
+  jobId: string;
+  to: JobStage;
+  valueCents?: number;
+  lostReason?: string;
+  /** Who is moving and where from. With it a toast says so and Undo puts the job back; without it the move is quiet. */
+  undo?: { name: string; from: JobStage };
+};
 
 export const jobsKeys = {
   board: (f: BoardFilterParams) => ['jobs-board', f] as const,
@@ -172,12 +179,15 @@ type MoveContext = { snapshots: Array<[QueryKey, unknown]> };
 /**
  * Moves a job to another stage (`PATCH /api/jobs/:id`). Every cached board moves the card at once;
  * a refusal puts every board back and says why in a toast. The boards and the job are asked for
- * again when it settles.
+ * again when it settles. A move that says who and from where (`undo`) ends in a toast with Undo,
+ * which moves the job back, quietly.
  */
 export function useMoveJob() {
   const queryClient = useQueryClient();
   const toast = useToast();
-  return useMutation<unknown, Error, MoveJobInput, MoveContext>({
+  // Undo is pressed long after the render that made the toast: it calls the latest mutate
+  const again = useRef<(input: MoveJobInput) => void>(() => undefined);
+  const mutation = useMutation<unknown, Error, MoveJobInput, MoveContext>({
     mutationFn: ({ jobId, to, valueCents, lostReason }) =>
       apiFetch('/api/jobs/' + jobId, {
         method: 'PATCH',
@@ -201,6 +211,13 @@ export function useMoveJob() {
       }
       toast.show(error instanceof ApiError ? error.message : jobs.moveFailed, 'error');
     },
+    onSuccess: (_data, input) => {
+      const { undo } = input;
+      if (undo === undefined || undo.from === input.to) return;
+      toast.show(jobs.movedTo(undo.name, jobs.stage[input.to]), 'success', {
+        action: { label: jobs.undo, onClick: () => again.current({ jobId: input.jobId, to: undo.from }) },
+      });
+    },
     onSettled: (_data, _error, input) => {
       void queryClient.invalidateQueries({ queryKey: ['jobs-board'] });
       void queryClient.invalidateQueries({ queryKey: ['job', input.jobId] });
@@ -208,4 +225,8 @@ export function useMoveJob() {
       void queryClient.invalidateQueries({ queryKey: ['customers'] });
     },
   });
+  useEffect(() => {
+    again.current = mutation.mutate;
+  }, [mutation.mutate]);
+  return mutation;
 }

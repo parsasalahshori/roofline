@@ -78,7 +78,7 @@ export function JobHeader({ view, onEdit }: JobHeaderProps) {
 
       <StageStepper job={current} canEdit={can.edit} />
 
-      {can.edit ? <MoveJobMenu job={current} /> : null}
+      {can.edit ? <MoveJobMenu job={current} archived={current.archived} /> : null}
 
       <div className={styles.row}>
         <Select

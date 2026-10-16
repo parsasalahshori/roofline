@@ -159,6 +159,16 @@ export async function waitForStormSteps(page: Page, taskId: string): Promise<voi
     .toBe('done');
 }
 
+/**
+ * Moves a job through its "Move to…" menu: opens the menu inside `scope` (a board card, a list row or the job's
+ * header) and clicks the stage by its name ("Inspection", "Lost", "Archive"). The menu also takes the number keys
+ * and L / E; those are covered by the unit tests, so the specs click like a person with a mouse.
+ */
+export async function moveJob(scope: Locator, stage: string): Promise<void> {
+  await scope.getByRole('button', { name: 'Move to…' }).click();
+  await scope.page().getByRole('option', { name: stage, exact: true }).click();
+}
+
 type Fixtures = {
   scenario: Scenario;
   loginAs: (page: Page, who: Who) => Promise<void>;

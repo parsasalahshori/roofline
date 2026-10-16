@@ -48,7 +48,7 @@ export function Board() {
       setSheet({ job, to });
       return;
     }
-    move.mutate({ jobId, to });
+    move.mutate({ jobId, to, undo: { name: job.customerName, from: job.stage } });
   };
 
   if (board.isPending) {

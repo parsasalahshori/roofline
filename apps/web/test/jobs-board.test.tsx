@@ -135,7 +135,17 @@ const board = () => screen.findByRole('region', { name: jobs.boardLabel });
 const stageRegion = (stage: BoardStage) => screen.findByRole('region', { name: jobs.stage[stage] });
 /** The card (its link and Move-to menu) for a customer, found through the link. */
 const cardFor = (customer: string) => screen.getByRole('link', { name: new RegExp(customer) }).parentElement as HTMLElement;
-const moveSelect = (customer: string) => within(cardFor(customer)).getByLabelText(jobs.moveTo);
+const moveButton = (customer: string) => within(cardFor(customer)).getByRole('button', { name: jobs.moveTo });
+/** Opens a card's Move to… menu and returns its listbox. */
+async function openMove(user: ReturnType<typeof userEvent.setup>, customer: string) {
+  await user.click(moveButton(customer));
+  return screen.findByRole('listbox', { name: jobs.moveHeading(customer) });
+}
+/** Moves a card through its menu: open it, click the stage. */
+async function moveTo(user: ReturnType<typeof userEvent.setup>, customer: string, stage: string) {
+  const list = await openMove(user, customer);
+  await user.click(within(list).getByRole('option', { name: stage }));
+}
 
 describe('pipeline board', () => {
   it('columns and counts from a stubbed BoardView', async () => {
@@ -232,7 +242,7 @@ describe('pipeline board', () => {
     const { user } = renderApp('/jobs');
 
     await screen.findByRole('link', { name: /Pat Homeowner/ });
-    await user.selectOptions(moveSelect('Pat Homeowner'), 'lost');
+    await moveTo(user, 'Pat Homeowner', jobs.stage.lost);
     const sheet = await screen.findByRole('dialog', { name: jobs.sheetLost });
     await user.selectOptions(within(sheet).getByLabelText(jobs.lostReasonLabel), 'Price');
     await user.click(within(sheet).getByRole('button', { name: jobs.confirm }));
@@ -247,7 +257,7 @@ describe('pipeline board', () => {
     const { user } = renderApp('/jobs');
 
     await screen.findByRole('link', { name: /Pat Homeowner/ });
-    await user.selectOptions(moveSelect('Pat Homeowner'), 'won');
+    await moveTo(user, 'Pat Homeowner', jobs.stage.won);
     const sheet = await screen.findByRole('dialog', { name: jobs.sheetWon });
     await user.click(within(sheet).getByRole('button', { name: jobs.confirm }));
 
@@ -262,7 +272,7 @@ describe('pipeline board', () => {
     const { user } = renderApp('/jobs');
 
     await screen.findByRole('link', { name: /Pat Homeowner/ });
-    await user.selectOptions(moveSelect('Pat Homeowner'), 'won');
+    await moveTo(user, 'Pat Homeowner', jobs.stage.won);
     const sheet = await screen.findByRole('dialog', { name: jobs.sheetWon });
     await user.type(within(sheet).getByLabelText(jobs.valueLabel), '12,500');
     await user.click(within(sheet).getByRole('button', { name: jobs.confirm }));
@@ -277,7 +287,7 @@ describe('pipeline board', () => {
     const { user } = renderApp('/jobs');
 
     await screen.findByRole('link', { name: /Pat Homeowner/ });
-    await user.selectOptions(moveSelect('Pat Homeowner'), 'won');
+    await moveTo(user, 'Pat Homeowner', jobs.stage.won);
     const sheet = await screen.findByRole('dialog', { name: jobs.sheetWon });
     await user.type(within(sheet).getByLabelText(jobs.valueLabel), '12abc');
     await user.click(within(sheet).getByRole('button', { name: jobs.confirm }));
@@ -293,7 +303,7 @@ describe('pipeline board', () => {
     const { user } = renderApp('/jobs');
 
     await screen.findByRole('link', { name: /Pat Homeowner/ });
-    await user.selectOptions(moveSelect('Pat Homeowner'), 'won');
+    await moveTo(user, 'Pat Homeowner', jobs.stage.won);
     const sheet = await screen.findByRole('dialog', { name: jobs.sheetWon });
     await user.type(within(sheet).getByLabelText(jobs.valueLabel), '1,2,3');
     await user.click(within(sheet).getByRole('button', { name: jobs.confirm }));
@@ -309,12 +319,130 @@ describe('pipeline board', () => {
         column('won', [job({ id: 'j2', stage: 'won', customerName: 'Won Customer', valueCents: 500000 })], 500000),
       ]),
     );
-    renderApp('/jobs');
+    const { user } = renderApp('/jobs');
 
     await screen.findByRole('link', { name: /Won Customer/ });
-    const leadOptions = within(moveSelect('Lead Customer')).queryByRole('option', { name: jobs.stage.installed });
-    expect(leadOptions).not.toBeInTheDocument();
-    expect(within(moveSelect('Won Customer')).getByRole('option', { name: jobs.stage.installed })).toBeInTheDocument();
+    const leadList = await openMove(user, 'Lead Customer');
+    expect(within(leadList).queryByRole('option', { name: jobs.stage.installed })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    const wonList = await openMove(user, 'Won Customer');
+    expect(within(wonList).getByRole('option', { name: jobs.stage.installed })).toBeInTheDocument();
+  });
+
+  it('a move through the menu says so with Undo, and Undo moves it back without another toast', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]), {
+      'PATCH /api/jobs/j1': () => ({ body: {} }),
+    });
+    const { user } = renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    await moveTo(user, 'Pat Homeowner', jobs.stage.inspection);
+    await waitFor(() => expect(api.sent('PATCH /api/jobs/j1')).toEqual([{ stage: 'inspection' }]));
+
+    const status = screen.getByRole('status');
+    expect(await within(status).findByText(jobs.movedTo('Pat Homeowner', jobs.stage.inspection))).toBeInTheDocument();
+    await user.click(within(status).getByRole('button', { name: jobs.undo }));
+    await waitFor(() => expect(api.sent('PATCH /api/jobs/j1')).toEqual([{ stage: 'inspection' }, { stage: 'lead' }]));
+    await waitFor(() => expect(status).toBeEmptyDOMElement());
+  });
+
+  it('a drag says so with Undo too', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]), {
+      'PATCH /api/jobs/j1': () => ({ body: {} }),
+    });
+    renderApp('/jobs');
+
+    const leadRegion = await stageRegion('lead');
+    const inspectionRegion = await stageRegion('inspection');
+    const dataTransfer = { getData: () => 'j1', setData: () => {}, effectAllowed: 'none' };
+    fireEvent.dragStart(within(leadRegion).getByRole('link', { name: /Pat Homeowner/ }), { dataTransfer });
+    fireEvent.drop(inspectionRegion, { dataTransfer });
+
+    const status = screen.getByRole('status');
+    expect(await within(status).findByText(jobs.movedTo('Pat Homeowner', jobs.stage.inspection))).toBeInTheDocument();
+    expect(within(status).getByRole('button', { name: jobs.undo })).toBeInTheDocument();
+  });
+
+  it('a refused move shows no Undo', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]), {
+      'PATCH /api/jobs/j1': () => ({ status: 400, body: { error: 'Mark the job Won first.' } }),
+    });
+    const { user } = renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    await moveTo(user, 'Pat Homeowner', jobs.stage.proposal);
+    expect(await screen.findByText('Mark the job Won first.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: jobs.undo })).not.toBeInTheDocument();
+  });
+
+  it('the menu moves on a number key, opens the sheet on L, and picking the current stage does nothing', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]), {
+      'PATCH /api/jobs/j1': () => ({ body: {} }),
+    });
+    const { user } = renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    await openMove(user, 'Pat Homeowner');
+    await user.keyboard('1');
+    expect(api.count('PATCH /api/jobs/j1')).toBe(0);
+
+    await openMove(user, 'Pat Homeowner');
+    await user.keyboard('l');
+    expect(await screen.findByRole('dialog', { name: jobs.sheetLost })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: jobs.cancel }));
+
+    await openMove(user, 'Pat Homeowner');
+    await user.keyboard('3');
+    await waitFor(() => expect(api.sent('PATCH /api/jobs/j1')).toEqual([{ stage: 'proposal' }]));
+  });
+
+  it('the stages are numbered, the current one is checked, and Lost and Archive follow', async () => {
+    signedIn(boardOf([column('inspection', [job({ id: 'j1', stage: 'inspection' })])]));
+    const { user } = renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    const list = await openMove(user, 'Pat Homeowner');
+    const options = within(list).getAllByRole('option');
+    expect(options.map((option) => option.textContent?.replace(/\d$|[LE]$/, ''))).toEqual([
+      jobs.stage.lead,
+      jobs.stage.inspection,
+      jobs.stage.proposal,
+      jobs.stage.won,
+      jobs.stage.lost,
+      jobs.archiveOption,
+    ]);
+    expect(options.filter((option) => option.getAttribute('aria-selected') === 'true').map((option) => option.textContent)).toEqual([
+      expect.stringContaining(jobs.stage.inspection),
+    ]);
+  });
+
+  it('Archive posts to the archive route and says so with Undo, which restores', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]), {
+      'POST /api/jobs/j1/archive': () => ({ body: {} }),
+      'POST /api/jobs/j1/unarchive': () => ({ body: {} }),
+    });
+    const { user } = renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    await moveTo(user, 'Pat Homeowner', jobs.archiveOption);
+    await waitFor(() => expect(api.count('POST /api/jobs/j1/archive')).toBe(1));
+
+    const status = screen.getByRole('status');
+    expect(await within(status).findByText(jobs.archivedJob('Pat Homeowner'))).toBeInTheDocument();
+    await user.click(within(status).getByRole('button', { name: jobs.undo }));
+    await waitFor(() => expect(api.count('POST /api/jobs/j1/unarchive')).toBe(1));
+  });
+
+  it('a rep is not offered Archive on a job that is not theirs', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead', assigned: { userId: 'someone-else', name: 'Casey' } })])]), {
+      'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role: 'rep' } }),
+    });
+    const { user } = renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    const list = await openMove(user, 'Pat Homeowner');
+    expect(within(list).queryByRole('option', { name: jobs.archiveOption })).not.toBeInTheDocument();
+    expect(within(list).getByRole('option', { name: jobs.stage.lost })).toBeInTheDocument();
   });
 
   it('filters update the URL and the request', async () => {

@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { test, expect } from './fixtures.ts';
+import { test, expect, moveJob } from './fixtures.ts';
 
 /*
  * Core CRM, start to finish: the pipeline board, the New job form, the job window's timeline and
@@ -56,7 +56,7 @@ test('drag a lead to Inspection, then Lost asks why', async ({ page, loginAs, ma
 
   // Moving a job to Lost opens the sheet that asks why; saving without a reason is refused
   const inspectionCard = board.locator('section[data-stage="inspection"] div[data-stage="inspection"]').first();
-  await inspectionCard.getByLabel('Move to…').selectOption('lost');
+  await moveJob(inspectionCard, 'Lost');
   const sheet = page.getByRole('dialog', { name: 'Why was the job lost?' });
   await expect(sheet).toBeVisible();
   await sheet.getByRole('button', { name: 'Save', exact: true }).click();

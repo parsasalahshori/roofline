@@ -31,7 +31,7 @@ export function MoveJobSheet({ job, to, onDone }: MoveJobSheetProps) {
         return;
       }
       try {
-        await move.mutateAsync({ jobId: job.id, to: 'lost', lostReason });
+        await move.mutateAsync({ jobId: job.id, to: 'lost', lostReason, undo: { name: job.customerName, from: job.stage } });
       } catch {
         return; // the toast has said why; the sheet stays open
       }
@@ -50,7 +50,7 @@ export function MoveJobSheet({ job, to, onDone }: MoveJobSheetProps) {
       return;
     }
     try {
-      await move.mutateAsync({ jobId: job.id, to: 'won', valueCents });
+      await move.mutateAsync({ jobId: job.id, to: 'won', valueCents, undo: { name: job.customerName, from: job.stage } });
     } catch {
       return;
     }

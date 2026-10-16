@@ -63,7 +63,16 @@ export const jobs = {
   // Move to
   moveTo: 'Move to…',
   moveJobFor: (name: string) => `Move ${name}`,
+  /** The menu's own heading, over the stages: "Move Linda Young to" (set in mono capitals by the kit). */
+  moveHeading: (name: string) => `Move ${name} to`,
   moved: (stage: string) => `Moved to ${stage}.`,
+  /** The toast after a move, with Undo beside it. */
+  movedTo: (name: string, stage: string) => `${name} moved to ${stage}.`,
+  archivedJob: (name: string) => `${name} archived.`,
+  restoredJob: (name: string) => `${name} restored.`,
+  archiveOption: 'Archive',
+  restoreOption: 'Restore',
+  undo: 'Undo',
   moveFailed: "We couldn't move that job. Try again.",
 
   // Move sheet
