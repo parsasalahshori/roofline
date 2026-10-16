@@ -70,15 +70,18 @@ public struct ArScale: Codable, Equatable, Sendable {
     }
 }
 
+/// RoomPlan's own confidence in a surface (ROOMPLAN_CONFIDENCES).
+public enum RoomPlanConfidence: String, Codable, CaseIterable, Sendable {
+    case low, medium, high
+}
+
 /// The 'roomplan' scale: a window RoomPlan found, its size from the scan. Never order-grade.
 public struct RoomPlanScale: Codable, Equatable, Sendable {
     public var widthM: Double
     public var heightM: Double
-    /// RoomPlan's confidence as 0...1 (low 0.33, medium 0.66, high 1).
-    // VERIFY (server contract): the parallel server change defines `confidence`; a number 0..1 is assumed here.
-    public var confidence: Double
+    public var confidence: RoomPlanConfidence
 
-    public init(widthM: Double, heightM: Double, confidence: Double) {
+    public init(widthM: Double, heightM: Double, confidence: RoomPlanConfidence) {
         self.widthM = widthM
         self.heightM = heightM
         self.confidence = confidence
@@ -131,15 +134,17 @@ public enum WindowPhotoScale: Codable, Equatable, Sendable {
 }
 
 /// What is sent for one photographed window (PhotoWindowInput): corners in the photo's pixels, TL, TR, BR, BL.
+/// `uploadId` and `corners` are absent only for a RoomPlan window with no photo (the server refuses that for any other
+/// kind); this app always sends a photo.
 public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
     public var id: String
-    public var uploadId: String
+    public var uploadId: String?
     public var label: String?
     public var windowKey: String?
-    public var corners: [Vec2]
+    public var corners: [Vec2]?
     public var scale: WindowPhotoScale
 
-    public init(id: String, uploadId: String, label: String?, windowKey: String?, corners: [Vec2], scale: WindowPhotoScale) {
+    public init(id: String, uploadId: String?, label: String?, windowKey: String?, corners: [Vec2]?, scale: WindowPhotoScale) {
         self.id = id
         self.uploadId = uploadId
         self.label = label
@@ -156,10 +161,10 @@ public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         id = try c.decode(String.self, forKey: .id)
-        uploadId = try c.decode(String.self, forKey: .uploadId)
+        uploadId = try c.decodeIfPresent(String.self, forKey: .uploadId)
         label = try c.decodeIfPresent(String.self, forKey: .label)
         windowKey = try c.decodeIfPresent(String.self, forKey: .windowKey)
-        corners = try c.decode([Vec2].self, forKey: .corners)
+        corners = try c.decodeIfPresent([Vec2].self, forKey: .corners)
         scale = try c.decode(WindowPhotoScale.self, forKey: .scale)
     }
 
@@ -167,10 +172,10 @@ public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Keys.self)
         try c.encode(id, forKey: .id)
-        try c.encode(uploadId, forKey: .uploadId)
+        if let u = uploadId, !u.isEmpty { try c.encode(u, forKey: .uploadId) }
         if let label = label, !label.isEmpty { try c.encode(label, forKey: .label) }
         if let key = windowKey, !key.isEmpty { try c.encode(key, forKey: .windowKey) }
-        try c.encode(corners, forKey: .corners)
+        if let corners = corners { try c.encode(corners, forKey: .corners) }
         try c.encode(scale, forKey: .scale)
     }
 }

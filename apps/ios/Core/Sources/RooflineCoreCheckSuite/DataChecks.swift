@@ -64,7 +64,7 @@ let serverMeasurementJSON = """
       "widthIn": 39.37, "heightIn": 39.37, "sizeClass": "large", "uncertaintyIn": { "width": 0.2, "height": 0.3 }, "quality": "good" },
     { "id": "w3", "uploadId": "bb1c2a8e-1111-4c2b-9a55-0123456789ab", "windowKey": "k1",
       "corners": [[10,10],[100,10],[100,200],[10,200]],
-      "scale": { "kind": "roomplan", "widthM": 1.0, "heightM": 1.0, "confidence": 0.66 },
+      "scale": { "kind": "roomplan", "widthM": 1.0, "heightM": 1.0, "confidence": "medium" },
       "widthIn": 39.5, "heightIn": 39.0, "sizeClass": "large", "uncertaintyIn": null, "quality": "check" },
     { "id": "w2", "uploadId": "cc1c2a8e-1111-4c2b-9a55-0123456789ab",
       "corners": [[10,10],[100,10],[100,200],[10,200]],
@@ -92,8 +92,12 @@ let apiChecks: [Check] = [
         let oo = try json(old)
         ctx.equal(Set(oo.keys), Set(["id", "uploadId", "corners", "scale"]))
         ctx.equal(Set((oo["scale"] as! [String: Any]).keys), Set(["kind", "pointsM", "trackingLostCount"]))
-        let rp = try json(PhotoWindowInput(id: "w8", uploadId: "u", label: "Bed 2", windowKey: nil, corners: [], scale: .roomplan(RoomPlanScale(widthM: 0.9, heightM: 1.2, confidence: 1))))
+        let rp = try json(PhotoWindowInput(id: "w8", uploadId: "u", label: "Bed 2", windowKey: nil, corners: [], scale: .roomplan(RoomPlanScale(widthM: 0.9, heightM: 1.2, confidence: .high))))
         ctx.equal(Set((rp["scale"] as! [String: Any]).keys), Set(["kind", "widthM", "heightM", "confidence"]))
+        ctx.equal((rp["scale"] as! [String: Any])["confidence"] as? String, "high")
+        // A RoomPlan window with no photo (the server allows it): no uploadId, no corners
+        let bare = try json(PhotoWindowInput(id: "w7", uploadId: nil, label: nil, windowKey: nil, corners: nil, scale: .roomplan(RoomPlanScale(widthM: 1, heightM: 1, confidence: .low))))
+        ctx.equal(Set(bare.keys), Set(["id", "scale"]))
     },
     Check("WindowMeasurementView: decodes the server's view; other scales pass through unchanged") { ctx in
         let v = try JSONDecoder().decode(WindowMeasurementView.self, from: Data(serverMeasurementJSON.utf8))
@@ -101,6 +105,9 @@ let apiChecks: [Check] = [
         ctx.equal(v.adjustments?.photoWindows?.count, 2)
         ctx.equal(v.photoWindows?[1].input.scale.kind, "roomplan")
         ctx.equal(v.photoWindows?[0].uncertaintyIn?.height, 0.3)
+        let photoless = try JSONDecoder().decode(PhotoWindowInput.self, from: Data(#"{"id":"r1","scale":{"kind":"roomplan","widthM":1,"heightM":1.2,"confidence":"low"}}"#.utf8))
+        ctx.equal(photoless.uploadId, nil)
+        ctx.equal(photoless.corners, nil)
         ctx.equal(v.photoWindows?[1].uncertaintyIn, nil)
         let sheet = v.adjustments!.photoWindows![1]
         ctx.equal(sheet.scale.kind, "sheet")

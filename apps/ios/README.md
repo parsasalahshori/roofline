@@ -40,10 +40,10 @@ in the web app's windows screen, sized by the server.
 
 `RoomCaptureView`; when the rep taps Done, every `CapturedRoom` window (doors too, off by default) is listed with its
 size; the rep ticks and labels each. Each is saved as scale kind `roomplan` `{widthM, heightM, confidence}` with the
-photo from the scan that saw it best (keyframes are kept while scanning). The server marks these `check`, ± about 1 in,
-never order-grade.
+photo from the scan that saw it best (keyframes are kept while scanning). The server marks these `check`, ± 1 / 1.5 / 2 in
+by RoomPlan's confidence (high / medium / low), never order-grade.
 
-### Server endpoints it expects (the parallel server change)
+### Server endpoints it expects (branch ios/measure-app)
 
 `POST /api/window-measurements/:id/photo-windows` (append one), `DELETE /:id/photo-windows/:windowId`,
 `GET /api/window-measurements?propertyId=`, the optional `device` / `cornerSpreadM` on the `ar` scale and the
@@ -81,7 +81,9 @@ swift build && swift test           # with Xcode installed
 ```
 
 `check.sh` also compares the Swift `sizeFromArPoints` with the server's numbers when
-`RooflineMeasureTests/Fixtures/ar-sizing.json` exists (written by the server's vitest).
+`RooflineMeasureTests/Fixtures/ar-sizing.json` exists (written by `npm run ios:fixtures` on the server branch):
+width, height, ±, quality and corner order to 1e-6 in, and the constants (`ArLimits`). Another path can be passed:
+`./scripts/check.sh path/to/ar-sizing.json`.
 
 ## Build and run on an iPhone
 

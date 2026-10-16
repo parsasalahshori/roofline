@@ -127,10 +127,10 @@ let outboxChecks: [Check] = [
         let got = await again.items.first!
         ctx.equal(got.id, item.id)
         ctx.equal(got.uploadId, "u")
-        ctx.equal(got.window.corners.first, Vec2(50, 50))
+        ctx.equal(got.window.corners?.first, Vec2(50, 50))
         ctx.equal(got.imageWidthPx, 720)
         await again.syncAll()
-        ctx.equal(t.saved[item.id]?.corners[2], Vec2(250, 450))
+        ctx.equal(t.saved[item.id]?.corners?[2], Vec2(250, 450))
     },
     Check("OutboxMachine: a refused photo upload is redone from scratch on Retry") { ctx in
         var i = OutboxItem(window: sampleWindow(), measurementId: "m", address: nil, jpegFileName: "x.jpg", imageWidthPx: 1, imageHeightPx: 1)

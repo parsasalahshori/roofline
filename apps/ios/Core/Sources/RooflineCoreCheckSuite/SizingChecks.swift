@@ -23,24 +23,32 @@ let sizingChecks: [Check] = [
         near3(ctx, m[0], r[1], 1e-12, "mirrored TL")
         ctx.expect(gravityOrderedCorners([Vec3(0, 0, 0), Vec3(1, 0, 0), Vec3(1, 0, 1), Vec3(0, 0, 1)]) == nil, "a floor has no up")
     },
+    Check("arCornerOrder: the server's order, seen from AR's origin") { ctx in
+        let r = rect(w: 30 * inch, h: 50 * inch) // the wall faces the origin (+z side)
+        ctx.equal(arCornerOrder(r), [0, 1, 2, 3])
+        ctx.equal(arCornerOrder([r[2], r[0], r[3], r[1]]), [1, 3, 0, 2])
+        // A wall behind the origin (the person turned round): left/right as seen from the origin
+        let behind = r.map { Vec3(-$0.x, $0.y, -$0.z) }
+        let o = arCornerOrder(behind)
+        ctx.expect(behind[o[0]].x > behind[o[1]].x, "seen from the origin, TL is further +x on a wall facing -z")
+    },
     Check("sizeFromArPoints: a square 36 x 48 in frame, as the server sizes it") { ctx in
         let s = sizeFromArPoints(rect(w: 36 * inch, h: 48 * inch))
         ctx.near(s?.widthIn, 36, 1e-9)
         ctx.near(s?.heightIn, 48, 1e-9)
         ctx.equal(s?.quality, .good)
-        // Perfect rectangle: the ± is the point sigma alone, 3 mm = 0.1181 in
-        ctx.near(s?.uncertaintyWidthIn, 0.003 * 39.37007874, 1e-12)
-        ctx.near(s?.uncertaintyHeightIn, 0.003 * 39.37007874, 1e-12)
+        // Perfect rectangle, no device (webxr, 6 mm): point noise 6 mm and 1% of the side, in quadrature
+        let sigmaIn = 0.006 * 39.37007874
+        ctx.near(s?.uncertaintyWidthIn, (sigmaIn * sigmaIn + 0.36 * 0.36).squareRoot(), 1e-12)
+        ctx.near(s?.uncertaintyHeightIn, (sigmaIn * sigmaIn + 0.48 * 0.48).squareRoot(), 1e-12)
+        ctx.equal(s?.order, [0, 1, 2, 3])
     },
     Check("sizeFromArPoints: corners tapped out of order are sized the same (bug B9)") { ctx in
         let r = rect(w: 30 * inch, h: 60 * inch)
-        let shuffled = [r[3], r[0], r[2], r[1]]
-        let g = sizeFromArPoints(shuffled)
+        let g = sizeFromArPoints([r[3], r[0], r[2], r[1]], device: .arkitLidar)
         ctx.near(g?.widthIn, 30, 1e-9)
         ctx.near(g?.heightIn, 60, 1e-9)
-        // Without gravity order the same taps make a bow-tie and come out wrong
-        let t = sizeFromArPoints(shuffled, gravityOrder: false)
-        ctx.expect(t == nil || abs(t!.widthIn - 30) > 1 || t!.quality == .check, "tap order is wrong")
+        ctx.equal(g?.order, [1, 3, 2, 0])
     },
     Check("sizeFromArPoints: 'check' reasons match the server's wording") { ctx in
         var r = rect(w: 36 * inch, h: 48 * inch)
@@ -57,19 +65,17 @@ let sizingChecks: [Check] = [
         ctx.expect(sizeFromArPoints(Array(rect(w: 1, h: 1).prefix(3))) == nil, "three points")
         ctx.expect(sizeFromArPoints([Vec3(.nan, 0, 0)] + rect(w: 1, h: 1).suffix(3)) == nil, "not finite")
     },
-    Check("sizeFromArPoints: uncertainty adds the side difference, the scale term, the device sigma") { ctx in
-        var r = rect(w: 36 * inch, h: 48 * inch)
-        r[2] = r[2] + Vec3(0.5 * inch, 0, 0) // bottom 0.5 in longer
-        let s = sizeFromArPoints(r, sigmaM: 0, scaleFraction: 0, gravityOrder: true)!
-        ctx.near(s.uncertaintyWidthIn, 0.25, 1e-3, "half the side difference")
-        let sc = sizeFromArPoints(rect(w: 36 * inch, h: 48 * inch), sigmaM: 0, scaleFraction: 0.01)!
-        ctx.near(sc.uncertaintyWidthIn, 0.36, 1e-9, "1% of 36 in")
-        ctx.near(sc.uncertaintyHeightIn, 0.48, 1e-9, "1% of 48 in")
-        let m = ArSigmaModel.default
-        ctx.near(m.sigma(device: .arkitLidar, cornerSpreadM: nil), m.pointSigmaM[.arkitLidar]!)
-        ctx.near(m.sigma(device: .arkitLidar, cornerSpreadM: [0.01, 0.01, 0.01, 0.01]), 0.01, 1e-12, "a measured spread wider than the device's")
-        ctx.near(m.sigma(device: nil, cornerSpreadM: nil), 0.003)
-        let p = previewArSize(rect(w: 36 * inch, h: 48 * inch), device: .arkit, cornerSpreadM: nil)!
-        ctx.expect(p.uncertaintyWidthIn > 0.36, "preview includes the scale term")
+    Check("sizeFromArPoints: device sigma, a wider measured spread wins for its corner") { ctx in
+        let r = rect(w: 36 * inch, h: 48 * inch)
+        let lidar = sizeFromArPoints(r, device: .arkitLidar)!
+        let plain = sizeFromArPoints(r, device: .arkit)!
+        ctx.expect(lidar.uncertaintyWidthIn < plain.uncertaintyWidthIn, "LiDAR is tighter")
+        let small = sizeFromArPoints(r, device: .arkitLidar, cornerSpreadM: [0.001, 0.001, 0.001, 0.001])!
+        ctx.near(small.uncertaintyWidthIn, lidar.uncertaintyWidthIn, 1e-12, "spread below the device sigma: the device wins")
+        let wide = sizeFromArPoints(r, device: .arkitLidar, cornerSpreadM: [0.012, 0.0025, 0.0025, 0.0025])!
+        let pin = (0.012 * 0.012 + 3 * 0.0025 * 0.0025).squareRoot() / 2 * 39.37007874
+        ctx.near(wide.uncertaintyWidthIn, (pin * pin + 0.36 * 0.36).squareRoot(), 1e-12)
+        ctx.near(ArLimits.sigma(nil), 0.006)
+        ctx.near(previewArSize(r, device: .arkit, cornerSpreadM: nil)?.uncertaintyWidthIn, plain.uncertaintyWidthIn, 0)
     },
 ]

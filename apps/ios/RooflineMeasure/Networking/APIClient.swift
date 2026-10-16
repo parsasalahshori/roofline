@@ -182,7 +182,14 @@ final class APIClient: @unchecked Sendable {
             let view = try await measurement(id: measurementId) // a 404 here: the measurement itself is gone
             var list = view.adjustments?.photoWindows ?? []
             list.removeAll { $0.id == window.id }
-            list.append(window)
+            // A server without the append route predates `device` / `cornerSpreadM` too (its schema is strict)
+            var old = window
+            if case .ar(var s) = old.scale {
+                s.device = nil
+                s.cornerSpreadM = nil
+                old.scale = .ar(s)
+            }
+            list.append(old)
             struct Patch: Encodable { let photoWindows: [PhotoWindowInput] }
             try await send("PATCH", "api/window-measurements/\(measurementId)", json: Patch(photoWindows: list))
             _ = e

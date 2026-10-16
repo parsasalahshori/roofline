@@ -71,7 +71,7 @@ private struct RoomScanScreen: View {
                             FoundRow(item: Binding(get: { scanner.found[i] }, set: { scanner.found[i] = $0 }))
                         }
                     } footer: {
-                        Text("Room-scan sizes are quote-grade (about ± 1 in) and always marked 'check'. Measure a window with AR corners before ordering it.")
+                        Text("Room-scan sizes are quote-grade (± 1 to 2 in by RoomPlan's confidence) and always marked 'check'. Measure a window with AR corners before ordering it.")
                     }
                     if let e = error { Text(e).foregroundStyle(.red) }
                 }
@@ -131,7 +131,7 @@ private struct FoundRow: View {
                         CheckBadge(text: "scan · check")
                     }
                     Text(Eighths.size(widthIn: item.widthM * inchesPerMetre, heightIn: item.heightM * inchesPerMetre)).font(.headline.monospacedDigit())
-                    Text("RoomPlan confidence: \(item.confidenceLabel)").font(.caption).foregroundStyle(.secondary)
+                    Text("RoomPlan confidence: \(item.confidence.rawValue) · ± \(Eighths.formatUncertainty(RoomPlanLimits.uncertaintyIn(item.confidence))) in").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Toggle("Include", isOn: $item.include).labelsHidden()
@@ -163,9 +163,7 @@ final class RoomScanner {
         var isDoor: Bool
         var widthM: Double
         var heightM: Double
-        /// 0...1 from RoomPlan's low / medium / high.
-        var confidence: Double
-        var confidenceLabel: String
+        var confidence: RoomPlanConfidence
         /// World corners TL, TR, BR, BL.
         var corners: [Vec3]
         var include: Bool
@@ -277,11 +275,11 @@ final class RoomScanner {
             // Seen from inside the room: the room's centre side (the camera path's middle is a fair viewer)
             let viewer = keyframes.isEmpty ? nil : Vec3.mean(keyframes.map { $0.cameraTransform.translation })
             let corners = RoomPlanMath.corners(transform: t, widthM: w, heightM: h, viewer: viewer)
-            let (conf, confLabel) = Self.confidence(s.confidence)
+            let conf = Self.confidence(s.confidence)
             let best = bestKeyframe(for: corners)
             if !isDoor { n += 1 }
             list.append(Found(
-                id: s.identifier, isDoor: isDoor, widthM: w, heightM: h, confidence: conf, confidenceLabel: confLabel,
+                id: s.identifier, isDoor: isDoor, widthM: w, heightM: h, confidence: conf,
                 corners: corners, include: !isDoor, label: isDoor ? "Door" : "Scan window \(n)",
                 keyframe: best, thumbnail: best.flatMap { thumbnail(keyframes[$0].jpeg) }
             ))
@@ -290,12 +288,12 @@ final class RoomScanner {
         phase = .review
     }
 
-    private static func confidence(_ c: CapturedRoom.Confidence) -> (Double, String) {
+    private static func confidence(_ c: CapturedRoom.Confidence) -> RoomPlanConfidence {
         switch c {
-        case .high: return (1, "high")
-        case .medium: return (0.66, "medium")
-        case .low: return (0.33, "low")
-        @unknown default: return (0.33, "unknown")
+        case .high: return .high
+        case .medium: return .medium
+        case .low: return .low
+        @unknown default: return .low
         }
     }
 
@@ -326,15 +324,16 @@ final class RoomScanner {
             : ImageMapping.insetCorners(width: w, height: h)
         let label = f.label.trimmingCharacters(in: .whitespaces).isEmpty ? (f.isDoor ? "Door" : "Scan window") : f.label
         let window = PhotoWindowInput(
-            id: WindowIds.new(), uploadId: "", label: label, windowKey: WindowIds.new(), corners: corners,
+            id: WindowIds.new(), uploadId: nil, label: label, windowKey: WindowIds.new(), corners: corners,
             scale: .roomplan(RoomPlanScale(widthM: f.widthM, heightM: f.heightM, confidence: f.confidence))
         )
         let pass = TestPass(
             measurementId: context.measurementId, windowId: window.id, windowKey: window.windowKey, label: label,
             method: "roomplan", device: "roomplan", lidar: true, pointsM: f.corners, cornerSpreadM: nil,
             trackingLostCount: 0, restartsForTracking: 0, wallPlaneLocked: false, maxOffPlaneMm: nil,
-            widthIn: f.widthM * inchesPerMetre, heightIn: f.heightM * inchesPerMetre, uncertaintyWidthIn: 1, uncertaintyHeightIn: 1,
-            quality: "check", reasons: ["room scan (RoomPlan confidence \(f.confidenceLabel))"], durationS: Date().timeIntervalSince(startedAt)
+            widthIn: f.widthM * inchesPerMetre, heightIn: f.heightM * inchesPerMetre,
+            uncertaintyWidthIn: RoomPlanLimits.uncertaintyIn(f.confidence), uncertaintyHeightIn: RoomPlanLimits.uncertaintyIn(f.confidence),
+            quality: "check", reasons: ["room scan (RoomPlan confidence \(f.confidence.rawValue))"], durationS: Date().timeIntervalSince(startedAt)
         )
         return (window, k.jpeg, k.widthPx, k.heightPx, pass)
     }

@@ -108,7 +108,7 @@ public enum OutboxMachine {
         i.window.uploadId = upload.id
         // The corners are in the JPEG's pixels; if the server reads the photo at another size, follow it
         if upload.widthPx != i.imageWidthPx || upload.heightPx != i.imageHeightPx, upload.widthPx > 0, upload.heightPx > 0 {
-            i.window.corners = ImageMapping.rescale(i.window.corners, from: (Double(i.imageWidthPx), Double(i.imageHeightPx)), to: (Double(upload.widthPx), Double(upload.heightPx)))
+            i.window.corners = i.window.corners.map { ImageMapping.rescale($0, from: (Double(i.imageWidthPx), Double(i.imageHeightPx)), to: (Double(upload.widthPx), Double(upload.heightPx))) }
             i.imageWidthPx = upload.widthPx
             i.imageHeightPx = upload.heightPx
         }

@@ -265,7 +265,7 @@ final class ArMeasureController {
     private func finish(viewer: Vec3) {
         finished = capture.finished(viewer: viewer)
         if let f = finished {
-            preview = previewArSize(f.pointsM, device: device, cornerSpreadM: f.cornerSpreadM, viewer: viewer)
+            preview = previewArSize(f.pointsM, device: device, cornerSpreadM: f.cornerSpreadM)
         } else {
             message = "These four corners do not make a window (in a line, or on a floor). Start over."
         }
@@ -299,7 +299,7 @@ final class ArMeasureController {
         }
         let window = PhotoWindowInput(
             id: WindowIds.new(),
-            uploadId: "",
+            uploadId: nil, // filled in by the outbox once the photo is up
             label: label,
             windowKey: context.windowKey,
             corners: shot.corners,
