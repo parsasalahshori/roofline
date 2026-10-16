@@ -116,6 +116,23 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.premjeetech.winchoice.measure.coretests
         GENERATE_INFOPLIST_FILE: YES
 
+  # Apple's accessibility audit (contrast, tap-target size, Dynamic Type, clipped text, labels) on every screen, at the default text
+  # size and at the largest accessibility size. Run in the simulator with the in-memory fake server (scheme WinChoiceUITests).
+  WinChoiceUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: WinChoiceUITests
+        excludes:
+          - "**/*.md"
+    dependencies:
+      - target: WinChoice
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.premjeetech.winchoice.measure.uitests
+        GENERATE_INFOPLIST_FILE: YES
+
   # ---------------------------------------------------------------------------------------------- the rep app (parked)
   RooflineMeasure:
     type: application
@@ -189,6 +206,19 @@ schemes:
         - WinChoiceCoreTests
     archive:
       config: Release
+
+  # Not part of the WinChoice scheme's test action: UI tests launch the app many times and take minutes.
+  WinChoiceUITests:
+    build:
+      targets:
+        WinChoice: all
+        WinChoiceUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - WinChoiceUITests
 
   RooflineMeasure:
     build:

@@ -48,7 +48,9 @@ on id, 409 for a different window with the same id, consent version, 60 windows)
 number and ship date); the fake shows them (`.all`) unless `-debugStrict`.
 
 The **outbox** (`Core`'s `Outbox` with `HomeownerOutboxTransport`) keeps every window on disk until the server has it: the photo goes
-up at once, the window waits for its style (a style is required), then it is sent; a retry is safe.
+up at once, the window waits for its style (a style is required), then it is sent; a retry is safe. A 429 is not a refusal: the live
+client waits a short `Retry-After` (up to 10 s) and tries once more, a longer one is kept on the item (`retryNotBefore`) and the outbox
+leaves it alone until then; the window list says so calmly in the server's own words.
 
 ### Brand
 
@@ -58,6 +60,22 @@ the app icon. `Theme.swift` reads the colours from the JSON: WinChoice red `#ED3
 `#112337` / `#061F3F` the ink and the hero, blue `#155EAB` selection and links, tape yellow only for measuring guides. The look
 (Chalk Line: expanded heavy headings, mono digits for sizes, stacked fractions) is Roofline's and does not change per company. A text
 wordmark, no logo. Another company = another JSON, another target.
+
+### Accessibility
+
+- **Dynamic Type**: every text scales (`ScaledMetric` from the mockup's size), and the layouts change instead of cutting words
+  at the accessibility sizes: rows stack (`AdaptiveStack`), the nav bar puts its title under the buttons, the pinned main button
+  moves to the end of the scrolling content (`wcFooter` and `WCScrollFooter`), the style grid has one column, the tab bar becomes a
+  menu. Over the camera (the AR HUD, the card photo's tapping, the room scan) the controls stop at the largest ordinary size so the
+  picture stays in view.
+- **VoiceOver**: every control has a label (sizes are spoken in words: "35 and 5 eighths by 59 and 5 eighths inches"), headings are
+  marked, the photo-tapping canvas allows direct touch, the room drawing is described, a notice is announced when it appears.
+- **Targets and contrast**: 44 pt minimum targets; the quiet text colour (`ink3`) is a touch darker than the mockups' so small
+  text clears 4.5:1 on every surface; the main button's label is 18 pt bold (large text, 3:1) because white on the brand red
+  `#ED3A2B` is 4.0:1 (a darker red such as `#DB3425` would be 4.6:1: the brand owner's call).
+- **Reduce Motion**: the press scale, the notice's slide and the zoom reset are off.
+- **Checked by Apple's accessibility audit** (`WinChoiceUITests`, below): contrast, hit areas, Dynamic Type, clipped text and
+  descriptions on every screen, light, dark and at the largest accessibility size.
 
 ### Layout
 
@@ -73,6 +91,7 @@ RooflineMeasure/Brand/WinChoice/   WinChoice.json, Info.plist, PrivacyInfo.xcpri
 WinChoiceTests/       app tests (hosted): the store over the fake server, the HTTP client over a stub, the outbox, rows and wording,
                       the card flow, photo preparation, the brand and bundle
 WinChoiceCoreTests/   the whole RooflineCore check suite as an XCTest (no host app)
+WinChoiceUITests/     Apple's accessibility audit on every screen (its own scheme: it launches the app 37 times, about 5 minutes)
 ```
 
 ### Run it in the simulator
@@ -109,9 +128,11 @@ xcrun simctl launch --console booted com.premjeetech.winchoice.measure -debugSer
 ### Tests
 
 ```sh
-cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 83 checks
+cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 85 checks
 cd apps/ios && xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoice \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO
+xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoiceUITests \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO   # the accessibility audit
 ```
 
 The card model's parity data (`Core/Sources/RooflineCoreCheckSuite/CardParityData.swift`) is generated from the server's real
