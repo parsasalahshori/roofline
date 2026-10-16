@@ -232,6 +232,20 @@
       "when": 1792104590524,
       "tag": "0032_window_measurement_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792115457475,
+      "tag": "0036_window_orders_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792115472497,
+      "tag": "0037_window_orders_grants_rls",
+      "breakpoints": true
     }
   ]
 }

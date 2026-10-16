@@ -177,6 +177,26 @@ describe('schema', () => {
     expect(cols.map((c) => c.column_name)).toEqual(expect.arrayContaining(['photos', 'adjustments', 'uploads', 'photos_delete_by']));
   });
 
+  test('window_orders is a tenant table with RLS forced, one order per measurement, same-company measurement', async () => {
+    expect([...TENANT_TABLES]).toContain('window_orders');
+    const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+      `select relrowsecurity, relforcerowsecurity from pg_class where oid = 'public.window_orders'::regclass`,
+    );
+    expect(cls).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+    const policies = await ownerQuery<{ policyname: string }>(
+      `select policyname from pg_policies where schemaname = 'public' and tablename = 'window_orders'`,
+    );
+    expect(policies.map((p) => p.policyname)).toContain('tenant_isolation');
+    const cons = await ownerQuery<{ conname: string }>(`select conname from pg_constraint where conrelid = 'public.window_orders'::regclass`);
+    expect(cons.map((c) => c.conname)).toEqual(
+      expect.arrayContaining(['window_orders_company_measurement_fk', 'window_orders_company_measurement_uniq', 'window_orders_status_check']),
+    );
+    const cols = await ownerQuery<{ column_name: string }>(
+      `select column_name from information_schema.columns where table_schema = 'public' and table_name = 'company_settings' and column_name = 'window_order_settings'`,
+    );
+    expect(cols).toHaveLength(1);
+  });
+
   test('D1 tables are tenant tables with RLS forced', async () => {
     const d1Tables = ['conversations', 'calls', 'conversation_turns', 'claim_intakes', 'blocked_numbers'] as const;
     expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...d1Tables]));
